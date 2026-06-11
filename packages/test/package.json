@@ -79,8 +79,7 @@
 	},
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
-		"@pluxel/build": "workspace:*",
-		"@pluxel/workspace": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"fs-fixture": "^2.13.0",
 		"vitest": "^4.1.7"
 	},
@@ -91,6 +90,7 @@
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.3.4",
-		"fs-fixture": "2.14.0"
+		"fs-fixture": "2.14.0",
+		"pathe": "2.0.3"
 	}
 }

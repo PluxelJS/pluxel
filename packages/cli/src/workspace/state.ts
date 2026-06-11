@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/workspace/info'
+import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/rolldown/workspace/info'
 import { isAbsolute, normalize, relative, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { CLI_DEFAULTS } from '../config'

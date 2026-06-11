@@ -14,7 +14,7 @@ const pluginBuildMocks = vi.hoisted(() => ({
 	resolvePluginUiBuildSignature: vi.fn(() => 'ui-build-signature'),
 }))
 
-vi.mock('@pluxel/vite/plugin-ui', () => ({
+vi.mock('@pluxel/rolldown/vite/plugin-ui', () => ({
 	buildPluginUiRemote: pluginBuildMocks.buildPluginUiRemote,
 	resolveExtensionFederationShared: pluginBuildMocks.resolveExtensionFederationShared,
 	resolvePluginUiBuildSignature: pluginBuildMocks.resolvePluginUiBuildSignature,

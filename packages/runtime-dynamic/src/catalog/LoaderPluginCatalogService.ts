@@ -3,10 +3,10 @@ import {
 	formatForkPluginId,
 	getPluginInfo,
 	OverrideOf,
+	type ConfigLayout,
 	type Context,
 	type PluginConstructor,
 } from '@pluxel/core'
-import type { ConfigLayout } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 import {
 	EXTRA_FORKS,

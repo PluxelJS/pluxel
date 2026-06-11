@@ -6,7 +6,7 @@ import {
 	PLUXEL_TABLER_ICONS_ESM_ENTRY_SPECIFIER,
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
-} from '@pluxel/workspace/vite'
+} from '@pluxel/rolldown/workspace/vite'
 import { createWorkbenchFrontendPlugins } from './vite/plugins'
 
 const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(

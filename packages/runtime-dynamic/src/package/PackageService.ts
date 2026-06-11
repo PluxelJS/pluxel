@@ -1,5 +1,5 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import { loadWorkspaceInfo } from '@pluxel/workspace/info'
+import { loadWorkspaceInfo } from '@pluxel/rolldown/workspace/info'
 import {
 	isEntryOk,
 	type EntryResolution,

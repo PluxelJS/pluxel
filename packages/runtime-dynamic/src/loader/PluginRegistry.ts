@@ -315,8 +315,8 @@ export class PluginRegistry {
 			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
-			this.ctx.logger
-				.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
+				void this.ctx.logger
+					.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
 		}
 
 		const prevSeen = this.enrolled.get(ctor)

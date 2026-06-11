@@ -1,11 +1,14 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
-const buildCli = fileURLToPath(new URL('../build/src/cli/index.ts', import.meta.url))
-const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
-const workspaceFs = fileURLToPath(new URL('../workspace/src/fs-entry.ts', import.meta.url))
-const workspaceInfo = fileURLToPath(new URL('../workspace/src/info-entry.ts', import.meta.url))
+const rolldownBuild = fileURLToPath(new URL('../rolldown/src/cli/index.ts', import.meta.url))
+const rolldownPlugins = fileURLToPath(new URL('../rolldown/src/rolldown/index.ts', import.meta.url))
+const rolldownWorkspaceFs = fileURLToPath(
+	new URL('../rolldown/src/workspace/fs-entry.ts', import.meta.url),
+)
+const rolldownWorkspaceInfo = fileURLToPath(
+	new URL('../rolldown/src/workspace/info-entry.ts', import.meta.url),
+)
 const reactDevtoolsCoreStub = fileURLToPath(
 	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
 )
@@ -22,13 +25,11 @@ export default defineConfig({
 	// This CLI intentionally ships as a bundled artifact with minimal runtime deps.
 	// Bundle internal toolchain pieces and CLI-only UI deps so the published CLI keeps a small runtime surface.
 	deps: {
-		// `@pluxel/build` exports rolldown plugin types. Keep rolldown itself external instead of re-bundling it here.
+		// `@pluxel/rolldown` exports rolldown plugin types. Keep rolldown itself external instead of re-bundling it here.
 		neverBundle: ['rolldown', 'rolldown/*'],
 		alwaysBundle: [
-			'@pluxel/build',
-			'@pluxel/build/*',
-			'@pluxel/workspace/fs',
-			'@pluxel/workspace/info',
+			'@pluxel/rolldown',
+			'@pluxel/rolldown/*',
 			'react',
 			'react/*',
 			'ink',
@@ -36,11 +37,10 @@ export default defineConfig({
 		],
 	},
 	alias: {
-		'@pluxel/build': buildRoot,
-		'@pluxel/build/cli': buildCli,
-		'@pluxel/build/rolldown': buildRolldown,
-		'@pluxel/workspace/fs': workspaceFs,
-		'@pluxel/workspace/info': workspaceInfo,
+		'@pluxel/rolldown/build': rolldownBuild,
+		'@pluxel/rolldown/plugins': rolldownPlugins,
+		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
+		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
 		'react-devtools-core': reactDevtoolsCoreStub,
 	},
 	dts: {

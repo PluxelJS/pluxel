@@ -4,7 +4,7 @@ import {
 	pluxelOxlintIgnorePatterns,
 	prefixPluxelRuleSet,
 	pluxelRules,
-} from './packages/workspace/src/oxlint/index.ts'
+} from './packages/rolldown/src/workspace/oxlint/index.ts'
 
 /**
  * Lint design goals for this repo:
@@ -76,6 +76,7 @@ const baselineRules: RuleMap = {
 	'react/exhaustive-deps': 'off',
 	'react/no-array-index-key': 'off',
 	'react/no-danger': 'error',
+	'react/no-unstable-nested-components': 'off',
 	'react/react-in-jsx-scope': 'off',
 	'react/rules-of-hooks': 'off',
 	'typescript/no-extraneous-class': 'off',
@@ -83,6 +84,7 @@ const baselineRules: RuleMap = {
 	'unicorn/no-array-sort': 'off',
 	'unicorn/prefer-add-event-listener': 'off',
 	'unicorn/require-module-specifiers': 'off',
+	'vitest/no-standalone-expect': 'off',
 	'vitest/require-mock-type-parameters': 'off',
 }
 

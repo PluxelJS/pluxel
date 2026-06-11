@@ -1,8 +1,11 @@
 import { normalize, resolve as r } from 'pathe'
 import type { PackageJson } from 'pkg-types'
-import { PLUXEL_CONDITION_RUNTIME_DYNAMIC } from '@pluxel/runtime/shared'
-import { toDirectoryURLString } from '@pluxel/runtime/shared'
-import { getCachedResolver, resolveModulePath } from '@pluxel/runtime/shared'
+import {
+	getCachedResolver,
+	PLUXEL_CONDITION_RUNTIME_DYNAMIC,
+	resolveModulePath,
+	toDirectoryURLString,
+} from '@pluxel/runtime/shared'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
 import type { ModuleResolveCache } from './resolve-cache'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'

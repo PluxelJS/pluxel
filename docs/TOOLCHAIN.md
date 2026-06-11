@@ -4,7 +4,7 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 
 ## Build
 
-`@pluxel/build` 是内部构建辅助包。它不定义 authoring API，也不定义 runtime API，只负责构建期改写和元数据注入。
+`@pluxel/rolldown` 是公开的 Pluxel toolchain 包。它不定义插件 authoring API，也不定义 runtime 业务 API；它收敛 build、Rolldown/Vite plugin、workspace helper 和 build-critical lint，负责构建期改写、元数据注入和开发期子编译工具。
 
 关键插件：
 
@@ -22,7 +22,7 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 - runtime web asset build。
 - route HMR / plugin UI remote build。
 
-route-specific HMR 提交流程归各 runtime route；route-neutral Vite/MF/Paraglide helper 归 `@pluxel/vite`。`@pluxel/runtime-dynamic/hmr` 负责 loader HMR 的 Vite runner/watch/module replacement；`@pluxel/runtime-static` 负责 static definition import/catalog diff。`@pluxel/runtime/plugin` 提供 route-neutral 的 `ui(...)` / `worker(...)` authoring bridge，插件 UI remote build helper 由 `@pluxel/vite/plugin-ui` 共享。
+route-specific HMR 提交流程归各 runtime route；route-neutral Rolldown/Vite/MF/Paraglide helper 归 `@pluxel/rolldown`。`@pluxel/runtime-dynamic/hmr` 负责 loader HMR 的 Vite runner/watch/module replacement；`@pluxel/runtime-static` 负责 static definition import/catalog diff。`@pluxel/runtime/plugin` 提供 route-neutral 的 `ui(...)` / `worker(...)` authoring bridge，插件 UI remote build helper 由 `@pluxel/rolldown/vite/plugin-ui` 共享。
 
 规则：
 
@@ -58,7 +58,7 @@ Lint 分 repo lint 和 build lint：
 - `@pluxel/runtime`
 - `@pluxel/runtime-dynamic`
 - `@pluxel/runtime-static`
-- `@pluxel/vite`
+- `@pluxel/rolldown`
 - `@pluxel/cli`
 - `@pluxel/test`
 
@@ -66,15 +66,15 @@ Lint 分 repo lint 和 build lint：
 
 ## 实现入口
 
-- `packages/build/src/rolldown/plugins/configSourcePlugin.ts`
-- `packages/build/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
-- `packages/build/src/cli.ts`
+- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
+- `packages/rolldown/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
+- `packages/rolldown/src/cli/index.ts`
 - `packages/cli/src/build.ts`
 - `packages/cli/src/hmr/**`
 - `packages/runtime-dynamic/src/hmr/engine/config.ts`
-- `packages/vite/src/plugin-ui.ts`
+- `packages/rolldown/src/vite/plugin-ui.ts`
 - `oxlint.build.config.ts`
 - `oxlint.config.ts`
-- `packages/workspace/src/oxlint/plugin.ts`
+- `packages/rolldown/src/workspace/oxlint/plugin.ts`
 - `packages/test/README.md`
 - `packages/test/LLM_TESTING_GUIDE.md`

@@ -1,8 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const buildRoot = fileURLToPath(new URL('../build/src/index.ts', import.meta.url))
-const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
+const rolldownPlugins = fileURLToPath(new URL('../rolldown/src/rolldown/index.ts', import.meta.url))
 const runtimeDynamicRegister = fileURLToPath(new URL('./src/register.ts', import.meta.url))
 
 export default defineConfig({
@@ -10,14 +9,6 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		// Internal/private workspace packages must be bundled into the published artifact.
-		alwaysBundle: [
-			'@pluxel/build',
-			'@pluxel/build/*',
-			'@pluxel/workspace/fs',
-			'@pluxel/workspace/info',
-		],
-		onlyBundle: ['fdir'],
 		neverBundle: [
 			'@pluxel/core',
 			'@pluxel/core/services',
@@ -25,15 +16,16 @@ export default defineConfig({
 			'@pluxel/runtime/internal',
 			'@pluxel/runtime/plugin-catalog',
 			'@pluxel/runtime/shared',
-			'@pluxel/vite',
-			'@pluxel/vite/*',
+			'@pluxel/rolldown',
+			'@pluxel/rolldown/*',
+			'@pluxel/rolldown/vite',
+			'@pluxel/rolldown/vite/*',
 			'vite',
 			'vite/*',
 		],
 	},
 	alias: {
-		'@pluxel/build': buildRoot,
-		'@pluxel/build/rolldown': buildRolldown,
+		'@pluxel/rolldown/plugins': rolldownPlugins,
 		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
 	},
 	entry: {

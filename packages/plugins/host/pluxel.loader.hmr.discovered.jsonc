@@ -9,7 +9,6 @@
 	},
 	"workspace": {
 		"rootsExpanded": [
-			"packages/build",
 			"packages/cli",
 			"packages/components",
 			"packages/context",
@@ -18,13 +17,12 @@
 			"packages/diod",
 			"packages/ops",
 			"packages/plugins/host",
+			"packages/rolldown",
 			"packages/runtime",
 			"packages/runtime-dynamic",
 			"packages/runtime-static",
 			"packages/test",
-			"packages/valibot-form",
-			"packages/vite",
-			"packages/workspace"
+			"packages/valibot-form"
 		],
 		"excludeGlobs": [
 			"**/node_modules/**",

@@ -37,7 +37,7 @@ pluxel new
 - `pluxel hmr`
   启动 `@pluxel/runtime-dynamic/hmr` host，让 `ui(...).bind(ctx)` 这类 authoring bridge 在开发期生效
 - `pluxel build`
-  走 `@pluxel/build` 的默认 overlay，把 authoring/hmr 语义降成 runtime 可消费的产物
+  走 `@pluxel/rolldown` 的默认 overlay，把 authoring/hmr 语义降成 runtime 可消费的产物
 
 也就是说，CLI 是命令入口，不是前端架构本身的一层。
 
@@ -48,7 +48,7 @@ pluxel new
 - `pluxel hmr`
   组装 `@pluxel/runtime-dynamic/hmr`
 - `pluxel build`
-  组装 `@pluxel/build` + 相关 build helper
+  组装 `@pluxel/rolldown` + 相关 build helper
 - `pluxel new`
   组装脚手架能力
 

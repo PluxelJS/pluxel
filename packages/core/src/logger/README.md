@@ -6,7 +6,7 @@
 补充：如果你在使用 `@pluxel/runtime`，也建议宿主在启动入口统一 `configure(createPluxelLogtapeConfig(...))`，
 避免分散的“自动配置”导致行为隐式且难以追踪。
 
-调用点约束以 lint 为准：仓库通过 `packages/workspace/src/oxlint/plugin.ts`（对外发布为 `@pluxel/test/oxlint`）强制日志错误字段、禁止错误字符串插值，以及限制直接 `getLogger()` 导入。
+调用点约束以 lint 为准：仓库通过 `packages/rolldown/src/workspace/oxlint/plugin.ts`（对外发布为 `@pluxel/test/oxlint`）强制日志错误字段、禁止错误字符串插值，以及限制直接 `getLogger()` 导入。
 其中只有可证明安全的场景会提供 `--fix` / suggestion；涉及错误语义、消息措辞或 logger 上下文改写的场景只保留诊断，不做激进自动修复。
 
 ## Categories

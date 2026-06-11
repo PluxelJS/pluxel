@@ -8,7 +8,7 @@ describe('Forkable plugins', () => {
 			@Plugin({ name: 'NotForkable' })
 			class NotForkable extends BasePlugin {}
 
-			expect(() => host.fork(NotForkable as any, 'a')).toThrow()
+			expect(() => host.fork(NotForkable as any, 'a')).toThrow(/is not forkable/)
 		})
 	})
 

@@ -4,14 +4,14 @@ import {
 	pluxelOxlintIgnorePatterns,
 	prefixPluxelRuleSet,
 	pluxelCorrectnessRules,
-} from './packages/workspace/src/oxlint/index.ts'
+} from './packages/rolldown/src/workspace/oxlint/index.ts'
 
 type RuleMap = NonNullable<OxlintConfig['rules']>
 type JsPlugins = NonNullable<OxlintConfig['jsPlugins']>
 type IgnorePatterns = NonNullable<OxlintConfig['ignorePatterns']>
 
 const jsPlugins: JsPlugins = [
-	createPluxelJsPluginEntry('./packages/workspace/src/oxlint/plugin.ts'),
+	createPluxelJsPluginEntry('./packages/rolldown/src/workspace/oxlint/plugin.ts'),
 ]
 
 const ignorePatterns: IgnorePatterns = [...pluxelOxlintIgnorePatterns]

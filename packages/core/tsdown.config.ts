@@ -1,4 +1,4 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/build/rolldown'
+import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'tsdown'
 
 const moduleAugmentationMap = {
@@ -31,6 +31,7 @@ export default defineConfig({
 	},
 	entry: {
 		env: 'src/env.ts',
+		federation: 'src/federation.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',

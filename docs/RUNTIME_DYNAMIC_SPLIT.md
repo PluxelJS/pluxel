@@ -1,6 +1,6 @@
 # Runtime Dynamic Split
 
-状态：已实现的迁移说明。本文只描述当前 runtime-dynamic split，不描述未来 runtime-static route 的完整设计；未来路线仍见 `proposals/runtime-routes.md`。
+状态：已实现的迁移说明。本文只描述 runtime common 与 runtime-dynamic route 的拆分结果；runtime-static route 的当前事实见 `RUNTIME.md` 与 `HMR.md`。
 
 ## 目标
 
@@ -53,7 +53,7 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 
 ## 为什么这样拆
 
-loader route 的 scan/package/cache/module catalog 是动态插件生态的成本。runtime-static route 未来不应该继承这些成本。
+loader route 的 scan/package/cache/module catalog 是动态插件生态的成本。runtime-static route 不继承这些成本，只提供 fixed catalog、definition diff 和 static HMR。
 
 runtime common 仍然复用：
 

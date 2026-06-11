@@ -126,7 +126,7 @@ export default defineLoaderHmrConfig({
 
 Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿主加载协议；loader HMR mode 负责发现 UI 源码变更、触发 remote build，并处理 HMR watch/rebuild/submit。
 
-当前共享的 `@pluxel/vite/plugin-ui` build helper 策略：
+当前共享的 `@pluxel/rolldown/vite/plugin-ui` build helper 策略：
 
 - 同一插件包根目录共享 root-scoped build scheduler。
 - 同 root 多个 UI remote 串行构建。
@@ -147,7 +147,7 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 - `packages/runtime-dynamic/src/hmr/engine/runner.ts`：SSR runner 和 bridge handling。
 - `packages/runtime/src/plugin.ts`：route-neutral `ui(...)` / `worker(...)` authoring bridge。
 - `packages/runtime-dynamic/src/hmr/extensions/ExtensionCompilerService.ts`：HMR 期消费 bridge、编译 UI、提交 compiled module。
-- `packages/vite/src/plugin-ui.ts`：共享的插件 UI remote build helper。
+- `packages/rolldown/src/vite/plugin-ui.ts`：共享的插件 UI remote build helper。
 - `packages/runtime-dynamic/src/hmr/diagnose/**`：loader HMR config 和 workspace diagnose。
 - `packages/runtime-dynamic/src/hmr/snapshot.ts`：`LoaderHmrWorkspace`。
 
@@ -155,7 +155,7 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 
 `@pluxel/runtime-static/hmr` 已实现轻量 static HMR 基线：外部 Vite SSR import 重新得到 `StaticRuntimeDefinition`，static route 只按 plugin name diff fixed catalog，并提交 affected enabled plugins。它不复用 dynamic loader replacement，也不拥有 Vite server、module graph、module id registry、package cache 或 loader batch。
 
-两条 route 的 HMR 能力保持一致的目标是“插件代码变化后可以重新提交运行中插件”，不是共享同一个 loader。dynamic route 负责动态 module exports -> loader batch；static route 负责 definition -> catalog diff；插件 UI remote build 这类 Vite/MF 子编译能力统一在 `@pluxel/vite/plugin-ui`。
+两条 route 的 HMR 能力保持一致的目标是“插件代码变化后可以重新提交运行中插件”，不是共享同一个 loader。dynamic route 负责动态 module exports -> loader batch；static route 负责 definition -> catalog diff；插件 UI remote build 这类 Vite/MF 子编译能力统一在 `@pluxel/rolldown/vite/plugin-ui`。
 
 固定插件集合可以支持开发期热替换，但语义不是“动态 loader HMR”：
 

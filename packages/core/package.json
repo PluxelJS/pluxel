@@ -21,6 +21,11 @@
 			"import": "./dist/env.mjs",
 			"require": "./dist/env.cjs"
 		},
+		"./federation": {
+			"@pluxel/source": "./src/federation.ts",
+			"import": "./dist/federation.mjs",
+			"require": "./dist/federation.cjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
@@ -48,6 +53,10 @@
 				"import": "./dist/env.mjs",
 				"require": "./dist/env.cjs"
 			},
+			"./federation": {
+				"import": "./dist/federation.mjs",
+				"require": "./dist/federation.cjs"
+			},
 			"./logger": {
 				"import": "./dist/logger.mjs",
 				"require": "./dist/logger.cjs"
@@ -68,7 +77,7 @@
 		"build": "tsdown",
 		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
 		"bench": "bun --conditions=@pluxel/source run bench/pluginLifecycle.bench.ts",
-		"bench:dist": "pnpm --filter @pluxel/build build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
+		"bench:dist": "pnpm --filter @pluxel/rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",
@@ -82,7 +91,6 @@
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
-		"@pluxel/build": "workspace:*",
 		"@pluxel/context": "workspace:*",
 		"@pluxel/core-di": "workspace:*",
 		"option-t": "^55.1.2",

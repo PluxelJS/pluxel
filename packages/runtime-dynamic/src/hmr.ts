@@ -11,7 +11,6 @@ import {
 import {
 	installLoaderHmrRuntime,
 	type InstallLoaderHmrRuntimeOptions,
-	type InstallLoaderHmrRuntimeResult,
 } from './hmr/install-hmr-runtime'
 import type { LoaderHmrService as InternalLoaderHmrService } from './hmr/engine/LoaderHmrService'
 import type { LoaderHmrWorkspaceSnapshot } from './hmr/snapshot'

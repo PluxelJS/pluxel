@@ -54,7 +54,7 @@ describe('PluginService cascade options', () => {
 			// Non-cascading unregister is allowed at the draft layer, but commit must reject
 			// the resulting broken graph and keep the last committed state intact.
 			host.ctx.registry.unregister(A, { cascadeDependents: false })
-			await expect(host.commit()).rejects.toThrow()
+			await expect(host.commit()).rejects.toThrow(/service verification failed/)
 
 			expect(host.ctx.registry.isRegistered(A)).toBe(true)
 			expect(host.ctx.registry.isRegistered(B)).toBe(true)

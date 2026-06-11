@@ -107,7 +107,8 @@ export async function readPackageInventoryEntry(
 	id: string,
 	filter?: InventoryFilter,
 ): Promise<InventoryEntry> {
-	const entry = (await listPackageInventory(pCtx, filter)).find((item) => item.id === id)
+	const inventory = await listPackageInventory(pCtx, filter)
+	const entry = inventory.find((item) => item.id === id)
 	if (!entry) {
 		throw new GraphQLError('Package inventory entry not found', {
 			extensions: { code: 'NOT_FOUND', id },

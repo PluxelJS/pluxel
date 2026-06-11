@@ -65,10 +65,6 @@
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
 		},
-		"./vite": {
-			"@pluxel/source": "./src/vite.ts",
-			"default": "./dist/vite.mjs"
-		},
 		"./web": {
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
@@ -107,7 +103,6 @@
 			"./services": "./dist/services.mjs",
 			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
-			"./vite": "./dist/vite.mjs",
 			"./web": "./dist/web.mjs",
 			"./web/extensions": "./dist/web/extensions.mjs",
 			"./web/federation": "./dist/web/federation.mjs",
@@ -160,7 +155,7 @@
 	},
 	"devDependencies": {
 		"@pluxel/test": "workspace:*",
-		"@pluxel/workspace": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"@types/react": "^19.2.14",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",

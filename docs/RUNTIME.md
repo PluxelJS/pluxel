@@ -1,6 +1,6 @@
 # Runtime
 
-`@pluxel/runtime` 是共同宿主层。它不应该只被理解成“动态插件生态”，而是承载宿主能力的 runtime：当前 runtime-dynamic 路线和未来 runtime-static 路线都应该复用这里的服务、协议和状态投影。
+`@pluxel/runtime` 是共同宿主层。它不应该只被理解成“动态插件生态”，而是承载宿主能力的 runtime：当前 runtime-dynamic 路线和 runtime-static 路线都复用这里的服务、协议和状态投影。
 
 当前 `@pluxel/runtime` 与 `@pluxel/runtime-dynamic` 的拆分细节见 `RUNTIME_DYNAMIC_SPLIT.md`。
 
@@ -51,19 +51,19 @@ module id
 - 要处理模块替换、缺失依赖、enabled-but-stopped 等运行时状态。
 - 要把动态目录的不确定性解释给 control-plane 和 workbench。
 
-## 未来插件加载路线：runtime-static route
+## 固定插件路线：runtime-static route
 
-runtime-static route 目前只有包骨架，startup/hmr 行为还没有实现，不能从本文件推断为当前 API。它应该只作为 runtime 的第二条 catalog/startup 路线存在，整体分层设计写在 `proposals/runtime-routes.md`，static route authoring 和 enabled/config 边界写在 `proposals/runtime-static-route.md`，并由 `proposals/README.md` 索引。
+runtime-static route 是当前已实现的第二条 runtime 路线。它消费 `defineStaticRuntime({ plugins: [...] })` 产出的 fixed catalog，不做 workspace scan、package install、dynamic module registry 或 loader batch。static HMR 入口归 `@pluxel/runtime-static/hmr`：外部 Vite SSR import 重新得到 definition 后，static route 按 plugin name diff catalog，再对受影响且 enabled 的插件提交 core lifecycle 计划。
 
-两条路线的隔离方式应该是：
+两条路线的隔离方式是：
 
 ```text
 runtime common host layer
-  -> loader route        当前实现：scan/package/dynamic module/HMR replaceModule
-  -> runtime-static route 未来提案：known catalog/strict startup/bounded replacement
+  -> runtime-dynamic route  scan/package/dynamic module/HMR replaceModule
+  -> runtime-static route   known catalog/definition diff/static HMR
 ```
 
-两条路线不应该复制 core 生命周期，也不应该复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
+两条路线不复制 core 生命周期，也不复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
 
 ## Runtime 服务入口
 

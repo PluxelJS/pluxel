@@ -23,13 +23,13 @@ import {
 	buildPluginUiRemote,
 	resolveExtensionFederationShared,
 	resolvePluginUiBuildSignature,
-} from '@pluxel/vite/plugin-ui'
+} from '@pluxel/rolldown/vite/plugin-ui'
 import type { InlineConfig } from 'vite'
 import {
 	isParaglideGeneratedFile,
 	resolveParaglideIntegration,
 	type ResolvedParaglideIntegration,
-} from '@pluxel/vite/paraglide'
+} from '@pluxel/rolldown/vite/paraglide'
 import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 

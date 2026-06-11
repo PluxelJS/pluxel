@@ -7,7 +7,7 @@ import {
 	nodeWorkspaceFs,
 	readTextFile,
 	type WorkspaceFs,
-} from '@pluxel/workspace/fs'
+} from '@pluxel/rolldown/workspace/fs'
 import type { FsServiceNodeBackendFs } from '@pluxel/runtime/services'
 
 export {

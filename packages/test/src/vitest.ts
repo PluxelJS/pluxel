@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
 import {
 	defineConfig,
 	mergeConfig,

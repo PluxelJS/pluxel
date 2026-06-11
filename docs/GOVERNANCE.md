@@ -10,7 +10,7 @@
 @pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic <- @pluxel/cli
 ```
 
-`@pluxel/build` 是 build-time tooling，不进入 runtime service graph。
+`@pluxel/rolldown` 是 build-time tooling，不进入 runtime service graph。
 
 必须保持：
 

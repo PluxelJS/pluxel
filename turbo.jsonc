@@ -31,7 +31,7 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/build#build": {
+		"@pluxel/rolldown#build": {
 			// Most internal packages resolve workspace sources through `@pluxel/source`
 			// or explicit source aliases. They need dependency source changes hashed,
 			// but they do not need upstream dist artifacts built first.
@@ -79,7 +79,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/core#build": {
-			"dependsOn": ["@pluxel/build#build", "@pluxel/context#build", "@pluxel/core-di#build"],
+			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/context#build", "@pluxel/core-di#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -142,7 +142,7 @@
 			"dependsOn": [
 				"@pluxel/core#build",
 				"@pluxel/ops#build",
-				"@pluxel/workspace#build",
+				"@pluxel/rolldown#build",
 				"valibot-form#build",
 			],
 			"outputs": ["dist/**", "public/**"],
@@ -165,10 +165,9 @@
 		},
 		"@pluxel/runtime-dynamic#build": {
 			"dependsOn": [
-				"@pluxel/build#build",
+				"@pluxel/rolldown#build",
 				"@pluxel/core#build",
 				"@pluxel/runtime#build",
-				"@pluxel/workspace#build",
 			],
 			"outputs": ["dist/**"],
 			"inputs": [
@@ -213,9 +212,8 @@
 		},
 		"@pluxel/cli#build": {
 			"dependsOn": [
-				"@pluxel/build#build",
+				"@pluxel/rolldown#build",
 				"@pluxel/runtime#build",
-				"@pluxel/workspace#build",
 			],
 			"outputs": ["dist/**"],
 			"inputs": [

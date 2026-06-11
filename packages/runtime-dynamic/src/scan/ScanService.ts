@@ -1,8 +1,12 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import '@pluxel/runtime/events'
 import { dirname, normalize } from 'pathe'
-import { type ExsolveResolver, toDirectoryURLString } from '@pluxel/runtime/shared'
-import { getCachedResolver, resolveModulePath } from '@pluxel/runtime/shared'
+import {
+	type ExsolveResolver,
+	getCachedResolver,
+	resolveModulePath,
+	toDirectoryURLString,
+} from '@pluxel/runtime/shared'
 import { EntryResolver } from './entry-resolver'
 import { nodeWorkspaceFs, type WorkspaceFs } from './fs'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'

@@ -46,7 +46,7 @@ export function stableSignalDbValueKey(value: unknown, seen = new WeakSet<object
 		a.localeCompare(b),
 	)
 	const key = `object:{${entries
-		.map(([key, entryValue]) => `${key}:${stableSignalDbValueKey(entryValue, seen)}`)
+		.map(([entryKey, entryValue]) => `${entryKey}:${stableSignalDbValueKey(entryValue, seen)}`)
 		.join(',')}}`
 	seen.delete(value as object)
 	return key

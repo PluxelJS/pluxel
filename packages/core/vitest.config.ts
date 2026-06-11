@@ -1,4 +1,4 @@
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'vitest/config'
 
 const pluxelConditions = ['@pluxel/source', 'node', 'import', 'module', 'development', 'default']

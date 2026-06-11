@@ -88,10 +88,10 @@ export function BuiltinInfoCard({
 			rows.map((row) => {
 				const value: any = row?.value
 				if (!isObject(value)) return row
-				if (value.kind === 'signaldb') {
-					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
-					return { ...row, value: nextValue as any }
-				}
+					if (value.kind === 'signaldb') {
+						const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
+						return Object.assign({}, row, { value: nextValue as any })
+					}
 				return row
 			}),
 		[pluginName, rowsKey],

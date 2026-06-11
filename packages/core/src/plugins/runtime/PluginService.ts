@@ -690,7 +690,7 @@ export class PluginService {
 				}
 			})
 			.catch((error) => {
-				this.ctx.logger.with({ error }).error`commit 内部异常`
+				void this.ctx.logger.with({ error }).error`commit 内部异常`
 				return createErr(error)
 			})
 
@@ -753,7 +753,7 @@ export class PluginService {
 			} catch {
 				// ignore: events service may be overridden
 			}
-			this.ctx.logger.with({ error: err }).error`解析 ${String(id)} 失败`
+			void this.ctx.logger.with({ error: err }).error`解析 ${String(id)} 失败`
 			return false
 		}
 		const pluginCtx = instance.ctx
@@ -771,7 +771,7 @@ export class PluginService {
 				// ignore: events service may be overridden
 			}
 			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
+			void logger.with({ error: err }).error`注入/校验配置到 ${String(id)} 失败`
 			try {
 				await pluginCtx.effects.dispose()
 			} catch {
@@ -785,7 +785,7 @@ export class PluginService {
 			return true
 		} catch (error) {
 			const logger = pluginCtx.logger ?? this.ctx.logger
-			logger.with({ error }).error`启动 ${String(id)} 失败`
+			void logger.with({ error }).error`启动 ${String(id)} 失败`
 			try {
 				await pluginCtx.effects.dispose()
 			} catch {
@@ -861,7 +861,7 @@ export class PluginService {
 		const action = this.definitions.build()
 		if (!action.ok) {
 			action.err.reset()
-			this.ctx.logger.with({ error: action.err.err, detail: String(action.err.err) })
+			void this.ctx.logger.with({ error: action.err.err, detail: String(action.err.err) })
 				.error`插件在依赖项解析时失败`
 			return createErr(new Error('service verification failed', { cause: action.err.err }))
 		}

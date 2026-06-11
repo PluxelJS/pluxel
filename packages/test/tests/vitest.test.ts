@@ -16,7 +16,7 @@ const rolldownMocks = vi.hoisted(() => {
 	return { lintGuardPlugin, configSourcePlugin }
 })
 
-vi.mock('@pluxel/build/rolldown', () => rolldownMocks)
+vi.mock('@pluxel/rolldown/plugins', () => rolldownMocks)
 
 afterEach(() => {
 	vi.clearAllMocks()

@@ -1,5 +1,4 @@
-import { Injectable, type Context, type PluginConstructor } from '@pluxel/core'
-import type { ConfigLayout } from '@pluxel/core'
+import { Injectable, type Context as PluxelContext, type PluginConstructor, type ConfigLayout } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 
 const serviceName = 'pluginCatalog' as const
@@ -98,7 +97,7 @@ declare module '@pluxel/core' {
 
 @Injectable({ key: serviceName })
 export class RuntimePluginCatalogService {
-	constructor(public readonly ctx: Context) {}
+	constructor(public readonly ctx: PluxelContext) {}
 
 	private missing(): never {
 		throw new Error(

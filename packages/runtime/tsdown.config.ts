@@ -3,8 +3,12 @@ import { defineConfig } from 'tsdown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 
 const valibotFormSrc = fileURLToPath(new URL('../valibot-form/src', import.meta.url))
-const workspaceFs = fileURLToPath(new URL('../workspace/src/fs-entry.ts', import.meta.url))
-const workspaceInfo = fileURLToPath(new URL('../workspace/src/info-entry.ts', import.meta.url))
+const rolldownWorkspaceFs = fileURLToPath(
+	new URL('../rolldown/src/workspace/fs-entry.ts', import.meta.url),
+)
+const rolldownWorkspaceInfo = fileURLToPath(
+	new URL('../rolldown/src/workspace/info-entry.ts', import.meta.url),
+)
 
 export default defineConfig({
 	exports: {
@@ -12,8 +16,8 @@ export default defineConfig({
 	},
 	deps: {
 		alwaysBundle: [
-			'@pluxel/workspace/fs',
-			'@pluxel/workspace/info',
+			'@pluxel/rolldown/workspace/fs',
+			'@pluxel/rolldown/workspace/info',
 			'valibot-form',
 			'valibot-form/*',
 		],
@@ -42,7 +46,6 @@ export default defineConfig({
 		services: 'src/services.ts',
 		shared: 'src/shared.ts',
 		test: 'src/test.ts',
-		vite: 'src/vite.ts',
 		internal: 'src/internal.ts',
 		config: 'src/config.ts',
 		web: 'src/web.ts',
@@ -55,8 +58,8 @@ export default defineConfig({
 	copy: ['public'],
 	alias: {
 		'~': valibotFormSrc,
-		'@pluxel/workspace/fs': workspaceFs,
-		'@pluxel/workspace/info': workspaceInfo,
+		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
+		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
 	},
 	tsconfig: './tsconfig.json',
 	dts: {

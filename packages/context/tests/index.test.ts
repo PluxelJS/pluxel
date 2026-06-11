@@ -209,10 +209,12 @@ describe('extend / isolate / ctx 回灌', () => {
 	test('isolate 不允许隔离 root scope 服务（避免误导：root 服务总是走 ctx.root）', () => {
 		const ctx = new Context({ name: 'root' })
 		// isolateKeys is type-safe and excludes RootServices, so this uses a cast to reach the runtime guard.
-		expect(() =>
-			ctx.isolateKeys(['rootTapService'] as unknown as Iterable<keyof Context.PublicServices>),
-		).toThrow()
-		expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow()
+			expect(() =>
+				ctx.isolateKeys(['rootTapService'] as unknown as Iterable<keyof Context.PublicServices>),
+			).toThrow(/Cannot isolate a root-scoped service key: rootTapService/)
+			expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow(
+				/Cannot isolate a root-scoped service: rootTapService/,
+			)
 	})
 
 	test('config 合并（构造注入快照不变）', () => {
@@ -287,8 +289,10 @@ describe('错误/冲突路径', () => {
 				_cfg?: unknown,
 			) {}
 		}
-		Context.registerService(asTestServiceClass(Dup1))
-		expect(() => Context.registerService(asTestServiceClass(Dup2))).toThrow()
+			Context.registerService(asTestServiceClass(Dup1))
+			expect(() => Context.registerService(asTestServiceClass(Dup2))).toThrow(
+				'如果你要覆盖已有服务，先 override。',
+			)
 	})
 
 	test('methods 与 Context.prototype 冲突不应覆盖', () => {
@@ -352,9 +356,9 @@ describe('错误/冲突路径', () => {
 				_cfg?: unknown,
 			) {}
 		}
-		expect(() =>
-			Context.overrideService(asTestServiceClass(NotRegistered), asTestServiceClass(X)),
-		).toThrow()
+			expect(() =>
+				Context.overrideService(asTestServiceClass(NotRegistered), asTestServiceClass(X)),
+			).toThrow('该服务从未被注册')
 	})
 
 	test('isolate 未注册服务应抛错（避免隐式污染映射）', () => {
@@ -364,10 +368,12 @@ describe('错误/冲突路径', () => {
 				public ctx: Context,
 				_cfg?: unknown,
 			) {}
-		}
-		const ctx = new Context()
-		expect(() => ctx.isolate([asTestServiceClass(NotRegisteredService)])).toThrow()
-	})
+			}
+			const ctx = new Context()
+			expect(() => ctx.isolate([asTestServiceClass(NotRegisteredService)])).toThrow(
+				/Cannot isolate an unregistered service: NotRegisteredService/,
+			)
+		})
 })
 
 describe('多服务隔离/共享混用', () => {

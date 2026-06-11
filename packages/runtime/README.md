@@ -223,8 +223,8 @@ SignalDB 的 React 响应性现在走官方链路：
 
 插件自定义 UI 的正式本地化现在统一走 `@inlang/paraglide-js`，runtime 不再维护插件级文本字典注册层。Paraglide 的 Vite 插件已经由 Pluxel 的插件 UI 编译链自动接入：
 
-- HMR：需要插件 UI 子编译的 route 通过 `@pluxel/vite/plugin-ui` 注入；dynamic host 可用标准 `vite` config 追加 React/codegen 等插件
-- build：`@pluxel/vite/plugin-ui` 的 `buildPluginUiRemote(...)` 自动注入，也支持标准 `vite?: InlineConfig` merge
+- HMR：需要插件 UI 子编译的 route 通过 `@pluxel/rolldown/vite/plugin-ui` 注入；dynamic host 可用标准 `vite` config 追加 React/codegen 等插件
+- build：`@pluxel/rolldown/vite/plugin-ui` 的 `buildPluginUiRemote(...)` 自动注入，也支持标准 `vite?: InlineConfig` merge
 - 约定：插件包根目录必须提供 `project.inlang`，消息源目录固定为 `messages/`，生成目录固定为 `src/paraglide/`
 
 ## doc 约束
@@ -293,7 +293,5 @@ runtime 本身不启动 Vite。开发期统一通过 `@pluxel/runtime-dynamic/hm
   冻结宿主构建
 - `@pluxel/runtime/shared`
   给 `@pluxel/runtime-dynamic` 复用的纯工具
-- `@pluxel/runtime/vite`
-  Vite 环境判断和 `serverOnly/browserOnly` 插件包装
 - `@pluxel/runtime/internal`
   runtime 与 loader HMR 之间的内部 glue

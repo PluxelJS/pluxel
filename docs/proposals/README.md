@@ -1,52 +1,10 @@
 # Proposals
 
-这里仅记录未实现或未来设计。不要把本文件内容当成当前 API；当前实现以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md` 等领域文档为准。
+这里仅记录未实现或未来设计。不要把本文件内容当成当前 API；当前实现以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md`、`../TOOLCHAIN.md` 等领域文档为准。
 
-## 1. Runtime Dynamic HMR Mode
+已完成的 runtime-dynamic split、loader HMR 收敛、runtime-static route、以及 `@pluxel/rolldown` 工具链合并不再保留独立 proposal 文档；需要考古时从 git history 读取旧原文。
 
-状态：已采纳并进入实现态。独立 `@pluxel/hmr` 包不再保留，loader HMR 入口收敛到 `@pluxel/runtime-dynamic/hmr`；插件作者侧 `ui(...)` / `worker(...)` bridge 是 route-neutral 的 `@pluxel/runtime/plugin`。
-
-详细设计见 `runtime-dynamic-hmr-mode.md`。
-
-核心方向：
-
-- HMR 不再是独立包或独立 route，而是 `@pluxel/runtime-dynamic` 的 HMR mode。
-- loader 继续拥有 dynamic catalog、scan、package、module registry、`replaceModule` 和 batch commit。
-- HMR mode 只负责把 Vite/watch/runner 的 source change 转成 loader batch。
-- 目标态只保留 `@pluxel/runtime-dynamic/hmr` 作为 loader HMR subpath；diagnose/workspace 归入 `/hmr`，插件 authoring bridge 归 `@pluxel/runtime/plugin`，route-neutral Vite/MF/Paraglide helper 归 `@pluxel/vite`。
-- 标准入口使用 `defineLoaderHmrConfig`、`createLoaderHmrHost`、`createLoaderHmrHostFromSnapshot`、`installLoaderHmr`、`LoaderHmrService` 等命名。
-- 不保留 `@pluxel/hmr`、`@pluxel/hmr/*`、`pluxel.hmr.jsonc` 或任何 re-export/facade/deprecated wrapper。
-
-## 2. Runtime Static Route
-
-状态：提案/基线已落地。当前已有 `@pluxel/runtime-static` fixed catalog startup、startup/change report 和轻量 static HMR；ops/web/MCP 的 route-neutral 控制面仍待接入。
-
-详细设计见 `runtime-routes.md` 和 `runtime-static-route.md`。这里仅保留摘要，避免把未来路线误写成当前 runtime 实现。
-
-目标模型：
-
-```text
-@pluxel/runtime common host layer
-  -> runtime-dynamic route  scan/package/dynamic module/HMR
-  -> runtime-static route   known catalog/startup report/static HMR
-```
-
-runtime-static route 面向固定插件目录：
-
-- static entry 静态导入并 export 所有插件。
-- `defineStaticRuntime(...)` 只声明固定插件目录。
-- `createStaticRuntimeHost(..., { configService })` 选择配置路径、模式或 snapshot。
-- runtime config `enabled` set 决定启动哪些插件；空 enabled set 表示全部 disabled。
-- startup report 用插件名解释 started、disabled、config-invalid、dependency-missing、start-failed、drift。
-- static HMR 通过 Vite SSR import definition，按 plugin name 替换同名 ctor，并只提交 affected enabled plugins。
-
-文档归属：
-
-- `runtime-routes.md`：runtime common / dynamic / static 的分层索引。
-- `runtime-static-route.md`：static route API、startup 和 HMR。
-- 当前行为仍以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md` 为准。
-
-## 3. Workbench View Model
+## Workbench View Model
 
 状态：提案。
 
@@ -64,7 +22,7 @@ runtime-static route 面向固定插件目录：
 
 这个模型用于替换当前更零散的 plugin tabs/context/dock 概念，但目前不是当前 UI 行为。
 
-## 4. Plugin UI Cleanup
+## Plugin UI Cleanup
 
 状态：未来清理。
 
@@ -75,11 +33,11 @@ runtime-static route 面向固定插件目录：
 - 减少 extension loader/runtime state duplication。
 - SignalDB authoring 收敛到少数稳定 access patterns。
 - 在 MF2/Vite 上游行为足够稳定前，继续隔离构建状态。
-- 增加 extension loader、interaction session lifecycle、plugin-build isolation 的 focused tests。
+- 增加 extension loader、interaction session lifecycle、plugin UI build isolation 的 focused tests。
 
 非目标：不要发明第三条产品路径，也不要引入新的 universal state framework。
 
-## 5. Core DI V2
+## Core DI V2
 
 状态：prototype/future architecture notes。`@pluxel/core-di` 当前仍是 internal/private prototype。
 
@@ -103,7 +61,7 @@ runtime-static route 面向固定插件目录：
 - `packages/core-di/DESIGN.md`
 - `packages/core-di/benchmarks/core-di-vs-diod.md`
 
-## 6. Ops V2
+## Ops V2
 
 状态：提案笔记。
 
@@ -116,7 +74,7 @@ runtime-static route 面向固定插件目录：
 
 如果未来存在 `packages/ops/docs/core-v2.md` 或 adapter V2 笔记，应继续视为提案，不自动升级为当前全局架构。
 
-## 7. Promotion Rule
+## Promotion Rule
 
 提案实现后：
 

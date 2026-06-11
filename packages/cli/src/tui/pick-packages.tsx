@@ -825,7 +825,10 @@ export function PickPackagesDualPicker(props: {
 			}
 
 			if (op === 'invert') {
-				for (const n of names) isActive(n) ? clear(n) : setToMode(n)
+				for (const n of names) {
+					if (isActive(n)) clear(n)
+					else setToMode(n)
+				}
 				return { enabled: nextEnabled, builtin: nextBuiltin }
 			}
 
@@ -836,7 +839,10 @@ export function PickPackagesDualPicker(props: {
 					break
 				}
 			}
-			for (const n of names) any ? clear(n) : setToMode(n)
+			for (const n of names) {
+				if (any) clear(n)
+				else setToMode(n)
+			}
 			return { enabled: nextEnabled, builtin: nextBuiltin }
 		})
 	}
@@ -1341,7 +1347,10 @@ export function PickPackagesDualBrowser(props: {
 				return next
 			}
 			if (op === 'invert') {
-				for (const n of names) isActive(n) ? clear(n) : setToMode(n)
+				for (const n of names) {
+					if (isActive(n)) clear(n)
+					else setToMode(n)
+				}
 				const next = { enabled: nextEnabled, builtin: nextBuiltin }
 				emit(next)
 				return next
@@ -1354,7 +1363,10 @@ export function PickPackagesDualBrowser(props: {
 					break
 				}
 			}
-			for (const n of names) any ? clear(n) : setToMode(n)
+			for (const n of names) {
+				if (any) clear(n)
+				else setToMode(n)
+			}
 			const next = { enabled: nextEnabled, builtin: nextBuiltin }
 			emit(next)
 			return next

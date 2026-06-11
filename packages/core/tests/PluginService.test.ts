@@ -565,7 +565,7 @@ describe('PluginService commit()', () => {
 
 			// Draft contains an invalid DI graph: A needs B but B is missing.
 			host.add(A)
-			await expect(host.commit()).rejects.toThrow()
+			await expect(host.commit()).rejects.toThrow(/service verification failed/)
 			expect(host.isRunning(A)).toBe(false)
 			expect(host.isRunning(B)).toBe(false)
 

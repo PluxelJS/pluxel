@@ -16,7 +16,7 @@ RuleTester.it = it
 type TestedRule = Parameters<RuleTester['run']>[1]
 type TestedCases = Parameters<RuleTester['run']>[2]
 
-const WORKSPACE_PLUGIN_SPECIFIER = './packages/workspace/src/oxlint/plugin.ts'
+const WORKSPACE_PLUGIN_SPECIFIER = './packages/rolldown/src/workspace/oxlint/plugin.ts'
 
 const tester = new RuleTester({
 	languageOptions: {
@@ -590,40 +590,40 @@ runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
 	valid: [
 		{
 			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
-			code: "import { crawlFilesAbs } from '@pluxel/workspace/fs'",
+			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace/fs'",
 		},
 		{
 			filename: '/repo/packages/runtime/vite.config.ts',
-			code: "import { createPluxelUiChunkGroups } from '@pluxel/workspace/vite'",
+			code: "import { createPluxelUiChunkGroups } from '@pluxel/rolldown/workspace/vite'",
 		},
 		{
 			filename: '/repo/packages/test/src/oxlint.ts',
-			code: "export * from '@pluxel/workspace/oxlint'",
+			code: "export * from '@pluxel/rolldown/oxlint'",
 		},
 		{
-			filename: '/repo/packages/workspace/src/index.ts',
-			code: "export * from '@pluxel/workspace'",
+			filename: '/repo/packages/rolldown/src/workspace/index.ts',
+			code: "export * from '@pluxel/rolldown/workspace'",
 		},
 	],
 	invalid: [
 		{
 			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
-			code: "import { crawlFilesAbs } from '@pluxel/workspace'",
+			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace'",
 			errors: [{ messageId: 'root' }],
 		},
 		{
 			filename: '/repo/packages/cli/src/workspace/state.ts',
-			code: "export { loadWorkspaceInfo } from '@pluxel/workspace'",
+			code: "export { loadWorkspaceInfo } from '@pluxel/rolldown/workspace'",
 			errors: [{ messageId: 'root' }],
 		},
 		{
 			filename: '/repo/packages/runtime-dynamic/src/hmr/diagnose/fs.ts',
-			code: "export * from '@pluxel/workspace'",
+			code: "export * from '@pluxel/rolldown/workspace'",
 			errors: [{ messageId: 'root' }],
 		},
 		{
 			filename: '/repo/packages/runtime-dynamic/src/package/PackageService.ts',
-			code: "await import('@pluxel/workspace')",
+			code: "await import('@pluxel/rolldown/workspace')",
 			errors: [{ messageId: 'root' }],
 		},
 	],

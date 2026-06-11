@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { createFilter, normalizePath } from 'vite'
+import { matchViteIdsWithQuery } from '@pluxel/rolldown/vite'
 import {
 	DRIVE_PATH_RE,
 	boundedSet,
@@ -418,7 +418,7 @@ export class HmrEnvironment {
 
 	private createFilters(): HmrFilterFactory {
 		const exts = ['ts', 'tsx', 'mts', 'cts'] as const
-		const includeGlobs = makeIdFiltersToMatchWithQuery(
+		const includeGlobs = matchViteIdsWithQuery(
 			this.includeGlobs?.length
 				? this.includeGlobs
 				: this.scanRootsAbs.flatMap((dir) => exts.map((ext) => `${dir}/**/*.${ext}`)),
@@ -428,7 +428,7 @@ export class HmrEnvironment {
 			`${dir}/**/*.d.mts`,
 			`${dir}/**/*.d.cts`,
 		])
-		const excludeGlobs = makeIdFiltersToMatchWithQuery([
+		const excludeGlobs = matchViteIdsWithQuery([
 			...excludePatterns,
 			...(this.excludeGlobs ?? []),
 			'**/node_modules/**',

@@ -561,8 +561,8 @@ export class LoaderHmrService {
 			throw error
 		}
 
-		if (this.config.printUrls !== false) server.printUrls()
-		this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
+			if (this.config.printUrls !== false) server.printUrls()
+			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
 		// Default operational report: info-level, counts only.
 		// Best-effort and must never block startup.
 		void this.logOperationalReport('startup').catch((error) => {

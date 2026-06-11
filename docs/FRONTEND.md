@@ -64,8 +64,8 @@ MF2 是 custom frontend remote artifact format 和浏览器宿主按需加载协
 
 - `packages/runtime/src/plugin.ts`：route-neutral authoring bridge，`ui(...)` / `worker(...)`。
 - `packages/runtime-dynamic/src/hmr/extensions/ExtensionCompilerService.ts`：HMR 期编译插件 UI。
-- `packages/vite/src/plugin-ui.ts`：共享的插件 UI remote build helper。
-- `packages/build/src/rolldown/plugins/runtimeUiBridgePlugin.ts`：build 期 bridge rewrite。
+- `packages/rolldown/src/vite/plugin-ui.ts`：共享的插件 UI remote build helper。
+- `packages/rolldown/src/rolldown/plugins/runtimeUiBridgePlugin.ts`：build 期 bridge rewrite。
 - `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`：extension 注册和 runtime 协调。
 - `packages/runtime/src/services/plugin-interaction/ExtService.ts`：`ctx.ext` service wiring。
 - `packages/runtime/src/services/plugin-interaction/RpcService.ts`：插件 RPC。

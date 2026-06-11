@@ -80,7 +80,7 @@ core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`con
 - `packages/core/src/services/config/ops.ts`：defaults/patch validation helpers。
 - `packages/core/src/plugins/composition/cfg.ts`：`cfg(schemaMap)` 和 layout DSL。
 - `packages/core/src/plugins/composition/ConfigHost.ts`：config declaration field injection。
-- `packages/build/src/rolldown/plugins/configSourcePlugin.ts`：schema/layout source extraction。
+- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`：schema/layout source extraction。
 - `packages/runtime/src/services/ConfigService.ts`：runtime persistence/profile/watch/debounce。
 - `packages/runtime/src/api/ops/plugin-config.ts`：config ops binding。
 - `packages/runtime/src/api/features/plugins/**`：plugin config/status read model。

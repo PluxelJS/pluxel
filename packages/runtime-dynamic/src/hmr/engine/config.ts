@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
 import { resolve } from 'pathe'
 import {
 	createLogger,
@@ -11,6 +11,7 @@ import {
 	mergeConfig,
 	searchForWorkspaceRoot,
 } from 'vite'
+import { serverOnlyVitePlugin } from '@pluxel/rolldown/vite'
 import {
 	PLUXEL_CONDITION_RUNTIME_DYNAMIC,
 	PLUXEL_CONDITION_SOURCE,
@@ -20,7 +21,6 @@ import {
 	pathVariantsAbs,
 	toBasePackage,
 } from '@pluxel/runtime/shared'
-import { serverOnlyVitePlugin } from '@pluxel/runtime/vite'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface LoaderHmrDependencyConfig {
@@ -93,7 +93,7 @@ const REQUIRED_BRIDGE_PROVIDERS = Object.freeze({
 } satisfies Record<string, string>)
 
 const REQUIRED_DEDUPE_PACKAGES = [
-	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/build']),
+	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/rolldown']),
 ] as const
 
 const DEFAULT_SSR_NO_EXTERNAL_BASE = ['react', 'react-dom'] as const
@@ -370,7 +370,8 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	}
 	customLogger.infoOnce = (msg: string, options?: unknown) => {
 		if (shouldSilenceOptimizeDepsInfo(msg)) return
-		baseLogger.infoOnce?.(msg, options) ?? baseLogger.info(msg, options)
+		if (baseLogger.infoOnce) baseLogger.infoOnce(msg, options)
+		else baseLogger.info(msg, options)
 	}
 	customLogger.warn = (msg: string, options?: unknown) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
@@ -380,7 +381,8 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	customLogger.warnOnce = (msg: string, options?: unknown) => {
 		if (shouldSilenceDynamicImportWarning(msg)) return
 		if (shouldSilenceSourcemapMissingWarning(msg)) return
-		baseLogger.warnOnce?.(msg, options) ?? baseLogger.warn(msg, options)
+		if (baseLogger.warnOnce) baseLogger.warnOnce(msg, options)
+		else baseLogger.warn(msg, options)
 	}
 
 	const internalAliases = TABLER_ICONS_ESM_ENTRY
