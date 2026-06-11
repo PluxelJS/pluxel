@@ -21,39 +21,30 @@
 
 状态：提案/骨架已建。当前已有 `@pluxel/runtime-static` 包骨架和 tsdown 构建配置，但还没有 runtime-static startup 实现，也没有 runtime-static HMR mode。
 
-详细设计见 `runtime-routes.md`。这里仅保留摘要，避免把未来路线误写成当前 runtime 实现。
-
-问题背景：
-
-- 企业应用常常有固定且明确的插件总量。
-- 插件可以从一个 static entry 静态导入并统一 export。
-- 动态 install/scan/package loading 未必是核心价值。
-- 更重要的是配置声明、配置落盘、网页配置、启动时严格检查、插件未启动时报错，以及可控 replacement 边界。
+详细设计见 `runtime-routes.md` 和 `runtime-static-route.md`。这里仅保留摘要，避免把未来路线误写成当前 runtime 实现。
 
 目标模型：
 
 ```text
 @pluxel/runtime common host layer
-  -> loader route        scan/package/dynamic module
-  -> runtime-static route known catalog/strict startup
+  -> runtime-dynamic route  scan/package/dynamic module/HMR
+  -> runtime-static route   known catalog/startup report/static HMR
 ```
 
-runtime-static route 应该是 runtime 的一条路线，而不是 core-only host，也不是替代 runtime。它和当前 loader route 的关系必须保持清楚：
+runtime-static route 面向固定插件目录：
 
-- loader route 是当前实现，覆盖 scan/package/dynamic module/HMR replaceModule。
-- runtime-static route 是未来提案，覆盖 known catalog/strict startup/bounded replacement。
-- runtime common host layer 承载两条路线共享的 config persistence、web config APIs、plugin status projection、ops/control-plane、plugin UI protocols。
-- core 仍只负责 plugin graph、DI、lifecycle 和 config validation。
-- loader HMR mode 属于 `@pluxel/runtime-dynamic`，不反向进入 runtime common layer。
+- static entry 静态导入并 export 所有插件。
+- `defineStaticRuntime(...)` 只声明固定插件目录。
+- `createStaticRuntimeHost(..., { configService })` 选择配置路径、模式或 snapshot。
+- runtime config `enabled` set 决定启动哪些插件；空 enabled set 表示全部 disabled。
+- startup report 用插件名解释 started、disabled、config-invalid、dependency-missing、start-failed、drift。
+- static HMR 通过 Vite SSR import definition，按 plugin name 替换同名 ctor，并只提交 affected enabled plugins。
 
-文档隔离规则：当前 loader route 和 loader HMR mode 写在 `../RUNTIME.md` 和 `../HMR.md`；runtime-static route 细节写在 `runtime-routes.md`，本文件只保留摘要索引。startup/hmr 实现落地前，不要把 runtime-static 行为写成当前能力。
+文档归属：
 
-核心方向：
-
-- runtime-static route 复用 runtime common 的配置、ops、web config、plugin UI protocols。
-- runtime-static route 不复用 loader 的 scan/package/cache/dynamic module map。
-- runtime-static route 默认不继承 loader HMR mode；如果未来需要 fixed catalog HMR replacement，应作为 runtime-static route 自己的 HMR 子路径另行证明和设计。
-- 插件集合 drift 默认报错。
+- `runtime-routes.md`：runtime common / dynamic / static 的分层索引。
+- `runtime-static-route.md`：static route API、startup 和 HMR。
+- 当前行为仍以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md` 为准。
 
 ## 3. Workbench View Model
 

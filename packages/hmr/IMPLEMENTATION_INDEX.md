@@ -2,7 +2,7 @@
 
 目标：快速定位 dev host、Vite wiring、plugin authoring bridge 和插件 UI 编译链。
 
-当前索引只描述已实现的 `@pluxel/hmr` 包。未来目标态会删除该包，并把这些实现迁入 `@pluxel/runtime-loader` dev mode；不会保留旧入口兼容。设计见 [`docs/proposals/runtime-loader-dev-mode.md`](../../docs/proposals/runtime-loader-dev-mode.md)。
+当前索引只描述已实现的 `@pluxel/hmr` 包。未来目标态会删除该包，并把这些实现迁入 `@pluxel/runtime-dynamic` HMR mode；不会保留旧入口兼容。设计见 [`docs/proposals/runtime-dynamic-hmr-mode.md`](../../docs/proposals/runtime-dynamic-hmr-mode.md)。
 
 前端整条链路说明见：
 

@@ -91,7 +91,7 @@ core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`con
 即使未来走 runtime-static/fixed catalog，配置仍应复用这条链路：
 
 - static runtime definition 声明插件总量。
-- runtime 读取落盘配置。
+- runtime 读取落盘配置并唯一接管 enabled/disabled 状态。
 - core 校验 schema/defaults。
 - runtime 投影 web config 和 ops。
 - 启动时生成 strict startup report，明确哪个插件因配置或依赖没启动。

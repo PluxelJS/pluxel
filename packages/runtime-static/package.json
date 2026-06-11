@@ -13,15 +13,21 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./hmr": {
+			"@pluxel/source": "./src/hmr.ts",
+			"default": "./dist/hmr.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./hmr": "./dist/hmr.mjs",
 			"./package.json": "./package.json"
 		}
 	},
 	"scripts": {
+		"test": "pnpm exec vitest run",
 		"build": "tsdown"
 	},
 	"dependencies": {
@@ -29,6 +35,7 @@
 		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
+		"@pluxel/test": "workspace:*",
 		"typescript": "^6.0.3"
 	}
 }

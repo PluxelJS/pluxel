@@ -53,7 +53,7 @@ module id
 
 ## 未来插件加载路线：runtime-static route
 
-runtime-static route 目前只有包骨架，startup/hmr 行为还没有实现，不能从本文件推断为当前 API。它应该只作为 runtime 的第二条 catalog/startup 路线存在，详细设计写在 `proposals/runtime-routes.md`，并由 `proposals/README.md` 索引。
+runtime-static route 目前只有包骨架，startup/hmr 行为还没有实现，不能从本文件推断为当前 API。它应该只作为 runtime 的第二条 catalog/startup 路线存在，整体分层设计写在 `proposals/runtime-routes.md`，static route authoring 和 enabled/config 边界写在 `proposals/runtime-static-route.md`，并由 `proposals/README.md` 索引。
 
 两条路线的隔离方式应该是：
 

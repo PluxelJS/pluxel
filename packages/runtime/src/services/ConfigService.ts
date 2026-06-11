@@ -529,6 +529,24 @@ export class ConfigService {
 		return this.data.extra[key] as T | undefined
 	}
 
+	/**
+	 * Read a detached snapshot of the runtime config state.
+	 *
+	 * Callers can inspect this for diagnostics and route decisions, but mutating the
+	 * returned object never mutates the live config service.
+	 */
+	getConfigSnapshot(): ConfigShape {
+		const plugins: Record<string, Record<string, unknown>> = Object.create(null)
+		for (const [name, record] of Object.entries(this.data.plugins)) {
+			plugins[name] = { ...record }
+		}
+		return {
+			enabled: new Set(this.data.enabled),
+			plugins,
+			extra: { ...this.data.extra },
+		}
+	}
+
 	isEnabledInConfig(name: string): boolean {
 		return this.data.enabled.has(name)
 	}

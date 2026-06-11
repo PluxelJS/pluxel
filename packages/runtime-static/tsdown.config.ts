@@ -12,6 +12,7 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
+		hmr: 'src/hmr.ts',
 	},
 	dts: {
 		sourcemap: true,
