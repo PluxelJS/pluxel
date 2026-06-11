@@ -76,27 +76,29 @@ HMR 对 MF2 的使用也很克制：
 
 - 同一个插件包根目录共享一个 root-scoped build scheduler
 - 同 root 的多个 UI remote 构建请求会串行执行
-- 每一次真正的 MF2/Vite build 都在一个全新的子进程里完成
+- 每一次真正的 MF2/Vite build 默认在当前进程内完成
 - 每次 build 只清理这次专属的临时 cache，不主动触碰 root 下的 federation 临时目录
+- 测试环境按 `@module-federation/vite` 的要求临时设置 `MFE_VITE_NO_TEST_ENV_CHECK=true`
 
-这不是保守实现，而是当前最实用的实现。
+这不是抽象层，而是当前最小的实用实现。
 
 设计原因很直接：
 
-- `@module-federation/vite` 当前在同进程重复构建时会残留进程内状态
-- `1.14.1` 仍然需要在测试环境里显式关闭它自己的 test-env skip，但这已经收口在 child build 边界
-- 所以“常驻 worker 里反复 build”虽然看起来更快，实际会更脆
+- `@module-federation/vite@1.16.6` 已经可以通过同进程连续 remote build 的 smoke 和回归测试
+- 同一 root 下并发 build 仍可能让 MF virtual module id 互相串扰，所以 root-scoped 串行队列仍然必要
+- 上游仍然会在 `NODE_ENV=test` / Vitest / Jest 环境跳过 federation 插件，所以 test-env escape hatch 还不能删
+- root-scoped scheduler 仍然有价值：它让同一个插件包内的并发 UI build 保持确定顺序，并继续支持 inflight 去重
 
-因此这里故意只复用调度，不复用 federation build 进程状态。
+因此这里复用调度和当前进程，不再维护子进程 eval build 模型。
 
 最终收益是：
 
 - 同 root 请求仍然能做去重和排队
 - 跨 root 仍然可以并行
-- 本地补丁面继续收缩在子进程边界和专属 cacheDir 上
+- 本地补丁面继续收缩在 MF 插件创建和专属 cacheDir 上
 - HMR/runtime 不需要额外理解上游插件的内部状态机
 
-如果未来上游彻底修好同进程可重入性，这里唯一值得升级的方向，才是回到“每个 package root 一个常驻 build worker”。
+如果未来上游移除测试环境 skip，这里唯一值得删除的是 `MFE_VITE_NO_TEST_ENV_CHECK` 的临时 env 处理。
 
 ## Paraglide
 

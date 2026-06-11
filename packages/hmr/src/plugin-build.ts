@@ -1,7 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
 	extensionFederationBuildOutDir,
@@ -12,7 +11,9 @@ import {
 	extensionFederationSharedPackages,
 } from '@pluxel/runtime/web/federation'
 import { resolve } from 'pathe'
-import type { ModuleFederationOptions } from '@module-federation/vite'
+import { paraglideVitePlugin } from '@inlang/paraglide-js'
+import { federation, type ModuleFederationOptions } from '@module-federation/vite'
+import { build, type PluginOption } from 'vite'
 import { resolveParaglideIntegration } from './paraglide'
 
 export type BuildPluginUiRemoteOptions = {
@@ -36,7 +37,7 @@ type SerializedParaglideConfig = {
 	outdir: string
 }
 
-type PluginUiBuildChildPayload = {
+type PluginUiBuildPayload = {
 	root: string
 	outDir: string
 	entryPath: string
@@ -46,20 +47,11 @@ type PluginUiBuildChildPayload = {
 	publicPath: string
 	minify: boolean
 	paraglide: SerializedParaglideConfig | null
-	imports: {
-		vite: string
-		federation: string
-		paraglide: string
-	}
 }
 
-const rootBuildSchedulers = new Map<string, RootBuildScheduler>()
+const rootBuildTails = new Map<string, Promise<void>>()
 const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
-const runtimeRequire = createRequire(import.meta.url)
 const MFE_VITE_NO_TEST_ENV_CHECK = 'true'
-const nodeExecutable = resolveNodeExecutable()
-const shouldDisableFederationTestEnvCheck = isTestLikeProcessEnv(process.env)
-let cleanupHooksRegistered = false
 
 export async function buildPluginUiRemote(
 	options: BuildPluginUiRemoteOptions,
@@ -95,7 +87,7 @@ export async function buildPluginUiRemote(
 
 	const task = (async () => {
 		const buildId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-		await getRootBuildScheduler(root).runBuild({
+		await runRootBuild(root, {
 			root,
 			outDir,
 			entryPath,
@@ -110,11 +102,6 @@ export async function buildPluginUiRemote(
 						outdir: paraglide.outdir,
 					}
 				: null,
-			imports: {
-				vite: pathToFileURL(runtimeRequire.resolve('vite')).href,
-				federation: pathToFileURL(runtimeRequire.resolve('@module-federation/vite')).href,
-				paraglide: pathToFileURL(runtimeRequire.resolve('@inlang/paraglide-js')).href,
-			},
 		})
 		return result
 	})()
@@ -128,38 +115,20 @@ export async function buildPluginUiRemote(
 }
 
 export function disposePluginUiBuildSchedulers(): void {
-	for (const scheduler of rootBuildSchedulers.values()) {
-		scheduler.close()
-	}
-	rootBuildSchedulers.clear()
+	rootBuildTails.clear()
 	inflightBuilds.clear()
 }
 
-function getRootBuildScheduler(root: string): RootBuildScheduler {
+function runRootBuild(root: string, payload: PluginUiBuildPayload): Promise<void> {
 	const normalizedRoot = resolve(root)
-	let scheduler = rootBuildSchedulers.get(normalizedRoot)
-	if (!scheduler) {
-		registerCleanupHooks()
-		scheduler = new RootBuildScheduler(normalizedRoot)
-		rootBuildSchedulers.set(normalizedRoot, scheduler)
-	}
-	return scheduler
-}
-
-function registerCleanupHooks(): void {
-	if (cleanupHooksRegistered) return
-	cleanupHooksRegistered = true
-	const dispose = () => disposePluginUiBuildSchedulers()
-	process.once('exit', dispose)
-	process.once('beforeExit', dispose)
-}
-
-function resolveNodeExecutable(): string {
-	const explicit = process.env.PLUXEL_NODE_EXEC_PATH
-	if (typeof explicit === 'string' && existsSync(explicit)) return explicit
-
-	if (existsSync(process.execPath)) return process.execPath
-	return 'node'
+	const previous = rootBuildTails.get(normalizedRoot) ?? Promise.resolve()
+	const task = previous.catch((): void => undefined).then(() => runViteBuild(payload))
+	rootBuildTails.set(normalizedRoot, task)
+	return task.finally(() => {
+		if (rootBuildTails.get(normalizedRoot) === task) {
+			rootBuildTails.delete(normalizedRoot)
+		}
+	})
 }
 
 function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
@@ -170,166 +139,13 @@ function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
 	)
 }
 
-class RootBuildScheduler {
-	private readonly root: string
-	private tail: Promise<void> = Promise.resolve()
-	private activeChild: ChildProcessWithoutNullStreams | null = null
-	private pendingCount = 0
-	private closed = false
-
-	constructor(root: string) {
-		this.root = root
-	}
-
-	runBuild(payload: PluginUiBuildChildPayload): Promise<void> {
-		if (this.closed) {
-			throw new Error(`Plugin UI build scheduler already closed for ${this.root}`)
-		}
-		this.pendingCount += 1
-		const task = this.tail.catch((): void => undefined).then(() => this.spawnIsolatedBuild(payload))
-		this.tail = task.finally(() => {
-			this.pendingCount -= 1
-			if (
-				this.pendingCount === 0 &&
-				!this.activeChild &&
-				rootBuildSchedulers.get(this.root) === this
-			) {
-				rootBuildSchedulers.delete(this.root)
-			}
-		})
-		return task
-	}
-
-	close(): void {
-		this.closed = true
-		const child = this.activeChild
-		this.activeChild = null
-		if (child && !child.killed) {
-			child.kill()
-		}
-		if (rootBuildSchedulers.get(this.root) === this) {
-			rootBuildSchedulers.delete(this.root)
-		}
-	}
-
-	private async spawnIsolatedBuild(payload: PluginUiBuildChildPayload): Promise<void> {
-		if (this.closed) {
-			throw new Error(`Plugin UI build scheduler already closed for ${this.root}`)
-		}
-
-		const child = spawn(
-			nodeExecutable,
-			['--input-type=module', '--eval', PLUGIN_UI_BUILD_CHILD_SCRIPT],
-			{
-				cwd: this.root,
-				env: {
-					...process.env,
-					...(shouldDisableFederationTestEnvCheck ? { MFE_VITE_NO_TEST_ENV_CHECK } : {}),
-					PLUXEL_PLUGIN_UI_BUILD_PAYLOAD: JSON.stringify(payload),
-				},
-				stdio: ['ignore', 'pipe', 'pipe'],
-			},
-		)
-		this.activeChild = child
-
-		const stdoutLines: string[] = []
-		const stderrLines: string[] = []
-		child.stdout.on('data', (chunk) => {
-			this.pushOutput(stdoutLines, chunk)
-		})
-		child.stderr.on('data', (chunk) => {
-			this.pushOutput(stderrLines, chunk)
-		})
-
-		await new Promise<void>((resolvePromise, rejectPromise) => {
-			let settled = false
-			const settle = (callback: () => void) => {
-				if (settled) return
-				settled = true
-				this.activeChild = null
-				callback()
-			}
-			child.once('error', (error) => {
-				settle(() => {
-					rejectPromise(this.decorateChildError(error, stdoutLines, stderrLines))
-				})
-			})
-			child.once('exit', (code, signal) => {
-				settle(() => {
-					if (code === 0) {
-						resolvePromise()
-						return
-					}
-					rejectPromise(
-						this.decorateChildError(
-							new Error(
-								[
-									`Plugin UI build failed for ${this.root}`,
-									signal ? `signal: ${signal}` : `exit code: ${code ?? 'unknown'}`,
-								].join('\n'),
-							),
-							stdoutLines,
-							stderrLines,
-						),
-					)
-				})
-			})
-		})
-	}
-
-	private decorateChildError(error: Error, stdoutLines: string[], stderrLines: string[]): Error {
-		const details = [...stderrLines.slice(-40), ...stdoutLines.slice(-20)].join('\n').trim()
-		if (!details) return error
-		return new Error(`${error.message}\n${details}`)
-	}
-
-	private pushOutput(bucket: string[], chunk: unknown): void {
-		const text = String(chunk ?? '')
-		if (!text) return
-		for (const line of text.split(/\r?\n/)) {
-			if (!line) continue
-			bucket.push(line)
-			if (bucket.length > 120) bucket.shift()
-		}
-	}
-}
-
-const PLUGIN_UI_BUILD_CHILD_SCRIPT = `
-import { rm } from 'node:fs/promises'
-const toPluginArray = (input) => Array.isArray(input) ? input.flatMap((item) => toPluginArray(item)) : [input]
-const cleanup = async (options) => rm(options.cacheDir, { recursive: true, force: true })
-
-async function runBuild(options) {
-	const { build } = await import(options.imports.vite)
-	const { federation } = await import(options.imports.federation)
-	const plugins = []
-	if (options.paraglide) {
-		const { paraglideVitePlugin } = await import(options.imports.paraglide)
-		plugins.push(...toPluginArray(paraglideVitePlugin({
-			project: options.paraglide.project,
-			outdir: options.paraglide.outdir,
-		})))
-	}
-	plugins.push(federation({
-		name: options.remoteName,
-		filename: ${JSON.stringify(EXTENSION_FEDERATION_REMOTE_ENTRY_FILE)},
-		exposes: {
-			[${JSON.stringify(EXTENSION_FEDERATION_EXPOSE)}]: options.entryPath,
-		},
-		manifest: {
-			fileName: ${JSON.stringify(EXTENSION_FEDERATION_MANIFEST_FILE)},
-		},
-		dts: false,
-		publicPath: options.publicPath,
-		shared: options.shared,
-		shareStrategy: ${JSON.stringify(EXTENSION_FEDERATION_SHARE_STRATEGY)},
-	}))
-
+async function runViteBuild(payload: PluginUiBuildPayload): Promise<void> {
+	const plugins = createPluginUiBuildPlugins(payload)
 	try {
 		await build({
 			configFile: false,
-			root: options.root,
-			cacheDir: options.cacheDir,
+			root: payload.root,
+			cacheDir: payload.cacheDir,
 			publicDir: false,
 			clearScreen: false,
 			logLevel: 'error',
@@ -339,40 +155,82 @@ async function runBuild(options) {
 			},
 			plugins,
 			build: {
-				outDir: options.outDir,
+				outDir: payload.outDir,
 				emptyOutDir: true,
 				target: 'chrome89',
 				manifest: false,
-				minify: options.minify,
+				minify: payload.minify,
 				cssCodeSplit: true,
 				sourcemap: true,
 				rollupOptions: {
-					input: options.entryPath,
+					input: payload.entryPath,
 				},
 			},
 		})
 	} catch (error) {
-		await rm(options.outDir, { recursive: true, force: true })
+		await rm(payload.outDir, { recursive: true, force: true })
 		throw error
 	} finally {
-		await cleanup(options)
+		await rm(payload.cacheDir, { recursive: true, force: true })
 	}
 }
 
-const payload = process.env.PLUXEL_PLUGIN_UI_BUILD_PAYLOAD
-if (!payload) {
-	console.error('Missing PLUXEL_PLUGIN_UI_BUILD_PAYLOAD')
-	process.exit(1)
+function createPluginUiBuildPlugins(payload: PluginUiBuildPayload): PluginOption[] {
+	const plugins: PluginOption[] = []
+	if (payload.paraglide) {
+		plugins.push(
+			...toPluginArray(
+				paraglideVitePlugin({
+					project: payload.paraglide.project,
+					outdir: payload.paraglide.outdir,
+				}),
+			),
+		)
+	}
+	plugins.push(...createFederationPlugin(payload))
+	return plugins
 }
 
-try {
-	await runBuild(JSON.parse(payload))
-	process.exit(0)
-} catch (error) {
-	console.error(error instanceof Error ? error.stack || error.message : String(error))
-	process.exit(1)
+function createFederationPlugin(payload: PluginUiBuildPayload): PluginOption[] {
+	const create = () =>
+		toPluginArray(
+			federation({
+				name: payload.remoteName,
+				filename: EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
+				exposes: {
+					[EXTENSION_FEDERATION_EXPOSE]: payload.entryPath,
+				},
+				manifest: {
+					fileName: EXTENSION_FEDERATION_MANIFEST_FILE,
+				},
+				dts: false,
+				publicPath: payload.publicPath,
+				shared: payload.shared,
+				shareStrategy: EXTENSION_FEDERATION_SHARE_STRATEGY,
+			}),
+		)
+
+	if (!isTestLikeProcessEnv(process.env)) return create()
+
+	// @module-federation/vite intentionally skips itself under test runners unless this is set.
+	const previous = process.env.MFE_VITE_NO_TEST_ENV_CHECK
+	process.env.MFE_VITE_NO_TEST_ENV_CHECK = MFE_VITE_NO_TEST_ENV_CHECK
+	try {
+		return create()
+	} finally {
+		if (previous === undefined) {
+			delete process.env.MFE_VITE_NO_TEST_ENV_CHECK
+		} else {
+			process.env.MFE_VITE_NO_TEST_ENV_CHECK = previous
+		}
+	}
 }
-`
+
+function toPluginArray(input: PluginOption): PluginOption[] {
+	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
+	if (!input) return []
+	return [input]
+}
 
 export function resolveExtensionFederationShared(
 	root: string,

@@ -48,7 +48,7 @@
 		"@gqloom/core": "^0.16.1",
 		"@inlang/paraglide-js": "^2.15.1",
 		"@logtape/logtape": "^2.0.2",
-		"@module-federation/vite": "1.14.1",
+		"@module-federation/vite": "1.16.6",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@rolldown/pluginutils": "1.0.0-rc.5",

@@ -88,8 +88,11 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 
 - 同一插件包根目录共享 root-scoped build scheduler。
 - 同 root 多个 UI remote 串行构建。
-- 每次真实 MF2/Vite build 放到新子进程。
+- 每次真实 MF2/Vite build 默认在当前进程内执行。
 - 每次只清理本次专属临时 cache，避免误删 root federation 临时目录。
+- `@module-federation/vite` 仍会在测试环境跳过插件加载，所以测试环境只在创建 federation 插件时临时设置 `MFE_VITE_NO_TEST_ENV_CHECK=true`。
+
+`@module-federation/vite@1.16.6` 已经不需要每次 build 新开子进程；同进程连续 build 通过回归测试。但同一 root 下并发 build 仍可能让 MF virtual module id 互相串扰，所以 root-scoped 串行队列仍是必要边界，而不是旧 workaround。
 
 ## 实现入口
 
