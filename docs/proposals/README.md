@@ -4,7 +4,7 @@
 
 ## 1. Runtime Dynamic HMR Mode
 
-状态：已采纳并进入实现态。独立 `@pluxel/hmr` 包不再保留，入口收敛到 `@pluxel/runtime-dynamic/hmr` 和 `@pluxel/runtime-dynamic/plugin`。
+状态：已采纳并进入实现态。独立 `@pluxel/hmr` 包不再保留，loader HMR 入口收敛到 `@pluxel/runtime-dynamic/hmr`；插件作者侧 `ui(...)` / `worker(...)` bridge 是 route-neutral 的 `@pluxel/runtime/plugin`。
 
 详细设计见 `runtime-dynamic-hmr-mode.md`。
 
@@ -13,13 +13,13 @@
 - HMR 不再是独立包或独立 route，而是 `@pluxel/runtime-dynamic` 的 HMR mode。
 - loader 继续拥有 dynamic catalog、scan、package、module registry、`replaceModule` 和 batch commit。
 - HMR mode 只负责把 Vite/watch/runner 的 source change 转成 loader batch。
-- 目标态只保留 `@pluxel/runtime-dynamic/hmr` 和 `@pluxel/runtime-dynamic/plugin` 两个 HMR 相关 subpath；diagnose/workspace/Vite helper 都归入 `/hmr`。
-- 标准入口使用 `defineLoaderHmrConfig`、`createLoaderHmrHost`、`installLoaderHmr`、`LoaderHmrService`、`LoaderHmrSummary` 等命名。
+- 目标态只保留 `@pluxel/runtime-dynamic/hmr` 作为 loader HMR subpath；diagnose/workspace 归入 `/hmr`，插件 authoring bridge 归 `@pluxel/runtime/plugin`，route-neutral Vite/MF/Paraglide helper 归 `@pluxel/vite`。
+- 标准入口使用 `defineLoaderHmrConfig`、`createLoaderHmrHost`、`createLoaderHmrHostFromSnapshot`、`installLoaderHmr`、`LoaderHmrService` 等命名。
 - 不保留 `@pluxel/hmr`、`@pluxel/hmr/*`、`pluxel.hmr.jsonc` 或任何 re-export/facade/deprecated wrapper。
 
 ## 2. Runtime Static Route
 
-状态：提案/骨架已建。当前已有 `@pluxel/runtime-static` 包骨架和 tsdown 构建配置，但还没有 runtime-static startup 实现，也没有 runtime-static HMR mode。
+状态：提案/基线已落地。当前已有 `@pluxel/runtime-static` fixed catalog startup、startup/change report 和轻量 static HMR；ops/web/MCP 的 route-neutral 控制面仍待接入。
 
 详细设计见 `runtime-routes.md` 和 `runtime-static-route.md`。这里仅保留摘要，避免把未来路线误写成当前 runtime 实现。
 

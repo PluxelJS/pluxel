@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from 'pathe'
-import type { Plugin as VitePlugin } from 'vite'
+import type { InlineConfig } from 'vite'
 
 import '@pluxel/runtime-dynamic/register'
 import { setPluxelRuntime } from '@pluxel/core'
@@ -48,7 +48,7 @@ export type LoaderHmrHostOptions<TSnapshot extends LoaderHmrWorkspaceSnapshot = 
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	vitePlugins?: VitePlugin[]
+	vite?: InlineConfig
 	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	logging?: boolean | EnsurePluxelLoggingOptions
@@ -70,7 +70,7 @@ export type PlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot = 
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	vitePlugins?: VitePlugin[]
+	vite?: InlineConfig
 	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	logging?: boolean | EnsurePluxelLoggingOptions
@@ -172,7 +172,7 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		builtinsFromDist,
 		warmup: opts.warmup,
 		printUrls: opts.printUrls,
-		vitePlugins: opts.vitePlugins,
+		vite: opts.vite,
 		deps: opts.deps,
 		cjsExternal: opts.cjsExternal,
 		logging: opts.logging,
@@ -274,7 +274,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		snapshot: plan.snapshot,
 		printUrls: plan.printUrls,
 		warmup: plan.warmup,
-		vitePlugins: plan.vitePlugins,
+		vite: plan.vite,
 		deps: plan.deps,
 		cjsExternal: plan.cjsExternal,
 		builtinsFromDist: plan.builtinsFromDist,

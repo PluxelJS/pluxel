@@ -1872,6 +1872,14 @@ function ProfilesOverlay(props: {
 	)
 }
 
+function HelpKey(props: { children: string }) {
+	return (
+		<Text color="black" backgroundColor="cyan">
+			{` ${props.children} `}
+		</Text>
+	)
+}
+
 function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
@@ -1883,31 +1891,27 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 		}
 	})
 
-	const Key = (keyProps: { children: string }) => (
-		<Text color="black" backgroundColor="cyan">
-			{` ${keyProps.children} `}
-		</Text>
-	)
-
 	const tabName = tabLabel(props.tab)
 	const tabLine =
 		props.tab === 'packages' ? (
 			<Text color="gray">
-				<Key>Enter/Space</Key> toggle • <Key>j/k</Key> move • <Key>/</Key> filter • <Key>e</Key>{' '}
-				mode • <Key>Tab(hold)</Key> profiles • <Key>Ctrl+P</Key> profiles
+				<HelpKey>Enter/Space</HelpKey> toggle • <HelpKey>j/k</HelpKey> move •{' '}
+				<HelpKey>/</HelpKey> filter • <HelpKey>e</HelpKey> mode •{' '}
+				<HelpKey>Tab(hold)</HelpKey> profiles • <HelpKey>Ctrl+P</HelpKey> profiles
 			</Text>
 		) : props.tab === 'paths' ? (
 			<Text color="gray">
-				<Key>Tab/Shift+Tab</Key> section • <Key>r/i/x</Key> focus • <Key>s</Key> scope •{' '}
-				<Key>t</Key> roots auto • <Key>Enter</Key> edit
+				<HelpKey>Tab/Shift+Tab</HelpKey> section • <HelpKey>r/i/x</HelpKey> focus •{' '}
+				<HelpKey>s</HelpKey> scope • <HelpKey>t</HelpKey> roots auto •{' '}
+				<HelpKey>Enter</HelpKey> edit
 			</Text>
 		) : props.tab === 'doctor' ? (
 			<Text color="gray">
-				<Key>↑/↓</Key> scroll • <Key>d</Key> details
+				<HelpKey>↑/↓</HelpKey> scroll • <HelpKey>d</HelpKey> details
 			</Text>
 		) : (
 			<Text color="gray">
-				<Key>Enter</Key> start • blocked → check Doctor
+				<HelpKey>Enter</HelpKey> start • blocked → check Doctor
 			</Text>
 		)
 
@@ -1929,8 +1933,9 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 			</Text>
 			<Text color="cyan">Global</Text>
 			<Text color="gray">
-				<Key>Ctrl+←/→</Key> tabs • <Key>Ctrl+S</Key> save • <Key>Ctrl+R</Key> rescan •{' '}
-				<Key>Ctrl+P</Key> profiles • <Key>Tab(hold)</Key> profiles • <Key>q</Key> quit
+				<HelpKey>Ctrl+←/→</HelpKey> tabs • <HelpKey>Ctrl+S</HelpKey> save •{' '}
+				<HelpKey>Ctrl+R</HelpKey> rescan • <HelpKey>Ctrl+P</HelpKey> profiles •{' '}
+				<HelpKey>Tab(hold)</HelpKey> profiles • <HelpKey>q</HelpKey> quit
 			</Text>
 			<Text color="cyan">{tabName}</Text>
 			{tabLine}

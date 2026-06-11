@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
-import { runtimeDynamicUiBridgePlugin } from '../../src/rolldown/plugins/runtimeDynamicUiBridgePlugin'
+import { runtimeUiBridgePlugin } from '../../src/rolldown/plugins/runtimeUiBridgePlugin'
 import { lintGuardPlugin } from '../../src/rolldown/plugins/lintGuardPlugin'
 
 const buildLintConfigPath = fileURLToPath(
@@ -567,7 +567,7 @@ export class BuildLintInvalidConfigRedefaultPlugin extends BasePlugin {
 	}
 }
 `,
-	'plugin-with-runtime-dynamic-ui.ts': `import { ui } from '@pluxel/runtime-dynamic/plugin'
+	'plugin-with-runtime-ui.ts': `import { ui } from '@pluxel/runtime/plugin'
 
 class BasePlugin {
 	ctx: any
@@ -586,7 +586,7 @@ export class UiBridgePlugin extends BasePlugin {
 	}
 }
 `,
-	'plugin-with-runtime-dynamic-ui-alias.ts': `import { ui as defineUi, worker } from '@pluxel/runtime-dynamic/plugin'
+	'plugin-with-runtime-ui-alias.ts': `import { ui as defineUi, worker } from '@pluxel/runtime/plugin'
 
 class BasePlugin {
 	ctx: any
@@ -606,7 +606,7 @@ export class UiAliasBridgePlugin extends BasePlugin {
 	}
 }
 `,
-	'plugin-with-runtime-dynamic-ui-namespace.ts': `import * as runtimeDynamicPlugin from '@pluxel/runtime-dynamic/plugin'
+	'plugin-with-runtime-ui-namespace.ts': `import * as runtimePlugin from '@pluxel/runtime/plugin'
 
 class BasePlugin {
 	ctx: any
@@ -616,7 +616,7 @@ function Plugin(_meta?: any): ClassDecorator {
 	return () => {}
 }
 
-const pluginUi = runtimeDynamicPlugin.ui('./ui/index.tsx')
+const pluginUi = runtimePlugin.ui('./ui/index.tsx')
 
 @Plugin({ name: 'UiNamespaceBridgePlugin' })
 export class UiNamespaceBridgePlugin extends BasePlugin {
@@ -1142,43 +1142,43 @@ describe('plugins integration', () => {
 		})
 	}
 
-	it('rewrites runtime-dynamic ui bridge imports into runtime packaged helpers', async () => {
+	it('rewrites runtime ui bridge imports into runtime packaged helpers', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
 				fixturesDir,
-				input: 'plugin-with-runtime-dynamic-ui.ts',
-				plugins: [runtimeDynamicUiBridgePlugin()],
-				external: ['@pluxel/runtime-dynamic/plugin'],
+				input: 'plugin-with-runtime-ui.ts',
+				plugins: [runtimeUiBridgePlugin()],
+				external: ['@pluxel/runtime/plugin'],
 			})
 
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).toContain('__pluxelRuntimeUiBridge__')
-			expect(code).not.toContain("import { ui } from '@pluxel/runtime-dynamic/plugin'")
+			expect(code).not.toContain("import { ui } from '@pluxel/runtime/plugin'")
 		})
 	})
 
-	it('preserves non-ui runtime-dynamic plugin imports while rewriting aliased ui bindings', async () => {
+	it('preserves non-ui runtime plugin imports while rewriting aliased ui bindings', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
 				fixturesDir,
-				input: 'plugin-with-runtime-dynamic-ui-alias.ts',
-				plugins: [runtimeDynamicUiBridgePlugin()],
-				external: ['@pluxel/runtime-dynamic/plugin'],
+				input: 'plugin-with-runtime-ui-alias.ts',
+				plugins: [runtimeUiBridgePlugin()],
+				external: ['@pluxel/runtime/plugin'],
 			})
 
-			expect(code).toContain('import { worker } from "@pluxel/runtime-dynamic/plugin";')
+			expect(code).toContain('import { worker } from "@pluxel/runtime/plugin";')
 			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')
 			expect(code).not.toContain('ui as defineUi')
 		})
 	})
 
-	it('rejects namespace imports from @pluxel/runtime-dynamic/plugin to keep AST rewrite deterministic', async () => {
+	it('rejects namespace imports from @pluxel/runtime/plugin to keep AST rewrite deterministic', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-runtime-dynamic-ui-namespace.ts'),
-				plugins: [runtimeDynamicUiBridgePlugin()],
-				external: ['@pluxel/runtime-dynamic/plugin'],
+				input: resolve(fixturesDir, 'plugin-with-runtime-ui-namespace.ts'),
+				plugins: [runtimeUiBridgePlugin()],
+				external: ['@pluxel/runtime/plugin'],
 			})
 
 			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
@@ -1201,13 +1201,13 @@ describe('plugins integration', () => {
 		})
 	})
 
-	it('composes runtimeDynamicUiBridgePlugin with existing build plugins', async () => {
+	it('composes runtimeUiBridgePlugin with existing build plugins', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
 				fixturesDir,
-				input: 'plugin-with-runtime-dynamic-ui.ts',
-				plugins: [configSourcePlugin(), runtimeDynamicUiBridgePlugin()],
-				external: ['@pluxel/runtime-dynamic/plugin'],
+				input: 'plugin-with-runtime-ui.ts',
+				plugins: [configSourcePlugin(), runtimeUiBridgePlugin()],
+				external: ['@pluxel/runtime/plugin'],
 			})
 
 			expect(code).toContain('ctx.ext.ui.remote.packaged()')

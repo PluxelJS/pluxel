@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
-import { runtimeDynamicUiBridgePlugin } from '../rolldown/plugins/runtimeDynamicUiBridgePlugin'
+import { runtimeUiBridgePlugin } from '../rolldown/plugins/runtimeUiBridgePlugin'
 import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 
 export const cliTsdownOverlay = defineConfig(() => ({
@@ -11,5 +11,5 @@ export const cliTsdownOverlay = defineConfig(() => ({
 	deps: {
 		neverBundle: [/^@pluxel\//],
 	},
-	plugins: [lintGuardPlugin(), configSourcePlugin(), runtimeDynamicUiBridgePlugin()],
+	plugins: [lintGuardPlugin(), configSourcePlugin(), runtimeUiBridgePlugin()],
 }))

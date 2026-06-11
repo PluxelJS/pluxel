@@ -49,9 +49,9 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 对前端来说，这里最重要的边界是：
 
 - `hmr`
-  由 `@pluxel/runtime-dynamic/hmr` 消费 `ui(...).bind(ctx)` 这类 authoring bridge
+  由 `@pluxel/runtime-dynamic/hmr` 安装 dev handles，接管 `@pluxel/runtime/plugin` 的 `ui(...).bind(ctx)` / worker authoring bridge
 - `static`
-  由 `@pluxel/runtime-static` 消费固定 `plugins: [...]` catalog；示例默认启用一组不依赖 config-source transform 的插件，worker/UI-HMR 能力走 fallback
+  由 `@pluxel/runtime-static` 消费固定 `plugins: [...]` catalog；没有 dev handles 时同一套 authoring bridge 走 packaged UI / worker fallback
 
 也就是说，这个 host 包的价值主要有两点：
 

@@ -73,7 +73,7 @@ runtime common 仍然复用：
 - RPC 入口仍是 `rpc.package()`。
 - MCP tool 名仍是 `workspace.resolveEntry` / `workspace.listEntries`。
 
-实现归属改变：这些入口只有在 loader route 注册后可用。HMR 和 frozen bootstrap 会显式 import `@pluxel/runtime-dynamic/register`。
+实现归属改变：这些入口只有在 loader route 注册后可用。dynamic HMR host 会显式 import `@pluxel/runtime-dynamic/register`；static route 不加载 loader/scan/package 注册。
 
 ## 清理结论
 

@@ -32,14 +32,14 @@
 - `TOOLCHAIN.md`：build、Vite 分层、lint、test 和发布工具链。
 - `GOVERNANCE.md`：依赖方向、公开包、导出、维护规则。
 - `proposals/README.md`：未实现或未来设计入口，例如 runtime-dynamic HMR mode、runtime-static route、WorkbenchView、Core DI V2。
-- `proposals/runtime-dynamic-hmr-mode.md`：未来把独立 HMR 包收敛为 `@pluxel/runtime-dynamic` HMR mode 的目标设计，不保留兼容入口。
-- `proposals/runtime-routes.md`：未来 runtime 双路线设计，讨论 runtime-dynamic route、runtime-static route 和 route-neutral runtime common。
+- `proposals/runtime-dynamic-hmr-mode.md`：独立 HMR 包收敛为 `@pluxel/runtime-dynamic` HMR mode 的设计记录，不保留兼容入口。
+- `proposals/runtime-routes.md`：runtime 双路线设计，讨论 runtime-dynamic route、runtime-static route 和 route-neutral runtime common。
 
 ## 当前与未来
 
 - 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
 - 未来或未实现：写在 `proposals/README.md`，大型提案放在 `docs/proposals/*.md`，并由 `proposals/README.md` 索引。
-- runtime 当前只有 runtime-dynamic route；runtime-static route 目前只有包骨架，startup/hmr 行为不能写成当前实现。
+- runtime 当前有 runtime-dynamic route 和 runtime-static route。runtime-static 已有 fixed catalog startup、startup/change report 和轻量 static HMR；ops/web/MCP 的 route-neutral 控制面仍按提案推进。
 - 如果提案实现，先把已实现行为迁入当前领域文档，再缩短 `proposals/README.md` 或对应提案文档。
 
 ## 维护规则

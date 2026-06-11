@@ -10,7 +10,7 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 
 - `lintGuardPlugin()`：执行 build-critical lint，违规直接失败。
 - `configSourcePlugin()`：提取 `@Config(...)` / `configs.use(...)` 的 schema source 和 layout metadata。
-- `runtimeDynamicUiBridgePlugin()`：把 `ui(...).bind(ctx)` 改写成 `ctx.ext.ui.remote.packaged()`。
+- `runtimeUiBridgePlugin()`：把 `ui(...).bind(ctx)` 改写成 `ctx.ext.ui.remote.packaged()`。
 
 最终产物不应残留 loader-hmr/source authoring 语义。
 
@@ -20,13 +20,14 @@ Toolchain 包括 build、Vite 分层、lint、test 和发布约束。它的职�
 
 - components/workbench client。
 - runtime web asset build。
-- HMR host。
+- route HMR / plugin UI remote build。
 
-HMR host 归入 `@pluxel/runtime-dynamic` HMR mode；Vite 分层原则不变。
+route-specific HMR 提交流程归各 runtime route；route-neutral Vite/MF/Paraglide helper 归 `@pluxel/vite`。`@pluxel/runtime-dynamic/hmr` 负责 loader HMR 的 Vite runner/watch/module replacement；`@pluxel/runtime-static` 负责 static definition import/catalog diff。`@pluxel/runtime/plugin` 提供 route-neutral 的 `ui(...)` / `worker(...)` authoring bridge，插件 UI remote build helper 由 `@pluxel/vite/plugin-ui` 共享。
 
 规则：
 
 - 环境相关 Vite plugin 必须限定作用域。
+- Runtime HMR 接收标准 Vite `InlineConfig`；文档警告高风险字段，但不额外发明一套插件/alias options。
 - runtime HTML shell 和 HMR host 不混成一层。
 - shared UI build policy 要和插件 UI remote build 保持一致。
 
@@ -56,6 +57,8 @@ Lint 分 repo lint 和 build lint：
 - `@pluxel/core`
 - `@pluxel/runtime`
 - `@pluxel/runtime-dynamic`
+- `@pluxel/runtime-static`
+- `@pluxel/vite`
 - `@pluxel/cli`
 - `@pluxel/test`
 
@@ -64,12 +67,12 @@ Lint 分 repo lint 和 build lint：
 ## 实现入口
 
 - `packages/build/src/rolldown/plugins/configSourcePlugin.ts`
-- `packages/build/src/rolldown/plugins/runtimeDynamicUiBridgePlugin.ts`
+- `packages/build/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
 - `packages/build/src/cli.ts`
 - `packages/cli/src/build.ts`
 - `packages/cli/src/hmr/**`
 - `packages/runtime-dynamic/src/hmr/engine/config.ts`
-- `packages/runtime-dynamic/src/hmr/plugin-build.ts`
+- `packages/vite/src/plugin-ui.ts`
 - `oxlint.build.config.ts`
 - `oxlint.config.ts`
 - `packages/workspace/src/oxlint/plugin.ts`

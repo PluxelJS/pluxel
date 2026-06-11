@@ -16,7 +16,9 @@ describe('@pluxel/runtime-dynamic/hmr workspace profiles', () => {
 				'{ "version": 1, "profile": "hmr", "profiles": { "hmr": { "enabled": [] } }, "foo": 1 }',
 		})
 		const fs = fixture.fs as LoaderHmrWorkspaceFs
-		expect(() => readLoaderHmrConfigV1(resolve(fixture.path, 'pluxel.loader.hmr.jsonc'), fs)).toThrow()
+		expect(() =>
+			readLoaderHmrConfigV1(resolve(fixture.path, 'pluxel.loader.hmr.jsonc'), fs),
+		).toThrow(/unknown|unexpected|foo/i)
 	})
 
 	it('returns a friendly error when config file is missing', async () => {

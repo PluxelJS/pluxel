@@ -2,7 +2,7 @@
 // - 你要做跨插件 interaction
 // - 你要看 consumer 拥有 config，provider 拥有资源和 session UI 的推荐分工
 
-import { ui } from '@pluxel/runtime-dynamic/plugin'
+import { ui } from '@pluxel/runtime/plugin'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { doc } from '@pluxel/runtime/services'
 import {

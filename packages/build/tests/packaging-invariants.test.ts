@@ -100,7 +100,7 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 }
 
 describe('packaging invariants', () => {
-	it('only core/runtime/runtime-dynamic/runtime-static/cli/test/ops are publishable', async () => {
+	it('only public runtime/toolchain packages are publishable', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const workspace = await collectWorkspacePackages(root)
 		const publishable = new Set([
@@ -111,6 +111,7 @@ describe('packaging invariants', () => {
 			'@pluxel/cli',
 			'@pluxel/test',
 			'@pluxel/ops',
+			'@pluxel/vite',
 		])
 		const mismatches: string[] = []
 
@@ -140,16 +141,18 @@ describe('packaging invariants', () => {
 			{ name: '@pluxel/cli', path: `${root}/packages/cli/package.json` },
 			{ name: '@pluxel/test', path: `${root}/packages/test/package.json` },
 			{ name: '@pluxel/ops', path: `${root}/packages/ops/package.json` },
+			{ name: '@pluxel/vite', path: `${root}/packages/vite/package.json` },
 		] as const
 
 		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
 			['@pluxel/core', new Set()],
 			['@pluxel/runtime', new Set(['@pluxel/core', '@pluxel/ops'])],
-			['@pluxel/runtime-dynamic', new Set(['@pluxel/core', '@pluxel/runtime'])],
+			['@pluxel/runtime-dynamic', new Set(['@pluxel/core', '@pluxel/runtime', '@pluxel/vite'])],
 			['@pluxel/runtime-static', new Set(['@pluxel/core', '@pluxel/runtime'])],
 			['@pluxel/cli', new Set(['@pluxel/runtime-dynamic', '@pluxel/runtime'])],
 			['@pluxel/test', new Set()],
 			['@pluxel/ops', new Set()],
+			['@pluxel/vite', new Set(['@pluxel/runtime'])],
 		])
 		const privateRuntimeDeps: string[] = []
 		const disallowedRuntimeDeps: string[] = []
@@ -274,7 +277,15 @@ describe('packaging invariants', () => {
 
 	it('published package internals use explicit workspace subpaths', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageDirs = ['cli', 'components', 'runtime-dynamic', 'runtime-static', 'runtime', 'test'] as const
+		const packageDirs = [
+			'cli',
+			'components',
+			'runtime-dynamic',
+			'runtime-static',
+			'runtime',
+			'test',
+			'vite',
+		] as const
 		const forbidden = forbiddenImportPattern('@pluxel/workspace')
 		const offenders: string[] = []
 

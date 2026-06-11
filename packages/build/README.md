@@ -23,7 +23,7 @@
   在内部仓库构建/HMR/测试链路里执行 `oxlint.build.config.ts`，只强制 build-critical correctness 规则；发现违规时直接失败，不再偷偷改源码
 - `configSourcePlugin()`
   提取 `@Config(...)` / `configs.use(...)` 的 schema source
-- `runtimeDynamicUiBridgePlugin()`
+- `runtimeUiBridgePlugin()`
   把 `ui(...).bind(ctx)` 重写成 `ctx.ext.ui.remote.packaged()`
 
 ## 默认 overlay
@@ -32,7 +32,7 @@
 
 - `lintGuardPlugin()`
 - `configSourcePlugin()`
-- `runtimeDynamicUiBridgePlugin()`
+- `runtimeUiBridgePlugin()`
 
 目标是让最终产物不再残留 authoring/HMR 语义。
 
@@ -45,7 +45,7 @@
 
 ## 插件前端构建约定
 
-在当前前端链路里，`@pluxel/build` 需要和 `@pluxel/runtime-dynamic/hmr` 内部的 UI remote 编译链路保持同一套固定约定：
+在当前前端链路里，`@pluxel/build` 需要和 `@pluxel/runtime/hmr` 内部的 UI remote 编译链路保持同一套固定约定：
 
 - 作者侧源码允许写 `ui(...).bind(ctx)`
 - build 期必须把这层 bridge rewrite 掉
@@ -65,12 +65,12 @@
 ```ts
 import {
 	configSourcePlugin,
-	runtimeDynamicUiBridgePlugin,
+	runtimeUiBridgePlugin,
 	lintGuardPlugin,
 } from '@pluxel/build/rolldown'
 
 export default {
-	plugins: [lintGuardPlugin(), configSourcePlugin(), runtimeDynamicUiBridgePlugin()],
+	plugins: [lintGuardPlugin(), configSourcePlugin(), runtimeUiBridgePlugin()],
 }
 ```
 

@@ -1,6 +1,6 @@
-# Runtime Dynamic HMR Mode Proposal
+# Runtime Dynamic HMR Mode
 
-状态：已采纳目标设计。本文记录 runtime-dynamic HMR mode 的收敛边界：不保留兼容入口，不提供 `@pluxel/hmr` facade，不维护旧配置文件名或旧 subpath。
+状态：已实现的设计记录。本文记录 runtime-dynamic HMR mode 的收敛边界：不保留兼容入口，不提供 `@pluxel/hmr` facade，不维护旧配置文件名或旧 subpath。
 
 ## 目标结论
 
@@ -24,7 +24,7 @@ HMR 不再是一层独立产品概念，也不再是独立包。它是 loader ro
 core <- runtime <- runtime-dynamic <- cli
 ```
 
-runtime common 仍然不 import Vite、不理解源码入口、不拥有 moduleGraph。Vite、watch、runner、插件 UI 源码编译都属于 `@pluxel/runtime-dynamic/hmr`。
+runtime common 仍然不 import Vite、不理解源码入口、不拥有 moduleGraph。Vite、watch、runner 和 dynamic loader replacement 属于 `@pluxel/runtime-dynamic/hmr`；route-neutral Vite/MF/Paraglide helper 属于 `@pluxel/vite`。
 
 CLI 是最外层命令聚合器，不是 loader HMR 的领域所有者。`pluxel hmr` 可以由 `@pluxel/cli` 暴露，但 workspace discovery、profile merge、diagnose、snapshot build、path normalization 必须归 `@pluxel/runtime-dynamic/hmr`。CLI 可以做交互式编辑和命令编排，不能复制或重写 loader HMR 的发现规则。
 
@@ -56,7 +56,7 @@ source change
 @pluxel/runtime-dynamic/register
 @pluxel/runtime-dynamic/services
 @pluxel/runtime-dynamic/hmr
-@pluxel/runtime-dynamic/plugin
+@pluxel/runtime/plugin
 ```
 
 不保留：
@@ -149,8 +149,8 @@ class LoaderService {
 
 class LoaderHmrService {
 	start(): Promise<void>
-	stop(): Promise<void>
-	reload(files?: string[]): Promise<LoaderHmrSummary>
+	close(): Promise<void>
+	executeFiles(files: readonly string[], keepOrder?: boolean): Promise<void>
 }
 ```
 
@@ -211,10 +211,10 @@ import {
 } from '@pluxel/runtime-dynamic/hmr'
 ```
 
-插件作者入口：
+插件作者入口是 route-neutral 的 runtime bridge：
 
 ```ts
-import { ui, worker } from '@pluxel/runtime-dynamic/plugin'
+import { ui, worker } from '@pluxel/runtime/plugin'
 ```
 
 命名规则：
@@ -223,12 +223,12 @@ import { ui, worker } from '@pluxel/runtime-dynamic/plugin'
 - 内部实现可以保留 hot/reload 术语；public API 只在表达热替换能力时使用 `Hmr`。
 - `hmr` 表示 loader HMR mode；`reload` / `replace` 表示一次模块提交；`hot` 只适合作为日志或 summary 里的行为描述。
 
-只保留两个 public subpath 语义：
+只保留这些 public subpath 语义：
 
-- `/hmr`：host、Vite HMR server、config、diagnose、workspace、summary。
-- `/plugin`：插件作者源码里的 `ui(...)` / `worker(...)` bridge。
+- `@pluxel/runtime-dynamic/hmr`：host、Vite HMR server、config、diagnose、workspace、summary。
+- `@pluxel/runtime/plugin`：插件作者源码里的 `ui(...)` / `worker(...)` bridge；dynamic route 通过 runtime internal handles 接管 dev UI/worker，static route 没有 dev handles 时自然 fallback 到 packaged UI/worker。
 
-插件 UI 的正式构建不属于 runtime-dynamic public surface；如果需要 public helper，应由 build/toolchain 侧拥有，而不是重新在 loader HMR 里暴露 `plugin-build`。
+插件 UI 的正式构建不属于 runtime-dynamic public surface；public helper 由 `@pluxel/vite/plugin-ui` 拥有，而不是重新在 loader HMR 里暴露 `plugin-build`。
 
 ## 删除抽象清单
 
@@ -238,8 +238,8 @@ import { ui, worker } from '@pluxel/runtime-dynamic/plugin'
 | --- | --- |
 | `@pluxel/hmr` | 删除，使用 `@pluxel/runtime-dynamic/hmr` |
 | `@pluxel/hmr/host` | 删除，使用 `@pluxel/runtime-dynamic/hmr` |
-| `@pluxel/hmr/plugin` | 删除，使用 `@pluxel/runtime-dynamic/plugin` |
-| `@pluxel/hmr/plugin-build` | 删除；正式构建 helper 归 build/toolchain 侧，不挂到 runtime-dynamic HMR public surface |
+| `@pluxel/hmr/plugin` | 删除，使用 `@pluxel/runtime/plugin` |
+| `@pluxel/hmr/plugin-build` | 删除；正式构建 helper 归 `@pluxel/vite/plugin-ui`，不挂到 runtime-dynamic HMR public surface |
 | `@pluxel/hmr/diagnose` | 删除，诊断函数从 `@pluxel/runtime-dynamic/hmr` 导出 |
 | `@pluxel/hmr/snapshot` | 删除，workspace/diagnostics type 从 `@pluxel/runtime-dynamic/hmr` 导出 |
 | `attachHmrRuntime(...)` | 删除，使用 `installLoaderHmr(ctx, ...)` |
@@ -247,7 +247,7 @@ import { ui, worker } from '@pluxel/runtime-dynamic/plugin'
 | `HMRService` | 删除，使用 `LoaderHmrService` |
 | `HMRConfig` | 删除，使用 `LoaderHmrConfig` |
 | `HmrWorkspaceSnapshot` | 删除，使用 `LoaderHmrWorkspace` 或 `LoaderHmrDiagnostics` |
-| `HMR summary` | 删除，使用 `LoaderHmrSummary` |
+| `HMR summary` | 删除旧命名，使用 loader HMR operational/change report |
 | `HmrAdapter` / `RouteHmrAdapter` | 不新增，loader HMR mode 直接提交 loader batch |
 | `pluxel.hmr.jsonc` | 删除，使用 `pluxel.loader.hmr.jsonc` |
 
@@ -277,10 +277,10 @@ runtime common 应该暴露 route-neutral lifecycle/config ops：
 
 ## 插件 UI 开发链路
 
-作者侧 bridge 归到 loader HMR：
+作者侧 bridge 归到 runtime common，loader HMR 只安装 dev handles：
 
 ```ts
-import { ui, worker } from '@pluxel/runtime-dynamic/plugin'
+import { ui, worker } from '@pluxel/runtime/plugin'
 ```
 
 HMR mode 消费 `ui(...).bind(ctx)`，把源码入口编译成可运行 remote。build 期仍由 build plugin 把 authoring bridge 改写为 runtime packaged 注册语义：
@@ -299,7 +299,7 @@ Vite 是唯一 HMR runner 实现，放在 `@pluxel/runtime-dynamic/hmr` 内部�
 
 - `@pluxel/runtime-dynamic` 默认入口不 import Vite/chokidar/MF HMR build。
 - `@pluxel/runtime-dynamic/services` 只导出 loader/runtime route 服务。
-- `@pluxel/runtime-dynamic/hmr` 才可以依赖 Vite、watch、runner、plugin UI HMR compiler。
+- `@pluxel/runtime-dynamic/hmr` 才可以拥有 Vite runner、watch、moduleGraph 和 loader replacement；插件 UI remote build helper 归 `@pluxel/vite/plugin-ui` 复用。
 - 构建配置应保证 HMR-only 依赖不会进入普通 loader consumer 的 runtime graph。
 
 固定使用 Vite 后，下面这些概念都应该压缩掉：
@@ -311,7 +311,7 @@ Vite 是唯一 HMR runner 实现，放在 `@pluxel/runtime-dynamic/hmr` 内部�
 - 不需要通用 watch abstraction：watch 行为由 Vite/chokidar 集成承担，只在 summary 里暴露结果。
 - 不需要把 Vite config 包一层通用 HMR config：`LoaderHmrConfig` 可以直接包含 Vite/hmr-server 字段。
 - 不需要把 module graph 抽象成 route-neutral graph：moduleGraph 是 HMR-only diagnostic，不进入 runtime common。
-- 不需要单独 `/hmr/vite` subpath：Vite 是唯一实现，Vite helper 直接从 `/hmr` 导出或保持内部。
+- 不需要单独 `/hmr/vite` subpath：dynamic HMR 的 Vite runner/config 保持内部；插件 UI remote build 和 Paraglide 这类 route-neutral Vite helper 从 `@pluxel/vite` 导出。
 - 不需要单独 `/diagnose` / `/snapshot` subpath：诊断和 workspace read model 都是 loader HMR 的一部分，从 `/hmr` 导出。
 
 保留的边界只剩两个：
@@ -348,9 +348,9 @@ Vite source event
 
 ## Runtime-static 的关系
 
-runtime-static route 仍是 runtime common 的未来第二条 route，但它不需要继承 loader HMR mode。
+runtime-static route 是 runtime common 的第二条 route，但它不继承 loader HMR mode。
 
-如果未来 fixed catalog 也需要开发热替换，应先证明它不是 loader route 能覆盖的场景，再设计 `@pluxel/runtime-static/hmr`。不要为了对称性在 runtime common 里预留 HMR adapter。当前目标只承认一个事实：动态 loader 的 hot replacement 由 loader 自己拥有。
+`@pluxel/runtime-static/hmr` 已实现轻量 static HMR 基线：Vite SSR import 重新得到 static definition，按 plugin name diff fixed catalog，再提交 affected enabled plugins。它不使用 dynamic 的 loader replacement、module id registry、package cache 或 loader batch。不要为了对称性在 runtime common 里预留通用 HMR adapter；两条 route 共享的是 runtime/core 提交能力和插件 UI 子编译 helper，不共享 source ingestion。
 
 ## 删除边界
 

@@ -8,6 +8,7 @@ import {
 	type Logger,
 	normalizePath,
 	type Plugin,
+	mergeConfig,
 	searchForWorkspaceRoot,
 } from 'vite'
 import {
@@ -302,7 +303,7 @@ export interface HmrViteConfigOptions {
 	fsAllow: string[]
 	deps: ResolvedLoaderHmrDependencyConfig
 	clientEntries?: string[]
-	extraPlugins?: Plugin[]
+	vite?: InlineConfig
 	runnerPlugin: Plugin
 	httpPlugin: Plugin
 	port?: number
@@ -343,12 +344,16 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	// across different hosts/roots can cause "update deps" metadata mismatches in Vite 8 beta.
 	// If callers want a shared cache, they can still opt-in explicitly via config.
 	const cacheDir = opts.cacheDir
-	const dedupePackages = [...new Set([
-	...REQUIRED_DEDUPE_PACKAGES,
-	...DEFAULT_CLIENT_DEDUPE,
-	...opts.deps.bridgeModules.map(toBasePackage)
-])]
-	const clientOptimizeDepsInclude = [...new Set([...DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE, ...opts.deps.optimizeDepsInclude])]
+	const dedupePackages = [
+		...new Set([
+			...REQUIRED_DEDUPE_PACKAGES,
+			...DEFAULT_CLIENT_DEDUPE,
+			...opts.deps.bridgeModules.map(toBasePackage),
+		]),
+	]
+	const clientOptimizeDepsInclude = [
+		...new Set([...DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE, ...opts.deps.optimizeDepsInclude]),
+	]
 
 	type LoggerWithOnce = Logger & {
 		infoOnce: (msg: string, options?: unknown) => void
@@ -378,7 +383,16 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		baseLogger.warnOnce?.(msg, options) ?? baseLogger.warn(msg, options)
 	}
 
-	return {
+	const internalAliases = TABLER_ICONS_ESM_ENTRY
+		? [
+				{
+					find: /^@tabler\/icons-react$/,
+					replacement: TABLER_ICONS_ESM_ENTRY,
+				},
+			]
+		: []
+
+	const internalConfig: InlineConfig = {
 		root: opts.root,
 		cacheDir,
 		customLogger,
@@ -391,14 +405,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			},
 		},
 		resolve: {
-			alias: TABLER_ICONS_ESM_ENTRY
-				? [
-						{
-							find: /^@tabler\/icons-react$/,
-							replacement: TABLER_ICONS_ESM_ENTRY,
-						},
-					]
-				: [],
+			alias: internalAliases,
 			conditions: clientConditions,
 			dedupe: dedupePackages,
 			// Ensure linked workspaces resolve to real filesystem paths so the runner does not
@@ -411,6 +418,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		environments: {
 			ssr: {
 				resolve: {
+					alias: internalAliases,
 					conditions: ssrConditions,
 					dedupe: dedupePackages,
 					preserveSymlinks: false,
@@ -428,7 +436,6 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 				lintGuardPlugin({ cwd: opts.root }),
 				configSourcePlugin(),
 			]),
-			...(opts.extraPlugins ?? []),
 			opts.runnerPlugin,
 			opts.httpPlugin,
 		],
@@ -481,6 +488,8 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			} as unknown as InlineConfig['resolve'],
 		},
 	}
+
+	return mergeConfig(internalConfig, opts.vite ?? {})
 }
 
 function shouldSilenceDynamicImportWarning(msg: string): boolean {

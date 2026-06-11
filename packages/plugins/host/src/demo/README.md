@@ -76,7 +76,7 @@
 
 - `configs.use(schema)` 读到的是 schema 归一化后的值；默认值放进 Valibot，不要在插件里再做 `?? fallback`
 - `this.ctx.ext.signaldb.collection({ name }).doc(selector).form(...)` 默认同步当前选中的 doc；不想同步时再显式改用 `formUnsynced(...)` 或 `formFrom(...)`
-- `@pluxel/runtime-dynamic/plugin` 只用 named import：`import { ui, worker } from '@pluxel/runtime-dynamic/plugin'`
+- `@pluxel/runtime/plugin` 只用 named import：`import { ui, worker } from '@pluxel/runtime/plugin'`
 - 自定义 UI 插件主类保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`
 - 生命周期清理统一绑到 `this.ctx.effects`
 - 后端事件类型增强统一声明到 `@pluxel/runtime`

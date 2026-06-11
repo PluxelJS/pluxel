@@ -19,14 +19,19 @@ import {
 	sanitizeExtensionPluginName,
 } from '@pluxel/runtime/web/federation'
 import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactBasePath } from '@pluxel/runtime/web/paths'
-import { watch, type FSWatcher } from 'chokidar'
-import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
-import { buildPluginUiRemote, resolveExtensionFederationShared } from '../plugin-build'
+import {
+	buildPluginUiRemote,
+	resolveExtensionFederationShared,
+	resolvePluginUiBuildSignature,
+} from '@pluxel/vite/plugin-ui'
+import type { InlineConfig } from 'vite'
 import {
 	isParaglideGeneratedFile,
 	resolveParaglideIntegration,
 	type ResolvedParaglideIntegration,
-} from '../paraglide'
+} from '@pluxel/vite/paraglide'
+import { watch, type FSWatcher } from 'chokidar'
+import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 
 import { collectModuleGraphFiles } from '../compile/bundler/moduleGraph'
 import { LoaderHmrService } from '../engine/LoaderHmrService'
@@ -57,6 +62,8 @@ export type ExtensionCompilerServiceConfig = {
 	 * Defaults to `@pluxel/runtime/web`'s `extensionFederationSharedPackages`.
 	 */
 	sharedPackages?: string[]
+	/** Extra Vite config merged into plugin UI remote builds. */
+	vite?: InlineConfig
 }
 
 type PluginCompileEntry = {
@@ -110,7 +117,7 @@ const HASH_ALLOWED_EXTENSIONS = [
 ] as const
 
 // Bump when federation build semantics change (invalidates sourceHash cache key).
-const EXTENSION_COMPILER_VERSION = 11
+const EXTENSION_COMPILER_VERSION = 12
 
 export class ExtensionCompilerService {
 	private readonly enabled: boolean
@@ -120,6 +127,8 @@ export class ExtensionCompilerService {
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
 	private readonly compileConcurrency: number
+	private readonly sharedPackages?: readonly string[]
+	private readonly vite?: InlineConfig
 
 	private readonly entries = new Map<string, PluginCompileEntry>()
 	private pendingPlugins = new Set<string>()
@@ -140,6 +149,8 @@ export class ExtensionCompilerService {
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/extensions')
 		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
+		this.sharedPackages = config?.sharedPackages
+		this.vite = config?.vite
 		const logger = (this.ctx as unknown as { logger?: unknown }).logger
 		const fn =
 			logger && typeof logger === 'object'
@@ -271,6 +282,7 @@ export class ExtensionCompilerService {
 				entry.sourceFiles,
 				sharedPackages,
 				entry.pluginDir,
+				resolvePluginUiBuildSignature(this.vite),
 			)
 			const current = store.getCompiledModule(pluginName)
 			if (current?.sourceHash === sourceHash) {
@@ -414,6 +426,7 @@ export class ExtensionCompilerService {
 			publicPath,
 			sharedPackages,
 			minify: false,
+			vite: this.vite,
 		})
 
 		const manifestFile = join(outDir, EXTENSION_FEDERATION_MANIFEST_FILE)
@@ -459,7 +472,7 @@ export class ExtensionCompilerService {
 	}
 
 	private getSharedPackages(): readonly string[] {
-		const configured = (this.ctx.config as any)?.extensionCompiler?.sharedPackages
+		const configured = this.sharedPackages
 		if (Array.isArray(configured) && configured.length > 0) return configured
 		return extensionFederationSharedPackages
 	}
@@ -476,6 +489,7 @@ export class ExtensionCompilerService {
 		files: string[],
 		sharedPackages: readonly string[],
 		baseDir?: string,
+		uiBuildSignature?: string,
 	): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${EXTENSION_COMPILER_VERSION}`)
@@ -486,6 +500,7 @@ export class ExtensionCompilerService {
 		hash.update(`shareStrategy:${EXTENSION_FEDERATION_SHARE_STRATEGY}`)
 		hash.update(`remoteEntry:${EXTENSION_FEDERATION_REMOTE_ENTRY_FILE}`)
 		hash.update(`expose:${EXTENSION_FEDERATION_EXPOSE}`)
+		if (uiBuildSignature) hash.update(`ui:${uiBuildSignature}`)
 		const expanded = await this.expandHashTargets(files)
 		expanded.sort()
 

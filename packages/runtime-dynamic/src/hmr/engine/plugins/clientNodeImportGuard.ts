@@ -11,6 +11,15 @@ const BUILTIN_SET = (() => {
 	return set
 })()
 
+const escapeRegExp = (value: string) => value.replaceAll(/[\\^$.*+?()[\]{}|]/g, '\\$&')
+const BUILTIN_ID_ALTERNATION = [...BUILTIN_SET]
+	.sort((a, b) => b.length - a.length)
+	.map(escapeRegExp)
+	.join('|')
+const BUILTIN_RESOLVE_ID_FILTER = new RegExp(
+	`^(?:${BUILTIN_ID_ALTERNATION}|\\0?(?:__vite-browser-external:|vite-browser-external:)(?:${BUILTIN_ID_ALTERNATION}))$`,
+)
+
 function unwrapViteBrowserExternalId(source: string): string | null {
 	const s = source.startsWith('\0') ? source.slice(1) : source
 	const prefixes = ['__vite-browser-external:', 'vite-browser-external:']
@@ -45,18 +54,23 @@ export function clientNodeImportGuardPlugin(): Plugin {
 	return {
 		name: 'pluxel:client-node-import-guard',
 		apply: 'serve',
-		resolveId(source, importer) {
-			if (!isClientEnvironment(this)) return null
+		resolveId: {
+			filter: {
+				id: BUILTIN_RESOLVE_ID_FILTER,
+			},
+			handler(source, importer) {
+				if (!isClientEnvironment(this)) return null
 
-			// Keep this conservative; the goal is to catch clear Node-only modules.
-			const unwrapped = typeof source === 'string' ? unwrapViteBrowserExternalId(source) : null
-			if (typeof source === 'string' && BUILTIN_SET.has(source))
-				this.error(formatHint({ source, importer }))
-			if (typeof unwrapped === 'string' && BUILTIN_SET.has(unwrapped)) {
-				this.error(formatHint({ source: unwrapped, importer }))
-			}
+				// Keep this conservative; the goal is to catch clear Node-only modules.
+				const unwrapped = typeof source === 'string' ? unwrapViteBrowserExternalId(source) : null
+				if (typeof source === 'string' && BUILTIN_SET.has(source))
+					this.error(formatHint({ source, importer }))
+				if (typeof unwrapped === 'string' && BUILTIN_SET.has(unwrapped)) {
+					this.error(formatHint({ source: unwrapped, importer }))
+				}
 
-			return null
+				return null
+			},
 		},
 	}
 }

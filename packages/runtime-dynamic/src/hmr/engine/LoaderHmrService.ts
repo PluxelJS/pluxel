@@ -8,8 +8,8 @@ import {
 	createServer,
 	type DevEnvironment,
 	normalizePath,
-	type Plugin,
 	type ViteDevServer,
+	type InlineConfig,
 } from 'vite'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 import {
@@ -130,13 +130,8 @@ export interface LoaderHmrConfig {
 	 * @default 8
 	 */
 	commitAutoDisableMaxPasses?: number
-	/**
-	 * 额外的 Vite 插件（仅用于 HMR server）。
-	 *
-	 * 用途示例：
-	 * - 下游自己加宏：`import Macros from 'unplugin-macros/vite'; vitePlugins: [Macros()]`
-	 */
-	vitePlugins?: Plugin[]
+	/** Extra Vite config merged into the loader HMR Vite server. */
+	vite?: InlineConfig
 	/**
 	 * Preloaded plugin constructors that should be enabled without needing a scanned entry file.
 	 *
@@ -523,7 +518,7 @@ export class LoaderHmrService {
 			clientEntries,
 			port: this.config.port,
 			deps: this.deps,
-			extraPlugins: this.config.vitePlugins,
+			vite: this.config.vite,
 			runnerPlugin: this.plugin,
 			httpPlugin: createFetchHmrServerPlugin({
 				exclude: [

@@ -1,5 +1,4 @@
-import { getLogger } from '@logtape/logtape'
-import { pluxelCategories } from '@pluxel/core/logger'
+import { getDebugLogger } from '@pluxel/core/logger'
 
 export function matchesSpecifierPattern(specifier: string, pattern: string) {
 	if (!pattern) return false
@@ -11,7 +10,9 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
-const batchDebouncerLogger = getLogger([...pluxelCategories.hmr, 'BatchDebouncer'])
+const batchDebouncerLogger = getDebugLogger('pluxel:hmr:batch').with({
+	name: 'BatchDebouncer',
+})
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
 	batchDebouncerLogger.error('flush failed', { error })
 }

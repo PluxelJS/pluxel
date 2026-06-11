@@ -4,7 +4,7 @@
 
 import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui } from '@pluxel/runtime-dynamic/plugin'
+import { ui } from '@pluxel/runtime/plugin'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { SseChannel } from '@pluxel/runtime/services'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'

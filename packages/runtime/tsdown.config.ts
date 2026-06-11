@@ -37,6 +37,7 @@ export default defineConfig({
 		api: 'src/api/contributions.ts',
 		logger: 'src/logger.ts',
 		'plugin-catalog': 'src/plugin-catalog.ts',
+		plugin: 'src/plugin.ts',
 		protocol: 'src/protocol.ts',
 		services: 'src/services.ts',
 		shared: 'src/shared.ts',

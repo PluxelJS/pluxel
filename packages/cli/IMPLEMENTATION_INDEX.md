@@ -25,7 +25,7 @@
 ## Command Roles
 
 - `pluxel hmr`
-  把 `@pluxel/runtime-dynamic/hmr` host 作为标准开发入口暴露出来
+  把 `@pluxel/runtime/hmr` host 作为标准开发入口暴露出来
 - `pluxel build`
   把 `@pluxel/build` overlay 与相关构建 helper 串成标准构建命令
 - `pluxel new`
@@ -44,7 +44,7 @@
 
 1. `packages/cli/src/build.ts`
 2. `packages/build/src/cli.ts`
-3. `packages/build/src/rolldown/plugins/runtimeDynamicUiBridgePlugin.ts`
+3. `packages/build/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
 
 如果你在追“开发宿主是怎么被启动的”，优先读：
 
