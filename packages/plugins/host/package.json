@@ -3,28 +3,28 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dynamic": "pnpm exec tsx src/dynamic.ts",
+		"dynamic": "node src/dynamic.ts",
 		"static": "pnpm exec tsx src/static.ts",
 		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
 		"@pluxel/ops": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/runtime-static": "workspace:*"
 	},
 	"devDependencies": {
-		"@mantine/core": "^9.2.1",
-		"@mantine/hooks": "^9.2.1",
+		"@mantine/core": "^9.3.1",
+		"@mantine/hooks": "^9.3.1",
 		"@pluxel/cli": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"pathe": "^2.0.3",
-		"react": "^19.2.6",
-		"react-dom": "^19.2.6",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
 		"tinypool": "^2.1.0",
-		"tsx": "^4.22.3"
+		"tsx": "^4.22.4"
 	}
 }

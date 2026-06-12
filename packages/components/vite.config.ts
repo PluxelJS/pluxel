@@ -7,6 +7,7 @@ import {
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
 } from '@pluxel/rolldown/workspace/vite'
+import { gqlens } from '@gqlens/vite'
 import { createWorkbenchFrontendPlugins } from './vite/plugins'
 
 const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(
@@ -50,7 +51,23 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 
-		plugins: createWorkbenchFrontendPlugins(),
+		plugins: [
+			gqlens({
+				output: 'src/app/gqlens',
+				entry: '/src/app/gqlens/graphql-entry.ts',
+				endpoint: '/graphql',
+				include: [
+					/packages\/runtime\/src\/api\//,
+					/packages\/runtime\/src\/services\/http\/internalGraphqlSchema\.ts$/,
+					/packages\/runtime-dynamic\/src\/api\//,
+					/packages\/runtime-loader\/src\/api\//,
+					/packages\/components\/src\/app\/gqlens\/graphql-entry\.ts$/,
+				],
+				framework: 'react',
+				middleware: false,
+			}),
+			...createWorkbenchFrontendPlugins(),
+		],
 
 		css: {
 			preprocessorOptions: {
