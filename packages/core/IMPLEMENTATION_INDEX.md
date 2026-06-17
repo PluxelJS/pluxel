@@ -21,6 +21,8 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
+- `packages/core/RUNTIME_UPDATE_DESIGN.md`
+  - runtime declaration update / HMR 支持的核心重设设计
 
 ## Services
 

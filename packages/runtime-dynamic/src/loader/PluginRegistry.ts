@@ -113,7 +113,7 @@ export class PluginRegistry {
 	 * Loader 内部事务（仅保护 loader 的声明层状态）。
 	 *
 	 * 说明：
-	 * - core 的 DI 草稿回滚由 `ctx.registry.resetDraft()`/commit 内部负责；
+	 * - core 的 DI 草稿回滚由 core runtime update transaction 负责；
 	 * - 这里仅保证「模块声明层」与「name->ctor 映射」在 commit(含 build 校验)失败时可恢复，
 	 *   避免 loader 与 core 的容器状态出现漂移。
 	 *

@@ -175,6 +175,9 @@ export class LoaderService {
 		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
 
 		const tx = this.registry.beginTransaction()
+		const runtimeUpdate = shouldCommit
+			? this.ctx.registry.beginUpdate({ reason: 'startup' })
+			: null
 		const seen = new Set<PluginConstructor>()
 		const declared: Array<{ name: string; ctor: PluginConstructor; defaultEnable: boolean }> = []
 		const declaredForks: Array<{
@@ -316,7 +319,7 @@ export class LoaderService {
 				})
 
 				let pass = 0
-				let res = await this.ctx.registry.commit()
+				let res = await runtimeUpdate!.commit({ rollbackOnFailure: false })
 				while (
 					!res.ok &&
 					!strict &&
@@ -334,9 +337,10 @@ export class LoaderService {
 					})
 					if (disabled.size === 0) break
 
-					// Commit failure rolls core draft back internally; enable remaining plugins again and retry.
+					// Commit failure rolls core draft back internally; enable remaining plugins again and retry
+					// within the same runtime update transaction.
 					await enableTargetsIfEnabledInConfig()
-					res = await this.ctx.registry.commit()
+					res = await runtimeUpdate!.commit({ rollbackOnFailure: false })
 					pass++
 				}
 
@@ -346,7 +350,7 @@ export class LoaderService {
 					if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
 					if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
 					tx.rollback()
-					this.ctx.registry.resetDraft()
+					runtimeUpdate!.rollback()
 
 					if (strict) throw new Error('builtin preload commit failed', { cause: res.err })
 					this.ctx.logger.error('builtin preload commit failed', { error: res.err })
@@ -362,7 +366,8 @@ export class LoaderService {
 			if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
 			if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
 			tx.rollback()
-			if (touchedCoreDraft) this.ctx.registry.resetDraft()
+			if (runtimeUpdate) runtimeUpdate.rollback()
+			else if (touchedCoreDraft) this.ctx.registry.resetDraft()
 			throw error
 		}
 	}
@@ -379,7 +384,7 @@ export class LoaderService {
 
 	/**
 	 * HMR 批量注入事务（loader 层的声明状态回滚）。
-	 * - core 容器的草稿回滚由 `ctx.registry.resetDraft()`/commit 内部负责；
+	 * - core 容器的草稿回滚由调用方的 runtime update transaction 负责；
 	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
 	 */
 	beginBatch(): LoaderBatch {

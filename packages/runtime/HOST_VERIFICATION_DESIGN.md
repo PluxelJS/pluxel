@@ -16,7 +16,7 @@
 - OTP/TOTP 计算交给 `otpauth`，passkey 协议校验交给 `@simplewebauthn/server`
 - 长期安全材料只落在 `data/security/identity.json`
 - `ctx.vault` 只保留存储面，`ctx.root.vaultAdmin` 只保留 host 管理面
-- security 管理不进入 `ctx.ops`，也不进入 MCP tool surface
+- security 管理不进入 plugin control-plane，也不进入未来外部 tool surface
 
 ## 核心接口
 

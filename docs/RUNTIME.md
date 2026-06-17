@@ -14,8 +14,7 @@ runtime 拥有：
 - route-neutral plugin catalog 契约
 - 插件状态 read model
 - HTTP/control-plane routes
-- ops catalog 和 invocation boundary
-- MCP/RPC/SSE/runtime web APIs
+- RPC/SSE/runtime web APIs
 - plugin interaction services
 - plugin UI runtime protocols
 - browser host APIs、web config、workbench surfaces
@@ -63,14 +62,14 @@ runtime common host layer
   -> runtime-static route   known catalog/definition diff/static HMR
 ```
 
-两条路线不复制 core 生命周期，也不复制 runtime 的配置、ops、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
+两条路线不复制 core 生命周期，也不复制 runtime 的配置、web config、plugin UI protocols。共同逻辑留在 runtime common host layer；差异只放在 catalog resolution、startup policy 和 route-specific management 能力。
 
 ## Runtime 服务入口
 
 - `packages/runtime/src/index.ts`：runtime public entry。
 - `packages/runtime/src/runtime/register.ts`：runtime common services 注册副作用，不自动注册 loader route。
 - `packages/runtime/src/services.ts`：runtime common services public surface。
-- `packages/runtime/src/api/contributions.ts`：route package 对 GraphQL resolver、RPC handle、MCP tools 的最小注册点。
+- `packages/runtime/src/api/contributions.ts`：route package 对 GraphQL resolver、RPC handle 的最小注册点。
 - `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog 契约和共享 extra keys。
 - `packages/runtime/src/services/runtime/catalog/RuntimePluginCatalogService.ts`：runtime common 使用的插件 catalog 契约；没有 route 实现时会明确报错。
 - `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
@@ -84,17 +83,16 @@ runtime common host layer
 - `packages/runtime-dynamic/src/package/PackageService.ts`：package install/remove/cache flows。
 - `packages/runtime-dynamic/src/api/features/package-manager/**`：loader-specific package inventory/load issues GraphQL 查询。
 - `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`rpc.package()` 的 package install/remove/reload/retry 操作。
-- `packages/runtime-dynamic/src/api/mcp/workspace-tools.ts`：`workspace.resolveEntry` / `workspace.listEntries` MCP HMR tools。
 - `packages/runtime/src/services/ConfigService.ts`：runtime 配置持久化。
-- `packages/runtime/src/services/ops/OpsService.ts`：runtime op registry。
-- `packages/runtime/src/api/**`：route-neutral HTTP、ops、MCP、feature APIs；loader package 通过 contribution registry 挂载 loader-specific 控制面。
+- `packages/runtime/src/api/usecases/**`：route-neutral plugin status/config/dependency/fork usecases。
+- `packages/runtime/src/api/**`：route-neutral HTTP、RPC、feature APIs；loader package 通过 contribution registry 挂载 loader-specific 控制面。
 - `packages/runtime/src/web/**`：browser/runtime web clients 和协议。
 
 ## 控制面原则
 
-runtime 内部控制面统一建模为 operation。CLI、RPC、MCP、workbench 应该投影同一套 op registry，避免形成多套语义相近但行为不同的插件 handle。
+runtime 内部控制面使用明确的 usecase + RPC method。当前不提供 MCP transport；未来如果接入，也应复用这些 usecase 函数，而不是在内核里保留半套 carrier。
 
-安全管理面是例外：security/vault admin 走专用 security client，不并入 runtime canonical plugin/config ops。
+安全管理面继续走专用 security client，不并入 plugin control-plane RPC。
 
 ## 和 core/HMR 的关系
 

@@ -52,6 +52,7 @@ type StaticRuntimeDraftOperation =
 	  }
 
 type StaticRuntimeCatalogPlan = {
+	readonly mode: StaticRuntimePlanOptions['mode']
 	readonly catalog: StaticRuntimeCatalog
 	readonly enabled: ReadonlySet<string>
 	readonly blocked: ReadonlySet<string>
@@ -114,10 +115,16 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.disposed = true
 		try {
 			this.ctx.registry.resetDraft()
-			for (const plugin of this.registeredByName.values()) {
-				if (this.ctx.registry.isRegistered(plugin)) this.ctx.registry.unregister(plugin)
+			const update = this.ctx.registry.beginUpdate({ reason: 'config' })
+			try {
+				for (const plugin of this.registeredByName.values()) {
+					if (this.ctx.registry.isRegistered(plugin)) update.unregister(plugin)
+				}
+				const result = await update.commit({ rollbackOnFailure: false })
+				if (!result.ok) update.rollback()
+			} catch {
+				update.rollback()
 			}
-			await this.ctx.registry.commit().catch((): undefined => undefined)
 		} finally {
 			this.registeredByName.clear()
 			this.ctx.registry.resetDraft()
@@ -198,6 +205,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.applyDependencyBlocks(catalog, enabled, blocked, entries)
 
 		return {
+			mode: options.mode,
 			catalog,
 			entries,
 			enabled,
@@ -318,8 +326,17 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private async applyCatalogPlan(
 		plan: StaticRuntimeCatalogPlan,
 	): Promise<StaticRuntimeStartupReport> {
-		this.applyDraftOperations(plan.operations)
-		const commit = await this.commitPlan(plan)
+		const update = this.ctx.registry.beginUpdate({
+			reason: plan.mode === 'hmr' ? 'hmr' : 'startup',
+		})
+		let commit: CommitSummary | undefined
+		try {
+			this.applyDraftOperations(plan.operations, update)
+			commit = await this.commitPlan(plan, update)
+		} catch (error) {
+			update.rollback()
+			throw error
+		}
 		if (commit) this.confirmDraftOperations(plan.operations)
 		this.applyCommitResult(plan, commit)
 
@@ -330,22 +347,25 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 	}
 
-	private applyDraftOperations(operations: readonly StaticRuntimeDraftOperation[]): void {
+	private applyDraftOperations(
+		operations: readonly StaticRuntimeDraftOperation[],
+		update: ReturnType<Context['registry']['beginUpdate']>,
+	): void {
 		for (const operation of operations) {
 			if (operation.type === 'register') {
-				this.ctx.registry.register(operation.plugin)
+				update.register(operation.plugin)
 				continue
 			}
 			if (operation.type === 'replace') {
 				if (this.ctx.registry.isRegistered(operation.from)) {
-					this.ctx.registry.replace(operation.from, operation.to, { cascadeDependents: true })
+					update.replace(operation.from, operation.to, { cascadeDependents: true })
 				} else {
-					this.ctx.registry.register(operation.to)
+					update.register(operation.to)
 				}
 				continue
 			}
 			if (this.ctx.registry.isRegistered(operation.plugin)) {
-				this.ctx.registry.unregister(operation.plugin, { cascadeDependents: true })
+				update.unregister(operation.plugin, { cascadeDependents: true })
 			}
 		}
 	}
@@ -364,11 +384,12 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 
 	private async commitPlan(
 		plan: StaticRuntimeCatalogPlan,
+		update: ReturnType<Context['registry']['beginUpdate']>,
 	): Promise<CommitSummary | undefined> {
 		if (plan.operations.length === 0) {
-			const result = await this.ctx.registry.commit()
+			const result = await update.commit({ rollbackOnFailure: false })
 			if (!result.ok) {
-				this.ctx.registry.resetDraft()
+				update.rollback()
 				plan.entries.push({
 					name: this.definition.name,
 					status: 'catalog-drift',
@@ -379,10 +400,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			return this.ctx.registry.lastCommit
 		}
 
-		const result = await this.ctx.registry.commit()
+		const result = await update.commit({ rollbackOnFailure: false })
 		if (result.ok) return this.ctx.registry.lastCommit
 
-		this.ctx.registry.resetDraft()
+		update.rollback()
 		const message = errorMessage(result.err)
 		for (const operation of plan.operations) {
 			plan.entries.push({ name: operation.name, status: 'dependency-missing', message })

@@ -9,7 +9,7 @@
 ```text
 @pluxel/core
   <- @pluxel/runtime
-       runtime common services / config / ops / HTTP / web protocol / route-neutral API
+       runtime common services / config / HTTP / web protocol / route-neutral API
   <- @pluxel/runtime-dynamic
        loader / scan / package / package-manager / workspace tools
        HMR mode / Vite runner / watch / loader replacement
@@ -26,11 +26,10 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 - `PackageService` 和 install/remove/load/retry/state flows。
 - 原 `market` API，改名为 `package-manager`，负责 package inventory、load issues、install/remove/reload/retry。
 - `rpc.package()` 的实现 handle，改名为 `PackageManagerHandle`。
-- `workspace.resolveEntry` / `workspace.listEntries` MCP HMR tools。
 
 留在 `@pluxel/runtime` 的内容：
 
-- runtime service 注册、config persistence、ops、HTTP/RPC/MCP server、web protocol。
+- runtime service 注册、config persistence、HTTP/RPC server、web protocol。
 - route-neutral plugin status/config/dependency/fork usecases。
 - `RuntimePluginCatalogService` 契约和共享 extra keys。
 - `RuntimeRpcApi.package()` 协议入口，但实际 handle 由 route contribution 注册。
@@ -39,17 +38,15 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 
 `@pluxel/runtime/plugin-catalog` 是 runtime common 读取插件目录的 route-neutral 契约。loader route 通过 `LoaderPluginCatalogService` 覆盖这个契约，把 loader registry/runtime/control 映射给 runtime API。
 
-`@pluxel/runtime/api` 是很薄的 contribution registry，只提供三类注册点：
+`@pluxel/runtime/api` 是很薄的 contribution registry，只提供两类注册点：
 
 - GraphQL resolver contribution。
 - RPC handle contribution。
-- MCP tools contribution。
 
 它不是可无限扩展的 route plugin 系统；它只是让 route 包把自己的控制面挂进 runtime 已有 server。当前 loader route 注册：
 
 - package-manager GraphQL resolver。
 - `rpc.package()` handle。
-- workspace MCP tools。
 
 ## 为什么这样拆
 
@@ -58,8 +55,8 @@ loader route 的 scan/package/cache/module catalog 是动态插件生态的成�
 runtime common 仍然复用：
 
 - config persistence 和 profile。
-- plugin config/status/lifecycle ops。
-- HTTP/RPC/MCP transport。
+- plugin config/status/lifecycle usecases。
+- HTTP/RPC transport。
 - web protocol 和插件 UI protocols。
 - vault/fs/logging/verification 等宿主服务。
 
@@ -71,8 +68,6 @@ runtime common 仍然复用：
 
 - GraphQL 字段仍是 `packageInventory` / `packageLoadIssues`。
 - RPC 入口仍是 `rpc.package()`。
-- MCP tool 名仍是 `workspace.resolveEntry` / `workspace.listEntries`。
-
 实现归属改变：这些入口只有在 loader route 注册后可用。dynamic HMR host 会显式 import `@pluxel/runtime-dynamic/register`；static route 不加载 loader/scan/package 注册。
 
 ## 清理结论

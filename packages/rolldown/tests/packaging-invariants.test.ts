@@ -146,7 +146,7 @@ describe('packaging invariants', () => {
 
 		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
 			['@pluxel/core', new Set()],
-			['@pluxel/runtime', new Set(['@pluxel/core', '@pluxel/ops'])],
+			['@pluxel/runtime', new Set(['@pluxel/core'])],
 			['@pluxel/runtime-dynamic', new Set(['@pluxel/core', '@pluxel/runtime', '@pluxel/rolldown'])],
 			['@pluxel/runtime-static', new Set(['@pluxel/core', '@pluxel/runtime'])],
 			['@pluxel/cli', new Set(['@pluxel/runtime-dynamic', '@pluxel/runtime'])],

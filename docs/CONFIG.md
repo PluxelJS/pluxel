@@ -4,7 +4,7 @@
 
 ```text
 core      declaration / validation / defaults / normalized snapshots
-runtime   persistence / profile / patch-reset ops / web config
+runtime   persistence / profile / patch-reset usecases / web config
 ```
 
 这个分法让配置声明可移植，同时让 runtime 提供文件落盘、网页配置、profile 和控制面。
@@ -82,7 +82,7 @@ core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`con
 - `packages/core/src/plugins/composition/ConfigHost.ts`：config declaration field injection。
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`：schema/layout source extraction。
 - `packages/runtime/src/services/ConfigService.ts`：runtime persistence/profile/watch/debounce。
-- `packages/runtime/src/api/ops/plugin-config.ts`：config ops binding。
+- `packages/runtime/src/api/usecases/pluginConfig.ts`：config control-plane usecase。
 - `packages/runtime/src/api/features/plugins/**`：plugin config/status read model。
 - `packages/runtime/docs/config/contract.md`：runtime 与 Host/UI 的配置实现契约。
 
@@ -93,5 +93,5 @@ core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`con
 - static runtime definition 声明插件总量。
 - runtime 读取落盘配置并唯一接管 enabled/disabled 状态。
 - core 校验 schema/defaults。
-- runtime 投影 web config 和 ops。
+- runtime 投影 web config 和 plugin control-plane read models。
 - 启动时生成 strict startup report，明确哪个插件因配置或依赖没启动。

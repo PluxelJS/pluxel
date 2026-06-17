@@ -1,0 +1,18 @@
+{
+	"extends": "../../../tsconfig.json",
+	"compilerOptions": {
+		"allowImportingTsExtensions": true,
+		"composite": false,
+		"declaration": false,
+		"declarationMap": false,
+		"jsx": "react-jsx",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		"incremental": false,
+		"skipLibCheck": true,
+		"types": ["node", "vite/client"]
+	},
+	"include": ["src", "tooling", "web", "vite.config.ts"]
+}

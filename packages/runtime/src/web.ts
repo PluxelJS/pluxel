@@ -103,14 +103,8 @@ export {
 	useRuntimeTransportClient,
 } from './web/react'
 export {
-	dispatchRuntimeCommand,
 	invokeRpc,
-	invokeRuntimeOp,
-	listRuntimeOpCatalog,
-	listRuntimeOpsToolsets,
 	rpcErrorMessage,
-	resolveRuntimeOpsToolset,
-	updateRuntimeOpsToolsets,
 } from './web/rpc'
 export {
 	useSignalDbCollectionState,

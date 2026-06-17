@@ -4,8 +4,6 @@
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
-
-import type { OpDescriptor } from '@pluxel/ops'
 export type {
 	VerificationOtpProvisionResult,
 	VerificationOtpUserProvisionInput,
@@ -137,7 +135,7 @@ export type SchemaResultOk = {
 
 export type SchemaResultErr = {
 	ok: false
-	code: 'plugin_not_found' | 'schema_not_found'
+	code: string
 	message: string
 }
 
@@ -159,35 +157,6 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
-export type RuntimeOpCatalogOwnerKind = 'runtime' | 'plugin' | 'context'
-export type RuntimeOpCliBindingSummary = {
-	triggers: string[]
-	tail?: {
-		mode: 'line' | 'json' | 'parsebox'
-		key?: string
-		entry?: string
-		placeholder?: string
-		keys?: readonly string[]
-	}
-}
-export type RuntimeOpCatalogBindings = {
-	cli?: RuntimeOpCliBindingSummary
-	rpc?: { exposed: true }
-	mcp?: { name: string }
-}
-export type RuntimeOpCatalogEntry = {
-	id: string
-	owner: string
-	ownerKind: RuntimeOpCatalogOwnerKind
-	pluginId?: string
-	descriptor: OpDescriptor
-	bindings: RuntimeOpCatalogBindings
-	workbench: {
-		mutating: boolean
-		confirm: boolean
-	}
-}
-
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
 
 export type PluginDependencyKind = 'plugin' | 'base' | 'forkable'
@@ -206,39 +175,6 @@ export type PluginGroup = {
 	pluginIds: string[]
 }
 
-export type OpsToolsetInput = {
-	toolsetId: string
-	name: string
-	description?: string
-	opIds: string[]
-}
-
-export type OpsToolset = {
-	__typename?: 'OpsToolset'
-	toolsetId: string
-	name: string
-	description?: string
-	opIds: string[]
-}
-
-export type RuntimeOpToolsetEntry = {
-	id: string
-	title: string
-	description?: string
-	tags: string[]
-	owner: string
-	ownerKind: RuntimeOpCatalogOwnerKind
-	pluginId?: string
-	mutating: boolean
-	confirm: boolean
-}
-
-export type RuntimeOpToolsetManifest = {
-	toolset: OpsToolset
-	tools: RuntimeOpToolsetEntry[]
-	missingOpIds: string[]
-}
-
 export type PluginDependencyOption = {
 	name: string
 	isRunning: boolean
@@ -247,6 +183,7 @@ export type PluginDependencyOption = {
 
 export type PluginDependencyRef = {
 	name?: string
+	isRunning?: boolean
 }
 
 export type PluginDependencyState = {
@@ -403,13 +340,35 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>
-	opsCatalog: () => RuntimeOpCatalogEntry[]
-	opsToolsets: () => OpsToolset[]
-	resolveOpsToolset: (toolsetId: string) => RuntimeOpToolsetManifest | null
-	opsInvoke: (id: string, input?: unknown) => Promise<unknown>
-	opsDispatch: (command: string) => Promise<unknown>
-	updateOpsToolsets: (toolsets: OpsToolsetInput[]) => Promise<OpsToolset[]>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
+	pluginSchema: (name: string) => Promise<SchemaResult>
+	pluginConfig: (name: string) => Promise<ConfigResult>
+	patchPluginConfig: (name: string, patch: Record<string, unknown>) => Promise<ConfigResult>
+	patchPluginConfigField: (
+		name: string,
+		input: ConfigFieldMutation,
+	) => Promise<ConfigResult>
+	pluginDependencies: (name: string) => Promise<PluginDependencyRef[]>
+	inspectPluginDependencies: (name: string) => Promise<PluginDependencyState[]>
+	setPluginDependencyTarget: (input: {
+		name: string
+		index: number
+		targetName: string | null
+	}) => Promise<PluginDependencyMutationResult>
+	inspectPluginBaseProvider: (name: string) => Promise<BaseProviderInfo | null>
+	selectPluginBaseProvider: (input: {
+		name: string
+		baseToken: string
+		providerName: string | null
+	}) => Promise<PluginDependencyMutationResult>
+	ensurePluginFork: (input: {
+		baseName: string
+		forkId: string
+		enable?: boolean
+	}) => Promise<EnsureForkResult>
+	applyPluginStatusActions: (
+		actions: PluginStatusBatchAction[],
+	) => Promise<PluginStatusBatchResult>
 }
 
 export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>

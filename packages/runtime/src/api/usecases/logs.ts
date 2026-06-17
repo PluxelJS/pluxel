@@ -187,7 +187,7 @@ export function logsLatest(input: LogsLatestInput = {}): LogsLatestOutput {
 /**
  * Wait for logs matching filter/cursor.
  *
- * This stays MCP-friendly: clients can call it in a loop to simulate SSE tailing.
+ * Transport-neutral polling helper: clients can call it in a loop to simulate SSE tailing.
  */
 export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatestOutput> {
 	const first = logsLatest(input)

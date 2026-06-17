@@ -16,7 +16,7 @@ core 拥有：
 
 core 不拥有：
 
-- HTTP、RPC、MCP、SSE
+- HTTP、RPC、SSE
 - workspace scan、package install、runtime dynamic
 - web workbench、浏览器协议
 - Vite、HMR、构建期源码改写

@@ -23,7 +23,8 @@
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
 		"generate:gqlens": "node scripts/generate-gqlens.ts",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
-		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
+		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static",
+		"plugin-demo:static-commercial": "pnpm --filter @pluxel/plugins-static-commercial-demo dev"
 	},
 	"dependencies": {
 		"@mantine/core": "^9.3.1",

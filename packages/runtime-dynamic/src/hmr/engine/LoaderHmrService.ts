@@ -319,7 +319,7 @@ export class LoaderHmrService {
 	])
 
 	/**
-	 * Stable, minimal surface for external callers (UI/RPC/MCP/tooling).
+	 * Stable, minimal surface for external callers (UI/RPC/tooling).
 	 *
 	 * This intentionally avoids exposing the Vite server directly.
 	 */

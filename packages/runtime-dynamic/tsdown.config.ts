@@ -33,6 +33,7 @@ export default defineConfig({
 		register: 'src/register.ts',
 		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
+		plugin: 'src/plugin.ts',
 	},
 	copy: ['src/hmr/compile/bundler/bundle-worker.mjs'],
 	dts: {

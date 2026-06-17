@@ -6,7 +6,6 @@ import {
 	PluginFeatureDepsProvider,
 	PluginHttpRoutesDemo,
 	PluginHttpWorkerDemo,
-	PluginOpsDemo,
 	PluginVaultDemo,
 } from './demo'
 
@@ -17,7 +16,6 @@ export const staticDemoPlugins = [
 	PluginFeatureDepsConsumer,
 	PluginHttpRoutesDemo,
 	PluginHttpWorkerDemo,
-	PluginOpsDemo,
 	PluginVaultDemo,
 ] as const
 
@@ -28,7 +26,6 @@ export const staticDemoEnabledPlugins = [
 	'PluginFeatureDepsConsumer',
 	'PluginHttpRoutesDemo',
 	'PluginHttpWorkerDemo',
-	'PluginOpsDemo',
 	'PluginVaultDemo',
 ] as const
 

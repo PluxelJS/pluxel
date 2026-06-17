@@ -1,25 +1,32 @@
 // rpc/RuntimeRpcApi.ts - 主 RPC API
 import type { Context } from '@pluxel/core'
-import { errors } from '@pluxel/ops'
 import { RpcTarget } from 'capnweb'
 import type { ExtensionUiRpcMap } from '../../../services'
-import {
-	dispatchRuntimeCommand,
-	ensureRuntimeOpsRegistered,
-	getRuntimeOpsCatalog,
-	invokeRuntimeOp,
-} from '../../ops'
 import { writeGroups } from '../../features/pluginGroups/service'
 import { createRuntimeRpcHandle } from '../../contributions'
+import {
+	pluginConfigGet,
+	pluginConfigPatch,
+	pluginConfigPatchField,
+	pluginSchema,
+} from '../../usecases/pluginConfig'
+import {
+	inspectPluginBaseProvider,
+	inspectPluginDependencies,
+	listPluginDependencies,
+	pluginBaseProviderSet,
+	pluginDependencySetTarget,
+} from '../../usecases/pluginDependencies'
+import { ensureFork } from '../../usecases/pluginForks'
+import { applyStatusActions } from '../../usecases/pluginStatus'
 import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import type {
-	OpsToolset,
-	OpsToolsetInput,
+	ConfigFieldMutation,
 	PackageHandleApi,
 	PluginGroup,
 	PluginGroupInput,
-	RuntimeOpToolsetManifest,
+	PluginStatusBatchAction,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -29,7 +36,6 @@ export class RuntimeRpcApi extends RpcTarget {
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
-		ensureRuntimeOpsRegistered(ctx)
 		this.extView = ctx.ext.rpc.createExtensionsView(ctx)
 	}
 
@@ -74,40 +80,66 @@ export class RuntimeRpcApi extends RpcTarget {
 		}
 	}
 
-	opsCatalog() {
-		return getRuntimeOpsCatalog(this.ctx)
-	}
-
-	opsToolsets() {
-		return this.ctx.ops.toolsets.list()
-	}
-
-	resolveOpsToolset(toolsetId: string): RuntimeOpToolsetManifest | null {
-		return this.ctx.ops.toolsets.resolve(toolsetId)
-	}
-
-	async opsInvoke(id: string, input?: unknown): Promise<unknown> {
-		const entry = this.ctx.ops.listCatalog().find((item) => item.id === id)
-		if (entry && !entry.bindings.rpc) {
-			throw new errors.OpError('E_FORBIDDEN', 'Operation not exposed over RPC', {
-				details: { node: id, reason: 'rpc_not_exposed' },
-				message: `Operation "${id}" is not exposed over RPC`,
-			})
-		}
-		return await invokeRuntimeOp(this.ctx, id, input, 'rpc')
-	}
-
-	async opsDispatch(command: string): Promise<unknown> {
-		return await dispatchRuntimeCommand(this.ctx, command, 'rpc')
-	}
-
-	async updateOpsToolsets(toolsets: OpsToolsetInput[]): Promise<OpsToolset[]> {
-		const safe = Array.isArray(toolsets) ? toolsets : []
-		return this.ctx.ops.toolsets.write(safe)
-	}
-
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
 		const safe = Array.isArray(groups) ? groups : []
 		return writeGroups(this.ctx, safe)
+	}
+
+	async pluginSchema(name: string) {
+		return await pluginSchema(this.ctx, name)
+	}
+
+	async pluginConfig(name: string) {
+		return await pluginConfigGet(this.ctx, name)
+	}
+
+	async patchPluginConfig(name: string, patch: Record<string, unknown>) {
+		return await pluginConfigPatch(this.ctx, name, patch)
+	}
+
+	async patchPluginConfigField(name: string, input: ConfigFieldMutation) {
+		return await pluginConfigPatchField(this.ctx, name, input)
+	}
+
+	pluginDependencies(name: string) {
+		return listPluginDependencies(this.ctx, name)
+	}
+
+	inspectPluginDependencies(name: string) {
+		return inspectPluginDependencies(this.ctx, name)
+	}
+
+	async setPluginDependencyTarget(input: {
+		name: string
+		index: number
+		targetName: string | null
+	}) {
+		return await pluginDependencySetTarget(this.ctx, input.name, input.index, input.targetName)
+	}
+
+	inspectPluginBaseProvider(name: string) {
+		return inspectPluginBaseProvider(this.ctx, name)
+	}
+
+	async selectPluginBaseProvider(input: {
+		name: string
+		baseToken: string
+		providerName: string | null
+	}) {
+		return await pluginBaseProviderSet(
+			this.ctx,
+			input.name,
+			input.baseToken,
+			input.providerName,
+		)
+	}
+
+	async ensurePluginFork(input: { baseName: string; forkId: string; enable?: boolean }) {
+		return await ensureFork(this.ctx, input.baseName, input.forkId, { enable: input.enable })
+	}
+
+	async applyPluginStatusActions(actions: PluginStatusBatchAction[]) {
+		const safe = Array.isArray(actions) ? actions : []
+		return await applyStatusActions(this.ctx, safe)
 	}
 }

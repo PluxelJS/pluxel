@@ -6,7 +6,7 @@
 
 > documented schema function + validation + registry
 
-The core package should not become a carrier framework or host policy layer. CLI, RPC, MCP, catalog, toolsets, owner, lifetime, confirmation, audit, grouping, and permissions live outside the kernel.
+The core package should not become a transport framework or host policy layer. Transport bindings, cataloging, owner, lifetime, confirmation, audit, grouping, and permissions live outside the kernel.
 
 Reason: every surface eventually crosses the ops execution path, so the shared core should stay small, predictable, and cheap.
 
@@ -20,7 +20,7 @@ const status = defineOp({
 
 	doc: {
 		title: 'Get plugin status',
-		description: 'Read one plugin runtime status.',
+		description: 'Read one plugin status.',
 	},
 
 	input: obj({
@@ -51,7 +51,7 @@ Optional:
 - `validate`
 - `validateOutput`
 
-Do not add kernel-level `cli`, `tool`, `rpc`, `exposure`, `policy`, `confirm`, `audit`, `owner`, `lifetime`, `group`, or `toolset`.
+Do not add kernel-level `transport`, `exposure`, `policy`, `confirm`, `audit`, `owner`, `lifetime`, or `group`.
 
 Naming rule:
 
@@ -91,7 +91,7 @@ This separates two concerns:
 - `invoke(candidate, ctx)` is the untrusted execution boundary.
 - `invokeRaw(candidate, ctx)` is the throwing variant for adapters that prefer exceptions.
 
-`Ctx` is generic and call-scoped. The kernel may define a small base context, but runtime can extend it:
+`Ctx` is generic and call-scoped. The kernel may define a small base context, and hosts can extend it:
 
 ```ts
 type OpContext = {
@@ -105,7 +105,7 @@ type OpContext = {
 Guidelines:
 
 - Put cancellation, deadlines, deterministic time, and request metadata in base `ctx`.
-- Runtime may extend `ctx` with handles such as `runtime` and `source`.
+- Hosts may extend `ctx` with request-scoped handles.
 - Do not put owner, lifetime, CLI bindings, or host UI policy in core `ctx`.
 - `Registry<Ctx>` and adapters should preserve the same `Ctx` type so every surface reaches the same typed execution boundary.
 
@@ -217,7 +217,7 @@ Not kernel responsibilities:
 - carrier indexes;
 - catalog filtering;
 - lifecycle cleanup;
-- toolset persistence.
+- group persistence.
 
 ## Invocation And Errors
 
@@ -248,4 +248,4 @@ Rules:
 
 ## Non-Goals
 
-The V2 kernel does not provide CLI DSL, RPC exposure flags, MCP/tool metadata, UI schema, confirm/audit/permission policy, owner/lifetime, catalog grouping, toolset persistence, or plugin dependency contracts.
+The V2 kernel does not provide transport DSLs, exposure flags, UI schema, confirm/audit/permission policy, owner/lifetime, catalog grouping, group persistence, or plugin dependency contracts.

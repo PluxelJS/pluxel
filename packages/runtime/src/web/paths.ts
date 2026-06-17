@@ -9,7 +9,6 @@ export const HMR_TRANSPORT_PATHS = {
 	rpc: '/rpc',
 	graphql: '/graphql',
 	sse: '/sse',
-	mcp: '/mcp',
 	signaldb: '/signaldb',
 } as const
 

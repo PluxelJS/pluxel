@@ -9,7 +9,6 @@
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
-		"@pluxel/ops": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*"

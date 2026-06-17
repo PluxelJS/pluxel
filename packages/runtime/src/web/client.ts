@@ -39,7 +39,6 @@ export interface RuntimeMeta {
 		rpc: string
 		graphql: string
 		sse: string
-		mcp: string
 		signaldb: string
 	}
 }
@@ -133,7 +132,6 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	mcp: string
 	signaldbCollection(pluginName: string, collection: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
 	extensionEvents(namespaces?: string[]): string
@@ -244,7 +242,6 @@ export function createRuntimeTransportLinks(
 		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, HMR_TRANSPORT_PATHS.rpc)),
 		graphql: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.sse)),
-		mcp: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.mcp)),
 		signaldbCollection: (pluginName: string, collection: string) =>
 			resolveClientUrl(joinPath(apiBase, hmrSignalDbCollectionPath(pluginName, collection))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {

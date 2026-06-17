@@ -30,9 +30,6 @@ export function getWorkbenchSectionTitle(pathname: string) {
 	if (pathname.startsWith('/logs')) {
 		return { eyebrow: 'Logs', title: '日志', subtitle: '运行时流与诊断' }
 	}
-	if (pathname.startsWith('/ops')) {
-		return { eyebrow: 'Ops', title: 'Ops Explorer', subtitle: '宿主控制面与动态操作分组' }
-	}
 	return { eyebrow: 'Workbench', title: '控制台', subtitle: pathname }
 }
 
@@ -42,7 +39,6 @@ export function getWorkbenchSectionId(pathname: string): WorkbenchSectionId {
 	if (pathname.startsWith('/security')) return 'other'
 	if (pathname.startsWith('/packages')) return 'packages'
 	if (pathname.startsWith('/logs')) return 'logs'
-	if (pathname.startsWith('/ops')) return 'ops'
 	return 'other'
 }
 

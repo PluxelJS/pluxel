@@ -1,6 +1,6 @@
 # @pluxel/runtime
 
-`@pluxel/runtime` 是共同宿主层：负责 runtime services、配置持久化、loader/package/scan、HTTP/control-plane、ops、web 协议和插件 UI runtime protocols。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
+`@pluxel/runtime` 是共同宿主层：负责 runtime services、配置持久化、loader/package/scan、HTTP/control-plane、web 协议和插件 UI runtime protocols。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
 
 ## 运行时模型
 
@@ -29,9 +29,6 @@ runtime 只消费两类前端输入：
 
 ## Runtime Services
 
-- `this.ctx.ops`
-  runtime control-plane 的 live registry wrapper；插件、RPC、MCP、CLI 都复用同一套 operation 执行边界
-  `this.ctx.ops.toolsets.*` 承载 host-owned toolset 组织层；MCP tool 只是 runtime read model 的投影，不是另一套内核
 - `this.ctx.ext.rpc.expose(...)`
   暴露自定义 UI 的 RPC
 - `this.ctx.ext.sse.expose(...)`
@@ -74,49 +71,11 @@ runtime 只消费两类前端输入：
 
 ### runtime control-plane 原则
 
-- runtime 内部控制面统一建模为 operation，而不是额外再造 `PluginHandle` / 专用 RPC façade
-- `defineOp(...)` 只产出 documented schema function；descriptor 只包含 `id`、`doc.title`、`doc.description`、`schemas.input`、`schemas.output`
-- RPC / CLI / MCP / workbench 绑定属于 runtime/adapter metadata，不写回 core descriptor
-- 对外唯一 RPC 面是：
-  - `opsCatalog()`
-  - `opsInvoke(id, input?)`
-  - `opsDispatch(command)`
-- `opsCatalog()` 返回 runtime read model，不透出内部 registry object
-- CLI、MCP、RPC 命中的都是同一个 op registry；语义、schema、约束和返回值保持一致
-- 即使是 runtime 内部调用，默认也不绕过 op 输入/输出校验；性能优化应在现有 op 模型内做，而不是私下分叉 trusted path
-- RPC 可见性来自 runtime metadata；MCP/CLI/workbench 可见性来自对应 adapter binding
-- MCP tool name 统一走 lower-case dotted / kebab 风格；不要把 camelCase 暴露给 carrier
-- MCP tool 帮助信息统一来自 op `doc` 和 input/output schema；不要在 carrier 里再拼第二份文案
-- runtime canonical op namespace 视为 host contract，保留给 runtime 自己使用；插件自定义 op 应使用插件自有前缀，而不是复用 `plugin.*` / `plugins.*` / `runtime.*`
-- MCP tool surface 也是 `ctx.ops` 的实时投影，不应退化成“启动时快照”
-- `opsCatalog()` / `opsToolsets()` 是 RPC read model，不反向注册成 runtime op
-
-当前 runtime core 已收敛到这一组 canonical runtime op ids：
-
-- `plugins.list`
-- `plugin.status`
-- `plugins.status.apply`
-- `plugin.start` / `plugin.stop` / `plugin.restart` / `plugin.enable` / `plugin.disable`
-- `plugin.wait-for-stage`
-- `plugin.dependencies.list`
-- `plugin.dependencies.inspect`
-- `plugin.dependencies.set-target`
-- `plugin.base-provider.inspect`
-- `plugin.base-provider.select`
-- `plugin.fork.ensure`
-- `plugin.schema`
-- `plugin.config.get`
-- `plugins.config.get`
-- `plugin.config.validate`
-- `plugins.config.validate`
-- `plugin.config.patch`
-- `plugins.config.set`
-- `plugin.config.patch-field`
-- `plugins.config.patch-field`
-- `plugin.config.reset`
-- `plugins.config.reset`
-
-security 管理不进入 runtime ops。
+- runtime control-plane 使用明确的 usecase + RPC method，不再通过通用 operation registry 做二次分发。
+- 插件状态、config、dependency、fork 等宿主操作统一落在 `src/api/usecases/*`，RPC 只暴露具体方法。
+- 当前不提供 MCP transport；未来若接入，应复用 `src/api/usecases/*`，不要在 runtime 内核里预留半套 carrier。
+- 性能上少一次 registry 查找、carrier 可见性判断和 op envelope unwrap；代价是每个公开能力都要有清晰的 RPC/usecase 契约。
+- 插件自定义 UI 的浏览器通信继续使用 `ctx.ext.rpc/sse/signaldb`，不共享宿主 control-plane API。
 
 浏览器宿主管理面统一走 `/security`，前端只通过专用 security client 调用：
 

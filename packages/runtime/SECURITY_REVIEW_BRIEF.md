@@ -38,8 +38,8 @@
 - vault 不自建第二套认证体系
 - namespace 只是存储分区，不表达权限
 - transport 只承载和展示结果，不反向定义安全语义
-- security 管理不进入 `ctx.ops`
-- security 管理不进入 MCP tool surface
+- security 管理不进入 plugin control-plane
+- security 管理不进入未来外部 tool surface
 - 插件只使用 `ctx.vault` 存储面，不越过 host 边界管理 security
 
 ## 当前接口语义
@@ -125,7 +125,7 @@
 - 不要把 verification session 带入 vault
 - 不要把 vault 可用性绑定到 verification allow
 - 不要让 `/security` 之外的 carrier 持有自己的安全真相
-- 不要让 plugin API、ops、MCP 暴露 security 管理动作
+- 不要让 plugin API 或未来外部 tool surface 暴露 security 管理动作
 
 ## 期望输出
 

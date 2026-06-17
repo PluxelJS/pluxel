@@ -60,7 +60,6 @@ export default defineConfig(({ mode }) => {
 					/packages\/runtime\/src\/api\//,
 					/packages\/runtime\/src\/services\/http\/internalGraphqlSchema\.ts$/,
 					/packages\/runtime-dynamic\/src\/api\//,
-					/packages\/runtime-loader\/src\/api\//,
 					/packages\/components\/src\/app\/gqlens\/graphql-entry\.ts$/,
 				],
 				framework: 'react',

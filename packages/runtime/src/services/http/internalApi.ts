@@ -21,7 +21,6 @@ import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
-import { getHmrMcpHttpHandler } from '../../api/mcp'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
 import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
 import { getRuntimePluginCatalog } from '../runtime/catalog/RuntimePluginCatalogService'
@@ -140,7 +139,6 @@ function createInternalTransportPlugins(
 	ctx: PluginContext,
 	options: InternalApiOptions = {},
 ): BaseElysiaApp[] {
-	const mcpHandler = getHmrMcpHttpHandler(ctx)
 	const web = options.web !== false
 	const rpc = options.rpc !== false
 	const sse = options.sse !== false
@@ -183,15 +181,6 @@ function createInternalTransportPlugins(
 				),
 			),
 			ctx.internalGraphql.plugin(),
-			createInternalPlugin(ctx, 'mcp', (app) =>
-				app
-					.all(HMR_TRANSPORT_PATHS.mcp, ({ request }: any) => mcpHandler(request), {
-						parse: 'none',
-					})
-					.all(`${HMR_TRANSPORT_PATHS.mcp}/*`, ({ request }: any) => mcpHandler(request), {
-						parse: 'none',
-					}),
-			),
 		)
 	}
 	if (web || rpc || sse) {

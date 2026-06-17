@@ -178,13 +178,13 @@ host.cfg(Cfg).set({ foo: 'hello' })
 await host.start(Cfg)
 ```
 
-### Runtime ops / RPC / MCP tests
+### Runtime RPC tests
 
 Use the test package for runtime surfaces:
 
 - `withContext(...)` for service-level tests that only need a `Context`.
-- `withRuntimeHost(...)` / `createRuntimeHost()` for plugin lifecycle that needs loader, config, ops, RPC, or MCP behavior.
-- Do not hand-roll `loader`, `registry`, `configService`, or `ops` stubs unless the test is explicitly for an error edge that cannot be reached through public host APIs.
+- `withRuntimeHost(...)` / `createRuntimeHost()` for plugin lifecycle that needs loader, config, or RPC behavior.
+- Do not hand-roll `loader`, `registry`, or `configService` stubs unless the test is explicitly for an error edge that cannot be reached through public host APIs.
 
 If a test needs declared-but-stopped plugins, preload them through the real loader:
 

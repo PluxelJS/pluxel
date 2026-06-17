@@ -10,8 +10,6 @@ This directory is the single home for workbench pane layout infrastructure.
   active-tab scoped split state hooks.
 - `plugin.ts`
   plugin workbench layout specs and state resolvers.
-- `ops.ts`
-  ops workbench layout specs and state resolvers.
 - `index.ts`
   public barrel for workbench split consumers.
 

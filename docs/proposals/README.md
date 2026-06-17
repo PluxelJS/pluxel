@@ -61,19 +61,6 @@
 - `packages/core-di/DESIGN.md`
 - `packages/core-di/benchmarks/core-di-vs-diod.md`
 
-## Ops V2
-
-状态：提案笔记。
-
-方向：
-
-- lightweight op descriptor。
-- doc/schema 必填。
-- runtime/CLI/MCP/workbench adapters 放在 core op descriptor 外。
-- runtime read models 和 registry internals 分离。
-
-如果未来存在 `packages/ops/docs/core-v2.md` 或 adapter V2 笔记，应继续视为提案，不自动升级为当前全局架构。
-
 ## Promotion Rule
 
 提案实现后：

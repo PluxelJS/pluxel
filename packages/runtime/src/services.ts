@@ -101,31 +101,11 @@ export {
 } from './services/routing/pluginGatedRoutes'
 
 export { doc } from './services/plugin-interaction/doc'
-export {
-	OpsService,
-	type RuntimeOpCatalogEntry,
-	type RuntimeOpContext,
-	type RuntimeOpContextInput,
-	type RuntimeOperation,
-	type RuntimeOpSource,
-	type RuntimeOpCatalogOptions,
-	type RuntimeOpsRegisterOptions,
-	type RuntimeMcpToolDef,
-} from './services/ops/OpsService'
 export type {
 	SignalDbCollectionHandle,
 	SignalDbDocumentHandle,
 	SignalDbCollectionOptions,
 } from './services/plugin-interaction/SignalDbService'
-export {
-	OpsToolsetInputSchema,
-	OpsToolsetSchema,
-	type OpsToolset,
-	type OpsToolsetInput,
-	type OpsToolsetInputValue,
-	type OpsToolsetOutput,
-	type RuntimeOpToolsetManifest,
-} from './services/ops/toolsets'
 export type { ExtensionUiRpcMap } from './web/protocol'
 export type { SseChannel } from './services/plugin-interaction/SseService'
 

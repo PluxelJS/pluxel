@@ -48,6 +48,52 @@ type AnyServiceClass = ServiceClass<new (ctx: PluxelContext, cfg?: unknown) => u
 type CascadeOptions = { cascadeDependents?: boolean }
 type ReplacePluginOptions = CascadeOptions & { provideBase?: boolean }
 type PluginReplacement = { from: PluginIdentifier; to: PluginIdentifier }
+export type RuntimeUpdateReason =
+	| 'startup'
+	| 'hmr'
+	| 'config'
+	| 'package-refresh'
+	| 'test'
+
+export type RuntimeUpdateOptions = {
+	reason?: RuntimeUpdateReason
+}
+
+export type RuntimeUpdateCommitOptions = {
+	/**
+	 * Use strict commit semantics for this update.
+	 *
+	 * Strict commit returns an error result if any plugin fails to start.
+	 */
+	strict?: boolean
+	/**
+	 * Roll back core draft/pending restart state when commit returns an error.
+	 *
+	 * Defaults to true. HMR retry loops may set this to false, re-sync declarations,
+	 * and call commit again before eventually committing or rolling back the transaction.
+	 */
+	rollbackOnFailure?: boolean
+}
+
+export type RuntimeUpdateTransaction = {
+	readonly reason: RuntimeUpdateReason
+	register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void
+	unregister(id: PluginIdentifier, opts?: CascadeOptions): void
+	replace(
+		target: PluginIdentifier,
+		next: PluginConstructor,
+		opts?: ReplacePluginOptions,
+	): void
+	restart(id: PluginIdentifier, opts?: CascadeOptions): void
+	commit(options?: RuntimeUpdateCommitOptions): Promise<Awaited<ReturnType<PluginService['commit']>>>
+	rollback(): void
+}
+
+type RuntimeUpdateCheckpoint = {
+	pendingStart: Set<PluginIdentifier>
+	pendingRestart: Set<PluginIdentifier>
+}
+
 type CommitExecutionPlan = {
 	added: Set<PluginIdentifier>
 	replaced: PluginReplacement[]
@@ -66,6 +112,77 @@ const EMPTY_DELTA = {
 	affected: [],
 	retargetedTokens: [],
 } as const
+
+class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
+	public readonly reason: RuntimeUpdateReason
+	private closed = false
+
+	public constructor(
+		private readonly registry: PluginService,
+		options: RuntimeUpdateOptions = {},
+	) {
+		this.reason = options.reason ?? 'startup'
+	}
+
+	public register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void {
+		this.assertOpen()
+		this.registry.register(Plugin, opts)
+	}
+
+	public unregister(id: PluginIdentifier, opts?: CascadeOptions): void {
+		this.assertOpen()
+		this.registry.unregister(id, opts)
+	}
+
+	public replace(
+		target: PluginIdentifier,
+		next: PluginConstructor,
+		opts?: ReplacePluginOptions,
+	): void {
+		this.assertOpen()
+		this.registry.replace(target, next, opts)
+	}
+
+	public restart(id: PluginIdentifier, opts?: CascadeOptions): void {
+		this.assertOpen()
+		this.registry.restart(id, opts)
+	}
+
+	public async commit(options: RuntimeUpdateCommitOptions = {}) {
+		this.assertOpen()
+		const rollbackOnFailure = options.rollbackOnFailure ?? true
+		const result = await this.registry.commit()
+
+		if (!result.ok) {
+			if (rollbackOnFailure) {
+				this.rollback()
+			}
+			return result
+		}
+
+		this.closed = true
+		this.registry.clearRuntimeUpdateCheckpoint(this)
+
+		const failed = options.strict ? (this.registry.lastCommit?.failed ?? []) : []
+		if (failed.length > 0) {
+			return createErr(
+				new Error(`Some plugins failed to start: ${failed.map(String).join(', ')}`),
+			)
+		}
+
+		return result
+	}
+
+	public rollback(): void {
+		if (this.closed) return
+		this.closed = true
+		this.registry.rollbackRuntimeUpdate(this)
+	}
+
+	private assertOpen(): void {
+		if (this.closed) throw new Error('Runtime update transaction is already closed')
+	}
+}
 
 export interface CommitSummary {
 	graph: PluginGraph
@@ -314,6 +431,10 @@ export class PluginService {
 	private _pendingStart = new Set<PluginIdentifier>()
 	/** Plugins that should be restarted (re-instantiated) on the next commit. */
 	private _pendingRestart = new Set<PluginIdentifier>()
+	private readonly runtimeUpdateCheckpoints = new WeakMap<
+		RuntimeUpdateTransaction,
+		RuntimeUpdateCheckpoint
+	>()
 	private order = 0
 	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
 	private readonly featureDeclarationPolicyExplicit: boolean
@@ -601,6 +722,45 @@ export class PluginService {
 	/** Roll back draft registrations since last confirmed container. */
 	public resetDraft(): void {
 		this.definitions.resetDraft()
+	}
+
+	/**
+	 * Start a bounded runtime declaration update.
+	 *
+	 * This is intentionally a top-level transaction: PluginDefinitions currently only supports
+	 * rollback to the last confirmed graph, so nested updates or updates opened on top of existing
+	 * draft mutations would make rollback semantics ambiguous.
+	 */
+	public beginUpdate(options: RuntimeUpdateOptions = {}): RuntimeUpdateTransaction {
+		if (this.definitions.hasPendingChanges()) {
+			throw new Error('Cannot begin runtime update while registry draft has pending changes')
+		}
+		const tx = new PluginRuntimeUpdateTransaction(this, options)
+		this.runtimeUpdateCheckpoints.set(tx, this.createRuntimeUpdateCheckpoint())
+		return tx
+	}
+
+	/** @internal RuntimeUpdateTransaction callback. */
+	public clearRuntimeUpdateCheckpoint(tx: RuntimeUpdateTransaction): void {
+		this.runtimeUpdateCheckpoints.delete(tx)
+	}
+
+	/** @internal RuntimeUpdateTransaction callback. */
+	public rollbackRuntimeUpdate(tx: RuntimeUpdateTransaction): void {
+		const checkpoint = this.runtimeUpdateCheckpoints.get(tx)
+		this.runtimeUpdateCheckpoints.delete(tx)
+		this.definitions.resetDraft()
+		if (checkpoint) {
+			this._pendingStart = new Set(checkpoint.pendingStart)
+			this._pendingRestart = new Set(checkpoint.pendingRestart)
+		}
+	}
+
+	private createRuntimeUpdateCheckpoint(): RuntimeUpdateCheckpoint {
+		return {
+			pendingStart: new Set(this._pendingStart),
+			pendingRestart: new Set(this._pendingRestart),
+		}
 	}
 
 	/** Register a plugin ctor into the draft container. */

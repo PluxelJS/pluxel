@@ -24,7 +24,7 @@
 - `packages/runtime/src/plugin-catalog.ts`
   route-neutral plugin catalog 契约
 - `packages/runtime/src/api/contributions.ts`
-  route package 挂载 GraphQL/RPC/MCP 控制面的最小注册点
+  route package 挂载 GraphQL/RPC 控制面的最小注册点
 - `packages/runtime-dynamic/src/loader/LoaderService.ts`
   loader route 插件加载
 - `packages/runtime-dynamic/src/package/PackageService.ts`
@@ -47,16 +47,14 @@
 
 ## Control Plane
 
-- `packages/runtime/src/services/ops/OpsService.ts`
-  `ctx.ops`；runtime / plugin / RPC / MCP / CLI 共用的 operation kernel
-- `packages/runtime/src/api/ops/index.ts`
-  runtime ops 聚合入口
-- `packages/runtime/src/api/ops/plugin-status.ts`
-  插件生命周期与状态类 op
-- `packages/runtime/src/api/ops/plugin-dependencies.ts`
-  插件依赖、base provider、fork 相关 op
-- `packages/runtime/src/api/ops/plugin-config.ts`
-  插件 schema/config/批处理配置 op
+- `packages/runtime/src/api/usecases/pluginStatus.ts`
+  插件生命周期批量操作
+- `packages/runtime/src/api/usecases/pluginConfig.ts`
+  插件 schema/config 读取、校验和 patch
+- `packages/runtime/src/api/usecases/pluginDependencies.ts`
+  插件依赖、base provider、fork 相关操作
+- `packages/runtime/src/api/http/rpc/RuntimeRpcApi.ts`
+  host control-plane 的具体 RPC 方法入口
 
 ## Host Security
 
@@ -76,7 +74,7 @@
 - `packages/runtime/src/web/client.ts`
   transport client、HTTP links、RPC/SSE 接入
 - `packages/runtime/src/web/rpc.ts`
-  runtime ops 浏览器 helper
+  RPC client/session helper
 - `packages/runtime/src/web/protocol.ts`
   浏览器/服务端共享协议类型
 - `packages/runtime/src/web/react.tsx`
@@ -88,8 +86,6 @@
 
 ## Tests
 
-- `packages/runtime/tests/services/runtime-ops.test.ts`
-  runtime ops 主流程
 - `packages/runtime/tests/services/vault-service.test.ts`
   vault 状态、密钥与预检
 - `packages/runtime/tests/verification/host-verification-flow.test.ts`

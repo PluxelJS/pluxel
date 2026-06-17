@@ -33,6 +33,87 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 }
 
 describe('PluginService commit()', () => {
+	it('commits a runtime update transaction', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-COMMIT-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			expect(tx.reason).toBe('hmr')
+			tx.register(A)
+			const res = await tx.commit({ strict: true })
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.isRunning(A)).toBe(true)
+			expect(host.get(A)).toBeInstanceOf(A)
+		})
+	})
+
+	it('rolls back runtime update draft and pending restarts', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-ROLLBACK-A' })
+			class A extends BasePlugin {}
+
+			@Plugin({ name: 'TX-ROLLBACK-B' })
+			class B extends BasePlugin {}
+
+			await host.start(A)
+			const committedGraph = host.ctx.registry.graph
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.replace(A, B)
+			tx.restart(B)
+			tx.rollback()
+
+			const summary = await host.commit()
+			expect(summary.graph).toBe(committedGraph)
+			expect(summary.replaced).toEqual([])
+			expect(summary.touched).toEqual([])
+			expect(host.ctx.registry.graph.resolve(A)).toBe(A)
+			expect(host.get(A)).toBeInstanceOf(A)
+			expect(host.get(B)).toBeUndefined()
+		})
+	})
+
+	it('rejects runtime update when a loose draft is already pending', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-PENDING-A' })
+			class A extends BasePlugin {}
+
+			host.ctx.registry.register(A)
+
+			expect(() => host.ctx.registry.beginUpdate({ reason: 'hmr' })).toThrow(
+				/pending changes/i,
+			)
+		})
+	})
+
+	it('rolls back runtime update draft when commit fails', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MISSING-DEP' })
+			class MissingDep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-COMMIT-FAIL-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(public readonly dep: MissingDep) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, MissingDep)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(false)
+			expect(host.ctx.registry.isRegistered(Consumer)).toBe(false)
+
+			const clean = await host.ctx.registry.commit()
+			expect(clean.ok).toBe(true)
+			expect(host.ctx.registry.lastCommit?.added).toEqual([])
+		})
+	})
+
 	it('resolves aliases through the committed graph', async () => {
 		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}

@@ -15,7 +15,7 @@
 
 ## 建议阅读顺序
 
-先读这 5 个，它们覆盖了最常见的标准用法：
+先读这 4 个，它们覆盖了最常见的标准用法：
 
 1. `PluginFeatureConfigDemo.ts`
    最小配置写法。看 `configs.use(...)`、`features.use(...)` 和 feature 配置如何归因到父插件。
@@ -26,8 +26,6 @@
    这里也顺手区分了 optional 依赖的两种写法：provider 类型可静态 import 时用类 token；provider 包本身可能缺失时改用稳定字符串 token，把 provider-specific 代码留在 `load()` 的懒加载模块后面。
 4. `PluginWithUI.ts` + `PluginWithUI/ui/*`
    最小自定义 UI 路径。看 `ui(...).bind(this.ctx)`、RPC、SSE、SignalDB 与浏览器侧 `plugin.use()`。
-5. `PluginOpsDemo.ts`
-   最小 ops 路径。看 `defineOp(...)`、`ctx.ops.register(...)`，以及 runtime metadata 如何显式绑定 RPC / CLI / MCP / workbench。
 
 在这之后按需再看：
 
@@ -105,14 +103,6 @@
 
 - 服务端：`pluginUi.bind(this.ctx)` + `ctx.ext.rpc.expose(...)` + `ctx.ext.sse.expose(...)`
 - 浏览器侧：`const plugin = pluginUi('MyPlugin')` + `const app = plugin.use()` + `app.db.useDocById(...)`
-
-注册 ops：
-
-- 服务端：`defineOp(...)` + `ctx.ops.register(...)`
-- core op 只声明 `id/doc/input/output/run`
-- RPC/CLI/MCP/workbench 入口通过 `ctx.ops.register(op, { metadata })` 显式绑定
-- 写操作在 `metadata.workbench.mutating` 标记，用于 host read model 和 UI
-- MCP 工具名在 `metadata.mcp.name` 标记，不写回 op descriptor
 
 ## 类型检查
 

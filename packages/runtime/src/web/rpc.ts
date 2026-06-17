@@ -1,13 +1,6 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { HMR_INTERNAL_API_BASE } from './paths'
-import type {
-	ExtensionUiRpcMap,
-	OpsToolset,
-	OpsToolsetInput,
-	RuntimeOpCatalogEntry,
-	RuntimeRpcApi,
-	RuntimeOpToolsetManifest,
-} from './protocol'
+import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
@@ -106,47 +99,6 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	if (error instanceof Error) return error.message || fallback
 	if (typeof error === 'string') return error
 	return fallback
-}
-
-export async function listRuntimeOpCatalog(
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<RuntimeOpCatalogEntry[]> {
-	return await invokeRpc((rpc) => Promise.resolve(rpc.opsCatalog()), options)
-}
-
-export async function listRuntimeOpsToolsets(
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<OpsToolset[]> {
-	return await invokeRpc((rpc) => Promise.resolve(rpc.opsToolsets()), options)
-}
-
-export async function resolveRuntimeOpsToolset(
-	toolsetId: string,
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<RuntimeOpToolsetManifest | null> {
-	return await invokeRpc((rpc) => Promise.resolve(rpc.resolveOpsToolset(toolsetId)), options)
-}
-
-export async function updateRuntimeOpsToolsets(
-	toolsets: OpsToolsetInput[],
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<OpsToolset[]> {
-	return await invokeRpc((rpc) => rpc.updateOpsToolsets(toolsets), options)
-}
-
-export async function invokeRuntimeOp<T = unknown>(
-	id: string,
-	input?: unknown,
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<T> {
-	return await invokeRpc((rpc) => rpc.opsInvoke(id, input) as unknown as Promise<T>, options)
-}
-
-export async function dispatchRuntimeCommand<T = unknown>(
-	command: string,
-	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
-): Promise<T> {
-	return await invokeRpc((rpc) => rpc.opsDispatch(command) as unknown as Promise<T>, options)
 }
 
 export function createUiRpcView(

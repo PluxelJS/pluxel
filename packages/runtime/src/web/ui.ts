@@ -40,8 +40,6 @@ export type {
 	PackageLoadIssue,
 	PackageSpecInput,
 	LogLevel,
-	OpsToolset,
-	OpsToolsetInput,
 	PluginDependencyState,
 	PluginGroup,
 	PluginGroupInput,
@@ -51,7 +49,6 @@ export type {
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-	RuntimeOpToolsetManifest,
 	RuntimeRpcApi,
 } from './protocol'
 export { rpcErrorMessage } from './rpc'

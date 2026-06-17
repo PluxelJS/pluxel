@@ -1,14 +1,8 @@
 import {
 	DEFAULT_PLUGIN_SECTION_LAYOUT,
-	OPS_WORKBENCH_CONTENT_LAYOUT_SCOPE,
-	OPS_WORKBENCH_HORIZONTAL_LAYOUT_SCOPE,
-	OPS_WORKBENCH_PANELS_SCOPE,
 	PLUGIN_RAIL_PANEL_ID,
 	PLUGIN_SECTION_CONTENT_PANEL_ID,
 	PLUGIN_WORKBENCH_PANELS_SCOPE,
-	resolveOpsWorkbenchContentLayout,
-	resolveOpsWorkbenchHorizontalLayout,
-	resolveOpsWorkbenchPanelsState,
 	sanitizePluginSectionLayout,
 	sanitizePluginWorkbenchPanelsState,
 } from './split'
@@ -19,7 +13,7 @@ export type WorkbenchTab = {
 	meta?: string
 }
 
-export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'ops' | 'other'
+export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'other'
 export type WorkbenchTabState = Record<string, Record<string, unknown>>
 export type WorkbenchSectionPaneState = {
 	visible: boolean
@@ -121,21 +115,6 @@ function sanitizeWorkbenchTabState(value: unknown): WorkbenchTabState {
 		if (PLUGIN_WORKBENCH_PANELS_SCOPE in nextState) {
 			nextState[PLUGIN_WORKBENCH_PANELS_SCOPE] = sanitizePluginWorkbenchPanelsState(
 				nextState[PLUGIN_WORKBENCH_PANELS_SCOPE],
-			)
-		}
-		if (OPS_WORKBENCH_PANELS_SCOPE in nextState) {
-			nextState[OPS_WORKBENCH_PANELS_SCOPE] = resolveOpsWorkbenchPanelsState(
-				nextState[OPS_WORKBENCH_PANELS_SCOPE],
-			)
-		}
-		if (OPS_WORKBENCH_HORIZONTAL_LAYOUT_SCOPE in nextState) {
-			nextState[OPS_WORKBENCH_HORIZONTAL_LAYOUT_SCOPE] = resolveOpsWorkbenchHorizontalLayout(
-				nextState[OPS_WORKBENCH_HORIZONTAL_LAYOUT_SCOPE],
-			)
-		}
-		if (OPS_WORKBENCH_CONTENT_LAYOUT_SCOPE in nextState) {
-			nextState[OPS_WORKBENCH_CONTENT_LAYOUT_SCOPE] = resolveOpsWorkbenchContentLayout(
-				nextState[OPS_WORKBENCH_CONTENT_LAYOUT_SCOPE],
 			)
 		}
 		next[tabId] = nextState

@@ -28,14 +28,13 @@
 - `FRONTEND.md`：插件 UI、authoring bridge、MF2 remote、SignalDB/RPC/SSE。
 - `CONFIG.md`：配置声明、校验、默认值、持久化、网页配置。
 - `WORKBENCH.md`：插件工作台、builtin/custom contribution、UI ownership。
-- `OPS.md`：operation control-plane、CLI/RPC/MCP/workbench 投影。
 - `TOOLCHAIN.md`：build、Vite 分层、lint、test 和发布工具链。
 - `GOVERNANCE.md`：依赖方向、公开包、导出、维护规则。
-- `proposals/README.md`：未实现或未来设计入口，例如 WorkbenchView、Plugin UI cleanup、Core DI V2、Ops V2。
+- `proposals/README.md`：未实现或未来设计入口，例如 WorkbenchView、Plugin UI cleanup、Core DI V2。
 
 ## 当前与未来
 
-- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`OPS.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
+- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
 - 未来或未实现：写在 `proposals/README.md`，大型提案放在 `docs/proposals/*.md`，并由 `proposals/README.md` 索引。
 - runtime 当前有 runtime-dynamic route 和 runtime-static route。dynamic/static 的当前行为分别写在 `RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md` 和 `HMR.md`。
 - 如果提案实现，先把已实现行为迁入当前领域文档，再缩短 `proposals/README.md` 或对应提案文档。

@@ -19,6 +19,7 @@ import { runWithRequireShims } from './runtime-shims'
 export type PrefetchOrder = 'near' | 'all'
 
 type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>
+type RuntimeUpdate = ReturnType<Context['registry']['beginUpdate']>
 type HmrExecutionResult = {
 	res: CommitResult
 	commitMs: number
@@ -373,9 +374,10 @@ class HmrRuntimeCommitScheduler {
 
 	async commitBatch(params: {
 		batch: LoaderBatch
+		runtimeUpdate: RuntimeUpdate
 		replacedModules: readonly string[]
 	}): Promise<HmrExecutionResult> {
-		const { batch, replacedModules } = params
+		const { batch, runtimeUpdate, replacedModules } = params
 		const affectedModules = readBatchAffectedModules(batch)
 		const syncedModules = new Set<string>()
 
@@ -385,12 +387,13 @@ class HmrRuntimeCommitScheduler {
 		}
 
 		const endCommit = startTimer()
-		let res: CommitResult = await this.ctx.registry.commit()
+		let res: CommitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
 		const autoDisabled = new Set<string>()
 
 		if (!res.ok) {
 			await this.retryMissingDependencies({
 				batch,
+				runtimeUpdate,
 				res,
 				replacedModules,
 				affectedModules,
@@ -403,7 +406,7 @@ class HmrRuntimeCommitScheduler {
 		}
 
 		const commitMs = endCommit()
-		this.closeBatch(batch, res.ok)
+		this.closeBatch(batch, runtimeUpdate, res.ok)
 
 		return {
 			res,
@@ -416,6 +419,7 @@ class HmrRuntimeCommitScheduler {
 
 	private async retryMissingDependencies(params: {
 		batch: LoaderBatch
+		runtimeUpdate: RuntimeUpdate
 		res: CommitResult
 		replacedModules: readonly string[]
 		affectedModules: readonly string[]
@@ -441,7 +445,7 @@ class HmrRuntimeCommitScheduler {
 					...params.affectedModules,
 				]),
 			)
-			res = await this.ctx.registry.commit()
+			res = await params.runtimeUpdate.commit({ rollbackOnFailure: false })
 			params.setResult(res)
 			pass++
 		}
@@ -452,7 +456,7 @@ class HmrRuntimeCommitScheduler {
 		moduleIds: Iterable<string>,
 	): Promise<readonly string[]> {
 		// LoaderService owns moduleId → exported ctor mapping. Re-sync through the batch is the
-		// stable orchestration boundary between HMR and runtime, especially after core draft rollback.
+		// stable orchestration boundary between HMR and runtime across commit retry attempts.
 		const synced: string[] = []
 		const seen = new Set<string>()
 		for (const id of moduleIds) {
@@ -470,13 +474,13 @@ class HmrRuntimeCommitScheduler {
 		return synced
 	}
 
-	private closeBatch(batch: LoaderBatch, ok: boolean) {
+	private closeBatch(batch: LoaderBatch, runtimeUpdate: RuntimeUpdate, ok: boolean) {
 		if (ok) {
 			batch.commit()
 			return
 		}
 		batch.rollback()
-		this.ctx.registry.resetDraft()
+		runtimeUpdate.rollback()
 	}
 }
 
@@ -515,6 +519,7 @@ export class HmrExecutor {
 		const ordered = dedupeIds(cleanIds)
 
 		const batch = this.ctx.loader.beginBatch()
+		const runtimeUpdate = this.ctx.registry.beginUpdate({ reason: 'hmr' })
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
 		const replacedModules: string[] = []
@@ -549,7 +554,7 @@ export class HmrExecutor {
 			} catch (err) {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
-				this.ctx.registry.resetDraft()
+				runtimeUpdate.rollback()
 				return undefined
 			}
 			const injectMs = endInject()
@@ -562,7 +567,7 @@ export class HmrExecutor {
 			}
 		}
 
-		return await this.commitScheduler.commitBatch({ batch, replacedModules })
+		return await this.commitScheduler.commitBatch({ batch, runtimeUpdate, replacedModules })
 	}
 
 	async runAndLoadAll(

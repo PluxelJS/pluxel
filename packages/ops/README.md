@@ -2,7 +2,7 @@
 
 Lightweight operation kernel for Pluxel control-plane actions.
 
-One `defineOp` call produces one documented schema function with validation and a serializable descriptor. Runtime, RPC, CLI, MCP, catalog, and workbench metadata live outside the core descriptor.
+One `defineOp` call produces one documented schema function with validation and a serializable descriptor. Transport and host metadata live outside the core descriptor.
 
 TypeBox helpers live at `@pluxel/ops/typebox` so schema code keeps the familiar TypeBox shape.
 
@@ -60,10 +60,9 @@ await registry.invoke('plugin.config.patch', {
 - Always declare both `input` and `output`.
 - Always declare `doc.title` and `doc.description`.
 - Keep operation ids lowercase.
-- Put CLI/RPC/MCP/workbench bindings in adapters or runtime metadata, not in `defineOp`.
-- Keep owner, lifetime, cleanup, catalog, and toolsets outside the core registry.
+- Put transport bindings in adapters or host metadata, not in `defineOp`.
+- Keep owner, lifetime, cleanup, catalog, and grouping outside the core registry.
 
 Design notes:
 
 - [Core V2](./docs/core-v2.md): lightweight kernel contract.
-- [Adapters V2](./docs/adapters-v2.md): CLI/runtime/host facilities around the kernel.
