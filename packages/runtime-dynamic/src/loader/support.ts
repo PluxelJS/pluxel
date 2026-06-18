@@ -275,7 +275,7 @@ export class PluginPruner {
 
 	prunePluginByName(name: string, scope: RemovalScope = 'runtime') {
 		const candidates = new Set<string>()
-		const mapped = this.registry.name2PathMap.get(name)
+		const mapped = this.ctx.registry.getRuntimeModuleId(name) ?? this.registry.name2PathMap.get(name)
 		if (mapped) candidates.add(mapped)
 		else {
 			for (const [moduleId, items] of this.registry.modules) {
@@ -309,6 +309,7 @@ export class PluginPruner {
 
 export class LoaderRegistryView {
 	constructor(
+		private readonly ctx: Context,
 		private readonly registry: PluginRegistry,
 		private readonly runtime: RuntimeResolver,
 	) {}
@@ -322,18 +323,15 @@ export class LoaderRegistryView {
 	}
 
 	findModuleId(name: string, ctor?: PluginConstructor): string | null {
+		const committed = this.ctx.registry.getRuntimeModuleId(ctor ?? name)
+		if (committed) return committed
 		const direct = this.registry.name2PathMap.get(name)
 		if (direct) return direct
 		const fork = parseForkPluginId(name)
 		if (fork) {
-			const base = this.registry.name2PathMap.get(fork.baseId)
+			const base =
+				this.ctx.registry.getRuntimeModuleId(fork.baseId) ?? this.registry.name2PathMap.get(fork.baseId)
 			if (base) return base
-		}
-		if (!ctor) return null
-		for (const [moduleId, modules] of this.registry.modules) {
-			if (modules.some((item) => item.ctor === ctor)) {
-				return moduleId
-			}
 		}
 		return null
 	}

@@ -150,9 +150,17 @@ describe('LoaderService', () => {
 	it('preloadPlugins enables and commits builtins', async () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
+		let moduleItemsSeenDuringStartupCommit: Function[] = []
 
 		@Plugin({ name: 'Builtin' })
 		class Builtin extends BasePlugin {}
+
+		ctx.on('afterCommit', (summary) => {
+			if ((summary as { reason?: string }).reason !== 'startup') return
+			moduleItemsSeenDuringStartupCommit = core.registry
+				.listRuntimeModuleItems('pluxel:builtins')
+				.map((item) => item.ctor)
+		})
 
 		const names = await loader.preloadPlugins([Builtin])
 		expect(names).toEqual(['Builtin'])
@@ -160,6 +168,7 @@ describe('LoaderService', () => {
 		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
 		expect(loader.api.registry.findModuleId('Builtin')).toBe('pluxel:builtins')
 		expect(core.registry.isRunning(Builtin)).toBe(true)
+		expect(moduleItemsSeenDuringStartupCommit).toEqual([Builtin])
 	})
 
 	it('preloaded builtin baseline survives later failed batch rollback', async () => {
@@ -293,6 +302,37 @@ describe('LoaderService', () => {
 		expect(loader.api.registry.findModuleId('Alpha')).toBe('A.ts')
 		expect(loader.api.registry.findModuleIdByName('Beta')).toBe('B.ts')
 		expect(loader.api.registry.listLoadedNames()).toEqual(['Alpha', 'Beta'])
+		expect(core.registry.getRuntimeModuleId(Alpha)).toBe('A.ts')
+		expect(core.registry.getRuntimeModuleId('Beta')).toBe('B.ts')
+		expect(core.registry.listRuntimeModuleItems('A.ts')).toEqual([
+			{ ctor: Alpha, exportKey: 'Alpha' },
+		])
+	})
+
+	it('does not publish rolled back loader declarations to core ownership', async () => {
+		const { core, ctx } = createHmrTestContext()
+		const loader = new LoaderService(ctx)
+
+		@Plugin({ name: 'Committed' })
+		class Committed extends BasePlugin {}
+
+		@Plugin({ name: 'RolledBack' })
+		class RolledBack extends BasePlugin {}
+
+		const committed = loader.beginBatch()
+		await committed.replaceModule('Committed.ts', { Committed })
+		const committedRes = await core.registry.commit()
+		expect(committedRes.ok).toBe(true)
+		committed.commit()
+
+		const rolledBack = loader.beginBatch()
+		await rolledBack.replaceModule('RolledBack.ts', { RolledBack })
+		rolledBack.rollback()
+		core.registry.resetDraft()
+
+		expect(core.registry.getRuntimeModuleId(Committed)).toBe('Committed.ts')
+		expect(core.registry.getRuntimeModuleId(RolledBack)).toBeUndefined()
+		expect(core.registry.listRuntimeModuleItems('RolledBack.ts')).toEqual([])
 	})
 
 	it('anchors remove expects clean ids', async () => {

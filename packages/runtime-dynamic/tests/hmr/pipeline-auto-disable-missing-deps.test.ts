@@ -32,6 +32,7 @@ describe('HmrExecutor commit retry', () => {
 		try {
 			let depSeq = 0
 			let consumerSeq = 0
+			let moduleItemsSeenDuringHmrCommit: Function[] = []
 
 			@Plugin({ name: 'Dep' })
 			class Dep extends BasePlugin {
@@ -52,6 +53,12 @@ describe('HmrExecutor commit retry', () => {
 			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
 			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
 			await host.commit()
+			host.ctx.on('afterCommit', (summary: { reason?: string }) => {
+				if (summary.reason !== 'hmr') return
+				moduleItemsSeenDuringHmrCommit = host.ctx.registry
+					.listRuntimeModuleItems('/dep.ts')
+					.map((item: { ctor: Function }) => item.ctor)
+			})
 
 			const firstConsumer = host.get(Consumer)
 			expect(firstConsumer?.seq).toBe(1)
@@ -74,6 +81,11 @@ describe('HmrExecutor commit retry', () => {
 			expect(new Set(out?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
 			expect(out?.syncedModules).toEqual(['/consumer.ts'])
 			expect(out?.autoDisabled).toEqual([])
+			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
+			expect(new Set(host.ctx.registry.lastCommit?.touchedModules)).toEqual(
+				new Set(['/dep.ts', '/consumer.ts']),
+			)
+			expect(moduleItemsSeenDuringHmrCommit).toEqual([DepNext])
 
 			const nextConsumer = host.get(Consumer)
 			expect(nextConsumer?.seq).toBe(2)

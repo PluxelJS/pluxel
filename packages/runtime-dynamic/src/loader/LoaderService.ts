@@ -39,6 +39,13 @@ export type { LoaderApi, LoaderBatch, LoaderSyncModulesOptions, RemovalScope } f
 
 const serviceName = 'loader' as const
 const BUILTIN_MODULE_ID_DEFAULT = 'pluxel:builtins'
+type RuntimeModuleUpdateBridge = {
+	upsertModule(module: {
+		moduleId: string
+		items: ReadonlyArray<{ ctor: PluginConstructor; exportKey?: string }>
+	}): void
+	removeModule(moduleId: string): void
+}
 
 export type BuiltinForkSpec = string | { id: string; enable?: boolean }
 export type PreloadBuiltinsOptions = {
@@ -135,7 +142,7 @@ export class LoaderService {
 			this.ctx.configService.isEnabledInConfig(name),
 		)
 		this.dependencyInspector = new PluginDependencyInspector(this.ctx)
-		this.registryView = new LoaderRegistryView(this.registry, this.runtime)
+		this.registryView = new LoaderRegistryView(this.ctx, this.registry, this.runtime)
 		this.anchorsView = new LoaderAnchors(this.anchors)
 		this.control = new LoaderControl(this.registry)
 		this.api = {
@@ -174,10 +181,12 @@ export class LoaderService {
 		const autoDisableMissingDependencies = options.autoDisableMissingDependencies ?? !strict
 		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
 
-		const tx = this.registry.beginTransaction()
 		const runtimeUpdate = shouldCommit
 			? this.ctx.registry.beginUpdate({ reason: 'startup' })
 			: null
+		const tx = this.registry.beginTransaction({
+			runtimeUpdate: runtimeUpdate ?? undefined,
+		})
 		const seen = new Set<PluginConstructor>()
 		const declared: Array<{ name: string; ctor: PluginConstructor; defaultEnable: boolean }> = []
 		const declaredForks: Array<{
@@ -387,10 +396,10 @@ export class LoaderService {
 	 * - core 容器的草稿回滚由调用方的 runtime update transaction 负责；
 	 * - 这里确保 loader 自身不“先走一步”导致状态漂移。
 	 */
-	beginBatch(): LoaderBatch {
+	beginBatch(options: { runtimeUpdate?: RuntimeModuleUpdateBridge } = {}): LoaderBatch {
 		return new LoaderBatchSession(
 			this.moduleReplacer,
-			this.registry.beginTransaction(),
+			this.registry.beginTransaction({ runtimeUpdate: options.runtimeUpdate }),
 			this.anchors,
 			(moduleIds, options) => this.syncRuntimeForModules(moduleIds, options),
 		)

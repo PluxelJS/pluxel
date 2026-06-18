@@ -21,8 +21,12 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
-- `packages/core/RUNTIME_UPDATE_DESIGN.md`
-  - runtime declaration update / HMR 支持的核心重设设计
+- `packages/core/docs/runtime-update/DESIGN.md`
+  - runtime declaration update / HMR 支持的核心重设设计、性能预算、迁移阶段和被否决方向
+- `packages/core/docs/runtime-update/STATUS.md`
+  - runtime update 重构当前已完成、未完成、下一步接手顺序和快速验证命令
+- `packages/core/docs/runtime-update/RATIONALE.md`
+  - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
 
 ## Services
 

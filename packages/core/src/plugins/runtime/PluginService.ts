@@ -14,6 +14,7 @@ import { isProduction } from '../../env'
 import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginInfo } from '../decorators/decorator/types'
+import { getPluginInfo } from '../decorators/PluginDecorator'
 // Optional dependency API removed in favor of feature composition (BaseFeature).
 import type {
 	ForkablePluginConstructor,
@@ -59,6 +60,16 @@ export type RuntimeUpdateOptions = {
 	reason?: RuntimeUpdateReason
 }
 
+export type RuntimeModuleDeclarationItem = {
+	ctor: PluginConstructor
+	exportKey?: string
+}
+
+export type RuntimeModuleDeclaration = {
+	moduleId: string
+	items: readonly RuntimeModuleDeclarationItem[]
+}
+
 export type RuntimeUpdateCommitOptions = {
 	/**
 	 * Use strict commit semantics for this update.
@@ -84,6 +95,10 @@ export type RuntimeUpdateTransaction = {
 		next: PluginConstructor,
 		opts?: ReplacePluginOptions,
 	): void
+	upsertModule(module: RuntimeModuleDeclaration): void
+	removeModule(moduleId: string): void
+	touchModule(moduleId: string): void
+	touchModules(moduleIds: Iterable<string>): void
 	restart(id: PluginIdentifier, opts?: CascadeOptions): void
 	commit(options?: RuntimeUpdateCommitOptions): Promise<Awaited<ReturnType<PluginService['commit']>>>
 	rollback(): void
@@ -92,6 +107,12 @@ export type RuntimeUpdateTransaction = {
 type RuntimeUpdateCheckpoint = {
 	pendingStart: Set<PluginIdentifier>
 	pendingRestart: Set<PluginIdentifier>
+}
+
+type RuntimeModuleSnapshot = readonly RuntimeModuleDeclarationItem[] | undefined
+type RuntimeUpdateCommitMeta = {
+	reason: RuntimeUpdateReason
+	touchedModules: readonly string[]
 }
 
 type CommitExecutionPlan = {
@@ -116,6 +137,8 @@ const EMPTY_DELTA = {
 class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public readonly reason: RuntimeUpdateReason
 	private closed = false
+	private readonly moduleSnapshots = new Map<string, RuntimeModuleSnapshot>()
+	private readonly touchedModules = new Set<string>()
 
 	public constructor(
 		private readonly registry: PluginService,
@@ -143,6 +166,30 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 		this.registry.replace(target, next, opts)
 	}
 
+	public upsertModule(module: RuntimeModuleDeclaration): void {
+		this.assertOpen()
+		this.recordModuleSnapshot(module.moduleId)
+		this.touchedModules.add(module.moduleId)
+		this.registry.upsertRuntimeModule(module)
+	}
+
+	public removeModule(moduleId: string): void {
+		this.assertOpen()
+		this.recordModuleSnapshot(moduleId)
+		this.touchedModules.add(moduleId)
+		this.registry.removeRuntimeModule(moduleId)
+	}
+
+	public touchModule(moduleId: string): void {
+		this.assertOpen()
+		this.touchedModules.add(moduleId)
+	}
+
+	public touchModules(moduleIds: Iterable<string>): void {
+		this.assertOpen()
+		for (const moduleId of moduleIds) this.touchedModules.add(moduleId)
+	}
+
 	public restart(id: PluginIdentifier, opts?: CascadeOptions): void {
 		this.assertOpen()
 		this.registry.restart(id, opts)
@@ -151,7 +198,10 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public async commit(options: RuntimeUpdateCommitOptions = {}) {
 		this.assertOpen()
 		const rollbackOnFailure = options.rollbackOnFailure ?? true
-		const result = await this.registry.commit()
+		const result = await this.registry.commitRuntimeUpdate({
+			reason: this.reason,
+			touchedModules: [...this.touchedModules],
+		})
 
 		if (!result.ok) {
 			if (rollbackOnFailure) {
@@ -162,6 +212,8 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 
 		this.closed = true
 		this.registry.clearRuntimeUpdateCheckpoint(this)
+		this.moduleSnapshots.clear()
+		this.touchedModules.clear()
 
 		const failed = options.strict ? (this.registry.lastCommit?.failed ?? []) : []
 		if (failed.length > 0) {
@@ -176,7 +228,23 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public rollback(): void {
 		if (this.closed) return
 		this.closed = true
+		this.rollbackModules()
+		this.touchedModules.clear()
 		this.registry.rollbackRuntimeUpdate(this)
+	}
+
+	private recordModuleSnapshot(moduleId: string): void {
+		if (this.moduleSnapshots.has(moduleId)) return
+		this.moduleSnapshots.set(moduleId, this.registry.snapshotRuntimeModule(moduleId))
+	}
+
+	private rollbackModules(): void {
+		const entries = [...this.moduleSnapshots.entries()]
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const [moduleId, items] = entries[i]!
+			this.registry.restoreRuntimeModule(moduleId, items)
+		}
+		this.moduleSnapshots.clear()
 	}
 
 	private assertOpen(): void {
@@ -186,10 +254,12 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 
 export interface CommitSummary {
 	graph: PluginGraph
+	reason?: RuntimeUpdateReason
 	added: PluginIdentifier[]
 	replaced: PluginReplacement[]
 	removed: PluginIdentifier[]
 	failed: PluginIdentifier[]
+	touchedModules: string[]
 	/**
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
@@ -435,6 +505,12 @@ export class PluginService {
 		RuntimeUpdateTransaction,
 		RuntimeUpdateCheckpoint
 	>()
+	private readonly runtimeModuleItems = new Map<
+		string,
+		readonly RuntimeModuleDeclarationItem[]
+	>()
+	private readonly runtimeModuleByName = new Map<string, string>()
+	private readonly runtimeModuleByCtor = new WeakMap<PluginConstructor, string>()
 	private order = 0
 	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
 	private readonly featureDeclarationPolicyExplicit: boolean
@@ -652,6 +728,41 @@ export class PluginService {
 		return this._lastCommit
 	}
 
+	public get runtimeModules(): ReadonlyMap<string, readonly RuntimeModuleDeclarationItem[]> {
+		return this.runtimeModuleItems
+	}
+
+	public listRuntimeModuleItems(moduleId: string): readonly RuntimeModuleDeclarationItem[] {
+		return this.runtimeModuleItems.get(moduleId) ?? []
+	}
+
+	public getRuntimeModuleId(id: PluginIdentifier | string): string | undefined {
+		if (typeof id === 'string') return this.runtimeModuleByName.get(id)
+		const graph = this._activeGraph ?? this.graph
+		const resolved = this.resolveGraphKey(graph, id)
+		if (typeof resolved === 'function') {
+			const direct = this.runtimeModuleByCtor.get(resolved as PluginConstructor)
+			if (direct) return direct
+			try {
+				const info = getPluginInfo(resolved as PluginConstructor)
+				const byName = this.runtimeModuleByName.get(info.id)
+				if (byName) return byName
+			} catch {
+				// fall through
+			}
+		}
+		if (resolved !== id && typeof id === 'function') {
+			const direct = this.runtimeModuleByCtor.get(id as PluginConstructor)
+			if (direct) return direct
+		}
+		try {
+			const info = getPluginInfo(id as PluginConstructor)
+			return this.runtimeModuleByName.get(info.id)
+		} catch {
+			return undefined
+		}
+	}
+
 	/**
 	 * Get the current singleton instance for an identifier if it is running.
 	 * This does not instantiate or start anything; it only reads the runtime cache + running state.
@@ -763,6 +874,72 @@ export class PluginService {
 		}
 	}
 
+	public upsertRuntimeModule(module: RuntimeModuleDeclaration): void {
+		const moduleId = module.moduleId
+		this.removeRuntimeModuleIndex(moduleId)
+		const items = module.items
+			.map((item) => ({ ctor: item.ctor, exportKey: item.exportKey }))
+			.filter((item) => typeof item.ctor === 'function')
+		if (items.length === 0) {
+			this.runtimeModuleItems.delete(moduleId)
+			return
+		}
+		this.runtimeModuleItems.set(moduleId, items)
+		for (let i = 0; i < items.length; i++) {
+			const { ctor } = items[i]!
+			this.runtimeModuleByCtor.set(ctor, moduleId)
+			try {
+				const info = getPluginInfo(ctor)
+				this.runtimeModuleByName.set(info.id, moduleId)
+			} catch {
+				// Keep module ownership best-effort; invalid plugin ctors still fail at registration.
+			}
+		}
+	}
+
+	public removeRuntimeModule(moduleId: string): void {
+		this.removeRuntimeModuleIndex(moduleId)
+		this.runtimeModuleItems.delete(moduleId)
+	}
+
+	/** @internal RuntimeUpdateTransaction callback. */
+	public snapshotRuntimeModule(moduleId: string): RuntimeModuleSnapshot {
+		const items = this.runtimeModuleItems.get(moduleId)
+		return items ? [...items] : undefined
+	}
+
+	/** @internal RuntimeUpdateTransaction callback. */
+	public restoreRuntimeModule(moduleId: string, items: RuntimeModuleSnapshot): void {
+		if (!items) {
+			this.removeRuntimeModule(moduleId)
+			return
+		}
+		this.upsertRuntimeModule({ moduleId, items })
+	}
+
+	private removeRuntimeModuleIndex(moduleId: string): void {
+		const prev = this.runtimeModuleItems.get(moduleId)
+		if (!prev) return
+		for (let i = 0; i < prev.length; i++) {
+			const ctor = prev[i]!.ctor
+			try {
+				const info = getPluginInfo(ctor)
+				if (this.runtimeModuleByName.get(info.id) === moduleId) {
+					this.runtimeModuleByName.delete(info.id)
+				}
+			} catch {
+				// ignore invalid decorator state in stale declarations
+			}
+		}
+		// WeakMap entries cannot be deleted without a ctor key scan from the old module list.
+		for (let i = 0; i < prev.length; i++) {
+			const ctor = prev[i]!.ctor
+			if (this.runtimeModuleByCtor.get(ctor) === moduleId) {
+				this.runtimeModuleByCtor.delete(ctor)
+			}
+		}
+	}
+
 	/** Register a plugin ctor into the draft container. */
 	public register(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): void {
 		this.definitions.register(Plugin, opts)
@@ -838,13 +1015,16 @@ export class PluginService {
 
 	/* ─────────────────────────── Commit Internals ─────────────────────────── */
 
-	private enqueueCommit(policyOverride: 'off' | 'warn' | 'error' | null) {
+	private enqueueCommit(
+		policyOverride: 'off' | 'warn' | 'error' | null,
+		meta: RuntimeUpdateCommitMeta | null = null,
+	) {
 		const next = this._commitLock
 			.then(async () => {
 				const prev = this.nextCommitFeatureDeclarationPolicy
 				this.nextCommitFeatureDeclarationPolicy = policyOverride
 				try {
-					return await this.executeCommit()
+					return await this.executeCommit(meta)
 				} finally {
 					this.nextCommitFeatureDeclarationPolicy = prev
 				}
@@ -983,6 +1163,11 @@ export class PluginService {
 		return this.enqueueCommit(null)
 	}
 
+	/** @internal RuntimeUpdateTransaction callback. */
+	public commitRuntimeUpdate(meta: RuntimeUpdateCommitMeta) {
+		return this.enqueueCommit(null, meta)
+	}
+
 	/**
 	 * Strict commit:
 	 * - runs a commit with feature declaration policy set to `error` for this cycle;
@@ -1000,7 +1185,8 @@ export class PluginService {
 		return res
 	}
 
-	private async executeCommit() {
+	private async executeCommit(meta: RuntimeUpdateCommitMeta | null = null) {
+		const summaryMeta = this.createCommitSummaryMeta(meta)
 		if (
 			!this.definitions.hasPendingChanges() &&
 			this._pendingStart.size === 0 &&
@@ -1009,6 +1195,7 @@ export class PluginService {
 			const graph = this.graph
 			this.publishCommitSummary({
 				graph,
+				...summaryMeta,
 				added: [],
 				replaced: [],
 				removed: [],
@@ -1048,6 +1235,7 @@ export class PluginService {
 				confirm()
 				this.publishCommitSummary({
 					graph: this.graph,
+					...summaryMeta,
 					added: [],
 					replaced: [],
 					removed: [],
@@ -1091,6 +1279,7 @@ export class PluginService {
 
 			this.publishCommitSummary({
 				graph: this.graph,
+				...summaryMeta,
 				added: [...plan.added],
 				replaced: [...plan.replaced],
 				removed: [...plan.removed],
@@ -1183,6 +1372,14 @@ export class PluginService {
 		this._lastCommit = summary
 		this.watcherRegistry.publish(summary)
 		this.ctx.emit('afterCommit', summary)
+	}
+
+	private createCommitSummaryMeta(meta: RuntimeUpdateCommitMeta | null): Pick<
+		CommitSummary,
+		'reason' | 'touchedModules'
+	> {
+		const touchedModules = meta ? [...new Set(meta.touchedModules)] : []
+		return meta ? { reason: meta.reason, touchedModules } : { touchedModules }
 	}
 
 	private replacePendingStarts(ids: Iterable<PluginIdentifier>): void {

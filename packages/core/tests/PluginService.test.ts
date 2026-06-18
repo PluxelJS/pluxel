@@ -114,6 +114,89 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('tracks runtime module ownership inside update transactions', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-a.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-a.ts')
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-A')).toBe('module-a.ts')
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
+			expect(host.ctx.registry.listRuntimeModuleItems('module-a.ts')).toEqual([])
+		})
+	})
+
+	it('keeps runtime module ownership after update commit', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-COMMIT-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-commit.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.register(A)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
+			expect(host.ctx.registry.lastCommit?.touchedModules).toEqual(['module-commit.ts'])
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-commit.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-commit.ts')).toEqual([
+				{ ctor: A, exportKey: 'A' },
+			])
+		})
+	})
+
+	it('reports touched modules without mutating module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-TOUCH-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.touchModule('module-touch.ts')
+			tx.register(A)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
+			expect(host.ctx.registry.lastCommit?.touchedModules).toEqual(['module-touch.ts'])
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
+		})
+	})
+
+	it('keeps runtime module ctor index when stale module ownership is removed', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-MOVE-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-old.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.upsertModule({
+				moduleId: 'module-new.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.removeModule('module-old.ts')
+			tx.register(A)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-new.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-old.ts')).toEqual([])
+		})
+	})
+
 	it('resolves aliases through the committed graph', async () => {
 		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}

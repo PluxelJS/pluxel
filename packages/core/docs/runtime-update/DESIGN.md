@@ -2,6 +2,8 @@
 
 本文档描述一次克制的 runtime core 重设：让 core 高效支持 HMR、动态加载、配置变更和未来 package refresh，同时避免把 Vite、Module Federation、worker 编译等开发期细节塞进 core。
 
+当前落地状态和接手清单见 `packages/core/docs/runtime-update/STATUS.md`；设计合理性和推进判断见 `packages/core/docs/runtime-update/RATIONALE.md`。本文档只记录目标设计、边界和被否决的方向。
+
 核心判断：
 
 - HMR 不是 core 的概念，"运行时声明更新"才是 core 的概念。
@@ -295,7 +297,7 @@ type RuntimeUpdateSummary = {
 }
 ```
 
-UI compiler、worker watcher、ops/status UI 可以消费 summary，但不需要知道 core draft 细节。
+UI compiler、worker watcher、plugin status/workbench consumers 可以消费 summary，但不需要知道 core draft 细节。
 
 ## 5. Adapter 边界
 
@@ -494,7 +496,7 @@ if (!result.ok) {
 1. 用 `PluginKey` 解除插件身份和 constructor 引用的绑定。
 2. 用 `RuntimeUpdateTransaction` 让 core 拥有声明更新的事务边界。
 
-其他抽象先克制。等这两件事落地后，再看 UI federation、worker、static build 是否真的共享了足够多的 artifact 生命周期，再决定是否抽 provider。
+其他抽象先克制。UI federation、worker、static build 的 artifact 生命周期不属于本轮 runtime core 设计；除非未来有新的充分证据，否则不要抽 provider。
 
 设计成功的标志不是类变多，而是这些代码变少：
 

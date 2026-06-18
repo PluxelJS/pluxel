@@ -380,6 +380,7 @@ class HmrRuntimeCommitScheduler {
 		const { batch, runtimeUpdate, replacedModules } = params
 		const affectedModules = readBatchAffectedModules(batch)
 		const syncedModules = new Set<string>()
+		runtimeUpdate.touchModules([...replacedModules, ...affectedModules])
 
 		const affectedOnlyModules = excludeIds(affectedModules, replacedModules)
 		if (affectedOnlyModules.length > 0) {
@@ -445,6 +446,7 @@ class HmrRuntimeCommitScheduler {
 					...params.affectedModules,
 				]),
 			)
+			params.runtimeUpdate.touchModules(params.syncedModules)
 			res = await params.runtimeUpdate.commit({ rollbackOnFailure: false })
 			params.setResult(res)
 			pass++
@@ -518,8 +520,8 @@ export class HmrExecutor {
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
 
-		const batch = this.ctx.loader.beginBatch()
 		const runtimeUpdate = this.ctx.registry.beginUpdate({ reason: 'hmr' })
+		const batch = this.ctx.loader.beginBatch({ runtimeUpdate })
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
 		const replacedModules: string[] = []

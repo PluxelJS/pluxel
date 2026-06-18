@@ -28,6 +28,13 @@ type ModuleId = string
 type PluginName = string
 type ExportKey = string
 type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
+type RuntimeModuleUpdateBridge = {
+	upsertModule(module: {
+		moduleId: ModuleId
+		items: ReadonlyArray<{ ctor: PluginConstructor; exportKey?: ExportKey }>
+	}): void
+	removeModule(moduleId: ModuleId): void
+}
 
 const EMPTY: readonly ModuleItem[] = []
 const isIndexFile = (p: string) => /(?:^|[\\/])index\.[cm]?[tj]sx?$/.test(p)
@@ -81,7 +88,6 @@ export class PluginRegistry {
 	private moduleMap = new Map<ModuleId, readonly ModuleItem[]>() // 模块 -> [{ ctor, exportKey }]
 	private nameMap = new Map<PluginName, PluginConstructor>() // 名称 -> ctor
 	private name2Path = new Map<PluginName, ModuleId>() // 名称 -> 文件
-	private name2ExportKey = new Map<PluginName, ExportKey>() // 名称 -> 导出键
 	private enrolled = new WeakMap<PluginConstructor, Set<ModuleId>>() // 模块级去重
 
 	constructor(private ctx: Context) {}
@@ -119,10 +125,12 @@ export class PluginRegistry {
 	 *
 	 * 性能：只记录变更 key 的旧值（O(变更)），不 clone 全表（O(插件总数)）。
 	 */
-	public beginTransaction() {
+	public beginTransaction(options: { runtimeUpdate?: RuntimeModuleUpdateBridge } = {}) {
 		type Undo = () => void
 		const undos: Undo[] = []
 		const seen = new Map<object, Set<unknown>>() // map -> keys
+		const touchedModules = new Set<ModuleId>()
+		const runtimeUpdate = options.runtimeUpdate
 
 		const record = <K, V>(map: Map<K, V>, key: K) => {
 			let keys = seen.get(map as unknown as object)
@@ -177,22 +185,60 @@ export class PluginRegistry {
 		}
 
 		return {
-			recordModule: (moduleId: ModuleId) => record(this.moduleMap, moduleId),
+			recordModule: (moduleId: ModuleId) => {
+				touchedModules.add(moduleId)
+				record(this.moduleMap, moduleId)
+			},
 			recordName: (name: PluginName) => {
 				record(this.nameMap, name)
 				record(this.name2Path, name)
-				record(this.name2ExportKey, name)
 			},
 			recordEnrolled: (ctor: PluginConstructor) => recordWeak(this.enrolled, ctor),
 			recordIdentity,
+			publishRuntimeModule: (moduleId: ModuleId) => {
+				if (!runtimeUpdate) return
+				this.publishRuntimeModule(moduleId, runtimeUpdate)
+			},
 			rollback: () => {
 				for (let i = undos.length - 1; i >= 0; i--) undos[i]!()
+				touchedModules.clear()
 			},
 			commit: () => {
+				if (!runtimeUpdate) {
+					for (const moduleId of touchedModules) this.syncCoreRuntimeModule(moduleId)
+				}
 				undos.length = 0
 				seen.clear()
+				touchedModules.clear()
 			},
 		}
+	}
+
+	private publishRuntimeModule(
+		moduleId: ModuleId,
+		runtimeUpdate: RuntimeModuleUpdateBridge,
+	): void {
+		const items = this.moduleMap.get(moduleId)
+		if (!items || items.length === 0) {
+			runtimeUpdate.removeModule(moduleId)
+			return
+		}
+		runtimeUpdate.upsertModule({
+			moduleId,
+			items: items.map((item) => ({ ctor: item.ctor, exportKey: item.exportKey })),
+		})
+	}
+
+	private syncCoreRuntimeModule(moduleId: ModuleId): void {
+		const items = this.moduleMap.get(moduleId)
+		if (!items || items.length === 0) {
+			this.ctx.registry.removeRuntimeModule(moduleId)
+			return
+		}
+		this.ctx.registry.upsertRuntimeModule({
+			moduleId,
+			items: items.map((item) => ({ ctor: item.ctor, exportKey: item.exportKey })),
+		})
 	}
 
 	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
@@ -240,7 +286,18 @@ export class PluginRegistry {
 		return getPluginInfo(ctor)?.configLayoutMap ?? undefined
 	}
 	getExportKeyByName(name: string): ExportKey | undefined {
-		return this.name2ExportKey.get(name)
+		const moduleId = this.name2Path.get(name)
+		if (!moduleId) return undefined
+		const items = this.moduleMap.get(moduleId) ?? EMPTY
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i]!
+			try {
+				if (getPluginInfo(item.ctor).id === name) return item.exportKey
+			} catch {
+				// ignore invalid decorator state in stale declarations
+			}
+		}
+		return undefined
 	}
 
 	listModuleItems(moduleId: ModuleId): readonly ModuleItem[] {
@@ -352,8 +409,9 @@ export class PluginRegistry {
 			!candidateIsIndexAlias
 		if (shouldUpdatePrimaryMapping) {
 			this.name2Path.set(name, moduleId)
-			this.name2ExportKey.set(name, exportKey)
 		}
+		tx?.publishRuntimeModule(moduleId)
+		if (!tx) this.syncCoreRuntimeModule(moduleId)
 		return name
 	}
 
@@ -370,7 +428,6 @@ export class PluginRegistry {
 			if (this.name2Path.get(name) === moduleId) {
 				this.nameMap.delete(name)
 				this.name2Path.delete(name)
-				this.name2ExportKey.delete(name)
 			}
 			const prevSeen = this.enrolled.get(ctor)
 			if (!prevSeen) continue
@@ -386,6 +443,8 @@ export class PluginRegistry {
 			if (prevSeen.size === 0) this.enrolled.delete(ctor)
 		}
 		this.moduleMap.delete(moduleId)
+		tx?.publishRuntimeModule(moduleId)
+		if (!tx) this.syncCoreRuntimeModule(moduleId)
 	}
 
 	// =============== 运行层：启/停 ===============

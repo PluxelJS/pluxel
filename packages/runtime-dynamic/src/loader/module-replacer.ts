@@ -155,7 +155,7 @@ export class ModuleReplacer {
 			const slot = stack.pop()!
 			const name = graph.declarationAtSlot(slot)?.meta?.id
 			if (name) {
-				const moduleId = this.registry.name2PathMap.get(name)
+				const moduleId = this.ctx.registry.getRuntimeModuleId(name) ?? this.registry.name2PathMap.get(name)
 				if (moduleId) out.add(moduleId)
 			}
 
