@@ -37,8 +37,8 @@
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@mantine/core": "^9.3.1",
-		"@mantine/hooks": "^9.3.1",
+		"@mantine/core": "^9.3.2",
+		"@mantine/hooks": "^9.3.2",
 		"@tabler/icons-react": "^3.37.1",
 		"@tanstack/react-form": "^1.28.3",
 		"@types/react": "^19.2.14",
@@ -47,7 +47,7 @@
 		"jsdom": "^28.1.0",
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7",
-		"tsdown": "^0.22.2",
+		"tsdown": "^0.22.3",
 		"typescript": "^6.0.3",
 		"vite": "beta"
 	},
@@ -56,8 +56,8 @@
 		"@dnd-kit/modifiers": "^9.0.0",
 		"@dnd-kit/sortable": "^10.0.0",
 		"@dnd-kit/utilities": "^3.2.2",
-		"@mantine/core": "^9.3.1",
-		"@mantine/hooks": "^9.3.1",
+		"@mantine/core": "^9.3.2",
+		"@mantine/hooks": "^9.3.2",
 		"@tabler/icons-react": "^3.37.1",
 		"@tanstack/react-form": "^1.28.3",
 		"react": "^19.2.7",

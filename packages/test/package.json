@@ -81,12 +81,12 @@
 		"@platformatic/vfs": "^0.3.0",
 		"@pluxel/rolldown": "workspace:*",
 		"fs-fixture": "^2.13.0",
-		"vitest": "^4.1.8"
+		"vitest": "^4.1.9"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
 		"oxlint": "^1.58.0",
-		"vitest": "^4.1.8"
+		"vitest": "^4.1.9"
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.3.4",

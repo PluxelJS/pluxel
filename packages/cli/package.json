@@ -62,7 +62,7 @@
 		"@types/react": "^19.2.14",
 		"ink": "^6.8.0",
 		"react": "^19.2.7",
-		"tsdown": "^0.22.2",
+		"tsdown": "^0.22.3",
 		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {

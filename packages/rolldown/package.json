@@ -90,7 +90,7 @@
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"rolldown": "1.0.0-rc.5",
-		"tsdown": "^0.22.2",
+		"tsdown": "^0.22.3",
 		"vite": "beta"
 	},
 	"devDependencies": {
