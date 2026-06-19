@@ -71,7 +71,16 @@ function resolvePluginFile(ctx: Context, targetPath: string): string {
 	const pluginId = ctx.pluginInfo?.id
 	if (pluginId) {
 		try {
-			const registryPath = ctx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
+			const loaderApi = (
+				ctx as unknown as {
+					loader?: {
+						api?: { registry?: { findModuleIdByName?: (name: string) => string | undefined } }
+					}
+				}
+			).loader?.api
+			const registryPath =
+				ctx.registry.getRuntimeModuleId(pluginId) ??
+				loaderApi?.registry?.findModuleIdByName?.(pluginId)
 			const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
 			if (baseDir) return resolve(baseDir, targetPath)
 		} catch {
@@ -107,10 +116,7 @@ export function worker(
 
 	return {
 		entryPath: normalizedEntry,
-		async bind(
-			ctx: Context,
-			options: PluginWorkerBindOptions = {},
-		): Promise<PluginWorkerBinding> {
+		async bind(ctx: Context, options: PluginWorkerBindOptions = {}): Promise<PluginWorkerBinding> {
 			const external = options.external ? [...options.external] : defaultExternal
 			const fallback = options.fallback ?? defaultFallback
 			const onUpdate = options.onUpdate

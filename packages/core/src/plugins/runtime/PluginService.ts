@@ -86,6 +86,13 @@ export type RuntimeUpdateCommitOptions = {
 	 * and call commit again before eventually committing or rolling back the transaction.
 	 */
 	rollbackOnFailure?: boolean
+	/**
+	 * Plugins that an adapter disabled while recovering this runtime update.
+	 *
+	 * Core records this in the commit summary only; the policy and persistence side effects
+	 * remain owned by the adapter/control-plane layer.
+	 */
+	autoDisabled?: readonly RuntimePluginKey[]
 }
 
 export type RuntimeUpdateTransaction = {
@@ -119,6 +126,7 @@ type RuntimeModuleSnapshot =
 type RuntimeUpdateCommitMeta = {
 	reason: RuntimeUpdateReason
 	touchedModules: readonly string[]
+	autoDisabled: readonly RuntimePluginKey[]
 }
 
 type CommitExecutionPlan = {
@@ -232,6 +240,7 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 		const result = await this.registry.commitRuntimeUpdate({
 			reason: this.reason,
 			touchedModules: [...this.touchedModules],
+			autoDisabled: options.autoDisabled ?? [],
 		})
 
 		if (!result.ok) {
@@ -289,6 +298,8 @@ export interface CommitSummary {
 	removed: RuntimePluginKey[]
 	failed: RuntimePluginKey[]
 	touchedModules: string[]
+	autoDisabled: RuntimePluginKey[]
+	restarted: RuntimePluginKey[]
 	/**
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
@@ -1475,6 +1486,7 @@ export class PluginService {
 				replaced: [],
 				removed: [],
 				failed: [],
+				restarted: [],
 				touched: [],
 			})
 			return createOk({ graph, delta: EMPTY_DELTA })
@@ -1515,6 +1527,7 @@ export class PluginService {
 					replaced: [],
 					removed: [],
 					failed: [],
+					restarted: [],
 					touched: [],
 				})
 				return createOk({ graph: this.graph, delta })
@@ -1559,6 +1572,7 @@ export class PluginService {
 				replaced: [...plan.replaced],
 				removed: [...plan.removed],
 				failed: [...failed],
+				restarted: this.collectRestartedSummary(plan, failed),
 				touched: [...new Set<RuntimePluginKey>([...plan.toStop, ...plan.toStart])],
 			})
 
@@ -1640,6 +1654,26 @@ export class PluginService {
 		return slots
 	}
 
+	private collectRestartedSummary(
+		plan: CommitExecutionPlan,
+		failed: ReadonlySet<RuntimePluginKey>,
+	): RuntimePluginKey[] {
+		const structural = new Set<RuntimePluginKey>([...plan.added, ...plan.removed, ...failed])
+		for (const { from, to } of plan.replaced) {
+			structural.add(from)
+			structural.add(to)
+		}
+
+		const restarted: RuntimePluginKey[] = []
+		const seen = new Set<RuntimePluginKey>()
+		for (const id of plan.toStart) {
+			if (structural.has(id) || seen.has(id)) continue
+			seen.add(id)
+			restarted.push(id)
+		}
+		return restarted
+	}
+
 	private publishCommitSummary(summary: CommitSummary): void {
 		this._lastCommit = summary
 		this.watcherRegistry.publish(summary)
@@ -1648,9 +1682,12 @@ export class PluginService {
 
 	private createCommitSummaryMeta(
 		meta: RuntimeUpdateCommitMeta | null,
-	): Pick<CommitSummary, 'reason' | 'touchedModules'> {
+	): Pick<CommitSummary, 'reason' | 'touchedModules' | 'autoDisabled'> {
 		const touchedModules = meta ? [...new Set(meta.touchedModules)] : []
-		return meta ? { reason: meta.reason, touchedModules } : { touchedModules }
+		const autoDisabled = meta ? [...new Set(meta.autoDisabled)] : []
+		return meta
+			? { reason: meta.reason, touchedModules, autoDisabled }
+			: { touchedModules, autoDisabled }
 	}
 
 	private replacePendingStarts(ids: Iterable<RuntimePluginKey>): void {

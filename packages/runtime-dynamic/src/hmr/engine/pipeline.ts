@@ -388,8 +388,8 @@ class HmrRuntimeCommitScheduler {
 		}
 
 		const endCommit = startTimer()
-		let res: CommitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
 		const autoDisabled = new Set<string>()
+		let res: CommitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
 
 		if (!res.ok) {
 			await this.retryMissingDependencies({
@@ -447,7 +447,10 @@ class HmrRuntimeCommitScheduler {
 				]),
 			)
 			params.runtimeUpdate.touchModules(params.syncedModules)
-			res = await params.runtimeUpdate.commit({ rollbackOnFailure: false })
+			res = await params.runtimeUpdate.commit({
+				rollbackOnFailure: false,
+				autoDisabled: [...params.autoDisabled].sort(),
+			})
 			params.setResult(res)
 			pass++
 		}
@@ -596,7 +599,8 @@ function collectEnabledButStopped(ctx: Context, moduleIds: ReadonlySet<string>):
 	const out: string[] = []
 	for (const [name, status] of Object.entries(statuses)) {
 		if (!status?.isEnabled || status.isRunning) continue
-		const moduleId = ctx.loader.api.registry.findModuleIdByName(name)
+		const moduleId =
+			ctx.registry.getRuntimeModuleId(name) ?? ctx.loader.api.registry.findModuleIdByName(name)
 		if (!moduleId || !moduleIds.has(moduleId)) continue
 		out.push(name)
 	}
@@ -829,6 +833,7 @@ export type HmrBatchSummary = {
 		failed: readonly string[]
 		touched: readonly string[]
 		restarted: readonly string[]
+		autoDisabled: readonly string[]
 	}
 }
 

@@ -70,6 +70,9 @@ function createFakeCtx(overrides?: Partial<any>, fixture?: Pick<TestFixture, 'fs
 		logger: rootLogger,
 		name: 'test',
 		pluginInfo: { id: 'test-plugin' },
+		registry: {
+			getRuntimeModuleId: vi.fn(() => undefined),
+		},
 		effects: {
 			defer: (fn: () => void) => ({ dispose: fn }),
 		},
@@ -251,6 +254,39 @@ describe('ExtensionService runtime/hmr boundary', () => {
 					service.resolveArtifactFile('test-plugin', compiled.sourceHash, 'mf-manifest.json'),
 				).toBe(join(fixture.path, 'dist/ui.remote/mf-manifest.json'))
 
+				dispose()
+			},
+		)
+	})
+
+	it('packaged() resolves implicit manifest path from core runtime ownership first', async () => {
+		await withPackagedService(
+			{
+			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+			src: {
+				'index.ts': 'export {}',
+			},
+			dist: {
+				'ui.remote': {
+					'mf-manifest.json': JSON.stringify({
+						id: 'demo',
+						metadata: {},
+					}),
+				},
+			},
+			},
+			() => '/tmp/loader-fallback/index.ts',
+			async ({ fixture, service, ctx }) => {
+				ctx.registry = {
+					getRuntimeModuleId: vi.fn(() => join(fixture.path, 'src/index.ts')),
+				}
+				const findModuleIdByName = ctx.loader.api.registry.findModuleIdByName
+
+				const dispose = service.packaged()
+				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
+
+				expect(ctx.registry.getRuntimeModuleId).toHaveBeenCalledWith('test-plugin')
+				expect(findModuleIdByName).not.toHaveBeenCalled()
 				dispose()
 			},
 		)

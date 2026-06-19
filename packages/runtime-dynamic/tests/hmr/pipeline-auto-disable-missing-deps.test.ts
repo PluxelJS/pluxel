@@ -127,6 +127,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.affectedModules).toEqual([])
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
+			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['Broken'])
 			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(false)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
@@ -175,6 +176,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.res.ok).toBe(true)
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
+			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['Broken'])
 			expect(host.require(Stable)).toBe(firstStable)
 		} finally {
 			await host.dispose()
@@ -184,17 +186,15 @@ describe('HmrExecutor commit retry', () => {
 
 describe('HmrBatchProcessor summary', () => {
 	it('reports enabled-but-stopped plugins within the batch-related module set', async () => {
+		const findModuleIdByName = vi.fn((name: string) =>
+			name === 'StoppedElsewhere' ? '/other.ts' : null,
+		)
 		const ctx = {
 			loader: {
 				api: {
 					registry: {
 						listRegistered: () => new Map(),
-						findModuleIdByName: (name: string) =>
-							name === 'StoppedInBatch'
-								? '/consumer.ts'
-								: name === 'StoppedElsewhere'
-									? '/other.ts'
-									: null,
+						findModuleIdByName,
 					},
 					status: {
 						snapshot: () => ({
@@ -212,7 +212,11 @@ describe('HmrBatchProcessor summary', () => {
 				},
 				pruneModule: () => {},
 			},
-			registry: { graph: { activeCount: () => 0 } },
+			registry: {
+				getRuntimeModuleId: (name: string) =>
+					name === 'StoppedInBatch' ? '/consumer.ts' : undefined,
+				graph: { activeCount: () => 0 },
+			},
 			configService: { isEnabledInConfig: () => false },
 			logger: { info: () => {}, warn: () => {}, error: () => {} },
 		} as any
@@ -264,5 +268,6 @@ describe('HmrBatchProcessor summary', () => {
 
 		const summary = await processor.process(['/consumer.ts'], 1)
 		expect(summary?.enabledButStopped).toEqual(['StoppedInBatch'])
+		expect(findModuleIdByName).not.toHaveBeenCalledWith('StoppedInBatch')
 	})
 })

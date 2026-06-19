@@ -125,8 +125,9 @@ Phase 3 性能判断：
 Phase 4/5 未完成：adapter 继续瘦身和旧补丁删除。
 
 - HMR executor 仍知道 retry 后需要 re-sync affected/replaced modules。
-- commit summary 还不是完整的 `RuntimeUpdateSummary`；已有 `reason` / `touchedModules`，但缺少 `autoDisabled`、revision replacement 等稳定字段。
-- UI compiler / worker watcher 还没有统一改成只消费 commit summary 或 plugin lifecycle。
+- commit summary 已有 `reason` / `touchedModules` / `autoDisabled` / `restarted`；仍缺少 revision replacement 等稳定字段。
+- worker fallback path、Tinypool worker entry resolution、runtime packaged manifest implicit path、HMR enabled-but-stopped 诊断、UI extension compiler entry base-dir lookup 已优先使用 core runtime module ownership read model，loader registry 只作为兼容 fallback。
+- UI compiler / worker watcher 还没有完全统一成只消费 commit summary 或 plugin lifecycle；watch files、source entry、HMR handles 仍属于 adapter 语义，不能下沉到 core。
 - 外层 retry re-sync、与 core transaction 重叠的 HMR helper 仍需在后续阶段删除；constructor param normalization patch 和 dependency override metadata mutation patch 已删除。
 
 ## 推荐下一步
@@ -149,7 +150,7 @@ Phase 4/5 入口约束：
 推荐的下一步候选：
 
 1. 梳理 HMR executor 中 failure retry 后的 `batch.syncModules(...)`，只在能删除外层重复协调时才推进 transaction option。
-2. 升级 commit summary：优先补 adapter 真正在读的字段，例如 `autoDisabled`、replacement revision/module info，而不是一次性设计大而全的事件模型。
+2. 继续升级 commit summary：优先补 adapter 真正在读的字段，例如 replacement revision/module info，而不是一次性设计大而全的事件模型。
 3. 让 UI compiler / worker watcher / status consumers 优先消费 commit summary 或 lifecycle event，减少直接读取 loader/core 内部状态。
 4. 清理 runtime-dynamic 中与 core transaction 重叠的 helper；每删一条 helper 配一个 focused regression test。
 

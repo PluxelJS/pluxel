@@ -47,7 +47,7 @@ export type BundleResult = {
 	hash: string
 }
 
-export type TinypoolWorkerOwnerContext = Pick<PluxelContext, 'loader' | 'pluginInfo'>
+export type TinypoolWorkerOwnerContext = Pick<PluxelContext, 'loader' | 'pluginInfo' | 'registry'>
 
 export type TinypoolWorkerCompileOptions = {
 	external?: string[]
@@ -343,7 +343,9 @@ export class BundlerService {
 		const pluginId = ownerCtx.pluginInfo?.id
 		if (pluginId) {
 			try {
-				const registryPath = ownerCtx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
+				const registryPath =
+					ownerCtx.registry.getRuntimeModuleId(pluginId) ??
+					ownerCtx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
 				const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
 				if (baseDir) {
 					return resolve(baseDir, tsEntry)

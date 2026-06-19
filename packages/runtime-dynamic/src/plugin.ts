@@ -20,7 +20,9 @@ export interface LoaderHmrUiModuleDeclaration {
 	bind(ctx: Context): () => void
 }
 
-function normalizeUiConfig(input: string | LoaderHmrUiSourceDeclaration): LoaderHmrUiSourceDeclaration {
+function normalizeUiConfig(
+	input: string | LoaderHmrUiSourceDeclaration,
+): LoaderHmrUiSourceDeclaration {
 	const entryPath =
 		typeof input === 'string' ? String(input).trim() : String(input.entryPath ?? '').trim()
 	return { entryPath }
@@ -72,7 +74,16 @@ function resolvePluginFile(ctx: Context, targetPath: string): string {
 	const pluginId = ctx.pluginInfo?.id
 	if (pluginId) {
 		try {
-			const registryPath = ctx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
+			const loaderApi = (
+				ctx as unknown as {
+					loader?: {
+						api?: { registry?: { findModuleIdByName?: (name: string) => string | undefined } }
+					}
+				}
+			).loader?.api
+			const registryPath =
+				ctx.registry.getRuntimeModuleId(pluginId) ??
+				loaderApi?.registry?.findModuleIdByName?.(pluginId)
 			const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
 			if (baseDir) return resolve(baseDir, targetPath)
 		} catch {

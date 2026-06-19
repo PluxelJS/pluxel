@@ -561,8 +561,8 @@ export class LoaderHmrService {
 			throw error
 		}
 
-			if (this.config.printUrls !== false) server.printUrls()
-			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
+		if (this.config.printUrls !== false) server.printUrls()
+		void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
 		// Default operational report: info-level, counts only.
 		// Best-effort and must never block startup.
 		void this.logOperationalReport('startup').catch((error) => {
@@ -1057,19 +1057,14 @@ export class LoaderHmrService {
 		const removed = commit.removed.map((id) => this.formatIdentifier(id))
 		const failed = commit.failed.map((id) => this.formatIdentifier(id))
 		const touched = commit.touched.map((id) => this.formatIdentifier(id))
-		const structural = new Set<string>([
-			...added,
-			...removed,
-			...failed,
-			...replaced.map((item) => item.from),
-			...replaced.map((item) => item.to),
-		])
-		const restarted = touched.filter((id) => !structural.has(id))
+		const restarted = commit.restarted.map((id) => this.formatIdentifier(id))
+		const autoDisabled = commit.autoDisabled.map((id) => this.formatIdentifier(id))
 
 		return {
 			...summary,
+			autoDisabled,
 			lifecycleOk: failed.length === 0,
-			commit: { added, replaced, removed, failed, touched, restarted },
+			commit: { added, replaced, removed, failed, touched, restarted, autoDisabled },
 		}
 	}
 

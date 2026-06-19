@@ -328,7 +328,11 @@ export class LoaderService {
 				})
 
 				let pass = 0
-				let res = await runtimeUpdate!.commit({ rollbackOnFailure: false })
+				const autoDisabled = new Set<string>()
+				let res = await runtimeUpdate!.commit({
+					rollbackOnFailure: false,
+					autoDisabled: [...autoDisabled],
+				})
 				while (
 					!res.ok &&
 					!strict &&
@@ -345,11 +349,15 @@ export class LoaderService {
 						stage: 'builtins preload',
 					})
 					if (disabled.size === 0) break
+					for (const name of disabled) autoDisabled.add(name)
 
 					// Commit failure rolls core draft back internally; enable remaining plugins again and retry
 					// within the same runtime update transaction.
 					await enableTargetsIfEnabledInConfig()
-					res = await runtimeUpdate!.commit({ rollbackOnFailure: false })
+					res = await runtimeUpdate!.commit({
+						rollbackOnFailure: false,
+						autoDisabled: [...autoDisabled].sort(),
+					})
 					pass++
 				}
 

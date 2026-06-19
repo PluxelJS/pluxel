@@ -19,6 +19,9 @@ function createPluginCtx() {
 			defer: (fn: () => void | Promise<void>) => ({ dispose: fn }),
 		},
 		pluginInfo: { id: 'DemoPlugin' },
+		registry: {
+			getRuntimeModuleId: vi.fn(() => undefined),
+		},
 		loader: {
 			api: {
 				registry: {
@@ -90,6 +93,22 @@ describe('@pluxel/runtime/plugin', () => {
 			mode: 'fallback',
 			url: pathToFileURL('/tmp/demo-plugin/dist/worker.mjs').href,
 		})
+	})
+
+	it('worker() resolves fallback paths from core runtime module ownership first', async () => {
+		const { pluginCtx } = createPluginCtx()
+		pluginCtx.registry.getRuntimeModuleId.mockReturnValue('/tmp/core-plugin/index.ts')
+		const onUpdate = vi.fn()
+
+		await worker('./ui/worker.ts', {
+			fallback: './dist/worker.mjs',
+		}).bind(pluginCtx, { onUpdate })
+
+		expect(onUpdate).toHaveBeenCalledWith({
+			mode: 'fallback',
+			url: pathToFileURL('/tmp/core-plugin/dist/worker.mjs').href,
+		})
+		expect(pluginCtx.loader.api.registry.findModuleIdByName).not.toHaveBeenCalled()
 	})
 
 	it('worker() uses root-scoped dev handles and tracks HMR updates', async () => {

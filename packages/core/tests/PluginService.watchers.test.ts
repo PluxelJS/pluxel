@@ -65,6 +65,7 @@ describe('PluginService watchInstance()', () => {
 			expect(summary.replaced).toEqual([])
 			expect(summary.failed).toEqual([])
 			expect(summary.touched).toEqual(['WATCH-RESTART'])
+			expect(summary.restarted).toEqual(['WATCH-RESTART'])
 			expect(second).not.toBe(first)
 			expect(seen).toEqual(['none', first.label, second.label])
 		})

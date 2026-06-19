@@ -47,12 +47,20 @@ describe('PluginService commit()', () => {
 
 			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
 			expect(tx.reason).toBe('hmr')
+			tx.touchModule('tx-commit.ts')
 			tx.register(A)
-			const res = await tx.commit({ strict: true })
+			const res = await tx.commit({
+				strict: true,
+				autoDisabled: ['TX-META-DISABLED'],
+			})
 
 			expect(res.ok).toBe(true)
 			expect(host.ctx.registry.isRunning(A)).toBe(true)
 			expect(host.get(A)).toBeInstanceOf(A)
+			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
+			expect(host.ctx.registry.lastCommit?.touchedModules).toEqual(['tx-commit.ts'])
+			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['TX-META-DISABLED'])
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
 		})
 	})
 
@@ -473,23 +481,6 @@ describe('PluginService commit()', () => {
 				'dep-fork-owner.ts',
 			)
 			expect(host.ctx.registry.getRuntimeModuleId(DepFork)).toBe('dep-fork-owner.ts')
-		})
-	})
-
-	it('reports touched modules without mutating module ownership', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'TX-MODULE-TOUCH-A' })
-			class A extends BasePlugin {}
-
-			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
-			tx.touchModule('module-touch.ts')
-			tx.register(A)
-			const res = await tx.commit()
-
-			expect(res.ok).toBe(true)
-			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
-			expect(host.ctx.registry.lastCommit?.touchedModules).toEqual(['module-touch.ts'])
-			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
 		})
 	})
 

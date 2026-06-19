@@ -692,7 +692,9 @@ export class ExtensionService implements ExtensionModuleStore {
 				}
 			}
 		).loader?.api
-		const registryPath = loaderApi?.registry?.findModuleIdByName?.(pluginName)
+		const registryPath =
+			this.ctx.registry.getRuntimeModuleId(pluginName) ??
+			loaderApi?.registry?.findModuleIdByName?.(pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
 			if (baseDir) {

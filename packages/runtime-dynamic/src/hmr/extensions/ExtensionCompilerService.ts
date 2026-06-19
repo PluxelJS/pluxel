@@ -642,7 +642,9 @@ export class ExtensionCompilerService {
 	}
 
 	private findPluginEntryBaseDir(ctx: Context, pluginName: string): string | null {
-		const registryPath = ctx.loader.api.registry.findModuleIdByName(pluginName)
+		const registryPath =
+			ctx.registry.getRuntimeModuleId(pluginName) ??
+			ctx.loader.api.registry.findModuleIdByName(pluginName)
 		if (!registryPath) return null
 		return resolveModuleIdBaseDir(registryPath)
 	}
