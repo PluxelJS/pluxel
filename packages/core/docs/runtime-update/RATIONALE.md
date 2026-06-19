@@ -139,6 +139,44 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - graph 内部仍编译为 slot/array，不让业务热路径做 string Map lookup。
 - 分批迁移 constructor API，不一次性破坏现有 plugin authoring。
 
+截至当前停点，Phase 3 已完成第一处窄切口：HMR/loader 侧 constructor param metadata mutation patch 已删除，dependency ctor identity drift 改为在 core declaration build 阶段通过 committed runtime module ownership read model 归一。这个改动仍不是完整 PluginKey graph；它只是把真实输入面收敛到 build 边界，并用删除旧补丁验证 Phase 3 方向成立。
+
+随后完成的第二个窄切口是 persisted dependency override overlay：loader 和 runtime control-plane 不再改写 constructor param metadata，而是把“某个 consumer 在某些 index 上选择了哪个 runtime dependency”的事实发布给 core。core 在 provider declaration build 阶段把 overlay 与原始 constructor params 合成，commit 后重启 consumer subtree。
+
+当前停止点合理，因为：
+
+- 新成本只发生在 declaration/build/update rollback 边界；无 token 变化时复用原 deps array。
+- loader 不再改写 decorator metadata，也不再记录 normalization warning。
+- loader/control-plane 不再调用 `setParamToken(...)` / `clearParamToken(...)` 来表达 persisted dependency selection，constructor metadata 重新只表示 authoring/declaration 默认值。
+- fork id drift 已通过 exact ownership 和 base fallback 覆盖。
+- 显式 runtime read model（`isRunning` / `getInstance` / `watchInstance`）也能从 committed ownership 解析 shadow ctor，避免把 constructor identity drift 泄漏给 runtime consumers。
+- ownership rollback 使用 module revision 选择最近 owner；较旧 snapshot restore 不会覆盖仍然更新的同名 owner。
+- update planning path 仍保留 graph-token 语义，避免 HMR ownership 已指向新 ctor 时错误地把 replace/unregister 目标改到新实现。
+- persisted override 的 config extra 读取、fork catalog 写入、selected dependency enablement 仍留在 loader/control-plane，因为它们属于 adapter/runtime usecase，不属于 core dependency graph。
+- 继续往完整 PluginKey graph 推进前，还需要找到能删除的下一条 compat 分支；否则应停止。
+
+### Phase 3 当前性能损益
+
+新增成本：
+
+- core `PluginService` 多维护一个 `plugin id -> constructor param override array` 的 Map。
+- 设置或清除 override 时会重建该 consumer 的 provider declaration，并把 consumer canonical key 加入 pending restart。
+- loader 在 module declaration apply 阶段会从 `EXTRA_DEP_OVERRIDES` 构造一次 overlay array；control-plane set target 会从完整 persisted state 重新构造一次 overlay array。
+- inspect 为了呈现 persisted selection 的 effective target，会在 read usecase 中解析一次 selected plugin name。
+
+删除或降低的成本：
+
+- HMR/module reload 不再反复改写 decorator metadata，也不需要清理 metadata override。
+- control-plane set target 不再通过全局 constructor metadata 表达 runtime selection，避免同一个 constructor 在多个 runtime/context 之间共享脏状态。
+- loader 和 core 的职责更短：adapter 只读 config/catalog 并发布 overlay；core 只在 declaration build 合成依赖 token。
+
+性能判断：
+
+- 插件业务热路径没有新增 Map lookup；依赖注入仍发生在 commit/start 构造实例时。
+- 单次 HMR 或 set target 多一个小数组构造和 declaration replace，成本与已有 commit/restart 相比很小。
+- 多参数 override 的成本与 override 数量线性相关，只出现在 config apply / control-plane mutation 边界。
+- 总体是小幅增加 core bookkeeping，换掉跨 loader/control-plane 的 metadata mutation 和 cleanup 成本；对稳定运行态性能近似零影响，对 HMR/control-plane 路径通常是正向或持平。
+
 ### Commit summary 升级
 
 低风险，值得做。

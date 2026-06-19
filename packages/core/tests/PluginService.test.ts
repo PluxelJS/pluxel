@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 import { PluginB } from './plugins'
 
 function createDeferred() {
@@ -156,6 +156,196 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('resolves dependency ctor identity drift from runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-DEP' })
+			class Dep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-DEP' })
+			class DepShadow extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepShadow) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepShadow)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.upsertModule({
+				moduleId: 'consumer.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			tx.register(Dep)
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(Dep)
+		})
+	})
+
+	it('resolves explicit runtime queries from runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-QUERY' })
+			class Dep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-QUERY' })
+			class DepShadow extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'query.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.register(Dep)
+			expect((await tx.commit()).ok).toBe(true)
+
+			expect(host.ctx.registry.isRunning(DepShadow)).toBe(true)
+			expect(host.ctx.registry.getInstance(DepShadow)).toBeInstanceOf(Dep)
+		})
+	})
+
+	it('applies runtime dependency override overlays without mutating constructor metadata', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			expect((await host.commit()).failed).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB])
+			expect((await host.commit()).failed).toEqual([])
+
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('applies runtime dependency override overlays by runtime owner name', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-NAME-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-NAME-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-NAME-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			host.ctx.registry.upsertRuntimeModule({
+				moduleId: 'Consumer.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			host.ctx.registry.setRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [
+				DepB,
+			])
+
+			expect((await host.commit()).failed).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('keeps unrelated runtime dependency override indexes when one index returns to default', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-C' })
+			class DepC extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-D' })
+			class DepD extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(
+					readonly first: DepA,
+					readonly second: DepC,
+				) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+			setParamToken(Consumer, 1, DepC)
+
+			host.add([DepA, DepB, DepC, DepD, Consumer])
+			expect((await host.commit()).failed).toEqual([])
+
+			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB, DepD])
+			expect((await host.commit()).failed).toEqual([])
+			expect(host.get(Consumer)?.first).toBeInstanceOf(DepB)
+			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
+
+			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [undefined, DepD])
+			expect((await host.commit()).failed).toEqual([])
+			expect(host.get(Consumer)?.first).toBeInstanceOf(DepA)
+			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
+		})
+	})
+
+	it('resolves fork dependency ctor identity drift from exact runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-FORK-DEP' })
+			class Dep extends ForkablePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-FORK-DEP' })
+			class DepShadow extends ForkablePlugin {}
+
+			const DepFork = host.ctx.registry.fork(Dep, 'blue')
+			const DepShadowFork = host.ctx.registry.fork(DepShadow, 'blue')
+
+			@Plugin({ name: 'TX-MODULE-FORK-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: Dep) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepShadowFork)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep-fork.ts',
+				items: [{ ctor: DepFork, exportKey: 'DepBlue' }],
+			})
+			tx.upsertModule({
+				moduleId: 'consumer-fork.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			tx.register(DepFork)
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepFork)
+		})
+	})
+
 	it('reports touched modules without mutating module ownership', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'TX-MODULE-TOUCH-A' })
@@ -194,6 +384,130 @@ describe('PluginService commit()', () => {
 			expect(res.ok).toBe(true)
 			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-new.ts')
 			expect(host.ctx.registry.listRuntimeModuleItems('module-old.ts')).toEqual([])
+		})
+	})
+
+	it('restores previous runtime module owner when an overlapping update rolls back', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OWNER' })
+			class A extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OWNER' })
+			class NextA extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-a.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			seed.register(A)
+			expect((await seed.commit()).ok).toBe(true)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-next.ts',
+				items: [{ ctor: NextA, exportKey: 'A' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe(
+				'module-next.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe(
+				'module-a.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-a.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-a.ts')).toEqual([
+				{ ctor: A, exportKey: 'A' },
+			])
+			expect(host.ctx.registry.listRuntimeModuleItems('module-next.ts')).toEqual([])
+		})
+	})
+
+	it('restores the latest previous runtime module owner when multiple modules share an id', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class First extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class Second extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class Third extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: First, exportKey: 'Plugin' }],
+			})
+			seed.upsertModule({
+				moduleId: 'module-second.ts',
+				items: [{ ctor: Second, exportKey: 'Plugin' }],
+			})
+			expect((await seed.commit()).ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-second.ts',
+			)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-third.ts',
+				items: [{ ctor: Third, exportKey: 'Plugin' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-third.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-second.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(Second)).toBe('module-second.ts')
+		})
+	})
+
+	it('does not let an older restored snapshot reclaim ownership from a newer module', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class First extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class Second extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class FirstNext extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: First, exportKey: 'Plugin' }],
+			})
+			seed.upsertModule({
+				moduleId: 'module-second.ts',
+				items: [{ ctor: Second, exportKey: 'Plugin' }],
+			})
+			expect((await seed.commit()).ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-second.ts',
+			)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: FirstNext, exportKey: 'Plugin' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-first.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.listRuntimeModuleItems('module-first.ts')).toEqual([
+				{ ctor: First, exportKey: 'Plugin' },
+			])
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-second.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(Second)).toBe('module-second.ts')
 		})
 	})
 

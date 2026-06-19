@@ -32,6 +32,7 @@ import {
 import { forkPlugin, getForkedCtor, listForks } from './fork'
 import { LifecycleManager } from './LifecycleManager'
 import { PluginDefinitions, type PluginGraph, type PluginRuntime } from './PluginDefinitions'
+import { parseForkPluginId } from './pluginId'
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -109,7 +110,12 @@ type RuntimeUpdateCheckpoint = {
 	pendingRestart: Set<PluginIdentifier>
 }
 
-type RuntimeModuleSnapshot = readonly RuntimeModuleDeclarationItem[] | undefined
+type RuntimeModuleSnapshot =
+	| {
+			items: readonly RuntimeModuleDeclarationItem[]
+			revision: number
+	  }
+	| undefined
 type RuntimeUpdateCommitMeta = {
 	reason: RuntimeUpdateReason
 	touchedModules: readonly string[]
@@ -133,6 +139,31 @@ const EMPTY_DELTA = {
 	affected: [],
 	retargetedTokens: [],
 } as const
+
+const normalizeRuntimeDependencyOverrides = (
+	overrides: readonly (PluginIdentifier | undefined)[] | undefined,
+): readonly (PluginIdentifier | undefined)[] | undefined => {
+	if (!overrides || overrides.length === 0) return undefined
+	let end = overrides.length
+	while (end > 0 && overrides[end - 1] === undefined) end--
+	if (end === 0) return undefined
+	const next = Array<PluginIdentifier | undefined>(end)
+	for (let i = 0; i < end; i++) next[i] = overrides[i]
+	return next
+}
+
+const sameRuntimeDependencyOverrides = (
+	left: readonly (PluginIdentifier | undefined)[] | undefined,
+	right: readonly (PluginIdentifier | undefined)[] | undefined,
+): boolean => {
+	if (!left || left.length === 0) return !right || right.length === 0
+	if (!right || right.length === 0) return false
+	if (left.length !== right.length) return false
+	for (let i = 0; i < left.length; i++) {
+		if (left[i] !== right[i]) return false
+	}
+	return true
+}
 
 class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public readonly reason: RuntimeUpdateReason
@@ -409,7 +440,7 @@ class InstanceWatcherRegistry {
 		for (const [resolved, set] of this.byResolved) {
 			if (touchedSet.has(resolved)) continue
 			for (const entry of set) {
-				const nextResolved = (summary.graph.resolve(entry.token) ?? entry.token) as PluginIdentifier
+				const nextResolved = this.resolveGraphKey(summary.graph, entry.token)
 				if (nextResolved !== entry.resolved) retargeted.push(entry)
 			}
 		}
@@ -424,7 +455,7 @@ class InstanceWatcherRegistry {
 		if (entry.lastNotifiedSeq === seq) return
 		entry.lastNotifiedSeq = seq
 
-		const nextResolved = (summary.graph.resolve(entry.token) ?? entry.token) as PluginIdentifier
+		const nextResolved = this.resolveGraphKey(summary.graph, entry.token)
 		if (nextResolved !== entry.resolved) {
 			this.remove(entry)
 			entry.resolved = nextResolved
@@ -509,8 +540,15 @@ export class PluginService {
 		string,
 		readonly RuntimeModuleDeclarationItem[]
 	>()
+	private readonly runtimeModuleRevisions = new Map<string, number>()
 	private readonly runtimeModuleByName = new Map<string, string>()
+	private readonly runtimeModuleCtorByName = new Map<string, PluginConstructor>()
 	private readonly runtimeModuleByCtor = new WeakMap<PluginConstructor, string>()
+	private runtimeModuleRevision = 0
+	private readonly runtimeDependencyOverrides = new Map<
+		string,
+		readonly (PluginIdentifier | undefined)[]
+	>()
 	private order = 0
 	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
 	private readonly featureDeclarationPolicyExplicit: boolean
@@ -552,46 +590,53 @@ export class PluginService {
 			seen.add(effectsSvc)
 			isolated.push(effectsSvc)
 		}
-		this.definitions = new PluginDefinitions(() => {
-			const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
-			const override = this.nextCommitFeatureDeclarationPolicy
-			if (this.featureDeclarationPolicyExplicit || (override !== null && override !== undefined)) {
-				const policy = override ?? this.featureDeclarationPolicyDefault
-				Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
-					value: policy,
-					writable: false,
-					enumerable: false,
-					configurable: true,
-				})
-			}
-
-			// Effects are per‑plugin by design and used heavily for lifecycle cleanups.
-			// Pin the instance to:
-			// 1) avoid Context service‑getter overhead on hot paths;
-			// 2) keep identity stable for this plugin context.
-			try {
-				const effects = pluginCTX.effects
-				if (effects) {
-					Object.defineProperty(pluginCTX, 'effects', {
-						value: effects,
+		this.definitions = new PluginDefinitions(
+			() => {
+				const pluginCTX = this.ctx.root.isolate(isolated, { name: `${this.order++}` })
+				const override = this.nextCommitFeatureDeclarationPolicy
+				if (this.featureDeclarationPolicyExplicit || (override !== null && override !== undefined)) {
+					const policy = override ?? this.featureDeclarationPolicyDefault
+					Object.defineProperty(pluginCTX, PluginService.FEATURE_DECLARATION_POLICY, {
+						value: policy,
 						writable: false,
 						enumerable: false,
 						configurable: true,
 					})
 				}
-			} catch {
-				// If effects service was overridden/removed, fall back silently.
-			}
 
-			return pluginCTX
-		})
+				// Effects are per‑plugin by design and used heavily for lifecycle cleanups.
+				// Pin the instance to:
+				// 1) avoid Context service‑getter overhead on hot paths;
+				// 2) keep identity stable for this plugin context.
+				try {
+					const effects = pluginCTX.effects
+					if (effects) {
+						Object.defineProperty(pluginCTX, 'effects', {
+							value: effects,
+							writable: false,
+							enumerable: false,
+							configurable: true,
+						})
+					}
+				} catch {
+					// If effects service was overridden/removed, fall back silently.
+				}
+
+				return pluginCTX
+			},
+			{
+				resolveDependencyToken: (token) => this.resolveRuntimeModuleDependencyToken(token),
+				resolveDependencyTokenOverrides: (pluginId) =>
+					this.runtimeDependencyOverrides.get(pluginId),
+			},
+		)
 
 		this.lifecycle = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
 		this.dependentClosure = new DependentClosureCollector((graph, id) =>
 			this.resolveGraphKey(graph, id),
 		)
 		this.watcherRegistry = new InstanceWatcherRegistry(
-			(graph, id) => this.resolveGraphKey(graph, id),
+			(graph, id) => this.resolveRuntimeReadKey(graph, id),
 			(id) => this.getRunningRuntimeInstance(id),
 			(error) => {
 				this.ctx.logger.error('instance watcher error', { error })
@@ -657,6 +702,45 @@ export class PluginService {
 		return (graph.resolve(id) ?? id) as PluginIdentifier
 	}
 
+	private resolveRuntimeReadKey(
+		graph: PluginGraph | undefined,
+		id: PluginIdentifier,
+	): PluginIdentifier {
+		const resolved = this.resolveGraphKey(graph, id)
+		if (resolved !== id) return resolved
+		const owner = this.resolveRuntimeModuleDependencyToken(id)
+		if (!owner || owner === id) return resolved
+		return this.resolveGraphKey(graph, owner)
+	}
+
+	private resolveRuntimeModuleDependencyToken(token: PluginIdentifier): PluginIdentifier | undefined {
+		if (typeof token !== 'function') return undefined
+		let id: string
+		try {
+			id = getPluginInfo(token as PluginConstructor).id
+		} catch {
+			return undefined
+		}
+
+		const exact = this.runtimeModuleCtorByName.get(id)
+		if (exact) return exact
+
+		const fork = parseForkPluginId(id)
+		if (fork) {
+			const baseCtor = this.runtimeModuleCtorByName.get(fork.baseId)
+			if (!baseCtor) return undefined
+			const existing = getForkedCtor(baseCtor, fork.forkId)
+			if (existing) return existing
+			try {
+				return forkPlugin(baseCtor as ForkablePluginConstructor, fork.forkId)
+			} catch {
+				return undefined
+			}
+		}
+
+		return undefined
+	}
+
 	private activeRuntime(): PluginRuntime {
 		return this._activeRuntime ?? this.definitions.runtime
 	}
@@ -714,7 +798,7 @@ export class PluginService {
 
 	isRunning(id: PluginIdentifier): boolean {
 		const graph = this._activeGraph ?? this.graph
-		const key = this.resolveGraphKey(graph, id)
+		const key = this.resolveRuntimeReadKey(graph, id)
 		const instance = this.getRuntimeInstance(key)
 		return this.lifecycle.isRunning(instance)
 	}
@@ -734,6 +818,37 @@ export class PluginService {
 
 	public listRuntimeModuleItems(moduleId: string): readonly RuntimeModuleDeclarationItem[] {
 		return this.runtimeModuleItems.get(moduleId) ?? []
+	}
+
+	public setRuntimeDependencyOverrides(
+		plugin: PluginIdentifier | string,
+		overrides: readonly (PluginIdentifier | undefined)[] | undefined,
+	): void {
+		const pluginId =
+			typeof plugin === 'string' ? plugin : getPluginInfo(plugin as PluginConstructor).id
+		const next = normalizeRuntimeDependencyOverrides(overrides)
+		const prev = this.runtimeDependencyOverrides.get(pluginId)
+		if (sameRuntimeDependencyOverrides(prev, next)) return
+
+		if (!next) {
+			this.runtimeDependencyOverrides.delete(pluginId)
+		} else {
+			this.runtimeDependencyOverrides.set(pluginId, next)
+		}
+
+		const current =
+			typeof plugin === 'function'
+				? (plugin as PluginConstructor)
+				: this.runtimeModuleCtorByName.get(pluginId)
+		if (!current || !this.planningContains(current)) {
+			return
+		}
+
+		const canonical = this.resolvePlanningKey(current)
+		this.definitions.replace(canonical, current, {
+			aliases: [current, canonical],
+		})
+		this._pendingRestart.add(canonical)
 	}
 
 	public getRuntimeModuleId(id: PluginIdentifier | string): string | undefined {
@@ -769,7 +884,7 @@ export class PluginService {
 	 */
 	public getInstance<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
 		const graph = this._activeGraph ?? this.graph
-		const key = this.resolveGraphKey(graph, id)
+		const key = this.resolveRuntimeReadKey(graph, id)
 		return this.getRunningRuntimeInstance(key) as InstanceType<T> | undefined
 	}
 
@@ -875,6 +990,10 @@ export class PluginService {
 	}
 
 	public upsertRuntimeModule(module: RuntimeModuleDeclaration): void {
+		this.setRuntimeModule(module, ++this.runtimeModuleRevision)
+	}
+
+	private setRuntimeModule(module: RuntimeModuleDeclaration, revision: number): void {
 		const moduleId = module.moduleId
 		this.removeRuntimeModuleIndex(moduleId)
 		const items = module.items
@@ -882,15 +1001,23 @@ export class PluginService {
 			.filter((item) => typeof item.ctor === 'function')
 		if (items.length === 0) {
 			this.runtimeModuleItems.delete(moduleId)
+			this.runtimeModuleRevisions.delete(moduleId)
 			return
 		}
 		this.runtimeModuleItems.set(moduleId, items)
+		this.runtimeModuleRevisions.set(moduleId, revision)
+		if (revision > this.runtimeModuleRevision) this.runtimeModuleRevision = revision
 		for (let i = 0; i < items.length; i++) {
 			const { ctor } = items[i]!
-			this.runtimeModuleByCtor.set(ctor, moduleId)
+			if (this.shouldClaimRuntimeModuleCtor(ctor, moduleId, revision)) {
+				this.runtimeModuleByCtor.set(ctor, moduleId)
+			}
 			try {
 				const info = getPluginInfo(ctor)
-				this.runtimeModuleByName.set(info.id, moduleId)
+				if (this.shouldClaimRuntimeModuleName(info.id, moduleId, revision)) {
+					this.runtimeModuleByName.set(info.id, moduleId)
+					this.runtimeModuleCtorByName.set(info.id, ctor)
+				}
 			} catch {
 				// Keep module ownership best-effort; invalid plugin ctors still fail at registration.
 			}
@@ -900,21 +1027,46 @@ export class PluginService {
 	public removeRuntimeModule(moduleId: string): void {
 		this.removeRuntimeModuleIndex(moduleId)
 		this.runtimeModuleItems.delete(moduleId)
+		this.runtimeModuleRevisions.delete(moduleId)
 	}
 
 	/** @internal RuntimeUpdateTransaction callback. */
 	public snapshotRuntimeModule(moduleId: string): RuntimeModuleSnapshot {
 		const items = this.runtimeModuleItems.get(moduleId)
-		return items ? [...items] : undefined
+		if (!items) return undefined
+		return {
+			items: [...items],
+			revision: this.runtimeModuleRevisions.get(moduleId) ?? 0,
+		}
 	}
 
 	/** @internal RuntimeUpdateTransaction callback. */
-	public restoreRuntimeModule(moduleId: string, items: RuntimeModuleSnapshot): void {
-		if (!items) {
+	public restoreRuntimeModule(moduleId: string, snapshot: RuntimeModuleSnapshot): void {
+		if (!snapshot) {
 			this.removeRuntimeModule(moduleId)
 			return
 		}
-		this.upsertRuntimeModule({ moduleId, items })
+		this.setRuntimeModule({ moduleId, items: snapshot.items }, snapshot.revision)
+	}
+
+	private shouldClaimRuntimeModuleName(
+		name: string,
+		moduleId: string,
+		revision: number,
+	): boolean {
+		const currentModuleId = this.runtimeModuleByName.get(name)
+		if (!currentModuleId || currentModuleId === moduleId) return true
+		return (this.runtimeModuleRevisions.get(currentModuleId) ?? 0) <= revision
+	}
+
+	private shouldClaimRuntimeModuleCtor(
+		ctor: PluginConstructor,
+		moduleId: string,
+		revision: number,
+	): boolean {
+		const currentModuleId = this.runtimeModuleByCtor.get(ctor)
+		if (!currentModuleId || currentModuleId === moduleId) return true
+		return (this.runtimeModuleRevisions.get(currentModuleId) ?? 0) <= revision
 	}
 
 	private removeRuntimeModuleIndex(moduleId: string): void {
@@ -924,9 +1076,14 @@ export class PluginService {
 			const ctor = prev[i]!.ctor
 			try {
 				const info = getPluginInfo(ctor)
-				if (this.runtimeModuleByName.get(info.id) === moduleId) {
+				const ownedByModule = this.runtimeModuleByName.get(info.id) === moduleId
+				if (ownedByModule) {
 					this.runtimeModuleByName.delete(info.id)
 				}
+				if (ownedByModule && this.runtimeModuleCtorByName.get(info.id) === ctor) {
+					this.runtimeModuleCtorByName.delete(info.id)
+				}
+				if (ownedByModule) this.restoreRuntimeModuleNameIndex(info.id, moduleId)
 			} catch {
 				// ignore invalid decorator state in stale declarations
 			}
@@ -936,8 +1093,57 @@ export class PluginService {
 			const ctor = prev[i]!.ctor
 			if (this.runtimeModuleByCtor.get(ctor) === moduleId) {
 				this.runtimeModuleByCtor.delete(ctor)
+				this.restoreRuntimeModuleCtorIndex(ctor, moduleId)
 			}
 		}
+	}
+
+	private restoreRuntimeModuleNameIndex(name: string, skipModuleId: string): void {
+		let best:
+			| {
+					moduleId: string
+					ctor: PluginConstructor
+					revision: number
+			  }
+			| undefined
+		for (const [moduleId, items] of this.runtimeModuleItems) {
+			if (moduleId === skipModuleId) continue
+			const revision = this.runtimeModuleRevisions.get(moduleId) ?? 0
+			for (let i = 0; i < items.length; i++) {
+				const ctor = items[i]!.ctor
+				try {
+					if (getPluginInfo(ctor).id !== name) continue
+					if (!best || revision >= best.revision) {
+						best = { moduleId, ctor, revision }
+					}
+				} catch {
+					// ignore invalid decorator state in stale declarations
+				}
+			}
+		}
+		if (!best) return
+		this.runtimeModuleByName.set(name, best.moduleId)
+		this.runtimeModuleCtorByName.set(name, best.ctor)
+	}
+
+	private restoreRuntimeModuleCtorIndex(ctor: PluginConstructor, skipModuleId: string): void {
+		let best:
+			| {
+					moduleId: string
+					revision: number
+			  }
+			| undefined
+		for (const [moduleId, items] of this.runtimeModuleItems) {
+			if (moduleId === skipModuleId) continue
+			const revision = this.runtimeModuleRevisions.get(moduleId) ?? 0
+			for (let i = 0; i < items.length; i++) {
+				if (items[i]!.ctor !== ctor) continue
+				if (!best || revision >= best.revision) {
+					best = { moduleId, revision }
+				}
+			}
+		}
+		if (best) this.runtimeModuleByCtor.set(ctor, best.moduleId)
 	}
 
 	/** Register a plugin ctor into the draft container. */

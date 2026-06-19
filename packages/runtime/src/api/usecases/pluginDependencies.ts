@@ -2,7 +2,6 @@ import {
 	BasePlugin,
 	type Context,
 	checkPluginDecorator,
-	clearParamToken,
 	formatForkPluginId,
 	ForkablePlugin,
 	getClassParams,
@@ -14,7 +13,6 @@ import {
 	PARAM_TYPES,
 	type PluginConstructor,
 	type PluginIdentifier,
-	setParamToken,
 } from '@pluxel/core'
 import {
 	type BaseProvidersExtra,
@@ -65,14 +63,15 @@ function getErrorMessage(error: unknown): string {
 
 function readParamTypes(ctor: PluginConstructor): unknown[] {
 	const reflectApi = Reflect as unknown
-	if (!reflectApi || typeof reflectApi !== 'object') return []
+	const fallback = () => [...getClassParams<unknown>(ctor)]
+	if (!reflectApi || typeof reflectApi !== 'object') return fallback()
 	const getMetadata = (reflectApi as { getMetadata?: unknown }).getMetadata
-	if (typeof getMetadata !== 'function') return []
+	if (typeof getMetadata !== 'function') return fallback()
 	try {
 		const out = (getMetadata as (key: unknown, target: unknown) => unknown)(PARAM_TYPES, ctor)
-		return Array.isArray(out) ? out : []
+		return Array.isArray(out) && out.length > 0 ? out : fallback()
 	} catch {
-		return []
+		return fallback()
 	}
 }
 
@@ -117,6 +116,24 @@ function writeDepOverride(
 	setExtra(EXTRA_DEP_OVERRIDES, nextAll)
 }
 
+function buildRuntimeDependencyOverrides(
+	ctx: Context,
+	consumerName: string,
+): Array<PluginIdentifier | undefined> | undefined {
+	const persisted = readDepOverrides(ctx, consumerName)
+	if (!persisted) return undefined
+
+	const overrides: Array<PluginIdentifier | undefined> = []
+	for (const [rawIndex, targetName] of Object.entries(persisted)) {
+		const index = Number(rawIndex)
+		if (!Number.isFinite(index) || index < 0) continue
+		if (typeof targetName !== 'string' || targetName.trim() === '') continue
+		overrides[index] = resolvePlugin(ctx, targetName.trim())
+	}
+
+	return overrides.length === 0 ? undefined : overrides
+}
+
 export function listPluginDependencies(ctx: Context, name: string): PluginDependencyRef[] {
 	const ctor = resolvePlugin(ctx, name)
 	return getRuntimePluginCatalog(ctx).listDependencies(ctor)
@@ -132,10 +149,17 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 	for (let index = 0; index < rawParams.length; index += 1) {
 		const token = rawParams[index]
 		if (typeof token !== 'function') continue
-		const effectiveToken = effectiveParams[index] ?? token
+		const selected = overrides?.[index] ?? null
+		let effectiveToken = effectiveParams[index] ?? token
+		if (selected) {
+			try {
+				effectiveToken = resolvePlugin(ctx, selected)
+			} catch {
+				// Persisted selections can point at unloaded/removed plugins; keep the build/default token.
+			}
+		}
 
 		const effective = tokenName(effectiveToken)
-		const selected = overrides?.[index] ?? null
 
 		const isDecorated = checkPluginDecorator(token as PluginConstructor)
 		const tokenProto = (token as { prototype?: unknown }).prototype
@@ -249,11 +273,8 @@ export async function pluginDependencySetTarget(
 			typeof targetName === 'string' && targetName.trim() ? targetName.trim() : null
 		writeDepOverride(ctx, name, index, normalized)
 
-		if (!normalized) {
-			clearParamToken(ctor, index)
-		} else {
+		if (normalized) {
 			const token = resolvePlugin(ctx, normalized)
-			setParamToken(ctor, index, token)
 
 			const fork = parseForkPluginId(normalized)
 			if (fork) addForkToCatalog(ctx, fork.baseId, fork.forkId)
@@ -261,7 +282,8 @@ export async function pluginDependencySetTarget(
 			await getRuntimePluginCatalog(ctx).enable(normalized, token)
 		}
 
-		ctx.registry.restart(ctor)
+		const overrides = buildRuntimeDependencyOverrides(ctx, name)
+		ctx.registry.setRuntimeDependencyOverrides(ctor, overrides)
 		const commit = await ctx.registry.commit()
 		if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 		return { ok: true }

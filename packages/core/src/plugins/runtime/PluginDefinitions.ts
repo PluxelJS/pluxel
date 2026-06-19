@@ -35,6 +35,10 @@ import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../typ
 export type PluginGraph = GraphSnapshot<ReturnType<typeof getPluginInfo>>
 export type PluginRuntime = Runtime<ReturnType<typeof getPluginInfo>>
 export type createCTX = () => Context
+type PluginDependencyTokenResolver = (token: PluginIdentifier) => PluginIdentifier | undefined
+type PluginDependencyTokenOverrideResolver = (
+	pluginId: string,
+) => readonly (PluginIdentifier | undefined)[] | undefined
 
 type BuildRet = {
 	graph: PluginGraph
@@ -59,7 +63,13 @@ export class PluginDefinitions {
 	private readonly draft = new DraftGraph<ReturnType<typeof getPluginInfo>>()
 	private committedRuntime?: PluginRuntime
 
-	constructor(private readonly createPluginContext: createCTX) {}
+	constructor(
+		private readonly createPluginContext: createCTX,
+		private readonly options: {
+			resolveDependencyToken?: PluginDependencyTokenResolver
+			resolveDependencyTokenOverrides?: PluginDependencyTokenOverrideResolver
+		} = {},
+	) {}
 
 	public get lastGraph(): PluginGraph {
 		return this.draft.graph as PluginGraph
@@ -151,6 +161,23 @@ export class PluginDefinitions {
 		)
 	}
 
+	private normalizeDependencyTokens(
+		paramTypes: readonly PluginIdentifier[],
+	): readonly PluginIdentifier[] {
+		const resolveDependencyToken = this.options.resolveDependencyToken
+		if (!resolveDependencyToken || paramTypes.length === 0) return paramTypes
+
+		let next: PluginIdentifier[] | undefined
+		for (let i = 0; i < paramTypes.length; i++) {
+			const token = paramTypes[i]!
+			const resolved = resolveDependencyToken(token)
+			if (!resolved || resolved === token) continue
+			if (!next) next = [...paramTypes]
+			next[i] = resolved
+		}
+		return next ?? paramTypes
+	}
+
 	private createCallerViewFactory(pluginCTX: Context): (parent: BasePlugin) => BasePlugin {
 		const ctxDescriptor: PropertyDescriptor = {
 			value: null,
@@ -224,14 +251,18 @@ export class PluginDefinitions {
 		const info = getPluginInfo(Plugin)
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
 
-		const paramTypes = getClassParams(Plugin) as PluginIdentifier[]
+		const paramTypes = getClassParams(
+			Plugin,
+			this.options.resolveDependencyTokenOverrides?.(info.id),
+		) as PluginIdentifier[]
 		this.assertRequiredConstructorDepsDeclared(Plugin, paramTypes)
+		const deps = this.normalizeDependencyTokens(paramTypes)
 		const extraTokens = this.providerTokens(Plugin, info, opts)
 
 		return factoryProvider({
 			key: Plugin,
 			tokens: extraTokens,
-			deps: paramTypes,
+			deps,
 			meta: info,
 			use: (...deps: readonly unknown[]) => this.instantiatePluginInContext(Plugin, info, deps),
 		})

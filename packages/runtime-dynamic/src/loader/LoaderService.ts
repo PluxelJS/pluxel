@@ -424,7 +424,6 @@ export class LoaderService {
 	 * because core rolls draft changes back internally on verification failure.
 	 */
 	private async syncRuntimeForModule(moduleId: string): Promise<void> {
-		this.moduleReplacer.syncModuleParams(moduleId)
 		await this.registry.syncRuntimeForModule(moduleId, {
 			refreshRegistered: true,
 			restartRegistered: true,

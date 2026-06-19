@@ -4,6 +4,19 @@ import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-dyna
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { createHmrTestContext } from '../support/hmr-context'
 
+function definePlugin<T extends new (...args: any[]) => BasePlugin>(
+	ctor: T,
+	meta: Parameters<typeof Plugin>[0],
+	paramTypes: unknown[] = [],
+): T {
+	if (paramTypes.length > 0) {
+		;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
+			.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	}
+	Plugin(meta)(ctor)
+	return ctor
+}
+
 async function loadModule(
 	fixture: ReturnType<typeof createHmrTestContext>,
 	moduleId: string,
@@ -34,18 +47,26 @@ describe('runtime control-plane RPC', () => {
 	it('exposes plugin status, config and dependency usecases through direct methods', async () => {
 		const fixture = createRpcFixture()
 
-		@Plugin({ name: 'Provider' })
-		class Provider extends BasePlugin {}
+		class Provider extends BasePlugin {
+			readonly kind = 'primary'
+		}
+		definePlugin(Provider, { name: 'Provider' })
 
-		@Plugin({ name: 'Consumer' })
+		class ProviderAlt extends BasePlugin {
+			readonly kind = 'alt'
+		}
+		definePlugin(ProviderAlt, { name: 'ProviderAlt' })
+
 		class Consumer extends BasePlugin {
 			constructor(readonly provider: Provider) {
 				super()
 			}
 		}
+		definePlugin(Consumer, { name: 'Consumer' }, [Provider])
 		setParamToken(Consumer, 0, Provider)
 
 		await loadModule(fixture, 'Provider.ts', { Provider })
+		await loadModule(fixture, 'ProviderAlt.ts', { ProviderAlt })
 		await loadModule(fixture, 'Consumer.ts', { Consumer })
 
 		expect(await fixture.rpc.pluginConfig('Consumer')).toMatchObject({
@@ -76,6 +97,27 @@ describe('runtime control-plane RPC', () => {
 		expect(status.results.map((entry) => [entry.name, entry.ok, entry.lifecycleStage])).toEqual([
 			['Provider', true, 'running'],
 			['Consumer', true, 'running'],
+		])
+
+		expect(fixture.core.registry.getInstance(Consumer)?.provider.kind).toBe('primary')
+
+		await expect(
+			fixture.rpc.setPluginDependencyTarget({
+				name: 'Consumer',
+				index: 0,
+				targetName: 'ProviderAlt',
+			}),
+		).resolves.toEqual({ ok: true })
+
+		expect(fixture.core.registry.getInstance(Consumer)?.provider.kind).toBe('alt')
+		expect(fixture.rpc.inspectPluginDependencies('Consumer')).toMatchObject([
+			{
+				index: 0,
+				token: 'Provider',
+				kind: 'plugin',
+				selected: 'ProviderAlt',
+				effective: 'ProviderAlt',
+			},
 		])
 	})
 })

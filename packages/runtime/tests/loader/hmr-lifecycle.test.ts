@@ -4,57 +4,67 @@ import { LoaderService } from '../../../runtime-dynamic/src/services'
 import { EXTRA_DEP_OVERRIDES } from '../../../runtime-dynamic/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
-async function commitBatch(
-	core: ReturnType<typeof createHmrTestContext>['core'],
-	batch: { commit(): void },
-) {
-	const res = await core.registry.commit()
-	expect(res.ok).toBe(true)
+type HmrCore = ReturnType<typeof createHmrTestContext>['core']
+type RuntimeUpdate = ReturnType<HmrCore['registry']['beginUpdate']>
+type RuntimeBatch = ReturnType<LoaderService['beginBatch']>
+
+function definePlugin<T extends new (...args: any[]) => BasePlugin>(
+	ctor: T,
+	meta: Parameters<typeof Plugin>[0],
+	paramTypes: unknown[] = [],
+): T {
+	if (paramTypes.length > 0) {
+		;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
+			.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	}
+	Plugin(meta)(ctor)
+	return ctor
+}
+
+function beginRuntimeBatch(core: HmrCore, loader: LoaderService) {
+	const runtimeUpdate = core.registry.beginUpdate({ reason: 'hmr' })
+	return {
+		runtimeUpdate,
+		batch: loader.beginBatch({ runtimeUpdate }),
+	}
+}
+
+async function commitBatch(runtimeUpdate: RuntimeUpdate, batch: RuntimeBatch) {
+	const res = await runtimeUpdate.commit({ rollbackOnFailure: false })
+	expect(res).toMatchObject({ ok: true })
 	batch.commit()
 }
 
 describe('LoaderService HMR lifecycle', () => {
-	it('normalizes ctor-param tokens by plugin id across HMR ctor identity mismatches', async () => {
+	it('resolves ctor-param tokens by plugin id across HMR ctor identity mismatches', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const warns: unknown[] = []
-		;(ctx as unknown as { logger: { warn: (...args: unknown[]) => void } }).logger.warn = (
-			...args: unknown[]
-		) => warns.push(args)
 		ctx.configService.enableInConfig('Dep', 'Consumer')
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Dep' })
 		class Dep extends BasePlugin {}
+		definePlugin(Dep, { name: 'Dep' })
 
-		@Plugin({ name: 'Dep' })
 		class DepShadow extends BasePlugin {}
+		definePlugin(DepShadow, { name: 'Dep' })
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(_dep: DepShadow) {
 				super()
 			}
 		}
+		definePlugin(Consumer, { name: 'Consumer' }, [DepShadow])
 		setParamToken(Consumer, 0, DepShadow)
 
 		await loader.preloadPlugins([Dep])
 		expect(core.registry.isRunning(Dep)).toBe(true)
 
 		{
-			const batch = loader.beginBatch()
+			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(core, batch)
+			await commitBatch(runtimeUpdate, batch)
 		}
 
 		expect(core.registry.isRunning(Consumer)).toBe(true)
-		expect(warns).toHaveLength(1)
-		expect((warns[0] as unknown[])[0]).toBe(
-			'依赖注入 token 已归一化：检测到同 id 不同 ctor 引用（建议检查 bridge/导入路径）',
-		)
-		expect((warns[0] as unknown[])[1]).toMatchObject({
-			moduleId: 'Consumer.ts',
-			consumer: 'Consumer',
-		})
 	})
 
 	it('reports DI-cascade affected modules so HMR can restart non-reexecuted dependents', async () => {
@@ -64,12 +74,11 @@ describe('LoaderService HMR lifecycle', () => {
 		let depSeq = 0
 		let consumerSeq = 0
 
-		@Plugin({ name: 'Dep' })
 		class Dep extends BasePlugin {
 			readonly seq = ++depSeq
 		}
+		definePlugin(Dep, { name: 'Dep' })
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
 
@@ -77,13 +86,14 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
+		definePlugin(Consumer, { name: 'Consumer' }, [Dep])
 		setParamToken(Consumer, 0, Dep)
 
 		{
-			const batch = loader.beginBatch()
+			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 			await batch.replaceModule('Dep.ts', { Dep })
 			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(core, batch)
+			await commitBatch(runtimeUpdate, batch)
 		}
 
 		const firstDep = core.registry.getInstance(Dep)
@@ -92,17 +102,17 @@ describe('LoaderService HMR lifecycle', () => {
 		expect(firstConsumer?.seq).toBe(1)
 		expect(firstConsumer?.dep.seq).toBe(firstDep?.seq)
 
-		@Plugin({ name: 'Dep' })
 		class DepNext extends BasePlugin {
 			readonly seq = ++depSeq
 		}
+		definePlugin(DepNext, { name: 'Dep' })
 
-		const batch = loader.beginBatch()
+		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 		await batch.replaceModule('Dep.ts', { DepNext })
 		expect(new Set(batch.getAffectedModules())).toEqual(new Set(['Dep.ts', 'Consumer.ts']))
 		await batch.syncModules(batch.getAffectedModules())
 
-		await commitBatch(core, batch)
+		await commitBatch(runtimeUpdate, batch)
 
 		const secondDep = core.registry.getInstance(DepNext)
 		const secondConsumer = core.registry.getInstance(
@@ -120,40 +130,40 @@ describe('LoaderService HMR lifecycle', () => {
 		ctx.configService.enableInConfig('Dep', 'Bad')
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Dep' })
 		class Dep extends BasePlugin {}
+		definePlugin(Dep, { name: 'Dep' })
 
-		@Plugin({ name: 'Bad' })
 		class Bad extends BasePlugin {
 			constructor(_dep: Dep) {
 				super()
 			}
 		}
+		definePlugin(Bad, { name: 'Bad' }, [Dep])
 		setParamToken(Bad, 0, Dep)
 
 		{
-			const batch = loader.beginBatch()
+			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 			await batch.replaceModule('Dep.ts', { Dep })
 			await batch.replaceModule('Bad.ts', { Bad })
-			await commitBatch(core, batch)
+			await commitBatch(runtimeUpdate, batch)
 		}
 
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin({ name: 'Dep' })
 		class DepBroken extends BasePlugin {
 			constructor(_missing: MissingBase) {
 				super()
 			}
 		}
+		definePlugin(DepBroken, { name: 'Dep' }, [MissingBase])
 		setParamToken(DepBroken, 0, MissingBase)
 
-		const batch = loader.beginBatch()
+		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 		await batch.replaceModule('Dep.ts', { DepBroken })
-		const res = await core.registry.commit()
+		const res = await runtimeUpdate.commit({ rollbackOnFailure: false })
 		expect(res.ok).toBe(false)
 		batch.rollback()
-		core.registry.resetDraft()
+		runtimeUpdate.rollback()
 
 		expect(loader.api.registry.getCtor('Dep')).toBe(Dep)
 		expect(loader.api.registry.findModuleId('Dep')).toBe('Dep.ts')
@@ -167,12 +177,11 @@ describe('LoaderService HMR lifecycle', () => {
 		let depSeq = 0
 		let consumerSeq = 0
 
-		@Plugin({ name: 'Dep' })
 		class Dep extends BasePlugin {
 			readonly seq = ++depSeq
 		}
+		definePlugin(Dep, { name: 'Dep' })
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
 
@@ -180,6 +189,7 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
+		definePlugin(Consumer, { name: 'Consumer' }, [Dep])
 		setParamToken(Consumer, 0, Dep)
 
 		expect(await loader.replaceModule('Dep.ts', { Dep })).toMatchObject({
@@ -193,10 +203,10 @@ describe('LoaderService HMR lifecycle', () => {
 		let res = await core.registry.commit()
 		expect(res.ok).toBe(true)
 
-		@Plugin({ name: 'Dep' })
 		class DepNext extends BasePlugin {
 			readonly seq = ++depSeq
 		}
+		definePlugin(DepNext, { name: 'Dep' })
 
 		const replaced = await loader.replaceModule('Dep.ts', { DepNext })
 		expect(replaced.isAnchor).toBe(true)
@@ -217,18 +227,17 @@ describe('LoaderService HMR lifecycle', () => {
 		let depBSeq = 0
 		let consumerSeq = 0
 
-		@Plugin({ name: 'DepA' })
 		class DepA extends BasePlugin {
 			readonly kind = 'A'
 		}
+		definePlugin(DepA, { name: 'DepA' })
 
-		@Plugin({ name: 'DepB' })
 		class DepB extends BasePlugin {
 			readonly kind = 'B'
 			readonly seq = ++depBSeq
 		}
+		definePlugin(DepB, { name: 'DepB' })
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
 
@@ -236,17 +245,18 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
+		definePlugin(Consumer, { name: 'Consumer' }, [DepA])
 		setParamToken(Consumer, 0, DepA)
 
 		ctx.configService.enableInConfig('DepA', 'DepB', 'Consumer')
 		ctx.configService.setExtra(EXTRA_DEP_OVERRIDES, { Consumer: { 0: 'DepB' } })
 
 		{
-			const batch = loader.beginBatch()
+			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 			await batch.replaceModule('DepA.ts', { DepA })
 			await batch.replaceModule('DepB.ts', { DepB })
 			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(core, batch)
+			await commitBatch(runtimeUpdate, batch)
 		}
 
 		const firstConsumer = core.registry.getInstance(Consumer)
@@ -254,17 +264,17 @@ describe('LoaderService HMR lifecycle', () => {
 		expect(firstConsumer?.dep.kind).toBe('B')
 		expect((firstConsumer?.dep as InstanceType<typeof DepB> | undefined)?.seq).toBe(1)
 
-		@Plugin({ name: 'DepB' })
 		class DepBNext extends BasePlugin {
 			readonly kind = 'B'
 			readonly seq = ++depBSeq
 		}
+		definePlugin(DepBNext, { name: 'DepB' })
 
-		const batch = loader.beginBatch()
+		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 		await batch.replaceModule('DepB.ts', { DepBNext })
 		expect(new Set(batch.getAffectedModules())).toEqual(new Set(['DepB.ts', 'Consumer.ts']))
 		await batch.syncModules(batch.getAffectedModules())
-		await commitBatch(core, batch)
+		await commitBatch(runtimeUpdate, batch)
 
 		const nextConsumer = core.registry.getInstance(Consumer)
 		expect(nextConsumer?.seq).toBe(2)
@@ -277,8 +287,8 @@ describe('LoaderService HMR lifecycle', () => {
 		const { ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Anchor' })
 		class Anchor extends BasePlugin {}
+		definePlugin(Anchor, { name: 'Anchor' })
 
 		const committed = loader.beginBatch()
 		await committed.replaceModule('Committed.ts', { Anchor })

@@ -69,4 +69,30 @@ describe('PluginService watchInstance()', () => {
 			expect(seen).toEqual(['none', first.label, second.label])
 		})
 	})
+
+	it('resolves watched ctor identity drift from runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'WATCH-DRIFT' })
+			class Dep extends BasePlugin {}
+
+			@Plugin({ name: 'WATCH-DRIFT' })
+			class DepShadow extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'watch-drift.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.register(Dep)
+			expect((await tx.commit()).ok).toBe(true)
+
+			const seen: string[] = []
+			const off = host.ctx.registry.watchInstance(DepShadow, (instance) => {
+				seen.push(instance?.constructor.name ?? 'none')
+			})
+
+			expect(seen).toEqual(['Dep'])
+			off()
+		})
+	})
 })
