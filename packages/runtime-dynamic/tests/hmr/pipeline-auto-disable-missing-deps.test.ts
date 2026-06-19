@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import '@pluxel/runtime-dynamic/register'
 import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
 
 import { HmrBatchProcessor, HmrExecutor } from '../../src/hmr/engine/pipeline'
+
+function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
+	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
+		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+}
 
 function createExecutor(
 	ctx: any,
@@ -34,12 +39,11 @@ describe('HmrExecutor commit retry', () => {
 			let consumerSeq = 0
 			let moduleItemsSeenDuringHmrCommit: Function[] = []
 
-			@Plugin({ name: 'Dep' })
 			class Dep extends BasePlugin {
 				readonly seq = ++depSeq
 			}
+			Plugin({ name: 'Dep' })(Dep)
 
-			@Plugin({ name: 'Consumer' })
 			class Consumer extends BasePlugin {
 				readonly seq = ++consumerSeq
 
@@ -47,6 +51,8 @@ describe('HmrExecutor commit retry', () => {
 					super()
 				}
 			}
+			defineParamTypes(Consumer, [Dep])
+			Plugin({ name: 'Consumer' })(Consumer)
 			setParamToken(Consumer, 0, Dep)
 
 			host.ctx.configService.enableInConfig('Dep', 'Consumer')
@@ -64,10 +70,10 @@ describe('HmrExecutor commit retry', () => {
 			expect(firstConsumer?.seq).toBe(1)
 			expect(firstConsumer?.dep.seq).toBe(1)
 
-			@Plugin({ name: 'Dep' })
 			class DepNext extends BasePlugin {
 				readonly seq = ++depSeq
 			}
+			Plugin({ name: 'Dep' })(DepNext)
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
@@ -101,12 +107,13 @@ describe('HmrExecutor commit retry', () => {
 		try {
 			abstract class MissingBase extends BasePlugin {}
 
-			@Plugin({ name: 'Broken' })
 			class Broken extends BasePlugin {
 				constructor(_dep: MissingBase) {
 					super()
 				}
 			}
+			defineParamTypes(Broken, [MissingBase])
+			Plugin({ name: 'Broken' })(Broken)
 			setParamToken(Broken, 0, MissingBase)
 
 			host.ctx.configService.enableInConfig('Broken')
@@ -140,19 +147,20 @@ describe('HmrExecutor commit retry', () => {
 		try {
 			let stableSeq = 0
 
-			@Plugin({ name: 'Stable' })
 			class Stable extends BasePlugin {
 				readonly seq = ++stableSeq
 			}
+			Plugin({ name: 'Stable' })(Stable)
 
 			abstract class MissingBase extends BasePlugin {}
 
-			@Plugin({ name: 'Broken' })
 			class Broken extends BasePlugin {
 				constructor(_dep: MissingBase) {
 					super()
 				}
 			}
+			defineParamTypes(Broken, [MissingBase])
+			Plugin({ name: 'Broken' })(Broken)
 			setParamToken(Broken, 0, MissingBase)
 
 			host.ctx.configService.enableInConfig('Stable', 'Broken')

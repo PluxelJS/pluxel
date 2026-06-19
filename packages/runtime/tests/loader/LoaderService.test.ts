@@ -21,8 +21,8 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Forky' })
 		class Forky extends ForkablePlugin {}
+		Plugin({ name: 'Forky' })(Forky)
 
 		await loader.preloadPlugins([
 			{
@@ -80,17 +80,18 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Good' })
 		class Good extends BasePlugin {}
+		Plugin({ name: 'Good' })(Good)
 
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin({ name: 'Bad' })
 		class Bad extends BasePlugin {
 			constructor(_dep: MissingBase) {
 				super()
 			}
 		}
+		defineParamTypes(Bad, [MissingBase])
+		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, MissingBase)
 
 		const names = await loader.preloadPlugins([Good, Bad])
@@ -108,17 +109,18 @@ describe('LoaderService', () => {
 			extra: Object.create(null) as Record<string, unknown>,
 		}
 
-		@Plugin({ name: 'Good' })
 		class Good extends BasePlugin {}
+		Plugin({ name: 'Good' })(Good)
 
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin({ name: 'Bad' })
 		class Bad extends BasePlugin {
 			constructor(_dep: MissingBase) {
 				super()
 			}
 		}
+		defineParamTypes(Bad, [MissingBase])
+		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, MissingBase)
 
 		{
@@ -158,17 +160,18 @@ describe('LoaderService', () => {
 		const { ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Good' })
 		class Good extends BasePlugin {}
+		Plugin({ name: 'Good' })(Good)
 
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin({ name: 'Bad' })
 		class Bad extends BasePlugin {
 			constructor(_dep: MissingBase) {
 				super()
 			}
 		}
+		defineParamTypes(Bad, [MissingBase])
+		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, MissingBase)
 
 		await expect(loader.preloadPlugins([Good, Bad], { strict: true })).rejects.toThrow(
@@ -184,8 +187,8 @@ describe('LoaderService', () => {
 		const loader = new LoaderService(ctx)
 		let moduleItemsSeenDuringStartupCommit: Function[] = []
 
-		@Plugin({ name: 'Builtin' })
 		class Builtin extends BasePlugin {}
+		Plugin({ name: 'Builtin' })(Builtin)
 
 		ctx.on('afterCommit', (summary) => {
 			if ((summary as { reason?: string }).reason !== 'startup') return
@@ -207,20 +210,21 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Builtin' })
 		class Builtin extends BasePlugin {}
+		Plugin({ name: 'Builtin' })(Builtin)
 
 		await loader.preloadPlugins([Builtin])
 		expect(core.registry.isRunning(Builtin)).toBe(true)
 
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin({ name: 'Bad' })
 		class Bad extends BasePlugin {
 			constructor(_dep: MissingBase) {
 				super()
 			}
 		}
+		defineParamTypes(Bad, [MissingBase])
+		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, MissingBase)
 
 		ctx.configService.enableInConfig('Bad')
@@ -243,15 +247,16 @@ describe('LoaderService', () => {
 
 		abstract class Abs extends BasePlugin {}
 
-		@Plugin(Abs, { name: 'Impl' })
 		class Impl extends Abs {}
+		Plugin(Abs, { name: 'Impl' })(Impl)
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(_dep: Abs) {
 				super()
 			}
 		}
+		defineParamTypes(Consumer, [Abs])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Abs)
 
 		core.registry.register(Impl)
@@ -272,15 +277,16 @@ describe('LoaderService', () => {
 		abstract class Abs extends BasePlugin {}
 		abstract class MissingBase extends BasePlugin {}
 
-		@Plugin(Abs, { name: 'Impl1' })
 		class Impl1 extends Abs {}
+		Plugin(Abs, { name: 'Impl1' })(Impl1)
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(_dep: MissingBase) {
 				super()
 			}
 		}
+		defineParamTypes(Consumer, [MissingBase])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, MissingBase)
 
 		// Baseline: load module A providing Impl1 and commit successfully.
@@ -318,11 +324,11 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Alpha' })
 		class Alpha extends BasePlugin {}
+		Plugin({ name: 'Alpha' })(Alpha)
 
-		@Plugin({ name: 'Beta' })
 		class Beta extends BasePlugin {}
+		Plugin({ name: 'Beta' })(Beta)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('B.ts', { Beta })
@@ -345,11 +351,11 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Committed' })
 		class Committed extends BasePlugin {}
+		Plugin({ name: 'Committed' })(Committed)
 
-		@Plugin({ name: 'RolledBack' })
 		class RolledBack extends BasePlugin {}
+		Plugin({ name: 'RolledBack' })(RolledBack)
 
 		const committed = loader.beginBatch()
 		await committed.replaceModule('Committed.ts', { Committed })
@@ -371,8 +377,8 @@ describe('LoaderService', () => {
 		const { ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
-		@Plugin({ name: 'Anchor' })
 		class Anchor extends BasePlugin {}
+		Plugin({ name: 'Anchor' })(Anchor)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('/abs/Plugin.ts', { Anchor })

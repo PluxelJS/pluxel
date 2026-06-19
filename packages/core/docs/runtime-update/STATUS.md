@@ -30,7 +30,7 @@ MCP 接入已剥离：
 - runtime-dynamic 的 workspace MCP tools 已删除。
 - 文档只保留边界说明：未来若重新接 MCP，应复用 `src/api/usecases/*`，不要在 runtime 内核里保留 carrier glue。
 
-## 未完成
+## 稳定停点与刻意保留边界
 
 Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 
@@ -47,7 +47,7 @@ Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 - loader 的 committed module-id 查询现在优先走 core ownership read model；`findModuleId(...)` 不再按 ctor 线性扫描全部 loader modules，affected-module/pruner 的 committed lookup 也先信 core。
 - HMR scheduler 会把 replaced/affected/synced modules 标记到 runtime update transaction，便于 adapter 后续只读 commit summary。
 
-仍未完成：
+刻意保留在 adapter/loader 层：
 
 - module -> plugin declaration 的主要写入逻辑仍在 loader/HMR batch 层。
 - `LoaderService.beginBatch()` 仍是实际 loader 声明事务，不只是 core transaction 的兼容 facade。
@@ -122,17 +122,17 @@ Phase 3 性能判断：
 - 删除的成本包括 HMR path metadata mutation、constructor param cleanup、control-plane 全局 constructor metadata selection，以及 adapter 对 constructor drift 的额外补丁。
 - 对稳定运行态性能近似零影响；对 HMR/control-plane 路径通常持平或正向，代价是 core declaration/compat resolver 代码短期更复杂。
 
-Phase 4/5 未完成：adapter 继续瘦身和旧补丁删除。
+Phase 4/5 已到稳定停点：adapter 已继续瘦身，旧补丁已删除；剩余边界属于 adapter 语义。
 
 - HMR executor 仍知道 retry 后需要 re-sync affected/replaced modules。
-- commit summary 已有 `reason` / `touchedModules` / `autoDisabled` / `restarted`；仍缺少 revision replacement 等稳定字段。
+- commit summary 已有 `reason` / `touchedModules` / `autoDisabled` / `restarted`；不再补 revision replacement 等字段，除非后续出现真实 consumer。
 - worker fallback path、Tinypool worker entry resolution、runtime packaged manifest implicit path、HMR enabled-but-stopped 诊断、UI extension compiler entry base-dir lookup 已优先使用 core runtime module ownership read model，loader registry 只作为兼容 fallback。
 - UI compiler / worker watcher 还没有完全统一成只消费 commit summary 或 plugin lifecycle；watch files、source entry、HMR handles 仍属于 adapter 语义，不能下沉到 core。
-- 外层 retry re-sync、与 core transaction 重叠的 HMR helper 仍需在后续阶段删除；constructor param normalization patch 和 dependency override metadata mutation patch 已删除。
+- 外层 retry re-sync 属于 loader/config re-apply 语义；constructor param normalization patch 和 dependency override metadata mutation patch 已删除。
 
 ## 推荐下一步
 
-Phase 3 已完成，后续应进入 Phase 4/5：adapter 瘦身、summary 升级、旧 HMR helper 删除。
+Phase 3 已完成，Phase 4/5 已到稳定停点。后续不应继续为了“完成文档阶段”而推进；只有能删除真实复杂度的新证据才值得继续切。
 
 当前判断：
 
@@ -147,12 +147,12 @@ Phase 4/5 入口约束：
 3. commit summary 可以补字段，但不能演变成事件溯源或全量 update log。
 4. 新增成本仍只能留在 declaration/build/commit 边界，不能进入依赖访问和插件生命周期热路径。
 
-推荐的下一步候选：
+后续候选只在出现真实 consumer 或新重复复杂度时考虑：
 
-1. 梳理 HMR executor 中 failure retry 后的 `batch.syncModules(...)`，只在能删除外层重复协调时才推进 transaction option。
-2. 继续升级 commit summary：优先补 adapter 真正在读的字段，例如 replacement revision/module info，而不是一次性设计大而全的事件模型。
-3. 让 UI compiler / worker watcher / status consumers 优先消费 commit summary 或 lifecycle event，减少直接读取 loader/core 内部状态。
-4. 清理 runtime-dynamic 中与 core transaction 重叠的 helper；每删一条 helper 配一个 focused regression test。
+1. 若未来有新的 loader/config abstraction 能真正删除 retry re-sync，再重新评估 `batch.syncModules(...)`。
+2. 若 adapter 出现真实 consumer，再为 commit summary 补字段；不要预先设计 replacement revision/module info。
+3. 若 UI compiler / worker watcher 出现重复读取 committed runtime ownership 的问题，再优先消费 commit summary 或 lifecycle event。
+4. 清理 runtime-dynamic helper 时必须能删除一条真实重复路径，并配一个 focused regression test。
 
 ## 明确不要做
 

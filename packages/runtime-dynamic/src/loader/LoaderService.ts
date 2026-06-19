@@ -331,7 +331,6 @@ export class LoaderService {
 				const autoDisabled = new Set<string>()
 				let res = await runtimeUpdate!.commit({
 					rollbackOnFailure: false,
-					autoDisabled: [...autoDisabled],
 				})
 				while (
 					!res.ok &&

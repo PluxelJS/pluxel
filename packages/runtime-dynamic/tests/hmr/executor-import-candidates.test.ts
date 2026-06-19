@@ -9,8 +9,8 @@ describe('HmrExecutor import candidates', () => {
 		const cleanId = '/repo/plugins/a/src/index.ts'
 		const host = createRuntimeHost()
 
-		@Plugin({ name: 'Anchor' })
 		class Anchor extends BasePlugin {}
+		Plugin({ name: 'Anchor' })(Anchor)
 
 		const runner = {
 			import: async (id: string) => {
