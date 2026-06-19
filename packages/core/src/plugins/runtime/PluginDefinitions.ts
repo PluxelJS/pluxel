@@ -31,11 +31,12 @@ import {
 	getRequiredPluginDependencies,
 } from '../decorators/PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
+import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
 
 export type PluginGraph = GraphSnapshot<ReturnType<typeof getPluginInfo>>
 export type PluginRuntime = Runtime<ReturnType<typeof getPluginInfo>>
 export type createCTX = () => Context
-type PluginDependencyTokenResolver = (token: PluginIdentifier) => PluginIdentifier | undefined
+type PluginDependencyTokenResolver = (token: PluginIdentifier) => RuntimePluginKey | undefined
 type PluginDependencyTokenOverrideResolver = (
 	pluginId: string,
 ) => readonly (PluginIdentifier | undefined)[] | undefined
@@ -87,12 +88,13 @@ export class PluginDefinitions {
 		return runtime
 	}
 
-	public resolvePlanning(id: PluginIdentifier): PluginIdentifier {
-		return (this.draft.resolvePlanningToken(id) ?? id) as PluginIdentifier
+	public resolvePlanningHandle(id: RuntimePluginHandle): RuntimePluginKey | undefined {
+		if (typeof id === 'string') return this.draft.has(id) ? id : undefined
+		return this.draft.resolvePlanningToken(id) as RuntimePluginKey | undefined
 	}
 
-	public collectPlanningCascadeTargets(id: PluginIdentifier): Set<PluginIdentifier> {
-		return this.draft.collectCascadeTargets(id) as Set<PluginIdentifier>
+	public collectPlanningCascadeTargets(id: RuntimePluginHandle): Set<RuntimePluginKey> {
+		return this.draft.collectCascadeTargets(id) as Set<RuntimePluginKey>
 	}
 
 	/** Roll back draft mutations since the last confirmed graph. */
@@ -101,21 +103,21 @@ export class PluginDefinitions {
 	}
 
 	/** Whether a plugin ctor is currently registered in the draft graph. */
-	public isRegistered(id: PluginIdentifier): boolean {
-		return this.draft.has(id)
+	public isRegistered(id: RuntimePluginHandle): boolean {
+		return this.resolvePlanningHandle(id) !== undefined
 	}
 
 	public register(
 		Plugin: PluginConstructor,
-		opts?: { provideBase?: boolean; aliases?: PluginIdentifier[] },
+		opts?: { provideBase?: boolean; aliases?: RuntimePluginHandle[] },
 	): void {
 		this.draft.put(this.createProviderDecl(Plugin, opts))
 	}
 
 	public replace(
-		target: PluginIdentifier,
+		target: RuntimePluginHandle,
 		next: PluginConstructor,
-		opts?: { provideBase?: boolean; aliases?: PluginIdentifier[] },
+		opts?: { provideBase?: boolean; aliases?: RuntimePluginHandle[] },
 	): void {
 		this.draft.replace(target, this.createProviderDecl(next, opts))
 	}
@@ -149,29 +151,26 @@ export class PluginDefinitions {
 	private providerTokens(
 		Plugin: PluginConstructor,
 		info: NonNullable<ReturnType<typeof getPluginInfo>>,
-		opts?: { provideBase?: boolean; aliases?: PluginIdentifier[] },
+		opts?: { provideBase?: boolean; aliases?: RuntimePluginHandle[] },
 	): Token[] {
 		const isFork = !!getForkOf(Plugin)
 		const provideBase = opts?.provideBase ?? (info.base ? !isFork : false)
-		return uniqueTokens(
-			[
-				...(provideBase && info.base ? [info.base as PluginIdentifier] : []),
-				...(opts?.aliases ?? []),
-			] as Token[],
-		)
+		return uniqueTokens([
+			Plugin,
+			...(provideBase && info.base ? [info.base as PluginIdentifier] : []),
+			...(opts?.aliases ?? []),
+		] as Token[])
 	}
 
-	private normalizeDependencyTokens(
-		paramTypes: readonly PluginIdentifier[],
-	): readonly PluginIdentifier[] {
+	private normalizeDependencyTokens(paramTypes: readonly PluginIdentifier[]): readonly Token[] {
 		const resolveDependencyToken = this.options.resolveDependencyToken
 		if (!resolveDependencyToken || paramTypes.length === 0) return paramTypes
 
-		let next: PluginIdentifier[] | undefined
+		let next: Token[] | undefined
 		for (let i = 0; i < paramTypes.length; i++) {
 			const token = paramTypes[i]!
 			const resolved = resolveDependencyToken(token)
-			if (!resolved || resolved === token) continue
+			if (!resolved) continue
 			if (!next) next = [...paramTypes]
 			next[i] = resolved
 		}
@@ -207,10 +206,7 @@ export class PluginDefinitions {
 			case 1:
 				return new Plugin(wrapParent(deps[0]! as BasePlugin))
 			case 2:
-				return new Plugin(
-					wrapParent(deps[0]! as BasePlugin),
-					wrapParent(deps[1]! as BasePlugin),
-				)
+				return new Plugin(wrapParent(deps[0]! as BasePlugin), wrapParent(deps[1]! as BasePlugin))
 			case 3:
 				return new Plugin(
 					wrapParent(deps[0]! as BasePlugin),
@@ -246,7 +242,7 @@ export class PluginDefinitions {
 
 	private createProviderDecl(
 		Plugin: PluginConstructor,
-		opts?: { provideBase?: boolean; aliases?: PluginIdentifier[] },
+		opts?: { provideBase?: boolean; aliases?: RuntimePluginHandle[] },
 	): ProviderDecl<PluginInstance, ReturnType<typeof getPluginInfo>> {
 		const info = getPluginInfo(Plugin)
 		if (!info) throw new Error('缺少 @Plugin 装饰器元数据')
@@ -260,15 +256,16 @@ export class PluginDefinitions {
 		const extraTokens = this.providerTokens(Plugin, info, opts)
 
 		return factoryProvider({
-			key: Plugin,
+			key: runtimePluginKeyOfCtor(Plugin),
 			tokens: extraTokens,
 			deps,
 			meta: info,
-			use: (...deps: readonly unknown[]) => this.instantiatePluginInContext(Plugin, info, deps),
+			use: (...resolvedDeps: readonly unknown[]) =>
+				this.instantiatePluginInContext(Plugin, info, resolvedDeps),
 		})
 	}
 
-	public unregister(id: PluginIdentifier): void {
+	public unregister(id: RuntimePluginHandle): void {
 		this.draft.remove(id)
 	}
 

@@ -10,7 +10,12 @@ import {
 	type OnOptions,
 	type Unsubscribe,
 } from 'eventure'
-import type { CommitSummary, PluginIdentifier, PluginInstance } from '../../plugins'
+import type {
+	CommitSummary,
+	PluginIdentifier,
+	PluginInstance,
+	RuntimePluginKey,
+} from '../../plugins'
 
 const serviceName = 'events' as const
 declare module '@pluxel/context' {
@@ -125,11 +130,11 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 export interface Events {
 	onLoad: [string]
 	beforeStart: [PluginInstance] // 启动前
-	commitFailed: (failed: Set<PluginIdentifier>) => void
+	commitFailed: (failed: Set<RuntimePluginKey>) => void
 	afterCommit: (summary: CommitSummary) => void
 	afterStart: [PluxelContext] // 启动成功
 	startError: [PluxelContext, Error] // 启动失败
-	resolveError: [PluginIdentifier, Error] // 构造/依赖解析失败（无 plugin ctx）
+	resolveError: [PluginIdentifier | RuntimePluginKey, Error] // 构造/依赖解析失败（无 plugin ctx）
 }
 
 type FilterFunction = ((attachedCtx: PluxelContext) => boolean) | undefined

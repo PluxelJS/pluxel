@@ -156,9 +156,11 @@ export class LoaderService {
 
 		// --- 原子提交失败：回滚运行层（不触碰持久层启用位） ---
 		this.ctx.on('commitFailed', (failed) => {
-			for (const ctor of failed) {
-				const { id: name } = getPluginInfo(ctor as PluginConstructor)
-				this.registry.stopPlugin(name, ctor as PluginConstructor) // 只停运
+			for (const key of failed) {
+				const name = String(key)
+				const ctor = this.runtime.resolve(name)
+				if (!ctor) continue
+				this.registry.stopPlugin(name, ctor) // 只停运
 			}
 		})
 	}
@@ -181,9 +183,7 @@ export class LoaderService {
 		const autoDisableMissingDependencies = options.autoDisableMissingDependencies ?? !strict
 		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
 
-		const runtimeUpdate = shouldCommit
-			? this.ctx.registry.beginUpdate({ reason: 'startup' })
-			: null
+		const runtimeUpdate = shouldCommit ? this.ctx.registry.beginUpdate({ reason: 'startup' }) : null
 		const tx = this.registry.beginTransaction({
 			runtimeUpdate: runtimeUpdate ?? undefined,
 		})
@@ -401,7 +401,7 @@ export class LoaderService {
 			this.moduleReplacer,
 			this.registry.beginTransaction({ runtimeUpdate: options.runtimeUpdate }),
 			this.anchors,
-			(moduleIds, options) => this.syncRuntimeForModules(moduleIds, options),
+			(moduleIds, syncOptions) => this.syncRuntimeForModules(moduleIds, syncOptions),
 		)
 	}
 

@@ -10,7 +10,7 @@
 
 当前最值得推进的是 Phase 2：Declaration ownership 下沉到 core。它能直接删除 HMR/loader 对 core draft、rollback、retry 的重复协调逻辑，属于明确的高收益改动。
 
-完整 PluginKey graph 是长期正确方向，但风险更高。它会触碰 DI graph、fork、base provider、dependency override、status read model，应在 Phase 2 稳定后再小步推进。
+完整 runtime key graph 是长期正确方向，但风险更高。它会触碰 DI graph、fork、base provider、dependency override、status read model，应在 Phase 2 稳定后再小步推进。当前落地名称是 `RuntimePluginKey`：内部 canonical string key；`PluginIdentity` 只作为结构化边界概念。
 
 ## 收益对象
 
@@ -26,7 +26,7 @@ runtime-dynamic 收益最大，因为它有最多状态面：
 - loader batch
 - core registry draft
 
-Phase 2 和后续 PluginKey 对 dynamic 的收益：
+Phase 2 和后续 runtime key graph 对 dynamic 的收益：
 
 - HMR 不再知道 core draft rollback 细节。
 - missing-deps retry 不再需要外层 re-sync modules。
@@ -42,7 +42,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - static catalog diff 可以使用同一套 `upsertModule` / `removeModule` 语义。
 - static HMR 或 catalog refresh 不需要自己拼 register/replace/unregister。
 - removed plugin / catalog drift rollback 更清楚。
-- PluginKey 能让 static definition 的插件身份更稳定，不依赖某次 import 得到的 constructor 引用。
+- `RuntimePluginKey` 能让 static definition 的插件身份更稳定，不依赖某次 import 得到的 constructor 引用。
 - fork/base provider/status read model 可以和 dynamic 共享同一套身份语义。
 
 因此这些设计不是只为 runtime-dynamic；dynamic 是最强驱动力，static 应共享 core 能力，而不是另做一套。
@@ -55,7 +55,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 
 - core 会多维护一层 runtime declaration ownership。
 - update/commit 边界会多 declaration registry / journal bookkeeping。
-- PluginKey graph 会在 graph build 阶段增加 key normalization。
+- `RuntimePluginKey` graph 会在 graph build 阶段增加 key normalization。
 - 迁移期会有 compat resolver / alias 逻辑，短期代码复杂度会上升。
 
 ### 预期收益
@@ -117,7 +117,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 
 这意味着 Phase 2 的边际收益已经明显下降。继续停留在 Phase 2，大概率只会得到更多“看起来更架构化”的抽象，而不是继续删除真实复杂度。
 
-### Phase 3：PluginKey graph
+### Phase 3：RuntimePluginKey graph
 
 长期收益最大，但不应直接大改。
 
@@ -125,7 +125,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 
 - 同一个 plugin id 的不同 constructor 引用不再破坏依赖解析。
 - constructor 只表示某次 module evaluation 的 implementation。
-- plugin identity 由 `PluginKey = id + fork` 表示。
+- plugin identity 由 `RuntimePluginKey = name` 或 `name#fork` 表示。
 
 成本和风险：
 
@@ -139,7 +139,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - graph 内部仍编译为 slot/array，不让业务热路径做 string Map lookup。
 - 分批迁移 constructor API，不一次性破坏现有 plugin authoring。
 
-截至当前停点，Phase 3 已完成第一处窄切口：HMR/loader 侧 constructor param metadata mutation patch 已删除，dependency ctor identity drift 改为在 core declaration build 阶段通过 committed runtime module ownership read model 归一。这个改动仍不是完整 PluginKey graph；它只是把真实输入面收敛到 build 边界，并用删除旧补丁验证 Phase 3 方向成立。
+截至当前停点，Phase 3 已完成到可收口状态：HMR/loader 侧 constructor param metadata mutation patch 已删除，dependency ctor identity drift 改为在 core declaration build 阶段解析为 `RuntimePluginKey`；graph key、runtime cache key、commit summary、failed/touched identity、lifecycle status 和 watcher resolved key 都已经迁到 `RuntimePluginKey`。constructor 仍保留为 authoring API 和 compat token alias。
 
 随后完成的第二个窄切口是 persisted dependency override overlay：loader 和 runtime control-plane 不再改写 constructor param metadata，而是把“某个 consumer 在某些 index 上选择了哪个 runtime dependency”的事实发布给 core。core 在 provider declaration build 阶段把 overlay 与原始 constructor params 合成，commit 后重启 consumer subtree。
 
@@ -151,9 +151,10 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - fork id drift 已通过 exact ownership 和 base fallback 覆盖。
 - 显式 runtime read model（`isRunning` / `getInstance` / `watchInstance`）也能从 committed ownership 解析 shadow ctor，避免把 constructor identity drift 泄漏给 runtime consumers。
 - ownership rollback 使用 module revision 选择最近 owner；较旧 snapshot restore 不会覆盖仍然更新的同名 owner。
+- runtime update rollback 会恢复事务期间修改过的 dependency override overlay，避免 build 失败后 core declaration build 输入残留新 selection。
 - update planning path 仍保留 graph-token 语义，避免 HMR ownership 已指向新 ctor 时错误地把 replace/unregister 目标改到新实现。
 - persisted override 的 config extra 读取、fork catalog 写入、selected dependency enablement 仍留在 loader/control-plane，因为它们属于 adapter/runtime usecase，不属于 core dependency graph。
-- 继续往完整 PluginKey graph 推进前，还需要找到能删除的下一条 compat 分支；否则应停止。
+- Phase 3 不再继续引入新的 key 抽象；后续若要减少 compat token 面，必须能删除 adapter/usecase 的真实复杂度，否则应停止。
 
 ### Phase 3 当前性能损益
 
@@ -163,16 +164,18 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - 设置或清除 override 时会重建该 consumer 的 provider declaration，并把 consumer canonical key 加入 pending restart。
 - loader 在 module declaration apply 阶段会从 `EXTRA_DEP_OVERRIDES` 构造一次 overlay array；control-plane set target 会从完整 persisted state 重新构造一次 overlay array。
 - inspect 为了呈现 persisted selection 的 effective target，会在 read usecase 中解析一次 selected plugin name。
+- graph build / planning / read-model 边界会做 constructor token -> `RuntimePluginKey` 的一次解析，运行实例 cache 和 lifecycle 之后都按 key/slot 访问。
 
 删除或降低的成本：
 
 - HMR/module reload 不再反复改写 decorator metadata，也不需要清理 metadata override。
 - control-plane set target 不再通过全局 constructor metadata 表达 runtime selection，避免同一个 constructor 在多个 runtime/context 之间共享脏状态。
 - loader 和 core 的职责更短：adapter 只读 config/catalog 并发布 overlay；core 只在 declaration build 合成依赖 token。
+- graph delta、commit summary、watcher index 不再暴露 constructor identity drift，HMR/adapter 不需要猜当前 constructor 是否还是 graph identity。
 
 性能判断：
 
-- 插件业务热路径没有新增 Map lookup；依赖注入仍发生在 commit/start 构造实例时。
+- 插件业务热路径没有新增 registry Map lookup；依赖注入仍发生在 commit/start 构造实例时，底层 graph/runtime 继续走 slot/array 和 instance store。
 - 单次 HMR 或 set target 多一个小数组构造和 declaration replace，成本与已有 commit/restart 相比很小。
 - 多参数 override 的成本与 override 数量线性相关，只出现在 config apply / control-plane mutation 边界。
 - 总体是小幅增加 core bookkeeping，换掉跨 loader/control-plane 的 metadata mutation 和 cleanup 成本；对稳定运行态性能近似零影响，对 HMR/control-plane 路径通常是正向或持平。
@@ -213,7 +216,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 具体停止规则：
 
 - Phase 2 如果不能减少 HMR/loader 的 re-sync/rollback 逻辑，就停止。
-- PluginKey 如果不能删除 constructor token normalization，就停止。
+- RuntimePluginKey 如果不能删除 constructor token normalization 或其它真实 compat 复杂度，就停止。
 - commit summary 如果开始演变成事件溯源或全量日志，就停止。
 - retry option 如果扩成通用 policy engine，就停止。
 - 任何改动如果进入插件业务热路径，就停止并重新设计。

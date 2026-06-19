@@ -89,30 +89,38 @@ Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 - 提前引入的 `PluginKey` 壳子或 graph identity 抽象。
 - 试图把 `missing-deps retry` 强收进 core transaction 的半成品。
 
-Phase 3 已推进到第一处稳定停点：constructor dependency token 归一化已从 loader/HMR patch 下沉到 core declaration build。
+Phase 3 已完成到可收口状态：constructor identity 已从 graph/runtime 语义身份中拆出，内部 canonical identity 使用 `RuntimePluginKey`。
 
-已完成的 Phase 3 子集：
+已完成的 Phase 3 范围：
 
 - runtime-dynamic 已删除 HMR path 上的 `normalizeCtorParams(...)` / `syncModuleParams(...)` / `setParamTokens(...)` metadata 改写补丁。
-- core `PluginDefinitions` 在 provider declaration build 阶段读取 constructor deps，并通过 registry ownership read model 把同 id / fork id 的漂移 ctor 归一到当前 runtime owner ctor。
+- core `PluginDefinitions` 在 provider declaration build 阶段读取 constructor deps，并把同 id / fork id 的漂移 ctor 解析为当前 `RuntimePluginKey`。
+- dependency graph node key、runtime cache key、commit summary 的 `added` / `removed` / `replaced` / `failed` / `touched`、`commitFailed` payload、lifecycle id、watcher resolved key 都已迁到 `RuntimePluginKey`。
+- constructor token 仍作为 authoring API 和 compat alias 保留：`features.dep(SomeCtor)`、constructor params、base provider token、旧 `getInstance(Ctor)` / `isRunning(Ctor)` / `watchInstance(Ctor)` 仍可用，但都会在 build/planning/read-model 边界解析成 key。
 - core `isRunning(...)` / `getInstance(...)` / `watchInstance(...)` 的显式 runtime read model 也通过同一 ownership read key 处理 ctor identity drift。
 - 归一化只在 declaration/build 边界发生；无变化时复用原 deps array，不进入插件业务热路径。
 - core runtime module ownership 增加 module revision，rollback/remove 同名 owner 时恢复最近上一任 owner，且较旧 snapshot restore 不会抢回仍然更新的 owner。
 - 已补 focused tests 覆盖普通 plugin id 漂移、fork id 漂移、显式 runtime query 漂移、watcher 漂移、overlapping rollback owner 恢复、旧 snapshot 不抢新 owner。
+- 已补 focused test 固定 Phase 3 核心不变量：graph node 是 runtime key 字符串，constructor 只作为 token alias。
 - persisted dependency override 的运行时应用也已从 loader/control-plane metadata mutation 下沉到 core declaration overlay：
   - runtime-dynamic 不再对 override 调用 `setParamToken(...)` / `clearParamToken(...)`，只负责读取 config extra、解析 runtime ctor、必要时启用被选 dependency，然后把 overlay 发布给 `ctx.registry.setRuntimeDependencyOverrides(...)`。
   - runtime control-plane 的 set target 不再改写 constructor metadata，而是写入持久化 extra 后按完整 persisted state 构造 overlay，交给 core 在 declaration build 边界重建 provider declaration。
   - inspect 仍属于 runtime/control-plane read usecase，但 `effective` 优先反映 persisted selection；不存在 selection 或 selection 不可解析时才回落到 declaration/default token。
+  - runtime update rollback 会恢复事务期间修改过的 dependency override overlay，避免 build 失败后 core declaration overlay 与 loader/config 回滚状态漂移。
   - 新增成本只在 override 写入、module declaration apply、provider declaration rebuild、commit/restart 边界出现，不进入插件实例业务热路径。
 
-Phase 3 完整 PluginKey graph 仍未完成：
+Phase 3 命名模型：
 
-- graph 身份仍以 constructor token 为主。
-- `PluginKey = id + fork` 还没有成为 dependency graph、status、watcher、enablement 的统一语义身份。
-- decorator metadata 中的 constructor dependency token 目前只在 declaration build 阶段归一到 committed owner ctor，还没有统一解析为 `PluginKey`。
-- runtime dependency override overlay 仍以 consumer plugin id 为 key，并在 declaration build 时覆盖 constructor params；这是为了删除 metadata mutation patch 的窄入口，不是完整 graph identity 迁移。
-- update planning path 仍按 graph token 解析，不走 runtime read-key；这是刻意保留，因为 HMR replace/unregister 需要能指向旧 graph key，不能被已更新的 module ownership 抢先改写目标。
-- 仍不应提前引入完整 `PluginKey` graph；下一步必须继续以能删除旧复杂度为准。
+- `RuntimePluginKey` 是实际落地的内部 graph/runtime identity，格式为 `PluginName` 或 `PluginName#forkId`。
+- `PluginIdentity` 是结构化边界概念，用于表达 `{ name, fork }`，进入 graph/runtime 前 canonicalize 为 string key。
+- 不再引入对象形态的 `PluginKey`；它会增加比较/Map 复杂度，且当前 string key 已能直接映射到底层 slot graph。
+
+Phase 3 性能判断：
+
+- 新增成本停留在 declaration build、planning、read-model、commit summary 构造和 override 写入边界。
+- 运行实例 cache 通过 `ensureByKey` / `peekByKey` 访问，底层仍是 graph slot + instance store；插件方法调用和依赖访问没有新增 registry Map lookup。
+- 删除的成本包括 HMR path metadata mutation、constructor param cleanup、control-plane 全局 constructor metadata selection，以及 adapter 对 constructor drift 的额外补丁。
+- 对稳定运行态性能近似零影响；对 HMR/control-plane 路径通常持平或正向，代价是 core declaration/compat resolver 代码短期更复杂。
 
 Phase 4/5 未完成：adapter 继续瘦身和旧补丁删除。
 
@@ -123,27 +131,27 @@ Phase 4/5 未完成：adapter 继续瘦身和旧补丁删除。
 
 ## 推荐下一步
 
-Phase 2 目前已到自然停点，并已完成 Phase 3 第一处窄入口；后续进入完整 PluginKey graph 前仍必须保持入口很窄。
+Phase 3 已完成，后续应进入 Phase 4/5：adapter 瘦身、summary 升级、旧 HMR helper 删除。
 
 当前判断：
 
 - `missing-deps retry -> batch.syncModules(...)` 仍是外层 adapter 语义；若强行收进 core transaction，会把 loader/config re-apply 重新带回 core。这里应明确停止，而不是继续硬推。
 - committed module ownership 的写入、rollback、`afterCommit` 可见性和主要 read-path 已经尽量对齐到 core；loader 侧剩余 maps 主要承载冲突处理、未提交声明、primary provider/fork/pruner 这类宿主语义，不再是单纯“应该继续下沉的重复 committed read-model”。
-- 因此继续停留在 Phase 2 的边际收益已经明显下降；constructor dependency token 的真实输入面已收敛到 core declaration build，PluginKey graph 的输入边界比之前清楚。
+- constructor dependency token 的真实输入面已收敛到 core declaration build，graph/read-model/summary/watchers 已使用 `RuntimePluginKey`；继续在 Phase 3 上加抽象的边际收益很低。
 
-Phase 3 后续入口约束：
+Phase 4/5 入口约束：
 
-1. 只接受能继续删除现有 compat/adapter 复杂度的步骤。
-2. 下一步不要直接改完整 graph；优先让 dependency token 解析开始产出稳定 key，同时保留现有 authoring API 兼容。
-3. 不要先引入 `PluginKey` 抽象壳子、provider/kernel 体系或新的通用 policy；没有删除旧补丁的抽象先不做。
+1. 只接受能继续删除 adapter/HMR/control-plane 复杂度的步骤。
+2. 不要把 loader config/catalog side effect 收进 core；core 只接收 declaration、ownership、override overlay 这些事实。
+3. commit summary 可以补字段，但不能演变成事件溯源或全量 update log。
 4. 新增成本仍只能留在 declaration/build/commit 边界，不能进入依赖访问和插件生命周期热路径。
 
 推荐的下一步候选：
 
-1. 盘点 dependency token canonicalization 与 override overlay 之后仍保留的 constructor identity compat 面，确认 fork/base alias、status/watchers 是否还能各删一条旧分支。
-2. `depOverrides.apply(...)` 中读取 config extra、fork catalog、enable selected dependency 仍依赖 loader/control-plane 语义，本阶段继续留在 adapter/usecase；不要把 config/catalog side effect 收进 core。
-3. 为这些输入面补 focused tests，固定“同 id / 同 fork id 不同 ctor 引用”和“persisted selection 不改写 constructor metadata”的 key 级预期。
-4. 只有在能删除一条现有 compat 分支时，才引入最小 `PluginKey`/canonical key 解析。
+1. 梳理 HMR executor 中 failure retry 后的 `batch.syncModules(...)`，只在能删除外层重复协调时才推进 transaction option。
+2. 升级 commit summary：优先补 adapter 真正在读的字段，例如 `autoDisabled`、replacement revision/module info，而不是一次性设计大而全的事件模型。
+3. 让 UI compiler / worker watcher / status consumers 优先消费 commit summary 或 lifecycle event，减少直接读取 loader/core 内部状态。
+4. 清理 runtime-dynamic 中与 core transaction 重叠的 helper；每删一条 helper 配一个 focused regression test。
 
 ## 明确不要做
 

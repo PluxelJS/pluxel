@@ -64,7 +64,7 @@ describe('PluginService watchInstance()', () => {
 			expect(summary.removed).toEqual([])
 			expect(summary.replaced).toEqual([])
 			expect(summary.failed).toEqual([])
-			expect(summary.touched).toEqual([Restartable])
+			expect(summary.touched).toEqual(['WATCH-RESTART'])
 			expect(second).not.toBe(first)
 			expect(seen).toEqual(['none', first.label, second.label])
 		})
@@ -84,7 +84,8 @@ describe('PluginService watchInstance()', () => {
 				items: [{ ctor: Dep, exportKey: 'Dep' }],
 			})
 			tx.register(Dep)
-			expect((await tx.commit()).ok).toBe(true)
+			const commitResult = await tx.commit()
+			expect(commitResult.ok).toBe(true)
 
 			const seen: string[] = []
 			const off = host.ctx.registry.watchInstance(DepShadow, (instance) => {

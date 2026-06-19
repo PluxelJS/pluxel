@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+import {
+	BasePlugin,
+	ForkablePlugin,
+	Plugin,
+	type PluginIdentifier,
+	setParamToken,
+	withCoreHost,
+} from '@pluxel/core/test'
 import { PluginB } from './plugins'
 
 function createDeferred() {
@@ -49,6 +56,38 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('uses runtime plugin keys as graph nodes while keeping constructors as aliases', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'RKEY-A' })
+			class A extends BasePlugin {}
+
+			await host.start(A)
+
+			const graph = host.ctx.registry.graph
+			expect([...graph.keys()]).toEqual(['RKEY-A'])
+			expect(graph.has('RKEY-A')).toBe(true)
+			expect(graph.has(A)).toBe(false)
+			expect(graph.resolve(A)).toBe('RKEY-A')
+			expect(host.get(A)).toBeInstanceOf(A)
+		})
+	})
+
+	it('does not resolve undecorated constructor names as runtime plugin keys', async () => {
+		await withCoreHost(async (host) => {
+			class RKEYCollision {}
+			const legacyToken = RKEYCollision as unknown as PluginIdentifier
+
+			@Plugin({ name: 'RKEYCollision' })
+			class Real extends BasePlugin {}
+
+			await host.start(Real)
+
+			expect(host.ctx.registry.graph.has('RKEYCollision')).toBe(true)
+			expect(host.ctx.registry.getInstance(legacyToken)).toBeUndefined()
+			expect(host.ctx.registry.isRunning(legacyToken)).toBe(false)
+		})
+	})
+
 	it('rolls back runtime update draft and pending restarts', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'TX-ROLLBACK-A' })
@@ -69,7 +108,7 @@ describe('PluginService commit()', () => {
 			expect(summary.graph).toBe(committedGraph)
 			expect(summary.replaced).toEqual([])
 			expect(summary.touched).toEqual([])
-			expect(host.ctx.registry.graph.resolve(A)).toBe(A)
+			expect(host.ctx.registry.graph.resolve(A)).toBe('TX-ROLLBACK-A')
 			expect(host.get(A)).toBeInstanceOf(A)
 			expect(host.get(B)).toBeUndefined()
 		})
@@ -82,9 +121,19 @@ describe('PluginService commit()', () => {
 
 			host.ctx.registry.register(A)
 
+			expect(() => host.ctx.registry.beginUpdate({ reason: 'hmr' })).toThrow(/pending changes/i)
+		})
+	})
+
+	it('rejects nested runtime update transactions', async () => {
+		await withCoreHost(async (host) => {
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+
 			expect(() => host.ctx.registry.beginUpdate({ reason: 'hmr' })).toThrow(
-				/pending changes/i,
+				/another runtime update is active/i,
 			)
+
+			tx.rollback()
 		})
 	})
 
@@ -204,7 +253,8 @@ describe('PluginService commit()', () => {
 				items: [{ ctor: Dep, exportKey: 'Dep' }],
 			})
 			tx.register(Dep)
-			expect((await tx.commit()).ok).toBe(true)
+			const commitResult = await tx.commit()
+			expect(commitResult.ok).toBe(true)
 
 			expect(host.ctx.registry.isRunning(DepShadow)).toBe(true)
 			expect(host.ctx.registry.getInstance(DepShadow)).toBeInstanceOf(Dep)
@@ -228,12 +278,67 @@ describe('PluginService commit()', () => {
 			setParamToken(Consumer, 0, DepA)
 
 			host.add([DepA, DepB, Consumer])
-			expect((await host.commit()).failed).toEqual([])
+			const firstCommit = await host.commit()
+			expect(firstCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
 
 			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB])
-			expect((await host.commit()).failed).toEqual([])
+			const secondCommit = await host.commit()
+			expect(secondCommit.failed).toEqual([])
 
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('rolls back runtime dependency override overlays with runtime update failure', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-C' })
+			class DepC extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, DepC, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.failed).toEqual([])
+
+			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.failed).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-MISSING' })
+			class MissingDep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-BAD' })
+			class Bad extends BasePlugin {
+				constructor(_dep: MissingDep) {
+					super()
+				}
+			}
+			setParamToken(Bad, 0, MissingDep)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepC])
+			tx.register(Bad)
+
+			const res = await tx.commit()
+			expect(res.ok).toBe(false)
+
+			host.restart(Consumer)
+			const restartCommit = await host.commit()
+			expect(restartCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
 		})
 	})
@@ -259,11 +364,10 @@ describe('PluginService commit()', () => {
 				moduleId: 'Consumer.ts',
 				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
 			})
-			host.ctx.registry.setRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [
-				DepB,
-			])
+			host.ctx.registry.setRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [DepB])
 
-			expect((await host.commit()).failed).toEqual([])
+			const commit = await host.commit()
+			expect(commit.failed).toEqual([])
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
 		})
 	})
@@ -295,15 +399,18 @@ describe('PluginService commit()', () => {
 			setParamToken(Consumer, 1, DepC)
 
 			host.add([DepA, DepB, DepC, DepD, Consumer])
-			expect((await host.commit()).failed).toEqual([])
+			const initialCommit = await host.commit()
+			expect(initialCommit.failed).toEqual([])
 
 			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB, DepD])
-			expect((await host.commit()).failed).toEqual([])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.first).toBeInstanceOf(DepB)
 			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
 
 			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [undefined, DepD])
-			expect((await host.commit()).failed).toEqual([])
+			const fallbackCommit = await host.commit()
+			expect(fallbackCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.first).toBeInstanceOf(DepA)
 			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
 		})
@@ -343,6 +450,29 @@ describe('PluginService commit()', () => {
 
 			expect(res.ok).toBe(true)
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepFork)
+		})
+	})
+
+	it('resolves fork runtime module ownership through the base module', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-FORK-OWNER' })
+			class Dep extends ForkablePlugin {}
+
+			const DepFork = host.ctx.registry.fork(Dep, 'blue')
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep-fork-owner.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.register(Dep)
+			const res = await tx.commit()
+			expect(res.ok).toBe(true)
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-FORK-OWNER#blue')).toBe(
+				'dep-fork-owner.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(DepFork)).toBe('dep-fork-owner.ts')
 		})
 	})
 
@@ -401,7 +531,8 @@ describe('PluginService commit()', () => {
 				items: [{ ctor: A, exportKey: 'A' }],
 			})
 			seed.register(A)
-			expect((await seed.commit()).ok).toBe(true)
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
 
 			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
 			tx.upsertModule({
@@ -413,9 +544,7 @@ describe('PluginService commit()', () => {
 			)
 			tx.rollback()
 
-			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe(
-				'module-a.ts',
-			)
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe('module-a.ts')
 			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-a.ts')
 			expect(host.ctx.registry.listRuntimeModuleItems('module-a.ts')).toEqual([
 				{ ctor: A, exportKey: 'A' },
@@ -444,7 +573,8 @@ describe('PluginService commit()', () => {
 				moduleId: 'module-second.ts',
 				items: [{ ctor: Second, exportKey: 'Plugin' }],
 			})
-			expect((await seed.commit()).ok).toBe(true)
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
 			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
 				'module-second.ts',
 			)
@@ -486,7 +616,8 @@ describe('PluginService commit()', () => {
 				moduleId: 'module-second.ts',
 				items: [{ ctor: Second, exportKey: 'Plugin' }],
 			})
-			expect((await seed.commit()).ok).toBe(true)
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
 			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
 				'module-second.ts',
 			)
@@ -519,7 +650,7 @@ describe('PluginService commit()', () => {
 			class A extends Abs {}
 
 			await host.start(A, { provideBase: true })
-			expect(host.ctx.registry.graph.resolve(Abs)).toBe(A)
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('BIND-A')
 			expect(host.get(Abs)).toBeInstanceOf(A)
 		})
 	})
@@ -538,8 +669,8 @@ describe('PluginService commit()', () => {
 			host.replace(A, B, { provideBase: true })
 			await host.commit()
 
-			expect(host.ctx.registry.graph.resolve(Abs)).toBe(B)
-			expect(host.ctx.registry.graph.resolve(A)).toBe(B)
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('REPL-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBe('REPL-B')
 			expect(host.get(Abs)).toBeInstanceOf(B)
 			expect(host.get(A)).toBeInstanceOf(B)
 			expect(host.get(B)).toBeInstanceOf(B)
@@ -570,10 +701,10 @@ describe('PluginService commit()', () => {
 			host.replace(A, B, { provideBase: true })
 			const summary = await host.commit()
 
-			expect(summary.replaced).toEqual([{ from: A, to: B }])
-			expect(new Set(summary.touched)).toEqual(new Set([A, B, C]))
-			expect(host.ctx.registry.graph.resolve(Abs)).toBe(B)
-			expect(host.ctx.registry.graph.resolve(A)).toBe(B)
+			expect(summary.replaced).toEqual([{ from: 'PAIR-A', to: 'PAIR-B' }])
+			expect(new Set(summary.touched)).toEqual(new Set(['PAIR-A', 'PAIR-B', 'PAIR-C']))
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('PAIR-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBe('PAIR-B')
 			expect(host.get(C)?.dep).toBeInstanceOf(B)
 		})
 	})
@@ -593,7 +724,7 @@ describe('PluginService commit()', () => {
 
 			const summary = await host.commit()
 			expect(summary.graph).toBe(host.ctx.registry.graph)
-			expect(summary.graph.resolve(A)).toBe(A)
+			expect(summary.graph.resolve(A)).toBe('NOOP-A')
 
 			const committedGraph = host.ctx.registry.graph
 			const second = await host.commit()
@@ -817,9 +948,9 @@ describe('PluginService commit()', () => {
 				host.add([A, B, C])
 				const summary = await host.commitAllowFail()
 
-				expect(summary.failed).toContain(A)
-				expect(summary.failed).toContain(B)
-				expect(summary.failed).toContain(C)
+				expect(summary.failed).toContain('FF-A')
+				expect(summary.failed).toContain('FF-B')
+				expect(summary.failed).toContain('FF-C')
 				expect(bInit).toBe(false)
 				expect(cInit).toBe(false)
 				expect(host.get(B)).toBeUndefined()
@@ -851,7 +982,7 @@ describe('PluginService commit()', () => {
 
 				host.add(Slow)
 				const summary = await host.commitAllowFail()
-				expect(summary.failed).toContain(Slow)
+				expect(summary.failed).toContain('TO-global')
 				expect(host.isRunning(Slow)).toBe(false)
 			},
 			{ registry: { startTimeoutMs: 10 } },
@@ -973,13 +1104,13 @@ describe('PluginService commit()', () => {
 			expect(secondResult.failed).toEqual([])
 
 			expect(summaries.length).toBe(2)
-			expect(summaries[0]?.added).toEqual([SlowPlugin])
-			expect(new Set(summaries[1]?.added)).toEqual(new Set([PluginB]))
+			expect(summaries[0]?.added).toEqual(['SlowPlugin'])
+			expect(new Set(summaries[1]?.added)).toEqual(new Set(['PluginB']))
 
 			const lastGraph = host.last()?.graph
 			expect(lastGraph).toBeDefined()
-			expect(lastGraph!.has(SlowPlugin)).toBe(true)
-			expect(lastGraph!.has(PluginB)).toBe(true)
+			expect(lastGraph!.has('SlowPlugin')).toBe(true)
+			expect(lastGraph!.has('PluginB')).toBe(true)
 		})
 	})
 
@@ -995,8 +1126,8 @@ describe('PluginService commit()', () => {
 			host.add(ThrowPlugin)
 			const summary = await host.commitAllowFail()
 
-			expect(summary?.failed).toContain(ThrowPlugin)
-			expect(summary?.added).toContain(ThrowPlugin)
+			expect(summary?.failed).toContain('ThrowPlugin')
+			expect(summary?.added).toContain('ThrowPlugin')
 			expect(host.get(ThrowPlugin)).toBeUndefined()
 		})
 	})
@@ -1018,7 +1149,7 @@ describe('PluginService commit()', () => {
 			host.add(Flaky)
 
 			await host.commitAllowFail()
-			expect(host.last()?.failed).toContain(Flaky)
+			expect(host.last()?.failed).toContain('Flaky')
 			expect(host.isRunning(Flaky)).toBe(false)
 
 			// No graph changes, but Flaky should be retried.
@@ -1054,5 +1185,4 @@ describe('PluginService commit()', () => {
 			expect(host.isRunning(B)).toBe(true)
 		})
 	})
-
 })

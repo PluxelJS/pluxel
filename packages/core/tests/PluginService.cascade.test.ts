@@ -35,7 +35,9 @@ async function expectCascadeUnregisterFromDraft(opts?: { invalidateDraftFirst?: 
 		const summary = await host.commit()
 
 		expect(summary.added).toEqual([])
-		expect(summary.removed).toEqual([A])
+		expect(summary.removed).toEqual([
+			`${opts?.invalidateDraftFirst ? 'CASCADE-RECOVER' : 'CASCADE-DRAFT'}-A`,
+		])
 		expect(summary.failed).toEqual([])
 		expect(new Set(host.plugins())).toEqual(new Set())
 		expect(host.isRunning(A)).toBe(false)
@@ -65,10 +67,12 @@ describe('PluginService cascade options', () => {
 	})
 
 	it('cascades unregister across dependents added in the current draft', async () => {
+		expect.hasAssertions()
 		await expectCascadeUnregisterFromDraft()
 	})
 
 	it('still cascades unregister from an invalid draft where the root provider was already removed', async () => {
+		expect.hasAssertions()
 		await expectCascadeUnregisterFromDraft({ invalidateDraftFirst: true })
 	})
 
@@ -104,7 +108,7 @@ describe('PluginService cascade options', () => {
 			expect(summary.removed).toEqual([])
 			expect(summary.replaced).toEqual([])
 			expect(summary.failed).toEqual([])
-			expect(summary.touched).toEqual([A])
+			expect(summary.touched).toEqual(['CASCADE-RESTART-A'])
 			expect(secondA).not.toBe(firstA)
 			expect(secondB).toBe(firstB)
 		})
@@ -152,11 +156,11 @@ describe('PluginService cascade options', () => {
 			host.replace(A, B, { provideBase: true, cascadeDependents: false })
 			const summary = await host.commit()
 
-			expect(summary.replaced).toEqual([{ from: A, to: B }])
-			expect(new Set(summary.touched)).toEqual(new Set([A, B]))
+			expect(summary.replaced).toEqual([{ from: 'CASCADE-REPLACE-A', to: 'CASCADE-REPLACE-B' }])
+			expect(new Set(summary.touched)).toEqual(new Set(['CASCADE-REPLACE-A', 'CASCADE-REPLACE-B']))
 			expect(host.require(C)).toBe(firstC)
-			expect(host.ctx.registry.graph.resolve(Abs)).toBe(B)
-			expect(host.ctx.registry.graph.resolve(A)).toBe(B)
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('CASCADE-REPLACE-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBe('CASCADE-REPLACE-B')
 		})
 	})
 })

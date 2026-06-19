@@ -181,7 +181,7 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 			const baseToken = token
 			try {
 				const resolved = ctx.registry.graph.resolve(baseToken as PluginIdentifier)
-				if (typeof resolved === 'function') baseProvider = tokenName(resolved)
+				if (resolved !== undefined) baseProvider = tokenName(resolved)
 			} catch {}
 
 			for (const [pluginName, pluginCtor] of getRuntimePluginCatalog(ctx).listRegistered()) {

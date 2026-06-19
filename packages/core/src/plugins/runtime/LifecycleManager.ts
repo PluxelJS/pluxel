@@ -7,6 +7,7 @@ import type { Context } from '@pluxel/context'
 import { BasePlugin } from '../composition/BasePlugin'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from './PluginActor'
 import type { PluginIdentifier } from '../types'
+import type { RuntimePluginKey } from './identity'
 
 const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
 
@@ -41,7 +42,7 @@ export class LifecycleManager {
 		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] = ref ?? null
 	}
 
-	private createLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
+	private createLifecycle(id: PluginIdentifier | RuntimePluginKey, plugin: BasePlugin): PluginLifecycleActor {
 		const ref = new PluginLifecycleActor(
 			{ autoStart: false, useErrorChannel: true },
 			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
@@ -60,7 +61,7 @@ export class LifecycleManager {
 		return ref
 	}
 
-	private ensureLifecycle(id: PluginIdentifier, plugin: BasePlugin): PluginLifecycleActor {
+	private ensureLifecycle(id: PluginIdentifier | RuntimePluginKey, plugin: BasePlugin): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
 			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
@@ -81,7 +82,7 @@ export class LifecycleManager {
 	/* ─────────────────────────── Lifecycle Management ─────────────────────────── */
 
 	async startLifecycle(
-		id: PluginIdentifier,
+		id: PluginIdentifier | RuntimePluginKey,
 		plugin: BasePlugin,
 		timeoutMs?: number,
 	): Promise<void> {
@@ -137,7 +138,7 @@ export class LifecycleManager {
 	}
 
 	async stopLifecycle(
-		_id: PluginIdentifier,
+		_id: PluginIdentifier | RuntimePluginKey,
 		plugin: BasePlugin,
 		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
 	): Promise<void> {

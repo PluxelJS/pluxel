@@ -373,7 +373,7 @@ describe('FeatureHost.dep', () => {
 
 			host.add(DepFail)
 			const summary = await host.commitAllowFail()
-			expect(summary.failed).toContain(DepFail)
+			expect(summary.failed).toContain('DepFail')
 
 			expect(h.seen).toBe(0)
 			h.read()

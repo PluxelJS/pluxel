@@ -10,6 +10,12 @@ import {
 } from '../../../runtime-dynamic/src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
+function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
+}
+
 describe('LoaderService', () => {
 	it('preloadPlugins supports forkable builtins (including enabled forks)', async () => {
 		const { core, ctx } = createHmrTestContext()
@@ -42,6 +48,32 @@ describe('LoaderService', () => {
 
 		// Fork source should resolve to the base plugin module id.
 		expect(loader.api.registry.findModuleId('Forky#a')).toBe('pluxel:builtins')
+	})
+
+	it('cleans up failed fork registrations from commitFailed events', async () => {
+		const { core, ctx } = createHmrTestContext()
+		const loader = new LoaderService(ctx)
+
+		class Worker extends ForkablePlugin {
+			protected override init() {
+				throw new Error('fork boom')
+			}
+		}
+		Plugin({ name: 'Worker' })(Worker)
+
+		ctx.configService.setExtra(EXTRA_FORKS, { Worker: ['f1'] })
+		ctx.configService.enableInConfig('Worker#f1')
+
+		const batch = loader.beginBatch()
+		await batch.replaceModule('Worker.ts', { Worker })
+		const Fork = core.registry.fork(Worker as unknown as ForkablePluginConstructor, 'f1')
+		expect(core.registry.isRegistered(Fork)).toBe(true)
+
+		const res = await core.registry.commit()
+		expect(res.ok).toBe(true)
+		expect(core.registry.lastCommit?.failed).toEqual(['Worker#f1'])
+		expect(core.registry.isRegistered(Fork)).toBe(false)
+		batch.commit()
 	})
 
 	it('preloadPlugins auto-disables missing-dependency builtins and commits the rest', async () => {

@@ -13,6 +13,12 @@ async function commitBatch(
 	batch.commit()
 }
 
+function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
+}
+
 describe('base provider selection', () => {
 	it('self-heals when baseProviders points to a fork id', async () => {
 		const { core, ctx } = createHmrTestContext()
@@ -20,8 +26,8 @@ describe('base provider selection', () => {
 
 		abstract class Abs extends ForkablePlugin {}
 
-		@Plugin(Abs, { name: 'Impl' })
 		class Impl extends Abs {}
+		Plugin(Abs, { name: 'Impl' })(Impl)
 
 		// Persist an invalid selection: base points to a fork id.
 		ctx.configService.setExtra(EXTRA_BASE_PROVIDERS, { Abs: 'Impl#f1' })
@@ -48,12 +54,11 @@ describe('base provider selection', () => {
 			abstract readonly providerSeq: number
 		}
 
-		@Plugin(Abs, { name: 'Impl' })
 		class Impl extends Abs {
 			readonly providerSeq = ++providerSeq
 		}
+		Plugin(Abs, { name: 'Impl' })(Impl)
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			readonly consumerSeq = ++consumerSeq
 
@@ -61,6 +66,8 @@ describe('base provider selection', () => {
 				super()
 			}
 		}
+		defineParamTypes(Consumer, [Abs])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Abs)
 
 		ctx.configService.enableInConfig('Impl', 'Consumer')
@@ -76,10 +83,10 @@ describe('base provider selection', () => {
 		expect(firstConsumer?.consumerSeq).toBe(1)
 		expect(firstConsumer?.dep.providerSeq).toBe(1)
 
-		@Plugin(Abs, { name: 'Impl' })
 		class ImplNext extends Abs {
 			readonly providerSeq = ++providerSeq
 		}
+		Plugin(Abs, { name: 'Impl' })(ImplNext)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('Provider.ts', { ImplNext })
@@ -99,14 +106,13 @@ describe('base provider selection', () => {
 		let providerSeq = 0
 		let consumerSeq = 0
 
-		@Plugin({ name: 'Worker' })
 		class Worker extends ForkablePlugin {
 			readonly providerSeq = ++providerSeq
 		}
+		Plugin({ name: 'Worker' })(Worker)
 
 		const WorkerFork = core.registry.fork(Worker, 'f1')
 
-		@Plugin({ name: 'Consumer' })
 		class Consumer extends BasePlugin {
 			readonly consumerSeq = ++consumerSeq
 
@@ -114,6 +120,8 @@ describe('base provider selection', () => {
 				super()
 			}
 		}
+		defineParamTypes(Consumer, [WorkerFork])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, WorkerFork)
 
 		ctx.configService.setExtra(EXTRA_FORKS, { Worker: ['f1'] })
@@ -130,10 +138,10 @@ describe('base provider selection', () => {
 		expect(firstConsumer?.consumerSeq).toBe(1)
 		expect(firstConsumer?.dep.providerSeq).toBe(1)
 
-		@Plugin({ name: 'Worker' })
 		class WorkerNext extends ForkablePlugin {
 			readonly providerSeq = ++providerSeq
 		}
+		Plugin({ name: 'Worker' })(WorkerNext)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('Provider.ts', { WorkerNext })

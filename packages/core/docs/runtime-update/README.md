@@ -11,15 +11,16 @@
 3. `STATUS.md`
    - 当前已完成、未完成、下一步接手顺序和验证命令。
 
-如果你当前是在 review / 整理 Phase 2 阶段提交，建议直接看：
+如果你当前是在 review / 继续推进 runtime update 重构，建议直接看：
 
 1. `STATUS.md`
    - `Phase 2 收益总结`
    - `Phase 2 提交建议`
+   - `Phase 3 已完成到可收口状态`
    - `推荐下一步`
 2. `RATIONALE.md`
    - `截至当前停点的实际收益`
-   - `Phase 3：PluginKey graph`
+   - `Phase 3：RuntimePluginKey graph`
 
 边界：
 

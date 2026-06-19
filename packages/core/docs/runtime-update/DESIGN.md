@@ -81,24 +81,30 @@ core 不应该知道这些工具；但 core 应该暴露足够清晰的 commit s
 
 只引入两个 core 能力。
 
-## 3.1 PluginKey：插件身份与实现分离
+## 3.1 RuntimePluginKey：插件身份与实现分离
 
 ### 设计
 
-插件身份用稳定 key 表示：
+插件身份在语义边界用结构化 identity 表示：
 
 ```ts
-type PluginKey = {
-	id: string
+type PluginIdentity = {
+	name: string
 	fork?: string
 }
+```
+
+graph/cache/lifecycle 内部使用 canonical string key：
+
+```ts
+type RuntimePluginKey = string // "PluginName" 或 "PluginName#forkId"
 ```
 
 一次具体实现用 implementation 表示：
 
 ```ts
 type PluginImplementation = {
-	key: PluginKey
+	key: RuntimePluginKey
 	ctor: PluginConstructor
 	moduleId: string
 	exportKey: string
@@ -106,7 +112,7 @@ type PluginImplementation = {
 }
 ```
 
-依赖图、enablement、fork selection、status、watcher 都以 `PluginKey` 为语义身份。constructor 只在实例化时使用。
+依赖图、runtime cache、commit summary、lifecycle status、watcher resolved key 都以 `RuntimePluginKey` 为语义身份。constructor 只作为 authoring token、compat alias 和实例化实现使用。
 
 ### 必要性
 
@@ -118,15 +124,15 @@ type PluginImplementation = {
 
 负面影响：
 
-- declaration build 阶段需要把 decorator 参数从 constructor token 解析成 `PluginKey`。
+- declaration build 阶段需要把 decorator 参数从 constructor token 解析成 `RuntimePluginKey`。
 - 兼容旧 API 时，constructor -> key 需要一次 lookup。
 - graph build 期间会多一些 key normalization 成本。
 
 控制方式：
 
-- commit/build 阶段把 `PluginKey` 编译成 slot number。
+- commit/build 阶段把 `RuntimePluginKey` 编译成 slot number。
 - runtime hot path 继续走 slot/array，不在插件注入时反复 Map 查找。
-- `PluginKey` 内部可 canonicalize 为字符串 key，例如 `id` 或 `id#fork`，避免对象比较。
+- `RuntimePluginKey` 是 canonical string key，例如 `id` 或 `id#fork`，避免对象比较。
 
 预期结果：
 
@@ -138,7 +144,7 @@ type PluginImplementation = {
 
 清晰度显著提升：
 
-- "插件是谁"由 key 决定。
+- "插件是谁"由 `RuntimePluginKey` 决定。
 - "这次加载到哪个 class"由 implementation 决定。
 - "是否需要重启"由 key 的 implementation revision 变化决定。
 
@@ -157,12 +163,7 @@ type PluginImplementation = {
 新增最小事务 API：
 
 ```ts
-type RuntimeUpdateReason =
-	| 'startup'
-	| 'hmr'
-	| 'config'
-	| 'package-refresh'
-	| 'test'
+type RuntimeUpdateReason = 'startup' | 'hmr' | 'config' | 'package-refresh' | 'test'
 
 type RuntimeModuleDeclaration = {
 	moduleId: string
@@ -178,7 +179,7 @@ type RuntimeUpdateCommitOptions = {
 interface RuntimeUpdateTransaction {
 	upsertModule(module: RuntimeModuleDeclaration): void
 	removeModule(moduleId: string, options?: { scope?: 'runtime' | 'persistent' }): void
-	restart(key: PluginKeyLike, options?: { cascadeDependents?: boolean }): void
+	restart(key: RuntimePluginHandle, options?: { cascadeDependents?: boolean }): void
 	commit(options?: RuntimeUpdateCommitOptions): Promise<Result<RuntimeUpdateSummary, Error>>
 	rollback(): void
 }
@@ -254,27 +255,27 @@ core 需要维护 module ownership：
 
 ```ts
 moduleId -> PluginImplementation[]
-pluginKey -> current implementation
-pluginKey -> owning moduleId
+runtimePluginKey -> current implementation
+runtimePluginKey -> owning moduleId
 ```
 
 这部分可以从 loader 下沉到 core，但只下沉纯 runtime declaration，不下沉文件扫描、workspace profile、Vite id normalization。
 
 ### 4.2 Graph Build
 
-graph build 输入从 constructor set 变成 implementation set：
+graph build 输入从 constructor set 变成 keyed provider declarations：
 
-1. 收集 enabled `PluginKey`。
+1. 收集 enabled `RuntimePluginKey`。
 2. 解析每个 key 当前 implementation。
 3. 从 implementation ctor 读取 decorator metadata。
-4. 把 dependency token 规范化为 `PluginKey`。
+4. 把 dependency token 规范化为 `RuntimePluginKey`。
 5. 编译为 slot graph。
 
 graph 内部仍应使用 slot number，以保持现有性能优势。
 
 ### 4.3 Replacement Semantics
 
-当同一个 `PluginKey` 的 implementation revision 变化：
+当同一个 `RuntimePluginKey` 的 implementation revision 变化：
 
 - 该 key 标记为 replaced。
 - 依赖它的子树按现有 cascade 规则 restart。
@@ -287,13 +288,13 @@ commit summary 要成为 adapter 的稳定观察面：
 ```ts
 type RuntimeUpdateSummary = {
 	reason: RuntimeUpdateReason
-	added: PluginKey[]
-	removed: PluginKey[]
-	replaced: Array<{ key: PluginKey; fromRevision: string; toRevision: string }>
-	restarted: PluginKey[]
-	failed: PluginKey[]
+	added: RuntimePluginKey[]
+	removed: RuntimePluginKey[]
+	replaced: Array<{ key: RuntimePluginKey; fromRevision: string; toRevision: string }>
+	restarted: RuntimePluginKey[]
+	failed: RuntimePluginKey[]
 	touchedModules: string[]
-	autoDisabled: PluginKey[]
+	autoDisabled: RuntimePluginKey[]
 }
 ```
 
@@ -344,7 +345,7 @@ static runtime 可以使用同一个 update transaction：
 
 ### 6.1 允许的新增成本
 
-- commit/build 阶段做 `PluginKey` normalization。
+- commit/build 阶段做 `RuntimePluginKey` normalization。
 - update transaction 创建小型 journal。
 - commit summary 构造稳定数组。
 
@@ -432,7 +433,7 @@ Vite module graph 是 adapter 的事实，不是 runtime core 的事实。core �
 
 - 新增 `ctx.registry.beginUpdate()`。
 - 内部先复用现有 `register/replace/unregister/commit/resetDraft`。
-- HMR pipeline 只改到通过 transaction commit，不改变 PluginKey 模型。
+- HMR pipeline 只改到通过 transaction commit，不改变 runtime key 模型。
 
 目标：先收敛 rollback/retry 边界。
 
@@ -444,9 +445,9 @@ Vite module graph 是 adapter 的事实，不是 runtime core 的事实。core �
 
 目标：减少 loader 对 core draft 的直接操作。
 
-### Phase 3: PluginKey graph
+### Phase 3: RuntimePluginKey graph
 
-- 引入 `PluginKey` normalization。
+- 引入 `RuntimePluginKey` normalization。
 - graph build 使用 key -> slot。
 - constructor API 通过 compat resolver 转成 key。
 - 保留旧 constructor token alias 一段时间。
@@ -493,7 +494,7 @@ if (!result.ok) {
 
 这次重设只应该做两件事：
 
-1. 用 `PluginKey` 解除插件身份和 constructor 引用的绑定。
+1. 用 `RuntimePluginKey` 解除插件身份和 constructor 引用的绑定。
 2. 用 `RuntimeUpdateTransaction` 让 core 拥有声明更新的事务边界。
 
 其他抽象先克制。UI federation、worker、static build 的 artifact 生命周期不属于本轮 runtime core 设计；除非未来有新的充分证据，否则不要抽 provider。

@@ -112,7 +112,8 @@ export class ModuleReplacer {
 		stack.length = 0
 		const out = new Set<string>()
 		const pushRoot = (ctor: PluginConstructor) => {
-			const slot = graph.slotOf(ctor)
+			const key = graph.resolve(ctor)
+			const slot = key === undefined ? undefined : graph.slotOf(key)
 			if (slot === undefined || marks[slot] === 1) return
 			marks[slot] = 1
 			slots.push(slot)

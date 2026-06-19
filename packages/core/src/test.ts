@@ -145,11 +145,19 @@ export function createCoreHost(
 	const last = () => registry.lastCommit
 	const services = () => [...(last()?.graph.keys() ?? [])]
 	const plugins = () =>
-		services().filter(
-			(id): id is PluginConstructor =>
-				typeof id === 'function' && checkPluginDecorator(id as PluginConstructor),
-		)
-	const has = (id: unknown) => last()?.graph.has(id as never) ?? false
+		(last()?.graph.declarationsBySlot() ?? [])
+			.map((decl) => decl?.meta?.class)
+			.filter(
+				(id): id is PluginConstructor =>
+					typeof id === 'function' && checkPluginDecorator(id as PluginConstructor),
+			)
+	const has = (id: unknown) => {
+		const graph = last()?.graph
+		if (!graph) return false
+		if (typeof id === 'string') return graph.has(id)
+		if (typeof id === 'function') return graph.resolve(id as PluginIdentifier) !== undefined
+		return false
+	}
 
 	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
 	const require = <T extends PluginIdentifier>(id: T) => {

@@ -28,9 +28,9 @@ describe('PluginService failure reporting', () => {
 			// Strict mode still publishes commit-side observability before surfacing the error result.
 			expect(failed.ok).toBe(false)
 			expect(afterCommit).toHaveLength(1)
-			expect(afterCommit[0]!.failed).toEqual([A])
-			expect(commitFailed).toEqual([[A]])
-			expect(host.ctx.registry.lastCommit?.failed).toEqual([A])
+			expect(afterCommit[0]!.failed).toEqual(['STRICT-FAIL-A'])
+			expect(commitFailed).toEqual([['STRICT-FAIL-A']])
+			expect(host.ctx.registry.lastCommit?.failed).toEqual(['STRICT-FAIL-A'])
 			expect(host.get(A)).toBeUndefined()
 			expect(host.isRunning(A)).toBe(false)
 		})
@@ -66,8 +66,8 @@ describe('PluginService failure reporting', () => {
 			const summary = await host.commitAllowFail()
 
 			// Only the failing root and its dependency chain should be marked failed.
-			expect(new Set(summary.failed)).toEqual(new Set([A, B]))
-			expect(summary.failed).not.toContain(C)
+			expect(new Set(summary.failed)).toEqual(new Set(['FAIL-SUBTREE-A', 'FAIL-SUBTREE-B']))
+			expect(summary.failed).not.toContain('FAIL-SUBTREE-C')
 			expect(host.isRunning(A)).toBe(false)
 			expect(host.isRunning(B)).toBe(false)
 			expect(host.isRunning(C)).toBe(true)
