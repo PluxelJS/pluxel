@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { dirname, isAbsolute, resolve } from 'pathe'
-import { resolveModuleIdBaseDir } from '../../runtime/module-id'
+import { resolveModuleIdBaseDir, findRuntimeModuleId } from '../../runtime/module-id'
 import type {
 	BuiltinDocExtensionDef,
 	BuiltinExtensionDef,
@@ -686,15 +686,12 @@ export class ExtensionService implements ExtensionModuleStore {
 			this.ctx as unknown as {
 				loader?: {
 					api?: {
-						registry?: { findModuleIdByName?: (name: string) => string | undefined }
 						anchors?: { list?: () => Iterable<string> }
 					}
 				}
 			}
 		).loader?.api
-		const registryPath =
-			this.ctx.registry.getRuntimeModuleId(pluginName) ??
-			loaderApi?.registry?.findModuleIdByName?.(pluginName)
+		const registryPath = findRuntimeModuleId(this.ctx, pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
 			if (baseDir) {

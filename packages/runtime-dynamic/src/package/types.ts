@@ -1,5 +1,3 @@
-import type { OperationOptions } from 'nypm'
-
 import type { EntryResolutionOk, ScanTaskOptions } from '../scan/types'
 import type { NormalizedPackageSpecifier } from './specifiers'
 
@@ -86,9 +84,19 @@ export interface ListInstalledPackagesOptions {
 	includeUntracked?: boolean
 }
 
-/** Install options based on nypm OperationOptions with force flag. */
-export interface InstallOptions extends OperationOptions {
+export interface InstallOptions {
+	cwd?: string
+	dev?: boolean
+	workspace?: boolean
+	env?: Record<string, string | undefined>
+	silent?: boolean
+	packageManager?: string
+	global?: boolean
+	dry?: boolean
+	registry?: string
+	registries?: Record<string, string>
 	force?: boolean
+	installPeerDependencies?: boolean
 }
 
 /** Load options only keep resolution-related settings. */

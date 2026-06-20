@@ -15,10 +15,12 @@ export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'
 export * from './decorators/decoratorRuntime'
-export * from './runtime/PluginDefinitions'
 export * from './runtime/fork'
-export * from './runtime/identity'
+export {
+	parseRuntimePluginKey,
+	runtimePluginKeyOfIdentity,
+	type PluginIdentity,
+	type RuntimePluginKey,
+} from './runtime/identity'
 export * from './runtime/pluginId'
-export * from './runtime/LifecycleManager'
-export * from './runtime/PluginActor'
-export * from './runtime/PluginService'
+export { type CommitSummary, PluginService } from './runtime/PluginService'

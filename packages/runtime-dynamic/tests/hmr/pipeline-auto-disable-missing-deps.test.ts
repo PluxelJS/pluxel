@@ -83,7 +83,7 @@ describe('HmrExecutor commit retry', () => {
 			})
 
 			const out = await executor.runAndLoadAllClean(['/dep.ts'])
-			expect(out?.res.ok).toBe(true)
+			expect(out?.commitResult.ok).toBe(true)
 			expect(new Set(out?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
 			expect(out?.syncedModules).toEqual(['/consumer.ts'])
 			expect(out?.autoDisabled).toEqual([])
@@ -130,7 +130,7 @@ describe('HmrExecutor commit retry', () => {
 			})
 
 			const out = await executor.runAndLoadAllClean(['/broken.ts'])
-			expect(out?.res.ok).toBe(true)
+			expect(out?.commitResult.ok).toBe(true)
 			expect(out?.affectedModules).toEqual([])
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
@@ -181,7 +181,7 @@ describe('HmrExecutor commit retry', () => {
 			})
 
 			const out = await executor.runAndLoadAllClean(['/stable.ts', '/broken.ts'])
-			expect(out?.res.ok).toBe(true)
+			expect(out?.commitResult.ok).toBe(true)
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
 			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['Broken'])
@@ -241,7 +241,7 @@ describe('HmrBatchProcessor summary', () => {
 		} as any
 		const executor = {
 			runAndLoadAllClean: async () => ({
-				res: { ok: true as const, val: null },
+				commitResult: { ok: true as const, val: null },
 				commitMs: 1,
 				affectedModules: ['/consumer.ts'],
 				syncedModules: ['/consumer.ts'],

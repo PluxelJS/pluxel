@@ -283,7 +283,7 @@ export async function pluginDependencySetTarget(
 		}
 
 		const overrides = buildRuntimeDependencyOverrides(ctx, name)
-		ctx.registry.setRuntimeDependencyOverrides(ctor, overrides)
+		ctx.registry.replaceRuntimeDependencyOverrides(ctor, overrides)
 		const commit = await ctx.registry.commit()
 		if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
 		return { ok: true }

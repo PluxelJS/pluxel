@@ -64,7 +64,7 @@ describe('PluginService commit()', () => {
 		})
 	})
 
-	it('uses runtime plugin keys as graph nodes while keeping constructors as aliases', async () => {
+	it('uses runtime plugin keys as graph nodes while resolving constructors at registry boundary', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'RKEY-A' })
 			class A extends BasePlugin {}
@@ -75,7 +75,8 @@ describe('PluginService commit()', () => {
 			expect([...graph.keys()]).toEqual(['RKEY-A'])
 			expect(graph.has('RKEY-A')).toBe(true)
 			expect(graph.has(A)).toBe(false)
-			expect(graph.resolve(A)).toBe('RKEY-A')
+			expect(graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('RKEY-A')
 			expect(host.get(A)).toBeInstanceOf(A)
 		})
 	})
@@ -116,7 +117,7 @@ describe('PluginService commit()', () => {
 			expect(summary.graph).toBe(committedGraph)
 			expect(summary.replaced).toEqual([])
 			expect(summary.touched).toEqual([])
-			expect(host.ctx.registry.graph.resolve(A)).toBe('TX-ROLLBACK-A')
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('TX-ROLLBACK-A')
 			expect(host.get(A)).toBeInstanceOf(A)
 			expect(host.get(B)).toBeUndefined()
 		})
@@ -290,7 +291,7 @@ describe('PluginService commit()', () => {
 			expect(firstCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
 
-			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB])
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB])
 			const secondCommit = await host.commit()
 			expect(secondCommit.failed).toEqual([])
 
@@ -321,7 +322,7 @@ describe('PluginService commit()', () => {
 			const initialCommit = await host.commit()
 			expect(initialCommit.failed).toEqual([])
 
-			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB])
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB])
 			const overrideCommit = await host.commit()
 			expect(overrideCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
@@ -338,7 +339,7 @@ describe('PluginService commit()', () => {
 			setParamToken(Bad, 0, MissingDep)
 
 			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
-			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepC])
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepC])
 			tx.register(Bad)
 
 			const res = await tx.commit()
@@ -372,7 +373,7 @@ describe('PluginService commit()', () => {
 				moduleId: 'Consumer.ts',
 				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
 			})
-			host.ctx.registry.setRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [DepB])
+			host.ctx.registry.replaceRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [DepB])
 
 			const commit = await host.commit()
 			expect(commit.failed).toEqual([])
@@ -410,17 +411,68 @@ describe('PluginService commit()', () => {
 			const initialCommit = await host.commit()
 			expect(initialCommit.failed).toEqual([])
 
-			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [DepB, DepD])
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB, DepD])
 			const overrideCommit = await host.commit()
 			expect(overrideCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.first).toBeInstanceOf(DepB)
 			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
 
-			host.ctx.registry.setRuntimeDependencyOverrides(Consumer, [undefined, DepD])
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [undefined, DepD])
 			const fallbackCommit = await host.commit()
 			expect(fallbackCommit.failed).toEqual([])
 			expect(host.get(Consumer)?.first).toBeInstanceOf(DepA)
 			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
+		})
+	})
+
+	it('preserves base provider ownership when rebuilding dependency override declarations', async () => {
+		await withCoreHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'TX-OVERRIDE-BASE-PRIMARY' })
+			class Primary extends Abs {}
+
+			@Plugin(Abs, { name: 'TX-OVERRIDE-BASE-SECONDARY' })
+			class Secondary extends Abs {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Secondary, 0, DepA)
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly provider: Abs) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, Abs)
+
+			host
+				.add(DepA)
+				.add(DepB)
+				.add(Primary, { provideBase: true })
+				.add(Secondary, { provideBase: false })
+				.add(Consumer)
+			const initialCommit = await host.commit()
+			expect(initialCommit.failed).toEqual([])
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('TX-OVERRIDE-BASE-PRIMARY')
+			expect(host.get(Consumer)?.provider).toBeInstanceOf(Primary)
+			expect(host.get(Secondary)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Secondary, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.failed).toEqual([])
+
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('TX-OVERRIDE-BASE-PRIMARY')
+			expect(host.get(Consumer)?.provider).toBeInstanceOf(Primary)
+			expect(host.get(Secondary)?.dep).toBeInstanceOf(DepB)
 		})
 	})
 
@@ -646,7 +698,7 @@ describe('PluginService commit()', () => {
 		})
 	})
 
-	it('replaces a plugin implementation while keeping old tokens resolvable', async () => {
+	it('replaces a plugin implementation without storing implementation ctor graph aliases', async () => {
 		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
@@ -661,7 +713,9 @@ describe('PluginService commit()', () => {
 			await host.commit()
 
 			expect(host.ctx.registry.graph.resolve(Abs)).toBe('REPL-B')
-			expect(host.ctx.registry.graph.resolve(A)).toBe('REPL-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('REPL-B')
+			expect(host.ctx.registry.resolveRuntimeKey(B)).toBe('REPL-B')
 			expect(host.get(Abs)).toBeInstanceOf(B)
 			expect(host.get(A)).toBeInstanceOf(B)
 			expect(host.get(B)).toBeInstanceOf(B)
@@ -695,7 +749,9 @@ describe('PluginService commit()', () => {
 			expect(summary.replaced).toEqual([{ from: 'PAIR-A', to: 'PAIR-B' }])
 			expect(new Set(summary.touched)).toEqual(new Set(['PAIR-A', 'PAIR-B', 'PAIR-C']))
 			expect(host.ctx.registry.graph.resolve(Abs)).toBe('PAIR-B')
-			expect(host.ctx.registry.graph.resolve(A)).toBe('PAIR-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('PAIR-B')
+			expect(host.ctx.registry.resolveRuntimeKey(B)).toBe('PAIR-B')
 			expect(host.get(C)?.dep).toBeInstanceOf(B)
 		})
 	})
@@ -715,7 +771,8 @@ describe('PluginService commit()', () => {
 
 			const summary = await host.commit()
 			expect(summary.graph).toBe(host.ctx.registry.graph)
-			expect(summary.graph.resolve(A)).toBe('NOOP-A')
+			expect(summary.graph.has('NOOP-A')).toBe(true)
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('NOOP-A')
 
 			const committedGraph = host.ctx.registry.graph
 			const second = await host.commit()

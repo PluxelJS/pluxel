@@ -1,7 +1,6 @@
 import {
 	type CommitSummary,
 	type PluginConstructor,
-	type PluginIdentifier,
 } from '@pluxel/core'
 import { Context } from '@pluxel/runtime'
 import { bootstrapHostVault } from '@pluxel/runtime/services'
@@ -415,12 +414,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		plan: StaticRuntimeCatalogPlan,
 		commit: CommitSummary | undefined,
 	): void {
-		const failed = commit
-			? new Set<PluginIdentifier>(commit.failed)
-			: new Set<PluginIdentifier>()
+		const failed = commit ? new Set(commit.failed.map(String)) : new Set<string>()
 		for (const { name, plugin } of plan.catalog.entries) {
 			if (!plan.enabled.has(name) || plan.blocked.has(name)) continue
-			if (failed.has(plugin)) {
+			if (failed.has(name)) {
 				plan.entries.push({ name, status: 'start-failed' })
 			} else if (this.ctx.registry.isRunning(plugin)) {
 				plan.entries.push({ name, status: 'started' })

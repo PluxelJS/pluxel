@@ -9,6 +9,7 @@ import {
 	type MissingDepsCandidate,
 	startTimer,
 } from '@pluxel/runtime/shared'
+import { findRuntimeModuleId } from '@pluxel/runtime/internal'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
@@ -18,10 +19,12 @@ import { runWithRequireShims } from './runtime-shims'
 
 export type PrefetchOrder = 'near' | 'all'
 
-type CommitResult = Awaited<ReturnType<Context['registry']['commit']>>
+type RuntimeCommitResult = Awaited<ReturnType<Context['registry']['commit']>>
 type RuntimeUpdate = ReturnType<Context['registry']['beginUpdate']>
+const createRuntimeCommitFailureResult = (cause: unknown): RuntimeCommitResult =>
+	({ ok: false, err: cause }) as RuntimeCommitResult
 type HmrExecutionResult = {
-	res: CommitResult
+	commitResult: RuntimeCommitResult
 	commitMs: number
 	affectedModules: readonly string[]
 	syncedModules: readonly string[]
@@ -389,28 +392,30 @@ class HmrRuntimeCommitScheduler {
 
 		const endCommit = startTimer()
 		const autoDisabled = new Set<string>()
-		let res: CommitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
+		let commitResult: RuntimeCommitResult
+		try {
+			commitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
 
-		if (!res.ok) {
-			await this.retryMissingDependencies({
-				batch,
-				runtimeUpdate,
-				res,
-				replacedModules,
-				affectedModules,
-				autoDisabled,
-				syncedModules,
-				setResult: (next) => {
-					res = next
-				},
-			})
+			if (!commitResult.ok) {
+				commitResult = await this.retryAfterAutoDisablingMissingDeps({
+					batch,
+					runtimeUpdate,
+					commitResult,
+					replacedModules,
+					affectedModules,
+					autoDisabled,
+					syncedModules,
+				})
+			}
+		} catch (error) {
+			commitResult = createRuntimeCommitFailureResult(error)
 		}
 
 		const commitMs = endCommit()
-		this.closeBatch(batch, runtimeUpdate, res.ok)
+		this.closeBatch(batch, runtimeUpdate, commitResult.ok)
 
 		return {
-			res,
+			commitResult,
 			commitMs,
 			affectedModules,
 			syncedModules: [...syncedModules],
@@ -418,24 +423,23 @@ class HmrRuntimeCommitScheduler {
 		}
 	}
 
-	private async retryMissingDependencies(params: {
+	private async retryAfterAutoDisablingMissingDeps(params: {
 		batch: LoaderBatch
 		runtimeUpdate: RuntimeUpdate
-		res: CommitResult
+		commitResult: RuntimeCommitResult
 		replacedModules: readonly string[]
 		affectedModules: readonly string[]
 		autoDisabled: Set<string>
 		syncedModules: Set<string>
-		setResult: (res: CommitResult) => void
-	}) {
-		let res = params.res
+	}): Promise<RuntimeCommitResult> {
+		let commitResult = params.commitResult
 		const autoDisableMissingDependencies = this.cfg.autoDisableMissingDependencies ?? true
 		const autoDisableMaxPasses = this.cfg.autoDisableMaxPasses ?? 8
-		if (!autoDisableMissingDependencies || autoDisableMaxPasses <= 0) return
+		if (!autoDisableMissingDependencies || autoDisableMaxPasses <= 0) return commitResult
 
 		let pass = 0
-		while (!res.ok && pass < autoDisableMaxPasses) {
-			const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, res.err)
+		while (!commitResult.ok && pass < autoDisableMaxPasses) {
+			const disabled = disablePluginsOnMissingDepsFromCommitError(this.ctx, commitResult.err)
 			if (disabled.size === 0) break
 			for (const name of disabled) params.autoDisabled.add(name)
 
@@ -447,13 +451,13 @@ class HmrRuntimeCommitScheduler {
 				]),
 			)
 			params.runtimeUpdate.touchModules(params.syncedModules)
-			res = await params.runtimeUpdate.commit({
+			commitResult = await params.runtimeUpdate.commit({
 				rollbackOnFailure: false,
 				autoDisabled: [...params.autoDisabled].sort(),
 			})
-			params.setResult(res)
 			pass++
 		}
+		return commitResult
 	}
 
 	private async syncModulesToCoreDraft(
@@ -599,8 +603,7 @@ function collectEnabledButStopped(ctx: Context, moduleIds: ReadonlySet<string>):
 	const out: string[] = []
 	for (const [name, status] of Object.entries(statuses)) {
 		if (!status?.isEnabled || status.isRunning) continue
-		const moduleId =
-			ctx.registry.getRuntimeModuleId(name) ?? ctx.loader.api.registry.findModuleIdByName(name)
+		const moduleId = findRuntimeModuleId(ctx, name)
 		if (!moduleId || !moduleIds.has(moduleId)) continue
 		out.push(name)
 	}
@@ -943,9 +946,11 @@ export class HmrBatchProcessor {
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = Math.round(endBatch() * 10) / 10
-		const commitOk = Boolean(executed?.res.ok)
+		const commitOk = Boolean(executed?.commitResult.ok)
 		const commitError =
-			executed?.res.ok === false ? String(executed.res.err ?? 'commit failed') : undefined
+			executed?.commitResult.ok === false
+				? String(executed.commitResult.err ?? 'commit failed')
+				: undefined
 		const relatedModules = new Set<string>([
 			...execOrder,
 			...affectedModules,

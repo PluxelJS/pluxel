@@ -41,7 +41,6 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@sinclair/parsebox": "^0.11.1",
 		"@sinclair/typebox": "^0.34.48"
 	}
 }

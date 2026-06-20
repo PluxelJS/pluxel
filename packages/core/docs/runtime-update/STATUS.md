@@ -103,7 +103,7 @@ Phase 3 已完成到可收口状态：constructor identity 已从 graph/runtime 
 - 已补 focused tests 覆盖普通 plugin id 漂移、fork id 漂移、显式 runtime query 漂移、watcher 漂移、overlapping rollback owner 恢复、旧 snapshot 不抢新 owner。
 - 已补 focused test 固定 Phase 3 核心不变量：graph node 是 runtime key 字符串，constructor 只作为 token alias。
 - persisted dependency override 的运行时应用也已从 loader/control-plane metadata mutation 下沉到 core declaration overlay：
-  - runtime-dynamic 不再对 override 调用 `setParamToken(...)` / `clearParamToken(...)`，只负责读取 config extra、解析 runtime ctor、必要时启用被选 dependency，然后把 overlay 发布给 `ctx.registry.setRuntimeDependencyOverrides(...)`。
+  - runtime-dynamic 不再对 override 调用 `setParamToken(...)` / `clearParamToken(...)`，只负责读取 config extra、解析 runtime ctor、必要时启用被选 dependency，然后把完整 overlay 发布给 `ctx.registry.replaceRuntimeDependencyOverrides(...)`。
   - runtime control-plane 的 set target 不再改写 constructor metadata，而是写入持久化 extra 后按完整 persisted state 构造 overlay，交给 core 在 declaration build 边界重建 provider declaration。
   - inspect 仍属于 runtime/control-plane read usecase，但 `effective` 优先反映 persisted selection；不存在 selection 或 selection 不可解析时才回落到 declaration/default token。
   - runtime update rollback 会恢复事务期间修改过的 dependency override overlay，避免 build 失败后 core declaration overlay 与 loader/config 回滚状态漂移。

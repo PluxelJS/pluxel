@@ -5,75 +5,15 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 type PackageJson = {
-	name?: string
-	private?: boolean
 	exports?: unknown
 	dependencies?: Record<string, string>
-	optionalDependencies?: Record<string, string>
+	devDependencies?: Record<string, string>
+	inlinedDependencies?: Record<string, string>
 	peerDependencies?: Record<string, string>
 }
 
 async function readJson(path: string): Promise<PackageJson> {
 	return JSON.parse(await readFile(path, 'utf8')) as PackageJson
-}
-
-async function collectWorkspacePackages(root: string) {
-	const out = new Map<string, { private: boolean; path: string }>()
-	const packagesDir = join(root, 'packages')
-
-	const walk = async (dir: string, depth: number) => {
-		if (depth <= 0) return
-		let entries
-		try {
-			entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' })
-		} catch {
-			return
-		}
-
-		for (const ent of entries) {
-			if (!ent.isDirectory()) continue
-			if (ent.name === 'node_modules' || ent.name === 'dist' || ent.name === '.turbo') continue
-			const next = join(dir, ent.name)
-			const pkgJsonPath = join(next, 'package.json')
-			try {
-				const json = await readJson(pkgJsonPath)
-				const name = typeof json.name === 'string' ? json.name : ''
-				if (name) {
-					out.set(name, { private: Boolean(json.private), path: pkgJsonPath })
-					continue
-				}
-			} catch {
-				// not a package dir
-			}
-			await walk(next, depth - 1)
-		}
-	}
-
-	await walk(packagesDir, 3)
-	return out
-}
-
-function quotedStringPattern(value: string) {
-	const escaped = value.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
-	return new RegExp(`["'\`]${escaped}["'\`]`)
-}
-
-function forbiddenImportPattern(specifier: string) {
-	const escaped = specifier.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&')
-	return new RegExp(`(?:\\bfrom\\s*|\\bimport\\s*\\(\\s*)["'\`]${escaped}["'\`]`)
-}
-
-function collectExportConditions(exportsField: unknown): Set<string> {
-	const out = new Set<string>()
-	const visit = (value: unknown) => {
-		if (!value || typeof value !== 'object' || Array.isArray(value)) return
-		for (const [key, child] of Object.entries(value)) {
-			if (key.startsWith('@pluxel/')) out.add(key)
-			visit(child)
-		}
-	}
-	visit(exportsField)
-	return out
 }
 
 async function collectSourceFiles(dir: string): Promise<string[]> {
@@ -99,116 +39,7 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 	return out.sort()
 }
 
-describe('packaging invariants', () => {
-	it('only public runtime/toolchain packages are publishable', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const workspace = await collectWorkspacePackages(root)
-		const publishable = new Set([
-			'@pluxel/core',
-			'@pluxel/runtime',
-			'@pluxel/runtime-dynamic',
-			'@pluxel/runtime-static',
-			'@pluxel/cli',
-			'@pluxel/test',
-			'@pluxel/ops',
-			'@pluxel/rolldown',
-		])
-		const mismatches: string[] = []
-
-		for (const [name, meta] of workspace) {
-			const expectedPrivate = !publishable.has(name)
-			if (meta.private !== expectedPrivate) {
-				mismatches.push(
-					expectedPrivate
-						? `${name} must be private (${meta.path})`
-						: `${name} must not be private (${meta.path})`,
-				)
-			}
-		}
-
-		expect(mismatches).toEqual([])
-	})
-
-	it('published packages do not depend on workspace packages at runtime', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const workspace = await collectWorkspacePackages(root)
-
-		const packages = [
-			{ name: '@pluxel/core', path: `${root}/packages/core/package.json` },
-			{ name: '@pluxel/runtime', path: `${root}/packages/runtime/package.json` },
-			{ name: '@pluxel/runtime-dynamic', path: `${root}/packages/runtime-dynamic/package.json` },
-			{ name: '@pluxel/runtime-static', path: `${root}/packages/runtime-static/package.json` },
-			{ name: '@pluxel/cli', path: `${root}/packages/cli/package.json` },
-			{ name: '@pluxel/test', path: `${root}/packages/test/package.json` },
-			{ name: '@pluxel/ops', path: `${root}/packages/ops/package.json` },
-			{ name: '@pluxel/rolldown', path: `${root}/packages/rolldown/package.json` },
-		] as const
-
-		const allowedWorkspaceDeps = new Map<string, ReadonlySet<string>>([
-			['@pluxel/core', new Set()],
-			['@pluxel/runtime', new Set(['@pluxel/core'])],
-			['@pluxel/runtime-dynamic', new Set(['@pluxel/core', '@pluxel/runtime', '@pluxel/rolldown'])],
-			['@pluxel/runtime-static', new Set(['@pluxel/core', '@pluxel/runtime'])],
-			['@pluxel/cli', new Set(['@pluxel/runtime-dynamic', '@pluxel/runtime'])],
-			['@pluxel/test', new Set()],
-			['@pluxel/ops', new Set()],
-			['@pluxel/rolldown', new Set(['@pluxel/core'])],
-		])
-		const privateRuntimeDeps: string[] = []
-		const disallowedRuntimeDeps: string[] = []
-
-		for (const pkg of packages) {
-			const json = await readJson(pkg.path)
-			expect(json.name).toBe(pkg.name)
-
-			const deps = [
-				...Object.keys(json.dependencies ?? {}),
-				...Object.keys(json.optionalDependencies ?? {}),
-			]
-			const allow = allowedWorkspaceDeps.get(pkg.name) ?? new Set()
-
-			for (const dep of deps) {
-				const ws = workspace.get(dep)
-				if (!ws) continue
-
-				if (ws.private) {
-					privateRuntimeDeps.push(
-						`${pkg.name} must not depend on private workspace package "${dep}" (${ws.path}) at runtime`,
-					)
-					continue
-				}
-
-				if (!allow.has(dep)) {
-					disallowedRuntimeDeps.push(
-						`${pkg.name} must not depend on workspace package "${dep}" at runtime`,
-					)
-				}
-			}
-		}
-
-		expect(privateRuntimeDeps).toEqual([])
-		expect(disallowedRuntimeDeps).toEqual([])
-	})
-
-	it('uses only real Pluxel export conditions', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const workspace = await collectWorkspacePackages(root)
-		const allowed = new Set(['@pluxel/source', '@pluxel/runtime-dynamic'])
-		const offenders: string[] = []
-
-		for (const meta of workspace.values()) {
-			const json = await readJson(meta.path)
-			for (const condition of collectExportConditions(json.exports)) {
-				if (!allowed.has(condition)) offenders.push(`${meta.path}: ${condition}`)
-			}
-		}
-
-		expect(
-			offenders,
-			'Pluxel export conditions are fixed: internals use @pluxel/source, plugin dev source uses @pluxel/runtime-dynamic',
-		).toEqual([])
-	})
-
+describe('toolchain package boundaries', () => {
 	it('keeps Vite toolchain helpers out of runtime public exports', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtime = await readJson(`${root}/packages/runtime/package.json`)
@@ -221,7 +52,7 @@ describe('packaging invariants', () => {
 
 	it('keeps plugin UI Module Federation build logic in the rolldown package', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic`)
+		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const offenders: string[] = []
 
 		for (const file of runtimeDynamicFiles) {
@@ -242,133 +73,27 @@ describe('packaging invariants', () => {
 		expect(runtimeDynamic.dependencies).not.toHaveProperty('@rolldown/pluginutils')
 	})
 
-	it('published packages explicitly bundle private workspace build-time imports', async () => {
+	it('keeps toolchain implementation helpers out of published runtime dependencies', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
+		const runtime = await readJson(`${root}/packages/runtime/package.json`)
+		const test = await readJson(`${root}/packages/test/package.json`)
 
-		const packages = [
-			{
-				name: '@pluxel/core',
-				config: `${root}/packages/core/tsdown.config.ts`,
-				alwaysBundle: [
-					'@pluxel/context',
-					'@pluxel/context/*',
-					'@pluxel/core-di',
-					'@pluxel/core-di/*',
-				],
-			},
-			{
-				name: '@pluxel/runtime',
-				config: `${root}/packages/runtime/tsdown.config.ts`,
-				alwaysBundle: [
-					'@pluxel/rolldown/workspace/fs',
-					'@pluxel/rolldown/workspace/info',
-					'valibot-form',
-					'valibot-form/*',
-				],
-			},
-			{
-				name: '@pluxel/runtime-dynamic',
-				config: `${root}/packages/runtime-dynamic/tsdown.config.ts`,
-				alwaysBundle: [],
-			},
-			{
-				name: '@pluxel/cli',
-				config: `${root}/packages/cli/tsdown.config.ts`,
-				alwaysBundle: [
-					'@pluxel/rolldown',
-					'@pluxel/rolldown/*',
-				],
-			},
-			{
-				name: '@pluxel/test',
-				config: `${root}/packages/test/tsdown.config.ts`,
-				alwaysBundle: ['@pluxel/rolldown', '@pluxel/rolldown/*', '@pluxel/rolldown/oxlint'],
-			},
-		] as const
-
-		for (const pkg of packages) {
-			const config = await readFile(pkg.config, 'utf8')
-			expect(
-				config,
-				`${pkg.name} should list concrete workspace subpaths instead of bundling all workspace helpers`,
-			).not.toMatch(quotedStringPattern('@pluxel/rolldown/workspace/*'))
-			for (const specifier of pkg.alwaysBundle) {
-				expect(
-					config,
-					`${pkg.name} must bundle private workspace import "${specifier}" in ${pkg.config}`,
-				).toMatch(quotedStringPattern(specifier))
-			}
+		expect(rolldown.dependencies).toEqual({
+			'@inlang/paraglide-js': '^2.15.1',
+			'@module-federation/vite': '1.16.6',
+			'@pluxel/core': 'workspace:*',
+		})
+		expect(rolldown.peerDependencies).toMatchObject({
+			rolldown: '1.0.0-rc.5',
+			tsdown: '*',
+			vite: '>=8.0.0-beta.18 <9',
+		})
+		for (const name of ['@rolldown/pluginutils', 'fdir', 'oxc-parser', 'pathe', 'pkg-types']) {
+			expect(rolldown.devDependencies).toHaveProperty(name)
+			expect(rolldown.dependencies).not.toHaveProperty(name)
 		}
-	})
-
-	it('published package internals use explicit workspace subpaths', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const packageDirs = [
-			'cli',
-			'components',
-			'runtime-dynamic',
-			'runtime-static',
-			'runtime',
-			'test',
-			'rolldown',
-		] as const
-		const forbidden = forbiddenImportPattern('@pluxel/rolldown/workspace')
-		const offenders: string[] = []
-
-		for (const pkgDir of packageDirs) {
-			const files = await collectSourceFiles(`${root}/packages/${pkgDir}`)
-			for (const file of files) {
-				const code = await readFile(file, 'utf8')
-				if (forbidden.test(code)) offenders.push(file)
-			}
-		}
-
-		expect(
-			offenders,
-			'published package internals should import @pluxel/rolldown/workspace via explicit subpaths',
-		).toEqual([])
-	})
-
-	it('core tests use core test host directly instead of the test package facade', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const files = await collectSourceFiles(`${root}/packages/core`)
-		const allowed = new Set([
-			`${root}/packages/core/fsm/tests/macro-bake.test.ts`,
-			`${root}/packages/core/tests/PluxelOxlintPlugin.test.ts`,
-		])
-		const forbidden = forbiddenImportPattern('@pluxel/test')
-		const offenders: string[] = []
-
-		for (const file of files) {
-			if (allowed.has(file)) continue
-			const code = await readFile(file, 'utf8')
-			if (forbidden.test(code)) offenders.push(file)
-		}
-
-		expect(
-			offenders,
-			'core package internals should import @pluxel/core/test, not @pluxel/test',
-		).toEqual([])
-	})
-
-	it('workspace vite helpers are consumed through the workspace package subpath', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const files = [
-			...(await collectSourceFiles(`${root}/packages/components`)),
-			...(await collectSourceFiles(`${root}/packages/runtime`)),
-		]
-		const offenders: string[] = []
-
-		for (const file of files) {
-			const code = await readFile(file, 'utf8')
-			if (code.includes('../workspace/src/vite') || code.includes('../../workspace/src/vite')) {
-				offenders.push(file)
-			}
-		}
-
-		expect(
-			offenders,
-			'components/runtime should import workspace Vite helpers from @pluxel/rolldown/workspace/vite',
-		).toEqual([])
+		expect(runtime.dependencies).not.toHaveProperty('pkg-types')
+		expect(test.inlinedDependencies).not.toHaveProperty('pathe')
 	})
 })

@@ -4,6 +4,7 @@ import {
 	getPluginInfo,
 	type PluginConstructor,
 } from '@pluxel/core'
+import { findRuntimeModuleId } from '@pluxel/runtime/internal'
 import type { PluginRegistry } from './PluginRegistry'
 import { type DepOverridesExtra, EXTRA_DEP_OVERRIDES } from './selection'
 import type { AnchorJournal, AnchorStore } from './support'
@@ -112,7 +113,7 @@ export class ModuleReplacer {
 		stack.length = 0
 		const out = new Set<string>()
 		const pushRoot = (ctor: PluginConstructor) => {
-			const key = graph.resolve(ctor)
+			const key = this.ctx.registry.resolveRuntimeKey(ctor)
 			const slot = key === undefined ? undefined : graph.slotOf(key)
 			if (slot === undefined || marks[slot] === 1) return
 			marks[slot] = 1
@@ -130,7 +131,7 @@ export class ModuleReplacer {
 			const slot = stack.pop()!
 			const name = graph.declarationAtSlot(slot)?.meta?.id
 			if (name) {
-				const moduleId = this.ctx.registry.getRuntimeModuleId(name) ?? this.registry.name2PathMap.get(name)
+				const moduleId = findRuntimeModuleId(this.ctx, name) ?? this.registry.name2PathMap.get(name)
 				if (moduleId) out.add(moduleId)
 			}
 
@@ -188,7 +189,7 @@ class DependencyOverrideApplier {
 		const all = this.ctx.configService.getExtra<DepOverridesExtra>(EXTRA_DEP_OVERRIDES)
 		const overrides = all?.[name]
 		if (!overrides) {
-			this.ctx.registry.setRuntimeDependencyOverrides(name, undefined)
+			this.ctx.registry.replaceRuntimeDependencyOverrides(name, undefined)
 			return
 		}
 		const consumerEnabled = this.ctx.configService.isEnabledInConfig(name)
@@ -219,7 +220,7 @@ class DependencyOverrideApplier {
 				}
 			}
 		}
-		this.ctx.registry.setRuntimeDependencyOverrides(
+		this.ctx.registry.replaceRuntimeDependencyOverrides(
 			name,
 			next.length === 0 ? undefined : next,
 		)

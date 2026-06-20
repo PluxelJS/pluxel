@@ -16,6 +16,18 @@ export type PackageLogFn = (
 
 export type NormalizeSpecFn = (input: PackageSpecifierInput) => NormalizedPackageSpecifier
 
+function toNypmOperationOptions(options: ResolvedInstallOptions): OperationOptions {
+	const {
+		force: _force,
+		installPeerDependencies: _installPeerDependencies,
+		...operationOptions
+	} = options
+	return {
+		...operationOptions,
+		silent: operationOptions.silent ?? false,
+	} as OperationOptions
+}
+
 export class PackageInstaller {
 	private readonly installedCache = new Map<
 		string,
@@ -64,7 +76,7 @@ export class PackageInstaller {
 	): Promise<PackageInstallResult[]> {
 		if (specs.length === 0) return []
 		const targets = specs.map((s) => s.target)
-		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
+		const opOptions = toNypmOperationOptions(options)
 		const opResult = await addDependency(targets, opOptions)
 		if (opResult?.exec) {
 			this.logEvent('info', 'install:pm_command', {
@@ -97,7 +109,7 @@ export class PackageInstaller {
 	): Promise<void> {
 		if (specs.length === 0) return
 		const targets = [...new Set(specs.map((s) => s.name))]
-		const opOptions: OperationOptions = { ...options, silent: options.silent ?? false }
+		const opOptions = toNypmOperationOptions(options)
 		try {
 			const opResult = await removeDependency(targets, opOptions)
 			if (opResult?.exec) {

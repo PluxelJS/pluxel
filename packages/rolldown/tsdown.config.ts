@@ -7,6 +7,13 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
+		alwaysBundle: [
+			'@rolldown/pluginutils',
+			'fdir',
+			'oxc-parser',
+			'pathe',
+			'pkg-types',
+		],
 		neverBundle: [
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',

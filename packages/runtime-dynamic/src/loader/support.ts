@@ -9,7 +9,7 @@ import {
 	type PluginIdentifier,
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
-import { getRuntimeModuleAdapter } from '@pluxel/runtime/internal'
+import { getRuntimeModuleAdapter, findRuntimeModuleId } from '@pluxel/runtime/internal'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,
@@ -275,7 +275,7 @@ export class PluginPruner {
 
 	prunePluginByName(name: string, scope: RemovalScope = 'runtime') {
 		const candidates = new Set<string>()
-		const mapped = this.ctx.registry.getRuntimeModuleId(name) ?? this.registry.name2PathMap.get(name)
+		const mapped = findRuntimeModuleId(this.ctx, name) ?? this.registry.name2PathMap.get(name)
 		if (mapped) candidates.add(mapped)
 		else {
 			for (const [moduleId, items] of this.registry.modules) {
@@ -330,7 +330,8 @@ export class LoaderRegistryView {
 		const fork = parseForkPluginId(name)
 		if (fork) {
 			const base =
-				this.ctx.registry.getRuntimeModuleId(fork.baseId) ?? this.registry.name2PathMap.get(fork.baseId)
+				findRuntimeModuleId(this.ctx, fork.baseId) ??
+				this.registry.name2PathMap.get(fork.baseId)
 			if (base) return base
 		}
 		return null

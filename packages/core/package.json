@@ -82,7 +82,6 @@
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
-		"@noble/hashes": "^2.0.1",
 		"@standard-schema/spec": "^1.1.0",
 		"eventure": "^0.4.4",
 		"pathe": "^2.0.3",

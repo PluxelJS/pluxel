@@ -8,17 +8,9 @@ type HmrCore = ReturnType<typeof createHmrTestContext>['core']
 type RuntimeUpdate = ReturnType<HmrCore['registry']['beginUpdate']>
 type RuntimeBatch = ReturnType<LoaderService['beginBatch']>
 
-function definePlugin<T extends new (...args: any[]) => BasePlugin>(
-	ctor: T,
-	meta: Parameters<typeof Plugin>[0],
-	paramTypes: unknown[] = [],
-): T {
-	if (paramTypes.length > 0) {
-		;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-			.defineMetadata?.('design:paramtypes', paramTypes, ctor)
-	}
-	Plugin(meta)(ctor)
-	return ctor
+function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
+	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
+		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 function beginRuntimeBatch(core: HmrCore, loader: LoaderService) {
@@ -42,17 +34,18 @@ describe('LoaderService HMR lifecycle', () => {
 		const loader = new LoaderService(ctx)
 
 		class Dep extends BasePlugin {}
-		definePlugin(Dep, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(Dep)
 
 		class DepShadow extends BasePlugin {}
-		definePlugin(DepShadow, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(DepShadow)
 
 		class Consumer extends BasePlugin {
 			constructor(_dep: DepShadow) {
 				super()
 			}
 		}
-		definePlugin(Consumer, { name: 'Consumer' }, [DepShadow])
+		defineParamTypes(Consumer, [DepShadow])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, DepShadow)
 
 		await loader.preloadPlugins([Dep])
@@ -77,7 +70,7 @@ describe('LoaderService HMR lifecycle', () => {
 		class Dep extends BasePlugin {
 			readonly seq = ++depSeq
 		}
-		definePlugin(Dep, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(Dep)
 
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
@@ -86,7 +79,8 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
-		definePlugin(Consumer, { name: 'Consumer' }, [Dep])
+		defineParamTypes(Consumer, [Dep])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Dep)
 
 		{
@@ -105,7 +99,7 @@ describe('LoaderService HMR lifecycle', () => {
 		class DepNext extends BasePlugin {
 			readonly seq = ++depSeq
 		}
-		definePlugin(DepNext, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(DepNext)
 
 		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 		await batch.replaceModule('Dep.ts', { DepNext })
@@ -131,14 +125,15 @@ describe('LoaderService HMR lifecycle', () => {
 		const loader = new LoaderService(ctx)
 
 		class Dep extends BasePlugin {}
-		definePlugin(Dep, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(Dep)
 
 		class Bad extends BasePlugin {
 			constructor(_dep: Dep) {
 				super()
 			}
 		}
-		definePlugin(Bad, { name: 'Bad' }, [Dep])
+		defineParamTypes(Bad, [Dep])
+		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, Dep)
 
 		{
@@ -155,7 +150,8 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
-		definePlugin(DepBroken, { name: 'Dep' }, [MissingBase])
+		defineParamTypes(DepBroken, [MissingBase])
+		Plugin({ name: 'Dep' })(DepBroken)
 		setParamToken(DepBroken, 0, MissingBase)
 
 		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
@@ -180,7 +176,7 @@ describe('LoaderService HMR lifecycle', () => {
 		class Dep extends BasePlugin {
 			readonly seq = ++depSeq
 		}
-		definePlugin(Dep, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(Dep)
 
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
@@ -189,7 +185,8 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
-		definePlugin(Consumer, { name: 'Consumer' }, [Dep])
+		defineParamTypes(Consumer, [Dep])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Dep)
 
 		expect(await loader.replaceModule('Dep.ts', { Dep })).toMatchObject({
@@ -206,7 +203,7 @@ describe('LoaderService HMR lifecycle', () => {
 		class DepNext extends BasePlugin {
 			readonly seq = ++depSeq
 		}
-		definePlugin(DepNext, { name: 'Dep' })
+		Plugin({ name: 'Dep' })(DepNext)
 
 		const replaced = await loader.replaceModule('Dep.ts', { DepNext })
 		expect(replaced.isAnchor).toBe(true)
@@ -230,13 +227,13 @@ describe('LoaderService HMR lifecycle', () => {
 		class DepA extends BasePlugin {
 			readonly kind = 'A'
 		}
-		definePlugin(DepA, { name: 'DepA' })
+		Plugin({ name: 'DepA' })(DepA)
 
 		class DepB extends BasePlugin {
 			readonly kind = 'B'
 			readonly seq = ++depBSeq
 		}
-		definePlugin(DepB, { name: 'DepB' })
+		Plugin({ name: 'DepB' })(DepB)
 
 		class Consumer extends BasePlugin {
 			readonly seq = ++consumerSeq
@@ -245,7 +242,8 @@ describe('LoaderService HMR lifecycle', () => {
 				super()
 			}
 		}
-		definePlugin(Consumer, { name: 'Consumer' }, [DepA])
+		defineParamTypes(Consumer, [DepA])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, DepA)
 
 		ctx.configService.enableInConfig('DepA', 'DepB', 'Consumer')
@@ -268,7 +266,7 @@ describe('LoaderService HMR lifecycle', () => {
 			readonly kind = 'B'
 			readonly seq = ++depBSeq
 		}
-		definePlugin(DepBNext, { name: 'DepB' })
+		Plugin({ name: 'DepB' })(DepBNext)
 
 		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
 		await batch.replaceModule('DepB.ts', { DepBNext })
@@ -288,7 +286,7 @@ describe('LoaderService HMR lifecycle', () => {
 		const loader = new LoaderService(ctx)
 
 		class Anchor extends BasePlugin {}
-		definePlugin(Anchor, { name: 'Anchor' })
+		Plugin({ name: 'Anchor' })(Anchor)
 
 		const committed = loader.beginBatch()
 		await committed.replaceModule('Committed.ts', { Anchor })

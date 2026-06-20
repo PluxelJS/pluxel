@@ -19,7 +19,10 @@ describe('ModuleReplacer export scanning', () => {
 				isEnabledInConfig: () => false,
 				getExtra: () => null,
 			},
-			registry: { container: null },
+			registry: {
+				container: null,
+				replaceRuntimeDependencyOverrides: () => {},
+			},
 		} as unknown as Context
 
 		const registry = {

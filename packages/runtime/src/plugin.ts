@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/core'
 import { isAbsolute, resolve } from 'pathe'
-import { getHmrRuntimeHandles, resolveModuleIdBaseDir } from './internal'
+import { getHmrRuntimeHandles, resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
 
 export interface PluginUiSourceDeclaration {
 	/** Authoring declaration. Runtime never consumes this path directly. */
@@ -71,16 +71,7 @@ function resolvePluginFile(ctx: Context, targetPath: string): string {
 	const pluginId = ctx.pluginInfo?.id
 	if (pluginId) {
 		try {
-			const loaderApi = (
-				ctx as unknown as {
-					loader?: {
-						api?: { registry?: { findModuleIdByName?: (name: string) => string | undefined } }
-					}
-				}
-			).loader?.api
-			const registryPath =
-				ctx.registry.getRuntimeModuleId(pluginId) ??
-				loaderApi?.registry?.findModuleIdByName?.(pluginId)
+			const registryPath = findRuntimeModuleId(ctx, pluginId)
 			const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
 			if (baseDir) return resolve(baseDir, targetPath)
 		} catch {

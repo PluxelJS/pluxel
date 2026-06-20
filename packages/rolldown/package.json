@@ -83,18 +83,42 @@
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
 		"@module-federation/vite": "1.16.6",
-		"@pluxel/core": "workspace:*",
+		"@pluxel/core": "workspace:*"
+	},
+	"devDependencies": {
 		"@rolldown/pluginutils": "1.0.0-rc.5",
+		"fs-fixture": "^2.13.0",
 		"fdir": "^6.5.0",
 		"oxc-parser": "^0.115.0",
 		"pathe": "^2.0.3",
 		"pkg-types": "^2.3.0",
 		"rolldown": "1.0.0-rc.5",
 		"tsdown": "^0.22.3",
-		"vite": "beta"
+		"typescript": "^6.0.3",
+		"vite": "8.0.0-beta.18"
 	},
-	"devDependencies": {
-		"fs-fixture": "^2.13.0",
-		"typescript": "^6.0.3"
+	"peerDependencies": {
+		"rolldown": "1.0.0-rc.5",
+		"tsdown": "*",
+		"vite": ">=8.0.0-beta.18 <9"
+	},
+	"peerDependenciesMeta": {
+		"rolldown": {
+			"optional": true
+		},
+		"tsdown": {
+			"optional": true
+		},
+		"vite": {
+			"optional": true
+		}
+	},
+	"inlinedDependencies": {
+		"@rolldown/pluginutils": "1.0.0-rc.5",
+		"confbox": "0.2.4",
+		"exsolve": "1.0.8",
+		"fdir": "6.5.0",
+		"pathe": "2.0.3",
+		"pkg-types": "2.3.1"
 	}
 }

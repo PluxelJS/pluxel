@@ -86,6 +86,13 @@ describe('buildPluginUiRemote', () => {
 			'@mantine/hooks',
 			'@pluxel/runtime/web/ui',
 		]
+		const vite = {
+			resolve: {
+				alias: {
+					'@pluxel/runtime/web/ui': resolve(workspaceRoot, 'packages/runtime/src/web/ui.ts'),
+				},
+			},
+		}
 
 		const first = await buildPluginUiRemote({
 			root,
@@ -95,6 +102,7 @@ describe('buildPluginUiRemote', () => {
 			publicPath: '/test/',
 			sharedPackages,
 			minify: false,
+			vite,
 		})
 		const second = await buildPluginUiRemote({
 			root,
@@ -104,6 +112,7 @@ describe('buildPluginUiRemote', () => {
 			publicPath: '/test/',
 			sharedPackages,
 			minify: false,
+			vite,
 		})
 
 		await expect(access(first.manifestPath)).resolves.toBeUndefined()

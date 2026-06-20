@@ -155,7 +155,7 @@ export function createCoreHost(
 		const graph = last()?.graph
 		if (!graph) return false
 		if (typeof id === 'string') return graph.has(id)
-		if (typeof id === 'function') return graph.resolve(id as PluginIdentifier) !== undefined
+		if (typeof id === 'function') return registry.resolveRuntimeKey(id as PluginIdentifier) !== undefined
 		return false
 	}
 

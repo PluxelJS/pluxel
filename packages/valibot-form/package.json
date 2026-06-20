@@ -49,7 +49,7 @@
 		"react-dom": "^19.2.7",
 		"tsdown": "^0.22.3",
 		"typescript": "^6.0.3",
-		"vite": "beta"
+		"vite": "8.0.0-beta.18"
 	},
 	"peerDependencies": {
 		"@dnd-kit/core": "^6.3.1",

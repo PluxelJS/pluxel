@@ -8,6 +8,7 @@ import {
 	createCompiledExtensionModule,
 	type ExtensionModuleStore,
 	resolveModuleIdBaseDir,
+	findRuntimeModuleId,
 } from '@pluxel/runtime/internal'
 import { findNearestPackageRoot } from '@pluxel/runtime/shared'
 import {
@@ -642,9 +643,7 @@ export class ExtensionCompilerService {
 	}
 
 	private findPluginEntryBaseDir(ctx: Context, pluginName: string): string | null {
-		const registryPath =
-			ctx.registry.getRuntimeModuleId(pluginName) ??
-			ctx.loader.api.registry.findModuleIdByName(pluginName)
+		const registryPath = findRuntimeModuleId(ctx, pluginName)
 		if (!registryPath) return null
 		return resolveModuleIdBaseDir(registryPath)
 	}

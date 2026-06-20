@@ -13,7 +13,6 @@
 	"dependencies": {
 		"@gqlens/core": "link:../../../../GQLens/packages/core",
 		"@gqlens/react": "link:../../../../GQLens/packages/react",
-		"@gqlens/vite": "link:../../../../GQLens/packages/vite",
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
 		"@pluxel/runtime": "workspace:*",
@@ -26,12 +25,13 @@
 	},
 	"devDependencies": {
 		"@gqlens/codegen": "link:../../../../GQLens/packages/codegen",
+		"@gqlens/vite": "link:../../../../GQLens/packages/vite",
 		"@types/node": "^25.9.3",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
 		"tsx": "^4.22.4",
 		"typescript": "^6.0.3",
-		"vite": "beta"
+		"vite": "8.0.0-beta.18"
 	}
 }

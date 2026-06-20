@@ -25,7 +25,11 @@ export {
 	resolveProfiledPath,
 	resolveRuntimeStoragePaths,
 } from './runtime/paths'
-export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
+export {
+	findRuntimeModuleId,
+	resolveModuleIdBaseDir,
+	resolveModuleIdPath,
+} from './runtime/module-id'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'

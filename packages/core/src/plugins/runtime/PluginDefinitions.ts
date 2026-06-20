@@ -62,6 +62,7 @@ const uniqueTokens = (tokens: Iterable<Token>): Token[] => {
 
 export class PluginDefinitions {
 	private readonly draft = new DraftGraph<ReturnType<typeof getPluginInfo>>()
+	private readonly runtimeKeysByCtor = new WeakMap<PluginConstructor, RuntimePluginKey>()
 	private committedRuntime?: PluginRuntime
 
 	constructor(
@@ -90,11 +91,20 @@ export class PluginDefinitions {
 
 	public resolvePlanningHandle(id: RuntimePluginHandle): RuntimePluginKey | undefined {
 		if (typeof id === 'string') return this.draft.has(id) ? id : undefined
+		try {
+			const key = this.runtimeKeyOfCtor(id)
+			if (this.draft.has(key)) return key
+			const resolvedByKey = this.draft.resolvePlanningToken(key) as RuntimePluginKey | undefined
+			if (resolvedByKey) return resolvedByKey
+		} catch {
+			// Undecorated abstract/base tokens are resolved through graph aliases.
+		}
 		return this.draft.resolvePlanningToken(id) as RuntimePluginKey | undefined
 	}
 
 	public collectPlanningCascadeTargets(id: RuntimePluginHandle): Set<RuntimePluginKey> {
-		return this.draft.collectCascadeTargets(id) as Set<RuntimePluginKey>
+		const key = this.resolvePlanningHandle(id)
+		return this.draft.collectCascadeTargets(key ?? id) as Set<RuntimePluginKey>
 	}
 
 	/** Roll back draft mutations since the last confirmed graph. */
@@ -156,7 +166,6 @@ export class PluginDefinitions {
 		const isFork = !!getForkOf(Plugin)
 		const provideBase = opts?.provideBase ?? (info.base ? !isFork : false)
 		return uniqueTokens([
-			Plugin,
 			...(provideBase && info.base ? [info.base as PluginIdentifier] : []),
 			...(opts?.aliases ?? []),
 		] as Token[])
@@ -256,13 +265,22 @@ export class PluginDefinitions {
 		const extraTokens = this.providerTokens(Plugin, info, opts)
 
 		return factoryProvider({
-			key: runtimePluginKeyOfCtor(Plugin),
+			key: this.runtimeKeyOfCtor(Plugin),
 			tokens: extraTokens,
 			deps,
 			meta: info,
 			use: (...resolvedDeps: readonly unknown[]) =>
 				this.instantiatePluginInContext(Plugin, info, resolvedDeps),
 		})
+	}
+
+	private runtimeKeyOfCtor(ctor: PluginIdentifier): RuntimePluginKey {
+		const keyCtor = ctor as PluginConstructor
+		const cached = this.runtimeKeysByCtor.get(keyCtor)
+		if (cached) return cached
+		const key = runtimePluginKeyOfCtor(ctor)
+		this.runtimeKeysByCtor.set(keyCtor, key)
+		return key
 	}
 
 	public unregister(id: RuntimePluginHandle): void {

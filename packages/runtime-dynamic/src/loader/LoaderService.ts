@@ -329,17 +329,17 @@ export class LoaderService {
 
 				let pass = 0
 				const autoDisabled = new Set<string>()
-				let res = await runtimeUpdate!.commit({
+				let commitResult = await runtimeUpdate!.commit({
 					rollbackOnFailure: false,
 				})
 				while (
-					!res.ok &&
+					!commitResult.ok &&
 					!strict &&
 					autoDisableMissingDependencies &&
 					pass < autoDisableMaxPasses
 				) {
 					const disabled = disablePluginsOnMissingDependencyError({
-						error: res.err,
+						error: commitResult.err,
 						candidates,
 						isEnabled: (name) => this.ctx.configService.isEnabledInConfig(name),
 						disable: (name) => this.ctx.configService.disableInConfig(name),
@@ -353,14 +353,14 @@ export class LoaderService {
 					// Commit failure rolls core draft back internally; enable remaining plugins again and retry
 					// within the same runtime update transaction.
 					await enableTargetsIfEnabledInConfig()
-					res = await runtimeUpdate!.commit({
+					commitResult = await runtimeUpdate!.commit({
 						rollbackOnFailure: false,
 						autoDisabled: [...autoDisabled].sort(),
 					})
 					pass++
 				}
 
-				if (!res.ok) {
+				if (!commitResult.ok) {
 					// Keep persisted state consistent: revert enable bits that were introduced by this call.
 					for (const n of enabledByUs) this.ctx.configService.disableInConfig(n)
 					if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
@@ -368,8 +368,10 @@ export class LoaderService {
 					tx.rollback()
 					runtimeUpdate!.rollback()
 
-					if (strict) throw new Error('builtin preload commit failed', { cause: res.err })
-					this.ctx.logger.error('builtin preload commit failed', { error: res.err })
+					if (strict) {
+						throw new Error('builtin preload commit failed', { cause: commitResult.err })
+					}
+					this.ctx.logger.error('builtin preload commit failed', { error: commitResult.err })
 					return []
 				}
 			}

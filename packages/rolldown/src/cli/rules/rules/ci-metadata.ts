@@ -1,8 +1,8 @@
-import type { PackageJson } from 'pkg-types'
 import { resolveRepoFromCi } from '../../ci/context'
+import type { WorkspacePackageJson } from '../../../workspace/package-json'
 import type { RuleContext } from '../types'
 
-export function ciMetadataRule(pkg: PackageJson, _context: RuleContext) {
+export function ciMetadataRule(pkg: WorkspacePackageJson, _context: RuleContext) {
 	const repo = resolveRepoFromCi()
 	if (!repo) return undefined
 	const baseUrl = `https://${repo.host}/${repo.repo.replace(/^\//, '')}`
@@ -30,13 +30,16 @@ export function ciMetadataRule(pkg: PackageJson, _context: RuleContext) {
 	return messages.length > 0 ? messages : undefined
 }
 
-function isRepoEqual(prev: PackageJson['repository'], next: { type: string; url: string }) {
+function isRepoEqual(
+	prev: WorkspacePackageJson['repository'],
+	next: { type: string; url: string },
+) {
 	if (!prev) return false
 	if (typeof prev === 'string') return prev === next.url
 	return prev.type === next.type && prev.url === next.url
 }
 
-function isBugsEqual(prev: PackageJson['bugs'], nextUrl: string) {
+function isBugsEqual(prev: WorkspacePackageJson['bugs'], nextUrl: string) {
 	if (!prev) return false
 	if (typeof prev === 'string') return prev === nextUrl
 	return prev.url === nextUrl

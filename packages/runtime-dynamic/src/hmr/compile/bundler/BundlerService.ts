@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { getDebugLogger } from '@pluxel/core/logger'
-import { resolveModuleIdBaseDir } from '@pluxel/runtime/internal'
+import { resolveModuleIdBaseDir, findRuntimeModuleId } from '@pluxel/runtime/internal'
 import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
 import { collectModuleGraphFiles } from './moduleGraph'
@@ -343,9 +343,7 @@ export class BundlerService {
 		const pluginId = ownerCtx.pluginInfo?.id
 		if (pluginId) {
 			try {
-				const registryPath =
-					ownerCtx.registry.getRuntimeModuleId(pluginId) ??
-					ownerCtx.loader?.api?.registry?.findModuleIdByName?.(pluginId)
+				const registryPath = findRuntimeModuleId(ownerCtx, pluginId)
 				const baseDir = registryPath ? resolveModuleIdBaseDir(registryPath) : null
 				if (baseDir) {
 					return resolve(baseDir, tsEntry)

@@ -1,11 +1,11 @@
 import { normalize, resolve as r } from 'pathe'
-import type { PackageJson } from 'pkg-types'
 import { nodeWorkspaceFs, readTextFile, type WorkspaceFs } from './fs'
 import { manifestPathForWithFs, safeReadManifestWithFs } from './manifest'
+import type { WorkspacePackageJson } from './package-json'
 
 export interface WorkspaceInfo {
 	root: string
-	manifest?: PackageJson
+	manifest?: WorkspacePackageJson
 	manifestPath?: string
 	patterns: string[]
 	packageDirs: string[]
@@ -55,9 +55,9 @@ export async function loadWorkspaceInfoWithFs(
 	return info
 }
 
-export function extractPackageWorkspaces(pkg: PackageJson | undefined): string[] {
+export function extractPackageWorkspaces(pkg: WorkspacePackageJson | undefined): string[] {
 	if (!pkg) return []
-	const raw = (pkg as any).workspaces
+	const raw = pkg.workspaces
 	if (!raw) return []
 	if (Array.isArray(raw)) return raw
 	if (Array.isArray(raw?.packages)) return raw.packages

@@ -41,7 +41,7 @@ describe('HmrExecutor import candidates', () => {
 			const out = await executor.runAndLoadAllClean([cleanId])
 
 			expect(calls).toEqual([`/@fs${cleanId}`])
-			expect(out?.res.ok).toBe(true)
+			expect(out?.commitResult.ok).toBe(true)
 			expect(host.ctx.loader.api.anchors.has(cleanId)).toBe(true)
 			expect(host.ctx.loader.api.registry.findModuleId('Anchor')).toBe(cleanId)
 		} finally {

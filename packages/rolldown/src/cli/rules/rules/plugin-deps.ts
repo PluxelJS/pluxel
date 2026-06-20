@@ -1,8 +1,8 @@
-import type { PackageJson } from 'pkg-types'
 import { MANIFEST_DEPEND_ON_FIELD } from '../../env'
+import type { WorkspacePackageJson } from '../../../workspace/package-json'
 import type { RuleContext } from '../types'
 
-export function pluginDependencyRule(pkg: PackageJson, context: RuleContext) {
+export function pluginDependencyRule(pkg: WorkspacePackageJson, context: RuleContext) {
 	if (context.pluginUsages.size === 0) return undefined
 
 	const runtimeDependencies = new Set(Object.keys(pkg.dependencies ?? {}))
@@ -41,7 +41,7 @@ export function pluginDependencyRule(pkg: PackageJson, context: RuleContext) {
 	return messages.length > 0 ? messages : undefined
 }
 
-function resolvePluginVersions(pkg: PackageJson, context: RuleContext) {
+function resolvePluginVersions(pkg: WorkspacePackageJson, context: RuleContext) {
 	const versions = new Map<string, string>()
 	for (const name of context.pluginUsages.keys()) {
 		const version =
@@ -51,7 +51,7 @@ function resolvePluginVersions(pkg: PackageJson, context: RuleContext) {
 	return versions
 }
 
-function ensurePeerDependencies(pkg: PackageJson, versions: Map<string, string>) {
+function ensurePeerDependencies(pkg: WorkspacePackageJson, versions: Map<string, string>) {
 	const peers = { ...pkg.peerDependencies }
 	const updates: string[] = []
 	let mutated = false
@@ -70,7 +70,7 @@ function ensurePeerDependencies(pkg: PackageJson, versions: Map<string, string>)
 }
 
 function removeEntries(
-	pkg: PackageJson,
+	pkg: WorkspacePackageJson,
 	section: 'dependencies' | 'devDependencies',
 	versions: Map<string, string>,
 ) {
@@ -95,7 +95,7 @@ function removeEntries(
 }
 
 function syncManifestDependOn(
-	pkg: PackageJson,
+	pkg: WorkspacePackageJson,
 	pluginUsages: Map<string, { hasStaticImport: boolean; hasDynamicImport: boolean }>,
 	runtimeDependencies: Set<string>,
 	manifestField: string,

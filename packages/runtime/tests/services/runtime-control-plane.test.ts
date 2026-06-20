@@ -4,17 +4,9 @@ import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-dyna
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 import { createHmrTestContext } from '../support/hmr-context'
 
-function definePlugin<T extends new (...args: any[]) => BasePlugin>(
-	ctor: T,
-	meta: Parameters<typeof Plugin>[0],
-	paramTypes: unknown[] = [],
-): T {
-	if (paramTypes.length > 0) {
-		;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-			.defineMetadata?.('design:paramtypes', paramTypes, ctor)
-	}
-	Plugin(meta)(ctor)
-	return ctor
+function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
+	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
+		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 async function loadModule(
@@ -50,19 +42,20 @@ describe('runtime control-plane RPC', () => {
 		class Provider extends BasePlugin {
 			readonly kind = 'primary'
 		}
-		definePlugin(Provider, { name: 'Provider' })
+		Plugin({ name: 'Provider' })(Provider)
 
 		class ProviderAlt extends BasePlugin {
 			readonly kind = 'alt'
 		}
-		definePlugin(ProviderAlt, { name: 'ProviderAlt' })
+		Plugin({ name: 'ProviderAlt' })(ProviderAlt)
 
 		class Consumer extends BasePlugin {
 			constructor(readonly provider: Provider) {
 				super()
 			}
 		}
-		definePlugin(Consumer, { name: 'Consumer' }, [Provider])
+		defineParamTypes(Consumer, [Provider])
+		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Provider)
 
 		await loadModule(fixture, 'Provider.ts', { Provider })
