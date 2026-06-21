@@ -5,29 +5,12 @@
 import { BaseFeature, BasePlugin, Plugin } from '@pluxel/runtime'
 import { f, v } from '@pluxel/runtime/config'
 
-function booleanField(label: string, description: string, defaultValue: boolean) {
-	return v.pipe(
-		v.optional(v.boolean(), defaultValue),
-		f.formMeta({ label, description }),
-		f.booleanMeta({}),
-	)
-}
-
-function numberField(
-	label: string,
-	description: string,
-	defaultValue: number,
-	input: { min: number; max: number; step: number },
-) {
-	return v.pipe(
-		v.optional(v.number(), defaultValue),
-		f.formMeta({ label, description }),
-		f.numberMeta(input),
-	)
-}
-
 const PluginConfig = v.object({
-	enabled: booleanField('启用插件', '用于演示插件级配置', true),
+	enabled: v.pipe(
+		v.optional(v.boolean(), true),
+		f.formMeta({ label: '启用插件', description: '用于演示插件级配置' }),
+		f.booleanMeta({}),
+	),
 })
 
 class CacheFeature extends BaseFeature {
@@ -35,21 +18,36 @@ class CacheFeature extends BaseFeature {
 
 	config = this.configs.use(
 		v.object({
-			enabled: booleanField('启用缓存', '用于演示 feature.config（归因到父插件配置页）', true),
-			ttlMs: numberField('TTL (ms)', '用于演示 feature 多个 schema tab', 5_000, {
-				min: 0,
-				max: 60_000,
-				step: 250,
-			}),
+			enabled: v.pipe(
+				v.optional(v.boolean(), true),
+				f.formMeta({
+					label: '启用缓存',
+					description: '用于演示 feature.config（归因到父插件配置页）',
+				}),
+				f.booleanMeta({}),
+			),
+			ttlMs: v.pipe(
+				v.optional(v.number(), 5_000),
+				f.formMeta({ label: 'TTL (ms)', description: '用于演示 feature 多个 schema tab' }),
+				f.numberMeta({
+					min: 0,
+					max: 60_000,
+					step: 250,
+				}),
+			),
 		}),
 	)
 	rules = this.configs.use(
 		v.object({
-			maxKeys: numberField('最大键数', '用于演示 `feature.rules` tab', 1_000, {
-				min: 0,
-				max: 100_000,
-				step: 100,
-			}),
+			maxKeys: v.pipe(
+				v.optional(v.number(), 1_000),
+				f.formMeta({ label: '最大键数', description: '用于演示 `feature.rules` tab' }),
+				f.numberMeta({
+					min: 0,
+					max: 100_000,
+					step: 100,
+				}),
+			),
 		}),
 	)
 }
@@ -59,8 +57,16 @@ class TelemetryFeature extends BaseFeature {
 
 	config = this.configs.use(
 		v.object({
-			enabled: booleanField('启用 Telemetry', '用于演示 feature.config', false),
-			sampleRate: numberField('采样率', '0~1', 1, { min: 0, max: 1, step: 0.05 }),
+			enabled: v.pipe(
+				v.optional(v.boolean(), false),
+				f.formMeta({ label: '启用 Telemetry', description: '用于演示 feature.config' }),
+				f.booleanMeta({}),
+			),
+			sampleRate: v.pipe(
+				v.optional(v.number(), 1),
+				f.formMeta({ label: '采样率', description: '0~1' }),
+				f.numberMeta({ min: 0, max: 1, step: 0.05 }),
+			),
 		}),
 	)
 }

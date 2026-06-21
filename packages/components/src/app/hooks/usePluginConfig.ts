@@ -33,6 +33,22 @@ const schemaCache = new Map<
 >()
 const configDataCache = new Map<string, PluginConfigData>()
 
+function errorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message
+	return String(error)
+}
+
+function evaluateSchemaSource(pluginName: string, key: string, expr: string): unknown {
+	try {
+		return new Function('v', 'f', `return ${expr}`)(v, f)
+	} catch (error) {
+		throw new Error(
+			`配置 schema 加载失败：${pluginName}.${key} 无法还原（${errorMessage(error)}）。schemaSource 只能引用运行时注入的 v/f；请避免本地 helper 闭包。`,
+			{ cause: error },
+		)
+	}
+}
+
 /** 清除缓存 */
 export function invalidateSchemaCache(pluginName?: string) {
 	if (pluginName) {
@@ -94,15 +110,15 @@ async function loadPluginData(
 			// Convention: schema keys starting with "_" are treated as private/internal and
 			// are hidden from the Config UI (still available to other host-rendered surfaces).
 			if (key.startsWith('_')) continue
-				const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-				if (schema instanceof Promise) {
-					pending.push(
-						schema.then((r): undefined => {
-							schemaMap[key] = r
-							return undefined
-						}),
-					)
-				} else {
+			const schema = evaluateSchemaSource(pluginName, key, expr)
+			if (schema instanceof Promise) {
+				pending.push(
+					schema.then((r): undefined => {
+						schemaMap[key] = r
+						return undefined
+					}),
+				)
+			} else {
 				schemaMap[key] = schema
 			}
 		}
