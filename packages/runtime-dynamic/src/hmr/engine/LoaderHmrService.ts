@@ -33,6 +33,8 @@ import { buildHmrOperationalReport } from './operational-report'
 import {
 	HmrBatchProcessor,
 	type HmrBatchSummary,
+	type HmrExecutionResult,
+	type PrefetchTransformResult,
 	HmrExecutor,
 	prefetchTransforms,
 } from './pipeline'
@@ -40,6 +42,21 @@ import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 import { createFetchHmrServerPlugin } from '../vite-fetch-plugin'
+
+function assertHmrExecutionOk(
+	result: HmrExecutionResult | undefined,
+	label: string,
+): asserts result is HmrExecutionResult | undefined {
+	if (!result || result.commitResult.ok) return
+	const stage = result.executeError ? 'execute' : result.injectError ? 'inject' : 'commit'
+	const message =
+		result.executeError ??
+		result.injectError ??
+		String(result.commitResult.err ?? `${stage} failed`)
+	throw new Error(`${label} failed during ${stage}: ${message}`, {
+		cause: result.commitResult.err,
+	})
+}
 
 export interface LoaderHmrConfig {
 	/** 业务扫描边界：HMR 只监听这些 roots（用于过滤 watcher 事件、分组报告等）。 */
@@ -451,7 +468,8 @@ export class LoaderHmrService {
 		await this.ensureBaseline()
 		await this.execLock.run(async () => {
 			this.timing.clear()
-			await this.executor.runAndLoadAll(filesPath, keepOrder)
+			const executed = await this.executor.runAndLoadAll(filesPath, keepOrder)
+			assertHmrExecutionOk(executed, 'HMR executeFiles')
 		})
 		void this.logOperationalReport('executeFiles').catch((error) => {
 			this.ctx.logger.warn('HMR report failed', { error })
@@ -1206,7 +1224,8 @@ export class LoaderHmrService {
 
 			const endWarmup = startTimer()
 			let prefetchMs: number | undefined
-			let prefetchPromise: Promise<void> | undefined
+			let prefetchFailed: number | undefined
+			let prefetchPromise: Promise<PrefetchTransformResult> | undefined
 			let endPrefetch: (() => number) | undefined
 			if (this.shouldWarmupPrefetch(coldFiles.length)) {
 				endPrefetch = startTimer()
@@ -1229,9 +1248,11 @@ export class LoaderHmrService {
 			if (prefetchPromise) {
 				// Overlap transform prefetch with evaluation to reduce warmup wall time.
 				// Await it after evaluation so we don't leave background work behind.
-				await prefetchPromise.catch((): undefined => undefined)
+				const prefetch = await prefetchPromise.catch((): undefined => undefined)
+				prefetchFailed = prefetch?.failed || undefined
 				prefetchMs = Math.round((endPrefetch?.() ?? 0) * 10) / 10
 			}
+			assertHmrExecutionOk(executed, 'HMR warmup')
 			const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
 
 			const warmupMs = Math.round(endWarmup() * 10) / 10
@@ -1243,6 +1264,7 @@ export class LoaderHmrService {
 				files: coldFiles.length,
 				scanMs,
 				prefetchMs,
+				prefetchFailed,
 				warmupMs,
 				commitMs,
 				totalMs,

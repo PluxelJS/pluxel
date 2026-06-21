@@ -5,8 +5,9 @@ import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/ru
 import { HmrBatchProcessor, HmrExecutor } from '../../src/hmr/engine/pipeline'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 function createExecutor(
@@ -142,7 +143,7 @@ describe('HmrExecutor commit retry', () => {
 		}
 	})
 
-	it('does not replay modules whose runner evaluation failed during commit retry', async () => {
+	it('stops the batch when a runner evaluation fails before commit retry', async () => {
 		const host = createRuntimeHost()
 		try {
 			let stableSeq = 0
@@ -181,10 +182,12 @@ describe('HmrExecutor commit retry', () => {
 			})
 
 			const out = await executor.runAndLoadAllClean(['/stable.ts', '/broken.ts'])
-			expect(out?.commitResult.ok).toBe(true)
-			expect(out?.syncedModules).toEqual(['/broken.ts'])
-			expect(out?.autoDisabled).toEqual(['Broken'])
-			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['Broken'])
+			expect(out?.commitResult.ok).toBe(false)
+			expect(out?.executeError).toBe('syntax error')
+			expect(out?.syncedModules).toEqual([])
+			expect(out?.autoDisabled).toEqual([])
+			expect(host.ctx.registry.lastCommit?.autoDisabled ?? []).toEqual([])
+			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(true)
 			expect(host.require(Stable)).toBe(firstStable)
 		} finally {
 			await host.dispose()

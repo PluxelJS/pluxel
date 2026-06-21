@@ -23,12 +23,26 @@ type RuntimeCommitResult = Awaited<ReturnType<Context['registry']['commit']>>
 type RuntimeUpdate = ReturnType<Context['registry']['beginUpdate']>
 const createRuntimeCommitFailureResult = (cause: unknown): RuntimeCommitResult =>
 	({ ok: false, err: cause }) as RuntimeCommitResult
-type HmrExecutionResult = {
+
+function formatErrorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message || error.name
+	return String(error)
+}
+
+export type HmrExecutionResult = {
 	commitResult: RuntimeCommitResult
 	commitMs: number
 	affectedModules: readonly string[]
 	syncedModules: readonly string[]
 	autoDisabled: readonly string[]
+	executeError?: string
+	injectError?: string
+}
+
+export type PrefetchTransformResult = {
+	attempted: number
+	failed: number
+	failedIds: readonly string[]
 }
 
 type PluginStatusSnapshotLike = {
@@ -315,7 +329,7 @@ export async function prefetchTransforms(params: {
 	ids: Iterable<string>
 	timing: TimingTracker
 	concurrency: number
-}) {
+}): Promise<PrefetchTransformResult> {
 	const seen = new Set<string>()
 	const queue: string[] = []
 
@@ -325,10 +339,12 @@ export async function prefetchTransforms(params: {
 		seen.add(id)
 		queue.push(id)
 	}
-	if (queue.length === 0) return
+	if (queue.length === 0) return { attempted: 0, failed: 0, failedIds: [] }
 
 	let cursor = 0
 	const workerCount = Math.min(params.concurrency, queue.length)
+	let failed = 0
+	const failedIds: string[] = []
 
 	const worker = async () => {
 		while (true) {
@@ -339,13 +355,17 @@ export async function prefetchTransforms(params: {
 			try {
 				await params.env.fetchModule(id)
 			} catch {
-				// Ignore transform errors (non-code resources, edge cases).
+				// Transform prefetch is a latency optimization. Evaluation still owns correctness.
+				failed++
+				failedIds.push(id)
+			} finally {
+				end()
 			}
-			end()
 		}
 	}
 
 	await Promise.all(Array.from({ length: workerCount }, () => worker()))
+	return { attempted: queue.length, failed, failedIds }
 }
 
 export type HmrExecutorConfig = {
@@ -544,13 +564,33 @@ export class HmrExecutor {
 					this.cfg.useRequireShims ? await runWithRequireShims(evaluate) : await evaluate()
 				) as Record<string, unknown>
 			} catch (err) {
+				endEvaluate()
 				const cjsHint = buildCjsExternalizeHint(err)
 				if (cjsHint) {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
-					throw new Error(cjsHint, { cause: err })
+					const error = new Error(cjsHint, { cause: err })
+					batch.rollback()
+					runtimeUpdate.rollback()
+					return {
+						commitResult: createRuntimeCommitFailureResult(error),
+						commitMs: 0,
+						affectedModules: [],
+						syncedModules: [],
+						autoDisabled: [],
+						executeError: cjsHint,
+					}
 				}
 				this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
-				continue
+				batch.rollback()
+				runtimeUpdate.rollback()
+				return {
+					commitResult: createRuntimeCommitFailureResult(err),
+					commitMs: 0,
+					affectedModules: [],
+					syncedModules: [],
+					autoDisabled: [],
+					executeError: formatErrorMessage(err),
+				}
 			}
 			const evaluateMs = endEvaluate()
 
@@ -564,7 +604,14 @@ export class HmrExecutor {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
 				runtimeUpdate.rollback()
-				return undefined
+				return {
+					commitResult: createRuntimeCommitFailureResult(err),
+					commitMs: 0,
+					affectedModules: [],
+					syncedModules: [],
+					autoDisabled: [],
+					injectError: formatErrorMessage(err),
+				}
 			}
 			const injectMs = endInject()
 
@@ -815,6 +862,9 @@ export type HmrBatchSummary = {
 	 */
 	ok: boolean
 	commitError?: string
+	executeError?: string
+	injectError?: string
+	prefetchFailed: number
 	/**
 	 * Lifecycle-level success flag (core plugin system semantics), when available.
 	 *
@@ -890,6 +940,7 @@ export class HmrBatchProcessor {
 		const graph = this.graphTools.collectBatchGraph(changed)
 		this.logGraphDebug(graph)
 		const invalidated = this.invalidateCaches(graph.affectedIds)
+		let prefetchFailed = 0
 
 		const targets = pickTargetsByAnchors({
 			affectedIds: graph.affectedIds,
@@ -908,12 +959,13 @@ export class HmrBatchProcessor {
 				this.cfg.prefetchLimit,
 			)
 			if (prefetchList.length > 0) {
-				await prefetchTransforms({
+				const prefetch = await prefetchTransforms({
 					env: this.env,
 					ids: prefetchList,
 					timing: this.timing,
 					concurrency: this.cfg.prefetchConcurrency,
 				})
+				prefetchFailed = prefetch.failed
 			}
 		}
 
@@ -923,6 +975,8 @@ export class HmrBatchProcessor {
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []
 		const autoDisabled = executed?.autoDisabled ?? []
+		const executeError = executed?.executeError
+		const injectError = executed?.injectError
 
 		const attrLevel = this.cfg.attributionLevel
 		if (attrLevel !== 'off') {
@@ -948,7 +1002,7 @@ export class HmrBatchProcessor {
 		const batchMs = Math.round(endBatch() * 10) / 10
 		const commitOk = Boolean(executed?.commitResult.ok)
 		const commitError =
-			executed?.commitResult.ok === false
+			!executeError && !injectError && executed?.commitResult.ok === false
 				? String(executed.commitResult.err ?? 'commit failed')
 				: undefined
 		const relatedModules = new Set<string>([
@@ -963,7 +1017,7 @@ export class HmrBatchProcessor {
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
 		const changedPreview = changedPretty.slice(0, CHANGED_PREVIEW_LIMIT)
 		const changedPreviewOmitted = Math.max(0, changedPretty.length - changedPreview.length)
-		this.ctx.logger.info('HMR updated', {
+		const logProps = {
 			epoch,
 			changedFiles: changed.length,
 			changedPreview: changedPreview.length > 0 ? changedPreview : undefined,
@@ -979,11 +1033,16 @@ export class HmrBatchProcessor {
 			plugins: pluginTotals,
 			hotspots: hotspots.length > 0 ? hotspots : undefined,
 			invalidated,
+			prefetchFailed: prefetchFailed || undefined,
 			commitMs,
 			batchMs,
 			ok: commitOk,
+			...(executeError ? { executeError } : {}),
+			...(injectError ? { injectError } : {}),
 			...(commitError ? { commitError } : {}),
-		})
+		}
+		if (commitOk) this.ctx.logger.info('HMR updated', logProps)
+		else this.ctx.logger.warn('HMR updated', logProps)
 
 		return {
 			epoch,
@@ -998,9 +1057,12 @@ export class HmrBatchProcessor {
 			activeServices,
 			plugins: pluginTotals,
 			invalidated,
+			prefetchFailed,
 			commitMs,
 			batchMs,
 			ok: commitOk,
+			...(executeError ? { executeError } : {}),
+			...(injectError ? { injectError } : {}),
 			...(commitError ? { commitError } : {}),
 		}
 	}
