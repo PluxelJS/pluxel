@@ -73,8 +73,11 @@ importers:
         specifier: ^1.0.1
         version: 1.5.1
       '@pluxel/market':
-        specifier: '*'
+        specifier: ^0.1.0
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -106,9 +109,6 @@ importers:
         specifier: ^2.8.2
         version: 2.9.0
     devDependencies:
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -592,6 +592,37 @@ importers:
         specifier: 8.0.0-beta.18
         version: 8.0.0-beta.18(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.4)(yaml@2.9.0)
 
+  packages/runtime-dev:
+    dependencies:
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../core
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+    devDependencies:
+      '@logtape/logtape':
+        specifier: ^2.0.2
+        version: 2.1.3
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: 8.0.0-beta.18
+        version: 8.0.0-beta.18(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.4)(yaml@2.9.0)
+
   packages/runtime-dynamic:
     dependencies:
       '@gqloom/core':
@@ -643,6 +674,9 @@ importers:
         specifier: 8.0.0-beta.18
         version: 8.0.0-beta.18(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.4)(yaml@2.9.0)
     devDependencies:
+      '@pluxel/runtime-dev':
+        specifier: workspace:*
+        version: link:../runtime-dev
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -661,22 +695,40 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
     devDependencies:
+      '@pluxel/runtime-dev':
+        specifier: workspace:*
+        version: link:../runtime-dev
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      vite:
+        specifier: 8.0.0-beta.18
+        version: 8.0.0-beta.18(@emnapi/core@1.11.0)(@emnapi/runtime@1.11.0)(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.4)(yaml@2.9.0)
 
   packages/test:
     dependencies:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       oxlint:
         specifier: ^1.58.0
         version: 1.69.0
@@ -684,9 +736,6 @@ importers:
       '@platformatic/vfs':
         specifier: ^0.3.0
         version: 0.3.4
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
       fs-fixture:
         specifier: ^2.13.0
         version: 2.14.0

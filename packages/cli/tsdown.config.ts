@@ -1,19 +1,50 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const rolldownBuild = fileURLToPath(new URL('../rolldown/src/cli/index.ts', import.meta.url))
-const rolldownPlugins = fileURLToPath(new URL('../rolldown/src/rolldown/index.ts', import.meta.url))
-const rolldownWorkspaceFs = fileURLToPath(
-	new URL('../rolldown/src/workspace/fs-entry.ts', import.meta.url),
-)
-const rolldownWorkspaceInfo = fileURLToPath(
-	new URL('../rolldown/src/workspace/info-entry.ts', import.meta.url),
-)
 const reactDevtoolsCoreStub = fileURLToPath(
 	new URL('./src/vendor/react-devtools-core.ts', import.meta.url),
 )
 
 const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
+const inlineRuntimeDeps = [
+	'@alcalzone/ansi-tokenize',
+	'ansi-escapes',
+	'ansi-regex',
+	'ansi-styles',
+	'auto-bind',
+	'chalk',
+	'cli-boxes',
+	'cli-cursor',
+	'cli-truncate',
+	'code-excerpt',
+	'convert-to-spaces',
+	'emoji-regex',
+	'environment',
+	'es-toolkit',
+	'escape-string-regexp',
+	'get-east-asian-width',
+	'indent-string',
+	'ink',
+	'is-fullwidth-code-point',
+	'is-in-ci',
+	'mimic-fn',
+	'onetime',
+	'patch-console',
+	'react',
+	'react-reconciler',
+	'restore-cursor',
+	'scheduler',
+	'signal-exit',
+	'slice-ansi',
+	'stack-utils',
+	'string-width',
+	'strip-ansi',
+	'terminal-size',
+	'widest-line',
+	'wrap-ansi',
+	'ws',
+	'yoga-layout',
+]
 
 export default defineConfig({
 	entry: {
@@ -22,25 +53,28 @@ export default defineConfig({
 		rolldown: './src/rolldown.ts',
 		hmr: './src/hmr/index.ts',
 	},
-	// This CLI intentionally ships as a bundled artifact with minimal runtime deps.
-	// Bundle internal toolchain pieces and CLI-only UI deps so the published CLI keeps a small runtime surface.
+	// This CLI intentionally ships as a mostly bundled artifact, but consumes
+	// @pluxel/rolldown as a published toolchain package instead of vendoring it.
 	deps: {
-		// `@pluxel/rolldown` exports rolldown plugin types. Keep rolldown itself external instead of re-bundling it here.
-		neverBundle: ['rolldown', 'rolldown/*'],
-		alwaysBundle: [
+		neverBundle: [
+			'@pluxel/core',
+			'@pluxel/core/*',
+			'@pluxel/market',
+			'@pluxel/market/*',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
-			'react',
-			'react/*',
-			'ink',
-			'ink/*',
+			'@pluxel/runtime',
+			'@pluxel/runtime/*',
+			'@pluxel/runtime-dynamic',
+			'@pluxel/runtime-dynamic/*',
+			'rolldown',
+			'rolldown/*',
 		],
+		// The CLI intentionally bundles its app/UI stack; the toolchain package stays external above.
+		alwaysBundle: inlineRuntimeDeps,
+		onlyBundle: inlineRuntimeDeps,
 	},
 	alias: {
-		'@pluxel/rolldown/build': rolldownBuild,
-		'@pluxel/rolldown/plugins': rolldownPlugins,
-		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
-		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
 		'react-devtools-core': reactDevtoolsCoreStub,
 	},
 	dts: {

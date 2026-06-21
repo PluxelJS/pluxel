@@ -1,7 +1,4 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
-
-const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
@@ -20,15 +17,10 @@ export default defineConfig({
 			'vite',
 			'vite/*',
 		],
-		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
-	},
-	alias: {
-		'@pluxel/runtime-dev': runtimeDevEntry,
 	},
 	entry: {
 		index: 'src/index.ts',
-		hmr: 'src/hmr.ts',
-		vite: 'src/vite.ts',
+		extensions: 'src/extensions.ts',
 	},
 	dts: {
 		sourcemap: true,

@@ -1,13 +1,15 @@
 import { defineConfig } from 'tsdown'
 
 const fastBuild = process.env.PLUXEL_FAST_BUILD === 'true'
+const inlineRuntimeDeps = ['@rolldown/pluginutils', 'fdir', 'pathe']
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: ['@rolldown/pluginutils', 'fdir', 'pathe'],
+		alwaysBundle: inlineRuntimeDeps,
+		onlyBundle: inlineRuntimeDeps,
 		neverBundle: [
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',

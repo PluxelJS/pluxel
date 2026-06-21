@@ -64,6 +64,7 @@
 		"vite": "8.0.0-beta.18"
 	},
 	"devDependencies": {
+		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/bun": "^1.3.14",
 		"superjson": "^2.2.6",

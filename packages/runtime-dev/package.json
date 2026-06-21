@@ -1,7 +1,8 @@
 {
-	"name": "@pluxel/runtime-static",
+	"name": "@pluxel/runtime-dev",
 	"version": "0.1.0",
-	"description": "Pluxel runtime static route (fixed plugin catalog, startup reports, and drift checks)",
+	"private": true,
+	"description": "Pluxel route-neutral runtime development capabilities",
 	"files": [
 		"!**/*.map",
 		"dist"
@@ -13,23 +14,11 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./hmr": {
-			"@pluxel/source": "./src/hmr.ts",
-			"default": "./dist/hmr.mjs"
-		},
-		"./vite": {
-			"@pluxel/source": "./src/vite.ts",
-			"default": "./dist/vite.mjs"
+		"./extensions": {
+			"@pluxel/source": "./src/extensions.ts",
+			"default": "./dist/extensions.mjs"
 		},
 		"./package.json": "./package.json"
-	},
-	"publishConfig": {
-		"exports": {
-			".": "./dist/index.mjs",
-			"./hmr": "./dist/hmr.mjs",
-			"./vite": "./dist/vite.mjs",
-			"./package.json": "./package.json"
-		}
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
@@ -43,7 +32,7 @@
 		"pathe": "^2.0.3"
 	},
 	"devDependencies": {
-		"@pluxel/runtime-dev": "workspace:*",
+		"@logtape/logtape": "^2.0.2",
 		"@pluxel/test": "workspace:*",
 		"typescript": "^6.0.3",
 		"vite": "8.0.0-beta.18"
@@ -54,6 +43,13 @@
 	"peerDependenciesMeta": {
 		"vite": {
 			"optional": true
+		}
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./extensions": "./dist/extensions.mjs",
+			"./package.json": "./package.json"
 		}
 	}
 }

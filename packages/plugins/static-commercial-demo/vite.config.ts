@@ -1,13 +1,19 @@
 import { fileURLToPath } from 'node:url'
 import { gqlens } from '@gqlens/vite'
+import { staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 import { commercialGraphQLEndpoint } from './src/paths.ts'
 const graphQLPackageRoot = fileURLToPath(new URL('node_modules/graphql', import.meta.url))
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	appType: 'spa',
 	plugins: [
+		...staticRuntimeVitePlugins({
+			root: repoRoot,
+			runtimeUiBridge: command === 'serve' ? false : undefined,
+		}),
 		pluxelStaticCommercialHost(),
 		gqlens({
 			output: 'web/gqlens',
@@ -28,7 +34,7 @@ export default defineConfig({
 	optimizeDeps: {
 		exclude: ['graphql', 'graphql-yoga'],
 	},
-})
+}))
 
 function pluxelStaticCommercialHost(): Plugin {
 	let stop: (() => Promise<void>) | undefined
@@ -41,7 +47,7 @@ function pluxelStaticCommercialHost(): Plugin {
 			const { createStaticCommercialHost } = (await import(
 				/* @vite-ignore */ staticHostModuleUrl
 			)) as typeof import('./src/static-host')
-			const host = await createStaticCommercialHost()
+			const host = await createStaticCommercialHost(server)
 			stop = () => host.stop()
 
 			server.httpServer?.once('close', () => {

@@ -1,8 +1,6 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const rolldownOxlint = fileURLToPath(new URL('../rolldown/src/workspace/oxlint/index.ts', import.meta.url))
-const rolldownPlugins = fileURLToPath(new URL('../rolldown/src/rolldown/index.ts', import.meta.url))
+const inlineRuntimeDeps = ['@platformatic/vfs', 'fs-fixture']
 
 export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
@@ -10,13 +8,8 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		// The Vitest preset and oxlint bridge use private workspace build tooling; published
-		// artifacts must contain that code instead of externalizing private packages.
-		alwaysBundle: ['@pluxel/rolldown', '@pluxel/rolldown/*', '@pluxel/rolldown/oxlint'],
-	},
-	alias: {
-		'@pluxel/rolldown/oxlint': rolldownOxlint,
-		'@pluxel/rolldown/plugins': rolldownPlugins,
+		neverBundle: ['@pluxel/rolldown', '@pluxel/rolldown/*'],
+		onlyBundle: inlineRuntimeDeps,
 	},
 	entry: {
 		fixtures: './src/fixtures.ts',

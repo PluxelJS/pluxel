@@ -20,7 +20,7 @@ vi.mock('@pluxel/rolldown/vite/plugin-ui', () => ({
 	resolvePluginUiBuildSignature: pluginBuildMocks.resolvePluginUiBuildSignature,
 }))
 
-import { ExtensionCompilerService } from '../../src/hmr/extensions/ExtensionCompilerService'
+import { ExtensionCompilerService } from '../src/extensions/ExtensionCompilerService'
 
 describe('ExtensionCompilerService', () => {
 	it('resolves relative UI entries from the declaring plugin source file', async () => {

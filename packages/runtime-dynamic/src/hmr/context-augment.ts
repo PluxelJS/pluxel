@@ -1,5 +1,5 @@
 import type { LoaderHmrConfig } from './engine/LoaderHmrService'
-import type { ExtensionCompilerServiceConfig } from './extensions/ExtensionCompilerService'
+import type { ExtensionCompilerServiceConfig } from '@pluxel/runtime-dev'
 
 declare module '@pluxel/core' {
 	namespace Context {

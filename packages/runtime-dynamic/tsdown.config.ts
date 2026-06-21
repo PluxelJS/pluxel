@@ -1,8 +1,11 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const rolldownPlugins = fileURLToPath(new URL('../rolldown/src/rolldown/index.ts', import.meta.url))
 const runtimeDynamicRegister = fileURLToPath(new URL('./src/register.ts', import.meta.url))
+const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
+const runtimeDevExtensions = fileURLToPath(
+	new URL('../runtime-dev/src/extensions.ts', import.meta.url),
+)
 
 export default defineConfig({
 	exports: {
@@ -23,10 +26,12 @@ export default defineConfig({
 			'vite',
 			'vite/*',
 		],
+		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
 	},
 	alias: {
-		'@pluxel/rolldown/plugins': rolldownPlugins,
 		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
+		'@pluxel/runtime-dev': runtimeDevEntry,
+		'@pluxel/runtime-dev/extensions': runtimeDevExtensions,
 	},
 	entry: {
 		index: 'src/index.ts',

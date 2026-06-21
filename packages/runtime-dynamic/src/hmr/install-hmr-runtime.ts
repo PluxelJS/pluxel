@@ -8,8 +8,9 @@ import {
 	setHmrRuntimeHandles,
 	setRuntimeModuleAdapter,
 } from '@pluxel/runtime/internal'
+import { mergeExtensionCompilerViteConfig } from '@pluxel/runtime-dev'
 import { isAbsolute, resolve } from 'pathe'
-import { type InlineConfig, mergeConfig } from 'vite'
+import type { InlineConfig } from 'vite'
 
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 import { BundlerService } from './compile/bundler/BundlerService'
@@ -28,17 +29,6 @@ export type InstallLoaderHmrRuntimeOptions = {
 	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
-}
-
-function mergeExtensionCompilerViteConfig(
-	base: ExtensionCompilerServiceConfig | undefined,
-	vite: InlineConfig | undefined,
-): ExtensionCompilerServiceConfig | undefined {
-	if (!vite) return base
-	return {
-		...base,
-		vite: base?.vite ? mergeConfig(base.vite, vite) : vite,
-	}
 }
 
 export type InstallLoaderHmrRuntimeResult = {
@@ -130,7 +120,7 @@ export async function installLoaderHmrRuntime(
 	ctx.config.extensionCompiler = extensionCompilerConfig
 	const extensionCompiler = new ExtensionCompilerService(
 		ctx,
-		{ hmr, enabled: true },
+		{ viteServer: hmr.vite, enabled: true },
 		extensionCompilerConfig,
 	)
 

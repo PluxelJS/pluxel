@@ -77,17 +77,7 @@ function assertMethod(value: string | undefined): 'password' | 'otp' | 'passkey'
 
 async function loadRuntimeSecurityServices(): Promise<RuntimeSecurityServices> {
 	if (!runtimeSecurityServicesPromise) {
-		runtimeSecurityServicesPromise = (async () => {
-			try {
-				const runtimeSecurity = await import('../../../runtime/src/services.ts')
-				if (typeof runtimeSecurity.describeLocalVerification === 'function') {
-					return runtimeSecurity as RuntimeSecurityServices
-				}
-			} catch {
-				// Fall through to package mode below.
-			}
-			return await import('@pluxel/runtime/services')
-		})()
+		runtimeSecurityServicesPromise = import('@pluxel/runtime/services')
 	}
 	return await runtimeSecurityServicesPromise
 }

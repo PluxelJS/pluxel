@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { getHmrRuntimeHandles } from '@pluxel/runtime/internal'
 import {
 	createStaticRuntimeHost,
 	defineStaticRuntime,
 	type StaticRuntimeHost,
 	type StaticRuntimePluginStatus,
 } from '@pluxel/runtime-static'
-import { reloadStaticRuntime } from '@pluxel/runtime-static/hmr'
+import { installStaticRuntimeHmr, reloadStaticRuntime } from '@pluxel/runtime-static/hmr'
+import { staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
 
 function statuses(host: StaticRuntimeHost): Record<string, StaticRuntimePluginStatus> {
 	const out: Record<string, StaticRuntimePluginStatus> = {}
@@ -61,6 +63,38 @@ class DisabledHotV2 extends BasePlugin {
 }
 
 describe('@pluxel/runtime-static', () => {
+	it('exposes the shared Vite transform stack for static hosts', () => {
+		const plugins = staticRuntimeVitePlugins({ root: '/repo' }).flat() as Array<{ name?: string }>
+
+		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'pluxel:static-runtime-transform',
+			'pluxel-runtime-ui-bridge',
+		])
+	})
+
+	it('installs route-neutral development handles for source UI remotes', async () => {
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-hmr-test', plugins: [] }),
+			{
+				configService: { mode: 'memory' },
+				context: {
+					http: { uiAssets: 'disabled' },
+					extensionService: { enabled: false },
+				},
+			},
+		)
+		try {
+			installStaticRuntimeHmr({ host })
+
+			expect(host.ctx.config.http?.uiAssets).toBe('hmr-server')
+			expect(host.ctx.config.extensionService?.enabled).toBe(true)
+			expect(getHmrRuntimeHandles(host.ctx)?.extensions?.bindUiSource).toBeTypeOf('function')
+			expect(() => installStaticRuntimeHmr({ host })).toThrow(/already installed/i)
+		} finally {
+			await host.stop()
+		}
+	})
+
 	it('starts only plugins enabled by runtime config and reports unknown config entries', async () => {
 		const started: string[] = []
 
