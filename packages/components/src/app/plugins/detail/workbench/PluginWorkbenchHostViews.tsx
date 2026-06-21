@@ -17,7 +17,9 @@ import { useExtensionSurface, usePluginUiStatus } from '../../../../extension'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
+import { BaseProviderCard } from '../cards/BaseProviderCard'
 import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
+import { DependencyOverridesCard } from '../cards/DependencyOverridesCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
 import { formatCompactSource, resolveKnownPluginName } from '../rightPaneState'
 import {
@@ -82,6 +84,16 @@ function PluginDescriptionCard({ description }: { description?: string | null })
 	)
 }
 
+// Host-owned DI controls: these manage runtime injection policy, not plugin-authored UI.
+function PluginDependencyInjectionControls() {
+	return (
+		<Stack gap="sm">
+			<BaseProviderCard />
+			<DependencyOverridesCard />
+		</Stack>
+	)
+}
+
 export function PluginWorkbenchSidebar() {
 	const { description, isRunning, isSyncing } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
@@ -114,6 +126,7 @@ export function PluginWorkbenchSidebar() {
 					<WorkbenchScrollPane>
 						<PluginDescriptionCard description={description} />
 						<PluginContextSummaryCard />
+						<PluginDependencyInjectionControls />
 						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
 					</WorkbenchScrollPane>
 				),

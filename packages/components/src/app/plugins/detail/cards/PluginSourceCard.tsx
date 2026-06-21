@@ -20,8 +20,6 @@ import {
 	usePluginDependencyEntries,
 	type DependencyListProps,
 } from './DependencyList'
-import { BaseProviderCard } from './BaseProviderCard'
-import { DependencyOverridesCard } from './DependencyOverridesCard'
 
 function CopyAction({ value, label = '复制路径' }: { value: string | null; label?: string }) {
 	if (value == null || value === '') return null
@@ -122,7 +120,6 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 
 	return (
 		<Stack gap="sm">
-			<BaseProviderCard />
 			<Paper withBorder radius="md" p="sm" shadow="xs">
 				<Stack gap="xs">
 					<Group gap="xs" align="flex-start" wrap="nowrap">
@@ -152,9 +149,6 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 					</Group>
 				</Stack>
 			</Paper>
-
-			{/* DI 选择存在“条件渲染”，避免加载期间闪烁导致布局重排 */}
-			<DependencyOverridesCard />
 		</Stack>
 	)
 }
