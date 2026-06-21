@@ -1,38 +1,48 @@
 import type { Context } from '@pluxel/core'
-import type { PluxelPluginLogLevel } from '@pluxel/core/logger'
-
-import { runtimePluginLevels } from './ensure'
+import {
+	runtimePluginLogPolicy,
+	type PluginLogPolicySnapshot,
+	type RuntimePluginLogLevel,
+} from './policy'
 
 /**
- * Persisted per-plugin log level overrides for runtime hosts.
+ * Persisted plugin log policy for runtime hosts.
  *
- * Stored in ConfigService "extra" (single source of truth for host settings),
- * and applied to the global LogTape filter via `runtimePluginLevels`.
+ * Stored in ConfigService "extra" so workbench changes are profile-scoped and
+ * apply to the global LogTape filter without re-running configure().
  */
-export const EXTRA_RUNTIME_PLUGIN_LEVELS = 'runtime.logger.pluginLevels' as const
+export const EXTRA_RUNTIME_PLUGIN_POLICY = 'runtime.logger.pluginPolicy' as const
 
-type PersistedPluginLevels = Record<string, PluxelPluginLogLevel>
+function isRuntimePluginLogLevel(value: unknown): value is RuntimePluginLogLevel {
+	return (
+		value === 'off' ||
+		value === 'trace' ||
+		value === 'debug' ||
+		value === 'info' ||
+		value === 'warning' ||
+		value === 'error' ||
+		value === 'fatal'
+	)
+}
 
-function coercePersistedPluginLevels(value: unknown): PersistedPluginLevels | undefined {
+function coercePluginLogPolicySnapshot(value: unknown): PluginLogPolicySnapshot | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-	const out: PersistedPluginLevels = Object.create(null)
-	for (const k in value as Record<string, unknown>) {
-		if (!Object.hasOwn(value as Record<string, unknown>, k)) continue
-		const v = (value as Record<string, unknown>)[k]
-		if (v === null || typeof v === 'string') out[k] = v as PluxelPluginLogLevel
+	const raw = value as Record<string, unknown>
+	const out: PluginLogPolicySnapshot = { overrides: {} }
+	const defaultLevel = raw.defaultLevel
+	if (isRuntimePluginLogLevel(defaultLevel)) out.defaultLevel = defaultLevel
+	const overrides = raw.overrides
+	if (overrides && typeof overrides === 'object' && !Array.isArray(overrides)) {
+		for (const [pluginId, level] of Object.entries(overrides as Record<string, unknown>)) {
+			if (isRuntimePluginLogLevel(level)) out.overrides[pluginId] = level
+		}
 	}
 	return out
 }
 
 const loadByConfigService = new WeakMap<object, Promise<void>>()
 
-/**
- * Load persisted log-level overrides into the in-memory state once.
- *
- * Note: this is intentionally lazy so hosts can call ensurePluxelLogging()
- * before Context/services finish initializing.
- */
-export async function ensureRuntimePluginLevelsLoaded(ctx: Context): Promise<void> {
+export async function ensureRuntimePluginPolicyLoaded(ctx: Context): Promise<void> {
 	const configService = ctx.configService
 	if (!configService) return
 
@@ -40,24 +50,12 @@ export async function ensureRuntimePluginLevelsLoaded(ctx: Context): Promise<voi
 	if (existing) return await existing
 
 	const task = (async () => {
-		// In core this resolves immediately; in HMR it may load from disk asynchronously.
 		await configService.ready
-
-		const persisted = coercePersistedPluginLevels(configService.getExtra(EXTRA_RUNTIME_PLUGIN_LEVELS))
-		if (!persisted) return
-
-		runtimePluginLevels.clear()
-		for (const k in persisted) {
-			if (!Object.hasOwn(persisted, k)) continue
-			// Be tolerant to stale/invalid persisted values; skip bad entries instead of failing startup.
-			try {
-				runtimePluginLevels.set(k, persisted[k]!)
-			} catch {
-				// ignore
-			}
-		}
+		const persisted = coercePluginLogPolicySnapshot(
+			configService.getExtra(EXTRA_RUNTIME_PLUGIN_POLICY),
+		)
+		if (persisted) runtimePluginLogPolicy.replace(persisted)
 	})().catch((error) => {
-		// Don't cache failures forever; allow a later call to retry.
 		loadByConfigService.delete(configService as object)
 		throw error
 	})
@@ -66,6 +64,6 @@ export async function ensureRuntimePluginLevelsLoaded(ctx: Context): Promise<voi
 	return await task
 }
 
-export function persistRuntimePluginLevels(ctx: Context): void {
-	ctx.configService?.setExtra(EXTRA_RUNTIME_PLUGIN_LEVELS, runtimePluginLevels.toRecord())
+export function persistRuntimePluginPolicy(ctx: Context): void {
+	ctx.configService?.setExtra(EXTRA_RUNTIME_PLUGIN_POLICY, runtimePluginLogPolicy.snapshot())
 }

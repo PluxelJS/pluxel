@@ -43,12 +43,12 @@ export type {
 	PluginDependencyState,
 	PluginGroup,
 	PluginGroupInput,
-	PluginLevelsSnapshot,
-	PluginLogLevel,
+	PluginLogPolicySnapshot,
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
+	RuntimePluginLogLevel,
 	RuntimeRpcApi,
 } from './protocol'
 export { rpcErrorMessage } from './rpc'

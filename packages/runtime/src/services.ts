@@ -3,7 +3,7 @@ export {
 	LogtapeLoggerService,
 	type LogtapeLoggerServiceConfig,
 } from './logger/LogtapeLoggerService'
-export { createLogStoreSink, createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
+export { createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
 
 export {
 	ConfigService,

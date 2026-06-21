@@ -316,20 +316,24 @@ export interface ExtensionSessionHandleApi {
 }
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
-export type PluginLogLevel = LogLevel | null
+export type RuntimePluginLogLevel = LogLevel | 'off'
 
-export type PluginLevelsSnapshot = {
-	/** Includes `'*'` for the default when set. */
-	levels: Record<string, PluginLogLevel>
+export type PluginLogPolicySnapshot = {
+	defaultLevel?: RuntimePluginLogLevel
+	overrides: Record<string, RuntimePluginLogLevel>
 }
 
 export type LoggingHandleApi = {
-	getPluginLevels: () => Promise<PluginLevelsSnapshot>
-	setPluginLevel: (pluginId: string, level: PluginLogLevel) => Promise<{ ok: true }>
-	deletePluginLevel: (pluginId: string) => Promise<{ ok: true }>
-	setPluginLevelDefault: (level: PluginLogLevel) => Promise<{ ok: true }>
-	deletePluginLevelDefault: () => Promise<{ ok: true }>
-	clearPluginLevels: () => Promise<{ ok: true }>
+	getPolicy: () => Promise<PluginLogPolicySnapshot>
+	replacePolicy: (snapshot: PluginLogPolicySnapshot) => Promise<PluginLogPolicySnapshot>
+	setDefaultLevel: (level: RuntimePluginLogLevel) => Promise<PluginLogPolicySnapshot>
+	clearDefaultLevel: () => Promise<PluginLogPolicySnapshot>
+	setPluginLevel: (
+		pluginId: string,
+		level: RuntimePluginLogLevel,
+	) => Promise<PluginLogPolicySnapshot>
+	clearPluginLevel: (pluginId: string) => Promise<PluginLogPolicySnapshot>
+	resetPolicy: () => Promise<PluginLogPolicySnapshot>
 }
 
 type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
@@ -344,10 +348,7 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	pluginSchema: (name: string) => Promise<SchemaResult>
 	pluginConfig: (name: string) => Promise<ConfigResult>
 	patchPluginConfig: (name: string, patch: Record<string, unknown>) => Promise<ConfigResult>
-	patchPluginConfigField: (
-		name: string,
-		input: ConfigFieldMutation,
-	) => Promise<ConfigResult>
+	patchPluginConfigField: (name: string, input: ConfigFieldMutation) => Promise<ConfigResult>
 	pluginDependencies: (name: string) => Promise<PluginDependencyRef[]>
 	inspectPluginDependencies: (name: string) => Promise<PluginDependencyState[]>
 	setPluginDependencyTarget: (input: {
@@ -366,9 +367,7 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 		forkId: string
 		enable?: boolean
 	}) => Promise<EnsureForkResult>
-	applyPluginStatusActions: (
-		actions: PluginStatusBatchAction[],
-	) => Promise<PluginStatusBatchResult>
+	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
 }
 
 export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>

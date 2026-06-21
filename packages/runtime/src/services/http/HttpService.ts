@@ -2,7 +2,7 @@ import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import { ensureRuntimePluginLevelsLoaded } from '../../logger/levels'
+import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
 	createVerificationBlockedHeaders,
@@ -158,17 +158,14 @@ export class HttpService {
 			uiAssets: config.uiAssets ?? 'static-built',
 			uiPublicDir: config.uiPublicDir ?? '',
 		}
-		this.host.routes(
-			(app) => createVerificationRoutes(this.ctx, app),
-			{
-				id: 'pluxel:verification',
-				path: VERIFICATION_PAGE_PATH,
-				app: {
-					aot: true,
-					name: 'pluxel.http.verification',
-				},
+		this.host.routes((app) => createVerificationRoutes(this.ctx, app), {
+			id: 'pluxel:verification',
+			path: VERIFICATION_PAGE_PATH,
+			app: {
+				aot: true,
+				name: 'pluxel.http.verification',
 			},
-		)
+		})
 		this.rebuildRootApp()
 		if (
 			this.config.controlPlane.web ||
@@ -193,8 +190,8 @@ export class HttpService {
 		}
 		if (this.config.controlPlane.sse) this.registerSseBuiltins()
 
-		void ensureRuntimePluginLevelsLoaded(ctx).catch((error) => {
-			this.logger.warn('Failed to load persisted plugin log levels', { error })
+		void ensureRuntimePluginPolicyLoaded(ctx).catch((error) => {
+			this.logger.warn('Failed to load persisted plugin log policy', { error })
 		})
 	}
 
@@ -433,8 +430,7 @@ export class HttpService {
 			url: request.url,
 		})
 		const isSecurityRoute = path === HMR_SECURITY_BASE || path.startsWith(`${HMR_SECURITY_BASE}/`)
-		const isSecurityCarrier =
-			path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
+		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
 		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
 		if (isSecurityRoute) {
 			this.logger.warn('Blocked host security admin route', {
@@ -470,24 +466,24 @@ export class HttpService {
 			kind,
 			reason,
 		)
-			if (kind === 'ui') {
-				return new Response(null, {
-					status: 302,
+		if (kind === 'ui') {
+			return new Response(null, {
+				status: 302,
 				headers: {
 					Location: redirectPath,
 					'Cache-Control': 'no-store',
 				},
-				})
-			}
-
-			return Response.json(
-				createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
-				{
-					status: 401,
-					headers: createVerificationBlockedHeaders(redirectPath, reason),
-				},
-			)
+			})
 		}
+
+		return Response.json(
+			createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
+			{
+				status: 401,
+				headers: createVerificationBlockedHeaders(redirectPath, reason),
+			},
+		)
+	}
 
 	private isHtmlNavigation(req: Request): boolean {
 		const headers = req.headers

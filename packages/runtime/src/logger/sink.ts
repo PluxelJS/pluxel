@@ -113,8 +113,8 @@ export type RuntimeLogSinkOptions = {
 	/** In-memory retention window (lines). Default 200_000. */
 	windowLines?: number
 
-	/** Drop/compute caller in `props`. Default false. */
-	includeCaller?: boolean
+	/** Keep or compute caller in `props`. Default false. */
+	caller?: boolean
 
 	/** Never persist these top-level prop keys. */
 	hiddenKeys?: string[]
@@ -131,7 +131,7 @@ export type RuntimeLogSinkOptions = {
 function pickExtraProps(
 	raw: Record<string, unknown>,
 	opts: {
-		includeCaller: boolean
+		caller: boolean
 		hiddenKeys: Set<string>
 		redactKeys: Set<string>
 		maxPropsKeys: number
@@ -140,21 +140,18 @@ function pickExtraProps(
 ): Record<string, unknown> | undefined {
 	let out: Record<string, unknown> | undefined
 
-	if (opts.includeCaller) {
+	if (opts.caller) {
 		const existing = raw.caller
 		if (typeof existing === 'string') {
 			;(out ??= {}).caller = existing
-		} else {
-			const captured = captureCaller({ exclude: pickExtraProps })
-			if (captured) (out ??= {}).caller = captured
 		}
 	}
 
 	let kept = 0
 	for (const k in raw) {
 		if (!Object.hasOwn(raw, k)) continue
-		if (pluxelReservedLogPropertyKeySet.has(k) && (k !== 'caller' || !opts.includeCaller)) continue
-		if (k === 'caller' && typeof raw[k] !== 'string' && !opts.includeCaller) continue
+		if (pluxelReservedLogPropertyKeySet.has(k) && (k !== 'caller' || !opts.caller)) continue
+		if (k === 'caller' && typeof raw[k] !== 'string' && !opts.caller) continue
 		if (opts.hiddenKeys.has(k)) continue
 		if (opts.redactKeys.has(k)) {
 			;(out ??= {})[k] = '[REDACTED]'
@@ -169,7 +166,7 @@ function pickExtraProps(
 function toRuntimeLogLineInput(
 	record: LogRecord,
 	opts: {
-		includeCaller: boolean
+		caller: boolean
 		hiddenKeys: Set<string>
 		redactKeys: Set<string>
 		includeRaw: boolean
@@ -198,7 +195,7 @@ function toRuntimeLogLineInput(
 	const props = pickExtraProps(
 		rawProps,
 		{
-			includeCaller: opts.includeCaller,
+			caller: opts.caller,
 			hiddenKeys: opts.hiddenKeys,
 			redactKeys: opts.redactKeys,
 			maxPropsKeys: opts.caps.maxPropsKeys,
@@ -256,7 +253,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 
 	const hiddenKeys = new Set((options.hiddenKeys ?? []).filter(Boolean))
 	const redactKeys = new Set((options.redactKeys ?? []).filter(Boolean))
-	const includeCaller = options.includeCaller ?? false
+	const caller = options.caller ?? false
 	const includeRaw = options.includeRaw ?? false
 
 	const caps: Required<RuntimeLogSinkCaps> = {
@@ -303,12 +300,19 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 		timer = setTimeout(flush, flushIntervalMs)
 	}
 
-	return (record) => {
+	const sink: Sink = (record) => {
 		try {
 			if (compareLogLevel(record.level, minLevel) < 0) return
+
+			let input = record
+			if (caller && typeof input.properties.caller !== 'string') {
+				const captured = captureCaller({ exclude: sink })
+				if (captured) input = { ...input, properties: { ...input.properties, caller: captured } }
+			}
+
 			buf.push(
-				toRuntimeLogLineInput(record, {
-					includeCaller,
+				toRuntimeLogLineInput(input, {
+					caller,
 					hiddenKeys,
 					redactKeys,
 					includeRaw,
@@ -324,9 +328,5 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 			// Ignore.
 		}
 	}
+	return sink
 }
-
-/**
- * Backward-compatible alias (name reflects old "UI log store" implementation).
- */
-export const createLogStoreSink = createRuntimeLogSink

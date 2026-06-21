@@ -97,19 +97,20 @@ ctx.logger.getDebugChannel('pluxel:hmr:batch').debug('batch targets', { targets 
 await configure(
 	createPluxelLogtapeConfig({
 		preset: 'hmr',
-		pluginLevels: {
-			'*': 'info', // 默认
-			'plugin-a': 'debug',
-			'plugin-b': null, // 禁用
+		pluginLevelLookup(pluginId) {
+			if (pluginId === 'plugin-a') return 'debug'
+			if (pluginId === 'plugin-b') return null // 禁用
+			return 'info'
 		},
 	}),
 )
 ```
 
-如需动态调整，可传函数（自行读取你的 map/配置源）。
+如需动态调整，让 `pluginLevelLookup` 读取你的 runtime policy state。
 
-另外，`@pluxel/runtime/logger` 提供了一个可变的 `runtimePluginLevels`（`createPluxelPluginLevelState()`）
-方便在运行时直接调级（无需重新 configure）。
+`@pluxel/runtime/logger` 提供 `runtimePluginLogPolicy` 和 `PluginLogPolicySnapshot`
+作为运行时插件日志策略状态；workbench/RPC 修改 policy 后，LogTape filter 会直接读取新状态，
+无需重新 configure。
 
 ## Sinks / Formatters
 

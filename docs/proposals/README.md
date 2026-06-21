@@ -1,6 +1,6 @@
 # Proposals
 
-这里仅记录未实现或未来设计。不要把本文件内容当成当前 API；当前实现以 `../CORE.md`、`../RUNTIME.md`、`../HMR.md`、`../TOOLCHAIN.md` 等领域文档为准。
+这里记录未实现提案和已落地设计记录。不要只凭本目录判断当前 API；当前实现以代码、包内 README、`../CORE.md`、`../RUNTIME.md`、`../HMR.md`、`../TOOLCHAIN.md` 等领域文档为准。
 
 已完成的 runtime-dynamic split、loader HMR 收敛、runtime-static route、以及 `@pluxel/rolldown` 工具链合并不再保留独立 proposal 文档；需要考古时从 git history 读取旧原文。
 
@@ -60,6 +60,14 @@
 - `packages/core-di/README.md`
 - `packages/core-di/DESIGN.md`
 - `packages/core-di/benchmarks/core-di-vs-diod.md`
+
+## Logger Redesign
+
+状态：已落地的设计记录。
+
+设计记录见 `logger-redesign.md`。核心原则是不要重造 LogTape 抽象，而是把 Pluxel 的 context、plugin log policy、caller policy、runtime UI store 等语义显式编译到 LogTape config/filter/sink。
+
+必须保留 workbench 配置插件日志策略的能力，但策略应成为独立 runtime state，由 LogTape filter 读取；网页不直接配置 LogTape。
 
 ## Promotion Rule
 

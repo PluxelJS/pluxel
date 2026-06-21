@@ -4,12 +4,13 @@ import {
 	rpcErrorMessage,
 	useRuntimeTransportClient,
 	type LogLevel,
-	type PluginLevelsSnapshot,
-	type PluginLogLevel,
+	type PluginLogPolicySnapshot,
+	type RuntimePluginLogLevel,
 } from '../../../../runtime'
 
 type Snapshot = {
-	levels: Record<string, PluginLogLevel>
+	defaultLevel?: RuntimePluginLogLevel
+	overrides: Record<string, RuntimePluginLogLevel>
 }
 
 const LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warning', 'error', 'fatal'] as const
@@ -45,11 +46,12 @@ export function LogLevelsCard({
 		setLoading(true)
 		setError(null)
 		try {
-			const res: PluginLevelsSnapshot = await transport.withRpc((rpc) =>
-				rpc.logging().getPluginLevels(),
+			const res: PluginLogPolicySnapshot = await transport.withRpc((rpc) =>
+				rpc.logging().getPolicy(),
 			)
 			setSnapshot({
-				levels: res.levels ?? Object.create(null),
+				defaultLevel: res.defaultLevel,
+				overrides: res.overrides ?? Object.create(null),
 			})
 		} catch (e) {
 			setError(rpcErrorMessage(e))
@@ -62,17 +64,11 @@ export function LogLevelsCard({
 		void refresh()
 	}, [refresh])
 
-	const currentDefault = snapshot?.levels?.['*']
-	const currentPlugin = snapshot?.levels?.[pluginId]
+	const currentDefault = snapshot?.defaultLevel
+	const currentPlugin = snapshot?.overrides?.[pluginId]
 
-	const pluginSelectValue =
-		currentPlugin === undefined ? '__inherit__' : currentPlugin === null ? '__off__' : currentPlugin
-	const defaultSelectValue =
-		currentDefault === undefined
-			? '__inherit__'
-			: currentDefault === null
-				? '__off__'
-				: currentDefault
+	const pluginSelectValue = currentPlugin === undefined ? '__inherit__' : currentPlugin
+	const defaultSelectValue = currentDefault === undefined ? '__inherit__' : currentDefault
 
 	const setPluginLevel = useCallback(
 		async (next: string | null) => {
@@ -81,18 +77,18 @@ export function LogLevelsCard({
 			try {
 				await transport.withRpc(async (rpc) => {
 					const api = rpc.logging()
-					if (next === '__inherit__') return await api.deletePluginLevel(pluginId)
-					if (next === '__off__') return await api.setPluginLevel(pluginId, null)
+					if (next === '__inherit__') return await api.clearPluginLevel(pluginId)
+					if (next === '__off__') return await api.setPluginLevel(pluginId, 'off')
 					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
 					return await api.setPluginLevel(pluginId, next)
 				})
 				setSnapshot((prev) => {
 					if (!prev) return prev
-					const levels = { ...prev.levels }
-					if (next === '__inherit__') delete levels[pluginId]
-					else if (next === '__off__') levels[pluginId] = null
-					else if (next && isLogLevel(next)) levels[pluginId] = next
-					return { ...prev, levels }
+					const overrides = { ...prev.overrides }
+					if (next === '__inherit__') delete overrides[pluginId]
+					else if (next === '__off__') overrides[pluginId] = 'off'
+					else if (next && isLogLevel(next)) overrides[pluginId] = next
+					return { ...prev, overrides }
 				})
 			} catch (e) {
 				setError(rpcErrorMessage(e))
@@ -108,12 +104,12 @@ export function LogLevelsCard({
 			setSaving(true)
 			setError(null)
 			try {
-				await transport.withRpc((rpc) => rpc.logging().deletePluginLevel(id))
+				await transport.withRpc((rpc) => rpc.logging().clearPluginLevel(id))
 				setSnapshot((prev) => {
 					if (!prev) return prev
-					const levels = { ...prev.levels }
-					delete levels[id]
-					return { ...prev, levels }
+					const overrides = { ...prev.overrides }
+					delete overrides[id]
+					return { ...prev, overrides }
 				})
 			} catch (e) {
 				setError(rpcErrorMessage(e))
@@ -131,18 +127,20 @@ export function LogLevelsCard({
 			try {
 				await transport.withRpc(async (rpc) => {
 					const api = rpc.logging()
-					if (next === '__inherit__') return await api.deletePluginLevelDefault()
-					if (next === '__off__') return await api.setPluginLevelDefault(null)
+					if (next === '__inherit__') return await api.clearDefaultLevel()
+					if (next === '__off__') return await api.setDefaultLevel('off')
 					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setPluginLevelDefault(next)
+					return await api.setDefaultLevel(next)
 				})
 				setSnapshot((prev) => {
 					if (!prev) return prev
-					const levels = { ...prev.levels }
-					if (next === '__inherit__') delete levels['*']
-					else if (next === '__off__') levels['*'] = null
-					else if (next && isLogLevel(next)) levels['*'] = next
-					return { ...prev, levels }
+					if (next === '__inherit__') {
+						const { defaultLevel: _defaultLevel, ...rest } = prev
+						return rest
+					}
+					if (next === '__off__') return { ...prev, defaultLevel: 'off' }
+					if (next && isLogLevel(next)) return { ...prev, defaultLevel: next }
+					return prev
 				})
 			} catch (e) {
 				setError(rpcErrorMessage(e))
@@ -154,12 +152,11 @@ export function LogLevelsCard({
 	)
 
 	const overrides = useMemo(() => {
-		const levels = snapshot?.levels
+		const levels = snapshot?.overrides
 		if (!levels) return []
-		const out: Array<{ id: string; level: PluginLogLevel }> = []
+		const out: Array<{ id: string; level: RuntimePluginLogLevel }> = []
 		for (const id in levels) {
 			if (!Object.hasOwn(levels, id)) continue
-			if (id === '*') continue
 			out.push({ id, level: levels[id] })
 		}
 		out.sort((a, b) => a.id.localeCompare(b.id))
@@ -170,8 +167,8 @@ export function LogLevelsCard({
 		setSaving(true)
 		setError(null)
 		try {
-			await transport.withRpc((rpc) => rpc.logging().clearPluginLevels())
-			setSnapshot({ levels: Object.create(null) })
+			const next = await transport.withRpc((rpc) => rpc.logging().resetPolicy())
+			setSnapshot({ defaultLevel: next.defaultLevel, overrides: next.overrides })
 		} catch (e) {
 			setError(rpcErrorMessage(e))
 		} finally {
@@ -236,7 +233,7 @@ export function LogLevelsCard({
 						onChange={(v) => void setDefaultLevel(v)}
 						data={[
 							{ value: '__inherit__', label: '继承全局 (PLUXEL_LOG_LEVEL)' },
-							{ value: '__off__', label: '关闭 (null)' },
+							{ value: '__off__', label: '关闭 (off)' },
 							...LEVEL_OPTIONS,
 						]}
 					/>
@@ -258,7 +255,7 @@ export function LogLevelsCard({
 						onChange={(v) => void setPluginLevel(v)}
 						data={[
 							{ value: '__inherit__', label: '继承默认' },
-							{ value: '__off__', label: '关闭 (null)' },
+							{ value: '__off__', label: '关闭 (off)' },
 							...LEVEL_OPTIONS,
 						]}
 					/>
@@ -291,7 +288,7 @@ export function LogLevelsCard({
 										{r.id}
 									</Code>
 									<Group gap="xs" wrap="nowrap">
-										<Badge variant="light" color={r.level === null ? 'red' : 'blue'}>
+										<Badge variant="light" color={r.level === 'off' ? 'red' : 'blue'}>
 											{String(r.level)}
 										</Badge>
 										<Button
