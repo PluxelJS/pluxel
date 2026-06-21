@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'pathe'
+import { posix, resolve } from 'pathe'
 import { fdir } from 'fdir'
 import {
 	nodeWorkspaceFs,
@@ -31,7 +31,7 @@ export type CrawlFilesOptions = {
 }
 
 function toPosix(p: string) {
-	return p.replaceAll('\\', '/')
+	return posix.normalize(p)
 }
 
 function uniqSorted(items: readonly string[]): string[] {

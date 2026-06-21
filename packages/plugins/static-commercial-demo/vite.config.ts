@@ -55,13 +55,25 @@ function pluxelStaticCommercialHost(): Plugin {
 						return
 					}
 
-					void (async () => {
-						const response = await host.fetch(toRequest(req, server))
-						await writeResponse(res, response)
-					})().catch(next)
+					void proxyToPluxel(req, res, server, (request) => host.fetch(request), next)
 				})
 			}
 		},
+	}
+}
+
+async function proxyToPluxel(
+	req: import('node:http').IncomingMessage,
+	res: import('node:http').ServerResponse,
+	server: ViteDevServer,
+	fetch: (request: Request) => Promise<Response>,
+	next: (err?: unknown) => void,
+): Promise<void> {
+	try {
+		const response = await fetch(toRequest(req, server))
+		await writeResponse(res, response)
+	} catch (error) {
+		next(error)
 	}
 }
 

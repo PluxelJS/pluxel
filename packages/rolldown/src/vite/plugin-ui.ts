@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
 	extensionFederationBuildOutDir,
@@ -14,6 +13,7 @@ import { resolve } from 'pathe'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
 import { build, type InlineConfig, mergeConfig, type Plugin, type PluginOption } from 'vite'
+import { resolvePackageJsonPathWithOxc } from '../resolver/oxc.ts'
 import { resolveParaglideIntegration } from './paraglide'
 
 export type BuildPluginUiRemoteOptions = {
@@ -249,9 +249,7 @@ function collectPluginNames(input: PluginOption | undefined, out: string[]): voi
 	else out.push('anonymous')
 }
 
-export function resolvePluginUiBuildSignature(
-	vite: InlineConfig | undefined,
-): string {
+export function resolvePluginUiBuildSignature(vite: InlineConfig | undefined): string {
 	const pluginNames: string[] = []
 	collectPluginNames(vite?.plugins, pluginNames)
 
@@ -306,7 +304,10 @@ export function resolveExtensionFederationShared(
 }
 
 function resolveSharedPackageVersion(root: string, packageName: string): string | undefined {
-	const packageJsonPath = resolvePackageJsonPath(root, packageName)
+	const packageJsonPath = resolvePackageJsonPathWithOxc(root, packageName, {
+		conditionNames: ['import', 'module', 'browser', 'default'],
+		tsconfig: 'auto',
+	})
 	if (!packageJsonPath) return undefined
 
 	try {
@@ -314,50 +315,6 @@ function resolveSharedPackageVersion(root: string, packageName: string): string 
 		return typeof parsed.version === 'string' ? parsed.version : undefined
 	} catch {
 		return undefined
-	}
-}
-
-function resolvePackageJsonPath(root: string, packageName: string): string | null {
-	const req = createRequire(resolve(root, '__pluxel_mf_resolver__.mjs'))
-
-	try {
-		return req.resolve(`${packageName}/package.json`)
-	} catch {
-		// Fall through to package entry probing.
-	}
-
-	const resolvedEntry = resolvePackageEntry(root, packageName)
-	if (!resolvedEntry) return null
-
-	let current = existsSync(resolvedEntry) ? resolvedEntry : resolve(root, resolvedEntry)
-	for (let depth = 0; depth < 8; depth += 1) {
-		const candidate =
-			current.endsWith('/package.json') || current.endsWith('\\package.json')
-				? current
-				: resolve(current, '..', 'package.json')
-		if (existsSync(candidate)) {
-			try {
-				const parsed = JSON.parse(readFileSync(candidate, 'utf-8')) as { name?: unknown }
-				if (parsed?.name === packageName) return candidate
-			} catch {
-				// Ignore invalid JSON and keep walking upward.
-			}
-		}
-
-		const parent = resolve(current, '..')
-		if (parent === current) break
-		current = parent
-	}
-
-	return null
-}
-
-function resolvePackageEntry(root: string, packageName: string): string | null {
-	try {
-		const req = createRequire(resolve(root, '__pluxel_mf_resolver__.mjs'))
-		return req.resolve(packageName)
-	} catch {
-		return null
 	}
 }
 

@@ -46,7 +46,7 @@ afterEach(() => {
 })
 
 describe('@pluxel/runtime/plugin', () => {
-	it('ui() binds through dev handles when HMR wiring is attached', () => {
+	it('ui() binds through HMR handles when HMR wiring is attached', () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const bindUiSource = vi.fn(() => () => {})
 
@@ -77,7 +77,7 @@ describe('@pluxel/runtime/plugin', () => {
 		expect(typeof dispose).toBe('function')
 	})
 
-	it('worker() falls back cleanly when no dev bundler is attached', async () => {
+	it('worker() falls back cleanly when no HMR bundler is attached', async () => {
 		const { pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()
 
@@ -111,7 +111,7 @@ describe('@pluxel/runtime/plugin', () => {
 		expect(pluginCtx.loader.api.registry.findModuleIdByName).not.toHaveBeenCalled()
 	})
 
-	it('worker() uses root-scoped dev handles and tracks HMR updates', async () => {
+	it('worker() uses root-scoped HMR handles and tracks HMR updates', async () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()
 		const stopWatching = vi.fn(async () => {})

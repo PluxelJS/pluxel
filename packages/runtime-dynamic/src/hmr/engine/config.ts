@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
-import { resolve } from 'pathe'
+import { dirname, resolve } from 'pathe'
 import {
 	createLogger,
 	type InlineConfig,
@@ -13,12 +13,14 @@ import {
 } from 'vite'
 import { serverOnlyVitePlugin } from '@pluxel/rolldown/vite'
 import {
-	PLUXEL_CONDITION_RUNTIME_DYNAMIC,
+	PLUXEL_CONDITION_HMR,
 	PLUXEL_CONDITION_SOURCE,
 	canResolveFromCwd,
 	findNearestPackageRoot,
-	getExsolveCache,
+	getCachedResolver,
+	getOxcResolveCache,
 	pathVariantsAbs,
+	resolveModulePath,
 	toBasePackage,
 } from '@pluxel/runtime/shared'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
@@ -136,14 +138,19 @@ const DEFAULT_CLIENT_OPTIMIZE_DEPS_INCLUDE = [
 	'@mantine/notifications',
 	'@tabler/icons-react',
 ] as const
-const require = createRequire(import.meta.url)
+const moduleDir = dirname(fileURLToPath(import.meta.url))
 
 function resolveOptionalPackageEntry(specifier: string): string | null {
-	try {
-		return normalizePath(require.resolve(specifier))
-	} catch {
-		return null
-	}
+	const resolver = getCachedResolver(
+		getOxcResolveCache(),
+		'hmr:optional-package-entry-resolver',
+		[moduleDir],
+		{ limit: 8 },
+	)
+	const resolved = resolveModulePath(resolver, specifier, {
+		conditions: ['import', 'module', 'browser', 'default'],
+	})
+	return resolved ? normalizePath(resolved) : null
 }
 
 const TABLER_ICONS_ESM_ENTRY = resolveOptionalPackageEntry(
@@ -152,7 +159,10 @@ const TABLER_ICONS_ESM_ENTRY = resolveOptionalPackageEntry(
 
 // Prefer workspace TS sources for SSR runner (monorepo/hmr).
 // NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
-export const BASE_LOADER_HMR_RESOLVE_CONDITIONS = [PLUXEL_CONDITION_RUNTIME_DYNAMIC, PLUXEL_CONDITION_SOURCE] as const
+export const BASE_LOADER_HMR_RESOLVE_CONDITIONS = [
+	PLUXEL_CONDITION_HMR,
+	PLUXEL_CONDITION_SOURCE,
+] as const
 // Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
 const DEFAULT_RESOLVE_CONDITIONS = [
 	'import',
@@ -181,7 +191,7 @@ export function resolveLoaderHmrDependencyConfig(
 	opts?: { cwd?: string; resolveCache?: Map<string, unknown> },
 ): ResolvedLoaderHmrDependencyConfig {
 	const cwd = opts?.cwd ?? process.cwd()
-	const resolveCache = getExsolveCache(opts?.resolveCache)
+	const resolveCache = getOxcResolveCache(opts?.resolveCache)
 
 	if (!overrides) {
 		const bridgeProviders = mergeBridgeProviders(
@@ -229,7 +239,9 @@ export function resolveLoaderHmrDependencyConfig(
 
 export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
-	return [...new Set([...BASE_LOADER_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras])]
+	return [
+		...new Set([...BASE_LOADER_HMR_RESOLVE_CONDITIONS, ...DEFAULT_RESOLVE_CONDITIONS, ...extras]),
+	]
 }
 
 function mergeBridgeProviders(
@@ -332,7 +344,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 	// `@pluxel/wretch` (or any runner-only plugin) to `./src/...` and then try to analyze/optimize Node-only imports
 	// (e.g. `undici`) as if they were browser deps.
 	const clientConditions = ssrConditions.filter(
-		(c) => c !== PLUXEL_CONDITION_RUNTIME_DYNAMIC && c !== PLUXEL_CONDITION_SOURCE,
+		(c) => c !== PLUXEL_CONDITION_HMR && c !== PLUXEL_CONDITION_SOURCE,
 	)
 	// Default: avoid dep optimization churn in Vite 8 beta.
 	// Opt-in via config when you want "fastest steady-state" for the UI/runner.

@@ -1,15 +1,16 @@
 import { existsSync } from 'node:fs'
 
-import { createResolver, type ResolveOptions } from 'exsolve'
 import { resolve } from 'pathe'
 
 import {
-	type ExsolveCache,
-	type ExsolveResolver,
-	getCachedExsolveResolver,
-	toDirectoryURLString,
-} from './exsolve'
-import { hasNodeModulesPackageJson } from './node-modules'
+	createOxcResolver,
+	type OxcResolveCache,
+	type OxcResolver,
+	getCachedOxcResolver,
+	normalizeOxcResolveDirectories,
+} from './oxc-resolver'
+import { hasNodeModulesPackageJson, toBasePackage } from './node-modules'
+export { toBasePackage } from './node-modules'
 
 export const RESOLVE_CHECK_CONDITIONS = ['node', 'import', 'require', 'default'] as const
 export type ResolveMode = 'direct' | 'distPreferEsm'
@@ -19,32 +20,24 @@ export type ResolvePolicy = {
 }
 
 export function getCachedResolver(
-	cache: ExsolveCache,
+	cache: OxcResolveCache,
 	group: string,
 	from: readonly string[],
 	opts?: { limit?: number },
-): ExsolveResolver {
-	const normalizedFrom = [...new Set(from.map((f) => String(f).trim()).filter((f) => f.length > 0))]
+): OxcResolver {
+	const normalizedFrom = normalizeOxcResolveDirectories(from)
 	if (normalizedFrom.length === 0) {
 		throw new Error('[runtime:resolution] Resolver "from" list is empty.')
 	}
 
 	const key = normalizedFrom.join('|')
-	return getCachedExsolveResolver(
-		cache,
-		group,
-		key,
-		() =>
-			createResolver({
-				from: normalizedFrom,
-				cache,
-			}),
-		{ limit: opts?.limit ?? 32 },
-	)
+	return getCachedOxcResolver(cache, group, key, () => createOxcResolver(normalizedFrom), {
+		limit: opts?.limit ?? 32,
+	})
 }
 
 export function resolveModulePath(
-	resolver: ExsolveResolver,
+	resolver: OxcResolver,
 	id: string,
 	policy?: ResolvePolicy,
 ): string | null {
@@ -52,8 +45,8 @@ export function resolveModulePath(
 	const conditions = policy?.conditions?.length ? policy.conditions : undefined
 
 	const resolveWith = (conds?: readonly string[]) => {
-		const options: ResolveOptions = { try: true }
-		if (conds && conds.length > 0) options.conditions = [...conds]
+		const options: { try: true; conditions?: readonly string[] } = { try: true }
+		if (conds && conds.length > 0) options.conditions = conds
 		const resolved = resolver.resolveModulePath(id, options)
 		return typeof resolved === 'string' && resolved.length > 0 ? resolved : null
 	}
@@ -74,16 +67,6 @@ export function resolveModulePath(
 	return resolveWith(conditions)
 }
 
-export function toBasePackage(specifier: string) {
-	if (specifier.startsWith('@')) {
-		const parts = specifier.split('/')
-		if (parts.length >= 2) return `${parts[0]}/${parts[1]}`
-		return specifier
-	}
-	const parts = specifier.split('/')
-	return parts[0] ?? specifier
-}
-
 /**
  * Best-effort "is this package available from this cwd?" check.
  *
@@ -91,12 +74,12 @@ export function toBasePackage(specifier: string) {
  * - if `node_modules` exists, a direct `node_modules/<pkg>/package.json` entry counts as available.
  *
  * Fallback:
- * - use exsolve (PnP / custom resolvers) to see whether the specifier can be resolved.
+ * - use the shared OXC resolver to see whether the specifier can be resolved.
  */
 export function canResolveFromCwd(
 	cwd: string,
 	specifier: string,
-	resolveCache: ExsolveCache,
+	resolveCache: OxcResolveCache,
 	opts?: {
 		group?: string
 		limit?: number
@@ -113,16 +96,20 @@ export function canResolveFromCwd(
 		return hasNodeModulesPackageJson(nodeModulesDir, baseSpecifier)
 	}
 
-	const base = toDirectoryURLString(cwdAbs)
-	const resolver = getCachedResolver(resolveCache, opts?.group ?? 'runtime:cwd-resolver', [base], {
-		limit: opts?.limit ?? 32,
-	})
+	const resolver = getCachedResolver(
+		resolveCache,
+		opts?.group ?? 'runtime:cwd-resolver',
+		[cwdAbs],
+		{
+			limit: opts?.limit ?? 32,
+		},
+	)
 
 	try {
 		return (
 			resolveModulePath(resolver, baseSpecifier, {
 				conditions: opts?.conditions ?? RESOLVE_CHECK_CONDITIONS,
-				}) !== null
+			}) !== null
 		)
 	} catch {
 		return false

@@ -1,6 +1,6 @@
 import os from 'node:os'
 import { isAbsolute, normalize, resolve as r } from 'pathe'
-import type { PackageJson } from 'pkg-types'
+import type { WorkspacePackageJson as PackageJson } from '@pluxel/rolldown/workspace/info'
 import type { EntryResolver } from './entry-resolver'
 import {
 	getAllTsFiles,
@@ -10,7 +10,7 @@ import {
 	safeReadManifest,
 	type WorkspaceFs,
 } from './fs'
-import { createLimiter } from './limit'
+import { createLimiter } from './shared'
 import type {
 	EntryResolution,
 	PackageNode,

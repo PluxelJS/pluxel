@@ -31,7 +31,11 @@ import {
 	getRequiredPluginDependencies,
 } from '../decorators/PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
-import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
+import {
+	runtimePluginKeyOfCtor,
+	type RuntimePluginHandle,
+	type RuntimePluginKey,
+} from './identity'
 
 export type PluginGraph = GraphSnapshot<ReturnType<typeof getPluginInfo>>
 export type PluginRuntime = Runtime<ReturnType<typeof getPluginInfo>>
@@ -46,7 +50,6 @@ type BuildRet = {
 	runtime: PluginRuntime
 	delta: GraphDelta
 	confirm: () => void
-	reset: () => void
 }
 
 const uniqueTokens = (tokens: Iterable<Token>): Token[] => {
@@ -62,7 +65,6 @@ const uniqueTokens = (tokens: Iterable<Token>): Token[] => {
 
 export class PluginDefinitions {
 	private readonly draft = new DraftGraph<ReturnType<typeof getPluginInfo>>()
-	private readonly runtimeKeysByCtor = new WeakMap<PluginConstructor, RuntimePluginKey>()
 	private committedRuntime?: PluginRuntime
 
 	constructor(
@@ -92,7 +94,7 @@ export class PluginDefinitions {
 	public resolvePlanningHandle(id: RuntimePluginHandle): RuntimePluginKey | undefined {
 		if (typeof id === 'string') return this.draft.has(id) ? id : undefined
 		try {
-			const key = this.runtimeKeyOfCtor(id)
+			const key = runtimePluginKeyOfCtor(id)
 			if (this.draft.has(key)) return key
 			const resolvedByKey = this.draft.resolvePlanningToken(key) as RuntimePluginKey | undefined
 			if (resolvedByKey) return resolvedByKey
@@ -265,22 +267,13 @@ export class PluginDefinitions {
 		const extraTokens = this.providerTokens(Plugin, info, opts)
 
 		return factoryProvider({
-			key: this.runtimeKeyOfCtor(Plugin),
+			key: runtimePluginKeyOfCtor(Plugin),
 			tokens: extraTokens,
 			deps,
 			meta: info,
 			use: (...resolvedDeps: readonly unknown[]) =>
 				this.instantiatePluginInContext(Plugin, info, resolvedDeps),
 		})
-	}
-
-	private runtimeKeyOfCtor(ctor: PluginIdentifier): RuntimePluginKey {
-		const keyCtor = ctor as PluginConstructor
-		const cached = this.runtimeKeysByCtor.get(keyCtor)
-		if (cached) return cached
-		const key = runtimePluginKeyOfCtor(ctor)
-		this.runtimeKeysByCtor.set(keyCtor, key)
-		return key
 	}
 
 	public unregister(id: RuntimePluginHandle): void {
@@ -300,9 +293,6 @@ export class PluginDefinitions {
 			delta: built.val.delta,
 			confirm: () => {
 				built.val.commit()
-			},
-			reset: () => {
-				built.val.reset()
 			},
 		}
 

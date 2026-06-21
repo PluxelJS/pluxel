@@ -91,11 +91,7 @@ export class PackageRuntime {
 		ids.add(spec.name)
 		ids.add(spec.target)
 		ids.add(spec.raw)
-		try {
-			ids.add(pathToFileURL(normalized).href)
-		} catch {
-			// ignore invalid URL conversion
-		}
+		ids.add(pathToFileURL(normalized).href)
 		return ids
 	}
 }

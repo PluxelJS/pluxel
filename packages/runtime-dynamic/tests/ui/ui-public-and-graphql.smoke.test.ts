@@ -127,7 +127,7 @@ describe('HMR UI smoke', () => {
 					name: 'pluxel-plugin-a',
 					version: '0.0.0',
 					type: 'module',
-					exports: { '.': { '@pluxel/runtime-dynamic': './src/index.ts', default: './dist/index.mjs' } },
+					exports: { '.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' } },
 				},
 				null,
 				2,

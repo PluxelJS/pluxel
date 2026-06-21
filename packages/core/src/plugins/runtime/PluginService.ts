@@ -580,7 +580,6 @@ export class PluginService {
 		string,
 		readonly (PluginIdentifier | undefined)[]
 	>()
-	private readonly runtimeKeysByCtor = new WeakMap<PluginConstructor, RuntimePluginKey>()
 	private order = 0
 	private readonly featureDeclarationPolicyDefault: 'off' | 'warn' | 'error'
 	private readonly featureDeclarationPolicyExplicit: boolean
@@ -756,7 +755,7 @@ export class PluginService {
 			return typeof resolved === 'string' ? (resolved as RuntimePluginKey) : (id as RuntimePluginKey)
 		}
 		try {
-			const key = this.runtimeKeyOfCtor(id)
+			const key = runtimePluginKeyOfCtor(id)
 			if (!graph || graph.has(key)) return key
 		} catch {
 			// Base/abstract tokens may be undecorated; fall back to graph aliases.
@@ -789,14 +788,14 @@ export class PluginService {
 		}
 
 		const exact = this.runtimeModuleCtorByName.get(id)
-		if (exact) return this.runtimeKeyOfCtor(exact)
+		if (exact) return runtimePluginKeyOfCtor(exact)
 
 		const fork = parseForkPluginId(id)
 		if (fork) {
 			const baseCtor = this.runtimeModuleCtorByName.get(fork.baseId)
-			if (!baseCtor) return this.runtimeKeyOfCtor(token)
+			if (!baseCtor) return runtimePluginKeyOfCtor(token)
 			const existing = getForkedCtor(baseCtor, fork.forkId)
-			if (existing) return this.runtimeKeyOfCtor(existing)
+			if (existing) return runtimePluginKeyOfCtor(existing)
 			try {
 				forkPlugin(baseCtor as ForkablePluginConstructor, fork.forkId)
 				return formatForkPluginId(fork.baseId, fork.forkId) as RuntimePluginKey
@@ -812,43 +811,31 @@ export class PluginService {
 		return this._activeRuntime ?? this.definitions.runtime
 	}
 
-	private runtimeKeyOfCtor(ctor: PluginIdentifier): RuntimePluginKey {
-		const keyCtor = ctor as PluginConstructor
-		const cached = this.runtimeKeysByCtor.get(keyCtor)
-		if (cached) return cached
-		const key = runtimePluginKeyOfCtor(ctor)
-		this.runtimeKeysByCtor.set(keyCtor, key)
-		return key
-	}
-
-	private hasDraftStructuralChanges(): boolean {
-		return this._activeGraph !== undefined || this.definitions.hasPendingChanges()
+	private currentPlanningGraph(): PluginGraph | undefined {
+		if (this._activeGraph) return this._activeGraph
+		return this.definitions.hasPendingChanges() ? undefined : this.graph
 	}
 
 	private resolvePlanningKey(id: RuntimePluginHandle): RuntimePluginKey | undefined {
-		if (!this.hasDraftStructuralChanges()) return this.resolveGraphKey(this.graph, id)
-		return this._activeGraph
-			? this.resolveGraphKey(this._activeGraph, id)
+		const graph = this.currentPlanningGraph()
+		return graph
+			? this.resolveGraphKey(graph, id)
 			: (this.definitions.resolvePlanningHandle(id) ?? this.resolveGraphKey(undefined, id))
 	}
 
 	private planningContains(id: RuntimePluginHandle): boolean {
-		if (!this.hasDraftStructuralChanges()) {
-			const graph = this.graph
-			const key = this.resolveGraphKey(graph, id)
-			return (
-				(key !== undefined && graph.has(key)) ||
-				(typeof id !== 'string' && graph.resolve(id) !== undefined)
-			)
-		}
-		if (this._activeGraph) {
-			const key = this.resolveGraphKey(this._activeGraph, id)
-			return (
-				(key !== undefined && this._activeGraph.has(key)) ||
-				(typeof id !== 'string' && this._activeGraph.resolve(id) !== undefined)
-			)
-		}
-		return this.definitions.resolvePlanningHandle(id) !== undefined
+		const graph = this.currentPlanningGraph()
+		return graph
+			? this.graphContainsHandle(graph, id)
+			: this.definitions.resolvePlanningHandle(id) !== undefined
+	}
+
+	private graphContainsHandle(graph: PluginGraph, id: RuntimePluginHandle): boolean {
+		const key = this.resolveGraphKey(graph, id)
+		return (
+			(key !== undefined && graph.has(key)) ||
+			(typeof id !== 'string' && graph.resolve(id) !== undefined)
+		)
 	}
 
 	private collectPlanningCascadeTargets(
@@ -859,8 +846,8 @@ export class PluginService {
 			const key = this.resolvePlanningKey(id)
 			return key ? new Set([key]) : new Set()
 		}
-		if (!this.hasDraftStructuralChanges()) {
-			const graph = this.graph
+		const graph = this.currentPlanningGraph()
+		if (graph) {
 			const key = this.resolveGraphKey(graph, id)
 			if (key) {
 				const slot = graph.slotOf(key)
@@ -870,7 +857,6 @@ export class PluginService {
 			}
 			return this.dependentClosure.collect(graph, [id])
 		}
-		if (this._activeGraph) return this.dependentClosure.collect(this._activeGraph, [id])
 		return this.definitions.collectPlanningCascadeTargets(id)
 	}
 
@@ -1060,7 +1046,7 @@ export class PluginService {
 	public getFork<T extends PluginIdentifier>(ctor: T, forkId: string): InstanceType<T> | undefined {
 		const ForkCtor = getForkedCtor(ctor, forkId)
 		if (!ForkCtor) return undefined
-		return this.getRunningRuntimeInstance(this.runtimeKeyOfCtor(ForkCtor)) as
+		return this.getRunningRuntimeInstance(runtimePluginKeyOfCtor(ForkCtor)) as
 			| InstanceType<T>
 			| undefined
 	}

@@ -25,6 +25,10 @@
 			"@pluxel/source": "./src/rolldown/index.ts",
 			"default": "./dist/plugins.mjs"
 		},
+		"./resolver/oxc": {
+			"@pluxel/source": "./src/resolver/oxc.ts",
+			"default": "./dist/resolver/oxc.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite/index.ts",
 			"default": "./dist/vite.mjs"
@@ -65,6 +69,7 @@
 			"./build": "./dist/build.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
+			"./resolver/oxc": "./dist/resolver/oxc.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./vite/environment": "./dist/vite/environment.mjs",
 			"./vite/paraglide": "./dist/vite/paraglide.mjs",
@@ -83,15 +88,15 @@
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
 		"@module-federation/vite": "1.16.6",
-		"@pluxel/core": "workspace:*"
+		"@pluxel/core": "workspace:*",
+		"oxc-parser": "^0.115.0",
+		"oxc-resolver": "^11.21.3"
 	},
 	"devDependencies": {
 		"@rolldown/pluginutils": "1.0.0-rc.5",
-		"fs-fixture": "^2.13.0",
 		"fdir": "^6.5.0",
-		"oxc-parser": "^0.115.0",
+		"fs-fixture": "^2.13.0",
 		"pathe": "^2.0.3",
-		"pkg-types": "^2.3.0",
 		"rolldown": "1.0.0-rc.5",
 		"tsdown": "^0.22.3",
 		"typescript": "^6.0.3",
@@ -115,10 +120,7 @@
 	},
 	"inlinedDependencies": {
 		"@rolldown/pluginutils": "1.0.0-rc.5",
-		"confbox": "0.2.4",
-		"exsolve": "1.0.8",
 		"fdir": "6.5.0",
-		"pathe": "2.0.3",
-		"pkg-types": "2.3.1"
+		"pathe": "2.0.3"
 	}
 }

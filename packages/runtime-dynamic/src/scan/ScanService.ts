@@ -1,16 +1,17 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import '@pluxel/runtime/events'
-import { dirname, normalize } from 'pathe'
+import { dirname, normalize, resolve as r } from 'pathe'
 import {
-	type ExsolveResolver,
+	clearOxcResolveCache,
+	type OxcResolver,
 	getCachedResolver,
+	getOxcResolveCache,
+	hasNodeModulesPackageJson,
 	resolveModulePath,
-	toDirectoryURLString,
 } from '@pluxel/runtime/shared'
 import { EntryResolver } from './entry-resolver'
 import { nodeWorkspaceFs, type WorkspaceFs } from './fs'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'
-import { ModuleResolveCache } from './resolve-cache'
 import {
 	mergeFocus,
 	missingPackageResolution,
@@ -18,8 +19,8 @@ import {
 	selectorBareName,
 	selectorFocusHints,
 } from './selectors'
-import { normalizeScanInputs, resolveScanRoots } from './shared'
-import { type ScanSnapshot, ScanSnapshotBuilder, ScanSnapshotCache } from './snapshot'
+import { createScanCacheKey, normalizeScanInputs, resolveScanRoots } from './shared'
+import { buildScanSnapshot, type ScanSnapshot } from './snapshot'
 import {
 	isPackageEntryOk,
 	type EntryResolution,
@@ -81,13 +82,13 @@ export class ScanService {
 	public ctx: PluxelContext
 	private defaults: ResolvedScanOptions
 	private roots: string[]
-	private readonly resolveCache = new ModuleResolveCache()
+	private readonly resolveCache = getOxcResolveCache(new Map())
 	private scanFs: WorkspaceFs
 	private installedBase: string
 	private entryResolver: EntryResolver
-	private snapshotBuilder: ScanSnapshotBuilder
-	private snapshotCache: ScanSnapshotCache
-	private installedResolver: InstalledPackageResolver
+	private readonly snapshotCache = new Map<string, Promise<ScanSnapshot>>()
+	private installedResolver: OxcResolver
+	private installedNodeModulesDir: string
 
 	constructor(ctx: PluxelContext, config: ScanServiceConfig = {}) {
 		this.ctx = ctx
@@ -96,19 +97,18 @@ export class ScanService {
 		this.scanFs = config.fs ?? nodeWorkspaceFs
 		this.installedBase = config.installedBase ?? process.cwd()
 		this.entryResolver = new EntryResolver(this.resolveCache, this.scanFs)
-		this.snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver, this.scanFs)
-		this.snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
-		this.installedResolver = new InstalledPackageResolver(this.resolveCache, this.installedBase)
+		this.installedResolver = this.createInstalledResolver(this.installedBase)
+		this.installedNodeModulesDir = this.resolveNodeModulesDir(this.installedBase)
 	}
 
 	/**
-	 * Exposes the underlying exsolve resolve cache map for advanced integrations (e.g. HMR runner).
+	 * Exposes the underlying OXC resolver resolve cache map for advanced integrations (e.g. HMR runner).
 	 *
 	 * Sharing this cache across long-lived services reduces duplicate work and keeps cache invalidation
 	 * behavior consistent (`invalidateResolverCache()` clears this map).
 	 */
 	get resolverCache(): Map<string, unknown> {
-		return this.resolveCache.map
+		return this.resolveCache
 	}
 
 	/**
@@ -138,7 +138,8 @@ export class ScanService {
 		}
 		if (config.installedBase && config.installedBase !== this.installedBase) {
 			this.installedBase = config.installedBase
-			this.installedResolver = new InstalledPackageResolver(this.resolveCache, this.installedBase)
+			this.installedResolver = this.createInstalledResolver(this.installedBase)
+			this.installedNodeModulesDir = this.resolveNodeModulesDir(this.installedBase)
 			mutated = true
 		}
 		if (mutated) this.clearCaches()
@@ -163,14 +164,13 @@ export class ScanService {
 	 * 手动清理缓存，下次调用会重新扫描磁盘。
 	 */
 	clearCaches() {
-		this.snapshotCache.clear()
+		this.clearSnapshotCache()
 		this.invalidateResolverCache({ by: 'scanService', reason: 'clearCaches' })
 	}
 
 	private rebuildScanState() {
 		this.entryResolver = new EntryResolver(this.resolveCache, this.scanFs)
-		this.snapshotBuilder = new ScanSnapshotBuilder(this.entryResolver, this.scanFs)
-		this.snapshotCache = new ScanSnapshotCache(this.snapshotBuilder)
+		this.clearSnapshotCache()
 	}
 
 	/**
@@ -178,7 +178,7 @@ export class ScanService {
 	 */
 	invalidateResolverCache(detail?: { by?: string; reason?: string; targets?: readonly string[] }) {
 		this.entryResolver.clear()
-		this.resolveCache.clear()
+		clearOxcResolveCache(this.resolveCache)
 
 		// Notify long-lived runtime services (HMR runner, package loaders, tooling) so they can drop any
 		// derived resolution caches.
@@ -188,7 +188,20 @@ export class ScanService {
 	private snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
 		const roots = resolveScanRoots(this.roots, request.roots)
 		const options = resolveScanOptions(this.defaults, request.scan)
-		return this.snapshotCache.get(roots, options)
+		const key = createScanCacheKey(roots, options)
+		const cached = this.snapshotCache.get(key)
+		if (cached) return cached
+
+		const promise = buildScanSnapshot(roots, options, this.entryResolver, this.scanFs).catch((err) => {
+			this.snapshotCache.delete(key)
+			throw err
+		})
+		this.snapshotCache.set(key, promise)
+		return promise
+	}
+
+	private clearSnapshotCache() {
+		this.snapshotCache.clear()
 	}
 
 	/**
@@ -269,7 +282,7 @@ export class ScanService {
 				message: '包名为空，无法解析入口。',
 			}
 		}
-		const resolved = this.installedResolver.resolve(trimmed, conditions ?? this.defaults.conditions)
+		const resolved = this.resolveInstalledPackage(trimmed, conditions ?? this.defaults.conditions)
 		return resolved ?? missingPackageResolution(trimmed)
 	}
 
@@ -279,24 +292,15 @@ export class ScanService {
 	): EntryResolution | undefined {
 		const bare = selectorBareName(selector)
 		if (!bare) return undefined
-		return this.installedResolver.resolve(bare, conditions)
-	}
-}
-
-class InstalledPackageResolver {
-	private readonly resolver: ExsolveResolver
-
-	constructor(
-		private readonly cache: ModuleResolveCache,
-		baseDir: string = process.cwd(),
-	) {
-		const fromStr = toDirectoryURLString(baseDir)
-		this.resolver = getCachedResolver(this.cache.map, 'scan:installed-resolver', [fromStr], {
-			limit: 8,
-		})
+		return this.resolveInstalledPackage(bare, conditions)
 	}
 
-	resolve(bareName: string, conditions?: string[]): EntryResolutionOk | undefined {
+	private resolveInstalledPackage(
+		bareName: string,
+		conditions?: string[],
+	): EntryResolutionOk | undefined {
+		if (!hasNodeModulesPackageJson(this.installedNodeModulesDir, bareName)) return undefined
+
 		for (const variant of this.resolutionPlan(conditions)) {
 			const entryPath = this.resolveWithConditions(bareName, variant)
 			if (!entryPath) continue
@@ -319,7 +323,7 @@ class InstalledPackageResolver {
 	}
 
 	private resolveWithConditions(id: string, conditions?: string[]): string | undefined {
-		return resolveModulePath(this.resolver, id, { conditions }) ?? undefined
+		return resolveModulePath(this.installedResolver, id, { conditions }) ?? undefined
 	}
 
 	private resolutionPlan(conditions?: string[]): Array<string[] | undefined> {
@@ -327,5 +331,15 @@ class InstalledPackageResolver {
 			return [conditions, undefined]
 		}
 		return [undefined]
+	}
+
+	private createInstalledResolver(baseDir: string): OxcResolver {
+		return getCachedResolver(this.resolveCache, 'scan:installed-resolver', [baseDir], {
+			limit: 8,
+		})
+	}
+
+	private resolveNodeModulesDir(baseDir: string): string {
+		return normalize(r(baseDir, 'node_modules'))
 	}
 }

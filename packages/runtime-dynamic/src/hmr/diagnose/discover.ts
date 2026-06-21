@@ -1,7 +1,7 @@
 import { dirname, resolve } from 'pathe'
-import type { PackageJson } from 'pkg-types'
 import picomatch from 'picomatch'
-import { PLUXEL_CONDITION_RUNTIME_DYNAMIC } from '@pluxel/runtime/shared'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import type { WorkspacePackageJson as PackageJson } from '@pluxel/rolldown/workspace/info'
 import { toPosix, toRootRelative, uniqSorted } from './utils'
 import {
 	DEFAULT_IGNORED_DIR_NAMES,
@@ -32,9 +32,10 @@ export type WorkspacePackage = {
 }
 
 function normalizeMatchers(rootDir: string, excludeGlobs: string[]) {
-	const patterns = excludeGlobs.length > 0
-		? excludeGlobs.map((g) => toPosix(resolve(rootDir, g)))
-		: [resolve(rootDir, '**/node_modules/**'), resolve(rootDir, '**/dist/**')]
+	const patterns =
+		excludeGlobs.length > 0
+			? excludeGlobs.map((g) => toPosix(resolve(rootDir, g)))
+			: [resolve(rootDir, '**/node_modules/**'), resolve(rootDir, '**/dist/**')]
 	return picomatch(patterns.map(toPosix), { dot: true })
 }
 
@@ -73,7 +74,7 @@ function resolvePluginEntryAbs(pkgDirAbs: string, manifest: PackageJson): string
 	if (!exportsField || typeof exportsField !== 'object') return null
 	const dot = (exportsField as any)['.']
 	if (!dot || typeof dot !== 'object') return null
-	const loaderHmrEntry = (dot as any)[PLUXEL_CONDITION_RUNTIME_DYNAMIC]
+	const loaderHmrEntry = (dot as any)[PLUXEL_CONDITION_HMR]
 	if (typeof loaderHmrEntry !== 'string' || !loaderHmrEntry.trim()) return null
 
 	return resolve(pkgDirAbs, loaderHmrEntry)

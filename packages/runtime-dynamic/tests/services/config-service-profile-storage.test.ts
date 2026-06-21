@@ -24,7 +24,7 @@ describe('HMR ConfigService profile storage', () => {
 					version: '0.0.0',
 					type: 'module',
 					exports: {
-						'.': { '@pluxel/runtime-dynamic': './src/index.ts', default: './dist/index.mjs' },
+						'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
 					},
 				},
 				null,

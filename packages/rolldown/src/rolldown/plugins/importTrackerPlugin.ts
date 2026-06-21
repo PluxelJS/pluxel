@@ -8,7 +8,8 @@
  */
 
 import type { ViteCompatPlugin } from './compat.ts'
-import { normalizePatterns } from './pluginUtils.ts'
+import { collectImportSpecifiers } from './importCollector.ts'
+import { normalizePatterns, parseWithLang } from './pluginUtils.ts'
 
 export interface TrackedPluginUsage {
 	hasStaticImport: boolean
@@ -55,27 +56,12 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 		collected.set(name, current)
 	}
 
-	const collectFromSource = (code: string) => {
-		// We intentionally parse via regex to also capture external/unresolved imports,
-		// which may not be present in `moduleParsed().importedIds` depending on bundler internals.
-		//
-		// Static:
-		// - import 'pkg'
-		// - import x from 'pkg'
-		// - export * from 'pkg'
-		// Dynamic:
-		// - import('pkg')
-		const staticRe = /\b(?:import|export)\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g
-		const dynamicRe = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-
-		for (const match of code.matchAll(staticRe)) {
-			const spec = match[1]
-			if (spec) record(spec, 'static')
-		}
-		for (const match of code.matchAll(dynamicRe)) {
-			const spec = match[1]
-			if (spec) record(spec, 'dynamic')
-		}
+	const collectFromSource = (ctx: unknown, code: string, id: string) => {
+		// We intentionally inspect the authored AST instead of bundler `importedIds`, because unresolved
+		// or external imports still need to be tracked.
+		const ast = parseWithLang(ctx, code, id)
+		if (!ast) return
+		for (const item of collectImportSpecifiers(ast)) record(item.specifier, item.kind)
 	}
 
 	const plugin: ViteCompatPlugin = {
@@ -94,8 +80,8 @@ export function createImportTracker(options: ImportTrackerPluginOptions): Import
 					include: /@Plugin|\bPlugin\s*\(|__decorate\s*\(/,
 				},
 			},
-			handler(code, _id) {
-				collectFromSource(code)
+			handler(code, id) {
+				collectFromSource(this, code, id)
 				return null
 			},
 		},

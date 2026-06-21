@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('@pluxel/runtime-dynamic/hmr/host runtime bridges', () => {
-	it('installs module adapter + dev handles on the host Context', async () => {
+	it('installs root-owned module adapter and HMR handles on the host Context', async () => {
 		await using fixture = await createFixture({
 			'packages/a/src/index.ts': 'export const entry = "a"\n',
 		})
@@ -40,6 +40,8 @@ describe('@pluxel/runtime-dynamic/hmr/host runtime bridges', () => {
 		expect(getHmrRuntimeHandles(res.ctx)?.bundler?.watchTinypoolWorker).toBeTypeOf('function')
 
 		const pluginCtx = res.ctx.extend({ name: 'plugin-a' })
+		expect(hasRuntimeModuleAdapter(pluginCtx)).toBe(true)
+		expect(getRuntimeModuleAdapter(pluginCtx).normalizeId('/tmp/a.ts')).toBe('/tmp/a.ts')
 		expect(getHmrRuntimeHandles(pluginCtx)?.bundler?.watchTinypoolWorker).toBeTypeOf('function')
 
 		await res.hmr.close()

@@ -19,21 +19,17 @@ export class WorkspaceEntryResolver {
 			this.cache,
 			specifier,
 			async () => {
-				try {
-					const res = await this.scanService.resolveEntry(
-						{ name: specifier },
-						{
-							workspaceOnly: true,
-							scan: {
-								conditions: [...this.workspaceConditions],
-								preferRuntimeDynamicExports: true,
-							},
+				const res = await this.scanService.resolveEntry(
+					{ name: specifier },
+					{
+						workspaceOnly: true,
+						scan: {
+							conditions: [...this.workspaceConditions],
+							preferHmrExports: true,
 						},
-					)
-					return res.ok ? this.path.toClean(res.entry) : null
-				} catch {
-					return null
-				}
+					},
+				)
+				return res.ok ? this.path.toClean(res.entry) : null
 			},
 			{
 				limit: this.cacheLimit,

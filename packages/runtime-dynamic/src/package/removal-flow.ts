@@ -1,7 +1,6 @@
 import type { PackageInstaller, PackageLogFn } from './installer'
-import type { ResolvedInstallOptions } from './internal-types'
 import type { NormalizedPackageSpecifier } from './specifiers'
-import type { PackageRemovalResult, PackageUninstallResult } from './types'
+import type { PackageRemovalResult, PackageUninstallResult, ResolvedInstallOptions } from './types'
 
 type BlockPackage = (name: string) => void
 
@@ -27,20 +26,12 @@ export class PackageRemovalFlow {
 			targets: specs.map((s) => s.target),
 		})
 
-		const markFailed = (spec: NormalizedPackageSpecifier, error: unknown) => {
-			const entry = results.find((item) => item.spec.key === spec.key)
-			if (entry) {
-				entry.status = 'failed'
-				entry.error = error
-			}
-		}
-
 		for (const spec of specs) {
 			try {
 				this.blockPackage(spec.name)
 				this.invalidatePackage(spec.name, { resync: false })
 			} catch (error) {
-				markFailed(spec, error)
+				markPackageResultFailed(results, spec, error)
 				this.logEvent('warn', 'uninstall:invalidate_failed', {
 					target: spec.target,
 					error,
@@ -74,20 +65,12 @@ export class PackageRemovalFlow {
 			targets: specs.map((s) => s.target),
 		})
 
-		const markFailed = (spec: NormalizedPackageSpecifier, error: unknown) => {
-			const entry = results.find((item) => item.spec.key === spec.key)
-			if (entry) {
-				entry.status = 'failed'
-				entry.error = error
-			}
-		}
-
 		for (const spec of specs) {
 			try {
 				this.blockPackage(spec.name)
 				this.invalidatePackage(spec.name, { resync: false })
 			} catch (error) {
-				markFailed(spec, error)
+				markPackageResultFailed(results, spec, error)
 				this.logEvent('warn', 'remove:invalidate_failed', {
 					target: spec.target,
 					error,
@@ -100,7 +83,7 @@ export class PackageRemovalFlow {
 			this.installer.invalidateCache(options.cwd)
 		} catch (error) {
 			for (const spec of specs) {
-				markFailed(spec, error)
+				markPackageResultFailed(results, spec, error)
 			}
 			this.logEvent('error', 'remove:batch_remove_failed', {
 				targets: specs.map((s) => s.target),
@@ -120,4 +103,15 @@ export class PackageRemovalFlow {
 		this.onSync()
 		return results
 	}
+}
+
+function markPackageResultFailed(
+	results: Array<PackageRemovalResult | PackageUninstallResult>,
+	spec: NormalizedPackageSpecifier,
+	error: unknown,
+) {
+	const entry = results.find((item) => item.spec.key === spec.key)
+	if (!entry) return
+	entry.status = 'failed'
+	entry.error = error
 }

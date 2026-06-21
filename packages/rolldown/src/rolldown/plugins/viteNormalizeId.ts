@@ -1,5 +1,5 @@
-import { normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { normalize } from 'pathe'
 
 export function normalizeViteId(id: string): string {
 	const cleaned = id.split('?')[0]!
@@ -15,5 +15,5 @@ export function normalizeViteId(id: string): string {
 }
 
 function normalizePath(path: string): string {
-	return normalize(path).replaceAll('\\', '/')
+	return normalize(path)
 }

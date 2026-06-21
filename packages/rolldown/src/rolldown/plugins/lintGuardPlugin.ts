@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { dirname, join, resolve } from 'pathe'
 import type { PluginContext } from 'rolldown'
 import { type ViteCompatPlugin } from './compat.ts'
 

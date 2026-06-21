@@ -1,10 +1,10 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, resolve } from 'pathe'
+import { dirname, isAbsolute, normalize, resolve } from 'pathe'
 import { boundedSet, resolveCacheLimit } from './cache'
 
 export function toPosixPath(value: string): string {
 	if (!value) return value
-	return value.includes('\\') ? value.replaceAll('\\', '/') : value
+	return normalize(value)
 }
 
 const nsToMs = (ns: bigint) => Number(ns) / 1e6

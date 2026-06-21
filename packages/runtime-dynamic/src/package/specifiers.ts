@@ -1,3 +1,5 @@
+import type { Maybe } from 'option-t/maybe'
+
 export type PackageSpecifierInput =
 	| string
 	| {
@@ -55,9 +57,19 @@ export function toSnapshot(spec: NormalizedPackageSpecifier): PackageSpecifierSn
 }
 
 export function fromSnapshot(snapshot: PackageSpecifierSnapshot): NormalizedPackageSpecifier {
+	const spec = tryFromSnapshot(snapshot)
+	if (!spec) {
+		throw new Error('Package specifier snapshot is empty.')
+	}
+	return spec
+}
+
+export function tryFromSnapshot(
+	snapshot: PackageSpecifierSnapshot,
+): Maybe<NormalizedPackageSpecifier> {
 	const { name, version, tag } = snapshot
 	const hint = version ? `${name}@${version}` : tag ? `${name}@${tag}` : snapshot.requested || name
-	return normalizeSpecifier(hint)
+	return tryNormalizeSpecifier(hint)
 }
 
 export function withVersion(

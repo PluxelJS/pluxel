@@ -1,4 +1,4 @@
-import type { Program } from 'oxc-parser'
+import { parseSync, type Program } from 'oxc-parser'
 
 export type Lang = 'ts' | 'tsx' | 'js' | 'jsx'
 
@@ -20,14 +20,27 @@ export function normalizePatterns(
 
 export function parseWithLang(ctx: unknown, code: string, id: string): Program | null {
 	const parse = (ctx as { parse?: (code: string, opts?: unknown) => Program } | null)?.parse
-	if (typeof parse !== 'function') return null
-	try {
-		return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
-	} catch {
+	if (typeof parse === 'function') {
 		try {
-			return parse.call(ctx, code) as Program
+			return parse.call(ctx, code, { lang: getLangFromId(id) }) as Program
 		} catch {
-			return null
+			try {
+				return parse.call(ctx, code) as Program
+			} catch {
+				// Fall through to standalone OXC parsers below.
+			}
 		}
+	}
+
+	return parseStandaloneWithLang(code, id)
+}
+
+export function parseStandaloneWithLang(code: string, id: string): Program | null {
+	const lang = getLangFromId(id)
+
+	try {
+		return parseSync(id, code, { sourceType: 'module', lang }).program ?? null
+	} catch {
+		return null
 	}
 }

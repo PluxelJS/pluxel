@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises'
+
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
 import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
-import type { ResolvedInstallOptions } from './internal-types'
 import type { NormalizedPackageSpecifier } from './specifiers'
-import type { InstallOptions } from './types'
+import type { InstallOptions, ResolvedInstallOptions } from './types'
+
+const MANAGED_PLUGIN_PATTERN = /^(?:@[^/]+\/)?pluxel-plugin(?:-|$)/i
 
 export function resolveStateFilePath(file?: string): string {
 	return file ? resolvePath(file) : resolveRuntimeStoragePaths(process.cwd()).packageStateFile
@@ -71,6 +74,56 @@ export function parseDependOn(value: unknown): string[] {
 }
 
 export function isManagedPackageName(name: string): boolean {
-	if (!name) return false
-	return /^(?:@[^/]+\/)?pluxel-plugin\b/.test(name)
+	return MANAGED_PLUGIN_PATTERN.test(name)
+}
+
+export function createDebouncedTrigger(config: {
+	delayMs: number
+	run: () => void | Promise<void>
+}): () => void {
+	let timer: ReturnType<typeof setTimeout> | null = null
+	let pending = false
+
+	return () => {
+		pending = true
+		if (timer) return
+		timer = setTimeout(async () => {
+			timer = null
+			if (!pending) return
+			pending = false
+			await config.run()
+		}, config.delayMs)
+	}
+}
+
+export async function collectDeclaredPlugins(roots: string[]): Promise<Set<string>> {
+	const result = new Set<string>()
+	await Promise.all(
+		roots.map(async (root) => {
+			try {
+				const pkgPath = resolvePath(root, 'package.json')
+				const content = await readFile(pkgPath, 'utf8')
+				const json: unknown = JSON.parse(content)
+				const rootManifest = asRecord(json)
+				collectDeps(asRecord(rootManifest?.dependencies), result)
+				collectDeps(asRecord(rootManifest?.optionalDependencies), result)
+				collectDeps(asRecord(rootManifest?.peerDependencies), result)
+			} catch {
+				// ignore unreadable roots
+			}
+		}),
+	)
+	return result
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+	if (!value || typeof value !== 'object') return undefined
+	return value as Record<string, unknown>
+}
+
+function collectDeps(deps: Record<string, unknown> | undefined, out: Set<string>) {
+	if (!deps) return
+	for (const name of Object.keys(deps)) {
+		if (MANAGED_PLUGIN_PATTERN.test(name)) out.add(name)
+	}
 }

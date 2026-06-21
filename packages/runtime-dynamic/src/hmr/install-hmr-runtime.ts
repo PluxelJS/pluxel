@@ -3,7 +3,6 @@ import type { Context } from '@pluxel/core'
 import {
 	clearHmrRuntimeHandles,
 	clearRuntimeModuleAdapter,
-	createHmrModuleRuntimeAdapter,
 	getHmrRuntimeHandles,
 	hasRuntimeModuleAdapter,
 	setHmrRuntimeHandles,
@@ -121,7 +120,7 @@ export async function installLoaderHmrRuntime(
 	ctx.config.loaderHmr = loaderHmr
 
 	const hmr = new LoaderHmrService(ctx, loaderHmr)
-	setRuntimeModuleAdapter(ctx, createHmrModuleRuntimeAdapter(hmr))
+	setRuntimeModuleAdapter(ctx, hmr)
 
 	const bundler = new BundlerService(ctx)
 	const extensionCompilerConfig = mergeExtensionCompilerViteConfig(

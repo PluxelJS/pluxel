@@ -1,4 +1,6 @@
 export { appendDtsImport } from './plugins/appendDtsImport.ts'
+export type { CollectedImportKind, CollectedImportSpecifier } from './plugins/importCollector.ts'
+export { collectImportSpecifiers } from './plugins/importCollector.ts'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
 export type { RuntimeUiBridgePluginOptions } from './plugins/runtimeUiBridgePlugin.ts'
@@ -11,6 +13,13 @@ export type {
 	TrackedPluginUsage,
 } from './plugins/importTrackerPlugin.ts'
 export { createImportTracker } from './plugins/importTrackerPlugin.ts'
+export type { Lang } from './plugins/pluginUtils.ts'
+export {
+	getLangFromId,
+	normalizePatterns,
+	parseStandaloneWithLang,
+	parseWithLang,
+} from './plugins/pluginUtils.ts'
 export { rewriteDtsModuleAugmentations } from './plugins/rewriteDtsModuleAugmentations.ts'
 export { rewriteDtsText } from './plugins/rewriteDtsText.ts'
 export { assertBundleNoText } from './plugins/assertBundleNoText.ts'

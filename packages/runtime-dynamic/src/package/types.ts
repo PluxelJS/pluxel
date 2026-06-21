@@ -99,6 +99,12 @@ export interface InstallOptions {
 	installPeerDependencies?: boolean
 }
 
+export interface ResolvedInstallOptions extends InstallOptions {
+	cwd: string
+	force: boolean
+	installPeerDependencies: boolean
+}
+
 /** Load options only keep resolution-related settings. */
 export interface LoadOptions {
 	scan?: ScanTaskOptions

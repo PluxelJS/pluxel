@@ -8,7 +8,6 @@ export {
 export type { RuntimeModuleAdapter, RuntimeModuleCacheEntry } from './runtime/module-runtime'
 export {
 	clearRuntimeModuleAdapter,
-	createHmrModuleRuntimeAdapter,
 	getRuntimeModuleAdapter,
 	hasRuntimeModuleAdapter,
 	setRuntimeModuleAdapter,

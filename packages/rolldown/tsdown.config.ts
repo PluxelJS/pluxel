@@ -7,13 +7,7 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: [
-			'@rolldown/pluginutils',
-			'fdir',
-			'oxc-parser',
-			'pathe',
-			'pkg-types',
-		],
+		alwaysBundle: ['@rolldown/pluginutils', 'fdir', 'pathe'],
 		neverBundle: [
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',
@@ -27,6 +21,7 @@ export default defineConfig({
 		index: 'src/index.ts',
 		build: 'src/cli/index.ts',
 		plugins: 'src/rolldown/index.ts',
+		'resolver/oxc': 'src/resolver/oxc.ts',
 		vite: 'src/vite/index.ts',
 		'vite/environment': 'src/vite/environment.ts',
 		'vite/paraglide': 'src/vite/paraglide.ts',

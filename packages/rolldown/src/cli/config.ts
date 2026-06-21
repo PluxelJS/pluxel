@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises'
 import { resolve } from 'pathe'
-import { resolvePackageJSON } from 'pkg-types'
 import { resolvePluginEnv } from './env'
+import { resolvePackageJsonPath } from './package-json'
 import type { BuildRuntimeConfig } from './types'
 
 const ENV_TSDOWN_CONFIG = 'PLUXEL_TSDOWN_CONFIG'
@@ -25,7 +25,7 @@ export async function resolveBuildContext(
 ): Promise<BuildRuntimeConfig> {
 	const projectRoot = process.cwd()
 	const envConfig = resolvePluginEnv()
-	const packageJsonPath = await resolvePackageJsonPath(projectRoot)
+	const packageJsonPath = await resolveProjectPackageJsonPath(projectRoot)
 	const tsdownConfigPath =
 		resolveOverridePath(process.env[ENV_TSDOWN_CONFIG], projectRoot) ??
 		(await discoverDefaultTsdownConfig(projectRoot))
@@ -46,9 +46,9 @@ export async function resolveBuildContext(
 	return context
 }
 
-async function resolvePackageJsonPath(projectRoot: string) {
+async function resolveProjectPackageJsonPath(projectRoot: string) {
 	try {
-		return await resolvePackageJSON(projectRoot)
+		return await resolvePackageJsonPath(projectRoot)
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error)
 		throw new Error(`Unable to find package.json under ${projectRoot}: ${reason}`, {

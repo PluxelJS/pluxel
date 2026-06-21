@@ -1,14 +1,13 @@
 import type { PackageInstaller, PackageLogFn } from './installer'
-import type { ResolvedInstallOptions } from './internal-types'
+import { formatUnknownErrorMessage, PackageServiceError } from './errors'
 import type { NormalizedPackageSpecifier } from './specifiers'
-import type { PackageInstallResult } from './types'
+import type { PackageInstallResult, ResolvedInstallOptions } from './types'
 
 export class PackageInstallFlow {
 	constructor(
 		private readonly installer: PackageInstaller,
 		private readonly logEvent: PackageLogFn,
 		private readonly onPackageInstalled: (result: PackageInstallResult) => void,
-		private readonly createError: (code: string, message: string, detail?: unknown) => Error,
 	) {}
 
 	async installOne(
@@ -48,12 +47,12 @@ export class PackageInstallFlow {
 			})
 			return installResult
 		} catch (error) {
-			const message = error instanceof Error ? error.message : '未知错误'
+			const message = formatUnknownErrorMessage(error)
 			this.logEvent('error', 'install:failed', {
 				target: spec.target,
 				message,
 			})
-			throw this.createError('INSTALL_FAILED', `安装插件 "${spec.target}" 失败：${message}`, {
+			throw new PackageServiceError('INSTALL_FAILED', `安装插件 "${spec.target}" 失败：${message}`, {
 				cause: error,
 				spec,
 				options,
@@ -99,12 +98,12 @@ export class PackageInstallFlow {
 					force,
 				})
 			} catch (error) {
-				const message = error instanceof Error ? error.message : '未知错误'
+				const message = formatUnknownErrorMessage(error)
 				this.logEvent('error', 'installMany:failed', {
 					targets: toInstall.map((s) => s.target),
 					message,
 				})
-				throw this.createError('INSTALL_FAILED', `批量安装插件失败：${message}`, {
+				throw new PackageServiceError('INSTALL_FAILED', `批量安装插件失败：${message}`, {
 					cause: error,
 					specs: toInstall,
 					options,

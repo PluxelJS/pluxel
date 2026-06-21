@@ -21,16 +21,15 @@ import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	clearSieveState,
 	cleanViteUrl as cleanUrl,
-	type ExsolveResolver,
+	type OxcResolver,
 	findNearestPackageRoot,
 	fsPathFromViteFsId,
 	getCachedResolver,
-	getExsolveCache,
+	getOxcResolveCache,
 	getOrCreatePromise,
 	isBarePackageSpecifier,
 	resolveCacheLimit,
 	resolveModulePath,
-	toDirectoryURLString,
 	unwrapViteId,
 } from '@pluxel/runtime/shared'
 import type { HmrPathApi } from './environment'
@@ -60,7 +59,7 @@ export type HmrRunnerInitOptions = {
 	bridgeModules?: readonly string[]
 	/** Optional bridge specifier → provider specifier mapping. */
 	bridgeProviders?: Readonly<Record<string, string>>
-	/** Optional shared exsolve cache map (recommended: share with ScanService). */
+	/** Optional shared OXC resolver cache map (recommended: share with ScanService). */
 	resolveCache?: Map<string, unknown>
 	/** Export conditions used when resolving workspace entries (source preference). */
 	workspaceConditions?: readonly string[]
@@ -81,7 +80,7 @@ export class HmrRunner {
 
 	private _env: DevEnvironment | null = null
 	private _runner: ModuleRunner | null = null
-	private _hostResolver!: ExsolveResolver
+	private _hostResolver!: OxcResolver
 	private _hostCwdAbs: string | null = null
 	private _cjsExternal: readonly string[] = []
 	private _skipPlugin: Plugin | null = null
@@ -107,10 +106,9 @@ export class HmrRunner {
 		// - this module: last-resort (pnpm workspace symlinks / direct execution)
 		this._hostCwdAbs = resolve(opts.hostCwd ?? process.cwd())
 		const viteRootAbs = resolve(server.config.root)
-		const resolveCache = getExsolveCache(opts.resolveCache)
-		const hostCwdUrl = toDirectoryURLString(this._hostCwdAbs)
-		const viteRootUrl = toDirectoryURLString(viteRootAbs)
-		const resolverFrom = [...new Set([hostCwdUrl, viteRootUrl, import.meta.url])]
+		const resolveCache = getOxcResolveCache(opts.resolveCache)
+		const moduleDir = dirname(fileURLToPath(import.meta.url))
+		const resolverFrom = [...new Set([this._hostCwdAbs, viteRootAbs, moduleDir])]
 		this._hostResolver = getCachedResolver(resolveCache, 'hmr:runner-resolver', resolverFrom, {
 			limit: 8,
 		})

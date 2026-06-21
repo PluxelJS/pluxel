@@ -7,7 +7,6 @@ import {
 	type PackageSelector,
 	selectorKeys,
 } from './selectors'
-import { createScanCacheKey } from './shared'
 import type { EntryResolution, PackageNode, ResolvedScanOptions, ScanGraph } from './types'
 
 export interface ScanSnapshot {
@@ -21,52 +20,27 @@ export interface ScanSnapshot {
 	resolveEntry(selector: PackageSelector): EntryResolution | undefined
 }
 
-export class ScanSnapshotBuilder {
-	constructor(
-		private readonly entryResolver: EntryResolver,
-		private readonly fs: WorkspaceFs = nodeWorkspaceFs,
-	) {}
+export async function buildScanSnapshot(
+	inputs: string[],
+	options: ResolvedScanOptions,
+	entryResolver: EntryResolver,
+	fs: WorkspaceFs = nodeWorkspaceFs,
+): Promise<ScanSnapshot> {
+	const graph = await buildScanGraph(inputs, options, entryResolver, fs)
+	const index = indexPackages(graph.packages)
 
-	async build(inputs: string[], options: ResolvedScanOptions): Promise<ScanSnapshot> {
-		const graph = await buildScanGraph(inputs, options, this.entryResolver, this.fs)
-		const index = indexPackages(graph.packages)
+	const findPackage = (selector: PackageSelector) => selectPackage(selector, index)
+	const resolveEntry = (selector: PackageSelector) => findPackage(selector)?.entry
 
-		const findPackage = (selector: PackageSelector) => selectPackage(selector, index)
-		const resolveEntry = (selector: PackageSelector) => findPackage(selector)?.entry
-
-		return {
-			graph,
-			packages: graph.packages,
-			entries: graph.entries,
-			fallbackEntries: graph.fallbackEntries,
-			byName: index.byName,
-			byDir: index.byDir,
-			findPackage,
-			resolveEntry,
-		}
-	}
-}
-
-export class ScanSnapshotCache {
-	private readonly cache = new Map<string, Promise<ScanSnapshot>>()
-
-	constructor(private readonly builder: ScanSnapshotBuilder) {}
-
-	get(inputs: string[], options: ResolvedScanOptions): Promise<ScanSnapshot> {
-		const key = createScanCacheKey(inputs, options)
-		const cached = this.cache.get(key)
-		if (cached) return cached
-
-		const promise = this.builder.build(inputs, options).catch((err) => {
-			this.cache.delete(key)
-			throw err
-		})
-		this.cache.set(key, promise)
-		return promise
-	}
-
-	clear() {
-		this.cache.clear()
+	return {
+		graph,
+		packages: graph.packages,
+		entries: graph.entries,
+		fallbackEntries: graph.fallbackEntries,
+		byName: index.byName,
+		byDir: index.byDir,
+		findPackage,
+		resolveEntry,
 	}
 }
 

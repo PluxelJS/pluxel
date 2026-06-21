@@ -40,7 +40,18 @@ export function runtimePluginKeyOfName(name: string): RuntimePluginKey {
 	return name as RuntimePluginKey
 }
 
+const runtimeKeysByCtor = new WeakMap<PluginConstructor, RuntimePluginKey>()
+
 export function runtimePluginKeyOfCtor(ctor: PluginIdentifier): RuntimePluginKey {
+	const keyCtor = ctor as PluginConstructor
+	const cached = runtimeKeysByCtor.get(keyCtor)
+	if (cached) return cached
+	const key = computeRuntimePluginKeyOfCtor(ctor)
+	runtimeKeysByCtor.set(keyCtor, key)
+	return key
+}
+
+function computeRuntimePluginKeyOfCtor(ctor: PluginIdentifier): RuntimePluginKey {
 	const info = getPluginInfo(ctor as PluginConstructor)
 	const forkId = getForkId(ctor)
 	if (!forkId) return info.id as RuntimePluginKey

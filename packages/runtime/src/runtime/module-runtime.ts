@@ -24,50 +24,20 @@ const identityModuleRuntime: RuntimeModuleAdapter = {
 	dropModuleCacheEntries() {},
 }
 
-const store = new WeakMap<object, RuntimeModuleAdapter>()
+const store = new WeakMap<Context.Root, RuntimeModuleAdapter>()
 
-export function getRuntimeModuleAdapter(ctx: Pick<Context, 'config'>): RuntimeModuleAdapter {
-	return store.get(ctx as object) ?? identityModuleRuntime
+export function getRuntimeModuleAdapter(ctx: Context): RuntimeModuleAdapter {
+	return store.get(ctx.root) ?? identityModuleRuntime
 }
 
-export function hasRuntimeModuleAdapter(ctx: Pick<Context, 'config'>): boolean {
-	return store.has(ctx as object)
+export function hasRuntimeModuleAdapter(ctx: Context): boolean {
+	return store.has(ctx.root)
 }
 
-export function setRuntimeModuleAdapter(
-	ctx: Pick<Context, 'config'>,
-	adapter: RuntimeModuleAdapter,
-): void {
-	store.set(ctx as object, adapter)
+export function setRuntimeModuleAdapter(ctx: Context, adapter: RuntimeModuleAdapter): void {
+	store.set(ctx.root, adapter)
 }
 
-export function clearRuntimeModuleAdapter(ctx: Pick<Context, 'config'>): void {
-	store.delete(ctx as object)
-}
-
-export function createHmrModuleRuntimeAdapter(
-	hmr: Pick<
-		{
-			normalizeId(moduleId: string): string
-			moduleIdAliases(moduleId: string): Iterable<string>
-			primeModuleCacheEntry(entry: RuntimeModuleCacheEntry): void
-			dropModuleCacheEntries(ids: Iterable<string>): void
-		},
-		'normalizeId' | 'moduleIdAliases' | 'primeModuleCacheEntry' | 'dropModuleCacheEntries'
-	>,
-): RuntimeModuleAdapter {
-	return {
-		normalizeId(moduleId) {
-			return hmr.normalizeId(moduleId)
-		},
-		moduleIdAliases(moduleId) {
-			return hmr.moduleIdAliases(moduleId)
-		},
-		primeModuleCacheEntry(entry) {
-			hmr.primeModuleCacheEntry(entry)
-		},
-		dropModuleCacheEntries(ids) {
-			hmr.dropModuleCacheEntries(ids)
-		},
-	}
+export function clearRuntimeModuleAdapter(ctx: Context): void {
+	store.delete(ctx.root)
 }

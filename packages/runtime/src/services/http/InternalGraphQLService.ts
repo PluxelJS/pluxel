@@ -113,7 +113,7 @@ export class InternalGraphQLService {
 		try {
 			this.logger.info('Generating GQLens client…', { destination })
 
-			const { dirname } = await import('node:path')
+			const { dirname } = await import('pathe')
 			const { fileURLToPath } = await import('node:url')
 			const { mkdir, readFile, writeFile } = await import('node:fs/promises')
 			const { generateFiles } = await import('@gqlens/codegen')

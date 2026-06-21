@@ -1,6 +1,11 @@
 import { statSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { dirname, isAbsolute, resolve } from 'pathe'
+import { getOxcResolveCache } from '../services/runtime/shared/oxc-resolver'
+import {
+	getCachedResolver,
+	RESOLVE_CHECK_CONDITIONS,
+	resolveModulePath,
+} from '../services/runtime/shared/resolution'
 
 type RuntimeModuleLookupContext = {
 	registry?: {
@@ -35,16 +40,17 @@ export function resolveModuleIdPath(moduleId: string, cwd = process.cwd()): stri
 	if (!normalized) return null
 	if (isAbsolute(normalized)) return normalized
 
-	for (const candidate of getRequireBases(cwd)) {
-		try {
-			const req = createRequire(candidate)
-			return req.resolve(normalized)
-		} catch {
-			// Try the next base.
-		}
+	try {
+		const resolver = getCachedResolver(
+			getOxcResolveCache(),
+			'runtime:module-id-resolver',
+			getResolveBaseDirs(cwd),
+			{ limit: 16 },
+		)
+		return resolveModulePath(resolver, normalized, { conditions: RESOLVE_CHECK_CONDITIONS })
+	} catch {
+		return null
 	}
-
-	return null
 }
 
 export function resolveModuleIdBaseDir(moduleId: string, cwd = process.cwd()): string | null {
@@ -61,12 +67,11 @@ export function resolveModuleIdBaseDir(moduleId: string, cwd = process.cwd()): s
 	return dirname(resolved)
 }
 
-function getRequireBases(cwd: string): string[] {
-	const bases = [resolve(cwd, '__pluxel_runtime_module_id__.mjs')]
+function getResolveBaseDirs(cwd: string): string[] {
+	const bases = [resolve(cwd)]
 	const entryScript = process.argv[1]
 	if (typeof entryScript === 'string' && entryScript.trim() && isAbsolute(entryScript)) {
-		bases.push(entryScript)
-		bases.push(resolve(dirname(entryScript), '__pluxel_runtime_module_id__.mjs'))
+		bases.push(dirname(entryScript))
 	}
 	return bases
 }

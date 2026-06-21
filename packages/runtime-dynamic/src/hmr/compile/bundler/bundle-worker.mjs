@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'pathe'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
+import { collectImportSpecifiers, parseWithLang } from '@pluxel/rolldown/plugins'
 
 const normalizeOutput = (res) => {
 	if (Array.isArray(res)) return res
@@ -37,7 +38,7 @@ export default async function runBundle(job) {
 				: null
 
 		const jobResolve = resolve ?? {}
-		const conditions = [...new Set(['@pluxel/runtime', ...jobResolve.conditions ?? []])]
+		const conditions = [...new Set(['@pluxel/runtime', ...(jobResolve.conditions ?? [])])]
 
 		result = await build({
 			root,
@@ -292,7 +293,6 @@ function createBrowserImportGuardPlugin(opts) {
 		throw new Error(lines.filter(Boolean).join('\n'))
 	}
 
-	const DYN_IMPORT = /\bimport\s*\(\s*(["'`])([^"'`]+)\1\s*\)/g
 	const externalSet = opts.externalSet ?? new Set()
 
 	return {
@@ -341,12 +341,14 @@ function createBrowserImportGuardPlugin(opts) {
 			if (typeof code !== 'string') return null
 			if (!code.includes('import(')) return null
 
-			const matches = [...code.matchAll(DYN_IMPORT)]
-			if (matches.length === 0) return null
+			const ast = parseWithLang(this, code, id)
+			const dynamicImports = ast
+				? collectImportSpecifiers(ast).filter((item) => item.kind === 'dynamic')
+				: []
+			if (dynamicImports.length === 0) return null
 
-			for (const m of matches) {
-				const spec = m?.[2]
-				if (!spec) continue
+			for (const item of dynamicImports) {
+				const spec = item.specifier
 				const unwrapped = unwrapViteBrowserExternalId(spec)
 				const check = unwrapped ?? spec
 				if (forbidden.has(check)) {

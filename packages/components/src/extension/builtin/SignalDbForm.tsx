@@ -9,20 +9,19 @@ import {
 	useSignalDbCollectionsState,
 	useSignalDbQueryState,
 } from '@pluxel/runtime/web'
-import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { getPluginSchema, type RuntimeRpcStub } from '../../runtime'
 import { applySignalDbWrite, isObject, resolveSignalDbRef, stableSignalDbValueKey } from './_shared'
 
-type SchemaCacheEntry = { schema: ObjectSchema<any, any>; defaults: Record<string, any> }
+type SchemaCacheEntry = { schema: v.ObjectSchema<any, any>; defaults: Record<string, any> }
 const schemaCache = new Map<string, SchemaCacheEntry>()
 
 type SchemaLoadState =
 	| { status: 'loading' }
 	| { status: 'error'; error: Error }
-	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
+	| { status: 'ready'; schema: v.ObjectSchema<any, any>; defaults: Record<string, any> }
 
 function normalizeKey(input: unknown): string {
 	return typeof input === 'string' ? input.trim() : ''

@@ -25,10 +25,9 @@ import type {
 } from '../types'
 
 type StaticRuntimePlanOptions =
-	| { mode: 'startup' }
+	| { reason: 'startup' }
 	| {
-			mode: 'hmr'
-			previous: StaticRuntimeCatalog
+			reason: 'hmr'
 			diff: StaticRuntimeCatalogDiff
 	  }
 
@@ -51,7 +50,7 @@ type StaticRuntimeDraftOperation =
 	  }
 
 type StaticRuntimeCatalogPlan = {
-	readonly mode: StaticRuntimePlanOptions['mode']
+	readonly reason: StaticRuntimePlanOptions['reason']
 	readonly catalog: StaticRuntimeCatalog
 	readonly enabled: ReadonlySet<string>
 	readonly blocked: ReadonlySet<string>
@@ -104,7 +103,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		if (this.disposed) throw new Error('[runtime-static] cannot start a disposed host')
 		if (this.started) return this.report ?? this.createNoopReport()
 		this.started = true
-		const plan = await this.createCatalogPlan(this.catalog, { mode: 'startup' })
+		const plan = await this.createCatalogPlan(this.catalog, { reason: 'startup' })
 		this.report = await this.applyCatalogPlan(plan)
 		return this.report
 	}
@@ -141,8 +140,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.catalog = next
 
 		const plan = await this.createCatalogPlan(next, {
-			mode: 'hmr',
-			previous,
+			reason: 'hmr',
 			diff,
 		})
 		const report = await this.applyCatalogPlan(plan)
@@ -178,10 +176,8 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			entries.push({ name: unknown, status: 'unknown-config-entry' })
 		}
 
-		if (options.mode === 'hmr') {
+		if (options.reason === 'hmr') {
 			for (const name of options.diff.removed) {
-				const previous = options.previous.byName.get(name)
-				if (!previous) continue
 				entries.push({
 					name,
 					status: 'catalog-drift',
@@ -204,7 +200,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.applyDependencyBlocks(catalog, enabled, blocked, entries)
 
 		return {
-			mode: options.mode,
+			reason: options.reason,
 			catalog,
 			entries,
 			enabled,
@@ -219,7 +215,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		options: StaticRuntimePlanOptions,
 	): Set<string> {
 		const names = new Set<string>()
-		if (options.mode === 'startup') {
+		if (options.reason === 'startup') {
 			for (const name of enabled) names.add(name)
 			return names
 		}
@@ -290,7 +286,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	): StaticRuntimeDraftOperation[] {
 		const operations: StaticRuntimeDraftOperation[] = []
 
-		if (options.mode === 'hmr') {
+		if (options.reason === 'hmr') {
 			for (const name of options.diff.removed) {
 				const current = this.registeredByName.get(name)
 				if (!current) continue
@@ -326,7 +322,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		plan: StaticRuntimeCatalogPlan,
 	): Promise<StaticRuntimeStartupReport> {
 		const update = this.ctx.registry.beginUpdate({
-			reason: plan.mode === 'hmr' ? 'hmr' : 'startup',
+			reason: plan.reason,
 		})
 		let commit: CommitSummary | undefined
 		try {
@@ -385,25 +381,20 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		plan: StaticRuntimeCatalogPlan,
 		update: ReturnType<Context['registry']['beginUpdate']>,
 	): Promise<CommitSummary | undefined> {
-		if (plan.operations.length === 0) {
-			const result = await update.commit({ rollbackOnFailure: false })
-			if (!result.ok) {
-				update.rollback()
-				plan.entries.push({
-					name: this.definition.name,
-					status: 'catalog-drift',
-					message: errorMessage(result.err),
-				})
-				return undefined
-			}
-			return this.ctx.registry.lastCommit
-		}
-
 		const result = await update.commit({ rollbackOnFailure: false })
 		if (result.ok) return this.ctx.registry.lastCommit
 
 		update.rollback()
 		const message = errorMessage(result.err)
+		if (plan.operations.length === 0) {
+			plan.entries.push({
+				name: this.definition.name,
+				status: 'catalog-drift',
+				message,
+			})
+			return undefined
+		}
+
 		for (const operation of plan.operations) {
 			plan.entries.push({ name: operation.name, status: 'dependency-missing', message })
 		}

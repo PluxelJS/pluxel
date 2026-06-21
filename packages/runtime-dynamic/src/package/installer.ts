@@ -1,11 +1,28 @@
+import { readFile } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { addDependency, removeDependency, type OperationOptions } from 'nypm'
-import { type PackageJson, readPackageJSON } from 'pkg-types'
+import { resolve } from 'pathe'
 
-import { canResolveFromCwd, getExsolveCache } from '@pluxel/runtime/shared'
-import type { ResolvedInstallOptions } from './internal-types'
+import {
+	canResolveFromCwd,
+	getCachedResolver,
+	getOxcResolveCache,
+	installedPackageJsonPath,
+	resolvePackageJsonPathWithOxc,
+} from '@pluxel/runtime/shared'
 import type { NormalizedPackageSpecifier, PackageSpecifierInput } from './specifiers'
-import type { PackageInstallResult } from './types'
+import type { PackageInstallResult, ResolvedInstallOptions } from './types'
+
+type PackageJson = {
+	name?: string
+	version?: string
+	dependencies?: Record<string, string>
+	devDependencies?: Record<string, string>
+	optionalDependencies?: Record<string, string>
+	peerDependencies?: Record<string, string>
+	peerDependenciesMeta?: Record<string, { optional?: boolean; dev?: boolean }>
+	[key: string]: unknown
+}
 
 export type PackageLogFn = (
 	level: 'info' | 'warn' | 'error',
@@ -52,13 +69,7 @@ export class PackageInstaller {
 	async dependencyExists(name: string, options: ResolvedInstallOptions): Promise<boolean> {
 		const cwd = options.cwd ?? process.cwd()
 
-		let sharedResolveCache: Map<string, unknown> | undefined
-		try {
-			sharedResolveCache = this.ctx.scanService.resolverCache
-		} catch {
-			sharedResolveCache = undefined
-		}
-		const cache = getExsolveCache(sharedResolveCache)
+		const cache = getOxcResolveCache(this.sharedResolveCache())
 		return canResolveFromCwd(cwd, name, cache, {
 			group: 'package:installer-resolver',
 			limit: 16,
@@ -235,9 +246,38 @@ export class PackageInstaller {
 
 	private async readPackageJsonSafe(pathOrName: string, cwd?: string): Promise<PackageJson> {
 		try {
-			return await readPackageJSON(pathOrName, cwd ? { url: cwd } : undefined)
+			if (!cwd) {
+				const path = pathOrName.endsWith('package.json')
+					? pathOrName
+					: resolve(pathOrName, 'package.json')
+				return await readPackageJsonFile(path)
+			}
+
+			const cache = getOxcResolveCache(this.sharedResolveCache())
+			const resolver = getCachedResolver(cache, 'package:installer-package-json-resolver', [cwd], {
+				limit: 16,
+			})
+			const resolvedPath = resolvePackageJsonPathWithOxc(resolver, pathOrName, {
+				conditions: ['node', 'import', 'require', 'default'],
+			})
+			if (resolvedPath) return await readPackageJsonFile(resolvedPath)
+
+			const directPath = installedPackageJsonPath(cwd, pathOrName)
+			return directPath ? await readPackageJsonFile(directPath) : {}
 		} catch {
 			return {}
 		}
 	}
+
+	private sharedResolveCache(): Map<string, unknown> | undefined {
+		try {
+			return this.ctx.scanService.resolverCache
+		} catch {
+			return undefined
+		}
+	}
+}
+
+async function readPackageJsonFile(path: string): Promise<PackageJson> {
+	return JSON.parse(await readFile(path, 'utf8')) as PackageJson
 }

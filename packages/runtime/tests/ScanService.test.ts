@@ -30,6 +30,26 @@ const scanSingleFixture = {
 	'node_modules/pathe/index.js': "export const join = (...parts) => parts.join('/')\n",
 } satisfies Record<string, string>
 
+const hmrConditionFixture = {
+	'package.json': JSON.stringify(
+		{
+			name: 'scan-hmr-condition-fixture',
+			version: '1.0.0',
+			type: 'module',
+			exports: {
+				'.': {
+					'@pluxel/hmr': './src/index.ts',
+					default: './dist/index.mjs',
+				},
+			},
+		},
+		null,
+		2,
+	),
+	'src/index.ts': "export const source = 'hmr'\n",
+	'dist/index.mjs': "export const source = 'dist'\n",
+} satisfies Record<string, string>
+
 const scanTsOnlyFixture = {
 	'index.ts': "export const hello = 'ts-only'\n",
 } satisfies Record<string, string>
@@ -72,6 +92,26 @@ describe('ScanService', () => {
 
 		expect(resolution.ok).toBe(true)
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/lib\/index\.js$/)
+	})
+
+	it('does not use the HMR export condition for default package resolution', async () => {
+		await using fixture = await createDiskFixture(hmrConditionFixture)
+		const service = createService(normalize(fixture.path))
+		const resolution = await service.resolveEntryByName('scan-hmr-condition-fixture')
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/dist\/index\.mjs$/)
+	})
+
+	it('uses the HMR export condition only when explicitly requested', async () => {
+		await using fixture = await createDiskFixture(hmrConditionFixture)
+		const service = createService(normalize(fixture.path))
+		const resolution = await service.resolveEntryByName('scan-hmr-condition-fixture', {
+			scan: { preferHmrExports: true },
+		})
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/src\/index\.ts$/)
 	})
 
 	it('falls back to installed packages when not in workspace', async () => {

@@ -158,7 +158,7 @@ export async function startPluginsWithStrategy<T>(
 		return failed
 	}
 
-	const concurrency = normalizeStartConcurrency(opts.concurrency)
+	const concurrency = normalizeConcurrency(opts.concurrency, 8)
 	await startPluginsReadyQueue(plan, instantiateAndStart, failed, concurrency)
 	return failed
 }
@@ -312,13 +312,6 @@ function markBlockedNode<T>(
 	blocked.push(id)
 }
 
-function normalizeStartConcurrency(value: number | undefined): number {
-	if (value === null || value === undefined) return 8
-	if (!Number.isFinite(value)) return 8
-	const n = Math.floor(value)
-	return n >= 1 ? n : 1
-}
-
 /* ─────────────────────────── Teardown Strategy ─────────────────────────── */
 
 export type TeardownStrategyOptions = {
@@ -345,7 +338,7 @@ export async function stopPluginsTopo<T>(
 		return
 	}
 
-	const concurrency = normalizeStopConcurrency(opts.concurrency, 1)
+	const concurrency = normalizeConcurrency(opts.concurrency, 1)
 
 	// Reverse-topo scheduler:
 	// - a node becomes "ready to stop" once all of its affected dependents are stopped.
@@ -416,7 +409,7 @@ export async function stopPluginsTopo<T>(
 	}
 }
 
-function normalizeStopConcurrency(value: number | undefined, fallback: number): number {
+function normalizeConcurrency(value: number | undefined, fallback: number): number {
 	if (value === null || value === undefined) return fallback
 	if (!Number.isFinite(value)) return fallback
 	const n = Math.floor(value)

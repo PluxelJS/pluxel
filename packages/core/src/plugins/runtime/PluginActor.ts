@@ -294,7 +294,7 @@ export class PluginLifecycleActor {
 				sub.unsubscribe()
 			}
 
-				if (timeoutMs !== null && timeoutMs !== undefined) {
+			if (timeoutMs !== null && timeoutMs !== undefined) {
 				timer = setTimeout(() => {
 					if (done) return
 					done = true
@@ -305,17 +305,12 @@ export class PluginLifecycleActor {
 		})
 	}
 
-	waitForState(states: readonly LifecycleState[], timeoutMs?: number): Promise<LifecycleSnapshot> {
-		const set = new Set(states)
-		return this.waitUntil((s) => set.has(s.value), timeoutMs)
-	}
-
 	waitForStable(timeoutMs?: number): Promise<LifecycleSnapshot> {
-		return this.waitForState(['running', 'failing', 'stopped'], timeoutMs)
+		return this.waitUntil(lifecycleSelectors.isStable, timeoutMs)
 	}
 
 	waitForStopped(timeoutMs?: number): Promise<LifecycleSnapshot> {
-		return this.waitForState(['stopped'], timeoutMs)
+		return this.waitUntil(lifecycleSelectors.isStopped, timeoutMs)
 	}
 
 	send(event: LifecycleEvent): void {

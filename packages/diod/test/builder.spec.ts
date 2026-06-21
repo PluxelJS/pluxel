@@ -141,7 +141,7 @@ describe('build-time validations and registry ops', () => {
 		expectOk(builder.tryRegisterAndUse(circular2.Circular2)).withDependencies([circular1.Circular1])
 
 		// 成功构建
-		expectOk(builder.build({ autowire: false }))
+		expect(() => expectOk(builder.build({ autowire: false }))).not.toThrow()
 	})
 
 	it('throws error if service is registered twice', () => {

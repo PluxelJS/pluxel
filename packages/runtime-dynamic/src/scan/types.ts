@@ -1,15 +1,15 @@
-import type { PackageJson } from 'pkg-types'
+import type { WorkspacePackageJson as PackageJson } from '@pluxel/rolldown/workspace/info'
 
 /* ----------------------------- Options / Config ----------------------------- */
 
 /** Public options that callers can override per invocation. */
 export interface ScanOptions {
-	/** Resolution conditions passed to the module resolver (exsolve). */
+	/** Resolution conditions passed to the module resolver (OXC resolver). */
 	conditions: string[]
 	/** Fallback relative paths tried when no explicit entry is found. */
 	conservativeCandidates: string[]
-	/** Prefer the `@pluxel/runtime-dynamic` export target when present. */
-	preferRuntimeDynamicExports: boolean
+	/** Prefer the loader-HMR export condition (`@pluxel/hmr`). */
+	preferHmrExports: boolean
 	/** Whether to treat the workspace root itself as a package. */
 	includeRoot: boolean
 	/** Skip workspace packages that don't declare `name`. */

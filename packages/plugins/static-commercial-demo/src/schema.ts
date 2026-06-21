@@ -65,9 +65,9 @@ const commercialResolver = resolver({
 	}),
 	customer: query(CustomerSchema)
 		.input({ id: id() })
-		.resolve(({ id }, payload) => {
+		.resolve(({ id: customerId }, payload) => {
 			const context = payload?.context as CommercialContext
-			return context.services.customer(id)
+			return context.services.customer(customerId)
 		}),
 	orders: query(silk.list(OrderSchema)).resolve((_args, payload) => {
 		const context = payload?.context as CommercialContext
@@ -75,9 +75,9 @@ const commercialResolver = resolver({
 	}),
 	order: query(OrderSchema)
 		.input({ id: id() })
-		.resolve(({ id }, payload) => {
+		.resolve(({ id: orderId }, payload) => {
 			const context = payload?.context as CommercialContext
-			return context.services.order(id)
+			return context.services.order(orderId)
 		}),
 	ordersByStatus: query(silk.list(OrderSchema))
 		.input({ status: OrderStatusSchema })
@@ -87,21 +87,21 @@ const commercialResolver = resolver({
 		}),
 	approveOrder: mutation(OrderSchema)
 		.input({ id: id() })
-		.resolve(({ id }, payload) => {
+		.resolve(({ id: orderId }, payload) => {
 			const context = payload?.context as CommercialContext
-			return context.services.approveOrder(id)
+			return context.services.approveOrder(orderId)
 		}),
 	updateOrderAmount: mutation(OrderSchema)
 		.input({ id: id(), amount: v.nonOptional(v.number()) })
-		.resolve(({ id, amount }, payload) => {
+		.resolve(({ id: orderId, amount }, payload) => {
 			const context = payload?.context as CommercialContext
-			return context.services.updateOrderAmount(id, amount)
+			return context.services.updateOrderAmount(orderId, amount)
 		}),
 	setCustomerHealth: mutation(CustomerSchema)
 		.input({ id: id(), score: v.nonOptional(v.number()) })
-		.resolve(({ id, score }, payload) => {
+		.resolve(({ id: customerId, score }, payload) => {
 			const context = payload?.context as CommercialContext
-			return context.services.setCustomerHealth(id, score)
+			return context.services.setCustomerHealth(customerId, score)
 		}),
 })
 

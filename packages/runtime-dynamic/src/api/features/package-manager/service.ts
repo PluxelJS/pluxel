@@ -9,13 +9,17 @@ import type {
 	PackageSpecifierInput as PackageSpecifierInputSchema,
 } from './schema'
 import {
-	PackageServiceError,
 	type InstallOptions,
 	type PackageInstallStatus,
 	type PackageLoadIssue as ServiceIssue,
 	type PackageReloadResult,
 	type PackageService,
 } from '../../../package/PackageService'
+import {
+	formatUnknownErrorMessage,
+	getUnknownErrorStack,
+	unwrapErrorCause,
+} from '../../../package/errors'
 import {
 	normalizeSpecifier,
 	type NormalizedPackageSpecifier,
@@ -465,23 +469,12 @@ function serializeReloadResults(
 
 function formatUnknownError(error: unknown, fallback?: string): string | null {
 	if ((error === null || error === undefined) && !fallback) return null
-	const target = unwrapError(error) ?? fallback
-	if (target instanceof Error) return target.stack ?? target.message ?? fallback ?? null
-	if (typeof target === 'string') return target
-	try {
-		return JSON.stringify(target)
-	} catch {
-		return target !== null && target !== undefined ? String(target) : (fallback ?? null)
-	}
-}
-
-function unwrapError(error: unknown): unknown {
-	if (error instanceof PackageServiceError && error.cause) return error.cause
-	if (error && typeof error === 'object' && 'cause' in (error as any)) {
-		const cause = (error as any).cause
-		if (cause) return cause
-	}
-	return error
+	const stack = getUnknownErrorStack(error)
+	if (stack) return stack
+	const target = unwrapErrorCause(error, { acceptNonErrorCause: true }) ?? fallback
+	return target === null || target === undefined
+		? (fallback ?? null)
+		: formatUnknownErrorMessage(target, fallback ?? '未知错误')
 }
 
 function resolveConcurrency(size: number): number {

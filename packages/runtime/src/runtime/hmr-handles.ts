@@ -33,20 +33,16 @@ export type HmrRuntimeHandles = {
 	}
 }
 
-function resolveHandleOwner(ctx: Context): Context {
-	return ((ctx as unknown as { root?: Context }).root ?? ctx) as Context
-}
-
-const store = new WeakMap<Context, HmrRuntimeHandles>()
+const store = new WeakMap<Context.Root, HmrRuntimeHandles>()
 
 export function setHmrRuntimeHandles(ctx: Context, handles: HmrRuntimeHandles): void {
-	store.set(resolveHandleOwner(ctx), handles)
+	store.set(ctx.root, handles)
 }
 
 export function getHmrRuntimeHandles(ctx: Context): HmrRuntimeHandles | null {
-	return store.get(resolveHandleOwner(ctx)) ?? null
+	return store.get(ctx.root) ?? null
 }
 
 export function clearHmrRuntimeHandles(ctx: Context): void {
-	store.delete(resolveHandleOwner(ctx))
+	store.delete(ctx.root)
 }

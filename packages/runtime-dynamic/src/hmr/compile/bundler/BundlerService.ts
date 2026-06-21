@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { cpus } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
@@ -8,6 +9,7 @@ import { getDebugLogger } from '@pluxel/core/logger'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from '@pluxel/runtime/internal'
 import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
+import { Tinypool } from 'tinypool'
 import { collectModuleGraphFiles } from './moduleGraph'
 
 const serviceName = 'bundlerService' as const
@@ -300,13 +302,11 @@ export class BundlerService {
 		return hash.digest('hex').slice(0, 16)
 	}
 
-	private pool: import('tinypool').default | null = null
-	private getPool(): import('tinypool').default {
+	private pool: Tinypool | null = null
+	private getPool(): Tinypool {
 		if (this.pool) return this.pool
-		// 延迟创建，避免未用时初始化线程
-		const { default: Tinypool } = require('tinypool') as typeof import('tinypool')
 		const worker = this.resolveWorkerPath()
-		const cpuSlack = Math.max(1, require('node:os').cpus().length - 1)
+		const cpuSlack = Math.max(1, cpus().length - 1)
 		this.pool = new Tinypool({
 			filename: worker,
 			// Default: keep 1 warm worker, burst to 1-2 workers, and shrink back to 1.

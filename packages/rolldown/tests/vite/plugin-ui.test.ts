@@ -6,6 +6,7 @@ import { join, resolve } from 'pathe'
 import {
 	buildPluginUiRemote,
 	disposePluginUiBuildSchedulers,
+	resolveExtensionFederationShared,
 	resolvePluginUiBuildSignature,
 } from '../../src/vite/plugin-ui'
 
@@ -204,5 +205,31 @@ export default { marker }
 		expect(signature).toContain('chrome120')
 		expect(signature).toContain('css:')
 		expect(signature).toContain('camelCaseOnly')
+	})
+
+	it('reads shared package versions from OXC package metadata', async () => {
+		await using fixture = await createFixture({
+			'node_modules/shared-exported/package.json': JSON.stringify({
+				name: 'shared-exported',
+				version: '1.2.3',
+				type: 'module',
+				exports: {
+					'.': './dist/index.js',
+				},
+			}),
+			'node_modules/shared-exported/dist/index.js': 'export {}\n',
+		})
+
+		const resolved = resolveExtensionFederationShared(fixture.path, ['shared-exported'])
+
+		expect(resolved.signature).toBe('shared-exported@1.2.3')
+		expect(resolved.shared).toMatchObject({
+			'shared-exported': {
+				version: '1.2.3',
+				singleton: true,
+				import: false,
+				requiredVersion: false,
+			},
+		})
 	})
 })

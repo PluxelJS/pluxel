@@ -4,7 +4,7 @@ import { PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runt
 export type WorkspaceResolveEntryInput = {
 	name: string
 	workspaceOnly?: boolean
-	preferRuntimeDynamicExports?: boolean
+	preferHmrExports?: boolean
 	conditions?: string[]
 }
 
@@ -35,7 +35,7 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 		return { ok: false as const, code: 'MISSING_PACKAGE', message: 'name is required' }
 	}
 
-	const preferRuntimeDynamicExports = input.preferRuntimeDynamicExports !== false
+	const preferHmrExports = input.preferHmrExports !== false
 	const conditions =
 		Array.isArray(input.conditions) && input.conditions.length > 0
 			? input.conditions
@@ -43,12 +43,12 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 
 	return await getScanService(ctx).resolveEntryByName(name, {
 		workspaceOnly: input.workspaceOnly === true,
-		scan: { conditions, ...(preferRuntimeDynamicExports ? { preferRuntimeDynamicExports: true } : {}) },
+		scan: { conditions, ...(preferHmrExports ? { preferHmrExports: true } : {}) },
 	})
 }
 
 export async function workspaceListEntries(ctx: Context) {
 	return await getScanService(ctx).listWorkspaceEntries({
-		scan: { conditions: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferRuntimeDynamicExports: true },
+		scan: { conditions: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferHmrExports: true },
 	})
 }

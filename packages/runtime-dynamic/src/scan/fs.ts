@@ -9,7 +9,7 @@ import {
 	type WorkspaceFs,
 } from '@pluxel/rolldown/workspace/fs'
 import { extname, isAbsolute, normalize, resolve } from 'pathe'
-import { createLimiter } from './limit'
+import { createLimiter } from './shared'
 
 export interface TsScanOptions {
 	exts?: string[]

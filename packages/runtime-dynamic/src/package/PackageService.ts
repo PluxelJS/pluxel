@@ -7,23 +7,29 @@ import {
 	type ScanTaskOptions,
 } from '../scan/types'
 import {
+	collectDeclaredPlugins,
+	createDebouncedTrigger,
 	dedupeByName,
 	isManagedPackageName,
 	normalizeRoots,
 	resolveInstallDefaults,
 	resolveStateFilePath,
 } from './helpers'
+import {
+	formatUnknownErrorMessage,
+	getUnknownErrorStack,
+	normalizeUnknownError,
+	PackageServiceError,
+} from './errors'
 import { PackageInstallFlow } from './install-flow'
 import { PackageInstaller } from './installer'
-import type { ResolvedInstallOptions } from './internal-types'
 import { type LoadIntentConfig, PackageLoader } from './loader'
-import { KeyedLock } from './locks'
 import { PackageRemovalFlow } from './removal-flow'
 import { PackageRuntime } from './runtime'
 import {
 	type NormalizedPackageSpecifier,
-	normalizeSpecifier,
 	type PackageSpecifierInput,
+	tryNormalizeSpecifier,
 } from './specifiers'
 import { PackageState } from './state'
 import {
@@ -42,14 +48,15 @@ import type {
 	PackageLoadResult,
 	PackageReloadResult,
 	PackageRemovalResult,
+	ResolvedInstallOptions,
 	PackageServiceConfig,
 	PackageServiceErrorCode,
 	PackagePolicy,
 	PackageUninstallResult,
 	RetryOptions,
 } from './types'
-import { createDebouncedTrigger } from './util/debounce'
-import { collectDeclaredPlugins } from './util/plugins'
+
+export { PackageServiceError } from './errors'
 
 export type {
 	InstallOptions,
@@ -70,12 +77,6 @@ export type {
 	RetryOptions,
 } from './types'
 
-function getErrorCause(value: unknown): unknown {
-	if (!value || typeof value !== 'object') return undefined
-	if (!('cause' in value)) return undefined
-	return (value as { cause?: unknown }).cause
-}
-
 const serviceName = 'packageService' as const
 
 declare module '@pluxel/core' {
@@ -86,21 +87,6 @@ declare module '@pluxel/core' {
 		interface Config {
 			[serviceName]?: PackageServiceConfig
 		}
-	}
-}
-
-export class PackageServiceError extends Error {
-	override name = 'PackageServiceError'
-	public readonly cause: unknown
-
-	constructor(
-		public readonly code: PackageServiceErrorCode,
-		message: string,
-		public readonly detail?: unknown,
-	) {
-		super(message)
-		const cause = getErrorCause(detail)
-		this.cause = detail instanceof Error ? detail : cause instanceof Error ? cause : undefined
 	}
 }
 
@@ -164,7 +150,7 @@ export class PackageService {
 			stateOptions.debounceMs = config.state.debounceMs
 		}
 		this.stateStore = new PackageStateStore(stateOptions)
-		this.state = new PackageState(this.stateStore, (error) => this.getErrorStack(error))
+		this.state = new PackageState(this.stateStore, getUnknownErrorStack)
 		this.runtime = new PackageRuntime(this.ctx)
 		this.installer = new PackageInstaller(
 			this.ctx,
@@ -176,8 +162,6 @@ export class PackageService {
 			this.installer,
 			(level, event, payload, message) => this.logEvent(level, event, payload, message),
 			(result) => this.onPackageInstalled(result),
-			(code, message, detail) =>
-				new PackageServiceError(code as PackageServiceErrorCode, message, detail),
 		)
 		this.loader = new PackageLoader(
 			this.ctx,
@@ -188,8 +172,6 @@ export class PackageService {
 			(spec, error, source, moduleId) => this.recordLoadIssue(spec, error, source, moduleId),
 			(spec, options) => this.installFlow.installOne(spec, options),
 			(overrides) => this.resolveInstallOptions(overrides),
-			(code, message, detail) =>
-				new PackageServiceError(code as PackageServiceErrorCode, message, detail),
 			shouldRetryInstall,
 		)
 		this.removalFlow = new PackageRemovalFlow(
@@ -197,7 +179,7 @@ export class PackageService {
 			(level, event, payload, message) => this.logEvent(level, event, payload, message),
 			(name) => this.blockPackage(name),
 			(name, options) => this.invalidatePackage(name, options),
-			() => this.syncTrigger.trigger(),
+			() => this.syncTrigger(),
 		)
 		this.installDefaultsReady = this.initializeInstallDefaults(config.install)
 		this.ready = this.installDefaultsReady
@@ -213,14 +195,11 @@ export class PackageService {
 
 	/** Normalize package spec input or throw on invalid input. */
 	normalizeSpecifier(input: PackageSpecifierInput): NormalizedPackageSpecifier {
-		try {
-			return normalizeSpecifier(input)
-		} catch (error) {
-			throw new PackageServiceError('INVALID_SPEC', '包名不能为空。', {
-				input,
-				cause: error,
-			})
+		const spec = tryNormalizeSpecifier(input)
+		if (!spec) {
+			throw new PackageServiceError('INVALID_SPEC', '包名不能为空。', { input })
 		}
+		return spec
 	}
 
 	/**
@@ -306,12 +285,7 @@ export class PackageService {
 		return this.uninstallLock.run(spec.key, async () => {
 			const [result] = await this.removalFlow.uninstallMany([spec])
 			if (result.status === 'failed') {
-				const message =
-					result.error instanceof Error
-						? result.error.message
-						: result.error
-							? String(result.error)
-							: '未知错误'
+				const message = formatUnknownErrorMessage(result.error)
 				throw new PackageServiceError('UNINSTALL_FAILED', message, {
 					cause: result.error,
 					spec,
@@ -587,7 +561,7 @@ export class PackageService {
 		this.state.clearIssue(name)
 		this.state.removeDependentsOf(name)
 		if (options?.resync !== false) {
-			this.syncTrigger.trigger()
+			this.syncTrigger()
 		}
 		this.logEvent('info', 'invalidate', { name, scope: 'runtime', moduleId })
 	}
@@ -759,7 +733,7 @@ export class PackageService {
 		source: PackageLoadIssueSource,
 		moduleId?: string,
 	) {
-		const normalized = this.normalizeIssueError(error)
+		const normalized = normalizeUnknownError(error)
 		const issue: PackageLoadIssue = {
 			spec,
 			source,
@@ -778,42 +752,6 @@ export class PackageService {
 			message: issue.message,
 			moduleId,
 		})
-	}
-
-	private normalizeIssueError(error: unknown): {
-		message: string
-		error: unknown
-		stack?: string
-	} {
-		const unwrapped = this.unwrapError(error)
-		if (unwrapped instanceof Error) {
-			return { message: unwrapped.message, error: unwrapped, stack: unwrapped.stack }
-		}
-		if (typeof unwrapped === 'string') {
-			return { message: unwrapped, error: unwrapped }
-		}
-		if (unwrapped === undefined || unwrapped === null) {
-			return { message: '未知错误', error: unwrapped }
-		}
-		try {
-			return { message: JSON.stringify(unwrapped), error: unwrapped }
-		} catch {
-			return { message: String(unwrapped), error: unwrapped }
-		}
-	}
-
-	private getErrorStack(error: unknown): string | undefined {
-		const unwrapped = this.unwrapError(error)
-		if (unwrapped instanceof Error) return unwrapped.stack ?? unwrapped.message
-		if (typeof unwrapped === 'string') return unwrapped
-		return undefined
-	}
-
-	private unwrapError(error: unknown): unknown {
-		if (error instanceof PackageServiceError && error.cause) return error.cause
-		const cause = getErrorCause(error)
-		if (cause instanceof Error) return cause
-		return error
 	}
 
 	private logEvent(
@@ -942,4 +880,18 @@ function shouldRetryInstall(
 	if (error.code !== 'RESOLUTION_FAILED') return false
 	const resolution = (error.detail as { resolution?: EntryResolution } | undefined)?.resolution
 	return Boolean(resolution && !isEntryOk(resolution) && resolution.code === 'MISSING_PACKAGE')
+}
+
+class KeyedLock<T> {
+	private readonly locks = new Map<string, Promise<T>>()
+
+	run(key: string, task: () => Promise<T>): Promise<T> {
+		const existing = this.locks.get(key)
+		if (existing) return existing
+		const promise = task().finally(() => {
+			this.locks.delete(key)
+		})
+		this.locks.set(key, promise)
+		return promise
+	}
 }

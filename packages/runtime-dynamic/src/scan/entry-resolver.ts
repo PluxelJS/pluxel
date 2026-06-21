@@ -1,19 +1,18 @@
 import { normalize, resolve as r } from 'pathe'
-import type { PackageJson } from 'pkg-types'
+import type { WorkspacePackageJson as PackageJson } from '@pluxel/rolldown/workspace/info'
 import {
 	getCachedResolver,
-	PLUXEL_CONDITION_RUNTIME_DYNAMIC,
+	type OxcResolveCache,
 	resolveModulePath,
-	toDirectoryURLString,
+	withPluxelHmrConditions,
 } from '@pluxel/runtime/shared'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
-import type { ModuleResolveCache } from './resolve-cache'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 
 export class EntryResolver {
 	private readonly cache = new Map<string, Promise<EntryResolution>>()
 	constructor(
-		private readonly moduleResolveCache: ModuleResolveCache,
+		private readonly resolveCache: OxcResolveCache,
 		private readonly fs: WorkspaceFs = nodeWorkspaceFs,
 	) {}
 
@@ -26,16 +25,17 @@ export class EntryResolver {
 		options: ResolvedScanOptions,
 		manifest?: PackageJson,
 	): Promise<EntryResolution> {
+		const effectiveOptions = withEntryResolveConditions(options)
 		const key = JSON.stringify([
 			normalize(dir),
-			options.conditions,
-			options.conservativeCandidates,
-			options.preferRuntimeDynamicExports,
+			effectiveOptions.conditions,
+			effectiveOptions.conservativeCandidates,
+			effectiveOptions.preferHmrExports,
 		])
 		const cached = this.cache.get(key)
 		if (cached) return cached
 
-		const promise = this.resolveUncached(dir, options, manifest).catch((err) => {
+		const promise = this.resolveUncached(dir, effectiveOptions, manifest).catch((err) => {
 			this.cache.delete(key)
 			throw err
 		})
@@ -74,18 +74,9 @@ export class EntryResolver {
 			}
 		}
 
-		const hmrExport = options.preferRuntimeDynamicExports ? pickRuntimeDynamicExport(pkgJson?.exports) : undefined
-		if (hmrExport) {
-			const abs = r(dir, hmrExport)
-			if (this.fs.existsSync(abs)) {
-				return entryOk(dir, normalize(abs), 'exports', [])
-			}
-		}
-
-		const base = toDirectoryURLString(dir)
-		const resolver = getCachedResolver(this.moduleResolveCache.map, 'scan:pkg-resolver', [base], {
-			limit: 256,
-		})
+			const resolver = getCachedResolver(this.resolveCache, 'scan:pkg-resolver', [dir], {
+				limit: 256,
+			})
 
 		let exportsEntry: string | null = null
 		if (pkgJson?.name) {
@@ -142,6 +133,16 @@ export class EntryResolver {
 	}
 }
 
+function withEntryResolveConditions(options: ResolvedScanOptions): ResolvedScanOptions {
+	if (!options.preferHmrExports) return options
+	const conditions = withPluxelHmrConditions(options.conditions)
+	return sameStringList(conditions, options.conditions) ? options : { ...options, conditions }
+}
+
+function sameStringList(a: readonly string[], b: readonly string[]): boolean {
+	return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
 function entryOk(
 	dir: string,
 	entry: string,
@@ -169,33 +170,4 @@ function findFirstTsEntry(
 		}
 	}
 	return null
-}
-
-function pickRuntimeDynamicExport(exportsField: PackageJson['exports']): string | undefined {
-	if (!exportsField) return undefined
-	const rootExport =
-		typeof exportsField === 'object' && exportsField !== null && '.' in exportsField
-			? (exportsField as Record<string, unknown>)['.']
-			: exportsField
-
-	return resolveRuntimeDynamicTarget(rootExport)
-}
-
-function resolveRuntimeDynamicTarget(target: unknown): string | undefined {
-	if (!target) return undefined
-	if (typeof target === 'string') return target
-	if (Array.isArray(target)) {
-		for (const item of target) {
-			const hit = resolveRuntimeDynamicTarget(item)
-			if (hit) return hit
-		}
-		return undefined
-	}
-	if (typeof target === 'object') {
-		const record = target as Record<string, unknown>
-		if (record[PLUXEL_CONDITION_RUNTIME_DYNAMIC]) {
-			return resolveRuntimeDynamicTarget(record[PLUXEL_CONDITION_RUNTIME_DYNAMIC])
-		}
-	}
-	return undefined
 }

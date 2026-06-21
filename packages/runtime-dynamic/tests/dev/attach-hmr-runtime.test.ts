@@ -50,6 +50,10 @@ describe('@pluxel/runtime-dynamic/hmr installLoaderHmr', () => {
 		expect(getRuntimeModuleAdapter(ctx).normalizeId('/tmp/a.ts')).toBe('/tmp/a.ts')
 		expect(getHmrRuntimeHandles(ctx)?.bundler?.watchTinypoolWorker).toBeTypeOf('function')
 		expect(getHmrRuntimeHandles(ctx)?.extensions?.bindUiSource).toBeTypeOf('function')
+		const pluginCtx = ctx.extend({ name: 'plugin-a' })
+		expect(hasRuntimeModuleAdapter(pluginCtx)).toBe(true)
+		expect(getRuntimeModuleAdapter(pluginCtx).normalizeId('/tmp/a.ts')).toBe('/tmp/a.ts')
+		expect(getHmrRuntimeHandles(pluginCtx)?.bundler?.watchTinypoolWorker).toBeTypeOf('function')
 
 		await res.hmr.start()
 		await res.hmr.close()

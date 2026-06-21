@@ -17,7 +17,7 @@ export type ResolverCacheInvalidationDetail = {
 
 export interface PluxelRuntimeEventMap {
 	/**
-	 * Fired when ScanService clears its module-resolution caches (exsolve cache map + entry resolver).
+	 * Fired when ScanService clears its module-resolution caches (OXC resolver cache map + entry resolver).
 	 *
 	 * Consumers (HMR runner, package loaders, long-lived tooling) should treat this as a signal to
 	 * drop any derived/cached resolution results so future imports can observe newly installed/removed

@@ -122,14 +122,14 @@ export function collectUnknownConfigEntries(
 	snapshot: ConfigShape,
 	known: ReadonlyMap<string, unknown>,
 ): string[] {
-	const out: string[] = []
+	const out = new Set<string>()
 	for (const name of snapshot.enabled) {
-		if (!known.has(name)) out.push(name)
+		if (!known.has(name)) out.add(name)
 	}
 	for (const name of Object.keys(snapshot.plugins)) {
-		if (!known.has(name) && !out.includes(name)) out.push(name)
+		if (!known.has(name)) out.add(name)
 	}
-	return out.sort((a, b) => a.localeCompare(b))
+	return [...out].sort((a, b) => a.localeCompare(b))
 }
 
 function uniquePluginDeps(deps: readonly PluginIdentifier[]): readonly PluginIdentifier[] {

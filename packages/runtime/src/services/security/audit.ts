@@ -25,7 +25,7 @@ const AUDIT_SYMBOL = Symbol.for('pluxel:runtime:security-audit')
 const MAX_EVENTS = 200
 
 function resolveState(ctx: PluxelContext): AuditState {
-	const root = (ctx.root ?? ctx) as PluxelContext & { [AUDIT_SYMBOL]?: AuditState }
+	const root = ctx.root as PluxelContext & { [AUDIT_SYMBOL]?: AuditState }
 	root[AUDIT_SYMBOL] ??= {
 		seq: 0,
 		events: [],

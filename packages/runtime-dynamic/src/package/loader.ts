@@ -2,13 +2,22 @@ import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
 import type { Context } from '@pluxel/core'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import { isNotNullOrUndefined, type Maybe } from 'option-t/maybe'
+import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
 import { resolve as resolvePath } from 'pathe'
 
-import { isEntryOk, type EntryResolutionOk, type ScanTaskOptions } from '../scan/types'
+import {
+	type EntryResolutionErr,
+	isEntryOk,
+	type EntryResolutionOk,
+	type ScanOptionsInput,
+	type ScanTaskOptions,
+} from '../scan/types'
+import { PackageServiceError, toError } from './errors'
 import { parseDependOn } from './helpers'
-import type { ResolvedInstallOptions } from './internal-types'
 import type { PackageRuntime } from './runtime'
-import { type NormalizedPackageSpecifier, fromSnapshot as specFromSnapshot } from './specifiers'
+import { type NormalizedPackageSpecifier, tryFromSnapshot } from './specifiers'
 import type { PackageState } from './state'
 import type { PackageStatePayload, PersistedPackageEntry } from './state-store'
 import type {
@@ -16,6 +25,7 @@ import type {
 	PackageInstallResult,
 	PackageLoadIssueSource,
 	PackageLoadResult,
+	ResolvedInstallOptions,
 } from './types'
 
 export interface LoadIntentConfig {
@@ -37,8 +47,6 @@ type LogEvent = (
 	payload?: Record<string, unknown>,
 	message?: string,
 ) => void
-
-type CreateError = (code: string, message: string, detail?: unknown) => Error
 
 type RecordLoadIssue = (
 	spec: NormalizedPackageSpecifier,
@@ -68,7 +76,6 @@ export class PackageLoader {
 		private readonly recordLoadIssue: RecordLoadIssue,
 		private readonly performInstall: PerformInstall,
 		private readonly resolveInstallOptions: ResolveInstallOptions,
-		private readonly createError: CreateError,
 		private readonly shouldRetryInstall: ShouldRetryInstall,
 	) {}
 
@@ -122,29 +129,40 @@ export class PackageLoader {
 
 	restorePersistedIssues(payload: PackageStatePayload) {
 		for (const issue of payload.issues ?? []) {
-			try {
-				const spec = specFromSnapshot(issue.spec)
-				const restoredError = new Error(issue.message)
-				if (issue.stack) restoredError.stack = issue.stack
-				this.state.recordIssue({
-					spec,
-					message: issue.message,
-					source: issue.source,
-					moduleId: issue.moduleId,
-					recordedAt: issue.recordedAt,
-					error: restoredError,
-					stack: issue.stack,
+			const spec = tryFromSnapshot(issue.spec)
+			if (!spec) {
+				this.logEvent('warn', 'restore:issue_skipped', {
+					reason: 'invalid_spec_snapshot',
+					spec: issue.spec,
 				})
-			} catch {
-				// ignore malformed issue entries
+				continue
 			}
+			const restoredError = new Error(issue.message)
+			if (issue.stack) restoredError.stack = issue.stack
+			this.state.recordIssue({
+				spec,
+				message: issue.message,
+				source: issue.source,
+				moduleId: issue.moduleId,
+				recordedAt: issue.recordedAt,
+				error: restoredError,
+				stack: issue.stack,
+			})
 		}
 	}
 
 	async restorePersistedPackages(entries: PersistedPackageEntry[]) {
 		let mutated = false
 		for (const entry of entries) {
-			const spec = specFromSnapshot(entry.spec)
+			const spec = tryFromSnapshot(entry.spec)
+			if (!spec) {
+				this.logEvent('warn', 'restore:package_skipped', {
+					reason: 'invalid_spec_snapshot',
+					spec: entry.spec,
+				})
+				mutated = true
+				continue
+			}
 			try {
 				const moduleId = this.runtime.normalizeModuleId(entry.moduleId || entry.resolution.entry)
 				const module = await this.importModule(moduleId, this.getDefaults().preferFreshImport)
@@ -228,31 +246,44 @@ export class PackageLoader {
 		spec: NormalizedPackageSpecifier,
 		scanOverrides?: ScanTaskOptions,
 	): Promise<EntryResolutionOk> {
+		const result = await this.resolveEntryForSpecResult(spec, scanOverrides)
+		if (isOk(result)) return result.val
+		throw new PackageServiceError('RESOLUTION_FAILED', result.err.message, {
+			spec,
+			resolution: result.err,
+		})
+	}
+
+	async resolveEntryForSpecResult(
+		spec: NormalizedPackageSpecifier,
+		scanOverrides?: ScanTaskOptions,
+	): Promise<Result<EntryResolutionOk, EntryResolutionErr>> {
 		const request = this.mergeScanOptions(scanOverrides)
 		const resolution = await this.ctx.scanService.resolveEntry({ name: spec.name }, request ?? {})
 		if (!isEntryOk(resolution)) {
-			throw this.createError('RESOLUTION_FAILED', resolution.message, { spec, resolution })
+			return createErr(resolution)
 		}
-		return resolution
+		return createOk(resolution)
 	}
 
-	private mergeScanOptions(overrides?: ScanTaskOptions): ScanTaskOptions | undefined {
-		const base = this.getDefaults().scan
-		if (!base) return overrides
-		if (!overrides) return base
+	private mergeScanOptions(overrides?: ScanTaskOptions): Maybe<ScanTaskOptions> {
+		const base = sanitizePackageScanOptions(this.getDefaults().scan)
+		const cleanOverrides = sanitizePackageScanOptions(overrides)
+		if (!base) return cleanOverrides
+		if (!cleanOverrides) return base
 
 		const merged: ScanTaskOptions = {}
-		if (overrides.roots !== undefined) merged.roots = overrides.roots
+		if (cleanOverrides.roots !== undefined) merged.roots = cleanOverrides.roots
 		else if (base.roots !== undefined) merged.roots = base.roots
 
 		const mergedScan = base.scan
-			? { ...base.scan, ...overrides.scan }
-			: (overrides.scan ?? base.scan)
+			? { ...base.scan, ...cleanOverrides.scan }
+			: (cleanOverrides.scan ?? base.scan)
 		if (mergedScan !== undefined) {
 			merged.scan = mergedScan
 		}
 
-		if (overrides.workspaceOnly !== undefined) merged.workspaceOnly = overrides.workspaceOnly
+		if (cleanOverrides.workspaceOnly !== undefined) merged.workspaceOnly = cleanOverrides.workspaceOnly
 		else if (base.workspaceOnly !== undefined) merged.workspaceOnly = base.workspaceOnly
 
 		return merged
@@ -270,24 +301,7 @@ export class PackageLoader {
 			return await import(url.href)
 		} catch (error) {
 			this.ctx.logger.error('导入模块失败 {moduleId}', { moduleId, error })
-
-			if (error instanceof Error) {
-				throw error
-			}
-			const message =
-				typeof error === 'string'
-					? error
-					: error !== null && error !== undefined
-						? String(error)
-						: '未知错误'
-			const wrapped = new Error(message)
-			if (error && typeof error === 'object' && 'stack' in error) {
-				const stack = (error as { stack?: unknown }).stack
-				if (typeof stack === 'string') {
-					wrapped.stack = stack
-				}
-			}
-			throw wrapped
+			throw toError(error)
 		}
 	}
 
@@ -315,4 +329,27 @@ export class PackageLoader {
 			return { manifestPath, dependOn: [] }
 		}
 	}
+}
+
+function sanitizePackageScanOptions(input?: ScanTaskOptions): Maybe<ScanTaskOptions> {
+	if (!input) return undefined
+
+	const scan = sanitizePackageScanInput(input.scan)
+	const out: ScanTaskOptions = {}
+	if (input.roots !== undefined) out.roots = input.roots
+	if (isNotNullOrUndefined(scan)) out.scan = scan
+	if (input.workspaceOnly !== undefined) out.workspaceOnly = input.workspaceOnly
+	return Object.keys(out).length > 0 ? out : undefined
+}
+
+function sanitizePackageScanInput(input?: ScanOptionsInput): Maybe<ScanOptionsInput> {
+	if (!input) return undefined
+
+	const { preferHmrExports: _preferHmrExports, conditions, ...rest } = input
+	const out: ScanOptionsInput = { ...rest }
+	if (conditions !== undefined) {
+		const filtered = conditions.filter((condition) => condition !== PLUXEL_CONDITION_HMR)
+		if (filtered.length > 0) out.conditions = filtered
+	}
+	return Object.keys(out).length > 0 ? out : undefined
 }
