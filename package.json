@@ -35,7 +35,7 @@
 		"react-dom": "^19.2.7"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "link:../GQLens/packages/codegen",
+		"@gqlens/codegen": "0.2.0",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",

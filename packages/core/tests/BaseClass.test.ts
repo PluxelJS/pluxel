@@ -59,7 +59,7 @@ describe('Abstract base and canonical ids', () => {
 			@Plugin(Abs, { name: 'Provider' })
 			class Provider extends Abs {
 				override async init(): Promise<void> {
-					await new Promise((r) => setTimeout(r, 10))
+					await Promise.resolve()
 					providerReady = true
 					events.push('provider')
 				}

@@ -11,8 +11,8 @@
 		"verify": "tsx tooling/generate-gqlens.ts && tsc --noEmit && vite build"
 	},
 	"dependencies": {
-		"@gqlens/core": "link:../../../../GQLens/packages/core",
-		"@gqlens/react": "link:../../../../GQLens/packages/react",
+		"@gqlens/core": "0.2.0",
+		"@gqlens/react": "0.2.0",
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
 		"@pluxel/runtime": "workspace:*",
@@ -24,8 +24,8 @@
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "link:../../../../GQLens/packages/codegen",
-		"@gqlens/vite": "link:../../../../GQLens/packages/vite",
+		"@gqlens/codegen": "0.2.0",
+		"@gqlens/vite": "0.2.0",
 		"@types/node": "^25.9.3",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",

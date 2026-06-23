@@ -6,6 +6,12 @@ allowBuilds:
   '@parcel/watcher': false
   esbuild: false
 
+minimumReleaseAgeExclude:
+  - '@gqlens/codegen@0.2.0'
+  - '@gqlens/core@0.2.0'
+  - '@gqlens/react@0.2.0'
+  - '@gqlens/vite@0.2.0'
+
 onlyBuiltDependencies:
   - esbuild
 

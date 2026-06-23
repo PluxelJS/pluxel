@@ -147,7 +147,7 @@
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "link:../../../GQLens/packages/codegen",
+		"@gqlens/codegen": "0.2.0",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/react": "^19.2.14",

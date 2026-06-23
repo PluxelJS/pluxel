@@ -1,16 +1,13 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { afterEach, describe, expect, it } from 'vitest'
-import { join, resolve } from 'pathe'
+import { join } from 'pathe'
 import {
 	buildPluginUiRemote,
 	disposePluginUiBuildSchedulers,
 	resolveExtensionFederationShared,
 	resolvePluginUiBuildSignature,
 } from '../../src/vite/plugin-ui'
-
-const workspaceRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
 afterEach(() => {
 	disposePluginUiBuildSchedulers()
@@ -23,6 +20,9 @@ describe('buildPluginUiRemote', () => {
 				name: '@pluxel/plugins-demo',
 				private: true,
 				type: 'module',
+				dependencies: {
+					react: '19.2.0',
+				},
 			}),
 			'packages/plugins/demo/src/ui/a.ts': 'export default { id: "a" }\n',
 			'packages/plugins/demo/src/ui/b.ts': 'export default { id: "b" }\n',
@@ -79,45 +79,58 @@ describe('buildPluginUiRemote', () => {
 	}, 45_000)
 
 	it('builds the same remote repeatedly without reusing process-local federation state', async () => {
-		const root = resolve(workspaceRoot, 'packages/plugins/host')
-		const sharedPackages = [
-			'react',
-			'react-dom',
-			'@mantine/core',
-			'@mantine/hooks',
-			'@pluxel/runtime/web/ui',
-		]
-		const vite = {
-			resolve: {
-				alias: {
-					'@pluxel/runtime/web/ui': resolve(workspaceRoot, 'packages/runtime/src/web/ui.ts'),
+		await using fixture = await createFixture({
+			'packages/plugins/demo/package.json': JSON.stringify({
+				name: '@pluxel/plugins-demo',
+				private: true,
+				type: 'module',
+				dependencies: {
+					react: '19.2.0',
 				},
-			},
-		}
+			}),
+			'packages/plugins/demo/src/ui/index.ts': `
+export const marker = "same-remote"
+export default { marker }
+`,
+			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
+				name: 'react',
+				version: '19.2.0',
+				main: 'index.js',
+			}),
+			'packages/plugins/demo/node_modules/react/index.js': 'module.exports = {}\n',
+		})
+
+		const root = join(fixture.path, 'packages/plugins/demo')
+		const entryPath = join(root, 'src/ui/index.ts')
 
 		const first = await buildPluginUiRemote({
 			root,
 			pluginName: 'PluginWithUI',
-			entryPath: resolve(workspaceRoot, 'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx'),
-			outDir: resolve(workspaceRoot, '.tmp/pwui-test-1'),
+			entryPath,
+			outDir: join(fixture.path, 'pwui-test-1'),
 			publicPath: '/test/',
-			sharedPackages,
+			sharedPackages: ['react'],
 			minify: false,
-			vite,
 		})
 		const second = await buildPluginUiRemote({
 			root,
 			pluginName: 'PluginWithUI',
-			entryPath: resolve(workspaceRoot, 'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx'),
-			outDir: resolve(workspaceRoot, '.tmp/pwui-test-2'),
+			entryPath,
+			outDir: join(fixture.path, 'pwui-test-2'),
 			publicPath: '/test/',
-			sharedPackages,
+			sharedPackages: ['react'],
 			minify: false,
-			vite,
 		})
 
-		await expect(access(first.manifestPath)).resolves.toBeUndefined()
-		await expect(access(second.manifestPath)).resolves.toBeUndefined()
+		for (const result of [first, second]) {
+			await access(result.manifestPath)
+			const files = await readdir(result.outDir, { recursive: true })
+			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
+			const contents = await Promise.all(
+				jsFiles.map((file) => readFile(join(result.outDir, file), 'utf-8')),
+			)
+			expect(contents.join('\n')).toContain('same-remote')
+		}
 	}, 45_000)
 
 	it('runs user Vite plugins before building the federated UI remote', async () => {
@@ -126,6 +139,9 @@ describe('buildPluginUiRemote', () => {
 				name: '@pluxel/plugins-demo',
 				private: true,
 				type: 'module',
+				dependencies: {
+					react: '19.2.0',
+				},
 			}),
 			'packages/plugins/demo/src/ui/index.ts': `
 const marker = "__PLUGIN_UI_MARKER__"
