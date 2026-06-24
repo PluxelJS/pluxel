@@ -42,7 +42,10 @@ export class LifecycleManager {
 		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] = ref ?? null
 	}
 
-	private createLifecycle(id: PluginIdentifier | RuntimePluginKey, plugin: BasePlugin): PluginLifecycleActor {
+	private createLifecycle(
+		id: PluginIdentifier | RuntimePluginKey,
+		plugin: BasePlugin,
+	): PluginLifecycleActor {
 		const ref = new PluginLifecycleActor(
 			{ autoStart: false, useErrorChannel: true },
 			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
@@ -61,7 +64,10 @@ export class LifecycleManager {
 		return ref
 	}
 
-	private ensureLifecycle(id: PluginIdentifier | RuntimePluginKey, plugin: BasePlugin): PluginLifecycleActor {
+	private ensureLifecycle(
+		id: PluginIdentifier | RuntimePluginKey,
+		plugin: BasePlugin,
+	): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
 			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
@@ -141,9 +147,9 @@ export class LifecycleManager {
 		_id: PluginIdentifier | RuntimePluginKey,
 		plugin: BasePlugin,
 		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
-	): Promise<void> {
+	): Promise<LifecycleSnapshot | undefined> {
 		const lifecycle = opts?.ref ?? this.getLifecycle(plugin)
-		if (!lifecycle) return
+		if (!lifecycle) return undefined
 
 		try {
 			lifecycle.send({ type: 'STOP' })
@@ -152,17 +158,23 @@ export class LifecycleManager {
 		}
 
 		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.stopTimeoutMs)
-		await this.waitUntilStopped(lifecycle, timeoutMs)
+		const snapshot = await this.waitUntilStopped(lifecycle, timeoutMs)
 		this.setLifecycle(plugin)
+		return snapshot
 	}
 
-	private async waitUntilStopped(ref: PluginLifecycleActor, timeoutMs: number): Promise<void> {
-		if (lifecycleSelectors.isStopped(ref.getSnapshot?.())) return
+	private async waitUntilStopped(
+		ref: PluginLifecycleActor,
+		timeoutMs: number,
+	): Promise<LifecycleSnapshot | undefined> {
+		const current = ref.getSnapshot?.()
+		if (lifecycleSelectors.isStopped(current)) return current
 		try {
-			await ref.waitForStopped(timeoutMs)
+			return await ref.waitForStopped(timeoutMs)
 		} catch {
 			/* ignore */
 		}
+		return ref.getSnapshot?.()
 	}
 }
 

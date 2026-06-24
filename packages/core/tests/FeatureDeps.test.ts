@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, assertPluginLifecycleIssue, withCoreHost } from '@pluxel/core/test'
 
 describe('FeatureHost.dep', () => {
 	it('returns undefined when missing and injects caller when present', async () => {
@@ -373,7 +373,7 @@ describe('FeatureHost.dep', () => {
 
 			host.add(DepFail)
 			const summary = await host.commitAllowFail()
-			expect(summary.failed).toContain('DepFail')
+			assertPluginLifecycleIssue(summary, DepFail, { kind: 'start-failed' })
 
 			expect(h.seen).toBe(0)
 			h.read()

@@ -220,7 +220,7 @@ HMR 不再直接协调 loader tx、core draft 和 retry。
 
 控制方式：
 
-- transaction 只记录 touched modules，不复制整个 registry。
+- transaction 只记录 affected modules，不复制整个 registry。
 - module declaration 层使用 journal/undo log，而不是 deep clone。
 - startup path 可以直接用同一个 transaction API，但内部保留 fast path：无 retry、无 rollback journal 扩展时少分配。
 - no-op update 必须短路，不触发生命周期 stop/start。
@@ -286,15 +286,21 @@ graph 内部仍应使用 slot number，以保持现有性能优势。
 commit summary 要成为 adapter 的稳定观察面：
 
 ```ts
-type RuntimeUpdateSummary = {
-	reason: RuntimeUpdateReason
-	added: RuntimePluginKey[]
-	removed: RuntimePluginKey[]
-	replaced: Array<{ key: RuntimePluginKey; fromRevision: string; toRevision: string }>
-	restarted: RuntimePluginKey[]
-	failed: RuntimePluginKey[]
-	touchedModules: string[]
-	autoDisabled: RuntimePluginKey[]
+type CommitSummary = {
+	graph: PluginGraph
+	pluginChanges: {
+		added: RuntimePluginKey[]
+		removed: RuntimePluginKey[]
+		replaced: PluginReplacement[]
+		restarted: RuntimePluginKey[]
+		availabilityChanged: RuntimePluginKey[]
+	}
+	runtimeUpdate: {
+		reason?: RuntimeUpdateReason
+		affectedModules: string[]
+		autoDisabled: RuntimePluginKey[]
+	}
+	lifecycleReport: PluginLifecycleReport
 }
 ```
 

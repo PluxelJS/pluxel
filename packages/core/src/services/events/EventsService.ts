@@ -130,7 +130,6 @@ export class EvtChannel<D extends EventDescriptor> extends Channel<D> {
 export interface Events {
 	onLoad: [string]
 	beforeStart: [PluginInstance] // 启动前
-	commitFailed: (failed: Set<RuntimePluginKey>) => void
 	afterCommit: (summary: CommitSummary) => void
 	afterStart: [PluxelContext] // 启动成功
 	startError: [PluxelContext, Error] // 启动失败

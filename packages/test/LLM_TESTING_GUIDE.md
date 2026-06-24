@@ -137,7 +137,7 @@ it('starts a runtime-enabled plugin', async () => {
 })
 ```
 
-`await host.commit()` is **strict** (throws if any plugin fails to start). If a test intentionally introduces a failing plugin, use `await host.commitAllowFail()` and assert on `host.last()?.failed`.
+`await host.commit()` is **strict** (throws if any plugin fails to start). If a test intentionally introduces a failing plugin, use `await host.commitAllowFail()` and assert on `lifecycleReport.ok` plus `assertPluginLifecycleIssue(...)` or the lifecycle issue selector helpers.
 
 ### `host.cfg(target)`
 

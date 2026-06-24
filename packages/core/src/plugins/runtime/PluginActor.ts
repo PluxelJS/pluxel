@@ -188,6 +188,7 @@ export class PluginLifecycleActor {
 					this.stopAbort = new AbortController()
 					const { runtime } = this.ctx
 					let stopErr: unknown
+					let disposeErr: unknown
 					try {
 						if (runtime.stop) await runtime.stop(this.stopAbort.signal)
 					} catch (e) {
@@ -195,11 +196,12 @@ export class PluginLifecycleActor {
 					}
 					try {
 						await runtime.dispose?.()
-					} catch {
-						/* ignore */
+					} catch (e) {
+						disposeErr = e
 					}
-					if (stopErr) {
-						if (!this.ctx.err) this.ctx.err = toError(stopErr)
+					const err = stopErr ?? disposeErr
+					if (err) {
+						if (!this.ctx.err) this.ctx.err = toError(err)
 						if (!this.ctx.failedStep) this.ctx.failedStep = 'stop'
 						this.ctx.attempt++
 						await dispatch(E.stopErr)

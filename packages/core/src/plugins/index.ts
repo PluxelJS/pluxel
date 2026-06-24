@@ -23,4 +23,23 @@ export {
 	type RuntimePluginKey,
 } from './runtime/identity'
 export * from './runtime/pluginId'
-export { type CommitSummary, PluginService } from './runtime/PluginService'
+export {
+	collectPluginLifecycleBlocked,
+	collectPluginLifecycleIssuePlugins,
+	collectPluginLifecycleNotStarted,
+	collectPluginLifecycleStoppedWithErrors,
+	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleNotStartedIssue,
+	isPluginLifecycleStoppedWithErrorIssue,
+	type CommitSummary,
+	type PluginLifecycleErrorInfo,
+	type PluginLifecycleIssue,
+	type PluginLifecycleIssueKind,
+	type PluginLifecycleIssuePhase,
+	type PluginLifecycleIssuePredicate,
+	type PluginLifecycleReport,
+	type PluginCommitChanges,
+	type PluginReplacement,
+	PluginService,
+	type RuntimeUpdateCommitSummary,
+} from './runtime/PluginService'

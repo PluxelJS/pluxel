@@ -38,7 +38,7 @@ describe('PluginService watchInstance()', () => {
 		})
 	})
 
-	it('marks restart-only commits as touched and re-emits the restarted instance once', async () => {
+	it('marks restart-only commits as availability changes and re-emits the restarted instance once', async () => {
 		await withCoreHost(async (host) => {
 			const seen: string[] = []
 			let seq = 0
@@ -60,12 +60,12 @@ describe('PluginService watchInstance()', () => {
 			const summary = await host.commit()
 			const second = host.require(Restartable)
 
-			expect(summary.added).toEqual([])
-			expect(summary.removed).toEqual([])
-			expect(summary.replaced).toEqual([])
-			expect(summary.failed).toEqual([])
-			expect(summary.touched).toEqual(['WATCH-RESTART'])
-			expect(summary.restarted).toEqual(['WATCH-RESTART'])
+			expect(summary.pluginChanges.added).toEqual([])
+			expect(summary.pluginChanges.removed).toEqual([])
+			expect(summary.pluginChanges.replaced).toEqual([])
+			expect(summary.lifecycleReport.issues).toEqual([])
+			expect(summary.pluginChanges.availabilityChanged).toEqual(['WATCH-RESTART'])
+			expect(summary.pluginChanges.restarted).toEqual(['WATCH-RESTART'])
 			expect(second).not.toBe(first)
 			expect(seen).toEqual(['none', first.label, second.label])
 		})

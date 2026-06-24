@@ -566,6 +566,59 @@ runRule('configs-use-no-redefault', pluxelRules['configs-use-no-redefault'], {
 	],
 })
 
+runRule('plugin-no-process-exit', pluxelRules['plugin-no-process-exit'], {
+	valid: [
+		{
+			code: `
+				process.exit(1)
+			`,
+		},
+		{
+			code: `
+				class HostEntrypoint {
+					stop() {
+						process.exit(1)
+					}
+				}
+			`,
+		},
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						throw new Error('not ready')
+					}
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						process.exit(1)
+					}
+				}
+			`,
+			errors: [{ messageId: 'exit' }],
+		},
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						setTimeout(() => process.exit(1), 10)
+					}
+				}
+			`,
+			errors: [{ messageId: 'exit' }],
+		},
+	],
+})
+
 runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logger'], {
 	valid: [
 		{

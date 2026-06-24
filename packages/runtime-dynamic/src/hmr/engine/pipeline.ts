@@ -403,7 +403,7 @@ class HmrRuntimeCommitScheduler {
 		const { batch, runtimeUpdate, replacedModules } = params
 		const affectedModules = readBatchAffectedModules(batch)
 		const syncedModules = new Set<string>()
-		runtimeUpdate.touchModules([...replacedModules, ...affectedModules])
+		runtimeUpdate.markAffectedModules([...replacedModules, ...affectedModules])
 
 		const affectedOnlyModules = excludeIds(affectedModules, replacedModules)
 		if (affectedOnlyModules.length > 0) {
@@ -470,7 +470,7 @@ class HmrRuntimeCommitScheduler {
 					...params.affectedModules,
 				]),
 			)
-			params.runtimeUpdate.touchModules(params.syncedModules)
+			params.runtimeUpdate.markAffectedModules(params.syncedModules)
 			commitResult = await params.runtimeUpdate.commit({
 				rollbackOnFailure: false,
 				autoDisabled: [...params.autoDisabled].sort(),
@@ -826,6 +826,26 @@ export type HmrBatchConfig = {
 	prefetchConcurrency: number
 }
 
+export type HmrPluginChanges = {
+	added: readonly string[]
+	replaced: readonly { from: string; to: string }[]
+	removed: readonly string[]
+	availabilityChanged: readonly string[]
+	restarted: readonly string[]
+}
+
+export type HmrPluginLifecycleReport = {
+	ok: boolean
+	issues: readonly {
+		plugin: string
+		phase: string
+		kind: string
+		message: string
+		error?: { name: string; message: string; stack?: string; cause?: string }
+		blockedBy?: string
+	}[]
+}
+
 export type HmrBatchSummary = {
 	epoch: number
 	changed: readonly string[]
@@ -866,28 +886,14 @@ export type HmrBatchSummary = {
 	injectError?: string
 	prefetchFailed: number
 	/**
-	 * Lifecycle-level success flag (core plugin system semantics), when available.
+	 * Formatted plugin change summary from the core plugin system (when available).
 	 *
-	 * Core commit is non-transactional; the container can switch even if some plugins fail to start.
-	 * When present, this is derived from `commit.failed.length === 0`.
+	 * Note: core commit is non-transactional; plugin changes can be applied even when some plugin
+	 * lifecycles fail to start.
 	 */
-	lifecycleOk?: boolean
-	/**
-	 * Commit summary from the core plugin system (when available).
-	 *
-	 * Note: core commit is non-transactional; the container can switch even if some plugins fail to start.
-	 * When `commit` is present, callers should treat `commit.failed` as the source of truth for lifecycle
-	 * failures (and `lifecycleOk` may be derived from it by the caller).
-	 */
-	commit?: {
-		added: readonly string[]
-		replaced: readonly { from: string; to: string }[]
-		removed: readonly string[]
-		failed: readonly string[]
-		touched: readonly string[]
-		restarted: readonly string[]
-		autoDisabled: readonly string[]
-	}
+	pluginChanges?: HmrPluginChanges
+	/** Plugin lifecycle report from the core plugin system, when this batch committed plugin changes. */
+	pluginLifecycleReport?: HmrPluginLifecycleReport
 }
 
 export class HmrBatchProcessor {

@@ -55,7 +55,7 @@ type PluginServiceConfig = {
 type AnyServiceClass = ServiceClass<new (ctx: PluxelContext, cfg?: unknown) => unknown>
 type CascadeOptions = { cascadeDependents?: boolean }
 type ReplacePluginOptions = CascadeOptions & { provideBase?: boolean }
-type PluginReplacement = { from: RuntimePluginKey; to: RuntimePluginKey }
+export type PluginReplacement = { readonly from: RuntimePluginKey; readonly to: RuntimePluginKey }
 type RuntimeUpdateReason = string
 
 export type RuntimeUpdateOptions = {
@@ -102,8 +102,8 @@ export type RuntimeUpdateTransaction = {
 	replace(target: PluginIdentifier, next: PluginConstructor, opts?: ReplacePluginOptions): void
 	upsertModule(module: RuntimeModuleDeclaration): void
 	removeModule(moduleId: string): void
-	touchModule(moduleId: string): void
-	touchModules(moduleIds: Iterable<string>): void
+	markAffectedModule(moduleId: string): void
+	markAffectedModules(moduleIds: Iterable<string>): void
 	restart(id: PluginIdentifier, opts?: CascadeOptions): void
 	commit(
 		options?: RuntimeUpdateCommitOptions,
@@ -125,7 +125,7 @@ type RuntimeModuleSnapshot =
 	| undefined
 type RuntimeUpdateCommitMeta = {
 	reason: RuntimeUpdateReason
-	touchedModules: readonly string[]
+	affectedModules: readonly string[]
 	autoDisabled: readonly RuntimePluginKey[]
 }
 type RuntimeUpdateController = {
@@ -152,6 +152,43 @@ type CommitExecutionPlan = {
 	toStart: Set<RuntimePluginKey>
 	toStopSlots: Set<number>
 	toStartSlots: Set<number>
+}
+
+export type PluginLifecycleIssuePhase = 'resolve' | 'config' | 'start' | 'dependency' | 'stop'
+
+export type PluginLifecycleIssueKind =
+	| 'resolve-failed'
+	| 'config-failed'
+	| 'start-failed'
+	| 'dependency-blocked'
+	| 'stop-failed'
+
+export type PluginLifecycleErrorInfo = {
+	name: string
+	message: string
+	stack?: string
+	cause?: string
+}
+
+export type PluginLifecycleIssue = {
+	plugin: RuntimePluginKey
+	phase: PluginLifecycleIssuePhase
+	kind: PluginLifecycleIssueKind
+	message: string
+	error?: PluginLifecycleErrorInfo
+	blockedBy?: RuntimePluginKey
+}
+
+export type PluginLifecycleReport = {
+	readonly ok: boolean
+	readonly issues: readonly PluginLifecycleIssue[]
+}
+
+export type PluginLifecycleIssuePredicate = (issue: PluginLifecycleIssue) => boolean
+
+type MutableLifecycleReport = {
+	issues: PluginLifecycleIssue[]
+	issueKeys: Set<string>
 }
 
 const EMPTY_DELTA = {
@@ -187,11 +224,111 @@ const sameRuntimeDependencyOverrides = (
 	return true
 }
 
+const createLifecycleReport = (): MutableLifecycleReport => ({
+	issues: [],
+	issueKeys: new Set(),
+})
+
+const EMPTY_LIFECYCLE_REPORT: PluginLifecycleReport = Object.freeze({
+	ok: true,
+	issues: Object.freeze([]) as readonly PluginLifecycleIssue[],
+})
+
+const EMPTY_PLUGIN_COMMIT_CHANGES: PluginCommitChanges = Object.freeze({
+	added: Object.freeze([]) as readonly RuntimePluginKey[],
+	replaced: Object.freeze([]) as readonly PluginReplacement[],
+	removed: Object.freeze([]) as readonly RuntimePluginKey[],
+	restarted: Object.freeze([]) as readonly RuntimePluginKey[],
+	availabilityChanged: Object.freeze([]) as readonly RuntimePluginKey[],
+})
+
+function serializeLifecycleError(error: unknown): PluginLifecycleErrorInfo {
+	if (error instanceof Error) {
+		const info: PluginLifecycleErrorInfo = {
+			name: error.name || 'Error',
+			message: error.message,
+		}
+		if (error.stack) info.stack = error.stack
+		const cause = (error as Error & { cause?: unknown }).cause
+		if (cause !== null && cause !== undefined) info.cause = errorMessage(cause)
+		return info
+	}
+	return {
+		name: typeof error,
+		message: errorMessage(error),
+	}
+}
+
+function errorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message
+	if (typeof error === 'string') return error
+	try {
+		const json = JSON.stringify(error)
+		return json ?? String(error)
+	} catch {
+		return String(error)
+	}
+}
+
+function recordLifecycleIssue(report: MutableLifecycleReport, issue: PluginLifecycleIssue): void {
+	const key = `${issue.plugin}\0${issue.kind}\0${issue.blockedBy ?? ''}\0${issue.message}`
+	if (report.issueKeys.has(key)) return
+	report.issueKeys.add(key)
+	report.issues.push(issue)
+}
+
+function finalizeLifecycleReport(report: MutableLifecycleReport): PluginLifecycleReport {
+	if (report.issues.length === 0) return EMPTY_LIFECYCLE_REPORT
+	return { ok: false, issues: report.issues }
+}
+
+export function isPluginLifecycleNotStartedIssue(issue: PluginLifecycleIssue): boolean {
+	return issue.kind !== 'stop-failed'
+}
+
+export function isPluginLifecycleBlockedIssue(issue: PluginLifecycleIssue): boolean {
+	return issue.kind === 'dependency-blocked'
+}
+
+export function isPluginLifecycleStoppedWithErrorIssue(issue: PluginLifecycleIssue): boolean {
+	return issue.kind === 'stop-failed'
+}
+
+export function collectPluginLifecycleIssuePlugins(
+	report: PluginLifecycleReport | undefined,
+	predicate: PluginLifecycleIssuePredicate = () => true,
+): RuntimePluginKey[] {
+	if (!report) return []
+	const plugins = new Set<RuntimePluginKey>()
+	for (const issue of report.issues) {
+		if (predicate(issue)) plugins.add(issue.plugin)
+	}
+	return [...plugins]
+}
+
+export function collectPluginLifecycleNotStarted(
+	report: PluginLifecycleReport | undefined,
+): RuntimePluginKey[] {
+	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleNotStartedIssue)
+}
+
+export function collectPluginLifecycleBlocked(
+	report: PluginLifecycleReport | undefined,
+): RuntimePluginKey[] {
+	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleBlockedIssue)
+}
+
+export function collectPluginLifecycleStoppedWithErrors(
+	report: PluginLifecycleReport | undefined,
+): RuntimePluginKey[] {
+	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleStoppedWithErrorIssue)
+}
+
 class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public readonly reason: RuntimeUpdateReason
 	private closed = false
 	private readonly moduleSnapshots = new Map<string, RuntimeModuleSnapshot>()
-	private readonly touchedModules = new Set<string>()
+	private readonly affectedModules = new Set<string>()
 
 	public constructor(
 		private readonly controller: RuntimeUpdateController,
@@ -222,25 +359,25 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	public upsertModule(module: RuntimeModuleDeclaration): void {
 		this.assertOpen()
 		this.recordModuleSnapshot(module.moduleId)
-		this.touchedModules.add(module.moduleId)
+		this.affectedModules.add(module.moduleId)
 		this.controller.upsertRuntimeModule(module)
 	}
 
 	public removeModule(moduleId: string): void {
 		this.assertOpen()
 		this.recordModuleSnapshot(moduleId)
-		this.touchedModules.add(moduleId)
+		this.affectedModules.add(moduleId)
 		this.controller.removeRuntimeModule(moduleId)
 	}
 
-	public touchModule(moduleId: string): void {
+	public markAffectedModule(moduleId: string): void {
 		this.assertOpen()
-		this.touchedModules.add(moduleId)
+		this.affectedModules.add(moduleId)
 	}
 
-	public touchModules(moduleIds: Iterable<string>): void {
+	public markAffectedModules(moduleIds: Iterable<string>): void {
 		this.assertOpen()
-		for (const moduleId of moduleIds) this.touchedModules.add(moduleId)
+		for (const moduleId of moduleIds) this.affectedModules.add(moduleId)
 	}
 
 	public restart(id: PluginIdentifier, opts?: CascadeOptions): void {
@@ -253,7 +390,7 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 		const rollbackOnFailure = options.rollbackOnFailure ?? true
 		const result = await this.controller.commitDraft({
 			reason: this.reason,
-			touchedModules: [...this.touchedModules],
+			affectedModules: [...this.affectedModules],
 			autoDisabled: options.autoDisabled ?? [],
 		})
 
@@ -267,9 +404,11 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 		this.closed = true
 		this.controller.completeTransaction(this)
 		this.moduleSnapshots.clear()
-		this.touchedModules.clear()
+		this.affectedModules.clear()
 
-		const failed = options.strict ? (this.controller.lastCommitSummary()?.failed ?? []) : []
+		const failed = options.strict
+			? collectPluginLifecycleNotStarted(this.controller.lastCommitSummary()?.lifecycleReport)
+			: []
 		if (failed.length > 0) {
 			return createErr(new Error(`Some plugins failed to start: ${failed.map(String).join(', ')}`))
 		}
@@ -281,7 +420,7 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 		if (this.closed) return
 		this.closed = true
 		this.rollbackModules()
-		this.touchedModules.clear()
+		this.affectedModules.clear()
 		this.controller.rollbackDraft(this)
 	}
 
@@ -304,23 +443,31 @@ class PluginRuntimeUpdateTransaction implements RuntimeUpdateTransaction {
 	}
 }
 
-export interface CommitSummary {
-	graph: PluginGraph
-	reason?: RuntimeUpdateReason
-	added: RuntimePluginKey[]
-	replaced: PluginReplacement[]
-	removed: RuntimePluginKey[]
-	failed: RuntimePluginKey[]
-	touchedModules: string[]
-	autoDisabled: RuntimePluginKey[]
-	restarted: RuntimePluginKey[]
+export type PluginCommitChanges = {
+	readonly added: readonly RuntimePluginKey[]
+	readonly replaced: readonly PluginReplacement[]
+	readonly removed: readonly RuntimePluginKey[]
+	readonly restarted: readonly RuntimePluginKey[]
 	/**
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
 	 * This includes anything that was stopped or (re)started (adds, replaces, restarts, retries).
 	 * Useful for efficient optional-dependency watchers (e.g. FeatureHost.dep).
 	 */
-	touched: RuntimePluginKey[]
+	readonly availabilityChanged: readonly RuntimePluginKey[]
+}
+
+export type RuntimeUpdateCommitSummary = {
+	readonly reason?: RuntimeUpdateReason
+	readonly affectedModules: readonly string[]
+	readonly autoDisabled: readonly RuntimePluginKey[]
+}
+
+export interface CommitSummary {
+	readonly graph: PluginGraph
+	readonly pluginChanges: PluginCommitChanges
+	readonly runtimeUpdate: RuntimeUpdateCommitSummary
+	readonly lifecycleReport: PluginLifecycleReport
 }
 
 type InstanceWatcher = {
@@ -458,20 +605,20 @@ class InstanceWatcherRegistry {
 
 	public publish(summary: CommitSummary): void {
 		if (this.byResolved.size === 0) return
-		const touched = summary.touched
-		if (touched.length === 0) return
+		const availabilityChanged = summary.pluginChanges.availabilityChanged
+		if (availabilityChanged.length === 0) return
 		const seq = ++this.commitSeq
-		const touchedSet = new Set(touched)
+		const availabilityChangedSet = new Set(availabilityChanged)
 
-		for (let i = 0; i < touched.length; i++) {
-			const set = this.byResolved.get(touched[i]!)
+		for (let i = 0; i < availabilityChanged.length; i++) {
+			const set = this.byResolved.get(availabilityChanged[i]!)
 			if (!set || set.size === 0) continue
 			this.flush(set, summary, seq)
 		}
 
 		const retargeted: InstanceWatcher[] = []
 		for (const [resolved, set] of this.byResolved) {
-			if (touchedSet.has(resolved)) continue
+			if (availabilityChangedSet.has(resolved)) continue
 			for (const entry of set) {
 				const nextResolved = this.resolveGraphKey(summary.graph, entry.token)
 				if (nextResolved !== entry.resolved) retargeted.push(entry)
@@ -606,7 +753,7 @@ export class PluginService {
 	)
 
 	// Internal helpers (single instances; no per‑commit allocations).
-	private readonly lifecycle: LifecycleManager
+	private readonly lifecycleManager: LifecycleManager
 
 	constructor(
 		public ctx: PluxelContext,
@@ -679,7 +826,7 @@ export class PluginService {
 			},
 		)
 
-		this.lifecycle = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
+		this.lifecycleManager = new LifecycleManager(this.ctx, this.startTimeoutMs, this.stopTimeoutMs)
 		this.dependentClosure = new DependentClosureCollector((graph, id) =>
 			this.resolveGraphKey(graph, id),
 		)
@@ -752,7 +899,9 @@ export class PluginService {
 		if (typeof id === 'string') {
 			if (!graph || graph.has(id)) return id as RuntimePluginKey
 			const resolved = graph.resolve(id)
-			return typeof resolved === 'string' ? (resolved as RuntimePluginKey) : (id as RuntimePluginKey)
+			return typeof resolved === 'string'
+				? (resolved as RuntimePluginKey)
+				: (id as RuntimePluginKey)
 		}
 		try {
 			const key = runtimePluginKeyOfCtor(id)
@@ -885,7 +1034,7 @@ export class PluginService {
 		const key = this.resolveRuntimeReadKey(graph, id)
 		if (!key) return false
 		const instance = this.getRuntimeInstance(key)
-		return this.lifecycle.isRunning(instance)
+		return this.lifecycleManager.isRunning(instance)
 	}
 
 	/** Whether an identifier is registered in the current draft container. */
@@ -1008,7 +1157,7 @@ export class PluginService {
 	 * Watch the runtime instance behind a plugin identifier.
 	 *
 	 * - The callback is invoked immediately with the current *running* instance (or `undefined`).
-	 * - On commits, it is only re-evaluated when the *resolved* target is touched (start/stop/restart/replace).
+	 * - On commits, it is only re-evaluated when the resolved target's availability changes.
 	 * - If identifier resolution changes across commits (aliases/replacements), the watcher auto-rebinds.
 	 */
 	public watchInstance<T extends PluginIdentifier>(
@@ -1385,12 +1534,23 @@ export class PluginService {
 		return next
 	}
 
-	private async stopPlugin(id: RuntimePluginKey): Promise<void> {
+	private async stopPlugin(id: RuntimePluginKey, report: MutableLifecycleReport): Promise<void> {
 		// Important: don't call container.get() here; it may instantiate plugins just to stop them.
 		// Only stop plugins that were actually constructed (and thus may be running).
 		const plugin = this.getRuntimeInstance(id)
 		if (!plugin) return
-		await this.lifecycle.stopLifecycle(id, plugin, { timeoutMs: this.resolveStopTimeoutMs(plugin) })
+		const snapshot = await this.lifecycleManager.stopLifecycle(id, plugin, {
+			timeoutMs: this.resolveStopTimeoutMs(plugin),
+		})
+		const context = snapshot?.context as { failedStep?: string; err?: unknown } | undefined
+		if (context?.failedStep !== 'stop') return
+		recordLifecycleIssue(report, {
+			plugin: id,
+			phase: 'stop',
+			kind: 'stop-failed',
+			message: context.err ? errorMessage(context.err) : `Plugin ${String(id)} failed to stop`,
+			error: context.err ? serializeLifecycleError(context.err) : undefined,
+		})
 	}
 
 	private resolveStartTimeoutMs(plugin: BasePlugin): number | undefined {
@@ -1410,10 +1570,14 @@ export class PluginService {
 
 	private getRunningRuntimeInstance(id: RuntimePluginKey | undefined): BasePlugin | undefined {
 		const instance = this.getRuntimeInstance(id)
-		return instance && this.lifecycle.isRunning(instance) ? instance : undefined
+		return instance && this.lifecycleManager.isRunning(instance) ? instance : undefined
 	}
 
-	private async applyTeardown(graph: PluginGraph | undefined, toStop: Set<number>): Promise<void> {
+	private async applyTeardown(
+		graph: PluginGraph | undefined,
+		toStop: Set<number>,
+		report: MutableLifecycleReport,
+	): Promise<void> {
 		if (!graph || toStop.size === 0) return
 		// Default concurrency is 1 (sequential) to preserve legacy stop behavior.
 		await stopPluginsTopo(
@@ -1421,7 +1585,7 @@ export class PluginService {
 			toStop,
 			async (slot) => {
 				const id = graph.keyOf(slot)
-				if (id !== undefined) await this.stopPlugin(id as RuntimePluginKey)
+				if (id !== undefined) await this.stopPlugin(id as RuntimePluginKey, report)
 			},
 			{ concurrency: this.stopConcurrency },
 		)
@@ -1430,12 +1594,20 @@ export class PluginService {
 	private async instantiateAndStart(
 		runtime: PluginRuntime,
 		id: RuntimePluginKey,
+		report: MutableLifecycleReport,
 	): Promise<boolean> {
 		let instance: PluginInstance
 		try {
 			instance = runtime.ensureByKey(id) as PluginInstance
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error(String(error), { cause: error })
+			recordLifecycleIssue(report, {
+				plugin: id,
+				phase: 'resolve',
+				kind: 'resolve-failed',
+				message: err.message,
+				error: serializeLifecycleError(err),
+			})
 			try {
 				this.ctx.emit('resolveError', id, err)
 			} catch {
@@ -1452,6 +1624,13 @@ export class PluginService {
 			await this.injectConfig(instance)
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error(String(error), { cause: error })
+			recordLifecycleIssue(report, {
+				plugin: id,
+				phase: 'config',
+				kind: 'config-failed',
+				message: err.message,
+				error: serializeLifecycleError(err),
+			})
 			try {
 				// Treat config injection/validation failures as start errors so callers can observe the root cause.
 				this.ctx.emit('startError', pluginCtx, err)
@@ -1469,9 +1648,16 @@ export class PluginService {
 		}
 
 		try {
-			await this.lifecycle.startLifecycle(id, instance, this.resolveStartTimeoutMs(instance))
+			await this.lifecycleManager.startLifecycle(id, instance, this.resolveStartTimeoutMs(instance))
 			return true
 		} catch (error) {
+			recordLifecycleIssue(report, {
+				plugin: id,
+				phase: 'start',
+				kind: 'start-failed',
+				message: errorMessage(error),
+				error: serializeLifecycleError(error),
+			})
 			const logger = pluginCtx.logger ?? this.ctx.logger
 			void logger.with({ error }).error`启动 ${String(id)} 失败`
 			try {
@@ -1488,16 +1674,42 @@ export class PluginService {
 		runtime: PluginRuntime,
 		graph: PluginGraph,
 		plan: InitPlan<number>,
+		report: MutableLifecycleReport,
 	): Promise<Set<number>> {
+		for (const slot of plan.leftovers) {
+			const id = graph.keyOf(slot)
+			if (id === undefined) continue
+			recordLifecycleIssue(report, {
+				plugin: id as RuntimePluginKey,
+				phase: 'dependency',
+				kind: 'dependency-blocked',
+				message: `Plugin ${String(id)} could not be scheduled because its dependency graph is cyclic.`,
+			})
+		}
 		return startPluginsWithStrategy(
 			plan,
 			(slot) => {
 				const id = graph.keyOf(slot)
 				return id === undefined
 					? Promise.resolve(false)
-					: this.instantiateAndStart(runtime, id as RuntimePluginKey)
+					: this.instantiateAndStart(runtime, id as RuntimePluginKey, report)
 			},
-			{ strategy: this.startStrategy, concurrency: this.startConcurrency },
+			{
+				strategy: this.startStrategy,
+				concurrency: this.startConcurrency,
+				onDependencyBlocked: (slot, dependency) => {
+					const id = graph.keyOf(slot as number)
+					const dep = graph.keyOf(dependency as number)
+					if (id === undefined || dep === undefined) return
+					recordLifecycleIssue(report, {
+						plugin: id as RuntimePluginKey,
+						phase: 'dependency',
+						kind: 'dependency-blocked',
+						blockedBy: dep as RuntimePluginKey,
+						message: `Plugin ${String(id)} was not started because dependency ${String(dep)} failed.`,
+					})
+				},
+			},
 		)
 	}
 
@@ -1524,16 +1736,15 @@ export class PluginService {
 		const commitResult = await this.enqueueCommit('error')
 		if (!commitResult.ok) return commitResult
 		const summary = this._lastCommit
-		if (summary?.failed.length) {
-			return createErr(
-				new Error(`Some plugins failed to start: ${summary.failed.map(String).join(', ')}`),
-			)
+		const failed = collectPluginLifecycleNotStarted(summary?.lifecycleReport)
+		if (failed.length > 0) {
+			return createErr(new Error(`Some plugins failed to start: ${failed.map(String).join(', ')}`))
 		}
 		return commitResult
 	}
 
 	private async executeCommit(meta: RuntimeUpdateCommitMeta | null = null) {
-		const summaryMeta = this.createCommitSummaryMeta(meta)
+		const runtimeUpdate = this.createRuntimeUpdateSummary(meta)
 		if (
 			!this.definitions.hasPendingChanges() &&
 			this._pendingStart.size === 0 &&
@@ -1542,13 +1753,9 @@ export class PluginService {
 			const graph = this.graph
 			this.publishCommitSummary({
 				graph,
-				...summaryMeta,
-				added: [],
-				replaced: [],
-				removed: [],
-				failed: [],
-				restarted: [],
-				touched: [],
+				runtimeUpdate,
+				pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
+				lifecycleReport: EMPTY_LIFECYCLE_REPORT,
 			})
 			return createOk({ graph, delta: EMPTY_DELTA })
 		}
@@ -1583,13 +1790,9 @@ export class PluginService {
 				confirm()
 				this.publishCommitSummary({
 					graph: this.graph,
-					...summaryMeta,
-					added: [],
-					replaced: [],
-					removed: [],
-					failed: [],
-					restarted: [],
-					touched: [],
+					runtimeUpdate,
+					pluginChanges: EMPTY_PLUGIN_COMMIT_CHANGES,
+					lifecycleReport: EMPTY_LIFECYCLE_REPORT,
 				})
 				return createOk({ graph: this.graph, delta })
 			}
@@ -1601,7 +1804,8 @@ export class PluginService {
 				restart:
 					plan.restartRequested.size > 0 ? [...plan.restartRequested].map(String) : undefined,
 			}))
-			await this.applyTeardown(oldGraph, plan.toStopSlots)
+			const lifecycleReport = createLifecycleReport()
+			await this.applyTeardown(oldGraph, plan.toStopSlots, lifecycleReport)
 			confirm()
 
 			// Ensure fresh instances for restarts/replacements.
@@ -1613,36 +1817,37 @@ export class PluginService {
 					plan.toStartSlots,
 					(slot) => graph.depSlotsOf(slot) as readonly number[],
 				)
-				const failedSlots = await this.startPlugins(runtime, graph, initPlan)
+				const failedSlots = await this.startPlugins(runtime, graph, initPlan, lifecycleReport)
 				for (const slot of failedSlots) {
 					const id = graph.keyOf(slot)
 					if (id !== undefined) failed.add(id as RuntimePluginKey)
 				}
 			}
-
 			// Ensure failed plugins are not observable as "available" for this commit.
 			// (They may have been instantiated but not successfully started.)
 			if (failed.size > 0) {
 				runtime.deleteMany(failed)
 			}
 
+			const lifecycleReportResult = finalizeLifecycleReport(lifecycleReport)
 			this.publishCommitSummary({
 				graph: this.graph,
-				...summaryMeta,
-				added: [...plan.added],
-				replaced: [...plan.replaced],
-				removed: [...plan.removed],
-				failed: [...failed],
-				restarted: this.collectRestartedSummary(plan, failed),
-				touched: [...new Set<RuntimePluginKey>([...plan.toStop, ...plan.toStart])],
+				runtimeUpdate,
+				pluginChanges: {
+					added: [...plan.added],
+					replaced: [...plan.replaced],
+					removed: [...plan.removed],
+					restarted: this.collectRestartedSummary(plan, failed),
+					availabilityChanged: [...new Set<RuntimePluginKey>([...plan.toStop, ...plan.toStart])],
+				},
+				lifecycleReport: lifecycleReportResult,
 			})
 
 			// update pending retry set
 			this.replacePendingStarts(failed)
 
-			if (failed.size > 0) {
-				this.ctx.logger.warn('以下插件启动失败', { failed: [...failed].map(String) })
-				this.ctx.emit('commitFailed', failed)
+			if (!lifecycleReportResult.ok) {
+				this.ctx.logger.warn('插件生命周期报告包含错误', { lifecycleReport: lifecycleReportResult })
 			}
 
 			return createOk({ graph: this.graph, delta })
@@ -1741,14 +1946,14 @@ export class PluginService {
 		this.ctx.emit('afterCommit', summary)
 	}
 
-	private createCommitSummaryMeta(
+	private createRuntimeUpdateSummary(
 		meta: RuntimeUpdateCommitMeta | null,
-	): Pick<CommitSummary, 'reason' | 'touchedModules' | 'autoDisabled'> {
-		const touchedModules = meta ? [...new Set(meta.touchedModules)] : []
+	): RuntimeUpdateCommitSummary {
+		const affectedModules = meta ? [...new Set(meta.affectedModules)] : []
 		const autoDisabled = meta ? [...new Set(meta.autoDisabled)] : []
 		return meta
-			? { reason: meta.reason, touchedModules, autoDisabled }
-			: { touchedModules, autoDisabled }
+			? { reason: meta.reason, affectedModules, autoDisabled }
+			: { affectedModules, autoDisabled }
 	}
 
 	private replacePendingStarts(ids: Iterable<RuntimePluginKey>): void {

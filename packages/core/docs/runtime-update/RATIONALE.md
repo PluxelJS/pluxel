@@ -139,7 +139,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - graph 内部仍编译为 slot/array，不让业务热路径做 string Map lookup。
 - 分批迁移 constructor API，不一次性破坏现有 plugin authoring。
 
-截至当前停点，Phase 3 已完成到可收口状态：HMR/loader 侧 constructor param metadata mutation patch 已删除，dependency ctor identity drift 改为在 core declaration build 阶段解析为 `RuntimePluginKey`；graph key、runtime cache key、commit summary、failed/touched identity、lifecycle status 和 watcher resolved key 都已经迁到 `RuntimePluginKey`。constructor 仍保留为 authoring API 和 compat token alias。
+截至当前停点，Phase 3 已完成到可收口状态：HMR/loader 侧 constructor param metadata mutation patch 已删除，dependency ctor identity drift 改为在 core declaration build 阶段解析为 `RuntimePluginKey`；graph key、runtime cache key、commit summary、lifecycle report、runtime plugin identity、lifecycle status 和 watcher resolved key 都已经迁到 `RuntimePluginKey`。constructor 仍保留为 authoring API 和 compat token alias。
 
 随后完成的第二个窄切口是 persisted dependency override overlay：loader 和 runtime control-plane 不再改写 constructor param metadata，而是把“某个 consumer 在某些 index 上选择了哪个 runtime dependency”的事实发布给 core。core 在 provider declaration build 阶段把 overlay 与原始 constructor params 合成，commit 后重启 consumer subtree。
 

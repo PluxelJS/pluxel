@@ -6,9 +6,13 @@ import {
 	type CommitSummary,
 	Context,
 	type ForkablePluginConstructor,
+	type PluginLifecycleIssue,
+	type PluginLifecycleIssueKind,
+	type PluginLifecycleIssuePhase,
 	type PluginConstructor,
 	type PluginIdentifier,
 	type PluginService,
+	type RuntimePluginKey,
 } from './index'
 
 export {
@@ -22,7 +26,14 @@ export {
 	Plugin,
 	checkPluginDecorator,
 	clearParamToken,
+	collectPluginLifecycleBlocked,
+	collectPluginLifecycleIssuePlugins,
+	collectPluginLifecycleNotStarted,
+	collectPluginLifecycleStoppedWithErrors,
 	getPluginInfo,
+	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleNotStartedIssue,
+	isPluginLifecycleStoppedWithErrorIssue,
 	setParamToken,
 	setParamTokens,
 	UseFeature,
@@ -31,8 +42,16 @@ export { Context } from './index'
 export type {
 	CommitSummary,
 	ForkablePluginConstructor,
+	PluginCommitChanges,
+	PluginReplacement,
+	PluginLifecycleIssue,
+	PluginLifecycleIssueKind,
+	PluginLifecycleIssuePhase,
+	PluginLifecycleIssuePredicate,
 	PluginConstructor,
 	PluginIdentifier,
+	RuntimeUpdateCommitSummary,
+	RuntimePluginKey,
 } from './index'
 
 type NamespacedConfigKey = `${string}.${string}`
@@ -115,6 +134,13 @@ export type CoreHostOptions = {
 	prepareCommit?: (ctx: Context) => Promise<void> | void
 }
 
+export type CoreHostLifecycleIssueExpectation = {
+	phase?: PluginLifecycleIssuePhase
+	kind?: PluginLifecycleIssueKind
+	blockedBy?: PluginConstructor | string
+	message?: string | RegExp
+}
+
 function normalizeConfig(config: Context.Config): Context.Config {
 	return Object.assign({}, config, {
 		root: config.root ?? {},
@@ -130,6 +156,71 @@ function assertCommitSummary(
 	const summary = registry.lastCommit
 	if (!summary) throw new Error('commit succeeded but lastCommit is missing')
 	return summary
+}
+
+function pluginKey(target: PluginConstructor | string): RuntimePluginKey {
+	return (typeof target === 'string' ? target : getPluginInfo(target).id) as RuntimePluginKey
+}
+
+export function findPluginLifecycleIssue(
+	summary: CommitSummary,
+	plugin: PluginConstructor | string,
+	expected: CoreHostLifecycleIssueExpectation = {},
+): PluginLifecycleIssue | undefined {
+	const key = pluginKey(plugin)
+	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
+	return summary.lifecycleReport.issues.find((issue) => {
+		if (issue.plugin !== key) return false
+		if (expected.phase && issue.phase !== expected.phase) return false
+		if (expected.kind && issue.kind !== expected.kind) return false
+		if (blockedBy && issue.blockedBy !== blockedBy) return false
+		if (expected.message instanceof RegExp) return expected.message.test(issue.message)
+		if (typeof expected.message === 'string') return issue.message.includes(expected.message)
+		return true
+	})
+}
+
+export function pluginLifecycleIssuePlugins(
+	summary: CommitSummary,
+	expected: CoreHostLifecycleIssueExpectation = {},
+): RuntimePluginKey[] {
+	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
+	const plugins = new Set<RuntimePluginKey>()
+	for (const issue of summary.lifecycleReport.issues) {
+		if (expected.phase && issue.phase !== expected.phase) continue
+		if (expected.kind && issue.kind !== expected.kind) continue
+		if (blockedBy && issue.blockedBy !== blockedBy) continue
+		if (expected.message instanceof RegExp && !expected.message.test(issue.message)) continue
+		if (typeof expected.message === 'string' && !issue.message.includes(expected.message)) {
+			continue
+		}
+		plugins.add(issue.plugin)
+	}
+	return [...plugins]
+}
+
+export function assertPluginLifecycleIssue(
+	summary: CommitSummary,
+	plugin: PluginConstructor | string,
+	expected: CoreHostLifecycleIssueExpectation = {},
+): PluginLifecycleIssue {
+	const issue = findPluginLifecycleIssue(summary, plugin, expected)
+	if (issue) return issue
+	const key = pluginKey(plugin)
+	const details = [
+		expected.phase ? `phase=${expected.phase}` : undefined,
+		expected.kind ? `kind=${expected.kind}` : undefined,
+		expected.blockedBy ? `blockedBy=${pluginKey(expected.blockedBy)}` : undefined,
+		expected.message ? `message=${String(expected.message)}` : undefined,
+	]
+		.filter(Boolean)
+		.join(', ')
+	throw new Error(
+		`Expected lifecycle issue for ${String(key)}${details ? ` (${details})` : ''}. ` +
+			`Actual issues: ${summary.lifecycleReport.issues
+				.map((item) => `${item.plugin}:${item.kind}:${item.message}`)
+				.join('; ')}`,
+	)
 }
 
 export function createCoreHost(
@@ -155,7 +246,8 @@ export function createCoreHost(
 		const graph = last()?.graph
 		if (!graph) return false
 		if (typeof id === 'string') return graph.has(id)
-		if (typeof id === 'function') return registry.resolveRuntimeKey(id as PluginIdentifier) !== undefined
+		if (typeof id === 'function')
+			return registry.resolveRuntimeKey(id as PluginIdentifier) !== undefined
 		return false
 	}
 

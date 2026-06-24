@@ -102,6 +102,16 @@ function isThisFeaturesCall(node: unknown, methodName: string): boolean {
 	)
 }
 
+function isProcessExitCall(node: unknown): boolean {
+	const expression = unwrapExpression(node)
+	if (!expression || expression.type !== 'CallExpression') return false
+	const callee = unwrapExpression(expression.callee)
+	if (!callee || callee.type !== 'MemberExpression') return false
+	if (getStaticPropertyName(callee.property, Boolean(callee.computed)) !== 'exit') return false
+	const target = unwrapExpression(callee.object)
+	return target?.type === 'Identifier' && target.name === 'process'
+}
+
 function isFunctionBoundary(node: unknown): boolean {
 	return isNodeLike(node)
 		? node.type === 'ArrowFunctionExpression' ||
@@ -746,11 +756,32 @@ const pluginConstructorNoTypeOnlyImports = createRule(
 	}),
 )
 
+const pluginNoProcessExit = createRule(
+	{
+		type: 'problem',
+		docs: {
+			description: 'Disallow process.exit(...) inside @Plugin classes',
+		},
+		messages: {
+			exit: 'Plugins must not call process.exit(...). Throw during lifecycle startup or report an operational error so the host can decide process policy.',
+		},
+	},
+	(context) => ({
+		CallExpression(node) {
+			if (!isProcessExitCall(node)) return
+			const ancestors = context.sourceCode.getAncestors(node)
+			const inPluginClass = ancestors.some((ancestor) => isPluginClass(ancestor))
+			if (inPluginClass) report(context, node, 'exit')
+		},
+	}),
+)
+
 export const pluginsRules: Record<string, OxRule> = {
 	'features-use-top-level-class': featuresUseTopLevelClass,
 	'features-try-use-no-class-field': featuresTryUseNoClassField,
 	'features-try-use-requires-defined-spec': featuresTryUseRequiresDefinedSpec,
 	'features-try-use-no-static-load': featuresTryUseNoStaticLoad,
+	'plugin-no-process-exit': pluginNoProcessExit,
 	'plugin-base-class-requires-plugin-registration': pluginBaseClassRequiresPluginRegistration,
 	'plugin-constructor-no-type-only-imports': pluginConstructorNoTypeOnlyImports,
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+import {
+	BasePlugin,
+	Plugin,
+	assertPluginLifecycleIssue,
+	pluginLifecycleIssuePlugins,
+	setParamToken,
+	withCoreHost,
+} from '@pluxel/core/test'
 
 function createDeferred() {
 	let resolve!: () => void
@@ -58,5 +65,33 @@ describe('PluginService teardown ordering', () => {
 			},
 			{ registry: { stopConcurrency: 2 } },
 		)
+	})
+
+	it('reports stop failures while continuing teardown', async () => {
+		await withCoreHost(async (host) => {
+			let stopped = false
+
+			@Plugin({ name: 'StopFail' })
+			class StopFail extends BasePlugin {
+				override stop(): void {
+					stopped = true
+					throw new Error('stop boom')
+				}
+			}
+
+			host.add(StopFail)
+			await host.commit()
+
+			host.remove(StopFail)
+			const summary = await host.commitAllowFail()
+
+			expect(stopped).toBe(true)
+			expect(pluginLifecycleIssuePlugins(summary)).toEqual(['StopFail'])
+			assertPluginLifecycleIssue(summary, StopFail, {
+				phase: 'stop',
+				kind: 'stop-failed',
+				message: 'stop boom',
+			})
+		})
 	})
 })

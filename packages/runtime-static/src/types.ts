@@ -1,8 +1,4 @@
-import type {
-	Context as CoreContext,
-	CommitSummary,
-	PluginConstructor,
-} from '@pluxel/core'
+import type { Context as CoreContext, CommitSummary, PluginConstructor } from '@pluxel/core'
 import type { Context } from '@pluxel/runtime'
 import type { ConfigServiceConfig } from '@pluxel/runtime/services'
 
@@ -53,6 +49,7 @@ export type StaticRuntimePluginStatus =
 	| 'disabled'
 	| 'config-invalid'
 	| 'dependency-missing'
+	| 'dependency-failed'
 	| 'start-failed'
 	| 'unknown-config-entry'
 	| 'catalog-drift'

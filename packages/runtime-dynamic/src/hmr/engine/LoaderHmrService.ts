@@ -1067,22 +1067,34 @@ export class LoaderHmrService {
 		const commit = this.commitByBatchEpoch.get(epoch)
 		if (!commit) return summary
 
-		const added = commit.added.map((id) => this.formatIdentifier(id))
-		const replaced = commit.replaced.map(({ from, to }) => ({
+		const added = commit.pluginChanges.added.map((id) => this.formatIdentifier(id))
+		const replaced = commit.pluginChanges.replaced.map(({ from, to }) => ({
 			from: this.formatIdentifier(from),
 			to: this.formatIdentifier(to),
 		}))
-		const removed = commit.removed.map((id) => this.formatIdentifier(id))
-		const failed = commit.failed.map((id) => this.formatIdentifier(id))
-		const touched = commit.touched.map((id) => this.formatIdentifier(id))
-		const restarted = commit.restarted.map((id) => this.formatIdentifier(id))
-		const autoDisabled = commit.autoDisabled.map((id) => this.formatIdentifier(id))
+		const removed = commit.pluginChanges.removed.map((id) => this.formatIdentifier(id))
+		const availabilityChanged = commit.pluginChanges.availabilityChanged.map((id) =>
+			this.formatIdentifier(id),
+		)
+		const restarted = commit.pluginChanges.restarted.map((id) => this.formatIdentifier(id))
+		const autoDisabled = commit.runtimeUpdate.autoDisabled.map((id) => this.formatIdentifier(id))
+		const pluginChanges = { added, replaced, removed, availabilityChanged, restarted }
+		const pluginLifecycleReport = {
+			ok: commit.lifecycleReport.ok,
+			issues: commit.lifecycleReport.issues.map((issue) => {
+				const next = Object.assign({}, issue, {
+					plugin: this.formatIdentifier(issue.plugin),
+				})
+				if (issue.blockedBy) next.blockedBy = this.formatIdentifier(issue.blockedBy)
+				return next
+			}),
+		}
 
 		return {
 			...summary,
 			autoDisabled,
-			lifecycleOk: failed.length === 0,
-			commit: { added, replaced, removed, failed, touched, restarted, autoDisabled },
+			pluginChanges,
+			pluginLifecycleReport,
 		}
 	}
 

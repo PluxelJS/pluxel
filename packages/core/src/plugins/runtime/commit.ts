@@ -134,6 +134,8 @@ export type StartStrategyOptions = {
 	strategy?: PluginStartStrategy
 	/** Only used by `ready-queue`. Minimum is 1. */
 	concurrency?: number
+	/** Called when a node is skipped because one of its dependencies failed. */
+	onDependencyBlocked?: (id: unknown, dependency: unknown) => void
 }
 
 export async function startPluginsWithStrategy<T>(
@@ -154,12 +156,18 @@ export async function startPluginsWithStrategy<T>(
 
 	const strategy = opts.strategy ?? 'ready-queue'
 	if (strategy === 'batch') {
-		await startPluginsBatched(plan, instantiateAndStart, failed)
+		await startPluginsBatched(plan, instantiateAndStart, failed, opts.onDependencyBlocked)
 		return failed
 	}
 
 	const concurrency = normalizeConcurrency(opts.concurrency, 8)
-	await startPluginsReadyQueue(plan, instantiateAndStart, failed, concurrency)
+	await startPluginsReadyQueue(
+		plan,
+		instantiateAndStart,
+		failed,
+		concurrency,
+		opts.onDependencyBlocked,
+	)
 	return failed
 }
 
@@ -167,6 +175,7 @@ async function startPluginsBatched<T>(
 	plan: InitPlan<T>,
 	instantiateAndStart: (id: T) => Promise<boolean>,
 	failed: Set<T>,
+	onDependencyBlocked?: (id: T, dependency: T) => void,
 ): Promise<void> {
 	const { dependencies } = plan
 
@@ -178,15 +187,16 @@ async function startPluginsBatched<T>(
 
 			const deps = dependencies.get(id)
 			if (deps && deps.length > 0) {
-				let blocked = false
+				let blocker: T | undefined
 				for (let i = 0; i < deps.length; i++) {
 					if (failed.has(deps[i])) {
-						blocked = true
+						blocker = deps[i]
 						break
 					}
 				}
-				if (blocked) {
+				if (blocker !== undefined) {
 					failed.add(id)
+					onDependencyBlocked?.(id, blocker)
 					continue
 				}
 			}
@@ -212,6 +222,7 @@ async function startPluginsReadyQueue<T>(
 	instantiateAndStart: (id: T) => Promise<boolean>,
 	failed: Set<T>,
 	concurrency: number,
+	onDependencyBlocked?: (id: T, dependency: T) => void,
 ): Promise<void> {
 	const nodes = plan.nodes
 	if (nodes.length === 0) return
@@ -229,8 +240,10 @@ async function startPluginsReadyQueue<T>(
 
 	for (let i = 0; i < nodes.length; i++) {
 		const id = nodes[i]!
-		if (nodeDependsOnFailedSeed(id, plan.dependencies, failed)) {
+		const blocker = failedDependencyOf(id, plan.dependencies, failed)
+		if (blocker !== undefined) {
 			markBlockedNode(id, hasFailedDep, blockedQueued, blocked)
+			onDependencyBlocked?.(id, blocker)
 		}
 		if ((remainingDeps.get(id) ?? 0) === 0) ready.push(id)
 	}
@@ -244,6 +257,7 @@ async function startPluginsReadyQueue<T>(
 			remainingDeps.set(child, next)
 			if (!ok) {
 				markBlockedNode(child, hasFailedDep, blockedQueued, blocked)
+				onDependencyBlocked?.(child, id)
 			}
 			if (next === 0) ready.push(child)
 		}
@@ -288,16 +302,17 @@ async function startPluginsReadyQueue<T>(
 	}
 }
 
-function nodeDependsOnFailedSeed<T>(
+function failedDependencyOf<T>(
 	id: T,
 	dependencies: ReadonlyMap<T, readonly T[]>,
 	failed: ReadonlySet<T>,
-): boolean {
+): T | undefined {
 	const deps = dependencies.get(id) ?? []
 	for (let i = 0; i < deps.length; i++) {
-		if (failed.has(deps[i]!)) return true
+		const dep = deps[i]!
+		if (failed.has(dep)) return dep
 	}
-	return false
+	return undefined
 }
 
 function markBlockedNode<T>(

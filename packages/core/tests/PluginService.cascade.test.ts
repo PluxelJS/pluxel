@@ -34,11 +34,11 @@ async function expectCascadeUnregisterFromDraft(opts?: { invalidateDraftFirst?: 
 
 		const summary = await host.commit()
 
-		expect(summary.added).toEqual([])
-		expect(summary.removed).toEqual([
+		expect(summary.pluginChanges.added).toEqual([])
+		expect(summary.pluginChanges.removed).toEqual([
 			`${opts?.invalidateDraftFirst ? 'CASCADE-RECOVER' : 'CASCADE-DRAFT'}-A`,
 		])
-		expect(summary.failed).toEqual([])
+		expect(summary.lifecycleReport.issues).toEqual([])
 		expect(new Set(host.plugins())).toEqual(new Set())
 		expect(host.isRunning(A)).toBe(false)
 		expect(host.isRunning(B)).toBe(false)
@@ -104,11 +104,11 @@ describe('PluginService cascade options', () => {
 			const secondA = host.require(A)
 			const secondB = host.require(B)
 
-			expect(summary.added).toEqual([])
-			expect(summary.removed).toEqual([])
-			expect(summary.replaced).toEqual([])
-			expect(summary.failed).toEqual([])
-			expect(summary.touched).toEqual(['CASCADE-RESTART-A'])
+			expect(summary.pluginChanges.added).toEqual([])
+			expect(summary.pluginChanges.removed).toEqual([])
+			expect(summary.pluginChanges.replaced).toEqual([])
+			expect(summary.lifecycleReport.issues).toEqual([])
+			expect(summary.pluginChanges.availabilityChanged).toEqual(['CASCADE-RESTART-A'])
 			expect(secondA).not.toBe(firstA)
 			expect(secondB).toBe(firstB)
 		})
@@ -128,7 +128,7 @@ describe('PluginService cascade options', () => {
 		})
 	})
 
-	it('replace without cascading leaves existing dependents running and limits touched scope', async () => {
+	it('replace without cascading leaves existing dependents running and limits availability changes', async () => {
 		await withCoreHost(async (host) => {
 			abstract class Abs extends BasePlugin {}
 
@@ -156,8 +156,12 @@ describe('PluginService cascade options', () => {
 			host.replace(A, B, { provideBase: true, cascadeDependents: false })
 			const summary = await host.commit()
 
-			expect(summary.replaced).toEqual([{ from: 'CASCADE-REPLACE-A', to: 'CASCADE-REPLACE-B' }])
-			expect(new Set(summary.touched)).toEqual(new Set(['CASCADE-REPLACE-A', 'CASCADE-REPLACE-B']))
+			expect(summary.pluginChanges.replaced).toEqual([
+				{ from: 'CASCADE-REPLACE-A', to: 'CASCADE-REPLACE-B' },
+			])
+			expect(new Set(summary.pluginChanges.availabilityChanged)).toEqual(
+				new Set(['CASCADE-REPLACE-A', 'CASCADE-REPLACE-B']),
+			)
 			expect(host.require(C)).toBe(firstC)
 			expect(host.ctx.registry.graph.resolve(Abs)).toBe('CASCADE-REPLACE-B')
 			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()

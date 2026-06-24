@@ -38,9 +38,9 @@ Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 
 - core registry 已有 runtime module ownership read model：`runtimeModules`、`listRuntimeModuleItems(...)`、`getRuntimeModuleId(...)`。
 - `RuntimeUpdateTransaction` 已有 `upsertModule(...)` / `removeModule(...)`，并带 rollback journal。
-- `RuntimeUpdateTransaction` 已有 `touchModule(...)` / `touchModules(...)`，用于在不改变 ownership 的情况下记录本次更新涉及的 modules。
-- core `CommitSummary` 已带 `reason` 和 `touchedModules`；普通 commit 的 `touchedModules` 为空数组，runtime update commit 会填入事务标记过的 modules。
-- runtime-dynamic 的 loader declaration transaction 在 `commit()` 时把 touched module ownership 同步到 core。
+- `RuntimeUpdateTransaction` 已有 `markAffectedModule(...)` / `markAffectedModules(...)`，用于在不改变 ownership 的情况下记录本次更新涉及的 modules。
+- core `CommitSummary.runtimeUpdate` 已带 `reason` 和 `affectedModules`；普通 commit 的 `affectedModules` 为空数组，runtime update commit 会填入事务标记过的 modules。
+- runtime-dynamic 的 loader declaration transaction 在 `commit()` 时把 affected modules 的 ownership 同步到 core。
 - loader transaction `rollback()` 不发布 core ownership，避免 loader 声明回滚后污染 core read model。
 - runtime-dynamic 的 HMR batch 现在可把 module ownership 直接挂到 `RuntimeUpdateTransaction`，因此 `afterCommit` 监听器在 HMR commit 内已能读取到最新的 `ctx.registry.runtimeModules`。
 - loader 内部已删除一层纯重复 read-model：`name2ExportKey` 不再单独维护，公开 `exportKey` 查询改为从 `moduleMap` 按需推导，新增成本只发生在 catalog/UI 查询边界。
@@ -95,7 +95,7 @@ Phase 3 已完成到可收口状态：constructor identity 已从 graph/runtime 
 
 - runtime-dynamic 已删除 HMR path 上的 `normalizeCtorParams(...)` / `syncModuleParams(...)` / `setParamTokens(...)` metadata 改写补丁。
 - core `PluginDefinitions` 在 provider declaration build 阶段读取 constructor deps，并把同 id / fork id 的漂移 ctor 解析为当前 `RuntimePluginKey`。
-- dependency graph node key、runtime cache key、commit summary 的 `added` / `removed` / `replaced` / `failed` / `touched`、`commitFailed` payload、lifecycle id、watcher resolved key 都已迁到 `RuntimePluginKey`。
+- dependency graph node key、runtime cache key、commit summary 的 `added` / `removed` / `replaced` / `availabilityChanged`、lifecycle issue plugin key、lifecycle id、watcher resolved key 都已迁到 `RuntimePluginKey`；lifecycle failure 通过 `afterCommit` 的 `lifecycleReport.ok` / `lifecycleReport.issues` 和 lifecycle selector 观察，不再维护独立失败事件或派生失败数组。
 - constructor token 仍作为 authoring API 和 compat alias 保留：`features.dep(SomeCtor)`、constructor params、base provider token、旧 `getInstance(Ctor)` / `isRunning(Ctor)` / `watchInstance(Ctor)` 仍可用，但都会在 build/planning/read-model 边界解析成 key。
 - core `isRunning(...)` / `getInstance(...)` / `watchInstance(...)` 的显式 runtime read model 也通过同一 ownership read key 处理 ctor identity drift。
 - 归一化只在 declaration/build 边界发生；无变化时复用原 deps array，不进入插件业务热路径。
@@ -125,7 +125,7 @@ Phase 3 性能判断：
 Phase 4/5 已到稳定停点：adapter 已继续瘦身，旧补丁已删除；剩余边界属于 adapter 语义。
 
 - HMR executor 仍知道 retry 后需要 re-sync affected/replaced modules。
-- commit summary 已有 `reason` / `touchedModules` / `autoDisabled` / `restarted`；不再补 revision replacement 等字段，除非后续出现真实 consumer。
+- commit summary 已拆成 `pluginChanges` / `runtimeUpdate` / `lifecycleReport`；不再补 revision replacement 等字段，除非后续出现真实 consumer。
 - worker fallback path、Tinypool worker entry resolution、runtime packaged manifest implicit path、HMR enabled-but-stopped 诊断、UI extension compiler entry base-dir lookup 已优先使用 core runtime module ownership read model，loader registry 只作为兼容 fallback。
 - UI compiler / worker watcher 还没有完全统一成只消费 commit summary 或 plugin lifecycle；watch files、source entry、HMR handles 仍属于 adapter 语义，不能下沉到 core。
 - 外层 retry re-sync 属于 loader/config re-apply 语义；constructor param normalization patch 和 dependency override metadata mutation patch 已删除。

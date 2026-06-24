@@ -129,7 +129,7 @@ export class PluginRegistry {
 		type Undo = () => void
 		const undos: Undo[] = []
 		const seen = new Map<object, Set<unknown>>() // map -> keys
-		const touchedModules = new Set<ModuleId>()
+		const affectedModules = new Set<ModuleId>()
 		const runtimeUpdate = options.runtimeUpdate
 
 		const record = <K, V>(map: Map<K, V>, key: K) => {
@@ -186,7 +186,7 @@ export class PluginRegistry {
 
 		return {
 			recordModule: (moduleId: ModuleId) => {
-				touchedModules.add(moduleId)
+				affectedModules.add(moduleId)
 				record(this.moduleMap, moduleId)
 			},
 			recordName: (name: PluginName) => {
@@ -201,23 +201,20 @@ export class PluginRegistry {
 			},
 			rollback: () => {
 				for (let i = undos.length - 1; i >= 0; i--) undos[i]!()
-				touchedModules.clear()
+				affectedModules.clear()
 			},
 			commit: () => {
 				if (!runtimeUpdate) {
-					for (const moduleId of touchedModules) this.syncCoreRuntimeModule(moduleId)
+					for (const moduleId of affectedModules) this.syncCoreRuntimeModule(moduleId)
 				}
 				undos.length = 0
 				seen.clear()
-				touchedModules.clear()
+				affectedModules.clear()
 			},
 		}
 	}
 
-	private publishRuntimeModule(
-		moduleId: ModuleId,
-		runtimeUpdate: RuntimeModuleUpdateBridge,
-	): void {
+	private publishRuntimeModule(moduleId: ModuleId, runtimeUpdate: RuntimeModuleUpdateBridge): void {
 		const items = this.moduleMap.get(moduleId)
 		if (!items || items.length === 0) {
 			runtimeUpdate.removeModule(moduleId)
@@ -372,8 +369,8 @@ export class PluginRegistry {
 			tx?.recordIdentity(ctor)
 			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
 			name = prefixedId
-				void this.ctx.logger
-					.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
+			void this.ctx.logger
+				.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
 		}
 
 		const prevSeen = this.enrolled.get(ctor)

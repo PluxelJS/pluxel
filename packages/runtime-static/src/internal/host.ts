@@ -1,6 +1,8 @@
 import {
 	type CommitSummary,
+	isPluginLifecycleNotStartedIssue,
 	type PluginConstructor,
+	type PluginLifecycleIssue,
 } from '@pluxel/core'
 import { Context } from '@pluxel/runtime'
 import { bootstrapHostVault } from '@pluxel/runtime/services'
@@ -405,11 +407,21 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		plan: StaticRuntimeCatalogPlan,
 		commit: CommitSummary | undefined,
 	): void {
-		const failed = commit ? new Set(commit.failed.map(String)) : new Set<string>()
+		const issueByPlugin = new Map<string, PluginLifecycleIssue>()
+		for (const issue of commit?.lifecycleReport.issues ?? []) {
+			if (isPluginLifecycleNotStartedIssue(issue) && !issueByPlugin.has(String(issue.plugin))) {
+				issueByPlugin.set(String(issue.plugin), issue)
+			}
+		}
 		for (const { name, plugin } of plan.catalog.entries) {
 			if (!plan.enabled.has(name) || plan.blocked.has(name)) continue
-			if (failed.has(name)) {
-				plan.entries.push({ name, status: 'start-failed' })
+			const issue = issueByPlugin.get(name)
+			if (issue) {
+				plan.entries.push({
+					name,
+					status: issue.kind === 'dependency-blocked' ? 'dependency-failed' : 'start-failed',
+					message: issue.message,
+				})
 			} else if (this.ctx.registry.isRunning(plugin)) {
 				plan.entries.push({ name, status: 'started' })
 			}
@@ -417,7 +429,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 }
 
-function compactReportEntries(entries: readonly StaticRuntimeReportEntry[]): StaticRuntimeReportEntry[] {
+function compactReportEntries(
+	entries: readonly StaticRuntimeReportEntry[],
+): StaticRuntimeReportEntry[] {
 	const out: StaticRuntimeReportEntry[] = []
 	const seen = new Set<string>()
 	for (const entry of entries) {

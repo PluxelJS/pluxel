@@ -22,6 +22,12 @@ function statuses(host: StaticRuntimeHost): Record<string, StaticRuntimePluginSt
 	return out
 }
 
+function messages(host: StaticRuntimeHost): Record<string, string | undefined> {
+	const out: Record<string, string | undefined> = {}
+	for (const entry of host.lastReport()?.entries ?? []) out[entry.name] = entry.message
+	return out
+}
+
 const RequiredStringSchema = {
 	'~standard': {
 		version: 1,
@@ -297,14 +303,62 @@ describe('@pluxel/runtime-static', () => {
 			},
 		)
 		try {
-			await host.start()
+			const report = await host.start()
 
 			expect(statuses(host)).toMatchObject({
 				StartFail: 'start-failed',
 				StartOk: 'started',
 			})
+			expect(messages(host).StartFail).toContain('boom')
+			expect(report.commit?.lifecycleReport.issues).toMatchObject([
+				{ plugin: 'StartFail', kind: 'start-failed', phase: 'start' },
+			])
 			expect(host.ctx.registry.isRunning(StartFail)).toBe(false)
 			expect(host.ctx.registry.isRunning(StartOk)).toBe(true)
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('reports dependency-failed when a provider starts and fails', async () => {
+		@Plugin({ name: 'ProviderFail' })
+		class ProviderFail extends BasePlugin {
+			override init(): void {
+				throw new Error('provider unavailable')
+			}
+		}
+
+		@Plugin({ name: 'ConsumerBlocked' })
+		class ConsumerBlocked extends BasePlugin {
+			constructor(_provider: ProviderFail) {
+				super()
+			}
+		}
+		setParamToken(ConsumerBlocked, 0, ProviderFail)
+
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({
+				name: 'static-provider-fail',
+				plugins: [ProviderFail, ConsumerBlocked],
+			}),
+			{
+				configService: {
+					mode: 'memory',
+					snapshot: { enabled: ['ProviderFail', 'ConsumerBlocked'] },
+				},
+			},
+		)
+		try {
+			await host.start()
+
+			expect(statuses(host)).toMatchObject({
+				ProviderFail: 'start-failed',
+				ConsumerBlocked: 'dependency-failed',
+			})
+			expect(messages(host).ProviderFail).toContain('provider unavailable')
+			expect(messages(host).ConsumerBlocked).toContain('ProviderFail')
+			expect(host.ctx.registry.isRunning(ProviderFail)).toBe(false)
+			expect(host.ctx.registry.isRunning(ConsumerBlocked)).toBe(false)
 		} finally {
 			await host.stop()
 		}

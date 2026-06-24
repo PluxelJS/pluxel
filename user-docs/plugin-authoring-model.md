@@ -26,13 +26,19 @@
 Pluxel core 的插件模型应该保持小而确定：
 
 - `init()` 抛错：该插件本轮启动失败。
-- 依赖它的插件：不启动，进入失败集合。
+- 依赖它的插件：不启动，并在 lifecycle report 中记录 dependency issue。
 - 不依赖它的插件：继续按依赖拓扑和并发策略启动。
 - 启动失败的插件：仍保留在 registry/container 中，后续 config、HMR 或下一次 commit 可以重试。
 - `stop()` 或 dispose 失败：记录错误，但不应该阻塞整体关闭。
 - core 不负责决定是否退出进程。
 
 这意味着启动失败不是“系统崩了”，而是“这次生命周期提交中某个节点没有进入 running 状态”。
+
+提交后的生命周期观察面是 `CommitSummary.lifecycleReport`：
+
+- `lifecycleReport.ok` 是快速判断本次生命周期是否有问题的摘要。
+- `lifecycleReport.issues` 是唯一事实列表，记录插件、阶段、错误类型、消息和依赖阻塞关系。
+- 需要派生“哪些插件未启动 / 被依赖阻塞 / 停止时报错”时，使用 lifecycle selector helper，不要在业务代码里重复手写过滤条件。
 
 ## 插件最佳写法
 
@@ -108,7 +114,7 @@ override init() {
 }
 ```
 
-不要把可选服务放进 constructor 硬依赖，否则它失败会把主插件也拖入失败集合。
+不要把可选服务放进 constructor 硬依赖，否则它失败会让主插件也进入 lifecycle report 的启动失败链路。
 
 ### 资源创建后立即注册清理
 

@@ -11,8 +11,6 @@
 
 1. `plugin-authoring-model.md`
    插件整体模型、生命周期、错误模型、资源管理和推荐写法。
-2. `plugin-model-refinement.md`
-   下一轮精进插件模型的三个核心要义。
 
 ## 写作原则
 

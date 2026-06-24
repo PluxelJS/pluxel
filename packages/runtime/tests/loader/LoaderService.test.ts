@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	ForkablePlugin,
+	Plugin,
+	assertPluginLifecycleIssue,
+	setParamToken,
+} from '@pluxel/runtime/test'
 import type { ForkablePluginConstructor } from '@pluxel/core'
 import { LoaderService } from '../../../runtime-dynamic/src/services'
 import {
@@ -50,7 +56,7 @@ describe('LoaderService', () => {
 		expect(loader.api.registry.findModuleId('Forky#a')).toBe('pluxel:builtins')
 	})
 
-	it('cleans up failed fork registrations from commitFailed events', async () => {
+	it('cleans up failed fork registrations after committed lifecycle reports', async () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = new LoaderService(ctx)
 
@@ -71,7 +77,7 @@ describe('LoaderService', () => {
 
 		const res = await core.registry.commit()
 		expect(res.ok).toBe(true)
-		expect(core.registry.lastCommit?.failed).toEqual(['Worker#f1'])
+		assertPluginLifecycleIssue(core.registry.lastCommit!, 'Worker#f1', { kind: 'start-failed' })
 		expect(core.registry.isRegistered(Fork)).toBe(false)
 		batch.commit()
 	})
@@ -191,7 +197,8 @@ describe('LoaderService', () => {
 		Plugin({ name: 'Builtin' })(Builtin)
 
 		ctx.on('afterCommit', (summary) => {
-			if ((summary as { reason?: string }).reason !== 'startup') return
+			if ((summary as { runtimeUpdate?: { reason?: string } }).runtimeUpdate?.reason !== 'startup')
+				return
 			moduleItemsSeenDuringStartupCommit = core.registry
 				.listRuntimeModuleItems('pluxel:builtins')
 				.map((item) => item.ctor)

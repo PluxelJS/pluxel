@@ -60,8 +60,8 @@ describe('HmrExecutor commit retry', () => {
 			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
 			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
 			await host.commit()
-			host.ctx.on('afterCommit', (summary: { reason?: string }) => {
-				if (summary.reason !== 'hmr') return
+			host.ctx.on('afterCommit', (summary: { runtimeUpdate?: { reason?: string } }) => {
+				if (summary.runtimeUpdate?.reason !== 'hmr') return
 				moduleItemsSeenDuringHmrCommit = host.ctx.registry
 					.listRuntimeModuleItems('/dep.ts')
 					.map((item: { ctor: Function }) => item.ctor)
@@ -88,8 +88,8 @@ describe('HmrExecutor commit retry', () => {
 			expect(new Set(out?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
 			expect(out?.syncedModules).toEqual(['/consumer.ts'])
 			expect(out?.autoDisabled).toEqual([])
-			expect(host.ctx.registry.lastCommit?.reason).toBe('hmr')
-			expect(new Set(host.ctx.registry.lastCommit?.touchedModules)).toEqual(
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.reason).toBe('hmr')
+			expect(new Set(host.ctx.registry.lastCommit?.runtimeUpdate.affectedModules)).toEqual(
 				new Set(['/dep.ts', '/consumer.ts']),
 			)
 			expect(moduleItemsSeenDuringHmrCommit).toEqual([DepNext])
@@ -135,7 +135,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.affectedModules).toEqual([])
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
-			expect(host.ctx.registry.lastCommit?.autoDisabled).toEqual(['Broken'])
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual(['Broken'])
 			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(false)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
@@ -186,7 +186,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.executeError).toBe('syntax error')
 			expect(out?.syncedModules).toEqual([])
 			expect(out?.autoDisabled).toEqual([])
-			expect(host.ctx.registry.lastCommit?.autoDisabled ?? []).toEqual([])
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled ?? []).toEqual([])
 			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(true)
 			expect(host.require(Stable)).toBe(firstStable)
 		} finally {

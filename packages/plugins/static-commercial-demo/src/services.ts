@@ -125,7 +125,8 @@ export function createCommercialServices(database: CommercialDatabase) {
 		},
 
 		async customerCount(): Promise<number> {
-			return (await database.select({ value: count() }).from(customersTable).get())?.value ?? 0
+			const result = await database.select({ value: count() }).from(customersTable).get()
+			return result?.value ?? 0
 		},
 	}
 }

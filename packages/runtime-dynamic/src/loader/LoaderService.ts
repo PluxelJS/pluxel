@@ -1,5 +1,7 @@
 // loader/index.ts
 import {
+	collectPluginLifecycleNotStarted,
+	type CommitSummary,
 	type Context as PluxelContext,
 	type ForkablePluginConstructor,
 	formatForkPluginId,
@@ -154,15 +156,18 @@ export class LoaderService {
 			control: this.control,
 		}
 
-		// --- 原子提交失败：回滚运行层（不触碰持久层启用位） ---
-		this.ctx.on('commitFailed', (failed) => {
-			for (const key of failed) {
-				const name = String(key)
-				const ctor = this.runtime.resolve(name)
-				if (!ctor) continue
-				this.registry.stopPlugin(name, ctor) // 只停运
-			}
+		this.ctx.on('afterCommit', (summary) => {
+			this.cleanupNotStartedRuntimeRegistrations(summary)
 		})
+	}
+
+	private cleanupNotStartedRuntimeRegistrations(summary: CommitSummary): void {
+		for (const key of collectPluginLifecycleNotStarted(summary.lifecycleReport)) {
+			const name = String(key)
+			const ctor = this.runtime.resolve(name)
+			if (!ctor) continue
+			this.registry.stopPlugin(name, ctor)
+		}
 	}
 
 	/**
@@ -194,7 +199,7 @@ export class LoaderService {
 			ctor: PluginConstructor
 			defaultEnable: boolean
 		}> = []
-		let touchedCoreDraft = false
+		let coreDraftChanged = false
 		const prevForksExtra = this.ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS) ?? {}
 		let forksExtraDirty = false
 		const forkSets = new Map<string, Set<string>>()
@@ -301,7 +306,7 @@ export class LoaderService {
 					const shouldSeed = t.defaultEnable && !t.knownBefore
 					if (!wasEnabled && !shouldSeed) continue
 					await this.registry.enable(t.name, t.ctor)
-					touchedCoreDraft = true
+					coreDraftChanged = true
 					if (!wasEnabled) enabledByUs.push(t.name)
 				}
 			}
@@ -310,7 +315,7 @@ export class LoaderService {
 				for (const t of enableTargets) {
 					if (!this.ctx.configService.isEnabledInConfig(t.name)) continue
 					await this.registry.enable(t.name, t.ctor)
-					touchedCoreDraft = true
+					coreDraftChanged = true
 				}
 			}
 
@@ -385,7 +390,7 @@ export class LoaderService {
 			if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
 			tx.rollback()
 			if (runtimeUpdate) runtimeUpdate.rollback()
-			else if (touchedCoreDraft) this.ctx.registry.resetDraft()
+			else if (coreDraftChanged) this.ctx.registry.resetDraft()
 			throw error
 		}
 	}

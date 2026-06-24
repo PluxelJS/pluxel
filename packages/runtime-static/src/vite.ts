@@ -11,10 +11,7 @@ import { serverOnlyVitePlugin } from '@pluxel/rolldown/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin, PluginOption, ViteDevServer } from 'vite'
 
-import type {
-	InstallStaticRuntimeHmrOptions,
-	StaticRuntimeExtensionCompilerConfig,
-} from './hmr'
+import type { InstallStaticRuntimeHmrOptions, StaticRuntimeExtensionCompilerConfig } from './hmr'
 import type { StaticRuntimeHost, StaticRuntimeStartupReport } from './types'
 
 export type StaticRuntimeVitePluginsOptions = {
@@ -40,11 +37,12 @@ export function staticRuntimeVitePlugins(
 		serverPlugins.push(
 			lintGuardPlugin({
 				cwd: options.root,
-				...(options.lintGuard ?? {}),
+				...options.lintGuard,
 			}),
 		)
 	}
-	if (options.configSource !== false) serverPlugins.push(configSourcePlugin(options.configSource ?? {}))
+	if (options.configSource !== false)
+		serverPlugins.push(configSourcePlugin(options.configSource ?? {}))
 
 	const plugins: PluginOption[] = []
 	if (serverPlugins.length > 0) {
@@ -97,9 +95,7 @@ export type StaticRuntimeViteHostPluginOptions = {
 
 export type StaticRuntimeViteRequestPredicate = (request: IncomingMessage) => boolean
 
-export function staticRuntimeHostVitePlugin(
-	options: StaticRuntimeViteHostPluginOptions,
-): Plugin {
+export function staticRuntimeHostVitePlugin(options: StaticRuntimeViteHostPluginOptions): Plugin {
 	const shouldHandleRequest = options.shouldHandleRequest ?? shouldHandleStaticRuntimeRequest
 	let host: StaticRuntimeHost | undefined
 	let stopPromise: Promise<void> | undefined
@@ -176,14 +172,14 @@ function resolveStaticRuntimePluginDirs(
 	host: StaticRuntimeHost,
 ): Record<string, string> | undefined {
 	const modules = moduleGraphEntries(server)
-	if (!modules.length) return undefined
+	if (modules.length === 0) return undefined
 
 	const pluginDirs: Record<string, string> = {}
 	for (const { name, plugin } of host.describeCatalog().plugins) {
 		const pluginDir = findSsrExportDir(modules, plugin)
 		if (pluginDir) pluginDirs[name] = pluginDir
 	}
-	return Object.keys(pluginDirs).length ? pluginDirs : undefined
+	return Object.keys(pluginDirs).length > 0 ? pluginDirs : undefined
 }
 
 function moduleGraphEntries(server: ViteDevServer): ViteSsrModuleLike[] {
@@ -216,7 +212,7 @@ function mergeExtensionCompilerPluginDirs(
 		...config,
 		pluginDirs: {
 			...pluginDirs,
-			...(config?.pluginDirs ?? {}),
+			...config?.pluginDirs,
 		},
 	}
 }

@@ -23,15 +23,37 @@ export {
 	ForkablePlugin,
 	HostBoundFeature,
 	Plugin,
+	assertPluginLifecycleIssue,
 	checkPluginDecorator,
 	clearParamToken,
+	collectPluginLifecycleBlocked,
+	collectPluginLifecycleIssuePlugins,
+	collectPluginLifecycleNotStarted,
+	collectPluginLifecycleStoppedWithErrors,
 	Context,
+	findPluginLifecycleIssue,
 	getPluginInfo,
+	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleNotStartedIssue,
+	isPluginLifecycleStoppedWithErrorIssue,
+	pluginLifecycleIssuePlugins,
 	setParamToken,
 	setParamTokens,
 	UseFeature,
 } from '@pluxel/core/test'
-export type { CommitSummary } from '@pluxel/core/test'
+export type {
+	CommitSummary,
+	CoreHostLifecycleIssueExpectation,
+	PluginLifecycleErrorInfo,
+	PluginLifecycleIssue,
+	PluginLifecycleIssueKind,
+	PluginLifecycleIssuePhase,
+	PluginLifecycleIssuePredicate,
+	PluginLifecycleReport,
+	PluginCommitChanges,
+	PluginReplacement,
+	RuntimeUpdateCommitSummary,
+} from '@pluxel/core/test'
 
 export type RuntimeHost = CoreHost
 export type RuntimeTestContext = CoreTestContext

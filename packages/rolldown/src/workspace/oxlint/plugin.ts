@@ -83,6 +83,11 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
+	'plugin-no-process-exit': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
 	'plugin-constructor-no-type-only-imports': {
 		category: 'correctness',
 		buildCritical: true,
