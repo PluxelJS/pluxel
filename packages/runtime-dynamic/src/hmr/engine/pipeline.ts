@@ -45,8 +45,18 @@ export type PrefetchTransformResult = {
 	failedIds: readonly string[]
 }
 
-type PluginStatusSnapshotLike = {
+export type PluginStatusSnapshotLike = {
 	statuses?: Record<string, { isEnabled?: boolean; isRunning?: boolean }>
+}
+
+export type EnabledButStoppedLookupContext = Parameters<typeof findRuntimeModuleId>[0] & {
+	loader: {
+		api: {
+			status: {
+				snapshot: () => PluginStatusSnapshotLike
+			}
+		}
+	}
 }
 
 function dedupeCleanIds(ids: readonly string[], toClean: (id: string) => string) {
@@ -325,9 +335,9 @@ function buildOrderedList(
 }
 
 export async function prefetchTransforms(params: {
-	env: DevEnvironment
+	env: Pick<DevEnvironment, 'fetchModule'>
 	ids: Iterable<string>
-	timing: TimingTracker
+	timing: Pick<TimingTracker, 'start'>
 	concurrency: number
 }): Promise<PrefetchTransformResult> {
 	const seen = new Set<string>()
@@ -520,7 +530,7 @@ export class HmrExecutor {
 		private readonly ctx: Context,
 		private readonly runner: HmrRunner,
 		private readonly path: HmrPathApi,
-		private readonly timing: TimingTracker,
+		private readonly timing: Pick<TimingTracker, 'start'>,
 		private readonly cfg: HmrExecutorConfig,
 	) {
 		this.commitScheduler = new HmrRuntimeCommitScheduler(ctx, cfg)
@@ -643,9 +653,12 @@ function readBatchAffectedModules(batch: LoaderBatch): readonly string[] {
 	return batch.getAffectedModules().filter((id) => id.length > 0)
 }
 
-function collectEnabledButStopped(ctx: Context, moduleIds: ReadonlySet<string>): readonly string[] {
+export function collectEnabledButStopped(
+	ctx: EnabledButStoppedLookupContext,
+	moduleIds: ReadonlySet<string>,
+): readonly string[] {
 	if (moduleIds.size === 0) return []
-	const snapshot = ctx.loader.api.status.snapshot() as PluginStatusSnapshotLike
+	const snapshot = ctx.loader.api.status.snapshot()
 	const statuses = snapshot.statuses ?? {}
 	const out: string[] = []
 	for (const [name, status] of Object.entries(statuses)) {

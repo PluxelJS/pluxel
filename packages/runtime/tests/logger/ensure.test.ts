@@ -1,11 +1,15 @@
 import { resetSync } from '@logtape/logtape'
 import { ensurePluxelLogging, runtimeLogStores } from '@pluxel/runtime/logger'
+import { withRuntimeContext } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { LogtapeLoggerService } from '../../src/logger/LogtapeLoggerService'
+import { createLoggerPluginContext } from '../support/logger-context'
 
-function emitPluginLogForCallerTest(pluginId = 'plugin-a') {
-	const logger = new LogtapeLoggerService({ name: 'PluginA', pluginInfo: { id: pluginId } } as any)
-	logger.info('hello from plugin')
+async function emitPluginLogForCallerTest(pluginId = 'plugin-a') {
+	return withRuntimeContext((root) => {
+		const logger = new LogtapeLoggerService(createLoggerPluginContext(root, 'PluginA', pluginId))
+		logger.info('hello from plugin')
+	})
 }
 
 describe('ensurePluxelLogging', () => {
@@ -19,7 +23,7 @@ describe('ensurePluxelLogging', () => {
 			ui: { streamId, bufferSize: 1, flushIntervalMs: 0, windowLines: 10 },
 		})
 
-		emitPluginLogForCallerTest()
+		await emitPluginLogForCallerTest()
 
 		const [line] = runtimeLogStores.getOrCreate(streamId).tailWindow(1)
 		expect(line?.props?.caller).toEqual(expect.stringContaining('ensure.test.ts'))
@@ -39,7 +43,7 @@ describe('ensurePluxelLogging', () => {
 			},
 		})
 
-		emitPluginLogForCallerTest()
+		await emitPluginLogForCallerTest()
 
 		const [line] = runtimeLogStores.getOrCreate(streamId).tailWindow(1)
 		expect(line?.props?.caller).toBeUndefined()

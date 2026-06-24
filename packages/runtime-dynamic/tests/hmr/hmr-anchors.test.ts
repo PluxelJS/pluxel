@@ -1,33 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
+import { BasePlugin, Plugin } from '@pluxel/test'
 import { join } from 'pathe'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-import { createEventContextStub, createNoopLogger, noop } from './_stubs'
+import { withTestDynamicContext } from '../support/context'
+import { inspectLoaderHmr } from '../support/white-box'
 
-const createCtx = () => {
-	const anchors = new Set<string>()
-	const ctx = {
-		logger: createNoopLogger(),
-		...createEventContextStub(),
-		scanService: { resolveEntry: async () => ({ ok: false }) },
-		loader: {
-			api: {
-				anchors: {
-					has: (id: string) => anchors.has(id),
-					list: () => anchors.values(),
-					snapshot: () => new Set(anchors),
-					remove: (id: string) => anchors.delete(id),
-				},
-			},
-		},
-		registry: {
-			commit: async () => ({ ok: true }),
-			container: { services: new Map() },
-		},
-		http: { vitePlugin: { name: 'noop', apply: 'serve', configureServer: noop } },
-	} as unknown
-	return { ctx, anchors }
-}
+const noop = () => {}
 
 describe('LoaderHmrService anchors', () => {
 	it('treats anchors as in-scope even when excluded by default filters (tsx)', async () => {
@@ -37,21 +16,24 @@ describe('LoaderHmrService anchors', () => {
 		const root = fixture.path
 		const entry = join(root, 'Entry.tsx')
 
-		const { ctx, anchors } = createCtx()
-		anchors.add(entry)
+		class EntryPlugin extends BasePlugin {}
+		Plugin({ name: 'EntryPlugin' })(EntryPlugin)
 
-		const hmr = new LoaderHmrService(ctx, {
-			roots: [root],
-			entries: [],
-			exclude: [`${root}/**/*.tsx`],
+		await withTestDynamicContext(async (ctx) => {
+			await ctx.loader.replaceModule(entry, { EntryPlugin })
+
+			const hmr = new LoaderHmrService(ctx, {
+				roots: [root],
+				entries: [],
+				exclude: [`${root}/**/*.tsx`],
+			})
+			const hmrBox = inspectLoaderHmr(hmr)
+			hmrBox.debouncer = { push: noop }
+
+			const accepted = hmrBox.enqueueFileChange(entry)
+			expect(accepted).toBe(true)
+			expect(hmr.toolkit.pathFilter(hmr.path.toClean(entry))).toBe(false)
 		})
-		;(hmr as unknown as { debouncer: { push: (id: string) => void } }).debouncer = { push: noop }
-
-		const accepted = (
-			hmr as unknown as { enqueueFileChange: (file: string) => boolean }
-		).enqueueFileChange(entry)
-		expect(accepted).toBe(true)
-		expect(hmr.toolkit.pathFilter(hmr.path.toClean(entry))).toBe(false)
 	})
 
 	it('returns stable anchor snapshots across calls', async () => {
@@ -61,26 +43,31 @@ describe('LoaderHmrService anchors', () => {
 		})
 		const root = fixture.path
 
-		const { ctx, anchors } = createCtx()
 		const a = join(root, 'A.ts')
 		const b = join(root, 'B.ts')
-		anchors.add(a)
 
-		const hmr = new LoaderHmrService(ctx, { roots: [root], entries: [] })
+		class AnchorA extends BasePlugin {}
+		Plugin({ name: 'AnchorA' })(AnchorA)
 
-		const snapshot1: ReadonlySet<string> = (
-			hmr as unknown as { getAnchorsCleanSnapshot: () => ReadonlySet<string> }
-		).getAnchorsCleanSnapshot()
-		expect(snapshot1.has(a)).toBe(true)
-		expect(snapshot1.has(b)).toBe(false)
+		class AnchorB extends BasePlugin {}
+		Plugin({ name: 'AnchorB' })(AnchorB)
 
-		anchors.add(b)
-		const snapshot2: ReadonlySet<string> = (
-			hmr as unknown as { getAnchorsCleanSnapshot: () => ReadonlySet<string> }
-		).getAnchorsCleanSnapshot()
-		expect(snapshot2.has(a)).toBe(true)
-		expect(snapshot2.has(b)).toBe(true)
+		await withTestDynamicContext(async (ctx) => {
+			await ctx.loader.replaceModule(a, { AnchorA })
 
-		expect(snapshot1.has(b)).toBe(false)
+			const hmr = new LoaderHmrService(ctx, { roots: [root], entries: [] })
+			const hmrBox = inspectLoaderHmr(hmr)
+
+			const snapshot1 = hmrBox.getAnchorsCleanSnapshot()
+			expect(snapshot1.has(a)).toBe(true)
+			expect(snapshot1.has(b)).toBe(false)
+
+			await ctx.loader.replaceModule(b, { AnchorB })
+			const snapshot2 = hmrBox.getAnchorsCleanSnapshot()
+			expect(snapshot2.has(a)).toBe(true)
+			expect(snapshot2.has(b)).toBe(true)
+
+			expect(snapshot1.has(b)).toBe(false)
+		})
 	})
 })

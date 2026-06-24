@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
-import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-dynamic/src/services'
-import { getStatusOverview } from '../../src/api/features/pluginStatus/service'
-import { EXTRA_FORKS } from '../../../runtime-dynamic/src/loader/selection'
+import { getStatusOverview } from '../../../runtime/src/api/features/pluginStatus/service'
+import { EXTRA_FORKS } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('pluginStatus forks', () => {
 	it('includes fork plugins from runtime and from catalog', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
-		ctx.loader = loader
-		ctx.pluginCatalog = new LoaderPluginCatalogService(ctx)
+		const loader = ctx.loader
 
 		@Plugin({ name: 'DemoWorker' })
 		class DemoWorker extends ForkablePlugin {}
@@ -44,7 +41,7 @@ describe('pluginStatus forks', () => {
 
 	it('enabling the same plugin twice is idempotent', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		@Plugin({ name: 'Alpha' })
 		class Alpha extends BasePlugin {}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderService } from '../../../runtime-dynamic/src/services'
-import { EXTRA_DEP_OVERRIDES } from '../../../runtime-dynamic/src/loader/selection'
+import type { LoaderService } from '../../src/services'
+import { EXTRA_DEP_OVERRIDES } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 type HmrCore = ReturnType<typeof createHmrTestContext>['core']
@@ -9,8 +9,9 @@ type RuntimeUpdate = ReturnType<HmrCore['registry']['beginUpdate']>
 type RuntimeBatch = ReturnType<LoaderService['beginBatch']>
 
 function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
-	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 function beginRuntimeBatch(core: HmrCore, loader: LoaderService) {
@@ -31,7 +32,7 @@ describe('LoaderService HMR lifecycle', () => {
 	it('resolves ctor-param tokens by plugin id across HMR ctor identity mismatches', async () => {
 		const { core, ctx } = createHmrTestContext()
 		ctx.configService.enableInConfig('Dep', 'Consumer')
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		class Dep extends BasePlugin {}
 		Plugin({ name: 'Dep' })(Dep)
@@ -63,7 +64,7 @@ describe('LoaderService HMR lifecycle', () => {
 	it('reports DI-cascade affected modules so HMR can restart non-reexecuted dependents', async () => {
 		const { core, ctx } = createHmrTestContext()
 		ctx.configService.enableInConfig('Dep', 'Consumer')
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 		let depSeq = 0
 		let consumerSeq = 0
 
@@ -122,7 +123,7 @@ describe('LoaderService HMR lifecycle', () => {
 	it('rolls back loader state when core commit fails after module replacement', async () => {
 		const { core, ctx } = createHmrTestContext()
 		ctx.configService.enableInConfig('Dep', 'Bad')
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		class Dep extends BasePlugin {}
 		Plugin({ name: 'Dep' })(Dep)
@@ -169,7 +170,7 @@ describe('LoaderService HMR lifecycle', () => {
 	it('non-batch replaceModule returns structured results and restarts affected dependents', async () => {
 		const { core, ctx } = createHmrTestContext()
 		ctx.configService.enableInConfig('Dep', 'Consumer')
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 		let depSeq = 0
 		let consumerSeq = 0
 
@@ -220,7 +221,7 @@ describe('LoaderService HMR lifecycle', () => {
 
 	it('applies persisted dependency overrides across HMR reloads', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 		let depBSeq = 0
 		let consumerSeq = 0
 
@@ -283,7 +284,7 @@ describe('LoaderService HMR lifecycle', () => {
 
 	it('closes batch transactions after commit or rollback', async () => {
 		const { ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		class Anchor extends BasePlugin {}
 		Plugin({ name: 'Anchor' })(Anchor)

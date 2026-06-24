@@ -8,11 +8,15 @@ import {
 	runtimeLogStores,
 	writePluginLogPolicyFile,
 } from '@pluxel/runtime/logger'
+import { withRuntimeContext } from '@pluxel/runtime/test'
 import { LogtapeLoggerService } from '../../src/logger/LogtapeLoggerService'
+import { createLoggerPluginContext } from '../support/logger-context'
 
-function emitPluginLog(pluginId: string, level: 'debug' | 'info', message: string) {
-	const logger = new LogtapeLoggerService({ name: pluginId, pluginInfo: { id: pluginId } } as any)
-	logger[level](message)
+async function emitPluginLog(pluginId: string, level: 'debug' | 'info', message: string) {
+	return withRuntimeContext((root) => {
+		const logger = new LogtapeLoggerService(createLoggerPluginContext(root, pluginId))
+		logger[level](message)
+	})
 }
 
 describe('createRuntimeLogging', () => {
@@ -79,8 +83,8 @@ describe('createRuntimeLogging', () => {
 			overrides: { PluginA: 'debug' },
 		})
 
-		emitPluginLog('PluginA', 'debug', 'debug from A')
-		emitPluginLog('PluginB', 'info', 'info from B')
+		await emitPluginLog('PluginA', 'debug', 'debug from A')
+		await emitPluginLog('PluginB', 'info', 'info from B')
 
 		const lines = runtimeLogStores.getOrCreate(streamId).tailWindow(10)
 		expect(lines.map((line) => line.pluginId)).toEqual(['PluginA'])

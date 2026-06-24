@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { __registerConfigSchema__ as registerUnsafeConfigSchema } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
-import { PluginRegistry } from '../../../runtime-dynamic/src/loader/PluginRegistry'
+
+import { withTestDynamicContext } from '../support/context'
 
 @Plugin({ name: 'BadConfigPlugin' })
 class BadConfigPlugin extends BasePlugin {
@@ -10,12 +11,13 @@ class BadConfigPlugin extends BasePlugin {
 }
 
 describe('PluginRegistry config schema enforcement', () => {
-	test('throws when a plugin declares non-object config schema', () => {
+	test('throws when a plugin declares non-object config schema', async () => {
 		registerUnsafeConfigSchema(BadConfigPlugin, 'bad', v.optional(v.string()))
 
-		const registry = new PluginRegistry({ configService: { getExtra: () => ({}) } } as any)
-		expect(() => registry.getSchema(BadConfigPlugin as any)).toThrow(
-			/Invalid config schema: "BadConfigPlugin\.bad"/,
-		)
+		await withTestDynamicContext((ctx) => {
+			expect(() => ctx.loader.api.registry.getSchema(BadConfigPlugin)).toThrow(
+				/Invalid config schema: "BadConfigPlugin\.bad"/,
+			)
+		})
 	})
 })

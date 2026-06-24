@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderService } from '../../../runtime-dynamic/src/services'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		@Plugin({ name: 'Provider' })
 		class Provider extends BasePlugin {}
@@ -35,7 +34,7 @@ describe('monorepo plugin dependencies', () => {
 
 	it('fails commit when a runtime-enabled plugin depends on another plugin that is not loaded via entries', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		@Plugin({ name: 'Provider' })
 		class Provider extends BasePlugin {}

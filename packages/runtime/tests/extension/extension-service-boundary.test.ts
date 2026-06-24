@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFixture, type TestFixture } from '@pluxel/test/fixtures'
+import { createRuntimeContext, type Context } from '@pluxel/runtime/test'
 import { dirname, join } from 'pathe'
 import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
@@ -11,6 +12,18 @@ import {
 import { defineInteractionContract, doc } from '../../src/web/extensions'
 
 const runtimePackageDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+const runtimeContexts = new Set<ReturnType<typeof createRuntimeContext>>()
+type ExtensionTestContext = ReturnType<typeof createRuntimeContext>['ctx'] & {
+	root: ReturnType<typeof createRuntimeContext>['ctx']['root'] &
+		Record<string, unknown> & { config?: Context.Config }
+	config?: Context.Config
+}
+
+afterEach(async () => {
+	const pending = [...runtimeContexts]
+	runtimeContexts.clear()
+	await Promise.all(pending.map((runtime) => runtime.dispose()))
+})
 
 function createNodeFsShim(fixture: Pick<TestFixture, 'fs' | 'fsp'>) {
 	return {
@@ -51,39 +64,51 @@ function createNodeFsShim(fixture: Pick<TestFixture, 'fs' | 'fsp'>) {
 	}
 }
 
-function createFakeCtx(overrides?: Partial<any>, fixture?: Pick<TestFixture, 'fs' | 'fsp'>) {
+function createExtensionTestContext(
+	overrides?: Partial<Record<string, unknown>>,
+	fixture?: Pick<TestFixture, 'fs' | 'fsp'>,
+) {
+	const runtime = createRuntimeContext()
+	runtimeContexts.add(runtime)
 	const rootLogger = {
 		error: vi.fn(),
 		warn: vi.fn(),
 		info: vi.fn(),
 		debug: vi.fn(),
 	}
-	const root: any = {
-		logger: rootLogger,
-		config: {},
-		...(fixture ? { fs: createNodeFsShim(fixture) } : {}),
+	const ctx = runtime.ctx as ExtensionTestContext
+	const root = ctx.root
+	root.config = root.config ?? {}
+	defineTestProperty(root, 'logger', rootLogger)
+	if (fixture) defineTestProperty(root, 'fs', createNodeFsShim(fixture))
+	defineTestProperty(ctx, 'logger', rootLogger)
+	defineTestProperty(ctx, 'name', 'test')
+	defineTestProperty(ctx, 'pluginInfo', { id: 'test-plugin' })
+	defineTestProperty(ctx, 'registry', {
+		getRuntimeModuleId: vi.fn(() => undefined),
+	})
+	defineTestProperty(ctx, 'config', root.config)
+	for (const [key, value] of Object.entries(overrides ?? {})) {
+		defineTestProperty(ctx, key, value)
 	}
-
-	const ctx: any = {
-		root,
-		config: root.config,
-		logger: rootLogger,
-		name: 'test',
-		pluginInfo: { id: 'test-plugin' },
-		registry: {
-			getRuntimeModuleId: vi.fn(() => undefined),
-		},
-		effects: {
-			defer: (fn: () => void) => ({ dispose: fn }),
-		},
-		...overrides,
-	}
-	if (!ctx.root) ctx.root = root
-	if (!ctx.root.fs && fixture) ctx.root.fs = createNodeFsShim(fixture)
-	if (!ctx.root.logger) ctx.root.logger = rootLogger
+	if (fixture && !ctx.root.fs) defineTestProperty(ctx.root, 'fs', createNodeFsShim(fixture))
+	if (!ctx.root.logger) defineTestProperty(ctx.root, 'logger', rootLogger)
 	if (!ctx.root.config) ctx.root.config = {}
-	ctx.config = ctx.config ?? ctx.root.config
+	if (!ctx.config) defineTestProperty(ctx, 'config', ctx.root.config)
 	return { ctx, root, logger: rootLogger }
+}
+
+function defineTestProperty(target: object, key: string, value: unknown) {
+	Object.defineProperty(target, key, {
+		value,
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	})
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+	return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
 function createDependencyLoader(graph: Record<string, string[]>) {
@@ -128,12 +153,12 @@ async function withPackagedService(
 		fixture: TestFixture
 		service: ExtensionService
 		ctx: any
-		logger: ReturnType<typeof createFakeCtx>['logger']
+		logger: ReturnType<typeof createExtensionTestContext>['logger']
 	}) => Promise<void>,
 ) {
 	await using fixture = await createFixture(files)
 	const entryPath = registryPath(fixture)
-	const { ctx, logger } = createFakeCtx(
+	const { ctx, logger } = createExtensionTestContext(
 		{
 			loader: {
 				api: {
@@ -161,27 +186,24 @@ const FontInteractionContract = defineInteractionContract<
 	id: 'test.font-picker',
 	version: 1,
 	validateInput(value) {
+		const input = toRecord(value)
+		const current = input.current
 		return {
-			current:
-				typeof (value as any)?.current === 'string' && (value as any).current.trim()
-					? (value as any).current.trim()
-					: null,
+			current: typeof current === 'string' && current.trim() ? current.trim() : null,
 		}
 	},
 	validateDraft(value) {
+		const draft = toRecord(value)
+		const selectedId = draft.selectedId
 		return {
-			selectedId:
-				typeof (value as any)?.selectedId === 'string' && (value as any).selectedId.trim()
-					? (value as any).selectedId.trim()
-					: null,
+			selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
 		}
 	},
 	validateResult(value) {
+		const result = toRecord(value)
+		const selectedId = result.selectedId
 		return {
-			selectedId:
-				typeof (value as any)?.selectedId === 'string' && (value as any).selectedId.trim()
-					? (value as any).selectedId.trim()
-					: null,
+			selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
 		}
 	},
 })
@@ -198,15 +220,15 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	it('packaged() registers packaged federation metadata', async () => {
 		await withPackagedService(
 			{
-			dist: {
-				'index.mjs': 'export {}',
-				'ui.remote': {
-					'mf-manifest.json': JSON.stringify({
-						id: 'demo',
-						metadata: {},
-					}),
+				dist: {
+					'index.mjs': 'export {}',
+					'ui.remote': {
+						'mf-manifest.json': JSON.stringify({
+							id: 'demo',
+							metadata: {},
+						}),
+					},
 				},
-			},
 			},
 			(fixture) => join(fixture.path, 'dist/index.mjs'),
 			async ({ fixture, service }) => {
@@ -231,18 +253,18 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	it('packaged() resolves the default manifest from package root dist output', async () => {
 		await withPackagedService(
 			{
-			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
-			src: {
-				'index.ts': 'export {}',
-			},
-			dist: {
-				'ui.remote': {
-					'mf-manifest.json': JSON.stringify({
-						id: 'demo',
-						metadata: {},
-					}),
+				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+				src: {
+					'index.ts': 'export {}',
 				},
-			},
+				dist: {
+					'ui.remote': {
+						'mf-manifest.json': JSON.stringify({
+							id: 'demo',
+							metadata: {},
+						}),
+					},
+				},
 			},
 			(fixture) => join(fixture.path, 'src/index.ts'),
 			async ({ fixture, service }) => {
@@ -262,24 +284,24 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	it('packaged() resolves implicit manifest path from core runtime ownership first', async () => {
 		await withPackagedService(
 			{
-			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
-			src: {
-				'index.ts': 'export {}',
-			},
-			dist: {
-				'ui.remote': {
-					'mf-manifest.json': JSON.stringify({
-						id: 'demo',
-						metadata: {},
-					}),
+				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+				src: {
+					'index.ts': 'export {}',
 				},
-			},
+				dist: {
+					'ui.remote': {
+						'mf-manifest.json': JSON.stringify({
+							id: 'demo',
+							metadata: {},
+						}),
+					},
+				},
 			},
 			() => '/tmp/loader-fallback/index.ts',
 			async ({ fixture, service, ctx }) => {
-				ctx.registry = {
+				defineTestProperty(ctx, 'registry', {
 					getRuntimeModuleId: vi.fn(() => join(fixture.path, 'src/index.ts')),
-				}
+				})
 				const findModuleIdByName = ctx.loader.api.registry.findModuleIdByName
 
 				const dispose = service.packaged()
@@ -295,10 +317,10 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	it('packaged() does not warn when the implicit packaged manifest is absent', async () => {
 		await withPackagedService(
 			{
-			'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
-			src: {
-				'index.ts': 'export {}',
-			},
+				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
+				src: {
+					'index.ts': 'export {}',
+				},
 			},
 			(fixture) => join(fixture.path, 'src/index.ts'),
 			async ({ service, logger }) => {
@@ -314,7 +336,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 
 	it('doc(schemaMap)`...` bumps manifest version and is cleaned up by disposer', async () => {
 		await using fixture = await createFixture({})
-		const { ctx } = createFakeCtx()
+		const { ctx } = createExtensionTestContext()
 		void fixture
 		const service = new ExtensionService(ctx, { enabled: true })
 
@@ -344,7 +366,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 
 	it('surface() registers consumer-owned interaction surfaces into the manifest', () => {
 		const apply = vi.fn()
-		const { ctx } = createFakeCtx({
+		const { ctx } = createExtensionTestContext({
 			pluginInfo: { id: 'consumer-plugin' },
 		})
 		const service = new ExtensionService(ctx, { enabled: true })
@@ -384,7 +406,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			'font-manager': [],
 		})
 		const service = new ExtensionService(
-			createFakeCtx({
+			createExtensionTestContext({
 				loader,
 				pluginInfo: { id: 'consumer-plugin' },
 			}).ctx,
@@ -401,7 +423,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			meta: { label: 'Typography', tab: { id: 'typography', label: 'Typography' } } as any,
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'consumer-plugin-2' },
 		}).ctx
@@ -416,7 +438,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			meta: { label: 'Typography', tab: { id: 'typography', label: 'Typography' } } as any,
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'font-manager' },
 		}).ctx
@@ -479,7 +501,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 		const draftSpy = vi.fn()
 		const applySpy = vi.fn()
 		const service = new ExtensionService(
-			createFakeCtx({
+			createExtensionTestContext({
 				loader,
 				pluginInfo: { id: 'consumer-plugin' },
 			}).ctx,
@@ -500,7 +522,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			meta: { label: 'Typography', tab: { id: 'typography', label: 'Typography' } } as any,
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'font-manager' },
 		}).ctx
@@ -563,7 +585,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			'font-manager': [],
 		})
 		const service = new ExtensionService(
-			createFakeCtx({
+			createExtensionTestContext({
 				loader,
 				pluginInfo: { id: 'consumer-plugin' },
 			}).ctx,
@@ -578,7 +600,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			apply: async () => {},
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'font-manager' },
 		}).ctx
@@ -607,7 +629,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			'theme-manager': [],
 		})
 		const service = new ExtensionService(
-			createFakeCtx({
+			createExtensionTestContext({
 				loader,
 				pluginInfo: { id: 'consumer-plugin' },
 			}).ctx,
@@ -622,7 +644,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			apply: async () => {},
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'font-manager' },
 		}).ctx
@@ -634,7 +656,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			renderKey: 'fontPickerSession',
 		})
 
-		service.ctx = createFakeCtx({
+		service.ctx = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'theme-manager' },
 		}).ctx
@@ -674,7 +696,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	})
 
 	it('required surfaces surface waiting-provider diagnostics and warn once', () => {
-		const { ctx, logger } = createFakeCtx({
+		const { ctx, logger } = createExtensionTestContext({
 			pluginInfo: { id: 'consumer-plugin' },
 		})
 		const service = new ExtensionService(ctx, { enabled: true })
@@ -714,7 +736,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 		const loader = createDependencyLoader({
 			'font-manager': [],
 		})
-		const { ctx } = createFakeCtx({
+		const { ctx } = createExtensionTestContext({
 			loader,
 			pluginInfo: { id: 'font-manager' },
 		})
@@ -751,7 +773,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	})
 
 	it('compile status transitions are surfaced via manifest events', async () => {
-		const { ctx } = createFakeCtx()
+		const { ctx } = createExtensionTestContext()
 		const service = new ExtensionService(ctx, { enabled: true })
 		const events: any[] = []
 		const unsubscribe = service.subscribeManifest((event) => events.push(event))
@@ -789,7 +811,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 	})
 
 	it('commitCompiledModule() stores federated module metadata', async () => {
-		const { ctx } = createFakeCtx()
+		const { ctx } = createExtensionTestContext()
 		const service = new ExtensionService(ctx, { enabled: true })
 
 		const okHash = 'abcd'

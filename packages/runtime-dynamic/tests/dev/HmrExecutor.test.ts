@@ -2,6 +2,49 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { HmrExecutor, prefetchTransforms } from '../../src/hmr/engine/pipeline'
 
+type ExecutorOptions = {
+	errorLogs: Array<{ message: string; props: unknown }>
+	runtimeRollback: () => void
+	batchRollback: () => void
+	importModule: (id: string) => Promise<Record<string, unknown>>
+	replaceModule?: () => Promise<unknown> | unknown
+}
+
+function createExecutor(options: ExecutorOptions) {
+	return new HmrExecutor(
+		{
+			logger: {
+				error: (message: string, props?: unknown) => options.errorLogs.push({ message, props }),
+			},
+			registry: {
+				beginUpdate: () => ({
+					rollback: options.runtimeRollback,
+					commit: vi.fn(),
+				}),
+			},
+			loader: {
+				beginBatch: () => ({
+					replaceModule: options.replaceModule ?? vi.fn(async () => ({})),
+					rollback: options.batchRollback,
+					commit: vi.fn(),
+					getAffectedModules: () => [],
+					syncModules: vi.fn(async () => []),
+				}),
+			},
+		} as ConstructorParameters<typeof HmrExecutor>[0],
+		{ import: options.importModule } as ConstructorParameters<typeof HmrExecutor>[1],
+		{
+			variants: (id: string) => [id],
+			variantsClean: (id: string) => [id],
+			pretty: (id: string) => id,
+			toClean: (id: string) => id,
+			toVite: (id: string) => id,
+		} as ConstructorParameters<typeof HmrExecutor>[2],
+		{ start: () => () => 1 },
+		{ useRequireShims: false, dbgModules: null },
+	)
+}
+
 describe('HmrExecutor', () => {
 	it('marks invalid JavaScript evaluation as a failed batch result', async () => {
 		const errorLogs: Array<{ message: string; props: unknown }> = []
@@ -10,43 +53,15 @@ describe('HmrExecutor', () => {
 		const replaceModule = vi.fn()
 		const syntaxError = new SyntaxError('Unexpected token')
 
-		const executor = new HmrExecutor(
-			{
-				logger: {
-					error: (message: string, props?: unknown) => errorLogs.push({ message, props }),
-				},
-				registry: {
-					beginUpdate: () => ({
-						rollback: runtimeRollback,
-						commit: vi.fn(),
-					}),
-				},
-				loader: {
-					beginBatch: () => ({
-						replaceModule,
-						rollback: batchRollback,
-						commit: vi.fn(),
-						getAffectedModules: () => [],
-						syncModules: vi.fn(async () => []),
-					}),
-				},
-			} as any,
-			{
-				import: vi.fn(async () => {
-					throw syntaxError
-				}),
-			} as any,
-			{
-				variants: (id: string) => [id],
-				variantsClean: (id: string) => [id],
-				pretty: (id: string) => id,
-				toClean: (id: string) => id,
-			} as any,
-			{
-				start: () => () => 1,
-			} as any,
-			{} as any,
-		)
+		const executor = createExecutor({
+			errorLogs,
+			batchRollback,
+			runtimeRollback,
+			replaceModule,
+			importModule: vi.fn(async () => {
+				throw syntaxError
+			}),
+		})
 
 		const result = await executor.runAndLoadAllClean(['/repo/plugin.ts'])
 
@@ -69,41 +84,15 @@ describe('HmrExecutor', () => {
 		const runtimeRollback = vi.fn()
 		const injectError = new Error('invalid plugin export')
 
-		const executor = new HmrExecutor(
-			{
-				logger: {
-					error: (message: string, props?: unknown) => errorLogs.push({ message, props }),
-				},
-				registry: {
-					beginUpdate: () => ({
-						rollback: runtimeRollback,
-						commit: vi.fn(),
-					}),
-				},
-				loader: {
-					beginBatch: () => ({
-						replaceModule: vi.fn(async () => {
-							throw injectError
-						}),
-						rollback: batchRollback,
-						commit: vi.fn(),
-						getAffectedModules: () => [],
-						syncModules: vi.fn(async () => []),
-					}),
-				},
-			} as any,
-			{ import: vi.fn(async () => ({ Plugin: class Plugin {} })) } as any,
-			{
-				variants: (id: string) => [id],
-				variantsClean: (id: string) => [id],
-				pretty: (id: string) => id,
-				toClean: (id: string) => id,
-			} as any,
-			{
-				start: () => () => 1,
-			} as any,
-			{} as any,
-		)
+		const executor = createExecutor({
+			errorLogs,
+			batchRollback,
+			runtimeRollback,
+			importModule: vi.fn(async () => ({ Plugin: class Plugin {} })),
+			replaceModule: vi.fn(async () => {
+				throw injectError
+			}),
+		})
 
 		const result = await executor.runAndLoadAllClean(['/repo/plugin.ts'])
 
@@ -125,9 +114,9 @@ describe('HmrExecutor', () => {
 				fetchModule: vi.fn(async (id: string) => {
 					if (id.endsWith('bad.ts')) throw new Error('syntax error')
 				}),
-			} as any,
+			},
 			ids: ['/repo/good.ts', '/repo/bad.ts', '/repo/good.ts'],
-			timing: { start: () => () => 0 } as any,
+			timing: { start: () => () => 0 },
 			concurrency: 2,
 		})
 

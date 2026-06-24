@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Context } from '@pluxel/core'
+import { createHost } from '@pluxel/test'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
 import { normalize } from 'pathe'
-import { type EntryResolutionOk, ScanService } from '../../runtime-dynamic/src/scan/ScanService'
+import { type EntryResolutionOk, ScanService } from '../../src/scan/ScanService'
 
 const scanSingleFixture = {
 	'package.json': JSON.stringify(
@@ -57,19 +57,18 @@ const scanTsOnlyFixture = {
 function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
-) {
-	return new ScanService(
-		{
-			internalEvent: {
-				resolverCacheInvalidated: { emit: () => {} },
-			},
-		} as unknown as Context,
-		{
-			roots: root,
-			installedBase: root,
-			...overrides,
+): ScanService & AsyncDisposable {
+	const host = createHost()
+	const service = new ScanService(host.ctx, {
+		roots: root,
+		installedBase: root,
+		...overrides,
+	})
+	return Object.assign(service, {
+		async [Symbol.asyncDispose]() {
+			await host.dispose()
 		},
-	)
+	})
 }
 
 function asPosix(input: string) {
@@ -77,19 +76,10 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
-	it('emits resolverCacheInvalidated through internalEvent', () => {
+	it('emits resolverCacheInvalidated through internalEvent', async () => {
 		const internalEmit = vi.fn()
-		const service = new ScanService(
-			{
-				internalEvent: {
-					resolverCacheInvalidated: { emit: internalEmit },
-				},
-			} as unknown as Context,
-			{
-				roots: '/tmp',
-				installedBase: '/tmp',
-			},
-		)
+		await using service = createService('/tmp')
+		service.ctx.internalEvent.resolverCacheInvalidated.on(internalEmit)
 
 		service.invalidateResolverCache({ by: 'test', reason: 'unit', targets: ['x'] })
 		const detail = {
@@ -102,7 +92,7 @@ describe('ScanService', () => {
 
 	it('resolves entry by package name inside workspace', async () => {
 		await using fixture = await createFixture(scanSingleFixture)
-		const service = createService(normalize(fixture.path), { fs: fixture.fs })
+		await using service = createService(normalize(fixture.path), { fs: fixture.fs })
 		const resolution = await service.resolveEntryByName('scan-single-fixture')
 
 		expect(resolution.ok).toBe(true)
@@ -111,7 +101,7 @@ describe('ScanService', () => {
 
 	it('does not use the HMR export condition for default package resolution', async () => {
 		await using fixture = await createDiskFixture(hmrConditionFixture)
-		const service = createService(normalize(fixture.path))
+		await using service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntryByName('scan-hmr-condition-fixture')
 
 		expect(resolution.ok).toBe(true)
@@ -120,7 +110,7 @@ describe('ScanService', () => {
 
 	it('uses the HMR export condition only when explicitly requested', async () => {
 		await using fixture = await createDiskFixture(hmrConditionFixture)
-		const service = createService(normalize(fixture.path))
+		await using service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntryByName('scan-hmr-condition-fixture', {
 			scan: { preferHmrExports: true },
 		})
@@ -131,7 +121,7 @@ describe('ScanService', () => {
 
 	it('falls back to installed packages when not in workspace', async () => {
 		await using fixture = await createDiskFixture(scanSingleFixture)
-		const service = createService(normalize(fixture.path))
+		await using service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntry('pathe')
 
 		expect(resolution.ok).toBe(true)
@@ -140,7 +130,7 @@ describe('ScanService', () => {
 
 	it('can skip installed fallback when workspaceOnly is true', async () => {
 		await using fixture = await createDiskFixture(scanSingleFixture)
-		const service = createService(normalize(fixture.path))
+		await using service = createService(normalize(fixture.path))
 		const resolution = await service.resolveEntry('pathe', { workspaceOnly: true })
 
 		expect(resolution.ok).toBe(false)
@@ -148,7 +138,7 @@ describe('ScanService', () => {
 
 	it('directly resolves installed package entries', async () => {
 		await using fixture = await createDiskFixture(scanSingleFixture)
-		const service = createService(normalize(fixture.path))
+		await using service = createService(normalize(fixture.path))
 		const resolution = await service.resolveInstalledEntry('pathe')
 
 		expect(resolution.ok).toBe(true)
@@ -158,7 +148,7 @@ describe('ScanService', () => {
 	it('accepts directory selectors for workspace packages', async () => {
 		await using fixture = await createFixture(scanSingleFixture)
 		const fixtureRoot = normalize(fixture.path)
-		const service = createService(fixtureRoot, { fs: fixture.fs })
+		await using service = createService(fixtureRoot, { fs: fixture.fs })
 		const resolution = await service.resolveEntry({ dir: fixtureRoot })
 
 		expect(resolution?.ok).toBe(true)
@@ -168,7 +158,7 @@ describe('ScanService', () => {
 	it('lists workspace entries scoped by roots', async () => {
 		await using fixture = await createFixture(scanSingleFixture)
 		const fixtureRoot = normalize(fixture.path)
-		const service = createService(fixtureRoot, { fs: fixture.fs })
+		await using service = createService(fixtureRoot, { fs: fixture.fs })
 		const entries = await service.listWorkspaceEntries({ roots: fixtureRoot })
 
 		expect(entries.length).toBeGreaterThan(0)
@@ -179,7 +169,7 @@ describe('ScanService', () => {
 		await using diskFixture = await createDiskFixture({})
 		await using virtualFixture = await createFixture(scanSingleFixture)
 
-		const service = createService(normalize(diskFixture.path))
+		await using service = createService(normalize(diskFixture.path))
 		service.updateConfig({ roots: normalize(virtualFixture.path), fs: virtualFixture.fs })
 
 		const resolution = await service.resolveEntryByName('scan-single-fixture')
@@ -193,7 +183,7 @@ describe('ScanService', () => {
 		})
 		await using installedFixture = await createDiskFixture(scanSingleFixture)
 
-		const service = createService(normalize(emptyFixture.path))
+		await using service = createService(normalize(emptyFixture.path))
 		const initialResolution = await service.resolveInstalledEntry('pathe')
 		expect(initialResolution.ok).toBe(false)
 
@@ -209,7 +199,7 @@ describe('ScanService without package.json (ts-only)', () => {
 	it('resolves index.ts as fallback entry', async () => {
 		await using fixture = await createFixture(scanTsOnlyFixture)
 		const tsOnlyRoot = normalize(fixture.path)
-		const service = createService(tsOnlyRoot, {
+		await using service = createService(tsOnlyRoot, {
 			fs: fixture.fs,
 			options: { fallbackTsOnSingle: true },
 		})

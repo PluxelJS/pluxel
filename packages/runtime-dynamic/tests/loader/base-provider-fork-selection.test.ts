@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderService } from '../../../runtime-dynamic/src/services'
-import { EXTRA_BASE_PROVIDERS, EXTRA_FORKS } from '../../../runtime-dynamic/src/loader/selection'
+import { EXTRA_BASE_PROVIDERS, EXTRA_FORKS } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 async function commitBatch(
@@ -22,7 +21,7 @@ function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 describe('base provider selection', () => {
 	it('self-heals when baseProviders points to a fork id', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 
 		abstract class Abs extends ForkablePlugin {}
 
@@ -46,7 +45,7 @@ describe('base provider selection', () => {
 
 	it('restarts consumers that depend on a base token when the selected provider module reloads', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 		let providerSeq = 0
 		let consumerSeq = 0
 
@@ -102,7 +101,7 @@ describe('base provider selection', () => {
 
 	it('restarts consumers that depend on an enabled fork when the provider module reloads', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = new LoaderService(ctx)
+		const loader = ctx.loader
 		let providerSeq = 0
 		let consumerSeq = 0
 

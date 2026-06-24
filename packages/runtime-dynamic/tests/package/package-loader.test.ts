@@ -4,6 +4,26 @@ import { isOk } from 'option-t/plain_result'
 import { PackageLoader } from '../../src/package/loader'
 import { normalizeSpecifier } from '../../src/package/specifiers'
 
+type PackageLoaderDefaults = ConstructorParameters<typeof PackageLoader>[3]
+type ResolveEntry = (selector: unknown, options?: unknown) => Promise<unknown>
+
+function createPackageLoader(resolveEntry: ResolveEntry, getDefaults: PackageLoaderDefaults) {
+	return new PackageLoader(
+		{ scanService: { resolveEntry } } as ConstructorParameters<typeof PackageLoader>[0],
+		{} as ConstructorParameters<typeof PackageLoader>[1],
+		{} as ConstructorParameters<typeof PackageLoader>[2],
+		getDefaults,
+		() => {},
+		() => {},
+		async () => {
+			throw new Error('install should not run')
+		},
+		() => ({ cwd: process.cwd(), dry: true, force: false, installPeerDependencies: false }),
+		(_code, message) => new Error(message),
+		() => false,
+	)
+}
+
 describe('PackageLoader scan policy', () => {
 	it('does not pass HMR export conditions through package-managed resolution', async () => {
 		const resolveEntry = vi.fn().mockResolvedValue({
@@ -13,28 +33,15 @@ describe('PackageLoader scan policy', () => {
 			source: 'exports',
 			tried: [],
 		})
-		const loader = new PackageLoader(
-			{ scanService: { resolveEntry } } as any,
-			{} as any,
-			{} as any,
-			() => ({
-				preferFreshImport: false,
+		const loader = createPackageLoader(resolveEntry, () => ({
+			preferFreshImport: false,
+			scan: {
 				scan: {
-					scan: {
-						conditions: [PLUXEL_CONDITION_HMR, 'node', 'import'],
-						preferHmrExports: true,
-					},
+					conditions: [PLUXEL_CONDITION_HMR, 'node', 'import'],
+					preferHmrExports: true,
 				},
-			}),
-			() => {},
-			() => {},
-			async () => {
-				throw new Error('install should not run')
 			},
-			() => ({ cwd: process.cwd(), dry: true, force: false, installPeerDependencies: false }),
-			(_code, message) => new Error(message),
-			() => false,
-		)
+		}))
 
 		await loader.resolveEntryForSpec(normalizeSpecifier('pluxel-plugin-managed'), {
 			scan: {
@@ -60,20 +67,7 @@ describe('PackageLoader scan policy', () => {
 			code: 'MISSING_PACKAGE',
 			message: 'Package is missing.',
 		})
-		const loader = new PackageLoader(
-			{ scanService: { resolveEntry } } as any,
-			{} as any,
-			{} as any,
-			() => ({ preferFreshImport: false }),
-			() => {},
-			() => {},
-			async () => {
-				throw new Error('install should not run')
-			},
-			() => ({ cwd: process.cwd(), dry: true, force: false, installPeerDependencies: false }),
-			(_code, message) => new Error(message),
-			() => false,
-		)
+		const loader = createPackageLoader(resolveEntry, () => ({ preferFreshImport: false }))
 
 		const result = await loader.resolveEntryForSpecResult(normalizeSpecifier('missing-package'))
 

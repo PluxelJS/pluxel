@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { LoaderPluginCatalogService, LoaderService } from '../../../runtime-dynamic/src/services'
-import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
+import { RuntimeRpcApi } from '../../../runtime/src/api/http/rpc/RuntimeRpcApi'
 import { createHmrTestContext } from '../support/hmr-context'
 
 function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
-	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 async function loadModule(
@@ -23,15 +23,6 @@ async function loadModule(
 
 function createRpcFixture() {
 	const fixture = createHmrTestContext()
-	const loader = new LoaderService(fixture.ctx)
-	fixture.ctx.loader = loader
-	fixture.ctx.pluginCatalog = new LoaderPluginCatalogService(fixture.ctx)
-	fixture.ctx.ext = {
-		rpc: {
-			createExtensionsView: () => ({}),
-			getNamespaces: () => [],
-		},
-	} as any
 	return { ...fixture, rpc: new RuntimeRpcApi(fixture.ctx) }
 }
 

@@ -1,39 +1,60 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 import { SignalDbService } from '../../src/services/plugin-interaction/SignalDbService'
 
-function createFakeCtx() {
+const runtimeContexts = new Set<ReturnType<typeof createRuntimeContext>>()
+
+afterEach(async () => {
+	const pending = [...runtimeContexts]
+	runtimeContexts.clear()
+	await Promise.all(pending.map((runtime) => runtime.dispose()))
+})
+
+function createSignalDbTestContext() {
+	const runtime = createRuntimeContext()
+	runtimeContexts.add(runtime)
 	const sseDispose = vi.fn(() => {})
 	const sseRegister = vi.fn(() => sseDispose)
 	const deferred: Array<() => void> = []
-	const ctx: any = {
-		__deferred: deferred,
-		pluginInfo: { id: 'test-plugin' },
-		effects: {
-			defer: (fn: () => void) => {
-				deferred.push(fn)
-				return { dispose: fn }
-			},
+	const ctx: any = runtime.ctx
+	const effects = ctx.effects
+	defineTestProperty(ctx, '__deferred', deferred)
+	defineTestProperty(ctx, 'pluginInfo', { id: 'test-plugin' })
+	defineTestProperty(ctx, 'effects', {
+		defer: (fn: () => void) => {
+			deferred.push(fn)
+			return { dispose: fn }
 		},
-		ext: {
-			sse: {
-				expose: sseRegister,
-			},
+		dispose: () => effects.dispose(),
+	})
+	defineTestProperty(ctx, 'ext', {
+		sse: {
+			expose: sseRegister,
 		},
-		pluginData: {
-			persistenceForCollection: vi.fn(async () => ({
-				load: async () => ({ items: [] }),
-				save: async () => {},
-				register: async () => {},
-				unregister: async () => {},
-			})),
-		},
-	}
+	})
+	defineTestProperty(ctx, 'pluginData', {
+		persistenceForCollection: vi.fn(async () => ({
+			load: async () => ({ items: [] }),
+			save: async () => {},
+			register: async () => {},
+			unregister: async () => {},
+		})),
+	})
 	return ctx
+}
+
+function defineTestProperty(target: object, key: string, value: unknown) {
+	Object.defineProperty(target, key, {
+		value,
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	})
 }
 
 describe('SignalDbService', () => {
 	it('collection.watch() receives client and server-side mutations', async () => {
-		const ctx = createFakeCtx()
+		const ctx = createSignalDbTestContext()
 		const service = new SignalDbService(ctx)
 		const collection = service.collection<{ id: string; value: number }>({
 			name: 'runtime-actions',
@@ -58,7 +79,7 @@ describe('SignalDbService', () => {
 	})
 
 	it('creates persistence-backed collections without a transient adapter-less instance', async () => {
-		const ctx = createFakeCtx()
+		const ctx = createSignalDbTestContext()
 		const service = new SignalDbService(ctx)
 		const collection = service.collection<{ id: string; value: number }>({
 			name: 'persisted-runtime-actions',
@@ -74,7 +95,7 @@ describe('SignalDbService', () => {
 	})
 
 	it('provides selector-bound doc helpers for builtin sync/form/action', async () => {
-		const ctx = createFakeCtx()
+		const ctx = createSignalDbTestContext()
 		const service = new SignalDbService(ctx)
 		const collection = service.collection<{ id: string; paused: boolean; ticks: number }>({
 			name: 'runtime',
@@ -130,7 +151,7 @@ describe('SignalDbService', () => {
 	})
 
 	it('re-registers the signaldb SSE namespace from the sync transport path when needed', async () => {
-		const ctx = createFakeCtx()
+		const ctx = createSignalDbTestContext()
 		const service = new SignalDbService(ctx)
 		const collection = service.collection<{ id: string; value: number }>({
 			name: 'events',

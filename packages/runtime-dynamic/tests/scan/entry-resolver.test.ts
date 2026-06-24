@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { normalize } from 'pathe'
 import { getOxcResolveCache } from '@pluxel/runtime/shared'
-import { EntryResolver } from '../../../runtime-dynamic/src/scan/entry-resolver'
-import type { ResolvedScanOptions } from '../../../runtime-dynamic/src/scan/types'
+import { EntryResolver } from '../../src/scan/entry-resolver'
+import type { ResolvedScanOptions } from '../../src/scan/types'
 
 const baseOptions: ResolvedScanOptions = {
 	conditions: ['node', 'import'],

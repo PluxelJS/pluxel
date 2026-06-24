@@ -1,15 +1,15 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import type { ExtensionModuleStore } from '@pluxel/runtime/internal'
 import { join } from 'pathe'
+import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pluginBuildMocks = vi.hoisted(() => ({
-	buildPluginUiRemote: vi.fn(
-		async (input: { outDir: string; entryPath: string; root: string }) => {
-			await mkdir(input.outDir, { recursive: true })
-			await writeFile(join(input.outDir, 'mf-manifest.json'), JSON.stringify({}), 'utf-8')
-		},
-	),
+	buildPluginUiRemote: vi.fn(async (input: { outDir: string; entryPath: string; root: string }) => {
+		await mkdir(input.outDir, { recursive: true })
+		await writeFile(join(input.outDir, 'mf-manifest.json'), JSON.stringify({}), 'utf-8')
+	}),
 	resolveExtensionFederationShared: vi.fn(() => ({ signature: 'shared-signature' })),
 	resolvePluginUiBuildSignature: vi.fn(() => 'ui-build-signature'),
 }))
@@ -21,6 +21,26 @@ vi.mock('@pluxel/rolldown/vite/plugin-ui', () => ({
 }))
 
 import { ExtensionCompilerService } from '../src/extensions/ExtensionCompilerService'
+
+function createPluginContext(
+	host: Host,
+	pluginName: string,
+	overrides: Record<string, unknown> = {},
+): Context {
+	const ctx = host.ctx.extend({ name: pluginName }) as Context
+	defineTestProperty(ctx, 'pluginInfo', { id: pluginName })
+	for (const [key, value] of Object.entries(overrides)) defineTestProperty(ctx, key, value)
+	return ctx
+}
+
+function defineTestProperty(target: object, key: string, value: unknown) {
+	Object.defineProperty(target, key, {
+		value,
+		writable: true,
+		configurable: true,
+		enumerable: true,
+	})
+}
 
 describe('ExtensionCompilerService', () => {
 	beforeEach(() => {
@@ -40,16 +60,13 @@ describe('ExtensionCompilerService', () => {
 			'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx': 'export default {}\n',
 		})
 
-		const committed: Array<{ pluginName: string; sourceHash: string }> = []
+		const committed: Parameters<ExtensionModuleStore['commitCompiledModule']>[0][] = []
 		const artifactRoots: string[] = []
-		let currentModule: { pluginName: string; sourceHash: string } | undefined
+		let currentModule: ReturnType<ExtensionModuleStore['getCompiledModule']>
+		const host = createHost()
 
 		const service = new ExtensionCompilerService(
-			{
-				config: {},
-				logger: { error: vi.fn() },
-				name: 'test',
-			} as any,
+			host.ctx,
 			{ enabled: true },
 			{
 				cacheDir: fixture.getPath('.pluxel/extensions'),
@@ -66,7 +83,7 @@ describe('ExtensionCompilerService', () => {
 		)
 
 		service.attachStore({
-			getCompiledModule: () => currentModule as any,
+			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module, options) {
 				currentModule = module
 				committed.push(module)
@@ -80,8 +97,7 @@ describe('ExtensionCompilerService', () => {
 		})
 
 		const dispose = service.bindDeclaration(
-			{
-				pluginInfo: { id: 'PluginWithUI' },
+			createPluginContext(host, 'PluginWithUI', {
 				loader: {
 					api: {
 						registry: {
@@ -93,10 +109,7 @@ describe('ExtensionCompilerService', () => {
 						},
 					},
 				},
-				effects: {
-					defer: (fn: () => void | Promise<void>) => ({ dispose: fn }),
-				},
-			} as any,
+			}),
 			{ entryPath: './PluginWithUI/ui/index.tsx' },
 		)
 
@@ -128,6 +141,7 @@ describe('ExtensionCompilerService', () => {
 
 		dispose()
 		service.dispose()
+		await host.dispose()
 	})
 
 	it('resolves static Vite host UI entries from Vite root without a loader', async () => {
@@ -139,20 +153,17 @@ describe('ExtensionCompilerService', () => {
 			}),
 			'packages/plugins/static-commercial-demo/web/client/main.tsx': 'export default {}\n',
 		})
+		const host = createHost()
 
 		const service = new ExtensionCompilerService(
-			{
-				config: {},
-				logger: { error: vi.fn() },
-				name: 'test',
-			} as any,
+			host.ctx,
 			{
 				enabled: true,
 				viteServer: {
 					config: {
 						root: fixture.getPath('packages/plugins/static-commercial-demo'),
 					},
-				} as any,
+				},
 			},
 			{
 				cacheDir: fixture.getPath('.pluxel/extensions'),
@@ -170,29 +181,22 @@ describe('ExtensionCompilerService', () => {
 			async removePlugin() {},
 		})
 
-		const dispose = service.bindDeclaration(
-			{
-				pluginInfo: { id: 'StaticCommercialPlugin' },
-				effects: {
-					defer: (fn: () => void | Promise<void>) => ({ dispose: fn }),
-				},
-			} as any,
-			{ entryPath: './web/client/main.tsx' },
-		)
+		const dispose = service.bindDeclaration(createPluginContext(host, 'StaticCommercialPlugin'), {
+			entryPath: './web/client/main.tsx',
+		})
 
 		await service.requestCompile('StaticCommercialPlugin')
 
 		expect(pluginBuildMocks.buildPluginUiRemote).toHaveBeenCalledWith(
 			expect.objectContaining({
 				root: fixture.getPath('packages/plugins/static-commercial-demo'),
-				entryPath: fixture.getPath(
-					'packages/plugins/static-commercial-demo/web/client/main.tsx',
-				),
+				entryPath: fixture.getPath('packages/plugins/static-commercial-demo/web/client/main.tsx'),
 				pluginName: 'StaticCommercialPlugin',
 			}),
 		)
 
 		dispose()
 		service.dispose()
+		await host.dispose()
 	})
 })

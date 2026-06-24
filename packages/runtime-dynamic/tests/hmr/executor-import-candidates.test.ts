@@ -12,13 +12,13 @@ describe('HmrExecutor import candidates', () => {
 		class Anchor extends BasePlugin {}
 		Plugin({ name: 'Anchor' })(Anchor)
 
-		const runner = {
+		const runner: ConstructorParameters<typeof HmrExecutor>[1] = {
 			import: async (id: string) => {
 				calls.push(id)
 				if (id === `/@fs${cleanId}`) return { Anchor }
 				throw new Error(`unexpected id: ${id}`)
 			},
-		} as any
+		}
 
 		const path = {
 			variantsClean: (id: string) => [id, `/@fs${id}`],
@@ -26,11 +26,11 @@ describe('HmrExecutor import candidates', () => {
 			toClean: (id: string) => id,
 			toVite: (id: string) => id,
 			variants: (id: string) => [id, `/@fs${id}`],
-		} as any
+		} as ConstructorParameters<typeof HmrExecutor>[2]
 
-		const timing = {
+		const timing: ConstructorParameters<typeof HmrExecutor>[3] = {
 			start: () => () => 0,
-		} as any
+		}
 
 		try {
 			const executor = new HmrExecutor(host.ctx, runner, path, timing, {

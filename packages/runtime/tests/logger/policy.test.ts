@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import type { LogRecord } from '@logtape/logtape'
 import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -10,14 +11,15 @@ import {
 } from '@pluxel/runtime/logger'
 
 function record(level: 'debug' | 'info' | 'warning', pluginId?: string) {
-	return {
+	const out: LogRecord = {
 		level,
 		category: ['pluxel', 'plugins'],
 		properties: pluginId ? { pluginId } : {},
 		message: ['test'],
 		rawMessage: 'test',
 		timestamp: Date.now(),
-	} as any
+	}
+	return out
 }
 
 describe('RuntimePluginLogPolicy', () => {

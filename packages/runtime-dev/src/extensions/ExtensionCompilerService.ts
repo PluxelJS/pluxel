@@ -73,8 +73,14 @@ export type ExtensionCompilerServiceConfig = {
 	vite?: InlineConfig
 }
 
+export type ExtensionCompilerViteServer = {
+	config: Pick<ViteDevServer['config'], 'root'>
+	moduleGraph?: Pick<ViteDevServer['moduleGraph'], 'getModuleByUrl'>
+	transformRequest?: ViteDevServer['transformRequest']
+}
+
 export type ExtensionCompilerServiceDeps = {
-	viteServer?: ViteDevServer
+	viteServer?: ExtensionCompilerViteServer
 	enabled?: boolean
 }
 
@@ -135,7 +141,7 @@ export class ExtensionCompilerService {
 	private readonly enabled: boolean
 	private readonly dbg: LogtapeLogger
 	private store: ExtensionModuleStore | null = null
-	private readonly viteServer?: ViteDevServer
+	private readonly viteServer?: ExtensionCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
 	private readonly compileConcurrency: number
@@ -575,6 +581,7 @@ export class ExtensionCompilerService {
 	private async refreshWatchFiles(entry: PluginCompileEntry): Promise<void> {
 		const vite = this.viteServer
 		if (!vite) return
+		if (!vite.moduleGraph || !vite.transformRequest) return
 
 		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) return

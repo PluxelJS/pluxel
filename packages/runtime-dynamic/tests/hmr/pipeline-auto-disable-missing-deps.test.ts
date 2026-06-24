@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import '@pluxel/runtime-dynamic/register'
 import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
 
-import { HmrBatchProcessor, HmrExecutor } from '../../src/hmr/engine/pipeline'
+import {
+	collectEnabledButStopped,
+	type EnabledButStoppedLookupContext,
+	HmrExecutor,
+} from '../../src/hmr/engine/pipeline'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 	;(
@@ -11,19 +15,23 @@ function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 }
 
 function createExecutor(
-	ctx: any,
+	ctx: ConstructorParameters<typeof HmrExecutor>[0],
 	options: {
 		importModule?: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>
-		config?: Record<string, unknown>
+		config?: Partial<ConstructorParameters<typeof HmrExecutor>[4]>
 	} = {},
 ) {
-	const runner = { import: async (id: string) => options.importModule?.(id) ?? {} } as any
+	const runner: ConstructorParameters<typeof HmrExecutor>[1] = {
+		import: async (id: string) => options.importModule?.(id) ?? {},
+	}
 	const path = {
 		variants: (id: string) => [id],
 		variantsClean: (id: string) => [id],
+		toClean: (id: string) => id,
+		toVite: (id: string) => id,
 		pretty: (id: string) => id,
-	} as any
-	const timing = { start: () => () => 0 } as any
+	} as ConstructorParameters<typeof HmrExecutor>[2]
+	const timing: ConstructorParameters<typeof HmrExecutor>[3] = { start: () => () => 0 }
 
 	return new HmrExecutor(ctx, runner, path, timing, {
 		useRequireShims: false,
@@ -197,16 +205,15 @@ describe('HmrExecutor commit retry', () => {
 	})
 })
 
-describe('HmrBatchProcessor summary', () => {
+describe('collectEnabledButStopped', () => {
 	it('reports enabled-but-stopped plugins within the batch-related module set', async () => {
 		const findModuleIdByName = vi.fn((name: string) =>
 			name === 'StoppedElsewhere' ? '/other.ts' : null,
 		)
-		const ctx = {
+		const ctx: EnabledButStoppedLookupContext = {
 			loader: {
 				api: {
 					registry: {
-						listRegistered: () => new Map(),
 						findModuleIdByName,
 					},
 					status: {
@@ -223,64 +230,15 @@ describe('HmrBatchProcessor summary', () => {
 						remove: () => {},
 					},
 				},
-				pruneModule: () => {},
 			},
 			registry: {
 				getRuntimeModuleId: (name: string) =>
 					name === 'StoppedInBatch' ? '/consumer.ts' : undefined,
-				graph: { activeCount: () => 0 },
 			},
-			configService: { isEnabledInConfig: () => false },
-			logger: { info: () => {}, warn: () => {}, error: () => {} },
-		} as any
-		const env = {
-			moduleGraph: {
-				getModulesByFile: (id: string) =>
-					id === '/consumer.ts'
-						? new Set([{ id: '/consumer.ts', importers: new Set() }])
-						: undefined,
-				getModuleById: () => undefined,
-				invalidateModule: () => {},
-			},
-			fetchModule: async () => {},
-		} as any
-		const executor = {
-			runAndLoadAllClean: async () => ({
-				commitResult: { ok: true as const, val: null },
-				commitMs: 1,
-				affectedModules: ['/consumer.ts'],
-				syncedModules: ['/consumer.ts'],
-				autoDisabled: [],
-			}),
-		} as any
-		const path = {
-			toClean: (id: string) => id,
-			variants: (id: string) => [id],
-			variantsClean: (id: string) => [id],
-			pretty: (id: string) => id,
-		} as any
-		const toolkit = { pathFilter: () => true } as any
-		const timing = {
-			clear: () => {},
-			start: () => () => 0,
-			entries: () => [],
-			snapshot: () => ({ evalMs: new Map(), injectMs: new Map(), transformMs: new Map() }),
-		} as any
-		const processor = new HmrBatchProcessor(
-			ctx,
-			env,
-			{ invalidateRunnerCacheByFiles: () => ({ invalidated: 0, invalidatedKeys: [] }) } as any,
-			executor,
-			path,
-			toolkit,
-			timing,
-			{ attributionLevel: 'off', prefetchLimit: 0, prefetchOrder: 'near', prefetchConcurrency: 0 },
-			{ batch: null, cache: null, graph: null },
-			() => new Set(['/consumer.ts']),
-		)
+		}
 
-		const summary = await processor.process(['/consumer.ts'], 1)
-		expect(summary?.enabledButStopped).toEqual(['StoppedInBatch'])
+		const stopped = collectEnabledButStopped(ctx, new Set(['/consumer.ts']))
+		expect(stopped).toEqual(['StoppedInBatch'])
 		expect(findModuleIdByName).not.toHaveBeenCalledWith('StoppedInBatch')
 	})
 })
