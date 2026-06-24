@@ -1,19 +1,28 @@
 import { createYoga } from 'graphql-yoga'
+import { setParamToken } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui } from '@pluxel/runtime/plugin'
 import { createCommercialContext } from './context.ts'
+import { CommercialDataPlugin } from './data-plugin.ts'
 import { createSchema } from './schema.ts'
 
 const pluginUi = ui('./web/client/main.tsx')
 
 export class StaticCommercialPlugin extends BasePlugin {
+	private readonly data: CommercialDataPlugin
+
+	constructor(data: CommercialDataPlugin) {
+		super()
+		this.data = data
+	}
+
 	override init(): void {
 		pluginUi.bind(this.ctx)
 
 		const yoga = createYoga({
 			schema: createSchema(),
 			graphqlEndpoint: '/__pluxel/plugins/StaticCommercialPlugin/graphql',
-			context: (initial) => createCommercialContext(initial, this.ctx),
+			context: (initial) => createCommercialContext(initial, this.ctx, this.data.services),
 			maskedErrors: process.env.NODE_ENV === 'production',
 			logging: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
 		})
@@ -41,3 +50,4 @@ export class StaticCommercialPlugin extends BasePlugin {
 }
 
 Plugin({ name: 'StaticCommercialPlugin' })(StaticCommercialPlugin)
+setParamToken(StaticCommercialPlugin, 0, CommercialDataPlugin)

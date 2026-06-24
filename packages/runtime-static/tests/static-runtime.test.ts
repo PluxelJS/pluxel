@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -10,7 +10,11 @@ import {
 	type StaticRuntimePluginStatus,
 } from '@pluxel/runtime-static'
 import { installStaticRuntimeHmr, reloadStaticRuntime } from '@pluxel/runtime-static/hmr'
-import { staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
+import {
+	shouldHandleStaticRuntimeRequest,
+	staticRuntimeHostVitePlugin,
+	staticRuntimeVitePlugins,
+} from '@pluxel/runtime-static/vite'
 
 function statuses(host: StaticRuntimeHost): Record<string, StaticRuntimePluginStatus> {
 	const out: Record<string, StaticRuntimePluginStatus> = {}
@@ -70,6 +74,81 @@ describe('@pluxel/runtime-static', () => {
 			'pluxel:static-runtime-transform',
 			'pluxel-runtime-ui-bridge',
 		])
+	})
+
+	it('matches static host requests without stealing Vite module assets', () => {
+		expect(
+			shouldHandleStaticRuntimeRequest({
+				url: '/__pluxel/plugins/Demo/graphql',
+				method: 'POST',
+				headers: {},
+			} as never),
+		).toBe(true)
+		expect(
+			shouldHandleStaticRuntimeRequest({
+				url: '/commercial',
+				method: 'GET',
+				headers: { accept: 'text/html' },
+			} as never),
+		).toBe(true)
+		expect(
+			shouldHandleStaticRuntimeRequest({
+				url: '/@vite/client',
+				method: 'GET',
+				headers: { accept: '*/*' },
+			} as never),
+		).toBe(false)
+		expect(
+			shouldHandleStaticRuntimeRequest({
+				url: '/web/client/main.tsx',
+				method: 'GET',
+				headers: { accept: '*/*' },
+			} as never),
+		).toBe(false)
+	})
+
+	it('starts and stops a static host through the Vite helper', async () => {
+		let close: (() => void) | undefined
+		const host = {
+			definition: { name: 'vite-static-test' },
+			ctx: {
+				logger: { info: vi.fn() },
+				http: { fetch: vi.fn() },
+			},
+			start: vi.fn(async () => ({
+				runtime: 'vite-static-test',
+				entries: [{ name: 'DemoPlugin', status: 'started' }],
+			})),
+			stop: vi.fn(async () => {}),
+		} as unknown as StaticRuntimeHost
+		const server = {
+			httpServer: {
+				once: vi.fn((_event: string, callback: () => void) => {
+					close = callback
+				}),
+			},
+			middlewares: { use: vi.fn() },
+		}
+
+		const plugin = staticRuntimeHostVitePlugin({
+			hmr: false,
+			createHost: async () => host,
+		})
+		const installMiddleware = await (
+			plugin as unknown as {
+				configureServer(input: typeof server): Promise<() => void>
+			}
+		).configureServer(server)
+		installMiddleware()
+		close?.()
+
+		expect(host.start).toHaveBeenCalledOnce()
+		expect(server.middlewares.use).toHaveBeenCalledOnce()
+		expect(host.stop).toHaveBeenCalledOnce()
+		expect(host.ctx.logger.info).toHaveBeenCalledWith('Static runtime Vite host ready', {
+			runtime: 'vite-static-test',
+			startup: ['DemoPlugin:started'],
+		})
 	})
 
 	it('installs route-neutral development handles for source UI remotes', async () => {

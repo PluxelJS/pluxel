@@ -1,10 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createStaticRuntimeHost } from '@pluxel/runtime-static'
+import { createStaticRuntimeHost, type StaticRuntimeHost } from '@pluxel/runtime-static'
 import { installStaticRuntimeHmr } from '@pluxel/runtime-static/hmr'
 import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
-import type { ViteDevServer } from 'vite'
 import staticRuntime, { staticCommercialEnabledPlugins } from './pluxel.static.ts'
 
 export interface StaticCommercialHost {
@@ -12,9 +11,7 @@ export interface StaticCommercialHost {
 	stop(): Promise<void>
 }
 
-export async function createStaticCommercialHost(
-	viteServer?: ViteDevServer,
-): Promise<StaticCommercialHost> {
+export async function createStaticCommercialRuntimeHost(): Promise<StaticRuntimeHost> {
 	const repoRoot = resolve(import.meta.dirname, '../../../..')
 	const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-static-commercial-demo'
 
@@ -50,11 +47,17 @@ export async function createStaticCommercialHost(
 			extensionService: { enabled: true },
 		},
 	})
-	installStaticRuntimeHmr({ host, viteServer })
+
+	return host
+}
+
+export async function createStaticCommercialHost(): Promise<StaticCommercialHost> {
+	const host = await createStaticCommercialRuntimeHost()
+	installStaticRuntimeHmr({ host })
 
 	const startup = await host.start()
 	host.ctx.logger.info('Static commercial runtime ready', {
-		profile: activeProfile,
+		profile: process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-static-commercial-demo',
 		startup: startup.entries.map(({ name, status }) => `${name}:${status}`),
 	})
 

@@ -62,6 +62,13 @@ export type ExtensionCompilerServiceConfig = {
 	 * Defaults to `@pluxel/runtime/web`'s `extensionFederationSharedPackages`.
 	 */
 	sharedPackages?: string[]
+	/**
+	 * Explicit plugin package directories keyed by plugin name.
+	 *
+	 * Static hosts do not have a dynamic loader anchor table, so Vite/static
+	 * integrations can provide these after loading the fixed catalog.
+	 */
+	pluginDirs?: Record<string, string>
 	/** Extra Vite config merged into plugin UI remote builds. */
 	vite?: InlineConfig
 }
@@ -133,6 +140,7 @@ export class ExtensionCompilerService {
 	private readonly cacheKeep: number
 	private readonly compileConcurrency: number
 	private readonly sharedPackages?: readonly string[]
+	private readonly pluginDirs: ReadonlyMap<string, string>
 	private readonly vite?: InlineConfig
 
 	private readonly entries = new Map<string, PluginCompileEntry>()
@@ -152,6 +160,7 @@ export class ExtensionCompilerService {
 		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		this.sharedPackages = config?.sharedPackages
+		this.pluginDirs = new Map(Object.entries(config?.pluginDirs ?? {}))
 		this.vite = config?.vite
 		const logger = (this.ctx as unknown as { logger?: unknown }).logger
 		const fn =
@@ -186,6 +195,9 @@ export class ExtensionCompilerService {
 		let pluginDir = this.findPluginDir(ctx, pluginName)
 		if (!pluginDir && isAbsolute(config.entryPath)) {
 			pluginDir = dirname(config.entryPath)
+		}
+		if (!pluginDir) {
+			pluginDir = this.findViteRootPluginDir(config.entryPath)
 		}
 		if (!pluginDir) throw new Error(`无法定位插件目录: ${pluginName}`)
 		const entryBaseDir = this.findPluginEntryBaseDir(ctx, pluginName) ?? pluginDir
@@ -630,17 +642,39 @@ export class ExtensionCompilerService {
 	}
 
 	private findPluginDir(ctx: Context, pluginName: string): string | null {
+		const configured = this.pluginDirs.get(pluginName)
+		if (configured) return findNearestPackageRoot(configured) ?? configured
+
 		const baseDir = this.findPluginEntryBaseDir(ctx, pluginName)
 		if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
 
+		const loaderApi = (
+			ctx as unknown as {
+				loader?: {
+					api?: {
+						anchors?: { list?: () => Iterable<string> }
+					}
+				}
+			}
+		).loader?.api
 		const needle = pluginName.toLowerCase()
-		for (const path of ctx.loader.api.anchors.list()) {
+		for (const path of loaderApi?.anchors?.list?.() ?? []) {
 			if (path.toLowerCase().includes(needle) && isAbsolute(path)) {
 				const pathBaseDir = dirname(path)
 				return findNearestPackageRoot(pathBaseDir) ?? pathBaseDir
 			}
 		}
 		return null
+	}
+
+	private findViteRootPluginDir(entryPath: string): string | null {
+		const viteRoot = this.viteServer?.config.root
+		if (!viteRoot) return null
+
+		const root = isAbsolute(viteRoot) ? viteRoot : resolve(process.cwd(), viteRoot)
+		const entry = this.resolvePluginFile(root, entryPath)
+		if (!entry || !existsSync(entry)) return null
+		return findNearestPackageRoot(root) ?? root
 	}
 
 	private findPluginEntryBaseDir(ctx: Context, pluginName: string): string | null {

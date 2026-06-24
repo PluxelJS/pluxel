@@ -64,6 +64,10 @@ export type StaticRuntimeExtensionCompilerConfig = {
 	 * Override the shared package list exposed by the host runtime.
 	 */
 	sharedPackages?: string[]
+	/**
+	 * Explicit plugin package directories keyed by plugin name.
+	 */
+	pluginDirs?: Record<string, string>
 	/** Extra Vite config merged into plugin UI remote builds. */
 	vite?: InlineConfig
 }

@@ -1,9 +1,11 @@
 import { createRequire } from 'node:module'
 import { resolver, mutation, query, silk } from '@gqloom/core'
 import { ValibotWeaver, asEnumType, asObjectType } from '@gqloom/valibot'
+import { GraphQLError } from 'graphql'
 import * as v from 'valibot'
 import type { CommercialContext } from './context.ts'
 import type { OrderStatus } from './db.ts'
+import { isCommercialServiceError } from './errors.ts'
 
 const require = createRequire(import.meta.url)
 const { printSchema } = require('graphql') as typeof import('graphql')
@@ -55,55 +57,77 @@ export const OrderSchema = v.pipe(
 )
 
 const commercialResolver = resolver({
-	summary: query(PipelineSummarySchema).resolve((_args, payload) => {
-		const context = payload?.context as CommercialContext
-		return context.services.summary()
+	summary: query(PipelineSummarySchema).resolve(async (_args, payload) => {
+		return await resolveCommercial(payload, (context) => context.services.summary())
 	}),
-	customers: query(silk.list(CustomerSchema)).resolve((_args, payload) => {
-		const context = payload?.context as CommercialContext
-		return [...context.services.customers()]
+	customers: query(silk.list(CustomerSchema)).resolve(async (_args, payload) => {
+		return await resolveCommercial(payload, async (context) => [
+			...(await context.services.customers()),
+		])
 	}),
 	customer: query(CustomerSchema)
 		.input({ id: id() })
-		.resolve(({ id: customerId }, payload) => {
-			const context = payload?.context as CommercialContext
-			return context.services.customer(customerId)
+		.resolve(async ({ id: customerId }, payload) => {
+			return await resolveCommercial(payload, (context) => context.services.customer(customerId))
 		}),
-	orders: query(silk.list(OrderSchema)).resolve((_args, payload) => {
-		const context = payload?.context as CommercialContext
-		return [...context.services.orders()]
+	orders: query(silk.list(OrderSchema)).resolve(async (_args, payload) => {
+		return await resolveCommercial(payload, async (context) => [
+			...(await context.services.orders()),
+		])
 	}),
 	order: query(OrderSchema)
 		.input({ id: id() })
-		.resolve(({ id: orderId }, payload) => {
-			const context = payload?.context as CommercialContext
-			return context.services.order(orderId)
+		.resolve(async ({ id: orderId }, payload) => {
+			return await resolveCommercial(payload, (context) => context.services.order(orderId))
 		}),
 	ordersByStatus: query(silk.list(OrderSchema))
 		.input({ status: OrderStatusSchema })
-		.resolve(({ status }, payload) => {
-			const context = payload?.context as CommercialContext
-			return [...context.services.ordersByStatus(status as OrderStatus)]
+		.resolve(async ({ status }, payload) => {
+			return await resolveCommercial(payload, async (context) => [
+				...(await context.services.ordersByStatus(status as OrderStatus)),
+			])
 		}),
 	approveOrder: mutation(OrderSchema)
 		.input({ id: id() })
-		.resolve(({ id: orderId }, payload) => {
-			const context = payload?.context as CommercialContext
-			return context.services.approveOrder(orderId)
+		.resolve(async ({ id: orderId }, payload) => {
+			return await resolveCommercial(payload, (context) => context.services.approveOrder(orderId))
 		}),
 	updateOrderAmount: mutation(OrderSchema)
 		.input({ id: id(), amount: v.nonOptional(v.number()) })
-		.resolve(({ id: orderId, amount }, payload) => {
-			const context = payload?.context as CommercialContext
-			return context.services.updateOrderAmount(orderId, amount)
+		.resolve(async ({ id: orderId, amount }, payload) => {
+			return await resolveCommercial(payload, (context) =>
+				context.services.updateOrderAmount(orderId, amount),
+			)
 		}),
 	setCustomerHealth: mutation(CustomerSchema)
 		.input({ id: id(), score: v.nonOptional(v.number()) })
-		.resolve(({ id: customerId, score }, payload) => {
-			const context = payload?.context as CommercialContext
-			return context.services.setCustomerHealth(customerId, score)
+		.resolve(async ({ id: customerId, score }, payload) => {
+			return await resolveCommercial(payload, (context) =>
+				context.services.setCustomerHealth(customerId, score),
+			)
 		}),
 })
+
+async function resolveCommercial<T>(
+	payload: { readonly context?: unknown } | undefined,
+	fn: (context: CommercialContext) => Promise<T>,
+): Promise<T> {
+	const context = payload?.context as CommercialContext
+	try {
+		return await fn(context)
+	} catch (error) {
+		if (!isCommercialServiceError(error)) throw error
+		throw new GraphQLError(error.message, {
+			extensions: {
+				code: error.code,
+				status: error.status,
+				http: { status: error.status },
+				details: error.details,
+			},
+			originalError: error,
+		})
+	}
+}
 
 export function createSchema() {
 	return ValibotWeaver.weave(commercialResolver)

@@ -16,6 +16,7 @@ and mutates plugins at runtime.
 - `reloadStaticRuntime(...)` for applying an already-imported static definition update
 - `installStaticRuntimeHmr(...)` for enabling source UI remotes during development
 - `staticRuntimeVitePlugins(...)` for the Vite transform stack expected by static hosts
+- `staticRuntimeHostVitePlugin(...)` for mounting a static host into a Vite dev server
 
 It does not scan workspaces, install packages, run the dynamic module adapter, or execute changed
 plugin source files directly. Those are dynamic route responsibilities.
@@ -27,7 +28,7 @@ For development hosts that want source UI remotes:
 ```ts
 import { createStaticRuntimeHost } from '@pluxel/runtime-static'
 import { installStaticRuntimeHmr } from '@pluxel/runtime-static/hmr'
-import { staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
+import { staticRuntimeHostVitePlugin, staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
 ```
 
 Use `staticRuntimeVitePlugins(...)` in the host Vite config. In dev, disable
@@ -37,6 +38,20 @@ production builds.
 After creating a host, call `installStaticRuntimeHmr({ host, viteServer })` before `host.start()`.
 This installs only route-neutral source UI handling. Catalog reload remains static-owned and should
 still happen through `reloadStaticRuntime(...)`.
+
+Vite hosts can delegate that lifecycle and Fetch bridge wiring to
+`staticRuntimeHostVitePlugin(...)`:
+
+```ts
+staticRuntimeHostVitePlugin({
+	async createHost() {
+		return createStaticRuntimeHost(staticRuntime, options)
+	},
+})
+```
+
+The helper installs static HMR by default, starts the host, forwards `/__pluxel/*` and document
+navigations to `host.ctx.http.fetch(...)`, and stops the host when the Vite server closes.
 
 ## Packaging
 
