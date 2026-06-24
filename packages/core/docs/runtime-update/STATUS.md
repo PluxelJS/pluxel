@@ -42,7 +42,7 @@ Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 - core `CommitSummary.runtimeUpdate` 已带 `reason` 和 `affectedModules`；普通 commit 的 `affectedModules` 为空数组，runtime update commit 会填入事务标记过的 modules。
 - runtime-dynamic 的 loader declaration transaction 在 `commit()` 时把 affected modules 的 ownership 同步到 core。
 - loader transaction `rollback()` 不发布 core ownership，避免 loader 声明回滚后污染 core read model。
-- runtime-dynamic 的 HMR batch 现在可把 module ownership 直接挂到 `RuntimeUpdateTransaction`，因此 `afterCommit` 监听器在 HMR commit 内已能读取到最新的 `ctx.registry.runtimeModules`。
+- runtime-dynamic 的 HMR batch 现在可把 module ownership 直接挂到 `RuntimeUpdateTransaction`，因此 `ctx.internalEvent.runtimeCommitted` 监听器在 HMR commit 内已能读取到最新的 `ctx.registry.runtimeModules`。
 - loader 内部已删除一层纯重复 read-model：`name2ExportKey` 不再单独维护，公开 `exportKey` 查询改为从 `moduleMap` 按需推导，新增成本只发生在 catalog/UI 查询边界。
 - loader 的 committed module-id 查询现在优先走 core ownership read model；`findModuleId(...)` 不再按 ctor 线性扫描全部 loader modules，affected-module/pruner 的 committed lookup 也先信 core。
 - HMR scheduler 会把 replaced/affected/synced modules 标记到 runtime update transaction，便于 adapter 后续只读 commit summary。
@@ -61,7 +61,7 @@ Phase 2 已到阶段停点：Declaration ownership 下沉到 core。
 
 1. committed runtime module ownership 现在有了稳定的 core read model。
    - core 已经拥有 `runtimeModules` / `getRuntimeModuleId(...)` / `listRuntimeModuleItems(...)`。
-   - HMR commit 的 `afterCommit` 回调内已经可以读取到最新 ownership，不再存在“summary 已提交但 registry ownership 还没同步”的时间差。
+   - HMR commit 的 `ctx.internalEvent.runtimeCommitted` 回调内已经可以读取到最新 ownership，不再存在“summary 已提交但 registry ownership 还没同步”的时间差。
 2. runtime declaration update 的事务边界更清楚了。
    - core transaction 负责 ownership journal、rollback 和 commit metadata。
    - loader transaction 继续只负责 loader 自己的声明层状态，不再假装拥有 committed runtime state。
@@ -95,7 +95,7 @@ Phase 3 已完成到可收口状态：constructor identity 已从 graph/runtime 
 
 - runtime-dynamic 已删除 HMR path 上的 `normalizeCtorParams(...)` / `syncModuleParams(...)` / `setParamTokens(...)` metadata 改写补丁。
 - core `PluginDefinitions` 在 provider declaration build 阶段读取 constructor deps，并把同 id / fork id 的漂移 ctor 解析为当前 `RuntimePluginKey`。
-- dependency graph node key、runtime cache key、commit summary 的 `added` / `removed` / `replaced` / `availabilityChanged`、lifecycle issue plugin key、lifecycle id、watcher resolved key 都已迁到 `RuntimePluginKey`；lifecycle failure 通过 `afterCommit` 的 `lifecycleReport.ok` / `lifecycleReport.issues` 和 lifecycle selector 观察，不再维护独立失败事件或派生失败数组。
+- dependency graph node key、runtime cache key、commit summary 的 `added` / `removed` / `replaced` / `availabilityChanged`、lifecycle issue plugin key、lifecycle id、watcher resolved key 都已迁到 `RuntimePluginKey`；lifecycle failure 通过 `ctx.internalEvent.runtimeCommitted` 的 `lifecycleReport.ok` / `lifecycleReport.issues` 和 lifecycle selector 观察，不再维护独立失败事件或派生失败数组。
 - constructor token 仍作为 authoring API 和 compat alias 保留：`features.dep(SomeCtor)`、constructor params、base provider token、旧 `getInstance(Ctor)` / `isRunning(Ctor)` / `watchInstance(Ctor)` 仍可用，但都会在 build/planning/read-model 边界解析成 key。
 - core `isRunning(...)` / `getInstance(...)` / `watchInstance(...)` 的显式 runtime read model 也通过同一 ownership read key 处理 ctor identity drift。
 - 归一化只在 declaration/build 边界发生；无变化时复用原 deps array，不进入插件业务热路径。
@@ -137,7 +137,7 @@ Phase 3 已完成，Phase 4/5 已到稳定停点。后续不应继续为了“�
 当前判断：
 
 - `missing-deps retry -> batch.syncModules(...)` 仍是外层 adapter 语义；若强行收进 core transaction，会把 loader/config re-apply 重新带回 core。这里应明确停止，而不是继续硬推。
-- committed module ownership 的写入、rollback、`afterCommit` 可见性和主要 read-path 已经尽量对齐到 core；loader 侧剩余 maps 主要承载冲突处理、未提交声明、primary provider/fork/pruner 这类宿主语义，不再是单纯“应该继续下沉的重复 committed read-model”。
+- committed module ownership 的写入、rollback、`ctx.internalEvent.runtimeCommitted` 可见性和主要 read-path 已经尽量对齐到 core；loader 侧剩余 maps 主要承载冲突处理、未提交声明、primary provider/fork/pruner 这类宿主语义，不再是单纯“应该继续下沉的重复 committed read-model”。
 - constructor dependency token 的真实输入面已收敛到 core declaration build，graph/read-model/summary/watchers 已使用 `RuntimePluginKey`；继续在 Phase 3 上加抽象的边际收益很低。
 
 Phase 4/5 入口约束：

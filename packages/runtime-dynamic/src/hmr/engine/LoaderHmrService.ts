@@ -1031,7 +1031,7 @@ export class LoaderHmrService {
 	}
 
 	private attachCommitTracker() {
-		this.ctx.on('afterCommit', (summary: CommitSummary) => {
+		this.ctx.internalEvent.runtimeCommitted.on((summary: CommitSummary) => {
 			const epoch = this.inFlightBatchEpoch
 			if (epoch !== null) {
 				this.commitByBatchEpoch.set(epoch, summary)
@@ -1040,7 +1040,7 @@ export class LoaderHmrService {
 	}
 
 	private attachResolverCacheInvalidation() {
-		this.ctx.on('runtime:resolverCacheInvalidated', (detail) => {
+		this.ctx.internalEvent.resolverCacheInvalidated.on((detail) => {
 			// When ScanService clears its resolver cache, our derived caches may become stale:
 			// - workspace entry rewrite (bare → fs entry)
 			// - runner host-entry fallbacks and package-name lookups

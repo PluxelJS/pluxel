@@ -3,31 +3,14 @@ import type { Context } from '@pluxel/core'
 import { join, normalize, relative } from 'pathe'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { fixturesPluginsDir, workspaceRoot } from './_paths'
-
-const noop = () => {}
-
-function createNoopLogger() {
-	const self: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => self,
-	}
-	return {
-		...self,
-		getDebugChannel: () => self,
-	}
-}
+import { createEventContextStub, createNoopLogger } from './_stubs'
 
 // Minimal ctx stub to construct LoaderHmrService without booting Vite.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: createNoopLogger(),
-		on: () => noop,
+		...createEventContextStub(),
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {

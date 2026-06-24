@@ -1,5 +1,5 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import '@pluxel/runtime/events'
+import type { ResolverCacheInvalidatedEvent } from '@pluxel/core/services'
 import { dirname, normalize, resolve as r } from 'pathe'
 import {
 	clearOxcResolveCache,
@@ -176,13 +176,12 @@ export class ScanService {
 	/**
 	 * 仅清空模块解析缓存，适合在依赖安装/升级后调用。
 	 */
-	invalidateResolverCache(detail?: { by?: string; reason?: string; targets?: readonly string[] }) {
+	invalidateResolverCache(detail?: ResolverCacheInvalidatedEvent) {
 		this.entryResolver.clear()
 		clearOxcResolveCache(this.resolveCache)
 
-		// Notify long-lived runtime services (HMR runner, package loaders, tooling) so they can drop any
-		// derived resolution caches.
-		this.ctx.emit('runtime:resolverCacheInvalidated', detail)
+		// Notify long-lived runtime services so they can drop derived resolution caches.
+		this.ctx.internalEvent.resolverCacheInvalidated.emit(detail)
 	}
 
 	private snapshot(request: ScanTaskOptions = {}): Promise<ScanSnapshot> {
@@ -192,10 +191,12 @@ export class ScanService {
 		const cached = this.snapshotCache.get(key)
 		if (cached) return cached
 
-		const promise = buildScanSnapshot(roots, options, this.entryResolver, this.scanFs).catch((err) => {
-			this.snapshotCache.delete(key)
-			throw err
-		})
+		const promise = buildScanSnapshot(roots, options, this.entryResolver, this.scanFs).catch(
+			(err) => {
+				this.snapshotCache.delete(key)
+				throw err
+			},
+		)
 		this.snapshotCache.set(key, promise)
 		return promise
 	}

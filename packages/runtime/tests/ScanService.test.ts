@@ -58,11 +58,18 @@ function createService(
 	root: string,
 	overrides: Partial<ConstructorParameters<typeof ScanService>[1]> = {},
 ) {
-	return new ScanService({ emit: () => {} } as unknown as Context, {
-		roots: root,
-		installedBase: root,
-		...overrides,
-	})
+	return new ScanService(
+		{
+			internalEvent: {
+				resolverCacheInvalidated: { emit: () => {} },
+			},
+		} as unknown as Context,
+		{
+			roots: root,
+			installedBase: root,
+			...overrides,
+		},
+	)
 }
 
 function asPosix(input: string) {
@@ -70,19 +77,27 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
-	it('emits runtime:resolverCacheInvalidated when events are available', () => {
-		const emit = vi.fn()
-		const service = new ScanService({ emit } as unknown as Context, {
-			roots: '/tmp',
-			installedBase: '/tmp',
-		})
+	it('emits resolverCacheInvalidated through internalEvent', () => {
+		const internalEmit = vi.fn()
+		const service = new ScanService(
+			{
+				internalEvent: {
+					resolverCacheInvalidated: { emit: internalEmit },
+				},
+			} as unknown as Context,
+			{
+				roots: '/tmp',
+				installedBase: '/tmp',
+			},
+		)
 
 		service.invalidateResolverCache({ by: 'test', reason: 'unit', targets: ['x'] })
-		expect(emit).toHaveBeenCalledWith('runtime:resolverCacheInvalidated', {
+		const detail = {
 			by: 'test',
 			reason: 'unit',
 			targets: ['x'],
-		})
+		}
+		expect(internalEmit).toHaveBeenCalledWith(detail)
 	})
 
 	it('resolves entry by package name inside workspace', async () => {

@@ -60,12 +60,14 @@ describe('HmrExecutor commit retry', () => {
 			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
 			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
 			await host.commit()
-			host.ctx.on('afterCommit', (summary: { runtimeUpdate?: { reason?: string } }) => {
-				if (summary.runtimeUpdate?.reason !== 'hmr') return
-				moduleItemsSeenDuringHmrCommit = host.ctx.registry
-					.listRuntimeModuleItems('/dep.ts')
-					.map((item: { ctor: Function }) => item.ctor)
-			})
+			host.ctx.internalEvent.runtimeCommitted.on(
+				(summary: { runtimeUpdate?: { reason?: string } }) => {
+					if (summary.runtimeUpdate?.reason !== 'hmr') return
+					moduleItemsSeenDuringHmrCommit = host.ctx.registry
+						.listRuntimeModuleItems('/dep.ts')
+						.map((item: { ctor: Function }) => item.ctor)
+				},
+			)
 
 			const firstConsumer = host.get(Consumer)
 			expect(firstConsumer?.seq).toBe(1)

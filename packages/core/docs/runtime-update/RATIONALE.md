@@ -111,7 +111,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 截至 2026-06-19，Phase 2 已经兑现的收益主要是：
 
 - committed runtime module ownership 已经成为 core 的稳定事实来源，而不是 loader commit 后补同步的影子状态。
-- HMR commit 内的 ownership 可见性已经对齐；`afterCommit` 消费方不再需要接受 ownership 落后于 summary 的时序差。
+- HMR commit 内的 ownership 可见性已经对齐；`ctx.internalEvent.runtimeCommitted` 消费方不再需要接受 ownership 落后于 summary 的时序差。
 - adapter/loader 的一部分重复 committed read-model 已被删除或降级为按需推导，典型例子是 `name2ExportKey` 和 `findModuleId(..., ctor)` 的线性扫描分支。
 - Phase 2 的“不要再继续下沉”的边界也已经变得清楚：`missing-deps retry` 仍然依赖 loader/config re-apply 语义，继续硬推只会污染 core。
 

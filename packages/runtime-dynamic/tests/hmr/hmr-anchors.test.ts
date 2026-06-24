@@ -2,30 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-
-const noop = () => {}
-
-function createNoopLogger() {
-	const self: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => self,
-	}
-	return {
-		...self,
-		getDebugChannel: () => self,
-	}
-}
+import { createEventContextStub, createNoopLogger, noop } from './_stubs'
 
 const createCtx = () => {
 	const anchors = new Set<string>()
 	const ctx = {
 		logger: createNoopLogger(),
-		on: () => noop,
+		...createEventContextStub(),
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
@@ -57,7 +40,11 @@ describe('LoaderHmrService anchors', () => {
 		const { ctx, anchors } = createCtx()
 		anchors.add(entry)
 
-		const hmr = new LoaderHmrService(ctx, { roots: [root], entries: [], exclude: [`${root}/**/*.tsx`] })
+		const hmr = new LoaderHmrService(ctx, {
+			roots: [root],
+			entries: [],
+			exclude: [`${root}/**/*.tsx`],
+		})
 		;(hmr as unknown as { debouncer: { push: (id: string) => void } }).debouncer = { push: noop }
 
 		const accepted = (

@@ -11,12 +11,12 @@ import {
 } from '@pluxel/core/test'
 
 describe('PluginService failure reporting', () => {
-	it('commitStrict publishes failure details through afterCommit before returning an error', async () => {
+	it('commitStrict publishes failure details through runtimeCommitted before returning an error', async () => {
 		await withCoreHost(async (host) => {
-			const afterCommit: CommitSummary[] = []
+			const committed: CommitSummary[] = []
 
-			host.ctx.on('afterCommit', (summary) => {
-				afterCommit.push(summary)
+			host.ctx.internalEvent.runtimeCommitted.on((summary) => {
+				committed.push(summary)
 			})
 
 			@Plugin({ name: 'STRICT-FAIL-A' })
@@ -31,8 +31,8 @@ describe('PluginService failure reporting', () => {
 
 			// Strict mode still publishes commit-side observability before surfacing the error result.
 			expect(failed.ok).toBe(false)
-			expect(afterCommit).toHaveLength(1)
-			expect(pluginLifecycleIssuePlugins(afterCommit[0]!)).toEqual(['STRICT-FAIL-A'])
+			expect(committed).toHaveLength(1)
+			expect(pluginLifecycleIssuePlugins(committed[0]!)).toEqual(['STRICT-FAIL-A'])
 			expect(pluginLifecycleIssuePlugins(host.ctx.registry.lastCommit!)).toEqual(['STRICT-FAIL-A'])
 			assertPluginLifecycleIssue(host.ctx.registry.lastCommit!, A, {
 				phase: 'start',

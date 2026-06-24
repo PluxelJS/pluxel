@@ -2,24 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-
-const noop = () => {}
-
-function createNoopLogger() {
-	const self: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => self,
-	}
-	return {
-		...self,
-		getDebugChannel: () => self,
-	}
-}
+import { createEventContextStub, createNoopLogger, noop } from './_stubs'
 
 const createCtx = () => {
 	const anchors = new Set<string>()
@@ -34,7 +17,7 @@ const createCtx = () => {
 
 	const ctx = {
 		logger: createNoopLogger(),
-		on: () => noop,
+		...createEventContextStub(),
 		loader: {
 			api: {
 				anchors: {

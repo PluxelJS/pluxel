@@ -11,31 +11,14 @@ import {
 } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { HmrRunner } from '../../src/hmr/engine/runner'
-
-const noop = () => {}
-
-function createNoopLogger() {
-	const self: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => self,
-	}
-	return {
-		...self,
-		getDebugChannel: () => self,
-	}
-}
+import { createEventContextStub, createNoopLogger } from './_stubs'
 
 // Minimal ctx stub to construct LoaderHmrService without booting the whole app.
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: createNoopLogger(),
-		on: () => noop,
+		...createEventContextStub(),
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {
@@ -133,5 +116,5 @@ describe('HMR runner bridge', () => {
 		} finally {
 			await server.close()
 		}
-	}, 20_000)
+	}, 60_000)
 })

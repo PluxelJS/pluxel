@@ -7,30 +7,13 @@ import {
 	fixturesPluginsRelFromWorkspace,
 	workspaceRoot,
 } from './_paths'
-
-const noop = () => {}
-
-function createNoopLogger() {
-	const self: any = {
-		trace: noop,
-		debug: noop,
-		info: noop,
-		warn: noop,
-		error: noop,
-		fatal: noop,
-		with: () => self,
-	}
-	return {
-		...self,
-		getDebugChannel: () => self,
-	}
-}
+import { createEventContextStub, createNoopLogger, noop } from './_stubs'
 
 const createCtx = () => {
 	const anchors = new Set<string>()
 	return {
 		logger: createNoopLogger(),
-		on: () => noop,
+		...createEventContextStub(),
 		scanService: { resolveEntry: async () => ({ ok: false }) },
 		loader: {
 			api: {

@@ -156,7 +156,7 @@ export class LoaderService {
 			control: this.control,
 		}
 
-		this.ctx.on('afterCommit', (summary) => {
+		this.ctx.internalEvent.runtimeCommitted.on((summary) => {
 			this.cleanupNotStartedRuntimeRegistrations(summary)
 		})
 	}

@@ -672,23 +672,18 @@ class InstanceWatcherRegistry {
 
 const serviceName = 'registry' as const
 declare module '@pluxel/context' {
-	// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target namespace
 	namespace Context {
-		// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target interface
 		interface Config {
 			[serviceName]?: PluginServiceConfig
 		}
-	}
-	export interface Context {
-		pluginInfo: PluginInfo
-		parent?: Context
-		caller?: Context
-	}
-	export namespace Context {
-		// oxlint-disable-next-line eslint/no-unused-vars -- declaration merging target interface
 		interface Services {
 			[serviceName]: PluginService
 		}
+	}
+	interface Context {
+		pluginInfo: PluginInfo
+		parent?: Context
+		caller?: Context
 	}
 }
 
@@ -1943,7 +1938,7 @@ export class PluginService {
 	private publishCommitSummary(summary: CommitSummary): void {
 		this._lastCommit = summary
 		this.watcherRegistry.publish(summary)
-		this.ctx.emit('afterCommit', summary)
+		this.ctx.internalEvent.runtimeCommitted.emit(summary)
 	}
 
 	private createRuntimeUpdateSummary(

@@ -53,17 +53,11 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 		},
 	}
 
-	const coreAny = core as unknown as {
-		events?: unknown
-		emit?: (...args: unknown[]) => unknown
-	}
-
 	const ctx = {
 		root,
 		registry: core.registry,
-		events: coreAny.events,
-		on: core.on.bind(core),
-		emit: typeof coreAny.emit === 'function' ? coreAny.emit.bind(core) : undefined,
+		events: core.events,
+		internalEvent: core.internalEvent,
 		logger: { info: () => {}, warn: () => {}, error: () => {} },
 		configService,
 	} as unknown as PlxContext

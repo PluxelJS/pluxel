@@ -196,7 +196,7 @@ describe('LoaderService', () => {
 		class Builtin extends BasePlugin {}
 		Plugin({ name: 'Builtin' })(Builtin)
 
-		ctx.on('afterCommit', (summary) => {
+		ctx.internalEvent.runtimeCommitted.on((summary) => {
 			if ((summary as { runtimeUpdate?: { reason?: string } }).runtimeUpdate?.reason !== 'startup')
 				return
 			moduleItemsSeenDuringStartupCommit = core.registry

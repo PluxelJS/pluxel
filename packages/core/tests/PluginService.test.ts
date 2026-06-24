@@ -23,10 +23,14 @@ function createDeferred() {
 }
 
 function collectCommitSummaries(host: {
-	ctx: { on: (event: 'afterCommit', cb: (summary: unknown) => void) => void }
+	ctx: {
+		internalEvent: {
+			runtimeCommitted: { on(listener: (summary: unknown) => void): unknown }
+		}
+	}
 }) {
 	const summaries: unknown[] = []
-	host.ctx.on('afterCommit', (summary) => {
+	host.ctx.internalEvent.runtimeCommitted.on((summary: unknown) => {
 		summaries.push(summary)
 	})
 	return summaries
@@ -1074,7 +1078,7 @@ describe('PluginService commit()', () => {
 	it('can unregister during an active commit and still stop on the next commit', async () => {
 		await withCoreHost(async (host) => {
 			const summaries: any[] = []
-			host.ctx.on('afterCommit', (summary) => {
+			host.ctx.internalEvent.runtimeCommitted.on((summary) => {
 				summaries.push(summary)
 			})
 
