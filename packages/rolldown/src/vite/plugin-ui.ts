@@ -266,7 +266,9 @@ export function resolvePluginUiBuildSignature(vite: InlineConfig | undefined): s
 
 function stableJsonish(value: unknown): string {
 	if (value === null || value === undefined) return ''
-	if (typeof value === 'function') return `[function ${(value as Function).name || 'anonymous'}]`
+	if (typeof value === 'function') {
+		return `[function ${(value as { readonly name?: string }).name || 'anonymous'}]`
+	}
 	if (value instanceof RegExp) return value.toString()
 	if (Array.isArray(value)) return `[${value.map((item) => stableJsonish(item)).join(',')}]`
 	if (typeof value === 'object') {

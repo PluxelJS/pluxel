@@ -34,7 +34,9 @@ export function stableSignalDbValueKey(value: unknown, seen = new WeakSet<object
 		return `${type}:${String(value)}`
 	}
 	if (type === 'symbol') return `symbol:${String(value)}`
-	if (type === 'function') return `function:${(value as Function).name || 'anonymous'}`
+	if (type === 'function') {
+		return `function:${(value as { readonly name?: string }).name || 'anonymous'}`
+	}
 	if (value instanceof Date) return `date:${value.toISOString()}`
 	if (type !== 'object') return type
 	if (seen.has(value as object)) return '[Circular]'

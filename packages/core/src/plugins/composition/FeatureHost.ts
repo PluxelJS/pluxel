@@ -13,6 +13,7 @@ import {
 	type FeatureCtor,
 	type HostBoundFeature,
 } from './BaseFeature'
+import { callFeatureConfigInjector, FEATURE_CONFIG_INJECTOR } from './featureConfigInjection'
 import { PLUGIN_CTX } from './symbols'
 
 const FEATURE_DECLARATION_POLICY = Symbol.for('pluxel:feature:declarationPolicy')
@@ -186,17 +187,14 @@ export class FeatureHost<Host = unknown> {
 	}
 
 	/** @internal Called by the registry after config validation/injection. */
-	__injectConfigsFromHostPlugin(): void {
+	[FEATURE_CONFIG_INJECTOR](): void {
 		if (this.instances.size === 0) return
 		for (const feature of this.instances.values()) this.tryInjectConfigsIntoFeature(feature)
 	}
 
 	private tryInjectConfigsIntoFeature(instance: BaseFeature): void {
 		try {
-			const maybe = instance as unknown as { __injectConfigsFromHostPlugin?: () => void }
-			if (typeof maybe.__injectConfigsFromHostPlugin === 'function') {
-				maybe.__injectConfigsFromHostPlugin()
-			}
+			callFeatureConfigInjector(instance)
 		} catch (error) {
 			this.ctx.logger.error('feature config inject error', { error })
 		}

@@ -389,6 +389,35 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('applies runtime dependency override overlays by committed graph name', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides('TX-OVERRIDE-GRAPH-NAME-CONSUMER', [DepB])
+
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
 	it('keeps unrelated runtime dependency override indexes when one index returns to default', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'TX-OVERRIDE-MULTI-A' })

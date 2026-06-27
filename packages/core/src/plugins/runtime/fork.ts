@@ -21,7 +21,7 @@ const forks: ForkTable = new WeakMap()
 
 function assertForkable(ctor: PluginIdentifier): asserts ctor is ForkablePluginConstructor {
 	if (!(ctor.prototype instanceof ForkablePlugin)) {
-		const ctorName = (ctor as unknown as Function | undefined)?.name
+		const ctorName = (ctor as { readonly name?: string }).name
 		throw new Error(
 			`Plugin ${ctorName || '<anonymous>'} is not forkable. Extend ForkablePlugin to opt‑in.`,
 		)

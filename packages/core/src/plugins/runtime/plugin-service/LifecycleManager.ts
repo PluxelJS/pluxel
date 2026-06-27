@@ -4,12 +4,13 @@
 // identical runtime behavior.
 
 import type { Context } from '@pluxel/context'
-import { BasePlugin } from '../composition/BasePlugin'
-import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from './PluginActor'
-import type { PluginIdentifier } from '../types'
-import type { RuntimePluginKey } from './identity'
+import { BasePlugin } from '../../composition/BasePlugin'
+import type { PluginIdentifier } from '../../types'
+import type { RuntimePluginKey } from '../identity'
+import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
-const PLUGIN_LIFECYCLE = Symbol.for('pluxel:plugin:lifecycle')
+const PLUGIN_LIFECYCLE_SLOT_KEY = 'pluxel:plugin:lifecycle'
+const PLUGIN_LIFECYCLE_SLOT = Symbol.for(PLUGIN_LIFECYCLE_SLOT_KEY)
 
 export class LifecycleManager {
 	constructor(
@@ -21,25 +22,25 @@ export class LifecycleManager {
 	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
 
 	private ensureLifecycleSlot(plugin: BasePlugin): {
-		[PLUGIN_LIFECYCLE]: PluginLifecycleActor | null
+		[PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null
 	} {
-		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE)) {
-			Object.defineProperty(plugin, PLUGIN_LIFECYCLE, {
+		if (!Object.hasOwn(plugin, PLUGIN_LIFECYCLE_SLOT)) {
+			Object.defineProperty(plugin, PLUGIN_LIFECYCLE_SLOT, {
 				value: null,
 				writable: true,
 				configurable: false,
 				enumerable: false,
 			})
 		}
-		return plugin as unknown as { [PLUGIN_LIFECYCLE]: PluginLifecycleActor | null }
+		return plugin as unknown as { [PLUGIN_LIFECYCLE_SLOT]: PluginLifecycleActor | null }
 	}
 
 	private getLifecycle(plugin: BasePlugin): PluginLifecycleActor | undefined {
-		return this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] ?? undefined
+		return this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] ?? undefined
 	}
 
 	private setLifecycle(plugin: BasePlugin, ref?: PluginLifecycleActor) {
-		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE] = ref ?? null
+		this.ensureLifecycleSlot(plugin)[PLUGIN_LIFECYCLE_SLOT] = ref ?? null
 	}
 
 	private createLifecycle(
@@ -52,7 +53,10 @@ export class LifecycleManager {
 		)
 		ref.subscribe({
 			error: (err) => {
-				const label = typeof id === 'function' ? (id as Function).name : String(id)
+				const label =
+					typeof id === 'function'
+						? ((id as { readonly name?: string }).name ?? String(id))
+						: String(id)
 				this.ctx.logger.error('actor {actor} unhandled error', {
 					actor: label,
 					error: err,

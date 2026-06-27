@@ -3,6 +3,7 @@
 //
 // Folder layout:
 // - runtime/: orchestrator and commit scheduling
+// - runtime/plugin-service/: PluginService internals and runtime update helpers
 // - decorators/: @Plugin/@Config metadata and decorator runtime
 // - composition/: BasePlugin + FeatureHost + ConfigHost
 // - types.ts: shared plugin type aliases
@@ -31,15 +32,29 @@ export {
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleNotStartedIssue,
 	isPluginLifecycleStoppedWithErrorIssue,
-	type CommitSummary,
 	type PluginLifecycleErrorInfo,
 	type PluginLifecycleIssue,
 	type PluginLifecycleIssueKind,
 	type PluginLifecycleIssuePhase,
 	type PluginLifecycleIssuePredicate,
 	type PluginLifecycleReport,
+} from './runtime/plugin-service/LifecycleReport'
+export {
+	type CommitSummary,
 	type PluginCommitChanges,
 	type PluginReplacement,
-	PluginService,
 	type RuntimeUpdateCommitSummary,
-} from './runtime/PluginService'
+} from './runtime/plugin-service/CommitPlan'
+export { PluginService } from './runtime/PluginService'
+export type {
+	RuntimeModuleDeclaration,
+	RuntimeModuleDeclarationItem,
+} from './runtime/plugin-service/RuntimeModuleRegistry'
+export type {
+	CascadeOptions,
+	ReplacePluginOptions,
+	RuntimeUpdateCommitOptions,
+	RuntimeUpdateOptions,
+	RuntimeUpdateReason,
+	RuntimeUpdateTransaction,
+} from './runtime/plugin-service/RuntimeUpdateTransaction'
