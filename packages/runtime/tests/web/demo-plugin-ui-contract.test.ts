@@ -26,11 +26,13 @@ async function loadDemoModules(): Promise<DemoModules> {
 				import('../../../plugins/host/src/demo/PluginContributionFontDemo/ui/index'),
 				import('../ui-demos/PluginStatusBadge/ui/StatusBadge'),
 			])
-		return {
+		const modules = {
 			pluginWithUi,
 			fontPickerUi,
 			statusBadgeUi,
 		}
+		expect(warn).not.toHaveBeenCalled()
+		return modules
 	} finally {
 		warn.mockRestore()
 	}
@@ -76,7 +78,7 @@ describe('demo plugin UI contract', () => {
 		)?.definition
 		expect(standaloneRoute?.path).toBe('/standalone')
 		expect(standaloneRoute?.frame).toBe('standalone')
-		expect(standaloneRoute?.addToNav).toBe(true)
+		expect(standaloneRoute?.addToNav).toBeUndefined()
 
 		expect(Object.keys(fontPickerUi.sessions ?? {})).toEqual(['fontPickerSession'])
 		expect(

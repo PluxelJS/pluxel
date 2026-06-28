@@ -73,7 +73,7 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 					showIcon: <IconLayoutSidebarLeftExpand size={18} />,
 					showLabel: '显示左栏',
 					visible: leftPaneVisible,
-			  }
+				}
 			: null,
 		{
 			key: 'right',
@@ -97,8 +97,8 @@ export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 
 	return (
 		<WorkbenchLayoutControls>
-			{layoutToggles.map((toggle) => (
-				<WorkbenchLayoutToggleButton key={toggle.key} {...toggle} />
+			{layoutToggles.map(({ key, ...toggle }) => (
+				<WorkbenchLayoutToggleButton key={key} {...toggle} />
 			))}
 
 			<WorkbenchLayoutButton

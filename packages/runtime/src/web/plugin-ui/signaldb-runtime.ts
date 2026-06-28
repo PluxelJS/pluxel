@@ -14,6 +14,7 @@ import type { SseMessage } from '../sse'
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
+	type SignalDbLoadResponse,
 	type SignalDbModifier,
 	type SignalDbSelector,
 	type SignalDbSyncEvent,
@@ -22,6 +23,7 @@ import {
 
 type CollectionMeta = {
 	ready: WriteSignal<boolean>
+	clientWrites: WriteSignal<boolean | null>
 	version: WriteSignal<number>
 	revision: WriteSignal<number>
 }
@@ -42,6 +44,7 @@ const SIGNALDB_SYNC_RETRY_MS = 800
 export interface SignalDbCollectionView<T extends SignalDbItem> {
 	readonly name: string
 	readonly ready: boolean
+	readonly clientWrites: boolean
 	readonly version: number
 	readonly items: readonly T[]
 	find(selector?: SignalDbSelector<T>, options?: SignalDbFindOptions<T>): T[]
@@ -69,7 +72,7 @@ class SignalDbReplicaNamespace {
 	private readonly states = new Map<string, CollectionState<SignalDbItem>>()
 	private readonly remoteHandlers = new Map<
 		string,
-		Set<(data?: LoadResponse<SignalDbItem>) => Promise<void>>
+		Set<(data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>>
 	>()
 	private readonly syncTasks = new Map<string, Promise<void>>()
 	private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -91,12 +94,19 @@ class SignalDbReplicaNamespace {
 					},
 				)
 				if (!response.ok) throw new Error(`signaldb pull failed: HTTP ${response.status}`)
-				return (await response.json()) as LoadResponse<SignalDbItem>
+				const data = (await response.json()) as SignalDbLoadResponse<SignalDbItem>
+				this.applyResponseMeta(name, data)
+				return data
 			},
 			push: async (
 				{ name }: SyncCollectionOptions,
 				{ changes }: { changes: Changeset<SignalDbItem> },
 			) => {
+				if (!hasSignalDbChanges(changes)) return
+				const state = this.states.get(name)
+				if (state?.meta.clientWrites() !== true) {
+					throw new Error(`signaldb collection "${name}" does not allow client writes`)
+				}
 				const response = await this.transport.fetch(
 					this.transport.links.signaldbCollection(this.pluginName, name),
 					{
@@ -109,7 +119,7 @@ class SignalDbReplicaNamespace {
 			},
 			registerRemoteChange: async (
 				{ name }: SyncCollectionOptions,
-				onChange: (data?: LoadResponse<SignalDbItem>) => Promise<void>,
+				onChange: (data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>,
 			) => {
 				const handlers = this.remoteHandlers.get(name) ?? new Set()
 				if (!this.remoteHandlers.has(name)) this.remoteHandlers.set(name, handlers)
@@ -172,6 +182,7 @@ class SignalDbReplicaNamespace {
 			collection: signalCollection,
 			meta: {
 				ready: signal(false),
+				clientWrites: signal<boolean | null>(null),
 				version: signal(0),
 				revision: signal(0),
 			},
@@ -205,10 +216,21 @@ class SignalDbReplicaNamespace {
 		this.retryTimers.delete(collection)
 	}
 
-	private async dispatchRemoteChange(collection: string, data?: LoadResponse<SignalDbItem>) {
+	private async dispatchRemoteChange(
+		collection: string,
+		data?: SignalDbLoadResponse<SignalDbItem>,
+	) {
+		this.applyResponseMeta(collection, data)
 		const handlers = this.remoteHandlers.get(collection)
 		if (!handlers?.size) return
 		await Promise.all(Array.from(handlers, (handler) => handler(data)))
+	}
+
+	private applyResponseMeta(collection: string, data?: SignalDbLoadResponse<SignalDbItem>) {
+		const state = this.states.get(collection)
+		const clientWrites = data?.meta?.clientWrites
+		if (!state || typeof clientWrites !== 'boolean') return
+		state.meta.clientWrites.set(clientWrites)
 	}
 
 	private syncCollection(collection: string): Promise<void> {
@@ -306,6 +328,9 @@ function buildCollectionView<T extends SignalDbItem>(
 		get ready() {
 			return state.meta.ready()
 		},
+		get clientWrites() {
+			return state.meta.clientWrites() === true
+		},
 		get version() {
 			return state.meta.version()
 		},
@@ -323,30 +348,49 @@ function buildCollectionView<T extends SignalDbItem>(
 			return countSignalDbItems(state, selector)
 		},
 		insert(item) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.insert(cloneItem(item))
 		},
 		insertMany(items) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.insertMany(items.map(cloneItem))
 		},
 		updateOne(selector, modifier, options) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.updateOne(selector as any, cloneItem(modifier) as any, options)
 		},
 		replaceOne(selector, replacement, options) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.replaceOne(selector as any, cloneItem(replacement), options)
 		},
 		removeOne(selector) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.removeOne(selector as any)
 		},
 		removeMany(selector) {
+			assertClientWritesEnabled(name, state)
 			return state.collection.removeMany(selector as any)
 		},
 	}
 }
 
+function assertClientWritesEnabled<T extends SignalDbItem>(
+	name: string,
+	state: CollectionState<T>,
+) {
+	if (state.meta.clientWrites() === true) return
+	throw new Error(`signaldb collection "${name}" does not allow client writes`)
+}
+
 function dependOnCollectionState<T extends SignalDbItem>(state: CollectionState<T>) {
 	void state.meta.ready()
+	void state.meta.clientWrites()
 	void state.meta.version()
 	void state.meta.revision()
+}
+
+function hasSignalDbChanges<T extends SignalDbItem>(changes: Changeset<T>): boolean {
+	return changes.added.length > 0 || changes.modified.length > 0 || changes.removed.length > 0
 }
 
 function fetchSignalDbItems<T extends SignalDbItem>(

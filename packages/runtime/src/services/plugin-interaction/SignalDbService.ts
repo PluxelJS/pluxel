@@ -1,9 +1,4 @@
-import {
-	Collection as SignalCollection,
-	type Changeset,
-	type Collection,
-	type LoadResponse,
-} from '@signaldb/core'
+import { Collection as SignalCollection, type Changeset, type Collection } from '@signaldb/core'
 import type { Context } from '@pluxel/core'
 import type {
 	BuiltinActionBlock,
@@ -15,6 +10,7 @@ import type {
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
+	type SignalDbLoadResponse,
 	type SignalDbModifier,
 	type SignalDbSelector,
 	type SignalDbSyncEvent,
@@ -113,10 +109,10 @@ export class SignalDbService {
 		})
 		collections.set(name, managed)
 		this.ensureStream(pluginName)
-			void managed.ready().then((): undefined => {
-				this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
-				return undefined
-			})
+		void managed.ready().then((): undefined => {
+			this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
+			return undefined
+		})
 
 		this.ctx.effects.defer(() => {
 			const currentCollections = this.collectionsByPlugin.get(pluginName)
@@ -131,13 +127,13 @@ export class SignalDbService {
 	}
 
 	/** @internal Internal sync transport entry used by the HMR/web bridge. */
-	async loadCollectionSync<T extends SignalDbItem>(name: string): Promise<LoadResponse<T>> {
+	async loadCollectionSync<T extends SignalDbItem>(name: string): Promise<SignalDbLoadResponse<T>> {
 		const pluginName = this.currentPluginName()
 		const managed = this.collectionsFor(pluginName).get(name)
-		if (!managed) return { items: [] }
+		if (!managed) return { items: [], meta: { clientWrites: false } }
 		this.ensureStream(pluginName)
 		await managed.ready()
-		return managed.loadSyncResponse() as LoadResponse<T>
+		return managed.loadSyncResponse() as SignalDbLoadResponse<T>
 	}
 
 	/** @internal Internal sync transport entry used by the HMR/web bridge. */
@@ -280,9 +276,12 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		}
 	}
 
-	loadSyncResponse(): LoadResponse<T> {
+	loadSyncResponse(): SignalDbLoadResponse<T> {
 		return {
 			items: this.snapshotItems(),
+			meta: {
+				clientWrites: this.allowsClientWrites(),
+			},
 		}
 	}
 

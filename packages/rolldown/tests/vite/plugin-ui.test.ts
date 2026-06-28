@@ -184,11 +184,65 @@ export default { marker }
 
 		const files = await readdir(outDir, { recursive: true })
 		const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
-		const contents = await Promise.all(
-			jsFiles.map((file) => readFile(join(outDir, file), 'utf-8')),
-		)
+		const contents = await Promise.all(jsFiles.map((file) => readFile(join(outDir, file), 'utf-8')))
 		expect(contents.join('\n')).toContain('transformed-by-user-plugin')
 		expect(contents.join('\n')).not.toContain('__PLUGIN_UI_MARKER__')
+	}, 45_000)
+
+	it('waits for host shared initialization before importing exposed entry chunks', async () => {
+		await using fixture = await createFixture({
+			'packages/plugins/demo/package.json': JSON.stringify({
+				name: '@pluxel/plugins-demo',
+				private: true,
+				type: 'module',
+				dependencies: {
+					react: '19.2.0',
+				},
+			}),
+			'packages/plugins/demo/src/ui/index.ts': `
+import { forwardRef } from 'react'
+
+export const Component = forwardRef(() => null)
+export default { Component }
+`,
+			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
+				name: 'react',
+				version: '19.2.0',
+				main: 'index.js',
+			}),
+			'packages/plugins/demo/node_modules/react/index.js':
+				'exports.forwardRef = (render) => ({ $$typeof: Symbol.for("react.forward_ref"), render })\n',
+		})
+
+		const root = join(fixture.path, 'packages/plugins/demo')
+		const outDir = join(fixture.path, 'dist/plugin-ui')
+		await buildPluginUiRemote({
+			root,
+			pluginName: 'PluginWithTopLevelShared',
+			entryPath: join(root, 'src/ui/index.ts'),
+			outDir,
+			publicPath: '/test/',
+			sharedPackages: ['react'],
+			minify: false,
+		})
+
+		const files = await readdir(join(outDir, 'assets'), { recursive: true })
+		const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
+		const contents = await Promise.all(
+			jsFiles.map((file) => readFile(join(outDir, 'assets', file), 'utf-8')),
+		)
+		const exposesChunk = contents.find((code) => code.includes('importExposedModule')) ?? ''
+		const manifest = JSON.parse(await readFile(join(outDir, 'mf-manifest.json'), 'utf-8')) as {
+			exposes?: Array<{ assets?: { js?: { async?: string[]; sync?: string[] } } }>
+		}
+
+		expect(exposesChunk).toContain('__pluxelMfRemoteInitPromise')
+		expect(exposesChunk).toContain('__mf_init__virtual:mf:__mfe_internal__')
+		expect(exposesChunk).not.toContain('hostAutoInit')
+		expect(exposesChunk.indexOf('await __pluxelMfRemoteInitPromise')).toBeLessThan(
+			exposesChunk.indexOf('const importModule = await importExposedModule'),
+		)
+		expect(manifest.exposes?.[0]?.assets?.js).toMatchObject({ async: [], sync: [] })
 	}, 45_000)
 
 	it('creates a stable signature for user build additions', () => {

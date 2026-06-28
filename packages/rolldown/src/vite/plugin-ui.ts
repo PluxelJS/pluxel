@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import {
 	EXTENSION_FEDERATION_EXPOSE,
 	extensionFederationBuildOutDir,
@@ -109,6 +109,7 @@ export async function buildPluginUiRemote(
 					}
 				: null,
 		})
+		await disableExposedEntryPreloads(result.manifestPath)
 		return result
 	})()
 
@@ -194,6 +195,7 @@ function createPluginUiBuildPlugins(payload: PluginUiBuildPayload): PluginOption
 		)
 	}
 	plugins.push(...createFederationPlugin(payload))
+	plugins.push(createAwaitRemoteInitPlugin(payload.remoteName))
 	return plugins
 }
 
@@ -236,6 +238,69 @@ function toPluginArray(input: PluginOption | undefined): PluginOption[] {
 	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
 	if (!input) return []
 	return [input]
+}
+
+function createAwaitRemoteInitPlugin(remoteName: string): Plugin {
+	const initGlobalKey = `__mf_init__virtual:mf:__mfe_internal__${remoteName}__mf_v__runtimeInit__mf_v__.js__`
+
+	return {
+		name: 'pluxel-plugin-ui-await-remote-init',
+		enforce: 'post',
+		transform(code, id) {
+			if (!id.includes('virtual:mf-exposes:')) return null
+			if (id.includes('virtual:mf-exposes-ssr:')) return null
+			if (code.includes('__pluxelMfRemoteInitPromise')) return null
+
+			const marker = 'await injectCssAssets('
+			if (!code.includes(marker)) return null
+
+			const awaitRemoteInit = [
+				`const __pluxelMfRemoteInitState = globalThis[${JSON.stringify(initGlobalKey)}];`,
+				'const __pluxelMfRemoteInitPromise = __pluxelMfRemoteInitState?.initPromise ?? Promise.resolve();',
+			].join('\n')
+
+			return [
+				awaitRemoteInit,
+				code.replaceAll(
+					marker,
+					'await __pluxelMfRemoteInitPromise;\n          await injectCssAssets(',
+				),
+			].join('\n')
+		},
+	}
+}
+
+async function disableExposedEntryPreloads(manifestPath: string): Promise<void> {
+	type FederationManifest = {
+		exposes?: Array<{
+			assets?: {
+				js?: {
+					async?: string[]
+					sync?: string[]
+				}
+			}
+		}>
+	}
+
+	const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as FederationManifest
+	let changed = false
+
+	for (const expose of manifest.exposes ?? []) {
+		const jsAssets = expose.assets?.js
+		if (!jsAssets) continue
+		if ((jsAssets.async?.length ?? 0) > 0) {
+			jsAssets.async = []
+			changed = true
+		}
+		if ((jsAssets.sync?.length ?? 0) > 0) {
+			jsAssets.sync = []
+			changed = true
+		}
+	}
+
+	if (changed) {
+		await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf-8')
+	}
 }
 
 function collectPluginNames(input: PluginOption | undefined, out: string[]): void {

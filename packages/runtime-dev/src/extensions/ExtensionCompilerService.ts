@@ -135,7 +135,7 @@ const HASH_ALLOWED_EXTENSIONS = [
 ] as const
 
 // Bump when federation build semantics change (invalidates sourceHash cache key).
-const EXTENSION_COMPILER_VERSION = 12
+const EXTENSION_COMPILER_VERSION = 14
 
 export class ExtensionCompilerService {
 	private readonly enabled: boolean

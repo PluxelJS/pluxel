@@ -1,16 +1,12 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import type { Changeset, LoadResponse } from '@signaldb/core'
+import type { Changeset } from '@signaldb/core'
 import {
 	canAccessSecurityAdmin,
 	createVerificationBlockedHeaders,
 	createVerificationBlockedPayload,
 	resolveControlPlaneRedirectPath,
 } from '../../shared/verification-http'
-import {
-	HMR_INTERNAL_API_BASE,
-	HMR_SECURITY_BASE,
-	HMR_TRANSPORT_PATHS,
-} from '../../web/paths'
+import { HMR_INTERNAL_API_BASE, HMR_SECURITY_BASE, HMR_TRANSPORT_PATHS } from '../../web/paths'
 import { buildVerificationRedirectPath } from '../verification/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
@@ -22,7 +18,7 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
+import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
 import { getRuntimePluginCatalog } from '../runtime/catalog/RuntimePluginCatalogService'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
@@ -297,9 +293,9 @@ async function loadSignalDbSnapshot<T extends SignalDbItem>(
 	ctx: PluginContext,
 	pluginName: string,
 	collectionName: string,
-): Promise<LoadResponse<T>> {
+): Promise<SignalDbLoadResponse<T>> {
 	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return { items: [] }
+	if (!service) return { items: [], meta: { clientWrites: false } }
 	return await service.loadCollectionSync<T>(collectionName)
 }
 

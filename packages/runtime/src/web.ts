@@ -102,10 +102,7 @@ export {
 	type RuntimeTransportClientProviderProps,
 	useRuntimeTransportClient,
 } from './web/react'
-export {
-	invokeRpc,
-	rpcErrorMessage,
-} from './web/rpc'
+export { invokeRpc, rpcErrorMessage } from './web/rpc'
 export {
 	useSignalDbCollectionState,
 	useSignalDbCollectionsState,
@@ -116,6 +113,7 @@ export {
 export type {
 	SignalDbFindOptions,
 	SignalDbItem,
+	SignalDbLoadResponse,
 	SignalDbListSpec,
 	SignalDbSelector,
 } from './web/plugin-ui/signaldb-contracts'

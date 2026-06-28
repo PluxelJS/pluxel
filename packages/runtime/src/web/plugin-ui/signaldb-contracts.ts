@@ -1,3 +1,5 @@
+import type { LoadResponse } from '@signaldb/core'
+
 export type SignalDbItem = { id: string }
 
 export type SignalDbSelector<T extends SignalDbItem> = Partial<T>
@@ -24,6 +26,12 @@ export type SignalDbSyncEvent<T extends SignalDbItem = SignalDbItem> =
 	| { type: 'update'; collection: string; version: number; items: T[] }
 	| { type: 'remove'; collection: string; version: number; ids: string[] }
 	| { type: 'reset'; collection: string; version: number; items: T[] }
+
+export type SignalDbLoadResponse<T extends SignalDbItem = SignalDbItem> = LoadResponse<T> & {
+	meta?: {
+		clientWrites?: boolean
+	}
+}
 
 export function signalDbNamespace(pluginName: string): string {
 	return `${String(pluginName ?? '').trim()}:signaldb`

@@ -94,6 +94,29 @@ describe('SignalDbService', () => {
 		expect(collection.findOne({ id: 'a' })).toEqual({ id: 'a', value: 1 })
 	})
 
+	it('includes client write permissions in sync snapshots', async () => {
+		const ctx = createSignalDbTestContext()
+		const service = new SignalDbService(ctx)
+		const readonlyCollection = service.collection<{ id: string; value: number }>({
+			name: 'readonly-events',
+			persistence: false,
+		})
+		const writableCollection = service.collection<{ id: string; value: number }>({
+			name: 'writable-events',
+			persistence: false,
+			clientWrites: true,
+		})
+
+		await Promise.all([readonlyCollection.ready(), writableCollection.ready()])
+
+		await expect(service.loadCollectionSync('readonly-events')).resolves.toMatchObject({
+			meta: { clientWrites: false },
+		})
+		await expect(service.loadCollectionSync('writable-events')).resolves.toMatchObject({
+			meta: { clientWrites: true },
+		})
+	})
+
 	it('provides selector-bound doc helpers for builtin sync/form/action', async () => {
 		const ctx = createSignalDbTestContext()
 		const service = new SignalDbService(ctx)
