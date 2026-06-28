@@ -424,7 +424,7 @@ export class HttpService {
 		method: string,
 		kind: VerificationBlockedKind,
 	): Promise<Response | undefined> {
-		const state = this.ctx.root.verification.authorize({
+		const state = await this.ctx.root.verification.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,

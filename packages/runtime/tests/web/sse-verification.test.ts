@@ -68,9 +68,9 @@ describe('runtime/web SSE verification probe', () => {
 		client.close()
 	})
 
-	it('closes SSE and redirects to /security when verification is misconfigured', async () => {
+	it('closes SSE and redirects to /security when public OIDC is missing', async () => {
 		const onBlocked = vi.fn()
-		const readState = vi.fn(async () => ({ allow: false as const, reason: 'misconfigured' as const }))
+		const readState = vi.fn(async () => ({ allow: false as const, reason: 'missing_oidc' as const }))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
 		const client = sse({
@@ -97,10 +97,10 @@ describe('runtime/web SSE verification probe', () => {
 		client.close()
 	})
 
-	it('redirects blocked SSE clients to the verification page when credentials are required', async () => {
+	it('redirects blocked SSE clients to the verification page when external auth is required', async () => {
 		const onBlocked = vi.fn()
 		const readState = vi.fn(async () =>
-			({ allow: false as const, reason: 'verification_required' as const }),
+			({ allow: false as const, reason: 'unauthenticated' as const }),
 		)
 		vi.stubGlobal('EventSource', FakeEventSource)
 

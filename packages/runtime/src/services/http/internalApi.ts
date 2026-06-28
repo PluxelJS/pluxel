@@ -62,7 +62,7 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
-		const state = pluginCtx.root.verification.authorize({ request })
+		const state = await pluginCtx.root.verification.authorize({ request })
 
 		if (isSecurityApiPath(path)) {
 			if (canAccessSecurityAdmin(state)) return undefined

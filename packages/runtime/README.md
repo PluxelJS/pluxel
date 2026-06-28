@@ -57,9 +57,7 @@ runtime 只消费两类前端输入：
   共享加密持久化入口；namespace 只是存储分区，不是额外权限模型
 - `this.ctx.root.verification`
   host-only gate；只回答“当前宿主是否允许进入 control plane”
-  `authorize()` / `describe()` 纯读
-  `verifyPassword()` / `verifyOtp()` / `finishPasskeyAuthentication()` 只写 verification session
-  `clear()` / `setMode()` / `setMethod()` / `upsertPasswordUser()` / `provisionOtpUser()` / `beginPasskeyRegistration()` / `finishPasskeyRegistration()` / `deleteUser()` 才产生副作用
+  `authorize()` / `describe()` / `assertCanBindHost()`；private mode 直接放行，public mode 使用 OIDC JWT 校验
 - `this.ctx.root.vaultAdmin.*`
   host-only 管理面：`preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
 - `this.ctx.vault`
@@ -79,15 +77,8 @@ runtime 只消费两类前端输入：
 
 浏览器宿主管理面统一走 `/security`，前端只通过专用 security client 调用：
 
-- `read()`
-- `verification.clear()`
-- `verification.setMode()`
-- `verification.setMethod()`
-- `verification.upsertPasswordUser()`
-- `verification.provisionOtpUser()`
-- `verification.beginPasskeyRegistration()`
-- `verification.finishPasskeyRegistration()`
-- `verification.deleteUser()`
+- `readOverview()`
+- `listEvents()`
 - `vault.unlock()`
 - `vault.ensureHostKey()`
 - `vault.generateDeployKey()`

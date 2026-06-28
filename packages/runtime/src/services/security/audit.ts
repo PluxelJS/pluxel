@@ -5,6 +5,7 @@ export type SecurityEvent = {
 	at: number
 	area: 'verification' | 'vault'
 	action:
+		| 'authorize'
 		| 'verify'
 		| 'clear'
 		| 'preflight'

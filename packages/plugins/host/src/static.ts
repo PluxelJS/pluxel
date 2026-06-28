@@ -53,6 +53,7 @@ const host = await createStaticRuntimeHost(staticRuntime, {
 })
 
 const startup = await host.start()
+host.ctx.root.verification.assertCanBindHost(bindHost)
 const server = await startFetchHostServer({
 	host: bindHost,
 	port: bindPort,

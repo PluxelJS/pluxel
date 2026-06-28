@@ -1,218 +1,103 @@
 import type {
+	VerificationClaimRequirement,
 	VerificationConfig,
-	VerificationMethod,
-	VerificationOtpConfig,
-	VerificationOtpUserStored,
-	VerificationPasskeyConfig,
-	VerificationPasskeyUserStored,
-	VerificationPasswordConfig,
-	VerificationPasswordUserStored,
-	VerificationUser,
+	VerificationExposure,
+	VerificationOidcConfig,
 } from './types'
 
-export const DEFAULT_VERIFICATION_MODE = 'bypass' as const
-export const DEFAULT_VERIFICATION_METHOD = 'password' as const
+export const DEFAULT_VERIFICATION_EXPOSURE = 'private' as const
+export const DEFAULT_OIDC_TOKEN_HEADER = 'authorization' as const
 
 type VerificationConfigLike =
 	| {
-			mode?: VerificationConfig['mode']
-			method?: VerificationMethod
-			users?: unknown
+			exposure?: unknown
+			oidc?: unknown
 	  }
 	| null
 	| undefined
 
-export function normalizeVerificationUsername(value: string): string {
-	return value.trim()
+function trimOrUndefined(value: unknown): string | undefined {
+	if (typeof value !== 'string') return undefined
+	const trimmed = value.trim()
+	return trimmed || undefined
 }
 
-export function requireVerificationPassword(value: string): string {
-	if (value.trim().length === 0) throw new Error('Password is required.')
-	return value
-}
-
-export function normalizeOtpCode(value: string): string {
-	return value.replaceAll(/\s+/g, '')
-}
-
-function normalizePasswordUsers(value: unknown): VerificationPasswordUserStored[] {
-	if (!Array.isArray(value)) return []
+function normalizeAudience(value: unknown): string | string[] | undefined {
+	if (typeof value === 'string') return trimOrUndefined(value)
+	if (!Array.isArray(value)) return undefined
 	const seen = new Set<string>()
-	const users: VerificationPasswordUserStored[] = []
+	const audience: string[] = []
 	for (const entry of value) {
-		if (!entry || typeof entry !== 'object') continue
-		const username = normalizeVerificationUsername(String((entry as { username?: unknown }).username ?? ''))
-		const passwordHash = String((entry as { passwordHash?: unknown }).passwordHash ?? '').trim()
-		if (!username || !passwordHash || seen.has(username)) continue
-		seen.add(username)
-		users.push({ username, passwordHash })
+		const item = trimOrUndefined(entry)
+		if (!item || seen.has(item)) continue
+		seen.add(item)
+		audience.push(item)
 	}
-	return users
+	return audience.length > 0 ? audience : undefined
 }
 
-function normalizeOtpUsers(value: unknown): VerificationOtpUserStored[] {
-	if (!Array.isArray(value)) return []
+function normalizeClaimRequirement(value: unknown): VerificationClaimRequirement | undefined {
+	if (typeof value === 'string') return trimOrUndefined(value)
+	if (!Array.isArray(value)) return undefined
 	const seen = new Set<string>()
-	const users: VerificationOtpUserStored[] = []
+	const values: string[] = []
 	for (const entry of value) {
-		if (!entry || typeof entry !== 'object') continue
-		const username = normalizeVerificationUsername(String((entry as { username?: unknown }).username ?? ''))
-		const otpSecret = String((entry as { otpSecret?: unknown }).otpSecret ?? '').trim()
-		if (!username || !otpSecret || seen.has(username)) continue
-		seen.add(username)
-		users.push({ username, otpSecret })
+		const item = trimOrUndefined(entry)
+		if (!item || seen.has(item)) continue
+		seen.add(item)
+		values.push(item)
 	}
-	return users
+	return values.length > 0 ? values : undefined
 }
 
-function normalizePasskeyUsers(value: unknown): VerificationPasskeyUserStored[] {
-	if (!Array.isArray(value)) return []
-	const seen = new Set<string>()
-	const users: VerificationPasskeyUserStored[] = []
-	for (const entry of value) {
-		if (!entry || typeof entry !== 'object') continue
-		const username = normalizeVerificationUsername(String((entry as { username?: unknown }).username ?? ''))
-		const credentialId = String((entry as { credentialId?: unknown }).credentialId ?? '').trim()
-		const publicKey = String((entry as { publicKey?: unknown }).publicKey ?? '').trim()
-		const counter = Number((entry as { counter?: unknown }).counter ?? 0)
-		const transports = Array.isArray((entry as { transports?: unknown }).transports)
-			? (entry as { transports?: unknown[] }).transports
-					.map((transport) => String(transport ?? '').trim())
-					.filter(Boolean)
-			: undefined
-		if (!username || !credentialId || !publicKey || !Number.isFinite(counter) || seen.has(username)) continue
-		seen.add(username)
-		users.push({
-			username,
-			credentialId,
-			publicKey,
-			counter: Math.max(0, Math.floor(counter)),
-			...(transports && transports.length > 0 ? { transports } : {}),
-		})
+function normalizeRequiredClaims(value: unknown): Record<string, VerificationClaimRequirement> | undefined {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+	const claims: Record<string, VerificationClaimRequirement> = {}
+	for (const [key, raw] of Object.entries(value)) {
+		const name = key.trim()
+		const requirement = normalizeClaimRequirement(raw)
+		if (!name || !requirement) continue
+		claims[name] = requirement
 	}
-	return users
+	return Object.keys(claims).length > 0 ? claims : undefined
+}
+
+function normalizeClockTolerance(value: unknown): number | undefined {
+	const seconds = Number(value)
+	if (!Number.isFinite(seconds) || seconds < 0) return undefined
+	return Math.floor(seconds)
+}
+
+function normalizeOidcConfig(value: unknown): VerificationOidcConfig | undefined {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+	const source = value as {
+		issuer?: unknown
+		audience?: unknown
+		tokenHeader?: unknown
+		requiredClaims?: unknown
+		clockToleranceSeconds?: unknown
+	}
+	const issuer = trimOrUndefined(source.issuer)?.replace(/\/+$/, '')
+	if (!issuer) return undefined
+	const audience = normalizeAudience(source.audience)
+	const tokenHeader = trimOrUndefined(source.tokenHeader)?.toLowerCase()
+	const requiredClaims = normalizeRequiredClaims(source.requiredClaims)
+	const clockToleranceSeconds = normalizeClockTolerance(source.clockToleranceSeconds)
+	return {
+		issuer,
+		...(audience ? { audience } : {}),
+		...(tokenHeader ? { tokenHeader } : {}),
+		...(requiredClaims ? { requiredClaims } : {}),
+		...(clockToleranceSeconds !== undefined ? { clockToleranceSeconds } : {}),
+	}
 }
 
 export function resolveVerificationConfig(input?: VerificationConfigLike): VerificationConfig {
-	const mode =
-		input?.mode === 'enforce' || input?.mode === 'bypass'
-			? input.mode
-			: DEFAULT_VERIFICATION_MODE
-	const method = input?.method ?? DEFAULT_VERIFICATION_METHOD
-	const users = (input as { users?: unknown } | null | undefined)?.users
-	switch (method) {
-		case 'password':
-			return {
-				mode,
-				method,
-				users: normalizePasswordUsers(users),
-			}
-		case 'otp':
-			return {
-				mode,
-				method,
-				users: normalizeOtpUsers(users),
-			}
-		case 'passkey':
-			return {
-				mode,
-				method,
-				users: normalizePasskeyUsers(users),
-			}
-	}
-}
-
-export function listVerificationUsers(config: VerificationConfig): VerificationUser[] {
-	return (config.users ?? []).map(({ username }) => ({ username }))
-}
-
-export function setVerificationConfigMode(
-	config: VerificationConfig,
-	mode: VerificationConfig['mode'],
-): VerificationConfig {
+	const exposure: VerificationExposure =
+		input?.exposure === 'public' ? 'public' : DEFAULT_VERIFICATION_EXPOSURE
+	if (exposure === 'private') return { exposure: 'private' }
 	return {
-		...config,
-		mode,
+		exposure: 'public',
+		oidc: normalizeOidcConfig(input?.oidc),
 	}
-}
-
-export function setVerificationConfigMethod(
-	config: VerificationConfig,
-	method: VerificationMethod,
-): VerificationConfig {
-	if (config.method === method) return config
-	return { mode: config.mode, method, users: [] } as VerificationConfig
-}
-
-export function findPasswordUser(
-	config: VerificationConfig,
-	username: string,
-): VerificationPasswordUserStored | undefined {
-	if (config.method !== 'password') return undefined
-	return config.users.find((entry) => entry.username === username)
-}
-
-export function findOtpUser(
-	config: VerificationConfig,
-	username: string,
-): VerificationOtpUserStored | undefined {
-	if (config.method !== 'otp') return undefined
-	return config.users.find((entry) => entry.username === username)
-}
-
-export function findPasskeyUser(
-	config: VerificationConfig,
-	username: string,
-): VerificationPasskeyUserStored | undefined {
-	if (config.method !== 'passkey') return undefined
-	return config.users.find((entry) => entry.username === username)
-}
-
-export function upsertPasswordUser(
-	config: VerificationConfig,
-	user: VerificationPasswordUserStored,
-): VerificationPasswordConfig {
-	if (config.method !== 'password') {
-		throw new Error('Verification method must be password.')
-	}
-	return {
-		...config,
-		users: [...config.users.filter((entry) => entry.username !== user.username), user],
-	}
-}
-
-export function upsertOtpUser(
-	config: VerificationConfig,
-	user: VerificationOtpUserStored,
-): VerificationOtpConfig {
-	if (config.method !== 'otp') {
-		throw new Error('Verification method must be otp.')
-	}
-	return {
-		...config,
-		users: [...config.users.filter((entry) => entry.username !== user.username), user],
-	}
-}
-
-export function upsertPasskeyUser(
-	config: VerificationConfig,
-	user: VerificationPasskeyUserStored,
-): VerificationPasskeyConfig {
-	if (config.method !== 'passkey') {
-		throw new Error('Verification method must be passkey.')
-	}
-	return {
-		...config,
-		users: [...config.users.filter((entry) => entry.username !== user.username), user],
-	}
-}
-
-export function deleteVerificationUser(
-	config: VerificationConfig,
-	username: string,
-): VerificationConfig {
-	return {
-		...config,
-		users: (config.users ?? []).filter((entry) => entry.username !== username),
-	} as VerificationConfig
 }

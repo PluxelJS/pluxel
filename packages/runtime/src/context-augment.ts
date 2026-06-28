@@ -1,5 +1,6 @@
 import type { HttpServiceConfig } from './services/http/HttpService'
 import type { ExtensionServiceConfig } from './services/plugin-interaction/ExtensionService'
+import type { VerificationConfig } from './services/verification/types'
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
@@ -14,6 +15,8 @@ declare module '@pluxel/core' {
 			profile?: string
 			/** HTTP/control-plane runtime settings. */
 			http?: HttpServiceConfig
+			/** Host control-plane access policy. Defaults to private. */
+			verification?: VerificationConfig
 			/** UI extension registry settings. */
 			extensionService?: ExtensionServiceConfig
 		}

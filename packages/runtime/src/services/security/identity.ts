@@ -1,23 +1,8 @@
 import { resolve } from 'pathe'
 import type { FsService } from '../fs/FsService'
-import {
-	DEFAULT_VERIFICATION_METHOD,
-	DEFAULT_VERIFICATION_MODE,
-	normalizeVerificationUsername,
-	resolveVerificationConfig,
-} from '../verification/model'
-import type {
-	VerificationConfig,
-	VerificationMethod,
-	VerificationMode,
-	VerificationOtpUserStored,
-	VerificationPasskeyUserStored,
-	VerificationPasswordUserStored,
-} from '../verification/types'
 
 export type SecurityIdentityDoc = {
 	version: 1
-	verification?: VerificationConfig
 	vault?: {
 		hostIdentity?: string
 		deployRecipients?: string[]
@@ -49,97 +34,11 @@ function normalizeRecipients(value: unknown): string[] | undefined {
 	return recipients.length > 0 ? recipients : undefined
 }
 
-function normalizeVerificationMode(value: unknown): VerificationMode | undefined {
-	return value === 'bypass' || value === 'enforce' ? value : undefined
-}
-
-function normalizeVerificationMethod(value: unknown): VerificationMethod | undefined {
-	return value === 'password' || value === 'otp' || value === 'passkey' ? value : undefined
-}
-
-function normalizeLegacyPasswordUser(value: {
-	username?: unknown
-	passwordHash?: unknown
-} | undefined): VerificationPasswordUserStored[] {
-	const username = normalizeVerificationUsername(String(value?.username ?? ''))
-	const passwordHash = trimOrUndefined(value?.passwordHash)
-	return username && passwordHash ? [{ username, passwordHash }] : []
-}
-
-function normalizePasswordUsers(value: unknown): VerificationPasswordUserStored[] {
-	const config = resolveVerificationConfig({
-		mode: DEFAULT_VERIFICATION_MODE,
-		method: 'password',
-		users: value as VerificationPasswordUserStored[] | undefined,
-	})
-	return config.method === 'password' ? config.users ?? [] : []
-}
-
-function normalizeOtpUsers(value: unknown): VerificationOtpUserStored[] {
-	const config = resolveVerificationConfig({
-		mode: DEFAULT_VERIFICATION_MODE,
-		method: 'otp',
-		users: value as VerificationOtpUserStored[] | undefined,
-	})
-	return config.method === 'otp' ? config.users ?? [] : []
-}
-
-function normalizePasskeyUsers(value: unknown): VerificationPasskeyUserStored[] {
-	const config = resolveVerificationConfig({
-		mode: DEFAULT_VERIFICATION_MODE,
-		method: 'passkey',
-		users: value as VerificationPasskeyUserStored[] | undefined,
-	})
-	return config.method === 'passkey' ? config.users ?? [] : []
-}
-
-function normalizeVerificationConfig(input: unknown): VerificationConfig | undefined {
-	if (!input || typeof input !== 'object') return undefined
-	const source = input as {
-		mode?: unknown
-		method?: unknown
-		users?: unknown
-		username?: unknown
-		passwordHash?: unknown
-	}
-	const mode = normalizeVerificationMode(source.mode) ?? DEFAULT_VERIFICATION_MODE
-	const method = normalizeVerificationMethod(source.method) ?? DEFAULT_VERIFICATION_METHOD
-	switch (method) {
-		case 'password': {
-			const users = normalizePasswordUsers(source.users)
-			const legacyUsers = users.length > 0 ? users : normalizeLegacyPasswordUser(source)
-			return {
-				mode,
-				method,
-				...(legacyUsers.length > 0 ? { users: legacyUsers } : {}),
-			}
-		}
-		case 'otp': {
-			const users = normalizeOtpUsers(source.users)
-			return {
-				mode,
-				method,
-				...(users.length > 0 ? { users } : {}),
-			}
-		}
-		case 'passkey': {
-			const users = normalizePasskeyUsers(source.users)
-			return {
-				mode,
-				method,
-				...(users.length > 0 ? { users } : {}),
-			}
-		}
-	}
-}
-
 function normalizeDoc(input: unknown): SecurityIdentityDoc {
 	if (!input || typeof input !== 'object') return emptyDoc()
 	const source = input as {
-		verification?: unknown
 		vault?: { hostIdentity?: unknown; deployRecipients?: unknown }
 	}
-	const verification = normalizeVerificationConfig(source.verification)
 	const hostIdentity = trimOrUndefined(source.vault?.hostIdentity)
 	const deployRecipients = normalizeRecipients(source.vault?.deployRecipients)
 
@@ -147,7 +46,6 @@ function normalizeDoc(input: unknown): SecurityIdentityDoc {
 		version: 1,
 	}
 
-	if (verification) doc.verification = verification
 	if (hostIdentity || deployRecipients) {
 		doc.vault = {}
 		if (hostIdentity) doc.vault.hostIdentity = hostIdentity
@@ -167,7 +65,6 @@ function isMissing(error: unknown): boolean {
 
 function hasMaterial(doc: SecurityIdentityDoc): boolean {
 	return !!(
-		doc.verification ||
 		doc.vault?.hostIdentity ||
 		(doc.vault?.deployRecipients && doc.vault.deployRecipients.length > 0)
 	)

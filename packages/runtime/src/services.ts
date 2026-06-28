@@ -20,16 +20,6 @@ export {
 } from './services/debug'
 export { bootstrapHostVault } from './services/security/bootstrap'
 export {
-	deleteLocalVerificationUser,
-	describeLocalVerification,
-	resetLocalVerification,
-	setLocalVerificationMethod,
-	setLocalVerificationMode,
-	upsertLocalVerificationPasswordUser,
-	type LocalVerificationSnapshot,
-} from './services/security/local-admin'
-
-export {
 	FsError,
 	FsService,
 	createNodeFsServiceBackend,

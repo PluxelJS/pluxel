@@ -26,11 +26,11 @@ function requestReturnTo(request: Request): string {
 }
 
 export function resolveVerificationLandingPath(reason?: VerificationReason): string {
-	return reason === 'misconfigured' ? HMR_SECURITY_BASE : HMR_VERIFICATION_BASE
+	return reason === 'missing_oidc' ? HMR_SECURITY_BASE : HMR_VERIFICATION_BASE
 }
 
 export function canAccessSecurityAdmin(state: VerificationLike): boolean {
-	return state.allow || state.reason === 'misconfigured'
+	return state.allow || state.reason === 'missing_oidc'
 }
 
 export function resolveControlPlaneRedirectPath(
@@ -39,7 +39,7 @@ export function resolveControlPlaneRedirectPath(
 	kind: VerificationBlockedKind,
 	reason?: VerificationReason,
 ): string {
-	if (reason === 'misconfigured') return resolveVerificationLandingPath(reason)
+	if (reason === 'missing_oidc') return resolveVerificationLandingPath(reason)
 	if (kind === 'ui') {
 		return buildRedirectPath(requestReturnTo(request))
 	}

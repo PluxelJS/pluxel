@@ -193,6 +193,7 @@ async function startManagedHost() {
 		extensionService: { enabled: false },
 	})
 	await bootstrapHostVault(ctx)
+	ctx.root.verification.assertCanBindHost(bindHost)
 
 	const server = await startFetchHostServer({
 		host: bindHost,
@@ -251,6 +252,7 @@ async function startFrozenHost() {
 		throw new Error(`Frozen host entry does not export a runnable context: ${res.entry}`)
 	}
 
+	ctx.root.verification.assertCanBindHost(bindHost)
 	const server = await startFetchHostServer({
 		host: bindHost,
 		port: bindPort,

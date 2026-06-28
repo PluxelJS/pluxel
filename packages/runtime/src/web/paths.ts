@@ -15,18 +15,6 @@ export const HMR_TRANSPORT_PATHS = {
 export const HMR_META_INFO_PATH = HMR_META_BASE
 export const HMR_META_SSE_PATH = `${HMR_META_BASE}/sse`
 export const HMR_SECURITY_EVENTS_PATH = `${HMR_SECURITY_BASE}/events`
-export const HMR_SECURITY_VERIFICATION_MODE_PATH = `${HMR_SECURITY_BASE}/verification/mode`
-export const HMR_SECURITY_VERIFICATION_METHOD_PATH = `${HMR_SECURITY_BASE}/verification/method`
-export const HMR_SECURITY_VERIFICATION_PASSWORD_USERS_PATH =
-	`${HMR_SECURITY_BASE}/verification/users/password`
-export const HMR_SECURITY_VERIFICATION_OTP_USERS_PATH =
-	`${HMR_SECURITY_BASE}/verification/users/otp`
-export const HMR_SECURITY_VERIFICATION_PASSKEY_REGISTER_OPTIONS_PATH =
-	`${HMR_SECURITY_BASE}/verification/passkey/register/options`
-export const HMR_SECURITY_VERIFICATION_PASSKEY_REGISTER_PATH =
-	`${HMR_SECURITY_BASE}/verification/passkey/register`
-export const HMR_SECURITY_VERIFICATION_USERS_DELETE_PATH =
-	`${HMR_SECURITY_BASE}/verification/users/delete`
 export const HMR_SECURITY_VAULT_UNLOCK_PATH = `${HMR_SECURITY_BASE}/vault/unlock`
 export const HMR_SECURITY_VAULT_HOST_KEY_PATH = `${HMR_SECURITY_BASE}/vault/keys/host`
 export const HMR_SECURITY_VAULT_DEPLOY_GENERATE_PATH =

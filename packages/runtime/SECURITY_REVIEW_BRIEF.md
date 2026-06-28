@@ -5,29 +5,26 @@
 ## 审查目标
 
 - `verification` 只回答一件事：
-  当前 host 是否允许进入 control plane
+  当前 host control-plane 是否允许访问
 - `vault` 只回答一件事：
   敏感数据是否被正确加密存储，并且当前 host 是否具备可用解锁材料
 - host 在插件激活前完成 vault preflight；vault 不可用时不进入后续运行流程
 
 ## 当前模型
 
-- 长期安全材料只有一个文件：
-  `data/security/identity.json`
-- `identity.json` 只承载两类长期材料：
-  `verification` 的 gate + credentials
-  `vault` 的 host identity + deploy recipients
 - `ctx.root.verification`
-  host-only gate
+  host-only access gate
+- private exposure 下不做任何认证，直接 allow
+- public exposure 下必须配置 OIDC，使用 issuer discovery + JWKS 校验 bearer JWT
+- 绑定公网地址前必须通过 `verification.assertCanBindHost(host)` 检查 OIDC 配置
+- Pluxel 不保存本地 verification users、password hash、OTP secret、passkey credential 或 verification session
+- `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 - `ctx.vault`
   插件与 runtime 共享的加密存储面，只负责数据读写
 - `ctx.root.vaultAdmin`
   host-only vault 管理面
 - `/security`
-  唯一浏览器管理面
-- `runtime security client`
-  浏览器访问 `/security` 的专用 carrier，不属于通用 transport client
-- OTP 与 passkey 的协议/密码学校验交给成熟库，runtime 自身只保留 host 状态与材料管理语义
+  浏览器管理面；只读展示 access policy，写操作只面向 vault
 
 ## 必须成立的事实
 
@@ -45,26 +42,11 @@
 ## 当前接口语义
 
 - `ctx.root.verification.authorize()`
-  纯读；只输出 `allow/reason`
+  纯读；输出 `allow/reason/principal`
 - `ctx.root.verification.describe()`
-  纯读；只输出 gate mode、method、users 概览、当前状态
-- `ctx.root.verification.verifyPassword()` / `verifyOtp()` / `finishPasskeyAuthentication()`
-  只在对应 method 成功时写当前 verification session
-- `ctx.root.verification.clear()`
-  清当前 verification session
-- `ctx.root.verification.setMode()`
-  只更新 gate mode，并写入 `identity.json`
-- `ctx.root.verification.setMethod()`
-  只切换全局验证方式，并清空不兼容 users
-- `ctx.root.verification.upsertPasswordUser()`
-  创建或覆盖 password user，并写入 `identity.json`
-- `ctx.root.verification.provisionOtpUser()`
-  生成或替换 OTP secret，并写入 `identity.json`
-- `ctx.root.verification.beginPasskeyRegistration()` / `finishPasskeyRegistration()`
-  显式注册 passkey user，并写入 `identity.json`
-- `ctx.root.verification.deleteUser()`
-  删除 verification user，并写入 `identity.json`
-
+  纯读；输出 access policy 概览和当前状态
+- `ctx.root.verification.assertCanBindHost()`
+  启动期检查；公网 bind 缺少 public OIDC 配置时抛错
 - `ctx.root.vaultAdmin.describe()`
   纯读；只做 mount/material/status 概览，不触发解锁
 - `ctx.root.vaultAdmin.preflight()`
@@ -83,12 +65,11 @@
 ## 状态约束
 
 - verification 状态只表达：
-  `mode`
-  `method`
+  `exposure`
+  `provider`
   `state.allow`
   `state.reason`
-  `users[]` 这种必要概览
-- verification 的 transport 路径、页面路径、cookie 名称不属于核心安全状态
+  `principal`
 - vault 状态只表达：
   mount 是否存在
   当前是否解锁
@@ -106,38 +87,11 @@
 - mount 已存在且可解锁时，允许继续启动
 - mount 已存在但当前材料无法解锁时，必须终止启动
 
-## 审查重点
-
-- 这个概念是否还能继续压缩
-- 这个字段是否只是派生值
-- 这个接口是否和别的接口表达同一件事
-- 这层抽象是否只是为了假想扩展
-- 这段实现是否忠实服务于 host gate 或 vault 加密目标
-- 这段 transport / 页面 / API 代码是否把承载细节反向注入了核心语义
-- 是否还存在任何 host-only 能力挂在插件侧语义上
-- 是否还存在任何插件侧能力越过了 host 安全边界
-- 是否还有可以删除的中间态、包装层、转发 helper、缓存壳
-
 ## 红线
 
-- 不要重新引入 config 驱动的 gate 来源
-- 不要重新引入第二份长期安全材料
+- 不要重新引入本地 verification users
+- 不要重新引入 password / OTP / passkey credential 存储
 - 不要把 verification session 带入 vault
 - 不要把 vault 可用性绑定到 verification allow
 - 不要让 `/security` 之外的 carrier 持有自己的安全真相
 - 不要让 plugin API 或未来外部 tool surface 暴露 security 管理动作
-
-## 期望输出
-
-如果发现问题，优先指出：
-
-- 哪个概念是重复的
-- 哪个字段是派生值
-- 哪个接口语义重叠
-- 哪个文件夹或模块边界还能收缩
-- 哪段实现让 transport/UI 反向侵入了核心安全模型
-
-如果没有问题，也请明确说明：
-
-- 当前模型是否已经足够闭合
-- 哪些地方虽然还能继续抽象整理，但继续改动的收益已经很低

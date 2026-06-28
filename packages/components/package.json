@@ -41,7 +41,6 @@
 		"@material/material-color-utilities": "^0.4.0",
 		"@module-federation/runtime": "2.2.2",
 		"@pluxel/runtime": "workspace:*",
-		"@simplewebauthn/browser": "13.3.0",
 		"@tanstack/react-hotkeys": "^0.8.4",
 		"@tanstack/react-router": "^1.168.8",
 		"@tanstack/react-store": "^0.9.3",
@@ -52,8 +51,8 @@
 	},
 	"devDependencies": {
 		"@gqlens/vite": "0.2.0",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@tanstack/router-plugin": "1.167.9",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",

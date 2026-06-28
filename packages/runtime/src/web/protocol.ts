@@ -4,15 +4,6 @@
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
-export type {
-	VerificationOtpProvisionResult,
-	VerificationOtpUserProvisionInput,
-	VerificationPasskeyRegistrationFinishInput,
-	VerificationPasskeyRegistrationOptions,
-	VerificationPasskeyRegistrationStartInput,
-	VerificationPasswordUserUpsertInput,
-	VerificationUserDeleteInput,
-} from '../services/verification/types'
 export type { VaultKeyPair } from '../services/vault/types'
 
 /**
