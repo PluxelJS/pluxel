@@ -61,7 +61,7 @@
 		"picomatch": "^4.0.3",
 		"tinypool": "^2.1.0",
 		"valibot": "^1.2.0",
-		"vite": "8.0.0-beta.18"
+		"vite": "^8.0.0-beta.18"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",

@@ -35,7 +35,7 @@
 		"@logtape/logtape": "^2.0.2",
 		"@pluxel/test": "workspace:*",
 		"typescript": "^6.0.3",
-		"vite": "8.0.0-beta.18"
+		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
 		"vite": ">=8.0.0-beta.18 <9"

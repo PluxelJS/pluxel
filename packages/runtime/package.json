@@ -141,12 +141,12 @@
 		"ohash": "^2.0.11",
 		"oxc-resolver": "^11.21.3",
 		"pathe": "^2.0.3",
-		"std-env": "4.0.0-rc.1",
+		"std-env": "^4.0.0-rc.1",
 		"superjson": "^2.2.6",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "0.2.0",
+		"@gqlens/codegen": "^0.2.0",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/react": "^19.2.14",
@@ -154,7 +154,7 @@
 		"postcss-preset-mantine": "^1.18.0",
 		"postcss-simple-vars": "^7.0.1",
 		"valibot-form": "workspace:*",
-		"vite": "8.0.0-beta.18"
+		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
 		"@tabler/icons-react": "*"

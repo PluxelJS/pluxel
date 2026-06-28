@@ -87,23 +87,23 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
-		"@module-federation/vite": "1.16.6",
+		"@module-federation/vite": "^1.16.6",
 		"@pluxel/core": "workspace:*",
 		"oxc-parser": "^0.115.0",
 		"oxc-resolver": "^11.21.3"
 	},
 	"devDependencies": {
-		"@rolldown/pluginutils": "1.0.0-rc.5",
+		"@rolldown/pluginutils": "^1.0.0-rc.5",
 		"fdir": "^6.5.0",
 		"fs-fixture": "^2.13.0",
 		"pathe": "^2.0.3",
-		"rolldown": "1.0.0-rc.5",
+		"rolldown": "^1.0.0-rc.5",
 		"tsdown": "^0.22.3",
 		"typescript": "^6.0.3",
-		"vite": "8.0.0-beta.18"
+		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
-		"rolldown": "1.0.0-rc.5",
+		"rolldown": "^1.0.0-rc.5",
 		"tsdown": "*",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
