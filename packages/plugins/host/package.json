@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dynamic": "node src/dynamic.ts",
+		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts --host 127.0.0.1",
 		"static": "pnpm exec tsx src/static.ts",
 		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host"
@@ -24,6 +24,7 @@
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7",
 		"tinypool": "^2.1.0",
-		"tsx": "^4.22.4"
+		"tsx": "^4.22.4",
+		"vite": "^8.0.0-beta.18"
 	}
 }

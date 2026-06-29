@@ -23,7 +23,48 @@ describe('runtime-dev Vite plugin stack', () => {
 		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' })
 
 		expect(plugin.name).toBe('pluxel:runtime-source')
-		expect(config).toEqual({
+		expect(config).toMatchObject({
+			resolve: {
+				conditions: expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+				externalConditions: expect.arrayContaining([
+					'@pluxel/source',
+					'node',
+					'import',
+					'default',
+				]),
+				preserveSymlinks: false,
+			},
+			environments: {
+				ssr: {
+					resolve: {
+						conditions: expect.arrayContaining([
+							'@pluxel/source',
+							'node',
+							'import',
+							'default',
+						]),
+						externalConditions: expect.arrayContaining([
+							'@pluxel/source',
+							'node',
+							'import',
+							'default',
+						]),
+						preserveSymlinks: false,
+					},
+				},
+			},
+			ssr: {
+				resolve: {
+					conditions: expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+					externalConditions: expect.arrayContaining([
+						'@pluxel/source',
+						'node',
+						'import',
+						'default',
+					]),
+					preserveSymlinks: false,
+				},
+			},
 			oxc: {
 				decorator: {
 					legacy: true,

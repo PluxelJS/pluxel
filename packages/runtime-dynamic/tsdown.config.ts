@@ -40,6 +40,7 @@ export default defineConfig({
 		register: 'src/register.ts',
 		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
+		vite: 'src/vite.ts',
 		plugin: 'src/plugin.ts',
 	},
 	copy: ['src/hmr/compile/bundler/bundle-worker.mjs'],

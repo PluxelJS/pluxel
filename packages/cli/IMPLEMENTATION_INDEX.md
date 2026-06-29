@@ -25,7 +25,7 @@
 ## Command Roles
 
 - `pluxel hmr`
-  把 `@pluxel/runtime-dynamic/hmr` host 作为标准开发入口暴露出来
+  暴露 `@pluxel/runtime-dynamic/hmr` workspace profile / diagnose / TUI 工具
 - `pluxel build`
   把 `@pluxel/rolldown` overlay 与相关构建 helper 串成标准构建命令
 - `pluxel new`
@@ -46,7 +46,7 @@
 2. `packages/rolldown/src/cli/index.ts`
 3. `packages/rolldown/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
 
-如果你在追“开发宿主是怎么被启动的”，优先读：
+如果你在追“dynamic 开发宿主是怎么被启动的”，优先读：
 
-1. `packages/cli/src/hmr/index.ts`
-2. `packages/runtime-dynamic/src/hmr.ts`
+1. `packages/runtime-dynamic/src/vite.ts`
+2. `packages/plugins/host/vite.dynamic.config.ts`

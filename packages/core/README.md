@@ -5,7 +5,8 @@
 它不包含 runtime kernel 的“宿主能力”（HTTP/control-plane、workspace 扫描、包安装、loader HMR 等），这些都在：
 
 - `@pluxel/runtime`（kernel services + 稳定协议/路由）
-- `@pluxel/runtime-dynamic/hmr`（HMR-time：Vite + watch + runner + loader replacement）
+- `@pluxel/runtime-dynamic/vite`（dynamic route 安装到 host-owned Vite server）
+- `@pluxel/runtime-dynamic/hmr`（CLI/test-facing workspace diagnose 和 loader HMR internals）
 
 文档入口：
 

@@ -1,17 +1,26 @@
+import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'pathe'
-import type { InlineConfig } from 'vite'
+import type { InlineConfig, ViteDevServer } from 'vite'
 
 import '@pluxel/runtime-dynamic/register'
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
-import { resolveRuntimeStoragePaths, type RuntimeStoragePaths } from '@pluxel/runtime/internal'
+import {
+	clearHmrRuntimeHandles,
+	clearRuntimeModuleAdapter,
+	getHmrRuntimeHandles,
+	hasRuntimeModuleAdapter,
+	resolveRuntimeStoragePaths,
+	setHmrRuntimeHandles,
+	setRuntimeModuleAdapter,
+	type RuntimeStoragePaths,
+} from '@pluxel/runtime/internal'
 import { Context } from '@pluxel/runtime'
 import { bootstrapHostVault, createNodeFsServiceBackend } from '@pluxel/runtime/services'
+import { mergeExtensionCompilerViteConfig } from '@pluxel/runtime-dev'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
-import { installLoaderHmrRuntime } from './install-hmr-runtime'
-import type { LoaderHmrConfig } from './engine/LoaderHmrService'
-import type { LoaderHmrDependencyConfig } from './engine/config'
+import { BundlerService } from './compile/bundler/BundlerService'
 import {
 	diagnoseWorkspace,
 	nodeLoaderHmrWorkspaceFs,
@@ -19,6 +28,10 @@ import {
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceSnapshot,
 } from './diagnose'
+import type { LoaderHmrDependencyConfig } from './engine/config'
+import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
+import { ExtensionCompilerService } from './extensions/ExtensionCompilerService'
+import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { materializeProfiledFile } from './host/storage'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
@@ -89,7 +102,11 @@ export type BootedLoaderHmrHost = {
 	root: string
 	logsDir: string
 	ctx: import('@pluxel/core').Context
-	hmr: import('./engine/LoaderHmrService').LoaderHmrService
+	hmr: LoaderHmrService
+}
+
+export type BootLoaderHmrHostOptions = {
+	viteServer?: ViteDevServer
 }
 
 export type LoaderHmrHostConfigInput = Omit<
@@ -224,6 +241,7 @@ export async function planLoaderHmrHostFromConfig(
 
 export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
+	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
 	// `@pluxel/runtime` sets process runtime to "core"; use the hmr runtime preset for loader HMR hosts.
 	// This affects logger preset defaults (category/name injection) and other runtime flags.
@@ -279,20 +297,130 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	await bootstrapHostVault(ctx)
 
-	const hmrInstall = await installLoaderHmrRuntime(ctx, {
-		cwd: plan.root,
-		snapshot: plan.snapshot,
-		printUrls: plan.printUrls,
-		warmup: plan.warmup,
-		vite: plan.vite,
-		deps: plan.deps,
-		cjsExternal: plan.cjsExternal,
-		builtinsFromDist: plan.builtinsFromDist,
-	})
+	const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
 
 	if (plan.builtins?.length) {
 		await ctx.loader.preloadPlugins([...plan.builtins], { strict: true, commit: true })
 	}
 
-	return { root: plan.root, logsDir: plan.runtimeStorage.logsDir, ctx, hmr: hmrInstall.hmr }
+	return { root: plan.root, logsDir: plan.runtimeStorage.logsDir, ctx, hmr }
+}
+
+async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
+	ctx: Context,
+	plan: PlannedLoaderHmrHost<TSnapshot>,
+	viteServer: ViteDevServer | undefined,
+): Promise<LoaderHmrService> {
+	if (ctx.config.loaderHmr || hasRuntimeModuleAdapter(ctx) || getHmrRuntimeHandles(ctx)) {
+		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
+	}
+
+	const loaderHmr = resolveLoaderHmrConfig(plan)
+	ctx.config.loaderHmr = loaderHmr
+
+	const hmr = new LoaderHmrService(ctx, loaderHmr)
+	if (viteServer) await hmr.attachServer(viteServer)
+	setRuntimeModuleAdapter(ctx, hmr)
+
+	const bundler = new BundlerService(ctx)
+	const extensionCompilerConfig = mergeExtensionCompilerViteConfig(
+		ctx.config.extensionCompiler,
+		plan.vite,
+	)
+	ctx.config.extensionCompiler = extensionCompilerConfig
+	const extensionCompiler = new ExtensionCompilerService(
+		ctx,
+		{ viteServer: viteServer ?? hmr.vite, enabled: true },
+		extensionCompilerConfig,
+	)
+
+	ctx.config.http = { ...ctx.config.http, uiAssets: 'hmr-server' }
+	ctx.config.extensionService = {
+		...ctx.config.extensionService,
+		enabled: true,
+	}
+	const extensionStore = ctx.ext.ui
+	extensionStore.reconfigure(ctx.config.extensionService)
+	extensionCompiler.attachStore(extensionStore)
+
+	setHmrRuntimeHandles(ctx, {
+		hmr: {
+			api: hmr.api,
+			executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
+		},
+		bundler: {
+			watchTinypoolWorker: (ownerCtx, tsEntry, bundlerOptions) =>
+				bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
+					...bundlerOptions,
+					vite: hmr.vite,
+				}),
+		},
+		extensions: {
+			bindUiSource: (ownerCtx, declaration) =>
+				extensionCompiler.bindDeclaration(ownerCtx, declaration),
+		},
+	})
+
+	ctx.effects.defer(() => {
+		clearRuntimeModuleAdapter(ctx)
+		clearHmrRuntimeHandles(ctx)
+		extensionCompiler.dispose()
+		return bundler.dispose()
+	})
+
+	return hmr
+}
+
+function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
+	plan: PlannedLoaderHmrHost<TSnapshot>,
+): LoaderHmrConfig {
+	const deps: LoaderHmrDependencyConfig | undefined = plan.cjsExternal?.length
+		? { ...plan.deps, cjsExternal: plan.cjsExternal }
+		: plan.deps
+	const builtinsFromDist = resolveBuiltinsFromDistEntries(
+		plan.root,
+		plan.builtinsFromDist ?? plan.snapshot.builtinsFromDist,
+	)
+
+	return applyLoaderHmrEnvOverrides({
+		roots: plan.snapshot.watchRoots,
+		printUrls: plan.printUrls ?? true,
+		warmup: plan.warmup ?? true,
+		include:
+			plan.snapshot.includeGlobs.length > 0 ? uniqSorted(plan.snapshot.includeGlobs) : undefined,
+		entries: plan.snapshot.enabledEntries,
+		exclude:
+			plan.snapshot.excludeGlobs.length > 0 ? uniqSorted(plan.snapshot.excludeGlobs) : undefined,
+		clientEntries: resolveDefaultClientEntries(plan.root),
+		builtinsFromDist,
+		vite: plan.vite,
+		deps,
+	})
+}
+
+function uniqSorted(list: readonly string[]): string[] {
+	return [...new Set(list)].sort((a, b) => a.localeCompare(b))
+}
+
+function resolveDefaultClientEntries(cwd: string): string[] {
+	const runtimeClientEntry = resolve(cwd, 'packages/runtime/src/client.tsx')
+	return existsSync(runtimeClientEntry) ? [runtimeClientEntry] : []
+}
+
+function resolveBuiltinsFromDistEntries(
+	cwd: string,
+	list: LoaderHmrConfig['builtinsFromDist'],
+): LoaderHmrConfig['builtinsFromDist'] {
+	if (!list?.length) return list
+	return list
+		.map((entry) => ({
+			...entry,
+			packageName: String(entry.packageName ?? '').trim(),
+			entry: (() => {
+				const raw = String(entry.entry ?? '').trim()
+				if (!raw) return raw
+				return isAbsolute(raw) ? raw : resolve(cwd, raw)
+			})(),
+		}))
+		.filter((entry) => entry.packageName && entry.entry)
 }

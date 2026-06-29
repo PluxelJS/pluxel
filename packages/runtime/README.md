@@ -222,10 +222,11 @@ SignalDB 的 React 响应性现在走官方链路：
 
 ## 开发期
 
-runtime 本身不启动 Vite。开发期统一通过 `@pluxel/runtime-dynamic/hmr` 接入：
+runtime 本身不启动 Vite。开发期应用宿主统一通过 route-owned Vite 插件接入：
 
-- `createLoaderHmrHost({ config: defineLoaderHmrConfig(...) })` + `host.start()`
-- `installLoaderHmr(ctx, ...)`
+- `@pluxel/runtime-dynamic/vite`：`dynamicRuntimeVitePlugin({ config })`
+- `@pluxel/runtime-static/vite`：`staticRuntimeVitePlugin({ config })`
+- `@pluxel/runtime-dynamic/vite` owns dynamic dev host startup; apps should not wire loader HMR manually.
 
 ## 主要 subpath
 

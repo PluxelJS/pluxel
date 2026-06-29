@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { createStaticRuntimeHost, type StaticRuntimeHost } from '@pluxel/runtime-static'
-import { installStaticRuntimeHmr } from '@pluxel/runtime-static/hmr'
 import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
 import staticRuntime, { staticCommercialEnabledPlugins } from './pluxel.static.ts'
@@ -45,9 +44,9 @@ export async function createStaticCommercialRuntimeHost(): Promise<StaticRuntime
 			},
 			http: {
 				controlPlane: { web: true, rpc: true, sse: true },
-				uiAssets: 'hmr-server',
+				uiAssets: 'static-built',
 			},
-			extensionService: { enabled: true },
+			extensionService: { enabled: false },
 		},
 	})
 
@@ -56,7 +55,6 @@ export async function createStaticCommercialRuntimeHost(): Promise<StaticRuntime
 
 export async function createStaticCommercialHost(): Promise<StaticCommercialHost> {
 	const host = await createStaticCommercialRuntimeHost()
-	installStaticRuntimeHmr({ host })
 
 	const startup = await host.start()
 	host.ctx.logger.info('Static commercial runtime ready', {

@@ -1,13 +1,9 @@
 import { existsSync } from 'node:fs'
 import {
 	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-	assertLoaderHmrWorkspace,
-	createLoaderHmrHost,
-	createLoaderHmrHostFromSnapshot,
 	diagnoseLoaderHmrWorkspace,
 	type PluxelLoaderHmrConfigV1,
 	type LoaderHmrWorkspace,
-	defineLoaderHmrConfig,
 	readLoaderHmrConfigV1,
 	writeLoaderHmrConfigV1,
 } from '@pluxel/runtime-dynamic/hmr'
@@ -49,7 +45,7 @@ type LoaderHmrSetValues = ArgValues<LoaderHmrSetArgs>
 
 type LoaderHmrProfile = PluxelLoaderHmrConfigV1['profiles'][string]
 
-type LoaderHmrRuntime = {
+type LoaderHmrCommandContext = {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
@@ -86,7 +82,7 @@ function resolveActiveProfile(params: {
 	return params.valuesProfile ?? params.envProfile ?? params.cfg.profile
 }
 
-function resolveRuntime(values: LoaderHmrCommonValues): LoaderHmrRuntime {
+function resolveCommandContext(values: LoaderHmrCommonValues): LoaderHmrCommandContext {
 	const rootDir = resolve(process.cwd(), values.root || '.')
 	const configPath = resolve(rootDir, values.config || DEFAULT_LOADER_HMR_CONFIG_BASENAME)
 	const env: NodeJS.ProcessEnv = {
@@ -106,12 +102,12 @@ function printHeading(title: string) {
 	process.stdout.write(`\n${title}\n${'-'.repeat(Math.min(Math.max(title.length, 8), 64))}\n`)
 }
 
-function writeSnapshotIndex(runtime: LoaderHmrRuntime, snapshot: LoaderHmrWorkspace) {
+function writeSnapshotIndex(context: LoaderHmrCommandContext, snapshot: LoaderHmrWorkspace) {
 	writeLoaderHmrDiscoveredIndex({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
+		rootDir: context.rootDir,
+		configPath: context.configPath,
 		activeProfile: snapshot.activeProfile,
-		rootsExpandedAbs: snapshot.roots.map((r) => resolve(runtime.rootDir, r)),
+		rootsExpandedAbs: snapshot.roots.map((r) => resolve(context.rootDir, r)),
 		excludeGlobs: snapshot.excludeGlobs,
 		builtinPackages: snapshot.builtinPackages,
 		omitFromEntries: snapshot.builtinPackages,
@@ -119,20 +115,14 @@ function writeSnapshotIndex(runtime: LoaderHmrRuntime, snapshot: LoaderHmrWorksp
 	})
 }
 
-async function startHostFromSnapshot(rootDir: string, snapshotOrJson: unknown) {
-	const snapshot = typeof snapshotOrJson === 'string' ? JSON.parse(snapshotOrJson) : snapshotOrJson
-	assertLoaderHmrWorkspace(snapshot)
-
-	const host = await createLoaderHmrHostFromSnapshot({ root: rootDir, snapshot })
-	await host.start()
-}
-
 async function runTui(params: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
 	initialTab?: Parameters<typeof import('../tui/hmr-prompt').runLoaderHmrPromptTui>[0]['initialTab']
-	initialOpen?: Parameters<typeof import('../tui/hmr-prompt').runLoaderHmrPromptTui>[0]['initialOpen']
+	initialOpen?: Parameters<
+		typeof import('../tui/hmr-prompt').runLoaderHmrPromptTui
+	>[0]['initialOpen']
 }) {
 	const { runLoaderHmrPromptTui } = await import('../tui/hmr-prompt')
 	const res = await runLoaderHmrPromptTui({
@@ -144,16 +134,14 @@ async function runTui(params: {
 		initialOpen: params.initialOpen,
 	})
 	if (res.action === 'exit') return
-	process.stdout.write('Starting loader HMR host (Ctrl+C to stop)…\n')
-	await startHostFromSnapshot(params.rootDir, res.snapshotJson)
 }
 
 async function runDoctor(values: LoaderHmrCommonValues) {
-	const runtime = resolveRuntime(values)
+	const context = resolveCommandContext(values)
 	const res = await diagnoseLoaderHmrWorkspace({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
-		env: runtime.env,
+		rootDir: context.rootDir,
+		configPath: context.configPath,
+		env: context.env,
 	})
 
 	if (res.ok === false) {
@@ -161,9 +149,9 @@ async function runDoctor(values: LoaderHmrCommonValues) {
 		process.stderr.write(`${res.errors.join('\n')}\n`)
 		if (res.discovered?.length) {
 			writeLoaderHmrDiscoveredIndex({
-				rootDir: runtime.rootDir,
-				configPath: runtime.configPath,
-				activeProfile: values.profile ?? runtime.env.PLUXEL_HMR_PROFILE ?? 'unknown',
+				rootDir: context.rootDir,
+				configPath: context.configPath,
+				activeProfile: values.profile ?? context.env.PLUXEL_HMR_PROFILE ?? 'unknown',
 				discovered: res.discovered,
 			})
 			printHeading('Discovered plugin packages')
@@ -180,7 +168,7 @@ async function runDoctor(values: LoaderHmrCommonValues) {
 	}
 
 	const s = res.snapshot
-	writeSnapshotIndex(runtime, s)
+	writeSnapshotIndex(context, s)
 
 	printHeading('Summary')
 	process.stdout.write(
@@ -205,39 +193,22 @@ async function runDoctor(values: LoaderHmrCommonValues) {
 	}
 }
 
-async function runStart(values: LoaderHmrCommonValues) {
-	const runtime = resolveRuntime(values)
-	const host = await createLoaderHmrHost({
-		config: defineLoaderHmrConfig({
-			root: runtime.rootDir,
-			configPath: runtime.configPath,
-			env: runtime.env,
-		}),
-	})
-
-	for (const w of host.warnings) process.stdout.write(`${w}\n`)
-	writeSnapshotIndex(runtime, host.workspace as LoaderHmrWorkspace)
-
-	process.stdout.write('Starting loader HMR host (Ctrl+C to stop)…\n')
-	await host.start()
-}
-
 async function runPrompt(values: LoaderHmrCommonValues) {
-	const runtime = resolveRuntime(values)
-	await runTui({ rootDir: runtime.rootDir, configPath: runtime.configPath, env: runtime.env })
+	const context = resolveCommandContext(values)
+	await runTui({ rootDir: context.rootDir, configPath: context.configPath, env: context.env })
 }
 
 async function runEnabled(values: LoaderHmrSetValues) {
-	const runtime = resolveRuntime(values)
+	const context = resolveCommandContext(values)
 	if (values.set) {
-		if (!existsSync(runtime.configPath)) {
-			throw new Error(`Missing config file: ${runtime.configPath} (run \`pluxel hmr\` first)`)
+		if (!existsSync(context.configPath)) {
+			throw new Error(`Missing config file: ${context.configPath} (run \`pluxel hmr\` first)`)
 		}
-		const cfg = readLoaderHmrConfigV1(runtime.configPath)
+		const cfg = readLoaderHmrConfigV1(context.configPath)
 		const activeProfile = resolveActiveProfile({
 			cfg,
 			valuesProfile: values.profile,
-			envProfile: runtime.env.PLUXEL_HMR_PROFILE,
+			envProfile: context.env.PLUXEL_HMR_PROFILE,
 		})
 		ensureProfile(cfg, activeProfile)
 		const currentProfile: LoaderHmrProfile = cfg.profiles[activeProfile] ?? { enabled: [] }
@@ -249,31 +220,31 @@ async function runEnabled(values: LoaderHmrSetValues) {
 			...(nextBuiltin.length > 0 ? { builtin: nextBuiltin } : {}),
 		}
 		if (nextBuiltin.length === 0) delete cfg.profiles[activeProfile]!.builtin
-		writeLoaderHmrConfigV1(runtime.configPath, cfg)
-		process.stdout.write(`Wrote ${runtime.configPath}\n`)
+		writeLoaderHmrConfigV1(context.configPath, cfg)
+		process.stdout.write(`Wrote ${context.configPath}\n`)
 		return
 	}
 
 	await runTui({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
-		env: runtime.env,
+		rootDir: context.rootDir,
+		configPath: context.configPath,
+		env: context.env,
 		initialTab: 'packages',
 		initialOpen: { kind: 'packages', mode: 'enabled' },
 	})
 }
 
 async function runBuiltin(values: LoaderHmrSetValues) {
-	const runtime = resolveRuntime(values)
+	const context = resolveCommandContext(values)
 	if (values.set) {
-		if (!existsSync(runtime.configPath)) {
-			throw new Error(`Missing config file: ${runtime.configPath} (run \`pluxel hmr\` first)`)
+		if (!existsSync(context.configPath)) {
+			throw new Error(`Missing config file: ${context.configPath} (run \`pluxel hmr\` first)`)
 		}
-		const cfg = readLoaderHmrConfigV1(runtime.configPath)
+		const cfg = readLoaderHmrConfigV1(context.configPath)
 		const activeProfile = resolveActiveProfile({
 			cfg,
 			valuesProfile: values.profile,
-			envProfile: runtime.env.PLUXEL_HMR_PROFILE,
+			envProfile: context.env.PLUXEL_HMR_PROFILE,
 		})
 		ensureProfile(cfg, activeProfile)
 		const currentProfile: LoaderHmrProfile = cfg.profiles[activeProfile] ?? { enabled: [] }
@@ -285,15 +256,15 @@ async function runBuiltin(values: LoaderHmrSetValues) {
 			...(nextBuiltin.length > 0 ? { builtin: nextBuiltin } : {}),
 		}
 		if (nextBuiltin.length === 0) delete cfg.profiles[activeProfile]!.builtin
-		writeLoaderHmrConfigV1(runtime.configPath, cfg)
-		process.stdout.write(`Wrote ${runtime.configPath}\n`)
+		writeLoaderHmrConfigV1(context.configPath, cfg)
+		process.stdout.write(`Wrote ${context.configPath}\n`)
 		return
 	}
 
 	await runTui({
-		rootDir: runtime.rootDir,
-		configPath: runtime.configPath,
-		env: runtime.env,
+		rootDir: context.rootDir,
+		configPath: context.configPath,
+		env: context.env,
 		initialTab: 'packages',
 		initialOpen: { kind: 'packages', mode: 'builtin' },
 	})
@@ -306,16 +277,6 @@ const loaderHmrPromptCommand = define({
 	args: loaderHmrCommonArgs,
 	async run(ctx) {
 		await runPrompt(ctx.values as LoaderHmrCommonValues)
-	},
-})
-
-const loaderHmrStartCommand = define({
-	name: 'start',
-	description: 'Diagnose workspace and start loader HMR host',
-	toKebab: true,
-	args: loaderHmrCommonArgs,
-	async run(ctx) {
-		await runStart(ctx.values as LoaderHmrCommonValues)
 	},
 })
 
@@ -351,12 +312,11 @@ const loaderHmrBuiltinCommand = define({
 
 export const hmrCommand = define({
 	name: 'hmr',
-	description: 'Loader HMR workspace profiles (prompt/start/doctor)',
+	description: 'Loader HMR workspace profiles (prompt/doctor)',
 	toKebab: true,
 	args: loaderHmrCommonArgs,
 	subCommands: new Map([
 		['prompt', loaderHmrPromptCommand],
-		['start', loaderHmrStartCommand],
 		['doctor', loaderHmrDoctorCommand],
 		['enabled', loaderHmrEnabledCommand],
 		['builtin', loaderHmrBuiltinCommand],

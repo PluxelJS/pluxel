@@ -29,6 +29,10 @@
 			"@pluxel/source": "./src/services.ts",
 			"default": "./dist/services.mjs"
 		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -38,6 +42,7 @@
 			"./plugin": "./dist/plugin.mjs",
 			"./register": "./dist/register.mjs",
 			"./services": "./dist/services.mjs",
+			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}
 	},
@@ -60,14 +65,22 @@
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
 		"tinypool": "^2.1.0",
-		"valibot": "^1.2.0",
-		"vite": "^8.0.0-beta.18"
+		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/bun": "^1.3.14",
 		"superjson": "^2.2.6",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"vite": "^8.0.0-beta.18"
+	},
+	"peerDependencies": {
+		"vite": ">=8.0.0-beta.18 <9"
+	},
+	"peerDependenciesMeta": {
+		"vite": {
+			"optional": true
+		}
 	}
 }

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +9,8 @@ type PackageJson = {
 	exports?: unknown
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
+	peerDependencies?: Record<string, string>
+	peerDependenciesMeta?: Record<string, { optional?: boolean }>
 	inlinedDependencies?: Record<string, string>
 }
 
@@ -44,14 +47,32 @@ describe('toolchain package boundaries', () => {
 		const runtime = await readJson(`${root}/packages/runtime/package.json`)
 		const runtimeDynamic = await readJson(`${root}/packages/runtime-dynamic/package.json`)
 		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
+		const runtimeDev = await readJson(`${root}/packages/runtime-dev/package.json`)
 		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
 
 		expect(runtime.exports).not.toHaveProperty('./vite')
-		expect(runtimeDynamic.exports).not.toHaveProperty('./vite')
+		expect(existsSync(`${root}/packages/runtime/src/vite.ts`)).toBe(false)
+		expect(existsSync(`${root}/packages/runtime/src/services/runtime/shared/vite-environment.ts`)).toBe(
+			false,
+		)
+		expect(runtimeDynamic.exports).toHaveProperty('./vite')
+		expect(runtimeDynamic.exports).toHaveProperty('./hmr')
 		expect(runtimeStatic.exports).toHaveProperty('./vite')
+		expect(runtimeStatic.exports).not.toHaveProperty('./hmr')
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
+
+		for (const pkg of [runtimeDynamic, runtimeStatic, runtimeDev]) {
+			expect(pkg.dependencies).not.toHaveProperty('vite')
+			expect(pkg.devDependencies).toHaveProperty('vite')
+			expect(pkg.peerDependencies).toHaveProperty('vite', '>=8.0.0-beta.18 <9')
+			expect(pkg.peerDependenciesMeta?.vite?.optional).toBe(true)
+		}
+		for (const pkg of [runtimeDynamic, runtimeStatic]) {
+			expect(pkg.dependencies).not.toHaveProperty('@pluxel/runtime-dev')
+			expect(pkg.devDependencies).toHaveProperty('@pluxel/runtime-dev')
+		}
 	})
 
 	it('keeps plugin UI Module Federation build logic in the rolldown package', async () => {
@@ -103,7 +124,8 @@ describe('toolchain package boundaries', () => {
 
 		for (const file of cliFiles) {
 			const code = await readFile(file, 'utf8')
-			if (code.includes('../runtime/src/') || code.includes('../runtime-dynamic/src/')) offenders.push(file)
+			if (code.includes('../runtime/src/') || code.includes('../runtime-dynamic/src/'))
+				offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])
@@ -126,15 +148,20 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dynamic/src/hmr/engine/config.ts`,
 			'utf8',
 		)
+		const runtimeDynamicVite = await readFile(
+			`${root}/packages/runtime-dynamic/src/vite.ts`,
+			'utf8',
+		)
+		const runtimeDynamicPackage = await readFile(
+			`${root}/packages/runtime-dynamic/package.json`,
+			'utf8',
+		)
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
 		const staticDemoVite = await readFile(
 			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
 			'utf8',
 		)
-		const pluginsHostStatic = await readFile(
-			`${root}/packages/plugins/host/src/static.ts`,
-			'utf8',
-		)
+		const pluginsHostStatic = await readFile(`${root}/packages/plugins/host/src/static.ts`, 'utf8')
 		const staticCommercialHost = await readFile(
 			`${root}/packages/plugins/static-commercial-demo/src/static-host.ts`,
 			'utf8',
@@ -172,28 +199,65 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicHmrConfig).toContain('@pluxel/runtime-dev/vite')
 		expect(runtimeDynamicHmrConfig).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeDynamicHmrConfig).not.toContain('pluxelRuntimeDevVitePlugin')
-		expect(runtimeDynamicHmrConfig).not.toContain('runtimeUiBridge: false')
+		expect(runtimeDynamicHmrConfig).not.toContain(`runtime${'UiBridge'}: false`)
+		const runtimeDynamicHmr = await readFile(`${root}/packages/runtime-dynamic/src/hmr.ts`, 'utf8')
+		expect(runtimeDynamicHmr).not.toContain(`createLoader${'HmrHost'}`)
+		expect(runtimeDynamicHmr).not.toContain(`createLoader${'HmrHostFromSnapshot'}`)
+		expect(runtimeDynamicHmr).not.toContain(`installLoader${'Hmr'}`)
+		const runtimeDynamicHmrFiles = await readdir(`${root}/packages/runtime-dynamic/src/hmr`)
+		expect(runtimeDynamicHmrFiles.filter((file) => file.endsWith('-runtime.ts'))).toEqual([])
+		const runtimeDynamicHost = await readFile(
+			`${root}/packages/runtime-dynamic/src/hmr/host.ts`,
+			'utf8',
+		)
+		expect(runtimeDynamicHost).not.toContain(`attachLoader${'HmrRuntime'}`)
+		expect(runtimeDynamicHost).not.toContain(`configureLoader${'HmrRuntime'}`)
+		expect(runtimeDynamicHmr).not.toContain(`Loader${'HmrOptions'}`)
+		const runtimeStaticHmr = await readFile(`${root}/packages/runtime-static/src/hmr.ts`, 'utf8')
+		expect(runtimeStaticHmr).not.toContain(`installStatic${'RuntimeHmr'}`)
+		const runtimeDevIndex = await readFile(`${root}/packages/runtime-dev/src/index.ts`, 'utf8')
+		expect(runtimeDevIndex).not.toContain(`installExtension${'DevRuntime'}`)
+		expect(runtimeDynamicVite).toContain('@pluxel/runtime-dev/vite')
+		expect(runtimeDynamicVite).toContain('defineDynamicRuntimeConfig')
+		expect(runtimeDynamicVite).toContain('dynamicRuntimeVitePlugin')
+		expect(runtimeDynamicVite).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeDynamicVite).not.toContain('createServer(')
+		expect(runtimeDynamicPackage).toContain('"./vite"')
 		expect(runtimeStaticVite).toContain('@pluxel/runtime-dev/vite')
 		expect(runtimeStaticVite).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeStaticVite).toContain('pluxelRuntimeUiBridgeVitePlugin')
-		expect(runtimeStaticVite).toContain('staticRuntimeSourceVitePlugin')
-		expect(runtimeStaticVite).toContain('staticRuntimeUiBridgeVitePlugin')
+		expect(runtimeStaticVite).toContain('defineStaticRuntimeConfig')
+		expect(runtimeStaticVite).toContain('staticRuntimeVitePlugin')
+		expect(runtimeStaticVite).not.toContain(`export function shouldHandleStatic${'RuntimeRequest'}`)
+		expect(runtimeStaticVite).not.toContain(`StaticRuntime${'ViteHost'}`)
+		expect(runtimeStaticVite).not.toContain(`StaticRuntime${'ExtensionCompilerConfig'}`)
+		const removedStaticViteHelpers = [
+			`staticRuntime${'Source'}VitePlugin`,
+			`staticRuntime${'UiBridge'}VitePlugin`,
+			`staticRuntime${'Host'}VitePlugin`,
+		]
+		for (const helper of removedStaticViteHelpers) {
+			expect(runtimeStaticVite).not.toContain(helper)
+		}
 		expect(runtimeStaticVite).not.toContain('pluxelRuntimeDevVitePlugin')
-		expect(runtimeStaticVite).not.toContain('staticRuntimeVitePlugin')
-		expect(runtimeStaticVite).not.toContain('staticRuntimeVitePlugins')
-		expect(runtimeStaticVite).not.toContain('runtimeUiBridge')
+		expect(runtimeStaticVite).not.toContain(`staticRuntimeVite${'Plugins'}`)
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/plugins')
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/vite')
-		expect(staticDemoVite).toContain('staticRuntimeSourceVitePlugin')
-		expect(staticDemoVite).toContain('staticRuntimeUiBridgeVitePlugin')
-		expect(staticDemoVite).toContain('staticRuntimeHostVitePlugin')
-		expect(staticDemoVite).not.toContain('staticRuntimeVitePlugins')
+		expect(staticDemoVite).toContain('staticRuntimeVitePlugin')
+		for (const helper of removedStaticViteHelpers) {
+			expect(staticDemoVite).not.toContain(helper)
+		}
+		expect(staticDemoVite).not.toContain(`staticRuntimeVite${'Plugins'}`)
 		expect(staticDemoVite).not.toContain('runtimeUiBridge')
 		for (const staticHost of [pluginsHostStatic, staticCommercialHost]) {
 			expect(staticHost).toContain('runtimeState')
 			expect(staticHost).toContain('snapshot: { enabled:')
-			expect(staticHost).not.toContain('configService: {\n\t\t\tmode: \'memory\',\n\t\t\tsnapshot: { enabled:')
-			expect(staticHost).not.toContain('configService: {\n\t\tmode: \'memory\',\n\t\tsnapshot: { enabled:')
+			expect(staticHost).not.toContain(
+				"configService: {\n\t\t\tmode: 'memory',\n\t\t\tsnapshot: { enabled:",
+			)
+			expect(staticHost).not.toContain(
+				"configService: {\n\t\tmode: 'memory',\n\t\tsnapshot: { enabled:",
+			)
 		}
 	})
 

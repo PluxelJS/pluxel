@@ -1,30 +1,16 @@
 import { fileURLToPath } from 'node:url'
 import { gqlens } from '@gqlens/vite'
-import {
-	staticRuntimeHostVitePlugin,
-	staticRuntimeSourceVitePlugin,
-	staticRuntimeUiBridgeVitePlugin,
-} from '@pluxel/runtime-static/vite'
+import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { commercialGraphQLEndpoint } from './src/paths.ts'
 const graphQLPackageRoot = fileURLToPath(new URL('node_modules/graphql', import.meta.url))
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
-export default defineConfig(({ command }) => ({
+export default defineConfig({
 	appType: 'spa',
 	plugins: [
-		staticRuntimeSourceVitePlugin({ root: repoRoot }),
-		...(command === 'serve' ? [] : [staticRuntimeUiBridgeVitePlugin()]),
-		staticRuntimeHostVitePlugin({
-			name: 'pluxel-static-commercial-host',
-			async createHost() {
-				const staticHostModuleUrl = new URL('./src/static-host.ts', import.meta.url).href
-				const { createStaticCommercialRuntimeHost } = (await import(
-					/* @vite-ignore */ staticHostModuleUrl
-				)) as typeof import('./src/static-host')
-				return createStaticCommercialRuntimeHost()
-			},
+		staticRuntimeVitePlugin({
+			config: './src/pluxel.static.vite.ts',
 		}),
 		gqlens({
 			output: 'web/gqlens',
@@ -45,4 +31,4 @@ export default defineConfig(({ command }) => ({
 	optimizeDeps: {
 		exclude: ['graphql', 'graphql-yoga'],
 	},
-}))
+})

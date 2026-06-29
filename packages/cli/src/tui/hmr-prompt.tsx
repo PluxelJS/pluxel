@@ -18,9 +18,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { writeLoaderHmrDiscoveredIndex } from '../hmr/discovered-index'
 import { type PickPackagesDiscoveredPlugin, PickPackagesDualBrowser } from './pick-packages'
 
-type TabKey = 'packages' | 'paths' | 'doctor' | 'start'
+type TabKey = 'packages' | 'paths' | 'doctor' | 'snapshot'
 
-type PromptResult = { action: 'exit' } | { action: 'start'; snapshotJson: string }
+type PromptResult = { action: 'exit' }
 
 type ConfigScope = 'profile' | 'defaults'
 
@@ -68,13 +68,13 @@ function tabLabel(tab: TabKey) {
 			return 'Paths'
 		case 'doctor':
 			return 'Doctor'
-		case 'start':
-			return 'Start'
+		case 'snapshot':
+			return 'Snapshot'
 	}
 }
 
 function tabs(): TabKey[] {
-	return ['packages', 'paths', 'doctor', 'start']
+	return ['packages', 'paths', 'doctor', 'snapshot']
 }
 
 function TabBar(props: { tabs: TabKey[]; active: TabKey }) {
@@ -767,9 +767,10 @@ function LoaderHmrPromptApp(props: {
 				})
 				const discovered = discoverPluginsFromPackages(rootDirAbs, scanPackages)
 
-				const discoveredForUi = props.skipPackages.size > 0
-					? discovered.filter((p) => !props.skipPackages.has(p.name))
-					: discovered
+				const discoveredForUi =
+					props.skipPackages.size > 0
+						? discovered.filter((p) => !props.skipPackages.has(p.name))
+						: discovered
 
 				writeLoaderHmrDiscoveredIndex({
 					rootDir: rootDirAbs,
@@ -886,27 +887,6 @@ function LoaderHmrPromptApp(props: {
 		} catch (error) {
 			setToast(error instanceof Error ? error.message : String(error))
 		}
-	}
-
-	function startIfReady() {
-		if (snapshot.status !== 'ok') {
-			setToast('Start blocked: fix errors (see Doctor tab).')
-			setTab('doctor')
-			return
-		}
-		setModal({
-			kind: 'confirm',
-			title: 'Start loader HMR',
-			message: dirty ? 'Config is dirty. Start with current (unsaved) config state?' : 'Start now?',
-			confirmLabel: 'Start',
-			cancelLabel: 'Cancel',
-			defaultFocus: dirty ? 'cancel' : 'confirm',
-			onConfirm: () => {
-				setModal(null)
-				finish({ action: 'start', snapshotJson: JSON.stringify(snapshot.snapshot) })
-			},
-			onCancel: () => setModal(null),
-		})
 	}
 
 	// Global keybindings (disabled while modal is open).
@@ -1155,12 +1135,6 @@ function LoaderHmrPromptApp(props: {
 			!key.meta
 		) {
 			toggleRootsAuto()
-			return
-		}
-
-		// Start
-		if (key.return && tab === 'start') {
-			startIfReady()
 			return
 		}
 
@@ -1463,7 +1437,9 @@ function LoaderHmrPromptApp(props: {
 					setModal(null)
 					setCfg((prev) => {
 						const data = prev.profiles[act.from] ?? { enabled: [] }
-						const cloned = JSON.parse(JSON.stringify(data)) as PluxelLoaderHmrConfigV1['profiles'][string]
+						const cloned = JSON.parse(
+							JSON.stringify(data),
+						) as PluxelLoaderHmrConfigV1['profiles'][string]
 						return { ...prev, profiles: { ...prev.profiles, [name]: cloned } }
 					})
 					setDirty(true)
@@ -1513,9 +1489,10 @@ function LoaderHmrPromptApp(props: {
 	}
 
 	const profilePos = Math.max(profileNames.indexOf(activeProfile), 0) + 1
-	const profileBadge = profileNames.length > 0
-		? `${activeProfile} (${profilePos}/${profileNames.length})`
-		: activeProfile
+	const profileBadge =
+		profileNames.length > 0
+			? `${activeProfile} (${profilePos}/${profileNames.length})`
+			: activeProfile
 	const enabledCount = (profile.enabled ?? []).length
 	const builtinCount = (profile.builtin ?? []).length
 	const scanInfo =
@@ -1664,12 +1641,10 @@ function LoaderHmrPromptApp(props: {
 					</Box>
 				) : null}
 
-				{tab === 'start' ? (
+				{tab === 'snapshot' ? (
 					<Box flexDirection="column" width="100%">
-						<Text>Start</Text>
-						<Text color="gray">
-							Enter start • Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • q/Ctrl+C exit
-						</Text>
+						<Text>Snapshot</Text>
+						<Text color="gray">Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • q/Ctrl+C exit</Text>
 						<Text>enabled: {enabledPreview}</Text>
 						<Text>builtin: {builtinPreview}</Text>
 						<Text>
@@ -1895,24 +1870,21 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	const tabLine =
 		props.tab === 'packages' ? (
 			<Text color="gray">
-				<HelpKey>Enter/Space</HelpKey> toggle • <HelpKey>j/k</HelpKey> move •{' '}
-				<HelpKey>/</HelpKey> filter • <HelpKey>e</HelpKey> mode •{' '}
-				<HelpKey>Tab(hold)</HelpKey> profiles • <HelpKey>Ctrl+P</HelpKey> profiles
+				<HelpKey>Enter/Space</HelpKey> toggle • <HelpKey>j/k</HelpKey> move • <HelpKey>/</HelpKey>{' '}
+				filter • <HelpKey>e</HelpKey> mode • <HelpKey>Tab(hold)</HelpKey> profiles •{' '}
+				<HelpKey>Ctrl+P</HelpKey> profiles
 			</Text>
 		) : props.tab === 'paths' ? (
 			<Text color="gray">
 				<HelpKey>Tab/Shift+Tab</HelpKey> section • <HelpKey>r/i/x</HelpKey> focus •{' '}
-				<HelpKey>s</HelpKey> scope • <HelpKey>t</HelpKey> roots auto •{' '}
-				<HelpKey>Enter</HelpKey> edit
+				<HelpKey>s</HelpKey> scope • <HelpKey>t</HelpKey> roots auto • <HelpKey>Enter</HelpKey> edit
 			</Text>
 		) : props.tab === 'doctor' ? (
 			<Text color="gray">
 				<HelpKey>↑/↓</HelpKey> scroll • <HelpKey>d</HelpKey> details
 			</Text>
 		) : (
-			<Text color="gray">
-				<HelpKey>Enter</HelpKey> start • blocked → check Doctor
-			</Text>
+			<Text color="gray">Snapshot summary • blocked → check Doctor</Text>
 		)
 
 	return (
@@ -1985,7 +1957,7 @@ export async function runLoaderHmrPromptTui(params: {
 	}
 
 	const defaultInitialOpen: InitialOpen | undefined = (() => {
-		// First-time setup: prompt user to pick packages instead of a blank start screen.
+		// First-time setup: prompt user to pick packages instead of a blank snapshot screen.
 		if (!existsSync(params.configPath)) return { kind: 'packages', mode: 'enabled' }
 		return undefined
 	})()

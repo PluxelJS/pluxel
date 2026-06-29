@@ -2,71 +2,59 @@
 
 Dynamic runtime route for workspace-driven plugin loading.
 
-Static and dynamic routes should keep plugin author behavior aligned, but their HMR orchestration
-is intentionally different. Dynamic owns loader HMR: it discovers workspace plugins, tracks source
-entries, evaluates changed modules, and can add or remove plugins while the host is running.
+Dynamic owns workspace diagnose, source execution, watch batching, module replacement, package
+state, and dynamic commits. Vite ownership stays with the host app.
 
-## Responsibility
+## Public Entry
 
-`runtime-dynamic` owns:
-
-- workspace scan, profile resolution, and enabled entry snapshots
-- package install, package state, and dynamic plugin loading
-- Vite-backed loader HMR and module runtime adapter
-- `executeFiles`, batch stability APIs, and dynamic commit tracking
-- Tinypool worker watching for plugin workers
-- installation of source UI runtime handles during loader HMR startup
-
-It reuses private `@pluxel/runtime-dev` development pieces by inlining them at build time. Shared
-source semantics and UI remote compilation stay aligned with static while the dynamic loader model
-stays local to this package.
-
-## Vite Model
-
-Dynamic HMR owns a dedicated Vite dev server because it needs Vite's module runner, watcher, SSR
-environment, source transforms, and browser UI server as one lifecycle. Callers do not install a
-`@pluxel/runtime-dynamic/vite` plugin into an existing Vite server.
-
-Instead, hosts pass Vite config into the loader HMR host:
+Use one config function and one Vite plugin:
 
 ```ts
-import { createLoaderHmrHost, defineLoaderHmrConfig } from '@pluxel/runtime-dynamic/hmr'
+// vite.config.ts
+import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
+import { defineConfig } from 'vite'
 
-const host = await createLoaderHmrHost({
-	config: defineLoaderHmrConfig({
-		root,
-		configPath: 'pluxel.loader.hmr.jsonc',
-		profile: 'dev',
-		vite: {
-			plugins: [/* host-owned Vite plugins */],
-		},
-	}),
+export default defineConfig({
+	plugins: [
+		dynamicRuntimeVitePlugin({
+			config: './pluxel.dynamic.ts',
+		}),
+	],
 })
-
-await host.start()
 ```
 
-The internal Vite config composes route-neutral Pluxel source semantics from
-`@pluxel/runtime-dev/vite`; dynamic adds only loader-specific runner, HTTP, watch, and execution
-plugins.
+```ts
+// pluxel.dynamic.ts
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
 
-## Development UI Remotes
+export default defineDynamicRuntimeConfig({
+	root: process.cwd(),
+	configPath: 'pluxel.loader.hmr.jsonc',
+	profile: 'dev',
+	logsDir: 'logs',
+})
+```
 
-During `installLoaderHmr(...)`, dynamic route:
+Runtime config does not accept nested Vite config. Add React, GraphQL, macros, aliases, and other
+Vite settings to the host `vite.config.ts`.
 
-- starts the loader HMR service
-- installs the module runtime adapter
-- enables runtime HTTP UI assets with `uiAssets: 'hmr-server'`
-- enables the runtime extension service
-- installs source UI handles backed by the shared compiler
+## HMR Internals
 
-The compiler calls `@pluxel/rolldown/vite/plugin-ui` for web Module Federation remote builds.
-Dynamic does not own the MF build implementation.
+`@pluxel/runtime-dynamic/hmr` contains internal and CLI-facing workspace diagnose, snapshot, and
+loader HMR primitives. Application hosts should prefer `@pluxel/runtime-dynamic/vite`.
+
+During startup the dynamic route:
+
+- diagnoses the workspace profile into a snapshot
+- creates the runtime `Context`
+- wires loader HMR to the host `ViteDevServer`
+- wires the module runtime adapter and source UI handles
+- executes startup entries and feeds source changes through the debounced loader batch
 
 ## Packaging
 
-`@pluxel/runtime-dev` is a private workspace package and is inlined into this package's HMR chunk.
-Published output must not import `@pluxel/runtime-dev`.
+`@pluxel/runtime-dev` is private and inlined into this package's Vite/HMR output. Published output
+must not import `@pluxel/runtime-dev`.
 
 `@pluxel/rolldown`, `vite`, and runtime kernel packages stay external. Native toolchain packages
 must not be bundled into generated runtime-dynamic output.

@@ -52,7 +52,7 @@ module id
 
 ## 固定插件路线：runtime-static route
 
-runtime-static route 是当前已实现的第二条 runtime 路线。它消费 `defineStaticRuntime({ plugins: [...] })` 产出的 fixed catalog，不做 workspace scan、package install、dynamic module registry 或 loader batch。static HMR 入口归 `@pluxel/runtime-static/hmr`：外部 Vite SSR import 重新得到 definition 后，static route 按 plugin name diff catalog，再对受影响且 enabled 的插件提交 core lifecycle 计划。
+runtime-static route 是当前已实现的第二条 runtime 路线。它消费 `defineStaticRuntime({ plugins: [...] })` 产出的 fixed catalog，不做 workspace scan、package install、dynamic module registry 或 loader batch。static HMR 由 `@pluxel/runtime-static/vite` route 内部拥有：Vite SSR import 重新得到 definition 后，static route 按 plugin name diff catalog，再对受影响且 enabled 的插件提交 core lifecycle 计划。
 
 两条路线的隔离方式是：
 
@@ -103,4 +103,4 @@ runtime 内部控制面使用明确的 usecase + RPC method。当前不提供 MC
 core <- runtime common <- runtime-dynamic <- cli
 ```
 
-runtime 依赖 core 来提交生命周期。loader route 依赖 runtime common 的配置、catalog 契约和宿主服务，并提供 scan/package/dynamic module 能力。loader HMR mode 安装到已有 runtime `Context`，并显式注册 loader route。runtime 不应该 import `@pluxel/runtime-dynamic/hmr`；loader HMR 不应该重新定义 runtime 协议。
+runtime 依赖 core 来提交生命周期。loader route 依赖 runtime common 的配置、catalog 契约和宿主服务，并提供 scan/package/dynamic module 能力。loader HMR mode 是 dynamic Vite route 的内部 runtime wiring，并显式注册 loader route。runtime 不应该 import `@pluxel/runtime-dynamic/hmr`；loader HMR 不应该重新定义 runtime 协议。

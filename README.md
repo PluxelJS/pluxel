@@ -27,8 +27,8 @@ pnpm plugin-host:static
 
 - `@pluxel/core`：最小稳定内核（Context/DI/插件生命周期与基础 services 合约）
 - `@pluxel/runtime`：生产 runtime kernel（services + 稳定协议/路由 + web SDK + frozen）
-- `@pluxel/runtime-dynamic`：动态插件路线；`/hmr` 内置 Vite + watch + runner + HMR
-- `@pluxel/runtime-static`：固定插件路线；承载 fixed catalog startup、startup/change report 与轻量 static HMR
+- `@pluxel/runtime-dynamic`：动态插件路线；`/vite` 提供 host-owned Vite route，`/hmr` 保留内部 workspace/HMR primitives
+- `@pluxel/runtime-static`：固定插件路线；`/vite` 提供 static route，承载 fixed catalog startup、startup/change report 与轻量 static HMR
 - `@pluxel/cli`：命令行入口（build/scaffold/hmr）
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/plugins/*`：workspace 内置插件与宿主样例（internal；不属于发布包集合）

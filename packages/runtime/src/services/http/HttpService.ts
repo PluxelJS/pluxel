@@ -139,6 +139,7 @@ export class HttpService {
 		new Response('HTTP runtime unavailable', { status: 503 })
 	private uiPublicHandler: UiPublicAssetHandler | null | undefined = undefined
 
+	private readonly hostCtx: PluxelContext
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private sseBuiltinsReady = false
@@ -148,7 +149,8 @@ export class HttpService {
 		public ctx: PluxelContext,
 		config: HttpServiceConfig = {},
 	) {
-		this.logger = ctx.logger!
+		this.hostCtx = ctx.root
+		this.logger = this.hostCtx.logger!
 		this.config = {
 			controlPlane: {
 				web: config.controlPlane?.web !== false,
@@ -158,7 +160,7 @@ export class HttpService {
 			uiAssets: config.uiAssets ?? 'static-built',
 			uiPublicDir: config.uiPublicDir ?? '',
 		}
-		this.host.routes((app) => createVerificationRoutes(this.ctx, app), {
+		this.mountHostRoutes((app) => createVerificationRoutes(this.hostCtx, app), {
 			id: 'pluxel:verification',
 			path: VERIFICATION_PAGE_PATH,
 			app: {
@@ -172,8 +174,8 @@ export class HttpService {
 			this.config.controlPlane.rpc ||
 			this.config.controlPlane.sse
 		) {
-			this.host.routes(
-				createInternalApiRoutes(this.ctx, {
+			this.mountHostRoutes(
+				createInternalApiRoutes(this.hostCtx, {
 					web: this.config.controlPlane.web,
 					rpc: this.config.controlPlane.rpc,
 					sse: this.config.controlPlane.sse,
@@ -231,8 +233,9 @@ export class HttpService {
 	}
 
 	get plugin() {
-		const pluginId = this.requirePluginId()
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(options)
+		const pluginCtx = this.ctx
+		const pluginId = this.requirePluginId(pluginCtx)
+		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
 		return {
 			id: pluginId,
 			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees so
@@ -241,14 +244,14 @@ export class HttpService {
 			app: elysia,
 			base: (path = '/') => this.resolvePluginBase(pluginId, path),
 			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginId, build, options),
+				this.mountPluginRoutes(pluginCtx, pluginId, build, options),
 			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginId, boundary, options),
+				this.mountPluginBoundary(pluginCtx, pluginId, boundary, options),
 		}
 	}
 
 	get host() {
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(options)
+		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(this.hostCtx, options)
 		return {
 			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees.
 			elysia,
@@ -260,7 +263,7 @@ export class HttpService {
 	}
 
 	private mountHostBoundary(spec: HostHttpMountSpec): HttpBoundaryHandle {
-		return this.mountAtPath({
+		return this.mountAtPath(this.hostCtx, {
 			id: spec.id,
 			base: spec.path,
 			boundary: spec.boundary,
@@ -268,28 +271,35 @@ export class HttpService {
 	}
 
 	private mountPluginBoundary(
+		pluginCtx: PluxelContext,
 		pluginId: string,
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
 		const path = normalizePluginPath(options.path)
 		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path)
-		return this.mountHostBoundary({
+		return this.mountAtPath(pluginCtx, {
 			id: routeId,
-			path: this.resolvePluginBase(pluginId, path),
+			base: this.resolvePluginBase(pluginId, path),
 			boundary,
 		})
 	}
 
 	private mountPluginRoutes(
+		pluginCtx: PluxelContext,
 		pluginId: string,
 		build: ElysiaBoundaryBuilder,
 		options: PluginHttpMountOptions = {},
 	): ElysiaRouteHandle {
 		const { app: appOptions, ...mountOptions } = options
 		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(appOptions))
-		const handle = this.mountPluginBoundary(pluginId, createBoundary(build), mountOptions)
+			nextBuild(this.createApp(pluginCtx, appOptions))
+		const handle = this.mountPluginBoundary(
+			pluginCtx,
+			pluginId,
+			createBoundary(build),
+			mountOptions,
+		)
 
 		return {
 			...handle,
@@ -303,7 +313,7 @@ export class HttpService {
 	): ElysiaRouteHandle {
 		const { app: appOptions, ...mountSpec } = options
 		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(appOptions))
+			nextBuild(this.createApp(this.hostCtx, appOptions))
 		const handle = this.mountHostBoundary({
 			...mountSpec,
 			boundary: createBoundary(build),
@@ -315,7 +325,7 @@ export class HttpService {
 		}
 	}
 
-	private mountAtPath(spec: MountedBoundarySpec): HttpBoundaryHandle {
+	private mountAtPath(ownerCtx: PluxelContext, spec: MountedBoundarySpec): HttpBoundaryHandle {
 		const slot = this.upsertMounted(spec)
 		const dispose = () => {
 			if (this.mounted.delete(slot.id)) {
@@ -324,7 +334,7 @@ export class HttpService {
 				this.requestFullReload()
 			}
 		}
-		const guard = this.ctx.effects.defer(dispose)
+		const guard = ownerCtx.effects.defer(dispose)
 
 		return {
 			replace: (boundary) => {
@@ -350,7 +360,7 @@ export class HttpService {
 	}
 
 	private rebuildRootApp() {
-		const root = createElysiaApp(this.ctx, {
+		const root = createElysiaApp(this.hostCtx, {
 			aot: true,
 			name: 'pluxel.http.root',
 		})
@@ -392,18 +402,18 @@ export class HttpService {
 			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
 		]
 
-		for (const dispose of disposers) this.ctx.effects.defer(dispose)
+		for (const dispose of disposers) this.hostCtx.effects.defer(dispose)
 	}
 
 	private registerBuiltinSse(
 		namespace: string,
 		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
-		return this.ctx.ext.sse.expose(() => handler, { namespace })
+		return this.hostCtx.ext.sse.expose(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = this.ctx.ext.ui
+		const service = this.hostCtx.ext.ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return undefined
@@ -424,7 +434,7 @@ export class HttpService {
 		method: string,
 		kind: VerificationBlockedKind,
 	): Promise<Response | undefined> {
-		const state = await this.ctx.root.verification.authorize({
+		const state = await this.hostCtx.root.verification.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,
@@ -548,7 +558,7 @@ export class HttpService {
 
 	private wrapMountedPlugin(id: string, base: string, boundary: BaseElysiaApp): BaseElysiaApp {
 		const prefix = base === '/' ? undefined : base
-		return createElysiaApp(this.ctx, {
+		return createElysiaApp(this.hostCtx, {
 			aot: true,
 			name: `pluxel.http.boundary.${id}`,
 			prefix,
@@ -564,8 +574,8 @@ export class HttpService {
 		return boundary instanceof Elysia
 	}
 
-	private requirePluginId(): string {
-		const pluginId = String(this.ctx.pluginInfo?.id ?? '').trim()
+	private requirePluginId(ctx: PluxelContext): string {
+		const pluginId = String(ctx.pluginInfo?.id ?? '').trim()
 		if (!pluginId) throw new Error('Plugin-scoped HTTP routes require ctx.pluginInfo.id')
 		return pluginId
 	}
@@ -590,8 +600,8 @@ export class HttpService {
 		this.mountedIndex = [...this.mounted.values()].sort((a, b) => b.base.length - a.base.length)
 	}
 
-	private createApp(options?: CreateElysiaAppOptions) {
-		return createElysiaApp(this.ctx, options)
+	private createApp(ctx: PluxelContext, options?: CreateElysiaAppOptions) {
+		return createElysiaApp(ctx, options)
 	}
 
 	private async createRenderer(): Promise<RenderHandler> {

@@ -9,6 +9,26 @@ import {
 import { isServerConsumerEnvironment } from '@pluxel/rolldown/vite'
 import { perEnvironmentPlugin, type Plugin, type PluginOption } from 'vite'
 
+const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
+	'@pluxel/source',
+	'node',
+	'import',
+	'module',
+	'browser',
+	'development',
+	'production',
+	'default',
+] as const
+
+const PLUXEL_SINGLETON_PACKAGES = [
+	'@pluxel/context',
+	'@pluxel/core',
+	'@pluxel/runtime',
+	'@pluxel/runtime-dev',
+	'@pluxel/runtime-dynamic',
+	'@pluxel/runtime-static',
+] as const
+
 export type PluxelRuntimeSourceVitePluginOptions = {
 	/**
 	 * Vite plugin name for Pluxel source/server semantics.
@@ -53,6 +73,30 @@ export function pluxelRuntimeSourceVitePlugin(
 		// extraction runs only in server-like Vite environments.
 		config() {
 			return {
+				resolve: {
+					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+					externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+					dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+					preserveSymlinks: false,
+				},
+				environments: {
+					ssr: {
+						resolve: {
+							conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+							externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+							dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+							preserveSymlinks: false,
+						},
+					},
+				},
+				ssr: {
+					resolve: {
+						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+						externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+						dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+						preserveSymlinks: false,
+					},
+				},
 				oxc: {
 					decorator: {
 						legacy: true,

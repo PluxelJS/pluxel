@@ -1,19 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { getHmrRuntimeHandles } from '@pluxel/runtime/internal'
 import {
 	createStaticRuntimeHost,
 	defineStaticRuntime,
 	type StaticRuntimeHost,
 	type StaticRuntimePluginStatus,
 } from '@pluxel/runtime-static'
-import { installStaticRuntimeHmr, reloadStaticRuntime } from '@pluxel/runtime-static/hmr'
-import {
-	shouldHandleStaticRuntimeRequest,
-	staticRuntimeHostVitePlugin,
-} from '@pluxel/runtime-static/vite'
+import { defineStaticRuntimeConfig, staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+
+import { reloadStaticRuntime } from '../src/hmr'
 
 function statuses(host: StaticRuntimeHost): Record<string, StaticRuntimePluginStatus> {
 	const out: Record<string, StaticRuntimePluginStatus> = {}
@@ -72,102 +69,24 @@ class DisabledHotV2 extends BasePlugin {
 }
 
 describe('@pluxel/runtime-static', () => {
-	it('matches static host requests without stealing Vite module assets', () => {
-		expect(
-			shouldHandleStaticRuntimeRequest({
-				url: '/__pluxel/plugins/Demo/graphql',
-				method: 'POST',
-				headers: {},
-			} as never),
-		).toBe(true)
-		expect(
-			shouldHandleStaticRuntimeRequest({
-				url: '/commercial',
-				method: 'GET',
-				headers: { accept: 'text/html' },
-			} as never),
-		).toBe(true)
-		expect(
-			shouldHandleStaticRuntimeRequest({
-				url: '/@vite/client',
-				method: 'GET',
-				headers: { accept: '*/*' },
-			} as never),
-		).toBe(false)
-		expect(
-			shouldHandleStaticRuntimeRequest({
-				url: '/web/client/main.tsx',
-				method: 'GET',
-				headers: { accept: '*/*' },
-			} as never),
-		).toBe(false)
-	})
-
-	it('starts and stops a static host through the Vite helper', async () => {
-		let close: (() => void) | undefined
-		const host = {
-			definition: { name: 'vite-static-test' },
-			ctx: {
-				logger: { info: vi.fn() },
-				http: { fetch: vi.fn() },
-			},
-			start: vi.fn(async () => ({
-				runtime: 'vite-static-test',
-				entries: [{ name: 'DemoPlugin', status: 'started' }],
-			})),
-			stop: vi.fn(async () => {}),
-		} as unknown as StaticRuntimeHost
-		const server = {
-			httpServer: {
-				once: vi.fn((_event: string, callback: () => void) => {
-					close = callback
-				}),
-			},
-			middlewares: { use: vi.fn() },
-		}
-
-		const plugin = staticRuntimeHostVitePlugin({
-			hmr: false,
-			createHost: async () => host,
+	it('exposes a marked static runtime config and a single route plugin entry', () => {
+		const config = defineStaticRuntimeConfig({
+			name: 'static-vite-config-test',
+			plugins: [],
+			runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 		})
-		const installMiddleware = await (
-			plugin as unknown as {
-				configureServer(input: typeof server): Promise<() => void>
-			}
-		).configureServer(server)
-		installMiddleware()
-		close?.()
+		const plugins = staticRuntimeVitePlugin({ config: './pluxel.static.ts' }) as Array<{
+			name?: string
+			apply?: unknown
+		}>
 
-		expect(host.start).toHaveBeenCalledOnce()
-		expect(server.middlewares.use).toHaveBeenCalledOnce()
-		expect(host.stop).toHaveBeenCalledOnce()
-		expect(host.ctx.logger.info).toHaveBeenCalledWith('Static runtime Vite host ready', {
-			runtime: 'vite-static-test',
-			startup: ['DemoPlugin:started'],
-		})
-	})
-
-	it('installs route-neutral development handles for source UI remotes', async () => {
-		const host = await createStaticRuntimeHost(
-			defineStaticRuntime({ name: 'static-hmr-test', plugins: [] }),
-			{
-				configService: { mode: 'memory' },
-				context: {
-					http: { uiAssets: 'disabled' },
-					extensionService: { enabled: false },
-				},
-			},
-		)
-		try {
-			installStaticRuntimeHmr({ host })
-
-			expect(host.ctx.config.http?.uiAssets).toBe('hmr-server')
-			expect(host.ctx.config.extensionService?.enabled).toBe(true)
-			expect(getHmrRuntimeHandles(host.ctx)?.extensions?.bindUiSource).toBeTypeOf('function')
-			expect(() => installStaticRuntimeHmr({ host })).toThrow(/already installed/i)
-		} finally {
-			await host.stop()
-		}
+		expect(Object.keys(config)).toEqual(['name', 'plugins', 'runtimeState'])
+		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'pluxel:static-runtime-source',
+			'pluxel-runtime-ui-bridge',
+			'pluxel:static-runtime',
+		])
+		expect(plugins[2]?.apply).toBe('serve')
 	})
 
 	it('starts only plugins enabled by runtime config and reports unknown config entries', async () => {

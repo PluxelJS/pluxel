@@ -13,10 +13,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./hmr": {
-			"@pluxel/source": "./src/hmr.ts",
-			"default": "./dist/hmr.mjs"
-		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -26,7 +22,6 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./hmr": "./dist/hmr.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}

@@ -5,7 +5,7 @@
 It combines:
 
 - `@pluxel/runtime-static` fixed catalog as the backend driver
-- `staticRuntimeHostVitePlugin(...)` mounting that backend into the host Vite dev server
+- `staticRuntimeVitePlugin(...)` mounting that backend into the host Vite dev server
 - `CommercialDataPlugin` providing a reusable Drizzle + libSQL business data capability
 - `StaticCommercialPlugin` mounting `graphql-yoga` through `this.ctx.http.plugin.routes(...)`
 - `@gqloom/core` + `@gqloom/valibot` for code-first backend schema and resolvers
@@ -46,7 +46,7 @@ The browser talks to one Vite origin. Vite serves frontend modules, while Pluxel
 
 ```text
 Vite /__pluxel/plugins/StaticCommercialPlugin/graphql
-  -> staticRuntimeHostVitePlugin(...)
+  -> staticRuntimeVitePlugin(...)
   -> @pluxel/runtime-static host
   -> CommercialDataPlugin
   -> StaticCommercialPlugin
@@ -55,7 +55,7 @@ Vite /__pluxel/plugins/StaticCommercialPlugin/graphql
 ```
 
 The demo-specific host factory only creates the static runtime host. Vite lifecycle, HMR source UI
-installation, request forwarding, and shutdown are delegated to `@pluxel/runtime-static/vite`.
+wiring, request forwarding, and shutdown are delegated to `@pluxel/runtime-static/vite`.
 
 The standalone static host can also be started without Vite:
 

@@ -279,6 +279,7 @@ type HmrBatchWaiter = {
 export class LoaderHmrService {
 	public vite!: ViteDevServer
 	private startPromise?: Promise<void>
+	private ownsViteServer = false
 	private readonly serverConfigured: Promise<void>
 	private serverConfiguredResolve: () => void = () => {}
 	private serverConfiguredReject: (error: unknown) => void = () => {}
@@ -321,6 +322,7 @@ export class LoaderHmrService {
 	private warmupPromise?: Promise<void>
 
 	private debouncer!: BatchDebouncer
+	private readonly watcherDisposers: Array<() => void> = []
 
 	private readonly dbg: {
 		modules: LogtapeLogger
@@ -436,6 +438,21 @@ export class LoaderHmrService {
 		return this.path.toClean(id)
 	}
 
+	public get vitePlugin(): Plugin {
+		return this.plugin
+	}
+
+	public async attachServer(server: ViteDevServer): Promise<void> {
+		if (this.vite) {
+			if (this.vite !== server) {
+				throw new Error('[hmr] LoaderHmrService is already attached to a different Vite server')
+			}
+			await this.serverConfigured
+			return
+		}
+		await this.configureServer(server)
+	}
+
 	public moduleIdAliases(id: string): string[] {
 		return this.path.variants(id)
 	}
@@ -514,11 +531,22 @@ export class LoaderHmrService {
 	public async close(): Promise<void> {
 		const server = (this as unknown as { vite?: ViteDevServer }).vite
 		if (!server) return
-		await server.close().catch((): undefined => undefined)
+		for (const dispose of this.watcherDisposers.splice(0)) dispose()
+		if (this.ownsViteServer) await server.close().catch((): undefined => undefined)
 		this.startPromise = undefined
 	}
 
 	private async startImpl(): Promise<void> {
+		if (this.vite) {
+			await this.ensureBaseline()
+			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
+			void this.logOperationalReport('startup').catch((error) => {
+				this.ctx.logger.warn('HMR report failed', { error })
+			})
+			if (this.shouldAutoWarmup()) this.startWarmup()
+			return
+		}
+
 		const serverFsAllow = resolveFsAllowList({
 			cwd: this.cwd,
 			cwdNormalized: this.env.paths.cwdNormalizedPath,
@@ -561,6 +589,7 @@ export class LoaderHmrService {
 			cacheDir: this.config.viteCacheDir,
 		})
 		const server = await createServer(serverConfig)
+		this.ownsViteServer = true
 		// Bind server shutdown to host lifetime (CLI agent runs call `ctx.effects.dispose()`).
 		this.ctx.effects.defer(() => server.close().catch((): undefined => undefined), {
 			tag: 'LoaderHmrService.viteServer',
@@ -968,9 +997,15 @@ export class LoaderHmrService {
 	}
 
 	private registerWatchers(server: ViteDevServer) {
-		server.watcher.on('change', (file) => this.enqueueFileChange(file))
-		server.watcher.on('add', (file) => this.enqueueFileChange(file))
-		server.watcher.on('unlink', (file) => this.enqueueFileChange(file))
+		const events = ['change', 'add', 'unlink'] as const
+		for (const event of events) {
+			const listener = (file: string) => this.enqueueFileChange(file)
+			server.watcher.on(event, listener)
+			this.watcherDisposers.push(() => server.watcher.off(event, listener))
+		}
+		this.ctx.effects.defer(() => {
+			for (const dispose of this.watcherDisposers.splice(0)) dispose()
+		})
 	}
 
 	private enqueueFileChange(file: string) {

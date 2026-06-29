@@ -16,7 +16,7 @@
 
 - core host-free。
 - runtime 不依赖 runtime-dynamic。
-- loader HMR mode 安装到已有 runtime `Context`。
+- loader HMR mode 只作为 dynamic Vite route 的内部 runtime wiring。
 - build 只做 build-time metadata/rewrite/lint。
 - config persistence 不进入 core。
 

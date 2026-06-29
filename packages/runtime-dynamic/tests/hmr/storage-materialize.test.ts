@@ -1,10 +1,10 @@
-import { resolve } from 'pathe'
 import { createFixture } from '@pluxel/test/fixtures'
+import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
 import { materializeProfiledFile } from '../../src/hmr/host/storage'
 
-describe('hmr host storage helpers', () => {
+describe('loader HMR storage helpers', () => {
 	it('materializes profiled storage files, including seed fallback', async () => {
 		await using fixture = await createFixture({
 			'.pluxel/loader-hmr/config.json': '{"seed":true}\n',

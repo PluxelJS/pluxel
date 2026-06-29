@@ -35,7 +35,7 @@ pluxel new
 对插件前端来说，CLI 主要负责两件事：
 
 - `pluxel hmr`
-  启动 `@pluxel/runtime-dynamic/hmr` host，让 `ui(...).bind(ctx)` 这类 authoring bridge 在开发期生效
+  提供 loader HMR workspace profile 的诊断、TUI 编辑和辅助索引
 - `pluxel build`
   走 `@pluxel/rolldown` 的默认 overlay，把 authoring/hmr 语义降成 runtime 可消费的产物
 
@@ -46,7 +46,7 @@ pluxel new
 可以把 CLI 当成一个很薄的 orchestration layer：
 
 - `pluxel hmr`
-  组装 `@pluxel/runtime-dynamic/hmr`
+  组装 `@pluxel/runtime-dynamic/hmr` 的 workspace diagnose/profile 工具
 - `pluxel build`
   组装 `@pluxel/rolldown` + 相关 build helper
 - `pluxel new`
@@ -66,13 +66,13 @@ CLI 不拥有 loader HMR 的发现和路径规则。
 - plugin discovery
 - dependency closure / `watchRoots`
 - `LoaderHmrWorkspace` snapshot build
-- host create/install
+- dynamic route 启动所需的内部 boot plan
 
 归 CLI：
 
 - 参数解析
 - TUI 编辑
 - 输出 `pluxel.loader.hmr.discovered.jsonc` 这类辅助索引
-- 调用 runtime-dynamic 的 headless API 后启动 host
+- 调用 runtime-dynamic 的 headless API 生成/诊断 profile 数据
 
 这样 `pluxel hmr` 可以保持用户入口集中在 CLI，但 monorepo HMR、路径归一化和 workspace discovery 的正确性仍由 runtime-dynamic 这个领域包负责。

@@ -82,45 +82,58 @@ runtime 永远不应该回头理解 source `entryPath`。
 
 ## Vite 配置
 
-Loader HMR 的 programmatic 入口直接接收 Vite `InlineConfig`。这让 GQLens、React、macro、GraphQL codegen 这类已有 Vite 插件可以按用户熟悉的方式接入：
+Dynamic HMR 由宿主 `vite.config.ts` 拥有唯一 Vite server。GQLens、React、macro、
+GraphQL codegen 这类已有 Vite 插件直接写在宿主 Vite config；Pluxel 只挂 dynamic route plugin：
 
 ```ts
 import react from '@vitejs/plugin-react'
 import { gqlens } from '@gqlens/vite'
-import { defineLoaderHmrConfig } from '@pluxel/runtime-dynamic/hmr'
+import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
+import { defineConfig } from 'vite'
 
-export default defineLoaderHmrConfig({
+export default defineConfig({
 	root: import.meta.dirname,
-	configPath: 'pluxel.loader.hmr.jsonc',
-	vite: {
-		plugins: [
-			gqlens({
-				entry: '/src/graphql-entry.ts',
-				output: 'src/gqlens',
-				endpoint: '/graphql',
-				framework: 'react',
-			}),
-			react(),
-		],
-		resolve: {
-			alias: {
-				'@generated/graphql': '/absolute/path/to/generated/graphql.ts',
-			},
+	plugins: [
+		dynamicRuntimeVitePlugin({ config: './pluxel.dynamic.ts' }),
+		gqlens({
+			entry: '/src/graphql-entry.ts',
+			output: 'src/gqlens',
+			endpoint: '/graphql',
+			framework: 'react',
+		}),
+		react(),
+	],
+	resolve: {
+		alias: {
+			'@generated/graphql': '/absolute/path/to/generated/graphql.ts',
 		},
 	},
 })
 ```
 
-这份 `vite` 配置会合并进 dynamic HMR server；插件 UI remote build 也会复用同一份配置。Pluxel 先生成 runner、config-source、HTTP bridge、Paraglide、Module Federation remote 和 remote output 等内部基线，再把用户 Vite config 作为最后一层 merge。
+Dynamic route config 只描述 workspace/profile/runtime 语义，不再嵌套 Vite config：
+
+```ts
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
+
+export default defineDynamicRuntimeConfig({
+	root: process.cwd(),
+	configPath: 'pluxel.loader.hmr.jsonc',
+	profile: 'dev',
+})
+```
+
+Pluxel 在宿主 Vite server 内挂载 runner、config-source、HTTP bridge、watch 和 module
+replacement。普通 Vite 插件仍由宿主 Vite config 排序和配置。
 
 需要谨慎对待的字段：
 
 - `plugins`：可以正常追加；如果插件假设自己运行在普通 app dev server，要确认它不会拦截 Pluxel HMR 内部请求。
-- `server` / `preview` / `appType`：会影响 HMR server 行为，改错会直接破坏开发宿主。
+- `server` / `preview` / `appType`：仍属于宿主 Vite 配置，会影响开发宿主行为。
 - `resolve` / `ssr` / `environments`：会影响 runner singleton、workspace source condition 和 linked package 去重。
 - `build` / `worker`：会影响插件 UI remote build；覆盖 `outDir`、`rollupOptions.input`、MF remote 相关输出会导致 runtime 找不到 remote artifact。
 
-原则是：API 放开为标准 Vite config；配置错误导致 HMR 或 remote build 不正确，由配置方负责。
+原则是：Vite 配置入口只在宿主 `vite.config.ts`；配置错误导致 HMR 或 remote build 不正确，由配置方负责。
 
 ## MF2 在 Loader HMR 的角色
 
@@ -134,13 +147,13 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 - 每次只清理本次专属临时 cache，避免误删 root federation 临时目录。
 - `@module-federation/vite` 仍会在测试环境跳过插件加载，所以测试环境只在创建 federation 插件时临时设置 `MFE_VITE_NO_TEST_ENV_CHECK=true`。
 
-`@module-federation/vite@1.16.6` 已经不需要每次 build 新开子进程；同进程连续 build 通过回归测试。但同一 root 下并发 build 仍可能让 MF virtual module id 互相串扰，所以 root-scoped 串行队列仍是必要边界，而不是旧 workaround。这个 helper 是 route-neutral 的 Vite 工具链能力；dynamic/static route 可以在需要插件 UI 子编译时复用，但它不拥有两条 route 的 HMR 提交流程。
+`@module-federation/vite@1.16.6` 已经不需要每次 build 新开子进程；同进程连续 build 通过回归测试。但同一 root 下并发 build 仍可能让 MF virtual module id 互相串扰，所以 root-scoped 串行队列仍是必要边界，而不是旧 workaround。这是 route-neutral 的 Vite 工具链能力；dynamic/static route 可以在需要插件 UI 子编译时复用，但它不拥有两条 route 的 HMR 提交流程。
 
 ## 实现入口
 
-- `packages/runtime-dynamic/src/hmr.ts`：`createLoaderHmrHost` / `installLoaderHmr` / diagnose exports。
+- `packages/runtime-dynamic/src/vite.ts`：host-owned dynamic route Vite plugin。
+- `packages/runtime-dynamic/src/hmr.ts`：CLI/test-facing loader HMR internals and diagnose exports。
 - `packages/runtime-dynamic/src/hmr/host.ts`：loader HMR host planning/boot internals。
-- `packages/runtime-dynamic/src/hmr/install-hmr-runtime.ts`：把 loader HMR 安装到已有 runtime `Context`。
 - `packages/runtime-dynamic/src/hmr/engine/LoaderHmrService.ts`：HMR server、runner、watch pipeline。
 - `packages/runtime-dynamic/src/hmr/engine/config.ts`：Vite config、bridge modules、dedupe、optimizeDeps。
 - `packages/runtime-dynamic/src/hmr/engine/pipeline.ts`：graph processing、executor、commit scheduler。
@@ -153,7 +166,7 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 
 ## 静态插件目录的 HMR 方向
 
-`@pluxel/runtime-static/hmr` 已实现轻量 static HMR 基线：外部 Vite SSR import 重新得到 `StaticRuntimeDefinition`，static route 只按 plugin name diff fixed catalog，并提交 affected enabled plugins。它不复用 dynamic loader replacement，也不拥有 Vite server、module graph、module id registry、package cache 或 loader batch。
+`@pluxel/runtime-static/vite` 内部实现轻量 static HMR 基线：Vite route 通过 SSR import 重新得到 `StaticRuntimeDefinition`，static route 只按 plugin name diff fixed catalog，并提交 affected enabled plugins。它不复用 dynamic loader replacement，也不拥有独立 Vite server、module graph、module id registry、package cache 或 loader batch。
 
 两条 route 的 HMR 能力保持一致的目标是“插件代码变化后可以重新提交运行中插件”，不是共享同一个 loader。dynamic route 负责动态 module exports -> loader batch；static route 负责 definition -> catalog diff；插件 UI remote build 这类 Vite/MF 子编译能力统一在 `@pluxel/rolldown/vite/plugin-ui`。
 

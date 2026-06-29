@@ -2,29 +2,49 @@
 
 Static runtime route for fixed plugin catalogs.
 
-Static and dynamic routes should expose the same plugin author contract where possible. The
-difference is the plugin loading model: static receives a fixed catalog, while dynamic discovers
-and mutates plugins at runtime.
+Static and dynamic hosts both start from the host-owned `vite.config.ts` when they need a Vite dev
+server. Static differs only in the loading model: it receives a fixed plugin catalog and applies
+catalog diffs on config-module reload.
 
-## Responsibility
+## Public Entry
 
-`runtime-static` owns:
+Use one config function and one Vite plugin:
 
-- `defineStaticRuntime(...)` for declaring a fixed plugin catalog
-- `createStaticRuntimeHost(...)` for preparing a runtime context from that catalog
-- startup reports for enabled, disabled, invalid, failed, and missing-dependency plugins
-- `reloadStaticRuntime(...)` for applying an already-imported static definition update
-- `installStaticRuntimeHmr(...)` for enabling source UI remotes during development
-- `staticRuntimeSourceVitePlugin(...)` and `staticRuntimeUiBridgeVitePlugin(...)` for the
-  Vite transform stack expected by static hosts
-- `staticRuntimeHostVitePlugin(...)` for mounting a static host into a Vite dev server
+```ts
+// vite.config.ts
+import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import { defineConfig } from 'vite'
 
-It does not scan workspaces, install packages, run the dynamic module adapter, or execute changed
-plugin source files directly. Those are dynamic route responsibilities.
+export default defineConfig({
+	plugins: [
+		staticRuntimeVitePlugin({
+			config: './pluxel.static.ts',
+		}),
+	],
+})
+```
 
-## Host Model
+```ts
+// pluxel.static.ts
+import { defineStaticRuntimeConfig } from '@pluxel/runtime-static/vite'
+import { DemoPlugin } from './src/DemoPlugin'
 
-Static can run without Vite when it consumes prebuilt plugin UI/worker artifacts:
+export default defineStaticRuntimeConfig({
+	name: 'app',
+	plugins: [DemoPlugin],
+	runtimeState: {
+		mode: 'memory',
+		snapshot: { enabled: ['DemoPlugin'] },
+	},
+})
+```
+
+The route plugin owns static source transforms, development host lifecycle, request forwarding,
+source UI HMR handles, and build-time packaged UI lowering.
+
+## Headless Host
+
+Static can still run without Vite when it consumes prebuilt plugin UI/worker artifacts:
 
 ```ts
 import { createStaticRuntimeHost, defineStaticRuntime } from '@pluxel/runtime-static'
@@ -40,57 +60,10 @@ const host = await createStaticRuntimeHost(runtime, {
 await host.start()
 ```
 
-When the static host is also a Vite dev app, the host owns `vite.config.ts` and explicitly composes
-the Pluxel Vite pieces it needs.
-
-## Development UI Remotes
-
-For development hosts that want source UI remotes:
-
-```ts
-import { createStaticRuntimeHost } from '@pluxel/runtime-static'
-import { installStaticRuntimeHmr } from '@pluxel/runtime-static/hmr'
-import {
-	staticRuntimeHostVitePlugin,
-	staticRuntimeSourceVitePlugin,
-	staticRuntimeUiBridgeVitePlugin,
-} from '@pluxel/runtime-static/vite'
-```
-
-Compose the host Vite config explicitly: the source plugin installs route-neutral source semantics,
-the UI bridge plugin lowers packaged `ui(...).bind(ctx)` calls for builds, and the host plugin owns
-the static development server lifecycle.
-
-```ts
-plugins: [
-	staticRuntimeSourceVitePlugin({ root }),
-	...(command === 'serve' ? [] : [staticRuntimeUiBridgeVitePlugin()]),
-	staticRuntimeHostVitePlugin({ createHost }),
-]
-```
-
-After creating a host, call `installStaticRuntimeHmr({ host, viteServer })` before `host.start()`.
-This installs only route-neutral source UI handling. Catalog reload remains static-owned and should
-still happen through `reloadStaticRuntime(...)`.
-
-Vite hosts can delegate that lifecycle and Fetch bridge wiring to
-`staticRuntimeHostVitePlugin(...)`:
-
-```ts
-staticRuntimeHostVitePlugin({
-	async createHost() {
-		return createStaticRuntimeHost(staticRuntime, options)
-	},
-})
-```
-
-The helper installs static HMR by default, starts the host, forwards `/__pluxel/*` and document
-navigations to `host.ctx.http.fetch(...)`, and stops the host when the Vite server closes.
-
 ## Packaging
 
-`@pluxel/runtime-dev` is a private workspace package and is inlined into this package's HMR chunk.
-Published output must not import `@pluxel/runtime-dev`.
+`@pluxel/runtime-dev` is private and inlined into this package's Vite/HMR output. Published output
+must not import `@pluxel/runtime-dev`.
 
-`@pluxel/rolldown` remains external because it owns the complex Rolldown/OXC/Vite and web Module
+`@pluxel/rolldown` remains external because it owns the Rolldown/OXC/Vite and web Module
 Federation toolchain helpers.
