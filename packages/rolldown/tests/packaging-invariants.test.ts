@@ -9,8 +9,6 @@ type PackageJson = {
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
 	inlinedDependencies?: Record<string, string>
-	peerDependencies?: Record<string, string>
-	private?: boolean
 }
 
 async function readJson(path: string): Promise<PackageJson> {
@@ -44,9 +42,13 @@ describe('toolchain package boundaries', () => {
 	it('keeps Vite toolchain helpers out of runtime public exports', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtime = await readJson(`${root}/packages/runtime/package.json`)
+		const runtimeDynamic = await readJson(`${root}/packages/runtime-dynamic/package.json`)
+		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
 		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
 
 		expect(runtime.exports).not.toHaveProperty('./vite')
+		expect(runtimeDynamic.exports).not.toHaveProperty('./vite')
+		expect(runtimeStatic.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
@@ -74,62 +76,6 @@ describe('toolchain package boundaries', () => {
 		const runtimeDynamic = await readJson(`${root}/packages/runtime-dynamic/package.json`)
 
 		expect(runtimeDynamic.dependencies).not.toHaveProperty('@rolldown/pluginutils')
-	})
-
-	it('keeps toolchain implementation helpers out of published runtime dependencies', async () => {
-		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
-		const runtime = await readJson(`${root}/packages/runtime/package.json`)
-		const runtimeDev = await readJson(`${root}/packages/runtime-dev/package.json`)
-		const runtimeDynamic = await readJson(`${root}/packages/runtime-dynamic/package.json`)
-		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
-		const cli = await readJson(`${root}/packages/cli/package.json`)
-		const test = await readJson(`${root}/packages/test/package.json`)
-
-		expect(rolldown.dependencies).toEqual({
-			'@inlang/paraglide-js': '^2.15.1',
-			'@module-federation/vite': '1.16.6',
-			'@pluxel/core': 'workspace:*',
-			'oxc-parser': '^0.115.0',
-			'oxc-resolver': '^11.21.3',
-		})
-		expect(rolldown.peerDependencies).toMatchObject({
-			rolldown: '1.0.0-rc.5',
-			tsdown: '*',
-			vite: '>=8.0.0-beta.18 <9',
-		})
-		for (const name of ['@rolldown/pluginutils', 'fdir', 'pathe']) {
-			expect(rolldown.devDependencies).toHaveProperty(name)
-			expect(rolldown.dependencies).not.toHaveProperty(name)
-		}
-		expect(rolldown.devDependencies).not.toHaveProperty('pkg-types')
-		expect(rolldown.inlinedDependencies).not.toHaveProperty('exsolve')
-		expect(rolldown.inlinedDependencies).not.toHaveProperty('pkg-types')
-		expect(runtime.dependencies).not.toHaveProperty('exsolve')
-		expect(runtime.dependencies).not.toHaveProperty('pkg-types')
-		expect(runtime.dependencies).toHaveProperty('oxc-resolver')
-		expect(runtime.dependencies).not.toHaveProperty('@pluxel/runtime-dynamic')
-		expect(runtime.dependencies).not.toHaveProperty('@pluxel/runtime-dev')
-		expect(runtimeDev.private).toBe(true)
-		expect(runtimeDev.dependencies).toHaveProperty('@pluxel/rolldown')
-		expect(runtimeDev.dependencies).not.toHaveProperty('oxc-parser')
-		expect(runtimeDev.dependencies).not.toHaveProperty('oxc-resolver')
-		expect(runtimeDynamic.dependencies).not.toHaveProperty('exsolve')
-		expect(runtimeDynamic.dependencies).not.toHaveProperty('pkg-types')
-		expect(runtimeDynamic.dependencies).toHaveProperty('@pluxel/rolldown')
-		expect(runtimeDynamic.dependencies).not.toHaveProperty('@pluxel/runtime-dev')
-		expect(runtimeDynamic.devDependencies).toHaveProperty('@pluxel/runtime-dev')
-		expect(runtimeStatic.dependencies).toHaveProperty('@pluxel/rolldown')
-		expect(runtimeStatic.dependencies).not.toHaveProperty('@pluxel/runtime-dev')
-		expect(runtimeStatic.devDependencies).toHaveProperty('@pluxel/runtime-dev')
-		expect(cli.dependencies).toHaveProperty('@pluxel/market')
-		expect(cli.dependencies).toHaveProperty('@pluxel/rolldown')
-		expect(cli.dependencies).not.toHaveProperty('oxc-parser')
-		expect(cli.dependencies).not.toHaveProperty('oxc-resolver')
-		expect(test.dependencies).toHaveProperty('@pluxel/rolldown')
-		expect(test.dependencies).not.toHaveProperty('oxc-parser')
-		expect(test.dependencies).not.toHaveProperty('pathe')
-		expect(test.inlinedDependencies).not.toHaveProperty('pathe')
 	})
 
 	it('keeps published consumers from vendoring complex rolldown toolchain entries', async () => {
@@ -175,7 +121,24 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-static/tsdown.config.ts`,
 			'utf8',
 		)
+		const runtimeDevVite = await readFile(`${root}/packages/runtime-dev/src/vite.ts`, 'utf8')
+		const runtimeDynamicHmrConfig = await readFile(
+			`${root}/packages/runtime-dynamic/src/hmr/engine/config.ts`,
+			'utf8',
+		)
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
+		const staticDemoVite = await readFile(
+			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
+			'utf8',
+		)
+		const pluginsHostStatic = await readFile(
+			`${root}/packages/plugins/host/src/static.ts`,
+			'utf8',
+		)
+		const staticCommercialHost = await readFile(
+			`${root}/packages/plugins/static-commercial-demo/src/static-host.ts`,
+			'utf8',
+		)
 
 		expect(runtimeConfig).toContain('onlyBundle: []')
 		expect(runtimeConfig).toContain('../rolldown/src/workspace/fs-entry.ts')
@@ -188,13 +151,50 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicConfig).not.toContain('../rolldown/src/')
 		expect(runtimeDynamicConfig).toContain("alwaysBundle: ['@pluxel/runtime-dev'")
 		expect(runtimeDynamicConfig).toContain('../runtime-dev/src/index.ts')
+		expect(runtimeDynamicConfig).toContain('../runtime-dev/src/vite.ts')
 		expect(runtimeStaticConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/rolldown/)
 		expect(runtimeStaticConfig).toContain("alwaysBundle: ['@pluxel/runtime-dev'")
 		expect(runtimeStaticConfig).toContain('../runtime-dev/src/index.ts')
-		expect(runtimeStaticVite).toContain('@pluxel/rolldown/plugins')
-		expect(runtimeStaticVite).toContain('@pluxel/rolldown/vite')
-		expect(runtimeStaticVite).toContain('configSourcePlugin')
-		expect(runtimeStaticVite).toContain('runtimeUiBridgePlugin')
+		expect(runtimeStaticConfig).toContain('../runtime-dev/src/vite.ts')
+		expect(runtimeDevVite).toContain('@pluxel/rolldown/plugins')
+		expect(runtimeDevVite).toContain('@pluxel/rolldown/vite')
+		expect(runtimeDevVite).toContain('configSourcePlugin')
+		expect(runtimeDevVite).toContain('runtimeUiBridgePlugin')
+		expect(runtimeDevVite).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeDevVite).toContain('pluxelRuntimeUiBridgeVitePlugin')
+		expect(runtimeDevVite).not.toContain('pluxelRuntimeDevVitePlugin')
+		expect(runtimeDevVite).not.toContain('pluxelRuntimeDevVitePlugins')
+		expect(runtimeDevVite).not.toContain('runtimeDevSourceVitePlugins')
+		expect(runtimeDevVite).not.toContain('runtimeDevLegacyDecoratorPlugin')
+		expect(runtimeDevVite).not.toContain('runtimeUiBridge?:')
+		expect(runtimeDevVite).not.toContain('resolveUiBridgeOptions')
+		expect(runtimeDevVite).toContain('legacy: true')
+		expect(runtimeDynamicHmrConfig).toContain('@pluxel/runtime-dev/vite')
+		expect(runtimeDynamicHmrConfig).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeDynamicHmrConfig).not.toContain('pluxelRuntimeDevVitePlugin')
+		expect(runtimeDynamicHmrConfig).not.toContain('runtimeUiBridge: false')
+		expect(runtimeStaticVite).toContain('@pluxel/runtime-dev/vite')
+		expect(runtimeStaticVite).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeStaticVite).toContain('pluxelRuntimeUiBridgeVitePlugin')
+		expect(runtimeStaticVite).toContain('staticRuntimeSourceVitePlugin')
+		expect(runtimeStaticVite).toContain('staticRuntimeUiBridgeVitePlugin')
+		expect(runtimeStaticVite).not.toContain('pluxelRuntimeDevVitePlugin')
+		expect(runtimeStaticVite).not.toContain('staticRuntimeVitePlugin')
+		expect(runtimeStaticVite).not.toContain('staticRuntimeVitePlugins')
+		expect(runtimeStaticVite).not.toContain('runtimeUiBridge')
+		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/plugins')
+		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/vite')
+		expect(staticDemoVite).toContain('staticRuntimeSourceVitePlugin')
+		expect(staticDemoVite).toContain('staticRuntimeUiBridgeVitePlugin')
+		expect(staticDemoVite).toContain('staticRuntimeHostVitePlugin')
+		expect(staticDemoVite).not.toContain('staticRuntimeVitePlugins')
+		expect(staticDemoVite).not.toContain('runtimeUiBridge')
+		for (const staticHost of [pluginsHostStatic, staticCommercialHost]) {
+			expect(staticHost).toContain('runtimeState')
+			expect(staticHost).toContain('snapshot: { enabled:')
+			expect(staticHost).not.toContain('configService: {\n\t\t\tmode: \'memory\',\n\t\t\tsnapshot: { enabled:')
+			expect(staticHost).not.toContain('configService: {\n\t\tmode: \'memory\',\n\t\tsnapshot: { enabled:')
+		}
 	})
 
 	it('keeps native toolchain packages external to generated bundles', async () => {

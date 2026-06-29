@@ -13,7 +13,6 @@ import { installStaticRuntimeHmr, reloadStaticRuntime } from '@pluxel/runtime-st
 import {
 	shouldHandleStaticRuntimeRequest,
 	staticRuntimeHostVitePlugin,
-	staticRuntimeVitePlugins,
 } from '@pluxel/runtime-static/vite'
 
 function statuses(host: StaticRuntimeHost): Record<string, StaticRuntimePluginStatus> {
@@ -73,15 +72,6 @@ class DisabledHotV2 extends BasePlugin {
 }
 
 describe('@pluxel/runtime-static', () => {
-	it('exposes the shared Vite transform stack for static hosts', () => {
-		const plugins = staticRuntimeVitePlugins({ root: '/repo' }).flat() as Array<{ name?: string }>
-
-		expect(plugins.map((plugin) => plugin.name)).toEqual([
-			'pluxel:static-runtime-transform',
-			'pluxel-runtime-ui-bridge',
-		])
-	})
-
 	it('matches static host requests without stealing Vite module assets', () => {
 		expect(
 			shouldHandleStaticRuntimeRequest({

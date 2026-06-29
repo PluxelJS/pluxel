@@ -37,6 +37,13 @@
 
 非目标：不要发明第三条产品路径，也不要引入新的 universal state framework。
 
+## Vite-Owned Runtime Routes
+
+状态：提案，准备实现。
+
+目标是把 static/dynamic 宿主入口统一成 host-owned Vite plugin + `defineXxxRuntimeConfig(...)`
+配置文件。设计记录见 `vite-owned-runtime-routes.md`。
+
 ## Core DI V2
 
 状态：prototype/future architecture notes。`@pluxel/core-di` 当前仍是 internal/private prototype。

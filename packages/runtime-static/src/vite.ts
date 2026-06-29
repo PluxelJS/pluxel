@@ -1,58 +1,37 @@
 import { dirname } from 'node:path'
 import {
-	configSourcePlugin,
-	lintGuardPlugin,
-	runtimeUiBridgePlugin,
-	type ConfigSourcePluginOptions,
-	type LintGuardPluginOptions,
-	type RuntimeUiBridgePluginOptions,
-} from '@pluxel/rolldown/plugins'
-import { serverOnlyVitePlugin } from '@pluxel/rolldown/vite'
+	pluxelRuntimeSourceVitePlugin,
+	pluxelRuntimeUiBridgeVitePlugin,
+	type PluxelRuntimeSourceVitePluginOptions,
+	type PluxelRuntimeUiBridgeVitePluginOptions,
+} from '@pluxel/runtime-dev/vite'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin, PluginOption, ViteDevServer } from 'vite'
 
 import type { InstallStaticRuntimeHmrOptions, StaticRuntimeExtensionCompilerConfig } from './hmr'
 import type { StaticRuntimeHost, StaticRuntimeStartupReport } from './types'
 
-export type StaticRuntimeVitePluginsOptions = {
-	/**
-	 * Project root used by lintGuardPlugin. Defaults to process.cwd().
-	 */
-	root?: string
-	configSource?: false | ConfigSourcePluginOptions
-	lintGuard?: false | LintGuardPluginOptions
-	/**
-	 * Build-time lowering for ui(...).bind(ctx). Keep disabled in dev when an HMR host
-	 * installs source handles; enable it for packaged/static production builds.
-	 */
-	runtimeUiBridge?: false | RuntimeUiBridgePluginOptions
+export type StaticRuntimeSourceVitePluginOptions = Omit<
+	PluxelRuntimeSourceVitePluginOptions,
+	'serverOnlyName'
+>
+
+export type StaticRuntimeUiBridgeVitePluginOptions = PluxelRuntimeUiBridgeVitePluginOptions
+
+export function staticRuntimeSourceVitePlugin(
+	options: StaticRuntimeSourceVitePluginOptions = {},
+): Plugin {
+	return pluxelRuntimeSourceVitePlugin({
+		...options,
+		name: options.name ?? 'pluxel:static-runtime-source',
+		serverOnlyName: 'pluxel:static-runtime-transform',
+	})
 }
 
-export function staticRuntimeVitePlugins(
-	options: StaticRuntimeVitePluginsOptions = {},
-): PluginOption[] {
-	const serverPlugins: PluginOption[] = []
-
-	if (options.lintGuard !== false) {
-		serverPlugins.push(
-			lintGuardPlugin({
-				cwd: options.root,
-				...options.lintGuard,
-			}),
-		)
-	}
-	if (options.configSource !== false)
-		serverPlugins.push(configSourcePlugin(options.configSource ?? {}))
-
-	const plugins: PluginOption[] = []
-	if (serverPlugins.length > 0) {
-		plugins.push(serverOnlyVitePlugin('pluxel:static-runtime-transform', serverPlugins))
-	}
-	if (options.runtimeUiBridge !== false) {
-		plugins.push(runtimeUiBridgePlugin(options.runtimeUiBridge ?? {}))
-	}
-
-	return plugins
+export function staticRuntimeUiBridgeVitePlugin(
+	options: StaticRuntimeUiBridgeVitePluginOptions = {},
+): PluginOption {
+	return pluxelRuntimeUiBridgeVitePlugin(options)
 }
 
 export type StaticRuntimeViteHostHmrOptions = Omit<

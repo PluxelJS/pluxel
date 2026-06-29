@@ -36,6 +36,9 @@ await ensurePluxelLogging({
 const host = await createStaticRuntimeHost(staticRuntime, {
 	configService: {
 		mode: 'memory',
+	},
+	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
 	context: {

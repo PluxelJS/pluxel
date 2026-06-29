@@ -1,6 +1,10 @@
 import { fileURLToPath } from 'node:url'
 import { gqlens } from '@gqlens/vite'
-import { staticRuntimeHostVitePlugin, staticRuntimeVitePlugins } from '@pluxel/runtime-static/vite'
+import {
+	staticRuntimeHostVitePlugin,
+	staticRuntimeSourceVitePlugin,
+	staticRuntimeUiBridgeVitePlugin,
+} from '@pluxel/runtime-static/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { commercialGraphQLEndpoint } from './src/paths.ts'
@@ -10,10 +14,8 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 export default defineConfig(({ command }) => ({
 	appType: 'spa',
 	plugins: [
-		...staticRuntimeVitePlugins({
-			root: repoRoot,
-			runtimeUiBridge: command === 'serve' ? false : undefined,
-		}),
+		staticRuntimeSourceVitePlugin({ root: repoRoot }),
+		...(command === 'serve' ? [] : [staticRuntimeUiBridgeVitePlugin()]),
 		staticRuntimeHostVitePlugin({
 			name: 'pluxel-static-commercial-host',
 			async createHost() {

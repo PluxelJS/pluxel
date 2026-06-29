@@ -90,51 +90,10 @@ export interface PluginSourceInfoNode {
   readonly tag: Types.PluginSourceInfo["tag"] | undefined;
 }
 
-export interface PackageManagerNode {
-  readonly __typename: string | undefined;
-  readonly loadIssue: (args: GQLensArgs<Types.PackageManagerLoadIssueArgs>) => PackageLoadIssueNode;
-  readonly loadIssues: { readonly ids: readonly string[] | undefined };
-  readonly inventoryEntry: (args: GQLensArgs<Types.PackageManagerInventoryEntryArgs>) => PackageInventoryEntryNode;
-  readonly inventory: (args?: GQLensArgs<Types.PackageManagerInventoryArgs>) => { readonly ids: readonly string[] | undefined };
-}
-
-export interface PackageLoadIssueNode {
-  readonly __typename: string | undefined;
-  readonly id: Types.PackageLoadIssue["id"] | undefined;
-  readonly spec: PackageIssueSpecNode;
-  readonly source: Types.PackageLoadIssue["source"] | undefined;
-  readonly message: Types.PackageLoadIssue["message"] | undefined;
-  readonly error: Types.PackageLoadIssue["error"] | undefined;
-  readonly moduleId: Types.PackageLoadIssue["moduleId"] | undefined;
-  readonly recordedAt: Types.PackageLoadIssue["recordedAt"] | undefined;
-}
-
-export interface PackageIssueSpecNode {
-  readonly __typename: string | undefined;
-  readonly key: Types.PackageIssueSpec["key"] | undefined;
-  readonly name: Types.PackageIssueSpec["name"] | undefined;
-  readonly version: Types.PackageIssueSpec["version"] | undefined;
-  readonly tag: Types.PackageIssueSpec["tag"] | undefined;
-  readonly target: Types.PackageIssueSpec["target"] | undefined;
-  readonly raw: Types.PackageIssueSpec["raw"] | undefined;
-}
-
-export interface PackageInventoryEntryNode {
-  readonly __typename: string | undefined;
-  readonly id: Types.PackageInventoryEntry["id"] | undefined;
-  readonly spec: PackageIssueSpecNode;
-  readonly installedVersion: Types.PackageInventoryEntry["installedVersion"] | undefined;
-  readonly requestedVersion: Types.PackageInventoryEntry["requestedVersion"] | undefined;
-  readonly loaded: Types.PackageInventoryEntry["loaded"] | undefined;
-  readonly moduleId: Types.PackageInventoryEntry["moduleId"] | undefined;
-  readonly issues: { readonly ids: readonly string[] | undefined };
-}
-
 export interface QueryNode {
   readonly __typename: string | undefined;
   readonly _empty: Types.Query["_empty"] | undefined;
   readonly pluginCatalog: PluginCatalogNode;
-  readonly packageManager: PackageManagerNode;
 }
 
 // Schema contract consumed by @gqlens/core
@@ -146,7 +105,6 @@ export const gqlensSchema: GQLensSchemaContract = {
       "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
       "_empty": { name: "_empty", result: { "kind": "scalar", "cardinality": "one" } },
       "pluginCatalog": { name: "pluginCatalog", result: { "kind": "object", "cardinality": "one", "typeName": "PluginCatalog", "objectKind": "value" } },
-      "packageManager": { name: "packageManager", result: { "kind": "object", "cardinality": "one", "typeName": "PackageManager", "objectKind": "value" } },
     },
   },
   mutation: {
@@ -243,58 +201,6 @@ export const gqlensSchema: GQLensSchemaContract = {
         "packageName": { name: "packageName", result: { "kind": "scalar", "cardinality": "one" } },
         "version": { name: "version", result: { "kind": "scalar", "cardinality": "one" } },
         "tag": { name: "tag", result: { "kind": "scalar", "cardinality": "one" } },
-      },
-    },
-    "PackageManager": {
-      type: "PackageManager",
-      kind: "value",
-      fields: {
-        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
-        "loadIssue": { name: "loadIssue", result: { "kind": "object", "cardinality": "one", "typeName": "PackageLoadIssue", "objectKind": "entity" }, args: { "id": "String!" } },
-        "loadIssues": { name: "loadIssues", result: { "kind": "object", "cardinality": "list", "typeName": "PackageLoadIssue", "objectKind": "entity" } },
-        "inventoryEntry": { name: "inventoryEntry", result: { "kind": "object", "cardinality": "one", "typeName": "PackageInventoryEntry", "objectKind": "entity" }, args: { "id": "String!", "includeUntracked": "Boolean" } },
-        "inventory": { name: "inventory", result: { "kind": "object", "cardinality": "list", "typeName": "PackageInventoryEntry", "objectKind": "entity" }, args: { "includeUntracked": "Boolean" } },
-      },
-    },
-    "PackageLoadIssue": {
-      type: "PackageLoadIssue",
-      kind: "entity",
-      fields: {
-        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
-        "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
-        "spec": { name: "spec", result: { "kind": "object", "cardinality": "one", "typeName": "PackageIssueSpec", "objectKind": "value" } },
-        "source": { name: "source", result: { "kind": "scalar", "cardinality": "one" } },
-        "message": { name: "message", result: { "kind": "scalar", "cardinality": "one" } },
-        "error": { name: "error", result: { "kind": "scalar", "cardinality": "one" } },
-        "moduleId": { name: "moduleId", result: { "kind": "scalar", "cardinality": "one" } },
-        "recordedAt": { name: "recordedAt", result: { "kind": "scalar", "cardinality": "one" } },
-      },
-    },
-    "PackageIssueSpec": {
-      type: "PackageIssueSpec",
-      kind: "value",
-      fields: {
-        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
-        "key": { name: "key", result: { "kind": "scalar", "cardinality": "one" } },
-        "name": { name: "name", result: { "kind": "scalar", "cardinality": "one" } },
-        "version": { name: "version", result: { "kind": "scalar", "cardinality": "one" } },
-        "tag": { name: "tag", result: { "kind": "scalar", "cardinality": "one" } },
-        "target": { name: "target", result: { "kind": "scalar", "cardinality": "one" } },
-        "raw": { name: "raw", result: { "kind": "scalar", "cardinality": "one" } },
-      },
-    },
-    "PackageInventoryEntry": {
-      type: "PackageInventoryEntry",
-      kind: "entity",
-      fields: {
-        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
-        "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
-        "spec": { name: "spec", result: { "kind": "object", "cardinality": "one", "typeName": "PackageIssueSpec", "objectKind": "value" } },
-        "installedVersion": { name: "installedVersion", result: { "kind": "scalar", "cardinality": "one" } },
-        "requestedVersion": { name: "requestedVersion", result: { "kind": "scalar", "cardinality": "one" } },
-        "loaded": { name: "loaded", result: { "kind": "scalar", "cardinality": "one" } },
-        "moduleId": { name: "moduleId", result: { "kind": "scalar", "cardinality": "one" } },
-        "issues": { name: "issues", result: { "kind": "object", "cardinality": "list", "typeName": "PackageLoadIssue", "objectKind": "entity" } },
       },
     },
   },

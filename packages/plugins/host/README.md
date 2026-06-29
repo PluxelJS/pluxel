@@ -9,6 +9,11 @@
 - `dynamic`：`@pluxel/runtime-dynamic/hmr` 驱动的开发宿主，负责 workspace diagnose / source execution / watch / loader replacement。
 - `static`：`@pluxel/runtime-static` 驱动的固定目录宿主，直接消费 `defineStaticRuntime(...)` 的 known catalog。
 
+两条路线的 Vite 关系不同：
+
+- `dynamic` 内部启动 loader HMR Vite server；宿主通过 `defineLoaderHmrConfig({ vite })` 注入 Vite 配置。
+- `static` 可以不依赖 Vite；如果作为 Vite dev app 运行，则由宿主 `vite.config.ts` 显式拼 `@pluxel/runtime-static/vite` 的 source/uiBridge/host 插件。
+
 如果你在看插件前端链路，建议同时看：
 
 - `docs/RUNTIME.md`
@@ -42,7 +47,7 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 ## Boundary
 
 - `src/dynamic.ts` 走 `createLoaderHmrHost()`。
-- `src/static.ts` 走 `createStaticRuntimeHost()`，catalog 来自 `src/pluxel.static.ts`。
+- `src/static.ts` 走 `createStaticRuntimeHost()`，catalog 来自 `src/pluxel.static.ts`，enabled 状态来自 `runtimeState`。
 
 对前端来说，这里最重要的边界是：
 

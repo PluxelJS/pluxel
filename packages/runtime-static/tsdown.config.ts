@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
+const runtimeDevViteEntry = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
@@ -24,6 +25,7 @@ export default defineConfig({
 	},
 	alias: {
 		'@pluxel/runtime-dev': runtimeDevEntry,
+		'@pluxel/runtime-dev/vite': runtimeDevViteEntry,
 	},
 	entry: {
 		index: 'src/index.ts',

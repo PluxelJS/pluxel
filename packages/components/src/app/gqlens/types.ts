@@ -97,72 +97,10 @@ export type PluginSourceInfoKind =
   | 'package'
   | 'unknown';
 
-export type PackageManager = {
-  __typename?: 'PackageManager';
-  loadIssue: PackageLoadIssue;
-  loadIssues: Array<PackageLoadIssue>;
-  inventoryEntry: PackageInventoryEntry;
-  inventory: Array<PackageInventoryEntry>;
-};
-
-
-export type PackageManagerLoadIssueArgs = {
-  id: Scalars['String']['input'];
-};
-
-
-export type PackageManagerInventoryEntryArgs = {
-  id: Scalars['String']['input'];
-  includeUntracked?: InputMaybe<Scalars['Boolean']['input']>;
-};
-
-
-export type PackageManagerInventoryArgs = {
-  includeUntracked?: InputMaybe<Scalars['Boolean']['input']>;
-};
-
-export type PackageLoadIssue = {
-  __typename?: 'PackageLoadIssue';
-  id: Scalars['String']['output'];
-  spec: PackageIssueSpec;
-  source: PackageLoadIssueSource;
-  message: Scalars['String']['output'];
-  error?: Maybe<Scalars['String']['output']>;
-  moduleId?: Maybe<Scalars['String']['output']>;
-  recordedAt: Scalars['Float']['output'];
-};
-
-export type PackageIssueSpec = {
-  __typename?: 'PackageIssueSpec';
-  key: Scalars['String']['output'];
-  name: Scalars['String']['output'];
-  version?: Maybe<Scalars['String']['output']>;
-  tag?: Maybe<Scalars['String']['output']>;
-  target: Scalars['String']['output'];
-  raw: Scalars['String']['output'];
-};
-
-export type PackageLoadIssueSource =
-  | 'load'
-  | 'restore'
-  | 'retry';
-
-export type PackageInventoryEntry = {
-  __typename?: 'PackageInventoryEntry';
-  id: Scalars['String']['output'];
-  spec: PackageIssueSpec;
-  installedVersion?: Maybe<Scalars['String']['output']>;
-  requestedVersion?: Maybe<Scalars['String']['output']>;
-  loaded: Scalars['Boolean']['output'];
-  moduleId?: Maybe<Scalars['String']['output']>;
-  issues?: Maybe<Array<PackageLoadIssue>>;
-};
-
 export type Query = {
   __typename?: 'Query';
   _empty: Scalars['String']['output'];
   pluginCatalog: PluginCatalog;
-  packageManager: PackageManager;
 };
 
 export type Mutation = {

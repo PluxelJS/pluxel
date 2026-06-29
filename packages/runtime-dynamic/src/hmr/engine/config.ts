@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
+import { pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
 import { dirname, resolve } from 'pathe'
 import {
 	createLogger,
@@ -11,7 +11,6 @@ import {
 	mergeConfig,
 	searchForWorkspaceRoot,
 } from 'vite'
-import { serverOnlyVitePlugin } from '@pluxel/rolldown/vite'
 import {
 	PLUXEL_CONDITION_HMR,
 	PLUXEL_CONDITION_SOURCE,
@@ -441,15 +440,11 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
-			serverOnlyVitePlugin('pluxel:ssr-transform', [
-				// Keep semantics plugins unscoped:
-				// - `preserveSymlinks: false` makes Vite normalize module ids to realpaths.
-				// - root-based include globs are brittle under symlinks and can skip schema injection.
-				// These plugins are already cheap (CODE_HINT + AST parse only when needed) and are only
-				// invoked for modules Vite actually loads/evaluates.
-				lintGuardPlugin({ cwd: opts.root }),
-				configSourcePlugin(),
-			]),
+			pluxelRuntimeSourceVitePlugin({
+				name: 'pluxel:dynamic-runtime-source',
+				root: opts.root,
+				serverOnlyName: 'pluxel:ssr-transform',
+			}),
 			opts.runnerPlugin,
 			opts.httpPlugin,
 		],

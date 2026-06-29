@@ -17,9 +17,38 @@ entries, evaluates changed modules, and can add or remove plugins while the host
 - Tinypool worker watching for plugin workers
 - installation of source UI runtime handles during loader HMR startup
 
-It reuses the private `@pluxel/runtime-dev` source UI compiler by inlining it at build time. That
-keeps source UI remote behavior aligned with static while leaving the dynamic loader model local to
-this package.
+It reuses private `@pluxel/runtime-dev` development pieces by inlining them at build time. Shared
+source semantics and UI remote compilation stay aligned with static while the dynamic loader model
+stays local to this package.
+
+## Vite Model
+
+Dynamic HMR owns a dedicated Vite dev server because it needs Vite's module runner, watcher, SSR
+environment, source transforms, and browser UI server as one lifecycle. Callers do not install a
+`@pluxel/runtime-dynamic/vite` plugin into an existing Vite server.
+
+Instead, hosts pass Vite config into the loader HMR host:
+
+```ts
+import { createLoaderHmrHost, defineLoaderHmrConfig } from '@pluxel/runtime-dynamic/hmr'
+
+const host = await createLoaderHmrHost({
+	config: defineLoaderHmrConfig({
+		root,
+		configPath: 'pluxel.loader.hmr.jsonc',
+		profile: 'dev',
+		vite: {
+			plugins: [/* host-owned Vite plugins */],
+		},
+	}),
+})
+
+await host.start()
+```
+
+The internal Vite config composes route-neutral Pluxel source semantics from
+`@pluxel/runtime-dev/vite`; dynamic adds only loader-specific runner, HTTP, watch, and execution
+plugins.
 
 ## Development UI Remotes
 

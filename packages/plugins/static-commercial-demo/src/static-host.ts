@@ -32,6 +32,9 @@ export async function createStaticCommercialRuntimeHost(): Promise<StaticRuntime
 	const host = await createStaticRuntimeHost(staticRuntime, {
 		configService: {
 			mode: 'memory',
+		},
+		runtimeState: {
+			mode: 'memory',
 			snapshot: { enabled: staticCommercialEnabledPlugins },
 		},
 		context: {

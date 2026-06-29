@@ -6,6 +6,7 @@ const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', imp
 const runtimeDevExtensions = fileURLToPath(
 	new URL('../runtime-dev/src/extensions.ts', import.meta.url),
 )
+const runtimeDevVite = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
 
 export default defineConfig({
 	exports: {
@@ -32,6 +33,7 @@ export default defineConfig({
 		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
 		'@pluxel/runtime-dev': runtimeDevEntry,
 		'@pluxel/runtime-dev/extensions': runtimeDevExtensions,
+		'@pluxel/runtime-dev/vite': runtimeDevVite,
 	},
 	entry: {
 		index: 'src/index.ts',
