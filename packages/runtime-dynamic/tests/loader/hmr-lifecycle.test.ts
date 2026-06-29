@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import type { LoaderService } from '../../src/services'
-import { EXTRA_DEP_OVERRIDES } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
+import { enablePlugins } from '../support/runtime-state'
 
 type HmrCore = ReturnType<typeof createHmrTestContext>['core']
 type RuntimeUpdate = ReturnType<HmrCore['registry']['beginUpdate']>
@@ -31,7 +31,7 @@ async function commitBatch(runtimeUpdate: RuntimeUpdate, batch: RuntimeBatch) {
 describe('LoaderService HMR lifecycle', () => {
 	it('resolves ctor-param tokens by plugin id across HMR ctor identity mismatches', async () => {
 		const { core, ctx } = createHmrTestContext()
-		ctx.configService.enableInConfig('Dep', 'Consumer')
+		enablePlugins(ctx, 'Dep', 'Consumer')
 		const loader = ctx.loader
 
 		class Dep extends BasePlugin {}
@@ -63,7 +63,7 @@ describe('LoaderService HMR lifecycle', () => {
 
 	it('reports DI-cascade affected modules so HMR can restart non-reexecuted dependents', async () => {
 		const { core, ctx } = createHmrTestContext()
-		ctx.configService.enableInConfig('Dep', 'Consumer')
+		enablePlugins(ctx, 'Dep', 'Consumer')
 		const loader = ctx.loader
 		let depSeq = 0
 		let consumerSeq = 0
@@ -122,7 +122,7 @@ describe('LoaderService HMR lifecycle', () => {
 
 	it('rolls back loader state when core commit fails after module replacement', async () => {
 		const { core, ctx } = createHmrTestContext()
-		ctx.configService.enableInConfig('Dep', 'Bad')
+		enablePlugins(ctx, 'Dep', 'Bad')
 		const loader = ctx.loader
 
 		class Dep extends BasePlugin {}
@@ -169,7 +169,7 @@ describe('LoaderService HMR lifecycle', () => {
 
 	it('non-batch replaceModule returns structured results and restarts affected dependents', async () => {
 		const { core, ctx } = createHmrTestContext()
-		ctx.configService.enableInConfig('Dep', 'Consumer')
+		enablePlugins(ctx, 'Dep', 'Consumer')
 		const loader = ctx.loader
 		let depSeq = 0
 		let consumerSeq = 0
@@ -247,8 +247,10 @@ describe('LoaderService HMR lifecycle', () => {
 		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, DepA)
 
-		ctx.configService.enableInConfig('DepA', 'DepB', 'Consumer')
-		ctx.configService.setExtra(EXTRA_DEP_OVERRIDES, { Consumer: { 0: 'DepB' } })
+		enablePlugins(ctx, 'DepA', 'DepB', 'Consumer')
+		ctx.runtimeState.update((draft) => {
+			draft.dependencyOverrides = { Consumer: { 0: 'DepB' } }
+		})
 
 		{
 			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)

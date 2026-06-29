@@ -9,6 +9,7 @@ export type ResolvedProfiledPath = {
 
 export type RuntimeStorageLayout = {
 	configFile?: string
+	runtimeStateFile?: string
 	pluginDataDir?: string
 	packageStateFile?: string
 	logsDir?: string
@@ -17,6 +18,7 @@ export type RuntimeStorageLayout = {
 
 export type RuntimeStoragePaths = {
 	configFile: string
+	runtimeStateFile: string
 	pluginDataDir: string
 	packageStateFile: string
 	logsDir: string
@@ -58,6 +60,7 @@ export function resolveRuntimeStoragePaths(
 	const logsDir = resolve(rootDir, layout.logsDir ?? 'logs')
 	return {
 		configFile: resolve(rootDir, layout.configFile ?? 'data/runtime/config.json'),
+		runtimeStateFile: resolve(rootDir, layout.runtimeStateFile ?? 'data/runtime/state.json'),
 		pluginDataDir: resolve(rootDir, layout.pluginDataDir ?? 'data/plugin-data'),
 		packageStateFile: resolve(
 			rootDir,

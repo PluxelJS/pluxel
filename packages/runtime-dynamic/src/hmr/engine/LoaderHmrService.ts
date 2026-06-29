@@ -19,6 +19,7 @@ import {
 	setPkgrootCacheLimit,
 	startTimer,
 } from '@pluxel/runtime/shared'
+import { isPluginEnabled } from '@pluxel/runtime/services'
 import {
 	buildLoaderHmrViteConfig,
 	type LoaderHmrDependencyConfig,
@@ -740,6 +741,7 @@ export class LoaderHmrService {
 		// (warmup/executeFiles/batches rely on it).
 		const configService = this.ctx.configService
 		if (!configService.isReady) await configService.ready
+		if (!this.ctx.runtimeState.isReady) await this.ctx.runtimeState.ready
 
 		// 1) Bridge host modules (singleton identity).
 		await this.bridgeHostModules()
@@ -773,6 +775,7 @@ export class LoaderHmrService {
 
 		const config = this.ctx.configService
 		if (!config.isReady) await config.ready
+		if (!this.ctx.runtimeState.isReady) await this.ctx.runtimeState.ready
 
 		try {
 			const resolved: BuiltinPluginSpec[] = []
@@ -1411,7 +1414,7 @@ export class LoaderHmrService {
 			rootsPretty: scope.rootsPretty,
 			entriesByRoot: scope.entriesByRoot,
 			registryView,
-			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
+			isPluginEnabled: (name) => isPluginEnabled(this.ctx.runtimeState.snapshot(), name),
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
 			resolveBareWorkspaceEntry: (specifier) =>
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),

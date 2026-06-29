@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import { EXTRA_BASE_PROVIDERS, EXTRA_FORKS } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
+import { enablePlugins } from '../support/runtime-state'
 
 async function commitBatch(
 	core: ReturnType<typeof createHmrTestContext>['core'],
@@ -29,11 +29,13 @@ describe('base provider selection', () => {
 		Plugin(Abs, { name: 'Impl' })(Impl)
 
 		// Persist an invalid selection: base points to a fork id.
-		ctx.configService.setExtra(EXTRA_BASE_PROVIDERS, { Abs: 'Impl#f1' })
-		ctx.configService.setExtra(EXTRA_FORKS, { Impl: ['f1'] })
+		ctx.runtimeState.update((draft) => {
+			draft.baseProviders = { Abs: 'Impl#f1' }
+			draft.forks = { Impl: ['f1'] }
+		})
 
 		// Enable both the provider and the fork.
-		ctx.configService.enableInConfig('Impl', 'Impl#f1')
+		enablePlugins(ctx, 'Impl', 'Impl#f1')
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('A.ts', { Impl })
@@ -69,7 +71,7 @@ describe('base provider selection', () => {
 		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, Abs)
 
-		ctx.configService.enableInConfig('Impl', 'Consumer')
+		enablePlugins(ctx, 'Impl', 'Consumer')
 
 		{
 			const batch = loader.beginBatch()
@@ -123,8 +125,10 @@ describe('base provider selection', () => {
 		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, WorkerFork)
 
-		ctx.configService.setExtra(EXTRA_FORKS, { Worker: ['f1'] })
-		ctx.configService.enableInConfig('Worker#f1', 'Consumer')
+		ctx.runtimeState.update((draft) => {
+			draft.forks = { Worker: ['f1'] }
+		})
+		enablePlugins(ctx, 'Worker#f1', 'Consumer')
 
 		{
 			const batch = loader.beginBatch()

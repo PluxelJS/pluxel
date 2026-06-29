@@ -7,6 +7,7 @@ import {
 	type EnabledButStoppedLookupContext,
 	HmrExecutor,
 } from '../../src/hmr/engine/pipeline'
+import { enablePlugins, isEnabled } from '../support/runtime-state'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 	;(
@@ -64,7 +65,7 @@ describe('HmrExecutor commit retry', () => {
 			Plugin({ name: 'Consumer' })(Consumer)
 			setParamToken(Consumer, 0, Dep)
 
-			host.ctx.configService.enableInConfig('Dep', 'Consumer')
+			enablePlugins(host.ctx, 'Dep', 'Consumer')
 			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
 			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
 			await host.commit()
@@ -127,7 +128,7 @@ describe('HmrExecutor commit retry', () => {
 			Plugin({ name: 'Broken' })(Broken)
 			setParamToken(Broken, 0, MissingBase)
 
-			host.ctx.configService.enableInConfig('Broken')
+			enablePlugins(host.ctx, 'Broken')
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
@@ -146,7 +147,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.syncedModules).toEqual(['/broken.ts'])
 			expect(out?.autoDisabled).toEqual(['Broken'])
 			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual(['Broken'])
-			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(false)
+			expect(isEnabled(host.ctx, 'Broken')).toBe(false)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -174,7 +175,7 @@ describe('HmrExecutor commit retry', () => {
 			Plugin({ name: 'Broken' })(Broken)
 			setParamToken(Broken, 0, MissingBase)
 
-			host.ctx.configService.enableInConfig('Stable', 'Broken')
+			enablePlugins(host.ctx, 'Stable', 'Broken')
 			await host.ctx.loader.replaceModule('/stable.ts', { Stable })
 			await host.commit()
 
@@ -197,7 +198,7 @@ describe('HmrExecutor commit retry', () => {
 			expect(out?.syncedModules).toEqual([])
 			expect(out?.autoDisabled).toEqual([])
 			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled ?? []).toEqual([])
-			expect(host.ctx.configService.isEnabledInConfig('Broken')).toBe(true)
+			expect(isEnabled(host.ctx, 'Broken')).toBe(true)
 			expect(host.require(Stable)).toBe(firstStable)
 		} finally {
 			await host.dispose()

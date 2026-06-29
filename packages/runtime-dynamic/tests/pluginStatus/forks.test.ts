@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import { getStatusOverview } from '../../../runtime/src/api/features/pluginStatus/service'
-import { EXTRA_FORKS } from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
 
 describe('pluginStatus forks', () => {
@@ -9,8 +8,8 @@ describe('pluginStatus forks', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ name: 'DemoWorker' })
 		class DemoWorker extends ForkablePlugin {}
+		Plugin({ name: 'DemoWorker' })(DemoWorker)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('A.ts', { DemoWorker })
@@ -29,7 +28,9 @@ describe('pluginStatus forks', () => {
 		}
 
 		// Persist another fork in the catalog, without starting it.
-		ctx.configService.setExtra(EXTRA_FORKS, { DemoWorker: ['bbb'] })
+		ctx.runtimeState.update((draft) => {
+			draft.forks = { DemoWorker: ['bbb'] }
+		})
 
 		const overview = getStatusOverview(ctx)
 		const names = overview.statuses.map((s) => s?.name).filter(Boolean)
@@ -43,8 +44,8 @@ describe('pluginStatus forks', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ name: 'Alpha' })
 		class Alpha extends BasePlugin {}
+		Plugin({ name: 'Alpha' })(Alpha)
 
 		// Load module (does not auto-enable without config).
 		const batch = loader.beginBatch()

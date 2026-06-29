@@ -7,13 +7,8 @@ import {
 	setParamToken,
 } from '@pluxel/runtime/test'
 import type { ForkablePluginConstructor } from '@pluxel/core'
-import {
-	EXTRA_BUILTINS_KNOWN,
-	EXTRA_FORKS,
-	type BuiltinsKnownExtra,
-	type ForksExtra,
-} from '../../src/loader/selection'
 import { createHmrTestContext } from '../support/hmr-context'
+import { disablePlugins, enablePlugins, isEnabled } from '../support/runtime-state'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 	;(
@@ -37,12 +32,12 @@ describe('LoaderService', () => {
 			},
 		])
 
-		expect(ctx.configService.isEnabledInConfig('Forky')).toBe(false)
-		expect(ctx.configService.isEnabledInConfig('Forky#a')).toBe(true)
-		expect(ctx.configService.isEnabledInConfig('Forky#b')).toBe(true)
-		expect(ctx.configService.isEnabledInConfig('Forky#c')).toBe(false)
+		expect(isEnabled(ctx, 'Forky')).toBe(false)
+		expect(isEnabled(ctx, 'Forky#a')).toBe(true)
+		expect(isEnabled(ctx, 'Forky#b')).toBe(true)
+		expect(isEnabled(ctx, 'Forky#c')).toBe(false)
 
-		const catalog = ctx.configService.getExtra(EXTRA_FORKS) as ForksExtra | undefined
+		const catalog = ctx.runtimeState.snapshot().forks
 		expect(catalog?.Forky?.slice().sort()).toEqual(['a', 'b', 'c'])
 
 		const ForkA = core.registry.fork(Forky as unknown as ForkablePluginConstructor, 'a')
@@ -66,8 +61,10 @@ describe('LoaderService', () => {
 		}
 		Plugin({ name: 'Worker' })(Worker)
 
-		ctx.configService.setExtra(EXTRA_FORKS, { Worker: ['f1'] })
-		ctx.configService.enableInConfig('Worker#f1')
+		ctx.runtimeState.update((draft) => {
+			draft.forks = { Worker: ['f1'] }
+		})
+		enablePlugins(ctx, 'Worker#f1')
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('Worker.ts', { Worker })
@@ -102,8 +99,8 @@ describe('LoaderService', () => {
 		const names = await loader.preloadPlugins([Good, Bad])
 		expect(names.slice().sort()).toEqual(['Bad', 'Good'])
 
-		expect(ctx.configService.isEnabledInConfig('Good')).toBe(true)
-		expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+		expect(isEnabled(ctx, 'Good')).toBe(true)
+		expect(isEnabled(ctx, 'Bad')).toBe(false)
 		expect(core.registry.isRunning(Good)).toBe(true)
 		expect(core.registry.isRunning(Bad)).toBe(false)
 	})
@@ -133,13 +130,13 @@ describe('LoaderService', () => {
 			const loader = ctx.loader
 
 			await loader.preloadPlugins([Good, Bad])
-			expect(ctx.configService.isEnabledInConfig('Good')).toBe(true)
-			expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+			expect(isEnabled(ctx, 'Good')).toBe(true)
+			expect(isEnabled(ctx, 'Bad')).toBe(false)
 			expect(core.registry.isRunning(Good)).toBe(true)
 			expect(core.registry.isRunning(Bad)).toBe(false)
 
 			// Simulate user disabling the healthy plugin as well.
-			ctx.configService.disableInConfig('Good')
+			disablePlugins(ctx, 'Good')
 		}
 
 		// New startup: should respect disabled bits and should not "seed enable" again.
@@ -148,14 +145,12 @@ describe('LoaderService', () => {
 			const loader = ctx.loader
 
 			await loader.preloadPlugins([Good, Bad])
-			expect(ctx.configService.isEnabledInConfig('Good')).toBe(false)
-			expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+			expect(isEnabled(ctx, 'Good')).toBe(false)
+			expect(isEnabled(ctx, 'Bad')).toBe(false)
 			expect(core.registry.isRunning(Good)).toBe(false)
 			expect(core.registry.isRunning(Bad)).toBe(false)
 
-			const known = ctx.configService.getExtra(EXTRA_BUILTINS_KNOWN) as
-				| BuiltinsKnownExtra
-				| undefined
+			const known = ctx.runtimeState.snapshot().builtinsKnown
 			expect(known?.Good).toBe(1)
 			expect(known?.Bad).toBe(1)
 		}
@@ -183,8 +178,8 @@ describe('LoaderService', () => {
 			/builtin preload commit failed/i,
 		)
 		// rollback should revert enable bits introduced by this call
-		expect(ctx.configService.isEnabledInConfig('Good')).toBe(false)
-		expect(ctx.configService.isEnabledInConfig('Bad')).toBe(false)
+		expect(isEnabled(ctx, 'Good')).toBe(false)
+		expect(isEnabled(ctx, 'Bad')).toBe(false)
 	})
 
 	it('preloadPlugins enables and commits builtins', async () => {
@@ -205,7 +200,7 @@ describe('LoaderService', () => {
 
 		const names = await loader.preloadPlugins([Builtin])
 		expect(names).toEqual(['Builtin'])
-		expect(ctx.configService.isEnabledInConfig('Builtin')).toBe(true)
+		expect(isEnabled(ctx, 'Builtin')).toBe(true)
 		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
 		expect(loader.api.registry.findModuleId('Builtin')).toBe('pluxel:builtins')
 		expect(core.registry.isRunning(Builtin)).toBe(true)
@@ -233,7 +228,7 @@ describe('LoaderService', () => {
 		Plugin({ name: 'Bad' })(Bad)
 		setParamToken(Bad, 0, MissingBase)
 
-		ctx.configService.enableInConfig('Bad')
+		enablePlugins(ctx, 'Bad')
 		{
 			const batch = loader.beginBatch()
 			await batch.replaceModule('Bad.ts', { Bad })
@@ -277,7 +272,7 @@ describe('LoaderService', () => {
 	it('batch rollback keeps loader state consistent when core commit fails', async () => {
 		const { core, ctx } = createHmrTestContext()
 		// Enable baseline provider; the later consumer will be enabled too.
-		ctx.configService.enableInConfig('Impl1', 'Consumer')
+		enablePlugins(ctx, 'Impl1', 'Consumer')
 		const loader = ctx.loader
 
 		abstract class Abs extends BasePlugin {}

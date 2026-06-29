@@ -5,8 +5,8 @@ import {
 	type PluginConstructor,
 } from '@pluxel/core'
 import { findRuntimeModuleId } from '@pluxel/runtime/internal'
+import { isPluginEnabled } from '@pluxel/runtime/services'
 import type { PluginRegistry } from './PluginRegistry'
-import { type DepOverridesExtra, EXTRA_DEP_OVERRIDES } from './selection'
 import type { AnchorJournal, AnchorStore } from './support'
 
 type PluginRegistryTx = ReturnType<PluginRegistry['beginTransaction']>
@@ -95,7 +95,9 @@ export class ModuleReplacer {
 		return { isAnchor, affectedModules }
 	}
 
-	private collectAffectedModules(oldItems: readonly { ctor: PluginConstructor }[]): readonly string[] {
+	private collectAffectedModules(
+		oldItems: readonly { ctor: PluginConstructor }[],
+	): readonly string[] {
 		if (oldItems.length === 0) return []
 		const graph = this.ctx.registry.graph
 		const slotCount = graph.slotCount()
@@ -186,13 +188,12 @@ class DependencyOverrideApplier {
 	 */
 	async apply(ctor: PluginConstructor, registry: PluginRegistry) {
 		const name = getPluginInfo(ctor).id
-		const all = this.ctx.configService.getExtra<DepOverridesExtra>(EXTRA_DEP_OVERRIDES)
-		const overrides = all?.[name]
+		const overrides = this.ctx.runtimeState.snapshot().dependencyOverrides[name]
 		if (!overrides) {
 			this.ctx.registry.replaceRuntimeDependencyOverrides(name, undefined)
 			return
 		}
-		const consumerEnabled = this.ctx.configService.isEnabledInConfig(name)
+		const consumerEnabled = isPluginEnabled(this.ctx.runtimeState.snapshot(), name)
 		const next: Array<PluginConstructor | undefined> = []
 
 		for (const [rawIndex, targetName] of Object.entries(overrides)) {
@@ -220,9 +221,6 @@ class DependencyOverrideApplier {
 				}
 			}
 		}
-		this.ctx.registry.replaceRuntimeDependencyOverrides(
-			name,
-			next.length === 0 ? undefined : next,
-		)
+		this.ctx.registry.replaceRuntimeDependencyOverrides(name, next.length === 0 ? undefined : next)
 	}
 }

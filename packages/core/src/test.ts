@@ -134,6 +134,20 @@ export type CoreHostOptions = {
 	prepareCommit?: (ctx: Context) => Promise<void> | void
 }
 
+type RuntimeStateLike = {
+	snapshot: () => { enabled: readonly string[] }
+	update: (run: (draft: { enabled: Set<string> }) => void) => void
+}
+
+function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
+	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState
+	if (!runtimeState || typeof runtimeState !== 'object') return undefined
+	const candidate = runtimeState as Partial<RuntimeStateLike>
+	return typeof candidate.snapshot === 'function' && typeof candidate.update === 'function'
+		? (candidate as RuntimeStateLike)
+		: undefined
+}
+
 export type CoreHostLifecycleIssueExpectation = {
 	phase?: PluginLifecycleIssuePhase
 	kind?: PluginLifecycleIssueKind
@@ -232,6 +246,23 @@ export function createCoreHost(
 	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
 	const registry = ctx.registry as PluginService
 	const configService = ctx.configService
+	const localEnabled = new Set<string>()
+	const setEnabled = (name: string, enabled: boolean) => {
+		const runtimeState = runtimeStateOf(ctx)
+		if (runtimeState) {
+			runtimeState.update((draft) => {
+				if (enabled) draft.enabled.add(name)
+				else draft.enabled.delete(name)
+			})
+			return
+		}
+		if (enabled) localEnabled.add(name)
+		else localEnabled.delete(name)
+	}
+	const isEnabled = (name: string) => {
+		const runtimeState = runtimeStateOf(ctx)
+		return runtimeState ? runtimeState.snapshot().enabled.includes(name) : localEnabled.has(name)
+	}
 
 	const last = () => registry.lastCommit
 	const services = () => [...(last()?.graph.keys() ?? [])]
@@ -279,9 +310,9 @@ export function createCoreHost(
 		set: (patch) => configService.patchConfig(name, patch as Record<string, unknown>),
 		unset: (...keys) => configService.unsetConfigKeys(name, keys),
 		rev: () => configService.getConfigRevision(name),
-		enable: () => configService.enableInConfig(name),
-		disable: () => configService.disableInConfig(name),
-		enabled: () => configService.isEnabledInConfig(name),
+		enable: () => setEnabled(name, true),
+		disable: () => setEnabled(name, false),
+		enabled: () => isEnabled(name),
 	})
 
 	const resolveCfgName = (target: CoreHostConfigTarget) =>

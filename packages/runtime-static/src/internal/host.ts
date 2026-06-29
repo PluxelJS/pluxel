@@ -1,11 +1,19 @@
 import {
 	type CommitSummary,
+	ForkablePlugin,
 	isPluginLifecycleNotStartedIssue,
 	type PluginConstructor,
+	type PluginIdentifier,
 	type PluginLifecycleIssue,
 } from '@pluxel/core'
 import { Context } from '@pluxel/runtime'
 import { bootstrapHostVault } from '@pluxel/runtime/services'
+import { isPluginEnabled, setPluginEnabled } from '@pluxel/runtime/services'
+import type {
+	RuntimePluginDependencyInfo,
+	RuntimePluginSource,
+	RuntimeRouteCapabilities,
+} from '@pluxel/runtime/plugin-catalog'
 import {
 	buildCatalog,
 	collectUnknownConfigEntries,
@@ -76,17 +84,102 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		public definition: StaticRuntimeDefinition,
 		public readonly options: StaticRuntimeHostOptions,
 	) {
-		const context = options.context ?? {}
+		const context = createStaticRuntimeContextConfig(options)
 		this.catalog = buildCatalog(definition)
 		this.ctx = new Context({
 			name: definition.name,
 			...context,
-			configService: options.configService ?? context.configService,
 		})
+		this.ctx.runtimeRoute = this.createRuntimeRoute()
+	}
+
+	private createRuntimeRoute(): RuntimeRouteCapabilities {
+		const unknownSource = (): RuntimePluginSource => ({
+			__typename: 'PluginSourceInfo',
+			kind: 'unknown',
+			moduleId: null,
+			packageName: null,
+			version: null,
+			tag: null,
+		})
+
+		const route: RuntimeRouteCapabilities = {
+			catalog: {
+				resolve: (target) => {
+					if (typeof target === 'string') {
+						return this.catalog.byName.get(target)?.plugin ?? this.registeredByName.get(target)
+					}
+					return this.catalog.byPlugin.get(target)?.plugin ?? target
+				},
+				resolveOrRegistered: (name) =>
+					this.registeredByName.get(name) ?? this.catalog.byName.get(name)?.plugin,
+				require: (name) => {
+					const ctor = route.catalog.resolveOrRegistered(name)
+					if (!ctor) throw new Error(`Plugin not found: ${name}`)
+					return ctor
+				},
+				listRegistered: () =>
+					new Map(this.catalog.entries.map((entry) => [entry.name, entry.plugin])),
+				listLoadedNames: () => this.catalog.entries.map((entry) => entry.name),
+			},
+			lifecycle: {
+				isRunning: (target) => this.ctx.registry.isRunning(target),
+				enable: (name, ctor) => {
+					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
+					this.ctx.registry.register(ctor)
+					this.registeredByName.set(name, ctor)
+				},
+				enablePersisted: (name) => {
+					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
+				},
+				deactivate: (name, ctor, options) => {
+					this.ctx.registry.unregister(ctor)
+					this.registeredByName.delete(name)
+					if (!options.runtimeOnly) {
+						this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, false))
+					}
+				},
+				stop: (name, ctor) => {
+					this.ctx.registry.unregister(ctor)
+					this.registeredByName.delete(name)
+				},
+			},
+			configMetadata: {
+				getSchema: (name) => this.catalog.byName.get(name)?.info.configMap ?? undefined,
+				getSchemaSource: () => undefined,
+				getConfigLayout: (name) => this.catalog.byName.get(name)?.info.configLayoutMap ?? undefined,
+			},
+			dependencies: {
+				listDependencies: (ctor): RuntimePluginDependencyInfo => {
+					const entry = this.catalog.byPlugin.get(ctor)
+					if (!entry) return []
+					return entry.deps.map((dep) => {
+						const depEntry = this.catalog.byPlugin.get(dep)
+						const depCtor = depEntry?.plugin ?? dep
+						return {
+							name: depEntry?.name ?? describeStaticDependency(dep),
+							isRunning: this.ctx.registry.isRunning(depCtor),
+						}
+					})
+				},
+				ensureForkBase: (baseName) => {
+					const baseCtor = route.catalog.resolve(baseName)
+					if (!baseCtor) return undefined
+					const proto = (baseCtor as { prototype?: unknown }).prototype
+					if (!proto || !(proto instanceof ForkablePlugin)) return undefined
+					return baseCtor
+				},
+			},
+			source: {
+				resolveSource: () => unknownSource(),
+			},
+		}
+
+		return route
 	}
 
 	public async prepare(): Promise<void> {
-		await this.ctx.root.configService.ready
+		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
 		await bootstrapHostVault(this.ctx)
 	}
 
@@ -161,7 +254,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			runtime: this.definition.name,
 			entries: this.catalog.entries.map(({ name }) => ({
 				name,
-				status: this.ctx.configService.isEnabledInConfig(name) ? 'started' : 'disabled',
+				status: isPluginEnabled(this.ctx.runtimeState.snapshot(), name) ? 'started' : 'disabled',
 			})),
 		}
 	}
@@ -170,11 +263,15 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		catalog: StaticRuntimeCatalog,
 		options: StaticRuntimePlanOptions,
 	): Promise<StaticRuntimeCatalogPlan> {
-		await this.ctx.root.configService.ready
+		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
 
 		const entries: StaticRuntimeReportEntry[] = [...catalog.diagnostics]
 		const configSnapshot = readConfigSnapshot(this.ctx.configService)
-		for (const unknown of collectUnknownConfigEntries(configSnapshot, catalog.byName)) {
+		for (const unknown of collectUnknownConfigEntries(
+			configSnapshot,
+			catalog.byName,
+			this.ctx.runtimeState.snapshot().enabled,
+		)) {
 			entries.push({ name: unknown, status: 'unknown-config-entry' })
 		}
 
@@ -189,8 +286,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		}
 
 		const enabled = new Set<string>()
+		const runtimeState = this.ctx.runtimeState.snapshot()
 		for (const { name } of catalog.entries) {
-			if (this.ctx.configService.isEnabledInConfig(name)) enabled.add(name)
+			if (isPluginEnabled(runtimeState, name)) enabled.add(name)
 		}
 
 		for (const { name } of catalog.entries) {
@@ -446,4 +544,27 @@ function compactReportEntries(
 function errorMessage(error: unknown): string {
 	if (error instanceof Error) return error.message
 	return String(error)
+}
+
+function describeStaticDependency(dep: PluginIdentifier): string {
+	if (typeof dep !== 'function') return String(dep)
+	return dep.name || '<anonymous>'
+}
+
+function createStaticRuntimeContextConfig(
+	options: StaticRuntimeHostOptions,
+): NonNullable<StaticRuntimeHostOptions['context']> {
+	const context = options.context ?? {}
+	const configService = options.configService ?? context.configService
+	const inheritedRuntimeState =
+		!options.runtimeState && !context.runtimeState && configService?.mode
+			? { mode: configService.mode }
+			: undefined
+	const runtimeState = options.runtimeState ?? context.runtimeState ?? inheritedRuntimeState
+
+	return {
+		...context,
+		configService,
+		runtimeState,
+	}
 }

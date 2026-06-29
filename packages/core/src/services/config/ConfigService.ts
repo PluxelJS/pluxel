@@ -19,15 +19,12 @@ declare module '@pluxel/context' {
  *
  * - Core owns "when/how @Config is injected".
  * - Core also provides the shared validation/defaulting engine via `ensureValidated(...)`.
- * - Apps/HMR override this service mainly for persistence and enablement policies.
+ * - Apps/HMR override this service mainly for persistence.
  *
  * Readiness contract:
  * - `isReady/ready` exist on the core service so orchestrators can reliably wait for config-backed policies
  *   (HMR loads from disk asynchronously; core resolves immediately).
  *
- * Note on enablement:
- * - This service stores enablement preference in config state.
- * - Core does not interpret it; orchestrators/loaders may use it to decide whether a plugin should be started.
  */
 @Injectable({ key: serviceName })
 export class ConfigService {
@@ -47,11 +44,9 @@ export class ConfigService {
 			snapshot: Readonly<Record<string, unknown>>
 		}
 	>()
-	private enabledInConfig = new Set<string>()
 	private store = new Map<string, Record<string, unknown>>()
 	private configSeq = 0
 	private configRevByPlugin = new Map<string, number>()
-	private extra: Record<string, unknown> = Object.create(null)
 
 	constructor(ctx: PluxelContext, _config: unknown) {
 		this.ctx = ctx
@@ -77,42 +72,6 @@ export class ConfigService {
 			sig += `${key.length}:${key}#${id};`
 		}
 		return sig
-	}
-
-	isEnabledInConfig(name: string): boolean {
-		return this.enabledInConfig.has(name)
-	}
-
-	setEnabledInConfig(name: string, enabled: boolean) {
-		if (enabled) this.enabledInConfig.add(name)
-		else this.enabledInConfig.delete(name)
-	}
-
-	enableInConfig(...names: string[]) {
-		for (const n of names) this.enabledInConfig.add(n)
-	}
-
-	disableInConfig(...names: string[]) {
-		for (const n of names) this.enabledInConfig.delete(n)
-	}
-
-	replaceEnabledInConfigSet(names: Iterable<string>) {
-		const next = new Set<string>()
-		for (const n of names) next.add(n)
-
-		let same = next.size === this.enabledInConfig.size
-		if (same) {
-			for (const n of next) {
-				if (!this.enabledInConfig.has(n)) {
-					same = false
-					break
-				}
-			}
-		}
-		if (same) return
-
-		this.enabledInConfig.clear()
-		for (const n of next) this.enabledInConfig.add(n)
 	}
 
 	/**
@@ -260,14 +219,6 @@ export class ConfigService {
 		if (!changed) return
 		this.configRevByPlugin.set(name, ++this.configSeq)
 		this.validated.delete(name)
-	}
-
-	getExtra<T = unknown>(key: string): T | undefined {
-		return this.extra[key] as T | undefined
-	}
-
-	setExtra(key: string, value: unknown): void {
-		this.extra[key] = value
 	}
 
 	/**

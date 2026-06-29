@@ -63,12 +63,17 @@ const ctx = new Context({
 \tprofile: ${JSON.stringify(profile)},
 \tconfigService: {
 \t\t// Frozen hosts still need a mutable bootstrap phase because builtin preload
-\t\t// records schema/extra metadata into ConfigService. Keep it in-memory so the
+\t\t// records schema metadata into ConfigService. Keep it in-memory so the
 \t\t// export stays side-effect free while allowing runtime baseline registration.
 \t\tmode: 'memory',
 \t\tsnapshot: {
-\t\t\tenabled: ${JSON.stringify([...enabled])},
 \t\t\tplugins: ${JSON.stringify(configPayload, null, 2)},
+\t\t},
+\t},
+\truntimeState: {
+\t\tmode: 'memory',
+\t\tsnapshot: {
+\t\t\tenabled: ${JSON.stringify([...enabled])},
 \t\t},
 \t},
 \tpackageService: {

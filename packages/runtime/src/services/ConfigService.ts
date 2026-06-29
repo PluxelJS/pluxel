@@ -10,11 +10,13 @@ import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
 
-// —— 3. 全局配置 ——
-export interface ConfigShape {
-	enabled: Set<string>
+export interface PluginConfigFile {
+	version: 1
 	plugins: Record<string, Record<string, unknown>>
-	extra: Record<string, unknown>
+}
+
+export interface ConfigShape {
+	plugins: Record<string, Record<string, unknown>>
 }
 
 export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
@@ -23,9 +25,7 @@ export interface ConfigServiceConfig {
 	mode?: ConfigServiceMode
 	path?: string
 	snapshot?: Partial<{
-		enabled: Iterable<string> | string[]
 		plugins: Record<string, Record<string, unknown>>
-		extra: Record<string, unknown>
 	}>
 }
 
@@ -53,9 +53,7 @@ export class ConfigService {
 	public readonly ready: Promise<void>
 
 	private readonly data: ConfigShape = {
-		enabled: new Set(),
 		plugins: Object.create(null),
-		extra: Object.create(null),
 	}
 	private readonly file: string
 	private readonly saveDelayMs = 200
@@ -90,9 +88,6 @@ export class ConfigService {
 
 	constructor(ctx: PluxelContext, cfg: ConfigServiceConfig = {}) {
 		this.ctx = ctx
-		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
-		this.getExtra = this.getExtra.bind(this)
-		this.setExtra = this.setExtra.bind(this)
 
 		// Default mode depends on the filesystem backend:
 		// - In tests we frequently run with an in-memory fs, where "file mode" would cause an
@@ -215,9 +210,9 @@ export class ConfigService {
 		const txtDigest = ohash(txt)
 		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
 
-		let parsed: Partial<ConfigShape> & { enabled?: unknown }
+		let parsed: Partial<PluginConfigFile>
 		try {
-			parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
+			parsed = SuperJSON.parse(txt) as Partial<PluginConfigFile>
 		} catch (error) {
 			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', { file, error })
 			await this.isolateBrokenConfigFile(file, txt)
@@ -230,19 +225,8 @@ export class ConfigService {
 			return
 		}
 
-		this.data.enabled.clear()
-		const enabledList = Array.isArray(parsed.enabled)
-			? (parsed.enabled as string[])
-			: parsed?.enabled instanceof Set
-				? [...(parsed.enabled as Set<string>)]
-				: []
-		for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
-
 		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
 		this.reconcilePluginsFromDisk(nextPlugins)
-
-		clearRecord(this.data.extra)
-		if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
 
 		if (readFromFallback) {
 			await this.saveToDisk(file)
@@ -250,22 +234,15 @@ export class ConfigService {
 	}
 
 	private resetToDefault() {
-		this.data.enabled.clear()
 		clearRecord(this.data.plugins)
-		clearRecord(this.data.extra)
 	}
 
 	private applySnapshot(
 		snapshot: Partial<{
-			enabled: Iterable<string> | string[]
 			plugins: Record<string, Record<string, unknown>>
-			extra: Record<string, unknown>
 		}>,
 	) {
 		this.resetToDefault()
-		for (const name of snapshot.enabled ?? []) {
-			if (typeof name === 'string' && name) this.data.enabled.add(name)
-		}
 		if (snapshot.plugins) {
 			for (const [name, value] of Object.entries(snapshot.plugins)) {
 				if (!value || typeof value !== 'object') continue
@@ -274,7 +251,6 @@ export class ConfigService {
 				this.configRevByPlugin.set(name, 1)
 			}
 		}
-		if (snapshot.extra) Object.assign(this.data.extra, snapshot.extra)
 	}
 
 	private assertMutable(action: string) {
@@ -354,17 +330,20 @@ export class ConfigService {
 			return
 		}
 
-		const content = SuperJSON.stringify(this.data)
+		const content = SuperJSON.stringify({
+			version: 1,
+			plugins: this.data.plugins,
+		} satisfies PluginConfigFile)
 		const nextDigest = ohash(content)
 		if (nextDigest === this.lastWrittenDigest && this.ctx.root.fs.exists(file)) return
 
-			this.pendingWriteDigest = nextDigest
-			const task = this.ctx.root.fs
-				.writeTextAtomic(file, content)
-				.then((): undefined => {
-					this.lastWrittenDigest = nextDigest
-					return undefined
-				})
+		this.pendingWriteDigest = nextDigest
+		const task = this.ctx.root.fs
+			.writeTextAtomic(file, content)
+			.then((): undefined => {
+				this.lastWrittenDigest = nextDigest
+				return undefined
+			})
 			.finally(() => {
 				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
 			})
@@ -525,12 +504,8 @@ export class ConfigService {
 		return sig
 	}
 
-	getExtra<T = unknown>(key: string): T | undefined {
-		return this.data.extra[key] as T | undefined
-	}
-
 	/**
-	 * Read a detached snapshot of the runtime config state.
+	 * Read a detached snapshot of the plugin config state.
 	 *
 	 * Callers can inspect this for diagnostics and route decisions, but mutating the
 	 * returned object never mutates the live config service.
@@ -540,15 +515,7 @@ export class ConfigService {
 		for (const [name, record] of Object.entries(this.data.plugins)) {
 			plugins[name] = { ...record }
 		}
-		return {
-			enabled: new Set(this.data.enabled),
-			plugins,
-			extra: { ...this.data.extra },
-		}
-	}
-
-	isEnabledInConfig(name: string): boolean {
-		return this.data.enabled.has(name)
+		return { plugins }
 	}
 
 	// —— 写接口（更简洁的 API）—— //
@@ -606,74 +573,6 @@ export class ConfigService {
 			this.bumpPluginRevision(name)
 			this.requestSave()
 		}
-	}
-
-	setExtra(key: string, value: unknown) {
-		this.assertMutable('setExtra')
-		if (this.data.extra[key] === value) return
-		this.data.extra[key] = value
-		this.requestSave()
-	}
-
-	/**
-	 * 批量启用：ConfigService.enableInConfig('a', 'b', 'c')
-	 */
-	enableInConfig(...names: readonly string[]) {
-		this.assertMutable('enableInConfig')
-		let changed = false
-		for (let i = 0; i < names.length; i++) {
-			const n = names[i]
-			if (!this.data.enabled.has(n)) {
-				this.data.enabled.add(n)
-				changed = true
-			}
-		}
-		if (changed) this.requestSave()
-	}
-
-	/**
-	 * 批量禁用：ConfigService.disableInConfig('a', 'b')
-	 */
-	disableInConfig(...names: readonly string[]) {
-		this.assertMutable('disableInConfig')
-		let changed = false
-		for (let i = 0; i < names.length; i++) {
-			const n = names[i]
-			if (this.data.enabled.delete(n)) changed = true
-		}
-		if (changed) this.requestSave()
-	}
-
-	/**
-	 * 单个开关（更语义化）
-	 */
-	setEnabledInConfig(name: string, enabled: boolean) {
-		if (enabled) this.enableInConfig(name)
-		else this.disableInConfig(name)
-	}
-
-	/**
-	 * 一次性覆盖启用集合（常用于 UI “全选/重置”）
-	 */
-	replaceEnabledInConfigSet(names: Iterable<string>) {
-		this.assertMutable('replaceEnabledInConfigSet')
-		const next = new Set<string>()
-		for (const n of names) next.add(n)
-
-		let same = next.size === this.data.enabled.size
-		if (same) {
-			for (const n of next) {
-				if (!this.data.enabled.has(n)) {
-					same = false
-					break
-				}
-			}
-		}
-		if (same) return
-
-		this.data.enabled.clear()
-		for (const n of next) this.data.enabled.add(n)
-		this.requestSave()
 	}
 }
 

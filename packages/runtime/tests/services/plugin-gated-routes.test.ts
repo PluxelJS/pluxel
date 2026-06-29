@@ -5,6 +5,7 @@ import {
 	createElysiaApp,
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
+	setPluginEnabled,
 	type PluginGatedModuleDef,
 } from '@pluxel/runtime/services'
 
@@ -22,9 +23,13 @@ const routes: PluginGatedModuleDef[] = [
 ]
 
 describe('plugin gated routes', () => {
+	const enable = (ctx: Parameters<typeof createPluginGatedRouter>[0], name: string) => {
+		ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
+	}
+
 	it('returns 404 when plugin is disabled', async () => {
 		await withRuntimeContext(async (ctx) => {
-			ctx.configService.enableInConfig('PluginA')
+			enable(ctx, 'PluginA')
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
 			app.mount('/api', api)
@@ -36,7 +41,7 @@ describe('plugin gated routes', () => {
 
 	it('handles request when plugin is enabled', async () => {
 		await withRuntimeContext(async (ctx) => {
-			ctx.configService.enableInConfig('PluginB')
+			enable(ctx, 'PluginB')
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
 			app.mount('/api', api)
@@ -49,7 +54,7 @@ describe('plugin gated routes', () => {
 
 	it('computes a runtime snapshot of enabled plugins/routes', () => {
 		return withRuntimeContext((ctx) => {
-			ctx.configService.enableInConfig('PluginA')
+			enable(ctx, 'PluginA')
 			const snap = getPluginRoutingSnapshot(ctx, routes)
 			expect(snap).toEqual({
 				enabledPlugins: ['PluginA'],

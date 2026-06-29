@@ -203,9 +203,12 @@ describe('@pluxel/runtime-static', () => {
 				configService: {
 					mode: 'memory',
 					snapshot: {
-						enabled: ['StaticA', 'Ghost'],
 						plugins: { Ghost: {} },
 					},
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['StaticA', 'Ghost'] },
 				},
 			},
 		)
@@ -232,7 +235,11 @@ describe('@pluxel/runtime-static', () => {
 			{
 				configService: {
 					mode: 'memory',
-					snapshot: { enabled: ['InvalidConfigPlugin'], plugins: { InvalidConfigPlugin: {} } },
+					snapshot: { plugins: { InvalidConfigPlugin: {} } },
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['InvalidConfigPlugin'] },
 				},
 			},
 		)
@@ -264,6 +271,9 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-deps', plugins: [DepA, DepB] }),
 			{
 				configService: {
+					mode: 'memory',
+				},
+				runtimeState: {
 					mode: 'memory',
 					snapshot: { enabled: ['DepB'] },
 				},
@@ -297,6 +307,9 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-failures', plugins: [StartFail, StartOk] }),
 			{
 				configService: {
+					mode: 'memory',
+				},
+				runtimeState: {
 					mode: 'memory',
 					snapshot: { enabled: ['StartFail', 'StartOk'] },
 				},
@@ -344,6 +357,9 @@ describe('@pluxel/runtime-static', () => {
 			{
 				configService: {
 					mode: 'memory',
+				},
+				runtimeState: {
+					mode: 'memory',
 					snapshot: { enabled: ['ProviderFail', 'ConsumerBlocked'] },
 				},
 			},
@@ -386,6 +402,9 @@ describe('@pluxel/runtime-static', () => {
 			{
 				configService: {
 					mode: 'memory',
+				},
+				runtimeState: {
+					mode: 'memory',
 					snapshot: { enabled: ['HotStatic'] },
 				},
 			},
@@ -415,6 +434,9 @@ describe('@pluxel/runtime-static', () => {
 			defineStaticRuntime({ name: 'static-hmr-remove', plugins: [RemovedStatic] }),
 			{
 				configService: {
+					mode: 'memory',
+				},
+				runtimeState: {
 					mode: 'memory',
 					snapshot: { enabled: ['RemovedStatic'] },
 				},
@@ -450,7 +472,11 @@ describe('@pluxel/runtime-static', () => {
 			{
 				configService: {
 					mode: 'memory',
-					snapshot: { enabled: ['HotConfig'], plugins: { HotConfig: {} } },
+					snapshot: { plugins: { HotConfig: {} } },
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['HotConfig'] },
 				},
 			},
 		)
@@ -480,7 +506,7 @@ describe('@pluxel/runtime-static', () => {
 	it('does not validate disabled plugins during static HMR', async () => {
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntime({ name: 'static-hmr-disabled', plugins: [DisabledHotV1] }),
-			{ configService: { mode: 'memory', snapshot: { enabled: [] } } },
+			{ configService: { mode: 'memory' }, runtimeState: { mode: 'memory' } },
 		)
 		try {
 			await host.start()

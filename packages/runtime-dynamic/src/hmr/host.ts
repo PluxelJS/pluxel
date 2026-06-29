@@ -26,6 +26,7 @@ const nodeHostFs = nodeLoaderHmrWorkspaceFs
 
 export type LoaderHmrHostStorageOptions = {
 	configFile?: string
+	runtimeStateFile?: string
 	seedConfig?: string | false
 	pluginDataDir?: string
 }
@@ -36,7 +37,9 @@ export type LoaderHmrHostConfigMaterialization = {
 	seedFile: string | false
 }
 
-export type LoaderHmrHostOptions<TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot> = {
+export type LoaderHmrHostOptions<
+	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
+> = {
 	root?: string
 	chdir?: boolean
 	fs?: LoaderHmrWorkspaceFs
@@ -59,7 +62,9 @@ export type LoaderHmrHostOptions<TSnapshot extends LoaderHmrWorkspaceSnapshot = 
 	context?: Record<string, unknown>
 }
 
-export type PlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot> = {
+export type PlannedLoaderHmrHost<
+	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
+> = {
 	root: string
 	chdir: boolean
 	fs: LoaderHmrWorkspaceFs
@@ -110,6 +115,7 @@ function planRuntimeStorage(
 		...(storage
 			? {
 					configFile: storage.configFile ?? '.pluxel/loader-hmr/config.json',
+					runtimeStateFile: storage.runtimeStateFile ?? '.pluxel/loader-hmr/state.json',
 					pluginDataDir: storage.pluginDataDir ?? '.pluxel/plugin-data',
 				}
 			: {}),
@@ -257,6 +263,10 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			mode: 'file',
 			path: plan.runtimeStorage.configFile,
 		},
+		runtimeState: {
+			mode: 'file',
+			path: plan.runtimeStorage.runtimeStateFile,
+		},
 		fs: {
 			backend: createNodeFsServiceBackend(plan.fs),
 		},
@@ -266,7 +276,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		},
 		...plan.context,
 	})
-	await ctx.root.configService.ready
+	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	await bootstrapHostVault(ctx)
 
 	const hmrInstall = await installLoaderHmrRuntime(ctx, {

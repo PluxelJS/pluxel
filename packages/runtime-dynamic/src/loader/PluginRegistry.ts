@@ -16,14 +16,8 @@ import {
 	type ConfigSchemaMap as CoreConfigSchemaMap,
 	isStandardSchemaV1,
 } from '@pluxel/core/services'
+import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/services'
 import * as v from 'valibot'
-import {
-	type BaseProvidersExtra,
-	EXTRA_BASE_PROVIDERS,
-	EXTRA_FORKS,
-	type ForksExtra,
-} from './selection'
-
 type ModuleId = string
 type PluginName = string
 type ExportKey = string
@@ -92,9 +86,16 @@ export class PluginRegistry {
 
 	constructor(private ctx: Context) {}
 
+	private isEnabled(name: string): boolean {
+		return isPluginEnabled(this.ctx.runtimeState.snapshot(), name)
+	}
+
+	private setEnabled(names: Iterable<string>, enabled: boolean): void {
+		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, names, enabled))
+	}
+
 	private getForkIds(originalName: string): string[] {
-		const map = this.ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)
-		const list = map?.[originalName]
+		const list = this.ctx.runtimeState.snapshot().forks[originalName]
 		if (!Array.isArray(list) || list.length === 0) return []
 		const out: string[] = []
 		for (const id of list) {
@@ -106,11 +107,9 @@ export class PluginRegistry {
 
 	private recordBaseProvider(baseToken: PluginIdentifier, providerName: string) {
 		const baseKey = getDeclaredName(baseToken)
-		const prev = this.ctx.configService.getExtra<BaseProvidersExtra>(EXTRA_BASE_PROVIDERS) ?? {}
-		if (prev[baseKey] === providerName) return
-		this.ctx.configService.setExtra(EXTRA_BASE_PROVIDERS, {
-			...prev,
-			[baseKey]: providerName,
+		if (this.ctx.runtimeState.snapshot().baseProviders[baseKey] === providerName) return
+		this.ctx.runtimeState.update((draft) => {
+			draft.baseProviders[baseKey] = providerName
 		})
 	}
 
@@ -461,7 +460,7 @@ export class PluginRegistry {
 		for (const { ctor } of list) {
 			const { id: name } = getPluginInfo(ctor)
 			if (!this.isPrimaryProvider(moduleId, ctor)) continue
-			if (!this.ctx.configService.isEnabledInConfig(name)) continue
+			if (!this.isEnabled(name)) continue
 			starts.push(safeStart(name, ctor))
 		}
 
@@ -483,7 +482,7 @@ export class PluginRegistry {
 				} catch {
 					continue
 				}
-				if (!this.ctx.configService.isEnabledInConfig(forkName)) continue
+				if (!this.isEnabled(forkName)) continue
 				try {
 					const ForkCtor = this.ctx.registry.fork(
 						ctor as unknown as ForkablePluginConstructor,
@@ -526,8 +525,8 @@ export class PluginRegistry {
 		// 进入运行层（两段式，失败回滚）
 		let enabled = false
 		try {
-			if (!this.ctx.configService.isEnabledInConfig(name)) {
-				this.ctx.configService.enableInConfig(name)
+			if (!this.isEnabled(name)) {
+				this.setEnabled([name], true)
 			}
 			enabled = true
 			// Idempotency: enable/start may be invoked multiple times (config ready races, user clicks, etc.).
@@ -556,7 +555,7 @@ export class PluginRegistry {
 			})
 			if (enabled) {
 				this.logGuard(`config.disable(${name})`, () => {
-					this.ctx.configService.disableInConfig(name)
+					this.setEnabled([name], false)
 				})
 			}
 			throw err
@@ -609,24 +608,24 @@ export class PluginRegistry {
 
 	// =============== 持久层（配置启用位） ===============
 	enablePersisted(...names: readonly string[]): void {
-		this.ctx.configService.batch(() => this.ctx.configService.enableInConfig(...names))
+		this.setEnabled(names, true)
 	}
 	disablePersisted(...names: readonly string[]): void {
-		this.ctx.configService.batch(() => this.ctx.configService.disableInConfig(...names))
+		this.setEnabled(names, false)
 	}
 	/** 将该模块内所有插件的持久启用位关闭（用于 prune(persisted)） */
 	disablePersistedByModule(moduleId: ModuleId): void {
-		this.ctx.configService.batch(() => {
+		this.ctx.runtimeState.update((draft) => {
 			const list = this.moduleMap.get(moduleId) ?? EMPTY
 			for (const { ctor } of list) {
 				const { id: name } = getPluginInfo(ctor)
 				if (!this.isPrimaryProvider(moduleId, ctor)) continue
-				this.ctx.configService.disableInConfig(name)
+				setPluginsEnabled(draft, [name], false)
 
 				const forkIds = this.getForkIds(name)
 				for (const forkId of forkIds) {
 					try {
-						this.ctx.configService.disableInConfig(formatForkPluginId(name, forkId))
+						setPluginsEnabled(draft, [formatForkPluginId(name, forkId)], false)
 					} catch {
 						// ignore invalid persisted fork ids
 					}
@@ -652,7 +651,7 @@ export class PluginRegistry {
 			if (getForkOf(ctor)) return false
 
 			const baseKey = getDeclaredName(base)
-			const map = this.ctx.configService.getExtra<BaseProvidersExtra>(EXTRA_BASE_PROVIDERS) ?? {}
+			const map = this.ctx.runtimeState.snapshot().baseProviders
 			const selectedRaw = map?.[baseKey]
 			const selected =
 				typeof selectedRaw === 'string' && selectedRaw.trim().length > 0 ? selectedRaw.trim() : null
@@ -660,9 +659,7 @@ export class PluginRegistry {
 			const selectedCtor = selected && !selectedIsForkName ? this.nameMap.get(selected) : undefined
 			const selectedIsForkCtor = selectedCtor ? Boolean(getForkOf(selectedCtor)) : false
 			const selectedEnabled =
-				selectedCtor && selected && !selectedIsForkName
-					? this.ctx.configService.isEnabledInConfig(selected)
-					: false
+				selectedCtor && selected && !selectedIsForkName ? this.isEnabled(selected) : false
 
 			const selectedValid = Boolean(
 				selected && !selectedIsForkName && selectedCtor && !selectedIsForkCtor && selectedEnabled,
@@ -673,8 +670,7 @@ export class PluginRegistry {
 				for (const [candidateName, candidateCtor] of this.nameMap) {
 					// nameMap is declaration-only; still be defensive.
 					if (isForkPluginId(candidateName)) continue
-					if (candidateName !== name && !this.ctx.configService.isEnabledInConfig(candidateName))
-						continue
+					if (candidateName !== name && !this.isEnabled(candidateName)) continue
 
 					try {
 						if (getForkOf(candidateCtor)) continue
@@ -701,7 +697,9 @@ export class PluginRegistry {
 
 				// Persist the fallback so future commits stay deterministic.
 				if (map[baseKey] !== fallback) {
-					this.ctx.configService.setExtra(EXTRA_BASE_PROVIDERS, { ...map, [baseKey]: fallback })
+					this.ctx.runtimeState.update((draft) => {
+						draft.baseProviders[baseKey] = fallback
+					})
 				}
 			}
 		} catch {

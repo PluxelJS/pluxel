@@ -1,5 +1,9 @@
-import './loader/LoaderService'
-import './package/PackageService'
-import './scan/ScanService'
-import './catalog/LoaderPluginCatalogService'
-import './api/register'
+import { LoaderService } from './loader/LoaderService'
+import { PackageService } from './package/PackageService'
+import { ScanService } from './scan/ScanService'
+
+export { LoaderService, PackageService, ScanService }
+
+void LoaderService
+void PackageService
+void ScanService

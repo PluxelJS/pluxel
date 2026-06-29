@@ -14,15 +14,8 @@ import {
 	type PluginConstructor,
 	type PluginIdentifier,
 } from '@pluxel/core'
-import {
-	type BaseProvidersExtra,
-	type DepOverridesExtra,
-	EXTRA_BASE_PROVIDERS,
-	EXTRA_DEP_OVERRIDES,
-	EXTRA_FORKS,
-	type ForksExtra,
-	getRuntimePluginCatalog,
-} from '../../services/runtime/catalog/RuntimePluginCatalogService'
+import { requireRouteCapability } from '../../runtime/capabilities'
+import { isPluginEnabled } from '../../services/RuntimeStateStore'
 import { addForkToCatalog } from './forksCatalog'
 import type {
 	BaseProviderInfo,
@@ -34,10 +27,8 @@ import type {
 } from '../../web/protocol'
 
 function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {
-	const ctor =
-		getRuntimePluginCatalog(ctx).resolve(name) ??
-		getRuntimePluginCatalog(ctx).resolve(hint ?? name) ??
-		hint
+	const catalog = requireRouteCapability(ctx, 'catalog')
+	const ctor = catalog.resolve(name) ?? catalog.resolve(hint ?? name) ?? hint
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -75,25 +66,10 @@ function readParamTypes(ctor: PluginConstructor): unknown[] {
 	}
 }
 
-function getExtraApi(ctx: Context): {
-	getExtra?: (key: string) => unknown
-	setExtra?: (key: string, value: unknown) => void
-} {
-	const svc = ctx.configService as unknown
-	if (!svc || typeof svc !== 'object') return {}
-	const getExtra = (svc as { getExtra?: unknown }).getExtra
-	const setExtra = (svc as { setExtra?: unknown }).setExtra
-	return {
-		getExtra: typeof getExtra === 'function' ? getExtra.bind(svc) : undefined,
-		setExtra: typeof setExtra === 'function' ? setExtra.bind(svc) : undefined,
-	}
-}
-
 function readDepOverrides(ctx: Context, consumerName: string): Record<number, string> | undefined {
-	const { getExtra } = getExtraApi(ctx)
-	if (typeof getExtra !== 'function') return undefined
-	const all = getExtra(EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined
-	return all?.[consumerName]
+	return ctx.runtimeState.snapshot().dependencyOverrides[consumerName] as
+		| Record<number, string>
+		| undefined
 }
 
 function writeDepOverride(
@@ -102,18 +78,16 @@ function writeDepOverride(
 	index: number,
 	targetName: string | null,
 ) {
-	const { getExtra, setExtra } = getExtraApi(ctx)
-	if (typeof getExtra !== 'function' || typeof setExtra !== 'function') return
+	ctx.runtimeState.update((draft) => {
+		const existing = draft.dependencyOverrides[consumerName]
+			? { ...draft.dependencyOverrides[consumerName] }
+			: {}
+		if (!targetName) delete existing[index]
+		else existing[index] = targetName
 
-	const all = (getExtra(EXTRA_DEP_OVERRIDES) as DepOverridesExtra | undefined) ?? {}
-	const existing = all[consumerName] ? { ...all[consumerName] } : {}
-	if (!targetName) delete existing[index]
-	else existing[index] = targetName
-
-	const nextAll: DepOverridesExtra = { ...all }
-	if (Object.keys(existing).length === 0) delete nextAll[consumerName]
-	else nextAll[consumerName] = existing
-	setExtra(EXTRA_DEP_OVERRIDES, nextAll)
+		if (Object.keys(existing).length === 0) delete draft.dependencyOverrides[consumerName]
+		else draft.dependencyOverrides[consumerName] = existing
+	})
 }
 
 function buildRuntimeDependencyOverrides(
@@ -136,10 +110,13 @@ function buildRuntimeDependencyOverrides(
 
 export function listPluginDependencies(ctx: Context, name: string): PluginDependencyRef[] {
 	const ctor = resolvePlugin(ctx, name)
-	return getRuntimePluginCatalog(ctx).listDependencies(ctor)
+	return requireRouteCapability(ctx, 'dependencies').listDependencies(ctor)
 }
 
 export function inspectPluginDependencies(ctx: Context, name: string): PluginDependencyState[] {
+	const catalog = requireRouteCapability(ctx, 'catalog')
+	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
+	const runtimeState = ctx.runtimeState.snapshot()
 	const ctor = resolvePlugin(ctx, name)
 	const rawParams = readParamTypes(ctor)
 	const effectiveParams = getClassParams<unknown>(ctor)
@@ -184,14 +161,14 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 				if (resolved !== undefined) baseProvider = tokenName(resolved)
 			} catch {}
 
-			for (const [pluginName, pluginCtor] of getRuntimePluginCatalog(ctx).listRegistered()) {
+			for (const [pluginName, pluginCtor] of catalog.listRegistered()) {
 				try {
 					const info = getPluginInfo(pluginCtor)
 					if (info.base !== baseToken) continue
 					options.push({
 						name: pluginName,
-						isEnabled: ctx.configService.isEnabledInConfig(pluginName),
-						isRunning: getRuntimePluginCatalog(ctx).isRunning(pluginCtor),
+						isEnabled: isPluginEnabled(runtimeState, pluginName),
+						isRunning: lifecycle.isRunning(pluginCtor),
 					})
 				} catch {}
 			}
@@ -205,8 +182,7 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 			}
 
 			const forkIds: string[] = []
-			const fromCatalog =
-				ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS)?.[originalName] ?? []
+			const fromCatalog = ctx.runtimeState.snapshot().forks[originalName] ?? []
 			for (const id of fromCatalog) {
 				const forkId = typeof id === 'string' ? id.trim() : ''
 				if (forkId) forkIds.push(forkId)
@@ -218,10 +194,10 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 
 			options.push({
 				name: originalName,
-				isEnabled: ctx.configService.isEnabledInConfig(originalName),
+				isEnabled: isPluginEnabled(runtimeState, originalName),
 				isRunning:
 					typeof original === 'function'
-						? getRuntimePluginCatalog(ctx).isRunning(original as PluginConstructor)
+						? lifecycle.isRunning(original as PluginConstructor)
 						: false,
 			})
 			for (const forkId of forkIds) {
@@ -231,11 +207,11 @@ export function inspectPluginDependencies(ctx: Context, name: string): PluginDep
 				} catch {
 					continue
 				}
-				const forkCtor = getRuntimePluginCatalog(ctx).resolve(forkName)
+				const forkCtor = catalog.resolve(forkName)
 				options.push({
 					name: forkName,
-					isEnabled: ctx.configService.isEnabledInConfig(forkName),
-					isRunning: forkCtor ? getRuntimePluginCatalog(ctx).isRunning(forkCtor) : false,
+					isEnabled: isPluginEnabled(runtimeState, forkName),
+					isRunning: forkCtor ? lifecycle.isRunning(forkCtor) : false,
 				})
 			}
 			options.sort((left, right) => left.name.localeCompare(right.name))
@@ -279,7 +255,7 @@ export async function pluginDependencySetTarget(
 			const fork = parseForkPluginId(normalized)
 			if (fork) addForkToCatalog(ctx, fork.baseId, fork.forkId)
 
-			await getRuntimePluginCatalog(ctx).enable(normalized, token)
+			await requireRouteCapability(ctx, 'lifecycle').enable(normalized, token)
 		}
 
 		const overrides = buildRuntimeDependencyOverrides(ctx, name)
@@ -305,7 +281,6 @@ export async function pluginBaseProviderSet(
 	try {
 		resolvePlugin(ctx, pluginName)
 
-		const { getExtra, setExtra } = getExtraApi(ctx)
 		const baseKey = typeof baseToken === 'string' ? baseToken.trim() : ''
 		if (!baseKey) return { ok: false, code: 'invalid_base', error: 'baseToken is required' }
 
@@ -314,7 +289,9 @@ export async function pluginBaseProviderSet(
 			ctor: PluginConstructor
 			baseCtor: PluginIdentifier
 		}> = []
-		for (const [name, pluginCtor] of getRuntimePluginCatalog(ctx).listRegistered()) {
+		const catalog = requireRouteCapability(ctx, 'catalog')
+		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
+		for (const [name, pluginCtor] of catalog.listRegistered()) {
 			try {
 				const info = getPluginInfo(pluginCtor)
 				const base = info.base
@@ -331,14 +308,9 @@ export async function pluginBaseProviderSet(
 			typeof providerName === 'string' && providerName.trim() ? providerName.trim() : null
 
 		if (!normalizedProvider) {
-			if (typeof getExtra === 'function' && typeof setExtra === 'function') {
-				const prev = (getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {}
-				if (prev[baseKey]) {
-					const next = { ...prev }
-					delete next[baseKey]
-					setExtra(EXTRA_BASE_PROVIDERS, next)
-				}
-			}
+			ctx.runtimeState.update((draft) => {
+				delete draft.baseProviders[baseKey]
+			})
 			return { ok: true }
 		}
 
@@ -351,19 +323,18 @@ export async function pluginBaseProviderSet(
 			}
 		}
 
-		if (typeof getExtra === 'function' && typeof setExtra === 'function') {
-			const prev = (getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {}
-			setExtra(EXTRA_BASE_PROVIDERS, { ...prev, [baseKey]: target.name })
-		}
+		ctx.runtimeState.update((draft) => {
+			draft.baseProviders[baseKey] = target.name
+		})
 
-		const catalog = getRuntimePluginCatalog(ctx)
+		const runtimeState = ctx.runtimeState.snapshot()
 		const enabled = [...catalog.listRegistered()].filter(([name]) =>
-			ctx.configService.isEnabledInConfig(name),
+			isPluginEnabled(runtimeState, name),
 		)
-		for (const [name, ctor] of enabled) catalog.stop(name, ctor)
-		for (const [name, ctor] of enabled) await catalog.enable(name, ctor)
+		for (const [name, ctor] of enabled) lifecycle.stop(name, ctor)
+		for (const [name, ctor] of enabled) await lifecycle.enable(name, ctor)
 		if (!enabled.some(([name]) => name === target.name)) {
-			await catalog.enable(target.name, target.ctor)
+			await lifecycle.enable(target.name, target.ctor)
 		}
 
 		try {
@@ -385,22 +356,20 @@ export function inspectPluginBaseProvider(ctx: Context, name: string): BaseProvi
 	if (!base || typeof base !== 'function') return null
 
 	const baseToken = getDeclaredName(base)
-	const { getExtra } = getExtraApi(ctx)
-	const map =
-		typeof getExtra === 'function'
-			? ((getExtra(EXTRA_BASE_PROVIDERS) as BaseProvidersExtra | undefined) ?? {})
-			: {}
+	const map = ctx.runtimeState.snapshot().baseProviders
 	const currentDefault = (map?.[baseToken] as string | undefined) ?? null
 
 	const providers: PluginDependencyOption[] = []
-	for (const [pluginName, pluginCtor] of getRuntimePluginCatalog(ctx).listRegistered()) {
+	const catalog = requireRouteCapability(ctx, 'catalog')
+	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
+	for (const [pluginName, pluginCtor] of catalog.listRegistered()) {
 		try {
 			const pluginInfo = getPluginInfo(pluginCtor)
 			if (pluginInfo.base !== base) continue
 			providers.push({
 				name: pluginName,
-				isEnabled: ctx.configService.isEnabledInConfig(pluginName),
-				isRunning: getRuntimePluginCatalog(ctx).isRunning(pluginCtor),
+				isEnabled: isPluginEnabled(ctx.runtimeState.snapshot(), pluginName),
+				isRunning: lifecycle.isRunning(pluginCtor),
 			})
 		} catch {}
 	}

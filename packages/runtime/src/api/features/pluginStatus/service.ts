@@ -5,7 +5,11 @@ import type {
 	PluginStatusEntryLifecycleStage,
 	PluginStatusOverview,
 } from './schema'
-import { runtimePluginCatalog } from '../plugins/catalog'
+import {
+	readRuntimePluginStatus,
+	runtimePluginStatusOverview,
+	unknownPluginSource,
+} from '../../../runtime/capabilities'
 
 type LifecycleStage = InferOutput<typeof PluginStatusEntryLifecycleStage>
 type SourceOutput = InferOutput<typeof PluginSourceInfo>
@@ -15,7 +19,8 @@ export function resolvePluginSource(
 	name: string,
 	ctor?: PluginConstructor,
 ): SourceOutput {
-	return runtimePluginCatalog(pCtx).resolveSource(name, ctor)
+	return (pCtx.runtimeRoute?.source?.resolveSource(name, ctor) ??
+		unknownPluginSource()) as SourceOutput
 }
 
 export function readStatusSnapshot(
@@ -28,7 +33,7 @@ export function readStatusSnapshot(
 	lifecycleStage: LifecycleStage
 	source: SourceOutput
 } {
-	return runtimePluginCatalog(pCtx).readStatus(name, ctor) as {
+	return readRuntimePluginStatus(pCtx, name, ctor) as {
 		isRunning: boolean
 		isEnabled: boolean
 		lifecycleStage: LifecycleStage
@@ -37,7 +42,7 @@ export function readStatusSnapshot(
 }
 
 export function getStatusOverview(pCtx: PlxContext) {
-	const overview = runtimePluginCatalog(pCtx).statusOverview()
+	const overview = runtimePluginStatusOverview(pCtx)
 	const plugins: Array<InferOutput<typeof PluginStatusOverview>['plugins'][number]> = []
 	const statuses = []
 	for (const snap of overview.statuses) {

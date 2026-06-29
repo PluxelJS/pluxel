@@ -9,6 +9,7 @@ describe('runtime host path policy', () => {
 		const paths = resolveRuntimeStoragePaths(root)
 
 		expect(paths.configFile).toBe(resolve(root, 'data/runtime/config.json'))
+		expect(paths.runtimeStateFile).toBe(resolve(root, 'data/runtime/state.json'))
 		expect(paths.pluginDataDir).toBe(resolve(root, 'data/plugin-data'))
 		expect(paths.packageStateFile).toBe(resolve(root, 'data/runtime/package-state.json'))
 		expect(paths.logsDir).toBe(resolve(root, 'logs'))

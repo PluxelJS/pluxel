@@ -6,7 +6,7 @@ import {
 } from '@pluxel/core/services'
 import type { BuiltinMarkdownPart } from '../../web/extensions'
 import type { ConfigFieldMutation } from '../../web/protocol'
-import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
+import { requireRouteCapability } from '../../runtime/capabilities'
 
 export type PluginSchemaResult =
 	| {
@@ -71,8 +71,9 @@ function writeNestedField(
 }
 
 export async function pluginSchema(ctx: Context, name: string): Promise<PluginSchemaResult> {
-	const catalog = getRuntimePluginCatalog(ctx)
-	const schemaMap = catalog.getSchema(name)
+	const configMetadata = requireRouteCapability(ctx, 'configMetadata')
+	const catalog = requireRouteCapability(ctx, 'catalog')
+	const schemaMap = configMetadata.getSchema(name)
 	if (!schemaMap) {
 		return {
 			ok: false,
@@ -81,7 +82,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		}
 	}
 
-	const schemaSource = catalog.getSchemaSource(name)
+	const schemaSource = configMetadata.getSchemaSource(name)
 	if (!schemaSource || Object.keys(schemaSource).length === 0) {
 		return {
 			ok: false,
@@ -90,7 +91,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 		}
 	}
 
-	const layoutMap = catalog.getConfigLayout(name) ?? null
+	const layoutMap = configMetadata.getConfigLayout(name) ?? null
 	let layout: BuiltinMarkdownPart[] | null = null
 	if (layoutMap && Object.keys(layoutMap).length > 0) {
 		const ctor = catalog.resolveOrRegistered(name)
@@ -125,7 +126,7 @@ export async function pluginSchema(ctx: Context, name: string): Promise<PluginSc
 }
 
 export async function pluginConfigGet(ctx: Context, name: string): Promise<PluginConfigResult> {
-	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
+	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
 	const defaults = schema ? await collectConfigDefaults(schema, { missingObjectDefault: {} }) : {}
 	const rawConfig = ctx.configService.getRawConfig(name)
 	return { ok: true, saved: false, config: normalizePlainObject(rawConfig), defaults }
@@ -136,7 +137,7 @@ export async function pluginConfigValidate(
 	name: string,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
+	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
 	if (!schema)
 		return {
 			ok: false,
@@ -172,7 +173,7 @@ export async function pluginConfigPatch(
 	name: string,
 	patch: Record<string, unknown>,
 ): Promise<PluginConfigResult> {
-	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
+	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
 	if (!schema)
 		return {
 			ok: false,
@@ -252,7 +253,7 @@ export async function pluginConfigReset(
 	name: string,
 	keys?: string[],
 ): Promise<PluginConfigResult> {
-	const schema = getRuntimePluginCatalog(ctx).getSchema(name)
+	const schema = requireRouteCapability(ctx, 'configMetadata').getSchema(name)
 	if (!schema)
 		return {
 			ok: false,

@@ -153,7 +153,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 - ownership rollback 使用 module revision 选择最近 owner；较旧 snapshot restore 不会覆盖仍然更新的同名 owner。
 - runtime update rollback 会恢复事务期间修改过的 dependency override overlay，避免 build 失败后 core declaration build 输入残留新 selection。
 - update planning path 仍保留 graph-token 语义，避免 HMR ownership 已指向新 ctor 时错误地把 replace/unregister 目标改到新实现。
-- persisted override 的 config extra 读取、fork catalog 写入、selected dependency enablement 仍留在 loader/control-plane，因为它们属于 adapter/runtime usecase，不属于 core dependency graph。
+- persisted override 的 runtime state 读取、fork catalog 写入、selected dependency enablement 仍留在 loader/control-plane，因为它们属于 adapter/runtime usecase，不属于 core dependency graph。
 - Phase 3 不再继续引入新的 key 抽象；后续若要减少 compat token 面，必须能删除 adapter/usecase 的真实复杂度，否则应停止。
 
 ### Phase 3 当前性能损益
@@ -162,7 +162,7 @@ static 没有 scan/package/Vite runner 这些动态状态面，所以短期收�
 
 - core `PluginService` 多维护一个 `plugin id -> constructor param override array` 的 Map。
 - 设置或清除 override 时会重建该 consumer 的 provider declaration，并把 consumer canonical key 加入 pending restart。
-- loader 在 module declaration apply 阶段会从 `EXTRA_DEP_OVERRIDES` 构造一次 overlay array；control-plane set target 会从完整 persisted state 重新构造一次 overlay array。
+- loader 在 module declaration apply 阶段会从 `ctx.runtimeState.snapshot().dependencyOverrides` 构造一次 overlay array；control-plane set target 会从完整 persisted state 重新构造一次 overlay array。
 - inspect 为了呈现 persisted selection 的 effective target，会在 read usecase 中解析一次 selected plugin name。
 - graph build / planning / read-model 边界会做 constructor token -> `RuntimePluginKey` 的一次解析，运行实例 cache 和 lifecycle 之后都按 key/slot 访问。
 

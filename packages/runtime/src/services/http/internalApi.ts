@@ -18,8 +18,8 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
+import { requireRouteCapability } from '../../runtime/capabilities'
 import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
-import { getRuntimePluginCatalog } from '../runtime/catalog/RuntimePluginCatalogService'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -311,7 +311,7 @@ async function pushSignalDbChanges<T extends SignalDbItem>(
 }
 
 function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
-	const ctor = getRuntimePluginCatalog(ctx).resolveOrRegistered(pluginName)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(pluginName)
 	if (!ctor) return null
 
 	const instance = ctx.registry.getInstance(ctor as never) as

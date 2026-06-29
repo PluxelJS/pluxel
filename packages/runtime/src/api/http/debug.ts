@@ -1,7 +1,7 @@
 import type { Context as PluginContext } from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
-import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
+import { requireRouteCapability } from '../../runtime/capabilities'
 import { pluginSchema } from '../usecases/pluginConfig'
 import { HMR_INTERNAL_API_BASE } from '../../web/paths'
 import { debugSchemaSourceQuery, pluginNameParams } from './models'
@@ -16,15 +16,16 @@ interface PluginSchemaInfo {
 }
 
 function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
-	const catalog = getRuntimePluginCatalog(ctx)
+	const catalog = requireRouteCapability(ctx, 'catalog')
+	const configMetadata = requireRouteCapability(ctx, 'configMetadata')
 	const names = catalog.listLoadedNames()
 	const result: PluginSchemaInfo[] = []
 
 	for (const name of names) {
 		const ctor = catalog.resolveOrRegistered(name)
 		if (!ctor) continue
-		const schema = catalog.getSchema(name)
-		const schemaSource = catalog.getSchemaSource(name)
+		const schema = configMetadata.getSchema(name)
+		const schemaSource = configMetadata.getSchemaSource(name)
 		result.push({
 			name,
 			hasSchema: !!schema && Object.keys(schema).length > 0,
@@ -42,7 +43,7 @@ function escapeHtml(str: string): string {
 		.replaceAll('<', '&lt;')
 		.replaceAll('>', '&gt;')
 		.replaceAll('"', '&quot;')
-		.replaceAll('\'', '&#39;')
+		.replaceAll("'", '&#39;')
 }
 
 const STYLES = `

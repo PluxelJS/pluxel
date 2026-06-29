@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext } from '@pluxel/runtime/test'
+import { isPluginEnabled } from '@pluxel/runtime/services'
 
 describe('@pluxel/runtime Context bootstrap', () => {
 	it('boots core runtime services without any loader/HMR layer', async () => {
@@ -38,11 +39,14 @@ describe('@pluxel/runtime Context bootstrap', () => {
 				configService: {
 					mode: 'readonly',
 					snapshot: {
-						enabled: ['ExamplePlugin'],
 						plugins: {
 							ExamplePlugin: { answer: 42 },
 						},
 					},
+				},
+				runtimeState: {
+					mode: 'readonly',
+					snapshot: { enabled: ['ExamplePlugin'] },
 				},
 				packageService: {
 					policy: { allowInstall: false, allowUninstall: false },
@@ -52,7 +56,7 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			})
 			const ctx = runtime.ctx
 
-			expect(ctx.configService.isEnabledInConfig('ExamplePlugin')).toBe(true)
+			expect(isPluginEnabled(ctx.runtimeState.snapshot(), 'ExamplePlugin')).toBe(true)
 			expect(ctx.configService.getRawConfig('ExamplePlugin')).toEqual({ answer: 42 })
 			expect(() => ctx.configService.patchConfig('ExamplePlugin', { answer: 7 })).toThrow(
 				/readonly mode/i,

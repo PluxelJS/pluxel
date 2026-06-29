@@ -10,10 +10,7 @@ export {
 	type RemovalScope,
 } from './loader/LoaderService'
 
-export {
-	LoaderPluginCatalogService,
-	getRuntimePluginCatalog,
-} from './catalog/LoaderPluginCatalogService'
+export { createLoaderRuntimeRoute } from './catalog/LoaderRuntimeRoute'
 
 export {
 	PackageService,

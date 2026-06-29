@@ -13,14 +13,10 @@ import {
 	disablePluginsOnMissingDependencyError,
 	type MissingDepsCandidate,
 } from '@pluxel/runtime/shared'
+import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/services'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
-import {
-	type BuiltinsKnownExtra,
-	EXTRA_BUILTINS_KNOWN,
-	EXTRA_FORKS,
-	type ForksExtra,
-} from './selection'
+import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'
 import {
 	AnchorStore,
 	type LoaderBatch,
@@ -115,6 +111,14 @@ declare module '@pluxel/core' {
 	}
 }
 
+function cloneStringArrayRecord(
+	input: Readonly<Record<string, readonly string[]>>,
+): Record<string, string[]> {
+	const out: Record<string, string[]> = Object.create(null)
+	for (const [key, value] of Object.entries(input)) out[key] = [...value]
+	return out
+}
+
 @Injectable({ key: serviceName })
 export class LoaderService {
 	/** 仅记录“当前是插件锚点”的文件，供外部(HMR)过滤 */
@@ -141,7 +145,7 @@ export class LoaderService {
 		)
 		this.pruner = new PluginPruner(this.ctx, this.registry, this.anchors)
 		this.statusReporter = new PluginStatusReporter(this.registry, this.runtime, (name) =>
-			this.ctx.configService.isEnabledInConfig(name),
+			this.isEnabled(name),
 		)
 		this.dependencyInspector = new PluginDependencyInspector(this.ctx)
 		this.registryView = new LoaderRegistryView(this.ctx, this.registry, this.runtime)
@@ -155,10 +159,19 @@ export class LoaderService {
 			anchors: this.anchorsView,
 			control: this.control,
 		}
+		this.ctx.runtimeRoute = createLoaderRuntimeRoute(this.ctx, this.api)
 
 		this.ctx.internalEvent.runtimeCommitted.on((summary) => {
 			this.cleanupNotStartedRuntimeRegistrations(summary)
 		})
+	}
+
+	private isEnabled(name: string): boolean {
+		return isPluginEnabled(this.ctx.runtimeState.snapshot(), name)
+	}
+
+	private setEnabled(names: Iterable<string>, enabled: boolean): void {
+		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, names, enabled))
 	}
 
 	private cleanupNotStartedRuntimeRegistrations(summary: CommitSummary): void {
@@ -200,13 +213,13 @@ export class LoaderService {
 			defaultEnable: boolean
 		}> = []
 		let coreDraftChanged = false
-		const prevForksExtra = this.ctx.configService.getExtra<ForksExtra>(EXTRA_FORKS) ?? {}
+		const runtimeState = this.ctx.runtimeState.snapshot()
+		const prevForks = cloneStringArrayRecord(runtimeState.forks)
 		let forksExtraDirty = false
 		const forkSets = new Map<string, Set<string>>()
-		const prevKnownExtra =
-			this.ctx.configService.getExtra<BuiltinsKnownExtra>(EXTRA_BUILTINS_KNOWN) ?? {}
+		const prevKnown = { ...runtimeState.builtinsKnown }
 		let knownDirty = false
-		let nextKnownExtra: BuiltinsKnownExtra | undefined
+		let nextKnown: Record<string, 1> | undefined
 		const enabledByUs: string[] = []
 
 		try {
@@ -230,9 +243,7 @@ export class LoaderService {
 
 						let set = forkSets.get(declaredName)
 						if (!set) {
-							const seed = Array.isArray(prevForksExtra[declaredName])
-								? prevForksExtra[declaredName]
-								: []
+							const seed = Array.isArray(prevForks[declaredName]) ? prevForks[declaredName] : []
 							set = new Set(seed)
 							forkSets.set(declaredName, set)
 						}
@@ -259,15 +270,15 @@ export class LoaderService {
 			}> = []
 
 			const ensureKnown = (name: string) => {
-				if (prevKnownExtra[name] === 1) return
-				if (!nextKnownExtra) nextKnownExtra = { ...prevKnownExtra }
-				if (nextKnownExtra[name] === 1) return
-				nextKnownExtra[name] = 1
+				if (prevKnown[name] === 1) return
+				if (!nextKnown) nextKnown = { ...prevKnown }
+				if (nextKnown[name] === 1) return
+				nextKnown[name] = 1
 				knownDirty = true
 			}
 
 			for (const item of declared) {
-				const knownBefore = prevKnownExtra[item.name] === 1
+				const knownBefore = prevKnown[item.name] === 1
 				enableTargets.push({
 					name: item.name,
 					ctor: item.ctor,
@@ -277,7 +288,7 @@ export class LoaderService {
 				if (!knownBefore) ensureKnown(item.name)
 			}
 			for (const fork of declaredForks) {
-				const knownBefore = prevKnownExtra[fork.name] === 1
+				const knownBefore = prevKnown[fork.name] === 1
 				enableTargets.push({
 					name: fork.name,
 					ctor: fork.ctor,
@@ -288,21 +299,21 @@ export class LoaderService {
 			}
 
 			if (forksExtraDirty || knownDirty) {
-				this.ctx.configService.batch(() => {
+				this.ctx.runtimeState.update((draft) => {
 					if (forksExtraDirty) {
-						const next: ForksExtra = { ...prevForksExtra }
+						const next = cloneStringArrayRecord(prevForks)
 						for (const [baseName, set] of forkSets) next[baseName] = [...set]
-						this.ctx.configService.setExtra(EXTRA_FORKS, next)
+						draft.forks = next
 					}
 					if (knownDirty) {
-						this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, nextKnownExtra!)
+						draft.builtinsKnown = { ...nextKnown! }
 					}
 				})
 			}
 
 			const startTargetsWithSeeding = async () => {
 				for (const t of enableTargets) {
-					const wasEnabled = this.ctx.configService.isEnabledInConfig(t.name)
+					const wasEnabled = this.isEnabled(t.name)
 					const shouldSeed = t.defaultEnable && !t.knownBefore
 					if (!wasEnabled && !shouldSeed) continue
 					await this.registry.enable(t.name, t.ctor)
@@ -313,7 +324,7 @@ export class LoaderService {
 
 			const enableTargetsIfEnabledInConfig = async () => {
 				for (const t of enableTargets) {
-					if (!this.ctx.configService.isEnabledInConfig(t.name)) continue
+					if (!this.isEnabled(t.name)) continue
 					await this.registry.enable(t.name, t.ctor)
 					coreDraftChanged = true
 				}
@@ -346,9 +357,9 @@ export class LoaderService {
 					const disabled = disablePluginsOnMissingDependencyError({
 						error: commitResult.err,
 						candidates,
-						isEnabled: (name) => this.ctx.configService.isEnabledInConfig(name),
-						disable: (name) => this.ctx.configService.disableInConfig(name),
-						batch: (run) => this.ctx.configService.batch(run),
+						isEnabled: (name) => this.isEnabled(name),
+						disable: (name) => this.setEnabled([name], false),
+						batch: (run) => this.ctx.runtimeState.update(() => run()),
 						logger: this.ctx.logger,
 						stage: 'builtins preload',
 					})
@@ -367,9 +378,8 @@ export class LoaderService {
 
 				if (!commitResult.ok) {
 					// Keep persisted state consistent: revert enable bits that were introduced by this call.
-					for (const n of enabledByUs) this.ctx.configService.disableInConfig(n)
-					if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
-					if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
+					this.setEnabled(enabledByUs, false)
+					this.revertPreloadRuntimeState({ forksExtraDirty, knownDirty, prevForks, prevKnown })
 					tx.rollback()
 					runtimeUpdate!.rollback()
 
@@ -385,14 +395,26 @@ export class LoaderService {
 			return declared.map((d) => d.name)
 		} catch (error) {
 			// Keep persisted state consistent: revert enable bits introduced by this call.
-			for (const n of enabledByUs) this.ctx.configService.disableInConfig(n)
-			if (forksExtraDirty) this.ctx.configService.setExtra(EXTRA_FORKS, prevForksExtra)
-			if (knownDirty) this.ctx.configService.setExtra(EXTRA_BUILTINS_KNOWN, prevKnownExtra)
+			this.setEnabled(enabledByUs, false)
+			this.revertPreloadRuntimeState({ forksExtraDirty, knownDirty, prevForks, prevKnown })
 			tx.rollback()
 			if (runtimeUpdate) runtimeUpdate.rollback()
 			else if (coreDraftChanged) this.ctx.registry.resetDraft()
 			throw error
 		}
+	}
+
+	private revertPreloadRuntimeState(options: {
+		forksExtraDirty: boolean
+		knownDirty: boolean
+		prevForks: Record<string, string[]>
+		prevKnown: Record<string, 1>
+	}): void {
+		if (!options.forksExtraDirty && !options.knownDirty) return
+		this.ctx.runtimeState.update((draft) => {
+			if (options.forksExtraDirty) draft.forks = cloneStringArrayRecord(options.prevForks)
+			if (options.knownDirty) draft.builtinsKnown = { ...options.prevKnown }
+		})
 	}
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。

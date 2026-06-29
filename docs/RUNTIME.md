@@ -38,7 +38,7 @@ route 实现可以改变 module/catalog 状态，但插件真正 start/stop 仍�
 module id
 -> exported plugin ctors
 -> plugin name
--> enabled config bit
+-> runtime state enabled bit
 -> core registry draft
 -> core commit
 ```
@@ -69,13 +69,14 @@ runtime common host layer
 - `packages/runtime/src/index.ts`：runtime public entry。
 - `packages/runtime/src/runtime/register.ts`：runtime common services 注册副作用，不自动注册 loader route。
 - `packages/runtime/src/services.ts`：runtime common services public surface。
-- `packages/runtime/src/api/contributions.ts`：route package 对 GraphQL resolver、RPC handle 的最小注册点。
-- `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog 契约和共享 extra keys。
-- `packages/runtime/src/services/runtime/catalog/RuntimePluginCatalogService.ts`：runtime common 使用的插件 catalog 契约；没有 route 实现时会明确报错。
+- `packages/runtime/src/api/contributions.ts`：从当前 `Context.runtimeRoute.api` 读取 GraphQL resolver、RPC handle。
+- `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog/status/source/capability 类型出口。
+- `packages/runtime/src/runtime/capabilities.ts`：runtime common 使用的窄 route capabilities；缺少必需 capability 时会明确报错。
+- `packages/runtime/src/services/RuntimeStateStore.ts`：运行控制面状态持久化，包括 enabled、forks、base providers、依赖覆盖、builtin/plugin groups。
 - `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
 - `packages/runtime-dynamic/src/services.ts`：loader route services public surface。
 - `packages/runtime-dynamic/src/loader/LoaderService.ts`：loader service 和 public loader API。
-- `packages/runtime-dynamic/src/catalog/LoaderPluginCatalogService.ts`：把 loader registry/runtime/control 适配到 runtime plugin catalog 契约。
+- `packages/runtime-dynamic/src/catalog/LoaderRuntimeRoute.ts`：把 loader registry/runtime/control 组装成 runtime route capabilities。
 - `packages/runtime-dynamic/src/loader/PluginRegistry.ts`：loader declaration/status state。
 - `packages/runtime-dynamic/src/loader/module-replacer.ts`：HMR/module replacement 接入 loader。
 - `packages/runtime-dynamic/src/loader/support.ts`：loader batch/status/control helpers。
@@ -85,7 +86,7 @@ runtime common host layer
 - `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`rpc.package()` 的 package install/remove/reload/retry 操作。
 - `packages/runtime/src/services/ConfigService.ts`：runtime 配置持久化。
 - `packages/runtime/src/api/usecases/**`：route-neutral plugin status/config/dependency/fork usecases。
-- `packages/runtime/src/api/**`：route-neutral HTTP、RPC、feature APIs；loader package 通过 contribution registry 挂载 loader-specific 控制面。
+- `packages/runtime/src/api/**`：route-neutral HTTP、RPC、feature APIs；loader package 通过当前 route 的 API capability 挂载 loader-specific 控制面。
 - `packages/runtime/src/web/**`：browser/runtime web clients 和协议。
 
 ## 控制面原则

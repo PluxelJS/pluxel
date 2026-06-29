@@ -1,6 +1,6 @@
 import type { Context as CoreContext, CommitSummary, PluginConstructor } from '@pluxel/core'
 import type { Context } from '@pluxel/runtime'
-import type { ConfigServiceConfig } from '@pluxel/runtime/services'
+import type { ConfigServiceConfig, RuntimeStateStoreConfig } from '@pluxel/runtime/services'
 
 export type StaticRuntimeDefinition = {
 	/**
@@ -20,6 +20,13 @@ export type StaticRuntimeHostOptions = {
 	 * @default File-backed runtime config resolved by @pluxel/runtime.
 	 */
 	configService?: ConfigServiceConfig
+	/**
+	 * Runtime control-plane state source used for plugin enablement, fork metadata,
+	 * dependency overrides, and built-in catalog state.
+	 *
+	 * @default File-backed runtime state resolved by @pluxel/runtime.
+	 */
+	runtimeState?: RuntimeStateStoreConfig
 	/**
 	 * Additional runtime context config. `configService` is still owned by this route
 	 * option and overrides `context.configService`.

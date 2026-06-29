@@ -31,19 +31,19 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 
 - runtime service 注册、config persistence、HTTP/RPC server、web protocol。
 - route-neutral plugin status/config/dependency/fork usecases。
-- `RuntimePluginCatalogService` 契约和共享 extra keys。
-- `RuntimeRpcApi.package()` 协议入口，但实际 handle 由 route contribution 注册。
+- route capabilities 类型和 `RuntimeStateStore` 运行控制面状态。
+- `RuntimeRpcApi.package()` 协议入口，但实际 handle 由当前 route 的 API capability 提供。
 
 ## 关键接口
 
-`@pluxel/runtime/plugin-catalog` 是 runtime common 读取插件目录的 route-neutral 契约。loader route 通过 `LoaderPluginCatalogService` 覆盖这个契约，把 loader registry/runtime/control 映射给 runtime API。
+`@pluxel/runtime/plugin-catalog` 是 runtime common 暴露 route-neutral catalog/status/source/capability 类型的出口。loader route 通过 `createLoaderRuntimeRoute()` 把 loader registry/runtime/control 映射成当前 `Context.runtimeRoute` 上的 capabilities。
 
-`@pluxel/runtime/api` 是很薄的 contribution registry，只提供两类注册点：
+`@pluxel/runtime/api` 是很薄的 route API 读取入口，只从当前 context 的 route capability 读取两类贡献：
 
 - GraphQL resolver contribution。
 - RPC handle contribution。
 
-它不是可无限扩展的 route plugin 系统；它只是让 route 包把自己的控制面挂进 runtime 已有 server。当前 loader route 注册：
+它不是可无限扩展的 route plugin 系统；它只是让 route 包把自己的控制面挂进 runtime 已有 server。当前 loader route capability 提供：
 
 - package-manager GraphQL resolver。
 - `rpc.package()` handle。

@@ -2,7 +2,7 @@ import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot } from '../features/pluginStatus/service'
 import { maybeAddForkToCatalog } from './forksCatalog'
-import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
+import { requireRouteCapability } from '../../runtime/capabilities'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -11,7 +11,7 @@ import type {
 } from '../../web/protocol'
 
 function resolvePlugin(ctx: Context, name: string) {
-	const ctor = getRuntimePluginCatalog(ctx).resolve(name)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolve(name)
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -31,7 +31,7 @@ async function runStatusAction(
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
-		const catalog = getRuntimePluginCatalog(ctx)
+		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
 		if (action === 'start' || action === 'restart' || action === 'enable') {
 			maybeAddForkToCatalog(ctx, name)
 		}
@@ -41,20 +41,20 @@ async function runStatusAction(
 		switch (action) {
 			case 'start':
 			case 'enable':
-				await catalog.enable(name, ctor)
+				await lifecycle.enable(name, ctor)
 				break
 			case 'stop':
-				catalog.deactivate(name, ctor, { runtimeOnly: true })
+				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
-				catalog.deactivate(name, ctor, { runtimeOnly: true })
-				await catalog.enable(name, ctor)
+				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
+				await lifecycle.enable(name, ctor)
 				break
 			case 'disable':
-				catalog.deactivate(name, ctor, { runtimeOnly: false })
+				lifecycle.deactivate(name, ctor, { runtimeOnly: false })
 				break
 			case 'enable-persisted':
-				catalog.enablePersisted(name)
+				lifecycle.enablePersisted(name)
 				break
 			default:
 				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }

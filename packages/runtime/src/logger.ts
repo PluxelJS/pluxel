@@ -24,11 +24,7 @@ export {
 	type TimeRotatingFileSinkOptions,
 } from './logger/file'
 
-export {
-	EXTRA_RUNTIME_PLUGIN_POLICY,
-	ensureRuntimePluginPolicyLoaded,
-	persistRuntimePluginPolicy,
-} from './logger/levels'
+export { ensureRuntimePluginPolicyLoaded, persistRuntimePluginPolicy } from './logger/levels'
 
 export type {
 	CompiledLogFilter,

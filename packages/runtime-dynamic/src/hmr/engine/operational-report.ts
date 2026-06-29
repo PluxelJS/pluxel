@@ -90,7 +90,7 @@ function normalizeModuleIdToFsPath(cwd: string, moduleId: string) {
 
 export function collectPluginTotals(params: {
 	registryView: RegistryViewLike
-	isEnabledInConfig: (name: string) => boolean
+	isPluginEnabled: (name: string) => boolean
 	isRunning: (ctor: PluginConstructor) => boolean
 	builtinsModuleId?: string
 	builtinsModuleIds?: readonly string[]
@@ -106,7 +106,7 @@ export function collectPluginTotals(params: {
 
 	for (const [name, ctor] of params.registryView.listRegistered()) {
 		const moduleId = params.registryView.findModuleIdByName(name)
-		const enabled = params.isEnabledInConfig(name)
+		const enabled = params.isPluginEnabled(name)
 		const running = params.isRunning(ctor)
 
 		if (moduleId && builtinsSet.has(moduleId)) {
@@ -133,7 +133,7 @@ export async function buildHmrOperationalReport(params: {
 	rootsPretty: readonly string[]
 	entriesByRoot: readonly number[]
 	registryView: RegistryViewLike
-	isEnabledInConfig: (name: string) => boolean
+	isPluginEnabled: (name: string) => boolean
 	isRunning: (ctor: PluginConstructor) => boolean
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
@@ -161,7 +161,7 @@ export async function buildHmrOperationalReport(params: {
 
 	const { plugins: pluginTotals, builtins } = collectPluginTotals({
 		registryView: params.registryView,
-		isEnabledInConfig: params.isEnabledInConfig,
+		isPluginEnabled: params.isPluginEnabled,
 		isRunning: params.isRunning,
 		builtinsModuleId,
 		builtinsModuleIds: params.builtinsModuleIds,
@@ -203,7 +203,7 @@ export async function buildHmrOperationalReport(params: {
 		const moduleId = params.registryView.findModuleIdByName(name)
 		if (!moduleId || builtinsSet.has(moduleId)) continue
 
-		const enabled = params.isEnabledInConfig(name)
+		const enabled = params.isPluginEnabled(name)
 		const running = params.isRunning(ctor)
 
 		const clean = await resolveModuleIdForRootGrouping(moduleId)

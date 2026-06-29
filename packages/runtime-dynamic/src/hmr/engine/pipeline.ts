@@ -10,6 +10,7 @@ import {
 	startTimer,
 } from '@pluxel/runtime/shared'
 import { findRuntimeModuleId } from '@pluxel/runtime/internal'
+import { isPluginEnabled, setPluginEnabled, type RuntimeStateDraft } from '@pluxel/runtime/services'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
@@ -682,12 +683,27 @@ function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown
 		candidates.push({ name, ctorName: ctor?.name })
 	}
 
+	let activeDraft: RuntimeStateDraft | null = null
 	return disablePluginsOnMissingDependencyError({
 		error,
 		candidates,
-		isEnabled: (name) => ctx.configService.isEnabledInConfig(name),
-		disable: (name) => ctx.configService.disableInConfig(name),
-		batch: (run) => ctx.configService.batch(run),
+		isEnabled: (name) => isPluginEnabled(ctx.runtimeState.snapshot(), name),
+		disable: (name) => {
+			if (activeDraft) {
+				setPluginEnabled(activeDraft, name, false)
+				return
+			}
+			ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, false))
+		},
+		batch: (run) =>
+			ctx.runtimeState.update((draft) => {
+				activeDraft = draft
+				try {
+					run()
+				} finally {
+					activeDraft = null
+				}
+			}),
 		logger: ctx.logger,
 		stage: 'hmr batch commit',
 	})
@@ -1014,7 +1030,7 @@ export class HmrBatchProcessor {
 		const activeServices = this.ctx.registry.graph.activeCount()
 		const { plugins: pluginTotals } = collectPluginTotals({
 			registryView: this.ctx.loader.api.registry,
-			isEnabledInConfig: (name) => this.ctx.configService.isEnabledInConfig(name),
+			isPluginEnabled: (name) => isPluginEnabled(this.ctx.runtimeState.snapshot(), name),
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))

@@ -106,24 +106,23 @@ export function firstMissingDependency(
 
 export type ConfigSnapshotReader = {
 	getConfigSnapshot?: () => ConfigShape
-	isEnabledInConfig: (name: string) => boolean
 }
 
 export function readConfigSnapshot(configService: ConfigSnapshotReader): ConfigShape {
-	if (typeof configService.getConfigSnapshot === 'function') return configService.getConfigSnapshot()
+	if (typeof configService.getConfigSnapshot === 'function')
+		return configService.getConfigSnapshot()
 	return {
-		enabled: new Set(),
 		plugins: Object.create(null),
-		extra: Object.create(null),
 	}
 }
 
 export function collectUnknownConfigEntries(
 	snapshot: ConfigShape,
 	known: ReadonlyMap<string, unknown>,
+	enabled: Iterable<string> = [],
 ): string[] {
 	const out = new Set<string>()
-	for (const name of snapshot.enabled) {
+	for (const name of enabled) {
 		if (!known.has(name)) out.add(name)
 	}
 	for (const name of Object.keys(snapshot.plugins)) {

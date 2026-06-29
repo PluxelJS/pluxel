@@ -5,8 +5,7 @@ import * as v from 'valibot'
 import { PluginGroupInput, type PluginGroupInputValue, type PluginGroupOutput } from './schema'
 
 export function readGroups(pCtx: PlxContext): PluginGroupOutput[] {
-	const raw = pCtx.configService.getExtra('groups')
-	if (!Array.isArray(raw)) return []
+	const raw = pCtx.runtimeState.snapshot().pluginGroups
 	return raw
 		.filter((item): item is PluginGroupInputValue => v.safeParse(PluginGroupInput, item).success)
 		.map((item) => ({
@@ -32,14 +31,13 @@ export function writeGroups(
 	pCtx: PlxContext,
 	groups: PluginGroupInputValue[],
 ): PluginGroupOutput[] {
-	pCtx.configService.setExtra(
-		'groups',
-		groups.map((group) => ({
+	pCtx.runtimeState.update((draft) => {
+		draft.pluginGroups = groups.map((group) => ({
 			groupId: group.groupId,
 			name: group.name,
 			pluginIds: group.pluginIds,
-		})),
-	)
+		}))
+	})
 	return groups.map((group) => ({
 		__typename: 'PluginGroup' as const,
 		id: group.groupId,

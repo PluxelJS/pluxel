@@ -10,6 +10,7 @@ import {
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 import { getRuntimeModuleAdapter, findRuntimeModuleId } from '@pluxel/runtime/internal'
+import { setPluginEnabled } from '@pluxel/runtime/services'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,
@@ -297,7 +298,9 @@ export class PluginPruner {
 			// 没找到模块路径，至少停运行态/禁持久启用
 			const ctor = this.registry.getPluginByName(name)
 			if (ctor) this.registry.stopPlugin(name, ctor)
-			if (scope === 'persisted') this.ctx.configService.disableInConfig(name)
+			if (scope === 'persisted') {
+				this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, false))
+			}
 			return
 		}
 
@@ -330,8 +333,7 @@ export class LoaderRegistryView {
 		const fork = parseForkPluginId(name)
 		if (fork) {
 			const base =
-				findRuntimeModuleId(this.ctx, fork.baseId) ??
-				this.registry.name2PathMap.get(fork.baseId)
+				findRuntimeModuleId(this.ctx, fork.baseId) ?? this.registry.name2PathMap.get(fork.baseId)
 			if (base) return base
 		}
 		return null

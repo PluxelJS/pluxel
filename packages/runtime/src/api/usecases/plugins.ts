@@ -1,7 +1,7 @@
 import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
-import { getRuntimePluginCatalog } from '../../services/runtime/catalog/RuntimePluginCatalogService'
+import { requireRouteCapability } from '../../runtime/capabilities'
 
 export type PluginStatusSnapshot = ReturnType<typeof readStatusSnapshot> & { name: string }
 
@@ -16,7 +16,7 @@ export type PluginsListOutput = {
 }
 
 export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot | null {
-	const catalog = getRuntimePluginCatalog(ctx)
+	const catalog = requireRouteCapability(ctx, 'catalog')
 	const ctor = catalog.resolveOrRegistered(name)
 	if (!ctor) return null
 	const snap = readStatusSnapshot(ctx, name, ctor)
@@ -31,7 +31,7 @@ export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot |
 }
 
 export function pluginsList(ctx: Context): PluginsListOutput {
-	const catalog = getRuntimePluginCatalog(ctx)
+	const catalog = requireRouteCapability(ctx, 'catalog')
 	const out: PluginStatusSnapshot[] = []
 	for (const [name, ctor] of catalog.listRegistered()) {
 		const snap = readStatusSnapshot(ctx, name, ctor)
@@ -65,7 +65,7 @@ export function pluginsList(ctx: Context): PluginsListOutput {
 }
 
 export function pluginSource(ctx: Context, name: string) {
-	const ctor = getRuntimePluginCatalog(ctx).resolveOrRegistered(name)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(name)
 	const src: any = resolvePluginSource(ctx, name, ctor)
 	if (src && typeof src === 'object') {
 		const { __typename: _t, ...rest } = src

@@ -10,7 +10,23 @@ export {
 	type ConfigServiceConfig,
 	type ConfigServiceMode,
 	type ConfigShape,
+	type PluginConfigFile,
 } from './services/ConfigService'
+
+export {
+	isPluginEnabled,
+	listForkIds,
+	replaceEnabledPlugins,
+	RuntimeStateStore,
+	setPluginEnabled,
+	setPluginsEnabled,
+	type PluginGroupState,
+	type RuntimeStateDraft,
+	type RuntimeStateFile,
+	type RuntimeStateSnapshot,
+	type RuntimeStateStoreConfig,
+	type RuntimeStateStoreMode,
+} from './services/RuntimeStateStore'
 
 export {
 	getDebugLogger,
@@ -117,20 +133,23 @@ export type {
 } from './services/vault/types'
 
 export {
-	EXTRA_BASE_PROVIDERS,
-	EXTRA_BUILTINS_KNOWN,
-	EXTRA_DEP_OVERRIDES,
-	EXTRA_FORKS,
-	RuntimePluginCatalogService,
-	getRuntimePluginCatalog,
-	type BaseProvidersExtra,
-	type BuiltinsKnownExtra,
-	type DepOverridesExtra,
-	type ForksExtra,
-	type RuntimePluginCatalog,
+	ensureForkBaseFromCatalog,
+	readRuntimePluginStatus,
+	requireRouteCapability,
+	runtimePluginStatusOverview,
+	unknownPluginSource,
+	type PluginCatalogRead,
+	type PluginConfigMetadataRead,
+	type PluginDependencyRead,
+	type PluginLifecycleControl,
+	type PluginSourceRead,
+	type RuntimeApiCapabilities,
+	type RuntimeApiResolverFactory,
 	type RuntimePluginDependencyInfo,
 	type RuntimePluginLifecycleStage,
 	type RuntimePluginSource,
 	type RuntimePluginStatusOverview,
 	type RuntimePluginStatusSnapshot,
-} from './services/runtime/catalog/RuntimePluginCatalogService'
+	type RuntimeRouteCapabilities,
+	type RuntimeRpcHandleFactory,
+} from './runtime/capabilities'
