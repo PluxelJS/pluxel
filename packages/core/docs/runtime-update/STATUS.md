@@ -127,7 +127,7 @@ Phase 4/5 已到稳定停点：adapter 已继续瘦身，旧补丁已删除；�
 - HMR executor 仍知道 retry 后需要 re-sync affected/replaced modules。
 - commit summary 已拆成 `pluginChanges` / `runtimeUpdate` / `lifecycleReport`；不再补 revision replacement 等字段，除非后续出现真实 consumer。
 - worker fallback path、Tinypool worker entry resolution、runtime packaged manifest implicit path、HMR enabled-but-stopped 诊断、UI extension compiler entry base-dir lookup 已优先使用 core runtime module ownership read model，loader registry 只作为兼容 fallback。
-- UI compiler / worker watcher 还没有完全统一成只消费 commit summary 或 plugin lifecycle；watch files、source entry、HMR handles 仍属于 adapter 语义，不能下沉到 core。
+- UI compiler / worker watcher 还没有完全统一成只消费 commit summary 或 plugin lifecycle；watch files、source entry、route dev capabilities 仍属于 runtime route 语义，不能下沉到 core。
 - 外层 retry re-sync 属于 loader/config re-apply 语义；constructor param normalization patch 和 dependency override metadata mutation patch 已删除。
 
 ## 推荐下一步
@@ -181,7 +181,7 @@ Phase 4/5 入口约束：
 残留旧语义检查：
 
 ```sh
-rg -n "ctx\\.ops|opsInvoke|opsDispatch|opsCatalog|opsToolsets|mcp-lite|registerRuntimeMcpTools|HMR_TRANSPORT_PATHS\\.mcp|PluginOpsDemo|useRuntimeOpCatalog|useRuntimeOpsToolsets" packages docs package.json pnpm-lock.yaml
+rg -n "ctx\\.ops|opsInvoke|opsDispatch|opsCatalog|opsToolsets|mcp-lite|registerRuntimeMcpTools|RUNTIME_TRANSPORT_PATHS\\.mcp|PluginOpsDemo|useRuntimeOpCatalog|useRuntimeOpsToolsets" packages docs package.json pnpm-lock.yaml
 ```
 
 Phase 3 第一刀残留检查：

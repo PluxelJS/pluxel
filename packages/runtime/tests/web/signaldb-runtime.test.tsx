@@ -57,7 +57,7 @@ function createTransport(response: unknown) {
 			fetch,
 			links: {
 				signaldbCollection: (pluginName: string, collection: string) =>
-					`/__pluxel/hmr/signaldb/${pluginName}/${collection}`,
+					`/__pluxel/runtime/signaldb/${pluginName}/${collection}`,
 			},
 			createSse: vi.fn(() => sse),
 			dispose: vi.fn(),

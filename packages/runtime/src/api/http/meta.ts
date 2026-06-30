@@ -1,6 +1,6 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
-import { HMR_META_BASE, HMR_TRANSPORT_PATHS } from '../../web/paths'
+import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
 
 function readInternalMeta(
 	pluginCtx: PluginContext,
@@ -9,7 +9,7 @@ function readInternalMeta(
 	const manifest = extensionService?.getManifest()
 	const modules = Array.isArray(manifest?.modules) ? manifest.modules.length : 0
 	return {
-		service: 'pluxel-hmr' as const,
+		service: 'pluxel-runtime' as const,
 		ready: true as const,
 		sse: {
 			namespaces: pluginCtx.ext.sse.getNamespaces(),
@@ -18,12 +18,12 @@ function readInternalMeta(
 			version: manifest?.version ?? 0,
 			modules,
 		},
-		transport: HMR_TRANSPORT_PATHS,
+		transport: RUNTIME_TRANSPORT_PATHS,
 	}
 }
 
 export const metaRoutes = (app: AnyElysiaApp) =>
-	app.get('/', 'Pluxel HMR RPC ready').group(HMR_META_BASE, (meta) =>
+	app.get('/', 'Pluxel runtime RPC ready').group(RUNTIME_META_BASE, (meta) =>
 		meta
 			.get('/', async ({ set, pluginCtx, request }) => {
 				set.headers['cache-control'] = 'no-store'

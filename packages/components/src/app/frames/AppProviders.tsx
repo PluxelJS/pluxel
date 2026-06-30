@@ -14,12 +14,12 @@ import { ExtensionLoader } from '../ExtensionLoader'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { PluginOverviewProvider } from '../plugins/pluginOverviewStore'
-import { HMR_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
+import { RUNTIME_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
-	const isSecurityRoute = pathname === HMR_SECURITY_BASE
+	const isSecurityRoute = pathname === RUNTIME_SECURITY_BASE
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)

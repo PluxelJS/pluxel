@@ -36,7 +36,7 @@ function isClientEnvironment(context: unknown): boolean {
 
 function formatHint(params: { source: string; importer?: string }) {
 	const lines = [
-		`[pluxel-hmr] Node-only import detected in the browser (client) environment: "${params.source}"`,
+		`[pluxel-runtime] Node-only import detected in the browser (client) environment: "${params.source}"`,
 		params.importer ? `Importer: ${params.importer}` : null,
 		'',
 		'This usually means a plugin UI entry imported server-only code.',

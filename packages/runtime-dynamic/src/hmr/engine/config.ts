@@ -371,7 +371,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		warnOnce: (msg: string, options?: unknown) => void
 	}
 
-	const baseLogger = createLogger(undefined, { prefix: '[pluxel-hmr]' }) as LoggerWithOnce
+	const baseLogger = createLogger(undefined, { prefix: '[pluxel-runtime]' }) as LoggerWithOnce
 	// Avoid `{...baseLogger}` here: Vite mutates `logger.hasWarned`, and spreading would copy a stale boolean.
 	// We only override warning output to silence known-noisy Vite import-analysis warnings.
 	const customLogger = Object.create(baseLogger) as LoggerWithOnce

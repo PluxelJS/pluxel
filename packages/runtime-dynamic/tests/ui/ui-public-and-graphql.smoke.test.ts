@@ -5,7 +5,7 @@ import { writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
-import { HMR_INTERNAL_API_BASE, HMR_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
+import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { createCompiledExtensionModule } from '@pluxel/runtime/internal'
 import { createTestHmrHost } from '../support/test-host'
 
@@ -154,7 +154,7 @@ describe('HMR UI smoke', () => {
 		})
 
 		const res = await host.ctx.http.fetch(
-			new Request(`http://local${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}`, {
+			new Request(`http://local${RUNTIME_INTERNAL_API_BASE}${RUNTIME_TRANSPORT_PATHS.graphql}`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ query: '{ _empty }' }),
@@ -200,7 +200,7 @@ describe('HMR UI smoke', () => {
 					metaData?: { publicPath?: string }
 				}
 				expect(manifest.metaData?.publicPath).toBe(
-					`${HMR_INTERNAL_API_BASE}/extensions/artifacts/DemoPlugin/demo-hash/`,
+					`${RUNTIME_INTERNAL_API_BASE}/extensions/artifacts/DemoPlugin/demo-hash/`,
 				)
 
 				const assetRes = await ctx.http.fetch(

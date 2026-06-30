@@ -40,7 +40,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	}
 
 	ping() {
-		return 'hmr-rpc:ok'
+		return 'runtime-rpc:ok'
 	}
 
 	/** 包管理操作 */

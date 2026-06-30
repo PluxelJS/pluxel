@@ -48,7 +48,7 @@ During startup the dynamic route:
 - diagnoses the workspace profile into a snapshot
 - creates the runtime `Context`
 - wires loader HMR to the host `ViteDevServer`
-- wires the module runtime adapter and source UI handles
+- contributes module and dev capabilities to `ctx.runtimeRoute`
 - executes startup entries and feeds source changes through the debounced loader batch
 
 ## Packaging

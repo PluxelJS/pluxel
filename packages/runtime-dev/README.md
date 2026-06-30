@@ -10,7 +10,7 @@ their own published HMR/dev chunks.
 
 `runtime-dev` owns only development behavior that is independent from the plugin loading route:
 
-- bind `ui(...).bind(ctx)` source declarations to runtime HMR handles
+- bind `ui(...).bind(ctx)` source declarations to route dev capabilities
 - watch plugin UI source files and related generated source roots
 - hash source inputs, shared package signatures, and UI build options
 - build source UI entries into web Module Federation remotes through `@pluxel/rolldown/vite/plugin-ui`
@@ -23,7 +23,7 @@ It does not own a host HMR model.
 
 Keep these outside this package:
 
-- dynamic workspace scan, profile resolution, package installation, module adapter, and `executeFiles`
+- dynamic workspace scan, profile resolution, package installation, route module capability, and `executeFiles`
 - static runtime catalog diffing, static definition re-import, and fixed plugin enablement
 - Rolldown/OXC/Vite plugin implementation details
 - public API intended for application authors

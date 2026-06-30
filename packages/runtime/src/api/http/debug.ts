@@ -3,10 +3,10 @@ import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { requireRouteCapability } from '../../runtime/capabilities'
 import { pluginSchema } from '../usecases/pluginConfig'
-import { HMR_INTERNAL_API_BASE } from '../../web/paths'
+import { RUNTIME_INTERNAL_API_BASE } from '../../web/paths'
 import { debugSchemaSourceQuery, pluginNameParams } from './models'
 
-const DEBUG_BASE = `${HMR_INTERNAL_API_BASE}/debug`
+const DEBUG_BASE = `${RUNTIME_INTERNAL_API_BASE}/debug`
 
 interface PluginSchemaInfo {
 	name: string

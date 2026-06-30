@@ -23,7 +23,7 @@ import {
 	extensionFederationManifestPath,
 	extensionFederationRemoteName,
 } from '../../web/federation'
-import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
+import { RUNTIME_INTERNAL_API_BASE, runtimeExtensionArtifactPath } from '../../web/paths'
 import type { FsService, FsStat } from '../fs/FsService'
 import { ExtensionInteractionRegistry } from './ExtensionInteractionRegistry'
 import {
@@ -798,7 +798,7 @@ export function createCompiledExtensionModule(input: {
 	return {
 		pluginName: input.pluginName,
 		remoteName: extensionFederationRemoteName(input.pluginName),
-		manifestUrl: `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactPath(
+		manifestUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeExtensionArtifactPath(
 			input.pluginName,
 			input.sourceHash,
 			EXTENSION_FEDERATION_MANIFEST_FILE,

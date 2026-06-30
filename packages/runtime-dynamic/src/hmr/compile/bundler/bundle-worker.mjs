@@ -260,7 +260,7 @@ function createBrowserImportGuardPlugin(opts) {
 		const importerId = importer ? cleanId(importer) : null
 		const chainFrom = importerId ?? entryId
 		const chain = buildChain(chainFrom)
-		const title = `[pluxel-hmr] Browser bundle imported a Node-only module: "${source}"`
+		const title = `[pluxel-runtime] Browser bundle imported a Node-only module: "${source}"`
 		const lines = [
 			title,
 			opts.label ? `Bundle: ${opts.label}` : null,
@@ -278,7 +278,7 @@ function createBrowserImportGuardPlugin(opts) {
 		const importerId = importer ? cleanId(importer) : null
 		const chainFrom = importerId ?? entryId
 		const chain = buildChain(chainFrom)
-		const title = `[pluxel-hmr] Browser bundle imported an unresolved module: "${source}"`
+		const title = `[pluxel-runtime] Browser bundle imported an unresolved module: "${source}"`
 		const lines = [
 			title,
 			opts.label ? `Bundle: ${opts.label}` : null,

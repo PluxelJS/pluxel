@@ -1,17 +1,10 @@
-export type { HmrRuntimeHandles } from './runtime/hmr-handles'
-export {
-	clearHmrRuntimeHandles,
-	getHmrRuntimeHandles,
-	setHmrRuntimeHandles,
-} from './runtime/hmr-handles'
-
-export type { RuntimeModuleAdapter, RuntimeModuleCacheEntry } from './runtime/module-runtime'
-export {
-	clearRuntimeModuleAdapter,
-	getRuntimeModuleAdapter,
-	hasRuntimeModuleAdapter,
-	setRuntimeModuleAdapter,
-} from './runtime/module-runtime'
+export { runtimeModuleRuntime } from './runtime/capabilities'
+export type {
+	RuntimeDevCapabilities,
+	RuntimeModuleCacheEntry,
+	RuntimeModuleRuntime,
+	RuntimeWorkerWatchOptions,
+} from './runtime/capabilities'
 
 export type {
 	MaterializeProfiledFileOptions,

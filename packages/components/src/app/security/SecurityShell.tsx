@@ -1,7 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import { IconBox, IconShieldLock } from '@tabler/icons-react'
 import { ColorSchemeToggle } from '../../theme'
-import { HMR_SECURITY_BASE } from '../../runtime'
+import { RUNTIME_SECURITY_BASE } from '../../runtime'
 import { baseNavItems } from '../navigation/navConfig'
 import '../workbench/styles.scss'
 
@@ -35,7 +35,7 @@ export function SecurityShell() {
 
 				<nav className="plx-workbench__activityList">
 					{baseNavItems.map((item) =>
-						item.href === HMR_SECURITY_BASE ? (
+						item.href === RUNTIME_SECURITY_BASE ? (
 							<Link
 								key={item.href}
 								to={item.href}

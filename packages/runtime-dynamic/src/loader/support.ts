@@ -9,7 +9,7 @@ import {
 	type PluginIdentifier,
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
-import { getRuntimeModuleAdapter, findRuntimeModuleId } from '@pluxel/runtime/internal'
+import { runtimeModuleRuntime, findRuntimeModuleId } from '@pluxel/runtime/internal'
 import { setPluginEnabled } from '@pluxel/runtime/services'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
@@ -198,7 +198,7 @@ export class RuntimeResolver {
 	}
 
 	normalizeId(moduleId: string) {
-		return getRuntimeModuleAdapter(this.ctx).normalizeId(moduleId)
+		return runtimeModuleRuntime(this.ctx).normalizeId(moduleId)
 	}
 }
 

@@ -1,6 +1,6 @@
-import { HMR_VERIFICATION_BASE } from '../../web/paths'
+import { RUNTIME_VERIFICATION_BASE } from '../../web/paths'
 
-export const VERIFICATION_PAGE_PATH = HMR_VERIFICATION_BASE
+export const VERIFICATION_PAGE_PATH = RUNTIME_VERIFICATION_BASE
 
 export function buildVerificationRedirectPath(returnTo?: string): string {
 	const search = new URLSearchParams()

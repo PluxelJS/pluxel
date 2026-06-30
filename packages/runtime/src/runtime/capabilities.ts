@@ -88,12 +88,51 @@ export interface PluginSourceRead {
 	resolveSource(name: string, ctor?: PluginConstructor): RuntimePluginSource
 }
 
+export interface RuntimeModuleCacheEntry {
+	id: string
+	exports: Record<string, unknown>
+	aliases?: readonly string[]
+}
+
+export interface RuntimeModuleRuntime {
+	normalizeId(moduleId: string): string
+	moduleIdAliases(moduleId: string): Iterable<string>
+	primeModuleCacheEntry(entry: RuntimeModuleCacheEntry): void
+	dropModuleCacheEntries(ids: Iterable<string>): void
+}
+
 export type RuntimeApiResolverFactory = (ctx: Context) => Resolver | Resolver[]
 export type RuntimeRpcHandleFactory = (ctx: Context) => unknown
 
 export type RuntimeApiCapabilities = {
 	resolvers?: readonly RuntimeApiResolverFactory[]
 	rpcHandles?: Readonly<Record<string, RuntimeRpcHandleFactory>>
+}
+
+export type RuntimeWorkerWatchOptions = {
+	external?: string[]
+	onUpdate: (workerUrl: string) => void | Promise<void>
+	onError?: (error: unknown) => void
+}
+
+export type RuntimeDevCapabilities = {
+	uiSource?: {
+		bind(ctx: Context, options: { entryPath: string }): () => void
+	}
+	worker?: {
+		watch(
+			ctx: Context,
+			tsEntry: string,
+			options: RuntimeWorkerWatchOptions,
+		): Promise<() => Promise<void>>
+	}
+	batches?: {
+		lastBatch(): unknown
+		waitForBatch(options?: unknown): Promise<unknown>
+		waitForStable(options?: unknown): Promise<unknown>
+		waitForIdle(options?: unknown): Promise<void>
+		executeFiles?(files: string[], keepOrder?: boolean): Promise<void>
+	}
 }
 
 export type RuntimeRouteCapabilities = {
@@ -103,6 +142,19 @@ export type RuntimeRouteCapabilities = {
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
 	api?: RuntimeApiCapabilities
+	modules?: RuntimeModuleRuntime
+	dev?: RuntimeDevCapabilities
+}
+
+const identityModuleRuntime: RuntimeModuleRuntime = {
+	normalizeId(moduleId) {
+		return moduleId
+	},
+	moduleIdAliases(moduleId) {
+		return [moduleId]
+	},
+	primeModuleCacheEntry() {},
+	dropModuleCacheEntries() {},
 }
 
 declare module '@pluxel/core' {
@@ -120,6 +172,10 @@ export function requireRouteCapability<K extends keyof RuntimeRouteCapabilities>
 		throw new Error(`[pluxel/runtime] Runtime route capability "${key}" is not available.`)
 	}
 	return value
+}
+
+export function runtimeModuleRuntime(ctx: Context): RuntimeModuleRuntime {
+	return ctx.runtimeRoute?.modules ?? ctx.root.runtimeRoute?.modules ?? identityModuleRuntime
 }
 
 export function unknownPluginSource(): RuntimePluginSource {

@@ -8,7 +8,7 @@ import {
 describe('HMR client optimizeDeps', () => {
 	it('optimizes explicit browser entries outside the Vite root', () => {
 		const config = buildLoaderHmrViteConfig({
-			root: '/tmp/pluxel-hmr',
+			root: '/tmp/pluxel-runtime',
 			fsAllow: [],
 			clientEntries: ['/workspace/packages/runtime/src/client.tsx'],
 			deps: resolveLoaderHmrDependencyConfig(),
@@ -40,7 +40,7 @@ describe('HMR client optimizeDeps', () => {
 
 	it('merges user Vite config as the final layer while keeping internal plugins', () => {
 		const config = buildLoaderHmrViteConfig({
-			root: '/tmp/pluxel-hmr',
+			root: '/tmp/pluxel-runtime',
 			fsAllow: [],
 			deps: resolveLoaderHmrDependencyConfig(),
 			runnerPlugin: { name: 'runner-noop' },

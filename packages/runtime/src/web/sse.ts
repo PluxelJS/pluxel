@@ -2,7 +2,7 @@ import {
 	defaultOnVerificationBlocked,
 	type OnVerificationBlocked,
 } from './verification'
-import { HMR_INTERNAL_API_BASE } from './paths'
+import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './extensions'
 import type { ExtensionUiSseMap } from './protocol'
 import {
@@ -45,7 +45,7 @@ export interface SseClientOptions {
 	namespaces?: Array<keyof ResolvedSseEvents | string>
 	/** 额外查询参数（会附加到 SSE url 上） */
 	params?: Record<string, string | number | boolean | null | undefined>
-	/** 自定义 SSE 入口（默认 `${HMR_INTERNAL_API_BASE}/sse`） */
+	/** 自定义 SSE 入口（默认 `${RUNTIME_INTERNAL_API_BASE}/sse`） */
 	url?: string
 	/** Whether to send cookies/credentials for cross-origin SSE. */
 	withCredentials?: boolean
@@ -83,7 +83,7 @@ class SseClient {
 	}
 
 	constructor(options: SseClientOptions = {}) {
-		const url = new URL(options.url ?? `${HMR_INTERNAL_API_BASE}/sse`, window.location.origin)
+		const url = new URL(options.url ?? `${RUNTIME_INTERNAL_API_BASE}/sse`, window.location.origin)
 		const namespaces = options.namespaces?.filter(Boolean)
 		if (namespaces?.length) url.searchParams.set('ns', namespaces.join(','))
 		if (options.params) {

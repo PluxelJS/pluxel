@@ -40,7 +40,7 @@ export default defineStaticRuntimeConfig({
 ```
 
 The route plugin owns static source transforms, development host lifecycle, request forwarding,
-source UI HMR handles, and build-time packaged UI lowering.
+source UI dev capability, and build-time packaged UI lowering.
 
 ## Headless Host
 

@@ -1,6 +1,6 @@
 import type { AnyElysiaApp } from '../../services/http/elysia'
 import { listSecurityEvents } from '../../services/security/audit'
-import { HMR_SECURITY_BASE } from '../../web/paths'
+import { RUNTIME_SECURITY_BASE } from '../../web/paths'
 
 function setNoStore(set: { headers: Record<string, string | number> }) {
 	set.headers['cache-control'] = 'no-store'
@@ -43,7 +43,7 @@ function invalidSecurityInput(
 }
 
 export const securityRoutes = (app: AnyElysiaApp) =>
-	app.group(HMR_SECURITY_BASE, (security) =>
+	app.group(RUNTIME_SECURITY_BASE, (security) =>
 		security
 			.get('/', async ({ set, pluginCtx, request }) => {
 				setNoStore(set)

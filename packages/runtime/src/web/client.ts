@@ -15,18 +15,18 @@ import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
 import { createRuntimeSecurityClient } from './security'
 import {
-	HMR_EXTENSIONS_EVENTS_PATH,
-	HMR_INTERNAL_API_BASE,
-	HMR_TRANSPORT_PATHS,
-	hmrSignalDbCollectionPath,
-	hmrLogStreamPath,
+	RUNTIME_EXTENSIONS_EVENTS_PATH,
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_TRANSPORT_PATHS,
+	runtimeSignalDbCollectionPath,
+	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
 import { mergeNamespaces } from './utils'
 import { resolveClientUrl } from './http-utils'
 
 export interface RuntimeMeta {
-	service: 'pluxel-hmr'
+	service: 'pluxel-runtime'
 	ready: true
 	sse: {
 		namespaces: string[]
@@ -195,8 +195,8 @@ function resolveApiBase(options: RuntimeTransportClientOptions): string {
 	return resolveClientUrl(
 		options.apiBase ??
 			(typeof options.origin === 'string' && options.origin
-				? joinPath(options.origin, HMR_INTERNAL_API_BASE)
-				: HMR_INTERNAL_API_BASE),
+				? joinPath(options.origin, RUNTIME_INTERNAL_API_BASE)
+				: RUNTIME_INTERNAL_API_BASE),
 	)
 }
 
@@ -239,19 +239,19 @@ export function createRuntimeTransportLinks(
 	const apiBase = resolveApiBase(options)
 	const transport = {
 		apiBase,
-		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, HMR_TRANSPORT_PATHS.rpc)),
-		graphql: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.graphql)),
-		sse: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.sse)),
+		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
+		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
+		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
 		signaldbCollection: (pluginName: string, collection: string) =>
-			resolveClientUrl(joinPath(apiBase, hmrSignalDbCollectionPath(pluginName, collection))),
+			resolveClientUrl(joinPath(apiBase, runtimeSignalDbCollectionPath(pluginName, collection))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
-			const base = resolveClientUrl(joinPath(apiBase, hmrLogStreamPath(streamId, '/follow')))
+			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
 			const suffix =
 				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
 			return suffix ? `${base}?${suffix}` : base
 		},
 		extensionEvents: (namespaces?: string[]) => {
-			const base = resolveClientUrl(joinPath(apiBase, HMR_EXTENSIONS_EVENTS_PATH))
+			const base = resolveClientUrl(joinPath(apiBase, RUNTIME_EXTENSIONS_EVENTS_PATH))
 			const params = new URLSearchParams()
 			for (const namespace of namespaces ?? []) params.append('ns', namespace)
 			const suffix = params.toString()

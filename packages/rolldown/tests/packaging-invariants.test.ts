@@ -144,6 +144,10 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 		const runtimeDevVite = await readFile(`${root}/packages/runtime-dev/src/vite.ts`, 'utf8')
+		const runtimeDevExtensionCompiler = await readFile(
+			`${root}/packages/runtime-dev/src/extensions/ExtensionCompilerService.ts`,
+			'utf8',
+		)
 		const runtimeDynamicHmrConfig = await readFile(
 			`${root}/packages/runtime-dynamic/src/hmr/engine/config.ts`,
 			'utf8',
@@ -157,6 +161,14 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
+		const runtimeInternal = await readFile(`${root}/packages/runtime/src/internal.ts`, 'utf8')
+		const runtimePlugin = await readFile(`${root}/packages/runtime/src/plugin.ts`, 'utf8')
+		const runtimeCapabilities = await readFile(
+			`${root}/packages/runtime/src/runtime/capabilities.ts`,
+			'utf8',
+		)
+		const runtimeWebPaths = await readFile(`${root}/packages/runtime/src/web/paths.ts`, 'utf8')
+		const runtimeWeb = await readFile(`${root}/packages/runtime/src/web.ts`, 'utf8')
 		const staticDemoVite = await readFile(
 			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
 			'utf8',
@@ -172,6 +184,21 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeConfig).toContain('../rolldown/src/workspace/info-entry.ts')
 		expect(runtimeConfig).not.toContain('../rolldown/src/rolldown')
 		expect(runtimeConfig).not.toContain('@pluxel/rolldown/vite')
+		expect(existsSync(`${root}/packages/runtime/src/runtime/hmr-${'handles'}.ts`)).toBe(false)
+		expect(existsSync(`${root}/packages/runtime/src/runtime/module-${'runtime'}.ts`)).toBe(false)
+		expect(runtimeInternal).not.toContain(`setHmr${'RuntimeHandles'}`)
+		expect(runtimeInternal).not.toContain(`getHmr${'RuntimeHandles'}`)
+		expect(runtimeInternal).not.toContain(`setRuntime${'ModuleAdapter'}`)
+		expect(runtimeInternal).not.toContain(`getRuntime${'ModuleAdapter'}`)
+		expect(runtimePlugin).not.toContain(`getHmr${'RuntimeHandles'}`)
+		expect(runtimePlugin).toContain('runtimeRoute(ctx)?.dev')
+		expect(runtimeCapabilities).toContain('modules?: RuntimeModuleRuntime')
+		expect(runtimeCapabilities).toContain('dev?: RuntimeDevCapabilities')
+		expect(runtimeWebPaths).toContain("RUNTIME_INTERNAL_API_BASE = '/__pluxel/runtime'")
+		expect(runtimeWebPaths).not.toContain('HMR_')
+		expect(runtimeWebPaths).not.toContain(`/__pluxel/${'hmr'}`)
+		expect(runtimeWeb).toContain('RUNTIME_INTERNAL_API_BASE')
+		expect(runtimeWeb).not.toContain('HMR_')
 		expect(runtimeDevConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/rolldown/)
 		expect(runtimeDevConfig).not.toContain('../rolldown/src/')
 		expect(runtimeDynamicConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/rolldown/)
@@ -196,6 +223,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDevVite).not.toContain('runtimeUiBridge?:')
 		expect(runtimeDevVite).not.toContain('resolveUiBridgeOptions')
 		expect(runtimeDevVite).toContain('legacy: true')
+		expect(runtimeDevExtensionCompiler).not.toContain('attachStore')
+		expect(runtimeDevExtensionCompiler).toContain('store: ExtensionModuleStore')
 		expect(runtimeDynamicHmrConfig).toContain('@pluxel/runtime-dev/vite')
 		expect(runtimeDynamicHmrConfig).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeDynamicHmrConfig).not.toContain('pluxelRuntimeDevVitePlugin')

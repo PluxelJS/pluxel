@@ -145,6 +145,9 @@ export {
 	type PluginSourceRead,
 	type RuntimeApiCapabilities,
 	type RuntimeApiResolverFactory,
+	type RuntimeDevCapabilities,
+	type RuntimeModuleCacheEntry,
+	type RuntimeModuleRuntime,
 	type RuntimePluginDependencyInfo,
 	type RuntimePluginLifecycleStage,
 	type RuntimePluginSource,
@@ -152,4 +155,5 @@ export {
 	type RuntimePluginStatusSnapshot,
 	type RuntimeRouteCapabilities,
 	type RuntimeRpcHandleFactory,
+	type RuntimeWorkerWatchOptions,
 } from './runtime/capabilities'

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HMR_VERIFICATION_BASE } from '../../src/web/paths'
+import { RUNTIME_VERIFICATION_BASE } from '../../src/web/paths'
 import { sse } from '../../src/web/sse'
 
 class FakeEventSource {
@@ -120,7 +120,7 @@ describe('runtime/web SSE verification probe', () => {
 		expect(onBlocked).toHaveBeenCalledWith(
 			expect.objectContaining({
 				status: 401,
-				redirectPath: HMR_VERIFICATION_BASE,
+				redirectPath: RUNTIME_VERIFICATION_BASE,
 			}),
 		)
 		expect(source!.closed).toBe(true)

@@ -1,8 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { clearHmrRuntimeHandles, setHmrRuntimeHandles } from '@pluxel/runtime/internal'
-
 import { ui, worker } from '../src/plugin'
 
 function createPluginCtx() {
@@ -46,24 +44,24 @@ afterEach(() => {
 })
 
 describe('@pluxel/runtime/plugin', () => {
-	it('ui() binds through HMR handles when HMR wiring is attached', () => {
+	it('ui() binds through route dev capability when source UI is available', () => {
 		const { root, pluginCtx } = createPluginCtx()
-		const bindUiSource = vi.fn(() => () => {})
+		const bind = vi.fn(() => () => {})
 
-		setHmrRuntimeHandles(root, {
-			extensions: {
-				bindUiSource,
+		root.runtimeRoute = {
+			catalog: {} as never,
+			dev: {
+				uiSource: { bind },
 			},
-		})
+		}
 
 		const declaration = ui('./ui/index.tsx')
 		const dispose = declaration.bind(pluginCtx)
 
-		expect(bindUiSource).toHaveBeenCalledWith(pluginCtx, {
+		expect(bind).toHaveBeenCalledWith(pluginCtx, {
 			entryPath: './ui/index.tsx',
 		})
 		expect(typeof dispose).toBe('function')
-		clearHmrRuntimeHandles(root)
 	})
 
 	it('ui() falls back to packaged runtime registration outside HMR', () => {
@@ -111,24 +109,25 @@ describe('@pluxel/runtime/plugin', () => {
 		expect(pluginCtx.loader.api.registry.findModuleIdByName).not.toHaveBeenCalled()
 	})
 
-	it('worker() uses root-scoped HMR handles and tracks HMR updates', async () => {
+	it('worker() uses route dev capability and tracks HMR updates', async () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()
 		const stopWatching = vi.fn(async () => {})
-		const watchTinypoolWorker = vi.fn(async (_ctx, _entry, options) => {
+		const watch = vi.fn(async (_ctx, _entry, options) => {
 			await options.onUpdate('file:///tmp/hmr-worker.mjs')
 			return stopWatching
 		})
 
-		setHmrRuntimeHandles(root, {
-			bundler: {
-				watchTinypoolWorker,
+		root.runtimeRoute = {
+			catalog: {} as never,
+			dev: {
+				worker: { watch },
 			},
-		})
+		}
 
 		const binding = await worker('./ui/worker.ts').bind(pluginCtx, { onUpdate })
 
-		expect(watchTinypoolWorker).toHaveBeenCalledWith(
+		expect(watch).toHaveBeenCalledWith(
 			pluginCtx,
 			'./ui/worker.ts',
 			expect.objectContaining({
@@ -147,6 +146,5 @@ describe('@pluxel/runtime/plugin', () => {
 
 		await binding.dispose()
 		expect(stopWatching).toHaveBeenCalledTimes(1)
-		clearHmrRuntimeHandles(root)
 	})
 })

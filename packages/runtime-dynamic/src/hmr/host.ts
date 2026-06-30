@@ -6,13 +6,7 @@ import '@pluxel/runtime-dynamic/register'
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
-	clearHmrRuntimeHandles,
-	clearRuntimeModuleAdapter,
-	getHmrRuntimeHandles,
-	hasRuntimeModuleAdapter,
 	resolveRuntimeStoragePaths,
-	setHmrRuntimeHandles,
-	setRuntimeModuleAdapter,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context } from '@pluxel/runtime'
@@ -296,6 +290,8 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	})
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	await bootstrapHostVault(ctx)
+	// Materialize the loader route before HMR contributes dev/module capabilities to it.
+	void ctx.loader
 
 	const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
 
@@ -311,7 +307,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
 ): Promise<LoaderHmrService> {
-	if (ctx.config.loaderHmr || hasRuntimeModuleAdapter(ctx) || getHmrRuntimeHandles(ctx)) {
+	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules || ctx.runtimeRoute?.dev) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
 	}
 
@@ -320,7 +316,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	const hmr = new LoaderHmrService(ctx, loaderHmr)
 	if (viteServer) await hmr.attachServer(viteServer)
-	setRuntimeModuleAdapter(ctx, hmr)
 
 	const bundler = new BundlerService(ctx)
 	const extensionCompilerConfig = mergeExtensionCompilerViteConfig(
@@ -328,12 +323,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		plan.vite,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	const extensionCompiler = new ExtensionCompilerService(
-		ctx,
-		{ viteServer: viteServer ?? hmr.vite, enabled: true },
-		extensionCompilerConfig,
-	)
-
 	ctx.config.http = { ...ctx.config.http, uiAssets: 'hmr-server' }
 	ctx.config.extensionService = {
 		...ctx.config.extensionService,
@@ -341,29 +330,44 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	}
 	const extensionStore = ctx.ext.ui
 	extensionStore.reconfigure(ctx.config.extensionService)
-	extensionCompiler.attachStore(extensionStore)
+	const extensionCompiler = new ExtensionCompilerService(
+		ctx,
+		{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },
+		extensionCompilerConfig,
+	)
 
-	setHmrRuntimeHandles(ctx, {
-		hmr: {
-			api: hmr.api,
-			executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
+	const baseRoute = ctx.runtimeRoute
+	if (!baseRoute) {
+		throw new Error('[loader-hmr-host] Loader route capabilities must be registered before HMR starts')
+	}
+	ctx.runtimeRoute = {
+		...baseRoute,
+		modules: hmr,
+		dev: {
+			...baseRoute.dev,
+			batches: {
+				lastBatch: hmr.api.lastBatch,
+				waitForBatch: hmr.api.waitForBatch,
+				waitForStable: hmr.api.waitForStable,
+				waitForIdle: hmr.api.waitForIdle,
+				executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
+			},
+			worker: {
+				watch: (ownerCtx, tsEntry, bundlerOptions) =>
+					bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
+						...bundlerOptions,
+						vite: hmr.vite,
+					}),
+			},
+			uiSource: {
+				bind: (ownerCtx, declaration) =>
+					extensionCompiler.bindDeclaration(ownerCtx, declaration),
+			},
 		},
-		bundler: {
-			watchTinypoolWorker: (ownerCtx, tsEntry, bundlerOptions) =>
-				bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
-					...bundlerOptions,
-					vite: hmr.vite,
-				}),
-		},
-		extensions: {
-			bindUiSource: (ownerCtx, declaration) =>
-				extensionCompiler.bindDeclaration(ownerCtx, declaration),
-		},
-	})
+	}
 
 	ctx.effects.defer(() => {
-		clearRuntimeModuleAdapter(ctx)
-		clearHmrRuntimeHandles(ctx)
+		ctx.runtimeRoute = baseRoute
 		extensionCompiler.dispose()
 		return bundler.dispose()
 	})

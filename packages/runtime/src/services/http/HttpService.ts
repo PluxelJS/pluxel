@@ -13,7 +13,7 @@ import {
 } from '../../shared/verification-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
-import { HMR_INTERNAL_API_BASE, HMR_SECURITY_BASE } from '../../web/paths'
+import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE } from '../../web/paths'
 import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
 import { createVerificationRoutes } from '../verification/http'
 import {
@@ -182,7 +182,7 @@ export class HttpService {
 				}),
 				{
 					id: 'hmr:internal-api',
-					path: HMR_INTERNAL_API_BASE,
+					path: RUNTIME_INTERNAL_API_BASE,
 					app: {
 						aot: true,
 						name: 'pluxel.http.internal',
@@ -439,7 +439,7 @@ export class HttpService {
 			request,
 			url: request.url,
 		})
-		const isSecurityRoute = path === HMR_SECURITY_BASE || path.startsWith(`${HMR_SECURITY_BASE}/`)
+		const isSecurityRoute = path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
 		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
 		if (isSecurityRoute) {

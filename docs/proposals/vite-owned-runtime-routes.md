@@ -77,7 +77,7 @@ export default defineStaticRuntimeConfig({
 
 Static route infers transform policy from Vite command:
 
-- `serve`: source semantics, static host lifecycle, request forwarding, source UI HMR handles.
+- `serve`: source semantics, static host lifecycle, request forwarding, source UI dev capability.
 - `build`: source semantics and packaged UI bridge lowering.
 
 ## Boundaries
@@ -125,7 +125,7 @@ Only one dynamic runtime route is allowed per Vite server.
 - contributes route-neutral source semantics
 - loads static runtime config through the host Vite server
 - creates the static runtime host
-- wires static source UI HMR handles in serve mode
+- wires static source UI dev capability in serve mode
 - forwards `/__pluxel/*` and document navigations to `host.ctx.http.fetch(...)`
 - reloads the fixed catalog when the config module graph changes
 - stops the host when the Vite server closes

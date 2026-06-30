@@ -1,7 +1,8 @@
 import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/core'
+import type { RuntimeRouteCapabilities } from './plugin-catalog'
 import { isAbsolute, resolve } from 'pathe'
-import { getHmrRuntimeHandles, resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
+import { resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
 
 export interface PluginUiSourceDeclaration {
 	/** Authoring declaration. Runtime never consumes this path directly. */
@@ -13,8 +14,8 @@ export interface PluginUiModuleDeclaration {
 	 * Route-neutral plugin UI bridge entry.
 	 *
 	 * Plugin code keeps calling `ui(...).bind(ctx)` so build-time tooling can recognize and rewrite
-	 * this declaration if needed. Routes with HMR handles can consume the source declaration directly;
-	 * routes without those handles fall back to packaged remote registration on `ctx.ext.ui`.
+	 * this declaration if needed. Routes with dev capabilities can consume the source declaration directly;
+	 * routes without dev capabilities fall back to packaged remote registration on `ctx.ext.ui`.
 	 */
 	bind(ctx: Context): () => void
 }
@@ -25,14 +26,18 @@ function normalizeUiConfig(input: string | PluginUiSourceDeclaration): PluginUiS
 	return { entryPath }
 }
 
+function runtimeRoute(ctx: Context): RuntimeRouteCapabilities | undefined {
+	return ctx.runtimeRoute ?? ctx.root.runtimeRoute
+}
+
 export function ui(input: string | PluginUiSourceDeclaration): PluginUiModuleDeclaration {
 	const config = normalizeUiConfig(input)
 	if (!config.entryPath) throw new Error('[pluxel/runtime/plugin] ui(): entryPath required')
 
 	return {
 		bind(ctx: Context) {
-			const hmrBinder = getHmrRuntimeHandles(ctx)?.extensions?.bindUiSource
-			if (hmrBinder) return hmrBinder(ctx, config)
+			const sourceBinder = runtimeRoute(ctx)?.dev?.uiSource?.bind
+			if (sourceBinder) return sourceBinder(ctx, config)
 			return ctx.ext.ui.remote.packaged()
 		},
 	}
@@ -134,9 +139,9 @@ export function worker(
 				await onUpdate({ ...state })
 			}
 
-			const bundler = getHmrRuntimeHandles(ctx)?.bundler
-			if (bundler?.watchTinypoolWorker) {
-				stopWatching = await bundler.watchTinypoolWorker(ctx, normalizedEntry, {
+			const workerDev = runtimeRoute(ctx)?.dev?.worker
+			if (workerDev?.watch) {
+				stopWatching = await workerDev.watch(ctx, normalizedEntry, {
 					external,
 					onError,
 					onUpdate: async (workerUrl) => {

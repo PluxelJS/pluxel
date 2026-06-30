@@ -27,8 +27,8 @@ export default defineConfig(({ mode }) => {
 	return {
 		server: {
 			proxy: {
-				// Pluxel HMR internal API 走后端 3000，方便本地联调
-				'/__pluxel/hmr': {
+				// Pluxel runtime internal API 走后端 3000，方便本地联调
+				'/__pluxel/runtime': {
 					target: 'http://localhost:3000',
 					changeOrigin: true,
 				},

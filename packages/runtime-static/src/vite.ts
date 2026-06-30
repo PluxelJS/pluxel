@@ -277,16 +277,14 @@ async function configureStaticRuntimeDevRuntime(
 	host: StaticRuntimeHost,
 	options: StaticRuntimeDevRuntimeOptions,
 ): Promise<void> {
-	const [runtimeDev, runtimeInternal] = await Promise.all([
-		loadStaticRuntimeDevModule(server),
-		server.ssrLoadModule('@pluxel/runtime/internal') as Promise<
-			typeof import('@pluxel/runtime/internal')
-		>,
-	])
+	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
-	const previousHandles = runtimeInternal.getHmrRuntimeHandles(ctx)
-	if (previousHandles?.extensions?.bindUiSource) {
+	const previousRoute = ctx.runtimeRoute
+	if (previousRoute?.dev?.uiSource) {
 		throw new Error('[runtime-static/vite] extension source UI runtime is already attached')
+	}
+	if (!previousRoute) {
+		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
 
 	const extensionCompilerConfig = runtimeDev.mergeExtensionCompilerViteConfig(
@@ -294,12 +292,6 @@ async function configureStaticRuntimeDevRuntime(
 		options.vite,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	const extensionCompiler = new runtimeDev.ExtensionCompilerService(
-		ctx,
-		{ viteServer: options.viteServer, enabled: true },
-		extensionCompilerConfig,
-	)
-
 	if (options.enableRuntimeServices !== false) {
 		ctx.config.http = { ...ctx.config.http, uiAssets: 'hmr-server' }
 		ctx.config.extensionService = {
@@ -310,21 +302,26 @@ async function configureStaticRuntimeDevRuntime(
 
 	const extensionStore = ctx.ext.ui
 	extensionStore.reconfigure(ctx.config.extensionService)
-	extensionCompiler.attachStore(extensionStore)
+	const extensionCompiler = new runtimeDev.ExtensionCompilerService(
+		ctx,
+		{ store: extensionStore, viteServer: options.viteServer, enabled: true },
+		extensionCompilerConfig,
+	)
 
-	runtimeInternal.setHmrRuntimeHandles(ctx, {
-		...previousHandles,
-		extensions: {
-			...previousHandles?.extensions,
-			bindUiSource: (ownerCtx, declaration) =>
-				extensionCompiler.bindDeclaration(ownerCtx, declaration),
+	ctx.runtimeRoute = {
+		...previousRoute,
+		dev: {
+			...previousRoute?.dev,
+			uiSource: {
+				bind: (ownerCtx, declaration) =>
+					extensionCompiler.bindDeclaration(ownerCtx, declaration),
+			},
 		},
-	})
+	}
 
 	ctx.effects.defer(() => {
 		extensionCompiler.dispose()
-		if (previousHandles) runtimeInternal.setHmrRuntimeHandles(ctx, previousHandles)
-		else runtimeInternal.clearHmrRuntimeHandles(ctx)
+		ctx.runtimeRoute = previousRoute
 	})
 }
 

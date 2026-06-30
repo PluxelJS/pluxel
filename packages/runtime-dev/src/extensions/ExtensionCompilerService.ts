@@ -19,7 +19,7 @@ import {
 	extensionFederationSharedPackages,
 	sanitizeExtensionPluginName,
 } from '@pluxel/runtime/web/federation'
-import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactBasePath } from '@pluxel/runtime/web/paths'
+import { RUNTIME_INTERNAL_API_BASE, runtimeExtensionArtifactBasePath } from '@pluxel/runtime/web/paths'
 import {
 	buildPluginUiRemote,
 	resolveExtensionFederationShared,
@@ -80,6 +80,7 @@ export type ExtensionCompilerViteServer = {
 }
 
 export type ExtensionCompilerServiceDeps = {
+	store: ExtensionModuleStore
 	viteServer?: ExtensionCompilerViteServer
 	enabled?: boolean
 }
@@ -140,7 +141,7 @@ const EXTENSION_COMPILER_VERSION = 14
 export class ExtensionCompilerService {
 	private readonly enabled: boolean
 	private readonly dbg: LogtapeLogger
-	private store: ExtensionModuleStore | null = null
+	private readonly store: ExtensionModuleStore
 	private readonly viteServer?: ExtensionCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
@@ -160,6 +161,7 @@ export class ExtensionCompilerService {
 		deps: ExtensionCompilerServiceDeps,
 		config?: ExtensionCompilerServiceConfig,
 	) {
+		this.store = deps.store
 		this.viteServer = deps.viteServer
 		this.enabled = (deps.enabled ?? true) && config?.enabled !== false
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/extensions')
@@ -182,14 +184,9 @@ export class ExtensionCompilerService {
 					})
 	}
 
-	attachStore(store: ExtensionModuleStore): void {
-		this.store = store
-	}
-
 	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {
 		if (!this.enabled) return () => {}
 		const store = this.store
-		if (!store) return () => {}
 
 		const pluginName = ctx.pluginInfo.id
 
@@ -290,7 +287,6 @@ export class ExtensionCompilerService {
 
 	private async compilePlugin(pluginName: string): Promise<boolean> {
 		const store = this.store
-		if (!store) return false
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
 
@@ -437,7 +433,7 @@ export class ExtensionCompilerService {
 		await rm(outDir, { recursive: true, force: true }).catch((): undefined => undefined)
 		await mkdir(outDir, { recursive: true })
 
-		const publicPath = `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactBasePath(entry.pluginName, sourceHash)}/`
+		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeExtensionArtifactBasePath(entry.pluginName, sourceHash)}/`
 		await buildPluginUiRemote({
 			root: entry.pluginDir,
 			pluginName: entry.pluginName,

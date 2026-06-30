@@ -1,4 +1,4 @@
-import { HMR_SECURITY_BASE, HMR_VERIFICATION_BASE } from '../web/paths'
+import { RUNTIME_SECURITY_BASE, RUNTIME_VERIFICATION_BASE } from '../web/paths'
 import type { VerificationReason, VerificationState } from '../services/verification/types'
 export type { VerificationReason } from '../services/verification/types'
 
@@ -26,7 +26,7 @@ function requestReturnTo(request: Request): string {
 }
 
 export function resolveVerificationLandingPath(reason?: VerificationReason): string {
-	return reason === 'missing_oidc' ? HMR_SECURITY_BASE : HMR_VERIFICATION_BASE
+	return reason === 'missing_oidc' ? RUNTIME_SECURITY_BASE : RUNTIME_VERIFICATION_BASE
 }
 
 export function canAccessSecurityAdmin(state: VerificationLike): boolean {

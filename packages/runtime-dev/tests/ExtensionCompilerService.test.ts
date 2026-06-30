@@ -64,10 +64,23 @@ describe('ExtensionCompilerService', () => {
 		const artifactRoots: string[] = []
 		let currentModule: ReturnType<ExtensionModuleStore['getCompiledModule']>
 		const host = createHost()
+		const store: ExtensionModuleStore = {
+			getCompiledModule: () => currentModule,
+			async commitCompiledModule(module, options) {
+				currentModule = module
+				committed.push(module)
+				if (options?.artifactRoot) artifactRoots.push(options.artifactRoot)
+			},
+			async markCompiling() {},
+			async markCompileError(_pluginName, error) {
+				throw error
+			},
+			async removePlugin() {},
+		}
 
 		const service = new ExtensionCompilerService(
 			host.ctx,
-			{ enabled: true },
+			{ store, enabled: true },
 			{
 				cacheDir: fixture.getPath('.pluxel/extensions'),
 				cacheKeep: 1,
@@ -81,20 +94,6 @@ describe('ExtensionCompilerService', () => {
 				},
 			},
 		)
-
-		service.attachStore({
-			getCompiledModule: () => currentModule,
-			async commitCompiledModule(module, options) {
-				currentModule = module
-				committed.push(module)
-				if (options?.artifactRoot) artifactRoots.push(options.artifactRoot)
-			},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
-			async removePlugin() {},
-		})
 
 		const dispose = service.bindDeclaration(
 			createPluginContext(host, 'PluginWithUI', {
@@ -154,10 +153,20 @@ describe('ExtensionCompilerService', () => {
 			'packages/plugins/static-commercial-demo/web/client/main.tsx': 'export default {}\n',
 		})
 		const host = createHost()
+		const store: ExtensionModuleStore = {
+			getCompiledModule: () => undefined,
+			async commitCompiledModule() {},
+			async markCompiling() {},
+			async markCompileError(_pluginName, error) {
+				throw error
+			},
+			async removePlugin() {},
+		}
 
 		const service = new ExtensionCompilerService(
 			host.ctx,
 			{
+				store,
 				enabled: true,
 				viteServer: {
 					config: {
@@ -170,16 +179,6 @@ describe('ExtensionCompilerService', () => {
 				cacheKeep: 1,
 			},
 		)
-
-		service.attachStore({
-			getCompiledModule: () => undefined,
-			async commitCompiledModule() {},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
-			async removePlugin() {},
-		})
 
 		const dispose = service.bindDeclaration(createPluginContext(host, 'StaticCommercialPlugin'), {
 			entryPath: './web/client/main.tsx',

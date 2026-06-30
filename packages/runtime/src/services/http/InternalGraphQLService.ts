@@ -2,7 +2,7 @@ import { Injectable, type Context as PlxContext } from '@pluxel/core'
 import { printSchema, type GraphQLSchema } from 'graphql'
 import { createYoga } from 'graphql-yoga'
 
-import { HMR_TRANSPORT_PATHS } from '../../web/paths'
+import { RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
 import { createElysiaApp } from './elysia'
 import { createInternalGraphQLSchema } from './internalGraphqlSchema'
 
@@ -56,7 +56,7 @@ export class InternalGraphQLService {
 			aot: true,
 			name: 'pluxel.http.internal.graphql',
 		}).all(
-			HMR_TRANSPORT_PATHS.graphql,
+			RUNTIME_TRANSPORT_PATHS.graphql,
 			({ pluginCtx, request }) => pluginCtx.internalGraphql.fetch(request),
 			{ parse: 'none' },
 		)
@@ -89,7 +89,7 @@ export class InternalGraphQLService {
 	private pushFetch() {
 		const yoga = createYoga({
 			landingPage: false,
-			graphqlEndpoint: HMR_TRANSPORT_PATHS.graphql,
+			graphqlEndpoint: RUNTIME_TRANSPORT_PATHS.graphql,
 			maskedErrors: process.env.NODE_ENV === 'production',
 			graphiql: process.env.NODE_ENV !== 'production',
 			schema: this.schema,

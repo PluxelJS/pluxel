@@ -1,5 +1,5 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
-import { HMR_INTERNAL_API_BASE } from './paths'
+import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
@@ -11,7 +11,7 @@ export type RpcClientCreateOptions = {
 }
 
 export function createRpcClient(
-	rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`,
+	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
 	options: RpcClientCreateOptions = {},
 ): RuntimeRpcStub {
 	const signal = options.signal
@@ -35,7 +35,7 @@ export function createRpcClient(
 
 export type RpcClientFactory = (options?: RpcClientCreateOptions) => RuntimeRpcStub
 
-export function createRpcClientFactory(rpcBase = `${HMR_INTERNAL_API_BASE}/rpc`): RpcClientFactory {
+export function createRpcClientFactory(rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`): RpcClientFactory {
 	// Capnweb batch RPC sessions must be short-lived per call; reusing a closed
 	// session will surface "Batch RPC request ended." errors in consumers.
 	return (options) => createRpcClient(rpcBase, options)
@@ -63,7 +63,7 @@ function createTimeout(timeoutMs: number) {
 	const ctrl = new AbortController()
 	const timer = setTimeout(() => {
 		try {
-			ctrl.abort(new Error(`[HMR RPC] timeout after ${timeoutMs}ms`))
+			ctrl.abort(new Error(`[runtime RPC] timeout after ${timeoutMs}ms`))
 		} catch {
 			try {
 				ctrl.abort()
@@ -81,13 +81,13 @@ export async function invokeRpc<T>(
 	runner: (client: RuntimeRpcStub) => Promise<T>,
 	options?: { rpcBase?: string; timeoutMs?: number; credentials?: RequestCredentials },
 ): Promise<T> {
-	const base = options?.rpcBase ?? `${HMR_INTERNAL_API_BASE}/rpc`
+	const base = options?.rpcBase ?? `${RUNTIME_INTERNAL_API_BASE}/rpc`
 	const { signal, clear } = createTimeout(options?.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
 	const client = createRpcClient(base, { signal, credentials: options?.credentials })
 	try {
 		return await runner(client)
 	} catch (error) {
-		console.error('[HMR RPC] 调用失败', error)
+		console.error('[runtime RPC] 调用失败', error)
 		throw error
 	} finally {
 		clear()

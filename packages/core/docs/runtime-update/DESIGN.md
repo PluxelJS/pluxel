@@ -46,7 +46,7 @@ HMR 更新现在横跨多个状态面：
 
 ### 1.3 Dev adapter 侵入 runtime 语义
 
-HMR handles、UI federation compiler、worker watcher 等开发期能力通过 side channel 挂到 runtime context。它们能工作，但让 authoring API、runtime API、dev server 生命周期互相知道太多。
+UI federation compiler、worker watcher 等开发期能力曾通过 side channel 挂到 runtime context。它们能工作，但会让 authoring API、runtime API、dev server 生命周期互相知道太多；当前方向是让这些能力归 runtime route capability 所有。
 
 core 不应该知道这些工具；但 core 应该暴露足够清晰的 commit summary，让这些工具可以低成本响应 runtime 更新结果。
 
@@ -472,7 +472,7 @@ Vite module graph 是 adapter 的事实，不是 runtime core 的事实。core �
 
 - 删除 constructor param normalization。
 - 删除外层 retry re-sync。
-- 删除不再需要的 HMR runtime handles 中与 core transaction 重叠的能力。
+- 删除不再需要的 HMR route side-table/handle 入口中与 core transaction 重叠的能力。
 
 ## 10. 推荐 API 草案
 
@@ -510,4 +510,4 @@ if (!result.ok) {
 - token normalization patch
 - HMR pipeline 中的 `resetDraft`
 - commit failure 后的外层 re-sync
-- runtime handles 中用于绕过正式边界的入口
+- route side-table/handle 中用于绕过正式边界的入口

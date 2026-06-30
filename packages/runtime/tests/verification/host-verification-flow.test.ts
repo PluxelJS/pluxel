@@ -5,10 +5,10 @@ import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-	HMR_INTERNAL_API_BASE,
-	HMR_SECURITY_BASE,
-	HMR_TRANSPORT_PATHS,
-	HMR_VERIFICATION_BASE,
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_TRANSPORT_PATHS,
+	RUNTIME_VERIFICATION_BASE,
 } from '@pluxel/runtime/web/paths'
 
 function req(url: string, init?: RequestInit) {
@@ -16,10 +16,10 @@ function req(url: string, init?: RequestInit) {
 }
 
 function internalUrl(path = ''): string {
-	return `http://local${HMR_INTERNAL_API_BASE}${path}`
+	return `http://local${RUNTIME_INTERNAL_API_BASE}${path}`
 }
 
-function securityUrl(path = HMR_SECURITY_BASE): string {
+function securityUrl(path = RUNTIME_SECURITY_BASE): string {
 	return internalUrl(path)
 }
 
@@ -198,7 +198,8 @@ describe('Host verification gate', () => {
 
 		const blocked = await host.ctx.http.fetch(req(internalUrl(), { headers: { accept: 'application/json' } }))
 		expect(blocked.status).toBe(401)
-		expect((await blocked.json() as any).reason).toBe('unauthenticated')
+		const blockedBody = (await blocked.json()) as any
+		expect(blockedBody.reason).toBe('unauthenticated')
 
 		const allowed = await host.ctx.http.fetch(
 			req(internalUrl(), {
@@ -209,13 +210,10 @@ describe('Host verification gate', () => {
 			}),
 		)
 		expect(allowed.status).toBe(200)
-		expect(
-			(
-				await host.ctx.verification.authorize({
-					headers: new Headers({ authorization: `Bearer ${bearer}` }),
-				})
-			).allow,
-		).toBe(true)
+		const authorization = await host.ctx.verification.authorize({
+			headers: new Headers({ authorization: `Bearer ${bearer}` }),
+		})
+		expect(authorization.allow).toBe(true)
 	})
 
 	it('rejects valid OIDC tokens that miss required claims', async () => {
@@ -234,7 +232,7 @@ describe('Host verification gate', () => {
 		const bearer = await oidc.token({ groups: ['readers'] })
 
 		const res = await host.ctx.http.fetch(
-			req(internalUrl(HMR_TRANSPORT_PATHS.graphql), {
+			req(internalUrl(RUNTIME_TRANSPORT_PATHS.graphql), {
 				method: 'POST',
 				headers: {
 					accept: 'application/json',
@@ -262,7 +260,7 @@ describe('Host verification gate', () => {
 		})
 
 		const page = await host.ctx.http.fetch(
-			req(`http://local${HMR_VERIFICATION_BASE}?returnTo=%2Flogs`, {
+			req(`http://local${RUNTIME_VERIFICATION_BASE}?returnTo=%2Flogs`, {
 				headers: { accept: 'text/html' },
 			}),
 		)
