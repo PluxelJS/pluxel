@@ -28,7 +28,13 @@
 - `packages/runtime-dynamic/src/loader/LoaderService.ts`
   loader route 插件加载
 - `packages/runtime-dynamic/src/package/PackageService.ts`
-  loader route 包管理
+  loader route 包管理 facade
+- `packages/runtime-dynamic/src/package/mutation.ts`
+  package install/remove/reinstall flow
+- `packages/runtime-dynamic/src/package/load-runtime.ts`
+  package load/retry/runtime cache flow
+- `packages/runtime-dynamic/src/package/inventory.ts`
+  package inventory/load issue read model
 - `packages/runtime-dynamic/src/scan/ScanService.ts`
   loader route workspace scan
 

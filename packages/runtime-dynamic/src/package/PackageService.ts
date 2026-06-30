@@ -7,16 +7,13 @@ import {
 	type ScanTaskOptions,
 } from '../scan/types'
 import {
-	collectDeclaredPlugins,
 	createDebouncedTrigger,
 	dedupeByName,
-	isManagedPackageName,
 	normalizeRoots,
 	resolveInstallDefaults,
 	resolveStateFilePath,
 } from './helpers'
 import {
-	formatUnknownErrorMessage,
 	getUnknownErrorStack,
 	normalizeUnknownError,
 	PackageServiceError,
@@ -24,6 +21,9 @@ import {
 import { PackageInstallFlow } from './install-flow'
 import { PackageInstaller } from './installer'
 import { type LoadIntentConfig, PackageLoader } from './loader'
+import { PackageInventoryService } from './inventory'
+import { PackageLoadRuntime } from './load-runtime'
+import { PackageMutationService } from './mutation'
 import { PackageRemovalFlow } from './removal-flow'
 import { PackageRuntime } from './runtime'
 import {
@@ -100,16 +100,12 @@ export class PackageService {
 	}
 	private readonly policy: PackagePolicy
 
-	private readonly installLock = new KeyedLock<PackageInstallResult>()
-	private readonly installManyLock = new KeyedLock<PackageInstallResult[]>()
-	private readonly loadLock = new KeyedLock<PackageLoadResult>()
-	private readonly uninstallLock = new KeyedLock<void>()
-	private readonly uninstallManyLock = new KeyedLock<PackageUninstallResult[]>()
-	private readonly removeManyLock = new KeyedLock<PackageRemovalResult[]>()
-
 	private readonly installer: PackageInstaller
 	private readonly installFlow: PackageInstallFlow
+	private readonly inventory: PackageInventoryService
 	private readonly loader: PackageLoader
+	private readonly loadRuntime: PackageLoadRuntime
+	private readonly mutations: PackageMutationService
 	private readonly removalFlow: PackageRemovalFlow
 	private readonly runtime: PackageRuntime
 	private readonly stateStore: PackageStateStore
@@ -182,11 +178,56 @@ export class PackageService {
 			() => this.syncTrigger(),
 		)
 		this.installDefaultsReady = this.initializeInstallDefaults(config.install)
+		this.loadRuntime = new PackageLoadRuntime(
+			this.ctx,
+			this.state,
+			this.runtime,
+			this.loader,
+			this.installFlow,
+			this.installDefaultsReady,
+			(input) => this.normalizeSpecifier(input),
+			(inputs) => this.normalizeUniqueByName(inputs),
+			(overrides) => this.resolveInstallOptions(overrides),
+			(spec, overrides) => this.assertInstallPolicy(spec, overrides),
+			(name) => this.unblockPackage(name),
+			(spec, error, source, moduleId) => this.recordLoadIssue(spec, error, source, moduleId),
+			() => this.initialized,
+			() => this.syncTrigger(),
+			(level, event, payload, message) => this.logEvent(level, event, payload, message),
+		)
+		this.inventory = new PackageInventoryService(
+			this.state,
+			this.installer,
+			this.runtime,
+			(overrides) => this.resolveInstallOptions(overrides),
+			() => this.initialized,
+		)
+		this.mutations = new PackageMutationService(
+			this.ctx,
+			this.installFlow,
+			this.removalFlow,
+			this.loadRuntime,
+			(input) => this.normalizeSpecifier(input),
+			(inputs) => this.normalizeUniqueByName(inputs),
+			(overrides) => this.resolveInstallOptions(overrides),
+			(spec, overrides) => this.assertInstallPolicy(spec, overrides),
+			(spec) => this.assertUninstallPolicy(spec),
+			(name) => this.unblockPackage(name),
+			(level, event, payload, message) => this.logEvent(level, event, payload, message),
+		)
 		this.ready = this.installDefaultsReady
 			.then(() => this.initializeFromState())
-			.then(() => this.syncTrackedPlugins())
 			.catch((error) => {
 				this.logEvent('warn', 'init:restore_failed', { error })
+				return undefined
+			})
+			.then(() => {
+				this.initialized = true
+				return this.syncTrackedPlugins()
+			})
+			.catch((error) => {
+				this.logEvent('warn', 'init:sync_failed', { error })
+				return undefined
 			})
 			.finally(() => {
 				this.initialized = true
@@ -210,15 +251,7 @@ export class PackageService {
 		overrides: InstallOptions = {},
 	): Promise<PackageInstallResult> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		this.assertInstallPolicy(spec, overrides)
-		this.unblockPackage(spec.name)
-		const resolved = this.resolveInstallOptions(overrides)
-		this.logEvent('info', 'install:scheduled', {
-			target: spec.target,
-			force: resolved.force,
-		})
-		return this.installLock.run(spec.key, () => this.installFlow.installOne(spec, resolved))
+		return this.mutations.install(input, overrides)
 	}
 
 	/** Batch install packages with a single package manager call. */
@@ -227,19 +260,7 @@ export class PackageService {
 		overrides: InstallOptions = {},
 	): Promise<PackageInstallResult[]> {
 		await this.ensureReady()
-		if (inputs.length === 0) return []
-		const specs = inputs.map((item) => this.normalizeSpecifier(item))
-		specs.forEach((spec) => this.assertInstallPolicy(spec, overrides))
-		specs.forEach((spec) => {
-			this.unblockPackage(spec.name)
-		})
-		const key = this.buildMultiKey(specs)
-		const resolved = this.resolveInstallOptions(overrides)
-		this.logEvent('info', 'installMany:scheduled', {
-			targets: specs.map((s) => s.target),
-			force: resolved.force,
-		})
-		return this.installManyLock.run(key, () => this.installFlow.installMany(specs, resolved))
+		return this.mutations.installMany(inputs, overrides)
 	}
 
 	/** Resolve entry for a package in scan context. */
@@ -248,8 +269,7 @@ export class PackageService {
 		options: ScanTaskOptions = {},
 	): Promise<EntryResolutionOk> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		return this.loader.resolveEntryForSpec(spec, options)
+		return this.loadRuntime.resolveEntry(input, options)
 	}
 
 	/**
@@ -257,10 +277,7 @@ export class PackageService {
 	 */
 	async load(input: PackageSpecifierInput, options: LoadOptions = {}): Promise<PackageLoadResult> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		this.assertInstallPolicy(spec, options.install)
-		this.unblockPackage(spec.name)
-		return this.loadWithIntent(spec, options, { autoInstall: true, source: 'load' })
+		return this.loadRuntime.load(input, options)
 	}
 
 	/**
@@ -271,8 +288,7 @@ export class PackageService {
 		options: LoadOptions = {},
 	): Promise<PackageLoadResult> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		return this.loadWithIntent(spec, options, { autoInstall: false, source: 'load' })
+		return this.loadRuntime.loadInstalled(input, options)
 	}
 
 	/**
@@ -280,28 +296,13 @@ export class PackageService {
 	 */
 	async uninstall(input: PackageSpecifierInput): Promise<void> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		this.assertUninstallPolicy(spec)
-		return this.uninstallLock.run(spec.key, async () => {
-			const [result] = await this.removalFlow.uninstallMany([spec])
-			if (result.status === 'failed') {
-				const message = formatUnknownErrorMessage(result.error)
-				throw new PackageServiceError('UNINSTALL_FAILED', message, {
-					cause: result.error,
-					spec,
-				})
-			}
-		})
+		return this.mutations.uninstall(input)
 	}
 
 	/** Batch uninstall: runtime only. */
 	async uninstallMany(inputs: PackageSpecifierInput[]): Promise<PackageUninstallResult[]> {
 		await this.ensureReady()
-		if (inputs.length === 0) return []
-		const specs = this.normalizeUniqueByName(inputs)
-		specs.forEach((spec) => this.assertUninstallPolicy(spec))
-		const key = this.buildMultiKey(specs)
-		return this.uninstallManyLock.run(key, () => this.removalFlow.uninstallMany(specs))
+		return this.mutations.uninstallMany(inputs)
 	}
 
 	/** Remove packages: runtime cleanup then remove dependencies. */
@@ -310,26 +311,7 @@ export class PackageService {
 		overrides: InstallOptions = {},
 	): Promise<PackageRemovalResult[]> {
 		await this.ensureReady()
-		if (inputs.length === 0) return []
-		const specs = this.normalizeUniqueByName(inputs)
-		specs.forEach((spec) => this.assertUninstallPolicy(spec))
-		const key = this.buildMultiKey(specs)
-		const options = this.resolveInstallOptions(overrides)
-		return this.removeManyLock.run(key, async () => {
-			const result = await this.removalFlow.removeMany(specs, options)
-			this.ctx.scanService.invalidateResolverCache({
-				by: 'packageService',
-				reason: 'remove',
-				targets: specs.map((s) => s.target),
-			})
-			this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
-				targets: specs.map((s) => s.target),
-			})
-			this.logEvent('info', 'remove:scan_cache_cleared', {
-				targets: specs.map((s) => s.target),
-			})
-			return result
-		})
+		return this.mutations.removePackages(inputs, overrides)
 	}
 
 	/** Force reload with fresh import. */
@@ -338,13 +320,7 @@ export class PackageService {
 		options: LoadOptions = {},
 	): Promise<PackageLoadResult> {
 		await this.ensureReady()
-		const spec = this.normalizeSpecifier(input)
-		this.assertInstallPolicy(spec, options.install)
-		return this.loadWithIntent(spec, options, {
-			autoInstall: true,
-			fresh: true,
-			source: 'load',
-		})
+		return this.loadRuntime.reload(input, options)
 	}
 
 	/** Batch reload, fresh by default. */
@@ -354,25 +330,7 @@ export class PackageService {
 		intent: Partial<Pick<LoadIntentConfig, 'autoInstall' | 'fresh' | 'source'>> = {},
 	): Promise<PackageReloadResult[]> {
 		await this.ensureReady()
-		if (inputs.length === 0) return []
-		const specs = this.normalizeUniqueByName(inputs)
-		if ((intent.autoInstall ?? true) !== false) {
-			specs.forEach((spec) => this.assertInstallPolicy(spec, options.install))
-		}
-		const results: PackageReloadResult[] = []
-		for (const spec of specs) {
-			try {
-				const record = await this.loadWithIntent(spec, options, {
-					autoInstall: intent.autoInstall ?? true,
-					fresh: intent.fresh ?? true,
-					source: intent.source ?? 'load',
-				})
-				results.push({ spec, record })
-			} catch (error) {
-				results.push({ spec, error })
-			}
-		}
-		return results
+		return this.loadRuntime.reloadMany(inputs, options, intent)
 	}
 
 	/** Batch reinstall: clear runtime, force install, then fresh reload. */
@@ -384,36 +342,7 @@ export class PackageService {
 		} = {},
 	): Promise<PackageReloadResult[]> {
 		await this.ensureReady()
-		if (inputs.length === 0) return []
-		const specs = this.normalizeUniqueByName(inputs)
-		specs.forEach((spec) => {
-			this.assertUninstallPolicy(spec)
-			this.assertInstallPolicy(spec, options.install)
-		})
-		const installOptions = this.resolveInstallOptions({
-			...options.install,
-			force: options.install?.force ?? true,
-		})
-		const results: PackageReloadResult[] = []
-
-		for (const spec of specs) {
-			try {
-				this.unblockPackage(spec.name)
-				this.invalidatePackage(spec.name)
-				const installResult = await this.installFlow.installOne(spec, installOptions)
-				const record = await this.loadWithIntent(
-					spec,
-					options.load ?? {},
-					{ autoInstall: false, fresh: true, source: 'load' },
-					installResult,
-				)
-				results.push({ spec, record })
-			} catch (error) {
-				results.push({ spec, error })
-			}
-		}
-
-		return results
+		return this.mutations.reinstallMany(inputs, options)
 	}
 
 	/** List installed packages including ones not loaded by loader. */
@@ -421,66 +350,7 @@ export class PackageService {
 		options: ListInstalledPackagesOptions = {},
 	): Promise<PackageInventoryEntry[]> {
 		await this.ensureReady()
-		const entries = new Map<string, PackageInventoryEntry>()
-		const includeUntracked = options.includeUntracked ?? false
-		const addOrMerge = (next: PackageInventoryEntry) => {
-			const existing = entries.get(next.spec.name)
-			if (!existing) {
-				entries.set(next.spec.name, next)
-				return
-			}
-			const merged: PackageInventoryEntry = {
-				spec: existing.spec,
-				installedVersion: next.installedVersion ?? existing.installedVersion,
-				requestedVersion: next.requestedVersion ?? existing.requestedVersion,
-				loaded: existing.loaded || next.loaded,
-				moduleId: next.moduleId ?? existing.moduleId,
-				issues: existing.issues ?? next.issues,
-				blocked: next.blocked ?? existing.blocked,
-			}
-			entries.set(next.spec.name, merged)
-		}
-
-		for (const record of this.state.loadedEntries()) {
-			addOrMerge({
-				spec: record.spec,
-				installedVersion: record.resolvedVersion ?? record.manifestVersion,
-				requestedVersion: record.spec.version ?? record.spec.tag,
-				loaded: true,
-				moduleId: record.moduleId,
-				blocked: this.state.isBlocked(record.spec.name),
-				issues: this.state.getIssue(record.spec.name)
-					? [this.state.getIssue(record.spec.name)!]
-					: undefined,
-			})
-		}
-
-		for (const issue of this.state.issueEntries()) {
-			addOrMerge({
-				spec: issue.spec,
-				loaded: false,
-				blocked: this.state.isBlocked(issue.spec.name),
-				issues: [issue],
-			})
-		}
-
-		const managedNames = new Set<string>([...this.state.loadedNames(), ...this.state.issueNames()])
-		const installedDeps = await this.installer.readInstalledDependencies({
-			options: this.resolveInstallOptions(),
-		})
-		for (const dep of installedDeps) {
-			const managed = managedNames.has(dep.spec.name) || isManagedPackageName(dep.spec.name)
-			if (!includeUntracked && !managed) continue
-			addOrMerge({
-				spec: dep.spec,
-				installedVersion: dep.installedVersion,
-				requestedVersion: dep.requestedVersion,
-				loaded: this.state.hasLoaded(dep.spec.name),
-				blocked: this.state.isBlocked(dep.spec.name),
-			})
-		}
-
-		return [...entries.values()]
+		return this.inventory.listInstalledPackages(options)
 	}
 
 	/** Retry recorded failures with optional reinstall. */
@@ -489,128 +359,39 @@ export class PackageService {
 		options: RetryOptions = {},
 	): Promise<PackageLoadResult> {
 		await this.ensureReady()
-		const spec =
-			typeof nameOrSpec === 'string' && this.state.getIssue(nameOrSpec)
-				? this.state.getIssue(nameOrSpec)!.spec
-				: this.normalizeSpecifier(nameOrSpec)
-		const reinstall = options.reinstall ?? false
-		if (reinstall) {
-			const installResult = await this.installFlow.installOne(
-				spec,
-				this.resolveInstallOptions(options.install),
-			)
-			return this.loadWithIntent(
-				spec,
-				options,
-				{ autoInstall: false, fresh: options.fresh ?? true, source: 'retry' },
-				installResult,
-			)
-		}
-		return this.loadWithIntent(spec, options, {
-			autoInstall: true,
-			fresh: options.fresh ?? true,
-			source: 'retry',
-		})
+		return this.loadRuntime.retryLoad(nameOrSpec, options)
 	}
 
 	/** Retry all load issues. */
 	async retryAllLoadIssues(options: RetryOptions = {}) {
 		await this.ensureReady()
-		const issues = this.listLoadIssues()
-		const results: PackageLoadResult[] = []
-		for (const issue of issues) {
-			try {
-				const result = await this.retryLoad(issue.spec, options)
-				results.push(result)
-			} catch (error) {
-				this.recordLoadIssue(issue.spec, error, 'retry', issue.moduleId)
-			}
-		}
-		return results
+		return this.loadRuntime.retryAllLoadIssues(options)
 	}
 
 	listLoadIssues(): PackageLoadIssue[] {
-		if (!this.initialized) return []
-		return this.state.listIssues()
+		return this.inventory.listLoadIssues()
 	}
 
 	/** Drop runtime caches for a package. */
 	invalidatePackage(name: string, options?: { resync?: boolean }) {
-		const record = this.state.getLoaded(name)
-		const failure = this.state.getIssue(name)
-		const moduleId =
-			record?.moduleId ??
-			this.runtime.getModuleId(name) ??
-			(failure?.moduleId ? this.normalizeModuleId(failure.moduleId) : undefined)
-
-		if (record && moduleId) {
-			this.runtime.dropHmrCacheForRecord(record)
-		} else if (moduleId) {
-			this.runtime.dropHmrCacheById(moduleId, name)
-		}
-
-		if (moduleId) {
-			this.runtime.dropCachedModule(moduleId)
-			this.ctx.loader.pruneModule(moduleId, 'runtime')
-		} else {
-			this.ctx.loader.prunePluginByName(name, 'runtime')
-		}
-
-		this.runtime.clearModuleId(name)
-		this.state.clearRecord(name)
-		this.state.clearIssue(name)
-		this.state.removeDependentsOf(name)
-		if (options?.resync !== false) {
-			this.syncTrigger()
-		}
-		this.logEvent('info', 'invalidate', { name, scope: 'runtime', moduleId })
+		this.loadRuntime.invalidatePackage(name, options)
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
-		const normalized = this.normalizeModuleId(moduleId)
-		for (const record of this.state.loadedEntries()) {
-			if (this.normalizeModuleId(record.moduleId) === normalized) {
-				return record.spec
-			}
-		}
-		for (const issue of this.state.issueEntries()) {
-			if (issue.moduleId && this.normalizeModuleId(issue.moduleId) === normalized) {
-				return issue.spec
-			}
-		}
-		return undefined
+		return this.inventory.getPackageSpecByModuleId(moduleId)
 	}
 
 	getDependencies(name: string): string[] {
-		return this.state.getDependencies(name)
+		return this.inventory.getDependencies(name)
 	}
 
 	getDependents(name: string): string[] {
-		return this.state.getDependents(name)
+		return this.inventory.getDependents(name)
 	}
 
 	/** Scan declared plugins and auto-load missing managed packages. */
 	async syncTrackedPlugins(): Promise<void> {
-		if (!this.initialized) return
-		await this.installDefaultsReady
-		const roots = this.ctx.scanService.defaultRoots ?? [process.cwd()]
-		const found = await collectDeclaredPlugins(roots)
-		const toLoad: string[] = []
-		for (const name of found) {
-			if (!isManagedPackageName(name)) continue
-			if (this.state.isBlocked(name)) continue
-			if (this.state.hasLoaded(name)) continue
-			toLoad.push(name)
-		}
-		if (toLoad.length === 0) return
-
-		for (const name of toLoad) {
-			try {
-				await this.load(name)
-			} catch (error) {
-				this.ctx.logger.warn('同步加载插件失败', { name, error })
-			}
-		}
+		await this.loadRuntime.syncTrackedPlugins()
 	}
 
 	private async initializeInstallDefaults(overrides?: InstallOptions) {
@@ -648,8 +429,8 @@ export class PackageService {
 				this.state.block(name)
 			})
 		}
-		this.loader.restorePersistedIssues(payload)
-		const mutated = await this.loader.restorePersistedPackages(payload.packages)
+		this.loadRuntime.restorePersistedIssues(payload)
+		const mutated = await this.loadRuntime.restorePersistedPackages(payload.packages)
 		this.state.enablePersistence()
 		if (mutated) this.state.requestPersist()
 	}
@@ -708,17 +489,6 @@ export class PackageService {
 		return dedupeByName(specs)
 	}
 
-	private buildMultiKey(specs: NormalizedPackageSpecifier[]): string {
-		return specs
-			.map((s) => s.key)
-			.sort()
-			.join('|')
-	}
-
-	private normalizeModuleId(moduleId: string): string {
-		return this.runtime.normalizeModuleId(moduleId)
-	}
-
 	private blockPackage(name: string) {
 		this.state.block(name)
 	}
@@ -771,19 +541,6 @@ export class PackageService {
 		} else {
 			logger.error(baseMessage, record)
 		}
-	}
-
-	private async loadWithIntent(
-		spec: NormalizedPackageSpecifier,
-		options: LoadOptions,
-		intent: LoadIntentConfig,
-		installResult?: PackageInstallResult,
-	): Promise<PackageLoadResult> {
-		if (intent.autoInstall) this.assertInstallPolicy(spec, options.install)
-		this.unblockPackage(spec.name)
-		return this.loadLock.run(spec.key, () =>
-			this.loader.loadWithIntent(spec, options, intent, installResult),
-		)
 	}
 
 	private assertInstallPolicy(
@@ -880,18 +637,4 @@ function shouldRetryInstall(
 	if (error.code !== 'RESOLUTION_FAILED') return false
 	const resolution = (error.detail as { resolution?: EntryResolution } | undefined)?.resolution
 	return Boolean(resolution && !isEntryOk(resolution) && resolution.code === 'MISSING_PACKAGE')
-}
-
-class KeyedLock<T> {
-	private readonly locks = new Map<string, Promise<T>>()
-
-	run(key: string, task: () => Promise<T>): Promise<T> {
-		const existing = this.locks.get(key)
-		if (existing) return existing
-		const promise = task().finally(() => {
-			this.locks.delete(key)
-		})
-		this.locks.set(key, promise)
-		return promise
-	}
 }

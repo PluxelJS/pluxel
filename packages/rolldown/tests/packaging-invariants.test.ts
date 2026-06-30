@@ -178,6 +178,22 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dynamic/src/catalog/LoaderRuntimeRoute.ts`,
 			'utf8',
 		)
+		const runtimeDynamicPackageService = await readFile(
+			`${root}/packages/runtime-dynamic/src/package/PackageService.ts`,
+			'utf8',
+		)
+		const runtimeDynamicPackageMutation = await readFile(
+			`${root}/packages/runtime-dynamic/src/package/mutation.ts`,
+			'utf8',
+		)
+		const runtimeDynamicPackageLoadRuntime = await readFile(
+			`${root}/packages/runtime-dynamic/src/package/load-runtime.ts`,
+			'utf8',
+		)
+		const runtimeDynamicPackageInventory = await readFile(
+			`${root}/packages/runtime-dynamic/src/package/inventory.ts`,
+			'utf8',
+		)
 		const staticDemoVite = await readFile(
 			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
 			'utf8',
@@ -214,6 +230,15 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicRoute).toContain('features: {')
 		expect(runtimeDynamicRoute).toContain('packageManager:')
 		expect(runtimeDynamicRoute).not.toContain('rpcHandles')
+		expect(runtimeDynamicPackageService).toContain('new PackageMutationService')
+		expect(runtimeDynamicPackageService).toContain('new PackageLoadRuntime')
+		expect(runtimeDynamicPackageService).toContain('new PackageInventoryService')
+		expect(runtimeDynamicPackageMutation).toContain('class PackageMutationService')
+		expect(runtimeDynamicPackageMutation).toContain('removePackages(')
+		expect(runtimeDynamicPackageLoadRuntime).toContain('class PackageLoadRuntime')
+		expect(runtimeDynamicPackageLoadRuntime).toContain('invalidatePackage(')
+		expect(runtimeDynamicPackageInventory).toContain('class PackageInventoryService')
+		expect(runtimeDynamicPackageInventory).toContain('listInstalledPackages(')
 		expect(runtimeWebPaths).toContain("RUNTIME_INTERNAL_API_BASE = '/__pluxel/runtime'")
 		expect(runtimeWebPaths).not.toContain('HMR_')
 		expect(runtimeWebPaths).not.toContain(`/__pluxel/${'hmr'}`)

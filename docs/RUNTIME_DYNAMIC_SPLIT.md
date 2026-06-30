@@ -23,7 +23,7 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 
 - `LoaderService`、`PluginRegistry`、module replacement、loader batch/control/status helpers。
 - `ScanService` 和 workspace entry resolver/cache/snapshot。
-- `PackageService` 和 install/remove/load/retry/state flows。
+- package manager facade 和 install/remove/load/retry/state 内部 flows。
 - 原 `market` API，改名为 `package-manager`，负责 package inventory、load issues、install/remove/reload/retry。
 - `packageManager` route feature 的实现 handle：`PackageManagerHandle`。
 
@@ -74,7 +74,8 @@ runtime common 仍然复用：
 
 这次迁移没有重写 loader 核心逻辑，主要是物理迁移和入口重接：
 
-- package-manager 已回到直接复用 `PackageService` / `normalizeSpecifier`，没有保留临时复制的 normalize 逻辑。
+- package-manager 已回到直接复用 dynamic package facade / `normalizeSpecifier`，没有保留临时复制的 normalize 逻辑。
+- dynamic package 内部已拆成 `PackageMutationService`、`PackageLoadRuntime`、`PackageInventoryService`，避免 `PackageService` 继续承载所有 flow。
 - runtime common 不再 import loader/package/scan/package-manager/workspace 实现。
 - runtime-dynamic 只依赖 runtime 的窄公共入口：`internal`、`shared`、`plugin-catalog`、`api`、`protocol`。
 - loader-specific tests 现在显式引用 runtime-dynamic 或显式注册 loader route。

@@ -17,7 +17,7 @@ import {
 
 /**
  * Package-manager GraphQL resolver - queries only.
- * Mutations are exposed through the route RPC handle.
+ * Mutations are exposed through the packageManager route feature.
  */
 export function createPackageManagerResolver(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({

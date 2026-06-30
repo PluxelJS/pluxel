@@ -69,7 +69,7 @@ runtime common host layer
 - `packages/runtime/src/index.ts`：runtime public entry。
 - `packages/runtime/src/runtime/register.ts`：runtime common services 注册副作用，不自动注册 loader route。
 - `packages/runtime/src/services.ts`：runtime common services public surface。
-- `packages/runtime/src/api/contributions.ts`：从当前 `Context.runtimeRoute.api` 读取 GraphQL resolver、RPC handle。
+- `packages/runtime/src/api/contributions.ts`：从当前 `Context.runtimeRoute.api` 读取 GraphQL resolver 和 route feature handle。
 - `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog/status/source/capability 类型出口。
 - `packages/runtime/src/runtime/capabilities.ts`：runtime common 使用的窄 route capabilities；缺少必需 capability 时会明确报错。
 - `packages/runtime/src/services/RuntimeStateStore.ts`：运行控制面状态持久化，包括 enabled、forks、base providers、依赖覆盖、builtin/plugin groups。
@@ -81,7 +81,10 @@ runtime common host layer
 - `packages/runtime-dynamic/src/loader/module-replacer.ts`：HMR/module replacement 接入 loader。
 - `packages/runtime-dynamic/src/loader/support.ts`：loader batch/status/control helpers。
 - `packages/runtime-dynamic/src/scan/ScanService.ts`：workspace/plugin entry 扫描。
-- `packages/runtime-dynamic/src/package/PackageService.ts`：package install/remove/cache flows。
+- `packages/runtime-dynamic/src/package/PackageService.ts`：dynamic package facade，负责 ready/config/policy。
+- `packages/runtime-dynamic/src/package/mutation.ts`：package install/remove/reinstall flows。
+- `packages/runtime-dynamic/src/package/load-runtime.ts`：package load/retry/runtime cache flows。
+- `packages/runtime-dynamic/src/package/inventory.ts`：package inventory/load issue read model。
 - `packages/runtime-dynamic/src/api/features/package-manager/**`：loader-specific package inventory/load issues GraphQL 查询。
 - `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`packageManager` route feature 的 package install/remove/reload/retry 操作。
 - `packages/runtime/src/services/ConfigService.ts`：runtime 配置持久化。

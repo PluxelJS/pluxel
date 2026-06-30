@@ -235,7 +235,7 @@ ctx.contribution.signaldb.collection(...)
 
 ## 4. Dynamic Package Manager 变成 Route Feature
 
-状态：已推进。
+状态：已实现。
 
 ### 现状
 
@@ -248,23 +248,19 @@ feature('packageManager'): PackageManagerFeatureApi
 
 package install/remove/reload 只属于 dynamic route。static route 没有 `packageManager` feature，workbench 调用前通过 `features()` 判断可用性。
 
-dynamic route 内部的 `PackageService` 同时负责：
+dynamic route 内部的 package manager 已拆成窄内部边界：
 
-- spec normalize
-- install/installMany
-- load/reload/retry
-- uninstall/remove
-- package state persistence
-- scan defaults
-- policy enforcement
-- inventory/load issue projection
-- runtime plugin load side effects
+- `PackageService`：ready/init/config defaults/policy/facade。
+- `PackageMutationService`：install/installMany/uninstall/remove/reinstall。
+- `PackageLoadRuntime`：load/reload/retry/runtime cache/state restore/sync。
+- `PackageInventoryService`：inventory/load issue/dependency read model。
 
 ### 问题
 
-package manager 已经是 dynamic route 的可选管理面，不是 runtime common 的固定 RPC 方法。剩余问题集中在 `PackageService` 内部职责偏宽：
+package manager 已经是 dynamic route 的可选管理面，不是 runtime common 的固定 RPC 方法。`PackageService` 也不再聚合全部 package manager 实现：
 
-- PackageService 聚合了 package manager、inventory、load issue、route runtime side effects，职责偏宽。
+- PackageService 只保留 facade、ready/init、config defaults、policy enforcement。
+- mutation、load runtime、inventory read model 作为独立内部模块，route feature handle 不再依赖一个过宽 service 实现。
 - 用户侧看到 install/remove API 时容易误解为 Pluxel 的通用插件模型，而不是 dynamic route 的管理能力。
 
 ### 目标设计
@@ -289,9 +285,9 @@ rpc.feature('packageManager').mutate(...)
 
 类型化 client 保留 feature handle 类型，但入口是 feature-discovered，不是 runtime common 固定方法。
 
-PackageService 内部也应拆成更清晰的三个部分：
+PackageService 内部已经拆成更清晰的三个部分：
 
-- `PackageMutationService`：install/remove/uninstall/retry。
+- `PackageMutationService`：install/remove/uninstall/reinstall。
 - `PackageInventoryService`：inventory/load issues/read model。
 - `PackageLoadRuntime`：把 package artifact 变成 plugin constructors 并提交 route lifecycle。
 
@@ -301,6 +297,7 @@ PackageService 内部也应拆成更清晰的三个部分：
 - runtime common 不再硬编码 `package()`。
 - workbench/control-plane 通过 feature availability 决定是否访问 package manager。
 - install/remove 语义只出现在 dynamic route feature 文档里。
+- `PackageService` 不再直接实现 install/remove、inventory projection、runtime cache invalidation 三条路径。
 
 ## 5. Config State 和 Runtime State 的边界再收窄
 
@@ -367,7 +364,7 @@ applyPluginControlCommands(ctx, commands)
    已推进。runtime common web/control-plane 使用 `RUNTIME_*` 命名，base URL 迁到 `/__pluxel/runtime`，旧 `HMR_*` 出口不保留 alias。
 
 3. **Dynamic Package Manager 变成 Route Feature**  
-   已推进。runtime common RPC 不再固定暴露 `package()`；dynamic route 通过 `packageManager` feature 提供 install/remove/reload/retry。
+   已实现。runtime common RPC 不再固定暴露 `package()`；dynamic route 通过 `packageManager` feature 提供 install/remove/reload/retry，内部 package manager 已拆成 mutation/load runtime/inventory 三个窄模块。
 
 4. **Plugin UI / Extension / Interaction 命名收敛**  
    收益最大，但影响作者 API 和 UI manifest 解释，需要先完成设计文档和迁移策略。
@@ -384,13 +381,13 @@ applyPluginControlCommands(ctx, commands)
 
 ## 下一步切法
 
-建议下一轮只做 **PackageService 内部职责拆分**：
+建议下一轮只做 **Plugin UI / Extension / Interaction 命名收敛** 的设计冻结：
 
 ```text
-PackageMutationService
--> PackageInventoryService
--> PackageLoadRuntime
--> 更新 tests/docs/invariants
+ctx.ext.ui / ExtensionService
+-> contribution.ui / contribution.interaction / contribution transport
+-> 内部 store 拆分设计
+-> 作者 API 迁移策略
 ```
 
-feature 边界已经清楚，下一步应把 `PackageService` 里的 install/remove、inventory/load issues、runtime load side effects 分离，避免 route feature handle 继续依赖一个过宽 service。
+package manager feature 边界已经清楚，下一步不应继续扩展 package manager，而应处理仍然暴露旧 extension 概念的作者侧 API。
