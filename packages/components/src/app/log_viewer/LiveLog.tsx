@@ -92,7 +92,6 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 		return s ? s : undefined
 	}
 	return {
-		name: trimOrUndef(filter?.name),
 		pluginId: trimOrUndef(filter?.pluginId),
 		context: trimOrUndef(filter?.context),
 		displayName: trimOrUndef(filter?.displayName),
@@ -102,12 +101,21 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 
 function sameFilter(a: LogFilter, b: LogFilter): boolean {
 	return (
-		(a.name ?? '') === (b.name ?? '') &&
 		(a.pluginId ?? '') === (b.pluginId ?? '') &&
 		(a.context ?? '') === (b.context ?? '') &&
 		(a.displayName ?? '') === (b.displayName ?? '') &&
 		(a.category ?? '') === (b.category ?? '')
 	)
+}
+
+function filterSummary(filter: LogFilter): string | null {
+	const parts = [
+		filter.pluginId ? `plugin=${filter.pluginId}` : null,
+		filter.context ? `context=${filter.context}` : null,
+		filter.displayName ? `display=${filter.displayName}` : null,
+		filter.category ? `category=${filter.category}` : null,
+	].filter((v): v is string => !!v)
+	return parts.length > 0 ? parts.join(' ') : null
 }
 
 /* ================= 轻量环形缓冲 + 外部订阅（避免 setState 全量重渲染） ================= */
@@ -723,15 +731,13 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const defaultsFilter = useMemo(
 		() =>
 			normalizeFilter({
-				name: filter?.name ?? module,
-				pluginId: filter?.pluginId,
+				pluginId: filter?.pluginId ?? module,
 				context: filter?.context,
 				displayName: filter?.displayName,
 				category: filter?.category,
 			}),
 		[
 			module,
-			filter?.name,
 			filter?.pluginId,
 			filter?.context,
 			filter?.displayName,
@@ -746,7 +752,6 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		setDraftFilter(defaultsFilter)
 		setActiveFilter(defaultsFilter)
 	}, [
-		defaultsFilter.name,
 		defaultsFilter.pluginId,
 		defaultsFilter.context,
 		defaultsFilter.displayName,
@@ -772,7 +777,6 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	const filterQuery = useMemo(() => {
 		const params = new URLSearchParams()
-		if (activeFilter.name) params.set('name', activeFilter.name)
 		if (activeFilter.pluginId) params.set('pluginId', activeFilter.pluginId)
 		if (activeFilter.context) params.set('context', activeFilter.context)
 		if (activeFilter.displayName) params.set('displayName', activeFilter.displayName)
@@ -1017,6 +1021,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const showSidePanel = isFull || !!selectedLine
 	const showToolbar = true
 	const palette = plxScheme.log
+	const activeFilterSummary = filterSummary(activeFilter)
 
 	const clearLogs = useCallback(() => {
 		ringRef.current.clear()
@@ -1119,7 +1124,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 							<div style={{ opacity: 0.8 }}>
 								{connected ? 'connected' : 'disconnected'}
 								{meta ? ` · epoch=${meta.epoch} · tail=${meta.tailSeq}` : ''}
-								{activeFilter.name ? ` · filter=${activeFilter.name}` : ''}
+								{activeFilterSummary ? ` · ${activeFilterSummary}` : ''}
 							</div>
 							<button type="button" onClick={clearLogs} style={controlButtonStyle(palette)}>
 								clear
@@ -1326,12 +1331,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 											</button>
 											<div style={{ flex: 1 }} />
 											<div style={{ opacity: 0.75, color: palette.textMuted }}>
-												{activeFilter.name ||
-												activeFilter.pluginId ||
-												activeFilter.context ||
-												activeFilter.category
-													? 'live'
-													: 'no filter'}
+												{activeFilterSummary ? 'live' : 'no filter'}
 												{dirty ? ' · (pending)' : ''}
 											</div>
 										</div>

@@ -44,6 +44,15 @@
 目标是把 static/dynamic 宿主入口统一成 host-owned Vite plugin + `defineXxxRuntimeConfig(...)`
 配置文件。设计记录见 `vite-owned-runtime-routes.md`。
 
+## Static Fetch-Native Runtime
+
+状态：设计目标和网络模型审计。
+
+static 路线的生产目标是 `runtime -> runtime-static` 可以被 `tsdown` 静态打包成最小
+fetch-native JavaScript，部署到 Node、Bun、Deno、Cloudflare Workers 等环境。dynamic
+路线继续保留 Vite/HMR/scan/package manager 能力，不追求 worker-native。目标边界、当前
+网络模型审计和允许破坏兼容的优化方向见 `static-fetch-native-runtime.md`。
+
 ## Runtime Concept Pruning
 
 状态：提案。

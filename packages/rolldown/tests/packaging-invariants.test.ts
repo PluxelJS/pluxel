@@ -283,6 +283,11 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicHmr).not.toContain(`installLoader${'Hmr'}`)
 		const runtimeDynamicHmrFiles = await readdir(`${root}/packages/runtime-dynamic/src/hmr`)
 		expect(runtimeDynamicHmrFiles.filter((file) => file.endsWith('-runtime.ts'))).toEqual([])
+		const loaderHmrService = await readFile(
+			`${root}/packages/runtime-dynamic/src/hmr/engine/LoaderHmrService.ts`,
+			'utf8',
+		)
+		expect(loaderHmrService).not.toContain(`attach${'Server'}`)
 		const runtimeDynamicHost = await readFile(
 			`${root}/packages/runtime-dynamic/src/hmr/host.ts`,
 			'utf8',

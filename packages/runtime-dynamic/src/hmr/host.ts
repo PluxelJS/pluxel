@@ -314,8 +314,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	const loaderHmr = resolveLoaderHmrConfig(plan)
 	ctx.config.loaderHmr = loaderHmr
 
-	const hmr = new LoaderHmrService(ctx, loaderHmr)
-	if (viteServer) await hmr.attachServer(viteServer)
+	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
 	const bundler = new BundlerService(ctx)
 	const extensionCompilerConfig = mergeExtensionCompilerViteConfig(

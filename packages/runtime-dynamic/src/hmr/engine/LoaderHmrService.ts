@@ -352,6 +352,7 @@ export class LoaderHmrService {
 	constructor(
 		public ctx: Context,
 		private readonly config: LoaderHmrConfig,
+		server?: ViteDevServer,
 	) {
 		this.scanService = this.ctx.scanService
 		if (!Array.isArray(this.config.entries)) {
@@ -432,6 +433,7 @@ export class LoaderHmrService {
 
 		this.attachCommitTracker()
 		this.attachResolverCacheInvalidation()
+		if (server) this.configureServer(server)
 	}
 
 	public normalizeId(id: string): string {
@@ -440,17 +442,6 @@ export class LoaderHmrService {
 
 	public get vitePlugin(): Plugin {
 		return this.plugin
-	}
-
-	public async attachServer(server: ViteDevServer): Promise<void> {
-		if (this.vite) {
-			if (this.vite !== server) {
-				throw new Error('[hmr] LoaderHmrService is already attached to a different Vite server')
-			}
-			await this.serverConfigured
-			return
-		}
-		await this.configureServer(server)
 	}
 
 	public moduleIdAliases(id: string): string[] {
@@ -639,7 +630,7 @@ export class LoaderHmrService {
 			enforce: 'pre',
 			apply: 'serve',
 
-			configureServer: async (server) => this.configureServer(server),
+			configureServer: (server) => this.configureServer(server),
 
 			resolveId: async (id, _importer, options) => {
 				// Hard isolation: runner-only resolution must never affect the client environment
@@ -677,7 +668,15 @@ export class LoaderHmrService {
 		return plugin
 	}
 
-	private async configureServer(server: ViteDevServer): Promise<void> {
+	private configureServer(server: ViteDevServer): void {
+		if (this.vite) {
+			if (this.vite !== server) {
+				const error = new Error('[hmr] LoaderHmrService is already configured with a different Vite server')
+				this.serverConfiguredReject(error)
+				throw error
+			}
+			return
+		}
 		this.vite = server
 		this.setServerRoot(server.config.root)
 

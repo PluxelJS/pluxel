@@ -197,10 +197,6 @@ function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 	if (f.pluginId && !meta.pluginId.has(f.pluginId)) return false
 	if (f.context && !meta.context.has(f.context)) return false
 	if (f.displayName && !meta.name.has(f.displayName)) return false
-	if (f.nameAny) {
-		const v = f.nameAny
-		if (!meta.pluginId.has(v) && !meta.context.has(v) && !meta.name.has(v)) return false
-	}
 	if (f.categoryKey) {
 		if (f.categoryPrefix) {
 			if (!meta.categoryPrefix.has(f.categoryKey)) return false

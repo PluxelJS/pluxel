@@ -2,8 +2,6 @@ import type { LogFilter } from './protocol'
 
 export function parseLogFilter(search: URLSearchParams): LogFilter {
 	return {
-		// Back-compat: `name` is an "any-of" filter.
-		name: search.get('name') ?? undefined,
 		pluginId: search.get('pluginId') ?? undefined,
 		context: search.get('context') ?? undefined,
 		displayName: search.get('displayName') ?? undefined,

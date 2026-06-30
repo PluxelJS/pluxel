@@ -576,7 +576,6 @@ function mergeFilters(a: LogFilter | undefined, b: LogFilter | undefined): LogFi
 	if (a.category && b.category && a.category !== b.category) return null
 
 	const out: LogFilter = { ...a }
-	assignDefined(out, 'name', b.name)
 	assignDefined(out, 'pluginId', b.pluginId)
 	assignDefined(out, 'context', b.context)
 	assignDefined(out, 'displayName', b.displayName)

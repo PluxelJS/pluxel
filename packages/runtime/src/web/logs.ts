@@ -1,11 +1,6 @@
 import type { LogLevel } from './protocol'
 
 export interface LogFilter {
-	/**
-	 * Backward compatible single filter:
-	 * matches `pluginId` / `context` / `name` (exact match).
-	 */
-	name?: string
 	pluginId?: string
 	context?: string
 	displayName?: string
