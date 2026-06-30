@@ -25,14 +25,14 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 - `ScanService` 和 workspace entry resolver/cache/snapshot。
 - `PackageService` 和 install/remove/load/retry/state flows。
 - 原 `market` API，改名为 `package-manager`，负责 package inventory、load issues、install/remove/reload/retry。
-- `rpc.package()` 的实现 handle，改名为 `PackageManagerHandle`。
+- `packageManager` route feature 的实现 handle：`PackageManagerHandle`。
 
 留在 `@pluxel/runtime` 的内容：
 
 - runtime service 注册、config persistence、HTTP/RPC server、web protocol。
 - route-neutral plugin status/config/dependency/fork usecases。
 - route capabilities 类型和 `RuntimeStateStore` 运行控制面状态。
-- `RuntimeRpcApi.package()` 协议入口，但实际 handle 由当前 route 的 API capability 提供。
+- `RuntimeRpcApi.features()` / `RuntimeRpcApi.feature(name)` route feature lookup。
 
 ## 关键接口
 
@@ -41,12 +41,12 @@ runtime 不依赖 runtime-dynamic。`pnpm install` 只报告原有 core/test 循
 `@pluxel/runtime/api` 是很薄的 route API 读取入口，只从当前 context 的 route capability 读取两类贡献：
 
 - GraphQL resolver contribution。
-- RPC handle contribution。
+- route feature handle contribution。
 
 它不是可无限扩展的 route plugin 系统；它只是让 route 包把自己的控制面挂进 runtime 已有 server。当前 loader route capability 提供：
 
 - package-manager GraphQL resolver。
-- `rpc.package()` handle。
+- `packageManager` route feature handle。
 
 ## 为什么这样拆
 
@@ -64,10 +64,10 @@ runtime common 仍然复用：
 
 ## 当前协议边界
 
-对外协议保持不变：
+对外协议边界：
 
 - GraphQL 字段仍是 `packageInventory` / `packageLoadIssues`。
-- RPC 入口仍是 `rpc.package()`。
+- RPC 入口是 `rpc.feature('packageManager')`，调用前可通过 `rpc.features()` 发现能力。
 实现归属改变：这些入口只有在 loader route 注册后可用。dynamic HMR host 会显式 import `@pluxel/runtime-dynamic/register`；static route 不加载 loader/scan/package 注册。
 
 ## 清理结论

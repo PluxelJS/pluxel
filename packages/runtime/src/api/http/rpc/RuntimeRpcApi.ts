@@ -3,7 +3,7 @@ import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import type { ExtensionUiRpcMap } from '../../../services'
 import { writeGroups } from '../../features/pluginGroups/service'
-import { createRuntimeRpcHandle } from '../../contributions'
+import { createRuntimeRouteFeatureHandle, listRuntimeRouteFeatures } from '../../contributions'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
@@ -23,10 +23,11 @@ import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import type {
 	ConfigFieldMutation,
-	PackageHandleApi,
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
+	RuntimeRouteFeatureApi,
+	RuntimeRouteFeatureName,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -43,9 +44,14 @@ export class RuntimeRpcApi extends RpcTarget {
 		return 'runtime-rpc:ok'
 	}
 
-	/** 包管理操作 */
-	package(): PackageHandleApi {
-		return createRuntimeRpcHandle<PackageHandleApi>(this.ctx, 'package')
+	/** Route-provided optional control-plane features. */
+	features(): string[] {
+		return listRuntimeRouteFeatures(this.ctx)
+	}
+
+	/** Lookup a route feature handle after checking `features()`. */
+	feature<Name extends RuntimeRouteFeatureName>(name: Name): RuntimeRouteFeatureApi<Name> {
+		return createRuntimeRouteFeatureHandle<RuntimeRouteFeatureApi<Name>>(this.ctx, name)
 	}
 
 	/** Logging settings (host-level, persisted). */

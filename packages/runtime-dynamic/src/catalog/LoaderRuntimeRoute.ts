@@ -78,9 +78,9 @@ export function createLoaderRuntimeRoute(ctx: Context, api: LoaderApi): RuntimeR
 		},
 		api: {
 			resolvers: [createPackageManagerResolver],
-			rpcHandles: {
-				package: (rpcCtx) => new PackageManagerHandle(rpcCtx),
-			},
+		},
+		features: {
+			packageManager: (rpcCtx) => new PackageManagerHandle(rpcCtx),
 		},
 	}
 }

@@ -102,12 +102,13 @@ export interface RuntimeModuleRuntime {
 }
 
 export type RuntimeApiResolverFactory = (ctx: Context) => Resolver | Resolver[]
-export type RuntimeRpcHandleFactory = (ctx: Context) => unknown
 
 export type RuntimeApiCapabilities = {
 	resolvers?: readonly RuntimeApiResolverFactory[]
-	rpcHandles?: Readonly<Record<string, RuntimeRpcHandleFactory>>
 }
+
+export type RuntimeRouteFeatureHandleFactory = (ctx: Context) => unknown
+export type RuntimeRouteFeatures = Readonly<Record<string, RuntimeRouteFeatureHandleFactory>>
 
 export type RuntimeWorkerWatchOptions = {
 	external?: string[]
@@ -142,6 +143,7 @@ export type RuntimeRouteCapabilities = {
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
 	api?: RuntimeApiCapabilities
+	features?: RuntimeRouteFeatures
 	modules?: RuntimeModuleRuntime
 	dev?: RuntimeDevCapabilities
 }

@@ -40,6 +40,7 @@ export type {
 	PackageInventoryFilter,
 	PackageIssueSpec,
 	PackageLoadIssue,
+	PackageManagerFeatureApi,
 	PackageSpecInput,
 	PluginDependencyRef,
 	PluginDependencyMutationResult,

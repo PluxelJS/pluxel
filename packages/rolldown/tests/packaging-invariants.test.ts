@@ -163,12 +163,21 @@ describe('toolchain package boundaries', () => {
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
 		const runtimeInternal = await readFile(`${root}/packages/runtime/src/internal.ts`, 'utf8')
 		const runtimePlugin = await readFile(`${root}/packages/runtime/src/plugin.ts`, 'utf8')
+		const runtimeRpcApi = await readFile(
+			`${root}/packages/runtime/src/api/http/rpc/RuntimeRpcApi.ts`,
+			'utf8',
+		)
 		const runtimeCapabilities = await readFile(
 			`${root}/packages/runtime/src/runtime/capabilities.ts`,
 			'utf8',
 		)
+		const runtimeProtocol = await readFile(`${root}/packages/runtime/src/web/protocol.ts`, 'utf8')
 		const runtimeWebPaths = await readFile(`${root}/packages/runtime/src/web/paths.ts`, 'utf8')
 		const runtimeWeb = await readFile(`${root}/packages/runtime/src/web.ts`, 'utf8')
+		const runtimeDynamicRoute = await readFile(
+			`${root}/packages/runtime-dynamic/src/catalog/LoaderRuntimeRoute.ts`,
+			'utf8',
+		)
 		const staticDemoVite = await readFile(
 			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
 			'utf8',
@@ -194,6 +203,17 @@ describe('toolchain package boundaries', () => {
 		expect(runtimePlugin).toContain('runtimeRoute(ctx)?.dev')
 		expect(runtimeCapabilities).toContain('modules?: RuntimeModuleRuntime')
 		expect(runtimeCapabilities).toContain('dev?: RuntimeDevCapabilities')
+		expect(runtimeCapabilities).toContain('features?: RuntimeRouteFeatures')
+		expect(runtimeRpcApi).toContain('features(): string[]')
+		expect(runtimeRpcApi).toContain('feature<Name extends RuntimeRouteFeatureName>')
+		expect(runtimeRpcApi).not.toContain(`package():`)
+		expect(runtimeProtocol).toContain('PackageManagerFeatureApi')
+		expect(runtimeProtocol).toContain("feature: <Name extends RuntimeRouteFeatureName>")
+		expect(runtimeProtocol).not.toContain('PackageHandleApi')
+		expect(runtimeProtocol).not.toContain(`package: () =>`)
+		expect(runtimeDynamicRoute).toContain('features: {')
+		expect(runtimeDynamicRoute).toContain('packageManager:')
+		expect(runtimeDynamicRoute).not.toContain('rpcHandles')
 		expect(runtimeWebPaths).toContain("RUNTIME_INTERNAL_API_BASE = '/__pluxel/runtime'")
 		expect(runtimeWebPaths).not.toContain('HMR_')
 		expect(runtimeWebPaths).not.toContain(`/__pluxel/${'hmr'}`)

@@ -288,11 +288,26 @@ export type PackageBatchResult = {
 	error: string | null
 }
 
-export interface PackageHandleApi {
+export type PackageManagerSnapshot = {
+	__typename: 'PackageManagerSnapshot'
+	inventory: PackageInventoryEntry[]
+	loadIssues: PackageLoadIssue[]
+}
+
+export interface PackageManagerFeatureApi {
 	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
+	snapshot: (filter?: PackageInventoryFilter) => Promise<PackageManagerSnapshot>
 	inventory: (filter?: PackageInventoryFilter) => Promise<PackageInventoryEntry[]>
 	loadIssues: () => Promise<PackageLoadIssue[]>
 }
+
+export type RuntimeRouteFeatureApiMap = {
+	packageManager: PackageManagerFeatureApi
+}
+
+export type RuntimeRouteFeatureName = keyof RuntimeRouteFeatureApiMap
+export type RuntimeRouteFeatureApi<Name extends RuntimeRouteFeatureName = RuntimeRouteFeatureName> =
+	RuntimeRouteFeatureApiMap[Name]
 
 export interface BuildSnapshotResult {
 	ok: boolean
@@ -329,7 +344,8 @@ export type LoggingHandleApi = {
 
 type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ping: () => string
-	package: () => PackageHandleApi
+	features: () => string[]
+	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
 	logging: () => LoggingHandleApi
 	ui: () => ExtensionSessionHandleApi
 	ext: ExtRpc

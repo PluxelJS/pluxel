@@ -83,10 +83,10 @@ runtime common host layer
 - `packages/runtime-dynamic/src/scan/ScanService.ts`：workspace/plugin entry 扫描。
 - `packages/runtime-dynamic/src/package/PackageService.ts`：package install/remove/cache flows。
 - `packages/runtime-dynamic/src/api/features/package-manager/**`：loader-specific package inventory/load issues GraphQL 查询。
-- `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`rpc.package()` 的 package install/remove/reload/retry 操作。
+- `packages/runtime-dynamic/src/api/http/rpc/PackageManagerHandle.ts`：`packageManager` route feature 的 package install/remove/reload/retry 操作。
 - `packages/runtime/src/services/ConfigService.ts`：runtime 配置持久化。
 - `packages/runtime/src/api/usecases/**`：route-neutral plugin status/config/dependency/fork usecases。
-- `packages/runtime/src/api/**`：route-neutral HTTP、RPC、feature APIs；loader package 通过当前 route 的 API capability 挂载 loader-specific 控制面。
+- `packages/runtime/src/api/**`：route-neutral HTTP、RPC、feature APIs；loader package 通过当前 route feature 挂载 loader-specific 控制面。
 - `packages/runtime/src/web/**`：browser/runtime web clients 和协议。
 
 ## 控制面原则

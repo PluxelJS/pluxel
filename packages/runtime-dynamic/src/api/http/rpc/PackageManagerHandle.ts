@@ -11,6 +11,7 @@ import type {
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageLoadIssue,
+	PackageManagerSnapshot,
 	PackageMutationInput,
 } from '@pluxel/runtime/protocol'
 
@@ -35,5 +36,14 @@ export class PackageManagerHandle extends RpcTarget {
 	/** 读取加载问题列表 */
 	loadIssues(): Promise<PackageLoadIssue[]> {
 		return Promise.resolve(listLoadIssues(this.ctx))
+	}
+
+	/** 读取包管理页面需要的完整快照。 */
+	async snapshot(filter?: PackageInventoryFilter): Promise<PackageManagerSnapshot> {
+		return {
+			__typename: 'PackageManagerSnapshot',
+			inventory: await listPackageInventory(this.ctx, filter),
+			loadIssues: listLoadIssues(this.ctx),
+		}
 	}
 }

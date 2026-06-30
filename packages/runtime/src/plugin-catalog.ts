@@ -20,6 +20,7 @@ export {
 	type RuntimePluginStatusOverview,
 	type RuntimePluginStatusSnapshot,
 	type RuntimeRouteCapabilities,
-	type RuntimeRpcHandleFactory,
+	type RuntimeRouteFeatureHandleFactory,
+	type RuntimeRouteFeatures,
 	type RuntimeWorkerWatchOptions,
 } from './runtime/capabilities'

@@ -48,7 +48,7 @@
 
 状态：提案。
 
-Vite-owned runtime routes 落地后，下一批值得大幅出清的概念包括 runtime web paths 去 HMR 化、route capability 合并 route dev/module runtime、plugin contribution 命名收敛、dynamic package manager 下沉为 route feature，以及 plugin control state mutation 收窄。route capability 合并已推进；剩余方向见 `runtime-concept-pruning.md`。
+Vite-owned runtime routes 落地后，下一批值得大幅出清的概念包括 runtime web paths 去 HMR 化、route capability 合并 route dev/module runtime、dynamic package manager 下沉为 route feature、plugin contribution 命名收敛，以及 plugin control state mutation 收窄。前三项已推进；剩余方向见 `runtime-concept-pruning.md`。
 
 ## Core DI V2
 
