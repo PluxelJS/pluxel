@@ -5,7 +5,7 @@ import type { RuntimeApiResolverFactory, RuntimeRouteCapabilities } from '../run
 export type { RuntimeApiResolverFactory }
 
 function runtimeRoute(ctx: Context): RuntimeRouteCapabilities | undefined {
-	return ctx.runtimeRoute ?? ctx.root.runtimeRoute
+	return ctx.runtimeRoute ?? ctx.root?.runtimeRoute
 }
 
 export function getRuntimeApiResolvers(ctx: Context): Resolver[] {

@@ -1,8 +1,4 @@
 export { EvtChannel } from '@pluxel/core/services'
-export {
-	LogtapeLoggerService,
-	type LogtapeLoggerServiceConfig,
-} from './logger/LogtapeLoggerService'
 export { createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
 
 export {

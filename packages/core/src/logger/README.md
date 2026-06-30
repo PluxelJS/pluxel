@@ -19,7 +19,7 @@
 
 ## Record Properties（约定字段）
 
-由 `LoggerService`/`LogtapeLoggerService` 注入（约定）：
+由 `LoggerService` 注入（约定）：
 
 - `context`: 当前 Context 名称
 - `pluginId` (可选): 插件 id（用于 filter）

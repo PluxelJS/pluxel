@@ -9,7 +9,6 @@ export type PluginWorkbenchAsideContextValue = {
 	assistHost: HTMLDivElement | null
 	setAssistHost: (node: HTMLDivElement | null) => void
 	assistVisible: boolean
-	setAssistVisible: (visible: boolean) => void
 	setAssistClaim: (owner: symbol, visible: boolean) => void
 }
 
@@ -25,7 +24,6 @@ const FALLBACK_ASIDE_CONTEXT: PluginWorkbenchAsideContextValue = {
 	assistHost: null,
 	setAssistHost: () => {},
 	assistVisible: false,
-	setAssistVisible: () => {},
 	setAssistClaim: () => {},
 }
 

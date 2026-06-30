@@ -1,13 +1,13 @@
 import { resetSync } from '@logtape/logtape'
+import { LoggerService } from '@pluxel/core/services'
 import { ensurePluxelLogging, runtimeLogStores } from '@pluxel/runtime/logger'
 import { withRuntimeContext } from '@pluxel/runtime/test'
 import { afterEach, describe, expect, it } from 'vitest'
-import { LogtapeLoggerService } from '../../src/logger/LogtapeLoggerService'
 import { createLoggerPluginContext } from '../support/logger-context'
 
 async function emitPluginLogForCallerTest(pluginId = 'plugin-a') {
 	return withRuntimeContext((root) => {
-		const logger = new LogtapeLoggerService(createLoggerPluginContext(root, 'PluginA', pluginId))
+		const logger = new LoggerService(createLoggerPluginContext(root, 'PluginA', pluginId))
 		logger.info('hello from plugin')
 	})
 }

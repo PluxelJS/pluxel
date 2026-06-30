@@ -134,6 +134,7 @@ describe('toolchain package boundaries', () => {
 	it('keeps runtime hmr packaging boundaries explicit', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeConfig = await readFile(`${root}/packages/runtime/tsdown.config.ts`, 'utf8')
+		const runtimeServices = await readFile(`${root}/packages/runtime/src/services.ts`, 'utf8')
 		const runtimeDevConfig = await readFile(`${root}/packages/runtime-dev/tsdown.config.ts`, 'utf8')
 		const runtimeDynamicConfig = await readFile(
 			`${root}/packages/runtime-dynamic/tsdown.config.ts`,
@@ -209,6 +210,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeConfig).toContain('../rolldown/src/workspace/info-entry.ts')
 		expect(runtimeConfig).not.toContain('../rolldown/src/rolldown')
 		expect(runtimeConfig).not.toContain('@pluxel/rolldown/vite')
+		expect(existsSync(`${root}/packages/runtime/src/logger/LogtapeLoggerService.ts`)).toBe(false)
+		expect(runtimeServices).not.toContain('LogtapeLoggerService')
 		expect(existsSync(`${root}/packages/runtime/src/runtime/hmr-${'handles'}.ts`)).toBe(false)
 		expect(existsSync(`${root}/packages/runtime/src/runtime/module-${'runtime'}.ts`)).toBe(false)
 		expect(runtimeInternal).not.toContain(`setHmr${'RuntimeHandles'}`)

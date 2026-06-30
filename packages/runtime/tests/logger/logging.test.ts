@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { configureSync, resetSync } from '@logtape/logtape'
+import { LoggerService } from '@pluxel/core/services'
 import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -9,12 +10,11 @@ import {
 	writePluginLogPolicyFile,
 } from '@pluxel/runtime/logger'
 import { withRuntimeContext } from '@pluxel/runtime/test'
-import { LogtapeLoggerService } from '../../src/logger/LogtapeLoggerService'
 import { createLoggerPluginContext } from '../support/logger-context'
 
 async function emitPluginLog(pluginId: string, level: 'debug' | 'info', message: string) {
 	return withRuntimeContext((root) => {
-		const logger = new LogtapeLoggerService(createLoggerPluginContext(root, pluginId))
+		const logger = new LoggerService(createLoggerPluginContext(root, pluginId))
 		logger[level](message)
 	})
 }

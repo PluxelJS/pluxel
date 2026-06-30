@@ -21,13 +21,11 @@ import { RightPane } from '../RightPane'
 import { PluginWorkbenchPanel, PluginWorkbenchSidebar } from './PluginWorkbenchHostViews'
 import { PluginWorkbenchAsideProvider, usePluginWorkbenchLayout } from './context'
 
-const LEGACY_ASSIST_OWNER = Symbol('plugin-workbench-assist-legacy')
-
 export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	const horizontalGroupRef = useRef<SplitViewHandle | null>(null)
 	const verticalGroupRef = useRef<SplitViewHandle | null>(null)
 	const [assistHost, setAssistHostState] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisibleState] = useState(false)
+	const [assistVisible, setAssistPanelVisible] = useState(false)
 	const assistClaimsRef = useRef(new Map<symbol, true>())
 	const { dockVisible, rightPaneVisible, setDockVisible, setRightPaneVisible } =
 		usePluginWorkbenchLayout()
@@ -48,24 +46,17 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 		const claims = assistClaimsRef.current
 		if (visible) claims.set(owner, true)
 		else claims.delete(owner)
-		setAssistVisibleState(claims.size > 0)
+		setAssistPanelVisible(claims.size > 0)
 	}, [])
-	const setAssistVisible = useCallback(
-		(visible: boolean) => {
-			setAssistClaim(LEGACY_ASSIST_OWNER, visible)
-		},
-		[setAssistClaim],
-	)
 	const asideContext = useMemo(
 		() => ({
 			asideAvailable: true,
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistVisible,
 			setAssistClaim,
 		}),
-		[assistHost, assistVisible, setAssistHost, setAssistVisible, setAssistClaim],
+		[assistHost, assistVisible, setAssistHost, setAssistClaim],
 	)
 	useSyncedLayout(horizontalGroupRef, horizontalLayout, rightPaneVisible)
 	useSyncedLayout(verticalGroupRef, verticalLayout, dockVisible)

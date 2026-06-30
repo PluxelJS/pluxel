@@ -1,5 +1,6 @@
 import { createHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
+import { getRuntimeApiResolvers } from '../../src/api/contributions'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 
 function createRpcHost() {
@@ -50,5 +51,9 @@ describe('RuntimeRpcApi route features', () => {
 		} finally {
 			await host.dispose()
 		}
+	})
+
+	it('keeps route API contributions optional for build-time clients', () => {
+		expect(getRuntimeApiResolvers({} as never)).toEqual([])
 	})
 })

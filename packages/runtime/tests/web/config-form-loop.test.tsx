@@ -190,12 +190,12 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
 	const [dirty, setDirty] = useState(false)
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisible] = useState(false)
+	const [assistVisible, setAssistPanelVisible] = useState(false)
 	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
 	const setAssistClaim = (owner: symbol, visible: boolean) => {
 		if (visible) assistClaims.set(owner, true)
 		else assistClaims.delete(owner)
-		setAssistVisible(assistClaims.size > 0)
+		setAssistPanelVisible(assistClaims.size > 0)
 	}
 	const asideValue = useMemo(
 		() => ({
@@ -203,7 +203,6 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistVisible: (visible: boolean) => setAssistClaim(Symbol.for('legacy-assist'), visible),
 			setAssistClaim,
 		}),
 		[assistHost, assistVisible, assistClaims],
@@ -285,7 +284,6 @@ function BuiltinDocHarness({
 			assistHost,
 			setAssistHost,
 			assistVisible: false,
-			setAssistVisible: () => {},
 			setAssistClaim: () => {},
 		}),
 		[assistHost],
@@ -335,12 +333,12 @@ function AssistClaimHarness({
 	secondVisible: boolean
 }) {
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisible] = useState(false)
+	const [assistVisible, setAssistPanelVisible] = useState(false)
 	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
 	const setAssistClaim = (owner: symbol, visible: boolean) => {
 		if (visible) assistClaims.set(owner, true)
 		else assistClaims.delete(owner)
-		setAssistVisible(assistClaims.size > 0)
+		setAssistPanelVisible(assistClaims.size > 0)
 	}
 	const asideValue = useMemo(
 		() => ({
@@ -348,7 +346,6 @@ function AssistClaimHarness({
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistVisible: (visible: boolean) => setAssistClaim(Symbol.for('legacy-assist'), visible),
 			setAssistClaim,
 		}),
 		[assistHost, assistVisible, assistClaims],

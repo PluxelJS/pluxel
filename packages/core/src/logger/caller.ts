@@ -38,7 +38,6 @@ const DEFAULT_SKIP_MARKERS = [
 	'/packages/runtime-dynamic/dist/',
 	'/dist/',
 	'LoggerService.',
-	'LogtapeLoggerService.',
 	'/logger/index.',
 ] as const
 
