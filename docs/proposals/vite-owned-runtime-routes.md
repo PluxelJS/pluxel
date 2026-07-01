@@ -60,8 +60,9 @@ export default defineConfig({
 })
 ```
 
-Dynamic route config does not accept nested Vite config. Host Vite config is the only Vite config
-entry. Dynamic direct startup does not need to be tsdown-minimal; it can load full runtime,
+Dynamic route config does not accept nested Vite or HMR config. Host Vite config is the only Vite
+config entry, and loader HMR wiring belongs to `@pluxel/runtime-dynamic` internals plus the host
+Vite server. Dynamic direct startup does not need to be tsdown-minimal; it can load full runtime,
 loader, scan, package manager, workspace diagnose, and persistence services by default. Vite HMR
 startup uses the same config, plus the host Vite dev server for SSR loading, watcher events, and
 module replacement.

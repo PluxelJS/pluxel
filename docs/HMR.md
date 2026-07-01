@@ -111,7 +111,7 @@ export default defineConfig({
 })
 ```
 
-Dynamic route config 只描述 workspace/profile/runtime 语义，不再嵌套 Vite config：
+Dynamic route config 只描述 workspace/profile/runtime 语义，不再嵌套 Vite 或 HMR config：
 
 ```ts
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'

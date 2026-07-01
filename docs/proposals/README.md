@@ -51,13 +51,13 @@
 
 ## Static Fetch-Native Runtime
 
-状态：设计目标和网络模型审计。
+状态：已实现基线，保留后续平台适配方向。
 
 static 路线的生产目标是 `runtime -> runtime-static` 可以被 `tsdown` 静态打包成最小
 fetch-native JavaScript，部署到 Node、Bun、Deno、Cloudflare Workers 等环境。dynamic
-路线继续保留 Vite/HMR/scan/package manager 能力，不追求 worker-native。目标边界、当前
-网络模型审计和允许破坏兼容的优化方向见 `static-fetch-native-runtime.md`。`@pluxel/runtime-static`
-主入口应就是轻量 production static 入口，`./vite` 才是开发期入口。已落地的
+路线继续保留 Vite/HMR/scan/package manager 能力，不追求 worker-native。目标边界、已落地
+基线和后续平台适配方向见 `static-fetch-native-runtime.md`。`@pluxel/runtime-static`
+主入口就是轻量 production static 入口，`./vite` 才是开发期入口。已落地的
 host-owned Vite config 分离不回退，但 `pluxel.static.ts` 这类文件应是 route-neutral runtime
 config：`defineStaticRuntimeConfig(...)` 从 `@pluxel/runtime-static` 主入口导出；Vite 插件通过
 `staticRuntimeVitePlugin({ config })` 加载同一份 config，production entry 直接 import 后
@@ -65,12 +65,13 @@ config：`defineStaticRuntimeConfig(...)` 从 `@pluxel/runtime-static` 主入口
 
 ## Static Runtime Enterprise Refactor
 
-状态：重构方案。
+状态：已实现基线，保留企业平台适配方向。
 
-面向企业后端 static runtime 的具体重构步骤见 `static-runtime-enterprise-refactor.md`。
+面向企业后端 static runtime 的已落地边界和后续适配方向见 `static-runtime-enterprise-refactor.md`。
 核心方向是保留 Elysia 作为唯一 HTTP 框架，GraphQL 归入 HTTP 默认能力，config/state
-file persistence、plugin data 和 file logger 作为企业后端默认能力优化；`FsService` 改成窄
-`PersistenceService`，用来区分 durable/ephemeral/readonly backend，而不是完整 Node fs 抽象。
+plugin data 和 logger 作为默认能力；durable persistence 由 host 显式注入 backend。旧
+`FsService` 已改成窄 `PersistenceService`，用来区分 durable/ephemeral/readonly backend，
+而不是完整 Node fs 抽象。
 Vault 是真正插件按需 import 的服务；runtime web UI、management panel、ext、SSE 作为
 web-management bundle 共通进退。重构时要控制 public 概念数量：不要新增 preset、
 capability registry、service declaration、asset subsystem；优先使用 Elysia route、logger sink、

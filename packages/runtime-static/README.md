@@ -80,6 +80,9 @@ const runtime = await createStaticRuntime(config)
 export default { fetch: runtime.fetch }
 ```
 
+`createStaticRuntime(config)` starts the fixed catalog before it resolves. `runtime.start()` remains
+available as an idempotent lifecycle handle, but standalone hosts should not call it a second time.
+
 ## Packaging
 
 `@pluxel/runtime-dev` is private and inlined into this package's Vite/HMR output. Published output

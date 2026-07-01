@@ -4,7 +4,7 @@ import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 
 describe('@pluxel/runtime-dynamic/vite', () => {
-	it('marks dynamic runtime config without exposing nested Vite config', () => {
+	it('marks dynamic runtime config without exposing nested Vite or HMR config', () => {
 		const config = defineDynamicRuntimeConfig({
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
@@ -18,6 +18,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 				vite: {},
 			} as never),
 		).toThrow(/nested "vite" field/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
+				hmr: {},
+			} as never),
+		).toThrow(/must not include an "hmr" field/i)
 	})
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {

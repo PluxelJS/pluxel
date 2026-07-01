@@ -35,8 +35,8 @@ export default defineDynamicRuntimeConfig({
 })
 ```
 
-Runtime config does not accept nested Vite config. Add React, GraphQL, macros, aliases, and other
-Vite settings to the host `vite.config.ts`.
+Runtime config does not accept nested Vite or HMR config. Add React, GraphQL, macros, aliases, and
+other Vite settings to the host `vite.config.ts`; loader HMR wiring stays inside the dynamic route.
 
 Direct/headless launch uses the same config object:
 

@@ -129,7 +129,7 @@ static 主入口默认能力：
 - `ctx.configService`
 - `ctx.runtimeState`
 - `ctx.pluginData`
-- `ctx.logger`：console/file sink 默认可用，sink 可替换
+- `ctx.logger`：logger core 默认可用；console/file sink 可配置、可替换
 - `ctx.registry` / `ctx.effects` / `ctx.events`
 - `ctx.root.persistence`
 
@@ -265,16 +265,16 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
    - `@pluxel/runtime-static/vite` 导出 `staticRuntimeVitePlugin(...)`，兼容 re-export config helper。
    - `@pluxel/runtime-dynamic` 导出 `defineDynamicRuntimeConfig(...)` / `createDynamicRuntime(config)`。
    - `@pluxel/runtime-dynamic/vite` 导出 `dynamicRuntimeVitePlugin(...)`，兼容 re-export config helper。
-   - `defineStaticRuntime(...)` 如保留，只作为兼容 alias，避免两套 define 名称长期并存。
+   - `defineStaticRuntime(...)` 不再保留；新代码只使用 `defineStaticRuntimeConfig(...)`。
 
 3. 重构 static 主入口 import graph：
-   - 只依赖 base 和 static 默认能力。
-   - 不依赖 full `@pluxel/runtime` entry。
+   - 只依赖 `@pluxel/runtime` common surface 和 static 默认能力。
+   - 不依赖 full runtime registration。
    - 移除无条件 vault bootstrap。
 
 4. 重构 persistence：
    - `ctx.root.fs` 迁到 `ctx.root.persistence`。
-   - ConfigService / RuntimeStateStore / PluginDataService / file logger 改用 persistence namespace。
+   - ConfigService / RuntimeStateStore / PluginDataService / logger policy 改用 persistence namespace。
    - 拆 backend，标注 `durable` / `ephemeral` / `readonly`。
    - 移除 production 顶层 `chokidar`。
 
@@ -302,14 +302,14 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
 ## 验收标准
 
 - static/dynamic 都是一份 route-neutral runtime config，两种 launcher。
-- `vite.config.ts` 仍是唯一 Vite config；runtime config 不接受 nested Vite config。
+- `vite.config.ts` 仍是唯一 Vite config；runtime config 不接受 nested Vite/HMR config。
 - static app 可以被 `tsdown` 打成 fetch-native ESM。
 - static production import graph 不包含 Vite/Rolldown/chokidar/Node http/Node stream/Vault/web-management/dynamic loader，除非显式选择对应能力。
 - dynamic direct launcher 可启动 full dynamic runtime，且 dynamic Vite HMR 行为不回退。
 - 插件 lifecycle、fixed catalog、enabled state、dependencies、config validation、effects cleanup、commit report 正常。
 - Elysia plugin routes 和 fetch mount 正常。
 - GraphQL HTTP 默认可用。
-- config/state/pluginData/fileLogger 默认存在且可配置 backend。
+- config/state/pluginData/logger 默认存在；未注入 backend 时使用 memory/ephemeral persistence，可配置 durable backend。
 - `PersistenceService` 替代 `FsService`，不是完整 Node fs 抽象。
 - Vault 只有被插件/host import 时才进入 bundle。
 - web-management 未 import 时，`ctx.ext` / management panel / runtime web UI / SSE 不进入 static 主入口 bundle。

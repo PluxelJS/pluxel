@@ -78,7 +78,7 @@ runtime common host layer
 - `packages/runtime/src/services/persistence/PersistenceService.ts`：窄 runtime persistence service，config/state/plugin-data/logger/vault 通过 namespace 复用 backend。
   common runtime 不内置 Node fs backend；未显式提供 backend 时使用 memory backend，dynamic route 通过 workspace fs adapter 注入 durable backend。
 - `packages/runtime/src/services/RuntimeStateStore.ts`：运行控制面状态持久化，包括 enabled、forks、base providers、依赖覆盖、builtin/plugin groups。
-- `packages/runtime-static/src/index.ts`：static production direct launcher，导出 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(config)`。
+- `packages/runtime-static/src/index.ts`：static production direct launcher，导出 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(config)`；factory 返回前已完成 startup，直接使用 `runtime.fetch`。
 - `packages/runtime-static/src/vite.ts`：static Vite launcher，负责 SSR 加载同一份 runtime config、按需接入 web-management/dev UI bridge 和 HMR。
 - `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
 - `packages/runtime-dynamic/src/index.ts`：dynamic direct launcher，导出 `defineDynamicRuntimeConfig(...)` 和 `createDynamicRuntime(config)`。

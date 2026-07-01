@@ -163,6 +163,11 @@ function validateDynamicRuntimeConfigModule(
 			`[runtime-dynamic/vite] ${configPath} must not include a nested "vite" field; use the host vite.config.ts instead`,
 		)
 	}
+	if ('hmr' in value) {
+		throw new Error(
+			`[runtime-dynamic/vite] ${configPath} must not include an "hmr" field; loader HMR belongs to @pluxel/runtime-dynamic internals and host Vite wiring`,
+		)
+	}
 	return value
 }
 

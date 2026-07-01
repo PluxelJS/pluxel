@@ -52,9 +52,9 @@ describe('toolchain package boundaries', () => {
 
 		expect(runtime.exports).not.toHaveProperty('./vite')
 		expect(existsSync(`${root}/packages/runtime/src/vite.ts`)).toBe(false)
-		expect(existsSync(`${root}/packages/runtime/src/services/runtime/shared/vite-environment.ts`)).toBe(
-			false,
-		)
+		expect(
+			existsSync(`${root}/packages/runtime/src/services/runtime/shared/vite-environment.ts`),
+		).toBe(false)
 		expect(runtimeDynamic.exports).toHaveProperty('./vite')
 		expect(runtimeDynamic.exports).toHaveProperty('./hmr')
 		expect(runtimeStatic.exports).toHaveProperty('./vite')
@@ -75,10 +75,11 @@ describe('toolchain package boundaries', () => {
 		}
 	})
 
-	it('keeps plugin UI Module Federation build logic in the rolldown package', async () => {
+	it('keeps plugin UI Module Federation build logic and direct deps in one place', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const runtimeDevFiles = await collectSourceFiles(`${root}/packages/runtime-dev/src`)
+		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
 		const offenders: string[] = []
 
 		for (const file of [...runtimeDynamicFiles, ...runtimeDevFiles]) {
@@ -90,6 +91,11 @@ describe('toolchain package boundaries', () => {
 			offenders,
 			'runtime-dynamic should call @pluxel/rolldown/vite/plugin-ui instead of owning MF build logic',
 		).toEqual([])
+		expect(runtimeStatic.dependencies).toHaveProperty('@module-federation/vite')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/dts-plugin')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/runtime')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/runtime-core')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/sdk')
 	})
 
 	it('keeps Rolldown plugin utility dependencies inside the rolldown package', async () => {
@@ -172,8 +178,14 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
-		const runtimeStaticIndex = await readFile(`${root}/packages/runtime-static/src/index.ts`, 'utf8')
-		const runtimeStaticTypes = await readFile(`${root}/packages/runtime-static/src/types.ts`, 'utf8')
+		const runtimeStaticIndex = await readFile(
+			`${root}/packages/runtime-static/src/index.ts`,
+			'utf8',
+		)
+		const runtimeStaticTypes = await readFile(
+			`${root}/packages/runtime-static/src/types.ts`,
+			'utf8',
+		)
 		const runtimeStaticCatalog = await readFile(
 			`${root}/packages/runtime-static/src/internal/catalog.ts`,
 			'utf8',
@@ -182,7 +194,10 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-static/src/internal/host.ts`,
 			'utf8',
 		)
-		const runtimeStateEntry = await readFile(`${root}/packages/runtime/src/runtime-state.ts`, 'utf8')
+		const runtimeStateEntry = await readFile(
+			`${root}/packages/runtime/src/runtime-state.ts`,
+			'utf8',
+		)
 		const runtimeInternal = await readFile(`${root}/packages/runtime/src/internal.ts`, 'utf8')
 		const runtimeWorkspaceFs = await readFile(
 			`${root}/packages/runtime/src/runtime/workspace-fs.ts`,
@@ -305,7 +320,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeRpcApi).toContain('feature<Name extends RuntimeRouteFeatureName>')
 		expect(runtimeRpcApi).not.toContain(`package():`)
 		expect(runtimeProtocol).toContain('PackageManagerFeatureApi')
-		expect(runtimeProtocol).toContain("feature: <Name extends RuntimeRouteFeatureName>")
+		expect(runtimeProtocol).toContain('feature: <Name extends RuntimeRouteFeatureName>')
 		expect(runtimeProtocol).not.toContain('PackageHandleApi')
 		expect(runtimeProtocol).not.toContain(`package: () =>`)
 		expect(runtimeDynamicRoute).toContain('features: {')
@@ -327,7 +342,9 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeHttpService).toContain('createLazyGraphqlBoundary')
 		expect(runtimeHttpService).toContain("import('./internalApi')")
 		expect(runtimeHttpService).toContain('this.config.graphql')
-		expect(runtimeHttpService).not.toContain('this.createLazyInternalApiBoundary({\n\t\t\t\t\tgraphql: this.config.graphql')
+		expect(runtimeHttpService).not.toContain(
+			'this.createLazyInternalApiBoundary({\n\t\t\t\t\tgraphql: this.config.graphql',
+		)
 		expect(runtimeDynamicPackageMutation).toContain('class PackageMutationService')
 		expect(runtimeDynamicPackageMutation).toContain('removePackages(')
 		expect(runtimeDynamicPackageLoadRuntime).toContain('class PackageLoadRuntime')
@@ -395,6 +412,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicVite).toContain('defineDynamicRuntimeConfig')
 		expect(runtimeDynamicVite).toContain('dynamicRuntimeVitePlugin')
 		expect(runtimeDynamicVite).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeDynamicVite).toContain('must not include an "hmr" field')
 		expect(runtimeDynamicVite).not.toContain('createServer(')
 		expect(runtimeDynamicPackage).toContain('"./vite"')
 		expect(runtimeDynamicConfig).not.toContain('@pluxel/runtime/config')
@@ -428,9 +446,9 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStaticVite).not.toContain(`staticRuntimeVite${'Plugins'}`)
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/plugins')
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/vite')
-		expect(runtimeStaticIndex).toContain("@pluxel/runtime/register/static")
-		expect(runtimeStaticIndex).toContain("@pluxel/runtime")
-		expect(runtimeStaticIndex).not.toContain("@pluxel/runtime/base")
+		expect(runtimeStaticIndex).toContain('@pluxel/runtime/register/static')
+		expect(runtimeStaticIndex).toContain('@pluxel/runtime')
+		expect(runtimeStaticIndex).not.toContain('@pluxel/runtime/base')
 		expect(runtimeStaticIndex).toContain('defineStaticRuntimeConfig')
 		expect(runtimeStaticIndex).toContain('createStaticRuntime')
 		expect(runtimeStaticIndex).not.toContain('export async function createStaticRuntimeHost')
@@ -460,10 +478,11 @@ describe('toolchain package boundaries', () => {
 		expect(staticCommercialConfig).toContain('runtimeState')
 		expect(staticCommercialConfig).toContain('snapshot: { enabled:')
 		expect(staticCommercialHost).toContain('createStaticRuntime(staticRuntime)')
+		expect(staticCommercialHost).not.toContain('runtime.start()')
 		expect(staticCommercialHost).not.toContain('...staticRuntime')
-		expect(existsSync(`${root}/packages/plugins/static-commercial-demo/src/pluxel.static.vite.ts`)).toBe(
-			false,
-		)
+		expect(
+			existsSync(`${root}/packages/plugins/static-commercial-demo/src/pluxel.static.vite.ts`),
+		).toBe(false)
 		expect(existsSync(`${root}/packages/plugins/static-commercial-demo/src/static-host.ts`)).toBe(
 			false,
 		)
@@ -475,6 +494,7 @@ describe('toolchain package boundaries', () => {
 		expect(pluginsHostStaticConfig).toContain('runtimeState')
 		expect(pluginsHostStaticConfig).toContain('snapshot: { enabled:')
 		expect(pluginsHostStatic).toContain('createStaticRuntime(staticRuntime)')
+		expect(pluginsHostStatic).not.toContain('runtime.start()')
 		expect(pluginsHostStatic).not.toContain('...staticRuntime')
 		for (const staticHost of [pluginsHostStatic, staticCommercialHost]) {
 			expect(staticHost).not.toContain(
@@ -522,11 +542,36 @@ describe('toolchain package boundaries', () => {
 
 		for (const file of files) {
 			const code = await readFile(file, 'utf8')
-			if (code.includes("'@pluxel/runtime/services'") || code.includes('"@pluxel/runtime/services"')) {
+			if (
+				code.includes("'@pluxel/runtime/services'") ||
+				code.includes('"@pluxel/runtime/services"')
+			) {
 				offenders.push(file)
 			}
 			if (code.includes('@pluxel/runtime/config')) offenders.push(`${file}:@pluxel/runtime/config`)
 			if (code.includes('@pluxel/runtime/base')) offenders.push(`${file}:@pluxel/runtime/base`)
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps runtime config helpers on route package main entries in app code', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const files = [
+			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
+			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
+			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
+		]
+		const offenders: string[] = []
+		const staticViteConfigHelper =
+			/import\s+\{[^}]*defineStaticRuntimeConfig[^}]*\}\s+from\s+['"]@pluxel\/runtime-static\/vite['"]/
+		const dynamicViteConfigHelper =
+			/import\s+\{[^}]*defineDynamicRuntimeConfig[^}]*\}\s+from\s+['"]@pluxel\/runtime-dynamic\/vite['"]/
+
+		for (const file of files) {
+			const code = await readFile(file, 'utf8')
+			if (staticViteConfigHelper.test(code) || dynamicViteConfigHelper.test(code))
+				offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])
@@ -577,7 +622,8 @@ describe('toolchain package boundaries', () => {
 			if (configDtsMatch) {
 				const configDts = `${root}/packages/runtime-static/dist/${configDtsMatch[1].replace(/\.mjs$/, '.d.mts')}`
 				const code = await readFile(configDts, 'utf8')
-				if (code.includes('@pluxel/runtime/services')) offenders.push(`${configDts}:@pluxel/runtime/services`)
+				if (code.includes('@pluxel/runtime/services'))
+					offenders.push(`${configDts}:@pluxel/runtime/services`)
 			}
 		}
 

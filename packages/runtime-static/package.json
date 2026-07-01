@@ -31,10 +31,6 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@module-federation/dts-plugin": "2.6.0",
-		"@module-federation/runtime": "2.6.0",
-		"@module-federation/runtime-core": "2.6.0",
-		"@module-federation/sdk": "2.6.0",
 		"@module-federation/vite": "1.16.12",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",

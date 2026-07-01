@@ -1,6 +1,6 @@
 # Static Runtime Enterprise Refactor
 
-状态：重构方案。
+状态：已实现基线，保留企业平台适配方向。
 
 本文基于当前代码审计，描述如何把 static runtime 路线重构成尽可能轻、适合企业后端开发、同时保留 Pluxel 插件能力的生产路径。
 
@@ -10,7 +10,7 @@
 - HTTP route framework 固定为 Elysia。
 - 插件生命周期、依赖、配置、effects、logger 保持可用。
 - GraphQL 视作 HTTP 能力的一部分，可以作为默认加载能力。
-- config/state file persistence、plugin data、file logger 默认存在并优化实现。
+- config/state/plugin data/logger 默认存在；durable persistence 由 host 显式注入 backend。
 - runtime web UI、management panel、ext、SSE 属于同一个网页管理 bundle，共同进退。
 - Vault 是真正插件按需引入的服务。
 - 服务根据配置和运行环境 fail fast。
@@ -22,7 +22,7 @@
 这次重构要主动减少 public 名词。static runtime 对使用者只应该有少数稳定概念：
 
 - runtime config：`defineStaticRuntimeConfig(...)`，唯一描述 runtime 怎么启动。
-- direct launcher：`createStaticRuntime(config)`，创建 runtime 并暴露 `fetch`。
+- direct launcher：`createStaticRuntime(config)`，创建并启动 runtime，然后暴露 `fetch`。
 - Vite launcher：`staticRuntimeVitePlugin({ config })`，只负责 host-owned Vite dev/build 链路。
 - 默认上下文：HTTP、logger、config/state/plugin data、persistence、registry/effects/events。
 - 显式大能力：`vault` 和 `web-management`。
@@ -43,7 +43,7 @@
 - 同一份 runtime config 可以被 Vite 插件加载，也可以被 production entry 直接 import 后传给 `createStaticRuntime(config)`。
 - `@pluxel/runtime-static` 主入口不拥有 Vite dev server、SSR loader、watcher 或 HMR；这些仍只属于 `/vite` route。
 
-## 当前代码事实
+## 当前实现事实
 
 `Context` 已经具备按需服务模型：
 
@@ -54,17 +54,27 @@
 
 因此“少数可选服务由插件自己 import，例如 vault，从而获得类型增强和实际增强”是符合现有机制的方向，不需要重写 DI。默认能力不需要都做成按需服务；否则概念会过多。
 
-当前阻碍 static 最小化的是入口和服务实现边界：
+已落地的边界：
 
-- `@pluxel/runtime` 顶层 import `./runtime/register`，一次性注册 runtime common 的所有服务。
-- `runtime-static` 从 `@pluxel/runtime` 和 `@pluxel/runtime/services` 引入 `Context`、`bootstrapHostVault`、`ConfigService`、`RuntimeStateStore` 等，间接拉入重 barrel。
-- `StaticRuntimeHostImpl.prepare()` 无条件等待 `configService`、`runtimeState`，并无条件 `bootstrapHostVault(this.ctx)`，导致 vault 无法真正按需。
-- `ConfigService` 和 `RuntimeStateStore` 顶层 import `chokidar`，即使使用 `memory` mode 也会进入 import graph。
-- `FsService` 顶层 import Node fs，即使使用 memory backend 也会进入 import graph；更根本的问题是它太像 Node fs 镜像，需要改名并收窄成 `PersistenceService`。
-- `PluginDataService` 顶层 import `chokidar`，默认使用 fs storage；它应该保留为默认能力，但去掉 watcher 等非必要重依赖。
-- `HttpService` 使用 Elysia 是正确方向。GraphQL 可以作为 HTTP 能力保留；管理面板、SSE、runtime web UI 应作为一个网页管理 bundle，不默认拉入最小路径。
-- `ExtensionService` 顶层 import Node crypto/fs，用于 packaged UI artifact 和 manifest；它应属于网页管理 bundle，而不是 static core。
-- `createRuntimeLogging()` 顶层 import `node:fs/promises` 和 file sink；file logger 可以默认存在，但实现应直接面向现代 JS fs API 并避免额外重抽象。
+- `@pluxel/runtime` 顶层只注册 static/common services；full runtime 注册在
+  `@pluxel/runtime/register/full`。
+- `@pluxel/runtime-static` 主入口暴露 `defineStaticRuntimeConfig(...)` 和
+  `createStaticRuntime(config)`，不暴露 host/HMR internals。
+- `@pluxel/runtime-static/vite` 是开发期 Vite launcher，加载同一份 runtime config，并拒绝
+  nested `vite` / `hmr` config 字段。
+- `StaticRuntimeHostImpl.prepare()` 不再 bootstrap Vault；Vault 只由
+  `@pluxel/runtime/services/vault` 显式边界启用。
+- broad `@pluxel/runtime/services` barrel、Node HTTP adapter、旧 `FsService` 已删除。
+- `ConfigService`、`RuntimeStateStore`、`PluginDataService` 通过
+  `ctx.root.persistence.namespace(...)` 读写 runtime 数据，不依赖 `ctx.root.fs` 或 `chokidar`。
+- `PersistenceService` 是窄 durable/ephemeral/readonly backend boundary；默认 memory backend 是
+  ephemeral，durable file/database/KV/object storage 由 host 注入 backend。
+- `HttpService` 保留 Elysia 和 GraphQL HTTP 能力；management/control-plane/UI assets 只有在配置
+  启用并显式 import web-management 时才挂载。
+- `ExtensionService`、RPC、SSE、SignalDB、runtime UI log sink 和管理 UI 被归入
+  `@pluxel/runtime/services/web-management`。
+- logger core 默认存在；文件策略读写被拆到 `logger/policy-file.ts`，避免 policy parser 顶层
+  import Node fs。
 
 ## 目标形态
 
@@ -81,13 +91,18 @@ import { AuditPlugin } from './plugins/AuditPlugin'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin, AuditPlugin],
-	enabled: ['OrdersPlugin', 'AuditPlugin'],
+	runtimeState: {
+		mode: 'memory',
+		snapshot: { enabled: ['OrdersPlugin', 'AuditPlugin'] },
+	},
 	http: {
 		graphql: true,
 		management: false,
 	},
 	logger: {
-		sinks: ['console', 'file'],
+		sinks: {
+			console: { enabled: true },
+		},
 	},
 })
 ```
@@ -139,7 +154,7 @@ export class SecretsPlugin extends BasePlugin {
 }
 ```
 
-bundle 结果默认包含企业后端常用的 static 能力：HTTP/Elysia/GraphQL、plugin lifecycle、config/state persistence、plugin data、logger/file logger。Vault 这类不一定使用且语义较重的能力，由插件 import 后进入 bundle。
+bundle 结果默认包含企业后端常用的 static 能力：HTTP/Elysia/GraphQL、plugin lifecycle、config/state persistence、plugin data、logger core。File sink 由 logger config 显式启用；Vault 这类不一定使用且语义较重的能力，由插件 import 后进入 bundle。
 
 ### Host API
 
@@ -154,12 +169,13 @@ type StaticFetchRuntime = {
 }
 ```
 
-实现上可以由当前 `defineStaticRuntime(...)` + `createStaticRuntimeHost(...)` 演进而来，但 public 目标应尽量收敛成：
+public API 已收敛成：
 
 - `defineStaticRuntimeConfig(...)`：纯 runtime config helper，主入口导出，生产和 `/vite` 共用。
-- `createStaticRuntime(config)`：生产 runtime factory，返回 `{ ctx, fetch, start, stop }`。
+- `createStaticRuntime(config)`：生产 runtime factory，返回 `{ ctx, fetch, start, stop }`；
+  factory 返回前已完成 startup，`start()` 只保留为幂等 lifecycle handle。
 
-`defineStaticRuntime(...)` 如果保留，只作为兼容 alias，避免同时存在两套含义相近的 define helper。
+`defineStaticRuntime(...)` 已移除；新代码只使用 `defineStaticRuntimeConfig(...)`。
 
 direct launcher 只允许依赖：
 
@@ -169,7 +185,7 @@ direct launcher 只允许依赖：
 - static catalog/lifecycle code
 - config/state persistence
 - plugin data
-- logger core + console/file sinks
+- logger core + configurable console/file sinks
 - explicitly imported optional services such as vault
 
 它不应依赖：
@@ -190,7 +206,7 @@ direct launcher 只允许依赖：
 - `ctx.configService`。
 - `ctx.runtimeState`。
 - `ctx.pluginData`。
-- `ctx.logger`，console/file sink 都可用。
+- `ctx.logger`，console/file sink 都可配置。
 - `ctx.registry` / `ctx.effects` / `ctx.events`。
 
 这些能力不需要插件或 host 分别 import。重构目标是优化它们的实现和依赖，而不是把它们拆成更多概念。
@@ -212,7 +228,7 @@ dynamic route 的 loader/package/scan 仍在 `@pluxel/runtime-dynamic`，不属�
 
 - **未 import 可选服务模块**：TypeScript 不应看到对应 `ctx.service`；如果绕过类型直接访问，运行时应是明确的 missing-service 错误。
 - **已 import 但环境不满足**：服务第一次构造或 `prepare()` 阶段抛出带 service id、原因、修复建议的错误。
-- **默认服务环境不满足**：例如 file persistence 或 file logger 在目标运行时没有可用 fs API，应在 startup/preflight 报错，提示切换 memory/database/KV backend 或关闭对应 sink。
+- **持久化环境不满足**：例如 host 配置了 durable file/database/KV backend 但目标运行时不可用，应在 startup/preflight 报错，提示切换 backend 或改用 memory/ephemeral。
 - **服务被配置为 disabled**：公共方法应 fail fast，除非该服务明确设计为 no-op。
 - **生产不支持的 backend**：不要 fallback 到 Node 或 memory；必须报错。
 
@@ -253,19 +269,21 @@ import './runtime/register'
 
 三者作为默认能力保留，但实现要轻：
 
-- 默认 file persistence 可用，面向现代 JS fs API。
+- 默认 memory/ephemeral persistence 可用；durable file/database/KV backend 由 host 注入。
 - memory/database/KV backend 可通过配置切换。
 - 依赖窄 `ctx.root.persistence`，而不是各服务自己探测环境。
 - persistence backend 应声明 `durable` / `ephemeral` / `readonly` capability。Worker 临时 fs 这类环境可以作为 `ephemeral` backend 工作，但 startup/preflight 必须明确提示它不是持久存储。
 - 不在顶层 import `chokidar`；watcher 只属于 dev 或显式 watch mode。
-- plugin data 默认存在，提供轻量 file-backed persistence；需要数据库/KV 时换 backend。
+- plugin data 默认存在，复用共享 persistence backend；需要 durable 存储时由 host 注入
+  file/database/KV backend。
 
 ### 3. 把 `FsService` 改成 `PersistenceService`
 
 不要删除这层抽象；要删除的是“完整 Node fs 镜像”的抽象。公共服务应改名为 `PersistenceService`，挂在 `ctx.root.persistence`。它表达 runtime 数据是否可持久、可写、可列举，而不是表达底层是不是文件系统。
 
 - 大部分现代 JS 后端环境已经提供某种 fs 或存储 API，但语义不同。例如 Worker 的 fs 可能只是临时文件本地读写，不代表 durable persistence。
-- runtime 需要统一判断 config/state/plugin-data/file-logger 当前落在 durable、ephemeral 还是 readonly backend。
+- runtime 需要统一判断 config/state/plugin-data/logger policy/vault 当前落在 durable、ephemeral
+  还是 readonly backend。
 - 企业后端更常见的是数据库、KV、对象存储、平台绑定，而不是统一文件系统。
 - 直接让每个服务自己探测 fs 会造成重复和不一致。
 - 旧 `FsService` 容易把 Node-only import 拉进最小 bundle，所以要拆后端、保留窄接口。
@@ -298,7 +316,7 @@ type PersistenceService = {
 }
 ```
 
-`namespace()` 是关键：config、state、plugin-data、file-logger、vault 等服务都通过自己的 namespace 复用同一个 backend，避免路径拼接和权限语义散落在各服务里。
+`namespace()` 是关键：config、state、plugin-data、logger policy、vault 等服务都通过自己的 namespace 复用同一个 backend，避免路径拼接和权限语义散落在各服务里。
 
 backend 可以是 file、memory、database、KV、object storage、Durable Object 或 host 自定义实现。file backend 只是其中一种实现，不应污染公共 API。
 
@@ -376,22 +394,24 @@ logger 是必然存在的基础服务，不需要过度抽象。
 
 - core `LoggerService` 保持默认存在。
 - logger configuration 接受 sinks。
-- console sink 和 file sink 在基础入口可用。
+- console sink 和 file sink 在基础入口可配置。
 - file sink 实现应轻量，避免额外 Node-only helper 抽象；目标环境没有 fs 时 fail fast 或要求关闭 file sink。
 - UI sink 属于 web-management bundle。
-- plugin log policy persistence 默认 file-backed，可通过配置换 backend。
+- plugin log policy persistence 通过 `PersistenceService` backend 持久化；未注入 durable backend 时是 memory/ephemeral。
 
 示例：
 
 ```ts
 logger: {
-	sinks: [consoleSink()],
+	sinks: {
+		console: { enabled: true },
+	},
 }
 ```
 
 ## Static Host Startup Flow
 
-新的 startup 顺序：
+当前 startup 顺序：
 
 ```text
 import selected service modules
@@ -415,9 +435,9 @@ import selected service modules
 - `ctx.registry`
 - `ctx.effects`
 
-## Bundle Guard
+## 当前 Bundle Guard
 
-为 `@pluxel/runtime-static` 主入口增加 import graph 测试：
+`@pluxel/runtime-static` 主入口的 import graph 测试保持以下边界：
 
 允许：
 
@@ -426,7 +446,7 @@ import selected service modules
 - `elysia`
 - GraphQL HTTP capability
 - `@logtape/logtape`
-- lightweight file persistence/logger implementation
+- lightweight persistence/logger implementation
 - small schema/runtime utilities
 
 禁止，除非对应测试显式 import service：
@@ -440,33 +460,20 @@ import selected service modules
 - dynamic loader/package/scan modules
 - web-management bundle modules
 
-测试方式：
+守卫方式：
 
 - 对 `@pluxel/runtime-static` 做 tsdown bundle。
 - 扫描输出 import specifiers。
 - 运行一个最小 Elysia plugin route smoke test。
-- 再分别测试默认 file persistence/file logger、`+vault`、`+web-management` 组合。
+- 再分别测试默认 memory persistence、durable backend、`+vault`、`+web-management` 组合。
 
-## 迁移顺序
+## 验收守卫
 
-1. 把 `@pluxel/runtime` 顶层改成插件作者默认入口，只注册 static/common services；full registration 移到 `@pluxel/runtime/register/full`。
-2. 把 `@pluxel/runtime-static` 主入口改成轻量 production static/fetch 入口；`@pluxel/runtime-static/vite` 保持开发期入口。
-3. 移除 static host `prepare()` 中的无条件 vault bootstrap。
-4. 优化 `ConfigService` / `RuntimeStateStore` / `PluginDataService` 默认 file persistence，移除顶层 `chokidar` 和 `ctx.root.fs` 依赖，统一改用 `ctx.root.persistence`。
-5. 用 `PersistenceService` 替换 `FsService`，拆后端并标记 durable/ephemeral/readonly capability。
-6. 调整 `HttpService` static defaults：GraphQL HTTP capability 保留，management off；业务 assets 走 Elysia route/mount，管理 UI assets 随 web-management。
-7. 把 management panel / ext / SSE / runtime web UI 合并成 web-management bundle，避免默认注册 `ctx.ext`。
-8. 优化 logger sinks：console/file 默认可用，UI sink 归入 web-management。
-9. 增加默认能力和已 import 大能力的 startup checks。
-10. 增加 bundle guard 和组合 smoke tests。
-
-## 成功标准
-
-- 最小 static enterprise app 可以打包 core + Elysia + GraphQL HTTP + static lifecycle + config/state/plugin-data/file logger。
+- 最小 static enterprise app 可以打包 core + Elysia + GraphQL HTTP + static lifecycle + config/state/plugin-data/logger core。
 - 插件系统仍完整支持 fixed catalog、enable state、dependencies、config validation、effects cleanup、core commit report。
 - Vault 插件 import 后类型和 runtime getter 同时可用。
 - web-management bundle 未 import 时，`ctx.ext` / management panel / runtime web UI / SSE 不进入 bundle。
-- 默认 file persistence、plugin data、file logger 在环境不支持时 startup/preflight 给明确错误。
+- durable persistence backend、plugin data 和 logger policy 在环境不支持时 startup/preflight 给明确错误。
 - Vault 和 web-management 都能按需组合。
 - GraphQL 作为 HTTP 能力存在，不再作为独立 service 增加概念。
 - `FsService` 被替换为窄 `PersistenceService`，不再是完整 Node fs 抽象。

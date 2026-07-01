@@ -6,10 +6,7 @@ import { ensurePluxelLogging } from '@pluxel/runtime/logger'
 import { dirname, resolve } from 'pathe'
 
 import staticRuntime from './pluxel.static'
-import {
-	installShutdown,
-	startFetchHostServer,
-} from './server'
+import { installShutdown, startFetchHostServer } from './server'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../../..')
@@ -35,7 +32,6 @@ await ensurePluxelLogging({
 
 const runtime = await createStaticRuntime(staticRuntime)
 
-const startup = await runtime.start()
 runtime.ctx.root.verification.assertCanBindHost(bindHost)
 const server = await startFetchHostServer({
 	host: bindHost,
@@ -46,7 +42,6 @@ const server = await startFetchHostServer({
 runtime.ctx.logger.info('Static runtime host ready', {
 	profile: activeProfile,
 	url: server.baseUrl,
-	startup: startup.entries.map(({ name, status }) => `${name}:${status}`),
 })
 
 const watchSignals = installShutdown('static host', async (signal) => {

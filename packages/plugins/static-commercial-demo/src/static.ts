@@ -22,10 +22,8 @@ await ensurePluxelLogging({
 })
 
 const runtime = await createStaticRuntime(staticRuntime)
-const startup = await runtime.start()
 runtime.ctx.logger.info('Static commercial runtime ready', {
 	profile: process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-static-commercial-demo',
-	startup: startup.entries.map(({ name, status }) => `${name}:${status}`),
 })
 
 const server = createServer(async (req, res) => {

@@ -33,6 +33,11 @@ export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(confi
 			'[runtime-dynamic] Dynamic runtime config must not include a nested "vite" field; use the host vite.config.ts instead',
 		)
 	}
+	if ('hmr' in config) {
+		throw new Error(
+			'[runtime-dynamic] Dynamic runtime config must not include an "hmr" field; loader HMR belongs to @pluxel/runtime-dynamic internals and host Vite wiring.',
+		)
+	}
 	Object.defineProperty(config, DYNAMIC_RUNTIME_CONFIG_MARKER, {
 		value: true,
 		enumerable: false,
@@ -44,7 +49,7 @@ export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(confi
 export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeConfig {
 	return Boolean(
 		value &&
-			typeof value === 'object' &&
-			(value as MarkedDynamicRuntimeConfig)[DYNAMIC_RUNTIME_CONFIG_MARKER] === true,
+		typeof value === 'object' &&
+		(value as MarkedDynamicRuntimeConfig)[DYNAMIC_RUNTIME_CONFIG_MARKER] === true,
 	)
 }

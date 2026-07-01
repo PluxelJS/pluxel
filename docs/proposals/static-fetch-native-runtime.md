@@ -1,6 +1,6 @@
 # Static Fetch-Native Runtime
 
-状态：设计目标和网络模型审计。
+状态：已实现基线，保留后续平台适配方向。
 
 本文记录 static 路线的目标形态：`runtime -> runtime-static` 可以被 `tsdown` 静态打包成最小 JavaScript，运行在任意 fetch-native 环境中，例如 Node fetch server、Vite preview/dev bridge、Cloudflare Workers、Bun、Deno Deploy 或其他 WinterTC-style host。
 
@@ -83,11 +83,7 @@ Pluxel static runtime 在这个模型里只负责：
 插件 HTTP 能力以 Elysia 为主入口，最终仍编译到 fetch boundary：
 
 ```ts
-type HttpHandler = (
-	request: Request,
-	env?: unknown,
-	ctx?: unknown,
-) => Response | Promise<Response>
+type HttpHandler = (request: Request, env?: unknown, ctx?: unknown) => Response | Promise<Response>
 
 type HttpBoundary = Elysia | HttpHandler | { fetch: HttpHandler }
 ```
@@ -100,14 +96,15 @@ type HttpBoundary = Elysia | HttpHandler | { fetch: HttpHandler }
 
 Elysia 是 Pluxel 的唯一 HTTP route framework，不需要再为 Hono、Express 或任意 router 做一层 framework-neutral authoring 抽象。`mount(...)` 只是为了接入 fetch-native 子系统，不代表 Pluxel 支持多个 HTTP framework。
 
-## 目标包边界
+## 当前包边界
 
-推荐拆成清晰的 public surfaces：
+当前 public surfaces 保持少而明确：
 
 - `@pluxel/runtime-static`
   - production fetch-native static kernel。
   - 导出纯 `defineStaticRuntimeConfig(...)`，用于生产和 `/vite` 共用的 runtime config 文件。
-  - 暴露 production factory，例如 `createStaticRuntime(...) -> { ctx, fetch, start, stop }`。
+  - 暴露 production factory，例如 `createStaticRuntime(...) -> { ctx, fetch, start, stop }`；
+    factory 返回前已完成 startup，`start()` 只保留为幂等 lifecycle handle。
   - 可以 import Elysia。
   - 可以 import GraphQL HTTP capability。
   - 不 import Vite、Rolldown、chokidar、Node http、Node stream、Vault 默认实现或 web-management bundle。
@@ -117,31 +114,42 @@ Elysia 是 Pluxel 的唯一 HTTP route framework，不需要再为 Hono、Expres
   - 导出 `staticRuntimeVitePlugin(...)`。
   - 可以 re-export `defineStaticRuntimeConfig(...)` 兼容旧 config 文件，但推荐从主入口 import 这个 helper，避免生产 config 依赖 `/vite`。
   - 拥有 static source transform、config reload、static HMR、source UI dev 能力。
-- `@pluxel/runtime/node`
-  - Node `IncomingMessage` / `ServerResponse` fetch bridge。
+
+Node `IncomingMessage` / `ServerResponse` bridge 不是 public runtime surface；当前只作为
+`@pluxel/runtime-static/vite` 的内部 dev-server proxy 细节存在。生产 Node host 如果需要监听端口，
+应在应用侧把平台请求转换成 standard `Request`，再调用 `runtime.fetch(...)`。
 
 生产主入口不能因为 barrel export 把 Vite/Node-only/SSE/Vault/management/runtime-web 默认实现拉进 bundle。
 
-## 当前模型审计
+## 当前实现基线
 
-当前方向正确的部分：
+已落地的基线：
 
-- `HttpHandler` 已经是 `Request -> Response`，并预留 `env` / `ctx` 参数。
-- `HttpBoundary` 已经允许 Elysia、函数或 `{ fetch }`，可以覆盖普通 Elysia routes 和少量 fetch-native escape hatch。
-- `HttpService.fetch` 是 runtime 对外网络入口。
-- GraphQL 应归入 HTTP 能力，而不是额外 service 概念。
-- dynamic Vite route 已经通过 fetch bridge 挂进宿主 Vite server。
-- static host 示例也通过 `host.ctx.http.fetch(request)` 对接外部 Node server。
+- `@pluxel/runtime-static` 主入口导出 `defineStaticRuntimeConfig(...)` 和
+  `createStaticRuntime(config)`，direct launcher 只消费已 import 的 config 对象。
+- `@pluxel/runtime-static/vite` 是唯一 static Vite launcher，负责 Vite SSR 加载同一份
+  runtime config、source transform、static HMR 和 build-time UI bridge。
+- `pluxel.static.ts` 不允许嵌套 `vite` 或 `hmr` 字段；开发期选项属于宿主 `vite.config.ts`。
+- `HttpService.fetch(request, env?, ctx?)` 是 runtime 对外 fetch-native boundary。
+- Elysia 是唯一插件 route authoring framework；fetch mount 只作为低层 escape hatch。
+- GraphQL 归入 HTTP 能力，最小 static runtime 不需要 web-management 也能暴露内部 GraphQL。
+- `@pluxel/runtime` 顶层只注册 static/common services；full runtime 注册已移动到
+  `@pluxel/runtime/register/full`。
+- broad `@pluxel/runtime/services` barrel、Node HTTP adapter、旧 `FsService` 已移除。
+- static production 注册默认不引入 Vite、Rolldown、chokidar、Node http/stream、Vault 或
+  web-management bundle。`packages/rolldown/tests/packaging-invariants.test.ts` 会扫描源码和
+  built static entries 作为守卫。
+- `PersistenceService` 是窄 durable/ephemeral/readonly backend boundary。未显式提供 backend 时
+  默认是 memory/ephemeral；需要 durable file/database/KV/object storage 时由 host 注入 backend。
+- `plugins/host` 和 `static-commercial-demo` 都复用同一份 runtime config；standalone/direct
+  launcher 不再 spread 或重组配置对象。
 
-当前影响最小 fetch-native bundle 的部分：
+仍属于平台适配或后续增强的方向：
 
-- `HttpService` root router 直接依赖 Elysia；这是可接受的，但需要避免它顺带拉入管理面板、SSE 和 dev-only 模块。
-- `@pluxel/runtime/services` barrel 同时导出 Elysia、Node adapter、GraphQL、SSE、fs、vault 等能力，容易让 production static bundle surface 变重。
-- `@pluxel/runtime` 的 side-effect `runtime/register` 一次性注册所有 runtime services，缺少轻量 static 主入口。
-- `HttpService` 默认 control-plane 是开启的，默认 UI assets 是 `static-built`，会自然牵引 SSE、management/runtime web 和 static asset serving。
-- 多个服务默认使用 `process.cwd()` 和旧的 fs-backed storage；fetch-native 环境需要更清晰的 backend 选择和 fail-fast。
-- `@pluxel/runtime-static` 的 package 依赖包含 `@pluxel/rolldown`、`chokidar` 和 Vite peer，这些属于 dev/static-HMR surface，不应该污染 production fetch surface。
-- `runtime-static/vite` 里保留了一套本地 request/response proxy，可以收敛到共享 fetch adapter，减少重复。
+- 为 Cloudflare Workers、Deno Deploy、Bun、数据库/KV/object storage 等提供更完整的
+  persistence backend 示例或包。
+- 把更多平台特定 fetch bridge 文档化；runtime core 不应新增 framework adapter。
+- 继续压缩 `/vite` 产物和插件 UI bridge 的开发期依赖，但不把这些依赖带进 static 主入口。
 
 ## 优化方向
 
@@ -176,12 +184,12 @@ Elysia root
 
 不要新增 `static fetch preset` 概念。`@pluxel/runtime-static` 主入口本身只注册 static production 必需项：
 
-- config service，默认 file persistence，可配置 memory/database/KV backend。
-- runtime state，默认 file persistence，可配置 memory/database/KV backend。
-- plugin data，默认 file persistence。
+- config service，默认 memory/ephemeral persistence，可配置 durable file/database/KV backend。
+- runtime state，默认 memory/ephemeral persistence，可配置 durable file/database/KV backend。
+- plugin data，默认复用共享 persistence backend。
 - Elysia-backed HTTP fetch service，包含 GraphQL HTTP capability。
 - verification，默认 private/no-op。
-- logger，console/file sink 默认可用，UI sink 归入 web-management bundle。
+- logger core 默认可用；console/file sink 是可配置 sink，UI sink 归入 web-management bundle。
 
 不要在主入口中默认启用：
 
@@ -204,7 +212,10 @@ export default defineStaticRuntimeConfig({
 		management: false,
 	},
 	logger: {
-		sinks: [consoleSink(), fileSink()],
+		sinks: {
+			console: { enabled: true },
+			file: { path: './logs/runtime.log' },
+		},
 	},
 })
 ```
@@ -233,9 +244,7 @@ export default defineStaticRuntimeConfig({
 不要让 static fetch kernel 默认从文件系统读 `dist/public`，也不要为此新增公共 `AssetProvider` 模型。业务资源已经可以用 Elysia route/mount 表达：
 
 ```ts
-ctx.http.plugin.routes((app) =>
-	app.get('/assets/*', ({ params }) => serveAsset(params['*'])),
-)
+ctx.http.plugin.routes((app) => app.get('/assets/*', ({ params }) => serveAsset(params['*'])))
 ```
 
 管理 UI 资源随 web-management bundle 进入；不启用 web-management 时，static kernel 不关心它。资源可以来自 bundled manifest、KV/R2、外部 CDN 或 filesystem，但这些只是 route/mount 的实现细节，不成为 Pluxel static kernel 的 public 概念。
@@ -249,7 +258,8 @@ fetch-native runtime 不应该假设：
 - `process.cwd()` 存在。
 - fs API 存在。
 - Node streams 存在。
-- file logger 可用。
+- file sink 或 runtime UI sink 可用；logger core 默认存在，具体 sink 由 logger config 和显式
+  service import 决定。
 - long-lived local disk 可用。
 
 只保留少数替换点：
@@ -261,8 +271,8 @@ fetch-native runtime 不应该假设：
 
 默认能力应做环境探测和明确 fallback：
 
-- 有 fs API：默认 file persistence/file logger 可用。
-- 没有 fs API：startup fail fast，提示切换 memory/database/KV backend 或关闭 file sink。
+- 未配置 backend：默认 memory/ephemeral persistence 可用。
+- 配置 durable backend 但环境不满足：startup/preflight fail fast，提示切换 backend 或改用 memory。
 - vault 需要 crypto/persistence 时由 vault 自己检查。
 - management assets 由 web-management 内部处理。
 
@@ -272,11 +282,14 @@ logger 不需要拆成复杂平台抽象。它是必然服务，只要保留 sin
 
 ```ts
 logger: {
-	sinks: [consoleSink(), runtimeUiSink()],
+	sinks: {
+		console: { enabled: true },
+		ui: { enabled: true },
+	},
 }
 ```
 
-file sink 默认存在；runtime UI sink 随 web-management bundle 进入；test sink、remote sink 都只是 sink，不是新的 runtime service kind。
+file sink 是基础 logger 能力之一，但需要 logger config 显式启用；runtime UI sink 随 web-management bundle 进入；test sink、remote sink 都只是 sink，不是新的 runtime service kind。
 
 ### 6. 保留 dynamic 的重能力
 
@@ -291,18 +304,10 @@ dynamic route 继续拥有：
 
 不要为了 fetch-native static 目标削弱 dynamic 的开发体验。两条 route 共享 core lifecycle 和 runtime protocol，但不共享 dev/runtime machinery。
 
-## 建议迁移顺序
-
-1. 把 `@pluxel/runtime-static` 主入口改成 production static/fetch entry，并明确它可以依赖 Elysia 和 GraphQL HTTP capability。
-2. 让主入口只注册 static 默认核心，避免 `runtime/register` 一次性注册所有服务。
-3. 给 static 主入口建立 bundle guard 测试：禁止 Vite、Rolldown、chokidar、Node http、Node stream、Vault 默认实现、web-management bundle 出现在 production import graph。
-4. 把 `runtime-static/vite` 的 proxy 收敛到共享 fetch adapter。
-5. 再移除旧 heavy defaults，static production 默认 management off、assets disabled、vault disabled，但保留 config/state/plugin-data/file logger 默认能力。
-
-## 成功标准
+## 当前守卫
 
 - 一个 static app 可以通过 `tsdown` 打成单个 ESM worker entry。
-- production import graph 可以包含 Elysia、GraphQL HTTP capability、默认 file persistence、plugin data 和 file logger，但不包含 Vite/Rolldown/chokidar/Node http/Node stream/Vault/web-management bundle，除非用户显式选择对应能力。
+- production import graph 可以包含 Elysia、GraphQL HTTP capability、默认 memory persistence、plugin data 和 logger core，但不包含 Vite/Rolldown/chokidar/Node http/Node stream/Vault/web-management bundle，除非用户显式选择对应能力。
 - 插件 HTTP route 以 Elysia 为唯一 route framework，并保留 fetch mount escape hatch。
 - vault 和 web-management bundle 能按需挂上，不影响最小 static bundle。
 - logger 始终可用，并能自由配置 sink。
