@@ -11,6 +11,8 @@ Recommended entries:
 
 The dynamic Vite config is [vite.dynamic.config.ts](./vite.dynamic.config.ts). The route config is
 [src/pluxel.dynamic.ts](./src/pluxel.dynamic.ts).
+The static runtime config is [src/pluxel.static.ts](./src/pluxel.static.ts); the Node host entry
+[src/static.ts](./src/static.ts) imports that config directly and only owns platform startup.
 
 ## Run
 
@@ -38,9 +40,11 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 ## Boundary
 
 - Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`.
-- Static headless mode uses `createStaticRuntimeHost()` with the catalog from
+- Static headless mode uses `createStaticRuntime(config)` with the same complete runtime config from
   [src/pluxel.static.ts](./src/pluxel.static.ts).
-- Static Vite mode should use `staticRuntimeVitePlugin({ config })`.
 
 The host proves that the same plugin API can run under dynamic HMR and static fixed-catalog
 semantics.
+
+Capability-specific demos that need external setup, such as `PluginVaultDemo`, stay in
+`src/demo` for discovery/manual enablement but are not part of the default enabled set.

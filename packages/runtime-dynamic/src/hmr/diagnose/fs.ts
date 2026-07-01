@@ -8,7 +8,7 @@ import {
 	readTextFile,
 	type WorkspaceFs,
 } from '@pluxel/rolldown/workspace/fs'
-import type { FsServiceNodeBackendFs } from '@pluxel/runtime/services'
+import type { NodeWorkspaceFs } from '@pluxel/runtime/internal'
 
 export {
 	DEFAULT_IGNORED_DIR_NAMES,
@@ -20,10 +20,10 @@ export {
 export type { WorkspaceFs }
 
 export type LoaderHmrWorkspaceFs = WorkspaceFs &
-	FsServiceNodeBackendFs & {
+	NodeWorkspaceFs & {
 		readFileSync(path: string, encoding: BufferEncoding): string
 		writeFileSync(path: string, contents: string, encoding: BufferEncoding): void
-		promises: WorkspaceFs['promises'] & FsServiceNodeBackendFs['promises']
+		promises: WorkspaceFs['promises'] & NodeWorkspaceFs['promises']
 	}
 
 export const nodeLoaderHmrWorkspaceFs = {

@@ -1,5 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { v } from '@pluxel/runtime/config'
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 
 const SchemaA = v.object({
 	a: v.optional(v.string(), 'a'),

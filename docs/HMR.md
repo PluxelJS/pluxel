@@ -114,7 +114,7 @@ export default defineConfig({
 Dynamic route config 只描述 workspace/profile/runtime 语义，不再嵌套 Vite config：
 
 ```ts
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),

@@ -83,8 +83,6 @@ const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/core/services',
 	'@pluxel/runtime',
 	'@pluxel/runtime/internal',
-	'@pluxel/runtime/services',
-	'@pluxel/runtime/config',
 	'@pluxel/runtime/web',
 	'@pluxel/runtime/capnweb',
 ] as const

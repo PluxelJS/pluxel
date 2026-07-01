@@ -134,7 +134,17 @@ describe('toolchain package boundaries', () => {
 	it('keeps runtime hmr packaging boundaries explicit', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeConfig = await readFile(`${root}/packages/runtime/tsdown.config.ts`, 'utf8')
-		const runtimeServices = await readFile(`${root}/packages/runtime/src/services.ts`, 'utf8')
+		const runtimePackage = await readFile(`${root}/packages/runtime/package.json`, 'utf8')
+		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
+		const runtimeTestEntry = await readFile(`${root}/packages/runtime/src/test.ts`, 'utf8')
+		const runtimeRegisterFull = await readFile(
+			`${root}/packages/runtime/src/runtime/register/full.ts`,
+			'utf8',
+		)
+		const runtimeRegisterStatic = await readFile(
+			`${root}/packages/runtime/src/runtime/register/static.ts`,
+			'utf8',
+		)
 		const runtimeDevConfig = await readFile(`${root}/packages/runtime-dev/tsdown.config.ts`, 'utf8')
 		const runtimeDynamicConfig = await readFile(
 			`${root}/packages/runtime-dynamic/tsdown.config.ts`,
@@ -162,7 +172,22 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 		const runtimeStaticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
+		const runtimeStaticIndex = await readFile(`${root}/packages/runtime-static/src/index.ts`, 'utf8')
+		const runtimeStaticTypes = await readFile(`${root}/packages/runtime-static/src/types.ts`, 'utf8')
+		const runtimeStaticCatalog = await readFile(
+			`${root}/packages/runtime-static/src/internal/catalog.ts`,
+			'utf8',
+		)
+		const runtimeStaticHost = await readFile(
+			`${root}/packages/runtime-static/src/internal/host.ts`,
+			'utf8',
+		)
+		const runtimeStateEntry = await readFile(`${root}/packages/runtime/src/runtime-state.ts`, 'utf8')
 		const runtimeInternal = await readFile(`${root}/packages/runtime/src/internal.ts`, 'utf8')
+		const runtimeWorkspaceFs = await readFile(
+			`${root}/packages/runtime/src/runtime/workspace-fs.ts`,
+			'utf8',
+		)
 		const runtimePlugin = await readFile(`${root}/packages/runtime/src/plugin.ts`, 'utf8')
 		const runtimeRpcApi = await readFile(
 			`${root}/packages/runtime/src/api/http/rpc/RuntimeRpcApi.ts`,
@@ -183,6 +208,26 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dynamic/src/package/PackageService.ts`,
 			'utf8',
 		)
+		const runtimeConfigService = await readFile(
+			`${root}/packages/runtime/src/services/ConfigService.ts`,
+			'utf8',
+		)
+		const runtimeStateStore = await readFile(
+			`${root}/packages/runtime/src/services/RuntimeStateStore.ts`,
+			'utf8',
+		)
+		const runtimePersistenceService = await readFile(
+			`${root}/packages/runtime/src/services/persistence/PersistenceService.ts`,
+			'utf8',
+		)
+		const runtimeLoggerPolicy = await readFile(
+			`${root}/packages/runtime/src/logger/policy.ts`,
+			'utf8',
+		)
+		const runtimeHttpService = await readFile(
+			`${root}/packages/runtime/src/services/http/HttpService.ts`,
+			'utf8',
+		)
 		const runtimeDynamicPackageMutation = await readFile(
 			`${root}/packages/runtime-dynamic/src/package/mutation.ts`,
 			'utf8',
@@ -199,9 +244,21 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/plugins/static-commercial-demo/vite.config.ts`,
 			'utf8',
 		)
+		const staticCommercialConfig = await readFile(
+			`${root}/packages/plugins/static-commercial-demo/src/pluxel.static.ts`,
+			'utf8',
+		)
+		const pluginsHostStaticConfig = await readFile(
+			`${root}/packages/plugins/host/src/pluxel.static.ts`,
+			'utf8',
+		)
+		const pluginsHostDynamicConfig = await readFile(
+			`${root}/packages/plugins/host/src/pluxel.dynamic.ts`,
+			'utf8',
+		)
 		const pluginsHostStatic = await readFile(`${root}/packages/plugins/host/src/static.ts`, 'utf8')
 		const staticCommercialHost = await readFile(
-			`${root}/packages/plugins/static-commercial-demo/src/static-host.ts`,
+			`${root}/packages/plugins/static-commercial-demo/src/static.ts`,
 			'utf8',
 		)
 
@@ -211,7 +268,24 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeConfig).not.toContain('../rolldown/src/rolldown')
 		expect(runtimeConfig).not.toContain('@pluxel/rolldown/vite')
 		expect(existsSync(`${root}/packages/runtime/src/logger/LogtapeLoggerService.ts`)).toBe(false)
-		expect(runtimeServices).not.toContain('LogtapeLoggerService')
+		expect(existsSync(`${root}/packages/runtime/src/services.ts`)).toBe(false)
+		expect(existsSync(`${root}/packages/runtime/src/runtime/register.ts`)).toBe(false)
+		expect(existsSync(`${root}/packages/runtime/src/services/http/node-adapters.ts`)).toBe(false)
+		expect(runtimeConfig).not.toContain("services: 'src/services.ts'")
+		expect(runtimeConfig).not.toContain("config: 'src/config.ts'")
+		expect(runtimePackage).not.toContain('"./services"')
+		expect(runtimePackage).not.toContain('"./config"')
+		expect(runtimeIndex).not.toContain('bootstrapHostVault')
+		expect(runtimeIndex).toContain("export { f, v } from './config'")
+		expect(runtimeTestEntry).toContain("from './services/vault'")
+		expect(runtimeTestEntry).not.toContain('./services/security/bootstrap')
+		expect(runtimeInternal).toContain('createNodeWorkspaceFsBackend')
+		expect(runtimeInternal).not.toContain('createNodeFsServiceBackend')
+		expect(runtimeWorkspaceFs).not.toContain('@RootService')
+		expect(runtimeWorkspaceFs).not.toContain('interface RootServices')
+		expect(runtimeWorkspaceFs).not.toContain("const serviceName = 'fs'")
+		expect(runtimeRegisterFull).not.toContain('services/fs/FsService')
+		expect(runtimeRegisterStatic).not.toContain('services/fs/FsService')
 		expect(existsSync(`${root}/packages/runtime/src/runtime/hmr-${'handles'}.ts`)).toBe(false)
 		expect(existsSync(`${root}/packages/runtime/src/runtime/module-${'runtime'}.ts`)).toBe(false)
 		expect(runtimeInternal).not.toContain(`setHmr${'RuntimeHandles'}`)
@@ -220,9 +294,13 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeInternal).not.toContain(`getRuntime${'ModuleAdapter'}`)
 		expect(runtimePlugin).not.toContain(`getHmr${'RuntimeHandles'}`)
 		expect(runtimePlugin).toContain('runtimeRoute(ctx)?.dev')
+		expect(runtimePlugin).not.toContain('node:url')
+		expect(runtimePlugin).not.toContain('pathToFileURL')
 		expect(runtimeCapabilities).toContain('modules?: RuntimeModuleRuntime')
 		expect(runtimeCapabilities).toContain('dev?: RuntimeDevCapabilities')
 		expect(runtimeCapabilities).toContain('features?: RuntimeRouteFeatures')
+		expect(runtimeRpcApi).not.toContain("from '../../../services'")
+		expect(runtimeRpcApi).not.toContain('from "../../../services"')
 		expect(runtimeRpcApi).toContain('features(): string[]')
 		expect(runtimeRpcApi).toContain('feature<Name extends RuntimeRouteFeatureName>')
 		expect(runtimeRpcApi).not.toContain(`package():`)
@@ -236,6 +314,20 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicPackageService).toContain('new PackageMutationService')
 		expect(runtimeDynamicPackageService).toContain('new PackageLoadRuntime')
 		expect(runtimeDynamicPackageService).toContain('new PackageInventoryService')
+		expect(runtimeDynamicPackageService).toContain(
+			"this.ctx.root.persistence.namespace('package-state')",
+		)
+		expect(runtimeDynamicPackageService).not.toContain('ctx.root.fs')
+		expect(runtimeConfigService).toContain('ctx.root.persistence.namespace')
+		expect(runtimeConfigService).not.toContain('ctx.config as unknown as { fs')
+		expect(runtimeStateStore).toContain('ctx.root.persistence.namespace')
+		expect(runtimeStateStore).not.toContain('ctx.config as unknown as { fs')
+		expect(runtimePersistenceService).not.toContain('ctx.config as unknown as { fs')
+		expect(runtimeLoggerPolicy).not.toContain('node:fs')
+		expect(runtimeHttpService).toContain('createLazyGraphqlBoundary')
+		expect(runtimeHttpService).toContain("import('./internalApi')")
+		expect(runtimeHttpService).toContain('this.config.graphql')
+		expect(runtimeHttpService).not.toContain('this.createLazyInternalApiBoundary({\n\t\t\t\t\tgraphql: this.config.graphql')
 		expect(runtimeDynamicPackageMutation).toContain('class PackageMutationService')
 		expect(runtimeDynamicPackageMutation).toContain('removePackages(')
 		expect(runtimeDynamicPackageLoadRuntime).toContain('class PackageLoadRuntime')
@@ -305,11 +397,22 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDynamicVite).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeDynamicVite).not.toContain('createServer(')
 		expect(runtimeDynamicPackage).toContain('"./vite"')
+		expect(runtimeDynamicConfig).not.toContain('@pluxel/runtime/config')
+		expect(runtimeStateEntry).toContain('./services/RuntimeStateHelpers')
+		expect(runtimeStateEntry).not.toContain('RuntimeStateStore }')
+		expect(runtimeStaticHost).toContain('@pluxel/runtime/runtime-state')
+		expect(runtimeStaticHost).not.toContain("from '@pluxel/runtime/services'")
 		expect(runtimeStaticVite).toContain('@pluxel/runtime-dev/vite')
 		expect(runtimeStaticVite).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeStaticVite).toContain('pluxelRuntimeUiBridgeVitePlugin')
+		expect(runtimeStaticVite).toContain('hmrOptions && hmrOptions.enableWebManagement !== false')
+		expect(runtimeStaticVite).not.toContain('if (hmr !== false) {\n\t\t\t\tconst enabledHmrOptions')
 		expect(runtimeStaticVite).toContain('defineStaticRuntimeConfig')
 		expect(runtimeStaticVite).toContain('staticRuntimeVitePlugin')
+		expect(runtimeStaticVite).toContain('options.hmr')
+		expect(runtimeStaticVite).not.toContain('state.runtimeConfig?.hmr')
+		expect(runtimeStaticVite).not.toContain('StaticRuntimeConfig & {')
+		expect(runtimeStaticVite).toContain('must not include an "hmr" field')
 		expect(runtimeStaticVite).not.toContain(`export function shouldHandleStatic${'RuntimeRequest'}`)
 		expect(runtimeStaticVite).not.toContain(`StaticRuntime${'ViteHost'}`)
 		expect(runtimeStaticVite).not.toContain(`StaticRuntime${'ExtensionCompilerConfig'}`)
@@ -325,15 +428,55 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStaticVite).not.toContain(`staticRuntimeVite${'Plugins'}`)
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/plugins')
 		expect(runtimeStaticVite).not.toContain('@pluxel/rolldown/vite')
+		expect(runtimeStaticIndex).toContain("@pluxel/runtime/register/static")
+		expect(runtimeStaticIndex).toContain("@pluxel/runtime")
+		expect(runtimeStaticIndex).not.toContain("@pluxel/runtime/base")
+		expect(runtimeStaticIndex).toContain('defineStaticRuntimeConfig')
+		expect(runtimeStaticIndex).toContain('createStaticRuntime')
+		expect(runtimeStaticIndex).not.toContain('export async function createStaticRuntimeHost')
+		expect(runtimeStaticIndex).not.toContain('StaticRuntimeHost,')
+		expect(runtimeStaticIndex).not.toContain('StaticRuntimeHmrController')
+		expect(runtimeStaticIndex).not.toContain('StaticRuntimeHmrReport')
+		expect(runtimeStaticIndex).not.toContain('defineStaticRuntime<T')
+		expect(runtimeStaticIndex).not.toContain('function defineStaticRuntime')
+		expect(runtimeStaticIndex).not.toContain('@pluxel/runtime/register/full')
+		expect(runtimeStaticIndex).not.toContain('@pluxel/runtime-dev')
+		expect(runtimeStaticIndex).not.toContain('@pluxel/runtime/services/vault')
+		expect(runtimeStaticIndex).not.toContain('@pluxel/runtime/services/web-management')
+		expect(runtimeStaticIndex).not.toContain('node:http')
+		expect(runtimeStaticIndex).not.toContain('node:stream')
+		expect(runtimeStaticIndex).not.toContain('/vite')
+		expect(runtimeStaticTypes).not.toContain('@pluxel/runtime/services')
+		expect(runtimeStaticTypes).toContain('@pluxel/runtime/runtime-state')
+		expect(runtimeStaticCatalog).not.toContain('@pluxel/runtime/services')
 		expect(staticDemoVite).toContain('staticRuntimeVitePlugin')
 		for (const helper of removedStaticViteHelpers) {
 			expect(staticDemoVite).not.toContain(helper)
 		}
 		expect(staticDemoVite).not.toContain(`staticRuntimeVite${'Plugins'}`)
 		expect(staticDemoVite).not.toContain('runtimeUiBridge')
+		expect(staticDemoVite).toContain("config: './src/pluxel.static.ts'")
+		expect(staticDemoVite).not.toContain('pluxel.static.vite')
+		expect(staticCommercialConfig).toContain('runtimeState')
+		expect(staticCommercialConfig).toContain('snapshot: { enabled:')
+		expect(staticCommercialHost).toContain('createStaticRuntime(staticRuntime)')
+		expect(staticCommercialHost).not.toContain('...staticRuntime')
+		expect(existsSync(`${root}/packages/plugins/static-commercial-demo/src/pluxel.static.vite.ts`)).toBe(
+			false,
+		)
+		expect(existsSync(`${root}/packages/plugins/static-commercial-demo/src/static-host.ts`)).toBe(
+			false,
+		)
+		expect(pluginsHostStaticConfig).not.toContain("from './demo'")
+		expect(pluginsHostStaticConfig).not.toContain('PluginHttpWorkerDemo')
+		expect(pluginsHostStaticConfig).not.toContain('PluginVaultDemo')
+		expect(pluginsHostStaticConfig).not.toContain('tinypool')
+		expect(pluginsHostDynamicConfig).not.toContain("'PluginVaultDemo'")
+		expect(pluginsHostStaticConfig).toContain('runtimeState')
+		expect(pluginsHostStaticConfig).toContain('snapshot: { enabled:')
+		expect(pluginsHostStatic).toContain('createStaticRuntime(staticRuntime)')
+		expect(pluginsHostStatic).not.toContain('...staticRuntime')
 		for (const staticHost of [pluginsHostStatic, staticCommercialHost]) {
-			expect(staticHost).toContain('runtimeState')
-			expect(staticHost).toContain('snapshot: { enabled:')
 			expect(staticHost).not.toContain(
 				"configService: {\n\t\t\tmode: 'memory',\n\t\t\tsnapshot: { enabled:",
 			)
@@ -362,6 +505,79 @@ describe('toolchain package boundaries', () => {
 			const pkg = await readJson(`${root}/packages/${packageName}/package.json`)
 			for (const dep of Object.keys(pkg.inlinedDependencies ?? {})) {
 				if (nativeToolchainPackage.test(dep)) offenders.push(`${packageName}:${dep}`)
+			}
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps demo plugins off the broad runtime services barrel', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const files = [
+			...(await collectSourceFiles(`${root}/packages/plugins/host/src/demo`)),
+			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
+			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
+		]
+		const offenders: string[] = []
+
+		for (const file of files) {
+			const code = await readFile(file, 'utf8')
+			if (code.includes("'@pluxel/runtime/services'") || code.includes('"@pluxel/runtime/services"')) {
+				offenders.push(file)
+			}
+			if (code.includes('@pluxel/runtime/config')) offenders.push(`${file}:@pluxel/runtime/config`)
+			if (code.includes('@pluxel/runtime/base')) offenders.push(`${file}:@pluxel/runtime/base`)
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps built static production entries free of dev and Node transport imports when present', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const runtimeStaticDistFiles = existsSync(`${root}/packages/runtime-static/dist`)
+			? await readdir(`${root}/packages/runtime-static/dist`)
+			: []
+		const builtEntries = [
+			`${root}/packages/runtime/dist/index.mjs`,
+			`${root}/packages/runtime/dist/register/static.mjs`,
+			`${root}/packages/runtime-static/dist/index.mjs`,
+			...runtimeStaticDistFiles
+				.filter((file) => /^host-.*\.mjs$/.test(file))
+				.map((file) => `${root}/packages/runtime-static/dist/${file}`),
+		]
+		if (builtEntries.some((entry) => !existsSync(entry))) return
+
+		const forbidden = [
+			'node:http',
+			'node:stream',
+			'node:fs',
+			'node-adapters',
+			'createNodeHttpHandler',
+			'FsService',
+			'createNodeFsServiceBackend',
+			'ctx.root.fs',
+			'chokidar',
+			'@pluxel/runtime-dev',
+		]
+		const forbiddenImports = [/[;}]\s*from["']vite["']/, /import\(["']vite["']\)/]
+		const offenders: string[] = []
+		for (const entry of builtEntries) {
+			const code = await readFile(entry, 'utf8')
+			for (const token of forbidden) {
+				if (code.includes(token)) offenders.push(`${entry}:${token}`)
+			}
+			for (const pattern of forbiddenImports) {
+				if (pattern.test(code)) offenders.push(`${entry}:${pattern.source}`)
+			}
+		}
+		const staticIndexDts = `${root}/packages/runtime-static/dist/index.d.mts`
+		if (existsSync(staticIndexDts)) {
+			const indexDts = await readFile(staticIndexDts, 'utf8')
+			const configDtsMatch = indexDts.match(/from "\.\/([^"]+\.mjs)"/)
+			if (configDtsMatch) {
+				const configDts = `${root}/packages/runtime-static/dist/${configDtsMatch[1].replace(/\.mjs$/, '.d.mts')}`
+				const code = await readFile(configDts, 'utf8')
+				if (code.includes('@pluxel/runtime/services')) offenders.push(`${configDts}:@pluxel/runtime/services`)
 			}
 		}
 

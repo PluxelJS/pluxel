@@ -36,16 +36,8 @@ const runtimeAliases = [
 		replacement: fileURLToPath(new URL('./src/capnweb.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/config$/,
-		replacement: fileURLToPath(new URL('./src/config.ts', import.meta.url)),
-	},
-	{
 		find: /^@pluxel\/runtime\/logger$/,
 		replacement: fileURLToPath(new URL('./src/logger.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/services$/,
-		replacement: fileURLToPath(new URL('./src/services.ts', import.meta.url)),
 	},
 ]
 

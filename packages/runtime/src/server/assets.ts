@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'pathe'
-import { UI_PUBLIC_BASE } from './ui-public'
+import { UI_PUBLIC_BASE } from '../web/paths'
 
 export interface Assets {
 	js: string

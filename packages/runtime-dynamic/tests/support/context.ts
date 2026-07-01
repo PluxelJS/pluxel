@@ -5,7 +5,12 @@ import { createHost, type Host } from '@pluxel/test'
 import type { Context } from '@pluxel/core'
 
 export function createTestDynamicHost(config: Context.Config = {}): Host {
-	return createHost(config)
+	return createHost({
+		persistence: { mode: 'memory' },
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory' },
+		...config,
+	})
 }
 
 export async function withTestDynamicContext<T>(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { defineDynamicRuntimeConfig, dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('marks dynamic runtime config without exposing nested Vite config', () => {

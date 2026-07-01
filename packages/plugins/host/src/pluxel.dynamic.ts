@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url'
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { dirname, resolve } from 'pathe'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -13,7 +13,6 @@ const enabledDemoPlugins = [
 	'PluginFeatureDepsConsumer',
 	'PluginHttpRoutesDemo',
 	'PluginHttpWorkerDemo',
-	'PluginVaultDemo',
 ] as const
 
 export default defineDynamicRuntimeConfig({

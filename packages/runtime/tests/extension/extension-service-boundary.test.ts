@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createFixture, type TestFixture } from '@pluxel/test/fixtures'
+import { createDiskFixture, createFixture, type TestFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext, type Context } from '@pluxel/runtime/test'
 import { dirname, join } from 'pathe'
 import { fileURLToPath } from 'node:url'
@@ -25,49 +25,7 @@ afterEach(async () => {
 	await Promise.all(pending.map((runtime) => runtime.dispose()))
 })
 
-function createNodeFsShim(fixture: Pick<TestFixture, 'fs' | 'fsp'>) {
-	return {
-		exists: (path: string) => fixture.fs.existsSync(path),
-		readText: (path: string) => fixture.fsp.readFile(path, 'utf-8'),
-		writeTextAtomic: async (path: string, text: string) => {
-			await fixture.fsp.mkdir(dirname(path), { recursive: true })
-			await fixture.fsp.writeFile(path, text, 'utf-8')
-		},
-		readdir: async (path: string) => {
-			try {
-				return await fixture.fsp.readdir(path)
-			} catch {
-				return []
-			}
-		},
-		stat: async (path: string) => {
-			try {
-				const st = await fixture.fsp.stat(path)
-				return {
-					type: st.isFile() ? 'file' : st.isDirectory() ? 'dir' : 'other',
-					size: st.size,
-					mtimeMs: st.mtimeMs,
-				} as const
-			} catch {
-				return { type: 'missing' } as const
-			}
-		},
-		unlink: async (path: string) => {
-			await fixture.fsp.rm(path, { force: true })
-		},
-		rm: async (path: string, options: { recursive?: boolean; force?: boolean }) => {
-			await fixture.fsp.rm(path, {
-				recursive: options.recursive === true,
-				force: options.force === true,
-			})
-		},
-	}
-}
-
-function createExtensionTestContext(
-	overrides?: Partial<Record<string, unknown>>,
-	fixture?: Pick<TestFixture, 'fs' | 'fsp'>,
-) {
+function createExtensionTestContext(overrides?: Partial<Record<string, unknown>>) {
 	const runtime = createRuntimeContext()
 	runtimeContexts.add(runtime)
 	const rootLogger = {
@@ -80,7 +38,6 @@ function createExtensionTestContext(
 	const root = ctx.root
 	root.config = root.config ?? {}
 	defineTestProperty(root, 'logger', rootLogger)
-	if (fixture) defineTestProperty(root, 'fs', createNodeFsShim(fixture))
 	defineTestProperty(ctx, 'logger', rootLogger)
 	defineTestProperty(ctx, 'name', 'test')
 	defineTestProperty(ctx, 'pluginInfo', { id: 'test-plugin' })
@@ -91,7 +48,6 @@ function createExtensionTestContext(
 	for (const [key, value] of Object.entries(overrides ?? {})) {
 		defineTestProperty(ctx, key, value)
 	}
-	if (fixture && !ctx.root.fs) defineTestProperty(ctx.root, 'fs', createNodeFsShim(fixture))
 	if (!ctx.root.logger) defineTestProperty(ctx.root, 'logger', rootLogger)
 	if (!ctx.root.config) ctx.root.config = {}
 	if (!ctx.config) defineTestProperty(ctx, 'config', ctx.root.config)
@@ -156,7 +112,7 @@ async function withPackagedService(
 		logger: ReturnType<typeof createExtensionTestContext>['logger']
 	}) => Promise<void>,
 ) {
-	await using fixture = await createFixture(files)
+	await using fixture = await createDiskFixture(files)
 	const entryPath = registryPath(fixture)
 	const { ctx, logger } = createExtensionTestContext(
 		{
@@ -172,7 +128,6 @@ async function withPackagedService(
 			},
 			pluginInfo: { id: 'test-plugin' },
 		},
-		fixture,
 	)
 	const service = new ExtensionService(ctx, { enabled: true })
 	await run({ fixture, service, ctx, logger })

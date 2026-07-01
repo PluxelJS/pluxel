@@ -1,7 +1,6 @@
 // rpc/RuntimeRpcApi.ts - 主 RPC API
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
-import type { ExtensionUiRpcMap } from '../../../services'
 import { writeGroups } from '../../features/pluginGroups/service'
 import { createRuntimeRouteFeatureHandle, listRuntimeRouteFeatures } from '../../contributions'
 import {
@@ -23,6 +22,7 @@ import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
 import type {
 	ConfigFieldMutation,
+	ExtensionUiRpcMap,
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,

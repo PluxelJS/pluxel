@@ -5,12 +5,15 @@ import {
 	getRequiredPluginDependencies,
 	type PluginIdentifier,
 } from '@pluxel/core'
-import type { ConfigShape } from '@pluxel/runtime/services'
 import type {
 	StaticRuntimeCatalogEntry,
 	StaticRuntimeDefinition,
 	StaticRuntimeReportEntry,
 } from '../types'
+
+type ConfigShape = {
+	plugins: Record<string, Record<string, unknown>>
+}
 
 export type StaticRuntimeCatalogEntryInternal = StaticRuntimeCatalogEntry & {
 	readonly info: ReturnType<typeof getPluginInfo>

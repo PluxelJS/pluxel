@@ -54,8 +54,8 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 /* eslint-disable */
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
-import { bootstrapHostVault } from '@pluxel/runtime/services'
 import '@pluxel/runtime'
+import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
 import '@pluxel/runtime-dynamic/register'
 ${imports}
 

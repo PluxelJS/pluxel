@@ -4,7 +4,8 @@
 
 - `packages/runtime/src/services/verification/VerificationService.ts`
 - `packages/runtime/src/services/vault/VaultService.ts`
-- `packages/runtime/src/services/security/identity.ts`
+- `packages/runtime/src/services/vault.ts`
+  显式 vault boundary，导出 host bootstrap helper；内部实现落在 `services/security/bootstrap.ts`
 - `packages/runtime/src/api/http/security.ts`
 - `packages/components/src/app/security/SecurityScreen.tsx`
 
@@ -46,7 +47,7 @@
 
 ## Host 启动约束
 
-- host 在插件运行前调用 `bootstrapHostVault(ctx)`
+- 显式启用 vault 的 host 在插件运行前调用 `bootstrapHostVault(ctx)`
 - `bootstrapHostVault(ctx)` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
 - mount 不存在时直接通过

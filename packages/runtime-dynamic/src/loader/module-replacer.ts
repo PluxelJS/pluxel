@@ -5,7 +5,7 @@ import {
 	type PluginConstructor,
 } from '@pluxel/core'
 import { findRuntimeModuleId } from '@pluxel/runtime/internal'
-import { isPluginEnabled } from '@pluxel/runtime/services'
+import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 import type { PluginRegistry } from './PluginRegistry'
 import type { AnchorJournal, AnchorStore } from './support'
 

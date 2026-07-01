@@ -7,12 +7,8 @@ import {
 import { type Context as PluxelContext, Injectable, RootService } from '@pluxel/core'
 import { basename, resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
-import type { FsService } from '../fs/FsService'
+import type { PersistenceNamespace } from '../persistence/PersistenceService'
 import { recordSecurityEvent } from '../security/audit'
-import {
-	readSecurityIdentity,
-	updateSecurityIdentity,
-} from '../security/identity'
 import type {
 	VaultAdminState,
 	VaultBlobHandle,
@@ -68,10 +64,15 @@ export class VaultError extends Error {
 	}
 }
 
-type FsLike = Pick<
-	FsService,
-	'exists' | 'readText' | 'writeTextAtomic' | 'readBytes' | 'writeBytesAtomic' | 'unlink' | 'readdir'
->
+type VaultStore = {
+	exists(key: string): Promise<boolean>
+	readText(key: string): Promise<string | undefined>
+	writeText(key: string, text: string): Promise<void>
+	readBytes(key: string): Promise<Uint8Array | undefined>
+	writeBytes(key: string, bytes: Uint8Array): Promise<void>
+	delete(key: string): Promise<void>
+	listChildren(prefix: string): Promise<string[]>
+}
 
 type MountRuntime = {
 	dir: string
@@ -95,6 +96,14 @@ type VaultProbeState = {
 	unlockable: boolean
 	reason?: VaultAdminState['reason']
 	lastError?: VaultStatusError
+}
+
+type SecurityIdentityDoc = {
+	version: 1
+	vault?: {
+		hostIdentity?: string
+		deployRecipients?: string[]
+	}
 }
 
 type VaultSnapshot = {
@@ -202,6 +211,34 @@ function textDecode(input: Uint8Array): string {
 function normalizeSegment(input: string): string {
 	const trimmed = input || 'default'
 	return basename(trimmed).replaceAll(/[^A-Za-z0-9._-]/g, '_')
+}
+
+function normalizeStoreKey(key: string): string {
+	return String(key || '').replaceAll('\\', '/').replace(/^\/+/, '')
+}
+
+function createVaultStore(storage: PersistenceNamespace): VaultStore {
+	return {
+		exists: async (key) => (await storage.stat(key)) !== undefined,
+		readText: (key) => storage.getText(key),
+		writeText: (key, text) => storage.put(key, text, { atomic: true }),
+		readBytes: (key) => storage.get(key),
+		writeBytes: (key, bytes) => storage.put(key, bytes, { atomic: true }),
+		delete: (key) => storage.delete(key),
+		listChildren: async (prefix) => {
+			const cleanPrefix = normalizeStoreKey(prefix)
+			const childNames = new Set<string>()
+			for await (const entry of storage.list(prefix)) {
+				let key = normalizeStoreKey(entry.key)
+				if (cleanPrefix && key.startsWith(`${cleanPrefix}/`)) {
+					key = key.slice(cleanPrefix.length + 1)
+				}
+				const child = key.split('/').filter(Boolean)[0]
+				if (child) childNames.add(child)
+			}
+			return [...childNames].sort()
+		},
+	}
 }
 
 function cloneJson<T>(value: T): T {
@@ -350,17 +387,82 @@ function normalizeRecipients(input: Iterable<string>): string[] {
 	return recipients
 }
 
-async function readDeployRecipients(fs: FsLike): Promise<string[]> {
-	const identity = await readSecurityIdentity(fs)
+const SECURITY_IDENTITY_KEY = 'security/identity.json'
+
+function emptySecurityIdentityDoc(): SecurityIdentityDoc {
+	return { version: 1 }
+}
+
+function trimOrUndefined(value: unknown): string | undefined {
+	if (typeof value !== 'string') return undefined
+	const trimmed = value.trim()
+	return trimmed || undefined
+}
+
+function normalizeDeployRecipientsValue(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined
+	const recipients = normalizeRecipients(value.filter((entry): entry is string => typeof entry === 'string'))
+	return recipients.length > 0 ? recipients : undefined
+}
+
+function normalizeSecurityIdentity(input: unknown): SecurityIdentityDoc {
+	if (!input || typeof input !== 'object') return emptySecurityIdentityDoc()
+	const source = input as {
+		vault?: { hostIdentity?: unknown; deployRecipients?: unknown }
+	}
+	const hostIdentity = trimOrUndefined(source.vault?.hostIdentity)
+	const deployRecipients = normalizeDeployRecipientsValue(source.vault?.deployRecipients)
+	const doc: SecurityIdentityDoc = { version: 1 }
+	if (hostIdentity || deployRecipients) {
+		doc.vault = {}
+		if (hostIdentity) doc.vault.hostIdentity = hostIdentity
+		if (deployRecipients) doc.vault.deployRecipients = deployRecipients
+	}
+	return doc
+}
+
+function securityIdentityHasMaterial(doc: SecurityIdentityDoc): boolean {
+	return !!(
+		doc.vault?.hostIdentity ||
+		(doc.vault?.deployRecipients && doc.vault.deployRecipients.length > 0)
+	)
+}
+
+async function readSecurityIdentity(store: VaultStore): Promise<SecurityIdentityDoc> {
+	const raw = await store.readText(SECURITY_IDENTITY_KEY)
+	if (raw === undefined) return emptySecurityIdentityDoc()
+	return normalizeSecurityIdentity(JSON.parse(raw) as unknown)
+}
+
+async function writeSecurityIdentity(store: VaultStore, doc: SecurityIdentityDoc): Promise<void> {
+	const normalized = normalizeSecurityIdentity(doc)
+	if (!securityIdentityHasMaterial(normalized)) {
+		await store.delete(SECURITY_IDENTITY_KEY)
+		return
+	}
+	await store.writeText(SECURITY_IDENTITY_KEY, `${JSON.stringify(normalized, null, 2)}\n`)
+}
+
+async function updateSecurityIdentity(
+	store: VaultStore,
+	update: (current: SecurityIdentityDoc) => SecurityIdentityDoc,
+): Promise<SecurityIdentityDoc> {
+	const next = normalizeSecurityIdentity(update(await readSecurityIdentity(store)))
+	await writeSecurityIdentity(store, next)
+	return next
+}
+
+async function readDeployRecipients(store: VaultStore): Promise<string[]> {
+	const identity = await readSecurityIdentity(store)
 	return normalizeRecipients(identity.vault?.deployRecipients ?? [])
 }
 
 async function writeDeployRecipients(
-	fs: FsLike,
+	store: VaultStore,
 	recipients: string[],
 ): Promise<void> {
 	const nextRecipients = normalizeRecipients(recipients)
-	await updateSecurityIdentity(fs, (current) => ({
+	await updateSecurityIdentity(store, (current) => ({
 		...current,
 		vault: {
 			...current.vault,
@@ -374,17 +476,17 @@ async function hasDeployIdentity(runtime: MountRuntime): Promise<boolean> {
 }
 
 async function ensureIdentity(
-	fs: FsLike,
+	store: VaultStore,
 	createIfMissing: boolean,
 ): Promise<string | undefined> {
-	const identityDoc = await readSecurityIdentity(fs)
+	const identityDoc = await readSecurityIdentity(store)
 	const identity = identityDoc.vault?.hostIdentity
 	if (identity) return identity
 
 	if (!createIfMissing) return undefined
 	const nextIdentity = await generateIdentity()
 	try {
-		await updateSecurityIdentity(fs, (current) => ({
+		await updateSecurityIdentity(store, (current) => ({
 			...current,
 			vault: {
 				...current.vault,
@@ -397,34 +499,34 @@ async function ensureIdentity(
 	return nextIdentity
 }
 
-async function hasHostIdentity(fs: FsLike): Promise<boolean> {
-	const identity = await readSecurityIdentity(fs)
+async function hasHostIdentity(store: VaultStore): Promise<boolean> {
+	const identity = await readSecurityIdentity(store)
 	return !!identity.vault?.hostIdentity
 }
 
 async function resolveManagedRecipients(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<string[]> {
 	const recipients: string[] = []
-	const identity = await ensureIdentity(fs, options.createHostIdentity === true)
+	const identity = await ensureIdentity(store, options.createHostIdentity === true)
 	if (identity) recipients.push(await identityToRecipient(identity))
 	const deployRecipients =
 		deployRecipientsOverride !== undefined
 			? normalizeRecipients(deployRecipientsOverride)
-			: await readDeployRecipients(fs)
+			: await readDeployRecipients(store)
 	return recipients.concat(deployRecipients)
 }
 
 async function resolveManagedIdentities(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<string[]> {
 	const identities: string[] = []
-	const localIdentity = await ensureIdentity(fs, false)
+	const localIdentity = await ensureIdentity(store, false)
 	if (localIdentity) identities.push(localIdentity)
 	if (options.includeDeployIdentity !== false) {
 		identities.push(...splitMaterialLines((stdEnv[runtime.deployIdentityEnv] as string | undefined) ?? ''))
@@ -433,14 +535,14 @@ async function resolveManagedIdentities(
 }
 
 async function encryptDek(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	dek: Uint8Array,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
 	const encrypter = new Encrypter()
-	const recipients = await resolveManagedRecipients(fs, runtime, deployRecipientsOverride, options)
+	const recipients = await resolveManagedRecipients(store, runtime, deployRecipientsOverride, options)
 	if (recipients.length === 0) {
 		throw new VaultError('INVALID_CONFIG', 'No age recipients resolved for vault encryption.')
 	}
@@ -454,13 +556,13 @@ async function encryptDek(
 }
 
 async function decryptDek(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	ciphertext: Uint8Array,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
 	const decrypter = new Decrypter()
-	const identities = await resolveManagedIdentities(fs, runtime, options)
+	const identities = await resolveManagedIdentities(store, runtime, options)
 	if (identities.length === 0) {
 		throw new VaultError('INVALID_CONFIG', 'No age identities resolved for vault decryption.')
 	}
@@ -495,21 +597,25 @@ function getOrCreateMountCache(key: string): MountCacheEntry {
 	return created
 }
 
-function isMountPresent(fs: FsLike, runtime: MountRuntime): boolean {
-	return fs.exists(runtime.keysPath) || fs.exists(runtime.statePath)
+async function isMountPresent(store: VaultStore, runtime: MountRuntime): Promise<boolean> {
+	return (await store.exists(runtime.keysPath)) || (await store.exists(runtime.statePath))
 }
 
-function toRuntimeStatus(fs: FsLike, runtime: MountRuntime, entry: MountCacheEntry): VaultRuntimeStatus {
+async function toRuntimeStatus(
+	store: VaultStore,
+	runtime: MountRuntime,
+	entry: MountCacheEntry,
+): Promise<VaultRuntimeStatus> {
 	return {
 		phase: entry.status.phase,
-		present: isMountPresent(fs, runtime),
+		present: await isMountPresent(store, runtime),
 		dirty: entry.status.dirty,
 		lastError: cloneStatusError(entry.status.lastError),
 	}
 }
 
 function updateStatus(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	entry: MountCacheEntry,
 	patch: Partial<MountCacheEntry['status']>,
@@ -524,9 +630,9 @@ function updateStatus(
 	entry.status = next
 }
 
-function clearStatusError(fs: FsLike, runtime: MountRuntime, entry: MountCacheEntry): void {
+function clearStatusError(store: VaultStore, runtime: MountRuntime, entry: MountCacheEntry): void {
 	if (!entry.status.lastError) return
-	updateStatus(fs, runtime, entry, { lastError: undefined })
+	updateStatus(store, runtime, entry, { lastError: undefined })
 }
 
 function toStatusError(error: unknown): VaultStatusError {
@@ -542,12 +648,12 @@ function toFailurePhase(error: unknown): VaultRuntimePhase {
 }
 
 function setStatusFailure(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	entry: MountCacheEntry,
 	error: unknown,
 ): void {
-	updateStatus(fs, runtime, entry, {
+	updateStatus(store, runtime, entry, {
 		phase: toFailurePhase(error),
 		dirty: false,
 		lastError: toStatusError(error),
@@ -563,12 +669,12 @@ function findNamespaceState(snapshot: VaultSnapshot, namespace: string) {
 }
 
 async function loadMountState(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	options: { includeDeployIdentity?: boolean } = {},
 ): Promise<{ dek: Uint8Array; snapshot: VaultSnapshot } | undefined> {
-	if (!fs.exists(runtime.keysPath)) {
-		if (fs.exists(runtime.statePath)) {
+	if (!(await store.exists(runtime.keysPath))) {
+		if (await store.exists(runtime.statePath)) {
 			throw new VaultError(
 				'INVALID_FORMAT',
 				`Vault mount is missing key envelope: ${runtime.keysPath}`,
@@ -577,22 +683,26 @@ async function loadMountState(
 		return undefined
 	}
 
-	const dek = await decryptDek(fs, runtime, await fs.readBytes(runtime.keysPath), options)
-	if (!fs.exists(runtime.statePath)) return { dek, snapshot: createEmptySnapshot() }
-	const plaintext = await aesDecrypt(dek, await fs.readBytes(runtime.statePath))
+	const keys = await store.readBytes(runtime.keysPath)
+	if (!keys) return undefined
+	const dek = await decryptDek(store, runtime, keys, options)
+	if (!(await store.exists(runtime.statePath))) return { dek, snapshot: createEmptySnapshot() }
+	const stateBytes = await store.readBytes(runtime.statePath)
+	if (!stateBytes) return { dek, snapshot: createEmptySnapshot() }
+	const plaintext = await aesDecrypt(dek, stateBytes)
 	return { dek, snapshot: parseSnapshot(plaintext) }
 }
 
 async function createMountKey(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	deployRecipientsOverride?: string[],
 	options: { createHostIdentity?: boolean } = {},
 ): Promise<Uint8Array> {
 	const dek = randomBytes(32)
-	await fs.writeBytesAtomic(
+	await store.writeBytes(
 		runtime.keysPath,
-		await encryptDek(fs, runtime, dek, deployRecipientsOverride, options),
+		await encryptDek(store, runtime, dek, deployRecipientsOverride, options),
 	)
 	return dek
 }
@@ -608,10 +718,10 @@ async function createDeployKeyPair(ctx: PluxelContext): Promise<VaultKeyPair> {
 	}
 }
 
-async function flushUnlockedState(fs: FsLike, runtime: MountRuntime, state: Extract<MountCacheState, { status: 'unlocked' }>) {
+async function flushUnlockedState(store: VaultStore, runtime: MountRuntime, state: Extract<MountCacheState, { status: 'unlocked' }>) {
 	if (!state.dirty) return
 	const ciphertext = await aesEncrypt(state.dek, serializeSnapshot(state.snapshot))
-	await fs.writeBytesAtomic(runtime.statePath, ciphertext)
+	await store.writeBytes(runtime.statePath, ciphertext)
 	state.dirty = false
 }
 
@@ -623,23 +733,23 @@ function clearTimer(state: Extract<MountCacheState, { status: 'unlocked' }>) {
 }
 
 function scheduleFlush(
-	fs: FsLike,
+	store: VaultStore,
 	runtime: MountRuntime,
 	entry: MountCacheEntry,
 ) {
 	if (entry.state.status !== 'unlocked') return
-	updateStatus(fs, runtime, entry, { phase: 'ready', dirty: true, lastError: undefined })
+	updateStatus(store, runtime, entry, { phase: 'ready', dirty: true, lastError: undefined })
 	clearTimer(entry.state)
 	entry.state.timer = setTimeout(() => {
 		void entry.lock.run(async () => {
 			if (entry.state.status !== 'unlocked') return
-			entry.state.flushPromise = flushUnlockedState(fs, runtime, entry.state)
+			entry.state.flushPromise = flushUnlockedState(store, runtime, entry.state)
 				.then((): undefined => {
-					updateStatus(fs, runtime, entry, { phase: 'ready', dirty: false, lastError: undefined })
+					updateStatus(store, runtime, entry, { phase: 'ready', dirty: false, lastError: undefined })
 					return undefined
 				})
 				.catch((error) => {
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				})
 				.finally(() => {
@@ -673,11 +783,11 @@ export class VaultService {
 
 	managedVault(): ManagedVault {
 		const ctx = this.ctx
-		const fs: FsLike = ctx.root.fs
+		const store = createVaultStore(ctx.root.persistence.namespace('vault'))
 		const runtime = resolveRuntime(ctx)
 		const entry = getOrCreateMountCache(runtime.dir)
 
-		const currentStatus = () => toRuntimeStatus(fs, runtime, entry)
+		const currentStatus = () => toRuntimeStatus(store, runtime, entry)
 
 		const finalizeUnlockedState = (
 			dek: Uint8Array,
@@ -694,7 +804,7 @@ export class VaultService {
 				timer: null,
 				flushPromise: null,
 			}
-			updateStatus(fs, runtime, entry, {
+			updateStatus(store, runtime, entry, {
 				phase: 'ready',
 				dirty,
 				lastError: undefined,
@@ -709,19 +819,19 @@ export class VaultService {
 			} = {},
 		) => {
 			if (entry.state.status === 'unlocked') return entry.state
-			updateStatus(fs, runtime, entry, { phase: 'unlocking', dirty: false })
-			const loaded = await loadMountState(fs, runtime, {
+			updateStatus(store, runtime, entry, { phase: 'unlocking', dirty: false })
+			const loaded = await loadMountState(store, runtime, {
 				includeDeployIdentity: options.includeDeployIdentity,
 			})
 			if (!loaded) {
-				updateStatus(fs, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
+				updateStatus(store, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
 				return undefined
 			}
 			return finalizeUnlockedState(loaded.dek, loaded.snapshot, options.source)
 		}
 
 		const resetAutoUnlockStatus = () => {
-			updateStatus(fs, runtime, entry, {
+			updateStatus(store, runtime, entry, {
 				phase: 'sealed',
 				dirty: false,
 				lastError: undefined,
@@ -729,9 +839,9 @@ export class VaultService {
 		}
 
 		const ensureAutoUnlocked = async () => {
-			if (entry.state.status === 'unlocked' || !isMountPresent(fs, runtime)) return entry.state
+			if (entry.state.status === 'unlocked' || !(await isMountPresent(store, runtime))) return entry.state
 			const deployIdentityPresent = await hasDeployIdentity(runtime)
-			const hostIdentityPresent = await hasHostIdentity(fs)
+			const hostIdentityPresent = await hasHostIdentity(store)
 			let lastError: unknown
 
 			if (deployIdentityPresent) {
@@ -792,11 +902,11 @@ export class VaultService {
 						if (!changed) return result
 						entry.state.snapshot.namespaces[namespace] = nextNamespaceState
 						entry.state.dirty = true
-						scheduleFlush(fs, runtime, entry)
+						scheduleFlush(store, runtime, entry)
 						return result
 					}
 
-					const present = isMountPresent(fs, runtime)
+					const present = await isMountPresent(store, runtime)
 					let loaded:
 						| {
 								dek: Uint8Array
@@ -804,7 +914,7 @@ export class VaultService {
 						  }
 						| undefined
 					if (present) {
-						loaded = await loadMountState(fs, runtime, { includeDeployIdentity: true })
+						loaded = await loadMountState(store, runtime, { includeDeployIdentity: true })
 					}
 					const nextSnapshot = loaded?.snapshot ?? createEmptySnapshot()
 					const nextNamespaceState = cloneNamespaceState(nextSnapshot.namespaces[namespace])
@@ -812,12 +922,12 @@ export class VaultService {
 					if (!changed) return result
 
 					nextSnapshot.namespaces[namespace] = nextNamespaceState
-					const dek = loaded?.dek ?? (await createMountKey(fs, runtime))
+					const dek = loaded?.dek ?? (await createMountKey(store, runtime))
 					finalizeUnlockedState(dek, nextSnapshot, 'host', true)
-					scheduleFlush(fs, runtime, entry)
+					scheduleFlush(store, runtime, entry)
 					return result
 				} catch (error) {
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				}
 			})
@@ -830,7 +940,7 @@ export class VaultService {
 					if (isUnlockedState(entry.state)) {
 						return await run(entry.state.snapshot)
 					}
-					if (!isMountPresent(fs, runtime)) {
+					if (!(await isMountPresent(store, runtime))) {
 						return await run(createEmptySnapshot())
 					}
 					const state = await ensureAutoUnlocked()
@@ -843,7 +953,7 @@ export class VaultService {
 					}
 					return await run(resolvedState.snapshot)
 				} catch (error) {
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				}
 			})
@@ -854,13 +964,13 @@ export class VaultService {
 				try {
 					await ensureAutoUnlocked()
 					if (isUnlockedState(entry.state)) return entry.state.dek
-					const present = isMountPresent(fs, runtime)
+					const present = await isMountPresent(store, runtime)
 					if (!present && !createIfMissing) {
-						updateStatus(fs, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
+						updateStatus(store, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
 						return undefined
 					}
-					updateStatus(fs, runtime, entry, { phase: 'unlocking', dirty: false })
-					const loaded = await loadMountState(fs, runtime, { includeDeployIdentity: true })
+					updateStatus(store, runtime, entry, { phase: 'unlocking', dirty: false })
+					const loaded = await loadMountState(store, runtime, { includeDeployIdentity: true })
 					if (loaded) {
 						finalizeUnlockedState(
 							loaded.dek,
@@ -870,11 +980,11 @@ export class VaultService {
 						return loaded.dek
 					}
 					if (!createIfMissing) return undefined
-					const dek = await createMountKey(fs, runtime)
+					const dek = await createMountKey(store, runtime)
 					finalizeUnlockedState(dek, createEmptySnapshot(), 'host')
 					return dek
 				} catch (error) {
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				}
 			})
@@ -885,13 +995,13 @@ export class VaultService {
 				if (entry.state.status !== 'unlocked') return
 				clearTimer(entry.state)
 				if (entry.state.flushPromise) await entry.state.flushPromise
-				entry.state.flushPromise = flushUnlockedState(fs, runtime, entry.state)
+				entry.state.flushPromise = flushUnlockedState(store, runtime, entry.state)
 					.then((): undefined => {
-						updateStatus(fs, runtime, entry, { phase: 'ready', dirty: false, lastError: undefined })
+						updateStatus(store, runtime, entry, { phase: 'ready', dirty: false, lastError: undefined })
 						return undefined
 					})
 					.catch((error) => {
-						setStatusFailure(fs, runtime, entry, error)
+						setStatusFailure(store, runtime, entry, error)
 						throw error
 					})
 					.finally(() => {
@@ -904,11 +1014,11 @@ export class VaultService {
 		const sealForRuntime = async () => {
 			await flush()
 			entry.state = { status: 'locked' }
-			updateStatus(fs, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
+			updateStatus(store, runtime, entry, { phase: 'sealed', dirty: false, lastError: undefined })
 		}
 
 		const rewriteEnvelope = async (deployRecipientsOverride?: string[]) => {
-			if (!isUnlockedState(entry.state) && !isMountPresent(fs, runtime)) {
+			if (!isUnlockedState(entry.state) && !(await isMountPresent(store, runtime))) {
 				throw new VaultError(
 					'MISSING_MOUNT',
 					`Vault mount "${SHARED_MOUNT}" does not exist and can not be rekeyed.`,
@@ -918,8 +1028,8 @@ export class VaultService {
 			if (isUnlockedState(entry.state)) {
 				dek = entry.state.dek
 			} else {
-				const loaded = await loadMountState(fs, runtime, { includeDeployIdentity: true })
-				dek = loaded?.dek ?? (await createMountKey(fs, runtime, deployRecipientsOverride))
+				const loaded = await loadMountState(store, runtime, { includeDeployIdentity: true })
+				dek = loaded?.dek ?? (await createMountKey(store, runtime, deployRecipientsOverride))
 				if (loaded) {
 					finalizeUnlockedState(
 						loaded.dek,
@@ -929,8 +1039,8 @@ export class VaultService {
 				}
 			}
 			if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to load vault key for rekey.')
-			await fs.writeBytesAtomic(runtime.keysPath, await encryptDek(fs, runtime, dek, deployRecipientsOverride))
-			clearStatusError(fs, runtime, entry)
+			await store.writeBytes(runtime.keysPath, await encryptDek(store, runtime, dek, deployRecipientsOverride))
+			clearStatusError(store, runtime, entry)
 		}
 
 		const rekey = async () => {
@@ -956,14 +1066,14 @@ export class VaultService {
 								? error.message
 								: `Vault mount "${SHARED_MOUNT}" rekey failed.`,
 					})
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				}
 			})
 		}
 
 		const probeUnlockState = async (): Promise<VaultProbeState> => {
-			const status = currentStatus()
+			const status = await currentStatus()
 			if (!status.present) return { unlockable: true, lastError: status.lastError }
 			if (isUnlockedState(entry.state)) {
 				return {
@@ -972,7 +1082,7 @@ export class VaultService {
 				}
 			}
 
-			const hostIdentityPresent = await hasHostIdentity(fs)
+			const hostIdentityPresent = await hasHostIdentity(store)
 			const deployIdentityPresent = await hasDeployIdentity(runtime)
 			if (!hostIdentityPresent && !deployIdentityPresent) {
 				return {
@@ -983,7 +1093,7 @@ export class VaultService {
 			}
 
 			try {
-				await loadMountState(fs, runtime, { includeDeployIdentity: true })
+				await loadMountState(store, runtime, { includeDeployIdentity: true })
 				return {
 					unlockable: true,
 					lastError: status.lastError,
@@ -1155,14 +1265,15 @@ export class VaultService {
 				open: (name: string): VaultBlobHandle => {
 					const path = blobPath(runtime, namespace, name)
 					const readBytes = async () => {
-						if (!fs.exists(path)) return undefined
+						if (!(await store.exists(path))) return undefined
 						const dek = await readDek(false)
 						if (!dek) return undefined
-						return await aesDecrypt(dek, await fs.readBytes(path))
+						const encrypted = await store.readBytes(path)
+						return encrypted ? await aesDecrypt(dek, encrypted) : undefined
 					}
 
 					return {
-						exists: async () => fs.exists(path),
+						exists: async () => await store.exists(path),
 						readBytes,
 						readText: async () => {
 							const bytes = await readBytes()
@@ -1171,21 +1282,21 @@ export class VaultService {
 						writeBytes: async (bytes: Uint8Array) => {
 							const dek = await readDek(true)
 							if (!dek) throw new VaultError('INVALID_CONFIG', 'Failed to create vault key.')
-							await fs.writeBytesAtomic(path, await aesEncrypt(dek, bytes))
+							await store.writeBytes(path, await aesEncrypt(dek, bytes))
 						},
 						writeText: async (text: string) => {
-							await fs.writeBytesAtomic(path, await aesEncrypt((await readDek(true))!, textEncode(text)))
+							await store.writeBytes(path, await aesEncrypt((await readDek(true))!, textEncode(text)))
 						},
 						remove: async () => {
-							if (!fs.exists(path)) return
-							await fs.unlink(path)
+							if (!(await store.exists(path))) return
+							await store.delete(path)
 						},
 						describe: () => ({ path }),
 					}
 				},
 				list: async () => {
 					const namespaceDir = resolve(runtime.blobsDir, namespace)
-					const names = await fs.readdir(namespaceDir)
+					const names = await store.listChildren(namespaceDir)
 					return names
 						.filter((blobName) => blobName.endsWith('.blob'))
 						.map((blobName) => blobName.slice(0, -'.blob'.length))
@@ -1278,12 +1389,12 @@ export class VaultService {
 		const describe = async (): Promise<VaultAdminState> => {
 			const probe = await probeUnlockState()
 			const unlocked = isUnlockedState(entry.state) ? entry.state : null
-			const deployRecipients = await readDeployRecipients(fs)
-			const current = currentStatus()
+			const deployRecipients = await readDeployRecipients(store)
+			const current = await currentStatus()
 			let namespaces: VaultAdminState['namespaces'] | undefined
 			if (unlocked) {
 				const namespaceNames = new Set<string>(Object.keys(unlocked.snapshot.namespaces))
-					for (const namespaceName of await fs.readdir(runtime.blobsDir).catch((): string[] => [])) {
+					for (const namespaceName of await store.listChildren(runtime.blobsDir).catch((): string[] => [])) {
 						if (namespaceName) namespaceNames.add(namespaceName)
 					}
 
@@ -1295,8 +1406,8 @@ export class VaultService {
 						for (const collection of Object.values(docsState)) {
 							docDocuments += Object.keys(collection ?? {}).length
 						}
-						const blobNames = await fs
-							.readdir(resolve(runtime.blobsDir, namespaceName))
+						const blobNames = await store
+							.listChildren(resolve(runtime.blobsDir, namespaceName))
 							.catch((): string[] => [])
 						const row: VaultNamespaceStats = {
 							namespace: namespaceName,
@@ -1319,15 +1430,15 @@ export class VaultService {
 					identityPresent: await hasDeployIdentity(runtime),
 					recipients: deployRecipients,
 				},
-				hostIdentityPresent: await hasHostIdentity(fs),
+				hostIdentityPresent: await hasHostIdentity(store),
 				namespaces,
 			}
 		}
 
 		const preflight = async (): Promise<VaultAdminState> => {
 			try {
-				if (!isMountPresent(fs, runtime)) {
-					updateStatus(fs, runtime, entry, {
+				if (!(await isMountPresent(store, runtime))) {
+					updateStatus(store, runtime, entry, {
 						phase: 'sealed',
 						dirty: false,
 						lastError: undefined,
@@ -1344,14 +1455,14 @@ export class VaultService {
 
 				await entry.lock.run(async () => {
 					if (isUnlockedState(entry.state)) return
-					const hostIdentityPresent = await hasHostIdentity(fs)
+					const hostIdentityPresent = await hasHostIdentity(store)
 					const deployIdentityPresent = await hasDeployIdentity(runtime)
 					if (!hostIdentityPresent && !deployIdentityPresent) {
 						const error = new VaultError(
 							'ACCESS_DENIED',
 							`Vault mount "${SHARED_MOUNT}" is sealed and can not be unlocked during host startup.`,
 						)
-						setStatusFailure(fs, runtime, entry, error)
+						setStatusFailure(store, runtime, entry, error)
 						throw error
 					}
 					try {
@@ -1362,9 +1473,9 @@ export class VaultService {
 								`Vault mount "${SHARED_MOUNT}" is sealed and can not be unlocked during host startup.`,
 							)
 						}
-						clearStatusError(fs, runtime, entry)
+						clearStatusError(store, runtime, entry)
 					} catch (error) {
-						setStatusFailure(fs, runtime, entry, error)
+						setStatusFailure(store, runtime, entry, error)
 						throw error
 					}
 				})
@@ -1395,7 +1506,7 @@ export class VaultService {
 
 		const unlock = async (): Promise<VaultAdminState> => {
 			try {
-				if (!isMountPresent(fs, runtime)) {
+				if (!(await isMountPresent(store, runtime))) {
 					recordSecurityEvent(ctx, {
 						area: 'vault',
 						action: 'unlock',
@@ -1408,14 +1519,14 @@ export class VaultService {
 
 				await entry.lock.run(async () => {
 					if (isUnlockedState(entry.state)) return
-					const hostIdentityPresent = await hasHostIdentity(fs)
+					const hostIdentityPresent = await hasHostIdentity(store)
 					const deployIdentityPresent = await hasDeployIdentity(runtime)
 					if (!hostIdentityPresent && !deployIdentityPresent) return
 					try {
 						await ensureAutoUnlocked()
-						if (isUnlockedState(entry.state)) clearStatusError(fs, runtime, entry)
+						if (isUnlockedState(entry.state)) clearStatusError(store, runtime, entry)
 					} catch (error) {
-						setStatusFailure(fs, runtime, entry, error)
+						setStatusFailure(store, runtime, entry, error)
 						throw error
 					}
 				})
@@ -1460,27 +1571,27 @@ export class VaultService {
 			sealForRuntime,
 			setDeployRecipients: async (recipients: string[]) => {
 				const nextRecipients = normalizeRecipients(recipients)
-				if (isMountPresent(fs, runtime)) {
+				if (await isMountPresent(store, runtime)) {
 					await entry.lock.run(async () => {
 						try {
 							await rewriteEnvelope(nextRecipients)
 						} catch (error) {
-							setStatusFailure(fs, runtime, entry, error)
+							setStatusFailure(store, runtime, entry, error)
 							throw error
 						}
 					})
 				}
-				await writeDeployRecipients(fs, nextRecipients)
+				await writeDeployRecipients(store, nextRecipients)
 				return await describe()
 			},
 			ensureHostKey: async () => {
 				try {
-					const identity = await ensureIdentity(fs, true)
+					const identity = await ensureIdentity(store, true)
 					if (!identity) throw new VaultError('MISSING_IDENTITY', 'Missing local age identity.')
-					clearStatusError(fs, runtime, entry)
+					clearStatusError(store, runtime, entry)
 					return await identityToRecipient(identity)
 				} catch (error) {
-					setStatusFailure(fs, runtime, entry, error)
+					setStatusFailure(store, runtime, entry, error)
 					throw error
 				}
 			},

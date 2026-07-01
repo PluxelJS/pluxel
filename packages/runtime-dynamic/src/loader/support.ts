@@ -10,7 +10,7 @@ import {
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 import { runtimeModuleRuntime, findRuntimeModuleId } from '@pluxel/runtime/internal'
-import { setPluginEnabled } from '@pluxel/runtime/services'
+import { setPluginEnabled } from '@pluxel/runtime/runtime-state'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,

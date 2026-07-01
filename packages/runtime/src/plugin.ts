@@ -1,8 +1,9 @@
-import { pathToFileURL } from 'node:url'
 import type { Context } from '@pluxel/core'
 import type { RuntimeRouteCapabilities } from './plugin-catalog'
 import { isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
+
+export { doc } from './web/extensions'
 
 export interface PluginUiSourceDeclaration {
 	/** Authoring declaration. Runtime never consumes this path directly. */
@@ -30,6 +31,26 @@ function runtimeRoute(ctx: Context): RuntimeRouteCapabilities | undefined {
 	return ctx.runtimeRoute ?? ctx.root.runtimeRoute
 }
 
+function packagedUiBinder(ctx: Context): (() => () => void) | undefined {
+	const ext = (ctx as unknown as {
+		ext?: { ui?: { remote?: { packaged?: () => () => void } } }
+	}).ext
+	const remote = ext?.ui?.remote
+	if (typeof remote?.packaged !== 'function') return undefined
+	return () => remote.packaged!()
+}
+
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
+}
+
+function fileUrlFromPath(path: string): string {
+	const normalized = path.replaceAll('\\', '/')
+	const pathname = encodeURI(normalized).replaceAll('#', '%23').replaceAll('?', '%3F')
+	return `file://${normalized.startsWith('/') ? '' : '/'}${pathname}`
+}
+
 export function ui(input: string | PluginUiSourceDeclaration): PluginUiModuleDeclaration {
 	const config = normalizeUiConfig(input)
 	if (!config.entryPath) throw new Error('[pluxel/runtime/plugin] ui(): entryPath required')
@@ -38,7 +59,11 @@ export function ui(input: string | PluginUiSourceDeclaration): PluginUiModuleDec
 		bind(ctx: Context) {
 			const sourceBinder = runtimeRoute(ctx)?.dev?.uiSource?.bind
 			if (sourceBinder) return sourceBinder(ctx, config)
-			return ctx.ext.ui.remote.packaged()
+			const packaged = packagedUiBinder(ctx)
+			if (packaged) return packaged()
+			throw new Error(
+				'[runtime/plugin:web-management] service unavailable. Reason: ui().bind(ctx) has no dev UI source capability and @pluxel/runtime/services/web-management is not imported. Fix: import @pluxel/runtime/services/web-management before starting the host, or remove ui(...).bind(ctx) from this plugin.',
+			)
 		},
 	}
 }
@@ -84,7 +109,7 @@ function resolvePluginFile(ctx: Context, targetPath: string): string {
 		}
 	}
 
-	return resolve(process.cwd(), targetPath)
+	return resolve(currentWorkingDirectory(), targetPath)
 }
 
 function resolveFallbackUrl(ctx: Context, fallback: string | null | undefined): string | null {
@@ -94,7 +119,7 @@ function resolveFallbackUrl(ctx: Context, fallback: string | null | undefined): 
 	try {
 		return new URL(raw).href
 	} catch {
-		return pathToFileURL(resolvePluginFile(ctx, raw)).href
+		return fileUrlFromPath(resolvePluginFile(ctx, raw))
 	}
 }
 

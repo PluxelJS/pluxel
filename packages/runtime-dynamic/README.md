@@ -25,7 +25,7 @@ export default defineConfig({
 
 ```ts
 // pluxel.dynamic.ts
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
@@ -37,6 +37,16 @@ export default defineDynamicRuntimeConfig({
 
 Runtime config does not accept nested Vite config. Add React, GraphQL, macros, aliases, and other
 Vite settings to the host `vite.config.ts`.
+
+Direct/headless launch uses the same config object:
+
+```ts
+import { createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import config from './pluxel.dynamic'
+
+const runtime = await createDynamicRuntime(config)
+await runtime.start()
+```
 
 ## HMR Internals
 

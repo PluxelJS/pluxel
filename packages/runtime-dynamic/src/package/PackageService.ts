@@ -135,7 +135,7 @@ export class PackageService {
 		}
 		const stateFile = resolveStateFilePath(config.state?.file)
 		const stateOptions: PackageStateStoreOptions = {
-			fs: this.ctx.root.fs,
+			storage: this.ctx.root.persistence.namespace('package-state'),
 			file: stateFile,
 			enabled: config.state?.enabled !== false,
 			onError: (error) => {

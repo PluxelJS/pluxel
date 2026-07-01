@@ -7,7 +7,7 @@ import {
 	getPluginRoutingSnapshot,
 	setPluginEnabled,
 	type PluginGatedModuleDef,
-} from '@pluxel/runtime/services'
+} from '@pluxel/runtime'
 
 const routes: PluginGatedModuleDef[] = [
 	{

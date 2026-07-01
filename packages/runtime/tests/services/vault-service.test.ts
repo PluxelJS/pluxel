@@ -2,7 +2,8 @@ import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, it } from 'vitest'
-import { securityIdentityPath } from '../../src/services/security/identity'
+
+type RuntimeHostLike = Parameters<Parameters<typeof withRuntimeHost>[0]>[0]
 
 function bytesToHex(bytes: Uint8Array): string {
 	let out = ''
@@ -21,6 +22,26 @@ function randomHex(bytes: number): string {
 
 async function sealVaultForTesting(vault: unknown): Promise<void> {
 	await (vault as { sealMountForTesting: () => Promise<void> }).sealMountForTesting()
+}
+
+function vaultStorage(host: RuntimeHostLike) {
+	return host.ctx.root.persistence.namespace('vault')
+}
+
+function displayKey(key: string): string {
+	return key.startsWith('/') ? key : `/${key}`
+}
+
+async function listVaultFiles(host: RuntimeHostLike, prefix: string): Promise<string[]> {
+	const out: string[] = []
+	for await (const entry of vaultStorage(host).list(prefix)) {
+		if (entry.kind === 'file') out.push(displayKey(entry.key))
+	}
+	return out.sort()
+}
+
+async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
+	await vaultStorage(host).delete('security/identity.json')
 }
 
 describe('VaultService (shared mount runtime)', () => {
@@ -48,9 +69,9 @@ describe('VaultService (shared mount runtime)', () => {
 					tx.entries()
 				})
 
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
+				expect(await listVaultFiles(host, dir)).toEqual([])
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -75,13 +96,13 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await kv.get('github.token')).toBe('ghp_test')
 
 				const mountDir = resolve(dir, 'global')
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([
+				expect(await listVaultFiles(host, dir)).toEqual([
 					resolve(mountDir, 'keys.age'),
 					resolve(mountDir, 'state.enc'),
 				])
-				expect(host.ctx.root.fs.exists(securityIdentityPath())).toBe(true)
+				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -101,7 +122,8 @@ describe('VaultService (shared mount runtime)', () => {
 
 				await kv.set('a', '0')
 				await plugin.ctx.vault.flush()
-				const before = host.ctx.root.fs.debugStats()
+				const statePath = resolve(dir, 'global', 'state.enc')
+				const before = await vaultStorage(host).get(statePath)
 
 				await kv.batch((tx) => {
 					tx.set('a', '1')
@@ -110,12 +132,14 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				await plugin.ctx.vault.flush()
 
-				const after = host.ctx.root.fs.debugStats()
-				expect(after.writeBytesAtomic - before.writeBytesAtomic).toBe(1)
+				const after = await vaultStorage(host).get(statePath)
+				expect(before).toBeTruthy()
+				expect(after).toBeTruthy()
+				expect(after).not.toEqual(before)
 				expect(await kv.get('a')).toBe('1')
 				expect(await kv.get('b')).toBe('2')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir, flushDebounceMs: 1 } },
+			{ vault: { dir, flushDebounceMs: 1 } },
 		)
 	})
 
@@ -145,7 +169,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await b.ctx.vault.kv().get('token')).toBe('b-secret')
 				expect(await a.ctx.vault.kv({ namespace: 'PluginB' }).get('token')).toBe('b-secret')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -176,7 +200,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await docs.get('default')).toEqual({ ready: true })
 				expect(await blob.readText()).toBe('scoped')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -207,7 +231,7 @@ describe('VaultService (shared mount runtime)', () => {
 					ready: true,
 				})
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -230,17 +254,18 @@ describe('VaultService (shared mount runtime)', () => {
 				await sealVaultForTesting(plugin.ctx.vault)
 
 				const path = resolve(dir, 'global', 'state.enc')
-				const bytes = await host.ctx.root.fs.readBytes(path)
-				const tampered = Uint8Array.from(bytes)
+				const bytes = await vaultStorage(host).get(path)
+				expect(bytes).toBeTruthy()
+				const tampered = Uint8Array.from(bytes!)
 				tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff
-				await host.ctx.root.fs.writeBytesAtomic(path, tampered)
+				await vaultStorage(host).put(path, tampered, { atomic: true })
 
 				await expect(kv.get('token')).rejects.toMatchObject({
 					name: 'VaultError',
 					code: 'DECRYPT_FAILED',
 				})
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -268,7 +293,7 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -307,7 +332,7 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 
 		delete stdEnv[envName]
@@ -330,9 +355,9 @@ describe('VaultService (shared mount runtime)', () => {
 					name: 'VaultError',
 					code: 'MISSING_MOUNT',
 				})
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
+				expect(await listVaultFiles(host, dir)).toEqual([])
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -349,16 +374,23 @@ describe('VaultService (shared mount runtime)', () => {
 				const plugin = host.require(PluginA)
 				await plugin.ctx.vault.kv().set('token', 'value')
 				await plugin.ctx.vault.flush()
-				const before = host.ctx.root.fs.debugStats()
+				const keyPath = resolve(dir, 'global', 'keys.age')
+				const statePath = resolve(dir, 'global', 'state.enc')
+				const beforeKey = await vaultStorage(host).get(keyPath)
+				const beforeState = await vaultStorage(host).get(statePath)
 
 				await host.ctx.vaultAdmin.rekey()
-				const after = host.ctx.root.fs.debugStats()
-				expect(after.writeBytesAtomic - before.writeBytesAtomic).toBe(1)
+				const afterKey = await vaultStorage(host).get(keyPath)
+				const afterState = await vaultStorage(host).get(statePath)
+				expect(beforeKey).toBeTruthy()
+				expect(afterKey).toBeTruthy()
+				expect(afterKey).not.toEqual(beforeKey)
+				expect(afterState).toEqual(beforeState)
 
 				await sealVaultForTesting(plugin.ctx.vault)
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -381,7 +413,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await plugin.ctx.vault.blobs().list()).toEqual(['notes'])
 				expect(blob.describe().path).toBe(resolve(dir, 'global', 'blobs', 'PluginA', 'notes.blob'))
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -400,9 +432,9 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(described).toMatchObject({
 					present: false,
 				})
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
+				expect(await listVaultFiles(host, dir)).toEqual([])
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -421,7 +453,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await seeder.ctx.vault.kv().set('token', 'secret')
 				await seeder.ctx.vault.flush()
 				await sealVaultForTesting(seeder.ctx.vault)
-				await host.ctx.root.fs.unlink(securityIdentityPath())
+				await deleteVaultIdentity(host)
 
 				await expect(host.ctx.vaultAdmin.preflight()).rejects.toMatchObject({
 					name: 'VaultError',
@@ -435,7 +467,7 @@ describe('VaultService (shared mount runtime)', () => {
 					},
 				})
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -458,7 +490,7 @@ describe('VaultService (shared mount runtime)', () => {
 				envName = pair.envName
 				await host.ctx.vaultAdmin.setDeployRecipients([pair.publicKey])
 				await sealVaultForTesting(seeder.ctx.vault)
-				await host.ctx.root.fs.unlink(securityIdentityPath())
+				await deleteVaultIdentity(host)
 
 				stdEnv[envName] = pair.privateKey
 
@@ -477,7 +509,7 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				expect(await seeder.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 
 		delete stdEnv[envName]
@@ -499,7 +531,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await seeder.ctx.vault.flush()
 				await sealVaultForTesting(seeder.ctx.vault)
 
-				await host.ctx.root.fs.unlink(securityIdentityPath())
+				await deleteVaultIdentity(host)
 
 				await expect(seeder.ctx.vault.kv().get('token')).rejects.toMatchObject({
 					code: expect.stringMatching(/^(INVALID_CONFIG|DECRYPT_FAILED)$/),
@@ -517,7 +549,7 @@ describe('VaultService (shared mount runtime)', () => {
 					}),
 				})
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -539,7 +571,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await seeder.ctx.vault.kv().set('token', 'secret')
 				await seeder.ctx.vault.flush()
 				await sealVaultForTesting(seeder.ctx.vault)
-				await host.ctx.root.fs.unlink(securityIdentityPath())
+				await deleteVaultIdentity(host)
 
 				host.add(VaultConsumer)
 				await expect(host.commitAllowFail()).rejects.toThrow(
@@ -551,7 +583,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(unlock.unlocked).toBe(false)
 				expect(unlock.reason).toBe('unlock_required')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
@@ -579,7 +611,7 @@ describe('VaultService (shared mount runtime)', () => {
 				])
 				expect(admin.deploy.recipients).toEqual([pairA.publicKey, pairB.publicKey])
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 })

@@ -53,8 +53,6 @@ function normalizeUi(input: EnsurePluxelLoggingOptions['ui']): RuntimeUiSinkInpu
 /**
  * Ensure LogTape is configured for a Pluxel host app.
  *
- * Compatibility helper over `createRuntimeLogging()`.
- *
  * @returns `true` if this call performed `configure()`, otherwise `false`.
  */
 export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {}): Promise<boolean> {

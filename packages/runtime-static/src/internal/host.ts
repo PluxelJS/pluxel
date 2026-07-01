@@ -7,8 +7,7 @@ import {
 	type PluginLifecycleIssue,
 } from '@pluxel/core'
 import { Context } from '@pluxel/runtime'
-import { bootstrapHostVault } from '@pluxel/runtime/services'
-import { isPluginEnabled, setPluginEnabled } from '@pluxel/runtime/services'
+import { isPluginEnabled, setPluginEnabled } from '@pluxel/runtime/runtime-state'
 import type {
 	RuntimePluginDependencyInfo,
 	RuntimePluginSource,
@@ -179,8 +178,8 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	public async prepare(): Promise<void> {
+		this.assertWebManagementAvailable()
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
-		await bootstrapHostVault(this.ctx)
 	}
 
 	public describeCatalog(): StaticRuntimeCatalogSnapshot {
@@ -192,6 +191,14 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 
 	public lastReport(): StaticRuntimeStartupReport | undefined {
 		return this.report
+	}
+
+	private assertWebManagementAvailable(): void {
+		if (!staticHostNeedsWebManagement(this.ctx.config.http)) return
+		if ('ext' in Context.prototype) return
+		throw new Error(
+			'[runtime-static:web-management] service unavailable. Reason: http.management/control-plane/UI assets are enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable http.management, controlPlane, and uiAssets.',
+		)
 	}
 
 	public async start(): Promise<StaticRuntimeStartupReport> {
@@ -527,6 +534,15 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 }
 
+export async function createStaticRuntimeHost(
+	definition: StaticRuntimeDefinition,
+	options: StaticRuntimeHostOptions = {},
+): Promise<StaticRuntimeHost> {
+	const host = new StaticRuntimeHostImpl(definition, options)
+	await host.prepare()
+	return host
+}
+
 function compactReportEntries(
 	entries: readonly StaticRuntimeReportEntry[],
 ): StaticRuntimeReportEntry[] {
@@ -551,11 +567,28 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 	return dep.name || '<anonymous>'
 }
 
+function staticHostNeedsWebManagement(http: unknown): boolean {
+	if (!http || typeof http !== 'object') return false
+	const cfg = http as {
+		management?: unknown
+		controlPlane?: { web?: unknown; rpc?: unknown; sse?: unknown }
+		uiAssets?: unknown
+	}
+	if (cfg.management === true) return true
+	if (cfg.uiAssets !== undefined && cfg.uiAssets !== 'disabled') return true
+	if (!cfg.controlPlane || typeof cfg.controlPlane !== 'object') return false
+	return cfg.controlPlane.web === true || cfg.controlPlane.rpc === true || cfg.controlPlane.sse === true
+}
+
 function createStaticRuntimeContextConfig(
 	options: StaticRuntimeHostOptions,
 ): NonNullable<StaticRuntimeHostOptions['context']> {
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
+	const http = options.http ?? context.http
+	const logger = options.logger ?? context.logger
+	const persistence = options.persistence ?? context.persistence
+	const pluginData = options.pluginData ?? context.pluginData
 	const inheritedRuntimeState =
 		!options.runtimeState && !context.runtimeState && configService?.mode
 			? { mode: configService.mode }
@@ -564,7 +597,15 @@ function createStaticRuntimeContextConfig(
 
 	return {
 		...context,
+		http: {
+			management: false,
+			uiAssets: 'disabled',
+			...(http && typeof http === 'object' ? http : {}),
+		},
 		configService,
 		runtimeState,
+		persistence,
+		pluginData,
+		logger,
 	}
 }

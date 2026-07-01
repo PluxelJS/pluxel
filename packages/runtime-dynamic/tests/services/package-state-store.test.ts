@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
+import { createMemoryPersistenceBackend } from '@pluxel/runtime'
 
 import { PackageStateStore } from '../../src/package/state-store'
 
@@ -15,13 +16,12 @@ describe('PackageStateStore', () => {
 		})
 
 		const file = resolve(fixture.path, 'state.json')
+		const storage = createMemoryPersistenceBackend().namespace('package-state-test')
 		const store = new PackageStateStore({
 			file,
-			fs: {
-				readText: async (p) => await fixture.fsp.readFile(p, 'utf8'),
-				writeTextAtomic: async (p, data) => void (await fixture.fsp.writeFile(p, data, 'utf8')),
-			},
+			storage,
 		})
+		await storage.put(file, await fixture.fsp.readFile(file, 'utf8'))
 
 		const out = await store.read()
 		expect(out).toBeNull()

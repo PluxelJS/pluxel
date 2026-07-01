@@ -1,9 +1,9 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import type { BaseItem, PersistenceAdapter } from '@signaldb/core'
-import { watch, type FSWatcher } from 'chokidar'
 import { basename, resolve } from 'pathe'
 import { SuperJSON } from 'superjson'
 import { resolveRuntimeStoragePaths } from '../runtime/paths'
+import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 const serviceName = 'pluginData' as const
 
@@ -48,13 +48,14 @@ function isEnoent(err: unknown): boolean {
 @Injectable({ key: serviceName })
 export class PluginDataService {
 	private readonly baseDir: string
-	private readonly watchers = new Map<string, Set<FSWatcher>>()
 	private readonly enabled: boolean
+	private readonly storage: PersistenceNamespace
 
 	constructor(public ctx: PluxelContext) {
 		const cfg = ctx.config.pluginData ?? {}
 		this.enabled = cfg.enabled !== false
-		const dir = cfg.dir ?? resolveRuntimeStoragePaths(process.cwd()).pluginDataDir
+		this.storage = ctx.root.persistence.namespace('plugin-data')
+		const dir = cfg.dir ?? resolveRuntimeStoragePaths(currentWorkingDirectory()).pluginDataDir
 		this.baseDir = resolve(dir)
 	}
 
@@ -92,39 +93,15 @@ export class PluginDataService {
 			return deserialize(txt.trim())
 		}
 
-		let watcher: FSWatcher | null = null
-
 		return {
 			load: async () => ({ items: await readItems() }),
 			save: async (items, _changes) => {
-				await this.ctx.root.fs.writeTextAtomic(file, serialize(items))
+				await this.storage.put(file, serialize(items))
 			},
 			register: async (onChange) => {
-				const notify = async () => {
-					await onChange({ items: await readItems() })
-				}
-				await notify()
-				try {
-					watcher = watch(file, {
-						ignoreInitial: true,
-						awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-					})
-						.on('add', () => void notify())
-						.on('change', () => void notify())
-					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
-					this.watchers.get(file)?.add(watcher)
-				} catch {
-					// ignore watcher errors (e.g., unsupported runtime / missing file)
-				}
+				await onChange({ items: await readItems() })
 			},
-			unregister: async () => {
-				if (!watcher) return
-				await Promise.resolve(watcher.close()).catch((): undefined => undefined)
-				const set = this.watchers.get(file)
-				set?.delete(watcher)
-				if (set && set.size === 0) this.watchers.delete(file)
-				watcher = null
-			},
+			unregister: async () => {},
 		}
 	}
 
@@ -223,42 +200,19 @@ export class PluginDataService {
 				return []
 			}
 
-			let watcher: FSWatcher | null = null
-
 			return {
 				load: async () => ({ items: await loadItems() }),
 				save: async (items, _changes) => {
 					const serialized = options?.serialize ? options.serialize(items) : items
-					await this.ctx.root.fs.writeTextAtomic(
+					await this.storage.put(
 						file,
 						typeof serialized === 'string' ? serialized : JSON.stringify(serialized, null, 2),
 					)
 				},
 				register: async (onChange) => {
-					const notify = async () => {
-						await onChange({ items: await loadItems() })
-					}
-					await notify()
-					try {
-						watcher = watch(file, {
-							ignoreInitial: true,
-							awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-						})
-							.on('add', () => void notify())
-							.on('change', () => void notify())
-						if (!this.watchers.has(file)) this.watchers.set(file, new Set())
-						this.watchers.get(file)?.add(watcher)
-					} catch {
-					}
+					await onChange({ items: await loadItems() })
 				},
-				unregister: async () => {
-					if (!watcher) return
-					await Promise.resolve(watcher.close()).catch((): undefined => undefined)
-					const set = this.watchers.get(file)
-					set?.delete(watcher)
-					if (set && set.size === 0) this.watchers.delete(file)
-					watcher = null
-				},
+				unregister: async () => {},
 			}
 		}
 
@@ -311,10 +265,8 @@ export class PluginDataService {
 
 		const saveStore = async (store: MultiCollectionStore) => {
 			const content = JSON.stringify(store, null, 2)
-			await this.ctx.root.fs.writeTextAtomic(file, content)
+			await this.storage.put(file, content)
 		}
-
-		let watcher: FSWatcher | null = null
 
 		return {
 			load: async () => {
@@ -329,31 +281,10 @@ export class PluginDataService {
 				await saveStore(store)
 			},
 			register: async (onChange) => {
-				const notify = async () => {
-					const store = await loadStore()
-					await onChange({ items: extractItems(store) })
-				}
-				await notify()
-				try {
-					watcher = watch(file, {
-						ignoreInitial: true,
-						awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-					})
-						.on('add', () => void notify())
-						.on('change', () => void notify())
-					if (!this.watchers.has(file)) this.watchers.set(file, new Set())
-					this.watchers.get(file)?.add(watcher)
-				} catch {
-				}
+				const store = await loadStore()
+				await onChange({ items: extractItems(store) })
 			},
-			unregister: async () => {
-				if (!watcher) return
-				await Promise.resolve(watcher.close()).catch((): undefined => undefined)
-				const set = this.watchers.get(file)
-				set?.delete(watcher)
-				if (set && set.size === 0) this.watchers.delete(file)
-				watcher = null
-			},
+			unregister: async () => {},
 		}
 	}
 
@@ -375,7 +306,7 @@ export class PluginDataService {
 	private async readTextOptional(path: string | null): Promise<string | null> {
 		if (!path) return null
 		try {
-			return await this.ctx.root.fs.readText(path)
+			return (await this.storage.getText(path)) ?? null
 		} catch (err) {
 			if (isEnoent(err)) return null
 			throw err
@@ -386,4 +317,9 @@ export class PluginDataService {
 		const trimmed = ns || 'default'
 		return basename(trimmed).replaceAll(/[^A-Za-z0-9_-]/g, '_')
 	}
+}
+
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }

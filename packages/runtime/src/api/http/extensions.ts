@@ -84,7 +84,9 @@ function extractArtifactFilePath(
 	sourceHash: string,
 ): string | null {
 	const pathname = new URL(url).pathname
-	const prefix = `${RUNTIME_INTERNAL_API_BASE}${runtimeExtensionArtifactBasePath(pluginName, sourceHash)}`
+	const artifactBase = runtimeExtensionArtifactBasePath(pluginName, sourceHash)
+	const fullPrefix = `${RUNTIME_INTERNAL_API_BASE}${artifactBase}`
+	const prefix = pathname.startsWith(fullPrefix) ? fullPrefix : artifactBase
 	if (!pathname.startsWith(prefix)) return null
 	const file = pathname.slice(prefix.length).replace(/^\/+/, '')
 	return file || null

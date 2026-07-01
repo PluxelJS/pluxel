@@ -4,8 +4,7 @@
 // - 你想看 `defineOptionalFeature(...)` + `tryUse(...)` + 懒加载 optional module 的标准写法
 // - 你想确认 “依赖插件类型存在” 和 “依赖插件包可能根本不存在” 该怎么分别表达
 
-import { BasePlugin, defineOptionalFeature, Plugin } from '@pluxel/runtime'
-import { EvtChannel } from '@pluxel/runtime/services'
+import { BasePlugin, defineOptionalFeature, EvtChannel, Plugin } from '@pluxel/runtime'
 import {
 	PluginLoggerFeature,
 	type TickEvent,

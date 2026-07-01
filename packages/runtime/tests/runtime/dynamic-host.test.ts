@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext } from '@pluxel/runtime/test'
-import { isPluginEnabled } from '@pluxel/runtime/services'
+import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 
 describe('@pluxel/runtime Context bootstrap', () => {
 	it('boots core runtime services without any loader/HMR layer', async () => {

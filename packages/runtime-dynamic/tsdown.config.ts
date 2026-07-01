@@ -17,6 +17,7 @@ export default defineConfig({
 			'@pluxel/core',
 			'@pluxel/core/services',
 			'@pluxel/runtime',
+			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
 			'@pluxel/runtime/plugin-catalog',
 			'@pluxel/runtime/shared',

@@ -1,3 +1,4 @@
+import type { PersistenceNamespace } from '@pluxel/runtime'
 import type { EntryResolutionOk } from '../scan/types'
 import type { PackageSpecifierSnapshot } from './specifiers'
 import type { PackageInstallStatus, PackageLoadIssueSource } from './types'
@@ -41,37 +42,31 @@ export interface PackageStatePayload {
 
 export interface PackageStateStoreOptions {
 	/**
-	 * Minimal text file I/O used by the store.
-	 * Usually `ctx.root.fs`.
+	 * Runtime-owned persistence namespace used by the store.
 	 */
-	fs: TextFs
+	storage: PersistenceNamespace
 	file: string
 	enabled?: boolean
 	debounceMs?: number | undefined
 	onError?: ((error: unknown) => void) | undefined
 }
 
-export interface TextFs {
-	readText(path: string): Promise<string>
-	writeTextAtomic(path: string, data: string): Promise<void>
-}
-
 /**
  * Lightweight debounced writer for package state.
  * - Does not attempt to validate the payload; the caller owns shape conversion.
- * - Writes atomically via the provided fs implementation to avoid partial state.
+ * - Writes atomically through runtime persistence to avoid partial state.
  */
 export class PackageStateStore {
 	private timer: ReturnType<typeof setTimeout> | undefined
 	private latest: PackageStatePayload | undefined
-	private readonly fs: TextFs
+	private readonly storage: PersistenceNamespace
 	private readonly file: string
 	private readonly enabled: boolean
 	private readonly debounceMs: number
 	private readonly onError: ((error: unknown) => void) | undefined
 
 	constructor(options: PackageStateStoreOptions) {
-		this.fs = options.fs
+		this.storage = options.storage
 		this.file = options.file
 		this.enabled = options.enabled !== false
 		this.debounceMs = Math.max(0, options.debounceMs ?? 120)
@@ -80,17 +75,11 @@ export class PackageStateStore {
 
 	async read(): Promise<PackageStatePayload | null> {
 		if (!this.enabled) return null
-		try {
-			const raw = await this.fs.readText(this.file)
-			const parsed = parsePackageStatePayload(raw, this.file)
-			if (!parsed) return null
-			return parsed
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-				return null
-			}
-			throw error
-		}
+		const raw = await this.storage.getText(this.file)
+		if (raw === undefined) return null
+		const parsed = parsePackageStatePayload(raw, this.file)
+		if (!parsed) return null
+		return parsed
 	}
 
 	scheduleWrite(snapshot: PackageStatePayload) {
@@ -111,7 +100,7 @@ export class PackageStateStore {
 		const snapshot = this.latest
 		this.latest = undefined
 		try {
-			await writeJsonAtomic(this.fs, this.file, snapshot)
+			await writeJsonAtomic(this.storage, this.file, snapshot)
 		} catch (error) {
 			this.onError?.(error)
 			throw error
@@ -119,9 +108,13 @@ export class PackageStateStore {
 	}
 }
 
-async function writeJsonAtomic(fs: TextFs, file: string, payload: PackageStatePayload) {
+async function writeJsonAtomic(
+	storage: PersistenceNamespace,
+	file: string,
+	payload: PackageStatePayload,
+) {
 	const content = JSON.stringify(payload, null, 2)
-	await fs.writeTextAtomic(file, content)
+	await storage.put(file, content)
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {

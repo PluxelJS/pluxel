@@ -15,14 +15,16 @@ import {
 } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
+import { defineStaticRuntimeConfig, isStaticRuntimeConfig } from './config'
+import { createStaticRuntimeHost } from './internal/host'
 import type {
 	StaticRuntimeDefinition,
 	StaticRuntimeHost,
 	StaticRuntimeHostOptions,
 	StaticRuntimeStartupReport,
+	StaticRuntimeConfig,
 } from './types'
 
-const STATIC_RUNTIME_CONFIG_MARKER = Symbol.for('pluxel.staticRuntimeViteConfig')
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 
 type ExtensionCompilerConfig = {
@@ -36,50 +38,22 @@ type ExtensionCompilerConfig = {
 }
 
 type StaticRuntimeViteHmrConfig = {
-	vite?: InlineConfig
 	extensionCompiler?: ExtensionCompilerConfig
-	enableRuntimeServices?: boolean
+	enableWebManagement?: boolean
 }
 
 type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
 	viteServer?: ViteDevServer
 }
 
-export type StaticRuntimeViteConfig = StaticRuntimeDefinition &
-	StaticRuntimeHostOptions & {
-		hmr?: false | StaticRuntimeViteHmrConfig
-	}
+export type StaticRuntimeViteConfig = StaticRuntimeConfig
 
 export type StaticRuntimeVitePluginOptions = {
 	config: string
+	hmr?: false | StaticRuntimeViteHmrConfig
 }
 
-type MarkedStaticRuntimeViteConfig = StaticRuntimeViteConfig & {
-	readonly [STATIC_RUNTIME_CONFIG_MARKER]?: true
-}
-
-export function defineStaticRuntimeConfig(
-	config: StaticRuntimeViteConfig,
-): StaticRuntimeViteConfig {
-	return markStaticRuntimeConfig(config)
-}
-
-function markStaticRuntimeConfig<T extends StaticRuntimeViteConfig>(config: T): T {
-	Object.defineProperty(config, STATIC_RUNTIME_CONFIG_MARKER, {
-		value: true,
-		enumerable: false,
-		configurable: false,
-	})
-	return config
-}
-
-function isStaticRuntimeConfig(value: unknown): value is StaticRuntimeViteConfig {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		(value as MarkedStaticRuntimeViteConfig)[STATIC_RUNTIME_CONFIG_MARKER] === true,
-	)
-}
+export { defineStaticRuntimeConfig }
 
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
 	const state: {
@@ -125,24 +99,30 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
 			const config = await loadConfig()
-			const { createStaticRuntimeHost } =
-				await loadStaticRuntimeModule<typeof import('./index')>(server)
+			const hmr = options.hmr
+			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
+			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
+				await import('@pluxel/runtime/services/web-management')
+			}
 			const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(config), {
 				configService: config.configService,
 				runtimeState: config.runtimeState,
+				persistence: config.persistence,
+				pluginData: config.pluginData,
+				http: config.http,
+				logger: config.logger,
 				context: config.context,
 			})
 			state.host = host
 
-			const hmr = state.runtimeConfig?.hmr
-			if (hmr !== false) {
-				const hmrOptions = hmr ?? {}
+			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
+				const enabledHmrOptions = hmrOptions ?? {}
 				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
 				await configureStaticRuntimeDevRuntime(server, host, {
 					viteServer: server,
-					...hmrOptions,
+					...enabledHmrOptions,
 					extensionCompiler: mergeExtensionCompilerPluginDirs(
-						hmrOptions.extensionCompiler,
+						enabledHmrOptions.extensionCompiler,
 						pluginDirs,
 					),
 				})
@@ -236,6 +216,16 @@ function validateStaticRuntimeConfigModule(
 			`[runtime-static/vite] ${configPath} must default-export defineStaticRuntimeConfig(...)`,
 		)
 	}
+	if ('vite' in value) {
+		throw new Error(
+			`[runtime-static/vite] ${configPath} must not include a nested "vite" field; use the host vite.config.ts instead`,
+		)
+	}
+	if ('hmr' in value) {
+		throw new Error(
+			`[runtime-static/vite] ${configPath} must not include an "hmr" field; pass staticRuntimeVitePlugin({ hmr }) options from the host vite.config.ts instead`,
+		)
+	}
 	return value
 }
 
@@ -268,10 +258,6 @@ function collectSsrImportFiles(server: ViteDevServer, entry: string): Set<string
 	return files
 }
 
-async function loadStaticRuntimeModule<T>(server: ViteDevServer): Promise<T> {
-	return server.ssrLoadModule('@pluxel/runtime-static') as Promise<T>
-}
-
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
@@ -289,11 +275,17 @@ async function configureStaticRuntimeDevRuntime(
 
 	const extensionCompilerConfig = runtimeDev.mergeExtensionCompilerViteConfig(
 		options.extensionCompiler,
-		options.vite,
+		undefined,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	if (options.enableRuntimeServices !== false) {
-		ctx.config.http = { ...ctx.config.http, uiAssets: 'hmr-server' }
+	if (options.enableWebManagement !== false) {
+		await import('@pluxel/runtime/services/web-management')
+		ctx.config.http = {
+			...ctx.config.http,
+			management: true,
+			controlPlane: { web: true, rpc: true, sse: true },
+			uiAssets: 'hmr-server',
+		}
 		ctx.config.extensionService = {
 			...ctx.config.extensionService,
 			enabled: true,

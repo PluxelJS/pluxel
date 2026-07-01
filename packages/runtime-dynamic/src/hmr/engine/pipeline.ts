@@ -10,7 +10,11 @@ import {
 	startTimer,
 } from '@pluxel/runtime/shared'
 import { findRuntimeModuleId } from '@pluxel/runtime/internal'
-import { isPluginEnabled, setPluginEnabled, type RuntimeStateDraft } from '@pluxel/runtime/services'
+import {
+	isPluginEnabled,
+	setPluginEnabled,
+	type RuntimeStateDraft,
+} from '@pluxel/runtime/runtime-state'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'

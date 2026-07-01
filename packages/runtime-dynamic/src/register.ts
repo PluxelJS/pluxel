@@ -1,3 +1,4 @@
+import '@pluxel/runtime/register/full'
 import { LoaderService } from './loader/LoaderService'
 import { PackageService } from './package/PackageService'
 import { ScanService } from './scan/ScanService'

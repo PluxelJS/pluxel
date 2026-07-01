@@ -78,7 +78,6 @@ describe('Host verification gate', () => {
 
 	it('defaults to private mode and does not require credentials', async () => {
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 		})
 
 		expect(await host.ctx.verification.describe()).toMatchObject({
@@ -94,7 +93,6 @@ describe('Host verification gate', () => {
 
 	it('blocks public mode when OIDC is not configured', async () => {
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: { exposure: 'public' },
 		})
 
@@ -117,7 +115,6 @@ describe('Host verification gate', () => {
 
 	it('requires public OIDC config before binding a public host', async () => {
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 		})
 
 		expect(() => host!.ctx.root.verification.assertCanBindHost('127.0.0.1')).not.toThrow()
@@ -132,7 +129,6 @@ describe('Host verification gate', () => {
 		await host.dispose()
 		const oidc = await installOidcIssuer('bind')
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -159,7 +155,6 @@ describe('Host verification gate', () => {
 			}),
 		)
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -184,7 +179,6 @@ describe('Host verification gate', () => {
 	it('allows public control-plane requests with a valid OIDC bearer token', async () => {
 		const oidc = await installOidcIssuer('valid')
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -219,7 +213,6 @@ describe('Host verification gate', () => {
 	it('rejects valid OIDC tokens that miss required claims', async () => {
 		const oidc = await installOidcIssuer('claims')
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -249,7 +242,6 @@ describe('Host verification gate', () => {
 	it('renders a static external-auth page instead of a local login form', async () => {
 		const oidc = await installOidcIssuer('page')
 		host = createRuntimeHost({
-			fs: { mode: 'memory' },
 			verification: {
 				exposure: 'public',
 				oidc: {

@@ -13,7 +13,7 @@ import {
 	disablePluginsOnMissingDependencyError,
 	type MissingDepsCandidate,
 } from '@pluxel/runtime/shared'
-import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/services'
+import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/runtime-state'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'

@@ -1,4 +1,4 @@
-import { f, v } from '@pluxel/runtime/config'
+import { f, v } from '@pluxel/runtime'
 
 /** Polling 配置 schema */
 const PollingConfigSchema = v.object({

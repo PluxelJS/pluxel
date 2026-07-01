@@ -4,7 +4,7 @@ import picomatch from 'picomatch'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 
-import type { HttpHandler } from '@pluxel/runtime/services'
+import type { HttpHandler } from '@pluxel/runtime'
 
 export interface FetchHmrServerPluginOptions {
 	exclude?: Array<string | RegExp>

@@ -4,7 +4,6 @@ import pkg from '../package.json'
 import { buildCommand } from './commands/build'
 import { hmrCommand } from './commands/hmr'
 import { publishCommand } from './commands/publish'
-import { securityCommand } from './commands/security'
 import { workspaceCommand } from './commands/workspace'
 import { newCommand } from './scaffold'
 
@@ -15,7 +14,6 @@ const commands = new Map<string, AnyCommand>([
 	['build', buildCommand],
 	['publish', publishCommand],
 	['hmr', hmrCommand],
-	['security', securityCommand],
 	['workspace', workspaceCommand],
 ])
 

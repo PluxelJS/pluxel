@@ -3,8 +3,8 @@
 Static runtime route for fixed plugin catalogs.
 
 Static and dynamic hosts both start from the host-owned `vite.config.ts` when they need a Vite dev
-server. Static differs only in the loading model: it receives a fixed plugin catalog and applies
-catalog diffs on config-module reload.
+server. Static differs only in the loading model: it consumes a route-neutral runtime config with a
+fixed plugin catalog, then applies catalog diffs on config-module reload.
 
 ## Public Entry
 
@@ -26,38 +26,58 @@ export default defineConfig({
 
 ```ts
 // pluxel.static.ts
-import { defineStaticRuntimeConfig } from '@pluxel/runtime-static/vite'
+import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 import { DemoPlugin } from './src/DemoPlugin'
 
 export default defineStaticRuntimeConfig({
 	name: 'app',
 	plugins: [DemoPlugin],
+	configService: { mode: 'memory' },
 	runtimeState: {
 		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
+	persistence: { mode: 'memory' },
+	pluginData: { enabled: true },
+	http: { management: false },
+	logger: { preset: 'core' },
 })
 ```
 
-The route plugin owns static source transforms, development host lifecycle, request forwarding,
-source UI dev capability, and build-time packaged UI lowering.
+The runtime config is not a Vite config. The route plugin owns Vite SSR loading, static source
+transforms, development host lifecycle, request forwarding, source UI dev capability, and build-time
+packaged UI lowering.
+
+Development-only switches, such as disabling the web-management dev bridge, belong to the host
+`vite.config.ts`:
+
+```ts
+staticRuntimeVitePlugin({
+	config: './pluxel.static.ts',
+	hmr: { enableWebManagement: false },
+})
+```
 
 ## Headless Host
 
 Static can still run without Vite when it consumes prebuilt plugin UI/worker artifacts:
 
 ```ts
-import { createStaticRuntimeHost, defineStaticRuntime } from '@pluxel/runtime-static'
+import { createStaticRuntime, defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 
-const runtime = defineStaticRuntime({ name: 'app', plugins: [DemoPlugin] })
-const host = await createStaticRuntimeHost(runtime, {
+const config = defineStaticRuntimeConfig({
+	name: 'app',
+	plugins: [DemoPlugin],
+	configService: { mode: 'memory' },
 	runtimeState: {
 		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
+	persistence: { mode: 'memory' },
 })
+const runtime = await createStaticRuntime(config)
 
-await host.start()
+export default { fetch: runtime.fetch }
 ```
 
 ## Packaging

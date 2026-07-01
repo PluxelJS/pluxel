@@ -2,61 +2,28 @@ import { resolve } from 'node:path'
 import { pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
-import type { BuiltinPluginSpec } from './services'
-import type { BootedLoaderHmrHost, LoaderHmrHostStorageOptions } from './hmr/host'
-import type { LoaderHmrDependencyConfig } from './hmr/engine/config'
-import type { LoaderHmrConfig } from './hmr/engine/LoaderHmrService'
+import type { BootedLoaderHmrHost } from './hmr/host'
+import {
+	defineDynamicRuntimeConfig,
+	isDynamicRuntimeConfig,
+	type DynamicRuntimeConfig,
+} from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 
-const DYNAMIC_RUNTIME_CONFIG_MARKER = Symbol.for('pluxel.dynamicRuntimeViteConfig')
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 
-export type DynamicRuntimeViteConfig = {
-	root?: string
-	configPath?: string
-	profile?: string
-	env?: Record<string, string | undefined>
-	omitPackages?: string[]
-	logsDir?: string
-	logFile?: string
-	storage?: LoaderHmrHostStorageOptions
-	warmup?: boolean
-	printUrls?: boolean
-	deps?: LoaderHmrDependencyConfig
-	cjsExternal?: readonly string[]
-	builtins?: readonly BuiltinPluginSpec[]
-	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
-	context?: Record<string, unknown>
-}
+export type DynamicRuntimeViteConfig = DynamicRuntimeConfig
 
 export type DynamicRuntimeVitePluginOptions = {
 	config: string
 }
 
-type MarkedDynamicRuntimeViteConfig = DynamicRuntimeViteConfig & {
-	readonly [DYNAMIC_RUNTIME_CONFIG_MARKER]?: true
-}
+export { defineDynamicRuntimeConfig }
 
 type DynamicRuntimeController = {
 	booted: BootedLoaderHmrHost
 	configFiles: Set<string>
 	stop(): Promise<void>
-}
-
-export function defineDynamicRuntimeConfig(
-	config: DynamicRuntimeViteConfig,
-): DynamicRuntimeViteConfig {
-	if ('vite' in config) {
-		throw new Error(
-			'[runtime-dynamic/vite] Dynamic runtime config must not include a nested "vite" field; use the host vite.config.ts instead',
-		)
-	}
-	Object.defineProperty(config, DYNAMIC_RUNTIME_CONFIG_MARKER, {
-		value: true,
-		enumerable: false,
-		configurable: false,
-	})
-	return config
 }
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
@@ -168,14 +135,6 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		}),
 		routePlugin,
 	]
-}
-
-function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeViteConfig {
-	return Boolean(
-		value &&
-		typeof value === 'object' &&
-		(value as MarkedDynamicRuntimeViteConfig)[DYNAMIC_RUNTIME_CONFIG_MARKER] === true,
-	)
 }
 
 function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: string): string {

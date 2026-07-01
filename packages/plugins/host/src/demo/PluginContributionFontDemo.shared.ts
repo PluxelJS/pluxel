@@ -1,4 +1,4 @@
-import { f, v } from '@pluxel/runtime/config'
+import { f, v } from '@pluxel/runtime'
 import { defineInteractionContract } from '@pluxel/runtime/web/extensions'
 import type { ExtensionUiSignalDbMap as _ExtensionUiSignalDbMap } from '@pluxel/runtime/web'
 

@@ -6,11 +6,12 @@ import '@pluxel/runtime-dynamic/register'
 import { setPluxelRuntime } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
+	createNodeWorkspaceFsBackend,
 	resolveRuntimeStoragePaths,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
-import { Context } from '@pluxel/runtime'
-import { bootstrapHostVault, createNodeFsServiceBackend } from '@pluxel/runtime/services'
+import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
 import { mergeExtensionCompilerViteConfig } from '@pluxel/runtime-dev'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
@@ -34,6 +35,7 @@ const nodeHostFs = nodeLoaderHmrWorkspaceFs
 export type LoaderHmrHostStorageOptions = {
 	configFile?: string
 	runtimeStateFile?: string
+	persistenceDir?: string
 	seedConfig?: string | false
 	pluginDataDir?: string
 }
@@ -127,6 +129,7 @@ function planRuntimeStorage(
 			? {
 					configFile: storage.configFile ?? '.pluxel/loader-hmr/config.json',
 					runtimeStateFile: storage.runtimeStateFile ?? '.pluxel/loader-hmr/state.json',
+					persistenceDir: storage.persistenceDir ?? '.pluxel/persistence',
 					pluginDataDir: storage.pluginDataDir ?? '.pluxel/plugin-data',
 				}
 			: {}),
@@ -266,6 +269,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		})
 	}
 
+	const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
 	const ctx = new Context({
 		debug: plan.debug,
 		registry: plan.registry,
@@ -279,8 +283,10 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			mode: 'file',
 			path: plan.runtimeStorage.runtimeStateFile,
 		},
-		fs: {
-			backend: createNodeFsServiceBackend(plan.fs),
+		persistence: {
+			backend: createWorkspacePersistenceBackend(runtimeFsBackend, {
+				root: plan.runtimeStorage.persistenceDir,
+			}),
 		},
 		pluginData: { dir: plan.runtimeStorage.pluginDataDir },
 		packageService: {

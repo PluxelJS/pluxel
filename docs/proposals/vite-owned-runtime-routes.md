@@ -2,12 +2,48 @@
 
 状态：已实现。
 
-Static 和 dynamic runtime 路线都从宿主 `vite.config.ts` 启动。宿主拥有唯一 Vite dev
-server；Pluxel route package 只暴露每条路线一个 Vite 插件和一个 runtime config 定义函数。
+Static 和 dynamic runtime 都应由同一份 route-neutral runtime config 描述。使用 Vite
+开发时，宿主 `vite.config.ts` 只负责安装对应 Vite launcher；不使用 Vite 时，direct launcher
+直接消费同一份 config 对象。
+
+核心规则：
+
+- `pluxel.static.ts` / `pluxel.dynamic.ts` 是 runtime config，不是 Vite config。
+- `vite.config.ts` 是 host-owned Vite config，只安装 `staticRuntimeVitePlugin(...)` /
+  `dynamicRuntimeVitePlugin(...)`。
+- direct launcher 不按路径加载 config；它只接收应用已经 import 好的 config 对象。
+- Vite launcher 才通过 Vite SSR import 按路径加载 config，并拥有 watcher/HMR/build-time lowering。
+- static direct launcher 追求 fetch-native/tsdown-minimal；dynamic direct launcher 默认加载 full runtime
+  和 dynamic 服务，不追求最小打包。
 
 ## Public API
 
 ### Dynamic
+
+Route-neutral dynamic runtime config:
+
+```ts
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+
+export default defineDynamicRuntimeConfig({
+	root: process.cwd(),
+	configPath: 'packages/plugins/host/pluxel.loader.hmr.jsonc',
+	profile: 'plugins-host',
+	logsDir: 'packages/plugins/host/logs',
+})
+```
+
+Headless/full-runtime launcher:
+
+```ts
+import { createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import config from './pluxel.dynamic'
+
+const runtime = await createDynamicRuntime(config)
+await runtime.start()
+```
+
+Vite HMR launcher:
 
 ```ts
 import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
@@ -24,21 +60,47 @@ export default defineConfig({
 })
 ```
 
-```ts
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic/vite'
+Dynamic route config does not accept nested Vite config. Host Vite config is the only Vite config
+entry. Dynamic direct startup does not need to be tsdown-minimal; it can load full runtime,
+loader, scan, package manager, workspace diagnose, and persistence services by default. Vite HMR
+startup uses the same config, plus the host Vite dev server for SSR loading, watcher events, and
+module replacement.
 
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
-	configPath: 'packages/plugins/host/pluxel.loader.hmr.jsonc',
-	profile: 'plugins-host',
-	logsDir: 'packages/plugins/host/logs',
+### Static
+
+Route-neutral static runtime config:
+
+```ts
+import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
+import { DemoPlugin } from './src/DemoPlugin'
+
+export default defineStaticRuntimeConfig({
+	name: 'plugins-host-static',
+	plugins: [DemoPlugin],
+	runtimeState: {
+		mode: 'memory',
+		snapshot: { enabled: ['DemoPlugin'] },
+	},
+	http: {
+		management: true,
+	},
 })
 ```
 
-Dynamic route config does not accept nested Vite config. Host Vite config is the only Vite config
-entry.
+Production/fetch launcher:
 
-### Static
+```ts
+import { createStaticRuntime } from '@pluxel/runtime-static'
+import config from './pluxel.static'
+
+const runtime = await createStaticRuntime(config)
+
+export default {
+	fetch: runtime.fetch,
+}
+```
+
+Vite dev/build launcher:
 
 ```ts
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
@@ -55,26 +117,6 @@ export default defineConfig({
 })
 ```
 
-```ts
-import { defineStaticRuntimeConfig } from '@pluxel/runtime-static/vite'
-import { DemoPlugin } from './src/DemoPlugin'
-
-export default defineStaticRuntimeConfig({
-	name: 'plugins-host-static',
-	plugins: [DemoPlugin],
-	runtimeState: {
-		mode: 'memory',
-		snapshot: { enabled: ['DemoPlugin'] },
-	},
-	context: {
-		http: {
-			controlPlane: { web: true, rpc: true, sse: true },
-			uiAssets: 'hmr-server',
-		},
-	},
-})
-```
-
 Static route infers transform policy from Vite command:
 
 - `serve`: source semantics, static host lifecycle, request forwarding, source UI dev capability.
@@ -84,15 +126,17 @@ Static route infers transform policy from Vite command:
 
 - `@pluxel/runtime-dev/vite` is an implementation layer. Application hosts import route packages,
   not runtime-dev.
-- `@pluxel/runtime-static/vite` exposes only the static config function and route plugin.
-- `@pluxel/runtime-dynamic/vite` exposes only the dynamic config function and route plugin.
+- `@pluxel/runtime-static` exposes static runtime config definition and production launcher.
+- `@pluxel/runtime-dynamic` exposes dynamic runtime config definition and direct launcher.
+- `@pluxel/runtime-static/vite` exposes the static Vite launcher and may re-export the config helper for compatibility.
+- `@pluxel/runtime-dynamic/vite` exposes the dynamic Vite launcher and may re-export the config helper for compatibility.
 - `@pluxel/runtime` common does not expose `./vite`.
 - Dynamic HMR internals remain under `@pluxel/runtime-dynamic/hmr` for CLI, tests, and internal
   workspace tooling.
 
 ## Config Loading
 
-Route plugins load config modules through Vite SSR import:
+Vite launchers load config modules through Vite SSR import:
 
 - resolve `config` relative to Vite root
 - call `server.ssrLoadModule(...)`
@@ -102,6 +146,16 @@ Route plugins load config modules through Vite SSR import:
 - restart/reload the route when the config module graph changes
 
 No custom TS config loader exists in the route packages.
+
+Direct launchers do not load config by path. They consume an already-imported config object:
+
+```ts
+const runtime = await createDynamicRuntime(config)
+const runtime = await createStaticRuntime(config)
+```
+
+This preserves one runtime config shape while keeping Vite SSR import, watcher invalidation, HMR,
+and build-time transforms strictly inside the `/vite` launchers.
 
 ## Dynamic Lifecycle
 
@@ -132,8 +186,9 @@ Only one dynamic runtime route is allowed per Vite server.
 
 ## Success Criteria
 
-- New hosts start either route from `vite.config.ts`.
-- Each route has one documented Vite plugin and one documented config function.
+- New hosts can start either route directly from an imported runtime config.
+- New hosts can start either route from `vite.config.ts` by pointing the Vite launcher at the same config file.
+- Each route has one documented config helper, one direct launcher, and one Vite launcher.
 - Common source/decorator/config extraction behavior has one implementation.
 - Runtime config stays route-specific and small.
 - Host Vite config remains authoritative.

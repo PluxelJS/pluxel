@@ -9,13 +9,14 @@
 runtime 拥有：
 
 - runtime services 注册和宿主能力
-- file/memory/readonly 配置持久化
+- durable/ephemeral/readonly runtime persistence backend
 - profile-aware config path
 - route-neutral plugin catalog 契约
 - 插件状态 read model
-- HTTP/control-plane routes
-- RPC/SSE/runtime web APIs
-- plugin interaction services
+- Elysia HTTP routes、fetch mount 和 GraphQL HTTP capability
+- optional web-management bundle：RPC、SSE、runtime web UI、management panel、`ctx.ext`
+- optional vault bundle：`ctx.vault` 和 host-side vault bootstrap/admin
+- plugin interaction contracts
 - plugin UI runtime protocols
 - browser host APIs、web config、workbench surfaces
 
@@ -52,7 +53,7 @@ module id
 
 ## 固定插件路线：runtime-static route
 
-runtime-static route 是当前已实现的第二条 runtime 路线。它消费 `defineStaticRuntime({ plugins: [...] })` 产出的 fixed catalog，不做 workspace scan、package install、dynamic module registry 或 loader batch。static HMR 由 `@pluxel/runtime-static/vite` route 内部拥有：Vite SSR import 重新得到 definition 后，static route 按 plugin name diff catalog，再对受影响且 enabled 的插件提交 core lifecycle 计划。
+runtime-static route 是当前已实现的第二条 runtime 路线。它消费 `defineStaticRuntimeConfig({ plugins: [...] })` 产出的 fixed catalog，不做 workspace scan、package install、dynamic module registry 或 loader batch。static HMR 由 `@pluxel/runtime-static/vite` route 内部拥有：Vite SSR import 重新得到 definition 后，static route 按 plugin name diff catalog，再对受影响且 enabled 的插件提交 core lifecycle 计划。
 
 两条路线的隔离方式是：
 
@@ -66,14 +67,22 @@ runtime common host layer
 
 ## Runtime 服务入口
 
-- `packages/runtime/src/index.ts`：runtime public entry。
-- `packages/runtime/src/runtime/register.ts`：runtime common services 注册副作用，不自动注册 loader route。
-- `packages/runtime/src/services.ts`：runtime common services public surface。
+- `packages/runtime/src/index.ts`：默认 plugin authoring/runtime common entry，只注册 static/common services。
+- `packages/runtime/src/runtime/register/static.ts`：static production 默认服务注册。
+- `packages/runtime/src/runtime/register/full.ts`：dynamic/dev full runtime 默认服务注册。
+- `packages/runtime/src/services/vault.ts`：显式 vault service boundary。
+- `packages/runtime/src/services/web-management.ts`：显式 web-management service boundary。
 - `packages/runtime/src/api/contributions.ts`：从当前 `Context.runtimeRoute.api` 读取 GraphQL resolver 和 route feature handle。
 - `packages/runtime/src/plugin-catalog.ts`：route-neutral plugin catalog/status/source/capability 类型出口。
 - `packages/runtime/src/runtime/capabilities.ts`：runtime common 使用的窄 route capabilities；缺少必需 capability 时会明确报错。
+- `packages/runtime/src/services/persistence/PersistenceService.ts`：窄 runtime persistence service，config/state/plugin-data/logger/vault 通过 namespace 复用 backend。
+  common runtime 不内置 Node fs backend；未显式提供 backend 时使用 memory backend，dynamic route 通过 workspace fs adapter 注入 durable backend。
 - `packages/runtime/src/services/RuntimeStateStore.ts`：运行控制面状态持久化，包括 enabled、forks、base providers、依赖覆盖、builtin/plugin groups。
+- `packages/runtime-static/src/index.ts`：static production direct launcher，导出 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(config)`。
+- `packages/runtime-static/src/vite.ts`：static Vite launcher，负责 SSR 加载同一份 runtime config、按需接入 web-management/dev UI bridge 和 HMR。
 - `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
+- `packages/runtime-dynamic/src/index.ts`：dynamic direct launcher，导出 `defineDynamicRuntimeConfig(...)` 和 `createDynamicRuntime(config)`。
+- `packages/runtime-dynamic/src/vite.ts`：dynamic Vite launcher，负责 SSR 加载同一份 runtime config 和 loader HMR。
 - `packages/runtime-dynamic/src/services.ts`：loader route services public surface。
 - `packages/runtime-dynamic/src/loader/LoaderService.ts`：loader service 和 public loader API。
 - `packages/runtime-dynamic/src/catalog/LoaderRuntimeRoute.ts`：把 loader registry/runtime/control 组装成 runtime route capabilities。

@@ -44,6 +44,11 @@
 目标是把 static/dynamic 宿主入口统一成 host-owned Vite plugin + `defineXxxRuntimeConfig(...)`
 配置文件。设计记录见 `vite-owned-runtime-routes.md`。
 
+下一步统一规则：`pluxel.static.ts` 和 `pluxel.dynamic.ts` 都应是 route-neutral runtime config，
+不是 Vite config。Vite 插件通过 `{ config }` 加载同一份配置；production/headless 入口可以
+直接 import 这份配置并启动 runtime。static 需要轻量 fetch-native/tsdown 路径；dynamic 不追求
+最小打包，默认加载 full runtime、loader、scan、package manager 和 HMR 相关服务。
+
 ## Static Fetch-Native Runtime
 
 状态：设计目标和网络模型审计。
@@ -51,7 +56,25 @@
 static 路线的生产目标是 `runtime -> runtime-static` 可以被 `tsdown` 静态打包成最小
 fetch-native JavaScript，部署到 Node、Bun、Deno、Cloudflare Workers 等环境。dynamic
 路线继续保留 Vite/HMR/scan/package manager 能力，不追求 worker-native。目标边界、当前
-网络模型审计和允许破坏兼容的优化方向见 `static-fetch-native-runtime.md`。
+网络模型审计和允许破坏兼容的优化方向见 `static-fetch-native-runtime.md`。`@pluxel/runtime-static`
+主入口应就是轻量 production static 入口，`./vite` 才是开发期入口。已落地的
+host-owned Vite config 分离不回退，但 `pluxel.static.ts` 这类文件应是 route-neutral runtime
+config：`defineStaticRuntimeConfig(...)` 从 `@pluxel/runtime-static` 主入口导出；Vite 插件通过
+`staticRuntimeVitePlugin({ config })` 加载同一份 config，production entry 直接 import 后
+`createStaticRuntime(config) -> runtime.fetch`。
+
+## Static Runtime Enterprise Refactor
+
+状态：重构方案。
+
+面向企业后端 static runtime 的具体重构步骤见 `static-runtime-enterprise-refactor.md`。
+核心方向是保留 Elysia 作为唯一 HTTP 框架，GraphQL 归入 HTTP 默认能力，config/state
+file persistence、plugin data 和 file logger 作为企业后端默认能力优化；`FsService` 改成窄
+`PersistenceService`，用来区分 durable/ephemeral/readonly backend，而不是完整 Node fs 抽象。
+Vault 是真正插件按需 import 的服务；runtime web UI、management panel、ext、SSE 作为
+web-management bundle 共通进退。重构时要控制 public 概念数量：不要新增 preset、
+capability registry、service declaration、asset subsystem；优先使用 Elysia route、logger sink、
+persistence backend 和显式 import。
 
 ## Runtime Concept Pruning
 

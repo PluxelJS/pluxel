@@ -3,7 +3,8 @@
 // - 你只想看 builtin doc/form/action 的完整最小组合
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc, type SignalDbDocumentHandle } from '@pluxel/runtime/services'
+import { doc } from '@pluxel/runtime/plugin'
+import type { SignalDbDocumentHandle } from '@pluxel/runtime/services/web-management'
 import {
 	BehaviorConfig,
 	type BuiltinAction,

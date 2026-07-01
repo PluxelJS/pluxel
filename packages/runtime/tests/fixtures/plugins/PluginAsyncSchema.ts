@@ -1,5 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { f, v } from '@pluxel/runtime/config'
+import { BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 
 const font = v.pipe(
 	v.array(

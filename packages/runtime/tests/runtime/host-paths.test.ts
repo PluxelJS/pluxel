@@ -10,6 +10,7 @@ describe('runtime host path policy', () => {
 
 		expect(paths.configFile).toBe(resolve(root, 'data/runtime/config.json'))
 		expect(paths.runtimeStateFile).toBe(resolve(root, 'data/runtime/state.json'))
+		expect(paths.persistenceDir).toBe(resolve(root, 'data/persistence'))
 		expect(paths.pluginDataDir).toBe(resolve(root, 'data/plugin-data'))
 		expect(paths.packageStateFile).toBe(resolve(root, 'data/runtime/package-state.json'))
 		expect(paths.logsDir).toBe(resolve(root, 'logs'))

@@ -1,41 +1,44 @@
-import { type ConfigSchemaList, Config as OrigConfig, setPluxelRuntime } from '@pluxel/core'
-import {
-	type ErrorMessage,
-	type InferOutput,
-	isOfType,
-	type ObjectEntries,
-	type ObjectEntriesAsync,
-	type ObjectIssue,
-	type ObjectSchema,
-	type ObjectSchemaAsync,
-} from 'valibot'
-import './runtime/register'
+import './runtime/register/static'
+import { setPluxelRuntime } from '@pluxel/core'
 
 setPluxelRuntime('core')
 
-export type { RuntimeEvents } from './events'
-
+export { EvtChannel } from '@pluxel/core/services'
+export * from './base'
+export { f, v } from './config'
 export {
-	BaseFeature,
-	BasePlugin,
-	cfg,
-	Context,
-	defineOptionalFeature,
-	ForkablePlugin,
-	HostBoundFeature,
-	Plugin,
-	pluginMethodDecorator,
-} from '@pluxel/core'
-export { bootstrapHostVault } from './services/security/bootstrap'
-
-type ConfigSchema =
-	| ObjectSchema<ObjectEntries, ErrorMessage<ObjectIssue> | undefined>
-	| ObjectSchemaAsync<ObjectEntriesAsync, ErrorMessage<ObjectIssue> | undefined>
-export type ConfigSchemaMap = ConfigSchemaList<ConfigSchema>
-export type Config<T extends ConfigSchema> = InferOutput<T>
-export function Config(configSchema: ConfigSchema): ReturnType<typeof OrigConfig> {
-	if (!isOfType('object', configSchema)) {
-		throw new Error('传入 Config 装饰器的必须是 valibot ObjectSchema')
-	}
-	return OrigConfig(configSchema)
-}
+	PersistenceError,
+	createMemoryPersistenceBackend,
+	createReadonlyPersistenceBackend,
+	createWorkspacePersistenceBackend,
+	type PersistenceBackend,
+	type PersistenceCapability,
+	type PersistenceEntry,
+	type PersistenceMode,
+	type PersistenceNamespace,
+	type PersistenceRequirement,
+	type PersistenceServiceConfig,
+	type WorkspacePersistenceBackendFs,
+	type WorkspacePersistenceBackendOptions,
+} from './services/persistence/PersistenceService'
+export {
+	PLUGIN_HTTP_BASE,
+	type ElysiaRouteHandle,
+	type HttpHandler,
+} from './services/http/HttpService'
+export {
+	createElysiaApp,
+	type AnyElysiaApp,
+	type CreateElysiaAppOptions,
+} from './services/http/elysia'
+export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
+export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
+export {
+	setPluginEnabled,
+} from './runtime-state'
+export {
+	getPluginRoutingSnapshot,
+	type PluginRoutingSnapshot,
+	type RouteId,
+} from './services/routing/pluginGatedRoutes'
+export type { StaticRuntimeRegisteredServices } from './runtime/register/static'

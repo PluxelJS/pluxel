@@ -1,4 +1,5 @@
 export const RUNTIME_INTERNAL_API_BASE = '/__pluxel/runtime' as const
+export const UI_PUBLIC_BASE = '/dist/public' as const
 export const RUNTIME_META_BASE = '/meta' as const
 export const RUNTIME_EXTENSIONS_BASE = '/extensions' as const
 export const RUNTIME_LOG_STREAMS_BASE = '/logs/v1/streams' as const

@@ -21,10 +21,6 @@
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
 		},
-		"./config": {
-			"@pluxel/source": "./src/config.ts",
-			"default": "./dist/config.mjs"
-		},
 		"./events": {
 			"@pluxel/source": "./src/events.ts",
 			"default": "./dist/events.mjs"
@@ -53,9 +49,25 @@
 			"@pluxel/source": "./src/protocol.ts",
 			"default": "./dist/protocol.mjs"
 		},
-		"./services": {
-			"@pluxel/source": "./src/services.ts",
-			"default": "./dist/services.mjs"
+		"./register/full": {
+			"@pluxel/source": "./src/runtime/register/full.ts",
+			"default": "./dist/register/full.mjs"
+		},
+		"./register/static": {
+			"@pluxel/source": "./src/runtime/register/static.ts",
+			"default": "./dist/register/static.mjs"
+		},
+		"./runtime-state": {
+			"@pluxel/source": "./src/runtime-state.ts",
+			"default": "./dist/runtime-state.mjs"
+		},
+		"./services/vault": {
+			"@pluxel/source": "./src/services/vault.ts",
+			"default": "./dist/services/vault.mjs"
+		},
+		"./services/web-management": {
+			"@pluxel/source": "./src/services/web-management.ts",
+			"default": "./dist/services/web-management.mjs"
 		},
 		"./shared": {
 			"@pluxel/source": "./src/shared.ts",
@@ -92,7 +104,6 @@
 			".": "./dist/index.mjs",
 			"./api": "./dist/api.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
-			"./config": "./dist/config.mjs",
 			"./events": "./dist/events.mjs",
 			"./frozen": "./dist/frozen.mjs",
 			"./internal": "./dist/internal.mjs",
@@ -100,7 +111,11 @@
 			"./plugin": "./dist/plugin.mjs",
 			"./plugin-catalog": "./dist/plugin-catalog.mjs",
 			"./protocol": "./dist/protocol.mjs",
-			"./services": "./dist/services.mjs",
+			"./register/full": "./dist/register/full.mjs",
+			"./register/static": "./dist/register/static.mjs",
+			"./runtime-state": "./dist/runtime-state.mjs",
+			"./services/vault": "./dist/services/vault.mjs",
+			"./services/web-management": "./dist/services/web-management.mjs",
 			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
 			"./web": "./dist/web.mjs",
@@ -133,7 +148,6 @@
 		"age-encryption": "^0.3.0",
 		"better-sse": "^0.16.1",
 		"capnweb": "^0.5.0",
-		"chokidar": "^5.0.0",
 		"elysia": "^1.4.27",
 		"graphql": "^16.13.0",
 		"graphql-yoga": "^5.18.0",

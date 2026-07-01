@@ -5,9 +5,11 @@
 ## Runtime Entry
 
 - `packages/runtime/src/index.ts`
-  runtime 入口
-- `packages/runtime/src/runtime/register.ts`
-  side-effect 注册 `Context` services
+  plugin authoring / runtime common 默认入口，只注册 static/common services
+- `packages/runtime/src/runtime/register/static.ts`
+  static/common side-effect service registration
+- `packages/runtime/src/runtime/register/full.ts`
+  dynamic/dev full side-effect service registration
 
 ## Core Services
 
@@ -17,8 +19,10 @@
   host verification gate
 - `packages/runtime/src/services/vault/VaultService.ts`
   `ctx.vault` 存储面与 host-only `ctx.root.vaultAdmin`
-- `packages/runtime/src/services/security/identity.ts`
-  `data/security/identity.json` 读写
+- `packages/runtime/src/services/vault.ts`
+  显式 vault boundary，导出 bootstrap helper；`services/security/bootstrap.ts` 是内部实现
+- `packages/runtime/src/services/persistence/PersistenceService.ts`
+  runtime persistence namespace/backend 抽象
 - `packages/runtime/src/services/ConfigService.ts`
   配置读写
 - `packages/runtime/src/plugin-catalog.ts`

@@ -2,7 +2,7 @@ import '../../src/services'
 import { afterEach } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
 import type { Context } from '@pluxel/core'
-import { setPluginsEnabled } from '@pluxel/runtime/services'
+import { setPluginsEnabled } from '@pluxel/runtime/runtime-state'
 
 export type HmrTestState = {
 	enabled?: Set<string>
@@ -34,7 +34,12 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 	state.enabled = enabled
 	state.runtimeState ??= {}
 	const loaderHmr = { normalizeId: (id: string) => id }
-	const host = createHost({ root: { loaderHmr } } as Context.Config)
+	const host = createHost({
+		persistence: { mode: 'memory' },
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory' },
+		root: { loaderHmr },
+	} as Context.Config)
 	const ctx = host.ctx
 	const runtimeState = ctx.runtimeState
 	const updateRuntimeState = runtimeState.update.bind(runtimeState)

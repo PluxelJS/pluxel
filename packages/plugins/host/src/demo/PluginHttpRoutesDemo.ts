@@ -3,7 +3,7 @@
 // - 你不需要 worker，只想看 route base、path params 和 builtin doc 说明
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc } from '@pluxel/runtime/services'
+import { doc } from '@pluxel/runtime/plugin'
 
 const ROUTE_BASE = '/http-demo'
 

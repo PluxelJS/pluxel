@@ -54,8 +54,9 @@ Vite /__pluxel/plugins/StaticCommercialPlugin/graphql
   -> Drizzle service facade
 ```
 
-The demo-specific host factory only creates the static runtime host. Vite lifecycle, HMR source UI
-wiring, request forwarding, and shutdown are delegated to `@pluxel/runtime-static/vite`.
+Vite and standalone mode consume the same runtime config from `src/pluxel.static.ts`.
+Vite lifecycle, HMR source UI wiring, request forwarding, and shutdown are delegated to
+`@pluxel/runtime-static/vite`; the standalone `src/static.ts` entry only owns Node HTTP startup.
 
 The standalone static host can also be started without Vite:
 

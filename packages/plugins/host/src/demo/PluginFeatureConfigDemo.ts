@@ -2,8 +2,7 @@
 // - 你想看最小 `configs.use(...)` + `features.use(...)`
 // - 你需要 feature 配置如何归因到父插件配置页
 
-import { BaseFeature, BasePlugin, Plugin } from '@pluxel/runtime'
-import { f, v } from '@pluxel/runtime/config'
+import { BaseFeature, BasePlugin, f, Plugin, v } from '@pluxel/runtime'
 
 const PluginConfig = v.object({
 	enabled: v.pipe(

@@ -13,18 +13,10 @@ import {
 } from '../../shared/verification-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE } from '../../web/paths'
+import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
-import { createVerificationRoutes } from '../verification/http'
-import {
-	createUiPublicAssetHandler,
-	resolveDefaultUiPublicDir,
-	type UiPublicAssetHandler,
-	UI_PUBLIC_BASE,
-} from '../../server/ui-public'
 import type { SseChannel } from '../plugin-interaction/SseService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
-import { createInternalApiRoutes } from './internalApi'
 
 const serviceName = 'http' as const
 
@@ -53,6 +45,15 @@ export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 export type UiAssetStrategy = 'hmr-server' | 'static-built' | 'disabled'
 
 export interface HttpServiceConfig {
+	/**
+	 * Enables the Pluxel management surface (verification pages, internal API, SSE, and UI fallback).
+	 *
+	 * Dynamic/dev hosts keep the historical default (`true`). Static production hosts set this to
+	 * `false` from their launcher unless the app opts in.
+	 */
+	management?: boolean
+	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
+	graphql?: boolean
 	controlPlane?: {
 		web?: boolean
 		rpc?: boolean
@@ -79,6 +80,24 @@ export interface HttpBoundaryHandle {
 }
 
 type BaseElysiaApp = AnyElysiaApp
+
+type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
+type InternalApiOptions = {
+	web?: boolean
+	rpc?: boolean
+	sse?: boolean
+	graphql?: boolean
+}
+type ResolvedHttpServiceConfig = {
+	controlPlane: {
+		web: boolean
+		rpc: boolean
+		sse: boolean
+	}
+	graphql: boolean
+	uiAssets: UiAssetStrategy
+	uiPublicDir: string
+}
 
 export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
 
@@ -130,6 +149,11 @@ function encodePathSegment(input: string): string {
 	return encodeURIComponent(input)
 }
 
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
+}
+
 @Injectable({ key: serviceName })
 export class HttpService {
 	private fullReloadRequested = false
@@ -143,7 +167,7 @@ export class HttpService {
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private sseBuiltinsReady = false
-	private readonly config: Required<HttpServiceConfig>
+	private readonly config: ResolvedHttpServiceConfig
 
 	constructor(
 		public ctx: PluxelContext,
@@ -151,44 +175,60 @@ export class HttpService {
 	) {
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
+		const controlPlaneRequested =
+			config.controlPlane?.web === true ||
+			config.controlPlane?.rpc === true ||
+			config.controlPlane?.sse === true
+		const uiAssetsRequested = config.uiAssets !== undefined && config.uiAssets !== 'disabled'
+		const management = config.management !== false || controlPlaneRequested || uiAssetsRequested
+		const useDefaultControlPlane = management && config.controlPlane === undefined
+		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
-				web: config.controlPlane?.web !== false,
-				rpc: config.controlPlane?.rpc !== false,
-				sse: config.controlPlane?.sse !== false,
+				web:
+					useDefaultControlPlane ||
+					(config.management === true && config.controlPlane?.web !== false) ||
+					config.controlPlane?.web === true,
+				rpc:
+					useDefaultControlPlane ||
+					(config.management === true && config.controlPlane?.rpc !== false) ||
+					config.controlPlane?.rpc === true,
+				sse:
+					useDefaultControlPlane ||
+					(config.management === true && config.controlPlane?.sse !== false) ||
+					config.controlPlane?.sse === true,
 			},
-			uiAssets: config.uiAssets ?? 'static-built',
+			graphql,
+			uiAssets: config.uiAssets ?? (management ? 'static-built' : 'disabled'),
 			uiPublicDir: config.uiPublicDir ?? '',
 		}
-		this.mountHostRoutes((app) => createVerificationRoutes(this.hostCtx, app), {
-			id: 'pluxel:verification',
-			path: VERIFICATION_PAGE_PATH,
-			app: {
-				aot: true,
-				name: 'pluxel.http.verification',
-			},
-		})
+		if (management) {
+			this.mountHostBoundary({
+				id: 'pluxel:verification',
+				path: VERIFICATION_PAGE_PATH,
+				boundary: this.createLazyVerificationBoundary(),
+			})
+		}
 		this.rebuildRootApp()
-		if (
-			this.config.controlPlane.web ||
-			this.config.controlPlane.rpc ||
-			this.config.controlPlane.sse
-		) {
-			this.mountHostRoutes(
-				createInternalApiRoutes(this.hostCtx, {
+		const controlPlaneEnabled =
+			this.config.controlPlane.web || this.config.controlPlane.rpc || this.config.controlPlane.sse
+		if (controlPlaneEnabled) {
+			this.mountHostBoundary({
+				id: 'hmr:internal-api',
+				path: RUNTIME_INTERNAL_API_BASE,
+				boundary: this.createLazyInternalApiBoundary({
 					web: this.config.controlPlane.web,
 					rpc: this.config.controlPlane.rpc,
 					sse: this.config.controlPlane.sse,
+					graphql: this.config.graphql,
 				}),
-				{
-					id: 'hmr:internal-api',
-					path: RUNTIME_INTERNAL_API_BASE,
-					app: {
-						aot: true,
-						name: 'pluxel.http.internal',
-					},
-				},
-			)
+			})
+		} else if (this.config.graphql) {
+			this.mountHostBoundary({
+				id: 'pluxel:internal-graphql',
+				path: RUNTIME_INTERNAL_API_BASE,
+				boundary: this.createLazyGraphqlBoundary(),
+			})
 		}
 		if (this.config.controlPlane.sse) this.registerSseBuiltins()
 
@@ -270,6 +310,49 @@ export class HttpService {
 		})
 	}
 
+	private createLazyVerificationBoundary(): HttpHandler {
+		let appPromise: Promise<BaseElysiaApp> | undefined
+		return async (request) => {
+			appPromise ??= import('../verification/http').then(({ createVerificationRoutes }) =>
+				createVerificationRoutes(
+					this.hostCtx,
+					this.createApp(this.hostCtx, {
+						aot: true,
+						name: 'pluxel.http.verification',
+					}),
+				),
+			)
+			const app = await appPromise
+			return app.fetch(request)
+		}
+	}
+
+	private createLazyInternalApiBoundary(options: InternalApiOptions): HttpHandler {
+		let boundaryPromise: Promise<HttpBoundary> | undefined
+		return async (request) => {
+			boundaryPromise ??= import('./internalApi').then(({ createInternalApiRoutes }) => {
+				const build = createInternalApiRoutes(this.hostCtx, options)
+				return build(
+					this.createApp(this.hostCtx, {
+						aot: true,
+						name: 'pluxel.http.internal',
+					}),
+				)
+			})
+			const boundary = await boundaryPromise
+			return this.toFetch(boundary)(request)
+		}
+	}
+
+	private createLazyGraphqlBoundary(): HttpHandler {
+		let boundaryPromise: Promise<HttpBoundary> | undefined
+		return async (request) => {
+			boundaryPromise ??= Promise.resolve(this.hostCtx.internalGraphql.plugin())
+			const boundary = await boundaryPromise
+			return this.toFetch(boundary)(request)
+		}
+	}
+
 	private mountPluginBoundary(
 		pluginCtx: PluxelContext,
 		pluginId: string,
@@ -345,17 +428,23 @@ export class HttpService {
 		}
 	}
 
-	private resolveUiPublicDir(): string | null {
+	private async resolveUiPublicDir(): Promise<string | null> {
 		if (this.config.uiAssets !== 'static-built') return null
 		const configured = String(this.config.uiPublicDir ?? '').trim()
-		if (configured) return isAbsolute(configured) ? configured : resolve(process.cwd(), configured)
+		if (configured) return isAbsolute(configured) ? configured : resolve(currentWorkingDirectory(), configured)
+		const { resolveDefaultUiPublicDir } = await import('../../server/ui-public')
 		return resolveDefaultUiPublicDir()
 	}
 
-	private uiPublic(): UiPublicAssetHandler | null {
+	private async uiPublic(): Promise<UiPublicAssetHandler | null> {
 		if (this.uiPublicHandler !== undefined) return this.uiPublicHandler
-		const dir = this.resolveUiPublicDir()
-		this.uiPublicHandler = dir ? createUiPublicAssetHandler({ publicDirAbs: dir }) : null
+		const dir = await this.resolveUiPublicDir()
+		if (!dir) {
+			this.uiPublicHandler = null
+			return null
+		}
+		const { createUiPublicAssetHandler } = await import('../../server/ui-public')
+		this.uiPublicHandler = createUiPublicAssetHandler({ publicDirAbs: dir })
 		return this.uiPublicHandler
 	}
 
@@ -372,15 +461,17 @@ export class HttpService {
 			const path = url.pathname
 			const method = (request.method ?? 'GET').toUpperCase()
 
-			const uiPublic = this.uiPublic()
 			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
+				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
+				const uiPublic = await this.uiPublic()
 				if (!uiPublic) return new Response('Not Found', { status: 404 })
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
 			}
 
 			if (this.isHtmlNavigation(request)) {
+				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
 				return this.render(request)
@@ -610,7 +701,7 @@ export class HttpService {
 		}
 		if (this.config.uiAssets === 'static-built') {
 			const { createStaticRenderer } = await import('../../server/static')
-			return createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined })
+			return createStaticRenderer({ publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined })
 		}
 		const { createHmrRenderer } = await import('../../server/hmr')
 		return createHmrRenderer()

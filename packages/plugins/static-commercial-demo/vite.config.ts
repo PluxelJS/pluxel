@@ -10,7 +10,7 @@ export default defineConfig({
 	appType: 'spa',
 	plugins: [
 		staticRuntimeVitePlugin({
-			config: './src/pluxel.static.vite.ts',
+			config: './src/pluxel.static.ts',
 		}),
 		gqlens({
 			output: 'web/gqlens',

@@ -19,7 +19,7 @@ import {
 	setPkgrootCacheLimit,
 	startTimer,
 } from '@pluxel/runtime/shared'
-import { isPluginEnabled } from '@pluxel/runtime/services'
+import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 import {
 	buildLoaderHmrViteConfig,
 	type LoaderHmrDependencyConfig,

@@ -21,7 +21,7 @@
 			"@pluxel/core": ["packages/core/src/index.ts"],
 			"@pluxel/core/*": ["packages/core/src/*"],
 			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
-			"@pluxel/runtime/services": ["packages/runtime/src/services.ts"],
+			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"],
 			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
 			"@pluxel/runtime/web/ui": ["packages/runtime/src/web/ui.ts"],
 			"@pluxel/runtime/web/extensions": ["packages/runtime/src/web/extensions.ts"],

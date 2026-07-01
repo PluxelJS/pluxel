@@ -24,7 +24,6 @@ import {
 	extensionFederationRemoteName,
 } from '../../web/federation'
 import { RUNTIME_INTERNAL_API_BASE, runtimeExtensionArtifactPath } from '../../web/paths'
-import type { FsService, FsStat } from '../fs/FsService'
 import { ExtensionInteractionRegistry } from './ExtensionInteractionRegistry'
 import {
 	errorMessage,
@@ -731,34 +730,14 @@ export class ExtensionService implements ExtensionModuleStore {
 		return resolve(cwd, manifestPath)
 	}
 
-	private getPackagedManifestFs(): Pick<FsService, 'exists' | 'readText' | 'stat'> | undefined {
-		const root = this.ctx.root as
-			| { fs?: Pick<FsService, 'exists' | 'readText' | 'stat'> }
-			| undefined
-		return root?.fs
-	}
-
 	private async readPackagedManifestText(path: string): Promise<string | null> {
-		const fs = this.getPackagedManifestFs()
-		if (typeof fs?.readText === 'function') {
-			try {
-				return await fs.readText(path)
-			} catch {
-				return null
-			}
-		}
 		return await readFile(path, 'utf-8').catch((): null => null)
 	}
 
-	private async statPackagedManifest(path: string): Promise<FsStat | null> {
-		const fs = this.getPackagedManifestFs()
-		if (typeof fs?.stat === 'function') {
-			try {
-				return await fs.stat(path)
-			} catch {
-				return { type: 'missing' }
-			}
-		}
+	private async statPackagedManifest(path: string): Promise<{
+		type: 'file' | 'dir' | 'other'
+		mtimeMs?: number
+	} | null> {
 		return await stat(path)
 			.then((st) => ({
 				type: st.isFile()
@@ -772,13 +751,10 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	private findNearestPackageRoot(start: string): string | null {
-		const fs = this.getPackagedManifestFs()
-		const pathExists =
-			typeof fs?.exists === 'function' ? (path: string) => fs.exists!(path) : existsSync
 		try {
 			let current = start
 			while (true) {
-				if (pathExists(resolve(current, 'package.json'))) return current
+				if (existsSync(resolve(current, 'package.json'))) return current
 				const parent = dirname(current)
 				if (parent === current) return null
 				current = parent

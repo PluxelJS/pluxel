@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 
-import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime/services'
+import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime'
 
 @Plugin({ name: 'ScopedHttpPlugin', type: 'event' })
 class ScopedHttpPlugin extends BasePlugin {

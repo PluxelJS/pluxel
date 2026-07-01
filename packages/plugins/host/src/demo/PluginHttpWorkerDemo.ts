@@ -3,8 +3,7 @@
 // - 你需要一个 HTTP endpoint 作为 worker 调用触发器
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
-import { doc } from '@pluxel/runtime/services'
+import { doc, worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {

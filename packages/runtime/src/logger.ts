@@ -46,12 +46,13 @@ export { createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
 
 export {
 	RuntimePluginLogPolicy,
-	readPluginLogPolicyFile,
+	parsePluginLogPolicySnapshot,
 	runtimePluginLogPolicy,
-	writePluginLogPolicyFile,
+	serializePluginLogPolicySnapshot,
 	type PluginLogPolicySnapshot,
 	type RuntimePluginLogLevel,
 } from './logger/policy'
+export { readPluginLogPolicyFile, writePluginLogPolicyFile } from './logger/policy-file'
 
 export type {
 	RuntimeLogStoreAppend,

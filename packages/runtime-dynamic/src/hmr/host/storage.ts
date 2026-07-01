@@ -7,10 +7,10 @@ import {
 	type MaterializeProfiledFileOptions,
 	type ResolvedProfiledPath,
 } from '@pluxel/runtime/internal'
-import type { FsServiceNodeBackendFs } from '@pluxel/runtime/services'
+import type { NodeWorkspaceFs } from '@pluxel/runtime/internal'
 
-type MaterializeFs = Pick<FsServiceNodeBackendFs, 'existsSync'> & {
-	promises: Pick<FsServiceNodeBackendFs['promises'], 'copyFile' | 'mkdir'>
+type MaterializeFs = Pick<NodeWorkspaceFs, 'existsSync'> & {
+	promises: Pick<NodeWorkspaceFs['promises'], 'copyFile' | 'mkdir'>
 }
 
 const nodeMaterializeFs: MaterializeFs = {

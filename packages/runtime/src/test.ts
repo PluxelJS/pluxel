@@ -1,4 +1,4 @@
-import './runtime/register'
+import './runtime/register/full'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -12,7 +12,7 @@ import {
 	type CoreTestContext,
 	type PluginConstructor,
 } from '@pluxel/core/test'
-import { bootstrapHostVault } from './services/security/bootstrap'
+import { bootstrapHostVault } from './services/vault'
 
 export {
 	BaseFeature,
@@ -65,11 +65,19 @@ export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> 
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	return createCoreHost(config, {
-		prepareCommit: async (ctx) => {
-			await bootstrapHostVault(ctx)
+	return createCoreHost(
+		{
+			persistence: { mode: 'memory' },
+			configService: { mode: 'memory' },
+			runtimeState: { mode: 'memory' },
+			...config,
 		},
-	})
+		{
+			prepareCommit: async (ctx) => {
+				await bootstrapHostVault(ctx)
+			},
+		},
+	)
 }
 
 export async function withRuntimeHost<T>(
@@ -85,12 +93,22 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	return createCoreContext(config)
+	return createCoreContext({
+		persistence: { mode: 'memory' },
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory' },
+		...config,
+	})
 }
 
 export async function withRuntimeContext<T>(
 	fn: (ctx: Context) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	return withCoreContext(fn, config)
+	return withCoreContext(fn, {
+		persistence: { mode: 'memory' },
+		configService: { mode: 'memory' },
+		runtimeState: { mode: 'memory' },
+		...config,
+	})
 }

@@ -1,6 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import type { LogLevel, LogRecord } from '@logtape/logtape'
-import { dirname } from 'pathe'
 
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
@@ -141,26 +139,14 @@ export class RuntimePluginLogPolicy {
 	}
 }
 
-export async function readPluginLogPolicyFile(
-	path: string,
-): Promise<PluginLogPolicySnapshot | null> {
-	try {
-		const raw = await readFile(path, 'utf8')
-		const parsed = JSON.parse(raw) as unknown
-		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-		return normalizeSnapshot(parsed as Partial<PluginLogPolicySnapshot>)
-	} catch (error) {
-		if ((error as { code?: unknown }).code === 'ENOENT') return null
-		throw error
-	}
+export function parsePluginLogPolicySnapshot(raw: string): PluginLogPolicySnapshot | null {
+	const parsed = JSON.parse(raw) as unknown
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+	return normalizeSnapshot(parsed as Partial<PluginLogPolicySnapshot>)
 }
 
-export async function writePluginLogPolicyFile(
-	path: string,
-	snapshot: PluginLogPolicySnapshot,
-): Promise<void> {
-	await mkdir(dirname(path), { recursive: true })
-	await writeFile(path, `${JSON.stringify(normalizeSnapshot(snapshot), null, 2)}\n`)
+export function serializePluginLogPolicySnapshot(snapshot: PluginLogPolicySnapshot): string {
+	return `${JSON.stringify(normalizeSnapshot(snapshot), null, 2)}\n`
 }
 
 export const runtimePluginLogPolicy = new RuntimePluginLogPolicy()

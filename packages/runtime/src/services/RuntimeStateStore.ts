@@ -1,8 +1,8 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import { watch, type FSWatcher } from 'chokidar'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
+import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type PluginGroupState = {
 	groupId: string
@@ -46,6 +46,14 @@ export interface RuntimeStateStoreConfig {
 	snapshot?: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] }
 }
 
+export {
+	isPluginEnabled,
+	listForkIds,
+	replaceEnabledPlugins,
+	setPluginEnabled,
+	setPluginsEnabled,
+} from './RuntimeStateHelpers'
+
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Config {
@@ -73,22 +81,22 @@ export class RuntimeStateStore {
 	private saveAgain = false
 	private pendingWriteDigest: string | undefined
 	private lastWrittenDigest: string | undefined
-	private watcher: FSWatcher | undefined
 	private disposed = false
 	private batching = 0
 	private pendingSave = false
+	private readonly storage: PersistenceNamespace
 
 	constructor(
 		public readonly ctx: PluxelContext,
 		cfg: RuntimeStateStoreConfig = {},
 	) {
-		const fsMode = (ctx.config as unknown as { fs?: { mode?: unknown } })?.fs?.mode
-		const implicitMode: RuntimeStateStoreMode = fsMode === 'memory' ? 'memory' : 'file'
+		const implicitMode = defaultRuntimeStateStoreMode(ctx.root.persistence.capability)
 		this.mode = cfg.mode ?? implicitMode
 		this.readonlyMode = this.mode === 'readonly'
+		this.storage = ctx.root.persistence.namespace('runtime-state')
 
 		const profile = normalizeProfileName(ctx.config.profile)
-		const runtimeStorage = resolveRuntimeStoragePaths(process.cwd())
+		const runtimeStorage = resolveRuntimeStoragePaths(currentWorkingDirectory())
 		const resolved = resolveProfiledPath(cfg.path ?? runtimeStorage.runtimeStateFile, profile)
 		this.file = resolved.path
 
@@ -98,12 +106,6 @@ export class RuntimeStateStore {
 			this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
 				this.isReady = true
 			})
-			this.watcher = watch(this.file, {
-				ignoreInitial: true,
-				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-			})
-				.on('add', () => this.onDiskChange(this.file))
-				.on('change', () => this.onDiskChange(this.file))
 		} else {
 			this.isReady = true
 			this.ready = Promise.resolve()
@@ -154,8 +156,6 @@ export class RuntimeStateStore {
 		this.disposed = true
 		this.cancelScheduledSave()
 		await this.flush({ force: true }).catch((): void => undefined)
-		await Promise.resolve(this.watcher?.close()).catch((): void => undefined)
-		this.watcher = undefined
 	}
 
 	private assertMutable(action: string) {
@@ -194,28 +194,17 @@ export class RuntimeStateStore {
 	}
 
 	private async loadFromDisk(file: string, fallbackFile?: string) {
-		const fs = this.ctx.root.fs
 		let txt: string
 		let readFromFallback = false
-		try {
-			const hasPrimary = fs.exists(file)
-			const shouldSeed = !hasPrimary && !!fallbackFile && fs.exists(fallbackFile)
-			if (shouldSeed) {
-				txt = await fs.readText(fallbackFile!)
-				readFromFallback = true
-			} else {
-				txt = await fs.readText(file)
-			}
-		} catch (error) {
-			if (isMissingFileError(error)) {
-				replaceDraft(this.data, createDefaultDraft())
-				await this.saveToDisk(file)
-				return
-			}
-			this.ctx.logger.warn('RuntimeStateStore read failed (fallback to defaults)', {
-				file,
-				error,
-			})
+		const primary = await this.storage.getText(file)
+		const fallback =
+			primary === undefined && fallbackFile ? await this.storage.getText(fallbackFile) : undefined
+		if (fallback !== undefined) {
+			txt = fallback
+			readFromFallback = true
+		} else if (primary !== undefined) {
+			txt = primary
+		} else {
 			replaceDraft(this.data, createDefaultDraft())
 			await this.saveToDisk(file)
 			return
@@ -258,11 +247,11 @@ export class RuntimeStateStore {
 
 		const content = SuperJSON.stringify(toRuntimeStateFile(this.data))
 		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && this.ctx.root.fs.exists(file)) return
+		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(file))) return
 
 		this.pendingWriteDigest = nextDigest
-		const task = this.ctx.root.fs
-			.writeTextAtomic(file, content)
+		const task = this.storage
+			.put(file, content)
 			.then((): undefined => {
 				this.lastWrittenDigest = nextDigest
 				return undefined
@@ -281,16 +270,11 @@ export class RuntimeStateStore {
 		}
 	}
 
-	private async onDiskChange(file: string) {
-		if (this.disposed) return
-		await this.loadFromDisk(file)
-	}
-
 	private async isolateBrokenStateFile(file: string, content: string) {
 		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
 		const brokenFile = `${file}.broken.${safeTs}`
 		try {
-			await this.ctx.root.fs.writeTextAtomic(brokenFile, content)
+			await this.storage.put(brokenFile, content)
 		} catch (error) {
 			this.ctx.logger.warn('failed to isolate broken runtime state file', {
 				file,
@@ -299,38 +283,6 @@ export class RuntimeStateStore {
 			})
 		}
 	}
-}
-
-export function isPluginEnabled(state: RuntimeStateSnapshot, pluginId: string): boolean {
-	return state.enabled.includes(pluginId)
-}
-
-export function setPluginEnabled(
-	draft: RuntimeStateDraft,
-	pluginId: string,
-	enabled: boolean,
-): void {
-	if (enabled) draft.enabled.add(pluginId)
-	else draft.enabled.delete(pluginId)
-}
-
-export function setPluginsEnabled(
-	draft: RuntimeStateDraft,
-	pluginIds: Iterable<string>,
-	enabled: boolean,
-): void {
-	for (const pluginId of pluginIds) setPluginEnabled(draft, pluginId, enabled)
-}
-
-export function replaceEnabledPlugins(draft: RuntimeStateDraft, pluginIds: Iterable<string>): void {
-	draft.enabled.clear()
-	for (const pluginId of pluginIds) {
-		if (typeof pluginId === 'string' && pluginId) draft.enabled.add(pluginId)
-	}
-}
-
-export function listForkIds(state: RuntimeStateSnapshot, basePluginId: string): readonly string[] {
-	return state.forks[basePluginId] ?? []
 }
 
 function createDefaultDraft(): RuntimeStateDraft {
@@ -522,15 +474,6 @@ function freezeNestedRecord(
 	return Object.freeze(out)
 }
 
-function isMissingFileError(error: unknown): boolean {
-	if (!error || typeof error !== 'object') return false
-	if ('code' in error && (error as { code?: unknown }).code === 'ENOENT') return true
-	if ('name' in error && (error as { name?: unknown }).name === 'FsError') {
-		return 'code' in error && (error as { code?: unknown }).code === 'ENOENT'
-	}
-	return false
-}
-
 function normalizeProfileName(raw: unknown): string | undefined {
 	if (typeof raw !== 'string') return undefined
 	const trimmed = raw.trim()
@@ -543,4 +486,16 @@ function normalizeProfileName(raw: unknown): string | undefined {
 		.replace(/^[-.]+/, '')
 		.replace(/[-.]+$/, '')
 	return safe || undefined
+}
+
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
+}
+
+function defaultRuntimeStateStoreMode(
+	capability: PluxelContext.RootServices['persistence']['capability'],
+): RuntimeStateStoreMode {
+	if (capability === 'readonly') return 'readonly'
+	return 'file'
 }

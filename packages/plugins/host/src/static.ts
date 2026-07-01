@@ -1,11 +1,11 @@
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { createStaticRuntimeHost } from '@pluxel/runtime-static'
+import '@pluxel/runtime/services/web-management'
+import { createStaticRuntime } from '@pluxel/runtime-static'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
-import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
 import { dirname, resolve } from 'pathe'
 
-import staticRuntime, { staticDemoEnabledPlugins } from './pluxel.static'
+import staticRuntime from './pluxel.static'
 import {
 	installShutdown,
 	startFetchHostServer,
@@ -19,11 +19,11 @@ const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-host-static
 const bindHost = process.env.PLUXEL_HOST_BIND ?? '127.0.0.1'
 const bindPort = Number(process.env.PLUXEL_HOST_PORT ?? '3310')
 
-const storage = resolveRuntimeStoragePaths(repoRoot, {
-	configFile: 'packages/plugins/host/.pluxel/static/{profile}/config.json',
-	pluginDataDir: 'packages/plugins/host/.pluxel/static/plugin-data',
-	logsDir: 'packages/plugins/host/logs',
-})
+const logsDir = resolve(repoRoot, 'packages/plugins/host/logs')
+const storage = {
+	logsDir,
+	logFile: resolve(logsDir, 'runtime.log'),
+}
 
 await mkdir(storage.logsDir, { recursive: true })
 await ensurePluxelLogging({
@@ -33,47 +33,27 @@ await ensurePluxelLogging({
 	debug: ['pluxel:runtime:*'],
 })
 
-const host = await createStaticRuntimeHost(staticRuntime, {
-	configService: {
-		mode: 'memory',
-	},
-	runtimeState: {
-		mode: 'memory',
-		snapshot: { enabled: staticDemoEnabledPlugins },
-	},
-	context: {
-		profile: activeProfile,
-		logger: { preset: 'core' },
-		pluginData: {
-			dir: storage.pluginDataDir,
-		},
-		http: {
-			controlPlane: { web: true, rpc: true, sse: true },
-			uiAssets: 'static-built',
-		},
-		extensionService: { enabled: false },
-	},
-})
+const runtime = await createStaticRuntime(staticRuntime)
 
-const startup = await host.start()
-host.ctx.root.verification.assertCanBindHost(bindHost)
+const startup = await runtime.start()
+runtime.ctx.root.verification.assertCanBindHost(bindHost)
 const server = await startFetchHostServer({
 	host: bindHost,
 	port: bindPort,
-	fetch: (request) => host.ctx.http.fetch(request),
+	fetch: runtime.fetch,
 })
 
-host.ctx.logger.info('Static runtime host ready', {
+runtime.ctx.logger.info('Static runtime host ready', {
 	profile: activeProfile,
 	url: server.baseUrl,
 	startup: startup.entries.map(({ name, status }) => `${name}:${status}`),
 })
 
 const watchSignals = installShutdown('static host', async (signal) => {
-	host.ctx.logger.info('Stopping static host', { signal })
+	runtime.ctx.logger.info('Stopping static host', { signal })
 	await server.close()
-	await host.stop()
+	await runtime.stop()
 })
 watchSignals(async (label, error) => {
-	host.ctx.logger.error(label, { error })
+	runtime.ctx.logger.error(label, { error })
 })

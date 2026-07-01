@@ -29,6 +29,7 @@ type InternalApiOptions = {
 	web?: boolean
 	rpc?: boolean
 	sse?: boolean
+	graphql?: boolean
 }
 
 type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
@@ -36,14 +37,24 @@ type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
 }
 
 function resolveRequestKind(path: string): 'api' | 'graphql' {
-	return path === `${RUNTIME_INTERNAL_API_BASE}${RUNTIME_TRANSPORT_PATHS.graphql}` ? 'graphql' : 'api'
+	const internalPath = toInternalApiPath(path)
+	return internalPath === RUNTIME_TRANSPORT_PATHS.graphql ? 'graphql' : 'api'
 }
 
 function isSecurityApiPath(path: string): boolean {
+	const internalPath = toInternalApiPath(path)
 	return (
-		path === `${RUNTIME_INTERNAL_API_BASE}${RUNTIME_SECURITY_BASE}` ||
-		path.startsWith(`${RUNTIME_INTERNAL_API_BASE}${RUNTIME_SECURITY_BASE}/`)
+		internalPath === RUNTIME_SECURITY_BASE ||
+		internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	)
+}
+
+function toInternalApiPath(path: string): string {
+	if (path === RUNTIME_INTERNAL_API_BASE) return '/'
+	if (path.startsWith(`${RUNTIME_INTERNAL_API_BASE}/`)) {
+		return path.slice(RUNTIME_INTERNAL_API_BASE.length) || '/'
+	}
+	return path
 }
 
 function createInternalPlugin(
@@ -138,6 +149,7 @@ function createInternalTransportPlugins(
 	const web = options.web !== false
 	const rpc = options.rpc !== false
 	const sse = options.sse !== false
+	const graphql = options.graphql !== false
 	const plugins: BaseElysiaApp[] = [
 		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel runtime RPC ready')),
 		createInternalPlugin(ctx, 'plugin-schema', (app) =>
@@ -176,8 +188,10 @@ function createInternalTransportPlugins(
 					{ parse: 'none' },
 				),
 			),
-			ctx.internalGraphql.plugin(),
 		)
+	}
+	if (graphql) {
+		plugins.push(ctx.internalGraphql.plugin())
 	}
 	if (web || rpc || sse) {
 		plugins.push(

@@ -2,6 +2,7 @@
 // - 你要在插件里做共享加密持久化
 // - 你想看 kv / docs / blobs 的最小组合
 
+import '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
 const KV_TOKEN = 'demo.token'

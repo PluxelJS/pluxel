@@ -75,6 +75,15 @@ describe('@pluxel/runtime/plugin', () => {
 		expect(typeof dispose).toBe('function')
 	})
 
+	it('ui() fails fast when neither dev UI source nor web-management is available', () => {
+		const { pluginCtx } = createPluginCtx()
+		delete pluginCtx.ext
+
+		expect(() => ui('./ui/index.tsx').bind(pluginCtx)).toThrow(
+			'[runtime/plugin:web-management] service unavailable. Reason: ui().bind(ctx) has no dev UI source capability and @pluxel/runtime/services/web-management is not imported. Fix: import @pluxel/runtime/services/web-management before starting the host, or remove ui(...).bind(ctx) from this plugin.',
+		)
+	})
+
 	it('worker() falls back cleanly when no HMR bundler is attached', async () => {
 		const { pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()

@@ -16,10 +16,10 @@ import { dirname } from 'pathe'
 import { createDailyTimeRotatingFileSink } from './file'
 import {
 	RuntimePluginLogPolicy,
-	readPluginLogPolicyFile,
 	type PluginLogPolicySnapshot,
 	type RuntimePluginLogLevel,
 } from './policy'
+import { readPluginLogPolicyFile } from './policy-file'
 import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
 
 export type RuntimeLoggingPreset = 'core' | 'hmr'

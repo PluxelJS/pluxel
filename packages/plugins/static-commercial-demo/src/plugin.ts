@@ -1,7 +1,7 @@
 import { createYoga } from 'graphql-yoga'
 import { setParamToken } from '@pluxel/core'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui } from '@pluxel/runtime/plugin'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { createCommercialContext } from './context.ts'
 import { CommercialDataPlugin } from './data-plugin.ts'
 import { createSchema } from './schema.ts'

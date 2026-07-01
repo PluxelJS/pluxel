@@ -1,6 +1,6 @@
 # @pluxel/runtime
 
-`@pluxel/runtime` 是共同宿主层：负责 runtime services、配置持久化、loader/package/scan、HTTP/control-plane、web 协议和插件 UI runtime protocols。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
+`@pluxel/runtime` 是插件作者默认入口和 runtime common kernel：负责插件 authoring API、static/common 服务注册、配置/状态/插件数据持久化、HTTP/control-plane、web 协议和插件 UI runtime protocols。loader/package/scan 属于 `@pluxel/runtime-dynamic` route，不是普通插件或 static direct host 的默认依赖。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
 
 ## 运行时模型
 
@@ -29,6 +29,27 @@ runtime 只消费两类前端输入：
 
 ## Runtime Services
 
+默认 `@pluxel/runtime` 只注册 static/common services。普通插件 authoring 从
+`@pluxel/runtime` 导入；vault 和 web-management 是显式增强边界。
+
+- `this.ctx.http.plugin.routes(...)`
+  插件级 HTTP 路由挂载入口
+- `workerDecl.bind(this.ctx, options)`
+  HMR worker 绑定入口
+- `this.ctx.root.verification`
+  host-only gate；只回答“当前宿主是否允许进入 control plane”
+  `authorize()` / `describe()` / `assertCanBindHost()`；private mode 直接放行，public mode 使用 OIDC JWT 校验
+- `this.ctx.root.persistence`
+  runtime 数据持久化入口。config、runtime state、plugin data、logger policy、vault 等共享
+  namespace 化 backend；它不是业务文件系统，也不是 Node `fs` 镜像。
+- `this.ctx.loader.api`
+  dynamic loader route API；只在 `@pluxel/runtime-dynamic` full route 中存在
+
+### Optional Web Management
+
+显式 import `@pluxel/runtime/services/web-management` 后才注册 `ctx.ext`、RPC、SSE、
+SignalDB、runtime web UI 和 management panel。
+
 - `this.ctx.ext.rpc.expose(...)`
   暴露自定义 UI 的 RPC
 - `this.ctx.ext.sse.expose(...)`
@@ -47,25 +68,20 @@ runtime 只消费两类前端输入：
   声明 consumer-owned interaction surface，负责 placement、输入与最终 apply
 - `this.ctx.ext.ui.interaction.offer(...)`
   声明 provider-owned interaction offer，负责准备资源与提供 session UI
-- `this.ctx.http.plugin.routes(...)`
-  插件级 HTTP 路由挂载入口
-- `workerDecl.bind(this.ctx, options)`
-  HMR worker 绑定入口
+
+### Optional Vault
+
+显式 import `@pluxel/runtime/services/vault` 后才注册 `ctx.vault` 和
+`ctx.root.vaultAdmin`。
+
 - `this.ctx.vault`
   插件与 runtime 的共享加密存储入口，只保留数据读写能力
 - `this.ctx.vault.kv(...)` / `this.ctx.vault.docs(...)` / `this.ctx.vault.blobs(...)`
   共享加密持久化入口；namespace 只是存储分区，不是额外权限模型
-- `this.ctx.root.verification`
-  host-only gate；只回答“当前宿主是否允许进入 control plane”
-  `authorize()` / `describe()` / `assertCanBindHost()`；private mode 直接放行，public mode 使用 OIDC JWT 校验
 - `this.ctx.root.vaultAdmin.*`
   host-only 管理面：`preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
 - `this.ctx.vault`
   设计原则见 `HOST_VERIFICATION_DESIGN.md`；vault 使用说明见 `src/services/vault/加密实现规范.md`
-- `this.ctx.root.fs.*`
-  root FS 入口
-- `this.ctx.loader.api`
-  loader API
 
 ### runtime control-plane 原则
 
@@ -230,8 +246,12 @@ runtime 本身不启动 Vite。开发期应用宿主统一通过 route-owned Vit
 
 ## 主要 subpath
 
-- `@pluxel/runtime/services`
-  runtime services 导出
+- `@pluxel/runtime`
+  普通插件 authoring 和 runtime common 能力默认入口；内置可用的 HTTP、GraphQL、persistence、runtime state、事件等常用 API 都从这里导入
+- `@pluxel/runtime/services/vault`
+  可选 vault 增强；插件或 host 需要加密存储能力时显式导入
+- `@pluxel/runtime/services/web-management`
+  可选 web-management 增强；需要 `ctx.ext`、SSE、runtime web UI、management panel 或 UI log sink 时显式导入
 - `@pluxel/runtime/web`
   浏览器协议与 SDK；插件 UI 类型增强统一声明到这里
 - `@pluxel/runtime/web/ui`
@@ -242,7 +262,5 @@ runtime 本身不启动 Vite。开发期应用宿主统一通过 route-owned Vit
   MF remote 命名和 shared contract
 - `@pluxel/runtime/frozen`
   冻结宿主构建
-- `@pluxel/runtime/shared`
-  给 `@pluxel/runtime-dynamic` 复用的纯工具
-- `@pluxel/runtime/internal`
-  runtime 与 loader HMR 之间的内部 glue
+- `@pluxel/runtime/shared` / `@pluxel/runtime/internal`
+  仅供 `@pluxel/runtime-dynamic` / `@pluxel/runtime-dev` 内部复用；普通插件不要依赖
