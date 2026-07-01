@@ -250,13 +250,14 @@ static host 在 startup 直接检查默认能力和已 import 的大能力即可
 
 ### 1. `@pluxel/runtime` 顶层入口
 
-现状：
+当前入口已经拆分完成：
 
 ```ts
-import './runtime/register'
+import './runtime/register/static'
 ```
 
-这对静态最小包不友好。建议改成：
+这个静态注册入口是 `@pluxel/runtime` 顶层默认入口使用的唯一注册副作用。完整 dynamic/dev
+注册不再从顶层进入，而是由 dynamic launcher 显式加载：
 
 - `@pluxel/runtime`：插件作者默认入口，导出 `BasePlugin`、`Plugin`、`Context`、`Config` 等基础 API，并只注册 static/common runtime services。
 - `@pluxel/runtime/register/full`：dynamic/dev 使用的完整注册入口。
@@ -328,7 +329,8 @@ backend 可以是 file、memory、database、KV、object storage、Durable Objec
 
 - GraphQL 是 HTTP 能力，可默认存在。
 - `management` 默认 false。
-- web-management bundle 只有 import 对应 bundle 或配置启用后才挂。
+- static direct 只有显式 import `@pluxel/runtime/services/web-management` 后才具备
+  web-management；runtime config 只决定是否挂 management/control-plane/UI asset 路由。
 - 不设计独立 asset subsystem。业务 assets 用 Elysia route/mount；管理 UI assets 随 web-management。
 
 `HttpService` 的最小职责：

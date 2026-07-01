@@ -478,8 +478,11 @@ describe('toolchain package boundaries', () => {
 		expect(staticCommercialConfig).toContain('runtimeState')
 		expect(staticCommercialConfig).toContain('snapshot: { enabled:')
 		expect(staticCommercialHost).toContain('createStaticRuntime(staticRuntime)')
+		expect(staticCommercialHost).toContain('startFetchHostServer')
 		expect(staticCommercialHost).not.toContain('runtime.start()')
 		expect(staticCommercialHost).not.toContain('...staticRuntime')
+		expect(staticCommercialHost).not.toContain('createServer(')
+		expect(staticCommercialHost).not.toContain('Readable.toWeb')
 		expect(
 			existsSync(`${root}/packages/plugins/static-commercial-demo/src/pluxel.static.vite.ts`),
 		).toBe(false)
@@ -572,6 +575,27 @@ describe('toolchain package boundaries', () => {
 			const code = await readFile(file, 'utf8')
 			if (staticViteConfigHelper.test(code) || dynamicViteConfigHelper.test(code))
 				offenders.push(file)
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps refactor docs on split runtime registration entries', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const docs = [
+			`${root}/docs/proposals/refactor-prompt.md`,
+			`${root}/docs/proposals/static-fetch-native-runtime.md`,
+			`${root}/docs/proposals/static-runtime-enterprise-refactor.md`,
+			`${root}/docs/RUNTIME.md`,
+		]
+		const offenders: string[] = []
+
+		for (const file of docs) {
+			const code = await readFile(file, 'utf8')
+			if (code.includes("import './runtime/register'")) offenders.push(file)
+			if (code.includes('packages/runtime/src/runtime/register.ts')) offenders.push(file)
+			if (code.includes('import 对应 bundle 或配置启用')) offenders.push(file)
+			if (code.includes('配置启用后才挂')) offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])
