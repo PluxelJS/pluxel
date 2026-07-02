@@ -14,7 +14,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
 import { build, type InlineConfig, mergeConfig, type Plugin, type PluginOption } from 'vite'
 import { resolvePackageJsonPathWithOxc } from '../resolver/oxc.ts'
-import { resolveParaglideIntegration } from './paraglide'
+import { resolveParaglideIntegration } from './paraglide.ts'
 
 export type BuildPluginUiRemoteOptions = {
 	pluginName: string

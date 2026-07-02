@@ -1,15 +1,17 @@
 {
 	"name": "@pluxel/context",
 	"version": "0.1.0",
-	"private": true,
 	"description": "Demo example that imports a local package",
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
 	"type": "module",
 	"main": "./dist/index.cjs",
 	"module": "./dist/index.mjs",
 	"types": "./dist/index.d.cts",
 	"exports": {
 		".": {
-			"@pluxel/source": "./src/index.ts",
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.cjs"
 		},

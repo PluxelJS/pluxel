@@ -20,6 +20,16 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 	'default',
 ] as const
 
+const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = [
+	'node',
+	'import',
+	'module',
+	'browser',
+	'development',
+	'production',
+	'default',
+] as const
+
 const PLUXEL_SINGLETON_PACKAGES = [
 	'@pluxel/context',
 	'@pluxel/core',
@@ -75,7 +85,7 @@ export function pluxelRuntimeSourceVitePlugin(
 			return {
 				resolve: {
 					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
-					externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 					dedupe: [...PLUXEL_SINGLETON_PACKAGES],
 					preserveSymlinks: false,
 				},
@@ -83,16 +93,17 @@ export function pluxelRuntimeSourceVitePlugin(
 					ssr: {
 						resolve: {
 							conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
-							externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+							externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 							dedupe: [...PLUXEL_SINGLETON_PACKAGES],
 							preserveSymlinks: false,
 						},
 					},
 				},
 				ssr: {
+					external: [...PLUXEL_SINGLETON_PACKAGES],
 					resolve: {
 						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
-						externalConditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 						dedupe: [...PLUXEL_SINGLETON_PACKAGES],
 						preserveSymlinks: false,
 					},

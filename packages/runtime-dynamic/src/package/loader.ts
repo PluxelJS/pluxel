@@ -283,7 +283,8 @@ export class PackageLoader {
 			merged.scan = mergedScan
 		}
 
-		if (cleanOverrides.workspaceOnly !== undefined) merged.workspaceOnly = cleanOverrides.workspaceOnly
+		if (cleanOverrides.workspaceOnly !== undefined)
+			merged.workspaceOnly = cleanOverrides.workspaceOnly
 		else if (base.workspaceOnly !== undefined) merged.workspaceOnly = base.workspaceOnly
 
 		return merged
@@ -298,7 +299,7 @@ export class PackageLoader {
 			url.searchParams.set('_ts', `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 		}
 		try {
-			return await import(url.href)
+			return await import(/* @vite-ignore */ url.href)
 		} catch (error) {
 			this.ctx.logger.error('导入模块失败 {moduleId}', { moduleId, error })
 			throw toError(error)

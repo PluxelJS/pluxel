@@ -1,3 +1,3 @@
-export * from './environment'
-export * from './paraglide'
-export * from './plugin-ui'
+export * from './environment.ts'
+export * from './paraglide.ts'
+export * from './plugin-ui.ts'

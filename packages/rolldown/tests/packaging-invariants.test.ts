@@ -152,6 +152,9 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 		const runtimeDevConfig = await readFile(`${root}/packages/runtime-dev/tsdown.config.ts`, 'utf8')
+		const coreConfig = await readFile(`${root}/packages/core/tsdown.config.ts`, 'utf8')
+		const corePackage = await readJson(`${root}/packages/core/package.json`)
+		const contextPackage = await readJson(`${root}/packages/context/package.json`)
 		const runtimeDynamicConfig = await readFile(
 			`${root}/packages/runtime-dynamic/tsdown.config.ts`,
 			'utf8',
@@ -221,6 +224,10 @@ describe('toolchain package boundaries', () => {
 		)
 		const runtimeDynamicPackageService = await readFile(
 			`${root}/packages/runtime-dynamic/src/package/PackageService.ts`,
+			'utf8',
+		)
+		const runtimeDynamicPackageLoader = await readFile(
+			`${root}/packages/runtime-dynamic/src/package/loader.ts`,
 			'utf8',
 		)
 		const runtimeConfigService = await readFile(
@@ -333,6 +340,7 @@ describe('toolchain package boundaries', () => {
 			"this.ctx.root.persistence.namespace('package-state')",
 		)
 		expect(runtimeDynamicPackageService).not.toContain('ctx.root.fs')
+		expect(runtimeDynamicPackageLoader).toContain('import(/* @vite-ignore */ url.href)')
 		expect(runtimeConfigService).toContain('ctx.root.persistence.namespace')
 		expect(runtimeConfigService).not.toContain('ctx.config as unknown as { fs')
 		expect(runtimeStateStore).toContain('ctx.root.persistence.namespace')
@@ -356,6 +364,12 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeWebPaths).not.toContain(`/__pluxel/${'hmr'}`)
 		expect(runtimeWeb).toContain('RUNTIME_INTERNAL_API_BASE')
 		expect(runtimeWeb).not.toContain('HMR_')
+		expect(coreConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/context/)
+		expect(coreConfig).not.toMatch(/alwaysBundle:\s*\[[^\]]*['"]@pluxel\/context/)
+		expect(corePackage.dependencies).toHaveProperty('@pluxel/context')
+		expect(corePackage.devDependencies).not.toHaveProperty('@pluxel/context')
+		expect(contextPackage).not.toHaveProperty('private', true)
+		expect(JSON.stringify(contextPackage.exports)).not.toContain('@pluxel/source')
 		expect(runtimeDevConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/rolldown/)
 		expect(runtimeDevConfig).not.toContain('../rolldown/src/')
 		expect(runtimeDynamicConfig).toMatch(/neverBundle:\s*\[[^\]]*['"]@pluxel\/rolldown/)
@@ -373,6 +387,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDevVite).toContain('runtimeUiBridgePlugin')
 		expect(runtimeDevVite).toContain('pluxelRuntimeSourceVitePlugin')
 		expect(runtimeDevVite).toContain('pluxelRuntimeUiBridgeVitePlugin')
+		expect(runtimeDevVite).toContain('PLUXEL_EXTERNAL_RESOLVE_CONDITIONS')
+		expect(runtimeDevVite).toContain('external: [...PLUXEL_SINGLETON_PACKAGES]')
 		expect(runtimeDevVite).not.toContain('pluxelRuntimeDevVitePlugin')
 		expect(runtimeDevVite).not.toContain('pluxelRuntimeDevVitePlugins')
 		expect(runtimeDevVite).not.toContain('runtimeDevSourceVitePlugins')
@@ -384,6 +400,9 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeDevExtensionCompiler).toContain('store: ExtensionModuleStore')
 		expect(runtimeDynamicHmrConfig).toContain('@pluxel/runtime-dev/vite')
 		expect(runtimeDynamicHmrConfig).toContain('pluxelRuntimeSourceVitePlugin')
+		expect(runtimeDynamicHmrConfig).toContain('/packages/runtime-dynamic/')
+		expect(runtimeDynamicHmrConfig).not.toContain('/packages/runtime/')
+		expect(runtimeDynamicHmrConfig).not.toContain('market loader')
 		expect(runtimeDynamicHmrConfig).not.toContain('pluxelRuntimeDevVitePlugin')
 		expect(runtimeDynamicHmrConfig).not.toContain(`runtime${'UiBridge'}: false`)
 		const runtimeDynamicHmr = await readFile(`${root}/packages/runtime-dynamic/src/hmr.ts`, 'utf8')
@@ -403,6 +422,8 @@ describe('toolchain package boundaries', () => {
 		)
 		expect(runtimeDynamicHost).not.toContain(`attachLoader${'HmrRuntime'}`)
 		expect(runtimeDynamicHost).not.toContain(`configureLoader${'HmrRuntime'}`)
+		expect(runtimeDynamicHost).not.toContain('@pluxel/runtime/services/vault')
+		expect(runtimeDynamicHost).not.toContain('bootstrapHostVault')
 		expect(runtimeDynamicHmr).not.toContain(`Loader${'HmrOptions'}`)
 		const runtimeStaticHmr = await readFile(`${root}/packages/runtime-static/src/hmr.ts`, 'utf8')
 		expect(runtimeStaticHmr).not.toContain(`installStatic${'RuntimeHmr'}`)

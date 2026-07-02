@@ -501,13 +501,13 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 
 function shouldSilenceDynamicImportWarning(msg: string): boolean {
 	// Vite import-analysis warns on dynamic import patterns it can't statically analyze.
-	// We intentionally use them in a few server-only places (runner/market loader).
+	// We intentionally use them in a few server-only places (runner/package loader).
 	if (!msg.includes('The above dynamic import cannot be analyzed by Vite.')) return false
 	return (
-		msg.includes('/packages/runtime/') ||
-		msg.includes('\\packages\\hmr\\') ||
-		msg.includes('/node_modules/@pluxel/runtime/') ||
-		msg.includes('\\node_modules\\@pluxel\\hmr\\')
+		msg.includes('/packages/runtime-dynamic/') ||
+		msg.includes('\\packages\\runtime-dynamic\\') ||
+		msg.includes('/node_modules/@pluxel/runtime-dynamic/') ||
+		msg.includes('\\node_modules\\@pluxel\\runtime-dynamic\\')
 	)
 }
 

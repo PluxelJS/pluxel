@@ -11,7 +11,6 @@ import {
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
-import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
 import { mergeExtensionCompilerViteConfig } from '@pluxel/runtime-dev'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
@@ -295,7 +294,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		...plan.context,
 	})
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
-	await bootstrapHostVault(ctx)
 	// Materialize the loader route before HMR contributes dev/module capabilities to it.
 	void ctx.loader
 
@@ -343,7 +341,9 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	const baseRoute = ctx.runtimeRoute
 	if (!baseRoute) {
-		throw new Error('[loader-hmr-host] Loader route capabilities must be registered before HMR starts')
+		throw new Error(
+			'[loader-hmr-host] Loader route capabilities must be registered before HMR starts',
+		)
 	}
 	ctx.runtimeRoute = {
 		...baseRoute,
@@ -365,8 +365,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 					}),
 			},
 			uiSource: {
-				bind: (ownerCtx, declaration) =>
-					extensionCompiler.bindDeclaration(ownerCtx, declaration),
+				bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
 			},
 		},
 	}

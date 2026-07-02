@@ -297,21 +297,40 @@ function getServiceProxyTarget(ctx: Context, key: string) {
 }
 
 const CONTEXT_IMPL = Symbol.for('pluxel:context:impl')
-const existingContextImpl = (globalThis as unknown as Record<symbol, unknown>)[CONTEXT_IMPL] as
-	| typeof Context
-	| undefined
+const CONTEXT_IMPL_META = Symbol.for('pluxel:context:impl:meta')
+type ContextImplMeta = {
+	url: string
+	stack?: string
+}
+const contextGlobal = globalThis as unknown as Record<symbol, unknown>
+const existingContextImpl = contextGlobal[CONTEXT_IMPL] as typeof Context | undefined
 if (existingContextImpl && existingContextImpl !== Context) {
+	const meta = contextGlobal[CONTEXT_IMPL_META] as ContextImplMeta | undefined
 	throw new Error(
 		[
 			'[pluxel/context] Multiple Context implementations detected in the same runtime.',
 			'This indicates that more than one copy of @pluxel/context was evaluated (e.g. via HMR runner/workspace resolution).',
 			'Fix your module resolution to guarantee a single implementation.',
-		].join('\n'),
+			`First implementation: ${meta?.url ?? '<unknown>'}`,
+			`Current implementation: ${import.meta.url}`,
+			meta?.stack ? `First implementation stack:\n${meta.stack}` : undefined,
+		]
+			.filter((line): line is string => typeof line === 'string')
+			.join('\n'),
 	)
 }
 if (!existingContextImpl) {
-	Object.defineProperty(globalThis, CONTEXT_IMPL, {
+	Object.defineProperty(contextGlobal, CONTEXT_IMPL, {
 		value: Context,
+		configurable: false,
+		enumerable: false,
+		writable: false,
+	})
+	Object.defineProperty(contextGlobal, CONTEXT_IMPL_META, {
+		value: {
+			url: import.meta.url,
+			stack: new Error('[pluxel/context] First Context implementation loaded here').stack,
+		} satisfies ContextImplMeta,
 		configurable: false,
 		enumerable: false,
 		writable: false,
