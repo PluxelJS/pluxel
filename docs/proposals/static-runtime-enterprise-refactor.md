@@ -92,12 +92,10 @@ export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin, AuditPlugin],
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: ['OrdersPlugin', 'AuditPlugin'] },
 	},
 	http: {
 		graphql: true,
-		management: false,
 	},
 	logger: {
 		sinks: {

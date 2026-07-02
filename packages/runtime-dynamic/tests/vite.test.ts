@@ -9,9 +9,11 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
+			runtimeState: { mode: 'memory', snapshot: { enabled: ['DemoPlugin'] } },
 		})
 
-		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile'])
+		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile', 'runtimeState'])
+		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
 		expect(() =>
 			defineDynamicRuntimeConfig({
 				root: '/repo',
@@ -24,6 +26,21 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 				hmr: {},
 			} as never),
 		).toThrow(/must not include an "hmr" field/i)
+	})
+
+	it('keeps runtime context config at the same top level as static route config', () => {
+		const config = defineDynamicRuntimeConfig({
+			root: '/repo',
+			configPath: 'pluxel.loader.hmr.jsonc',
+			profile: 'dev',
+			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
+			http: { management: true },
+			logger: { preset: 'hmr' },
+		})
+
+		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(config.http).toEqual({ management: true })
+		expect(config.context).toBeUndefined()
 	})
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {

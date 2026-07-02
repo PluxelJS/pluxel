@@ -1,76 +1,34 @@
 import type { Context as CoreContext, CommitSummary, PluginConstructor } from '@pluxel/core'
-import type { Context } from '@pluxel/runtime'
+import type {
+	ConfigServiceConfig,
+	Context,
+	HttpHandler,
+	HttpServiceConfig,
+	PersistenceBackend,
+	PersistenceCapability,
+	PersistenceEntry,
+	PersistenceNamespace,
+	PersistenceRequirement,
+	PersistenceServiceConfig,
+	PluginDataServiceConfig,
+	UiAssetStrategy,
+} from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
 
 export type StaticRuntimeRegisteredServices = RuntimeStaticRegisteredServices
 
-export type StaticRuntimeConfigServiceConfig = {
-	mode?: 'file' | 'memory' | 'readonly'
-	path?: string
-	snapshot?: Partial<{
-		plugins: Record<string, Record<string, unknown>>
-	}>
-}
-
-export type StaticRuntimePersistenceCapability = 'durable' | 'ephemeral' | 'readonly'
-
-export type StaticRuntimePersistenceEntry = {
-	key: string
-	kind: 'file' | 'directory'
-	size?: number
-	updatedAt?: Date
-}
-
-export type StaticRuntimePersistenceRequirement = {
-	durable?: boolean
-	writable?: boolean
-}
-
-export type StaticRuntimePersistenceNamespace = {
-	get(key: string): Promise<Uint8Array | undefined>
-	getText(key: string): Promise<string | undefined>
-	put(key: string, value: Uint8Array | string, options?: { atomic?: boolean }): Promise<void>
-	delete(key: string): Promise<void>
-	list(prefix?: string): AsyncIterable<StaticRuntimePersistenceEntry>
-	stat(key: string): Promise<StaticRuntimePersistenceEntry | undefined>
-}
-
-export type StaticRuntimePersistenceBackend = {
-	capability: StaticRuntimePersistenceCapability
-	namespace(name: string): StaticRuntimePersistenceNamespace
-	preflight?(requirement?: StaticRuntimePersistenceRequirement): Promise<void>
-}
-
-export type StaticRuntimePersistenceConfig = {
-	mode?: 'file' | 'memory' | 'readonly'
-	backend?: StaticRuntimePersistenceBackend
-}
-
-export type StaticRuntimePluginDataConfig = {
-	dir?: string
-	enabled?: boolean
-}
-
-export type StaticRuntimeHttpHandler = (
-	req: Request,
-	env?: unknown,
-	ctx?: unknown,
-) => Response | Promise<Response>
-
-export type StaticRuntimeUiAssetStrategy = 'hmr-server' | 'static-built' | 'disabled'
-
-export type StaticRuntimeHttpConfig = {
-	management?: boolean
-	graphql?: boolean
-	controlPlane?: {
-		web?: boolean
-		rpc?: boolean
-		sse?: boolean
-	}
-	uiAssets?: StaticRuntimeUiAssetStrategy
-	uiPublicDir?: string
-}
+export type StaticRuntimeConfigServiceConfig = ConfigServiceConfig
+export type StaticRuntimePersistenceCapability = PersistenceCapability
+export type StaticRuntimePersistenceEntry = PersistenceEntry
+export type StaticRuntimePersistenceRequirement = PersistenceRequirement
+export type StaticRuntimePersistenceNamespace = PersistenceNamespace
+export type StaticRuntimePersistenceBackend = PersistenceBackend
+export type StaticRuntimePersistenceConfig = PersistenceServiceConfig
+export type StaticRuntimePluginDataConfig = PluginDataServiceConfig
+export type StaticRuntimeHttpHandler = HttpHandler
+export type StaticRuntimeUiAssetStrategy = UiAssetStrategy
+export type StaticRuntimeHttpConfig = HttpServiceConfig
 
 export type StaticRuntimeDefinition = {
 	/**
@@ -121,8 +79,12 @@ export type StaticRuntimeHostOptions = {
 	 */
 	logger?: CoreContext.Config['logger']
 	/**
-	 * Additional runtime context config. `configService` is still owned by this route
-	 * option and overrides `context.configService`.
+	 * Runtime profile used for config/state storage labels and diagnostics.
+	 */
+	profile?: CoreContext.Config['profile']
+	/**
+	 * Additional low-level runtime context config. Prefer top-level static runtime config
+	 * fields for common runtime options.
 	 *
 	 * @default {}
 	 */

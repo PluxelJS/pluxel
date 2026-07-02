@@ -48,6 +48,7 @@ export async function createStaticRuntime(config: StaticRuntimeConfig): Promise<
 		pluginData: config.pluginData,
 		http: config.http,
 		logger: config.logger,
+		profile: config.profile,
 		context: config.context,
 	})
 	await host.start()

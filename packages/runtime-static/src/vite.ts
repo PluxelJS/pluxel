@@ -111,6 +111,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				pluginData: config.pluginData,
 				http: config.http,
 				logger: config.logger,
+				profile: config.profile,
 				context: config.context,
 			})
 			state.host = host

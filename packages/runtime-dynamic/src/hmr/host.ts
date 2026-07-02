@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'pathe'
 import type { InlineConfig, ViteDevServer } from 'vite'
 
 import '@pluxel/runtime-dynamic/register'
-import { setPluxelRuntime } from '@pluxel/core'
+import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
 	createNodeWorkspaceFsBackend,
@@ -67,7 +67,7 @@ export type LoaderHmrHostOptions<
 	logFile?: string
 	storage?: LoaderHmrHostStorageOptions
 	registry?: Record<string, unknown>
-	context?: Record<string, unknown>
+	context?: CoreContext.Config
 }
 
 export type PlannedLoaderHmrHost<
@@ -90,7 +90,7 @@ export type PlannedLoaderHmrHost<
 	runtimeStorage: RuntimeStoragePaths
 	configMaterialization?: LoaderHmrHostConfigMaterialization
 	registry?: Record<string, unknown>
-	context?: Record<string, unknown>
+	context?: CoreContext.Config
 }
 
 export type BootedLoaderHmrHost = {
@@ -112,6 +112,13 @@ export type LoaderHmrHostConfigInput = Omit<
 	profile?: string
 	env?: Record<string, string | undefined>
 	omitPackages?: string[]
+	configService?: CoreContext.Config['configService']
+	runtimeState?: CoreContext.Config['runtimeState']
+	persistence?: CoreContext.Config['persistence']
+	pluginData?: CoreContext.Config['pluginData']
+	http?: CoreContext.Config['http']
+	logger?: CoreContext.Config['logger']
+	verification?: CoreContext.Config['verification']
 }
 
 function planRuntimeStorage(
@@ -205,7 +212,21 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 export async function planLoaderHmrHostFromConfig(
 	opts: LoaderHmrHostConfigInput,
 ): Promise<PlannedLoaderHmrHost<WorkspaceSnapshot>> {
-	const { configPath, profile, env: envOverrides, omitPackages, ...hostOpts } = opts
+	const {
+		configPath,
+		profile,
+		env: envOverrides,
+		omitPackages,
+		configService,
+		runtimeState,
+		persistence,
+		pluginData,
+		http,
+		logger,
+		verification,
+		context,
+		...hostOpts
+	} = opts
 
 	const rootDir = resolve(process.cwd(), hostOpts.root ?? '.')
 	const configPathAbs = (() => {
@@ -232,6 +253,15 @@ export async function planLoaderHmrHostFromConfig(
 		root: rootDir,
 		snapshot: diagnosed.snapshot,
 		warnings: diagnosed.warnings,
+		context: mergeContextConfig(context, {
+			configService,
+			runtimeState,
+			persistence,
+			pluginData,
+			http,
+			logger,
+			verification,
+		}),
 	})
 }
 
@@ -269,7 +299,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	}
 
 	const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
-	const ctx = new Context({
+	const defaultContext: CoreContext.Config = {
 		debug: plan.debug,
 		registry: plan.registry,
 		profile: plan.snapshot.activeProfile,
@@ -291,8 +321,8 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		packageService: {
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},
-		...plan.context,
-	})
+	}
+	const ctx = new Context(mergeContextConfig(defaultContext, plan.context))
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	// Materialize the loader route before HMR contributes dev/module capabilities to it.
 	void ctx.loader
@@ -304,6 +334,43 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	}
 
 	return { root: plan.root, logsDir: plan.runtimeStorage.logsDir, ctx, hmr }
+}
+
+function mergeContextConfig(
+	base: CoreContext.Config | undefined,
+	override: CoreContext.Config | undefined,
+): CoreContext.Config {
+	if (!base) return compactContextConfig(override)
+	if (!override) return compactContextConfig(base)
+	return compactContextConfig({
+		...base,
+		...override,
+		configService: mergeRecord(base.configService, override.configService),
+		runtimeState: mergeRecord(base.runtimeState, override.runtimeState),
+		persistence: mergeRecord(base.persistence, override.persistence),
+		pluginData: mergeRecord(base.pluginData, override.pluginData),
+		http: mergeRecord(base.http, override.http),
+		logger: mergeRecord(base.logger, override.logger),
+		verification: mergeRecord(base.verification, override.verification),
+	})
+}
+
+function compactContextConfig(config: CoreContext.Config | undefined): CoreContext.Config {
+	if (!config) return {}
+	return Object.fromEntries(
+		Object.entries(config).filter(([, value]) => value !== undefined),
+	) as CoreContext.Config
+}
+
+function mergeRecord<T>(base: T | undefined, override: T | undefined): T | undefined {
+	if (base && override && isPlainRecord(base) && isPlainRecord(override)) {
+		return { ...base, ...override } as T
+	}
+	return override ?? base
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(

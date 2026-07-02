@@ -14,12 +14,9 @@ export const staticCommercialEnabledPlugins = [
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-static-commercial-demo',
+	profile: activeProfile,
 	plugins: staticCommercialPlugins,
-	configService: {
-		mode: 'memory',
-	},
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: staticCommercialEnabledPlugins },
 	},
 	logger: { preset: 'core' },
@@ -28,11 +25,5 @@ export default defineStaticRuntimeConfig({
 	},
 	http: {
 		management: true,
-		controlPlane: { web: true, rpc: true, sse: true },
-		uiAssets: 'static-built',
-	},
-	context: {
-		profile: activeProfile,
-		extensionService: { enabled: false },
 	},
 })

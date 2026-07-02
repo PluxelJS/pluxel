@@ -99,7 +99,6 @@ import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin],
-	http: { management: false },
 })
 ```
 

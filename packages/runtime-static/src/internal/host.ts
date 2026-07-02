@@ -589,6 +589,7 @@ function createStaticRuntimeContextConfig(
 	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
 	const pluginData = options.pluginData ?? context.pluginData
+	const profile = options.profile ?? context.profile
 	const inheritedRuntimeState =
 		!options.runtimeState && !context.runtimeState && configService?.mode
 			? { mode: configService.mode }
@@ -602,6 +603,7 @@ function createStaticRuntimeContextConfig(
 			uiAssets: 'disabled',
 			...(http && typeof http === 'object' ? http : {}),
 		},
+		profile,
 		configService,
 		runtimeState,
 		persistence,

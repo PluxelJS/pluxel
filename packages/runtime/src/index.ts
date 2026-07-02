@@ -21,10 +21,14 @@ export {
 	type WorkspacePersistenceBackendFs,
 	type WorkspacePersistenceBackendOptions,
 } from './services/persistence/PersistenceService'
+export type { ConfigServiceConfig } from './services/ConfigService'
+export type { PluginDataServiceConfig } from './services/PluginDataService'
 export {
 	PLUGIN_HTTP_BASE,
 	type ElysiaRouteHandle,
+	type HttpServiceConfig,
 	type HttpHandler,
+	type UiAssetStrategy,
 } from './services/http/HttpService'
 export {
 	createElysiaApp,

@@ -33,25 +33,16 @@ export const staticDemoEnabledPlugins = [
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-host-static',
+	profile: activeProfile,
 	plugins: staticDemoPlugins,
-	configService: {
-		mode: 'memory',
-	},
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
 	http: {
 		management: true,
-		controlPlane: { web: true, rpc: true, sse: true },
-		uiAssets: 'static-built',
 	},
 	logger: { preset: 'core' },
 	pluginData: {
 		dir: resolve(repoRoot, 'packages/plugins/host/.pluxel/static/plugin-data'),
-	},
-	context: {
-		profile: activeProfile,
-		extensionService: { enabled: false },
 	},
 })

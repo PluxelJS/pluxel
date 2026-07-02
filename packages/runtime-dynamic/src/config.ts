@@ -1,3 +1,4 @@
+import type { Context as CoreContext } from '@pluxel/core'
 import type { BuiltinPluginSpec } from './services'
 import type { LoaderHmrDependencyConfig } from './hmr/engine/config'
 import type { LoaderHmrConfig } from './hmr/engine/LoaderHmrService'
@@ -20,7 +21,14 @@ export type DynamicRuntimeConfig = {
 	cjsExternal?: readonly string[]
 	builtins?: readonly BuiltinPluginSpec[]
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
-	context?: Record<string, unknown>
+	configService?: CoreContext.Config['configService']
+	runtimeState?: CoreContext.Config['runtimeState']
+	persistence?: CoreContext.Config['persistence']
+	pluginData?: CoreContext.Config['pluginData']
+	http?: CoreContext.Config['http']
+	logger?: CoreContext.Config['logger']
+	verification?: CoreContext.Config['verification']
+	context?: CoreContext.Config
 }
 
 type MarkedDynamicRuntimeConfig = DynamicRuntimeConfig & {

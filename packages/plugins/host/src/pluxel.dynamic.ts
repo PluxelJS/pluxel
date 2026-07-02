@@ -20,10 +20,8 @@ export default defineDynamicRuntimeConfig({
 	configPath,
 	profile: activeProfile,
 	logsDir: 'packages/plugins/host/logs',
-	context: {
-		runtimeState: {
-			mode: 'memory',
-			snapshot: { enabled: enabledDemoPlugins },
-		},
+	runtimeState: {
+		mode: 'memory',
+		snapshot: { enabled: enabledDemoPlugins },
 	},
 })

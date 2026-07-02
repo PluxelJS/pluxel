@@ -75,15 +75,16 @@ describe('@pluxel/runtime-static', () => {
 	it('exposes a marked static runtime config and a single route plugin entry', () => {
 		const config = defineStaticRuntimeConfig({
 			name: 'static-vite-config-test',
+			profile: 'test',
 			plugins: [],
-			runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+			runtimeState: { snapshot: { enabled: [] } },
 		})
 		const plugins = staticRuntimeVitePlugin({ config: './pluxel.static.ts' }) as Array<{
 			name?: string
 			apply?: unknown
 		}>
 
-		expect(Object.keys(config)).toEqual(['name', 'plugins', 'runtimeState'])
+		expect(Object.keys(config)).toEqual(['name', 'profile', 'plugins', 'runtimeState'])
 		expect(() =>
 			defineStaticRuntimeConfig({
 				name: 'static-vite-rejected',
