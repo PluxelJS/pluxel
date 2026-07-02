@@ -15,6 +15,10 @@
 			"include": ["packages/plugins/host/src/demo/**/*.ts"],
 			"exclude": [
 				"packages/plugins/host/src/demo/**/ui/**",
+				"packages/plugins/host/src/demo/**/*.d.ts",
+				"packages/plugins/host/src/demo/**/*.optional.ts",
+				"packages/plugins/host/src/demo/**/*.shared.ts",
+				"packages/plugins/host/src/demo/PluginVaultDemo.ts",
 				"packages/plugins/host/src/demo/env.ts",
 				"packages/plugins/host/src/demo/index.ts",
 			],

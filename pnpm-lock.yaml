@@ -324,6 +324,28 @@ importers:
         specifier: ^0.34.48
         version: 0.34.49
 
+  packages/plugins/authelia-oidc-demo:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
+      '@pluxel/runtime-static':
+        specifier: workspace:*
+        version: link:../../runtime-static
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      tsx:
+        specifier: ^4.22.4
+        version: 4.22.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/plugins/host:
     dependencies:
       '@pluxel/runtime':
@@ -335,9 +357,6 @@ importers:
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../runtime-static
-      jose:
-        specifier: ^6.2.3
-        version: 6.2.3
     devDependencies:
       '@mantine/core':
         specifier: ^9.4.0

@@ -5,14 +5,14 @@
 	"scripts": {
 		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts --host 127.0.0.1",
 		"static": "pnpm exec tsx src/static.ts",
+		"typecheck": "pnpm exec tsc -p src/demo/tsconfig.json --pretty false",
 		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host",
 		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../../.. --config packages/plugins/host/pluxel.loader.hmr.jsonc --profile plugins-host"
 	},
 	"dependencies": {
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*",
-		"jose": "^6.2.3"
+		"@pluxel/runtime-static": "workspace:*"
 	},
 	"devDependencies": {
 		"@mantine/core": "^9.4.0",

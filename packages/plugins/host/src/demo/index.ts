@@ -11,7 +11,6 @@ export * from './PluginHttpWorkerDemo'
 export * from './PluginWithUI'
 
 // Capability-specific demos.
-export * from './PluginAutheliaOidcDemo'
 export * from './PluginVaultDemo'
 
 // Advanced patterns: useful, but not the first demos to read.

@@ -1,4 +1,4 @@
-# Demo-only Authelia config for packages/plugins/host.
+# Demo-only Authelia config for packages/plugins/authelia-oidc-demo.
 # Credentials are intentionally simple:
 # - user: demo / password
 # - both OIDC clients: client_secret=password
@@ -14,7 +14,7 @@ log:
   level: debug
 
 totp:
-  issuer: pluxel-authelia-demo
+  issuer: pluxel-authelia-oidc-demo
 
 authentication_backend:
   file:
@@ -75,7 +75,7 @@ identity_providers:
         public: false
         authorization_policy: one_factor
         redirect_uris:
-          - http://127.0.0.1:3310/__pluxel/plugins/PluginAutheliaOidcDemo/authelia-oidc-demo/business/callback
+          - http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo/business/callback
         scopes:
           - openid
           - profile

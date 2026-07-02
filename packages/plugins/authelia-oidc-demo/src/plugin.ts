@@ -1,5 +1,5 @@
 // Read this when:
-// - 你要把 Authelia 作为 Pluxel host verification 的 OIDC issuer
+// - 你要把 Authelia 作为 Pluxel host management verification 的 OIDC issuer
 // - 你要在插件/业务后端里单独实现一个 OIDC 登录
 // - 你要确认 business login 不应该复用 ctx.root.verification 作为业务会话系统
 
@@ -12,7 +12,7 @@ const ROUTE_BASE = '/authelia-oidc-demo'
 const SESSION_COOKIE = 'pluxel_business_demo_session'
 const LOGIN_STATE_COLLECTION = 'business-login-states'
 const SESSION_COLLECTION = 'business-sessions'
-const VAULT_NAMESPACE = 'PluginAutheliaOidcDemo'
+const VAULT_NAMESPACE = 'AutheliaOidcDemoPlugin'
 
 type OidcDiscovery = {
 	issuer: string
@@ -55,8 +55,8 @@ function readCookie(request: Request, name: string): string | undefined {
 	return undefined
 }
 
-@Plugin({ name: 'PluginAutheliaOidcDemo' })
-export class PluginAutheliaOidcDemo extends BasePlugin {
+@Plugin({ name: 'AutheliaOidcDemoPlugin' })
+export class AutheliaOidcDemoPlugin extends BasePlugin {
 	private readonly issuer = env('PLUXEL_AUTHELIA_ISSUER', 'http://127.0.0.1:9091')
 	private readonly hostAudience = env('PLUXEL_AUTHELIA_HOST_AUDIENCE', 'pluxel-host-verification')
 	private readonly businessClientId = env(
@@ -66,7 +66,7 @@ export class PluginAutheliaOidcDemo extends BasePlugin {
 	private readonly businessClientSecret = env('PLUXEL_AUTHELIA_BUSINESS_CLIENT_SECRET', 'password')
 	private readonly publicRouteBase = env(
 		'PLUXEL_AUTHELIA_BUSINESS_PUBLIC_ROUTE_BASE',
-		'http://127.0.0.1:3310/__pluxel/plugins/PluginAutheliaOidcDemo/authelia-oidc-demo',
+		'http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo',
 	)
 	private discovery?: Promise<OidcDiscovery>
 	private jwks?: ReturnType<typeof createRemoteJWKSet>
@@ -85,7 +85,6 @@ export class PluginAutheliaOidcDemo extends BasePlugin {
 							issuer: this.issuer,
 							audience: this.hostAudience,
 						},
-						note: 'This endpoint reads Pluxel host verification state. It does not create a business login session.',
 					}))
 					.get('/business/login', async ({ set }) => {
 						const login = await this.createLoginState()
@@ -149,12 +148,11 @@ export class PluginAutheliaOidcDemo extends BasePlugin {
 							issuer: this.issuer,
 							clientId: this.businessClientId,
 							claims: session.claims,
-							note: 'This is the plugin business session. It is separate from Pluxel host verification.',
 						}
 					}),
 			{
 				path: ROUTE_BASE,
-				id: 'PluginAutheliaOidcDemo:http',
+				id: 'AutheliaOidcDemoPlugin:http',
 			},
 		)
 	}

@@ -1,6 +1,6 @@
 # Authelia OIDC Demo
 
-This is a small local Authelia setup for showing how Pluxel connects to an external OIDC provider.
+Local Authelia setup for `packages/plugins/authelia-oidc-demo`.
 
 Demo credentials:
 
@@ -12,13 +12,6 @@ Demo credentials:
 
 The committed config is intentionally simple and demo-only. Do not reuse the secrets or signing key
 outside local examples.
-
-## Start Authelia
-
-```sh
-cd packages/plugins/host/authelia-demo
-docker compose up
-```
 
 Authelia reads [config/configuration.yml](./config/configuration.yml),
 [config/users_database.yml](./config/users_database.yml), and the demo OIDC signing key in
@@ -66,22 +59,22 @@ This path validates Bearer JWTs issued by Authelia. It does not create a busines
 
 ## Business OIDC Login
 
-Enable `PluginAutheliaOidcDemo`, then open:
+After the demo runtime starts, open:
 
 ```text
-http://127.0.0.1:3310/__pluxel/plugins/PluginAutheliaOidcDemo/authelia-oidc-demo/business/login
+http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo/business/login
 ```
 
 That route uses the separate `pluxel-business-demo` Authelia client and redirects back to:
 
 ```text
-http://127.0.0.1:3310/__pluxel/plugins/PluginAutheliaOidcDemo/authelia-oidc-demo/business/callback
+http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo/business/callback
 ```
 
 Check the resulting plugin-owned business session:
 
 ```text
-http://127.0.0.1:3310/__pluxel/plugins/PluginAutheliaOidcDemo/authelia-oidc-demo/business/me
+http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo/business/me
 ```
 
 The business login owns its callback, cookie, token exchange, and app authorization rules. Keep it
@@ -89,7 +82,7 @@ separate from `ctx.root.verification.authorize()`, which only protects the Pluxe
 
 ## Vault Usage
 
-The plugin stores demo OIDC settings and business sessions in the `PluginAutheliaOidcDemo` vault
+The plugin stores demo OIDC settings and business sessions in the `AutheliaOidcDemoPlugin` vault
 namespace. Vault is encrypted persistence only:
 
 - OIDC does not unlock vault.

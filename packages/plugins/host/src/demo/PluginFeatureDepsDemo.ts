@@ -5,10 +5,7 @@
 // - 你想确认 “依赖插件类型存在” 和 “依赖插件包可能根本不存在” 该怎么分别表达
 
 import { BasePlugin, defineOptionalFeature, EvtChannel, Plugin } from '@pluxel/runtime'
-import {
-	PluginLoggerFeature,
-	type TickEvent,
-} from './PluginFeatureDeps.shared'
+import { PluginLoggerFeature, type TickEvent } from './PluginFeatureDeps.shared'
 
 function startChannelFeed<Payload>(
 	plugin: BasePlugin,

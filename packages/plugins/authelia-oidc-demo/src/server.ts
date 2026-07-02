@@ -33,31 +33,32 @@ function toFetchHeaders(headers: IncomingHttpHeaders): Headers {
 }
 
 function toFetchRequest(req: IncomingMessage, baseUrl: string): Request {
-	const url = new URL(req.url ?? '/', baseUrl)
 	const method = req.method ?? 'GET'
 	const init: RequestInit & { duplex?: 'half' } = {
 		method,
 		headers: toFetchHeaders(req.headers),
-		body: method === 'GET' || method === 'HEAD' ? undefined : Readable.toWeb(req),
+		body:
+			method === 'GET' || method === 'HEAD'
+				? undefined
+				: (Readable.toWeb(req) as unknown as BodyInit),
 	}
 	if (init.body) init.duplex = 'half'
-	return new Request(url, init)
+	return new Request(new URL(req.url ?? '/', baseUrl), init)
 }
 
 async function writeFetchResponse(res: ServerResponse, response: Response): Promise<void> {
 	res.statusCode = response.status
 	for (const [key, value] of response.headers) res.setHeader(key, value)
-
 	if (!response.body) {
 		res.end()
 		return
 	}
 
-	await new Promise<void>((resolvePromise, reject) => {
-		Readable.fromWeb(response.body)
+	await new Promise<void>((resolve, reject) => {
+		Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream)
 			.on('error', reject)
 			.pipe(res)
-			.on('finish', resolvePromise)
+			.on('finish', resolve)
 			.on('error', reject)
 	})
 }
@@ -67,44 +68,42 @@ export async function startFetchHostServer(
 ): Promise<FetchHostServer> {
 	const host = options.host ?? '127.0.0.1'
 	const port = Number(options.port ?? 3310)
+	const baseUrl = `http://${host}:${port}`
 	const server = createServer(async (req, res) => {
 		try {
-			const request = toFetchRequest(req, `http://${host}:${port}`)
+			const request = toFetchRequest(req, baseUrl)
 			const response = await options.fetch(request)
 			await writeFetchResponse(res, response)
 		} catch (error) {
 			res.statusCode = 500
-			res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+			res.setHeader('content-type', 'text/plain; charset=utf-8')
 			res.end(error instanceof Error ? (error.stack ?? error.message) : String(error))
 		}
 	})
 
-	await new Promise<void>((resolvePromise, reject) => {
+	await new Promise<void>((resolve, reject) => {
 		server.once('error', reject)
 		server.listen(port, host, () => {
 			server.off('error', reject)
-			resolvePromise()
+			resolve()
 		})
 	})
 
 	return {
 		host,
 		port,
-		baseUrl: `http://${host}:${port}`,
+		baseUrl,
 		close: async () =>
-			new Promise<void>((resolvePromise, reject) =>
+			new Promise<void>((resolve, reject) =>
 				server.close((error) => {
 					if (error) reject(error)
-					else resolvePromise()
+					else resolve()
 				}),
 			),
 	}
 }
 
-export function installShutdown(
-	label: string,
-	onClose: (signal: 'SIGINT' | 'SIGTERM') => Promise<void>,
-): (messageLogger: (label: string, error: unknown) => Promise<void> | void) => void {
+export function installShutdown(onClose: (signal: 'SIGINT' | 'SIGTERM') => Promise<void>): void {
 	let closing = false
 	async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
 		if (closing) return
@@ -115,13 +114,4 @@ export function installShutdown(
 
 	process.on('SIGINT', () => void shutdown('SIGINT'))
 	process.on('SIGTERM', () => void shutdown('SIGTERM'))
-
-	return (messageLogger) => {
-		process.on('uncaughtException', (error) => {
-			void messageLogger(`${label} uncaught exception`, error)
-		})
-		process.on('unhandledRejection', (error) => {
-			void messageLogger(`${label} unhandled rejection`, error)
-		})
-	}
 }

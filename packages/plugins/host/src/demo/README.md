@@ -10,7 +10,8 @@
 ## 运行
 
 - 开发宿主：`pnpm plugin-host:dynamic` 或 `pnpm --filter @pluxel/plugins-host dynamic`
-- demo 入口由 `packages/plugins/host/pluxel.loader.hmr.jsonc` 的 `include` 控制
+- demo 启动入口由 `packages/plugins/host/pluxel.loader.hmr.jsonc` 的 `include` 显式列出
+- `PluginVaultDemo.ts` 这类需要额外状态的 demo 不在默认 include；要运行时把对应文件加入 include
 - 默认假设 HMR 侧启用了 `configSourcePlugin`
 
 ## 建议阅读顺序
@@ -39,8 +40,8 @@
   HMR worker fallback；HTTP endpoint 只是 worker 调用触发器。
 - `PluginVaultDemo.ts`
   插件级加密持久化。
-- `PluginAutheliaOidcDemo.ts`
-  Authelia OIDC 接入示例：一条链路演示 Pluxel host verification 的 Bearer JWT 校验，另一条链路演示业务后端自己的 OIDC 登录/session；配套 Authelia SQLite 配置在 `packages/plugins/host/authelia-demo`。
+
+Authelia/OIDC 是独立 demo package：`packages/plugins/authelia-oidc-demo`。
 
 最后再看 advanced：
 
@@ -108,7 +109,7 @@
 
 ## 类型检查
 
-- `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
+- `pnpm --filter @pluxel/plugins-host typecheck`
 
 ## 非目标
 
