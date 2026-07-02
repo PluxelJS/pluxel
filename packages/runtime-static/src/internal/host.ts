@@ -194,10 +194,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	private assertWebManagementAvailable(): void {
-		if (!staticHostNeedsWebManagement(this.ctx.config.http)) return
+		if (!staticHostNeedsWebManagement(this.ctx.config)) return
 		if ('ext' in Context.prototype) return
 		throw new Error(
-			'[runtime-static:web-management] service unavailable. Reason: http.management is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable http.management.',
+			'[runtime-static:web-management] service unavailable. Reason: management is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable management.',
 		)
 	}
 
@@ -567,10 +567,12 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 	return dep.name || '<anonymous>'
 }
 
-function staticHostNeedsWebManagement(http: unknown): boolean {
-	if (!http || typeof http !== 'object') return false
-	const cfg = http as { management?: unknown }
-	if (cfg.management === true) return true
+function staticHostNeedsWebManagement(ctxConfig: unknown): boolean {
+	if (!ctxConfig || typeof ctxConfig !== 'object') return false
+	const cfg = ctxConfig as {
+		management?: { enabled?: unknown }
+	}
+	if (cfg.management?.enabled === true) return true
 	return false
 }
 
@@ -580,6 +582,11 @@ function createStaticRuntimeContextConfig(
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
 	const http = options.http ?? context.http
+	const management = options.management ??
+		context.management ?? {
+			enabled: false,
+			access: { exposure: 'private' },
+		}
 	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
 	const pluginData = options.pluginData ?? context.pluginData
@@ -593,9 +600,9 @@ function createStaticRuntimeContextConfig(
 	return {
 		...context,
 		http: {
-			management: false,
 			...(http && typeof http === 'object' ? http : {}),
 		},
+		management,
 		profile,
 		configService,
 		runtimeState,

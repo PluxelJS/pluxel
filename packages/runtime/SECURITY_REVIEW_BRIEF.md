@@ -14,9 +14,10 @@
 
 - `ctx.root.verification`
   host-only access gate
-- private exposure 下不做任何认证，直接 allow
-- public exposure 下必须配置 OIDC，使用 issuer discovery + JWKS 校验 bearer JWT
-- 绑定公网地址前必须通过 `verification.assertCanBindHost(host)` 检查 OIDC 配置
+- `management.enabled=false` 不挂 runtime web management，不要求 OIDC
+- management private exposure 下不做任何认证，直接 allow
+- management public exposure 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
+- public exposure 使用 issuer discovery + JWKS 校验 bearer JWT
 - Pluxel 不保存本地 verification users、password hash、OTP secret、passkey credential 或 verification session
 - `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 - `ctx.vault`
@@ -45,8 +46,6 @@
   纯读；输出 `allow/reason/principal`
 - `ctx.root.verification.describe()`
   纯读；输出 access policy 概览和当前状态
-- `ctx.root.verification.assertCanBindHost()`
-  启动期检查；公网 bind 缺少 public OIDC 配置时抛错
 - `ctx.root.vaultAdmin.describe()`
   纯读；只做 mount/material/status 概览，不触发解锁
 - `ctx.root.vaultAdmin.preflight()`

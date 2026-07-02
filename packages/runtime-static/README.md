@@ -39,7 +39,10 @@ export default defineStaticRuntimeConfig({
 	},
 	persistence: { mode: 'memory' },
 	pluginData: { enabled: true },
-	http: { management: false },
+	management: {
+		enabled: false,
+		access: { exposure: 'private' },
+	},
 	logger: { preset: 'core' },
 })
 ```

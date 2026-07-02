@@ -212,9 +212,7 @@ export default defineStaticRuntimeConfig({
 	configService: { mode: 'memory' },
 	runtimeState: { mode: 'memory' },
 	persistence: { mode: 'memory' },
-	http: {
-		management: false,
-	},
+	management: { enabled: false, access: { exposure: 'private' } },
 	logger: {
 		sinks: {
 			console: { enabled: true },
@@ -232,9 +230,7 @@ import '@pluxel/runtime/services/web-management'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin],
-	http: {
-		management: true,
-	},
+	management: { enabled: true, access: { exposure: 'private' } },
 })
 ```
 

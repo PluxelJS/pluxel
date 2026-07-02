@@ -1,6 +1,7 @@
 import type {
+	ManagementAccessConfig,
+	ManagementConfig,
 	VerificationClaimRequirement,
-	VerificationConfig,
 	VerificationExposure,
 	VerificationOidcConfig,
 } from './types'
@@ -8,10 +9,18 @@ import type {
 export const DEFAULT_VERIFICATION_EXPOSURE = 'private' as const
 export const DEFAULT_OIDC_TOKEN_HEADER = 'authorization' as const
 
-type VerificationConfigLike =
+type ManagementAccessConfigLike =
 	| {
 			exposure?: unknown
 			oidc?: unknown
+	  }
+	| null
+	| undefined
+
+type ManagementConfigLike =
+	| {
+			enabled?: unknown
+			access?: ManagementAccessConfigLike
 	  }
 	| null
 	| undefined
@@ -50,7 +59,9 @@ function normalizeClaimRequirement(value: unknown): VerificationClaimRequirement
 	return values.length > 0 ? values : undefined
 }
 
-function normalizeRequiredClaims(value: unknown): Record<string, VerificationClaimRequirement> | undefined {
+function normalizeRequiredClaims(
+	value: unknown,
+): Record<string, VerificationClaimRequirement> | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
 	const claims: Record<string, VerificationClaimRequirement> = {}
 	for (const [key, raw] of Object.entries(value)) {
@@ -92,12 +103,25 @@ function normalizeOidcConfig(value: unknown): VerificationOidcConfig | undefined
 	}
 }
 
-export function resolveVerificationConfig(input?: VerificationConfigLike): VerificationConfig {
+function resolveManagementAccessConfig(input?: ManagementAccessConfigLike): ManagementAccessConfig {
 	const exposure: VerificationExposure =
 		input?.exposure === 'public' ? 'public' : DEFAULT_VERIFICATION_EXPOSURE
-	if (exposure === 'private') return { exposure: 'private' }
+	const oidc = normalizeOidcConfig(input?.oidc)
+	if (exposure === 'private') {
+		return {
+			exposure: 'private',
+			...(oidc ? { oidc } : {}),
+		}
+	}
 	return {
 		exposure: 'public',
-		oidc: normalizeOidcConfig(input?.oidc),
+		...(oidc ? { oidc } : {}),
+	}
+}
+
+export function resolveManagementConfig(input?: ManagementConfigLike): Required<ManagementConfig> {
+	return {
+		enabled: input?.enabled === true,
+		access: resolveManagementAccessConfig(input?.access),
 	}
 }

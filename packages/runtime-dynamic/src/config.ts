@@ -26,8 +26,8 @@ export type DynamicRuntimeConfig = {
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
+	management?: CoreContext.Config['management']
 	logger?: CoreContext.Config['logger']
-	verification?: CoreContext.Config['verification']
 	context?: CoreContext.Config
 }
 
@@ -65,9 +65,11 @@ export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeC
 
 function assertPublicHttpConfig(http: unknown, label: string): void {
 	if (!http || typeof http !== 'object') return
-	const forbidden = ['controlPlane', 'uiAssets', 'uiPublicDir'].filter((key) => key in http)
+	const forbidden = ['management', 'controlPlane', 'uiAssets', 'uiPublicDir'].filter(
+		(key) => key in http,
+	)
 	if (forbidden.length === 0) return
 	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use "http.management" and let the route launcher own management internals.`,
+		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "management" and let the route launcher own management internals.`,
 	)
 }

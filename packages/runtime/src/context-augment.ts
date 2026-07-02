@@ -1,6 +1,6 @@
 import type { HttpServiceConfig } from './services/http/HttpService'
 import type { ExtensionServiceConfig } from './services/plugin-interaction/ExtensionService'
-import type { VerificationConfig } from './services/verification/types'
+import type { ManagementConfig } from './services/verification/types'
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
@@ -15,8 +15,8 @@ declare module '@pluxel/core' {
 			profile?: string
 			/** HTTP runtime settings. Management internals are owned by route launchers. */
 			http?: HttpServiceConfig
-			/** Host control-plane access policy. Defaults to private. */
-			verification?: VerificationConfig
+			/** Host management surface and access policy. */
+			management?: ManagementConfig
 			/** UI extension registry settings. */
 			extensionService?: ExtensionServiceConfig
 		}

@@ -1,14 +1,11 @@
 import { type Context as PluxelContext, RootService } from '@pluxel/core'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { recordSecurityEvent } from '../security/audit'
-import {
-	DEFAULT_OIDC_TOKEN_HEADER,
-	resolveVerificationConfig,
-} from './model'
+import { DEFAULT_OIDC_TOKEN_HEADER, resolveManagementConfig } from './model'
 import type {
+	ManagementAccessConfig,
 	VerificationAuthorizeInput,
 	VerificationClaimRequirement,
-	VerificationConfig,
 	VerificationOidcConfig,
 	VerificationState,
 } from './types'
@@ -35,13 +32,10 @@ function readHeaders(input: VerificationAuthorizeInput): Headers {
 	return input.headers ?? input.request?.headers ?? new Headers()
 }
 
-function isPublicBindHost(host: string | undefined): boolean {
-	if (host === undefined) return false
-	const value = host.trim().toLowerCase()
-	return value === '0.0.0.0' || value === '::' || value === '[::]' || value === ''
-}
-
-function readBearerToken(headers: Headers, headerName: string = DEFAULT_OIDC_TOKEN_HEADER): string | undefined {
+function readBearerToken(
+	headers: Headers,
+	headerName: string = DEFAULT_OIDC_TOKEN_HEADER,
+): string | undefined {
 	const raw = headers.get(headerName)
 	if (!raw) return undefined
 	const value = raw.trim()
@@ -65,7 +59,10 @@ function claimMatches(actual: unknown, expected: VerificationClaimRequirement): 
 	return expectedValues.some((entry) => actualValues.includes(entry))
 }
 
-function claimsMatch(payload: JWTPayload, requiredClaims: Record<string, VerificationClaimRequirement>): boolean {
+function claimsMatch(
+	payload: JWTPayload,
+	requiredClaims: Record<string, VerificationClaimRequirement>,
+): boolean {
 	for (const [name, expected] of Object.entries(requiredClaims)) {
 		if (!claimMatches(payload[name], expected)) return false
 	}
@@ -143,13 +140,6 @@ export class VerificationService {
 		}
 	}
 
-	assertCanBindHost(host: string | undefined): void {
-		if (!isPublicBindHost(host)) return
-		const config = this.readConfig()
-		if (config.exposure === 'public' && config.oidc) return
-		throw new Error('Public host binding requires verification.exposure="public" with OIDC configured.')
-	}
-
 	private async verifyOidcToken(
 		config: VerificationOidcConfig,
 		token: string,
@@ -191,7 +181,12 @@ export class VerificationService {
 		}
 	}
 
-	private readConfig(): VerificationConfig {
-		return resolveVerificationConfig((this.ctx.config as { verification?: VerificationConfig }).verification)
+	private readConfig(): ManagementAccessConfig {
+		const config = this.ctx.config as { management?: unknown }
+		const management = resolveManagementConfig(config.management)
+		if (!management.enabled) {
+			return { exposure: 'private' }
+		}
+		return management.access
 	}
 }

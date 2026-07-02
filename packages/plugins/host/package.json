@@ -11,7 +11,8 @@
 	"dependencies": {
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
-		"@pluxel/runtime-static": "workspace:*"
+		"@pluxel/runtime-static": "workspace:*",
+		"jose": "^6.2.3"
 	},
 	"devDependencies": {
 		"@mantine/core": "^9.4.0",

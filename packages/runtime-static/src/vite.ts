@@ -15,12 +15,11 @@ import {
 } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
-import { defineStaticRuntimeConfig, isStaticRuntimeConfig } from './config'
+import { isStaticRuntimeConfig } from './config'
 import { createStaticRuntimeHost } from './internal/host'
 import type {
 	StaticRuntimeDefinition,
 	StaticRuntimeHost,
-	StaticRuntimeHostOptions,
 	StaticRuntimeStartupReport,
 	StaticRuntimeConfig,
 } from './types'
@@ -53,7 +52,7 @@ export type StaticRuntimeVitePluginOptions = {
 	hmr?: false | StaticRuntimeViteHmrConfig
 }
 
-export { defineStaticRuntimeConfig }
+export { defineStaticRuntimeConfig } from './config'
 
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
 	const state: {
@@ -110,6 +109,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				persistence: config.persistence,
 				pluginData: config.pluginData,
 				http: config.http,
+				management: config.management,
 				logger: config.logger,
 				profile: config.profile,
 				context: config.context,
@@ -163,11 +163,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 	}
 
-	return [
-		createStaticRuntimeSourcePlugin(),
-		staticRuntimeBuildUiBridgeVitePlugin(),
-		routePlugin,
-	]
+	return [createStaticRuntimeSourcePlugin(), staticRuntimeBuildUiBridgeVitePlugin(), routePlugin]
 }
 
 function logStaticRuntimeStarted(
@@ -281,6 +277,10 @@ async function configureStaticRuntimeDevRuntime(
 	ctx.config.extensionCompiler = extensionCompilerConfig
 	if (options.enableWebManagement !== false) {
 		await import('@pluxel/runtime/services/web-management')
+		ctx.config.management = {
+			enabled: true,
+			access: ctx.config.management?.access ?? { exposure: 'private' },
+		}
 		ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 		ctx.config.extensionService = {
 			...ctx.config.extensionService,
@@ -301,8 +301,7 @@ async function configureStaticRuntimeDevRuntime(
 		dev: {
 			...previousRoute?.dev,
 			uiSource: {
-				bind: (ownerCtx, declaration) =>
-					extensionCompiler.bindDeclaration(ownerCtx, declaration),
+				bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
 			},
 		},
 	}
@@ -318,7 +317,6 @@ function withDevWebManagementHttpConfig(
 ): StaticRuntimeConfig['http'] {
 	const next = {
 		...config,
-		management: true,
 		controlPlane: { web: true, rpc: true, sse: true },
 		uiAssets: 'dev-server',
 	}

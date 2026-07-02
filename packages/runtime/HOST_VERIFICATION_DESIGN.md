@@ -11,18 +11,20 @@
 
 ## 核心原则
 
-- verification 只回答 host control-plane 是否允许访问
+- verification 只回答 host control-plane / management 是否允许访问
 - Pluxel 不保存本地账号、密码、OTP secret 或 passkey credential
-- private mode 不做任何认证
-- public mode 必须配置 OIDC，并通过 JWT issuer/JWKS 校验访问者身份
-- host 绑定公网地址前必须调用 `verification.assertCanBindHost(host)`
+- `management.enabled=false` 不挂 runtime web management，不要求 OIDC
+- `management.enabled=true` 且 `management.access.exposure='private'` 不要求 OIDC
+- `management.enabled=true` 且 `management.access.exposure='public'` 必须配置 OIDC，否则 fail fast
+- OIDC 可以预先保留在 private/disabled 配置里，供后续切 public 使用
+- listen/bind host 属于 launcher/deployment concern，不作为 runtime access policy 的唯一事实来源
 - vault 只负责加密落盘，和 OIDC 身份验证解耦
 - `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 
 ## 核心接口
 
 - `ctx.root.verification`
-  `authorize()` / `describe()` / `assertCanBindHost()`
+  `authorize()` / `describe()`
 - `ctx.vault`
   `kv()` / `docs()` / `blobs()` / `namespace()` / `flush()`
 - `ctx.root.vaultAdmin`
@@ -47,6 +49,7 @@
 
 ## Host 启动约束
 
+- management public access 必须在 HTTP 服务初始化时通过 OIDC 配置校验
 - Vault 只有一个启用入口：显式 import `@pluxel/runtime/services/vault`
 - 启用 vault 的 host 在插件运行前调用 `bootstrapHostVault(ctx)`；static kernel 和 dynamic
   HMR host 都不默认 bootstrap vault

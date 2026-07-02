@@ -29,16 +29,18 @@ export function defineStaticRuntimeConfig<T extends StaticRuntimeConfig>(config:
 export function isStaticRuntimeConfig(value: unknown): value is StaticRuntimeConfig {
 	return Boolean(
 		value &&
-			typeof value === 'object' &&
-			(value as MarkedStaticRuntimeConfig)[STATIC_RUNTIME_CONFIG_MARKER] === true,
+		typeof value === 'object' &&
+		(value as MarkedStaticRuntimeConfig)[STATIC_RUNTIME_CONFIG_MARKER] === true,
 	)
 }
 
 function assertPublicHttpConfig(http: unknown, label: string): void {
 	if (!http || typeof http !== 'object') return
-	const forbidden = ['controlPlane', 'uiAssets', 'uiPublicDir'].filter((key) => key in http)
+	const forbidden = ['management', 'controlPlane', 'uiAssets', 'uiPublicDir'].filter(
+		(key) => key in http,
+	)
 	if (forbidden.length === 0) return
 	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use "http.management" and let the route launcher own management internals.`,
+		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "management" and let the route launcher own management internals.`,
 	)
 }

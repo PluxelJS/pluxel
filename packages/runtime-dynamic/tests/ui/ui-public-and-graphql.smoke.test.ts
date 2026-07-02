@@ -33,7 +33,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: { management: true },
+				management: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -104,7 +104,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: { management: true },
+				management: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -208,7 +208,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: { management: true },
+				management: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})

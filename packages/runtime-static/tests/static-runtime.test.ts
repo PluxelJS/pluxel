@@ -153,16 +153,19 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				http: { management: false },
+				management: { enabled: false, access: { exposure: 'private' } },
 			}),
 		)
 		try {
 			const response = await runtime.fetch(
-				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_TRANSPORT_PATHS.graphql}`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ query: '{ _empty }' }),
-				}),
+				new Request(
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_TRANSPORT_PATHS.graphql}`,
+					{
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ query: '{ _empty }' }),
+					},
+				),
 			)
 
 			expect(response.status).toBe(200)
@@ -202,7 +205,7 @@ describe('@pluxel/runtime-static', () => {
 					plugins: [],
 					configService: { mode: 'memory' },
 					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-					http: { management: true },
+					management: { enabled: true, access: { exposure: 'private' } },
 				}),
 			),
 		).rejects.toThrow(/services\/web-management/)
@@ -216,12 +219,14 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				http: { management: true },
+				management: { enabled: true, access: { exposure: 'private' } },
 			}),
 		)
 		try {
 			expect('ext' in runtime.ctx).toBe(true)
-			const response = await runtime.fetch(new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`))
+			const response = await runtime.fetch(
+				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`),
+			)
 			expect(response.status).toBeLessThan(500)
 		} finally {
 			await runtime.stop()
@@ -581,7 +586,10 @@ describe('@pluxel/runtime-static', () => {
 			await host.start()
 			const report = await reloadStaticRuntime({
 				host,
-				definition: defineStaticRuntimeConfig({ name: 'static-hmr-disabled', plugins: [DisabledHotV2] }),
+				definition: defineStaticRuntimeConfig({
+					name: 'static-hmr-disabled',
+					plugins: [DisabledHotV2],
+				}),
 			})
 
 			expect(report.replaced).toEqual(['DisabledHot'])

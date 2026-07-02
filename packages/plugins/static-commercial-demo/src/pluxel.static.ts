@@ -27,7 +27,5 @@ export default defineStaticRuntimeConfig({
 	pluginData: {
 		dir: resolve(repoRoot, 'packages/plugins/static-commercial-demo/.pluxel/static/plugin-data'),
 	},
-	http: {
-		management: true,
-	},
+	management: { enabled: true, access: { exposure: 'private' } },
 })

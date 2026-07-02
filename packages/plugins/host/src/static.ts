@@ -32,7 +32,6 @@ await ensurePluxelLogging({
 
 const runtime = await createStaticRuntime(staticRuntime)
 
-runtime.ctx.root.verification.assertCanBindHost(bindHost)
 const server = await startFetchHostServer({
 	host: bindHost,
 	port: bindPort,

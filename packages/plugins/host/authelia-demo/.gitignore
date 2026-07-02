@@ -1,0 +1,3 @@
+config/*.sqlite3
+config/*.sqlite3-*
+config/notification.txt

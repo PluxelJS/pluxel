@@ -117,8 +117,8 @@ export type LoaderHmrHostConfigInput = Omit<
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
+	management?: CoreContext.Config['management']
 	logger?: CoreContext.Config['logger']
-	verification?: CoreContext.Config['verification']
 }
 
 function planRuntimeStorage(
@@ -222,8 +222,8 @@ export async function planLoaderHmrHostFromConfig(
 		persistence,
 		pluginData,
 		http,
+		management,
 		logger,
-		verification,
 		context,
 		...hostOpts
 	} = opts
@@ -259,8 +259,8 @@ export async function planLoaderHmrHostFromConfig(
 			persistence,
 			pluginData,
 			http,
+			management,
 			logger,
-			verification,
 		}),
 	})
 }
@@ -393,6 +393,10 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		plan.vite,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
+	ctx.config.management = {
+		enabled: true,
+		access: ctx.config.management?.access ?? { exposure: 'private' },
+	}
 	ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 	ctx.config.extensionService = {
 		...ctx.config.extensionService,
@@ -451,7 +455,6 @@ function withDevWebManagementHttpConfig(
 ): CoreContext.Config['http'] {
 	const next = {
 		...config,
-		management: true,
 		controlPlane: { web: true, rpc: true, sse: true },
 		uiAssets: 'dev-server',
 	}

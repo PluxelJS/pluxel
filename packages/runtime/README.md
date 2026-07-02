@@ -38,7 +38,7 @@ runtime 只消费两类前端输入：
   HMR worker 绑定入口
 - `this.ctx.root.verification`
   host-only gate；只回答“当前宿主是否允许进入 control plane”
-  `authorize()` / `describe()` / `assertCanBindHost()`；private mode 直接放行，public mode 使用 OIDC JWT 校验
+  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验
 - `this.ctx.root.persistence`
   runtime 数据持久化入口。config、runtime state、plugin data、logger policy、vault 等共享
   namespace 化 backend；它不是业务文件系统，也不是 Node `fs` 镜像。
@@ -104,6 +104,9 @@ SignalDB、runtime web UI 和 management panel。
 
 - `configs.use(schema)` 读到的是 schema 归一化后的输出
 - 默认值放进 Valibot schema 本身，不要在插件里再写 `config ?? defaults`
+- 管理面访问策略放在 `management`：`management.enabled=true` 开启 runtime web management，
+  `management.access.exposure='public'` 时必须配置 `management.access.oidc`，否则 fail fast。
+  OIDC 可以预先保留在 private/disabled 配置里，方便后续切到 public。
 - cfg/schema 提取与 cfg layout 设计见 `docs/CONFIG.md`；Host 合同见 `packages/runtime/docs/config/contract.md`。
 
 ## SignalDB 语义

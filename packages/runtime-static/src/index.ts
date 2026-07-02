@@ -1,13 +1,8 @@
 import '@pluxel/runtime/register/static'
 import { setPluxelRuntime } from '@pluxel/core'
 
-import { defineStaticRuntimeConfig } from './config'
 import { createStaticRuntimeHost } from './internal/host'
-import type {
-	StaticRuntime,
-	StaticRuntimeConfig,
-	StaticRuntimeDefinition,
-} from './types'
+import type { StaticRuntime, StaticRuntimeConfig, StaticRuntimeDefinition } from './types'
 
 setPluxelRuntime('core')
 
@@ -47,6 +42,7 @@ export async function createStaticRuntime(config: StaticRuntimeConfig): Promise<
 		persistence: config.persistence,
 		pluginData: config.pluginData,
 		http: config.http,
+		management: config.management,
 		logger: config.logger,
 		profile: config.profile,
 		context: config.context,

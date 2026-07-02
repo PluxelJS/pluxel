@@ -1,14 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 import { dirname, resolve } from 'pathe'
-import {
-	PluginEventsDeclaredConsumer,
-	PluginEventsDeclaredProducer,
-} from './demo/PluginEventsDemo'
-import {
-	PluginFeatureDepsConsumer,
-	PluginFeatureDepsProvider,
-} from './demo/PluginFeatureDepsDemo'
+import { PluginEventsDeclaredConsumer, PluginEventsDeclaredProducer } from './demo/PluginEventsDemo'
+import { PluginFeatureDepsConsumer, PluginFeatureDepsProvider } from './demo/PluginFeatureDepsDemo'
 import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -42,8 +36,9 @@ export default defineStaticRuntimeConfig({
 		mode: 'memory',
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
-	http: {
-		management: true,
+	management: {
+		enabled: true,
+		access: { exposure: 'private' },
 	},
 	logger: { preset: 'core' },
 	pluginData: {

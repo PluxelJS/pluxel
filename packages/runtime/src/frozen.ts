@@ -80,7 +80,8 @@ const ctx = new Context({
 \t\tpolicy: { allowInstall: false, allowUninstall: false },
 \t\tstate: { enabled: false },
 \t},
-\thttp: ${JSON.stringify(options.bootstrap?.http ?? { management: false })},
+\thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
+\tmanagement: ${JSON.stringify(options.bootstrap?.management ?? { enabled: false, access: { exposure: 'private' } })},
 \textensionService: { enabled: false },
 })
 

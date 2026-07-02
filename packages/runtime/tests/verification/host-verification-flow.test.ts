@@ -7,7 +7,6 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_SECURITY_BASE,
 	RUNTIME_TRANSPORT_PATHS,
 	RUNTIME_VERIFICATION_BASE,
 } from '@pluxel/runtime/web/paths'
@@ -20,10 +19,6 @@ function internalUrl(path = ''): string {
 	return `http://local${RUNTIME_INTERNAL_API_BASE}${path}`
 }
 
-function securityUrl(path = RUNTIME_SECURITY_BASE): string {
-	return internalUrl(path)
-}
-
 function jsonResponse(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		status,
@@ -34,9 +29,9 @@ function jsonResponse(body: unknown, status = 200): Response {
 function createManagementHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
 	return createRuntimeHost({
 		...config,
-		http: {
-			...config.http,
-			management: true,
+		management: {
+			...config.management,
+			enabled: true,
 		},
 	})
 }
@@ -97,57 +92,60 @@ describe('Host verification gate', () => {
 			reason: 'private',
 		})
 
-		const res = await host.ctx.http.fetch(req(internalUrl(), { headers: { accept: 'application/json' } }))
+		const res = await host.ctx.http.fetch(
+			req(internalUrl(), { headers: { accept: 'application/json' } }),
+		)
 		expect(res.status).toBe(200)
 	})
 
-	it('blocks public mode when OIDC is not configured', async () => {
-		host = createManagementHost({
-			verification: { exposure: 'public' },
+	it('fails fast when public management has no OIDC config', async () => {
+		host = createRuntimeHost({
+			management: {
+				enabled: true,
+				access: { exposure: 'public' },
+			},
 		})
 
-		const blocked = await host.ctx.http.fetch(req(internalUrl(), { headers: { accept: 'application/json' } }))
-		expect(blocked.status).toBe(401)
-		expect(blocked.headers.get('X-Pluxel-Verification-Redirect')).toBe('/security')
-		const blockedPayload = (await blocked.json()) as any
-		expect(blockedPayload.reason).toBe('missing_oidc')
-
-		const snapshot = await host.ctx.http.fetch(req(securityUrl()))
-		expect(snapshot.status).toBe(200)
-		const body = (await snapshot.json()) as any
-		expect(body.verification).toMatchObject({
-			exposure: 'public',
-			provider: 'oidc',
-			allow: false,
-			reason: 'missing_oidc',
-		})
+		expect(() => host!.ctx.http).toThrow(
+			'Public management access requires management.access.oidc.',
+		)
 	})
 
-	it('requires public OIDC config before binding a public host', async () => {
+	it('treats disabled management as private even when access is prepared for public OIDC', async () => {
+		const oidc = await installOidcIssuer('future')
 		host = createRuntimeHost({
-		})
-
-		expect(() => host!.ctx.root.verification.assertCanBindHost('127.0.0.1')).not.toThrow()
-		expect(() => host!.ctx.root.verification.assertCanBindHost(undefined)).not.toThrow()
-		expect(() => host!.ctx.root.verification.assertCanBindHost('0.0.0.0')).toThrow(
-			'Public host binding requires verification.exposure="public" with OIDC configured.',
-		)
-		expect(() => host!.ctx.root.verification.assertCanBindHost('')).toThrow(
-			'Public host binding requires verification.exposure="public" with OIDC configured.',
-		)
-
-		await host.dispose()
-		const oidc = await installOidcIssuer('bind')
-		host = createRuntimeHost({
-			verification: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+			management: {
+				enabled: false,
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+					},
 				},
 			},
 		})
-		expect(() => host!.ctx.root.verification.assertCanBindHost('0.0.0.0')).not.toThrow()
+
+		expect(await host.ctx.verification.describe()).toMatchObject({
+			exposure: 'private',
+			provider: 'none',
+			allow: true,
+		})
+	})
+
+	it('does not require OIDC while public access is only staged for disabled management', async () => {
+		host = createRuntimeHost({
+			management: {
+				enabled: false,
+				access: { exposure: 'public' },
+			},
+		})
+
+		expect(await host.ctx.verification.describe()).toMatchObject({
+			exposure: 'private',
+			provider: 'none',
+			allow: true,
+		})
 	})
 
 	it('does not permanently cache failed OIDC discovery', async () => {
@@ -165,11 +163,14 @@ describe('Host verification gate', () => {
 			}),
 		)
 		host = createRuntimeHost({
-			verification: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+			management: {
+				enabled: true,
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+					},
 				},
 			},
 		})
@@ -189,18 +190,22 @@ describe('Host verification gate', () => {
 	it('allows public control-plane requests with a valid OIDC bearer token', async () => {
 		const oidc = await installOidcIssuer('valid')
 		host = createManagementHost({
-			verification: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
-					requiredClaims: { groups: 'admins' },
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+						requiredClaims: { groups: 'admins' },
+					},
 				},
 			},
 		})
 		const bearer = await oidc.token({ groups: ['admins'] })
 
-		const blocked = await host.ctx.http.fetch(req(internalUrl(), { headers: { accept: 'application/json' } }))
+		const blocked = await host.ctx.http.fetch(
+			req(internalUrl(), { headers: { accept: 'application/json' } }),
+		)
 		expect(blocked.status).toBe(401)
 		const blockedBody = (await blocked.json()) as any
 		expect(blockedBody.reason).toBe('unauthenticated')
@@ -223,12 +228,14 @@ describe('Host verification gate', () => {
 	it('rejects valid OIDC tokens that miss required claims', async () => {
 		const oidc = await installOidcIssuer('claims')
 		host = createManagementHost({
-			verification: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
-					requiredClaims: { groups: 'admins' },
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+						requiredClaims: { groups: 'admins' },
+					},
 				},
 			},
 		})
@@ -246,17 +253,19 @@ describe('Host verification gate', () => {
 			}),
 		)
 		expect(res.status).toBe(401)
-		expect((await res.json() as any).reason).toBe('forbidden')
+		expect(((await res.json()) as any).reason).toBe('forbidden')
 	})
 
 	it('renders a static external-auth page instead of a local login form', async () => {
 		const oidc = await installOidcIssuer('page')
 		host = createManagementHost({
-			verification: {
-				exposure: 'public',
-				oidc: {
-					issuer: oidc.issuer,
-					audience: oidc.audience,
+			management: {
+				access: {
+					exposure: 'public',
+					oidc: {
+						issuer: oidc.issuer,
+						audience: oidc.audience,
+					},
 				},
 			},
 		})

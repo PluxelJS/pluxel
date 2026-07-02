@@ -39,6 +39,8 @@
   HMR worker fallback；HTTP endpoint 只是 worker 调用触发器。
 - `PluginVaultDemo.ts`
   插件级加密持久化。
+- `PluginAutheliaOidcDemo.ts`
+  Authelia OIDC 接入示例：一条链路演示 Pluxel host verification 的 Bearer JWT 校验，另一条链路演示业务后端自己的 OIDC 登录/session；配套 Authelia SQLite 配置在 `packages/plugins/host/authelia-demo`。
 
 最后再看 advanced：
 

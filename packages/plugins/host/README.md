@@ -46,5 +46,9 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 The host proves that the same plugin API can run under dynamic HMR and static fixed-catalog
 semantics.
 
-Capability-specific demos that need external setup, such as `PluginVaultDemo`, stay in
-`src/demo` for discovery/manual enablement but are not part of the default enabled set.
+Capability-specific demos that need external setup, such as `PluginVaultDemo` and
+`PluginAutheliaOidcDemo`, stay in `src/demo` for discovery/manual enablement but are not part of the
+default enabled set.
+
+Authelia/OIDC setup files live in [authelia-demo](./authelia-demo). That demo intentionally separates
+Pluxel host verification from a plugin-owned business OIDC login.

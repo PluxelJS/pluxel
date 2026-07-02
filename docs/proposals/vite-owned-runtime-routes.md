@@ -82,9 +82,7 @@ export default defineStaticRuntimeConfig({
 		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
-	http: {
-		management: true,
-	},
+	management: { enabled: true, access: { exposure: 'private' } },
 })
 ```
 

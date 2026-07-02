@@ -68,10 +68,14 @@ export type StaticRuntimeHostOptions = {
 	 */
 	pluginData?: StaticRuntimePluginDataConfig
 	/**
-	 * HTTP runtime settings. Static direct hosts default to a production API surface with
-	 * management UI/RPC/SSE disabled unless explicitly enabled here.
+	 * HTTP runtime settings. Management UI/RPC/SSE are controlled by the top-level
+	 * management config.
 	 */
 	http?: StaticRuntimeHttpConfig
+	/**
+	 * Host management surface and access policy. When enabled with public exposure, OIDC is required.
+	 */
+	management?: CoreContext.Config['management']
 	/**
 	 * Runtime logger settings.
 	 */

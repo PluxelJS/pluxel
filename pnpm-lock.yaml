@@ -335,6 +335,9 @@ importers:
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../runtime-static
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
     devDependencies:
       '@mantine/core':
         specifier: ^9.4.0

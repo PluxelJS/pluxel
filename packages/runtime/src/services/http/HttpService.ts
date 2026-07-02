@@ -15,6 +15,7 @@ import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
+import { resolveManagementConfig } from '../verification/model'
 import type { SseChannel } from '../plugin-interaction/SseService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
@@ -43,11 +44,6 @@ export type HttpHandler = (
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
 export interface HttpServiceConfig {
-	/**
-	 * Enables the Pluxel management surface (verification pages, internal API, SSE, and UI fallback).
-	 * Defaults to false. Route launchers may choose the concrete runtime transport/asset mode internally.
-	 */
-	management?: boolean
 	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
 	graphql?: boolean
 }
@@ -177,32 +173,25 @@ export class HttpService {
 		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
-		const controlPlaneRequested =
-			runtimeConfig.controlPlane?.web === true ||
-			runtimeConfig.controlPlane?.rpc === true ||
-			runtimeConfig.controlPlane?.sse === true
-		const uiAssetsRequested =
-			runtimeConfig.uiAssets !== undefined && runtimeConfig.uiAssets !== 'disabled'
-		const management = config.management === true || controlPlaneRequested || uiAssetsRequested
+		const managementConfig = resolveManagementConfig(this.hostCtx.config.management)
+		const management = managementConfig.enabled
+		if (
+			management &&
+			managementConfig.access.exposure === 'public' &&
+			!managementConfig.access.oidc
+		) {
+			throw new Error('Public management access requires management.access.oidc.')
+		}
 		const useDefaultControlPlane = management && runtimeConfig.controlPlane === undefined
 		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
-				web:
-					useDefaultControlPlane ||
-					(config.management === true && runtimeConfig.controlPlane?.web !== false) ||
-					runtimeConfig.controlPlane?.web === true,
-				rpc:
-					useDefaultControlPlane ||
-					(config.management === true && runtimeConfig.controlPlane?.rpc !== false) ||
-					runtimeConfig.controlPlane?.rpc === true,
-				sse:
-					useDefaultControlPlane ||
-					(config.management === true && runtimeConfig.controlPlane?.sse !== false) ||
-					runtimeConfig.controlPlane?.sse === true,
+				web: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
+				rpc: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
+				sse: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
 			},
 			graphql,
-			uiAssets: runtimeConfig.uiAssets ?? (management ? 'static-built' : 'disabled'),
+			uiAssets: management ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
 			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
 		}
 		if (management) {
@@ -435,7 +424,8 @@ export class HttpService {
 	private async resolveUiPublicDir(): Promise<string | null> {
 		if (this.config.uiAssets !== 'static-built') return null
 		const configured = String(this.config.uiPublicDir ?? '').trim()
-		if (configured) return isAbsolute(configured) ? configured : resolve(currentWorkingDirectory(), configured)
+		if (configured)
+			return isAbsolute(configured) ? configured : resolve(currentWorkingDirectory(), configured)
 		const { resolveDefaultUiPublicDir } = await import('../../server/ui-public')
 		return resolveDefaultUiPublicDir()
 	}
@@ -534,7 +524,8 @@ export class HttpService {
 			request,
 			url: request.url,
 		})
-		const isSecurityRoute = path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+		const isSecurityRoute =
+			path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
 		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
 		if (isSecurityRoute) {

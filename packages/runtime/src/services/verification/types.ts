@@ -12,14 +12,20 @@ export type VerificationOidcConfig = {
 	clockToleranceSeconds?: number
 }
 
-export type VerificationConfig =
+export type ManagementAccessConfig =
 	| {
 			exposure?: 'private'
+			oidc?: VerificationOidcConfig
 	  }
 	| {
 			exposure: 'public'
 			oidc?: VerificationOidcConfig
 	  }
+
+export type ManagementConfig = {
+	enabled?: boolean
+	access?: ManagementAccessConfig
+}
 
 export type VerificationReason =
 	| 'private'
