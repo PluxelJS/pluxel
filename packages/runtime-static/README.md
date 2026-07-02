@@ -32,9 +32,14 @@ import { DemoPlugin } from './src/DemoPlugin'
 export default defineStaticRuntimeConfig({
 	name: 'app',
 	plugins: [DemoPlugin],
+	configService: { mode: 'memory' },
 	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
+	persistence: { mode: 'memory' },
+	pluginData: { enabled: true },
+	http: { management: false },
 	logger: { preset: 'core' },
 })
 ```
@@ -63,9 +68,12 @@ import { createStaticRuntime, defineStaticRuntimeConfig } from '@pluxel/runtime-
 const config = defineStaticRuntimeConfig({
 	name: 'app',
 	plugins: [DemoPlugin],
+	configService: { mode: 'memory' },
 	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
+	persistence: { mode: 'memory' },
 })
 const runtime = await createStaticRuntime(config)
 

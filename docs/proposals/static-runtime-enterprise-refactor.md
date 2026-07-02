@@ -91,11 +91,15 @@ import { AuditPlugin } from './plugins/AuditPlugin'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin, AuditPlugin],
+	configService: { mode: 'memory' },
 	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: ['OrdersPlugin', 'AuditPlugin'] },
 	},
+	persistence: { mode: 'memory' },
 	http: {
 		graphql: true,
+		management: false,
 	},
 	logger: {
 		sinks: {

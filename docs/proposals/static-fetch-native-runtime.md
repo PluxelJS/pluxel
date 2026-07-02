@@ -209,6 +209,12 @@ fetch-native production host 应默认是最小业务 runtime：
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin],
+	configService: { mode: 'memory' },
+	runtimeState: { mode: 'memory' },
+	persistence: { mode: 'memory' },
+	http: {
+		management: false,
+	},
 	logger: {
 		sinks: {
 			console: { enabled: true },

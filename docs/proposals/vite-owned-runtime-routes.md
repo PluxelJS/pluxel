@@ -79,6 +79,7 @@ export default defineStaticRuntimeConfig({
 	name: 'plugins-host-static',
 	plugins: [DemoPlugin],
 	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
 	http: {

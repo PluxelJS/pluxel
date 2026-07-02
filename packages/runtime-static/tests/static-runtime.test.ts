@@ -77,7 +77,7 @@ describe('@pluxel/runtime-static', () => {
 			name: 'static-vite-config-test',
 			profile: 'test',
 			plugins: [],
-			runtimeState: { snapshot: { enabled: [] } },
+			runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 		})
 		const plugins = staticRuntimeVitePlugin({ config: './pluxel.static.ts' }) as Array<{
 			name?: string

@@ -35,7 +35,11 @@ export default defineStaticRuntimeConfig({
 	name: 'plugins-host-static',
 	profile: activeProfile,
 	plugins: staticDemoPlugins,
+	configService: {
+		mode: 'memory',
+	},
 	runtimeState: {
+		mode: 'memory',
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
 	http: {
