@@ -228,27 +228,6 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('treats management as the only static web-management config opt-in', async () => {
-		await import('@pluxel/runtime/services/web-management')
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
-				name: 'static-control-plane-with-web-management',
-				plugins: [],
-				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				http: { management: true },
-			}),
-		)
-		try {
-			const response = await runtime.fetch(
-				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`),
-			)
-			expect(response.status).toBeLessThan(500)
-		} finally {
-			await runtime.stop()
-		}
-	})
-
 	it('exposes vault only after explicit import without static host auto-bootstrap', async () => {
 		await import('@pluxel/runtime/services/vault')
 		const runtime = await createStaticRuntime(

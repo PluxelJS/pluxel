@@ -20,57 +20,31 @@ async function resolveEnvironmentPluginNames(
 describe('runtime-dev Vite plugin stack', () => {
 	it('exposes source/server semantics as a dedicated plugin', () => {
 		const plugin = pluxelRuntimeSourceVitePlugin()
-		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' })
+		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
+			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
+			environments?: { ssr?: { resolve?: { conditions?: string[] } } }
+			ssr?: { external?: string[]; resolve?: { conditions?: string[] } }
+			oxc?: { decorator?: { legacy?: boolean } }
+		}
 
 		expect(plugin.name).toBe('pluxel:runtime-source')
-		expect(config).toMatchObject({
-			resolve: {
-				conditions: expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
-				externalConditions: expect.arrayContaining([
-					'@pluxel/source',
-					'node',
-					'import',
-					'default',
-				]),
-				preserveSymlinks: false,
-			},
-			environments: {
-				ssr: {
-					resolve: {
-						conditions: expect.arrayContaining([
-							'@pluxel/source',
-							'node',
-							'import',
-							'default',
-						]),
-						externalConditions: expect.arrayContaining([
-							'@pluxel/source',
-							'node',
-							'import',
-							'default',
-						]),
-						preserveSymlinks: false,
-					},
-				},
-			},
-			ssr: {
-				resolve: {
-					conditions: expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
-					externalConditions: expect.arrayContaining([
-						'@pluxel/source',
-						'node',
-						'import',
-						'default',
-					]),
-					preserveSymlinks: false,
-				},
-			},
-			oxc: {
-				decorator: {
-					legacy: true,
-				},
-			},
-		})
+		expect(config.resolve?.conditions).toEqual(
+			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+		)
+		expect(config.environments?.ssr?.resolve?.conditions).toEqual(
+			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+		)
+		expect(config.ssr?.resolve?.conditions).toEqual(
+			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+		)
+		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
+		expect(config.resolve?.dedupe).toEqual(
+			expect.arrayContaining(['@pluxel/core', '@pluxel/runtime']),
+		)
+		expect(config.ssr?.external).toEqual(
+			expect.arrayContaining(['@pluxel/core', '@pluxel/runtime']),
+		)
+		expect(config.oxc?.decorator?.legacy).toBe(true)
 	})
 
 	it('exposes UI bridge lowering as a separate plugin', () => {

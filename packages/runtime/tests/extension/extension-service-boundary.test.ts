@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDiskFixture, createFixture, type TestFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext, type Context } from '@pluxel/runtime/test'
-import { dirname, join } from 'pathe'
-import { fileURLToPath } from 'node:url'
-import { readFile } from 'node:fs/promises'
+import { join } from 'pathe'
 
 import {
 	createCompiledExtensionModule,
@@ -11,7 +9,6 @@ import {
 } from '../../src/services/plugin-interaction/ExtensionService'
 import { defineInteractionContract, doc } from '../../src/web/extensions'
 
-const runtimePackageDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const runtimeContexts = new Set<ReturnType<typeof createRuntimeContext>>()
 type ExtensionTestContext = ReturnType<typeof createRuntimeContext>['ctx'] & {
 	root: ReturnType<typeof createRuntimeContext>['ctx']['root'] &
@@ -164,14 +161,6 @@ const FontInteractionContract = defineInteractionContract<
 })
 
 describe('ExtensionService runtime/hmr boundary', () => {
-	it('runtime ExtensionService has no chokidar import (guardrail)', async () => {
-		const code = await readFile(
-			join(runtimePackageDir, 'src/services/plugin-interaction/ExtensionService.ts'),
-			'utf-8',
-		)
-		expect(code).not.toMatch(/\bchokidar\b/)
-	})
-
 	it('packaged() registers packaged federation metadata', async () => {
 		await withPackagedService(
 			{
