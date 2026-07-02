@@ -31,7 +31,6 @@ const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = [
 ] as const
 
 const PLUXEL_SINGLETON_PACKAGES = [
-	'@pluxel/context',
 	'@pluxel/core',
 	'@pluxel/runtime',
 	'@pluxel/runtime-dev',

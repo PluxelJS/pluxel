@@ -262,9 +262,6 @@ importers:
       '@logtape/pretty':
         specifier: ^2.0.2
         version: 2.2.1(@logtape/logtape@2.2.1)
-      '@pluxel/context':
-        specifier: workspace:*
-        version: link:../context
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -284,6 +281,9 @@ importers:
       '@abraham/reflection':
         specifier: ^0.13.0
         version: 0.13.0
+      '@pluxel/context':
+        specifier: workspace:*
+        version: link:../context
       '@pluxel/core-di':
         specifier: workspace:*
         version: link:../core-di

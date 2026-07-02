@@ -80,7 +80,6 @@
 		"bench:dist": "pnpm --filter @pluxel/rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
-		"@pluxel/context": "workspace:*",
 		"@logtape/logtape": "^2.0.2",
 		"@logtape/pretty": "^2.0.2",
 		"@standard-schema/spec": "^1.1.0",
@@ -91,6 +90,7 @@
 	},
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
+		"@pluxel/context": "workspace:*",
 		"@pluxel/core-di": "workspace:*",
 		"option-t": "^55.1.2",
 		"tinybench": "^6.0.0"
