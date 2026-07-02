@@ -1,5 +1,6 @@
 import '@pluxel/runtime/test'
 import '@pluxel/runtime'
+import '@pluxel/runtime/services/web-management'
 
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
@@ -36,12 +37,6 @@ function createManagementHost(config: Parameters<typeof createRuntimeHost>[0] = 
 		http: {
 			...config.http,
 			management: true,
-			controlPlane: {
-				web: true,
-				rpc: false,
-				sse: false,
-				...config.http?.controlPlane,
-			},
 		},
 	})
 }

@@ -11,7 +11,6 @@ import type {
 	PersistenceRequirement,
 	PersistenceServiceConfig,
 	PluginDataServiceConfig,
-	UiAssetStrategy,
 } from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
@@ -27,7 +26,6 @@ export type StaticRuntimePersistenceBackend = PersistenceBackend
 export type StaticRuntimePersistenceConfig = PersistenceServiceConfig
 export type StaticRuntimePluginDataConfig = PluginDataServiceConfig
 export type StaticRuntimeHttpHandler = HttpHandler
-export type StaticRuntimeUiAssetStrategy = UiAssetStrategy
 export type StaticRuntimeHttpConfig = HttpServiceConfig
 
 export type StaticRuntimeDefinition = {

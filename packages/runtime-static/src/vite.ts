@@ -281,12 +281,7 @@ async function configureStaticRuntimeDevRuntime(
 	ctx.config.extensionCompiler = extensionCompilerConfig
 	if (options.enableWebManagement !== false) {
 		await import('@pluxel/runtime/services/web-management')
-		ctx.config.http = {
-			...ctx.config.http,
-			management: true,
-			controlPlane: { web: true, rpc: true, sse: true },
-			uiAssets: 'hmr-server',
-		}
+		ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 		ctx.config.extensionService = {
 			...ctx.config.extensionService,
 			enabled: true,
@@ -316,6 +311,18 @@ async function configureStaticRuntimeDevRuntime(
 		extensionCompiler.dispose()
 		ctx.runtimeRoute = previousRoute
 	})
+}
+
+function withDevWebManagementHttpConfig(
+	config: StaticRuntimeConfig['http'] | undefined,
+): StaticRuntimeConfig['http'] {
+	const next = {
+		...config,
+		management: true,
+		controlPlane: { web: true, rpc: true, sse: true },
+		uiAssets: 'dev-server',
+	}
+	return next
 }
 
 async function loadStaticRuntimeDevModule(

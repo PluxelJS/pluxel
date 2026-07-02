@@ -610,6 +610,30 @@ describe('toolchain package boundaries', () => {
 		expect(offenders).toEqual([])
 	})
 
+	it('keeps old HTTP management internals out of public runtime config surfaces', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const files = [
+			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
+			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
+			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
+			`${root}/packages/runtime-static/src/types.ts`,
+			`${root}/packages/runtime-static/src/index.ts`,
+			`${root}/packages/runtime/src/runtime/contracts.ts`,
+			`${root}/packages/runtime/src/frozen.ts`,
+		]
+		const forbidden = ['controlPlane', 'uiAssets', 'uiPublicDir', 'UiAssetStrategy']
+		const offenders: string[] = []
+
+		for (const file of files) {
+			const code = await readFile(file, 'utf8')
+			for (const token of forbidden) {
+				if (code.includes(token)) offenders.push(`${file}:${token}`)
+			}
+		}
+
+		expect(offenders).toEqual([])
+	})
+
 	it('keeps refactor docs on split runtime registration entries', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const docs = [

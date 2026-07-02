@@ -42,22 +42,25 @@ export type HttpHandler = (
  */
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
-export type UiAssetStrategy = 'hmr-server' | 'static-built' | 'disabled'
-
 export interface HttpServiceConfig {
 	/**
 	 * Enables the Pluxel management surface (verification pages, internal API, SSE, and UI fallback).
-	 * Defaults to false; hosts opt in with this flag, `controlPlane`, or `uiAssets`.
+	 * Defaults to false. Route launchers may choose the concrete runtime transport/asset mode internally.
 	 */
 	management?: boolean
 	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
 	graphql?: boolean
+}
+
+type RuntimeHttpUiAssetMode = 'dev-server' | 'static-built' | 'disabled'
+
+type RuntimeHttpServiceConfig = HttpServiceConfig & {
 	controlPlane?: {
 		web?: boolean
 		rpc?: boolean
 		sse?: boolean
 	}
-	uiAssets?: UiAssetStrategy
+	uiAssets?: RuntimeHttpUiAssetMode
 	/**
 	 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
 	 *
@@ -93,7 +96,7 @@ type ResolvedHttpServiceConfig = {
 		sse: boolean
 	}
 	graphql: boolean
-	uiAssets: UiAssetStrategy
+	uiAssets: RuntimeHttpUiAssetMode
 	uiPublicDir: string
 }
 
@@ -171,34 +174,36 @@ export class HttpService {
 		public ctx: PluxelContext,
 		config: HttpServiceConfig = {},
 	) {
+		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
 		const controlPlaneRequested =
-			config.controlPlane?.web === true ||
-			config.controlPlane?.rpc === true ||
-			config.controlPlane?.sse === true
-		const uiAssetsRequested = config.uiAssets !== undefined && config.uiAssets !== 'disabled'
+			runtimeConfig.controlPlane?.web === true ||
+			runtimeConfig.controlPlane?.rpc === true ||
+			runtimeConfig.controlPlane?.sse === true
+		const uiAssetsRequested =
+			runtimeConfig.uiAssets !== undefined && runtimeConfig.uiAssets !== 'disabled'
 		const management = config.management === true || controlPlaneRequested || uiAssetsRequested
-		const useDefaultControlPlane = management && config.controlPlane === undefined
+		const useDefaultControlPlane = management && runtimeConfig.controlPlane === undefined
 		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
 				web:
 					useDefaultControlPlane ||
-					(config.management === true && config.controlPlane?.web !== false) ||
-					config.controlPlane?.web === true,
+					(config.management === true && runtimeConfig.controlPlane?.web !== false) ||
+					runtimeConfig.controlPlane?.web === true,
 				rpc:
 					useDefaultControlPlane ||
-					(config.management === true && config.controlPlane?.rpc !== false) ||
-					config.controlPlane?.rpc === true,
+					(config.management === true && runtimeConfig.controlPlane?.rpc !== false) ||
+					runtimeConfig.controlPlane?.rpc === true,
 				sse:
 					useDefaultControlPlane ||
-					(config.management === true && config.controlPlane?.sse !== false) ||
-					config.controlPlane?.sse === true,
+					(config.management === true && runtimeConfig.controlPlane?.sse !== false) ||
+					runtimeConfig.controlPlane?.sse === true,
 			},
 			graphql,
-			uiAssets: config.uiAssets ?? (management ? 'static-built' : 'disabled'),
-			uiPublicDir: config.uiPublicDir ?? '',
+			uiAssets: runtimeConfig.uiAssets ?? (management ? 'static-built' : 'disabled'),
+			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
 		}
 		if (management) {
 			this.mountHostBoundary({
@@ -245,7 +250,8 @@ export class HttpService {
 	 * HMR hosts can decide UI asset mode at process startup; if the HTTP service is already
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
-	reconfigureUiAssets(config: Pick<HttpServiceConfig, 'uiAssets' | 'uiPublicDir'>): void {
+	/** @internal Route launchers use this to switch between bundled and dev-server management UI assets. */
+	reconfigureUiAssets(config: { uiAssets?: RuntimeHttpUiAssetMode; uiPublicDir?: string }): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''
 		if (nextUiAssets === this.config.uiAssets && nextUiPublicDir === this.config.uiPublicDir) {

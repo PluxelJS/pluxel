@@ -393,7 +393,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		plan.vite,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	ctx.config.http = { ...ctx.config.http, uiAssets: 'hmr-server' }
+	ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 	ctx.config.extensionService = {
 		...ctx.config.extensionService,
 		enabled: true,
@@ -444,6 +444,18 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	})
 
 	return hmr
+}
+
+function withDevWebManagementHttpConfig(
+	config: CoreContext.Config['http'] | undefined,
+): CoreContext.Config['http'] {
+	const next = {
+		...config,
+		management: true,
+		controlPlane: { web: true, rpc: true, sse: true },
+		uiAssets: 'dev-server',
+	}
+	return next
 }
 
 function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(

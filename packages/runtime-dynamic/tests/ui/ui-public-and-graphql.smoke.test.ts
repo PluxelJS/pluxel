@@ -1,4 +1,5 @@
 import type { LoaderHmrWorkspaceSnapshot } from '@pluxel/runtime-dynamic/hmr'
+import '@pluxel/runtime/services/web-management'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { withRuntimeContext } from '@pluxel/runtime/test'
 import { writeFile } from 'node:fs/promises'
@@ -13,6 +14,7 @@ describe('HMR UI smoke', () => {
 	it('renders dev UI with a Vite-accessible source entry and rejects stale /dist/public asset requests', async () => {
 		await withRuntimeContext(
 			async (ctx) => {
+				ctx.http.reconfigureUiAssets({ uiAssets: 'dev-server' })
 				const htmlRes = await ctx.http.fetch(
 					new Request('http://local/', {
 						headers: { accept: 'text/html' },
@@ -31,10 +33,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: {
-					uiAssets: 'dev-server',
-					controlPlane: { web: false, rpc: false, sse: false },
-				},
+				http: { management: true },
 			},
 		)
 	})
@@ -62,6 +61,7 @@ describe('HMR UI smoke', () => {
 		const publicDir = resolve(fixture.path, 'dist/public')
 		await withRuntimeContext(
 			async (ctx) => {
+				ctx.http.reconfigureUiAssets({ uiAssets: 'static-built', uiPublicDir: publicDir })
 				const asset = await ctx.http.fetch(new Request('http://local/dist/public/assets/hello.js'))
 				expect(asset.status).toBe(200)
 				expect(asset.headers.get('content-type')).toContain('application/javascript')
@@ -104,11 +104,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: {
-					uiAssets: 'static-built',
-					uiPublicDir: publicDir,
-					controlPlane: { web: false, rpc: false, sse: false },
-				},
+				http: { management: true },
 			},
 		)
 	})
@@ -212,13 +208,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				http: {
-					uiAssets: 'disabled',
-					controlPlane: { web: true, rpc: false, sse: false },
-				},
-				extensionService: {
-					enabled: true,
-				},
+				http: { management: true },
 			},
 		)
 	})

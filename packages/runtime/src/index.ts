@@ -28,7 +28,6 @@ export {
 	type ElysiaRouteHandle,
 	type HttpServiceConfig,
 	type HttpHandler,
-	type UiAssetStrategy,
 } from './services/http/HttpService'
 export {
 	createElysiaApp,

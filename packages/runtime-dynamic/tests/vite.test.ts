@@ -26,6 +26,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 				hmr: {},
 			} as never),
 		).toThrow(/must not include an "hmr" field/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
+				http: { controlPlane: { rpc: true } },
+			} as never),
+		).toThrow(/http must not include "controlPlane"/i)
 	})
 
 	it('keeps runtime context config at the same top level as static route config', () => {

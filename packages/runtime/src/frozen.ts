@@ -80,10 +80,7 @@ const ctx = new Context({
 \t\tpolicy: { allowInstall: false, allowUninstall: false },
 \t\tstate: { enabled: false },
 \t},
-\thttp: {
-\t\tuiAssets: ${JSON.stringify(options.bootstrap?.uiAssets ?? 'disabled')},
-\t\tcontrolPlane: ${JSON.stringify(options.bootstrap?.controlPlane ?? { web: false, rpc: false, sse: false })},
-\t},
+\thttp: ${JSON.stringify(options.bootstrap?.http ?? { management: false })},
 \textensionService: { enabled: false },
 })
 

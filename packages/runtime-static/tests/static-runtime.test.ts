@@ -99,6 +99,13 @@ describe('@pluxel/runtime-static', () => {
 				hmr: {},
 			} as never),
 		).toThrow(/must not include an "hmr" field/i)
+		expect(() =>
+			defineStaticRuntimeConfig({
+				name: 'static-http-internals-rejected',
+				plugins: [],
+				http: { uiAssets: 'disabled' },
+			} as never),
+		).toThrow(/http must not include "uiAssets"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'pluxel:static-runtime-source',
 			'pluxel-runtime-ui-bridge',
@@ -209,7 +216,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				http: { management: true, uiAssets: 'disabled' },
+				http: { management: true },
 			}),
 		)
 		try {
@@ -221,7 +228,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('treats explicit control-plane routes as web-management opt-in', async () => {
+	it('treats management as the only static web-management config opt-in', async () => {
 		await import('@pluxel/runtime/services/web-management')
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
@@ -229,10 +236,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				http: {
-					controlPlane: { rpc: true },
-					uiAssets: 'disabled',
-				},
+				http: { management: true },
 			}),
 		)
 		try {

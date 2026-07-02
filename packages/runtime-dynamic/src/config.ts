@@ -46,6 +46,7 @@ export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(confi
 			'[runtime-dynamic] Dynamic runtime config must not include an "hmr" field; loader HMR belongs to @pluxel/runtime-dynamic internals and host Vite wiring.',
 		)
 	}
+	assertPublicHttpConfig(config.http, '[runtime-dynamic] Dynamic runtime config')
 	Object.defineProperty(config, DYNAMIC_RUNTIME_CONFIG_MARKER, {
 		value: true,
 		enumerable: false,
@@ -59,5 +60,14 @@ export function isDynamicRuntimeConfig(value: unknown): value is DynamicRuntimeC
 		value &&
 		typeof value === 'object' &&
 		(value as MarkedDynamicRuntimeConfig)[DYNAMIC_RUNTIME_CONFIG_MARKER] === true,
+	)
+}
+
+function assertPublicHttpConfig(http: unknown, label: string): void {
+	if (!http || typeof http !== 'object') return
+	const forbidden = ['controlPlane', 'uiAssets', 'uiPublicDir'].filter((key) => key in http)
+	if (forbidden.length === 0) return
+	throw new Error(
+		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use "http.management" and let the route launcher own management internals.`,
 	)
 }

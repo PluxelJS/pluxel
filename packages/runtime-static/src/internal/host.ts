@@ -197,7 +197,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		if (!staticHostNeedsWebManagement(this.ctx.config.http)) return
 		if ('ext' in Context.prototype) return
 		throw new Error(
-			'[runtime-static:web-management] service unavailable. Reason: http.management/control-plane/UI assets are enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable http.management, controlPlane, and uiAssets.',
+			'[runtime-static:web-management] service unavailable. Reason: http.management is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable http.management.',
 		)
 	}
 
@@ -569,15 +569,9 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 
 function staticHostNeedsWebManagement(http: unknown): boolean {
 	if (!http || typeof http !== 'object') return false
-	const cfg = http as {
-		management?: unknown
-		controlPlane?: { web?: unknown; rpc?: unknown; sse?: unknown }
-		uiAssets?: unknown
-	}
+	const cfg = http as { management?: unknown }
 	if (cfg.management === true) return true
-	if (cfg.uiAssets !== undefined && cfg.uiAssets !== 'disabled') return true
-	if (!cfg.controlPlane || typeof cfg.controlPlane !== 'object') return false
-	return cfg.controlPlane.web === true || cfg.controlPlane.rpc === true || cfg.controlPlane.sse === true
+	return false
 }
 
 function createStaticRuntimeContextConfig(
@@ -600,7 +594,6 @@ function createStaticRuntimeContextConfig(
 		...context,
 		http: {
 			management: false,
-			uiAssets: 'disabled',
 			...(http && typeof http === 'object' ? http : {}),
 		},
 		profile,

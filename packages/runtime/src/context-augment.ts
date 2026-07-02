@@ -13,7 +13,7 @@ declare module '@pluxel/core' {
 			path?: string
 			/** Workspace profile (generic). */
 			profile?: string
-			/** HTTP/control-plane runtime settings. */
+			/** HTTP runtime settings. Management internals are owned by route launchers. */
 			http?: HttpServiceConfig
 			/** Host control-plane access policy. Defaults to private. */
 			verification?: VerificationConfig
