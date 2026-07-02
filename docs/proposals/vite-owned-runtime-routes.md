@@ -13,8 +13,8 @@ Static 和 dynamic runtime 都应由同一份 route-neutral runtime config 描�
   `dynamicRuntimeVitePlugin(...)`。
 - direct launcher 不按路径加载 config；它只接收应用已经 import 好的 config 对象。
 - Vite launcher 才通过 Vite SSR import 按路径加载 config，并拥有 watcher/HMR/build-time lowering。
-- static direct launcher 追求 fetch-native/tsdown-minimal；dynamic direct launcher 默认加载 full runtime
-  和 dynamic 服务，不追求最小打包。
+- static direct launcher 追求 fetch-native/tsdown-minimal；dynamic direct launcher 默认加载 dynamic
+  route 服务和开发 web-management 边界，不追求最小打包；Vault 仍显式启用。
 
 ## Public API
 
@@ -62,10 +62,10 @@ export default defineConfig({
 
 Dynamic route config does not accept nested Vite or HMR config. Host Vite config is the only Vite
 config entry, and loader HMR wiring belongs to `@pluxel/runtime-dynamic` internals plus the host
-Vite server. Dynamic direct startup does not need to be tsdown-minimal; it can load full runtime,
-loader, scan, package manager, workspace diagnose, and persistence services by default. Vite HMR
-startup uses the same config, plus the host Vite dev server for SSR loading, watcher events, and
-module replacement.
+Vite server. Dynamic direct startup does not need to be tsdown-minimal; it can load loader, scan,
+package manager, workspace diagnose, persistence services, and the development web-management
+boundary by default. Vite HMR startup uses the same config, plus the host Vite dev server for SSR
+loading, watcher events, and module replacement.
 
 ### Static
 

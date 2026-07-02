@@ -8,8 +8,9 @@ dynamic 路线不追求这个目标。dynamic 可以继续依赖 Vite runner、w
 
 但 dynamic 应共享同一套入口心智模型：`pluxel.dynamic.ts` 是 route-neutral runtime config，
 `createDynamicRuntime(config)` 可以直接启动 full dynamic runtime，`dynamicRuntimeVitePlugin({ config })`
-用同一份 config 接入 host Vite dev server 和 HMR。dynamic 只是默认加载全部 dynamic/full runtime
-服务，不需要被 `tsdown` 打成最小 fetch-native 包。
+用同一份 config 接入 host Vite dev server 和 HMR。dynamic 默认加载 dynamic route 服务和开发
+web-management 边界，但 Vault 仍通过 `@pluxel/runtime/services/vault` 显式启用；dynamic 不需要被
+`tsdown` 打成最小 fetch-native 包。
 
 HTTP 框架选择不再作为开放抽象目标：Pluxel static runtime 以 Elysia 作为唯一 HTTP route framework。最小化目标不是移除 Elysia，而是在 Elysia + core plugin runtime 的前提下，避免把 dynamic/dev/control-plane/Node-only 服务打进 production static bundle。
 
@@ -133,8 +134,8 @@ Node `IncomingMessage` / `ServerResponse` bridge 不是 public runtime surface�
 - `HttpService.fetch(request, env?, ctx?)` 是 runtime 对外 fetch-native boundary。
 - Elysia 是唯一插件 route authoring framework；fetch mount 只作为低层 escape hatch。
 - GraphQL 归入 HTTP 能力，最小 static runtime 不需要 web-management 也能暴露内部 GraphQL。
-- `@pluxel/runtime` 顶层只注册 static/common services；full runtime 注册已移动到
-  `@pluxel/runtime/register/full`。
+- `@pluxel/runtime` 顶层只注册 static/common services；dynamic/dev common 注册入口在
+  `@pluxel/runtime/register/full`，optional vault/web-management 仍使用各自 service subpath。
 - broad `@pluxel/runtime/services` barrel、Node HTTP adapter、旧 `FsService` 已移除。
 - static production 注册默认不引入 Vite、Rolldown、chokidar、Node http/stream、Vault 或
   web-management bundle。`packages/rolldown/tests/packaging-invariants.test.ts` 会扫描源码和

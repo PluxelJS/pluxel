@@ -69,7 +69,7 @@ runtime common host layer
 
 - `packages/runtime/src/index.ts`：默认 plugin authoring/runtime common entry，只注册 static/common services。
 - `packages/runtime/src/runtime/register/static.ts`：static production 默认服务注册。
-- `packages/runtime/src/runtime/register/full.ts`：dynamic/dev full runtime 默认服务注册。
+- `packages/runtime/src/runtime/register/full.ts`：dynamic/dev common 注册入口，不包含 vault 或 web-management optional boundary。
 - `packages/runtime/src/services/vault.ts`：显式 vault service boundary。
 - `packages/runtime/src/services/web-management.ts`：显式 web-management service boundary。
 - `packages/runtime/src/api/contributions.ts`：从当前 `Context.runtimeRoute.api` 读取 GraphQL resolver 和 route feature handle。
@@ -80,7 +80,7 @@ runtime common host layer
 - `packages/runtime/src/services/RuntimeStateStore.ts`：运行控制面状态持久化，包括 enabled、forks、base providers、依赖覆盖、builtin/plugin groups。
 - `packages/runtime-static/src/index.ts`：static production direct launcher，导出 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(config)`；factory 返回前已完成 startup，直接使用 `runtime.fetch`。
 - `packages/runtime-static/src/vite.ts`：static Vite launcher，负责 SSR 加载同一份 runtime config、按需接入 web-management/dev UI bridge 和 HMR。
-- `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用。
+- `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用，并通过 `@pluxel/runtime/services/web-management` 显式接入 dynamic 开发管理面；不默认启用 vault。
 - `packages/runtime-dynamic/src/index.ts`：dynamic direct launcher，导出 `defineDynamicRuntimeConfig(...)` 和 `createDynamicRuntime(config)`。
 - `packages/runtime-dynamic/src/vite.ts`：dynamic Vite launcher，负责 SSR 加载同一份 runtime config 和 loader HMR。
 - `packages/runtime-dynamic/src/services.ts`：loader route services public surface。

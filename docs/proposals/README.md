@@ -47,7 +47,8 @@
 下一步统一规则：`pluxel.static.ts` 和 `pluxel.dynamic.ts` 都应是 route-neutral runtime config，
 不是 Vite config。Vite 插件通过 `{ config }` 加载同一份配置；production/headless 入口可以
 直接 import 这份配置并启动 runtime。static 需要轻量 fetch-native/tsdown 路径；dynamic 不追求
-最小打包，默认加载 full runtime、loader、scan、package manager 和 HMR 相关服务。
+最小打包，默认加载 dynamic route、loader、scan、package manager 和 HMR 相关服务；Vault 仍通过
+`@pluxel/runtime/services/vault` 显式启用。
 
 ## Static Fetch-Native Runtime
 

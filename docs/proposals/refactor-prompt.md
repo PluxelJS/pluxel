@@ -50,7 +50,7 @@ import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 ### 2. Static 轻，Dynamic 全
 
 - static direct launcher 追求 fetch-native / `tsdown` minimal。
-- dynamic direct launcher 默认加载 full runtime、loader、scan、package manager、workspace diagnose、HMR 相关服务，不追求最小打包。
+- dynamic direct launcher 默认加载 dynamic route、loader、scan、package manager、workspace diagnose、HMR 相关服务，不追求最小打包；Vault 仍通过显式 service subpath 启用。
 - 不要为了 static 目标削弱 dynamic。
 
 ### 3. Elysia 是唯一 HTTP framework
@@ -177,7 +177,7 @@ import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 dynamicRuntimeVitePlugin({ config: './pluxel.dynamic.ts' })
 ```
 
-dynamic 可以默认加载 full runtime/dynamic 服务；不要对它套 static import graph 最小化约束。
+dynamic 可以默认加载 dynamic route/HMR 服务；不要对它套 static import graph 最小化约束。Vault 仍保持显式 optional boundary。
 
 ## Persistence
 
@@ -258,7 +258,7 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
 
 1. 建立轻默认作者入口：
    - `@pluxel/runtime` 导出 `BasePlugin`、`Plugin`、`Context`、`Config` 等，只 import static/common runtime register。
-   - dynamic/dev full registration 由 `@pluxel/runtime/register/full` 和 dynamic launcher 显式加载。
+   - dynamic/dev common registration 由 `@pluxel/runtime/register/full` 和 dynamic launcher 显式加载；Vault/Web management 不从 `full` 隐式进入。
 
 2. 统一 config + launcher API：
    - `@pluxel/runtime-static` 导出 `defineStaticRuntimeConfig(...)` / `createStaticRuntime(config)`。

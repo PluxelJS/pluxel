@@ -30,6 +30,22 @@ function jsonResponse(body: unknown, status = 200): Response {
 	})
 }
 
+function createManagementHost(config: Parameters<typeof createRuntimeHost>[0] = {}): RuntimeHost {
+	return createRuntimeHost({
+		...config,
+		http: {
+			...config.http,
+			management: true,
+			controlPlane: {
+				web: true,
+				rpc: false,
+				sse: false,
+				...config.http?.controlPlane,
+			},
+		},
+	})
+}
+
 async function installOidcIssuer(name: string) {
 	const issuer = `https://oidc.${name}.example`
 	const audience = `pluxel-${name}`
@@ -77,8 +93,7 @@ describe('Host verification gate', () => {
 	})
 
 	it('defaults to private mode and does not require credentials', async () => {
-		host = createRuntimeHost({
-		})
+		host = createManagementHost()
 
 		expect(await host.ctx.verification.describe()).toMatchObject({
 			exposure: 'private',
@@ -92,7 +107,7 @@ describe('Host verification gate', () => {
 	})
 
 	it('blocks public mode when OIDC is not configured', async () => {
-		host = createRuntimeHost({
+		host = createManagementHost({
 			verification: { exposure: 'public' },
 		})
 
@@ -178,7 +193,7 @@ describe('Host verification gate', () => {
 
 	it('allows public control-plane requests with a valid OIDC bearer token', async () => {
 		const oidc = await installOidcIssuer('valid')
-		host = createRuntimeHost({
+		host = createManagementHost({
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -212,7 +227,7 @@ describe('Host verification gate', () => {
 
 	it('rejects valid OIDC tokens that miss required claims', async () => {
 		const oidc = await installOidcIssuer('claims')
-		host = createRuntimeHost({
+		host = createManagementHost({
 			verification: {
 				exposure: 'public',
 				oidc: {
@@ -241,7 +256,7 @@ describe('Host verification gate', () => {
 
 	it('renders a static external-auth page instead of a local login form', async () => {
 		const oidc = await installOidcIssuer('page')
-		host = createRuntimeHost({
+		host = createManagementHost({
 			verification: {
 				exposure: 'public',
 				oidc: {

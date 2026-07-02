@@ -9,7 +9,7 @@
 - `packages/runtime/src/runtime/register/static.ts`
   static/common side-effect service registration
 - `packages/runtime/src/runtime/register/full.ts`
-  dynamic/dev full side-effect service registration
+  dynamic/dev common side-effect service registration; optional vault and web-management stay behind service subpaths
 
 ## Core Services
 

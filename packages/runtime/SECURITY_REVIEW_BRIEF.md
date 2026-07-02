@@ -80,9 +80,10 @@
 
 ## Host 启动约束
 
-- 显式启用 vault 的 host 在插件运行前调用 `bootstrapHostVault(ctx)`；dynamic full host 默认启用。
-- static kernel 默认不 bootstrap vault。需要 vault 的插件/host 必须显式 import
-  `@pluxel/runtime/services/vault`，再由 host 启动流程调用 bootstrap。
+- Vault 只有一个启用入口：显式 import `@pluxel/runtime/services/vault`。
+- 启用 vault 的 host 在插件运行前调用 `bootstrapHostVault(ctx)`；static kernel 和 dynamic
+  HMR host 都不默认 bootstrap vault。
+- 需要 vault 的插件/host 必须显式 import `@pluxel/runtime/services/vault`，再由 host 启动流程调用 bootstrap。
 - `bootstrapHostVault(ctx)` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
 - mount 不存在时，允许空 vault 启动

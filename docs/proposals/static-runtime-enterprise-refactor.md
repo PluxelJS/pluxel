@@ -260,7 +260,7 @@ import './runtime/register/static'
 注册不再从顶层进入，而是由 dynamic launcher 显式加载：
 
 - `@pluxel/runtime`：插件作者默认入口，导出 `BasePlugin`、`Plugin`、`Context`、`Config` 等基础 API，并只注册 static/common runtime services。
-- `@pluxel/runtime/register/full`：dynamic/dev 使用的完整注册入口。
+- `@pluxel/runtime/register/full`：dynamic/dev 的 common 注册入口；vault 和 web-management 仍必须通过各自 service subpath 显式启用。
 - `@pluxel/runtime-static`：production static 主入口，只依赖 `@pluxel/runtime` 的 common surface，不依赖 full runtime；暴露 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(...)`。
 - `@pluxel/runtime-static/vite`：保留 `staticRuntimeVitePlugin(...)`，继续承载已实现的 host-owned Vite route；可以 re-export `defineStaticRuntimeConfig(...)` 兼容旧 config 文件，但新文档不推荐从 `/vite` import config helper。
 
@@ -347,7 +347,7 @@ backend 可以是 file、memory、database、KV、object storage、Durable Objec
 Vault 必须完全 optional：
 
 - 从 static `prepare()` 移除无条件 `bootstrapHostVault(this.ctx)`。
-- `bootstrapHostVault` 只由显式 import 的 vault 模块负责，不放进 static host 默认流程。
+- `bootstrapHostVault` 只由显式 import 的 vault 模块负责，不放进 static host 或 dynamic HMR host 默认流程。
 - `vault` / `vaultAdmin` 注册由 `@pluxel/runtime/services/vault` 提供。
 - Vault preflight 检查 WebCrypto、identity material、persistence backend；失败直接给 `service-unavailable`。
 

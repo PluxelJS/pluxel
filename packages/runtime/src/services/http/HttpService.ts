@@ -47,9 +47,7 @@ export type UiAssetStrategy = 'hmr-server' | 'static-built' | 'disabled'
 export interface HttpServiceConfig {
 	/**
 	 * Enables the Pluxel management surface (verification pages, internal API, SSE, and UI fallback).
-	 *
-	 * Dynamic/dev hosts keep the historical default (`true`). Static production hosts set this to
-	 * `false` from their launcher unless the app opts in.
+	 * Defaults to false; hosts opt in with this flag, `controlPlane`, or `uiAssets`.
 	 */
 	management?: boolean
 	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
@@ -180,7 +178,7 @@ export class HttpService {
 			config.controlPlane?.rpc === true ||
 			config.controlPlane?.sse === true
 		const uiAssetsRequested = config.uiAssets !== undefined && config.uiAssets !== 'disabled'
-		const management = config.management !== false || controlPlaneRequested || uiAssetsRequested
+		const management = config.management === true || controlPlaneRequested || uiAssetsRequested
 		const useDefaultControlPlane = management && config.controlPlane === undefined
 		const graphql = config.graphql !== false
 		this.config = {

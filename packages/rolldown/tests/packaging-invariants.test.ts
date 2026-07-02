@@ -301,6 +301,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeIndex).toContain("export { f, v } from './config'")
 		expect(runtimeTestEntry).toContain("from './services/vault'")
 		expect(runtimeTestEntry).not.toContain('./services/security/bootstrap')
+		expect(runtimeRegisterFull).not.toContain('services/plugin-interaction/ExtService')
+		expect(runtimeRegisterFull).not.toContain('services/vault/VaultService')
 		expect(runtimeInternal).toContain('createNodeWorkspaceFsBackend')
 		expect(runtimeInternal).not.toContain('createNodeFsServiceBackend')
 		expect(runtimeWorkspaceFs).not.toContain('@RootService')
@@ -421,6 +423,12 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dynamic/src/hmr/host.ts`,
 			'utf8',
 		)
+		const runtimeDynamicRegister = await readFile(
+			`${root}/packages/runtime-dynamic/src/register.ts`,
+			'utf8',
+		)
+		expect(runtimeDynamicRegister).toContain('@pluxel/runtime/services/web-management')
+		expect(runtimeDynamicRegister).not.toContain('@pluxel/runtime/services/vault')
 		expect(runtimeDynamicHost).not.toContain(`attachLoader${'HmrRuntime'}`)
 		expect(runtimeDynamicHost).not.toContain(`configureLoader${'HmrRuntime'}`)
 		expect(runtimeDynamicHost).not.toContain('@pluxel/runtime/services/vault')
