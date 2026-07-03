@@ -1,6 +1,13 @@
 export { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from './logger/ensure'
 
 export {
+	getDebugLogger,
+	isDebugTopicEnabled,
+	resolveDebugTopics,
+	type DebugTopic,
+} from '@pluxel/core/logger'
+
+export {
 	createRuntimeLogging,
 	type ResolvedConsoleSink,
 	type ResolvedFileSink,

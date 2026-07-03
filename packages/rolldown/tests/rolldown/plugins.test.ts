@@ -12,6 +12,14 @@ const buildLintConfigPath = fileURLToPath(
 	new URL('../../../../oxlint.build.config.ts', import.meta.url),
 )
 
+const CONFIG_SOURCE_EXTERNALS = ['valibot', '@pluxel/core', '@pluxel/runtime']
+const CONFIG_SOURCE_FORM_EXTERNALS = [
+	'valibot',
+	'valibot-form',
+	'@pluxel/core',
+	'@pluxel/runtime',
+]
+
 const fixtureFiles = {
 	'composed-parts.ts': `import * as v from 'valibot'
 
@@ -801,7 +809,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-cfg-layout.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigLayout__')
@@ -818,14 +826,34 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'cfg-schemas-imported.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__registerConfigBinding__')
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('__setConfigLayout__')
+			expect(code).toContain('from "@pluxel/runtime"')
 			expect(code).toContain('["a"]')
 			expect(code).toContain('["b"]')
+		})
+	})
+
+	it('allows overriding generated metadata helper import source', async () => {
+		await withFixtures(async (fixturesDir) => {
+			const code = await generateCode({
+				fixturesDir,
+				input: 'plugin-with-config.ts',
+				plugins: [
+					configSourcePlugin({
+						metadataHelperImportSource: '@scope/custom-runtime',
+					}),
+				],
+				external: ['valibot', '@pluxel/core', '@scope/custom-runtime'],
+			})
+
+			expect(code).toContain('from "@scope/custom-runtime"')
+			expect(code).not.toContain('from "@pluxel/runtime"')
+			expect(code).toContain('__setConfigSource__(TestPlugin')
 		})
 	})
 
@@ -834,7 +862,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'invalid-cfg-layout.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
@@ -849,7 +877,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigSource__')
@@ -863,7 +891,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-config-alias.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/runtime', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigSource__')
@@ -878,7 +906,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-feature-use.ts',
 				plugins: [configSourcePlugin()],
-				external: ['@pluxel/core'],
+				external: ['@pluxel/core', '@pluxel/runtime'],
 			})
 
 			expect(code).toContain('__registerUsedFeatures__')
@@ -891,7 +919,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config-valibot-namespace.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -909,7 +937,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-namespace.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', 'valibot-form', '@pluxel/core'],
+				external: CONFIG_SOURCE_FORM_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -932,7 +960,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config-valibot-named-import.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -950,7 +978,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-named-import.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', 'valibot-form', '@pluxel/core'],
+				external: CONFIG_SOURCE_FORM_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -974,7 +1002,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-computed-config.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigSource__(ComputedKeyPlugin')
@@ -988,7 +1016,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-config.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -1010,7 +1038,7 @@ describe('configSourcePlugin', () => {
 				fixturesDir,
 				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigSource__(TestPlugin')
@@ -1029,7 +1057,7 @@ describe('configSourcePlugin', () => {
 						exclude: ['**/plugin-with-config.ts'],
 					}),
 				],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -1045,7 +1073,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-nested-import.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -1063,7 +1091,7 @@ describe('configSourcePlugin', () => {
 			const bundle = await rolldown({
 				input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			const { output } = await bundle.generate({ format: 'esm' })
@@ -1193,7 +1221,7 @@ describe('plugins integration', () => {
 				fixturesDir,
 				input: 'plugin-with-config.ts',
 				plugins: [configSourcePlugin()],
-				external: ['valibot', '@pluxel/core'],
+				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
 			expect(code).toContain('__setConfigSource__')

@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context } from '@pluxel/core'
-import { getDebugLogger } from '@pluxel/core/logger'
+import { type Context } from '@pluxel/runtime'
+import { getDebugLogger } from '@pluxel/runtime/logger'
 import {
 	createCompiledExtensionModule,
 	type ExtensionModuleStore,

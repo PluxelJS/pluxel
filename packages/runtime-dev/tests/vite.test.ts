@@ -41,9 +41,8 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.resolve?.dedupe).toEqual(
 			expect.arrayContaining(['@pluxel/core', '@pluxel/runtime']),
 		)
-		expect(config.ssr?.external).toEqual(
-			expect.arrayContaining(['@pluxel/core', '@pluxel/runtime']),
-		)
+		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
+		expect(config.ssr?.external).not.toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
 	})
 

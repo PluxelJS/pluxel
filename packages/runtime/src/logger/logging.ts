@@ -204,7 +204,7 @@ function withCaller(sink: Sink, enabled: boolean): Sink {
 
 		let caller = callers.get(record)
 		if (!callers.has(record)) {
-			caller = captureCaller({ exclude: callerSink })
+			caller = captureCaller()
 			callers.set(record, caller)
 		}
 		if (!caller) {

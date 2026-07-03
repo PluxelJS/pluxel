@@ -20,6 +20,7 @@ import {
 	startTimer,
 } from '@pluxel/runtime/shared'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,
 	type LoaderHmrDependencyConfig,
@@ -480,7 +481,7 @@ export class LoaderHmrService {
 			const executed = await this.executor.runAndLoadAll(filesPath, keepOrder)
 			assertHmrExecutionOk(executed, 'HMR executeFiles')
 		})
-		void this.logOperationalReport('executeFiles').catch((error) => {
+		void this.logOperationalReport('update').catch((error) => {
 			this.ctx.logger.warn('HMR report failed', { error })
 		})
 	}
@@ -671,7 +672,9 @@ export class LoaderHmrService {
 	private configureServer(server: ViteDevServer): void {
 		if (this.vite) {
 			if (this.vite !== server) {
-				const error = new Error('[hmr] LoaderHmrService is already configured with a different Vite server')
+				const error = new Error(
+					'[hmr] LoaderHmrService is already configured with a different Vite server',
+				)
 				this.serverConfiguredReject(error)
 				throw error
 			}
@@ -1260,7 +1263,7 @@ export class LoaderHmrService {
 			const endAll = startTimer()
 			const endScan = startTimer()
 			const scope = await this.ensureStartupScope()
-			const scanMs = Math.round(endScan() * 10) / 10
+			const scanMs = roundHmrMs(endScan())
 			// Governance: preserve caller-provided entry order.
 			// - `entries` order is deliberate (profiles/CLI/host define it)
 			// - anchors are appended in sorted order by `ensureStartupScope()`
@@ -1299,13 +1302,13 @@ export class LoaderHmrService {
 				// Await it after evaluation so we don't leave background work behind.
 				const prefetch = await prefetchPromise.catch((): undefined => undefined)
 				prefetchFailed = prefetch?.failed || undefined
-				prefetchMs = Math.round((endPrefetch?.() ?? 0) * 10) / 10
+				prefetchMs = roundHmrMs(endPrefetch?.() ?? 0)
 			}
 			assertHmrExecutionOk(executed, 'HMR warmup')
-			const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
+			const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 
-			const warmupMs = Math.round(endWarmup() * 10) / 10
-			const totalMs = Math.round(endAll() * 10) / 10
+			const warmupMs = roundHmrMs(endWarmup())
+			const totalMs = roundHmrMs(endAll())
 
 			const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 
@@ -1430,14 +1433,14 @@ export class LoaderHmrService {
 		return await this.startupScope
 	}
 
-	private async logOperationalReport(reason: 'startup' | 'executeFiles' | 'warmup') {
+	private async logOperationalReport(reason: HmrReportReason) {
 		if (!this.shouldLogOperationalReport()) return
 
 		const registryView = this.ctx.loader.api.registry
 
 		const scope = await this.ensureStartupScope()
 		const hotspots =
-			reason === 'executeFiles' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
+			reason === 'update' ? collectHotspots(this.timing, (id) => this.path.pretty(id)) : []
 
 		const report = await buildHmrOperationalReport({
 			reason,

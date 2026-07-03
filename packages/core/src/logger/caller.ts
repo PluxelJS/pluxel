@@ -4,8 +4,6 @@ import { isProduction } from 'std-env'
 import { readBoolEnv, tryGetCwd } from './runtime'
 
 export type CallerCaptureOptions = {
-	/** Exclude frames up to and including this function (Node/Bun only). */
-	exclude?: (...args: never[]) => unknown
 	/** Additional skip markers applied on top of defaults. */
 	skipMarkers?: readonly string[]
 }
@@ -31,13 +29,16 @@ const DEFAULT_SKIP_MARKERS = [
 	'/node_modules/@logtape/',
 	'\\node_modules\\@logtape\\',
 	'/packages/core/src/logger/',
+	'/packages/core/src/test.',
+	'\\packages\\core\\src\\test.',
 	'/packages/runtime/src/logger/',
 	'/packages/runtime-dynamic/src/hmr/hmr/logging.',
 	'/packages/core/dist/',
 	'/packages/runtime/dist/',
 	'/packages/runtime-dynamic/dist/',
 	'/dist/',
-	'LoggerService.',
+	'LoggerService.log',
+	'LoggerService.levelMethod',
 	'/logger/index.',
 ] as const
 
@@ -79,21 +80,7 @@ function normalizeFunctionName(fn: string): string {
 }
 
 export function captureCaller(opts: CallerCaptureOptions = {}): string | undefined {
-	const error = {} as { stack?: string }
-	const captureStackTrace = (
-		Error as unknown as {
-			captureStackTrace?: (
-				targetObject: object,
-				constructorOpt?: CallerCaptureOptions['exclude'],
-			) => void
-		}
-	).captureStackTrace
-	if (typeof captureStackTrace === 'function') {
-		captureStackTrace(error, opts.exclude ?? captureCaller)
-	} else {
-		error.stack = new Error('captureCaller stack').stack
-	}
-	const stack = error.stack
+	const stack = new Error('captureCaller stack').stack
 	if (!stack) return undefined
 
 	const skipMarkers = opts.skipMarkers?.length

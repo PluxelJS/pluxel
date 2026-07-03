@@ -13,15 +13,25 @@ import {
 export type { RuntimeEvents } from './events'
 
 export {
+	__registerConfigBinding__,
+	__registerConfigSchema__,
+	__registerUsedFeatures__,
+	__setConfigLayout__,
+	__setConfigSource__,
 	BaseFeature,
 	BasePlugin,
+	clearParamToken,
+	clearParamTokens,
 	cfg,
 	Context,
 	defineOptionalFeature,
 	ForkablePlugin,
+	getStoredParamTokens,
 	HostBoundFeature,
 	Plugin,
 	pluginMethodDecorator,
+	setParamToken,
+	setParamTokens,
 } from '@pluxel/core'
 
 type ConfigSchema =

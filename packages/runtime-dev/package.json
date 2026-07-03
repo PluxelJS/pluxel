@@ -18,11 +18,24 @@
 			"@pluxel/source": "./src/extensions.ts",
 			"default": "./dist/extensions.mjs"
 		},
+		"./hmr-log": {
+			"@pluxel/source": "./src/hmr-log.ts",
+			"default": "./dist/hmr-log.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
 		},
 		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./extensions": "./dist/extensions.mjs",
+			"./hmr-log": "./dist/hmr-log.mjs",
+			"./vite": "./dist/vite.mjs",
+			"./package.json": "./package.json"
+		}
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
@@ -47,14 +60,6 @@
 	"peerDependenciesMeta": {
 		"vite": {
 			"optional": true
-		}
-	},
-	"publishConfig": {
-		"exports": {
-			".": "./dist/index.mjs",
-			"./extensions": "./dist/extensions.mjs",
-			"./vite": "./dist/vite.mjs",
-			"./package.json": "./package.json"
 		}
 	}
 }

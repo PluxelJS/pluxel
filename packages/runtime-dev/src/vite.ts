@@ -37,6 +37,12 @@ const PLUXEL_SINGLETON_PACKAGES = [
 	'@pluxel/runtime-dynamic',
 	'@pluxel/runtime-static',
 ] as const
+const PLUXEL_SSR_EXTERNAL_PACKAGES = [
+	'@pluxel/runtime',
+	'@pluxel/runtime-dev',
+	'@pluxel/runtime-dynamic',
+	'@pluxel/runtime-static',
+] as const
 
 export type PluxelRuntimeSourceVitePluginOptions = {
 	/**
@@ -99,7 +105,7 @@ export function pluxelRuntimeSourceVitePlugin(
 					},
 				},
 				ssr: {
-					external: [...PLUXEL_SINGLETON_PACKAGES],
+					external: [...PLUXEL_SSR_EXTERNAL_PACKAGES],
 					resolve: {
 						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
 						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],

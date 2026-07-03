@@ -1,6 +1,7 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import { getPluxelRuntime } from '../env'
+import { captureCaller, isCallerEnabled } from './caller'
 import { pluxelCategories } from './categories'
 import { findPluginId } from './context'
 import { callLogtape, type PluxelLogMethod } from './logCall'
@@ -159,7 +160,9 @@ export class LoggerService {
 	}
 
 	private log(level: PluxelLogMethod, args: unknown[]) {
-		callLogtape(this.getBaseContextLogger(), level, args)
+		const base = this.getBaseContextLogger()
+		const caller = isCallerEnabled() ? captureCaller() : undefined
+		callLogtape(caller ? base.with({ caller }) : base, level, args)
 	}
 
 	private levelMethod(level: PluxelLogMethod) {

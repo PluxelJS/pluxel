@@ -16,7 +16,6 @@
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
 		"@libsql/client": "^0.17.4",
-		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
 		"drizzle-orm": "^0.45.2",

@@ -306,7 +306,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 
 			let input = record
 			if (caller && typeof input.properties.caller !== 'string') {
-				const captured = captureCaller({ exclude: sink })
+				const captured = captureCaller()
 				if (captured) input = { ...input, properties: { ...input.properties, caller: captured } }
 			}
 

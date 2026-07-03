@@ -128,7 +128,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			rawMessage: 'HMR report',
 			properties: {
 				context: 'root',
-				reason: 'executeFiles',
+				reason: 'update',
 				scope: { roots: 2, entries: 9, anchors: 3 },
 				plugins: { loaded: 22, enabled: 22, running: 21 },
 				pluginsByRoot: { mode: 'byRoot', reasons: ['ok'] },
@@ -142,7 +142,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 
 		const out = formatter(record)
 		expect(out).toContain('HMR report')
-		expect(out).toContain('reason=executeFiles')
+		expect(out).toContain('reason=update')
 		expect(out).toContain('roots=2')
 		expect(out).toContain('plugins=22:22:21')
 		expect(out).toContain('roots:')

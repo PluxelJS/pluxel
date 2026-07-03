@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { withCoreContext } from '@pluxel/core/test'
+import { LoggerService } from '../src/services/LoggerService'
+import { withCoreContext } from '../src/test'
 
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
@@ -56,5 +57,15 @@ describe('LoggerService', () => {
 			},
 			{ name: 'plugin-test' },
 		)
+	})
+
+	it('injects the user callsite as caller at the logger service boundary', () => {
+		const logger = new LoggerService({ name: 'caller-test' } as never)
+
+		logger.info('caller probe')
+
+		const rec = records.find((r) => r.rawMessage === 'caller probe')
+		expect(rec?.properties.caller).toEqual(expect.stringContaining('LoggerService.test.ts'))
+		expect(rec?.properties.caller).not.toEqual(expect.stringContaining('src/logger/LoggerService'))
 	})
 })

@@ -5,6 +5,18 @@ import {
 	pluxelRuntimeSourceVitePlugin,
 	pluxelRuntimeUiBridgeVitePlugin,
 } from '@pluxel/runtime-dev/vite'
+import {
+	HMR_PATH_PREVIEW_LIMIT,
+	hmrChangedPreviewProps,
+	hmrInvalidated,
+	hmrPathPreview,
+	roundHmrMs,
+	type HmrPluginTotals,
+	type HmrReportLogProps,
+	type HmrUpdatedLogProps,
+} from '@pluxel/runtime-dev/hmr-log'
+import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
+import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
 	normalizePath,
@@ -20,6 +32,7 @@ import { createStaticRuntimeHost } from './internal/host'
 import type {
 	StaticRuntimeDefinition,
 	StaticRuntimeHost,
+	StaticRuntimeHmrReport,
 	StaticRuntimeStartupReport,
 	StaticRuntimeConfig,
 } from './types'
@@ -50,6 +63,7 @@ export type StaticRuntimeViteConfig = StaticRuntimeConfig
 export type StaticRuntimeVitePluginOptions = {
 	config: string
 	hmr?: false | StaticRuntimeViteHmrConfig
+	logging?: false | EnsurePluxelLoggingOptions
 }
 
 export { defineStaticRuntimeConfig } from './config'
@@ -98,6 +112,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
 			const config = await loadConfig()
+			await ensureStaticRuntimeViteLogging(options.logging)
 			const hmr = options.hmr
 			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
 			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
@@ -110,7 +125,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				pluginData: config.pluginData,
 				http: config.http,
 				management: config.management,
-				logger: config.logger,
+				logger: { ...config.logger, preset: 'hmr' },
 				profile: config.profile,
 				context: config.context,
 			})
@@ -130,7 +145,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			}
 
 			const startup = await host.start()
-			logStaticRuntimeStarted(host, startup)
+			logStaticRuntimeStarted(host, startup, state.configFiles)
 
 			server.httpServer?.once('close', () => {
 				void stopHost()
@@ -149,16 +164,21 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			if (!host || !state.configFiles.has(ctx.file)) return
 			const server = state.server ?? ctx.server
 			state.server = server
-			for (const file of state.configFiles) {
-				for (const mod of server.moduleGraph.getModulesByFile(file) ?? []) {
-					server.moduleGraph.invalidateModule(mod)
-				}
-			}
+			const viteInvalidated = invalidateStaticRuntimeChangedModules(server, ctx.file)
 			const config = await loadConfig()
-			await reloadStaticRuntime({
+			const start = performance.now()
+			const report = await reloadStaticRuntime({
 				host,
 				definition: toStaticRuntimeDefinition(config),
 			})
+			logStaticRuntimeHmrUpdated(
+				host,
+				report,
+				ctx.file,
+				state.configFiles,
+				roundHmrMs(performance.now() - start),
+				viteInvalidated,
+			)
 			return []
 		},
 	}
@@ -166,14 +186,192 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	return [createStaticRuntimeSourcePlugin(), staticRuntimeBuildUiBridgeVitePlugin(), routePlugin]
 }
 
+async function ensureStaticRuntimeViteLogging(
+	logging: StaticRuntimeVitePluginOptions['logging'],
+): Promise<void> {
+	if (logging === false) return
+	const overrides = logging ?? {}
+	await ensurePluxelLogging({
+		preset: overrides.preset ?? 'hmr',
+		console: overrides.console,
+		file: overrides.file ?? false,
+		ui: overrides.ui ?? true,
+		debug: overrides.debug ?? ['pluxel:runtime:*'],
+	})
+}
+
+type StaticRuntimeReportSummary = {
+	plugins: {
+		catalog: number
+		enabled: number
+		started: number
+		disabled: number
+		blocked: number
+	}
+	loaded: string[]
+	entries: string[]
+	commit?: {
+		added: string[]
+		removed: string[]
+		replaced: string[]
+		restarted: string[]
+		lifecycleOk: boolean
+	}
+}
+
 function logStaticRuntimeStarted(
 	host: StaticRuntimeHost,
 	startup: StaticRuntimeStartupReport,
+	configFiles: ReadonlySet<string>,
 ): void {
-	host.ctx.logger.info('Static runtime Vite host ready', {
-		runtime: host.definition.name,
-		startup: startup.entries.map(({ name, status }) => `${name}:${status}`),
-	})
+	const summary = formatStaticRuntimeReport(host, startup)
+	host.ctx.logger.info('HMR report', formatStaticRuntimeHmrReport('startup', summary, configFiles))
+}
+
+function logStaticRuntimeHmrUpdated(
+	host: StaticRuntimeHost,
+	report: StaticRuntimeHmrReport,
+	changedFile: string,
+	configFiles: ReadonlySet<string>,
+	commitMs: number,
+	viteInvalidated: number,
+): void {
+	const summary = formatStaticRuntimeReport(host, report)
+	const ok = report.commit?.lifecycleReport.ok ?? false
+	const props = {
+		ok,
+		changedFiles: 1,
+		...hmrChangedPreviewProps(
+			hmrPathPreview([changedFile], { limit: HMR_PATH_PREVIEW_LIMIT, normalize: normalizePath }),
+			HMR_PATH_PREVIEW_LIMIT,
+		),
+		targets: summary.plugins.catalog,
+		affected: affectedStaticRuntimePlugins(report),
+		activeServices: summary.plugins.started,
+		fallbackRoots: configFiles.size,
+		plugins: toHmrPluginTotals(summary),
+		invalidated: hmrInvalidated(viteInvalidated),
+		commitMs,
+		...(ok ? {} : { commitError: 'static runtime reload did not produce a successful commit' }),
+	} satisfies HmrUpdatedLogProps
+	host.ctx.logger[ok ? 'info' : 'warn']('HMR updated', props)
+	host.ctx.logger.info('HMR report', formatStaticRuntimeHmrReport('update', summary, configFiles))
+}
+
+function formatStaticRuntimeReport(
+	host: StaticRuntimeHost,
+	report: StaticRuntimeStartupReport,
+): StaticRuntimeReportSummary {
+	const catalog = host.describeCatalog().plugins
+	const catalogNames = catalog.map(({ name }) => name)
+	const entries = report.entries.map(({ name, status, message }) =>
+		message ? `${name}:${status} (${message})` : `${name}:${status}`,
+	)
+	const status = countStatuses(report.entries)
+	const runtimeState = host.ctx.runtimeState.snapshot()
+	const commit = report.commit
+	return {
+		plugins: {
+			catalog: catalogNames.length,
+			enabled: catalog.filter(({ name }) => isPluginEnabled(runtimeState, name)).length,
+			started: catalog.filter(({ plugin }) => host.ctx.registry.isRunning(plugin)).length,
+			disabled: status.disabled,
+			blocked: status.blocked,
+		},
+		loaded: catalogNames,
+		entries,
+		commit: commit
+			? {
+					added: commit.pluginChanges.added.map(String),
+					removed: commit.pluginChanges.removed.map(String),
+					replaced: commit.pluginChanges.replaced.map(({ from, to }) => `${from} -> ${to}`),
+					restarted: commit.pluginChanges.restarted.map(String),
+					lifecycleOk: commit.lifecycleReport.ok,
+				}
+			: undefined,
+	}
+}
+
+function formatStaticRuntimeHmrReport(
+	reason: 'startup' | 'update',
+	summary: StaticRuntimeReportSummary,
+	configFiles: ReadonlySet<string>,
+): HmrReportLogProps {
+	const plugins = toHmrPluginTotals(summary)
+	return {
+		reason,
+		scope: {
+			roots: 1,
+			entries: configFiles.size,
+			anchors: 0,
+		},
+		plugins,
+		roots: [
+			{
+				root: 'static-catalog',
+				entries: configFiles.size,
+				plugins,
+			},
+		],
+		loaded: summary.loaded,
+		entries: summary.entries,
+		commit: summary.commit,
+	}
+}
+
+function toHmrPluginTotals(summary: StaticRuntimeReportSummary): HmrPluginTotals {
+	return {
+		loaded: summary.plugins.catalog,
+		enabled: summary.plugins.enabled,
+		running: summary.plugins.started,
+	}
+}
+
+function affectedStaticRuntimePlugins(report: StaticRuntimeHmrReport): number {
+	const restarted = report.commit?.pluginChanges.restarted.map(String) ?? []
+	return new Set([...report.added, ...report.removed, ...report.replaced, ...restarted]).size
+}
+
+function invalidateStaticRuntimeChangedModules(server: ViteDevServer, changedFile: string): number {
+	type ModuleLike = {
+		file?: string | null
+		importers?: Set<ModuleLike>
+	}
+
+	const queue: ModuleLike[] = []
+	const seen = new Set<ModuleLike>()
+	for (const mod of server.moduleGraph.getModulesByFile(changedFile) ?? []) {
+		queue.push(mod as ModuleLike)
+	}
+
+	let invalidated = 0
+	while (queue.length > 0) {
+		const mod = queue.shift()!
+		if (seen.has(mod)) continue
+		seen.add(mod)
+		server.moduleGraph.invalidateModule(
+			mod as Parameters<typeof server.moduleGraph.invalidateModule>[0],
+		)
+		invalidated++
+		for (const importer of mod.importers ?? []) queue.push(importer)
+	}
+	return invalidated
+}
+
+function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][number][]): {
+	started: number
+	disabled: number
+	blocked: number
+} {
+	let started = 0
+	let disabled = 0
+	let blocked = 0
+	for (const entry of entries) {
+		if (entry.status === 'started') started++
+		else if (entry.status === 'disabled') disabled++
+		else blocked++
+	}
+	return { started, disabled, blocked }
 }
 
 function staticRuntimeBuildUiBridgeVitePlugin(): PluginOption {

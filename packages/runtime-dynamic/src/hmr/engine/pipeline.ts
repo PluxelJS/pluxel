@@ -16,6 +16,17 @@ import {
 	type RuntimeStateDraft,
 } from '@pluxel/runtime/runtime-state'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
+import {
+	HMR_CHANGED_PREVIEW_LIMIT,
+	hmrChangedPreviewProps,
+	hmrInvalidated,
+	hmrOptionalCount,
+	hmrOptionalList,
+	roundHmrMs,
+	type HmrInvalidationCounts,
+	type HmrPluginTotals,
+	type HmrUpdatedLogProps,
+} from '@pluxel/runtime-dev/hmr-log'
 import type { HmrPathApi, HmrToolkit } from './environment'
 import { collectHotspots, isLogEnabled, logAttributionReport, type TimingTracker } from './logging'
 import { collectPluginTotals } from './operational-report'
@@ -902,9 +913,9 @@ export type HmrBatchSummary = {
 	enabledButStopped: readonly string[]
 	affected: number
 	fallbackRoots: number
-	invalidated: { vite: number; runner: number }
+	invalidated: HmrInvalidationCounts
 	activeServices: number
-	plugins: ReturnType<typeof collectPluginTotals>['plugins']
+	plugins: HmrPluginTotals
 	commitMs: number | null
 	batchMs: number
 	/**
@@ -1010,7 +1021,7 @@ export class HmrBatchProcessor {
 
 		const execOrder = buildOrderedList(targets, graph.distance, 'near', targets.size || 1)
 		const executed = await this.executor.runAndLoadAllClean(execOrder, true)
-		const commitMs = executed ? Math.round(executed.commitMs * 10) / 10 : null
+		const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []
 		const autoDisabled = executed?.autoDisabled ?? []
@@ -1038,7 +1049,7 @@ export class HmrBatchProcessor {
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
-		const batchMs = Math.round(endBatch() * 10) / 10
+		const batchMs = roundHmrMs(endBatch())
 		const commitOk = Boolean(executed?.commitResult.ok)
 		const commitError =
 			!executeError && !injectError && executed?.commitResult.ok === false
@@ -1052,34 +1063,30 @@ export class HmrBatchProcessor {
 		])
 		const enabledButStopped = collectEnabledButStopped(this.ctx, relatedModules)
 
-		const CHANGED_PREVIEW_LIMIT = 3
 		const changedPretty = [...new Set(changed.map((id) => this.path.pretty(id)))].sort()
-		const changedPreview = changedPretty.slice(0, CHANGED_PREVIEW_LIMIT)
-		const changedPreviewOmitted = Math.max(0, changedPretty.length - changedPreview.length)
 		const logProps = {
 			epoch,
 			changedFiles: changed.length,
-			changedPreview: changedPreview.length > 0 ? changedPreview : undefined,
-			changedPreviewOmitted: changedPreviewOmitted || undefined,
+			...hmrChangedPreviewProps(changedPretty, HMR_CHANGED_PREVIEW_LIMIT),
 			targets: execOrder.length,
-			affectedModules: affectedModules.length > 0 ? affectedModules.length : undefined,
-			syncedModules: syncedModules.length > 0 ? syncedModules.length : undefined,
-			autoDisabled: autoDisabled.length > 0 ? autoDisabled : undefined,
-			enabledButStopped: enabledButStopped.length > 0 ? enabledButStopped : undefined,
+			affectedModules: hmrOptionalCount(affectedModules.length),
+			syncedModules: hmrOptionalCount(syncedModules.length),
+			autoDisabled: hmrOptionalList(autoDisabled),
+			enabledButStopped: hmrOptionalList(enabledButStopped),
 			affected: graph.affectedIds.size,
 			fallbackRoots: graph.roots.length,
 			activeServices,
 			plugins: pluginTotals,
-			hotspots: hotspots.length > 0 ? hotspots : undefined,
+			hotspots: hmrOptionalList(hotspots),
 			invalidated,
-			prefetchFailed: prefetchFailed || undefined,
+			prefetchFailed: hmrOptionalCount(prefetchFailed),
 			commitMs,
 			batchMs,
 			ok: commitOk,
 			...(executeError ? { executeError } : {}),
 			...(injectError ? { injectError } : {}),
 			...(commitError ? { commitError } : {}),
-		}
+		} satisfies HmrUpdatedLogProps
 		if (commitOk) this.ctx.logger.info('HMR updated', logProps)
 		else this.ctx.logger.warn('HMR updated', logProps)
 
@@ -1182,6 +1189,6 @@ export class HmrBatchProcessor {
 				})
 			}
 		}
-		return { vite: viteInvalidated, runner: runnerInvalidated }
+		return hmrInvalidated(viteInvalidated, runnerInvalidated)
 	}
 }

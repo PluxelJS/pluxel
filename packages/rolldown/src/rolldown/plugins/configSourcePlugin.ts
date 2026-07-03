@@ -42,6 +42,15 @@ export interface ConfigSourcePluginOptions {
 	include?: string | string[]
 	/** File patterns to exclude */
 	exclude?: string | string[]
+	/**
+	 * Module specifier used for generated metadata helper imports.
+	 *
+	 * Plugin source may still import decorators from any supported runtime source;
+	 * this controls only the injected `__setConfigSource__`/feature metadata calls.
+	 *
+	 * @default '@pluxel/runtime'
+	 */
+	metadataHelperImportSource?: string
 }
 
 interface ExtractedConfig {
@@ -139,11 +148,14 @@ interface ResolveContext {
 
 const DEFAULT_EXPORT = '__pluxel_default_export__'
 const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/runtime'] as const
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime'
 
 const CODE_HINT =
 	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
+	const metadataHelperImportSource =
+		options.metadataHelperImportSource?.trim() || DEFAULT_METADATA_HELPER_IMPORT_SOURCE
 	const includePatterns = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -262,6 +274,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 						extracted.layouts,
 						extractedFeatures,
 						parseProgram,
+						metadataHelperImportSource,
 					)
 					return {
 						code: code + '\n' + injection,
@@ -1759,6 +1772,7 @@ function generateInjection(
 	layouts: ExtractedConfigLayout[],
 	features: ExtractedFeatureUse[],
 	parseProgram: (code: string, filename: string) => Program,
+	metadataHelperImportSource: string,
 ): string {
 	if (
 		configs.length === 0 &&
@@ -1785,7 +1799,8 @@ function generateInjection(
 		if (features.length > 0) imports.push('__registerUsedFeatures__')
 		// Keep import stable/deterministic for snapshots and caching.
 		imports.sort()
-		lines.push(`import { ${imports.join(', ')} } from "@pluxel/core";`)
+		const importSource = JSON.stringify(metadataHelperImportSource)
+		lines.push(`import { ${imports.join(', ')} } from ${importSource};`)
 
 		for (const { className, fieldName, source } of configs) {
 			const final = normalizeSchemaSource(source, parseProgram)

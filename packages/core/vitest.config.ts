@@ -15,6 +15,7 @@ export default defineConfig({
 	plugins: [
 		lintGuardPlugin({ cwd: import.meta.dirname }),
 		configSourcePlugin({
+			metadataHelperImportSource: '@pluxel/core',
 			include: [
 				'src/**/*.ts',
 				'src/**/*.tsx',

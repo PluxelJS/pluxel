@@ -1,4 +1,5 @@
 import type { LogLevel, Logger as LogtapeLogger } from '@logtape/logtape'
+import { roundHmrMs } from '@pluxel/runtime-dev/hmr-log'
 
 export type HmrDebugLogger = LogtapeLogger
 
@@ -76,7 +77,7 @@ export function collectHotspots(
 	return [...totals.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.slice(0, limit)
-		.map(([id, ms]) => ({ id: prettyId(id), ms: Math.round(ms * 10) / 10 }))
+		.map(([id, ms]) => ({ id: prettyId(id), ms: roundHmrMs(ms) }))
 }
 
 export function isLogEnabled(logger: LogtapeLogger | null | undefined, level: LogLevel): boolean {

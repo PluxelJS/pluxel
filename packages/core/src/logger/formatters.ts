@@ -839,7 +839,7 @@ export function withPluxelMessagePrefix(
 			includeCaller && isCallerEnabled()
 				? typeof record.properties.caller === 'string'
 					? (record.properties.caller as string)
-					: captureCaller({ exclude: formatter })
+					: captureCaller()
 				: undefined
 
 		const nextRecord = { ...record, message } as LogRecord

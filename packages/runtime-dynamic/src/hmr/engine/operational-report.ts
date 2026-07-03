@@ -4,55 +4,22 @@ import type { PluginConstructor } from '@pluxel/core'
 import { resolve } from 'pathe'
 import { normalizePath } from 'vite'
 import { DRIVE_PATH_RE, fsPathFromViteFsId, resolveCacheLimit } from '@pluxel/runtime/shared'
+import type {
+	HmrPluginTotals as PluginTotals,
+	HmrPluginsByRootInfo as PluginsByRootInfo,
+	HmrPluginsByRootMode as PluginsByRootMode,
+	HmrPluginsByRootReason as PluginsByRootReason,
+	HmrReportLogProps as HmrOperationalReportProps,
+	HmrReportReason,
+	HmrReportRoot,
+} from '@pluxel/runtime-dev/hmr-log'
 
 export type RegistryViewLike = {
 	listRegistered: () => ReadonlyMap<string, PluginConstructor>
 	findModuleIdByName: (name: string) => string | null
 }
 
-export type PluginTotals = { loaded: number; enabled: number; running: number }
-
 export type BuiltinsTotals = PluginTotals
-
-export type PluginsByRootMode = 'byRoot' | 'partial' | 'off'
-
-export type PluginsByRootReason =
-	| 'ok'
-	| 'unresolved-moduleIds'
-	| 'unmapped-moduleIds'
-	| 'resolve-capped'
-	| 'all-unresolved'
-
-export type PluginsByRootInfo =
-	| {
-			mode: 'byRoot'
-			reasons: ['ok']
-	  }
-	| {
-			mode: 'partial' | 'off'
-			reasons: readonly PluginsByRootReason[]
-			unresolved: number
-			unmapped: number
-			resolvedSpecifiers: number
-			resolveAttempts: number
-			resolveLimit: number
-	  }
-
-export type HmrReportRoot = {
-	root: string
-	entries: number
-	plugins?: PluginTotals
-}
-
-export type HmrOperationalReportProps = {
-	reason: string
-	scope: { anchors: number; entries: number; roots: number }
-	roots: HmrReportRoot[]
-	plugins: PluginTotals
-	pluginsByRoot: PluginsByRootInfo
-	builtins: BuiltinsTotals
-	hotspots?: Array<{ id: string; ms: number }>
-}
 
 const FILE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json)$/i
 
@@ -125,7 +92,7 @@ export function collectPluginTotals(params: {
 }
 
 export async function buildHmrOperationalReport(params: {
-	reason: 'startup' | 'executeFiles' | 'warmup'
+	reason: HmrReportReason
 	cwd: string
 	anchors: number
 	entries: number

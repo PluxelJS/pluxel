@@ -3,6 +3,7 @@ import './context-augment'
 
 import type { ExtensionCompilerServiceConfig } from './extensions/ExtensionCompilerService'
 
+export * from './hmr-log'
 export {
 	ExtensionCompilerService,
 	type ExtensionCompilerServiceConfig,
