@@ -92,7 +92,7 @@ runtime common 已有 `Context.runtimeRoute`：
 - source
 - api
 
-旧实现里 source UI compiler、worker bundler、loader module cache 曾通过 runtime common side table 接入。当前已经收敛到 `ctx.runtimeRoute.dev` 和 `ctx.runtimeRoute.modules`。
+旧实现里 source UI compiler、worker bundler、loader module cache 曾通过 runtime common side table 接入。当前已经收敛到 `ctx.runtimeDev` 和 `ctx.runtimeRoute.modules`。
 
 ### 问题
 
@@ -101,11 +101,11 @@ runtime common 已有 `Context.runtimeRoute`：
 - route 能力不再分散在 `ctx.runtimeRoute` 和 side table 多处。
 - 名字不再暗示“把 HMR attach 到 Context”，而是 route 启动时拥有 capability。
 - static route 的 source UI 开发能力不再伪装成 dynamic HMR wiring。
-- `runtime/plugin.ts` 为 route-neutral authoring API，只读取 route dev capability。
+- `runtime/plugin.ts` 为 route-neutral authoring API，只读取 runtime dev capability。
 
 ### 目标设计
 
-把 route-owned 能力并入 `RuntimeRouteCapabilities`：
+把 route 能力和 dev/HMR 能力拆成两个明确入口：
 
 ```ts
 type RuntimeRouteCapabilities = {
@@ -116,7 +116,6 @@ type RuntimeRouteCapabilities = {
 	source?: PluginSourceRead
 	api?: RuntimeApiCapabilities
 	modules?: RuntimeModuleRuntime
-	dev?: RuntimeDevCapabilities
 }
 
 type RuntimeDevCapabilities = {
@@ -124,7 +123,11 @@ type RuntimeDevCapabilities = {
 		bind(ctx: Context, options: { entryPath: string }): () => void
 	}
 	worker?: {
-		watch(ctx: Context, tsEntry: string, options: RuntimeWorkerWatchOptions): Promise<() => Promise<void>>
+		watch(
+			ctx: Context,
+			tsEntry: string,
+			options: RuntimeWorkerWatchOptions,
+		): Promise<() => Promise<void>>
 	}
 	batches?: {
 		last(): unknown
@@ -134,13 +137,20 @@ type RuntimeDevCapabilities = {
 		executeFiles?(files: string[], keepOrder?: boolean): Promise<void>
 	}
 }
+
+declare module '@pluxel/core' {
+	interface Context {
+		runtimeRoute?: RuntimeRouteCapabilities
+		runtimeDev?: RuntimeDevCapabilities
+	}
+}
 ```
 
 关键变化：
 
-- route 启动时设置完整 `ctx.runtimeRoute`。
-- route 关闭时由 route lifecycle/effects 清理 capability。
-- `ui(...)` 和 `worker(...)` 只读 `ctx.runtimeRoute.dev`。
+- route 启动时设置完整 `ctx.runtimeRoute`，dev host 只在开发期设置 `ctx.runtimeDev`。
+- route/dev host 关闭时由 lifecycle/effects 清理 capability。
+- `ui(...)` 和 `worker(...)` 只读 `ctx.runtimeDev`。
 - module cache/normalize/drop 归 `ctx.runtimeRoute.modules`。
 - 删除 route dev/module runtime side table。
 - dev-only extension compiler 通过构造参数接收 module store，不再暴露 `attachStore` 生命周期 API。
@@ -154,8 +164,8 @@ type RuntimeDevCapabilities = {
 ### 成功标准
 
 - runtime common 中没有 route dev/module runtime side table setter。
-- `runtime/plugin.ts` 只读取 `ctx.runtimeRoute.dev`。
-- static/dynamic 只通过 `RuntimeRouteCapabilities` 暴露 route-owned dev 能力。
+- `runtime/plugin.ts` 只读取 `ctx.runtimeDev`。
+- static/dynamic 通过 `RuntimeRouteCapabilities` 暴露 route 能力，通过 `ctx.runtimeDev` 暴露 dev/HMR 能力。
 - static/dynamic 构造 dev compiler 时一次性提供 store，不再使用 attach-style 后补状态。
 
 ## 3. Plugin UI / Extension / Interaction 命名收敛

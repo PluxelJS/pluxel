@@ -170,6 +170,8 @@ Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact for
 
 两条 route 的 HMR 能力保持一致的目标是“插件代码变化后可以重新提交运行中插件”，不是共享同一个 loader。dynamic route 负责动态 module exports -> loader batch；static route 负责 definition -> catalog diff；插件 UI remote build 这类 Vite/MF 子编译能力统一在 `@pluxel/rolldown/vite/plugin-ui`。
 
+route 能力和 dev/HMR 能力分开挂载：`ctx.runtimeRoute` 只描述 catalog/lifecycle/source/API 等路线语义，`ctx.runtimeDev` 才承载 source UI、worker watch 和 batch 等开发期能力。
+
 固定插件集合可以支持开发期热替换，但语义不是“动态 loader HMR”：
 
 - 启动时插件集合必须已知。

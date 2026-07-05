@@ -31,13 +31,10 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@module-federation/vite": "1.16.12",
 		"@pluxel/core": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"oxc-parser": "^0.115.0",
-		"oxc-resolver": "^11.21.3",
-		"pathe": "^2.0.3",
-		"typescript": "^6.0.3"
+		"pathe": "^2.0.3"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
@@ -53,27 +50,7 @@
 		}
 	},
 	"inlinedDependencies": {
-		"@inlang/paraglide-js": "2.20.2",
-		"@inlang/sdk": "2.10.2",
-		"@jridgewell/gen-mapping": "0.3.13",
-		"@jridgewell/remapping": "2.3.5",
-		"@jridgewell/resolve-uri": "3.1.2",
-		"@jridgewell/sourcemap-codec": "1.5.5",
-		"@jridgewell/trace-mapping": "0.3.31",
-		"@lix-js/sdk": "0.4.10",
-		"@sqlite.org/sqlite-wasm": "3.48.0-build4",
-		"acorn": "8.17.0",
 		"chokidar": "5.0.0",
-		"consola": "3.4.0",
-		"human-id": "4.2.0",
-		"js-sha256": "0.11.1",
-		"kysely": "0.28.17",
-		"picomatch": "4.0.4",
-		"readdirp": "5.0.0",
-		"sqlite-wasm-kysely": "0.3.0",
-		"unplugin": "2.3.11",
-		"urlpattern-polyfill": "10.1.0",
-		"uuid": "14.0.1",
-		"webpack-virtual-modules": "0.6.2"
+		"readdirp": "5.0.0"
 	}
 }

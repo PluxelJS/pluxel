@@ -81,7 +81,7 @@ runtime common host layer
 - `packages/runtime-static/src/index.ts`：static production direct launcher，导出 `defineStaticRuntimeConfig(...)` 和 `createStaticRuntime(config)`；factory 返回前已完成 startup，直接使用 `runtime.fetch`。
 - `packages/runtime-static/src/vite.ts`：static Vite launcher，负责 SSR 加载同一份 runtime config、按需接入 web-management/dev UI bridge 和 HMR。
 - `packages/runtime-dynamic/src/register.ts`：loader route services 注册副作用，并通过 `@pluxel/runtime/services/web-management` 显式接入 dynamic 开发管理面；不默认启用 vault。
-- `packages/runtime-dynamic/src/index.ts`：dynamic direct launcher，导出 `defineDynamicRuntimeConfig(...)` 和 `createDynamicRuntime(config)`。
+- `packages/runtime-dynamic/src/index.ts`：dynamic dev/HMR direct launcher，导出 `defineDynamicRuntimeConfig(...)` 和 `createDynamicDevRuntime(config)`；`createDynamicRuntime(config)` 仅作为兼容别名保留。
 - `packages/runtime-dynamic/src/vite.ts`：dynamic Vite launcher，负责 SSR 加载同一份 runtime config 和 loader HMR。
 - `packages/runtime-dynamic/src/services.ts`：loader route services public surface。
 - `packages/runtime-dynamic/src/loader/LoaderService.ts`：loader service 和 public loader API。

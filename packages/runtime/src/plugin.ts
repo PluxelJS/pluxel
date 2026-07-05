@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import type { RuntimeRouteCapabilities } from './plugin-catalog'
+import { runtimeDevCapabilities, type RuntimeRouteCapabilities } from './plugin-catalog'
 import { isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
 
@@ -32,9 +32,11 @@ function runtimeRoute(ctx: Context): RuntimeRouteCapabilities | undefined {
 }
 
 function packagedUiBinder(ctx: Context): (() => () => void) | undefined {
-	const ext = (ctx as unknown as {
-		ext?: { ui?: { remote?: { packaged?: () => () => void } } }
-	}).ext
+	const ext = (
+		ctx as unknown as {
+			ext?: { ui?: { remote?: { packaged?: () => () => void } } }
+		}
+	).ext
 	const remote = ext?.ui?.remote
 	if (typeof remote?.packaged !== 'function') return undefined
 	return () => remote.packaged!()
@@ -57,7 +59,7 @@ export function ui(input: string | PluginUiSourceDeclaration): PluginUiModuleDec
 
 	return {
 		bind(ctx: Context) {
-			const sourceBinder = runtimeRoute(ctx)?.dev?.uiSource?.bind
+			const sourceBinder = runtimeDevCapabilities(ctx)?.uiSource?.bind
 			if (sourceBinder) return sourceBinder(ctx, config)
 			const packaged = packagedUiBinder(ctx)
 			if (packaged) return packaged()
@@ -164,7 +166,7 @@ export function worker(
 				await onUpdate({ ...state })
 			}
 
-			const workerDev = runtimeRoute(ctx)?.dev?.worker
+			const workerDev = runtimeDevCapabilities(ctx)?.worker
 			if (workerDev?.watch) {
 				stopWatching = await workerDev.watch(ctx, normalizedEntry, {
 					external,

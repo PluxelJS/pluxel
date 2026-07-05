@@ -2,6 +2,7 @@ export {
 	ensureForkBaseFromCatalog,
 	readRuntimePluginStatus,
 	requireRouteCapability,
+	runtimeDevCapabilities,
 	runtimePluginStatusOverview,
 	unknownPluginSource,
 	type PluginCatalogRead,

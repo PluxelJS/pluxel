@@ -714,27 +714,18 @@ importers:
 
   packages/runtime-static:
     dependencies:
-      '@module-federation/vite':
-        specifier: 1.16.12
-        version: 1.16.12(typescript@6.0.3)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.15))(tsx@4.22.4)(yaml@2.9.0))
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
-      oxc-parser:
-        specifier: ^0.115.0
-        version: 0.115.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)
-      oxc-resolver:
-        specifier: ^11.21.3
-        version: 11.21.3
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
     devDependencies:
       '@pluxel/runtime-dev':
         specifier: workspace:*

@@ -38,13 +38,14 @@ export default defineDynamicRuntimeConfig({
 Runtime config does not accept nested Vite or HMR config. Add React, GraphQL, macros, aliases, and
 other Vite settings to the host `vite.config.ts`; loader HMR wiring stays inside the dynamic route.
 
-Direct/headless launch uses the same config object:
+Direct/headless launch is currently the loader dev/HMR host. Use the explicit dev name for new
+code; `createDynamicRuntime` remains as a compatibility alias.
 
 ```ts
-import { createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import { createDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import config from './pluxel.dynamic'
 
-const runtime = await createDynamicRuntime(config)
+const runtime = await createDynamicDevRuntime(config)
 await runtime.start()
 ```
 
@@ -58,7 +59,7 @@ During startup the dynamic route:
 - diagnoses the workspace profile into a snapshot
 - creates the runtime `Context`
 - wires loader HMR to the host `ViteDevServer`
-- contributes module and dev capabilities to `ctx.runtimeRoute`
+- contributes route capabilities to `ctx.runtimeRoute` and dev/HMR capabilities to `ctx.runtimeDev`
 - executes startup entries and feeds source changes through the debounced loader batch
 
 ## Packaging

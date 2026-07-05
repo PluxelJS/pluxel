@@ -378,7 +378,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
 ): Promise<LoaderHmrService> {
-	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules || ctx.runtimeRoute?.dev) {
+	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules || ctx.runtimeDev) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
 	}
 
@@ -411,6 +411,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	)
 
 	const baseRoute = ctx.runtimeRoute
+	const baseDev = ctx.runtimeDev
 	if (!baseRoute) {
 		throw new Error(
 			'[loader-hmr-host] Loader route capabilities must be registered before HMR starts',
@@ -419,30 +420,31 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	ctx.runtimeRoute = {
 		...baseRoute,
 		modules: hmr,
-		dev: {
-			...baseRoute.dev,
-			batches: {
-				lastBatch: hmr.api.lastBatch,
-				waitForBatch: hmr.api.waitForBatch,
-				waitForStable: hmr.api.waitForStable,
-				waitForIdle: hmr.api.waitForIdle,
-				executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
-			},
-			worker: {
-				watch: (ownerCtx, tsEntry, bundlerOptions) =>
-					bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
-						...bundlerOptions,
-						vite: hmr.vite,
-					}),
-			},
-			uiSource: {
-				bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
-			},
+	}
+	ctx.runtimeDev = {
+		...baseDev,
+		batches: {
+			lastBatch: hmr.api.lastBatch,
+			waitForBatch: hmr.api.waitForBatch,
+			waitForStable: hmr.api.waitForStable,
+			waitForIdle: hmr.api.waitForIdle,
+			executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
+		},
+		worker: {
+			watch: (ownerCtx, tsEntry, bundlerOptions) =>
+				bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
+					...bundlerOptions,
+					vite: hmr.vite,
+				}),
+		},
+		uiSource: {
+			bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
 		},
 	}
 
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
+		ctx.runtimeDev = baseDev
 		extensionCompiler.dispose()
 		return bundler.dispose()
 	})

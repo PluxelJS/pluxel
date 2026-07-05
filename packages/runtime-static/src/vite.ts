@@ -460,10 +460,11 @@ async function configureStaticRuntimeDevRuntime(
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
-	const previousRoute = ctx.runtimeRoute
-	if (previousRoute?.dev?.uiSource) {
+	const previousDev = ctx.runtimeDev
+	if (previousDev?.uiSource) {
 		throw new Error('[runtime-static/vite] extension source UI runtime is already attached')
 	}
+	const previousRoute = ctx.runtimeRoute
 	if (!previousRoute) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
@@ -494,19 +495,16 @@ async function configureStaticRuntimeDevRuntime(
 		extensionCompilerConfig,
 	)
 
-	ctx.runtimeRoute = {
-		...previousRoute,
-		dev: {
-			...previousRoute?.dev,
-			uiSource: {
-				bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
-			},
+	ctx.runtimeDev = {
+		...previousDev,
+		uiSource: {
+			bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
 		},
 	}
 
 	ctx.effects.defer(() => {
 		extensionCompiler.dispose()
-		ctx.runtimeRoute = previousRoute
+		ctx.runtimeDev = previousDev
 	})
 }
 

@@ -145,7 +145,6 @@ export type RuntimeRouteCapabilities = {
 	api?: RuntimeApiCapabilities
 	features?: RuntimeRouteFeatures
 	modules?: RuntimeModuleRuntime
-	dev?: RuntimeDevCapabilities
 }
 
 const identityModuleRuntime: RuntimeModuleRuntime = {
@@ -162,6 +161,7 @@ const identityModuleRuntime: RuntimeModuleRuntime = {
 declare module '@pluxel/core' {
 	interface Context {
 		runtimeRoute?: RuntimeRouteCapabilities
+		runtimeDev?: RuntimeDevCapabilities
 	}
 }
 
@@ -178,6 +178,10 @@ export function requireRouteCapability<K extends keyof RuntimeRouteCapabilities>
 
 export function runtimeModuleRuntime(ctx: Context): RuntimeModuleRuntime {
 	return ctx.runtimeRoute?.modules ?? ctx.root.runtimeRoute?.modules ?? identityModuleRuntime
+}
+
+export function runtimeDevCapabilities(ctx: Context): RuntimeDevCapabilities | undefined {
+	return ctx.runtimeDev ?? ctx.root.runtimeDev
 }
 
 export function unknownPluginSource(): RuntimePluginSource {

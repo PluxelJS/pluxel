@@ -1,22 +1,21 @@
 import './register'
 
 import type { Context } from '@pluxel/runtime'
-import {
-	defineDynamicRuntimeConfig,
-	type DynamicRuntimeConfig,
-} from './config'
+import { defineDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
 
 export * from './services'
 export { defineDynamicRuntimeConfig }
 export type { DynamicRuntimeConfig } from './config'
 
-export type DynamicRuntime = {
+export type DynamicDevRuntime = {
 	readonly ctx: Context
 	start(): Promise<void>
 	stop(): Promise<void>
 }
 
-export async function createDynamicRuntime(config: DynamicRuntimeConfig): Promise<DynamicRuntime> {
+export async function createDynamicDevRuntime(
+	config: DynamicRuntimeConfig,
+): Promise<DynamicDevRuntime> {
 	const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } = await import('./hmr/host')
 	const plan = await planLoaderHmrHostFromConfig(config)
 	let booted: Awaited<ReturnType<typeof bootPlannedLoaderHmrHost>> | undefined
@@ -40,7 +39,9 @@ export async function createDynamicRuntime(config: DynamicRuntimeConfig): Promis
 	return {
 		get ctx() {
 			if (!booted) {
-				throw new Error('[runtime-dynamic] runtime has not started; call await runtime.start() before accessing ctx')
+				throw new Error(
+					'[runtime-dynamic] runtime has not started; call await runtime.start() before accessing ctx',
+				)
 			}
 			return booted.ctx as Context
 		},
@@ -53,3 +54,9 @@ export async function createDynamicRuntime(config: DynamicRuntimeConfig): Promis
 		},
 	}
 }
+
+/** @deprecated Use createDynamicDevRuntime(). The current direct dynamic route is the loader dev/HMR host. */
+export type DynamicRuntime = DynamicDevRuntime
+
+/** @deprecated Use createDynamicDevRuntime(). The current direct dynamic route is the loader dev/HMR host. */
+export const createDynamicRuntime = createDynamicDevRuntime

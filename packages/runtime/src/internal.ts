@@ -1,4 +1,4 @@
-export { runtimeModuleRuntime } from './runtime/capabilities'
+export { runtimeDevCapabilities, runtimeModuleRuntime } from './runtime/capabilities'
 export type {
 	RuntimeDevCapabilities,
 	RuntimeModuleCacheEntry,

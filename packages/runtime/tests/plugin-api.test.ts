@@ -44,15 +44,12 @@ afterEach(() => {
 })
 
 describe('@pluxel/runtime/plugin', () => {
-	it('ui() binds through route dev capability when source UI is available', () => {
+	it('ui() binds through runtime dev capability when source UI is available', () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const bind = vi.fn(() => () => {})
 
-		root.runtimeRoute = {
-			catalog: {} as never,
-			dev: {
-				uiSource: { bind },
-			},
+		root.runtimeDev = {
+			uiSource: { bind },
 		}
 
 		const declaration = ui('./ui/index.tsx')
@@ -118,7 +115,7 @@ describe('@pluxel/runtime/plugin', () => {
 		expect(pluginCtx.loader.api.registry.findModuleIdByName).not.toHaveBeenCalled()
 	})
 
-	it('worker() uses route dev capability and tracks HMR updates', async () => {
+	it('worker() uses runtime dev capability and tracks HMR updates', async () => {
 		const { root, pluginCtx } = createPluginCtx()
 		const onUpdate = vi.fn()
 		const stopWatching = vi.fn(async () => {})
@@ -127,11 +124,8 @@ describe('@pluxel/runtime/plugin', () => {
 			return stopWatching
 		})
 
-		root.runtimeRoute = {
-			catalog: {} as never,
-			dev: {
-				worker: { watch },
-			},
+		root.runtimeDev = {
+			worker: { watch },
 		}
 
 		const binding = await worker('./ui/worker.ts').bind(pluginCtx, { onUpdate })

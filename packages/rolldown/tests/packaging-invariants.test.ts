@@ -80,6 +80,10 @@ describe('toolchain package boundaries', () => {
 		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const runtimeDevFiles = await collectSourceFiles(`${root}/packages/runtime-dev/src`)
 		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
+		const runtimeStaticTsdown = await readFile(
+			`${root}/packages/runtime-static/tsdown.config.ts`,
+			'utf8',
+		)
 		const offenders: string[] = []
 
 		for (const file of [...runtimeDynamicFiles, ...runtimeDevFiles]) {
@@ -91,11 +95,19 @@ describe('toolchain package boundaries', () => {
 			offenders,
 			'runtime-dynamic should call @pluxel/rolldown/vite/plugin-ui instead of owning MF build logic',
 		).toEqual([])
-		expect(runtimeStatic.dependencies).toHaveProperty('@module-federation/vite')
+		expect(runtimeStatic.dependencies).toHaveProperty('@pluxel/rolldown')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/vite')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/dts-plugin')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/runtime')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/runtime-core')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/sdk')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-parser')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-resolver')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('typescript')
+		expect(runtimeStaticTsdown).not.toContain('@module-federation/vite')
+		expect(runtimeStaticTsdown).not.toContain('oxc-parser')
+		expect(runtimeStaticTsdown).not.toContain('oxc-resolver')
+		expect(runtimeStaticTsdown).not.toContain('typescript')
 	})
 
 	it('keeps Rolldown plugin utility dependencies inside the rolldown package', async () => {
@@ -206,6 +218,24 @@ describe('toolchain package boundaries', () => {
 		}
 
 		expect(offenders).toEqual([])
+	})
+
+	it('keeps dev/HMR capabilities out of the runtime route contract', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const capabilities = await readFile(
+			`${root}/packages/runtime/src/runtime/capabilities.ts`,
+			'utf8',
+		)
+		const pluginApi = await readFile(`${root}/packages/runtime/src/plugin.ts`, 'utf8')
+
+		const routeType = capabilities.match(
+			/export type RuntimeRouteCapabilities = \{[\s\S]*?\n\}/,
+		)?.[0]
+		expect(routeType).toBeTruthy()
+		expect(routeType).not.toContain('dev?:')
+		expect(capabilities).toContain('runtimeDev?: RuntimeDevCapabilities')
+		expect(pluginApi).toContain('runtimeDevCapabilities(ctx)')
+		expect(pluginApi).not.toContain('runtimeRoute(ctx)?.dev')
 	})
 
 	it('keeps old HTTP management internals out of public runtime config surfaces', async () => {

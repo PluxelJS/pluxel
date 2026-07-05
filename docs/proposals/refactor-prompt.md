@@ -41,7 +41,7 @@ import { defineStaticRuntimeConfig, createStaticRuntime } from '@pluxel/runtime-
 import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
 
 // dynamic
-import { defineDynamicRuntimeConfig, createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import { defineDynamicRuntimeConfig, createDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 ```
 
@@ -149,7 +149,7 @@ static 主入口不得默认拉入：
 `@pluxel/runtime-dynamic` 主入口应该导出：
 
 - `defineDynamicRuntimeConfig(...)`
-- `createDynamicRuntime(config) -> { ctx, start, stop, ... }`
+- `createDynamicDevRuntime(config) -> { ctx, start, stop, ... }`
 
 示例：
 
@@ -166,10 +166,10 @@ export default defineDynamicRuntimeConfig({
 
 ```ts
 // headless.ts
-import { createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import { createDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import config from './pluxel.dynamic'
 
-const runtime = await createDynamicRuntime(config)
+const runtime = await createDynamicDevRuntime(config)
 await runtime.start()
 ```
 
@@ -266,7 +266,7 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
 2. 统一 config + launcher API：
    - `@pluxel/runtime-static` 导出 `defineStaticRuntimeConfig(...)` / `createStaticRuntime(config)`。
    - `@pluxel/runtime-static/vite` 导出 `staticRuntimeVitePlugin(...)`，兼容 re-export config helper。
-   - `@pluxel/runtime-dynamic` 导出 `defineDynamicRuntimeConfig(...)` / `createDynamicRuntime(config)`。
+   - `@pluxel/runtime-dynamic` 导出 `defineDynamicRuntimeConfig(...)` / `createDynamicDevRuntime(config)`；`createDynamicRuntime(config)` 仅作为兼容别名。
    - `@pluxel/runtime-dynamic/vite` 导出 `dynamicRuntimeVitePlugin(...)`，兼容 re-export config helper。
    - `defineStaticRuntime(...)` 不再保留；新代码只使用 `defineStaticRuntimeConfig(...)`。
 

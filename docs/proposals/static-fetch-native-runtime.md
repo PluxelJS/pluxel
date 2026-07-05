@@ -7,7 +7,7 @@
 dynamic 路线不追求这个目标。dynamic 可以继续依赖 Vite runner、workspace scan、package manager、module graph、HMR replacement 和 Node/Vite 能力。
 
 但 dynamic 应共享同一套入口心智模型：`pluxel.dynamic.ts` 是 route-neutral runtime config，
-`createDynamicRuntime(config)` 可以直接启动 full dynamic runtime，`dynamicRuntimeVitePlugin({ config })`
+`createDynamicDevRuntime(config)` 可以直接启动 loader dev/HMR runtime，`dynamicRuntimeVitePlugin({ config })`
 用同一份 config 接入 host Vite dev server 和 HMR。dynamic 默认加载 dynamic route 服务和开发
 web-management 边界，但 Vault 仍通过 `@pluxel/runtime/services/vault` 显式启用；dynamic 不需要被
 `tsdown` 打成最小 fetch-native 包。

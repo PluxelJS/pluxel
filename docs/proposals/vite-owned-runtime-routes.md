@@ -33,13 +33,13 @@ export default defineDynamicRuntimeConfig({
 })
 ```
 
-Headless/full-runtime launcher:
+Headless dynamic dev/HMR launcher:
 
 ```ts
-import { createDynamicRuntime } from '@pluxel/runtime-dynamic'
+import { createDynamicDevRuntime } from '@pluxel/runtime-dynamic'
 import config from './pluxel.dynamic'
 
-const runtime = await createDynamicRuntime(config)
+const runtime = await createDynamicDevRuntime(config)
 await runtime.start()
 ```
 
@@ -149,7 +149,7 @@ No custom TS config loader exists in the route packages.
 Direct launchers do not load config by path. They consume an already-imported config object:
 
 ```ts
-const runtime = await createDynamicRuntime(config)
+const runtime = await createDynamicDevRuntime(config)
 const runtime = await createStaticRuntime(config)
 ```
 
