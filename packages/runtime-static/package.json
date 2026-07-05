@@ -33,8 +33,7 @@
 	"dependencies": {
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
-		"pathe": "^2.0.3"
+		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
@@ -51,6 +50,7 @@
 	},
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
+		"pathe": "2.0.3",
 		"readdirp": "5.0.0"
 	}
 }

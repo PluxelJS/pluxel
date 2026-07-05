@@ -103,6 +103,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/sdk')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-parser')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-resolver')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('pathe')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('typescript')
 		expect(runtimeStaticTsdown).not.toContain('@module-federation/vite')
 		expect(runtimeStaticTsdown).not.toContain('oxc-parser')

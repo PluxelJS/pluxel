@@ -16,8 +16,7 @@
 		"@pluxel/runtime-static": "workspace:*"
 	},
 	"devDependencies": {
-		"@mantine/core": "^9.4.0",
-		"@mantine/hooks": "^9.4.0",
+		"@mantine/core": "^9.4.1",
 		"@pluxel/cli": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"@types/react": "^19.2.14",
