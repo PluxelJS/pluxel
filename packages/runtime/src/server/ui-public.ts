@@ -4,7 +4,8 @@ import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname, resolve } from 'pathe'
 
-export const UI_PUBLIC_BASE = '/dist/public'
+import { UI_PUBLIC_BASE } from '../web/paths'
+export { UI_PUBLIC_BASE } from '../web/paths'
 
 export type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
 

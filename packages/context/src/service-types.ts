@@ -36,13 +36,15 @@ export type ServiceWithCtx<C> = { ctx: C }
 export type ServiceCtor = new (ctx: Context, cfg?: any) => unknown
 
 /**
- * 给 Service ctor 增加可选的 metadata：key、methods
+ * 给 Service ctor 增加可选的 metadata：key、methods、props
  */
 export type ServiceClass<S extends ServiceCtor = ServiceCtor> = S & {
 	/** 在 Context 上的访问名，默认由类名剥 “Service” 得到 */
 	readonly key?: string
 	/** 要在 Context 原型上代理的方法名列表 */
 	readonly methods?: readonly Extract<keyof ServiceInst<S>, string>[]
+	/** 要在 Context 原型上代理的属性/getter 名列表 */
+	readonly props?: readonly Extract<keyof ServiceInst<S>, string>[]
 	/**
 	 * Service scope:
 	 * - `"context"` (default): service is shared but `ctx` is rebound on every access

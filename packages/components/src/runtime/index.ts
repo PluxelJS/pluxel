@@ -1,32 +1,26 @@
 import {
-	createAuthAwareFetch,
+	createVerificationAwareFetch,
 	createRuntimeTransportClient,
-	dispatchRuntimeCommand,
+	createRuntimeSecurityClient,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_VERIFICATION_BASE,
 	invokeRpc,
-	invokeRuntimeOp,
-	listRuntimeOpCatalog,
-	listRuntimeOpsToolsets,
-	listRuntimeOps,
 	rpcErrorMessage,
+	resolveVerificationLandingPath,
 	RuntimeTransportClientProvider,
-	resolveRuntimeOpsToolset,
-	updateRuntimeOpsToolsets,
 	useRuntimeTransportClient,
 } from '@pluxel/runtime/web'
-export * from './ops'
+export * from './pluginControl'
 
 export {
-	createAuthAwareFetch,
-	dispatchRuntimeCommand,
+	createVerificationAwareFetch,
+	createRuntimeSecurityClient,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_VERIFICATION_BASE,
 	invokeRpc,
-	invokeRuntimeOp,
-	listRuntimeOpCatalog,
-	listRuntimeOpsToolsets,
-	listRuntimeOps,
 	rpcErrorMessage,
+	resolveVerificationLandingPath,
 	RuntimeTransportClientProvider,
-	resolveRuntimeOpsToolset,
-	updateRuntimeOpsToolsets,
 	useRuntimeTransportClient,
 }
 
@@ -41,43 +35,46 @@ export type {
 	LogRangeOk,
 	LogSseEvent,
 	LogStreamMeta,
-	OpsToolset,
-	OpsToolsetInput,
 	PackageBatchResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
 	PackageIssueSpec,
 	PackageLoadIssue,
+	PackageManagerFeatureApi,
 	PackageSpecInput,
 	PluginDependencyRef,
 	PluginDependencyMutationResult,
 	PluginDependencyState,
 	PluginGroup,
 	PluginGroupInput,
-	PluginLevelsSnapshot,
-	PluginLogLevel,
+	PluginLogPolicySnapshot,
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,
 	PluginStatusMutationResult,
-	RuntimeOpCatalogEntry,
-	RuntimeOpDescriptor,
-	RuntimeOpToolsetManifest,
+	RuntimePluginLogLevel,
+	SecurityAuditEvent,
+	SecurityOverview,
+	VerificationOverview,
 	RuntimeLogLine,
 	RuntimeRpcApi,
 	RuntimeTransportClient,
+	RuntimeSecurityClient,
+	VaultAdminState,
+	VaultKeyPair,
 	SchemaResult,
 	SchemaResultErr,
 	SchemaResultOk,
 } from '@pluxel/runtime/web'
 
 let transport: ReturnType<typeof createRuntimeTransportClient> | null = null
+let security: ReturnType<typeof createRuntimeSecurityClient> | null = null
 
 /**
  * Host-wide runtime transport singleton.
  *
  * Non-React code and the root provider must share the same client instance so
- * SSE connections, auth probing, and transport caches stay deterministic.
+ * SSE connections, verification probing, and transport caches stay deterministic.
  */
 export function getRuntimeTransportClient() {
 	if (!transport) {
@@ -87,4 +84,16 @@ export function getRuntimeTransportClient() {
 	}
 
 	return transport
+}
+
+export function getRuntimeSecurityClient() {
+	if (!security) {
+		const runtime = getRuntimeTransportClient()
+		security = createRuntimeSecurityClient({
+			apiBase: runtime.links.apiBase,
+			fetch: runtime.fetch,
+		})
+	}
+
+	return security
 }

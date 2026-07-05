@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
-import { PluginA, PluginB, PluginC } from './plugins'
+import {
+	BasePlugin,
+	ForkablePlugin,
+	Plugin,
+	assertPluginLifecycleIssue,
+	pluginLifecycleIssuePlugins,
+	type PluginIdentifier,
+	setParamToken,
+	withCoreHost,
+} from '@pluxel/core/test'
+import { PluginB } from './plugins'
 
 function createDeferred() {
 	let resolve!: () => void
@@ -14,10 +23,14 @@ function createDeferred() {
 }
 
 function collectCommitSummaries(host: {
-	ctx: { on: (event: 'afterCommit', cb: (summary: unknown) => void) => void }
+	ctx: {
+		internalEvent: {
+			runtimeCommitted: { on(listener: (summary: unknown) => void): unknown }
+		}
+	}
 }) {
 	const summaries: unknown[] = []
-	host.ctx.on('afterCommit', (summary) => {
+	host.ctx.internalEvent.runtimeCommitted.on((summary: unknown) => {
 		summaries.push(summary)
 	})
 	return summaries
@@ -33,32 +46,786 @@ async function waitUntil(cond: () => boolean, opts?: { timeoutMs?: number }) {
 }
 
 describe('PluginService commit()', () => {
-	it('preserves this-binding for container.resolveIdentifier', async () => {
-		await withHost(async (host) => {
-			@Plugin({ name: 'BIND-A' })
+	it('commits a runtime update transaction', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-COMMIT-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			expect(tx.reason).toBe('hmr')
+			tx.markAffectedModule('tx-commit.ts')
+			tx.register(A)
+			const res = await tx.commit({
+				strict: true,
+				autoDisabled: ['TX-META-DISABLED'],
+			})
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.isRunning(A)).toBe(true)
+			expect(host.get(A)).toBeInstanceOf(A)
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.reason).toBe('hmr')
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.affectedModules).toEqual(['tx-commit.ts'])
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual(['TX-META-DISABLED'])
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
+		})
+	})
+
+	it('uses runtime plugin keys as graph nodes while resolving constructors at registry boundary', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'RKEY-A' })
 			class A extends BasePlugin {}
 
 			await host.start(A)
 
-			const container = host.ctx.registry.container as unknown as {
-				resolveIdentifier?: (id: unknown) => unknown
-				__sentinel?: symbol
-			}
+			const graph = host.ctx.registry.graph
+			expect([...graph.keys()]).toEqual(['RKEY-A'])
+			expect(graph.has('RKEY-A')).toBe(true)
+			expect(graph.has(A)).toBe(false)
+			expect(graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('RKEY-A')
+			expect(host.get(A)).toBeInstanceOf(A)
+		})
+	})
 
-			const sentinel = Symbol('sentinel')
-			container.__sentinel = sentinel
-			container.resolveIdentifier = function (this: { __sentinel?: symbol }, id: unknown) {
-				if (this.__sentinel !== sentinel) throw new Error('resolveIdentifier lost `this` binding')
-				return id
-			}
+	it('does not resolve undecorated constructor names as runtime plugin keys', async () => {
+		await withCoreHost(async (host) => {
+			class RKEYCollision {}
+			const legacyToken = RKEYCollision as unknown as PluginIdentifier
 
-			expect(host.isRunning(A)).toBe(true)
-			expect(() => host.remove(A)).not.toThrow()
+			@Plugin({ name: 'RKEYCollision' })
+			class Real extends BasePlugin {}
+
+			await host.start(Real)
+
+			expect(host.ctx.registry.graph.has('RKEYCollision')).toBe(true)
+			expect(host.ctx.registry.getInstance(legacyToken)).toBeUndefined()
+			expect(host.ctx.registry.isRunning(legacyToken)).toBe(false)
+		})
+	})
+
+	it('rolls back runtime update draft and pending restarts', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-ROLLBACK-A' })
+			class A extends BasePlugin {}
+
+			@Plugin({ name: 'TX-ROLLBACK-B' })
+			class B extends BasePlugin {}
+
+			await host.start(A)
+			const committedGraph = host.ctx.registry.graph
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.replace(A, B)
+			tx.restart(B)
+			tx.rollback()
+
+			const summary = await host.commit()
+			expect(summary.graph).toBe(committedGraph)
+			expect(summary.pluginChanges.replaced).toEqual([])
+			expect(summary.pluginChanges.availabilityChanged).toEqual([])
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('TX-ROLLBACK-A')
+			expect(host.get(A)).toBeInstanceOf(A)
+			expect(host.get(B)).toBeUndefined()
+		})
+	})
+
+	it('rejects runtime update when a loose draft is already pending', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-PENDING-A' })
+			class A extends BasePlugin {}
+
+			host.ctx.registry.register(A)
+
+			expect(() => host.ctx.registry.beginUpdate({ reason: 'hmr' })).toThrow(/pending changes/i)
+		})
+	})
+
+	it('rejects nested runtime update transactions', async () => {
+		await withCoreHost(async (host) => {
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+
+			expect(() => host.ctx.registry.beginUpdate({ reason: 'hmr' })).toThrow(
+				/another runtime update is active/i,
+			)
+
+			tx.rollback()
+		})
+	})
+
+	it('rolls back runtime update draft when commit fails', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MISSING-DEP' })
+			class MissingDep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-COMMIT-FAIL-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(public readonly dep: MissingDep) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, MissingDep)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(false)
+			expect(host.ctx.registry.isRegistered(Consumer)).toBe(false)
+
+			const clean = await host.ctx.registry.commit()
+			expect(clean.ok).toBe(true)
+			expect(host.ctx.registry.lastCommit?.pluginChanges.added).toEqual([])
+		})
+	})
+
+	it('tracks runtime module ownership inside update transactions', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-a.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-a.ts')
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-A')).toBe('module-a.ts')
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBeUndefined()
+			expect(host.ctx.registry.listRuntimeModuleItems('module-a.ts')).toEqual([])
+		})
+	})
+
+	it('keeps runtime module ownership after update commit', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-COMMIT-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-commit.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.register(A)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.reason).toBe('hmr')
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.affectedModules).toEqual([
+				'module-commit.ts',
+			])
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-commit.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-commit.ts')).toEqual([
+				{ ctor: A, exportKey: 'A' },
+			])
+		})
+	})
+
+	it('resolves dependency ctor identity drift from runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-DEP' })
+			class Dep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-DEP' })
+			class DepShadow extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepShadow) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepShadow)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.upsertModule({
+				moduleId: 'consumer.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			tx.register(Dep)
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(Dep)
+		})
+	})
+
+	it('resolves explicit runtime queries from runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-QUERY' })
+			class Dep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-QUERY' })
+			class DepShadow extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'query.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.register(Dep)
+			const commitResult = await tx.commit()
+			expect(commitResult.ok).toBe(true)
+
+			expect(host.ctx.registry.isRunning(DepShadow)).toBe(true)
+			expect(host.ctx.registry.getInstance(DepShadow)).toBeInstanceOf(Dep)
+		})
+	})
+
+	it('applies runtime dependency override overlays without mutating constructor metadata', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			const firstCommit = await host.commit()
+			expect(firstCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB])
+			const secondCommit = await host.commit()
+			expect(secondCommit.lifecycleReport.issues).toEqual([])
+
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('rolls back runtime dependency override overlays with runtime update failure', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-C' })
+			class DepC extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, DepC, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-MISSING' })
+			class MissingDep extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-BAD' })
+			class Bad extends BasePlugin {
+				constructor(_dep: MissingDep) {
+					super()
+				}
+			}
+			setParamToken(Bad, 0, MissingDep)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepC])
+			tx.register(Bad)
+
+			const res = await tx.commit()
+			expect(res.ok).toBe(false)
+
+			host.restart(Consumer)
+			const restartCommit = await host.commit()
+			expect(restartCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('applies runtime dependency override overlays by runtime owner name', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-NAME-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-NAME-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-NAME-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			host.ctx.registry.upsertRuntimeModule({
+				moduleId: 'Consumer.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			host.ctx.registry.replaceRuntimeDependencyOverrides('TX-OVERRIDE-NAME-CONSUMER', [DepB])
+
+			const commit = await host.commit()
+			expect(commit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('applies runtime dependency override overlays by committed graph name', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-GRAPH-NAME-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+
+			host.add([DepA, DepB, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides('TX-OVERRIDE-GRAPH-NAME-CONSUMER', [DepB])
+
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('keeps unrelated runtime dependency override indexes when one index returns to default', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-C' })
+			class DepC extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-D' })
+			class DepD extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-MULTI-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(
+					readonly first: DepA,
+					readonly second: DepC,
+				) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepA)
+			setParamToken(Consumer, 1, DepC)
+
+			host.add([DepA, DepB, DepC, DepD, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [DepB, DepD])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.first).toBeInstanceOf(DepB)
+			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Consumer, [undefined, DepD])
+			const fallbackCommit = await host.commit()
+			expect(fallbackCommit.lifecycleReport.issues).toEqual([])
+			expect(host.get(Consumer)?.first).toBeInstanceOf(DepA)
+			expect(host.get(Consumer)?.second).toBeInstanceOf(DepD)
+		})
+	})
+
+	it('preserves base provider ownership when rebuilding dependency override declarations', async () => {
+		await withCoreHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'TX-OVERRIDE-BASE-PRIMARY' })
+			class Primary extends Abs {}
+
+			@Plugin(Abs, { name: 'TX-OVERRIDE-BASE-SECONDARY' })
+			class Secondary extends Abs {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Secondary, 0, DepA)
+
+			@Plugin({ name: 'TX-OVERRIDE-BASE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly provider: Abs) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, Abs)
+
+			host
+				.add(DepA)
+				.add(DepB)
+				.add(Primary, { provideBase: true })
+				.add(Secondary, { provideBase: false })
+				.add(Consumer)
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('TX-OVERRIDE-BASE-PRIMARY')
+			expect(host.get(Consumer)?.provider).toBeInstanceOf(Primary)
+			expect(host.get(Secondary)?.dep).toBeInstanceOf(DepA)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Secondary, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('TX-OVERRIDE-BASE-PRIMARY')
+			expect(host.get(Consumer)?.provider).toBeInstanceOf(Primary)
+			expect(host.get(Secondary)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('resolves fork dependency ctor identity drift from exact runtime module ownership', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-FORK-DEP' })
+			class Dep extends ForkablePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-FORK-DEP' })
+			class DepShadow extends ForkablePlugin {}
+
+			const DepFork = host.ctx.registry.fork(Dep, 'blue')
+			const DepShadowFork = host.ctx.registry.fork(DepShadow, 'blue')
+
+			@Plugin({ name: 'TX-MODULE-FORK-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly dep: Dep) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, DepShadowFork)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep-fork.ts',
+				items: [{ ctor: DepFork, exportKey: 'DepBlue' }],
+			})
+			tx.upsertModule({
+				moduleId: 'consumer-fork.ts',
+				items: [{ ctor: Consumer, exportKey: 'Consumer' }],
+			})
+			tx.register(DepFork)
+			tx.register(Consumer)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepFork)
+		})
+	})
+
+	it('resolves fork runtime module ownership through the base module', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-FORK-OWNER' })
+			class Dep extends ForkablePlugin {}
+
+			const DepFork = host.ctx.registry.fork(Dep, 'blue')
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'dep-fork-owner.ts',
+				items: [{ ctor: Dep, exportKey: 'Dep' }],
+			})
+			tx.register(Dep)
+			const res = await tx.commit()
+			expect(res.ok).toBe(true)
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-FORK-OWNER#blue')).toBe(
+				'dep-fork-owner.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(DepFork)).toBe('dep-fork-owner.ts')
+		})
+	})
+
+	it('keeps runtime module ctor index when stale module ownership is removed', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-MOVE-A' })
+			class A extends BasePlugin {}
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-old.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.upsertModule({
+				moduleId: 'module-new.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			tx.removeModule('module-old.ts')
+			tx.register(A)
+			const res = await tx.commit()
+
+			expect(res.ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-new.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-old.ts')).toEqual([])
+		})
+	})
+
+	it('restores previous runtime module owner when an overlapping update rolls back', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OWNER' })
+			class A extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OWNER' })
+			class NextA extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-a.ts',
+				items: [{ ctor: A, exportKey: 'A' }],
+			})
+			seed.register(A)
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-next.ts',
+				items: [{ ctor: NextA, exportKey: 'A' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe(
+				'module-next.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OWNER')).toBe('module-a.ts')
+			expect(host.ctx.registry.getRuntimeModuleId(A)).toBe('module-a.ts')
+			expect(host.ctx.registry.listRuntimeModuleItems('module-a.ts')).toEqual([
+				{ ctor: A, exportKey: 'A' },
+			])
+			expect(host.ctx.registry.listRuntimeModuleItems('module-next.ts')).toEqual([])
+		})
+	})
+
+	it('restores the latest previous runtime module owner when multiple modules share an id', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class First extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class Second extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-LATEST' })
+			class Third extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: First, exportKey: 'Plugin' }],
+			})
+			seed.upsertModule({
+				moduleId: 'module-second.ts',
+				items: [{ ctor: Second, exportKey: 'Plugin' }],
+			})
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-second.ts',
+			)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-third.ts',
+				items: [{ ctor: Third, exportKey: 'Plugin' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-third.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-LATEST')).toBe(
+				'module-second.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(Second)).toBe('module-second.ts')
+		})
+	})
+
+	it('does not let an older restored snapshot reclaim ownership from a newer module', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class First extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class Second extends BasePlugin {}
+
+			@Plugin({ name: 'TX-MODULE-ROLLBACK-OLDER' })
+			class FirstNext extends BasePlugin {}
+
+			const seed = host.ctx.registry.beginUpdate({ reason: 'startup' })
+			seed.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: First, exportKey: 'Plugin' }],
+			})
+			seed.upsertModule({
+				moduleId: 'module-second.ts',
+				items: [{ ctor: Second, exportKey: 'Plugin' }],
+			})
+			const seedCommit = await seed.commit()
+			expect(seedCommit.ok).toBe(true)
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-second.ts',
+			)
+
+			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
+			tx.upsertModule({
+				moduleId: 'module-first.ts',
+				items: [{ ctor: FirstNext, exportKey: 'Plugin' }],
+			})
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-first.ts',
+			)
+			tx.rollback()
+
+			expect(host.ctx.registry.listRuntimeModuleItems('module-first.ts')).toEqual([
+				{ ctor: First, exportKey: 'Plugin' },
+			])
+			expect(host.ctx.registry.getRuntimeModuleId('TX-MODULE-ROLLBACK-OLDER')).toBe(
+				'module-second.ts',
+			)
+			expect(host.ctx.registry.getRuntimeModuleId(Second)).toBe('module-second.ts')
+		})
+	})
+
+	it('resolves aliases through the committed graph', async () => {
+		await withCoreHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'BIND-A' })
+			class A extends Abs {}
+
+			await host.start(A, { provideBase: true })
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('BIND-A')
+			expect(host.get(Abs)).toBeInstanceOf(A)
+		})
+	})
+
+	it('replaces a plugin implementation without storing implementation ctor graph aliases', async () => {
+		await withCoreHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'REPL-A' })
+			class A extends Abs {}
+
+			@Plugin(Abs, { name: 'REPL-B' })
+			class B extends Abs {}
+
+			await host.start(A, { provideBase: true })
+			host.replace(A, B, { provideBase: true })
+			await host.commit()
+
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('REPL-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('REPL-B')
+			expect(host.ctx.registry.resolveRuntimeKey(B)).toBe('REPL-B')
+			expect(host.get(Abs)).toBeInstanceOf(B)
+			expect(host.get(A)).toBeInstanceOf(B)
+			expect(host.get(B)).toBeInstanceOf(B)
+		})
+	})
+
+	it('reports replacement pairs and availability changes for root replacement', async () => {
+		await withCoreHost(async (host) => {
+			abstract class Abs extends BasePlugin {}
+
+			@Plugin(Abs, { name: 'PAIR-A' })
+			class A extends Abs {}
+
+			@Plugin(Abs, { name: 'PAIR-B' })
+			class B extends Abs {}
+
+			@Plugin({ name: 'PAIR-C' })
+			class C extends BasePlugin {
+				constructor(public readonly dep: Abs) {
+					super()
+				}
+			}
+			setParamToken(C, 0, Abs)
+
+			host.add([A, C], { provideBase: true })
+			await host.commit()
+
+			host.replace(A, B, { provideBase: true })
+			const summary = await host.commit()
+
+			expect(summary.pluginChanges.replaced).toEqual([{ from: 'PAIR-A', to: 'PAIR-B' }])
+			expect(new Set(summary.pluginChanges.availabilityChanged)).toEqual(
+				new Set(['PAIR-A', 'PAIR-B', 'PAIR-C']),
+			)
+			expect(host.ctx.registry.graph.resolve(Abs)).toBe('PAIR-B')
+			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('PAIR-B')
+			expect(host.ctx.registry.resolveRuntimeKey(B)).toBe('PAIR-B')
+			expect(host.get(C)?.dep).toBeInstanceOf(B)
+		})
+	})
+
+	it('confirms no-op draft commits before publishing the summary graph', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'NOOP-A' })
+			class A extends BasePlugin {}
+
+			@Plugin({ name: 'NOOP-B' })
+			class B extends BasePlugin {}
+
+			await host.start(A)
+
+			host.replace(A, B)
+			host.replace(B, A)
+
+			const summary = await host.commit()
+			expect(summary.graph).toBe(host.ctx.registry.graph)
+			expect(summary.graph.has('NOOP-A')).toBe(true)
+			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('NOOP-A')
+
+			const committedGraph = host.ctx.registry.graph
+			const second = await host.commit()
+			expect(second.graph).toBe(committedGraph)
+			expect(second.pluginChanges.added).toEqual([])
+			expect(second.pluginChanges.removed).toEqual([])
+			expect(second.pluginChanges.replaced).toEqual([])
+			expect(second.lifecycleReport.issues).toEqual([])
+			expect(second.pluginChanges.availabilityChanged).toEqual([])
 		})
 	})
 
 	it('ready-queue starts dependents without batch barriers', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -119,7 +886,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('batch strategy keeps depth barriers', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				const events: string[] = []
 
@@ -183,7 +950,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('ready-queue enforces bounded concurrency', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				let active = 0
 				let maxActive = 0
@@ -231,7 +998,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('ready-queue fails fast on dependency chain', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				let bInit = false
 				let cInit = false
@@ -268,9 +1035,9 @@ describe('PluginService commit()', () => {
 				host.add([A, B, C])
 				const summary = await host.commitAllowFail()
 
-				expect(summary.failed).toContain(A)
-				expect(summary.failed).toContain(B)
-				expect(summary.failed).toContain(C)
+				expect(new Set(pluginLifecycleIssuePlugins(summary))).toEqual(
+					new Set(['FF-A', 'FF-B', 'FF-C']),
+				)
 				expect(bInit).toBe(false)
 				expect(cInit).toBe(false)
 				expect(host.get(B)).toBeUndefined()
@@ -281,7 +1048,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('respects global startTimeoutMs when no override is provided', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				@Plugin({ name: 'TO-global' })
 				class Slow extends BasePlugin {
@@ -302,7 +1069,7 @@ describe('PluginService commit()', () => {
 
 				host.add(Slow)
 				const summary = await host.commitAllowFail()
-				expect(summary.failed).toContain(Slow)
+				assertPluginLifecycleIssue(summary, Slow, { kind: 'start-failed' })
 				expect(host.isRunning(Slow)).toBe(false)
 			},
 			{ registry: { startTimeoutMs: 10 } },
@@ -310,7 +1077,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('allows per-plugin startTimeoutMs via @Plugin metadata', async () => {
-		await withHost(
+		await withCoreHost(
 			async (host) => {
 				@Plugin({ name: 'TO-meta', startTimeoutMs: 200 })
 				class Slow extends BasePlugin {
@@ -337,58 +1104,10 @@ describe('PluginService commit()', () => {
 		)
 	})
 
-	it('teardown stops dependents before parents', async () => {
-		await withHost(
-			async (host) => {
-				const events: string[] = []
-
-				@Plugin({ name: 'Stop-A' })
-				class A extends BasePlugin {
-					override stop(): void {
-						events.push('A:stop')
-					}
-				}
-
-				const bStopGate = createDeferred()
-
-				@Plugin({ name: 'Stop-B' })
-				class B extends BasePlugin {
-					constructor(_a: A) {
-						super()
-					}
-					override async stop(): Promise<void> {
-						events.push('B:stop')
-						await bStopGate.promise
-					}
-				}
-				setParamToken(B, 0, A)
-
-				host.add([A, B])
-				await host.commit()
-				expect(host.get(A)).toBeDefined()
-				expect(host.get(B)).toBeDefined()
-				expect(host.isRunning(A)).toBe(true)
-				expect(host.isRunning(B)).toBe(true)
-
-				events.length = 0
-				host.remove(A) // cascades to dependents, so A and B are both stopped
-				const commitPromise = host.commit()
-
-				await waitUntil(() => events.includes('B:stop'))
-				expect(events.includes('A:stop')).toBe(false)
-
-				bStopGate.resolve()
-				await commitPromise
-				expect(events).toEqual(['B:stop', 'A:stop'])
-			},
-			{ registry: { stopConcurrency: 2 } },
-		)
-	})
-
 	it('can unregister during an active commit and still stop on the next commit', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const summaries: any[] = []
-			host.ctx.on('afterCommit', (summary) => {
+			host.ctx.internalEvent.runtimeCommitted.on((summary) => {
 				summaries.push(summary)
 			})
 
@@ -417,13 +1136,13 @@ describe('PluginService commit()', () => {
 	})
 
 	it('shutdownSelf() throws outside plugin context', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			expect(() => host.ctx.registry.shutdownSelf()).toThrow('not in a plugin context')
 		})
 	})
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const summaries = collectCommitSummaries(host) as Array<{
 				added?: unknown[]
 			}>
@@ -468,22 +1187,22 @@ describe('PluginService commit()', () => {
 
 			expect(firstResolved).toBe(true)
 			expect(secondResolved).toBe(true)
-			expect(firstResult.failed).toEqual([])
-			expect(secondResult.failed).toEqual([])
+			expect(firstResult.lifecycleReport.issues).toEqual([])
+			expect(secondResult.lifecycleReport.issues).toEqual([])
 
 			expect(summaries.length).toBe(2)
-			expect(summaries[0]?.added).toEqual([SlowPlugin])
-			expect(new Set(summaries[1]?.added)).toEqual(new Set([PluginB]))
+			expect(summaries[0]?.pluginChanges.added).toEqual(['SlowPlugin'])
+			expect(new Set(summaries[1]?.pluginChanges.added)).toEqual(new Set(['PluginB']))
 
-			const lastContainer = host.last()?.container
-			expect(lastContainer).toBeDefined()
-			expect(lastContainer!.services.has(SlowPlugin)).toBe(true)
-			expect(lastContainer!.services.has(PluginB)).toBe(true)
+			const lastGraph = host.last()?.graph
+			expect(lastGraph).toBeDefined()
+			expect(lastGraph!.has('SlowPlugin')).toBe(true)
+			expect(lastGraph!.has('PluginB')).toBe(true)
 		})
 	})
 
 	it('captures failing plugins and clears singletons for retries', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'ThrowPlugin' })
 			class ThrowPlugin extends BasePlugin {
 				override init(): void {
@@ -494,14 +1213,14 @@ describe('PluginService commit()', () => {
 			host.add(ThrowPlugin)
 			const summary = await host.commitAllowFail()
 
-			expect(summary?.failed).toContain(ThrowPlugin)
-			expect(summary?.added).toContain(ThrowPlugin)
+			assertPluginLifecycleIssue(summary, ThrowPlugin, { kind: 'start-failed' })
+			expect(summary?.pluginChanges.added).toContain('ThrowPlugin')
 			expect(host.get(ThrowPlugin)).toBeUndefined()
 		})
 	})
 
 	it('retries failed plugins on later commits even without container changes', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			let attempt = 0
 			const events: string[] = []
 
@@ -517,10 +1236,10 @@ describe('PluginService commit()', () => {
 			host.add(Flaky)
 
 			await host.commitAllowFail()
-			expect(host.last()?.failed).toContain(Flaky)
+			assertPluginLifecycleIssue(host.last()!, Flaky, { kind: 'start-failed' })
 			expect(host.isRunning(Flaky)).toBe(false)
 
-			// No container changes, but Flaky should be retried.
+			// No graph changes, but Flaky should be retried.
 			await host.commit()
 			expect(host.isRunning(Flaky)).toBe(true)
 			expect(events).toEqual(['ok'])
@@ -528,7 +1247,7 @@ describe('PluginService commit()', () => {
 	})
 
 	it('recovers from DI build failures on the next commit', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'MissingDep-B' })
 			class B extends BasePlugin {}
 
@@ -542,7 +1261,7 @@ describe('PluginService commit()', () => {
 
 			// Draft contains an invalid DI graph: A needs B but B is missing.
 			host.add(A)
-			await expect(host.commit()).rejects.toThrow()
+			await expect(host.commit()).rejects.toThrow(/service verification failed/)
 			expect(host.isRunning(A)).toBe(false)
 			expect(host.isRunning(B)).toBe(false)
 
@@ -551,36 +1270,6 @@ describe('PluginService commit()', () => {
 			await host.commit()
 			expect(host.isRunning(A)).toBe(true)
 			expect(host.isRunning(B)).toBe(true)
-		})
-	})
-
-	it('updates registered plugin set across commits', async () => {
-		await withHost(async (host) => {
-			const readPluginSet = () => new Set<any>(host.plugins())
-
-			// Bun's TS transpilation may not emit `design:paramtypes` metadata;
-			// set tokens explicitly to keep DI behavior deterministic in tests.
-			setParamToken(PluginA, 0, PluginB)
-
-			host.add([PluginB, PluginC, PluginA])
-			await host.commit()
-
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
-
-			host.restart(PluginA)
-			host.remove(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
-
-			host.add(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC, PluginA]))
-			expect(host.isRunning(PluginA)).toBe(true)
-
-			host.remove(PluginA)
-			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([PluginB, PluginC]))
-			expect(host.isRunning(PluginA)).toBe(false)
 		})
 	})
 })

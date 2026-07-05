@@ -1,7 +1,7 @@
 import { cancel, intro, isCancel, note, outro, spinner, text } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
-import { resolvePluginEnv } from '@pluxel/build/cli'
+import { resolvePluginEnv } from '@pluxel/rolldown/build'
 import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { parsePackageName, pascalCase, suggestPackageName, validatePackageName } from './name'
 import {
@@ -148,7 +148,7 @@ export const newCommand = define({
 				throw error
 			}
 
-			ctx.log(`\n${pm} dev`)
+			ctx.log(`\n${pm} build`)
 		}
 
 		outro(`✔ Done.\ncd ${plan.targetDir}`)

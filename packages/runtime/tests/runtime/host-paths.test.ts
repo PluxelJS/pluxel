@@ -9,16 +9,18 @@ describe('runtime host path policy', () => {
 		const paths = resolveRuntimeStoragePaths(root)
 
 		expect(paths.configFile).toBe(resolve(root, 'data/runtime/config.json'))
+		expect(paths.runtimeStateFile).toBe(resolve(root, 'data/runtime/state.json'))
+		expect(paths.persistenceDir).toBe(resolve(root, 'data/persistence'))
 		expect(paths.pluginDataDir).toBe(resolve(root, 'data/plugin-data'))
 		expect(paths.packageStateFile).toBe(resolve(root, 'data/runtime/package-state.json'))
 		expect(paths.logsDir).toBe(resolve(root, 'logs'))
 		expect(paths.logFile).toBe(resolve(root, 'logs/runtime.log'))
 	})
 
-	it('expands profiled config paths without leaking hmr semantics into runtime helpers', () => {
-		const resolved = resolveProfiledPath('/workspace/app/.pluxel/hmr/config.json', 'dev')
-		expect(resolved.path).toBe('/workspace/app/.pluxel/hmr/config.dev.json')
-		expect(resolved.fallbackPath).toBe('/workspace/app/.pluxel/hmr/config.json')
+	it('expands profiled config paths without leaking dev-route semantics into runtime helpers', () => {
+		const resolved = resolveProfiledPath('/workspace/app/.pluxel/runtime/config.json', 'dev')
+		expect(resolved.path).toBe('/workspace/app/.pluxel/runtime/config.dev.json')
+		expect(resolved.fallbackPath).toBe('/workspace/app/.pluxel/runtime/config.json')
 	})
 
 	it('supports explicit {profile} layout tokens for host-owned storage policies', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Config, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Config, Plugin, withCoreHost } from '@pluxel/core/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const PassthroughSchema: StandardSchemaV1 = {
@@ -12,7 +12,7 @@ const PassthroughSchema: StandardSchemaV1 = {
 
 describe('ConfigService', () => {
 	it('returns the per-plugin config snapshot in plugin context', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'P' })
 			class P extends BasePlugin {
 				@Config(PassthroughSchema)
@@ -29,7 +29,7 @@ describe('ConfigService', () => {
 	})
 
 	it('reuses the cached validated snapshot across schemaMap recreation', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.ctx.configService.patchConfig('P', { answer: 1 })
 
 			const first = await host.ctx.configService.ensureValidated('P', { answer: PassthroughSchema })
@@ -42,7 +42,7 @@ describe('ConfigService', () => {
 	})
 
 	it('does not bump revision for no-op patches/unsets', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.ctx.configService.patchConfig('P', { answer: 1 })
 			const rev1 = host.ctx.configService.getConfigRevision('P')
 
@@ -58,7 +58,7 @@ describe('ConfigService', () => {
 	})
 
 	it('stores enable/disable preferences without interpreting them', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			expect(host.cfg('P').enabled()).toBe(false)
 
 			host.cfg('P').enable()

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, getPluginInfo, withHost } from '@pluxel/test'
+import { BasePlugin, ForkablePlugin, Plugin, getPluginInfo, withCoreHost } from '@pluxel/core/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { cfg } from '@pluxel/core'
 
@@ -81,7 +81,7 @@ describe('TestHost config injection', () => {
 		expect(info.configMap).toBeTruthy()
 		expect(info.configBindingsMap).toBeTruthy()
 
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			seen = []
 
 			const svc1 = host.ctx.configService
@@ -127,7 +127,7 @@ describe('TestHost config injection', () => {
 		expect(Object.keys(info.configMap ?? {}).sort()).toEqual(['a', 'b'])
 		expect(info.configBindingsMap).toMatchObject({ settings: ['a', 'b'] })
 
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			seen = []
 
 			host.cfg(CfgGroups).set({ a: 'hello', b: 42 })
@@ -145,7 +145,7 @@ describe('TestHost config injection', () => {
 		expect(Object.keys(info.configMap ?? {}).sort()).toEqual(['a', 'b'])
 		expect(info.configBindingsMap).toMatchObject({ settings: ['a', 'b'] })
 
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			seen = []
 
 			host.cfg(CfgGroupsWithMd).set({ a: 'hello', b: 42 })
@@ -171,7 +171,7 @@ describe('TestHost config injection', () => {
 	})
 
 	it('supports fork ids via runtime pluginInfo.id', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(ForkCfg)
 			const A = host.fork(ForkCfg, 'a')
 			const B = host.fork(ForkCfg, 'b')

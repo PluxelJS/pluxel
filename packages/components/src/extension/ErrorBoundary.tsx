@@ -14,7 +14,7 @@ interface ExtensionErrorBoundaryState {
 	error: Error | null
 }
 
-export class ExtensionErrorBoundary extends Component<
+class ExtensionErrorBoundaryImpl extends Component<
 	ExtensionErrorBoundaryProps,
 	ExtensionErrorBoundaryState
 > {
@@ -34,16 +34,6 @@ export class ExtensionErrorBoundary extends Component<
 		onError?.(error, errorInfo)
 	}
 
-	override componentDidUpdate(prevProps: ExtensionErrorBoundaryProps) {
-		if (
-			prevProps.extensionId !== this.props.extensionId ||
-			prevProps.pluginName !== this.props.pluginName
-		&& this.state.hasError
-		) {
-			this.setState({ hasError: false, error: null })
-		}
-	}
-
 	override render(): ReactNode {
 		const { hasError, error } = this.state
 		const { children, fallback } = this.props
@@ -55,4 +45,9 @@ export class ExtensionErrorBoundary extends Component<
 		}
 		return children
 	}
+}
+
+export function ExtensionErrorBoundary(props: ExtensionErrorBoundaryProps) {
+	const { extensionId, pluginName, point } = props
+	return <ExtensionErrorBoundaryImpl key={`${pluginName}:${extensionId}:${point}`} {...props} />
 }

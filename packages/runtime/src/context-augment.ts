@@ -1,9 +1,10 @@
 import type { HttpServiceConfig } from './services/http/HttpService'
 import type { ExtensionServiceConfig } from './services/plugin-interaction/ExtensionService'
+import type { ManagementConfig } from './services/verification/types'
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
-// HMR/Vite-specific config keys must live in @pluxel/hmr (dev-only), so runtime remains a clean kernel.
+// Vite/loader-hmr-specific config keys must live in @pluxel/runtime-dynamic/hmr, so runtime remains a clean kernel.
 
 declare module '@pluxel/core' {
 	namespace Context {
@@ -12,8 +13,10 @@ declare module '@pluxel/core' {
 			path?: string
 			/** Workspace profile (generic). */
 			profile?: string
-			/** HTTP/control-plane runtime settings. */
+			/** HTTP runtime settings. Management internals are owned by route launchers. */
 			http?: HttpServiceConfig
+			/** Host management surface and access policy. */
+			management?: ManagementConfig
 			/** UI extension registry settings. */
 			extensionService?: ExtensionServiceConfig
 		}

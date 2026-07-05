@@ -1,7 +1,12 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import type { BuiltinBadgeValue, BuiltinInfoCardBlock } from '@pluxel/runtime/web/extensions'
 import { useSignalDbQueryState } from '@pluxel/runtime/web'
-import { isObject, resolveSignalDbRef, useSignalDbForValues } from './_shared'
+import {
+	isObject,
+	resolveSignalDbRef,
+	stableSignalDbValueKey,
+	useSignalDbForValues,
+} from './_shared'
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
 	return Boolean(value) && typeof value === 'object' && (value as any).kind === 'badge'
@@ -72,6 +77,7 @@ export function BuiltinInfoCard({
 	block: BuiltinInfoCardBlock
 }) {
 	const rows = Array.isArray(block.rows) ? block.rows : []
+	const rowsKey = stableSignalDbValueKey(rows)
 	const signalDbCollections = useSignalDbForValues(
 		pluginName,
 		rows.map((r) => r?.value),
@@ -82,13 +88,13 @@ export function BuiltinInfoCard({
 			rows.map((row) => {
 				const value: any = row?.value
 				if (!isObject(value)) return row
-				if (value.kind === 'signaldb') {
-					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
-					return { ...row, value: nextValue as any }
-				}
+					if (value.kind === 'signaldb') {
+						const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
+						return Object.assign({}, row, { value: nextValue as any })
+					}
 				return row
 			}),
-		[rows, signalDbCollections],
+		[pluginName, rowsKey],
 	)
 
 	const layout = block.layout ?? {}

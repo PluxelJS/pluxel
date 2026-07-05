@@ -4,8 +4,7 @@
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
-
-import type { OpPublicDescriptor } from '@pluxel/ops'
+export type { VaultKeyPair } from '../services/vault/types'
 
 /**
  * UI extensibility surface.
@@ -31,7 +30,13 @@ export interface ExtensionUiRpcMap {}
 export interface ExtensionUiSseMap {}
 export interface ExtensionUiSignalDbMap {}
 
-export type PluginStatusAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
+export type PluginStatusAction =
+	| 'start'
+	| 'stop'
+	| 'restart'
+	| 'enable'
+	| 'enable-persisted'
+	| 'disable'
 export type ConfigPatch = Record<string, unknown>
 export type ConfigFieldMutation = {
 	schemaKey: string
@@ -121,7 +126,7 @@ export type SchemaResultOk = {
 
 export type SchemaResultErr = {
 	ok: false
-	code: 'plugin_not_found' | 'schema_not_found'
+	code: string
 	message: string
 }
 
@@ -143,16 +148,6 @@ export type PluginStatusBatchResult = {
 	commitError?: string
 }
 
-export type RuntimeOpDescriptor = OpPublicDescriptor
-export type RuntimeOpCatalogOwnerKind = 'runtime' | 'plugin' | 'context'
-export type RuntimeOpCatalogEntry = {
-	id: string
-	owner: string
-	ownerKind: RuntimeOpCatalogOwnerKind
-	pluginId?: string
-	descriptor: RuntimeOpDescriptor
-}
-
 export type PluginStatusEntryLifecycleStage = 'running' | 'stopped' | 'disabled'
 
 export type PluginDependencyKind = 'plugin' | 'base' | 'forkable'
@@ -165,42 +160,10 @@ export type PluginGroupInput = {
 
 export type PluginGroup = {
 	__typename?: 'PluginGroup'
+	id: string
 	groupId: string
 	name: string
 	pluginIds: string[]
-}
-
-export type OpsToolsetInput = {
-	toolsetId: string
-	name: string
-	description?: string
-	opIds: string[]
-}
-
-export type OpsToolset = {
-	__typename?: 'OpsToolset'
-	toolsetId: string
-	name: string
-	description?: string
-	opIds: string[]
-}
-
-export type RuntimeOpToolsetEntry = {
-	id: string
-	title: string
-	description?: string
-	tags: string[]
-	owner: string
-	ownerKind: RuntimeOpCatalogOwnerKind
-	pluginId?: string
-	mutating: boolean
-	confirm: boolean
-}
-
-export type RuntimeOpToolsetManifest = {
-	toolset: OpsToolset
-	tools: RuntimeOpToolsetEntry[]
-	missingOpIds: string[]
 }
 
 export type PluginDependencyOption = {
@@ -211,6 +174,7 @@ export type PluginDependencyOption = {
 
 export type PluginDependencyRef = {
 	name?: string
+	isRunning?: boolean
 }
 
 export type PluginDependencyState = {
@@ -253,6 +217,7 @@ export type PackageSpecInput = {
 
 export type PackageIssueSpec = {
 	__typename: 'PackageIssueSpec'
+	key: string
 	name: string
 	version: string | null
 	tag: string | null
@@ -262,6 +227,7 @@ export type PackageIssueSpec = {
 
 export type PackageLoadIssue = {
 	__typename: 'PackageLoadIssue'
+	id: string
 	spec: PackageIssueSpec
 	source: 'load' | 'restore' | 'retry'
 	message: string
@@ -272,6 +238,7 @@ export type PackageLoadIssue = {
 
 export type PackageInventoryEntry = {
 	__typename: 'PackageInventoryEntry'
+	id: string
 	spec: PackageIssueSpec
 	installedVersion: string | null
 	requestedVersion: string | null
@@ -306,6 +273,7 @@ export type PackageMutationInput = {
 
 export type PackageMutationResult = {
 	__typename: 'PackageMutationResult'
+	id: string
 	ok: boolean
 	code: string
 	spec: PackageIssueSpec | null
@@ -320,11 +288,26 @@ export type PackageBatchResult = {
 	error: string | null
 }
 
-export interface PackageHandleApi {
+export type PackageManagerSnapshot = {
+	__typename: 'PackageManagerSnapshot'
+	inventory: PackageInventoryEntry[]
+	loadIssues: PackageLoadIssue[]
+}
+
+export interface PackageManagerFeatureApi {
 	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
+	snapshot: (filter?: PackageInventoryFilter) => Promise<PackageManagerSnapshot>
 	inventory: (filter?: PackageInventoryFilter) => Promise<PackageInventoryEntry[]>
 	loadIssues: () => Promise<PackageLoadIssue[]>
 }
+
+export type RuntimeRouteFeatureApiMap = {
+	packageManager: PackageManagerFeatureApi
+}
+
+export type RuntimeRouteFeatureName = keyof RuntimeRouteFeatureApiMap
+export type RuntimeRouteFeatureApi<Name extends RuntimeRouteFeatureName = RuntimeRouteFeatureName> =
+	RuntimeRouteFeatureApiMap[Name]
 
 export interface BuildSnapshotResult {
 	ok: boolean
@@ -339,38 +322,59 @@ export interface ExtensionSessionHandleApi {
 }
 
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
-export type PluginLogLevel = LogLevel | null
+export type RuntimePluginLogLevel = LogLevel | 'off'
 
-export type PluginLevelsSnapshot = {
-	/** Includes `'*'` for the default when set. */
-	levels: Record<string, PluginLogLevel>
+export type PluginLogPolicySnapshot = {
+	defaultLevel?: RuntimePluginLogLevel
+	overrides: Record<string, RuntimePluginLogLevel>
 }
 
 export type LoggingHandleApi = {
-	getPluginLevels: () => Promise<PluginLevelsSnapshot>
-	setPluginLevel: (pluginId: string, level: PluginLogLevel) => Promise<{ ok: true }>
-	deletePluginLevel: (pluginId: string) => Promise<{ ok: true }>
-	setPluginLevelDefault: (level: PluginLogLevel) => Promise<{ ok: true }>
-	deletePluginLevelDefault: () => Promise<{ ok: true }>
-	clearPluginLevels: () => Promise<{ ok: true }>
+	getPolicy: () => Promise<PluginLogPolicySnapshot>
+	replacePolicy: (snapshot: PluginLogPolicySnapshot) => Promise<PluginLogPolicySnapshot>
+	setDefaultLevel: (level: RuntimePluginLogLevel) => Promise<PluginLogPolicySnapshot>
+	clearDefaultLevel: () => Promise<PluginLogPolicySnapshot>
+	setPluginLevel: (
+		pluginId: string,
+		level: RuntimePluginLogLevel,
+	) => Promise<PluginLogPolicySnapshot>
+	clearPluginLevel: (pluginId: string) => Promise<PluginLogPolicySnapshot>
+	resetPolicy: () => Promise<PluginLogPolicySnapshot>
 }
 
 type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	ping: () => string
-	package: () => PackageHandleApi
+	features: () => string[]
+	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
 	logging: () => LoggingHandleApi
 	ui: () => ExtensionSessionHandleApi
 	ext: ExtRpc
 	extensions: () => string[]
 	buildSnapshot: () => Promise<BuildSnapshotResult>
-	opsList: () => RuntimeOpDescriptor[]
-	opsCatalog: () => RuntimeOpCatalogEntry[]
-	opsToolsets: () => OpsToolset[]
-	resolveOpsToolset: (toolsetId: string) => RuntimeOpToolsetManifest | null
-	opsInvoke: (id: string, input?: unknown) => Promise<unknown>
-	opsDispatch: (command: string) => Promise<unknown>
-	updateOpsToolsets: (toolsets: OpsToolsetInput[]) => Promise<OpsToolset[]>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
+	pluginSchema: (name: string) => Promise<SchemaResult>
+	pluginConfig: (name: string) => Promise<ConfigResult>
+	patchPluginConfig: (name: string, patch: Record<string, unknown>) => Promise<ConfigResult>
+	patchPluginConfigField: (name: string, input: ConfigFieldMutation) => Promise<ConfigResult>
+	pluginDependencies: (name: string) => Promise<PluginDependencyRef[]>
+	inspectPluginDependencies: (name: string) => Promise<PluginDependencyState[]>
+	setPluginDependencyTarget: (input: {
+		name: string
+		index: number
+		targetName: string | null
+	}) => Promise<PluginDependencyMutationResult>
+	inspectPluginBaseProvider: (name: string) => Promise<BaseProviderInfo | null>
+	selectPluginBaseProvider: (input: {
+		name: string
+		baseToken: string
+		providerName: string | null
+	}) => Promise<PluginDependencyMutationResult>
+	ensurePluginFork: (input: {
+		baseName: string
+		forkId: string
+		enable?: boolean
+	}) => Promise<EnsureForkResult>
+	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
 }
 
 export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>

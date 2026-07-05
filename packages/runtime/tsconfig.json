@@ -5,14 +5,17 @@
 	"compilerOptions": {
 		"noEmit": false,
 		"paths": {
+			"@pluxel/core-di": ["packages/core-di/src/index.ts"],
+			"@pluxel/core-di/*": ["packages/core-di/src/*"],
 			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
 			"@pluxel/runtime/*": ["packages/runtime/src/*"],
 			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
 			"@pluxel/runtime/capnweb": ["packages/runtime/src/capnweb.ts"],
-			"@pluxel/runtime/config": ["packages/runtime/src/config.ts"],
+			"@pluxel/runtime/api": ["packages/runtime/src/api/contributions.ts"],
 			"@pluxel/runtime/logger": ["packages/runtime/src/logger.ts"],
+			"@pluxel/runtime/plugin-catalog": ["packages/runtime/src/plugin-catalog.ts"],
+			"@pluxel/runtime/protocol": ["packages/runtime/src/protocol.ts"],
 			"@pluxel/runtime/events": ["packages/runtime/src/events.ts"],
-			"@pluxel/runtime/services": ["packages/runtime/src/services.ts"],
 			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"],
 			"@pluxel/runtime/frozen": ["packages/runtime/src/frozen.ts"]
 		},

@@ -25,8 +25,12 @@
 			"path": "packages/diod",
 		},
 		{
-			"name": "📁 @pluxel/hmr",
-			"path": "packages/hmr",
+			"name": "📁 @pluxel/runtime-dynamic",
+			"path": "packages/runtime-dynamic",
+		},
+		{
+			"name": "📁 @pluxel/runtime-static",
+			"path": "packages/runtime-static",
 		},
 		{
 			"name": "📁 @pluxel/rolldown",
@@ -80,14 +84,21 @@
 				"label": "📁 diod",
 				"foreground": "#ffffff",
 				"background": "#16af78",
-			},
-			{
-				"path": "/home/ahdg/code/plugin-style-ts/packages/hmr",
-				"packageName": "@pluxel/hmr",
-				"label": "📁 @pluxel/hmr",
-				"foreground": "#ffffff",
-				"background": "#662b90",
-			},
+		},
+		{
+			"path": "/home/ahdg/code/plugin-style-ts/packages/runtime-dynamic",
+			"packageName": "@pluxel/runtime-dynamic",
+			"label": "📁 @pluxel/runtime-dynamic",
+			"foreground": "#ffffff",
+			"background": "#662b90",
+		},
+		{
+			"path": "/home/ahdg/code/pluxel-workspace/pluxel/packages/runtime-static",
+			"packageName": "@pluxel/runtime-static",
+			"label": "📁 @pluxel/runtime-static",
+			"foreground": "#ffffff",
+			"background": "#24524a",
+		},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/rolldown",
 				"packageName": "@pluxel/rolldown",
@@ -108,7 +119,7 @@
 		"exportall.config.folderListener": [
 			"/packages/components/src/components/Plugin",
 			"/packages/components/src/form/schema",
-			"/packages/hmr/tests/ui-demos",
+			"/packages/runtime-dynamic/tests/ui-demos",
 		],
 		"exportall.config.relExclusion": ["/packages/components/src/app/Dashboard/Example.tsx"],
 		"cSpell.words": ["gqloom", "Gqty", "tabler"],

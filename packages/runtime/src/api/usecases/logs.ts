@@ -102,7 +102,6 @@ function mergeFilters(a: LogFilter | undefined, b: LogFilter | undefined): LogFi
 	if (a.displayName && b.displayName && a.displayName !== b.displayName) return null
 	if (a.category && b.category && a.category !== b.category) return null
 	const out: LogFilter = { ...a }
-	assignDefined(out, 'name', b.name)
 	assignDefined(out, 'pluginId', b.pluginId)
 	assignDefined(out, 'context', b.context)
 	assignDefined(out, 'displayName', b.displayName)
@@ -187,7 +186,7 @@ export function logsLatest(input: LogsLatestInput = {}): LogsLatestOutput {
 /**
  * Wait for logs matching filter/cursor.
  *
- * This stays MCP-friendly: clients can call it in a loop to simulate SSE tailing.
+ * Transport-neutral polling helper: clients can call it in a loop to simulate SSE tailing.
  */
 export async function logsWaitFor(input: LogsWaitInput = {}): Promise<LogsLatestOutput> {
 	const first = logsLatest(input)

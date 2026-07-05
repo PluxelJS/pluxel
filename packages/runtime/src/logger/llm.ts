@@ -7,7 +7,7 @@ export type LlmLogFormatOptions = {
 	maxLineChars?: number
 	/** Maximum stack lines to include for error-like props. Defaults to 6. */
 	maxStackLines?: number
-	/** Include category prefix (e.g. pluxel.hmr). Defaults to true. */
+	/** Include category prefix (e.g. pluxel.plugins). Defaults to true. */
 	includeCategory?: boolean
 	/** Include plugin/context/name hint. Defaults to true. */
 	includeOrigin?: boolean

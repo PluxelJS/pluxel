@@ -1,10 +1,7 @@
-import '@pluxel/test/setup'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { createHost, type Host } from '@pluxel/test'
-import { afterEach, describe, expect, it } from 'vitest'
-
-import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime/services'
+import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime'
 
 @Plugin({ name: 'ScopedHttpPlugin', type: 'event' })
 class ScopedHttpPlugin extends BasePlugin {
@@ -29,71 +26,65 @@ class DynamicScopedHttpPlugin extends BasePlugin {
 }
 
 describe('HttpService plugin-scoped mount', () => {
-	let host: Host | null = null
-
-	afterEach(async () => {
-		if (!host) return
-		await host.dispose()
-		host = null
-	})
-
 	it('mounts plugin routes under the plugin id prefix and auto-disposes on unload', async () => {
-		host = createHost()
-		host.add(ScopedHttpPlugin)
-		host.cfg('ScopedHttpPlugin').enable()
-		await host.commit()
+		await withRuntimeHost(async (host) => {
+			host.add(ScopedHttpPlugin)
+			host.cfg('ScopedHttpPlugin').enable()
+			await host.commit()
 
-		const rootRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
-		)
-		expect(rootRes.status).toBe(200)
-		expect(await rootRes.text()).toBe('root')
+			const rootRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
+			)
+			expect(rootRes.status).toBe(200)
+			expect(await rootRes.text()).toBe('root')
 
-		const settingsRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin/settings`),
-		)
-		expect(settingsRes.status).toBe(200)
-		expect(await settingsRes.text()).toBe('settings')
+			const settingsRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin/settings`),
+			)
+			expect(settingsRes.status).toBe(200)
+			expect(await settingsRes.text()).toBe('settings')
 
-		host.remove(ScopedHttpPlugin)
-		await host.commit()
+			host.remove(ScopedHttpPlugin)
+			await host.commit()
 
-		const removedRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
-		)
-		expect(removedRes.status).toBe(404)
+			const removedRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
+			)
+			expect(removedRes.status).toBe(404)
+		})
 	})
 
 	it('supports replacing a mounted plugin route tree to add routes dynamically', async () => {
-		host = createHost()
-		host.add(DynamicScopedHttpPlugin)
-		host.cfg('DynamicScopedHttpPlugin').enable()
-		await host.commit()
+		await withRuntimeHost(async (host) => {
+			host.add(DynamicScopedHttpPlugin)
+			host.cfg('DynamicScopedHttpPlugin').enable()
+			await host.commit()
 
-		let rootRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
-		)
-		expect(rootRes.status).toBe(200)
-		expect(await rootRes.text()).toBe('v1')
+			let rootRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
+			)
+			expect(rootRes.status).toBe(200)
+			expect(await rootRes.text()).toBe('v1')
 
-		let extraRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
-		)
-		expect(extraRes.status).toBe(404)
+			let extraRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
+			)
+			expect(extraRes.status).toBe(404)
 
-		const instance = host.ctx.registry.getInstance(DynamicScopedHttpPlugin)
-		instance?.replaceRoutes()
+			const instance = host.ctx.registry.getInstance(DynamicScopedHttpPlugin)
+			instance?.replaceRoutes()
 
-		rootRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
-		)
-		expect(rootRes.status).toBe(200)
-		expect(await rootRes.text()).toBe('v2')
+			rootRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
+			)
+			expect(rootRes.status).toBe(200)
+			expect(await rootRes.text()).toBe('v2')
 
-		extraRes = await host.ctx.http.fetch(
-			new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
-		)
-		expect(extraRes.status).toBe(200)
-		expect(await extraRes.text()).toBe('extra')
+			extraRes = await host.ctx.http.fetch(
+				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
+			)
+			expect(extraRes.status).toBe(200)
+			expect(await extraRes.text()).toBe('extra')
+		})
 	})
 })

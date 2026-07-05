@@ -4,7 +4,7 @@ import {
 	pluxelOxlintIgnorePatterns,
 	prefixPluxelRuleSet,
 	pluxelRules,
-} from './packages/workspace/src/oxlint/index.ts'
+} from './packages/rolldown/src/workspace/oxlint/index.ts'
 
 /**
  * Lint design goals for this repo:
@@ -53,47 +53,45 @@ const categories: Categories = {
 const ignorePatterns: IgnorePatterns = [...pluxelOxlintIgnorePatterns]
 
 const createOverride = (files: GlobSet, rules: RuleMap): OxlintOverride => ({ files, rules })
-// Baseline repo policy: the default stance for rules we explicitly keep on/off.
+// Repository deviations from enabled defaults. Rules should appear here only when
+// Pluxel intentionally differs from oxlint/plugin recommendations.
 const baselineRules: RuleMap = {
 	'eslint/no-await-in-loop': 'off',
-	'eslint/no-control-regex': 'error',
+	// Pluxel intentionally uses underscore names for runtime globals, Node compatibility
+	// shims, decorator/DI fields, and double-underscore internal hooks.
+	'eslint/no-underscore-dangle': 'off',
 	'eslint/no-unmodified-loop-condition': 'off',
 	'eslint/no-unused-expressions': 'off',
 	'eslint/no-unused-vars': 'warn',
-	'import/no-default-export': 'off',
 	'import/no-unassigned-import': 'off',
 	'import/no-cycle': 'error',
+	// This repo uses Vitest. Keep overlapping Jest assertion/title rules disabled so test
+	// diagnostics come from the Vitest plugin defaults instead of two near-identical rule sets.
 	'jest/expect-expect': 'off',
 	'jest/no-conditional-expect': 'off',
 	'jest/no-standalone-expect': 'off',
 	'jest/require-to-throw-message': 'off',
 	'jest/valid-expect': 'off',
 	'jest/valid-title': 'off',
-	'promise/always-return': 'error',
-	'promise/no-callback-in-promise': 'error',
-	'promise/no-multiple-resolved': 'error',
 	'react/exhaustive-deps': 'off',
 	'react/no-array-index-key': 'off',
 	'react/no-danger': 'error',
-	'react/no-danger-with-children': 'error',
+	'react/no-unstable-nested-components': 'off',
 	'react/react-in-jsx-scope': 'off',
 	'react/rules-of-hooks': 'off',
-	'typescript/no-empty-interface': 'off',
-	'typescript/no-explicit-any': 'off',
 	'typescript/no-extraneous-class': 'off',
-	'typescript/no-non-null-assertion': 'off',
 	'unicorn/consistent-function-scoping': 'off',
 	'unicorn/no-array-sort': 'off',
 	'unicorn/prefer-add-event-listener': 'off',
 	'unicorn/require-module-specifiers': 'off',
+	'vitest/no-standalone-expect': 'off',
 	'vitest/require-mock-type-parameters': 'off',
 }
 
-// Extra rules that survived repository-wide scans and targeted fixes.
+// Non-default extra rules that survived repository-wide scans and targeted fixes.
 // The acceptance bar is intentionally pragmatic: low noise, stable gain, broad applicability.
 const highSignalRules: RuleMap = {
 	'eslint/no-duplicate-imports': 'error',
-	'eslint/no-useless-concat': 'error',
 	'eslint/prefer-object-has-own': 'error',
 	'unicorn/error-message': 'error',
 	'unicorn/explicit-length-check': 'error',
@@ -102,16 +100,12 @@ const highSignalRules: RuleMap = {
 	'unicorn/no-immediate-mutation': 'error',
 	'unicorn/no-instanceof-array': 'error',
 	'unicorn/no-new-buffer': 'error',
-	'unicorn/no-single-promise-in-promise-methods': 'error',
 	'unicorn/no-useless-collection-argument': 'error',
-	'unicorn/no-thenable': 'error',
-	'unicorn/prefer-array-flat-map': 'error',
 	'unicorn/prefer-array-some': 'error',
 	'unicorn/prefer-includes': 'error',
 	'unicorn/prefer-node-protocol': 'error',
 	'unicorn/prefer-optional-catch-binding': 'error',
 	'unicorn/prefer-reflect-apply': 'error',
-	'unicorn/prefer-set-size': 'error',
 	'unicorn/prefer-string-replace-all': 'error',
 	'unicorn/prefer-type-error': 'error',
 	'unicorn/throw-new-error': 'error',

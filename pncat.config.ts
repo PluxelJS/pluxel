@@ -15,10 +15,11 @@ const BACKEND_PACKAGES: (string | RegExp)[] = [
 	'@hono/valibot-validator',
 ]
 const GRAPHQL_PACKAGES: (string | RegExp)[] = [
+	'@gqlens/codegen',
+	'@gqlens/core',
+	'@gqlens/react',
 	'@gqloom/core',
 	'@gqloom/valibot',
-	'@gqty/cli',
-	'gqty',
 	'graphql',
 	'graphql-scalars',
 	'graphql-yoga',
@@ -37,7 +38,7 @@ const LOGGING_PACKAGES: (string | RegExp)[] = [
 	'@poppinss/dumper',
 	'youch',
 ]
-const WORKFLOW_PACKAGES: (string | RegExp)[] = ['exsolve', 'knitwork', '@tanstack/pacer', 'xstate']
+const WORKFLOW_PACKAGES: (string | RegExp)[] = ['knitwork', '@tanstack/pacer', 'xstate']
 const NODE_RUNTIME_PACKAGES: (string | RegExp)[] = ['chokidar', 'pathe', 'pkg-types']
 
 export default defineConfig({

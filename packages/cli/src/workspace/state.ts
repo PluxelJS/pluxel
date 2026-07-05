@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/workspace'
+import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/rolldown/workspace/info'
 import { isAbsolute, normalize, relative, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { CLI_DEFAULTS } from '../config'
@@ -96,10 +96,7 @@ export function addWorkspacePattern(root: string, input: string): Promise<Worksp
 	return mutateWorkspacePattern(root, input, 'add')
 }
 
-export function removeWorkspacePattern(
-	root: string,
-	input: string,
-): Promise<WorkspaceMutation> {
+export function removeWorkspacePattern(root: string, input: string): Promise<WorkspaceMutation> {
 	return mutateWorkspacePattern(root, input, 'remove')
 }
 

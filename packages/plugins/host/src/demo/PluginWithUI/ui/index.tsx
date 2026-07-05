@@ -121,8 +121,6 @@ export default definePluginUIModule({
 			definition: {
 				path: '/standalone',
 				title: 'PluginWithUI Standalone',
-				addToNav: true,
-				navPriority: 40,
 				frame: 'standalone',
 			},
 			render: () => <StandaloneRoutePage />,

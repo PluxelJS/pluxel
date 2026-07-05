@@ -81,7 +81,39 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 		const out = formatter(record)
 		expect(out).toContain('HMR updated')
 		expect(out).toContain('status=failed')
-		expect(out).toContain('error: reload failed: broken export shape')
+		expect(out).toContain('error: commit: reload failed: broken export shape')
+		expect(out).not.toContain('⟪')
+	})
+
+	it('renders failed "HMR updated" with stage-specific execute and prefetch details', () => {
+		const formatter = createFormatter()
+
+		const record: LogRecord = {
+			category: ['pluxel', 'hmr'],
+			level: 'warning',
+			timestamp: Date.now(),
+			message: ['HMR updated'],
+			rawMessage: 'HMR updated',
+			properties: {
+				context: 'root',
+				ok: false,
+				epoch: 3,
+				changedFiles: 1,
+				targets: 1,
+				affected: 1,
+				fallbackRoots: 1,
+				activeServices: 5,
+				batchMs: 31.2,
+				invalidated: { vite: 1, runner: 1 },
+				prefetchFailed: 1,
+				executeError: 'Unexpected token',
+			},
+		}
+
+		const out = formatter(record)
+		expect(out).toContain('status=failed')
+		expect(out).toContain('prefetch: failed=1')
+		expect(out).toContain('error: execute: Unexpected token')
 		expect(out).not.toContain('⟪')
 	})
 
@@ -96,7 +128,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 			rawMessage: 'HMR report',
 			properties: {
 				context: 'root',
-				reason: 'executeFiles',
+				reason: 'update',
 				scope: { roots: 2, entries: 9, anchors: 3 },
 				plugins: { loaded: 22, enabled: 22, running: 21 },
 				pluginsByRoot: { mode: 'byRoot', reasons: ['ok'] },
@@ -110,7 +142,7 @@ describe('createPluxelPrettyFormatter (hmr)', () => {
 
 		const out = formatter(record)
 		expect(out).toContain('HMR report')
-		expect(out).toContain('reason=executeFiles')
+		expect(out).toContain('reason=update')
 		expect(out).toContain('roots=2')
 		expect(out).toContain('plugins=22:22:21')
 		expect(out).toContain('roots:')

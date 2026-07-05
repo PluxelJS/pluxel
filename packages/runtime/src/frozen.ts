@@ -55,30 +55,37 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import '@pluxel/runtime'
+import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
+import '@pluxel/runtime-dynamic/register'
 ${imports}
 
 const ctx = new Context({
 \tprofile: ${JSON.stringify(profile)},
 \tconfigService: {
 \t\t// Frozen hosts still need a mutable bootstrap phase because builtin preload
-\t\t// records schema/extra metadata into ConfigService. Keep it in-memory so the
+\t\t// records schema metadata into ConfigService. Keep it in-memory so the
 \t\t// export stays side-effect free while allowing runtime baseline registration.
 \t\tmode: 'memory',
 \t\tsnapshot: {
-\t\t\tenabled: ${JSON.stringify([...enabled])},
 \t\t\tplugins: ${JSON.stringify(configPayload, null, 2)},
+\t\t},
+\t},
+\truntimeState: {
+\t\tmode: 'memory',
+\t\tsnapshot: {
+\t\t\tenabled: ${JSON.stringify([...enabled])},
 \t\t},
 \t},
 \tpackageService: {
 \t\tpolicy: { allowInstall: false, allowUninstall: false },
 \t\tstate: { enabled: false },
 \t},
-\thttp: {
-\t\tuiAssets: ${JSON.stringify(options.bootstrap?.uiAssets ?? 'disabled')},
-\t\tcontrolPlane: ${JSON.stringify(options.bootstrap?.controlPlane ?? { web: false, rpc: false, sse: false, auth: 'none' })},
-\t},
+\thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
+\tmanagement: ${JSON.stringify(options.bootstrap?.management ?? { enabled: false, access: { exposure: 'private' } })},
 \textensionService: { enabled: false },
 })
+
+await bootstrapHostVault(ctx)
 
 await ctx.loader.preloadPlugins(
 \t[

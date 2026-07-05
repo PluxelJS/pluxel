@@ -7,7 +7,7 @@ import {
 	createPluxelUiChunkGroups,
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
-} from '../workspace/src/vite'
+} from '@pluxel/rolldown/workspace/vite'
 import { createRuntimeWebPlugins } from './vite/plugins'
 
 const runtimeAliases = [
@@ -36,16 +36,8 @@ const runtimeAliases = [
 		replacement: fileURLToPath(new URL('./src/capnweb.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/config$/,
-		replacement: fileURLToPath(new URL('./src/config.ts', import.meta.url)),
-	},
-	{
 		find: /^@pluxel\/runtime\/logger$/,
 		replacement: fileURLToPath(new URL('./src/logger.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/services$/,
-		replacement: fileURLToPath(new URL('./src/services.ts', import.meta.url)),
 	},
 ]
 

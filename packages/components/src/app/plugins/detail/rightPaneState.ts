@@ -123,12 +123,6 @@ export function sanitizeRightPaneState(value: unknown): RightPaneState {
 	}
 }
 
-export function readStoredPaneState(
-	getActiveTabState: <T = unknown>(scope: string) => T | undefined,
-) {
-	return sanitizeRightPaneState(getActiveTabState(RIGHT_PANE_VIEW_STATE_KEY))
-}
-
 export function buildRightPaneTabGroups(
 	pluginName: string,
 	tabItems: Array<{ meta?: unknown }>,
@@ -286,7 +280,29 @@ export function formatCompactSource(
 ) {
 	if (packageName) return `${packageName}${version ? `@${version}` : ''}`
 	if (!moduleId) return '未知来源'
-	const segments = moduleId.split(/[/\\]+/).filter(Boolean)
-	if (segments.length <= 3) return moduleId
-	return `…/${segments.slice(-3).join('/')}`
+	return shortenPathSegments(moduleId)
+}
+
+export function shortenPathSegments(path: string, keep = 3) {
+	const segments = path.split(/[/\\]+/).filter(Boolean)
+	if (segments.length <= keep) return path
+	return `…/${segments.slice(-keep).join('/')}`
+}
+
+export function resolveKnownPluginName(
+	knownPluginNames: ReadonlySet<string>,
+	pluginName: string,
+) {
+	if (knownPluginNames.has(pluginName)) return pluginName
+	const hash = pluginName.lastIndexOf('#')
+	return hash > 0 && knownPluginNames.has(pluginName.slice(0, hash))
+		? pluginName.slice(0, hash)
+		: undefined
+}
+
+export function matchesKnownPluginName(
+	knownPluginNames: ReadonlySet<string>,
+	pluginName: string,
+) {
+	return resolveKnownPluginName(knownPluginNames, pluginName) !== undefined
 }

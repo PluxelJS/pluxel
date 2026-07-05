@@ -1,18 +1,10 @@
-export type { DevRuntimeHandles } from './runtime/dev-handles'
-export {
-	clearDevRuntimeHandles,
-	getDevRuntimeHandles,
-	setDevRuntimeHandles,
-} from './runtime/dev-handles'
-
-export type { RuntimeModuleAdapter, RuntimeModuleCacheEntry } from './runtime/module-runtime'
-export {
-	clearRuntimeModuleAdapter,
-	createHmrModuleRuntimeAdapter,
-	getRuntimeModuleAdapter,
-	hasRuntimeModuleAdapter,
-	setRuntimeModuleAdapter,
-} from './runtime/module-runtime'
+export { runtimeDevCapabilities, runtimeModuleRuntime } from './runtime/capabilities'
+export type {
+	RuntimeDevCapabilities,
+	RuntimeModuleCacheEntry,
+	RuntimeModuleRuntime,
+	RuntimeWorkerWatchOptions,
+} from './runtime/capabilities'
 
 export type {
 	MaterializeProfiledFileOptions,
@@ -25,8 +17,14 @@ export {
 	resolveProfiledPath,
 	resolveRuntimeStoragePaths,
 } from './runtime/paths'
-export { resolveModuleIdBaseDir, resolveModuleIdPath } from './runtime/module-id'
+export {
+	findRuntimeModuleId,
+	resolveModuleIdBaseDir,
+	resolveModuleIdPath,
+} from './runtime/module-id'
+export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
+export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 
-// Dev-only helpers used by @pluxel/hmr (kept out of the public `services` surface).
+// HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'
 export { createCompiledExtensionModule } from './services/plugin-interaction/ExtensionService'

@@ -44,8 +44,10 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
-		"@pluxel/hmr": "workspace:*",
-		"fdir": "^6.5.0",
+		"@pluxel/market": "^0.1.0",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"gunshi": "^0.29.2",
 		"jsonc-parser": "^3.3.1",
 		"package-manager-detector": "^1.6.0",
@@ -55,18 +57,15 @@
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
-		"@pluxel/build": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@pluxel/workspace": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"@types/react": "^19.2.14",
 		"ink": "^6.8.0",
-		"react": "^19.2.4",
-		"tsdown": "^0.21.7",
-		"typescript": "^6.0.2"
+		"react": "^19.2.7",
+		"tsdown": "^0.22.3",
+		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "*",
 		"oxlint": "^1.58.0",
 		"tsdown": "*"
 	}

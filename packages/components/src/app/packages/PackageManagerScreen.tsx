@@ -47,6 +47,7 @@ import {
 	type PackageBatchResult,
 	type PackageInventoryEntry,
 	type PackageLoadIssue,
+	type PackageManagerFeatureApi,
 	type PackageSpecInput,
 	useRuntimeTransportClient,
 } from '../../runtime'
@@ -93,6 +94,23 @@ export function PackageManagerScreen() {
 	const notify = useNotify()
 	const pendingInstallSpecs = useMemo(() => parseInstallSpecs(installInput), [installInput])
 
+	const ensurePackageManagerAvailable = useCallback(async (): Promise<void> => {
+		const features = await transport.withRpc((rpc) => rpc.features())
+		if (!features.includes('packageManager')) {
+			throw new Error('当前运行路线不支持包管理功能')
+		}
+	}, [transport])
+
+	const withPackageManager = useCallback(
+		async <T,>(
+			runner: (feature: PackageManagerFeatureApi) => Promise<T>,
+		): Promise<T> => {
+			await ensurePackageManagerAvailable()
+			return await transport.withRpc((rpc) => runner(rpc.feature('packageManager')))
+		},
+		[ensurePackageManagerAvailable, transport],
+	)
+
 	const statuses = useMemo(() => {
 		try {
 			return [...(overviewState.overview?.status?.statuses ?? [])]
@@ -114,13 +132,9 @@ export function PackageManagerScreen() {
 			setInlineError(null)
 			if (!hasSnapshot) setPageError(null)
 			try {
-				const result = await transport.withRpc(async (rpc) => {
-					const pkg = rpc.package()
-					const [nextInventory, nextIssues] = await Promise.all([
-						pkg.inventory({ includeUntracked: showAllPackages }),
-						pkg.loadIssues(),
-					])
-					return { inventory: nextInventory, issues: nextIssues }
+				const result = await withPackageManager(async (pkg) => {
+					const snapshot = await pkg.snapshot({ includeUntracked: showAllPackages })
+					return { inventory: snapshot.inventory, issues: snapshot.loadIssues }
 				})
 				if (requestId !== requestIdRef.current) return
 				setInventory(Array.isArray(result.inventory) ? result.inventory : [])
@@ -145,7 +159,7 @@ export function PackageManagerScreen() {
 		inflightRef.current = task
 		inflightKeyRef.current = snapshotKey
 		return task
-	}, [transport, showAllPackages])
+	}, [withPackageManager, showAllPackages])
 
 	useEffect(() => {
 		void refetch()
@@ -328,19 +342,19 @@ export function PackageManagerScreen() {
 		[notify],
 	)
 
-	const runMarketMutation = useCallback(
+	const runPackageMutation = useCallback(
 		async (
 			action: 'install' | 'uninstall' | 'remove' | 'reinstall' | 'reload' | 'retry',
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
-			const result = await transport.withRpc((rpc) =>
-				rpc.package().mutate({ action, specs, options }),
+			const result = await withPackageManager((pkg) =>
+				pkg.mutate({ action, specs, options }),
 			)
 			invalidate({ topic: 'package-data', reason: action })
 			return result
 		},
-		[transport],
+		[withPackageManager],
 	)
 
 	const applyOperationLogs = useCallback((result?: PackageBatchResult | null) => {
@@ -397,7 +411,7 @@ export function PackageManagerScreen() {
 			openBatchOperationLog(config.logTitle, targets)
 			config.setLoading(true)
 			try {
-				const result = await runMarketMutation(
+				const result = await runPackageMutation(
 					config.action,
 					selectedRows.map(toSpecInput),
 					config.options,
@@ -427,7 +441,7 @@ export function PackageManagerScreen() {
 			notify,
 			openBatchOperationLog,
 			refetch,
-			runMarketMutation,
+			runPackageMutation,
 			selectedRows,
 			summarizeBatchResult,
 		],
@@ -477,7 +491,7 @@ export function PackageManagerScreen() {
 			const spec = toSpecInput(config.row)
 			config.setLoading(true)
 			try {
-				const result = await runMarketMutation(config.action, [spec], config.options)
+				const result = await runPackageMutation(config.action, [spec], config.options)
 				const entry = result?.results?.[0]
 				if (!entry || result?.error || entry.ok === false) {
 					notify({
@@ -503,7 +517,7 @@ export function PackageManagerScreen() {
 				config.setLoading(false)
 			}
 		},
-		[notify, refetch, runMarketMutation],
+		[notify, refetch, runPackageMutation],
 	)
 
 	const openRowConfirm = useCallback(
@@ -556,7 +570,7 @@ export function PackageManagerScreen() {
 				return (hint ? `${name}@${hint}` : name).toLowerCase()
 			}
 
-			const result = await runMarketMutation(
+			const result = await runPackageMutation(
 				'install',
 				specs.map((raw) => ({ raw })),
 				{ force: forceInstall },

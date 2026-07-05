@@ -22,7 +22,7 @@ export type PluxelLogtapeConfigPreset = 'core' | 'hmr'
 export type PluxelUiLoggerOptions = {
 	/** Sink id used in `config.sinks`. */
 	id?: string
-	/** The sink instance (e.g. `createLogStoreSink(...)`). */
+	/** The sink instance (e.g. `createRuntimeLogSink(...)`). */
 	sink: Sink
 	/** Categories that should write to this sink. */
 	categories?: ReadonlyArray<string | readonly string[]>
@@ -34,111 +34,7 @@ export type PluxelUiLoggerOptions = {
 
 export type PluxelUiOption = Sink | PluxelUiLoggerOptions
 
-export type PluxelLogLevelInput = LogLevel | 'warn' | string
-export type PluxelPluginLogLevel = PluxelLogLevelInput | null
-export type PluxelPluginLogLevels =
-	| Record<string, PluxelPluginLogLevel>
-	| Map<string, PluxelPluginLogLevel>
-	| ((pluginId: string) => PluxelPluginLogLevel | undefined)
-	| PluxelPluginLevelState
-
-export type PluxelPluginLevelState = {
-	get(pluginId: string): PluxelPluginLogLevel | undefined
-	set(pluginId: string, level: PluxelPluginLogLevel): void
-	delete(pluginId: string): void
-	clear(): void
-	/** Whether there is any rule at all (default `'*'` or per-plugin). */
-	hasAnyRules(): boolean
-	/** Whether there is any per-plugin (non-`'*'`) rule. */
-	hasPerPluginRules(): boolean
-	/** Stored under `'*'`. */
-	getDefault(): PluxelPluginLogLevel | undefined
-	/** Stored under `'*'`. */
-	setDefault(level: PluxelPluginLogLevel): void
-	/** Snapshot for persistence/inspection. */
-	toRecord(): Record<string, PluxelPluginLogLevel>
-	/** Function form (dynamic): suitable for `createPluxelLogtapeConfig({ pluginLevels })`. */
-	lookup: (pluginId: string) => PluxelPluginLogLevel | undefined
-}
-
-export function createPluxelPluginLevelState(
-	init?: Record<string, PluxelPluginLogLevel>,
-): PluxelPluginLevelState {
-	const map = new Map<string, LogLevel | null>()
-	let pluginRuleCount = 0 // excludes "*"
-	let hasDefault = false
-	if (init) {
-		for (const [k, v] of Object.entries(init)) {
-			const normalized = normalizeLogLevelInput(v)
-			if (normalized === undefined) continue
-			map.set(k, normalized)
-			if (k === '*') hasDefault = true
-			else pluginRuleCount++
-		}
-	}
-
-	function set(pluginId: string, level: PluxelPluginLogLevel) {
-		const normalized = normalizeLogLevelInput(level)
-		const existed = map.has(pluginId)
-		if (normalized === undefined) {
-			if (!existed) return
-			map.delete(pluginId)
-			if (pluginId === '*') hasDefault = false
-			else pluginRuleCount--
-			return
-		}
-
-		map.set(pluginId, normalized)
-		if (!existed) {
-			if (pluginId === '*') hasDefault = true
-			else pluginRuleCount++
-		}
-	}
-
-	function del(pluginId: string) {
-		const existed = map.has(pluginId)
-		if (!existed) return
-		map.delete(pluginId)
-		if (pluginId === '*') hasDefault = false
-		else pluginRuleCount--
-	}
-
-	function clear() {
-		map.clear()
-		pluginRuleCount = 0
-		hasDefault = false
-	}
-
-	return {
-		get(pluginId) {
-			return map.get(pluginId)
-		},
-		set,
-		delete: del,
-		clear,
-		hasAnyRules() {
-			return hasDefault || pluginRuleCount > 0
-		},
-		hasPerPluginRules() {
-			return pluginRuleCount > 0
-		},
-		getDefault() {
-			return map.get('*')
-		},
-		setDefault(level) {
-			set('*', level)
-		},
-		toRecord() {
-			// Return a plain object (Object.prototype) so this snapshot is safe to serialize or send over RPC.
-			const out: Record<string, PluxelPluginLogLevel> = {}
-			for (const [k, v] of map.entries()) out[k] = v
-			return out
-		},
-		lookup(pluginId) {
-			return map.get(pluginId) ?? map.get('*')
-		},
-	}
-}
+export type PluxelPluginLevelLookup = (pluginId: string | undefined) => LogLevel | null | undefined
 
 export type PluxelLogtapeConfigOptions = {
 	/**
@@ -180,19 +76,8 @@ export type PluxelLogtapeConfigOptions = {
 	 */
 	ui?: PluxelUiOption | false
 
-	/**
-	 * Per-plugin log level overrides (matched by `record.properties.pluginId`).
-	 *
-	 * - `null` disables logging for that plugin.
-	 * - `'*'` key is treated as a default for maps/records.
-	 * - For dynamic routing, provide a function.
-	 */
-	pluginLevels?: PluxelPluginLogLevels
-	/**
-	 * Default log level for plugin logs when no plugin-level override matches.
-	 * Falls back to `lowestLevel` when omitted.
-	 */
-	pluginLevelDefault?: PluxelPluginLogLevel
+	/** Runtime plugin log policy lookup. `null` disables the plugin. */
+	pluginLevelLookup?: PluxelPluginLevelLookup
 
 	/**
 	 * Debug topics to enable at debug level.
@@ -235,78 +120,6 @@ function resolveLowestLevel(explicit: LogLevel | null | undefined): LogLevel | n
 	} catch {
 		return 'info'
 	}
-}
-
-function normalizeLogLevelInput(
-	level: PluxelLogLevelInput | null | undefined,
-): LogLevel | null | undefined {
-	if (level === undefined) return undefined
-	if (level === null) return null
-	if (level === 'warn') return 'warning'
-	// Fast path: avoid parse/allocs for the common case.
-	if (
-		level === 'trace' ||
-		level === 'debug' ||
-		level === 'info' ||
-		level === 'warning' ||
-		level === 'error' ||
-		level === 'fatal'
-	) {
-		return level
-	}
-	return parseLogLevel(String(level))
-}
-
-type PluginLevelLookupFn = (pluginId: string | undefined) => LogLevel | null | undefined
-type PluginLevelLookup = PluginLevelLookupFn & {
-	/** If present, allows log filters to short-circuit without touching record.properties. */
-	hasAnyRules?: () => boolean
-	hasPerPluginRules?: () => boolean
-	getDefault?: () => LogLevel | null | undefined
-}
-
-function normalizePluginLevels(input?: PluxelPluginLogLevels): PluginLevelLookup | null {
-	if (!input) return null
-	if (typeof input === 'object' && 'lookup' in input && typeof input.lookup === 'function') {
-		const state = input as PluxelPluginLevelState
-		const fn = ((pluginId: string | undefined) =>
-			state.lookup(pluginId ?? '*') as LogLevel | null | undefined) as PluginLevelLookup
-		fn.hasAnyRules = () => state.hasAnyRules()
-		fn.hasPerPluginRules = () => state.hasPerPluginRules()
-		fn.getDefault = () => state.getDefault() as LogLevel | null | undefined
-		return fn
-	}
-	if (typeof input === 'function') {
-		return (pluginId) => normalizeLogLevelInput(input(pluginId ?? '*'))
-	}
-	if (input instanceof Map) {
-		const normalized = new Map<string, LogLevel | null>()
-		for (const [key, value] of input.entries()) {
-			const resolved = normalizeLogLevelInput(value)
-			if (resolved !== undefined) normalized.set(key, resolved)
-		}
-		const fn = ((pluginId: string | undefined) =>
-			normalized.get(pluginId ?? '*') ?? normalized.get('*')) as PluginLevelLookup
-		const hasDefault = normalized.has('*')
-		const perPluginRuleCount = normalized.size - (hasDefault ? 1 : 0)
-		fn.hasAnyRules = () => normalized.size > 0
-		fn.hasPerPluginRules = () => perPluginRuleCount > 0
-		fn.getDefault = () => normalized.get('*')
-		return fn
-	}
-	const normalized = new Map<string, LogLevel | null>()
-	for (const [key, value] of Object.entries(input)) {
-		const resolved = normalizeLogLevelInput(value)
-		if (resolved !== undefined) normalized.set(key, resolved)
-	}
-	const fn = ((pluginId: string | undefined) =>
-		normalized.get(pluginId ?? '*') ?? normalized.get('*')) as PluginLevelLookup
-	const hasDefault = normalized.has('*')
-	const perPluginRuleCount = normalized.size - (hasDefault ? 1 : 0)
-	fn.hasAnyRules = () => normalized.size > 0
-	fn.hasPerPluginRules = () => perPluginRuleCount > 0
-	fn.getDefault = () => normalized.get('*')
-	return fn
 }
 
 /**
@@ -386,8 +199,7 @@ export function createPluxelLogtapeConfig(
 		const lowestLevel = ui.lowestLevel ?? 'trace'
 		for (const category of categories) {
 			loggers.push({
-				category:
-					typeof category === 'string' ? category : [...category as readonly string[]],
+				category: typeof category === 'string' ? category : [...(category as readonly string[])],
 				sinks: [id],
 				lowestLevel,
 				parentSinks: ui.parentSinks,
@@ -409,43 +221,18 @@ export function createPluxelLogtapeConfig(
 	}
 	loggers.unshift(baseLogger)
 
-	const pluginLevelLookup = normalizePluginLevels(opts.pluginLevels)
-	const pluginDefaultLevel =
-		opts.pluginLevelDefault !== undefined
-			? normalizeLogLevelInput(opts.pluginLevelDefault)
-			: baseLowestLevel
-	if (pluginLevelLookup || opts.pluginLevelDefault !== undefined) {
+	if (opts.pluginLevelLookup) {
 		const id = 'pluxelPluginLevels'
 		filters[id] = ((record: LogRecord) => {
 			const category = record.category
 			if (category[0] !== 'pluxel' || category[1] !== 'plugins') return true
 
-			// Avoid touching record.properties unless we might need pluginId.
-			// LogTape "properties" can be lazy (resolved via getters), so reading it can be expensive
-			// and may allocate/compute more than we need.
-			if (!pluginLevelLookup) {
-				const level = pluginDefaultLevel
-				if (level === null || level === undefined) return false
-				return compareLogLevel(record.level, level) >= 0
-			}
-			if (pluginLevelLookup.hasAnyRules && pluginLevelLookup.hasAnyRules() === false) {
-				const level = pluginDefaultLevel
-				if (level === null || level === undefined) return false
-				return compareLogLevel(record.level, level) >= 0
-			}
-			if (pluginLevelLookup.hasPerPluginRules && pluginLevelLookup.hasPerPluginRules() === false) {
-				const overrideDefault = pluginLevelLookup.getDefault?.()
-				const level = overrideDefault !== undefined ? overrideDefault : pluginDefaultLevel
-				if (level === null || level === undefined) return false
-				return compareLogLevel(record.level, level) >= 0
-			}
-
 			const props = record.properties
 			const pluginId =
 				props && typeof props === 'object' ? (props as Record<string, unknown>).pluginId : undefined
-			const override = pluginLevelLookup(typeof pluginId === 'string' ? pluginId : undefined)
-			const level = override !== undefined ? override : pluginDefaultLevel
-			if (level === null || level === undefined) return false
+			const level = opts.pluginLevelLookup!(typeof pluginId === 'string' ? pluginId : undefined)
+			if (level === undefined) return true
+			if (level === null) return false
 			return compareLogLevel(record.level, level) >= 0
 		}) satisfies FilterLike
 

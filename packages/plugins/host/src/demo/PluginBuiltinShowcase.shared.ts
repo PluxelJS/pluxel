@@ -1,4 +1,4 @@
-import { f, v } from '@pluxel/runtime/config'
+import { f, v } from '@pluxel/runtime'
 
 const MIN_REFRESH_MS = 250
 const MAX_REFRESH_MS = 10_000

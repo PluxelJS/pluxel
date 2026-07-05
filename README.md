@@ -3,32 +3,32 @@
 ```bash
 pnpm install
 pnpm build
-pnpm dev
+pnpm plugin-host:dynamic
 ```
 
 文档入口（先看这些，避免被历史笔记误导）：
 
 - `docs/README.md`
-- `docs/architecture/system.md`
-- `docs/governance/packaging.md`
-- `docs/governance/agent-rules.md`
+- `docs/CORE.md`
+- `docs/RUNTIME.md`
+- `docs/HMR.md`
+- `docs/FRONTEND.md`
+- `docs/CONFIG.md`
+- `docs/proposals/README.md`
 
 开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
 
 ```bash
-pnpm dev
-pnpm dev:smoke
-pnpm deploy:managed
-pnpm deploy:managed:smoke
-pnpm deploy:frozen
-pnpm deploy:frozen:smoke
+pnpm plugin-host:dynamic
+pnpm plugin-host:static
 ```
 
 当前包边界：
 
 - `@pluxel/core`：最小稳定内核（Context/DI/插件生命周期与基础 services 合约）
 - `@pluxel/runtime`：生产 runtime kernel（services + 稳定协议/路由 + web SDK + frozen）
-- `@pluxel/hmr`：开发期运行时（Vite + watch + runner + HMR，attach 到既有 ctx）
+- `@pluxel/runtime-dynamic`：动态插件路线；`/vite` 提供 host-owned Vite route，`/hmr` 保留内部 workspace/HMR primitives
+- `@pluxel/runtime-static`：固定插件路线；`/vite` 提供 static route，承载 fixed catalog startup、startup/change report 与轻量 static HMR
 - `@pluxel/cli`：命令行入口（build/scaffold/hmr）
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/plugins/*`：workspace 内置插件与宿主样例（internal；不属于发布包集合）
@@ -37,7 +37,6 @@ pnpm deploy:frozen:smoke
 
 ```bash
 pnpm test           # full (turbo)
-pnpm test:affected  # affected since origin/main (turbo)
 pnpm test:watch     # watch mode (vitest, workspace)
 pnpm test:watch -- --project=@pluxel/runtime  # watch a single project
 

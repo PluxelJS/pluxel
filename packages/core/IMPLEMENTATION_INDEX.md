@@ -1,12 +1,13 @@
 # @pluxel/core — Implementation Index (for LLM)
 
-目标：索引 core 的公共导出、关键注册点与依赖边界，避免误把 runtime/hmr 逻辑塞进 core。
+目标：索引 core 的公共导出、关键注册点与依赖边界，避免误把 runtime/loader-hmr 逻辑塞进 core。
 
 仓库级约束与设计目标见：
 
-- `docs/architecture/system.md`
-- `docs/governance/packaging.md`
-- `docs/governance/agent-rules.md`
+- `docs/CORE.md`
+- `docs/CONFIG.md`
+- `docs/GOVERNANCE.md`
+- `docs/proposals/README.md`
 
 ## Public Surface (package exports)
 
@@ -20,6 +21,12 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
+- `packages/core/docs/runtime-update/DESIGN.md`
+  - runtime declaration update / HMR 支持的核心重设设计、性能预算、迁移阶段和被否决方向
+- `packages/core/docs/runtime-update/STATUS.md`
+  - runtime update 重构当前已完成、未完成、Phase 3 RuntimePluginKey graph 收口状态、下一步接手顺序和快速验证命令
+- `packages/core/docs/runtime-update/RATIONALE.md`
+  - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
 
 ## Services
 

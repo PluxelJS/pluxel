@@ -420,6 +420,9 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	const epoch = typeof props.epoch === 'number' ? props.epoch : undefined
 	const ok = typeof props.ok === 'boolean' ? props.ok : undefined
 	const commitError = typeof props.commitError === 'string' ? props.commitError : undefined
+	const executeError = typeof props.executeError === 'string' ? props.executeError : undefined
+	const injectError = typeof props.injectError === 'string' ? props.injectError : undefined
+	const prefetchFailed = typeof props.prefetchFailed === 'number' ? props.prefetchFailed : undefined
 	const changedFiles = typeof props.changedFiles === 'number' ? props.changedFiles : undefined
 	const changedPreview = Array.isArray(props.changedPreview)
 		? (props.changedPreview.filter((x) => typeof x === 'string') as string[])
@@ -491,8 +494,20 @@ function formatHmrUpdatedDetails(record: LogRecord, colorsOn: boolean): string[]
 	if (commitMs) timeParts.push(`commit=${commitMs}`)
 	if (timeParts.length > 0) lines.push(`    time: ${timeParts.join(' ')}`)
 
-	if (commitError)
-		lines.push(`    error: ${String(commitError).replaceAll(/\s+/g, ' ').slice(0, 240)}`)
+	if (prefetchFailed && prefetchFailed > 0)
+		lines.push(`    prefetch: failed=${fmtCount(prefetchFailed)}`)
+
+	const stageError = executeError
+		? ['execute', executeError]
+		: injectError
+			? ['inject', injectError]
+			: commitError
+				? ['commit', commitError]
+				: null
+	if (stageError) {
+		const [stage, error] = stageError
+		lines.push(`    error: ${stage}: ${String(error).replaceAll(/\s+/g, ' ').slice(0, 240)}`)
+	}
 
 	const pluginParts: string[] = []
 	if (pluginsLoaded !== undefined) pluginParts.push(`loaded=${fmtCount(pluginsLoaded)}`)
@@ -824,7 +839,7 @@ export function withPluxelMessagePrefix(
 			includeCaller && isCallerEnabled()
 				? typeof record.properties.caller === 'string'
 					? (record.properties.caller as string)
-					: captureCaller({ exclude: formatter })
+					: captureCaller()
 				: undefined
 
 		const nextRecord = { ...record, message } as LogRecord

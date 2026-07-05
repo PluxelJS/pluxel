@@ -5,16 +5,18 @@ import {
 	ConfigService as CoreConfigService,
 	normalizeConfigRecord,
 } from '@pluxel/core/services'
-import { watch, type FSWatcher } from 'chokidar'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
+import type { PersistenceNamespace } from './persistence/PersistenceService'
 
-// —— 3. 全局配置 ——
-export interface ConfigShape {
-	enabled: Set<string>
+export interface PluginConfigFile {
+	version: 1
 	plugins: Record<string, Record<string, unknown>>
-	extra: Record<string, unknown>
+}
+
+export interface ConfigShape {
+	plugins: Record<string, Record<string, unknown>>
 }
 
 export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
@@ -23,9 +25,7 @@ export interface ConfigServiceConfig {
 	mode?: ConfigServiceMode
 	path?: string
 	snapshot?: Partial<{
-		enabled: Iterable<string> | string[]
 		plugins: Record<string, Record<string, unknown>>
-		extra: Record<string, unknown>
 	}>
 }
 
@@ -53,9 +53,7 @@ export class ConfigService {
 	public readonly ready: Promise<void>
 
 	private readonly data: ConfigShape = {
-		enabled: new Set(),
 		plugins: Object.create(null),
-		extra: Object.create(null),
 	}
 	private readonly file: string
 	private readonly saveDelayMs = 200
@@ -65,7 +63,6 @@ export class ConfigService {
 	private saveAgain = false
 	private pendingWriteDigest: string | undefined
 	private lastWrittenDigest: string | undefined
-	private watcher: FSWatcher | undefined
 	private disposed = false
 	private configSeq = 0
 	private configRevByPlugin = new Map<string, number>()
@@ -87,24 +84,18 @@ export class ConfigService {
 	private pendingSave = false
 	private readonly mode: ConfigServiceMode
 	private readonly readonlyMode: boolean
+	private readonly storage: PersistenceNamespace
 
 	constructor(ctx: PluxelContext, cfg: ConfigServiceConfig = {}) {
 		this.ctx = ctx
-		// 允许调用方把方法解构出来用（避免丢失 this 导致 this.data 为空）
-		this.getExtra = this.getExtra.bind(this)
-		this.setExtra = this.setExtra.bind(this)
 
-		// Default mode depends on the filesystem backend:
-		// - In tests we frequently run with an in-memory fs, where "file mode" would cause an
-		//   async boot load that can race with early patchConfig() calls (clobbering patches).
-		// - In normal runtimes, default to file persistence.
-		const fsMode = (ctx.config as unknown as { fs?: { mode?: unknown } })?.fs?.mode
-		const implicitMode: ConfigServiceMode = fsMode === 'memory' ? 'memory' : 'file'
+		const implicitMode = defaultConfigServiceMode(ctx.root.persistence.capability)
 		this.mode = cfg.mode ?? implicitMode
 		this.readonlyMode = this.mode === 'readonly'
+		this.storage = ctx.root.persistence.namespace('config')
 
 		const profile = normalizeProfileName(ctx.config.profile)
-		const runtimeStorage = resolveRuntimeStoragePaths(process.cwd())
+		const runtimeStorage = resolveRuntimeStoragePaths(currentWorkingDirectory())
 		const resolved = resolveProfiledPath(
 			cfg.path ?? ctx.config.path ?? runtimeStorage.configFile,
 			profile,
@@ -116,20 +107,12 @@ export class ConfigService {
 			this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
 				this.isReady = true
 			})
-
-			this.watcher = watch(this.file, {
-				ignoreInitial: true,
-				// 防止编辑器“分块写”引发多次触发
-				awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
-			})
-				.on('add', () => this.onDiskChange(this.file))
-				.on('change', () => this.onDiskChange(this.file))
 		} else {
 			this.isReady = true
 			this.ready = Promise.resolve()
 		}
 
-		// Ensure watcher + pending writes are cleaned up on context disposal (HMR reloads/shutdown).
+		// Ensure pending writes are cleaned up on context disposal (HMR reloads/shutdown).
 		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
 	}
 
@@ -181,32 +164,23 @@ export class ConfigService {
 	// —— I/O 层 —— //
 
 	private async loadFromDisk(file: string, fallbackFile?: string) {
-		const fs = this.ctx.root.fs
 		let txt: string
 		let readFromFallback = false
-		try {
-			const hasPrimary = fs.exists(file)
-			const shouldSeed = !hasPrimary && !!fallbackFile && fs.exists(fallbackFile)
-			if (shouldSeed) {
-				txt = await fs.readText(fallbackFile!)
-				readFromFallback = true
-			} else {
-				txt = await fs.readText(file)
-			}
-		} catch (error) {
+		const primary = await this.storage.getText(file)
+		const fallback =
+			primary === undefined && fallbackFile ? await this.storage.getText(fallbackFile) : undefined
+		if (fallback !== undefined) {
+			txt = fallback
+			readFromFallback = true
+		} else if (primary !== undefined) {
+			txt = primary
+		} else {
 			// Missing file is expected on first run: initialize a clean default.
-			if (isMissingFileError(error)) {
-				this.resetToDefault()
-				this.configRevByPlugin.clear()
-				this.configDigestByPlugin.clear()
-				this.rawViews.clear()
-				this.validated.clear()
-				await this.saveToDisk(file)
-				return
-			}
-
-			this.ctx.logger.warn('ConfigService read failed (fallback to defaults)', { file, error })
 			this.resetToDefault()
+			this.configRevByPlugin.clear()
+			this.configDigestByPlugin.clear()
+			this.rawViews.clear()
+			this.validated.clear()
 			await this.saveToDisk(file)
 			return
 		}
@@ -215,9 +189,9 @@ export class ConfigService {
 		const txtDigest = ohash(txt)
 		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
 
-		let parsed: Partial<ConfigShape> & { enabled?: unknown }
+		let parsed: Partial<PluginConfigFile>
 		try {
-			parsed = SuperJSON.parse(txt) as Partial<ConfigShape> & { enabled?: unknown }
+			parsed = SuperJSON.parse(txt) as Partial<PluginConfigFile>
 		} catch (error) {
 			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', { file, error })
 			await this.isolateBrokenConfigFile(file, txt)
@@ -230,19 +204,8 @@ export class ConfigService {
 			return
 		}
 
-		this.data.enabled.clear()
-		const enabledList = Array.isArray(parsed.enabled)
-			? (parsed.enabled as string[])
-			: parsed?.enabled instanceof Set
-				? [...(parsed.enabled as Set<string>)]
-				: []
-		for (let i = 0; i < enabledList.length; i++) this.data.enabled.add(enabledList[i])
-
 		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
 		this.reconcilePluginsFromDisk(nextPlugins)
-
-		clearRecord(this.data.extra)
-		if (parsed.extra) Object.assign(this.data.extra, parsed.extra)
 
 		if (readFromFallback) {
 			await this.saveToDisk(file)
@@ -250,22 +213,15 @@ export class ConfigService {
 	}
 
 	private resetToDefault() {
-		this.data.enabled.clear()
 		clearRecord(this.data.plugins)
-		clearRecord(this.data.extra)
 	}
 
 	private applySnapshot(
 		snapshot: Partial<{
-			enabled: Iterable<string> | string[]
 			plugins: Record<string, Record<string, unknown>>
-			extra: Record<string, unknown>
 		}>,
 	) {
 		this.resetToDefault()
-		for (const name of snapshot.enabled ?? []) {
-			if (typeof name === 'string' && name) this.data.enabled.add(name)
-		}
 		if (snapshot.plugins) {
 			for (const [name, value] of Object.entries(snapshot.plugins)) {
 				if (!value || typeof value !== 'object') continue
@@ -274,7 +230,6 @@ export class ConfigService {
 				this.configRevByPlugin.set(name, 1)
 			}
 		}
-		if (snapshot.extra) Object.assign(this.data.extra, snapshot.extra)
 	}
 
 	private assertMutable(action: string) {
@@ -286,7 +241,7 @@ export class ConfigService {
 		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
 		const brokenFile = `${file}.broken.${safeTs}`
 		try {
-			await this.ctx.root.fs.writeTextAtomic(brokenFile, content)
+			await this.storage.put(brokenFile, content)
 		} catch (error) {
 			this.ctx.logger.warn('failed to isolate broken config file', { file, brokenFile, error })
 		}
@@ -338,7 +293,7 @@ export class ConfigService {
 		this.validated.delete(name)
 	}
 
-	// 原子写：交给 ctx.root.fs.writeTextAtomic（tmp + rename）
+	// 原子写：交给 ctx.root.persistence backend（tmp + rename for file backend）
 	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
 		const force = options.force ?? false
 		if (!force && this.batching > 0) return // 事务中，先不写；提交时会统一触发
@@ -354,17 +309,20 @@ export class ConfigService {
 			return
 		}
 
-		const content = SuperJSON.stringify(this.data)
+		const content = SuperJSON.stringify({
+			version: 1,
+			plugins: this.data.plugins,
+		} satisfies PluginConfigFile)
 		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && this.ctx.root.fs.exists(file)) return
+		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(file))) return
 
-			this.pendingWriteDigest = nextDigest
-			const task = this.ctx.root.fs
-				.writeTextAtomic(file, content)
-				.then((): undefined => {
-					this.lastWrittenDigest = nextDigest
-					return undefined
-				})
+		this.pendingWriteDigest = nextDigest
+		const task = this.storage
+			.put(file, content)
+			.then((): undefined => {
+				this.lastWrittenDigest = nextDigest
+				return undefined
+			})
 			.finally(() => {
 				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
 			})
@@ -379,18 +337,11 @@ export class ConfigService {
 		}
 	}
 
-	private async onDiskChange(file: string) {
-		if (this.disposed) return
-		await this.loadFromDisk(file)
-	}
-
 	async dispose(): Promise<void> {
 		if (this.disposed) return
 		this.disposed = true
 		this.cancelScheduledSave()
 		await this.flush({ force: true }).catch((): void => undefined)
-		await Promise.resolve(this.watcher?.close()).catch((): void => undefined)
-		this.watcher = undefined
 	}
 
 	// —— 读接口 —— //
@@ -525,12 +476,18 @@ export class ConfigService {
 		return sig
 	}
 
-	getExtra<T = unknown>(key: string): T | undefined {
-		return this.data.extra[key] as T | undefined
-	}
-
-	isEnabledInConfig(name: string): boolean {
-		return this.data.enabled.has(name)
+	/**
+	 * Read a detached snapshot of the plugin config state.
+	 *
+	 * Callers can inspect this for diagnostics and route decisions, but mutating the
+	 * returned object never mutates the live config service.
+	 */
+	getConfigSnapshot(): ConfigShape {
+		const plugins: Record<string, Record<string, unknown>> = Object.create(null)
+		for (const [name, record] of Object.entries(this.data.plugins)) {
+			plugins[name] = { ...record }
+		}
+		return { plugins }
 	}
 
 	// —— 写接口（更简洁的 API）—— //
@@ -589,88 +546,22 @@ export class ConfigService {
 			this.requestSave()
 		}
 	}
-
-	setExtra(key: string, value: unknown) {
-		this.assertMutable('setExtra')
-		if (this.data.extra[key] === value) return
-		this.data.extra[key] = value
-		this.requestSave()
-	}
-
-	/**
-	 * 批量启用：ConfigService.enableInConfig('a', 'b', 'c')
-	 */
-	enableInConfig(...names: readonly string[]) {
-		this.assertMutable('enableInConfig')
-		let changed = false
-		for (let i = 0; i < names.length; i++) {
-			const n = names[i]
-			if (!this.data.enabled.has(n)) {
-				this.data.enabled.add(n)
-				changed = true
-			}
-		}
-		if (changed) this.requestSave()
-	}
-
-	/**
-	 * 批量禁用：ConfigService.disableInConfig('a', 'b')
-	 */
-	disableInConfig(...names: readonly string[]) {
-		this.assertMutable('disableInConfig')
-		let changed = false
-		for (let i = 0; i < names.length; i++) {
-			const n = names[i]
-			if (this.data.enabled.delete(n)) changed = true
-		}
-		if (changed) this.requestSave()
-	}
-
-	/**
-	 * 单个开关（更语义化）
-	 */
-	setEnabledInConfig(name: string, enabled: boolean) {
-		if (enabled) this.enableInConfig(name)
-		else this.disableInConfig(name)
-	}
-
-	/**
-	 * 一次性覆盖启用集合（常用于 UI “全选/重置”）
-	 */
-	replaceEnabledInConfigSet(names: Iterable<string>) {
-		this.assertMutable('replaceEnabledInConfigSet')
-		const next = new Set<string>()
-		for (const n of names) next.add(n)
-
-		let same = next.size === this.data.enabled.size
-		if (same) {
-			for (const n of next) {
-				if (!this.data.enabled.has(n)) {
-					same = false
-					break
-				}
-			}
-		}
-		if (same) return
-
-		this.data.enabled.clear()
-		for (const n of next) this.data.enabled.add(n)
-		this.requestSave()
-	}
 }
 
 function clearRecord(record: Record<string, unknown>) {
 	for (const k in record) delete record[k]
 }
 
-// Optional placeholder: allows callers to control where the profile lands.
-function isMissingFileError(error: unknown): boolean {
-	if (!error || typeof error !== 'object') return false
-	if ('code' in error && (error as { code?: unknown }).code === 'ENOENT') return true
-	if ('name' in error && (error as { name?: unknown }).name === 'FsError') {
-		return 'code' in error && (error as { code?: unknown }).code === 'ENOENT'
-	}
-	return false
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
+}
+
+function defaultConfigServiceMode(
+	capability: PluxelContext.RootServices['persistence']['capability'],
+): ConfigServiceMode {
+	if (capability === 'readonly') return 'readonly'
+	return 'file'
 }
 
 function createReadonlyView<T extends Record<string, unknown>>(target: T): Readonly<T> {

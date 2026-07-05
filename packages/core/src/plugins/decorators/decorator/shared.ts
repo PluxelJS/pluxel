@@ -1,6 +1,5 @@
 import { isProduction } from '../../../env'
-import type { Identifier } from '../../../container'
-import type { PluginIdentifier } from '../../types'
+import type { Identifier, PluginIdentifier } from '../../types'
 import { assertValidBasePluginId, assertValidPluginId } from '../../runtime/pluginId'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'
 import type { ConfigLayout } from '../../composition/cfg'
@@ -12,8 +11,8 @@ import type { ConfigLayout } from '../../composition/cfg'
   - 热路径 = 1× WeakMap.get → 固定 shape 的 State 属性访问。
 ───────────────────────────────────────────────────────────*/
 export const __DEV__ =
-	typeof (globalThis as unknown as { __PLUXEL_DEV__?: unknown }).__PLUXEL_DEV__ === 'boolean'
-		? (globalThis as unknown as { __PLUXEL_DEV__: boolean }).__PLUXEL_DEV__
+	typeof (globalThis as unknown as { __PLUXEL_HMR__?: unknown }).__PLUXEL_HMR__ === 'boolean'
+		? (globalThis as unknown as { __PLUXEL_HMR__: boolean }).__PLUXEL_HMR__
 		: !isProduction
 export const $freeze = <T>(x: T): T => (__DEV__ ? Object.freeze(x) : x)
 export const EMPTY_ARR: readonly unknown[] = $freeze([])

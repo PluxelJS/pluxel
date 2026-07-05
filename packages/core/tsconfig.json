@@ -1,6 +1,14 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "fsm", "../diod", "../context"],
+	"include": [
+		"src",
+		"tests",
+		"fsm",
+		"../context/src",
+		"../context/tests",
+		"../core-di/src",
+		"../core-di/tests"
+	],
 	"compilerOptions": {
 		"rootDir": "..",
 		"baseUrl": ".",
@@ -11,8 +19,8 @@
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
 		"paths": {
-			"diod": ["../diod/src"],
-			"diod/*": ["../diod/src/*"],
+			"@pluxel/core-di": ["../core-di/src"],
+			"@pluxel/core-di/*": ["../core-di/src/*"],
 			"@pluxel/context": ["../context/src"],
 			"@pluxel/context/*": ["../context/src/*"],
 			"@pluxel/core": ["./src"],

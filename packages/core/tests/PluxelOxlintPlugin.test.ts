@@ -16,7 +16,7 @@ RuleTester.it = it
 type TestedRule = Parameters<RuleTester['run']>[1]
 type TestedCases = Parameters<RuleTester['run']>[2]
 
-const WORKSPACE_PLUGIN_SPECIFIER = './packages/workspace/src/oxlint/plugin.ts'
+const WORKSPACE_PLUGIN_SPECIFIER = './packages/rolldown/src/workspace/oxlint/plugin.ts'
 
 const tester = new RuleTester({
 	languageOptions: {
@@ -26,7 +26,7 @@ const tester = new RuleTester({
 })
 
 function runRule(name: string, rule: OxRule, tests: TestedCases) {
-	tester.run(name, rule satisfies TestedRule, tests)
+	tester.run(name, rule as unknown as TestedRule, tests)
 }
 
 runRule('log-no-rendered-error', pluxelRules['log-no-rendered-error'], {
@@ -165,7 +165,6 @@ runRule('configs-use-no-private-field', pluxelRules['configs-use-no-private-fiel
 		},
 	],
 })
-
 
 runRule('features-use-top-level-class', pluxelRules['features-use-top-level-class'], {
 	valid: [
@@ -567,6 +566,59 @@ runRule('configs-use-no-redefault', pluxelRules['configs-use-no-redefault'], {
 	],
 })
 
+runRule('plugin-no-process-exit', pluxelRules['plugin-no-process-exit'], {
+	valid: [
+		{
+			code: `
+				process.exit(1)
+			`,
+		},
+		{
+			code: `
+				class HostEntrypoint {
+					stop() {
+						process.exit(1)
+					}
+				}
+			`,
+		},
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						throw new Error('not ready')
+					}
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						process.exit(1)
+					}
+				}
+			`,
+			errors: [{ messageId: 'exit' }],
+		},
+		{
+			code: `
+				@Plugin({ name: 'P' })
+				class P extends BasePlugin {
+					override init() {
+						setTimeout(() => process.exit(1), 10)
+					}
+				}
+			`,
+			errors: [{ messageId: 'exit' }],
+		},
+	],
+})
+
 runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logger'], {
 	valid: [
 		{
@@ -586,6 +638,119 @@ runRule('no-direct-logtape-get-logger', pluxelRules['no-direct-logtape-get-logge
 		},
 	],
 })
+
+runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
+	valid: [
+		{
+			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
+			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace/fs'",
+		},
+		{
+			filename: '/repo/packages/runtime/vite.config.ts',
+			code: "import { createPluxelUiChunkGroups } from '@pluxel/rolldown/workspace/vite'",
+		},
+		{
+			filename: '/repo/packages/test/src/oxlint.ts',
+			code: "export * from '@pluxel/rolldown/oxlint'",
+		},
+		{
+			filename: '/repo/packages/rolldown/src/workspace/index.ts',
+			code: "export * from '@pluxel/rolldown/workspace'",
+		},
+	],
+	invalid: [
+		{
+			filename: '/repo/packages/runtime-dynamic/src/scan/fs.ts',
+			code: "import { crawlFilesAbs } from '@pluxel/rolldown/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/cli/src/workspace/state.ts',
+			code: "export { loadWorkspaceInfo } from '@pluxel/rolldown/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/runtime-dynamic/src/hmr/diagnose/fs.ts',
+			code: "export * from '@pluxel/rolldown/workspace'",
+			errors: [{ messageId: 'root' }],
+		},
+		{
+			filename: '/repo/packages/runtime-dynamic/src/package/PackageService.ts',
+			code: "await import('@pluxel/rolldown/workspace')",
+			errors: [{ messageId: 'root' }],
+		},
+	],
+})
+
+runRule(
+	'plugin-base-class-requires-plugin-registration',
+	pluxelRules['plugin-base-class-requires-plugin-registration'],
+	{
+		valid: [
+			{
+				code: `
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends BasePlugin {}
+				`,
+			},
+			{
+				code: `
+					@Plugin({ name: 'PluginA' })
+					class PluginA extends ForkablePlugin {}
+				`,
+			},
+			{
+				code: `
+					abstract class PluginBase extends BasePlugin {}
+				`,
+			},
+			{
+				code: `
+					class PluginA extends BasePlugin {}
+					Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+			{
+				code: `
+					const PluginA = class extends BasePlugin {}
+					Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+			{
+				code: `
+					class PluginA extends runtime.BasePlugin {}
+					runtime.Plugin({ name: 'PluginA' })(PluginA)
+				`,
+			},
+		],
+		invalid: [
+			{
+				code: `
+					class PluginA extends BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					class PluginA extends ForkablePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					export class PluginA extends runtime.BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+			{
+				code: `
+					const PluginA = class extends BasePlugin {}
+				`,
+				errors: [{ messageId: 'missing' }],
+			},
+		],
+	},
+)
 
 runRule(
 	'plugin-constructor-no-type-only-imports',
@@ -765,11 +930,7 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 					}
 				}
 			`,
-			errors: [
-				{ messageId: 'webRpc' },
-				{ messageId: 'webSse' },
-				{ messageId: 'webSignalDb' },
-			],
+			errors: [{ messageId: 'webRpc' }, { messageId: 'webSse' }, { messageId: 'webSignalDb' }],
 		},
 		{
 			code: `

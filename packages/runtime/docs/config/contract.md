@@ -1,6 +1,6 @@
 # Plugin Config (Runtime Contract)
 
-这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的实现契约；设计原则与推荐写法见仓库级设计文档 `docs/design/plugin-config/overview.md`。
+这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的实现契约；设计原则与推荐写法见仓库级设计文档 `docs/CONFIG.md`。
 
 ## `plugin.schema()` 返回值
 

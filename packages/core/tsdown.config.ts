@@ -1,4 +1,4 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/build/rolldown'
+import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'tsdown'
 
 const moduleAugmentationMap = {
@@ -19,16 +19,18 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
-		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', 'diod', 'diod/*'],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', '@pluxel/core-di', '@pluxel/core-di/*'],
 	},
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	entry: {
 		env: 'src/env.ts',
+		federation: 'src/federation.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
+		test: 'src/test.ts',
 	},
 	dts: {
 		sourcemap: true,

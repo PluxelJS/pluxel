@@ -29,11 +29,46 @@ function extractMissingDependencyChains(detail: string): string[][] {
 			.filter(Boolean)
 		if (parts.length > 0) out.push(parts)
 	}
+
+	// Example (core-di):
+	//   [MissingDependency] Bad -> MissingBase
+	const simple = /\[MissingDependency\]\s*([^\n\r|]+?)\s*->\s*([^\n\r]+)/g
+	for (;;) {
+		const m = simple.exec(detail)
+		if (!m) break
+		const from = normalizeDependencyToken(m[1] ?? '')
+		const to = normalizeDependencyToken(m[2] ?? '')
+		if (from && to) out.push([from, to])
+	}
+
 	return out
 }
 
 function isMissingDependencyError(detail: string): boolean {
 	return detail.includes('MissingDependency') || detail.includes('[MissingDependency]')
+}
+
+function collectErrorDetail(error: unknown, seen = new Set<unknown>()): string {
+	if (error === null || error === undefined || seen.has(error)) return ''
+	if (typeof error === 'object' || typeof error === 'function') seen.add(error)
+
+	const parts: string[] = []
+	if (typeof error === 'string') {
+		parts.push(error)
+	} else if (error instanceof Error) {
+		if (error.message) parts.push(error.message)
+		const text = error.toString()
+		if (text && text !== error.message) parts.push(text)
+		const cause = (error as Error & { cause?: unknown }).cause
+		if (cause !== undefined) {
+			const nested = collectErrorDetail(cause, seen)
+			if (nested) parts.push(nested)
+		}
+	} else {
+		parts.push(String(error))
+	}
+
+	return parts.filter(Boolean).join('\n')
 }
 
 export function disablePluginsOnMissingDependencyError(params: {
@@ -46,8 +81,8 @@ export function disablePluginsOnMissingDependencyError(params: {
 	stage?: string
 	message?: string
 }): Set<string> {
-	const detail = String(params.error ?? '')
-	if (!isMissingDependencyError(detail) || !detail.includes('chain:')) return new Set()
+	const detail = collectErrorDetail(params.error)
+	if (!isMissingDependencyError(detail)) return new Set()
 
 	const tokenToName = new Map<string, string>()
 	for (const c of params.candidates) {

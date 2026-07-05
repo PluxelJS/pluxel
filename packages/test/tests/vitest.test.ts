@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolve } from 'node:path'
 import type { ViteUserConfig } from 'vitest/config'
+import { buildPluxelResolveConditions, definePluxelVitestConfig } from '../src/vitest'
 
-async function loadVitestModule() {
+const rolldownMocks = vi.hoisted(() => {
 	const lintGuardPlugin = vi.fn((options?: unknown) => ({
 		name: `lint-guard-${lintGuardPlugin.mock.calls.length}`,
 		options,
@@ -12,29 +13,23 @@ async function loadVitestModule() {
 		options,
 	}))
 
-	vi.doMock('@pluxel/build/rolldown', () => ({
-		lintGuardPlugin,
-		configSourcePlugin,
-	}))
+	return { lintGuardPlugin, configSourcePlugin }
+})
 
-	const mod = await import('../src/vitest')
-	return { ...mod, lintGuardPlugin, configSourcePlugin }
-}
+vi.mock('@pluxel/rolldown/plugins', () => rolldownMocks)
 
 afterEach(() => {
-	vi.resetModules()
-	vi.doUnmock('@pluxel/build/rolldown')
+	vi.clearAllMocks()
 })
 
 describe('@pluxel/test/vitest', () => {
-	it('binds lint guard to the merged project root', async () => {
-		const { definePluxelVitestConfig, lintGuardPlugin } = await loadVitestModule()
-
-		const config = (await definePluxelVitestConfig({
+	it('builds the fixed Pluxel test pipeline', () => {
+		const config = definePluxelVitestConfig({
 			root: 'packages/test',
-		})) as ViteUserConfig
+			test: { name: 'sync-config' },
+		}) as ViteUserConfig
 
-		expect(lintGuardPlugin).toHaveBeenLastCalledWith({
+		expect(rolldownMocks.lintGuardPlugin).toHaveBeenLastCalledWith({
 			cwd: resolve(process.cwd(), 'packages/test'),
 		})
 		expect(config.plugins?.[0]).toMatchObject({
@@ -42,5 +37,32 @@ describe('@pluxel/test/vitest', () => {
 				cwd: resolve(process.cwd(), 'packages/test'),
 			},
 		})
+		expect(config.test?.setupFiles).toHaveLength(1)
+		expect(config.test?.setupFiles?.[0]).toMatch(
+			/packages\/test\/(?:src|dist)\/setup\.(?:ts|mjs|cjs)$/,
+		)
+		expect(config).not.toHaveProperty('then')
+		expect(config.test?.name).toBe('sync-config')
+		expect(config.resolve?.conditions).toEqual(
+			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
+		)
+		expect(config.ssr?.resolve?.conditions).toEqual(
+			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
+		)
+	})
+
+	it('keeps node conditions deterministic', () => {
+		expect(buildPluxelResolveConditions('test')).toEqual([
+			'@pluxel/source',
+			'@pluxel/runtime-dynamic',
+			'node',
+			'import',
+			'module',
+			'development',
+			'production',
+			'default',
+			'browser',
+			'test',
+		])
 	})
 })

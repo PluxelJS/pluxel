@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { dirname, isAbsolute, resolve } from 'pathe'
-import { resolveModuleIdBaseDir } from '../../runtime/module-id'
+import { resolveModuleIdBaseDir, findRuntimeModuleId } from '../../runtime/module-id'
 import type {
 	BuiltinDocExtensionDef,
 	BuiltinExtensionDef,
@@ -23,8 +23,7 @@ import {
 	extensionFederationManifestPath,
 	extensionFederationRemoteName,
 } from '../../web/federation'
-import { HMR_INTERNAL_API_BASE, hmrExtensionArtifactPath } from '../../web/paths'
-import type { FsService, FsStat } from '../fs/FsService'
+import { RUNTIME_INTERNAL_API_BASE, runtimeExtensionArtifactPath } from '../../web/paths'
 import { ExtensionInteractionRegistry } from './ExtensionInteractionRegistry'
 import {
 	errorMessage,
@@ -682,7 +681,16 @@ export class ExtensionService implements ExtensionModuleStore {
 		pluginName: string,
 		relativeManifestPath: string,
 	): string | null {
-		const registryPath = this.ctx.loader?.api?.registry?.findModuleIdByName?.(pluginName)
+		const loaderApi = (
+			this.ctx as unknown as {
+				loader?: {
+					api?: {
+						anchors?: { list?: () => Iterable<string> }
+					}
+				}
+			}
+		).loader?.api
+		const registryPath = findRuntimeModuleId(this.ctx, pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
 			if (baseDir) {
@@ -698,7 +706,7 @@ export class ExtensionService implements ExtensionModuleStore {
 			}
 		}
 
-		for (const path of this.ctx.loader?.api?.anchors?.list?.() ?? []) {
+		for (const path of loaderApi?.anchors?.list?.() ?? []) {
 			if (path.toLowerCase().includes(pluginName.toLowerCase()) && isAbsolute(path)) {
 				const baseDir = dirname(path)
 				const packageRoot = this.findNearestPackageRoot(baseDir)
@@ -722,34 +730,14 @@ export class ExtensionService implements ExtensionModuleStore {
 		return resolve(cwd, manifestPath)
 	}
 
-	private getPackagedManifestFs(): Pick<FsService, 'exists' | 'readText' | 'stat'> | undefined {
-		const root = this.ctx.root as
-			| { fs?: Pick<FsService, 'exists' | 'readText' | 'stat'> }
-			| undefined
-		return root?.fs
-	}
-
 	private async readPackagedManifestText(path: string): Promise<string | null> {
-		const fs = this.getPackagedManifestFs()
-		if (typeof fs?.readText === 'function') {
-			try {
-				return await fs.readText(path)
-			} catch {
-				return null
-			}
-		}
 		return await readFile(path, 'utf-8').catch((): null => null)
 	}
 
-	private async statPackagedManifest(path: string): Promise<FsStat | null> {
-		const fs = this.getPackagedManifestFs()
-		if (typeof fs?.stat === 'function') {
-			try {
-				return await fs.stat(path)
-			} catch {
-				return { type: 'missing' }
-			}
-		}
+	private async statPackagedManifest(path: string): Promise<{
+		type: 'file' | 'dir' | 'other'
+		mtimeMs?: number
+	} | null> {
 		return await stat(path)
 			.then((st) => ({
 				type: st.isFile()
@@ -763,13 +751,10 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	private findNearestPackageRoot(start: string): string | null {
-		const fs = this.getPackagedManifestFs()
-		const pathExists =
-			typeof fs?.exists === 'function' ? (path: string) => fs.exists!(path) : existsSync
 		try {
 			let current = start
 			while (true) {
-				if (pathExists(resolve(current, 'package.json'))) return current
+				if (existsSync(resolve(current, 'package.json'))) return current
 				const parent = dirname(current)
 				if (parent === current) return null
 				current = parent
@@ -789,7 +774,7 @@ export function createCompiledExtensionModule(input: {
 	return {
 		pluginName: input.pluginName,
 		remoteName: extensionFederationRemoteName(input.pluginName),
-		manifestUrl: `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactPath(
+		manifestUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeExtensionArtifactPath(
 			input.pluginName,
 			input.sourceHash,
 			EXTENSION_FEDERATION_MANIFEST_FILE,

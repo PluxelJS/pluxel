@@ -10,12 +10,6 @@ import {
 	IconSearch,
 	IconX,
 } from '@tabler/icons-react'
-import {
-	Group as PanelGroup,
-	type GroupImperativeHandle,
-	Panel,
-	Separator as PanelSeparator,
-} from 'react-resizable-panels'
 import { startTransition, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react'
 import { ExtensionPoints, useExtensionSurface } from '../../extension'
 import { ColorSchemeToggle } from '../../theme'
@@ -25,19 +19,26 @@ import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
 import { WorkbenchPaneControls } from '../plugins/detail/controls/WorkbenchPaneControls'
 import { PluginWorkbenchLayoutProvider } from '../plugins/detail/workbench/context'
 import { useCurrentPathname } from '../router/useCurrentRoute'
+import { WorkbenchActionButton } from './LayoutControls'
 import {
 	DEFAULT_PLUGIN_SECTION_LAYOUT,
 	PLUGIN_RAIL_PANEL_ID,
 	PLUGIN_SECTION_CONTENT_PANEL_ID,
+	PLUGIN_WORKBENCH_PANELS_SCOPE,
+	WorkbenchSplitView,
+	mergeLayout,
 	resolvePluginWorkbenchPanelsState,
+	sanitizePluginSectionLayout,
+	type SplitViewHandle,
+	type SplitViewPane,
 	type PluginWorkbenchPanelsState,
-} from './pluginLayout'
+	useSyncedLayout,
+} from './split'
 import {
 	getWorkbenchSectionId,
 	getWorkbenchSectionTitle,
 	isWorkbenchActivityActive,
 } from './location'
-import { hasSameLayout } from './storage'
 import {
 	createPersistedWorkbenchState,
 	getSectionPaneState,
@@ -52,7 +53,6 @@ import {
 	resetWorkbenchToHome,
 	setWorkbenchActiveTabId,
 	setWorkbenchActiveTabState,
-	setWorkbenchPluginWorkbenchPanelsState,
 	setWorkbenchSectionPaneLayout,
 	setWorkbenchSectionPaneVisible,
 	setWorkbenchTabDirty,
@@ -70,12 +70,43 @@ import {
 } from './context'
 import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS } from './shortcuts'
 import './styles.scss'
-const PANEL_STYLE = {
-	display: 'flex',
-	flexDirection: 'column' as const,
-	height: '100%',
-	minHeight: 0,
-	minWidth: 0,
+
+const PLUGIN_PATH_PATTERN = /^\/plugins\/([^/]+)/
+type WorkbenchActivityItem = {
+	exact?: boolean
+	href: string
+	icon?: ReactNode
+	label: string
+}
+
+function resolvePluginNameFromPath(pathname: string) {
+	const match = pathname.match(PLUGIN_PATH_PATTERN)
+	if (!match?.[1]) return undefined
+	try {
+		return decodeURIComponent(match[1])
+	} catch {
+		return match[1]
+	}
+}
+
+function dispatchPluginSearchEvent() {
+	if (typeof window === 'undefined') return
+	window.setTimeout(() => {
+		window.dispatchEvent(
+			new CustomEvent<string | undefined>(PLUGIN_SEARCH_EVENT, { detail: undefined }),
+		)
+	}, 0)
+}
+
+function ThemeToggleButton() {
+	return (
+		<ColorSchemeToggle
+			label="切换工作台明暗模式"
+			size="md"
+			radius="md"
+			className="plx-workbench__themeToggle"
+		/>
+	)
 }
 
 function WorkbenchHotkeys({
@@ -146,23 +177,221 @@ function StatusBar({ surface }: { surface: { hasFill: boolean; nodes: ReactNode[
 	return <div className="plx-workbench__statusbar">{surface.nodes}</div>
 }
 
+function ActivityRail({
+	activityItems,
+	pathname,
+	requestNavigation,
+}: {
+	activityItems: WorkbenchActivityItem[]
+	pathname: string
+	requestNavigation: (to: string, request?: WorkbenchNavigationMode | 'auto') => string
+}) {
+	return (
+		<aside className="plx-workbench__activity" aria-label="工作台导航">
+			<div className="plx-workbench__activityBrand" aria-hidden="true">
+				<IconBox size={20} stroke={1.8} />
+			</div>
+
+			<nav className="plx-workbench__activityList">
+				{activityItems.map((item) => (
+					<Link
+						key={`${item.href}:${item.label}`}
+						to={item.href}
+						className="plx-workbench__activityItem"
+						onClick={() => {
+							requestNavigation(item.href, 'auto')
+						}}
+						data-active={
+							isWorkbenchActivityActive(pathname, item.href, item.exact) ? 'true' : 'false'
+						}
+						title={item.label}
+					>
+						{item.icon ?? <IconHome2 size={18} stroke={1.7} />}
+						<span className="plx-workbench__activityLabel">{item.label}</span>
+					</Link>
+				))}
+			</nav>
+		</aside>
+	)
+}
+
+function WorkbenchTopbarActions({
+	focusWorkbenchSearch,
+	isPluginDetail,
+	openPluginSearchTab,
+	togglePluginNav,
+}: {
+	focusWorkbenchSearch: () => void
+	isPluginDetail: boolean
+	openPluginSearchTab: () => void
+	togglePluginNav: () => void
+}) {
+	return (
+		<div className="plx-workbench__topbarActions">
+			{!isPluginDetail ? (
+				<WorkbenchActionButton
+					className="plx-workbench__action"
+					label="插件列表"
+					onClick={togglePluginNav}
+					title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
+				>
+					<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+					<span className="plx-workbench__actionLabel">插件列表</span>
+					<span className="plx-workbench__actionHint">
+						{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
+					</span>
+				</WorkbenchActionButton>
+			) : null}
+
+			<WorkbenchActionButton
+				className="plx-workbench__action"
+				label="新标签页"
+				onClick={openPluginSearchTab}
+				title={`新建插件标签页 (${WORKBENCH_HOTKEY_LABELS.newPluginTab})`}
+			>
+				<IconPlus size={16} stroke={1.8} />
+				<span className="plx-workbench__actionLabel">新标签页</span>
+				<span className="plx-workbench__actionHint">
+					{WORKBENCH_HOTKEY_LABELS.newPluginTab}
+				</span>
+			</WorkbenchActionButton>
+
+			{isPluginDetail ? <WorkbenchPaneControls /> : null}
+
+			<WorkbenchActionButton
+				className="plx-workbench__action"
+				label="搜索"
+				onClick={focusWorkbenchSearch}
+				title={`搜索插件 (${WORKBENCH_HOTKEY_LABELS.focusSearch})`}
+			>
+				<IconSearch size={16} stroke={1.8} />
+				<span className="plx-workbench__actionLabel">搜索</span>
+				<span className="plx-workbench__actionHint">{WORKBENCH_HOTKEY_LABELS.focusSearch}</span>
+			</WorkbenchActionButton>
+
+			<ThemeToggleButton />
+		</div>
+	)
+}
+
+function EditorTabStrip({
+	activeTabId,
+	dirtyTabs,
+	onActivateTab,
+	onCloseTab,
+	tabs,
+}: {
+	activeTabId: string | null
+	dirtyTabs: Record<string, boolean>
+	onActivateTab: (tab: WorkbenchTab) => void
+	onCloseTab: (tabId: string) => void
+	tabs: WorkbenchTab[]
+}) {
+	return (
+		<div className="plx-workbench__editorTabStrip" role="tablist" aria-label="工作标签页">
+			{tabs.map((tab) => {
+				const isActive = tab.id === activeTabId
+				const isDirty = Boolean(dirtyTabs[tab.id])
+				return (
+					<div
+						key={tab.id}
+						className="plx-workbench__editorTabButton"
+						data-active={isActive ? 'true' : 'false'}
+						role="tab"
+						aria-selected={isActive}
+						tabIndex={0}
+						onClick={() => onActivateTab(tab)}
+						onKeyDown={(event) => {
+							if (event.key === 'Enter' || event.key === ' ') {
+								event.preventDefault()
+								onActivateTab(tab)
+							}
+						}}
+					>
+						<div className="plx-workbench__editorTabBody">
+							<span className="plx-workbench__editorTabTitle">{tab.title}</span>
+							{isDirty ? (
+								<span className="plx-workbench__editorTabDirtyDot" title="未保存更改" aria-hidden="true" />
+							) : null}
+							{tab.meta ? <span className="plx-workbench__editorTabMeta">{tab.meta}</span> : null}
+						</div>
+						<button
+							type="button"
+							className="plx-workbench__iconButton"
+							aria-label={`关闭 ${tab.title}`}
+							onClick={(event) => {
+								event.stopPropagation()
+								onCloseTab(tab.id)
+							}}
+						>
+							<IconX size={14} stroke={1.8} />
+						</button>
+					</div>
+				)
+			})}
+		</div>
+	)
+}
+
+function PluginNavigationRail({
+	onCollapse,
+	pluginName,
+}: {
+	onCollapse: () => void
+	pluginName?: string
+}) {
+	return (
+		<div className="plx-workbench__navigationRail">
+			<div className="plx-workbench__navigationHeader">
+				<div className="plx-workbench__navigationTitle">
+					<span className="plx-workbench__eyebrow">Plugins</span>
+					<span className="plx-workbench__title">插件导航</span>
+					<span className="plx-workbench__subtitle">对象选择与筛选</span>
+				</div>
+				<button
+					type="button"
+					className="plx-workbench__iconButton"
+					aria-label="收起插件列表"
+					onClick={onCollapse}
+				>
+					<IconChevronLeft size={16} stroke={1.8} />
+				</button>
+			</div>
+			<div className="plx-workbench__navigationBody">
+				<PluginCatalog pluginName={pluginName} />
+			</div>
+		</div>
+	)
+}
+
+function WorkspacePaneContent() {
+	return (
+		<div className="plx-workbench__workspace">
+			<div className="plx-workbench__workspaceContent">
+				<Outlet />
+			</div>
+		</div>
+	)
+}
+
+function ThemeToggleAction() {
+	return (
+		<div className="plx-workbench__topbarActions">
+			<ThemeToggleButton />
+		</div>
+	)
+}
+
 export function WorkbenchShell() {
 	const pathname = useCurrentPathname()
 	const navigate = useNavigate()
-	const pluginLayoutGroupRef = useRef<GroupImperativeHandle | null>(null)
+	const pluginLayoutGroupRef = useRef<SplitViewHandle | null>(null)
 	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems, { renderNodes: false })
 	const statusBarSurface = useExtensionSurface(ExtensionPoints.GlobalStatusBar)
-	const currentTab = useMemo(() => deriveTabFromPath(pathname), [pathname])
-	const currentSection = useMemo(() => getWorkbenchSectionId(pathname), [pathname])
-	const pluginName = useMemo(() => {
-		const match = pathname.match(/^\/plugins\/([^/]+)/)
-		if (!match?.[1]) return undefined
-		try {
-			return decodeURIComponent(match[1])
-		} catch {
-			return match[1]
-		}
-	}, [pathname])
+	const currentTab = deriveTabFromPath(pathname)
+	const currentSection = getWorkbenchSectionId(pathname)
+	const pluginName = resolvePluginNameFromPath(pathname)
+	const isPluginsSection = currentSection === PLUGINS_SECTION_ID
 	const uiState = useStore(workbenchStore, (state) => state.uiState)
 	const dirtyTabs = useStore(workbenchStore, (state) => state.dirtyTabs)
 
@@ -208,7 +437,7 @@ export function WorkbenchShell() {
 	}, [navbarSurface.items])
 
 	const activityItems = useMemo(() => [...baseNavItems, ...extensionNavItems], [extensionNavItems])
-	const sectionTitle = useMemo(() => getWorkbenchSectionTitle(pathname), [pathname])
+	const sectionTitle = getWorkbenchSectionTitle(pathname)
 	const activeTab = useMemo(
 		() => uiState.tabs.find((tab) => tab.id === uiState.activeTabId) ?? currentTab,
 		[currentTab, uiState.activeTabId, uiState.tabs],
@@ -220,25 +449,22 @@ export function WorkbenchShell() {
 	)
 	const activeTabDirty = Boolean(activeTab?.id && dirtyTabs[activeTab.id])
 	const currentSectionPane = useMemo(
-		() =>
-			currentSection === PLUGINS_SECTION_ID
-				? getSectionPaneState(uiState, PLUGINS_SECTION_ID)
-				: null,
-		[currentSection, uiState.sectionPanes],
+		() => (isPluginsSection ? getSectionPaneState(uiState, PLUGINS_SECTION_ID) : null),
+		[isPluginsSection, uiState.sectionPanes],
 	)
-	useEffect(() => {
-		if (currentSection !== PLUGINS_SECTION_ID || !currentSectionPane) return
-		const current = pluginLayoutGroupRef.current?.getLayout()
-		if (!current || !hasSameLayout(current, currentSectionPane.layout)) {
-			pluginLayoutGroupRef.current?.setLayout(currentSectionPane.layout)
-		}
-	}, [currentSection, currentSectionPane])
-	const showPluginNav =
-		currentSection === PLUGINS_SECTION_ID && Boolean(currentSectionPane?.visible)
-	const isPluginDetail = currentSection === PLUGINS_SECTION_ID && Boolean(pluginName)
+	useSyncedLayout(
+		pluginLayoutGroupRef,
+		currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT,
+		isPluginsSection && Boolean(currentSectionPane),
+	)
+	const showPluginNav = isPluginsSection && Boolean(currentSectionPane?.visible)
+	const isPluginDetail = isPluginsSection && Boolean(pluginName)
 	const activePluginWorkbenchLayout = useMemo(
-		() => resolvePluginWorkbenchPanelsState(uiState.tabState, activeTab?.id ?? currentTab.id),
-		[activeTab?.id, currentTab.id, uiState.tabState],
+		() =>
+			resolvePluginWorkbenchPanelsState(
+				uiState.tabState[resolvedActiveTabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE],
+			),
+		[resolvedActiveTabId, uiState.tabState],
 	)
 	const { dockVisible, rightPaneVisible } = activePluginWorkbenchLayout
 
@@ -250,10 +476,18 @@ export function WorkbenchShell() {
 	}, [])
 	const setActivePluginWorkbenchLayout = useCallback(
 		(nextValue: Partial<PluginWorkbenchPanelsState>) => {
-			setWorkbenchPluginWorkbenchPanelsState(
-				workbenchStore.state.uiState.activeTabId ?? currentTab.id,
-				nextValue,
+			const tabId = workbenchStore.state.uiState.activeTabId ?? currentTab.id
+			const currentState = resolvePluginWorkbenchPanelsState(
+				workbenchStore.state.uiState.tabState[tabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE],
 			)
+			const nextState = { ...currentState, ...nextValue }
+			if (
+				nextState.rightPaneVisible === currentState.rightPaneVisible &&
+				nextState.dockVisible === currentState.dockVisible
+			) {
+				return
+			}
+			setWorkbenchActiveTabState(tabId, PLUGIN_WORKBENCH_PANELS_SCOPE, nextState)
 		},
 		[currentTab.id],
 	)
@@ -286,37 +520,26 @@ export function WorkbenchShell() {
 		})
 	}, [activePluginWorkbenchLayout.rightPaneVisible, setActivePluginWorkbenchLayout])
 
+	const openPluginWorkspace = useCallback(
+		(mode: 'open-tab' | 'replace-active') => {
+			setSectionPaneVisible(PLUGINS_SECTION_ID, true)
+			queueWorkbenchNavigationIntent({ to: '/plugins', mode })
+			if (!pathname.startsWith('/plugins')) {
+				navigate({ to: '/plugins' })
+			}
+			dispatchPluginSearchEvent()
+		},
+		[navigate, pathname, setSectionPaneVisible],
+	)
 	const focusWorkbenchSearch = useCallback(() => {
-		setSectionPaneVisible(PLUGINS_SECTION_ID, true)
-		queueWorkbenchNavigationIntent({ to: '/plugins', mode: 'replace-active' })
-		if (!pathname.startsWith('/plugins')) {
-			navigate({ to: '/plugins' })
-		}
-		if (typeof window !== 'undefined') {
-			window.setTimeout(() => {
-				window.dispatchEvent(
-					new CustomEvent<string | undefined>(PLUGIN_SEARCH_EVENT, { detail: undefined }),
-				)
-			}, 0)
-		}
-	}, [navigate, pathname, setSectionPaneVisible])
+		openPluginWorkspace('replace-active')
+	}, [openPluginWorkspace])
 	const openPluginSearchTab = useCallback(() => {
-		setSectionPaneVisible(PLUGINS_SECTION_ID, true)
-		queueWorkbenchNavigationIntent({ to: '/plugins', mode: 'open-tab' })
-		if (!pathname.startsWith('/plugins')) {
-			navigate({ to: '/plugins' })
-		}
-		if (typeof window !== 'undefined') {
-			window.setTimeout(() => {
-				window.dispatchEvent(
-					new CustomEvent<string | undefined>(PLUGIN_SEARCH_EVENT, { detail: undefined }),
-				)
-			}, 0)
-		}
-	}, [navigate, pathname, setSectionPaneVisible])
+		openPluginWorkspace('open-tab')
+	}, [openPluginWorkspace])
 
-	const activateTab = useCallback(
-		(tab: WorkbenchTab) => {
+	const navigateToWorkbenchTab = useCallback(
+		(tab: Pick<WorkbenchTab, 'id' | 'path'>) => {
 			setWorkbenchActiveTabId(tab.id)
 			startTransition(() => {
 				navigate({ to: tab.path })
@@ -325,6 +548,12 @@ export function WorkbenchShell() {
 		[navigate],
 	)
 
+	const activateTab = useCallback(
+		(tab: WorkbenchTab) => {
+			navigateToWorkbenchTab(tab)
+		},
+		[navigateToWorkbenchTab],
+	)
 	const stepTab = useCallback(
 		(direction: 1 | -1) => {
 			const { tabs, activeTabId } = workbenchStore.state.uiState
@@ -334,12 +563,9 @@ export function WorkbenchShell() {
 				activeIndex === -1 ? 0 : (activeIndex + direction + tabs.length) % tabs.length
 			const nextTab = tabs[nextIndex]
 			if (!nextTab) return
-			setWorkbenchActiveTabId(nextTab.id)
-			startTransition(() => {
-				navigate({ to: nextTab.path })
-			})
+			navigateToWorkbenchTab(nextTab)
 		},
-		[navigate],
+		[navigateToWorkbenchTab],
 	)
 
 	const closeTab = useCallback(
@@ -367,31 +593,66 @@ export function WorkbenchShell() {
 				nextTabs[0]
 			closeWorkbenchTab(tabId)
 			if (closingActive && fallbackTab) {
-				startTransition(() => {
-					navigate({ to: fallbackTab.path })
-				})
+				navigateToWorkbenchTab(fallbackTab)
 			}
 		},
-		[dirtyTabs, navigate],
+		[dirtyTabs, navigate, navigateToWorkbenchTab],
 	)
 
 	const togglePluginNav = useCallback(() => {
 		toggleSectionPane(PLUGINS_SECTION_ID)
 	}, [toggleSectionPane])
 
-	const handleLayoutChanged = useCallback((layout: Record<string, number>) => {
-		setWorkbenchSectionPaneLayout(PLUGINS_SECTION_ID, layout)
-	}, [])
+	const handleLayoutChanged = useCallback(
+		(layout: Record<string, number>) => {
+			setWorkbenchSectionPaneLayout(
+				PLUGINS_SECTION_ID,
+				mergeLayout(
+					currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT,
+					layout,
+					sanitizePluginSectionLayout,
+				),
+			)
+		},
+		[currentSectionPane?.layout],
+	)
+	const pluginRailPane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_RAIL_PANEL_ID,
+			defaultSize:
+				currentSectionPane?.layout[PLUGIN_RAIL_PANEL_ID] ??
+				DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_RAIL_PANEL_ID],
+			minSize: 14,
+			snap: true,
+			visible: showPluginNav,
+			onVisibleChange: (visible: boolean) => {
+				setSectionPaneVisible(PLUGINS_SECTION_ID, visible)
+			},
+			children: <PluginNavigationRail onCollapse={togglePluginNav} pluginName={pluginName} />,
+		}),
+		[currentSectionPane?.layout, pluginName, setSectionPaneVisible, showPluginNav, togglePluginNav],
+	)
+	const workspacePane = useMemo<SplitViewPane>(
+		() => ({
+			id: PLUGIN_SECTION_CONTENT_PANEL_ID,
+			defaultSize:
+				currentSectionPane?.layout[PLUGIN_SECTION_CONTENT_PANEL_ID] ??
+				DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_SECTION_CONTENT_PANEL_ID],
+			minSize: 56,
+			children: <WorkspacePaneContent />,
+		}),
+		[currentSectionPane?.layout],
+	)
 	const layoutContextValue = useMemo(
 		() => ({
-			leftPaneAvailable: currentSection === PLUGINS_SECTION_ID,
+			leftPaneAvailable: isPluginsSection,
 			leftPaneVisible: showPluginNav,
 			setLeftPaneVisible: (visible: boolean) => {
 				setSectionPaneVisible(PLUGINS_SECTION_ID, visible)
 			},
 			toggleLeftPane: togglePluginNav,
 		}),
-		[currentSection, setSectionPaneVisible, showPluginNav, togglePluginNav],
+		[isPluginsSection, setSectionPaneVisible, showPluginNav, togglePluginNav],
 	)
 	const pluginWorkbenchLayoutValue = useMemo(
 		() => ({
@@ -471,7 +732,7 @@ export function WorkbenchShell() {
 					<PluginWorkbenchLayoutProvider value={pluginWorkbenchLayoutValue}>
 						<div className="plx-workbench">
 							<WorkbenchHotkeys
-								canTogglePluginRail={currentSection === PLUGINS_SECTION_ID}
+								canTogglePluginRail={isPluginsSection}
 								onCloseActiveTab={() =>
 									closeTab(workbenchStore.state.uiState.activeTabId ?? currentTab.id)
 								}
@@ -482,33 +743,11 @@ export function WorkbenchShell() {
 								onTogglePluginRail={togglePluginNav}
 							/>
 
-							<aside className="plx-workbench__activity" aria-label="工作台导航">
-								<div className="plx-workbench__activityBrand" aria-hidden="true">
-									<IconBox size={20} stroke={1.8} />
-								</div>
-
-								<nav className="plx-workbench__activityList">
-									{activityItems.map((item) => (
-										<Link
-											key={`${item.href}:${item.label}`}
-											to={item.href}
-											className="plx-workbench__activityItem"
-											onClick={() => {
-												workbenchTabsValue.requestNavigation(item.href, 'auto')
-											}}
-											data-active={
-												isWorkbenchActivityActive(pathname, item.href, item.exact)
-													? 'true'
-													: 'false'
-											}
-											title={item.label}
-										>
-											{item.icon ?? <IconHome2 size={18} stroke={1.7} />}
-											<span className="plx-workbench__activityLabel">{item.label}</span>
-										</Link>
-									))}
-								</nav>
-							</aside>
+							<ActivityRail
+								activityItems={activityItems}
+								pathname={pathname}
+								requestNavigation={workbenchTabsValue.requestNavigation}
+							/>
 
 							<div className="plx-workbench__main">
 								<header
@@ -525,184 +764,38 @@ export function WorkbenchShell() {
 										) : null}
 									</div>
 
-									<div className="plx-workbench__topbarActions">
-										{currentSection === PLUGINS_SECTION_ID && !isPluginDetail ? (
-											<button
-												type="button"
-												className="plx-workbench__action"
-												onClick={togglePluginNav}
-												title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
-											>
-												<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
-												<span className="plx-workbench__actionLabel">插件列表</span>
-												<span className="plx-workbench__actionHint">
-													{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
-												</span>
-											</button>
-										) : null}
-
-										{currentSection === PLUGINS_SECTION_ID ? (
-											<button
-												type="button"
-												className="plx-workbench__action"
-												onClick={openPluginSearchTab}
-												title={`新建插件标签页 (${WORKBENCH_HOTKEY_LABELS.newPluginTab})`}
-											>
-												<IconPlus size={16} stroke={1.8} />
-												<span className="plx-workbench__actionLabel">新标签页</span>
-												<span className="plx-workbench__actionHint">
-													{WORKBENCH_HOTKEY_LABELS.newPluginTab}
-												</span>
-											</button>
-										) : null}
-
-										{isPluginDetail ? <WorkbenchPaneControls /> : null}
-
-										<button
-											type="button"
-											className="plx-workbench__action"
-											onClick={focusWorkbenchSearch}
-											title={`搜索插件 (${WORKBENCH_HOTKEY_LABELS.focusSearch})`}
-										>
-											<IconSearch size={16} stroke={1.8} />
-											<span className="plx-workbench__actionLabel">搜索</span>
-											<span className="plx-workbench__actionHint">
-												{WORKBENCH_HOTKEY_LABELS.focusSearch}
-											</span>
-										</button>
-
-										<ColorSchemeToggle
-											label="切换工作台明暗模式"
-											size="md"
-											radius="md"
-											className="plx-workbench__themeToggle"
+									{isPluginsSection ? (
+										<WorkbenchTopbarActions
+											focusWorkbenchSearch={focusWorkbenchSearch}
+											isPluginDetail={isPluginDetail}
+											openPluginSearchTab={openPluginSearchTab}
+											togglePluginNav={togglePluginNav}
 										/>
-									</div>
+									) : (
+										<ThemeToggleAction />
+									)}
 								</header>
 
-								<div
-									className="plx-workbench__editorTabStrip"
-									role="tablist"
-									aria-label="工作标签页"
-								>
-									{uiState.tabs.map((tab) => {
-										const isActive = tab.id === uiState.activeTabId
-										const isDirty = Boolean(dirtyTabs[tab.id])
-										return (
-											<div
-												key={tab.id}
-												className="plx-workbench__editorTabButton"
-												data-active={isActive ? 'true' : 'false'}
-												role="tab"
-												aria-selected={isActive}
-												tabIndex={0}
-												onClick={() => activateTab(tab)}
-												onKeyDown={(event) => {
-													if (event.key === 'Enter' || event.key === ' ') {
-														event.preventDefault()
-														activateTab(tab)
-													}
-												}}
-											>
-												<div className="plx-workbench__editorTabBody">
-													<span className="plx-workbench__editorTabTitle">{tab.title}</span>
-													{isDirty ? (
-														<span
-															className="plx-workbench__editorTabDirtyDot"
-															title="未保存更改"
-															aria-hidden="true"
-														/>
-													) : null}
-													{tab.meta ? (
-														<span className="plx-workbench__editorTabMeta">{tab.meta}</span>
-													) : null}
-												</div>
-												<button
-													type="button"
-													className="plx-workbench__iconButton"
-													aria-label={`关闭 ${tab.title}`}
-													onClick={(event) => {
-														event.stopPropagation()
-														closeTab(tab.id)
-													}}
-												>
-													<IconX size={14} stroke={1.8} />
-												</button>
-											</div>
-										)
-									})}
-								</div>
+								<EditorTabStrip
+									activeTabId={uiState.activeTabId}
+									dirtyTabs={dirtyTabs}
+									onActivateTab={activateTab}
+									onCloseTab={closeTab}
+									tabs={uiState.tabs}
+								/>
 
 								<div className="plx-workbench__body">
 									<div className="plx-workbench__surface">
-										{showPluginNav ? (
-											<PanelGroup
-												className="plx-workbench__panelGroup"
-												id="pluxel-workbench-main"
-												groupRef={pluginLayoutGroupRef}
-												orientation="horizontal"
-												defaultLayout={currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT}
-												onLayoutChanged={handleLayoutChanged}
-											>
-												<Panel
-													id={PLUGIN_RAIL_PANEL_ID}
-													defaultSize={`${
-														currentSectionPane?.layout[PLUGIN_RAIL_PANEL_ID] ??
-														DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_RAIL_PANEL_ID]
-													}%`}
-													minSize="14%"
-													style={PANEL_STYLE}
-												>
-													<div className="plx-workbench__navigationRail">
-														<div className="plx-workbench__navigationHeader">
-															<div className="plx-workbench__navigationTitle">
-																<span className="plx-workbench__eyebrow">Plugins</span>
-																<span className="plx-workbench__title">插件导航</span>
-																<span className="plx-workbench__subtitle">对象选择与筛选</span>
-															</div>
-															<button
-																type="button"
-																className="plx-workbench__iconButton"
-																aria-label="收起插件列表"
-																onClick={togglePluginNav}
-															>
-																<IconChevronLeft size={16} stroke={1.8} />
-															</button>
-														</div>
-														<div className="plx-workbench__navigationBody">
-															<PluginCatalog pluginName={pluginName} />
-														</div>
-													</div>
-												</Panel>
-
-												<PanelSeparator
-													id="pluxel-workbench-main-separator"
-													className="plx-workbench__resizeHandle"
-												/>
-
-												<Panel
-													id={PLUGIN_SECTION_CONTENT_PANEL_ID}
-													defaultSize={`${
-														currentSectionPane?.layout[PLUGIN_SECTION_CONTENT_PANEL_ID] ??
-														DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_SECTION_CONTENT_PANEL_ID]
-													}%`}
-													minSize="56%"
-													style={PANEL_STYLE}
-												>
-													<div className="plx-workbench__workspace">
-														<div className="plx-workbench__workspaceContent">
-															<Outlet />
-														</div>
-													</div>
-												</Panel>
-											</PanelGroup>
-										) : (
-											<div className="plx-workbench__workspace">
-												<div className="plx-workbench__workspaceContent">
-													<Outlet />
-												</div>
-											</div>
-										)}
+										<WorkbenchSplitView
+											className="plx-workbench__panelGroup"
+											defaultLayout={currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT}
+											id="pluxel-workbench-main"
+											onLayoutChanged={handleLayoutChanged}
+											orientation="horizontal"
+											primary={pluginRailPane}
+											secondary={workspacePane}
+											ref={pluginLayoutGroupRef}
+										/>
 									</div>
 								</div>
 

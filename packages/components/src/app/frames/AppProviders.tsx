@@ -14,11 +14,12 @@ import { ExtensionLoader } from '../ExtensionLoader'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { PluginOverviewProvider } from '../plugins/pluginOverviewStore'
-import { useRuntimeTransportClient } from '../../runtime'
+import { RUNTIME_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
+	const isSecurityRoute = pathname === RUNTIME_SECURITY_BASE
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)
@@ -97,21 +98,25 @@ export function AppProviders() {
 	)
 
 	return (
-		<PluginOverviewProvider>
-			<ExtensionPathnameProvider value={pathname}>
-				<ExtensionProvider value={extensionContext}>
-					<NotificationCenterProvider>
-						<ModalsProvider>
-							<Notifications position="top-center" />
-							<ExtensionLoader
-								pollInterval={5000}
-								onRunningPluginsChange={handleRunningPluginsChange}
-							/>
+		<ExtensionPathnameProvider value={pathname}>
+			<ExtensionProvider value={extensionContext}>
+				<NotificationCenterProvider>
+					<ModalsProvider>
+						<Notifications position="top-center" />
+						{isSecurityRoute ? (
 							<Outlet />
-						</ModalsProvider>
-					</NotificationCenterProvider>
-				</ExtensionProvider>
-			</ExtensionPathnameProvider>
-		</PluginOverviewProvider>
+						) : (
+							<PluginOverviewProvider>
+								<ExtensionLoader
+									pollInterval={5000}
+									onRunningPluginsChange={handleRunningPluginsChange}
+								/>
+								<Outlet />
+							</PluginOverviewProvider>
+						)}
+					</ModalsProvider>
+				</NotificationCenterProvider>
+			</ExtensionProvider>
+		</ExtensionPathnameProvider>
 	)
 }

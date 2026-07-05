@@ -1,15 +1,12 @@
-import type { LogLevel } from '@logtape/logtape'
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 
-import { hmrPluginLevels } from '../../../logger/ensure'
-import { ensureHmrPluginLevelsLoaded, persistHmrPluginLevels } from '../../../logger/levels'
-
-type PluginLogLevel = LogLevel | null
-
-export type PluginLevelsSnapshot = {
-	levels: Record<string, PluginLogLevel>
-}
+import { ensureRuntimePluginPolicyLoaded, persistRuntimePluginPolicy } from '../../../logger/levels'
+import {
+	runtimePluginLogPolicy,
+	type PluginLogPolicySnapshot,
+	type RuntimePluginLogLevel,
+} from '../../../logger/policy'
 
 export class LoggingHandle extends RpcTarget {
 	private readonly ctx: Context
@@ -19,44 +16,53 @@ export class LoggingHandle extends RpcTarget {
 		this.ctx = ctx
 	}
 
-	async getPluginLevels(): Promise<PluginLevelsSnapshot> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		const levels = hmrPluginLevels.toRecord() as Record<string, PluginLogLevel>
-		return { levels }
+	async getPolicy(): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 
-	async setPluginLevel(pluginId: string, level: PluginLogLevel): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.set(String(pluginId), level)
-		persistHmrPluginLevels(this.ctx)
-		return { ok: true }
+	async replacePolicy(snapshot: PluginLogPolicySnapshot): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.replace(snapshot)
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 
-	async deletePluginLevel(pluginId: string): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.delete(String(pluginId))
-		persistHmrPluginLevels(this.ctx)
-		return { ok: true }
+	async setDefaultLevel(level: RuntimePluginLogLevel): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.setDefaultLevel(level)
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 
-	async setPluginLevelDefault(level: PluginLogLevel): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.setDefault(level)
-		persistHmrPluginLevels(this.ctx)
-		return { ok: true }
+	async clearDefaultLevel(): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.clearDefaultLevel()
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 
-	async deletePluginLevelDefault(): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.delete('*')
-		persistHmrPluginLevels(this.ctx)
-		return { ok: true }
+	async setPluginLevel(
+		pluginId: string,
+		level: RuntimePluginLogLevel,
+	): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.setPluginLevel(String(pluginId), level)
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 
-	async clearPluginLevels(): Promise<{ ok: true }> {
-		await ensureHmrPluginLevelsLoaded(this.ctx)
-		hmrPluginLevels.clear()
-		persistHmrPluginLevels(this.ctx)
-		return { ok: true }
+	async clearPluginLevel(pluginId: string): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.clearPluginLevel(String(pluginId))
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
+	}
+
+	async resetPolicy(): Promise<PluginLogPolicySnapshot> {
+		await ensureRuntimePluginPolicyLoaded(this.ctx)
+		runtimePluginLogPolicy.clear()
+		persistRuntimePluginPolicy(this.ctx)
+		return runtimePluginLogPolicy.snapshot()
 	}
 }

@@ -1,8 +1,6 @@
-import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const buildRoot = fileURLToPath(new URL('../build/src', import.meta.url))
-const buildRolldown = fileURLToPath(new URL('../build/src/rolldown/index.ts', import.meta.url))
+const inlineRuntimeDeps = ['@platformatic/vfs', 'fs-fixture']
 
 export default defineConfig({
 	// This package ships as a bundled dev tool (Vitest preset + transforms).
@@ -10,8 +8,8 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		// Bundle internal build helpers so consumers don't need @pluxel/build at runtime.
-		alwaysBundle: ['@pluxel/build', '@pluxel/build/*'],
+		neverBundle: ['@pluxel/rolldown', '@pluxel/rolldown/*'],
+		onlyBundle: inlineRuntimeDeps,
 	},
 	entry: {
 		fixtures: './src/fixtures.ts',
@@ -30,10 +28,6 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	alias: {
-		'@pluxel/build': buildRoot,
-		'@pluxel/build/rolldown': buildRolldown,
-	},
 	inputOptions: {
 		transform: {
 			assumptions: {

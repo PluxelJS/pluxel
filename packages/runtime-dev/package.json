@@ -1,0 +1,65 @@
+{
+	"name": "@pluxel/runtime-dev",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Pluxel route-neutral runtime development capabilities",
+	"files": [
+		"!**/*.map",
+		"dist"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./extensions": {
+			"@pluxel/source": "./src/extensions.ts",
+			"default": "./dist/extensions.mjs"
+		},
+		"./hmr-log": {
+			"@pluxel/source": "./src/hmr-log.ts",
+			"default": "./dist/hmr-log.mjs"
+		},
+		"./vite": {
+			"@pluxel/source": "./src/vite.ts",
+			"default": "./dist/vite.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./extensions": "./dist/extensions.mjs",
+			"./hmr-log": "./dist/hmr-log.mjs",
+			"./vite": "./dist/vite.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run",
+		"build": "tsdown"
+	},
+	"dependencies": {
+		"@pluxel/core": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"chokidar": "^5.0.0",
+		"pathe": "^2.0.3"
+	},
+	"devDependencies": {
+		"@logtape/logtape": "^2.0.2",
+		"@pluxel/test": "workspace:*",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.0-beta.18"
+	},
+	"peerDependencies": {
+		"vite": ">=8.0.0-beta.18 <9"
+	},
+	"peerDependenciesMeta": {
+		"vite": {
+			"optional": true
+		}
+	}
+}

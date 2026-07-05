@@ -18,8 +18,8 @@ This folder contains the Pluxel runtime UI application shell.
   Notification bridge and provider wiring.
 - `hooks/`
   App-level hooks only. Keep domain-specific hooks in their domain folder.
-- `gqty/`
-  Generated GraphQL client bindings and hydration helpers.
+- `gqlens/`
+  Generated GQLens accessors, type bindings, and runtime fetcher wiring.
 - `bootstrap.ts`
   Global runtime bootstrap for schema vendors and app startup side effects.
 

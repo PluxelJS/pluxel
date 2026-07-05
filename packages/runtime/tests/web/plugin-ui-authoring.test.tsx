@@ -17,6 +17,7 @@ vi.mock('../../src/web/plugin-ui/signaldb-runtime', () => ({
 	useSignalDbCollectionState: vi.fn(() => ({
 		name: 'mock',
 		ready: true,
+		clientWrites: false,
 		version: 1,
 		items: [],
 		find: () => [],

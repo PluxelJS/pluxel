@@ -16,6 +16,7 @@ type InjectableCtor = new (ctx: Context, cfg?: any) => ServiceWithCtx<Context>
 export type ServiceOptions<S extends InjectableCtor> = {
 	key?: string
 	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
+	props?: readonly Extract<keyof ServiceInst<S>, string>[]
 	scope?: 'context' | 'root'
 }
 
@@ -24,6 +25,7 @@ export type RootServiceOptions<S extends InjectableCtor> = Omit<ServiceOptions<S
 type AnyServiceOptions = {
 	key?: string
 	methods?: readonly string[]
+	props?: readonly string[]
 	scope?: 'context' | 'root'
 }
 
@@ -31,6 +33,7 @@ type MutableServiceMeta = {
 	[OVERRIDE_FLAG]?: true
 	key?: string
 	methods?: readonly string[]
+	props?: readonly string[]
 	scope?: 'context' | 'root'
 }
 
@@ -65,6 +68,7 @@ export function Injectable<S extends new (...args: unknown[]) => object>(
 		if (meta[OVERRIDE_FLAG]) return
 		if (opts.key) meta.key = opts.key
 		if (opts.methods) meta.methods = opts.methods
+		if (opts.props) meta.props = opts.props
 		if (opts.scope) meta.scope = opts.scope
 		Context.registerService(ctor)
 	}
@@ -99,6 +103,7 @@ export function RootService<S extends new (...args: unknown[]) => object>(
 		if (meta[OVERRIDE_FLAG]) return
 		if (opts.key) meta.key = opts.key
 		if (opts.methods) meta.methods = opts.methods
+		if (opts.props) meta.props = opts.props
 		meta.scope = 'root'
 		Context.registerService(ctor)
 	}

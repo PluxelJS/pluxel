@@ -8,10 +8,21 @@ export {
 	PLUXEL_CONDITION_HMR,
 	PLUXEL_CONDITION_SOURCE,
 	PLUXEL_DIST_EXPORT_CONDITIONS,
-	PLUXEL_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
+	withPluxelHmrConditions,
 } from './services/runtime/shared/conditions'
-export type { ExsolveCache, ExsolveResolver } from './services/runtime/shared/exsolve'
-export { getExsolveCache, toDirectoryURLString } from './services/runtime/shared/exsolve'
+export type {
+	OxcResolveCache,
+	OxcResolveHit,
+	OxcResolveOptions,
+	OxcResolver,
+} from './services/runtime/shared/oxc-resolver'
+export {
+	clearOxcResolveCache,
+	getOxcResolveCache,
+	resolvePackageJsonPathWithOxc,
+	toDirectoryURLString,
+} from './services/runtime/shared/oxc-resolver'
 export {
 	findNearestPackageRoot,
 	pathVariantsAbs,
@@ -23,6 +34,11 @@ export {
 } from './services/runtime/shared/fs-path'
 export type { MissingDepsCandidate } from './services/runtime/shared/missing-deps'
 export { disablePluginsOnMissingDependencyError } from './services/runtime/shared/missing-deps'
+export {
+	hasNodeModulesPackageJson,
+	installedPackageJsonPath,
+	nodeModulesPackageJsonPath,
+} from './services/runtime/shared/node-modules'
 export {
 	canResolveFromCwd,
 	getCachedResolver,

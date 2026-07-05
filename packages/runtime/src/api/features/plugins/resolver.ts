@@ -4,34 +4,33 @@ import * as v from 'valibot'
 
 import { getStatusOverview } from '../pluginStatus/service'
 import { PluginStatusOverview } from '../pluginStatus/schema'
-import { PluginDetail, PluginIdScope, PluginScope } from './schema'
-import { createPluginScope, ensurePlugin, getPluginDependencies, getScopeCtor } from './scope'
+import { Plugin, PluginCatalog, PluginDetail } from './schema'
+import { createPlugin, getPluginDependencies, getPluginCtor, listPlugins } from './scope'
 
 export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({
-		pluginId: query(PluginIdScope)
-			.input({ name: v.string() })
-			.resolve(({ name }) => {
-				ensurePlugin(pCtx, name)
-				return { __typename: 'PluginIdScope', name }
-			}),
-		plugin: query(PluginScope)
-			.input({ name: v.string() })
-			.resolve(({ name }) => createPluginScope(pCtx, name)),
-		pluginStatus: query(PluginStatusOverview).resolve(() => getStatusOverview(pCtx)),
+		pluginCatalog: query(PluginCatalog).resolve(() => ({ __typename: 'PluginCatalog' as const })),
 	})
 
-	const scopeFields = resolver.of(PluginScope, {
-		detail: field(PluginDetail).resolve((scope) => {
-			const ctor = getScopeCtor(pCtx, scope)
+	const catalogFields = resolver.of(PluginCatalog, {
+		plugin: field(Plugin)
+			.input({ id: v.string() })
+			.resolve((_catalog, { id }) => createPlugin(pCtx, id)),
+		plugins: field(v.array(Plugin)).resolve(() => listPlugins(pCtx)),
+		status: field(PluginStatusOverview).resolve(() => getStatusOverview(pCtx)),
+	})
+
+	const pluginFields = resolver.of(Plugin, {
+		detail: field(PluginDetail).resolve((plugin) => {
+			const ctor = getPluginCtor(pCtx, plugin)
 			return {
 				__typename: 'PluginDetail' as const,
-				name: scope.name,
+				name: plugin.name,
 				desc: '插件示例描述',
 				dependencies: getPluginDependencies(pCtx, ctor),
 			}
 		}),
-	}) as unknown as Resolver
+	})
 
-	return [queries, scopeFields] satisfies Resolver[]
+	return [queries, catalogFields, pluginFields] satisfies Resolver[]
 }

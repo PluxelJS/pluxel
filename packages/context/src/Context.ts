@@ -1,7 +1,6 @@
 // Context.ts
 
 import type {
-	ServiceCfg,
 	ServiceClass,
 	ServiceContractInst,
 	ServiceCtor,
@@ -22,6 +21,7 @@ type ServiceMeta = {
 	key: string
 	scope: 'context' | 'root'
 }
+type RuntimeServiceCtor<T> = new (ctx: Context, cfg?: any) => T
 
 // oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- this class is intentionally merged with an interface for service augmentation.
 export class Context {
@@ -78,66 +78,17 @@ export class Context {
 		Context.serviceMetaByKey.set(key, meta)
 		Context.defaultMapping[sk] = sk
 
-		// 在原型上定义 getter：按 scope 在“注册阶段”分配不同实现，避免热路径分支。
-		const getter: (this: Context) => ServiceInst<S> =
-			meta.scope === 'root'
-				? function (this: Context) {
-						const root = this.root
-						let inst = root.instances[sk] as ServiceInst<S>
-						if (inst) {
-							const withCtx = inst as unknown as ServiceWithCtx<Context>
-							if (withCtx.ctx !== root) withCtx.ctx = root
-							return inst
-						}
-						const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new ctor(root, cfg) as ServiceInst<S>
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
-						root.instances[sk] = inst
-						return inst
-					}
-				: function (this: Context) {
-						const ik = this.mapping[sk] as symbol
-
-						// Fast path: read from `this.instances` first.
-						// - For non-isolated services, `ik === sk` and the instance lives in `root.instances`.
-						//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
-						//   (after isolate() via Object.create), so lookups still hit.
-						// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
-						let inst = this.instances[ik] as ServiceInst<S>
-						if (inst) {
-							const withCtx = inst as unknown as ServiceWithCtx<Context>
-							if (withCtx.ctx !== this) withCtx.ctx = this
-							return inst
-						}
-						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new ctor(this, cfg) as ServiceInst<S>
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-						// Only decide where to store on miss:
-						// - `ik === sk` → shared root space (avoid accidental isolation)
-						// - `ik !== sk` → this context's isolated space
-						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
-						return inst
-					}
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
-			get: getter,
+			get: createServiceGetter<ServiceInst<S>>(
+				ctor as unknown as RuntimeServiceCtor<ServiceInst<S>>,
+				key,
+				sk,
+				meta.scope,
+			),
 		})
 
-		// 方法代理（同样最轻）
-		for (const m of ctor.methods ?? []) {
-			if (m in Context.prototype) continue
-			Object.defineProperty(Context.prototype, m, {
-				configurable: true,
-				value(this: Context, ...args: unknown[]) {
-					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
-					const fn = svc[m] as unknown
-					if (typeof fn !== 'function') {
-						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
-					}
-					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
-				},
-			})
-		}
+		installServiceProxies(key, ctor.methods, ctor.props)
 	}
 
 	/** 提供 override —— 同步把原来的 getter 整块替换掉 */
@@ -161,56 +112,18 @@ export class Context {
 			meta.scope) as 'context' | 'root'
 		meta.scope = scope
 		const sk = meta.sk
-		const getter: (this: Context) => ServiceContractInst<S> =
-			scope === 'root'
-				? function (this: Context) {
-						const root = this.root
-						let inst = root.instances[sk] as ServiceContractInst<S>
-						if (inst) {
-							const withCtx = inst as unknown as ServiceWithCtx<Context>
-							if (withCtx.ctx !== root) withCtx.ctx = root
-							return inst
-						}
-						const cfg = (root.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new overrideCtor(root, cfg) as ServiceContractInst<S>
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = root
-						root.instances[sk] = inst
-						return inst
-					}
-				: function (this: Context) {
-						const ik = this.mapping[sk] as symbol
-						let inst = this.instances[ik] as ServiceContractInst<S>
-						if (inst) {
-							const withCtx = inst as unknown as ServiceWithCtx<Context>
-							if (withCtx.ctx !== this) withCtx.ctx = this
-							return inst
-						}
-						const cfg = (this.config as Record<string, unknown>)[key] as ServiceCfg<S>
-						inst = new overrideCtor(this, cfg) as ServiceContractInst<S>
-						;(inst as unknown as ServiceWithCtx<Context>).ctx = this
-						;(ik === sk ? this.root.instances : this.instances)[ik] = inst
-						return inst
-					}
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
-			get: getter,
+			get: createServiceGetter<ServiceContractInst<S>>(
+				overrideCtor as unknown as RuntimeServiceCtor<ServiceContractInst<S>>,
+				key,
+				sk,
+				scope,
+			),
 		})
 
-		// 4) 同步补齐方法代理（不覆盖既有 Context 方法/代理）
-		for (const m of overrideCtor.methods ?? []) {
-			if (m in Context.prototype) continue
-			Object.defineProperty(Context.prototype, m, {
-				configurable: true,
-				value(this: Context, ...args: unknown[]) {
-					const svc = (this as unknown as Record<string, unknown>)[key] as Record<string, unknown>
-					const fn = svc[m] as unknown
-					if (typeof fn !== 'function') {
-						throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
-					}
-					return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
-				},
-			})
-		}
+		// 4) 同步补齐代理（不覆盖既有 Context 方法/属性代理）
+		installServiceProxies(key, overrideCtor.methods, overrideCtor.props)
 	}
 	/**
 	 * 扩展 Context，继承 mapping & 共享 instances
@@ -301,22 +214,123 @@ export class Context {
 	}
 }
 
+function createServiceGetter<T>(
+	ctor: RuntimeServiceCtor<T>,
+	key: string,
+	sk: symbol,
+	scope: 'context' | 'root',
+): (this: Context) => T {
+	if (scope === 'root') {
+		return function (this: Context) {
+			const root = this.root
+			let inst = root.instances[sk] as T
+			if (inst) return bindServiceContext(inst, root)
+
+			const cfg = (root.config as Record<string, unknown>)[key]
+			inst = new ctor(root, cfg)
+			bindServiceContext(inst, root)
+			root.instances[sk] = inst
+			return inst
+		}
+	}
+
+	return function (this: Context) {
+		const ik = this.mapping[sk] as symbol
+
+		// Fast path: read from `this.instances` first.
+		// - For non-isolated services, `ik === sk` and the instance lives in `root.instances`.
+		//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
+		//   (after isolate() via Object.create), so lookups still hit.
+		// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
+		let inst = this.instances[ik] as T
+		if (inst) return bindServiceContext(inst, this)
+
+		const cfg = (this.config as Record<string, unknown>)[key]
+		inst = new ctor(this, cfg)
+		bindServiceContext(inst, this)
+		// Only decide where to store on miss:
+		// - `ik === sk` -> shared root space (avoid accidental isolation)
+		// - `ik !== sk` -> this context's isolated space
+		;(ik === sk ? this.root.instances : this.instances)[ik] = inst
+		return inst
+	}
+}
+
+function bindServiceContext<T>(inst: T, ctx: Context) {
+	const withCtx = inst as unknown as ServiceWithCtx<Context>
+	if (withCtx.ctx !== ctx) withCtx.ctx = ctx
+	return inst
+}
+
+function installServiceProxies(
+	key: string,
+	methods?: readonly string[],
+	props?: readonly string[],
+) {
+	for (const m of methods ?? []) {
+		if (m in Context.prototype) continue
+		Object.defineProperty(Context.prototype, m, {
+			configurable: true,
+			value(this: Context, ...args: unknown[]) {
+				const svc = getServiceProxyTarget(this, key)
+				const fn = svc[m] as unknown
+				if (typeof fn !== 'function') {
+					throw new TypeError(`[pluxel/context] Service method not found: ${key}.${m}`)
+				}
+				return (fn as (...a: unknown[]) => unknown).call(svc, ...args)
+			},
+		})
+	}
+	for (const p of props ?? []) {
+		if (p in Context.prototype) continue
+		Object.defineProperty(Context.prototype, p, {
+			configurable: true,
+			get(this: Context) {
+				return getServiceProxyTarget(this, key)[p]
+			},
+		})
+	}
+}
+
+function getServiceProxyTarget(ctx: Context, key: string) {
+	return (ctx as unknown as Record<string, unknown>)[key] as Record<string, unknown>
+}
+
 const CONTEXT_IMPL = Symbol.for('pluxel:context:impl')
-const existingContextImpl = (globalThis as unknown as Record<symbol, unknown>)[CONTEXT_IMPL] as
-	| typeof Context
-	| undefined
+const CONTEXT_IMPL_META = Symbol.for('pluxel:context:impl:meta')
+type ContextImplMeta = {
+	url: string
+	stack?: string
+}
+const contextGlobal = globalThis as unknown as Record<symbol, unknown>
+const existingContextImpl = contextGlobal[CONTEXT_IMPL] as typeof Context | undefined
 if (existingContextImpl && existingContextImpl !== Context) {
+	const meta = contextGlobal[CONTEXT_IMPL_META] as ContextImplMeta | undefined
 	throw new Error(
 		[
 			'[pluxel/context] Multiple Context implementations detected in the same runtime.',
 			'This indicates that more than one copy of @pluxel/context was evaluated (e.g. via HMR runner/workspace resolution).',
 			'Fix your module resolution to guarantee a single implementation.',
-		].join('\n'),
+			`First implementation: ${meta?.url ?? '<unknown>'}`,
+			`Current implementation: ${import.meta.url}`,
+			meta?.stack ? `First implementation stack:\n${meta.stack}` : undefined,
+		]
+			.filter((line): line is string => typeof line === 'string')
+			.join('\n'),
 	)
 }
 if (!existingContextImpl) {
-	Object.defineProperty(globalThis, CONTEXT_IMPL, {
+	Object.defineProperty(contextGlobal, CONTEXT_IMPL, {
 		value: Context,
+		configurable: false,
+		enumerable: false,
+		writable: false,
+	})
+	Object.defineProperty(contextGlobal, CONTEXT_IMPL_META, {
+		value: {
+			url: import.meta.url,
+			stack: new Error('[pluxel/context] First Context implementation loaded here').stack,
+		} satisfies ContextImplMeta,
 		configurable: false,
 		enumerable: false,
 		writable: false,

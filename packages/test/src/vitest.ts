@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/build/rolldown'
+import { extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
 import {
 	defineConfig,
 	mergeConfig,
@@ -24,7 +25,7 @@ export type PluxelVitestOptions = {
 	prePlugins?: NonNullable<ViteUserConfig['plugins']>
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/runtime'] as const
+export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/runtime-dynamic'] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
@@ -68,6 +69,14 @@ function asStringArray(value: unknown): string[] {
 	return typeof value === 'string' ? [value] : []
 }
 
+function isThenable<T>(value: unknown): value is PromiseLike<T> {
+	return (
+		(typeof value === 'object' || typeof value === 'function') &&
+		value !== null &&
+		typeof (value as { then?: unknown }).then === 'function'
+	)
+}
+
 function normalizeGlob(pattern: string): string {
 	if (pattern.startsWith('**/') || pattern.startsWith('/') || pattern.startsWith('!'))
 		return pattern
@@ -80,9 +89,9 @@ function normalizeGlobs(patterns: string[]): string[] {
 
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
- * - enables `@pluxel/source` + `@pluxel/runtime` resolution conditions
+ * - enables fixed Pluxel resolution conditions (`@pluxel/source` for internals, `@pluxel/runtime-dynamic` for plugin dev entries)
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
- * - runs `@pluxel/test/setup` once per worker
+ * - runs the local core-only `@pluxel/test/setup` module once per worker
  */
 export function definePluxelVitestConfig(
 	overrides: ViteUserConfigExport = {},
@@ -93,7 +102,9 @@ export function definePluxelVitestConfig(
 	)
 	const exclude = normalizeGlobs(toArray(options.exclude) ?? ['**/node_modules/**', '**/*.d.ts'])
 	const baseConditions = buildPluxelResolveConditions()
-	const setupFile = '@pluxel/test/setup'
+	const setupFile = fileURLToPath(
+		new URL(`./setup${extname(fileURLToPath(import.meta.url))}`, import.meta.url),
+	)
 
 	const base: ViteUserConfig = {
 		resolve: { conditions: baseConditions },
@@ -125,19 +136,13 @@ export function definePluxelVitestConfig(
 			configSourcePlugin({ include, exclude }),
 		]
 
-		// Always keep Pluxel resolution conditions available (and allow caller to add more).
-		const mergedConditions = uniqStrings([
-			...baseConditions,
-			...asStringArray(merged.resolve?.conditions),
-		])
-		merged.resolve = { ...merged.resolve, conditions: mergedConditions }
+		// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
+		// plugin packages use @pluxel/runtime-dynamic. Do not let per-package config widen this.
+		merged.resolve = { ...merged.resolve, conditions: baseConditions }
 		merged.ssr = merged.ssr ?? {}
 		merged.ssr.resolve = {
 			...merged.ssr.resolve,
-			conditions: uniqStrings([
-				...baseConditions,
-				...asStringArray(merged.ssr.resolve?.conditions),
-			]),
+			conditions: baseConditions,
 		}
 
 		// Always keep core setup in place. Caller can add more setup files.
@@ -157,12 +162,11 @@ export function definePluxelVitestConfig(
 		})
 	}
 
-	return defineConfig(
-		(async () => {
-			const resolved = (await overrides) as ViteUserConfig
-			return finalize(resolved ?? {})
-		})(),
-	)
+	if (isThenable<ViteUserConfig>(overrides)) {
+		return defineConfig(overrides.then((resolved) => finalize(resolved ?? {})))
+	}
+
+	return defineConfig(finalize((overrides ?? {}) as ViteUserConfig))
 }
 
 export default definePluxelVitestConfig()

@@ -1,8 +1,27 @@
+export { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from './logger/ensure'
+
 export {
-	hmrPluginLevels,
-	ensurePluxelLogging,
-	type EnsurePluxelLoggingOptions,
-} from './logger/ensure'
+	getDebugLogger,
+	isDebugTopicEnabled,
+	resolveDebugTopics,
+	type DebugTopic,
+} from '@pluxel/core/logger'
+
+export {
+	createRuntimeLogging,
+	type ResolvedConsoleSink,
+	type ResolvedFileSink,
+	type ResolvedRuntimeLoggingConfig,
+	type ResolvedUiSink,
+	type RuntimeConsoleSinkInput,
+	type RuntimeFileSinkInput,
+	type RuntimeLogging,
+	type RuntimeLoggingDescription,
+	type RuntimeLoggingInput,
+	type RuntimeLoggingPreset,
+	type RuntimeLoggingSinkId,
+	type RuntimeUiSinkInput,
+} from './logger/logging'
 
 export {
 	createDailyTimeRotatingFileSink,
@@ -12,11 +31,7 @@ export {
 	type TimeRotatingFileSinkOptions,
 } from './logger/file'
 
-export {
-	EXTRA_HMR_PLUGIN_LEVELS,
-	ensureHmrPluginLevelsLoaded,
-	persistHmrPluginLevels,
-} from './logger/levels'
+export { ensureRuntimePluginPolicyLoaded, persistRuntimePluginPolicy } from './logger/levels'
 
 export type {
 	CompiledLogFilter,
@@ -34,7 +49,17 @@ export type {
 } from './logger/protocol'
 export { compileLogFilter, matchesLogFilter, matchesLogFilterCompiled } from './logger/protocol'
 
-export { createLogStoreSink, createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
+export { createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
+
+export {
+	RuntimePluginLogPolicy,
+	parsePluginLogPolicySnapshot,
+	runtimePluginLogPolicy,
+	serializePluginLogPolicySnapshot,
+	type PluginLogPolicySnapshot,
+	type RuntimePluginLogLevel,
+} from './logger/policy'
+export { readPluginLogPolicyFile, writePluginLogPolicyFile } from './logger/policy-file'
 
 export type {
 	RuntimeLogStoreAppend,

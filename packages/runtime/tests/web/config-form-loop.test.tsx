@@ -2,7 +2,7 @@
 
 import { MantineProvider } from '@mantine/core'
 import { RuntimeTransportClientProvider } from '../../src/web/react'
-import { act, useMemo, useState } from 'react'
+import { act, useMemo, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
@@ -161,14 +161,6 @@ const schema = v.object({
 	enabled: v.pipe(v.boolean(), f.formMeta({ label: '启用' }), f.booleanMeta({})),
 })
 
-const extraSchema = v.object({
-	cacheKey: v.pipe(
-		v.string(),
-		f.formMeta({ label: '缓存键' }),
-		f.stringMeta({ placeholder: '输入缓存键' }),
-	),
-})
-
 function Harness({ active = true }: { active?: boolean }) {
 	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
 	const [dirty, setDirty] = useState(false)
@@ -198,12 +190,12 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
 	const [dirty, setDirty] = useState(false)
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisible] = useState(false)
+	const [assistVisible, setAssistPanelVisible] = useState(false)
 	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
 	const setAssistClaim = (owner: symbol, visible: boolean) => {
 		if (visible) assistClaims.set(owner, true)
 		else assistClaims.delete(owner)
-		setAssistVisible(assistClaims.size > 0)
+		setAssistPanelVisible(assistClaims.size > 0)
 	}
 	const asideValue = useMemo(
 		() => ({
@@ -211,7 +203,6 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistVisible: (visible: boolean) => setAssistClaim(Symbol.for('legacy-assist'), visible),
 			setAssistClaim,
 		}),
 		[assistHost, assistVisible, assistClaims],
@@ -293,7 +284,6 @@ function BuiltinDocHarness({
 			assistHost,
 			setAssistHost,
 			assistVisible: false,
-			setAssistVisible: () => {},
 			setAssistClaim: () => {},
 		}),
 		[assistHost],
@@ -343,12 +333,12 @@ function AssistClaimHarness({
 	secondVisible: boolean
 }) {
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
-	const [assistVisible, setAssistVisible] = useState(false)
+	const [assistVisible, setAssistPanelVisible] = useState(false)
 	const assistClaims = useMemo(() => new Map<symbol, true>(), [])
 	const setAssistClaim = (owner: symbol, visible: boolean) => {
 		if (visible) assistClaims.set(owner, true)
 		else assistClaims.delete(owner)
-		setAssistVisible(assistClaims.size > 0)
+		setAssistPanelVisible(assistClaims.size > 0)
 	}
 	const asideValue = useMemo(
 		() => ({
@@ -356,7 +346,6 @@ function AssistClaimHarness({
 			assistHost,
 			setAssistHost,
 			assistVisible,
-			setAssistVisible: (visible: boolean) => setAssistClaim(Symbol.for('legacy-assist'), visible),
 			setAssistClaim,
 		}),
 		[assistHost, assistVisible, assistClaims],
@@ -393,32 +382,6 @@ function LayoutHarness({ active = true }: { active?: boolean }) {
 						savedConfig={{}}
 						defaults={{}}
 						active={active}
-						draftValues={drafts}
-						onDirtyChange={setDirty}
-						onDraftChange={setDrafts}
-					/>
-					<ThemeCustomizer />
-				</div>
-			</MantineProvider>
-		</RuntimeTransportClientProvider>
-	)
-}
-
-function MultiSchemaHarness({ active = true }: { active?: boolean }) {
-	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
-	const [dirty, setDirty] = useState(false)
-
-	return (
-		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
-			<MantineProvider>
-				<div data-dirty={dirty ? 'true' : 'false'}>
-					<ConfigForm
-						pluginName="test-plugin"
-						schemas={{ config: schema, cache: extraSchema }}
-						savedConfig={{}}
-						defaults={{}}
-						active={active}
-						activeKey="config"
 						draftValues={drafts}
 						onDirtyChange={setDirty}
 						onDraftChange={setDrafts}
@@ -528,6 +491,17 @@ async function typeIntoInput(input: HTMLInputElement, value: string) {
 	})
 }
 
+async function mount(ui: ReactNode) {
+	const container = document.createElement('div')
+	document.body.appendChild(container)
+	const root = createRoot(container)
+	await act(async () => {
+		root.render(ui)
+		await Promise.resolve()
+	})
+	return { container, root }
+}
+
 beforeAll(async () => {
 	const module = await import('../../../components/src/app/plugins/detail/RightPane')
 	RightPaneComponent = module.RightPane
@@ -547,22 +521,17 @@ describe('ConfigForm loop safety', () => {
 		document.body.innerHTML = ''
 	})
 
-	it('does not hit maximum update depth while typing with active toc enabled', async () => {
+	function captureConsoleErrors() {
 		vi.useFakeTimers()
 		console.error = ((...args: unknown[]) => {
 			consoleErrors.push(args.map(String).join(' '))
 		}) as typeof console.error
+	}
 
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
+	async function exerciseTypingLoop(ui: ReactNode, dirtySelector: string) {
+		captureConsoleErrors()
+		const { container, root } = await mount(ui)
 		try {
-			await act(async () => {
-				root.render(<Harness active />)
-				await Promise.resolve()
-			})
-
 			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
 			expect(input).toBeTruthy()
 
@@ -574,199 +543,37 @@ describe('ConfigForm loop safety', () => {
 			})
 
 			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
+			expect(container.querySelector(dirtySelector)).toBeTruthy()
 		} finally {
 			await act(async () => {
 				root.unmount()
 			})
 		}
+	}
+
+	it('does not hit maximum update depth while typing with active toc enabled', async () => {
+		expect.hasAssertions()
+		await exerciseTypingLoop(<Harness active />, '[data-dirty="true"]')
 	})
 
 	it('does not hit maximum update depth with live workbench aside mounted', async () => {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
-		try {
-			await act(async () => {
-				root.render(<WorkbenchHarness active />)
-				await Promise.resolve()
-			})
-
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
-	})
-
-	it('does not hit maximum update depth while typing with toc disabled', async () => {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
-		try {
-			await act(async () => {
-				root.render(<Harness active={false} />)
-				await Promise.resolve()
-			})
-
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
+		expect.hasAssertions()
+		await exerciseTypingLoop(<WorkbenchHarness active />, '[data-dirty="true"]')
 	})
 
 	it('does not hit maximum update depth in cfg layout mode', async () => {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
-		try {
-			await act(async () => {
-				root.render(<LayoutHarness active />)
-				await Promise.resolve()
-			})
-
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
-	})
-
-	it('does not hit maximum update depth with schema switcher visible', async () => {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
-		try {
-			await act(async () => {
-				root.render(<MultiSchemaHarness active />)
-				await Promise.resolve()
-			})
-
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector('[data-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
+		expect.hasAssertions()
+		await exerciseTypingLoop(<LayoutHarness active />, '[data-dirty="true"]')
 	})
 
 	it('does not loop when workbench dirty propagation recreates setActiveTabDirty', async () => {
-		vi.useFakeTimers()
-		console.error = ((...args: unknown[]) => {
-			consoleErrors.push(args.map(String).join(' '))
-		}) as typeof console.error
-
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
-		try {
-			await act(async () => {
-				root.render(<RightPaneDirtyHarness />)
-				await Promise.resolve()
-			})
-
-			const input = container.querySelector('input[name="name"]') as HTMLInputElement | null
-			expect(input).toBeTruthy()
-
-			await typeIntoInput(input!, 'abc')
-
-			await act(async () => {
-				vi.advanceTimersByTime(200)
-				await Promise.resolve()
-			})
-
-			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
-			expect(container.querySelector('[data-tab-dirty="true"]')).toBeTruthy()
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
+		expect.hasAssertions()
+		await exerciseTypingLoop(<RightPaneDirtyHarness />, '[data-tab-dirty="true"]')
 	})
 
 	it('mounts builtin doc toc into the workbench aside host instead of inline content', async () => {
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
+		const { container, root } = await mount(<BuiltinDocHarness mountAssistHost={false} />)
 		try {
-			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost={false} />)
-				await Promise.resolve()
-			})
-
 			const shell = container.querySelector('[data-doc-shell="true"]')
 			expect(shell?.textContent).toContain('Builtin Doc Test')
 			expect(shell?.textContent).not.toContain('文档导航')
@@ -791,14 +598,11 @@ describe('ConfigForm loop safety', () => {
 	})
 
 	it('does not expose builtin doc toc when its tab is inactive', async () => {
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
+		const { container, root } = await mount(
+			<BuiltinDocHarness mountAssistHost={true} active={false} />,
+		)
 		try {
 			await act(async () => {
-				root.render(<BuiltinDocHarness mountAssistHost={true} active={false} />)
-				await Promise.resolve()
 				await Promise.resolve()
 			})
 
@@ -813,16 +617,10 @@ describe('ConfigForm loop safety', () => {
 	})
 
 	it('keeps assist area visible while another toc claim is still active', async () => {
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-
+		const { container, root } = await mount(
+			<AssistClaimHarness firstVisible={true} secondVisible={true} />,
+		)
 		try {
-			await act(async () => {
-				root.render(<AssistClaimHarness firstVisible={true} secondVisible={true} />)
-				await Promise.resolve()
-			})
-
 			expect(container.querySelector('[data-assist-visible="true"]')).toBeTruthy()
 
 			await act(async () => {

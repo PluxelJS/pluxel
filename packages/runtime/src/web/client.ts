@@ -2,39 +2,32 @@ import type { RpcStub } from 'capnweb'
 import { treaty } from '@elysiajs/eden'
 
 import {
-	type AuthAwareFetchOptions,
-	createAuthAwareFetch,
-	defaultOnAuthBlocked,
+	type VerificationAwareFetchOptions,
+	createVerificationAwareFetch,
+	defaultOnVerificationBlocked,
 	type RuntimeFetch,
 	toGlobalFetch,
-} from './auth'
+} from './verification'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { ExtensionManifest } from './extensions'
 import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
 import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
+import { createRuntimeSecurityClient } from './security'
 import {
-	HMR_EXTENSIONS_EVENTS_PATH,
-	HMR_INTERNAL_API_BASE,
-	HMR_META_AUTH_PATH,
-	HMR_TRANSPORT_PATHS,
-	hmrSignalDbCollectionPath,
-	hmrLogStreamPath,
+	RUNTIME_EXTENSIONS_EVENTS_PATH,
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_TRANSPORT_PATHS,
+	runtimeSignalDbCollectionPath,
+	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
 import { mergeNamespaces } from './utils'
-
-export interface RuntimeAuthMeta {
-	enabled: boolean
-	pluginName: string | null
-	redirectPath: string | null
-	authenticated: boolean
-}
+import { resolveClientUrl } from './http-utils'
 
 export interface RuntimeMeta {
-	service: 'pluxel-hmr'
+	service: 'pluxel-runtime'
 	ready: true
-	auth: RuntimeAuthMeta
 	sse: {
 		namespaces: string[]
 	}
@@ -46,7 +39,6 @@ export interface RuntimeMeta {
 		rpc: string
 		graphql: string
 		sse: string
-		mcp: string
 		signaldb: string
 	}
 }
@@ -92,9 +84,7 @@ type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
 	((params: { streamId: string }) => RuntimeTreatyStreamRoute)
 
 interface RuntimeTreatyClient {
-	meta: RuntimeTreatyGet<RuntimeMeta> & {
-		auth: RuntimeTreatyGet<RuntimeAuthMeta>
-	}
+	meta: RuntimeTreatyGet<RuntimeMeta>
 	extensions: {
 		manifest: RuntimeTreatyGet<ExtensionManifest>
 	}
@@ -113,7 +103,7 @@ export type RuntimeTransportClientOptions = {
 	defaultNamespace?: string
 	credentials?: RequestCredentials
 	fetch?: RuntimeFetch
-	auth?: AuthAwareFetchOptions & {
+	verification?: VerificationAwareFetchOptions & {
 		enabled?: boolean
 	}
 }
@@ -121,7 +111,6 @@ export type RuntimeTransportClientOptions = {
 type RuntimeTransportHttp = {
 	meta: {
 		info(init?: RequestInit): Promise<RuntimeMeta>
-		auth(init?: RequestInit): Promise<RuntimeAuthMeta>
 	}
 	extensions: {
 		manifest(init?: RequestInit): Promise<ExtensionManifest>
@@ -143,7 +132,6 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	mcp: string
 	signaldbCollection(pluginName: string, collection: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
 	extensionEvents(namespaces?: string[]): string
@@ -181,7 +169,6 @@ function createRuntimeTransportHttp(
 	return {
 		meta: {
 			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
-			auth: (init) => expectData<RuntimeAuthMeta>(http.meta.auth.get({ fetch: init })),
 		},
 		extensions: {
 			manifest: (init) =>
@@ -204,22 +191,12 @@ function createRuntimeTransportHttp(
 	}
 }
 
-function isAbsoluteUrl(value: string): boolean {
-	return /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value)
-}
-
-function resolveClientUrl(value: string): string {
-	if (isAbsoluteUrl(value)) return value
-	if (typeof window === 'undefined') return value
-	return new URL(value, window.location.origin).toString()
-}
-
 function resolveApiBase(options: RuntimeTransportClientOptions): string {
 	return resolveClientUrl(
 		options.apiBase ??
 			(typeof options.origin === 'string' && options.origin
-				? joinPath(options.origin, HMR_INTERNAL_API_BASE)
-				: HMR_INTERNAL_API_BASE),
+				? joinPath(options.origin, RUNTIME_INTERNAL_API_BASE)
+				: RUNTIME_INTERNAL_API_BASE),
 	)
 }
 
@@ -250,10 +227,9 @@ export function createRuntimeTransportFetch(
 ): RuntimeFetch {
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
-	if (options.auth?.enabled === false) return baseFetch
-	return createAuthAwareFetch(baseFetch, {
-		onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
-		requireMarkerHeader: options.auth?.requireMarkerHeader,
+	if (options.verification?.enabled === false) return baseFetch
+	return createVerificationAwareFetch(baseFetch, {
+		onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
 	})
 }
 
@@ -263,20 +239,19 @@ export function createRuntimeTransportLinks(
 	const apiBase = resolveApiBase(options)
 	const transport = {
 		apiBase,
-		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, HMR_TRANSPORT_PATHS.rpc)),
-		graphql: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.graphql)),
-		sse: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.sse)),
-		mcp: resolveClientUrl(joinPath(apiBase, HMR_TRANSPORT_PATHS.mcp)),
+		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
+		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
+		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
 		signaldbCollection: (pluginName: string, collection: string) =>
-			resolveClientUrl(joinPath(apiBase, hmrSignalDbCollectionPath(pluginName, collection))),
+			resolveClientUrl(joinPath(apiBase, runtimeSignalDbCollectionPath(pluginName, collection))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
-			const base = resolveClientUrl(joinPath(apiBase, hmrLogStreamPath(streamId, '/follow')))
+			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
 			const suffix =
 				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
 			return suffix ? `${base}?${suffix}` : base
 		},
 		extensionEvents: (namespaces?: string[]) => {
-			const base = resolveClientUrl(joinPath(apiBase, HMR_EXTENSIONS_EVENTS_PATH))
+			const base = resolveClientUrl(joinPath(apiBase, RUNTIME_EXTENSIONS_EVENTS_PATH))
 			const params = new URLSearchParams()
 			for (const namespace of namespaces ?? []) params.append('ns', namespace)
 			const suffix = params.toString()
@@ -310,7 +285,11 @@ export function createRuntimeTransportClient(
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
-	const authEnabled = options.auth?.enabled !== false
+	const verificationEnabled = options.verification?.enabled !== false
+	const security = createRuntimeSecurityClient({
+		apiBase: links.apiBase,
+		fetch,
+	})
 	const rawRpc = createRpcClientFactory(links.rpc)
 	const extensions = createUiRpcView(rawRpc, { credentials })
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
@@ -333,11 +312,13 @@ export function createRuntimeTransportClient(
 			...opts,
 			url: opts?.url ?? baseSseOptions.url ?? links.sse,
 			withCredentials,
-			auth: authEnabled
+			verification: verificationEnabled
 				? {
-						metaUrl: joinPath(links.apiBase, HMR_META_AUTH_PATH),
-						fetch,
-						onBlocked: options.auth?.onBlocked ?? defaultOnAuthBlocked,
+						readState: async () => {
+							const overview = await security.readOverview()
+							return overview.verification
+						},
+						onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
 					}
 				: undefined,
 			params,

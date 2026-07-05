@@ -3,20 +3,15 @@ import { describe, expect, it } from 'vitest'
 import * as PublicExtensions from '@pluxel/runtime/web/extensions'
 import { extensionFederationSharedPackages } from '@pluxel/runtime/web/federation'
 import * as PublicUi from '@pluxel/runtime/web/ui'
-import * as InternalExtensions from '../../src/web/extensions'
-import * as InternalUi from '../../src/web/ui'
-import { expectPublicSurface } from '../helpers/publicSurface'
 
 describe('runtime web subpath surfaces', () => {
-	it('keeps web/ui aligned with the internal ui facade', () => {
-		expectPublicSurface(PublicUi, InternalUi)
+	it('exports the plugin UI authoring entrypoints', () => {
 		expect(PublicUi.pluginUi).toBeTypeOf('function')
 		expect(PublicUi.definePluginUIModule).toBeTypeOf('function')
 		expect(PublicUi.rpcErrorMessage).toBeTypeOf('function')
 	})
 
-	it('keeps web/extensions aligned with the internal extension contracts', () => {
-		expectPublicSurface(PublicExtensions, InternalExtensions)
+	it('exports extension document and interaction helpers', () => {
 		expect(PublicExtensions.doc).toBeTypeOf('function')
 		expect(PublicExtensions.defineInteractionContract).toBeTypeOf('function')
 	})

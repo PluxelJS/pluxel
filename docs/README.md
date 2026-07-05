@@ -1,74 +1,48 @@
-# Pluxel Docs
+# Pluxel 文档入口
 
-这里是 **Pluxel 仓库的权威设计与治理文档入口**。
+这组文档面向人和 LLM：先给设计边界，再给实现入口，避免每次都扫完整仓库。当前实现和未来设想必须分开；`proposals/README.md` 里的内容不能反推为已实现 API。
 
-先看分层：
+## 阅读顺序
 
-- `docs/architecture/**`
-  回答“系统怎么分层、依赖方向与服务边界是什么”
-- `docs/governance/**`
-  回答“发布、维护、重构时有哪些硬约束”
-- `docs/design/**`
-  回答“某个具体子系统为什么收敛成当前设计”
-- `packages/*/README.md`
-  回答“这个包对外提供什么、应该怎么用”
-- `packages/*/docs/**`
-  回答“这个包内部某个子系统的实现 contract / host contract 是什么”
-- `packages/*/IMPLEMENTATION_INDEX.md`
-  回答“具体代码入口在哪、从哪里开始追实现”
+1. 先读包边界：
+   - `CORE.md`
+   - `RUNTIME.md`
+   - `RUNTIME_DYNAMIC_SPLIT.md`
+   - `HMR.md`
+2. 再读横向能力：
+   - `FRONTEND.md`
+   - `CONFIG.md`
+   - `WORKBENCH.md`
+   - `OPS.md`
+   - `TOOLCHAIN.md`
+3. 最后读约束和未来：
+   - `GOVERNANCE.md`
+   - `proposals/README.md`
 
-如果同一个主题在多个层级同时出现，优先级按上面顺序理解。
+## 文件职责
 
-阅读顺序（推荐）：
+- `CORE.md`：最小插件内核、DI、生命周期、feature/config 声明。
+- `RUNTIME.md`：宿主 runtime common、配置持久化、HTTP/web 协议、route-neutral 状态投影。
+- `RUNTIME_DYNAMIC_SPLIT.md`：当前 runtime common 与 runtime-dynamic route 的拆分结果和迁移边界。
+- `HMR.md`：开发期 Vite runner、watch、moduleGraph、模块替换。
+- `FRONTEND.md`：插件 UI、authoring bridge、MF2 remote、SignalDB/RPC/SSE。
+- `CONFIG.md`：配置声明、校验、默认值、持久化、网页配置。
+- `WORKBENCH.md`：插件工作台、builtin/custom contribution、UI ownership。
+- `TOOLCHAIN.md`：build、Vite 分层、lint、test 和发布工具链。
+- `GOVERNANCE.md`：依赖方向、公开包、导出、维护规则。
+- `proposals/README.md`：未实现或未来设计入口，例如 WorkbenchView、Plugin UI cleanup、Core DI V2。
 
-1. `docs/architecture/system.md`
-   整体架构与依赖方向（core/runtime/hmr/cli）
-2. `docs/architecture/frontend.md`
-   插件前端链路（`ctx.ext` / HMR / MF2 / runtime）
-3. `docs/governance/packaging.md`
-   发布/内联/依赖约束（只发布 5 个包）
-4. `docs/governance/agent-rules.md`
-   后续维护规则（避免引入新的遗留/噪音）
-5. `docs/architecture/lint-toolchain.md`
-   lint / build-correctness / toolchain transform 的分层与约束
+## 当前与未来
 
-包内文档（次级入口）：
+- 当前实现：写在 `CORE.md`、`RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md`、`HMR.md`、`FRONTEND.md`、`CONFIG.md`、`WORKBENCH.md`、`TOOLCHAIN.md`、`GOVERNANCE.md`。
+- 未来或未实现：写在 `proposals/README.md`，大型提案放在 `docs/proposals/*.md`，并由 `proposals/README.md` 索引。
+- runtime 当前有 runtime-dynamic route 和 runtime-static route。dynamic/static 的当前行为分别写在 `RUNTIME.md`、`RUNTIME_DYNAMIC_SPLIT.md` 和 `HMR.md`。
+- 如果提案实现，先把已实现行为迁入当前领域文档，再缩短 `proposals/README.md` 或对应提案文档。
 
-- `packages/core/README.md`、`packages/core/IMPLEMENTATION_INDEX.md`
-- `packages/runtime/README.md`、`packages/runtime/IMPLEMENTATION_INDEX.md`
-- `packages/hmr/README.md`、`packages/hmr/IMPLEMENTATION_INDEX.md`
-- `packages/cli/README.md`、`packages/cli/IMPLEMENTATION_INDEX.md`
-- `packages/test/README.md`
+## 维护规则
 
-仓库级补充文档：
-
-- `docs/architecture/services.md`
-  runtime / hmr service 边界补充说明
-- `docs/architecture/lint-toolchain.md`
-  repo lint、build lint、toolchain 接入点与 autofix 边界
-- `docs/design/plugin-config/overview.md`
-  插件配置声明与宿主 doc 编排的收敛设计
-  （实现侧 contract：`packages/runtime/docs/config/contract.md`）
-- `docs/design/plugin-feature/overview.md`
-  Plugin/Feature 分层、`use(required)` / `tryUse(optional)`、以及真正 optional feature 的模块加载边界
-- `docs/design/plugin-contribution/overview.md`
-  插件间 contribution / slot / provider-owned custom widget / resource reference 设计
-  （包含当前 capability matrix、常见交互形式与稳定/非稳定边界）
-- `docs/design/ops-catalog/overview.md`
-  ops live registry 的 host-side catalog 设计
-  （包含 runtime read model、生命周期边界与 workbench Ops 视图）
-
-非权威/历史文档说明：
-
-- `packages/*/src/**.md`、`packages/*/docs/**` 这类文件可能是历史笔记或第三方包自带文档；
-  如果它们与 `docs/*` 或上述 5 个发布包的 README 冲突，以 **`docs/*` 为准**。
-
-典型例子：
-
-- `packages/diod/**`：第三方依赖（仓库内 vendored），其文档不代表 Pluxel 的架构/约束。
-
-补充：
-
-- 一些 internal/private 包（例如 `@pluxel/context`）会配置 `exports` 供仓库内 import，但仍不属于发布集合；发布/依赖约束以 `docs/governance/packaging.md` 为准。
-- `packages/plugins/host/**`、`packages/plugins/host/src/demo/**`
-  是样例与 smoke host，不是权威架构文档；它们用于展示“当前推荐写法”，不替代 `docs/*`。
+- 不再新增深层文档目录，除非某个领域已经大到单文件无法维护。
+- 新文档优先放在 `docs/*.md` 顶层，按包或领域命名。
+- 每个当前设计文档都应该同时回答两个问题：为什么这样分层、代码从哪里看起。
+- 已实现行为写入对应领域文档；未实现计划只写入 `docs/proposals/`。
+- 包内 README 只保留本包入口和本包特有说明，仓库级设计链接到这些顶层文档。

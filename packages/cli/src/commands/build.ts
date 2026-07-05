@@ -4,7 +4,7 @@ import {
 	createOptionalDependencyHook,
 	resolveBuildContext,
 	runWithTsdown,
-} from '@pluxel/build/cli'
+} from '@pluxel/rolldown/build'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
 import { createImportTracker } from '../rolldown'

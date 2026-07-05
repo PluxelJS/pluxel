@@ -154,9 +154,10 @@ function usePluginDb<Name extends string>(
 		deps: DependencyList = [],
 	): T {
 		const view = useCollectionView(collection)
+		const collectionKey = String(collection)
 		const depsKey = signalDbValueKey(deps)
 		const stableDeps = useMemo(() => deps.map((dep) => stabilizeSignalDbValue(dep)), [depsKey])
-		return useSignalDbQueryState(() => query(view), [view, stableDeps])
+		return useSignalDbQueryState(() => query(view), [pluginName, collectionKey, stableDeps])
 	}
 
 	function useDocById<Key extends PluginUiCollectionKey<Name>>(collection: Key, id: string) {
@@ -370,7 +371,9 @@ function signalDbValueKey(value: unknown, seen = new WeakSet<object>()): string 
 		return `${valueType}:${String(value)}`
 	}
 	if (valueType === 'symbol') return `symbol:${String(value)}`
-	if (valueType === 'function') return `function:${(value as Function).name || 'anonymous'}`
+	if (valueType === 'function') {
+		return `function:${(value as { readonly name?: string }).name || 'anonymous'}`
+	}
 	if (value instanceof Date) return `date:${value.toISOString()}`
 	if (Array.isArray(value)) {
 		return `array:[${value.map((item) => signalDbValueKey(item, seen)).join(',')}]`

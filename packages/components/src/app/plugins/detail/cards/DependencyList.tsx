@@ -9,7 +9,7 @@ export interface DependencyListProps {
 		children: ReactNode
 		workbenchMode?: WorkbenchNavigationRequest
 	}>
-	isLinkable?: (name: string) => boolean
+	resolveLinkTarget?: (name: string) => string | undefined
 	linkWorkbenchMode?: WorkbenchNavigationRequest
 }
 
@@ -28,7 +28,7 @@ export function usePluginDependencyEntries() {
 
 export function DependencyList({
 	LinkComponent,
-	isLinkable,
+	resolveLinkTarget,
 	linkWorkbenchMode,
 }: DependencyListProps) {
 	const entries = usePluginDependencyEntries()
@@ -57,8 +57,10 @@ export function DependencyList({
 					/>
 				)
 
-				const linkable = LinkComponent ? (isLinkable ? isLinkable(dep.name) : true) : false
-				if (!LinkComponent || !linkable) {
+				const linkTarget = LinkComponent
+					? (resolveLinkTarget ? resolveLinkTarget(dep.name) : dep.name)
+					: undefined
+				if (!LinkComponent || !linkTarget) {
 					return (
 						<Tooltip
 							key={dep.name}
@@ -85,7 +87,7 @@ export function DependencyList({
 						variant="light"
 						color={color}
 						component={LinkComponent as any}
-						to={`/plugins/${encodeURIComponent(dep.name)}`}
+						to={`/plugins/${encodeURIComponent(linkTarget)}`}
 						workbenchMode={linkWorkbenchMode}
 						leftSection={dot}
 						radius="sm"

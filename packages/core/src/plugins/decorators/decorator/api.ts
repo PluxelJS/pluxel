@@ -1,6 +1,5 @@
-import type { Identifier } from '../../../container'
 import { isStandardSchemaV1 } from '../../../services/config/standardSchema'
-import type { PluginIdentifier, SubclassOf } from '../../types'
+import type { Identifier, PluginIdentifier, SubclassOf } from '../../types'
 import { assertValidBasePluginId } from '../../runtime/pluginId'
 import {
 	__DEV__,
@@ -370,6 +369,36 @@ export function UseFeature(...features: AnyCtor[]): ClassDecorator {
 	return (ctor) => {
 		__registerUsedFeatures__(ctor as unknown as AnyCtor, ...features)
 	}
+}
+
+export function patchPluginMetadata(ctor: AnyCtor, patch: Record<string, unknown>): void {
+	if (!patch || typeof patch !== 'object') return
+	const entries = Object.entries(patch).filter(([, value]) => value !== undefined)
+	if (entries.length === 0) return
+
+	const s = S(ctor)
+	const next = Object.assign(Object.create(null), s.declaredMeta ?? Object.create(null))
+	for (let i = 0; i < entries.length; i++) {
+		const [key, value] = entries[i]!
+		next[key] = value
+	}
+	s.declaredMeta = __DEV__ ? $freeze(next) : next
+	if (s.infoSnap) rebuildInfoSnapshot(ctor, s)
+}
+
+export function appendPluginMetadataArray<T>(
+	ctor: AnyCtor,
+	key: string,
+	...values: readonly T[]
+): void {
+	if (!key || values.length === 0) return
+	const s = S(ctor)
+	const meta = (s.declaredMeta ?? Object.create(null)) as Record<string, unknown>
+	const prev = Array.isArray(meta[key]) ? (meta[key] as readonly T[]) : EMPTY_ARR
+	const next = [...prev, ...values] as T[]
+	patchPluginMetadata(ctor, {
+		[key]: __DEV__ ? $freeze(next) : next,
+	})
 }
 
 /*───────────────────────────────────────────────────────────

@@ -1,24 +1,39 @@
 export {
-	type AuthAwareFetchOptions,
-	type AuthBlockedInfo,
+	type VerificationAwareFetchOptions,
+	type VerificationBlockedInfo,
 	type RuntimeFetch,
-	createAuthAwareFetch,
-	defaultOnAuthBlocked,
-	type OnAuthBlocked,
-} from './web/auth'
+	createVerificationAwareFetch,
+	defaultOnVerificationBlocked,
+	type OnVerificationBlocked,
+} from './web/verification'
+export {
+	resolveVerificationLandingPath,
+	type VerificationBlockedCode,
+	type VerificationBlockedKind,
+	type VerificationBlockedPayload,
+	type VerificationReason,
+} from './shared/verification-http'
 
 export {
 	createRuntimeTransportClient,
 	createRuntimeTransportFetch,
 	createRuntimeTransportLinks,
 	expectData,
-	type RuntimeAuthMeta,
 	type RuntimeLogRangeQuery,
 	type RuntimeLogStreamsIndex,
 	type RuntimeMeta,
 	type RuntimeTransportClient,
 	type RuntimeTransportClientOptions,
 } from './web/client'
+export {
+	createRuntimeSecurityClient,
+	type SecurityAuditEvent,
+	type SecurityOverview,
+	type VerificationOverview,
+	type RuntimeSecurityClient,
+	type RuntimeSecurityClientOptions,
+	type VaultAdminState,
+} from './web/security'
 export type {
 	LogFilter,
 	LogRangeErr,
@@ -33,23 +48,29 @@ export type {
 	RuntimeLogLine,
 } from './web/logs'
 export {
-	HMR_EXTENSIONS_BASE,
-	HMR_EXTENSIONS_ARTIFACTS_BASE,
-	HMR_EXTENSIONS_EVENTS_PATH,
-	HMR_EXTENSIONS_MANIFEST_PATH,
-	HMR_EXTENSIONS_MODULES_BASE,
-	HMR_INTERNAL_API_BASE,
-	HMR_LOG_STREAMS_BASE,
-	HMR_META_AUTH_PATH,
-	HMR_META_BASE,
-	HMR_META_INFO_PATH,
-	HMR_META_SSE_PATH,
-	HMR_TRANSPORT_PATHS,
-	hmrExtensionArtifactBasePath,
-	hmrExtensionArtifactPath,
-	hmrExtensionModulePath,
-	hmrLogStreamPath,
-	hmrSignalDbCollectionPath,
+	RUNTIME_EXTENSIONS_BASE,
+	RUNTIME_EXTENSIONS_ARTIFACTS_BASE,
+	RUNTIME_EXTENSIONS_EVENTS_PATH,
+	RUNTIME_EXTENSIONS_MANIFEST_PATH,
+	RUNTIME_EXTENSIONS_MODULES_BASE,
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_LOG_STREAMS_BASE,
+	RUNTIME_META_BASE,
+	RUNTIME_META_INFO_PATH,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_SECURITY_EVENTS_PATH,
+	RUNTIME_SECURITY_VAULT_DEPLOY_GENERATE_PATH,
+	RUNTIME_SECURITY_VAULT_DEPLOY_RECIPIENTS_PATH,
+	RUNTIME_SECURITY_VAULT_HOST_KEY_PATH,
+	RUNTIME_SECURITY_VAULT_UNLOCK_PATH,
+	RUNTIME_META_SSE_PATH,
+	RUNTIME_TRANSPORT_PATHS,
+	RUNTIME_VERIFICATION_BASE,
+	runtimeExtensionArtifactBasePath,
+	runtimeExtensionArtifactPath,
+	runtimeExtensionModulePath,
+	runtimeLogStreamPath,
+	runtimeSignalDbCollectionPath,
 	joinPath,
 } from './web/paths'
 export * from './web/plugin-ui/types'
@@ -74,17 +95,7 @@ export {
 	type RuntimeTransportClientProviderProps,
 	useRuntimeTransportClient,
 } from './web/react'
-export {
-	dispatchRuntimeCommand,
-	invokeRpc,
-	invokeRuntimeOp,
-	listRuntimeOpCatalog,
-	listRuntimeOpsToolsets,
-	listRuntimeOps,
-	rpcErrorMessage,
-	resolveRuntimeOpsToolset,
-	updateRuntimeOpsToolsets,
-} from './web/rpc'
+export { invokeRpc, rpcErrorMessage } from './web/rpc'
 export {
 	useSignalDbCollectionState,
 	useSignalDbCollectionsState,
@@ -95,6 +106,7 @@ export {
 export type {
 	SignalDbFindOptions,
 	SignalDbItem,
+	SignalDbLoadResponse,
 	SignalDbListSpec,
 	SignalDbSelector,
 } from './web/plugin-ui/signaldb-contracts'

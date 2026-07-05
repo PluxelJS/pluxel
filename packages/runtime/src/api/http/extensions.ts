@@ -3,13 +3,13 @@ import { extname } from 'pathe'
 import type { AnyElysiaApp } from '../../services/http/elysia'
 import { EXTENSION_FEDERATION_MANIFEST_FILE } from '../../web/federation'
 import {
-	HMR_EXTENSIONS_BASE,
-	HMR_INTERNAL_API_BASE,
-	hmrExtensionArtifactBasePath,
+	RUNTIME_EXTENSIONS_BASE,
+	RUNTIME_INTERNAL_API_BASE,
+	runtimeExtensionArtifactBasePath,
 } from '../../web/paths'
 
 export const extensionRoutes = (app: AnyElysiaApp) =>
-	app.group(HMR_EXTENSIONS_BASE, (extensions) =>
+	app.group(RUNTIME_EXTENSIONS_BASE, (extensions) =>
 		extensions
 			.get('/manifest', ({ set, pluginCtx }) => {
 				const extensionService = pluginCtx.ext.ui
@@ -84,7 +84,9 @@ function extractArtifactFilePath(
 	sourceHash: string,
 ): string | null {
 	const pathname = new URL(url).pathname
-	const prefix = `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactBasePath(pluginName, sourceHash)}`
+	const artifactBase = runtimeExtensionArtifactBasePath(pluginName, sourceHash)
+	const fullPrefix = `${RUNTIME_INTERNAL_API_BASE}${artifactBase}`
+	const prefix = pathname.startsWith(fullPrefix) ? fullPrefix : artifactBase
 	if (!pathname.startsWith(prefix)) return null
 	const file = pathname.slice(prefix.length).replace(/^\/+/, '')
 	return file || null
@@ -120,7 +122,7 @@ function contentTypeForFile(path: string): string {
 function rewriteFederationManifest(raw: string, pluginName: string, sourceHash: string): string {
 	try {
 		const manifest = JSON.parse(raw)
-		const publicPath = `${HMR_INTERNAL_API_BASE}${hmrExtensionArtifactBasePath(pluginName, sourceHash)}/`
+		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeExtensionArtifactBasePath(pluginName, sourceHash)}/`
 		if (manifest?.metaData && typeof manifest.metaData === 'object') {
 			manifest.metaData.publicPath = publicPath
 			if ('getPublicPath' in manifest.metaData) {

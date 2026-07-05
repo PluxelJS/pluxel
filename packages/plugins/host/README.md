@@ -1,66 +1,63 @@
 # Plugins Host Samples
 
-> Status: internal workspace app (examples + smoke). Not part of the 5 published packages.
+> Status: internal workspace app (examples + smoke). Not part of the published package set.
 
-`packages/plugins/host` 的定位不是“权威架构文档”，而是把当前 runtime/HMR/front-end 设计落成可运行样例和 smoke host。
+`packages/plugins/host` keeps runnable samples for the dynamic and static runtime routes.
 
-它现在提供三种最小入口：
+Recommended entries:
 
-- `dev`：`@pluxel/hmr` 驱动的开发宿主，负责 workspace diagnose / source execution / watch / HMR。
-- `deploy`：直接建立在 `@pluxel/runtime` 之上的管理式宿主。
-- `frozen`：先生成 frozen host，再直接启动它。
+- `dynamic`: host-owned Vite server with `@pluxel/runtime-dynamic/vite`
+- `static`: host-owned Vite server with `@pluxel/runtime-static/vite`
+- `static:direct`: headless fixed-catalog host with `createStaticRuntime`
 
-如果你在看插件前端链路，建议同时看：
-
-- `docs/architecture/frontend.md`
-- `packages/plugins/host/src/demo/README.md`
+The dynamic Vite config is [vite.dynamic.config.ts](./vite.dynamic.config.ts). The route config is
+[src/pluxel.dynamic.ts](./src/pluxel.dynamic.ts).
+The static Vite config is [vite.static.config.ts](./vite.static.config.ts). The static runtime
+config is [src/pluxel.static.ts](./src/pluxel.static.ts); the direct Node host entry
+[src/static.ts](./src/static.ts) imports that config directly and only owns platform startup.
 
 ## Run
 
-开发版：
+dynamic HMR:
 
 ```sh
-pnpm dev
-pnpm --filter @pluxel/plugins-host dev
+pnpm plugin-host:dynamic
+pnpm --filter @pluxel/plugins-host dynamic
 ```
 
-管理式部署版：
+static fixed catalog:
 
 ```sh
-pnpm deploy
-pnpm --filter @pluxel/plugins-host deploy
+pnpm plugin-host:static
+pnpm --filter @pluxel/plugins-host static
 ```
 
-冻结部署版：
+static direct launcher:
 
 ```sh
-pnpm frozen
-pnpm --filter @pluxel/plugins-host frozen
+pnpm plugin-host:static:direct
+pnpm --filter @pluxel/plugins-host static:direct
 ```
 
-## HMR Tools
+## Loader HMR Tools
 
 ```sh
-pnpm --filter @pluxel/plugins-host prompt
-pnpm --filter @pluxel/plugins-host doctor
+pnpm --filter @pluxel/plugins-host dynamic:prompt
+pnpm --filter @pluxel/plugins-host dynamic:doctor
 ```
-
-这里不再维护 `prepare` / `smoke` / `managed:start` / `frozen:start` 这一类中间脚本。宿主入口只保留真正有语义的三个动作：`dev`、`deploy`、`frozen`。
 
 ## Boundary
 
-- `scripts/host.mjs dev` 走 `planHmrHostFromConfig()` + `bootPlannedHmrHost()`。
-- `scripts/host.mjs managed` 直接 `new Context()` 启动 runtime 宿主。
-- `scripts/host.mjs frozen` 先 `buildFrozenHost()`，再启动 frozen 产物。
+- Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`.
+- Static uses a host-owned Vite server and wires the fixed catalog through `staticRuntimeVitePlugin`.
+- Static direct mode uses `createStaticRuntime(config)` with the same complete runtime config from
+  [src/pluxel.static.ts](./src/pluxel.static.ts).
 
-对前端来说，这里最重要的边界是：
+The host proves that the same plugin API can run under dynamic HMR and static fixed-catalog
+semantics.
 
-- `dev`
-  由 `@pluxel/hmr` 消费 `ui(...).bind(ctx)` 这类 authoring bridge
-- `deploy:*`
-  只消费 build 后的 runtime 语义，例如 `ctx.ext.ui.remote.packaged()`
+Capability-specific demos that need local state, such as `PluginVaultDemo`, stay in `src/demo` for
+discovery/manual enablement but are not part of the default enabled set.
 
-也就是说，这个 host 包的价值主要有两点：
-
-- 证明同一套插件 API 可以同时跑在 dev 与 deploy 语义下
-- 提供 demo 与 smoke，让文档里的架构判断有真实可运行样本
+Authelia/OIDC setup lives in `packages/plugins/authelia-oidc-demo`. Keep that integration separate
+from this general-purpose host package.

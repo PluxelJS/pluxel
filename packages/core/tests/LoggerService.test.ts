@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
-import { withContext } from '@pluxel/test'
+import { LoggerService } from '../src/services/LoggerService'
+import { withCoreContext } from '../src/test'
 
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
@@ -27,7 +28,7 @@ describe('LoggerService', () => {
 	})
 
 	it('logs as category "core" when plugin info is missing', () => {
-		return withContext(
+		return withCoreContext(
 			(ctx) => {
 				ctx.logger.info('hello', { id: 1 })
 
@@ -42,7 +43,7 @@ describe('LoggerService', () => {
 	})
 
 	it('logs as category "plugins" and attaches pluginId when available', () => {
-		return withContext(
+		return withCoreContext(
 			(ctx) => {
 				ctx.pluginInfo = { id: 'PluginX' } as any
 
@@ -56,5 +57,15 @@ describe('LoggerService', () => {
 			},
 			{ name: 'plugin-test' },
 		)
+	})
+
+	it('injects the user callsite as caller at the logger service boundary', () => {
+		const logger = new LoggerService({ name: 'caller-test' } as never)
+
+		logger.info('caller probe')
+
+		const rec = records.find((r) => r.rawMessage === 'caller probe')
+		expect(rec?.properties.caller).toEqual(expect.stringContaining('LoggerService.test.ts'))
+		expect(rec?.properties.caller).not.toEqual(expect.stringContaining('src/logger/LoggerService'))
 	})
 })

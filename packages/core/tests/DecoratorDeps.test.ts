@@ -6,9 +6,10 @@ import {
 	ForkablePlugin,
 	Plugin,
 	setParamToken,
-	withHost,
-} from '@pluxel/test'
-import { __registerUsedFeature__, pluginMethodDecorator } from '@pluxel/test/unsafe'
+	withCoreHost,
+} from '@pluxel/core/test'
+import { pluginMethodDecorator } from '../src/plugins/decorators/decoratorRuntime'
+import { __registerUsedFeature__ } from '../src/plugins/decorators/decorator/api'
 
 type PluginToken<T extends BasePlugin = BasePlugin> = abstract new (...args: unknown[]) => T
 type KvLike = {
@@ -83,7 +84,7 @@ setParamToken(FeatureDepsConsumerOk, 0, FeatureDepsKvPlugin)
 
 describe('Decorator-required plugin deps', () => {
 	it('throws when a plugin uses a decorator but has no ctor dependency', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {}
 
@@ -103,13 +104,13 @@ describe('Decorator-required plugin deps', () => {
 	})
 
 	it('inherits required deps from base classes', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {}
 
 			const RequiresKv = () => UsePluginId(KvPlugin)
 
-			class Base extends BasePlugin {
+			abstract class Base extends BasePlugin {
 				@RequiresKv()
 				async id() {
 					return 'local'
@@ -125,7 +126,7 @@ describe('Decorator-required plugin deps', () => {
 	})
 
 	it('demonstrates a realistic Cached() usage (cross-plugin decorator)', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })
 			class KvPlugin extends BasePlugin {
 				private store = new Map<string, unknown>()
@@ -171,7 +172,7 @@ describe('Decorator-required plugin deps', () => {
 	})
 
 	it('propagates decorator-required deps from BaseFeature via features.use() (extraction equivalent)', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			host.add(FeatureDepsKvPlugin)
 			expect(() => host.add(FeatureDepsConsumerMissing)).toThrow(/Missing constructor dependencies/)
 
@@ -184,7 +185,7 @@ describe('Decorator-required plugin deps', () => {
 	})
 
 	it('resolves base vs fork tokens correctly', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			abstract class KvBase extends ForkablePlugin {}
 
 			@Plugin(KvBase, { name: 'Kv' })

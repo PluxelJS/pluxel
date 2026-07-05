@@ -1,22 +1,10 @@
-import { mkdir } from 'node:fs/promises'
-import { configure, getConfig } from '@logtape/logtape'
+import { runtimePluginLogPolicy } from './policy'
 import {
-	createPluxelLogtapeConfig,
-	createPluxelPluginLevelState,
-	type PluxelLogtapeConfigOptions,
-} from '@pluxel/core/logger'
-import { dirname } from 'pathe'
-
-import { createDailyTimeRotatingFileSink } from './file'
-import { createRuntimeLogSink, type RuntimeLogSinkOptions } from './sink'
-
-/**
- * Mutable per-plugin level map for HMR hosts.
- *
- * This is a convenience: hosts (or UI) can tweak levels at runtime without
- * re-running `configure()`, because the LogTape filter reads this state per record.
- */
-export const hmrPluginLevels = createPluxelPluginLevelState()
+	createRuntimeLogging,
+	type RuntimeConsoleSinkInput,
+	type RuntimeLoggingPreset,
+	type RuntimeUiSinkInput,
+} from './logging'
 
 export type EnsurePluxelLoggingOptions = {
 	/**
@@ -24,23 +12,23 @@ export type EnsurePluxelLoggingOptions = {
 	 *
 	 * Defaults to `hmr` because this helper is mainly for HMR hosts.
 	 */
-	preset?: 'hmr' | 'core'
+	preset?: RuntimeLoggingPreset
 	/**
 	 * Console sink:
 	 * - `undefined` / `true`: enabled with preset defaults
 	 * - `false`: disabled
 	 */
-	console?: PluxelLogtapeConfigOptions['console']
+	console?: boolean | RuntimeConsoleSinkInput
 	/** File path used by the runtime helper (daily rotation by prefix path). */
 	file?: string | false
 	/**
 	 * Enable the UI log-store sink (SSE/inspector UI).
 	 *
-	 * - `true` uses defaults (`minLevel=trace`)
+	 * - `true` uses defaults (`minLevel=trace`, caller=true)
 	 * - object forwards to `createRuntimeLogSink`
 	 * - `false` disables it
 	 */
-	ui?: boolean | RuntimeLogSinkOptions
+	ui?: boolean | Exclude<RuntimeUiSinkInput, false>
 	/**
 	 * Debug topic patterns (e.g. `pluxel:hmr:*`).
 	 *
@@ -49,40 +37,38 @@ export type EnsurePluxelLoggingOptions = {
 	debug?: readonly string[]
 }
 
+function normalizeConsole(input: EnsurePluxelLoggingOptions['console']): RuntimeConsoleSinkInput {
+	if (input === false) return false
+	if (input === true || input === undefined) return { enabled: true }
+	return input
+}
+
+function normalizeUi(input: EnsurePluxelLoggingOptions['ui']): RuntimeUiSinkInput {
+	if (input === false) return false
+	if (input === true || input === undefined)
+		return { enabled: true, minLevel: 'trace', caller: true }
+	return { caller: true, ...input }
+}
+
 /**
  * Ensure LogTape is configured for a Pluxel host app.
- *
- * Downstream can call this without importing `@logtape/logtape` directly.
- * This keeps "host entry" code simple while still making logging explicit.
  *
  * @returns `true` if this call performed `configure()`, otherwise `false`.
  */
 export async function ensurePluxelLogging(opts: EnsurePluxelLoggingOptions = {}): Promise<boolean> {
-	if (getConfig()) return false
-
 	const preset = opts.preset ?? 'hmr'
-	const filePath = opts.file === false ? false : (opts.file ?? './logs/hmr.log')
-	let fileSink: PluxelLogtapeConfigOptions['file'] = false
-	if (typeof filePath === 'string') {
-		await mkdir(dirname(filePath), { recursive: true })
-		fileSink = createDailyTimeRotatingFileSink(filePath)
-	}
+	const logging = createRuntimeLogging({
+		preset,
+		sinks: {
+			console: normalizeConsole(opts.console),
+			file: opts.file === false ? false : { enabled: true, path: opts.file ?? './logs/hmr.log' },
+			ui: normalizeUi(opts.ui),
+		},
+		pluginPolicy: {
+			policy: runtimePluginLogPolicy,
+		},
+		debugTopics: opts.debug,
+	})
 
-	const ui =
-		opts.ui === false
-			? undefined
-			: createRuntimeLogSink(typeof opts.ui === 'object' ? { ...opts.ui } : { minLevel: 'trace' })
-
-	await configure(
-		createPluxelLogtapeConfig({
-			preset,
-			console: opts.console,
-			file: fileSink,
-			ui: ui ? { sink: ui } : undefined,
-			debug: opts.debug,
-			pluginLevels: hmrPluginLevels.lookup,
-		}),
-	)
-
-	return true
+	return await logging.configure()
 }

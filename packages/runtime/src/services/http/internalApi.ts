@@ -1,17 +1,25 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import type { Changeset, LoadResponse } from '@signaldb/core'
-import { HMR_INTERNAL_API_BASE, HMR_META_AUTH_PATH, HMR_TRANSPORT_PATHS } from '../../web/paths'
+import type { Changeset } from '@signaldb/core'
+import {
+	canAccessSecurityAdmin,
+	createVerificationBlockedHeaders,
+	createVerificationBlockedPayload,
+	resolveControlPlaneRedirectPath,
+} from '../../shared/verification-http'
+import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
+import { buildVerificationRedirectPath } from '../verification/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
 import { extensionRoutes } from '../../api/http/extensions'
 import { metaRoutes } from '../../api/http/meta'
+import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
-import { getHmrMcpHttpHandler } from '../../api/mcp'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import type { SignalDbItem } from '../../web/plugin-ui/signaldb-contracts'
+import { requireRouteCapability } from '../../runtime/capabilities'
+import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -21,6 +29,7 @@ type InternalApiOptions = {
 	web?: boolean
 	rpc?: boolean
 	sse?: boolean
+	graphql?: boolean
 }
 
 type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
@@ -28,7 +37,24 @@ type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
 }
 
 function resolveRequestKind(path: string): 'api' | 'graphql' {
-	return path === `${HMR_INTERNAL_API_BASE}${HMR_TRANSPORT_PATHS.graphql}` ? 'graphql' : 'api'
+	const internalPath = toInternalApiPath(path)
+	return internalPath === RUNTIME_TRANSPORT_PATHS.graphql ? 'graphql' : 'api'
+}
+
+function isSecurityApiPath(path: string): boolean {
+	const internalPath = toInternalApiPath(path)
+	return (
+		internalPath === RUNTIME_SECURITY_BASE ||
+		internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+	)
+}
+
+function toInternalApiPath(path: string): string {
+	if (path === RUNTIME_INTERNAL_API_BASE) return '/'
+	if (path.startsWith(`${RUNTIME_INTERNAL_API_BASE}/`)) {
+		return path.slice(RUNTIME_INTERNAL_API_BASE.length) || '/'
+	}
+	return path
 }
 
 function createInternalPlugin(
@@ -47,6 +73,22 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
+		const state = await pluginCtx.root.verification.authorize({ request })
+
+		if (isSecurityApiPath(path)) {
+			if (canAccessSecurityAdmin(state)) return undefined
+			const redirectPath = resolveControlPlaneRedirectPath(
+				buildVerificationRedirectPath,
+				request,
+				'api',
+				state.reason,
+			)
+			Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+			return status(
+				401,
+				createVerificationBlockedPayload(path, method, 'api', redirectPath, state.reason),
+			)
+		}
 
 		const validation = pluginCtx.internalApiValidation
 		if (validation?.hasValidators()) {
@@ -76,41 +118,27 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 			}
 		}
 
-		const authGuard = pluginCtx.authGuard
-		if (!authGuard || !authGuard.isActive() || path === HMR_META_AUTH_PATH) {
-			return undefined
-		}
-
 		const kind = resolveRequestKind(path)
-		const result = await authGuard.check({
-			kind,
-			path,
-			method,
-			url: request.url,
-			headers: request.headers,
+		if (state.allow) return undefined
+
+		const redirectPath = resolveControlPlaneRedirectPath(
+			buildVerificationRedirectPath,
 			request,
-		})
-		if (result.allow === true) return undefined
-
-		pluginCtx.logger.warn('Blocked request', {
+			kind,
+			state.reason,
+		)
+		pluginCtx.logger.warn('Blocked host verification gate', {
 			kind,
 			path,
 			method,
-			pluginName: result.pluginName,
+			reason: state.reason,
 		})
 
-		set.headers['cache-control'] = 'no-store'
-		set.headers['x-pluxel-auth-blocked'] = '1'
-		set.headers['x-pluxel-redirect-path'] = result.redirectPath
-		return status(401, {
-			allow: false,
-			code: 'access_denied',
-			kind,
-			path,
-			method,
-			pluginName: result.pluginName,
-			redirectPath: result.redirectPath,
-		})
+		Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+		return status(
+			401,
+			createVerificationBlockedPayload(path, method, kind, redirectPath, state.reason),
+		)
 	}) as BaseElysiaApp
 }
 
@@ -118,19 +146,19 @@ function createInternalTransportPlugins(
 	ctx: PluginContext,
 	options: InternalApiOptions = {},
 ): BaseElysiaApp[] {
-	const mcpHandler = getHmrMcpHttpHandler(ctx)
 	const web = options.web !== false
 	const rpc = options.rpc !== false
 	const sse = options.sse !== false
+	const graphql = options.graphql !== false
 	const plugins: BaseElysiaApp[] = [
-		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel HMR RPC ready')),
-			createInternalPlugin(ctx, 'plugin-schema', (app) =>
-				app.get(
-					'/plugins/:name/schema',
-					async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
-					{
-						params: pluginNameParams,
-					},
+		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel runtime RPC ready')),
+		createInternalPlugin(ctx, 'plugin-schema', (app) =>
+			app.get(
+				'/plugins/:name/schema',
+				async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
+				{
+					params: pluginNameParams,
+				},
 			),
 		),
 	]
@@ -138,7 +166,7 @@ function createInternalTransportPlugins(
 	if (sse) {
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
-				app.get(HMR_TRANSPORT_PATHS.sse, (context: any) =>
+				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
 					context.pluginCtx.ext.sse.stream(context),
 				),
 			),
@@ -148,7 +176,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'rpc', (app) =>
 				app.all(
-					HMR_TRANSPORT_PATHS.rpc,
+					RUNTIME_TRANSPORT_PATHS.rpc,
 					async ({ pluginCtx, request, status }: any) => {
 						try {
 							return await newHttpBatchRpcResponse(request, new RuntimeRpcApi(pluginCtx))
@@ -160,24 +188,17 @@ function createInternalTransportPlugins(
 					{ parse: 'none' },
 				),
 			),
-			ctx.internalGraphql.plugin(),
-			createInternalPlugin(ctx, 'mcp', (app) =>
-				app
-					.all(HMR_TRANSPORT_PATHS.mcp, ({ request }: any) => mcpHandler(request), {
-						parse: 'none',
-					})
-					.all(`${HMR_TRANSPORT_PATHS.mcp}/*`, ({ request }: any) => mcpHandler(request), {
-						parse: 'none',
-					}),
-			),
 		)
+	}
+	if (graphql) {
+		plugins.push(ctx.internalGraphql.plugin())
 	}
 	if (web || rpc || sse) {
 		plugins.push(
 			createInternalPlugin(ctx, 'signaldb', (app) =>
 				app
 					.get(
-						`${HMR_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
 						async ({ params, pluginCtx, set }: any) => {
 							set.headers['cache-control'] = 'no-store'
 							return await loadSignalDbSnapshot(
@@ -188,7 +209,7 @@ function createInternalTransportPlugins(
 						},
 					)
 					.post(
-						`${HMR_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
 						async ({ params, pluginCtx, request, set, status }: any) => {
 							set.headers['cache-control'] = 'no-store'
 							const body = await request.json().catch((): null => null)
@@ -227,6 +248,9 @@ function createInternalTransportPlugins(
 			),
 			createInternalPlugin(ctx, 'meta', (app) =>
 				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
+			),
+			createInternalPlugin(ctx, 'security', (app) =>
+				securityRoutes(app as unknown as Parameters<typeof securityRoutes>[0]),
 			),
 			createInternalPlugin(ctx, 'debug', (app) =>
 				debugRoutes(app as unknown as Parameters<typeof debugRoutes>[0]),
@@ -283,9 +307,9 @@ async function loadSignalDbSnapshot<T extends SignalDbItem>(
 	ctx: PluginContext,
 	pluginName: string,
 	collectionName: string,
-): Promise<LoadResponse<T>> {
+): Promise<SignalDbLoadResponse<T>> {
 	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return { items: [] }
+	if (!service) return { items: [], meta: { clientWrites: false } }
 	return await service.loadCollectionSync<T>(collectionName)
 }
 
@@ -301,8 +325,7 @@ async function pushSignalDbChanges<T extends SignalDbItem>(
 }
 
 function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
-	const ctor =
-		ctx.loader.api.runtime.resolve(pluginName) ?? ctx.loader.api.registry.getCtor(pluginName)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(pluginName)
 	if (!ctor) return null
 
 	const instance = ctx.registry.getInstance(ctor as never) as

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
 describe('EventsService', () => {
 	it('auto-unsubscribes listeners when plugin is unloaded', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'P' })
 			class P extends BasePlugin {
 				seen: string[] = []
@@ -25,6 +25,29 @@ describe('EventsService', () => {
 
 			host.ctx.emit('onLoad', 'b')
 			expect(p.seen).toEqual(['a'])
+		})
+	})
+
+	it('auto-unsubscribes internal event listeners when plugin is unloaded', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'InternalEventsPlugin' })
+			class InternalEventsPlugin extends BasePlugin {
+				seen = 0
+				protected override init(_abort: AbortSignal) {
+					this.ctx.internalEvent.runtimeCommitted.on(() => {
+						this.seen++
+					})
+				}
+			}
+
+			await host.start(InternalEventsPlugin)
+			const plugin = host.require(InternalEventsPlugin)
+			const seenAfterStart = plugin.seen
+
+			host.remove(InternalEventsPlugin)
+			await host.commit()
+
+			expect(plugin.seen).toBe(seenAfterStart)
 		})
 	})
 })

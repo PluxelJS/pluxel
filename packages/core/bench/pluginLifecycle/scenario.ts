@@ -48,11 +48,10 @@ function createChain(length: number) {
 }
 
 function createStar(leaves: number) {
-	// Root has two implementations (same plugin id) to exercise replace().
+	// Same plugin id, different ctor: replace().
 	const rootV1 = definePlugin('BenchStarRoot')
 	const rootV2 = definePlugin('BenchStarRoot')
 
-	// A single leaf is hot-replaced (same plugin id).
 	const hotLeafV1 = definePlugin('BenchStarHotLeaf', [rootV1])
 	const hotLeafV2 = definePlugin('BenchStarHotLeaf', [rootV1])
 
@@ -60,7 +59,6 @@ function createStar(leaves: number) {
 	leafCtors[0] = hotLeafV1
 	for (let i = 1; i < leaves; i++) leafCtors[i] = definePlugin(`BenchStarLeaf_${i}`, [rootV1])
 
-	// Used for incremental add/remove.
 	const addLeaf = definePlugin('BenchStarAddLeaf', [rootV1])
 
 	return {
@@ -76,7 +74,7 @@ function createStar(leaves: number) {
 function createConfigHeavy(keys: number) {
 	class P extends BasePlugin {}
 
-	// Register schemas before @Plugin so the decorator can collect pending configMap in one pass.
+	// Register schemas before @Plugin so configMap is captured.
 	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, passthroughSchema)
 	Plugin({ name: 'BenchConfigHeavy' })(P)
 
@@ -90,7 +88,6 @@ export type ScenarioSizes = {
 	starLeaves: number
 	chainLength: number
 	bigIndependent: number
-	loops: number
 	configKeys: number
 }
 
@@ -115,21 +112,21 @@ export function createScenario(sizes: ScenarioSizes) {
 		for (let i = 0; i < bigIndependent.length; i++) ctx.registry.register(bigIndependent[i])
 	}
 
-	const setupStarBaseline = async (name: string): Promise<Ctx> => {
+	const setupStarGraph = async (name: string): Promise<Ctx> => {
 		const ctx = new Context({ name })
 		registerStar(ctx)
 		ensureOk(await ctx.registry.commit())
 		return ctx
 	}
 
-	const setupChainBaseline = async (name: string): Promise<Ctx> => {
+	const setupChainGraph = async (name: string): Promise<Ctx> => {
 		const ctx = new Context({ name })
 		registerChain(ctx)
 		ensureOk(await ctx.registry.commit())
 		return ctx
 	}
 
-	const setupBigStarBaseline = async (name: string): Promise<Ctx> => {
+	const setupBigStarGraph = async (name: string): Promise<Ctx> => {
 		const ctx = new Context({ name })
 		registerBigIndependent(ctx)
 		registerStar(ctx)
@@ -146,8 +143,8 @@ export function createScenario(sizes: ScenarioSizes) {
 		registerStar,
 		registerChain,
 		registerBigIndependent,
-		setupStarBaseline,
-		setupChainBaseline,
-		setupBigStarBaseline,
+		setupStarGraph,
+		setupChainGraph,
+		setupBigStarGraph,
 	}
 }

@@ -1,11 +1,10 @@
-import { resolve } from 'pathe'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig(
 	{
-		resolve: {
-			alias: {
-				'@pluxel/hmr/plugin': resolve(__dirname, '../hmr/src/plugin.ts'),
+		oxc: {
+			decorator: {
+				legacy: true,
 			},
 		},
 	},

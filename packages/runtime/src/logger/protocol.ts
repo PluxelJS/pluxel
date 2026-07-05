@@ -1,21 +1,15 @@
 import type { LogLevel } from '@logtape/logtape'
 
 export type LogFilter = {
-	/**
-	 * Backward compatible single filter:
-	 * matches `pluginId` / `context` / `name` (exact match).
-	 */
-	name?: string
 	pluginId?: string
 	context?: string
 	displayName?: string
-	/** Category string, e.g. "pluxel.hmr" or "pluxel.plugins". Supports "prefix.*". */
+	/** Category string, e.g. "pluxel.plugins" or "pluxel.core". Supports "prefix.*". */
 	category?: string
 }
 
 export type CompiledLogFilter = {
 	hasFilter: boolean
-	nameAny?: string
 	pluginId?: string
 	context?: string
 	displayName?: string
@@ -139,7 +133,6 @@ export type LogSseEvent = LogSseAppend | LogSseGap | LogSseReset
 
 export function compileLogFilter(filter: LogFilter | undefined): CompiledLogFilter {
 	if (!filter) return { hasFilter: false }
-	const nameAny = filter.name ?? undefined
 	const pluginId = filter.pluginId ?? undefined
 	const context = filter.context ?? undefined
 	const displayName = filter.displayName ?? undefined
@@ -151,10 +144,9 @@ export function compileLogFilter(filter: LogFilter | undefined): CompiledLogFilt
 			: rawCategory
 		: undefined
 	const categoryParts = categoryKey ? categoryKey.split('.') : undefined
-	const hasFilter = !!(nameAny || pluginId || context || displayName || categoryKey)
+	const hasFilter = !!(pluginId || context || displayName || categoryKey)
 	return {
 		hasFilter,
-		nameAny,
 		pluginId,
 		context,
 		displayName,
@@ -172,10 +164,6 @@ export function matchesLogFilterCompiled(
 	if (compiled.pluginId && record.pluginId !== compiled.pluginId) return false
 	if (compiled.context && record.context !== compiled.context) return false
 	if (compiled.displayName && record.name !== compiled.displayName) return false
-	if (compiled.nameAny) {
-		const f = compiled.nameAny
-		if (record.pluginId !== f && record.context !== f && record.name !== f) return false
-	}
 	if (compiled.categoryKey) {
 		const wantParts = compiled.categoryParts ?? []
 		const got = record.category
@@ -193,10 +181,6 @@ export function matchesLogFilter(record: RuntimeLogLine, filter: LogFilter): boo
 	if (filter.pluginId && record.pluginId !== filter.pluginId) return false
 	if (filter.context && record.context !== filter.context) return false
 	if (filter.displayName && record.name !== filter.displayName) return false
-	if (filter.name) {
-		const f = filter.name
-		if (record.pluginId !== f && record.context !== f && record.name !== f) return false
-	}
 	if (filter.category) {
 		const joined = record.category.join('.')
 		const raw = filter.category

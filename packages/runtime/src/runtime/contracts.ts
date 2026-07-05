@@ -1,11 +1,9 @@
-import type { HttpServiceConfig, UiAssetStrategy } from '../services/http/HttpService'
-
-export type HostControlPlane = NonNullable<HttpServiceConfig['controlPlane']>
-export type UiAssetStrategySpec = UiAssetStrategy
+import type { HttpServiceConfig } from '../services/http/HttpService'
+import type { ManagementConfig } from '../services/verification/types'
 
 export type FrozenHostBootstrap = {
-	controlPlane?: HostControlPlane
-	uiAssets?: UiAssetStrategySpec
+	http?: Pick<HttpServiceConfig, 'graphql'>
+	management?: ManagementConfig
 }
 
 export type PluginModuleRef = {

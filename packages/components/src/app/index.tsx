@@ -5,6 +5,7 @@ import { getRuntimeTransportClient, RuntimeTransportClientProvider } from '../ru
 import './bootstrap'
 import '../styles/index.scss'
 import { appCssVariablesResolver, useAppTheme } from '../theme'
+import { PluxelGQLensProvider } from './gqlens'
 import { createAppRouter } from './router'
 
 export interface AppProps {
@@ -24,7 +25,9 @@ export function App({ history }: AppProps = {}) {
 			cssVariablesResolver={appCssVariablesResolver}
 		>
 			<RuntimeTransportClientProvider client={transportClient}>
-				<RouterProvider router={router} />
+				<PluxelGQLensProvider>
+					<RouterProvider router={router} />
+				</PluxelGQLensProvider>
 			</RuntimeTransportClientProvider>
 		</MantineProvider>
 	)

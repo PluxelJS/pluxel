@@ -1,7 +1,9 @@
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
 import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, it } from 'vitest'
+
+type RuntimeHostLike = Parameters<Parameters<typeof withRuntimeHost>[0]>[0]
 
 function bytesToHex(bytes: Uint8Array): string {
 	let out = ''
@@ -18,204 +20,598 @@ function randomHex(bytes: number): string {
 	return bytesToHex(buf)
 }
 
-function b64urlEncode(bytes: Uint8Array): string {
-	const b64 = Buffer.from(bytes).toString('base64')
-	return b64.replaceAll('+', '-').replaceAll('/', '_').replaceAll(/=+$/g, '')
+async function sealVaultForTesting(vault: unknown): Promise<void> {
+	await (vault as { sealMountForTesting: () => Promise<void> }).sealMountForTesting()
 }
 
-function b64urlDecode(input: string): Uint8Array {
-	const b64 = input.replaceAll('-', '+').replaceAll('_', '/')
-	const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4))
-	return new Uint8Array(Buffer.from(b64 + pad, 'base64'))
+function vaultStorage(host: RuntimeHostLike) {
+	return host.ctx.root.persistence.namespace('vault')
 }
 
-describe('VaultService (runtime)', () => {
-	it('getToken/listKeys do not create files when vault is missing', async () => {
+function displayKey(key: string): string {
+	return key.startsWith('/') ? key : `/${key}`
+}
+
+async function listVaultFiles(host: RuntimeHostLike, prefix: string): Promise<string[]> {
+	const out: string[] = []
+	for await (const entry of vaultStorage(host).list(prefix)) {
+		if (entry.kind === 'file') out.push(displayKey(entry.key))
+	}
+	return out.sort()
+}
+
+async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
+	await vaultStorage(host).delete('security/identity.json')
+}
+
+describe('VaultService (shared mount runtime)', () => {
+	it('read-only access and kv batch do not create files when the shared vault is missing', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
 
-				host.add(P)
+				host.add(PluginA)
 				await host.commit()
 
-				const p = host.require(P)
-				const vault = p.ctx.vault.open()
+				const plugin = host.require(PluginA)
+				const kv = plugin.ctx.vault.kv()
+				const docs = plugin.ctx.vault.docs().collection('profiles')
 
-				expect(await vault.getToken('missing')).toBeUndefined()
-				expect(await vault.listKeys()).toEqual([])
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
-			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
-		)
-	})
+				expect(await kv.get('missing')).toBeUndefined()
+				expect(await kv.keys()).toEqual([])
+				expect(await docs.get('default')).toBeUndefined()
 
-	it('batch() does not create files when there are no mutations', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
-		await withHost(
-			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
-
-				host.add(P)
-				await host.commit()
-
-				const p = host.require(P)
-				const vault = p.ctx.vault.open()
-
-				await vault.batch((tx) => {
-					tx.getToken('x')
-					tx.getSecret('y')
+				await kv.batch((tx) => {
+					tx.get('x')
+					tx.entries()
 				})
 
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([])
+				expect(await listVaultFiles(host, dir)).toEqual([])
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
-	it('setToken creates vault.json and vault.key; lock() forces re-unlock from fs', async () => {
+	it('first write creates one shared mount with key envelope and snapshot', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
 
-				host.add(P)
+				host.add(PluginA)
 				await host.commit()
 
-				const p = host.require(P)
-				const vault = p.ctx.vault.open()
+				const plugin = host.require(PluginA)
+				const kv = plugin.ctx.vault.kv()
 
-				await vault.setToken('github', 'ghp_test')
-				expect(await vault.getToken('github')).toBe('ghp_test')
+				await kv.set('github.token', 'ghp_test')
+				await plugin.ctx.vault.flush()
+				await sealVaultForTesting(plugin.ctx.vault)
 
-				vault.lock()
-				expect(await vault.getToken('github')).toBe('ghp_test')
+				expect(await kv.get('github.token')).toBe('ghp_test')
 
-				const vaultPath = resolve(dir, 'P', 'vault.json')
-				const keyPath = resolve(dir, 'P', 'vault.key')
-				expect(host.ctx.root.fs.debugListFiles(dir)).toEqual([vaultPath, keyPath])
+				const mountDir = resolve(dir, 'global')
+				expect(await listVaultFiles(host, dir)).toEqual([
+					resolve(mountDir, 'keys.age'),
+					resolve(mountDir, 'state.enc'),
+				])
+				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
-	it('batch persists once for multiple mutations (fs stats)', async () => {
+	it('flush writes one snapshot for multiple kv mutations', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
 
-				host.add(P)
+				host.add(PluginA)
 				await host.commit()
 
-				const p = host.require(P)
-				const vault = p.ctx.vault.open()
+				const plugin = host.require(PluginA)
+				const kv = plugin.ctx.vault.kv()
 
-				await vault.setToken('a', '0')
-				const before = host.ctx.root.fs.debugStats()
+				await kv.set('a', '0')
+				await plugin.ctx.vault.flush()
+				const statePath = resolve(dir, 'global', 'state.enc')
+				const before = await vaultStorage(host).get(statePath)
 
-				await vault.batch((tx) => {
-					tx.setToken('a', '1')
-					tx.setToken('b', '2')
-					tx.setSecret('json', { ok: true })
+				await kv.batch((tx) => {
+					tx.set('a', '1')
+					tx.set('b', '2')
+					tx.set('json', { ok: true })
 				})
+				await plugin.ctx.vault.flush()
 
-				const after = host.ctx.root.fs.debugStats()
-				expect(after.writeTextAtomic - before.writeTextAtomic).toBe(1)
-				expect(await vault.getToken('a')).toBe('1')
-				expect(await vault.getToken('b')).toBe('2')
+				const after = await vaultStorage(host).get(statePath)
+				expect(before).toBeTruthy()
+				expect(after).toBeTruthy()
+				expect(after).not.toEqual(before)
+				expect(await kv.get('a')).toBe('1')
+				expect(await kv.get('b')).toBe('2')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir, flushDebounceMs: 1 } },
 		)
 	})
 
-	it('rejects tampered ciphertext and enforces AAD binding', async () => {
+	it('shared mount keeps plugin namespaces separate', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
 
-				host.add(P)
+				@Plugin({ name: 'PluginB' })
+				class PluginB extends BasePlugin {}
+
+				host.add(PluginA)
+				host.add(PluginB)
 				await host.commit()
 
-				const p = host.require(P)
-				const vault = p.ctx.vault.open()
+				const a = host.require(PluginA)
+				const b = host.require(PluginB)
 
-				await vault.setToken('openai', 'sk-test')
-				vault.lock()
+				await a.ctx.vault.kv().set('token', 'a-secret')
+				await b.ctx.vault.kv().set('token', 'b-secret')
+				await a.ctx.vault.flush()
 
-				const vaultPath = resolve(dir, 'P', 'vault.json')
-				const raw = await host.ctx.root.fs.readText(vaultPath)
-				const goodRaw = raw
-				const file = JSON.parse(raw)
+				expect(await a.ctx.vault.kv().get('token')).toBe('a-secret')
+				expect(await b.ctx.vault.kv().get('token')).toBe('b-secret')
+				expect(await a.ctx.vault.kv({ namespace: 'PluginB' }).get('token')).toBe('b-secret')
+			},
+			{ vault: { dir } },
+		)
+	})
 
-				// Tamper ciphertext (AEAD integrity should fail).
-				const ct = b64urlDecode(file.payload.ct)
-				ct[0] = (ct[0] ^ 0x01) & 0xff
-				file.payload.ct = b64urlEncode(ct)
-				await host.ctx.root.fs.writeTextAtomic(vaultPath, JSON.stringify(file, null, 2))
+	it('namespace() provides a stable scoped facade over kv/docs/blobs', async () => {
+		const dir = `/vault/${randomHex(8)}`
 
-				await expect(vault.getToken('openai')).rejects.toMatchObject({
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				const space = plugin.ctx.vault.namespace()
+				const kv = space.kv()
+				const docs = space.docs().collection<{ ready: boolean }>('profiles')
+				const blob = space.blobs().open('notes')
+
+				expect(space.name).toBe('PluginA')
+				await kv.set('token', 'value')
+				await docs.set('default', { ready: true })
+				await blob.writeText('scoped')
+				await plugin.ctx.vault.flush()
+
+				expect(await kv.get('token')).toBe('value')
+				expect(await docs.get('default')).toEqual({ ready: true })
+				expect(await blob.readText()).toBe('scoped')
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('namespace.batch() updates kv and docs atomically within one namespace copy-on-write', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				const space = plugin.ctx.vault.namespace()
+
+				await space.batch((tx) => {
+					tx.kv.set('token', 'value')
+					tx.docs.collection<{ ready: boolean }>('profiles').set('default', { ready: true })
+				})
+				await plugin.ctx.vault.flush()
+
+				expect(await space.kv().get('token')).toBe('value')
+				expect(
+					await space.docs().collection<{ ready: boolean }>('profiles').get('default'),
+				).toEqual({
+					ready: true,
+				})
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('tampered shared snapshot fails to decrypt after relock', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				const kv = plugin.ctx.vault.kv()
+
+				await kv.set('token', 'secret')
+				await plugin.ctx.vault.flush()
+				await sealVaultForTesting(plugin.ctx.vault)
+
+				const path = resolve(dir, 'global', 'state.enc')
+				const bytes = await vaultStorage(host).get(path)
+				expect(bytes).toBeTruthy()
+				const tampered = Uint8Array.from(bytes!)
+				tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff
+				await vaultStorage(host).put(path, tampered, { atomic: true })
+
+				await expect(kv.get('token')).rejects.toMatchObject({
 					name: 'VaultError',
 					code: 'DECRYPT_FAILED',
 				})
-
-				// Restore the original file for the next assertion.
-				await host.ctx.root.fs.writeTextAtomic(vaultPath, goodRaw)
-				vault.lock()
-
-				const mismatched = p.ctx.vault.open({ aadString: 'different-aad' })
-				await expect(mismatched.getToken('openai')).rejects.toMatchObject({
-					name: 'VaultError',
-					code: 'AAD_MISMATCH',
-				})
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
 		)
 	})
 
-	it('supports env-based key material (no vault.key file)', async () => {
+	it('describe stays pure-read when a local host identity is available', async () => {
 		const dir = `/vault/${randomHex(8)}`
-		const envName = `PLUXEL_VAULT_KEY_${randomHex(6)}`
 
-		const keyBytes = new Uint8Array(32).fill(7)
-		stdEnv[envName] = bytesToHex(keyBytes)
-
-		await withHost(
+		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'P' })
-				class P extends BasePlugin {}
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
 
-				host.add(P)
+				host.add(PluginA)
 				await host.commit()
 
-				const p = host.require(P)
-				const vault = p.ctx.vault.open({ key: { env: envName, encoding: 'hex' } })
+				const plugin = host.require(PluginA)
+				await plugin.ctx.vault.kv().set('token', 'secret')
+				await plugin.ctx.vault.flush()
+				await sealVaultForTesting(plugin.ctx.vault)
 
-				await vault.setToken('t', 'v')
-				vault.lock()
-
-				const vaultPath = resolve(dir, 'P', 'vault.json')
-				const keyPath = resolve(dir, 'P', 'vault.key')
-				expect(host.ctx.root.fs.exists(vaultPath)).toBe(true)
-				expect(host.ctx.root.fs.exists(keyPath)).toBe(false)
-
-				const again = p.ctx.vault.open({ key: { env: envName, encoding: 'hex' } })
-				expect(await again.getToken('t')).toBe('v')
+				const admin = await host.ctx.vaultAdmin.describe()
+				expect(admin).toMatchObject({
+					present: true,
+					unlocked: false,
+					unlockedBy: null,
+				})
+				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ fs: { mode: 'memory' }, vault: { dir } },
+			{ vault: { dir } },
+		)
+	})
+
+	it('unlock() uses deploy key when the private identity is injected', async () => {
+		const dir = `/vault/${randomHex(8)}`
+		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				await plugin.ctx.vault.kv().set('token', 'secret')
+				await plugin.ctx.vault.flush()
+
+				const pair = await host.ctx.vaultAdmin.generateDeployKey()
+				envName = pair.envName
+				await host.ctx.vaultAdmin.setDeployRecipients([pair.publicKey])
+				await sealVaultForTesting(plugin.ctx.vault)
+
+				stdEnv[envName] = pair.privateKey
+
+				const admin = await host.ctx.vaultAdmin.unlock()
+				expect(admin).toMatchObject({
+					present: true,
+					unlocked: true,
+					unlockedBy: 'deploy',
+					deploy: expect.objectContaining({
+						recipients: [pair.publicKey],
+						identityPresent: true,
+					}),
+				})
+				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
+			},
+			{ vault: { dir } },
 		)
 
 		delete stdEnv[envName]
+	})
+
+	it('rekey() does not create a missing mount as a side effect', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const _plugin = host.require(PluginA)
+
+				await expect(host.ctx.vaultAdmin.rekey()).rejects.toMatchObject({
+					name: 'VaultError',
+					code: 'MISSING_MOUNT',
+				})
+				expect(await listVaultFiles(host, dir)).toEqual([])
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {
+		const dir = `/vault/${randomHex(8)}`
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				await plugin.ctx.vault.kv().set('token', 'value')
+				await plugin.ctx.vault.flush()
+				const keyPath = resolve(dir, 'global', 'keys.age')
+				const statePath = resolve(dir, 'global', 'state.enc')
+				const beforeKey = await vaultStorage(host).get(keyPath)
+				const beforeState = await vaultStorage(host).get(statePath)
+
+				await host.ctx.vaultAdmin.rekey()
+				const afterKey = await vaultStorage(host).get(keyPath)
+				const afterState = await vaultStorage(host).get(statePath)
+				expect(beforeKey).toBeTruthy()
+				expect(afterKey).toBeTruthy()
+				expect(afterKey).not.toEqual(beforeKey)
+				expect(afterState).toEqual(beforeState)
+
+				await sealVaultForTesting(plugin.ctx.vault)
+				expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('stores blobs separately from the shared snapshot', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'PluginA' })
+				class PluginA extends BasePlugin {}
+
+				host.add(PluginA)
+				await host.commit()
+
+				const plugin = host.require(PluginA)
+				const blob = plugin.ctx.vault.blobs().open('notes')
+
+				await blob.writeText('hello vault')
+				expect(await blob.readText()).toBe('hello vault')
+				expect(await plugin.ctx.vault.blobs().list()).toEqual(['notes'])
+				expect(blob.describe().path).toBe(resolve(dir, 'global', 'blobs', 'PluginA', 'notes.blob'))
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('host preflight keeps an empty shared mount lazy', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				const admin = await host.ctx.vaultAdmin.preflight()
+				expect(admin).toMatchObject({
+					present: false,
+					unlocked: false,
+					unlockedBy: null,
+				})
+				const described = await host.ctx.vaultAdmin.describe()
+				expect(described).toMatchObject({
+					present: false,
+				})
+				expect(await listVaultFiles(host, dir)).toEqual([])
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('host preflight fails when an existing sealed mount has no unlock identity', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'Seeder' })
+				class Seeder extends BasePlugin {}
+
+				host.add(Seeder)
+				await host.commit()
+
+				const seeder = host.require(Seeder)
+				await seeder.ctx.vault.kv().set('token', 'secret')
+				await seeder.ctx.vault.flush()
+				await sealVaultForTesting(seeder.ctx.vault)
+				await deleteVaultIdentity(host)
+
+				await expect(host.ctx.vaultAdmin.preflight()).rejects.toMatchObject({
+					name: 'VaultError',
+					code: 'ACCESS_DENIED',
+				})
+				expect(await host.ctx.vaultAdmin.describe()).toMatchObject({
+					present: true,
+					lastError: {
+						code: 'ACCESS_DENIED',
+						message: 'Vault mount "global" is sealed and can not be unlocked during host startup.',
+					},
+				})
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('host preflight auto-unlocks from deploy identity when available', async () => {
+		const dir = `/vault/${randomHex(8)}`
+		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'Seeder' })
+				class Seeder extends BasePlugin {}
+
+				host.add(Seeder)
+				await host.commit()
+
+				const seeder = host.require(Seeder)
+				await seeder.ctx.vault.kv().set('token', 'secret')
+				await seeder.ctx.vault.flush()
+				const pair = await host.ctx.vaultAdmin.generateDeployKey()
+				envName = pair.envName
+				await host.ctx.vaultAdmin.setDeployRecipients([pair.publicKey])
+				await sealVaultForTesting(seeder.ctx.vault)
+				await deleteVaultIdentity(host)
+
+				stdEnv[envName] = pair.privateKey
+
+				const admin = await host.ctx.vaultAdmin.preflight()
+				expect(admin).toMatchObject({
+					present: true,
+					unlocked: true,
+					unlockedBy: 'deploy',
+					deploy: expect.objectContaining({
+						identityPresent: true,
+					}),
+				})
+				expect(await host.ctx.vaultAdmin.describe()).toMatchObject({
+					present: true,
+					unlocked: true,
+				})
+				expect(await seeder.ctx.vault.kv().get('token')).toBe('secret')
+			},
+			{ vault: { dir } },
+		)
+
+		delete stdEnv[envName]
+	})
+
+	it('sealed mounts report unlock_required when no matching identity is available', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'Seeder' })
+				class Seeder extends BasePlugin {}
+
+				host.add(Seeder)
+				await host.commit()
+
+				const seeder = host.require(Seeder)
+				await seeder.ctx.vault.kv().set('token', 'secret')
+				await seeder.ctx.vault.flush()
+				await sealVaultForTesting(seeder.ctx.vault)
+
+				await deleteVaultIdentity(host)
+
+				await expect(seeder.ctx.vault.kv().get('token')).rejects.toMatchObject({
+					code: expect.stringMatching(/^(INVALID_CONFIG|DECRYPT_FAILED)$/),
+				})
+				const described = await host.ctx.vaultAdmin.unlock()
+				expect(described).toMatchObject({
+					reason: 'unlock_required',
+					unlocked: false,
+				})
+				expect(described).toMatchObject({
+					present: true,
+					lastError: expect.objectContaining({
+						code: expect.stringMatching(/^(INVALID_CONFIG|DECRYPT_FAILED)$/),
+						message: expect.any(String),
+					}),
+				})
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('registry commit rejects before activating more plugins when vault preflight fails', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'Seeder' })
+				class Seeder extends BasePlugin {}
+
+				@Plugin({ name: 'VaultConsumer' })
+				class VaultConsumer extends BasePlugin {}
+
+				host.add(Seeder)
+				await host.commit()
+
+				const seeder = host.require(Seeder)
+				await seeder.ctx.vault.kv().set('token', 'secret')
+				await seeder.ctx.vault.flush()
+				await sealVaultForTesting(seeder.ctx.vault)
+				await deleteVaultIdentity(host)
+
+				host.add(VaultConsumer)
+				await expect(host.commitAllowFail()).rejects.toThrow(
+					'Vault mount "global" is sealed and can not be unlocked during host startup.',
+				)
+				expect(host.get(VaultConsumer)).toBeUndefined()
+
+				const unlock = await host.ctx.vaultAdmin.unlock()
+				expect(unlock.unlocked).toBe(false)
+				expect(unlock.reason).toBe('unlock_required')
+			},
+			{ vault: { dir } },
+		)
+	})
+
+	it('replacing deploy recipients rekeys the envelope for all saved recipients', async () => {
+		const dir = `/vault/${randomHex(8)}`
+
+		await withRuntimeHost(
+			async (host) => {
+				@Plugin({ name: 'Seeder' })
+				class Seeder extends BasePlugin {}
+
+				host.add(Seeder)
+				await host.commit()
+
+				const seeder = host.require(Seeder)
+				await seeder.ctx.vault.kv().set('token', 'secret')
+				await seeder.ctx.vault.flush()
+
+				const pairA = await host.ctx.vaultAdmin.generateDeployKey()
+				const pairB = await host.ctx.vaultAdmin.generateDeployKey()
+				const admin = await host.ctx.vaultAdmin.setDeployRecipients([
+					pairA.publicKey,
+					pairB.publicKey,
+					pairA.publicKey,
+				])
+				expect(admin.deploy.recipients).toEqual([pairA.publicKey, pairB.publicKey])
+			},
+			{ vault: { dir } },
+		)
 	})
 })

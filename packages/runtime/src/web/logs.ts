@@ -1,15 +1,10 @@
 import type { LogLevel } from './protocol'
 
 export interface LogFilter {
-	/**
-	 * Backward compatible single filter:
-	 * matches `pluginId` / `context` / `name` (exact match).
-	 */
-	name?: string
 	pluginId?: string
 	context?: string
 	displayName?: string
-	/** Category string, e.g. "pluxel.hmr" or "pluxel.plugins". Supports "prefix.*". */
+	/** Category string, e.g. "pluxel.plugins" or "pluxel.core". Supports "prefix.*". */
 	category?: string
 }
 

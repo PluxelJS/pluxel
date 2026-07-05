@@ -1,10 +1,9 @@
 // Read this when:
-// - 你要看 HMR worker 存在时启用、否则 inline fallback 的写法
+// - 你要看 loader HMR worker 存在时启用、否则 inline fallback 的写法
 // - 你需要一个 HTTP endpoint 作为 worker 调用触发器
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { worker, type HmrWorkerBinding } from '@pluxel/hmr/plugin'
-import { doc } from '@pluxel/runtime/services'
+import { doc, worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
@@ -20,13 +19,13 @@ type SquareResult = {
 	mode: WorkerStatus['mode']
 }
 
-// HMR-only worker declaration; frozen/static hosts fall back inline.
+// Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
 	private pool: Tinypool | null = null
-	private workerBinding: HmrWorkerBinding | null = null
+	private workerBinding: PluginWorkerBinding | null = null
 
 	override async init(): Promise<void> {
 		const d = doc({} as const)
@@ -62,11 +61,11 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 				Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
 
 				Endpoints:
-				- \`GET /status\`: reports whether the HMR-only worker bundler is attached.
-				- \`GET /square/:value\`: invokes the worker when HMR is active, otherwise uses inline fallback.
+				- \`GET /status\`: reports whether the loader HMR worker bundler is attached.
+				- \`GET /square/:value\`: invokes the worker when loader HMR is active, otherwise uses inline fallback.
 
 				Frozen/static runtimes intentionally fall back to inline execution.
-				If you need a real production worker, prebuild a stable \`.mjs\` entry with tsdown instead of relying on the dev bundler.
+				If you need a real production worker, prebuild a stable \`.mjs\` entry with tsdown instead of relying on the HMR bundler.
 			`,
 		})
 
@@ -95,8 +94,8 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			mode: enabled ? 'hmr-worker' : 'fallback-inline',
 			workerUrl: snapshot.url,
 			note: enabled
-				? 'HMR dev bundler is available; worker source is compiled on demand.'
-				: 'No dev bundler attached. This is expected for frozen/static runtimes; use tsdown if you need a production worker artifact.',
+				? 'Loader HMR bundler is available; worker source is compiled on demand.'
+				: 'No HMR bundler attached. This is expected for static/non-HMR runtimes; use tsdown if you need a production worker artifact.',
 		}
 	}
 

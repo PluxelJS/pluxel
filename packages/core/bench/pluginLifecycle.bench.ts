@@ -1,27 +1,30 @@
 import '@pluxel/core/services'
 import { Bench } from 'tinybench'
-import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { mkdirSync } from 'node:fs'
 
 import {
-	baselineEnvPath,
 	benchOptions,
 	debugBench,
+	outputDirEnvPath,
+	referenceEnvPath,
 	scenarioSizes,
 	strictMode,
 	tolerancePct,
-	writeBaseline,
+	verboseBench,
 } from './pluginLifecycle/env'
+import { TASK_METADATA } from './pluginLifecycle/catalog'
 import { createScenario } from './pluginLifecycle/scenario'
-import { registerPluginLifecycleBenchmarks, TASK_MEANING } from './pluginLifecycle/tasks'
+import { registerPluginLifecycleBenchmarks } from './pluginLifecycle/tasks'
 import {
 	buildComparison,
 	collectRows,
-	loadBaselineReport,
+	loadReferenceReport,
 	printRowsTable,
 	renderMarkdown,
-	resolveBaselinePath,
-	toDiffReport,
+	resolveReferencePath,
+	isLatencyRegression,
 	toMainReport,
 	writeReports,
 } from './pluginLifecycle/report'
@@ -60,31 +63,36 @@ const bench = new Bench({
 })
 
 const scenario = createScenario(scenarioSizes)
-const disposeStableContexts = registerPluginLifecycleBenchmarks(bench, scenario)
 
 const restore = silencePluginLogs()
-await bench.run()
-restore()
+const disposeBenchContexts = registerPluginLifecycleBenchmarks(bench, scenario)
+try {
+	await bench.run()
+} finally {
+	restore()
+	disposeBenchContexts()
+}
 
 const recordedAt = new Date().toISOString()
 const runtime = { name: bench.runtime, version: bench.runtimeVersion }
 
 const rows = collectRows(bench)
-printRowsTable(rows)
+printRowsTable(rows, { detailed: verboseBench })
 
-const benchmarksDir = new URL('../benchmarks/', import.meta.url)
+const benchmarksDir = outputDirEnvPath
+	? pathToFileURL(`${path.resolve(outputDirEnvPath)}${path.sep}`)
+	: new URL('../benchmarks/', import.meta.url)
 mkdirSync(fileURLToPath(benchmarksDir), { recursive: true })
 
-const defaultBaselinePath = fileURLToPath(new URL('plugin-lifecycle.baseline.json', benchmarksDir))
-const resolvedBaselinePath = baselineEnvPath
-	? (resolveBaselinePath(baselineEnvPath) ?? fileURLToPath(new URL(baselineEnvPath, benchmarksDir)))
-	: defaultBaselinePath
-if (debugBench && baselineEnvPath) {
-	console.log('[bench] baseline candidates resolved to:', resolvedBaselinePath ?? '(not found)')
+const resolvedReferencePath = referenceEnvPath
+	? (resolveReferencePath(referenceEnvPath) ?? fileURLToPath(new URL(referenceEnvPath, benchmarksDir)))
+	: null
+if (debugBench && referenceEnvPath) {
+	console.log('[bench] reference report resolved to:', resolvedReferencePath ?? '(not found)')
 }
 
-const baselineReport = resolvedBaselinePath ? loadBaselineReport(resolvedBaselinePath) : null
-const comparison = buildComparison(rows, baselineReport)
+const referenceReport = loadReferenceReport(resolvedReferencePath)
+const comparison = buildComparison(rows, referenceReport)
 
 const mainReport = toMainReport({
 	recordedAt,
@@ -96,76 +104,58 @@ const mainReport = toMainReport({
 		warmupIterations: benchOptions.warmupIterations,
 		minIterations: Number.isFinite(benchOptions.iterations) ? benchOptions.iterations : null,
 	},
+	taskMetadata: TASK_METADATA,
 	tasks: rows,
 	comparison,
-	baselineRecordedAt: baselineReport?.recordedAt ?? null,
+	referenceRecordedAt: referenceReport?.recordedAt ?? null,
 })
 
 const markdown = renderMarkdown({
 	report: mainReport,
-	taskMeaning: TASK_MEANING,
+	taskMetadata: TASK_METADATA,
 	regressionTolerancePct: tolerancePct,
-})
-
-const diff = toDiffReport({
-	recordedAt,
-	baselineRecordedAt: baselineReport?.recordedAt ?? null,
-	tolerancePct,
-	comparison,
 })
 
 writeReports({
 	benchmarksDir,
 	mainReport,
 	markdown,
-	diffReport: diff,
-	writeBaseline,
-	baselinePath: new URL('plugin-lifecycle.baseline.json', benchmarksDir),
 })
 
-if (comparison.length > 0) {
-	console.log('\nComparison vs baseline:')
+const measuredComparison = comparison.filter((item) => item.status === 'measured')
+if (measuredComparison.length > 0 && verboseBench) {
+	console.log('\nComparison vs reference:')
 	console.table(
-		comparison.map((item) => ({
+		measuredComparison.map((item) => ({
 			Task: item.name,
-			Status: item.status,
-			'Ops Δ%':
+			'Ops Δ':
 				item.opsDeltaPct == null
 					? '—'
 					: `${item.opsDeltaPct > 0 ? '+' : ''}${item.opsDeltaPct.toFixed(2)}%`,
-			'Latency Δ%':
+			'Lat Δ':
 				item.latencyDeltaPct == null
 					? '—'
 					: `${item.latencyDeltaPct > 0 ? '+' : ''}${item.latencyDeltaPct.toFixed(2)}%`,
-			'Baseline ops': item.baselineOpsMean ?? '—',
-			'Current ops': item.opsMean ?? '—',
-			'Baseline latency (ms)': item.baselineLatencyMeanMs ?? '—',
-			'Current latency (ms)': item.latencyMeanMs ?? '—',
+			'Ref ops': item.referenceOpsMean ?? '—',
+			'Now ops': item.opsMean ?? '—',
+			'Ref ms': item.referenceLatencyMeanMs ?? '—',
+			'Now ms': item.latencyMeanMs ?? '—',
 		})),
 	)
 }
 
 const regressions = comparison
-	.filter((item) => item.status === 'measured')
-	.filter((item) => {
-		const opsDelta = item.opsDeltaPct ?? 0
-		const latencyDelta = item.latencyDeltaPct ?? 0
-		return opsDelta < -tolerancePct || latencyDelta > tolerancePct
-	})
+	.filter((item) => isLatencyRegression(item, tolerancePct))
 
 if (regressions.length > 0) {
-	console.warn('\nPotential regressions detected (threshold:', tolerancePct, '%):')
+	console.warn(`\nLatency regressions (>${tolerancePct}%):`)
 	for (const item of regressions) {
 		console.warn(
-			`- ${item.name}: ops Δ ${item.opsDeltaPct?.toFixed(2) ?? '—'}%, latency Δ ${item.latencyDeltaPct?.toFixed(2) ?? '—'}%`,
+			`- ${item.name}: latency Δ ${item.latencyDeltaPct?.toFixed(2) ?? '—'}%`,
 		)
 	}
 	if (strictMode) {
-		console.error(
-			'[bench] Failing build due to regressions exceeding tolerance. Set PLUXEL_BENCH_STRICT=0 to disable.',
-		)
+		console.error('[bench] Strict mode: latency regression.')
 		process.exitCode = 1
 	}
 }
-
-disposeStableContexts()

@@ -5,15 +5,23 @@ on:
     branches: [main]
     paths:
       - 'packages/core/**'
+      - 'packages/build/**'
+      - 'scripts/core-bench-compare.sh'
       - 'pnpm-lock.yaml'
       - '.github/workflows/core-bench.yml'
   pull_request:
     paths:
       - 'packages/core/**'
+      - 'packages/build/**'
+      - 'scripts/core-bench-compare.sh'
       - 'pnpm-lock.yaml'
       - '.github/workflows/core-bench.yml'
   workflow_dispatch:
     inputs:
+      base_ref:
+        description: 'Base commit/ref to compare against (defaults to previous push commit or merge-base with default branch)'
+        type: string
+        required: false
       fail_on_regression:
         description: 'Fail workflow when regression exceeds tolerance'
         type: boolean
@@ -36,86 +44,75 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      actions: read
     env:
-      BASE_BRANCH: ${{ github.base_ref || github.ref_name || github.event.repository.default_branch }}
+      BASE_REF: ${{ github.event.inputs.base_ref || github.event.pull_request.base.sha || github.event.before }}
+      HEAD_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Prepare git
         run: git config --global core.autocrlf false
 
-      - name: Checkout
+      - name: Checkout head
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "$BASE_BRANCH"
 
       - name: Setup toolchain
         uses: ./.github/actions/setup-toolchain
-
-      - name: Download baseline artifact
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v3
         with:
-          workflow: core-bench.yml
-          name: core-bench-baseline
-          branch: ${{ env.BASE_BRANCH }}
-          path: packages/core/benchmarks/baseline
-          if_no_artifact_found: ignore
+          install: 'false'
 
-      - name: Prepare baseline report
-        run: |
-          mkdir -p packages/core/benchmarks
-          if [ -f packages/core/benchmarks/baseline/plugin-lifecycle.baseline.json ]; then
-            cp packages/core/benchmarks/baseline/plugin-lifecycle.baseline.json packages/core/benchmarks/baseline.json
-          elif [ -f packages/core/benchmarks/baseline/plugin-lifecycle.json ]; then
-            cp packages/core/benchmarks/baseline/plugin-lifecycle.json packages/core/benchmarks/baseline.json
-          else
-            echo '{}' > packages/core/benchmarks/baseline.json
-          fi
-
-      - name: Run core benchmark
+      - name: Run base/head benchmark comparison
         env:
-          PLUXEL_BENCH_BASELINE: packages/core/benchmarks/baseline.json
+          PLUXEL_BENCH_COMPARE_BASE: ${{ env.BASE_REF }}
+          PLUXEL_BENCH_COMPARE_HEAD: ${{ env.HEAD_REF }}
+          PLUXEL_BENCH_DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
           PLUXEL_BENCH_TOLERANCE: ${{ env.BENCH_TOLERANCE }}
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
-          PLUXEL_BENCH_WRITE_BASELINE: ${{ github.ref_name == github.event.repository.default_branch && '1' || '0' }}
-        run: pnpm --filter @pluxel/core bench:dist
+        run: pnpm bench:core:compare
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4
         with:
           name: core-bench-run-${{ github.run_id }}
           path: |
-            packages/core/benchmarks/plugin-lifecycle.json
-            packages/core/benchmarks/plugin-lifecycle.md
-            packages/core/benchmarks/plugin-lifecycle-diff.json
-          if-no-files-found: ignore
-
-      - name: Upload baseline artifact
-        if: github.ref_name == github.event.repository.default_branch
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-bench-baseline
-          path: |
-            packages/core/benchmarks/plugin-lifecycle.json
-            packages/core/benchmarks/plugin-lifecycle.baseline.json
+            .bench-results/core/base/plugin-lifecycle.json
+            .bench-results/core/base/plugin-lifecycle.md
+            .bench-results/core/base/install.log
+            .bench-results/core/base/bench.log
+            .bench-results/core/head/plugin-lifecycle.json
+            .bench-results/core/head/plugin-lifecycle.md
+            .bench-results/core/head/install.log
+            .bench-results/core/head/bench.log
           if-no-files-found: error
 
       - name: Comment PR with results
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
+        env:
+          BASE_REF: ${{ env.BASE_REF }}
+          HEAD_REF: ${{ env.HEAD_REF }}
         with:
           script: |
             const fs = require('fs')
             const path = require('path')
             const marker = '<!-- pluxel-core-bench -->'
-            let body = ''
-            const reportPath = path.join(process.cwd(), 'packages/core/benchmarks/plugin-lifecycle.md')
-            if (fs.existsSync(reportPath)) {
-              body = fs.readFileSync(reportPath, 'utf8')
-            } else {
-              body = 'Benchmark report not found.'
-            }
-            body = `${marker}\n${body}`
+            const reportPath = path.join(process.cwd(), '.bench-results/core/head/plugin-lifecycle.md')
+            let body = fs.existsSync(reportPath)
+              ? fs.readFileSync(reportPath, 'utf8')
+              : 'Benchmark report not found.'
+            body = [
+              marker,
+              `Same runner: base \`${process.env.BASE_REF}\` -> head \`${process.env.HEAD_REF}\`.`,
+              '',
+              body,
+            ].join('\n')
             const { owner, repo } = context.repo
             const issue_number = context.issue.number
             const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 })

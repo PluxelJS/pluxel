@@ -4,51 +4,41 @@
 // Goal: keep PluginService readable while avoiding scattering across many tiny files.
 // Everything here is intentionally side-effect free.
 
-import type { ServiceMap } from '../../container'
-import type { BasePlugin } from '../composition/BasePlugin'
-import type { PluginIdentifier } from '../types'
-
 /* ─────────────────────────── Init Plan ─────────────────────────── */
 
-export type InitPlan = {
+export type InitPlan<T> = {
 	/**
 	 * Topological "levels" (aka depth batches).
 	 * Level boundaries are useful for legacy batching, but the same graph can also
 	 * be scheduled via a ready-queue without barriers.
 	 */
-	levels: PluginIdentifier[][]
+	levels: T[][]
 	/** All planned nodes (excludes leftovers/cycles). */
-	nodes: PluginIdentifier[]
-	leftovers: Set<PluginIdentifier>
+	nodes: T[]
+	leftovers: Set<T>
 	/** Resolved dependency list for each node (may include deps outside `nodes`). */
-	dependencies: Map<PluginIdentifier, readonly PluginIdentifier[]>
+	dependencies: Map<T, readonly T[]>
 	/** Adjacency within `nodes`: dep -> dependents. */
-	graph: Map<PluginIdentifier, PluginIdentifier[]>
+	graph: Map<T, T[]>
 	/** Initial in-degree within `nodes`. */
-	inDegree: Map<PluginIdentifier, number>
+	inDegree: Map<T, number>
 }
 
-export function computeInitPlan(
-	plugins: ServiceMap<BasePlugin>,
-	resolve: (id: PluginIdentifier) => PluginIdentifier = (id) => id,
-): InitPlan {
-	const inDegree = new Map<PluginIdentifier, number>()
-	const graph = new Map<PluginIdentifier, PluginIdentifier[]>()
-	const dependencies = new Map<PluginIdentifier, readonly PluginIdentifier[]>()
+export function computeInitPlan<T>(
+	plugins: Iterable<T>,
+	getDependencies: (id: T) => readonly T[],
+): InitPlan<T> {
+	const inDegree = new Map<T, number>()
+	const graph = new Map<T, T[]>()
+	const dependencies = new Map<T, readonly T[]>()
 
-	for (const id of plugins.keys()) {
+	for (const id of plugins) {
 		inDegree.set(id, 0)
 		graph.set(id, [])
 	}
 
-	for (const [id, plugin] of plugins) {
-		const raw = (plugin.dependencies ?? []) as PluginIdentifier[]
-		let deps = raw
-		if (raw.length > 0) {
-			const next = Array<PluginIdentifier>(raw.length)
-			for (let i = 0; i < raw.length; i++) next[i] = resolve(raw[i])
-			deps = next
-		}
+	for (const id of inDegree.keys()) {
+		const deps = getDependencies(id)
 		dependencies.set(id, deps)
 		for (const dep of deps) {
 			if (!inDegree.has(dep)) continue
@@ -60,15 +50,15 @@ export function computeInitPlan(
 	// Copy, because we'll mutate for level computation but also expose initial inDegree for schedulers.
 	const remaining = new Map(inDegree)
 
-	const levels: PluginIdentifier[][] = []
-	let frontier: PluginIdentifier[] = []
+	const levels: T[][] = []
+	let frontier: T[] = []
 	for (const [id, degree] of remaining) {
 		if (degree === 0) frontier.push(id)
 	}
 
 	while (frontier.length > 0) {
 		levels.push(frontier)
-		const next: PluginIdentifier[] = []
+		const next: T[] = []
 		for (const current of frontier) {
 			for (const dependent of graph.get(current)!) {
 				const nextRemaining = remaining.get(dependent)! - 1
@@ -79,13 +69,13 @@ export function computeInitPlan(
 		frontier = next
 	}
 
-	const leftovers = new Set<PluginIdentifier>()
+	const leftovers = new Set<T>()
 	for (const [id, degree] of remaining) {
 		if (degree > 0) leftovers.add(id)
 	}
 
 	// Expose nodes excluding cycles, so schedulers never need to flatten levels.
-	const plannedNodes: PluginIdentifier[] = []
+	const plannedNodes: T[] = []
 	for (let i = 0; i < levels.length; i++) {
 		const level = levels[i]!
 		for (let j = 0; j < level.length; j++) plannedNodes.push(level[j]!)
@@ -93,8 +83,8 @@ export function computeInitPlan(
 
 	// Prune graph/inDegree to only planned nodes. This avoids wasted scheduler work on leftovers.
 	const nodeSet = new Set(plannedNodes)
-	const plannedInDegree = new Map<PluginIdentifier, number>()
-	const plannedGraph = new Map<PluginIdentifier, PluginIdentifier[]>()
+	const plannedInDegree = new Map<T, number>()
+	const plannedGraph = new Map<T, T[]>()
 	for (let i = 0; i < plannedNodes.length; i++) {
 		const id = plannedNodes[i]!
 		plannedInDegree.set(id, inDegree.get(id) ?? 0)
@@ -113,7 +103,7 @@ export function computeInitPlan(
 		}
 		if (keepAll) plannedGraph.set(id, children)
 		else {
-			const next: PluginIdentifier[] = []
+			const next: T[] = []
 			for (let j = 0; j < children.length; j++) {
 				const child = children[j]!
 				if (nodeSet.has(child)) next.push(child)
@@ -132,21 +122,6 @@ export function computeInitPlan(
 	}
 }
 
-export function partitionChanges(changes: Array<{ type: string; key: unknown }>) {
-	const added = new Set<PluginIdentifier>()
-	const replaced = new Set<PluginIdentifier>()
-	const removed = new Set<PluginIdentifier>()
-
-	for (const { type, key } of changes) {
-		const id = key as PluginIdentifier
-		if (type === 'add') added.add(id)
-		else if (type === 'replace') replaced.add(id)
-		else removed.add(id)
-	}
-
-	return { added, replaced, removed }
-}
-
 /* ─────────────────────────── Startup Strategy ─────────────────────────── */
 
 export type PluginStartStrategy = 'ready-queue' | 'batch'
@@ -159,30 +134,48 @@ export type StartStrategyOptions = {
 	strategy?: PluginStartStrategy
 	/** Only used by `ready-queue`. Minimum is 1. */
 	concurrency?: number
+	/** Called when a node is skipped because one of its dependencies failed. */
+	onDependencyBlocked?: (id: unknown, dependency: unknown) => void
 }
 
-export async function startPluginsWithStrategy(
-	plan: InitPlan,
-	instantiateAndStart: (id: PluginIdentifier, failed: Set<PluginIdentifier>) => Promise<void>,
+export async function startPluginsWithStrategy<T>(
+	plan: InitPlan<T>,
+	instantiateAndStart: (id: T) => Promise<boolean>,
 	opts: StartStrategyOptions = {},
-): Promise<Set<PluginIdentifier>> {
-	const failed = new Set<PluginIdentifier>(plan.leftovers)
+): Promise<Set<T>> {
+	const failed = new Set<T>(plan.leftovers)
+	if (plan.nodes.length === 1 && failed.size === 0) {
+		const id = plan.nodes[0]!
+		const deps = plan.dependencies.get(id) ?? []
+		if (deps.length === 0) {
+			const ok = await instantiateAndStart(id)
+			if (!ok) failed.add(id)
+			return failed
+		}
+	}
 
 	const strategy = opts.strategy ?? 'ready-queue'
 	if (strategy === 'batch') {
-		await startPluginsBatched(plan, instantiateAndStart, failed)
+		await startPluginsBatched(plan, instantiateAndStart, failed, opts.onDependencyBlocked)
 		return failed
 	}
 
-	const concurrency = normalizeStartConcurrency(opts.concurrency)
-	await startPluginsReadyQueue(plan, instantiateAndStart, failed, concurrency)
+	const concurrency = normalizeConcurrency(opts.concurrency, 8)
+	await startPluginsReadyQueue(
+		plan,
+		instantiateAndStart,
+		failed,
+		concurrency,
+		opts.onDependencyBlocked,
+	)
 	return failed
 }
 
-async function startPluginsBatched(
-	plan: InitPlan,
-	instantiateAndStart: (id: PluginIdentifier, failed: Set<PluginIdentifier>) => Promise<void>,
-	failed: Set<PluginIdentifier>,
+async function startPluginsBatched<T>(
+	plan: InitPlan<T>,
+	instantiateAndStart: (id: T) => Promise<boolean>,
+	failed: Set<T>,
+	onDependencyBlocked?: (id: T, dependency: T) => void,
 ): Promise<void> {
 	const { dependencies } = plan
 
@@ -194,20 +187,24 @@ async function startPluginsBatched(
 
 			const deps = dependencies.get(id)
 			if (deps && deps.length > 0) {
-				let blocked = false
+				let blocker: T | undefined
 				for (let i = 0; i < deps.length; i++) {
 					if (failed.has(deps[i])) {
-						blocked = true
+						blocker = deps[i]
 						break
 					}
 				}
-				if (blocked) {
+				if (blocker !== undefined) {
 					failed.add(id)
+					onDependencyBlocked?.(id, blocker)
 					continue
 				}
 			}
 
-			const p = instantiateAndStart(id, failed)
+			const p = instantiateAndStart(id).then((ok): undefined => {
+				if (!ok) failed.add(id)
+				return undefined
+			})
 			if (!single) single = p
 			else {
 				tasks ??= [single]
@@ -220,11 +217,12 @@ async function startPluginsBatched(
 	}
 }
 
-async function startPluginsReadyQueue(
-	plan: InitPlan,
-	instantiateAndStart: (id: PluginIdentifier, failed: Set<PluginIdentifier>) => Promise<void>,
-	failed: Set<PluginIdentifier>,
+async function startPluginsReadyQueue<T>(
+	plan: InitPlan<T>,
+	instantiateAndStart: (id: T) => Promise<boolean>,
+	failed: Set<T>,
 	concurrency: number,
+	onDependencyBlocked?: (id: T, dependency: T) => void,
 ): Promise<void> {
 	const nodes = plan.nodes
 	if (nodes.length === 0) return
@@ -232,38 +230,25 @@ async function startPluginsReadyQueue(
 	// inDegree counts only edges within this plan; safe to mutate.
 	const remainingDeps = new Map(plan.inDegree)
 	const dependents = plan.graph
-	const hasFailedDep = new Set<PluginIdentifier>()
-	const blocked: PluginIdentifier[] = []
+	const hasFailedDep = new Set<T>()
+	const blocked: T[] = []
 	let blockedHead = 0
-	const blockedQueued = new Set<PluginIdentifier>()
+	const blockedQueued = new Set<T>()
+	const ready: T[] = []
+	let readyHead = 0
+	const inFlight = new Set<Promise<void>>()
 
-	// Track already-failed upstream and "external" deps (outside this plan).
 	for (let i = 0; i < nodes.length; i++) {
 		const id = nodes[i]!
-		const deps = plan.dependencies.get(id) ?? []
-		for (let j = 0; j < deps.length; j++) {
-			const dep = deps[j]!
-			if (failed.has(dep)) {
-				hasFailedDep.add(id)
-				if (!blockedQueued.has(id)) {
-					blockedQueued.add(id)
-					blocked.push(id)
-				}
-				break
-			}
+		const blocker = failedDependencyOf(id, plan.dependencies, failed)
+		if (blocker !== undefined) {
+			markBlockedNode(id, hasFailedDep, blockedQueued, blocked)
+			onDependencyBlocked?.(id, blocker)
 		}
-	}
-
-	const ready: PluginIdentifier[] = []
-	for (let i = 0; i < nodes.length; i++) {
-		const id = nodes[i]!
 		if ((remainingDeps.get(id) ?? 0) === 0) ready.push(id)
 	}
 
-	let head = 0
-	const inFlight = new Set<Promise<void>>()
-
-	const complete = (id: PluginIdentifier, ok: boolean) => {
+	const complete = (id: T, ok: boolean) => {
 		const children = dependents.get(id)
 		if (!children) return
 		for (let i = 0; i < children.length; i++) {
@@ -271,26 +256,24 @@ async function startPluginsReadyQueue(
 			const next = (remainingDeps.get(child) ?? 0) - 1
 			remainingDeps.set(child, next)
 			if (!ok) {
-				hasFailedDep.add(child)
-				if (!failed.has(child) && !blockedQueued.has(child)) {
-					blockedQueued.add(child)
-					blocked.push(child)
-				}
+				markBlockedNode(child, hasFailedDep, blockedQueued, blocked)
+				onDependencyBlocked?.(child, id)
 			}
 			if (next === 0) ready.push(child)
 		}
 	}
 
-	const failAndPropagate = (id: PluginIdentifier) => {
+	const failAndPropagate = (id: T) => {
 		if (failed.has(id)) return
 		failed.add(id)
 		complete(id, false)
 	}
 
-	const schedule = (id: PluginIdentifier) => {
+	const schedule = (id: T) => {
 		const p = (async () => {
 			try {
-				await instantiateAndStart(id, failed)
+				const ok = await instantiateAndStart(id)
+				if (!ok) failed.add(id)
 			} catch {
 				// Defensive: instantiateAndStart shouldn't throw, but keep scheduler stable.
 				failed.add(id)
@@ -302,14 +285,14 @@ async function startPluginsReadyQueue(
 		inFlight.add(p)
 	}
 
-	while (head < ready.length || blockedHead < blocked.length || inFlight.size > 0) {
+	while (readyHead < ready.length || blockedHead < blocked.length || inFlight.size > 0) {
 		while (blockedHead < blocked.length) {
 			const id = blocked[blockedHead++]!
 			failAndPropagate(id)
 		}
 
-		while (head < ready.length && inFlight.size < concurrency) {
-			const id = ready[head++]!
+		while (readyHead < ready.length && inFlight.size < concurrency) {
+			const id = ready[readyHead++]!
 			if (failed.has(id)) continue
 			if (hasFailedDep.has(id)) continue
 			schedule(id)
@@ -319,11 +302,29 @@ async function startPluginsReadyQueue(
 	}
 }
 
-function normalizeStartConcurrency(value: number | undefined): number {
-	if (value === null || value === undefined) return 8
-	if (!Number.isFinite(value)) return 8
-	const n = Math.floor(value)
-	return n >= 1 ? n : 1
+function failedDependencyOf<T>(
+	id: T,
+	dependencies: ReadonlyMap<T, readonly T[]>,
+	failed: ReadonlySet<T>,
+): T | undefined {
+	const deps = dependencies.get(id) ?? []
+	for (let i = 0; i < deps.length; i++) {
+		const dep = deps[i]!
+		if (failed.has(dep)) return dep
+	}
+	return undefined
+}
+
+function markBlockedNode<T>(
+	id: T,
+	hasFailedDep: Set<T>,
+	blockedQueued: Set<T>,
+	blocked: T[],
+): void {
+	hasFailedDep.add(id)
+	if (blockedQueued.has(id)) return
+	blockedQueued.add(id)
+	blocked.push(id)
 }
 
 /* ─────────────────────────── Teardown Strategy ─────────────────────────── */
@@ -336,21 +337,29 @@ export type TeardownStrategyOptions = {
 	concurrency?: number
 }
 
-export async function stopPluginsTopo(
-	dependents: ReadonlyMap<PluginIdentifier, Set<PluginIdentifier>> | undefined,
-	affected: Set<PluginIdentifier>,
-	stop: (id: PluginIdentifier) => Promise<void>,
+export async function stopPluginsTopo<T>(
+	getDependents: ((id: T) => Iterable<T>) | undefined,
+	affected: Set<T>,
+	stop: (id: T) => Promise<void>,
 	opts: TeardownStrategyOptions = {},
 ): Promise<void> {
-	if (!dependents || affected.size === 0) return
+	if (!getDependents || affected.size === 0) return
+	if (affected.size === 1) {
+		for (const id of affected) {
+			await stop(id).catch(() => {
+				// stop is best-effort by design; keep teardown progressing.
+			})
+		}
+		return
+	}
 
-	const concurrency = normalizeStopConcurrency(opts.concurrency, 1)
+	const concurrency = normalizeConcurrency(opts.concurrency, 1)
 
 	// Reverse-topo scheduler:
 	// - a node becomes "ready to stop" once all of its affected dependents are stopped.
 	// - default concurrency=1 preserves deterministic sequential teardown.
-	const remainingChildren = new Map<PluginIdentifier, number>()
-	const parents = new Map<PluginIdentifier, PluginIdentifier[]>()
+	const remainingChildren = new Map<T, number>()
+	const parents = new Map<T, T[]>()
 
 	for (const id of affected) {
 		remainingChildren.set(id, 0)
@@ -358,8 +367,7 @@ export async function stopPluginsTopo(
 	}
 
 	for (const id of affected) {
-		const children = dependents.get(id)
-		if (!children) continue
+		const children = getDependents(id)
 		for (const child of children) {
 			if (!affected.has(child)) continue
 			remainingChildren.set(id, (remainingChildren.get(id) ?? 0) + 1)
@@ -367,16 +375,16 @@ export async function stopPluginsTopo(
 		}
 	}
 
-	const ready: PluginIdentifier[] = []
+	const ready: T[] = []
 	for (const [id, count] of remainingChildren) {
 		if (count === 0) ready.push(id)
 	}
 
-	const stopped = new Set<PluginIdentifier>()
+	const stopped = new Set<T>()
 	let head = 0
 	const inFlight = new Set<Promise<void>>()
 
-	const complete = (id: PluginIdentifier) => {
+	const complete = (id: T) => {
 		for (const parent of parents.get(id)!) {
 			const next = (remainingChildren.get(parent) ?? 0) - 1
 			remainingChildren.set(parent, next)
@@ -384,7 +392,7 @@ export async function stopPluginsTopo(
 		}
 	}
 
-	const schedule = (id: PluginIdentifier) => {
+	const schedule = (id: T) => {
 		stopped.add(id)
 		const p = stop(id)
 			.catch(() => {
@@ -416,7 +424,7 @@ export async function stopPluginsTopo(
 	}
 }
 
-function normalizeStopConcurrency(value: number | undefined, fallback: number): number {
+function normalizeConcurrency(value: number | undefined, fallback: number): number {
 	if (value === null || value === undefined) return fallback
 	if (!Number.isFinite(value)) return fallback
 	const n = Math.floor(value)

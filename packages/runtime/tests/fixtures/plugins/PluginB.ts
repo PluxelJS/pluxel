@@ -1,5 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { v } from '@pluxel/runtime/config'
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 
 export const config = v.object({
 	name: v.optional(v.pipe(v.string(), v.hexColor()), '#000000'),

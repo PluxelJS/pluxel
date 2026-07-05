@@ -2,6 +2,7 @@ import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot } from '../features/pluginStatus/service'
 import { maybeAddForkToCatalog } from './forksCatalog'
+import { requireRouteCapability } from '../../runtime/capabilities'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -10,7 +11,7 @@ import type {
 } from '../../web/protocol'
 
 function resolvePlugin(ctx: Context, name: string) {
-	const ctor = ctx.loader.api.runtime.resolve(name)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolve(name)
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -30,6 +31,7 @@ async function runStatusAction(
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
+		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
 		if (action === 'start' || action === 'restart' || action === 'enable') {
 			maybeAddForkToCatalog(ctx, name)
 		}
@@ -38,27 +40,28 @@ async function runStatusAction(
 
 		switch (action) {
 			case 'start':
-				await ctx.loader.api.control.enable(name, ctor)
+			case 'enable':
+				await lifecycle.enable(name, ctor)
 				break
 			case 'stop':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
+				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: true })
-				await ctx.loader.api.control.enable(name, ctor)
+				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
+				await lifecycle.enable(name, ctor)
 				break
 			case 'disable':
-				ctx.loader.api.control.deactivate(name, ctor, { runtimeOnly: false })
+				lifecycle.deactivate(name, ctor, { runtimeOnly: false })
 				break
-			case 'enable':
-				ctx.loader.api.control.enablePersisted(name)
+			case 'enable-persisted':
+				lifecycle.enablePersisted(name)
 				break
 			default:
 				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
 		}
 		return { name, ok: true }
 	} catch (error) {
-		const isStart = action === 'start' || action === 'restart'
+		const isStart = action === 'start' || action === 'restart' || action === 'enable'
 		const message = getErrorMessage(error)
 		const code = message.includes('Plugin not found')
 			? 'plugin_not_found'

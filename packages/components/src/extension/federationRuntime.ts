@@ -8,6 +8,7 @@ import * as ReactDOM from 'react-dom'
 import * as ReactDOMClient from 'react-dom/client'
 import * as ReactJSXDevRuntime from 'react/jsx-dev-runtime'
 import * as ReactJSXRuntime from 'react/jsx-runtime'
+import * as ReactVirtual from '@tanstack/react-virtual'
 import {
 	EXTENSION_FEDERATION_SHARE_STRATEGY,
 	extensionFederationModuleId,
@@ -20,6 +21,7 @@ let federationRuntime: ModuleFederation | null = null
 const hostSharedVersions = {
 	mantineCore: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/core']),
 	mantineHooks: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/hooks']),
+	reactVirtual: normalizeSharedVersion(componentsPkg.dependencies['@tanstack/react-virtual']),
 	runtimeWebUi: runtimePkg.version,
 }
 
@@ -36,6 +38,7 @@ export function ensureExtensionFederationRuntime(): ModuleFederation {
 			'react/jsx-dev-runtime': sharedModule(ReactJSXDevRuntime, React.version),
 			'react-dom': sharedModule(ReactDOM, ReactDOM.version),
 			'react-dom/client': sharedModule(ReactDOMClient, ReactDOM.version),
+			'@tanstack/react-virtual': sharedModule(ReactVirtual, hostSharedVersions.reactVirtual),
 			'@mantine/core': sharedModule(MantineCore, hostSharedVersions.mantineCore),
 			'@mantine/hooks': sharedModule(MantineHooks, hostSharedVersions.mantineHooks),
 			'@pluxel/runtime/web/ui': sharedModule(RuntimeWebUi, hostSharedVersions.runtimeWebUi),

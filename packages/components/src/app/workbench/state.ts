@@ -5,8 +5,7 @@ import {
 	PLUGIN_WORKBENCH_PANELS_SCOPE,
 	sanitizePluginSectionLayout,
 	sanitizePluginWorkbenchPanelsState,
-} from './pluginLayout'
-
+} from './split'
 export type WorkbenchTab = {
 	id: string
 	path: string
@@ -14,7 +13,7 @@ export type WorkbenchTab = {
 	meta?: string
 }
 
-export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'ops' | 'other'
+export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'other'
 export type WorkbenchTabState = Record<string, Record<string, unknown>>
 export type WorkbenchSectionPaneState = {
 	visible: boolean

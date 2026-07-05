@@ -7,14 +7,17 @@ import {
 } from '../decorators/decorator/api'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
+import { FEATURE_CONFIG_INJECTOR } from './featureConfigInjection'
 
 export type FeatureCtor<T> = new (ctx: Context, ...args: unknown[]) => T
 
 const HOST_BOUND_FEATURE = Symbol.for('pluxel:feature:hostBound')
-const INJECT_PLAN = new WeakMap<
-	AnyCtor,
-	{ keys: ReadonlyArray<{ field: string; keys: readonly string[] }>; prefix: string }
->()
+type FeatureConfigBinding = { field: string; keys: readonly string[] }
+type FeatureConfigInjectPlan = {
+	bindings: readonly FeatureConfigBinding[]
+	prefix: string
+}
+const INJECT_PLAN = new WeakMap<AnyCtor, FeatureConfigInjectPlan>()
 
 export function isHostBoundFeature(ctor: unknown): boolean {
 	if (!ctor) return false
@@ -65,56 +68,80 @@ export abstract class BaseFeature<C extends Context = Context> {
 	 * Called by FeatureHost *after* the feature instance is fully constructed
 	 * (so derived class field initializers can't clobber injected values).
 	 */
-	public __injectConfigsFromHostPlugin(): void {
+	public [FEATURE_CONFIG_INJECTOR](): void {
 		const ctor = (this as { constructor?: unknown }).constructor
 		if (typeof ctor !== 'function') return
 
-		let plan = INJECT_PLAN.get(ctor as unknown as AnyCtor)
-		if (!plan) {
-			// Prefer explicit bindings; fall back to raw keys for legacy/edge cases.
-			const bindings = getDeclaredConfigBindings(ctor as unknown as AnyCtor)
-			const entries: Array<{ field: string; keys: readonly string[] }> = []
-			if (bindings) {
-				for (const [field, keys] of Object.entries(bindings)) {
-					entries.push({ field, keys })
-				}
-			} else {
-				const keys = getDeclaredConfigKeys(ctor as unknown as AnyCtor)
-				for (let i = 0; i < keys.length; i++) entries.push({ field: keys[i]!, keys: [keys[i]!] })
-			}
-			if (entries.length === 0) return
-			const ns = getFeatureNamespace(ctor as unknown as AnyCtor)
-			plan = { keys: entries, prefix: `${ns}.` }
-			INJECT_PLAN.set(ctor as unknown as AnyCtor, plan)
-		}
+		const plan = getFeatureConfigInjectPlan(ctor as unknown as AnyCtor)
+		if (!plan) return
 
 		const record = this.ctx.configService.tryGetValidatedConfig()
 		if (!record || typeof record !== 'object') return
 
-		for (let i = 0; i < plan.keys.length; i++) {
-			const { field, keys } = plan.keys[i]!
-			if (keys.length === 0) {
-				;(this as unknown as Record<string, unknown>)[field] = {}
-				continue
-			}
-			if (keys.length === 1) {
-				;(this as unknown as Record<string, unknown>)[field] = (record as Record<string, unknown>)[
-					plan.prefix + keys[0]!
-				]
-				continue
-			}
-			const obj: Record<string, unknown> = Object.create(null)
-			for (let j = 0; j < keys.length; j++) {
-				const k = keys[j]!
-				obj[k] = (record as Record<string, unknown>)[plan.prefix + k]
-			}
-			;(this as unknown as Record<string, unknown>)[field] = obj
-		}
+		applyFeatureConfigInjectPlan(this, plan, record as Record<string, unknown>)
 	}
 
 	dispose(): void {
 		this.scope.disposeAll()
 	}
+}
+
+function getFeatureConfigInjectPlan(ctor: AnyCtor): FeatureConfigInjectPlan | undefined {
+	let plan = INJECT_PLAN.get(ctor)
+	if (plan) return plan
+
+	const bindings = collectFeatureConfigBindings(ctor)
+	if (bindings.length === 0) return undefined
+
+	plan = { bindings, prefix: `${getFeatureNamespace(ctor)}.` }
+	INJECT_PLAN.set(ctor, plan)
+	return plan
+}
+
+function collectFeatureConfigBindings(ctor: AnyCtor): FeatureConfigBinding[] {
+	// Prefer explicit bindings; fall back to raw keys for legacy/edge cases.
+	const bindings = getDeclaredConfigBindings(ctor)
+	if (bindings) {
+		const entries: FeatureConfigBinding[] = []
+		for (const [field, keys] of Object.entries(bindings)) entries.push({ field, keys })
+		return entries
+	}
+
+	const keys = getDeclaredConfigKeys(ctor)
+	const entries: FeatureConfigBinding[] = []
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]!
+		entries.push({ field: key, keys: [key] })
+	}
+	return entries
+}
+
+function applyFeatureConfigInjectPlan(
+	target: object,
+	plan: FeatureConfigInjectPlan,
+	record: Record<string, unknown>,
+): void {
+	const targetRecord = target as Record<string, unknown>
+	for (let i = 0; i < plan.bindings.length; i++) {
+		const { field, keys } = plan.bindings[i]!
+		targetRecord[field] = createFeatureConfigBindingValue(record, plan.prefix, keys)
+	}
+}
+
+function createFeatureConfigBindingValue(
+	record: Record<string, unknown>,
+	prefix: string,
+	keys: readonly string[],
+): unknown {
+	if (keys.length === 0) return {}
+	if (keys.length === 1) return record[prefix + keys[0]!]
+
+	const value: Record<string, unknown> = Object.create(null)
+	for (let i = 0; i < keys.length; i++) {
+		const key = keys[i]!
+		value[key] = record[prefix + key]
+	}
+	return value
 }
 
 /**

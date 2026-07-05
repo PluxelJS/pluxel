@@ -2,20 +2,22 @@ import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import { ensureHmrPluginLevelsLoaded } from '../../logger/levels'
+import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
+import {
+	canAccessSecurityAdmin,
+	createVerificationBlockedHeaders,
+	createVerificationBlockedPayload,
+	resolveControlPlaneRedirectPath,
+	type VerificationBlockedKind,
+	type VerificationReason,
+} from '../../shared/verification-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
-import { HMR_INTERNAL_API_BASE } from '../../web/paths'
-import {
-	createUiPublicAssetHandler,
-	resolveDefaultUiPublicDir,
-	type UiPublicAssetHandler,
-	UI_PUBLIC_BASE,
-} from '../../server/ui-public'
+import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
+import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
+import { resolveManagementConfig } from '../verification/model'
 import type { SseChannel } from '../plugin-interaction/SseService'
-import type { AuthGuardContext, AuthGuardKind, AuthGuardResult } from './AuthGuardService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
-import { createInternalApiRoutes } from './internalApi'
 
 const serviceName = 'http' as const
 
@@ -41,16 +43,20 @@ export type HttpHandler = (
  */
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
-export type UiAssetStrategy = 'dev-server' | 'static-built' | 'disabled'
-
 export interface HttpServiceConfig {
+	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
+	graphql?: boolean
+}
+
+type RuntimeHttpUiAssetMode = 'dev-server' | 'static-built' | 'disabled'
+
+type RuntimeHttpServiceConfig = HttpServiceConfig & {
 	controlPlane?: {
 		web?: boolean
 		rpc?: boolean
 		sse?: boolean
-		auth?: 'none' | 'basic' | 'custom'
 	}
-	uiAssets?: UiAssetStrategy
+	uiAssets?: RuntimeHttpUiAssetMode
 	/**
 	 * Directory for serving built UI assets (mounted under `UI_PUBLIC_BASE` when `uiAssets=static-built`).
 	 *
@@ -71,6 +77,24 @@ export interface HttpBoundaryHandle {
 }
 
 type BaseElysiaApp = AnyElysiaApp
+
+type UiPublicAssetHandler = (request: Request) => Promise<Response | null>
+type InternalApiOptions = {
+	web?: boolean
+	rpc?: boolean
+	sse?: boolean
+	graphql?: boolean
+}
+type ResolvedHttpServiceConfig = {
+	controlPlane: {
+		web: boolean
+		rpc: boolean
+		sse: boolean
+	}
+	graphql: boolean
+	uiAssets: RuntimeHttpUiAssetMode
+	uiPublicDir: string
+}
 
 export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
 
@@ -122,6 +146,11 @@ function encodePathSegment(input: string): string {
 	return encodeURIComponent(input)
 }
 
+function currentWorkingDirectory(): string {
+	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
+	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
+}
+
 @Injectable({ key: serviceName })
 export class HttpService {
 	private fullReloadRequested = false
@@ -131,52 +160,72 @@ export class HttpService {
 		new Response('HTTP runtime unavailable', { status: 503 })
 	private uiPublicHandler: UiPublicAssetHandler | null | undefined = undefined
 
+	private readonly hostCtx: PluxelContext
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
 	private sseBuiltinsReady = false
-	private readonly config: Required<HttpServiceConfig>
+	private readonly config: ResolvedHttpServiceConfig
 
 	constructor(
 		public ctx: PluxelContext,
 		config: HttpServiceConfig = {},
 	) {
-		this.logger = ctx.logger!
+		const runtimeConfig = config as RuntimeHttpServiceConfig
+		this.hostCtx = ctx.root
+		this.logger = this.hostCtx.logger!
+		const managementConfig = resolveManagementConfig(this.hostCtx.config.management)
+		const management = managementConfig.enabled
+		if (
+			management &&
+			managementConfig.access.exposure === 'public' &&
+			!managementConfig.access.oidc
+		) {
+			throw new Error('Public management access requires management.access.oidc.')
+		}
+		const useDefaultControlPlane = management && runtimeConfig.controlPlane === undefined
+		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
-				web: config.controlPlane?.web !== false,
-				rpc: config.controlPlane?.rpc !== false,
-				sse: config.controlPlane?.sse !== false,
-				auth: config.controlPlane?.auth ?? 'none',
+				web: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
+				rpc: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
+				sse: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
 			},
-			uiAssets: config.uiAssets ?? 'static-built',
-			uiPublicDir: config.uiPublicDir ?? '',
+			graphql,
+			uiAssets: management ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
+			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
+		}
+		if (management) {
+			this.mountHostBoundary({
+				id: 'pluxel:verification',
+				path: VERIFICATION_PAGE_PATH,
+				boundary: this.createLazyVerificationBoundary(),
+			})
 		}
 		this.rebuildRootApp()
-		if (
-			this.config.controlPlane.web ||
-			this.config.controlPlane.rpc ||
-			this.config.controlPlane.sse
-		) {
-			this.host.routes(
-				createInternalApiRoutes(this.ctx, {
+		const controlPlaneEnabled =
+			this.config.controlPlane.web || this.config.controlPlane.rpc || this.config.controlPlane.sse
+		if (controlPlaneEnabled) {
+			this.mountHostBoundary({
+				id: 'hmr:internal-api',
+				path: RUNTIME_INTERNAL_API_BASE,
+				boundary: this.createLazyInternalApiBoundary({
 					web: this.config.controlPlane.web,
 					rpc: this.config.controlPlane.rpc,
 					sse: this.config.controlPlane.sse,
+					graphql: this.config.graphql,
 				}),
-				{
-					id: 'hmr:internal-api',
-					path: HMR_INTERNAL_API_BASE,
-					app: {
-						aot: true,
-						name: 'pluxel.http.internal',
-					},
-				},
-			)
+			})
+		} else if (this.config.graphql) {
+			this.mountHostBoundary({
+				id: 'pluxel:internal-graphql',
+				path: RUNTIME_INTERNAL_API_BASE,
+				boundary: this.createLazyGraphqlBoundary(),
+			})
 		}
 		if (this.config.controlPlane.sse) this.registerSseBuiltins()
 
-		void ensureHmrPluginLevelsLoaded(ctx).catch((error) => {
-			this.logger.warn('Failed to load persisted plugin log levels', { error })
+		void ensureRuntimePluginPolicyLoaded(ctx).catch((error) => {
+			this.logger.warn('Failed to load persisted plugin log policy', { error })
 		})
 	}
 
@@ -187,10 +236,11 @@ export class HttpService {
 	/**
 	 * Update UI asset serving mode for an already-instantiated HTTP runtime.
 	 *
-	 * Dev hosts can decide UI asset mode at process startup; if the HTTP service is already
+	 * HMR hosts can decide UI asset mode at process startup; if the HTTP service is already
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
-	reconfigureUiAssets(config: Pick<HttpServiceConfig, 'uiAssets' | 'uiPublicDir'>): void {
+	/** @internal Route launchers use this to switch between bundled and dev-server management UI assets. */
+	reconfigureUiAssets(config: { uiAssets?: RuntimeHttpUiAssetMode; uiPublicDir?: string }): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''
 		if (nextUiAssets === this.config.uiAssets && nextUiPublicDir === this.config.uiPublicDir) {
@@ -206,7 +256,7 @@ export class HttpService {
 	}
 
 	/**
-	 * Dev adapter integration hook: when runtime routes change (mount/replace/unmount),
+	 * HMR integration hook: when runtime routes change (mount/replace/unmount),
 	 * the UI usually needs a hard reload to refresh route bindings/state.
 	 */
 	consumeFullReloadRequest(): boolean {
@@ -216,8 +266,9 @@ export class HttpService {
 	}
 
 	get plugin() {
-		const pluginId = this.requirePluginId()
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(options)
+		const pluginCtx = this.ctx
+		const pluginId = this.requirePluginId(pluginCtx)
+		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
 		return {
 			id: pluginId,
 			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees so
@@ -226,14 +277,14 @@ export class HttpService {
 			app: elysia,
 			base: (path = '/') => this.resolvePluginBase(pluginId, path),
 			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginId, build, options),
+				this.mountPluginRoutes(pluginCtx, pluginId, build, options),
 			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginId, boundary, options),
+				this.mountPluginBoundary(pluginCtx, pluginId, boundary, options),
 		}
 	}
 
 	get host() {
-		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(options)
+		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(this.hostCtx, options)
 		return {
 			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees.
 			elysia,
@@ -245,36 +296,86 @@ export class HttpService {
 	}
 
 	private mountHostBoundary(spec: HostHttpMountSpec): HttpBoundaryHandle {
-		return this.mountAtPath({
+		return this.mountAtPath(this.hostCtx, {
 			id: spec.id,
 			base: spec.path,
 			boundary: spec.boundary,
 		})
 	}
 
+	private createLazyVerificationBoundary(): HttpHandler {
+		let appPromise: Promise<BaseElysiaApp> | undefined
+		return async (request) => {
+			appPromise ??= import('../verification/http').then(({ createVerificationRoutes }) =>
+				createVerificationRoutes(
+					this.hostCtx,
+					this.createApp(this.hostCtx, {
+						aot: true,
+						name: 'pluxel.http.verification',
+					}),
+				),
+			)
+			const app = await appPromise
+			return app.fetch(request)
+		}
+	}
+
+	private createLazyInternalApiBoundary(options: InternalApiOptions): HttpHandler {
+		let boundaryPromise: Promise<HttpBoundary> | undefined
+		return async (request) => {
+			boundaryPromise ??= import('./internalApi').then(({ createInternalApiRoutes }) => {
+				const build = createInternalApiRoutes(this.hostCtx, options)
+				return build(
+					this.createApp(this.hostCtx, {
+						aot: true,
+						name: 'pluxel.http.internal',
+					}),
+				)
+			})
+			const boundary = await boundaryPromise
+			return this.toFetch(boundary)(request)
+		}
+	}
+
+	private createLazyGraphqlBoundary(): HttpHandler {
+		let boundaryPromise: Promise<HttpBoundary> | undefined
+		return async (request) => {
+			boundaryPromise ??= Promise.resolve(this.hostCtx.internalGraphql.plugin())
+			const boundary = await boundaryPromise
+			return this.toFetch(boundary)(request)
+		}
+	}
+
 	private mountPluginBoundary(
+		pluginCtx: PluxelContext,
 		pluginId: string,
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
 		const path = normalizePluginPath(options.path)
 		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path)
-		return this.mountHostBoundary({
+		return this.mountAtPath(pluginCtx, {
 			id: routeId,
-			path: this.resolvePluginBase(pluginId, path),
+			base: this.resolvePluginBase(pluginId, path),
 			boundary,
 		})
 	}
 
 	private mountPluginRoutes(
+		pluginCtx: PluxelContext,
 		pluginId: string,
 		build: ElysiaBoundaryBuilder,
 		options: PluginHttpMountOptions = {},
 	): ElysiaRouteHandle {
 		const { app: appOptions, ...mountOptions } = options
 		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(appOptions))
-		const handle = this.mountPluginBoundary(pluginId, createBoundary(build), mountOptions)
+			nextBuild(this.createApp(pluginCtx, appOptions))
+		const handle = this.mountPluginBoundary(
+			pluginCtx,
+			pluginId,
+			createBoundary(build),
+			mountOptions,
+		)
 
 		return {
 			...handle,
@@ -288,7 +389,7 @@ export class HttpService {
 	): ElysiaRouteHandle {
 		const { app: appOptions, ...mountSpec } = options
 		const createBoundary = (nextBuild: ElysiaBoundaryBuilder) =>
-			nextBuild(this.createApp(appOptions))
+			nextBuild(this.createApp(this.hostCtx, appOptions))
 		const handle = this.mountHostBoundary({
 			...mountSpec,
 			boundary: createBoundary(build),
@@ -300,7 +401,7 @@ export class HttpService {
 		}
 	}
 
-	private mountAtPath(spec: MountedBoundarySpec): HttpBoundaryHandle {
+	private mountAtPath(ownerCtx: PluxelContext, spec: MountedBoundarySpec): HttpBoundaryHandle {
 		const slot = this.upsertMounted(spec)
 		const dispose = () => {
 			if (this.mounted.delete(slot.id)) {
@@ -309,7 +410,7 @@ export class HttpService {
 				this.requestFullReload()
 			}
 		}
-		const guard = this.ctx.effects.defer(dispose)
+		const guard = ownerCtx.effects.defer(dispose)
 
 		return {
 			replace: (boundary) => {
@@ -320,22 +421,29 @@ export class HttpService {
 		}
 	}
 
-	private resolveUiPublicDir(): string | null {
+	private async resolveUiPublicDir(): Promise<string | null> {
 		if (this.config.uiAssets !== 'static-built') return null
 		const configured = String(this.config.uiPublicDir ?? '').trim()
-		if (configured) return isAbsolute(configured) ? configured : resolve(process.cwd(), configured)
+		if (configured)
+			return isAbsolute(configured) ? configured : resolve(currentWorkingDirectory(), configured)
+		const { resolveDefaultUiPublicDir } = await import('../../server/ui-public')
 		return resolveDefaultUiPublicDir()
 	}
 
-	private uiPublic(): UiPublicAssetHandler | null {
+	private async uiPublic(): Promise<UiPublicAssetHandler | null> {
 		if (this.uiPublicHandler !== undefined) return this.uiPublicHandler
-		const dir = this.resolveUiPublicDir()
-		this.uiPublicHandler = dir ? createUiPublicAssetHandler({ publicDirAbs: dir }) : null
+		const dir = await this.resolveUiPublicDir()
+		if (!dir) {
+			this.uiPublicHandler = null
+			return null
+		}
+		const { createUiPublicAssetHandler } = await import('../../server/ui-public')
+		this.uiPublicHandler = createUiPublicAssetHandler({ publicDirAbs: dir })
 		return this.uiPublicHandler
 	}
 
 	private rebuildRootApp() {
-		const root = createElysiaApp(this.ctx, {
+		const root = createElysiaApp(this.hostCtx, {
 			aot: true,
 			name: 'pluxel.http.root',
 		})
@@ -347,15 +455,17 @@ export class HttpService {
 			const path = url.pathname
 			const method = (request.method ?? 'GET').toUpperCase()
 
-			const uiPublic = this.uiPublic()
 			if (path.startsWith(`${UI_PUBLIC_BASE}/`)) {
+				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
+				const uiPublic = await this.uiPublic()
 				if (!uiPublic) return new Response('Not Found', { status: 404 })
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
 			}
 
 			if (this.isHtmlNavigation(request)) {
+				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
 				return this.render(request)
@@ -377,18 +487,18 @@ export class HttpService {
 			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
 		]
 
-		for (const dispose of disposers) this.ctx.effects.defer(dispose)
+		for (const dispose of disposers) this.hostCtx.effects.defer(dispose)
 	}
 
 	private registerBuiltinSse(
 		namespace: string,
 		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
-		return this.ctx.ext.sse.expose(() => handler, { namespace })
+		return this.hostCtx.ext.sse.expose(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = this.ctx.ext.ui
+		const service = this.hostCtx.ext.ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return undefined
@@ -407,62 +517,66 @@ export class HttpService {
 		request: Request,
 		path: string,
 		method: string,
-		kind: AuthGuardKind,
+		kind: VerificationBlockedKind,
 	): Promise<Response | undefined> {
-		const service = this.ctx.authGuard
-		if (!service || !service.isActive()) return undefined
-
-		const input: AuthGuardContext = {
-			kind,
-			path,
-			method,
+		const state = await this.hostCtx.root.verification.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,
+		})
+		const isSecurityRoute =
+			path === RUNTIME_SECURITY_BASE || path.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+		const isSecurityCarrier = path === UI_PUBLIC_BASE || path.startsWith(`${UI_PUBLIC_BASE}/`)
+		if ((isSecurityRoute || isSecurityCarrier) && canAccessSecurityAdmin(state)) return undefined
+		if (isSecurityRoute) {
+			this.logger.warn('Blocked host security admin route', {
+				kind,
+				path,
+				method,
+				reason: state.reason,
+			})
+			return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
 		}
+		if (state.allow) return undefined
 
-		const result = await service.check(input)
-		if (result.allow === true) return undefined
-		const denied = result as Extract<AuthGuardResult, { allow: false }>
+		this.logger.warn('Blocked host verification gate', {
+			kind,
+			path,
+			method,
+			reason: state.reason,
+		})
 
-		this.logger.warn('Blocked request', { kind, path, method, pluginName: denied.pluginName })
-
-		return this.buildAuthDeniedResponse(path, method, kind, denied)
+		return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
 	}
 
-	private buildAuthDeniedResponse(
+	private buildVerificationDeniedResponse(
+		request: Request,
 		path: string,
 		method: string,
-		kind: AuthGuardKind,
-		result: Extract<AuthGuardResult, { allow: false }>,
+		kind: VerificationBlockedKind,
+		reason?: VerificationReason,
 	): Response {
+		const redirectPath = resolveControlPlaneRedirectPath(
+			buildVerificationRedirectPath,
+			request,
+			kind,
+			reason,
+		)
 		if (kind === 'ui') {
 			return new Response(null, {
 				status: 302,
 				headers: {
-					Location: result.redirectPath,
+					Location: redirectPath,
 					'Cache-Control': 'no-store',
 				},
 			})
 		}
 
 		return Response.json(
-			{
-				allow: false,
-				code: 'access_denied',
-				kind,
-				path,
-				method,
-				pluginName: result.pluginName,
-				redirectPath: result.redirectPath,
-			},
+			createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
 			{
 				status: 401,
-				headers: {
-					'Cache-Control': 'no-store',
-					'X-Pluxel-Auth-Blocked': '1',
-					'X-Pluxel-Redirect-Path': result.redirectPath,
-				},
+				headers: createVerificationBlockedHeaders(redirectPath, reason),
 			},
 		)
 	}
@@ -530,7 +644,7 @@ export class HttpService {
 
 	private wrapMountedPlugin(id: string, base: string, boundary: BaseElysiaApp): BaseElysiaApp {
 		const prefix = base === '/' ? undefined : base
-		return createElysiaApp(this.ctx, {
+		return createElysiaApp(this.hostCtx, {
 			aot: true,
 			name: `pluxel.http.boundary.${id}`,
 			prefix,
@@ -546,8 +660,8 @@ export class HttpService {
 		return boundary instanceof Elysia
 	}
 
-	private requirePluginId(): string {
-		const pluginId = String(this.ctx.pluginInfo?.id ?? '').trim()
+	private requirePluginId(ctx: PluxelContext): string {
+		const pluginId = String(ctx.pluginInfo?.id ?? '').trim()
 		if (!pluginId) throw new Error('Plugin-scoped HTTP routes require ctx.pluginInfo.id')
 		return pluginId
 	}
@@ -572,8 +686,8 @@ export class HttpService {
 		this.mountedIndex = [...this.mounted.values()].sort((a, b) => b.base.length - a.base.length)
 	}
 
-	private createApp(options?: CreateElysiaAppOptions) {
-		return createElysiaApp(this.ctx, options)
+	private createApp(ctx: PluxelContext, options?: CreateElysiaAppOptions) {
+		return createElysiaApp(ctx, options)
 	}
 
 	private async createRenderer(): Promise<RenderHandler> {
@@ -582,10 +696,10 @@ export class HttpService {
 		}
 		if (this.config.uiAssets === 'static-built') {
 			const { createStaticRenderer } = await import('../../server/static')
-			return createStaticRenderer({ publicDirAbs: this.resolveUiPublicDir() ?? undefined })
+			return createStaticRenderer({ publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined })
 		}
-		const { createDevRenderer } = await import('../../server/dev')
-		return createDevRenderer()
+		const { createHmrRenderer } = await import('../../server/hmr')
+		return createHmrRenderer()
 	}
 
 	private async render(request: Request) {

@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withHost } from '@pluxel/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
 
 describe('Forkable plugins', () => {
 	it('rejects forking non‑forkable plugins', () => {
-		return withHost((host) => {
+		return withCoreHost((host) => {
 			@Plugin({ name: 'NotForkable' })
 			class NotForkable extends BasePlugin {}
 
-			expect(() => host.fork(NotForkable as any, 'a')).toThrow()
+			expect(() => host.fork(NotForkable as any, 'a')).toThrow(/is not forkable/)
 		})
 	})
 
 	it('runs multiple forks with isolated ctx and identity', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			const events: string[] = []
 
 			@Plugin({ name: 'Forkee' })
@@ -41,7 +41,7 @@ describe('Forkable plugins', () => {
 	})
 
 	it('allows setParamToken to inject a specific fork', async () => {
-		await withHost(async (host) => {
+		await withCoreHost(async (host) => {
 			@Plugin({ name: 'Dep' })
 			class Dep extends ForkablePlugin {}
 

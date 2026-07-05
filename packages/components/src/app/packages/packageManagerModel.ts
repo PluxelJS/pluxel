@@ -1,4 +1,4 @@
-import type { PluginStatusEntry } from '../gqty'
+import type { PluginStatusEntry } from '../gqlens'
 import type { PackageInventoryEntry, PackageLoadIssue, PackageSpecInput } from '../../runtime'
 
 export type Maybe<T> = T | null | undefined

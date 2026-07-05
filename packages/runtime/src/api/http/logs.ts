@@ -16,7 +16,7 @@ import {
 } from '../../logger/store'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { createSseResponse } from '../../services/http/sse'
-import { HMR_LOG_STREAMS_BASE } from '../../web/paths'
+import { RUNTIME_LOG_STREAMS_BASE } from '../../web/paths'
 import { logFollowQuery, logRangeQuery, logStreamParams } from './models'
 
 function readIntEnv(name: string, fallback: number, min: number, max: number): number {
@@ -108,7 +108,7 @@ function mergeResolvedFilter(url: URL, resolved: ResolvedLogStream): LogFilter |
 }
 
 export const logRoutes = (app: AnyElysiaApp) =>
-	app.group(HMR_LOG_STREAMS_BASE, (streams) =>
+	app.group(RUNTIME_LOG_STREAMS_BASE, (streams) =>
 		streams
 			.get('', () => ({ streams: runtimeLogStores.list().map((store) => store.meta()) }))
 			.get(
@@ -576,7 +576,6 @@ function mergeFilters(a: LogFilter | undefined, b: LogFilter | undefined): LogFi
 	if (a.category && b.category && a.category !== b.category) return null
 
 	const out: LogFilter = { ...a }
-	assignDefined(out, 'name', b.name)
 	assignDefined(out, 'pluginId', b.pluginId)
 	assignDefined(out, 'context', b.context)
 	assignDefined(out, 'displayName', b.displayName)

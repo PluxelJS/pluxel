@@ -1,5 +1,7 @@
 import * as v from 'valibot'
 
+import { Plugin } from '../plugins/schema'
+
 export const PluginStatusEntryLifecycleStage = v.picklist([
 	'running',
 	'stopped',
@@ -15,9 +17,8 @@ export const PluginSourceInfo = v.object({
 	tag: v.nullish(v.string()),
 })
 
-export const PluginStatusEntry = v.object({
-	__typename: v.literal('PluginStatusEntry'),
-	name: v.string(),
+export const PluginStatus = v.object({
+	__typename: v.literal('PluginStatus'),
 	isRunning: v.boolean(),
 	isEnabled: v.boolean(),
 	lifecycleStage: PluginStatusEntryLifecycleStage,
@@ -34,7 +35,7 @@ export const PluginStatusSummary = v.object({
 
 export const PluginStatusOverview = v.object({
 	__typename: v.literal('PluginStatusOverview'),
-	statuses: v.array(PluginStatusEntry),
+	plugins: v.array(Plugin),
 	summary: PluginStatusSummary,
 })
 
@@ -49,5 +50,5 @@ export const PluginStatusMutationResult = v.object({
 
 export const UpdateStatusInput = v.object({
 	name: v.string(),
-	status: v.picklist(['start', 'stop', 'restart', 'enable', 'disable']),
+	status: v.picklist(['start', 'stop', 'restart', 'enable', 'enable-persisted', 'disable']),
 })

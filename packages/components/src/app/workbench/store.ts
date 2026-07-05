@@ -1,10 +1,7 @@
 import { Store } from '@tanstack/react-store'
 import {
-	DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE,
-	PLUGIN_WORKBENCH_PANELS_SCOPE,
-	resolvePluginWorkbenchPanelsState,
-	type ResolvedPluginWorkbenchPanelsState,
-} from './pluginLayout'
+	hasSameLayout,
+} from './split'
 import {
 	getSectionPaneState,
 	type WorkbenchSectionId,
@@ -94,19 +91,23 @@ export function setWorkbenchSectionPaneLayout(
 	sectionId: WorkbenchSectionId,
 	layout: Record<string, number>,
 ) {
-	workbenchStore.setState((prev) => ({
-		...prev,
-		uiState: {
-			...prev.uiState,
-			sectionPanes: {
-				...prev.uiState.sectionPanes,
-				[sectionId]: {
-					...getSectionPaneState(prev.uiState, sectionId),
-					layout,
+	workbenchStore.setState((prev) => {
+		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
+		if (hasSameLayout(currentPaneState.layout, layout)) return prev
+		return {
+			...prev,
+			uiState: {
+				...prev.uiState,
+				sectionPanes: {
+					...prev.uiState.sectionPanes,
+					[sectionId]: {
+						...currentPaneState,
+						layout,
+					},
 				},
 			},
-		},
-	}))
+		}
+	})
 }
 
 export function setWorkbenchActiveTabId(tabId: string | null) {
@@ -117,40 +118,6 @@ export function setWorkbenchActiveTabId(tabId: string | null) {
 			uiState: {
 				...prev.uiState,
 				activeTabId: tabId,
-			},
-		}
-	})
-}
-
-export function setWorkbenchPluginWorkbenchPanelsState(
-	tabId: string | null,
-	patch: Partial<ResolvedPluginWorkbenchPanelsState>,
-) {
-	if (!tabId) return
-	workbenchStore.setState((prev) => {
-		const currentState = resolvePluginWorkbenchPanelsState(prev.uiState.tabState, tabId)
-		const nextState: ResolvedPluginWorkbenchPanelsState = {
-			...DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE,
-			...currentState,
-			...patch,
-		}
-		if (
-			nextState.rightPaneVisible === currentState.rightPaneVisible &&
-			nextState.dockVisible === currentState.dockVisible
-		) {
-			return prev
-		}
-		return {
-			...prev,
-			uiState: {
-				...prev.uiState,
-				tabState: {
-					...prev.uiState.tabState,
-					[tabId]: {
-						...prev.uiState.tabState[tabId],
-						[PLUGIN_WORKBENCH_PANELS_SCOPE]: nextState,
-					},
-				},
 			},
 		}
 	})

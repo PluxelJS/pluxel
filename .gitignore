@@ -285,6 +285,8 @@ dist
 .turbo
 .tmp
 tmp
+.bench-results/
+.bench-worktrees/
 
 build/
 !packages/build/

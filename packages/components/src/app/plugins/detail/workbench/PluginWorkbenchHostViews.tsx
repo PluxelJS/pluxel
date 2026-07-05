@@ -17,8 +17,11 @@ import { useExtensionSurface, usePluginUiStatus } from '../../../../extension'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
+import { BaseProviderCard } from '../cards/BaseProviderCard'
 import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
+import { DependencyOverridesCard } from '../cards/DependencyOverridesCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
+import { formatCompactSource, resolveKnownPluginName } from '../rightPaneState'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,
@@ -81,6 +84,16 @@ function PluginDescriptionCard({ description }: { description?: string | null })
 	)
 }
 
+// Host-owned DI controls: these manage runtime injection policy, not plugin-authored UI.
+function PluginDependencyInjectionControls() {
+	return (
+		<Stack gap="sm">
+			<BaseProviderCard />
+			<DependencyOverridesCard />
+		</Stack>
+	)
+}
+
 export function PluginWorkbenchSidebar() {
 	const { description, isRunning, isSyncing } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
@@ -113,6 +126,7 @@ export function PluginWorkbenchSidebar() {
 					<WorkbenchScrollPane>
 						<PluginDescriptionCard description={description} />
 						<PluginContextSummaryCard />
+						<PluginDependencyInjectionControls />
 						<SidebarOutlineSection visible={assistVisible} onHostChange={setAssistHost} />
 					</WorkbenchScrollPane>
 				),
@@ -206,18 +220,6 @@ function AssistHostMount({
 	return <div className="plx-pluginWorkbench__assistHost" ref={hostRef} />
 }
 
-function formatSourcePreview(
-	moduleId: string | null,
-	packageName: string | null,
-	version: string | null,
-) {
-	if (packageName) return `${packageName}${version ? `@${version}` : ''}`
-	if (!moduleId) return '未知来源'
-	const segments = moduleId.split(/[/\\]+/).filter(Boolean)
-	if (segments.length <= 3) return moduleId
-	return `…/${segments.slice(-3).join('/')}`
-}
-
 function PluginContextSummaryCard() {
 	const { pluginName, source, knownPluginNames } = usePluginScope()
 	const deps = usePluginDependencyEntries()
@@ -225,7 +227,7 @@ function PluginContextSummaryCard() {
 	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
 	const sourcePreview = useMemo(
 		() =>
-			formatSourcePreview(
+			formatCompactSource(
 				source.moduleId ?? null,
 				source.packageName ?? null,
 				source.version ?? null,
@@ -237,11 +239,9 @@ function PluginContextSummaryCard() {
 		.slice(0, 2)
 		.map((dep) => dep.name)
 		.join(' / ')
-	const isLinkable = useMemo(() => {
+	const resolveDependencyLinkTarget = useMemo(() => {
 		return (name: string) => {
-			if (knownPluginNames.has(name)) return true
-			const hash = name.lastIndexOf('#')
-			return hash > 0 ? knownPluginNames.has(name.slice(0, hash)) : false
+			return resolveKnownPluginName(knownPluginNames, name)
 		}
 	}, [knownPluginNames])
 	const copyValue = source.moduleId ?? source.packageName ?? null
@@ -294,7 +294,7 @@ function PluginContextSummaryCard() {
 						{deps.length > 0 ? (
 							<DependencyList
 								LinkComponent={RouterLinkAdapter}
-								isLinkable={isLinkable}
+								resolveLinkTarget={resolveDependencyLinkTarget}
 								linkWorkbenchMode="open-tab"
 							/>
 						) : (

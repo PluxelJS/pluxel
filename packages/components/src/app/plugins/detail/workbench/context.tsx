@@ -2,14 +2,13 @@ import { createContext, useContext, useEffect, useRef, type ReactNode } from 're
 import {
 	DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE,
 	type ResolvedPluginWorkbenchPanelsState,
-} from '../../../workbench/pluginLayout'
+} from '../../../workbench/split'
 
 export type PluginWorkbenchAsideContextValue = {
 	asideAvailable: boolean
 	assistHost: HTMLDivElement | null
 	setAssistHost: (node: HTMLDivElement | null) => void
 	assistVisible: boolean
-	setAssistVisible: (visible: boolean) => void
 	setAssistClaim: (owner: symbol, visible: boolean) => void
 }
 
@@ -25,7 +24,6 @@ const FALLBACK_ASIDE_CONTEXT: PluginWorkbenchAsideContextValue = {
 	assistHost: null,
 	setAssistHost: () => {},
 	assistVisible: false,
-	setAssistVisible: () => {},
 	setAssistClaim: () => {},
 }
 

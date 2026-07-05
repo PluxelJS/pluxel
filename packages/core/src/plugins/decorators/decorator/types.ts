@@ -1,6 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import type { Identifier } from '../../../container'
-import type { PluginIdentifier } from '../../types'
+import type { Identifier, PluginIdentifier } from '../../types'
 import type { ConfigLayout } from '../../composition/cfg'
 
 /**
@@ -8,7 +7,7 @@ import type { ConfigLayout } from '../../composition/cfg'
  *
  * Current policy (performance + determinism):
  * - The DI key is always the ctor itself (including forks).
- * - Abstract bases/interfaces are supported via DI aliases (see diod aliasIndex).
+ * - Abstract bases/interfaces are supported via DI aliases.
  */
 export function getPluginDiKey(id: PluginIdentifier): PluginIdentifier {
 	return id

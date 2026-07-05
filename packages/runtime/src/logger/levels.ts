@@ -1,71 +1,94 @@
 import type { Context } from '@pluxel/core'
-import type { PluxelPluginLogLevel } from '@pluxel/core/logger'
 
-import { hmrPluginLevels } from './ensure'
+import {
+	parsePluginLogPolicySnapshot,
+	runtimePluginLogPolicy,
+	serializePluginLogPolicySnapshot,
+} from './policy'
 
-/**
- * Persisted per-plugin log level overrides for HMR.
- *
- * Stored in ConfigService "extra" (single source of truth for host settings),
- * and applied to the global LogTape filter via `hmrPluginLevels`.
- */
-export const EXTRA_HMR_PLUGIN_LEVELS = 'hmr.logger.pluginLevels' as const
-
-type PersistedPluginLevels = Record<string, PluxelPluginLogLevel>
-
-function coercePersistedPluginLevels(value: unknown): PersistedPluginLevels | undefined {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-	const out: PersistedPluginLevels = Object.create(null)
-	for (const k in value as Record<string, unknown>) {
-		if (!Object.hasOwn(value as Record<string, unknown>, k)) continue
-		const v = (value as Record<string, unknown>)[k]
-		if (v === null || typeof v === 'string') out[k] = v as PluxelPluginLogLevel
-	}
-	return out
+type PersistenceNamespace = {
+	getText(key: string): Promise<string | undefined>
+	put(key: string, value: string, options?: { atomic?: boolean }): Promise<void>
 }
 
-const loadByConfigService = new WeakMap<object, Promise<void>>()
+type PersistenceLike = {
+	namespace(name: string): PersistenceNamespace
+}
 
-/**
- * Load persisted log-level overrides into the in-memory state once.
- *
- * Note: this is intentionally lazy so hosts can call ensurePluxelLogging()
- * before Context/services finish initializing.
- */
-export async function ensureHmrPluginLevelsLoaded(ctx: Context): Promise<void> {
-	const configService = ctx.configService
-	if (!configService) return
+const loadByRoot = new WeakMap<object, Promise<void>>()
+const writeByRoot = new WeakMap<object, Promise<void>>()
 
-	const existing = loadByConfigService.get(configService as object)
+function rootContext(ctx: Context): Context {
+	return ctx.root ?? ctx
+}
+
+function profileName(ctx: Context): string {
+	const raw = String(ctx.config.profile ?? 'default').trim()
+	return raw.replaceAll(/[^A-Za-z0-9_.-]/g, '_') || 'default'
+}
+
+function policyKey(ctx: Context): string {
+	return `plugin-policy/${profileName(ctx)}.json`
+}
+
+function persistence(ctx: Context): PersistenceLike | undefined {
+	const value = (rootContext(ctx) as unknown as { persistence?: unknown }).persistence
+	if (!value || typeof value !== 'object') return undefined
+	if (typeof (value as PersistenceLike).namespace !== 'function') return undefined
+	return value as PersistenceLike
+}
+
+function logPolicyPersistenceFailure(ctx: Context, action: 'load' | 'persist', error: unknown): void {
+	const logger = (rootContext(ctx) as unknown as { logger?: unknown }).logger
+	if (!logger || typeof logger !== 'object') return
+	const warn = (logger as { warn?: unknown }).warn
+	if (typeof warn !== 'function') return
+	warn.call(logger, `Failed to ${action} persisted plugin log policy`, { error })
+}
+
+export async function ensureRuntimePluginPolicyLoaded(ctx: Context): Promise<void> {
+	const root = rootContext(ctx) as object
+
+	const existing = loadByRoot.get(root)
 	if (existing) return await existing
 
 	const task = (async () => {
-		// In core this resolves immediately; in HMR it may load from disk asynchronously.
-		await configService.ready
-
-		const persisted = coercePersistedPluginLevels(configService.getExtra(EXTRA_HMR_PLUGIN_LEVELS))
-		if (!persisted) return
-
-		hmrPluginLevels.clear()
-		for (const k in persisted) {
-			if (!Object.hasOwn(persisted, k)) continue
-			// Be tolerant to stale/invalid persisted values; skip bad entries instead of failing startup.
-			try {
-				hmrPluginLevels.set(k, persisted[k]!)
-			} catch {
-				// ignore
-			}
-		}
+		const configService = ctx.configService
+		if (configService) await configService.ready
+		const store = persistence(ctx)
+		if (!store) return
+		const raw = await store.namespace('logger').getText(policyKey(ctx))
+		if (raw === undefined) return
+		const snapshot = parsePluginLogPolicySnapshot(raw)
+		if (snapshot) runtimePluginLogPolicy.replace(snapshot)
 	})().catch((error) => {
-		// Don't cache failures forever; allow a later call to retry.
-		loadByConfigService.delete(configService as object)
+		loadByRoot.delete(root)
 		throw error
 	})
 
-	loadByConfigService.set(configService as object, task)
+	loadByRoot.set(root, task)
 	return await task
 }
 
-export function persistHmrPluginLevels(ctx: Context): void {
-	ctx.configService?.setExtra(EXTRA_HMR_PLUGIN_LEVELS, hmrPluginLevels.toRecord())
+export function persistRuntimePluginPolicy(ctx: Context): Promise<void> {
+	const root = rootContext(ctx) as object
+	const store = persistence(ctx)
+	if (!store) return Promise.resolve()
+
+	const previous = writeByRoot.get(root) ?? Promise.resolve()
+	const next = previous
+		.catch((): void => undefined)
+		.then(async () => {
+			await store
+				.namespace('logger')
+				.put(policyKey(ctx), serializePluginLogPolicySnapshot(runtimePluginLogPolicy.snapshot()), {
+					atomic: true,
+				})
+		})
+		.catch((error) => {
+			logPolicyPersistenceFailure(ctx, 'persist', error)
+		})
+
+	writeByRoot.set(root, next)
+	return next
 }

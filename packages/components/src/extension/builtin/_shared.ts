@@ -26,6 +26,34 @@ export function getByDotPath(obj: unknown, path: string | undefined): unknown {
 	return cur
 }
 
+export function stableSignalDbValueKey(value: unknown, seen = new WeakSet<object>()): string {
+	if (value === null) return 'null'
+	if (value === undefined) return 'undefined'
+	const type = typeof value
+	if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+		return `${type}:${String(value)}`
+	}
+	if (type === 'symbol') return `symbol:${String(value)}`
+	if (type === 'function') {
+		return `function:${(value as { readonly name?: string }).name || 'anonymous'}`
+	}
+	if (value instanceof Date) return `date:${value.toISOString()}`
+	if (type !== 'object') return type
+	if (seen.has(value as object)) return '[Circular]'
+	seen.add(value as object)
+	if (Array.isArray(value)) {
+		return `array:[${value.map((item) => stableSignalDbValueKey(item, seen)).join(',')}]`
+	}
+	const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+		a.localeCompare(b),
+	)
+	const key = `object:{${entries
+		.map(([entryKey, entryValue]) => `${entryKey}:${stableSignalDbValueKey(entryValue, seen)}`)
+		.join(',')}}`
+	seen.delete(value as object)
+	return key
+}
+
 export function resolveSignalDbRef(
 	ref: BuiltinSignalDbRef,
 	collections: Record<string, { findOne: (selector: Record<string, unknown>) => unknown }>,
@@ -58,13 +86,14 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 
 export function useSignalDbForValues(namespace: string, values: unknown[]) {
 	const transport = useGlobalExtensionContext().services.transport
+	const valuesKey = stableSignalDbValueKey(values)
 	const neededCollections = useMemo(() => {
 		const collections = new Set<string>()
 		for (const value of values) {
 			for (const collection of neededSignalDbCollectionsForValue(value)) collections.add(collection)
 		}
 		return Array.from(collections)
-	}, [values])
+	}, [valuesKey])
 
 	return useSignalDbCollectionsState(transport, namespace, neededCollections)
 }

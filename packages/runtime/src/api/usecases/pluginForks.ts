@@ -1,13 +1,14 @@
 import { getPluginInfo, type PluginConstructor, type Context } from '@pluxel/core'
 
 import { addForkToCatalog } from './forksCatalog'
+import { requireRouteCapability } from '../../runtime/capabilities'
 
 export type EnsureForkResult =
 	| { ok: true; forkName: string }
 	| { ok: false; code: string; error: string }
 
 function resolvePluginCtor(ctx: Context, name: string): PluginConstructor {
-	const ctor = ctx.loader.api.runtime.resolve(name) ?? ctx.loader.api.registry.getCtor(name)
+	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(name)
 	if (!ctor) throw new Error(`Plugin not found: ${name}`)
 	return ctor
 }
@@ -38,7 +39,7 @@ export async function ensureFork(
 
 		addForkToCatalog(ctx, base, fid)
 		if (options?.enable !== false) {
-			await ctx.loader.api.control.enable(forkName, forkCtor)
+			await requireRouteCapability(ctx, 'lifecycle').enable(forkName, forkCtor)
 		}
 
 		const commit = await ctx.registry.commit()

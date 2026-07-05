@@ -29,6 +29,8 @@ declare module '@pluxel/context' {
 	interface Context {
 		/** 代理方法：自动转发到实例 */
 		add(a: number, b: number): number
+		/** 代理属性：自动读取实例 getter/属性 */
+		mathConfig: { foo: string } | undefined
 	}
 }
 
@@ -36,6 +38,7 @@ declare module '@pluxel/context' {
 class MathService {
 	static key = 'mathService' as const
 	static methods = ['add'] as const
+	static props = ['mathConfig'] as const
 
 	constructor(
 		public ctx: Context,
@@ -46,6 +49,9 @@ class MathService {
 		return a + b
 	}
 	getConfig() {
+		return this.cfg
+	}
+	get mathConfig() {
 		return this.cfg
 	}
 }
@@ -148,6 +154,11 @@ describe('基础行为：注入、代理、配置', () => {
 		const ctx = new Context()
 		expect(ctx.add(4, 5)).toBe(9)
 	})
+
+	test('Context.prototype 的属性代理读取 service 属性/getter', () => {
+		const ctx = new Context({ mathService: { foo: 'prop' } })
+		expect(ctx.mathConfig).toEqual({ foo: 'prop' })
+	})
 })
 
 describe('extend / isolate / ctx 回灌', () => {
@@ -211,8 +222,10 @@ describe('extend / isolate / ctx 回灌', () => {
 		// isolateKeys is type-safe and excludes RootServices, so this uses a cast to reach the runtime guard.
 		expect(() =>
 			ctx.isolateKeys(['rootTapService'] as unknown as Iterable<keyof Context.PublicServices>),
-		).toThrow()
-		expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow()
+		).toThrow(/Cannot isolate a root-scoped service key: rootTapService/)
+		expect(() => ctx.isolate([asTestServiceClass(RootTapService)])).toThrow(
+			/Cannot isolate a root-scoped service: rootTapService/,
+		)
 	})
 
 	test('config 合并（构造注入快照不变）', () => {
@@ -288,7 +301,9 @@ describe('错误/冲突路径', () => {
 			) {}
 		}
 		Context.registerService(asTestServiceClass(Dup1))
-		expect(() => Context.registerService(asTestServiceClass(Dup2))).toThrow()
+		expect(() => Context.registerService(asTestServiceClass(Dup2))).toThrow(
+			'如果你要覆盖已有服务，先 override。',
+		)
 	})
 
 	test('methods 与 Context.prototype 冲突不应覆盖', () => {
@@ -354,7 +369,7 @@ describe('错误/冲突路径', () => {
 		}
 		expect(() =>
 			Context.overrideService(asTestServiceClass(NotRegistered), asTestServiceClass(X)),
-		).toThrow()
+		).toThrow('该服务从未被注册')
 	})
 
 	test('isolate 未注册服务应抛错（避免隐式污染映射）', () => {
@@ -366,7 +381,9 @@ describe('错误/冲突路径', () => {
 			) {}
 		}
 		const ctx = new Context()
-		expect(() => ctx.isolate([asTestServiceClass(NotRegisteredService)])).toThrow()
+		expect(() => ctx.isolate([asTestServiceClass(NotRegisteredService)])).toThrow(
+			/Cannot isolate an unregistered service: NotRegisteredService/,
+		)
 	})
 })
 

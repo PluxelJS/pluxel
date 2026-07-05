@@ -5,17 +5,18 @@
 - 让人第一次读就能知道“标准 Pluxel 插件该从哪里起手”
 - 让 LLM 能按同一套分层和命名继续扩展示例
 
-整条前端链路见 `docs/architecture/frontend.md`。
+整条前端链路见 `docs/FRONTEND.md`，开发期 HMR 链路见 `docs/HMR.md`。
 
 ## 运行
 
-- 开发宿主：`pnpm --filter @pluxel/plugins-host dev`
-- demo 入口由 `packages/plugins/host/pluxel.hmr.jsonc` 的 `include` 控制
+- 开发宿主：`pnpm plugin-host:dynamic` 或 `pnpm --filter @pluxel/plugins-host dynamic`
+- demo 启动入口由 `packages/plugins/host/pluxel.loader.hmr.jsonc` 的 `include` 显式列出
+- `PluginVaultDemo.ts` 这类需要额外状态的 demo 不在默认 include；要运行时把对应文件加入 include
 - 默认假设 HMR 侧启用了 `configSourcePlugin`
 
 ## 建议阅读顺序
 
-先读这 5 个，它们覆盖了最常见的标准用法：
+先读这 4 个，它们覆盖了最常见的标准用法：
 
 1. `PluginFeatureConfigDemo.ts`
    最小配置写法。看 `configs.use(...)`、`features.use(...)` 和 feature 配置如何归因到父插件。
@@ -26,8 +27,6 @@
    这里也顺手区分了 optional 依赖的两种写法：provider 类型可静态 import 时用类 token；provider 包本身可能缺失时改用稳定字符串 token，把 provider-specific 代码留在 `load()` 的懒加载模块后面。
 4. `PluginWithUI.ts` + `PluginWithUI/ui/*`
    最小自定义 UI 路径。看 `ui(...).bind(this.ctx)`、RPC、SSE、SignalDB 与浏览器侧 `plugin.use()`。
-5. `PluginOpsDemo.ts`
-   最小 ops 路径。看 `defineOp(...)`、`ctx.ops.register(...)`、`exposure.rpc`、`policy.mutating` 和 tool-facing op。
 
 在这之后按需再看：
 
@@ -41,6 +40,8 @@
   HMR worker fallback；HTTP endpoint 只是 worker 调用触发器。
 - `PluginVaultDemo.ts`
   插件级加密持久化。
+
+Authelia/OIDC 是独立 demo package：`packages/plugins/authelia-oidc-demo`。
 
 最后再看 advanced：
 
@@ -76,7 +77,7 @@
 
 - `configs.use(schema)` 读到的是 schema 归一化后的值；默认值放进 Valibot，不要在插件里再做 `?? fallback`
 - `this.ctx.ext.signaldb.collection({ name }).doc(selector).form(...)` 默认同步当前选中的 doc；不想同步时再显式改用 `formUnsynced(...)` 或 `formFrom(...)`
-- `@pluxel/hmr/plugin` 只用 named import：`import { ui, worker } from '@pluxel/hmr/plugin'`
+- `@pluxel/runtime/plugin` 只用 named import：`import { ui, worker } from '@pluxel/runtime/plugin'`
 - 自定义 UI 插件主类保留 `const pluginUi = ui('./ui/index.tsx')` + `pluginUi.bind(this.ctx)`
 - 生命周期清理统一绑到 `this.ctx.effects`
 - 后端事件类型增强统一声明到 `@pluxel/runtime`
@@ -106,16 +107,9 @@
 - 服务端：`pluginUi.bind(this.ctx)` + `ctx.ext.rpc.expose(...)` + `ctx.ext.sse.expose(...)`
 - 浏览器侧：`const plugin = pluginUi('MyPlugin')` + `const app = plugin.use()` + `app.db.useDocById(...)`
 
-注册 ops：
-
-- 服务端：`defineOp(...)` + `ctx.ops.register(...)`
-- 读操作：声明 `exposure.rpc`
-- 写操作：声明 `policy.mutating`
-- 暴露给工具客户端：声明 `tool.name`
-
 ## 类型检查
 
-- `pnpm exec tsc -p packages/plugins/host/src/demo/tsconfig.json`
+- `pnpm --filter @pluxel/plugins-host typecheck`
 
 ## 非目标
 

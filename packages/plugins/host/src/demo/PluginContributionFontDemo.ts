@@ -2,9 +2,8 @@
 // - 你要做跨插件 interaction
 // - 你要看 consumer 拥有 config，provider 拥有资源和 session UI 的推荐分工
 
-import { ui } from '@pluxel/hmr/plugin'
+import { doc, ui } from '@pluxel/runtime/plugin'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc } from '@pluxel/runtime/services'
 import {
 	ConsumerAppearanceConfig,
 	FONT_MANAGER_PLUGIN_NAME,

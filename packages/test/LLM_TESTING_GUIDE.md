@@ -17,8 +17,10 @@ Repo-internal note:
 
 ## Golden rules (must follow)
 
-1. **Prefer `@pluxel/test` only**.
+1. **Prefer the lightest real layer that owns the behavior**.
    - In tests, import from `@pluxel/test` (Host + decorators + base classes).
+   - Use `@pluxel/runtime/test` only when the behavior needs runtime services such as loader,
+     persisted enable bits, HTTP, vault, runtime ops, or HMR batch behavior.
    - Do **not** import low-level decorator/toolchain hooks like `__registerConfigSchema__`.
 
 2. **If you use `configs.use(...)` or `features.use(...)` in class fields, the class MUST be declared at module top-level**.
@@ -63,13 +65,17 @@ Use the preset so toolchain metadata extraction is available:
 `vitest.config.ts`
 
 ```ts
-export { default } from '@pluxel/test/vitest'
+export { default } from '../test/src/vitest.ts'
 ```
+
+If you are consuming the published package outside this monorepo, use `@pluxel/test/vitest`.
+The preset always enables `@pluxel/source` for internal packages and `@pluxel/runtime-dynamic` for plugin loader HMR
+entries; do not add per-package condition options.
 
 If you need extra Vite plugins in your test pipeline, use:
 
 ```ts
-import { definePluxelVitestConfig } from '@pluxel/test/vitest'
+import { definePluxelVitestConfig } from '../test/src/vitest.ts'
 import ExtraTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(
@@ -84,6 +90,10 @@ You normally **do not** need to import `@pluxel/test/setup` manually:
 - the Vitest preset also runs it via `setupFiles`
 
 ## Core testing primitives
+
+`@pluxel/test` is intentionally core-only. It registers core services and gives tests a real
+`Context` + `PluginService`, but it does not bootstrap runtime services. This keeps plugin semantics
+tests fast and prevents runtime/HMR assumptions from leaking into core tests.
 
 ### `withHost(fn)`
 
@@ -105,7 +115,29 @@ it('starts a plugin', async () => {
 })
 ```
 
-`await host.commit()` is **strict** (throws if any plugin fails to start). If a test intentionally introduces a failing plugin, use `await host.commitAllowFail()` and assert on `host.last()?.failed`.
+## Runtime testing primitives
+
+Runtime and HMR lifecycle tests should import from `@pluxel/runtime/test`. That entry registers runtime
+services and exposes a real runtime host/context. Runtime helpers intentionally use the `Runtime`
+prefix so tests cannot accidentally hide whether they need runtime services.
+
+```ts
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+
+@Plugin({ name: 'P' })
+class P extends BasePlugin {}
+
+it('starts a runtime-enabled plugin', async () => {
+	await withRuntimeHost(async (host) => {
+		host.add(P)
+		host.cfg(P).enable()
+		await host.commit()
+		expect(host.isRunning(P)).toBe(true)
+	})
+})
+```
+
+`await host.commit()` is **strict** (throws if any plugin fails to start). If a test intentionally introduces a failing plugin, use `await host.commitAllowFail()` and assert on `lifecycleReport.ok` plus `assertPluginLifecycleIssue(...)` or the lifecycle issue selector helpers.
 
 ### `host.cfg(target)`
 
@@ -146,6 +178,20 @@ host.cfg(Cfg).set({ foo: 'hello' })
 await host.start(Cfg)
 ```
 
+### Runtime RPC tests
+
+Use the test package for runtime surfaces:
+
+- `withContext(...)` for service-level tests that only need a `Context`.
+- `withRuntimeHost(...)` / `createRuntimeHost()` for plugin lifecycle that needs loader, config, or RPC behavior.
+- Do not hand-roll `loader`, `registry`, or `configService` stubs unless the test is explicitly for an error edge that cannot be reached through public host APIs.
+
+If a test needs declared-but-stopped plugins, preload them through the real loader:
+
+```ts
+await host.ctx.loader.preloadPlugins([{ plugin: P, enable: false }], { commit: false })
+```
+
 ### `features.use(FeatureCtor)` + `@UseFeature(...)`
 
 Preferred (toolchain-friendly) pattern: **declare feature usage as class fields**.
@@ -181,9 +227,7 @@ const searchHintsFeature = defineOptionalFeature({
 	key: 'search-hints',
 	requires: [HintsProviderPlugin],
 	load: () =>
-		import('./features/SearchHintsFeature').then(
-			({ SearchHintsFeature }) => SearchHintsFeature,
-		),
+		import('./features/SearchHintsFeature').then(({ SearchHintsFeature }) => SearchHintsFeature),
 })
 
 @Plugin({ name: 'Host' })

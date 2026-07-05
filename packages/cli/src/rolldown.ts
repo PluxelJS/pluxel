@@ -1,1 +1,1 @@
-export * from '@pluxel/build/rolldown'
+export * from '@pluxel/rolldown/plugins'

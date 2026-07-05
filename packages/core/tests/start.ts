@@ -1,7 +1,7 @@
 // start.ts
 import { configure } from '@logtape/logtape'
 import { createPluxelLogtapeConfig } from '@pluxel/core/logger'
-import { Context } from '@pluxel/test'
+import { Context } from '@pluxel/core/test'
 import { PluginA, PluginB, PluginC } from './plugins'
 
 await configure(
@@ -19,7 +19,7 @@ ctx.registry.register(PluginC) // PluginC 只是运行期附加能力，可注�
 ctx.registry.register(PluginA)
 
 await ctx.registry.commit()
-// 提交本周期，构建 diod 容器后依次初始化插件
+// 提交本周期，构建当前插件图后依次初始化插件
 
 ctx.registry.restart(PluginA)
 ctx.registry.unregister(PluginA)
