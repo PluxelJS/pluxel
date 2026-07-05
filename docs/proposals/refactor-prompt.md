@@ -266,7 +266,7 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
 2. 统一 config + launcher API：
    - `@pluxel/runtime-static` 导出 `defineStaticRuntimeConfig(...)` / `createStaticRuntime(config)`。
    - `@pluxel/runtime-static/vite` 导出 `staticRuntimeVitePlugin(...)`，兼容 re-export config helper。
-   - `@pluxel/runtime-dynamic` 导出 `defineDynamicRuntimeConfig(...)` / `createDynamicDevRuntime(config)`；`createDynamicRuntime(config)` 仅作为兼容别名。
+   - `@pluxel/runtime-dynamic` 导出 `defineDynamicRuntimeConfig(...)` / `createDynamicDevRuntime(config)`。
    - `@pluxel/runtime-dynamic/vite` 导出 `dynamicRuntimeVitePlugin(...)`，兼容 re-export config helper。
    - `defineStaticRuntime(...)` 不再保留；新代码只使用 `defineStaticRuntimeConfig(...)`。
 

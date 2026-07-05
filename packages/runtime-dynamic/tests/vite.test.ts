@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-	createDynamicDevRuntime,
-	createDynamicRuntime,
-	defineDynamicRuntimeConfig,
-} from '@pluxel/runtime-dynamic'
+import * as runtimeDynamic from '@pluxel/runtime-dynamic'
+import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
 
 describe('@pluxel/runtime-dynamic/vite', () => {
-	it('names the direct launcher as a dev/HMR runtime while keeping the old alias', () => {
-		expect(createDynamicRuntime).toBe(createDynamicDevRuntime)
+	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
+		expect(runtimeDynamic.createDynamicDevRuntime).toBe(createDynamicDevRuntime)
+		expect('createDynamicRuntime' in runtimeDynamic).toBe(false)
 	})
 
 	it('marks dynamic runtime config without exposing nested Vite or HMR config', () => {

@@ -54,9 +54,3 @@ export async function createDynamicDevRuntime(
 		},
 	}
 }
-
-/** @deprecated Use createDynamicDevRuntime(). The current direct dynamic route is the loader dev/HMR host. */
-export type DynamicRuntime = DynamicDevRuntime
-
-/** @deprecated Use createDynamicDevRuntime(). The current direct dynamic route is the loader dev/HMR host. */
-export const createDynamicRuntime = createDynamicDevRuntime
