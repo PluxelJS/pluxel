@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - packages/plugins/*
+  - projects/*
 
 allowBuilds:
   '@parcel/watcher': false

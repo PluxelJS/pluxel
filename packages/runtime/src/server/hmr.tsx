@@ -1,8 +1,8 @@
 import { DEV_ASSETS } from './assets'
-import { createHtmlResponse, renderUiHtmlDocument } from './html'
+import { createHtmlResponse, renderRuntimeUiHtml } from './html'
 import type { RenderHandler } from './types'
 
 export function createHmrRenderer(): RenderHandler {
-	const html = renderUiHtmlDocument(DEV_ASSETS)
+	const html = renderRuntimeUiHtml(DEV_ASSETS, { target: 'vite-dev' })
 	return () => createHtmlResponse(html)
 }
