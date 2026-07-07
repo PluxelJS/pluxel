@@ -88,9 +88,21 @@ available as an idempotent lifecycle handle, but standalone hosts should not cal
 
 ## Packaging
 
+The production entry is intentionally route-owned and narrow:
+
+- `@pluxel/runtime-static` imports `@pluxel/runtime/register/static` itself.
+- Plugin authoring APIs are re-exported from `@pluxel/runtime/authoring`, not from the heavier
+  `@pluxel/runtime` top-level entry.
+- The static production entry must not import Vite, Rolldown, chokidar, Node transport adapters,
+  Vault, or the web-management bundle unless the application explicitly opts into those services.
+
 `@pluxel/runtime-dev` is private and inlined into this package's Vite/HMR output. Published output
 must not import `@pluxel/runtime-dev`.
 
 `@pluxel/rolldown` remains external to the `/vite` development entry because it owns the
 Rolldown/OXC/Vite and web Module Federation toolchain helpers. It is an optional peer for
 development usage, not a production dependency of the fetch runtime entry.
+
+Current remaining optimization target: internal GraphQL and verification still belong to the
+default static register. They are valid production capabilities today, but they are the next place
+to evaluate opt-in splitting if the minimum worker bundle needs to shrink further.

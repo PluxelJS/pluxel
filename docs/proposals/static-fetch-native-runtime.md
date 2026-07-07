@@ -106,10 +106,18 @@ Elysia 是 Pluxel 的唯一 HTTP route framework，不需要再为 Hono、Expres
   - 导出纯 `defineStaticRuntimeConfig(...)`，用于生产和 `/vite` 共用的 runtime config 文件。
   - 暴露 production factory，例如 `createStaticRuntime(...) -> { ctx, fetch, start, stop }`；
     factory 返回前已完成 startup，`start()` 只保留为幂等 lifecycle handle。
+  - 显式 import `@pluxel/runtime/register/static`，由 route 包拥有 production static service
+    registration。
+  - re-export plugin authoring API from `@pluxel/runtime/authoring`，避免生产入口经过
+    `@pluxel/runtime` 顶层重入口。
   - 可以 import Elysia。
   - 可以 import GraphQL HTTP capability。
   - 不 import Vite、Rolldown、chokidar、Node http、Node stream、Vault 默认实现或 web-management bundle。
   - 可以被 app 使用 `tsdown` 直接 bundle。
+- `@pluxel/runtime/authoring`
+  - route-neutral plugin authoring surface。
+  - 只导出 `BasePlugin`、`Plugin`、`Config`、`cfg`、`f/v`、feature helpers 等插件作者常用 API。
+  - 不注册 runtime services，不 import static/dynamic route machinery。
 - `@pluxel/runtime-static/vite`
   - dev-only Vite route。
   - 导出 `staticRuntimeVitePlugin(...)`。
@@ -134,12 +142,20 @@ Node `IncomingMessage` / `ServerResponse` bridge 不是 public runtime surface�
 - `HttpService.fetch(request, env?, ctx?)` 是 runtime 对外 fetch-native boundary。
 - Elysia 是唯一插件 route authoring framework；fetch mount 只作为低层 escape hatch。
 - GraphQL 归入 HTTP 能力，最小 static runtime 不需要 web-management 也能暴露内部 GraphQL。
-- `@pluxel/runtime` 顶层只注册 static/common services；dynamic/dev common 注册入口在
-  `@pluxel/runtime/register/full`，optional vault/web-management 仍使用各自 service subpath。
+- `@pluxel/runtime` 顶层不再隐式注册 static/common services；它保留 common exports，
+  但 route service registration 由 route 包显式拥有。
+- `@pluxel/runtime/authoring` 是插件 authoring 的轻入口；`@pluxel/runtime-static` 和 static
+  demo/template 默认从这个入口 re-export/import authoring API。
+- dynamic/dev common 注册入口仍在 `@pluxel/runtime/register/full`，optional vault/web-management
+  仍使用各自 service subpath。
 - broad `@pluxel/runtime/services` barrel、Node HTTP adapter、旧 `FsService` 已移除。
 - static production 注册默认不引入 Vite、Rolldown、chokidar、Node http/stream、Vault 或
   web-management bundle。`packages/rolldown/tests/packaging-invariants.test.ts` 会扫描源码和
   built static entries 作为守卫。
+- `@pluxel/rolldown` 不再是 `@pluxel/runtime-static` 的 production dependency；它是 `/vite`
+  development entry 的 devDependency + optional peer。
+- `configSourcePlugin` 默认把生成的 metadata helper 指向 `@pluxel/runtime/authoring`，避免
+  HMR/开发期 transform 产物在 production build 中回到 `@pluxel/runtime` 顶层重入口。
 - `PersistenceService` 是窄 durable/ephemeral/readonly backend boundary。未显式提供 backend 时
   默认是 memory/ephemeral；需要 durable file/database/KV/object storage 时由 host 注入 backend。
 - `plugins/host` 和 `static-commercial-demo` 都复用同一份 runtime config；standalone/direct
@@ -150,7 +166,12 @@ Node `IncomingMessage` / `ServerResponse` bridge 不是 public runtime surface�
 - 为 Cloudflare Workers、Deno Deploy、Bun、数据库/KV/object storage 等提供更完整的
   persistence backend 示例或包。
 - 把更多平台特定 fetch bridge 文档化；runtime core 不应新增 framework adapter。
-- 继续压缩 `/vite` 产物和插件 UI bridge 的开发期依赖，但不把这些依赖带进 static 主入口。
+- 为 static production 增加应用级 bundle fixture：从真实 `createStaticRuntime(config)` entry
+  经 tsdown 打单文件，并断言 bundle 不含 Vite/Rolldown/chokidar/Node transport/Vault/web-management。
+- 评估把 internal GraphQL / verification 从 static 最小注册继续拆成 opt-in capability；
+  当前它们仍属于默认 static register，因此会进入消费方 production bundle。
+- `/vite`、static Vite HMR、dynamic HMR 和插件 UI bridge 不追求轻量化；只需要守住它们不泄漏进
+  static production 主入口。
 
 ## 优化方向
 
@@ -191,6 +212,14 @@ Elysia root
 - Elysia-backed HTTP fetch service，包含 GraphQL HTTP capability。
 - verification，默认 private/no-op。
 - logger core 默认可用；console/file sink 是可配置 sink，UI sink 归入 web-management bundle。
+
+注册所有权规则：
+
+- `@pluxel/runtime-static` 主入口显式 import `@pluxel/runtime/register/static`。
+- `@pluxel/runtime` 顶层不做隐式 service registration，防止普通 authoring import 把 route
+  services 拉进生产 bundle。
+- 插件和生成代码应优先 import `@pluxel/runtime/authoring`；旧的 `@pluxel/runtime` authoring
+  imports 仍保留兼容，但不作为 static production 推荐路径。
 
 不要在主入口中默认启用：
 
@@ -306,11 +335,22 @@ dynamic route 继续拥有：
 
 ## 当前守卫
 
-- 一个 static app 可以通过 `tsdown` 打成单个 ESM worker entry。
-- production import graph 可以包含 Elysia、GraphQL HTTP capability、默认 memory persistence、plugin data 和 logger core，但不包含 Vite/Rolldown/chokidar/Node http/Node stream/Vault/web-management bundle，除非用户显式选择对应能力。
+- package-level static production entry 可以通过 `tsdown` 构建；`@pluxel/runtime-static/dist/index.mjs`
+  只指向 `@pluxel/runtime/register/static` 和 `@pluxel/runtime/authoring`，不经
+  `@pluxel/runtime` 顶层重入口。
+- source/built-entry invariant 会守住 static production import graph：可以包含 Elysia、
+  GraphQL HTTP capability、默认 memory persistence、plugin data 和 logger core，但不包含
+  Vite/Rolldown/chokidar/Node http/Node stream/Vault/web-management bundle，除非用户显式选择对应能力。
+- 仍缺一个真实应用级 single-file bundle invariant；后续应补 `createStaticRuntime(config)` fixture
+  来验证消费方最终 bundle。
 - 插件 HTTP route 以 Elysia 为唯一 route framework，并保留 fetch mount escape hatch。
 - vault 和 web-management bundle 能按需挂上，不影响最小 static bundle。
 - logger 始终可用，并能自由配置 sink。
 - `FsService` 被替换为窄 `PersistenceService`，不是完整 Node fs 抽象。
 - dynamic HMR 行为不被 static fetch kernel 约束。
 - Node、Vite、Cloudflare Workers 等环境只差 fetch bridge / persistence backend，不差 runtime core。
+- packaging invariant 明确锁住：
+  - `@pluxel/runtime` 顶层不重新 import `./runtime/register/static`。
+  - `@pluxel/runtime-static` 主入口显式注册 static services。
+  - `configSourcePlugin` 默认 metadata helper source 是 `@pluxel/runtime/authoring`。
+  - `@pluxel/rolldown` 是 `runtime-static` 的 optional peer/dev dependency，不是 production dependency。
