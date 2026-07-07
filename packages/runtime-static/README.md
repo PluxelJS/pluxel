@@ -91,5 +91,6 @@ available as an idempotent lifecycle handle, but standalone hosts should not cal
 `@pluxel/runtime-dev` is private and inlined into this package's Vite/HMR output. Published output
 must not import `@pluxel/runtime-dev`.
 
-`@pluxel/rolldown` remains external because it owns the Rolldown/OXC/Vite and web Module
-Federation toolchain helpers.
+`@pluxel/rolldown` remains external to the `/vite` development entry because it owns the
+Rolldown/OXC/Vite and web Module Federation toolchain helpers. It is an optional peer for
+development usage, not a production dependency of the fetch runtime entry.

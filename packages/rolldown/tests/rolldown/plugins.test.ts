@@ -12,7 +12,12 @@ const buildLintConfigPath = fileURLToPath(
 	new URL('../../../../oxlint.build.config.ts', import.meta.url),
 )
 
-const CONFIG_SOURCE_EXTERNALS = ['valibot', '@pluxel/core', '@pluxel/runtime']
+const CONFIG_SOURCE_EXTERNALS = [
+	'valibot',
+	'@pluxel/core',
+	'@pluxel/runtime',
+	'@pluxel/runtime/authoring',
+]
 const CONFIG_SOURCE_FORM_EXTERNALS = [
 	'valibot',
 	'valibot-form',
@@ -832,7 +837,7 @@ describe('configSourcePlugin', () => {
 			expect(code).toContain('__registerConfigBinding__')
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('__setConfigLayout__')
-			expect(code).toContain('from "@pluxel/runtime"')
+			expect(code).toContain('from "@pluxel/runtime/authoring"')
 			expect(code).toContain('["a"]')
 			expect(code).toContain('["b"]')
 		})

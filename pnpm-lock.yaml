@@ -714,13 +714,13 @@ importers:
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
     devDependencies:
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
       '@pluxel/runtime-dev':
         specifier: workspace:*
         version: link:../runtime-dev

@@ -17,6 +17,10 @@
 			"@pluxel/source": "./src/api/contributions.ts",
 			"default": "./dist/api.mjs"
 		},
+		"./authoring": {
+			"@pluxel/source": "./src/authoring.ts",
+			"default": "./dist/authoring.mjs"
+		},
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
@@ -103,6 +107,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./api": "./dist/api.mjs",
+			"./authoring": "./dist/authoring.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./events": "./dist/events.mjs",
 			"./frozen": "./dist/frozen.mjs",

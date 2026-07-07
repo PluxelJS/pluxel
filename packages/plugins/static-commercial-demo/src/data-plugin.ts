@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createClient, type Client } from '@libsql/client/sqlite3'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime/authoring'
 import { drizzle } from 'drizzle-orm/libsql/sqlite3'
 import {
 	commercialSchema,

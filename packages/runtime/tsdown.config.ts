@@ -43,6 +43,7 @@ export default defineConfig({
 		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
 		events: 'src/events.ts',
 		api: 'src/api/contributions.ts',
+		authoring: 'src/authoring.ts',
 		logger: 'src/logger.ts',
 		'plugin-catalog': 'src/plugin-catalog.ts',
 		plugin: 'src/plugin.ts',

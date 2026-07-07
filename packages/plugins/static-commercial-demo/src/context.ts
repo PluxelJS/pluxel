@@ -1,5 +1,5 @@
 import type { YogaInitialContext } from 'graphql-yoga'
-import type { Context as PluxelContext } from '@pluxel/runtime'
+import type { Context as PluxelContext } from '@pluxel/runtime/authoring'
 import type { CommercialServices } from './services.ts'
 
 export interface CommercialContext {

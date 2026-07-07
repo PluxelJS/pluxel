@@ -32,18 +32,22 @@
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:*",
-		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
+		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
+		"@pluxel/rolldown": ">=0.1.0 <1",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/rolldown": {
+			"optional": true
+		},
 		"vite": {
 			"optional": true
 		}

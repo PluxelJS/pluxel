@@ -1,6 +1,6 @@
 import { createYoga } from 'graphql-yoga'
 import { ui } from '@pluxel/runtime/plugin'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/authoring'
 import { createCommercialContext } from './context.ts'
 import { CommercialDataPlugin } from './data-plugin.ts'
 import { createSchema } from './schema.ts'

@@ -20,7 +20,7 @@ export {
 	pluginMethodDecorator,
 	v,
 	type ConfigSchemaMap,
-} from '@pluxel/runtime'
+} from '@pluxel/runtime/authoring'
 
 export type {
 	StaticRuntime,

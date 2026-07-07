@@ -95,7 +95,10 @@ describe('toolchain package boundaries', () => {
 			offenders,
 			'runtime-dynamic should call @pluxel/rolldown/vite/plugin-ui instead of owning MF build logic',
 		).toEqual([])
-		expect(runtimeStatic.dependencies).toHaveProperty('@pluxel/rolldown')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('@pluxel/rolldown')
+		expect(runtimeStatic.devDependencies).toHaveProperty('@pluxel/rolldown')
+		expect(runtimeStatic.peerDependencies).toHaveProperty('@pluxel/rolldown')
+		expect(runtimeStatic.peerDependenciesMeta?.['@pluxel/rolldown']?.optional).toBe(true)
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/vite')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/dts-plugin')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@module-federation/runtime')
@@ -219,6 +222,30 @@ describe('toolchain package boundaries', () => {
 		}
 
 		expect(offenders).toEqual([])
+	})
+
+	it('keeps runtime authoring imports separate from route service registration', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
+		const runtimeAuthoring = await readFile(`${root}/packages/runtime/src/authoring.ts`, 'utf8')
+		const runtimeStaticIndex = await readFile(
+			`${root}/packages/runtime-static/src/index.ts`,
+			'utf8',
+		)
+		const configSourcePlugin = await readFile(
+			`${root}/packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`,
+			'utf8',
+		)
+
+		expect(runtimeIndex).not.toContain("import './runtime/register/static'")
+		expect(runtimeIndex).toContain("export * from './authoring'")
+		expect(runtimeAuthoring).not.toContain('runtime/register')
+		expect(runtimeAuthoring).not.toContain('services/web-management')
+		expect(runtimeStaticIndex).toContain("import '@pluxel/runtime/register/static'")
+		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime/authoring'")
+		expect(configSourcePlugin).toContain(
+			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/authoring'",
+		)
 	})
 
 	it('keeps dev/HMR capabilities out of the runtime route contract', async () => {

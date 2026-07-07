@@ -1,11 +1,5 @@
-import './runtime/register/static'
-import { setPluxelRuntime } from '@pluxel/core'
-
-setPluxelRuntime('core')
-
 export { EvtChannel } from '@pluxel/core/services'
-export * from './base'
-export { f, v } from './config'
+export * from './authoring'
 export {
 	PersistenceError,
 	createMemoryPersistenceBackend,

@@ -5,8 +5,8 @@ import {
 	type PluginConstructor,
 	type PluginIdentifier,
 	type PluginLifecycleIssue,
+	Context,
 } from '@pluxel/core'
-import { Context } from '@pluxel/runtime'
 import { isPluginEnabled, setPluginEnabled } from '@pluxel/runtime/runtime-state'
 import type {
 	RuntimePluginDependencyInfo,

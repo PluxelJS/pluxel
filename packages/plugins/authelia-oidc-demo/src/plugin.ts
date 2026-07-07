@@ -5,7 +5,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import '@pluxel/runtime/services/vault'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime/authoring'
 import { createRemoteJWKSet, jwtVerify } from 'jose'
 
 const ROUTE_BASE = '/authelia-oidc-demo'
