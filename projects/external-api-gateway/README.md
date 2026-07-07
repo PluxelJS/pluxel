@@ -4,7 +4,7 @@
 
 当前插件：
 
-- `ExternalGatewayPlugin`：外部 Cap'n Web RPC 入口，负责 `apiToken -> AuthedApi`、token 权限和 capability 编排。
+- `ExternalGatewayPlugin`：外部 Cap'n Web RPC 入口，负责 `apiToken -> AuthedApi`、token 吊销和 capability 编排。
 - `UsageBillingPlugin`：上游用量/计费插件，按 `userId + provider + operation + model` 汇总调用、延迟、输入输出体积、单位用量和成本。
 - `ZhipuProviderPlugin`：智谱 OpenAPI provider，依赖 `UsageBillingPlugin`，保存 API Key，并通过 OpenAPI-shaped capability 暴露 OCR、搜索、模型、embedding、rerank 等接口。
 
@@ -52,6 +52,7 @@ const ocrPromise = authedApi
 	.layoutParsing({
 		model: 'glm-ocr',
 		file: 'https://example.com/demo.pdf',
+		prompt: '请提取标题、日期和总金额，返回 JSON。',
 	})
 const searchPromise = authedApi
 	.bill({ userId: 'user-123', tenantId: 'tenant-a', traceId: 'trace-search-001' })
@@ -82,23 +83,11 @@ const [whoami, ocr, search, chat] = await Promise.allSettled([
 
 `bill(...)` 是强制的计费上下文边界。后面的 provider capability 会自动把 `userId / tenantId / traceId` 写入 `UsageBillingPlugin`。
 
-权限由 `ExternalGatewayPlugin` 的 token 决定。当前支持：
-
-- `zhipu:*`
-- `zhipu:ocr.layout_parsing`
-- `zhipu:ocr.files`
-- `zhipu:web_search`
-- `zhipu:reader`
-- `zhipu:chat.completions`
-- `zhipu:embeddings.create`
-- `zhipu:rerank.create`
-- `zhipu:moderations.create`
-- `zhipu:openapi.raw`
-- `*`
+`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可以访问 gateway 暴露的全部 provider capability；吊销后不可再认证。调用归属、成本和审计由 `bill(...)` 里的 `userId / tenantId / traceId` 以及 `UsageBillingPlugin` 记录。
 
 `projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖任意 Zhipu OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。
 
-- `layoutParsing({ model: "glm-ocr", file, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id? })`
+- `layoutParsing({ model: "glm-ocr", file, prompt?, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id?, ... })`
 - `filesOcr({ fileName, contentType?, bytes, fields: { tool_type: "hand_write", language_type?, probability? } })`
 - `webSearch({ search_query, search_engine, search_intent, count?, search_domain_filter?, search_recency_filter?, content_size?, request_id?, user_id? })`
 - `models().chatCompletions({ model, messages, stream?, thinking?, reasoning_effort?, tools?, response_format?, request_id?, user_id?, ... })`
@@ -170,9 +159,23 @@ this.billing.recordUsage({
 
 `UsageBillingPlugin` 的价格表使用 `provider:operation[:model]` 作为 key。provider 插件可以记录 `request`、`token`、`page`、`image` 等不同 unit，具体单价通过 `upsertRate` 配置；未配置时成本按 `0` 估算，但用量仍会完整保留。
 
+## Persistence
+
+插件运行数据使用项目内 SQLite 文件：
+
+```text
+.pluxel/static/plugin-data/external-api-gateway.sqlite
+```
+
+当前持久化内容：
+
+- gateway tokens：保存 token hash、启用/吊销状态和最近使用时间；UI 只展示预览。
+- billing usage records / rates：账单明细和价格表会跨重启保留；UI 明细只加载最近 500 条，汇总按 SQLite 全量记录重建。
+- Zhipu test history：插件 UI 的 OCR/API 测试历史跨重启保留。
+
 当前组织方式：
 
-- gateway 插件只负责外部 token、权限和 capability 分发。
+- gateway 插件只负责外部 token 认证/吊销和 capability 分发。
 - provider 插件负责 API key、OpenAPI path/body、上游响应解析和调用后落账。
 - billing 插件作为所有 provider 的上游依赖，统一记录 `userId / tenantId / traceId / provider / operation / model / cost`。
 - 当 provider 数量继续增多，可以把 `ExternalGatewayPlugin` 中的 provider 构造函数依赖迁移成 provider registry；在 runtime-static 阶段显式依赖更直接，也更符合当前 Pluxel 示例形态。

@@ -3,7 +3,10 @@ import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget, newHttpBatchRpcResponse } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
+import { desc, eq } from 'drizzle-orm'
 import { UsageBillingPlugin } from '../billing/plugin.ts'
+import { gatewayTokens, type GatewayTokenRow } from '../db/schema.ts'
+import { type ExternalGatewayDbHandle, useExternalGatewayDB } from '../db/use-db.ts'
 import { ZhipuProviderPlugin } from '../zhipu/plugin.ts'
 import type {
 	ZhipuChatCompletionsInput,
@@ -22,7 +25,6 @@ import type {
 	GatewayStatusDoc,
 	GatewayTokenCreateInput,
 	GatewayTokenDoc,
-	GatewayPermission,
 } from './contracts.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
@@ -34,6 +36,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	private tokens = this.ctx.ext.signaldb.collection<GatewayTokenDoc>({ name: 'tokens' })
 	private status = this.ctx.ext.signaldb.collection<GatewayStatusDoc>({ name: 'status' })
 	private tokenHashes = new Map<string, string>()
+	private data: ExternalGatewayDbHandle | undefined
 
 	constructor(
 		private readonly billing: UsageBillingPlugin,
@@ -44,6 +47,8 @@ export class ExternalGatewayPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		await Promise.all([this.tokens.ready(), this.status.ready()])
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadTokensFromDB()
 		await this.ensureDevToken()
 		this.syncStatus()
 		pluginUi.bind(this.ctx)
@@ -66,14 +71,15 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			id,
 			name,
 			tokenPreview: previewToken(token),
-			permissions: normalizePermissions(input.permissions),
 			enabled: input.enabled ?? true,
 			createdAt: this.tokens.findOne({ id })?.createdAt ?? now,
 			updatedAt: now,
 			lastUsedAt: this.tokens.findOne({ id })?.lastUsedAt ?? null,
 		}
-		this.tokenHashes.set(id, tokenHash(token))
+		const hash = tokenHash(token)
+		this.tokenHashes.set(id, hash)
 		this.tokens.replaceOne({ id }, doc, { upsert: true })
+		await this.persistToken({ ...doc, tokenHash: hash })
 		this.syncStatus()
 		return doc
 	}
@@ -86,6 +92,10 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			{ ...existing, enabled: false, updatedAt: Date.now() },
 			{ upsert: true },
 		)
+		await this.data?.db
+			.update(gatewayTokens)
+			.set({ enabled: false, updatedAt: Date.now() })
+			.where(eq(gatewayTokens.id, id))
 		this.syncStatus()
 		return { ok: true }
 	}
@@ -104,10 +114,13 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			if (!constantTimeEquals(expected, tokenHash(token))) continue
 			const next = { ...doc, lastUsedAt: Date.now(), updatedAt: Date.now() }
 			this.tokens.replaceOne({ id: doc.id }, next, { upsert: true })
+			await this.data?.db
+				.update(gatewayTokens)
+				.set({ lastUsedAt: next.lastUsedAt, updatedAt: next.updatedAt })
+				.where(eq(gatewayTokens.id, doc.id))
 			return {
 				tokenId: doc.id,
 				name: doc.name,
-				permissions: doc.permissions,
 			}
 		}
 		throw new Error('Invalid API token')
@@ -150,14 +163,17 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		const token = process.env.PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN ?? 'dev-zhipu-token-change-me'
 		const existing = this.tokens.findOne({ id: 'local-dev' })
 		if (existing) {
-			this.tokenHashes.set(existing.id, tokenHash(token))
+			await this.createToken({
+				name: existing.name,
+				token,
+				enabled: existing.enabled,
+			})
 			return
 		}
 		if (this.tokens.count() > 0) return
 		await this.createToken({
 			name: 'local-dev',
 			token,
-			permissions: ['zhipu:*'],
 		})
 	}
 
@@ -176,18 +192,45 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		)
 	}
 
+	private async loadTokensFromDB(): Promise<void> {
+		this.tokens.removeMany({})
+		this.tokenHashes.clear()
+		if (!this.data) return
+		const rows = await this.data.db
+			.select()
+			.from(gatewayTokens)
+			.orderBy(desc(gatewayTokens.updatedAt))
+		for (const row of rows.slice().reverse()) {
+			const doc = tokenDocFromRow(row)
+			this.tokens.replaceOne({ id: doc.id }, doc, { upsert: true })
+			this.tokenHashes.set(row.id, row.tokenHash)
+		}
+	}
+
+	private async persistToken(row: GatewayTokenRow): Promise<void> {
+		if (!this.data) return
+		await this.data.db
+			.insert(gatewayTokens)
+			.values(row)
+			.onConflictDoUpdate({
+				target: gatewayTokens.id,
+				set: {
+					name: row.name,
+					tokenHash: row.tokenHash,
+					tokenPreview: row.tokenPreview,
+					enabled: row.enabled,
+					updatedAt: row.updatedAt,
+					lastUsedAt: row.lastUsedAt,
+				},
+			})
+	}
+
 	apiFor(auth: GatewayAuthContext): AuthedApi {
 		return new AuthedApi(this, auth)
 	}
 
-	billedApi(auth: GatewayAuthContext, billing: GatewayBillingContext): BilledApi {
-		return new BilledApi(this, auth, billing)
-	}
-
-	assertPermission(auth: GatewayAuthContext, provider: string, operation: string): void {
-		if (!hasPermission(auth.permissions, provider, operation)) {
-			throw new Error(`Token ${auth.name} cannot call ${provider}:${operation}`)
-		}
+	billedApi(billing: GatewayBillingContext): BilledApi {
+		return new BilledApi(this, billing)
 	}
 
 	get zhipuProvider(): ZhipuProviderPlugin {
@@ -232,14 +275,13 @@ export class AuthedApi extends RpcTarget {
 			typeof input === 'string'
 				? { userId: requireUserId(input) }
 				: { ...input, userId: requireUserId(input.userId) }
-		return this.gateway.billedApi(this.auth, billing)
+		return this.gateway.billedApi(billing)
 	}
 }
 
 export class BilledApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
@@ -250,53 +292,51 @@ export class BilledApi extends RpcTarget {
 	}
 
 	zhipu(): ZhipuGatewayApi {
-		return new ZhipuGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuGatewayApi(this.gateway, this.billing)
 	}
 }
 
 export class ZhipuGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	ocr(): ZhipuOcrGatewayApi {
-		return new ZhipuOcrGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuOcrGatewayApi(this.gateway, this.billing)
 	}
 
 	models(): ZhipuModelsGatewayApi {
-		return new ZhipuModelsGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuModelsGatewayApi(this.gateway, this.billing)
 	}
 
 	embeddings(): ZhipuEmbeddingsGatewayApi {
-		return new ZhipuEmbeddingsGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuEmbeddingsGatewayApi(this.gateway, this.billing)
 	}
 
 	rerank(): ZhipuRerankGatewayApi {
-		return new ZhipuRerankGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuRerankGatewayApi(this.gateway, this.billing)
 	}
 
 	tools(): ZhipuToolsGatewayApi {
-		return new ZhipuToolsGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuToolsGatewayApi(this.gateway, this.billing)
 	}
 
 	moderations(): ZhipuModerationsGatewayApi {
-		return new ZhipuModerationsGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuModerationsGatewayApi(this.gateway, this.billing)
 	}
 
 	search(): ZhipuSearchGatewayApi {
-		return new ZhipuSearchGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuSearchGatewayApi(this.gateway, this.billing)
 	}
 
 	openapi(): ZhipuOpenApiGatewayApi {
-		return new ZhipuOpenApiGatewayApi(this.gateway, this.auth, this.billing)
+		return new ZhipuOpenApiGatewayApi(this.gateway, this.billing)
 	}
 
 	raw(input: ZhipuRawCallInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', input.operation || 'openapi.raw')
 		return this.gateway.zhipuProvider.gatewayRaw(this.billing, input)
 	}
 }
@@ -304,14 +344,12 @@ export class ZhipuGatewayApi extends RpcTarget {
 export class ZhipuModelsGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	chatCompletions(input: ZhipuChatCompletionsInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'chat.completions')
 		return this.gateway.zhipuProvider.gatewayChatCompletions(this.billing, input)
 	}
 }
@@ -319,14 +357,12 @@ export class ZhipuModelsGatewayApi extends RpcTarget {
 export class ZhipuOpenApiGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	request(input: ZhipuRawCallInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', input.operation || 'openapi.raw')
 		return this.gateway.zhipuProvider.gatewayRaw(this.billing, input)
 	}
 }
@@ -334,14 +370,12 @@ export class ZhipuOpenApiGatewayApi extends RpcTarget {
 export class ZhipuEmbeddingsGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	create(input: ZhipuEmbeddingInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'embeddings.create')
 		return this.gateway.zhipuProvider.gatewayEmbeddings(this.billing, input)
 	}
 }
@@ -349,14 +383,12 @@ export class ZhipuEmbeddingsGatewayApi extends RpcTarget {
 export class ZhipuRerankGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	create(input: ZhipuRerankInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'rerank.create')
 		return this.gateway.zhipuProvider.gatewayRerank(this.billing, input)
 	}
 }
@@ -364,14 +396,12 @@ export class ZhipuRerankGatewayApi extends RpcTarget {
 export class ZhipuToolsGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	reader(input: ZhipuReaderInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'reader')
 		return this.gateway.zhipuProvider.gatewayReader(this.billing, input)
 	}
 }
@@ -379,14 +409,12 @@ export class ZhipuToolsGatewayApi extends RpcTarget {
 export class ZhipuModerationsGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	create(input: ZhipuModerationInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'moderations.create')
 		return this.gateway.zhipuProvider.gatewayModerations(this.billing, input)
 	}
 }
@@ -394,19 +422,16 @@ export class ZhipuModerationsGatewayApi extends RpcTarget {
 export class ZhipuOcrGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	layoutParsing(input: ZhipuLayoutParsingInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'ocr.layout_parsing')
 		return this.gateway.zhipuProvider.gatewayLayoutParsing(this.billing, input)
 	}
 
 	filesOcr(input: ZhipuUploadInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'ocr.files')
 		return this.gateway.zhipuProvider.gatewayFilesOcr(this.billing, input)
 	}
 }
@@ -414,14 +439,12 @@ export class ZhipuOcrGatewayApi extends RpcTarget {
 export class ZhipuSearchGatewayApi extends RpcTarget {
 	constructor(
 		private readonly gateway: ExternalGatewayPlugin,
-		private readonly auth: GatewayAuthContext,
 		private readonly billing: GatewayBillingContext,
 	) {
 		super()
 	}
 
 	webSearch(input: ZhipuWebSearchInput): Promise<unknown> {
-		this.gateway.assertPermission(this.auth, 'zhipu', 'web_search')
 		return this.gateway.zhipuProvider.gatewayWebSearch(this.billing, input)
 	}
 }
@@ -473,22 +496,16 @@ function slugId(name: string): string {
 	)
 }
 
-function normalizePermissions(input: GatewayPermission[]): GatewayPermission[] {
-	const values = input.map((item) => item.trim()).filter(Boolean) as GatewayPermission[]
-	return values.length ? values : []
-}
-
-function hasPermission(
-	permissions: GatewayPermission[],
-	provider: string,
-	operation: string,
-): boolean {
-	return permissions.some(
-		(permission) =>
-			permission === '*' ||
-			permission === `${provider}:*` ||
-			permission === `${provider}:${operation}`,
-	)
+function tokenDocFromRow(row: GatewayTokenRow): GatewayTokenDoc {
+	return {
+		id: row.id,
+		name: row.name,
+		tokenPreview: row.tokenPreview,
+		enabled: row.enabled,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
+		lastUsedAt: row.lastUsedAt,
+	}
 }
 
 function requireUserId(userId: string): string {

@@ -3,7 +3,10 @@ import '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
+import { desc } from 'drizzle-orm'
 import { UsageBillingPlugin } from '../billing/plugin.ts'
+import { zhipuTestRuns, type ZhipuTestRunRow } from '../db/schema.ts'
+import { type ExternalGatewayDbHandle, useExternalGatewayDB } from '../db/use-db.ts'
 import type { GatewayBillingContext } from '../gateway/contracts.ts'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
@@ -40,6 +43,7 @@ type LayoutParsingInput = {
 	userId?: string
 	model: 'glm-ocr'
 	file: string
+	prompt?: string
 	return_crop_images?: boolean
 	need_layout_visualization?: boolean
 	start_page_id?: number
@@ -66,6 +70,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	private settings = this.ctx.ext.signaldb.collection<ZhipuSettingsDoc>({ name: 'settings' })
 	private status = this.ctx.ext.signaldb.collection<ZhipuStatusDoc>({ name: 'status' })
 	private history = this.ctx.ext.signaldb.collection<ZhipuTestRunDoc>({ name: 'history' })
+	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
 
 	constructor(private readonly billing: UsageBillingPlugin) {
@@ -74,7 +79,8 @@ export class ZhipuProviderPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
-		this.restoreHistorySeq()
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
 		pluginUi.bind(this.ctx)
@@ -156,6 +162,9 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	clearHistory(): { ok: true } {
 		this.history.removeMany({})
 		this.historySeq = 1
+		void this.data?.db.delete(zhipuTestRuns).catch((error) => {
+			this.ctx.logger.warn('Failed to clear Zhipu test history database', { error })
+		})
 		return { ok: true }
 	}
 
@@ -555,7 +564,17 @@ export class ZhipuProviderPlugin extends BasePlugin {
 				: {}),
 		}
 		this.history.insert(doc)
+		void this.persistHistory(doc)
 		this.trimHistory()
+	}
+
+	private async persistHistory(doc: ZhipuTestRunDoc): Promise<void> {
+		if (!this.data) return
+		try {
+			await this.data.db.insert(zhipuTestRuns).values(toHistoryRow(doc))
+		} catch (error) {
+			this.ctx.logger.warn('Failed to persist Zhipu test history', { error })
+		}
 	}
 
 	private toLayoutParsingPayload(
@@ -631,6 +650,21 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		this.historySeq = maxId + 1
 	}
 
+	private async loadHistoryFromDB(): Promise<void> {
+		this.history.removeMany({})
+		if (!this.data) {
+			this.historySeq = 1
+			return
+		}
+		const rows = await this.data.db
+			.select()
+			.from(zhipuTestRuns)
+			.orderBy(desc(zhipuTestRuns.at))
+			.limit(MAX_HISTORY)
+		for (const row of rows.slice().reverse()) this.history.insert(fromHistoryRow(row))
+		this.restoreHistorySeq()
+	}
+
 	private trimHistory(): void {
 		const all = this.history.find({}, { sort: { at: 1 } })
 		const overflow = all.length - MAX_HISTORY
@@ -703,6 +737,48 @@ function userIdFromRequest(request: Request): string {
 		normalizeUserId(url.searchParams.get('userId')) ??
 		'anonymous'
 	)
+}
+
+function toHistoryRow(doc: ZhipuTestRunDoc): ZhipuTestRunRow {
+	return {
+		id: doc.id,
+		at: doc.at,
+		source: doc.source,
+		userId: doc.userId,
+		operation: doc.operation,
+		model: doc.model ?? null,
+		ok: doc.ok,
+		status: doc.status,
+		latencyMs: doc.latencyMs,
+		inputBytes: doc.inputBytes,
+		outputBytes: doc.outputBytes,
+		fileName: doc.fileName ?? null,
+		upstreamRequestId: doc.upstreamRequestId ?? null,
+		requestPreview: doc.requestPreview ?? null,
+		responsePreview: doc.responsePreview ?? null,
+		error: doc.error ?? null,
+	}
+}
+
+function fromHistoryRow(row: ZhipuTestRunRow): ZhipuTestRunDoc {
+	return {
+		id: row.id,
+		at: row.at,
+		source: row.source,
+		userId: row.userId,
+		operation: row.operation,
+		...(row.model ? { model: row.model } : {}),
+		ok: row.ok,
+		status: row.status,
+		latencyMs: row.latencyMs,
+		inputBytes: row.inputBytes,
+		outputBytes: row.outputBytes,
+		...(row.fileName ? { fileName: row.fileName } : {}),
+		...(row.upstreamRequestId ? { upstreamRequestId: row.upstreamRequestId } : {}),
+		...(row.requestPreview ? { requestPreview: row.requestPreview } : {}),
+		...(row.responsePreview ? { responsePreview: row.responsePreview } : {}),
+		...(row.error ? { error: row.error } : {}),
+	}
 }
 
 function formEntryBytes(value: FormDataEntryValue): number {

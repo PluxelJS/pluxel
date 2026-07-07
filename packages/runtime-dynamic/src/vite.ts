@@ -16,6 +16,11 @@ export type DynamicRuntimeViteConfig = DynamicRuntimeConfig
 
 export type DynamicRuntimeVitePluginOptions = {
 	config: string
+	/**
+	 * Runs after the loader HMR host is created and before HMR/plugin startup.
+	 * Use this for host-owned bootstrapping such as preparing or unlocking vault storage.
+	 */
+	prepareHost?: (host: BootedLoaderHmrHost) => void | Promise<void>
 }
 
 export { defineDynamicRuntimeConfig }
@@ -59,6 +64,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } = await import('./hmr/host')
 		const plan = await planLoaderHmrHostFromConfig(config)
 		const booted = await bootPlannedLoaderHmrHost(plan, { viteServer: server })
+		await options.prepareHost?.(booted)
 		const controller: DynamicRuntimeController = {
 			booted,
 			configFiles: collectSsrImportFiles(server, state.configPath!),

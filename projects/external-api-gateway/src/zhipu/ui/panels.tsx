@@ -16,11 +16,12 @@ import {
 	Table,
 	Text,
 	TextInput,
+	Textarea,
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
 import { IconCheck, IconCloudUpload, IconKey, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
 import { zhipuPlugin } from './runtime'
 
@@ -79,6 +80,11 @@ function truncateText(input: string | undefined, length = 120): string {
 	return input.length > length ? `${input.slice(0, length)}...` : input
 }
 
+function settingsBadge(settings: ZhipuSettingsDoc | undefined): string | null {
+	if (!settings) return '加载中'
+	return settings.hasApiKey ? settings.apiKeyPreview : '未配置'
+}
+
 export function ZhipuDashboard() {
 	return (
 		<Stack gap="lg" p="md">
@@ -109,12 +115,16 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const settings = app.db.useDocById('settings', 'settings')
 	const status = app.db.useDocById('status', 'status')
 	const [apiKey, setApiKey] = useState('')
-	const [baseUrl, setBaseUrl] = useState(
-		settings?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
-	)
+	const [baseUrl, setBaseUrl] = useState('https://open.bigmodel.cn/api/paas/v4')
+	const baseUrlEdited = useRef(false)
 	const [testUserId, setTestUserId] = useState('system')
 	const [error, setError] = useState<string | null>(null)
 	const [message, setMessage] = useState<string | null>(null)
+
+	useEffect(() => {
+		if (baseUrlEdited.current) return
+		setBaseUrl(settings?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4')
+	}, [settings?.baseUrl])
 
 	const run = async <T,>(action: () => Promise<T>, fallback: string): Promise<T | undefined> => {
 		try {
@@ -134,6 +144,8 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 		)
 		if (result) {
 			setApiKey('')
+			baseUrlEdited.current = false
+			setBaseUrl(result.baseUrl)
 			setMessage('设置已保存')
 		}
 	}
@@ -152,7 +164,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 						<Title order={compact ? 5 : 4}>Zhipu 设置</Title>
 					</Group>
 					<Badge color={settings?.hasApiKey ? 'teal' : 'gray'} variant="light">
-						{settings?.hasApiKey ? settings.apiKeyPreview : '未配置'}
+						{settingsBadge(settings)}
 					</Badge>
 				</Group>
 				{error ? <Alert color="red">{error}</Alert> : null}
@@ -168,7 +180,10 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 				<TextInput
 					label="Base URL"
 					value={baseUrl}
-					onChange={(event) => setBaseUrl(event.currentTarget.value)}
+					onChange={(event) => {
+						baseUrlEdited.current = true
+						setBaseUrl(event.currentTarget.value)
+					}}
 				/>
 				<TextInput
 					label="测试 userId"
@@ -210,9 +225,10 @@ export function ZhipuOcrPanel() {
 	const [userId, setUserId] = useState('demo-user')
 	const [file, setFile] = useState<File | null>(null)
 	const [fileRef, setFileRef] = useState('')
+	const [prompt, setPrompt] = useState('')
 	const [layoutJson, setLayoutJson] = useState('{\n  "model": "glm-ocr"\n}')
 	const [state, setState] = useState<RequestState>({ loading: false, error: null, result: null })
-	const canRun = Boolean(settings?.hasApiKey) && (mode === 'files-ocr' ? Boolean(file) : true)
+	const canRun = (settings?.hasApiKey ?? true) && (mode === 'files-ocr' ? Boolean(file) : true)
 
 	const submit = async () => {
 		setState({ loading: true, error: null, result: null })
@@ -224,7 +240,7 @@ export function ZhipuOcrPanel() {
 			const response =
 				mode === 'files-ocr'
 					? await submitFilesOcr(endpoint, userId, file)
-					: await submitLayoutParsing(endpoint, userId, fileRef, layoutJson)
+					: await submitLayoutParsing(endpoint, userId, fileRef, prompt, layoutJson)
 			const body = await readResponseBody(response)
 			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
 			setState({ loading: false, error: null, result: body })
@@ -254,7 +270,9 @@ export function ZhipuOcrPanel() {
 						]}
 					/>
 				</Group>
-				{!settings?.hasApiKey ? <Alert color="yellow">先保存 Zhipu API Key。</Alert> : null}
+				{settings?.hasApiKey === false ? (
+					<Alert color="yellow">先保存 Zhipu API Key。</Alert>
+				) : null}
 				{state.error ? <Alert color="red">{state.error}</Alert> : null}
 				<TextInput
 					label="userId"
@@ -275,6 +293,14 @@ export function ZhipuOcrPanel() {
 							placeholder="https://example.com/demo.pdf"
 							value={fileRef}
 							onChange={(event) => setFileRef(event.currentTarget.value)}
+						/>
+						<Textarea
+							label="Prompt"
+							placeholder="例如：请提取发票号码、日期、金额，返回 JSON"
+							value={prompt}
+							onChange={(event) => setPrompt(event.currentTarget.value)}
+							autosize
+							minRows={3}
 						/>
 						<JsonInput
 							label="额外 JSON 参数"
@@ -407,11 +433,13 @@ async function submitLayoutParsing(
 	endpoint: string,
 	userId: string,
 	fileRef: string,
+	prompt: string,
 	rawJson: string,
 ): Promise<Response> {
 	const payload = parseJsonObject(rawJson)
 	payload.userId = userId
 	if (fileRef.trim()) payload.file = fileRef.trim()
+	if (prompt.trim()) payload.prompt = prompt.trim()
 	return fetch(endpoint, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },

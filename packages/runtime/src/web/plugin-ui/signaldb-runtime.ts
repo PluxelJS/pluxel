@@ -74,6 +74,7 @@ class SignalDbReplicaNamespace {
 		string,
 		Set<(data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>>
 	>()
+	private readonly queuedRemoteChanges = new Map<string, SignalDbLoadResponse<SignalDbItem>[]>()
 	private readonly syncTasks = new Map<string, Promise<void>>()
 	private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -124,6 +125,7 @@ class SignalDbReplicaNamespace {
 				const handlers = this.remoteHandlers.get(name) ?? new Set()
 				if (!this.remoteHandlers.has(name)) this.remoteHandlers.set(name, handlers)
 				handlers.add(onChange)
+				this.flushQueuedRemoteChanges(name, onChange)
 				return () => {
 					handlers.delete(onChange)
 					if (handlers.size === 0) this.remoteHandlers.delete(name)
@@ -159,6 +161,7 @@ class SignalDbReplicaNamespace {
 		for (const state of this.states.values()) state.stopObserve()
 		this.states.clear()
 		this.remoteHandlers.clear()
+		this.queuedRemoteChanges.clear()
 		this.syncTasks.clear()
 		void this.sync.dispose().catch((): undefined => undefined)
 		this.sse.close()
@@ -222,8 +225,37 @@ class SignalDbReplicaNamespace {
 	) {
 		this.applyResponseMeta(collection, data)
 		const handlers = this.remoteHandlers.get(collection)
-		if (!handlers?.size) return
+		if (!handlers?.size) {
+			if (data) this.queueRemoteChange(collection, data)
+			return
+		}
 		await Promise.all(Array.from(handlers, (handler) => handler(data)))
+	}
+
+	private queueRemoteChange(collection: string, data: SignalDbLoadResponse<SignalDbItem>) {
+		const queued = this.queuedRemoteChanges.get(collection) ?? []
+		queued.push(data)
+		this.queuedRemoteChanges.set(collection, queued)
+	}
+
+	private flushQueuedRemoteChanges(
+		collection: string,
+		handler: (data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>,
+	) {
+		const queued = this.queuedRemoteChanges.get(collection)
+		if (!queued?.length) return
+		this.queuedRemoteChanges.delete(collection)
+		void queued
+			.reduce(
+				(chain, data) => chain.then(() => handler(data)),
+				Promise.resolve() as Promise<void>,
+			)
+			.catch((error) => {
+				console.warn(
+					`[plugin-ui:${this.pluginName}] signaldb queued remote change failed (${collection})`,
+					error,
+				)
+			})
 	}
 
 	private applyResponseMeta(collection: string, data?: SignalDbLoadResponse<SignalDbItem>) {
@@ -261,10 +293,13 @@ class SignalDbReplicaNamespace {
 
 	private async apply(payload: SignalDbSyncEvent) {
 		if (!payload || typeof payload !== 'object') return
-		const state = this.states.get(payload.collection)
-		if (!state) return
 		const data = toLoadResponse(payload)
 		if (!data) return
+		const state = this.states.get(payload.collection)
+		if (!state) {
+			this.queueRemoteChange(payload.collection, data)
+			return
+		}
 
 		await this.dispatchRemoteChange(payload.collection, data)
 		const current = this.states.get(payload.collection)

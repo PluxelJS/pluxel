@@ -64,6 +64,11 @@ export type StaticRuntimeVitePluginOptions = {
 	config: string
 	hmr?: false | StaticRuntimeViteHmrConfig
 	logging?: false | EnsurePluxelLoggingOptions
+	/**
+	 * Runs after the static runtime host is created and before plugins start.
+	 * Use this for host-owned bootstrapping such as preparing or unlocking vault storage.
+	 */
+	prepareHost?: (host: StaticRuntimeHost) => void | Promise<void>
 }
 
 export { defineStaticRuntimeConfig } from './config'
@@ -130,6 +135,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				context: config.context,
 			})
 			state.host = host
+			await options.prepareHost?.(host)
 
 			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
 				const enabledHmrOptions = hmrOptions ?? {}

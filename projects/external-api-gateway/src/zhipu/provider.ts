@@ -30,12 +30,14 @@ export type ZhipuChatCompletionsInput = {
 export type ZhipuLayoutParsingInput = {
 	model: 'glm-ocr'
 	file: string
+	prompt?: string
 	return_crop_images?: boolean
 	need_layout_visualization?: boolean
 	start_page_id?: number
 	end_page_id?: number
 	request_id?: string
 	user_id?: string
+	[key: string]: unknown
 }
 
 export type ZhipuOcrToolType = 'hand_write'

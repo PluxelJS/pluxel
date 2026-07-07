@@ -15,6 +15,7 @@ const ocrPromise = authedApi
 	.layoutParsing({
 		model: 'glm-ocr',
 		file: 'https://example.com/demo.pdf',
+		prompt: '请提取标题、日期和总金额，返回 JSON。',
 	})
 const searchPromise = authedApi
 	.bill({ userId: 'user-123', tenantId: 'tenant-a', traceId: 'trace-search-001' })

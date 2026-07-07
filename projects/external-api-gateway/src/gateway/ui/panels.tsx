@@ -10,13 +10,12 @@ import {
 	ScrollArea,
 	Stack,
 	Table,
-	TagsInput,
 	Text,
 	TextInput,
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
-import { IconCheck, IconCopy, IconTrash } from '@tabler/icons-react'
+import { IconCheck, IconCopy, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import type { GatewayTokenCreateInput, GatewayTokenDoc } from '../contracts'
 import { gatewayPlugin } from './runtime'
@@ -61,7 +60,6 @@ export function GatewayPanel() {
 	const tokens = app.db.useList('tokens', { limit: 100, sort: { updatedAt: -1 } })
 	const [name, setName] = useState('zhipu-client')
 	const [token, setToken] = useState('')
-	const [permissions, setPermissions] = useState<string[]>(['zhipu:*'])
 	const [error, setError] = useState<string | null>(null)
 	const rpcPath = '/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc'
 
@@ -70,7 +68,6 @@ export function GatewayPanel() {
 			await app.rpc.createToken({
 				name,
 				token,
-				permissions: permissions as GatewayTokenCreateInput['permissions'],
 			})
 			setToken('')
 			setError(null)
@@ -124,19 +121,33 @@ export function GatewayPanel() {
 						value={token}
 						onChange={(event) => setToken(event.currentTarget.value)}
 					/>
-					<TagsInput label="权限" value={permissions} onChange={setPermissions} />
-					<Button
-						leftSection={<IconCheck size={16} />}
-						disabled={!token.trim()}
-						onClick={() => void create()}
-					>
-						保存 Token
-					</Button>
+					<Group>
+						<Button
+							variant="light"
+							leftSection={<IconRefresh size={16} />}
+							onClick={() => setToken(generateToken())}
+						>
+							生成 Token
+						</Button>
+						<Button
+							leftSection={<IconCheck size={16} />}
+							disabled={!token.trim()}
+							onClick={() => void create()}
+						>
+							保存 Token
+						</Button>
+					</Group>
 				</Stack>
 			</Card>
 			<TokenTable tokens={tokens} onRevoke={revoke} />
 		</Stack>
 	)
+}
+
+function generateToken(): string {
+	const bytes = new Uint8Array(32)
+	crypto.getRandomValues(bytes)
+	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function TokenTable({
@@ -154,7 +165,6 @@ function TokenTable({
 					<Table.Td>
 						<Code>{token.tokenPreview}</Code>
 					</Table.Td>
-					<Table.Td>{token.permissions.join(', ')}</Table.Td>
 					<Table.Td>
 						<Badge color={token.enabled ? 'teal' : 'gray'} variant="light">
 							{token.enabled ? 'enabled' : 'revoked'}
@@ -190,7 +200,6 @@ function TokenTable({
 							<Table.Tr>
 								<Table.Th>名称</Table.Th>
 								<Table.Th>预览</Table.Th>
-								<Table.Th>权限</Table.Th>
 								<Table.Th>状态</Table.Th>
 								<Table.Th>最近使用</Table.Th>
 								<Table.Th />

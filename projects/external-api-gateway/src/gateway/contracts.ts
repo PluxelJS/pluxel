@@ -1,10 +1,7 @@
-export type GatewayPermission = `${string}:${string}` | `${string}:*` | '*'
-
 export type GatewayTokenDoc = {
 	id: string
 	name: string
 	tokenPreview: string
-	permissions: GatewayPermission[]
 	enabled: boolean
 	createdAt: number
 	updatedAt: number
@@ -14,7 +11,6 @@ export type GatewayTokenDoc = {
 export type GatewayAuthContext = {
 	tokenId: string
 	name: string
-	permissions: GatewayPermission[]
 }
 
 export type GatewayBillingContext = {
@@ -27,7 +23,6 @@ export type GatewayBillingContext = {
 export type GatewayTokenCreateInput = {
 	name: string
 	token: string
-	permissions: GatewayPermission[]
 	enabled?: boolean
 }
 

@@ -2,6 +2,14 @@ import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
+import { desc } from 'drizzle-orm'
+import {
+	billingRates,
+	billingUsageRecords,
+	type BillingRateRow,
+	type BillingUsageRecordRow,
+} from '../db/schema.ts'
+import { type ExternalGatewayDbHandle, useExternalGatewayDB } from '../db/use-db.ts'
 import type {
 	BillingOverviewDoc,
 	BillingProviderSummaryDoc,
@@ -24,6 +32,7 @@ export class UsageBillingPlugin extends BasePlugin {
 		name: 'providers',
 	})
 	private rates = this.ctx.ext.signaldb.collection<BillingRateDoc>({ name: 'rates' })
+	private data: ExternalGatewayDbHandle | undefined
 	private seq = 1
 
 	override async init(): Promise<void> {
@@ -34,9 +43,12 @@ export class UsageBillingPlugin extends BasePlugin {
 			this.providers.ready(),
 			this.rates.ready(),
 		])
-		this.restoreSeq()
-		this.ensureOverview()
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadRatesFromDB()
 		this.seedDefaultRates()
+		const usageRecords = await this.loadUsageFromDB()
+		this.restoreSeq(usageRecords)
+		this.rebuildSummaries(usageRecords)
 		pluginUi.bind(this.ctx)
 		this.ctx.ext.rpc.expose(() => new UsageBillingRpc(this))
 		this.registerRoutes()
@@ -66,6 +78,7 @@ export class UsageBillingPlugin extends BasePlugin {
 		this.updateOverview(record)
 		this.updateUserSummary(record)
 		this.updateProviderSummary(record)
+		void this.persistRecord(record)
 		return { ...record }
 	}
 
@@ -86,6 +99,7 @@ export class UsageBillingPlugin extends BasePlugin {
 			updatedAt: Date.now(),
 		}
 		this.rates.replaceOne({ id: rate.id }, rate, { upsert: true })
+		void this.persistRate(rate)
 		return rate
 	}
 
@@ -95,6 +109,9 @@ export class UsageBillingPlugin extends BasePlugin {
 		this.providers.removeMany({})
 		this.overview.replaceOne({ id: OVERVIEW_DOC_ID }, emptyOverview(), { upsert: true })
 		this.seq = 1
+		void this.data?.db.delete(billingUsageRecords).catch((error) => {
+			this.ctx.logger.warn('Failed to clear billing usage database', { error })
+		})
 		return { ok: true }
 	}
 
@@ -113,11 +130,6 @@ export class UsageBillingPlugin extends BasePlugin {
 		)
 	}
 
-	private ensureOverview(): void {
-		if (this.overview.findOne({ id: OVERVIEW_DOC_ID })) return
-		this.overview.insert(emptyOverview())
-	}
-
 	private seedDefaultRates(): void {
 		const now = Date.now()
 		const defaults: BillingRateDoc[] = [
@@ -129,66 +141,68 @@ export class UsageBillingPlugin extends BasePlugin {
 				unitCostCny: 0,
 				updatedAt: now,
 			},
-				{
-					id: 'zhipu:ocr.layout_parsing:glm-ocr',
-					provider: 'zhipu',
+			{
+				id: 'zhipu:ocr.layout_parsing:glm-ocr',
+				provider: 'zhipu',
 				operation: 'ocr.layout_parsing',
 				model: 'glm-ocr',
 				unitName: 'request',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:web_search',
-					provider: 'zhipu',
-					operation: 'web_search',
-					unitName: 'request',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:reader',
-					provider: 'zhipu',
-					operation: 'reader',
-					unitName: 'request',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:chat.completions',
-					provider: 'zhipu',
-					operation: 'chat.completions',
-					unitName: 'token',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:embeddings.create',
-					provider: 'zhipu',
-					operation: 'embeddings.create',
-					unitName: 'token',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:rerank.create',
-					provider: 'zhipu',
-					operation: 'rerank.create',
-					unitName: 'request',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-				{
-					id: 'zhipu:moderations.create',
-					provider: 'zhipu',
-					operation: 'moderations.create',
-					unitName: 'request',
-					unitCostCny: 0,
-					updatedAt: now,
-				},
-			]
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:web_search',
+				provider: 'zhipu',
+				operation: 'web_search',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:reader',
+				provider: 'zhipu',
+				operation: 'reader',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:chat.completions',
+				provider: 'zhipu',
+				operation: 'chat.completions',
+				unitName: 'token',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:embeddings.create',
+				provider: 'zhipu',
+				operation: 'embeddings.create',
+				unitName: 'token',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:rerank.create',
+				provider: 'zhipu',
+				operation: 'rerank.create',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:moderations.create',
+				provider: 'zhipu',
+				operation: 'moderations.create',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+		]
 		for (const rate of defaults) {
+			if (this.rates.findOne({ id: rate.id })) continue
 			this.rates.replaceOne({ id: rate.id }, rate, { upsert: true })
+			void this.persistRate(rate)
 		}
 	}
 
@@ -269,9 +283,64 @@ export class UsageBillingPlugin extends BasePlugin {
 		for (const record of all.slice(0, overflow)) this.records.removeOne({ id: record.id })
 	}
 
-	private restoreSeq(): void {
-		const maxId = this.records
-			.find({}, { limit: MAX_RECORDS })
+	private async loadRatesFromDB(): Promise<void> {
+		this.rates.removeMany({})
+		if (!this.data) return
+		const rows = await this.data.db.select().from(billingRates)
+		for (const row of rows) {
+			this.rates.replaceOne({ id: row.id }, rateFromRow(row), { upsert: true })
+		}
+	}
+
+	private async loadUsageFromDB(): Promise<BillingUsageRecord[]> {
+		this.records.removeMany({})
+		if (!this.data) return []
+		const rows = await this.data.db
+			.select()
+			.from(billingUsageRecords)
+			.orderBy(desc(billingUsageRecords.at))
+		const allRecords = rows.map(recordFromRow)
+		for (const record of allRecords.slice(0, MAX_RECORDS).reverse()) this.records.insert(record)
+		return allRecords
+	}
+
+	private rebuildSummaries(records: BillingUsageRecord[]): void {
+		this.users.removeMany({})
+		this.providers.removeMany({})
+		this.overview.replaceOne({ id: OVERVIEW_DOC_ID }, emptyOverview(), { upsert: true })
+		for (const record of records.slice().reverse()) {
+			this.updateOverview(record)
+			this.updateUserSummary(record)
+			this.updateProviderSummary(record)
+		}
+	}
+
+	private async persistRecord(record: BillingUsageRecord): Promise<void> {
+		if (!this.data) return
+		try {
+			await this.data.db.insert(billingUsageRecords).values(recordToRow(record))
+		} catch (error) {
+			this.ctx.logger.warn('Failed to persist billing usage record', { error })
+		}
+	}
+
+	private async persistRate(rate: BillingRateDoc): Promise<void> {
+		if (!this.data) return
+		try {
+			await this.data.db
+				.insert(billingRates)
+				.values(rateToRow(rate))
+				.onConflictDoUpdate({
+					target: billingRates.id,
+					set: rateToRow(rate),
+				})
+		} catch (error) {
+			this.ctx.logger.warn('Failed to persist billing rate', { error })
+		}
+	}
+
+	private restoreSeq(records: BillingUsageRecord[]): void {
+		const maxId = records
 			.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
 		this.seq = maxId + 1
 	}
@@ -325,4 +394,87 @@ function roundMoney(value: number): number {
 
 function rateId(provider: string, operation: string, model?: string): string {
 	return model ? `${provider}:${operation}:${model}` : `${provider}:${operation}`
+}
+
+function recordToRow(record: BillingUsageRecord): BillingUsageRecordRow {
+	return {
+		id: record.id,
+		at: record.at,
+		userId: record.userId,
+		provider: record.provider,
+		pluginId: record.pluginId,
+		operation: record.operation,
+		model: record.model ?? null,
+		ok: record.ok,
+		status: record.status,
+		latencyMs: record.latencyMs,
+		inputBytes: record.inputBytes,
+		outputBytes: record.outputBytes,
+		units: record.units,
+		unitName: record.unitName,
+		costCny: record.costCny,
+		currency: record.currency,
+		costEstimated: record.costEstimated,
+		upstreamRequestId: record.upstreamRequestId ?? null,
+		metadataJson: record.metadata ? JSON.stringify(record.metadata) : null,
+	}
+}
+
+function recordFromRow(row: BillingUsageRecordRow): BillingUsageRecord {
+	return {
+		id: row.id,
+		at: row.at,
+		userId: row.userId,
+		provider: row.provider,
+		pluginId: row.pluginId,
+		operation: row.operation,
+		...(row.model ? { model: row.model } : {}),
+		ok: row.ok,
+		status: row.status,
+		latencyMs: row.latencyMs,
+		inputBytes: row.inputBytes,
+		outputBytes: row.outputBytes,
+		units: row.units,
+		unitName: row.unitName,
+		costCny: row.costCny,
+		currency: row.currency === 'USD' ? 'USD' : 'CNY',
+		costEstimated: row.costEstimated,
+		...(row.upstreamRequestId ? { upstreamRequestId: row.upstreamRequestId } : {}),
+		...(row.metadataJson ? { metadata: parseMetadata(row.metadataJson) } : {}),
+	}
+}
+
+function rateToRow(rate: BillingRateDoc): BillingRateRow {
+	return {
+		id: rate.id,
+		provider: rate.provider,
+		operation: rate.operation,
+		model: rate.model ?? null,
+		unitName: rate.unitName,
+		unitCostCny: rate.unitCostCny,
+		updatedAt: rate.updatedAt,
+	}
+}
+
+function rateFromRow(row: BillingRateRow): BillingRateDoc {
+	return {
+		id: row.id,
+		provider: row.provider,
+		operation: row.operation,
+		...(row.model ? { model: row.model } : {}),
+		unitName: row.unitName,
+		unitCostCny: row.unitCostCny,
+		updatedAt: row.updatedAt,
+	}
+}
+
+function parseMetadata(input: string): Record<string, unknown> | undefined {
+	try {
+		const parsed = JSON.parse(input)
+		return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: undefined
+	} catch {
+		return undefined
+	}
 }

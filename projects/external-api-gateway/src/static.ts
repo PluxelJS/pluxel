@@ -1,10 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
-import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
 import '@pluxel/runtime/services/web-management'
 import { createStaticRuntime } from '@pluxel/runtime-static'
 import staticRuntime from './pluxel.static.ts'
+import { prepareExternalGatewayRuntime } from './runtime-bootstrap.ts'
 import { installShutdown, startFetchHostServer } from './server.ts'
 
 const bindHost = process.env.PLUXEL_HOST_BIND ?? '127.0.0.1'
@@ -22,7 +22,7 @@ await ensurePluxelLogging({
 })
 
 const runtime = await createStaticRuntime(staticRuntime)
-await bootstrapHostVault(runtime.ctx)
+await prepareExternalGatewayRuntime(runtime.ctx)
 
 const server = await startFetchHostServer({
 	host: bindHost,
