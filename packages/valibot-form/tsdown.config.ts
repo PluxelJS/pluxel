@@ -12,7 +12,6 @@ export default defineConfig({
 			'@mantine/core',
 			'@mantine/hooks',
 			'@dnd-kit/core',
-			'@dnd-kit/modifiers',
 			'@dnd-kit/sortable',
 			'@dnd-kit/utilities',
 			'@tabler/icons-react',
