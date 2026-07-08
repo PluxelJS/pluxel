@@ -75,7 +75,31 @@ describe('SignalDbService', () => {
 		})
 		stop()
 
-		expect(events).toEqual(['insert', 'update', 'remove'])
+		expect(events).toEqual(['snapshot', 'insert', 'update', 'remove'])
+	})
+
+	it('replays a snapshot to late collection watchers', async () => {
+		const ctx = createSignalDbTestContext()
+		const service = new SignalDbService(ctx)
+		const collection = service.collection<{ id: string; value: number }>({
+			name: 'late-watch',
+			persistence: false,
+		})
+		await collection.ready()
+		collection.insert({ id: 'a', value: 1 })
+
+		const events: unknown[] = []
+		const stop = collection.watch((event) => events.push(event))
+		stop()
+
+		expect(events).toEqual([
+			{
+				type: 'snapshot',
+				collection: 'late-watch',
+				version: 1,
+				items: [{ id: 'a', value: 1 }],
+			},
+		])
 	})
 
 	it('creates persistence-backed collections without a transient adapter-less instance', async () => {
@@ -191,5 +215,35 @@ describe('SignalDbService', () => {
 		await service.loadCollectionSync('events')
 
 		expect(ctx.ext.sse.expose).toHaveBeenCalledTimes(2)
+	})
+
+	it('replays collection snapshots when a signaldb SSE channel attaches late', async () => {
+		const ctx = createSignalDbTestContext()
+		const service = new SignalDbService(ctx)
+		const collection = service.collection<{ id: string; value: number }>({
+			name: 'events',
+			persistence: false,
+		})
+		await collection.ready()
+		collection.insert({ id: 'a', value: 1 })
+
+		const factory = ctx.ext.sse.expose.mock.calls[0][0]
+		const handler = factory(ctx)
+		const channel = {
+			closed: false,
+			emit: vi.fn(),
+			onAbort: vi.fn(),
+		}
+
+		const cleanup = handler(channel)
+		await vi.waitFor(() => expect(channel.emit).toHaveBeenCalled())
+
+		expect(channel.emit).toHaveBeenCalledWith('snapshot', {
+			type: 'snapshot',
+			collection: 'events',
+			version: 1,
+			items: [{ id: 'a', value: 1 }],
+		})
+		cleanup?.()
 	})
 })

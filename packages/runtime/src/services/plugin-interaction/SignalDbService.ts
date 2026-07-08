@@ -159,6 +159,13 @@ export class SignalDbService {
 			() => (channel) => {
 				const channels = this.channelsFor(pluginName)
 				channels.add(channel)
+				for (const managed of this.collectionsFor(pluginName).values()) {
+					void managed.ready().then((): undefined => {
+						if (channel.closed || !channels.has(channel)) return undefined
+						channel.emit('snapshot', managed.snapshotEvent())
+						return undefined
+					})
+				}
 				channel.onAbort(() => {
 					channels.delete(channel)
 				})
@@ -345,8 +352,19 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	watch(listener: (event: SignalDbSyncEvent<T>) => void): () => void {
+		let active = true
 		this.listeners.add(listener)
+		if (this.initialized) {
+			listener(this.snapshotEvent())
+		} else {
+			void this.ready().then((): undefined => {
+				if (!active || !this.listeners.has(listener)) return undefined
+				listener(this.snapshotEvent())
+				return undefined
+			})
+		}
 		return () => {
+			active = false
 			this.listeners.delete(listener)
 		}
 	}
