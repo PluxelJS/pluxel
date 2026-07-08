@@ -1,5 +1,5 @@
 import type { InferSelectModel } from 'drizzle-orm'
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 const historySources = ['ui', 'rpc', 'settings'] as const
 
@@ -89,11 +89,36 @@ export const yiqichaTestRuns = sqliteTable('yiqicha_test_runs', {
 	error: text('error'),
 })
 
+export const yiqichaResponseCache = sqliteTable(
+	'yiqicha_response_cache',
+	{
+		id: text('id').primaryKey(),
+		apiCode: text('api_code').notNull(),
+		apiKey: text('api_key').notNull(),
+		paramsJson: text('params_json').notNull(),
+		status: text('status').notNull(),
+		httpStatus: integer('http_status').notNull(),
+		contentType: text('content_type').notNull(),
+		bodyText: text('body_text').notNull(),
+		outputBytes: integer('output_bytes').notNull(),
+		upstreamRequestId: text('upstream_request_id'),
+		createdAt: integer('created_at').notNull(),
+		updatedAt: integer('updated_at').notNull(),
+		lastHitAt: integer('last_hit_at'),
+		hitCount: integer('hit_count').notNull(),
+	},
+	(table) => ({
+		apiCodeIdx: index('idx_yiqicha_response_cache_api_code').on(table.apiCode),
+		updatedAtIdx: index('idx_yiqicha_response_cache_updated_at').on(table.updatedAt),
+	}),
+)
+
 export const gatewaySchema = {
 	billingRates,
 	billingUsageRecords,
 	gatewayMeta,
 	gatewayTokens,
+	yiqichaResponseCache,
 	yiqichaTestRuns,
 	zhipuTestRuns,
 }
@@ -101,5 +126,6 @@ export const gatewaySchema = {
 export type BillingRateRow = InferSelectModel<typeof billingRates>
 export type BillingUsageRecordRow = InferSelectModel<typeof billingUsageRecords>
 export type GatewayTokenRow = InferSelectModel<typeof gatewayTokens>
+export type YiqichaResponseCacheRow = InferSelectModel<typeof yiqichaResponseCache>
 export type YiqichaTestRunRow = InferSelectModel<typeof yiqichaTestRuns>
 export type ZhipuTestRunRow = InferSelectModel<typeof zhipuTestRuns>

@@ -6,8 +6,13 @@ import { drizzle } from 'drizzle-orm/libsql/sqlite3'
 import { gatewaySchema } from './schema.ts'
 
 const DB_FILE = 'external-api-gateway.sqlite'
-const SCHEMA_VERSION = '2026_07_08_004'
-const PREVIOUS_SCHEMA_VERSIONS = new Set(['2026_07_07_001', '2026_07_07_002', '2026_07_08_003'])
+const SCHEMA_VERSION = '2026_07_08_005'
+const PREVIOUS_SCHEMA_VERSIONS = new Set([
+	'2026_07_07_001',
+	'2026_07_07_002',
+	'2026_07_08_003',
+	'2026_07_08_004',
+])
 
 export type ExternalGatewayDatabase = ReturnType<typeof drizzle<typeof gatewaySchema>>
 
@@ -140,6 +145,28 @@ async function migrate(client: Client): Promise<void> {
 			response_preview TEXT,
 			error TEXT
 		);
+
+		CREATE TABLE IF NOT EXISTS yiqicha_response_cache (
+			id TEXT PRIMARY KEY NOT NULL,
+			api_code TEXT NOT NULL,
+			api_key TEXT NOT NULL,
+			params_json TEXT NOT NULL,
+			status TEXT NOT NULL,
+			http_status INTEGER NOT NULL,
+			content_type TEXT NOT NULL,
+			body_text TEXT NOT NULL,
+			output_bytes INTEGER NOT NULL,
+			upstream_request_id TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			last_hit_at INTEGER,
+			hit_count INTEGER NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_yiqicha_response_cache_api_code
+			ON yiqicha_response_cache (api_code);
+		CREATE INDEX IF NOT EXISTS idx_yiqicha_response_cache_updated_at
+			ON yiqicha_response_cache (updated_at);
 	`)
 
 	const result = await client.execute({

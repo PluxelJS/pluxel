@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import '@pluxel/runtime/register/static'
 import '@pluxel/runtime/services/web-management'
@@ -16,7 +17,9 @@ import {
 	UsageRecorderPlugin,
 	type ExternalGatewayDbHandle,
 	useExternalGatewayDB,
+	yiqichaResponseCache,
 	yiqichaTestRuns,
+	type YiqichaResponseCacheRow,
 	type YiqichaTestRunRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
@@ -24,7 +27,7 @@ import type { ProviderDescriptor } from '@repo/external-api-gateway-shared/provi
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import { yiqichaProviderDescriptor } from './descriptor.ts'
 import type {
@@ -45,6 +48,7 @@ const KV_SECRET_KEY = 'api.secret_key'
 const KV_BASE_URL = 'api.base_url'
 const DEFAULT_TEST_API = '1000'
 const DEFAULT_TEST_KEYWORD = '亿企查科技有限公司'
+const MAX_YIQICHA_RESPONSE_CACHE_ROWS = 50_000
 const apiKeyByCode: Map<string, string> = new Map(
 	Object.entries(yiqichaApiCodes).map(([key, code]) => [code, key]),
 )
@@ -53,6 +57,11 @@ type StoredSettings = {
 	appkey?: string
 	secretKey?: string
 	baseUrl: string
+}
+
+type ReadySettings = StoredSettings & {
+	appkey: string
+	secretKey: string
 }
 
 type UpstreamOutcome = {
@@ -66,6 +75,20 @@ type UpstreamOutcome = {
 	upstreamRequestId?: string
 	units?: number
 	unitName?: string
+	cacheHit?: boolean
+	cacheCoalesced?: boolean
+	cacheKey?: string
+	cacheAgeMs?: number
+	cacheStoredAt?: number
+}
+
+type CacheKey = {
+	id: string
+	paramsJson: string
+}
+
+type ForwardApiOptions = {
+	noCache?: boolean
 }
 
 @Plugin({ name: 'YiqichaProviderPlugin' })
@@ -75,6 +98,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private history = this.ctx.ext.signaldb.collection<YiqichaTestRunDoc>({ name: 'history' })
 	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
+	private readonly inflight = new Map<string, Promise<UpstreamOutcome>>()
 
 	constructor(private readonly usageRecorder: UsageRecorderPlugin) {
 		super()
@@ -138,7 +162,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		let apiInfo: YiqichaApi | undefined
 		try {
 			apiInfo = requireYiqichaApi(api)
-			outcome = await this.forwardApi(apiInfo, params)
+			outcome = await this.forwardApi(apiInfo, params, { noCache: true })
 			return {
 				ok: outcome.ok,
 				message: outcome.ok
@@ -229,6 +253,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			operation: input.operation ?? operationId(input.api),
 			api: input.api,
 			params: input.params,
+			noCache: input.noCache,
 		})
 	}
 
@@ -236,12 +261,14 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		billing: GatewayBillingContext,
 		api: string,
 		params?: YiqichaParams,
+		options: ForwardApiOptions = {},
 	): Promise<unknown> {
 		return this.gatewayCall({
 			billing,
 			operation: operationId(api),
 			api,
 			params,
+			noCache: options.noCache,
 		})
 	}
 
@@ -279,9 +306,10 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			userId = normalizeUserId(input.userId) || userId
 			api = requireYiqichaApi(stringField(input, 'api') ?? stringField(input, 'apiCode') ?? '')
 			const params = normalizeParams(input.params)
+			const noCache = booleanField(input, 'noCache') ?? false
 			inputBytes = jsonBytes(params)
 			requestPreviewText = previewJson(params)
-			outcome = await this.forwardApi(api, params)
+			outcome = await this.forwardApi(api, params, { noCache })
 			return outcome.response
 		} catch (caught) {
 			const message = errorMessage(caught)
@@ -315,11 +343,11 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		let api: YiqichaApi | undefined
 		try {
 			api = requireYiqichaApi(options.api)
-			outcome = await this.forwardApi(api, options.params ?? {})
+			outcome = await this.forwardApi(api, options.params ?? {}, { noCache: options.noCache })
 			if (!outcome.ok) {
 				throw new Error(outcome.error || `YiQiCha request failed: ${outcome.status}`)
 			}
-			return await responsePayload(outcome.response)
+			return await responsePayload(outcome.response, outcome)
 		} catch (caught) {
 			if (!outcome) {
 				const message = errorMessage(caught)
@@ -353,17 +381,67 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		}
 	}
 
-	private async forwardApi(api: YiqichaApi, params: YiqichaParams): Promise<UpstreamOutcome> {
-		const request = await this.createRequest(api, params)
-		const response = await fetch(request.url, request.init)
-		return this.toOutcome(response)
+	private async forwardApi(
+		api: YiqichaApi,
+		params: YiqichaParams,
+		options: ForwardApiOptions = {},
+	): Promise<UpstreamOutcome> {
+		const settings = await this.requireStoredSettings()
+		const cacheKey = makeCacheKey(api, params, settings.baseUrl)
+		if (!options.noCache) {
+			const cached = await this.readCachedOutcome(cacheKey)
+			if (cached) return cached
+
+			const pending = this.inflight.get(cacheKey.id)
+			if (pending) {
+				const outcome = await pending
+				return cloneOutcome(outcome, {
+					cacheCoalesced: true,
+					cacheKey: cacheKey.id,
+					units: 0,
+				})
+			}
+		}
+
+		const pending = this.forwardApiUncached(api, params, cacheKey, settings)
+		if (!options.noCache) this.inflight.set(cacheKey.id, pending)
+		try {
+			return await pending
+		} finally {
+			if (!options.noCache) this.inflight.delete(cacheKey.id)
+		}
 	}
 
-	private async createRequest(api: YiqichaApi, params: YiqichaParams) {
-		const settings = await this.readStoredSettings()
-		if (!settings.appkey) throw new Error('请先保存 YiQiCha App Key')
-		if (!settings.secretKey) throw new Error('请先保存 YiQiCha Secret Key')
+	private async forwardApiUncached(
+		api: YiqichaApi,
+		params: YiqichaParams,
+		cacheKey: CacheKey,
+		settings: ReadySettings,
+	): Promise<UpstreamOutcome> {
+		const request = this.createRequest(api, params, settings)
+		const response = await fetch(request.url, request.init)
+		const outcome = await this.toOutcome(response)
+		const cacheStoredAt = outcome.ok ? await this.writeCachedOutcome(api, cacheKey, outcome) : undefined
+		const headers = new Headers(outcome.response.headers)
+		if (cacheStoredAt !== undefined) {
+			headers.set('x-yiqicha-cache', 'MISS')
+			headers.set('x-yiqicha-cache-stored-at', String(cacheStoredAt))
+			headers.set('x-yiqicha-cache-age-ms', '0')
+		}
+		return {
+			...outcome,
+			response: new Response(outcome.bodyText ?? '', {
+				status: outcome.response.status,
+				headers,
+			}),
+			cacheHit: false,
+			cacheKey: cacheKey.id,
+			cacheAgeMs: cacheStoredAt === undefined ? undefined : 0,
+			cacheStoredAt,
+		}
+	}
 
+	private createRequest(api: YiqichaApi, params: YiqichaParams, settings: ReadySettings) {
 		const method = api.requestMethod.toUpperCase()
 		const timestamp = String(Date.now())
 		const url = createApiUrl(api, params, settings.baseUrl)
@@ -410,6 +488,123 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		}
 	}
 
+	private async readCachedOutcome(cacheKey: CacheKey): Promise<UpstreamOutcome | undefined> {
+		if (!this.data) return undefined
+		try {
+			const row = (
+				await this.data.db
+					.select()
+					.from(yiqichaResponseCache)
+					.where(eq(yiqichaResponseCache.id, cacheKey.id))
+					.limit(1)
+			)[0]
+			if (!row) return undefined
+			const now = Date.now()
+			const cached = outcomeFromCacheRow(row, now)
+			this.data.client
+				.execute({
+					sql: `
+						UPDATE yiqicha_response_cache
+						SET last_hit_at = ?, hit_count = hit_count + 1
+						WHERE id = ?
+					`,
+					args: [now, cacheKey.id],
+				})
+				.catch((error) => {
+					this.ctx.logger.warn('Failed to update YiQiCha response cache hit stats', {
+						error,
+						cacheKey: cacheKey.id,
+					})
+				})
+			return cached
+		} catch (error) {
+			this.ctx.logger.warn('Failed to read YiQiCha response cache', { error, cacheKey: cacheKey.id })
+			return undefined
+		}
+	}
+
+	private async writeCachedOutcome(
+		api: YiqichaApi,
+		cacheKey: CacheKey,
+		outcome: UpstreamOutcome,
+	): Promise<number | undefined> {
+		if (!this.data || !outcome.bodyText) return undefined
+		try {
+			const now = Date.now()
+			await this.data.client.execute({
+				sql: `
+					INSERT INTO yiqicha_response_cache (
+						id,
+						api_code,
+						api_key,
+						params_json,
+						status,
+						http_status,
+						content_type,
+						body_text,
+						output_bytes,
+						upstream_request_id,
+						created_at,
+						updated_at,
+						last_hit_at,
+						hit_count
+					)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
+					ON CONFLICT(id) DO UPDATE SET
+						api_code = excluded.api_code,
+						api_key = excluded.api_key,
+						params_json = excluded.params_json,
+						status = excluded.status,
+						http_status = excluded.http_status,
+						content_type = excluded.content_type,
+						body_text = excluded.body_text,
+						output_bytes = excluded.output_bytes,
+						upstream_request_id = excluded.upstream_request_id,
+						updated_at = excluded.updated_at
+				`,
+				args: [
+					cacheKey.id,
+					api.apiCode,
+					apiKeyByCode.get(api.apiCode) ?? api.apiCode,
+					cacheKey.paramsJson,
+					outcome.status,
+					outcome.response.status,
+					outcome.response.headers.get('content-type') ?? 'application/json; charset=utf-8',
+					outcome.bodyText,
+					outcome.outputBytes,
+					outcome.upstreamRequestId ?? null,
+					now,
+					now,
+				],
+			})
+			void this.trimResponseCache()
+			return now
+		} catch (error) {
+			this.ctx.logger.warn('Failed to write YiQiCha response cache', { error, cacheKey: cacheKey.id })
+			return undefined
+		}
+	}
+
+	private async trimResponseCache(): Promise<void> {
+		if (!this.data) return
+		try {
+			await this.data.client.execute({
+				sql: `
+					DELETE FROM yiqicha_response_cache
+					WHERE id IN (
+						SELECT id
+						FROM yiqicha_response_cache
+						ORDER BY COALESCE(last_hit_at, updated_at) DESC, updated_at DESC
+						LIMIT -1 OFFSET ?
+					)
+				`,
+				args: [MAX_YIQICHA_RESPONSE_CACHE_ROWS],
+			})
+		} catch (error) {
+			this.ctx.logger.warn('Failed to trim YiQiCha response cache', { error })
+		}
+	}
+
 	private recordUsage(input: {
 		userId: string
 		operation: string
@@ -439,6 +634,10 @@ export class YiqichaProviderPlugin extends BasePlugin {
 				...(input.api
 					? { apiCode: input.api.apiCode, apiName: input.api.apiName, cateName: input.api.cateName }
 					: {}),
+				cacheHit: outcome.cacheHit === true,
+				...(outcome.cacheCoalesced ? { cacheCoalesced: true } : {}),
+				...(outcome.cacheAgeMs !== undefined ? { cacheAgeMs: outcome.cacheAgeMs } : {}),
+				...(outcome.cacheStoredAt !== undefined ? { cacheStoredAt: outcome.cacheStoredAt } : {}),
 				...input.metadata,
 				...(outcome.errorCode ? { errorCode: outcome.errorCode } : {}),
 				...(outcome.error ? { error: outcome.error.slice(0, 500) } : {}),
@@ -501,6 +700,13 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		const appkey = await kv.get<string>(KV_APPKEY)
 		const secretKey = await kv.get<string>(KV_SECRET_KEY)
 		return { appkey, secretKey, baseUrl }
+	}
+
+	private async requireStoredSettings(): Promise<ReadySettings> {
+		const settings = await this.readStoredSettings()
+		if (!settings.appkey) throw new Error('请先保存 YiQiCha App Key')
+		if (!settings.secretKey) throw new Error('请先保存 YiQiCha Secret Key')
+		return { ...settings, appkey: settings.appkey, secretKey: settings.secretKey }
 	}
 
 	private kv() {
@@ -699,6 +905,13 @@ function userIdFromRequest(request: Request): string {
 	)
 }
 
+function booleanField(record: Record<string, unknown>, key: string): boolean | undefined {
+	const value = record[key]
+	if (value === undefined || value === null) return undefined
+	if (typeof value !== 'boolean') throw new Error(`${key} 必须是布尔值`)
+	return value
+}
+
 function compactApiDoc(api: YiqichaApi): YiqichaApiSummary {
 	return {
 		id: api.id,
@@ -716,6 +929,92 @@ function operationId(api: YiqichaApi | string | undefined): string {
 	if (!api) return 'api.unknown'
 	if (typeof api === 'string') return `api.${api.replace(/^api\./, '') || 'unknown'}`
 	return `api.${apiKeyByCode.get(api.apiCode) ?? api.apiCode}`
+}
+
+function makeCacheKey(api: YiqichaApi, params: YiqichaParams, baseUrl: string): CacheKey {
+	const rawParamsJson = stableParamsJson(params, { redactSensitiveValues: false })
+	const fingerprint = `yiqicha:v1:${normalizeBaseUrl(baseUrl)}:${api.apiCode}:${rawParamsJson}`
+	return {
+		id: createHash('sha256').update(fingerprint).digest('hex'),
+		paramsJson: stableParamsJson(params, { redactSensitiveValues: true }),
+	}
+}
+
+function stableParamsJson(
+	params: YiqichaParams,
+	options: { redactSensitiveValues: boolean },
+): string {
+	const normalized: Record<string, string | string[]> = {}
+	for (const key of Object.keys(params).sort()) {
+		const value = params[key]
+		if (value == null) continue
+		if (options.redactSensitiveValues && isSensitiveParamKey(key)) {
+			normalized[key] = '[redacted]'
+			continue
+		}
+		normalized[key] = Array.isArray(value) ? value.map((item) => String(item)) : String(value)
+	}
+	return JSON.stringify(normalized)
+}
+
+function isSensitiveParamKey(key: string): boolean {
+	return /(card|idcard|identity|mobile|phone|tel|email|password|secret|token)/i.test(key)
+}
+
+function outcomeFromCacheRow(row: YiqichaResponseCacheRow, now = Date.now()): UpstreamOutcome {
+	const cacheAgeMs = Math.max(0, now - row.updatedAt)
+	const headers = new Headers({
+		'content-type': row.contentType,
+		'x-yiqicha-cache': 'HIT',
+		'x-yiqicha-cache-stored-at': String(row.updatedAt),
+		'x-yiqicha-cache-age-ms': String(cacheAgeMs),
+	})
+	if (row.upstreamRequestId) headers.set('x-upstream-request-id', row.upstreamRequestId)
+	return {
+		response: new Response(row.bodyText, { status: row.httpStatus, headers }),
+		ok: true,
+		status: row.status,
+		outputBytes: row.outputBytes,
+		bodyText: row.bodyText,
+		upstreamRequestId: row.upstreamRequestId ?? undefined,
+		units: 0,
+		unitName: 'request',
+		cacheHit: true,
+		cacheKey: row.id,
+		cacheAgeMs,
+		cacheStoredAt: row.updatedAt,
+	}
+}
+
+function cloneOutcome(
+	outcome: UpstreamOutcome,
+	overrides: Partial<
+		Pick<
+			UpstreamOutcome,
+			| 'cacheCoalesced'
+			| 'cacheHit'
+			| 'cacheKey'
+			| 'units'
+			| 'cacheAgeMs'
+			| 'cacheStoredAt'
+		>
+	> = {},
+): UpstreamOutcome {
+	const headers = new Headers(outcome.response.headers)
+	if (overrides.cacheHit) headers.set('x-yiqicha-cache', 'HIT')
+	if (overrides.cacheCoalesced) headers.set('x-yiqicha-cache', 'COALESCED')
+	if (overrides.cacheStoredAt !== undefined) {
+		headers.set('x-yiqicha-cache-stored-at', String(overrides.cacheStoredAt))
+	}
+	if (overrides.cacheAgeMs !== undefined) headers.set('x-yiqicha-cache-age-ms', String(overrides.cacheAgeMs))
+	return {
+		...outcome,
+		response: new Response(outcome.bodyText ?? '', {
+			status: outcome.response.status,
+			headers,
+		}),
+		...overrides,
+	}
 }
 
 function toHistoryRow(doc: YiqichaTestRunDoc): YiqichaTestRunRow {
@@ -784,10 +1083,32 @@ function parseYiqichaBusinessStatus(text: string, contentType: string) {
 	}
 }
 
-async function responsePayload(response: Response): Promise<unknown> {
+async function responsePayload(response: Response, outcome?: UpstreamOutcome): Promise<unknown> {
 	const contentType = response.headers.get('content-type') ?? ''
-	if (contentType.includes('application/json')) return response.json()
+	if (contentType.includes('application/json')) {
+		const payload = await response.json()
+		return attachGatewayCacheInfo(payload, outcome)
+	}
 	return response.text()
+}
+
+function attachGatewayCacheInfo(payload: unknown, outcome?: UpstreamOutcome): unknown {
+	if (!outcome || outcome.cacheStoredAt === undefined) return payload
+	const cacheInfo = {
+		hit: outcome.cacheHit === true,
+		coalesced: outcome.cacheCoalesced === true,
+		storedAt: outcome.cacheStoredAt,
+		storedAtIso: new Date(outcome.cacheStoredAt).toISOString(),
+		ageMs: Math.max(0, Math.floor(outcome.cacheAgeMs ?? 0)),
+		key: outcome.cacheKey,
+	}
+	if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+		return {
+			...(payload as Record<string, unknown>),
+			_gatewayCache: cacheInfo,
+		}
+	}
+	return { data: payload, _gatewayCache: cacheInfo }
 }
 
 function jsonBytes(input: unknown): number {

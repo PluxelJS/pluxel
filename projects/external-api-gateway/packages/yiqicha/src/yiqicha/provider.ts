@@ -37,6 +37,7 @@ export type YiqichaApiDoc = YiqichaApiSummary & {
 export type YiqichaCallInput = {
 	api: string
 	params?: YiqichaParams
+	noCache?: boolean
 }
 
 export type YiqichaRawCallInput = YiqichaCallInput & {
@@ -48,4 +49,5 @@ export type YiqichaGatewayCallOptions = {
 	operation: string
 	api: string
 	params?: YiqichaParams
+	noCache?: boolean
 }
