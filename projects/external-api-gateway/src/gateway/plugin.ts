@@ -5,8 +5,10 @@ import { RpcTarget, newHttpBatchRpcResponse } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
 import { desc, eq } from 'drizzle-orm'
 import { UsageBillingPlugin } from '../billing/plugin.ts'
+import { DEFAULT_GATEWAY_DEV_TOKEN } from '../constants.ts'
 import { gatewayTokens, type GatewayTokenRow } from '../db/schema.ts'
 import { type ExternalGatewayDbHandle, useExternalGatewayDB } from '../db/use-db.ts'
+import type { ProviderCallInput, ProviderDescriptor } from '../provider/contracts.ts'
 import { ZhipuProviderPlugin } from '../zhipu/plugin.ts'
 import type {
 	ZhipuChatCompletionsInput,
@@ -104,6 +106,10 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		return this.tokens.find({}, { sort: { updatedAt: -1 } })
 	}
 
+	listProviders(): ProviderDescriptor[] {
+		return [this.zhipu.descriptor()]
+	}
+
 	async authenticate(apiToken: string): Promise<GatewayAuthContext> {
 		const token = apiToken.trim()
 		if (!token) throw new Error('Missing API token')
@@ -138,6 +144,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 						ok: true,
 						rpc: this.rpcBase(),
 						tokens: this.listTokens(),
+						providers: this.listProviders(),
 					}))
 					.all(
 						'/rpc',
@@ -160,7 +167,9 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 
 	private async ensureDevToken(): Promise<void> {
-		const token = process.env.PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN ?? 'dev-zhipu-token-change-me'
+		const explicitToken = process.env.PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN
+		if (process.env.NODE_ENV === 'production' && !explicitToken) return
+		const token = explicitToken ?? DEFAULT_GATEWAY_DEV_TOKEN
 		const existing = this.tokens.findOne({ id: 'local-dev' })
 		if (existing) {
 			await this.createToken({
@@ -254,6 +263,7 @@ export class ExternalGatewayRpc extends RpcTarget {
 		return {
 			ok: true,
 			rpc: this.gateway.rpcBase(),
+			providers: this.gateway.listProviders(),
 		}
 	}
 }
@@ -291,8 +301,45 @@ export class BilledApi extends RpcTarget {
 		return this.billing
 	}
 
+	providers(): ProviderDescriptor[] {
+		return this.gateway.listProviders()
+	}
+
+	provider(providerId: string): GenericProviderGatewayApi {
+		return new GenericProviderGatewayApi(this.gateway, this.billing, requireProviderId(providerId))
+	}
+
 	zhipu(): ZhipuGatewayApi {
 		return new ZhipuGatewayApi(this.gateway, this.billing)
+	}
+}
+
+export class GenericProviderGatewayApi extends RpcTarget {
+	constructor(
+		private readonly gateway: ExternalGatewayPlugin,
+		private readonly billing: GatewayBillingContext,
+		private readonly providerId: string,
+	) {
+		super()
+	}
+
+	call(input: ProviderCallInput): Promise<unknown> {
+		const operationId = requireOperationId(input.operation)
+		const descriptor = this.gateway.listProviders().find((provider) => provider.id === this.providerId)
+		if (!descriptor) throw new Error(`Unknown provider: ${this.providerId}`)
+		const operation = descriptor.operations.find((item) => item.id === operationId)
+		const path = input.path?.trim() || operation?.path
+		if (!path) throw new Error(`Provider operation requires path: ${this.providerId}:${operationId}`)
+		if (this.providerId === 'zhipu') {
+			return this.gateway.zhipuProvider.gatewayRaw(this.billing, {
+				method: input.method?.trim().toUpperCase() || operation?.method || 'POST',
+				path,
+				body: input.body,
+				operation: operationId,
+				model: input.model ?? operation?.defaultModel,
+			})
+		}
+		throw new Error(`Provider is not callable: ${this.providerId}`)
 	}
 }
 
@@ -496,6 +543,12 @@ function slugId(name: string): string {
 	)
 }
 
+function requireProviderId(providerId: string): string {
+	const value = providerId.trim()
+	if (!value) throw new Error('Provider id is required')
+	return value
+}
+
 function tokenDocFromRow(row: GatewayTokenRow): GatewayTokenDoc {
 	return {
 		id: row.id,
@@ -511,5 +564,11 @@ function tokenDocFromRow(row: GatewayTokenRow): GatewayTokenDoc {
 function requireUserId(userId: string): string {
 	const value = userId.trim()
 	if (!value) throw new Error('Billing userId is required')
+	return value
+}
+
+function requireOperationId(operationId: string): string {
+	const value = operationId.trim()
+	if (!value) throw new Error('Provider operation is required')
 	return value
 }

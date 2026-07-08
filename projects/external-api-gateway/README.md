@@ -83,9 +83,27 @@ const [whoami, ocr, search, chat] = await Promise.allSettled([
 
 `bill(...)` 是强制的计费上下文边界。后面的 provider capability 会自动把 `userId / tenantId / traceId` 写入 `UsageBillingPlugin`。
 
-`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可以访问 gateway 暴露的全部 provider capability；吊销后不可再认证。调用归属、成本和审计由 `bill(...)` 里的 `userId / tenantId / traceId` 以及 `UsageBillingPlugin` 记录。
+`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可以访问 gateway 暴露的全部 provider capability；吊销后不可再认证。调用归属、成本和审计由 `bill(...)` 里的 `userId / tenantId / traceId` 以及 `UsageBillingPlugin` 记录。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
 `projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖任意 Zhipu OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。
+
+Gateway 也暴露 provider descriptor 和轻量 generic call 入口：
+
+```ts
+authedApi
+	.bill({ userId: 'user-123' })
+	.provider('zhipu')
+	.call({
+		operation: 'web_search',
+		body: {
+			search_query: '智谱 GLM OpenAPI',
+			search_engine: 'search_std',
+			search_intent: false,
+		},
+	})
+```
+
+常用路径仍优先使用 typed wrapper，generic provider call 用于新增 provider 过渡期、临时 OpenAPI 路径或外部系统按 descriptor 调用。
 
 - `layoutParsing({ model: "glm-ocr", file, prompt?, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id?, ... })`
 - `filesOcr({ fileName, contentType?, bytes, fields: { tool_type: "hand_write", language_type?, probability? } })`
@@ -128,7 +146,7 @@ authedApi
 
 ## Adapter Contract
 
-后续接入新的外部接口插件时，推荐通过构造函数依赖 Billing：
+Provider 插件负责外部 API 适配、上游错误解析、请求预览脱敏和调用后产生 usage event。当前 `UsageBillingPlugin` 是唯一 usage recorder；未来如果要接多个计费 sink 或 quota/policy 插件，应优先保持 `UsageEvent` 稳定，而不是让 provider 直接依赖多个计费插件。
 
 ```ts
 class SomeProviderPlugin extends BasePlugin {
@@ -140,7 +158,7 @@ class SomeProviderPlugin extends BasePlugin {
 setParamToken(SomeProviderPlugin, 0, UsageBillingPlugin)
 ```
 
-每次外部 API 调用后调用：
+每次外部 API 调用后记录中性 usage event：
 
 ```ts
 this.billing.recordUsage({
@@ -157,7 +175,13 @@ this.billing.recordUsage({
 })
 ```
 
+`src/usage/contracts.ts` 中的 `UsageEvent` 是 provider 和 billing 的边界。新增计费插件时建议先作为 recorder/sink 消费同一个事件结构，再按需要增加 quota/policy 的调用前检查。
+
+Provider 应提供 `ProviderDescriptor`，描述 `id / label / operations`。Gateway 通过 descriptor 暴露 `providers()` 和 `provider(id).call(...)`，同时保留 typed API，避免为了统一而牺牲常用路径的类型体验。
+
 `UsageBillingPlugin` 的价格表使用 `provider:operation[:model]` 作为 key。provider 插件可以记录 `request`、`token`、`page`、`image` 等不同 unit，具体单价通过 `upsertRate` 配置；未配置时成本按 `0` 估算，但用量仍会完整保留。
+
+Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation / model / unitName / unitCostCny`。新增调用会按当前费率估算成本；已有明细不会被重算。
 
 ## Persistence
 
@@ -171,14 +195,14 @@ this.billing.recordUsage({
 
 - gateway tokens：保存 token hash、启用/吊销状态和最近使用时间；UI 只展示预览。
 - billing usage records / rates：账单明细和价格表会跨重启保留；UI 明细只加载最近 500 条，汇总按 SQLite 全量记录重建。
-- Zhipu test history：插件 UI 的 OCR/API 测试历史跨重启保留。
+- Zhipu test history：插件 UI 的 OCR/API 测试历史跨重启保留。OCR 请求预览会脱敏 data URL/base64 文件内容，只保留来源和体积摘要。
 
 当前组织方式：
 
 - gateway 插件只负责外部 token 认证/吊销和 capability 分发。
 - provider 插件负责 API key、OpenAPI path/body、上游响应解析和调用后落账。
 - billing 插件作为所有 provider 的上游依赖，统一记录 `userId / tenantId / traceId / provider / operation / model / cost`。
-- 当 provider 数量继续增多，可以把 `ExternalGatewayPlugin` 中的 provider 构造函数依赖迁移成 provider registry；在 runtime-static 阶段显式依赖更直接，也更符合当前 Pluxel 示例形态。
+- gateway 当前使用静态 provider descriptors。provider 数量继续增多时，可以把构造函数依赖迁移为 provider registry；在 runtime-static 阶段显式依赖仍更直接，也更符合当前 Pluxel 示例形态。
 
 ## Zhipu Routes
 
@@ -187,3 +211,5 @@ this.billing.recordUsage({
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/layout-parsing`
 
 `userId` 可以通过 `x-pluxel-user-id` / `x-user-id` header、URL query，或请求体字段传入。
+
+Zhipu client 默认上游请求超时为 120 秒。插件 UI 的 GLM OCR 面板支持直接上传本地图片/PDF，也支持手工填写 OpenAPI `file` 字段和 `prompt`，适合测试 `/layout_parsing` 的 prompt 效果。

@@ -6,8 +6,9 @@
 		"dev": "vite --host 127.0.0.1",
 		"build": "vite build",
 		"static": "tsx src/static.ts",
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false",
-		"verify": "tsc --noEmit --pretty false && vite build"
+		"verify": "tsc --noEmit --pretty false && vitest run --config vitest.config.ts && vite build"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.17.4",

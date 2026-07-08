@@ -4,20 +4,24 @@ import {
 	Button,
 	Card,
 	Group,
+	NumberInput,
 	NumberFormatter,
 	ScrollArea,
 	SimpleGrid,
 	Stack,
 	Table,
 	Text,
+	TextInput,
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
-import { IconTrash } from '@tabler/icons-react'
+import { IconCheck, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
+import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '../../constants'
 import type {
 	BillingOverviewDoc,
 	BillingProviderSummaryDoc,
+	BillingRateDoc,
 	BillingUsageRecord,
 	BillingUserSummaryDoc,
 } from '../contracts'
@@ -26,6 +30,7 @@ import { billingPlugin } from './runtime'
 type BillingUiApp = {
 	rpc: {
 		clearUsage(): Promise<{ ok: true }>
+		upsertRate(input: Omit<BillingRateDoc, 'id' | 'updatedAt'>): Promise<BillingRateDoc>
 	}
 	db: {
 		useDocById(collection: 'overview', id: 'overview'): BillingOverviewDoc | undefined
@@ -41,6 +46,10 @@ type BillingUiApp = {
 			collection: 'providers',
 			spec?: { limit?: number; sort?: Partial<Record<keyof BillingProviderSummaryDoc, 1 | -1>> },
 		): BillingProviderSummaryDoc[]
+		useList(
+			collection: 'rates',
+			spec?: { limit?: number; sort?: Partial<Record<keyof BillingRateDoc, 1 | -1>> },
+		): BillingRateDoc[]
 	}
 }
 
@@ -86,6 +95,7 @@ export function BillingPanel() {
 	const records = app.db.useList('records', { limit: 30, sort: { at: -1 } })
 	const users = app.db.useList('users', { limit: 10, sort: { totalCostCny: -1 } })
 	const providers = app.db.useList('providers', { limit: 10, sort: { totalCostCny: -1 } })
+	const rates = app.db.useList('rates', { limit: 100, sort: { provider: 1, operation: 1, model: 1 } })
 	const [error, setError] = useState<string | null>(null)
 	const avgLatency = overview?.requestCount
 		? Math.round((overview.totalLatencyMs / overview.requestCount) * 10) / 10
@@ -144,8 +154,122 @@ export function BillingPanel() {
 					])}
 				/>
 			</SimpleGrid>
+			<RatePanel
+				rates={rates}
+				onSave={(input) => app.rpc.upsertRate(input)}
+				onError={(message) => setError(message)}
+			/>
 			<RecordTable records={records} />
 		</Stack>
+	)
+}
+
+function RatePanel({
+	rates,
+	onSave,
+	onError,
+}: {
+	rates: BillingRateDoc[]
+	onSave: (input: Omit<BillingRateDoc, 'id' | 'updatedAt'>) => Promise<BillingRateDoc>
+	onError: (message: string | null) => void
+}) {
+	const [provider, setProvider] = useState('zhipu')
+	const [operation, setOperation] = useState('ocr.layout_parsing')
+	const [model, setModel] = useState(DEFAULT_ZHIPU_LAYOUT_MODEL)
+	const [unitName, setUnitName] = useState('request')
+	const [unitCostCny, setUnitCostCny] = useState<number | string>(0)
+	const [saving, setSaving] = useState(false)
+	const canSave = Boolean(provider.trim() && operation.trim())
+
+	const save = async () => {
+		setSaving(true)
+		try {
+			await onSave({
+				provider: provider.trim(),
+				operation: operation.trim(),
+				...(model.trim() ? { model: model.trim() } : {}),
+				unitName: unitName.trim() || 'request',
+				unitCostCny: Number(unitCostCny) || 0,
+			})
+			onError(null)
+		} catch (caught) {
+			onError(rpcErrorMessage(caught, '保存费率失败'))
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	return (
+		<Card withBorder radius="md" p="md">
+			<Stack gap="sm">
+				<Group justify="space-between">
+					<Title order={5}>费率</Title>
+					<Button
+						leftSection={<IconCheck size={16} />}
+						loading={saving}
+						disabled={!canSave}
+						onClick={() => void save()}
+					>
+						保存费率
+					</Button>
+				</Group>
+				<SimpleGrid cols={{ base: 1, md: 5 }}>
+					<TextInput
+						label="Provider"
+						value={provider}
+						onChange={(event) => setProvider(event.currentTarget.value)}
+					/>
+					<TextInput
+						label="Operation"
+						value={operation}
+						onChange={(event) => setOperation(event.currentTarget.value)}
+					/>
+					<TextInput
+						label="Model"
+						value={model}
+						onChange={(event) => setModel(event.currentTarget.value)}
+					/>
+					<TextInput
+						label="Unit"
+						value={unitName}
+						onChange={(event) => setUnitName(event.currentTarget.value)}
+					/>
+					<NumberInput
+						label="CNY / unit"
+						value={unitCostCny}
+						onChange={setUnitCostCny}
+						min={0}
+						decimalScale={8}
+					/>
+				</SimpleGrid>
+				<ScrollArea h={220} type="auto">
+					<Table striped highlightOnHover>
+						<Table.Thead>
+							<Table.Tr>
+								<Table.Th>Provider</Table.Th>
+								<Table.Th>Operation</Table.Th>
+								<Table.Th>Model</Table.Th>
+								<Table.Th>Unit</Table.Th>
+								<Table.Th>单价</Table.Th>
+							</Table.Tr>
+						</Table.Thead>
+						<Table.Tbody>
+							{rates.map((rate) => (
+								<Table.Tr key={rate.id}>
+									<Table.Td>{rate.provider}</Table.Td>
+									<Table.Td>{rate.operation}</Table.Td>
+									<Table.Td>{rate.model ?? '-'}</Table.Td>
+									<Table.Td>{rate.unitName}</Table.Td>
+									<Table.Td>
+										<NumberFormatter value={rate.unitCostCny} prefix="¥" decimalScale={8} />
+									</Table.Td>
+								</Table.Tr>
+							))}
+						</Table.Tbody>
+					</Table>
+				</ScrollArea>
+			</Stack>
+		</Card>
 	)
 }
 

@@ -1,33 +1,8 @@
-export type BillingCurrency = 'CNY' | 'USD'
+import type { UsageCurrency, UsageEvent, UsageRecord } from '../usage/contracts'
 
-export type BillingUsageInput = {
-	userId: string
-	provider: string
-	pluginId: string
-	operation: string
-	model?: string
-	ok: boolean
-	status: string
-	latencyMs: number
-	inputBytes?: number
-	outputBytes?: number
-	units?: number
-	unitName?: string
-	costCny?: number
-	upstreamRequestId?: string
-	metadata?: Record<string, unknown>
-}
-
-export type BillingUsageRecord = BillingUsageInput & {
-	id: string
-	at: number
-	currency: BillingCurrency
-	costEstimated: boolean
-	inputBytes: number
-	outputBytes: number
-	units: number
-	unitName: string
-}
+export type BillingCurrency = UsageCurrency
+export type BillingUsageInput = UsageEvent
+export type BillingUsageRecord = UsageRecord
 
 export type BillingOverviewDoc = {
 	id: 'overview'

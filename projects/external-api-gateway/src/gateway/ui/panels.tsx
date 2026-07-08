@@ -24,7 +24,6 @@ type GatewayUiApp = {
 	rpc: {
 		createToken(input: GatewayTokenCreateInput): Promise<GatewayTokenDoc>
 		revokeToken(id: string): Promise<{ ok: true }>
-		rpcBase(): Promise<string>
 	}
 	db: {
 		useList(
@@ -101,8 +100,7 @@ export function GatewayPanel() {
 					</Group>
 					<Code block>{rpcPath}</Code>
 					<Text size="sm" c="dimmed">
-						默认开发 token：<Code>dev-zhipu-token-change-me</Code>
-						，生产应通过环境变量或本页重新创建。
+						本地开发会自动创建一个默认 token；生产环境应通过环境变量或本页创建专用 token。
 					</Text>
 				</Stack>
 			</Card>

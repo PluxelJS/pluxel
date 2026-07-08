@@ -5,11 +5,18 @@ import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
 import { desc } from 'drizzle-orm'
 import { UsageBillingPlugin } from '../billing/plugin.ts'
+import {
+	DEFAULT_ZHIPU_BASE_URL,
+	DEFAULT_ZHIPU_LAYOUT_MODEL,
+	MAX_ZHIPU_HISTORY,
+} from '../constants.ts'
 import { zhipuTestRuns, type ZhipuTestRunRow } from '../db/schema.ts'
 import { type ExternalGatewayDbHandle, useExternalGatewayDB } from '../db/use-db.ts'
 import type { GatewayBillingContext } from '../gateway/contracts.ts'
+import type { ProviderDescriptor } from '../provider/contracts.ts'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
+import { zhipuProviderDescriptor } from './descriptor.ts'
 import type {
 	JsonObject,
 	ZhipuChatCompletionsInput,
@@ -23,6 +30,7 @@ import type {
 	ZhipuUploadInput,
 	ZhipuWebSearchInput,
 } from './provider.ts'
+import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
 const ROUTE_BASE = '/zhipu'
@@ -30,34 +38,20 @@ const VAULT_NAMESPACE = 'ZhipuProviderPlugin'
 const LEGACY_VAULT_NAMESPACE = 'ZhipuOcrPlugin'
 const KV_API_KEY = 'api.key'
 const KV_BASE_URL = 'api.base_url'
-const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
-const DEFAULT_LAYOUT_MODEL = 'glm-ocr'
-const MAX_HISTORY = 100
 
 type StoredSettings = {
 	apiKey?: string
 	baseUrl: string
 }
 
-type LayoutParsingInput = {
-	userId?: string
-	model: 'glm-ocr'
-	file: string
-	prompt?: string
-	return_crop_images?: boolean
-	need_layout_visualization?: boolean
-	start_page_id?: number
-	end_page_id?: number
-	request_id?: string
-	user_id?: string
-	[key: string]: unknown
-}
+type LayoutParsingInput = ZhipuLayoutParsingInput & { userId?: string }
 
 type UpstreamOutcome = {
 	response: Response
 	ok: boolean
 	status: string
 	error?: string
+	errorCode?: string
 	outputBytes: number
 	bodyText?: string
 	upstreamRequestId?: string
@@ -159,6 +153,10 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		return this.ctx.http.plugin.base(ROUTE_BASE)
 	}
 
+	descriptor(): ProviderDescriptor {
+		return zhipuProviderDescriptor
+	}
+
 	clearHistory(): { ok: true } {
 		this.history.removeMany({})
 		this.historySeq = 1
@@ -169,7 +167,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	}
 
 	listHistory(limit = 30): ZhipuTestRunDoc[] {
-		const capped = Math.max(0, Math.min(MAX_HISTORY, Math.floor(limit)))
+		const capped = Math.max(0, Math.min(MAX_ZHIPU_HISTORY, Math.floor(limit)))
 		return this.history.find({}, { limit: capped, sort: { at: -1 } })
 	}
 
@@ -178,13 +176,25 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		input: ZhipuLayoutParsingInput,
 	): Promise<unknown> {
 		const payload = this.toLayoutParsingPayload(input)
+		return this.gatewayJsonOperation(billing, {
+			operation: 'ocr.layout_parsing',
+			path: '/layout_parsing',
+			input: payload,
+			model: DEFAULT_ZHIPU_LAYOUT_MODEL,
+		})
+	}
+
+	private runTrackedJsonOperation(
+		billing: GatewayBillingContext,
+		options: { operation: string; path: string; input: JsonObject; model?: string },
+	): Promise<unknown> {
 		return this.gatewayCall({
 			billing,
-			operation: 'ocr.layout_parsing',
-			model: DEFAULT_LAYOUT_MODEL,
-			inputBytes: jsonBytes(payload),
-			body: payload,
-			path: '/layout_parsing',
+			operation: options.operation,
+			model: options.model,
+			inputBytes: jsonBytes(options.input),
+			body: options.input,
+			path: options.path,
 			method: 'POST',
 		})
 	}
@@ -293,15 +303,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		billing: GatewayBillingContext,
 		options: { operation: string; path: string; input: JsonObject; model?: string },
 	): Promise<unknown> {
-		return this.gatewayCall({
-			billing,
-			operation: options.operation,
-			model: options.model,
-			inputBytes: jsonBytes(options.input),
-			body: options.input,
-			path: options.path,
-			method: 'POST',
-		})
+		return this.runTrackedJsonOperation(billing, options)
 	}
 
 	private registerRoutes(): void {
@@ -394,7 +396,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			this.recordUsage({
 				userId,
 				operation: 'ocr.layout_parsing',
-				model: DEFAULT_LAYOUT_MODEL,
+				model: DEFAULT_ZHIPU_LAYOUT_MODEL,
 				startedAt,
 				inputBytes,
 				outcome,
@@ -403,7 +405,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 				source: 'ui',
 				userId,
 				operation: 'ocr.layout_parsing',
-				model: DEFAULT_LAYOUT_MODEL,
+				model: DEFAULT_ZHIPU_LAYOUT_MODEL,
 				startedAt,
 				inputBytes,
 				outcome,
@@ -478,17 +480,21 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			response.headers.get('x-request-id') ??
 			response.headers.get('x-zhipu-request-id') ??
 			undefined
-		if (upstreamRequestId) headers.set('x-upstream-request-id', upstreamRequestId)
-		const error = response.ok ? undefined : text || `Zhipu request failed: ${response.status}`
+		const parsedError = response.ok
+			? undefined
+			: parseUpstreamError(text, contentType, response.status)
+		const requestId = upstreamRequestId ?? parsedError?.requestId
+		if (requestId) headers.set('x-upstream-request-id', requestId)
 		const usage = extractUsageUnits(text, contentType)
 		return {
 			response: new Response(text, { status: response.status, headers }),
 			ok: response.ok,
 			status: String(response.status),
-			error,
+			error: parsedError?.message,
+			errorCode: parsedError?.code,
 			outputBytes,
 			bodyText: text,
-			upstreamRequestId,
+			upstreamRequestId: requestId,
 			...usage,
 		}
 	}
@@ -521,6 +527,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			upstreamRequestId: outcome.upstreamRequestId,
 			metadata: {
 				...(input.metadata ?? {}),
+				...(outcome.errorCode ? { errorCode: outcome.errorCode } : {}),
 				...(outcome.error ? { error: outcome.error.slice(0, 500) } : {}),
 			},
 		})
@@ -582,7 +589,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	): Record<string, unknown> {
 		const payload: Record<string, unknown> = {
 			...input,
-			model: DEFAULT_LAYOUT_MODEL,
+			model: DEFAULT_ZHIPU_LAYOUT_MODEL,
 		}
 		delete payload.userId
 		if (typeof payload.file !== 'string' || !payload.file.trim()) {
@@ -606,7 +613,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		const baseUrl =
 			(await kv.get<string>(KV_BASE_URL)) ??
 			(await legacyKv.get<string>(KV_BASE_URL)) ??
-			DEFAULT_BASE_URL
+			DEFAULT_ZHIPU_BASE_URL
 		const apiKey = (await kv.get<string>(KV_API_KEY)) ?? (await legacyKv.get<string>(KV_API_KEY))
 		return { apiKey, baseUrl }
 	}
@@ -645,7 +652,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 
 	private restoreHistorySeq(): void {
 		const maxId = this.history
-			.find({}, { limit: MAX_HISTORY })
+			.find({}, { limit: MAX_ZHIPU_HISTORY })
 			.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
 		this.historySeq = maxId + 1
 	}
@@ -660,14 +667,14 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			.select()
 			.from(zhipuTestRuns)
 			.orderBy(desc(zhipuTestRuns.at))
-			.limit(MAX_HISTORY)
+			.limit(MAX_ZHIPU_HISTORY)
 		for (const row of rows.slice().reverse()) this.history.insert(fromHistoryRow(row))
 		this.restoreHistorySeq()
 	}
 
 	private trimHistory(): void {
 		const all = this.history.find({}, { sort: { at: 1 } })
-		const overflow = all.length - MAX_HISTORY
+		const overflow = all.length - MAX_ZHIPU_HISTORY
 		if (overflow <= 0) return
 		for (const record of all.slice(0, overflow)) this.history.removeOne({ id: record.id })
 	}
@@ -720,7 +727,7 @@ export class ZhipuProviderRpc extends RpcTarget {
 }
 
 function normalizeBaseUrl(input: string | undefined): string {
-	const raw = input?.trim() || DEFAULT_BASE_URL
+	const raw = input?.trim() || DEFAULT_ZHIPU_BASE_URL
 	return raw.replace(/\/+$/, '')
 }
 
@@ -802,26 +809,6 @@ function byteLength(input: unknown): number {
 	if (input instanceof ArrayBuffer) return input.byteLength
 	if (input instanceof Uint8Array) return input.byteLength
 	return jsonBytes(input)
-}
-
-function previewJson(input: unknown): string {
-	try {
-		return JSON.stringify(input, null, 2)
-	} catch {
-		return String(input)
-	}
-}
-
-function requestPreview(input: unknown): string | undefined {
-	if (input === undefined || input === null) return undefined
-	if (typeof input === 'string') return input
-	if (typeof FormData !== 'undefined' && input instanceof FormData) return 'multipart/form-data'
-	if (typeof URLSearchParams !== 'undefined' && input instanceof URLSearchParams) {
-		return input.toString()
-	}
-	if (typeof Blob !== 'undefined' && input instanceof Blob) return `blob:${input.size}`
-	if (input instanceof ArrayBuffer || input instanceof Uint8Array) return `binary:${byteLength(input)}`
-	return previewJson(input)
 }
 
 function truncate(input: string, maxLength: number): string {

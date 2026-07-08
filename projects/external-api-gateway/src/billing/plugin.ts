@@ -3,6 +3,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
 import { desc } from 'drizzle-orm'
+import { DEFAULT_ZHIPU_LAYOUT_MODEL, MAX_BILLING_RECORDS } from '../constants.ts'
 import {
 	billingRates,
 	billingUsageRecords,
@@ -21,7 +22,6 @@ import type {
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
 const OVERVIEW_DOC_ID = 'overview' as const
-const MAX_RECORDS = 500
 
 @Plugin({ name: 'UsageBillingPlugin' })
 export class UsageBillingPlugin extends BasePlugin {
@@ -60,8 +60,10 @@ export class UsageBillingPlugin extends BasePlugin {
 		const units = Math.max(0, Number(input.units ?? 1) || 0)
 		const estimatedCost = this.estimateCostCny(input.provider, input.operation, input.model, units)
 		const costCny = roundMoney(input.costCny ?? estimatedCost)
+		const metadata = normalizeUsageMetadata(input)
 		const record: BillingUsageRecord = {
 			...input,
+			...(metadata ? { metadata } : {}),
 			id: this.nextId(),
 			at: now,
 			currency: 'CNY',
@@ -83,7 +85,7 @@ export class UsageBillingPlugin extends BasePlugin {
 	}
 
 	listRecords(limit = 100): BillingUsageRecord[] {
-		const capped = Math.max(0, Math.min(MAX_RECORDS, Math.floor(limit)))
+		const capped = Math.max(0, Math.min(MAX_BILLING_RECORDS, Math.floor(limit)))
 		return this.records.find({}, { limit: capped, sort: { at: -1 } })
 	}
 
@@ -92,9 +94,18 @@ export class UsageBillingPlugin extends BasePlugin {
 	}
 
 	upsertRate(input: Omit<BillingRateDoc, 'id' | 'updatedAt'>): BillingRateDoc {
+		const provider = input.provider.trim()
+		const operation = input.operation.trim()
+		const model = input.model?.trim() || undefined
+		const unitName = input.unitName.trim() || 'request'
+		if (!provider) throw new Error('Billing rate provider is required')
+		if (!operation) throw new Error('Billing rate operation is required')
 		const rate: BillingRateDoc = {
-			...input,
-			id: rateId(input.provider, input.operation, input.model),
+			provider,
+			operation,
+			...(model ? { model } : {}),
+			unitName,
+			id: rateId(provider, operation, model),
 			unitCostCny: Math.max(0, Number(input.unitCostCny) || 0),
 			updatedAt: Date.now(),
 		}
@@ -142,10 +153,10 @@ export class UsageBillingPlugin extends BasePlugin {
 				updatedAt: now,
 			},
 			{
-				id: 'zhipu:ocr.layout_parsing:glm-ocr',
+				id: `zhipu:ocr.layout_parsing:${DEFAULT_ZHIPU_LAYOUT_MODEL}`,
 				provider: 'zhipu',
 				operation: 'ocr.layout_parsing',
-				model: 'glm-ocr',
+				model: DEFAULT_ZHIPU_LAYOUT_MODEL,
 				unitName: 'request',
 				unitCostCny: 0,
 				updatedAt: now,
@@ -278,7 +289,7 @@ export class UsageBillingPlugin extends BasePlugin {
 
 	private trimRecords(): void {
 		const all = this.records.find({}, { sort: { at: 1 } })
-		const overflow = all.length - MAX_RECORDS
+		const overflow = all.length - MAX_BILLING_RECORDS
 		if (overflow <= 0) return
 		for (const record of all.slice(0, overflow)) this.records.removeOne({ id: record.id })
 	}
@@ -300,7 +311,9 @@ export class UsageBillingPlugin extends BasePlugin {
 			.from(billingUsageRecords)
 			.orderBy(desc(billingUsageRecords.at))
 		const allRecords = rows.map(recordFromRow)
-		for (const record of allRecords.slice(0, MAX_RECORDS).reverse()) this.records.insert(record)
+		for (const record of allRecords.slice(0, MAX_BILLING_RECORDS).reverse()) {
+			this.records.insert(record)
+		}
 		return allRecords
 	}
 
@@ -394,6 +407,16 @@ function roundMoney(value: number): number {
 
 function rateId(provider: string, operation: string, model?: string): string {
 	return model ? `${provider}:${operation}:${model}` : `${provider}:${operation}`
+}
+
+function normalizeUsageMetadata(record: BillingUsageInput): Record<string, unknown> | undefined {
+	const metadata = {
+		...(record.metadata ?? {}),
+		...(record.source ? { source: record.source } : {}),
+		...(record.tenantId ? { tenantId: record.tenantId } : {}),
+		...(record.traceId ? { traceId: record.traceId } : {}),
+	}
+	return Object.keys(metadata).length > 0 ? metadata : undefined
 }
 
 function recordToRow(record: BillingUsageRecord): BillingUsageRecordRow {

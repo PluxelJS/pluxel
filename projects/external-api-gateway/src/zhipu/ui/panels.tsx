@@ -1,6 +1,7 @@
 import {
 	Alert,
 	Badge,
+	Box,
 	Button,
 	Card,
 	Code,
@@ -22,6 +23,7 @@ import {
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
 import { IconCheck, IconCloudUpload, IconKey, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
+import { DEFAULT_ZHIPU_BASE_URL, DEFAULT_ZHIPU_LAYOUT_MODEL } from '../../constants'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
 import { zhipuPlugin } from './runtime'
 
@@ -75,6 +77,19 @@ function parseJsonObject(input: string): Record<string, unknown> {
 	return parsed as Record<string, unknown>
 }
 
+function safeJsonObject(input: string): Record<string, unknown> {
+	try {
+		return parseJsonObject(input)
+	} catch {
+		return {}
+	}
+}
+
+function jsonStringField(input: string, key: string): string | undefined {
+	const value = safeJsonObject(input)[key]
+	return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
 function truncateText(input: string | undefined, length = 120): string {
 	if (!input) return '-'
 	return input.length > length ? `${input.slice(0, length)}...` : input
@@ -115,7 +130,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const settings = app.db.useDocById('settings', 'settings')
 	const status = app.db.useDocById('status', 'status')
 	const [apiKey, setApiKey] = useState('')
-	const [baseUrl, setBaseUrl] = useState('https://open.bigmodel.cn/api/paas/v4')
+	const [baseUrl, setBaseUrl] = useState(DEFAULT_ZHIPU_BASE_URL)
 	const baseUrlEdited = useRef(false)
 	const [testUserId, setTestUserId] = useState('system')
 	const [error, setError] = useState<string | null>(null)
@@ -123,7 +138,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 
 	useEffect(() => {
 		if (baseUrlEdited.current) return
-		setBaseUrl(settings?.baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4')
+		setBaseUrl(settings?.baseUrl ?? DEFAULT_ZHIPU_BASE_URL)
 	}, [settings?.baseUrl])
 
 	const run = async <T,>(action: () => Promise<T>, fallback: string): Promise<T | undefined> => {
@@ -221,14 +236,18 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 export function ZhipuOcrPanel() {
 	const app = useZhipuApp()
 	const settings = app.db.useDocById('settings', 'settings')
-	const [mode, setMode] = useState<Mode>('files-ocr')
+	const [mode, setMode] = useState<Mode>('layout-parsing')
 	const [userId, setUserId] = useState('demo-user')
 	const [file, setFile] = useState<File | null>(null)
+	const [layoutFile, setLayoutFile] = useState<File | null>(null)
 	const [fileRef, setFileRef] = useState('')
 	const [prompt, setPrompt] = useState('')
-	const [layoutJson, setLayoutJson] = useState('{\n  "model": "glm-ocr"\n}')
+	const [layoutJson, setLayoutJson] = useState(`{\n  "model": "${DEFAULT_ZHIPU_LAYOUT_MODEL}"\n}`)
 	const [state, setState] = useState<RequestState>({ loading: false, error: null, result: null })
-	const canRun = (settings?.hasApiKey ?? true) && (mode === 'files-ocr' ? Boolean(file) : true)
+	const layoutHasFile = Boolean(layoutFile || fileRef.trim() || jsonStringField(layoutJson, 'file'))
+	const canRun =
+		(settings?.hasApiKey ?? true) &&
+		(mode === 'files-ocr' ? Boolean(file) : layoutHasFile)
 
 	const submit = async () => {
 		setState({ loading: true, error: null, result: null })
@@ -240,7 +259,7 @@ export function ZhipuOcrPanel() {
 			const response =
 				mode === 'files-ocr'
 					? await submitFilesOcr(endpoint, userId, file)
-					: await submitLayoutParsing(endpoint, userId, fileRef, prompt, layoutJson)
+					: await submitLayoutParsing(endpoint, userId, layoutFile, fileRef, prompt, layoutJson)
 			const body = await readResponseBody(response)
 			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
 			setState({ loading: false, error: null, result: body })
@@ -265,8 +284,8 @@ export function ZhipuOcrPanel() {
 						value={mode}
 						onChange={(value) => setMode(value as Mode)}
 						data={[
-							{ label: 'Files OCR', value: 'files-ocr' },
 							{ label: 'GLM OCR', value: 'layout-parsing' },
+							{ label: 'Files OCR', value: 'files-ocr' },
 						]}
 					/>
 				</Group>
@@ -280,38 +299,28 @@ export function ZhipuOcrPanel() {
 					onChange={(event) => setUserId(event.currentTarget.value)}
 				/>
 				{mode === 'files-ocr' ? (
-					<Stack gap="sm">
-						<FileInput label="上传图片或 PDF" value={file} onChange={setFile} clearable />
-						<Text size="sm" c="dimmed">
-							以 multipart 表单转发到 <Code>/files/ocr</Code>，并记录 userId 账单。
-						</Text>
-					</Stack>
+					<FilesOcrForm file={file} onFileChange={setFile} />
 				) : (
-					<Stack gap="sm">
-						<TextInput
-							label="OpenAPI file 字段"
-							placeholder="https://example.com/demo.pdf"
-							value={fileRef}
-							onChange={(event) => setFileRef(event.currentTarget.value)}
-						/>
-						<Textarea
-							label="Prompt"
-							placeholder="例如：请提取发票号码、日期、金额，返回 JSON"
-							value={prompt}
-							onChange={(event) => setPrompt(event.currentTarget.value)}
-							autosize
-							minRows={3}
-						/>
-						<JsonInput
-							label="额外 JSON 参数"
-							value={layoutJson}
-							onChange={setLayoutJson}
-							autosize
-							minRows={5}
-							formatOnBlur
-						/>
-					</Stack>
+					<LayoutParsingForm
+						file={layoutFile}
+						fileRef={fileRef}
+						prompt={prompt}
+						rawJson={layoutJson}
+						onFileChange={setLayoutFile}
+						onFileRefChange={setFileRef}
+						onPromptChange={setPrompt}
+						onRawJsonChange={setLayoutJson}
+					/>
 				)}
+				<OcrRequestSummary
+					mode={mode}
+					userId={userId}
+					filesOcrFile={file}
+					layoutFile={layoutFile}
+					fileRef={fileRef}
+					prompt={prompt}
+					layoutJson={layoutJson}
+				/>
 				<Group>
 					<Button
 						leftSection={<IconPlayerPlay size={16} />}
@@ -329,13 +338,124 @@ export function ZhipuOcrPanel() {
 						)}
 					</CopyButton>
 				</Group>
-				<Card withBorder radius="md" p={0}>
+				<Box
+					style={{
+						border: '1px solid var(--mantine-color-default-border)',
+						borderRadius: 8,
+						overflow: 'hidden',
+					}}
+				>
 					<ScrollArea h={320} type="auto" scrollbarSize={10} offsetScrollbars>
 						<Code block>{state.result ? jsonPretty(state.result) : '暂无结果'}</Code>
 					</ScrollArea>
-				</Card>
+				</Box>
 			</Stack>
 		</Card>
+	)
+}
+
+function FilesOcrForm({
+	file,
+	onFileChange,
+}: {
+	file: File | null
+	onFileChange: (file: File | null) => void
+}) {
+	return (
+		<Stack gap="sm">
+			<FileInput label="上传图片或 PDF" value={file} onChange={onFileChange} clearable />
+			<Text size="sm" c="dimmed">
+				以 multipart 表单转发到 <Code>/files/ocr</Code>，并记录 userId 账单。
+			</Text>
+		</Stack>
+	)
+}
+
+function LayoutParsingForm({
+	file,
+	fileRef,
+	prompt,
+	rawJson,
+	onFileChange,
+	onFileRefChange,
+	onPromptChange,
+	onRawJsonChange,
+}: {
+	file: File | null
+	fileRef: string
+	prompt: string
+	rawJson: string
+	onFileChange: (file: File | null) => void
+	onFileRefChange: (value: string) => void
+	onPromptChange: (value: string) => void
+	onRawJsonChange: (value: string) => void
+}) {
+	return (
+		<Stack gap="sm">
+			<FileInput label="上传图片或 PDF" value={file} onChange={onFileChange} clearable />
+			<TextInput
+				label="OpenAPI file 字段（URL 或 base64，可选）"
+				placeholder="https://example.com/demo.pdf"
+				value={fileRef}
+				onChange={(event) => onFileRefChange(event.currentTarget.value)}
+				disabled={Boolean(file)}
+			/>
+			<Textarea
+				label="Prompt"
+				placeholder="例如：请提取发票号码、日期、金额，返回 JSON"
+				value={prompt}
+				onChange={(event) => onPromptChange(event.currentTarget.value)}
+				autosize
+				minRows={3}
+			/>
+			<JsonInput
+				label="额外 JSON 参数"
+				value={rawJson}
+				onChange={onRawJsonChange}
+				autosize
+				minRows={5}
+				formatOnBlur
+			/>
+		</Stack>
+	)
+}
+
+function OcrRequestSummary({
+	mode,
+	userId,
+	filesOcrFile,
+	layoutFile,
+	fileRef,
+	prompt,
+	layoutJson,
+}: {
+	mode: Mode
+	userId: string
+	filesOcrFile: File | null
+	layoutFile: File | null
+	fileRef: string
+	prompt: string
+	layoutJson: string
+}) {
+	const endpoint = mode === 'files-ocr' ? '/files/ocr' : '/layout_parsing'
+	const layoutFileField = fileRef.trim() || jsonStringField(layoutJson, 'file')
+	const fileSource =
+		mode === 'files-ocr'
+			? filesOcrFile?.name ?? '-'
+			: layoutFile?.name || truncateText(layoutFileField, 80)
+	const extraKeys = Object.keys(safeJsonObject(layoutJson)).filter((key) => key !== 'file')
+	return (
+		<Group gap="xs">
+			<Badge variant="light">{endpoint}</Badge>
+			<Badge variant="light">user:{userId || '-'}</Badge>
+			<Badge variant="light">file:{fileSource}</Badge>
+			{mode === 'layout-parsing' ? (
+				<>
+					<Badge variant="light">prompt:{prompt.trim().length}</Badge>
+					<Badge variant="light">json:{extraKeys.length}</Badge>
+				</>
+			) : null}
+		</Group>
 	)
 }
 
@@ -378,6 +498,7 @@ export function ZhipuHistoryPanel() {
 								<Table.Th>操作</Table.Th>
 								<Table.Th>状态</Table.Th>
 								<Table.Th>文件</Table.Th>
+								<Table.Th>请求摘要</Table.Th>
 								<Table.Th>响应摘要</Table.Th>
 							</Table.Tr>
 						</Table.Thead>
@@ -403,6 +524,9 @@ export function ZhipuHistoryPanel() {
 										</Badge>
 									</Table.Td>
 									<Table.Td>{row.fileName ?? '-'}</Table.Td>
+									<Table.Td>
+										<Code>{truncateText(row.requestPreview, 100)}</Code>
+									</Table.Td>
 									<Table.Td>
 										<Code>{truncateText(row.responsePreview ?? row.error)}</Code>
 									</Table.Td>
@@ -432,18 +556,38 @@ async function submitFilesOcr(
 async function submitLayoutParsing(
 	endpoint: string,
 	userId: string,
+	file: File | null,
 	fileRef: string,
 	prompt: string,
 	rawJson: string,
 ): Promise<Response> {
 	const payload = parseJsonObject(rawJson)
 	payload.userId = userId
-	if (fileRef.trim()) payload.file = fileRef.trim()
+	if (file) {
+		payload.file = await fileToDataUrl(file)
+	} else if (fileRef.trim()) {
+		payload.file = fileRef.trim()
+	}
 	if (prompt.trim()) payload.prompt = prompt.trim()
 	return fetch(endpoint, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(payload),
+	})
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader()
+		reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'))
+		reader.onload = () => {
+			if (typeof reader.result === 'string') {
+				resolve(reader.result)
+				return
+			}
+			reject(new Error('读取文件失败'))
+		}
+		reader.readAsDataURL(file)
 	})
 }
 
@@ -457,6 +601,12 @@ function extractErrorMessage(input: unknown): string | undefined {
 	if (!input || typeof input !== 'object') return undefined
 	const record = input as Record<string, unknown>
 	if (typeof record.error === 'string') return record.error
+	if (record.error && typeof record.error === 'object') {
+		const error = record.error as Record<string, unknown>
+		if (typeof error.message === 'string') return error.message
+		if (typeof error.msg === 'string') return error.msg
+	}
 	if (typeof record.message === 'string') return record.message
+	if (typeof record.msg === 'string') return record.msg
 	return undefined
 }

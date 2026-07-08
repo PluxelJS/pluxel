@@ -1,7 +1,10 @@
+import { DEFAULT_ZHIPU_BASE_URL, DEFAULT_ZHIPU_TIMEOUT_MS } from '../../constants.ts'
+
 export type ZhipuClientOptions = {
 	apiKey: string
 	baseUrl?: string
 	fetch?: typeof fetch
+	timeoutMs?: number
 }
 
 export type ZhipuRawRequestOptions = {
@@ -9,9 +12,8 @@ export type ZhipuRawRequestOptions = {
 	path: string
 	body?: BodyInit | Record<string, unknown> | null
 	headers?: HeadersInit
+	timeoutMs?: number
 }
-
-const DEFAULT_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 
 function trimRightSlash(input: string): string {
 	return input.replace(/\/+$/, '')
@@ -39,11 +41,13 @@ export class ZhipuClient {
 	readonly baseUrl: string
 	private readonly apiKey: string
 	private readonly fetchImpl: typeof fetch
+	private readonly timeoutMs: number
 
 	constructor(options: ZhipuClientOptions) {
-		this.baseUrl = trimRightSlash(options.baseUrl ?? DEFAULT_BASE_URL)
+		this.baseUrl = trimRightSlash(options.baseUrl ?? DEFAULT_ZHIPU_BASE_URL)
 		this.apiKey = options.apiKey
 		this.fetchImpl = options.fetch ?? globalThis.fetch
+		this.timeoutMs = Math.max(0, Number(options.timeoutMs ?? DEFAULT_ZHIPU_TIMEOUT_MS) || 0)
 		if (!this.fetchImpl) throw new Error('No fetch implementation found')
 	}
 
@@ -51,21 +55,35 @@ export class ZhipuClient {
 		return new URL(`${this.baseUrl}/${normalizeOpenApiPath(path)}`)
 	}
 
-	raw(options: ZhipuRawRequestOptions): Promise<Response> {
+	async raw(options: ZhipuRawRequestOptions): Promise<Response> {
 		const headers = new Headers(options.headers)
 		if (!headers.has('authorization')) headers.set('authorization', `Bearer ${this.apiKey}`)
 		if (isJsonObject(options.body) && !headers.has('content-type')) {
 			headers.set('content-type', 'application/json')
 		}
+		const timeoutMs = Math.max(0, Number(options.timeoutMs ?? this.timeoutMs) || 0)
+		const controller = timeoutMs > 0 ? new AbortController() : undefined
+		const timeout =
+			controller && timeoutMs > 0
+				? setTimeout(
+						() => controller.abort(new Error(`Zhipu request timed out after ${timeoutMs}ms`)),
+						timeoutMs,
+					)
+				: undefined
 
 		const init: RequestInit = {
 			method: options.method.toUpperCase(),
 			headers,
+			...(controller ? { signal: controller.signal } : {}),
 		}
 		if (isJsonObject(options.body)) init.body = JSON.stringify(options.body)
 		else if (options.body !== undefined) init.body = options.body
 
-		return this.fetchImpl(this.url(options.path), init)
+		try {
+			return await this.fetchImpl(this.url(options.path), init)
+		} finally {
+			if (timeout) clearTimeout(timeout)
+		}
 	}
 }
 
