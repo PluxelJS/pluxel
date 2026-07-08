@@ -23,15 +23,14 @@ export default defineStaticRuntimeConfig({
 	pluginData: {
 		dir: resolve(repoRoot, 'packages/plugins/authelia-oidc-demo/.pluxel/static/plugin-data'),
 	},
-	management: {
+	adminAccess: {
 		enabled: true,
-		access: {
-			exposure: 'public',
-			oidc: {
-				issuer: process.env.PLUXEL_AUTHELIA_ISSUER ?? 'http://127.0.0.1:9091',
-				audience: process.env.PLUXEL_AUTHELIA_HOST_AUDIENCE ?? 'pluxel-host-verification',
-				requiredClaims: { groups: 'pluxel-admins' },
-			},
+		exposure: 'public',
+		oidc: {
+			issuer: process.env.PLUXEL_AUTHELIA_ISSUER ?? 'http://127.0.0.1:9091',
+			audience:
+				process.env.PLUXEL_AUTHELIA_HOST_ADMIN_ACCESS_AUDIENCE ?? 'pluxel-host-admin-access',
+			requiredClaims: { groups: 'pluxel-admins' },
 		},
 	},
 })

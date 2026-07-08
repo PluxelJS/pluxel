@@ -81,7 +81,7 @@ const ctx = new Context({
 \t\tstate: { enabled: false },
 \t},
 \thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
-\tmanagement: ${JSON.stringify(options.bootstrap?.management ?? { enabled: false, access: { exposure: 'private' } })},
+\tadminAccess: ${JSON.stringify(options.bootstrap?.adminAccess ?? { enabled: false, exposure: 'private' })},
 \textensionService: { enabled: false },
 })
 

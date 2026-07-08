@@ -2,12 +2,12 @@ import type { RpcStub } from 'capnweb'
 import { treaty } from '@elysiajs/eden'
 
 import {
-	type ManagementAccessAwareFetchOptions,
-	createManagementAccessAwareFetch,
-	defaultOnManagementAccessBlocked,
+	type AdminAccessAwareFetchOptions,
+	createAdminAccessAwareFetch,
+	defaultOnAdminAccessBlocked,
 	type RuntimeFetch,
 	toGlobalFetch,
-} from './verification'
+} from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { ExtensionManifest } from './extensions'
 import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
@@ -103,7 +103,7 @@ export type RuntimeTransportClientOptions = {
 	defaultNamespace?: string
 	credentials?: RequestCredentials
 	fetch?: RuntimeFetch
-	verification?: ManagementAccessAwareFetchOptions & {
+	adminAccess?: AdminAccessAwareFetchOptions & {
 		enabled?: boolean
 	}
 }
@@ -227,9 +227,9 @@ export function createRuntimeTransportFetch(
 ): RuntimeFetch {
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
-	if (options.verification?.enabled === false) return baseFetch
-	return createManagementAccessAwareFetch(baseFetch, {
-		onBlocked: options.verification?.onBlocked ?? defaultOnManagementAccessBlocked,
+	if (options.adminAccess?.enabled === false) return baseFetch
+	return createAdminAccessAwareFetch(baseFetch, {
+		onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
 	})
 }
 
@@ -285,7 +285,7 @@ export function createRuntimeTransportClient(
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
-	const verificationEnabled = options.verification?.enabled !== false
+	const adminAccessEnabled = options.adminAccess?.enabled !== false
 	const security = createRuntimeSecurityClient({
 		apiBase: links.apiBase,
 		fetch,
@@ -312,13 +312,13 @@ export function createRuntimeTransportClient(
 			...opts,
 			url: opts?.url ?? baseSseOptions.url ?? links.sse,
 			withCredentials,
-			verification: verificationEnabled
+			adminAccess: adminAccessEnabled
 				? {
 						readState: async () => {
 							const overview = await security.readOverview()
-							return overview.verification
+							return overview.adminAccess
 						},
-						onBlocked: options.verification?.onBlocked ?? defaultOnManagementAccessBlocked,
+						onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
 					}
 				: undefined,
 			params,

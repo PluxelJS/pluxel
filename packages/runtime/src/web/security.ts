@@ -1,8 +1,8 @@
 import type { VaultKeyPair } from './protocol'
 import type { SecurityEvent } from '../services/security/audit'
-import type { ManagementAccessOverview } from '../services/verification/types'
+import type { AdminAccessOverview } from '../services/admin-access/types'
 import type { VaultAdminState } from '../services/vault/types'
-export type { ManagementAccessOverview, VerificationOverview } from '../services/verification/types'
+export type { AdminAccessOverview } from '../services/admin-access/types'
 export type { VaultAdminState } from '../services/vault/types'
 import {
 	RUNTIME_SECURITY_EVENTS_PATH,
@@ -14,11 +14,11 @@ import {
 	joinPath,
 } from './paths'
 import { requestJson, resolveClientUrl, withJsonBody, withMethod } from './http-utils'
-import type { RuntimeFetch } from './verification'
+import type { RuntimeFetch } from './admin-access'
 
 export type SecurityAuditEvent = SecurityEvent
 export type SecurityOverview = {
-	verification: ManagementAccessOverview
+	adminAccess: AdminAccessOverview
 	vault: VaultAdminState
 }
 

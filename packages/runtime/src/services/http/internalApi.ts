@@ -2,16 +2,16 @@ import type { Context as PluginContext } from '@pluxel/core'
 import type { Changeset } from '@signaldb/core'
 import {
 	canAccessSecurityAdmin,
-	createManagementAccessBlockedHeaders,
-	createManagementAccessBlockedPayload,
-	resolveManagementAccessRedirectPath,
-} from '../../shared/verification-http'
+	createAdminAccessBlockedHeaders,
+	createAdminAccessBlockedPayload,
+	resolveAdminAccessRedirectPath,
+} from '../../shared/admin-access-http'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_SECURITY_BASE,
 	RUNTIME_TRANSPORT_PATHS,
 } from '../../web/paths'
-import { buildVerificationRedirectPath } from '../verification/transport'
+import { buildAdminAccessRedirectPath } from '../admin-access/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
 import { extensionRoutes } from '../../api/http/extensions'
@@ -76,20 +76,20 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
-		const state = await pluginCtx.root.verification.authorize({ request })
+		const state = await pluginCtx.root.adminAccess.authorize({ request })
 
 		if (isSecurityApiPath(path)) {
 			if (canAccessSecurityAdmin(state)) return undefined
-			const redirectPath = resolveManagementAccessRedirectPath(
-				buildVerificationRedirectPath,
+			const redirectPath = resolveAdminAccessRedirectPath(
+				buildAdminAccessRedirectPath,
 				request,
 				'api',
 				state.reason,
 			)
-			Object.assign(set.headers, createManagementAccessBlockedHeaders(redirectPath, state.reason))
+			Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
 			return status(
 				401,
-				createManagementAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
+				createAdminAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
 			)
 		}
 
@@ -124,23 +124,23 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 		const kind = resolveRequestKind(path)
 		if (state.allow) return undefined
 
-		const redirectPath = resolveManagementAccessRedirectPath(
-			buildVerificationRedirectPath,
+		const redirectPath = resolveAdminAccessRedirectPath(
+			buildAdminAccessRedirectPath,
 			request,
 			kind,
 			state.reason,
 		)
-		pluginCtx.logger.warn('Blocked management admin access gate', {
+		pluginCtx.logger.warn('Blocked admin access gate', {
 			kind,
 			path,
 			method,
 			reason: state.reason,
 		})
 
-		Object.assign(set.headers, createManagementAccessBlockedHeaders(redirectPath, state.reason))
+		Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
 		return status(
 			401,
-			createManagementAccessBlockedPayload(path, method, kind, redirectPath, state.reason),
+			createAdminAccessBlockedPayload(path, method, kind, redirectPath, state.reason),
 		)
 	}) as BaseElysiaApp
 }

@@ -117,7 +117,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
-	management?: CoreContext.Config['management']
+	adminAccess?: CoreContext.Config['adminAccess']
 	logger?: CoreContext.Config['logger']
 }
 
@@ -222,7 +222,7 @@ export async function planLoaderHmrHostFromConfig(
 		persistence,
 		pluginData,
 		http,
-		management,
+		adminAccess,
 		logger,
 		context,
 		...hostOpts
@@ -259,7 +259,7 @@ export async function planLoaderHmrHostFromConfig(
 			persistence,
 			pluginData,
 			http,
-			management,
+			adminAccess,
 			logger,
 		}),
 	})
@@ -351,7 +351,7 @@ function mergeContextConfig(
 		pluginData: mergeRecord(base.pluginData, override.pluginData),
 		http: mergeRecord(base.http, override.http),
 		logger: mergeRecord(base.logger, override.logger),
-		verification: mergeRecord(base.verification, override.verification),
+		adminAccess: mergeRecord(base.adminAccess, override.adminAccess),
 	})
 }
 
@@ -393,9 +393,10 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		plan.vite,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	ctx.config.management = {
+	ctx.config.adminAccess = {
 		enabled: true,
-		access: ctx.config.management?.access ?? { exposure: 'private' },
+		exposure: ctx.config.adminAccess?.exposure ?? 'private',
+		...(ctx.config.adminAccess?.oidc ? { oidc: ctx.config.adminAccess.oidc } : {}),
 	}
 	ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 	ctx.config.extensionService = {

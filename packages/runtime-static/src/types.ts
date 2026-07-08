@@ -69,13 +69,13 @@ export type StaticRuntimeHostOptions = {
 	pluginData?: StaticRuntimePluginDataConfig
 	/**
 	 * HTTP runtime settings. Management UI/RPC/SSE are controlled by the top-level
-	 * management config.
+	 * admin access config.
 	 */
 	http?: StaticRuntimeHttpConfig
 	/**
-	 * Host management surface and access policy. When enabled with public exposure, OIDC is required.
+	 * Host admin surface and access policy. When enabled with public exposure, OIDC is required.
 	 */
-	management?: CoreContext.Config['management']
+	adminAccess?: CoreContext.Config['adminAccess']
 	/**
 	 * Runtime logger settings.
 	 */

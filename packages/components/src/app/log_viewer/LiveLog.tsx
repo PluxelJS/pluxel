@@ -5,7 +5,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-	resolveManagementAccessLandingPath,
+	resolveAdminAccessLandingPath,
 	useRuntimeTransportClient,
 } from '../../runtime'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -787,8 +787,8 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
 	const abortRef = useRef<AbortController | null>(null)
-	const managementAccessProbeInFlightRef = useRef<Promise<boolean> | null>(null)
-	const lastManagementAccessProbeAtRef = useRef<number>(0)
+	const adminAccessProbeInFlightRef = useRef<Promise<boolean> | null>(null)
+	const lastAdminAccessProbeAtRef = useRef<number>(0)
 
 	const refreshStreams = useCallback(async () => {
 		try {
@@ -828,15 +828,15 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		const ac = new AbortController()
 		abortRef.current = ac
 
-		const probeManagementAccessBlocked = async (): Promise<boolean> => {
+		const probeAdminAccessBlocked = async (): Promise<boolean> => {
 			const now = Date.now()
-			if (now - lastManagementAccessProbeAtRef.current < 1500) return false
-			lastManagementAccessProbeAtRef.current = now
+			if (now - lastAdminAccessProbeAtRef.current < 1500) return false
+			lastAdminAccessProbeAtRef.current = now
 			try {
 				const payload = await getRuntimeSecurityClient().readOverview()
-				if (payload.verification.allow === true) return false
+				if (payload.adminAccess.allow === true) return false
 				if (typeof window !== 'undefined') {
-					const next = resolveManagementAccessLandingPath(payload.verification.reason)
+					const next = resolveAdminAccessLandingPath(payload.adminAccess.reason)
 					window.location.assign(next)
 				}
 				return true
@@ -950,11 +950,11 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 			es.onerror = () => {
 				setConnected(false)
-				if (managementAccessProbeInFlightRef.current) return
-				managementAccessProbeInFlightRef.current = probeManagementAccessBlocked().finally(() => {
-					managementAccessProbeInFlightRef.current = null
+				if (adminAccessProbeInFlightRef.current) return
+				adminAccessProbeInFlightRef.current = probeAdminAccessBlocked().finally(() => {
+					adminAccessProbeInFlightRef.current = null
 				})
-				void managementAccessProbeInFlightRef.current.then((blocked): undefined => {
+				void adminAccessProbeInFlightRef.current.then((blocked): undefined => {
 					if (blocked) es.close()
 					return undefined
 				})

@@ -101,7 +101,7 @@ export default defineStaticRuntimeConfig({
 	http: {
 		graphql: true,
 	},
-	management: { enabled: false, access: { exposure: 'private' } },
+	adminAccess: { enabled: false, exposure: 'private' },
 	logger: {
 		sinks: {
 			console: { enabled: true },
@@ -381,7 +381,7 @@ import '@pluxel/runtime/services/web-management'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin],
-	management: { enabled: true, access: { exposure: 'private' } },
+	adminAccess: { enabled: true, exposure: 'private' },
 })
 ```
 

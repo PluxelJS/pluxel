@@ -1,9 +1,9 @@
 import {
-	type ManagementAccessReason,
-	VERIFICATION_BLOCKED_HEADER,
-	VERIFICATION_REASON_HEADER,
-	VERIFICATION_REDIRECT_HEADER,
-} from '../shared/verification-http'
+	ADMIN_ACCESS_BLOCKED_HEADER,
+	ADMIN_ACCESS_REASON_HEADER,
+	ADMIN_ACCESS_REDIRECT_HEADER,
+	type AdminAccessReason,
+} from '../shared/admin-access-http'
 
 type RuntimeFetchPreconnect = typeof globalThis.fetch extends { preconnect: infer T }
 	? T
@@ -13,24 +13,20 @@ export type RuntimeFetch = ((input: RequestInfo | URL, init?: RequestInit) => Pr
 	preconnect?: RuntimeFetchPreconnect
 }
 
-export type ManagementAccessBlockedInfo = {
+export type AdminAccessBlockedInfo = {
 	status: number
 	url: string
 	redirectPath?: string
-	reason?: ManagementAccessReason
+	reason?: AdminAccessReason
 }
 
-export type OnManagementAccessBlocked = (info: ManagementAccessBlockedInfo) => void
+export type OnAdminAccessBlocked = (info: AdminAccessBlockedInfo) => void
 
-export type ManagementAccessAwareFetchOptions = {
-	onBlocked?: OnManagementAccessBlocked
+export type AdminAccessAwareFetchOptions = {
+	onBlocked?: OnAdminAccessBlocked
 }
 
-export type VerificationBlockedInfo = ManagementAccessBlockedInfo
-export type OnVerificationBlocked = OnManagementAccessBlocked
-export type VerificationAwareFetchOptions = ManagementAccessAwareFetchOptions
-
-const VERIFICATION_AWARE_FETCH = Symbol.for('pluxel.verificationAwareFetch')
+const ADMIN_ACCESS_AWARE_FETCH = Symbol.for('pluxel.adminAccessAwareFetch')
 const noopPreconnect = (() => {}) as RuntimeFetchPreconnect
 
 function resolvePreconnect(fetch: RuntimeFetch): RuntimeFetchPreconnect {
@@ -69,7 +65,7 @@ export function resetRedirectingState(): void {
 	redirectingAt = null
 }
 
-export function defaultOnManagementAccessBlocked(info: ManagementAccessBlockedInfo) {
+export function defaultOnAdminAccessBlocked(info: AdminAccessBlockedInfo) {
 	if (typeof window === 'undefined') return
 	if (!info.redirectPath) return
 	if (isRedirecting()) return
@@ -77,18 +73,18 @@ export function defaultOnManagementAccessBlocked(info: ManagementAccessBlockedIn
 	window.location.assign(info.redirectPath)
 }
 
-export function isVerificationBlockedResponse(res: Response): boolean {
+export function isAdminAccessBlockedResponse(res: Response): boolean {
 	const statusBlocked = res.status === 401 || res.status === 403
 	if (!statusBlocked) return false
-	return res.headers.get(VERIFICATION_BLOCKED_HEADER) === '1'
+	return res.headers.get(ADMIN_ACCESS_BLOCKED_HEADER) === '1'
 }
 
 export async function extractBlockedInfo(
 	res: Response,
-): Promise<Pick<ManagementAccessBlockedInfo, 'redirectPath' | 'reason'>> {
-	const header = res.headers.get(VERIFICATION_REDIRECT_HEADER)
+): Promise<Pick<AdminAccessBlockedInfo, 'redirectPath' | 'reason'>> {
+	const header = res.headers.get(ADMIN_ACCESS_REDIRECT_HEADER)
 	const reason =
-		(res.headers.get(VERIFICATION_REASON_HEADER) as ManagementAccessReason | null) ?? undefined
+		(res.headers.get(ADMIN_ACCESS_REASON_HEADER) as AdminAccessReason | null) ?? undefined
 	if (header) return { redirectPath: header, reason }
 
 	const ct = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -105,17 +101,17 @@ export async function extractBlockedInfo(
 	}
 }
 
-export function createManagementAccessAwareFetch(
+export function createAdminAccessAwareFetch(
 	baseFetch: RuntimeFetch,
-	options: ManagementAccessAwareFetchOptions = {},
+	options: AdminAccessAwareFetchOptions = {},
 ): RuntimeFetch {
-	if ((baseFetch as any)?.[VERIFICATION_AWARE_FETCH]) return baseFetch
+	if ((baseFetch as any)?.[ADMIN_ACCESS_AWARE_FETCH]) return baseFetch
 
-	const onBlocked = options.onBlocked ?? defaultOnManagementAccessBlocked
+	const onBlocked = options.onBlocked ?? defaultOnAdminAccessBlocked
 
 	const wrapped = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const res = await baseFetch(input as any, init)
-		if (!isVerificationBlockedResponse(res)) return res
+		if (!isAdminAccessBlockedResponse(res)) return res
 
 		const blocked = await extractBlockedInfo(res)
 		const url =
@@ -134,23 +130,20 @@ export function createManagementAccessAwareFetch(
 		return res
 	}) as RuntimeFetch
 
-	;(wrapped as any)[VERIFICATION_AWARE_FETCH] = true
+	;(wrapped as any)[ADMIN_ACCESS_AWARE_FETCH] = true
 	wrapped.preconnect = resolvePreconnect(baseFetch)
 	return wrapped
 }
 
-export const defaultOnVerificationBlocked = defaultOnManagementAccessBlocked
-export const createVerificationAwareFetch = createManagementAccessAwareFetch
-
-type InstallGlobalVerificationFetchOptions = ManagementAccessAwareFetchOptions & {
+type InstallGlobalAdminAccessFetchOptions = AdminAccessAwareFetchOptions & {
 	enabled?: boolean
 }
 
 let installCount = 0
 let originalFetch: RuntimeFetch | null = null
 
-export function installGlobalVerificationFetch(
-	options: InstallGlobalVerificationFetchOptions = {},
+export function installGlobalAdminAccessFetch(
+	options: InstallGlobalAdminAccessFetchOptions = {},
 ): () => void {
 	if (options.enabled === false) return () => {}
 	if (typeof globalThis.fetch !== 'function') return () => {}
@@ -162,7 +155,7 @@ export function installGlobalVerificationFetch(
 			'preconnect' in nativeFetch
 				? (nativeFetch.preconnect as RuntimeFetchPreconnect)
 				: noopPreconnect
-		globalThis.fetch = toGlobalFetch(createManagementAccessAwareFetch(originalFetch, options))
+		globalThis.fetch = toGlobalFetch(createAdminAccessAwareFetch(originalFetch, options))
 	}
 	installCount++
 

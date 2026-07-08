@@ -31,10 +31,7 @@ function readRecipients(value: unknown): string[] | null {
 	return recipients
 }
 
-function invalidSecurityInput(
-	status: (code: number, body: unknown) => unknown,
-	message?: string,
-) {
+function invalidSecurityInput(status: (code: number, body: unknown) => unknown, message?: string) {
 	return status(400, {
 		ok: false,
 		code: 'invalid_security_input',
@@ -48,7 +45,7 @@ export const securityRoutes = (app: AnyElysiaApp) =>
 			.get('/', async ({ set, pluginCtx, request }) => {
 				setNoStore(set)
 				return {
-					verification: await pluginCtx.root.verification.describe({ request }),
+					adminAccess: await pluginCtx.root.adminAccess.describe({ request }),
 					vault: await pluginCtx.root.vaultAdmin.describe(),
 				}
 			})
@@ -77,4 +74,4 @@ export const securityRoutes = (app: AnyElysiaApp) =>
 				if (!recipients) return invalidSecurityInput(status)
 				return await pluginCtx.root.vaultAdmin.setDeployRecipients(recipients)
 			}),
-		)
+	)

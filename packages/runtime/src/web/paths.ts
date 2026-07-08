@@ -4,7 +4,7 @@ export const RUNTIME_META_BASE = '/meta' as const
 export const RUNTIME_EXTENSIONS_BASE = '/extensions' as const
 export const RUNTIME_LOG_STREAMS_BASE = '/logs/v1/streams' as const
 export const RUNTIME_EXTENSIONS_ARTIFACTS_BASE = `${RUNTIME_EXTENSIONS_BASE}/artifacts` as const
-export const RUNTIME_VERIFICATION_BASE = '/__pluxel/verify' as const
+export const RUNTIME_ADMIN_ACCESS_BASE = '/__pluxel/admin-access' as const
 export const RUNTIME_SECURITY_BASE = '/security' as const
 export const RUNTIME_TRANSPORT_PATHS = {
 	rpc: '/rpc',
@@ -18,10 +18,8 @@ export const RUNTIME_META_SSE_PATH = `${RUNTIME_META_BASE}/sse`
 export const RUNTIME_SECURITY_EVENTS_PATH = `${RUNTIME_SECURITY_BASE}/events`
 export const RUNTIME_SECURITY_VAULT_UNLOCK_PATH = `${RUNTIME_SECURITY_BASE}/vault/unlock`
 export const RUNTIME_SECURITY_VAULT_HOST_KEY_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/host`
-export const RUNTIME_SECURITY_VAULT_DEPLOY_GENERATE_PATH =
-	`${RUNTIME_SECURITY_BASE}/vault/keys/deploy/generate`
-export const RUNTIME_SECURITY_VAULT_DEPLOY_RECIPIENTS_PATH =
-	`${RUNTIME_SECURITY_BASE}/vault/keys/deploy`
+export const RUNTIME_SECURITY_VAULT_DEPLOY_GENERATE_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/deploy/generate`
+export const RUNTIME_SECURITY_VAULT_DEPLOY_RECIPIENTS_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/deploy`
 export const RUNTIME_EXTENSIONS_MANIFEST_PATH = `${RUNTIME_EXTENSIONS_BASE}/manifest`
 export const RUNTIME_EXTENSIONS_EVENTS_PATH = `${RUNTIME_EXTENSIONS_BASE}/events`
 export const RUNTIME_EXTENSIONS_MODULES_BASE = `${RUNTIME_EXTENSIONS_BASE}/modules`

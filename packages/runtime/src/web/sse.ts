@@ -1,11 +1,8 @@
-import { defaultOnManagementAccessBlocked, type OnManagementAccessBlocked } from './verification'
+import { defaultOnAdminAccessBlocked, type OnAdminAccessBlocked } from './admin-access'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './extensions'
 import type { ExtensionUiSseMap } from './protocol'
-import {
-	resolveManagementAccessLandingPath,
-	type ManagementAccessReason,
-} from '../shared/verification-http'
+import { resolveAdminAccessLandingPath, type AdminAccessReason } from '../shared/admin-access-http'
 
 export interface BuiltinSseEvents {
 	extensions: ExtensionManifestEvent | { type: 'ready' }
@@ -47,12 +44,12 @@ export interface SseClientOptions {
 	/** Whether to send cookies/credentials for cross-origin SSE. */
 	withCredentials?: boolean
 	/**
-	 * Optional management access integration: when SSE errors, probe the admin gate and redirect
+	 * Optional admin access integration: when SSE errors, probe the admin gate and redirect
 	 * instead of reconnecting forever.
 	 */
-	verification?: {
-		readState: () => Promise<{ allow: boolean; reason?: ManagementAccessReason }>
-		onBlocked?: OnManagementAccessBlocked
+	adminAccess?: {
+		readState: () => Promise<{ allow: boolean; reason?: AdminAccessReason }>
+		onBlocked?: OnAdminAccessBlocked
 	}
 }
 
@@ -68,10 +65,10 @@ class SseClient {
 	private readonly errorHandlers = new Set<() => void>()
 	private stopped = false
 	private readonly url: string
-	private readonly verification?: NonNullable<SseClientOptions['verification']>
+	private readonly adminAccess?: NonNullable<SseClientOptions['adminAccess']>
 	private readonly withCredentials?: boolean
-	private managementAccessProbeInFlight: Promise<boolean> | null = null
-	private lastManagementAccessProbeAt = 0
+	private adminAccessProbeInFlight: Promise<boolean> | null = null
+	private lastAdminAccessProbeAt = 0
 	private connected = false
 
 	private static asap(fn: () => void) {
@@ -90,29 +87,29 @@ class SseClient {
 			}
 		}
 		this.url = url.toString()
-		this.verification = options.verification
+		this.adminAccess = options.adminAccess
 		this.withCredentials = options.withCredentials
 
 		this.connect()
 	}
 
-	private async probeManagementAccessBlocked(): Promise<boolean> {
-		const verification = this.verification
-		if (!verification) return false
+	private async probeAdminAccessBlocked(): Promise<boolean> {
+		const adminAccess = this.adminAccess
+		if (!adminAccess) return false
 
 		const now = Date.now()
-		if (now - this.lastManagementAccessProbeAt < 1500) return false
-		this.lastManagementAccessProbeAt = now
+		if (now - this.lastAdminAccessProbeAt < 1500) return false
+		this.lastAdminAccessProbeAt = now
 
 		try {
-			const state = await verification.readState()
+			const state = await adminAccess.readState()
 			if (!state || state.allow === true) return false
 
-			const onBlocked = verification.onBlocked ?? defaultOnManagementAccessBlocked
+			const onBlocked = adminAccess.onBlocked ?? defaultOnAdminAccessBlocked
 			onBlocked({
 				status: 401,
 				url: this.url,
-				redirectPath: resolveManagementAccessLandingPath(state.reason),
+				redirectPath: resolveAdminAccessLandingPath(state.reason),
 				reason: state.reason,
 			})
 			return true
@@ -137,13 +134,13 @@ class SseClient {
 		src.onerror = () => {
 			this.connected = false
 			for (const fn of this.errorHandlers) fn()
-			if (!this.verification) return
-			if (!this.managementAccessProbeInFlight) {
-				this.managementAccessProbeInFlight = this.probeManagementAccessBlocked().finally(() => {
-					this.managementAccessProbeInFlight = null
+			if (!this.adminAccess) return
+			if (!this.adminAccessProbeInFlight) {
+				this.adminAccessProbeInFlight = this.probeAdminAccessBlocked().finally(() => {
+					this.adminAccessProbeInFlight = null
 				})
 			}
-			void this.managementAccessProbeInFlight.then((blocked): undefined => {
+			void this.adminAccessProbeInFlight.then((blocked): undefined => {
 				if (blocked) this.close()
 				return undefined
 			})

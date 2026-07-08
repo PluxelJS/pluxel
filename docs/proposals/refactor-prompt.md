@@ -102,7 +102,7 @@ export default defineStaticRuntimeConfig({
 	configService: { mode: 'memory' },
 	runtimeState: { mode: 'memory' },
 	persistence: { mode: 'memory' },
-	management: { enabled: false, access: { exposure: 'private' } },
+	adminAccess: { enabled: false, exposure: 'private' },
 })
 ```
 
@@ -243,7 +243,7 @@ Web management：
 - `ctx.ext`、SSE、runtime web UI、management panel、runtime UI log sink 共同进退。
 - 不引入 managed preset。
 - 最小 static 主入口不包含它。
-- 需要时显式 import `@pluxel/runtime/services/web-management`，再在 runtime config 中启用 `management.enabled`。
+- 需要时显式 import `@pluxel/runtime/services/web-management`，再在 runtime config 中启用 `adminAccess.enabled`。
 
 Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI assets 随 web-management。
 

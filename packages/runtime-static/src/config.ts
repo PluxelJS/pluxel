@@ -41,6 +41,6 @@ function assertPublicHttpConfig(http: unknown, label: string): void {
 	)
 	if (forbidden.length === 0) return
 	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "management" and let the route launcher own management internals.`,
+		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "adminAccess" and let the route launcher own management internals.`,
 	)
 }

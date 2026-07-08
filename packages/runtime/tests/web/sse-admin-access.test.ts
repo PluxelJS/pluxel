@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RUNTIME_VERIFICATION_BASE } from '../../src/web/paths'
+import { RUNTIME_ADMIN_ACCESS_BASE } from '../../src/web/paths'
 import { sse } from '../../src/web/sse'
 
 class FakeEventSource {
@@ -37,7 +37,7 @@ async function waitUntil(assertion: () => void, timeoutMs = 1000) {
 	}
 }
 
-describe('runtime/web SSE verification probe', () => {
+describe('runtime/web SSE adminAccess probe', () => {
 	afterEach(() => {
 		FakeEventSource.latest = null
 		vi.unstubAllGlobals()
@@ -51,7 +51,7 @@ describe('runtime/web SSE verification probe', () => {
 
 		const client = sse({
 			url: 'http://local/sse',
-			verification: {
+			adminAccess: {
 				readState,
 				onBlocked,
 			},
@@ -70,12 +70,15 @@ describe('runtime/web SSE verification probe', () => {
 
 	it('closes SSE and redirects to /security when public OIDC is missing', async () => {
 		const onBlocked = vi.fn()
-		const readState = vi.fn(async () => ({ allow: false as const, reason: 'missing_oidc' as const }))
+		const readState = vi.fn(async () => ({
+			allow: false as const,
+			reason: 'missing_oidc' as const,
+		}))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
 		const client = sse({
 			url: 'http://local/sse',
-			verification: {
+			adminAccess: {
 				readState,
 				onBlocked,
 			},
@@ -97,16 +100,17 @@ describe('runtime/web SSE verification probe', () => {
 		client.close()
 	})
 
-	it('redirects blocked SSE clients to the verification page when external auth is required', async () => {
+	it('redirects blocked SSE clients to the adminAccess page when external auth is required', async () => {
 		const onBlocked = vi.fn()
-		const readState = vi.fn(async () =>
-			({ allow: false as const, reason: 'unauthenticated' as const }),
-		)
+		const readState = vi.fn(async () => ({
+			allow: false as const,
+			reason: 'unauthenticated' as const,
+		}))
 		vi.stubGlobal('EventSource', FakeEventSource)
 
 		const client = sse({
 			url: 'http://local/sse',
-			verification: {
+			adminAccess: {
 				readState,
 				onBlocked,
 			},
@@ -120,7 +124,7 @@ describe('runtime/web SSE verification probe', () => {
 		expect(onBlocked).toHaveBeenCalledWith(
 			expect.objectContaining({
 				status: 401,
-				redirectPath: RUNTIME_VERIFICATION_BASE,
+				redirectPath: RUNTIME_ADMIN_ACCESS_BASE,
 			}),
 		)
 		expect(source!.closed).toBe(true)

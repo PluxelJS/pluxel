@@ -4,7 +4,7 @@
 
 ## 审查目标
 
-- `verification` 只回答一件事：
+- `adminAccess` 只回答一件事：
   当前 host management admin surface 是否允许访问
 - `vault` 只回答一件事：
   敏感数据是否被正确加密存储，并且当前 host 是否具备可用解锁材料
@@ -12,15 +12,15 @@
 
 ## 当前模型
 
-- `ctx.root.verification`
+- `ctx.root.adminAccess`
   host-only access gate
-- `management.enabled=false` 不挂 runtime web management，不要求 OIDC
-- management private exposure 下不做任何认证，直接 allow
-- management public exposure 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
+- `adminAccess.enabled=false` 不挂 runtime web management，不要求 OIDC
+- private admin access 下不做任何认证，直接 allow
+- public admin access 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
 - public exposure 使用 issuer discovery + JWKS 校验 bearer JWT
 - Pluxel 没有 management 非 admin 用户模型；满足 OIDC access policy 的请求就是 admin 请求
-- `management.access.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
-- Pluxel 不保存本地 verification users、password hash、OTP secret、passkey credential 或 verification session
+- `adminAccess.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
+- Pluxel 不保存本地 admin access users、password hash、OTP secret、passkey credential 或 admin access session
 - `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 - `ctx.vault`
   插件与 runtime 共享的 ready 加密存储面，只负责数据读写，不负责运行期解锁
@@ -31,10 +31,10 @@
 
 ## 必须成立的事实
 
-- verification 与 vault 解耦
-- verification 不参与 vault 解锁
-- vault 不继承 verification session
-- verification 不做业务校验、schema 校验、插件私有规则
+- admin access 与 vault 解耦
+- admin access 不参与 vault 解锁
+- vault 不继承 admin access session
+- admin access 不做业务校验、schema 校验、插件私有规则
 - vault 不自建第二套认证体系
 - namespace 只是存储分区，不表达权限
 - transport 只承载和展示结果，不反向定义安全语义
@@ -44,9 +44,9 @@
 
 ## 当前接口语义
 
-- `ctx.root.verification.authorize()`
+- `ctx.root.adminAccess.authorize()`
   纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 management admin surface
-- `ctx.root.verification.describe()`
+- `ctx.root.adminAccess.describe()`
   纯读；输出 access policy 概览和当前状态
 - `ctx.root.vaultAdmin.describe()`
   纯读；只做 mount/material/status 概览，不触发解锁
@@ -65,7 +65,7 @@
 
 ## 状态约束
 
-- verification 状态只表达：
+- admin access 状态只表达：
   `exposure`
   `provider`
   `state.allow`
@@ -97,9 +97,9 @@
 
 ## 红线
 
-- 不要重新引入本地 verification users
+- 不要重新引入本地 admin access users
 - 不要重新引入 password / OTP / passkey credential 存储
-- 不要把 verification session 带入 vault
-- 不要把 vault 可用性绑定到 verification allow
+- 不要把 admin access session 带入 vault
+- 不要把 vault 可用性绑定到 adminAccess allow
 - 不要让 `/security` 之外的 carrier 持有自己的安全真相
 - 不要让 plugin API 或未来外部 tool surface 暴露 security 管理动作

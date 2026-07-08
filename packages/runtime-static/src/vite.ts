@@ -130,7 +130,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				persistence: config.persistence,
 				pluginData: config.pluginData,
 				http: config.http,
-				management: config.management,
+				adminAccess: config.adminAccess,
 				logger: { ...config.logger, preset: 'hmr' },
 				profile: config.profile,
 				context: config.context,
@@ -483,9 +483,10 @@ async function configureStaticRuntimeDevRuntime(
 	ctx.config.extensionCompiler = extensionCompilerConfig
 	if (options.enableWebManagement !== false) {
 		await import('@pluxel/runtime/services/web-management')
-		ctx.config.management = {
+		ctx.config.adminAccess = {
 			enabled: true,
-			access: ctx.config.management?.access ?? { exposure: 'private' },
+			exposure: ctx.config.adminAccess?.exposure ?? 'private',
+			...(ctx.config.adminAccess?.oidc ? { oidc: ctx.config.adminAccess.oidc } : {}),
 		}
 		ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
 		ctx.config.extensionService = {

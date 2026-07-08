@@ -1,7 +1,7 @@
 // Read this when:
-// - 你要把 Authelia 作为 Pluxel host management verification 的 OIDC issuer
+// - 你要把 Authelia 作为 Pluxel host admin access 的 OIDC issuer
 // - 你要在插件/业务后端里单独实现一个 OIDC 登录
-// - 你要确认 business login 不应该复用 ctx.root.verification 作为业务会话系统
+// - 你要确认 business login 不应该复用 ctx.root.adminAccess 作为业务会话系统
 
 import { createHash, randomBytes } from 'node:crypto'
 import '@pluxel/runtime/services/vault'
@@ -58,7 +58,10 @@ function readCookie(request: Request, name: string): string | undefined {
 @Plugin({ name: 'AutheliaOidcDemoPlugin' })
 export class AutheliaOidcDemoPlugin extends BasePlugin {
 	private readonly issuer = env('PLUXEL_AUTHELIA_ISSUER', 'http://127.0.0.1:9091')
-	private readonly hostAudience = env('PLUXEL_AUTHELIA_HOST_AUDIENCE', 'pluxel-host-verification')
+	private readonly hostAudience = env(
+		'PLUXEL_AUTHELIA_HOST_ADMIN_ACCESS_AUDIENCE',
+		'pluxel-host-admin-access',
+	)
 	private readonly businessClientId = env(
 		'PLUXEL_AUTHELIA_BUSINESS_CLIENT_ID',
 		'pluxel-business-demo',
@@ -78,9 +81,9 @@ export class AutheliaOidcDemoPlugin extends BasePlugin {
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app
-					.get('/host-verification', async ({ request }) => ({
-						kind: 'pluxel-host-verification',
-						verification: await this.ctx.root.verification.describe({ request }),
+					.get('/host-admin-access', async ({ request }) => ({
+						kind: 'pluxel-host-admin-access',
+						adminAccess: await this.ctx.root.adminAccess.describe({ request }),
 						oidc: {
 							issuer: this.issuer,
 							audience: this.hostAudience,
@@ -161,7 +164,7 @@ export class AutheliaOidcDemoPlugin extends BasePlugin {
 		const space = this.ctx.vault.namespace(VAULT_NAMESPACE)
 		await space.docs().collection('oidc-settings').set('local-authelia', {
 			issuer: this.issuer,
-			hostVerificationAudience: this.hostAudience,
+			hostAdminAccessAudience: this.hostAudience,
 			businessClientId: this.businessClientId,
 			businessCallbackUrl: this.callbackUrl(),
 		})

@@ -198,7 +198,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		if (!staticHostNeedsWebManagement(this.ctx.config)) return
 		if ('ext' in Context.prototype) return
 		throw new Error(
-			'[runtime-static:web-management] service unavailable. Reason: management is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable management.',
+			'[runtime-static:web-management] service unavailable. Reason: adminAccess is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable adminAccess.',
 		)
 	}
 
@@ -571,9 +571,9 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 function staticHostNeedsWebManagement(ctxConfig: unknown): boolean {
 	if (!ctxConfig || typeof ctxConfig !== 'object') return false
 	const cfg = ctxConfig as {
-		management?: { enabled?: unknown }
+		adminAccess?: { enabled?: unknown }
 	}
-	if (cfg.management?.enabled === true) return true
+	if (cfg.adminAccess?.enabled === true) return true
 	return false
 }
 
@@ -583,10 +583,10 @@ function createStaticRuntimeContextConfig(
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
 	const http = options.http ?? context.http
-	const management = options.management ??
-		context.management ?? {
+	const adminAccess = options.adminAccess ??
+		context.adminAccess ?? {
 			enabled: false,
-			access: { exposure: 'private' },
+			exposure: 'private',
 		}
 	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
@@ -603,7 +603,7 @@ function createStaticRuntimeContextConfig(
 		http: {
 			...(http && typeof http === 'object' ? http : {}),
 		},
-		management,
+		adminAccess,
 		profile,
 		configService,
 		runtimeState,

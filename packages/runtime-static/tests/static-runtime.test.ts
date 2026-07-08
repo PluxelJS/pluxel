@@ -153,7 +153,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				management: { enabled: false, access: { exposure: 'private' } },
+				adminAccess: { enabled: false, exposure: 'private' },
 			}),
 		)
 		try {
@@ -197,7 +197,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('fails fast when management is enabled without importing web-management', async () => {
+	it('fails fast when admin access is enabled without importing web-management', async () => {
 		await expect(
 			createStaticRuntime(
 				defineStaticRuntimeConfig({
@@ -205,13 +205,13 @@ describe('@pluxel/runtime-static', () => {
 					plugins: [],
 					configService: { mode: 'memory' },
 					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-					management: { enabled: true, access: { exposure: 'private' } },
+					adminAccess: { enabled: true, exposure: 'private' },
 				}),
 			),
 		).rejects.toThrow(/services\/web-management/)
 	})
 
-	it('starts static management when web-management is explicitly imported', async () => {
+	it('starts static admin access when web-management is explicitly imported', async () => {
 		await import('@pluxel/runtime/services/web-management')
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
@@ -219,7 +219,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				management: { enabled: true, access: { exposure: 'private' } },
+				adminAccess: { enabled: true, exposure: 'private' },
 			}),
 		)
 		try {

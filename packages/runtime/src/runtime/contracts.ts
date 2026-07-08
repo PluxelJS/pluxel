@@ -1,9 +1,9 @@
 import type { HttpServiceConfig } from '../services/http/HttpService'
-import type { ManagementConfig } from '../services/verification/types'
+import type { AdminAccessConfig } from '../services/admin-access/types'
 
 export type FrozenHostBootstrap = {
 	http?: Pick<HttpServiceConfig, 'graphql'>
-	management?: ManagementConfig
+	adminAccess?: AdminAccessConfig
 }
 
 export type PluginModuleRef = {

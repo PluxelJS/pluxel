@@ -1,28 +1,18 @@
 export {
-	type ManagementAccessAwareFetchOptions,
-	type ManagementAccessBlockedInfo,
-	type VerificationAwareFetchOptions,
-	type VerificationBlockedInfo,
+	type AdminAccessAwareFetchOptions,
+	type AdminAccessBlockedInfo,
 	type RuntimeFetch,
-	createManagementAccessAwareFetch,
-	createVerificationAwareFetch,
-	defaultOnManagementAccessBlocked,
-	defaultOnVerificationBlocked,
-	type OnManagementAccessBlocked,
-	type OnVerificationBlocked,
-} from './web/verification'
+	createAdminAccessAwareFetch,
+	defaultOnAdminAccessBlocked,
+	type OnAdminAccessBlocked,
+} from './web/admin-access'
 export {
-	resolveManagementAccessLandingPath,
-	type ManagementAccessBlockedCode,
-	type ManagementAccessBlockedKind,
-	type ManagementAccessBlockedPayload,
-	type ManagementAccessReason,
-	resolveVerificationLandingPath,
-	type VerificationBlockedCode,
-	type VerificationBlockedKind,
-	type VerificationBlockedPayload,
-	type VerificationReason,
-} from './shared/verification-http'
+	resolveAdminAccessLandingPath,
+	type AdminAccessBlockedCode,
+	type AdminAccessBlockedKind,
+	type AdminAccessBlockedPayload,
+	type AdminAccessReason,
+} from './shared/admin-access-http'
 
 export {
 	createRuntimeTransportClient,
@@ -37,10 +27,9 @@ export {
 } from './web/client'
 export {
 	createRuntimeSecurityClient,
-	type ManagementAccessOverview,
+	type AdminAccessOverview,
 	type SecurityAuditEvent,
 	type SecurityOverview,
-	type VerificationOverview,
 	type RuntimeSecurityClient,
 	type RuntimeSecurityClientOptions,
 	type VaultAdminState,
@@ -76,7 +65,7 @@ export {
 	RUNTIME_SECURITY_VAULT_UNLOCK_PATH,
 	RUNTIME_META_SSE_PATH,
 	RUNTIME_TRANSPORT_PATHS,
-	RUNTIME_VERIFICATION_BASE,
+	RUNTIME_ADMIN_ACCESS_BASE,
 	runtimeExtensionArtifactBasePath,
 	runtimeExtensionArtifactPath,
 	runtimeExtensionModulePath,

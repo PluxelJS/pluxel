@@ -1,29 +1,25 @@
 import {
-	createManagementAccessAwareFetch,
-	createVerificationAwareFetch,
+	createAdminAccessAwareFetch,
 	createRuntimeTransportClient,
 	createRuntimeSecurityClient,
 	RUNTIME_SECURITY_BASE,
-	RUNTIME_VERIFICATION_BASE,
+	RUNTIME_ADMIN_ACCESS_BASE,
 	invokeRpc,
 	rpcErrorMessage,
-	resolveManagementAccessLandingPath,
-	resolveVerificationLandingPath,
+	resolveAdminAccessLandingPath,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
 } from '@pluxel/runtime/web'
 export * from './pluginControl'
 
 export {
-	createManagementAccessAwareFetch,
-	createVerificationAwareFetch,
+	createAdminAccessAwareFetch,
 	createRuntimeSecurityClient,
 	RUNTIME_SECURITY_BASE,
-	RUNTIME_VERIFICATION_BASE,
+	RUNTIME_ADMIN_ACCESS_BASE,
 	invokeRpc,
 	rpcErrorMessage,
-	resolveManagementAccessLandingPath,
-	resolveVerificationLandingPath,
+	resolveAdminAccessLandingPath,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
 }
@@ -39,8 +35,8 @@ export type {
 	LogRangeOk,
 	LogSseEvent,
 	LogStreamMeta,
-	ManagementAccessAwareFetchOptions,
-	ManagementAccessBlockedInfo,
+	AdminAccessAwareFetchOptions,
+	AdminAccessBlockedInfo,
 	PackageBatchResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
@@ -61,15 +57,14 @@ export type {
 	RuntimePluginLogLevel,
 	SecurityAuditEvent,
 	SecurityOverview,
-	ManagementAccessOverview,
-	VerificationOverview,
+	AdminAccessOverview,
 	RuntimeLogLine,
 	RuntimeRpcApi,
 	RuntimeTransportClient,
 	RuntimeSecurityClient,
 	VaultAdminState,
 	VaultKeyPair,
-	OnManagementAccessBlocked,
+	OnAdminAccessBlocked,
 	SchemaResult,
 	SchemaResultErr,
 	SchemaResultOk,
@@ -82,7 +77,7 @@ let security: ReturnType<typeof createRuntimeSecurityClient> | null = null
  * Host-wide runtime transport singleton.
  *
  * Non-React code and the root provider must share the same client instance so
- * SSE connections, verification probing, and transport caches stay deterministic.
+ * SSE connections, admin access probing, and transport caches stay deterministic.
  */
 export function getRuntimeTransportClient() {
 	if (!transport) {

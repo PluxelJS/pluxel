@@ -36,9 +36,9 @@ runtime 只消费两类前端输入：
   插件级 HTTP 路由挂载入口
 - `workerDecl.bind(this.ctx, options)`
   HMR worker 绑定入口
-- `this.ctx.root.verification`
-  host-only management admin gate；只回答“当前请求是否允许进入 Pluxel management”
-  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验。Pluxel 没有 management 非 admin 用户模型，满足 `management.access.oidc.requiredClaims` 的 OIDC principal 即为 admin。
+- `this.ctx.root.adminAccess`
+  host-only admin access gate；只回答“当前请求是否允许进入 Pluxel management”
+  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验。Pluxel 没有 management 非 admin 用户模型，满足 `adminAccess.oidc.requiredClaims` 的 OIDC principal 即为 admin。
 - `this.ctx.root.persistence`
   runtime 数据持久化入口。config、runtime state、plugin data、logger policy、vault 等共享
   namespace 化 backend；它不是业务文件系统，也不是 Node `fs` 镜像。
@@ -81,7 +81,7 @@ SignalDB、runtime web UI 和 management panel。
 - `this.ctx.root.vaultAdmin.*`
   host-only 管理面：`preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
 - `this.ctx.vault`
-  设计原则见 `HOST_VERIFICATION_DESIGN.md`；vault 使用说明见 `src/services/vault/加密实现规范.md`
+  设计原则见 `HOST_ADMIN_ACCESS_DESIGN.md`；vault 使用说明见 `src/services/vault/加密实现规范.md`
 
 ### runtime control-plane 原则
 
@@ -104,8 +104,8 @@ SignalDB、runtime web UI 和 management panel。
 
 - `configs.use(schema)` 读到的是 schema 归一化后的输出
 - 默认值放进 Valibot schema 本身，不要在插件里再写 `config ?? defaults`
-- 管理面访问策略放在 `management`：`management.enabled=true` 开启 runtime web management，
-  `management.access.exposure='public'` 时必须配置 `management.access.oidc`，否则 fail fast。
+- 管理面访问策略放在 `adminAccess`：`adminAccess.enabled=true` 开启 runtime web management，
+  `adminAccess.exposure='public'` 时必须配置 `adminAccess.oidc`，否则 fail fast。
   OIDC 可以预先保留在 private/disabled 配置里，方便后续切到 public。
 - cfg/schema 提取与 cfg layout 设计见 `docs/CONFIG.md`；Host 合同见 `packages/runtime/docs/config/contract.md`。
 

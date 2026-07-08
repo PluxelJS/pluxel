@@ -2,7 +2,7 @@
 
 实现入口：
 
-- `packages/runtime/src/services/verification/VerificationService.ts`
+- `packages/runtime/src/services/admin-access/AdminAccessService.ts`
 - `packages/runtime/src/services/vault/VaultService.ts`
 - `packages/runtime/src/services/vault.ts`
   显式 vault boundary，注册 `ctx.vault` 和 eager `ctx.root.vaultAdmin`
@@ -11,12 +11,12 @@
 
 ## 核心原则
 
-- verification 只回答 host management admin surface 是否允许访问
+- adminAccess 只回答 host management admin surface 是否允许访问
 - Pluxel 没有 management 非 admin 用户模型；通过验证的人就是 management admin
 - Pluxel 不保存本地账号、密码、OTP secret 或 passkey credential
-- `management.enabled=false` 不挂 runtime web management，不要求 OIDC
-- `management.enabled=true` 且 `management.access.exposure='private'` 不要求 OIDC
-- `management.enabled=true` 且 `management.access.exposure='public'` 必须配置 OIDC，否则 fail fast
+- `adminAccess.enabled=false` 不挂 runtime web management，不要求 OIDC
+- `adminAccess.enabled=true` 且 `adminAccess.exposure='private'` 不要求 OIDC
+- `adminAccess.enabled=true` 且 `adminAccess.exposure='public'` 必须配置 OIDC，否则 fail fast
 - OIDC 可以预先保留在 private/disabled 配置里，供后续切 public 使用
 - listen/bind host 属于 launcher/deployment concern，不作为 runtime access policy 的唯一事实来源
 - vault 只负责加密落盘，和 OIDC 身份验证解耦
@@ -24,7 +24,7 @@
 
 ## 核心接口
 
-- `ctx.root.verification`
+- `ctx.root.adminAccess`
   `authorize()` / `describe()`；`allow=true` 表示允许进入 management admin surface
 - `ctx.vault`
   `kv()` / `docs()` / `blobs()` / `namespace()` / `flush()`
@@ -39,22 +39,22 @@
 
 ## 状态模型
 
-- verification
+- adminAccess
   `exposure: 'private' | 'public'`
   `provider: 'none' | 'oidc'`
   `allow: boolean`
   `reason?: 'private' | 'missing_oidc' | 'unauthenticated' | 'invalid_token' | 'forbidden'`
   `principal?: { provider: 'oidc', subject, claims }`
 
-`management.access.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略。public
-management 下，OIDC JWT 满足 issuer/audience/requiredClaims 后即视为 admin；不满足则不能进入后台。
+`adminAccess.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略。public
+admin access 下，OIDC JWT 满足 issuer/audience/requiredClaims 后即视为 admin；不满足则不能进入后台。
 
 - vault
   `present` / `unlocked` / `unlockedBy` / `lastError` / `deploy` / `hostIdentityPresent` / `namespaces`
 
 ## Host 启动约束
 
-- management public access 必须在 HTTP 服务初始化时通过 OIDC 配置校验
+- public admin access 必须在 HTTP 服务初始化时通过 OIDC 配置校验
 - Vault 只有一个启用入口：显式 import `@pluxel/runtime/services/vault`
 - host 在插件运行前调用 `ctx.prepareServices()`；vaultAdmin 是 eager root service，会在
   自己的 `prepare()` 里完成 vault bootstrap。dynamic/HMR 不做插件级归因，使用方如果启用

@@ -5,17 +5,17 @@ import { isAbsolute, resolve } from 'pathe'
 import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
-	createManagementAccessBlockedHeaders,
-	createManagementAccessBlockedPayload,
-	resolveManagementAccessRedirectPath,
-	type ManagementAccessBlockedKind,
-	type ManagementAccessReason,
-} from '../../shared/verification-http'
+	createAdminAccessBlockedHeaders,
+	createAdminAccessBlockedPayload,
+	resolveAdminAccessRedirectPath,
+	type AdminAccessBlockedKind,
+	type AdminAccessReason,
+} from '../../shared/admin-access-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
-import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
-import { resolveManagementConfig } from '../verification/model'
+import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
+import { resolveAdminAccessConfig } from '../admin-access/model'
 import type { SseChannel } from '../plugin-interaction/SseService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
@@ -173,32 +173,35 @@ export class HttpService {
 		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
-		const managementConfig = resolveManagementConfig(this.hostCtx.config.management)
-		const management = managementConfig.enabled
+		const adminAccessConfig = resolveAdminAccessConfig(this.hostCtx.config.adminAccess)
+		const adminAccessEnabled = adminAccessConfig.enabled
 		if (
-			management &&
-			managementConfig.access.exposure === 'public' &&
-			!managementConfig.access.oidc
+			adminAccessEnabled &&
+			adminAccessConfig.exposure === 'public' &&
+			!adminAccessConfig.oidc
 		) {
-			throw new Error('Public management access requires management.access.oidc.')
+			throw new Error('Public admin access requires adminAccess.oidc.')
 		}
-		const useDefaultControlPlane = management && runtimeConfig.controlPlane === undefined
+		const useDefaultControlPlane = adminAccessEnabled && runtimeConfig.controlPlane === undefined
 		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
-				web: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
-				rpc: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
-				sse: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
+				web:
+					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
+				rpc:
+					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
+				sse:
+					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
 			},
 			graphql,
-			uiAssets: management ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
+			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
 			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
 		}
-		if (management) {
+		if (adminAccessEnabled) {
 			this.mountHostBoundary({
-				id: 'pluxel:verification',
-				path: VERIFICATION_PAGE_PATH,
-				boundary: this.createLazyVerificationBoundary(),
+				id: 'pluxel:admin-access',
+				path: ADMIN_ACCESS_PAGE_PATH,
+				boundary: this.createLazyAdminAccessBoundary(),
 			})
 		}
 		this.rebuildRootApp()
@@ -303,15 +306,15 @@ export class HttpService {
 		})
 	}
 
-	private createLazyVerificationBoundary(): HttpHandler {
+	private createLazyAdminAccessBoundary(): HttpHandler {
 		let appPromise: Promise<BaseElysiaApp> | undefined
 		return async (request) => {
-			appPromise ??= import('../verification/http').then(({ createVerificationRoutes }) =>
-				createVerificationRoutes(
+			appPromise ??= import('../admin-access/http').then(({ createAdminAccessRoutes }) =>
+				createAdminAccessRoutes(
 					this.hostCtx,
 					this.createApp(this.hostCtx, {
 						aot: true,
-						name: 'pluxel.http.verification',
+						name: 'pluxel.http.admin-access',
 					}),
 				),
 			)
@@ -517,9 +520,9 @@ export class HttpService {
 		request: Request,
 		path: string,
 		method: string,
-		kind: ManagementAccessBlockedKind,
+		kind: AdminAccessBlockedKind,
 	): Promise<Response | undefined> {
-		const state = await this.hostCtx.root.verification.authorize({
+		const state = await this.hostCtx.root.adminAccess.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,
@@ -535,29 +538,29 @@ export class HttpService {
 				method,
 				reason: state.reason,
 			})
-			return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
+			return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
 		}
 		if (state.allow) return undefined
 
-		this.logger.warn('Blocked management admin access gate', {
+		this.logger.warn('Blocked admin access gate', {
 			kind,
 			path,
 			method,
 			reason: state.reason,
 		})
 
-		return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
+		return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
 	}
 
-	private buildVerificationDeniedResponse(
+	private buildAdminAccessDeniedResponse(
 		request: Request,
 		path: string,
 		method: string,
-		kind: ManagementAccessBlockedKind,
-		reason?: ManagementAccessReason,
+		kind: AdminAccessBlockedKind,
+		reason?: AdminAccessReason,
 	): Response {
-		const redirectPath = resolveManagementAccessRedirectPath(
-			buildVerificationRedirectPath,
+		const redirectPath = resolveAdminAccessRedirectPath(
+			buildAdminAccessRedirectPath,
 			request,
 			kind,
 			reason,
@@ -573,10 +576,10 @@ export class HttpService {
 		}
 
 		return Response.json(
-			createManagementAccessBlockedPayload(path, method, kind, redirectPath, reason),
+			createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason),
 			{
 				status: 401,
-				headers: createManagementAccessBlockedHeaders(redirectPath, reason),
+				headers: createAdminAccessBlockedHeaders(redirectPath, reason),
 			},
 		)
 	}

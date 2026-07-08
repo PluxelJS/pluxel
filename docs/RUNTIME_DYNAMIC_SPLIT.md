@@ -58,7 +58,7 @@ runtime common 仍然复用：
 - plugin config/status/lifecycle usecases。
 - HTTP/RPC transport。
 - web protocol 和插件 UI protocols。
-- vault/fs/logging/verification 等宿主服务。
+- vault/fs/logging/admin access 等宿主服务。
 
 这样 runtime-static route 未来只需要提供另一份 catalog/startup/hmr replacement 适配，不需要复制 runtime。
 
@@ -68,7 +68,7 @@ runtime common 仍然复用：
 
 - GraphQL 字段仍是 `packageInventory` / `packageLoadIssues`。
 - RPC 入口是 `rpc.feature('packageManager')`，调用前可通过 `rpc.features()` 发现能力。
-实现归属改变：这些入口只有在 loader route 注册后可用。dynamic HMR host 会显式 import `@pluxel/runtime-dynamic/register`；static route 不加载 loader/scan/package 注册。
+  实现归属改变：这些入口只有在 loader route 注册后可用。dynamic HMR host 会显式 import `@pluxel/runtime-dynamic/register`；static route 不加载 loader/scan/package 注册。
 
 ## 清理结论
 

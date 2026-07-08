@@ -1,17 +1,17 @@
 import { type Context as PluxelContext, RootService } from '@pluxel/core'
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { recordSecurityEvent } from '../security/audit'
-import { DEFAULT_OIDC_TOKEN_HEADER, resolveManagementConfig } from './model'
+import { DEFAULT_OIDC_TOKEN_HEADER, resolveAdminAccessConfig } from './model'
 import type {
-	ManagementAccessAuthorizeInput,
-	ManagementAccessConfig,
-	ManagementAccessClaimRequirement,
-	ManagementAccessOidcConfig,
-	ManagementAccessOverview,
-	ManagementAccessState,
+	AdminAccessAuthorizeInput,
+	AdminAccessClaimRequirement,
+	AdminAccessOidcConfig,
+	AdminAccessOverview,
+	AdminAccessState,
+	ResolvedAdminAccessConfig,
 } from './types'
 
-const serviceName = 'verification' as const
+const serviceName = 'adminAccess' as const
 
 type OidcDiscovery = {
 	issuer: string
@@ -24,12 +24,12 @@ const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 declare module '@pluxel/core' {
 	namespace Context {
 		interface RootServices {
-			[serviceName]: VerificationService
+			[serviceName]: AdminAccessService
 		}
 	}
 }
 
-function readHeaders(input: ManagementAccessAuthorizeInput): Headers {
+function readHeaders(input: AdminAccessAuthorizeInput): Headers {
 	return input.headers ?? input.request?.headers ?? new Headers()
 }
 
@@ -54,7 +54,7 @@ function claimValues(value: unknown): string[] {
 	return value.filter((entry): entry is string => typeof entry === 'string')
 }
 
-function claimMatches(actual: unknown, expected: ManagementAccessClaimRequirement): boolean {
+function claimMatches(actual: unknown, expected: AdminAccessClaimRequirement): boolean {
 	const actualValues = claimValues(actual)
 	const expectedValues = Array.isArray(expected) ? expected : [expected]
 	return expectedValues.some((entry) => actualValues.includes(entry))
@@ -62,7 +62,7 @@ function claimMatches(actual: unknown, expected: ManagementAccessClaimRequiremen
 
 function claimsMatch(
 	payload: JWTPayload,
-	requiredClaims: Record<string, ManagementAccessClaimRequirement>,
+	requiredClaims: Record<string, AdminAccessClaimRequirement>,
 ): boolean {
 	for (const [name, expected] of Object.entries(requiredClaims)) {
 		if (!claimMatches(payload[name], expected)) return false
@@ -104,10 +104,10 @@ async function resolveJwks(issuer: string): Promise<ReturnType<typeof createRemo
 }
 
 @RootService({ key: serviceName })
-export class VerificationService {
+export class AdminAccessService {
 	constructor(public ctx: PluxelContext) {}
 
-	async authorize(input: ManagementAccessAuthorizeInput = {}): Promise<ManagementAccessState> {
+	async authorize(input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessState> {
 		const config = this.readConfig()
 		if (config.exposure !== 'public') {
 			return {
@@ -123,7 +123,7 @@ export class VerificationService {
 		return await this.verifyOidcToken(config.oidc, token)
 	}
 
-	async describe(input: ManagementAccessAuthorizeInput = {}): Promise<ManagementAccessOverview> {
+	async describe(input: AdminAccessAuthorizeInput = {}): Promise<AdminAccessOverview> {
 		const config = this.readConfig()
 		const state = await this.authorize(input)
 		return {
@@ -142,9 +142,9 @@ export class VerificationService {
 	}
 
 	private async verifyOidcToken(
-		config: ManagementAccessOidcConfig,
+		config: AdminAccessOidcConfig,
 		token: string,
-	): Promise<ManagementAccessState> {
+	): Promise<AdminAccessState> {
 		try {
 			const jwks = await resolveJwks(config.issuer)
 			const result = await jwtVerify(token, jwks, {
@@ -154,7 +154,7 @@ export class VerificationService {
 			})
 			if (config.requiredClaims && !claimsMatch(result.payload, config.requiredClaims)) {
 				recordSecurityEvent(this.ctx, {
-					area: 'verification',
+					area: 'adminAccess',
 					action: 'authorize',
 					status: 'failure',
 					reason: 'forbidden',
@@ -173,22 +173,18 @@ export class VerificationService {
 			}
 		} catch (error) {
 			recordSecurityEvent(this.ctx, {
-				area: 'verification',
+				area: 'adminAccess',
 				action: 'authorize',
 				status: 'failure',
 				reason: 'invalid_token',
-				message: error instanceof Error ? error.message : 'OIDC token verification failed.',
+				message: error instanceof Error ? error.message : 'OIDC token check failed.',
 			})
 			return { allow: false, reason: 'invalid_token' }
 		}
 	}
 
-	private readConfig(): ManagementAccessConfig {
-		const config = this.ctx.config as { management?: unknown }
-		const management = resolveManagementConfig(config.management)
-		if (!management.enabled) {
-			return { exposure: 'private' }
-		}
-		return management.access
+	private readConfig(): ResolvedAdminAccessConfig {
+		const config = this.ctx.config as { adminAccess?: unknown }
+		return resolveAdminAccessConfig(config.adminAccess)
 	}
 }

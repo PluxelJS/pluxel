@@ -51,13 +51,13 @@ identity_providers:
       - key: |
           {{- fileContent "/config/oidc.private.pem" | nindent 10 }}
     clients:
-      - client_id: pluxel-host-verification
-        client_name: Pluxel Host Verification
+      - client_id: pluxel-host-admin-access
+        client_name: Pluxel Host Admin Access
         client_secret: '$argon2id$v=19$m=65536,t=3,p=4$Hjc7UQKiayw7pk6XNHWh1Q$u+UfWRZEqAWlw7yyYn8fBZ4/JIxQ2EnJOFXtUz3e0vg'
         public: false
         authorization_policy: one_factor
         redirect_uris:
-          - http://127.0.0.1:3310/security
+          - http://127.0.0.1:3310/__pluxel/admin-access
         scopes:
           - openid
           - profile

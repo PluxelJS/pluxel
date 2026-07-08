@@ -15,8 +15,8 @@
 
 - `packages/runtime/src/services/http/HttpService.ts`
   HTTP / control plane / UI assets
-- `packages/runtime/src/services/verification/VerificationService.ts`
-  host management admin access gate
+- `packages/runtime/src/services/admin-access/AdminAccessService.ts`
+  host admin access gate
 - `packages/runtime/src/services/vault/VaultService.ts`
   `ctx.vault` 存储面与 host-only `ctx.root.vaultAdmin`
 - `packages/runtime/src/services/vault.ts`
@@ -68,14 +68,14 @@
 
 ## Host Security
 
-- `packages/runtime/HOST_VERIFICATION_DESIGN.md`
+- `packages/runtime/HOST_ADMIN_ACCESS_DESIGN.md`
   安全模型与原则
 - `packages/runtime/src/api/http/security.ts`
   host-only security 管理 API
 - `packages/runtime/src/api/http/meta.ts`
-  management admin access state snapshot
+  admin access state snapshot
 - `packages/runtime/src/services/http/internalApi.ts`
-  internal API management admin access gate
+  internal API admin access gate
 - `packages/runtime/src/services/vault/加密实现规范.md`
   vault 使用边界
 
@@ -98,5 +98,5 @@
 
 - `packages/runtime/tests/services/vault-service.test.ts`
   vault 状态、密钥与预检
-- `packages/runtime/tests/verification/host-verification-flow.test.ts`
-  management admin access gate 与 security API
+- `packages/runtime/tests/admin-access/host-admin-access-flow.test.ts`
+  admin access gate 与 security API

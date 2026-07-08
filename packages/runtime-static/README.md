@@ -39,9 +39,9 @@ export default defineStaticRuntimeConfig({
 	},
 	persistence: { mode: 'memory' },
 	pluginData: { enabled: true },
-	management: {
+	adminAccess: {
 		enabled: false,
-		access: { exposure: 'private' },
+		exposure: 'private',
 	},
 	logger: { preset: 'core' },
 })
@@ -103,6 +103,6 @@ must not import `@pluxel/runtime-dev`.
 Rolldown/OXC/Vite and web Module Federation toolchain helpers. It is an optional peer for
 development usage, not a production dependency of the fetch runtime entry.
 
-Current remaining optimization target: internal GraphQL and verification still belong to the
+Current remaining optimization target: internal GraphQL and admin access still belong to the
 default static register. They are valid production capabilities today, but they are the next place
 to evaluate opt-in splitting if the minimum worker bundle needs to shrink further.

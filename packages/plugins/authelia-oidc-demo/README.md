@@ -5,7 +5,7 @@ Standalone OIDC integration demo under `packages/plugins`, separate from `plugin
 
 It demonstrates two different OIDC paths against the same local Authelia issuer:
 
-- Pluxel host management verification with the `pluxel-host-verification` client.
+- Pluxel host admin access with the `pluxel-host-admin-access` client.
 - A plugin-owned business login with the `pluxel-business-demo` client.
 
 Start Authelia:

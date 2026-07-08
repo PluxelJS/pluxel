@@ -1,26 +1,18 @@
 import type {
-	ManagementAccessConfig,
-	ManagementConfig,
-	ManagementAccessClaimRequirement,
-	ManagementAccessExposure,
-	ManagementAccessOidcConfig,
+	AdminAccessClaimRequirement,
+	AdminAccessExposure,
+	AdminAccessOidcConfig,
+	ResolvedAdminAccessConfig,
 } from './types'
 
-export const DEFAULT_VERIFICATION_EXPOSURE = 'private' as const
+export const DEFAULT_ADMIN_ACCESS_EXPOSURE = 'private' as const
 export const DEFAULT_OIDC_TOKEN_HEADER = 'authorization' as const
 
-type ManagementAccessConfigLike =
-	| {
-			exposure?: unknown
-			oidc?: unknown
-	  }
-	| null
-	| undefined
-
-type ManagementConfigLike =
+type AdminAccessConfigLike =
 	| {
 			enabled?: unknown
-			access?: ManagementAccessConfigLike
+			exposure?: unknown
+			oidc?: unknown
 	  }
 	| null
 	| undefined
@@ -45,7 +37,7 @@ function normalizeAudience(value: unknown): string | string[] | undefined {
 	return audience.length > 0 ? audience : undefined
 }
 
-function normalizeClaimRequirement(value: unknown): ManagementAccessClaimRequirement | undefined {
+function normalizeClaimRequirement(value: unknown): AdminAccessClaimRequirement | undefined {
 	if (typeof value === 'string') return trimOrUndefined(value)
 	if (!Array.isArray(value)) return undefined
 	const seen = new Set<string>()
@@ -61,9 +53,9 @@ function normalizeClaimRequirement(value: unknown): ManagementAccessClaimRequire
 
 function normalizeRequiredClaims(
 	value: unknown,
-): Record<string, ManagementAccessClaimRequirement> | undefined {
+): Record<string, AdminAccessClaimRequirement> | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-	const claims: Record<string, ManagementAccessClaimRequirement> = {}
+	const claims: Record<string, AdminAccessClaimRequirement> = {}
 	for (const [key, raw] of Object.entries(value)) {
 		const name = key.trim()
 		const requirement = normalizeClaimRequirement(raw)
@@ -79,7 +71,7 @@ function normalizeClockTolerance(value: unknown): number | undefined {
 	return Math.floor(seconds)
 }
 
-function normalizeOidcConfig(value: unknown): ManagementAccessOidcConfig | undefined {
+function normalizeOidcConfig(value: unknown): AdminAccessOidcConfig | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
 	const source = value as {
 		issuer?: unknown
@@ -103,25 +95,22 @@ function normalizeOidcConfig(value: unknown): ManagementAccessOidcConfig | undef
 	}
 }
 
-function resolveManagementAccessConfig(input?: ManagementAccessConfigLike): ManagementAccessConfig {
-	const exposure: ManagementAccessExposure =
-		input?.exposure === 'public' ? 'public' : DEFAULT_VERIFICATION_EXPOSURE
+export function resolveAdminAccessConfig(
+	input?: AdminAccessConfigLike,
+): ResolvedAdminAccessConfig {
+	const enabled = input?.enabled === true
+	const exposure: AdminAccessExposure =
+		input?.exposure === 'public' ? 'public' : DEFAULT_ADMIN_ACCESS_EXPOSURE
 	const oidc = normalizeOidcConfig(input?.oidc)
-	if (exposure === 'private') {
+	if (!enabled) {
 		return {
+			enabled: false,
 			exposure: 'private',
-			...(oidc ? { oidc } : {}),
 		}
 	}
 	return {
-		exposure: 'public',
+		enabled,
+		exposure,
 		...(oidc ? { oidc } : {}),
-	}
-}
-
-export function resolveManagementConfig(input?: ManagementConfigLike): Required<ManagementConfig> {
-	return {
-		enabled: input?.enabled === true,
-		access: resolveManagementAccessConfig(input?.access),
 	}
 }

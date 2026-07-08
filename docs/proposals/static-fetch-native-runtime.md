@@ -168,7 +168,7 @@ Node `IncomingMessage` / `ServerResponse` bridge 不是 public runtime surface�
 - 把更多平台特定 fetch bridge 文档化；runtime core 不应新增 framework adapter。
 - 为 static production 增加应用级 bundle fixture：从真实 `createStaticRuntime(config)` entry
   经 tsdown 打单文件，并断言 bundle 不含 Vite/Rolldown/chokidar/Node transport/Vault/web-management。
-- 评估把 internal GraphQL / verification 从 static 最小注册继续拆成 opt-in capability；
+- 评估把 internal GraphQL / admin access 从 static 最小注册继续拆成 opt-in capability；
   当前它们仍属于默认 static register，因此会进入消费方 production bundle。
 - `/vite`、static Vite HMR、dynamic HMR 和插件 UI bridge 不追求轻量化；只需要守住它们不泄漏进
   static production 主入口。
@@ -210,7 +210,7 @@ Elysia root
 - runtime state，默认 memory/ephemeral persistence，可配置 durable file/database/KV backend。
 - plugin data，默认复用共享 persistence backend。
 - Elysia-backed HTTP fetch service，包含 GraphQL HTTP capability。
-- verification，默认 private/no-op。
+- admin access，默认 private/no-op。
 - logger core 默认可用；console/file sink 是可配置 sink，UI sink 归入 web-management bundle。
 
 注册所有权规则：
@@ -241,7 +241,7 @@ export default defineStaticRuntimeConfig({
 	configService: { mode: 'memory' },
 	runtimeState: { mode: 'memory' },
 	persistence: { mode: 'memory' },
-	management: { enabled: false, access: { exposure: 'private' } },
+	adminAccess: { enabled: false, exposure: 'private' },
 	logger: {
 		sinks: {
 			console: { enabled: true },
@@ -259,7 +259,7 @@ import '@pluxel/runtime/services/web-management'
 export default defineStaticRuntimeConfig({
 	name: 'orders-api',
 	plugins: [OrdersPlugin],
-	management: { enabled: true, access: { exposure: 'private' } },
+	adminAccess: { enabled: true, exposure: 'private' },
 })
 ```
 

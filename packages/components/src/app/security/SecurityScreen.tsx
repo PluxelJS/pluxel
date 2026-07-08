@@ -70,10 +70,10 @@ function toneForReason(reason?: string): string {
 	}
 }
 
-function labelForAccessState(verification: SecurityOverview['verification']): string {
-	if (verification.allow && verification.exposure === 'private') return 'private'
-	if (verification.allow) return 'admin allowed'
-	switch (verification.reason) {
+function labelForAccessState(adminAccess: SecurityOverview['adminAccess']): string {
+	if (adminAccess.allow && adminAccess.exposure === 'private') return 'private'
+	if (adminAccess.allow) return 'admin allowed'
+	switch (adminAccess.reason) {
 		case 'missing_oidc':
 			return 'missing oidc'
 		case 'unauthenticated':
@@ -153,7 +153,7 @@ export function SecurityScreen() {
 	const [error, setError] = useState<string | null>(null)
 	const [deployRecipientsDraft, setDeployRecipientsDraft] = useState('')
 	const [generatedKeyPair, setGeneratedKeyPair] = useState<VaultKeyPair | null>(null)
-	const verification = overview?.verification ?? null
+	const adminAccess = overview?.adminAccess ?? null
 	const vault = overview?.vault ?? null
 
 	function applyOverview(nextOverview: SecurityOverview, options: RefreshOptions = {}) {
@@ -248,7 +248,7 @@ export function SecurityScreen() {
 		)
 	}
 
-	if (error || !overview || !verification || !vault) {
+	if (error || !overview || !adminAccess || !vault) {
 		return (
 			<ErrorState
 				title="Security state unavailable"
@@ -287,8 +287,8 @@ export function SecurityScreen() {
 								<IconShieldLock size={18} />
 								<Title order={3}>Access</Title>
 							</Group>
-							<Badge color={verification.allow ? 'green' : toneForReason(verification.reason)}>
-								{labelForAccessState(verification)}
+							<Badge color={adminAccess.allow ? 'green' : toneForReason(adminAccess.reason)}>
+								{labelForAccessState(adminAccess)}
 							</Badge>
 						</Group>
 						<Divider />
@@ -297,30 +297,30 @@ export function SecurityScreen() {
 								<Text size="xs" c="dimmed" fw={700}>
 									Exposure
 								</Text>
-								<Text fw={700}>{verification.exposure}</Text>
+								<Text fw={700}>{adminAccess.exposure}</Text>
 							</div>
 							<div style={summaryCardStyle}>
 								<Text size="xs" c="dimmed" fw={700}>
 									Provider
 								</Text>
-								<Text fw={700}>{verification.provider}</Text>
+								<Text fw={700}>{adminAccess.provider}</Text>
 							</div>
 							<div style={summaryCardStyle}>
 								<Text size="xs" c="dimmed" fw={700}>
 									Issuer
 								</Text>
-								<Text fw={700}>{verification.issuer ?? '-'}</Text>
+								<Text fw={700}>{adminAccess.issuer ?? '-'}</Text>
 							</div>
 							<div style={summaryCardStyle}>
 								<Text size="xs" c="dimmed" fw={700}>
 									Token Header
 								</Text>
-								<Text fw={700}>{verification.tokenHeader ?? '-'}</Text>
+								<Text fw={700}>{adminAccess.tokenHeader ?? '-'}</Text>
 							</div>
 						</div>
-						{verification.requiredClaims ? (
+						{adminAccess.requiredClaims ? (
 							<Text size="sm" c="dimmed">
-								Admin claims: {JSON.stringify(verification.requiredClaims)}
+								Admin claims: {JSON.stringify(adminAccess.requiredClaims)}
 							</Text>
 						) : null}
 					</Stack>

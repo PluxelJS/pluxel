@@ -82,7 +82,7 @@ export default defineStaticRuntimeConfig({
 		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
-	management: { enabled: true, access: { exposure: 'private' } },
+	adminAccess: { enabled: true, exposure: 'private' },
 })
 ```
 

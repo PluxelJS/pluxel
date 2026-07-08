@@ -1,6 +1,6 @@
 import type { Context as PluxelContext } from '@pluxel/core'
 import type { AnyElysiaApp } from '../http/elysia'
-import { buildVerificationRedirectPath } from './transport'
+import { buildAdminAccessRedirectPath } from './transport'
 
 function escapeHtml(input: string): string {
 	return input
@@ -38,13 +38,13 @@ function statusText(reason?: string): string {
 	}
 }
 
-async function renderVerificationPage(ctx: PluxelContext, request: Request): Promise<string> {
+async function renderAdminAccessPage(ctx: PluxelContext, request: Request): Promise<string> {
 	const url = new URL(request.url)
-	const verification = await ctx.root.verification.describe({ request })
+	const adminAccess = await ctx.root.adminAccess.describe({ request })
 	const returnTo = sanitizeReturnTo(request, url.searchParams.get('returnTo'))
 	const action =
-		verification.reason === 'missing_oidc'
-			? '<p>Configure public management access with an OIDC issuer, or run this host in private mode.</p>'
+		adminAccess.reason === 'missing_oidc'
+			? '<p>Configure public admin access with an OIDC issuer, or run this host in private mode.</p>'
 			: `<p>Authenticate through the configured OIDC provider, then return to <code>${escapeHtml(returnTo)}</code>.</p>`
 
 	return `<!doctype html>
@@ -66,20 +66,20 @@ async function renderVerificationPage(ctx: PluxelContext, request: Request): Pro
   </head>
   <body>
     <main>
-      <div class="pill">${escapeHtml(verification.exposure)} · ${escapeHtml(verification.provider)}</div>
+      <div class="pill">${escapeHtml(adminAccess.exposure)} · ${escapeHtml(adminAccess.provider)}</div>
       <h1>Pluxel Admin Access</h1>
-      <p>${escapeHtml(statusText(verification.reason))}</p>
+      <p>${escapeHtml(statusText(adminAccess.reason))}</p>
       ${action}
-      <p><a href="${escapeHtml(buildVerificationRedirectPath(returnTo))}">Retry</a></p>
+      <p><a href="${escapeHtml(buildAdminAccessRedirectPath(returnTo))}">Retry</a></p>
     </main>
   </body>
 </html>`
 }
 
-export function createVerificationRoutes(ctx: PluxelContext, app: AnyElysiaApp): AnyElysiaApp {
+export function createAdminAccessRoutes(ctx: PluxelContext, app: AnyElysiaApp): AnyElysiaApp {
 	return app.get('/', async ({ request, set }) => {
-		const verification = await ctx.root.verification.describe({ request })
-		if (verification.allow) {
+		const adminAccess = await ctx.root.adminAccess.describe({ request })
+		if (adminAccess.allow) {
 			return new Response(null, {
 				status: 302,
 				headers: {
@@ -90,6 +90,6 @@ export function createVerificationRoutes(ctx: PluxelContext, app: AnyElysiaApp):
 		}
 		set.headers['cache-control'] = 'no-store'
 		set.headers['content-type'] = 'text/html; charset=utf-8'
-		return await renderVerificationPage(ctx, request)
+		return await renderAdminAccessPage(ctx, request)
 	})
 }

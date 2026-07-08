@@ -5,7 +5,7 @@ Local Authelia setup for `packages/plugins/authelia-oidc-demo`.
 Demo credentials:
 
 - Authelia user: `demo` / `password`
-- Pluxel host verification client: `pluxel-host-verification` / `password`
+- Pluxel host admin access client: `pluxel-host-admin-access` / `password`
 - Business app client: `pluxel-business-demo` / `password`
 - Authelia issuer: `http://127.0.0.1:9091`
 - Authelia storage: SQLite at `/config/db.sqlite3`
@@ -18,39 +18,34 @@ Authelia reads [config/configuration.yml](./config/configuration.yml),
 [config/oidc.private.pem](./config/oidc.private.pem). The compose file enables Authelia's
 `template` config filter so `configuration.yml` can load that PEM without inlining it.
 
-## Pluxel Host Verification OIDC
+## Pluxel Host Admin Access OIDC
 
-Use the `pluxel-host-verification` Authelia client for Pluxel's built-in host/control-plane
-verification.
+Use the `pluxel-host-admin-access` Authelia client for Pluxel's built-in host/control-plane admin access.
 
 Runtime config:
 
 ```ts
-management: {
+adminAccess: {
 	enabled: true,
-	access: {
-		exposure: 'public',
-		oidc: {
-			issuer: 'http://127.0.0.1:9091',
-			audience: 'pluxel-host-verification',
-			requiredClaims: { groups: 'pluxel-admins' },
-		},
+	exposure: 'public',
+	oidc: {
+		issuer: 'http://127.0.0.1:9091',
+		audience: 'pluxel-host-admin-access',
+		requiredClaims: { groups: 'pluxel-admins' },
 	},
 },
 ```
 
-OIDC can stay in config while the management surface is disabled or private. Pluxel only fails fast
-when management is enabled and `access.exposure` is `public` without OIDC:
+OIDC can stay in config while admin access is disabled or private. Pluxel only fails fast
+when `adminAccess.enabled=true` and `adminAccess.exposure` is `public` without OIDC:
 
 ```ts
-management: {
+adminAccess: {
 	enabled: false,
-	access: {
-		exposure: 'private',
-		oidc: {
-			issuer: 'http://127.0.0.1:9091',
-			audience: 'pluxel-host-verification',
-		},
+	exposure: 'private',
+	oidc: {
+		issuer: 'http://127.0.0.1:9091',
+		audience: 'pluxel-host-admin-access',
 	},
 },
 ```
@@ -78,7 +73,7 @@ http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo
 ```
 
 The business login owns its callback, cookie, token exchange, and app authorization rules. Keep it
-separate from `ctx.root.verification.authorize()`, which only protects the Pluxel host/control-plane.
+separate from `ctx.root.adminAccess.authorize()`, which only protects Pluxel admin access.
 
 ## Vault Usage
 
