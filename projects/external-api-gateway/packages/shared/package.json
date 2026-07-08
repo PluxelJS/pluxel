@@ -19,10 +19,6 @@
 			"types": "./src/gateway/contracts.ts",
 			"default": "./src/gateway/contracts.ts"
 		},
-		"./provider": {
-			"types": "./src/provider/contracts.ts",
-			"default": "./src/provider/contracts.ts"
-		},
 		"./usage": {
 			"types": "./src/usage/contracts.ts",
 			"default": "./src/usage/contracts.ts"

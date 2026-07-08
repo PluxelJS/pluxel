@@ -23,13 +23,11 @@ import {
 	type YiqichaTestRunRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
-import type { ProviderDescriptor } from '@repo/external-api-gateway-shared/provider'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
 import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
-import { yiqichaProviderDescriptor } from './descriptor.ts'
 import type {
 	YiqichaApiDoc,
 	YiqichaApiSummary,
@@ -197,10 +195,6 @@ export class YiqichaProviderPlugin extends BasePlugin {
 
 	routeBase(): string {
 		return this.ctx.http.plugin.base(ROUTE_BASE)
-	}
-
-	descriptor(): ProviderDescriptor {
-		return yiqichaProviderDescriptor
 	}
 
 	listCatalog(filter: YiqichaCatalogFilter = {}): YiqichaApiSummary[] {

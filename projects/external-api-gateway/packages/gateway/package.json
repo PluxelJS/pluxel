@@ -7,9 +7,18 @@
 			"types": "./src/gateway/plugin.ts",
 			"default": "./src/gateway/plugin.ts"
 		},
+		"./tools": {
+			"types": "./src/gateway/tools.ts",
+			"default": "./src/gateway/tools.ts"
+		},
+		"./pi": {
+			"types": "./src/gateway/pi-extension.ts",
+			"default": "./src/gateway/pi-extension.ts"
+		},
 		"./package.json": "./package.json"
 	},
 	"scripts": {
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	}
 }

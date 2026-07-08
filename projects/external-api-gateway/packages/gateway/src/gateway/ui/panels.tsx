@@ -47,7 +47,7 @@ export function GatewayDashboard() {
 				<Stack gap={2}>
 					<Title order={3}>External Gateway RPC</Title>
 					<Text size="sm" c="dimmed">
-						外部系统通过 Cap&apos;n Web RPC 认证后调用 adapter capability
+						外部系统通过 Cap&apos;n Web RPC 认证后调用稳定 tool
 					</Text>
 				</Stack>
 				<Badge variant="light">Cap&apos;n Web</Badge>
