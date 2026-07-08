@@ -27,11 +27,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
 	DEFAULT_ZHIPU_BASE_URL,
 	DEFAULT_ZHIPU_CHAT_MODEL,
-	DEFAULT_ZHIPU_IMAGE_MODEL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
-	DEFAULT_ZHIPU_SPEECH_MODEL,
 	DEFAULT_ZHIPU_TOKENIZER_MODEL,
-	DEFAULT_ZHIPU_VIDEO_MODEL,
 } from '../../constants'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
 import { zhipuPlugin } from './runtime'
@@ -40,20 +37,11 @@ type Mode = 'files-ocr' | 'layout-parsing'
 type ApiMode =
 	| 'chat'
 	| 'tokenizer'
-	| 'images'
-	| 'async-images'
-	| 'async-result'
-	| 'videos'
-	| 'audio-transcriptions'
 	| 'web-search'
 	| 'reader'
 	| 'embeddings'
 	| 'rerank'
 	| 'moderations'
-	| 'files'
-	| 'agents'
-	| 'agent-async-result'
-	| 'agent-conversation'
 	| 'raw'
 
 type ApiCatalogItem = {
@@ -62,7 +50,6 @@ type ApiCatalogItem = {
 	operation: string
 	path: string
 	method: 'GET' | 'POST'
-	kind: 'json' | 'upload'
 	defaultModel?: string
 	defaultBody: Record<string, unknown>
 }
@@ -145,7 +132,6 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'chat.completions',
 		path: '/chat/completions',
 		method: 'POST',
-		kind: 'json',
 		defaultModel: DEFAULT_ZHIPU_CHAT_MODEL,
 		defaultBody: {
 			model: DEFAULT_ZHIPU_CHAT_MODEL,
@@ -158,7 +144,6 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'tokenizer',
 		path: '/tokenizer',
 		method: 'POST',
-		kind: 'json',
 		defaultModel: DEFAULT_ZHIPU_TOKENIZER_MODEL,
 		defaultBody: {
 			model: DEFAULT_ZHIPU_TOKENIZER_MODEL,
@@ -166,76 +151,11 @@ const API_CATALOG: ApiCatalogItem[] = [
 		},
 	},
 	{
-		value: 'images',
-		label: 'Image Generation',
-		operation: 'images.generations',
-		path: '/images/generations',
-		method: 'POST',
-		kind: 'json',
-		defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
-		defaultBody: {
-			model: DEFAULT_ZHIPU_IMAGE_MODEL,
-			prompt: 'A clean product photo of a compact desk lamp on a white background.',
-			size: '1280x1280',
-		},
-	},
-	{
-		value: 'async-images',
-		label: 'Async Image',
-		operation: 'images.generations.async',
-		path: '/async/images/generations',
-		method: 'POST',
-		kind: 'json',
-		defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
-		defaultBody: {
-			model: DEFAULT_ZHIPU_IMAGE_MODEL,
-			prompt: 'A clean product photo of a compact desk lamp on a white background.',
-			size: '1280x1280',
-		},
-	},
-	{
-		value: 'async-result',
-		label: 'Async Result',
-		operation: 'async_result',
-		path: '/async-result/{id}',
-		method: 'GET',
-		kind: 'json',
-		defaultBody: { id: 'replace-with-task-id' },
-	},
-	{
-		value: 'videos',
-		label: 'Video Generation',
-		operation: 'videos.generations',
-		path: '/videos/generations',
-		method: 'POST',
-		kind: 'json',
-		defaultModel: DEFAULT_ZHIPU_VIDEO_MODEL,
-		defaultBody: {
-			model: DEFAULT_ZHIPU_VIDEO_MODEL,
-			prompt: 'A cat is playing with a ball.',
-			quality: 'quality',
-			with_audio: true,
-			size: '1920x1080',
-			fps: 30,
-		},
-	},
-	{
-		value: 'audio-transcriptions',
-		label: 'Audio Transcription',
-		operation: 'audio.transcriptions',
-		path: '/audio/transcriptions',
-		method: 'POST',
-		kind: 'upload',
-		defaultModel: DEFAULT_ZHIPU_SPEECH_MODEL,
-		defaultBody: { model: DEFAULT_ZHIPU_SPEECH_MODEL, stream: false },
-	},
-	{
 		value: 'web-search',
 		label: 'Web Search',
 		operation: 'web_search',
 		path: '/web_search',
 		method: 'POST',
-		kind: 'json',
 		defaultBody: {
 			search_query: '智谱 GLM OpenAPI',
 			search_engine: 'search-prime',
@@ -249,7 +169,6 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'reader',
 		path: '/reader',
 		method: 'POST',
-		kind: 'json',
 		defaultBody: {
 			url: 'https://docs.z.ai/',
 			return_format: 'markdown',
@@ -261,7 +180,6 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'embeddings.create',
 		path: '/embeddings',
 		method: 'POST',
-		kind: 'json',
 		defaultBody: {
 			model: 'embedding-3',
 			input: 'hello world',
@@ -273,7 +191,6 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'rerank.create',
 		path: '/rerank',
 		method: 'POST',
-		kind: 'json',
 		defaultBody: {
 			model: 'rerank',
 			query: '什么是 GLM？',
@@ -288,50 +205,10 @@ const API_CATALOG: ApiCatalogItem[] = [
 		operation: 'moderations.create',
 		path: '/moderations',
 		method: 'POST',
-		kind: 'json',
 		defaultBody: {
 			model: 'moderation',
 			input: 'hello',
 		},
-	},
-	{
-		value: 'files',
-		label: 'Files Upload',
-		operation: 'files.upload',
-		path: '/files',
-		method: 'POST',
-		kind: 'upload',
-		defaultBody: { purpose: 'agent' },
-	},
-	{
-		value: 'agents',
-		label: 'Agents',
-		operation: 'agents.create',
-		path: '/v1/agents',
-		method: 'POST',
-		kind: 'json',
-		defaultBody: {
-			agent_id: 'general_translation',
-			messages: [{ role: 'user', content: { type: 'text', text: 'Translate to English: 你好' } }],
-		},
-	},
-	{
-		value: 'agent-async-result',
-		label: 'Agent Result',
-		operation: 'agents.async_result',
-		path: '/v1/agents/async-result',
-		method: 'POST',
-		kind: 'json',
-		defaultBody: { async_id: 'replace-with-async-id' },
-	},
-	{
-		value: 'agent-conversation',
-		label: 'Agent Conversation',
-		operation: 'agents.conversation',
-		path: '/v1/agents/conversation',
-		method: 'POST',
-		kind: 'json',
-		defaultBody: { conversation_id: 'replace-with-conversation-id' },
 	},
 ]
 
@@ -742,21 +619,18 @@ export function ZhipuApiPanel() {
 	const [mode, setMode] = useState<ApiMode>('chat')
 	const [userId, setUserId] = useState('demo-user')
 	const [rawJson, setRawJson] = useState(defaultApiJson('chat'))
-	const [uploadFile, setUploadFile] = useState<File | null>(null)
 	const [rawMethod, setRawMethod] = useState('POST')
 	const [rawPath, setRawPath] = useState('/chat/completions')
 	const [rawOperation, setRawOperation] = useState('chat.completions')
 	const [rawModel, setRawModel] = useState(DEFAULT_ZHIPU_CHAT_MODEL)
 	const [state, setState] = useState<RequestState>({ loading: false, error: null, result: null })
 	const selected = apiCatalogItem(mode)
-	const requiresUpload = selected?.kind === 'upload'
-	const canRun = (settings?.hasApiKey ?? true) && (!requiresUpload || Boolean(uploadFile))
+	const canRun = settings?.hasApiKey ?? true
 
 	const switchMode = (value: string) => {
 		const next = value as ApiMode
 		setMode(next)
 		setRawJson(defaultApiJson(next))
-		setUploadFile(null)
 		const item = apiCatalogItem(next)
 		if (item) {
 			setRawMethod(item.method)
@@ -780,20 +654,12 @@ export function ZhipuApiPanel() {
 							model: rawModel || undefined,
 							body: parseOpenApiBody(rawJson),
 						})
-					: selected?.kind === 'upload'
-						? await submitOpenApiUpload(
-								pluginRoute(app.pluginName, '/openapi-upload'),
-								userId,
-								selected,
-								uploadFile,
-								parseJsonObject(rawJson),
-							)
-						: await submitCatalogJson(
-								pluginRoute(app.pluginName, '/openapi'),
-								userId,
-								requireApiCatalogItem(mode),
-								parseJsonObject(rawJson),
-							)
+					: await submitCatalogJson(
+							pluginRoute(app.pluginName, '/openapi'),
+							userId,
+							requireApiCatalogItem(mode),
+							parseJsonObject(rawJson),
+						)
 			const body = await readResponseBody(response)
 			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
 			setState({ loading: false, error: null, result: body })
@@ -827,7 +693,6 @@ export function ZhipuApiPanel() {
 				{settings?.hasApiKey === false ? (
 					<Alert color="yellow">先保存 Zhipu API Key。</Alert>
 				) : null}
-				{requiresUpload && !uploadFile ? <Alert color="blue">选择文件后再调用。</Alert> : null}
 				{state.error ? <Alert color="red">{state.error}</Alert> : null}
 				<TextInput
 					label="userId"
@@ -865,9 +730,6 @@ export function ZhipuApiPanel() {
 							/>
 						</Grid.Col>
 					</Grid>
-				) : null}
-				{requiresUpload ? (
-					<FileInput label="上传文件" value={uploadFile} onChange={setUploadFile} clearable />
 				) : null}
 				<JsonInput
 					label={mode === 'raw' ? 'Body JSON' : `${apiOperationLabel(mode)} 请求 JSON`}
@@ -1028,61 +890,19 @@ function submitCatalogJson(
 	item: ApiCatalogItem,
 	payload: Record<string, unknown>,
 ): Promise<Response> {
-	const path = resolveApiPath(item.path, payload)
 	return postJson(endpoint, {
 		userId,
 		method: item.method,
-		path,
+		path: item.path,
 		operation: item.operation,
 		model: stringPayloadField(payload, 'model') ?? item.defaultModel,
-		body: item.method === 'GET' ? undefined : stripPathParams(item.path, payload),
+		body: payload,
 	})
-}
-
-function submitOpenApiUpload(
-	endpoint: string,
-	userId: string,
-	item: ApiCatalogItem,
-	file: File | null,
-	fields: Record<string, unknown>,
-): Promise<Response> {
-	if (!file) throw new Error('请选择文件')
-	const form = new FormData()
-	form.append('__userId', userId)
-	form.append('__method', item.method)
-	form.append('__path', item.path)
-	form.append('__operation', item.operation)
-	form.append('__billingModel', stringPayloadField(fields, 'model') ?? item.defaultModel ?? '')
-	for (const [key, value] of Object.entries(fields)) form.append(key, formValue(value))
-	form.append('file', file, file.name)
-	return fetch(endpoint, { method: 'POST', body: form })
-}
-
-function resolveApiPath(path: string, payload: Record<string, unknown>): string {
-	return path.replaceAll(/\{([^}]+)\}/g, (_match, key: string) => {
-		const value = payload[key]
-		if (typeof value !== 'string' && typeof value !== 'number') {
-			throw new TypeError(`路径参数缺失：${key}`)
-		}
-		return encodeURIComponent(String(value))
-	})
-}
-
-function stripPathParams(path: string, payload: Record<string, unknown>): Record<string, unknown> {
-	const output = { ...payload }
-	for (const match of path.matchAll(/\{([^}]+)\}/g)) delete output[match[1]]
-	return output
 }
 
 function stringPayloadField(payload: Record<string, unknown>, key: string): string | undefined {
 	const value = payload[key]
 	return typeof value === 'string' && value.trim() ? value.trim() : undefined
-}
-
-function formValue(value: unknown): string {
-	if (typeof value === 'string') return value
-	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-	return JSON.stringify(value)
 }
 
 function postJson(endpoint: string, payload: unknown): Promise<Response> {

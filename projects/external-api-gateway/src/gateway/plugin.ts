@@ -18,6 +18,7 @@ import type {
 	ZhipuRawCallInput,
 	ZhipuReaderInput,
 	ZhipuRerankInput,
+	ZhipuTokenizerInput,
 	ZhipuUploadInput,
 	ZhipuWebSearchInput,
 } from '../zhipu/provider.ts'
@@ -209,7 +210,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			.select()
 			.from(gatewayTokens)
 			.orderBy(desc(gatewayTokens.updatedAt))
-		for (const row of rows.slice().reverse()) {
+		for (const row of rows.toReversed()) {
 			const doc = tokenDocFromRow(row)
 			this.tokens.replaceOne({ id: doc.id }, doc, { upsert: true })
 			this.tokenHashes.set(row.id, row.tokenHash)
@@ -325,11 +326,14 @@ export class GenericProviderGatewayApi extends RpcTarget {
 
 	call(input: ProviderCallInput): Promise<unknown> {
 		const operationId = requireOperationId(input.operation)
-		const descriptor = this.gateway.listProviders().find((provider) => provider.id === this.providerId)
+		const descriptor = this.gateway
+			.listProviders()
+			.find((provider) => provider.id === this.providerId)
 		if (!descriptor) throw new Error(`Unknown provider: ${this.providerId}`)
 		const operation = descriptor.operations.find((item) => item.id === operationId)
 		const path = input.path?.trim() || operation?.path
-		if (!path) throw new Error(`Provider operation requires path: ${this.providerId}:${operationId}`)
+		if (!path)
+			throw new Error(`Provider operation requires path: ${this.providerId}:${operationId}`)
 		if (this.providerId === 'zhipu') {
 			return this.gateway.zhipuProvider.gatewayRaw(this.billing, {
 				method: input.method?.trim().toUpperCase() || operation?.method || 'POST',
@@ -398,6 +402,10 @@ export class ZhipuModelsGatewayApi extends RpcTarget {
 
 	chatCompletions(input: ZhipuChatCompletionsInput): Promise<unknown> {
 		return this.gateway.zhipuProvider.gatewayChatCompletions(this.billing, input)
+	}
+
+	tokenizer(input: ZhipuTokenizerInput): Promise<unknown> {
+		return this.gateway.zhipuProvider.gatewayTokenizer(this.billing, input)
 	}
 }
 
@@ -538,8 +546,8 @@ function slugId(name: string): string {
 		name
 			.trim()
 			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '') || `token-${Date.now()}`
+			.replaceAll(/[^a-z0-9]+/g, '-')
+			.replaceAll(/^-+|-+$/g, '') || `token-${Date.now()}`
 	)
 }
 

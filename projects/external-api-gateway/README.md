@@ -72,12 +72,38 @@ const chatPromise = authedApi
 		model: 'glm-4.5-flash',
 		messages: [{ role: 'user', content: 'hello' }],
 	})
+const visionPromise = authedApi
+	.bill({ userId: 'user-123', tenantId: 'tenant-a', traceId: 'trace-vision-001' })
+	.zhipu()
+	.models()
+	.chatCompletions({
+		model: 'glm-4.5-flash',
+		messages: [
+			{
+				role: 'user',
+				content: [
+					{ type: 'text', text: '描述这张图。' },
+					{ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } },
+				],
+			},
+		],
+	})
+const tokenizerPromise = authedApi
+	.bill({ userId: 'user-123', tenantId: 'tenant-a', traceId: 'trace-tokenizer-001' })
+	.zhipu()
+	.models()
+	.tokenizer({
+		model: 'glm-4.6',
+		messages: [{ role: 'user', content: '估算这句话的 token 数。' }],
+	})
 
-const [whoami, ocr, search, chat] = await Promise.allSettled([
+const [whoami, ocr, search, chat, vision, tokenizer] = await Promise.allSettled([
 	whoamiPromise,
 	ocrPromise,
 	searchPromise,
 	chatPromise,
+	visionPromise,
+	tokenizerPromise,
 ])
 ```
 
@@ -85,7 +111,7 @@ const [whoami, ocr, search, chat] = await Promise.allSettled([
 
 `ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可以访问 gateway 暴露的全部 provider capability；吊销后不可再认证。调用归属、成本和审计由 `bill(...)` 里的 `userId / tenantId / traceId` 以及 `UsageBillingPlugin` 记录。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
-`projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖任意 Zhipu OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。如果 baseUrl 配成旧的 `/api/paas/v4` 形式，客户端会避免重复拼接 `/paas/v4`，并能把 `/v1/*` agent 路径拼到同一 API root 下。
+`projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖临时 OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。如果 baseUrl 配成旧的 `/api/paas/v4` 形式，客户端会避免重复拼接 `/paas/v4`。
 
 Gateway 也暴露 provider descriptor 和轻量 generic call 入口：
 
@@ -109,6 +135,7 @@ authedApi
 - `filesOcr({ fileName, contentType?, bytes, fields: { tool_type: "hand_write", language_type?, probability? } })`
 - `webSearch({ search_query, search_engine, search_intent, count?, search_domain_filter?, search_recency_filter?, content_size?, request_id?, user_id? })`
 - `models().chatCompletions({ model, messages, stream?, thinking?, reasoning_effort?, tools?, response_format?, request_id?, user_id?, ... })`
+- `models().tokenizer({ model, messages?, prompt?, ... })`
 - `embeddings().create({ model, input, dimensions? })`
 - `rerank().create({ model, query, documents, top_n?, return_documents?, return_raw_scores?, request_id?, user_id? })`
 - `tools().reader({ url, timeout?, no_cache?, return_format?, retain_images?, ... })`
@@ -135,14 +162,13 @@ authedApi
 
 ## API Catalog Priority
 
-从智谱 OpenAPI 看，当前目录已覆盖这些常用路径：
+当前默认目录只覆盖 GLM 常用模型和工具路径，不把图像/视频生成、agent、通用 files upload 放进常用面：
 
-- 模型：`/paas/v4/chat/completions`、`/paas/v4/tokenizer`、`/paas/v4/images/generations`、`/paas/v4/async/images/generations`、`/paas/v4/videos/generations`、`/paas/v4/audio/transcriptions`。
+- 模型：`/paas/v4/chat/completions`、`/paas/v4/tokenizer`。聊天、识图都走 `chat.completions`，通过 message content 传 `text` / `image_url`。
 - 工具：`/paas/v4/layout_parsing`、`/paas/v4/files/ocr`、`/paas/v4/web_search`、`/paas/v4/reader`。
-- 异步/文件/agent：`/paas/v4/async-result/{id}`、`/paas/v4/files`、`/v1/agents`、`/v1/agents/async-result`、`/v1/agents/conversation`。
-- 历史常用能力：`/paas/v4/embeddings`、`/paas/v4/rerank`、`/paas/v4/moderations`。
+- RAG/安全：`/paas/v4/embeddings`、`/paas/v4/rerank`、`/paas/v4/moderations`。
 
-插件 UI 的“模型/工具”页按这个目录提供默认请求样例；新路径或临时参数可以用 Raw OpenAPI 模式直接指定 `method / path / operation / body`，调用仍会进入同一套 history 和 billing。
+外部调用优先走 `bill(...).zhipu()` 下的 typed RPC capability，以复用统一计费上下文。插件 UI 的“模型/工具”页只是按同一目录提供测试样例；新路径或临时参数可以用 Raw OpenAPI 模式直接指定 `method / path / operation / body`，调用仍会进入同一套 history 和 billing。
 
 `/layout_parsing` 不再转发 prompt。需要“按提示提取字段/转 JSON/重写摘要”时，先调用 OCR，再把 OCR 结果和用户 prompt 交给 `/chat/completions` 做后处理；插件 UI 的 OCR 面板已经按这个两阶段流程组合返回 `{ ocr, postprocess }`。
 
@@ -212,7 +238,6 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/files-ocr`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/layout-parsing`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/openapi`
-- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/openapi-upload`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/chat-completions`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/web-search`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/reader`

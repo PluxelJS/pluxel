@@ -27,6 +27,7 @@ import type {
 	ZhipuRawCallInput,
 	ZhipuReaderInput,
 	ZhipuRerankInput,
+	ZhipuTokenizerInput,
 	ZhipuUploadInput,
 	ZhipuWebSearchInput,
 } from './provider.ts'
@@ -212,6 +213,18 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		})
 	}
 
+	async gatewayTokenizer(
+		billing: GatewayBillingContext,
+		input: ZhipuTokenizerInput,
+	): Promise<unknown> {
+		return this.gatewayJsonOperation(billing, {
+			operation: 'tokenizer',
+			path: '/tokenizer',
+			input,
+			model: input.model,
+		})
+	}
+
 	async gatewayFilesOcr(billing: GatewayBillingContext, input: ZhipuUploadInput): Promise<unknown> {
 		const bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes)
 		const fileBytes = bytes.slice().buffer
@@ -323,7 +336,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 					.post('/files-ocr', async ({ request }) => this.handleFilesOcr(request))
 					.post('/layout-parsing', async ({ request }) => this.handleLayoutParsing(request))
 					.post('/openapi', async ({ request }) => this.handleUiOpenApi(request))
-					.post('/openapi-upload', async ({ request }) => this.handleUiOpenApiUpload(request))
 					.post('/chat-completions', async ({ request }) =>
 						this.handleUiJsonOperation(request, {
 							operation: 'chat.completions',
@@ -500,66 +512,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 				startedAt,
 				inputBytes,
 				outcome,
-				requestPreview: requestPreviewText,
-			})
-		}
-	}
-
-	private async handleUiOpenApiUpload(request: Request): Promise<Response> {
-		const startedAt = Date.now()
-		let userId = userIdFromRequest(request)
-		let inputBytes = 0
-		let outcome: UpstreamOutcome | undefined
-		let requestPreviewText: string | undefined
-		let operation = 'raw.upload'
-		let model: string | undefined
-		let fileName: string | undefined
-		try {
-			const form = await request.formData()
-			const path = stringFormField(form, '__path')
-			if (!path) throw new Error('OpenAPI upload requires `__path`')
-			const method = stringFormField(form, '__method')?.toUpperCase() || 'POST'
-			userId = normalizeUserId(stringFormField(form, '__userId')) || userId
-			operation =
-				stringFormField(form, '__operation') || `raw.${method}.${path.replace(/^\/+/, '')}`
-			model = stringFormField(form, '__billingModel') || stringFormField(form, 'model')
-			const upstream = new FormData()
-			const preview: Record<string, unknown> = { method, path, fields: {} }
-			for (const [key, value] of form.entries()) {
-				if (key.startsWith('__')) continue
-				upstream.append(key, value)
-				inputBytes += formEntryBytes(value)
-				if (key === 'file') fileName = fileNameFromFormValue(value)
-				;(preview.fields as Record<string, unknown>)[key] =
-					typeof value === 'string'
-						? value
-						: { fileName: fileNameFromFormValue(value), bytes: formEntryBytes(value) }
-			}
-			requestPreviewText = previewJson(preview)
-			outcome = await this.forwardRaw(method, path, upstream)
-			return outcome.response
-		} catch (caught) {
-			const message = errorMessage(caught)
-			outcome = jsonOutcome({ ok: false, error: message }, 500, message)
-			return outcome.response
-		} finally {
-			this.recordUsage({
-				userId,
-				operation,
-				model,
-				startedAt,
-				inputBytes,
-				outcome,
-			})
-			this.recordHistory({
-				source: 'ui',
-				userId,
-				operation,
-				model,
-				startedAt,
-				inputBytes,
-				outcome,
-				fileName,
 				requestPreview: requestPreviewText,
 			})
 		}
@@ -950,11 +902,6 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 	const value = record[key]
 	if (typeof value === 'string' && value.trim()) return value.trim()
 	return undefined
-}
-
-function stringFormField(form: FormData, key: string): string | undefined {
-	const value = form.get(key)
-	return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 function modelFromBody(body: unknown): string | undefined {

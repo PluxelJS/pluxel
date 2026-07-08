@@ -2,9 +2,26 @@ import type { GatewayBillingContext } from '../gateway/contracts.ts'
 
 export type JsonObject = Record<string, unknown>
 
+export type ZhipuChatTextContentPart = {
+	type: 'text'
+	text: string
+	[key: string]: unknown
+}
+
+export type ZhipuChatImageUrlContentPart = {
+	type: 'image_url'
+	image_url: string | { url: string; [key: string]: unknown }
+	[key: string]: unknown
+}
+
+export type ZhipuChatContentPart =
+	| ZhipuChatTextContentPart
+	| ZhipuChatImageUrlContentPart
+	| JsonObject
+
 export type ZhipuChatMessage = {
 	role: 'system' | 'user' | 'assistant' | 'tool' | string
-	content: unknown
+	content: string | ZhipuChatContentPart[] | JsonObject | null
 	[key: string]: unknown
 }
 
@@ -88,6 +105,13 @@ export type ZhipuRawCallInput = {
 	body?: Record<string, unknown> | string | null
 	operation?: string
 	model?: string
+}
+
+export type ZhipuTokenizerInput = {
+	model: string
+	messages?: ZhipuChatMessage[]
+	prompt?: string
+	[key: string]: unknown
 }
 
 export type ZhipuWebSearchEngine =

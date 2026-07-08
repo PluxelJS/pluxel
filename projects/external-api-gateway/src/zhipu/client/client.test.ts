@@ -13,13 +13,13 @@ describe('ZhipuClient URL normalization', () => {
 		)
 	})
 
-	it('routes /v1 agent paths to the API root when baseUrl points at /paas/v4', () => {
+	it('routes /v1 paths to the API root when baseUrl points at /paas/v4', () => {
 		const client = createZhipuClient({
 			apiKey: 'test',
 			baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
 		})
 
-		expect(client.url('/v1/agents').toString()).toBe('https://open.bigmodel.cn/api/v1/agents')
+		expect(client.url('/v1/example').toString()).toBe('https://open.bigmodel.cn/api/v1/example')
 	})
 
 	it('keeps /paas/v4 paths when baseUrl is the API root', () => {
