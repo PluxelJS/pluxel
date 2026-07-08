@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { gqlens } from '@gqlens/vite'
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+// Vite loads this config before Pluxel source conditions are active, so use the
+// workspace source here to avoid running stale runtime-static dist output.
+import { staticRuntimeVitePlugin } from '../../runtime-static/src/vite.ts'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { commercialGraphQLEndpoint } from './src/paths.ts'

@@ -169,6 +169,7 @@
 				"@pluxel/rolldown#build",
 				"@pluxel/core#build",
 				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
 			],
 			"outputs": ["dist/**"],
 			"inputs": [
@@ -192,6 +193,7 @@
 			"dependsOn": [
 				"@pluxel/core#build",
 				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
 			],
 			"outputs": ["dist/**"],
 			"inputs": [

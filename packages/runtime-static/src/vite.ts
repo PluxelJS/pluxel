@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+	importViteSsrModule,
 	pluxelRuntimeSourceVitePlugin,
 	pluxelRuntimeUiBridgeVitePlugin,
 } from '@pluxel/runtime-dev/vite'
@@ -93,7 +94,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			options.config,
 			'runtime-static',
 		))
-		const mod = await server.ssrLoadModule(configPath)
+		const mod = await importViteSsrModule(server, configPath, { fresh: true })
 		const loaded = validateStaticRuntimeConfigModule(mod, configPath)
 		state.configFiles = collectSsrImportFiles(server, configPath)
 		state.runtimeConfig = loaded
@@ -530,7 +531,7 @@ async function loadStaticRuntimeDevModule(
 ): Promise<typeof import('@pluxel/runtime-dev')> {
 	const sourceEntry = fileURLToPath(new URL('../../runtime-dev/src/index.ts', import.meta.url))
 	if (existsSync(sourceEntry)) {
-		return server.ssrLoadModule(sourceEntry) as Promise<typeof import('@pluxel/runtime-dev')>
+		return importViteSsrModule(server, sourceEntry) as Promise<typeof import('@pluxel/runtime-dev')>
 	}
 	return import('@pluxel/runtime-dev')
 }

@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
+import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
@@ -47,7 +47,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			options.config,
 			'runtime-dynamic',
 		))
-		const mod = await server.ssrLoadModule(configPath)
+		const mod = await importViteSsrModule(server, configPath, { fresh: true })
 		const config = validateDynamicRuntimeConfigModule(mod, configPath)
 		state.controller = state.controller
 			? {

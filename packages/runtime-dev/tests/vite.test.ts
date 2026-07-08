@@ -1,6 +1,11 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createServer, type ViteDevServer } from 'vite'
 
 import {
+	importViteSsrModule,
 	pluxelRuntimeSourceVitePlugin,
 	pluxelRuntimeUiBridgeVitePlugin,
 } from '../src/vite'
@@ -11,7 +16,9 @@ async function resolveEnvironmentPluginNames(
 ): Promise<string[]> {
 	const applied = await plugin.applyToEnvironment?.(environment as never)
 	if (!applied || applied === true) return []
-	const plugins = (Array.isArray(applied) ? applied.flat(Number.POSITIVE_INFINITY) : [applied]) as Array<{
+	const plugins = (
+		Array.isArray(applied) ? applied.flat(Number.POSITIVE_INFINITY) : [applied]
+	) as Array<{
 		name?: string
 	}>
 	return plugins.filter(Boolean).map((item) => item.name ?? '')
@@ -68,5 +75,30 @@ describe('runtime-dev Vite plugin stack', () => {
 		await expect(
 			resolveEnvironmentPluginNames(plugin, { name: 'client', config: { consumer: 'client' } }),
 		).resolves.toEqual([])
+	})
+
+	it('loads SSR modules through the source-map aware Vite module runner', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-runtime-dev-'))
+		const modulePath = join(root, 'probe.ts')
+		await writeFile(
+			modulePath,
+			['export function captureStack() {', "  return new Error('probe').stack", '}', ''].join('\n'),
+		)
+
+		let server: ViteDevServer | undefined
+		try {
+			server = await createServer({
+				root,
+				logLevel: 'silent',
+				server: { middlewareMode: true },
+				appType: 'custom',
+			})
+			const mod = await importViteSsrModule<{ captureStack(): string }>(server, modulePath)
+
+			expect(mod.captureStack()).toMatch(/probe\.ts:2:\d+/)
+		} finally {
+			await server?.close()
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 })

@@ -1,4 +1,6 @@
-import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
+// Vite loads this config before Pluxel source conditions are active, so use the
+// workspace source here to avoid running stale runtime-dynamic dist output.
+import { dynamicRuntimeVitePlugin } from '../../runtime-dynamic/src/vite.ts'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
