@@ -2,7 +2,7 @@
 
 > Status: internal/private. `@pluxel/context` 会被 `@pluxel/core` 内联打包，外部用户不应直接依赖/导入它；请从 `@pluxel/core` 或 `@pluxel/runtime` 使用 `Context`。
 
-`Context` 是一个轻量的 service registry：服务通过 `Context.registerService()` 注册后，会以 getter 的形式挂到 `Context.prototype` 上（惰性实例化）。
+`Context` 是一个轻量的 service registry：服务通过 `Context.registerService()` 注册后，会以 getter 的形式挂到 `Context.prototype` 上（默认惰性实例化）。
 
 ## 关键语义：共享实例 + ctx 回灌
 
@@ -75,6 +75,32 @@ const child2 = ctx.isolateKeys(['someService'], { name: 'child2' })
 - 类型层：把它放到 `Context.RootServices`，并通过 `ctx.root.<key>` 访问
 
 这样可以在类型上避免误用（例如把 root service 当作普通 service 存在 `ctx.<key>` 上），并且表达上更清晰：你在显式使用“root 级别的能力”。
+
+## Eager service lifecycle
+
+默认服务仍然 lazy。少数需要在 host 启动期完成检查或预热的服务，可以声明
+`eager: true`：
+
+```ts
+@RootService({ key: 'vaultAdmin', eager: true })
+class VaultAdminService {
+	constructor(public ctx: Context) {}
+
+	async prepare() {
+		// startup preflight
+	}
+}
+```
+
+host 在对外启动前调用：
+
+```ts
+await ctx.prepareServices()
+```
+
+`prepareServices()` 只实例化 eager service；如果实例有 `prepare()` 方法，就等待它完成。
+普通 lazy service 不受影响。不要把异步启动逻辑塞进 `Context` constructor；需要可观测失败的
+启动检查应该通过 `prepareServices()` 显式等待。
 
 ## mapping（内部实现细节）
 

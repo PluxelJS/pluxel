@@ -62,8 +62,9 @@
   `createStaticRuntime(config)`，不暴露 host/HMR internals。
 - `@pluxel/runtime-static/vite` 是开发期 Vite launcher，加载同一份 runtime config，并拒绝
   nested `vite` / `hmr` config 字段。
-- `StaticRuntimeHostImpl.prepare()` 不再 bootstrap Vault；Vault 只由
-  `@pluxel/runtime/services/vault` 显式边界启用。
+- `StaticRuntimeHostImpl.prepare()` 调用通用 `ctx.prepareServices()`；Vault 由
+  `VaultAdminService` 作为 eager root service 自己完成 bootstrap。未 import vault
+  时不引入、不初始化。
 - broad `@pluxel/runtime/services` barrel、Node HTTP adapter、旧 `FsService` 已删除。
 - `ConfigService`、`RuntimeStateStore`、`PluginDataService` 通过
   `ctx.root.persistence.namespace(...)` 读写 runtime 数据，不依赖 `ctx.root.fs` 或 `chokidar`。
@@ -348,10 +349,14 @@ backend 可以是 file、memory、database、KV、object storage、Durable Objec
 
 Vault 必须完全 optional：
 
-- 从 static `prepare()` 移除无条件 `bootstrapHostVault(this.ctx)`。
-- `bootstrapHostVault` 只由显式 import 的 vault 模块负责，不放进 static host 或 dynamic HMR host 默认流程。
+- static `prepare()` 不包含 vault 专用 bootstrap 逻辑。
+- static host 通过通用 `ctx.prepareServices()` 执行 eager service startup；vault bootstrap
+  收敛在 `VaultAdminService.prepare()` 内。dynamic HMR host 不做插件级消费者归因，使用方自行在插件运行前 prepare services。
 - `vault` / `vaultAdmin` 注册由 `@pluxel/runtime/services/vault` 提供。
 - Vault preflight 检查 WebCrypto、identity material、persistence backend；失败直接给 `service-unavailable`。
+- 缺失 mount 时，preflight 在启动期初始化空 mount；`ctx.vault` 普通存储 API 不做运行期 auto-unlock。
+- 启动失败只提示 runtime 已导入 `@pluxel/runtime/services/vault`，并给出
+  `rg "@pluxel/runtime/services/vault|ctx\\.vault" .` 排查命令；不引入插件级 capability metadata。
 
 ### 6. Web management bundle
 

@@ -1,9 +1,9 @@
 import type {
 	ManagementAccessConfig,
 	ManagementConfig,
-	VerificationClaimRequirement,
-	VerificationExposure,
-	VerificationOidcConfig,
+	ManagementAccessClaimRequirement,
+	ManagementAccessExposure,
+	ManagementAccessOidcConfig,
 } from './types'
 
 export const DEFAULT_VERIFICATION_EXPOSURE = 'private' as const
@@ -45,7 +45,7 @@ function normalizeAudience(value: unknown): string | string[] | undefined {
 	return audience.length > 0 ? audience : undefined
 }
 
-function normalizeClaimRequirement(value: unknown): VerificationClaimRequirement | undefined {
+function normalizeClaimRequirement(value: unknown): ManagementAccessClaimRequirement | undefined {
 	if (typeof value === 'string') return trimOrUndefined(value)
 	if (!Array.isArray(value)) return undefined
 	const seen = new Set<string>()
@@ -61,9 +61,9 @@ function normalizeClaimRequirement(value: unknown): VerificationClaimRequirement
 
 function normalizeRequiredClaims(
 	value: unknown,
-): Record<string, VerificationClaimRequirement> | undefined {
+): Record<string, ManagementAccessClaimRequirement> | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-	const claims: Record<string, VerificationClaimRequirement> = {}
+	const claims: Record<string, ManagementAccessClaimRequirement> = {}
 	for (const [key, raw] of Object.entries(value)) {
 		const name = key.trim()
 		const requirement = normalizeClaimRequirement(raw)
@@ -79,7 +79,7 @@ function normalizeClockTolerance(value: unknown): number | undefined {
 	return Math.floor(seconds)
 }
 
-function normalizeOidcConfig(value: unknown): VerificationOidcConfig | undefined {
+function normalizeOidcConfig(value: unknown): ManagementAccessOidcConfig | undefined {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
 	const source = value as {
 		issuer?: unknown
@@ -104,7 +104,7 @@ function normalizeOidcConfig(value: unknown): VerificationOidcConfig | undefined
 }
 
 function resolveManagementAccessConfig(input?: ManagementAccessConfigLike): ManagementAccessConfig {
-	const exposure: VerificationExposure =
+	const exposure: ManagementAccessExposure =
 		input?.exposure === 'public' ? 'public' : DEFAULT_VERIFICATION_EXPOSURE
 	const oidc = normalizeOidcConfig(input?.oidc)
 	if (exposure === 'private') {

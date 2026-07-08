@@ -55,7 +55,7 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import '@pluxel/runtime'
-import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
+import '@pluxel/runtime/services/vault'
 import '@pluxel/runtime-dynamic/register'
 ${imports}
 
@@ -85,7 +85,7 @@ const ctx = new Context({
 \textensionService: { enabled: false },
 })
 
-await bootstrapHostVault(ctx)
+await ctx.prepareServices()
 
 await ctx.loader.preloadPlugins(
 \t[

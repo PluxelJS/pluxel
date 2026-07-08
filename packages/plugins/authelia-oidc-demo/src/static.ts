@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { bootstrapHostVault } from '@pluxel/runtime/services/vault'
+import '@pluxel/runtime/services/vault'
 import '@pluxel/runtime/services/web-management'
 import { createStaticRuntime } from '@pluxel/runtime-static'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
@@ -31,7 +31,6 @@ await ensurePluxelLogging({
 })
 
 const runtime = await createStaticRuntime(staticRuntime)
-await bootstrapHostVault(runtime.ctx)
 await (runtime.ctx as unknown as RuntimeRouteActivator).runtimeRoute.lifecycle.enable(
 	'AutheliaOidcDemoPlugin',
 	AutheliaOidcDemoPlugin,

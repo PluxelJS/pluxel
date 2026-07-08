@@ -37,8 +37,8 @@ runtime 只消费两类前端输入：
 - `workerDecl.bind(this.ctx, options)`
   HMR worker 绑定入口
 - `this.ctx.root.verification`
-  host-only gate；只回答“当前宿主是否允许进入 control plane”
-  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验
+  host-only management admin gate；只回答“当前请求是否允许进入 Pluxel management”
+  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验。Pluxel 没有 management 非 admin 用户模型，满足 `management.access.oidc.requiredClaims` 的 OIDC principal 即为 admin。
 - `this.ctx.root.persistence`
   runtime 数据持久化入口。config、runtime state、plugin data、logger policy、vault 等共享
   namespace 化 backend；它不是业务文件系统，也不是 Node `fs` 镜像。

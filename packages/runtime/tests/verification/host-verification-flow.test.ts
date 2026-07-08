@@ -187,7 +187,7 @@ describe('Host verification gate', () => {
 		expect(second.allow).toBe(true)
 	})
 
-	it('allows public control-plane requests with a valid OIDC bearer token', async () => {
+	it('allows public management admin requests with a valid OIDC bearer token', async () => {
 		const oidc = await installOidcIssuer('valid')
 		host = createManagementHost({
 			management: {
@@ -222,7 +222,13 @@ describe('Host verification gate', () => {
 		const authorization = await host.ctx.verification.authorize({
 			headers: new Headers({ authorization: `Bearer ${bearer}` }),
 		})
-		expect(authorization.allow).toBe(true)
+		expect(authorization).toMatchObject({
+			allow: true,
+			principal: {
+				provider: 'oidc',
+				subject: 'user-1',
+			},
+		})
 	})
 
 	it('rejects valid OIDC tokens that miss required claims', async () => {
@@ -256,7 +262,7 @@ describe('Host verification gate', () => {
 		expect(((await res.json()) as any).reason).toBe('forbidden')
 	})
 
-	it('renders a static external-auth page instead of a local login form', async () => {
+	it('renders a static OIDC admin access page instead of a local login form', async () => {
 		const oidc = await installOidcIssuer('page')
 		host = createManagementHost({
 			management: {
@@ -277,7 +283,7 @@ describe('Host verification gate', () => {
 		)
 		expect(page.status).toBe(200)
 		const html = await page.text()
-		expect(html).toContain('External OIDC authentication is required.')
+		expect(html).toContain('OIDC authentication is required for Pluxel admin access.')
 		expect(html).not.toContain('type="password"')
 	})
 })

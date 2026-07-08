@@ -20,6 +20,7 @@ type ServiceMeta = {
 	sk: symbol
 	key: string
 	scope: 'context' | 'root'
+	eager: boolean
 }
 type RuntimeServiceCtor<T> = new (ctx: Context, cfg?: any) => T
 
@@ -43,6 +44,7 @@ export class Context {
 	public mapping: SymMap
 	/** 服务实例缓存，所有同 root 的 Context 共享，除 isolate 时另行克隆 */
 	private instances: Record<symbol, unknown> = Object.create(null)
+	private servicePreparePromises = new Map<symbol, Promise<unknown>>()
 	public parent?: Context
 	public root: Context.Root
 	public name: string
@@ -73,7 +75,8 @@ export class Context {
 		const scope = ((ctor as unknown as { scope?: 'context' | 'root' }).scope ?? 'context') as
 			| 'context'
 			| 'root'
-		const meta: ServiceMeta = { sk, key, scope }
+		const eager = (ctor as unknown as { eager?: boolean }).eager === true
+		const meta: ServiceMeta = { sk, key, scope, eager }
 		Context.serviceMetaByCtor.set(ctor as unknown as AnyServiceClass, meta)
 		Context.serviceMetaByKey.set(key, meta)
 		Context.defaultMapping[sk] = sk
@@ -111,6 +114,8 @@ export class Context {
 		const scope = ((overrideCtor as unknown as { scope?: 'context' | 'root' }).scope ??
 			meta.scope) as 'context' | 'root'
 		meta.scope = scope
+		const eager = (overrideCtor as unknown as { eager?: boolean }).eager
+		if (eager !== undefined) meta.eager = eager === true
 		const sk = meta.sk
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
@@ -124,6 +129,30 @@ export class Context {
 
 		// 4) 同步补齐代理（不覆盖既有 Context 方法/属性代理）
 		installServiceProxies(key, overrideCtor.methods, overrideCtor.props)
+	}
+
+	async prepareServices(): Promise<void> {
+		for (const meta of Context.serviceMetaByKey.values()) {
+			if (!meta.eager) continue
+			const target = meta.scope === 'root' ? this.root : this
+			const service = (target as unknown as Record<string, unknown>)[meta.key]
+			const prepare = (service as { prepare?: unknown } | null | undefined)?.prepare
+			if (typeof prepare !== 'function') continue
+			const existing = target.servicePreparePromises.get(meta.sk)
+			if (existing) {
+				await existing
+				continue
+			}
+			const pending = Promise.resolve().then(() => prepare.call(service))
+			target.servicePreparePromises.set(meta.sk, pending)
+			try {
+				await pending
+			} finally {
+				if (target.servicePreparePromises.get(meta.sk) === pending) {
+					target.servicePreparePromises.delete(meta.sk)
+				}
+			}
+		}
 	}
 	/**
 	 * 扩展 Context，继承 mapping & 共享 instances
@@ -145,6 +174,7 @@ export class Context {
 		// avoid per-child objects and deep prototype chains.
 		child.mapping = this.mapping
 		child.instances = this.instances // 共享实例池
+		child.servicePreparePromises = new Map()
 
 		return child
 	}

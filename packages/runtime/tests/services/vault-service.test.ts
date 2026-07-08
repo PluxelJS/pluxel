@@ -45,7 +45,7 @@ async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
 }
 
 describe('VaultService (shared mount runtime)', () => {
-	it('read-only access and kv batch do not create files when the shared vault is missing', async () => {
+	it('startup preflight creates an empty shared mount before plugin access', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
 		await withRuntimeHost(
@@ -69,13 +69,18 @@ describe('VaultService (shared mount runtime)', () => {
 					tx.entries()
 				})
 
-				expect(await listVaultFiles(host, dir)).toEqual([])
+				const mountDir = resolve(dir, 'global')
+				expect(await listVaultFiles(host, dir)).toEqual([
+					resolve(mountDir, 'keys.age'),
+					resolve(mountDir, 'state.enc'),
+				])
+				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
 			{ vault: { dir } },
 		)
 	})
 
-	it('first write creates one shared mount with key envelope and snapshot', async () => {
+	it('writes to the preflighted shared mount with key envelope and snapshot', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
 		await withRuntimeHost(
@@ -92,6 +97,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await kv.set('github.token', 'ghp_test')
 				await plugin.ctx.vault.flush()
 				await sealVaultForTesting(plugin.ctx.vault)
+				await host.ctx.vaultAdmin.preflight()
 
 				expect(await kv.get('github.token')).toBe('ghp_test')
 
@@ -260,7 +266,7 @@ describe('VaultService (shared mount runtime)', () => {
 				tampered[tampered.length - 1] = (tampered[tampered.length - 1] ^ 0x01) & 0xff
 				await vaultStorage(host).put(path, tampered, { atomic: true })
 
-				await expect(kv.get('token')).rejects.toMatchObject({
+				await expect(host.ctx.vaultAdmin.preflight()).rejects.toMatchObject({
 					name: 'VaultError',
 					code: 'DECRYPT_FAILED',
 				})
@@ -291,6 +297,7 @@ describe('VaultService (shared mount runtime)', () => {
 					unlocked: false,
 					unlockedBy: null,
 				})
+				await host.ctx.vaultAdmin.preflight()
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
 			{ vault: { dir } },
@@ -343,14 +350,6 @@ describe('VaultService (shared mount runtime)', () => {
 
 		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {}
-
-				host.add(PluginA)
-				await host.commit()
-
-				const _plugin = host.require(PluginA)
-
 				await expect(host.ctx.vaultAdmin.rekey()).rejects.toMatchObject({
 					name: 'VaultError',
 					code: 'MISSING_MOUNT',
@@ -388,6 +387,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(afterState).toEqual(beforeState)
 
 				await sealVaultForTesting(plugin.ctx.vault)
+				await host.ctx.vaultAdmin.preflight()
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
 			},
 			{ vault: { dir } },
@@ -417,22 +417,28 @@ describe('VaultService (shared mount runtime)', () => {
 		)
 	})
 
-	it('host preflight keeps an empty shared mount lazy', async () => {
+	it('host preflight initializes an empty shared mount', async () => {
 		const dir = `/vault/${randomHex(8)}`
 
 		await withRuntimeHost(
 			async (host) => {
 				const admin = await host.ctx.vaultAdmin.preflight()
 				expect(admin).toMatchObject({
-					present: false,
-					unlocked: false,
-					unlockedBy: null,
+					present: true,
+					unlocked: true,
+					unlockedBy: 'host',
 				})
 				const described = await host.ctx.vaultAdmin.describe()
 				expect(described).toMatchObject({
-					present: false,
+					present: true,
+					unlocked: true,
 				})
-				expect(await listVaultFiles(host, dir)).toEqual([])
+				const mountDir = resolve(dir, 'global')
+				expect(await listVaultFiles(host, dir)).toEqual([
+					resolve(mountDir, 'keys.age'),
+					resolve(mountDir, 'state.enc'),
+				])
+				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
 			{ vault: { dir } },
 		)
@@ -534,7 +540,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await deleteVaultIdentity(host)
 
 				await expect(seeder.ctx.vault.kv().get('token')).rejects.toMatchObject({
-					code: expect.stringMatching(/^(INVALID_CONFIG|DECRYPT_FAILED)$/),
+					code: 'ACCESS_DENIED',
 				})
 				const described = await host.ctx.vaultAdmin.unlock()
 				expect(described).toMatchObject({
@@ -544,7 +550,7 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(described).toMatchObject({
 					present: true,
 					lastError: expect.objectContaining({
-						code: expect.stringMatching(/^(INVALID_CONFIG|DECRYPT_FAILED)$/),
+						code: 'ACCESS_DENIED',
 						message: expect.any(String),
 					}),
 				})

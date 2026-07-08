@@ -72,7 +72,7 @@ function toneForReason(reason?: string): string {
 
 function labelForAccessState(verification: SecurityOverview['verification']): string {
 	if (verification.allow && verification.exposure === 'private') return 'private'
-	if (verification.allow) return 'allowed'
+	if (verification.allow) return 'admin allowed'
 	switch (verification.reason) {
 		case 'missing_oidc':
 			return 'missing oidc'
@@ -266,7 +266,7 @@ export function SecurityScreen() {
 				<div>
 					<Title order={2}>Security</Title>
 					<Text c="dimmed" size="sm">
-						Host access policy and encrypted storage state.
+						Management admin gate and encrypted storage state.
 					</Text>
 				</div>
 				<Button
@@ -320,7 +320,7 @@ export function SecurityScreen() {
 						</div>
 						{verification.requiredClaims ? (
 							<Text size="sm" c="dimmed">
-								Required claims: {JSON.stringify(verification.requiredClaims)}
+								Admin claims: {JSON.stringify(verification.requiredClaims)}
 							</Text>
 						) : null}
 					</Stack>
@@ -394,7 +394,10 @@ export function SecurityScreen() {
 							>
 								Generate Key
 							</Button>
-							<Button loading={busy === 'vault-deploy-save'} onClick={() => void saveDeployRecipients()}>
+							<Button
+								loading={busy === 'vault-deploy-save'}
+								onClick={() => void saveDeployRecipients()}
+							>
 								Save
 							</Button>
 						</Group>

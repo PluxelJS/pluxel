@@ -251,7 +251,8 @@ Assets 不做独立 subsystem。业务资源用 Elysia route/mount；管理 UI a
 
 - `@pluxel/runtime` 顶层不得导入 full registration；只允许 static/common services。
 - `runtime-static` 不得依赖 `@pluxel/runtime/services` broad barrel，也不得走 `@pluxel/runtime/base`。
-- static host 不得无条件 `bootstrapHostVault(this.ctx)`；vault 只由显式 `@pluxel/runtime/services/vault` 边界启用。
+- static host 不得无条件引入 vault；只调用通用 `ctx.prepareServices()`，由显式
+  `@pluxel/runtime/services/vault` 注册的 eager vaultAdmin 自己完成 prepare。
 - `ConfigService` / `RuntimeStateStore` / `PluginDataService` 不得依赖 `chokidar` 或 `ctx.root.fs`。
 - `FsService` / Node fs mirror 抽象必须移除，统一使用窄 `PersistenceService`。
 - `ExtensionService`、SSE、RPC、SignalDB、management UI 共同归入 web-management 可选边界。

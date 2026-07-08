@@ -1,12 +1,22 @@
 export {
+	type ManagementAccessAwareFetchOptions,
+	type ManagementAccessBlockedInfo,
 	type VerificationAwareFetchOptions,
 	type VerificationBlockedInfo,
 	type RuntimeFetch,
+	createManagementAccessAwareFetch,
 	createVerificationAwareFetch,
+	defaultOnManagementAccessBlocked,
 	defaultOnVerificationBlocked,
+	type OnManagementAccessBlocked,
 	type OnVerificationBlocked,
 } from './web/verification'
 export {
+	resolveManagementAccessLandingPath,
+	type ManagementAccessBlockedCode,
+	type ManagementAccessBlockedKind,
+	type ManagementAccessBlockedPayload,
+	type ManagementAccessReason,
 	resolveVerificationLandingPath,
 	type VerificationBlockedCode,
 	type VerificationBlockedKind,
@@ -27,6 +37,7 @@ export {
 } from './web/client'
 export {
 	createRuntimeSecurityClient,
+	type ManagementAccessOverview,
 	type SecurityAuditEvent,
 	type SecurityOverview,
 	type VerificationOverview,

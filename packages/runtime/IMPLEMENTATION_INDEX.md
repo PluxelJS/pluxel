@@ -16,11 +16,11 @@
 - `packages/runtime/src/services/http/HttpService.ts`
   HTTP / control plane / UI assets
 - `packages/runtime/src/services/verification/VerificationService.ts`
-  host verification gate
+  host management admin access gate
 - `packages/runtime/src/services/vault/VaultService.ts`
   `ctx.vault` 存储面与 host-only `ctx.root.vaultAdmin`
 - `packages/runtime/src/services/vault.ts`
-  显式 vault boundary，导出 bootstrap helper；`services/security/bootstrap.ts` 是内部实现
+  显式 vault boundary；vault 启动准备由 eager `VaultAdminService.prepare()` 承担
 - `packages/runtime/src/services/persistence/PersistenceService.ts`
   runtime persistence namespace/backend 抽象
 - `packages/runtime/src/services/ConfigService.ts`
@@ -73,9 +73,9 @@
 - `packages/runtime/src/api/http/security.ts`
   host-only security 管理 API
 - `packages/runtime/src/api/http/meta.ts`
-  verification state snapshot
+  management admin access state snapshot
 - `packages/runtime/src/services/http/internalApi.ts`
-  internal API verification gate
+  internal API management admin access gate
 - `packages/runtime/src/services/vault/加密实现规范.md`
   vault 使用边界
 
@@ -99,4 +99,4 @@
 - `packages/runtime/tests/services/vault-service.test.ts`
   vault 状态、密钥与预检
 - `packages/runtime/tests/verification/host-verification-flow.test.ts`
-  verification gate 与 security API
+  management admin access gate 与 security API

@@ -180,6 +180,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public async prepare(): Promise<void> {
 		this.assertWebManagementAvailable()
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
+		await this.ctx.prepareServices()
 	}
 
 	public describeCatalog(): StaticRuntimeCatalogSnapshot {

@@ -1,13 +1,10 @@
-import {
-	defaultOnVerificationBlocked,
-	type OnVerificationBlocked,
-} from './verification'
+import { defaultOnManagementAccessBlocked, type OnManagementAccessBlocked } from './verification'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import type { ExtensionManifestEvent } from './extensions'
 import type { ExtensionUiSseMap } from './protocol'
 import {
-	resolveVerificationLandingPath,
-	type VerificationReason,
+	resolveManagementAccessLandingPath,
+	type ManagementAccessReason,
 } from '../shared/verification-http'
 
 export interface BuiltinSseEvents {
@@ -50,12 +47,12 @@ export interface SseClientOptions {
 	/** Whether to send cookies/credentials for cross-origin SSE. */
 	withCredentials?: boolean
 	/**
-	 * Optional verification integration: when SSE errors, we can probe host verification state and redirect
+	 * Optional management access integration: when SSE errors, probe the admin gate and redirect
 	 * instead of reconnecting forever.
 	 */
 	verification?: {
-		readState: () => Promise<{ allow: boolean; reason?: VerificationReason }>
-		onBlocked?: OnVerificationBlocked
+		readState: () => Promise<{ allow: boolean; reason?: ManagementAccessReason }>
+		onBlocked?: OnManagementAccessBlocked
 	}
 }
 
@@ -73,8 +70,8 @@ class SseClient {
 	private readonly url: string
 	private readonly verification?: NonNullable<SseClientOptions['verification']>
 	private readonly withCredentials?: boolean
-	private verificationProbeInFlight: Promise<boolean> | null = null
-	private lastVerificationProbeAt = 0
+	private managementAccessProbeInFlight: Promise<boolean> | null = null
+	private lastManagementAccessProbeAt = 0
 	private connected = false
 
 	private static asap(fn: () => void) {
@@ -99,23 +96,23 @@ class SseClient {
 		this.connect()
 	}
 
-	private async probeVerificationBlocked(): Promise<boolean> {
+	private async probeManagementAccessBlocked(): Promise<boolean> {
 		const verification = this.verification
 		if (!verification) return false
 
 		const now = Date.now()
-		if (now - this.lastVerificationProbeAt < 1500) return false
-		this.lastVerificationProbeAt = now
+		if (now - this.lastManagementAccessProbeAt < 1500) return false
+		this.lastManagementAccessProbeAt = now
 
 		try {
 			const state = await verification.readState()
 			if (!state || state.allow === true) return false
 
-			const onBlocked = verification.onBlocked ?? defaultOnVerificationBlocked
+			const onBlocked = verification.onBlocked ?? defaultOnManagementAccessBlocked
 			onBlocked({
 				status: 401,
 				url: this.url,
-				redirectPath: resolveVerificationLandingPath(state.reason),
+				redirectPath: resolveManagementAccessLandingPath(state.reason),
 				reason: state.reason,
 			})
 			return true
@@ -141,12 +138,12 @@ class SseClient {
 			this.connected = false
 			for (const fn of this.errorHandlers) fn()
 			if (!this.verification) return
-			if (!this.verificationProbeInFlight) {
-				this.verificationProbeInFlight = this.probeVerificationBlocked().finally(() => {
-					this.verificationProbeInFlight = null
+			if (!this.managementAccessProbeInFlight) {
+				this.managementAccessProbeInFlight = this.probeManagementAccessBlocked().finally(() => {
+					this.managementAccessProbeInFlight = null
 				})
 			}
-			void this.verificationProbeInFlight.then((blocked): undefined => {
+			void this.managementAccessProbeInFlight.then((blocked): undefined => {
 				if (blocked) this.close()
 				return undefined
 			})

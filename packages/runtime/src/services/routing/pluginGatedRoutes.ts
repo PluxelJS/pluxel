@@ -4,19 +4,9 @@ import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
 export type PluginId = string
 export type RouteId = string
 
-export interface PluginGatedRouteMeta {
-	/**
-	 * Auth/permission metadata.
-	 *
-	 * Keep this minimal and purely declarative; enforcement belongs to the backend layer.
-	 */
-	auth?: 'public' | 'authenticated' | 'admin' | { permissions: readonly string[] }
-}
-
 export interface PluginGatedDef {
 	id: RouteId
 	plugin: PluginId
-	meta?: PluginGatedRouteMeta
 }
 
 export type IsPluginEnabled = (plugin: PluginId, ctx: Context) => boolean

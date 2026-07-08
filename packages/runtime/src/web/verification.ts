@@ -1,5 +1,5 @@
 import {
-	type VerificationReason,
+	type ManagementAccessReason,
 	VERIFICATION_BLOCKED_HEADER,
 	VERIFICATION_REASON_HEADER,
 	VERIFICATION_REDIRECT_HEADER,
@@ -13,18 +13,22 @@ export type RuntimeFetch = ((input: RequestInfo | URL, init?: RequestInit) => Pr
 	preconnect?: RuntimeFetchPreconnect
 }
 
-export type VerificationBlockedInfo = {
+export type ManagementAccessBlockedInfo = {
 	status: number
 	url: string
 	redirectPath?: string
-	reason?: VerificationReason
+	reason?: ManagementAccessReason
 }
 
-export type OnVerificationBlocked = (info: VerificationBlockedInfo) => void
+export type OnManagementAccessBlocked = (info: ManagementAccessBlockedInfo) => void
 
-export type VerificationAwareFetchOptions = {
-	onBlocked?: OnVerificationBlocked
+export type ManagementAccessAwareFetchOptions = {
+	onBlocked?: OnManagementAccessBlocked
 }
+
+export type VerificationBlockedInfo = ManagementAccessBlockedInfo
+export type OnVerificationBlocked = OnManagementAccessBlocked
+export type VerificationAwareFetchOptions = ManagementAccessAwareFetchOptions
 
 const VERIFICATION_AWARE_FETCH = Symbol.for('pluxel.verificationAwareFetch')
 const noopPreconnect = (() => {}) as RuntimeFetchPreconnect
@@ -65,7 +69,7 @@ export function resetRedirectingState(): void {
 	redirectingAt = null
 }
 
-export function defaultOnVerificationBlocked(info: VerificationBlockedInfo) {
+export function defaultOnManagementAccessBlocked(info: ManagementAccessBlockedInfo) {
 	if (typeof window === 'undefined') return
 	if (!info.redirectPath) return
 	if (isRedirecting()) return
@@ -81,10 +85,10 @@ export function isVerificationBlockedResponse(res: Response): boolean {
 
 export async function extractBlockedInfo(
 	res: Response,
-): Promise<Pick<VerificationBlockedInfo, 'redirectPath' | 'reason'>> {
+): Promise<Pick<ManagementAccessBlockedInfo, 'redirectPath' | 'reason'>> {
 	const header = res.headers.get(VERIFICATION_REDIRECT_HEADER)
 	const reason =
-		(res.headers.get(VERIFICATION_REASON_HEADER) as VerificationReason | null) ?? undefined
+		(res.headers.get(VERIFICATION_REASON_HEADER) as ManagementAccessReason | null) ?? undefined
 	if (header) return { redirectPath: header, reason }
 
 	const ct = (res.headers.get('content-type') ?? '').toLowerCase()
@@ -101,13 +105,13 @@ export async function extractBlockedInfo(
 	}
 }
 
-export function createVerificationAwareFetch(
+export function createManagementAccessAwareFetch(
 	baseFetch: RuntimeFetch,
-	options: VerificationAwareFetchOptions = {},
+	options: ManagementAccessAwareFetchOptions = {},
 ): RuntimeFetch {
 	if ((baseFetch as any)?.[VERIFICATION_AWARE_FETCH]) return baseFetch
 
-	const onBlocked = options.onBlocked ?? defaultOnVerificationBlocked
+	const onBlocked = options.onBlocked ?? defaultOnManagementAccessBlocked
 
 	const wrapped = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const res = await baseFetch(input as any, init)
@@ -135,7 +139,10 @@ export function createVerificationAwareFetch(
 	return wrapped
 }
 
-type InstallGlobalVerificationFetchOptions = VerificationAwareFetchOptions & {
+export const defaultOnVerificationBlocked = defaultOnManagementAccessBlocked
+export const createVerificationAwareFetch = createManagementAccessAwareFetch
+
+type InstallGlobalVerificationFetchOptions = ManagementAccessAwareFetchOptions & {
 	enabled?: boolean
 }
 
@@ -155,7 +162,7 @@ export function installGlobalVerificationFetch(
 			'preconnect' in nativeFetch
 				? (nativeFetch.preconnect as RuntimeFetchPreconnect)
 				: noopPreconnect
-		globalThis.fetch = toGlobalFetch(createVerificationAwareFetch(originalFetch, options))
+		globalThis.fetch = toGlobalFetch(createManagementAccessAwareFetch(originalFetch, options))
 	}
 	installCount++
 

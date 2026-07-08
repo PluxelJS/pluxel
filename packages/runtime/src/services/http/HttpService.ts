@@ -5,11 +5,11 @@ import { isAbsolute, resolve } from 'pathe'
 import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
-	createVerificationBlockedHeaders,
-	createVerificationBlockedPayload,
-	resolveControlPlaneRedirectPath,
-	type VerificationBlockedKind,
-	type VerificationReason,
+	createManagementAccessBlockedHeaders,
+	createManagementAccessBlockedPayload,
+	resolveManagementAccessRedirectPath,
+	type ManagementAccessBlockedKind,
+	type ManagementAccessReason,
 } from '../../shared/verification-http'
 import type { RenderHandler } from '../../server/types'
 import type { ExtensionManifestEvent } from '../../web/extensions'
@@ -517,7 +517,7 @@ export class HttpService {
 		request: Request,
 		path: string,
 		method: string,
-		kind: VerificationBlockedKind,
+		kind: ManagementAccessBlockedKind,
 	): Promise<Response | undefined> {
 		const state = await this.hostCtx.root.verification.authorize({
 			headers: request.headers,
@@ -539,7 +539,7 @@ export class HttpService {
 		}
 		if (state.allow) return undefined
 
-		this.logger.warn('Blocked host verification gate', {
+		this.logger.warn('Blocked management admin access gate', {
 			kind,
 			path,
 			method,
@@ -553,10 +553,10 @@ export class HttpService {
 		request: Request,
 		path: string,
 		method: string,
-		kind: VerificationBlockedKind,
-		reason?: VerificationReason,
+		kind: ManagementAccessBlockedKind,
+		reason?: ManagementAccessReason,
 	): Response {
-		const redirectPath = resolveControlPlaneRedirectPath(
+		const redirectPath = resolveManagementAccessRedirectPath(
 			buildVerificationRedirectPath,
 			request,
 			kind,
@@ -573,10 +573,10 @@ export class HttpService {
 		}
 
 		return Response.json(
-			createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
+			createManagementAccessBlockedPayload(path, method, kind, redirectPath, reason),
 			{
 				status: 401,
-				headers: createVerificationBlockedHeaders(redirectPath, reason),
+				headers: createManagementAccessBlockedHeaders(redirectPath, reason),
 			},
 		)
 	}

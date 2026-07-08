@@ -2,9 +2,9 @@ import type { RpcStub } from 'capnweb'
 import { treaty } from '@elysiajs/eden'
 
 import {
-	type VerificationAwareFetchOptions,
-	createVerificationAwareFetch,
-	defaultOnVerificationBlocked,
+	type ManagementAccessAwareFetchOptions,
+	createManagementAccessAwareFetch,
+	defaultOnManagementAccessBlocked,
 	type RuntimeFetch,
 	toGlobalFetch,
 } from './verification'
@@ -103,7 +103,7 @@ export type RuntimeTransportClientOptions = {
 	defaultNamespace?: string
 	credentials?: RequestCredentials
 	fetch?: RuntimeFetch
-	verification?: VerificationAwareFetchOptions & {
+	verification?: ManagementAccessAwareFetchOptions & {
 		enabled?: boolean
 	}
 }
@@ -228,8 +228,8 @@ export function createRuntimeTransportFetch(
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
 	if (options.verification?.enabled === false) return baseFetch
-	return createVerificationAwareFetch(baseFetch, {
-		onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
+	return createManagementAccessAwareFetch(baseFetch, {
+		onBlocked: options.verification?.onBlocked ?? defaultOnManagementAccessBlocked,
 	})
 }
 
@@ -318,7 +318,7 @@ export function createRuntimeTransportClient(
 							const overview = await security.readOverview()
 							return overview.verification
 						},
-						onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
+						onBlocked: options.verification?.onBlocked ?? defaultOnManagementAccessBlocked,
 					}
 				: undefined,
 			params,

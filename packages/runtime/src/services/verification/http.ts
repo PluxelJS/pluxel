@@ -26,15 +26,15 @@ function sanitizeReturnTo(request: Request, raw: string | null | undefined): str
 function statusText(reason?: string): string {
 	switch (reason) {
 		case 'missing_oidc':
-			return 'Public access requires an OIDC configuration.'
+			return 'Public admin access requires an OIDC configuration.'
 		case 'unauthenticated':
-			return 'External OIDC authentication is required.'
+			return 'OIDC authentication is required for Pluxel admin access.'
 		case 'invalid_token':
 			return 'The provided OIDC token is invalid.'
 		case 'forbidden':
-			return 'The authenticated identity is not allowed to access this host.'
+			return 'The authenticated OIDC identity is not allowed to administer this host.'
 		default:
-			return 'External OIDC authentication is required.'
+			return 'OIDC authentication is required for Pluxel admin access.'
 	}
 }
 
@@ -44,15 +44,15 @@ async function renderVerificationPage(ctx: PluxelContext, request: Request): Pro
 	const returnTo = sanitizeReturnTo(request, url.searchParams.get('returnTo'))
 	const action =
 		verification.reason === 'missing_oidc'
-			? '<p>Configure <code>verification.exposure = "public"</code> with an OIDC issuer, or run this host in private mode.</p>'
-			: `<p>Authenticate through the configured OIDC proxy, then return to <code>${escapeHtml(returnTo)}</code>.</p>`
+			? '<p>Configure public management access with an OIDC issuer, or run this host in private mode.</p>'
+			: `<p>Authenticate through the configured OIDC provider, then return to <code>${escapeHtml(returnTo)}</code>.</p>`
 
 	return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Pluxel Access</title>
+    <title>Pluxel Admin Access</title>
     <style>
       :root { color-scheme: light; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7f9; color: #1d2a34; }
@@ -67,7 +67,7 @@ async function renderVerificationPage(ctx: PluxelContext, request: Request): Pro
   <body>
     <main>
       <div class="pill">${escapeHtml(verification.exposure)} · ${escapeHtml(verification.provider)}</div>
-      <h1>Pluxel Access</h1>
+      <h1>Pluxel Admin Access</h1>
       <p>${escapeHtml(statusText(verification.reason))}</p>
       ${action}
       <p><a href="${escapeHtml(buildVerificationRedirectPath(returnTo))}">Retry</a></p>

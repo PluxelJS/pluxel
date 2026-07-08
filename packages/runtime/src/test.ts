@@ -1,4 +1,5 @@
 import './runtime/register/full'
+import './services/vault'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -12,7 +13,6 @@ import {
 	type CoreTestContext,
 	type PluginConstructor,
 } from '@pluxel/core/test'
-import { bootstrapHostVault } from './services/vault'
 
 export {
 	BaseFeature,
@@ -74,7 +74,7 @@ export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
 		},
 		{
 			prepareCommit: async (ctx) => {
-				await bootstrapHostVault(ctx)
+				await ctx.prepareServices()
 			},
 		},
 	)

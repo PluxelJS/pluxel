@@ -45,6 +45,8 @@ export type ServiceClass<S extends ServiceCtor = ServiceCtor> = S & {
 	readonly methods?: readonly Extract<keyof ServiceInst<S>, string>[]
 	/** 要在 Context 原型上代理的属性/getter 名列表 */
 	readonly props?: readonly Extract<keyof ServiceInst<S>, string>[]
+	/** Instantiate and prepare this service when `ctx.prepareServices()` is called. */
+	readonly eager?: boolean
 	/**
 	 * Service scope:
 	 * - `"context"` (default): service is shared but `ctx` is rebound on every access

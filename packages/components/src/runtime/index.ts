@@ -1,4 +1,5 @@
 import {
+	createManagementAccessAwareFetch,
 	createVerificationAwareFetch,
 	createRuntimeTransportClient,
 	createRuntimeSecurityClient,
@@ -6,6 +7,7 @@ import {
 	RUNTIME_VERIFICATION_BASE,
 	invokeRpc,
 	rpcErrorMessage,
+	resolveManagementAccessLandingPath,
 	resolveVerificationLandingPath,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
@@ -13,12 +15,14 @@ import {
 export * from './pluginControl'
 
 export {
+	createManagementAccessAwareFetch,
 	createVerificationAwareFetch,
 	createRuntimeSecurityClient,
 	RUNTIME_SECURITY_BASE,
 	RUNTIME_VERIFICATION_BASE,
 	invokeRpc,
 	rpcErrorMessage,
+	resolveManagementAccessLandingPath,
 	resolveVerificationLandingPath,
 	RuntimeTransportClientProvider,
 	useRuntimeTransportClient,
@@ -35,6 +39,8 @@ export type {
 	LogRangeOk,
 	LogSseEvent,
 	LogStreamMeta,
+	ManagementAccessAwareFetchOptions,
+	ManagementAccessBlockedInfo,
 	PackageBatchResult,
 	PackageInventoryEntry,
 	PackageInventoryFilter,
@@ -55,6 +61,7 @@ export type {
 	RuntimePluginLogLevel,
 	SecurityAuditEvent,
 	SecurityOverview,
+	ManagementAccessOverview,
 	VerificationOverview,
 	RuntimeLogLine,
 	RuntimeRpcApi,
@@ -62,6 +69,7 @@ export type {
 	RuntimeSecurityClient,
 	VaultAdminState,
 	VaultKeyPair,
+	OnManagementAccessBlocked,
 	SchemaResult,
 	SchemaResultErr,
 	SchemaResultOk,

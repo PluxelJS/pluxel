@@ -5,7 +5,7 @@ import {
 	type LogSseEvent,
 	type LogStreamMeta,
 	type RuntimeLogLine,
-	resolveVerificationLandingPath,
+	resolveManagementAccessLandingPath,
 	useRuntimeTransportClient,
 } from '../../runtime'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -736,13 +736,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 				displayName: filter?.displayName,
 				category: filter?.category,
 			}),
-		[
-			module,
-			filter?.pluginId,
-			filter?.context,
-			filter?.displayName,
-			filter?.category,
-		],
+		[module, filter?.pluginId, filter?.context, filter?.displayName, filter?.category],
 	)
 
 	const [draftFilter, setDraftFilter] = useState<LogFilter>(() => defaultsFilter)
@@ -793,8 +787,8 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	// —— 快照 + SSE（仅跟随 filterQuery 变化） —— //
 	const abortRef = useRef<AbortController | null>(null)
-	const verificationProbeInFlightRef = useRef<Promise<boolean> | null>(null)
-	const lastVerificationProbeAtRef = useRef<number>(0)
+	const managementAccessProbeInFlightRef = useRef<Promise<boolean> | null>(null)
+	const lastManagementAccessProbeAtRef = useRef<number>(0)
 
 	const refreshStreams = useCallback(async () => {
 		try {
@@ -834,20 +828,20 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		const ac = new AbortController()
 		abortRef.current = ac
 
-			const probeVerificationBlocked = async (): Promise<boolean> => {
-				const now = Date.now()
-				if (now - lastVerificationProbeAtRef.current < 1500) return false
-				lastVerificationProbeAtRef.current = now
-				try {
-						const payload = await getRuntimeSecurityClient().readOverview()
-						if (payload.verification.allow === true) return false
-						if (typeof window !== 'undefined') {
-							const next = resolveVerificationLandingPath(payload.verification.reason)
-							window.location.assign(next)
-						}
-					return true
-				} catch {
-					return false
+		const probeManagementAccessBlocked = async (): Promise<boolean> => {
+			const now = Date.now()
+			if (now - lastManagementAccessProbeAtRef.current < 1500) return false
+			lastManagementAccessProbeAtRef.current = now
+			try {
+				const payload = await getRuntimeSecurityClient().readOverview()
+				if (payload.verification.allow === true) return false
+				if (typeof window !== 'undefined') {
+					const next = resolveManagementAccessLandingPath(payload.verification.reason)
+					window.location.assign(next)
+				}
+				return true
+			} catch {
+				return false
 			}
 		}
 
@@ -956,11 +950,11 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 			es.onerror = () => {
 				setConnected(false)
-				if (verificationProbeInFlightRef.current) return
-				verificationProbeInFlightRef.current = probeVerificationBlocked().finally(() => {
-					verificationProbeInFlightRef.current = null
+				if (managementAccessProbeInFlightRef.current) return
+				managementAccessProbeInFlightRef.current = probeManagementAccessBlocked().finally(() => {
+					managementAccessProbeInFlightRef.current = null
 				})
-				void verificationProbeInFlightRef.current.then((blocked): undefined => {
+				void managementAccessProbeInFlightRef.current.then((blocked): undefined => {
 					if (blocked) es.close()
 					return undefined
 				})
@@ -1363,10 +1357,10 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										onClick={() => {
 											void copyToClipboard(
 												formatLineForCopy(selectedLine, { showCategory, showName }),
-												).then((ok): undefined => {
-													if (ok) setCopied('line')
-													return undefined
-												})
+											).then((ok): undefined => {
+												if (ok) setCopied('line')
+												return undefined
+											})
 										}}
 										style={controlButtonStyle(palette)}
 									>
@@ -1375,10 +1369,12 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 									<button
 										type="button"
 										onClick={() => {
-												void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then((ok): undefined => {
+											void copyToClipboard(JSON.stringify(selectedLine, null, 2)).then(
+												(ok): undefined => {
 													if (ok) setCopied('json')
 													return undefined
-												})
+												},
+											)
 										}}
 										style={controlButtonStyle(palette)}
 									>

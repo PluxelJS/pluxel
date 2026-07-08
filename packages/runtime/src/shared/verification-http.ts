@@ -1,58 +1,59 @@
 import { RUNTIME_SECURITY_BASE, RUNTIME_VERIFICATION_BASE } from '../web/paths'
-import type { VerificationReason, VerificationState } from '../services/verification/types'
-export type { VerificationReason } from '../services/verification/types'
+import type { ManagementAccessReason, ManagementAccessState } from '../services/verification/types'
+export type { ManagementAccessReason, VerificationReason } from '../services/verification/types'
 
+// Header names are part of the existing browser transport contract.
 export const VERIFICATION_BLOCKED_HEADER = 'X-Pluxel-Verification-Blocked'
 export const VERIFICATION_REDIRECT_HEADER = 'X-Pluxel-Verification-Redirect'
 export const VERIFICATION_REASON_HEADER = 'X-Pluxel-Verification-Reason'
 
-export type VerificationBlockedKind = 'ui' | 'api' | 'graphql'
-export type VerificationBlockedCode = 'verification_blocked'
+export type ManagementAccessBlockedKind = 'ui' | 'api' | 'graphql'
+export type ManagementAccessBlockedCode = 'verification_blocked'
 
-export type VerificationBlockedPayload = {
-	code: VerificationBlockedCode
-	kind: VerificationBlockedKind
+export type ManagementAccessBlockedPayload = {
+	code: ManagementAccessBlockedCode
+	kind: ManagementAccessBlockedKind
 	path: string
 	method: string
 	redirectPath: string
-	reason?: VerificationReason
+	reason?: ManagementAccessReason
 }
 type BuildRedirectPath = (returnTo?: string) => string
-type VerificationLike = Pick<VerificationState, 'allow' | 'reason'>
+type ManagementAccessLike = Pick<ManagementAccessState, 'allow' | 'reason'>
 
 function requestReturnTo(request: Request): string {
 	const url = new URL(request.url)
 	return `${url.pathname}${url.search}`
 }
 
-export function resolveVerificationLandingPath(reason?: VerificationReason): string {
+export function resolveManagementAccessLandingPath(reason?: ManagementAccessReason): string {
 	return reason === 'missing_oidc' ? RUNTIME_SECURITY_BASE : RUNTIME_VERIFICATION_BASE
 }
 
-export function canAccessSecurityAdmin(state: VerificationLike): boolean {
+export function canAccessSecurityAdmin(state: ManagementAccessLike): boolean {
 	return state.allow || state.reason === 'missing_oidc'
 }
 
-export function resolveControlPlaneRedirectPath(
+export function resolveManagementAccessRedirectPath(
 	buildRedirectPath: BuildRedirectPath,
 	request: Request,
-	kind: VerificationBlockedKind,
-	reason?: VerificationReason,
+	kind: ManagementAccessBlockedKind,
+	reason?: ManagementAccessReason,
 ): string {
-	if (reason === 'missing_oidc') return resolveVerificationLandingPath(reason)
+	if (reason === 'missing_oidc') return resolveManagementAccessLandingPath(reason)
 	if (kind === 'ui') {
 		return buildRedirectPath(requestReturnTo(request))
 	}
-	return resolveVerificationLandingPath(reason)
+	return resolveManagementAccessLandingPath(reason)
 }
 
-export function createVerificationBlockedPayload(
+export function createManagementAccessBlockedPayload(
 	path: string,
 	method: string,
-	kind: VerificationBlockedKind,
+	kind: ManagementAccessBlockedKind,
 	redirectPath: string,
-	reason?: VerificationReason,
-): VerificationBlockedPayload {
+	reason?: ManagementAccessReason,
+): ManagementAccessBlockedPayload {
 	return {
 		code: 'verification_blocked',
 		kind,
@@ -63,9 +64,9 @@ export function createVerificationBlockedPayload(
 	}
 }
 
-export function createVerificationBlockedHeaders(
+export function createManagementAccessBlockedHeaders(
 	redirectPath: string,
-	reason?: VerificationReason,
+	reason?: ManagementAccessReason,
 ): Record<string, string> {
 	return {
 		'Cache-Control': 'no-store',
@@ -74,3 +75,12 @@ export function createVerificationBlockedHeaders(
 		...(reason ? { [VERIFICATION_REASON_HEADER]: reason } : {}),
 	}
 }
+
+export type VerificationBlockedKind = ManagementAccessBlockedKind
+export type VerificationBlockedCode = ManagementAccessBlockedCode
+export type VerificationBlockedPayload = ManagementAccessBlockedPayload
+
+export const resolveVerificationLandingPath = resolveManagementAccessLandingPath
+export const resolveControlPlaneRedirectPath = resolveManagementAccessRedirectPath
+export const createVerificationBlockedPayload = createManagementAccessBlockedPayload
+export const createVerificationBlockedHeaders = createManagementAccessBlockedHeaders

@@ -17,6 +17,7 @@ export type ServiceOptions<S extends InjectableCtor> = {
 	key?: string
 	methods?: readonly Extract<keyof ServiceInst<S>, string>[]
 	props?: readonly Extract<keyof ServiceInst<S>, string>[]
+	eager?: boolean
 	scope?: 'context' | 'root'
 }
 
@@ -26,6 +27,7 @@ type AnyServiceOptions = {
 	key?: string
 	methods?: readonly string[]
 	props?: readonly string[]
+	eager?: boolean
 	scope?: 'context' | 'root'
 }
 
@@ -34,6 +36,7 @@ type MutableServiceMeta = {
 	key?: string
 	methods?: readonly string[]
 	props?: readonly string[]
+	eager?: boolean
 	scope?: 'context' | 'root'
 }
 
@@ -69,6 +72,7 @@ export function Injectable<S extends new (...args: unknown[]) => object>(
 		if (opts.key) meta.key = opts.key
 		if (opts.methods) meta.methods = opts.methods
 		if (opts.props) meta.props = opts.props
+		if (opts.eager !== undefined) meta.eager = opts.eager
 		if (opts.scope) meta.scope = opts.scope
 		Context.registerService(ctor)
 	}
@@ -104,6 +108,7 @@ export function RootService<S extends new (...args: unknown[]) => object>(
 		if (opts.key) meta.key = opts.key
 		if (opts.methods) meta.methods = opts.methods
 		if (opts.props) meta.props = opts.props
+		if (opts.eager !== undefined) meta.eager = opts.eager
 		meta.scope = 'root'
 		Context.registerService(ctor)
 	}

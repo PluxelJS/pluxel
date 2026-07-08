@@ -2,11 +2,15 @@ import type { Context as PluginContext } from '@pluxel/core'
 import type { Changeset } from '@signaldb/core'
 import {
 	canAccessSecurityAdmin,
-	createVerificationBlockedHeaders,
-	createVerificationBlockedPayload,
-	resolveControlPlaneRedirectPath,
+	createManagementAccessBlockedHeaders,
+	createManagementAccessBlockedPayload,
+	resolveManagementAccessRedirectPath,
 } from '../../shared/verification-http'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
+import {
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_TRANSPORT_PATHS,
+} from '../../web/paths'
 import { buildVerificationRedirectPath } from '../verification/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
@@ -44,8 +48,7 @@ function resolveRequestKind(path: string): 'api' | 'graphql' {
 function isSecurityApiPath(path: string): boolean {
 	const internalPath = toInternalApiPath(path)
 	return (
-		internalPath === RUNTIME_SECURITY_BASE ||
-		internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+		internalPath === RUNTIME_SECURITY_BASE || internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	)
 }
 
@@ -77,16 +80,16 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 
 		if (isSecurityApiPath(path)) {
 			if (canAccessSecurityAdmin(state)) return undefined
-			const redirectPath = resolveControlPlaneRedirectPath(
+			const redirectPath = resolveManagementAccessRedirectPath(
 				buildVerificationRedirectPath,
 				request,
 				'api',
 				state.reason,
 			)
-			Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+			Object.assign(set.headers, createManagementAccessBlockedHeaders(redirectPath, state.reason))
 			return status(
 				401,
-				createVerificationBlockedPayload(path, method, 'api', redirectPath, state.reason),
+				createManagementAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
 			)
 		}
 
@@ -121,23 +124,23 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 		const kind = resolveRequestKind(path)
 		if (state.allow) return undefined
 
-		const redirectPath = resolveControlPlaneRedirectPath(
+		const redirectPath = resolveManagementAccessRedirectPath(
 			buildVerificationRedirectPath,
 			request,
 			kind,
 			state.reason,
 		)
-		pluginCtx.logger.warn('Blocked host verification gate', {
+		pluginCtx.logger.warn('Blocked management admin access gate', {
 			kind,
 			path,
 			method,
 			reason: state.reason,
 		})
 
-		Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+		Object.assign(set.headers, createManagementAccessBlockedHeaders(redirectPath, state.reason))
 		return status(
 			401,
-			createVerificationBlockedPayload(path, method, kind, redirectPath, state.reason),
+			createManagementAccessBlockedPayload(path, method, kind, redirectPath, state.reason),
 		)
 	}) as BaseElysiaApp
 }

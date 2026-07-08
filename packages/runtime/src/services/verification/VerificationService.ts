@@ -3,11 +3,12 @@ import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { recordSecurityEvent } from '../security/audit'
 import { DEFAULT_OIDC_TOKEN_HEADER, resolveManagementConfig } from './model'
 import type {
+	ManagementAccessAuthorizeInput,
 	ManagementAccessConfig,
-	VerificationAuthorizeInput,
-	VerificationClaimRequirement,
-	VerificationOidcConfig,
-	VerificationState,
+	ManagementAccessClaimRequirement,
+	ManagementAccessOidcConfig,
+	ManagementAccessOverview,
+	ManagementAccessState,
 } from './types'
 
 const serviceName = 'verification' as const
@@ -28,7 +29,7 @@ declare module '@pluxel/core' {
 	}
 }
 
-function readHeaders(input: VerificationAuthorizeInput): Headers {
+function readHeaders(input: ManagementAccessAuthorizeInput): Headers {
 	return input.headers ?? input.request?.headers ?? new Headers()
 }
 
@@ -53,7 +54,7 @@ function claimValues(value: unknown): string[] {
 	return value.filter((entry): entry is string => typeof entry === 'string')
 }
 
-function claimMatches(actual: unknown, expected: VerificationClaimRequirement): boolean {
+function claimMatches(actual: unknown, expected: ManagementAccessClaimRequirement): boolean {
 	const actualValues = claimValues(actual)
 	const expectedValues = Array.isArray(expected) ? expected : [expected]
 	return expectedValues.some((entry) => actualValues.includes(entry))
@@ -61,7 +62,7 @@ function claimMatches(actual: unknown, expected: VerificationClaimRequirement): 
 
 function claimsMatch(
 	payload: JWTPayload,
-	requiredClaims: Record<string, VerificationClaimRequirement>,
+	requiredClaims: Record<string, ManagementAccessClaimRequirement>,
 ): boolean {
 	for (const [name, expected] of Object.entries(requiredClaims)) {
 		if (!claimMatches(payload[name], expected)) return false
@@ -106,7 +107,7 @@ async function resolveJwks(issuer: string): Promise<ReturnType<typeof createRemo
 export class VerificationService {
 	constructor(public ctx: PluxelContext) {}
 
-	async authorize(input: VerificationAuthorizeInput = {}): Promise<VerificationState> {
+	async authorize(input: ManagementAccessAuthorizeInput = {}): Promise<ManagementAccessState> {
 		const config = this.readConfig()
 		if (config.exposure !== 'public') {
 			return {
@@ -122,7 +123,7 @@ export class VerificationService {
 		return await this.verifyOidcToken(config.oidc, token)
 	}
 
-	async describe(input: VerificationAuthorizeInput = {}) {
+	async describe(input: ManagementAccessAuthorizeInput = {}): Promise<ManagementAccessOverview> {
 		const config = this.readConfig()
 		const state = await this.authorize(input)
 		return {
@@ -141,9 +142,9 @@ export class VerificationService {
 	}
 
 	private async verifyOidcToken(
-		config: VerificationOidcConfig,
+		config: ManagementAccessOidcConfig,
 		token: string,
-	): Promise<VerificationState> {
+	): Promise<ManagementAccessState> {
 		try {
 			const jwks = await resolveJwks(config.issuer)
 			const result = await jwtVerify(token, jwks, {
@@ -165,6 +166,7 @@ export class VerificationService {
 			return {
 				allow: true,
 				principal: {
+					provider: 'oidc',
 					subject: result.payload.sub,
 					claims: result.payload,
 				},

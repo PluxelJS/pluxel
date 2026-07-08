@@ -233,7 +233,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('exposes vault only after explicit import without static host auto-bootstrap', async () => {
+	it('bootstraps vault before startup after explicit import', async () => {
 		await import('@pluxel/runtime/services/vault')
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
@@ -247,8 +247,12 @@ describe('@pluxel/runtime-static', () => {
 		try {
 			expect('vault' in runtime.ctx).toBe(true)
 			const state = await runtime.ctx.root.vaultAdmin.describe()
-			expect(state.present).toBe(false)
-			expect(state.hostIdentityPresent).toBe(false)
+			expect(state).toMatchObject({
+				present: true,
+				unlocked: true,
+				unlockedBy: 'host',
+				hostIdentityPresent: true,
+			})
 		} finally {
 			await runtime.stop()
 		}

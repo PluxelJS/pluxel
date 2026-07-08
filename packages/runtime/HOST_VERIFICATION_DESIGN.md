@@ -5,13 +5,14 @@
 - `packages/runtime/src/services/verification/VerificationService.ts`
 - `packages/runtime/src/services/vault/VaultService.ts`
 - `packages/runtime/src/services/vault.ts`
-  显式 vault boundary，导出 host bootstrap helper；内部实现落在 `services/security/bootstrap.ts`
+  显式 vault boundary，注册 `ctx.vault` 和 eager `ctx.root.vaultAdmin`
 - `packages/runtime/src/api/http/security.ts`
 - `packages/components/src/app/security/SecurityScreen.tsx`
 
 ## 核心原则
 
-- verification 只回答 host control-plane / management 是否允许访问
+- verification 只回答 host management admin surface 是否允许访问
+- Pluxel 没有 management 非 admin 用户模型；通过验证的人就是 management admin
 - Pluxel 不保存本地账号、密码、OTP secret 或 passkey credential
 - `management.enabled=false` 不挂 runtime web management，不要求 OIDC
 - `management.enabled=true` 且 `management.access.exposure='private'` 不要求 OIDC
@@ -24,13 +25,13 @@
 ## 核心接口
 
 - `ctx.root.verification`
-  `authorize()` / `describe()`
+  `authorize()` / `describe()`；`allow=true` 表示允许进入 management admin surface
 - `ctx.vault`
   `kv()` / `docs()` / `blobs()` / `namespace()` / `flush()`
 - `ctx.root.vaultAdmin`
   `preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
-- host 启动引导 helper
-  `bootstrapHostVault(ctx)`
+- host 启动引导
+  `ctx.prepareServices()`
 - `/security`
   对应专用 security client
   `readOverview()` / `listEvents()`
@@ -43,7 +44,11 @@
   `provider: 'none' | 'oidc'`
   `allow: boolean`
   `reason?: 'private' | 'missing_oidc' | 'unauthenticated' | 'invalid_token' | 'forbidden'`
-  `principal?: { subject, claims }`
+  `principal?: { provider: 'oidc', subject, claims }`
+
+`management.access.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略。public
+management 下，OIDC JWT 满足 issuer/audience/requiredClaims 后即视为 admin；不满足则不能进入后台。
+
 - vault
   `present` / `unlocked` / `unlockedBy` / `lastError` / `deploy` / `hostIdentityPresent` / `namespaces`
 
@@ -51,10 +56,14 @@
 
 - management public access 必须在 HTTP 服务初始化时通过 OIDC 配置校验
 - Vault 只有一个启用入口：显式 import `@pluxel/runtime/services/vault`
-- 启用 vault 的 host 在插件运行前调用 `bootstrapHostVault(ctx)`；static kernel 和 dynamic
-  HMR host 都不默认 bootstrap vault
-- `bootstrapHostVault(ctx)` 的顺序必须保持：
+- host 在插件运行前调用 `ctx.prepareServices()`；vaultAdmin 是 eager root service，会在
+  自己的 `prepare()` 里完成 vault bootstrap。dynamic/HMR 不做插件级归因，使用方如果启用
+  vault 也必须在插件运行前完成同一 service prepare
+- vaultAdmin `prepare()` 的顺序必须保持：
   `describe()` -> 仅在 mount 缺失且 host identity 缺失时 `ensureHostKey()` -> `preflight()`
-- mount 不存在时直接通过
+- mount 不存在时在启动期初始化一个空 mount 并保持已解锁
 - mount 已存在且可解锁时通过
 - mount 已存在但当前材料无法解锁时终止启动
+- `ctx.vault` 只代表 ready storage；普通 kv/docs/blobs API 不做运行期自动解锁
+- fail fast 不追踪具体插件消费者；排查使用
+  `rg "@pluxel/runtime/services/vault|ctx\\.vault" .`

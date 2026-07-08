@@ -1,25 +1,31 @@
 import type { JWTPayload } from 'jose'
 
-export type VerificationExposure = 'private' | 'public'
+export type ManagementAccessExposure = 'private' | 'public'
 
-export type VerificationClaimRequirement = string | string[]
+export type ManagementAccessClaimRequirement = string | string[]
 
-export type VerificationOidcConfig = {
+export type ManagementAccessOidcConfig = {
 	issuer: string
 	audience?: string | string[]
 	tokenHeader?: string
-	requiredClaims?: Record<string, VerificationClaimRequirement>
+	/**
+	 * Claims required for Pluxel management admin access.
+	 *
+	 * Pluxel has no separate non-admin user model; a token that satisfies this
+	 * policy is allowed to enter the management surface as an admin.
+	 */
+	requiredClaims?: Record<string, ManagementAccessClaimRequirement>
 	clockToleranceSeconds?: number
 }
 
 export type ManagementAccessConfig =
 	| {
 			exposure?: 'private'
-			oidc?: VerificationOidcConfig
+			oidc?: ManagementAccessOidcConfig
 	  }
 	| {
 			exposure: 'public'
-			oidc?: VerificationOidcConfig
+			oidc?: ManagementAccessOidcConfig
 	  }
 
 export type ManagementConfig = {
@@ -27,37 +33,48 @@ export type ManagementConfig = {
 	access?: ManagementAccessConfig
 }
 
-export type VerificationReason =
+export type ManagementAccessReason =
 	| 'private'
 	| 'missing_oidc'
 	| 'unauthenticated'
 	| 'invalid_token'
 	| 'forbidden'
 
-export type VerificationPrincipal = {
+export type ManagementAccessPrincipal = {
+	provider: 'oidc'
 	subject: string
 	claims: JWTPayload
 }
 
-export type VerificationRequestContext = {
+export type ManagementAccessRequestContext = {
 	request?: Request
 	headers?: Headers
 	url?: string
 }
 
-export type VerificationAuthorizeInput = VerificationRequestContext
+export type ManagementAccessAuthorizeInput = ManagementAccessRequestContext
 
-export type VerificationState = {
+export type ManagementAccessState = {
 	allow: boolean
-	reason?: VerificationReason
-	principal?: VerificationPrincipal
+	reason?: ManagementAccessReason
+	principal?: ManagementAccessPrincipal
 }
 
-export type VerificationOverview = {
-	exposure: VerificationExposure
+export type ManagementAccessOverview = {
+	exposure: ManagementAccessExposure
 	provider: 'none' | 'oidc'
 	issuer?: string
 	audience?: string | string[]
-	requiredClaims?: Record<string, VerificationClaimRequirement>
+	requiredClaims?: Record<string, ManagementAccessClaimRequirement>
 	tokenHeader?: string
-} & VerificationState
+} & ManagementAccessState
+
+export type VerificationExposure = ManagementAccessExposure
+export type VerificationClaimRequirement = ManagementAccessClaimRequirement
+export type VerificationOidcConfig = ManagementAccessOidcConfig
+export type VerificationReason = ManagementAccessReason
+export type VerificationPrincipal = ManagementAccessPrincipal
+export type VerificationRequestContext = ManagementAccessRequestContext
+export type VerificationAuthorizeInput = ManagementAccessAuthorizeInput
+export type VerificationState = ManagementAccessState
+export type VerificationOverview = ManagementAccessOverview
