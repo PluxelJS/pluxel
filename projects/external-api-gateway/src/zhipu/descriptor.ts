@@ -1,4 +1,11 @@
-import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '../constants'
+import {
+	DEFAULT_ZHIPU_CHAT_MODEL,
+	DEFAULT_ZHIPU_IMAGE_MODEL,
+	DEFAULT_ZHIPU_LAYOUT_MODEL,
+	DEFAULT_ZHIPU_SPEECH_MODEL,
+	DEFAULT_ZHIPU_TOKENIZER_MODEL,
+	DEFAULT_ZHIPU_VIDEO_MODEL,
+} from '../constants'
 import type { ProviderDescriptor } from '../provider/contracts'
 
 export const zhipuProviderDescriptor: ProviderDescriptor = {
@@ -26,7 +33,62 @@ export const zhipuProviderDescriptor: ProviderDescriptor = {
 			label: 'Chat completions',
 			path: '/chat/completions',
 			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_CHAT_MODEL,
 			unitName: 'token',
+		},
+		{
+			id: 'tokenizer',
+			label: 'Text tokenizer',
+			path: '/tokenizer',
+			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_TOKENIZER_MODEL,
+			unitName: 'token',
+		},
+		{
+			id: 'images.generations',
+			label: 'Image generations',
+			path: '/images/generations',
+			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
+			unitName: 'image',
+		},
+		{
+			id: 'images.generations.async',
+			label: 'Async image generations',
+			path: '/async/images/generations',
+			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
+			unitName: 'request',
+		},
+		{
+			id: 'async_result',
+			label: 'Async result',
+			path: '/async-result/{id}',
+			method: 'GET',
+			unitName: 'request',
+		},
+		{
+			id: 'videos.generations',
+			label: 'Video generations',
+			path: '/videos/generations',
+			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_VIDEO_MODEL,
+			unitName: 'video',
+		},
+		{
+			id: 'audio.transcriptions',
+			label: 'Audio transcriptions',
+			path: '/audio/transcriptions',
+			method: 'POST',
+			defaultModel: DEFAULT_ZHIPU_SPEECH_MODEL,
+			unitName: 'request',
+		},
+		{
+			id: 'files.upload',
+			label: 'Files upload',
+			path: '/files',
+			method: 'POST',
+			unitName: 'request',
 		},
 		{
 			id: 'embeddings.create',
@@ -60,6 +122,27 @@ export const zhipuProviderDescriptor: ProviderDescriptor = {
 			id: 'web_search',
 			label: 'Web search',
 			path: '/web_search',
+			method: 'POST',
+			unitName: 'request',
+		},
+		{
+			id: 'agents.create',
+			label: 'Agents',
+			path: '/v1/agents',
+			method: 'POST',
+			unitName: 'request',
+		},
+		{
+			id: 'agents.async_result',
+			label: 'Agent async result',
+			path: '/v1/agents/async-result',
+			method: 'POST',
+			unitName: 'request',
+		},
+		{
+			id: 'agents.conversation',
+			label: 'Agent conversation',
+			path: '/v1/agents/conversation',
 			method: 'POST',
 			unitName: 'request',
 		},

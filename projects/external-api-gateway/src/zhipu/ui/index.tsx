@@ -1,7 +1,18 @@
 import { Button } from '@mantine/core'
 import { definePluginUIModule, ExtensionPoints } from '@pluxel/runtime/web/ui'
-import { IconCloudUpload, IconHistory, IconTextRecognition } from '@tabler/icons-react'
-import { ZhipuDashboard, ZhipuHistoryPanel, ZhipuOcrPanel, ZhipuSettingsPanel } from './panels'
+import {
+	IconCloudUpload,
+	IconHistory,
+	IconPlugConnected,
+	IconTextRecognition,
+} from '@tabler/icons-react'
+import {
+	ZhipuApiPanel,
+	ZhipuDashboard,
+	ZhipuHistoryPanel,
+	ZhipuOcrPanel,
+	ZhipuSettingsPanel,
+} from './panels'
 import { zhipuPlugin } from './runtime'
 
 function pluginRouteHref(pluginName: string, path: string) {
@@ -45,6 +56,13 @@ export default definePluginUIModule({
 			priority: 20,
 			meta: { label: '设置' },
 			render: () => <ZhipuSettingsPanel />,
+		},
+		{
+			point: ExtensionPoints.PluginTabs,
+			id: 'zhipu-api-tools',
+			priority: 25,
+			meta: { label: '模型/工具', icon: <IconPlugConnected size={16} /> },
+			render: () => <ZhipuApiPanel />,
 		},
 		{
 			point: ExtensionPoints.PluginTabs,

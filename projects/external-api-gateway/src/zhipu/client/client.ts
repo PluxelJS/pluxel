@@ -23,8 +23,21 @@ function trimLeftSlash(input: string): string {
 	return input.replace(/^\/+/, '')
 }
 
-function normalizeOpenApiPath(path: string): string {
+function isAbsoluteUrl(path: string): boolean {
+	return /^https?:\/\//i.test(path)
+}
+
+function baseEndsWithPaasV4(baseUrl: string): boolean {
+	return /\/paas\/v4$/i.test(baseUrl)
+}
+
+function trimPaasV4Base(baseUrl: string): string {
+	return baseUrl.replace(/\/paas\/v4$/i, '')
+}
+
+function normalizeOpenApiPath(path: string, baseUrl: string): string {
 	const trimmed = trimLeftSlash(path)
+	if (!baseEndsWithPaasV4(baseUrl)) return trimmed
 	return trimmed.startsWith('paas/v4/') ? trimmed.slice('paas/v4/'.length) : trimmed
 }
 
@@ -52,7 +65,12 @@ export class ZhipuClient {
 	}
 
 	url(path: string): URL {
-		return new URL(`${this.baseUrl}/${normalizeOpenApiPath(path)}`)
+		if (isAbsoluteUrl(path)) return new URL(path)
+		const trimmed = trimLeftSlash(path)
+		if (baseEndsWithPaasV4(this.baseUrl) && trimmed.startsWith('v1/')) {
+			return new URL(`${trimPaasV4Base(this.baseUrl)}/${trimmed}`)
+		}
+		return new URL(`${this.baseUrl}/${normalizeOpenApiPath(path, this.baseUrl)}`)
 	}
 
 	async raw(options: ZhipuRawRequestOptions): Promise<Response> {

@@ -13,6 +13,7 @@ import {
 	PasswordInput,
 	ScrollArea,
 	SegmentedControl,
+	Select,
 	Stack,
 	Table,
 	Text,
@@ -23,11 +24,48 @@ import {
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
 import { IconCheck, IconCloudUpload, IconKey, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
-import { DEFAULT_ZHIPU_BASE_URL, DEFAULT_ZHIPU_LAYOUT_MODEL } from '../../constants'
+import {
+	DEFAULT_ZHIPU_BASE_URL,
+	DEFAULT_ZHIPU_CHAT_MODEL,
+	DEFAULT_ZHIPU_IMAGE_MODEL,
+	DEFAULT_ZHIPU_LAYOUT_MODEL,
+	DEFAULT_ZHIPU_SPEECH_MODEL,
+	DEFAULT_ZHIPU_TOKENIZER_MODEL,
+	DEFAULT_ZHIPU_VIDEO_MODEL,
+} from '../../constants'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
 import { zhipuPlugin } from './runtime'
 
 type Mode = 'files-ocr' | 'layout-parsing'
+type ApiMode =
+	| 'chat'
+	| 'tokenizer'
+	| 'images'
+	| 'async-images'
+	| 'async-result'
+	| 'videos'
+	| 'audio-transcriptions'
+	| 'web-search'
+	| 'reader'
+	| 'embeddings'
+	| 'rerank'
+	| 'moderations'
+	| 'files'
+	| 'agents'
+	| 'agent-async-result'
+	| 'agent-conversation'
+	| 'raw'
+
+type ApiCatalogItem = {
+	value: Exclude<ApiMode, 'raw'>
+	label: string
+	operation: string
+	path: string
+	method: 'GET' | 'POST'
+	kind: 'json' | 'upload'
+	defaultModel?: string
+	defaultBody: Record<string, unknown>
+}
 
 type ZhipuUiApp = {
 	pluginName: 'ZhipuProviderPlugin'
@@ -100,6 +138,203 @@ function settingsBadge(settings: ZhipuSettingsDoc | undefined): string | null {
 	return settings.hasApiKey ? settings.apiKeyPreview : '未配置'
 }
 
+const API_CATALOG: ApiCatalogItem[] = [
+	{
+		value: 'chat',
+		label: 'Chat Completions',
+		operation: 'chat.completions',
+		path: '/chat/completions',
+		method: 'POST',
+		kind: 'json',
+		defaultModel: DEFAULT_ZHIPU_CHAT_MODEL,
+		defaultBody: {
+			model: DEFAULT_ZHIPU_CHAT_MODEL,
+			messages: [{ role: 'user', content: '用一句话介绍 GLM。' }],
+		},
+	},
+	{
+		value: 'tokenizer',
+		label: 'Tokenizer',
+		operation: 'tokenizer',
+		path: '/tokenizer',
+		method: 'POST',
+		kind: 'json',
+		defaultModel: DEFAULT_ZHIPU_TOKENIZER_MODEL,
+		defaultBody: {
+			model: DEFAULT_ZHIPU_TOKENIZER_MODEL,
+			messages: [{ role: 'user', content: '估算这句话的 token 数。' }],
+		},
+	},
+	{
+		value: 'images',
+		label: 'Image Generation',
+		operation: 'images.generations',
+		path: '/images/generations',
+		method: 'POST',
+		kind: 'json',
+		defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
+		defaultBody: {
+			model: DEFAULT_ZHIPU_IMAGE_MODEL,
+			prompt: 'A clean product photo of a compact desk lamp on a white background.',
+			size: '1280x1280',
+		},
+	},
+	{
+		value: 'async-images',
+		label: 'Async Image',
+		operation: 'images.generations.async',
+		path: '/async/images/generations',
+		method: 'POST',
+		kind: 'json',
+		defaultModel: DEFAULT_ZHIPU_IMAGE_MODEL,
+		defaultBody: {
+			model: DEFAULT_ZHIPU_IMAGE_MODEL,
+			prompt: 'A clean product photo of a compact desk lamp on a white background.',
+			size: '1280x1280',
+		},
+	},
+	{
+		value: 'async-result',
+		label: 'Async Result',
+		operation: 'async_result',
+		path: '/async-result/{id}',
+		method: 'GET',
+		kind: 'json',
+		defaultBody: { id: 'replace-with-task-id' },
+	},
+	{
+		value: 'videos',
+		label: 'Video Generation',
+		operation: 'videos.generations',
+		path: '/videos/generations',
+		method: 'POST',
+		kind: 'json',
+		defaultModel: DEFAULT_ZHIPU_VIDEO_MODEL,
+		defaultBody: {
+			model: DEFAULT_ZHIPU_VIDEO_MODEL,
+			prompt: 'A cat is playing with a ball.',
+			quality: 'quality',
+			with_audio: true,
+			size: '1920x1080',
+			fps: 30,
+		},
+	},
+	{
+		value: 'audio-transcriptions',
+		label: 'Audio Transcription',
+		operation: 'audio.transcriptions',
+		path: '/audio/transcriptions',
+		method: 'POST',
+		kind: 'upload',
+		defaultModel: DEFAULT_ZHIPU_SPEECH_MODEL,
+		defaultBody: { model: DEFAULT_ZHIPU_SPEECH_MODEL, stream: false },
+	},
+	{
+		value: 'web-search',
+		label: 'Web Search',
+		operation: 'web_search',
+		path: '/web_search',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			search_query: '智谱 GLM OpenAPI',
+			search_engine: 'search-prime',
+			search_intent: false,
+			count: 5,
+		},
+	},
+	{
+		value: 'reader',
+		label: 'Web Reader',
+		operation: 'reader',
+		path: '/reader',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			url: 'https://docs.z.ai/',
+			return_format: 'markdown',
+		},
+	},
+	{
+		value: 'embeddings',
+		label: 'Embeddings',
+		operation: 'embeddings.create',
+		path: '/embeddings',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			model: 'embedding-3',
+			input: 'hello world',
+		},
+	},
+	{
+		value: 'rerank',
+		label: 'Rerank',
+		operation: 'rerank.create',
+		path: '/rerank',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			model: 'rerank',
+			query: '什么是 GLM？',
+			documents: ['GLM 是智谱的模型系列。', '天气很好。'],
+			top_n: 2,
+			return_documents: true,
+		},
+	},
+	{
+		value: 'moderations',
+		label: 'Moderations',
+		operation: 'moderations.create',
+		path: '/moderations',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			model: 'moderation',
+			input: 'hello',
+		},
+	},
+	{
+		value: 'files',
+		label: 'Files Upload',
+		operation: 'files.upload',
+		path: '/files',
+		method: 'POST',
+		kind: 'upload',
+		defaultBody: { purpose: 'agent' },
+	},
+	{
+		value: 'agents',
+		label: 'Agents',
+		operation: 'agents.create',
+		path: '/v1/agents',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: {
+			agent_id: 'general_translation',
+			messages: [{ role: 'user', content: { type: 'text', text: 'Translate to English: 你好' } }],
+		},
+	},
+	{
+		value: 'agent-async-result',
+		label: 'Agent Result',
+		operation: 'agents.async_result',
+		path: '/v1/agents/async-result',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: { async_id: 'replace-with-async-id' },
+	},
+	{
+		value: 'agent-conversation',
+		label: 'Agent Conversation',
+		operation: 'agents.conversation',
+		path: '/v1/agents/conversation',
+		method: 'POST',
+		kind: 'json',
+		defaultBody: { conversation_id: 'replace-with-conversation-id' },
+	},
+]
+
 export function ZhipuDashboard() {
 	return (
 		<Stack gap="lg" p="md">
@@ -120,6 +355,7 @@ export function ZhipuDashboard() {
 					<ZhipuSettingsPanel compact />
 				</Grid.Col>
 			</Grid>
+			<ZhipuApiPanel />
 			<ZhipuHistoryPanel />
 		</Stack>
 	)
@@ -242,12 +478,12 @@ export function ZhipuOcrPanel() {
 	const [layoutFile, setLayoutFile] = useState<File | null>(null)
 	const [fileRef, setFileRef] = useState('')
 	const [prompt, setPrompt] = useState('')
+	const [postprocessModel, setPostprocessModel] = useState(DEFAULT_ZHIPU_CHAT_MODEL)
 	const [layoutJson, setLayoutJson] = useState(`{\n  "model": "${DEFAULT_ZHIPU_LAYOUT_MODEL}"\n}`)
 	const [state, setState] = useState<RequestState>({ loading: false, error: null, result: null })
 	const layoutHasFile = Boolean(layoutFile || fileRef.trim() || jsonStringField(layoutJson, 'file'))
 	const canRun =
-		(settings?.hasApiKey ?? true) &&
-		(mode === 'files-ocr' ? Boolean(file) : layoutHasFile)
+		(settings?.hasApiKey ?? true) && (mode === 'files-ocr' ? Boolean(file) : layoutHasFile)
 
 	const submit = async () => {
 		setState({ loading: true, error: null, result: null })
@@ -259,10 +495,25 @@ export function ZhipuOcrPanel() {
 			const response =
 				mode === 'files-ocr'
 					? await submitFilesOcr(endpoint, userId, file)
-					: await submitLayoutParsing(endpoint, userId, layoutFile, fileRef, prompt, layoutJson)
+					: await submitLayoutParsing(endpoint, userId, layoutFile, fileRef, layoutJson)
 			const body = await readResponseBody(response)
 			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
-			setState({ loading: false, error: null, result: body })
+			if (prompt.trim()) {
+				const chatResponse = await submitOcrPostprocess(
+					pluginRoute(app.pluginName, '/chat-completions'),
+					userId,
+					postprocessModel,
+					prompt,
+					body,
+				)
+				const postprocess = await readResponseBody(chatResponse)
+				if (!chatResponse.ok) {
+					throw new Error(extractErrorMessage(postprocess) ?? `后处理失败：${chatResponse.status}`)
+				}
+				setState({ loading: false, error: null, result: { ocr: body, postprocess } })
+				return
+			}
+			setState({ loading: false, error: null, result: { ocr: body } })
 		} catch (caught) {
 			setState({
 				loading: false,
@@ -304,14 +555,18 @@ export function ZhipuOcrPanel() {
 					<LayoutParsingForm
 						file={layoutFile}
 						fileRef={fileRef}
-						prompt={prompt}
 						rawJson={layoutJson}
 						onFileChange={setLayoutFile}
 						onFileRefChange={setFileRef}
-						onPromptChange={setPrompt}
 						onRawJsonChange={setLayoutJson}
 					/>
 				)}
+				<OcrPostprocessForm
+					prompt={prompt}
+					model={postprocessModel}
+					onPromptChange={setPrompt}
+					onModelChange={setPostprocessModel}
+				/>
 				<OcrRequestSummary
 					mode={mode}
 					userId={userId}
@@ -319,6 +574,7 @@ export function ZhipuOcrPanel() {
 					layoutFile={layoutFile}
 					fileRef={fileRef}
 					prompt={prompt}
+					postprocessModel={postprocessModel}
 					layoutJson={layoutJson}
 				/>
 				<Group>
@@ -374,20 +630,16 @@ function FilesOcrForm({
 function LayoutParsingForm({
 	file,
 	fileRef,
-	prompt,
 	rawJson,
 	onFileChange,
 	onFileRefChange,
-	onPromptChange,
 	onRawJsonChange,
 }: {
 	file: File | null
 	fileRef: string
-	prompt: string
 	rawJson: string
 	onFileChange: (file: File | null) => void
 	onFileRefChange: (value: string) => void
-	onPromptChange: (value: string) => void
 	onRawJsonChange: (value: string) => void
 }) {
 	return (
@@ -399,14 +651,6 @@ function LayoutParsingForm({
 				value={fileRef}
 				onChange={(event) => onFileRefChange(event.currentTarget.value)}
 				disabled={Boolean(file)}
-			/>
-			<Textarea
-				label="Prompt"
-				placeholder="例如：请提取发票号码、日期、金额，返回 JSON"
-				value={prompt}
-				onChange={(event) => onPromptChange(event.currentTarget.value)}
-				autosize
-				minRows={3}
 			/>
 			<JsonInput
 				label="额外 JSON 参数"
@@ -420,6 +664,36 @@ function LayoutParsingForm({
 	)
 }
 
+function OcrPostprocessForm({
+	prompt,
+	model,
+	onPromptChange,
+	onModelChange,
+}: {
+	prompt: string
+	model: string
+	onPromptChange: (value: string) => void
+	onModelChange: (value: string) => void
+}) {
+	return (
+		<Stack gap="sm">
+			<Textarea
+				label="后处理 Prompt"
+				placeholder="例如：基于 OCR markdown 提取发票号码、日期、金额，返回 JSON"
+				value={prompt}
+				onChange={(event) => onPromptChange(event.currentTarget.value)}
+				autosize
+				minRows={3}
+			/>
+			<TextInput
+				label="后处理模型"
+				value={model}
+				onChange={(event) => onModelChange(event.currentTarget.value)}
+			/>
+		</Stack>
+	)
+}
+
 function OcrRequestSummary({
 	mode,
 	userId,
@@ -427,6 +701,7 @@ function OcrRequestSummary({
 	layoutFile,
 	fileRef,
 	prompt,
+	postprocessModel,
 	layoutJson,
 }: {
 	mode: Mode
@@ -435,13 +710,14 @@ function OcrRequestSummary({
 	layoutFile: File | null
 	fileRef: string
 	prompt: string
+	postprocessModel: string
 	layoutJson: string
 }) {
 	const endpoint = mode === 'files-ocr' ? '/files/ocr' : '/layout_parsing'
 	const layoutFileField = fileRef.trim() || jsonStringField(layoutJson, 'file')
 	const fileSource =
 		mode === 'files-ocr'
-			? filesOcrFile?.name ?? '-'
+			? (filesOcrFile?.name ?? '-')
 			: layoutFile?.name || truncateText(layoutFileField, 80)
 	const extraKeys = Object.keys(safeJsonObject(layoutJson)).filter((key) => key !== 'file')
 	return (
@@ -452,10 +728,190 @@ function OcrRequestSummary({
 			{mode === 'layout-parsing' ? (
 				<>
 					<Badge variant="light">prompt:{prompt.trim().length}</Badge>
+					<Badge variant="light">chat:{postprocessModel || '-'}</Badge>
 					<Badge variant="light">json:{extraKeys.length}</Badge>
 				</>
 			) : null}
 		</Group>
+	)
+}
+
+export function ZhipuApiPanel() {
+	const app = useZhipuApp()
+	const settings = app.db.useDocById('settings', 'settings')
+	const [mode, setMode] = useState<ApiMode>('chat')
+	const [userId, setUserId] = useState('demo-user')
+	const [rawJson, setRawJson] = useState(defaultApiJson('chat'))
+	const [uploadFile, setUploadFile] = useState<File | null>(null)
+	const [rawMethod, setRawMethod] = useState('POST')
+	const [rawPath, setRawPath] = useState('/chat/completions')
+	const [rawOperation, setRawOperation] = useState('chat.completions')
+	const [rawModel, setRawModel] = useState(DEFAULT_ZHIPU_CHAT_MODEL)
+	const [state, setState] = useState<RequestState>({ loading: false, error: null, result: null })
+	const selected = apiCatalogItem(mode)
+	const requiresUpload = selected?.kind === 'upload'
+	const canRun = (settings?.hasApiKey ?? true) && (!requiresUpload || Boolean(uploadFile))
+
+	const switchMode = (value: string) => {
+		const next = value as ApiMode
+		setMode(next)
+		setRawJson(defaultApiJson(next))
+		setUploadFile(null)
+		const item = apiCatalogItem(next)
+		if (item) {
+			setRawMethod(item.method)
+			setRawPath(item.path)
+			setRawOperation(item.operation)
+			setRawModel(item.defaultModel ?? '')
+		}
+		setState({ loading: false, error: null, result: null })
+	}
+
+	const submit = async () => {
+		setState({ loading: true, error: null, result: null })
+		try {
+			const response =
+				mode === 'raw'
+					? await postJson(pluginRoute(app.pluginName, '/openapi'), {
+							userId,
+							method: rawMethod,
+							path: rawPath,
+							operation: rawOperation,
+							model: rawModel || undefined,
+							body: parseOpenApiBody(rawJson),
+						})
+					: selected?.kind === 'upload'
+						? await submitOpenApiUpload(
+								pluginRoute(app.pluginName, '/openapi-upload'),
+								userId,
+								selected,
+								uploadFile,
+								parseJsonObject(rawJson),
+							)
+						: await submitCatalogJson(
+								pluginRoute(app.pluginName, '/openapi'),
+								userId,
+								requireApiCatalogItem(mode),
+								parseJsonObject(rawJson),
+							)
+			const body = await readResponseBody(response)
+			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
+			setState({ loading: false, error: null, result: body })
+		} catch (caught) {
+			setState({
+				loading: false,
+				error: caught instanceof Error ? caught.message : String(caught),
+				result: null,
+			})
+		}
+	}
+
+	return (
+		<Card withBorder radius="md" p="lg">
+			<Stack gap="md">
+				<Group justify="space-between">
+					<Title order={4}>模型 / 工具 API</Title>
+					<Select
+						w={{ base: '100%', sm: 300 }}
+						value={mode}
+						onChange={(value) => {
+							if (value) switchMode(value)
+						}}
+						data={[
+							...API_CATALOG.map((item) => ({ label: item.label, value: item.value })),
+							{ label: 'Raw OpenAPI', value: 'raw' },
+						]}
+						allowDeselect={false}
+					/>
+				</Group>
+				{settings?.hasApiKey === false ? (
+					<Alert color="yellow">先保存 Zhipu API Key。</Alert>
+				) : null}
+				{requiresUpload && !uploadFile ? <Alert color="blue">选择文件后再调用。</Alert> : null}
+				{state.error ? <Alert color="red">{state.error}</Alert> : null}
+				<TextInput
+					label="userId"
+					value={userId}
+					onChange={(event) => setUserId(event.currentTarget.value)}
+				/>
+				{mode === 'raw' ? (
+					<Grid>
+						<Grid.Col span={{ base: 12, sm: 3 }}>
+							<TextInput
+								label="Method"
+								value={rawMethod}
+								onChange={(event) => setRawMethod(event.currentTarget.value.toUpperCase())}
+							/>
+						</Grid.Col>
+						<Grid.Col span={{ base: 12, sm: 9 }}>
+							<TextInput
+								label="Path"
+								value={rawPath}
+								onChange={(event) => setRawPath(event.currentTarget.value)}
+							/>
+						</Grid.Col>
+						<Grid.Col span={{ base: 12, sm: 6 }}>
+							<TextInput
+								label="Operation"
+								value={rawOperation}
+								onChange={(event) => setRawOperation(event.currentTarget.value)}
+							/>
+						</Grid.Col>
+						<Grid.Col span={{ base: 12, sm: 6 }}>
+							<TextInput
+								label="Billing model"
+								value={rawModel}
+								onChange={(event) => setRawModel(event.currentTarget.value)}
+							/>
+						</Grid.Col>
+					</Grid>
+				) : null}
+				{requiresUpload ? (
+					<FileInput label="上传文件" value={uploadFile} onChange={setUploadFile} clearable />
+				) : null}
+				<JsonInput
+					label={mode === 'raw' ? 'Body JSON' : `${apiOperationLabel(mode)} 请求 JSON`}
+					value={rawJson}
+					onChange={setRawJson}
+					autosize
+					minRows={10}
+					formatOnBlur
+				/>
+				<Group gap="xs">
+					<Badge variant="light">{selected?.method ?? rawMethod}</Badge>
+					<Badge variant="light">{selected?.path ?? rawPath}</Badge>
+					<Badge variant="light">{selected?.operation ?? rawOperation}</Badge>
+				</Group>
+				<Group>
+					<Button
+						leftSection={<IconPlayerPlay size={16} />}
+						loading={state.loading}
+						disabled={!canRun}
+						onClick={() => void submit()}
+					>
+						调用 API
+					</Button>
+					<CopyButton value={jsonPretty(state.result)}>
+						{({ copied, copy }) => (
+							<Button variant="light" disabled={!state.result} onClick={copy}>
+								{copied ? '已复制' : '复制结果'}
+							</Button>
+						)}
+					</CopyButton>
+				</Group>
+				<Box
+					style={{
+						border: '1px solid var(--mantine-color-default-border)',
+						borderRadius: 8,
+						overflow: 'hidden',
+					}}
+				>
+					<ScrollArea h={360} type="auto" scrollbarSize={10} offsetScrollbars>
+						<Code block>{state.result ? jsonPretty(state.result) : '暂无结果'}</Code>
+					</ScrollArea>
+				</Box>
+			</Stack>
+		</Card>
 	)
 }
 
@@ -540,6 +996,103 @@ export function ZhipuHistoryPanel() {
 	)
 }
 
+function apiOperationLabel(mode: ApiMode): string {
+	return apiCatalogItem(mode)?.operation ?? 'raw.openapi'
+}
+
+function defaultApiJson(mode: ApiMode): string {
+	if (mode === 'raw') return JSON.stringify({ model: DEFAULT_ZHIPU_CHAT_MODEL }, null, 2)
+	return JSON.stringify(requireApiCatalogItem(mode).defaultBody, null, 2)
+}
+
+function apiCatalogItem(mode: ApiMode): ApiCatalogItem | undefined {
+	if (mode === 'raw') return undefined
+	return API_CATALOG.find((item) => item.value === mode)
+}
+
+function requireApiCatalogItem(mode: ApiMode): ApiCatalogItem {
+	const item = apiCatalogItem(mode)
+	if (!item) throw new Error(`Unknown API mode: ${mode}`)
+	return item
+}
+
+function parseOpenApiBody(input: string): unknown {
+	const trimmed = input.trim()
+	if (!trimmed) return undefined
+	return JSON.parse(trimmed)
+}
+
+function submitCatalogJson(
+	endpoint: string,
+	userId: string,
+	item: ApiCatalogItem,
+	payload: Record<string, unknown>,
+): Promise<Response> {
+	const path = resolveApiPath(item.path, payload)
+	return postJson(endpoint, {
+		userId,
+		method: item.method,
+		path,
+		operation: item.operation,
+		model: stringPayloadField(payload, 'model') ?? item.defaultModel,
+		body: item.method === 'GET' ? undefined : stripPathParams(item.path, payload),
+	})
+}
+
+function submitOpenApiUpload(
+	endpoint: string,
+	userId: string,
+	item: ApiCatalogItem,
+	file: File | null,
+	fields: Record<string, unknown>,
+): Promise<Response> {
+	if (!file) throw new Error('请选择文件')
+	const form = new FormData()
+	form.append('__userId', userId)
+	form.append('__method', item.method)
+	form.append('__path', item.path)
+	form.append('__operation', item.operation)
+	form.append('__billingModel', stringPayloadField(fields, 'model') ?? item.defaultModel ?? '')
+	for (const [key, value] of Object.entries(fields)) form.append(key, formValue(value))
+	form.append('file', file, file.name)
+	return fetch(endpoint, { method: 'POST', body: form })
+}
+
+function resolveApiPath(path: string, payload: Record<string, unknown>): string {
+	return path.replaceAll(/\{([^}]+)\}/g, (_match, key: string) => {
+		const value = payload[key]
+		if (typeof value !== 'string' && typeof value !== 'number') {
+			throw new TypeError(`路径参数缺失：${key}`)
+		}
+		return encodeURIComponent(String(value))
+	})
+}
+
+function stripPathParams(path: string, payload: Record<string, unknown>): Record<string, unknown> {
+	const output = { ...payload }
+	for (const match of path.matchAll(/\{([^}]+)\}/g)) delete output[match[1]]
+	return output
+}
+
+function stringPayloadField(payload: Record<string, unknown>, key: string): string | undefined {
+	const value = payload[key]
+	return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function formValue(value: unknown): string {
+	if (typeof value === 'string') return value
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+	return JSON.stringify(value)
+}
+
+function postJson(endpoint: string, payload: unknown): Promise<Response> {
+	return fetch(endpoint, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(payload),
+	})
+}
+
 async function submitFilesOcr(
 	endpoint: string,
 	userId: string,
@@ -558,7 +1111,6 @@ async function submitLayoutParsing(
 	userId: string,
 	file: File | null,
 	fileRef: string,
-	prompt: string,
 	rawJson: string,
 ): Promise<Response> {
 	const payload = parseJsonObject(rawJson)
@@ -568,11 +1120,40 @@ async function submitLayoutParsing(
 	} else if (fileRef.trim()) {
 		payload.file = fileRef.trim()
 	}
-	if (prompt.trim()) payload.prompt = prompt.trim()
 	return fetch(endpoint, {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(payload),
+	})
+}
+
+function submitOcrPostprocess(
+	endpoint: string,
+	userId: string,
+	model: string,
+	prompt: string,
+	ocrResult: unknown,
+): Promise<Response> {
+	return fetch(endpoint, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({
+			userId,
+			model: model.trim() || DEFAULT_ZHIPU_CHAT_MODEL,
+			messages: [
+				{
+					role: 'system',
+					content: '你负责把 OCR/文档解析结果按用户要求转换为稳定、精炼、可机读的结果。',
+				},
+				{
+					role: 'user',
+					content: ['用户要求：', prompt.trim(), '', 'OCR 结果 JSON：', jsonPretty(ocrResult)].join(
+						'\n',
+					),
+				},
+			],
+			response_format: { type: 'json_object' },
+		}),
 	})
 }
 

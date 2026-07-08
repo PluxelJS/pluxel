@@ -3,7 +3,15 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
 import { desc } from 'drizzle-orm'
-import { DEFAULT_ZHIPU_LAYOUT_MODEL, MAX_BILLING_RECORDS } from '../constants.ts'
+import {
+	DEFAULT_ZHIPU_CHAT_MODEL,
+	DEFAULT_ZHIPU_IMAGE_MODEL,
+	DEFAULT_ZHIPU_LAYOUT_MODEL,
+	DEFAULT_ZHIPU_SPEECH_MODEL,
+	DEFAULT_ZHIPU_TOKENIZER_MODEL,
+	DEFAULT_ZHIPU_VIDEO_MODEL,
+	MAX_BILLING_RECORDS,
+} from '../constants.ts'
 import {
 	billingRates,
 	billingUsageRecords,
@@ -178,10 +186,72 @@ export class UsageBillingPlugin extends BasePlugin {
 				updatedAt: now,
 			},
 			{
-				id: 'zhipu:chat.completions',
+				id: `zhipu:chat.completions:${DEFAULT_ZHIPU_CHAT_MODEL}`,
 				provider: 'zhipu',
 				operation: 'chat.completions',
+				model: DEFAULT_ZHIPU_CHAT_MODEL,
 				unitName: 'token',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: `zhipu:tokenizer:${DEFAULT_ZHIPU_TOKENIZER_MODEL}`,
+				provider: 'zhipu',
+				operation: 'tokenizer',
+				model: DEFAULT_ZHIPU_TOKENIZER_MODEL,
+				unitName: 'token',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: `zhipu:images.generations:${DEFAULT_ZHIPU_IMAGE_MODEL}`,
+				provider: 'zhipu',
+				operation: 'images.generations',
+				model: DEFAULT_ZHIPU_IMAGE_MODEL,
+				unitName: 'image',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: `zhipu:images.generations.async:${DEFAULT_ZHIPU_IMAGE_MODEL}`,
+				provider: 'zhipu',
+				operation: 'images.generations.async',
+				model: DEFAULT_ZHIPU_IMAGE_MODEL,
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:async_result',
+				provider: 'zhipu',
+				operation: 'async_result',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: `zhipu:videos.generations:${DEFAULT_ZHIPU_VIDEO_MODEL}`,
+				provider: 'zhipu',
+				operation: 'videos.generations',
+				model: DEFAULT_ZHIPU_VIDEO_MODEL,
+				unitName: 'video',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: `zhipu:audio.transcriptions:${DEFAULT_ZHIPU_SPEECH_MODEL}`,
+				provider: 'zhipu',
+				operation: 'audio.transcriptions',
+				model: DEFAULT_ZHIPU_SPEECH_MODEL,
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:files.upload',
+				provider: 'zhipu',
+				operation: 'files.upload',
+				unitName: 'request',
 				unitCostCny: 0,
 				updatedAt: now,
 			},
@@ -205,6 +275,30 @@ export class UsageBillingPlugin extends BasePlugin {
 				id: 'zhipu:moderations.create',
 				provider: 'zhipu',
 				operation: 'moderations.create',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:agents.create',
+				provider: 'zhipu',
+				operation: 'agents.create',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:agents.async_result',
+				provider: 'zhipu',
+				operation: 'agents.async_result',
+				unitName: 'request',
+				unitCostCny: 0,
+				updatedAt: now,
+			},
+			{
+				id: 'zhipu:agents.conversation',
+				provider: 'zhipu',
+				operation: 'agents.conversation',
 				unitName: 'request',
 				unitCostCny: 0,
 				updatedAt: now,
@@ -353,8 +447,7 @@ export class UsageBillingPlugin extends BasePlugin {
 	}
 
 	private restoreSeq(records: BillingUsageRecord[]): void {
-		const maxId = records
-			.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
+		const maxId = records.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
 		this.seq = maxId + 1
 	}
 

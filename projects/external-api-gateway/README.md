@@ -52,7 +52,7 @@ const ocrPromise = authedApi
 	.layoutParsing({
 		model: 'glm-ocr',
 		file: 'https://example.com/demo.pdf',
-		prompt: '请提取标题、日期和总金额，返回 JSON。',
+		return_crop_images: false,
 	})
 const searchPromise = authedApi
 	.bill({ userId: 'user-123', tenantId: 'tenant-a', traceId: 'trace-search-001' })
@@ -85,7 +85,7 @@ const [whoami, ocr, search, chat] = await Promise.allSettled([
 
 `ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可以访问 gateway 暴露的全部 provider capability；吊销后不可再认证。调用归属、成本和审计由 `bill(...)` 里的 `userId / tenantId / traceId` 以及 `UsageBillingPlugin` 记录。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
-`projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖任意 Zhipu OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。
+`projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。当前项目先通过 `zhipu().openapi().request({ method, path, body, operation })` 覆盖任意 Zhipu OpenAPI 路径，并提供按官方 OpenAPI 字段建模的常用 wrapper。`path` 可以传 base-relative 路径如 `/web_search`，也可以传官方 spec 路径如 `/paas/v4/web_search`。如果 baseUrl 配成旧的 `/api/paas/v4` 形式，客户端会避免重复拼接 `/paas/v4`，并能把 `/v1/*` agent 路径拼到同一 API root 下。
 
 Gateway 也暴露 provider descriptor 和轻量 generic call 入口：
 
@@ -105,7 +105,7 @@ authedApi
 
 常用路径仍优先使用 typed wrapper，generic provider call 用于新增 provider 过渡期、临时 OpenAPI 路径或外部系统按 descriptor 调用。
 
-- `layoutParsing({ model: "glm-ocr", file, prompt?, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id?, ... })`
+- `layoutParsing({ model: "glm-ocr", file, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id?, ... })`
 - `filesOcr({ fileName, contentType?, bytes, fields: { tool_type: "hand_write", language_type?, probability? } })`
 - `webSearch({ search_query, search_engine, search_intent, count?, search_domain_filter?, search_recency_filter?, content_size?, request_id?, user_id? })`
 - `models().chatCompletions({ model, messages, stream?, thinking?, reasoning_effort?, tools?, response_format?, request_id?, user_id?, ... })`
@@ -121,11 +121,11 @@ authedApi
 	.bill({ userId: 'user-123' })
 	.zhipu()
 	.openapi()
-		.request({
-			method: 'POST',
-			path: '/paas/v4/web_search',
-			operation: 'web_search',
-			body: {
+	.request({
+		method: 'POST',
+		path: '/paas/v4/web_search',
+		operation: 'web_search',
+		body: {
 			search_query: '智谱 GLM OpenAPI',
 			search_engine: 'search_std',
 			search_intent: false,
@@ -135,14 +135,16 @@ authedApi
 
 ## API Catalog Priority
 
-从智谱 OpenAPI 看，当前最值得优先封装的 API：
+从智谱 OpenAPI 看，当前目录已覆盖这些常用路径：
 
-- OCR：`/paas/v4/layout_parsing`、`/paas/v4/files/ocr`，适合文档解析、图片/PDF 识别。
-- 搜索/读取：`/paas/v4/web_search`、`/paas/v4/reader`，适合联网问答、网页抓取转 markdown。
-- 模型：`/paas/v4/chat/completions`，适合统一从 gateway 计费的 GLM 调用。
-- RAG 基础能力：`/paas/v4/embeddings`、`/paas/v4/rerank`，适合知识库检索链路。
-- 安全：`/paas/v4/moderations`，适合把外部输入审核也纳入同一套用量审计。
-- 批处理/文件：files、batches 系列后续可补，它们更适合异步任务面板和任务状态轮询。
+- 模型：`/paas/v4/chat/completions`、`/paas/v4/tokenizer`、`/paas/v4/images/generations`、`/paas/v4/async/images/generations`、`/paas/v4/videos/generations`、`/paas/v4/audio/transcriptions`。
+- 工具：`/paas/v4/layout_parsing`、`/paas/v4/files/ocr`、`/paas/v4/web_search`、`/paas/v4/reader`。
+- 异步/文件/agent：`/paas/v4/async-result/{id}`、`/paas/v4/files`、`/v1/agents`、`/v1/agents/async-result`、`/v1/agents/conversation`。
+- 历史常用能力：`/paas/v4/embeddings`、`/paas/v4/rerank`、`/paas/v4/moderations`。
+
+插件 UI 的“模型/工具”页按这个目录提供默认请求样例；新路径或临时参数可以用 Raw OpenAPI 模式直接指定 `method / path / operation / body`，调用仍会进入同一套 history 和 billing。
+
+`/layout_parsing` 不再转发 prompt。需要“按提示提取字段/转 JSON/重写摘要”时，先调用 OCR，再把 OCR 结果和用户 prompt 交给 `/chat/completions` 做后处理；插件 UI 的 OCR 面板已经按这个两阶段流程组合返回 `{ ocr, postprocess }`。
 
 ## Adapter Contract
 
@@ -209,7 +211,15 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 - `GET /__pluxel/plugins/ZhipuProviderPlugin/zhipu/status`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/files-ocr`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/layout-parsing`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/openapi`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/openapi-upload`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/chat-completions`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/web-search`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/reader`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/embeddings`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/rerank`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/moderations`
 
 `userId` 可以通过 `x-pluxel-user-id` / `x-user-id` header、URL query，或请求体字段传入。
 
-Zhipu client 默认上游请求超时为 120 秒。插件 UI 的 GLM OCR 面板支持直接上传本地图片/PDF，也支持手工填写 OpenAPI `file` 字段和 `prompt`，适合测试 `/layout_parsing` 的 prompt 效果。
+Zhipu client 默认上游请求超时为 120 秒。插件 UI 的 GLM OCR 面板支持直接上传本地图片/PDF，也支持手工填写 OpenAPI `file` 字段；“后处理 Prompt”会在 OCR 完成后单独调用 chat，不会作为 `/layout_parsing` 参数转发。

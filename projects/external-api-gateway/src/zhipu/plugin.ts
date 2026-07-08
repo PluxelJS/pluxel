@@ -108,7 +108,8 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		let ok = false
 		let error: string | undefined
 		try {
-			const response = await (await this.client()).raw({ method: 'GET', path: '/models' })
+			const client = await this.client()
+			const response = await client.raw({ method: 'GET', path: '/models' })
 			status = String(response.status)
 			ok = response.ok
 			if (!response.ok) error = await responseText(response)
@@ -320,7 +321,49 @@ export class ZhipuProviderPlugin extends BasePlugin {
 						history: this.listHistory(),
 					}))
 					.post('/files-ocr', async ({ request }) => this.handleFilesOcr(request))
-					.post('/layout-parsing', async ({ request }) => this.handleLayoutParsing(request)),
+					.post('/layout-parsing', async ({ request }) => this.handleLayoutParsing(request))
+					.post('/openapi', async ({ request }) => this.handleUiOpenApi(request))
+					.post('/openapi-upload', async ({ request }) => this.handleUiOpenApiUpload(request))
+					.post('/chat-completions', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'chat.completions',
+							path: '/chat/completions',
+							model: (payload) => stringField(payload, 'model'),
+						}),
+					)
+					.post('/web-search', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'web_search',
+							path: '/web_search',
+						}),
+					)
+					.post('/reader', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'reader',
+							path: '/reader',
+						}),
+					)
+					.post('/embeddings', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'embeddings.create',
+							path: '/embeddings',
+							model: (payload) => stringField(payload, 'model'),
+						}),
+					)
+					.post('/rerank', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'rerank.create',
+							path: '/rerank',
+							model: (payload) => stringField(payload, 'model'),
+						}),
+					)
+					.post('/moderations', async ({ request }) =>
+						this.handleUiJsonOperation(request, {
+							operation: 'moderations.create',
+							path: '/moderations',
+							model: (payload) => stringField(payload, 'model'),
+						}),
+					),
 			{
 				path: ROUTE_BASE,
 				id: 'ZhipuProviderPlugin:http',
@@ -379,13 +422,13 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		let userId = userIdFromRequest(request)
 		let inputBytes = 0
 		let outcome: UpstreamOutcome | undefined
-		let requestPreview: string | undefined
+		let requestPreviewText: string | undefined
 		try {
 			const input = (await request.json()) as LayoutParsingInput
 			userId = normalizeUserId(input.userId) || userId
 			const payload = this.toLayoutParsingPayload(input)
 			inputBytes = jsonBytes(payload)
-			requestPreview = previewJson(payload)
+			requestPreviewText = previewJson(payload)
 			outcome = await this.forward('/layout_parsing', payload)
 			return outcome.response
 		} catch (caught) {
@@ -409,7 +452,165 @@ export class ZhipuProviderPlugin extends BasePlugin {
 				startedAt,
 				inputBytes,
 				outcome,
-				requestPreview,
+				requestPreview: requestPreviewText,
+			})
+		}
+	}
+
+	private async handleUiOpenApi(request: Request): Promise<Response> {
+		const startedAt = Date.now()
+		let userId = userIdFromRequest(request)
+		let inputBytes = 0
+		let outcome: UpstreamOutcome | undefined
+		let requestPreviewText: string | undefined
+		let operation = 'raw.openapi'
+		let model: string | undefined
+		try {
+			const input = (await request.json()) as Record<string, unknown>
+			userId = normalizeUserId(input.userId) || userId
+			const method = stringField(input, 'method')?.toUpperCase() || 'POST'
+			const path = stringField(input, 'path')
+			if (!path) throw new Error('OpenAPI request requires `path`')
+			operation = stringField(input, 'operation') || `raw.${method}.${path.replace(/^\/+/, '')}`
+			const body =
+				method === 'GET' || method === 'HEAD' ? undefined : normalizeOpenApiBody(input.body)
+			model = stringField(input, 'model') || modelFromBody(body)
+			inputBytes = body === undefined ? 0 : byteLength(body)
+			requestPreviewText = previewJson({ method, path, body })
+			outcome = await this.forwardRaw(method, path, body)
+			return outcome.response
+		} catch (caught) {
+			const message = errorMessage(caught)
+			outcome = jsonOutcome({ ok: false, error: message }, 500, message)
+			return outcome.response
+		} finally {
+			this.recordUsage({
+				userId,
+				operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+			})
+			this.recordHistory({
+				source: 'ui',
+				userId,
+				operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+				requestPreview: requestPreviewText,
+			})
+		}
+	}
+
+	private async handleUiOpenApiUpload(request: Request): Promise<Response> {
+		const startedAt = Date.now()
+		let userId = userIdFromRequest(request)
+		let inputBytes = 0
+		let outcome: UpstreamOutcome | undefined
+		let requestPreviewText: string | undefined
+		let operation = 'raw.upload'
+		let model: string | undefined
+		let fileName: string | undefined
+		try {
+			const form = await request.formData()
+			const path = stringFormField(form, '__path')
+			if (!path) throw new Error('OpenAPI upload requires `__path`')
+			const method = stringFormField(form, '__method')?.toUpperCase() || 'POST'
+			userId = normalizeUserId(stringFormField(form, '__userId')) || userId
+			operation =
+				stringFormField(form, '__operation') || `raw.${method}.${path.replace(/^\/+/, '')}`
+			model = stringFormField(form, '__billingModel') || stringFormField(form, 'model')
+			const upstream = new FormData()
+			const preview: Record<string, unknown> = { method, path, fields: {} }
+			for (const [key, value] of form.entries()) {
+				if (key.startsWith('__')) continue
+				upstream.append(key, value)
+				inputBytes += formEntryBytes(value)
+				if (key === 'file') fileName = fileNameFromFormValue(value)
+				;(preview.fields as Record<string, unknown>)[key] =
+					typeof value === 'string'
+						? value
+						: { fileName: fileNameFromFormValue(value), bytes: formEntryBytes(value) }
+			}
+			requestPreviewText = previewJson(preview)
+			outcome = await this.forwardRaw(method, path, upstream)
+			return outcome.response
+		} catch (caught) {
+			const message = errorMessage(caught)
+			outcome = jsonOutcome({ ok: false, error: message }, 500, message)
+			return outcome.response
+		} finally {
+			this.recordUsage({
+				userId,
+				operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+			})
+			this.recordHistory({
+				source: 'ui',
+				userId,
+				operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+				fileName,
+				requestPreview: requestPreviewText,
+			})
+		}
+	}
+
+	private async handleUiJsonOperation(
+		request: Request,
+		options: {
+			operation: string
+			path: string
+			model?: (payload: Record<string, unknown>) => string | undefined
+		},
+	): Promise<Response> {
+		const startedAt = Date.now()
+		let userId = userIdFromRequest(request)
+		let inputBytes = 0
+		let outcome: UpstreamOutcome | undefined
+		let requestPreviewText: string | undefined
+		let model: string | undefined
+		try {
+			const input = (await request.json()) as Record<string, unknown>
+			userId = normalizeUserId(input.userId) || userId
+			const payload = { ...input }
+			delete payload.userId
+			model = options.model?.(payload)
+			inputBytes = jsonBytes(payload)
+			requestPreviewText = previewJson(payload)
+			outcome = await this.forward(options.path, payload)
+			return outcome.response
+		} catch (caught) {
+			const message = errorMessage(caught)
+			outcome = jsonOutcome({ ok: false, error: message }, 500, message)
+			return outcome.response
+		} finally {
+			this.recordUsage({
+				userId,
+				operation: options.operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+			})
+			this.recordHistory({
+				source: 'ui',
+				userId,
+				operation: options.operation,
+				model,
+				startedAt,
+				inputBytes,
+				outcome,
+				requestPreview: requestPreviewText,
 			})
 		}
 	}
@@ -418,7 +619,16 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		path: string,
 		body: BodyInit | Record<string, unknown>,
 	): Promise<UpstreamOutcome> {
-		const response = await (await this.client()).raw({ method: 'POST', path, body })
+		return this.forwardRaw('POST', path, body)
+	}
+
+	private async forwardRaw(
+		method: string,
+		path: string,
+		body?: BodyInit | Record<string, unknown> | string | null,
+	): Promise<UpstreamOutcome> {
+		const client = await this.client()
+		const response = await client.raw({ method, path, body })
 		return this.toOutcome(response)
 	}
 
@@ -426,9 +636,8 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		const startedAt = Date.now()
 		let outcome: UpstreamOutcome | undefined
 		try {
-			const response = await (
-				await this.client()
-			).raw({
+			const client = await this.client()
+			const response = await client.raw({
 				method: options.method ?? 'POST',
 				path: options.path,
 				body: options.body,
@@ -455,7 +664,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 				metadata: {
 					...(options.billing.tenantId ? { tenantId: options.billing.tenantId } : {}),
 					...(options.billing.traceId ? { traceId: options.billing.traceId } : {}),
-					...(options.billing.metadata ?? {}),
+					...options.billing.metadata,
 				},
 			})
 			this.recordHistory({
@@ -526,7 +735,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			unitName: outcome.unitName ?? 'request',
 			upstreamRequestId: outcome.upstreamRequestId,
 			metadata: {
-				...(input.metadata ?? {}),
+				...input.metadata,
 				...(outcome.errorCode ? { errorCode: outcome.errorCode } : {}),
 				...(outcome.error ? { error: outcome.error.slice(0, 500) } : {}),
 			},
@@ -566,7 +775,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			...(outcome?.upstreamRequestId ? { upstreamRequestId: outcome.upstreamRequestId } : {}),
 			...(input.requestPreview ? { requestPreview: truncate(input.requestPreview, 2_000) } : {}),
 			...(outcome?.bodyText ? { responsePreview: truncate(outcome.bodyText, 8_000) } : {}),
-			...(input.error ?? outcome?.error
+			...((input.error ?? outcome?.error)
 				? { error: truncate(input.error ?? outcome?.error ?? '', 2_000) }
 				: {}),
 		}
@@ -592,6 +801,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			model: DEFAULT_ZHIPU_LAYOUT_MODEL,
 		}
 		delete payload.userId
+		delete payload.prompt
 		if (typeof payload.file !== 'string' || !payload.file.trim()) {
 			throw new Error('layout_parsing requires OpenAPI field `file`')
 		}
@@ -668,7 +878,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			.from(zhipuTestRuns)
 			.orderBy(desc(zhipuTestRuns.at))
 			.limit(MAX_ZHIPU_HISTORY)
-		for (const row of rows.slice().reverse()) this.history.insert(fromHistoryRow(row))
+		for (const row of rows.toReversed()) this.history.insert(fromHistoryRow(row))
 		this.restoreHistorySeq()
 	}
 
@@ -734,6 +944,33 @@ function normalizeBaseUrl(input: string | undefined): string {
 function normalizeUserId(input: unknown): string | undefined {
 	const value = typeof input === 'string' ? input.trim() : ''
 	return value || undefined
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+	const value = record[key]
+	if (typeof value === 'string' && value.trim()) return value.trim()
+	return undefined
+}
+
+function stringFormField(form: FormData, key: string): string | undefined {
+	const value = form.get(key)
+	return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function modelFromBody(body: unknown): string | undefined {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+	const value = (body as Record<string, unknown>).model
+	return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeOpenApiBody(
+	body: unknown,
+): BodyInit | Record<string, unknown> | string | null | undefined {
+	if (body === undefined) return undefined
+	if (body === null) return null
+	if (typeof body === 'string') return body
+	if (typeof body === 'object' && !Array.isArray(body)) return body as Record<string, unknown>
+	return JSON.stringify(body)
 }
 
 function userIdFromRequest(request: Request): string {
@@ -850,12 +1087,12 @@ function jsonOutcome(payload: unknown, status: number, error?: string): Upstream
 			headers: { 'content-type': 'application/json; charset=utf-8' },
 		}),
 		ok: status >= 200 && status < 300,
-			status: String(status),
-			error,
-			outputBytes: new TextEncoder().encode(body).length,
-			bodyText: body,
-		}
+		status: String(status),
+		error,
+		outputBytes: new TextEncoder().encode(body).length,
+		bodyText: body,
 	}
+}
 
 async function responseText(response: Response): Promise<string> {
 	try {

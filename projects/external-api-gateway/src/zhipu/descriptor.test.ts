@@ -16,7 +16,11 @@ describe('Zhipu provider descriptor', () => {
 			expect.arrayContaining([
 				expect.objectContaining({ id: 'ocr.layout_parsing', path: '/layout_parsing' }),
 				expect.objectContaining({ id: 'chat.completions', path: '/chat/completions' }),
+				expect.objectContaining({ id: 'tokenizer', path: '/tokenizer' }),
+				expect.objectContaining({ id: 'images.generations', path: '/images/generations' }),
+				expect.objectContaining({ id: 'audio.transcriptions', path: '/audio/transcriptions' }),
 				expect.objectContaining({ id: 'web_search', path: '/web_search' }),
+				expect.objectContaining({ id: 'agents.create', path: '/v1/agents' }),
 			]),
 		)
 	})

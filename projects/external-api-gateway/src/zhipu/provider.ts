@@ -30,7 +30,6 @@ export type ZhipuChatCompletionsInput = {
 export type ZhipuLayoutParsingInput = {
 	model: 'glm-ocr'
 	file: string
-	prompt?: string
 	return_crop_images?: boolean
 	need_layout_visualization?: boolean
 	start_page_id?: number
@@ -92,10 +91,14 @@ export type ZhipuRawCallInput = {
 }
 
 export type ZhipuWebSearchEngine =
+	| 'search-prime'
+	| 'search-std'
+	| 'search-pro'
 	| 'search_std'
 	| 'search_pro'
 	| 'search_pro_sogou'
 	| 'search_pro_quark'
+	| string
 
 export type ZhipuSearchRecencyFilter = 'oneDay' | 'oneWeek' | 'oneMonth' | 'oneYear' | 'noLimit'
 
