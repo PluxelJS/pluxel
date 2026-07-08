@@ -6,14 +6,14 @@
 
 - `ExternalGatewayPlugin`：外部 Cap'n Web RPC 入口，负责 `apiToken -> AuthedApi`、token 吊销和 capability 编排。
 - `UsageBillingPlugin`：上游用量/计费插件，按 `userId + provider + operation + model` 汇总调用、延迟、输入输出体积、单位用量和成本。
-- `ZhipuProviderPlugin`：智谱 OpenAPI provider，依赖 `UsageBillingPlugin`，保存 API Key，并通过 OpenAPI-shaped capability 暴露 OCR、搜索、模型、embedding、rerank 等接口。
+- `ZhipuProviderPlugin`：智谱 OpenAPI provider，依赖 shared usage recorder capability，保存 API Key，并通过 OpenAPI-shaped capability 暴露 OCR、文件解析、搜索、模型、embedding、rerank 等接口。
 
 ## Commands
 
 ```bash
-pnpm --filter @pluxel/project-external-api-gateway dev
-pnpm --filter @pluxel/project-external-api-gateway static
-pnpm --filter @pluxel/project-external-api-gateway verify
+pnpm --filter @repo/project-external-api-gateway dev
+pnpm --filter @repo/project-external-api-gateway static
+pnpm --filter @repo/project-external-api-gateway verify
 ```
 
 默认端口：`3313`。
@@ -36,7 +36,7 @@ dev-zhipu-token-change-me
 
 ```ts
 import { newHttpBatchRpcSession, type RpcPromise } from 'capnweb'
-import type { AuthedApi, ExternalGatewayRpc } from './src/gateway/plugin'
+import type { AuthedApi, ExternalGatewayRpc } from '@repo/external-api-gateway-gateway'
 
 const api = newHttpBatchRpcSession<ExternalGatewayRpc>(
 	'http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc',
@@ -130,9 +130,41 @@ authedApi
 ```
 
 常用路径仍优先使用 typed wrapper，generic provider call 用于新增 provider 过渡期、临时 OpenAPI 路径或外部系统按 descriptor 调用。
+`ProviderOperationDescriptor.inputKind` 会标记输入形态：`json` 走普通 JSON body，`path` 会用 body 展开 descriptor path 里的 `{field}`，`multipart` 需要使用对应 typed wrapper 或插件 UI 上传文件。
+
+YiQiCha provider 面向 LLM agent 的 RPC surface 刻意保持很小，不把 128 个上游 API 暴露成 128 个 tool。推荐外部 tool adapter 只映射 6 个动作：
+
+- `findApis({ query, limit? })`：按业务意图查找语义 API key。
+- `getApiSchema({ api })`：按语义 key 获取参数说明、必填项和响应示例。
+- `callApi({ api, params })`：按语义 key 调用任意 YiQiCha API。
+- `getEnterpriseProfile({ keyword, include?, pageSize? })`：组合企业画像信息。
+- `getEnterpriseRiskOverview({ keyword, include?, pageSize? })`：组合企业经营/资产类风险。
+- `getEnterpriseLegalOverview({ keyword, include?, pageSize? })`：组合企业司法风险。
+
+这些方法按 tool 使用场景设计，而不是按上游 API 一比一搬运：agent 先用 `findApis` 缩小候选，再用 `getApiSchema` 获取单个 API 参数，最后 `callApi` 执行；常见任务直接走 overview 组合 tool。这样 prompt 里只需要 6 个稳定工具，不需要塞入完整 API catalog，也避免模型选择 `1002` 这类不可读数字 code。内部仍保留 code/key 映射和 catalog，数字只作为 provider 实现细节。
+
+`examples/yiqicha-agent-tools.ts` 提供了 OpenAI/PI-style tool definitions 和 dispatcher 示例。它只依赖 Cap'n Web RPC，不绑定某个 agent SDK；接 PI、OpenAI tools 或 MCP adapter 时，可以复用同一组 JSON schema 和 `callTool(name, args)` 分发逻辑。
+
+例如文件解析结果查询可以通过 descriptor path 模板调用：
+
+```ts
+authedApi
+	.bill({ userId: 'user-123' })
+	.provider('zhipu')
+	.call({
+		operation: 'file_parser.result',
+		body: {
+			task_id: 'task-id-from-create',
+			format_type: 'text',
+		},
+	})
+```
 
 - `layoutParsing({ model: "glm-ocr", file, return_crop_images?, need_layout_visualization?, start_page_id?, end_page_id?, request_id?, user_id?, ... })`
 - `filesOcr({ fileName, contentType?, bytes, fields: { tool_type: "hand_write", language_type?, probability? } })`
+- `tools().fileParser().create({ fileName, contentType?, bytes, file_type, tool_type: "lite" | "expert" | "prime", ... })`
+- `tools().fileParser().result({ task_id, format_type: "text" | "download_link" })`
+- `tools().fileParser().sync({ fileName, contentType?, bytes, file_type, tool_type: "prime-sync", ... })`
 - `webSearch({ search_query, search_engine, search_intent, count?, search_domain_filter?, search_recency_filter?, content_size?, request_id?, user_id? })`
 - `models().chatCompletions({ model, messages, stream?, thinking?, reasoning_effort?, tools?, response_format?, request_id?, user_id?, ... })`
 - `models().tokenizer({ model, messages?, prompt?, ... })`
@@ -162,10 +194,11 @@ authedApi
 
 ## API Catalog Priority
 
-当前默认目录只覆盖 GLM 常用模型和工具路径，不把图像/视频生成、agent、通用 files upload 放进常用面：
+当前默认目录覆盖 GLM 常用模型、文档处理、搜索和 RAG/安全路径，不把图像/视频生成、agent、通用 files upload 放进常用面：
 
 - 模型：`/paas/v4/chat/completions`、`/paas/v4/tokenizer`。聊天、识图都走 `chat.completions`，通过 message content 传 `text` / `image_url`。
-- 工具：`/paas/v4/layout_parsing`、`/paas/v4/files/ocr`、`/paas/v4/web_search`、`/paas/v4/reader`。
+- 文档处理：`/paas/v4/layout_parsing`、`/paas/v4/files/ocr`、`/paas/v4/files/parser/create`、`/paas/v4/files/parser/result/{task_id}/{format_type}`、`/paas/v4/files/parser/sync`。
+- 搜索/读取：`/paas/v4/web_search`、`/paas/v4/reader`。对话内 web search 通过 `chat.completions.tools` 透传。
 - RAG/安全：`/paas/v4/embeddings`、`/paas/v4/rerank`、`/paas/v4/moderations`。
 
 外部调用优先走 `bill(...).zhipu()` 下的 typed RPC capability，以复用统一计费上下文。插件 UI 的“模型/工具”页只是按同一目录提供测试样例；新路径或临时参数可以用 Raw OpenAPI 模式直接指定 `method / path / operation / body`，调用仍会进入同一套 history 和 billing。
@@ -174,22 +207,24 @@ authedApi
 
 ## Adapter Contract
 
-Provider 插件负责外部 API 适配、上游错误解析、请求预览脱敏和调用后产生 usage event。当前 `UsageBillingPlugin` 是唯一 usage recorder；未来如果要接多个计费 sink 或 quota/policy 插件，应优先保持 `UsageEvent` 稳定，而不是让 provider 直接依赖多个计费插件。
+Provider 插件负责外部 API 适配、上游错误解析、请求预览脱敏和调用后产生 usage event。当前 `UsageBillingPlugin` 是唯一 `UsageRecorderPlugin` 实现；provider 只依赖 shared 里的 recorder capability，不直接依赖 billing 包。未来如果要接多个计费 sink 或 quota/policy 插件，应优先保持 `UsageEvent` 稳定。
 
 ```ts
+import { UsageRecorderPlugin } from '@repo/external-api-gateway-shared/usage'
+
 class SomeProviderPlugin extends BasePlugin {
-	constructor(private readonly billing: UsageBillingPlugin) {
+	constructor(private readonly usageRecorder: UsageRecorderPlugin) {
 		super()
 	}
 }
 
-setParamToken(SomeProviderPlugin, 0, UsageBillingPlugin)
+setParamToken(SomeProviderPlugin, 0, UsageRecorderPlugin)
 ```
 
 每次外部 API 调用后记录中性 usage event：
 
 ```ts
-this.billing.recordUsage({
+this.usageRecorder.recordUsage({
 	userId,
 	provider: 'some-provider',
 	pluginId: this.ctx.pluginInfo.id,
@@ -203,7 +238,7 @@ this.billing.recordUsage({
 })
 ```
 
-`src/usage/contracts.ts` 中的 `UsageEvent` 是 provider 和 billing 的边界。新增计费插件时建议先作为 recorder/sink 消费同一个事件结构，再按需要增加 quota/policy 的调用前检查。
+`@repo/external-api-gateway-shared/usage` 中的 `UsageEvent` 是 provider 和 billing 的边界。新增计费插件时建议先作为 recorder/sink 消费同一个事件结构，再按需要增加 quota/policy 的调用前检查。
 
 Provider 应提供 `ProviderDescriptor`，描述 `id / label / operations`。Gateway 通过 descriptor 暴露 `providers()` 和 `provider(id).call(...)`，同时保留 typed API，避免为了统一而牺牲常用路径的类型体验。
 
@@ -236,6 +271,9 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 
 - `GET /__pluxel/plugins/ZhipuProviderPlugin/zhipu/status`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/files-ocr`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/file-parser-create`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/file-parser-result`
+- `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/file-parser-sync`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/layout-parsing`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/openapi`
 - `POST /__pluxel/plugins/ZhipuProviderPlugin/zhipu/chat-completions`

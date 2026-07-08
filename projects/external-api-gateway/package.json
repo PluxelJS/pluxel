@@ -1,5 +1,5 @@
 {
-	"name": "@pluxel/project-external-api-gateway",
+	"name": "@repo/project-external-api-gateway",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -8,7 +8,7 @@
 		"static": "tsx src/static.ts",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false",
-		"verify": "tsc --noEmit --pretty false && vitest run --config vitest.config.ts && vite build"
+		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha test && tsc --noEmit --pretty false && vitest run --config vitest.config.ts && vite build"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.17.4",
@@ -16,6 +16,12 @@
 		"@mantine/hooks": "^9.4.1",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
+		"@repo/external-api-gateway-billing": "workspace:*",
+		"@repo/external-api-gateway-gateway": "workspace:*",
+		"@repo/external-api-gateway-shared": "workspace:*",
+		"@repo/external-api-gateway-yiqicha": "workspace:*",
+		"@repo/external-api-gateway-yiqicha-catalog": "workspace:*",
+		"@repo/external-api-gateway-zhipu": "workspace:*",
 		"@tabler/icons-react": "^3.37.1",
 		"capnweb": "^0.5.0",
 		"drizzle-orm": "^0.45.2",

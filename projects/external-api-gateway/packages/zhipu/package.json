@@ -1,0 +1,24 @@
+{
+	"name": "@repo/external-api-gateway-zhipu",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/zhipu/plugin.ts",
+			"default": "./src/zhipu/plugin.ts"
+		},
+		"./contracts": {
+			"types": "./src/zhipu/contracts.ts",
+			"default": "./src/zhipu/contracts.ts"
+		},
+		"./provider": {
+			"types": "./src/zhipu/provider.ts",
+			"default": "./src/zhipu/provider.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	}
+}

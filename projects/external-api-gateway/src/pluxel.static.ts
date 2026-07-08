@@ -1,8 +1,9 @@
 import { resolve } from 'node:path'
+import { UsageBillingPlugin } from '@repo/external-api-gateway-billing'
+import { ExternalGatewayPlugin } from '@repo/external-api-gateway-gateway'
+import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
+import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
-import { UsageBillingPlugin } from './billing/plugin.ts'
-import { ExternalGatewayPlugin } from './gateway/plugin.ts'
-import { ZhipuProviderPlugin } from './zhipu/plugin.ts'
 
 const projectRoot = resolve(import.meta.dirname, '..')
 const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'external-api-gateway'
@@ -10,11 +11,13 @@ const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'external-api-gatewa
 export const externalApiGatewayPlugins = [
 	UsageBillingPlugin,
 	ZhipuProviderPlugin,
+	YiqichaProviderPlugin,
 	ExternalGatewayPlugin,
 ] as const
 export const externalApiGatewayEnabledPlugins = [
 	'UsageBillingPlugin',
 	'ZhipuProviderPlugin',
+	'YiqichaProviderPlugin',
 	'ExternalGatewayPlugin',
 ] as const
 

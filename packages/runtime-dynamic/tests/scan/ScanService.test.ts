@@ -165,6 +165,44 @@ describe('ScanService', () => {
 		expect(asPosix(entries[0].entry)).toMatch(/lib\/index\.js$/)
 	})
 
+	it('resolves project-local workspace packages from nested pnpm patterns', async () => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({ name: 'root', version: '1.0.0' }, null, 2),
+			'pnpm-workspace.yaml': ['packages:', '  - projects/*/packages/*', ''].join('\n'),
+			'projects/external-api-gateway/packages/billing/package.json': JSON.stringify(
+				{
+					name: '@repo/nested-fixture-billing',
+					version: '0.0.0',
+					type: 'module',
+					exports: {
+						'.': {
+							'@pluxel/hmr': './src/index.ts',
+							default: './dist/index.mjs',
+						},
+					},
+				},
+				null,
+				2,
+			),
+			'projects/external-api-gateway/packages/billing/src/index.ts':
+				"export const source = 'billing-source'\n",
+			'projects/external-api-gateway/packages/billing/dist/index.mjs':
+				"export const source = 'billing-dist'\n",
+		})
+		const fixtureRoot = normalize(fixture.path)
+		await using service = createService(fixtureRoot)
+
+		const resolution = await service.resolveEntryByName('@repo/nested-fixture-billing', {
+			workspaceOnly: true,
+			scan: { preferHmrExports: true },
+		})
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(
+			/projects\/external-api-gateway\/packages\/billing\/src\/index\.ts$/,
+		)
+	})
+
 	it('can swap to a virtual scan fs via updateConfig', async () => {
 		await using diskFixture = await createDiskFixture({})
 		await using virtualFixture = await createFixture(scanSingleFixture)

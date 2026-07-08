@@ -370,6 +370,49 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
+	it('resolves abstract/base provider tokens during static dependency preflight', async () => {
+		abstract class UsageRecorderPlugin extends BasePlugin {}
+
+		class UsageBillingPlugin extends UsageRecorderPlugin {}
+		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
+
+		@Plugin({ name: 'ZhipuProviderPlugin' })
+		class ZhipuProviderPlugin extends BasePlugin {
+			constructor(_recorder: UsageRecorderPlugin) {
+				super()
+			}
+		}
+		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
+
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntimeConfig({
+				name: 'static-abstract-provider',
+				plugins: [UsageBillingPlugin, ZhipuProviderPlugin],
+			}),
+			{
+				configService: {
+					mode: 'memory',
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['UsageBillingPlugin', 'ZhipuProviderPlugin'] },
+				},
+			},
+		)
+		try {
+			await host.start()
+
+			expect(statuses(host)).toMatchObject({
+				UsageBillingPlugin: 'started',
+				ZhipuProviderPlugin: 'started',
+			})
+			expect(host.ctx.registry.isRunning(UsageRecorderPlugin)).toBe(true)
+			expect(host.ctx.registry.isRunning(ZhipuProviderPlugin)).toBe(true)
+		} finally {
+			await host.stop()
+		}
+	})
+
 	it('reports start-failed without hiding independent startup results', async () => {
 		@Plugin({ name: 'StartFail' })
 		class StartFail extends BasePlugin {

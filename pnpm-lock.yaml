@@ -825,6 +825,24 @@ importers:
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../packages/runtime-static
+      '@repo/external-api-gateway-billing':
+        specifier: workspace:*
+        version: link:packages/billing
+      '@repo/external-api-gateway-gateway':
+        specifier: workspace:*
+        version: link:packages/gateway
+      '@repo/external-api-gateway-shared':
+        specifier: workspace:*
+        version: link:packages/shared
+      '@repo/external-api-gateway-yiqicha':
+        specifier: workspace:*
+        version: link:packages/yiqicha
+      '@repo/external-api-gateway-yiqicha-catalog':
+        specifier: workspace:*
+        version: link:packages/yiqicha-catalog
+      '@repo/external-api-gateway-zhipu':
+        specifier: workspace:*
+        version: link:packages/zhipu
       '@tabler/icons-react':
         specifier: ^3.37.1
         version: 3.44.0(react@19.2.7)
@@ -862,6 +880,18 @@ importers:
       vite:
         specifier: ^8.0.0-beta.18
         version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
+
+  projects/external-api-gateway/packages/billing: {}
+
+  projects/external-api-gateway/packages/gateway: {}
+
+  projects/external-api-gateway/packages/shared: {}
+
+  projects/external-api-gateway/packages/yiqicha: {}
+
+  projects/external-api-gateway/packages/yiqicha-catalog: {}
+
+  projects/external-api-gateway/packages/zhipu: {}
 
 packages:
 

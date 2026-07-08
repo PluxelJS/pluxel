@@ -1,0 +1,35 @@
+{
+	"name": "@repo/external-api-gateway-shared",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./constants": {
+			"types": "./src/constants.ts",
+			"default": "./src/constants.ts"
+		},
+		"./db": {
+			"types": "./src/db/use-db.ts",
+			"default": "./src/db/use-db.ts"
+		},
+		"./gateway": {
+			"types": "./src/gateway/contracts.ts",
+			"default": "./src/gateway/contracts.ts"
+		},
+		"./provider": {
+			"types": "./src/provider/contracts.ts",
+			"default": "./src/provider/contracts.ts"
+		},
+		"./usage": {
+			"types": "./src/usage/contracts.ts",
+			"default": "./src/usage/contracts.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit --pretty false"
+	}
+}

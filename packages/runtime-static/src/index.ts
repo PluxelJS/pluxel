@@ -28,6 +28,8 @@ export type {
 	StaticRuntimeCatalogSnapshot,
 	StaticRuntimeConfig,
 	StaticRuntimeDefinition,
+	StaticRuntimeHmrReport,
+	StaticRuntimeHost,
 	StaticRuntimePluginStatus,
 	StaticRuntimeRegisteredServices,
 	StaticRuntimeReportEntry,

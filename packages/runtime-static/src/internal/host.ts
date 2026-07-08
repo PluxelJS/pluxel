@@ -19,6 +19,7 @@ import {
 	diffCatalog,
 	firstMissingDependency,
 	readConfigSnapshot,
+	type ConfigSnapshotReader,
 	type StaticRuntimeCatalog,
 	type StaticRuntimeCatalogDiff,
 } from './catalog'
@@ -122,7 +123,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 				listLoadedNames: () => this.catalog.entries.map((entry) => entry.name),
 			},
 			lifecycle: {
-				isRunning: (target) => this.ctx.registry.isRunning(target),
+				isRunning: (target) => {
+					const ctor = route.catalog.resolve(target)
+					return ctor ? this.ctx.registry.isRunning(ctor) : false
+				},
 				enable: (name, ctor) => {
 					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
 					this.ctx.registry.register(ctor)
@@ -274,7 +278,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
 
 		const entries: StaticRuntimeReportEntry[] = [...catalog.diagnostics]
-		const configSnapshot = readConfigSnapshot(this.ctx.configService)
+		const configSnapshot = readConfigSnapshot(
+			this.ctx.configService as unknown as ConfigSnapshotReader,
+		)
 		for (const unknown of collectUnknownConfigEntries(
 			configSnapshot,
 			catalog.byName,

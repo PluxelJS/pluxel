@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
 	importViteSsrModule,
@@ -168,7 +168,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 		async handleHotUpdate(ctx) {
 			const host = state.host
-			if (!host || !state.configFiles.has(ctx.file)) return
+			if (!host || !state.configFiles.has(ctx.file)) return undefined
 			const server = state.server ?? ctx.server
 			state.server = server
 			const viteInvalidated = invalidateStaticRuntimeChangedModules(server, ctx.file)

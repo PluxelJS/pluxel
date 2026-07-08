@@ -68,6 +68,7 @@ export function buildCatalog(definition: StaticRuntimeDefinition): StaticRuntime
 		entries.push(entry)
 		byName.set(name, entry)
 		byPlugin.set(plugin, entry)
+		if (info.base) byPlugin.set(info.base as PluginIdentifier, entry)
 	}
 
 	return { entries, byName, byPlugin, diagnostics }
