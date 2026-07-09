@@ -27,9 +27,6 @@ importers:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
     devDependencies:
-      '@gqlens/codegen':
-        specifier: workspace:*
-        version: link:vendor/gqlens/packages/codegen
       '@gqlens/vite':
         specifier: workspace:*
         version: link:vendor/gqlens/packages/vite
@@ -437,9 +434,6 @@ importers:
         specifier: ^1.2.0
         version: 1.4.2(typescript@6.0.3)
     devDependencies:
-      '@gqlens/codegen':
-        specifier: workspace:*
-        version: link:../../../vendor/gqlens/packages/codegen
       '@gqlens/vite':
         specifier: workspace:*
         version: link:../../../vendor/gqlens/packages/vite
@@ -586,9 +580,9 @@ importers:
         specifier: ^1.2.0
         version: 1.4.2(typescript@6.0.3)
     devDependencies:
-      '@gqlens/codegen':
+      '@gqlens/vite':
         specifier: workspace:*
-        version: link:../../vendor/gqlens/packages/codegen
+        version: link:../../vendor/gqlens/packages/vite
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown

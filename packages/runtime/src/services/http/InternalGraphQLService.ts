@@ -113,34 +113,18 @@ export class InternalGraphQLService {
 		try {
 			this.logger.info('Generating GQLens client…', { destination })
 
-			const { dirname } = await import('pathe')
 			const { fileURLToPath } = await import('node:url')
-			const { mkdir, readFile, writeFile } = await import('node:fs/promises')
-			const { generateFiles } = await import('@gqlens/codegen')
-			const files = await generateFiles({
+			const { generateGQLensFiles } = await import('@gqlens/vite')
+			const stats = await generateGQLensFiles({
 				schema: printSchema(this.schema),
 				framework: 'react',
+				output: fileURLToPath(destination),
 			})
-
-			let changed = 0
-			for (const [name, content] of Object.entries(files)) {
-				const file = fileURLToPath(new URL(name, destination))
-				let previous: string | undefined
-				try {
-					previous = await readFile(file, 'utf8')
-				} catch {
-					previous = undefined
-				}
-				if (previous === content) continue
-				await mkdir(dirname(file), { recursive: true })
-				await writeFile(file, content, 'utf8')
-				changed += 1
-			}
 
 			this.logger.info('GQLens client generated', {
 				destination,
-				files: Object.keys(files).length,
-				changed,
+				files: stats.total,
+				changed: stats.changed,
 			})
 		} catch (error) {
 			this.logger.error('generate GQLens client failed', { error, destination })

@@ -9,7 +9,7 @@ It combines:
 - `CommercialDataPlugin` providing a reusable Drizzle + libSQL business data capability
 - `StaticCommercialPlugin` mounting `graphql-yoga` through `this.ctx.http.plugin.routes(...)`
 - `@gqloom/core` + `@gqloom/valibot` for code-first backend schema and resolvers
-- `@gqlens/vite` + `@gqlens/codegen` for frontend accessor generation
+- `@gqlens/vite` for frontend accessor generation
 - React UI that reads and mutates a small order pipeline through the Pluxel plugin route
 
 The example is intentionally split into two plugins:
