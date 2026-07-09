@@ -15,12 +15,13 @@ import {
 	DEFAULT_YIQICHA_BASE_URL,
 	MAX_YIQICHA_HISTORY,
 	UsageRecorderPlugin,
+	providerCallHistory,
+	providerHistoryFromRow,
+	providerHistoryToRow,
 	type ExternalGatewayDbHandle,
 	useExternalGatewayDB,
 	yiqichaResponseCache,
-	yiqichaTestRuns,
 	type YiqichaResponseCacheRow,
-	type YiqichaTestRunRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
@@ -40,12 +41,14 @@ import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
 const ROUTE_BASE = '/yiqicha'
+const PROVIDER_ID = 'yiqicha'
 const VAULT_NAMESPACE = 'YiqichaProviderPlugin'
 const KV_APPKEY = 'api.appkey'
 const KV_SECRET_KEY = 'api.secret_key'
 const KV_BASE_URL = 'api.base_url'
 const DEFAULT_TEST_API = '1000'
 const DEFAULT_TEST_KEYWORD = '亿企查科技有限公司'
+const DEFAULT_YIQICHA_PAGE_SIZE = 50
 const MAX_YIQICHA_RESPONSE_CACHE_ROWS = 50_000
 const apiKeyByCode: Map<string, string> = new Map(
 	Object.entries(yiqichaApiCodes).map(([key, code]) => [code, key]),
@@ -230,9 +233,12 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	clearHistory(): { ok: true } {
 		this.history.removeMany({})
 		this.historySeq = 1
-		void this.data?.db.delete(yiqichaTestRuns).catch((error) => {
-			this.ctx.logger.warn('Failed to clear YiQiCha test history database', { error })
-		})
+		void this.data?.db
+			.delete(providerCallHistory)
+			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+			.catch((error) => {
+				this.ctx.logger.warn('Failed to clear YiQiCha test history database', { error })
+			})
 		return { ok: true }
 	}
 
@@ -299,7 +305,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			const input = (await request.json()) as Record<string, unknown>
 			userId = normalizeUserId(input.userId) || userId
 			api = requireYiqichaApi(stringField(input, 'api') ?? stringField(input, 'apiCode') ?? '')
-			const params = normalizeParams(input.params)
+			const params = withPaginationDefaults(api, normalizeParams(input.params))
 			const noCache = booleanField(input, 'noCache') ?? false
 			inputBytes = jsonBytes(params)
 			requestPreviewText = previewJson(params)
@@ -335,9 +341,11 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		const startedAt = Date.now()
 		let outcome: UpstreamOutcome | undefined
 		let api: YiqichaApi | undefined
+		let params = options.params ?? {}
 		try {
 			api = requireYiqichaApi(options.api)
-			outcome = await this.forwardApi(api, options.params ?? {}, { noCache: options.noCache })
+			params = withPaginationDefaults(api, params)
+			outcome = await this.forwardApi(api, params, { noCache: options.noCache })
 			if (!outcome.ok) {
 				throw new Error(outcome.error || `YiQiCha request failed: ${outcome.status}`)
 			}
@@ -354,7 +362,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 				operation: options.operation,
 				api,
 				startedAt,
-				inputBytes: jsonBytes(options.params ?? {}),
+				inputBytes: jsonBytes(params),
 				outcome,
 				metadata: {
 					...(options.billing.tenantId ? { tenantId: options.billing.tenantId } : {}),
@@ -368,9 +376,9 @@ export class YiqichaProviderPlugin extends BasePlugin {
 				operation: options.operation,
 				api,
 				startedAt,
-				inputBytes: jsonBytes(options.params ?? {}),
+				inputBytes: jsonBytes(params),
 				outcome,
-				requestPreview: requestPreview(options.params ?? {}),
+				requestPreview: requestPreview(params),
 			})
 		}
 	}
@@ -381,7 +389,8 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		options: ForwardApiOptions = {},
 	): Promise<UpstreamOutcome> {
 		const settings = await this.requireStoredSettings()
-		const cacheKey = makeCacheKey(api, params, settings.baseUrl)
+		const normalizedParams = withPaginationDefaults(api, params)
+		const cacheKey = makeCacheKey(api, normalizedParams, settings.baseUrl)
 		if (!options.noCache) {
 			const cached = await this.readCachedOutcome(cacheKey)
 			if (cached) return cached
@@ -397,7 +406,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			}
 		}
 
-		const pending = this.forwardApiUncached(api, params, cacheKey, settings)
+		const pending = this.forwardApiUncached(api, normalizedParams, cacheKey, settings)
 		if (!options.noCache) this.inflight.set(cacheKey.id, pending)
 		try {
 			return await pending
@@ -415,7 +424,9 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		const request = this.createRequest(api, params, settings)
 		const response = await fetch(request.url, request.init)
 		const outcome = await this.toOutcome(response)
-		const cacheStoredAt = outcome.ok ? await this.writeCachedOutcome(api, cacheKey, outcome) : undefined
+		const cacheStoredAt = outcome.ok
+			? await this.writeCachedOutcome(api, cacheKey, outcome)
+			: undefined
 		const headers = new Headers(outcome.response.headers)
 		if (cacheStoredAt !== undefined) {
 			headers.set('x-yiqicha-cache', 'MISS')
@@ -512,7 +523,10 @@ export class YiqichaProviderPlugin extends BasePlugin {
 				})
 			return cached
 		} catch (error) {
-			this.ctx.logger.warn('Failed to read YiQiCha response cache', { error, cacheKey: cacheKey.id })
+			this.ctx.logger.warn('Failed to read YiQiCha response cache', {
+				error,
+				cacheKey: cacheKey.id,
+			})
 			return undefined
 		}
 	}
@@ -574,7 +588,10 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			void this.trimResponseCache()
 			return now
 		} catch (error) {
-			this.ctx.logger.warn('Failed to write YiQiCha response cache', { error, cacheKey: cacheKey.id })
+			this.ctx.logger.warn('Failed to write YiQiCha response cache', {
+				error,
+				cacheKey: cacheKey.id,
+			})
 			return undefined
 		}
 	}
@@ -682,7 +699,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async persistHistory(doc: YiqichaTestRunDoc): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db.insert(yiqichaTestRuns).values(toHistoryRow(doc))
+			await this.data.db.insert(providerCallHistory).values(toProviderHistoryRow(doc))
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist YiQiCha test history', { error })
 		}
@@ -748,10 +765,11 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		}
 		const rows = await this.data.db
 			.select()
-			.from(yiqichaTestRuns)
-			.orderBy(desc(yiqichaTestRuns.at))
+			.from(providerCallHistory)
+			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+			.orderBy(desc(providerCallHistory.at))
 			.limit(MAX_YIQICHA_HISTORY)
-		for (const row of rows.toReversed()) this.history.insert(fromHistoryRow(row))
+		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
 		this.restoreHistorySeq()
 	}
 
@@ -883,6 +901,31 @@ function normalizeParams(input: unknown): YiqichaParams {
 	return output
 }
 
+function withPaginationDefaults(api: YiqichaApi, params: YiqichaParams): YiqichaParams {
+	if (!hasRequestParam(api, 'pageSize')) return params
+	const output: YiqichaParams = { ...params }
+	if (hasRequestParam(api, 'page') && output.page == null) output.page = 1
+	const pageSize = integerParam(output.pageSize)
+	output.pageSize =
+		pageSize === undefined
+			? DEFAULT_YIQICHA_PAGE_SIZE
+			: Math.max(1, Math.min(DEFAULT_YIQICHA_PAGE_SIZE, pageSize))
+	return output
+}
+
+function hasRequestParam(api: YiqichaApi, name: string): boolean {
+	return (
+		api.requestJson.includes(`"name":"${name}"`) || api.requestJson.includes(`"name": "${name}"`)
+	)
+}
+
+function integerParam(input: YiqichaParams[string]): number | undefined {
+	if (input === undefined || input === null || Array.isArray(input) || input === '')
+		return undefined
+	const number = Number(input)
+	return Number.isFinite(number) ? Math.floor(number) : undefined
+}
+
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
 	const value = record[key]
 	if (typeof value === 'string' && value.trim()) return value.trim()
@@ -985,12 +1028,7 @@ function cloneOutcome(
 	overrides: Partial<
 		Pick<
 			UpstreamOutcome,
-			| 'cacheCoalesced'
-			| 'cacheHit'
-			| 'cacheKey'
-			| 'units'
-			| 'cacheAgeMs'
-			| 'cacheStoredAt'
+			'cacheCoalesced' | 'cacheHit' | 'cacheKey' | 'units' | 'cacheAgeMs' | 'cacheStoredAt'
 		>
 	> = {},
 ): UpstreamOutcome {
@@ -1000,7 +1038,8 @@ function cloneOutcome(
 	if (overrides.cacheStoredAt !== undefined) {
 		headers.set('x-yiqicha-cache-stored-at', String(overrides.cacheStoredAt))
 	}
-	if (overrides.cacheAgeMs !== undefined) headers.set('x-yiqicha-cache-age-ms', String(overrides.cacheAgeMs))
+	if (overrides.cacheAgeMs !== undefined)
+		headers.set('x-yiqicha-cache-age-ms', String(overrides.cacheAgeMs))
 	return {
 		...outcome,
 		response: new Response(outcome.bodyText ?? '', {
@@ -1011,45 +1050,25 @@ function cloneOutcome(
 	}
 }
 
-function toHistoryRow(doc: YiqichaTestRunDoc): YiqichaTestRunRow {
-	return {
-		id: doc.id,
-		at: doc.at,
-		source: doc.source,
-		userId: doc.userId,
-		operation: doc.operation,
-		apiCode: doc.apiCode ?? null,
-		apiName: doc.apiName ?? null,
-		ok: doc.ok,
-		status: doc.status,
-		latencyMs: doc.latencyMs,
-		inputBytes: doc.inputBytes,
-		outputBytes: doc.outputBytes,
-		upstreamRequestId: doc.upstreamRequestId ?? null,
-		requestPreview: doc.requestPreview ?? null,
-		responsePreview: doc.responsePreview ?? null,
-		error: doc.error ?? null,
+function toProviderHistoryRow(doc: YiqichaTestRunDoc) {
+	const details = {
+		...(doc.apiCode ? { apiCode: doc.apiCode } : {}),
+		...(doc.apiName ? { apiName: doc.apiName } : {}),
 	}
+	return providerHistoryToRow(PROVIDER_ID, {
+		...doc,
+		...(Object.keys(details).length > 0 ? { details } : {}),
+	})
 }
 
-function fromHistoryRow(row: YiqichaTestRunRow): YiqichaTestRunDoc {
+function fromProviderHistoryRow(row: typeof providerCallHistory.$inferSelect): YiqichaTestRunDoc {
+	const { details, ...doc } = providerHistoryFromRow(row)
+	const apiCode = typeof details?.apiCode === 'string' ? details.apiCode : undefined
+	const apiName = typeof details?.apiName === 'string' ? details.apiName : undefined
 	return {
-		id: row.id,
-		at: row.at,
-		source: row.source,
-		userId: row.userId,
-		operation: row.operation,
-		...(row.apiCode ? { apiCode: row.apiCode } : {}),
-		...(row.apiName ? { apiName: row.apiName } : {}),
-		ok: row.ok,
-		status: row.status,
-		latencyMs: row.latencyMs,
-		inputBytes: row.inputBytes,
-		outputBytes: row.outputBytes,
-		...(row.upstreamRequestId ? { upstreamRequestId: row.upstreamRequestId } : {}),
-		...(row.requestPreview ? { requestPreview: row.requestPreview } : {}),
-		...(row.responsePreview ? { responsePreview: row.responsePreview } : {}),
-		...(row.error ? { error: row.error } : {}),
+		...doc,
+		...(apiCode ? { apiCode } : {}),
+		...(apiName ? { apiName } : {}),
 	}
 }
 

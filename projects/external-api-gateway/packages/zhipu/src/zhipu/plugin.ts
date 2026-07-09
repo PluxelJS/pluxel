@@ -7,16 +7,17 @@ import {
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
 	MAX_ZHIPU_HISTORY,
 	UsageRecorderPlugin,
+	providerCallHistory,
+	providerHistoryFromRow,
+	providerHistoryToRow,
 	type ExternalGatewayDbHandle,
 	useExternalGatewayDB,
-	zhipuTestRuns,
-	type ZhipuTestRunRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
 import type {
@@ -39,8 +40,8 @@ import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
 const ROUTE_BASE = '/zhipu'
+const PROVIDER_ID = 'zhipu'
 const VAULT_NAMESPACE = 'ZhipuProviderPlugin'
-const LEGACY_VAULT_NAMESPACE = 'ZhipuOcrPlugin'
 const KV_API_KEY = 'api.key'
 const KV_BASE_URL = 'api.base_url'
 
@@ -162,9 +163,12 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	clearHistory(): { ok: true } {
 		this.history.removeMany({})
 		this.historySeq = 1
-		void this.data?.db.delete(zhipuTestRuns).catch((error) => {
-			this.ctx.logger.warn('Failed to clear Zhipu test history database', { error })
-		})
+		void this.data?.db
+			.delete(providerCallHistory)
+			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+			.catch((error) => {
+				this.ctx.logger.warn('Failed to clear Zhipu test history database', { error })
+			})
 		return { ok: true }
 	}
 
@@ -893,7 +897,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	private async persistHistory(doc: ZhipuTestRunDoc): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db.insert(zhipuTestRuns).values(toHistoryRow(doc))
+			await this.data.db.insert(providerCallHistory).values(toProviderHistoryRow(doc))
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist Zhipu test history', { error })
 		}
@@ -925,21 +929,13 @@ export class ZhipuProviderPlugin extends BasePlugin {
 
 	private async readStoredSettings(): Promise<StoredSettings> {
 		const kv = this.kv()
-		const legacyKv = this.legacyKv()
-		const baseUrl =
-			(await kv.get<string>(KV_BASE_URL)) ??
-			(await legacyKv.get<string>(KV_BASE_URL)) ??
-			DEFAULT_ZHIPU_BASE_URL
-		const apiKey = (await kv.get<string>(KV_API_KEY)) ?? (await legacyKv.get<string>(KV_API_KEY))
+		const baseUrl = (await kv.get<string>(KV_BASE_URL)) ?? DEFAULT_ZHIPU_BASE_URL
+		const apiKey = await kv.get<string>(KV_API_KEY)
 		return { apiKey, baseUrl }
 	}
 
 	private kv() {
 		return this.ctx.vault.namespace(VAULT_NAMESPACE).kv()
-	}
-
-	private legacyKv() {
-		return this.ctx.vault.namespace(LEGACY_VAULT_NAMESPACE).kv()
 	}
 
 	private async syncSettingsDoc(): Promise<ZhipuSettingsDoc> {
@@ -981,10 +977,11 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		}
 		const rows = await this.data.db
 			.select()
-			.from(zhipuTestRuns)
-			.orderBy(desc(zhipuTestRuns.at))
+			.from(providerCallHistory)
+			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+			.orderBy(desc(providerCallHistory.at))
 			.limit(MAX_ZHIPU_HISTORY)
-		for (const row of rows.toReversed()) this.history.insert(fromHistoryRow(row))
+		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
 		this.restoreHistorySeq()
 	}
 
@@ -1133,45 +1130,19 @@ function userIdFromRequest(request: Request): string {
 	)
 }
 
-function toHistoryRow(doc: ZhipuTestRunDoc): ZhipuTestRunRow {
-	return {
-		id: doc.id,
-		at: doc.at,
-		source: doc.source,
-		userId: doc.userId,
-		operation: doc.operation,
-		model: doc.model ?? null,
-		ok: doc.ok,
-		status: doc.status,
-		latencyMs: doc.latencyMs,
-		inputBytes: doc.inputBytes,
-		outputBytes: doc.outputBytes,
-		fileName: doc.fileName ?? null,
-		upstreamRequestId: doc.upstreamRequestId ?? null,
-		requestPreview: doc.requestPreview ?? null,
-		responsePreview: doc.responsePreview ?? null,
-		error: doc.error ?? null,
-	}
+function toProviderHistoryRow(doc: ZhipuTestRunDoc) {
+	return providerHistoryToRow(PROVIDER_ID, {
+		...doc,
+		...(doc.fileName ? { details: { fileName: doc.fileName } } : {}),
+	})
 }
 
-function fromHistoryRow(row: ZhipuTestRunRow): ZhipuTestRunDoc {
+function fromProviderHistoryRow(row: typeof providerCallHistory.$inferSelect): ZhipuTestRunDoc {
+	const { details, ...doc } = providerHistoryFromRow(row)
+	const fileName = typeof details?.fileName === 'string' ? details.fileName : undefined
 	return {
-		id: row.id,
-		at: row.at,
-		source: row.source,
-		userId: row.userId,
-		operation: row.operation,
-		...(row.model ? { model: row.model } : {}),
-		ok: row.ok,
-		status: row.status,
-		latencyMs: row.latencyMs,
-		inputBytes: row.inputBytes,
-		outputBytes: row.outputBytes,
-		...(row.fileName ? { fileName: row.fileName } : {}),
-		...(row.upstreamRequestId ? { upstreamRequestId: row.upstreamRequestId } : {}),
-		...(row.requestPreview ? { requestPreview: row.requestPreview } : {}),
-		...(row.responsePreview ? { responsePreview: row.responsePreview } : {}),
-		...(row.error ? { error: row.error } : {}),
+		...doc,
+		...(fileName ? { fileName } : {}),
 	}
 }
 

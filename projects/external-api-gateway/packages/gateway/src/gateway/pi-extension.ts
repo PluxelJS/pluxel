@@ -1,11 +1,16 @@
 import { newHttpBatchRpcSession } from 'capnweb'
-import type { GatewayAuthContext, GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
+import type {
+	GatewayAuthContext,
+	GatewayBillingContext,
+} from '@repo/external-api-gateway-shared/gateway'
 import {
 	listExternalGatewayToolSpecs,
 	type ExternalGatewayToolCallInput,
+	type ExternalGatewayToolArgs,
 	type ExternalGatewayJsonSchema,
 	type ExternalGatewayToolListInput,
 	type ExternalGatewayToolName,
+	type ExternalGatewayToolResult,
 	type ExternalGatewayToolSpec,
 } from './tools.ts'
 
@@ -71,8 +76,13 @@ export type PiPlugin = {
 	tools: PiToolDefinition[]
 	getTools(input?: ExternalGatewayToolListInput): Promise<PiToolDefinition[]>
 	refreshTools(input?: ExternalGatewayToolListInput): Promise<PiToolDefinition[]>
+	callTool<N extends ExternalGatewayToolName>(
+		name: N,
+		args: ExternalGatewayToolArgs[N],
+		options?: PiToolCallOptions,
+	): Promise<ExternalGatewayToolResult[N]>
 	callTool(
-		name: ExternalGatewayToolName | string,
+		name: string,
 		args?: Record<string, unknown>,
 		options?: PiToolCallOptions,
 	): Promise<unknown>
@@ -95,6 +105,42 @@ export type ExternalGatewayRpcTransport = {
 
 export class PiExtension implements PiPlugin {
 	readonly tools: PiToolDefinition[]
+	readonly zhipu = {
+		chat: (args: ExternalGatewayToolArgs['zhipu.chat'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.chat', args, options),
+		webSearch: (args: ExternalGatewayToolArgs['zhipu.web_search'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.web_search', args, options),
+		reader: (args: ExternalGatewayToolArgs['zhipu.reader'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.reader', args, options),
+		rerank: (args: ExternalGatewayToolArgs['zhipu.rerank'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.rerank', args, options),
+		embeddings: (args: ExternalGatewayToolArgs['zhipu.embeddings'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.embeddings', args, options),
+		moderate: (args: ExternalGatewayToolArgs['zhipu.moderate'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.moderate', args, options),
+	}
+	readonly yiqicha = {
+		findApis: (args: ExternalGatewayToolArgs['yiqicha.find_apis'], options?: PiToolCallOptions) =>
+			this.callTool('yiqicha.find_apis', args, options),
+		describeApi: (
+			args: ExternalGatewayToolArgs['yiqicha.describe_api'],
+			options?: PiToolCallOptions,
+		) => this.callTool('yiqicha.describe_api', args, options),
+		callApi: (args: ExternalGatewayToolArgs['yiqicha.call_api'], options?: PiToolCallOptions) =>
+			this.callTool('yiqicha.call_api', args, options),
+		enterpriseProfile: (
+			args: ExternalGatewayToolArgs['yiqicha.enterprise_profile'],
+			options?: PiToolCallOptions,
+		) => this.callTool('yiqicha.enterprise_profile', args, options),
+		enterpriseRisk: (
+			args: ExternalGatewayToolArgs['yiqicha.enterprise_risk'],
+			options?: PiToolCallOptions,
+		) => this.callTool('yiqicha.enterprise_risk', args, options),
+		enterpriseLegal: (
+			args: ExternalGatewayToolArgs['yiqicha.enterprise_legal'],
+			options?: PiToolCallOptions,
+		) => this.callTool('yiqicha.enterprise_legal', args, options),
+	}
 
 	private readonly token: string
 	private readonly rpcUrl: string
@@ -113,7 +159,9 @@ export class PiExtension implements PiPlugin {
 		this.defaultBilling = options.billing ?? 'pi-agent'
 		this.defaultTools = options.tools
 		this.transport = (options.transport ??
-			newHttpBatchRpcSession<ExternalGatewayRpcTransport>(this.rpcUrl)) as ExternalGatewayRpcTransport & {
+			newHttpBatchRpcSession<ExternalGatewayRpcTransport>(
+				this.rpcUrl,
+			)) as ExternalGatewayRpcTransport & {
 			[key: symbol]: unknown
 		}
 		this.tools = toPiToolDefinitions(listExternalGatewayToolSpecs(options.tools))
@@ -123,13 +171,25 @@ export class PiExtension implements PiPlugin {
 		return input ? this.refreshTools(input) : Promise.resolve(this.tools)
 	}
 
-	async refreshTools(input: ExternalGatewayToolListInput = this.defaultTools ?? {}): Promise<PiToolDefinition[]> {
+	async refreshTools(
+		input: ExternalGatewayToolListInput = this.defaultTools ?? {},
+	): Promise<PiToolDefinition[]> {
 		const specs = await (await this.getAuthedApi()).toolSpecs(input)
 		return toPiToolDefinitions(specs)
 	}
 
+	callTool<N extends ExternalGatewayToolName>(
+		name: N,
+		args: ExternalGatewayToolArgs[N],
+		options?: PiToolCallOptions,
+	): Promise<ExternalGatewayToolResult[N]>
+	callTool(
+		name: string,
+		args?: Record<string, unknown>,
+		options?: PiToolCallOptions,
+	): Promise<unknown>
 	async callTool(
-		name: ExternalGatewayToolName | string,
+		name: string,
 		args: Record<string, unknown> = {},
 		options: PiToolCallOptions = {},
 	): Promise<unknown> {
@@ -150,7 +210,9 @@ export class PiExtension implements PiPlugin {
 		}
 	}
 
-	async test(input: ExternalGatewayToolListInput = this.defaultTools ?? {}): Promise<PiExtensionHealth> {
+	async test(
+		input: ExternalGatewayToolListInput = this.defaultTools ?? {},
+	): Promise<PiExtensionHealth> {
 		try {
 			const authedApi = await this.getAuthedApi()
 			const [identity, remoteSpecs] = await Promise.all([

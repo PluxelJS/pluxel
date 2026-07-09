@@ -2,6 +2,9 @@ import {
 	DEFAULT_ZHIPU_CHAT_MODEL,
 	type GatewayBillingContext,
 } from '@repo/external-api-gateway-shared'
+import { TypeCompiler, type TypeCheck } from '@sinclair/typebox/compiler'
+import { Value } from '@sinclair/typebox/value'
+import type { TSchema } from '@sinclair/typebox'
 import type {
 	YiqichaApiDoc,
 	YiqichaApiSummary,
@@ -16,7 +19,11 @@ import type {
 	ZhipuRerankInput,
 	ZhipuWebSearchInput,
 } from '@repo/external-api-gateway-zhipu/provider'
-import { requireExternalGatewayToolName } from './tools.ts'
+import {
+	inputSchemaForExternalGatewayTool,
+	requireExternalGatewayToolName,
+	type ExternalGatewayToolName,
+} from './tools.ts'
 
 export type ExternalGatewayToolHost = {
 	zhipuProvider: {
@@ -52,7 +59,7 @@ export async function callExternalGatewayTool(
 	argsInput: Record<string, unknown> | null | undefined,
 ): Promise<unknown> {
 	const toolName = requireExternalGatewayToolName(name)
-	const args = toolArgs(argsInput)
+	const args = validateToolArgs(toolName, toolArgs(argsInput))
 	switch (toolName) {
 		case 'zhipu.chat':
 			return gateway.zhipuProvider.gatewayChatCompletions(billing, {
@@ -125,6 +132,24 @@ export async function callExternalGatewayTool(
 		case 'yiqicha.enterprise_legal':
 			return enterpriseLegal(gateway, billing, args)
 	}
+}
+
+const compiledSchemas = new WeakMap<TSchema, TypeCheck<TSchema>>()
+
+function validateToolArgs(
+	toolName: ExternalGatewayToolName,
+	input: Record<string, unknown>,
+): Record<string, unknown> {
+	const schema = inputSchemaForExternalGatewayTool(toolName)
+	const validator = compiledSchemas.get(schema) ?? TypeCompiler.Compile(schema)
+	if (!compiledSchemas.has(schema)) compiledSchemas.set(schema, validator)
+	const candidate = Value.Default(schema, Value.Clone(input))
+	if (validator.Check(candidate)) return candidate as Record<string, unknown>
+
+	const [first] = [...validator.Errors(candidate)]
+	const path = first?.path && first.path !== '/' ? `${first.path}: ` : ''
+	const message = first?.message || 'Invalid arguments'
+	throw new Error(`Invalid args for ${toolName}: ${path}${message}`)
 }
 
 async function enterpriseProfile(
@@ -363,7 +388,8 @@ async function enterpriseLegal(
 
 function toolArgs(input: Record<string, unknown> | null | undefined): Record<string, unknown> {
 	if (input === undefined || input === null) return {}
-	if (typeof input !== 'object' || Array.isArray(input)) throw new Error('Tool args must be an object')
+	if (typeof input !== 'object' || Array.isArray(input))
+		throw new Error('Tool args must be an object')
 	return input
 }
 
@@ -473,11 +499,11 @@ function normalizeYiqichaToolParams(input: Record<string, unknown>): YiqichaPara
 	return params
 }
 
-function pageParams(keyword: string, pageSize = 5): YiqichaParams {
+function pageParams(keyword: string, pageSize = 50): YiqichaParams {
 	return {
 		keyword,
 		page: 1,
-		pageSize: Math.max(1, Math.min(20, Math.floor(Number(pageSize) || 5))),
+		pageSize: Math.max(1, Math.min(50, Math.floor(Number(pageSize) || 50))),
 	}
 }
 

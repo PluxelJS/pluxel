@@ -19,27 +19,39 @@ export const gatewayTokens = sqliteTable('gateway_tokens', {
 	lastUsedAt: integer('last_used_at'),
 })
 
-export const billingUsageRecords = sqliteTable('billing_usage_records', {
-	id: text('id').primaryKey(),
-	at: integer('at').notNull(),
-	userId: text('user_id').notNull(),
-	provider: text('provider').notNull(),
-	pluginId: text('plugin_id').notNull(),
-	operation: text('operation').notNull(),
-	model: text('model'),
-	ok: integer('ok', { mode: 'boolean' }).notNull(),
-	status: text('status').notNull(),
-	latencyMs: integer('latency_ms').notNull(),
-	inputBytes: integer('input_bytes').notNull(),
-	outputBytes: integer('output_bytes').notNull(),
-	units: real('units').notNull(),
-	unitName: text('unit_name').notNull(),
-	costCny: real('cost_cny').notNull(),
-	currency: text('currency').notNull(),
-	costEstimated: integer('cost_estimated', { mode: 'boolean' }).notNull(),
-	upstreamRequestId: text('upstream_request_id'),
-	metadataJson: text('metadata_json'),
-})
+export const billingUsageRecords = sqliteTable(
+	'billing_usage_records',
+	{
+		id: text('id').primaryKey(),
+		at: integer('at').notNull(),
+		userId: text('user_id').notNull(),
+		provider: text('provider').notNull(),
+		pluginId: text('plugin_id').notNull(),
+		operation: text('operation').notNull(),
+		model: text('model'),
+		ok: integer('ok', { mode: 'boolean' }).notNull(),
+		status: text('status').notNull(),
+		latencyMs: integer('latency_ms').notNull(),
+		inputBytes: integer('input_bytes').notNull(),
+		outputBytes: integer('output_bytes').notNull(),
+		units: real('units').notNull(),
+		unitName: text('unit_name').notNull(),
+		costCny: real('cost_cny').notNull(),
+		currency: text('currency').notNull(),
+		costEstimated: integer('cost_estimated', { mode: 'boolean' }).notNull(),
+		upstreamRequestId: text('upstream_request_id'),
+		metadataJson: text('metadata_json'),
+	},
+	(table) => ({
+		atIdx: index('idx_billing_usage_records_at').on(table.at),
+		providerOperationAtIdx: index('idx_billing_usage_records_provider_operation_at').on(
+			table.provider,
+			table.operation,
+			table.at,
+		),
+		userAtIdx: index('idx_billing_usage_records_user_at').on(table.userId, table.at),
+	}),
+)
 
 export const billingRates = sqliteTable('billing_rates', {
 	id: text('id').primaryKey(),
@@ -51,43 +63,36 @@ export const billingRates = sqliteTable('billing_rates', {
 	updatedAt: integer('updated_at').notNull(),
 })
 
-export const zhipuTestRuns = sqliteTable('zhipu_test_runs', {
-	id: text('id').primaryKey(),
-	at: integer('at').notNull(),
-	source: text('source', { enum: historySources }).notNull(),
-	userId: text('user_id').notNull(),
-	operation: text('operation').notNull(),
-	model: text('model'),
-	ok: integer('ok', { mode: 'boolean' }).notNull(),
-	status: text('status').notNull(),
-	latencyMs: integer('latency_ms').notNull(),
-	inputBytes: integer('input_bytes').notNull(),
-	outputBytes: integer('output_bytes').notNull(),
-	fileName: text('file_name'),
-	upstreamRequestId: text('upstream_request_id'),
-	requestPreview: text('request_preview'),
-	responsePreview: text('response_preview'),
-	error: text('error'),
-})
-
-export const yiqichaTestRuns = sqliteTable('yiqicha_test_runs', {
-	id: text('id').primaryKey(),
-	at: integer('at').notNull(),
-	source: text('source', { enum: historySources }).notNull(),
-	userId: text('user_id').notNull(),
-	operation: text('operation').notNull(),
-	apiCode: text('api_code'),
-	apiName: text('api_name'),
-	ok: integer('ok', { mode: 'boolean' }).notNull(),
-	status: text('status').notNull(),
-	latencyMs: integer('latency_ms').notNull(),
-	inputBytes: integer('input_bytes').notNull(),
-	outputBytes: integer('output_bytes').notNull(),
-	upstreamRequestId: text('upstream_request_id'),
-	requestPreview: text('request_preview'),
-	responsePreview: text('response_preview'),
-	error: text('error'),
-})
+export const providerCallHistory = sqliteTable(
+	'provider_call_history',
+	{
+		id: text('id').primaryKey(),
+		provider: text('provider').notNull(),
+		providerRecordId: text('provider_record_id').notNull(),
+		at: integer('at').notNull(),
+		source: text('source', { enum: historySources }).notNull(),
+		userId: text('user_id').notNull(),
+		operation: text('operation').notNull(),
+		model: text('model'),
+		ok: integer('ok', { mode: 'boolean' }).notNull(),
+		status: text('status').notNull(),
+		latencyMs: integer('latency_ms').notNull(),
+		inputBytes: integer('input_bytes').notNull(),
+		outputBytes: integer('output_bytes').notNull(),
+		upstreamRequestId: text('upstream_request_id'),
+		requestPreview: text('request_preview'),
+		responsePreview: text('response_preview'),
+		error: text('error'),
+		detailsJson: text('details_json'),
+	},
+	(table) => ({
+		providerAtIdx: index('idx_provider_call_history_provider_at').on(table.provider, table.at),
+		providerRecordIdx: index('idx_provider_call_history_provider_record').on(
+			table.provider,
+			table.providerRecordId,
+		),
+	}),
+)
 
 export const yiqichaResponseCache = sqliteTable(
 	'yiqicha_response_cache',
@@ -109,6 +114,7 @@ export const yiqichaResponseCache = sqliteTable(
 	},
 	(table) => ({
 		apiCodeIdx: index('idx_yiqicha_response_cache_api_code').on(table.apiCode),
+		lastHitAtIdx: index('idx_yiqicha_response_cache_last_hit_at').on(table.lastHitAt),
 		updatedAtIdx: index('idx_yiqicha_response_cache_updated_at').on(table.updatedAt),
 	}),
 )
@@ -118,14 +124,12 @@ export const gatewaySchema = {
 	billingUsageRecords,
 	gatewayMeta,
 	gatewayTokens,
+	providerCallHistory,
 	yiqichaResponseCache,
-	yiqichaTestRuns,
-	zhipuTestRuns,
 }
 
 export type BillingRateRow = InferSelectModel<typeof billingRates>
 export type BillingUsageRecordRow = InferSelectModel<typeof billingUsageRecords>
 export type GatewayTokenRow = InferSelectModel<typeof gatewayTokens>
+export type ProviderCallHistoryRow = InferSelectModel<typeof providerCallHistory>
 export type YiqichaResponseCacheRow = InferSelectModel<typeof yiqichaResponseCache>
-export type YiqichaTestRunRow = InferSelectModel<typeof yiqichaTestRuns>
-export type ZhipuTestRunRow = InferSelectModel<typeof zhipuTestRuns>

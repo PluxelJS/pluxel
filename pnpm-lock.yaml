@@ -883,7 +883,11 @@ importers:
 
   projects/external-api-gateway/packages/billing: {}
 
-  projects/external-api-gateway/packages/gateway: {}
+  projects/external-api-gateway/packages/gateway:
+    dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.49
 
   projects/external-api-gateway/packages/shared: {}
 

@@ -1,4 +1,5 @@
 export * from './constants.ts'
+export * from './db/history.ts'
 export * from './db/schema.ts'
 export * from './db/use-db.ts'
 export * from './gateway/contracts.ts'

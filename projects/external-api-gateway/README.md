@@ -48,16 +48,15 @@ if (!health.ok) throw new Error(health.error)
 console.info(`External gateway token: ${health.tokenName}`)
 
 const tools = pi.tools
-const search = await pi.callTool('zhipu.web_search', {
+const search = await pi.zhipu.webSearch({
 	query: '智谱 GLM OpenAPI web_search',
 	count: 5,
 	recency: 'noLimit',
 })
-const chat = await pi.callTool('zhipu.chat', {
+const chat = await pi.zhipu.chat({
 	messages: [{ role: 'user', content: 'hello' }],
 })
-const profile = await pi.callTool(
-	'yiqicha.enterprise_profile',
+const profile = await pi.yiqicha.enterpriseProfile(
 	{
 		keyword: '北京智谱华章科技股份有限公司',
 		include: ['basicInfo', 'shareholders', 'investments'],
@@ -85,11 +84,13 @@ piAgent.onToolCall(async (toolCall) => {
 
 `PiExtension` 的 tools 是 PI/OpenAI-style function definitions，执行时只调用 ExternalGateway RPC。`pi.test()` 会实际认证 token、验证 RPC URL 可达，并拉取远端 tool specs；构造函数本身只保存配置，不做网络请求。
 
+业务代码优先使用 `pi.zhipu.*` / `pi.yiqicha.*` typed wrapper；它们和 `callTool(...)` 复用同一套 TypeBox schema。需要对接模型 runtime 时才直接读取 `pi.tools` 并把 tool call 交给 `handleToolCall(...)`。`callTool('zhipu.web_search', args)` 仍保留，字面量 tool name 会推导对应 args 类型；动态字符串调用退回 `Record<string, unknown>`。
+
 `billing` 是每次 `callTool(...)` 的强制调用归属边界。`userId / tenantId / traceId` 会写入 `UsageBillingPlugin`，用于成本、审计和 history。`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可调用 gateway tool；吊销后不可再认证。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
 tool 名是稳定字面量：`zhipu.web_search`、`zhipu.chat`、`zhipu.reader`、`zhipu.rerank`、`zhipu.embeddings`、`zhipu.moderate`、`yiqicha.find_apis`、`yiqicha.describe_api`、`yiqicha.call_api`、`yiqicha.enterprise_profile`、`yiqicha.enterprise_risk`、`yiqicha.enterprise_legal`。字段名按 agent 表达优化，例如 `query / count / include / pageSize`，dispatcher 会映射到上游的 `search_query / search_engine / top_n` 等 provider 字段。二进制上传类接口只保留在 provider 内部 UI，不放进默认 PI tools。
 
-`@repo/external-api-gateway-gateway/pi` 是外部 agent 复用入口；`@repo/external-api-gateway-gateway/tools` 是无 runtime 副作用的纯契约入口，可直接读取稳定 tool specs。
+`@repo/external-api-gateway-gateway/pi` 是外部 agent 复用入口；`@repo/external-api-gateway-gateway/tools` 是无 runtime 副作用的纯契约入口，可直接读取稳定 tool specs、TypeBox input schemas 和 typed args。
 
 YiQiCha provider 面向 LLM agent 的 RPC surface 刻意保持很小，不把 128 个上游 API 暴露成 128 个 tool。默认 tool surface 只映射 6 个动作：
 
@@ -101,6 +102,8 @@ YiQiCha provider 面向 LLM agent 的 RPC surface 刻意保持很小，不把 12
 - `yiqicha.enterprise_legal({ keyword, include?, pageSize? })`：组合企业司法风险。
 
 这些方法按 tool 使用场景设计，而不是按上游 API 一比一搬运：agent 先用 `yiqicha.find_apis` 缩小候选，再用 `yiqicha.describe_api` 获取单个 API 参数，最后 `yiqicha.call_api` 执行；常见任务直接走 overview 组合 tool。这样 prompt 里只需要 6 个稳定工具，不需要塞入完整 API catalog，也避免模型选择 `1002` 这类不可读数字 code。内部仍保留 code/key 映射和 catalog，数字只作为 provider 实现细节。
+
+YiQiCha 上游按请求计费，分页 API 应尽量一次取满当前页来减少后续翻页调用。provider 会识别 request schema 里的 `pageSize` 参数：缺省时自动补 `pageSize: 50`，超过 50 时压到 50；如果 API 同时有 `page` 参数且调用方未传，会补 `page: 1`。不要把默认 pageSize 调小，除非某个接口明确证明返回体过大或上游限制更低。
 
 `projects/zhipu-glm-openapi-client.zip` 中的 generated client 目前还是 placeholder；真正 typed helper 需要跑 zip 内 `refresh` 生成。External gateway 不再暴露 raw OpenAPI / provider 调用链，新增外部能力应先沉淀成稳定 tool 字面量和 schema，再进入 `tool-dispatcher.ts`。
 
@@ -160,6 +163,8 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 
 ## Persistence
 
+本项目仍处于开发阶段，本地数据一律视为可丢弃缓存。为了让数据结构和接口代码可以快速收敛，schema 变化时允许直接清空 SQLite / SignalDB / vault 本地状态并重建，不保留向后兼容迁移，也不为旧字段、旧表或旧 namespace 增加兼容分支。
+
 插件运行数据使用项目内 SQLite 文件：
 
 ```text
@@ -170,7 +175,15 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 
 - gateway tokens：保存 token hash、启用/吊销状态和最近使用时间；UI 只展示预览。
 - billing usage records / rates：账单明细和价格表会跨重启保留；UI 明细只加载最近 500 条，汇总按 SQLite 全量记录重建。
-- Zhipu test history：插件 UI 的 OCR/API 测试历史跨重启保留。OCR 请求预览会脱敏 data URL/base64 文件内容，只保留来源和体积摘要。
+- provider call history：插件 UI 的 API 测试历史按 provider 统一保存。provider 特有字段进入 `details_json`，通用字段保留为结构化列。
+
+清理本地开发数据可以直接删除：
+
+```bash
+rm -rf projects/external-api-gateway/.pluxel projects/external-api-gateway/dist projects/external-api-gateway/.turbo
+```
+
+数据库启动策略同样按开发阶段处理：如果 `gateway_meta.schema_version` 与当前代码不一致，启动时直接 drop 用户表并按当前 schema 重建。不要为历史开发数据写旧表迁移；需要调整表结构时优先改干净的数据模型和调用代码。
 
 当前组织方式：
 

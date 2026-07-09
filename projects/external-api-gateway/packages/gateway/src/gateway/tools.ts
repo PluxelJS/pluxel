@@ -1,14 +1,7 @@
+import { Type, type Static, type TSchema, type TUnsafe } from '@sinclair/typebox'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 
-export type ExternalGatewayJsonSchema = {
-	type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean'
-	description?: string
-	properties?: Record<string, ExternalGatewayJsonSchema>
-	items?: ExternalGatewayJsonSchema
-	required?: string[]
-	enum?: Array<string | number | boolean>
-	additionalProperties?: boolean | ExternalGatewayJsonSchema
-}
+export type ExternalGatewayJsonSchema = Record<string, unknown>
 
 export type ExternalGatewayToolProvider = 'zhipu' | 'yiqicha'
 
@@ -42,64 +35,336 @@ export type ExternalGatewayToolListInput = {
 	names?: string[]
 }
 
+export type ExternalGatewayToolArgs = {
+	'zhipu.chat': Static<typeof zhipuChatInputSchema>
+	'zhipu.web_search': Static<typeof zhipuWebSearchInputSchema>
+	'zhipu.reader': Static<typeof zhipuReaderInputSchema>
+	'zhipu.rerank': Static<typeof zhipuRerankInputSchema>
+	'zhipu.embeddings': Static<typeof zhipuEmbeddingsInputSchema>
+	'zhipu.moderate': Static<typeof zhipuModerateInputSchema>
+	'yiqicha.find_apis': Static<typeof yiqichaFindApisInputSchema>
+	'yiqicha.describe_api': Static<typeof yiqichaDescribeApiInputSchema>
+	'yiqicha.call_api': Static<typeof yiqichaCallApiInputSchema>
+	'yiqicha.enterprise_profile': Static<typeof yiqichaEnterpriseProfileInputSchema>
+	'yiqicha.enterprise_risk': Static<typeof yiqichaEnterpriseRiskInputSchema>
+	'yiqicha.enterprise_legal': Static<typeof yiqichaEnterpriseLegalInputSchema>
+}
+
+export type ExternalGatewayToolResult = {
+	[K in ExternalGatewayToolName]: unknown
+}
+
+export type ExternalGatewayTypedToolCallInput<N extends ExternalGatewayToolName> = {
+	name: N
+	args: ExternalGatewayToolArgs[N]
+	billing: GatewayBillingContext | string
+}
+
 export type ExternalGatewayToolCallInput = {
 	name: ExternalGatewayToolName | string
 	args?: Record<string, unknown> | null
 	billing: GatewayBillingContext | string
 }
 
-const nonEmptyString: ExternalGatewayJsonSchema = {
-	type: 'string',
+const nonEmptyString = Type.String({
+	minLength: 1,
 	description: 'Non-empty string.',
-}
+})
 
-const stringArray: ExternalGatewayJsonSchema = {
-	type: 'array',
-	items: { type: 'string' },
-}
+const unknownObject = Type.Object({}, { additionalProperties: true })
+const unknownArray = Type.Array(Type.Unknown())
 
-const messagesSchema: ExternalGatewayJsonSchema = {
-	type: 'array',
-	description: 'OpenAI-compatible chat messages.',
-	items: {
-		type: 'object',
-		properties: {
+const stringEnum = <const T extends readonly [string, ...string[]]>(
+	values: T,
+	options: Record<string, unknown> = {},
+) =>
+	Type.Union(
+		values.map((value) => Type.Literal(value)) as [
+			ReturnType<typeof Type.Literal>,
+			...Array<ReturnType<typeof Type.Literal>>,
+		],
+		options,
+	) as TUnsafe<T[number]>
+
+const messagesSchema = Type.Array(
+	Type.Object(
+		{
 			role: nonEmptyString,
-			content: {
-				type: 'string',
-				description: 'Message text, or pass provider-native content parts via extra fields.',
-			},
+			content: Type.Union([
+				Type.String({
+					description: 'Message text.',
+				}),
+				unknownArray,
+				unknownObject,
+			]),
 		},
-		required: ['role', 'content'],
+		{
+			additionalProperties: true,
+			description: 'OpenAI-compatible chat message.',
+		},
+	),
+	{
+		description: 'OpenAI-compatible chat messages.',
+	},
+)
+
+export const zhipuChatInputSchema = Type.Object(
+	{
+		messages: messagesSchema,
+		model: Type.Optional(
+			Type.String({
+				description: 'Zhipu model id. Optional; defaults to the gateway chat model.',
+			}),
+		),
+		temperature: Type.Optional(Type.Number()),
+		max_tokens: Type.Optional(Type.Integer({ minimum: 1 })),
+		reasoning_effort: Type.Optional(
+			stringEnum(['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none']),
+		),
+	},
+	{
 		additionalProperties: true,
 	},
-}
+)
 
-export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
+export const zhipuWebSearchInputSchema = Type.Object(
+	{
+		query: nonEmptyString,
+		count: Type.Optional(
+			Type.Integer({
+				minimum: 1,
+				maximum: 50,
+				description: 'Result count. Default provider behavior, max 50.',
+			}),
+		),
+		engine: Type.Optional(
+			stringEnum(['search-std', 'search-pro', 'search-prime'], {
+				description: 'Search engine. Defaults to search-std.',
+				default: 'search-std',
+			}),
+		),
+		intent: Type.Optional(
+			Type.Boolean({
+				description: 'Whether Zhipu should infer search intent. Defaults to true.',
+				default: true,
+			}),
+		),
+		domain: Type.Optional(Type.String({ minLength: 1, description: 'Optional domain filter.' })),
+		recency: Type.Optional(stringEnum(['oneDay', 'oneWeek', 'oneMonth', 'oneYear', 'noLimit'])),
+		contentSize: Type.Optional(stringEnum(['medium', 'high'])),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuReaderInputSchema = Type.Object(
+	{
+		url: nonEmptyString,
+		returnFormat: Type.Optional(stringEnum(['markdown', 'text'])),
+		timeout: Type.Optional(Type.Integer({ minimum: 1 })),
+		noCache: Type.Optional(Type.Boolean()),
+		retainImages: Type.Optional(Type.Boolean()),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuRerankInputSchema = Type.Object(
+	{
+		query: nonEmptyString,
+		documents: Type.Array(Type.String(), { minItems: 1 }),
+		model: Type.Optional(
+			Type.String({ description: 'Optional rerank model. Defaults to rerank.' }),
+		),
+		topN: Type.Optional(Type.Integer({ minimum: 1 })),
+		returnDocuments: Type.Optional(Type.Boolean()),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuEmbeddingsInputSchema = Type.Object(
+	{
+		input: Type.Union([
+			Type.String({ minLength: 1 }),
+			Type.Array(Type.String(), {
+				minItems: 1,
+				description: 'Text inputs.',
+			}),
+		]),
+		model: Type.Optional(Type.String({ description: 'Defaults to embedding-3.' })),
+		dimensions: Type.Optional(
+			Type.Union([Type.Literal(2048), Type.Literal(1024), Type.Literal(512), Type.Literal(256)]),
+		),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuModerateInputSchema = Type.Object(
+	{
+		input: Type.Unknown({
+			description: 'Text, JSON object, or JSON array content to moderate.',
+		}),
+		model: Type.Optional(Type.String({ description: 'Defaults to moderation.' })),
+	},
+	{
+		additionalProperties: true,
+	},
+)
+
+export const yiqichaFindApisInputSchema = Type.Object(
+	{
+		query: Type.String({
+			minLength: 1,
+			description:
+				'Natural-language terms, for example business profile, shareholders, legal risk, patent.',
+		}),
+		limit: Type.Optional(
+			Type.Integer({ minimum: 1, maximum: 200, description: 'Default 20, max 200.' }),
+		),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const yiqichaDescribeApiInputSchema = Type.Object(
+	{
+		api: Type.String({
+			minLength: 1,
+			description: 'Semantic API key returned by yiqicha.find_apis, such as getBasicInfo.',
+		}),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const yiqichaCallApiInputSchema = Type.Object(
+	{
+		api: nonEmptyString,
+		params: Type.Object(
+			{},
+			{
+				additionalProperties: true,
+				description: 'API parameters matching yiqicha.describe_api.',
+			},
+		),
+		noCache: Type.Optional(
+			Type.Boolean({
+				description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
+			}),
+		),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+const enterpriseProfileInclude = stringEnum([
+	'basicInfo',
+	'shareholders',
+	'investments',
+	'branches',
+	'changeRecords',
+	'contacts',
+])
+
+const enterpriseRiskInclude = stringEnum([
+	'abnormalOperations',
+	'seriousIllegalRecords',
+	'stockPledges',
+	'administrativePenalties',
+	'chattelMortgages',
+	'liquidationRisks',
+])
+
+const enterpriseLegalInclude = stringEnum([
+	'enforcementCases',
+	'dishonestExecutions',
+	'courtAnnouncements',
+	'judgmentDocuments',
+	'highConsumptionLimits',
+	'bankruptcyReorganizations',
+])
+
+const enterprisePageSize = Type.Optional(
+	Type.Integer({
+		minimum: 1,
+		default: 50,
+		description: 'Default 50. Values above 50 are clamped to 50.',
+	}),
+)
+const yiqichaNoCache = Type.Optional(
+	Type.Boolean({
+		description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
+	}),
+)
+
+export const yiqichaEnterpriseProfileInputSchema = Type.Object(
+	{
+		keyword: nonEmptyString,
+		include: Type.Optional(Type.Array(enterpriseProfileInclude, { minItems: 1 })),
+		pageSize: enterprisePageSize,
+		noCache: yiqichaNoCache,
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const yiqichaEnterpriseRiskInputSchema = Type.Object(
+	{
+		keyword: nonEmptyString,
+		include: Type.Optional(Type.Array(enterpriseRiskInclude, { minItems: 1 })),
+		pageSize: enterprisePageSize,
+		noCache: yiqichaNoCache,
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const yiqichaEnterpriseLegalInputSchema = Type.Object(
+	{
+		keyword: nonEmptyString,
+		include: Type.Optional(Type.Array(enterpriseLegalInclude, { minItems: 1 })),
+		pageSize: enterprisePageSize,
+		noCache: yiqichaNoCache,
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const externalGatewayToolSchemas = {
+	'zhipu.chat': zhipuChatInputSchema,
+	'zhipu.web_search': zhipuWebSearchInputSchema,
+	'zhipu.reader': zhipuReaderInputSchema,
+	'zhipu.rerank': zhipuRerankInputSchema,
+	'zhipu.embeddings': zhipuEmbeddingsInputSchema,
+	'zhipu.moderate': zhipuModerateInputSchema,
+	'yiqicha.find_apis': yiqichaFindApisInputSchema,
+	'yiqicha.describe_api': yiqichaDescribeApiInputSchema,
+	'yiqicha.call_api': yiqichaCallApiInputSchema,
+	'yiqicha.enterprise_profile': yiqichaEnterpriseProfileInputSchema,
+	'yiqicha.enterprise_risk': yiqichaEnterpriseRiskInputSchema,
+	'yiqicha.enterprise_legal': yiqichaEnterpriseLegalInputSchema,
+} as const satisfies Record<ExternalGatewayToolName, TSchema>
+
+const externalGatewayToolDefinitions = [
 	{
 		name: 'zhipu.chat',
 		provider: 'zhipu',
 		title: 'Zhipu chat completion',
 		description:
 			'Call Zhipu chat completions with OpenAI-compatible messages. Omit model for the gateway default.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				messages: messagesSchema,
-				model: {
-					type: 'string',
-					description: 'Zhipu model id. Optional; defaults to the gateway chat model.',
-				},
-				temperature: { type: 'number' },
-				max_tokens: { type: 'integer' },
-				reasoning_effort: {
-					type: 'string',
-					enum: ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'none'],
-				},
-			},
-			required: ['messages'],
-			additionalProperties: true,
-		},
+		inputSchema: zhipuChatInputSchema,
 	},
 	{
 		name: 'zhipu.web_search',
@@ -107,104 +372,35 @@ export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
 		title: 'Zhipu web search',
 		description:
 			'Search the web through Zhipu. Use this for current facts, news, and source discovery.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				query: nonEmptyString,
-				count: { type: 'integer', description: 'Result count. Default provider behavior, max 50.' },
-				engine: {
-					type: 'string',
-					description: 'Search engine. Defaults to search-std.',
-					enum: ['search-std', 'search-pro', 'search-prime'],
-				},
-				intent: {
-					type: 'boolean',
-					description: 'Whether Zhipu should infer search intent. Defaults to true.',
-				},
-				domain: { type: 'string', description: 'Optional domain filter.' },
-				recency: {
-					type: 'string',
-					enum: ['oneDay', 'oneWeek', 'oneMonth', 'oneYear', 'noLimit'],
-				},
-				contentSize: { type: 'string', enum: ['medium', 'high'] },
-			},
-			required: ['query'],
-			additionalProperties: false,
-		},
+		inputSchema: zhipuWebSearchInputSchema,
 	},
 	{
 		name: 'zhipu.reader',
 		provider: 'zhipu',
 		title: 'Zhipu URL reader',
 		description: 'Extract readable content from a URL. Prefer returnFormat markdown for agents.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				url: nonEmptyString,
-				returnFormat: { type: 'string', enum: ['markdown', 'text'] },
-				timeout: { type: 'integer' },
-				noCache: { type: 'boolean' },
-				retainImages: { type: 'boolean' },
-			},
-			required: ['url'],
-			additionalProperties: false,
-		},
+		inputSchema: zhipuReaderInputSchema,
 	},
 	{
 		name: 'zhipu.rerank',
 		provider: 'zhipu',
 		title: 'Zhipu rerank',
 		description: 'Rank candidate documents by relevance to a query.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				query: nonEmptyString,
-				documents: stringArray,
-				model: { type: 'string', description: 'Optional rerank model. Defaults to rerank.' },
-				topN: { type: 'integer' },
-				returnDocuments: { type: 'boolean' },
-			},
-			required: ['query', 'documents'],
-			additionalProperties: false,
-		},
+		inputSchema: zhipuRerankInputSchema,
 	},
 	{
 		name: 'zhipu.embeddings',
 		provider: 'zhipu',
 		title: 'Zhipu embeddings',
 		description: 'Create embeddings for one string or a list of strings.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				input: {
-					type: 'array',
-					description: 'Text inputs. A single string is also accepted by the dispatcher.',
-					items: { type: 'string' },
-				},
-				model: { type: 'string', description: 'Defaults to embedding-3.' },
-				dimensions: { type: 'integer', enum: [2048, 1024, 512, 256] },
-			},
-			required: ['input'],
-			additionalProperties: false,
-		},
+		inputSchema: zhipuEmbeddingsInputSchema,
 	},
 	{
 		name: 'zhipu.moderate',
 		provider: 'zhipu',
 		title: 'Zhipu moderation',
 		description: 'Classify text or JSON content with Zhipu moderation.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				input: {
-					type: 'string',
-					description: 'Text to moderate. Provider-native object/array input is also accepted.',
-				},
-				model: { type: 'string', description: 'Defaults to moderation.' },
-			},
-			required: ['input'],
-			additionalProperties: true,
-		},
+		inputSchema: zhipuModerateInputSchema,
 	},
 	{
 		name: 'yiqicha.find_apis',
@@ -212,59 +408,23 @@ export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
 		title: 'Find YiQiCha APIs',
 		description:
 			'Search YiQiCha capabilities by business intent. Use before yiqicha.call_api for uncommon data.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				query: {
-					type: 'string',
-					description: 'Natural-language terms, for example 工商照面, 股东, 司法风险, 专利.',
-				},
-				limit: { type: 'integer', description: 'Default 20, max 200.' },
-			},
-			required: ['query'],
-			additionalProperties: false,
-		},
+		inputSchema: yiqichaFindApisInputSchema,
 	},
 	{
 		name: 'yiqicha.describe_api',
 		provider: 'yiqicha',
 		title: 'Describe YiQiCha API',
-		description: 'Return request parameters and response examples for one semantic YiQiCha API key.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				api: {
-					type: 'string',
-					description: 'Semantic API key returned by yiqicha.find_apis, such as getBasicInfo.',
-				},
-			},
-			required: ['api'],
-			additionalProperties: false,
-		},
+		description:
+			'Return request parameters and response examples for one semantic YiQiCha API key.',
+		inputSchema: yiqichaDescribeApiInputSchema,
 	},
 	{
 		name: 'yiqicha.call_api',
 		provider: 'yiqicha',
 		title: 'Call YiQiCha API',
 		description:
-			'Call one YiQiCha API by semantic key. Prefer enterprise_* tools for common company workflows.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				api: nonEmptyString,
-				params: {
-					type: 'object',
-					description: 'API parameters matching yiqicha.describe_api.',
-					additionalProperties: true,
-				},
-				noCache: {
-					type: 'boolean',
-					description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
-				},
-			},
-			required: ['api', 'params'],
-			additionalProperties: false,
-		},
+			'Call one YiQiCha API by semantic key. Paginated APIs default to page 1 and pageSize 50.',
+		inputSchema: yiqichaCallApiInputSchema,
 	},
 	{
 		name: 'yiqicha.enterprise_profile',
@@ -272,26 +432,7 @@ export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
 		title: 'YiQiCha enterprise profile',
 		description:
 			'Fetch a company profile bundle: basic info, shareholders, investments, branches, changes, contacts.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				keyword: nonEmptyString,
-				include: {
-					type: 'array',
-					items: {
-						type: 'string',
-						enum: ['basicInfo', 'shareholders', 'investments', 'branches', 'changeRecords', 'contacts'],
-					},
-				},
-				pageSize: { type: 'integer', description: 'Default 5, max 20.' },
-				noCache: {
-					type: 'boolean',
-					description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
-				},
-			},
-			required: ['keyword'],
-			additionalProperties: false,
-		},
+		inputSchema: yiqichaEnterpriseProfileInputSchema,
 	},
 	{
 		name: 'yiqicha.enterprise_risk',
@@ -299,33 +440,7 @@ export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
 		title: 'YiQiCha enterprise risk',
 		description:
 			'Fetch company risk signals: abnormal operations, serious illegal records, pledges, penalties, mortgages, liquidation.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				keyword: nonEmptyString,
-				include: {
-					type: 'array',
-					items: {
-						type: 'string',
-						enum: [
-							'abnormalOperations',
-							'seriousIllegalRecords',
-							'stockPledges',
-							'administrativePenalties',
-							'chattelMortgages',
-							'liquidationRisks',
-						],
-					},
-				},
-				pageSize: { type: 'integer', description: 'Default 5, max 20.' },
-				noCache: {
-					type: 'boolean',
-					description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
-				},
-			},
-			required: ['keyword'],
-			additionalProperties: false,
-		},
+		inputSchema: yiqichaEnterpriseRiskInputSchema,
 	},
 	{
 		name: 'yiqicha.enterprise_legal',
@@ -333,46 +448,34 @@ export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] = [
 		title: 'YiQiCha enterprise legal',
 		description:
 			'Fetch company legal signals: enforcement, dishonest executions, announcements, judgments, limits, bankruptcy.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				keyword: nonEmptyString,
-				include: {
-					type: 'array',
-					items: {
-						type: 'string',
-						enum: [
-							'enforcementCases',
-							'dishonestExecutions',
-							'courtAnnouncements',
-							'judgmentDocuments',
-							'highConsumptionLimits',
-							'bankruptcyReorganizations',
-						],
-					},
-				},
-				pageSize: { type: 'integer', description: 'Default 5, max 20.' },
-				noCache: {
-					type: 'boolean',
-					description: 'Bypass stored YiQiCha response cache and refresh from upstream.',
-				},
-			},
-			required: ['keyword'],
-			additionalProperties: false,
-		},
+		inputSchema: yiqichaEnterpriseLegalInputSchema,
 	},
-]
+] as const
+
+export const EXTERNAL_GATEWAY_TOOL_SPECS: readonly ExternalGatewayToolSpec[] =
+	externalGatewayToolDefinitions.map((tool) => ({
+		name: tool.name,
+		provider: tool.provider,
+		title: tool.title,
+		description: tool.description,
+		inputSchema: toJsonSchema(tool.inputSchema),
+	}))
 
 export function listExternalGatewayToolSpecs(
 	input: ExternalGatewayToolListInput = {},
 ): ExternalGatewayToolSpec[] {
 	const names = input.names?.length ? new Set(input.names) : undefined
 	return EXTERNAL_GATEWAY_TOOL_SPECS.filter(
-		(tool) => (!input.provider || tool.provider === input.provider) && (!names || names.has(tool.name)),
+		(tool) =>
+			(!input.provider || tool.provider === input.provider) && (!names || names.has(tool.name)),
 	).map((tool) => ({
 		...tool,
 		inputSchema: structuredClone(tool.inputSchema),
 	}))
+}
+
+export function inputSchemaForExternalGatewayTool(name: string): TSchema {
+	return externalGatewayToolSchemas[requireExternalGatewayToolName(name)]
 }
 
 export function requireExternalGatewayToolName(name: string): ExternalGatewayToolName {
@@ -380,4 +483,8 @@ export function requireExternalGatewayToolName(name: string): ExternalGatewayToo
 		return name as ExternalGatewayToolName
 	}
 	throw new Error(`Unknown gateway tool: ${name}`)
+}
+
+function toJsonSchema(schema: TSchema): ExternalGatewayJsonSchema {
+	return JSON.parse(JSON.stringify(schema)) as ExternalGatewayJsonSchema
 }

@@ -105,6 +105,7 @@ function apiSelectLabel(api: YiqichaApi): string {
 }
 
 const DEFAULT_API_CODE = '1000'
+const DEFAULT_PAGE_SIZE = 50
 const API_OPTIONS = yiqichaCatalog.apis.map((api) => ({
 	value: api.apiCode,
 	label: apiSelectLabel(api),
@@ -543,12 +544,17 @@ function defaultParamsJson(api: YiqichaApi | undefined, keyword: string): string
 		params[param.name] = defaultParamValue(param.name, param.type, keyword)
 	}
 	if (!('keyword' in params) && api?.requestJson.includes('"keyword"')) params.keyword = keyword
-	if (api?.apiCode === DEFAULT_API_CODE) params.pageSize = 10
+	if (api?.requestJson.includes('"page"') && !('page' in params)) params.page = 1
+	if (api?.requestJson.includes('"pageSize"') && !('pageSize' in params)) {
+		params.pageSize = DEFAULT_PAGE_SIZE
+	}
 	return JSON.stringify(params, null, 2)
 }
 
 function defaultParamValue(name: string, type: string | undefined, keyword: string): unknown {
 	if (name === 'keyword') return keyword
+	if (name === 'page') return 1
+	if (name === 'pageSize') return DEFAULT_PAGE_SIZE
 	const normalized = type?.toLowerCase()
 	if (normalized?.includes('int') || normalized?.includes('number')) return 1
 	if (normalized?.includes('bool')) return false

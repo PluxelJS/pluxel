@@ -27,13 +27,34 @@ describe('external gateway tool contract', () => {
 		expect(selected.map((spec) => spec.name)).toEqual(['yiqicha.enterprise_profile'])
 
 		selected[0].inputSchema.required = []
-		expect(listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema.required).toEqual([
-			'keyword',
-		])
+		expect(
+			listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema
+				.required,
+		).toEqual(['keyword'])
 		selected[0].inputSchema.properties = {}
 		expect(
-			Object.keys(listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema.properties ?? {}),
+			Object.keys(
+				listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema
+					.properties ?? {},
+			),
 		).toContain('keyword')
+	})
+
+	it('publishes TypeBox-derived JSON schemas with useful constraints', () => {
+		const webSearch = listExternalGatewayToolSpecs({ names: ['zhipu.web_search'] })[0]
+		const webSearchProperties = webSearch.inputSchema.properties as Record<
+			string,
+			Record<string, unknown>
+		>
+		expect(webSearchProperties.query.minLength).toBe(1)
+		expect(webSearchProperties.count.maximum).toBe(50)
+
+		const embeddings = listExternalGatewayToolSpecs({ names: ['zhipu.embeddings'] })[0]
+		const embeddingsProperties = embeddings.inputSchema.properties as Record<
+			string,
+			Record<string, unknown>
+		>
+		expect(embeddingsProperties.input.anyOf).toHaveLength(2)
 	})
 
 	it('rejects unknown tool names before dispatch', () => {
@@ -112,6 +133,52 @@ describe('external gateway tool contract', () => {
 		])
 	})
 
+	it('exposes typed provider wrappers for coding callers', async () => {
+		const calls: unknown[] = []
+		const pi = new PiExtension({
+			token: 'token-123',
+			rpcUrl: 'http://gateway.test/rpc',
+			billing: 'pi-user',
+			transport: {
+				authenticate() {
+					return {
+						whoami() {
+							return { tokenId: 'pi-token', name: 'PI token' }
+						},
+						async toolSpecs(input) {
+							return listExternalGatewayToolSpecs(input)
+						},
+						async callTool(input) {
+							calls.push(input)
+							return { ok: true }
+						},
+					}
+				},
+			},
+		})
+
+		await expect(pi.zhipu.webSearch({ query: 'GLM', count: 3 })).resolves.toEqual({ ok: true })
+		await expect(
+			pi.yiqicha.enterpriseProfile({
+				keyword: '智谱',
+				include: ['basicInfo'],
+			}),
+		).resolves.toEqual({ ok: true })
+
+		expect(calls).toEqual([
+			{
+				name: 'zhipu.web_search',
+				args: { query: 'GLM', count: 3 },
+				billing: 'pi-user',
+			},
+			{
+				name: 'yiqicha.enterprise_profile',
+				args: { keyword: '智谱', include: ['basicInfo'] },
+				billing: 'pi-user',
+			},
+		])
+	})
+
 	it('reports RPC health failures without throwing', async () => {
 		const pi = new PiExtension({
 			token: 'token-123',
@@ -171,6 +238,18 @@ describe('external gateway tool dispatcher', () => {
 				},
 			},
 		])
+	})
+
+	it('validates tool args against the published schema before dispatch', async () => {
+		const host = createHost()
+
+		await expect(
+			callExternalGatewayTool(host, billingContext(), 'zhipu.web_search', {
+				query: 'GLM',
+				unexpected: true,
+			}),
+		).rejects.toThrow('Invalid args for zhipu.web_search')
+		expect(host.calls).toEqual([])
 	})
 
 	it('normalizes yiqicha.call_api params for provider-safe primitive values', async () => {
@@ -247,7 +326,26 @@ describe('external gateway tool dispatcher', () => {
 				provider: 'yiqicha',
 				operation: 'contractDetailEnterpriseList',
 				billing,
-				params: { keyword: '智谱', page: 1, pageSize: 20 },
+				params: { keyword: '智谱', page: 1, pageSize: 50 },
+			},
+		])
+	})
+
+	it('defaults paginated YiQiCha enterprise calls to pageSize 50', async () => {
+		const host = createHost()
+		const billing = billingContext()
+
+		await callExternalGatewayTool(host, billing, 'yiqicha.enterprise_risk', {
+			keyword: '智谱',
+			include: ['abnormalOperations'],
+		})
+
+		expect(host.calls).toEqual([
+			{
+				provider: 'yiqicha',
+				operation: 'entAbnormalList1031',
+				billing,
+				params: { keyword: '智谱', page: 1, pageSize: 50 },
 			},
 		])
 	})
@@ -308,7 +406,13 @@ function createHost(): ExternalGatewayToolHost & { calls: unknown[] } {
 				}
 			},
 			async gatewayCallApi(billing, api, params, options) {
-				calls.push({ provider: 'yiqicha', operation: api, billing, params, ...(options ? { options } : {}) })
+				calls.push({
+					provider: 'yiqicha',
+					operation: api,
+					billing,
+					params,
+					...(options ? { options } : {}),
+				})
 				return { ok: true, api }
 			},
 		},
