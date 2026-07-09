@@ -2,40 +2,86 @@
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 6px;
+	gap: 5px;
 	height: 100%;
 	min-height: 0;
 	min-width: 0;
 }
 
-.plx-pluginCatalog__toolbar {
+.plx-pluginCatalog__header {
+	align-items: flex-start;
+	border-bottom: 1px solid var(--plx-border);
 	display: flex;
-	flex-direction: column;
-	gap: 6px;
-}
-
-.plx-pluginCatalog__metaBar {
-	align-items: center;
-	color: var(--plx-text-muted);
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px 10px;
+	gap: 8px;
 	justify-content: space-between;
-	min-height: 22px;
-	padding-inline: 2px;
+	margin: -4px -4px 0;
+	min-width: 0;
+	padding: 6px 6px 5px;
 }
 
-.plx-pluginCatalog__metaGroup,
-.plx-pluginCatalog__shortcutGroup {
+.plx-pluginCatalog__titleBlock {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__titleLine {
 	align-items: center;
-	display: inline-flex;
+	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
 	min-width: 0;
 }
 
-.plx-pluginCatalog__metaPill,
-.plx-pluginCatalog__shortcut {
+.plx-pluginCatalog__headerActions {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 4px;
+}
+
+.plx-pluginCatalog__helpButton {
+	align-items: center;
+	background: color-mix(in srgb, var(--plx-surface-muted) 84%, transparent);
+	border: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	font-size: 10px;
+	font-weight: 700;
+	gap: 4px;
+	height: 22px;
+	line-height: 1;
+	padding: 0 7px;
+	white-space: nowrap;
+}
+
+.plx-pluginCatalog__helpButton:hover,
+.plx-pluginCatalog__helpButton:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-pluginCatalog__toolbar {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.plx-pluginCatalog__metaGroup {
+	align-items: center;
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	min-width: 0;
+}
+
+.plx-pluginCatalog__metaPill {
 	align-items: center;
 	background: color-mix(in srgb, var(--plx-surface-muted) 84%, transparent);
 	border: 1px solid color-mix(in srgb, var(--plx-border) 76%, transparent);
@@ -44,27 +90,15 @@
 	display: inline-flex;
 	font-size: 10px;
 	font-weight: 600;
-	gap: 6px;
+	gap: 4px;
 	line-height: 1;
-	padding: 4px 8px;
+	padding: 3px 7px;
 	white-space: nowrap;
 }
 
 .plx-pluginCatalog__metaPill strong {
 	color: var(--plx-text);
 	font-weight: 700;
-}
-
-.plx-pluginCatalog__shortcutKey {
-	background: color-mix(in srgb, var(--plx-surface-strong) 88%, transparent);
-	border: 1px solid color-mix(in srgb, var(--plx-border-strong) 82%, transparent);
-	border-radius: 999px;
-	color: var(--plx-text);
-	font-size: 9px;
-	font-weight: 700;
-	letter-spacing: 0.03em;
-	line-height: 1;
-	padding: 3px 6px;
 }
 
 .plx-pluginCatalog__body {

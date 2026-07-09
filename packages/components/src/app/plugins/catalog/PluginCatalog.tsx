@@ -25,7 +25,13 @@
  */
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
-import { IconCornerUpLeft, IconPlugConnected, IconSearchOff } from '@tabler/icons-react'
+import {
+	IconChevronLeft,
+	IconCornerUpLeft,
+	IconKeyboard,
+	IconPlugConnected,
+	IconSearchOff,
+} from '@tabler/icons-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import type { JSX } from 'react/jsx-runtime'
 import { PluginOrganizer } from './organizer/PluginOrganizer'
@@ -64,6 +70,7 @@ import { CatalogHelpModal } from './components/CatalogHelpModal'
 import { SearchBar } from './components/SearchBar'
 
 interface PluginCatalogProps {
+	onCollapse?: () => void
 	pluginName?: string
 	onItemSelect?: () => void
 }
@@ -78,7 +85,7 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 }
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
 
-export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
+export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginName }) => {
 	const transport = useRuntimeTransportClient()
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
@@ -241,25 +248,25 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 		pendingCommitRef.current = null
 		const task = transport
 			.withRpc((rpc) => rpc.updatePluginGroups(pending))
-				.then((result): undefined => {
-					const nextGroups = Array.isArray(result) ? result : pending
-					lastSyncedRef.current = cloneGroups(nextGroups)
-					setDraftGroups(null)
-					setPluginOverviewGroups(nextGroups)
-					invalidate({ topic: 'plugin-groups', reason: 'rpc' })
-					return undefined
-				})
-				.catch((error: unknown): void => {
-					const message =
-						error && typeof error === 'object' && 'message' in error
-							? String((error as { message?: unknown }).message ?? '分组同步失败，请稍后重试。')
-							: '分组同步失败，请稍后重试。'
-					notify({ title: '同步失败', message, color: 'red' })
-					const rollback = cloneGroups(lastSyncedRef.current)
-					setDraftGroups(rollback)
-					setPluginOverviewGroups(rollback)
-					setOrganizerResetToken((n) => n + 1)
-				})
+			.then((result): undefined => {
+				const nextGroups = Array.isArray(result) ? result : pending
+				lastSyncedRef.current = cloneGroups(nextGroups)
+				setDraftGroups(null)
+				setPluginOverviewGroups(nextGroups)
+				invalidate({ topic: 'plugin-groups', reason: 'rpc' })
+				return undefined
+			})
+			.catch((error: unknown): void => {
+				const message =
+					error && typeof error === 'object' && 'message' in error
+						? String((error as { message?: unknown }).message ?? '分组同步失败，请稍后重试。')
+						: '分组同步失败，请稍后重试。'
+				notify({ title: '同步失败', message, color: 'red' })
+				const rollback = cloneGroups(lastSyncedRef.current)
+				setDraftGroups(rollback)
+				setPluginOverviewGroups(rollback)
+				setOrganizerResetToken((n) => n + 1)
+			})
 			.finally(() => {
 				inflightCommitRef.current = null
 				if (queuedCommitRef.current || pendingCommitRef.current) {
@@ -478,6 +485,56 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 
 	return (
 		<Stack className="plx-pluginCatalog" w="100%">
+			<div className="plx-pluginCatalog__header">
+				<div className="plx-pluginCatalog__titleBlock">
+					<div className="plx-pluginCatalog__titleLine">
+						<span className="plx-workbench__eyebrow">Plugins</span>
+						<span className="plx-workbench__title">插件导览</span>
+						<div className="plx-pluginCatalog__metaGroup" aria-live="polite">
+							<Box component="span" className="plx-pluginCatalog__metaPill">
+								总数 <strong>{overview.total}</strong>
+							</Box>
+							<Box component="span" className="plx-pluginCatalog__metaPill">
+								运行 <strong>{overview.running}</strong>
+							</Box>
+							<Box component="span" className="plx-pluginCatalog__metaPill">
+								禁用 <strong>{overview.disabled}</strong>
+							</Box>
+							{selectedIds.length > 0 ? (
+								<Box component="span" className="plx-pluginCatalog__metaPill">
+									已选 <strong>{selectedIds.length}</strong>
+								</Box>
+							) : null}
+							{hasActiveFilters ? (
+								<Box component="span" className="plx-pluginCatalog__metaPill">
+									筛选 <strong>{filterQuery ? '搜索' : '状态'}</strong>
+								</Box>
+							) : null}
+						</div>
+					</div>
+				</div>
+				<div className="plx-pluginCatalog__headerActions">
+					<button
+						type="button"
+						className="plx-pluginCatalog__helpButton"
+						onClick={() => setHelpOpened(true)}
+						title="F1 / ? 打开快捷键和搜索语法"
+					>
+						<IconKeyboard size={13} stroke={1.8} />
+						<span>F1</span>
+					</button>
+					{onCollapse ? (
+						<button
+							type="button"
+							className="plx-workbench__iconButton"
+							aria-label="收起插件列表"
+							onClick={onCollapse}
+						>
+							<IconChevronLeft size={16} stroke={1.8} />
+						</button>
+					) : null}
+				</div>
+			</div>
 			<div className="plx-pluginCatalog__toolbar">
 				<SearchBar
 					value={search}
@@ -486,49 +543,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ pluginName }) => {
 					statusFilter={statusFilter}
 					onToggleStatus={toggleStatusFilter}
 					onResetFilters={resetFilters}
-					onOpenHelp={() => setHelpOpened(true)}
 					hasActiveFilters={hasActiveFilters}
 				/>
-				<div className="plx-pluginCatalog__metaBar" aria-live="polite">
-					<div className="plx-pluginCatalog__metaGroup">
-						<Box component="span" className="plx-pluginCatalog__metaPill">
-							总数 <strong>{overview.total}</strong>
-						</Box>
-						<Box component="span" className="plx-pluginCatalog__metaPill">
-							运行 <strong>{overview.running}</strong>
-						</Box>
-						<Box component="span" className="plx-pluginCatalog__metaPill">
-							禁用 <strong>{overview.disabled}</strong>
-						</Box>
-						{selectedIds.length > 0 ? (
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								已选 <strong>{selectedIds.length}</strong>
-							</Box>
-						) : null}
-						{hasActiveFilters ? (
-							<Box component="span" className="plx-pluginCatalog__metaPill">
-								筛选 <strong>{filterQuery ? '搜索' : '状态'}</strong>
-							</Box>
-						) : null}
-					</div>
-					<div className="plx-pluginCatalog__shortcutGroup" aria-hidden>
-						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">/</span> 搜索
-						</span>
-						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">Alt+1/2/3</span> 状态
-						</span>
-						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">↑↓</span> 浏览
-						</span>
-						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">Enter</span> 打开
-						</span>
-						<span className="plx-pluginCatalog__shortcut">
-							<span className="plx-pluginCatalog__shortcutKey">⌘Enter</span> 新开
-						</span>
-					</div>
-				</div>
 			</div>
 
 			{selectedIds.length > 0 ? (

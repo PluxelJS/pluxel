@@ -1,6 +1,12 @@
 packages:
   - packages/*
   - packages/plugins/*
+  - vendor/gqlens/packages/codegen
+  - vendor/gqlens/packages/core
+  - vendor/gqlens/packages/react
+  - vendor/gqlens/packages/vite
+  - vendor/split-like-vscode/packages/core
+  - vendor/split-like-vscode/packages/react
   - projects/*
   - projects/*/packages/*
 

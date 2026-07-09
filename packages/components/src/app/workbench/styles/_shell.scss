@@ -415,10 +415,10 @@
 .plx-workbench__surface,
 .plx-workbench__panelGroup,
 .plx-workbench__navigationBody,
-	.plx-workbench__navigationBody > *,
-	.plx-workbench__workspace,
-	.plx-workbench__workspaceContent,
-	.plx-workbench__workspaceContent > * {
+.plx-workbench__navigationBody > *,
+.plx-workbench__workspace,
+.plx-workbench__workspaceContent,
+.plx-workbench__workspaceContent > * {
 	display: flex;
 	flex: 1;
 	min-height: 0;
@@ -460,20 +460,21 @@
 
 .plx-workbench__navigationBody {
 	overflow: hidden;
-	padding: 6px;
+	padding: 4px;
 }
 
 .plx-workbench__resizeHandle {
-	--separator-border: color-mix(in srgb, var(--plx-border) 88%, transparent);
-	--focus-border: var(--plx-accent);
-	--sash-size: 10px;
-	--sash-hover-size: 2px;
+	--worksplit-sash-hit: color-mix(in srgb, var(--plx-accent) 78%, transparent);
 	background: transparent;
 	flex: 1;
 	min-height: 0;
 	min-width: 0;
 	position: relative;
 	width: 100%;
+}
+
+.plx-workbench__resizeHandle .worksplit-sash::after {
+	background: color-mix(in srgb, var(--plx-accent) 72%, transparent);
 }
 
 .plx-workbench__workspace {

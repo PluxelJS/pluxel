@@ -6,7 +6,6 @@ import {
 	IconPlayerStop,
 	IconSearch,
 	IconX,
-	IconQuestionMark,
 } from '@tabler/icons-react'
 import type React from 'react'
 import type { StatusFilterState } from '../filterModel'
@@ -18,7 +17,6 @@ type Props = {
 	statusFilter: StatusFilterState
 	onToggleStatus: (key: keyof StatusFilterState) => void
 	onResetFilters: () => void
-	onOpenHelp: () => void
 	hasActiveFilters: boolean
 }
 
@@ -29,7 +27,6 @@ export function SearchBar({
 	statusFilter,
 	onToggleStatus,
 	onResetFilters,
-	onOpenHelp,
 	hasActiveFilters,
 }: Props) {
 	const clearBtn = value ? (
@@ -41,15 +38,6 @@ export function SearchBar({
 	const rightSection = (
 		<Group gap={2} wrap="nowrap">
 			{clearBtn}
-			<ActionIcon
-				size="sm"
-				variant="subtle"
-				onClick={onOpenHelp}
-				title="查看快捷键和搜索语法"
-				aria-label="查看帮助"
-			>
-				<IconQuestionMark size={12} />
-			</ActionIcon>
 			{hasActiveFilters ? (
 				<ActionIcon
 					size="sm"
@@ -106,7 +94,7 @@ export function SearchBar({
 			leftSection={<IconSearch size={14} />}
 			leftSectionPointerEvents="none"
 			rightSection={rightSection}
-			rightSectionWidth={hasActiveFilters ? 176 : clearBtn ? 144 : 120}
+			rightSectionWidth={hasActiveFilters ? 148 : clearBtn ? 116 : 92}
 			rightSectionPointerEvents="auto"
 			size="sm"
 			variant="default"

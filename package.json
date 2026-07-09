@@ -23,7 +23,8 @@
 		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
-		"generate:gqlens": "node scripts/generate-gqlens.ts",
+		"build:gqlens": "pnpm --filter @gqlens/core build && pnpm --filter @gqlens/react build && pnpm --filter @gqlens/codegen build && pnpm --filter @gqlens/vite build",
+		"generate:gqlens": "pnpm run build:gqlens && node scripts/generate-gqlens.ts",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
 		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static",
 		"plugin-host:static:direct": "pnpm --filter @pluxel/plugins-host static:direct",
@@ -40,7 +41,8 @@
 		"react-dom": "^19.2.7"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "^0.2.0",
+		"@gqlens/codegen": "workspace:*",
+		"@gqlens/vite": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",

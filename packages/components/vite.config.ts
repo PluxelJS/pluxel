@@ -7,6 +7,8 @@ import {
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
 } from '@pluxel/rolldown/workspace/vite'
+// Vite externalizes config dependencies before project resolve.conditions apply.
+// Use the GQLens workspace source here; app/runtime imports still use package conditions.
 import { gqlens } from '@gqlens/vite'
 import { createWorkbenchFrontendPlugins } from './vite/plugins'
 
@@ -23,6 +25,7 @@ const MANTINE_SASS_ENTRY = fileURLToPath(
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
 	const resolveConditions = buildPluxelFrontendResolveConditions(mode)
+	const developmentResolveConditions = ['development', ...resolveConditions]
 
 	return {
 		server: {
@@ -35,7 +38,7 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		resolve: {
-			conditions: resolveConditions,
+			conditions: developmentResolveConditions,
 			dedupe: [...PLUXEL_UI_DEDUPE_PACKAGES],
 			alias: {
 				// Workspace frontend should always consume current source, not stale package dist output.
@@ -47,7 +50,7 @@ export default defineConfig(({ mode }) => {
 		},
 		ssr: {
 			resolve: {
-				conditions: resolveConditions,
+				conditions: developmentResolveConditions,
 			},
 		},
 

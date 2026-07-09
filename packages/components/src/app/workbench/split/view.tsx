@@ -1,5 +1,5 @@
-import { Allotment, type AllotmentHandle } from 'allotment'
-import 'allotment/dist/style.css'
+import { Pane, SplitView, type SplitViewHandle as WorksplitHandle } from '@worksplit/react'
+import '@worksplit/react/style.css'
 import {
 	forwardRef,
 	useEffect,
@@ -49,8 +49,8 @@ export type WorkbenchSplitViewProps = {
 	separatorClassName?: string
 }
 
-function toPanelSize(size: number) {
-	return `${size}%`
+function toPanelSize(size: number): `${number}%` {
+	return `${size}%` as `${number}%`
 }
 
 function joinClasses(...values: Array<string | undefined>) {
@@ -63,23 +63,25 @@ function toPercentLayout(
 	axisSize: number,
 	currentLayout: SplitViewLayout,
 ) {
-	return panes.reduce<SplitViewLayout>((acc, pane, index) => {
-		const size = sizes[index]
-		if (typeof size === 'number' && axisSize > 0 && size > 0.5 && pane.visible !== false) {
-			acc[pane.id] = (size / axisSize) * 100
-		}
-		return acc
-	}, { ...currentLayout })
+	return panes.reduce<SplitViewLayout>(
+		(acc, pane, index) => {
+			const size = sizes[index]
+			if (typeof size === 'number' && axisSize > 0 && size > 0.5 && pane.visible !== false) {
+				acc[pane.id] = (size / axisSize) * 100
+			}
+			return acc
+		},
+		{ ...currentLayout },
+	)
 }
 
 function toPixelSizes(paneIds: string[], layout: SplitViewLayout, axisSize: number) {
-	return paneIds.map((paneId) => ((layout[paneId] ?? 0) / 100) * axisSize)
+	return Object.fromEntries(
+		paneIds.map((paneId) => [paneId, ((layout[paneId] ?? 0) / 100) * axisSize]),
+	)
 }
 
-function resolveAxisSize(
-	host: HTMLDivElement,
-	orientation: 'horizontal' | 'vertical',
-) {
+function resolveAxisSize(host: HTMLDivElement, orientation: 'horizontal' | 'vertical') {
 	return orientation === 'vertical' ? host.clientHeight : host.clientWidth
 }
 
@@ -126,17 +128,15 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 		},
 		ref,
 	) => {
-		const allotmentRef = useRef<AllotmentHandle | null>(null)
+		const splitRef = useRef<WorksplitHandle | null>(null)
 		const hostRef = useRef<HTMLDivElement | null>(null)
 		const layoutRef = useRef<SplitViewLayout>({ ...defaultLayout })
 		const { axisSize, axisSizeRef } = useObservedAxisSize(hostRef, orientation)
-		const panes = useMemo(() => (secondary ? [primary, secondary] : [primary]), [primary, secondary])
-		const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes])
-		const defaultSizes = useMemo(
-			() => panes.map((pane) => defaultLayout[pane.id] ?? pane.defaultSize),
-			[defaultLayout, panes],
+		const panes = useMemo(
+			() => (secondary ? [primary, secondary] : [primary]),
+			[primary, secondary],
 		)
-
+		const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes])
 		useEffect(() => {
 			layoutRef.current = { ...defaultLayout }
 		}, [defaultLayout])
@@ -148,7 +148,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 				setLayout: (layout) => {
 					layoutRef.current = { ...layout }
 					if (axisSizeRef.current > 0) {
-						allotmentRef.current?.resize(toPixelSizes(paneIds, layout, axisSizeRef.current))
+						splitRef.current?.setPaneSizes(toPixelSizes(paneIds, layout, axisSizeRef.current))
 					}
 				},
 			}),
@@ -157,7 +157,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 
 		const handleDragEnd = useMemo(() => {
 			if (!onLayoutChanged) return undefined
-			return (sizes: number[]) => {
+			return ({ sizes }: { sizes: number[] }) => {
 				const nextLayout = toPercentLayout(
 					panes,
 					sizes,
@@ -172,15 +172,16 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 		const renderedPanes = useMemo(
 			() =>
 				panes.map((pane) => (
-					<Allotment.Pane
+					<Pane
 						key={pane.id}
+						id={pane.id}
 						minSize={axisSize > 0 ? (axisSize * pane.minSize) / 100 : undefined}
-						preferredSize={toPanelSize(pane.defaultSize)}
+						defaultSize={toPanelSize(pane.defaultSize)}
 						snap={pane.snap}
 						visible={pane.visible}
 					>
 						<div style={PANEL_STYLE}>{pane.children}</div>
-					</Allotment.Pane>
+					</Pane>
 				)),
 			[axisSize, panes],
 		)
@@ -191,20 +192,18 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 				className={joinClasses('plx-workbenchSplitView', className, separatorClassName)}
 				style={PANEL_STYLE}
 			>
-				<Allotment
-					defaultSizes={defaultSizes}
+				<SplitView
 					id={id}
-					onDragEnd={handleDragEnd}
-					proportionalLayout
-					ref={allotmentRef}
-					separator
-					onVisibleChange={(index, visible) => {
-						panes[index]?.onVisibleChange?.(visible)
+					onResizeEnd={handleDragEnd}
+					proportionalResize
+					ref={splitRef}
+					onPaneVisibilityChange={({ id: paneId, visible }) => {
+						panes.find((pane) => pane.id === paneId)?.onVisibleChange?.(visible)
 					}}
-					vertical={orientation === 'vertical'}
+					orientation={orientation}
 				>
 					{renderedPanes}
-				</Allotment>
+				</SplitView>
 			</div>
 		)
 	},

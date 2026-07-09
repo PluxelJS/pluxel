@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url'
+// Vite externalizes config dependencies before project resolve.conditions apply.
+// Use the GQLens workspace source here; app/runtime imports still use package conditions.
 import { gqlens } from '@gqlens/vite'
 // Vite loads this config before Pluxel source conditions are active, so use the
 // workspace source here to avoid running stale runtime-static dist output.

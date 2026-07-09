@@ -3,16 +3,16 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"codegen": "tsx tooling/generate-gqlens.ts",
-		"dev": "tsx tooling/generate-gqlens.ts && vite --host 127.0.0.1",
-		"build": "tsx tooling/generate-gqlens.ts && vite build",
-		"typecheck": "tsx tooling/generate-gqlens.ts && tsc --noEmit",
+		"codegen": "pnpm -w run build:gqlens && tsx tooling/generate-gqlens.ts",
+		"dev": "pnpm run codegen && vite --host 127.0.0.1",
+		"build": "pnpm run codegen && vite build",
+		"typecheck": "pnpm run codegen && tsc --noEmit",
 		"static": "tsx src/static.ts",
-		"verify": "tsx tooling/generate-gqlens.ts && tsc --noEmit && vite build"
+		"verify": "pnpm run codegen && tsc --noEmit && vite build"
 	},
 	"dependencies": {
-		"@gqlens/core": "^0.2.0",
-		"@gqlens/react": "^0.2.0",
+		"@gqlens/core": "workspace:*",
+		"@gqlens/react": "workspace:*",
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
 		"@libsql/client": "^0.17.4",
@@ -26,8 +26,8 @@
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "^0.2.0",
-		"@gqlens/vite": "^0.2.0",
+		"@gqlens/codegen": "workspace:*",
+		"@gqlens/vite": "workspace:*",
 		"@types/node": "^25.9.3",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",

@@ -3,7 +3,6 @@ import { useStore } from '@tanstack/react-store'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import {
 	IconBox,
-	IconChevronLeft,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
 	IconPlus,
@@ -251,9 +250,7 @@ function WorkbenchTopbarActions({
 			>
 				<IconPlus size={16} stroke={1.8} />
 				<span className="plx-workbench__actionLabel">新标签页</span>
-				<span className="plx-workbench__actionHint">
-					{WORKBENCH_HOTKEY_LABELS.newPluginTab}
-				</span>
+				<span className="plx-workbench__actionHint">{WORKBENCH_HOTKEY_LABELS.newPluginTab}</span>
 			</WorkbenchActionButton>
 
 			{isPluginDetail ? <WorkbenchPaneControls /> : null}
@@ -311,7 +308,11 @@ function EditorTabStrip({
 						<div className="plx-workbench__editorTabBody">
 							<span className="plx-workbench__editorTabTitle">{tab.title}</span>
 							{isDirty ? (
-								<span className="plx-workbench__editorTabDirtyDot" title="未保存更改" aria-hidden="true" />
+								<span
+									className="plx-workbench__editorTabDirtyDot"
+									title="未保存更改"
+									aria-hidden="true"
+								/>
 							) : null}
 							{tab.meta ? <span className="plx-workbench__editorTabMeta">{tab.meta}</span> : null}
 						</div>
@@ -342,23 +343,8 @@ function PluginNavigationRail({
 }) {
 	return (
 		<div className="plx-workbench__navigationRail">
-			<div className="plx-workbench__navigationHeader">
-				<div className="plx-workbench__navigationTitle">
-					<span className="plx-workbench__eyebrow">Plugins</span>
-					<span className="plx-workbench__title">插件导航</span>
-					<span className="plx-workbench__subtitle">对象选择与筛选</span>
-				</div>
-				<button
-					type="button"
-					className="plx-workbench__iconButton"
-					aria-label="收起插件列表"
-					onClick={onCollapse}
-				>
-					<IconChevronLeft size={16} stroke={1.8} />
-				</button>
-			</div>
 			<div className="plx-workbench__navigationBody">
-				<PluginCatalog pluginName={pluginName} />
+				<PluginCatalog pluginName={pluginName} onCollapse={onCollapse} />
 			</div>
 		</div>
 	)
@@ -677,7 +663,7 @@ export function WorkbenchShell() {
 		[dirtyTabs],
 	)
 	const getActiveTabState = useCallback(
-		<T = unknown>(scope: string) => {
+		<T = unknown,>(scope: string) => {
 			if (!scope) return undefined
 			return activeTabStateMap[scope] as T | undefined
 		},
