@@ -5,6 +5,8 @@ import type {
 } from '@repo/external-api-gateway-shared/gateway'
 import {
 	listExternalGatewayToolSpecs,
+	type ExternalGatewayToolBatchCallInput,
+	type ExternalGatewayToolBatchCallResult,
 	type ExternalGatewayToolCallInput,
 	type ExternalGatewayToolArgs,
 	type ExternalGatewayJsonSchema,
@@ -37,6 +39,12 @@ export type PiExtensionOptions = {
 }
 
 export type PiToolCallOptions = {
+	billing?: GatewayBillingContext | string
+}
+
+export type PiToolBatchCallRequest = {
+	name: ExternalGatewayToolName | string
+	args?: Record<string, unknown> | null
 	billing?: GatewayBillingContext | string
 }
 
@@ -86,7 +94,9 @@ export type PiPlugin = {
 		args?: Record<string, unknown>,
 		options?: PiToolCallOptions,
 	): Promise<unknown>
+	callTools(calls: PiToolBatchCallRequest[]): Promise<ExternalGatewayToolBatchCallResult>
 	handleToolCall(input: PiToolCallRequest): Promise<PiToolCallResult>
+	handleToolCalls(input: PiToolCallRequest[]): Promise<PiToolCallResult[]>
 	test(input?: ExternalGatewayToolListInput): Promise<PiExtensionHealth>
 	dispose(): void
 }
@@ -97,6 +107,7 @@ export type ExternalGatewayAuthedRpc = {
 	whoami(): Awaitable<GatewayAuthContext>
 	toolSpecs(input?: ExternalGatewayToolListInput): Awaitable<ExternalGatewayToolSpec[]>
 	callTool(input: ExternalGatewayToolCallInput): Awaitable<unknown>
+	callTools(input: ExternalGatewayToolBatchCallInput): Awaitable<ExternalGatewayToolBatchCallResult>
 }
 
 export type ExternalGatewayRpcTransport = {
@@ -128,18 +139,10 @@ export class PiExtension implements PiPlugin {
 		) => this.callTool('yiqicha.describe_api', args, options),
 		callApi: (args: ExternalGatewayToolArgs['yiqicha.call_api'], options?: PiToolCallOptions) =>
 			this.callTool('yiqicha.call_api', args, options),
-		enterpriseProfile: (
-			args: ExternalGatewayToolArgs['yiqicha.enterprise_profile'],
+		recommendBundle: (
+			args: ExternalGatewayToolArgs['yiqicha.recommend_bundle'],
 			options?: PiToolCallOptions,
-		) => this.callTool('yiqicha.enterprise_profile', args, options),
-		enterpriseRisk: (
-			args: ExternalGatewayToolArgs['yiqicha.enterprise_risk'],
-			options?: PiToolCallOptions,
-		) => this.callTool('yiqicha.enterprise_risk', args, options),
-		enterpriseLegal: (
-			args: ExternalGatewayToolArgs['yiqicha.enterprise_legal'],
-			options?: PiToolCallOptions,
-		) => this.callTool('yiqicha.enterprise_legal', args, options),
+		) => this.callTool('yiqicha.recommend_bundle', args, options),
 	}
 
 	private readonly token: string
@@ -200,6 +203,16 @@ export class PiExtension implements PiPlugin {
 		})
 	}
 
+	async callTools(calls: PiToolBatchCallRequest[]): Promise<ExternalGatewayToolBatchCallResult> {
+		return (await this.getAuthedApi()).callTools({
+			calls: calls.map((call) => ({
+				name: call.name,
+				args: call.args,
+				billing: call.billing ?? this.defaultBilling,
+			})),
+		})
+	}
+
 	async handleToolCall(input: PiToolCallRequest): Promise<PiToolCallResult> {
 		const name = toolCallName(input)
 		const result = await this.callTool(name, toolCallArgs(input), { billing: input.billing })
@@ -208,6 +221,24 @@ export class PiExtension implements PiPlugin {
 			name,
 			result,
 		}
+	}
+
+	async handleToolCalls(input: PiToolCallRequest[]): Promise<PiToolCallResult[]> {
+		const batch = await this.callTools(
+			input.map((call) => ({
+				name: toolCallName(call),
+				args: toolCallArgs(call),
+				billing: call.billing,
+			})),
+		)
+		return batch.results.map((item) => {
+			if (!item.ok) throw new Error(item.error || `Tool call failed: ${item.name}`)
+			return {
+				toolCallId: input[item.index]?.id,
+				name: item.name,
+				result: item.result,
+			}
+		})
 	}
 
 	async test(

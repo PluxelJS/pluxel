@@ -23,21 +23,20 @@ describe('external gateway tool contract', () => {
 		const zhipuSpecs = listExternalGatewayToolSpecs({ provider: 'zhipu' })
 		expect(zhipuSpecs.every((spec) => spec.provider === 'zhipu')).toBe(true)
 
-		const selected = listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })
-		expect(selected.map((spec) => spec.name)).toEqual(['yiqicha.enterprise_profile'])
+		const selected = listExternalGatewayToolSpecs({ names: ['yiqicha.recommend_bundle'] })
+		expect(selected.map((spec) => spec.name)).toEqual(['yiqicha.recommend_bundle'])
 
 		selected[0].inputSchema.required = []
 		expect(
-			listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema
-				.required,
-		).toEqual(['keyword'])
+			listExternalGatewayToolSpecs({ names: ['yiqicha.recommend_bundle'] })[0].inputSchema.required,
+		).toBeUndefined()
 		selected[0].inputSchema.properties = {}
 		expect(
 			Object.keys(
-				listExternalGatewayToolSpecs({ names: ['yiqicha.enterprise_profile'] })[0].inputSchema
+				listExternalGatewayToolSpecs({ names: ['yiqicha.recommend_bundle'] })[0].inputSchema
 					.properties ?? {},
 			),
-		).toContain('keyword')
+		).toContain('bundle')
 	})
 
 	it('publishes TypeBox-derived JSON schemas with useful constraints', () => {
@@ -48,6 +47,13 @@ describe('external gateway tool contract', () => {
 		>
 		expect(webSearchProperties.query.minLength).toBe(1)
 		expect(webSearchProperties.count.maximum).toBe(50)
+		expect(webSearchProperties.recency.enum).toEqual([
+			'oneDay',
+			'oneWeek',
+			'oneMonth',
+			'oneYear',
+			'noLimit',
+		])
 
 		const embeddings = listExternalGatewayToolSpecs({ names: ['zhipu.embeddings'] })[0]
 		const embeddingsProperties = embeddings.inputSchema.properties as Record<
@@ -55,6 +61,10 @@ describe('external gateway tool contract', () => {
 			Record<string, unknown>
 		>
 		expect(embeddingsProperties.input.anyOf).toHaveLength(2)
+
+		const recommend = listExternalGatewayToolSpecs({ names: ['yiqicha.recommend_bundle'] })[0]
+		expect(recommend.metadata).toMatchObject({ billable: false, latency: 'local' })
+		expect(recommend.examples?.[0]?.args).toMatchObject({ bundle: 'profile' })
 	})
 
 	it('rejects unknown tool names before dispatch', () => {
@@ -90,6 +100,9 @@ describe('external gateway tool contract', () => {
 							calls.push({ operation: 'callTool', input })
 							return { ok: true }
 						},
+						async callTools() {
+							throw new Error('not used')
+						},
 					}
 				},
 			},
@@ -100,7 +113,7 @@ describe('external gateway tool contract', () => {
 			rpcUrl: 'http://gateway.test/rpc',
 			authenticated: true,
 			localToolCount: EXTERNAL_GATEWAY_TOOL_NAMES.length,
-			remoteToolCount: 6,
+			remoteToolCount: 4,
 			tokenId: 'pi-token',
 			tokenName: 'PI token',
 		})
@@ -152,6 +165,9 @@ describe('external gateway tool contract', () => {
 							calls.push(input)
 							return { ok: true }
 						},
+						async callTools() {
+							throw new Error('not used')
+						},
 					}
 				},
 			},
@@ -159,11 +175,10 @@ describe('external gateway tool contract', () => {
 
 		await expect(pi.zhipu.webSearch({ query: 'GLM', count: 3 })).resolves.toEqual({ ok: true })
 		await expect(
-			pi.yiqicha.enterpriseProfile({
-				keyword: '智谱',
-				include: ['basicInfo'],
-			}),
-		).resolves.toEqual({ ok: true })
+			pi.yiqicha.recommendBundle({ bundle: 'profile', keyword: '智谱' }),
+		).resolves.toEqual({
+			ok: true,
+		})
 
 		expect(calls).toEqual([
 			{
@@ -172,9 +187,75 @@ describe('external gateway tool contract', () => {
 				billing: 'pi-user',
 			},
 			{
-				name: 'yiqicha.enterprise_profile',
-				args: { keyword: '智谱', include: ['basicInfo'] },
+				name: 'yiqicha.recommend_bundle',
+				args: { bundle: 'profile', keyword: '智谱' },
 				billing: 'pi-user',
+			},
+		])
+	})
+
+	it('batches explicit tool calls for coding callers', async () => {
+		const calls: unknown[] = []
+		const pi = new PiExtension({
+			token: 'token-123',
+			rpcUrl: 'http://gateway.test/rpc',
+			billing: 'pi-user',
+			transport: {
+				authenticate() {
+					return {
+						whoami() {
+							return { tokenId: 'pi-token', name: 'PI token' }
+						},
+						async toolSpecs(input) {
+							return listExternalGatewayToolSpecs(input)
+						},
+						async callTool() {
+							throw new Error('not used')
+						},
+						async callTools(input) {
+							calls.push(input)
+							return {
+								results: input.calls.map((call, index) => ({
+									index,
+									name: call.name,
+									ok: true,
+									result: { ok: true },
+								})),
+							}
+						},
+					}
+				},
+			},
+		})
+
+		await expect(
+			pi.callTools([
+				{ name: 'yiqicha.call_api', args: { api: 'getBasicInfo', params: { keyword: '智谱' } } },
+				{
+					name: 'yiqicha.call_api',
+					args: { api: 'getEnterprisePartners', params: { keyword: '智谱' } },
+				},
+			]),
+		).resolves.toMatchObject({
+			results: [
+				{ index: 0, name: 'yiqicha.call_api', ok: true },
+				{ index: 1, name: 'yiqicha.call_api', ok: true },
+			],
+		})
+		expect(calls).toEqual([
+			{
+				calls: [
+					{
+						name: 'yiqicha.call_api',
+						args: { api: 'getBasicInfo', params: { keyword: '智谱' } },
+						billing: 'pi-user',
+					},
+					{
+						name: 'yiqicha.call_api',
+						args: { api: 'getEnterprisePartners', params: { keyword: '智谱' } },
+						billing: 'pi-user',
+					},
+				],
 			},
 		])
 	})
@@ -193,6 +274,9 @@ describe('external gateway tool contract', () => {
 							throw new Error('invalid token')
 						},
 						async callTool() {
+							throw new Error('not used')
+						},
+						async callTools() {
 							throw new Error('not used')
 						},
 					}
@@ -301,53 +385,54 @@ describe('external gateway tool dispatcher', () => {
 		])
 	})
 
-	it('composes enterprise profile tools into a small set of semantic provider calls', async () => {
+	it('recommends enterprise bundles without making paid provider calls', async () => {
 		const host = createHost()
 		const billing = billingContext()
 
-		const result = await callExternalGatewayTool(host, billing, 'yiqicha.enterprise_profile', {
+		const result = await callExternalGatewayTool(host, billing, 'yiqicha.recommend_bundle', {
+			bundle: 'profile',
 			keyword: '智谱',
 			include: ['basicInfo', 'contacts'],
 			pageSize: 100,
 		})
 
-		expect(result).toEqual({
-			basicInfo: { ok: true, api: 'getBasicInfo' },
-			contacts: { ok: true, api: 'contractDetailEnterpriseList' },
+		expect(result).toMatchObject({
+			provider: 'yiqicha',
+			bundle: 'profile',
+			estimatedCalls: 2,
+			calls: [
+				{ id: 'basicInfo', api: 'getBasicInfo', params: { keyword: '智谱' } },
+				{
+					id: 'contacts',
+					api: 'contractDetailEnterpriseList',
+					params: { keyword: '智谱', page: 1, pageSize: 50 },
+				},
+			],
 		})
-		expect(host.calls).toEqual([
-			{
-				provider: 'yiqicha',
-				operation: 'getBasicInfo',
-				billing,
-				params: { keyword: '智谱' },
-			},
-			{
-				provider: 'yiqicha',
-				operation: 'contractDetailEnterpriseList',
-				billing,
-				params: { keyword: '智谱', page: 1, pageSize: 50 },
-			},
-		])
+		expect(host.calls).toEqual([])
 	})
 
-	it('defaults paginated YiQiCha enterprise calls to pageSize 50', async () => {
+	it('recommends risk bundles with pageSize 50 defaults', async () => {
 		const host = createHost()
 		const billing = billingContext()
 
-		await callExternalGatewayTool(host, billing, 'yiqicha.enterprise_risk', {
+		const result = await callExternalGatewayTool(host, billing, 'yiqicha.recommend_bundle', {
+			bundle: 'risk',
 			keyword: '智谱',
 			include: ['abnormalOperations'],
 		})
 
-		expect(host.calls).toEqual([
-			{
-				provider: 'yiqicha',
-				operation: 'entAbnormalList1031',
-				billing,
-				params: { keyword: '智谱', page: 1, pageSize: 50 },
-			},
-		])
+		expect(result).toMatchObject({
+			estimatedCalls: 1,
+			calls: [
+				{
+					id: 'abnormalOperations',
+					api: 'entAbnormalList1031',
+					params: { keyword: '智谱', page: 1, pageSize: 50 },
+				},
+			],
+		})
+		expect(host.calls).toEqual([])
 	})
 })
 

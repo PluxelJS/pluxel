@@ -56,12 +56,16 @@ const search = await pi.zhipu.webSearch({
 const chat = await pi.zhipu.chat({
 	messages: [{ role: 'user', content: 'hello' }],
 })
-const profile = await pi.yiqicha.enterpriseProfile(
-	{
-		keyword: '北京智谱华章科技股份有限公司',
-		include: ['basicInfo', 'shareholders', 'investments'],
-	},
-	{ billing: { userId: 'pi-agent', tenantId: 'tenant-a', traceId: 'trace-company-001' } },
+const plan = await pi.yiqicha.recommendBundle({
+	bundle: 'profile',
+	keyword: '北京智谱华章科技股份有限公司',
+	include: ['basicInfo', 'shareholders', 'investments'],
+})
+const profileParts = await pi.callTools(
+	plan.calls.map((call) => ({
+		name: 'yiqicha.call_api',
+		args: { api: call.api, params: call.params },
+	})),
 )
 
 pi.dispose()
@@ -84,24 +88,22 @@ piAgent.onToolCall(async (toolCall) => {
 
 `PiExtension` 的 tools 是 PI/OpenAI-style function definitions，执行时只调用 ExternalGateway RPC。`pi.test()` 会实际认证 token、验证 RPC URL 可达，并拉取远端 tool specs；构造函数本身只保存配置，不做网络请求。
 
-业务代码优先使用 `pi.zhipu.*` / `pi.yiqicha.*` typed wrapper；它们和 `callTool(...)` 复用同一套 TypeBox schema。需要对接模型 runtime 时才直接读取 `pi.tools` 并把 tool call 交给 `handleToolCall(...)`。`callTool('zhipu.web_search', args)` 仍保留，字面量 tool name 会推导对应 args 类型；动态字符串调用退回 `Record<string, unknown>`。
+业务代码优先使用 `pi.zhipu.*` / `pi.yiqicha.*` typed wrapper；它们和 `callTool(...)` 复用同一套 TypeBox schema。需要对接模型 runtime 时才直接读取 `pi.tools` 并把 tool call 交给 `handleToolCall(...)`。`callTool('zhipu.web_search', args)` 仍保留，字面量 tool name 会推导对应 args 类型；动态字符串调用退回 `Record<string, unknown>`。需要一次提交多个显式 tool call 时用 `pi.callTools(...)`，每个结果独立返回。
 
 `billing` 是每次 `callTool(...)` 的强制调用归属边界。`userId / tenantId / traceId` 会写入 `UsageBillingPlugin`，用于成本、审计和 history。`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可调用 gateway tool；吊销后不可再认证。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
-tool 名是稳定字面量：`zhipu.web_search`、`zhipu.chat`、`zhipu.reader`、`zhipu.rerank`、`zhipu.embeddings`、`zhipu.moderate`、`yiqicha.find_apis`、`yiqicha.describe_api`、`yiqicha.call_api`、`yiqicha.enterprise_profile`、`yiqicha.enterprise_risk`、`yiqicha.enterprise_legal`。字段名按 agent 表达优化，例如 `query / count / include / pageSize`，dispatcher 会映射到上游的 `search_query / search_engine / top_n` 等 provider 字段。二进制上传类接口只保留在 provider 内部 UI，不放进默认 PI tools。
+tool 名是稳定字面量：`zhipu.web_search`、`zhipu.chat`、`zhipu.reader`、`zhipu.rerank`、`zhipu.embeddings`、`zhipu.moderate`、`yiqicha.find_apis`、`yiqicha.describe_api`、`yiqicha.call_api`、`yiqicha.recommend_bundle`。字段名按 agent 表达优化，例如 `query / count / include / pageSize`，dispatcher 会映射到上游的 `search_query / search_engine / top_n` 等 provider 字段。二进制上传类接口只保留在 provider 内部 UI，不放进默认 PI tools。
 
 `@repo/external-api-gateway-gateway/pi` 是外部 agent 复用入口；`@repo/external-api-gateway-gateway/tools` 是无 runtime 副作用的纯契约入口，可直接读取稳定 tool specs、TypeBox input schemas 和 typed args。
 
-YiQiCha provider 面向 LLM agent 的 RPC surface 刻意保持很小，不把 128 个上游 API 暴露成 128 个 tool。默认 tool surface 只映射 6 个动作：
+YiQiCha provider 面向 LLM agent 的 RPC surface 刻意保持很小，不把 128 个上游 API 暴露成 128 个 tool。默认 tool surface 只映射 4 个动作：
 
 - `yiqicha.find_apis({ query, limit? })`：按业务意图查找语义 API key。
 - `yiqicha.describe_api({ api })`：按语义 key 获取参数说明、必填项和响应示例。
 - `yiqicha.call_api({ api, params })`：按语义 key 调用任意 YiQiCha API。
-- `yiqicha.enterprise_profile({ keyword, include?, pageSize? })`：组合企业画像信息。
-- `yiqicha.enterprise_risk({ keyword, include?, pageSize? })`：组合企业经营/资产类风险。
-- `yiqicha.enterprise_legal({ keyword, include?, pageSize? })`：组合企业司法风险。
+- `yiqicha.recommend_bundle({ bundle?, keyword?, include?, pageSize? })`：返回企业画像/风险/司法/完整画像的推荐调用计划，不调用上游、不产生 YiQiCha 请求计费。
 
-这些方法按 tool 使用场景设计，而不是按上游 API 一比一搬运：agent 先用 `yiqicha.find_apis` 缩小候选，再用 `yiqicha.describe_api` 获取单个 API 参数，最后 `yiqicha.call_api` 执行；常见任务直接走 overview 组合 tool。这样 prompt 里只需要 6 个稳定工具，不需要塞入完整 API catalog，也避免模型选择 `1002` 这类不可读数字 code。内部仍保留 code/key 映射和 catalog，数字只作为 provider 实现细节。
+这些方法按 tool 使用场景设计，而不是按上游 API 一比一搬运：agent 先用 `yiqicha.find_apis` 缩小候选，再用 `yiqicha.describe_api` 获取单个 API 参数，最后 `yiqicha.call_api` 执行。常见企业画像任务先走 `yiqicha.recommend_bundle` 拿到 `{ api, params }` 调用计划，再由外部按预算选择哪些 API 真正执行。gateway 不再替调用方打包企业画像，避免一个 tool call 隐式产生多次 YiQiCha 计费请求；需要并行执行多个 API 时用 Cap'n Web RPC 的 `callTools(...)` 或 HTTP `/gateway/call-batch`。
 
 YiQiCha 上游按请求计费，分页 API 应尽量一次取满当前页来减少后续翻页调用。provider 会识别 request schema 里的 `pageSize` 参数：缺省时自动补 `pageSize: 50`，超过 50 时压到 50；如果 API 同时有 `page` 参数且调用方未传，会补 `page: 1`。不要把默认 pageSize 调小，除非某个接口明确证明返回体过大或上游限制更低。
 
@@ -117,6 +119,14 @@ YiQiCha 上游按请求计费，分页 API 应尽量一次取满当前页来减�
 - RAG/安全：`/paas/v4/embeddings`、`/paas/v4/rerank`、`/paas/v4/moderations`。
 
 外部调用统一走 `callTool(...)`，以复用统一计费上下文。插件 UI 的“模型/工具”页只是按 provider 内部目录提供测试样例；新路径或临时参数需要先转成稳定 gateway tool，再暴露给外部 agent。
+
+非 TypeScript 客户端可用 HTTP 调试入口：
+
+- `GET /__pluxel/plugins/ExternalGatewayPlugin/gateway/tools`
+- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call`
+- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call-batch`
+
+`call` / `call-batch` 使用 `Authorization: Bearer <token>` 或 `x-api-token` 认证，请求体与 RPC `callTool` / `callTools` 相同。
 
 `/layout_parsing` 不再转发 prompt。需要“按提示提取字段/转 JSON/重写摘要”时，先调用 OCR，再把 OCR 结果和用户 prompt 交给 `/chat/completions` 做后处理；插件 UI 的 OCR 面板已经按这个两阶段流程组合返回 `{ ocr, postprocess }`。
 

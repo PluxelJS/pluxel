@@ -23,6 +23,9 @@ import {
 	inputSchemaForExternalGatewayTool,
 	requireExternalGatewayToolName,
 	type ExternalGatewayToolName,
+	type YiqichaBundleKind,
+	type YiqichaBundleRecommendation,
+	type YiqichaRecommendedCall,
 } from './tools.ts'
 
 export type ExternalGatewayToolHost = {
@@ -125,12 +128,8 @@ export async function callExternalGatewayTool(
 				normalizeYiqichaToolParams(objectArg(args, 'params')),
 				yiqichaCallOptions(args),
 			)
-		case 'yiqicha.enterprise_profile':
-			return enterpriseProfile(gateway, billing, args)
-		case 'yiqicha.enterprise_risk':
-			return enterpriseRisk(gateway, billing, args)
-		case 'yiqicha.enterprise_legal':
-			return enterpriseLegal(gateway, billing, args)
+		case 'yiqicha.recommend_bundle':
+			return recommendYiqichaBundle(args)
 	}
 }
 
@@ -152,238 +151,202 @@ function validateToolArgs(
 	throw new Error(`Invalid args for ${toolName}: ${path}${message}`)
 }
 
-async function enterpriseProfile(
-	gateway: ExternalGatewayToolHost,
-	billing: GatewayBillingContext,
-	args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-	const keyword = stringArg(args, 'keyword')
-	const options = yiqichaCallOptions(args)
-	const include = includeSet(optionalStringArrayArg(args, 'include'), [
-		'basicInfo',
-		'shareholders',
-		'investments',
-		'branches',
-	])
-	const params = pageParams(keyword, optionalIntegerArg(args, 'pageSize'))
-	return collectDefined({
-		...(include.has('basicInfo')
-			? {
-					basicInfo: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'getBasicInfo',
-						{ keyword },
-						options,
-					),
-				}
-			: {}),
-		...(include.has('shareholders')
-			? {
-					shareholders: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'getEnterprisePartners',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('investments')
-			? {
-					investments: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'getInvestEnterprise',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('branches')
-			? {
-					branches: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'branchEnterprise',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('changeRecords')
-			? {
-					changeRecords: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'alterEnterprise',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('contacts')
-			? {
-					contacts: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'contractDetailEnterpriseList',
-						params,
-						options,
-					),
-				}
-			: {}),
-	})
+const yiqichaBundleSections = {
+	profile: [
+		section(
+			'basicInfo',
+			'getBasicInfo',
+			'Basic company profile',
+			'Core registration and business identity.',
+			false,
+		),
+		section(
+			'shareholders',
+			'getEnterprisePartners',
+			'Shareholders',
+			'Ownership and contribution context.',
+			true,
+		),
+		section(
+			'investments',
+			'getInvestEnterprise',
+			'Outbound investments',
+			'Equity links and controlled entities.',
+			true,
+		),
+		section(
+			'branches',
+			'branchEnterprise',
+			'Branches',
+			'Branch entities and operating footprint.',
+			true,
+		),
+		section(
+			'changeRecords',
+			'alterEnterprise',
+			'Change records',
+			'Registration and corporate changes.',
+			true,
+		),
+		section(
+			'contacts',
+			'contractDetailEnterpriseList',
+			'Contacts',
+			'Public contact and address signals.',
+			true,
+		),
+	],
+	risk: [
+		section(
+			'abnormalOperations',
+			'entAbnormalList1031',
+			'Abnormal operations',
+			'Business operation anomaly signals.',
+			true,
+		),
+		section(
+			'seriousIllegalRecords',
+			'entIllegalList',
+			'Serious illegal records',
+			'Serious violation history.',
+			true,
+		),
+		section(
+			'stockPledges',
+			'getStockInfoList',
+			'Stock pledges',
+			'Equity pledge and asset risk signals.',
+			true,
+		),
+		section(
+			'administrativePenalties',
+			'penaltyListVo',
+			'Administrative penalties',
+			'Regulatory penalty signals.',
+			true,
+		),
+		section(
+			'chattelMortgages',
+			'entMortList',
+			'Chattel mortgages',
+			'Asset mortgage records.',
+			true,
+		),
+		section(
+			'liquidationRisks',
+			'cleanRiskList',
+			'Liquidation risks',
+			'Liquidation and clean-up risks.',
+			true,
+		),
+	],
+	legal: [
+		section(
+			'enforcementCases',
+			'lawEnforceInfoList',
+			'Enforcement cases',
+			'Court enforcement records.',
+			true,
+		),
+		section(
+			'dishonestExecutions',
+			'lawDishonestList',
+			'Dishonest executions',
+			'Dishonest debtor signals.',
+			true,
+		),
+		section(
+			'courtAnnouncements',
+			'lawOpenAnnoList',
+			'Court announcements',
+			'Court announcement records.',
+			true,
+		),
+		section(
+			'judgmentDocuments',
+			'lawRefereeDocList',
+			'Judgment documents',
+			'Judgment and referee document records.',
+			true,
+		),
+		section(
+			'highConsumptionLimits',
+			'limitHighInfoList',
+			'High consumption limits',
+			'Consumption restriction records.',
+			true,
+		),
+		section(
+			'bankruptcyReorganizations',
+			'bankruptcyReorganizationList',
+			'Bankruptcy reorganizations',
+			'Bankruptcy and reorganization signals.',
+			true,
+		),
+	],
+} as const
+
+function recommendYiqichaBundle(args: Record<string, unknown>): YiqichaBundleRecommendation {
+	const bundle = (optionalStringArg(args, 'bundle') ?? 'profile') as YiqichaBundleKind
+	const keyword = optionalStringArg(args, 'keyword')
+	const include = optionalStringArrayArg(args, 'include')
+	const pageSize = optionalIntegerArg(args, 'pageSize') ?? 50
+	const calls = recommendedSections(bundle, include).map((item) =>
+		recommendedCall(item, keyword, pageSize),
+	)
+	return {
+		provider: 'yiqicha',
+		bundle,
+		description: yiqichaBundleDescription(bundle),
+		estimatedCalls: calls.length,
+		calls,
+		note: 'This is a no-cost call plan. Execute selected calls explicitly with yiqicha.call_api or PiExtension.callTools so the caller controls upstream billing.',
+	}
 }
 
-async function enterpriseRisk(
-	gateway: ExternalGatewayToolHost,
-	billing: GatewayBillingContext,
-	args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-	const keyword = stringArg(args, 'keyword')
-	const options = yiqichaCallOptions(args)
-	const include = includeSet(optionalStringArrayArg(args, 'include'), [
-		'abnormalOperations',
-		'seriousIllegalRecords',
-		'stockPledges',
-		'administrativePenalties',
-	])
-	const params = pageParams(keyword, optionalIntegerArg(args, 'pageSize'))
-	return collectDefined({
-		...(include.has('abnormalOperations')
-			? {
-					abnormalOperations: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'entAbnormalList1031',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('seriousIllegalRecords')
-			? {
-					seriousIllegalRecords: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'entIllegalList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('stockPledges')
-			? {
-					stockPledges: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'getStockInfoList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('administrativePenalties')
-			? {
-					administrativePenalties: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'penaltyListVo',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('chattelMortgages')
-			? {
-					chattelMortgages: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'entMortList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('liquidationRisks')
-			? {
-					liquidationRisks: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'cleanRiskList',
-						params,
-						options,
-					),
-				}
-			: {}),
-	})
+function recommendedSections(bundle: YiqichaBundleKind, include: string[] | undefined) {
+	const sections =
+		bundle === 'full'
+			? [
+					...yiqichaBundleSections.profile,
+					...yiqichaBundleSections.risk,
+					...yiqichaBundleSections.legal,
+				]
+			: [...yiqichaBundleSections[bundle]]
+	if (!include?.length) return sections
+	const wanted = new Set(include)
+	return sections.filter((item) => wanted.has(item.id))
 }
 
-async function enterpriseLegal(
-	gateway: ExternalGatewayToolHost,
-	billing: GatewayBillingContext,
-	args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-	const keyword = stringArg(args, 'keyword')
-	const options = yiqichaCallOptions(args)
-	const include = includeSet(optionalStringArrayArg(args, 'include'), [
-		'enforcementCases',
-		'dishonestExecutions',
-		'courtAnnouncements',
-		'judgmentDocuments',
-	])
-	const params = pageParams(keyword, optionalIntegerArg(args, 'pageSize'))
-	return collectDefined({
-		...(include.has('enforcementCases')
-			? {
-					enforcementCases: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'lawEnforceInfoList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('dishonestExecutions')
-			? {
-					dishonestExecutions: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'lawDishonestList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('courtAnnouncements')
-			? {
-					courtAnnouncements: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'lawOpenAnnoList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('judgmentDocuments')
-			? {
-					judgmentDocuments: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'lawRefereeDocList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('highConsumptionLimits')
-			? {
-					highConsumptionLimits: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'limitHighInfoList',
-						params,
-						options,
-					),
-				}
-			: {}),
-		...(include.has('bankruptcyReorganizations')
-			? {
-					bankruptcyReorganizations: await gateway.yiqichaProvider.gatewayCallApi(
-						billing,
-						'bankruptcyReorganizationList',
-						params,
-						options,
-					),
-				}
-			: {}),
-	})
+function recommendedCall(
+	item: ReturnType<typeof section>,
+	keyword: string | undefined,
+	pageSize: number,
+): YiqichaRecommendedCall {
+	return {
+		id: item.id,
+		api: item.api,
+		label: item.label,
+		reason: item.reason,
+		params: keyword ? (item.paginated ? pageParams(keyword, pageSize) : { keyword }) : {},
+	}
+}
+
+function section(id: string, api: string, label: string, reason: string, paginated: boolean) {
+	return { id, api, label, reason, paginated }
+}
+
+function yiqichaBundleDescription(bundle: YiqichaBundleKind): string {
+	switch (bundle) {
+		case 'profile':
+			return 'Recommended calls for company identity, shareholders, investments, branches, changes, and contacts.'
+		case 'risk':
+			return 'Recommended calls for operational, regulatory, pledge, mortgage, and liquidation risk signals.'
+		case 'legal':
+			return 'Recommended calls for enforcement, dishonest debtor, court announcement, judgment, restriction, and bankruptcy signals.'
+		case 'full':
+			return 'Combined profile, risk, and legal call plan. Execute only the sections needed for the task budget.'
+	}
 }
 
 function toolArgs(input: Record<string, unknown> | null | undefined): Record<string, unknown> {
@@ -505,12 +468,4 @@ function pageParams(keyword: string, pageSize = 50): YiqichaParams {
 		page: 1,
 		pageSize: Math.max(1, Math.min(50, Math.floor(Number(pageSize) || 50))),
 	}
-}
-
-function includeSet<T extends string>(input: T[] | undefined, defaults: readonly T[]): Set<T> {
-	return new Set(input?.length ? input : defaults)
-}
-
-function collectDefined(input: Record<string, unknown>): Record<string, unknown> {
-	return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined))
 }

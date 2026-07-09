@@ -24,7 +24,10 @@ import { ui } from '@pluxel/runtime/plugin'
 import { desc, eq } from 'drizzle-orm'
 import {
 	listExternalGatewayToolSpecs,
+	type ExternalGatewayToolBatchCallInput,
+	type ExternalGatewayToolBatchCallResult,
 	type ExternalGatewayToolCallInput,
+	type ExternalGatewayToolCallResultItem,
 	type ExternalGatewayToolListInput,
 	type ExternalGatewayToolSpec,
 } from './tools.ts'
@@ -34,12 +37,22 @@ export {
 	EXTERNAL_GATEWAY_TOOL_NAMES,
 	EXTERNAL_GATEWAY_TOOL_SPECS,
 	listExternalGatewayToolSpecs,
+	type ExternalGatewayToolArgs,
 	type ExternalGatewayJsonSchema,
+	type ExternalGatewayToolBatchCallInput,
+	type ExternalGatewayToolBatchCallResult,
 	type ExternalGatewayToolCallInput,
+	type ExternalGatewayToolCallResultItem,
+	type ExternalGatewayToolExample,
 	type ExternalGatewayToolListInput,
+	type ExternalGatewayToolMetadata,
 	type ExternalGatewayToolName,
 	type ExternalGatewayToolProvider,
+	type ExternalGatewayToolResult,
 	type ExternalGatewayToolSpec,
+	type YiqichaBundleKind,
+	type YiqichaBundleRecommendation,
+	type YiqichaRecommendedCall,
 } from './tools.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
@@ -153,6 +166,22 @@ export class ExternalGatewayPlugin extends BasePlugin {
 						ok: true,
 						rpc: this.rpcBase(),
 					}))
+					.get('/tools', ({ query }) =>
+						listExternalGatewayToolSpecs({
+							provider:
+								typeof query.provider === 'string'
+									? (query.provider as ExternalGatewayToolListInput['provider'])
+									: undefined,
+						}),
+					)
+					.post('/call', async ({ request }) => {
+						const api = this.apiFor(await this.authenticate(requestToken(request)))
+						return api.callTool((await request.json()) as ExternalGatewayToolCallInput)
+					})
+					.post('/call-batch', async ({ request }) => {
+						const api = this.apiFor(await this.authenticate(requestToken(request)))
+						return api.callTools((await request.json()) as ExternalGatewayToolBatchCallInput)
+					})
 					.all(
 						'/rpc',
 						async ({ request, set }) => {
@@ -291,6 +320,32 @@ export class AuthedApi extends RpcTarget {
 			input.args,
 		)
 	}
+
+	async callTools(
+		input: ExternalGatewayToolBatchCallInput,
+	): Promise<ExternalGatewayToolBatchCallResult> {
+		if (!Array.isArray(input.calls)) throw new Error('calls must be an array')
+		const results = await Promise.all(
+			input.calls.map(async (call, index): Promise<ExternalGatewayToolCallResultItem> => {
+				try {
+					return {
+						index,
+						name: call.name,
+						ok: true,
+						result: await this.callTool(call),
+					}
+				} catch (caught) {
+					return {
+						index,
+						name: call.name,
+						ok: false,
+						error: errorMessage(caught),
+					}
+				}
+			}),
+		)
+		return { results }
+	}
 }
 
 export class GatewayAdminRpc extends RpcTarget {
@@ -362,4 +417,17 @@ function normalizeBillingInput(input: string | GatewayBillingContext): GatewayBi
 	return typeof input === 'string'
 		? { userId: requireUserId(input) }
 		: { ...input, userId: requireUserId(input.userId) }
+}
+
+function requestToken(request: Request): string {
+	const authorization = request.headers.get('authorization') ?? ''
+	const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+	const token = bearer || request.headers.get('x-api-token')?.trim()
+	if (!token) throw new Error('Missing gateway API token')
+	return token
+}
+
+function errorMessage(caught: unknown): string {
+	if (caught instanceof Error) return caught.message
+	return String(caught)
 }
