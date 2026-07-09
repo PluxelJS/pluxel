@@ -7,14 +7,10 @@ export type {
 } from './runtime/capabilities'
 
 export type {
-	MaterializeProfiledFileOptions,
-	ResolvedProfiledPath,
 	RuntimeStorageLayout,
 	RuntimeStoragePaths,
 } from './runtime/paths'
 export {
-	HOST_PROFILE_TOKEN,
-	resolveProfiledPath,
 	resolveRuntimeStoragePaths,
 } from './runtime/paths'
 export {

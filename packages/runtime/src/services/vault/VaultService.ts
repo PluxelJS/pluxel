@@ -1,6 +1,6 @@
 import { Decrypter, Encrypter, generateIdentity, identityToRecipient } from 'age-encryption'
 import { type Context as PluxelContext, Injectable, RootService } from '@pluxel/core'
-import { basename, resolve } from 'pathe'
+import { basename, join } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
 import { recordSecurityEvent } from '../security/audit'
@@ -55,6 +55,7 @@ type VaultStore = {
 }
 
 type MountRuntime = {
+	cacheKey: string
 	dir: string
 	keysPath: string
 	statePath: string
@@ -157,9 +158,9 @@ class AsyncLock {
 }
 
 const CACHE_SYMBOL = Symbol.for('pluxel:vault:mount-cache')
+const CACHE_IDS_SYMBOL = Symbol.for('pluxel:vault:mount-cache-ids')
 const STATE_MAGIC = textEncode('PVLT2')
 const NONCE_BYTES = 12
-const DEFAULT_DIR = 'data/vault'
 const SHARED_MOUNT = 'global'
 const DEFAULT_FLUSH_DEBOUNCE_MS = 50
 const DEFAULT_DEPLOY_IDENTITY_ENV = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
@@ -344,12 +345,13 @@ function getConfig(ctx: PluxelContext): VaultServiceConfig {
 
 function resolveRuntime(ctx: PluxelContext): MountRuntime {
 	const cfg = getConfig(ctx)
-	const dir = resolve(cfg.dir ?? DEFAULT_DIR, SHARED_MOUNT)
+	const dir = SHARED_MOUNT
 	return {
+		cacheKey: getMountCacheKey(ctx),
 		dir,
-		keysPath: resolve(dir, 'keys.age'),
-		statePath: resolve(dir, 'state.enc'),
-		blobsDir: resolve(dir, 'blobs'),
+		keysPath: join(dir, 'keys.age'),
+		statePath: join(dir, 'state.enc'),
+		blobsDir: join(dir, 'blobs'),
 		flushDebounceMs: cfg.flushDebounceMs ?? DEFAULT_FLUSH_DEBOUNCE_MS,
 		deployIdentityEnv: cfg.deployIdentityEnv?.trim() || DEFAULT_DEPLOY_IDENTITY_ENV,
 	}
@@ -572,6 +574,22 @@ function getMountCache(): Map<string, MountCacheEntry> {
 	return created
 }
 
+function getMountCacheKey(ctx: PluxelContext): string {
+	const g = globalThis as Record<symbol, unknown> & { __pluxelVaultMountCacheSeq?: number }
+	let ids = g[CACHE_IDS_SYMBOL]
+	if (!(ids instanceof WeakMap)) {
+		ids = new WeakMap<object, string>()
+		g[CACHE_IDS_SYMBOL] = ids
+	}
+	const owner = ctx.root.persistence as unknown as object
+	const existing = ids.get(owner)
+	if (existing) return existing
+	g.__pluxelVaultMountCacheSeq = (g.__pluxelVaultMountCacheSeq ?? 0) + 1
+	const next = `persistence:${g.__pluxelVaultMountCacheSeq}`
+	ids.set(owner, next)
+	return next
+}
+
 function getOrCreateMountCache(key: string): MountCacheEntry {
 	const cache = getMountCache()
 	const existing = cache.get(key)
@@ -759,7 +777,7 @@ function cloneNamespaceState(state?: VaultSnapshot['namespaces'][string]) {
 }
 
 function blobPath(runtime: MountRuntime, namespace: string, name: string): string {
-	return resolve(runtime.blobsDir, namespace, `${normalizeSegment(name)}.blob`)
+	return join(runtime.blobsDir, namespace, `${normalizeSegment(name)}.blob`)
 }
 
 /**
@@ -779,7 +797,7 @@ export class VaultService {
 		const ctx = this.ctx
 		const store = createVaultStore(ctx.root.persistence.namespace('vault'))
 		const runtime = resolveRuntime(ctx)
-		const entry = getOrCreateMountCache(runtime.dir)
+		const entry = getOrCreateMountCache(runtime.cacheKey)
 
 		const currentStatus = () => toRuntimeStatus(store, runtime, entry)
 
@@ -1279,7 +1297,7 @@ export class VaultService {
 							throw error
 						}
 					})
-					const namespaceDir = resolve(runtime.blobsDir, namespace)
+					const namespaceDir = join(runtime.blobsDir, namespace)
 					const names = await store.listChildren(namespaceDir)
 					return names
 						.filter((blobName) => blobName.endsWith('.blob'))
@@ -1393,7 +1411,7 @@ export class VaultService {
 						docDocuments += Object.keys(collection ?? {}).length
 					}
 					const blobNames = await store
-						.listChildren(resolve(runtime.blobsDir, namespaceName))
+						.listChildren(join(runtime.blobsDir, namespaceName))
 						.catch((): string[] => [])
 					const row: VaultNamespaceStats = {
 						namespace: namespaceName,

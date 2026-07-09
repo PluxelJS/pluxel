@@ -4,7 +4,7 @@ import { CommercialDataPlugin } from './data-plugin.ts'
 import { StaticCommercialPlugin } from './plugin.ts'
 
 const repoRoot = resolve(import.meta.dirname, '../../../..')
-const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-static-commercial-demo'
+const staticDataRoot = resolve(repoRoot, 'packages/plugins/static-commercial-demo/.pluxel/static')
 
 export const staticCommercialPlugins = [CommercialDataPlugin, StaticCommercialPlugin] as const
 export const staticCommercialEnabledPlugins = [
@@ -14,18 +14,11 @@ export const staticCommercialEnabledPlugins = [
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-static-commercial-demo',
-	profile: activeProfile,
 	plugins: staticCommercialPlugins,
-	configService: {
-		mode: 'memory',
-	},
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: staticCommercialEnabledPlugins },
 	},
 	logger: { preset: 'core' },
-	pluginData: {
-		dir: resolve(repoRoot, 'packages/plugins/static-commercial-demo/.pluxel/static/plugin-data'),
-	},
+	persistence: resolve(staticDataRoot, 'persistence'),
 	management: { enabled: true, access: { exposure: 'private' } },
 })

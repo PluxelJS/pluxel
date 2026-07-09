@@ -1,14 +1,5 @@
 export type VaultServiceConfig = {
 	/**
-	 * Base directory for the shared vault mount.
-	 *
-	 * Vault files are stored under `${dir}/global`.
-	 *
-	 * @default "data/vault"
-	 */
-	dir?: string
-
-	/**
 	 * Debounce window for snapshot flushes.
 	 *
 	 * @default 50

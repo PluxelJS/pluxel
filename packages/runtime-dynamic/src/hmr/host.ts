@@ -26,23 +26,12 @@ import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
 import { ExtensionCompilerService } from './extensions/ExtensionCompilerService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
-import { materializeProfiledFile } from './host/storage'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
 const nodeHostFs = nodeLoaderHmrWorkspaceFs
 
 export type LoaderHmrHostStorageOptions = {
-	configFile?: string
-	runtimeStateFile?: string
 	persistenceDir?: string
-	seedConfig?: string | false
-	pluginDataDir?: string
-}
-
-export type LoaderHmrHostConfigMaterialization = {
-	basePath: string
-	profile: string
-	seedFile: string | false
 }
 
 export type LoaderHmrHostOptions<
@@ -88,7 +77,6 @@ export type PlannedLoaderHmrHost<
 	cjsExternal?: readonly string[]
 	logging?: boolean | EnsurePluxelLoggingOptions
 	runtimeStorage: RuntimeStoragePaths
-	configMaterialization?: LoaderHmrHostConfigMaterialization
 	registry?: Record<string, unknown>
 	context?: CoreContext.Config
 }
@@ -123,40 +111,19 @@ export type LoaderHmrHostConfigInput = Omit<
 
 function planRuntimeStorage(
 	root: string,
-	snapshot: LoaderHmrWorkspaceSnapshot,
 	storage: LoaderHmrHostStorageOptions | undefined,
 	logs: Pick<LoaderHmrHostOptions, 'logsDir' | 'logFile'>,
 ): {
 	runtimeStorage: RuntimeStoragePaths
-	configMaterialization?: LoaderHmrHostConfigMaterialization
 } {
 	const runtimeStorage = resolveRuntimeStoragePaths(root, {
-		...(storage
-			? {
-					configFile: storage.configFile ?? '.pluxel/loader-hmr/config.json',
-					runtimeStateFile: storage.runtimeStateFile ?? '.pluxel/loader-hmr/state.json',
-					persistenceDir: storage.persistenceDir ?? '.pluxel/persistence',
-					pluginDataDir: storage.pluginDataDir ?? '.pluxel/plugin-data',
-				}
-			: {}),
+		persistenceDir: storage?.persistenceDir ?? '.pluxel/persistence',
 		...(logs.logsDir ? { logsDir: logs.logsDir } : {}),
 		...(logs.logFile ? { logFile: logs.logFile } : {}),
 	})
 
 	return {
 		runtimeStorage,
-		...(storage
-			? {
-					configMaterialization: {
-						basePath: runtimeStorage.configFile,
-						profile: snapshot.activeProfile,
-						seedFile:
-							storage.seedConfig === false
-								? false
-								: resolve(root, storage.seedConfig ?? 'default.json'),
-					},
-				}
-			: {}),
 	}
 }
 
@@ -180,12 +147,10 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		builtinsFromDist = snapshot.builtinsFromDist?.length ? snapshot.builtinsFromDist : undefined
 	}
 
-	const { runtimeStorage, configMaterialization } = planRuntimeStorage(
-		root,
-		snapshot,
-		opts.storage,
-		{ logsDir: opts.logsDir, logFile: opts.logFile },
-	)
+	const { runtimeStorage } = planRuntimeStorage(root, opts.storage, {
+		logsDir: opts.logsDir,
+		logFile: opts.logFile,
+	})
 
 	return {
 		root,
@@ -203,7 +168,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		cjsExternal: opts.cjsExternal,
 		logging: opts.logging,
 		runtimeStorage,
-		configMaterialization,
 		registry: opts.registry,
 		context: opts.context,
 	}
@@ -274,16 +238,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	setPluxelRuntime('hmr')
 
 	if (plan.chdir) process.chdir(plan.root)
-	if (plan.configMaterialization) {
-		await materializeProfiledFile(
-			plan.configMaterialization.basePath,
-			{
-				profile: plan.configMaterialization.profile,
-				seedFile: plan.configMaterialization.seedFile,
-			},
-			plan.fs,
-		)
-	}
 
 	const logging = plan.logging ?? true
 	if (logging) {
@@ -304,20 +258,12 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		registry: plan.registry,
 		profile: plan.snapshot.activeProfile,
 		logger: { preset: 'hmr' },
-		configService: {
-			mode: 'file',
-			path: plan.runtimeStorage.configFile,
-		},
-		runtimeState: {
-			mode: 'file',
-			path: plan.runtimeStorage.runtimeStateFile,
-		},
 		persistence: {
+			mode: 'custom',
 			backend: createWorkspacePersistenceBackend(runtimeFsBackend, {
 				root: plan.runtimeStorage.persistenceDir,
 			}),
 		},
-		pluginData: { dir: plan.runtimeStorage.pluginDataDir },
 		packageService: {
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},

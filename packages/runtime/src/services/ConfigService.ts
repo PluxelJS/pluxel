@@ -7,7 +7,6 @@ import {
 } from '@pluxel/core/services'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
-import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export interface PluginConfigFile {
@@ -23,7 +22,6 @@ export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
 
 export interface ConfigServiceConfig {
 	mode?: ConfigServiceMode
-	path?: string
 	snapshot?: Partial<{
 		plugins: Record<string, Record<string, unknown>>
 	}>
@@ -94,17 +92,11 @@ export class ConfigService {
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = ctx.root.persistence.namespace('config')
 
-		const profile = normalizeProfileName(ctx.config.profile)
-		const runtimeStorage = resolveRuntimeStoragePaths(currentWorkingDirectory())
-		const resolved = resolveProfiledPath(
-			cfg.path ?? ctx.config.path ?? runtimeStorage.configFile,
-			profile,
-		)
-		this.file = resolved.path
+		this.file = 'config.json'
 		if (cfg.snapshot) this.applySnapshot(cfg.snapshot)
 
 		if (this.mode === 'file') {
-			this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
+			this.ready = this.loadFromDisk(this.file).finally(() => {
 				this.isReady = true
 			})
 		} else {
@@ -163,24 +155,13 @@ export class ConfigService {
 
 	// —— I/O 层 —— //
 
-	private async loadFromDisk(file: string, fallbackFile?: string) {
+	private async loadFromDisk(file: string) {
 		let txt: string
-		let readFromFallback = false
 		const primary = await this.storage.getText(file)
-		const fallback =
-			primary === undefined && fallbackFile ? await this.storage.getText(fallbackFile) : undefined
-		if (fallback !== undefined) {
-			txt = fallback
-			readFromFallback = true
-		} else if (primary !== undefined) {
+		if (primary !== undefined) {
 			txt = primary
 		} else {
-			// Missing file is expected on first run: initialize a clean default.
-			this.resetToDefault()
-			this.configRevByPlugin.clear()
-			this.configDigestByPlugin.clear()
-			this.rawViews.clear()
-			this.validated.clear()
+			// Missing file is expected on first run: persist the current in-memory seed.
 			await this.saveToDisk(file)
 			return
 		}
@@ -207,9 +188,6 @@ export class ConfigService {
 		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
 		this.reconcilePluginsFromDisk(nextPlugins)
 
-		if (readFromFallback) {
-			await this.saveToDisk(file)
-		}
 	}
 
 	private resetToDefault() {
@@ -552,11 +530,6 @@ function clearRecord(record: Record<string, unknown>) {
 	for (const k in record) delete record[k]
 }
 
-function currentWorkingDirectory(): string {
-	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
-	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
-}
-
 function defaultConfigServiceMode(
 	capability: PluxelContext.RootServices['persistence']['capability'],
 ): ConfigServiceMode {
@@ -582,21 +555,6 @@ function createReadonlyView<T extends Record<string, unknown>>(target: T): Reado
 			)
 		},
 	}) as Readonly<T>
-}
-
-function normalizeProfileName(raw: unknown): string | undefined {
-	if (typeof raw !== 'string') return undefined
-	const trimmed = raw.trim()
-	if (!trimmed) return undefined
-	// Keep profile names safe for filesystem usage across platforms.
-	const safe = trimmed
-		// oxlint-disable-next-line eslint/no-control-regex -- intentionally strips ASCII control characters for safe filenames.
-		.replaceAll(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-		.replaceAll(/\s+/g, '-')
-		.replaceAll(/-+/g, '-')
-		.replace(/^[-.]+/, '')
-		.replace(/[-.]+$/, '')
-	return safe || undefined
 }
 
 function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {

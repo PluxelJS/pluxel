@@ -163,7 +163,7 @@ Billing UI 已暴露费率编辑入口，可直接配置 `provider / operation /
 插件运行数据使用项目内 SQLite 文件：
 
 ```text
-.pluxel/static/plugin-data/external-api-gateway.sqlite
+.pluxel/static/persistence/plugin-data/external-api-gateway.sqlite
 ```
 
 当前持久化内容：

@@ -30,7 +30,7 @@ export type StaticRuntimeHttpConfig = HttpServiceConfig
 
 export type StaticRuntimeDefinition = {
 	/**
-	 * Stable runtime id used only for diagnostics, storage labels, and read models.
+	 * Stable runtime id used only for diagnostics and read models.
 	 */
 	name: string
 	/**
@@ -58,7 +58,7 @@ export type StaticRuntimeHostOptions = {
 	/**
 	 * Shared runtime persistence backend used by config/state/plugin data/logger/vault.
 	 *
-	 * @default In-memory persistence. Durable/file-backed static hosts must pass a backend.
+	 * @default In-memory persistence. Node hosts can pass a string root path.
 	 */
 	persistence?: StaticRuntimePersistenceConfig
 	/**
@@ -81,7 +81,7 @@ export type StaticRuntimeHostOptions = {
 	 */
 	logger?: CoreContext.Config['logger']
 	/**
-	 * Runtime profile used for config/state storage labels and diagnostics.
+	 * Runtime profile used for diagnostics.
 	 */
 	profile?: CoreContext.Config['profile']
 	/**

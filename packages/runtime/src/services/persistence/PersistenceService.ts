@@ -43,16 +43,19 @@ export type PersistenceBackend = {
 	preflight?(requirement?: PersistenceRequirement): Promise<void>
 }
 
-export type PersistenceMode = 'file' | 'memory' | 'readonly'
-
-export type PersistenceServiceConfig = {
-	mode?: PersistenceMode
-	backend?: PersistenceBackend
-}
+export type PersistenceServiceConfig =
+	| string
+	| { mode: 'memory' }
+	| { mode: 'custom'; backend: PersistenceBackend }
+	| ({ mode: 'readonly' } & ({ backend: PersistenceBackend } | { dir: string }))
 
 export type WorkspacePersistenceBackendOptions = {
 	capability?: PersistenceCapability
 	root?: string
+}
+
+export type MemoryPersistenceBackendOptions = {
+	warnOnWrite?: false | ((operation: 'put' | 'delete', namespace: string, key: string) => void)
 }
 
 export class PersistenceError extends Error {
@@ -107,6 +110,10 @@ function normalizeKey(key: string): string {
 	return String(key || '').replaceAll('\\', '/').replace(/^\/+/, '')
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
 function keyMatchesPrefix(key: string, prefix: string): boolean {
 	const clean = normalizeKey(prefix)
 	if (!clean) return true
@@ -131,30 +138,44 @@ function randomHex(bytes: number): string {
 	return Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)
 }
 
-export function createMemoryPersistenceBackend(): PersistenceBackend {
+export function createMemoryPersistenceBackend(
+	options: MemoryPersistenceBackendOptions = {},
+): PersistenceBackend {
 	const data = new Map<string, Uint8Array>()
 	const keyFor = (namespace: string, key: string) => `${normalizeNamespace(namespace)}/${normalizeKey(key)}`
+	let warned = false
+	const warnOnWrite = (operation: 'put' | 'delete', namespace: string, key: string) => {
+		if (warned || !options.warnOnWrite) return
+		warned = true
+		options.warnOnWrite(operation, namespace, key)
+	}
 
 	return {
 		capability: 'ephemeral',
 		namespace(name) {
+			const namespace = normalizeNamespace(name)
 			return {
 				get: async (key) => {
-					const value = data.get(keyFor(name, key))
+					const value = data.get(keyFor(namespace, key))
 					return value ? copyBytes(value) : undefined
 				},
 				getText: async (key) => {
-					const value = data.get(keyFor(name, key))
+					const value = data.get(keyFor(namespace, key))
 					return value ? utf8Decode(value) : undefined
 				},
 				put: async (key, value) => {
-					data.set(keyFor(name, key), typeof value === 'string' ? utf8Encode(value) : copyBytes(value))
+					warnOnWrite('put', namespace, key)
+					data.set(
+						keyFor(namespace, key),
+						typeof value === 'string' ? utf8Encode(value) : copyBytes(value),
+					)
 				},
 				delete: async (key) => {
-					data.delete(keyFor(name, key))
+					warnOnWrite('delete', namespace, key)
+					data.delete(keyFor(namespace, key))
 				},
 				list: async function* (prefix = '') {
-					const nsRoot = `${normalizeNamespace(name)}/`
+					const nsRoot = `${namespace}/`
 					for (const fullKey of [...data.keys()].sort()) {
 						if (!fullKey.startsWith(nsRoot)) continue
 						const key = fullKey.slice(nsRoot.length)
@@ -167,7 +188,7 @@ export function createMemoryPersistenceBackend(): PersistenceBackend {
 					}
 				},
 				stat: async (key) => {
-					const value = data.get(keyFor(name, key))
+					const value = data.get(keyFor(namespace, key))
 					return value ? { key, kind: 'file', size: value.byteLength } : undefined
 				},
 			}
@@ -176,11 +197,44 @@ export function createMemoryPersistenceBackend(): PersistenceBackend {
 			if (requirement?.durable) {
 				throw new PersistenceError(
 					'UNAVAILABLE',
-					'[PersistenceService] durable persistence required, but the configured memory backend is ephemeral. Fix: pass a durable persistence.backend or remove the durable preflight requirement.',
+					'[PersistenceService] durable persistence required, but the configured memory backend is ephemeral. Fix: configure a persistence root path, pass persistence: { mode: "custom", backend }, or remove the durable preflight requirement.',
 				)
 			}
 		},
 	}
+}
+
+function createLazyNodeWorkspaceFsBackend(): WorkspacePersistenceBackendFs {
+	let task: Promise<WorkspacePersistenceBackendFs> | undefined
+	const load = async () => {
+		task ??= import('../../runtime/workspace-fs')
+			.then((mod) => mod.createNodeWorkspaceFsBackend())
+			.catch((cause) => {
+				throw new PersistenceError(
+					'UNAVAILABLE',
+					'[PersistenceService] Node file persistence is unavailable in this runtime. Fix: pass persistence: { mode: "custom", backend } for this host, or use persistence: { mode: "memory" } for ephemeral writes.',
+					{ cause },
+				)
+			})
+		return await task
+	}
+
+	return {
+		exists: () => false,
+		readText: async (path) => await (await load()).readText(path),
+		writeTextAtomic: async (path, text) => await (await load()).writeTextAtomic(path, text),
+		readBytes: async (path) => await (await load()).readBytes(path),
+		writeBytesAtomic: async (path, bytes) => await (await load()).writeBytesAtomic(path, bytes),
+		unlink: async (path) => await (await load()).unlink(path),
+		readdir: async (path) => await (await load()).readdir(path),
+		stat: async (path) => await (await load()).stat(path),
+	}
+}
+
+export function createNodePersistenceBackend(
+	options: WorkspacePersistenceBackendOptions = {},
+): PersistenceBackend {
+	return createWorkspacePersistenceBackend(createLazyNodeWorkspaceFsBackend(), options)
 }
 
 export function createReadonlyPersistenceBackend(delegate: PersistenceBackend): PersistenceBackend {
@@ -194,7 +248,7 @@ export function createReadonlyPersistenceBackend(delegate: PersistenceBackend): 
 				put: async () => {
 					throw new PersistenceError(
 						'READONLY',
-						'[PersistenceService] write requested, but the configured persistence backend is readonly. Fix: pass a writable backend or use persistence.mode="memory" for ephemeral writes.',
+						'[PersistenceService] write requested, but the configured persistence backend is readonly. Fix: pass a writable backend or use persistence: { mode: "memory" } for ephemeral writes.',
 					)
 				},
 				delete: async () => {
@@ -325,20 +379,9 @@ export class PersistenceService {
 
 	constructor(
 		public ctx: PluxelContext,
-		config: PersistenceServiceConfig = {},
+		config?: PersistenceServiceConfig,
 	) {
-		const mode = config.mode ?? (config.backend ? 'file' : 'memory')
-		let backend = config.backend
-		if (!backend) {
-			if (mode === 'file') {
-				throw new PersistenceError(
-					'UNAVAILABLE',
-					'[PersistenceService] persistence.mode="file" requires an explicit backend. Fix: pass persistence.backend or use persistence.mode="memory".',
-				)
-			}
-			backend = createMemoryPersistenceBackend()
-		}
-		this.backend = mode === 'readonly' ? createReadonlyPersistenceBackend(backend) : backend
+		this.backend = resolvePersistenceBackend(config)
 	}
 
 	get capability(): PersistenceCapability {
@@ -352,4 +395,62 @@ export class PersistenceService {
 	preflight(requirement?: PersistenceRequirement): Promise<void> {
 		return this.backend.preflight?.(requirement) ?? Promise.resolve()
 	}
+}
+
+function resolvePersistenceBackend(config: PersistenceServiceConfig | undefined): PersistenceBackend {
+	if (config === undefined) return createImplicitMemoryPersistenceBackend()
+
+	if (typeof config === 'string') return createFilePersistenceBackend(config)
+	if (!isRecord(config)) throw invalidPersistenceConfig()
+
+	switch (config.mode) {
+		case 'memory':
+			return createMemoryPersistenceBackend()
+		case 'custom':
+			return assertPersistenceBackend(config.backend)
+		case 'readonly': {
+			const backend =
+				'backend' in config
+					? assertPersistenceBackend(config.backend)
+					: createFilePersistenceBackend(String(config.dir ?? ''))
+			return createReadonlyPersistenceBackend(backend)
+		}
+		default:
+			throw invalidPersistenceConfig()
+	}
+}
+
+function createFilePersistenceBackend(dir: string): PersistenceBackend {
+	const root = dir.trim()
+	if (!root) throw invalidPersistenceConfig()
+	return createNodePersistenceBackend({ root })
+}
+
+function createImplicitMemoryPersistenceBackend(): PersistenceBackend {
+	return createMemoryPersistenceBackend({
+		warnOnWrite: (operation, namespace, key) => {
+			const target = `${namespace}/${normalizeKey(key)}`
+			console.warn(
+				`[PersistenceService] implicit in-memory persistence received a ${operation} for "${target}". Data will be lost when the host restarts. Configure persistence: "./.pluxel/persistence" for Node file storage, pass persistence: { mode: "custom", backend } for custom storage, or set persistence: { mode: "memory" } if this is intentional.`,
+			)
+		},
+	})
+}
+
+function assertPersistenceBackend(value: unknown): PersistenceBackend {
+	if (
+		isRecord(value) &&
+		typeof value.capability === 'string' &&
+		typeof value.namespace === 'function'
+	) {
+		return value as PersistenceBackend
+	}
+	throw invalidPersistenceConfig()
+}
+
+function invalidPersistenceConfig(): PersistenceError {
+	return new PersistenceError(
+		'UNAVAILABLE',
+		'[PersistenceService] invalid persistence config. Use a string root path for Node file storage, { mode: "memory" } for ephemeral storage, { mode: "custom", backend } for custom storage, or { mode: "readonly", dir|backend } for readonly storage.',
+	)
 }

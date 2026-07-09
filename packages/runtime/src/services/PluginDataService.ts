@@ -1,8 +1,7 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import type { BaseItem, PersistenceAdapter } from '@signaldb/core'
-import { basename, resolve } from 'pathe'
+import { basename } from 'pathe'
 import { SuperJSON } from 'superjson'
-import { resolveRuntimeStoragePaths } from '../runtime/paths'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 const serviceName = 'pluginData' as const
@@ -19,12 +18,6 @@ declare module '@pluxel/core' {
 }
 
 export type PluginDataServiceConfig = {
-	/**
-	 * Base directory for plugin persistence data.
-	 *
-	 * @default runtime storage layout ("data/plugin-data")
-	 */
-	dir?: string
 	enabled?: boolean
 }
 
@@ -47,7 +40,6 @@ function isEnoent(err: unknown): boolean {
 
 @Injectable({ key: serviceName })
 export class PluginDataService {
-	private readonly baseDir: string
 	private readonly enabled: boolean
 	private readonly storage: PersistenceNamespace
 
@@ -55,8 +47,6 @@ export class PluginDataService {
 		const cfg = ctx.config.pluginData ?? {}
 		this.enabled = cfg.enabled !== false
 		this.storage = ctx.root.persistence.namespace('plugin-data')
-		const dir = cfg.dir ?? resolveRuntimeStoragePaths(currentWorkingDirectory()).pluginDataDir
-		this.baseDir = resolve(dir)
 	}
 
 	/**
@@ -294,13 +284,13 @@ export class PluginDataService {
 
 	private fileForNamespace(namespace: string): string {
 		const safe = this.normalizeNamespace(namespace)
-		return resolve(this.baseDir, `${safe}.json`)
+		return `${safe}.json`
 	}
 
 	private fileForCollection(namespace: string, collection: string): string {
 		const safeNs = this.normalizeNamespace(namespace)
 		const safeCol = this.normalizeNamespace(collection)
-		return resolve(this.baseDir, `${safeNs}.${safeCol}.json`)
+		return `${safeNs}.${safeCol}.json`
 	}
 
 	private async readTextOptional(path: string | null): Promise<string | null> {
@@ -317,9 +307,4 @@ export class PluginDataService {
 		const trimmed = ns || 'default'
 		return basename(trimmed).replaceAll(/[^A-Za-z0-9_-]/g, '_')
 	}
-}
-
-function currentWorkingDirectory(): string {
-	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
-	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }

@@ -24,9 +24,7 @@ export type ExternalGatewayDbHandle = {
 
 type DbContext = {
 	config: {
-		pluginData?: {
-			dir?: string
-		}
+		persistence?: unknown
 	}
 	effects: {
 		defer(callback: () => void): void
@@ -34,7 +32,10 @@ type DbContext = {
 }
 
 export async function useExternalGatewayDB(ctx: DbContext): Promise<ExternalGatewayDbHandle> {
-	const baseDir = ctx.config.pluginData?.dir ?? '.pluxel/plugin-data'
+	if (typeof ctx.config.persistence !== 'string') {
+		throw new Error('ExternalGateway database requires file persistence: set persistence to a root path.')
+	}
+	const baseDir = resolve(ctx.config.persistence, 'plugin-data')
 	const file = resolve(baseDir, DB_FILE)
 	await mkdir(dirname(file), { recursive: true })
 

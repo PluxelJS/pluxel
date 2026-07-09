@@ -3,26 +3,19 @@ import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 import { AutheliaOidcDemoPlugin } from './plugin.ts'
 
 const repoRoot = resolve(import.meta.dirname, '../../../..')
-const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-authelia-oidc-demo'
+const staticDataRoot = resolve(repoRoot, 'packages/plugins/authelia-oidc-demo/.pluxel/static')
 
 export const autheliaOidcDemoPlugins = [AutheliaOidcDemoPlugin] as const
 export const autheliaOidcDemoEnabledPlugins = [] as const
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-authelia-oidc-demo',
-	profile: activeProfile,
 	plugins: autheliaOidcDemoPlugins,
-	configService: {
-		mode: 'memory',
-	},
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: autheliaOidcDemoEnabledPlugins },
 	},
 	logger: { preset: 'core' },
-	pluginData: {
-		dir: resolve(repoRoot, 'packages/plugins/authelia-oidc-demo/.pluxel/static/plugin-data'),
-	},
+	persistence: resolve(staticDataRoot, 'persistence'),
 	adminAccess: {
 		enabled: true,
 		exposure: 'public',

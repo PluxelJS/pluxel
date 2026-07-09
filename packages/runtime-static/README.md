@@ -32,13 +32,10 @@ import { DemoPlugin } from './src/DemoPlugin'
 export default defineStaticRuntimeConfig({
 	name: 'app',
 	plugins: [DemoPlugin],
-	configService: { mode: 'memory' },
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
-	persistence: { mode: 'memory' },
-	pluginData: { enabled: true },
+	persistence: './.pluxel/static/persistence',
 	adminAccess: {
 		enabled: false,
 		exposure: 'private',
@@ -71,12 +68,10 @@ import { createStaticRuntime, defineStaticRuntimeConfig } from '@pluxel/runtime-
 const config = defineStaticRuntimeConfig({
 	name: 'app',
 	plugins: [DemoPlugin],
-	configService: { mode: 'memory' },
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: ['DemoPlugin'] },
 	},
-	persistence: { mode: 'memory' },
+	persistence: './.pluxel/static/persistence',
 })
 const runtime = await createStaticRuntime(config)
 
@@ -85,6 +80,15 @@ export default { fetch: runtime.fetch }
 
 `createStaticRuntime(config)` starts the fixed catalog before it resolves. `runtime.start()` remains
 available as an idempotent lifecycle handle, but standalone hosts should not call it a second time.
+
+`runtimeState.snapshot` is a first-run seed: if no persisted runtime state exists yet, Pluxel writes
+that initial state under the shared persistence root. Later restarts read the persisted state.
+
+For throwaway demos or tests, use `persistence: { mode: 'memory' }`. Runtime-owned data such as
+config, runtime state, plugin data, and vault content is stored under namespaces inside the shared
+persistence backend. If persistence is omitted, Pluxel falls back to in-memory storage and logs a
+warning the first time data is written, because those writes are lost when the host restarts.
+Non-Node hosts should pass `persistence: { mode: 'custom', backend }`.
 
 ## Packaging
 

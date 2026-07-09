@@ -78,7 +78,10 @@ export class CommercialDataPlugin extends BasePlugin {
 	}
 
 	private resolveDatabaseFile(): string {
-		const baseDir = this.ctx.config.pluginData?.dir ?? '.pluxel/plugin-data'
+		if (typeof this.ctx.config.persistence !== 'string') {
+			throw new Error('CommercialDataPlugin requires file persistence: set persistence to a root path.')
+		}
+		const baseDir = resolve(this.ctx.config.persistence, 'plugin-data')
 		return resolve(baseDir, pluginName, 'commercial.db')
 	}
 

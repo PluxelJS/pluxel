@@ -7,7 +7,7 @@ import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '../../../..')
-const activeProfile = process.env.PLUXEL_RUNTIME_PROFILE ?? 'plugins-host-static'
+const staticDataRoot = resolve(repoRoot, 'packages/plugins/host/.pluxel/static')
 
 export const staticDemoPlugins = [
 	PluginEventsDeclaredProducer,
@@ -27,13 +27,8 @@ export const staticDemoEnabledPlugins = [
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-host-static',
-	profile: activeProfile,
 	plugins: staticDemoPlugins,
-	configService: {
-		mode: 'memory',
-	},
 	runtimeState: {
-		mode: 'memory',
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
 	management: {
@@ -41,7 +36,5 @@ export default defineStaticRuntimeConfig({
 		access: { exposure: 'private' },
 	},
 	logger: { preset: 'core' },
-	pluginData: {
-		dir: resolve(repoRoot, 'packages/plugins/host/.pluxel/static/plugin-data'),
-	},
+	persistence: resolve(staticDataRoot, 'persistence'),
 })

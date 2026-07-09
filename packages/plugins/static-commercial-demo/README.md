@@ -29,10 +29,10 @@ inside the host Vite process, and another business plugin can consume it without
 the data comes from SQLite, a remote API, or a different provider plugin.
 
 The local database is provided through `@libsql/client/sqlite3` and queried through
-`drizzle-orm/libsql/sqlite3`. The database is persisted under the runtime plugin-data directory:
+`drizzle-orm/libsql/sqlite3`. The database is persisted under the runtime persistence root:
 
 ```text
-packages/plugins/static-commercial-demo/.pluxel/static/plugin-data/CommercialDataPlugin/commercial.db
+packages/plugins/static-commercial-demo/.pluxel/static/persistence/plugin-data/CommercialDataPlugin/commercial.db
 ```
 
 Run:

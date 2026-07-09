@@ -1,24 +1,8 @@
 import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
-import { resolve } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, it } from 'vitest'
 
 type RuntimeHostLike = Parameters<Parameters<typeof withRuntimeHost>[0]>[0]
-
-function bytesToHex(bytes: Uint8Array): string {
-	let out = ''
-	for (let i = 0; i < bytes.length; i++) out += bytes[i]!.toString(16).padStart(2, '0')
-	return out
-}
-
-function randomHex(bytes: number): string {
-	type WebCryptoLike = { getRandomValues: (array: Uint8Array) => Uint8Array }
-	const c = (globalThis as unknown as { crypto?: WebCryptoLike }).crypto
-	if (!c) throw new Error('WebCrypto is required for VaultService tests')
-	const buf = new Uint8Array(bytes)
-	c.getRandomValues(buf)
-	return bytesToHex(buf)
-}
 
 async function sealVaultForTesting(vault: unknown): Promise<void> {
 	await (vault as { sealMountForTesting: () => Promise<void> }).sealMountForTesting()
@@ -46,8 +30,6 @@ async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
 
 describe('VaultService (shared mount runtime)', () => {
 	it('startup preflight creates an empty shared mount before plugin access', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -69,20 +51,17 @@ describe('VaultService (shared mount runtime)', () => {
 					tx.entries()
 				})
 
-				const mountDir = resolve(dir, 'global')
-				expect(await listVaultFiles(host, dir)).toEqual([
-					resolve(mountDir, 'keys.age'),
-					resolve(mountDir, 'state.enc'),
+				expect(await listVaultFiles(host, 'global')).toEqual([
+					'/global/keys.age',
+					'/global/state.enc',
 				])
 				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('writes to the preflighted shared mount with key envelope and snapshot', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -101,20 +80,17 @@ describe('VaultService (shared mount runtime)', () => {
 
 				expect(await kv.get('github.token')).toBe('ghp_test')
 
-				const mountDir = resolve(dir, 'global')
-				expect(await listVaultFiles(host, dir)).toEqual([
-					resolve(mountDir, 'keys.age'),
-					resolve(mountDir, 'state.enc'),
+				expect(await listVaultFiles(host, 'global')).toEqual([
+					'/global/keys.age',
+					'/global/state.enc',
 				])
 				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('flush writes one snapshot for multiple kv mutations', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -128,7 +104,7 @@ describe('VaultService (shared mount runtime)', () => {
 
 				await kv.set('a', '0')
 				await plugin.ctx.vault.flush()
-				const statePath = resolve(dir, 'global', 'state.enc')
+				const statePath = 'global/state.enc'
 				const before = await vaultStorage(host).get(statePath)
 
 				await kv.batch((tx) => {
@@ -145,13 +121,11 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await kv.get('a')).toBe('1')
 				expect(await kv.get('b')).toBe('2')
 			},
-			{ vault: { dir, flushDebounceMs: 1 } },
+			{ vault: { flushDebounceMs: 1 } },
 		)
 	})
 
 	it('shared mount keeps plugin namespaces separate', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -175,13 +149,11 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await b.ctx.vault.kv().get('token')).toBe('b-secret')
 				expect(await a.ctx.vault.kv({ namespace: 'PluginB' }).get('token')).toBe('b-secret')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('namespace() provides a stable scoped facade over kv/docs/blobs', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -206,13 +178,11 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(await docs.get('default')).toEqual({ ready: true })
 				expect(await blob.readText()).toBe('scoped')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('namespace.batch() updates kv and docs atomically within one namespace copy-on-write', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -237,13 +207,11 @@ describe('VaultService (shared mount runtime)', () => {
 					ready: true,
 				})
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('tampered shared snapshot fails to decrypt after relock', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -259,7 +227,7 @@ describe('VaultService (shared mount runtime)', () => {
 				await plugin.ctx.vault.flush()
 				await sealVaultForTesting(plugin.ctx.vault)
 
-				const path = resolve(dir, 'global', 'state.enc')
+				const path = 'global/state.enc'
 				const bytes = await vaultStorage(host).get(path)
 				expect(bytes).toBeTruthy()
 				const tampered = Uint8Array.from(bytes!)
@@ -271,13 +239,11 @@ describe('VaultService (shared mount runtime)', () => {
 					code: 'DECRYPT_FAILED',
 				})
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('describe stays pure-read when a local host identity is available', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -300,13 +266,11 @@ describe('VaultService (shared mount runtime)', () => {
 				await host.ctx.vaultAdmin.preflight()
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
-	it('unlock() uses deploy key when the private identity is injected', async () => {
-		const dir = `/vault/${randomHex(8)}`
-		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
+	it('unlock() uses deploy key when the private identity is injected', async () => {		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
 		await withRuntimeHost(
 			async (host) => {
@@ -339,30 +303,26 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ vault: { dir } },
+			{},
 		)
 
 		delete stdEnv[envName]
 	})
 
 	it('rekey() does not create a missing mount as a side effect', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				await expect(host.ctx.vaultAdmin.rekey()).rejects.toMatchObject({
 					name: 'VaultError',
 					code: 'MISSING_MOUNT',
 				})
-				expect(await listVaultFiles(host, dir)).toEqual([])
+				expect(await listVaultFiles(host, 'global')).toEqual([])
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
-	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {
-		const dir = `/vault/${randomHex(8)}`
-		await withRuntimeHost(
+	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {}
@@ -373,8 +333,8 @@ describe('VaultService (shared mount runtime)', () => {
 				const plugin = host.require(PluginA)
 				await plugin.ctx.vault.kv().set('token', 'value')
 				await plugin.ctx.vault.flush()
-				const keyPath = resolve(dir, 'global', 'keys.age')
-				const statePath = resolve(dir, 'global', 'state.enc')
+				const keyPath = 'global/keys.age'
+				const statePath = 'global/state.enc'
 				const beforeKey = await vaultStorage(host).get(keyPath)
 				const beforeState = await vaultStorage(host).get(statePath)
 
@@ -390,13 +350,11 @@ describe('VaultService (shared mount runtime)', () => {
 				await host.ctx.vaultAdmin.preflight()
 				expect(await plugin.ctx.vault.kv().get('token')).toBe('value')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('stores blobs separately from the shared snapshot', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'PluginA' })
@@ -411,15 +369,13 @@ describe('VaultService (shared mount runtime)', () => {
 				await blob.writeText('hello vault')
 				expect(await blob.readText()).toBe('hello vault')
 				expect(await plugin.ctx.vault.blobs().list()).toEqual(['notes'])
-				expect(blob.describe().path).toBe(resolve(dir, 'global', 'blobs', 'PluginA', 'notes.blob'))
+				expect(blob.describe().path).toBe('global/blobs/PluginA/notes.blob')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('host preflight initializes an empty shared mount', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				const admin = await host.ctx.vaultAdmin.preflight()
@@ -433,20 +389,17 @@ describe('VaultService (shared mount runtime)', () => {
 					present: true,
 					unlocked: true,
 				})
-				const mountDir = resolve(dir, 'global')
-				expect(await listVaultFiles(host, dir)).toEqual([
-					resolve(mountDir, 'keys.age'),
-					resolve(mountDir, 'state.enc'),
+				expect(await listVaultFiles(host, 'global')).toEqual([
+					'/global/keys.age',
+					'/global/state.enc',
 				])
 				expect(await vaultStorage(host).stat('security/identity.json')).toBeTruthy()
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('host preflight fails when an existing sealed mount has no unlock identity', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
@@ -473,12 +426,11 @@ describe('VaultService (shared mount runtime)', () => {
 					},
 				})
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('host preflight auto-unlocks from deploy identity when available', async () => {
-		const dir = `/vault/${randomHex(8)}`
 		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
 		await withRuntimeHost(
@@ -515,15 +467,13 @@ describe('VaultService (shared mount runtime)', () => {
 				})
 				expect(await seeder.ctx.vault.kv().get('token')).toBe('secret')
 			},
-			{ vault: { dir } },
+			{},
 		)
 
 		delete stdEnv[envName]
 	})
 
 	it('sealed mounts report unlock_required when no matching identity is available', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
@@ -555,13 +505,11 @@ describe('VaultService (shared mount runtime)', () => {
 					}),
 				})
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('registry commit rejects before activating more plugins when vault preflight fails', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
@@ -589,13 +537,11 @@ describe('VaultService (shared mount runtime)', () => {
 				expect(unlock.unlocked).toBe(false)
 				expect(unlock.reason).toBe('unlock_required')
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 
 	it('replacing deploy recipients rekeys the envelope for all saved recipients', async () => {
-		const dir = `/vault/${randomHex(8)}`
-
 		await withRuntimeHost(
 			async (host) => {
 				@Plugin({ name: 'Seeder' })
@@ -617,7 +563,7 @@ describe('VaultService (shared mount runtime)', () => {
 				])
 				expect(admin.deploy.recipients).toEqual([pairA.publicKey, pairB.publicKey])
 			},
-			{ vault: { dir } },
+			{},
 		)
 	})
 })

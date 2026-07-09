@@ -1,7 +1,6 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
-import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type PluginGroupState = {
@@ -42,7 +41,6 @@ export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
-	path?: string
 	snapshot?: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] }
 }
 
@@ -95,15 +93,12 @@ export class RuntimeStateStore {
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = ctx.root.persistence.namespace('runtime-state')
 
-		const profile = normalizeProfileName(ctx.config.profile)
-		const runtimeStorage = resolveRuntimeStoragePaths(currentWorkingDirectory())
-		const resolved = resolveProfiledPath(cfg.path ?? runtimeStorage.runtimeStateFile, profile)
-		this.file = resolved.path
+		this.file = 'state.json'
 
 		if (cfg.snapshot) applySnapshot(this.data, cfg.snapshot)
 
 		if (this.mode === 'file') {
-			this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
+			this.ready = this.loadFromDisk(this.file).finally(() => {
 				this.isReady = true
 			})
 		} else {
@@ -193,19 +188,12 @@ export class RuntimeStateStore {
 		}
 	}
 
-	private async loadFromDisk(file: string, fallbackFile?: string) {
+	private async loadFromDisk(file: string) {
 		let txt: string
-		let readFromFallback = false
 		const primary = await this.storage.getText(file)
-		const fallback =
-			primary === undefined && fallbackFile ? await this.storage.getText(fallbackFile) : undefined
-		if (fallback !== undefined) {
-			txt = fallback
-			readFromFallback = true
-		} else if (primary !== undefined) {
+		if (primary !== undefined) {
 			txt = primary
 		} else {
-			replaceDraft(this.data, createDefaultDraft())
 			await this.saveToDisk(file)
 			return
 		}
@@ -228,7 +216,6 @@ export class RuntimeStateStore {
 		}
 
 		replaceDraft(this.data, coerceRuntimeStateFile(parsed))
-		if (readFromFallback) await this.saveToDisk(file)
 	}
 
 	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
@@ -472,25 +459,6 @@ function freezeNestedRecord(
 		out[key] = Object.freeze(Object.assign(Object.create(null), value))
 	}
 	return Object.freeze(out)
-}
-
-function normalizeProfileName(raw: unknown): string | undefined {
-	if (typeof raw !== 'string') return undefined
-	const trimmed = raw.trim()
-	if (!trimmed) return undefined
-	const safe = trimmed
-		// oxlint-disable-next-line eslint/no-control-regex -- intentionally strips ASCII control characters for safe filenames.
-		.replaceAll(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-		.replaceAll(/\s+/g, '-')
-		.replaceAll(/-+/g, '-')
-		.replace(/^[-.]+/, '')
-		.replace(/[-.]+$/, '')
-	return safe || undefined
-}
-
-function currentWorkingDirectory(): string {
-	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
-	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }
 
 function defaultRuntimeStateStoreMode(
