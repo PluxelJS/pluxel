@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { callExternalGatewayTool, type ExternalGatewayToolHost } from './tool-dispatcher.ts'
-import { externalGatewayPiTools, PiExtension } from './pi-extension.ts'
+import { externalGatewayPiTools, PiExtension, yiqichaBundleCalls } from './pi-extension.ts'
 import {
 	EXTERNAL_GATEWAY_TOOL_NAMES,
 	listExternalGatewayToolSpecs,
@@ -256,6 +256,47 @@ describe('external gateway tool contract', () => {
 						billing: 'pi-user',
 					},
 				],
+			},
+		])
+	})
+
+	it('turns YiQiCha recommendations into explicit batch calls', () => {
+		const calls = yiqichaBundleCalls(
+			{
+				provider: 'yiqicha',
+				bundle: 'profile',
+				description: 'test',
+				estimatedCalls: 2,
+				note: 'test',
+				calls: [
+					{
+						id: 'basicInfo',
+						api: 'getBasicInfo',
+						label: 'Basic',
+						reason: 'Core profile',
+						params: { keyword: '智谱' },
+					},
+					{
+						id: 'shareholders',
+						api: 'getEnterprisePartners',
+						label: 'Shareholders',
+						reason: 'Ownership',
+						params: { keyword: '智谱', page: 1, pageSize: 50 },
+					},
+				],
+			},
+			{ only: ['shareholders'], billing: 'pi-user', noCache: true },
+		)
+
+		expect(calls).toEqual([
+			{
+				name: 'yiqicha.call_api',
+				args: {
+					api: 'getEnterprisePartners',
+					params: { keyword: '智谱', page: 1, pageSize: 50 },
+					noCache: true,
+				},
+				billing: 'pi-user',
 			},
 		])
 	})

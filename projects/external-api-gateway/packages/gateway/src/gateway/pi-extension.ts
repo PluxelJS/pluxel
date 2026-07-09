@@ -1,4 +1,4 @@
-import { newHttpBatchRpcSession } from 'capnweb'
+import { newHttpBatchRpcSession, type RpcPromise } from 'capnweb'
 import type {
 	GatewayAuthContext,
 	GatewayBillingContext,
@@ -14,6 +14,7 @@ import {
 	type ExternalGatewayToolName,
 	type ExternalGatewayToolResult,
 	type ExternalGatewayToolSpec,
+	type YiqichaBundleRecommendation,
 } from './tools.ts'
 
 export const DEFAULT_EXTERNAL_GATEWAY_RPC_URL =
@@ -46,6 +47,12 @@ export type PiToolBatchCallRequest = {
 	name: ExternalGatewayToolName | string
 	args?: Record<string, unknown> | null
 	billing?: GatewayBillingContext | string
+}
+
+export type YiqichaBundleCallOptions = {
+	billing?: GatewayBillingContext | string
+	noCache?: boolean
+	only?: string[]
 }
 
 export type PiToolCallRequest = {
@@ -95,6 +102,7 @@ export type PiPlugin = {
 		options?: PiToolCallOptions,
 	): Promise<unknown>
 	callTools(calls: PiToolBatchCallRequest[]): Promise<ExternalGatewayToolBatchCallResult>
+	batch(): RpcPromise<ExternalGatewayAuthedRpc>
 	handleToolCall(input: PiToolCallRequest): Promise<PiToolCallResult>
 	handleToolCalls(input: PiToolCallRequest[]): Promise<PiToolCallResult[]>
 	test(input?: ExternalGatewayToolListInput): Promise<PiExtensionHealth>
@@ -152,6 +160,7 @@ export class PiExtension implements PiPlugin {
 	}
 	private readonly defaultBilling: GatewayBillingContext | string
 	private readonly defaultTools?: ExternalGatewayToolListInput
+	private readonly cacheAuthedApi: boolean
 	private authedApi?: Promise<ExternalGatewayAuthedRpc>
 
 	constructor(options: PiExtensionOptions) {
@@ -161,6 +170,7 @@ export class PiExtension implements PiPlugin {
 		this.rpcUrl = options.rpcUrl ?? DEFAULT_EXTERNAL_GATEWAY_RPC_URL
 		this.defaultBilling = options.billing ?? 'pi-agent'
 		this.defaultTools = options.tools
+		this.cacheAuthedApi = Boolean(options.transport)
 		this.transport = (options.transport ??
 			newHttpBatchRpcSession<ExternalGatewayRpcTransport>(
 				this.rpcUrl,
@@ -177,7 +187,7 @@ export class PiExtension implements PiPlugin {
 	async refreshTools(
 		input: ExternalGatewayToolListInput = this.defaultTools ?? {},
 	): Promise<PiToolDefinition[]> {
-		const specs = await (await this.getAuthedApi()).toolSpecs(input)
+		const specs = await this.callAuthed((api) => api.toolSpecs(input))
 		return toPiToolDefinitions(specs)
 	}
 
@@ -196,21 +206,30 @@ export class PiExtension implements PiPlugin {
 		args: Record<string, unknown> = {},
 		options: PiToolCallOptions = {},
 	): Promise<unknown> {
-		return (await this.getAuthedApi()).callTool({
-			name,
-			args,
-			billing: options.billing ?? this.defaultBilling,
-		})
+		return this.callAuthed((api) =>
+			api.callTool({
+				name,
+				args,
+				billing: options.billing ?? this.defaultBilling,
+			}),
+		)
 	}
 
 	async callTools(calls: PiToolBatchCallRequest[]): Promise<ExternalGatewayToolBatchCallResult> {
-		return (await this.getAuthedApi()).callTools({
-			calls: calls.map((call) => ({
-				name: call.name,
-				args: call.args,
-				billing: call.billing ?? this.defaultBilling,
-			})),
-		})
+		return this.callAuthed((api) =>
+			api.callTools({
+				calls: calls.map((call) => ({
+					name: call.name,
+					args: call.args,
+					billing: call.billing ?? this.defaultBilling,
+				})),
+			}),
+		)
+	}
+
+	batch(): RpcPromise<ExternalGatewayAuthedRpc> {
+		const transport = newHttpBatchRpcSession<ExternalGatewayRpcTransport>(this.rpcUrl)
+		return transport.authenticate(this.token) as RpcPromise<ExternalGatewayAuthedRpc>
 	}
 
 	async handleToolCall(input: PiToolCallRequest): Promise<PiToolCallResult> {
@@ -245,7 +264,7 @@ export class PiExtension implements PiPlugin {
 		input: ExternalGatewayToolListInput = this.defaultTools ?? {},
 	): Promise<PiExtensionHealth> {
 		try {
-			const authedApi = await this.getAuthedApi()
+			const authedApi = this.cacheAuthedApi ? await this.getAuthedApi() : this.batch()
 			const [identity, remoteSpecs] = await Promise.all([
 				authedApi.whoami(),
 				authedApi.toolSpecs(input),
@@ -287,11 +306,38 @@ export class PiExtension implements PiPlugin {
 		}
 		return this.authedApi
 	}
+
+	private async callAuthed<T>(
+		callback: (api: ExternalGatewayAuthedRpc) => T | Promise<T>,
+	): Promise<T> {
+		const api = (
+			this.cacheAuthedApi ? await this.getAuthedApi() : this.batch()
+		) as ExternalGatewayAuthedRpc
+		return callback(api)
+	}
 }
 
 export const externalGatewayPiTools: PiToolDefinition[] = toPiToolDefinitions(
 	listExternalGatewayToolSpecs(),
 )
+
+export function yiqichaBundleCalls(
+	plan: YiqichaBundleRecommendation,
+	options: YiqichaBundleCallOptions = {},
+): PiToolBatchCallRequest[] {
+	const only = options.only?.length ? new Set(options.only) : undefined
+	return plan.calls
+		.filter((call) => !only || only.has(call.id))
+		.map((call) => ({
+			name: 'yiqicha.call_api',
+			args: {
+				api: call.api,
+				params: call.params,
+				...(options.noCache === undefined ? {} : { noCache: options.noCache }),
+			},
+			...(options.billing === undefined ? {} : { billing: options.billing }),
+		}))
+}
 
 export function toPiToolDefinition(spec: ExternalGatewayToolSpec): PiToolDefinition {
 	return {

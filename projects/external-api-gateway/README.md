@@ -35,7 +35,7 @@ dev-zhipu-token-change-me
 外部 PI agent 复用正式导出的 `PiExtension`：
 
 ```ts
-import { PiExtension } from '@repo/external-api-gateway-gateway/pi'
+import { PiExtension, yiqichaBundleCalls } from '@repo/external-api-gateway-gateway/pi'
 
 const pi = new PiExtension({
 	token: apiToken,
@@ -61,15 +61,33 @@ const plan = await pi.yiqicha.recommendBundle({
 	keyword: '北京智谱华章科技股份有限公司',
 	include: ['basicInfo', 'shareholders', 'investments'],
 })
-const profileParts = await pi.callTools(
-	plan.calls.map((call) => ({
-		name: 'yiqicha.call_api',
-		args: { api: call.api, params: call.params },
-	})),
-)
+const profileParts = await pi.callTools(yiqichaBundleCalls(plan))
 
 pi.dispose()
 ```
+
+编程调用时要主动利用 Cap'n Web HTTP batch：如果要调用的工具已经确定，用 `pi.batch()` 开一个新的 HTTP batch session，不要逐个 `await`，最后一次 `Promise.all`。这会把 `authenticate` 和多个 RPC 方法调用合并进同一个 HTTP batch request。
+
+```ts
+const api = pi.batch()
+const basicInfo = api.callTool({
+	name: 'yiqicha.call_api',
+	args: { api: 'getBasicInfo', params: { keyword: '北京智谱华章科技股份有限公司' } },
+	billing: { userId: 'pi-agent', traceId: 'company-001' },
+})
+const shareholders = api.callTool({
+	name: 'yiqicha.call_api',
+	args: {
+		api: 'getEnterprisePartners',
+		params: { keyword: '北京智谱华章科技股份有限公司', page: 1, pageSize: 50 },
+	},
+	billing: { userId: 'pi-agent', traceId: 'company-001' },
+})
+
+const [basic, holders] = await Promise.all([basicInfo, shareholders])
+```
+
+如果要先根据 `recommendBundle(...)` 的结果选择 API，通常是两阶段：第一阶段免费拿计划；第二阶段把选中的计划转成 `yiqichaBundleCalls(plan, { only: [...] })` 后交给 `pi.callTools(...)`。这样计费调用仍由外部显式选择。
 
 接 PI runtime 时，`PiExtension` 本身就是插件对象。PI 侧负责把 `tools` 注入模型，把模型返回的 tool call 交回 `handleToolCall`：
 
@@ -88,7 +106,7 @@ piAgent.onToolCall(async (toolCall) => {
 
 `PiExtension` 的 tools 是 PI/OpenAI-style function definitions，执行时只调用 ExternalGateway RPC。`pi.test()` 会实际认证 token、验证 RPC URL 可达，并拉取远端 tool specs；构造函数本身只保存配置，不做网络请求。
 
-业务代码优先使用 `pi.zhipu.*` / `pi.yiqicha.*` typed wrapper；它们和 `callTool(...)` 复用同一套 TypeBox schema。需要对接模型 runtime 时才直接读取 `pi.tools` 并把 tool call 交给 `handleToolCall(...)`。`callTool('zhipu.web_search', args)` 仍保留，字面量 tool name 会推导对应 args 类型；动态字符串调用退回 `Record<string, unknown>`。需要一次提交多个显式 tool call 时用 `pi.callTools(...)`，每个结果独立返回。
+业务代码优先使用 `pi.zhipu.*` / `pi.yiqicha.*` typed wrapper；它们和 `callTool(...)` 复用同一套 TypeBox schema。需要对接模型 runtime 时才直接读取 `pi.tools` 并把 tool call 交给 `handleToolCall(...)`。`callTool('zhipu.web_search', args)` 仍保留，字面量 tool name 会推导对应 args 类型；动态字符串调用退回 `Record<string, unknown>`。默认 HTTP 模式下 `PiExtension` 会为每次 RPC 操作创建 fresh Cap'n Web batch，不缓存一次性 HTTP batch stub。已知多个调用时优先用 `pi.batch()` 让 Cap'n Web 合并成一次 HTTP batch；需要显式服务端批量执行时用 `pi.callTools(...)`，每个结果独立返回。
 
 `billing` 是每次 `callTool(...)` 的强制调用归属边界。`userId / tenantId / traceId` 会写入 `UsageBillingPlugin`，用于成本、审计和 history。`ExternalGatewayPlugin` 的 token 只做认证和吊销：有效 token 可调用 gateway tool；吊销后不可再认证。本地开发会自动创建默认 token；生产环境只有显式设置 `PLUXEL_EXTERNAL_GATEWAY_DEV_TOKEN` 时才会创建开发 token。
 
