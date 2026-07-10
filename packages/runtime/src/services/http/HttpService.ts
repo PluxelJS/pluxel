@@ -268,6 +268,14 @@ export class HttpService {
 		return value
 	}
 
+	matchesMountedRoute(pathname: string): boolean {
+		const path = normalizeMountBase(pathname)
+		return this.mountedIndex.some((slot) => {
+			if (slot.base === '/') return true
+			return path === slot.base || path.startsWith(`${slot.base}/`)
+		})
+	}
+
 	get plugin() {
 		const pluginCtx = this.ctx
 		const pluginId = this.requirePluginId(pluginCtx)

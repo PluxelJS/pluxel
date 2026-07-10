@@ -15,7 +15,7 @@ pnpm --filter @repo/project-external-api-gateway static
 pnpm --filter @repo/project-external-api-gateway verify
 ```
 
-默认端口：`3313`。
+默认端口：`3313`。`dev` 运行 Vite + runtime-static dev host，并显式代理 `/external-gateway/*` 到 Pluxel runtime HTTP router；`static` 运行 `src/static.ts` 里的独立 runtime server，更接近生产入口。
 
 默认开发 token：
 
@@ -26,7 +26,7 @@ dev-zhipu-token-change-me
 External gateway RPC:
 
 ```text
-http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc
+http://127.0.0.1:3313/external-gateway/rpc
 ```
 
 当前插件：

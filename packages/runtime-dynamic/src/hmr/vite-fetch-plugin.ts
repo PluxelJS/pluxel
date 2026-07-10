@@ -11,6 +11,7 @@ export interface FetchHmrServerPluginOptions {
 	fetch: HttpHandler
 	handleHotUpdate?: Plugin['handleHotUpdate']
 	injectClientScript?: boolean
+	shouldHandle?: (request: IncomingMessage) => boolean
 }
 
 function shouldSkipBody(method: string) {
@@ -140,6 +141,10 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 								next()
 								return
 							}
+						}
+						if (options.shouldHandle && !options.shouldHandle(req)) {
+							next()
+							return
 						}
 
 						const response = await options.fetch(toRequest(req))

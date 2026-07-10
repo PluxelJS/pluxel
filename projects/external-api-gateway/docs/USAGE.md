@@ -7,8 +7,17 @@
 默认本地 RPC URL：
 
 ```text
-http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc
+http://127.0.0.1:3313/external-gateway/rpc
 ```
+
+本地启动：
+
+```bash
+pnpm --filter @repo/project-external-api-gateway dev
+pnpm --filter @repo/project-external-api-gateway static
+```
+
+`dev` 是 Vite + runtime-static dev host；runtime-static 会把已挂载的 runtime HTTP routes 代理进 Pluxel runtime HTTP router。`static` 直接运行 `src/static.ts` 的独立 runtime server，更接近生产入口。不要用普通 Vite server 测试 RPC；那种情况下 GET 可能返回 SPA HTML，POST 会 404。
 
 默认开发 token：
 
@@ -25,7 +34,7 @@ import { PiExtension, yiqichaBundleCalls } from '@repo/external-api-gateway-gate
 
 const pi = new PiExtension({
 	token: apiToken,
-	rpcUrl: 'http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc',
+	rpcUrl: 'http://127.0.0.1:3313/external-gateway/rpc',
 	billing: { userId: 'pi-agent', tenantId: 'tenant-a' },
 })
 
@@ -154,13 +163,13 @@ OCR 和文件解析都可能耗时。对外使用时按需求选择能力，不�
 | 输入/需求 | 推荐能力 | 上游实现映射 |
 | --- | --- | --- |
 | PNG/JPG/JPEG/BMP，8MB 内，只要图片文字行、坐标、可选置信度，尤其手写识别 | `zhipu_ocr` | `/files/ocr`，`tool_type=hand_write` |
-| PDF/Word/Excel/PPT/CSV/MD/TXT/HTML 或图片，需要 Markdown/text、表格、版面结构、图片产物 | `zhipu_file_parse` | `/files/parser/create` + `/files/parser/result/{task_id}/{format_type}` |
+| PDF/Word/Excel/PPT/CSV/MD/TXT/HTML 或图片，需要 Markdown/text、表格、版面结构、图片产物 | `zhipu.file_parse` | `/files/parser/create`，后续用 `zhipu.file_parse_result` 映射 `/files/parser/result/{task_id}/{format_type}` |
 | 在线链路必须一次请求返回，文件满足同步解析限制，且需要 Prime 级解析 | `zhipu_file_parse` with `mode=sync` | `/files/parser/sync`，`tool_type=prime-sync` |
-| 大文件、复杂版式、批量导入、可后台处理 | `zhipu_file_parse` with `mode=async` | `/files/parser/create`，保存 `task_id` 后轮询 result |
+| 大文件、复杂版式、批量导入、可后台处理 | `zhipu.file_parse` with `mode=async` | `/files/parser/create`，保存 `task_id` 后用 `zhipu.file_parse_result` 轮询 |
 | URL 页面内容读取，不是本地文件上传 | `zhipu.reader` | `/reader` |
 | 图片/PDF OCR 后按业务字段抽取 JSON | 两阶段：OCR/parser -> chat | 先走 OCR/parser，再走 `zhipu.chat` |
 
-统一返回形状建议：
+Gateway 返回智谱上游原始响应。业务侧如果需要稳定读取层，建议在自己的 adapter 中归一化为：
 
 ```ts
 type DocumentJobResult = {
@@ -177,7 +186,7 @@ type DocumentJobResult = {
 }
 ```
 
-`waitMs` 内完成就返回 `succeeded`；未完成就返回 `queued/running + jobId + nextPollAfterMs`。底层 RPC 不应无限阻塞。字段抽取、转 JSON、摘要等需求作为 OCR/解析后的 `zhipu.chat` 后处理，不转发到 OCR 或 parser。
+如果业务 adapter 支持等待策略，可以在 `waitMs` 内完成时归一化为 `succeeded`，未完成时归一化为 `queued/running + jobId + nextPollAfterMs`；底层 RPC 不应无限阻塞。字段抽取、转 JSON、摘要等需求作为 OCR/解析后的 `zhipu.chat` 后处理，不转发到 OCR 或 parser。
 
 当前二进制上传类接口仍主要保留在 provider UI 和内部 route；正式进入默认 agent tool surface 前，需要先沉淀稳定 schema 和 job 状态协议。
 
@@ -185,9 +194,9 @@ type DocumentJobResult = {
 
 非 TypeScript 客户端可用 HTTP 调试入口：
 
-- `GET /__pluxel/plugins/ExternalGatewayPlugin/gateway/tools`
-- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call`
-- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call-batch`
+- `GET /external-gateway/tools`
+- `POST /external-gateway/call`
+- `POST /external-gateway/call-batch`
 
 认证使用 `Authorization: Bearer <token>` 或 `x-api-token`。
 

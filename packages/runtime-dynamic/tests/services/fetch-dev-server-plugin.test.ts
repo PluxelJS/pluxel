@@ -109,4 +109,34 @@ describe('createFetchDevServerPlugin', () => {
 		expect(res.status).toBe(299)
 		expect(await res.text()).toBe('next')
 	})
+
+	it('passes requests rejected by shouldHandle to the next middleware', async () => {
+		let middleware: Middleware | undefined
+		const plugin = createFetchDevServerPlugin({
+			shouldHandle: (req) => req.url === '/runtime',
+			fetch: async () => new Response('handled'),
+		})
+
+		plugin.configResolved?.({ base: '/' } as any)
+		plugin.configureServer?.({
+			middlewares: {
+				use(fn: Middleware) {
+					middleware = fn
+				},
+			},
+			ssrFixStacktrace: vi.fn(),
+		} as any)
+
+		if (!middleware) throw new Error('middleware not installed')
+		const harness = createMiddlewareHarness(middleware)
+		servers.push(harness)
+
+		const baseUrl = await harness.listen()
+		const skipped = await fetch(`${baseUrl}/vite-asset.js`)
+		const handled = await fetch(`${baseUrl}/runtime`)
+		expect(skipped.status).toBe(299)
+		expect(await skipped.text()).toBe('next')
+		expect(handled.status).toBe(200)
+		expect(await handled.text()).toBe('handled')
+	})
 })

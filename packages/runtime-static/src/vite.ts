@@ -159,7 +159,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			})
 
 			server.middlewares.use((req, res, next) => {
-				if (!isStaticRuntimeRouteRequest(req)) {
+				if (!isStaticRuntimeRouteRequest(req, host)) {
 					next()
 					return
 				}
@@ -537,9 +537,15 @@ async function loadStaticRuntimeDevModule(
 	return import('@pluxel/runtime-dev')
 }
 
-function isStaticRuntimeRouteRequest(request: IncomingMessage): boolean {
+function isStaticRuntimeRouteRequest(
+	request: IncomingMessage,
+	host: Pick<StaticRuntimeHost, 'ctx'>,
+): boolean {
 	const url = request.url ?? '/'
+	const pathname = requestPathname(url)
 	if (url.startsWith('/__pluxel/')) return true
+	const http = host.ctx.http as unknown as { matchesMountedRoute?: (pathname: string) => boolean }
+	if (http.matchesMountedRoute?.(pathname)) return true
 
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
@@ -547,6 +553,14 @@ function isStaticRuntimeRouteRequest(request: IncomingMessage): boolean {
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
 	return accept.includes('text/html')
+}
+
+function requestPathname(url: string): string {
+	try {
+		return new URL(url, 'http://local').pathname
+	} catch {
+		return url.split(/[?#]/, 1)[0] || '/'
+	}
 }
 
 type ViteSsrModuleLike = {

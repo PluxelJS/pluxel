@@ -18,7 +18,7 @@ import {
 } from './tools.ts'
 
 export const DEFAULT_EXTERNAL_GATEWAY_RPC_URL =
-	'http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc'
+	'http://127.0.0.1:3313/external-gateway/rpc'
 
 const disposeSymbol = (Symbol as unknown as { dispose?: symbol }).dispose
 const asyncDisposeSymbol = (Symbol as unknown as { asyncDispose?: symbol }).asyncDispose
@@ -143,6 +143,16 @@ export class PiExtension implements PiPlugin {
 			this.callTool('zhipu.embeddings', args, options),
 		moderate: (args: ExternalGatewayToolArgs['zhipu.moderate'], options?: PiToolCallOptions) =>
 			this.callTool('zhipu.moderate', args, options),
+		ocr: (args: ExternalGatewayToolArgs['zhipu.ocr'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.ocr', args, options),
+		fileParse: (
+			args: ExternalGatewayToolArgs['zhipu.file_parse'],
+			options?: PiToolCallOptions,
+		) => this.callTool('zhipu.file_parse', args, options),
+		fileParseResult: (
+			args: ExternalGatewayToolArgs['zhipu.file_parse_result'],
+			options?: PiToolCallOptions,
+		) => this.callTool('zhipu.file_parse_result', args, options),
 	}
 	readonly yiqicha = {
 		findApis: (args: ExternalGatewayToolArgs['yiqicha.find_apis'], options?: PiToolCallOptions) =>

@@ -14,9 +14,12 @@ import type {
 import type {
 	ZhipuChatCompletionsInput,
 	ZhipuEmbeddingInput,
+	ZhipuFileParserResultInput,
+	ZhipuFileParserUploadInput,
 	ZhipuModerationInput,
 	ZhipuReaderInput,
 	ZhipuRerankInput,
+	ZhipuUploadInput,
 	ZhipuWebSearchInput,
 } from '@repo/external-api-gateway-zhipu/provider'
 import {
@@ -41,6 +44,19 @@ export type ExternalGatewayToolHost = {
 		gatewayModerations(
 			billing: GatewayBillingContext,
 			input: ZhipuModerationInput,
+		): Promise<unknown>
+		gatewayFilesOcr(billing: GatewayBillingContext, input: ZhipuUploadInput): Promise<unknown>
+		gatewayFileParserCreate(
+			billing: GatewayBillingContext,
+			input: ZhipuFileParserUploadInput,
+		): Promise<unknown>
+		gatewayFileParserSync(
+			billing: GatewayBillingContext,
+			input: ZhipuFileParserUploadInput,
+		): Promise<unknown>
+		gatewayFileParserResult(
+			billing: GatewayBillingContext,
+			input: ZhipuFileParserResultInput,
 		): Promise<unknown>
 	}
 	yiqichaProvider: {
@@ -114,9 +130,27 @@ export async function callExternalGatewayTool(
 				model: optionalStringArg(args, 'model') ?? 'moderation',
 				input: requiredArg(args, 'input') as ZhipuModerationInput['input'],
 			})
+		case 'zhipu.ocr':
+			return gateway.zhipuProvider.gatewayFilesOcr(billing, {
+				fileName: stringArg(args, 'fileName'),
+				contentType: optionalStringArg(args, 'contentType'),
+				bytes: base64Arg(args, 'imageBase64'),
+				fields: {
+					tool_type: 'hand_write',
+					language_type: ocrLanguageType(args),
+					probability: optionalBooleanArg(args, 'probability') ?? false,
+				},
+			})
+		case 'zhipu.file_parse':
+			return parseZhipuFile(gateway, billing, args)
+		case 'zhipu.file_parse_result':
+			return gateway.zhipuProvider.gatewayFileParserResult(billing, {
+				taskId: stringArg(args, 'taskId'),
+				format_type: optionalStringArg(args, 'formatType'),
+			})
 		case 'yiqicha.find_apis':
 			return gateway.yiqichaProvider.listCatalog({
-				keyword: stringArg(args, 'query'),
+				keyword: optionalStringArg(args, 'query'),
 				limit: optionalIntegerArg(args, 'limit'),
 			})
 		case 'yiqicha.describe_api':
@@ -131,6 +165,24 @@ export async function callExternalGatewayTool(
 		case 'yiqicha.recommend_bundle':
 			return recommendYiqichaBundle(args)
 	}
+}
+
+async function parseZhipuFile(
+	gateway: ExternalGatewayToolHost,
+	billing: GatewayBillingContext,
+	args: Record<string, unknown>,
+): Promise<unknown> {
+	const input: ZhipuFileParserUploadInput = {
+		fileName: stringArg(args, 'fileName'),
+		contentType: optionalStringArg(args, 'contentType'),
+		bytes: base64Arg(args, 'contentBase64'),
+		file_type: fileTypeForParser(args),
+		tool_type: fileParserToolType(args),
+	}
+	if ((optionalStringArg(args, 'mode') ?? 'sync') === 'async') {
+		return gateway.zhipuProvider.gatewayFileParserCreate(billing, input)
+	}
+	return gateway.zhipuProvider.gatewayFileParserSync(billing, input)
 }
 
 const compiledSchemas = new WeakMap<TSchema, TypeCheck<TSchema>>()
@@ -356,6 +408,13 @@ function toolArgs(input: Record<string, unknown> | null | undefined): Record<str
 	return input
 }
 
+function base64Arg(args: Record<string, unknown>, key: string): Uint8Array {
+	const value = stringArg(args, key)
+	const bytes = Buffer.from(value, 'base64')
+	if (bytes.byteLength === 0) throw new Error(`${key} must be non-empty base64`)
+	return bytes
+}
+
 function requiredArg(args: Record<string, unknown>, key: string): unknown {
 	if (!(key in args) || args[key] === undefined || args[key] === null) {
 		throw new Error(`${key} is required`)
@@ -437,6 +496,57 @@ function stringOrStringArrayArg(args: Record<string, unknown>, key: string): str
 	if (typeof value === 'string') return value
 	if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return value
 	throw new Error(`${key} must be a string or string array`)
+}
+
+function ocrLanguageType(args: Record<string, unknown>): ZhipuUploadInput['fields']['language_type'] {
+	const hints = optionalStringArrayArg(args, 'languageHints') ?? []
+	const normalized = hints.map((hint) => hint.trim().toLowerCase())
+	if (normalized.some((hint) => ['auto', 'detect'].includes(hint))) return 'AUTO'
+	const hasEnglish = normalized.some((hint) => ['en', 'eng', 'english'].includes(hint))
+	const hasChinese = normalized.some((hint) =>
+		['zh', 'zho', 'chi', 'chn', 'chinese', 'cn'].includes(hint),
+	)
+	if (hasEnglish && !hasChinese) return 'ENG'
+	return 'CHN_ENG'
+}
+
+function fileParserToolType(args: Record<string, unknown>): string {
+	if ((optionalStringArg(args, 'mode') ?? 'sync') === 'sync') return 'prime-sync'
+	switch (optionalStringArg(args, 'quality') ?? 'balanced') {
+		case 'lowCost':
+			return 'lite'
+		case 'highAccuracy':
+			return 'expert'
+		default:
+			return 'prime'
+	}
+}
+
+function fileTypeForParser(args: Record<string, unknown>): string {
+	const filename = stringArg(args, 'fileName')
+	const extension = /\.([A-Za-z0-9]+)$/.exec(filename)?.[1]?.toLowerCase()
+	if (extension) return extension
+	const contentType = optionalStringArg(args, 'contentType')?.toLowerCase()
+	switch (contentType) {
+		case 'application/pdf':
+			return 'pdf'
+		case 'text/html':
+			return 'html'
+		case 'text/markdown':
+			return 'md'
+		case 'text/plain':
+			return 'txt'
+		case 'text/csv':
+			return 'csv'
+		case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+			return 'docx'
+		case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+			return 'xlsx'
+		case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+			return 'pptx'
+		default:
+			return 'file'
+	}
 }
 
 function normalizeYiqichaToolParams(input: Record<string, unknown>): YiqichaParams {

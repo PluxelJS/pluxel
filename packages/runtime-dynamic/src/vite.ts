@@ -9,6 +9,7 @@ import {
 	type DynamicRuntimeConfig,
 } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
+import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 
@@ -219,6 +220,10 @@ function installDynamicHttpMiddleware(
 			if (!ctx)
 				return Promise.resolve(new Response('Dynamic runtime is not ready', { status: 503 }))
 			return ctx.http.fetch(req)
+		},
+		shouldHandle: (req) => {
+			const ctx = state.controller?.booted.ctx
+			return Boolean(ctx && isRuntimeHttpRouteRequest(req, ctx))
 		},
 		injectClientScript: true,
 	})

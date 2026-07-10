@@ -44,6 +44,7 @@ import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 import { createFetchHmrServerPlugin } from '../vite-fetch-plugin'
+import { isRuntimeHttpRouteRequest } from '../runtime-route-request'
 
 function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
@@ -569,6 +570,7 @@ export class LoaderHmrService {
 					/\?t=\d+$/,
 				],
 				fetch: (req) => this.ctx.http.fetch(req),
+				shouldHandle: (req) => isRuntimeHttpRouteRequest(req, this.ctx),
 				handleHotUpdate: ({ server }) => {
 					if (this.ctx.http.consumeFullReloadRequest()) {
 						server.ws.send({ type: 'full-reload' })

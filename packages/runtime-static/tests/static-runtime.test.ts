@@ -119,6 +119,10 @@ describe('@pluxel/runtime-static', () => {
 		class DirectHttp extends BasePlugin {
 			override init(): void {
 				this.ctx.http.plugin.routes((app) => app.get('/ping', 'pong'))
+				this.ctx.http.host.routes((app) => app.post('/rpc', () => 'ok'), {
+					id: 'DirectHttp:public-api',
+					path: '/public-api',
+				})
 			}
 		}
 
@@ -137,9 +141,14 @@ describe('@pluxel/runtime-static', () => {
 			const response = await runtime.fetch(
 				new Request('http://local.test/__pluxel/plugins/DirectHttp/ping'),
 			)
+			const publicApi = await runtime.fetch(
+				new Request('http://local.test/public-api/rpc', { method: 'POST' }),
+			)
 			const root = await runtime.fetch(new Request('http://local.test/'))
 
 			expect(await response.text()).toBe('pong')
+			expect(await publicApi.text()).toBe('ok')
+			expect(runtime.ctx.http.matchesMountedRoute('/public-api/rpc')).toBe(true)
 			expect(root.status).toBe(404)
 		} finally {
 			await runtime.stop()

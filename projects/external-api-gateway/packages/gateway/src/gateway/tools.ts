@@ -12,6 +12,9 @@ export const EXTERNAL_GATEWAY_TOOL_NAMES = [
 	'zhipu.rerank',
 	'zhipu.embeddings',
 	'zhipu.moderate',
+	'zhipu.ocr',
+	'zhipu.file_parse',
+	'zhipu.file_parse_result',
 	'yiqicha.find_apis',
 	'yiqicha.describe_api',
 	'yiqicha.call_api',
@@ -55,6 +58,9 @@ export type ExternalGatewayToolArgs = {
 	'zhipu.rerank': Static<typeof zhipuRerankInputSchema>
 	'zhipu.embeddings': Static<typeof zhipuEmbeddingsInputSchema>
 	'zhipu.moderate': Static<typeof zhipuModerateInputSchema>
+	'zhipu.ocr': Static<typeof zhipuOcrInputSchema>
+	'zhipu.file_parse': Static<typeof zhipuFileParseInputSchema>
+	'zhipu.file_parse_result': Static<typeof zhipuFileParseResultInputSchema>
 	'yiqicha.find_apis': Static<typeof yiqichaFindApisInputSchema>
 	'yiqicha.describe_api': Static<typeof yiqichaDescribeApiInputSchema>
 	'yiqicha.call_api': Static<typeof yiqichaCallApiInputSchema>
@@ -68,6 +74,9 @@ export type ExternalGatewayToolResult = {
 	'zhipu.rerank': unknown
 	'zhipu.embeddings': unknown
 	'zhipu.moderate': unknown
+	'zhipu.ocr': unknown
+	'zhipu.file_parse': unknown
+	'zhipu.file_parse_result': unknown
 	'yiqicha.find_apis': unknown
 	'yiqicha.describe_api': unknown
 	'yiqicha.call_api': unknown
@@ -271,13 +280,87 @@ export const zhipuModerateInputSchema = Type.Object(
 	},
 )
 
+const documentModeSchema = stringEnum(['sync', 'async'], {
+	description: 'Synchronous extraction or queued provider job. Defaults to sync.',
+	default: 'sync',
+})
+
+const documentReturnFormatSchema = stringEnum(['markdown', 'text', 'download_link'], {
+	description: 'Preferred extraction output format. Defaults to markdown.',
+	default: 'markdown',
+})
+
+const languageHintsSchema = Type.Optional(
+	Type.Array(Type.String({ minLength: 1 }), {
+		description: 'Optional language hints from the caller. The gateway maps these to provider fields.',
+	}),
+)
+
+export const zhipuOcrInputSchema = Type.Object(
+	{
+		fileName: nonEmptyString,
+		contentType: Type.Optional(
+			Type.String({ minLength: 1, description: 'Image MIME type, for example image/png.' }),
+		),
+		imageBase64: nonEmptyString,
+		mode: Type.Optional(documentModeSchema),
+		returnFormat: Type.Optional(documentReturnFormatSchema),
+		waitMs: Type.Optional(Type.Integer({ minimum: 1 })),
+		languageHints: languageHintsSchema,
+		probability: Type.Optional(Type.Boolean()),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuFileParseInputSchema = Type.Object(
+	{
+		fileName: nonEmptyString,
+		contentType: Type.Optional(
+			Type.String({ minLength: 1, description: 'File MIME type, for example application/pdf.' }),
+		),
+		contentBase64: nonEmptyString,
+		mode: Type.Optional(documentModeSchema),
+		returnFormat: Type.Optional(documentReturnFormatSchema),
+		waitMs: Type.Optional(Type.Integer({ minimum: 1 })),
+		languageHints: languageHintsSchema,
+		quality: Type.Optional(
+			stringEnum(['lowCost', 'balanced', 'highAccuracy'], {
+				description: 'Provider-neutral quality preference. Defaults to balanced.',
+				default: 'balanced',
+			}),
+		),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
+export const zhipuFileParseResultInputSchema = Type.Object(
+	{
+		taskId: nonEmptyString,
+		formatType: Type.Optional(
+			stringEnum(['text', 'download_link', 'markdown'], {
+				description: 'Provider parser result format. Defaults to text.',
+				default: 'text',
+			}),
+		),
+	},
+	{
+		additionalProperties: false,
+	},
+)
+
 export const yiqichaFindApisInputSchema = Type.Object(
 	{
-		query: Type.String({
-			minLength: 1,
-			description:
-				'Natural-language terms, for example business profile, shareholders, legal risk, patent.',
-		}),
+		query: Type.Optional(
+			Type.String({
+				minLength: 1,
+				description:
+					'Natural-language terms, for example business profile, shareholders, legal risk, patent. Omit to list the local catalog.',
+			}),
+		),
 		limit: Type.Optional(
 			Type.Integer({ minimum: 1, maximum: 200, description: 'Default 20, max 200.' }),
 		),
@@ -389,6 +472,9 @@ export const externalGatewayToolSchemas = {
 	'zhipu.rerank': zhipuRerankInputSchema,
 	'zhipu.embeddings': zhipuEmbeddingsInputSchema,
 	'zhipu.moderate': zhipuModerateInputSchema,
+	'zhipu.ocr': zhipuOcrInputSchema,
+	'zhipu.file_parse': zhipuFileParseInputSchema,
+	'zhipu.file_parse_result': zhipuFileParseResultInputSchema,
 	'yiqicha.find_apis': yiqichaFindApisInputSchema,
 	'yiqicha.describe_api': yiqichaDescribeApiInputSchema,
 	'yiqicha.call_api': yiqichaCallApiInputSchema,
@@ -473,6 +559,57 @@ const externalGatewayToolDefinitions = [
 		inputSchema: zhipuModerateInputSchema,
 		metadata: billableNetworkTool,
 		examples: [{ title: 'Moderate text', args: { input: 'text to classify' } }],
+	},
+	{
+		name: 'zhipu.ocr',
+		provider: 'zhipu',
+		title: 'Zhipu image OCR',
+		description:
+			'Extract text lines from an uploaded image through Zhipu OCR and return the raw upstream response.',
+		inputSchema: zhipuOcrInputSchema,
+		metadata: billableNetworkTool,
+		examples: [
+			{
+				title: 'OCR image',
+				args: { fileName: 'scan.png', contentType: 'image/png', imageBase64: '<base64>' },
+			},
+		],
+	},
+	{
+		name: 'zhipu.file_parse',
+		provider: 'zhipu',
+		title: 'Zhipu file parser',
+		description:
+			'Parse an uploaded PDF, Office, HTML, text, or image file through Zhipu and return the raw upstream response.',
+		inputSchema: zhipuFileParseInputSchema,
+		metadata: billableNetworkTool,
+		examples: [
+			{
+				title: 'Parse PDF as markdown',
+				args: {
+					fileName: 'sample.pdf',
+					contentType: 'application/pdf',
+					contentBase64: '<base64>',
+					mode: 'sync',
+					returnFormat: 'markdown',
+				},
+			},
+		],
+	},
+	{
+		name: 'zhipu.file_parse_result',
+		provider: 'zhipu',
+		title: 'Zhipu file parser result',
+		description:
+			'Fetch a Zhipu asynchronous file parser result by provider task id and return the raw upstream response.',
+		inputSchema: zhipuFileParseResultInputSchema,
+		metadata: billableNetworkTool,
+		examples: [
+			{
+				title: 'Fetch parser result',
+				args: { taskId: 'parser-task-id', formatType: 'text' },
+			},
+		],
 	},
 	{
 		name: 'yiqicha.find_apis',

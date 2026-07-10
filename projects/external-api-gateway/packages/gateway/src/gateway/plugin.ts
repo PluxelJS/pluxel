@@ -19,8 +19,8 @@ import type {
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
-import { RpcTarget, newHttpBatchRpcResponse } from '@pluxel/runtime/capnweb'
 import { ui } from '@pluxel/runtime/plugin'
+import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
 import {
 	listExternalGatewayToolSpecs,
@@ -56,8 +56,8 @@ export {
 } from './tools.ts'
 
 const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
-const ROUTE_BASE = '/gateway'
-const RPC_PATH = `${ROUTE_BASE}/rpc`
+export const EXTERNAL_GATEWAY_ROUTE_BASE = '/external-gateway'
+export const EXTERNAL_GATEWAY_RPC_PATH = `${EXTERNAL_GATEWAY_ROUTE_BASE}/rpc`
 
 @Plugin({ name: 'ExternalGatewayPlugin' })
 export class ExternalGatewayPlugin extends BasePlugin {
@@ -83,7 +83,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		this.ctx.ext.rpc.expose(() => new GatewayAdminRpc(this))
 		this.registerRoutes()
 		this.ctx.logger.info('External CapnWeb gateway ready', {
-			rpcPath: this.ctx.http.plugin.base(RPC_PATH),
+			rpcPath: this.rpcBase(),
 			dependsOn: [this.zhipu.ctx.pluginInfo.id, this.yiqicha.ctx.pluginInfo.id],
 		})
 	}
@@ -155,51 +155,49 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 
 	rpcBase(): string {
-		return this.ctx.http.plugin.base(RPC_PATH)
+		return EXTERNAL_GATEWAY_RPC_PATH
 	}
 
 	private registerRoutes(): void {
-		this.ctx.http.plugin.routes(
-			(app) =>
-				app
-					.get('/status', () => ({
-						ok: true,
-						rpc: this.rpcBase(),
-					}))
-					.get('/tools', ({ query }) =>
-						listExternalGatewayToolSpecs({
-							provider:
-								typeof query.provider === 'string'
-									? (query.provider as ExternalGatewayToolListInput['provider'])
-									: undefined,
-						}),
-					)
-					.post('/call', async ({ request }) => {
-						const api = this.apiFor(await this.authenticate(requestToken(request)))
-						return api.callTool((await request.json()) as ExternalGatewayToolCallInput)
-					})
-					.post('/call-batch', async ({ request }) => {
-						const api = this.apiFor(await this.authenticate(requestToken(request)))
-						return api.callTools((await request.json()) as ExternalGatewayToolBatchCallInput)
-					})
-					.all(
-						'/rpc',
-						async ({ request, set }) => {
-							try {
-								return await newHttpBatchRpcResponse(request, new ExternalGatewayRpc(this))
-							} catch (error) {
-								this.ctx.logger.error('External gateway RPC failed', { error })
-								set.status = 500
-								return 'External gateway RPC error'
-							}
-						},
-						{ parse: 'none' },
-					),
-			{
-				path: ROUTE_BASE,
-				id: 'ExternalGatewayPlugin:http',
-			},
-		)
+		const buildRoutes = (app: ReturnType<typeof this.ctx.http.host.app>) =>
+			app
+				.get('/status', () => ({
+					ok: true,
+					rpc: this.rpcBase(),
+				}))
+				.get('/tools', ({ query }) =>
+					listExternalGatewayToolSpecs({
+						provider:
+							typeof query.provider === 'string'
+								? (query.provider as ExternalGatewayToolListInput['provider'])
+								: undefined,
+					}),
+				)
+				.post('/call', async ({ request }) => {
+					const api = this.apiFor(await this.authenticate(requestToken(request)))
+					return api.callTool((await request.json()) as ExternalGatewayToolCallInput)
+				})
+				.post('/call-batch', async ({ request }) => {
+					const api = this.apiFor(await this.authenticate(requestToken(request)))
+					return api.callTools((await request.json()) as ExternalGatewayToolBatchCallInput)
+				})
+				.all(
+					'/rpc',
+					async ({ request, set }) => {
+						try {
+							return await newHttpBatchRpcResponse(request, new ExternalGatewayRpc(this))
+						} catch (error) {
+							this.ctx.logger.error('External gateway RPC failed', { error })
+							set.status = 500
+							return 'External gateway RPC error'
+						}
+					},
+					{ parse: 'none' },
+				)
+		this.ctx.http.host.routes(buildRoutes, {
+			path: EXTERNAL_GATEWAY_ROUTE_BASE,
+			id: 'ExternalGatewayPlugin:external-http',
+		})
 	}
 
 	private async ensureDevToken(): Promise<void> {
@@ -228,7 +226,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			{ id: 'status' },
 			{
 				id: 'status',
-				rpcPath: this.ctx.http.plugin.base(RPC_PATH),
+				rpcPath: this.rpcBase(),
 				tokenCount: all.length,
 				enabledTokenCount: all.filter((token) => token.enabled).length,
 				updatedAt: Date.now(),

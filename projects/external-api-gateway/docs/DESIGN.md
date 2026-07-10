@@ -113,7 +113,7 @@ HTTP batch 约定：
 - `quality`：`lowCost`、`balanced`、`highAccuracy`
 - `waitMs`：等待上限
 
-耗时文档处理统一返回 job 状态：
+Gateway tool 返回智谱上游原始响应，不在 gateway 层改写 OCR/parser 字段。需要稳定业务形态的调用方应在自己的 adapter 内把上游响应归一化，例如：
 
 ```ts
 type DocumentJobResult = {
@@ -130,7 +130,7 @@ type DocumentJobResult = {
 }
 ```
 
-`raw` 只用于调试和兼容，不作为业务主路径。字段抽取、转 JSON、摘要等后处理走两阶段：OCR/parser -> `zhipu.chat`，不要把 prompt 转发给 OCR/parser。
+这个形态属于下游 adapter contract，不是 gateway RPC contract。字段抽取、转 JSON、摘要等后处理走两阶段：OCR/parser -> `zhipu.chat`，不要把 prompt 转发给 OCR/parser。
 
 ## Adapter Contract
 
@@ -160,7 +160,7 @@ this.usageRecorder.recordUsage({
 })
 ```
 
-Gateway 不直接转发 provider raw OpenAPI。新增外部能力应先变成稳定 tool 字面量和 schema，再进入 dispatcher。
+Gateway 不暴露任意 provider raw OpenAPI 代理。新增外部能力应先变成稳定 tool 字面量和 schema，再进入 dispatcher；稳定 tool 可以原样返回对应上游 API 响应。
 
 ## API Catalog Priority
 
@@ -177,11 +177,13 @@ Gateway 不直接转发 provider raw OpenAPI。新增外部能力应先变成稳
 
 External gateway:
 
-- `GET /__pluxel/plugins/ExternalGatewayPlugin/gateway/status`
-- `GET /__pluxel/plugins/ExternalGatewayPlugin/gateway/tools`
-- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call`
-- `POST /__pluxel/plugins/ExternalGatewayPlugin/gateway/call-batch`
-- `ALL /__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc`
+- `GET /external-gateway/status`
+- `GET /external-gateway/tools`
+- `POST /external-gateway/call`
+- `POST /external-gateway/call-batch`
+- `ALL /external-gateway/rpc`
+
+The standalone runtime server (`pnpm --filter @repo/project-external-api-gateway static`) serves these routes directly. In Vite dev, `runtime-static` checks the runtime HTTP mounted-route table and automatically proxies mounted host/plugin routes into the same runtime router, so plugins do not need to duplicate external API prefixes in Vite config.
 
 Zhipu provider internal/debug routes:
 

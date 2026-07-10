@@ -63,7 +63,7 @@ export function GatewayPanel() {
 	const [name, setName] = useState('zhipu-client')
 	const [token, setToken] = useState('')
 	const [error, setError] = useState<string | null>(null)
-	const rpcPath = '/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc'
+	const rpcPath = '/external-gateway/rpc'
 
 	const create = async () => {
 		try {

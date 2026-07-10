@@ -117,7 +117,7 @@ describe('external gateway tool contract', () => {
 				},
 			},
 		})
-		expect(await pi.getTools({ provider: 'zhipu' })).toHaveLength(6)
+		expect(await pi.getTools({ provider: 'zhipu' })).toHaveLength(9)
 		await expect(pi.test({ provider: 'yiqicha' })).resolves.toMatchObject({
 			ok: true,
 			rpcUrl: 'http://gateway.test/rpc',
@@ -436,6 +436,117 @@ describe('external gateway tool dispatcher', () => {
 		expect(host.calls).toEqual([])
 	})
 
+	it('maps zhipu.ocr image uploads to provider OCR calls', async () => {
+		const host = createHost()
+		const billing = billingContext()
+
+		const result = await callExternalGatewayTool(host, billing, 'zhipu.ocr', {
+			fileName: 'scan.png',
+			contentType: 'image/png',
+			imageBase64: Buffer.from('image-bytes').toString('base64'),
+			languageHints: ['zh', 'en'],
+			probability: true,
+		})
+
+		expect(result).toStrictEqual({
+			request_id: 'ocr-request-1',
+			words_result: [{ words: '发票号码 123' }, { words: '金额 456.00' }],
+		})
+		expect(host.calls).toEqual([
+			{
+				provider: 'zhipu',
+				operation: 'ocr.files',
+				billing,
+				input: {
+					fileName: 'scan.png',
+					contentType: 'image/png',
+					bytes: Buffer.from('image-bytes'),
+					fields: {
+						tool_type: 'hand_write',
+						language_type: 'CHN_ENG',
+						probability: true,
+					},
+				},
+			},
+		])
+	})
+
+	it('maps zhipu.file_parse sync uploads to provider parser calls', async () => {
+		const host = createHost()
+		const billing = billingContext()
+
+		const result = await callExternalGatewayTool(host, billing, 'zhipu.file_parse', {
+			fileName: 'sample.pdf',
+			contentType: 'application/pdf',
+			contentBase64: Buffer.from('pdf-bytes').toString('base64'),
+			mode: 'sync',
+			returnFormat: 'markdown',
+		})
+
+		expect(result).toStrictEqual({ task_id: 'parser-task-1', md_results: '# Parsed' })
+		expect(host.calls).toEqual([
+			{
+				provider: 'zhipu',
+				operation: 'file_parser.sync',
+				billing,
+				input: {
+					fileName: 'sample.pdf',
+					contentType: 'application/pdf',
+					bytes: Buffer.from('pdf-bytes'),
+					file_type: 'pdf',
+					tool_type: 'prime-sync',
+				},
+			},
+		])
+	})
+
+	it('maps zhipu.file_parse async uploads to queued parser jobs', async () => {
+		const host = createHost()
+
+		const result = await callExternalGatewayTool(host, billingContext(), 'zhipu.file_parse', {
+			fileName: 'sample.docx',
+			contentBase64: Buffer.from('docx-bytes').toString('base64'),
+			mode: 'async',
+			quality: 'highAccuracy',
+		})
+
+		expect(result).toStrictEqual({ task_id: 'parser-task-2' })
+		expect(host.calls).toMatchObject([
+			{
+				provider: 'zhipu',
+				operation: 'file_parser.create',
+				input: {
+					fileName: 'sample.docx',
+					file_type: 'docx',
+					tool_type: 'expert',
+				},
+			},
+		])
+	})
+
+	it('maps zhipu.file_parse_result to provider parser result calls', async () => {
+		const host = createHost()
+		const billing = billingContext()
+
+		const result = await callExternalGatewayTool(host, billing, 'zhipu.file_parse_result', {
+			taskId: 'parser-task-2',
+			formatType: 'text',
+		})
+
+		expect(result).toStrictEqual({ task_id: 'parser-task-2', text: 'Parsed later' })
+		expect(host.calls).toEqual([
+			{
+				provider: 'zhipu',
+				operation: 'file_parser.result',
+				billing,
+				input: {
+					taskId: 'parser-task-2',
+					format_type: 'text',
+				},
+			},
+		])
+	})
+
 	it('normalizes yiqicha.call_api params for provider-safe primitive values', async () => {
 		const host = createHost()
 		const billing = billingContext()
@@ -568,6 +679,25 @@ function createHost(): ExternalGatewayToolHost & { calls: unknown[] } {
 			async gatewayModerations(billing, input) {
 				calls.push({ provider: 'zhipu', operation: 'moderations', billing, input })
 				return { ok: true, provider: 'zhipu', operation: 'moderations' }
+			},
+			async gatewayFilesOcr(billing, input) {
+				calls.push({ provider: 'zhipu', operation: 'ocr.files', billing, input })
+				return {
+					request_id: 'ocr-request-1',
+					words_result: [{ words: '发票号码 123' }, { words: '金额 456.00' }],
+				}
+			},
+			async gatewayFileParserCreate(billing, input) {
+				calls.push({ provider: 'zhipu', operation: 'file_parser.create', billing, input })
+				return { task_id: 'parser-task-2' }
+			},
+			async gatewayFileParserSync(billing, input) {
+				calls.push({ provider: 'zhipu', operation: 'file_parser.sync', billing, input })
+				return { task_id: 'parser-task-1', md_results: '# Parsed' }
+			},
+			async gatewayFileParserResult(billing, input) {
+				calls.push({ provider: 'zhipu', operation: 'file_parser.result', billing, input })
+				return { task_id: input.taskId, text: 'Parsed later' }
 			},
 		},
 		yiqichaProvider: {
