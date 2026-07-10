@@ -4,8 +4,6 @@ import {
 	Badge,
 	Box,
 	Button,
-	Card,
-	CardSection,
 	Checkbox,
 	Flex,
 	Group,
@@ -18,7 +16,6 @@ import {
 	Text,
 	Textarea,
 	TextInput,
-	Title,
 	Tooltip,
 } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
@@ -70,6 +67,40 @@ import { PackageOperationLogModal } from './PackageOperationLogModal'
 import { EmptyState, ErrorState } from '../../components'
 import { usePluginOverview } from '../plugins/pluginOverviewStore'
 import { subscribeInvalidations, invalidate } from '../data/invalidations'
+import {
+	sanitizeTwoPanelLayout,
+	useStoredSplitLayout,
+	WorkbenchSplitView,
+} from '../workbench/split'
+
+type PackageBusyKey =
+	| 'install'
+	| 'batch-reload'
+	| 'batch-reinstall'
+	| 'batch-uninstall'
+	| 'batch-remove'
+	| 'row-load'
+	| 'row-reinstall'
+	| 'row-uninstall'
+	| 'row-remove'
+
+const PACKAGE_INSTALL_PANEL_ID = 'pluxel-packages-install'
+const PACKAGE_LIST_PANEL_ID = 'pluxel-packages-list'
+const PACKAGE_SPLIT_LAYOUT_STORAGE_KEY = 'pluxel:packages:split'
+const DEFAULT_PACKAGE_SPLIT_LAYOUT = {
+	[PACKAGE_INSTALL_PANEL_ID]: 24,
+	[PACKAGE_LIST_PANEL_ID]: 76,
+}
+
+function sanitizePackageSplitLayout(layout: Record<string, number>) {
+	return sanitizeTwoPanelLayout(
+		layout,
+		DEFAULT_PACKAGE_SPLIT_LAYOUT,
+		PACKAGE_INSTALL_PANEL_ID,
+		18,
+		52,
+	)
+}
 
 export function PackageManagerScreen() {
 	const transport = useRuntimeTransportClient()
@@ -88,6 +119,7 @@ export function PackageManagerScreen() {
 	const requestIdRef = useRef(0)
 	const hasSnapshotRef = useRef(false)
 	const snapshotKeyRef = useRef('')
+	const packageManagerAvailableRef = useRef<boolean | null>(null)
 
 	const [installInput, setInstallInput] = useState('')
 	const [forceInstall, setForceInstall] = useState(false)
@@ -95,16 +127,24 @@ export function PackageManagerScreen() {
 	const pendingInstallSpecs = useMemo(() => parseInstallSpecs(installInput), [installInput])
 
 	const ensurePackageManagerAvailable = useCallback(async (): Promise<void> => {
+		if (packageManagerAvailableRef.current === true) return
+		if (packageManagerAvailableRef.current === false) {
+			throw new Error('当前运行路线不支持包管理功能')
+		}
 		const features = await transport.withRpc((rpc) => rpc.features())
-		if (!features.includes('packageManager')) {
+		const available = features.includes('packageManager')
+		packageManagerAvailableRef.current = available
+		if (!available) {
 			throw new Error('当前运行路线不支持包管理功能')
 		}
 	}, [transport])
 
+	useEffect(() => {
+		packageManagerAvailableRef.current = null
+	}, [transport])
+
 	const withPackageManager = useCallback(
-		async <T,>(
-			runner: (feature: PackageManagerFeatureApi) => Promise<T>,
-		): Promise<T> => {
+		async <T,>(runner: (feature: PackageManagerFeatureApi) => Promise<T>): Promise<T> => {
 			await ensurePackageManagerAvailable()
 			return await transport.withRpc((rpc) => runner(rpc.feature('packageManager')))
 		},
@@ -283,25 +323,8 @@ export function PackageManagerScreen() {
 		})
 	}, [rows])
 
-	// Loading states for RPC operations
-	const [installLoading, setInstallLoading] = useState(false)
-	const [reinstallLoading, setReinstallLoading] = useState(false)
-	const [uninstallLoading, setUninstallLoading] = useState(false)
-	const [removeLoading, setRemoveLoading] = useState(false)
-	const [reloadBatchLoading, setReloadBatchLoading] = useState(false)
-	const [reinstallBatchLoading, setReinstallBatchLoading] = useState(false)
-	const [uninstallBatchLoading, setUninstallBatchLoading] = useState(false)
-	const [removeBatchLoading, setRemoveBatchLoading] = useState(false)
-
-	const busy =
-		installLoading ||
-		reinstallLoading ||
-		uninstallLoading ||
-		removeLoading ||
-		reloadBatchLoading ||
-		reinstallBatchLoading ||
-		uninstallBatchLoading ||
-		removeBatchLoading
+	const [busyKey, setBusyKey] = useState<PackageBusyKey | null>(null)
+	const busy = busyKey !== null
 
 	const summarizeBatchResult = useCallback(
 		(
@@ -348,9 +371,7 @@ export function PackageManagerScreen() {
 			specs: PackageSpecInput[],
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
-			const result = await withPackageManager((pkg) =>
-				pkg.mutate({ action, specs, options }),
-			)
+			const result = await withPackageManager((pkg) => pkg.mutate({ action, specs, options }))
 			invalidate({ topic: 'package-data', reason: action })
 			return result
 		},
@@ -402,14 +423,15 @@ export function PackageManagerScreen() {
 			successTitle: string
 			errorTitle: string
 			fallbackError: string
-			setLoading: (value: boolean) => void
+			busyKey: PackageBusyKey
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean }
 			clearSelection?: boolean
 		}) => {
+			if (busy) return
 			if (!ensureHasSelection()) return
 			const targets = selectedRows.map((row) => row.name)
 			openBatchOperationLog(config.logTitle, targets)
-			config.setLoading(true)
+			setBusyKey(config.busyKey)
 			try {
 				const result = await runPackageMutation(
 					config.action,
@@ -430,11 +452,12 @@ export function PackageManagerScreen() {
 					color: 'red',
 				})
 			} finally {
-				config.setLoading(false)
+				setBusyKey(null)
 			}
 		},
 		[
 			applyOperationLogs,
+			busy,
 			clearSelection,
 			ensureHasSelection,
 			markOperationLogsFailed,
@@ -482,14 +505,15 @@ export function PackageManagerScreen() {
 		async (config: {
 			row: PackageRow
 			action: 'reload' | 'reinstall' | 'uninstall' | 'remove'
-			setLoading: (value: boolean) => void
+			busyKey: PackageBusyKey
 			successTitle: string
 			successMessage: string
 			errorTitle: string
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean }
 		}) => {
+			if (busy) return
 			const spec = toSpecInput(config.row)
-			config.setLoading(true)
+			setBusyKey(config.busyKey)
 			try {
 				const result = await runPackageMutation(config.action, [spec], config.options)
 				const entry = result?.results?.[0]
@@ -514,10 +538,10 @@ export function PackageManagerScreen() {
 					color: 'red',
 				})
 			} finally {
-				config.setLoading(false)
+				setBusyKey(null)
 			}
 		},
-		[notify, refetch, runPackageMutation],
+		[busy, notify, refetch, runPackageMutation],
 	)
 
 	const openRowConfirm = useCallback(
@@ -547,6 +571,7 @@ export function PackageManagerScreen() {
 	)
 
 	const handleInstall = async () => {
+		if (busy) return
 		const specs = pendingInstallSpecs
 		if (specs.length === 0) {
 			notify({
@@ -559,7 +584,7 @@ export function PackageManagerScreen() {
 
 		const successes: string[] = []
 		const failures: string[] = []
-		setInstallLoading(true)
+		setBusyKey('install')
 
 		try {
 			const specKey = (spec?: PackageSpecInput) => {
@@ -597,8 +622,10 @@ export function PackageManagerScreen() {
 					successes.push(entry.spec?.name ?? raw)
 				}
 			}
+		} catch (error: any) {
+			failures.push(error?.message ?? '安装失败，请稍后再试')
 		} finally {
-			setInstallLoading(false)
+			setBusyKey(null)
 			if (successes.length > 0) {
 				notify({
 					title: '安装完成',
@@ -633,7 +660,7 @@ export function PackageManagerScreen() {
 			errorTitle: '重载失败',
 			fallbackError: '重载失败',
 			options: { fresh },
-			setLoading: setReloadBatchLoading,
+			busyKey: 'batch-reload',
 		})
 	}
 
@@ -645,7 +672,7 @@ export function PackageManagerScreen() {
 			errorTitle: '重装失败',
 			fallbackError: '重装失败',
 			options: { force: true },
-			setLoading: setReinstallBatchLoading,
+			busyKey: 'batch-reinstall',
 		})
 	}
 
@@ -656,7 +683,7 @@ export function PackageManagerScreen() {
 			successTitle: '已卸载运行态',
 			errorTitle: '卸载失败',
 			fallbackError: '卸载失败',
-			setLoading: setUninstallBatchLoading,
+			busyKey: 'batch-uninstall',
 			clearSelection: true,
 		})
 	}
@@ -668,7 +695,7 @@ export function PackageManagerScreen() {
 			successTitle: '已彻底移除',
 			errorTitle: '移除失败',
 			fallbackError: '移除失败',
-			setLoading: setRemoveBatchLoading,
+			busyKey: 'batch-remove',
 			clearSelection: true,
 		})
 	}
@@ -677,7 +704,7 @@ export function PackageManagerScreen() {
 		await runRowOperation({
 			row,
 			action: 'reload',
-			setLoading: setReloadBatchLoading,
+			busyKey: 'row-load',
 			successTitle: '已加载包',
 			successMessage: `${row.name} 已加载到运行态`,
 			errorTitle: '加载失败',
@@ -709,7 +736,7 @@ export function PackageManagerScreen() {
 		await runRowOperation({
 			row,
 			action: 'reinstall',
-			setLoading: setReinstallLoading,
+			busyKey: 'row-reinstall',
 			successTitle: '已重装',
 			successMessage: `${row.name} 已重新载入`,
 			errorTitle: '重装失败',
@@ -721,7 +748,7 @@ export function PackageManagerScreen() {
 		await runRowOperation({
 			row,
 			action: 'uninstall',
-			setLoading: setUninstallLoading,
+			busyKey: 'row-uninstall',
 			successTitle: '已卸载',
 			successMessage: `${row.name} 已从运行态移除`,
 			errorTitle: '卸载失败',
@@ -743,7 +770,7 @@ export function PackageManagerScreen() {
 		await runRowOperation({
 			row,
 			action: 'remove',
-			setLoading: setRemoveLoading,
+			busyKey: 'row-remove',
 			successTitle: '已移除',
 			successMessage: `${row.name} 已从系统中彻底移除`,
 			errorTitle: '移除失败',
@@ -769,6 +796,11 @@ export function PackageManagerScreen() {
 	const [operationTitle, setOperationTitle] = useState('操作日志')
 
 	const errorMessage = inlineError
+	const [packageSplitLayout, handlePackageSplitLayoutChanged] = useStoredSplitLayout(
+		PACKAGE_SPLIT_LAYOUT_STORAGE_KEY,
+		DEFAULT_PACKAGE_SPLIT_LAYOUT,
+		sanitizePackageSplitLayout,
+	)
 
 	const renderPackageTable = () => {
 		if (filteredRows.length === 0) {
@@ -830,7 +862,8 @@ export function PackageManagerScreen() {
 										color="brand"
 										size="md"
 										onClick={() => void handleBatchReload(true)}
-										loading={reloadBatchLoading}
+										disabled={busy && busyKey !== 'batch-reload'}
+										loading={busyKey === 'batch-reload'}
 									>
 										<IconRefresh size={18} />
 									</ActionIcon>
@@ -840,7 +873,8 @@ export function PackageManagerScreen() {
 										variant="light"
 										color="brand"
 										size="md"
-										loading={reinstallBatchLoading}
+										disabled={busy && busyKey !== 'batch-reinstall'}
+										loading={busyKey === 'batch-reinstall'}
 										onClick={() => void handleBatchReinstall()}
 									>
 										<IconRotateClockwise size={18} />
@@ -851,7 +885,8 @@ export function PackageManagerScreen() {
 										variant="light"
 										color="orange"
 										size="md"
-										loading={uninstallBatchLoading}
+										disabled={busy && busyKey !== 'batch-uninstall'}
+										loading={busyKey === 'batch-uninstall'}
 										onClick={() => confirmBatchUninstall()}
 									>
 										<IconTrash size={18} />
@@ -862,7 +897,8 @@ export function PackageManagerScreen() {
 										variant="light"
 										color="red"
 										size="md"
-										loading={removeBatchLoading}
+										disabled={busy && busyKey !== 'batch-remove'}
+										loading={busyKey === 'batch-remove'}
 										onClick={() => confirmBatchRemove()}
 									>
 										<IconX size={18} />
@@ -882,7 +918,7 @@ export function PackageManagerScreen() {
 					</Paper>
 				)}
 				<ScrollArea style={{ flex: 1 }}>
-					<Table striped highlightOnHover miw={720}>
+					<Table striped highlightOnHover miw={720} verticalSpacing={6}>
 						<Table.Thead>
 							<Table.Tr>
 								<Table.Th w={42}>
@@ -904,14 +940,14 @@ export function PackageManagerScreen() {
 						<Table.Tbody>
 							{filteredRows.map((row) => (
 								<Table.Tr key={row.name}>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Checkbox
 											checked={selectedPackages.has(row.name)}
 											onChange={(event) => setRowSelected(row.name, event.currentTarget.checked)}
 											aria-label={`选择 ${row.name}`}
 										/>
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Flex gap={6} align="center" wrap="wrap">
 											<Text fw={600}>{row.name}</Text>
 											{row.pluginNames.length > 0 ? (
@@ -934,22 +970,22 @@ export function PackageManagerScreen() {
 											)}
 										</Flex>
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Badge variant="light" color="gray">
 											{formatSpec(row)}
 										</Badge>
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Badge color={row.loaded ? 'green' : 'gray'} variant="light">
 											{row.loaded ? '已加载' : '未加载'}
 										</Badge>
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Text size="sm">
 											{row.runningCount}/{row.pluginCount} 运行中
 										</Text>
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										{row.issues.length > 0 ? (
 											<Badge color="red" variant="filled">
 												{row.issues.length} 个告警
@@ -960,7 +996,7 @@ export function PackageManagerScreen() {
 											</Badge>
 										)}
 									</Table.Td>
-									<Table.Td>
+									<Table.Td py={5}>
 										<Group justify="flex-end" gap={6}>
 											{row.loaded ? (
 												<Tooltip label="重装">
@@ -1034,52 +1070,81 @@ export function PackageManagerScreen() {
 
 	return (
 		<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
-			{/* Header */}
-			<Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
-				<Stack gap={2} style={{ minWidth: 200 }}>
-					<Title order={2}>包管理</Title>
-					<Text c="dimmed" size="sm">
-						查看已安装的包，快速执行安装、热重装与卸载操作
-					</Text>
-				</Stack>
-				<Group gap="sm">
-					{summaryStats.map((stat) => (
-						<Paper
-							key={stat.label}
-							withBorder
-							shadow="xs"
-							radius="md"
-							px="sm"
-							py={4}
-							style={{ minWidth: 90 }}
+			<Paper withBorder radius="sm" p="xs">
+				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
+					<Group gap={6} wrap="wrap">
+						{summaryStats.map((stat) => (
+							<Badge key={stat.label} variant="light" color={stat.color ?? 'gray'}>
+								{stat.label} {stat.value}
+							</Badge>
+						))}
+						<Badge variant="light" color="gray">
+							列表 {filteredRows.length} / {rows.length}
+						</Badge>
+					</Group>
+					<Group gap="xs" wrap="wrap">
+						<Tooltip
+							label={
+								<Group gap={4}>
+									<Kbd size="xs">Ctrl</Kbd>
+									<Text size="xs">+</Text>
+									<Kbd size="xs">F</Kbd>
+									<Text size="xs">搜索</Text>
+								</Group>
+							}
+							position="bottom"
 						>
-							<Text size="xs" c="dimmed">
-								{stat.label}
-							</Text>
-							<Text fw={700} size="md" c={stat.color}>
-								{stat.value}
-							</Text>
-						</Paper>
-					))}
-					<Checkbox
-						label="显示全部依赖"
-						checked={showAllPackages}
-						onChange={(event) => {
-							setShowAllPackages(event.currentTarget.checked)
-						}}
-						size="sm"
-					/>
-					<Button
-						leftSection={<IconRefresh size={16} />}
-						variant="light"
-						size="sm"
-						onClick={() => void refetch()}
-						loading={refreshing && rows.length === 0}
-					>
-						刷新
-					</Button>
+							<TextInput
+								ref={searchInputRef}
+								placeholder="搜索包名或插件..."
+								leftSection={<IconSearch size={14} />}
+								rightSection={
+									packageSearch && (
+										<ActionIcon size="xs" variant="subtle" onClick={() => setPackageSearch('')}>
+											<IconX size={12} />
+										</ActionIcon>
+									)
+								}
+								value={packageSearch}
+								onChange={(event) => setPackageSearch(event.currentTarget.value)}
+								size="sm"
+								style={{ width: 240, maxWidth: '100%' }}
+							/>
+						</Tooltip>
+						<Checkbox
+							label="全部依赖"
+							checked={showAllPackages}
+							onChange={(event) => {
+								setShowAllPackages(event.currentTarget.checked)
+							}}
+							size="sm"
+						/>
+						<Button
+							leftSection={<IconRefresh size={16} />}
+							variant="light"
+							size="sm"
+							onClick={() => void refetch()}
+							loading={refreshing}
+						>
+							刷新
+						</Button>
+						<Tooltip label="查看操作日志">
+							<ActionIcon variant="light" color="gray" onClick={() => setOperationLogOpen(true)}>
+								<IconTerminal2 size={16} />
+							</ActionIcon>
+						</Tooltip>
+						{!showIssuesPanel && sortedIssues.length > 0 && (
+							<Tooltip label="显示告警面板">
+								<ActionIcon variant="light" color="red" onClick={() => setShowIssuesPanel(true)}>
+									<Badge color="red" size="xs" circle>
+										{sortedIssues.length}
+									</Badge>
+								</ActionIcon>
+							</Tooltip>
+						)}
+					</Group>
 				</Group>
-			</Group>
+			</Paper>
 
 			{errorMessage && (
 				<Alert color="red" icon={<IconAlertTriangle size={18} />} title="加载失败">
@@ -1087,7 +1152,6 @@ export function PackageManagerScreen() {
 				</Alert>
 			)}
 
-			{/* Issues Panel */}
 			{sortedIssues.length > 0 && showIssuesPanel && (
 				<PackageIssuesPanel
 					issues={sortedIssues}
@@ -1096,134 +1160,133 @@ export function PackageManagerScreen() {
 				/>
 			)}
 
-			{/* Install Card */}
-			<Card withBorder shadow="sm" component="form" onSubmit={submitInstall} p="sm">
-				<Group align="flex-start" gap="md" wrap="nowrap">
-					<Stack gap="xs" style={{ flex: 1 }}>
-						<Group gap="xs">
-							<Text fw={600} size="sm">
-								安装新包
-							</Text>
-							<Text size="xs" c="dimmed">
-								支持 npm 语法，如 name@1.2.3，多个用换行/逗号分隔
-							</Text>
-						</Group>
-						<Textarea
-							placeholder="pluxel-plugin-redis&#10;@scope/pkg@1.0.0"
-							value={installInput}
-							onChange={(event) => setInstallInput(event.currentTarget.value)}
-							minRows={2}
-							autosize
-							maxRows={4}
-							style={{ flex: 1 }}
-						/>
-					</Stack>
-					<Stack gap="xs" justify="flex-end" style={{ minWidth: 140 }}>
-						{pendingInstallSpecs.length > 0 && (
-							<Group gap={4} wrap="wrap">
-								{pendingInstallSpecs.slice(0, 3).map((spec) => (
-									<Badge key={spec} color="gray" variant="light" size="sm">
-										{spec}
+			<WorkbenchSplitView
+				className="plx-workbench__panelGroup"
+				defaultLayout={packageSplitLayout}
+				id="pluxel-packages-split"
+				onLayoutChanged={handlePackageSplitLayoutChanged}
+				orientation="horizontal"
+				primary={{
+					id: PACKAGE_INSTALL_PANEL_ID,
+					defaultSize: packageSplitLayout[PACKAGE_INSTALL_PANEL_ID],
+					minSize: 18,
+					children: (
+						<Paper
+							withBorder
+							radius="sm"
+							component="form"
+							onSubmit={submitInstall}
+							p="sm"
+							style={{ minHeight: 0 }}
+						>
+							<Stack gap="sm">
+								<Group gap="xs" wrap="wrap">
+									<Text fw={700} size="sm">
+										安装
+									</Text>
+									<Badge variant="light" color="gray" size="xs">
+										换行/逗号分隔
 									</Badge>
-								))}
-								{pendingInstallSpecs.length > 3 && (
-									<Badge color="gray" variant="light" size="sm">
-										+{pendingInstallSpecs.length - 3}
-									</Badge>
-								)}
-							</Group>
-						)}
-						<Checkbox
-							label="强制安装"
-							checked={forceInstall}
-							onChange={(event) => setForceInstall(event.currentTarget.checked)}
-							size="xs"
-						/>
-						<Button type="submit" loading={installLoading} size="sm">
-							{pendingInstallSpecs.length > 1 ? `批量安装 (${pendingInstallSpecs.length})` : '安装'}
-						</Button>
-					</Stack>
-				</Group>
-			</Card>
-
-			{/* Package Table */}
-			<Card
-				withBorder
-				shadow="sm"
-				style={{
-					flex: 1,
-					minHeight: 0,
-					display: 'flex',
-					flexDirection: 'column',
-				}}
-			>
-				<CardSection withBorder px="md" py="xs">
-					<Group justify="space-between" align="center" wrap="wrap">
-						<Group gap="xs">
-							<Title order={5}>已安装的包</Title>
-							<Badge variant="light" color="gray">
-								{filteredRows.length} / {rows.length}
-							</Badge>
-						</Group>
-						<Group gap="xs">
-							<Tooltip
-								label={
-									<Group gap={4}>
-										<Kbd size="xs">Ctrl</Kbd>
-										<Text size="xs">+</Text>
-										<Kbd size="xs">F</Kbd>
-										<Text size="xs">搜索</Text>
-									</Group>
-								}
-								position="bottom"
-							>
-								<TextInput
-									ref={searchInputRef}
-									placeholder="搜索包名或插件..."
-									leftSection={<IconSearch size={14} />}
-									rightSection={
-										packageSearch && (
-											<ActionIcon size="xs" variant="subtle" onClick={() => setPackageSearch('')}>
-												<IconX size={12} />
-											</ActionIcon>
-										)
-									}
-									value={packageSearch}
-									onChange={(event) => setPackageSearch(event.currentTarget.value)}
-									size="sm"
-									style={{ minWidth: 240 }}
+								</Group>
+								<Textarea
+									placeholder="pluxel-plugin-redis&#10;@scope/pkg@1.0.0"
+									value={installInput}
+									onChange={(event) => setInstallInput(event.currentTarget.value)}
+									minRows={4}
+									autosize
+									maxRows={7}
+									style={{ flex: '0 0 auto' }}
 								/>
-							</Tooltip>
-							<Tooltip label="查看操作日志">
-								<ActionIcon variant="light" color="gray" onClick={() => setOperationLogOpen(true)}>
-									<IconTerminal2 size={16} />
-								</ActionIcon>
-							</Tooltip>
-							{!showIssuesPanel && sortedIssues.length > 0 && (
-								<Tooltip label="显示告警面板">
-									<ActionIcon variant="light" color="red" onClick={() => setShowIssuesPanel(true)}>
-										<Badge color="red" size="xs" circle>
-											{sortedIssues.length}
-										</Badge>
-									</ActionIcon>
-								</Tooltip>
-							)}
-						</Group>
-					</Group>
-				</CardSection>
-				<CardSection
-					px="md"
-					py="sm"
-					style={{
-						flex: 1,
-						minHeight: 0,
-						opacity: isSearchTransitioning ? 0.7 : 1,
-						transition: 'opacity 100ms ease-out',
-					}}
-				>
-					{renderPackageTable()}
-				</CardSection>
-			</Card>
+								{pendingInstallSpecs.length > 0 && (
+									<Group gap={4} wrap="wrap">
+										{pendingInstallSpecs.slice(0, 4).map((spec) => (
+											<Badge key={spec} color="gray" variant="light" size="sm">
+												{spec}
+											</Badge>
+										))}
+										{pendingInstallSpecs.length > 4 && (
+											<Badge color="gray" variant="light" size="sm">
+												+{pendingInstallSpecs.length - 4}
+											</Badge>
+										)}
+									</Group>
+								)}
+								<Group justify="space-between" align="center" mt="auto" wrap="wrap" gap="xs">
+									<Checkbox
+										label="强制安装"
+										checked={forceInstall}
+										onChange={(event) => setForceInstall(event.currentTarget.checked)}
+										size="xs"
+									/>
+									<Button
+										type="submit"
+										loading={busyKey === 'install'}
+										disabled={busy && busyKey !== 'install'}
+										size="sm"
+									>
+										{pendingInstallSpecs.length > 1
+											? `安装 ${pendingInstallSpecs.length} 个`
+											: '安装'}
+									</Button>
+								</Group>
+							</Stack>
+						</Paper>
+					),
+				}}
+				secondary={{
+					id: PACKAGE_LIST_PANEL_ID,
+					defaultSize: packageSplitLayout[PACKAGE_LIST_PANEL_ID],
+					minSize: 52,
+					children: (
+						<Paper
+							withBorder
+							radius="sm"
+							style={{
+								flex: 1,
+								minHeight: 0,
+								display: 'flex',
+								flexDirection: 'column',
+							}}
+						>
+							<Box
+								px="sm"
+								py={6}
+								style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+							>
+								<Group justify="space-between" align="center" wrap="wrap">
+									<Group gap="xs">
+										<Text fw={700} size="sm">
+											包列表
+										</Text>
+										{searchActive ? (
+											<Badge variant="light" color="gray">
+												匹配 {filteredRows.length}
+											</Badge>
+										) : null}
+									</Group>
+									{selectedPackages.size > 0 ? (
+										<Text size="xs" c="dimmed">
+											已选 {selectedPackages.size} 项
+										</Text>
+									) : null}
+								</Group>
+							</Box>
+							<Box
+								px="sm"
+								py="xs"
+								style={{
+									flex: 1,
+									minHeight: 0,
+									opacity: isSearchTransitioning ? 0.7 : 1,
+									transition: 'opacity 100ms ease-out',
+								}}
+							>
+								{renderPackageTable()}
+							</Box>
+						</Paper>
+					),
+				}}
+			/>
 
 			<PackageOperationLogModal
 				opened={operationLogOpen}

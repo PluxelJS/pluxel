@@ -18,6 +18,9 @@ export function deriveTabFromPath(pathname: string): WorkbenchTab {
 	if (pathname === '/security') {
 		return { id: 'security', path: pathname, title: '安全', meta: 'Host' }
 	}
+	if (pathname === '/security/audit') {
+		return { id: 'security:audit', path: pathname, title: '审计事件', meta: 'Security' }
+	}
 	if (pathname === '/packages') {
 		return { id: 'packages', path: pathname, title: '包管理', meta: 'Registry' }
 	}
@@ -28,22 +31,11 @@ export function deriveTabFromPath(pathname: string): WorkbenchTab {
 	if (pluginMatch) {
 		const pluginName = decodeSegment(pluginMatch[1] ?? '')
 		const tail = pluginMatch[2] ?? ''
-		if (!tail) {
-			return {
-				id: `plugin:${pluginName}:overview`,
-				path: pathname,
-				title: pluginName,
-				meta: '概览',
-			}
-		}
-		if (tail === 'config') {
-			return { id: `plugin:${pluginName}:config`, path: pathname, title: pluginName, meta: '配置' }
-		}
 		return {
-			id: `plugin:${pluginName}:page:${tail}`,
+			id: `plugin:${pluginName}`,
 			path: pathname,
 			title: pluginName,
-			meta: tail.replaceAll('/', ' / '),
+			meta: tail ? (tail === 'config' ? '配置' : tail.replaceAll('/', ' / ')) : '概览',
 		}
 	}
 	const extMatch = pathname.match(/^\/ext\/([^/]+)\/(.*)$/)
@@ -64,9 +56,29 @@ export function deriveTabFromPath(pathname: string): WorkbenchTab {
 	}
 }
 
+function sameWorkbenchTab(left: WorkbenchTab, right: WorkbenchTab) {
+	return (
+		left.id === right.id &&
+		left.path === right.path &&
+		left.title === right.title &&
+		left.meta === right.meta
+	)
+}
+
+function sameWorkbenchTabs(left: WorkbenchTab[], right: WorkbenchTab[]) {
+	return (
+		left.length === right.length && left.every((tab, index) => sameWorkbenchTab(tab, right[index]))
+	)
+}
+
+function preserveEqualTabs(previous: WorkbenchTab[], next: WorkbenchTab[]) {
+	return sameWorkbenchTabs(previous, next) ? previous : next
+}
+
 function upsertTab(tabs: WorkbenchTab[], nextTab: WorkbenchTab) {
 	const existingIndex = tabs.findIndex((tab) => tab.id === nextTab.id)
 	if (existingIndex === -1) return [...tabs, nextTab]
+	if (sameWorkbenchTab(tabs[existingIndex], nextTab)) return tabs
 	const clone = [...tabs]
 	clone[existingIndex] = nextTab
 	return clone
@@ -82,7 +94,7 @@ function replaceActiveTab(tabs: WorkbenchTab[], activeTabId: string | null, next
 			seen.add(tab.id)
 			return true
 		})
-	return nextTabs.length > 0 ? nextTabs : [nextTab]
+	return preserveEqualTabs(tabs, nextTabs.length > 0 ? nextTabs : [nextTab])
 }
 
 function removeTabById(tabs: WorkbenchTab[], tabId: string | null) {
@@ -100,25 +112,29 @@ export function syncWorkbenchTabs(
 	const targetExists = tabs.some((tab) => tab.id === nextTab.id)
 
 	if (activeTabId === nextTab.id) {
+		const nextTabs = upsertTab(tabs, nextTab)
+		if (prev.activeTabId === nextTab.id && nextTabs === prev.tabs) return prev
 		return {
 			...prev,
-			tabs: upsertTab(tabs, nextTab),
+			tabs: nextTabs,
 			activeTabId: nextTab.id,
 		}
 	}
 
 	if (mode === 'open-tab') {
+		const nextTabs = upsertTab(tabs, nextTab)
 		return {
 			...prev,
-			tabs: upsertTab(tabs, nextTab),
+			tabs: nextTabs,
 			activeTabId: nextTab.id,
 		}
 	}
 
 	if (targetExists) {
+		const nextTabs = upsertTab(removeTabById(tabs, activeTabId), nextTab)
 		return {
 			...prev,
-			tabs: upsertTab(removeTabById(tabs, activeTabId), nextTab),
+			tabs: nextTabs,
 			activeTabId: nextTab.id,
 		}
 	}

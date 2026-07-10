@@ -11,7 +11,7 @@ type Props = {
 
 export function BulkActionsBar({ count, busy, onAction }: Props) {
 	return (
-		<Paper className="plx-pluginCatalog__bulkBar" withBorder radius="md" p={0} shadow="none">
+		<Paper className="plx-pluginCatalog__bulkBar" withBorder radius="sm" p={0} shadow="none">
 			<Group justify="space-between" align="center" gap={6} wrap="nowrap">
 				<div className="plx-pluginCatalog__bulkMeta">
 					<Badge variant="light" color="gray" size="xs">

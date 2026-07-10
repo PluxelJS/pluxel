@@ -26,7 +26,7 @@ export function ExtensionDiagnosticsCard() {
 	if (!hasDiagnostics) return null
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs">
+		<Paper withBorder radius="sm" p="sm" shadow="none">
 			<Stack gap="xs">
 				<Group justify="space-between" align="flex-start" wrap="nowrap">
 					<Stack gap={2} style={{ minWidth: 0 }}>

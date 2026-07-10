@@ -2,7 +2,7 @@
 
 .plx-pluginSkeleton {
 	@include theme.panel-surface(panel-bg, border);
-	border-radius: 12px;
+	border-radius: 8px;
 	display: grid;
 	grid-template-rows: auto auto minmax(0, 1fr) minmax(132px, 22%);
 	height: 100%;
@@ -15,38 +15,38 @@
 	align-items: flex-start;
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
-	gap: 16px;
+	gap: 10px;
 	justify-content: space-between;
-	padding: 14px 16px 10px;
+	padding: 8px 10px 7px;
 }
 
 .plx-pluginSkeleton__title {
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 10px;
+	gap: 6px;
 	min-width: 0;
 }
 
 .plx-pluginSkeleton__chips {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 6px;
 }
 
 .plx-pluginSkeleton__actions {
 	display: flex;
 	flex: 0 0 auto;
-	gap: 8px;
+	gap: 6px;
 }
 
 .plx-pluginSkeleton__tabs {
 	align-items: center;
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
-	gap: 8px;
+	gap: 6px;
 	overflow: hidden;
-	padding: 8px 14px 10px;
+	padding: 5px 8px 6px;
 }
 
 .plx-pluginSkeleton__body {
@@ -67,22 +67,22 @@
 .plx-pluginSkeleton__workspace {
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: 6px;
 	min-height: 0;
-	padding: 14px;
+	padding: 8px;
 }
 
 .plx-pluginSkeleton__workspaceHead {
 	display: flex;
-	gap: 10px;
+	gap: 6px;
 }
 
 .plx-pluginSkeleton__aside {
 	border-left: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	padding: 12px;
+	gap: 6px;
+	padding: 8px;
 }
 
 .plx-pluginSkeleton__asideHead {
@@ -95,13 +95,13 @@
 	border-top: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	padding: 10px 14px 14px;
+	gap: 6px;
+	padding: 6px 8px 8px;
 }
 
 .plx-pluginSkeleton__dockTabs {
 	display: flex;
-	gap: 8px;
+	gap: 6px;
 }
 
 .plx-pluginSkeleton[data-stacked='true'] {

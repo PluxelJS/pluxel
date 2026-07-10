@@ -1,7 +1,5 @@
 import { Store } from '@tanstack/react-store'
-import {
-	hasSameLayout,
-} from './split'
+import { hasSameLayout } from './split/storage'
 import {
 	getSectionPaneState,
 	type WorkbenchSectionId,
@@ -19,12 +17,42 @@ function createInitialState(): WorkbenchState {
 
 export const workbenchStore = new Store<WorkbenchState>(createInitialState())
 
+function isPlainStateRecord(value: unknown): value is Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+	const proto = Object.getPrototypeOf(value)
+	return proto === Object.prototype || proto === null
+}
+
+function hasSameStateValue(left: unknown, right: unknown, depth = 0): boolean {
+	if (Object.is(left, right)) return true
+	if (depth > 8) return false
+	if (Array.isArray(left) && Array.isArray(right)) {
+		return (
+			left.length === right.length &&
+			left.every((item, index) => hasSameStateValue(item, right[index], depth + 1))
+		)
+	}
+	if (isPlainStateRecord(left) && isPlainStateRecord(right)) {
+		const leftKeys = Object.keys(left)
+		const rightKeys = Object.keys(right)
+		return (
+			leftKeys.length === rightKeys.length &&
+			leftKeys.every((key) => key in right && hasSameStateValue(left[key], right[key], depth + 1))
+		)
+	}
+	return false
+}
+
 export function syncWorkbenchLocation(pathname: string, mode: 'replace-active' | 'open-tab') {
 	const currentTab = deriveTabFromPath(pathname)
-	workbenchStore.setState((prev) => ({
-		...prev,
-		uiState: syncWorkbenchTabs(prev.uiState, currentTab, mode),
-	}))
+	workbenchStore.setState((prev) => {
+		const nextUiState = syncWorkbenchTabs(prev.uiState, currentTab, mode)
+		if (nextUiState === prev.uiState) return prev
+		return {
+			...prev,
+			uiState: nextUiState,
+		}
+	})
 }
 
 export function pruneWorkbenchDirtyTabs() {
@@ -142,7 +170,7 @@ export function setWorkbenchActiveTabState(tabId: string | null, scope: string, 
 				},
 			}
 		}
-		if (Object.is(currentState[scope], value)) return prev
+		if (hasSameStateValue(currentState[scope], value)) return prev
 		return {
 			...prev,
 			uiState: {

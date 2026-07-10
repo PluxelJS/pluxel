@@ -36,17 +36,17 @@ function PluginSkeleton({ stacked }: { stacked: boolean }) {
 					<Skeleton height={12} width="44%" />
 				</div>
 				<div className="plx-pluginSkeleton__actions">
-					<Skeleton height={28} width={96} radius="md" />
-					<Skeleton height={28} width={84} radius="md" />
-					<Skeleton height={28} width={116} radius="md" />
+					<Skeleton height={28} width={96} radius="sm" />
+					<Skeleton height={28} width={84} radius="sm" />
+					<Skeleton height={28} width={116} radius="sm" />
 				</div>
 			</div>
 
 			<div className="plx-pluginSkeleton__tabs">
-				<Skeleton height={28} width={72} radius="md" />
-				<Skeleton height={28} width={88} radius="md" />
-				<Skeleton height={28} width={76} radius="md" />
-				<Skeleton height={28} width={98} radius="md" />
+				<Skeleton height={28} width={72} radius="sm" />
+				<Skeleton height={28} width={88} radius="sm" />
+				<Skeleton height={28} width={76} radius="sm" />
+				<Skeleton height={28} width={98} radius="sm" />
 			</div>
 
 			<div className="plx-pluginSkeleton__body">
@@ -63,16 +63,16 @@ function PluginSkeleton({ stacked }: { stacked: boolean }) {
 						<Skeleton height={20} width={92} radius="sm" />
 						<Skeleton height={20} width={56} radius="xl" />
 					</div>
-					<Skeleton height={96} radius="md" />
-					<Skeleton height={132} radius="md" />
-					<Skeleton height="100%" radius="md" />
+					<Skeleton height={96} radius="sm" />
+					<Skeleton height={132} radius="sm" />
+					<Skeleton height="100%" radius="sm" />
 				</div>
 			</div>
 
 			<div className="plx-pluginSkeleton__dock">
 				<div className="plx-pluginSkeleton__dockTabs">
-					<Skeleton height={24} width={78} radius="md" />
-					<Skeleton height={24} width={66} radius="md" />
+					<Skeleton height={24} width={78} radius="sm" />
+					<Skeleton height={24} width={66} radius="sm" />
 				</div>
 				<Skeleton height="100%" radius="lg" />
 			</div>

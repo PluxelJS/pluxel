@@ -2,7 +2,6 @@ import { Pane, SplitView, type SplitViewHandle as WorksplitHandle } from '@works
 import '@worksplit/react/style.css'
 import {
 	forwardRef,
-	useEffect,
 	useImperativeHandle,
 	useLayoutEffect,
 	useMemo,
@@ -81,6 +80,10 @@ function toPixelSizes(paneIds: string[], layout: SplitViewLayout, axisSize: numb
 	)
 }
 
+function createLayoutSignature(paneIds: string[], layout: SplitViewLayout, axisSize: number) {
+	return paneIds.map((paneId) => `${paneId}:${layout[paneId] ?? 0}`).join('|') + `@${axisSize}`
+}
+
 function resolveAxisSize(host: HTMLDivElement, orientation: 'horizontal' | 'vertical') {
 	return orientation === 'vertical' ? host.clientHeight : host.clientWidth
 }
@@ -131,15 +134,27 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 		const splitRef = useRef<WorksplitHandle | null>(null)
 		const hostRef = useRef<HTMLDivElement | null>(null)
 		const layoutRef = useRef<SplitViewLayout>({ ...defaultLayout })
+		const syncedLayoutSignatureRef = useRef('')
 		const { axisSize, axisSizeRef } = useObservedAxisSize(hostRef, orientation)
 		const panes = useMemo(
 			() => (secondary ? [primary, secondary] : [primary]),
 			[primary, secondary],
 		)
 		const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes])
-		useEffect(() => {
+		const defaultSizeById = useMemo(
+			() => (axisSize > 0 ? toPixelSizes(paneIds, defaultLayout, axisSize) : undefined),
+			[axisSize, defaultLayout, paneIds],
+		)
+
+		useLayoutEffect(() => {
 			layoutRef.current = { ...defaultLayout }
-		}, [defaultLayout])
+			const currentAxisSize = axisSizeRef.current || axisSize
+			if (currentAxisSize <= 0) return
+			const signature = createLayoutSignature(paneIds, defaultLayout, currentAxisSize)
+			if (syncedLayoutSignatureRef.current === signature) return
+			syncedLayoutSignatureRef.current = signature
+			splitRef.current?.setPaneSizes(toPixelSizes(paneIds, defaultLayout, currentAxisSize))
+		}, [axisSize, axisSizeRef, defaultLayout, paneIds])
 
 		useImperativeHandle(
 			ref,
@@ -193,6 +208,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 				style={PANEL_STYLE}
 			>
 				<SplitView
+					defaultSizeById={defaultSizeById}
 					id={id}
 					onResizeEnd={handleDragEnd}
 					proportionalResize

@@ -1,11 +1,19 @@
 import { Tabs } from '@mantine/core'
-import { useCallback, useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
 	PANE_TABS_PROPS,
 	PaneTabLabel,
 	getPaneTabsRootClassName,
 } from '../../../workbench/PaneTabs'
-import { useWorkbenchTabs } from '../../../workbench/context'
+import { useWorkbenchTabIdentity } from '../../../workbench/context'
+import { useResolvedWorkbenchTabState } from '../../../workbench/split'
+import { setWorkbenchActiveTabState } from '../../../workbench/store'
+import { useCurrentPathname } from '../../../router/useCurrentRoute'
+import {
+	getPluginScopedSearchCandidates,
+	replacePluginDetailSearchParams,
+	usePluginDetailSearch,
+} from '../pluginDetailSearchState'
 
 export type PluginWorkbenchView = {
 	id: string
@@ -13,6 +21,28 @@ export type PluginWorkbenchView = {
 	count?: number
 	content: ReactNode
 	hidden?: boolean
+}
+
+type PluginWorkbenchViewSearchKey = 'dock' | 'side'
+
+function resolveVisibleViewId(
+	value: unknown,
+	views: PluginWorkbenchView[],
+	pluginName?: string,
+) {
+	if (typeof value !== 'string') return undefined
+	for (const candidate of getPluginScopedSearchCandidates(value, pluginName)) {
+		if (views.some((view) => view.id === candidate)) return candidate
+	}
+	return undefined
+}
+
+function createViewIntentSignature(
+	pathname: string,
+	searchKey: PluginWorkbenchViewSearchKey,
+	value: string,
+) {
+	return `${pathname}\n${searchKey}\n${value}`
 }
 
 function normalizeActiveView(value: unknown, views: PluginWorkbenchView[], fallbackId?: string) {
@@ -32,6 +62,8 @@ export function PluginWorkbenchViewContainer({
 	views,
 	fallbackViewId,
 	className,
+	searchKey,
+	searchPluginName,
 	headerMode = 'stacked',
 }: {
 	scope: string
@@ -43,22 +75,68 @@ export function PluginWorkbenchViewContainer({
 	views: PluginWorkbenchView[]
 	fallbackViewId?: string
 	className?: string
+	searchKey?: PluginWorkbenchViewSearchKey
+	searchPluginName?: string
 	headerMode?: 'stacked' | 'inline'
 }) {
-	const { getActiveTabState, setActiveTabState } = useWorkbenchTabs()
+	const { activeTabId } = useWorkbenchTabIdentity()
+	const pathname = useCurrentPathname()
+	const routeSearch = usePluginDetailSearch()
+	const [localSearchValue, setLocalSearchValue] = useState<string | undefined>()
+	const appliedRouteIntentSignatureRef = useRef<string | null>(null)
+	const storedViewId = useResolvedWorkbenchTabState(scope, (value) =>
+		typeof value === 'string' ? value : undefined,
+	)
 	const visibleViews = useMemo(() => views.filter((view) => !view.hidden), [views])
+	const routeSearchValue = searchKey ? routeSearch[searchKey] : undefined
+	const effectiveSearchValue = localSearchValue ?? routeSearchValue
+	const routeViewId = useMemo(
+		() => resolveVisibleViewId(effectiveSearchValue, visibleViews, searchPluginName),
+		[effectiveSearchValue, searchPluginName, visibleViews],
+	)
+	const routeIntentSignature =
+		searchKey && routeViewId && effectiveSearchValue
+			? createViewIntentSignature(pathname, searchKey, effectiveSearchValue)
+			: null
+	const routeIntentPending = Boolean(
+		routeIntentSignature &&
+			appliedRouteIntentSignatureRef.current !== routeIntentSignature,
+	)
 	const hasHeading = Boolean(eyebrow || title || subtitle)
 	const activeViewId = useMemo(
-		() => normalizeActiveView(getActiveTabState(scope), visibleViews, fallbackViewId),
-		[fallbackViewId, getActiveTabState, scope, visibleViews],
+		() =>
+			routeViewId && routeIntentPending
+				? routeViewId
+				: normalizeActiveView(storedViewId, visibleViews, fallbackViewId),
+		[fallbackViewId, routeIntentPending, routeViewId, storedViewId, visibleViews],
 	)
+
+	useEffect(() => {
+		setLocalSearchValue(undefined)
+	}, [pathname, routeSearchValue])
+
+	useEffect(() => {
+		if (!routeViewId || !routeIntentSignature) return
+		if (appliedRouteIntentSignatureRef.current === routeIntentSignature) return
+		appliedRouteIntentSignatureRef.current = routeIntentSignature
+		setWorkbenchActiveTabState(activeTabId, scope, routeViewId)
+	}, [activeTabId, routeIntentSignature, routeViewId, scope])
 
 	const selectView = useCallback(
 		(viewId: string | null) => {
 			if (!viewId || viewId === activeViewId) return
-			setActiveTabState(scope, viewId)
+			setWorkbenchActiveTabState(activeTabId, scope, viewId)
+			if (searchKey) {
+				appliedRouteIntentSignatureRef.current = createViewIntentSignature(
+					pathname,
+					searchKey,
+					viewId,
+				)
+				setLocalSearchValue(viewId)
+				replacePluginDetailSearchParams({ [searchKey]: viewId })
+			}
 		},
-		[activeViewId, scope, setActiveTabState],
+		[activeTabId, activeViewId, pathname, scope, searchKey],
 	)
 
 	return (

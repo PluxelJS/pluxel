@@ -28,7 +28,7 @@ export function GroupEditorModal({
 	}, [initialValue, opened])
 
 	return (
-		<Modal opened={opened} onClose={onClose} title={title} centered size="sm" radius="md">
+		<Modal opened={opened} onClose={onClose} title={title} centered size="sm" radius="sm">
 			<form
 				onSubmit={(event) => {
 					event.preventDefault()

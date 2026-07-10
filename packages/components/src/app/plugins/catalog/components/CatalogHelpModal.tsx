@@ -26,9 +26,9 @@ export function CatalogHelpModal({ opened, onClose }: CatalogHelpModalProps) {
 			title="插件列表快捷操作"
 			centered
 			size="lg"
-			radius="md"
+			radius="sm"
 		>
-			<Stack gap="lg">
+			<Stack gap="md">
 				<Stack gap="xs">
 					<Text fw={700} size="sm">
 						工作台快捷键

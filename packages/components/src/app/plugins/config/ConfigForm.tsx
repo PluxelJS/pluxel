@@ -94,12 +94,51 @@ export function ConfigForm({
 	const [scrollHostVersion, setScrollHostVersion] = useState(0)
 	const formBridgeRef = useRef<Record<string, FormBridge>>({})
 	const [formStates, setFormStates] = useState<Record<string, FormState>>({})
+	const formStatesRef = useRef<Record<string, FormState>>({})
 	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
+	const configIdentityRef = useRef('')
 	const markSaved = useCallback((key: string, value: TabValue) => {
 		const savedAt = Date.now()
 		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
 		setBaselineOverrides((prev) => ({ ...prev, [key]: value }))
 	}, [])
+	const configIdentity = useMemo(() => `${pluginName}\n${keys.join('\n')}`, [keys, pluginName])
+
+	useEffect(() => {
+		if (configIdentityRef.current === configIdentity) return
+		configIdentityRef.current = configIdentity
+		formBridgeRef.current = {}
+		formStatesRef.current = {}
+		lastDraftsRef.current = {}
+		setSavedAtMap({})
+		setBaselineOverrides({})
+		setFormStates({})
+	}, [configIdentity])
+
+	useEffect(() => {
+		const keySet = new Set(keys)
+		setSavedAtMap((prev) => {
+			const next = Object.fromEntries(
+				Object.entries(prev).filter(([key]) => keySet.has(key)),
+			) as Record<string, number | undefined>
+			return deepEqual(prev, next) ? prev : next
+		})
+		setFormStates((prev) => {
+			const next = Object.fromEntries(
+				Object.entries(prev).filter(([key]) => keySet.has(key)),
+			) as Record<string, FormState>
+			formStatesRef.current = next
+			return deepEqual(prev, next) ? prev : next
+		})
+		setBaselineOverrides((prev) => {
+			const next: Record<string, TabValue> = {}
+			for (const [key, value] of Object.entries(prev)) {
+				if (!keySet.has(key)) continue
+				if (formStatesRef.current[key]?.dirty) next[key] = value
+			}
+			return deepEqual(prev, next) ? prev : next
+		})
+	}, [keys, savedConfig])
 
 	useEffect(() => {
 		const next = keys[0] ?? ''
@@ -186,7 +225,9 @@ export function ConfigForm({
 			) {
 				return prev
 			}
-			return { ...prev, [key]: next }
+			const updated = { ...prev, [key]: next }
+			formStatesRef.current = updated
+			return updated
 		})
 	}, [])
 

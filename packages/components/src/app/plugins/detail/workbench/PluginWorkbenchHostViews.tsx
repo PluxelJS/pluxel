@@ -63,7 +63,7 @@ function WorkbenchScrollPane({
 
 function PluginDescriptionCard({ description }: { description?: string | null }) {
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs" style={{ overflow: 'hidden' }}>
+		<Paper withBorder radius="sm" p="sm" shadow="none" style={{ overflow: 'hidden' }}>
 			<Stack gap={4}>
 				<Text size="sm" fw={600}>
 					插件详情
@@ -95,7 +95,7 @@ function PluginDependencyInjectionControls() {
 }
 
 export function PluginWorkbenchSidebar() {
-	const { description, isRunning, isSyncing } = usePluginMeta()
+	const { description, isRunning, isSyncing, pluginName } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
 	const contextSurface = useExtensionSurface('plugin:context')
 	const contextNodes = useMemo(
@@ -149,6 +149,8 @@ export function PluginWorkbenchSidebar() {
 			rightMeta={statusBadges}
 			views={views}
 			fallbackViewId="inspect"
+			searchKey="side"
+			searchPluginName={pluginName}
 			className="plx-pluginWorkbench__contextRail"
 			headerMode="inline"
 		/>
@@ -171,7 +173,7 @@ function SidebarOutlineSection({
 	if (!visible) return null
 
 	return (
-		<Paper withBorder radius="md" p="xs" shadow="xs" className="plx-pluginWorkbench__assistCard">
+		<Paper withBorder radius="sm" p="xs" shadow="none" className="plx-pluginWorkbench__assistCard">
 			<Stack gap={8}>
 				<Group justify="space-between" align="center" wrap="nowrap">
 					<Text size="sm" fw={600}>
@@ -247,7 +249,7 @@ function PluginContextSummaryCard() {
 	const copyValue = source.moduleId ?? source.packageName ?? null
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs">
+		<Paper withBorder radius="sm" p="sm" shadow="none">
 			<Stack gap={8}>
 				<div className="plx-pluginWorkbench__summaryRow">
 					<span className="plx-pluginWorkbench__summaryLabel">来源</span>
@@ -378,6 +380,8 @@ export function PluginWorkbenchPanel() {
 			label="插件底部视图"
 			views={views}
 			fallbackViewId="logs"
+			searchKey="dock"
+			searchPluginName={pluginName}
 			className="plx-pluginWorkbench__dock"
 			headerMode="inline"
 		/>

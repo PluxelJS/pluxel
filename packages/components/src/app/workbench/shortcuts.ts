@@ -1,7 +1,6 @@
 export const WORKBENCH_HOTKEYS = {
 	togglePluginRail: 'Mod+B',
 	focusSearch: 'Mod+K',
-	newPluginTab: 'Mod+T',
 	closeActiveTab: 'Mod+W',
 	prevTab: 'Mod+Shift+BracketLeft',
 	nextTab: 'Mod+Shift+BracketRight',
@@ -10,15 +9,13 @@ export const WORKBENCH_HOTKEYS = {
 export const WORKBENCH_HOTKEY_LABELS = {
 	togglePluginRail: '⌘B',
 	focusSearch: '⌘K',
-	newPluginTab: '⌘T',
 	closeActiveTab: '⌘W',
 	prevTab: '⌘⇧[',
 	nextTab: '⌘⇧]',
 } as const
 
 export const WORKBENCH_SHORTCUT_ITEMS = [
-	['Ctrl/⌘ + K', '聚焦插件搜索'],
-	['Ctrl/⌘ + T', '打开新的插件工作标签并聚焦搜索'],
+	['Ctrl/⌘ + K', '打开插件搜索'],
 	['Ctrl/⌘ + B', '显示或隐藏插件列表'],
 	['Ctrl/⌘ + W', '关闭当前工作标签'],
 	['Ctrl/⌘ + Shift + [', '切到上一个工作标签'],
@@ -33,7 +30,7 @@ export const CATALOG_SHORTCUT_ITEMS = [
 	['↑ / ↓', '切换当前焦点项'],
 	['Shift + ↑ / ↓', '连续选择'],
 	['Enter', '打开当前焦点插件'],
-	['Ctrl/⌘ + Enter', '在新标签页打开当前焦点插件'],
+	['Ctrl/⌘ + Enter', '在独立工作标签打开当前焦点插件'],
 	['Space', '切换当前项选择状态'],
 	['Ctrl/⌘ + A', '全选当前可见插件'],
 	['G / M / U', '创建分组、移动到分组、移回未分组'],

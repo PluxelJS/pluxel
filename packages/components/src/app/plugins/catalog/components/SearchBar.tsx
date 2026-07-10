@@ -98,7 +98,7 @@ export function SearchBar({
 			rightSectionPointerEvents="auto"
 			size="sm"
 			variant="default"
-			radius="md"
+			radius="sm"
 			aria-label="搜索插件"
 		/>
 	)

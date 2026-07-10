@@ -69,12 +69,13 @@ export function BaseProviderCard() {
 			if (!pluginName || !info) return
 			if (!value) return
 			try {
-				const res = await transport.withRpc((rpc) =>
-					selectPluginBaseProvider(rpc, {
-						name: pluginName,
-						baseToken: info.baseToken,
-						providerName: value,
-					}) as Promise<PluginDependencyMutationResult>,
+				const res = await transport.withRpc(
+					(rpc) =>
+						selectPluginBaseProvider(rpc, {
+							name: pluginName,
+							baseToken: info.baseToken,
+							providerName: value,
+						}) as Promise<PluginDependencyMutationResult>,
 				)
 				if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 				await load({ force: true })
@@ -101,7 +102,7 @@ export function BaseProviderCard() {
 	const borderColor = highlight ? 'var(--plx-accent)' : 'var(--plx-panel-border-strong)'
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs" style={{ borderColor }}>
+		<Paper withBorder radius="sm" p="sm" shadow="none" style={{ borderColor }}>
 			<Group justify="space-between" align="flex-start" wrap="nowrap">
 				<Stack gap={4} style={{ minWidth: 0 }}>
 					<Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>

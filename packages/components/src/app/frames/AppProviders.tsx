@@ -19,7 +19,8 @@ import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
-	const isSecurityRoute = pathname === RUNTIME_SECURITY_BASE
+	const isSecurityRoute =
+		pathname === RUNTIME_SECURITY_BASE || pathname.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
 	const [runningReady, setRunningReady] = useState(false)

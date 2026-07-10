@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
 
 export type WorkbenchLayoutContextValue = {
 	leftPaneAvailable: boolean
@@ -26,6 +26,26 @@ export type WorkbenchTabsContextValue = {
 	setActiveTabDirty: (dirty: boolean) => void
 }
 
+export type WorkbenchTabIdentityContextValue = Pick<
+	WorkbenchTabsContextValue,
+	'activeTabId' | 'activeTabPath'
+>
+
+export type WorkbenchTabDirtyContextValue = Pick<
+	WorkbenchTabsContextValue,
+	'activeTabDirty' | 'isTabDirty' | 'setActiveTabDirty'
+>
+
+export type WorkbenchTabStateContextValue = Pick<
+	WorkbenchTabsContextValue,
+	'getActiveTabState' | 'setActiveTabState'
+>
+
+export type WorkbenchNavigationContextValue = Pick<
+	WorkbenchTabsContextValue,
+	'requestNavigation'
+>
+
 const FALLBACK_LAYOUT_CONTEXT: WorkbenchLayoutContextValue = {
 	leftPaneAvailable: false,
 	leftPaneVisible: false,
@@ -44,8 +64,32 @@ const FALLBACK_TABS_CONTEXT: WorkbenchTabsContextValue = {
 	setActiveTabDirty: () => {},
 }
 
+const FALLBACK_TAB_IDENTITY_CONTEXT: WorkbenchTabIdentityContextValue = {
+	activeTabId: null,
+	activeTabPath: null,
+}
+
+const FALLBACK_TAB_DIRTY_CONTEXT: WorkbenchTabDirtyContextValue = {
+	activeTabDirty: false,
+	isTabDirty: () => false,
+	setActiveTabDirty: () => {},
+}
+
+const FALLBACK_TAB_STATE_CONTEXT: WorkbenchTabStateContextValue = {
+	getActiveTabState: <T = unknown>() => undefined as T | undefined,
+	setActiveTabState: () => {},
+}
+
+const FALLBACK_NAVIGATION_CONTEXT: WorkbenchNavigationContextValue = {
+	requestNavigation: () => 'replace-active',
+}
+
 const WorkbenchLayoutContext = createContext<WorkbenchLayoutContextValue | null>(null)
 const WorkbenchTabsContext = createContext<WorkbenchTabsContextValue | null>(null)
+const WorkbenchTabIdentityContext = createContext<WorkbenchTabIdentityContextValue | null>(null)
+const WorkbenchTabDirtyContext = createContext<WorkbenchTabDirtyContextValue | null>(null)
+const WorkbenchTabStateContext = createContext<WorkbenchTabStateContextValue | null>(null)
+const WorkbenchNavigationContext = createContext<WorkbenchNavigationContextValue | null>(null)
 
 let pendingNavigationIntent: PendingNavigationIntent | null = null
 
@@ -77,7 +121,48 @@ export function WorkbenchTabsProvider({
 	value: WorkbenchTabsContextValue
 	children: ReactNode
 }) {
-	return <WorkbenchTabsContext.Provider value={value}>{children}</WorkbenchTabsContext.Provider>
+	const identityValue = useMemo<WorkbenchTabIdentityContextValue>(
+		() => ({
+			activeTabId: value.activeTabId,
+			activeTabPath: value.activeTabPath,
+		}),
+		[value.activeTabId, value.activeTabPath],
+	)
+	const dirtyValue = useMemo<WorkbenchTabDirtyContextValue>(
+		() => ({
+			activeTabDirty: value.activeTabDirty,
+			isTabDirty: value.isTabDirty,
+			setActiveTabDirty: value.setActiveTabDirty,
+		}),
+		[value.activeTabDirty, value.isTabDirty, value.setActiveTabDirty],
+	)
+	const stateValue = useMemo<WorkbenchTabStateContextValue>(
+		() => ({
+			getActiveTabState: value.getActiveTabState,
+			setActiveTabState: value.setActiveTabState,
+		}),
+		[value.getActiveTabState, value.setActiveTabState],
+	)
+	const navigationValue = useMemo<WorkbenchNavigationContextValue>(
+		() => ({
+			requestNavigation: value.requestNavigation,
+		}),
+		[value.requestNavigation],
+	)
+
+	return (
+		<WorkbenchTabsContext.Provider value={value}>
+			<WorkbenchTabIdentityContext.Provider value={identityValue}>
+				<WorkbenchTabDirtyContext.Provider value={dirtyValue}>
+					<WorkbenchTabStateContext.Provider value={stateValue}>
+						<WorkbenchNavigationContext.Provider value={navigationValue}>
+							{children}
+						</WorkbenchNavigationContext.Provider>
+					</WorkbenchTabStateContext.Provider>
+				</WorkbenchTabDirtyContext.Provider>
+			</WorkbenchTabIdentityContext.Provider>
+		</WorkbenchTabsContext.Provider>
+	)
 }
 
 export function useWorkbenchLayout() {
@@ -86,4 +171,20 @@ export function useWorkbenchLayout() {
 
 export function useWorkbenchTabs() {
 	return useContext(WorkbenchTabsContext) ?? FALLBACK_TABS_CONTEXT
+}
+
+export function useWorkbenchTabIdentity() {
+	return useContext(WorkbenchTabIdentityContext) ?? FALLBACK_TAB_IDENTITY_CONTEXT
+}
+
+export function useWorkbenchTabDirty() {
+	return useContext(WorkbenchTabDirtyContext) ?? FALLBACK_TAB_DIRTY_CONTEXT
+}
+
+export function useWorkbenchTabState() {
+	return useContext(WorkbenchTabStateContext) ?? FALLBACK_TAB_STATE_CONTEXT
+}
+
+export function useWorkbenchNavigation() {
+	return useContext(WorkbenchNavigationContext) ?? FALLBACK_NAVIGATION_CONTEXT
 }

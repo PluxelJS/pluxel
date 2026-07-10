@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 
 export type RightPaneState = {
+	path?: string
 	tab?: string
 	schema?: string
 	schemas?: Record<string, string>
@@ -90,33 +90,10 @@ export function encodeURIComponentSafe(value: string): string {
 	}
 }
 
-export function patchPluginDetailSearch(
-	search: PluginDetailSearch,
-	patch: Partial<PluginDetailSearch>,
-): PluginDetailSearch {
-	let changed = false
-	const next: PluginDetailSearch = { ...search }
-	for (const [key, value] of Object.entries(patch) as Array<
-		[keyof PluginDetailSearch, string | undefined]
-	>) {
-		if (!value) {
-			if (next[key] !== undefined) {
-				delete next[key]
-				changed = true
-			}
-			continue
-		}
-		if (next[key] !== value) {
-			next[key] = value
-			changed = true
-		}
-	}
-	return changed ? next : search
-}
-
 export function sanitizeRightPaneState(value: unknown): RightPaneState {
 	if (!isRecord(value)) return {}
 	return {
+		path: readStringProp(value, 'path'),
 		tab: readStringProp(value, 'tab'),
 		schema: readStringProp(value, 'schema'),
 		schemas: readStringMap(value.schemas),
@@ -195,21 +172,22 @@ export function resolveActiveRightPaneTab(params: {
 	showRouteTab: boolean
 	showConfigTab: boolean
 	showLevelsTab: boolean
+	storedPathMatches: boolean
 	storedTab?: string
 	tabFromSearch?: string
 	tabGroups: RightPaneTabGroup[]
 }) {
 	const resolved = params.resolveTab(params.tabFromSearch)
-	const fallback = params.showRouteTab ? undefined : params.resolveTab(params.storedTab)
+	const fallback = params.storedPathMatches ? params.resolveTab(params.storedTab) : undefined
 	return (
-		params.builtinTabFromPath ??
 		resolved ??
+		fallback ??
+		params.builtinTabFromPath ??
 		(params.showRouteTab
 			? 'route'
-			: (fallback ??
-				(params.showConfigTab
-					? 'config'
-					: (params.tabGroups[0]?.id ?? (params.showLevelsTab ? 'logging' : 'config')))))
+			: (params.showConfigTab
+				? 'config'
+				: (params.tabGroups[0]?.id ?? (params.showLevelsTab ? 'logging' : 'config'))))
 	)
 }
 
@@ -220,6 +198,7 @@ export function mergeRightPaneState(
 	fallbackSchema: string,
 ): RightPaneState {
 	return {
+		path: typeof patch.path === 'string' ? patch.path : previous.path,
 		tab: typeof patch.tab === 'string' ? patch.tab : fallbackTab,
 		schema: typeof patch.schema === 'string' ? patch.schema : fallbackSchema,
 		schemas:
@@ -227,50 +206,6 @@ export function mergeRightPaneState(
 				? { ...previous.schemas, ...patch.schemas }
 				: previous.schemas,
 	}
-}
-
-export function buildRightPaneSearchSyncPatch(params: {
-	activeSchemaKey: string
-	activeTab: string
-	builtinTabFromPath?: string
-	resolveSchema: (value: string | undefined) => string | undefined
-	resolveTab: (value: string | undefined) => string | undefined
-	schemaFromSearch?: string
-	schemaKeys: string[]
-	schemaKeysByConfigTab: Map<string, string[]>
-	showRouteTab: boolean
-	tabFromSearch?: string
-}) {
-	if (params.resolveTab(params.tabFromSearch) === 'route' && params.schemaFromSearch) {
-		return { schema: undefined } satisfies Partial<PluginDetailSearch>
-	}
-
-	if (params.showRouteTab) return null
-
-	if (isConfigTab(params.activeTab)) {
-		const tabKeys = params.schemaKeysByConfigTab.get(params.activeTab) ?? params.schemaKeys
-		if (tabKeys.length > 0) {
-			const fromSearch = params.resolveSchema(params.schemaFromSearch)
-			if ((!fromSearch || !tabKeys.includes(fromSearch)) && params.activeSchemaKey) {
-				return { schema: params.activeSchemaKey } satisfies Partial<PluginDetailSearch>
-			}
-		}
-	}
-
-	const resolvedTab = params.resolveTab(params.tabFromSearch)
-	if (resolvedTab || params.activeTab === 'route') return null
-
-	if (params.builtinTabFromPath === params.activeTab) {
-		return {
-			tab: undefined,
-			schema: isConfigTab(params.activeTab) ? params.activeSchemaKey || undefined : undefined,
-		} satisfies Partial<PluginDetailSearch>
-	}
-
-	return {
-		tab: params.activeTab,
-		schema: isConfigTab(params.activeTab) ? params.activeSchemaKey || undefined : undefined,
-	} satisfies Partial<PluginDetailSearch>
 }
 
 export function formatCompactSource(

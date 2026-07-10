@@ -1,5 +1,5 @@
 import { Box, Paper, Stack, Text, Typography } from '@mantine/core'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { MarkdownExit } from 'markdown-exit'
 import { type ConfigFormState, ConfigTabContent } from './ConfigTab'
@@ -52,6 +52,7 @@ export function ConfigLayout({
 	savedConfig,
 	defaults,
 	active,
+	activeKey,
 	draftValues,
 	onDirtyChange,
 	onDraftChange,
@@ -62,6 +63,7 @@ export function ConfigLayout({
 	savedConfig: Record<string, unknown>
 	defaults: Record<string, unknown>
 	active: boolean
+	activeKey?: string
 	draftValues?: Record<string, Record<string, unknown>>
 	onDirtyChange?: (dirty: boolean) => void
 	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
@@ -69,6 +71,7 @@ export function ConfigLayout({
 	const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
 	const [formStates, setFormStates] = useState<Record<string, ConfigFormState>>({})
 	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
+	const schemaNodeRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
 	// Reset local baseline when external saved config changes.
 	useEffect(() => {
@@ -143,6 +146,17 @@ export function ConfigLayout({
 		return { chunks, remaining }
 	}, [layout, schemaKeys])
 
+	useEffect(() => {
+		if (!active || !activeKey) return undefined
+		const handle = window.requestAnimationFrame(() => {
+			schemaNodeRefs.current[activeKey]?.scrollIntoView({
+				block: 'start',
+				inline: 'nearest',
+			})
+		})
+		return () => window.cancelAnimationFrame(handle)
+	}, [active, activeKey, rendered.chunks, rendered.remaining])
+
 	const finalSavedConfig = (savedOverride ?? savedConfig) as Record<string, unknown>
 	const reportState = useCallback((key: string, state: ConfigFormState) => {
 		setFormStates((prev) => {
@@ -174,7 +188,7 @@ export function ConfigLayout({
 							const schema = schemas?.[schemaKey]
 							if (!schema) {
 								return (
-									<Paper key={chunk.key} withBorder radius="md" p="sm" my="sm">
+									<Paper key={chunk.key} withBorder radius="sm" p="sm" my="sm">
 										<Text size="sm" c="red">
 											Unknown schema key in cfg layout: {schemaKey}
 										</Text>
@@ -183,7 +197,13 @@ export function ConfigLayout({
 							}
 
 							return (
-								<Fragment key={chunk.key}>
+								<Box
+									key={chunk.key}
+									ref={(node) => {
+										schemaNodeRefs.current[schemaKey] = node
+									}}
+									data-config-schema={schemaKey}
+								>
 									<ConfigTabContent
 										pluginName={pluginName}
 										tabKey={schemaKey}
@@ -201,7 +221,7 @@ export function ConfigLayout({
 										showToc={false}
 										active={active}
 									/>
-								</Fragment>
+								</Box>
 							)
 						})}
 					</Typography>
@@ -209,7 +229,7 @@ export function ConfigLayout({
 			) : null}
 
 			{rendered.remaining.length > 0 ? (
-				<Paper withBorder radius="md" p="sm" mt="sm">
+				<Paper withBorder radius="sm" p="sm" mt="sm">
 					<Stack gap={6}>
 						<Text size="sm" fw={600}>
 							Unplaced Schemas
@@ -222,7 +242,14 @@ export function ConfigLayout({
 							const schema = schemas?.[schemaKey]
 							if (!schema) return null
 							return (
-								<Box key={`remaining-${schemaKey}`} mt="sm">
+								<Box
+									key={`remaining-${schemaKey}`}
+									ref={(node) => {
+										schemaNodeRefs.current[schemaKey] = node
+									}}
+									data-config-schema={schemaKey}
+									mt="sm"
+								>
 									<Text size="sm" fw={600} mb={6}>
 										{schemaKey}
 									</Text>

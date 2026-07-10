@@ -96,12 +96,13 @@ export function DependencyOverridesCard() {
 
 	const setDependencyTarget = useCallback(
 		async (index: number, next: string | null) => {
-			const res = await transport.withRpc((rpc) =>
-				setPluginDependencyTarget(rpc, {
-					name: pluginName,
-					index,
-					targetName: next,
-				}) as Promise<PluginDependencyMutationResult>,
+			const res = await transport.withRpc(
+				(rpc) =>
+					setPluginDependencyTarget(rpc, {
+						name: pluginName,
+						index,
+						targetName: next,
+					}) as Promise<PluginDependencyMutationResult>,
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
 		},
@@ -110,12 +111,13 @@ export function DependencyOverridesCard() {
 
 	const ensureFork = useCallback(
 		async (baseName: string, forkId: string) => {
-			const res = await transport.withRpc((rpc) =>
-				ensurePluginFork(rpc, {
-					baseName,
-					forkId,
-					enable: true,
-				}) as Promise<EnsureForkResult>,
+			const res = await transport.withRpc(
+				(rpc) =>
+					ensurePluginFork(rpc, {
+						baseName,
+						forkId,
+						enable: true,
+					}) as Promise<EnsureForkResult>,
 			)
 			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
 			return res.forkName ?? `${baseName}#${forkId}`
@@ -181,7 +183,7 @@ export function DependencyOverridesCard() {
 	if (rows.length === 0) return null
 
 	return (
-		<Paper withBorder radius="md" p="sm" shadow="xs">
+		<Paper withBorder radius="sm" p="sm" shadow="none">
 			<Group justify="space-between" align="center" mb="xs">
 				<Group gap="xs" align="center">
 					<Text size="sm" fw={600}>

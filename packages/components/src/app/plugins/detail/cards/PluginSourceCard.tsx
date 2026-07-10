@@ -120,7 +120,7 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 
 	return (
 		<Stack gap="sm">
-			<Paper withBorder radius="md" p="sm" shadow="xs">
+			<Paper withBorder radius="sm" p="sm" shadow="none">
 				<Stack gap="xs">
 					<Group gap="xs" align="flex-start" wrap="nowrap">
 						<Text size="xs" c="dimmed" fw={600} style={labelStyle}>

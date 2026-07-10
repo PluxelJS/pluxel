@@ -579,7 +579,7 @@ export function PluginOrganizer({
 					className="plx-theme-panel plx-pluginCatalog__sectionCard"
 					withBorder
 					shadow="none"
-					radius="md"
+					radius="sm"
 					p={4}
 					style={{
 						minWidth: 0,
@@ -770,7 +770,7 @@ export function PluginOrganizer({
 						className="plx-theme-panel plx-pluginCatalog__sectionCard"
 						withBorder
 						shadow="none"
-						radius="md"
+						radius="sm"
 						p={4}
 						style={{
 							minHeight: 0,
@@ -848,7 +848,7 @@ export function PluginOrganizer({
 						className="plx-theme-panel plx-pluginCatalog__sectionCard"
 						withBorder
 						shadow="none"
-						radius="md"
+						radius="sm"
 						p={4}
 						style={{
 							minWidth: 0,

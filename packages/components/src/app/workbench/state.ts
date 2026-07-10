@@ -5,7 +5,7 @@ import {
 	PLUGIN_WORKBENCH_PANELS_SCOPE,
 	sanitizePluginSectionLayout,
 	sanitizePluginWorkbenchPanelsState,
-} from './split'
+} from './split/plugin'
 export type WorkbenchTab = {
 	id: string
 	path: string

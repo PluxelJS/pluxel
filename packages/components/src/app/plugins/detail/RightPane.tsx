@@ -13,10 +13,8 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import { getRouteApi, useRouter } from '@tanstack/react-router'
 import {
 	Fragment,
-	startTransition,
 	type ReactNode,
 	useCallback,
 	useEffect,
@@ -46,7 +44,11 @@ import { PluginPanel } from './cards/PluginPanel'
 import { ActionBar } from './controls/ActionBar'
 import { usePluginMeta, usePluginScope } from './context'
 import {
-	buildRightPaneSearchSyncPatch,
+	getPluginScopedSearchCandidates,
+	replacePluginDetailSearchParams,
+	usePluginDetailSearch,
+} from './pluginDetailSearchState'
+import {
 	buildRightPaneTabGroups,
 	CONFIG_GROUP_TAB_PREFIX,
 	deepEqual,
@@ -55,7 +57,6 @@ import {
 	isConfigTab,
 	mergeRightPaneState,
 	normalizeRestPath,
-	patchPluginDetailSearch,
 	resolveKnownPluginName,
 	resolveActiveRightPaneTab,
 	resolveStoredSchemaForTab,
@@ -65,7 +66,11 @@ import {
 } from './rightPaneState'
 import { usePluginWorkbenchLayout } from './workbench/context'
 import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
-import { useWorkbenchTabs } from '../../workbench/context'
+import {
+	useWorkbenchTabDirty,
+	useWorkbenchTabIdentity,
+} from '../../workbench/context'
+import { setWorkbenchActiveTabState } from '../../workbench/store'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -78,10 +83,10 @@ const COLUMN_STYLE = {
 	display: 'flex',
 	flexDirection: 'column' as const,
 }
-const pluginDetailRouteApi = getRouteApi('/_workbench/plugins/$name')
-const EMPTY_PLUGIN_DETAIL_SEARCH: PluginDetailSearch = {}
-type NavigateFn = (options: Record<string, unknown>) => Promise<unknown>
-const NOOP_NAVIGATE: NavigateFn = async () => {}
+type RightPaneRouteIntent = {
+	signature: string
+	state: RightPaneState
+}
 
 function PaneScrollBody({
 	children,
@@ -279,25 +284,6 @@ function PluginWorkbenchToolbar({
 	)
 }
 
-function usePluginDetailSearch() {
-	try {
-		return pluginDetailRouteApi.useSearch({ structuralSharing: true })
-	} catch {
-		return EMPTY_PLUGIN_DETAIL_SEARCH
-	}
-}
-
-function useOptionalNavigate() {
-	const router = useRouter({ warn: false })
-	return useCallback(
-		(options: Record<string, unknown>) => {
-			if (!router) return NOOP_NAVIGATE(options)
-			return router.navigate(options)
-		},
-		[router],
-	)
-}
-
 function resolveActiveSchemaKey(params: {
 	activeTab: string
 	resolveSchema: (value: string | undefined) => string | undefined
@@ -322,20 +308,28 @@ function resolveActiveSchemaKey(params: {
 	return tabKeys[0] ?? ''
 }
 
+function createRouteIntentSignature(restPath: string, search: PluginDetailSearch) {
+	return `${restPath}\n${search.tab ?? ''}\n${search.schema ?? ''}`
+}
+
+function mergeDisplayState(base: RightPaneState, patch: RightPaneState): RightPaneState {
+	return {
+		...base,
+		...patch,
+		schemas: patch.schemas ? { ...base.schemas, ...patch.schemas } : base.schemas,
+	}
+}
+
 export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const { pluginName, isEnabled, isRunning, isSyncing } = usePluginMeta()
 	const { source, knownPluginNames } = usePluginScope()
 	const { rightPaneVisible } = usePluginWorkbenchLayout()
-	const { activeTabId, setActiveTabState, setActiveTabDirty } = useWorkbenchTabs()
+	const { activeTabId } = useWorkbenchTabIdentity()
+	const { setActiveTabDirty } = useWorkbenchTabDirty()
 	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
-	const navigate = useOptionalNavigate()
 	const pathname = useCurrentPathname()
 	const routeSearch = usePluginDetailSearch()
-	const pluginBasePath = useMemo(
-		() => `/plugins/${encodeURIComponentSafe(pluginName)}`,
-		[pluginName],
-	)
-	const pluginConfigPath = useMemo(() => `${pluginBasePath}/config`, [pluginBasePath])
+	const [localSearchOverride, setLocalSearchOverride] = useState<PluginDetailSearch | null>(null)
 	const tabGroups = useMemo(
 		() => buildRightPaneTabGroups(pluginName, tabItems, tabNodes as ReactNode[]),
 		[pluginName, tabItems, tabNodes],
@@ -369,27 +363,13 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		return undefined
 	}, [restPath])
 	const showRouteTab = Boolean(restPath && !builtinTabFromPath)
-	const lastRestPathRef = useRef<string>('')
+	const appliedRouteIntentSignatureRef = useRef<string | null>(null)
 
-	const updateRouteSearch = useCallback(
-		(patch: Partial<PluginDetailSearch>, target?: string) => {
-			const nextSearch = patchPluginDetailSearch(routeSearch, patch)
-			const to = target ?? pathname
-			if (!to) return
-			if (nextSearch === routeSearch && to === pathname) return
-			startTransition(() => {
-				navigate({
-					to,
-					replace: true,
-					search: nextSearch as never,
-				})
-			})
-		},
-		[navigate, pathname, routeSearch],
-	)
+	useEffect(() => {
+		setLocalSearchOverride(null)
+	}, [restPath, routeSearch.schema, routeSearch.tab])
 
-	const tabFromSearch = routeSearch.tab
-	const schemaFromSearch = routeSearch.schema
+	const effectiveRouteSearch = localSearchOverride ?? routeSearch
 
 	const schemaKeys = useMemo(
 		() => Object.keys(config.data?.schemaMap ?? {}),
@@ -438,20 +418,99 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const resolveTab = useCallback(
 		(value: string | undefined) => {
 			if (!value) return undefined
-			if (value === 'logging') return showLevelsTab ? 'logging' : undefined
-			if (value === 'config' && showConfigTab) return 'config'
-			if (value === 'route') return showRouteTab ? 'route' : undefined
-			if (value.startsWith(CONFIG_GROUP_TAB_PREFIX)) {
-				return schemaKeysByConfigTab.has(value) ? value : undefined
+			const candidates = getPluginScopedSearchCandidates(value, pluginName)
+			for (const candidate of candidates) {
+				if (candidate === 'logging') return showLevelsTab ? 'logging' : undefined
+				if (candidate === 'config' && showConfigTab) return 'config'
+				if (candidate === 'route') return showRouteTab ? 'route' : undefined
+				if (candidate.startsWith(CONFIG_GROUP_TAB_PREFIX)) {
+					const resolvedConfigTab = schemaKeysByConfigTab.has(candidate) ? candidate : undefined
+					if (resolvedConfigTab) return resolvedConfigTab
+				}
+				if (tabGroups.some((tab) => tab.id === candidate)) return candidate
 			}
-			return tabGroups.some((tab) => tab.id === value) ? value : undefined
+			return undefined
 		},
-		[schemaKeysByConfigTab, showConfigTab, showLevelsTab, showRouteTab, tabGroups],
+		[pluginName, schemaKeysByConfigTab, showConfigTab, showLevelsTab, showRouteTab, tabGroups],
 	)
 	const resolveSchema = useCallback(
 		(value: string | undefined) => (value && schemaKeys.includes(value) ? value : undefined),
 		[schemaKeys],
 	)
+	const resolveConfigTabForSchema = useCallback(
+		(schemaKey: string | undefined) => {
+			if (!schemaKey) return undefined
+			for (const [tabId, tabKeys] of schemaKeysByConfigTab.entries()) {
+				if (tabKeys.includes(schemaKey)) return tabId
+			}
+			return undefined
+		},
+		[schemaKeysByConfigTab],
+	)
+
+	const routeIntent = useMemo<RightPaneRouteIntent | null>(() => {
+		const search = {
+			tab: effectiveRouteSearch.tab,
+			schema: effectiveRouteSearch.schema,
+		} satisfies PluginDetailSearch
+		const hasSearchIntent = Boolean(search.tab || search.schema)
+		if (hasSearchIntent) {
+			const tabFromSearch = resolveTab(search.tab)
+			const schemaFromSearch = resolveSchema(search.schema)
+			if (search.schema && !schemaFromSearch && (config.loading || schemaKeys.length === 0)) {
+				return null
+			}
+			const schemaTab = resolveConfigTabForSchema(schemaFromSearch)
+			const tab = tabFromSearch ?? schemaTab
+			if (!tab) return null
+			const schema = tab && isConfigTab(tab) ? schemaFromSearch : undefined
+			return {
+				signature: createRouteIntentSignature(restPath, search),
+				state: {
+					path: restPath,
+					tab,
+					schema,
+					schemas: tab && schema ? { [tab]: schema } : undefined,
+				},
+			}
+		}
+		if (showRouteTab) {
+			return {
+				signature: createRouteIntentSignature(restPath, search),
+				state: { path: restPath, tab: 'route', schema: undefined },
+			}
+		}
+		if (builtinTabFromPath) {
+			return {
+				signature: createRouteIntentSignature(restPath, search),
+				state: { path: restPath, tab: builtinTabFromPath },
+			}
+		}
+		if ((storedState.path ?? '') !== restPath) {
+			return {
+				signature: createRouteIntentSignature(restPath, search),
+				state: { path: restPath },
+			}
+		}
+		return null
+	}, [
+		builtinTabFromPath,
+		effectiveRouteSearch.schema,
+		effectiveRouteSearch.tab,
+		config.loading,
+		resolveConfigTabForSchema,
+		resolveSchema,
+		resolveTab,
+		restPath,
+		schemaKeys.length,
+		showRouteTab,
+		storedState.path,
+	])
+	const routeIntentPending = Boolean(
+		routeIntent && appliedRouteIntentSignatureRef.current !== routeIntent.signature,
+	)
+	const displayState =
+		routeIntent && routeIntentPending ? mergeDisplayState(storedState, routeIntent.state) : storedState
 
 	useEffect(() => {
 		storedStateRef.current = storedState
@@ -470,6 +529,8 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		setActiveTabDirty(hasDirtyConfig)
 	}, [hasDirtyConfig, setActiveTabDirty])
 
+	const storedPathMatches = (displayState.path ?? '') === restPath
+
 	const activeTab = useMemo(
 		() =>
 			resolveActiveRightPaneTab({
@@ -478,18 +539,18 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 				showRouteTab,
 				showConfigTab,
 				showLevelsTab,
-				storedTab: storedState.tab,
-				tabFromSearch,
+				storedPathMatches,
+				storedTab: displayState.tab,
 				tabGroups,
 			}),
 		[
 			builtinTabFromPath,
+			displayState.tab,
 			resolveTab,
 			showConfigTab,
 			showLevelsTab,
 			showRouteTab,
-			storedState.tab,
-			tabFromSearch,
+			storedPathMatches,
 			tabGroups,
 		],
 	)
@@ -499,65 +560,44 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 			resolveActiveSchemaKey({
 				activeTab,
 				resolveSchema,
-				schemaFromSearch,
 				schemaKeys,
 				schemaKeysByConfigTab,
-				storedState,
+				schemaFromSearch: undefined,
+				storedState: displayState,
 			}),
-		[activeTab, resolveSchema, schemaFromSearch, schemaKeys, schemaKeysByConfigTab, storedState],
+		[activeTab, displayState, resolveSchema, schemaKeys, schemaKeysByConfigTab],
 	)
-
-	// If user navigates to a plugin sub-route (path changes), default the pane to "route".
-	// This runs after the schema-sync effect so we don't accidentally re-inject `schema=...`
-	// when switching from config -> route.
-	useEffect(() => {
-		if (!showRouteTab) {
-			lastRestPathRef.current = ''
-			return
-		}
-		if (!restPath) return
-		if (lastRestPathRef.current === restPath) return
-		lastRestPathRef.current = restPath
-		updateRouteSearch({ tab: 'route', schema: undefined })
-	}, [restPath, showRouteTab, updateRouteSearch])
-
-	useEffect(() => {
-		const patch = buildRightPaneSearchSyncPatch({
-			activeSchemaKey,
-			activeTab,
-			builtinTabFromPath,
-			resolveSchema,
-			resolveTab,
-			schemaFromSearch,
-			schemaKeys,
-			schemaKeysByConfigTab,
-			showRouteTab,
-			tabFromSearch,
-		})
-		if (patch) updateRouteSearch(patch)
-	}, [
-		activeSchemaKey,
-		activeTab,
-		builtinTabFromPath,
-		resolveSchema,
-		resolveTab,
-		schemaFromSearch,
-		schemaKeys,
-		schemaKeysByConfigTab,
-		showRouteTab,
-		tabFromSearch,
-		updateRouteSearch,
-	])
 
 	const persistState = useCallback(
 		(next: RightPaneState) => {
 			const previous = storedStateRef.current
-			const merged = mergeRightPaneState(previous, next, activeTab, activeSchemaKey)
+			const merged = mergeRightPaneState(
+				previous,
+				{ ...next, path: restPath },
+				activeTab,
+				activeSchemaKey,
+			)
 			if (deepEqual(previous, merged)) return
 			storedStateRef.current = merged
-			setActiveTabState(RIGHT_PANE_VIEW_STATE_KEY, merged)
+			setWorkbenchActiveTabState(activeTabId, RIGHT_PANE_VIEW_STATE_KEY, merged)
 		},
-		[activeSchemaKey, activeTab, setActiveTabState],
+		[activeSchemaKey, activeTab, activeTabId, restPath],
+	)
+
+	useEffect(() => {
+		if (!routeIntent) return
+		if (appliedRouteIntentSignatureRef.current === routeIntent.signature) return
+		appliedRouteIntentSignatureRef.current = routeIntent.signature
+		persistState(routeIntent.state)
+	}, [persistState, routeIntent])
+
+	const replaceLocalSearch = useCallback(
+		(search: PluginDetailSearch) => {
+			appliedRouteIntentSignatureRef.current = createRouteIntentSignature(restPath, search)
+			setLocalSearchOverride(search)
+			replacePluginDetailSearchParams({ schema: search.schema, tab: search.tab })
+		},
+		[restPath],
 	)
 
 	const handleTabChange = useCallback(
@@ -577,28 +617,9 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 					? { tab: next, schema: nextSchema, schemas: { [next]: nextSchema } }
 					: { tab: next },
 			)
-			const patch: Partial<PluginDetailSearch> = {
-				tab: next,
-				schema: isConfigTab(next) ? nextSchema : undefined,
-			}
-			const nextTarget =
-				next === 'config'
-					? pluginConfigPath
-					: pathname === pluginConfigPath && !showRouteTab
-						? pluginBasePath
-						: undefined
-			if (next === 'config') patch.tab = undefined
-			updateRouteSearch(patch, nextTarget)
+			replaceLocalSearch({ tab: next, schema: nextSchema })
 		},
-		[
-			pathname,
-			persistState,
-			pluginBasePath,
-			pluginConfigPath,
-			schemaKeysByConfigTab,
-			showRouteTab,
-			updateRouteSearch,
-		],
+		[persistState, replaceLocalSearch, schemaKeysByConfigTab, storedState],
 	)
 
 	const handleSchemaChangeForTab = useCallback(
@@ -606,10 +627,9 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 			// Avoid inactive panels fighting the global URL/schema.
 			if (activeTab !== tabId) return
 			persistState({ schema: nextKey, schemas: { [tabId]: nextKey } })
-			if (!isConfigTab(activeTab)) return
-			updateRouteSearch({ schema: nextKey })
+			replaceLocalSearch({ tab: tabId, schema: nextKey })
 		},
-		[activeTab, persistState, updateRouteSearch],
+		[activeTab, persistState, replaceLocalSearch],
 	)
 	const handleConfigDirtyChange = useCallback((tabId: string, dirty: boolean) => {
 		setConfigDirtyMap((prev) => {
@@ -625,12 +645,12 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 
 			if (activeTab === tabId) return activeSchemaKey
 
-			const stored = resolveStoredSchemaForTab(storedState, tabId, tabKeys)
+			const stored = resolveStoredSchemaForTab(displayState, tabId, tabKeys)
 			if (stored) return stored
 
 			return tabKeys[0] ?? ''
 		},
-		[activeSchemaKey, activeTab, schemaKeysByConfigTab, storedState],
+		[activeSchemaKey, activeTab, displayState, schemaKeysByConfigTab],
 	)
 	const sourceTypeLabel =
 		source.kind === 'hmr' ? 'HMR' : source.kind === 'package' ? '包安装' : '未知来源'
@@ -651,7 +671,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	}, [knownPluginNames])
 
 	return (
-		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding="xs" gap="xs">
+		<PluginPanel className="plx-pluginWorkbench__contentPanel" padding={4} gap={4}>
 			<Box style={COLUMN_STYLE}>
 				<Tabs
 					{...PANE_TABS_PROPS}
@@ -803,6 +823,7 @@ function ConfigContent({
 						savedConfig={savedConfig}
 						defaults={defaults}
 						active={active}
+						activeKey={activeSchemaKey}
 						onDirtyChange={onDirtyChange}
 					/>
 				) : (

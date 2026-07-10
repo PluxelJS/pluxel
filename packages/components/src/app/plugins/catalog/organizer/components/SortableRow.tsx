@@ -10,7 +10,7 @@ import {
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconCheck, IconGripVertical, IconPlus } from '@tabler/icons-react'
+import { IconCheck, IconExternalLink, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
 	memo,
@@ -310,7 +310,7 @@ const SortableRowComponent = ({
 			)}
 
 			{LinkComp ? (
-				<Tooltip label="在新标签页打开" withinPortal withArrow openDelay={200}>
+				<Tooltip label="在独立工作标签打开" withinPortal withArrow openDelay={200}>
 					<ActionIcon
 						component={LinkComp as any}
 						to={href}
@@ -319,12 +319,12 @@ const SortableRowComponent = ({
 						data-plugin-link-mode="open-tab"
 						variant="subtle"
 						size="sm"
-						aria-label={`在新标签页打开 ${name}`}
+						aria-label={`在独立工作标签打开 ${name}`}
 						onClick={(event: React.MouseEvent) => {
 							event.stopPropagation()
 						}}
 					>
-						<IconPlus size={14} />
+						<IconExternalLink size={14} />
 					</ActionIcon>
 				</Tooltip>
 			) : null}

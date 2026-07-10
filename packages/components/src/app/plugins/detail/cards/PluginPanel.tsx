@@ -35,7 +35,7 @@ export function PluginPanel({
 	rightSection,
 	children,
 	gap = 8,
-	padding = 16,
+	padding = 12,
 	className,
 	style,
 }: PluginPanelProps) {
