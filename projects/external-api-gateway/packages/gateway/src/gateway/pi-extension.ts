@@ -21,11 +21,12 @@ export const DEFAULT_EXTERNAL_GATEWAY_RPC_URL =
 	'http://127.0.0.1:3313/__pluxel/plugins/ExternalGatewayPlugin/gateway/rpc'
 
 const disposeSymbol = (Symbol as unknown as { dispose?: symbol }).dispose
+const asyncDisposeSymbol = (Symbol as unknown as { asyncDispose?: symbol }).asyncDispose
 
 export type PiToolDefinition = {
 	type: 'function'
 	function: {
-		name: ExternalGatewayToolName
+		name: string
 		description: string
 		parameters: ExternalGatewayJsonSchema
 	}
@@ -122,6 +123,11 @@ export type ExternalGatewayRpcTransport = {
 	authenticate(apiToken: string): Awaitable<ExternalGatewayAuthedRpc>
 }
 
+type DisposableRpcTransport = ExternalGatewayRpcTransport & {
+	[key: symbol]: unknown
+	dispose?: () => void | Promise<void>
+}
+
 export class PiExtension implements PiPlugin {
 	readonly tools: PiToolDefinition[]
 	readonly zhipu = {
@@ -155,9 +161,7 @@ export class PiExtension implements PiPlugin {
 
 	private readonly token: string
 	private readonly rpcUrl: string
-	private readonly transport: ExternalGatewayRpcTransport & {
-		[key: symbol]: unknown
-	}
+	private readonly transport?: DisposableRpcTransport
 	private readonly defaultBilling: GatewayBillingContext | string
 	private readonly defaultTools?: ExternalGatewayToolListInput
 	private readonly cacheAuthedApi: boolean
@@ -171,12 +175,7 @@ export class PiExtension implements PiPlugin {
 		this.defaultBilling = options.billing ?? 'pi-agent'
 		this.defaultTools = options.tools
 		this.cacheAuthedApi = Boolean(options.transport)
-		this.transport = (options.transport ??
-			newHttpBatchRpcSession<ExternalGatewayRpcTransport>(
-				this.rpcUrl,
-			)) as ExternalGatewayRpcTransport & {
-			[key: symbol]: unknown
-		}
+		this.transport = options.transport as DisposableRpcTransport | undefined
 		this.tools = toPiToolDefinitions(listExternalGatewayToolSpecs(options.tools))
 	}
 
@@ -206,9 +205,10 @@ export class PiExtension implements PiPlugin {
 		args: Record<string, unknown> = {},
 		options: PiToolCallOptions = {},
 	): Promise<unknown> {
+		const toolName = externalGatewayToolNameFromPiName(name)
 		return this.callAuthed((api) =>
 			api.callTool({
-				name,
+				name: toolName,
 				args,
 				billing: options.billing ?? this.defaultBilling,
 			}),
@@ -219,7 +219,7 @@ export class PiExtension implements PiPlugin {
 		return this.callAuthed((api) =>
 			api.callTools({
 				calls: calls.map((call) => ({
-					name: call.name,
+					name: externalGatewayToolNameFromPiName(call.name),
 					args: call.args,
 					billing: call.billing ?? this.defaultBilling,
 				})),
@@ -264,11 +264,9 @@ export class PiExtension implements PiPlugin {
 		input: ExternalGatewayToolListInput = this.defaultTools ?? {},
 	): Promise<PiExtensionHealth> {
 		try {
-			const authedApi = this.cacheAuthedApi ? await this.getAuthedApi() : this.batch()
-			const [identity, remoteSpecs] = await Promise.all([
-				authedApi.whoami(),
-				authedApi.toolSpecs(input),
-			])
+			const [identity, remoteSpecs] = await this.callAuthed((authedApi) =>
+				Promise.all([authedApi.whoami(), authedApi.toolSpecs(input)]),
+			)
 			return {
 				ok: true,
 				rpcUrl: this.rpcUrl,
@@ -291,11 +289,11 @@ export class PiExtension implements PiPlugin {
 	}
 
 	dispose(): void {
-		const dispose = disposeSymbol ? this.transport[disposeSymbol] : undefined
-		if (typeof dispose === 'function') dispose.call(this.transport)
+		if (this.transport) void disposeRpcTransport(this.transport)
 	}
 
 	private getAuthedApi(): Promise<ExternalGatewayAuthedRpc> {
+		if (!this.transport) throw new Error('PiExtension transport is not configured')
 		if (!this.authedApi) {
 			this.authedApi = Promise.resolve()
 				.then(() => this.transport.authenticate(this.token))
@@ -310,10 +308,17 @@ export class PiExtension implements PiPlugin {
 	private async callAuthed<T>(
 		callback: (api: ExternalGatewayAuthedRpc) => T | Promise<T>,
 	): Promise<T> {
-		const api = (
-			this.cacheAuthedApi ? await this.getAuthedApi() : this.batch()
-		) as ExternalGatewayAuthedRpc
-		return callback(api)
+		if (this.cacheAuthedApi) return callback(await this.getAuthedApi())
+
+		const transport = newHttpBatchRpcSession<ExternalGatewayRpcTransport>(
+			this.rpcUrl,
+		) as unknown as DisposableRpcTransport
+		try {
+			const api = transport.authenticate(this.token) as ExternalGatewayAuthedRpc
+			return await callback(api)
+		} finally {
+			await disposeRpcTransport(transport)
+		}
 	}
 }
 
@@ -343,7 +348,7 @@ export function toPiToolDefinition(spec: ExternalGatewayToolSpec): PiToolDefinit
 	return {
 		type: 'function',
 		function: {
-			name: spec.name,
+			name: externalGatewayToolNameToPiName(spec.name),
 			description: spec.description,
 			parameters: spec.inputSchema,
 		},
@@ -357,8 +362,23 @@ function toPiToolDefinitions(specs: ExternalGatewayToolSpec[]): PiToolDefinition
 function toolCallName(input: PiToolCallRequest): string {
 	const name = input.name ?? input.toolName ?? input.tool ?? input.function?.name
 	if (!name?.trim()) throw new Error('PI tool call name is required')
-	return name.trim()
+	return externalGatewayToolNameFromPiName(name.trim())
 }
+
+export function externalGatewayToolNameToPiName(name: ExternalGatewayToolName): string {
+	return name.replaceAll('.', '_')
+}
+
+export function externalGatewayToolNameFromPiName(name: string): string {
+	return piToolNameToGatewayName.get(name) ?? name
+}
+
+const piToolNameToGatewayName = new Map<string, ExternalGatewayToolName>(
+	listExternalGatewayToolSpecs().flatMap((spec) => [
+		[spec.name, spec.name],
+		[externalGatewayToolNameToPiName(spec.name), spec.name],
+	]),
+)
 
 function toolCallArgs(input: PiToolCallRequest): Record<string, unknown> {
 	const args = input.args ?? input.arguments ?? input.function?.arguments ?? {}
@@ -378,4 +398,15 @@ function toolCallArgs(input: PiToolCallRequest): Record<string, unknown> {
 function errorMessage(caught: unknown): string {
 	if (caught instanceof Error) return caught.message
 	return String(caught)
+}
+
+async function disposeRpcTransport(transport: DisposableRpcTransport): Promise<void> {
+	const dispose =
+		(disposeSymbol ? transport[disposeSymbol] : undefined) ??
+		(asyncDisposeSymbol ? transport[asyncDisposeSymbol] : undefined) ??
+		transport.dispose
+	if (typeof dispose !== 'function') return
+	try {
+		await dispose.call(transport)
+	} catch {}
 }

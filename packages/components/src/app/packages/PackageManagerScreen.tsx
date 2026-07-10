@@ -1,36 +1,7 @@
-import {
-	ActionIcon,
-	Alert,
-	Badge,
-	Box,
-	Button,
-	Checkbox,
-	Flex,
-	Group,
-	Kbd,
-	Loader,
-	Paper,
-	ScrollArea,
-	Stack,
-	Table,
-	Text,
-	Textarea,
-	TextInput,
-	Tooltip,
-} from '@mantine/core'
+import { Alert, Badge, Box, Group, Paper, Stack, Text } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
-import {
-	IconAlertTriangle,
-	IconPackages,
-	IconRefresh,
-	IconRotateClockwise,
-	IconSearch,
-	IconSearch as IconSearchEmpty,
-	IconTerminal2,
-	IconTrash,
-	IconX,
-} from '@tabler/icons-react'
+import { IconAlertTriangle } from '@tabler/icons-react'
 import {
 	useCallback,
 	useDeferredValue,
@@ -48,59 +19,35 @@ import {
 	type PackageSpecInput,
 	useRuntimeTransportClient,
 } from '../../runtime'
-import { RouterLinkAdapter } from '../RouterLinkAdapter'
 import { useNotify } from '../hooks'
 import {
 	buildPackageRows,
 	filterPackageRows,
-	formatSpec,
 	parseInstallSpecs,
 	summarizeList,
 	toSpecInput,
 	toIssueDataList,
 	type IssueData,
 	type OperationLogEntry,
+	type PackageBusyKey,
 	type PackageRow,
 } from './packageManagerModel'
+import { PackageInstallPanel } from './PackageInstallPanel'
 import { PackageIssuesPanel } from './PackageIssuesPanel'
+import { PackageManagerToolbar, type PackageSummaryStat } from './PackageManagerToolbar'
 import { PackageOperationLogModal } from './PackageOperationLogModal'
-import { EmptyState, ErrorState } from '../../components'
+import { PackageTable } from './PackageTable'
+import { ErrorState } from '../../components'
 import { usePluginOverview } from '../plugins/pluginOverviewStore'
 import { subscribeInvalidations, invalidate } from '../data/invalidations'
+import { useStoredSplitLayout, WorkbenchSplitView } from '../workbench/split'
 import {
-	sanitizeTwoPanelLayout,
-	useStoredSplitLayout,
-	WorkbenchSplitView,
-} from '../workbench/split'
-
-type PackageBusyKey =
-	| 'install'
-	| 'batch-reload'
-	| 'batch-reinstall'
-	| 'batch-uninstall'
-	| 'batch-remove'
-	| 'row-load'
-	| 'row-reinstall'
-	| 'row-uninstall'
-	| 'row-remove'
-
-const PACKAGE_INSTALL_PANEL_ID = 'pluxel-packages-install'
-const PACKAGE_LIST_PANEL_ID = 'pluxel-packages-list'
-const PACKAGE_SPLIT_LAYOUT_STORAGE_KEY = 'pluxel:packages:split'
-const DEFAULT_PACKAGE_SPLIT_LAYOUT = {
-	[PACKAGE_INSTALL_PANEL_ID]: 24,
-	[PACKAGE_LIST_PANEL_ID]: 76,
-}
-
-function sanitizePackageSplitLayout(layout: Record<string, number>) {
-	return sanitizeTwoPanelLayout(
-		layout,
-		DEFAULT_PACKAGE_SPLIT_LAYOUT,
-		PACKAGE_INSTALL_PANEL_ID,
-		18,
-		52,
-	)
-}
+	DEFAULT_PACKAGE_SPLIT_LAYOUT,
+	PACKAGE_INSTALL_PANEL_ID,
+	PACKAGE_LIST_PANEL_ID,
+	PACKAGE_SPLIT_LAYOUT_STORAGE_KEY,
+	sanitizePackageSplitLayout,
+} from './packageManagerLayout'
 
 export function PackageManagerScreen() {
 	const transport = useRuntimeTransportClient()
@@ -223,7 +170,7 @@ export function PackageManagerScreen() {
 		() => statuses.filter((entry) => entry?.source?.kind === 'package').length,
 		[statuses],
 	)
-	const summaryStats = [
+	const summaryStats: PackageSummaryStat[] = [
 		{ label: '包总数', value: totalPackages },
 		{ label: '被引用插件', value: packageConsumers },
 		{ label: '运行中的包', value: runningPackages },
@@ -232,7 +179,7 @@ export function PackageManagerScreen() {
 	const [packageSearch, setPackageSearch] = useState('')
 	const deferredPackageSearch = useDeferredValue(packageSearch.trim().toLowerCase())
 	const searchActive = deferredPackageSearch.length > 0
-	// 搜索过渡状态，用于降低视觉闪烁
+	// Keeps fast typing from making the table flash between result sets.
 	const isSearchTransitioning = packageSearch.trim().toLowerCase() !== deferredPackageSearch
 	const filteredRows = useMemo(
 		() => filterPackageRows(rows, deferredPackageSearch),
@@ -802,260 +749,6 @@ export function PackageManagerScreen() {
 		sanitizePackageSplitLayout,
 	)
 
-	const renderPackageTable = () => {
-		if (filteredRows.length === 0) {
-			if (refreshing) {
-				return (
-					<Box
-						p="md"
-						style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center' }}
-					>
-						<Group gap="sm">
-							<Loader size="sm" />
-							<Text c="dimmed">正在加载包信息…</Text>
-						</Group>
-					</Box>
-				)
-			}
-			return searchActive ? (
-				<EmptyState
-					icon={<IconSearchEmpty size={28} stroke={1.5} />}
-					title={`没有匹配"${packageSearch.trim()}"的结果`}
-					description="尝试其他关键词，或清空搜索条件查看全部包。"
-					minHeight={200}
-				/>
-			) : (
-				<EmptyState
-					icon={<IconPackages size={28} stroke={1.5} />}
-					title="暂无包数据"
-					description="可先在上方安装新包，或等待插件上报。"
-					minHeight={200}
-				/>
-			)
-		}
-
-		const allVisibleSelected =
-			filteredRows.length > 0 && selectedVisibleCount === filteredRows.length
-		const isIndeterminate = selectedVisibleCount > 0 && selectedVisibleCount < filteredRows.length
-
-		return (
-			<Stack gap="xs" style={{ height: '100%' }}>
-				{selectedPackages.size > 0 && (
-					<Paper
-						withBorder
-						radius="md"
-						px="sm"
-						py={6}
-						style={{
-							background: 'var(--plx-accent-soft)',
-							borderColor: 'var(--plx-selected-border)',
-						}}
-					>
-						<Group gap="sm" align="center" wrap="nowrap">
-							<Text size="sm" fw={600} style={{ color: 'var(--plx-accent-strong)' }}>
-								已选 {selectedPackages.size} 项
-							</Text>
-							<Group gap={6}>
-								<Tooltip label="重载所选包">
-									<ActionIcon
-										variant="light"
-										color="brand"
-										size="md"
-										onClick={() => void handleBatchReload(true)}
-										disabled={busy && busyKey !== 'batch-reload'}
-										loading={busyKey === 'batch-reload'}
-									>
-										<IconRefresh size={18} />
-									</ActionIcon>
-								</Tooltip>
-								<Tooltip label="重装所选包">
-									<ActionIcon
-										variant="light"
-										color="brand"
-										size="md"
-										disabled={busy && busyKey !== 'batch-reinstall'}
-										loading={busyKey === 'batch-reinstall'}
-										onClick={() => void handleBatchReinstall()}
-									>
-										<IconRotateClockwise size={18} />
-									</ActionIcon>
-								</Tooltip>
-								<Tooltip label="卸载运行态">
-									<ActionIcon
-										variant="light"
-										color="orange"
-										size="md"
-										disabled={busy && busyKey !== 'batch-uninstall'}
-										loading={busyKey === 'batch-uninstall'}
-										onClick={() => confirmBatchUninstall()}
-									>
-										<IconTrash size={18} />
-									</ActionIcon>
-								</Tooltip>
-								<Tooltip label="彻底移除">
-									<ActionIcon
-										variant="light"
-										color="red"
-										size="md"
-										disabled={busy && busyKey !== 'batch-remove'}
-										loading={busyKey === 'batch-remove'}
-										onClick={() => confirmBatchRemove()}
-									>
-										<IconX size={18} />
-									</ActionIcon>
-								</Tooltip>
-							</Group>
-							<ActionIcon
-								variant="subtle"
-								color="gray"
-								size="sm"
-								onClick={clearSelection}
-								style={{ marginLeft: 'auto' }}
-							>
-								<IconX size={14} />
-							</ActionIcon>
-						</Group>
-					</Paper>
-				)}
-				<ScrollArea style={{ flex: 1 }}>
-					<Table striped highlightOnHover miw={720} verticalSpacing={6}>
-						<Table.Thead>
-							<Table.Tr>
-								<Table.Th w={42}>
-									<Checkbox
-										checked={allVisibleSelected}
-										indeterminate={isIndeterminate}
-										onChange={(event) => toggleSelectAllVisible(event.currentTarget.checked)}
-										aria-label="全选"
-									/>
-								</Table.Th>
-								<Table.Th>包</Table.Th>
-								<Table.Th>版本</Table.Th>
-								<Table.Th>加载</Table.Th>
-								<Table.Th>引用插件</Table.Th>
-								<Table.Th>状态</Table.Th>
-								<Table.Th>操作</Table.Th>
-							</Table.Tr>
-						</Table.Thead>
-						<Table.Tbody>
-							{filteredRows.map((row) => (
-								<Table.Tr key={row.name}>
-									<Table.Td py={5}>
-										<Checkbox
-											checked={selectedPackages.has(row.name)}
-											onChange={(event) => setRowSelected(row.name, event.currentTarget.checked)}
-											aria-label={`选择 ${row.name}`}
-										/>
-									</Table.Td>
-									<Table.Td py={5}>
-										<Flex gap={6} align="center" wrap="wrap">
-											<Text fw={600}>{row.name}</Text>
-											{row.pluginNames.length > 0 ? (
-												row.pluginNames.map((plugin) => (
-													<Badge
-														key={plugin}
-														variant="light"
-														color="brand"
-														component={RouterLinkAdapter}
-														to={`/plugins/${encodeURIComponent(plugin)}`}
-														style={{ cursor: 'pointer' }}
-													>
-														{plugin}
-													</Badge>
-												))
-											) : (
-												<Text size="xs" c="dimmed">
-													暂无关联插件
-												</Text>
-											)}
-										</Flex>
-									</Table.Td>
-									<Table.Td py={5}>
-										<Badge variant="light" color="gray">
-											{formatSpec(row)}
-										</Badge>
-									</Table.Td>
-									<Table.Td py={5}>
-										<Badge color={row.loaded ? 'green' : 'gray'} variant="light">
-											{row.loaded ? '已加载' : '未加载'}
-										</Badge>
-									</Table.Td>
-									<Table.Td py={5}>
-										<Text size="sm">
-											{row.runningCount}/{row.pluginCount} 运行中
-										</Text>
-									</Table.Td>
-									<Table.Td py={5}>
-										{row.issues.length > 0 ? (
-											<Badge color="red" variant="filled">
-												{row.issues.length} 个告警
-											</Badge>
-										) : (
-											<Badge color="green" variant="light">
-												正常
-											</Badge>
-										)}
-									</Table.Td>
-									<Table.Td py={5}>
-										<Group justify="flex-end" gap={6}>
-											{row.loaded ? (
-												<Tooltip label="重装">
-													<ActionIcon
-														variant="light"
-														color="brand"
-														size="md"
-														onClick={() => void performReinstall(row)}
-														disabled={busy}
-													>
-														<IconRotateClockwise size={16} />
-													</ActionIcon>
-												</Tooltip>
-											) : (
-												<Tooltip label="加载">
-													<ActionIcon
-														variant="light"
-														color="green"
-														size="md"
-														onClick={() => void handleLoad(row)}
-														disabled={busy}
-													>
-														<IconRefresh size={16} />
-													</ActionIcon>
-												</Tooltip>
-											)}
-											<Tooltip label="卸载运行态">
-												<ActionIcon
-													variant="light"
-													color="orange"
-													size="md"
-													onClick={() => confirmAndUninstall(row)}
-													disabled={busy}
-												>
-													<IconTrash size={16} />
-												</ActionIcon>
-											</Tooltip>
-											<Tooltip label="彻底移除">
-												<ActionIcon
-													variant="light"
-													color="red"
-													size="md"
-													onClick={() => confirmAndRemove(row)}
-													disabled={busy}
-												>
-													<IconX size={16} />
-												</ActionIcon>
-											</Tooltip>
-										</Group>
-									</Table.Td>
-								</Table.Tr>
-							))}
-						</Table.Tbody>
-					</Table>
-				</ScrollArea>
-			</Stack>
-		)
-	}
-
 	// 顶层错误：不再继续渲染复杂 UI（会触发更多懒读取/请求），直接给稳定错误态 + 手动重试。
 	if (pageError) {
 		return (
@@ -1070,81 +763,22 @@ export function PackageManagerScreen() {
 
 	return (
 		<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
-			<Paper withBorder radius="sm" p="xs">
-				<Group justify="space-between" align="center" wrap="wrap" gap="xs">
-					<Group gap={6} wrap="wrap">
-						{summaryStats.map((stat) => (
-							<Badge key={stat.label} variant="light" color={stat.color ?? 'gray'}>
-								{stat.label} {stat.value}
-							</Badge>
-						))}
-						<Badge variant="light" color="gray">
-							列表 {filteredRows.length} / {rows.length}
-						</Badge>
-					</Group>
-					<Group gap="xs" wrap="wrap">
-						<Tooltip
-							label={
-								<Group gap={4}>
-									<Kbd size="xs">Ctrl</Kbd>
-									<Text size="xs">+</Text>
-									<Kbd size="xs">F</Kbd>
-									<Text size="xs">搜索</Text>
-								</Group>
-							}
-							position="bottom"
-						>
-							<TextInput
-								ref={searchInputRef}
-								placeholder="搜索包名或插件..."
-								leftSection={<IconSearch size={14} />}
-								rightSection={
-									packageSearch && (
-										<ActionIcon size="xs" variant="subtle" onClick={() => setPackageSearch('')}>
-											<IconX size={12} />
-										</ActionIcon>
-									)
-								}
-								value={packageSearch}
-								onChange={(event) => setPackageSearch(event.currentTarget.value)}
-								size="sm"
-								style={{ width: 240, maxWidth: '100%' }}
-							/>
-						</Tooltip>
-						<Checkbox
-							label="全部依赖"
-							checked={showAllPackages}
-							onChange={(event) => {
-								setShowAllPackages(event.currentTarget.checked)
-							}}
-							size="sm"
-						/>
-						<Button
-							leftSection={<IconRefresh size={16} />}
-							variant="light"
-							size="sm"
-							onClick={() => void refetch()}
-							loading={refreshing}
-						>
-							刷新
-						</Button>
-						<Tooltip label="查看操作日志">
-							<ActionIcon variant="light" color="gray" onClick={() => setOperationLogOpen(true)}>
-								<IconTerminal2 size={16} />
-							</ActionIcon>
-						</Tooltip>
-						{!showIssuesPanel && sortedIssues.length > 0 && (
-							<Tooltip label="显示告警面板">
-								<ActionIcon variant="light" color="red" onClick={() => setShowIssuesPanel(true)}>
-									<Badge color="red" size="xs" circle>
-										{sortedIssues.length}
-									</Badge>
-								</ActionIcon>
-							</Tooltip>
-						)}
-					</Group>
-				</Group>
-			</Paper>
+			<PackageManagerToolbar
+				filteredCount={filteredRows.length}
+				issueCount={sortedIssues.length}
+				onOpenOperationLog={() => setOperationLogOpen(true)}
+				onPackageSearchChange={setPackageSearch}
+				onRefresh={() => void refetch()}
+				onShowAllPackagesChange={setShowAllPackages}
+				onShowIssuesPanel={() => setShowIssuesPanel(true)}
+				packageSearch={packageSearch}
+				refreshing={refreshing}
+				rowCount={rows.length}
+				searchInputRef={searchInputRef}
+				showAllPackages={showAllPackages}
+				showIssuesPanel={showIssuesPanel}
+				stats={summaryStats}
+			/>
 
 			{errorMessage && (
 				<Alert color="red" icon={<IconAlertTriangle size={18} />} title="加载失败">
@@ -1171,66 +805,16 @@ export function PackageManagerScreen() {
 					defaultSize: packageSplitLayout[PACKAGE_INSTALL_PANEL_ID],
 					minSize: 18,
 					children: (
-						<Paper
-							withBorder
-							radius="sm"
-							component="form"
+						<PackageInstallPanel
+							busy={busy}
+							forceInstall={forceInstall}
+							installInput={installInput}
+							installing={busyKey === 'install'}
+							onForceInstallChange={setForceInstall}
+							onInstallInputChange={setInstallInput}
 							onSubmit={submitInstall}
-							p="sm"
-							style={{ minHeight: 0 }}
-						>
-							<Stack gap="sm">
-								<Group gap="xs" wrap="wrap">
-									<Text fw={700} size="sm">
-										安装
-									</Text>
-									<Badge variant="light" color="gray" size="xs">
-										换行/逗号分隔
-									</Badge>
-								</Group>
-								<Textarea
-									placeholder="pluxel-plugin-redis&#10;@scope/pkg@1.0.0"
-									value={installInput}
-									onChange={(event) => setInstallInput(event.currentTarget.value)}
-									minRows={4}
-									autosize
-									maxRows={7}
-									style={{ flex: '0 0 auto' }}
-								/>
-								{pendingInstallSpecs.length > 0 && (
-									<Group gap={4} wrap="wrap">
-										{pendingInstallSpecs.slice(0, 4).map((spec) => (
-											<Badge key={spec} color="gray" variant="light" size="sm">
-												{spec}
-											</Badge>
-										))}
-										{pendingInstallSpecs.length > 4 && (
-											<Badge color="gray" variant="light" size="sm">
-												+{pendingInstallSpecs.length - 4}
-											</Badge>
-										)}
-									</Group>
-								)}
-								<Group justify="space-between" align="center" mt="auto" wrap="wrap" gap="xs">
-									<Checkbox
-										label="强制安装"
-										checked={forceInstall}
-										onChange={(event) => setForceInstall(event.currentTarget.checked)}
-										size="xs"
-									/>
-									<Button
-										type="submit"
-										loading={busyKey === 'install'}
-										disabled={busy && busyKey !== 'install'}
-										size="sm"
-									>
-										{pendingInstallSpecs.length > 1
-											? `安装 ${pendingInstallSpecs.length} 个`
-											: '安装'}
-									</Button>
-								</Group>
-							</Stack>
-						</Paper>
+							pendingInstallSpecs={pendingInstallSpecs}
+						/>
 					),
 				}}
 				secondary={{
@@ -1281,7 +865,27 @@ export function PackageManagerScreen() {
 									transition: 'opacity 100ms ease-out',
 								}}
 							>
-								{renderPackageTable()}
+								<PackageTable
+									busy={busy}
+									busyKey={busyKey}
+									filteredRows={filteredRows}
+									onBatchReinstall={() => void handleBatchReinstall()}
+									onBatchReload={() => void handleBatchReload(true)}
+									onBatchRemove={confirmBatchRemove}
+									onBatchUninstall={confirmBatchUninstall}
+									onClearSelection={clearSelection}
+									onLoad={(row) => void handleLoad(row)}
+									onRemove={confirmAndRemove}
+									onReinstall={(row) => void performReinstall(row)}
+									onRowSelectedChange={setRowSelected}
+									onSelectAllVisibleChange={toggleSelectAllVisible}
+									onUninstall={confirmAndUninstall}
+									packageSearch={packageSearch}
+									refreshing={refreshing}
+									searchActive={searchActive}
+									selectedPackages={selectedPackages}
+									selectedVisibleCount={selectedVisibleCount}
+								/>
 							</Box>
 						</Paper>
 					),

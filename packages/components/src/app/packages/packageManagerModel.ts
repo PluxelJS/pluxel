@@ -17,18 +17,22 @@ export type PackageRow = {
 	issues: PackageLoadIssue[]
 }
 
-export type InstallLogEntry = {
-	label: string
-	kind: 'primary' | 'dependency'
-	status: 'pending' | 'running' | 'success' | 'error'
-	message?: string
-}
-
 export type OperationLogEntry = {
 	label: string
 	status: 'pending' | 'running' | 'success' | 'error'
 	message?: string
 }
+
+export type PackageBusyKey =
+	| 'install'
+	| 'batch-reload'
+	| 'batch-reinstall'
+	| 'batch-uninstall'
+	| 'batch-remove'
+	| 'row-load'
+	| 'row-reinstall'
+	| 'row-uninstall'
+	| 'row-remove'
 
 export interface IssueData {
 	name: string

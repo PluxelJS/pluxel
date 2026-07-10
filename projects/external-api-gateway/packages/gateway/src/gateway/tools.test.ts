@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { callExternalGatewayTool, type ExternalGatewayToolHost } from './tool-dispatcher.ts'
-import { externalGatewayPiTools, PiExtension, yiqichaBundleCalls } from './pi-extension.ts'
+import {
+	externalGatewayPiTools,
+	externalGatewayToolNameToPiName,
+	PiExtension,
+	yiqichaBundleCalls,
+} from './pi-extension.ts'
 import {
 	EXTERNAL_GATEWAY_TOOL_NAMES,
 	listExternalGatewayToolSpecs,
@@ -72,9 +77,14 @@ describe('external gateway tool contract', () => {
 	})
 
 	it('exports PI tool definitions from the reusable extension entry', () => {
-		expect(externalGatewayPiTools.map((tool) => tool.function.name).sort()).toEqual(
-			[...EXTERNAL_GATEWAY_TOOL_NAMES].sort(),
+		const piNames = externalGatewayPiTools.map((tool) => tool.function.name)
+		expect(piNames.sort()).toEqual(
+			EXTERNAL_GATEWAY_TOOL_NAMES.map(externalGatewayToolNameToPiName).sort(),
 		)
+		expect(externalGatewayPiTools.every((tool) => /^[A-Za-z0-9_-]{1,64}$/.test(tool.function.name))).toBe(
+			true,
+		)
+		expect(new Set(piNames).size).toBe(EXTERNAL_GATEWAY_TOOL_NAMES.length)
 		expect(() => new PiExtension({ token: '' })).toThrow('PiExtension token is required')
 	})
 
@@ -121,7 +131,7 @@ describe('external gateway tool contract', () => {
 			pi.handleToolCall({
 				id: 'call-1',
 				function: {
-					name: 'zhipu.web_search',
+					name: 'zhipu_web_search',
 					arguments: '{"query":"GLM"}',
 				},
 			}),
@@ -190,6 +200,55 @@ describe('external gateway tool contract', () => {
 				name: 'yiqicha.recommend_bundle',
 				args: { bundle: 'profile', keyword: '智谱' },
 				billing: 'pi-user',
+			},
+		])
+	})
+
+	it('accepts OpenAI-safe PI tool names in programming calls while dispatching canonical names', async () => {
+		const calls: unknown[] = []
+		const pi = new PiExtension({
+			token: 'token-123',
+			rpcUrl: 'http://gateway.test/rpc',
+			billing: 'pi-user',
+			transport: {
+				authenticate() {
+					return {
+						whoami() {
+							return { tokenId: 'pi-token', name: 'PI token' }
+						},
+						async toolSpecs(input) {
+							return listExternalGatewayToolSpecs(input)
+						},
+						async callTool(input) {
+							calls.push(input)
+							return { ok: true }
+						},
+						async callTools(input) {
+							calls.push(input)
+							return { results: [] }
+						},
+					}
+				},
+			},
+		})
+
+		await pi.callTool('zhipu_web_search', { query: 'GLM' })
+		await pi.callTools([{ name: 'yiqicha_call_api', args: { api: 'getBasicInfo', params: {} } }])
+
+		expect(calls).toEqual([
+			{
+				name: 'zhipu.web_search',
+				args: { query: 'GLM' },
+				billing: 'pi-user',
+			},
+			{
+				calls: [
+					{
+						name: 'yiqicha.call_api',
+						args: { api: 'getBasicInfo', params: {} },
+						billing: 'pi-user',
+					},
+				],
 			},
 		])
 	})
