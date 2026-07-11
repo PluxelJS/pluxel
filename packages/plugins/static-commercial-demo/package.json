@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"codegen": "pnpm -w run build:gqlens && tsx tooling/generate-gqlens.ts",
+		"codegen": "pnpm -w run build:gqlens && node tooling/generate-gqlens.ts",
 		"dev": "pnpm run codegen && vite --host 127.0.0.1",
 		"build": "pnpm run codegen && vite build",
 		"typecheck": "pnpm run codegen && tsc --noEmit",
@@ -31,7 +31,6 @@
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
-		"tsx": "^4.22.4",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.0-beta.18"
 	}
