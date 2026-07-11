@@ -4,4 +4,4 @@
 
 插件作者只声明 `ui()` 并调用 `web.ui.register()`；runtime-dev 通过 host 安装的 dev capability 接收源码声明。Web Management 关闭时不创建 compiler 或 watcher。
 
-公开作者模型见 `docs/PLUGIN_AUTHORING_FINAL.md`。
+内部边界见 `docs/PLUGIN_SYSTEM.md`；作者用法见 `user-docs/plugin-authoring.md`。

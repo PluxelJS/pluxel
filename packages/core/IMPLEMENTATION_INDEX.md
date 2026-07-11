@@ -21,9 +21,8 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
-- `docs/PLUGIN_AUTHORING_FINAL.md`
+- `docs/PLUGIN_SYSTEM.md`
   - 当前唯一插件 authoring、dependency/feature 与 optional capability 设计
-- `packages/core/docs/runtime-update/RATIONALE.md`
   - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
 
 ## Services

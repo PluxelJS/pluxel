@@ -1,24 +1,34 @@
-# Frontend and Web Management
+# Frontend Architecture
 
-插件 HTTP 路由是常驻能力；插件 UI、管理 RPC/SSE 与管理态同步属于可选的 Web Management bundle。
+插件业务 HTTP 与管理前端是两条独立路径。管理前端属于 optional Web Management。
 
-插件只通过一个 gate 注册管理能力：
+## Contribution models
 
-```ts
-import { ui } from '@pluxel/runtime/web-management'
+- remote UI：插件拥有浏览器代码和复杂交互；
+- builtin UI：宿主渲染可序列化描述；
+- interaction surface：consumer 拥有 placement、input 和 apply；
+- interaction offer：provider 准备资源和 session UI；
+- management state：服务端权威、供管理 UI 同步的状态。
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
+这些模型共享插件 namespace，但不能折叠成失去 ownership 的通用 slot。
 
-this.ctx.webManagement.use((web) => {
-	web.ui.register(pluginUi)
-	web.rpc.expose(() => new PluginRpc(this))
-	web.sse.expose(() => this.events())
-	web.state.collection({ name: 'status' })
-})
-```
+## Server/browser boundary
 
-`ui()` 是纯声明。开发环境的 `web.ui.register()` 交给 Vite UI compiler；生产环境注册插件构建生成的 federation artifact。两种环境使用同一个作者 API，不存在运行期 AST bridge。
+- server declaration：`@pluxel/runtime/web-management`；
+- browser plugin API：`@pluxel/runtime/web`；
+- host workbench：消费 runtime read model 和 extension manifest；
+- plugin remote：只拥有自己的内容，不控制宿主布局。
 
-宿主关闭 Web Management 时 callback 不执行，UI compiler、watcher、管理路由和状态同步后端均不初始化，插件的 HTTP 与生命周期不受影响。
+`ui()` 是纯 declaration，`web.ui.register()` 是唯一注册动作。开发期编译源码，生产期注册 artifact，作者 API 不变。
 
-浏览器侧继续使用 `@pluxel/runtime/web` 提供的插件 UI API。完整边界见 `docs/PLUGIN_AUTHORING_FINAL.md`。
+## Context isolation
+
+plugin gate 随 Context 隔离；registry 由 host 共享。每次注册保留插件 id、logger 和 effects owner，异步或并发初始化不能切换共享“当前 ctx”。
+
+## 实现入口
+
+- `packages/runtime/src/web/`
+- `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
+- `packages/runtime/src/services/plugin-interaction/ExtensionInteractionRegistry.ts`
+- `packages/components/src/app/plugins/`
+- `packages/rolldown/src/vite/plugin-ui.ts`

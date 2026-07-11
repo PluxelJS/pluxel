@@ -1,13 +1,14 @@
 # Proposals
 
-本目录只保存尚未被当前实现取代的研究记录。已经落地或被替换的旧 runtime/plugin authoring 提案已删除，不能作为当前 API 依据。
+这里仅保存尚未实现的研究。proposal 不是当前 API，也不能覆盖 [`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md) 的事实。
 
-插件能力边界、Web Management、dependency/feature 和 UI build pipeline 的唯一权威设计是 `docs/PLUGIN_AUTHORING_FINAL.md`。
+规则：
 
-当前实现文档：
+- 明确标注问题、假设、未决问题和验收条件；
+- 不把提案示例复制进用户文档；
+- 实现后把稳定结论写入对应领域文档，并删除已完成提案内容；
+- 已被替代或没有继续价值的提案直接删除，历史由 Git 保存。
 
-- `docs/CORE.md`
-- `docs/RUNTIME.md`
-- `docs/FRONTEND.md`
-- `docs/TOOLCHAIN.md`
-- `docs/HMR.md`
+当前提案：
+
+- [`logger-redesign.md`](logger-redesign.md)

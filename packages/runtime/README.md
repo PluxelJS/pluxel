@@ -23,4 +23,4 @@ this.ctx.webManagement.use((web) => {
 - `@pluxel/runtime/plugin`：worker 声明。
 - `@pluxel/runtime/toolchain`：仅供生成代码使用的元数据 helper。
 
-最终设计见 `docs/PLUGIN_AUTHORING_FINAL.md`，用户写法见 `user-docs/plugin-authoring-model.md`。
+内部设计见 `docs/PLUGIN_SYSTEM.md`，插件作者主路径见 `user-docs/plugin-authoring.md`。

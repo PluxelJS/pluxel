@@ -1,0 +1,251 @@
+# 编写 Pluxel 插件
+
+这是一条面向插件作者的主路径。先按本文建立插件结构，再根据需要阅读具体服务类型。内部架构见 [`docs/PLUGIN_SYSTEM.md`](../docs/PLUGIN_SYSTEM.md)。
+
+## 先记住四件事
+
+1. 插件是依赖和生命周期单元。
+2. constructor 只放没有它就无法工作的插件依赖。
+3. `init()` 负责启动检查、注册运行时能力和登记资源清理。
+4. HTTP 是常驻业务能力；UI/RPC/SSE/management state 必须放进 `webManagement.use()`。
+
+## 一个标准插件
+
+```ts
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { ui } from '@pluxel/runtime/web-management'
+
+import { AccountsPlugin } from './AccountsPlugin.ts'
+import { BillingConfig } from './config.ts'
+import { BillingRpc } from './rpc.ts'
+
+const dashboard = ui(import.meta.url, './ui/index.tsx')
+
+@Plugin({ name: 'BillingPlugin' })
+export class BillingPlugin extends BasePlugin {
+	private readonly config = this.configs.use(BillingConfig)
+
+	constructor(private readonly accounts: AccountsPlugin) {
+		super()
+	}
+
+	override async init(signal: AbortSignal) {
+		await this.verifyUpstream({ signal })
+
+		this.ctx.http.plugin.routes((app) => app.get('/invoices', () => this.accounts.listInvoices()))
+
+		this.ctx.webManagement.use((web) => {
+			const status = web.state.collection({ name: 'billing-status' })
+			web.ui.register(dashboard)
+			web.rpc.expose(() => new BillingRpc(this, status))
+		})
+	}
+}
+```
+
+这个形状刻意把不同所有权分开：
+
+- declaration 放在 decorator、class field 或 module scope；
+- required dependency 放在 constructor；
+- 运行时工作放在 `init()`；
+- 管理面贡献放在唯一 optional gate 内。
+
+## 依赖：按“缺失时能否工作”选择
+
+### Required plugin dependency
+
+没有 provider 就不能工作时，直接使用 constructor：
+
+```ts
+@Plugin({ name: 'OrdersPlugin' })
+export class OrdersPlugin extends BasePlugin {
+	constructor(private readonly database: CommerceDbPlugin) {
+		super()
+	}
+}
+```
+
+不需要在 `@Plugin` 中重复列依赖。Pluxel 工具链生成 `design:paramtypes`，core 据此排序、注入并传播启动失败。
+
+插件源码必须通过宿主的 Vite/Rolldown 链加载。Node 可以执行普通、可擦除类型的 `.ts` 工具脚本，但不会替 Pluxel 生成 legacy decorator metadata，因此不能作为插件源码 runner。
+
+### Optional plugin integration
+
+缺少 provider 只损失增强能力时，使用 `this.plugins.use()`：
+
+```ts
+override init() {
+	this.plugins.use(AuditPlugin, (audit) => audit.registerSource(this))
+}
+```
+
+provider 未运行时 callback 不执行；provider replacement 后会重新绑定。callback 可以返回 cleanup。
+
+不要把 optional integration 放进 constructor，否则它会错误地阻塞主插件。
+
+## Feature：只表示插件内部组成
+
+required feature：
+
+```ts
+@Plugin({
+	name: 'SearchPlugin',
+	features: [QueryCacheFeature],
+})
+export class SearchPlugin extends BasePlugin {
+	readonly cache = this.features.use(QueryCacheFeature)
+}
+```
+
+lazy feature：
+
+```ts
+const analyticsFeature = defineLazyFeature({
+	key: 'analytics',
+	load: async () => (await import('./AnalyticsFeature.ts')).AnalyticsFeature,
+})
+
+override async init() {
+	const analytics = await this.features.load(analyticsFeature)
+	if (analytics) this.installAnalytics(analytics)
+}
+```
+
+Feature 不承担插件间依赖。判断方法很简单：独立生命周期和替换边界用 plugin；宿主插件内部实现拆分用 feature。
+
+## 配置：声明一次，只读取归一化结果
+
+```ts
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+
+export const WorkerConfig = v.object({
+	concurrency: v.optional(v.number(), 4),
+	endpoint: v.string(),
+})
+
+@Plugin({ name: 'WorkerPlugin' })
+export class WorkerPlugin extends BasePlugin {
+	private readonly config = this.configs.use(WorkerConfig)
+
+	override init() {
+		this.startWorkers(this.config.concurrency)
+	}
+}
+```
+
+- 默认值写进 schema，不在业务代码里再写 fallback。
+- `configs.use()` 放在顶层 class field，便于工具链提取稳定 metadata。
+- 配置值在 `init()` 或运行期方法中读取，不在 constructor 中读取；runtime 在实例构造后、启动前完成注入和校验。
+- 多 schema 页面需要布局时使用 `cfg(schemaMap)`，不要动态拼 schema key。
+
+## 生命周期：失败要诚实，资源要可回收
+
+`init()` 应验证插件能否真正提供能力。必要外部服务不可达、配置无效、数据库 schema 不匹配时直接抛出带行动建议的错误：
+
+```ts
+override async init(signal: AbortSignal) {
+	const pool = createPool(this.config)
+	this.ctx.effects.defer(() => pool.end())
+
+	await assertReachable(pool, { signal })
+	await assertSchemaVersion(pool, EXPECTED_SCHEMA_VERSION)
+}
+```
+
+资源创建成功后立即登记 cleanup。普通资源优先使用 `ctx.effects.defer()`；只有需要明确业务停止顺序时才实现 `stop()`。cleanup 必须幂等。
+
+不要捕获启动错误后只记日志继续运行。那会制造“生命周期显示 running、能力实际不可用”的半启动状态。
+
+core 的行为是：失败插件不进入 running，required dependents 被阻塞，无关插件继续。是否退出进程、告警或拒绝部署由宿主决定。
+
+## HTTP 与 Web Management
+
+### 业务 HTTP
+
+业务路由始终使用 `ctx.http.plugin`：
+
+```ts
+override init() {
+	this.ctx.http.plugin.routes((app) =>
+		app.get('/health', () => ({ ok: true })),
+	)
+}
+```
+
+HTTP 不依赖 Web Management，适合业务 API、webhook、health endpoint 和外部集成。
+
+### 可选管理面
+
+```ts
+const dashboard = ui(import.meta.url, './ui/index.tsx')
+
+override init() {
+	this.ctx.webManagement.use((web) => {
+		web.ui.register(dashboard)
+		web.rpc.expose(() => new DashboardRpc(this))
+		web.sse.expose(() => this.createStatusStream())
+		web.state.collection({ name: 'dashboard-status' })
+	})
+}
+```
+
+`use()` callback 只在宿主启用 Web Management 时执行。因此：
+
+- 只服务管理 UI 的状态和资源在 callback 内创建；
+- 插件核心业务不能依赖 callback 的副作用；
+- `web.state` 适合状态面板、表单和管理交互，不是业务数据库；
+- 管理 RPC/SSE 服务插件 UI，不替代公共业务 HTTP API。
+
+`ui()` 是纯 declaration，没有 bind 或注册副作用。开发环境由 Vite 编译源码，生产环境注册已构建 artifact，作者调用保持一致。
+
+## 错误边界
+
+生命周期错误和单次业务错误不要混淆：
+
+- 插件无法继续提供能力：让 `init()` 失败，或由宿主触发 restart/replacement。
+- 单个请求参数错误、上游超时、mutation 失败：返回请求级错误，不改变插件生命周期。
+- timer、watcher、queue consumer 等后台任务：捕获并记录每次错误，按业务语义重试或暂停。
+
+```ts
+const timer = setInterval(() => {
+	void this.syncOnce().catch((error) => {
+		this.ctx.logger.error('sync failed', { error })
+	})
+}, 30_000)
+
+this.ctx.effects.defer(() => clearInterval(timer))
+```
+
+## 宿主约束
+
+宿主使用 static 或 dynamic Vite route 加载插件源码。两条 route 的插件作者 API 完全相同。
+
+Web Management 只有一个顶层配置来源：
+
+```ts
+webManagement: false
+```
+
+或：
+
+```ts
+webManagement: {
+	enabled: true,
+	access: { exposure: 'private' },
+}
+```
+
+关闭时，宿主不创建 UI compiler、watcher、管理路由或 management state backend。
+
+## 提交前检查
+
+- required dependency 是否只写在 constructor？
+- optional integration 是否使用 `plugins.use()`？
+- feature 是否确实是插件内部组成？
+- 默认值是否都在 schema？
+- 启动前置条件是否在 `init()` 中验证并诚实失败？
+- 每个资源是否在创建后立即登记 cleanup？
+- 业务 HTTP 是否独立于 Web Management？
+- 管理面资源是否全部在 `webManagement.use()` 内？
+- 后台任务是否捕获错误？
+- 插件是否只通过 Vite/Rolldown 宿主入口运行？

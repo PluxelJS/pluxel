@@ -1,12 +1,30 @@
 # Toolchain
 
-插件构建工具链只负责静态元数据与制品生成：
+Pluxel 插件源码通过 Vite/Rolldown 链执行和构建。工具链负责提供 runtime 所依赖的静态事实，不改变作者模型。
 
-- `configSourcePlugin()` 提取 config source、binding、layout 和 schema registration。
-- 生成的元数据 helper 从 `@pluxel/runtime/toolchain` 导入；该入口不是插件作者 API。
-- UI compiler 将纯 `ui()` declaration 指向的源码构建为 federation artifact。
-- lint guard 检查 required dependency、required feature 和 lazy feature 的静态约束。
+## 职责
 
-工具链不改写公开调用，不在生产代码中插入另一套 UI 注册 API。`web.ui.register()` 在开发与生产保持同一语义。
+- OXC legacy decorator transform 与 `design:paramtypes`；
+- config source、binding、layout 和 feature metadata；
+- plugin UI federation artifact；
+- lint guard 与构建边界检查；
+- Vite Module Runner、source conditions 和 singleton resolution。
 
-Web Management 关闭时，static/dynamic Vite route 不创建 UI compiler 或 watcher。完整约束见 `docs/PLUGIN_AUTHORING_FINAL.md`。
+## 非职责
+
+- 不注入第二套 dependency 或 UI API；
+- 不让 toolchain helper 出现在默认作者入口；
+- 不替代 core graph/lifecycle；
+- 不在 Web Management disabled 时创建 UI compiler 或 watcher。
+
+Node 原生 type stripping 可运行普通代码生成脚本，但不会生成 Pluxel decorator metadata，因此不是插件源码入口。
+
+## 关键入口
+
+- `packages/runtime-dev/src/vite.ts`
+- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
+- `packages/rolldown/src/rolldown/plugins/lintGuardPlugin.ts`
+- `packages/rolldown/src/workspace/oxlint/`
+- `packages/test/src/vitest.ts`
+
+工具链契约必须由真实 Vite Module Runner 测试验证，不能用 raw TypeScript runner 的行为推断。

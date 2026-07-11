@@ -8,13 +8,10 @@ pnpm plugin-host:dynamic
 
 文档入口（先看这些，避免被历史笔记误导）：
 
-- `docs/README.md`
-- `docs/CORE.md`
-- `docs/RUNTIME.md`
-- `docs/HMR.md`
-- `docs/FRONTEND.md`
-- `docs/CONFIG.md`
-- `docs/proposals/README.md`
+- 插件作者：`user-docs/README.md`
+- 维护者文档：`docs/README.md`
+- 插件系统总边界：`docs/PLUGIN_SYSTEM.md`
+- 未实现研究：`docs/proposals/README.md`
 
 开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
 

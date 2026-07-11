@@ -1,22 +1,17 @@
 # Pluxel User Docs
 
-这个目录放用户向文档：面向插件作者、宿主集成者和应用开发者。
+这里是插件作者和宿主应用开发者的用户文档，只描述当前支持的用法。
 
-它和 `docs/` 的区别：
+## 从这里开始
 
-- `user-docs/` 解释怎么写插件、怎么组织应用、哪些写法是最佳实践。
-- `docs/` 解释 Pluxel 内部设计边界、包边界、实现路线和维护约束。
+- [`plugin-authoring.md`](plugin-authoring.md)：完整插件形状、依赖、feature、配置、生命周期、HTTP、Web Management 和最佳实践。
+- [`host-setup.md`](host-setup.md)：static/dynamic Vite host、Web Management 开关和启动策略。
 
-## 阅读顺序
+阅读完主路径后，再按使用到的 package subpath 查类型和示例。内部架构、实现入口和维护约束位于 [`docs/`](../docs/README.md)，不是写插件的前置知识。
 
-1. `plugin-authoring-model.md`
-   插件能力边界、依赖/feature、Web Management、生命周期、错误模型和资源管理。
+## 文档承诺
 
-内部设计与迁移后的唯一 API 清单见 `docs/PLUGIN_AUTHORING_FINAL.md`。
-
-## 写作原则
-
-- 优先描述当前应遵守的使用模型。
-- 不把未来提案写成已实现 API。
-- 不把内部实现细节暴露成用户必须记住的概念。
-- 示例代码表达意图即可，不要求覆盖每个具体包导入。
+- 示例使用当前公开 API。
+- 先给标准写法，再解释必要的设计原因。
+- 不展示兼容 API、内部 helper 或迁移历史。
+- 对 required/optional、业务/管理面、声明/执行等容易误用的边界给出明确选择规则。
