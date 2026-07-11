@@ -54,11 +54,11 @@ Vite /__pluxel/plugins/StaticCommercialPlugin/graphql
   -> Drizzle service facade
 ```
 
-Vite and standalone mode consume the same runtime config from `src/pluxel.static.ts`.
-Vite lifecycle, HMR source UI wiring, request forwarding, and shutdown are delegated to
-`@pluxel/runtime-static/vite`; the standalone `src/static.ts` entry only owns Node HTTP startup.
+Vite consumes the runtime config from `src/pluxel.static.ts`. Lifecycle, HMR source UI wiring,
+request forwarding, and shutdown are delegated to `@pluxel/runtime-static/vite`. Plugin source is
+never started through a raw TypeScript runner.
 
-The standalone static host can also be started without Vite:
+The static host entry uses the same Vite/Rolldown pipeline:
 
 ```sh
 pnpm --filter @pluxel/plugins-static-commercial-demo static

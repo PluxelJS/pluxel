@@ -21,6 +21,9 @@ Start the Pluxel static host:
 pnpm --filter @pluxel/plugins-authelia-oidc-demo static
 ```
 
+This command starts the host-owned Vite server with `staticRuntimeVitePlugin`; plugin TypeScript is
+always evaluated through the Pluxel Vite/Rolldown transform chain.
+
 Credentials and URLs:
 
 - Authelia user: `demo` / `password`

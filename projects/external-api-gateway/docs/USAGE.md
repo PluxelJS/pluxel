@@ -17,7 +17,7 @@ pnpm --filter @repo/project-external-api-gateway dev
 pnpm --filter @repo/project-external-api-gateway static
 ```
 
-`dev` 是 Vite + runtime-static dev host；runtime-static 会把已挂载的 runtime HTTP routes 代理进 Pluxel runtime HTTP router。`static` 直接运行 `src/static.ts` 的独立 runtime server，更接近生产入口。不要用普通 Vite server 测试 RPC；那种情况下 GET 可能返回 SPA HTML，POST 会 404。
+`dev` 和 `static` 都使用带 `staticRuntimeVitePlugin` 的 Vite host；runtime-static 会把已挂载的 runtime HTTP routes 代理进 Pluxel runtime HTTP router。不要绕过该插件使用普通 Vite server 或原始 TypeScript runner 测试 RPC。
 
 默认开发 token：
 
@@ -160,14 +160,14 @@ OCR 和文件解析都可能耗时。对外使用时按需求选择能力，不�
 
 推荐规则：
 
-| 输入/需求 | 推荐能力 | 上游实现映射 |
-| --- | --- | --- |
-| PNG/JPG/JPEG/BMP，8MB 内，只要图片文字行、坐标、可选置信度，尤其手写识别 | `zhipu_ocr` | `/files/ocr`，`tool_type=hand_write` |
-| PDF/Word/Excel/PPT/CSV/MD/TXT/HTML 或图片，需要 Markdown/text、表格、版面结构、图片产物 | `zhipu.file_parse` | `/files/parser/create`，后续用 `zhipu.file_parse_result` 映射 `/files/parser/result/{task_id}/{format_type}` |
-| 在线链路必须一次请求返回，文件满足同步解析限制，且需要 Prime 级解析 | `zhipu_file_parse` with `mode=sync` | `/files/parser/sync`，`tool_type=prime-sync` |
-| 大文件、复杂版式、批量导入、可后台处理 | `zhipu.file_parse` with `mode=async` | `/files/parser/create`，保存 `task_id` 后用 `zhipu.file_parse_result` 轮询 |
-| URL 页面内容读取，不是本地文件上传 | `zhipu.reader` | `/reader` |
-| 图片/PDF OCR 后按业务字段抽取 JSON | 两阶段：OCR/parser -> chat | 先走 OCR/parser，再走 `zhipu.chat` |
+| 输入/需求                                                                               | 推荐能力                             | 上游实现映射                                                                                                 |
+| --------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| PNG/JPG/JPEG/BMP，8MB 内，只要图片文字行、坐标、可选置信度，尤其手写识别                | `zhipu_ocr`                          | `/files/ocr`，`tool_type=hand_write`                                                                         |
+| PDF/Word/Excel/PPT/CSV/MD/TXT/HTML 或图片，需要 Markdown/text、表格、版面结构、图片产物 | `zhipu.file_parse`                   | `/files/parser/create`，后续用 `zhipu.file_parse_result` 映射 `/files/parser/result/{task_id}/{format_type}` |
+| 在线链路必须一次请求返回，文件满足同步解析限制，且需要 Prime 级解析                     | `zhipu_file_parse` with `mode=sync`  | `/files/parser/sync`，`tool_type=prime-sync`                                                                 |
+| 大文件、复杂版式、批量导入、可后台处理                                                  | `zhipu.file_parse` with `mode=async` | `/files/parser/create`，保存 `task_id` 后用 `zhipu.file_parse_result` 轮询                                   |
+| URL 页面内容读取，不是本地文件上传                                                      | `zhipu.reader`                       | `/reader`                                                                                                    |
+| 图片/PDF OCR 后按业务字段抽取 JSON                                                      | 两阶段：OCR/parser -> chat           | 先走 OCR/parser，再走 `zhipu.chat`                                                                           |
 
 Gateway 返回智谱上游原始响应。业务侧如果需要稳定读取层，建议在自己的 adapter 中归一化为：
 
@@ -204,9 +204,9 @@ type DocumentJobResult = {
 
 ```json
 {
-  "name": "zhipu.web_search",
-  "args": { "query": "GLM OpenAPI", "count": 5 },
-  "billing": { "userId": "pi-agent", "traceId": "search-001" }
+	"name": "zhipu.web_search",
+	"args": { "query": "GLM OpenAPI", "count": 5 },
+	"billing": { "userId": "pi-agent", "traceId": "search-001" }
 }
 ```
 
@@ -214,12 +214,12 @@ type DocumentJobResult = {
 
 ```json
 {
-  "calls": [
-    {
-      "name": "yiqicha.call_api",
-      "args": { "api": "getBasicInfo", "params": { "keyword": "智谱" } },
-      "billing": "pi-agent"
-    }
-  ]
+	"calls": [
+		{
+			"name": "yiqicha.call_api",
+			"args": { "api": "getBasicInfo", "params": { "keyword": "智谱" } },
+			"billing": "pi-agent"
+		}
+	]
 }
 ```

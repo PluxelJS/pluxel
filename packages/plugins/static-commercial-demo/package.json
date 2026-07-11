@@ -7,7 +7,7 @@
 		"dev": "pnpm run codegen && vite --host 127.0.0.1",
 		"build": "pnpm run codegen && vite build",
 		"typecheck": "pnpm run codegen && tsc --noEmit",
-		"static": "tsx src/static.ts",
+		"static": "pnpm run codegen && vite --host 127.0.0.1",
 		"verify": "pnpm run codegen && tsc --noEmit && vite build"
 	},
 	"dependencies": {

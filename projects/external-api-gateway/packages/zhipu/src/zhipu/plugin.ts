@@ -12,7 +12,7 @@ import {
 	useExternalGatewayDB,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
@@ -1009,8 +1009,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		)
 	}
 }
-
-setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
 
 export class ZhipuProviderRpc extends RpcTarget {
 	constructor(private readonly plugin: ZhipuProviderPlugin) {

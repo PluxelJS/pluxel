@@ -170,7 +170,7 @@ class OrdersPlugin extends BasePlugin {
 }
 ```
 
-抽象 token 或不生成 decorator metadata 的直接 transpiler/runner 场景，继续使用既有的 `setParamToken()` 低层覆盖；普通插件不需要写它。
+插件源码必须通过 Pluxel 的 Vite/Rolldown 工具链加载，由工具链保证 legacy decorator metadata。不要用 `tsx` 等原始 TypeScript runner 直接启动插件源码。
 
 required 本地 feature 使用 `this.features.use()`，并显式列入 `@Plugin({ features: [...] })`。正确性不依赖 class-field AST 推断。
 

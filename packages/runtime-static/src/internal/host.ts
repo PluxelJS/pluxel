@@ -16,6 +16,7 @@ import type {
 import {
 	isWebManagementEnabled,
 	webManagementAdminAccess,
+	withWebManagementPluginContext,
 } from '@pluxel/runtime/internal'
 import {
 	buildCatalog,
@@ -608,7 +609,7 @@ function createStaticRuntimeContextConfig(
 			: undefined
 	const runtimeState = options.runtimeState ?? context.runtimeState ?? inheritedRuntimeState
 
-	return {
+	return withWebManagementPluginContext({
 		...context,
 		http: {
 			...(http && typeof http === 'object' ? http : {}),
@@ -621,5 +622,5 @@ function createStaticRuntimeContextConfig(
 		persistence,
 		pluginData,
 		logger,
-	}
+	})
 }

@@ -6,13 +6,8 @@ export type {
 	RuntimeWorkerWatchOptions,
 } from './runtime/capabilities'
 
-export type {
-	RuntimeStorageLayout,
-	RuntimeStoragePaths,
-} from './runtime/paths'
-export {
-	resolveRuntimeStoragePaths,
-} from './runtime/paths'
+export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
+export { resolveRuntimeStoragePaths } from './runtime/paths'
 export {
 	findRuntimeModuleId,
 	resolveModuleIdBaseDir,
@@ -21,7 +16,10 @@ export {
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 export { isWebManagementEnabled, webManagementAdminAccess } from './web-management-config'
-export { requireWebManagement } from './services/web-management/WebManagementService'
+export {
+	requireWebManagement,
+	withWebManagementPluginContext,
+} from './services/web-management/WebManagementService'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'

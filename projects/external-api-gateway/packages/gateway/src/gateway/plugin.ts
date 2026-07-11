@@ -16,7 +16,7 @@ import type {
 } from '@repo/external-api-gateway-shared/gateway'
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
@@ -282,9 +282,6 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		return this.yiqicha
 	}
 }
-
-setParamToken(ExternalGatewayPlugin, 0, ZhipuProviderPlugin)
-setParamToken(ExternalGatewayPlugin, 1, YiqichaProviderPlugin)
 
 export class ExternalGatewayRpc extends RpcTarget {
 	constructor(private readonly gateway: ExternalGatewayPlugin) {

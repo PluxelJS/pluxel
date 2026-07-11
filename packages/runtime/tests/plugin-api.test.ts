@@ -48,6 +48,11 @@ describe('@pluxel/runtime author declarations', () => {
 			'__registerUsedFeatures__',
 			'__setConfigLayout__',
 			'__setConfigSource__',
+			'setParamToken',
+			'setParamTokens',
+			'clearParamToken',
+			'clearParamTokens',
+			'getStoredParamTokens',
 			'UseFeature',
 		]) {
 			expect(runtimeAuthoring).not.toHaveProperty(removed)
@@ -93,8 +98,48 @@ describe('@pluxel/runtime author declarations', () => {
 			firstServices.rpc.expose(() => ({}) as never)
 			expect(secondServices.rpc.getNamespaces()).toContain('FirstPlugin')
 			expect((firstServices.rpc as unknown as { ctx: unknown }).ctx).toBe(first)
+
+			second.webManagement.use((web) => web.rpc.expose(() => ({}) as never))
+			expect(firstServices.rpc.getNamespaces()).toContain('SecondPlugin')
 		} finally {
 			await runtime.dispose()
+		}
+	})
+
+	it('keeps cached plugin Web Management gates bound to their owner contexts', async () => {
+		const { createRuntimeHost } = await import('../src/test')
+		const gates: Array<{ ctx: unknown; use: (callback: (web: any) => unknown) => unknown }> = []
+
+		@runtimeAuthoring.Plugin({ name: 'CachedGateFirst' })
+		class CachedGateFirst extends runtimeAuthoring.BasePlugin {
+			override init() {
+				gates.push(this.ctx.webManagement)
+			}
+		}
+
+		@runtimeAuthoring.Plugin({ name: 'CachedGateSecond' })
+		class CachedGateSecond extends runtimeAuthoring.BasePlugin {
+			override init() {
+				gates.push(this.ctx.webManagement)
+			}
+		}
+
+		const host = createRuntimeHost()
+		try {
+			host.add([CachedGateFirst, CachedGateSecond])
+			host.cfg(CachedGateFirst).enable()
+			host.cfg(CachedGateSecond).enable()
+			await host.commit()
+
+			expect(gates).toHaveLength(2)
+			expect(gates[0]).not.toBe(gates[1])
+			expect(gates[0]!.ctx).toBe(host.require(CachedGateFirst).ctx)
+			expect(gates[1]!.ctx).toBe(host.require(CachedGateSecond).ctx)
+
+			gates[0]!.use((web) => web.rpc.expose(() => ({}) as never))
+			expect(requireWebManagement(host.ctx).rpc.getNamespaces()).toContain('CachedGateFirst')
+		} finally {
+			await host.dispose()
 		}
 	})
 

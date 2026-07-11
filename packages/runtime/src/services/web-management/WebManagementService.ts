@@ -6,17 +6,19 @@ import type { SseService } from '../plugin-interaction/SseService'
 
 const serviceName = 'webManagement' as const
 
-export interface PluginUiContributions
-	extends Pick<Context.PublicService<ExtensionService>, 'register' | 'builtin' | 'interaction'> {}
+export interface PluginUiContributions extends Pick<
+	Context.PublicService<ExtensionService>,
+	'register' | 'builtin' | 'interaction'
+> {}
 
-export interface PluginRpcRegistry
-	extends Pick<Context.PublicService<RpcService>, 'expose'> {}
+export interface PluginRpcRegistry extends Pick<Context.PublicService<RpcService>, 'expose'> {}
 
-export interface PluginSseRegistry
-	extends Pick<Context.PublicService<SseService>, 'expose'> {}
+export interface PluginSseRegistry extends Pick<Context.PublicService<SseService>, 'expose'> {}
 
-export interface PluginManagementState
-	extends Pick<Context.PublicService<SignalDbService>, 'collection'> {}
+export interface PluginManagementState extends Pick<
+	Context.PublicService<SignalDbService>,
+	'collection'
+> {}
 
 export interface PluginWebManagement {
 	readonly ui: PluginUiContributions
@@ -83,9 +85,12 @@ export class WebManagementService {
 	}
 
 	use<T>(callback: (web: PluginWebManagement) => T): T | undefined {
-		const backend = backendFor(this.ctx)
+		// Reading the root gate resolves the shared service again, so capture the
+		// caller-bound Context before backend lookup can rebind this service to root.
+		const ctx = this.ctx
+		const backend = backendFor(ctx)
 		if (!backend) return undefined
-		return callback(authorView(backend.forContext(this.ctx)))
+		return callback(authorView(backend.forContext(ctx)))
 	}
 }
 
@@ -116,4 +121,23 @@ export function installWebManagementBackend(
 		installedBackends.delete(gate)
 		void backend.dispose?.()
 	}
+}
+
+/** @internal Keep the lightweight author gate per plugin while sharing its host backend. */
+export function withWebManagementPluginContext<T extends Context.Config>(config: T): T {
+	const registry =
+		config.registry && typeof config.registry === 'object'
+			? (config.registry as Record<string, unknown>)
+			: {}
+	const current = Array.isArray(registry.pluginCTXIsolate)
+		? (registry.pluginCTXIsolate as unknown[])
+		: []
+	if (current.includes(WebManagementService)) return config
+	return {
+		...config,
+		registry: {
+			...registry,
+			pluginCTXIsolate: [...current, WebManagementService],
+		},
+	} as T
 }

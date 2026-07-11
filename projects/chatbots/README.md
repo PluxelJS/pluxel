@@ -18,7 +18,7 @@ pnpm install
 pnpm --filter @repo/project-chatbots start
 ```
 
-默认地址为 `http://127.0.0.1:3314`，直接打开即为 Pluxel 管理界面。两个 adapter 始终运行以提供配置页面；没有 Token 时保持 `unconfigured`，不会连接外部平台。`pnpm ... static` 只提供无前端编译器的 headless 宿主。
+默认地址为 `http://127.0.0.1:3314`，直接打开即为 Pluxel 管理界面。两个 adapter 始终运行以提供配置页面；没有 Token 时保持 `unconfigured`，不会连接外部平台。`start` 与 `static` 都使用带 `staticRuntimeVitePlugin` 的 Vite host，插件源码不会绕过工具链直接执行。
 
 沙箱接口位于插件路由：
 

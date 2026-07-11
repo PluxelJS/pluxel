@@ -183,7 +183,7 @@ External gateway:
 - `POST /external-gateway/call-batch`
 - `ALL /external-gateway/rpc`
 
-The standalone runtime server (`pnpm --filter @repo/project-external-api-gateway static`) serves these routes directly. In Vite dev, `runtime-static` checks the runtime HTTP mounted-route table and automatically proxies mounted host/plugin routes into the same runtime router, so plugins do not need to duplicate external API prefixes in Vite config.
+The Vite runtime host (`pnpm --filter @repo/project-external-api-gateway static`) uses `runtime-static` to inspect the mounted-route table and proxy host/plugin routes into the same runtime router, so plugins do not duplicate external API prefixes in Vite config.
 
 Zhipu provider internal/debug routes:
 

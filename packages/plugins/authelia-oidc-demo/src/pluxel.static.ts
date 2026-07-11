@@ -6,7 +6,7 @@ const repoRoot = resolve(import.meta.dirname, '../../../..')
 const staticDataRoot = resolve(repoRoot, 'packages/plugins/authelia-oidc-demo/.pluxel/static')
 
 export const autheliaOidcDemoPlugins = [AutheliaOidcDemoPlugin] as const
-export const autheliaOidcDemoEnabledPlugins = [] as const
+export const autheliaOidcDemoEnabledPlugins = ['AutheliaOidcDemoPlugin'] as const
 
 export default defineStaticRuntimeConfig({
 	name: 'plugins-authelia-oidc-demo',
@@ -23,8 +23,7 @@ export default defineStaticRuntimeConfig({
 			oidc: {
 				issuer: process.env.PLUXEL_AUTHELIA_ISSUER ?? 'http://127.0.0.1:9091',
 				audience:
-					process.env.PLUXEL_AUTHELIA_HOST_ADMIN_ACCESS_AUDIENCE ??
-					'pluxel-host-admin-access',
+					process.env.PLUXEL_AUTHELIA_HOST_ADMIN_ACCESS_AUDIENCE ?? 'pluxel-host-admin-access',
 				requiredClaims: { groups: 'pluxel-admins' },
 			},
 		},

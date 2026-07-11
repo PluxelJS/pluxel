@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 
@@ -48,6 +48,3 @@ export class ChatBuiltinsPlugin extends BasePlugin {
 		})
 	}
 }
-
-setParamToken(ChatBuiltinsPlugin, 0, ChatCommandsPlugin)
-setParamToken(ChatBuiltinsPlugin, 1, ChatHubPlugin)

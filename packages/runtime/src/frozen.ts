@@ -60,11 +60,12 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import '@pluxel/runtime'
+import { withWebManagementPluginContext } from '@pluxel/runtime/internal'
 import '@pluxel/runtime/services/vault'
 import '@pluxel/runtime-dynamic/register'
 ${imports}
 
-const ctx = new Context({
+const ctx = new Context(withWebManagementPluginContext({
 \tprofile: ${JSON.stringify(profile)},
 \tconfigService: {
 \t\t// Frozen hosts still need a mutable bootstrap phase because builtin preload
@@ -88,7 +89,7 @@ const ctx = new Context({
 \thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
 \twebManagement: ${JSON.stringify(webManagement)},
 \tadminAccess: ${JSON.stringify(adminAccess)},
-})
+}))
 
 await ctx.prepareServices()
 

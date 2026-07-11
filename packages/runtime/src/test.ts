@@ -1,6 +1,7 @@
 import './runtime/register/full'
 import './services/vault'
 import { installWebManagement } from './services/web-management'
+import { withWebManagementPluginContext } from './services/web-management/WebManagementService'
 import { isWebManagementEnabled, webManagementAdminAccess } from './web-management-config'
 import {
 	createCoreContext,
@@ -66,17 +67,19 @@ export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> 
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	const webManagement =
-		config.webManagement ?? { enabled: true, access: { exposure: 'private' as const } }
+	const webManagement = config.webManagement ?? {
+		enabled: true,
+		access: { exposure: 'private' as const },
+	}
 	const host = createCoreHost(
-		{
+		withWebManagementPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
 			webManagement,
 			adminAccess: config.adminAccess ?? webManagementAdminAccess(webManagement),
-		},
+		}),
 		{
 			prepareCommit: async (ctx) => {
 				await ctx.prepareServices()
@@ -100,16 +103,20 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	const webManagement =
-		config.webManagement ?? { enabled: true, access: { exposure: 'private' as const } }
-	const ctx = createCoreContext({
-		persistence: { mode: 'memory' },
-		configService: { mode: 'memory' },
-		runtimeState: { mode: 'memory' },
-		...config,
-		webManagement,
-		adminAccess: config.adminAccess ?? webManagementAdminAccess(webManagement),
-	})
+	const webManagement = config.webManagement ?? {
+		enabled: true,
+		access: { exposure: 'private' as const },
+	}
+	const ctx = createCoreContext(
+		withWebManagementPluginContext({
+			persistence: { mode: 'memory' },
+			configService: { mode: 'memory' },
+			runtimeState: { mode: 'memory' },
+			...config,
+			webManagement,
+			adminAccess: config.adminAccess ?? webManagementAdminAccess(webManagement),
+		}),
+	)
 	if (isWebManagementEnabled(webManagement)) installWebManagement(ctx.ctx)
 	return ctx
 }

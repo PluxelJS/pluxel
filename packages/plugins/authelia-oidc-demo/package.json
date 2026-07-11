@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"static": "tsx src/static.ts",
+		"static": "vite --host 127.0.0.1",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
@@ -13,7 +13,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^25.9.3",
-		"tsx": "^4.22.4",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"vite": "^8.0.0-beta.18"
 	}
 }

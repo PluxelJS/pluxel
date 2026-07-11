@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import {
 	ChatHubPlugin,
 	contentText,
@@ -114,5 +114,3 @@ export class ChatSandboxPlugin extends BasePlugin {
 			this.messages.splice(0, this.messages.length - MAX_MESSAGES)
 	}
 }
-
-setParamToken(ChatSandboxPlugin, 0, ChatHubPlugin)

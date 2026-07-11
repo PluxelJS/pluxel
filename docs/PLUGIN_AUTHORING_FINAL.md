@@ -170,7 +170,7 @@ There are four non-overlapping concepts:
 
 Plugin integration does not live on FeatureHost. `features.dep()` is removed. `features.load()` replaces the old probe-style naming because it performs asynchronous conditional loading rather than a synchronous probe.
 
-Required plugin dependencies keep the established constructor DI model. Runtime tokens come from TypeScript `design:paramtypes`; authors do not duplicate constructor dependencies in `@Plugin` metadata. The established low-level token overrides remain available for abstract tokens and direct transpiler/runner paths that do not emit decorator metadata.
+Required plugin dependencies keep the established constructor DI model. Runtime tokens come from TypeScript `design:paramtypes`; authors do not duplicate constructor dependencies in `@Plugin` metadata. Plugin source is loaded through the Pluxel Vite/Rolldown toolchain, which is responsible for legacy decorator metadata emission. Raw TypeScript runners are not a supported plugin runtime entry.
 
 Feature declarations that affect config or required dependency metadata must be explicit in `@Plugin({ features: [...] })`. Correctness must not depend on a class-field AST transform.
 

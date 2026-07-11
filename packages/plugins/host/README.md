@@ -8,13 +8,11 @@ Recommended entries:
 
 - `dynamic`: host-owned Vite server with `@pluxel/runtime-dynamic/vite`
 - `static`: host-owned Vite server with `@pluxel/runtime-static/vite`
-- `static:direct`: headless fixed-catalog host with `createStaticRuntime`
 
 The dynamic Vite config is [vite.dynamic.config.ts](./vite.dynamic.config.ts). The route config is
 [src/pluxel.dynamic.ts](./src/pluxel.dynamic.ts).
 The static Vite config is [vite.static.config.ts](./vite.static.config.ts). The static runtime
-config is [src/pluxel.static.ts](./src/pluxel.static.ts); the direct Node host entry
-[src/static.ts](./src/static.ts) imports that config directly and only owns platform startup.
+config is [src/pluxel.static.ts](./src/pluxel.static.ts).
 
 ## Run
 
@@ -32,13 +30,6 @@ pnpm plugin-host:static
 pnpm --filter @pluxel/plugins-host static
 ```
 
-static direct launcher:
-
-```sh
-pnpm plugin-host:static:direct
-pnpm --filter @pluxel/plugins-host static:direct
-```
-
 ## Loader HMR Tools
 
 ```sh
@@ -50,8 +41,8 @@ pnpm --filter @pluxel/plugins-host dynamic:doctor
 
 - Dynamic uses a host-owned Vite server and wires loader HMR through `dynamicRuntimeVitePlugin`.
 - Static uses a host-owned Vite server and wires the fixed catalog through `staticRuntimeVitePlugin`.
-- Static direct mode uses `createStaticRuntime(config)` with the same complete runtime config from
-  [src/pluxel.static.ts](./src/pluxel.static.ts).
+- Plugin source is always evaluated by the Pluxel Vite/Rolldown transform chain; raw TypeScript
+  runners are intentionally not runtime entries.
 
 The host proves that the same plugin API can run under dynamic HMR and static fixed-catalog
 semantics.

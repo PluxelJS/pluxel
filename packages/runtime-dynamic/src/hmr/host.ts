@@ -9,6 +9,7 @@ import {
 	createNodeWorkspaceFsBackend,
 	requireWebManagement,
 	resolveRuntimeStoragePaths,
+	withWebManagementPluginContext,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
@@ -26,10 +27,7 @@ import {
 import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
 import { ExtensionCompilerService } from './extensions/ExtensionCompilerService'
-import {
-	isWebManagementEnabled,
-	webManagementAdminAccess,
-} from '@pluxel/runtime/internal'
+import { isWebManagementEnabled, webManagementAdminAccess } from '@pluxel/runtime/internal'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
@@ -228,7 +226,7 @@ export async function planLoaderHmrHostFromConfig(
 			persistence,
 			pluginData,
 			http,
-				webManagement,
+			webManagement,
 			logger,
 		}),
 	})
@@ -273,7 +271,9 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},
 	}
-	const contextConfig = mergeContextConfig(defaultContext, plan.context)
+	const contextConfig = withWebManagementPluginContext(
+		mergeContextConfig(defaultContext, plan.context),
+	)
 	contextConfig.adminAccess = webManagementAdminAccess(contextConfig.webManagement)
 	if (isWebManagementEnabled(contextConfig.webManagement)) {
 		contextConfig.http = withDevWebManagementHttpConfig(contextConfig.http)

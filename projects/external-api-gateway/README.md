@@ -15,7 +15,7 @@ pnpm --filter @repo/project-external-api-gateway static
 pnpm --filter @repo/project-external-api-gateway verify
 ```
 
-默认端口：`3313`。`dev` 运行 Vite + runtime-static dev host，并显式代理 `/external-gateway/*` 到 Pluxel runtime HTTP router；`static` 运行 `src/static.ts` 里的独立 runtime server，更接近生产入口。
+默认端口：`3313`。`dev` 和 `static` 都运行 Vite + runtime-static host，并把 `/external-gateway/*` 代理到 Pluxel runtime HTTP router；插件源码始终经过 Pluxel Vite/Rolldown 转换链。
 
 默认开发 token：
 

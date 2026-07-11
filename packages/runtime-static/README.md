@@ -60,7 +60,9 @@ staticRuntimeVitePlugin({
 
 ## Headless Host
 
-Static can still run without Vite when it consumes prebuilt plugin UI/worker artifacts:
+Static can still run without a Vite server only when it consumes JavaScript and plugin UI/worker
+artifacts already produced by the Pluxel Rolldown pipeline. It must never execute plugin TypeScript
+source through a raw runner:
 
 ```ts
 import { createStaticRuntime, defineStaticRuntimeConfig } from '@pluxel/runtime-static'

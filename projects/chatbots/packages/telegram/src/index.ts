@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import '@pluxel/runtime/register/static'
 import '@pluxel/runtime/services/vault'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
@@ -308,8 +308,6 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		return doc
 	}
 }
-
-setParamToken(TelegramAdapterPlugin, 0, ChatHubPlugin)
 
 export class TelegramAdapterRpc extends RpcTarget {
 	constructor(private readonly plugin: TelegramAdapterPlugin) {
