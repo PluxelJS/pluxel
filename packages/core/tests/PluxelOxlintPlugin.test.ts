@@ -195,12 +195,12 @@ runRule('features-use-top-level-class', pluxelRules['features-use-top-level-clas
 	],
 })
 
-runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-class-field'], {
+runRule('features-load-no-class-field', pluxelRules['features-load-no-class-field'], {
 	valid: [
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 				})
@@ -210,7 +210,7 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 					feature
 
 					override async init() {
-						this.feature = await this.features.tryUse(optionalFeature)
+						this.feature = await this.features.load(optionalFeature)
 					}
 				}
 			`,
@@ -218,7 +218,7 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 				})
@@ -228,7 +228,7 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 					constructor() {
 						super()
 						const activateLater = async () =>
-							this.features.tryUse(optionalFeature)
+							this.features.load(optionalFeature)
 						void activateLater
 					}
 				}
@@ -239,14 +239,14 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 				})
 
 				@Plugin({ name: 'PluginA' })
 				class PluginA extends BasePlugin {
-					feature = this.features.tryUse(optionalFeature)
+					feature = this.features.load(optionalFeature)
 				}
 			`,
 			errors: [{ messageId: 'classField' }],
@@ -254,7 +254,7 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 				})
@@ -263,7 +263,7 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 				class PluginA extends BasePlugin {
 					constructor() {
 						super()
-						void this.features.tryUse(optionalFeature)
+						void this.features.load(optionalFeature)
 					}
 				}
 			`,
@@ -273,14 +273,14 @@ runRule('features-try-use-no-class-field', pluxelRules['features-try-use-no-clas
 })
 
 runRule(
-	'features-try-use-requires-defined-spec',
-	pluxelRules['features-try-use-requires-defined-spec'],
+	'features-load-requires-defined-spec',
+	pluxelRules['features-load-requires-defined-spec'],
 	{
 		valid: [
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					const optionalFeature = defineOptionalFeature({
+					const optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 					})
@@ -288,7 +288,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse(optionalFeature)
+							await this.features.load(optionalFeature)
 						}
 					}
 				`,
@@ -301,7 +301,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse(optionalFeature)
+							await this.features.load(optionalFeature)
 						}
 					}
 				`,
@@ -314,7 +314,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse({
+							await this.features.load({
 								key: 'optional',
 								load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 							})
@@ -326,7 +326,7 @@ runRule(
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					let optionalFeature = defineOptionalFeature({
+					let optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 					})
@@ -334,7 +334,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse(optionalFeature)
+							await this.features.load(optionalFeature)
 						}
 					}
 				`,
@@ -351,7 +351,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse(optionalFeature)
+							await this.features.load(optionalFeature)
 						}
 					}
 				`,
@@ -360,7 +360,7 @@ runRule(
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					const optionalFeature = defineOptionalFeature({
+					const optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
 					})
@@ -368,7 +368,7 @@ runRule(
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
-							await this.features.tryUse(optionalFeature, 'legacy')
+							await this.features.load(optionalFeature, 'legacy')
 						}
 					}
 				`,
@@ -378,12 +378,12 @@ runRule(
 	},
 )
 
-runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-static-load'], {
+runRule('features-load-no-static-load', pluxelRules['features-load-no-static-load'], {
 	valid: [
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: () =>
 						import('./optional').then(
@@ -399,7 +399,7 @@ runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-stat
 			code: `
 				import { OptionalFeature } from './optional'
 
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: async () => OptionalFeature,
 				})
@@ -411,7 +411,7 @@ runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-stat
 			code: `
 				import * as optionalModule from './optional'
 
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load() {
 						return optionalModule.OptionalFeature
@@ -425,7 +425,7 @@ runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-stat
 			code: `
 				class OptionalFeature extends BaseFeature {}
 
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: async () => OptionalFeature,
 				})
@@ -437,7 +437,7 @@ runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-stat
 			code: `
 				import { OptionalFeature } from './optional'
 
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: async () => {
 						await import('./optional')
@@ -450,7 +450,7 @@ runRule('features-try-use-no-static-load', pluxelRules['features-try-use-no-stat
 		{
 			filename: '/repo/packages/core/tests/plugin-a.ts',
 			code: `
-				const optionalFeature = defineOptionalFeature({
+				const optionalFeature = defineLazyFeature({
 					key: 'optional',
 					load: async () => {
 						await Promise.resolve()
@@ -873,9 +873,9 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 			code: `
 				class PluginA extends BasePlugin {
 					override init() {
-						this.ctx.ext.rpc.expose(() => new PluginARpc())
-						this.ctx.ext.sse.expose(() => null)
-						this.ctx.ext.signaldb.collection({ name: 'events' })
+						web.rpc.expose(() => new PluginARpc())
+						web.sse.expose(() => null)
+						web.state.collection({ name: 'events' })
 					}
 				}
 
@@ -898,9 +898,9 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 			code: `
 				class PluginA extends BasePlugin {
 					override init() {
-						this.ctx.ext.rpc.expose(() => new PluginARpc())
-						this.ctx.ext.sse.expose(() => null)
-						this.ctx.ext.signaldb.collection({ name: 'events' })
+						web.rpc.expose(() => new PluginARpc())
+						web.sse.expose(() => null)
+						web.state.collection({ name: 'events' })
 					}
 				}
 
@@ -913,7 +913,7 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 
 				class PluginA extends BasePlugin {
 					override init() {
-						this.ctx.ext.rpc.expose(() => new PluginARpc())
+						web.rpc.expose(() => new PluginARpc())
 					}
 				}
 			`,
@@ -924,9 +924,9 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 			code: `
 				class PluginA extends BasePlugin {
 					override init() {
-						this.ctx.ext.rpc.expose(() => new PluginARpc())
-						this.ctx.ext.sse.expose(() => null)
-						this.ctx.ext.signaldb.collection({ name: 'events' })
+						web.rpc.expose(() => new PluginARpc())
+						web.sse.expose(() => null)
+						web.state.collection({ name: 'events' })
 					}
 				}
 			`,
@@ -936,8 +936,8 @@ runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'],
 			code: `
 				class PluginA extends BasePlugin {
 					override init() {
-						pluginUi.bind(this.ctx)
-						this.ctx.ext.signaldb.collection({ name: 'events' })
+						web.ui.register(pluginUi)
+						web.state.collection({ name: 'events' })
 					}
 				}
 			`,

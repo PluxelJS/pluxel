@@ -27,10 +27,8 @@ function createSignalDbTestContext() {
 		},
 		dispose: () => effects.dispose(),
 	})
-	defineTestProperty(ctx, 'ext', {
-		sse: {
-			expose: sseRegister,
-		},
+	defineTestProperty(ctx, 'webManagement', {
+		require: () => ({ sse: { expose: sseRegister } }),
 	})
 	defineTestProperty(ctx, 'pluginData', {
 		persistenceForCollection: vi.fn(async () => ({
@@ -206,7 +204,7 @@ describe('SignalDbService', () => {
 		})
 
 		await collection.ready()
-		expect(ctx.ext.sse.expose).toHaveBeenCalledTimes(1)
+		expect(ctx.webManagement.require().sse.expose).toHaveBeenCalledTimes(1)
 
 		const streamCleanup = ctx.__deferred[0]
 		expect(typeof streamCleanup).toBe('function')
@@ -214,7 +212,7 @@ describe('SignalDbService', () => {
 
 		await service.loadCollectionSync('events')
 
-		expect(ctx.ext.sse.expose).toHaveBeenCalledTimes(2)
+		expect(ctx.webManagement.require().sse.expose).toHaveBeenCalledTimes(2)
 	})
 
 	it('replays collection snapshots when a signaldb SSE channel attaches late', async () => {
@@ -227,7 +225,7 @@ describe('SignalDbService', () => {
 		await collection.ready()
 		collection.insert({ id: 'a', value: 1 })
 
-		const factory = ctx.ext.sse.expose.mock.calls[0][0]
+		const factory = ctx.webManagement.require().sse.expose.mock.calls[0][0]
 		const handler = factory(ctx)
 		const channel = {
 			closed: false,

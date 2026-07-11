@@ -40,3 +40,4 @@ export {
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
 export type { StaticRuntimeRegisteredServices } from './runtime/register/static'
+export type { WebManagementConfig } from './web-management-config'

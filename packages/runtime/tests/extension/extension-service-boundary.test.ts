@@ -161,7 +161,30 @@ const FontInteractionContract = defineInteractionContract<
 })
 
 describe('ExtensionService runtime/hmr boundary', () => {
-	it('packaged() registers packaged federation metadata', async () => {
+	it('register() binds a source declaration through the dev capability', () => {
+		const bind = vi.fn(() => vi.fn())
+		const { ctx, root } = createExtensionTestContext()
+		defineTestProperty(root, 'runtimeDev', { uiSource: { bind } })
+		const service = new ExtensionService(ctx, { enabled: true })
+		const declaration = { entryPath: '/tmp/test-plugin/ui/index.tsx' }
+
+		const dispose = service.register(declaration)
+
+		expect(bind).toHaveBeenCalledWith(ctx, declaration)
+		expect(dispose).toBe(bind.mock.results[0]?.value)
+	})
+
+	it('register() uses the packaged artifact path when no dev capability exists', () => {
+		const { ctx } = createExtensionTestContext()
+		const service = new ExtensionService(ctx, { enabled: true })
+		const dispose = vi.fn()
+		const packaged = vi.spyOn(service, 'registerPackagedArtifact').mockReturnValue(dispose)
+
+		expect(service.register({ entryPath: './ui/index.tsx' })).toBe(dispose)
+		expect(packaged).toHaveBeenCalledWith()
+	})
+
+	it('registerPackagedArtifact() registers packaged federation metadata', async () => {
 		await withPackagedService(
 			{
 				dist: {
@@ -176,7 +199,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			},
 			(fixture) => join(fixture.path, 'dist/index.mjs'),
 			async ({ fixture, service }) => {
-				const dispose = service.packaged()
+				const dispose = service.registerPackagedArtifact()
 				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
 				const compiled = service.getCompiledModule('test-plugin')!
 
@@ -194,7 +217,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 		)
 	})
 
-	it('packaged() resolves the default manifest from package root dist output', async () => {
+	it('registerPackagedArtifact() resolves the default manifest from package root dist output', async () => {
 		await withPackagedService(
 			{
 				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
@@ -212,7 +235,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			},
 			(fixture) => join(fixture.path, 'src/index.ts'),
 			async ({ fixture, service }) => {
-				const dispose = service.packaged()
+				const dispose = service.registerPackagedArtifact()
 				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
 				const compiled = service.getCompiledModule('test-plugin')!
 
@@ -225,7 +248,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 		)
 	})
 
-	it('packaged() resolves implicit manifest path from core runtime ownership first', async () => {
+	it('registerPackagedArtifact() resolves implicit manifest path from core runtime ownership first', async () => {
 		await withPackagedService(
 			{
 				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
@@ -248,7 +271,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 				})
 				const findModuleIdByName = ctx.loader.api.registry.findModuleIdByName
 
-				const dispose = service.packaged()
+				const dispose = service.registerPackagedArtifact()
 				await vi.waitFor(() => expect(service.getCompiledModule('test-plugin')).toBeDefined())
 
 				expect(ctx.registry.getRuntimeModuleId).toHaveBeenCalledWith('test-plugin')
@@ -258,7 +281,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 		)
 	})
 
-	it('packaged() does not warn when the implicit packaged manifest is absent', async () => {
+	it('registerPackagedArtifact() does not warn when the implicit packaged manifest is absent', async () => {
 		await withPackagedService(
 			{
 				'package.json': JSON.stringify({ name: 'test-plugin', version: '0.0.0' }),
@@ -268,7 +291,7 @@ describe('ExtensionService runtime/hmr boundary', () => {
 			},
 			(fixture) => join(fixture.path, 'src/index.ts'),
 			async ({ service, logger }) => {
-				const dispose = service.packaged()
+				const dispose = service.registerPackagedArtifact()
 				await Promise.resolve()
 
 				expect(service.getCompiledModule('test-plugin')).toBeUndefined()

@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
 import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/web-management'
 import '@pluxel/runtime/services/vault'
 import {
 	createYiqichaSign,
@@ -24,9 +22,9 @@ import {
 	type YiqichaResponseCacheRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui } from '@pluxel/runtime/plugin'
+import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import type {
@@ -39,7 +37,7 @@ import type {
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
 
-const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
+const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const ROUTE_BASE = '/yiqicha'
 const PROVIDER_ID = 'yiqicha'
 const VAULT_NAMESPACE = 'YiqichaProviderPlugin'
@@ -92,11 +90,11 @@ type ForwardApiOptions = {
 	noCache?: boolean
 }
 
-@Plugin({ name: 'YiqichaProviderPlugin' })
+@Plugin({ name: 'YiqichaProviderPlugin', dependencies: [UsageRecorderPlugin] })
 export class YiqichaProviderPlugin extends BasePlugin {
-	private settings = this.ctx.ext.signaldb.collection<YiqichaSettingsDoc>({ name: 'settings' })
-	private status = this.ctx.ext.signaldb.collection<YiqichaStatusDoc>({ name: 'status' })
-	private history = this.ctx.ext.signaldb.collection<YiqichaTestRunDoc>({ name: 'history' })
+	private settings!: ManagementStateCollection<YiqichaSettingsDoc>
+	private status!: ManagementStateCollection<YiqichaStatusDoc>
+	private history!: ManagementStateCollection<YiqichaTestRunDoc>
 	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
 	private readonly inflight = new Map<string, Promise<UpstreamOutcome>>()
@@ -106,13 +104,18 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
-		await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
-		this.data = await useExternalGatewayDB(this.ctx)
-		await this.loadHistoryFromDB()
-		await this.syncSettingsDoc()
-		this.ensureStatusDoc()
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new YiqichaProviderRpc(this))
+		await this.ctx.webManagement.use(async (web) => {
+			this.settings = web.state.collection<YiqichaSettingsDoc>({ name: 'settings' })
+			this.status = web.state.collection<YiqichaStatusDoc>({ name: 'status' })
+			this.history = web.state.collection<YiqichaTestRunDoc>({ name: 'history' })
+			await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
+			this.data = await useExternalGatewayDB(this.ctx)
+			await this.loadHistoryFromDB()
+			await this.syncSettingsDoc()
+			this.ensureStatusDoc()
+			web.ui.register(pluginUi)
+			web.rpc.expose(() => new YiqichaProviderRpc(this))
+		})
 		this.registerRoutes()
 		this.ctx.logger.info('YiQiCha provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -795,7 +798,6 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	}
 }
 
-setParamToken(YiqichaProviderPlugin, 0, UsageRecorderPlugin)
 
 export class YiqichaProviderRpc extends RpcTarget {
 	constructor(private readonly plugin: YiqichaProviderPlugin) {

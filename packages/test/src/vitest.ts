@@ -108,7 +108,11 @@ export function definePluxelVitestConfig(
 
 	const base: ViteUserConfig = {
 		resolve: { conditions: baseConditions },
-		ssr: { resolve: { conditions: baseConditions } },
+		ssr: {
+			resolve: { conditions: baseConditions },
+			// Generated metadata imports must share the same source-mode core instance as tests.
+			noExternal: ['@pluxel/runtime/toolchain'],
+		},
 		test: {
 			environment: 'node',
 			setupFiles: [setupFile],
@@ -121,6 +125,9 @@ export function definePluxelVitestConfig(
 					ssr: { enabled: false },
 					web: { enabled: false },
 				},
+			},
+			server: {
+				deps: { inline: ['@pluxel/runtime/toolchain'] },
 			},
 		},
 	}

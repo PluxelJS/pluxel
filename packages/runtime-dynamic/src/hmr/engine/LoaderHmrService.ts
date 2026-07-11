@@ -164,7 +164,7 @@ export interface LoaderHmrConfig {
 	 * Builtin plugins loaded from workspace package dist entries (named exports).
 	 *
 	 * This form is designed for monorepos where `@pluxel/runtime` should not directly depend on builtin packages,
-	 * while still preserving **constructor identity** inside the SSR runner (so `features.dep(BuiltinCtor)`
+	 * while still preserving **constructor identity** inside the SSR runner (so `plugins.use(BuiltinCtor)`
 	 * works reliably).
 	 *
 	 * The host resolves each `entry` path (from `exports["."]`, e.g. `dist/index.mjs`) and HMR evaluates
@@ -651,7 +651,7 @@ export class LoaderHmrService {
 
 				// Builtins from dist: keep them stable and consistent across the runner cache.
 				// This avoids rewriting them to HMR/source TS entries which would
-				// produce a different ctor identity and break `features.dep(BuiltinCtor)` integrations.
+				// produce a different ctor identity and break `plugins.use(BuiltinCtor)` integrations.
 				const builtinEntry = builtinsFromDist?.get(id)
 				if (builtinEntry) {
 					const clean = this.path.toClean(builtinEntry)

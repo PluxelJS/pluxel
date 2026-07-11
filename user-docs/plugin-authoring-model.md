@@ -86,6 +86,7 @@ override async init() {
 如果一个插件没有另一个插件就不能工作，应该把它建模为插件依赖。比如订单插件需要数据库 provider，就依赖 `CommerceDbPlugin`。
 
 ```ts
+@Plugin({ name: 'Orders', dependencies: [CommerceDbPlugin] })
 class OrdersPlugin extends BasePlugin {
 	constructor(private readonly db: CommerceDbPlugin) {
 		super()
@@ -101,20 +102,75 @@ class OrdersPlugin extends BasePlugin {
 
 这样 `CommerceDbPlugin` 启动失败时，`OrdersPlugin` 自然不会启动。业务插件不需要自己重复判断数据库是否 ready。
 
-### 可选能力不要写成硬依赖
+### 可选插件集成和 lazy feature 不要写成硬依赖
 
 如果某个能力只是增强功能，不应该阻塞主插件启动。可选能力应该在运行期探测并降级。
 
+如果增强能力由另一个插件提供，使用 `this.plugins.use()`；provider 未运行时回调不执行，provider 替换后会重新绑定：
+
 ```ts
 override init() {
-	const audit = this.features.tryUse(AuditFeature)
-	if (audit) {
-		this.registerAuditHooks(audit)
-	}
+	this.plugins.use(AuditPlugin, (audit) => audit.registerSource(this))
+}
+```
+
+如果增强能力是当前插件内部的按需组成，使用 module top-level 的 lazy feature 声明：
+
+```ts
+const auditFeature = defineLazyFeature({
+	key: 'audit',
+	load: async () => (await import('./AuditFeature')).AuditFeature,
+})
+
+override async init() {
+	const audit = await this.features.load(auditFeature)
+	if (audit) this.registerAuditHooks(audit)
 }
 ```
 
 不要把可选服务放进 constructor 硬依赖，否则它失败会让主插件也进入 lifecycle report 的启动失败链路。
+
+## Web Management 可选边界
+
+HTTP、配置、日志、effects、events 和插件持久化是常驻能力。UI、插件管理 RPC/SSE 和管理态同步只存在于 Web Management：
+
+```ts
+import { ui } from '@pluxel/runtime/web-management'
+
+const dashboard = ui(import.meta.url, './ui/index.tsx')
+
+override init() {
+	this.ctx.http.plugin.routes((app) => app.get('/health', () => ({ ok: true })))
+
+	this.ctx.webManagement.use((web) => {
+		web.ui.register(dashboard)
+		web.rpc.expose(() => new DashboardRpc(this))
+		web.sse.expose(() => this.events())
+		web.state.collection({ name: 'dashboard-status' })
+	})
+}
+```
+
+宿主关闭 Web Management 时回调体完全不执行，也不会影响插件生命周期。不要在回调外创建仅供管理 UI 使用的状态或资源。
+
+`ui()` 只是纯声明，不携带运行时注册方法。开发环境由 Vite 在 `web.ui.register()` 时绑定源码，生产环境由同一个入口注册已构建制品。
+
+宿主只有一个开关：`webManagement: false`，或 `webManagement: { enabled: true, access: { exposure: 'private' } }`。
+
+## 依赖和 Feature 声明
+
+required 插件依赖必须同时出现在 constructor 和装饰器元数据中：
+
+```ts
+@Plugin({ name: 'Orders', dependencies: [CommerceDbPlugin] })
+class OrdersPlugin extends BasePlugin {
+	constructor(private readonly db: CommerceDbPlugin) {
+		super()
+	}
+}
+```
+
+required 本地 feature 使用 `this.features.use()`，并显式列入 `@Plugin({ features: [...] })`。正确性不依赖 class-field AST 推断。
 
 ### 资源创建后立即注册清理
 

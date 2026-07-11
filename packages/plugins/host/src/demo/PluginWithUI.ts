@@ -1,12 +1,15 @@
 // Read this when:
 // - 你要写自定义 UI
-// - 你想看 server 侧 `ui(...).bind(this.ctx)` + RPC + SSE + SignalDB 的最小闭环
+// - 你想看 Web Management UI + RPC + SSE + replicated state 的最小闭环
 
 import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui } from '@pluxel/runtime/plugin'
+import {
+	ui,
+	type ManagementStateCollection,
+	type SseChannel,
+} from '@pluxel/runtime/web-management'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import type { SseChannel } from '@pluxel/runtime/services/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 
 // Shared server-side data model exposed to the UI.
@@ -42,12 +45,8 @@ const pluginUi = ui(fileURLToPath(new URL('./PluginWithUI/ui/index.tsx', import.
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
-	private status = this.ctx.ext.signaldb.collection<PluginWithUIStatusDoc>({
-		name: 'status',
-	})
-	private events = this.ctx.ext.signaldb.collection<DemoEvent>({
-		name: 'events',
-	})
+	private status!: ManagementStateCollection<PluginWithUIStatusDoc>
+	private events!: ManagementStateCollection<DemoEvent>
 
 	private eventSeq = 1
 	private channels = new Set<SseChannel>()
@@ -55,16 +54,16 @@ export class PluginWithUI extends BasePlugin {
 	override async init() {
 		this.startedAt = Date.now()
 
-		await this.initState()
-		this.registerUiBindings()
+		await this.ctx.webManagement.use(async (web) => {
+			this.status = web.state.collection<PluginWithUIStatusDoc>({ name: 'status' })
+			this.events = web.state.collection<DemoEvent>({ name: 'events' })
+			await this.initState()
+			web.ui.register(pluginUi)
+			web.rpc.expose(() => new PluginWithUIRpc(this))
+			web.sse.expose(() => this.attachSse())
+		})
 
 		this.ctx.logger.info('ready')
-	}
-
-	private registerUiBindings() {
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new PluginWithUIRpc(this))
-		this.ctx.ext.sse.expose(() => this.attachSse())
 	}
 
 	// SSE lifecycle.

@@ -1,7 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { fileURLToPath } from 'node:url'
 import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/web-management'
 import {
 	DEFAULT_GATEWAY_DEV_TOKEN,
 	type ExternalGatewayDbHandle,
@@ -18,8 +16,8 @@ import type {
 } from '@repo/external-api-gateway-shared/gateway'
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
-import { ui } from '@pluxel/runtime/plugin'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
 import {
@@ -55,14 +53,17 @@ export {
 	type YiqichaRecommendedCall,
 } from './tools.ts'
 
-const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
+const pluginUi = ui(import.meta.url, './ui/index.tsx')
 export const EXTERNAL_GATEWAY_ROUTE_BASE = '/external-gateway'
 export const EXTERNAL_GATEWAY_RPC_PATH = `${EXTERNAL_GATEWAY_ROUTE_BASE}/rpc`
 
-@Plugin({ name: 'ExternalGatewayPlugin' })
+@Plugin({
+	name: 'ExternalGatewayPlugin',
+	dependencies: [ZhipuProviderPlugin, YiqichaProviderPlugin],
+})
 export class ExternalGatewayPlugin extends BasePlugin {
-	private tokens = this.ctx.ext.signaldb.collection<GatewayTokenDoc>({ name: 'tokens' })
-	private status = this.ctx.ext.signaldb.collection<GatewayStatusDoc>({ name: 'status' })
+	private tokens!: ManagementStateCollection<GatewayTokenDoc>
+	private status!: ManagementStateCollection<GatewayStatusDoc>
 	private tokenHashes = new Map<string, string>()
 	private data: ExternalGatewayDbHandle | undefined
 
@@ -74,13 +75,17 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
-		await Promise.all([this.tokens.ready(), this.status.ready()])
-		this.data = await useExternalGatewayDB(this.ctx)
-		await this.loadTokensFromDB()
-		await this.ensureDevToken()
-		this.syncStatus()
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new GatewayAdminRpc(this))
+		await this.ctx.webManagement.use(async (web) => {
+			this.tokens = web.state.collection<GatewayTokenDoc>({ name: 'tokens' })
+			this.status = web.state.collection<GatewayStatusDoc>({ name: 'status' })
+			await Promise.all([this.tokens.ready(), this.status.ready()])
+			this.data = await useExternalGatewayDB(this.ctx)
+			await this.loadTokensFromDB()
+			await this.ensureDevToken()
+			this.syncStatus()
+			web.ui.register(pluginUi)
+			web.rpc.expose(() => new GatewayAdminRpc(this))
+		})
 		this.registerRoutes()
 		this.ctx.logger.info('External CapnWeb gateway ready', {
 			rpcPath: this.rpcBase(),
@@ -281,8 +286,6 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 }
 
-setParamToken(ExternalGatewayPlugin, 0, ZhipuProviderPlugin)
-setParamToken(ExternalGatewayPlugin, 1, YiqichaProviderPlugin)
 
 export class ExternalGatewayRpc extends RpcTarget {
 	constructor(private readonly gateway: ExternalGatewayPlugin) {

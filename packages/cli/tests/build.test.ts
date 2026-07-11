@@ -160,12 +160,12 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { ui } from '@pluxel/runtime/plugin'",
+			"import { ui } from '@pluxel/runtime/web-management'",
 			'',
 			"const pluginUi = ui('./ui/index.tsx')",
 			'',
-			'export function bindPluginUi(ctx: any) {',
-			'\treturn pluginUi.bind(ctx)',
+			'export function registerPluginUi(web: any) {',
+			'\treturn web.ui.register(pluginUi)',
 			'}',
 			'',
 		].join('\n'),
@@ -414,7 +414,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('rewrites hmr ui bridge declarations in cli tsdown builds', async () => {
+	it('preserves pure UI declarations and explicit Web Management registration', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 
@@ -426,9 +426,9 @@ describe('build command', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('ctx.ext.ui.remote.packaged()')
-			expect(output).not.toContain('@pluxel/runtime/plugin')
-			expect(output).not.toContain('import{ui')
+			expect(output).toContain('web.ui.register')
+			expect(output).toContain('@pluxel/runtime/web-management')
+			expect(output).not.toContain('.bind(')
 		})
 	})
 

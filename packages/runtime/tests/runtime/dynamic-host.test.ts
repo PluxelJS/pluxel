@@ -16,7 +16,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 					policy: { allowInstall: false, allowUninstall: false },
 					state: { enabled: false },
 				},
-				extensionService: { enabled: false },
 			})
 			const ctx = runtime.ctx
 
@@ -52,7 +51,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 					policy: { allowInstall: false, allowUninstall: false },
 					state: { enabled: false },
 				},
-				extensionService: { enabled: false },
 			})
 			const ctx = runtime.ctx
 

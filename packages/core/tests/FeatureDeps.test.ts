@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { BasePlugin, Plugin, assertPluginLifecycleIssue, withCoreHost } from '@pluxel/core/test'
 
-describe('FeatureHost.dep', () => {
+describe('PluginHost.use', () => {
 	it('returns undefined when missing and injects caller when present', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'Dep0' })
@@ -14,8 +14,8 @@ describe('FeatureHost.dep', () => {
 				callerId: string | null = null
 
 				read(): void {
-					this.missing = this.features.dep(Dep0) === undefined
-					const dep = this.features.dep(Dep0)
+					this.missing = this.plugins.get(Dep0) === undefined
+					const dep = this.plugins.get(Dep0)
 					this.callerId = dep?.ctx.caller?.pluginInfo?.id ?? null
 				}
 
@@ -52,7 +52,7 @@ describe('FeatureHost.dep', () => {
 				cleaned = 0
 
 				override init(): void {
-					this.features.dep(Dep, () => {
+					this.plugins.use(Dep, () => {
 						this.seen++
 						return () => {
 							this.cleaned++
@@ -93,13 +93,13 @@ describe('FeatureHost.dep', () => {
 				bCleaned = 0
 
 				override init(): void {
-					this.features.dep(DepMany, () => {
+					this.plugins.use(DepMany, () => {
 						this.aSeen++
 						return () => {
 							this.aCleaned++
 						}
 					})
-					this.features.dep(DepMany, () => {
+					this.plugins.use(DepMany, () => {
 						this.bSeen++
 						return () => {
 							this.bCleaned++
@@ -142,7 +142,7 @@ describe('FeatureHost.dep', () => {
 				offB?: () => void
 
 				watchA(): void {
-					this.offA = this.features.dep(DepLate, () => {
+					this.offA = this.plugins.use(DepLate, () => {
 						this.aSeen++
 						return () => {
 							this.cleaned++
@@ -151,7 +151,7 @@ describe('FeatureHost.dep', () => {
 				}
 
 				watchB(): void {
-					this.offB = this.features.dep(DepLate, () => {
+					this.offB = this.plugins.use(DepLate, () => {
 						this.bSeen++
 						return () => {
 							this.cleaned++
@@ -202,7 +202,7 @@ describe('FeatureHost.dep', () => {
 				off?: () => void
 
 				override init(): void {
-					this.off = this.features.dep(DepOff, () => {
+					this.off = this.plugins.use(DepOff, () => {
 						this.seen++
 						return () => {
 							this.cleaned++
@@ -246,7 +246,7 @@ describe('FeatureHost.dep', () => {
 				off?: () => void
 
 				override init(): void {
-					this.off = this.features.dep(DepGone, () => {
+					this.off = this.plugins.use(DepGone, () => {
 						this.seen++
 						return () => {
 							this.cleaned++
@@ -281,7 +281,7 @@ describe('FeatureHost.dep', () => {
 			@Plugin({ name: 'HostDispose' })
 			class HostDispose extends BasePlugin {
 				override init(): void {
-					this.features.dep(DepDispose, () => {
+					this.plugins.use(DepDispose, () => {
 						return () => {
 							cleaned++
 						}
@@ -311,7 +311,7 @@ describe('FeatureHost.dep', () => {
 				lastCallerId: string | null = null
 
 				override init(): void {
-					this.features.dep(Dep2, (dep) => {
+					this.plugins.use(Dep2, (dep) => {
 						this.seen++
 						this.lastCallerId = dep.ctx.caller?.pluginInfo?.id ?? null
 						return () => {
@@ -353,13 +353,13 @@ describe('FeatureHost.dep', () => {
 				hasDep = false
 
 				override init(): void {
-					this.features.dep(DepFail, () => {
+					this.plugins.use(DepFail, () => {
 						this.seen++
 					})
 				}
 
 				read(): void {
-					this.hasDep = this.features.dep(DepFail) != null
+					this.hasDep = this.plugins.get(DepFail) != null
 				}
 			}
 

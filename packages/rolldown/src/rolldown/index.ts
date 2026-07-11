@@ -3,8 +3,6 @@ export type { CollectedImportKind, CollectedImportSpecifier } from './plugins/im
 export { collectImportSpecifiers } from './plugins/importCollector.ts'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
-export type { RuntimeUiBridgePluginOptions } from './plugins/runtimeUiBridgePlugin.ts'
-export { runtimeUiBridgePlugin } from './plugins/runtimeUiBridgePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
 export type {

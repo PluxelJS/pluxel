@@ -33,6 +33,11 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 	const configPayload = options.config ?? {}
 	const enabled = new Set(options.enabled)
 	const profile = options.profile ?? 'frozen'
+	const webManagement = options.bootstrap?.webManagement ?? false
+	const adminAccess =
+		webManagement !== false && webManagement.enabled === true
+			? { ...webManagement.access, enabled: true }
+			: { enabled: false, exposure: 'private' }
 	const imports = rows
 		.map((row) =>
 			row.exportKey === 'default'
@@ -81,11 +86,16 @@ const ctx = new Context({
 \t\tstate: { enabled: false },
 \t},
 \thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
-\tadminAccess: ${JSON.stringify(options.bootstrap?.adminAccess ?? { enabled: false, exposure: 'private' })},
-\textensionService: { enabled: false },
+\twebManagement: ${JSON.stringify(webManagement)},
+\tadminAccess: ${JSON.stringify(adminAccess)},
 })
 
 await ctx.prepareServices()
+
+if (${JSON.stringify(webManagement !== false && webManagement.enabled === true)}) {
+\tconst { installWebManagement } = await import('@pluxel/runtime/services/web-management')
+\tinstallWebManagement(ctx)
+}
 
 await ctx.loader.preloadPlugins(
 \t[

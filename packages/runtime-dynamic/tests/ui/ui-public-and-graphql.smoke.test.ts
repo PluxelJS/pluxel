@@ -1,5 +1,4 @@
 import type { LoaderHmrWorkspaceSnapshot } from '@pluxel/runtime-dynamic/hmr'
-import '@pluxel/runtime/services/web-management'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { withRuntimeContext } from '@pluxel/runtime/test'
 import { writeFile } from 'node:fs/promises'
@@ -33,7 +32,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				adminAccess: { enabled: true, exposure: 'private' },
+				webManagement: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -104,7 +103,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				adminAccess: { enabled: true, exposure: 'private' },
+				webManagement: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -177,7 +176,7 @@ describe('HMR UI smoke', () => {
 
 		await withRuntimeContext(
 			async (ctx) => {
-				await ctx.ext.ui.commitCompiledModule(
+				await ctx.webManagement.require().ui.commitCompiledModule(
 					createCompiledExtensionModule({
 						pluginName: 'DemoPlugin',
 						sourceHash: 'demo-hash',
@@ -186,7 +185,7 @@ describe('HMR UI smoke', () => {
 					{ artifactRoot: resolve(fixture.path, 'artifacts') },
 				)
 
-				const manifestUrl = ctx.ext.ui.getCompiledModule('DemoPlugin')?.manifestUrl
+				const manifestUrl = ctx.webManagement.require().ui.getCompiledModule('DemoPlugin')?.manifestUrl
 				expect(manifestUrl).toBeTruthy()
 
 				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))
@@ -208,7 +207,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				adminAccess: { enabled: true, exposure: 'private' },
+				webManagement: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})

@@ -50,9 +50,9 @@ draft graph changes
 当前稳定基线：
 
 - `features.use(FeatureCtor)`：required feature，属于宿主插件的静态组成。
-- `defineOptionalFeature(spec)`：声明 optional feature。
-- `features.tryUse(spec)`：条件启用或 lazy load optional feature。
-- `features.dep(DepPlugin, cb?)`：运行期 optional integration primitive。
+- `defineLazyFeature(spec)`：声明 lazy feature。
+- `features.load(spec)`：条件启用或 lazy load lazy feature。
+- `plugins.use(DepPlugin, cb?)`：运行期 optional integration primitive。
 - plugin constructor 只表达 required deps。
 
 不要把 runtime optional 和 link-time optional 混在一起。provider 类型可静态 import 时可以用类 token；provider 包本身可能缺失时用稳定字符串 token，把 provider-specific 代码放到 `load()` 后面。

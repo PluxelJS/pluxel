@@ -2,7 +2,12 @@
 // - 你要做跨插件 interaction
 // - 你要看 consumer 拥有 config，provider 拥有资源和 session UI 的推荐分工
 
-import { doc, ui } from '@pluxel/runtime/plugin'
+import {
+	doc,
+	ui,
+	type ManagementStateCollection,
+	type PluginWebManagement,
+} from '@pluxel/runtime/web-management'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import {
 	ConsumerAppearanceConfig,
@@ -20,22 +25,25 @@ const fontContributionUi = ui('./PluginContributionFontDemo/ui/index.tsx')
 // Provider owns resources plus the session UI.
 @Plugin({ name: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
-	private readonly fontSets = this.ctx.ext.signaldb.collection<FontSetDoc>({
-		name: 'fontSets',
-		initial: FONT_SETS.map((item) => ({ ...item })),
-	})
+	private fontSets!: ManagementStateCollection<FontSetDoc>
 
 	override async init(): Promise<void> {
-		await this.fontSets.ready()
-		fontContributionUi.bind(this.ctx)
-		this.registerOwnInfo()
-		this.registerConsumerContribution()
+		await this.ctx.webManagement.use(async (web) => {
+			this.fontSets = web.state.collection<FontSetDoc>({
+				name: 'fontSets',
+				initial: FONT_SETS.map((item) => ({ ...item })),
+			})
+			await this.fontSets.ready()
+			web.ui.register(fontContributionUi)
+			this.registerOwnInfo(web.ui)
+			this.registerConsumerContribution(web.ui)
+		})
 	}
 
-	private registerOwnInfo() {
+	private registerOwnInfo(uiService: PluginWebManagement['ui']) {
 		const d = doc({} as const)
 
-		this.ctx.ext.ui.builtin.doc({
+		uiService.builtin.doc({
 			id: 'font-manager-overview',
 			point: 'plugin:context',
 			title: 'Font Sets',
@@ -53,8 +61,8 @@ export class PluginContributionFontManager extends BasePlugin {
 		})
 	}
 
-	private registerConsumerContribution() {
-		this.ctx.ext.ui.interaction.offer({
+	private registerConsumerContribution(uiService: PluginWebManagement['ui']) {
+		uiService.interaction.offer({
 			id: 'font-manager-consumer-picker',
 			contract: FontPickerContract,
 			requireRunning: false,
@@ -73,7 +81,10 @@ export class PluginContributionFontManager extends BasePlugin {
 }
 
 // Consumer owns config and the interaction surface placement.
-@Plugin({ name: 'PluginContributionFontConsumer' })
+@Plugin({
+	name: 'PluginContributionFontConsumer',
+	dependencies: [PluginContributionFontManager],
+})
 export class PluginContributionFontConsumer extends BasePlugin {
 	appearance = this.configs.use(ConsumerAppearanceConfig)
 
@@ -82,7 +93,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.ext.ui.interaction.surface({
+		this.ctx.webManagement.use((web) => web.ui.interaction.surface({
 			id: 'appearance.font',
 			point: 'plugin:tabs',
 			contract: FontPickerContract,
@@ -103,7 +114,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 				icon: 'typography',
 				tab: { id: 'typography', label: 'Typography', icon: 'typography' },
 			},
-		})
+		}))
 		this.ctx.logger.info('font consumer config', {
 			appearance: this.appearance,
 		})

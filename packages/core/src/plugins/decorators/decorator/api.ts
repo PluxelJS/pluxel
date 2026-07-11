@@ -267,7 +267,7 @@ export function getFeatureNamespace(feature: AnyCtor): string {
 		(feature as unknown as { featureNamespace?: unknown }).featureNamespace ??
 		getDeclaredName(feature)
 	const ns = typeof raw === 'string' ? raw.trim() : ''
-	if (!ns) throw new Error(`[UseFeature] feature namespace is empty for ${nameOf(feature)}`)
+	if (!ns) throw new Error(`[FeatureComposition] feature namespace is empty for ${nameOf(feature)}`)
 	return ns
 }
 
@@ -312,7 +312,7 @@ function applyFeatureComposition(
 			if (key in next) {
 				if (next[key] === featureConfig[fieldName]) continue
 				throw new Error(
-					`[UseFeature] config key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
+					`[FeatureComposition] config key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
 						feature,
 					)})`,
 				)
@@ -333,7 +333,7 @@ function applyFeatureComposition(
 			if (key in next) {
 				if (next[key] === featureSource[fieldName]) continue
 				throw new Error(
-					`[UseFeature] configSource key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
+					`[FeatureComposition] configSource key collision on ${nameOf(ctor)}: ${key} (from feature ${nameOf(
 						feature,
 					)})`,
 				)
@@ -344,10 +344,6 @@ function applyFeatureComposition(
 	}
 
 	if (finalized && opts?.rebuild !== false) rebuildInfoSnapshot(ctor, s)
-}
-
-export function __registerUsedFeature__(ctor: AnyCtor, feature: AnyCtor): void {
-	__registerUsedFeatures__(ctor, feature)
 }
 
 export function __registerUsedFeatures__(ctor: AnyCtor, ...features: AnyCtor[]): void {
@@ -365,12 +361,6 @@ export function __registerUsedFeatures__(ctor: AnyCtor, ...features: AnyCtor[]):
  * - propagates decorator-required plugin deps from the feature onto the plugin,
  *   so DI validation stays deterministic.
  */
-export function UseFeature(...features: AnyCtor[]): ClassDecorator {
-	return (ctor) => {
-		__registerUsedFeatures__(ctor as unknown as AnyCtor, ...features)
-	}
-}
-
 export function patchPluginMetadata(ctor: AnyCtor, patch: Record<string, unknown>): void {
 	if (!patch || typeof patch !== 'object') return
 	const entries = Object.entries(patch).filter(([, value]) => value !== undefined)

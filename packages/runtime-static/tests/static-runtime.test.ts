@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { setParamToken } from '@pluxel/core'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import {
 	BasePlugin,
@@ -108,10 +107,9 @@ describe('@pluxel/runtime-static', () => {
 		).toThrow(/http must not include "uiAssets"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'pluxel:static-runtime-source',
-			'pluxel-runtime-ui-bridge',
 			'pluxel:static-runtime',
 		])
-		expect(plugins[2]?.apply).toBe('serve')
+		expect(plugins[1]?.apply).toBe('serve')
 	})
 
 	it('creates a direct fetch runtime from the route-neutral config', async () => {
@@ -156,13 +154,23 @@ describe('@pluxel/runtime-static', () => {
 	})
 
 	it('serves internal GraphQL by default without enabling management UI/RPC/SSE', async () => {
+		let callbackEvaluated = false
+		@Plugin({ name: 'HeadlessWebGate' })
+		class HeadlessWebGate extends BasePlugin {
+			override init(): void {
+				this.ctx.webManagement.use(() => {
+					callbackEvaluated = true
+				})
+			}
+		}
+
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
 				name: 'static-direct-graphql',
-				plugins: [],
+				plugins: [HeadlessWebGate],
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				adminAccess: { enabled: false, exposure: 'private' },
+				runtimeState: { mode: 'memory', snapshot: { enabled: ['HeadlessWebGate'] } },
+				webManagement: false,
 			}),
 		)
 		try {
@@ -180,6 +188,8 @@ describe('@pluxel/runtime-static', () => {
 			expect(response.status).toBe(200)
 			const json = (await response.json()) as { data?: { _empty?: string } }
 			expect(json.data?._empty).toBe('ok')
+			expect(callbackEvaluated).toBe(false)
+			expect(runtime.ctx.registry.isRunning(HeadlessWebGate)).toBe(true)
 		} finally {
 			await runtime.stop()
 		}
@@ -206,33 +216,30 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('fails fast when admin access is enabled without importing web-management', async () => {
-		await expect(
-			createStaticRuntime(
-				defineStaticRuntimeConfig({
-					name: 'static-management-without-web-management',
-					plugins: [],
-					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-					adminAccess: { enabled: true, exposure: 'private' },
-				}),
-			),
-		).rejects.toThrow(/services\/web-management/)
-	})
+	it('installs Web Management from the single host configuration boundary', async () => {
+		let callbackEvaluated = false
+		@Plugin({ name: 'ManagedWebGate' })
+		class ManagedWebGate extends BasePlugin {
+			override init(): void {
+				this.ctx.webManagement.use(() => {
+					callbackEvaluated = true
+				})
+			}
+		}
 
-	it('starts static admin access when web-management is explicitly imported', async () => {
-		await import('@pluxel/runtime/services/web-management')
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
 				name: 'static-management-with-web-management',
-				plugins: [],
+				plugins: [ManagedWebGate],
 				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				adminAccess: { enabled: true, exposure: 'private' },
+				runtimeState: { mode: 'memory', snapshot: { enabled: ['ManagedWebGate'] } },
+				webManagement: { enabled: true, access: { exposure: 'private' } },
 			}),
 		)
 		try {
-			expect('ext' in runtime.ctx).toBe(true)
+			expect(runtime.ctx.webManagement.enabled).toBe(true)
+			expect(callbackEvaluated).toBe(true)
+			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
 			const response = await runtime.fetch(
 				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`),
 			)
@@ -346,13 +353,12 @@ describe('@pluxel/runtime-static', () => {
 		@Plugin({ name: 'DepA' })
 		class DepA extends BasePlugin {}
 
-		@Plugin({ name: 'DepB' })
+		@Plugin({ name: 'DepB', dependencies: [DepA] })
 		class DepB extends BasePlugin {
 			constructor(_a: DepA) {
 				super()
 			}
 		}
-		setParamToken(DepB, 0, DepA)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({ name: 'static-deps', plugins: [DepA, DepB] }),
@@ -385,13 +391,12 @@ describe('@pluxel/runtime-static', () => {
 		class UsageBillingPlugin extends UsageRecorderPlugin {}
 		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
 
-		@Plugin({ name: 'ZhipuProviderPlugin' })
+		@Plugin({ name: 'ZhipuProviderPlugin', dependencies: [UsageRecorderPlugin] })
 		class ZhipuProviderPlugin extends BasePlugin {
 			constructor(_recorder: UsageRecorderPlugin) {
 				super()
 			}
 		}
-		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({
@@ -471,13 +476,12 @@ describe('@pluxel/runtime-static', () => {
 			}
 		}
 
-		@Plugin({ name: 'ConsumerBlocked' })
+		@Plugin({ name: 'ConsumerBlocked', dependencies: [ProviderFail] })
 		class ConsumerBlocked extends BasePlugin {
 			constructor(_provider: ProviderFail) {
 				super()
 			}
 		}
-		setParamToken(ConsumerBlocked, 0, ProviderFail)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({

@@ -1,0 +1,24 @@
+{
+	"extends": "../../tsconfig.options.json",
+	"compilerOptions": {
+		"allowImportingTsExtensions": true,
+		"baseUrl": ".",
+		"composite": false,
+		"declaration": false,
+		"declarationMap": false,
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"incremental": false,
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		"skipLibCheck": true,
+		"paths": {
+			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
+			"@repo/chatbots-hub": ["./packages/hub/src/index.ts"],
+			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"]
+		},
+		"types": ["bun"]
+	}
+}

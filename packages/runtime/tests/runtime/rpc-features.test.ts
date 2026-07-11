@@ -1,20 +1,10 @@
-import { createHost } from '@pluxel/test'
+import { createRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 import { getRuntimeApiResolvers } from '../../src/api/contributions'
 import { RuntimeRpcApi } from '../../src/api/http/rpc/RuntimeRpcApi'
 
 function createRpcHost() {
-	const host = createHost()
-	Object.defineProperty(host.ctx, 'ext', {
-		value: {
-			rpc: {
-				createExtensionsView: () => ({}),
-				getNamespaces: () => [],
-			},
-		},
-		configurable: true,
-	})
-	return host
+	return createRuntimeHost()
 }
 
 describe('RuntimeRpcApi route features', () => {

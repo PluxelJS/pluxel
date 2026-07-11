@@ -1,10 +1,8 @@
 import {
 	configSourcePlugin,
 	lintGuardPlugin,
-	runtimeUiBridgePlugin,
 	type ConfigSourcePluginOptions,
 	type LintGuardPluginOptions,
-	type RuntimeUiBridgePluginOptions,
 } from '@pluxel/rolldown/plugins'
 import { isServerConsumerEnvironment } from '@pluxel/rolldown/vite'
 import {
@@ -116,7 +114,6 @@ export type PluxelRuntimeSourceVitePluginOptions = {
 	lintGuard?: false | LintGuardPluginOptions
 }
 
-export type PluxelRuntimeUiBridgeVitePluginOptions = RuntimeUiBridgePluginOptions
 
 export function pluxelRuntimeSourceVitePlugin(
 	options: PluxelRuntimeSourceVitePluginOptions = {},
@@ -176,12 +173,6 @@ export function pluxelRuntimeSourceVitePlugin(
 			}
 		},
 	}
-}
-
-export function pluxelRuntimeUiBridgeVitePlugin(
-	options: PluxelRuntimeUiBridgeVitePluginOptions = {},
-): PluginOption {
-	return runtimeUiBridgePlugin(options)
 }
 
 function createServerSourcePlugins(options: PluxelRuntimeSourceVitePluginOptions): PluginOption[] {

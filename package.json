@@ -30,7 +30,8 @@
 		"plugin-host:static:direct": "pnpm --filter @pluxel/plugins-host static:direct",
 		"plugin-demo:authelia-oidc": "pnpm --filter @pluxel/plugins-authelia-oidc-demo static",
 		"plugin-demo:static-commercial": "pnpm --filter @pluxel/plugins-static-commercial-demo dev",
-		"project:external-api-gateway": "pnpm --filter @repo/project-external-api-gateway dev"
+		"project:external-api-gateway": "pnpm --filter @repo/project-external-api-gateway dev",
+		"project:chatbots": "pnpm --filter @repo/project-chatbots dev"
 	},
 	"dependencies": {
 		"@mantine/core": "^9.4.1",

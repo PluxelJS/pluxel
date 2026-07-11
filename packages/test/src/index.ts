@@ -22,7 +22,7 @@ export {
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
 	collectPluginLifecycleStoppedWithErrors,
-	defineOptionalFeature,
+	defineLazyFeature,
 	FeatureHost,
 	ForkablePlugin,
 	HostBoundFeature,
@@ -35,7 +35,6 @@ export {
 	isPluginLifecycleStoppedWithErrorIssue,
 	setParamToken,
 	setParamTokens,
-	UseFeature,
 } from '@pluxel/core'
 
 export { EffectsService, EventsService, LoggerService } from '@pluxel/core/services'

@@ -12,12 +12,10 @@
  * - Extracts and injects:
  *   - `@Config(schema)` field decorator source (`__setConfigSource__`)
  *   - `this.configs.use(schema)` class-field initializer source + schema registration (`__setConfigSource__` + `__registerConfigSchema__`)
- *   - `this.features.use(FeatureCtor)` class-field initializer (DI-required deps + feature config attribution) via `__registerUsedFeatures__(Ctor, FeatureCtor)`
  *
  * Important limitations:
  * - `config(s).use(...)` on `#private` fields is rejected (runtime injection can't assign to `#private`).
- * - `features.use(...)` is only extracted from class-field initializers. If you call it dynamically in `init()`,
- *   use `@UseFeature(FeatureCtor)` (or call `__registerUsedFeatures__(PluginCtor, FeatureCtor)` at module eval time).
+ * - Required feature metadata is declared explicitly in `@Plugin({ features: [...] })`.
  */
 
 import { readFile } from 'node:fs/promises'
@@ -70,11 +68,6 @@ interface ExtractedConfigLayout {
 	className: string
 	fieldName: string
 	layout: unknown[]
-}
-
-interface ExtractedFeatureUse {
-	className: string
-	featureExpr: string
 }
 
 interface DeclarationInfo {
@@ -152,10 +145,10 @@ const CONFIG_DECORATOR_SOURCES = [
 	'@pluxel/runtime',
 	'@pluxel/runtime/authoring',
 ] as const
-const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/authoring'
+const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
 
 const CODE_HINT =
-	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|\.features\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./
+	/@Plugin|\bPlugin\s*\(|@Config|\bConfig\s*\(|\.(?:config|configs)\.use\s*\(|__decorate\s*\(|v\.|valibot\.|f\./
 
 export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): ViteCompatPlugin {
 	const metadataHelperImportSource =
@@ -230,7 +223,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					// 第一步：收集并缓存本模块的导出 schema 定义（为跨文件引用做准备）
 					const moduleInfo = collectModuleInfo(sourceText, normalizedId, ast, moduleInfoStore)
 
-					const extractedFeatures = extractFeatureUses(moduleInfo, ast)
 					const parseProgram = (source: string, filename: string) => {
 						const parsed = parseWithLang(this, source, filename)
 						if (!parsed) throw new Error(`Failed to parse module: ${filename}`)
@@ -266,8 +258,7 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					if (
 						extracted.configs.length === 0 &&
 						extracted.bindings.length === 0 &&
-						extracted.layouts.length === 0 &&
-						extractedFeatures.length === 0
+						extracted.layouts.length === 0
 					)
 						return null
 
@@ -276,7 +267,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 						extracted.configs,
 						extracted.bindings,
 						extracted.layouts,
-						extractedFeatures,
 						parseProgram,
 						metadataHelperImportSource,
 					)
@@ -1632,46 +1622,6 @@ async function extractCfgSchemasFromSchemaMapExpr(
 	return { keys, entries }
 }
 
-function extractFeatureUses(moduleInfo: ModuleInfo, ast: Program): ExtractedFeatureUse[] {
-	const extracted: ExtractedFeatureUse[] = []
-	const seen = new Set<string>()
-
-	for (const node of ast.body) {
-		const classDecl =
-			node.type === 'ClassDeclaration'
-				? node
-				: node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'ClassDeclaration'
-					? node.declaration
-					: node.type === 'ExportDefaultDeclaration' && node.declaration.type === 'ClassDeclaration'
-						? node.declaration
-						: null
-
-		if (!classDecl) continue
-
-		const className = classDecl.id?.name
-		if (!className) continue
-
-		for (const member of classDecl.body.body) {
-			if (member.type !== 'PropertyDefinition') continue
-
-			const propDef = member as PropertyDefinition
-			const useMatch = extractFeaturesUseCall(propDef.value ?? null)
-			if (!useMatch) continue
-
-			const featureExpr = moduleInfo.code.slice(
-				useMatch.featureExpr.start,
-				useMatch.featureExpr.end,
-			)
-			const key = `${className}::${featureExpr}`
-			if (seen.has(key)) continue
-			seen.add(key)
-			extracted.push({ className, featureExpr })
-		}
-	}
-
-	return extracted
-}
-
 function extractConfigsUseCall(
 	value: Expression | null | undefined,
 ): { schemaExpr: Expression } | null {
@@ -1700,36 +1650,6 @@ function extractConfigsUseCall(
 	if (!resolved) return null
 	// Allow wrappers like `(expr)` / `expr as const` around the declaration.
 	return { schemaExpr: unwrapExpression(resolved as any) as Expression }
-}
-
-function extractFeaturesUseCall(
-	value: Expression | null | undefined,
-): { featureExpr: Expression } | null {
-	if (!value) return null
-	const normalized = unwrapExpression(value)
-
-	if (normalized.type !== 'CallExpression') return null
-	const callee = normalized.callee
-	if (callee.type !== 'MemberExpression') return null
-
-	// Match: this.features.use(...)
-	const prop = callee.property
-	if (prop.type !== 'Identifier' || prop.name !== 'use') return null
-
-	const obj = callee.object
-	if (obj.type !== 'MemberExpression') return null
-	const objProp = obj.property
-	if (objProp.type !== 'Identifier' || objProp.name !== 'features') return null
-
-	const objObj = obj.object
-	if (objObj.type !== 'ThisExpression') return null
-
-	if (normalized.arguments.length === 0) return null
-	const arg = normalized.arguments[0]
-	const resolved = arg.type === 'SpreadElement' ? arg.argument : arg
-	if (!resolved) return null
-	// Allow wrappers like `(expr)` / `expr as const`.
-	return { featureExpr: unwrapExpression(resolved as any) as Expression }
 }
 
 /**
@@ -1774,15 +1694,13 @@ function generateInjection(
 	configs: ExtractedConfig[],
 	bindings: ExtractedBinding[],
 	layouts: ExtractedConfigLayout[],
-	features: ExtractedFeatureUse[],
 	parseProgram: (code: string, filename: string) => Program,
 	metadataHelperImportSource: string,
 ): string {
 	if (
 		configs.length === 0 &&
 		bindings.length === 0 &&
-		layouts.length === 0 &&
-		features.length === 0
+		layouts.length === 0
 	)
 		return ''
 
@@ -1792,7 +1710,7 @@ function generateInjection(
 
 	const lines: string[] = ['// [pluxel-config-source] Injected metadata']
 
-	if (configs.length > 0 || bindings.length > 0 || layouts.length > 0 || features.length > 0) {
+	if (configs.length > 0 || bindings.length > 0 || layouts.length > 0) {
 		const imports: string[] = []
 		if (configs.length > 0) {
 			imports.push('__setConfigSource__')
@@ -1800,7 +1718,6 @@ function generateInjection(
 		}
 		if (layouts.length > 0) imports.push('__setConfigLayout__')
 		if (bindings.length > 0) imports.push('__registerConfigBinding__')
-		if (features.length > 0) imports.push('__registerUsedFeatures__')
 		// Keep import stable/deterministic for snapshots and caching.
 		imports.sort()
 		const importSource = JSON.stringify(metadataHelperImportSource)
@@ -1835,18 +1752,6 @@ function generateInjection(
 			lines.push(
 				`__registerConfigBinding__(${b.className}, ${JSON.stringify(b.fieldName)}, ${JSON.stringify(b.keys)});`,
 			)
-		}
-	}
-
-	if (features.length > 0) {
-		const groups = new Map<string, string[]>()
-		for (const { className, featureExpr } of features) {
-			const list = groups.get(className)
-			if (list) list.push(featureExpr)
-			else groups.set(className, [featureExpr])
-		}
-		for (const [className, featureExprs] of groups) {
-			lines.push(`__registerUsedFeatures__(${className}, ${featureExprs.join(', ')});`)
 		}
 	}
 

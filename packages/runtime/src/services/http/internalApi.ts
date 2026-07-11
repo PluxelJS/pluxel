@@ -170,7 +170,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
-					context.pluginCtx.ext.sse.stream(context),
+					context.pluginCtx.webManagement.require().sse.stream(context),
 				),
 			),
 		)

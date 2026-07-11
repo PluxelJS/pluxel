@@ -44,7 +44,7 @@
 
 1. `packages/cli/src/build.ts`
 2. `packages/rolldown/src/cli/index.ts`
-3. `packages/rolldown/src/rolldown/plugins/runtimeUiBridgePlugin.ts`
+3. `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
 
 如果你在追“dynamic 开发宿主是怎么被启动的”，优先读：
 

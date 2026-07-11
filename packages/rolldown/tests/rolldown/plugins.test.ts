@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
-import { runtimeUiBridgePlugin } from '../../src/rolldown/plugins/runtimeUiBridgePlugin'
 import { lintGuardPlugin } from '../../src/rolldown/plugins/lintGuardPlugin'
 
 const buildLintConfigPath = fileURLToPath(
@@ -438,14 +437,14 @@ export class RegularImport {
 	}
 }
 `,
-	'plugin-with-feature-use.ts': `// Test extraction of features.use(...) class-field initializer
+	'plugin-with-feature-use.ts': `// Required features are explicit plugin metadata.
 import { BasePlugin, Plugin } from '@pluxel/core'
 
 function PluginDecorator(_meta?: any): ClassDecorator {
 	return () => {}
 }
 
-@PluginDecorator({ name: 'FeatureHostPlugin' })
+@PluginDecorator({ name: 'FeatureHostPlugin', features: [CacheFeature] })
 export class FeatureHostPlugin extends BasePlugin {
 	feature = this.features.use(CacheFeature)
 }
@@ -577,64 +576,6 @@ export class BuildLintInvalidConfigRedefaultPlugin extends BasePlugin {
 
 	init() {
 		return this.config ?? {}
-	}
-}
-`,
-	'plugin-with-runtime-ui.ts': `import { ui } from '@pluxel/runtime/plugin'
-
-class BasePlugin {
-	ctx: any
-}
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-const pluginUi = ui('./ui/index.tsx')
-
-@Plugin({ name: 'UiBridgePlugin' })
-export class UiBridgePlugin extends BasePlugin {
-	init() {
-		return pluginUi.bind(this.ctx)
-	}
-}
-`,
-	'plugin-with-runtime-ui-alias.ts': `import { ui as defineUi, worker } from '@pluxel/runtime/plugin'
-
-class BasePlugin {
-	ctx: any
-}
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-export const demoWorker = worker('./worker.ts')
-const pluginUi = defineUi({ entryPath: './ui/index.tsx' })
-
-@Plugin({ name: 'UiAliasBridgePlugin' })
-export class UiAliasBridgePlugin extends BasePlugin {
-	init() {
-		return pluginUi.bind(this.ctx)
-	}
-}
-`,
-	'plugin-with-runtime-ui-namespace.ts': `import * as runtimePlugin from '@pluxel/runtime/plugin'
-
-class BasePlugin {
-	ctx: any
-}
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-const pluginUi = runtimePlugin.ui('./ui/index.tsx')
-
-@Plugin({ name: 'UiNamespaceBridgePlugin' })
-export class UiNamespaceBridgePlugin extends BasePlugin {
-	init() {
-		return pluginUi.bind(this.ctx)
 	}
 }
 `,
@@ -837,7 +778,7 @@ describe('configSourcePlugin', () => {
 			expect(code).toContain('__registerConfigBinding__')
 			expect(code).toContain('__setConfigSource__')
 			expect(code).toContain('__setConfigLayout__')
-			expect(code).toContain('from "@pluxel/runtime/authoring"')
+			expect(code).toContain('from "@pluxel/runtime/toolchain"')
 			expect(code).toContain('["a"]')
 			expect(code).toContain('["b"]')
 		})
@@ -905,7 +846,7 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
-	it('injects __registerUsedFeatures__ for features.use(...) class fields', async () => {
+	it('does not synthesize required feature metadata from class fields', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
 				fixturesDir,
@@ -914,8 +855,8 @@ describe('configSourcePlugin', () => {
 				external: ['@pluxel/core', '@pluxel/runtime'],
 			})
 
-			expect(code).toContain('__registerUsedFeatures__')
-			expect(code).toContain('__registerUsedFeatures__(FeatureHostPlugin, CacheFeature)')
+			expect(code).not.toContain('__registerUsedFeatures__')
+			expect(code).toContain('features: [CacheFeature]')
 		})
 	})
 
@@ -1175,51 +1116,6 @@ describe('plugins integration', () => {
 		})
 	}
 
-	it('rewrites runtime ui bridge imports into runtime packaged helpers', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-runtime-ui.ts',
-				plugins: [runtimeUiBridgePlugin()],
-				external: ['@pluxel/runtime/plugin'],
-			})
-
-			expect(code).toContain('ctx.ext.ui.remote.packaged()')
-			expect(code).toContain('__pluxelRuntimeUiBridge__')
-			expect(code).not.toContain("import { ui } from '@pluxel/runtime/plugin'")
-		})
-	})
-
-	it('preserves non-ui runtime plugin imports while rewriting aliased ui bindings', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-runtime-ui-alias.ts',
-				plugins: [runtimeUiBridgePlugin()],
-				external: ['@pluxel/runtime/plugin'],
-			})
-
-			expect(code).toContain('import { worker } from "@pluxel/runtime/plugin";')
-			expect(code).toContain('const defineUi = __pluxelRuntimeUiBridge__')
-			expect(code).toContain('ctx.ext.ui.remote.packaged()')
-			expect(code).not.toContain('ui as defineUi')
-		})
-	})
-
-	it('rejects namespace imports from @pluxel/runtime/plugin to keep AST rewrite deterministic', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-runtime-ui-namespace.ts'),
-				plugins: [runtimeUiBridgePlugin()],
-				external: ['@pluxel/runtime/plugin'],
-			})
-
-			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
-				/namespace import is not supported/,
-			)
-		})
-	})
-
 	it('composes configSourcePlugin on plugin modules', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
@@ -1234,17 +1130,4 @@ describe('plugins integration', () => {
 		})
 	})
 
-	it('composes runtimeUiBridgePlugin with existing build plugins', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-runtime-ui.ts',
-				plugins: [configSourcePlugin(), runtimeUiBridgePlugin()],
-				external: ['@pluxel/runtime/plugin'],
-			})
-
-			expect(code).toContain('ctx.ext.ui.remote.packaged()')
-			expect(code).toContain('UiBridgePlugin')
-		})
-	})
 })

@@ -24,4 +24,5 @@ export default defineDynamicRuntimeConfig({
 		mode: 'memory',
 		snapshot: { enabled: enabledDemoPlugins },
 	},
+	webManagement: { enabled: true, access: { exposure: 'private' } },
 })

@@ -244,7 +244,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStaticIndex).toContain("import '@pluxel/runtime/register/static'")
 		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime/authoring'")
 		expect(configSourcePlugin).toContain(
-			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/authoring'",
+			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'",
 		)
 	})
 

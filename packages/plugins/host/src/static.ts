@@ -1,6 +1,5 @@
 import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import '@pluxel/runtime/services/web-management'
 import { createStaticRuntime } from '@pluxel/runtime-static'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
 import { dirname, resolve } from 'pathe'

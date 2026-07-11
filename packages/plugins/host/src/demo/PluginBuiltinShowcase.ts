@@ -3,8 +3,12 @@
 // - 你只想看 builtin doc/form/action 的完整最小组合
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc } from '@pluxel/runtime/plugin'
-import type { SignalDbDocumentHandle } from '@pluxel/runtime/services/web-management'
+import {
+	doc,
+	type ManagementStateCollection,
+	type ManagementStateDocument,
+	type PluginWebManagement,
+} from '@pluxel/runtime/web-management'
 import {
 	BehaviorConfig,
 	type BuiltinAction,
@@ -52,13 +56,10 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
-	private builtinState = this.ctx.ext.signaldb.collection<BuiltinState>({ name: RUNTIME_DOC_ID })
-	private builtinActions = this.ctx.ext.signaldb.collection<BuiltinAction>({
-		name: RUNTIME_ACTIONS_COLLECTION,
-		clientWrites: true,
-		persistence: false,
-	})
-	private builtin!: SignalDbDocumentHandle<BuiltinState>
+	private builtinState!: ManagementStateCollection<BuiltinState>
+	private builtinActions!: ManagementStateCollection<BuiltinAction>
+	private managementUi!: PluginWebManagement['ui']
+	private builtin!: ManagementStateDocument<BuiltinState>
 	private readonly processingActions = new Set<string>()
 
 	private display = this.configs.use(DisplayConfig)
@@ -71,22 +72,29 @@ export class PluginBuiltinShowcase extends BasePlugin {
 		void this._runtime
 		void this._runtimeToggle
 
-		this.startedAt = Date.now()
-
-		await this.builtinState.ready()
-		await this.builtinActions.ready()
-		this.builtin = this.builtinState.doc({ id: RUNTIME_DOC_ID })
-		this.syncBuiltinState()
-		this.consumePendingActions()
-		const stopWatch = this.builtinActions.watch((event) => {
-			if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot') {
-				this.consumePendingActions()
-			}
+		await this.ctx.webManagement.use(async (web) => {
+			this.managementUi = web.ui
+			this.builtinState = web.state.collection<BuiltinState>({ name: RUNTIME_DOC_ID })
+			this.builtinActions = web.state.collection<BuiltinAction>({
+				name: RUNTIME_ACTIONS_COLLECTION,
+				clientWrites: true,
+				persistence: false,
+			})
+			this.startedAt = Date.now()
+			await this.builtinState.ready()
+			await this.builtinActions.ready()
+			this.builtin = this.builtinState.doc({ id: RUNTIME_DOC_ID })
+			this.syncBuiltinState()
+			this.consumePendingActions()
+			const stopWatch = this.builtinActions.watch((event) => {
+				if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot') {
+					this.consumePendingActions()
+				}
+			})
+			this.ctx.effects.defer(() => stopWatch())
+			this.registerBuiltins()
+			this.startTickLoop()
 		})
-		this.ctx.effects.defer(() => stopWatch())
-
-		this.registerBuiltins()
-		this.startTickLoop()
 	}
 
 	// Runtime state and builtin write payloads.
@@ -297,9 +305,11 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	}
 
 	private registerBuiltinDoc(
-		input: Parameters<typeof this.ctx.ext.ui.builtin.doc>[0] & { requireRunning?: false },
+		input: Parameters<PluginWebManagement['ui']['builtin']['doc']>[0] & {
+			requireRunning?: false
+		},
 	) {
-		this.ctx.ext.ui.builtin.doc({
+		this.managementUi.builtin.doc({
 			requireRunning: false,
 			...input,
 		})

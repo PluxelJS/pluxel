@@ -11,6 +11,7 @@ import type {
 	PersistenceRequirement,
 	PersistenceServiceConfig,
 	PluginDataServiceConfig,
+	WebManagementConfig,
 } from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
@@ -72,10 +73,8 @@ export type StaticRuntimeHostOptions = {
 	 * admin access config.
 	 */
 	http?: StaticRuntimeHttpConfig
-	/**
-	 * Host admin surface and access policy. When enabled with public exposure, OIDC is required.
-	 */
-	adminAccess?: CoreContext.Config['adminAccess']
+	/** Optional management UI, plugin UI RPC/SSE/state and access policy. @default false */
+	webManagement?: WebManagementConfig
 	/**
 	 * Runtime logger settings.
 	 */

@@ -70,7 +70,7 @@ class TelemetryFeature extends BaseFeature {
 	)
 }
 
-@Plugin({ name: 'PluginFeatureConfigDemo' })
+@Plugin({ name: 'PluginFeatureConfigDemo', features: [CacheFeature, TelemetryFeature] })
 export class PluginFeatureConfigDemo extends BasePlugin {
 	config = this.configs.use(PluginConfig)
 	readonly cache = this.features.use(CacheFeature)

@@ -14,6 +14,10 @@ import type {
 	RuntimeRouteCapabilities,
 } from '@pluxel/runtime/plugin-catalog'
 import {
+	isWebManagementEnabled,
+	webManagementAdminAccess,
+} from '@pluxel/runtime/internal'
+import {
 	buildCatalog,
 	collectUnknownConfigEntries,
 	diffCatalog,
@@ -200,9 +204,9 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 
 	private assertWebManagementAvailable(): void {
 		if (!staticHostNeedsWebManagement(this.ctx.config)) return
-		if ('ext' in Context.prototype) return
+		if (this.ctx.webManagement.enabled) return
 		throw new Error(
-			'[runtime-static:web-management] service unavailable. Reason: adminAccess is enabled but @pluxel/runtime/services/web-management has not been imported. Fix: import @pluxel/runtime/services/web-management before creating the static runtime, or disable adminAccess.',
+			'[runtime-static:web-management] enabled configuration was not installed before host startup.',
 		)
 	}
 
@@ -546,6 +550,10 @@ export async function createStaticRuntimeHost(
 	options: StaticRuntimeHostOptions = {},
 ): Promise<StaticRuntimeHost> {
 	const host = new StaticRuntimeHostImpl(definition, options)
+	if (isWebManagementEnabled(options.webManagement)) {
+		const { installWebManagement } = await import('@pluxel/runtime/services/web-management')
+		installWebManagement(host.ctx)
+	}
 	await host.prepare()
 	return host
 }
@@ -577,10 +585,9 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 function staticHostNeedsWebManagement(ctxConfig: unknown): boolean {
 	if (!ctxConfig || typeof ctxConfig !== 'object') return false
 	const cfg = ctxConfig as {
-		adminAccess?: { enabled?: unknown }
+		webManagement?: { enabled?: unknown } | false
 	}
-	if (cfg.adminAccess?.enabled === true) return true
-	return false
+	return cfg.webManagement !== false && cfg.webManagement?.enabled === true
 }
 
 function createStaticRuntimeContextConfig(
@@ -589,11 +596,8 @@ function createStaticRuntimeContextConfig(
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
 	const http = options.http ?? context.http
-	const adminAccess = options.adminAccess ??
-		context.adminAccess ?? {
-			enabled: false,
-			exposure: 'private',
-		}
+	const webManagement = options.webManagement ?? context.webManagement ?? false
+	const adminAccess = webManagementAdminAccess(webManagement)
 	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
 	const pluginData = options.pluginData ?? context.pluginData
@@ -610,6 +614,7 @@ function createStaticRuntimeContextConfig(
 			...(http && typeof http === 'object' ? http : {}),
 		},
 		adminAccess,
+		webManagement,
 		profile,
 		configService,
 		runtimeState,

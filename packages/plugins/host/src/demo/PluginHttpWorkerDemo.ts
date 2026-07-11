@@ -3,7 +3,8 @@
 // - 你需要一个 HTTP endpoint 作为 worker 调用触发器
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc, worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
+import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
+import { doc } from '@pluxel/runtime/web-management'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
@@ -50,7 +51,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.ext.ui.builtin.doc({
+		this.ctx.webManagement.use((web) => web.ui.builtin.doc({
 			id: 'plugin-http-worker-demo',
 			point: 'plugin:tabs',
 			title: 'HTTP Worker Demo',
@@ -67,7 +68,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 				Frozen/static runtimes intentionally fall back to inline execution.
 				If you need a real production worker, prebuild a stable \`.mjs\` entry with tsdown instead of relying on the HMR bundler.
 			`,
-		})
+		}))
 
 		this.workerBinding = await squareWorker.bind(this.ctx, {
 			onError: (error) => {

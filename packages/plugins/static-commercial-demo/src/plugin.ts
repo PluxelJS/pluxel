@@ -1,6 +1,6 @@
 import { createYoga } from 'graphql-yoga'
-import { ui } from '@pluxel/runtime/plugin'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/authoring'
+import { ui } from '@pluxel/runtime/web-management'
+import { BasePlugin, Plugin } from '@pluxel/runtime/authoring'
 import { createCommercialContext } from './context.ts'
 import { CommercialDataPlugin } from './data-plugin.ts'
 import { createSchema } from './schema.ts'
@@ -16,7 +16,7 @@ export class StaticCommercialPlugin extends BasePlugin {
 	}
 
 	override init(): void {
-		pluginUi.bind(this.ctx)
+		this.ctx.webManagement.use((web) => web.ui.register(pluginUi))
 
 		const yoga = createYoga({
 			schema: createSchema(),
@@ -48,5 +48,6 @@ export class StaticCommercialPlugin extends BasePlugin {
 	}
 }
 
-Plugin({ name: 'StaticCommercialPlugin' })(StaticCommercialPlugin)
-setParamToken(StaticCommercialPlugin, 0, CommercialDataPlugin)
+Plugin({ name: 'StaticCommercialPlugin', dependencies: [CommercialDataPlugin] })(
+	StaticCommercialPlugin,
+)

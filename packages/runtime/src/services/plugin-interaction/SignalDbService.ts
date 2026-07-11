@@ -96,7 +96,7 @@ export class SignalDbService {
 	): SignalDbCollectionHandle<T> {
 		const pluginName = this.currentPluginName()
 		const name = String(options.name ?? '').trim()
-		if (!name) throw new Error('[ext.signaldb] collection(): name required')
+		if (!name) throw new Error('[webManagement.state] collection(): name required')
 
 		const collections = this.collectionsFor(pluginName)
 		const existing = collections.get(name)
@@ -155,7 +155,7 @@ export class SignalDbService {
 		if (this.streamRegisteredByPlugin.has(pluginName)) return
 		this.streamRegisteredByPlugin.add(pluginName)
 
-		this.ctx.ext.sse.expose(
+		this.ctx.webManagement.require().sse.expose(
 			() => (channel) => {
 				const channels = this.channelsFor(pluginName)
 				channels.add(channel)
@@ -324,7 +324,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	private assertReady() {
 		if (!this.initialized || !this.collection) {
 			throw new Error(
-				`[ext.signaldb] collection "${this.options.name}" is not ready; await collection.ready() first`,
+				`[webManagement.state] collection "${this.options.name}" is not ready; await collection.ready() first`,
 			)
 		}
 	}

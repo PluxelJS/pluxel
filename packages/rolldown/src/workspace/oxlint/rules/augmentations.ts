@@ -56,8 +56,8 @@ function collectAugmentationState(sourceText: string): AugmentationState {
 			),
 		hasCustomUiBoundary:
 			/\bui\s*\(/u.test(sourceText) ||
-			/\.bind\s*\(\s*this\.ctx\s*\)/u.test(sourceText) ||
-			/\.ext\.(?:rpc|sse)\.expose\s*\(/u.test(sourceText),
+			/\bweb\.ui\.register\s*\(/u.test(sourceText) ||
+			/\bweb\.(?:rpc|sse)\.expose\s*\(/u.test(sourceText),
 		hasSharedContractImport:
 			/(?:from\s+)?['"]\.{1,2}\/[^'"]*\.(?:shared|types|contract|contracts)['"]/u.test(
 				sourceText,
@@ -74,11 +74,11 @@ const runtimeTypeAugmentations = createRule(
 		},
 		messages: {
 			webRpc:
-				'`ctx.ext.rpc.expose(...)` exposes a UI RPC namespace. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiRpcMap { ... } }` or import the local shared contract that declares it.',
+				'`web.rpc.expose(...)` exposes a UI RPC namespace. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiRpcMap { ... } }` or import the local shared contract that declares it.',
 			webSse:
-				'`ctx.ext.sse.expose(...)` exposes a UI SSE namespace. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiSseMap { ... } }` or import the local shared contract that declares it.',
+				'`web.sse.expose(...)` exposes a UI SSE namespace. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiSseMap { ... } }` or import the local shared contract that declares it.',
 			webSignalDb:
-				'`ctx.ext.signaldb.collection(...)` exposes browser SignalDB collections. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiSignalDbMap { ... } }` or import the local shared contract that declares it.',
+				'`web.state.collection(...)` exposes browser SignalDB collections. Add `declare module "@pluxel/runtime/web" { interface ExtensionUiSignalDbMap { ... } }` or import the local shared contract that declares it.',
 		},
 	},
 	(context) => {
@@ -103,19 +103,19 @@ const runtimeTypeAugmentations = createRule(
 				const path = calleePath(node)
 				if (!path) return
 
-				if (hasSuffix(path, ['ctx', 'ext', 'rpc', 'expose'])) {
+				if (hasSuffix(path, ['web', 'rpc', 'expose'])) {
 					if (!augmentations.webRpc && !hasLocalTypeBoundary(augmentations)) {
 						report(context, node, 'webRpc')
 					}
 					return
 				}
-				if (hasSuffix(path, ['ctx', 'ext', 'sse', 'expose'])) {
+				if (hasSuffix(path, ['web', 'sse', 'expose'])) {
 					if (!augmentations.webSse && !hasLocalTypeBoundary(augmentations)) {
 						report(context, node, 'webSse')
 					}
 					return
 				}
-				if (hasSuffix(path, ['ctx', 'ext', 'signaldb', 'collection'])) {
+				if (hasSuffix(path, ['web', 'state', 'collection'])) {
 					if (
 						augmentations.hasCustomUiBoundary &&
 						!hasLocalTypeBoundary(augmentations) &&

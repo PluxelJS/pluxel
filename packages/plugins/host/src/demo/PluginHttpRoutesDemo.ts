@@ -3,7 +3,7 @@
 // - 你不需要 worker，只想看 route base、path params 和 builtin doc 说明
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc } from '@pluxel/runtime/plugin'
+import { doc } from '@pluxel/runtime/web-management'
 
 const ROUTE_BASE = '/http-demo'
 
@@ -34,7 +34,7 @@ export class PluginHttpRoutesDemo extends BasePlugin {
 	private registerDoc() {
 		const d = doc({} as const)
 
-		this.ctx.ext.ui.builtin.doc({
+		this.ctx.webManagement.use((web) => web.ui.builtin.doc({
 			id: 'plugin-http-routes-demo',
 			point: 'plugin:tabs',
 			title: 'HTTP Routes Demo',
@@ -48,6 +48,6 @@ export class PluginHttpRoutesDemo extends BasePlugin {
 				- \`GET /status\`: returns a small health payload.
 				- \`GET /echo/:value\`: returns the path param and length.
 			`,
-		})
+		}))
 	}
 }

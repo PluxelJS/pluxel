@@ -14,18 +14,18 @@ export class ExtensionSessionHandle extends RpcTarget implements ExtensionSessio
 	}
 
 	async loadSession(sessionId: string): Promise<ExtensionSessionLoadResult> {
-		return await this.ctx.ext.ui.loadSession(String(sessionId ?? '').trim())
+		return await this.ctx.webManagement.require().ui.loadSession(String(sessionId ?? '').trim())
 	}
 
 	async syncDraft(input: ExtensionSessionDraftSyncInput): Promise<ExtensionSessionMutationResult> {
-		return await this.ctx.ext.ui.syncDraft({
+		return await this.ctx.webManagement.require().ui.syncDraft({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			draft: input?.draft,
 		})
 	}
 
 	async commitSession(input: ExtensionSessionCommitInput): Promise<ExtensionSessionMutationResult> {
-		return await this.ctx.ext.ui.commitSession({
+		return await this.ctx.webManagement.require().ui.commitSession({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			result: input?.result,
 		})

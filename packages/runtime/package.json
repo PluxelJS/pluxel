@@ -81,9 +81,17 @@
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
 		},
+		"./toolchain": {
+			"@pluxel/source": "./src/toolchain.ts",
+			"default": "./dist/toolchain.mjs"
+		},
 		"./web": {
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
+		},
+		"./web-management": {
+			"@pluxel/source": "./src/web-management.ts",
+			"default": "./dist/web-management.mjs"
 		},
 		"./web/extensions": {
 			"@pluxel/source": "./src/web/extensions.ts",
@@ -123,7 +131,9 @@
 			"./services/web-management": "./dist/services/web-management.mjs",
 			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
+			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",
+			"./web-management": "./dist/web-management.mjs",
 			"./web/extensions": "./dist/web/extensions.mjs",
 			"./web/federation": "./dist/web/federation.mjs",
 			"./web/paths": "./dist/web/paths.mjs",

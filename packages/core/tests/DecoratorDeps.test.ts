@@ -9,7 +9,6 @@ import {
 	withCoreHost,
 } from '@pluxel/core/test'
 import { pluginMethodDecorator } from '../src/plugins/decorators/decoratorRuntime'
-import { __registerUsedFeature__ } from '../src/plugins/decorators/decorator/api'
 
 type PluginToken<T extends BasePlugin = BasePlugin> = abstract new (...args: unknown[]) => T
 type KvLike = {
@@ -59,7 +58,7 @@ class FeatureDepsCacheFeature extends BaseFeature {
 	}
 }
 
-@Plugin({ name: 'FeatureDepsConsumerMissing' })
+@Plugin({ name: 'FeatureDepsConsumerMissing', features: [FeatureDepsCacheFeature] })
 class FeatureDepsConsumerMissing extends BasePlugin {
 	readonly cache = this.features.use(FeatureDepsCacheFeature)
 	async run() {
@@ -67,7 +66,11 @@ class FeatureDepsConsumerMissing extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'FeatureDepsConsumerOk' })
+@Plugin({
+	name: 'FeatureDepsConsumerOk',
+	dependencies: [FeatureDepsKvPlugin],
+	features: [FeatureDepsCacheFeature],
+})
 class FeatureDepsConsumerOk extends BasePlugin {
 	readonly cache = this.features.use(FeatureDepsCacheFeature)
 	constructor(public kv: FeatureDepsKvPlugin) {
@@ -77,10 +80,6 @@ class FeatureDepsConsumerOk extends BasePlugin {
 		return await this.cache.compute('x')
 	}
 }
-
-__registerUsedFeature__(FeatureDepsConsumerMissing, FeatureDepsCacheFeature)
-__registerUsedFeature__(FeatureDepsConsumerOk, FeatureDepsCacheFeature)
-setParamToken(FeatureDepsConsumerOk, 0, FeatureDepsKvPlugin)
 
 describe('Decorator-required plugin deps', () => {
 	it('throws when a plugin uses a decorator but has no ctor dependency', async () => {

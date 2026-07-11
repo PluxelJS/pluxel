@@ -19,7 +19,7 @@ export {
 	BaseFeature,
 	BasePlugin,
 	Config,
-	defineOptionalFeature,
+	defineLazyFeature,
 	FeatureHost,
 	ForkablePlugin,
 	HostBoundFeature,
@@ -36,7 +36,6 @@ export {
 	isPluginLifecycleStoppedWithErrorIssue,
 	setParamToken,
 	setParamTokens,
-	UseFeature,
 } from './index'
 export { Context } from './index'
 export type {

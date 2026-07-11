@@ -10,7 +10,9 @@
 ## 阅读顺序
 
 1. `plugin-authoring-model.md`
-   插件整体模型、生命周期、错误模型、资源管理和推荐写法。
+   插件能力边界、依赖/feature、Web Management、生命周期、错误模型和资源管理。
+
+内部设计与迁移后的唯一 API 清单见 `docs/PLUGIN_AUTHORING_FINAL.md`。
 
 ## 写作原则
 

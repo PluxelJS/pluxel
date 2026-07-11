@@ -20,5 +20,5 @@ export default defineStaticRuntimeConfig({
 	},
 	logger: { preset: 'core' },
 	persistence: resolve(staticDataRoot, 'persistence'),
-	management: { enabled: true, access: { exposure: 'private' } },
+	webManagement: { enabled: true, access: { exposure: 'private' } },
 })

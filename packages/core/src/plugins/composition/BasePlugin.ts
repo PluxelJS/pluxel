@@ -13,8 +13,10 @@ import type { AnyCtor } from '../decorators/decorator/shared'
 import { getPluginInfo } from '../decorators/decorator/api'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
+import { PluginHost } from './PluginHost'
 import { FORK_CTX, PLUGIN_CTX } from './symbols'
 const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
+const PLUGIN_HOST = Symbol.for('pluxel:plugin:pluginHost')
 
 export { FORK_CTX, PLUGIN_CTX } from './symbols'
 
@@ -60,6 +62,12 @@ export abstract class BasePlugin<C extends Context = Context> {
 			configurable: false,
 		})
 		return host
+	}
+
+	/** Optional integrations with other running plugins. Required dependencies stay in the constructor. */
+	public get plugins(): PluginHost {
+		const self = this as unknown as { [PLUGIN_HOST]?: PluginHost }
+		return (self[PLUGIN_HOST] ??= new PluginHost(this.features))
 	}
 
 	/** Config declaration helper: `foo = this.configs.use(schema)` */

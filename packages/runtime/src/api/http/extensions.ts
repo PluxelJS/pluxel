@@ -12,7 +12,7 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 	app.group(RUNTIME_EXTENSIONS_BASE, (extensions) =>
 		extensions
 			.get('/manifest', ({ set, pluginCtx }) => {
-				const extensionService = pluginCtx.ext.ui
+				const extensionService = pluginCtx.webManagement.require().ui
 				if (!extensionService) {
 					return {
 						version: 0,
@@ -29,7 +29,7 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 				return extensionService.getManifest()
 			})
 			.get('/artifacts/:plugin/:hash/*', async ({ params, pluginCtx, request, status }) => {
-				const extensionService = pluginCtx.ext.ui
+				const extensionService = pluginCtx.webManagement.require().ui
 				if (!extensionService) {
 					return status(503, 'Extension service not available')
 				}
@@ -75,7 +75,9 @@ export const extensionRoutes = (app: AnyElysiaApp) =>
 					},
 				})
 			})
-			.get('/events', (context) => context.pluginCtx.ext.sse.stream(context, ['extensions'])),
+			.get('/events', (context) =>
+				context.pluginCtx.webManagement.require().sse.stream(context, ['extensions']),
+			),
 	)
 
 function extractArtifactFilePath(

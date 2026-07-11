@@ -54,7 +54,7 @@ Development-only switches, such as disabling the web-management dev bridge, belo
 ```ts
 staticRuntimeVitePlugin({
 	config: './pluxel.static.ts',
-	hmr: { enableWebManagement: false },
+	webManagement: false,
 })
 ```
 

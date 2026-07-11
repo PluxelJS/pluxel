@@ -155,7 +155,7 @@ export class PluginDefinitions {
 			[
 				`Missing constructor dependencies for ${String(Plugin)}.`,
 				`This plugin uses decorators that require: ${missing.map(String).join(', ')}`,
-				'Declare them as constructor params (or use setParamToken) before registering.',
+				'Declare them as constructor params and @Plugin({ dependencies: [...] }) before registering.',
 			].join(' '),
 		)
 	}

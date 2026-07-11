@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
+import type { PluginUiModuleDeclaration } from '../../web-management/ui'
+import { runtimeDevCapabilities } from '../../runtime/capabilities'
 import { dirname, isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from '../../runtime/module-id'
 import type {
@@ -91,9 +93,6 @@ export class ExtensionService implements ExtensionModuleStore {
 	private readonly artifactRootsByPlugin = new Map<string, { sourceHash: string; dir: string }>()
 	private readonly manifestListeners = new Set<(event: ExtensionManifestEvent) => void>()
 	private readonly interactions: ExtensionInteractionRegistry
-	readonly remote = {
-		packaged: (input?: { manifestPath?: string | null }) => this.packaged(input),
-	}
 	readonly builtin = {
 		doc: <P extends ExtensionPoint = 'plugin:tabs'>(
 			input: Omit<BuiltinDocExtensionDef<P>, 'kind' | 'pluginName' | 'point'> & { point?: P },
@@ -146,6 +145,12 @@ export class ExtensionService implements ExtensionModuleStore {
 	) {
 		this.interactions = new ExtensionInteractionRegistry(ctx)
 		this.reconfigure(config)
+	}
+
+	register(declaration: PluginUiModuleDeclaration): () => void {
+		const sourceBinder = runtimeDevCapabilities(this.ctx)?.uiSource?.bind
+		if (sourceBinder) return sourceBinder(this.ctx, declaration)
+		return this.registerPackagedArtifact()
 	}
 
 	reconfigure(config?: ExtensionServiceConfig): void {
@@ -244,7 +249,7 @@ export class ExtensionService implements ExtensionModuleStore {
 		this.removeManifestEntry(pluginName)
 	}
 
-	packaged(input?: { manifestPath?: string | null }): () => void {
+	registerPackagedArtifact(input?: { manifestPath?: string | null }): () => void {
 		if (!this.enabled) return () => {}
 		const pluginName = this.ctx.pluginInfo.id
 		let disposed = false

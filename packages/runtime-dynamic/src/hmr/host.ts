@@ -25,6 +25,10 @@ import {
 import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
 import { ExtensionCompilerService } from './extensions/ExtensionCompilerService'
+import {
+	isWebManagementEnabled,
+	webManagementAdminAccess,
+} from '@pluxel/runtime/internal'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
@@ -105,7 +109,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
-	adminAccess?: CoreContext.Config['adminAccess']
+	webManagement?: CoreContext.Config['webManagement']
 	logger?: CoreContext.Config['logger']
 }
 
@@ -186,7 +190,7 @@ export async function planLoaderHmrHostFromConfig(
 		persistence,
 		pluginData,
 		http,
-		adminAccess,
+		webManagement,
 		logger,
 		context,
 		...hostOpts
@@ -223,7 +227,7 @@ export async function planLoaderHmrHostFromConfig(
 			persistence,
 			pluginData,
 			http,
-			adminAccess,
+				webManagement,
 			logger,
 		}),
 	})
@@ -268,7 +272,16 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},
 	}
-	const ctx = new Context(mergeContextConfig(defaultContext, plan.context))
+	const contextConfig = mergeContextConfig(defaultContext, plan.context)
+	contextConfig.adminAccess = webManagementAdminAccess(contextConfig.webManagement)
+	if (isWebManagementEnabled(contextConfig.webManagement)) {
+		contextConfig.http = withDevWebManagementHttpConfig(contextConfig.http)
+	}
+	const ctx = new Context(contextConfig)
+	if (isWebManagementEnabled(contextConfig.webManagement)) {
+		const { installWebManagement } = await import('@pluxel/runtime/services/web-management')
+		installWebManagement(ctx)
+	}
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	// Materialize the loader route before HMR contributes dev/module capabilities to it.
 	void ctx.loader
@@ -297,7 +310,7 @@ function mergeContextConfig(
 		pluginData: mergeRecord(base.pluginData, override.pluginData),
 		http: mergeRecord(base.http, override.http),
 		logger: mergeRecord(base.logger, override.logger),
-		adminAccess: mergeRecord(base.adminAccess, override.adminAccess),
+		webManagement: override.webManagement ?? base.webManagement,
 	})
 }
 
@@ -334,28 +347,20 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
 	const bundler = new BundlerService(ctx)
-	const extensionCompilerConfig = mergeExtensionCompilerViteConfig(
-		ctx.config.extensionCompiler,
-		plan.vite,
-	)
-	ctx.config.extensionCompiler = extensionCompilerConfig
-	ctx.config.adminAccess = {
-		enabled: true,
-		exposure: ctx.config.adminAccess?.exposure ?? 'private',
-		...(ctx.config.adminAccess?.oidc ? { oidc: ctx.config.adminAccess.oidc } : {}),
+	let extensionCompiler: ExtensionCompilerService | undefined
+	if (ctx.webManagement.enabled) {
+		const extensionCompilerConfig = mergeExtensionCompilerViteConfig(
+			ctx.config.extensionCompiler,
+			plan.vite,
+		)
+		ctx.config.extensionCompiler = extensionCompilerConfig
+		const extensionStore = ctx.webManagement.require().ui
+		extensionCompiler = new ExtensionCompilerService(
+			ctx,
+			{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },
+			extensionCompilerConfig,
+		)
 	}
-	ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
-	ctx.config.extensionService = {
-		...ctx.config.extensionService,
-		enabled: true,
-	}
-	const extensionStore = ctx.ext.ui
-	extensionStore.reconfigure(ctx.config.extensionService)
-	const extensionCompiler = new ExtensionCompilerService(
-		ctx,
-		{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },
-		extensionCompilerConfig,
-	)
 
 	const baseRoute = ctx.runtimeRoute
 	const baseDev = ctx.runtimeDev
@@ -384,15 +389,20 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 					vite: hmr.vite,
 				}),
 		},
-		uiSource: {
-			bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
-		},
+		...(extensionCompiler
+			? {
+					uiSource: {
+						bind: (ownerCtx, declaration) =>
+							extensionCompiler!.bindDeclaration(ownerCtx, declaration),
+					},
+				}
+			: {}),
 	}
 
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
 		ctx.runtimeDev = baseDev
-		extensionCompiler.dispose()
+		extensionCompiler?.dispose()
 		return bundler.dispose()
 	})
 

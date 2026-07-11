@@ -45,7 +45,7 @@
 ## Plugin Interaction
 
 - `packages/runtime/src/services/plugin-interaction/ExtService.ts`
-  `ctx.ext` 聚合入口
+  `ctx.webManagement.use()` 可选管理能力入口
 - `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
   packaged UI remote + builtin/doc 扩展
 - `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`

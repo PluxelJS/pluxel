@@ -1,46 +1,7 @@
 import type { Context } from '@pluxel/core'
-import { runtimeDevCapabilities, type RuntimeRouteCapabilities } from './plugin-catalog'
+import { runtimeDevCapabilities } from './plugin-catalog'
 import { isAbsolute, resolve } from 'pathe'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from './internal'
-
-export { doc } from './web/extensions'
-
-export interface PluginUiSourceDeclaration {
-	/** Authoring declaration. Runtime never consumes this path directly. */
-	entryPath: string
-}
-
-export interface PluginUiModuleDeclaration {
-	/**
-	 * Route-neutral plugin UI bridge entry.
-	 *
-	 * Plugin code keeps calling `ui(...).bind(ctx)` so build-time tooling can recognize and rewrite
-	 * this declaration if needed. Routes with dev capabilities can consume the source declaration directly;
-	 * routes without dev capabilities fall back to packaged remote registration on `ctx.ext.ui`.
-	 */
-	bind(ctx: Context): () => void
-}
-
-function normalizeUiConfig(input: string | PluginUiSourceDeclaration): PluginUiSourceDeclaration {
-	const entryPath =
-		typeof input === 'string' ? String(input).trim() : String(input.entryPath ?? '').trim()
-	return { entryPath }
-}
-
-function runtimeRoute(ctx: Context): RuntimeRouteCapabilities | undefined {
-	return ctx.runtimeRoute ?? ctx.root.runtimeRoute
-}
-
-function packagedUiBinder(ctx: Context): (() => () => void) | undefined {
-	const ext = (
-		ctx as unknown as {
-			ext?: { ui?: { remote?: { packaged?: () => () => void } } }
-		}
-	).ext
-	const remote = ext?.ui?.remote
-	if (typeof remote?.packaged !== 'function') return undefined
-	return () => remote.packaged!()
-}
 
 function currentWorkingDirectory(): string {
 	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
@@ -51,23 +12,6 @@ function fileUrlFromPath(path: string): string {
 	const normalized = path.replaceAll('\\', '/')
 	const pathname = encodeURI(normalized).replaceAll('#', '%23').replaceAll('?', '%3F')
 	return `file://${normalized.startsWith('/') ? '' : '/'}${pathname}`
-}
-
-export function ui(input: string | PluginUiSourceDeclaration): PluginUiModuleDeclaration {
-	const config = normalizeUiConfig(input)
-	if (!config.entryPath) throw new Error('[pluxel/runtime/plugin] ui(): entryPath required')
-
-	return {
-		bind(ctx: Context) {
-			const sourceBinder = runtimeDevCapabilities(ctx)?.uiSource?.bind
-			if (sourceBinder) return sourceBinder(ctx, config)
-			const packaged = packagedUiBinder(ctx)
-			if (packaged) return packaged()
-			throw new Error(
-				'[runtime/plugin:web-management] service unavailable. Reason: ui().bind(ctx) has no dev UI source capability and @pluxel/runtime/services/web-management is not imported. Fix: import @pluxel/runtime/services/web-management before starting the host, or remove ui(...).bind(ctx) from this plugin.',
-			)
-		},
-	}
 }
 
 export type PluginWorkerMode = 'hmr' | 'fallback'

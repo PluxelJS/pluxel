@@ -83,8 +83,8 @@ function isThisFeaturesUseCall(node: unknown): boolean {
 	return isThisFeaturesCall(node, 'use')
 }
 
-function isThisFeaturesTryUseCall(node: unknown): boolean {
-	return isThisFeaturesCall(node, 'tryUse')
+function isThisFeaturesLoadCall(node: unknown): boolean {
+	return isThisFeaturesCall(node, 'load')
 }
 
 function isThisFeaturesCall(node: unknown, methodName: string): boolean {
@@ -120,7 +120,7 @@ function isFunctionBoundary(node: unknown): boolean {
 		: false
 }
 
-function getNearestTryUseBoundary(ancestors: readonly OxNode[]): OxNode | null {
+function getNearestLoadBoundary(ancestors: readonly OxNode[]): OxNode | null {
 	for (let i = ancestors.length - 1; i >= 0; i--) {
 		const ancestor = ancestors[i]!
 		const parent = i > 0 ? ancestors[i - 1] : null
@@ -161,10 +161,10 @@ function isDefineOptionalFeatureCall(node: unknown): node is OxNode {
 	if (!expression || expression.type !== 'CallExpression') return false
 	const callee = unwrapExpression(expression.callee)
 	if (!callee) return false
-	if (callee.type === 'Identifier') return callee.name === 'defineOptionalFeature'
+	if (callee.type === 'Identifier') return callee.name === 'defineLazyFeature'
 	if (callee.type !== 'MemberExpression') return false
 	return (
-		getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineOptionalFeature'
+		getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineLazyFeature'
 	)
 }
 
@@ -496,25 +496,25 @@ const featuresUseTopLevelClass = createRule(
 	}),
 )
 
-const featuresTryUseNoClassField = createRule(
+const featuresLoadNoClassField = createRule(
 	{
 		type: 'problem',
 		docs: {
 			description:
-				'Disallow this.features.tryUse(...) in class fields or constructors because optional features are runtime-only',
+				'Disallow this.features.load(...) in class fields or constructors because optional features are runtime-only',
 		},
 		messages: {
 			classField:
-				'`this.features.tryUse(...)` must not run in a class field. Call it in `init()` or another runtime method so optional feature activation stays out of declaration-time metadata.',
+				'`this.features.load(...)` must not run in a class field. Call it in `init()` or another runtime method so optional feature activation stays out of declaration-time metadata.',
 			constructor:
-				'`this.features.tryUse(...)` must not run in a constructor. Call it in `init()` or another runtime method so optional feature activation stays out of construction-time wiring.',
+				'`this.features.load(...)` must not run in a constructor. Call it in `init()` or another runtime method so optional feature activation stays out of construction-time wiring.',
 		},
 	},
 	(context) => ({
 		CallExpression(node) {
-			if (!isThisFeaturesTryUseCall(node)) return
+			if (!isThisFeaturesLoadCall(node)) return
 			const ancestors = context.sourceCode.getAncestors(node)
-			const boundary = getNearestTryUseBoundary(ancestors)
+			const boundary = getNearestLoadBoundary(ancestors)
 			if (boundary?.type === 'PropertyDefinition') {
 				report(context, node, 'classField')
 				return
@@ -526,22 +526,22 @@ const featuresTryUseNoClassField = createRule(
 	}),
 )
 
-const featuresTryUseRequiresDefinedSpec = createRule(
+const featuresLoadRequiresDefinedSpec = createRule(
 	{
 		type: 'problem',
 		docs: {
 			description:
-				'Require this.features.tryUse(...) to receive a module-top-level defineOptionalFeature(...) spec',
+				'Require this.features.load(...) to receive a module-top-level defineLazyFeature(...) spec',
 		},
 		messages: {
 			inlineSpec:
-				'`this.features.tryUse(...)` must not receive an inline spec. Define the optional capability once with `defineOptionalFeature(...)`, then pass that named spec to `tryUse()`.',
+				'`this.features.load(...)` must not receive an inline spec. Define the optional capability once with `defineLazyFeature(...)`, then pass that named spec to `load()`.',
 			invalidSpec:
-				'`this.features.tryUse(...)` expects a module-top-level `defineOptionalFeature(...)` result (or an imported spec), not an ad-hoc runtime value.',
+				'`this.features.load(...)` expects a module-top-level `defineLazyFeature(...)` result (or an imported spec), not an ad-hoc runtime value.',
 			extraArgs:
-				'`this.features.tryUse(...)` accepts only the optional feature spec. Move runtime input onto the spec definition, host plugin state, or feature state.',
+				'`this.features.load(...)` accepts only the optional feature spec. Move runtime input onto the spec definition, host plugin state, or feature state.',
 			mutableSpec:
-				'`this.features.tryUse(...)` requires a module-top-level `const` spec from `defineOptionalFeature(...)`. Mutable `let`/`var` optional specs can drift at runtime.',
+				'`this.features.load(...)` requires a module-top-level `const` spec from `defineLazyFeature(...)`. Mutable `let`/`var` optional specs can drift at runtime.',
 		},
 	},
 	(context) => {
@@ -563,7 +563,7 @@ const featuresTryUseRequiresDefinedSpec = createRule(
 				for (const name of bindings.mutableSpecs) mutableSpecs.add(name)
 			},
 			CallExpression(node) {
-				if (!isThisFeaturesTryUseCall(node)) return
+				if (!isThisFeaturesLoadCall(node)) return
 				const args = Array.isArray(node.arguments) ? node.arguments : []
 				if (args.length > 1) {
 					const extraArg = unwrapExpression(args[1]) ?? node
@@ -602,18 +602,18 @@ const featuresTryUseRequiresDefinedSpec = createRule(
 	},
 )
 
-const featuresTryUseNoStaticLoad = createRule(
+const featuresLoadNoStaticLoad = createRule(
 	{
 		type: 'problem',
 		docs: {
 			description:
-				'Require defineOptionalFeature(...).load to keep optional features on a genuine lazy-load path',
+				'Require defineLazyFeature(...).load to keep optional features on a genuine lazy-load path',
 		},
 		messages: {
 			staticLoad:
-				'`defineOptionalFeature(...).load` must lazy-load the optional feature. Returning `{{name}}` keeps it on the host plugin hard path instead of a real dynamic-import boundary.',
+				'`defineLazyFeature(...).load` must lazy-load the optional feature. Returning `{{name}}` keeps it on the host plugin hard path instead of a real dynamic-import boundary.',
 			noDynamicImport:
-				'`defineOptionalFeature(...).load` must contain a dynamic `import(...)` boundary. Optional feature implementations cannot stay on the host module static path.',
+				'`defineLazyFeature(...).load` must contain a dynamic `import(...)` boundary. Optional feature implementations cannot stay on the host module static path.',
 		},
 	},
 	(context) => {
@@ -716,12 +716,12 @@ const pluginConstructorNoTypeOnlyImports = createRule(
 		type: 'problem',
 		docs: {
 			description:
-				'Require @Plugin constructor dependency types to come from runtime imports, not type-only imports',
+				'Require @Plugin constructor dependency tokens to come from runtime imports, not type-only imports',
 		},
 		fixable: 'code',
 		messages: {
 			typeOnly:
-				'`{{names}}` is used in an `@Plugin` constructor type and must come from a runtime import so decorator metadata can resolve the dependency.',
+				'`{{names}}` is used as an `@Plugin` constructor dependency and must come from a runtime import so it can also be listed in `dependencies`.',
 		},
 	},
 	(context) => ({
@@ -778,9 +778,9 @@ const pluginNoProcessExit = createRule(
 
 export const pluginsRules: Record<string, OxRule> = {
 	'features-use-top-level-class': featuresUseTopLevelClass,
-	'features-try-use-no-class-field': featuresTryUseNoClassField,
-	'features-try-use-requires-defined-spec': featuresTryUseRequiresDefinedSpec,
-	'features-try-use-no-static-load': featuresTryUseNoStaticLoad,
+	'features-load-no-class-field': featuresLoadNoClassField,
+	'features-load-requires-defined-spec': featuresLoadRequiresDefinedSpec,
+	'features-load-no-static-load': featuresLoadNoStaticLoad,
 	'plugin-no-process-exit': pluginNoProcessExit,
 	'plugin-base-class-requires-plugin-registration': pluginBaseClassRequiresPluginRegistration,
 	'plugin-constructor-no-type-only-imports': pluginConstructorNoTypeOnlyImports,

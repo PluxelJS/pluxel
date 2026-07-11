@@ -1,10 +1,10 @@
 // Read this when:
 // - 你要写插件内 feature 组合
-// - 你要区分 required feature 和 optional feature
-// - 你想看 `defineOptionalFeature(...)` + `tryUse(...)` + 懒加载 optional module 的标准写法
+// - 你要区分 required feature 和 lazy feature
+// - 你想看 `defineLazyFeature(...)` + `load(...)` + 懒加载 optional module 的标准写法
 // - 你想确认 “依赖插件类型存在” 和 “依赖插件包可能根本不存在” 该怎么分别表达
 
-import { BasePlugin, defineOptionalFeature, EvtChannel, Plugin } from '@pluxel/runtime'
+import { BasePlugin, defineLazyFeature, EvtChannel, Plugin } from '@pluxel/runtime'
 import { PluginLoggerFeature, type TickEvent } from './PluginFeatureDeps.shared'
 
 function startChannelFeed<Payload>(
@@ -39,7 +39,7 @@ export class PluginFeatureDepsProvider extends BasePlugin {
 	}
 }
 
-const providerMonitorFeature = defineOptionalFeature({
+const providerMonitorFeature = defineLazyFeature({
 	key: 'provider-monitor',
 	// 这里用类 token，是因为 provider plugin 与 host demo 在同一个静态代码面里，
 	// 可以安全地被宿主直接 import。
@@ -53,13 +53,13 @@ const providerMonitorFeature = defineOptionalFeature({
 		),
 })
 
-@Plugin({ name: 'PluginFeatureDepsConsumer' })
+@Plugin({ name: 'PluginFeatureDepsConsumer', features: [PluginLoggerFeature] })
 export class PluginFeatureDepsConsumer extends BasePlugin {
 	readonly log: PluginLoggerFeature = this.features.use(PluginLoggerFeature)
 
 	override async init(): Promise<void> {
 		this.log.info('consumer init')
-		const monitor = await this.features.tryUse(providerMonitorFeature)
+		const monitor = await this.features.load(providerMonitorFeature)
 		this.log.info(monitor ? 'optional monitor enabled' : 'optional monitor skipped')
 	}
 }

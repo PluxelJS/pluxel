@@ -1,6 +1,4 @@
-import { fileURLToPath } from 'node:url'
 import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/web-management'
 import '@pluxel/runtime/services/vault'
 import {
 	DEFAULT_ZHIPU_BASE_URL,
@@ -14,9 +12,9 @@ import {
 	useExternalGatewayDB,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui } from '@pluxel/runtime/plugin'
+import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
@@ -38,7 +36,7 @@ import type {
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
 
-const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
+const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const ROUTE_BASE = '/zhipu'
 const PROVIDER_ID = 'zhipu'
 const VAULT_NAMESPACE = 'ZhipuProviderPlugin'
@@ -65,11 +63,11 @@ type UpstreamOutcome = {
 	unitName?: string
 }
 
-@Plugin({ name: 'ZhipuProviderPlugin' })
+@Plugin({ name: 'ZhipuProviderPlugin', dependencies: [UsageRecorderPlugin] })
 export class ZhipuProviderPlugin extends BasePlugin {
-	private settings = this.ctx.ext.signaldb.collection<ZhipuSettingsDoc>({ name: 'settings' })
-	private status = this.ctx.ext.signaldb.collection<ZhipuStatusDoc>({ name: 'status' })
-	private history = this.ctx.ext.signaldb.collection<ZhipuTestRunDoc>({ name: 'history' })
+	private settings!: ManagementStateCollection<ZhipuSettingsDoc>
+	private status!: ManagementStateCollection<ZhipuStatusDoc>
+	private history!: ManagementStateCollection<ZhipuTestRunDoc>
 	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
 
@@ -78,13 +76,18 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
-		await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
-		this.data = await useExternalGatewayDB(this.ctx)
-		await this.loadHistoryFromDB()
-		await this.syncSettingsDoc()
-		this.ensureStatusDoc()
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new ZhipuProviderRpc(this))
+		await this.ctx.webManagement.use(async (web) => {
+			this.settings = web.state.collection<ZhipuSettingsDoc>({ name: 'settings' })
+			this.status = web.state.collection<ZhipuStatusDoc>({ name: 'status' })
+			this.history = web.state.collection<ZhipuTestRunDoc>({ name: 'history' })
+			await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
+			this.data = await useExternalGatewayDB(this.ctx)
+			await this.loadHistoryFromDB()
+			await this.syncSettingsDoc()
+			this.ensureStatusDoc()
+			web.ui.register(pluginUi)
+			web.rpc.expose(() => new ZhipuProviderRpc(this))
+		})
 		this.registerRoutes()
 		this.ctx.logger.info('Zhipu provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -1007,7 +1010,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	}
 }
 
-setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
 
 export class ZhipuProviderRpc extends RpcTarget {
 	constructor(private readonly plugin: ZhipuProviderPlugin) {

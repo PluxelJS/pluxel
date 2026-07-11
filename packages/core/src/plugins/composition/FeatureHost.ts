@@ -51,33 +51,33 @@ export type FeatureUseCtor<T extends BaseFeature, Host = unknown> =
 	| FeatureCtor<T>
 	| HostBoundFeatureCtor<T, Host>
 
-type OptionalFeatureSpecInput<T extends BaseFeature, Host = unknown> = {
+type LazyFeatureSpecInput<T extends BaseFeature, Host = unknown> = {
 	key: string
 	requires?: readonly PluginIdentifier[]
 	when?: boolean | ((ctx: Context) => MaybePromise<boolean>)
 	load: () => Promise<FeatureUseCtor<T, Host>>
 }
 
-export type OptionalFeatureSpec<T extends BaseFeature, Host = unknown> = Readonly<
-	OptionalFeatureSpecInput<T, Host> & {
+export type LazyFeatureSpec<T extends BaseFeature, Host = unknown> = Readonly<
+	LazyFeatureSpecInput<T, Host> & {
 		readonly [OPTIONAL_FEATURE_SPEC]: true
 	}
 >
 
-export function defineOptionalFeature<T extends BaseFeature, Host = unknown>(
-	spec: OptionalFeatureSpecInput<T, Host>,
-): OptionalFeatureSpec<T, Host> {
+export function defineLazyFeature<T extends BaseFeature, Host = unknown>(
+	spec: LazyFeatureSpecInput<T, Host>,
+): LazyFeatureSpec<T, Host> {
 	const key = typeof spec.key === 'string' ? spec.key.trim() : ''
-	if (!key) throw new Error('[pluxel/core] Optional feature key must be a non-empty string')
+	if (!key) throw new Error('[pluxel/core] Lazy feature key must be a non-empty string')
 	if (typeof spec.load !== 'function') {
-		throw new TypeError('[pluxel/core] Optional feature load must be a function')
+		throw new TypeError('[pluxel/core] Lazy feature load must be a function')
 	}
 	if (
 		spec.when !== undefined &&
 		typeof spec.when !== 'boolean' &&
 		typeof spec.when !== 'function'
 	) {
-		throw new TypeError('[pluxel/core] Optional feature when must be a boolean or function')
+		throw new TypeError('[pluxel/core] Lazy feature when must be a boolean or function')
 	}
 	const requires = spec.requires ? Object.freeze([...spec.requires]) : undefined
 	return Object.freeze({
@@ -85,12 +85,12 @@ export function defineOptionalFeature<T extends BaseFeature, Host = unknown>(
 		key,
 		requires,
 		[OPTIONAL_FEATURE_SPEC]: true as const,
-	}) as OptionalFeatureSpec<T, Host>
+	}) as LazyFeatureSpec<T, Host>
 }
 
-function isOptionalFeatureSpec<T extends BaseFeature, Host = unknown>(
+function isLazyFeatureSpec<T extends BaseFeature, Host = unknown>(
 	value: unknown,
-): value is OptionalFeatureSpec<T, Host> {
+): value is LazyFeatureSpec<T, Host> {
 	return (
 		Boolean(value) &&
 		(typeof value === 'object' || typeof value === 'function') &&
@@ -102,7 +102,7 @@ export class FeatureHost<Host = unknown> {
 	private readonly instances = new Map<FeatureCtor<BaseFeature>, BaseFeature>()
 	private readonly optionalLoads = new Map<string, Promise<BaseFeature | undefined>>()
 	private readonly optionalCtors = new Map<string, FeatureCtor<BaseFeature>>()
-	private readonly optionalSpecs = new Map<string, OptionalFeatureSpec<BaseFeature, Host>>()
+	private readonly optionalSpecs = new Map<string, LazyFeatureSpec<BaseFeature, Host>>()
 	private readonly warned = new Set<FeatureCtor<BaseFeature>>()
 	private readonly depWatchers = new Map<PluginIdentifier, DepWatcher>()
 	private readonly depViewCache = new WeakMap<object, unknown>()
@@ -145,16 +145,16 @@ export class FeatureHost<Host = unknown> {
 		return this.useInternal(Ctor, args, { checkDeclaration: true })
 	}
 
-	tryUse<T extends BaseFeature>(spec: OptionalFeatureSpec<T, Host>): Promise<T | undefined> {
-		this.ensureActive('tryUse')
-		if (!isOptionalFeatureSpec(spec)) {
+	load<T extends BaseFeature>(spec: LazyFeatureSpec<T, Host>): Promise<T | undefined> {
+		this.ensureActive('load')
+		if (!isLazyFeatureSpec(spec)) {
 			throw new Error(
-				'[pluxel/core] FeatureHost.tryUse() expects a spec created by defineOptionalFeature(). Keep optional feature declaration separate from runtime activation.',
+				'[pluxel/core] FeatureHost.load() expects a spec created by defineLazyFeature(). Keep lazy feature declaration separate from runtime activation.',
 			)
 		}
 		if (arguments.length > 1) {
 			throw new Error(
-				'[pluxel/core] FeatureHost.tryUse() does not accept feature constructor args. Move runtime input onto the optional feature spec, host plugin, or feature state.',
+				'[pluxel/core] FeatureHost.load() does not accept feature constructor args. Move runtime input onto the lazy feature spec, host plugin, or feature state.',
 			)
 		}
 		const key = spec.key
@@ -163,7 +163,7 @@ export class FeatureHost<Host = unknown> {
 		if (cached) return cached as Promise<T | undefined>
 		const epoch = this.disposeEpoch
 
-		const task = this.tryUseInternal(spec, key)
+		const task = this.loadInternal(spec, key)
 			.then((feature) => {
 				if (this.disposed || this.disposeEpoch !== epoch) {
 					this.clearOptionalKey(key)
@@ -203,16 +203,23 @@ export class FeatureHost<Host = unknown> {
 	/**
 	 * Friendly dependency accessor for other plugins.
 	 *
-	 * - `dep(DepPlugin)` returns the dependency instance (or `undefined`).
-	 * - `dep(DepPlugin, cb)` runs cb when the dep becomes available (and re-runs when it changes across commits).
+	 * - `plugins.get(DepPlugin)` returns the dependency instance (or `undefined`).
+	 * - `plugins.use(DepPlugin, cb)` runs cb when the dep becomes available and across replacements.
 	 *   If `cb` returns a cleanup function, it will be called when the dep disappears or changes.
 	 *
 	 * This is meant for optional integrations without requiring authors to reason about commit timing.
 	 */
-	dep<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined
-	dep<T extends PluginIdentifier>(id: T, cb: (dep: InstanceType<T>) => void): () => void
-	dep<T extends PluginIdentifier>(id: T, cb: (dep: InstanceType<T>) => () => void): () => void
-	dep<T extends PluginIdentifier>(
+	/** @internal Used by BasePlugin.plugins. */
+	pluginIntegration<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined
+	pluginIntegration<T extends PluginIdentifier>(
+		id: T,
+		cb: (dep: InstanceType<T>) => void,
+	): () => void
+	pluginIntegration<T extends PluginIdentifier>(
+		id: T,
+		cb: (dep: InstanceType<T>) => () => void,
+	): () => void
+	pluginIntegration<T extends PluginIdentifier>(
 		id: T,
 		cb?: (dep: InstanceType<T>) => unknown,
 	): InstanceType<T> | undefined | (() => void) {
@@ -231,7 +238,7 @@ export class FeatureHost<Host = unknown> {
 		if (!hadSub) {
 			const registry = this.getRegistry()
 			if (!registry || typeof registry.watchInstance !== 'function') {
-				throw new Error('[pluxel/core] FeatureHost.dep requires PluginService.watchInstance')
+				throw new Error('[pluxel/core] PluginHost.use requires PluginService.watchInstance')
 			}
 			watcher.unsub = registry.watchInstance(id, (instance) =>
 				this.flushDepWatcherRaw(watcher, instance),
@@ -349,7 +356,7 @@ export class FeatureHost<Host = unknown> {
 			feature: (ctor as { name?: string }).name ?? '<anonymous>',
 			hasConfig,
 			hasDeps,
-			hint: 'Use @UseFeature(FeatureCtor) (or ensure configSourcePlugin injects __registerUsedFeatures__ via a class-field `this.features.use(...)`).',
+			hint: 'Declare the required feature in @Plugin({ features: [FeatureCtor] }).',
 		}
 
 		if (policy === 'error') {
@@ -380,8 +387,8 @@ export class FeatureHost<Host = unknown> {
 		return instance
 	}
 
-	private async tryUseInternal<T extends BaseFeature>(
-		spec: OptionalFeatureSpec<T, Host>,
+	private async loadInternal<T extends BaseFeature>(
+		spec: LazyFeatureSpec<T, Host>,
 		key: string,
 	): Promise<T | undefined> {
 		if (!(await this.canActivateOptional(spec))) return undefined
@@ -391,7 +398,7 @@ export class FeatureHost<Host = unknown> {
 			const loaded = spec.load()
 			if (!isPromiseLike<FeatureUseCtor<T, Host>>(loaded)) {
 				throw new TypeError(
-					'[pluxel/core] Optional feature load must return a Promise. Use dynamic import(...) to keep optional features off the host static path.',
+					'[pluxel/core] Lazy feature load must return a Promise. Use dynamic import(...) to keep lazy features off the host static path.',
 				)
 			}
 			const Ctor = await loaded
@@ -402,13 +409,13 @@ export class FeatureHost<Host = unknown> {
 			this.assertOptionalFeatureInstance(instance, key)
 			return instance
 		} catch (error) {
-			this.ctx.logger.warn('optional feature skipped', { key, error })
+			this.ctx.logger.warn('lazy feature skipped', { key, error })
 			return undefined
 		}
 	}
 
 	private async canActivateOptional<T extends BaseFeature>(
-		spec: OptionalFeatureSpec<T, Host>,
+		spec: LazyFeatureSpec<T, Host>,
 	): Promise<boolean> {
 		const requires = spec.requires
 		if (requires?.length) {
@@ -440,9 +447,9 @@ export class FeatureHost<Host = unknown> {
 		if (hasConfig) reasons.push('declares feature config')
 		if (hasDeps) reasons.push('declares required plugin deps')
 		throw new Error(
-			`Optional feature "${key}" cannot use ${label}: ${reasons.join(
+			`Lazy feature "${key}" cannot use ${label}: ${reasons.join(
 				' and ',
-			)}. Use \`use()\` for declaration-time features, or move gates/deps onto the \`tryUse()\` spec.`,
+			)}. Use \`use()\` for declaration-time features, or move gates/deps onto the \`load()\` spec.`,
 		)
 	}
 
@@ -454,23 +461,23 @@ export class FeatureHost<Host = unknown> {
 			if (!isConfigSentinel(record[field])) continue
 			this.dispose(instance.constructor as FeatureCtor<BaseFeature>)
 			throw new Error(
-				`Optional feature "${key}" cannot expose configs.use(...) fields at runtime. Move gate config onto the host plugin, or register this feature through \`use()\`.`,
+				`Lazy feature "${key}" cannot expose configs.use(...) fields at runtime. Move gate config onto the host plugin, or register this feature through \`use()\`.`,
 			)
 		}
 	}
 
 	private assertOptionalSpecConsistency<T extends BaseFeature>(
 		key: string,
-		spec: OptionalFeatureSpec<T, Host>,
+		spec: LazyFeatureSpec<T, Host>,
 	): void {
 		const prev = this.optionalSpecs.get(key)
 		if (!prev) {
-			this.optionalSpecs.set(key, spec as unknown as OptionalFeatureSpec<BaseFeature, Host>)
+			this.optionalSpecs.set(key, spec as unknown as LazyFeatureSpec<BaseFeature, Host>)
 			return
 		}
 		if (prev === spec) return
 		throw new Error(
-			`Optional feature key "${key}" was reused with a different spec. Reuse one stable defineOptionalFeature(...) result per key.`,
+			`Lazy feature key "${key}" was reused with a different spec. Reuse one stable defineLazyFeature(...) result per key.`,
 		)
 	}
 
@@ -560,7 +567,7 @@ export class FeatureHost<Host = unknown> {
 		this.optionalSpecs.delete(key)
 	}
 
-	private ensureActive(op: 'use' | 'tryUse'): void {
+	private ensureActive(op: 'use' | 'load'): void {
 		if (!this.disposed) return
 		throw new Error(`[pluxel/core] FeatureHost.${op}() called after host disposal`)
 	}

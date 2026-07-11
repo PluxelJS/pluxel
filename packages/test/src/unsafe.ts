@@ -8,7 +8,6 @@
 export {
 	__registerConfigBinding__,
 	__registerConfigSchema__,
-	__registerUsedFeature__,
 	__registerUsedFeatures__,
 	getRequiredPluginDependencies,
 	pluginMethodDecorator,

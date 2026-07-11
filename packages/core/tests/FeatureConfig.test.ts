@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BaseFeature, BasePlugin, getPluginInfo, Plugin, UseFeature, withCoreHost } from '@pluxel/core/test'
+import { BaseFeature, BasePlugin, getPluginInfo, Plugin, withCoreHost } from '@pluxel/core/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 const PassthroughSchema: StandardSchemaV1 = {
@@ -23,8 +23,7 @@ class TelemetryFeature extends BaseFeature {
 	cfg = this.configs.use(PassthroughSchema)
 }
 
-@UseFeature(CacheFeature, TelemetryFeature)
-@Plugin({ name: 'Host' })
+@Plugin({ name: 'Host', features: [CacheFeature, TelemetryFeature] })
 class Host extends BasePlugin {
 	feature = this.features.use(CacheFeature)
 	telemetry = this.features.use(TelemetryFeature)

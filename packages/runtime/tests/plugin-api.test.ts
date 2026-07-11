@@ -1,7 +1,10 @@
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ui, worker } from '../src/plugin'
+import { worker } from '../src/plugin'
+import { ui } from '../src/web-management/ui'
+import * as runtimeAuthoring from '../src/index'
+import * as pluginAuthoring from '../src/plugin'
 
 function createPluginCtx() {
 	const root: any = {
@@ -27,13 +30,6 @@ function createPluginCtx() {
 				},
 			},
 		},
-		ext: {
-			ui: {
-				remote: {
-					packaged: vi.fn(() => () => {}),
-				},
-			},
-		},
 	}
 
 	return { root, pluginCtx }
@@ -43,42 +39,36 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-describe('@pluxel/runtime/plugin', () => {
-	it('ui() binds through runtime dev capability when source UI is available', () => {
-		const { root, pluginCtx } = createPluginCtx()
-		const bind = vi.fn(() => () => {})
-
-		root.runtimeDev = {
-			uiSource: { bind },
+describe('@pluxel/runtime author declarations', () => {
+	it('keeps removed mutation and UI APIs out of default author entries', () => {
+		for (const removed of [
+			'__registerConfigBinding__',
+			'__registerConfigSchema__',
+			'__registerUsedFeatures__',
+			'__setConfigLayout__',
+			'__setConfigSource__',
+			'setParamToken',
+			'setParamTokens',
+			'clearParamToken',
+			'clearParamTokens',
+			'UseFeature',
+		]) {
+			expect(runtimeAuthoring).not.toHaveProperty(removed)
 		}
+		expect(pluginAuthoring).not.toHaveProperty('ui')
+	})
 
+	it('ui() creates a pure source declaration', () => {
 		const declaration = ui('./ui/index.tsx')
-		const dispose = declaration.bind(pluginCtx)
+		expect(declaration).toEqual({ entryPath: './ui/index.tsx' })
+		expect(Object.isFrozen(declaration)).toBe(true)
+		expect('bind' in declaration).toBe(false)
+	})
 
-		expect(bind).toHaveBeenCalledWith(pluginCtx, {
-			entryPath: './ui/index.tsx',
+	it('ui() resolves an entry relative to its declaring module', () => {
+		expect(ui('file:///tmp/demo-plugin/src/index.ts', './ui/index.tsx')).toEqual({
+			entryPath: '/tmp/demo-plugin/src/ui/index.tsx',
 		})
-		expect(typeof dispose).toBe('function')
-	})
-
-	it('ui() falls back to packaged runtime registration outside HMR', () => {
-		const { pluginCtx } = createPluginCtx()
-
-		const declaration = ui('./ui/index.tsx')
-		const dispose = declaration.bind(pluginCtx)
-
-		expect(pluginCtx.ext.ui.remote.packaged).toHaveBeenCalledTimes(1)
-		expect(pluginCtx.ext.ui.remote.packaged).toHaveBeenCalledWith()
-		expect(typeof dispose).toBe('function')
-	})
-
-	it('ui() fails fast when neither dev UI source nor web-management is available', () => {
-		const { pluginCtx } = createPluginCtx()
-		delete pluginCtx.ext
-
-		expect(() => ui('./ui/index.tsx').bind(pluginCtx)).toThrow(
-			'[runtime/plugin:web-management] service unavailable. Reason: ui().bind(ctx) has no dev UI source capability and @pluxel/runtime/services/web-management is not imported. Fix: import @pluxel/runtime/services/web-management before starting the host, or remove ui(...).bind(ctx) from this plugin.',
-		)
 	})
 
 	it('worker() falls back cleanly when no HMR bundler is attached', async () => {

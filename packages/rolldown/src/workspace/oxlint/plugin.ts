@@ -63,17 +63,17 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-no-class-field': {
+	'features-load-no-class-field': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-requires-defined-spec': {
+	'features-load-requires-defined-spec': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-no-static-load': {
+	'features-load-no-static-load': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',

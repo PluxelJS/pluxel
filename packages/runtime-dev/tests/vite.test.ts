@@ -7,7 +7,6 @@ import { createServer, type ViteDevServer } from 'vite'
 import {
 	importViteSsrModule,
 	pluxelRuntimeSourceVitePlugin,
-	pluxelRuntimeUiBridgeVitePlugin,
 } from '../src/vite'
 
 async function resolveEnvironmentPluginNames(
@@ -51,12 +50,6 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
 		expect(config.ssr?.external).not.toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
-	})
-
-	it('exposes UI bridge lowering as a separate plugin', () => {
-		const plugin = pluxelRuntimeUiBridgeVitePlugin() as { name?: string }
-
-		expect(plugin.name).toBe('pluxel-runtime-ui-bridge')
 	})
 
 	it('expands source transforms only inside server Vite environments', async () => {

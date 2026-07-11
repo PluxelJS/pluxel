@@ -14,7 +14,7 @@ export type PluginCommitChanges = {
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
 	 * This includes anything that was stopped or (re)started (adds, replaces, restarts, retries).
-	 * Useful for efficient optional-dependency watchers (e.g. FeatureHost.dep).
+	 * Useful for efficient optional-dependency watchers (e.g. PluginHost.use).
 	 */
 	readonly availabilityChanged: readonly RuntimePluginKey[]
 }

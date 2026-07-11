@@ -1,9 +1,7 @@
-import { fileURLToPath } from 'node:url'
 import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/web-management'
 import { Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui } from '@pluxel/runtime/plugin'
+import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import {
 	DEFAULT_ZHIPU_CHAT_MODEL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
@@ -30,7 +28,7 @@ import type {
 	BillingUserSummaryDoc,
 } from './contracts.ts'
 
-const pluginUi = ui(fileURLToPath(new URL('./ui/index.tsx', import.meta.url)))
+const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const OVERVIEW_DOC_ID = 'overview' as const
 const yiqichaApiKeyByCode: Map<string, string> = new Map(
 	Object.entries(yiqichaApiCodes).map(([key, code]) => [code, key]),
@@ -38,32 +36,37 @@ const yiqichaApiKeyByCode: Map<string, string> = new Map(
 
 @Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })
 export class UsageBillingPlugin extends UsageRecorderPlugin {
-	private overview = this.ctx.ext.signaldb.collection<BillingOverviewDoc>({ name: 'overview' })
-	private records = this.ctx.ext.signaldb.collection<BillingUsageRecord>({ name: 'records' })
-	private users = this.ctx.ext.signaldb.collection<BillingUserSummaryDoc>({ name: 'users' })
-	private providers = this.ctx.ext.signaldb.collection<BillingProviderSummaryDoc>({
-		name: 'providers',
-	})
-	private rates = this.ctx.ext.signaldb.collection<BillingRateDoc>({ name: 'rates' })
+	private overview!: ManagementStateCollection<BillingOverviewDoc>
+	private records!: ManagementStateCollection<BillingUsageRecord>
+	private users!: ManagementStateCollection<BillingUserSummaryDoc>
+	private providers!: ManagementStateCollection<BillingProviderSummaryDoc>
+	private rates!: ManagementStateCollection<BillingRateDoc>
 	private data: ExternalGatewayDbHandle | undefined
 	private seq = 1
 
 	override async init(): Promise<void> {
-		await Promise.all([
-			this.overview.ready(),
-			this.records.ready(),
-			this.users.ready(),
-			this.providers.ready(),
-			this.rates.ready(),
-		])
-		this.data = await useExternalGatewayDB(this.ctx)
-		await this.loadRatesFromDB()
-		this.seedDefaultRates()
-		const usageRecords = await this.loadUsageFromDB()
-		this.restoreSeq(usageRecords)
-		this.rebuildSummaries(usageRecords)
-		pluginUi.bind(this.ctx)
-		this.ctx.ext.rpc.expose(() => new UsageBillingRpc(this))
+		await this.ctx.webManagement.use(async (web) => {
+			this.overview = web.state.collection<BillingOverviewDoc>({ name: 'overview' })
+			this.records = web.state.collection<BillingUsageRecord>({ name: 'records' })
+			this.users = web.state.collection<BillingUserSummaryDoc>({ name: 'users' })
+			this.providers = web.state.collection<BillingProviderSummaryDoc>({ name: 'providers' })
+			this.rates = web.state.collection<BillingRateDoc>({ name: 'rates' })
+			await Promise.all([
+				this.overview.ready(),
+				this.records.ready(),
+				this.users.ready(),
+				this.providers.ready(),
+				this.rates.ready(),
+			])
+			this.data = await useExternalGatewayDB(this.ctx)
+			await this.loadRatesFromDB()
+			this.seedDefaultRates()
+			const usageRecords = await this.loadUsageFromDB()
+			this.restoreSeq(usageRecords)
+			this.rebuildSummaries(usageRecords)
+			web.ui.register(pluginUi)
+			web.rpc.expose(() => new UsageBillingRpc(this))
+		})
 		this.registerRoutes()
 		this.ctx.logger.info('Usage billing ready')
 	}

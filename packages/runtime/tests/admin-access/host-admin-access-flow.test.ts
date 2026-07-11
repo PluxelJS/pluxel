@@ -1,6 +1,5 @@
 import '@pluxel/runtime/test'
 import '@pluxel/runtime'
-import '@pluxel/runtime/services/web-management'
 
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'

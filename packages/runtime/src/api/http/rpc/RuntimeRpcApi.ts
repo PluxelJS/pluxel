@@ -37,7 +37,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
-		this.extView = ctx.ext.rpc.createExtensionsView(ctx)
+		this.extView = ctx.webManagement.require().rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -76,7 +76,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	 * 列出所有已注册的 RPC 扩展命名空间
 	 */
 	extensions(): string[] {
-		return this.ctx.ext.rpc.getNamespaces()
+		return this.ctx.webManagement.require().rpc.getNamespaces()
 	}
 
 	async buildSnapshot() {

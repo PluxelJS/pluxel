@@ -505,11 +505,11 @@ export class HttpService {
 		namespace: string,
 		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
-		return this.hostCtx.ext.sse.expose(() => handler, { namespace })
+		return this.hostCtx.webManagement.require().sse.expose(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = this.hostCtx.ext.ui
+		const service = this.hostCtx.webManagement.require().ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return undefined

@@ -1,7 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { ensurePluxelLogging } from '@pluxel/runtime/logger'
-import '@pluxel/runtime/services/web-management'
 import { createStaticRuntime } from '@pluxel/runtime-static'
 import staticRuntime from './pluxel.static.ts'
 import { prepareExternalGatewayRuntime } from './runtime-bootstrap.ts'

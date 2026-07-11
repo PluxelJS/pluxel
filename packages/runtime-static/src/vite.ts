@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 import {
 	importViteSsrModule,
 	pluxelRuntimeSourceVitePlugin,
-	pluxelRuntimeUiBridgeVitePlugin,
 } from '@pluxel/runtime-dev/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
@@ -52,7 +51,6 @@ type ExtensionCompilerConfig = {
 
 type StaticRuntimeViteHmrConfig = {
 	extensionCompiler?: ExtensionCompilerConfig
-	enableWebManagement?: boolean
 }
 
 type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
@@ -121,16 +119,16 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			await ensureStaticRuntimeViteLogging(options.logging)
 			const hmr = options.hmr
 			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
-			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
-				await import('@pluxel/runtime/services/web-management')
-			}
 			const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(config), {
 				configService: config.configService,
 				runtimeState: config.runtimeState,
 				persistence: config.persistence,
 				pluginData: config.pluginData,
-				http: config.http,
-				adminAccess: config.adminAccess,
+				http:
+					config.webManagement !== false && config.webManagement?.enabled === true
+						? withDevWebManagementHttpConfig(config.http)
+						: config.http,
+				webManagement: config.webManagement,
 				logger: { ...config.logger, preset: 'hmr' },
 				profile: config.profile,
 				context: config.context,
@@ -138,7 +136,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			state.host = host
 			await options.prepareHost?.(host)
 
-			if (hmrOptions && hmrOptions.enableWebManagement !== false) {
+			if (
+				hmrOptions &&
+				config.webManagement !== false &&
+				config.webManagement?.enabled === true
+			) {
 				const enabledHmrOptions = hmrOptions ?? {}
 				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
 				await configureStaticRuntimeDevRuntime(server, host, {
@@ -190,7 +192,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 	}
 
-	return [createStaticRuntimeSourcePlugin(), staticRuntimeBuildUiBridgeVitePlugin(), routePlugin]
+	return [createStaticRuntimeSourcePlugin(), routePlugin]
 }
 
 async function ensureStaticRuntimeViteLogging(
@@ -381,15 +383,6 @@ function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][n
 	return { started, disabled, blocked }
 }
 
-function staticRuntimeBuildUiBridgeVitePlugin(): PluginOption {
-	const plugin = pluxelRuntimeUiBridgeVitePlugin()
-	const withBuildApply = (item: PluginOption): PluginOption => {
-		if (!item || typeof item !== 'object' || Array.isArray(item)) return item
-		return { ...(item as Plugin), apply: 'build' }
-	}
-	return Array.isArray(plugin) ? plugin.map(withBuildApply) : withBuildApply(plugin)
-}
-
 function createStaticRuntimeSourcePlugin(): Plugin {
 	return pluxelRuntimeSourceVitePlugin({
 		name: 'pluxel:static-runtime-source',
@@ -481,22 +474,7 @@ async function configureStaticRuntimeDevRuntime(
 		undefined,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	if (options.enableWebManagement !== false) {
-		await import('@pluxel/runtime/services/web-management')
-		ctx.config.adminAccess = {
-			enabled: true,
-			exposure: ctx.config.adminAccess?.exposure ?? 'private',
-			...(ctx.config.adminAccess?.oidc ? { oidc: ctx.config.adminAccess.oidc } : {}),
-		}
-		ctx.config.http = withDevWebManagementHttpConfig(ctx.config.http)
-		ctx.config.extensionService = {
-			...ctx.config.extensionService,
-			enabled: true,
-		}
-	}
-
-	const extensionStore = ctx.ext.ui
-	extensionStore.reconfigure(ctx.config.extensionService)
+	const extensionStore = ctx.webManagement.require().ui
 	const extensionCompiler = new runtimeDev.ExtensionCompilerService(
 		ctx,
 		{ store: extensionStore, viteServer: options.viteServer, enabled: true },

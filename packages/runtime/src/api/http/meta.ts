@@ -5,14 +5,15 @@ import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
 function readInternalMeta(
 	pluginCtx: PluginContext,
 ) {
-	const extensionService = pluginCtx.ext.ui
+	const web = pluginCtx.webManagement.require()
+	const extensionService = web.ui
 	const manifest = extensionService?.getManifest()
 	const modules = Array.isArray(manifest?.modules) ? manifest.modules.length : 0
 	return {
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
 		sse: {
-			namespaces: pluginCtx.ext.sse.getNamespaces(),
+			namespaces: web.sse.getNamespaces(),
 		},
 		extensions: {
 			version: manifest?.version ?? 0,
@@ -32,6 +33,6 @@ export const metaRoutes = (app: AnyElysiaApp) =>
 			})
 			.get('/sse', ({ set, pluginCtx }) => {
 				set.headers['cache-control'] = 'no-store'
-				return { namespaces: pluginCtx.ext.sse.getNamespaces() }
+				return { namespaces: pluginCtx.webManagement.require().sse.getNamespaces() }
 			}),
 	)
