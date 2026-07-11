@@ -44,7 +44,7 @@ export class DemoClockFixed extends DemoClock {
 	}
 }
 
-@Plugin({ name: 'DemoClockConsumer', dependencies: [DemoClock] })
+@Plugin({ name: 'DemoClockConsumer' })
 export class DemoClockConsumer extends BasePlugin {
 	constructor(private readonly clock: DemoClock) {
 		super()

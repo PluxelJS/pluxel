@@ -17,6 +17,7 @@ import {
 	signalDbNamespace,
 } from '../../web/plugin-ui/signaldb-contracts'
 import type { SseChannel } from './SseService'
+import { requireWebManagement } from '../web-management/WebManagementService'
 
 export interface SignalDbCollectionOptions<T extends SignalDbItem> {
 	name: string
@@ -155,7 +156,7 @@ export class SignalDbService {
 		if (this.streamRegisteredByPlugin.has(pluginName)) return
 		this.streamRegisteredByPlugin.add(pluginName)
 
-		this.ctx.webManagement.require().sse.expose(
+		requireWebManagement(this.ctx).sse.expose(
 			() => (channel) => {
 				const channels = this.channelsFor(pluginName)
 				channels.add(channel)

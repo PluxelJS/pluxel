@@ -22,8 +22,6 @@ export interface PluginMetadata {
 	 */
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
-	/** Required constructor dependency tokens, in parameter order. */
-	dependencies?: readonly Identifier<unknown>[]
 	/** Required plugin-local features whose config/dependency metadata participates in planning. */
 	features?: readonly Identifier<unknown>[]
 	[key: string]: unknown

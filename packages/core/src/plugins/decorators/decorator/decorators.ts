@@ -15,6 +15,7 @@ import {
 import {
 	type ConfigSchemaList,
 	type DeclaredMetaView,
+	PARAM_TYPES,
 	type PluginMetadata,
 } from './types'
 import { __registerUsedFeatures__ } from './api'
@@ -79,16 +80,16 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 
 		const s = S(ctor)
 
-		// Required plugin dependencies are explicit author metadata. Decorator-emitted
-		// design:paramtypes is intentionally not an authoring fallback.
-		const rt = meta.dependencies ?? EMPTY_ARR
-		s.rtypes = Array.isArray(rt) ? [...rt] : [...rt]
+		// Constructor DI remains the canonical authoring model. Explicit token
+		// overrides are applied separately by the low-level metadata API.
+		const rt = (Reflect.getMetadata(PARAM_TYPES, ctor) as unknown[]) ?? EMPTY_ARR
+		s.rtypes = Array.isArray(rt) ? rt : [...rt]
 
 		// 存储 ctor 引用
 		s.ctor = ctor as PluginIdentifier
 
 		// 提取并存储 declaredName
-		const { name: declaredName, dependencies: _dependencies, features, ...restMeta } = meta
+		const { name: declaredName, features, ...restMeta } = meta
 		s.declaredName = declaredName || nameOf(ctor)
 		const mergedMeta =
 			s.declaredMeta && Object.keys(restMeta).length > 0

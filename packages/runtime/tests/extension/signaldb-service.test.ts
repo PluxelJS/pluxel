@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
+import { requireWebManagement } from '../../src/services/web-management/WebManagementService'
 import { SignalDbService } from '../../src/services/plugin-interaction/SignalDbService'
 
 const runtimeContexts = new Set<ReturnType<typeof createRuntimeContext>>()
@@ -14,7 +15,6 @@ function createSignalDbTestContext() {
 	const runtime = createRuntimeContext()
 	runtimeContexts.add(runtime)
 	const sseDispose = vi.fn(() => {})
-	const sseRegister = vi.fn(() => sseDispose)
 	const deferred: Array<() => void> = []
 	const ctx: any = runtime.ctx
 	const effects = ctx.effects
@@ -27,9 +27,10 @@ function createSignalDbTestContext() {
 		},
 		dispose: () => effects.dispose(),
 	})
-	defineTestProperty(ctx, 'webManagement', {
-		require: () => ({ sse: { expose: sseRegister } }),
-	})
+	const sseExpose = vi
+		.spyOn(requireWebManagement(ctx).sse, 'expose')
+		.mockImplementation(() => sseDispose)
+	defineTestProperty(ctx, '__sseExpose', sseExpose)
 	defineTestProperty(ctx, 'pluginData', {
 		persistenceForCollection: vi.fn(async () => ({
 			load: async () => ({ items: [] }),
@@ -204,7 +205,7 @@ describe('SignalDbService', () => {
 		})
 
 		await collection.ready()
-		expect(ctx.webManagement.require().sse.expose).toHaveBeenCalledTimes(1)
+		expect(ctx.__sseExpose).toHaveBeenCalledTimes(1)
 
 		const streamCleanup = ctx.__deferred[0]
 		expect(typeof streamCleanup).toBe('function')
@@ -212,7 +213,7 @@ describe('SignalDbService', () => {
 
 		await service.loadCollectionSync('events')
 
-		expect(ctx.webManagement.require().sse.expose).toHaveBeenCalledTimes(2)
+		expect(ctx.__sseExpose).toHaveBeenCalledTimes(2)
 	})
 
 	it('replays collection snapshots when a signaldb SSE channel attaches late', async () => {
@@ -225,7 +226,7 @@ describe('SignalDbService', () => {
 		await collection.ready()
 		collection.insert({ id: 'a', value: 1 })
 
-		const factory = ctx.webManagement.require().sse.expose.mock.calls[0][0]
+		const factory = ctx.__sseExpose.mock.calls[0][0]
 		const handler = factory(ctx)
 		const channel = {
 			closed: false,

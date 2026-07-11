@@ -17,6 +17,7 @@ import {
 } from '@pluxel/runtime-dev/hmr-log'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+import { requireWebManagement } from '@pluxel/runtime/internal'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
 	normalizePath,
@@ -474,7 +475,7 @@ async function configureStaticRuntimeDevRuntime(
 		undefined,
 	)
 	ctx.config.extensionCompiler = extensionCompilerConfig
-	const extensionStore = ctx.webManagement.require().ui
+	const extensionStore = requireWebManagement(ctx).ui
 	const extensionCompiler = new runtimeDev.ExtensionCompilerService(
 		ctx,
 		{ store: extensionStore, viteServer: options.viteServer, enabled: true },

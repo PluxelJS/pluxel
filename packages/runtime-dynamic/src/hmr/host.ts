@@ -7,6 +7,7 @@ import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
 	createNodeWorkspaceFsBackend,
+	requireWebManagement,
 	resolveRuntimeStoragePaths,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
@@ -354,7 +355,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 			plan.vite,
 		)
 		ctx.config.extensionCompiler = extensionCompilerConfig
-		const extensionStore = ctx.webManagement.require().ui
+		const extensionStore = requireWebManagement(ctx).ui
 		extensionCompiler = new ExtensionCompilerService(
 			ctx,
 			{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },

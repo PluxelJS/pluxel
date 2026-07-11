@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { setParamToken } from '@pluxel/core'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import {
 	BasePlugin,
@@ -353,12 +354,13 @@ describe('@pluxel/runtime-static', () => {
 		@Plugin({ name: 'DepA' })
 		class DepA extends BasePlugin {}
 
-		@Plugin({ name: 'DepB', dependencies: [DepA] })
+		@Plugin({ name: 'DepB' })
 		class DepB extends BasePlugin {
 			constructor(_a: DepA) {
 				super()
 			}
 		}
+		setParamToken(DepB, 0, DepA)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({ name: 'static-deps', plugins: [DepA, DepB] }),
@@ -391,12 +393,13 @@ describe('@pluxel/runtime-static', () => {
 		class UsageBillingPlugin extends UsageRecorderPlugin {}
 		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
 
-		@Plugin({ name: 'ZhipuProviderPlugin', dependencies: [UsageRecorderPlugin] })
+		@Plugin({ name: 'ZhipuProviderPlugin' })
 		class ZhipuProviderPlugin extends BasePlugin {
 			constructor(_recorder: UsageRecorderPlugin) {
 				super()
 			}
 		}
+		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({
@@ -476,12 +479,13 @@ describe('@pluxel/runtime-static', () => {
 			}
 		}
 
-		@Plugin({ name: 'ConsumerBlocked', dependencies: [ProviderFail] })
+		@Plugin({ name: 'ConsumerBlocked' })
 		class ConsumerBlocked extends BasePlugin {
 			constructor(_provider: ProviderFail) {
 				super()
 			}
 		}
+		setParamToken(ConsumerBlocked, 0, ProviderFail)
 
 		const host = await createStaticRuntimeHost(
 			defineStaticRuntimeConfig({

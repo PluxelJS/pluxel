@@ -1,6 +1,6 @@
 import '@pluxel/runtime/register/static'
 import '@pluxel/runtime/services/vault'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
@@ -157,7 +157,7 @@ export function parseKookConversationId(value: string): { direct: boolean; targe
 	return { direct: kind === 'direct', targetId: value.slice(separator + 1) }
 }
 
-@Plugin({ name: 'KookAdapterPlugin', startTimeoutMs: 10_000, dependencies: [ChatHubPlugin] })
+@Plugin({ name: 'KookAdapterPlugin', startTimeoutMs: 10_000 })
 export class KookAdapterPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<KookSettingsDoc>
 	private status?: ManagementStateCollection<KookStatusDoc>
@@ -456,6 +456,8 @@ export class KookAdapterPlugin extends BasePlugin {
 		return doc
 	}
 }
+
+setParamToken(KookAdapterPlugin, 0, ChatHubPlugin)
 
 export class KookAdapterRpc extends RpcTarget {
 	constructor(private readonly plugin: KookAdapterPlugin) {

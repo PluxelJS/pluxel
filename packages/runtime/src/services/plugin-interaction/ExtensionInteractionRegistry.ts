@@ -27,11 +27,7 @@ export class ExtensionInteractionRegistry {
 	private readonly sessionInputById = new Map<string, unknown>()
 	private readonly warningSignatureByKey = new Map<string, string>()
 
-	constructor(public ctx: Context) {}
-
-	setContext(ctx: Context): void {
-		this.ctx = ctx
-	}
+	constructor(private readonly ctx: Context) {}
 
 	addBuiltin(def: BuiltinExtensionDef): void {
 		const pluginName = def.pluginName

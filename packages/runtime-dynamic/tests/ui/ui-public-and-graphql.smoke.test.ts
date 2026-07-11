@@ -6,7 +6,7 @@ import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
-import { createCompiledExtensionModule } from '@pluxel/runtime/internal'
+import { createCompiledExtensionModule, requireWebManagement } from '@pluxel/runtime/internal'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR UI smoke', () => {
@@ -176,7 +176,7 @@ describe('HMR UI smoke', () => {
 
 		await withRuntimeContext(
 			async (ctx) => {
-				await ctx.webManagement.require().ui.commitCompiledModule(
+				await requireWebManagement(ctx).ui.commitCompiledModule(
 					createCompiledExtensionModule({
 						pluginName: 'DemoPlugin',
 						sourceHash: 'demo-hash',
@@ -185,7 +185,7 @@ describe('HMR UI smoke', () => {
 					{ artifactRoot: resolve(fixture.path, 'artifacts') },
 				)
 
-				const manifestUrl = ctx.webManagement.require().ui.getCompiledModule('DemoPlugin')?.manifestUrl
+				const manifestUrl = requireWebManagement(ctx).ui.getCompiledModule('DemoPlugin')?.manifestUrl
 				expect(manifestUrl).toBeTruthy()
 
 				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))

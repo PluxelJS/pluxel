@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import {
 	ChatHubPlugin,
 	contentText,
@@ -20,7 +20,7 @@ type SandboxInput = {
 
 const MAX_MESSAGES = 500
 
-@Plugin({ name: 'ChatSandboxPlugin', dependencies: [ChatHubPlugin] })
+@Plugin({ name: 'ChatSandboxPlugin' })
 export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
@@ -114,3 +114,5 @@ export class ChatSandboxPlugin extends BasePlugin {
 			this.messages.splice(0, this.messages.length - MAX_MESSAGES)
 	}
 }
+
+setParamToken(ChatSandboxPlugin, 0, ChatHubPlugin)

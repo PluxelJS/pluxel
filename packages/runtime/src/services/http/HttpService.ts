@@ -17,6 +17,7 @@ import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from
 import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
 import { resolveAdminAccessConfig } from '../admin-access/model'
 import type { SseChannel } from '../plugin-interaction/SseService'
+import { requireWebManagement } from '../web-management/WebManagementService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
 const serviceName = 'http' as const
@@ -505,11 +506,11 @@ export class HttpService {
 		namespace: string,
 		handler: (channel: SseChannel) => undefined | (() => void),
 	) {
-		return this.hostCtx.webManagement.require().sse.expose(() => handler, { namespace })
+		return requireWebManagement(this.hostCtx).sse.expose(() => handler, { namespace })
 	}
 
 	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = this.hostCtx.webManagement.require().ui
+		const service = requireWebManagement(this.hostCtx).ui
 		if (!service) {
 			channel.emit('error', { reason: 'Extension service unavailable' })
 			return undefined

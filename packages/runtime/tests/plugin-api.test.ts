@@ -5,6 +5,7 @@ import { worker } from '../src/plugin'
 import { ui } from '../src/web-management/ui'
 import * as runtimeAuthoring from '../src/index'
 import * as pluginAuthoring from '../src/plugin'
+import { requireWebManagement } from '../src/services/web-management/WebManagementService'
 
 function createPluginCtx() {
 	const root: any = {
@@ -47,15 +48,54 @@ describe('@pluxel/runtime author declarations', () => {
 			'__registerUsedFeatures__',
 			'__setConfigLayout__',
 			'__setConfigSource__',
-			'setParamToken',
-			'setParamTokens',
-			'clearParamToken',
-			'clearParamTokens',
 			'UseFeature',
 		]) {
 			expect(runtimeAuthoring).not.toHaveProperty(removed)
 		}
 		expect(pluginAuthoring).not.toHaveProperty('ui')
+	})
+
+	it('exposes only the optional Web Management gate on plugin contexts', async () => {
+		const { createRuntimeContext } = await import('../src/test')
+		const runtime = createRuntimeContext()
+		try {
+			expect(runtime.ctx.webManagement.enabled).toBe(true)
+			expect(typeof runtime.ctx.webManagement.use).toBe('function')
+			expect(runtime.ctx.webManagement).not.toHaveProperty('require')
+			expect(runtime.ctx.webManagement).not.toHaveProperty('install')
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
+	it('keeps Web Management service contexts isolated while sharing host registries', async () => {
+		const { createRuntimeContext } = await import('../src/test')
+		const runtime = createRuntimeContext()
+		try {
+			const first = runtime.ctx.extend({ name: 'first-plugin' })
+			const second = runtime.ctx.extend({ name: 'second-plugin' })
+			Object.defineProperty(first, 'pluginInfo', {
+				value: { id: 'FirstPlugin' },
+				configurable: true,
+			})
+			Object.defineProperty(second, 'pluginInfo', {
+				value: { id: 'SecondPlugin' },
+				configurable: true,
+			})
+
+			const firstServices = requireWebManagement(first)
+			const secondServices = requireWebManagement(second)
+
+			expect((firstServices.rpc as unknown as { ctx: unknown }).ctx).toBe(first)
+			expect((secondServices.rpc as unknown as { ctx: unknown }).ctx).toBe(second)
+			expect(firstServices.rpc).not.toBe(secondServices.rpc)
+
+			firstServices.rpc.expose(() => ({}) as never)
+			expect(secondServices.rpc.getNamespaces()).toContain('FirstPlugin')
+			expect((firstServices.rpc as unknown as { ctx: unknown }).ctx).toBe(first)
+		} finally {
+			await runtime.dispose()
+		}
 	})
 
 	it('ui() creates a pure source declaration', () => {

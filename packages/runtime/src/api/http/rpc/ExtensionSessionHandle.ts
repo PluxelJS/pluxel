@@ -7,6 +7,7 @@ import type {
 	ExtensionSessionLoadResult,
 	ExtensionSessionMutationResult,
 } from '../../../web/protocol'
+import { requireWebManagement } from '../../../services/web-management/WebManagementService'
 
 export class ExtensionSessionHandle extends RpcTarget implements ExtensionSessionHandleApi {
 	constructor(private readonly ctx: Context) {
@@ -14,18 +15,18 @@ export class ExtensionSessionHandle extends RpcTarget implements ExtensionSessio
 	}
 
 	async loadSession(sessionId: string): Promise<ExtensionSessionLoadResult> {
-		return await this.ctx.webManagement.require().ui.loadSession(String(sessionId ?? '').trim())
+		return await requireWebManagement(this.ctx).ui.loadSession(String(sessionId ?? '').trim())
 	}
 
 	async syncDraft(input: ExtensionSessionDraftSyncInput): Promise<ExtensionSessionMutationResult> {
-		return await this.ctx.webManagement.require().ui.syncDraft({
+		return await requireWebManagement(this.ctx).ui.syncDraft({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			draft: input?.draft,
 		})
 	}
 
 	async commitSession(input: ExtensionSessionCommitInput): Promise<ExtensionSessionMutationResult> {
-		return await this.ctx.webManagement.require().ui.commitSession({
+		return await requireWebManagement(this.ctx).ui.commitSession({
 			sessionId: String(input?.sessionId ?? '').trim(),
 			result: input?.result,
 		})

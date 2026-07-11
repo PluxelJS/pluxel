@@ -86,7 +86,7 @@ override async init() {
 如果一个插件没有另一个插件就不能工作，应该把它建模为插件依赖。比如订单插件需要数据库 provider，就依赖 `CommerceDbPlugin`。
 
 ```ts
-@Plugin({ name: 'Orders', dependencies: [CommerceDbPlugin] })
+@Plugin({ name: 'Orders' })
 class OrdersPlugin extends BasePlugin {
 	constructor(private readonly db: CommerceDbPlugin) {
 		super()
@@ -159,16 +159,18 @@ override init() {
 
 ## 依赖和 Feature 声明
 
-required 插件依赖必须同时出现在 constructor 和装饰器元数据中：
+required 插件依赖只需要写在 constructor 中。Pluxel 使用 TypeScript `design:paramtypes` 读取运行时 token，不要求在 `@Plugin` 中重复声明：
 
 ```ts
-@Plugin({ name: 'Orders', dependencies: [CommerceDbPlugin] })
+@Plugin({ name: 'Orders' })
 class OrdersPlugin extends BasePlugin {
 	constructor(private readonly db: CommerceDbPlugin) {
 		super()
 	}
 }
 ```
+
+抽象 token 或不生成 decorator metadata 的直接 transpiler/runner 场景，继续使用既有的 `setParamToken()` 低层覆盖；普通插件不需要写它。
 
 required 本地 feature 使用 `this.features.use()`，并显式列入 `@Plugin({ features: [...] })`。正确性不依赖 class-field AST 推断。
 

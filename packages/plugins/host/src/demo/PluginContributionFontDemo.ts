@@ -81,10 +81,7 @@ export class PluginContributionFontManager extends BasePlugin {
 }
 
 // Consumer owns config and the interaction surface placement.
-@Plugin({
-	name: 'PluginContributionFontConsumer',
-	dependencies: [PluginContributionFontManager],
-})
+@Plugin({ name: 'PluginContributionFontConsumer' })
 export class PluginContributionFontConsumer extends BasePlugin {
 	appearance = this.configs.use(ConsumerAppearanceConfig)
 

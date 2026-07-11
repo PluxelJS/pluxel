@@ -25,6 +25,7 @@ import { pluginSchema } from '../../api/usecases/pluginConfig'
 import { requireRouteCapability } from '../../runtime/capabilities'
 import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
 import { SignalDbService } from '../plugin-interaction/SignalDbService'
+import { requireWebManagement } from '../web-management/WebManagementService'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
 
@@ -170,7 +171,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
-					context.pluginCtx.webManagement.require().sse.stream(context),
+					requireWebManagement(context.pluginCtx).sse.stream(context),
 				),
 			),
 		)

@@ -721,7 +721,7 @@ const pluginConstructorNoTypeOnlyImports = createRule(
 		fixable: 'code',
 		messages: {
 			typeOnly:
-				'`{{names}}` is used as an `@Plugin` constructor dependency and must come from a runtime import so it can also be listed in `dependencies`.',
+				'`{{names}}` is used in an `@Plugin` constructor and must come from a runtime import so `design:paramtypes` can resolve the dependency token.',
 		},
 	},
 	(context) => ({

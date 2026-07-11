@@ -37,6 +37,32 @@ export interface WebManagementBackend {
 	dispose?(): void | Promise<void>
 }
 
+const installedBackends = new WeakMap<WebManagementService, WebManagementBackend>()
+
+function rootGate(ctx: Context): WebManagementService {
+	return ctx.root.webManagement
+}
+
+function backendFor(ctx: Context): WebManagementBackend | undefined {
+	return installedBackends.get(rootGate(ctx))
+}
+
+function authorView(services: WebManagementBackendServices): PluginWebManagement {
+	return {
+		ui: {
+			register: services.ui.register.bind(services.ui),
+			builtin: { doc: services.ui.doc.bind(services.ui) },
+			interaction: {
+				surface: services.ui.surface.bind(services.ui),
+				offer: services.ui.offer.bind(services.ui),
+			},
+		},
+		rpc: { expose: services.rpc.expose.bind(services.rpc) },
+		sse: { expose: services.sse.expose.bind(services.sse) },
+		state: { collection: services.state.collection.bind(services.state) },
+	}
+}
+
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Services {
@@ -47,53 +73,47 @@ declare module '@pluxel/core' {
 
 @Injectable({ key: serviceName })
 export class WebManagementService {
-	private backend: WebManagementBackend | undefined
-
 	constructor(
 		public ctx: Context,
 		_cfg: unknown,
 	) {}
 
 	get enabled(): boolean {
-		return this.backend !== undefined
+		return backendFor(this.ctx) !== undefined
 	}
 
 	use<T>(callback: (web: PluginWebManagement) => T): T | undefined {
-		const backend = this.backend
+		const backend = backendFor(this.ctx)
 		if (!backend) return undefined
-		const services = backend.forContext(this.ctx)
-		return callback({
-			ui: {
-				register: services.ui.register.bind(services.ui),
-				builtin: services.ui.builtin,
-				interaction: services.ui.interaction,
-			},
-			rpc: { expose: services.rpc.expose.bind(services.rpc) },
-			sse: { expose: services.sse.expose.bind(services.sse) },
-			state: { collection: services.state.collection.bind(services.state) },
-		})
+		return callback(authorView(backend.forContext(this.ctx)))
 	}
+}
 
-	/** @internal Host/runtime entry. Plugins use use(). */
-	require(): WebManagementBackendServices {
-		const backend = this.backend
-		if (!backend) {
-			throw new Error('[pluxel/runtime] Web Management is not enabled for this host.')
-		}
-		return backend.forContext(this.ctx)
+/** @internal Runtime-only access to the installed backend services. */
+export function requireWebManagement(ctx: Context): WebManagementBackendServices {
+	const backend = backendFor(ctx)
+	if (!backend) {
+		throw new Error('[pluxel/runtime] Web Management is not enabled for this host.')
 	}
+	return backend.forContext(ctx)
+}
 
-	/** @internal Installed by static/dynamic host launchers before plugin commit. */
-	install(backend: WebManagementBackend): () => void {
-		if (this.backend) throw new Error('[pluxel/runtime] Web Management is already installed.')
-		this.backend = backend
-		let active = true
-		return () => {
-			if (!active) return
-			active = false
-			if (this.backend !== backend) return
-			this.backend = undefined
-			void backend.dispose?.()
-		}
+/** @internal Installed by host launchers before the first plugin commit. */
+export function installWebManagementBackend(
+	ctx: Context,
+	backend: WebManagementBackend,
+): () => void {
+	const gate = rootGate(ctx)
+	if (installedBackends.has(gate)) {
+		throw new Error('[pluxel/runtime] Web Management is already installed.')
+	}
+	installedBackends.set(gate, backend)
+	let active = true
+	return () => {
+		if (!active) return
+		active = false
+		if (installedBackends.get(gate) !== backend) return
+		installedBackends.delete(gate)
+		void backend.dispose?.()
 	}
 }

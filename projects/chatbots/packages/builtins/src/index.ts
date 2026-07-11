@@ -1,8 +1,8 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 
-@Plugin({ name: 'ChatBuiltinsPlugin', dependencies: [ChatCommandsPlugin, ChatHubPlugin] })
+@Plugin({ name: 'ChatBuiltinsPlugin' })
 export class ChatBuiltinsPlugin extends BasePlugin {
 	constructor(
 		private readonly commands: ChatCommandsPlugin,
@@ -48,3 +48,6 @@ export class ChatBuiltinsPlugin extends BasePlugin {
 		})
 	}
 }
+
+setParamToken(ChatBuiltinsPlugin, 0, ChatCommandsPlugin)
+setParamToken(ChatBuiltinsPlugin, 1, ChatHubPlugin)

@@ -163,7 +163,6 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	getManifest(): ExtensionManifest {
-		this.syncInteractionContext()
 		if (!this.enabled)
 			return {
 				version: 0,
@@ -242,7 +241,6 @@ export class ExtensionService implements ExtensionModuleStore {
 
 	async removePlugin(pluginName: string): Promise<void> {
 		if (!this.enabled) return
-		this.syncInteractionContext()
 		this.artifactRootsByPlugin.delete(pluginName)
 		this.moduleStatesByPlugin.delete(pluginName)
 		this.interactions.clearPlugin(pluginName)
@@ -288,7 +286,6 @@ export class ExtensionService implements ExtensionModuleStore {
 	 */
 	private registerBuiltin(def: Omit<BuiltinExtensionDef, 'pluginName'>): () => void {
 		if (!this.enabled) return () => {}
-		this.syncInteractionContext()
 		const currentPluginName = this.ctx.pluginInfo.id
 		const id = String(def.id ?? '').trim()
 		const point = String(def.point ?? '').trim()
@@ -353,7 +350,6 @@ export class ExtensionService implements ExtensionModuleStore {
 		},
 	): () => void {
 		if (!this.enabled) return () => {}
-		this.syncInteractionContext()
 		const pluginName = this.ctx.pluginInfo.id
 		const point = (input.point ?? ('plugin:tabs' as P)) as P
 		const id = String(input.id ?? '').trim()
@@ -433,7 +429,6 @@ export class ExtensionService implements ExtensionModuleStore {
 		},
 	): () => void {
 		if (!this.enabled) return () => {}
-		this.syncInteractionContext()
 		const pluginName = this.ctx.pluginInfo.id
 		const point = (input.point ?? ('plugin:tabs' as P)) as P
 		const id = String(input.id ?? '').trim()
@@ -483,17 +478,14 @@ export class ExtensionService implements ExtensionModuleStore {
 	}
 
 	async loadSession(sessionId: string) {
-		this.syncInteractionContext()
 		return await this.interactions.loadSession(sessionId)
 	}
 
 	async syncDraft(input: { sessionId: string; draft: unknown }) {
-		this.syncInteractionContext()
 		return await this.interactions.syncDraft(input)
 	}
 
 	async commitSession(input: { sessionId: string; result: unknown }) {
-		this.syncInteractionContext()
 		return await this.interactions.commitSession(input)
 	}
 
@@ -550,10 +542,6 @@ export class ExtensionService implements ExtensionModuleStore {
 			version: this.manifestVersion,
 			pluginName,
 		})
-	}
-
-	private syncInteractionContext(): void {
-		this.interactions.setContext(this.ctx)
 	}
 
 	private getModuleStatesSnapshot(): ExtensionModuleState[] {

@@ -15,12 +15,17 @@ export type { RuntimeEvents } from './events'
 export {
 	BaseFeature,
 	BasePlugin,
+	clearParamToken,
+	clearParamTokens,
 	cfg,
 	Context,
 	defineLazyFeature,
 	ForkablePlugin,
+	getStoredParamTokens,
 	HostBoundFeature,
 	Plugin,
+	setParamToken,
+	setParamTokens,
 } from '@pluxel/core'
 
 type ConfigSchema =

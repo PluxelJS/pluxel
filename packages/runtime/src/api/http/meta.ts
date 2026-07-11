@@ -1,11 +1,12 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
+import { requireWebManagement } from '../../services/web-management/WebManagementService'
 
 function readInternalMeta(
 	pluginCtx: PluginContext,
 ) {
-	const web = pluginCtx.webManagement.require()
+	const web = requireWebManagement(pluginCtx)
 	const extensionService = web.ui
 	const manifest = extensionService?.getManifest()
 	const modules = Array.isArray(manifest?.modules) ? manifest.modules.length : 0
@@ -33,6 +34,6 @@ export const metaRoutes = (app: AnyElysiaApp) =>
 			})
 			.get('/sse', ({ set, pluginCtx }) => {
 				set.headers['cache-control'] = 'no-store'
-				return { namespaces: pluginCtx.webManagement.require().sse.getNamespaces() }
+				return { namespaces: requireWebManagement(pluginCtx).sse.getNamespaces() }
 			}),
 	)

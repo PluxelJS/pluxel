@@ -20,6 +20,7 @@ import { ensureFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
 import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
+import { requireWebManagement } from '../../../services/web-management/WebManagementService'
 import type {
 	ConfigFieldMutation,
 	ExtensionUiRpcMap,
@@ -37,7 +38,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
-		this.extView = ctx.webManagement.require().rpc.createExtensionsView(ctx)
+		this.extView = requireWebManagement(ctx).rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -76,7 +77,7 @@ export class RuntimeRpcApi extends RpcTarget {
 	 * 列出所有已注册的 RPC 扩展命名空间
 	 */
 	extensions(): string[] {
-		return this.ctx.webManagement.require().rpc.getNamespaces()
+		return requireWebManagement(this.ctx).rpc.getNamespaces()
 	}
 
 	async buildSnapshot() {

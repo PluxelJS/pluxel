@@ -15,7 +15,7 @@ export class DemoWorker extends ForkablePlugin {
 	}
 }
 
-@Plugin({ name: 'DemoWorkerConsumer', dependencies: [DemoWorker] })
+@Plugin({ name: 'DemoWorkerConsumer' })
 export class DemoWorkerConsumer extends BasePlugin {
 	constructor(private readonly worker: DemoWorker) {
 		super()

@@ -16,7 +16,7 @@ import type {
 } from '@repo/external-api-gateway-shared/gateway'
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
@@ -57,10 +57,7 @@ const pluginUi = ui(import.meta.url, './ui/index.tsx')
 export const EXTERNAL_GATEWAY_ROUTE_BASE = '/external-gateway'
 export const EXTERNAL_GATEWAY_RPC_PATH = `${EXTERNAL_GATEWAY_ROUTE_BASE}/rpc`
 
-@Plugin({
-	name: 'ExternalGatewayPlugin',
-	dependencies: [ZhipuProviderPlugin, YiqichaProviderPlugin],
-})
+@Plugin({ name: 'ExternalGatewayPlugin' })
 export class ExternalGatewayPlugin extends BasePlugin {
 	private tokens!: ManagementStateCollection<GatewayTokenDoc>
 	private status!: ManagementStateCollection<GatewayStatusDoc>
@@ -286,6 +283,8 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 }
 
+setParamToken(ExternalGatewayPlugin, 0, ZhipuProviderPlugin)
+setParamToken(ExternalGatewayPlugin, 1, YiqichaProviderPlugin)
 
 export class ExternalGatewayRpc extends RpcTarget {
 	constructor(private readonly gateway: ExternalGatewayPlugin) {

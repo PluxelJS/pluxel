@@ -15,7 +15,6 @@ class CacheFeature extends BaseFeature {
 
 @Plugin({
 	name: 'PluginFeatureUse',
-	dependencies: [KvPlugin],
 	features: [CacheFeature],
 })
 export class PluginFeatureUse extends BasePlugin {

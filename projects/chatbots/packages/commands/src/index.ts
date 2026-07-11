@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { ChatHubPlugin, type ChatContent, type ChatHandlerContext } from '@repo/chatbots-hub'
 
 export type ChatCommandContext = ChatHandlerContext & {
@@ -88,7 +88,7 @@ export class CommandRegistry {
 	}
 }
 
-@Plugin({ name: 'ChatCommandsPlugin', dependencies: [ChatHubPlugin] })
+@Plugin({ name: 'ChatCommandsPlugin' })
 export class ChatCommandsPlugin extends BasePlugin {
 	private registry!: CommandRegistry
 
@@ -133,5 +133,7 @@ export class ChatCommandsPlugin extends BasePlugin {
 	}
 }
 
+
+setParamToken(ChatCommandsPlugin, 0, ChatHubPlugin)
 
 export { tokenize as tokenizeCommand }

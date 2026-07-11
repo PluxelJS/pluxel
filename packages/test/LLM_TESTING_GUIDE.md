@@ -11,7 +11,6 @@
 ```ts
 @Plugin({
 	name: 'Consumer',
-	dependencies: [Provider],
 	features: [CacheFeature],
 })
 class Consumer extends BasePlugin {

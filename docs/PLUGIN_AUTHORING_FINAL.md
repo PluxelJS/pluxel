@@ -66,6 +66,8 @@ export class BillingPlugin extends BasePlugin {
 - registrations inherit the current plugin context and effects lifetime;
 - Web Management absence never makes the plugin fail to start.
 
+The backend may share host-level registries, but every plugin receives a context-bound service view. Shared services must never switch a mutable current `ctx`; concurrent plugin initialization and asynchronous registrations therefore cannot leak plugin identity or effects scope across contexts. Backend installation and required internal access are runtime-only functions and are not methods on the plugin-visible gate.
+
 There is deliberately no null RPC, null UI registry, or null SignalDB collection. Fake successful stateful APIs hide errors and make headless behavior ambiguous.
 
 ## Web Management surface
@@ -167,6 +169,8 @@ There are four non-overlapping concepts:
 - `features.load(spec)`: optional/lazy plugin-local composition.
 
 Plugin integration does not live on FeatureHost. `features.dep()` is removed. `features.load()` replaces the old probe-style naming because it performs asynchronous conditional loading rather than a synchronous probe.
+
+Required plugin dependencies keep the established constructor DI model. Runtime tokens come from TypeScript `design:paramtypes`; authors do not duplicate constructor dependencies in `@Plugin` metadata. The established low-level token overrides remain available for abstract tokens and direct transpiler/runner paths that do not emit decorator metadata.
 
 Feature declarations that affect config or required dependency metadata must be explicit in `@Plugin({ features: [...] })`. Correctness must not depend on a class-field AST transform.
 

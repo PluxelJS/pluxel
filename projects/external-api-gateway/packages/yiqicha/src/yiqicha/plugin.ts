@@ -22,7 +22,7 @@ import {
 	type YiqichaResponseCacheRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
@@ -90,7 +90,7 @@ type ForwardApiOptions = {
 	noCache?: boolean
 }
 
-@Plugin({ name: 'YiqichaProviderPlugin', dependencies: [UsageRecorderPlugin] })
+@Plugin({ name: 'YiqichaProviderPlugin' })
 export class YiqichaProviderPlugin extends BasePlugin {
 	private settings!: ManagementStateCollection<YiqichaSettingsDoc>
 	private status!: ManagementStateCollection<YiqichaStatusDoc>
@@ -798,6 +798,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	}
 }
 
+setParamToken(YiqichaProviderPlugin, 0, UsageRecorderPlugin)
 
 export class YiqichaProviderRpc extends RpcTarget {
 	constructor(private readonly plugin: YiqichaProviderPlugin) {
