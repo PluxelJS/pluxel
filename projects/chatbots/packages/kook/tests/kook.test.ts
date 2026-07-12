@@ -62,6 +62,8 @@ describe('KOOK adapter contracts', () => {
 			apiPrefix: '/api/v3',
 		})
 		expect(Object.isFrozen(first.$.info)).toBe(true)
+		expect(Object.isFrozen(first.$.status)).toBe(true)
+		expect(Object.isFrozen(first.$.status.gateway)).toBe(true)
 		expect(JSON.stringify(first)).not.toContain('vault-secret')
 		await first.sendMessage({ target_id: 'channel-1', content: 'hello' })
 		expect(await requests[0]?.json()).toMatchObject({ content: 'hello' })

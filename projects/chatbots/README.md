@@ -46,11 +46,15 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。独立 client 与受管 Bot 继承同一个 native API prototype，180 个方法在整个包中只安装一份；Bot 不会因此暴露 client 的 `call`。
 
+`telegramBot.$.status.polling` 提供冻结的 offset、连续失败次数、当前退避、最近 poll 和最近 update 快照。空 poll 只更新 Bot 内存诊断，不触发管理投影持久化；恢复成功或收到 update 时才发布有意义变化。
+
 ## 启用 KOOK
 
 打开 Pluxel 中的 `KOOK Bot` 设置页，为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。设置页支持多账号选择、鉴权测试、重连、断开及删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
 完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 与 `KookBot` 共享唯一 native API prototype，但 client 的 `$raw/$tool` 不会沿继承链泄漏到 Bot；raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
+
+`kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。gateway transport factory 可注入，因此握手、heartbeat、断线退避和 teardown 可以脱离真实网络做确定性测试。
 
 ## 源码组织
 

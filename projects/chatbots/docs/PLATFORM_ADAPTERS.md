@@ -142,6 +142,39 @@ Bot 已拥有 owner Context 时，不应再从构造参数重复注入 logger。
 字段传给底层 API client，不能用 `{ ...botOptions }` 把 Context、Hub binding 或事件对象扩散到
 HTTP client 的配置和生命周期中。
 
+## 连接状态与诊断快照
+
+“已配置”“HTTP API 可鉴权”“事件连接在线”是三个不同事实。Bot 的 `$.status` 应是不可变、
+平台专属的实时快照，而不是单个 `connected: boolean`，也不能把管理数据库当作状态源：
+
+```ts
+bot.$.status.phase // offline | connecting | online | error | destroyed
+
+telegramBot.$.status.polling
+// { offset, consecutiveFailures, currentBackoffMs, lastPollAt, lastUpdateId, lastUpdateAt }
+
+kookBot.$.status.gateway
+// { phase, sessionId, lastSequence, counters, timestamps, currentBackoffMs, lastError }
+```
+
+连接状态机拥有快照，Bot 将其投影到 `$.status`，Web Management 再按需投影用于展示；依赖方向不能
+反过来。诊断只保留固定字段、累计计数和最近时间点，不保存无界事件历史。token、完整连接 URL、
+webhook secret 和带认证信息的错误对象不得进入快照。
+
+状态更新遵循以下规则：
+
+- 每次公开快照都创建冻结的新对象，嵌套诊断对象也冻结，调用方不能改写内部状态；
+- 鉴权成功后保留 `selfInfo`，短暂断线不能清除 Bot 身份；
+- transient failure 进入 error/backoff 并保留最近错误，下一次成功连接或 poll 才清除；
+- stop/destroy 必须立即终止 heartbeat、retry timer、poll request 和 transport registration；
+- replacement/start generation 使用 abort lease，旧异步完成不得覆盖新状态；
+- heartbeat 和空 poll 可以更新 Bot 内部快照，但管理投影只发布有意义的状态变化、错误或新事件，
+  避免固定周期持久化写放大；
+- polling 与 WebSocket 不共享“万能连接基类”，只共享纯 backoff、cancel delay 和 lease 原语。
+
+连接实现应提供可注入的最低层 transport factory（例如 WebSocket factory），使握手、heartbeat、
+退避和 teardown 能用确定性的 fake transport 测试；不能把真实网络作为状态机单测的前提。
+
 只有平台插件可以改变 registry。创建、更新、删除账号的方法由平台插件明确提供，并负责 Vault、
 状态投影和 Bot 生命周期；业务插件只能读取 Bot。
 

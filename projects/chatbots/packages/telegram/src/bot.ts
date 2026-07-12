@@ -25,16 +25,12 @@ import {
 	type TelegramBotEvents,
 	type TelegramPluginEvents,
 } from './events.ts'
-
-export type TelegramBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
-
-export type TelegramBotStatus = {
-	phase: TelegramBotPhase
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	updatedAt: number
-}
+import {
+	createTelegramBotStatus,
+	updateTelegramBotStatus,
+	type TelegramBotPhase,
+	type TelegramBotStatus,
+} from './status.ts'
 
 export type TelegramRawApi = {
 	call<Method extends TelegramMethod>(
@@ -79,13 +75,7 @@ export class TelegramBot extends TelegramNativeApi {
 	private readonly disposeHubObserver?: () => void
 	private connectionActive = false
 	private offset = 0
-	private statusValue: TelegramBotStatus = {
-		phase: 'offline',
-		botId: null,
-		username: null,
-		lastError: null,
-		updatedAt: Date.now(),
-	}
+	private statusValue = createTelegramBotStatus()
 
 	constructor(botOptions: TelegramBotOptions) {
 		super()
@@ -123,7 +113,7 @@ export class TelegramBot extends TelegramNativeApi {
 		this.assertAlive()
 		this.stopConnection(false)
 		const lease = this.connection.renew()
-		this.setStatus('connecting')
+		this.setStatus('connecting', {}, { polling: { currentBackoffMs: 0 } })
 		try {
 			const identity = await this.#api.call('getMe', undefined, lease.signal)
 			lease.throwIfStale()
@@ -132,7 +122,7 @@ export class TelegramBot extends TelegramNativeApi {
 			this.refreshTransport()
 			const botId = String(identity.id)
 			const username = identity.username ?? ''
-			this.setStatus('online', { botId, username })
+			this.setStatus('online', { botId, username }, { connectedAt: Date.now() })
 			void this.poll(lease.signal)
 			return this.statusValue
 		} catch (error) {
@@ -147,6 +137,7 @@ export class TelegramBot extends TelegramNativeApi {
 	private async poll(signal: AbortSignal): Promise<void> {
 		while (!signal.aborted) {
 			try {
+				this.patchStatus({ polling: { lastPollAt: Date.now() } }, false)
 				const updates = await this.#api.call(
 					'getUpdates',
 					{
@@ -157,10 +148,11 @@ export class TelegramBot extends TelegramNativeApi {
 					signal,
 				)
 				this.pollingBackoff.reset()
-				this.setStatus('online')
 				const messages: ChatMessage[] = []
+				let lastUpdateId: number | null = null
 				for (const update of updates) {
 					this.offset = Math.max(this.offset, update.update_id + 1)
+					lastUpdateId = update.update_id
 					await dispatchTelegramUpdate(
 						this,
 						this.events,
@@ -173,14 +165,30 @@ export class TelegramBot extends TelegramNativeApi {
 				}
 				const hub = this.#options.hub?.current
 				if (hub) await Promise.all(messages.map((message) => hub.receive(message, signal)))
+				const recovered = this.statusValue.phase !== 'online' || this.statusValue.lastError !== null
+				this.patchStatus(
+					{
+						phase: 'online',
+						lastError: null,
+						polling: {
+							offset: this.offset,
+							consecutiveFailures: 0,
+							currentBackoffMs: 0,
+							...(lastUpdateId === null ? {} : { lastUpdateId, lastUpdateAt: Date.now() }),
+						},
+					},
+					recovered || lastUpdateId !== null,
+				)
 			} catch (error) {
 				if (signal.aborted) return
-				this.setError(error)
+				const delay = this.pollingBackoff.next()
+				this.setError(error, delay)
 				this.#logger.warn('Telegram polling failed; retrying', {
 					accountId: this.id,
+					delay,
 					error,
 				})
-				await abortableDelay(this.pollingBackoff.next(), signal).catch((): void => undefined)
+				await abortableDelay(delay, signal).catch((): void => undefined)
 			}
 		}
 	}
@@ -210,7 +218,7 @@ export class TelegramBot extends TelegramNativeApi {
 		this.disposeTransport?.()
 		this.disposeTransport = undefined
 		return updateStatus && this.statusValue.phase !== 'destroyed'
-			? this.setStatus('offline')
+			? this.setStatus('offline', {}, { polling: { currentBackoffMs: 0 } })
 			: this.statusValue
 	}
 
@@ -225,13 +233,20 @@ export class TelegramBot extends TelegramNativeApi {
 	private setStatus(
 		phase: TelegramBotPhase,
 		identity: { botId?: string; username?: string } = {},
+		patch: Parameters<typeof updateTelegramBotStatus>[1] = {},
 	): TelegramBotStatus {
-		this.statusValue = Object.freeze({
+		this.statusValue = updateTelegramBotStatus(this.statusValue, {
+			...patch,
 			phase,
 			botId: identity.botId ?? this.statusValue.botId,
 			username: identity.username ?? this.statusValue.username,
-			lastError: null,
-			updatedAt: Date.now(),
+			lastError: patch.lastError ?? null,
+			connectedAt:
+				phase === 'online'
+					? (patch.connectedAt ?? this.statusValue.connectedAt)
+					: phase === 'error'
+						? this.statusValue.connectedAt
+						: null,
 		})
 		this.#options.onStatus?.(this.statusValue)
 		return this.statusValue
@@ -250,14 +265,28 @@ export class TelegramBot extends TelegramNativeApi {
 		})
 	}
 
-	private setError(error: unknown): TelegramBotStatus {
-		this.statusValue = Object.freeze({
-			...this.statusValue,
+	private setError(error: unknown, delay = 0): TelegramBotStatus {
+		this.statusValue = updateTelegramBotStatus(this.statusValue, {
 			phase: 'error',
 			lastError: error instanceof Error ? error.message : String(error),
-			updatedAt: Date.now(),
+			polling: {
+				consecutiveFailures:
+					delay > 0
+						? this.statusValue.polling.consecutiveFailures + 1
+						: this.statusValue.polling.consecutiveFailures,
+				currentBackoffMs: delay,
+			},
 		})
 		this.#options.onStatus?.(this.statusValue)
+		return this.statusValue
+	}
+
+	private patchStatus(
+		patch: Parameters<typeof updateTelegramBotStatus>[1],
+		publish = true,
+	): TelegramBotStatus {
+		this.statusValue = updateTelegramBotStatus(this.statusValue, patch)
+		if (publish) this.#options.onStatus?.(this.statusValue)
 		return this.statusValue
 	}
 

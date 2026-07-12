@@ -13,6 +13,13 @@ export type KookStatusDoc = {
 	botId: string | null
 	username: string | null
 	lastError: string | null
+	startedAt: number
+	connectedAt: number | null
+	gatewayPhase: import('./gateway.ts').KookGatewayPhase
+	lastSequence: number
+	lastEventAt: number | null
+	reconnectAttempts: number
+	currentBackoffMs: number
 	updatedAt: number
 }
 export type KookAttachment = {

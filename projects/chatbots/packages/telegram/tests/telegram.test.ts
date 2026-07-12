@@ -31,6 +31,8 @@ describe('Telegram API client', () => {
 		expect('call' in first).toBe(false)
 		expect(first.$.info).toEqual({ id: 'notifications', apiBase: 'https://api.telegram.org' })
 		expect(Object.isFrozen(first.$.info)).toBe(true)
+		expect(Object.isFrozen(first.$.status)).toBe(true)
+		expect(Object.isFrozen(first.$.status.polling)).toBe(true)
 		expect(JSON.stringify(first)).not.toContain('secret')
 		await first.sendMessage({ chat_id: 1, text: 'hello' })
 		expect(await requests[0]?.json()).toEqual({ chat_id: 1, text: 'hello' })
@@ -72,6 +74,7 @@ describe('Telegram API client', () => {
 
 		await bot.$.start()
 		expect(bot.selfInfo).toMatchObject({ id: 1, is_bot: true })
+		expect(bot.$.status.connectedAt).not.toBeNull()
 		expect(transports.at(-1)).toMatchObject({
 			platform: 'telegram',
 			accountId: 'notifications',
@@ -81,6 +84,55 @@ describe('Telegram API client', () => {
 		binding.controller.set(hub)
 		expect(transports).toHaveLength(2)
 		await expect(bot.getMe()).resolves.toMatchObject({ id: 1 })
+		bot.$.destroy()
+		await runtime.dispose()
+	})
+
+	it('publishes bounded polling diagnostics only when an update arrives', async () => {
+		const runtime = createRuntimeContext()
+		let polls = 0
+		const onStatus = vi.fn()
+		const bot = new TelegramBot({
+			id: 'diagnostics',
+			ctx: runtime.ctx,
+			token: 'secret',
+			onStatus,
+			fetch: async (input, init) => {
+				const method = String(input).split('/').at(-1)
+				if (method === 'getMe')
+					return Response.json({ ok: true, result: { id: 1, is_bot: true, first_name: 'Bot' } })
+				if (polls++ === 0)
+					return Response.json({
+						ok: true,
+						result: [
+							{
+								update_id: 9,
+								message: {
+									message_id: 1,
+									date: 1,
+									chat: { id: 1, type: 'private' },
+									text: 'hello',
+								},
+							},
+						],
+					})
+				return new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+						once: true,
+					})
+				})
+			},
+		})
+
+		await bot.$.start()
+		await vi.waitFor(() => expect(bot.$.status.polling.lastUpdateId).toBe(9))
+		expect(bot.$.status.polling).toMatchObject({
+			offset: 10,
+			consecutiveFailures: 0,
+			currentBackoffMs: 0,
+		})
+		expect(bot.$.status.polling.lastUpdateAt).not.toBeNull()
+		expect(onStatus.mock.calls.at(-1)?.[0].polling.lastUpdateId).toBe(9)
 		bot.$.destroy()
 		await runtime.dispose()
 	})

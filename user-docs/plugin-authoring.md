@@ -250,6 +250,11 @@ Context 时，从 `ctx.logger.with(...)` 派生带资源标识的 logger，不�
 不要在每个实例构造时批量创建闭包，也不要为了复用 client 而把 `call/$raw/$tool` 泄漏到受管对象
 顶层。
 
+长连接或后台 polling capability 的 `$.status` 应返回冻结、有界、无密钥的实时快照，记录 phase、
+累计计数和最近时间点，不保存无界历史。连接状态机是事实源，Web Management state 只是投影；
+heartbeat、空 poll 等高频内部变化不应造成固定周期持久化写。最低层网络 transport 应支持 factory
+注入，使重连、退避和 teardown 能在不访问真实网络的测试中验证。
+
 ## 错误边界
 
 生命周期错误和单次业务错误不要混淆：

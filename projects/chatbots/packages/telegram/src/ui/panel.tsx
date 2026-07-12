@@ -153,6 +153,11 @@ export function TelegramSettingsPanel() {
 			<Text size="sm">
 				Bot：{status?.username ? `@${status.username}` : (status?.botId ?? '-')}
 			</Text>
+			<Text size="xs" c="dimmed">
+				Polling offset：{status?.lastUpdateId == null ? '-' : status.lastUpdateId + 1} · 连续失败：
+				{status?.consecutiveFailures ?? 0}
+				{status?.currentBackoffMs ? ` · 退避 ${status.currentBackoffMs}ms` : ''}
+			</Text>
 		</Stack>
 	)
 }

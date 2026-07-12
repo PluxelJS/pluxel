@@ -59,6 +59,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 16. 多账号路由显式区分 `platform` 与 `accountId`；不能把账号 ID 拼进 platform，也不能让单一 transport 名称在多个 Bot 之间产生歧义。
 17. codegen 与 macro 分阶段：显式 codegen 生成并提交类型/inventory，macro 只把本地静态 metadata 内联到 bundle；正常构建不访问网络、不改写源码。
 18. 平台插件不把 ChatHub 声明成 required constructor dependency；通过 `plugins.use()` 动态投影。Hub 缺席或 HMR 替换不影响 Bot 原生 API 和平台事件连接。
+19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。管理 SignalDB 只投影有意义变化，不是运行状态源，heartbeat 与空 poll 不制造固定周期持久化写。
 
 ## 从旧设计保留什么
 

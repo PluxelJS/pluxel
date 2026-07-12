@@ -151,6 +151,11 @@ export function KookSettingsPanel() {
 				</Stack>
 			</Card>
 			<Text size="sm">Bot：{status?.username ?? status?.botId ?? '-'}</Text>
+			<Text size="xs" c="dimmed">
+				Gateway：{status?.gatewayPhase ?? '-'} · SN：{status?.lastSequence ?? 0} · 重连：
+				{status?.reconnectAttempts ?? 0}
+				{status?.currentBackoffMs ? ` · 退避 ${status.currentBackoffMs}ms` : ''}
+			</Text>
 		</Stack>
 	)
 }

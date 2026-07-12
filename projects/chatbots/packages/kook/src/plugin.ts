@@ -13,10 +13,11 @@ import {
 	type TokenBotConfigInput,
 } from '@repo/chatbots-hub'
 import type { KookAutoApi, Result } from './api/types.ts'
-import { KookBot, type KookBotStatus } from './bot.ts'
+import { KookBot } from './bot.ts'
 import { createKookPluginEvents } from './events.ts'
 import type { KookSettingsDoc, KookStatusDoc } from './protocol.ts'
 import { KookAdapterRpc } from './rpc.ts'
+import type { KookBotStatus } from './status.ts'
 
 export type KookBotConfigInput = TokenBotConfigInput
 
@@ -202,6 +203,13 @@ export class KookAdapterPlugin extends BasePlugin {
 			botId: status.botId,
 			username: status.username,
 			lastError: status.lastError,
+			startedAt: status.startedAt,
+			connectedAt: status.connectedAt,
+			gatewayPhase: status.gateway.phase,
+			lastSequence: status.gateway.lastSequence,
+			lastEventAt: status.gateway.timestamps.lastEventAt,
+			reconnectAttempts: status.gateway.counters.reconnectAttempts,
+			currentBackoffMs: status.gateway.currentBackoffMs,
 			updatedAt: status.updatedAt,
 		}
 		this.status?.replaceOne({ id }, doc, { upsert: true })

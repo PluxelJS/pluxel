@@ -20,18 +20,14 @@ import {
 	type KookBotEvents,
 	type KookPluginEvents,
 } from './events.ts'
-import { KookGateway } from './gateway.ts'
+import { createKookGatewaySnapshot, KookGateway, type KookGatewaySnapshot } from './gateway.ts'
+import {
+	createKookBotStatus,
+	updateKookBotStatus,
+	type KookBotPhase,
+	type KookBotStatus,
+} from './status.ts'
 import type { User } from './types/base.ts'
-
-export type KookBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
-
-export type KookBotStatus = {
-	phase: KookBotPhase
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	updatedAt: number
-}
 
 export type KookBotOptions = Omit<KookClientOptions, 'signal'> & {
 	id: string
@@ -87,13 +83,7 @@ export class KookBot extends KookNativeApi {
 	private disposeTransport?: () => void
 	private readonly disposeHubObserver?: () => void
 	private connectionActive = false
-	private statusValue: KookBotStatus = {
-		phase: 'offline',
-		botId: null,
-		username: null,
-		lastError: null,
-		updatedAt: Date.now(),
-	}
+	private statusValue = createKookBotStatus(createKookGatewaySnapshot())
 
 	constructor(botOptions: KookBotOptions) {
 		super()
@@ -149,6 +139,7 @@ export class KookBot extends KookNativeApi {
 			const username = identity.username ?? identity.nickname ?? ''
 			this.connectionActive = true
 			this.refreshTransport()
+			this.setStatus('connecting', { botId, username })
 			this.gateway = new KookGateway(
 				{
 					getUrl: async (signal) =>
@@ -159,19 +150,19 @@ export class KookBot extends KookNativeApi {
 						if (message) await this.#options.hub?.current?.receive(message, signal)
 					},
 					onOnline: (sessionId) => {
-						this.setStatus('online', { botId, username })
 						this.#logger.info('KOOK gateway online', {
 							accountId: this.id,
 							sessionId,
 						})
 					},
-					onOffline: () => this.setStatus('offline', { botId, username }),
+					onOffline: () => undefined,
 					onError: (error) => this.setError(error),
+					onSnapshot: (snapshot) => this.applyGatewaySnapshot(snapshot),
 				},
 				this.#logger,
 			)
 			this.gateway.start(lease.signal)
-			return this.setStatus('connecting', { botId, username })
+			return this.statusValue
 		} catch (error) {
 			if (lease.current()) {
 				this.stopConnection(false)
@@ -238,26 +229,62 @@ export class KookBot extends KookNativeApi {
 		phase: KookBotPhase,
 		identity: { botId?: string; username?: string } = {},
 	): KookBotStatus {
-		this.statusValue = Object.freeze({
+		this.statusValue = updateKookBotStatus(this.statusValue, {
 			phase,
 			botId: identity.botId ?? this.statusValue.botId,
 			username: identity.username ?? this.statusValue.username,
 			lastError: null,
-			updatedAt: Date.now(),
+			connectedAt:
+				phase === 'online'
+					? (this.statusValue.connectedAt ?? Date.now())
+					: phase === 'error'
+						? this.statusValue.connectedAt
+						: null,
 		})
 		this.#options.onStatus?.(this.statusValue)
 		return this.statusValue
 	}
 
 	private setError(error: unknown): KookBotStatus {
-		this.statusValue = Object.freeze({
-			...this.statusValue,
+		this.statusValue = updateKookBotStatus(this.statusValue, {
 			phase: 'error',
 			lastError: error instanceof Error ? error.message : String(error),
-			updatedAt: Date.now(),
 		})
 		this.#options.onStatus?.(this.statusValue)
 		return this.statusValue
+	}
+
+	private applyGatewaySnapshot(snapshot: KookGatewaySnapshot): void {
+		const previous = this.statusValue
+		const phase: KookBotPhase =
+			previous.phase === 'destroyed'
+				? 'destroyed'
+				: snapshot.phase === 'online'
+					? 'online'
+					: snapshot.phase === 'backoff' && snapshot.lastError
+						? 'error'
+						: snapshot.phase === 'connecting'
+							? 'connecting'
+							: 'offline'
+		this.statusValue = updateKookBotStatus(previous, {
+			phase,
+			gateway: snapshot,
+			lastError: snapshot.lastError,
+			connectedAt:
+				phase === 'online'
+					? previous.phase === 'online'
+						? previous.connectedAt
+						: Date.now()
+					: phase === 'error'
+						? previous.connectedAt
+						: null,
+		})
+		const meaningful =
+			phase !== previous.phase ||
+			snapshot.sessionId !== previous.gateway.sessionId ||
+			snapshot.lastSequence !== previous.gateway.lastSequence ||
+			snapshot.lastError !== previous.gateway.lastError
+		if (meaningful) this.#options.onStatus?.(this.statusValue)
 	}
 
 	private assertAlive(): void {

@@ -15,5 +15,11 @@ export type TelegramStatusDoc = {
 	botId: string | null
 	username: string | null
 	lastError: string | null
+	startedAt: number
+	connectedAt: number | null
+	lastUpdateId: number | null
+	lastUpdateAt: number | null
+	consecutiveFailures: number
+	currentBackoffMs: number
 	updatedAt: number
 }

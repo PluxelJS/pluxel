@@ -13,10 +13,11 @@ import {
 	type BotRegistryController,
 	type TokenBotConfigInput,
 } from '@repo/chatbots-hub'
-import { TelegramBot, type TelegramBotStatus } from './bot.ts'
+import { TelegramBot } from './bot.ts'
 import { createTelegramPluginEvents } from './events.ts'
 import type { TelegramSettingsDoc, TelegramStatusDoc } from './protocol.ts'
 import { TelegramAdapterRpc } from './rpc.ts'
+import type { TelegramBotStatus } from './status.ts'
 
 export type TelegramBotConfigInput = TokenBotConfigInput
 
@@ -202,6 +203,12 @@ export class TelegramAdapterPlugin extends BasePlugin {
 			botId: status.botId,
 			username: status.username,
 			lastError: status.lastError,
+			startedAt: status.startedAt,
+			connectedAt: status.connectedAt,
+			lastUpdateId: status.polling.lastUpdateId,
+			lastUpdateAt: status.polling.lastUpdateAt,
+			consecutiveFailures: status.polling.consecutiveFailures,
+			currentBackoffMs: status.polling.currentBackoffMs,
 			updatedAt: status.updatedAt,
 		}
 		this.status?.replaceOne({ id }, doc, { upsert: true })
