@@ -73,7 +73,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 - 不把平台 session、发送方法或二进制 Buffer 放进 `ChatMessage`；消息仍然可以持久化和跨进程传递。
 - 不恢复把 registry、持久化、RPC、SSE/webhook 和 Bot 生命周期塞进一个 manager 的模式。一个平台插件可以管理多个 Bot，但各层必须保持独立。
 - 不让 Hub 知道平台 SDK。KOOK/Telegram SDK 使用独立子入口，业务可按需依赖。
-- 不把 Telegram/KOOK 原始事件塞入通用消息；平台插件通过各 adapter 自己的 observer surface 订阅。
+- 不把 Telegram/KOOK 原始事件塞入通用消息；平台插件公开静态可枚举的 `EvtChannel` 属性，并同时提供 Bot 局部与 Plugin 聚合事件面。
 - 不恢复控制宿主布局的插件 API。沙箱、权限和 adapter 都只贡献自己的页面或 tab。
 
 ## 下一步扩展顺序

@@ -1,4 +1,5 @@
 import type { APIMethodParams, APIMethodReturn, APIMethods } from '@gramio/types'
+import type { Context } from '@pluxel/runtime'
 import {
 	abortableDelay,
 	ChatHubPlugin,
@@ -11,13 +12,18 @@ import {
 } from '@repo/chatbots-hub'
 import { createTelegramClient, type TelegramClientOptions, type TelegramApi } from './api/client.ts'
 import { TELEGRAM_ENDPOINTS, type TelegramMethod } from './api/endpoints.ts'
+import { TELEGRAM_UPDATE_KEYS } from './api/updates.ts'
 import {
 	normalizeTelegramUpdate,
 	TELEGRAM_TRANSPORT_CAPABILITIES,
 	telegramOutboundPayload,
 } from './codec.ts'
-import { TelegramUpdateObservers } from './events.ts'
-import type { TelegramUpdate } from './protocol.ts'
+import {
+	createTelegramBotEvents,
+	dispatchTelegramUpdate,
+	type TelegramBotEvents,
+	type TelegramPluginEvents,
+} from './events.ts'
 
 export type TelegramBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
 
@@ -44,11 +50,12 @@ export type TelegramRawApi = {
 
 export type TelegramBotOptions = Omit<TelegramClientOptions, 'signal'> & {
 	id: string
+	ctx: Context
 	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
+	pluginEvents?: TelegramPluginEvents
 	logger: TelegramBotLogger
 	pollingTimeoutSeconds?: number
 	onStatus?: (status: TelegramBotStatus) => void
-	onUpdate?: (bot: TelegramBot, update: TelegramUpdate, signal: AbortSignal) => void | Promise<void>
 }
 
 export type TelegramBotExtensions = {
@@ -65,7 +72,7 @@ const invokeTelegramEndpoint = Symbol('invokeTelegramEndpoint')
 // oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every GramIO method on the shared prototype below.
 export class TelegramBot {
 	readonly id: string
-	readonly events = new TelegramUpdateObservers()
+	readonly events: TelegramBotEvents
 	readonly $: TelegramBotExtensions
 	readonly #owner = new AbortController()
 	readonly #api: TelegramApi
@@ -87,6 +94,7 @@ export class TelegramBot {
 	constructor(botOptions: TelegramBotOptions) {
 		this.#options = botOptions
 		this.id = botOptions.id
+		this.events = createTelegramBotEvents(botOptions.ctx)
 		this.#api = createTelegramClient({ ...botOptions, signal: this.#owner.signal })
 		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: TelegramBotExtensions = {
@@ -138,7 +146,7 @@ export class TelegramBot {
 					{
 						offset: this.offset,
 						timeout: this.#options.pollingTimeoutSeconds ?? 25,
-						allowed_updates: ['message', 'channel_post'],
+						allowed_updates: [...TELEGRAM_UPDATE_KEYS],
 					},
 					signal,
 				)
@@ -147,10 +155,13 @@ export class TelegramBot {
 				const messages: ChatMessage[] = []
 				for (const update of updates) {
 					this.offset = Math.max(this.offset, update.update_id + 1)
-					await this.events.dispatch(update, signal, (handler, error) =>
-						this.#options.logger.warn('Telegram update handler failed', { handler, error }),
+					await dispatchTelegramUpdate(
+						this,
+						this.events,
+						this.#options.pluginEvents,
+						update,
+						signal,
 					)
-					await this.#options.onUpdate?.(this, update, signal)
 					const message = normalizeTelegramUpdate(update, this.id)
 					if (message) messages.push(message)
 				}

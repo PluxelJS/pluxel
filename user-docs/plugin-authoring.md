@@ -198,6 +198,36 @@ override init() {
 
 `ui()` 是纯 declaration，没有 bind 或注册副作用。开发环境由 Vite 编译源码，生产环境注册已构建 artifact，作者调用保持一致。
 
+## 公开有限事件集合
+
+插件公开的事件集合在设计时已知时，使用命名的 `EvtChannel` 属性，让调用方获得可发现、可精确
+类型化的 API：
+
+```ts
+import { BasePlugin, EvtChannel, Plugin } from '@pluxel/runtime'
+
+type InvoicePaid = (invoice: Invoice, signal: AbortSignal) => void | Promise<void>
+
+@Plugin({ name: 'BillingPlugin' })
+export class BillingPlugin extends BasePlugin {
+	readonly events = {
+		invoicePaid: new EvtChannel<InvoicePaid>(this.ctx),
+	} as const
+}
+
+billing.events.invoicePaid.on(async (invoice, signal) => {
+	await projectInvoice(invoice, { signal })
+})
+```
+
+不要为有限事件重新实现 `Map<string, handler>`，也不要把所有事件压成一个宽泛 payload 再让调用方
+自行分支。`EvtChannel.on()` 会把订阅绑定到调用方 Context 的 effects，插件停止或替换时自动清理；
+它仍返回幂等 disposer，并支持 `{ signal }`。生产者需要等待所有异步 listener 且隔离单项失败时，
+使用 `emitSettled()`。
+
+只有事件名本身确实由用户或外部系统动态定义时，才使用动态 registry。若 capability 管理多个资源，
+可以同时提供资源局部 channel 与 capability 聚合 channel；聚合 channel 的第一个参数应明确标识来源。
+
 ## 错误边界
 
 生命周期错误和单次业务错误不要混淆：

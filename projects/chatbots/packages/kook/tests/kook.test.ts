@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 import { createKookClient, KOOK_ENDPOINTS } from '../src/api/index.ts'
 import {
 	encodeKookBlock,
 	KookBot,
-	KookEventObservers,
+	createKookPluginEvents,
+	dispatchKookEvent,
+	KOOK_NOTICE_TYPES,
 	KOOK_TRANSPORT_CAPABILITIES,
 	normalizeKookEvent,
 	parseKookConversationId,
@@ -32,9 +35,11 @@ function event(patch: Partial<KookEvent> = {}): KookEvent {
 
 describe('KOOK adapter contracts', () => {
 	it('puts native API on Bot prototype and framework helpers only under $', async () => {
+		const runtime = createRuntimeContext()
 		const requests: Request[] = []
 		const options = {
 			id: 'community',
+			ctx: runtime.ctx,
 			token: 'vault-secret',
 			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
 				requests.push(new Request(input, init))
@@ -53,6 +58,7 @@ describe('KOOK adapter contracts', () => {
 		await first.sendMessage({ target_id: 'channel-1', content: 'hello' })
 		expect(await requests[0]?.json()).toMatchObject({ content: 'hello' })
 		expect(first.$.channel('channel-1').target_id).toBe('channel-1')
+		await runtime.dispose()
 	})
 
 	it('exposes the complete v3 endpoint catalog without duplicate method names', () => {
@@ -134,12 +140,55 @@ describe('KOOK adapter contracts', () => {
 		expect(() => parseKookConversationId('123')).toThrow(/Invalid/)
 	})
 
-	it('exposes raw KOOK events and only advertises encodable blocks', async () => {
+	it('exposes finite per-Bot and aggregate EvtChannel properties', async () => {
 		assertTransportConformance(KOOK_TRANSPORT_CAPABILITIES, encodeKookBlock)
-		const observers = new KookEventObservers()
-		const seen: string[] = []
-		observers.register('platform-feature', (raw) => void seen.push(raw.msg_id))
-		await observers.dispatch(event(), new AbortController().signal, () => {})
-		expect(seen).toEqual(['message-1'])
+		const runtime = createRuntimeContext()
+		const bot = new KookBot({
+			id: 'events',
+			ctx: runtime.ctx,
+			token: 'secret',
+			logger: { info() {}, warn() {} },
+		})
+		const aggregate = createKookPluginEvents(runtime.ctx)
+		const localSeen: string[] = []
+		const aggregateSeen: string[] = []
+		bot.events.event.on(() => {
+			throw new Error('isolated raw listener')
+		})
+		bot.events.group_message.on((raw) => void localSeen.push(raw.msg_id))
+		aggregate.message.on((source, raw) => void aggregateSeen.push(`${source.id}:${raw.msg_id}`))
+
+		await dispatchKookEvent(bot, bot.events, aggregate, event(), new AbortController().signal)
+
+		expect(Object.keys(bot.events)).toEqual([
+			'event',
+			'message',
+			'group_message',
+			'private_message',
+			'notice',
+			'unknown_notice',
+			...KOOK_NOTICE_TYPES,
+		])
+		expect(localSeen).toEqual(['message-1'])
+		expect(aggregateSeen).toEqual(['events:message-1'])
+
+		let clicked = ''
+		bot.events.message_btn_click.on((notice) => {
+			clicked = notice.extra.body.value
+		})
+		await dispatchKookEvent(
+			bot,
+			bot.events,
+			aggregate,
+			event({
+				type: 255,
+				extra: { type: 'message_btn_click', body: { value: 'confirm' } },
+			}),
+			new AbortController().signal,
+		)
+		expect(clicked).toBe('confirm')
+		bot.$.destroy()
+		await runtime.dispose()
+		expect(bot.events.message_btn_click.count()).toBe(0)
 	})
 })

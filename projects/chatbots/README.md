@@ -44,7 +44,7 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 打开 Pluxel 中的 `Telegram Bot` 设置页，为账号填写稳定的本地 Bot ID 与 Token 后点击“保存并连接”。同一插件可管理多个账号；Token 只写入持久化加密 Vault，SignalDB 和浏览器端只能看到是否存在及掩码。设置页可选择账号执行鉴权测试、重连、断开和删除。
 
-Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合，macro 再于构建期内联 inventory。Bot 的原生方法只在共享 prototype 安装一次。
+Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。Bot 的原生方法只在共享 prototype 安装一次。
 
 ## 启用 KOOK
 
@@ -119,18 +119,13 @@ export class TelegramModerationPlugin extends BasePlugin {
 	}
 
 	override init() {
-		this.ctx.effects.defer(
-			this.telegram.updates.observe('moderation.raw-updates', async ({ bot, update }) => {
-				if (update.callback_query)
-					await bot.answerCallbackQuery({
-						callback_query_id: update.callback_query.id,
-					})
-			}),
-		)
+		this.telegram.events.callback_query.on(async (bot, query, _update, signal) => {
+			await bot.$.raw.call('answerCallbackQuery', { callback_query_id: query.id }, { signal })
+		})
 	}
 }
 ```
 
-也可以通过 `telegram.bots.require('notifications')` 主动取得指定 Bot。KOOK 对应提供 `kook.bots`、`kook.events`、`bot.events`、直接的 `bot.method()` 与 `bot.$`。旧 `requireApi()` 只保留迁移兼容，不用于新代码。原始事件不会被塞进 `ChatMessage`；跨平台消息保持 JSON-safe，平台能力仍可独立组合为 Pluxel 插件依赖。
+也可以通过 `telegram.bots.require('notifications')` 主动取得指定 Bot，再使用 `bot.events.message.on(...)` 只监听该账号。Telegram 与 KOOK 都提供静态可枚举的 `plugin.events.<name>` 聚合 channel 和 `bot.events.<name>` 局部 channel；它们由 Pluxel `EvtChannel` 管理订阅生命周期与错误隔离。原始事件不会被塞进 `ChatMessage`；跨平台消息保持 JSON-safe，平台能力仍可独立组合为 Pluxel 插件依赖。
 
 更多设计取舍见 [docs/DESIGN.md](docs/DESIGN.md)，旧项目迁移映射见 [docs/MIGRATION.md](docs/MIGRATION.md)。

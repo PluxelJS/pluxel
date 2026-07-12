@@ -36,14 +36,12 @@ export class KookModerationPlugin extends BasePlugin {
 
 	override init() {
 		const bot = this.kook.bots.require('community')
-		this.ctx.effects.defer(
-			bot.events.on('moderation.messages', async (event, signal) => {
-				await bot.sendMessage({
-					target_id: event.target_id,
-					content: 'received',
-				})
-			}),
-		)
+		bot.events.group_message.on(async (event, signal) => {
+			await bot.sendMessage({
+				target_id: event.target_id,
+				content: 'received',
+			})
+		})
 	}
 }
 ```
@@ -179,19 +177,44 @@ type ChatAddress = {
 
 ## 原生事件
 
-事件面应保留平台原始类型，并天然绑定产生事件的 Bot：
+平台事件集合是有限、可枚举的公开协议，必须用命名的 `EvtChannel` 属性表达，不能重新实现
+`Map<string, handler>`，也不能要求调用方从一个宽泛 raw payload 中反复判断事件类型。事件面分为
+两个层级：
+
+- `bot.events.<name>` 只观察一个账号，参数不重复携带 Bot；
+- `plugin.events.<name>` 聚合该插件管理的所有账号，第一个参数是来源 Bot。
+
+两层使用同一份静态 event inventory：
 
 ```ts
-bot.events.on('feature.raw-events', (event, signal) => {})
+const bot = telegram.bots.require('notifications')
 
-kook.events.observe('audit', ({ bot, event, signal }) => {
-	// plugin 级 observer 可以观察全部账号，但无需再按 ID 反查 Bot。
+bot.events.callback_query.on(async (query, update, signal) => {
+	if (!signal.aborted) await bot.answerCallbackQuery({ callback_query_id: query.id })
+})
+
+telegram.events.callback_query.on(async (sourceBot, query, update, signal) => {
+	// 聚合 channel 天然携带来源 Bot，无需再按账号 ID 反查。
 })
 ```
 
-注册必须返回幂等 disposer。一个 handler 的异常不能阻止其他 observer，也不能使 gateway 的
-ack/offset 丢失。平台事件只有在 codec 明确支持时才额外投影到 ChatHub；不能为了跨平台统一而
-丢掉 callback query、reaction、guild mutation 等原生语义。
+命名遵循平台原生 payload，不增加第二套翻译名。Telegram 使用 `edited_message`、
+`callback_query` 等 `TelegramUpdate` 字段；KOOK notice 使用 `message_btn_click`、
+`added_reaction` 等原生 type。分类与兜底 channel 也必须显式且有限：Telegram 的 `update` 接收
+所有原始 Update；KOOK 的 `event/message/group_message/private_message/notice/unknown_notice`
+分别表达原始事件、消息分类和未知 notice。
+
+所有 channel 使用 Pluxel `EvtChannel`：`on()` 注册会绑定调用方 Context 并随其 effects 自动清理，
+仍返回幂等 disposer，也可通过 `{ signal }` 主动控制订阅。分发使用 `emitSettled()` 等待异步
+listener 并隔离失败；一个 listener 的异常不能阻止同 channel 的其他 listener，不能阻止精确事件
+channel，也不能使 gateway ack 或 polling offset 丢失。平台事件只有在 codec 明确支持时才额外
+投影到 ChatHub，不能为了跨平台统一而丢掉 callback query、reaction、guild mutation 等语义。
+
+事件 inventory 与 endpoint inventory 遵循相同的生成规则。外部类型包可枚举事件字段时，codegen
+从权威声明生成可审阅 TXT，`api:check` 双向检查漂移，macro 只把字段名数组内联到 runtime；类型
+仍直接映射外部声明，不生成副本。Telegram 即从 `@gramio/types` 的 `TelegramUpdate` 同时生成
+`updates.txt`，新字段或删除字段都会令 CI 失败。没有外部机器可读来源的平台维护一份经过类型
+`satisfies` 校验的本地常量，并由映射类型保证每个事件都有 channel 和精确 payload。
 
 ## API 类型与 endpoint inventory
 
@@ -448,13 +471,14 @@ Bot 直接继承纯 API client：
 ```ts
 export class PlatformBot extends PlatformApiClient {
 	readonly $: PlatformBotExtensions
-	readonly events = new PlatformBotEvents()
+	readonly events: PlatformBotEvents
 
 	constructor(
 		readonly id: string,
 		options: PlatformBotOptions,
 	) {
 		super(options.api)
+		this.events = createPlatformBotEvents(options.ctx)
 		this.$ = createPlatformBotExtensions(this, options)
 	}
 }
@@ -512,7 +536,7 @@ definitions.txt / endpoints.txt
 5. 两个 Bot 的同一 endpoint 方法引用相等，并且 endpoint 不是实例 own property。
 6. `$` helper 只调用公开原生 API 或 `$.raw`，不复制认证与 envelope 逻辑。
 7. 每请求 signal 与 Bot owner signal 正确组合；停止 Bot 会中止其所有连接和请求。
-8. raw event handler disposer 幂等，异常隔离，并且事件携带正确 Bot。
+8. event inventory 可枚举且无漂移；Bot/Plugin 两层 channel 类型精确，disposer 幂等且异常隔离。
 9. 多 Bot 的入站排序和出站回复不会串到另一个账号。
 10. 生产 bundle 不包含 `node:fs`、TXT 内容读取路径或 codegen 脚本。
 11. package root 和 `/api` 子入口只导出有意公开的类型/能力，`index.ts` 不含实现。
@@ -527,7 +551,9 @@ definitions.txt / endpoints.txt
 - [ ] 本项目扩展只存在于 `$`。
 - [ ] 平台插件公开只读 `bots` registry。
 - [ ] Bot 从配置存在起可发现，连接状态单独表达。
-- [ ] 原生事件保留权威类型并绑定 Bot。
+- [ ] 原生事件使用静态 `EvtChannel` 属性，保留权威类型并绑定 Bot。
+- [ ] 同时提供 Bot 局部与 Plugin 聚合事件面，且只有一个 event inventory。
+- [ ] raw/分类/精确事件 channel 的分发顺序与错误隔离有测试。
 - [ ] ChatHub 投影保持 JSON-safe，且带独立 `platform/accountId`。
 - [ ] ChatHub 通过 optional `plugins.use()` 接入；无 Hub 时平台原生能力仍可运行。
 - [ ] 优先复用外部类型包，没有重复造类型。

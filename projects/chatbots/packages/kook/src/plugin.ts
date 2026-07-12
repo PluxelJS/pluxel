@@ -14,7 +14,7 @@ import {
 } from '@repo/chatbots-hub'
 import type { KookAutoApi, Result } from './api/types.ts'
 import { KookBot, type KookBotStatus } from './bot.ts'
-import { KookPluginEvents, type KookEventHandler } from './events.ts'
+import { createKookPluginEvents } from './events.ts'
 import type { KookSettingsDoc, KookStatusDoc } from './protocol.ts'
 import { KookAdapterRpc } from './rpc.ts'
 
@@ -48,7 +48,7 @@ export class KookAdapterPlugin extends BasePlugin {
 
 	/** Live read-only platform capability registry. */
 	readonly bots: BotRegistry<KookBot> = this.registryState.registry
-	readonly events = new KookPluginEvents()
+	readonly events = createKookPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
 		this.ctx.effects.defer(
@@ -122,10 +122,6 @@ export class KookAdapterPlugin extends BasePlugin {
 		return this.currentStatus(id)
 	}
 
-	registerEventHandler(id: string, handler: KookEventHandler): () => void {
-		return this.events.observe(id, ({ event, signal }) => handler(event, signal))
-	}
-
 	/** @deprecated Prefer `upsertBot({ id, ... })`. */
 	saveSettings(input: { token?: string; apiBase?: string }): Promise<KookSettingsDoc> {
 		return this.upsertBot({ id: DEFAULT_BOT_ID, ...input })
@@ -160,15 +156,13 @@ export class KookAdapterPlugin extends BasePlugin {
 		this.removeRuntimeBot(id)
 		const bot = new KookBot({
 			id,
+			ctx: this.ctx,
 			token,
 			baseUrl: apiBase,
 			hub: this.hubBinding.ref,
+			pluginEvents: this.events,
 			logger: this.ctx.logger,
 			onStatus: (next) => this.projectStatus(id, next),
-			onEvent: async (sourceBot, event, signal) =>
-				this.events.dispatch({ bot: sourceBot, event, signal }, (handler, error) =>
-					this.ctx.logger.warn('KOOK plugin event handler failed', { handler, error }),
-				),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))
 		this.projectStatus(id, bot.$.status)

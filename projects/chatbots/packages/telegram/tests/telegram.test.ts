@@ -1,16 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createRuntimeContext } from '@pluxel/runtime/test'
 import { createCapabilityRef, type ChatTransport } from '@repo/chatbots-hub'
-import { createTelegramClient, TELEGRAM_ENDPOINTS } from '../src/api/index.ts'
+import { createTelegramClient, TELEGRAM_ENDPOINTS, TELEGRAM_UPDATE_KEYS } from '../src/api/index.ts'
 import { TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload } from '../src/codec.ts'
-import { TelegramUpdateObservers } from '../src/events.ts'
+import { createTelegramPluginEvents, dispatchTelegramUpdate } from '../src/events.ts'
 import { TelegramBot } from '../src/index.ts'
 import { assertTransportConformance } from '../../../test/transport-conformance.ts'
 
 describe('Telegram API client', () => {
 	it('puts GramIO methods on Bot prototype and keeps raw calls under $', async () => {
+		const runtime = createRuntimeContext()
 		const requests: Request[] = []
 		const options = {
 			id: 'notifications',
+			ctx: runtime.ctx,
 			token: 'secret',
 			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
 				requests.push(new Request(input, init))
@@ -27,9 +30,11 @@ describe('Telegram API client', () => {
 		expect(JSON.stringify(first)).not.toContain('secret')
 		await first.sendMessage({ chat_id: 1, text: 'hello' })
 		expect(await requests[0]?.json()).toEqual({ chat_id: 1, text: 'hello' })
+		await runtime.dispose()
 	})
 
 	it('keeps native Bot capability alive while an optional ChatHub is replaced', async () => {
+		const runtime = createRuntimeContext()
 		const binding = createCapabilityRef<{
 			registerTransport(transport: ChatTransport): () => void
 			receive(): Promise<void>
@@ -46,6 +51,7 @@ describe('Telegram API client', () => {
 		binding.controller.set(hub)
 		const bot = new TelegramBot({
 			id: 'notifications',
+			ctx: runtime.ctx,
 			token: 'secret',
 			hub: binding.ref,
 			logger: { warn() {} },
@@ -72,6 +78,7 @@ describe('Telegram API client', () => {
 		expect(transports).toHaveLength(2)
 		await expect(bot.getMe()).resolves.toMatchObject({ id: 1 })
 		bot.$.destroy()
+		await runtime.dispose()
 	})
 
 	it('inlines a complete endpoint inventory onto one shared prototype', async () => {
@@ -120,12 +127,42 @@ describe('Telegram API client', () => {
 		expect(form.get('file_0')).toBeInstanceOf(Blob)
 	})
 
-	it('keeps raw update extensions isolated and matches advertised transport blocks', async () => {
+	it('exposes generated per-Bot and aggregate EvtChannel properties', async () => {
 		assertTransportConformance(TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload)
-		const observers = new TelegramUpdateObservers()
-		const seen: number[] = []
-		observers.register('platform-feature', (update) => void seen.push(update.update_id))
-		await observers.dispatch({ update_id: 7 }, new AbortController().signal, () => {})
-		expect(seen).toEqual([7])
+		const runtime = createRuntimeContext()
+		const bot = new TelegramBot({
+			id: 'events',
+			ctx: runtime.ctx,
+			token: 'secret',
+			logger: { warn() {} },
+		})
+		const aggregate = createTelegramPluginEvents(runtime.ctx)
+		const localSeen: string[] = []
+		const aggregateSeen: string[] = []
+		bot.events.update.on(() => {
+			throw new Error('isolated raw listener')
+		})
+		bot.events.message.on((message) => void localSeen.push(message.text ?? ''))
+		aggregate.message.on(
+			(source, message) => void aggregateSeen.push(`${source.id}:${message.text ?? ''}`),
+		)
+
+		await dispatchTelegramUpdate(
+			bot,
+			bot.events,
+			aggregate,
+			{
+				update_id: 7,
+				message: { message_id: 1, date: 1, chat: { id: 1, type: 'private' }, text: 'hello' },
+			},
+			new AbortController().signal,
+		)
+
+		expect(Object.keys(bot.events)).toEqual(['update', ...TELEGRAM_UPDATE_KEYS])
+		expect(localSeen).toEqual(['hello'])
+		expect(aggregateSeen).toEqual(['events:hello'])
+		bot.$.destroy()
+		await runtime.dispose()
+		expect(bot.events.message.count()).toBe(0)
 	})
 })

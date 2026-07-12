@@ -21,7 +21,16 @@ export type KookAttachment = {
 	name?: string
 	file_type?: string
 }
-export type KookEvent = {
+export type KookEventExtra = {
+	guild_id?: string
+	channel_name?: string
+	author?: { id?: string; username?: string; nickname?: string; bot?: boolean }
+	kmarkdown?: { raw_content?: string }
+	attachments?: KookAttachment | KookAttachment[]
+	type?: string
+	body?: unknown
+}
+export type KookEvent<Extra extends KookEventExtra = KookEventExtra> = {
 	type: number
 	target_id: string
 	author_id: string
@@ -29,13 +38,7 @@ export type KookEvent = {
 	msg_id: string
 	msg_timestamp: number
 	channel_type: 'GROUP' | 'PERSON' | string
-	extra?: {
-		guild_id?: string
-		channel_name?: string
-		author?: { id?: string; username?: string; nickname?: string; bot?: boolean }
-		kmarkdown?: { raw_content?: string }
-		attachments?: KookAttachment | KookAttachment[]
-	}
+	extra?: Extra
 }
 export type KookGatewayFrame = {
 	s: number

@@ -15,7 +15,7 @@
 | platform 内聚合式 manager             | plugin + registry/bot/management 分层 | 保留多 Bot 能力，拆开持久化、管理投影和单 Bot 生命周期 |
 | KOOK 多 Bot manager                   | `KookAdapterPlugin.bots`              | 迁移为只读 registry，Bot 直接公开原生 API              |
 | permission trie / roles / identity DB | `access`                              | 保留 exact/wildcard/role 语义，简化为 Map 热路径       |
-| platform raw events / SDK extensions  | 对应 Bot / adapter plugin             | `bot.events` + `bot.method()`，不污染 Hub              |
+| platform raw events / SDK extensions  | 对应 Bot / adapter plugin             | 静态 `bot.events.<name>` + `bot.method()`，不污染 Hub  |
 
 平台 adapter 的公共面不再是 `requireApi()`。通过 `platform.bots.require(localId)` 获得 Bot，
 并直接调用 `bot.sendMessage()` 等原生 API；raw、

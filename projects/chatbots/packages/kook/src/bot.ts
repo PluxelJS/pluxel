@@ -4,6 +4,7 @@ import {
 	type ChatHubPlugin,
 	type ChatSendRequest,
 } from '@repo/chatbots-hub'
+import type { Context } from '@pluxel/runtime'
 import { createKookClient, type KookClientOptions } from './api/client.ts'
 import { KOOK_ENDPOINTS } from './api/endpoints.ts'
 import type { KookApi, KookApiTools, KookAutoApi, Result } from './api/types.ts'
@@ -13,9 +14,13 @@ import {
 	normalizeKookEvent,
 	parseKookConversationId,
 } from './codec.ts'
-import { KookEventObservers } from './events.ts'
+import {
+	createKookBotEvents,
+	dispatchKookEvent,
+	type KookBotEvents,
+	type KookPluginEvents,
+} from './events.ts'
 import { KookGateway } from './gateway.ts'
-import type { KookEvent } from './protocol.ts'
 
 export type KookBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
 
@@ -34,10 +39,11 @@ export type KookBotLogger = {
 
 export type KookBotOptions = Omit<KookClientOptions, 'signal'> & {
 	id: string
+	ctx: Context
 	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
+	pluginEvents?: KookPluginEvents
 	logger: KookBotLogger
 	onStatus?: (status: KookBotStatus) => void
-	onEvent?: (bot: KookBot, event: KookEvent, signal: AbortSignal) => void | Promise<void>
 }
 
 export type KookBotCallOptions = { signal?: AbortSignal }
@@ -76,7 +82,7 @@ const invokeKookEndpoint = Symbol('invokeKookEndpoint')
 // oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every merged method on the shared prototype below.
 export class KookBot {
 	readonly id: string
-	readonly events = new KookEventObservers()
+	readonly events: KookBotEvents
 	readonly $: KookBotExtensions
 	readonly #owner = new AbortController()
 	readonly #api: KookApi
@@ -97,6 +103,7 @@ export class KookBot {
 	constructor(botOptions: KookBotOptions) {
 		this.#options = botOptions
 		this.id = botOptions.id
+		this.events = createKookBotEvents(botOptions.ctx)
 		this.#api = createKookClient({ ...botOptions, signal: this.#owner.signal })
 		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: KookBotExtensions = {
@@ -140,10 +147,7 @@ export class KookBot {
 					getUrl: async (signal) =>
 						unwrap(await this.#api.$raw.call('getGateway', { compress: 0 }, signal)).url,
 					onEvent: async (event, signal) => {
-						await this.events.dispatch(event, signal, (handler, error) =>
-							this.#options.logger.warn('KOOK event handler failed', { handler, error }),
-						)
-						await this.#options.onEvent?.(this, event, signal)
+						await dispatchKookEvent(this, this.events, this.#options.pluginEvents, event, signal)
 						const message = normalizeKookEvent(event, botId, this.id)
 						if (message) await this.#options.hub?.current?.receive(message, signal)
 					},

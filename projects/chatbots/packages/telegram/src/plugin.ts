@@ -14,7 +14,7 @@ import {
 	type TokenBotConfigInput,
 } from '@repo/chatbots-hub'
 import { TelegramBot, type TelegramBotStatus } from './bot.ts'
-import { TelegramPluginUpdates, type TelegramUpdateHandler } from './events.ts'
+import { createTelegramPluginEvents } from './events.ts'
 import type { TelegramSettingsDoc, TelegramStatusDoc } from './protocol.ts'
 import { TelegramAdapterRpc } from './rpc.ts'
 
@@ -48,7 +48,7 @@ export class TelegramAdapterPlugin extends BasePlugin {
 
 	/** Live read-only platform capability registry. */
 	readonly bots: BotRegistry<TelegramBot> = this.registryState.registry
-	readonly updates = new TelegramPluginUpdates()
+	readonly events = createTelegramPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
 		this.ctx.effects.defer(
@@ -122,10 +122,6 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		return this.currentStatus(id)
 	}
 
-	registerUpdateHandler(id: string, handler: TelegramUpdateHandler): () => void {
-		return this.updates.observe(id, ({ update, signal }) => handler(update, signal))
-	}
-
 	/** @deprecated Prefer `upsertBot({ id, ... })`. */
 	saveSettings(input: { token?: string; apiBase?: string }): Promise<TelegramSettingsDoc> {
 		return this.upsertBot({ id: DEFAULT_BOT_ID, ...input })
@@ -160,15 +156,13 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		this.removeRuntimeBot(id)
 		const bot = new TelegramBot({
 			id,
+			ctx: this.ctx,
 			token,
 			apiBase,
 			hub: this.hubBinding.ref,
+			pluginEvents: this.events,
 			logger: this.ctx.logger,
 			onStatus: (next) => this.projectStatus(id, next),
-			onUpdate: async (sourceBot, update, signal) =>
-				this.updates.dispatch({ bot: sourceBot, update, signal }, (handler, error) =>
-					this.ctx.logger.warn('Telegram plugin update handler failed', { handler, error }),
-				),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))
 		this.projectStatus(id, bot.$.status)
