@@ -1,7 +1,7 @@
 # Authelia OIDC Demo
 
-Standalone OIDC integration demo under `packages/plugins`, separate from `plugins-host` like
-`static-commercial-demo`.
+Standalone OIDC integration demo under `packages/plugins`. For the canonical static host, frontend
+HMR, and GQLens integration layout, generate the CLI `app-monorepo` template.
 
 It demonstrates two different OIDC paths against the same local Authelia issuer:
 

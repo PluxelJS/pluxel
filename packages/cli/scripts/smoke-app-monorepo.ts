@@ -53,7 +53,7 @@ try {
 	const workspacePath = resolve(applicationRoot, 'pnpm-workspace.yaml')
 	const workspace = parse(await readFile(workspacePath, 'utf8')) as Record<string, unknown>
 	workspace.overrides = overrides
-	await writeFile(workspacePath, stringify(workspace))
+	await writeFile(workspacePath, stringify(workspace, { singleQuote: true }))
 
 	await runPnpm(['install', '--frozen-lockfile=false'], applicationRoot)
 	await runPnpm(['verify'], applicationRoot, { CI: '1' })
@@ -81,6 +81,12 @@ try {
 	)
 
 	await runPnpm(['install', '--frozen-lockfile=false'], pluginRoot)
+	// This workspace file belongs to the smoke harness rather than the published template. Keep it
+	// under the same formatting contract before asking the generated plugin to verify itself.
+	await runPnpm(
+		['exec', 'oxfmt', '-c', '.oxfmtrc.json', '--write', 'pnpm-workspace.yaml'],
+		pluginRoot,
+	)
 	await runPnpm(['verify'], pluginRoot, { CI: '1' })
 	const pluginPackRoot = resolve(pluginRoot, '.pack')
 	await mkdir(pluginPackRoot, { recursive: true })

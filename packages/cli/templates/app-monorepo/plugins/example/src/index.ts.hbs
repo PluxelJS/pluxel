@@ -1,5 +1,6 @@
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
-import { GreetingService } from '{{packageName}}-domain'
+import { GreetingService, greetingSchemaSDL } from '{{packageName}}-domain'
+import { createSchema, createYoga } from 'graphql-yoga'
 
 const ExampleConfig = v.object({
 	message: v.optional(v.string(), 'Hello'),
@@ -11,13 +12,34 @@ export class {{className}}Plugin extends BasePlugin {
 	private readonly greetings = new GreetingService()
 
 	override init(): void {
+		const yoga = createYoga({
+			schema: createSchema({
+				typeDefs: greetingSchemaSDL,
+				resolvers: {
+					Query: {
+						greeting: (_root: unknown, args: { name?: string }) =>
+							this.greetings.greet(args.name ?? '', this.config.message),
+					},
+				},
+			}),
+			graphqlEndpoint: this.ctx.http.plugin.base('/api/graphql'),
+		})
+
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app
 					.get('/health', () => ({ ok: true }))
 					.get('/greeting', ({ query }) => ({
 						message: this.greetings.greet(String(query.name ?? ''), this.config.message),
-					})),
+					}))
+					.all('/graphql', async ({ request, set }) => {
+						const response = await yoga.fetch(request)
+						set.status = response.status
+						response.headers.forEach((value, key) => {
+							set.headers[key] = value
+						})
+						return response.text()
+					}),
 			{ path: '/api', id: '{{className}}Plugin:api' },
 		)
 	}

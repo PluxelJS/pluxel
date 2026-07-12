@@ -9,19 +9,21 @@
 		"pnpm": ">=11"
 	},
 	"scripts": {
-		"dev": "pnpm --filter {{packageName}}-host dev",
-		"build": "pnpm -r --if-present build",
-		"lint": "oxlint apps packages plugins",
+		"dev": "pnpm --filter {{packageName}}-web dev",
+		"build": "pnpm --filter {{packageName}}-web build",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error web packages plugins oxlint.config.ts",
+		"lint:fix": "pnpm lint --fix",
+		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
+		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
 		"test": "pnpm -r --if-present test",
 		"typecheck": "pnpm -r --if-present typecheck",
-		"verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "^0.1.0",
-		"@types/node": "^25.0.0",
+		"oxfmt": "^0.57.0",
 		"oxlint": "^1.72.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.0.0",
 		"vitest": "^4.1.9"
 	}
 }

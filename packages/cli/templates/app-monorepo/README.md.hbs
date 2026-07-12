@@ -2,38 +2,66 @@
 
 {{description}}
 
-This repository is intentionally small: one Vite host, one Pluxel plugin, and one pure domain
-package. Pluxel packages are normal registry dependencies; only packages owned by this repository
-use `workspace:*`.
+This is a small Pluxel monorepo with one deployable `web` workspace, one plugin and one
+framework-neutral domain package. Start with plugin behavior; host composition is documented
+separately below.
 
-## Start
+## Develop the plugin
+
+Before changing `plugins/`, contracts, host policy or lint configuration, read
+[`docs/PLUXEL_PLUGIN_GUIDE.md`](docs/PLUXEL_PLUGIN_GUIDE.md). Coding agents are directed there by
+the generated `AGENTS.md`. The guide explains the standard plugin shape, required versus optional
+dependencies, lifecycle cleanup, Web Management boundaries and every enabled Pluxel Oxlint rule.
+
+The main plugin is `plugins/example/src/index.ts`. Its test proves that business HTTP works with
+Web Management disabled. Keep that property as the plugin grows.
+
+Run the complete local verification before finishing a change:
+
+```sh
+pnpm lint:fix
+pnpm verify
+```
+
+`verify` checks format, unused lint suppressions, types, tests and the production build. Treat
+Pluxel rule failures as ownership or correctness feedback; do not broadly disable them.
+
+## Start the application
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-The default host is headless. Verify the plugin business route:
+Open `http://127.0.0.1:3310` for the typed GQLens greeting UI. Verify the underlying plugin business
+route directly:
 
 ```sh
 curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
 ```
 
-Run the complete local verification:
+## Project boundaries
 
-```sh
-pnpm verify
-```
+- `web`: deployable Vite application, static host policy and React/GQLens frontend.
+- `plugins/example`: plugin lifecycle, configuration and business HTTP routes.
+- `packages/domain`: neutral logic shared by `web` and the plugin.
 
-Shared TypeScript, Vite, Vitest, lint, and Pluxel build tooling is owned by the workspace root.
-Application packages only declare their direct runtime and test dependencies.
+The repository root only coordinates workspaces and shared quality tooling. `web/package.json` owns
+React, GQLens, Vite and static runtime dependencies. Pluxel packages are normal registry
+dependencies; only packages owned here use `workspace:*`. If the repository gains multiple
+deployable applications, move `web` under an `apps/*` convention then.
 
-## Layout
+## Host composition
 
-- `apps/host`: host-owned static catalog, persistence, management, and deployment policy.
-- `plugins/example`: plugin lifecycle, configuration, and business HTTP routes.
-- `packages/domain`: framework-independent business logic.
+The Vite plugin order in `web/vite.config.ts` is intentional:
 
-To enable the Pluxel management workbench, change `webManagement: false` in
-`apps/host/src/pluxel.static.ts` to a host-owned configuration object. The plugin business route and
-domain package do not depend on that optional capability.
+1. Pluxel mounts the static runtime and plugin HTTP routes.
+2. GQLens watches the domain schema and regenerates typed frontend accessors.
+3. React provides normal component HMR.
+
+GQLens middleware stays disabled because GraphQL is served by the Pluxel plugin, not by a second
+development-only backend.
+
+To enable the optional Pluxel management workbench, replace `webManagement: false` in
+`web/src/pluxel.static.ts` with a host-owned configuration object. Plugin business routes and
+domain state must remain independent of that capability.

@@ -2,6 +2,11 @@
 
 `@pluxel/cli` 是按命令加载的编排入口，不是 runtime 或构建 API 的聚合包。
 
+插件写法、最佳实践和 Pluxel 增补 lint rules 分别见
+[`plugin-authoring.md`](plugin-authoring.md)、
+[`plugin-best-practices.md`](plugin-best-practices.md) 和 [`oxlint.md`](oxlint.md)。本页只说明命令
+和 package ownership。
+
 只创建项目时安装 CLI 即可：
 
 ```sh

@@ -182,7 +182,6 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
 			...(await collectSourceFiles(`${root}/packages/plugins/host/src/demo`)),
-			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 		]
 		const offenders: string[] = []
@@ -206,7 +205,6 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
 			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
-			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 		]
 		const offenders: string[] = []
@@ -270,7 +268,6 @@ describe('toolchain package boundaries', () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
 			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
-			...(await collectSourceFiles(`${root}/packages/plugins/static-commercial-demo/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 			`${root}/packages/runtime-static/src/types.ts`,
 			`${root}/packages/runtime-static/src/index.ts`,

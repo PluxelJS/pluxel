@@ -145,12 +145,12 @@ describe('ExtensionCompilerService', () => {
 
 	it('resolves static Vite host UI entries from Vite root without a loader', async () => {
 		await using fixture = await createFixture({
-			'packages/plugins/static-commercial-demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-static-commercial-demo',
+			'apps/static-host/package.json': JSON.stringify({
+				name: '@example/static-host',
 				private: true,
 				type: 'module',
 			}),
-			'packages/plugins/static-commercial-demo/web/client/main.tsx': 'export default {}\n',
+			'apps/static-host/web/client/main.tsx': 'export default {}\n',
 		})
 		const host = createHost()
 		const store: ExtensionModuleStore = {
@@ -170,7 +170,7 @@ describe('ExtensionCompilerService', () => {
 				enabled: true,
 				viteServer: {
 					config: {
-						root: fixture.getPath('packages/plugins/static-commercial-demo'),
+						root: fixture.getPath('apps/static-host'),
 					},
 				},
 			},
@@ -188,8 +188,8 @@ describe('ExtensionCompilerService', () => {
 
 		expect(pluginBuildMocks.buildPluginUiRemote).toHaveBeenCalledWith(
 			expect.objectContaining({
-				root: fixture.getPath('packages/plugins/static-commercial-demo'),
-				entryPath: fixture.getPath('packages/plugins/static-commercial-demo/web/client/main.tsx'),
+				root: fixture.getPath('apps/static-host'),
+				entryPath: fixture.getPath('apps/static-host/web/client/main.tsx'),
 				pluginName: 'StaticCommercialPlugin',
 			}),
 		)

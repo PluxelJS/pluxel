@@ -116,9 +116,12 @@ describe('scaffold template rendering', () => {
 
 		expect(ok).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pnpm-workspace.yaml'))).toBe(true)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'apps/host/src/pluxel.static.ts'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/pluxel.static.ts'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/PLUXEL_PLUGIN_GUIDE.md'))).toBe(true)
 
-		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'apps/host/vite.config.ts'), 'utf8')
+		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'web/vite.config.ts'), 'utf8')
 		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
 		expect(hostVite).not.toContain('../../packages/')
 
@@ -131,8 +134,32 @@ describe('scaffold template rendering', () => {
 
 		const rootManifest = fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')
 		expect(rootManifest).toContain('"@pluxel/rolldown": "^0.1.0"')
+		expect(rootManifest).toContain('"oxfmt": "^0.57.0"')
+		expect(rootManifest).not.toContain('"react":')
 		expect(rootManifest).not.toContain('"@pluxel/core"')
 		expect(rootManifest).not.toContain('"tsdown"')
+
+		const webManifest = fixture.fs.readFileSync(resolve(targetDir, 'web/package.json'), 'utf8')
+		expect(webManifest).toContain('"react": "^19.2.7"')
+		expect(webManifest).toContain('"@gqlens/react": "0.2.0"')
+		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/client/main.tsx'))).toBe(true)
+
+		const oxlintConfig = fixture.fs.readFileSync(resolve(targetDir, 'oxlint.config.ts'), 'utf8')
+		expect(oxlintConfig).toContain("from '@pluxel/rolldown/oxlint'")
+		expect(oxlintConfig).toContain('prefixPluxelRuleSet(pluxelRules)')
+
+		const agentsGuide = fixture.fs.readFileSync(resolve(targetDir, 'AGENTS.md'), 'utf8')
+		expect(agentsGuide).toContain('docs/PLUXEL_PLUGIN_GUIDE.md')
+
+		const pluginGuide = fixture.fs.readFileSync(
+			resolve(targetDir, 'docs/PLUXEL_PLUGIN_GUIDE.md'),
+			'utf8',
+		)
+		expect(pluginGuide).toContain('required plugin dependencies belong in constructors')
+		expect(pluginGuide).toContain('plugin-constructor-no-type-only-imports')
+		expect(pluginGuide).toContain('runtime-type-augmentations')
+		expect(pluginGuide).toContain('pnpm verify')
 
 		const vitestConfig = fixture.fs.readFileSync(
 			resolve(targetDir, 'plugins/example/vitest.config.ts'),
@@ -175,7 +202,10 @@ describe('scaffold template rendering', () => {
 			'@pluxel/core': '^0.3.0',
 			'@pluxel/rolldown': '^0.1.0',
 			'@pluxel/test': '^0.1.0',
+			oxfmt: '^0.57.0',
 		})
+		expect(fixture.fs.existsSync(resolve(targetDir, 'oxlint.config.ts'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, '.oxfmtrc.json'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
 		const vitestConfig = fixture.fs.readFileSync(resolve(targetDir, 'vitest.config.ts'), 'utf8')
 		expect(vitestConfig).not.toContain("'.*/**'")

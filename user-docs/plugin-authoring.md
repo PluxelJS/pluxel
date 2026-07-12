@@ -1,6 +1,9 @@
 # 编写 Pluxel 插件
 
-这是一条面向插件作者的主路径。先按本文建立插件结构，再根据需要阅读具体服务类型。内部架构见 [`docs/PLUGIN_SYSTEM.md`](../docs/PLUGIN_SYSTEM.md)。
+这是一条面向插件作者的主路径。先按本文建立插件结构，再用
+[`plugin-best-practices.md`](plugin-best-practices.md) review 所有权，并让
+[`oxlint.md`](oxlint.md) 检查可静态判断的约束。内部架构见
+[`docs/PLUGIN_SYSTEM.md`](../docs/PLUGIN_SYSTEM.md)。
 
 ## 先记住四件事
 
@@ -300,6 +303,9 @@ webManagement: {
 关闭时，宿主不创建 UI compiler、watcher、管理路由或 management state backend。
 
 ## 提交前检查
+
+CLI monorepo 模板已经配置 Pluxel Oxlint rules。先运行 `pnpm lint:fix`，再运行覆盖 format、lint、
+typecheck、tests 和 production build 的 `pnpm verify`。
 
 - required dependency 是否只写在 constructor？
 - optional integration 是否使用 `plugins.use()`？
