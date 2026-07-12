@@ -108,7 +108,7 @@ function looksLikeBase64(input: string): boolean {
 }
 
 function estimatedBase64Bytes(input: string): number {
-	const normalized = input.replace(/\s/g, '')
+	const normalized = input.replaceAll(/\s/g, '')
 	const padding = normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0
 	return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding)
 }

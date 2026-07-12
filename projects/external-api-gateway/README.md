@@ -12,8 +12,15 @@
 ```bash
 pnpm --filter @repo/project-external-api-gateway dev
 pnpm --filter @repo/project-external-api-gateway static
+pnpm --filter @repo/project-external-api-gateway headless
 pnpm --filter @repo/project-external-api-gateway verify
 ```
+
+`headless` 关闭整个 Web Management bundle；外部 gateway、provider HTTP 和计费能力仍然启动。
+这条入口用于持续验证管理 UI 只是业务状态的可选投影。
+
+`pnpm test:headless` 会使用临时数据目录和随机端口启动同一路线，请求 gateway/provider
+业务接口后关闭宿主；`verify` 已包含这项集成验证。
 
 默认端口：`3313`。`dev` 和 `static` 都运行 Vite + runtime-static host，并把 `/external-gateway/*` 代理到 Pluxel runtime HTTP router；插件源码始终经过 Pluxel Vite/Rolldown 转换链。
 

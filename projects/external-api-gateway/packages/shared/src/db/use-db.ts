@@ -27,7 +27,7 @@ type DbContext = {
 
 export async function useExternalGatewayDB(ctx: DbContext): Promise<ExternalGatewayDbHandle> {
 	if (typeof ctx.config.persistence !== 'string') {
-		throw new Error(
+		throw new TypeError(
 			'ExternalGateway database requires file persistence: set persistence to a root path.',
 		)
 	}

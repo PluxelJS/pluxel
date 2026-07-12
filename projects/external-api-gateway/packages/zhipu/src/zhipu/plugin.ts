@@ -1,9 +1,8 @@
-import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/vault'
 import {
 	DEFAULT_ZHIPU_BASE_URL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
 	MAX_ZHIPU_HISTORY,
+	ProjectedCollection,
 	UsageRecorderPlugin,
 	providerCallHistory,
 	providerHistoryFromRow,
@@ -13,8 +12,10 @@ import {
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
+import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { ui } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
@@ -65,9 +66,9 @@ type UpstreamOutcome = {
 
 @Plugin({ name: 'ZhipuProviderPlugin' })
 export class ZhipuProviderPlugin extends BasePlugin {
-	private settings!: ManagementStateCollection<ZhipuSettingsDoc>
-	private status!: ManagementStateCollection<ZhipuStatusDoc>
-	private history!: ManagementStateCollection<ZhipuTestRunDoc>
+	private readonly settings = new ProjectedCollection<ZhipuSettingsDoc>()
+	private readonly status = new ProjectedCollection<ZhipuStatusDoc>()
+	private readonly history = new ProjectedCollection<ZhipuTestRunDoc>()
 	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
 
@@ -76,15 +77,16 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadHistoryFromDB()
+		await this.syncSettingsDoc()
+		this.ensureStatusDoc()
 		await this.ctx.webManagement.use(async (web) => {
-			this.settings = web.state.collection<ZhipuSettingsDoc>({ name: 'settings' })
-			this.status = web.state.collection<ZhipuStatusDoc>({ name: 'status' })
-			this.history = web.state.collection<ZhipuTestRunDoc>({ name: 'history' })
-			await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
-			this.data = await useExternalGatewayDB(this.ctx)
-			await this.loadHistoryFromDB()
-			await this.syncSettingsDoc()
-			this.ensureStatusDoc()
+			await Promise.all([
+				this.settings.attach(web.state.collection<ZhipuSettingsDoc>({ name: 'settings' })),
+				this.status.attach(web.state.collection<ZhipuStatusDoc>({ name: 'status' })),
+				this.history.attach(web.state.collection<ZhipuTestRunDoc>({ name: 'history' })),
+			])
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new ZhipuProviderRpc(this))
 		})
@@ -1037,6 +1039,19 @@ export class ZhipuProviderRpc extends RpcTarget {
 
 	routeBase() {
 		return this.plugin.routeBase()
+	}
+}
+
+declare module '@pluxel/runtime/web' {
+	interface ExtensionUiRpcMap {
+		ZhipuProviderPlugin: ZhipuProviderRpc
+	}
+	interface ExtensionUiSignalDbMap {
+		ZhipuProviderPlugin: {
+			settings: ZhipuSettingsDoc
+			status: ZhipuStatusDoc
+			history: ZhipuTestRunDoc
+		}
 	}
 }
 

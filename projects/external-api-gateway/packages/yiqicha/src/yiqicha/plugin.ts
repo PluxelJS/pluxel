@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto'
-import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/vault'
 import {
 	createYiqichaSign,
 	getYiqichaApi,
@@ -12,6 +10,7 @@ import {
 import {
 	DEFAULT_YIQICHA_BASE_URL,
 	MAX_YIQICHA_HISTORY,
+	ProjectedCollection,
 	UsageRecorderPlugin,
 	providerCallHistory,
 	providerHistoryFromRow,
@@ -23,8 +22,10 @@ import {
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
+import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { ui } from '@pluxel/runtime/web-management'
 import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import type {
@@ -92,9 +93,9 @@ type ForwardApiOptions = {
 
 @Plugin({ name: 'YiqichaProviderPlugin' })
 export class YiqichaProviderPlugin extends BasePlugin {
-	private settings!: ManagementStateCollection<YiqichaSettingsDoc>
-	private status!: ManagementStateCollection<YiqichaStatusDoc>
-	private history!: ManagementStateCollection<YiqichaTestRunDoc>
+	private readonly settings = new ProjectedCollection<YiqichaSettingsDoc>()
+	private readonly status = new ProjectedCollection<YiqichaStatusDoc>()
+	private readonly history = new ProjectedCollection<YiqichaTestRunDoc>()
 	private data: ExternalGatewayDbHandle | undefined
 	private historySeq = 1
 	private readonly inflight = new Map<string, Promise<UpstreamOutcome>>()
@@ -104,15 +105,16 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadHistoryFromDB()
+		await this.syncSettingsDoc()
+		this.ensureStatusDoc()
 		await this.ctx.webManagement.use(async (web) => {
-			this.settings = web.state.collection<YiqichaSettingsDoc>({ name: 'settings' })
-			this.status = web.state.collection<YiqichaStatusDoc>({ name: 'status' })
-			this.history = web.state.collection<YiqichaTestRunDoc>({ name: 'history' })
-			await Promise.all([this.settings.ready(), this.status.ready(), this.history.ready()])
-			this.data = await useExternalGatewayDB(this.ctx)
-			await this.loadHistoryFromDB()
-			await this.syncSettingsDoc()
-			this.ensureStatusDoc()
+			await Promise.all([
+				this.settings.attach(web.state.collection<YiqichaSettingsDoc>({ name: 'settings' })),
+				this.status.attach(web.state.collection<YiqichaStatusDoc>({ name: 'status' })),
+				this.history.attach(web.state.collection<YiqichaTestRunDoc>({ name: 'history' })),
+			])
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new YiqichaProviderRpc(this))
 		})
@@ -499,13 +501,12 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async readCachedOutcome(cacheKey: CacheKey): Promise<UpstreamOutcome | undefined> {
 		if (!this.data) return undefined
 		try {
-			const row = (
-				await this.data.db
-					.select()
-					.from(yiqichaResponseCache)
-					.where(eq(yiqichaResponseCache.id, cacheKey.id))
-					.limit(1)
-			)[0]
+			const rows = await this.data.db
+				.select()
+				.from(yiqichaResponseCache)
+				.where(eq(yiqichaResponseCache.id, cacheKey.id))
+				.limit(1)
+			const row = rows[0]
 			if (!row) return undefined
 			const now = Date.now()
 			const cached = outcomeFromCacheRow(row, now)
@@ -833,6 +834,19 @@ export class YiqichaProviderRpc extends RpcTarget {
 
 	routeBase() {
 		return this.plugin.routeBase()
+	}
+}
+
+declare module '@pluxel/runtime/web' {
+	interface ExtensionUiRpcMap {
+		YiqichaProviderPlugin: YiqichaProviderRpc
+	}
+	interface ExtensionUiSignalDbMap {
+		YiqichaProviderPlugin: {
+			settings: YiqichaSettingsDoc
+			status: YiqichaStatusDoc
+			history: YiqichaTestRunDoc
+		}
 	}
 }
 

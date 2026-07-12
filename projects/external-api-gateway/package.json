@@ -4,11 +4,13 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --host 127.0.0.1",
+		"headless": "PLUXEL_WEB_MANAGEMENT=false vite --host 127.0.0.1",
 		"build": "vite build",
 		"static": "vite --host 127.0.0.1",
 		"test": "vitest run --config vitest.config.ts",
+		"test:headless": "node scripts/headless-smoke.mjs",
 		"typecheck": "tsc --noEmit --pretty false",
-		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-gateway test && tsc --noEmit --pretty false && vitest run --config vitest.config.ts && vite build"
+		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-gateway test && tsc --noEmit --pretty false && vite build && pnpm test:headless"
 	},
 	"dependencies": {
 		"@libsql/client": "^0.17.4",

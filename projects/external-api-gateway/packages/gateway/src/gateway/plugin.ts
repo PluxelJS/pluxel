@@ -1,9 +1,9 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import '@pluxel/runtime/register/static'
 import {
 	DEFAULT_GATEWAY_DEV_TOKEN,
 	type ExternalGatewayDbHandle,
 	gatewayTokens,
+	ProjectedCollection,
 	type GatewayTokenRow,
 	useExternalGatewayDB,
 } from '@repo/external-api-gateway-shared'
@@ -17,7 +17,8 @@ import type {
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
+import { ui } from '@pluxel/runtime/web-management'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
 import {
@@ -59,8 +60,8 @@ export const EXTERNAL_GATEWAY_RPC_PATH = `${EXTERNAL_GATEWAY_ROUTE_BASE}/rpc`
 
 @Plugin({ name: 'ExternalGatewayPlugin' })
 export class ExternalGatewayPlugin extends BasePlugin {
-	private tokens!: ManagementStateCollection<GatewayTokenDoc>
-	private status!: ManagementStateCollection<GatewayStatusDoc>
+	private readonly tokens = new ProjectedCollection<GatewayTokenDoc>()
+	private readonly status = new ProjectedCollection<GatewayStatusDoc>()
 	private tokenHashes = new Map<string, string>()
 	private data: ExternalGatewayDbHandle | undefined
 
@@ -72,14 +73,15 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadTokensFromDB()
+		await this.ensureDevToken()
+		this.syncStatus()
 		await this.ctx.webManagement.use(async (web) => {
-			this.tokens = web.state.collection<GatewayTokenDoc>({ name: 'tokens' })
-			this.status = web.state.collection<GatewayStatusDoc>({ name: 'status' })
-			await Promise.all([this.tokens.ready(), this.status.ready()])
-			this.data = await useExternalGatewayDB(this.ctx)
-			await this.loadTokensFromDB()
-			await this.ensureDevToken()
-			this.syncStatus()
+			await Promise.all([
+				this.tokens.attach(web.state.collection<GatewayTokenDoc>({ name: 'tokens' })),
+				this.status.attach(web.state.collection<GatewayStatusDoc>({ name: 'status' })),
+			])
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new GatewayAdminRpc(this))
 		})
@@ -364,6 +366,15 @@ export class GatewayAdminRpc extends RpcTarget {
 
 	rpcBase() {
 		return this.gateway.rpcBase()
+	}
+}
+
+declare module '@pluxel/runtime/web' {
+	interface ExtensionUiRpcMap {
+		ExternalGatewayPlugin: GatewayAdminRpc
+	}
+	interface ExtensionUiSignalDbMap {
+		ExternalGatewayPlugin: { tokens: GatewayTokenDoc; status: GatewayStatusDoc }
 	}
 }
 

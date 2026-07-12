@@ -17,8 +17,7 @@ import {
 	type YiqichaBundleRecommendation,
 } from './tools.ts'
 
-export const DEFAULT_EXTERNAL_GATEWAY_RPC_URL =
-	'http://127.0.0.1:3313/external-gateway/rpc'
+export const DEFAULT_EXTERNAL_GATEWAY_RPC_URL = 'http://127.0.0.1:3313/external-gateway/rpc'
 
 const disposeSymbol = (Symbol as unknown as { dispose?: symbol }).dispose
 const asyncDisposeSymbol = (Symbol as unknown as { asyncDispose?: symbol }).asyncDispose
@@ -145,10 +144,8 @@ export class PiExtension implements PiPlugin {
 			this.callTool('zhipu.moderate', args, options),
 		ocr: (args: ExternalGatewayToolArgs['zhipu.ocr'], options?: PiToolCallOptions) =>
 			this.callTool('zhipu.ocr', args, options),
-		fileParse: (
-			args: ExternalGatewayToolArgs['zhipu.file_parse'],
-			options?: PiToolCallOptions,
-		) => this.callTool('zhipu.file_parse', args, options),
+		fileParse: (args: ExternalGatewayToolArgs['zhipu.file_parse'], options?: PiToolCallOptions) =>
+			this.callTool('zhipu.file_parse', args, options),
 		fileParseResult: (
 			args: ExternalGatewayToolArgs['zhipu.file_parse_result'],
 			options?: PiToolCallOptions,
@@ -343,15 +340,16 @@ export function yiqichaBundleCalls(
 	const only = options.only?.length ? new Set(options.only) : undefined
 	return plan.calls
 		.filter((call) => !only || only.has(call.id))
-		.map((call) => ({
-			name: 'yiqicha.call_api',
-			args: {
+		.map((call) => {
+			const args: Record<string, unknown> = {
 				api: call.api,
 				params: call.params,
-				...(options.noCache === undefined ? {} : { noCache: options.noCache }),
-			},
-			...(options.billing === undefined ? {} : { billing: options.billing }),
-		}))
+			}
+			if (options.noCache !== undefined) args.noCache = options.noCache
+			const request: PiToolBatchCallRequest = { name: 'yiqicha.call_api', args }
+			if (options.billing !== undefined) request.billing = options.billing
+			return request
+		})
 }
 
 export function toPiToolDefinition(spec: ExternalGatewayToolSpec): PiToolDefinition {

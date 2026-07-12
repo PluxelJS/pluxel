@@ -292,7 +292,8 @@ const documentReturnFormatSchema = stringEnum(['markdown', 'text', 'download_lin
 
 const languageHintsSchema = Type.Optional(
 	Type.Array(Type.String({ minLength: 1 }), {
-		description: 'Optional language hints from the caller. The gateway maps these to provider fields.',
+		description:
+			'Optional language hints from the caller. The gateway maps these to provider fields.',
 	}),
 )
 
@@ -679,10 +680,7 @@ export function listExternalGatewayToolSpecs(
 	return EXTERNAL_GATEWAY_TOOL_SPECS.filter(
 		(tool) =>
 			(!input.provider || tool.provider === input.provider) && (!names || names.has(tool.name)),
-	).map((tool) => ({
-		...tool,
-		inputSchema: structuredClone(tool.inputSchema),
-	}))
+	).map((tool) => structuredClone(tool))
 }
 
 export function inputSchemaForExternalGatewayTool(name: string): TSchema {

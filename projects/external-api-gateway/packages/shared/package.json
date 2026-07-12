@@ -26,6 +26,7 @@
 		"./package.json": "./package.json"
 	},
 	"scripts": {
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	}
 }

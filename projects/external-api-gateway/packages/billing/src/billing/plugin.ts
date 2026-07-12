@@ -1,12 +1,13 @@
-import '@pluxel/runtime/register/static'
 import { Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
+import { ui } from '@pluxel/runtime/web-management'
 import {
 	DEFAULT_ZHIPU_CHAT_MODEL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
 	DEFAULT_ZHIPU_TOKENIZER_MODEL,
 	MAX_BILLING_RECORDS,
+	ProjectedCollection,
 	UsageRecorderPlugin,
 	billingRates,
 	billingUsageRecords,
@@ -36,34 +37,31 @@ const yiqichaApiKeyByCode: Map<string, string> = new Map(
 
 @Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })
 export class UsageBillingPlugin extends UsageRecorderPlugin {
-	private overview!: ManagementStateCollection<BillingOverviewDoc>
-	private records!: ManagementStateCollection<BillingUsageRecord>
-	private users!: ManagementStateCollection<BillingUserSummaryDoc>
-	private providers!: ManagementStateCollection<BillingProviderSummaryDoc>
-	private rates!: ManagementStateCollection<BillingRateDoc>
+	private readonly overview = new ProjectedCollection<BillingOverviewDoc>()
+	private readonly records = new ProjectedCollection<BillingUsageRecord>()
+	private readonly users = new ProjectedCollection<BillingUserSummaryDoc>()
+	private readonly providers = new ProjectedCollection<BillingProviderSummaryDoc>()
+	private readonly rates = new ProjectedCollection<BillingRateDoc>()
 	private data: ExternalGatewayDbHandle | undefined
 	private seq = 1
 
 	override async init(): Promise<void> {
+		this.data = await useExternalGatewayDB(this.ctx)
+		await this.loadRatesFromDB()
+		this.seedDefaultRates()
+		const usageRecords = await this.loadUsageFromDB()
+		this.restoreSeq(usageRecords)
+		this.rebuildSummaries(usageRecords)
 		await this.ctx.webManagement.use(async (web) => {
-			this.overview = web.state.collection<BillingOverviewDoc>({ name: 'overview' })
-			this.records = web.state.collection<BillingUsageRecord>({ name: 'records' })
-			this.users = web.state.collection<BillingUserSummaryDoc>({ name: 'users' })
-			this.providers = web.state.collection<BillingProviderSummaryDoc>({ name: 'providers' })
-			this.rates = web.state.collection<BillingRateDoc>({ name: 'rates' })
 			await Promise.all([
-				this.overview.ready(),
-				this.records.ready(),
-				this.users.ready(),
-				this.providers.ready(),
-				this.rates.ready(),
+				this.overview.attach(web.state.collection<BillingOverviewDoc>({ name: 'overview' })),
+				this.records.attach(web.state.collection<BillingUsageRecord>({ name: 'records' })),
+				this.users.attach(web.state.collection<BillingUserSummaryDoc>({ name: 'users' })),
+				this.providers.attach(
+					web.state.collection<BillingProviderSummaryDoc>({ name: 'providers' }),
+				),
+				this.rates.attach(web.state.collection<BillingRateDoc>({ name: 'rates' })),
 			])
-			this.data = await useExternalGatewayDB(this.ctx)
-			await this.loadRatesFromDB()
-			this.seedDefaultRates()
-			const usageRecords = await this.loadUsageFromDB()
-			this.restoreSeq(usageRecords)
-			this.rebuildSummaries(usageRecords)
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new UsageBillingRpc(this))
 		})
@@ -369,7 +367,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 			.from(billingUsageRecords)
 			.orderBy(desc(billingUsageRecords.at))
 		const allRecords = rows.map(recordFromRow)
-		for (const record of allRecords.slice(0, MAX_BILLING_RECORDS).reverse()) {
+		for (const record of allRecords.slice(0, MAX_BILLING_RECORDS).toReversed()) {
 			this.records.insert(record)
 		}
 		return allRecords
@@ -379,7 +377,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		this.users.removeMany({})
 		this.providers.removeMany({})
 		this.overview.replaceOne({ id: OVERVIEW_DOC_ID }, emptyOverview(), { upsert: true })
-		for (const record of records.slice().reverse()) {
+		for (const record of records.toReversed()) {
 			this.updateOverview(record)
 			this.updateUserSummary(record)
 			this.updateProviderSummary(record)
@@ -458,6 +456,21 @@ function emptyOverview(): BillingOverviewDoc {
 	}
 }
 
+declare module '@pluxel/runtime/web' {
+	interface ExtensionUiRpcMap {
+		UsageBillingPlugin: UsageBillingRpc
+	}
+	interface ExtensionUiSignalDbMap {
+		UsageBillingPlugin: {
+			overview: BillingOverviewDoc
+			records: BillingUsageRecord
+			users: BillingUserSummaryDoc
+			providers: BillingProviderSummaryDoc
+			rates: BillingRateDoc
+		}
+	}
+}
+
 function roundMoney(value: number): number {
 	return Math.round((Number(value) || 0) * 1_000_000) / 1_000_000
 }
@@ -468,7 +481,7 @@ function rateId(provider: string, operation: string, model?: string): string {
 
 function normalizeUsageMetadata(record: BillingUsageInput): Record<string, unknown> | undefined {
 	const metadata = {
-		...(record.metadata ?? {}),
+		...record.metadata,
 		...(record.source ? { source: record.source } : {}),
 		...(record.tenantId ? { tenantId: record.tenantId } : {}),
 		...(record.traceId ? { traceId: record.traceId } : {}),

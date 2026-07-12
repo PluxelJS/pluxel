@@ -6,7 +6,9 @@ import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 
 const projectRoot = resolve(import.meta.dirname, '..')
-const staticDataRoot = resolve(projectRoot, '.pluxel/static')
+const staticDataRoot = process.env.PLUXEL_STATIC_DATA_ROOT
+	? resolve(process.env.PLUXEL_STATIC_DATA_ROOT)
+	: resolve(projectRoot, '.pluxel/static')
 
 export const externalApiGatewayPlugins = [
 	UsageBillingPlugin,
@@ -21,6 +23,11 @@ export const externalApiGatewayEnabledPlugins = [
 	'ExternalGatewayPlugin',
 ] as const
 
+const webManagement =
+	process.env.PLUXEL_WEB_MANAGEMENT === 'false'
+		? false
+		: { enabled: true as const, access: { exposure: 'private' as const } }
+
 export default defineStaticRuntimeConfig({
 	name: 'external-api-gateway',
 	plugins: externalApiGatewayPlugins,
@@ -29,5 +36,5 @@ export default defineStaticRuntimeConfig({
 	},
 	persistence: resolve(staticDataRoot, 'persistence'),
 	logger: { preset: 'core' },
-	webManagement: { enabled: true, access: { exposure: 'private' } },
+	webManagement,
 })
