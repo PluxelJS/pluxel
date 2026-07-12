@@ -17,8 +17,13 @@ export type KookStatusDoc = {
 	connectedAt: number | null
 	gatewayPhase: import('./gateway.ts').KookGatewayPhase
 	lastSequence: number
+	bufferedEvents: number
 	lastEventAt: number | null
 	reconnectAttempts: number
+	resumeAttempts: number
+	duplicateEvents: number
+	outOfOrderEvents: number
+	bufferOverflows: number
 	currentBackoffMs: number
 	updatedAt: number
 }
@@ -50,7 +55,7 @@ export type KookEvent<Extra extends KookEventExtra = KookEventExtra> = {
 export type KookGatewayFrame = {
 	s: number
 	sn?: number
-	d?: KookEvent | { code?: number; session_id?: string }
+	d?: KookEvent | { code?: number; session_id?: string; err?: string }
 }
 
 export const KOOK_TEXT = 1
@@ -62,4 +67,6 @@ export const SIGNAL_EVENT = 0
 export const SIGNAL_HELLO = 1
 export const SIGNAL_PING = 2
 export const SIGNAL_PONG = 3
+export const SIGNAL_RESUME = 4
 export const SIGNAL_RECONNECT = 5
+export const SIGNAL_RESUME_ACK = 6

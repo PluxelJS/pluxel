@@ -255,6 +255,11 @@ Context 时，从 `ctx.logger.with(...)` 派生带资源标识的 logger，不�
 heartbeat、空 poll 等高频内部变化不应造成固定周期持久化写。最低层网络 transport 应支持 factory
 注入，使重连、退避和 teardown 能在不访问真实网络的测试中验证。
 
+外部 stream 带 sequence/cursor 时，把 decode 和 listener 调度串到同一异步 tail，并在 listener 完成后
+再提交 checkpoint。重复项应幂等丢弃，乱序项只能进入有明确上限的 buffer；断线恢复必须等待旧 tail
+收敛后再读取 checkpoint。resume 被协议拒绝、ACK 超时或缺口无法收敛时，应清空旧恢复状态并回退
+全新连接，不能无限重试过期 session，也不能让 buffer 无界增长。
+
 ## 错误边界
 
 生命周期错误和单次业务错误不要混淆：

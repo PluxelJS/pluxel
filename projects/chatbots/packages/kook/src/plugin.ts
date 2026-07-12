@@ -207,8 +207,13 @@ export class KookAdapterPlugin extends BasePlugin {
 			connectedAt: status.connectedAt,
 			gatewayPhase: status.gateway.phase,
 			lastSequence: status.gateway.lastSequence,
+			bufferedEvents: status.gateway.bufferedEvents,
 			lastEventAt: status.gateway.timestamps.lastEventAt,
 			reconnectAttempts: status.gateway.counters.reconnectAttempts,
+			resumeAttempts: status.gateway.counters.resumeAttempts,
+			duplicateEvents: status.gateway.counters.duplicateEvents,
+			outOfOrderEvents: status.gateway.counters.outOfOrderEvents,
+			bufferOverflows: status.gateway.counters.bufferOverflows,
 			currentBackoffMs: status.gateway.currentBackoffMs,
 			updatedAt: status.updatedAt,
 		}

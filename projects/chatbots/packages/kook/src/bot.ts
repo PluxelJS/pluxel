@@ -142,8 +142,16 @@ export class KookBot extends KookNativeApi {
 			this.setStatus('connecting', { botId, username })
 			this.gateway = new KookGateway(
 				{
-					getUrl: async (signal) =>
-						unwrap(await this.#api.$raw.call('getGateway', { compress: 0 }, signal)).url,
+					getUrl: async (request, signal) => {
+						const value = unwrap(await this.#api.$raw.call('getGateway', { compress: 0 }, signal))
+						const url = new URL(value.url)
+						if (request.resume && request.sessionId) {
+							url.searchParams.set('resume', '1')
+							url.searchParams.set('sn', String(request.lastSequence))
+							url.searchParams.set('session_id', request.sessionId)
+						}
+						return url.toString()
+					},
 					onEvent: async (event, signal) => {
 						await dispatchKookEvent(this, this.events, this.#options.pluginEvents, event, signal)
 						const message = normalizeKookEvent(event, botId, this.id)
@@ -263,7 +271,7 @@ export class KookBot extends KookNativeApi {
 					? 'online'
 					: snapshot.phase === 'backoff' && snapshot.lastError
 						? 'error'
-						: snapshot.phase === 'connecting'
+						: snapshot.phase === 'connecting' || snapshot.phase === 'resuming'
 							? 'connecting'
 							: 'offline'
 		this.statusValue = updateKookBotStatus(previous, {
@@ -283,6 +291,13 @@ export class KookBot extends KookNativeApi {
 			phase !== previous.phase ||
 			snapshot.sessionId !== previous.gateway.sessionId ||
 			snapshot.lastSequence !== previous.gateway.lastSequence ||
+			snapshot.bufferedEvents !== previous.gateway.bufferedEvents ||
+			snapshot.counters.reconnectAttempts !== previous.gateway.counters.reconnectAttempts ||
+			snapshot.counters.resumeAttempts !== previous.gateway.counters.resumeAttempts ||
+			snapshot.counters.duplicateEvents !== previous.gateway.counters.duplicateEvents ||
+			snapshot.counters.outOfOrderEvents !== previous.gateway.counters.outOfOrderEvents ||
+			snapshot.counters.bufferOverflows !== previous.gateway.counters.bufferOverflows ||
+			snapshot.currentBackoffMs !== previous.gateway.currentBackoffMs ||
 			snapshot.lastError !== previous.gateway.lastError
 		if (meaningful) this.#options.onStatus?.(this.statusValue)
 	}

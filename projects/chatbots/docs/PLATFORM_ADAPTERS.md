@@ -175,6 +175,35 @@ webhook secret 和带认证信息的错误对象不得进入快照。
 连接实现应提供可注入的最低层 transport factory（例如 WebSocket factory），使握手、heartbeat、
 退避和 teardown 能用确定性的 fake transport 测试；不能把真实网络作为状态机单测的前提。
 
+### WebSocket resume 与事件顺序
+
+平台提供 session/sequence 恢复协议时，普通网络断开应优先恢复原 session，而不是立即创建新会话：
+
+```text
+disconnect
+  -> request resume URL(sessionId, lastSequence)
+  -> HELLO
+  -> send RESUME(lastSequence)
+  -> RESUME_ACK
+  -> online
+```
+
+所有 WebSocket frame 必须进入单一异步 tail；不能从多个 `message` callback 并发执行 codec、事件
+listener 和 Hub 投影。带序列号的事件只按连续序列消费：
+
+- `sn <= lastSequence` 是重复帧，计数后丢弃；
+- `sn === lastSequence + 1` 立即消费，再连续 drain 已缓冲后继帧；
+- `sn > lastSequence + 1` 进入以 SN 为 key 的有界 buffer；
+- buffer 超过上限说明缺口无法健康收敛，关闭 socket 触发恢复，不能无限占用内存；
+- 只有事件处理完成后才推进 `lastSequence`，避免 handler 未完成却宣称已经消费；
+- HELLO 与 resume ACK 都必须有明确 timeout；resume HELLO 失败、ACK 超时或平台明确要求 hard reconnect 时，清空 session、SN 和 buffer，
+  回退到全新连接；普通网络抖动保留它们。
+
+resume session 默认只属于当前 Bot 生命周期，不写入管理投影。若平台确实需要跨进程恢复，必须使用
+明确的加密持久化契约、版本和过期策略，不能顺手把 session ID 或完整 gateway URL 写入普通状态库。
+诊断快照可以公开是否正在恢复、buffer 大小以及 resume/duplicate/out-of-order 计数，但不能公开完整
+认证 URL。
+
 只有平台插件可以改变 registry。创建、更新、删除账号的方法由平台插件明确提供，并负责 Vault、
 状态投影和 Bot 生命周期；业务插件只能读取 Bot。
 

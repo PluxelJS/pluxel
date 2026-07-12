@@ -54,7 +54,7 @@ Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API �
 
 完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 与 `KookBot` 共享唯一 native API prototype，但 client 的 `$raw/$tool` 不会沿继承链泄漏到 Bot；raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
 
-`kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。gateway transport factory 可注入，因此握手、heartbeat、断线退避和 teardown 可以脱离真实网络做确定性测试。
+`kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。普通网络断开会携带 session/SN 恢复；所有 frame 经单一异步 tail 串行处理，事件按连续 SN 消费，重复帧被丢弃，乱序帧进入有界 buffer，无法收敛时主动重连。只有 listener 完成后才推进 SN，因此恢复点不会越过尚未完成的业务处理。gateway transport factory 可注入，握手、resume、heartbeat、断线退避和 teardown 都可以脱离真实网络做确定性测试。
 
 ## 源码组织
 

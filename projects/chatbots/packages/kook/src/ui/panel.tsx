@@ -153,7 +153,10 @@ export function KookSettingsPanel() {
 			<Text size="sm">Bot：{status?.username ?? status?.botId ?? '-'}</Text>
 			<Text size="xs" c="dimmed">
 				Gateway：{status?.gatewayPhase ?? '-'} · SN：{status?.lastSequence ?? 0} · 重连：
-				{status?.reconnectAttempts ?? 0}
+				{status?.reconnectAttempts ?? 0} · Resume：{status?.resumeAttempts ?? 0} · 缓冲：
+				{status?.bufferedEvents ?? 0} · 乱序/重复：{status?.outOfOrderEvents ?? 0}/
+				{status?.duplicateEvents ?? 0}
+				{status?.bufferOverflows ? ` · 溢出 ${status.bufferOverflows}` : ''}
 				{status?.currentBackoffMs ? ` · 退避 ${status.currentBackoffMs}ms` : ''}
 			</Text>
 		</Stack>

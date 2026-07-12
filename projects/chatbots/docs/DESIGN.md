@@ -60,6 +60,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 17. codegen 与 macro 分阶段：显式 codegen 生成并提交类型/inventory，macro 只把本地静态 metadata 内联到 bundle；正常构建不访问网络、不改写源码。
 18. 平台插件不把 ChatHub 声明成 required constructor dependency；通过 `plugins.use()` 动态投影。Hub 缺席或 HMR 替换不影响 Bot 原生 API 和平台事件连接。
 19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。管理 SignalDB 只投影有意义变化，不是运行状态源，heartbeat 与空 poll 不制造固定周期持久化写。
+20. 有序 gateway 的所有 frame 进入同一异步 tail，且 reconnect 必须等待该 tail 收敛后再读取 checkpoint。事件 handler 完成后才推进连续 SN；重复帧丢弃，乱序帧使用有界 buffer。HELLO 与 resume ACK 都有明确 timeout；普通断线保留 session/SN 以 resume，握手超时、协议拒绝、明确 hard reconnect 或 buffer 无法收敛时清空恢复状态并回退全新连接。
 
 ## 从旧设计保留什么
 
