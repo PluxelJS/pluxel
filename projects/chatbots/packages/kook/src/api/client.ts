@@ -18,6 +18,8 @@ export type KookClientOptions = {
 	baseUrl?: string
 	/** @default "/api/v3" */
 	apiPrefix?: string
+	/** Aborts every request owned by this client instance. */
+	signal?: AbortSignal
 	fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
@@ -26,6 +28,7 @@ export type KookRawApi = {
 	call<K extends keyof KookAutoApi>(
 		endpoint: K,
 		payload?: Parameters<KookAutoApi[K]>[0],
+		signal?: AbortSignal,
 	): ReturnType<KookAutoApi[K]>
 }
 
@@ -35,30 +38,54 @@ type EndpointMeta = {
 	query: boolean
 }
 
-export function createKookClient(options: KookClientOptions): KookApi {
-	const token = options.token.trim()
-	if (!token) throw new Error('KOOK client requires a Bot token')
-	const baseUrl = (options.baseUrl?.trim() || 'https://www.kookapp.cn').replace(/\/+$/, '')
-	const apiPrefix = normalizePrefix(options.apiPrefix ?? '/api/v3')
-	const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
-	const endpointMap = new Map<string, EndpointMeta>(
-		KOOK_ENDPOINTS.map(([name, method, path]) => [name, { method, path, query: method === 'GET' }]),
-	)
+const endpointMap = new Map<string, EndpointMeta>(
+	KOOK_ENDPOINTS.map(([name, method, path]) => [
+		name,
+		{ method, path, query: method === 'GET' || method === 'DELETE' },
+	]),
+)
 
-	const request: KookRequest = async <T>(
+// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every merged method on the shared prototype below.
+export class KookApiClient {
+	readonly $raw: KookRawApi
+	readonly $tool: KookApi['$tool']
+	readonly #options: KookClientOptions
+	readonly #token: string
+	readonly #baseUrl: string
+	readonly #apiPrefix: string
+	readonly #fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+	readonly #lifecycle = new AbortController()
+
+	constructor(options: KookClientOptions) {
+		this.#options = options
+		this.#token = options.token.trim()
+		if (!this.#token) throw new Error('KOOK client requires a Bot token')
+		this.#baseUrl = (options.baseUrl?.trim() || 'https://www.kookapp.cn').replace(/\/+$/, '')
+		this.#apiPrefix = normalizePrefix(options.apiPrefix ?? '/api/v3')
+		this.#fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
+		this.$raw = {
+			request: (method, path, payload, signal) => this.request(method, path, payload, signal),
+			call: (endpoint, payload, signal) => this.call(endpoint, payload, signal) as never,
+		}
+		this.$tool = createKookTools(this)
+	}
+
+	async request<T>(
 		method: HttpMethod,
 		path: string,
 		payload?: RequestPayload,
-	): Promise<Result<T>> => {
+		signal?: AbortSignal,
+	): Promise<Result<T>> {
 		try {
 			const query = cleanParams(payload?.searchParams)
-			const url = new URL(`${baseUrl}${apiPrefix}${normalizePath(path)}`)
+			const url = new URL(`${this.#baseUrl}${this.#apiPrefix}${normalizePath(path)}`)
 			for (const [key, value] of Object.entries(query ?? {})) appendQuery(url, key, value)
 			const body = payload?.body ?? payload?.json
-			const response = await fetchImpl(url, {
+			const response = await this.#fetchImpl(url, {
 				method,
+				signal: combineSignals(this.#lifecycle.signal, this.#options.signal, signal),
 				headers: {
-					Authorization: `Bot ${token}`,
+					Authorization: `Bot ${this.#token}`,
 					...(body instanceof FormData ? {} : { 'content-type': 'application/json' }),
 				},
 				...(method === 'GET' || method === 'HEAD'
@@ -79,39 +106,58 @@ export function createKookClient(options: KookClientOptions): KookApi {
 		}
 	}
 
-	const raw: KookRawApi = {
-		request,
-		call(endpoint, payload) {
-			const meta = endpointMap.get(String(endpoint))
-			if (!meta) {
-				return Promise.resolve({
-					ok: false,
-					code: -404,
-					message: `Unknown KOOK endpoint: ${String(endpoint)}`,
-				}) as ReturnType<KookAutoApi[typeof endpoint]>
-			}
-			return request(
-				meta.method,
-				meta.path,
-				meta.query
-					? { searchParams: payload as Record<string, unknown> }
-					: isBodyInit(payload)
-						? { body: payload }
-						: { json: payload as JsonLike },
-			) as ReturnType<KookAutoApi[typeof endpoint]>
-		},
+	protected closeClient(reason?: unknown): void {
+		if (!this.#lifecycle.signal.aborted) this.#lifecycle.abort(reason)
 	}
 
-	const target = { $raw: raw } as KookApi
-	const client = new Proxy(target, {
-		get(object, property, receiver) {
-			if (Reflect.has(object, property)) return Reflect.get(object, property, receiver)
-			if (typeof property !== 'string' || !endpointMap.has(property)) return undefined
-			return (payload?: unknown) => raw.call(property as keyof KookAutoApi, payload as never)
+	call<K extends keyof KookAutoApi>(
+		endpoint: K,
+		payload?: Parameters<KookAutoApi[K]>[0],
+		signal?: AbortSignal,
+	): ReturnType<KookAutoApi[K]> {
+		const meta = endpointMap.get(String(endpoint))
+		if (!meta)
+			return Promise.resolve({
+				ok: false,
+				code: -404,
+				message: `Unknown KOOK endpoint: ${String(endpoint)}`,
+			}) as ReturnType<KookAutoApi[K]>
+		return this.request(
+			meta.method,
+			meta.path,
+			meta.query
+				? { searchParams: payload as Record<string, unknown> }
+				: isBodyInit(payload)
+					? { body: payload }
+					: { json: payload as JsonLike },
+			signal,
+		) as ReturnType<KookAutoApi[K]>
+	}
+}
+
+// Type-level endpoint methods mirror the prototype methods installed from the macro inventory.
+export interface KookApiClient extends KookAutoApi {}
+
+// The macro inventory installs endpoint methods once; bot instances carry only connection state.
+for (const [endpoint] of KOOK_ENDPOINTS) {
+	if (endpoint in KookApiClient.prototype) continue
+	Object.defineProperty(KookApiClient.prototype, endpoint, {
+		configurable: false,
+		enumerable: false,
+		value(this: KookApiClient, payload?: unknown, signal?: AbortSignal) {
+			return this.call(endpoint, payload as never, signal)
 		},
 	})
-	client.$tool = createKookTools(client)
-	return client
+}
+
+export function createKookClient(options: KookClientOptions): KookApi {
+	return new KookApiClient(options)
+}
+
+function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+	const active = [...new Set(signals.filter((signal): signal is AbortSignal => Boolean(signal)))]
+	if (active.length === 0) return undefined
+	return active.length === 1 ? active[0] : AbortSignal.any(active)
 }
 
 function normalizePrefix(value: string): string {

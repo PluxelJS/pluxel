@@ -1,4 +1,4 @@
-export interface IBaseAPIResponse<T = any> {
+export interface IBaseAPIResponse<T = unknown> {
 	code: number
 	message: string
 	data: T

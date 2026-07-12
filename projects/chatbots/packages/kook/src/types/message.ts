@@ -20,8 +20,8 @@ export interface MessageBase {
 export interface Message extends MessageBase, MessageMeta {
 	id: string
 	rong_id?: string
-	embeds: any[]
-	reactions: any[]
+	embeds: unknown[]
+	reactions: unknown[]
 	mention_info: object
 	extra: MessageExtra | Notice
 }
@@ -33,7 +33,7 @@ export interface MessageExtra extends MessageMeta {
 	guild_type: number
 	channel_name: string
 	channel_type: 1 | 2
-	visible_only: any | null
+	visible_only: unknown
 	nav_channels: string[]
 	interact_res?: {
 		emoji_id: number
@@ -74,7 +74,7 @@ export interface IKMarkdownParts {
 	mention_part: KmarkdownUserMeta[]
 	mention_role_part: KmarkdownRoleMeta[]
 	channel_part: Pick<Channel, 'id' | 'guild_id' | 'name'>[]
-	item_part: any[]
+	item_part: unknown[]
 	spl: string[]
 }
 

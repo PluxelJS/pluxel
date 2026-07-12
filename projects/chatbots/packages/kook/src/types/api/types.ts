@@ -26,7 +26,7 @@ export interface Guild {
 	openId: string
 	default_channel_id: string
 	welcome_channel_id: string
-	features: any[]
+	features: unknown[]
 	boost_num: number
 	buffer_boost_num: number
 	level: number
@@ -39,11 +39,11 @@ export interface Guild {
 
 export interface GuildWithUser extends Guild {
 	user_config: {
-		notify_type: null | any
+		notify_type: unknown
 		nickname: string
 		role_ids: number[]
 		chat_setting: string
-		security_limit: null | any
+		security_limit: unknown
 		close_mention_all_here: boolean
 		close_mention_role: boolean
 	}

@@ -5,6 +5,7 @@ import {
 	Card,
 	Group,
 	PasswordInput,
+	Select,
 	Stack,
 	Text,
 	TextInput,
@@ -13,36 +14,27 @@ import {
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
 import { IconKey, IconPlugConnected, IconPlugX, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import type { TelegramSettingsDoc, TelegramStatusDoc } from '../index.ts'
 import { telegramPlugin } from './runtime.ts'
 
-type TelegramUiApp = {
-	rpc: {
-		saveSettings(input: { token?: string; apiBase?: string }): Promise<TelegramSettingsDoc>
-		clearToken(): Promise<TelegramSettingsDoc>
-		testConnection(): Promise<{ ok: boolean; message: string }>
-		reconnect(): Promise<TelegramStatusDoc>
-		disconnect(): Promise<TelegramStatusDoc>
-	}
-	db: {
-		useDocById(collection: 'settings', id: 'settings'): TelegramSettingsDoc | undefined
-		useDocById(collection: 'status', id: 'status'): TelegramStatusDoc | undefined
-	}
-}
-
 export function TelegramSettingsPanel() {
-	const app = telegramPlugin.use() as unknown as TelegramUiApp
-	const settings = app.db.useDocById('settings', 'settings')
-	const status = app.db.useDocById('status', 'status')
+	const app = telegramPlugin.use()
+	const settingsList = app.db.useList('settings')
+	const statusList = app.db.useList('status')
+	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://api.telegram.org')
 	const [busy, setBusy] = useState(false)
 	const [message, setMessage] = useState<string | null>(null)
 	const [error, setError] = useState<string | null>(null)
 
-	useEffect(() => setApiBase(settings?.apiBase ?? 'https://api.telegram.org'), [settings?.apiBase])
+	const settings = settingsList.find((item) => item.id === accountId)
+	const status = statusList.find((item) => item.id === accountId)
+	useEffect(() => {
+		setApiBase(settings?.apiBase ?? 'https://api.telegram.org')
+		setToken('')
+	}, [settings?.apiBase, accountId])
 
-	const run = async (action: () => Promise<unknown>, success: string) => {
+	const run = async (action: () => Promise<unknown> | unknown, success: string) => {
 		setBusy(true)
 		try {
 			await action()
@@ -74,6 +66,23 @@ export function TelegramSettingsPanel() {
 			{message ? <Alert color="green">{message}</Alert> : null}
 			<Card withBorder>
 				<Stack>
+					<Group grow align="end">
+						<Select
+							label="已配置账号"
+							placeholder="选择或输入新的 Bot ID"
+							data={settingsList.map((item) => item.id)}
+							value={settings ? accountId : null}
+							onChange={(value) => value && setAccountId(value)}
+							searchable
+							clearable={false}
+						/>
+						<TextInput
+							label="Bot ID"
+							description="稳定的本地账号 ID，用于 plugin.bots.require(id)"
+							value={accountId}
+							onChange={(event) => setAccountId(event.currentTarget.value)}
+						/>
+					</Group>
 					<PasswordInput
 						label="Bot Token"
 						description={settings?.hasToken ? `已配置：${settings.tokenPreview}` : '尚未配置'}
@@ -91,7 +100,12 @@ export function TelegramSettingsPanel() {
 							loading={busy}
 							onClick={() =>
 								void run(
-									() => app.rpc.saveSettings({ token: token || undefined, apiBase }),
+									() =>
+										app.rpc.upsertBot({
+											id: accountId,
+											token: token || undefined,
+											apiBase,
+										}),
 									'设置已保存并连接',
 								)
 							}
@@ -101,14 +115,19 @@ export function TelegramSettingsPanel() {
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.rpc.testConnection(), '鉴权成功')}
+							onClick={() =>
+								void run(async () => {
+									const result = await app.rpc.testBot(accountId)
+									if (!result.ok) throw new Error(result.message)
+								}, '鉴权成功')
+							}
 						>
 							测试
 						</Button>
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.rpc.reconnect(), '正在重连')}
+							onClick={() => void run(() => app.rpc.reconnectBot(accountId), '正在重连')}
 						>
 							重连
 						</Button>
@@ -116,7 +135,7 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="gray"
 							leftSection={<IconPlugX size={16} />}
-							onClick={() => void run(() => app.rpc.disconnect(), '已断开')}
+							onClick={() => void run(() => app.rpc.disconnectBot(accountId), '已断开')}
 						>
 							断开
 						</Button>
@@ -124,9 +143,9 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="red"
 							leftSection={<IconTrash size={16} />}
-							onClick={() => void run(() => app.rpc.clearToken(), 'Token 已删除')}
+							onClick={() => void run(() => app.rpc.removeBot(accountId), 'Bot 已删除')}
 						>
-							删除 Token
+							删除 Bot
 						</Button>
 					</Group>
 				</Stack>

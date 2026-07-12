@@ -16,6 +16,7 @@
 		"@pluxel/components": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
+		"@repo/chatbots-access": "workspace:*",
 		"@repo/chatbots-builtins": "workspace:*",
 		"@repo/chatbots-commands": "workspace:*",
 		"@repo/chatbots-hub": "workspace:*",
@@ -27,6 +28,7 @@
 		"react-dom": "^19.2.7"
 	},
 	"devDependencies": {
+		"@pluxel/rolldown": "workspace:*",
 		"@types/node": "^25.9.3",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",

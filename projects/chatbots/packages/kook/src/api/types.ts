@@ -25,6 +25,7 @@ export type KookRequest = <T>(
 	method: HttpMethod,
 	path: string,
 	payload?: RequestPayload,
+	signal?: AbortSignal,
 ) => Promise<Result<T>>
 
 /* ------------------------- Public API surface ------------------------- */

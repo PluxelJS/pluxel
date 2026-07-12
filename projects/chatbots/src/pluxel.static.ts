@@ -1,4 +1,5 @@
 import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
+import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { KookAdapterPlugin } from '@repo/chatbots-kook'
@@ -9,6 +10,7 @@ import { createChatbotsPersistence } from './persistence.ts'
 
 export const chatbotsPlugins = [
 	ChatHubPlugin,
+	ChatAccessPlugin,
 	ChatCommandsPlugin,
 	ChatBuiltinsPlugin,
 	ChatSandboxPlugin,
@@ -23,7 +25,9 @@ export const chatbotsEnabledPlugins = chatbotsPlugins.map((plugin) => plugin.nam
 export default defineStaticRuntimeConfig({
 	name: 'chatbots',
 	plugins: chatbotsPlugins,
-	runtimeState: { snapshot: { enabled: chatbotsEnabledPlugins } },
+	// This is a fixed product catalog: capability plugins stay available so their
+	// setup UI is never hidden by a stale persisted enabled list after upgrades.
+	runtimeState: { mode: 'memory', snapshot: { enabled: chatbotsEnabledPlugins } },
 	persistence: {
 		mode: 'custom',
 		backend: createChatbotsPersistence('data/persistence'),

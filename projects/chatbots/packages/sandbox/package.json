@@ -13,7 +13,13 @@
 		"test": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
+		"@mantine/core": "^9.4.1",
 		"@pluxel/runtime": "workspace:*",
-		"@repo/chatbots-hub": "workspace:*"
+		"@repo/chatbots-hub": "workspace:*",
+		"@tabler/icons-react": "^3.37.1",
+		"react": "^19.2.7"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.14"
 	}
 }

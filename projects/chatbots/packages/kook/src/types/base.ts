@@ -1,6 +1,6 @@
 export interface PayLoad {
 	s: number // 信令类型
-	d: Data<any> // 数据
+	d: Data<unknown> // 数据
 	sn?: number // 当 s=0 存在，
 }
 
@@ -174,7 +174,7 @@ export interface Channel {
 	is_private?: boolean
 	permission_sync: 0 | 1
 	permission_overwrites: Overwrite[]
-	permission_users: any[]
+	permission_users: unknown[]
 	voice_quality?: string
 	server_type?: number
 	server_url?: string

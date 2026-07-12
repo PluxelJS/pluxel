@@ -114,7 +114,6 @@ export type PluxelRuntimeSourceVitePluginOptions = {
 	lintGuard?: false | LintGuardPluginOptions
 }
 
-
 export function pluxelRuntimeSourceVitePlugin(
 	options: PluxelRuntimeSourceVitePluginOptions = {},
 ): Plugin {
@@ -168,6 +167,7 @@ export function pluxelRuntimeSourceVitePlugin(
 				oxc: {
 					decorator: {
 						legacy: true,
+						emitDecoratorMetadata: true,
 					},
 				},
 			}

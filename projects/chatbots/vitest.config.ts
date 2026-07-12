@@ -6,6 +6,10 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{
+				find: /^@repo\/chatbots-access$/,
+				replacement: resolve(import.meta.dirname, 'packages/access/src/index.ts'),
+			},
+			{
 				find: /^@pluxel\/runtime$/,
 				replacement: resolve(import.meta.dirname, '../../packages/runtime/dist/index.mjs'),
 			},

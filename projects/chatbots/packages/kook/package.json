@@ -13,7 +13,8 @@
 		}
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false",
+		"api:check": "node --experimental-strip-types scripts/check-api.ts",
+		"typecheck": "pnpm api:check && tsc --noEmit --pretty false",
 		"test": "vitest run --config ../../vitest.config.ts tests"
 	},
 	"dependencies": {
@@ -24,6 +25,7 @@
 		"react": "^19.2.7"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.14"
+		"@types/react": "^19.2.14",
+		"typescript": "^6.0.3"
 	}
 }

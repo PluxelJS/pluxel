@@ -4,10 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createServer, type ViteDevServer } from 'vite'
 
-import {
-	importViteSsrModule,
-	pluxelRuntimeSourceVitePlugin,
-} from '../src/vite'
+import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '../src/vite'
 
 async function resolveEnvironmentPluginNames(
 	plugin: ReturnType<typeof pluxelRuntimeSourceVitePlugin>,
@@ -30,7 +27,7 @@ describe('runtime-dev Vite plugin stack', () => {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
 			environments?: { ssr?: { resolve?: { conditions?: string[] } } }
 			ssr?: { external?: string[]; resolve?: { conditions?: string[] } }
-			oxc?: { decorator?: { legacy?: boolean } }
+			oxc?: { decorator?: { legacy?: boolean; emitDecoratorMetadata?: boolean } }
 		}
 
 		expect(plugin.name).toBe('pluxel:runtime-source')
@@ -50,6 +47,7 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
 		expect(config.ssr?.external).not.toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
+		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
 	})
 
 	it('expands source transforms only inside server Vite environments', async () => {
@@ -89,6 +87,44 @@ describe('runtime-dev Vite plugin stack', () => {
 			const mod = await importViteSsrModule<{ captureStack(): string }>(server, modulePath)
 
 			expect(mod.captureStack()).toMatch(/probe\.ts:2:\d+/)
+		} finally {
+			await server?.close()
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('emits constructor dependency metadata through the real Vite module runner', async () => {
+		const root = await mkdtemp(join(process.cwd(), '.pluxel-runtime-dev-metadata-'))
+		const modulePath = join(root, 'plugin.ts')
+		await writeFile(
+			modulePath,
+			[
+				'const metadata = new WeakMap<object, Map<string, unknown>>()',
+				';(Reflect as any).metadata = (key: string, value: unknown) => (target: object) => { const values = metadata.get(target) ?? new Map(); values.set(key, value); metadata.set(target, values) }',
+				';(Reflect as any).getMetadata = (key: string, target: object) => metadata.get(target)?.get(key)',
+				'function Plugin(): ClassDecorator { return () => {} }',
+				'export class Provider {}',
+				'@Plugin()',
+				'export class Consumer { constructor(readonly provider: Provider) {} }',
+				"export const params = Reflect.getMetadata('design:paramtypes', Consumer)",
+				'',
+			].join('\n'),
+		)
+
+		let server: ViteDevServer | undefined
+		try {
+			server = await createServer({
+				root,
+				logLevel: 'silent',
+				server: { middlewareMode: true },
+				appType: 'custom',
+				plugins: [pluxelRuntimeSourceVitePlugin({ lintGuard: false, configSource: false })],
+			})
+			const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
+				server,
+				modulePath,
+			)
+			expect(mod.params).toEqual([mod.Provider])
 		} finally {
 			await server?.close()
 			await rm(root, { recursive: true, force: true })

@@ -100,7 +100,7 @@ export type IUpdatedMessageBody = {
 	updated_at: number
 	kmarkdown?: Omit<IKMarkdownParts, 'raw_content' | 'spl'>
 	last_msg_content: string
-	embeds: any[]
+	embeds: unknown[]
 	msg_id: string
 	channel_type: 1 | 2
 } & IMentions

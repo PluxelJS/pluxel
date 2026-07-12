@@ -6,13 +6,20 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./api": {
+			"types": "./src/api/index.ts",
+			"default": "./src/api/index.ts"
 		}
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false",
+		"api:generate": "node --experimental-strip-types scripts/generate-api.ts",
+		"api:check": "node --experimental-strip-types scripts/generate-api.ts --check",
+		"typecheck": "pnpm api:check && tsc --noEmit --pretty false",
 		"test": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
+		"@gramio/types": "^10.1.0",
 		"@mantine/core": "^9.4.1",
 		"@pluxel/runtime": "workspace:*",
 		"@repo/chatbots-hub": "workspace:*",
@@ -20,6 +27,7 @@
 		"react": "^19.2.7"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.14"
+		"@types/react": "^19.2.14",
+		"typescript": "^6.0.3"
 	}
 }

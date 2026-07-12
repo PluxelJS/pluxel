@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { createKookClient, KOOK_ENDPOINTS } from '../src/api/index.ts'
-import { normalizeKookEvent, parseKookConversationId, type KookEvent } from '../src/index.ts'
+import {
+	encodeKookBlock,
+	KookBot,
+	KookEventObservers,
+	KOOK_TRANSPORT_CAPABILITIES,
+	normalizeKookEvent,
+	parseKookConversationId,
+	type KookEvent,
+} from '../src/index.ts'
+import { assertTransportConformance } from '../../../test/transport-conformance.ts'
 
 function event(patch: Partial<KookEvent> = {}): KookEvent {
 	return {
@@ -22,6 +31,30 @@ function event(patch: Partial<KookEvent> = {}): KookEvent {
 }
 
 describe('KOOK adapter contracts', () => {
+	it('puts native API on Bot prototype and framework helpers only under $', async () => {
+		const requests: Request[] = []
+		const options = {
+			id: 'community',
+			token: 'vault-secret',
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push(new Request(input, init))
+				return Response.json({ code: 0, message: 'ok', data: { msg_id: 'sent-1' } })
+			},
+			logger: { info() {}, warn() {} },
+		} satisfies ConstructorParameters<typeof KookBot>[0]
+		const first = new KookBot(options)
+		const second = new KookBot(options)
+
+		expect(first.sendMessage).toBe(second.sendMessage)
+		expect(Object.hasOwn(first, 'sendMessage')).toBe(false)
+		expect('$raw' in first).toBe(false)
+		expect('$tool' in first).toBe(false)
+		expect(JSON.stringify(first)).not.toContain('vault-secret')
+		await first.sendMessage({ target_id: 'channel-1', content: 'hello' })
+		expect(await requests[0]?.json()).toMatchObject({ content: 'hello' })
+		expect(first.$.channel('channel-1').target_id).toBe('channel-1')
+	})
+
 	it('exposes the complete v3 endpoint catalog without duplicate method names', () => {
 		expect(KOOK_ENDPOINTS).toHaveLength(84)
 		expect(new Set(KOOK_ENDPOINTS.map(([name]) => name)).size).toBe(KOOK_ENDPOINTS.length)
@@ -37,6 +70,10 @@ describe('KOOK adapter contracts', () => {
 				return Response.json({ code: 0, message: 'ok', data: { items: [] } })
 			},
 		})
+		const second = createKookClient({ token: 'vault-secret', fetch: async () => Response.json({}) })
+		expect(Object.getPrototypeOf(client).sendMessage).toBe(
+			Object.getPrototypeOf(second).sendMessage,
+		)
 
 		await client.getGuildList({ page: 2, page_size: 20 })
 		await client.sendMessage({ target_id: 'channel-1', content: 'hello' })
@@ -72,7 +109,8 @@ describe('KOOK adapter contracts', () => {
 	it('normalizes group KMarkdown into a stable chat message', () => {
 		expect(normalizeKookEvent(event(), 'bot-1')).toMatchObject({
 			id: 'message-1',
-			transport: 'kook',
+			platform: 'kook',
+			accountId: 'default',
 			conversation: { id: 'channel:channel-1', kind: 'channel', title: 'general' },
 			actor: { id: 'user-1', displayName: 'Alice' },
 			text: '/ping',
@@ -94,5 +132,14 @@ describe('KOOK adapter contracts', () => {
 			targetId: 'user:with:colon',
 		})
 		expect(() => parseKookConversationId('123')).toThrow(/Invalid/)
+	})
+
+	it('exposes raw KOOK events and only advertises encodable blocks', async () => {
+		assertTransportConformance(KOOK_TRANSPORT_CAPABILITIES, encodeKookBlock)
+		const observers = new KookEventObservers()
+		const seen: string[] = []
+		observers.register('platform-feature', (raw) => void seen.push(raw.msg_id))
+		await observers.dispatch(event(), new AbortController().signal, () => {})
+		expect(seen).toEqual(['message-1'])
 	})
 })

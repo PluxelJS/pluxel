@@ -8,7 +8,7 @@ export * from './message'
 export * from './system'
 export type EventSession<T> = Session<Data<SystemExtra<T>>>
 export type MessageSession<T = MessageExtra> = Session<Data<T>>
-export interface Session<T = any> {
+export interface Session<T = unknown> {
 	userId: string
 	selfId: string
 	guildId: string
