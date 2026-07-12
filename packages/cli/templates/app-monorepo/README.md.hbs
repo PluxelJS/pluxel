@@ -9,12 +9,13 @@ separately below.
 ## Develop the plugin
 
 Before changing `plugins/`, contracts, host policy or lint configuration, read
-[`docs/PLUXEL_PLUGIN_GUIDE.md`](docs/PLUXEL_PLUGIN_GUIDE.md). Coding agents are directed there by
-the generated `AGENTS.md`. The guide explains the standard plugin shape, required versus optional
-dependencies, lifecycle cleanup, Web Management boundaries and every enabled Pluxel Oxlint rule.
+[`docs/pluxel/README.md`](docs/pluxel/README.md). `pluxel new` copies that documentation verbatim
+from the `user-docs/` bundled with the CLI, so the generated repository uses the same authoring,
+testing and Oxlint guidance as Pluxel itself. Coding agents are directed there by `AGENTS.md`.
 
-The main plugin is `plugins/example/src/index.ts`. Its test proves that business HTTP works with
-Web Management disabled. Keep that property as the plugin grows.
+The main plugin is `plugins/example/src/index.ts`. Its test uses `@pluxel/test/vitest` and
+`withRuntimeHost()` to prove that business HTTP works with Web Management disabled. Keep that
+property as the plugin grows.
 
 Run the complete local verification before finishing a change:
 

@@ -1,7 +1,8 @@
 # 插件最佳实践
 
 本文是写代码和 code review 时的快速决策指南。完整 API 示例见
-[`plugin-authoring.md`](plugin-authoring.md)，能够自动检查的约束见 [`oxlint.md`](oxlint.md)。
+[`plugin-authoring.md`](plugin-authoring.md)，测试策略见 [`testing.md`](testing.md)，能够自动检查的
+约束见 [`oxlint.md`](oxlint.md)。
 
 ## 按所有权组织代码
 
@@ -89,3 +90,5 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 3. 确认 required/optional、plugin/feature、HTTP/management 三组边界都清楚。
 4. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
 5. 确认 disabled Web Management 测试仍通过，公开 contract 类型能被消费者发现。
+6. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
+   raw TypeScript runner？

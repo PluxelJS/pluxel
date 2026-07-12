@@ -1,19 +1,21 @@
 # Pluxel 插件开发指南
 
-这里首先服务插件作者和修改插件的 coding agent。绝大多数工作只需要阅读前三篇；宿主安装和
+这里首先服务插件作者和修改插件的 coding agent。绝大多数工作只需要阅读前四篇；宿主安装和
 CLI 是独立的后续路径，不是理解插件设计的前置知识。
 
 ## 插件作者最短路径
 
 1. [`plugin-authoring.md`](plugin-authoring.md)：从标准插件形状开始，掌握依赖、配置、生命周期、
    HTTP、Web Management 和公开 capability。
-2. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
+2. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
+   插件生命周期、HTTP、失败传播、cleanup 与 disabled Web Management。
+3. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
    常见反模式与提交检查表。
-3. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
+4. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
 
-如果从 CLI monorepo 模板开始，生成仓库中的 `AGENTS.md` 和
-`docs/PLUXEL_PLUGIN_GUIDE.md` 会把这条主路径压缩成项目内可直接执行的说明；coding agent
-不需要先探索 Pluxel 源码仓库。
+如果从 CLI monorepo 模板开始，`pluxel new` 会把这组文档原样复制到生成仓库的
+`docs/pluxel/`，根 `AGENTS.md` 会要求 coding agent 从 `docs/pluxel/README.md` 开始。生成项目
+不维护另一套改写版 API 指南。
 
 ## 先做这四个判断
 
@@ -34,12 +36,12 @@ CLI 是独立的后续路径，不是理解插件设计的前置知识。
 - [`host-setup.md`](host-setup.md)：选择 static/dynamic Vite route，配置 Web Management 和启动策略。
 - [`tooling.md`](tooling.md)：CLI 可选能力、构建工具链和 HMR diagnostics 入口。
 
-内部架构、实现入口和维护约束位于 [`docs/`](../docs/README.md)。只有修改 Pluxel 本身时才需要
-阅读；插件代码不要导入其中提到的 internal helper。
+内部架构、实现入口和维护约束只存在于 Pluxel 源码仓库的 maintainer docs。插件作者不需要它们，
+插件代码也不要导入 internal helper。
 
 ## 文档承诺
 
 - 示例只使用当前公开 API。
 - 先给标准写法和选择规则，再解释必要的设计原因。
 - 不展示兼容 API、内部 helper 或迁移历史。
-- 插件作者行为变化会同步更新主路径、Oxlint 规则说明和 CLI 模板内指南。
+- 插件作者行为变化只更新这里；CLI 打包和 `pluxel new` 复制同一份文件，不维护平行指南。

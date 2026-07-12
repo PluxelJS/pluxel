@@ -26,6 +26,15 @@ try {
 	await mkdir(tarballRoot, { recursive: true })
 	for (const item of packages) await runPnpm(['--filter', item.name, ...item.build], repositoryRoot)
 
+	const sourceTestingGuide = await readFile(resolve(repositoryRoot, 'user-docs/testing.md'), 'utf8')
+	const bundledTestingGuide = await readFile(
+		resolve(repositoryRoot, 'packages/cli/dist/user-docs/testing.md'),
+		'utf8',
+	)
+	if (bundledTestingGuide !== sourceTestingGuide) {
+		throw new Error('CLI bundled user docs differ from user-docs source')
+	}
+
 	const overrides: Record<string, string> = {}
 	for (const item of packages.filter((candidate) => candidate.name !== '@pluxel/runtime-dev')) {
 		const tarball = resolve(tarballRoot, `${item.name.replaceAll(/[@/]/g, '-')}.tgz`)

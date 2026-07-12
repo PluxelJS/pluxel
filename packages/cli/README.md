@@ -23,6 +23,10 @@ pluxel new
 - `plugin`：在已有 workspace 中创建可发布插件包。
 - `app-monorepo`：创建独立的 static host、示例插件和纯领域包，适合新业务仓库。
 
+`user-docs/` 是插件作者文档的唯一真源。CLI build 将它原样打包到 `dist/user-docs/`；
+`app-monorepo` 只声明目标目录，`pluxel new` 会把当前 CLI 版本携带的完整文档递归复制到生成仓库的
+`docs/pluxel/`。模板不维护改写版 Markdown，也不对文档执行 Handlebars 渲染。
+
 新产品优先使用：
 
 ```sh

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
 	createYiqichaSign,
 	getYiqichaApi,
@@ -97,7 +97,6 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private readonly status = new ProjectedCollection<YiqichaStatusDoc>()
 	private readonly history = new ProjectedCollection<YiqichaTestRunDoc>()
 	private data: ExternalGatewayDbHandle | undefined
-	private historySeq = 1
 	private readonly inflight = new Map<string, Promise<UpstreamOutcome>>()
 
 	constructor(private readonly usageRecorder: UsageRecorderPlugin) {
@@ -235,10 +234,9 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		}
 	}
 
-	clearHistory(): { ok: true } {
+	async clearHistory(): Promise<{ ok: true }> {
 		this.history.removeMany({})
-		this.historySeq = 1
-		void this.data?.db
+		await this.data?.db
 			.delete(providerCallHistory)
 			.where(eq(providerCallHistory.provider, PROVIDER_ID))
 			.catch((error) => {
@@ -677,7 +675,7 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	}): void {
 		const outcome = input.outcome
 		const doc: YiqichaTestRunDoc = {
-			id: String(this.historySeq++),
+			id: randomUUID(),
 			at: Date.now(),
 			source: input.source,
 			userId: input.userId,
@@ -754,19 +752,9 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		})
 	}
 
-	private restoreHistorySeq(): void {
-		const maxId = this.history
-			.find({}, { limit: MAX_YIQICHA_HISTORY })
-			.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
-		this.historySeq = maxId + 1
-	}
-
 	private async loadHistoryFromDB(): Promise<void> {
 		this.history.removeMany({})
-		if (!this.data) {
-			this.historySeq = 1
-			return
-		}
+		if (!this.data) return
 		const rows = await this.data.db
 			.select()
 			.from(providerCallHistory)
@@ -774,7 +762,6 @@ export class YiqichaProviderPlugin extends BasePlugin {
 			.orderBy(desc(providerCallHistory.at))
 			.limit(MAX_YIQICHA_HISTORY)
 		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
-		this.restoreHistorySeq()
 	}
 
 	private trimHistory(): void {

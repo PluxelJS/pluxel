@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
-import type fs from 'node:fs'
+import fs from 'node:fs'
 import { parsePackageName } from '../src/scaffold'
 import { generateFromTemplate } from '../src/scaffold/template'
 
@@ -119,7 +119,9 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/pluxel.static.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/PLUXEL_PLUGIN_GUIDE.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/pluxel/README.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/pluxel/testing.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'user-docs.jsonc'))).toBe(false)
 
 		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'web/vite.config.ts'), 'utf8')
 		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
@@ -150,16 +152,17 @@ describe('scaffold template rendering', () => {
 		expect(oxlintConfig).toContain('prefixPluxelRuleSet(pluxelRules)')
 
 		const agentsGuide = fixture.fs.readFileSync(resolve(targetDir, 'AGENTS.md'), 'utf8')
-		expect(agentsGuide).toContain('docs/PLUXEL_PLUGIN_GUIDE.md')
+		expect(agentsGuide).toContain('docs/pluxel/README.md')
 
-		const pluginGuide = fixture.fs.readFileSync(
-			resolve(targetDir, 'docs/PLUXEL_PLUGIN_GUIDE.md'),
-			'utf8',
-		)
-		expect(pluginGuide).toContain('required plugin dependencies belong in constructors')
-		expect(pluginGuide).toContain('plugin-constructor-no-type-only-imports')
-		expect(pluginGuide).toContain('runtime-type-augmentations')
-		expect(pluginGuide).toContain('pnpm verify')
+		const sourceDocsDir = resolve(import.meta.dirname, '../../../user-docs')
+		const sourceDocs = fs.readdirSync(sourceDocsDir).sort()
+		const generatedDocs = fixture.fs.readdirSync(resolve(targetDir, 'docs/pluxel')).sort()
+		expect(generatedDocs).toEqual(sourceDocs)
+		for (const file of sourceDocs) {
+			expect(fixture.fs.readFileSync(resolve(targetDir, 'docs/pluxel', file), 'utf8')).toBe(
+				fs.readFileSync(resolve(sourceDocsDir, file), 'utf8'),
+			)
+		}
 
 		const vitestConfig = fixture.fs.readFileSync(
 			resolve(targetDir, 'plugins/example/vitest.config.ts'),
@@ -167,6 +170,14 @@ describe('scaffold template rendering', () => {
 		)
 		expect(vitestConfig).toContain("from '@pluxel/test/vitest'")
 		expect(vitestConfig).not.toContain('../test/src')
+
+		const pluginTest = fixture.fs.readFileSync(
+			resolve(targetDir, 'plugins/example/tests/plugin.test.ts'),
+			'utf8',
+		)
+		expect(pluginTest).toContain("from '@pluxel/runtime/test'")
+		expect(pluginTest).toContain('withRuntimeHost(')
+		expect(pluginTest).toContain('webManagement: false')
 	})
 
 	it('generates a self-contained publishable plugin package', async () => {

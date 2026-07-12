@@ -2,8 +2,10 @@
 
 这是一条面向插件作者的主路径。先按本文建立插件结构，再用
 [`plugin-best-practices.md`](plugin-best-practices.md) review 所有权，并让
-[`oxlint.md`](oxlint.md) 检查可静态判断的约束。内部架构见
-[`docs/PLUGIN_SYSTEM.md`](../docs/PLUGIN_SYSTEM.md)。
+[`oxlint.md`](oxlint.md) 检查可静态判断的约束。
+
+插件测试使用 [`testing.md`](testing.md) 的 `@pluxel/test/vitest` 标准工具链，不用 raw runner 绕过
+decorator 和 metadata transform。
 
 ## 先记住四件事
 
@@ -306,6 +308,8 @@ webManagement: {
 
 CLI monorepo 模板已经配置 Pluxel Oxlint rules。先运行 `pnpm lint:fix`，再运行覆盖 format、lint、
 typecheck、tests 和 production build 的 `pnpm verify`。
+
+测试最低覆盖标准和 core/runtime test host 的选择见 [`testing.md`](testing.md)。
 
 - required dependency 是否只写在 constructor？
 - optional integration 是否使用 `plugins.use()`？

@@ -46,19 +46,22 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 
 ## 模板内文档
 
-生成仓库的 README 先说明插件开发，再说明 host composition。更完整但仍针对当前模板的
-`docs/PLUXEL_PLUGIN_GUIDE.md` 包含：
+生成仓库的 README 先说明插件开发，再说明 host composition。CLI 发行包携带当前
+`user-docs/`，`pluxel new` 会把它们原样复制到 `docs/pluxel/`。入口
+`docs/pluxel/README.md` 包含：
 
 - 标准 plugin shape 与目录所有权；
 - required/optional、plugin/feature、业务/管理面的选择表；
+- `@pluxel/test/vitest`、`withRuntimeHost()` 和必须覆盖的插件测试边界；
 - config、lifecycle、cleanup 和 disabled Web Management 的实践；
 - 模板启用的每一条 Pluxel Oxlint rule 及修复方向；
 - `lint:fix` 到 `verify` 的完成标准。
 
-根 `AGENTS.md` 要求 coding agent 在修改 `plugins/`、contract、host config 或 lint config 前先读
-这份指南。它的目标是让生成项目离开 Pluxel 源码仓库后仍有足够的设计上下文；完整、跨模板的
-权威说明仍在 [`plugin-authoring.md`](plugin-authoring.md)、
-[`plugin-best-practices.md`](plugin-best-practices.md) 和 [`oxlint.md`](oxlint.md)。
+根 `AGENTS.md` 要求 coding agent 在修改 `plugins/`、contract、host config 或 lint config 前从
+这份入口开始。生成项目离开 Pluxel 源码仓库后仍拥有完整设计上下文，同时没有需要人工同步的
+模板文档副本；权威说明就是当前目录中的 [`plugin-authoring.md`](plugin-authoring.md)、
+[`testing.md`](testing.md)、[`plugin-best-practices.md`](plugin-best-practices.md) 和
+[`oxlint.md`](oxlint.md)。
 
 ## 何时参考 projects
 

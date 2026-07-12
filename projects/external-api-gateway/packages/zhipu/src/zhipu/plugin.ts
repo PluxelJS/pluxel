@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
 	DEFAULT_ZHIPU_BASE_URL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
@@ -70,7 +71,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	private readonly status = new ProjectedCollection<ZhipuStatusDoc>()
 	private readonly history = new ProjectedCollection<ZhipuTestRunDoc>()
 	private data: ExternalGatewayDbHandle | undefined
-	private historySeq = 1
 
 	constructor(private readonly usageRecorder: UsageRecorderPlugin) {
 		super()
@@ -165,10 +165,9 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		return this.ctx.http.plugin.base(ROUTE_BASE)
 	}
 
-	clearHistory(): { ok: true } {
+	async clearHistory(): Promise<{ ok: true }> {
 		this.history.removeMany({})
-		this.historySeq = 1
-		void this.data?.db
+		await this.data?.db
 			.delete(providerCallHistory)
 			.where(eq(providerCallHistory.provider, PROVIDER_ID))
 			.catch((error) => {
@@ -875,7 +874,7 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	}): void {
 		const outcome = input.outcome
 		const doc: ZhipuTestRunDoc = {
-			id: String(this.historySeq++),
+			id: randomUUID(),
 			at: Date.now(),
 			source: input.source,
 			userId: input.userId,
@@ -967,19 +966,9 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		})
 	}
 
-	private restoreHistorySeq(): void {
-		const maxId = this.history
-			.find({}, { limit: MAX_ZHIPU_HISTORY })
-			.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
-		this.historySeq = maxId + 1
-	}
-
 	private async loadHistoryFromDB(): Promise<void> {
 		this.history.removeMany({})
-		if (!this.data) {
-			this.historySeq = 1
-			return
-		}
+		if (!this.data) return
 		const rows = await this.data.db
 			.select()
 			.from(providerCallHistory)
@@ -987,7 +976,6 @@ export class ZhipuProviderPlugin extends BasePlugin {
 			.orderBy(desc(providerCallHistory.at))
 			.limit(MAX_ZHIPU_HISTORY)
 		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
-		this.restoreHistorySeq()
 	}
 
 	private trimHistory(): void {

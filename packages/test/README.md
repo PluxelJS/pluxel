@@ -2,6 +2,11 @@
 
 > Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
 
+Plugin authors should start with the repository-level
+[`user-docs/testing.md`](../../user-docs/testing.md). It explains the standard Vitest setup, how to
+choose between the core-only and runtime test hosts, lifecycle failure assertions, cleanup, HTTP,
+Web Management and fixture strategy.
+
 Core-side test surface for Pluxel plugin semantics:
 
 - Automatic core setup on import (`@pluxel/core/env` + services registration)
@@ -79,10 +84,8 @@ host.cfg(ForkA).set({ v: 'A' })
 `vitest.config.ts`:
 
 ```ts
-export { default } from '../test/src/vitest.ts'
+export { default } from '@pluxel/test/vitest'
 ```
-
-For published packages outside this monorepo, import `@pluxel/test/vitest` instead.
 
 Because the preset runs Pluxel build-correctness lint before transforms, the test project should
 also install `oxlint` as a dev dependency.
@@ -108,7 +111,8 @@ export default defineConfig({
 })
 ```
 
-Each package can keep its own `vitest.config.ts` (typically `export { default } from '../test/src/vitest.ts'`).
+Each package can keep its own `vitest.config.ts` (typically
+`export { default } from '@pluxel/test/vitest'`).
 
 By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
 when some packages have no tests.
@@ -134,7 +138,7 @@ export default definePluxelVitestWorkspaceConfig({
 If you need to add extra Vite plugins:
 
 ```ts
-import { definePluxelVitestConfig } from '../test/src/vitest.ts'
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 import SomeTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(
