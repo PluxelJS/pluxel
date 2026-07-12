@@ -1,6 +1,5 @@
-import '@pluxel/runtime/register/static'
-import '@pluxel/runtime/services/vault'
 import type { APIMethods } from '@gramio/types'
+import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'

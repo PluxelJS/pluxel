@@ -1,3 +1,4 @@
+import '@pluxel/runtime/services/vault'
 import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'

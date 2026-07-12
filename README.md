@@ -12,6 +12,8 @@ pnpm plugin-host:dynamic
 - 维护者文档：`docs/README.md`
 - 插件系统总边界：`docs/PLUGIN_SYSTEM.md`
 - 未实现研究：`docs/proposals/README.md`
+- 新应用模板：`user-docs/starter-monorepo.md`
+- 高级参考项目：`projects/README.md`
 
 开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
 

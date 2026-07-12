@@ -1,4 +1,3 @@
-import '@pluxel/runtime/register/static'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
