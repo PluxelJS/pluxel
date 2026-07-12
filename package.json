@@ -45,6 +45,7 @@
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
+		"@tsdown/css": "0.22.3",
 		"@types/bun": "^1.3.14",
 		"oxfmt": "^0.57.0",
 		"oxlint": "^1.72.0",
