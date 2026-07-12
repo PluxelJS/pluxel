@@ -9,21 +9,14 @@ const rolldownWorkspaceFs = fileURLToPath(
 const rolldownWorkspaceInfo = fileURLToPath(
 	new URL('../rolldown/src/workspace/info-entry.ts', import.meta.url),
 )
-const inlineWorkspaceHelpers = [
-	'@pluxel/rolldown/workspace/fs',
-	'@pluxel/rolldown/workspace/info',
-]
+const inlineWorkspaceHelpers = ['@pluxel/rolldown/workspace/fs', '@pluxel/rolldown/workspace/info']
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: [
-			...inlineWorkspaceHelpers,
-			'valibot-form',
-			'valibot-form/*',
-		],
+		alwaysBundle: [...inlineWorkspaceHelpers, 'valibot-form', 'valibot-form/*'],
 		onlyBundle: [],
 		neverBundle: [
 			'@pluxel/core',
@@ -67,6 +60,7 @@ export default defineConfig({
 	},
 	copy: ['public'],
 	alias: {
+		'valibot-form': `${valibotFormSrc}/index.ts`,
 		'~': valibotFormSrc,
 		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
 		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
