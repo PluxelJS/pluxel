@@ -16,11 +16,26 @@ const declaration = source.statements.find(
 		ts.isInterfaceDeclaration(statement) && statement.name.text === 'KookAutoApi',
 )
 if (!declaration) throw new Error('KookAutoApi interface is missing')
+const reserved = new Set([
+	...Object.getOwnPropertyNames(Object.prototype),
+	'$',
+	'$raw',
+	'$tool',
+	'call',
+	'events',
+	'id',
+	'request',
+	'selfInfo',
+	'then',
+])
 
 const typedMethods = declaration.members.map((member) => {
 	if (!member.name || !ts.isIdentifier(member.name))
 		throw new Error('KookAutoApi contains a non-identifier method')
-	return member.name.text
+	const name = member.name.text
+	if (reserved.has(name))
+		throw new Error(`KOOK API method conflicts with Client/Bot member: ${name}`)
+	return name
 })
 const endpoints = parseEndpoints(readFileSync(endpointsPath, 'utf8'))
 const endpointMethods = endpoints.map(([name]) => name)

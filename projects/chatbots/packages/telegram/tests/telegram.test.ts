@@ -19,14 +19,18 @@ describe('Telegram API client', () => {
 				requests.push(new Request(input, init))
 				return Response.json({ ok: true, result: { message_id: 1 } })
 			},
-			logger: { warn() {} },
 		} satisfies ConstructorParameters<typeof TelegramBot>[0]
 		const first = new TelegramBot(options)
 		const second = new TelegramBot(options)
+		const standalone = createTelegramClient({ token: 'secret', fetch: options.fetch })
 
 		expect(first.sendMessage).toBe(second.sendMessage)
+		expect(first.sendMessage).toBe(standalone.sendMessage)
 		expect(Object.hasOwn(first, 'sendMessage')).toBe(false)
+		expect(Object.hasOwn(TelegramBot.prototype, 'sendMessage')).toBe(false)
 		expect('call' in first).toBe(false)
+		expect(first.$.info).toEqual({ id: 'notifications', apiBase: 'https://api.telegram.org' })
+		expect(Object.isFrozen(first.$.info)).toBe(true)
 		expect(JSON.stringify(first)).not.toContain('secret')
 		await first.sendMessage({ chat_id: 1, text: 'hello' })
 		expect(await requests[0]?.json()).toEqual({ chat_id: 1, text: 'hello' })
@@ -54,7 +58,6 @@ describe('Telegram API client', () => {
 			ctx: runtime.ctx,
 			token: 'secret',
 			hub: binding.ref,
-			logger: { warn() {} },
 			fetch: async (input, init) => {
 				const method = String(input).split('/').at(-1)
 				if (method === 'getMe')
@@ -68,6 +71,7 @@ describe('Telegram API client', () => {
 		})
 
 		await bot.$.start()
+		expect(bot.selfInfo).toMatchObject({ id: 1, is_bot: true })
 		expect(transports.at(-1)).toMatchObject({
 			platform: 'telegram',
 			accountId: 'notifications',
@@ -134,7 +138,6 @@ describe('Telegram API client', () => {
 			id: 'events',
 			ctx: runtime.ctx,
 			token: 'secret',
-			logger: { warn() {} },
 		})
 		const aggregate = createTelegramPluginEvents(runtime.ctx)
 		const localSeen: string[] = []

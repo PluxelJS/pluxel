@@ -44,19 +44,21 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 打开 Pluxel 中的 `Telegram Bot` 设置页，为账号填写稳定的本地 Bot ID 与 Token 后点击“保存并连接”。同一插件可管理多个账号；Token 只写入持久化加密 Vault，SignalDB 和浏览器端只能看到是否存在及掩码。设置页可选择账号执行鉴权测试、重连、断开和删除。
 
-Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。Bot 的原生方法只在共享 prototype 安装一次。
+Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。独立 client 与受管 Bot 继承同一个 native API prototype，180 个方法在整个包中只安装一份；Bot 不会因此暴露 client 的 `call`。
 
 ## 启用 KOOK
 
 打开 Pluxel 中的 `KOOK Bot` 设置页，为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。设置页支持多账号选择、鉴权测试、重连、断开及删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
-完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 保留低层 API，注入业务插件的 `KookBot` 则只在顶层暴露原生具名方法，raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
+完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 与 `KookBot` 共享唯一 native API prototype，但 client 的 `$raw/$tool` 不会沿继承链泄漏到 Bot；raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
 
 ## 源码组织
 
 公共 `index.ts` 只做 barrel export，不承载实现。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；命令按 `types/parser/registry/middleware/plugin` 拆分；平台 adapter 的 `protocol/codec/api/events` 与 Pluxel lifecycle plugin 分离。这样协议转换和规划可单测，只有 plugin 文件接触 Context、Vault 和 Web Management。Telegram 与 KOOK 只共享纯退避策略和 superseding abort lease，各自保留适合 long polling、WebSocket 的连接状态机。
 
 新平台适配器必须遵循 [平台适配器设计规范](docs/PLATFORM_ADAPTERS.md)：平台插件公开只读 Bot registry，Bot 本身优先暴露原生 API，本项目增加的 raw、conversation 和生命周期能力统一收纳到 `$`。该文档同时说明如何从外部类型包或 OpenAPI 显式 codegen 出类型与 endpoint inventory，再通过 Pluxel macro 内联 metadata，并用共享 prototype 让所有 Bot 以最低实例成本获得具名 API 方法。
+
+受管 Bot 鉴权后通过 `bot.selfInfo` 暴露平台原生身份；`bot.$.info` 只包含本地账号 ID 和规范化 API 地址等冻结的非敏感信息。每个 Bot 从 Pluxel Context 派生带 `platform/accountId` 的 logger，底层 HTTP client 只接收显式白名单配置，不保留 Hub、事件或 Context 引用。
 
 ## 内容与匹配
 

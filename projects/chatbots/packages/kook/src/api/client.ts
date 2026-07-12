@@ -1,4 +1,5 @@
 import { KOOK_ENDPOINTS } from './endpoints.ts'
+import { invokeKookNative, KookNativeApi } from './native.ts'
 import { createKookTools } from './tools.ts'
 import type {
 	Err,
@@ -45,8 +46,7 @@ const endpointMap = new Map<string, EndpointMeta>(
 	]),
 )
 
-// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every merged method on the shared prototype below.
-export class KookApiClient {
+export class KookApiClient extends KookNativeApi {
 	readonly $raw: KookRawApi
 	readonly $tool: KookApi['$tool']
 	readonly #options: KookClientOptions
@@ -57,6 +57,7 @@ export class KookApiClient {
 	readonly #lifecycle = new AbortController()
 
 	constructor(options: KookClientOptions) {
+		super()
 		this.#options = options
 		this.#token = options.token.trim()
 		if (!this.#token) throw new Error('KOOK client requires a Bot token')
@@ -133,21 +134,10 @@ export class KookApiClient {
 			signal,
 		) as ReturnType<KookAutoApi[K]>
 	}
-}
 
-// Type-level endpoint methods mirror the prototype methods installed from the macro inventory.
-export interface KookApiClient extends KookAutoApi {}
-
-// The macro inventory installs endpoint methods once; bot instances carry only connection state.
-for (const [endpoint] of KOOK_ENDPOINTS) {
-	if (endpoint in KookApiClient.prototype) continue
-	Object.defineProperty(KookApiClient.prototype, endpoint, {
-		configurable: false,
-		enumerable: false,
-		value(this: KookApiClient, payload?: unknown, signal?: AbortSignal) {
-			return this.call(endpoint, payload as never, signal)
-		},
-	})
+	protected [invokeKookNative](endpoint: keyof KookAutoApi, payload?: unknown): unknown {
+		return this.call(endpoint, payload as never)
+	}
 }
 
 export function createKookClient(options: KookClientOptions): KookApi {

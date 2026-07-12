@@ -7,7 +7,16 @@ const objectsPath = new URL('./node_modules/@gramio/types/out/objects.d.ts', pac
 const packagePath = new URL('./node_modules/@gramio/types/package.json', packageRoot)
 const endpointsOutputPath = new URL('./src/api/endpoints.txt', packageRoot)
 const updatesOutputPath = new URL('./src/api/updates.txt', packageRoot)
-const reserved = new Set(['$', 'call', 'constructor', 'events', 'id', 'request'])
+const reserved = new Set([
+	...Object.getOwnPropertyNames(Object.prototype),
+	'$',
+	'call',
+	'events',
+	'id',
+	'request',
+	'selfInfo',
+	'then',
+])
 
 const source = parseSource(methodsPath)
 const declaration = requireInterface(source, 'APIMethods')

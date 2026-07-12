@@ -1,5 +1,6 @@
 import type { APIMethodParams, APIMethodReturn, APIMethods } from '@gramio/types'
 import { TELEGRAM_ENDPOINTS, type TelegramHttpMethod, type TelegramMethod } from './endpoints.ts'
+import { invokeTelegramNative, TelegramNativeApi } from './native.ts'
 
 export type TelegramClientOptions = {
 	token: string
@@ -8,8 +9,7 @@ export type TelegramClientOptions = {
 	fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
-// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every GramIO method on the shared prototype below.
-export class TelegramApiClient {
+export class TelegramApiClient extends TelegramNativeApi {
 	readonly #options: TelegramClientOptions
 	readonly #token: string
 	readonly #apiBase: string
@@ -18,6 +18,7 @@ export class TelegramApiClient {
 	readonly #lifecycle = new AbortController()
 
 	constructor(options: TelegramClientOptions) {
+		super()
 		this.#options = options
 		this.#token = options.token.trim()
 		if (!this.#token) throw new Error('Telegram client requires a Bot token')
@@ -56,9 +57,11 @@ export class TelegramApiClient {
 	protected closeClient(reason?: unknown): void {
 		if (!this.#lifecycle.signal.aborted) this.#lifecycle.abort(reason)
 	}
-}
 
-export interface TelegramApiClient extends APIMethods {}
+	protected [invokeTelegramNative](endpoint: TelegramMethod, payload?: unknown): unknown {
+		return this.call(endpoint, payload as never)
+	}
+}
 
 export type TelegramCallArgs<M extends TelegramMethod> =
 	undefined extends APIMethodParams<M>
@@ -67,18 +70,6 @@ export type TelegramCallArgs<M extends TelegramMethod> =
 export type TelegramApi = TelegramApiClient & APIMethods
 
 type TelegramResponse<T> = { ok: boolean; result?: T; description?: string }
-
-// Generated endpoint methods live once on the shared prototype, not once per configured bot.
-for (const [endpoint] of TELEGRAM_ENDPOINTS) {
-	if (endpoint in TelegramApiClient.prototype) continue
-	Object.defineProperty(TelegramApiClient.prototype, endpoint, {
-		configurable: false,
-		enumerable: false,
-		value(this: TelegramApiClient, payload?: unknown, signal?: AbortSignal) {
-			return this.call(endpoint, payload as never, signal)
-		},
-	})
-}
 
 export function createTelegramClient(options: TelegramClientOptions): TelegramApi {
 	return new TelegramApiClient(options)

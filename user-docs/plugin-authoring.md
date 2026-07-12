@@ -228,6 +228,28 @@ billing.events.invoicePaid.on(async (invoice, signal) => {
 只有事件名本身确实由用户或外部系统动态定义时，才使用动态 registry。若 capability 管理多个资源，
 可以同时提供资源局部 channel 与 capability 聚合 channel；聚合 channel 的第一个参数应明确标识来源。
 
+## 公开外部系统 capability
+
+包装外部平台 SDK 或 API 时，让平台原生具名方法直接出现在 capability 对象上；Pluxel 增加的 raw、
+生命周期、组合工具和诊断统一放在 `$`，避免 `api/client/$raw/$tool` 多套入口并存：
+
+```ts
+const bot = telegram.bots.require('notifications')
+await bot.sendMessage(payload)
+
+bot.selfInfo // 鉴权后的平台原生身份，未鉴权时为 undefined
+bot.$.info // 冻结的本地 ID/API 地址等非敏感元数据
+await bot.$.raw.call('sendMessage', payload, { signal })
+```
+
+`$.info`、status、日志和序列化结果不得包含 token、secret、Context 或内部 client。对象已经拥有 owner
+Context 时，从 `ctx.logger.with(...)` 派生带资源标识的 logger，不要重复注入 logger；向底层 client
+传参时列出明确字段，不要展开包含 Context、事件或其他 capability 的大 options 对象。
+
+大量固定原生方法应由一个共享 prototype 承载，standalone client 与受管对象复用同一方法实现；
+不要在每个实例构造时批量创建闭包，也不要为了复用 client 而把 `call/$raw/$tool` 泄漏到受管对象
+顶层。
+
 ## 错误边界
 
 生命周期错误和单次业务错误不要混淆：

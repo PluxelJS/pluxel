@@ -161,7 +161,6 @@ export class TelegramAdapterPlugin extends BasePlugin {
 			apiBase,
 			hub: this.hubBinding.ref,
 			pluginEvents: this.events,
-			logger: this.ctx.logger,
 			onStatus: (next) => this.projectStatus(id, next),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))

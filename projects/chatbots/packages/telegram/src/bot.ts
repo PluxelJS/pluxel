@@ -1,4 +1,4 @@
-import type { APIMethodParams, APIMethodReturn, APIMethods } from '@gramio/types'
+import type { APIMethodParams, APIMethodReturn } from '@gramio/types'
 import type { Context } from '@pluxel/runtime'
 import {
 	abortableDelay,
@@ -11,7 +11,8 @@ import {
 	type ChatSendRequest,
 } from '@repo/chatbots-hub'
 import { createTelegramClient, type TelegramClientOptions, type TelegramApi } from './api/client.ts'
-import { TELEGRAM_ENDPOINTS, type TelegramMethod } from './api/endpoints.ts'
+import type { TelegramMethod } from './api/endpoints.ts'
+import { invokeTelegramNative, TelegramNativeApi } from './api/native.ts'
 import { TELEGRAM_UPDATE_KEYS } from './api/updates.ts'
 import {
 	normalizeTelegramUpdate,
@@ -35,10 +36,6 @@ export type TelegramBotStatus = {
 	updatedAt: number
 }
 
-export type TelegramBotLogger = {
-	warn(message: string, data?: Record<string, unknown>): void
-}
-
 export type TelegramRawApi = {
 	call<Method extends TelegramMethod>(
 		endpoint: Method,
@@ -53,12 +50,12 @@ export type TelegramBotOptions = Omit<TelegramClientOptions, 'signal'> & {
 	ctx: Context
 	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
 	pluginEvents?: TelegramPluginEvents
-	logger: TelegramBotLogger
 	pollingTimeoutSeconds?: number
 	onStatus?: (status: TelegramBotStatus) => void
 }
 
 export type TelegramBotExtensions = {
+	readonly info: Readonly<{ id: string; apiBase: string }>
 	readonly raw: TelegramRawApi
 	readonly status: Readonly<TelegramBotStatus>
 	start(): Promise<TelegramBotStatus>
@@ -66,17 +63,16 @@ export type TelegramBotExtensions = {
 	destroy(): void
 }
 
-const invokeTelegramEndpoint = Symbol('invokeTelegramEndpoint')
-
 /** One configured Telegram account with GramIO-native methods on the Bot itself. */
-// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every GramIO method on the shared prototype below.
-export class TelegramBot {
+export class TelegramBot extends TelegramNativeApi {
 	readonly id: string
+	selfInfo?: APIMethodReturn<'getMe'>
 	readonly events: TelegramBotEvents
 	readonly $: TelegramBotExtensions
 	readonly #owner = new AbortController()
 	readonly #api: TelegramApi
 	readonly #options: TelegramBotOptions
+	readonly #logger: ReturnType<Context['logger']['with']>
 	private readonly connection = new SupersedingAbortScope()
 	private readonly pollingBackoff = new ExponentialBackoff({ initialMs: 2_000, maxMs: 30_000 })
 	private disposeTransport?: () => void
@@ -92,12 +88,21 @@ export class TelegramBot {
 	}
 
 	constructor(botOptions: TelegramBotOptions) {
+		super()
 		this.#options = botOptions
 		this.id = botOptions.id
+		this.#logger = botOptions.ctx.logger.with({ platform: 'telegram', accountId: this.id })
 		this.events = createTelegramBotEvents(botOptions.ctx)
-		this.#api = createTelegramClient({ ...botOptions, signal: this.#owner.signal })
+		const apiBase = (botOptions.apiBase?.trim() || 'https://api.telegram.org').replace(/\/+$/, '')
+		this.#api = createTelegramClient({
+			token: botOptions.token,
+			apiBase,
+			fetch: botOptions.fetch,
+			signal: this.#owner.signal,
+		})
 		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: TelegramBotExtensions = {
+			info: Object.freeze({ id: this.id, apiBase }),
 			raw: {
 				call: (endpoint, payload, options) =>
 					this.#api.call(endpoint, payload as never, options?.signal),
@@ -122,6 +127,7 @@ export class TelegramBot {
 		try {
 			const identity = await this.#api.call('getMe', undefined, lease.signal)
 			lease.throwIfStale()
+			this.selfInfo = identity
 			this.connectionActive = true
 			this.refreshTransport()
 			const botId = String(identity.id)
@@ -170,7 +176,7 @@ export class TelegramBot {
 			} catch (error) {
 				if (signal.aborted) return
 				this.setError(error)
-				this.#options.logger.warn('Telegram polling failed; retrying', {
+				this.#logger.warn('Telegram polling failed; retrying', {
 					accountId: this.id,
 					error,
 				})
@@ -260,21 +266,7 @@ export class TelegramBot {
 			throw new Error(`Telegram bot is destroyed: ${this.id}`)
 	}
 
-	[invokeTelegramEndpoint](endpoint: TelegramMethod, payload?: unknown) {
+	protected [invokeTelegramNative](endpoint: TelegramMethod, payload?: unknown): unknown {
 		return this.#api.call(endpoint, payload as never)
 	}
-}
-
-export interface TelegramBot extends APIMethods {}
-
-// GramIO-native methods live once on the Bot prototype; instances only own account state.
-for (const [endpoint] of TELEGRAM_ENDPOINTS) {
-	if (Object.hasOwn(TelegramBot.prototype, endpoint)) continue
-	Object.defineProperty(TelegramBot.prototype, endpoint, {
-		configurable: false,
-		enumerable: false,
-		value(this: TelegramBot, payload?: unknown) {
-			return this[invokeTelegramEndpoint](endpoint, payload)
-		},
-	})
 }

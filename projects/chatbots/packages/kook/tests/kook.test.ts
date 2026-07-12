@@ -45,15 +45,23 @@ describe('KOOK adapter contracts', () => {
 				requests.push(new Request(input, init))
 				return Response.json({ code: 0, message: 'ok', data: { msg_id: 'sent-1' } })
 			},
-			logger: { info() {}, warn() {} },
 		} satisfies ConstructorParameters<typeof KookBot>[0]
 		const first = new KookBot(options)
 		const second = new KookBot(options)
+		const standalone = createKookClient({ token: 'vault-secret', fetch: options.fetch })
 
 		expect(first.sendMessage).toBe(second.sendMessage)
+		expect(first.sendMessage).toBe(standalone.sendMessage)
 		expect(Object.hasOwn(first, 'sendMessage')).toBe(false)
+		expect(Object.hasOwn(KookBot.prototype, 'sendMessage')).toBe(false)
 		expect('$raw' in first).toBe(false)
 		expect('$tool' in first).toBe(false)
+		expect(first.$.info).toEqual({
+			id: 'community',
+			baseUrl: 'https://www.kookapp.cn',
+			apiPrefix: '/api/v3',
+		})
+		expect(Object.isFrozen(first.$.info)).toBe(true)
 		expect(JSON.stringify(first)).not.toContain('vault-secret')
 		await first.sendMessage({ target_id: 'channel-1', content: 'hello' })
 		expect(await requests[0]?.json()).toMatchObject({ content: 'hello' })
@@ -147,7 +155,6 @@ describe('KOOK adapter contracts', () => {
 			id: 'events',
 			ctx: runtime.ctx,
 			token: 'secret',
-			logger: { info() {}, warn() {} },
 		})
 		const aggregate = createKookPluginEvents(runtime.ctx)
 		const localSeen: string[] = []

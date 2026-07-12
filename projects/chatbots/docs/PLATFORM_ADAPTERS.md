@@ -68,6 +68,7 @@ await channel.transient('temporary', { ttlMs: 5_000 })
 
 await bot.$.start()
 await bot.$.stop()
+bot.$.info // stable, non-secret local account/API metadata
 bot.$.status
 ```
 
@@ -76,6 +77,7 @@ conversation builder 等高级能力伪装成平台官方 endpoint。推荐内�
 
 ```ts
 export interface KookBotExtensions {
+	readonly info: Readonly<{ id: string; baseUrl: string }>
 	readonly raw: KookRawApi
 	readonly status: Readonly<KookBotStatus>
 	channel(id: string): KookConversation
@@ -130,6 +132,15 @@ bot.$.status.phase // offline | connecting | online | error
 // gateway 暂时断开时，原生 HTTP API 仍可能可用。
 await bot.sendMessage(payload)
 ```
+
+鉴权成功后，Bot 可以公开平台原生的只读身份对象 `selfInfo`，使业务不必重复调用 `getMe` 或从
+管理投影反查；未鉴权时为 `undefined`。本地 ID、规范化 API base 等非敏感稳定信息放在冻结的
+`bot.$.info`，token、secret、内部 client 和 Context 不得进入 info、status 或 JSON 序列化结果。
+
+Bot 已拥有 owner Context 时，不应再从构造参数重复注入 logger。使用
+`ctx.logger.with({ platform, accountId })` 创建账号级 logger，并只把明确的 token/base/fetch/signal
+字段传给底层 API client，不能用 `{ ...botOptions }` 把 Context、Hub binding 或事件对象扩散到
+HTTP client 的配置和生命周期中。
 
 只有平台插件可以改变 registry。创建、更新、删除账号的方法由平台插件明确提供，并负责 Vault、
 状态投影和 Bot 生命周期；业务插件只能读取 Bot。
@@ -261,9 +272,9 @@ remote package / OpenAPI / schema
               v
  inlined readonly endpoint metadata
               |
-              | one shared prototype installer
+              | one shared native prototype installer
               v
- ApiClient prototype -> Bot inheritance
+ NativeApi prototype -> ApiClient + Bot
 ```
 
 codegen 可以解析远端规范并写文件，但必须是显式、可复现的开发命令。正常启动、测试和生产构建
@@ -285,7 +296,8 @@ src/api/
   endpoints.macro.ts      # build-only parser/validator
   endpoints.ts            # runtime-visible inlined constant
   request.ts              # auth/envelope/multipart/limiting
-  client.ts               # call() + shared prototype methods
+  native.ts               # shared native method prototype
+  client.ts               # standalone call()/raw client
   index.ts                # public exports only
 scripts/
   update-api-source.ts    # 可选：显式联网更新固定规范
@@ -341,7 +353,7 @@ OpenAPI codegen 至少需要验证：
 - request/response 与错误 envelope 明确；
 - 重复方法名、未知 method、缺失 schema 直接失败；
 - 输出顺序稳定，不包含时间戳和机器绝对路径。
-- `operationId` 不与 `call`、`request`、`$`、`events`、`id` 等 Bot/ApiClient 保留成员冲突。
+- `operationId` 不与 `Object.prototype`、`then`、`call`、`request`、`$`、`events`、`id`、`selfInfo` 等 Bot/ApiClient 保留成员冲突。
 
 例如生成：
 
@@ -435,11 +447,32 @@ macro 输出必须是普通 JSON-like 字面量。不要返回函数、class、M
 
 ## 最小成本地把方法放到 Bot 上
 
-一个 Bot 不应拥有几十或几百个 endpoint 闭包。使用单个 request/call 实现，并在
-`ApiClient.prototype` 上为每个 endpoint 安装一次转发方法：
+一个 Bot 不应拥有几十或几百个 endpoint 闭包，独立 client 与 Bot 也不应各安装一份相同方法。
+使用一个不公开 raw/call 的 `NativeApi` 基类承载具名方法；standalone client 与受管 Bot 作为兄弟
+子类共享该 prototype，并各自实现唯一的 symbol invoke：
 
 ```ts
-export class PlatformApiClient {
+const invokeNative = Symbol('invokeNative')
+
+abstract class PlatformNativeApi {
+	protected abstract [invokeNative](name: keyof PlatformAutoApi, payload?: unknown): unknown
+}
+
+// 类型层：声明生成的方法存在。
+interface PlatformNativeApi extends PlatformAutoApi {}
+
+// 运行时层：整个包中每个 endpoint 只有这一份函数。
+for (const [name] of PLATFORM_ENDPOINTS) {
+	Object.defineProperty(PlatformNativeApi.prototype, name, {
+		configurable: false,
+		enumerable: false,
+		value(this: PlatformNativeApi, payload?: unknown) {
+			return this[invokeNative](name, payload)
+		},
+	})
+}
+
+export class PlatformApiClient extends PlatformNativeApi {
 	async call<Name extends keyof PlatformAutoApi>(
 		name: Name,
 		...args: Parameters<PlatformAutoApi[Name]>
@@ -448,28 +481,18 @@ export class PlatformApiClient {
 		if (!endpoint) throw new Error(`Unknown endpoint: ${String(name)}`)
 		return this.request(endpoint, ...args) as never
 	}
-}
 
-// 类型层：声明生成的方法存在。
-export interface PlatformApiClient extends PlatformAutoApi {}
-
-// 运行时层：整个进程中每个 endpoint 只有这一份函数。
-for (const [name] of PLATFORM_ENDPOINTS) {
-	if (Object.hasOwn(PlatformApiClient.prototype, name)) continue
-	Object.defineProperty(PlatformApiClient.prototype, name, {
-		configurable: false,
-		enumerable: false,
-		value(this: PlatformApiClient, ...args: unknown[]) {
-			return Reflect.apply(this.call, this, [name, ...args])
-		},
-	})
+	protected [invokeNative](name: keyof PlatformAutoApi, payload?: unknown) {
+		return this.call(name, payload as never)
+	}
 }
 ```
 
-Bot 直接继承纯 API client：
+Bot 组合私有 client，但只继承无 escape hatch 的 native method base：
 
 ```ts
-export class PlatformBot extends PlatformApiClient {
+export class PlatformBot extends PlatformNativeApi {
+	#api: PlatformApiClient
 	readonly $: PlatformBotExtensions
 	readonly events: PlatformBotEvents
 
@@ -477,9 +500,14 @@ export class PlatformBot extends PlatformApiClient {
 		readonly id: string,
 		options: PlatformBotOptions,
 	) {
-		super(options.api)
+		super()
+		this.#api = new PlatformApiClient(options.api)
 		this.events = createPlatformBotEvents(options.ctx)
 		this.$ = createPlatformBotExtensions(this, options)
+	}
+
+	protected [invokeNative](name: keyof PlatformAutoApi, payload?: unknown) {
+		return this.#api.call(name, payload as never)
 	}
 }
 ```
@@ -490,10 +518,11 @@ export class PlatformBot extends PlatformApiClient {
 - Bot 不需要 `requireApi()` 或 `api.sendMessage()`；
 - endpoint 方法不成为 Bot own property；
 - 每个 Bot 只保存账号、连接和 `$` 状态；
+- standalone client 与所有 Bot 的同名 endpoint 引用严格相等；
 - 不需要 Proxy，也不需要运行时 `Object.setPrototypeOf()` 改写继承链。
 
-如果平台 client 不能被继承，可用组合，但仍应只在 Bot 的共享 prototype 安装一次转发方法；
-禁止在 constructor 中循环绑定 endpoint。
+不要直接让 Bot 继承一个公开 `call/$raw/$tool` 的 client，否则会破坏顶层原生 API、`$` 扩展能力
+的边界。禁止在 constructor 中循环绑定 endpoint，也禁止在 Client 与 Bot prototype 重复安装。
 
 ## 从旧上游保留和改进的部分
 
@@ -518,7 +547,7 @@ definitions.txt / endpoints.txt
 
 新版改进：
 
-- 用 `Bot extends ApiClient` 的正常继承替代额外的 `Object.setPrototypeOf()` prototype 链；
+- 用静态 `NativeApi` 基类替代额外的 `Object.setPrototypeOf()` prototype 链，并让 Client/Bot 共享唯一方法实现；
 - 用唯一 `$` 收纳 raw、工具和控制面，避免多个 `$xxx` namespace 漂移；
 - registry 对外只读，并区分本地配置 ID 与远端 Bot ID；
 - 类型来源、endpoint metadata 与 transport 分层，不用 `unknown` 表掩盖漂移；
@@ -533,7 +562,7 @@ definitions.txt / endpoints.txt
 2. inventory parser 测试覆盖非法行、重复 endpoint、未知 method/encoding。
 3. inventory 与类型权威源同步；新增或删除 endpoint 会让 CI 明确失败。
 4. 类型测试证明代表性方法的输入和返回值来自权威类型，而不是 `unknown`。
-5. 两个 Bot 的同一 endpoint 方法引用相等，并且 endpoint 不是实例 own property。
+5. standalone client 与两个 Bot 的同一 endpoint 方法引用相等，且 endpoint 不是 Client/Bot 子类或实例 own property。
 6. `$` helper 只调用公开原生 API 或 `$.raw`，不复制认证与 envelope 逻辑。
 7. 每请求 signal 与 Bot owner signal 正确组合；停止 Bot 会中止其所有连接和请求。
 8. event inventory 可枚举且无漂移；Bot/Plugin 两层 channel 类型精确，disposer 幂等且异常隔离。
@@ -549,6 +578,8 @@ definitions.txt / endpoints.txt
 
 - [ ] Bot 顶层只包含平台原生 API。
 - [ ] 本项目扩展只存在于 `$`。
+- [ ] `selfInfo` 保留原生身份类型，`$.info` 不包含 secret 或内部对象。
+- [ ] Bot 从 Context 派生账号级 logger，底层 client options 使用显式字段白名单。
 - [ ] 平台插件公开只读 `bots` registry。
 - [ ] Bot 从配置存在起可发现，连接状态单独表达。
 - [ ] 原生事件使用静态 `EvtChannel` 属性，保留权威类型并绑定 Bot。

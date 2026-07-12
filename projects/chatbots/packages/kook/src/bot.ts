@@ -6,7 +6,7 @@ import {
 } from '@repo/chatbots-hub'
 import type { Context } from '@pluxel/runtime'
 import { createKookClient, type KookClientOptions } from './api/client.ts'
-import { KOOK_ENDPOINTS } from './api/endpoints.ts'
+import { invokeKookNative, KookNativeApi } from './api/native.ts'
 import type { KookApi, KookApiTools, KookAutoApi, Result } from './api/types.ts'
 import {
 	encodeKookBlock,
@@ -21,6 +21,7 @@ import {
 	type KookPluginEvents,
 } from './events.ts'
 import { KookGateway } from './gateway.ts'
+import type { User } from './types/base.ts'
 
 export type KookBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
 
@@ -32,17 +33,11 @@ export type KookBotStatus = {
 	updatedAt: number
 }
 
-export type KookBotLogger = {
-	info(message: string, data?: Record<string, unknown>): void
-	warn(message: string, data?: Record<string, unknown>): void
-}
-
 export type KookBotOptions = Omit<KookClientOptions, 'signal'> & {
 	id: string
 	ctx: Context
 	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
 	pluginEvents?: KookPluginEvents
-	logger: KookBotLogger
 	onStatus?: (status: KookBotStatus) => void
 }
 
@@ -66,6 +61,7 @@ export type KookBotRawApi = {
 }
 
 export type KookBotExtensions = {
+	readonly info: Readonly<{ id: string; baseUrl: string; apiPrefix: string }>
 	readonly raw: KookBotRawApi
 	readonly status: Readonly<KookBotStatus>
 	channel: KookApiTools['createConversation']
@@ -76,17 +72,16 @@ export type KookBotExtensions = {
 	destroy(): void
 }
 
-const invokeKookEndpoint = Symbol('invokeKookEndpoint')
-
 /** One configured KOOK account. Native KOOK API methods are inherited directly. */
-// oxlint-disable-next-line typescript/no-unsafe-declaration-merging -- macro inventory installs every merged method on the shared prototype below.
-export class KookBot {
+export class KookBot extends KookNativeApi {
 	readonly id: string
+	selfInfo?: User
 	readonly events: KookBotEvents
 	readonly $: KookBotExtensions
 	readonly #owner = new AbortController()
 	readonly #api: KookApi
 	readonly #options: KookBotOptions
+	readonly #logger: ReturnType<Context['logger']['with']>
 	private readonly connection = new SupersedingAbortScope()
 	private gateway?: KookGateway
 	private disposeTransport?: () => void
@@ -101,12 +96,23 @@ export class KookBot {
 	}
 
 	constructor(botOptions: KookBotOptions) {
+		super()
 		this.#options = botOptions
 		this.id = botOptions.id
+		this.#logger = botOptions.ctx.logger.with({ platform: 'kook', accountId: this.id })
 		this.events = createKookBotEvents(botOptions.ctx)
-		this.#api = createKookClient({ ...botOptions, signal: this.#owner.signal })
+		const baseUrl = (botOptions.baseUrl?.trim() || 'https://www.kookapp.cn').replace(/\/+$/, '')
+		const apiPrefix = normalizeApiPrefix(botOptions.apiPrefix ?? '/api/v3')
+		this.#api = createKookClient({
+			token: botOptions.token,
+			baseUrl,
+			apiPrefix,
+			fetch: botOptions.fetch,
+			signal: this.#owner.signal,
+		})
 		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: KookBotExtensions = {
+			info: Object.freeze({ id: this.id, baseUrl, apiPrefix }),
 			raw: {
 				request: (method, path, payload, options) =>
 					this.#api.$raw.request(method, path, payload, options?.signal),
@@ -138,6 +144,7 @@ export class KookBot {
 		try {
 			const identity = unwrap(await this.#api.$raw.call('getUserMe', undefined, lease.signal))
 			lease.throwIfStale()
+			this.selfInfo = identity
 			const botId = identity.id
 			const username = identity.username ?? identity.nickname ?? ''
 			this.connectionActive = true
@@ -153,7 +160,7 @@ export class KookBot {
 					},
 					onOnline: (sessionId) => {
 						this.setStatus('online', { botId, username })
-						this.#options.logger.info('KOOK gateway online', {
+						this.#logger.info('KOOK gateway online', {
 							accountId: this.id,
 							sessionId,
 						})
@@ -161,7 +168,7 @@ export class KookBot {
 					onOffline: () => this.setStatus('offline', { botId, username }),
 					onError: (error) => this.setError(error),
 				},
-				this.#options.logger,
+				this.#logger,
 			)
 			this.gateway.start(lease.signal)
 			return this.setStatus('connecting', { botId, username })
@@ -257,27 +264,18 @@ export class KookBot {
 		if (this.statusValue.phase === 'destroyed') throw new Error(`KOOK bot is destroyed: ${this.id}`)
 	}
 
-	[invokeKookEndpoint](endpoint: keyof KookAutoApi, payload?: unknown) {
+	protected [invokeKookNative](endpoint: keyof KookAutoApi, payload?: unknown): unknown {
 		return this.#api.$raw.call(endpoint, payload as never)
 	}
-}
-
-export interface KookBot extends KookAutoApi {}
-
-// Bot instances contain no endpoint closures; native methods live once on this prototype.
-for (const [endpoint] of KOOK_ENDPOINTS) {
-	if (Object.hasOwn(KookBot.prototype, endpoint)) continue
-	Object.defineProperty(KookBot.prototype, endpoint, {
-		configurable: false,
-		enumerable: false,
-		value(this: KookBot, payload?: unknown) {
-			return this[invokeKookEndpoint](endpoint, payload)
-		},
-	})
 }
 
 function unwrap<Value>(result: Result<Value>): Value {
 	if (result.ok === true) return result.data
 	const failure = result as Extract<Result<Value>, { ok: false }>
 	throw new Error(`KOOK API error ${failure.code}: ${failure.message}`)
+}
+
+function normalizeApiPrefix(value: string): string {
+	const trimmed = value.trim().replace(/\/+$/, '')
+	return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 }
