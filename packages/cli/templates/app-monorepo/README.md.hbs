@@ -1,0 +1,39 @@
+# {{packageName}}
+
+{{description}}
+
+This repository is intentionally small: one Vite host, one Pluxel plugin, and one pure domain
+package. Pluxel packages are normal registry dependencies; only packages owned by this repository
+use `workspace:*`.
+
+## Start
+
+```sh
+pnpm install
+pnpm dev
+```
+
+The default host is headless. Verify the plugin business route:
+
+```sh
+curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
+```
+
+Run the complete local verification:
+
+```sh
+pnpm verify
+```
+
+Shared TypeScript, Vite, Vitest, lint, and Pluxel build tooling is owned by the workspace root.
+Application packages only declare their direct runtime and test dependencies.
+
+## Layout
+
+- `apps/host`: host-owned static catalog, persistence, management, and deployment policy.
+- `plugins/example`: plugin lifecycle, configuration, and business HTTP routes.
+- `packages/domain`: framework-independent business logic.
+
+To enable the Pluxel management workbench, change `webManagement: false` in
+`apps/host/src/pluxel.static.ts` to a host-owned configuration object. The plugin business route and
+domain package do not depend on that optional capability.

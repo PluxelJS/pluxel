@@ -43,6 +43,7 @@ export default defineConfig({
 		register: 'src/register.ts',
 		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
+		'hmr/diagnose': 'src/hmr/diagnose.ts',
 		vite: 'src/vite.ts',
 		plugin: 'src/plugin.ts',
 	},

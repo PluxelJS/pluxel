@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, v } from '@pluxel/runtime/authoring'
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 
 const {{className}}Config = v.object({
 	enabled: v.optional(v.boolean(), true),
@@ -6,14 +6,14 @@ const {{className}}Config = v.object({
 
 @Plugin({ name: '{{className}}' })
 export class {{className}} extends BasePlugin {
-	config = this.configs.use({{className}}Config)
+	private readonly config = this.configs.use({{className}}Config)
+
+	get enabled(): boolean {
+		return this.config.enabled
+	}
 
 	override init(): void {
 		this.ctx.logger.info('{{className}} ready')
-	}
-
-	override stop(): void {
-		this.ctx.logger.info('{{className}} stopped')
 	}
 }
 

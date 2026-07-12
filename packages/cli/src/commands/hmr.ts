@@ -1,41 +1,20 @@
 import { existsSync } from 'node:fs'
-import {
-	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-	diagnoseLoaderHmrWorkspace,
-	type PluxelLoaderHmrConfigV1,
-	type LoaderHmrWorkspace,
-	readLoaderHmrConfigV1,
-	writeLoaderHmrConfigV1,
-} from '@pluxel/runtime-dynamic/hmr'
+import type {
+	LoaderHmrWorkspace,
+	PluxelLoaderHmrConfigV1,
+} from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
+import {
+	hmrCommandDefinition,
+	loaderHmrBuiltinDefinition,
+	loaderHmrCommonArgs,
+	loaderHmrDoctorDefinition,
+	loaderHmrEnabledDefinition,
+	loaderHmrPromptDefinition,
+	loaderHmrSetArgs,
+} from '../command-manifest'
 import { writeLoaderHmrDiscoveredIndex } from '../hmr/discovered-index'
-
-const loaderHmrCommonArgs = {
-	root: {
-		type: 'string',
-		description: 'Workspace root',
-		default: '.',
-	},
-	config: {
-		type: 'string',
-		description: 'Config file path',
-		default: DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-	},
-	profile: {
-		type: 'string',
-		description: 'Profile name (overrides config.profile for this run)',
-	},
-} as const
-
-const loaderHmrSetArgs = {
-	...loaderHmrCommonArgs,
-	set: {
-		type: 'string',
-		description:
-			'Non-interactive package list (comma or newline separated). Writes config directly.',
-	},
-} as const
 
 type LoaderHmrCommonArgs = typeof loaderHmrCommonArgs
 type LoaderHmrCommonValues = ArgValues<LoaderHmrCommonArgs>
@@ -70,12 +49,12 @@ function uniqPreserveOrder(items: readonly string[]): string[] {
 	return out
 }
 
-function ensureProfile(cfg: ReturnType<typeof readLoaderHmrConfigV1>, name: string) {
+function ensureProfile(cfg: PluxelLoaderHmrConfigV1, name: string) {
 	if (!cfg.profiles[name]) cfg.profiles[name] = { enabled: [] }
 }
 
 function resolveActiveProfile(params: {
-	cfg: ReturnType<typeof readLoaderHmrConfigV1>
+	cfg: PluxelLoaderHmrConfigV1
 	valuesProfile?: string
 	envProfile?: string
 }) {
@@ -84,7 +63,7 @@ function resolveActiveProfile(params: {
 
 function resolveCommandContext(values: LoaderHmrCommonValues): LoaderHmrCommandContext {
 	const rootDir = resolve(process.cwd(), values.root || '.')
-	const configPath = resolve(rootDir, values.config || DEFAULT_LOADER_HMR_CONFIG_BASENAME)
+	const configPath = resolve(rootDir, values.config || 'pluxel.loader.hmr.jsonc')
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
 		...(values.profile ? { PLUXEL_HMR_PROFILE: values.profile } : {}),
@@ -137,6 +116,7 @@ async function runTui(params: {
 }
 
 async function runDoctor(values: LoaderHmrCommonValues) {
+	const { diagnoseLoaderHmrWorkspace } = await import('@pluxel/runtime-dynamic/hmr/diagnose')
 	const context = resolveCommandContext(values)
 	const res = await diagnoseLoaderHmrWorkspace({
 		rootDir: context.rootDir,
@@ -201,6 +181,8 @@ async function runPrompt(values: LoaderHmrCommonValues) {
 async function runEnabled(values: LoaderHmrSetValues) {
 	const context = resolveCommandContext(values)
 	if (values.set) {
+		const { readLoaderHmrConfigV1, writeLoaderHmrConfigV1 } =
+			await import('@pluxel/runtime-dynamic/hmr/diagnose')
 		if (!existsSync(context.configPath)) {
 			throw new Error(`Missing config file: ${context.configPath} (run \`pluxel hmr\` first)`)
 		}
@@ -237,6 +219,8 @@ async function runEnabled(values: LoaderHmrSetValues) {
 async function runBuiltin(values: LoaderHmrSetValues) {
 	const context = resolveCommandContext(values)
 	if (values.set) {
+		const { readLoaderHmrConfigV1, writeLoaderHmrConfigV1 } =
+			await import('@pluxel/runtime-dynamic/hmr/diagnose')
 		if (!existsSync(context.configPath)) {
 			throw new Error(`Missing config file: ${context.configPath} (run \`pluxel hmr\` first)`)
 		}
@@ -270,57 +254,36 @@ async function runBuiltin(values: LoaderHmrSetValues) {
 	})
 }
 
-const loaderHmrPromptCommand = define({
-	name: 'prompt',
-	description: 'Open interactive loader HMR prompt',
-	toKebab: true,
-	args: loaderHmrCommonArgs,
+export const loaderHmrPromptCommand = define({
+	...loaderHmrPromptDefinition,
 	async run(ctx) {
 		await runPrompt(ctx.values as LoaderHmrCommonValues)
 	},
 })
 
-const loaderHmrDoctorCommand = define({
-	name: 'doctor',
-	description: 'Diagnose workspace and print loader HMR summary',
-	toKebab: true,
-	args: loaderHmrCommonArgs,
+export const loaderHmrDoctorCommand = define({
+	...loaderHmrDoctorDefinition,
 	async run(ctx) {
 		await runDoctor(ctx.values as LoaderHmrCommonValues)
 	},
 })
 
-const loaderHmrEnabledCommand = define({
-	name: 'enabled',
-	description: 'Edit enabled plugin set (TUI or --set)',
-	toKebab: true,
-	args: loaderHmrSetArgs,
+export const loaderHmrEnabledCommand = define({
+	...loaderHmrEnabledDefinition,
 	async run(ctx) {
 		await runEnabled(ctx.values as LoaderHmrSetValues)
 	},
 })
 
-const loaderHmrBuiltinCommand = define({
-	name: 'builtin',
-	description: 'Edit builtin plugin set (TUI or --set)',
-	toKebab: true,
-	args: loaderHmrSetArgs,
+export const loaderHmrBuiltinCommand = define({
+	...loaderHmrBuiltinDefinition,
 	async run(ctx) {
 		await runBuiltin(ctx.values as LoaderHmrSetValues)
 	},
 })
 
 export const hmrCommand = define({
-	name: 'hmr',
-	description: 'Loader HMR workspace profiles (prompt/doctor)',
-	toKebab: true,
-	args: loaderHmrCommonArgs,
-	subCommands: new Map([
-		['prompt', loaderHmrPromptCommand],
-		['doctor', loaderHmrDoctorCommand],
-		['enabled', loaderHmrEnabledCommand],
-		['builtin', loaderHmrBuiltinCommand],
-	]),
+	...hmrCommandDefinition,
 	async run(ctx) {
 		await runPrompt(ctx.values as LoaderHmrCommonValues)
 	},

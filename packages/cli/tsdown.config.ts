@@ -49,9 +49,6 @@ const inlineRuntimeDeps = [
 export default defineConfig({
 	entry: {
 		cli: './src/cli.ts',
-		build: './src/build.ts',
-		rolldown: './src/rolldown.ts',
-		hmr: './src/hmr/index.ts',
 	},
 	// This CLI intentionally ships as a mostly bundled artifact, but consumes
 	// @pluxel/rolldown as a published toolchain package instead of vendoring it.

@@ -1,37 +1,22 @@
-import {
-	type BuildRuntimeConfig,
-	cliTsdownOverlay,
-	createOptionalDependencyHook,
-	resolveBuildContext,
-	runWithTsdown,
-} from '@pluxel/rolldown/build'
 import { type ArgValues, define } from 'gunshi'
 import type { InlineConfig } from 'tsdown'
-import { createImportTracker } from '../rolldown'
+import { buildCommandArgs, buildCommandDefinition } from '../command-manifest'
 
-const buildCommandArgs = {
-	watch: {
-		type: 'boolean',
-		description: 'Enable watch mode',
-		default: false,
-	},
-	debug: {
-		type: 'boolean',
-		description: 'Print resolved tsdown config before running',
-		default: false,
-	},
-} as const
+type BuildRuntimeConfig = import('@pluxel/rolldown/build').BuildRuntimeConfig
+type CliTsdownOverlay = (typeof import('@pluxel/rolldown/build'))['cliTsdownOverlay']
 
 type BuildCommandArgs = typeof buildCommandArgs
 type BuildCommandValues = ArgValues<BuildCommandArgs>
 
 export const buildCommand = define({
-	name: 'build',
-	description: 'Build current project',
-	args: buildCommandArgs,
+	...buildCommandDefinition,
 	async run(ctx) {
+		const [build, plugins] = await Promise.all([
+			import('@pluxel/rolldown/build'),
+			import('@pluxel/rolldown/plugins'),
+		])
 		// 先读取 workspace 配置，这里只负责 build 命令，不做 scaffold 以外的逻辑
-		const runtime = await resolveBuildContext(ctx.values as BuildCommandValues)
+		const runtime = await build.resolveBuildContext(ctx.values as BuildCommandValues)
 
 		ctx.log(`[build] root: ${runtime.projectRoot}`)
 		ctx.log(`[build] package.json: ${runtime.packageJsonPath}`)
@@ -46,27 +31,24 @@ export const buildCommand = define({
 		}
 
 		// 使用 Rolldown 插件在 bundler 内部跟踪 import，效率比提前用 parse-imports 扫目录更高
-		const importTracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-		const pluginHook = createOptionalDependencyHook({
+		const importTracker = plugins.createImportTracker({ prefixes: runtime.pluginPrefixes })
+		const pluginHook = build.createOptionalDependencyHook({
 			packageJsonPath: runtime.packageJsonPath,
 			manifestField: runtime.manifestField,
 			log: ctx.log,
 			collectPlugins: () => importTracker.flush(),
 		})
 
-		await runWithTsdown({
+		await build.runWithTsdown({
 			context: runtime,
 			onSuccess: pluginHook,
 			log: ctx.log,
-			extraConfig: mergeOverlayPlugins(cliTsdownOverlay, [importTracker.plugin]),
+			extraConfig: mergeOverlayPlugins(build.cliTsdownOverlay, [importTracker.plugin]),
 		})
 	},
 })
 
-function mergeOverlayPlugins(
-	overlay: typeof cliTsdownOverlay,
-	additional: InlineConfig['plugins'],
-) {
+function mergeOverlayPlugins(overlay: CliTsdownOverlay, additional: InlineConfig['plugins']) {
 	return async (ctx: BuildRuntimeConfig): Promise<InlineConfig> => {
 		const awaited = typeof overlay === 'function' ? await overlay(ctx) : overlay
 		// defineConfig 可能返回数组，取第一个

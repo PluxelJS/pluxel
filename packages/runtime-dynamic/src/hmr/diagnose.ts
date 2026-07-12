@@ -27,7 +27,9 @@ export type {
 
 export {
 	buildWorkspaceSnapshotFromScan,
+	buildWorkspaceSnapshotFromScan as buildLoaderHmrWorkspaceFromScan,
 	diagnoseWorkspace,
+	diagnoseWorkspace as diagnoseLoaderHmrWorkspace,
 	mergeLoaderHmrProfile,
 	resolveLoaderHmrConfigPathFromCwd,
 	resolveLoaderHmrRootsExpanded,
@@ -36,6 +38,7 @@ export type {
 	DiagnoseWorkspaceInput,
 	DiagnoseWorkspaceResult,
 	WorkspaceSnapshot,
+	WorkspaceSnapshot as LoaderHmrWorkspace,
 } from './diagnose/diagnose'
 
 export {

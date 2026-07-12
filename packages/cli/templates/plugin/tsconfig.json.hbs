@@ -7,18 +7,15 @@
 		"moduleDetection": "force",
 		"lib": ["ES2023"],
 		"strict": true,
-		"strictNullChecks": false,
-		"exactOptionalPropertyTypes": false,
-		"useUnknownInCatchVariables": false,
 		"noEmit": true,
 		"skipLibCheck": true,
 		"verbatimModuleSyntax": true,
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
 		"isolatedModules": true,
-		"customConditions": ["@pluxel/source", "@pluxel/runtime"],
+		"customConditions": ["@pluxel/source", "@pluxel/runtime-dynamic"],
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts", "tests/**/*.ts", "tsdown.config.ts", "vitest.config.ts"]
 }

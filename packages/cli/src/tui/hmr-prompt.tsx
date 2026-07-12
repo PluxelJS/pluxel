@@ -11,7 +11,7 @@ import {
 	scanWorkspacePackages,
 	type LoaderHmrWorkspace,
 	writeLoaderHmrConfigV1,
-} from '@pluxel/runtime-dynamic/hmr'
+} from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
 import { useEffect, useMemo, useRef, useState } from 'react'

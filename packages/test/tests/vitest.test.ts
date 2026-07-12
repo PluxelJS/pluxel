@@ -65,4 +65,13 @@ describe('@pluxel/test/vitest', () => {
 			'test',
 		])
 	})
+
+	it('includes source files directly under configured toolchain roots', () => {
+		definePluxelVitestConfig({}, { include: ['src/**/*.ts'] })
+
+		expect(rolldownMocks.configSourcePlugin).toHaveBeenLastCalledWith({
+			include: ['**/src/**/*.ts', '**/src/*.ts'],
+			exclude: ['**/node_modules/**', '**/*.d.ts'],
+		})
+	})
 })

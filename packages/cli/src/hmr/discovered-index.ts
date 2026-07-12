@@ -1,9 +1,8 @@
 import { writeFileSync } from 'node:fs'
-import type { DiscoveredPlugin } from '@pluxel/runtime-dynamic/hmr'
+import type { DiscoveredPlugin } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { dirname, resolve } from 'pathe'
 
-export const DEFAULT_LOADER_HMR_DISCOVERED_BASENAME =
-	'pluxel.loader.hmr.discovered.jsonc' as const
+export const DEFAULT_LOADER_HMR_DISCOVERED_BASENAME = 'pluxel.loader.hmr.discovered.jsonc' as const
 
 function toPosix(p: string) {
 	return p.replaceAll('\\', '/')

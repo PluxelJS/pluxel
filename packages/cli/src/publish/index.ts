@@ -159,7 +159,7 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 				log('[publish] warn: skipping market notification (no OIDC token available)')
 			} else {
 				log(`[publish] notifying market at ${marketBaseUrl}...`)
-				const rpcClient = resolveMarketWebhookClient(marketBaseUrl, log)
+				const rpcClient = await resolveMarketWebhookClient(marketBaseUrl, log)
 				if (rpcClient) {
 					await rpcClient.submit({ packageName: pkg.name, version: pkg.version }, oidcToken)
 					log('[publish] ✓ market notified')

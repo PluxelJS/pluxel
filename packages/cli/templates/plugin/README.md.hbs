@@ -1,0 +1,28 @@
+# {{packageName}}
+
+{{description}}
+
+## Install
+
+```sh
+pnpm add {{packageName}} @pluxel/runtime
+```
+
+Import the plugin constructor into a static catalog or expose the package through a dynamic loader
+workspace profile. Both routes use the same plugin class.
+
+```ts
+import {{className}} from '{{packageName}}'
+
+export const plugins = [{{className}}]
+```
+
+## Develop
+
+```sh
+pnpm install
+pnpm verify
+```
+
+`verify` runs lint, typecheck, tests and the production plugin build. Runtime is a peer dependency;
+build and test tooling stays in development dependencies.

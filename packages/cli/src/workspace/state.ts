@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs'
-import { extractPackageWorkspaces, loadWorkspaceInfo } from '@pluxel/rolldown/workspace/info'
 import { isAbsolute, normalize, relative, resolve } from 'pathe'
 import type { PackageJson } from 'pkg-types'
 import { CLI_DEFAULTS } from '../config'
@@ -8,6 +7,8 @@ import { manifestPathFor, readRawManifest, writeManifest } from './manifest'
 import { type PnpmWorkspace, readPnpmWorkspace, writePnpmWorkspace } from './pnpm'
 
 export type WorkspaceTarget = 'manifest' | 'pnpm'
+
+type LoadWorkspaceInfo = (typeof import('@pluxel/rolldown/workspace/info'))['loadWorkspaceInfo']
 
 type WorkspacesObject = Exclude<NonNullable<PackageJson['workspaces']>, string[]>
 
@@ -30,7 +31,7 @@ export interface PnpmSource {
 export interface WorkspaceState {
 	root: string
 	packageManager: PM
-	info: Awaited<ReturnType<typeof loadWorkspaceInfo>>
+	info: Awaited<ReturnType<LoadWorkspaceInfo>>
 	manifest?: ManifestSource
 	pnpm?: PnpmSource
 	effectivePatterns: string[]
@@ -49,6 +50,8 @@ export interface PatternInput {
 }
 
 export async function loadWorkspaceState(root: string): Promise<WorkspaceState> {
+	const { extractPackageWorkspaces, loadWorkspaceInfo } =
+		await import('@pluxel/rolldown/workspace/info')
 	const absoluteRoot = normalize(resolve(root))
 	const info = await loadWorkspaceInfo(absoluteRoot)
 	const manifestPath = manifestPathFor(absoluteRoot)

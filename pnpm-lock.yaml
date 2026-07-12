@@ -72,18 +72,6 @@ importers:
       '@clack/prompts':
         specifier: ^1.0.1
         version: 1.7.0
-      '@pluxel/market':
-        specifier: ^0.1.0
-        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../rolldown
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../runtime-dynamic
       gunshi:
         specifier: ^0.29.2
         version: 0.29.5
@@ -109,6 +97,15 @@ importers:
         specifier: ^2.8.2
         version: 2.9.0
     devDependencies:
+      '@pluxel/market':
+        specifier: ^0.1.0
+        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../rolldown
+      '@pluxel/runtime-dynamic':
+        specifier: workspace:*
+        version: link:../runtime-dynamic
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
@@ -127,6 +124,9 @@ importers:
       tsdown:
         specifier: ^0.22.3
         version: 0.22.3(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      tsx:
+        specifier: ^4.23.0
+        version: 4.23.0
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

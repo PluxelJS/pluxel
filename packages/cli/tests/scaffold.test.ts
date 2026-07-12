@@ -92,4 +92,92 @@ describe('scaffold template rendering', () => {
 		)
 		expect(entry).toContain(`export class ${data.className}`)
 	})
+
+	it('generates a standalone application monorepo from public package entrypoints', async () => {
+		await using fixture = await createFixture()
+		const targetDir = resolve(fixture.path, 'acme-app')
+		const ok = await generateFromTemplate(
+			{
+				templateBase: resolve(import.meta.dirname, '../templates/app-monorepo'),
+				targetDir,
+				data: {
+					pluginName: 'acme-app',
+					packageName: '@acme/acme-app',
+					className: 'AcmeApp',
+					year: '2026',
+					description: 'Acme application',
+				},
+				force: false,
+				dryRun: false,
+				fs: fixture.fs as unknown as typeof fs,
+			},
+			() => {},
+		)
+
+		expect(ok).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'pnpm-workspace.yaml'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'apps/host/src/pluxel.static.ts'))).toBe(true)
+
+		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'apps/host/vite.config.ts'), 'utf8')
+		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
+		expect(hostVite).not.toContain('../../packages/')
+
+		const pluginManifest = fixture.fs.readFileSync(
+			resolve(targetDir, 'plugins/example/package.json'),
+			'utf8',
+		)
+		expect(pluginManifest).toContain('"@pluxel/runtime": "^0.3.0"')
+		expect(pluginManifest).not.toContain('"@pluxel/runtime": "workspace:*"')
+
+		const rootManifest = fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')
+		expect(rootManifest).toContain('"@pluxel/rolldown": "^0.1.0"')
+		expect(rootManifest).not.toContain('"@pluxel/core"')
+		expect(rootManifest).not.toContain('"tsdown"')
+
+		const vitestConfig = fixture.fs.readFileSync(
+			resolve(targetDir, 'plugins/example/vitest.config.ts'),
+			'utf8',
+		)
+		expect(vitestConfig).toContain("from '@pluxel/test/vitest'")
+		expect(vitestConfig).not.toContain('../test/src')
+	})
+
+	it('generates a self-contained publishable plugin package', async () => {
+		await using fixture = await createFixture()
+		const targetDir = resolve(fixture.path, 'hello-world')
+		const ok = await generateFromTemplate(
+			{
+				templateBase: resolve(import.meta.dirname, '../templates/plugin'),
+				targetDir,
+				data: {
+					pluginName: 'hello-world',
+					packageName: 'pluxel-plugin-hello-world',
+					className: 'HelloWorld',
+					year: '2026',
+					description: 'Hello plugin',
+				},
+				force: false,
+				dryRun: false,
+				fs: fixture.fs as unknown as typeof fs,
+			},
+			() => {},
+		)
+
+		expect(ok).toBe(true)
+		const manifest = JSON.parse(
+			fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8'),
+		) as Record<string, any>
+		expect(manifest.scripts).not.toHaveProperty('build:plugin')
+		expect(manifest.scripts).toHaveProperty('verify')
+		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': '^0.3.0' })
+		expect(manifest.devDependencies).toMatchObject({
+			'@pluxel/cli': '^0.3.0',
+			'@pluxel/core': '^0.3.0',
+			'@pluxel/rolldown': '^0.1.0',
+			'@pluxel/test': '^0.1.0',
+		})
+		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
+		const vitestConfig = fixture.fs.readFileSync(resolve(targetDir, 'vitest.config.ts'), 'utf8')
+		expect(vitestConfig).not.toContain("'.*/**'")
+	})
 })

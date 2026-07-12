@@ -84,7 +84,15 @@ function normalizeGlob(pattern: string): string {
 }
 
 function normalizeGlobs(patterns: string[]): string[] {
-	return patterns.map((p) => normalizeGlob(p))
+	return uniqStrings(
+		patterns.flatMap((pattern) => {
+			const normalized = normalizeGlob(pattern)
+			// Vite's hook-filter glob matcher treats the final `**/` as one-or-more
+			// directories. Add the zero-depth form so `src/index.ts` is transformed too.
+			const direct = normalized.replace(/\/\*\*\/([^/]+)$/, '/$1')
+			return direct === normalized ? [normalized] : [normalized, direct]
+		}),
+	)
 }
 
 /**
@@ -293,7 +301,7 @@ export function definePluxelVitestWorkspaceConfig(
 			'parts/**/*.tsx',
 		] as const)
 	const excludeToolchain =
-		options.excludeToolchain ?? (['node_modules/**', 'dist/**', '**/*.d.ts', '.*/**'] as const)
+		options.excludeToolchain ?? (['node_modules/**', 'dist/**', '**/*.d.ts'] as const)
 
 	const pkgs = collectPluxelVitestWorkspaceProjects(options)
 	const projects = pkgs.map((p) => {

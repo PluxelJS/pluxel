@@ -1,52 +1,33 @@
 # @pluxel/cli — Implementation Index
 
-仓库级约束与设计目标见：
+## Public surface
 
-- `docs/OPS.md`
-- `docs/TOOLCHAIN.md`
-- `docs/GOVERNANCE.md`
-- `docs/proposals/README.md`
+- `packages/cli/bin/pluxel.mjs`：唯一命令入口。
+- `packages/cli/package.json`：只导出 `./package.json`，不转发 runtime、HMR 或 build API。
 
-如果你在追“命令是怎么把 runtime / loader HMR / build 串起来的”，优先看 `Command Entry`，再看各 subpath export。
+需要 library API 时直接使用领域包：
 
-## Public Surface (package exports)
+- build / Rolldown plugin：`@pluxel/rolldown/build`、`@pluxel/rolldown/plugins`；
+- loader HMR diagnostics：`@pluxel/runtime-dynamic/hmr/diagnose`；
+- dynamic runtime engine：`@pluxel/runtime-dynamic/hmr`。
 
-- `packages/cli/package.json`
-  - `pluxel` bin → `packages/cli/bin/pluxel.mjs`
-  - `./hmr` → `packages/cli/src/hmr/index.ts`
-  - `./build` → `packages/cli/src/build.ts`
-  - `./rolldown` → `packages/cli/src/rolldown.ts`
+## Command loading
 
-## Command Entry
+- `src/cli.ts`：root wiring，只静态加载命令 manifest。
+- `src/command-manifest.ts`：帮助文本、参数和 lazy command 映射。
+- `src/commands/`、`src/scaffold/`：仅在对应命令执行时加载。
 
-- `packages/cli/src/cli.ts`
-  root command wiring + subcommands
+可选能力：
 
-## Command Roles
+- `build`、`workspace` → `@pluxel/rolldown`；
+- `hmr` → `@pluxel/runtime-dynamic/hmr/diagnose`；
+- publish market webhook → `@pluxel/market`。
 
-- `pluxel hmr`
-  暴露 `@pluxel/runtime-dynamic/hmr` workspace profile / diagnose / TUI 工具
-- `pluxel build`
-  把 `@pluxel/rolldown` overlay 与相关构建 helper 串成标准构建命令
-- `pluxel new`
-  脚手架入口
+缺少可选能力只影响对应命令；`--help` 和 `new` 保持可用。
 
-## Relevant Exports
+## Ownership
 
-- `packages/cli/src/hmr/index.ts`
-  `pluxel hmr` 相关能力入口
-- `packages/cli/src/build.ts`
-  `pluxel build` 相关能力入口
-- `packages/cli/src/rolldown.ts`
-  对构建 overlay / plugin wiring 的再导出
-
-如果你在追“插件前端 build 是怎么被默认带上的”，优先读：
-
-1. `packages/cli/src/build.ts`
-2. `packages/rolldown/src/cli/index.ts`
-3. `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
-
-如果你在追“dynamic 开发宿主是怎么被启动的”，优先读：
-
-1. `packages/runtime-dynamic/src/vite.ts`
-2. `packages/plugins/host/vite.dynamic.config.ts`
+- CLI：参数解析、交互、输出和命令编排；
+- Rolldown：构建 overlay、import tracking 和 workspace build helpers；
+- runtime-dynamic diagnostics：HMR config、profile、workspace scan 和 snapshot；
+- runtime-dynamic engine：runtime registration、module replacement 和 route lifecycle。

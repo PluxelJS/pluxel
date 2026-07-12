@@ -1,0 +1,6 @@
+export class GreetingService {
+	greet(name: string, message: string): string {
+		const normalized = name.trim() || 'world'
+		return `${message}, ${normalized}!`
+	}
+}

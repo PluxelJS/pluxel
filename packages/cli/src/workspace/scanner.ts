@@ -1,7 +1,7 @@
-import { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } from '@pluxel/rolldown/workspace/fs'
 import { dirname, relative, resolve } from 'pathe'
 
 export async function scanWorkspaceDirs(root: string, base?: string) {
+	const { crawlFilesAbs, DEFAULT_IGNORED_DIR_NAMES } = await import('@pluxel/rolldown/workspace/fs')
 	const target = base ? resolve(root, base) : root
 	const files = await crawlFilesAbs({
 		roots: [target],

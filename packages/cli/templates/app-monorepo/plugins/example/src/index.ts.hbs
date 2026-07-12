@@ -1,0 +1,24 @@
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { GreetingService } from '{{packageName}}-domain'
+
+const ExampleConfig = v.object({
+	message: v.optional(v.string(), 'Hello'),
+})
+
+@Plugin({ name: '{{className}}Plugin' })
+export class {{className}}Plugin extends BasePlugin {
+	private readonly config = this.configs.use(ExampleConfig)
+	private readonly greetings = new GreetingService()
+
+	override init(): void {
+		this.ctx.http.plugin.routes(
+			(app) =>
+				app
+					.get('/health', () => ({ ok: true }))
+					.get('/greeting', ({ query }) => ({
+						message: this.greetings.greet(String(query.name ?? ''), this.config.message),
+					})),
+			{ path: '/api', id: '{{className}}Plugin:api' },
+		)
+	}
+}

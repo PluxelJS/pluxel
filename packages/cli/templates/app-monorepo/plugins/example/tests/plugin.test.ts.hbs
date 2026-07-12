@@ -1,0 +1,36 @@
+import { createStaticRuntime, defineStaticRuntimeConfig } from '@pluxel/runtime-static'
+import { afterEach, describe, expect, it } from 'vitest'
+import { {{className}}Plugin } from '../src/index.ts'
+
+const runtimes: Array<{ stop(): Promise<void> }> = []
+
+afterEach(async () => {
+	await Promise.all(runtimes.splice(0).map((runtime) => runtime.stop()))
+})
+
+describe('{{className}}Plugin', () => {
+	it('keeps business HTTP available without Web Management', async () => {
+		const runtime = await createStaticRuntime(
+			defineStaticRuntimeConfig({
+				name: '{{pluginName}}-test',
+				plugins: [{{className}}Plugin],
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['{{className}}Plugin'] },
+				},
+				persistence: { mode: 'memory' },
+				webManagement: false,
+			}),
+		)
+		runtimes.push(runtime)
+
+		const response = await runtime.fetch(
+			new Request(
+				'http://local.test/__pluxel/plugins/{{className}}Plugin/api/greeting?name=Pluxel',
+			),
+		)
+
+		expect(response.status).toBe(200)
+		expect(await response.json()).toEqual({ message: 'Hello, Pluxel!' })
+	})
+})

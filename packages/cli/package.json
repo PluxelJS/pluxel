@@ -12,42 +12,21 @@
 	],
 	"type": "module",
 	"exports": {
-		"./hmr": {
-			"@pluxel/source": "./src/hmr/index.ts",
-			"import": "./dist/hmr.mjs",
-			"default": "./dist/hmr.mjs"
-		},
-		"./build": {
-			"@pluxel/source": "./src/build.ts",
-			"import": "./dist/build.mjs",
-			"default": "./dist/build.mjs"
-		},
-		"./rolldown": {
-			"@pluxel/source": "./src/rolldown.ts",
-			"import": "./dist/rolldown.mjs",
-			"default": "./dist/rolldown.mjs"
-		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
-			"./hmr": "./dist/hmr.mjs",
-			"./build": "./dist/build.mjs",
-			"./rolldown": "./dist/rolldown.mjs",
 			"./package.json": "./package.json"
 		}
 	},
 	"scripts": {
 		"dev": "bun src/cli.ts new --dry-run --no-install",
 		"build": "tsdown",
-		"test": "pnpm exec vitest run"
+		"test": "pnpm exec vitest run",
+		"test:templates": "tsx scripts/smoke-app-monorepo.ts"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
-		"@pluxel/market": "^0.1.0",
-		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
-		"@pluxel/runtime-dynamic": "workspace:*",
 		"gunshi": "^0.29.2",
 		"jsonc-parser": "^3.3.1",
 		"package-manager-detector": "^1.6.0",
@@ -57,16 +36,40 @@
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
+		"@pluxel/market": "^0.1.0",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"@types/react": "^19.2.14",
 		"ink": "^6.8.0",
 		"react": "^19.2.7",
 		"tsdown": "^0.22.3",
+		"tsx": "^4.23.0",
 		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {
+		"@pluxel/market": "^0.1.0",
+		"@pluxel/rolldown": "^0.1.0",
+		"@pluxel/runtime-dynamic": "^0.3.0",
 		"oxlint": "^1.58.0",
 		"tsdown": "*"
+	},
+	"peerDependenciesMeta": {
+		"@pluxel/market": {
+			"optional": true
+		},
+		"@pluxel/rolldown": {
+			"optional": true
+		},
+		"@pluxel/runtime-dynamic": {
+			"optional": true
+		},
+		"oxlint": {
+			"optional": true
+		},
+		"tsdown": {
+			"optional": true
+		}
 	}
 }

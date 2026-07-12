@@ -1,7 +1,7 @@
 import { cancel, intro, isCancel, note, outro, spinner, text } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
-import { resolve } from 'pathe'
-import { resolvePluginEnv } from '@pluxel/rolldown/build'
+import { basename, resolve } from 'pathe'
+import { newCommandArgs, newCommandDefinition } from '../command-manifest'
 import { detectPm, type PM, runPackageManager } from '../utils/pm'
 import { parsePackageName, pascalCase, suggestPackageName, validatePackageName } from './name'
 import {
@@ -18,46 +18,6 @@ import {
 } from './workspace'
 
 export { parsePackageName } from './name'
-
-const newCommandArgs = {
-	dest: {
-		type: 'positional',
-		description: 'Destination base dir (relative to --root; auto when omitted)',
-	},
-	root: {
-		type: 'string',
-		description: 'Workspace root (auto-detect by default)',
-	},
-	template: {
-		type: 'string',
-		description: 'Template name or path (auto/prompt by default)',
-	},
-	pm: {
-		type: 'enum',
-		description: 'Package manager (auto-detect by default)',
-		choices: ['pnpm', 'npm', 'yarn'],
-	},
-	force: {
-		type: 'boolean',
-		description: 'Overwrite existing files',
-		default: false,
-	},
-	install: {
-		type: 'boolean',
-		description: 'Install dependencies after generation',
-		default: true,
-		negatable: true,
-	},
-	dryRun: {
-		type: 'boolean',
-		description: 'Show the plan without touching the filesystem',
-		default: false,
-	},
-	name: {
-		type: 'string',
-		description: 'Full npm name or short name, e.g. @scope/foo or foo',
-	},
-} as const
 
 type NewCommandArgs = typeof newCommandArgs
 type NewCommandValues = ArgValues<NewCommandArgs>
@@ -78,9 +38,7 @@ type ScaffoldPlan = {
 }
 
 export const newCommand = define({
-	name: 'new',
-	description: 'Scaffold from templates',
-	args: newCommandArgs,
+	...newCommandDefinition,
 	async run(ctx) {
 		const interactive = Boolean(process.stdout.isTTY && process.stdin.isTTY)
 
@@ -186,10 +144,12 @@ function createScaffoldPlan(
 	const cwd = process.cwd()
 
 	const rootInfo = resolveWorkspaceRoot(cwd, root)
-	const destPlan = resolveDestination(rootInfo, dest)
+	const templateBase = resolveTemplateBase(template)
+	const createsWorkspace = basename(templateBase) === 'app-monorepo'
+	const destPlan =
+		createsWorkspace && !dest ? { destBase: cwd } : resolveDestination(rootInfo, dest)
 
-	const envConfig = resolvePluginEnv()
-	const { name: pluginName, packageName } = parsePackageName(input, envConfig.pluginPrefixes)
+	const { name: pluginName, packageName } = parsePackageName(input, resolvePluginPrefixes())
 	const targetDir = resolve(destPlan.destBase, pluginName)
 
 	const plan: ScaffoldPlan = {
@@ -198,7 +158,7 @@ function createScaffoldPlan(
 		className: pascalCase(pluginName),
 		workspaceRoot: rootInfo.root,
 		targetDir,
-		templateBase: resolveTemplateBase(template),
+		templateBase,
 		workspaceReason: rootInfo.reason,
 		force,
 		dryRun,
@@ -208,6 +168,15 @@ function createScaffoldPlan(
 
 	if (pm) plan.pm = pm
 	return plan
+}
+
+function resolvePluginPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {
+	const raw = env.PLUXEL_PLUGIN_PREFIX
+	if (!raw?.trim()) return ['pluxel-plugin']
+	return raw
+		.split(',')
+		.map((segment) => segment.trim())
+		.filter(Boolean)
 }
 
 async function buildTemplateData(plan: ScaffoldPlan): Promise<Record<string, string> | null> {

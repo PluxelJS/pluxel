@@ -4,12 +4,12 @@ import {
 	type PluxelLoaderHmrConfigV1,
 	readLoaderHmrConfigV1,
 	writeLoaderHmrConfigV1,
-} from '@pluxel/runtime-dynamic/hmr'
+} from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
-describe('@pluxel/runtime-dynamic/hmr workspace profiles', () => {
+describe('@pluxel/runtime-dynamic/hmr/diagnose workspace profiles', () => {
 	it('parses config strictly (unknown fields rejected)', async () => {
 		await using fixture = await createFixture({
 			'pluxel.loader.hmr.jsonc':

@@ -749,6 +749,12 @@ const buildLintFailureCases = [
 ] as const
 
 describe('configSourcePlugin', () => {
+	it('keeps code hint filtering compatible with Vite object hooks', () => {
+		const transform = configSourcePlugin().transform
+		expect(transform).toBeTypeOf('object')
+		expect((transform as { filter?: { code?: unknown } }).filter?.code).toBeUndefined()
+	})
+
 	it('extracts cfg(schemaMap)`...` layout parts', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({

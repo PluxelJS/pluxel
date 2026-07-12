@@ -1,20 +1,44 @@
 #!/usr/bin/env node
-import { type Command, cli, define } from 'gunshi'
+import { cli, define, lazy } from 'gunshi'
 import pkg from '../package.json'
-import { buildCommand } from './commands/build'
-import { hmrCommand } from './commands/hmr'
-import { publishCommand } from './commands/publish'
-import { workspaceCommand } from './commands/workspace'
-import { newCommand } from './scaffold'
+import {
+	buildCommandDefinition,
+	hmrCommandDefinition,
+	newCommandDefinition,
+	publishCommandDefinition,
+	workspaceCommandDefinition,
+} from './command-manifest'
 
-type AnyCommand = Command
-
-const commands = new Map<string, AnyCommand>([
-	['new', newCommand],
-	['build', buildCommand],
-	['publish', publishCommand],
-	['hmr', hmrCommand],
-	['workspace', workspaceCommand],
+const commands = new Map([
+	[
+		'new',
+		lazy(() => import('./scaffold').then((module) => module.newCommand), newCommandDefinition),
+	],
+	[
+		'build',
+		lazy(
+			() => import('./commands/build').then((module) => module.buildCommand),
+			buildCommandDefinition,
+		),
+	],
+	[
+		'publish',
+		lazy(
+			() => import('./commands/publish').then((module) => module.publishCommand),
+			publishCommandDefinition,
+		),
+	],
+	[
+		'hmr',
+		lazy(() => import('./commands/hmr').then((module) => module.hmrCommand), hmrCommandDefinition),
+	],
+	[
+		'workspace',
+		lazy(
+			() => import('./commands/workspace').then((module) => module.workspaceCommand),
+			workspaceCommandDefinition,
+		),
+	],
 ])
 
 const rootCommand = define({
@@ -36,10 +60,31 @@ async function main() {
 			subCommands: commands,
 		})
 	} catch (error) {
-		const msg = error instanceof Error ? error.message : String(error)
+		const msg = formatCliError(error, process.argv[2])
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1
 	}
+}
+
+function formatCliError(error: unknown, command: string | undefined): string {
+	const message = error instanceof Error ? error.message : String(error)
+	const dependencyByCommand: Record<string, string> = {
+		build: '@pluxel/rolldown',
+		hmr: '@pluxel/runtime-dynamic',
+		workspace: '@pluxel/rolldown',
+	}
+	const dependency = command ? dependencyByCommand[command] : undefined
+	if (
+		dependency &&
+		(error as NodeJS.ErrnoException | undefined)?.code === 'ERR_MODULE_NOT_FOUND' &&
+		message.includes(dependency)
+	) {
+		return [
+			`The \`pluxel ${command}\` command requires the optional ${dependency} package.`,
+			`Install it in this project with \`pnpm add -D ${dependency}\`.`,
+		].join('\n')
+	}
+	return message
 }
 
 void main()

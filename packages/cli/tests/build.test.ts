@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { createImportTracker } from '@pluxel/cli/rolldown'
+import { createImportTracker } from '@pluxel/rolldown/plugins'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
@@ -10,7 +10,7 @@ import {
 	createOptionalDependencyHook,
 	resolveBuildContext,
 	runWithTsdown,
-} from '@pluxel/cli/build'
+} from '@pluxel/rolldown/build'
 
 const buildFixtures = {
 	basic: {

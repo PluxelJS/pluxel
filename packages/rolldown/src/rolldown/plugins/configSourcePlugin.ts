@@ -187,7 +187,6 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					include: includePatterns,
 					exclude: excludePatterns,
 				},
-				code: { include: CODE_HINT },
 			},
 			async handler(this: TransformPluginContext, code, id) {
 				const normalizedId = normalizeViteId(id)
@@ -211,6 +210,9 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					}
 				}
 
+				// Keep the cheap source hint in userland. Vite 8.1 currently skips object-style
+				// transform hooks that include a `code` hook filter, while Rolldown accepts it.
+				// The id hook filter still avoids irrelevant modules in both pipelines.
 				if (!CODE_HINT.test(sourceText)) return null
 
 				const ast = parseWithLang(this, sourceText, normalizedId)

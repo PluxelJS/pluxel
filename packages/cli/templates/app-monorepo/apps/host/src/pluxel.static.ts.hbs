@@ -1,0 +1,13 @@
+import { {{className}}Plugin } from '{{packageName}}-example-plugin'
+import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
+
+export default defineStaticRuntimeConfig({
+	name: '{{pluginName}}',
+	plugins: [{{className}}Plugin],
+	runtimeState: {
+		mode: 'memory',
+		snapshot: { enabled: ['{{className}}Plugin'] },
+	},
+	persistence: { mode: 'memory' },
+	webManagement: false,
+})

@@ -3,13 +3,16 @@
 ## 依赖方向
 
 ```text
-@pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic <- @pluxel/cli
+@pluxel/core <- @pluxel/runtime <- @pluxel/runtime-dynamic
                            └──── @pluxel/runtime-static
+
+@pluxel/cli --optional--> @pluxel/rolldown
+            --optional--> @pluxel/runtime-dynamic/hmr/diagnose
 ```
 
 `@pluxel/rolldown` 是 build-time tooling，不进入 runtime graph。
 
-必须保持：core host-free、runtime 不依赖 dynamic、route 不复制 lifecycle、config persistence 不进入 core。
+必须保持：core host-free、runtime 不依赖 dynamic、route 不复制 lifecycle、config persistence 不进入 core。CLI 是按命令加载的编排层，不作为 runtime 或 toolchain library API 的转发门面。
 
 ## 导出
 

@@ -7,7 +7,8 @@
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
-			"@pluxel/runtime": "./src/{{pluginName}}.ts",
+			"types": "./dist/index.d.mts",
+			"@pluxel/runtime-dynamic": "./src/{{pluginName}}.ts",
 			"default": "./dist/index.mjs"
 		},
 		"./package.json": "./package.json"
@@ -15,24 +16,31 @@
 	"files": ["!**/*.map", "dist"],
 	"scripts": {
 		"build": "pluxel build",
-		"build:plugin": "pluxel build",
+		"lint": "oxlint src tests tsdown.config.ts vitest.config.ts",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"typecheck": "tsc -p tsconfig.test.json --noEmit"
+		"typecheck": "tsc --noEmit --pretty false",
+		"verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/runtime": "^0.3.0"
 	},
 	"devDependencies": {
-		"@pluxel/cli": "workspace:*",
-		"@pluxel/test": "workspace:*",
-		"typescript": "^5.9.3",
-		"vitest": "^4.0.18"
+		"@pluxel/cli": "^0.3.0",
+		"@pluxel/core": "^0.3.0",
+		"@pluxel/rolldown": "^0.1.0",
+		"@pluxel/test": "^0.1.0",
+		"oxlint": "^1.72.0",
+		"tsdown": "^0.22.3",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.9"
 	},
 	"publishConfig": {
 		"exports": {
-			".": "./dist/index.mjs",
+			".": {
+				"types": "./dist/index.d.mts",
+				"default": "./dist/index.mjs"
+			},
 			"./package.json": "./package.json"
 		}
 	}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.pluxel/
+data/
+logs/
+*.log
+*.tsbuildinfo
+.env
+.env.*.local

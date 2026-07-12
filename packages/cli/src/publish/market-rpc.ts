@@ -1,4 +1,3 @@
-import { createMarketRpcClient } from '@pluxel/market'
 import { CLI_DEFAULTS } from '../config'
 
 type Logger = (...args: unknown[]) => void
@@ -7,10 +6,10 @@ export interface MarketWebhookClient {
 	submit(payload: { packageName: string; version: string }, token: string): Promise<unknown>
 }
 
-export function resolveMarketWebhookClient(
+export async function resolveMarketWebhookClient(
 	baseUrl: string | undefined,
 	log: Logger,
-): MarketWebhookClient | undefined {
+): Promise<MarketWebhookClient | undefined> {
 	const resolvedBase = baseUrl || CLI_DEFAULTS.publish.marketBaseUrl
 	if (!resolvedBase) {
 		log('[publish] warn: market base URL is not configured')
@@ -22,6 +21,7 @@ export function resolveMarketWebhookClient(
 	}
 
 	try {
+		const { createMarketRpcClient } = await import('@pluxel/market')
 		const client = createMarketRpcClient({ baseUrl: resolvedBase, fetch: globalThis.fetch })
 		if (client?.webhook?.submit) {
 			return {

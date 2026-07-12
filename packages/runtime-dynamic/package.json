@@ -17,6 +17,10 @@
 			"@pluxel/source": "./src/hmr.ts",
 			"default": "./dist/hmr.mjs"
 		},
+		"./hmr/diagnose": {
+			"@pluxel/source": "./src/hmr/diagnose.ts",
+			"default": "./dist/hmr/diagnose.mjs"
+		},
 		"./plugin": {
 			"@pluxel/source": "./src/plugin.ts",
 			"default": "./dist/plugin.mjs"
@@ -39,6 +43,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./hmr": "./dist/hmr.mjs",
+			"./hmr/diagnose": "./dist/hmr/diagnose.mjs",
 			"./plugin": "./dist/plugin.mjs",
 			"./register": "./dist/register.mjs",
 			"./services": "./dist/services.mjs",

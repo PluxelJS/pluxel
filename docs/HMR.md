@@ -15,8 +15,12 @@ static route reload fixed definition；dynamic route 额外拥有 scan、loader 
 
 ## 实现入口
 
+- `@pluxel/runtime-dynamic/hmr/diagnose`：无 runtime 注册副作用的 config、workspace scan、profile 和 snapshot API；
+- `@pluxel/runtime-dynamic/hmr`：dynamic route HMR engine 和 runtime integration；
 - `packages/runtime-dynamic/src/hmr/`
 - `packages/runtime-static/src/hmr.ts`
 - `packages/runtime-static/src/vite.ts`
 - `packages/runtime-dev/src/vite.ts`
 - `packages/runtime-dev/src/extensions/ExtensionCompilerService.ts`
+
+CLI 和其他离线工具只能使用 diagnostics 入口。读取或编辑 HMR 配置不得触发 runtime service 注册。
