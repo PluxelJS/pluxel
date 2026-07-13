@@ -17,7 +17,13 @@ import {
 } from '@pluxel/runtime/management/federation'
 import * as RuntimeManagementUi from '@pluxel/runtime/management/ui'
 
-let federationRuntime: ModuleFederation | null = null
+type ManagementFederationState = {
+	runtime: ModuleFederation
+	remoteEntries: Map<string, string>
+}
+
+const MANAGEMENT_FEDERATION_STATE = Symbol.for('pluxel.management.federation-runtime')
+const federationGlobal = globalThis as typeof globalThis & Record<PropertyKey, unknown>
 const sharedVersions = {
 	mantineCore: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/core']),
 	mantineHooks: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/hooks']),
@@ -26,8 +32,15 @@ const sharedVersions = {
 }
 
 export function ensureManagementFederationRuntime(): ModuleFederation {
-	if (federationRuntime) return federationRuntime
-	federationRuntime = createInstance({
+	return ensureManagementFederationState().runtime
+}
+
+function ensureManagementFederationState(): ManagementFederationState {
+	const existing = federationGlobal[MANAGEMENT_FEDERATION_STATE] as
+		| ManagementFederationState
+		| undefined
+	if (existing) return existing
+	const runtime = createInstance({
 		name: 'pluxel-management-host',
 		remotes: [],
 		shareStrategy: MANAGEMENT_FEDERATION_SHARE_STRATEGY,
@@ -46,22 +59,21 @@ export function ensureManagementFederationRuntime(): ModuleFederation {
 			),
 		},
 	} as Parameters<typeof createInstance>[0])
-	return federationRuntime
+	const state = { runtime, remoteEntries: new Map<string, string>() }
+	federationGlobal[MANAGEMENT_FEDERATION_STATE] = state
+	return state
 }
 
 export async function loadFederatedManagementModule(
 	artifact: ManagementUiArtifact,
 ): Promise<ManagementUiModule | { default?: ManagementUiModule }> {
-	const runtime = ensureManagementFederationRuntime()
-	runtime.registerRemotes(
-		[
-			{
-				name: artifact.remoteName,
-				entry: withCacheBusting(artifact.manifestUrl, artifact.sourceHash, artifact.compiledAt),
-			},
-		],
-		{ force: true },
-	)
+	const state = ensureManagementFederationState()
+	const runtime = state.runtime
+	const entry = withCacheBusting(artifact.manifestUrl, artifact.sourceHash, artifact.compiledAt)
+	if (state.remoteEntries.get(artifact.remoteName) !== entry) {
+		runtime.registerRemotes([{ name: artifact.remoteName, entry }], { force: true })
+		state.remoteEntries.set(artifact.remoteName, entry)
+	}
 	const loaded = await runtime.loadRemote<ManagementUiModule | { default?: ManagementUiModule }>(
 		`${artifact.remoteName}/${managementFederationModuleId(artifact.exposedModule)}`,
 		{ from: 'runtime' },

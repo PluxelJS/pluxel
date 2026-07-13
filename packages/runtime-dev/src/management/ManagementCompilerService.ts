@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context } from '@pluxel/runtime'
 import { getDebugLogger } from '@pluxel/runtime/logger'
@@ -52,6 +52,7 @@ export type ManagementCompilerServiceConfig = {
 	 * How many compiled remote builds to keep per plugin on disk.
 	 * Keep a few historical hashes so open tabs / inflight MF loads do not trip over
 	 * freshly evicted artifacts during rapid rebuilds.
+	 * Values below 1 are clamped to 1 because the active artifact is served from this cache.
 	 * @default 5
 	 */
 	cacheKeep?: number
@@ -127,6 +128,11 @@ const HASH_IGNORED_SEGMENTS = [
 	'.next',
 ] as const
 
+function hasIgnoredHashPathSegment(filePath: string): boolean {
+	const segments = filePath.replaceAll('\\', '/').toLowerCase().split('/')
+	return HASH_IGNORED_SEGMENTS.some((segment) => segments.includes(segment))
+}
+
 const HASH_ALLOWED_EXTENSIONS = [
 	'.ts',
 	'.tsx',
@@ -173,7 +179,7 @@ export class ManagementCompilerService {
 		this.viteServer = deps.viteServer
 		this.enabled = (deps.enabled ?? true) && config?.enabled !== false
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/management')
-		this.cacheKeep = Math.max(0, Math.floor(config?.cacheKeep ?? 5))
+		this.cacheKeep = Math.max(1, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		this.sharedPackages = config?.sharedPackages
 		this.pluginDirs = new Map(Object.entries(config?.pluginDirs ?? {}))
@@ -338,12 +344,10 @@ export class ManagementCompilerService {
 			})
 
 			const manifestFile = this.getManifestFilePath(pluginName, sourceHash)
-			if (manifestFile && existsSync(manifestFile)) {
+			if (existsSync(manifestFile)) {
 				const manifestStats = await stat(manifestFile).catch((): null => null)
 				const cachedDir = this.getCachedModuleDirPath(pluginName, sourceHash)
-				const validation = cachedDir
-					? await validateManagementUiArtifact(cachedDir, pluginName)
-					: { valid: false as const }
+				const validation = await validateManagementUiArtifact(cachedDir, pluginName)
 				if (manifestStats?.isFile() && validation.valid) {
 					await store.commitCompiledModule(
 						createCompiledManagementArtifact({
@@ -353,7 +357,7 @@ export class ManagementCompilerService {
 						}),
 						{ artifactRoot: cachedDir },
 					)
-					if (this.cacheKeep > 0) void this.cleanupCacheDir(pluginName)
+					await this.cleanupCacheDir(pluginName)
 					this.dbg.debug('compile done {pluginName} (cached:disk)', { pluginName })
 					return true
 				}
@@ -368,7 +372,7 @@ export class ManagementCompilerService {
 				}),
 				{ artifactRoot: built.outDir },
 			)
-			if (this.cacheKeep > 0) void this.cleanupCacheDir(pluginName)
+			await this.cleanupCacheDir(pluginName)
 			this.dbg.debug('compile done {pluginName}', { pluginName })
 			return true
 		} catch (error) {
@@ -415,24 +419,23 @@ export class ManagementCompilerService {
 		return join(this.cacheDir, sanitizeManagementOwnerName(pluginName))
 	}
 
-	private getCachedModuleDirPath(pluginName: string, sourceHash: string): string | null {
-		if (this.cacheKeep <= 0) return null
+	private getCachedModuleDirPath(pluginName: string, sourceHash: string): string {
 		return join(this.getPluginCacheDir(pluginName), sourceHash)
 	}
 
-	private getManifestFilePath(pluginName: string, sourceHash: string): string | null {
+	private getManifestFilePath(pluginName: string, sourceHash: string): string {
 		const dir = this.getCachedModuleDirPath(pluginName, sourceHash)
-		return dir ? join(dir, MANAGEMENT_FEDERATION_MANIFEST_FILE) : null
+		return join(dir, MANAGEMENT_FEDERATION_MANIFEST_FILE)
 	}
 
 	private async cleanupCacheDir(pluginName: string): Promise<void> {
-		if (this.cacheKeep <= 0) return
 		const dir = this.getPluginCacheDir(pluginName)
 		const entries = await readdir(dir).catch((): string[] => [])
 		if (entries.length === 0) return
 
 		const builds: Array<{ path: string; mtime: number }> = []
 		for (const name of entries) {
+			if (!/^[a-f\d]{16}$/.test(name)) continue
 			const full = join(dir, name)
 			const manifestFile = join(full, MANAGEMENT_FEDERATION_MANIFEST_FILE)
 			const st = await stat(manifestFile).catch((): null => null)
@@ -457,10 +460,6 @@ export class ManagementCompilerService {
 		}
 
 		const outDir = this.getCachedModuleDirPath(entry.pluginName, sourceHash)
-		if (!outDir) throw new Error('Management UI compiler cacheDir is disabled')
-
-		await rm(outDir, { recursive: true, force: true }).catch((): undefined => undefined)
-		await mkdir(outDir, { recursive: true })
 
 		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeManagementArtifactBasePath(entry.pluginName, sourceHash)}/`
 		await buildManagementUiRemote({
@@ -596,7 +595,7 @@ export class ManagementCompilerService {
 						continue
 					}
 					const fullPath = join(target, entry)
-					if (HASH_IGNORED_SEGMENTS.some((segment) => fullPath.includes(segment))) continue
+					if (hasIgnoredHashPathSegment(fullPath)) continue
 					const nestedStats = await stat(fullPath).catch((): null => null)
 					if (!nestedStats) continue
 					if (nestedStats.isDirectory()) queue.push(fullPath)
@@ -653,7 +652,7 @@ export class ManagementCompilerService {
 
 	private isHashableSourceFile(filePath: string): boolean {
 		const lower = filePath.toLowerCase()
-		if (HASH_IGNORED_SEGMENTS.some((segment) => lower.includes(segment))) return false
+		if (hasIgnoredHashPathSegment(lower)) return false
 		if (
 			lower.endsWith('.d.ts') ||
 			lower.endsWith('.d.mts') ||

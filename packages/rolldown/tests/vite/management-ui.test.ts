@@ -1,18 +1,14 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createFixture } from 'fs-fixture'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
+import { managementFederationRemoteName } from '@pluxel/core/federation'
 import {
 	buildManagementUiRemote,
-	disposeManagementUiBuildSchedulers,
 	resolveManagementFederationShared,
 	resolveManagementUiBuildSignature,
 } from '../../src/vite/management-ui'
 import { validateManagementUiArtifact } from '../../src/management/artifact'
-
-afterEach(() => {
-	disposeManagementUiBuildSchedulers()
-})
 
 describe('buildManagementUiRemote', () => {
 	it('rejects partial cached artifacts including missing lazy chunks', async () => {
@@ -112,6 +108,108 @@ describe('buildManagementUiRemote', () => {
 		await expect(
 			readdir(join(root, '.pluxel/vite-management-ui-cache')).catch((): string[] => []),
 		).resolves.toEqual([])
+	}, 45_000)
+
+	it('builds remotes from different package roots without cross-build corruption', async () => {
+		await using fixture = await createFixture({
+			'packages/plugins/yiqicha/package.json': JSON.stringify({
+				name: '@pluxel/plugin-yiqicha',
+				private: true,
+				type: 'module',
+				dependencies: { react: '19.2.0' },
+			}),
+			'packages/plugins/yiqicha/src/ui/index.ts': `
+export const marker = "yiqicha-management-ui"
+export default { marker }
+`,
+			'packages/plugins/yiqicha/node_modules/react/package.json': JSON.stringify({
+				name: 'react',
+				version: '19.2.0',
+				main: 'index.js',
+			}),
+			'packages/plugins/yiqicha/node_modules/react/index.js': 'module.exports = {}\n',
+			'packages/plugins/zhipu/package.json': JSON.stringify({
+				name: '@pluxel/plugin-zhipu',
+				private: true,
+				type: 'module',
+				dependencies: { react: '19.2.0' },
+			}),
+			'packages/plugins/zhipu/src/ui/index.ts': `
+export const marker = "zhipu-management-ui"
+export default { marker }
+`,
+			'packages/plugins/zhipu/node_modules/react/package.json': JSON.stringify({
+				name: 'react',
+				version: '19.2.0',
+				main: 'index.js',
+			}),
+			'packages/plugins/zhipu/node_modules/react/index.js': 'module.exports = {}\n',
+		})
+
+		const cases = [
+			{
+				root: join(fixture.path, 'packages/plugins/yiqicha'),
+				pluginName: 'YiqichaProviderPlugin',
+				marker: 'yiqicha-management-ui',
+			},
+			{
+				root: join(fixture.path, 'packages/plugins/zhipu'),
+				pluginName: 'ZhipuProviderPlugin',
+				marker: 'zhipu-management-ui',
+			},
+		] as const
+		let activeBuilds = 0
+		let maximumActiveBuilds = 0
+
+		const results = await Promise.all(
+			cases.map(({ root, pluginName }) =>
+				buildManagementUiRemote({
+					root,
+					pluginName,
+					entryPath: join(root, 'src/ui/index.ts'),
+					outDir: join(fixture.path, `dist/${pluginName}`),
+					publicPath: '/test/',
+					sharedPackages: ['react'],
+					minify: false,
+					vite: {
+						plugins: [
+							{
+								name: `test:track-${pluginName}`,
+								async buildStart() {
+									activeBuilds += 1
+									maximumActiveBuilds = Math.max(maximumActiveBuilds, activeBuilds)
+									try {
+										await new Promise((resolve) => setTimeout(resolve, 25))
+									} finally {
+										activeBuilds -= 1
+									}
+								},
+							},
+						],
+					},
+				}),
+			),
+		)
+		expect(maximumActiveBuilds).toBe(1)
+
+		for (const [index, result] of results.entries()) {
+			const expected = cases[index]!
+			const validation = await validateManagementUiArtifact(result.outDir, expected.pluginName)
+			expect(validation.valid).toBe(true)
+			if (!validation.valid) continue
+			expect(validation.manifest.name ?? validation.manifest.metaData?.name).toBe(
+				managementFederationRemoteName(expected.pluginName),
+			)
+
+			const files = await readdir(result.outDir, { recursive: true })
+			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
+			const contents = await Promise.all(
+				jsFiles.map((file) => readFile(join(result.outDir, file), 'utf-8')),
+			)
+			const output = contents.join('\n')
+			expect(output).toContain(expected.marker)
+			expect(output).not.toContain(cases[1 - index]!.marker)
+		}
 	}, 45_000)
 
 	it('builds the same remote repeatedly without reusing process-local federation state', async () => {
@@ -330,7 +428,10 @@ export default { Component }
 
 		const resolved = resolveManagementFederationShared(fixture.path, ['shared-exported'])
 
-		expect(resolved.signature).toBe('shared-exported@1.2.3')
+		expect(resolved.signature).toContain('builder:pluxel@1')
+		expect(resolved.signature).toContain('@module-federation/vite@1.16.16')
+		expect(resolved.signature).toContain('vite@8.1.3')
+		expect(resolved.signature).toContain('shared:shared-exported@1.2.3')
 		expect(resolved.shared).toMatchObject({
 			'shared-exported': {
 				version: '1.2.3',

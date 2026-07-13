@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import type { ModuleFederationOptions } from '@module-federation/vite'
 import { resolve } from 'pathe'
 import type { InlineConfig, Plugin, PluginOption } from 'vite'
@@ -9,6 +10,14 @@ export type ResolvedFederationShared = {
 	signature: string
 	resolveRoot: string
 }
+
+const require = createRequire(import.meta.url)
+const MANAGEMENT_UI_BUILD_CONTRACT_VERSION = 1
+const managementUiToolchainSignature = [
+	`pluxel@${MANAGEMENT_UI_BUILD_CONTRACT_VERSION}`,
+	`@module-federation/vite@${resolveToolchainPackageVersion('@module-federation/vite')}`,
+	`vite@${resolveToolchainPackageVersion('vite')}`,
+].join('|')
 
 function collectPluginNames(input: PluginOption | undefined, out: string[]): void {
 	if (!input) return
@@ -65,7 +74,10 @@ export function resolveManagementFederationShared(
 		packageName: pkg,
 		version: resolveSharedPackageVersion(resolveRoot, pkg),
 	}))
-	const signature = specs.map((spec) => `${spec.packageName}@${spec.version ?? '*'}`).join('|')
+	const signature = [
+		`builder:${managementUiToolchainSignature}`,
+		`shared:${specs.map((spec) => `${spec.packageName}@${spec.version ?? '*'}`).join('|')}`,
+	].join('|')
 	const shared = Object.fromEntries(
 		specs.map((spec) => [
 			spec.packageName,
@@ -79,6 +91,17 @@ export function resolveManagementFederationShared(
 	) as unknown as ModuleFederationOptions['shared']
 
 	return { shared, signature, resolveRoot }
+}
+
+function resolveToolchainPackageVersion(packageName: string): string {
+	try {
+		const packageJson = JSON.parse(
+			readFileSync(require.resolve(`${packageName}/package.json`), 'utf-8'),
+		) as { version?: unknown }
+		return typeof packageJson.version === 'string' ? packageJson.version : 'unknown'
+	} catch {
+		return 'unknown'
+	}
 }
 
 function resolveSharedPackageVersion(root: string, packageName: string): string | undefined {

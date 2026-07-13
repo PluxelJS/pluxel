@@ -219,6 +219,67 @@ describe('ManagementCompilerService', () => {
 		await host.dispose()
 	})
 
+	it('hashes sources in package names containing build and always retains the active artifact', async () => {
+		await using fixture = await createFixture({
+			'packages/plugin-builder/package.json': JSON.stringify({
+				name: '@example/plugin-builder',
+				private: true,
+				type: 'module',
+			}),
+			'packages/plugin-builder/src/plugin.ts': 'export const plugin = true\n',
+			'packages/plugin-builder/src/ui/index.tsx': 'export default { version: 1 }\n',
+		})
+		const host = createHost()
+		let currentModule: ReturnType<ManagementArtifactStore['getCompiledModule']>
+		const store: ManagementArtifactStore = {
+			getCompiledModule: () => currentModule,
+			async commitCompiledModule(module) {
+				currentModule = module
+			},
+			async markCompiling() {},
+			async markCompileError(_pluginName, error) {
+				throw error
+			},
+			async removePlugin() {},
+		}
+		const service = new ManagementCompilerService(
+			host.ctx,
+			{ store, enabled: true },
+			{
+				cacheDir: fixture.getPath('.pluxel/management'),
+				cacheKeep: 0,
+			},
+		)
+		const dispose = service.bindDeclaration(
+			createPluginContext(host, 'BuilderPlugin', {
+				loader: {
+					api: {
+						registry: {
+							findModuleIdByName: () => fixture.getPath('packages/plugin-builder/src/plugin.ts'),
+						},
+						anchors: { list: () => [] },
+					},
+				},
+			}),
+			{ entryPath: './ui/index.tsx' },
+		)
+
+		await service.requestCompile('BuilderPlugin')
+		const firstHash = currentModule?.sourceHash
+		await writeFile(
+			fixture.getPath('packages/plugin-builder/src/ui/index.tsx'),
+			'export default { version: 2 }\n',
+		)
+		await service.requestCompile('BuilderPlugin')
+
+		expect(pluginBuildMocks.buildManagementUiRemote).toHaveBeenCalledTimes(2)
+		expect(currentModule?.sourceHash).not.toBe(firstHash)
+
+		dispose()
+		service.dispose()
+		await host.dispose()
+	})
+
 	it('does not let an old replacement cleanup remove the active declaration', async () => {
 		await using fixture = await createFixture({
 			'plugin/package.json': JSON.stringify({ name: 'replacement-plugin', type: 'module' }),

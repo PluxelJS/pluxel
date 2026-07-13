@@ -43,3 +43,7 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 bundle 与 `dist/management/<owner>/` remote 分开生成。完整 remote 缓存在
 `.pluxel/management-build/<owner>/<hash>/`，因此 tsdown 清空 `dist` 后仍可复用；缓存命中不会加载完整
 Vite/MF builder，依赖 lockfile 变化则自动失效。可安全删除该目录执行冷构建。
+
+同一进程可同时发现、计算和命中多个插件 UI 缓存；Pluxel 会在底座隔离实际 Federation builder，并按
+输出目录串行校验与原子发布。项目无需为多个 Management UI 设置 `compileConcurrency: 1`，也不要自行共享
+临时输出目录。

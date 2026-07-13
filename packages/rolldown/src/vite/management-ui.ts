@@ -16,6 +16,10 @@ import {
 	resolveManagementFederationShared,
 	resolveManagementUiBuildSignature,
 } from '../management/build-contract.ts'
+import {
+	runManagementFederationBuild,
+	runManagementOutputTransaction,
+} from '../management/build-scheduler.ts'
 import { resolveParaglideIntegration } from './paraglide.ts'
 import { validateManagementUiArtifact } from '../management/artifact.ts'
 
@@ -57,7 +61,6 @@ type ManagementUiBuildPayload = {
 	vite?: InlineConfig
 }
 
-const rootBuildTails = new Map<string, Promise<void>>()
 const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
 const MFE_VITE_NO_TEST_ENV_CHECK = 'true'
 
@@ -98,28 +101,30 @@ export async function buildManagementUiRemote(
 	const existing = inflightBuilds.get(buildKey)
 	if (existing) return existing
 
-	const task = (async () => {
+	const task = runManagementOutputTransaction(outDir, async () => {
 		const buildId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 		const stagedOutDir = `${outDir}.tmp-${buildId}`
 		await rm(stagedOutDir, { recursive: true, force: true })
 		try {
-			await runRootBuild(root, {
-				root,
-				outDir: stagedOutDir,
-				entryPath,
-				remoteName,
-				cacheDir: resolve(root, '.pluxel/vite-management-ui-cache', `${remoteName}-${buildId}`),
-				shared: resolvedShared.shared,
-				publicPath,
-				minify: options.minify ?? true,
-				vite: options.vite,
-				paraglide: paraglide
-					? {
-							project: paraglide.project,
-							outdir: paraglide.outdir,
-						}
-					: null,
-			})
+			await runManagementFederationBuild(() =>
+				runViteBuild({
+					root,
+					outDir: stagedOutDir,
+					entryPath,
+					remoteName,
+					cacheDir: resolve(root, '.pluxel/vite-management-ui-cache', `${remoteName}-${buildId}`),
+					shared: resolvedShared.shared,
+					publicPath,
+					minify: options.minify ?? true,
+					vite: options.vite,
+					paraglide: paraglide
+						? {
+								project: paraglide.project,
+								outdir: paraglide.outdir,
+							}
+						: null,
+				}),
+			)
 			const stagedManifest = resolve(stagedOutDir, MANAGEMENT_FEDERATION_MANIFEST_FILE)
 			await disableExposedEntryPreloads(stagedManifest)
 			const validation = await validateManagementUiArtifact(stagedOutDir, options.pluginName)
@@ -133,12 +138,12 @@ export async function buildManagementUiRemote(
 			await rm(stagedOutDir, { recursive: true, force: true })
 			throw error
 		}
-		return result
-	})()
+	})
 
-	inflightBuilds.set(buildKey, task)
-	return task.finally(() => {
-		if (inflightBuilds.get(buildKey) === task) {
+	const resultTask = task.then(() => result)
+	inflightBuilds.set(buildKey, resultTask)
+	return resultTask.finally(() => {
+		if (inflightBuilds.get(buildKey) === resultTask) {
 			inflightBuilds.delete(buildKey)
 		}
 	})
@@ -161,23 +166,6 @@ async function publishDirectory(staged: string, target: string, buildId: string)
 		throw error
 	}
 	if (movedPrevious) await rm(previous, { recursive: true, force: true })
-}
-
-export function disposeManagementUiBuildSchedulers(): void {
-	rootBuildTails.clear()
-	inflightBuilds.clear()
-}
-
-function runRootBuild(root: string, payload: ManagementUiBuildPayload): Promise<void> {
-	const normalizedRoot = resolve(root)
-	const previous = rootBuildTails.get(normalizedRoot) ?? Promise.resolve()
-	const task = previous.catch((): void => undefined).then(() => runViteBuild(payload))
-	rootBuildTails.set(normalizedRoot, task)
-	return task.finally(() => {
-		if (rootBuildTails.get(normalizedRoot) === task) {
-			rootBuildTails.delete(normalizedRoot)
-		}
-	})
 }
 
 function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {

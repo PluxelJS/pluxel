@@ -15,6 +15,7 @@ import {
 	resolveManagementFederationShared,
 	resolveManagementUiBuildSignature,
 } from '../../management/build-contract.ts'
+import { runManagementOutputTransaction } from '../../management/build-scheduler.ts'
 import { collectImportSpecifiers } from './importCollector.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
 import { normalizePatterns, parseStandaloneWithLang, parseWithLang } from './pluginUtils.ts'
@@ -154,7 +155,7 @@ async function buildProductionRemote(
 	const existing = productionBuilds.get(key)
 	if (existing) return existing
 
-	const task = (async () => {
+	const task = runManagementOutputTransaction(outDir, async () => {
 		if (await canReuseArtifact(cachedOutDir, declaration.pluginName, sourceHash)) {
 			options.log?.(`[management-ui] reuse ${declaration.pluginName} (${sourceHash})`)
 		} else {
@@ -182,7 +183,7 @@ async function buildProductionRemote(
 		}
 		await publishCachedArtifact(cachedOutDir, outDir)
 		await cleanupProductionCache(ownerCacheDir, Math.max(1, options.cacheKeep ?? 3), sourceHash)
-	})()
+	})
 
 	productionBuilds.set(key, task)
 	try {

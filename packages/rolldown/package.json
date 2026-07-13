@@ -97,7 +97,7 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
-		"@module-federation/vite": "^1.16.6",
+		"@module-federation/vite": "^1.16.16",
 		"oxc-parser": "^0.115.0",
 		"oxc-resolver": "^11.21.3"
 	},
