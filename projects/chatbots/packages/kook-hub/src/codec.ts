@@ -1,23 +1,44 @@
+import type { KookBot, KookEvent } from '@repo/chatbots-kook'
 import {
 	blockText,
 	contentText,
+	normalizeContent,
 	type ChatBlock,
 	type ChatMessage,
+	type ChatSendRequest,
 	type ChatTransportCapabilities,
 } from '@repo/chatbots-contracts'
-import {
-	KOOK_FILE,
-	KOOK_IMAGE,
-	KOOK_KMARKDOWN,
-	KOOK_TEXT,
-	KOOK_VIDEO,
-	type KookEvent,
-} from './protocol.ts'
+
+const KOOK_TEXT = 1
+const KOOK_IMAGE = 2
+const KOOK_VIDEO = 3
+const KOOK_FILE = 4
+const KOOK_KMARKDOWN = 9
 
 export const KOOK_TRANSPORT_CAPABILITIES = {
 	blocks: ['text', 'image', 'audio', 'video', 'file'],
 	mixedContent: false,
 } as const satisfies ChatTransportCapabilities
+
+export async function sendKook(bot: KookBot, request: ChatSendRequest, signal?: AbortSignal) {
+	const target = parseKookConversationId(request.conversationId)
+	let lastMessageId = ''
+	for (const block of normalizeContent(request.content)) {
+		if (signal?.aborted) throw signal.reason
+		const payload = {
+			target_id: target.targetId,
+			...encodeKookBlock(block),
+			...(request.replyToId ? { quote: request.replyToId } : {}),
+		}
+		const result = target.direct
+			? await bot.$.raw.call('createDirectMessage', payload, { signal })
+			: await bot.$.raw.call('sendMessage', payload, { signal })
+		if (result.ok === false) throw new Error(`KOOK API error ${result.code}: ${result.message}`)
+		lastMessageId = result.data.msg_id
+	}
+	if (!lastMessageId) throw new Error('KOOK send requires non-empty content')
+	return { messageId: lastMessageId }
+}
 
 export function encodeKookBlock(block: ChatBlock): { type: number; content: string } {
 	if (block.type === 'text') return { type: KOOK_TEXT, content: block.text }

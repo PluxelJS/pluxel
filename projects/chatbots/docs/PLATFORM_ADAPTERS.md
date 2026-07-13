@@ -215,23 +215,36 @@ Web Management 不改变平台 capability 的类型或行为。
 api/             纯平台 HTTP client、类型、endpoint inventory
 bot/             单账号生命周期、事件连接、$ 高级能力
 registry/        Bot 集合和配置协调
-codec/           平台对象 <-> JSON-safe ChatMessage
 management/      可选 UI、RPC 和状态投影
 plugin.ts        Pluxel capability 组合根
+
+独立 {platform}-hub package:
+codec/           平台对象 <-> JSON-safe ChatMessage
+plugin.ts        平台 capability <-> ChatHub transport/projection
 ```
 
-硬依赖放构造函数，可选管理面放 `ctx.webManagement.use()`。ChatHub 投影属于 optional plugin
-integration，平台插件应使用 `this.plugins.use(ChatHubPlugin, callback)` 动态挂载；不能因为 Hub
-未启用就阻止 Bot 原生 API、gateway/polling 或 raw events 启动。Hub 替换或停用时只卸载
-transport，不能销毁 Bot。Bot 的 timer、gateway、polling、observer 和 transport registration 都
-必须有明确 disposer，并由平台插件生命周期最终回收。
+硬依赖放构造函数，可选管理面放 `ctx.webManagement.use()`。ChatHub 投影属于独立 bridge plugin；
+bridge 的 constructor 依赖平台 capability 与 ChatHub，平台包本身不得导入 `contracts` 或 Hub。未安装
+bridge 时 Bot 原生 API、gateway/polling 和 raw events 照常启动。bridge 停止时只卸载 transport 和
+确认型 projection，不能销毁 Bot。Bot 的 timer、gateway、polling 和 observer 由平台插件生命周期回收。
+
+普通原生事件 channel 使用 `emitSettled()` 隔离业务 listener 错误。需要参与 polling offset 或 gateway
+SN 确认的 bridge 不能伪装成普通 listener；平台 capability 必须提供窄的 acknowledged projection 注册口。
+projection 接收 Bot、原生事件与 signal，不包含 ChatMessage/Hub 类型；任一 projection 失败都阻止本次
+checkpoint 前移，由平台状态机按原事件重试。projection registry 在事件开始时冻结有序执行计划并
+fail-fast；执行中发生的注册或注销只影响下一个事件，避免 HMR/并发配置改变当前 checkpoint 的含义。
+
+bridge 还必须拥有独立 lifetime abort controller。入站 `hub.receive()` 与出站 transport send 都组合
+平台/Hub signal 和 bridge lifetime signal；stop、init rollback 或 replacement 时先 abort，再卸载
+transport/projection。已有 Bot 的 transport cleanup 必须在首次 attach 之前登记，避免 bridge init
+中途失败留下部分注册。
 
 ChatHub 不得知道平台 SDK 类型。adapter 可以把原生事件投影成 `ChatMessage`，但不能把 Bot、
 session、方法、`Blob` 或循环对象塞进通用消息。
 
-共享的 registry、原子账号存储、optional capability binding、退避和 abort lease 只从
-`@repo/chatbots-adapter-kit` 的对应子入口导入。平台 codec 直接依赖 `@repo/chatbots-contracts`；
-不能为了取得这些原语或消息类型而依赖 Hub 默认出口。连接状态机仍属于具体平台。
+共享的 registry、原子账号存储、串行器、retry gate、退避和 abort lease 只从
+`@repo/chatbots-adapter-kit` 的对应子入口导入。codec 与 `@repo/chatbots-contracts` 只存在于 bridge；
+平台包不能为了取得消息类型依赖 contracts 或 Hub。连接状态机仍属于具体平台。
 
 ### 多账号寻址
 
@@ -285,8 +298,8 @@ telegram.events.callback_query.on(async (sourceBot, query, update, signal) => {
 所有 channel 使用 Pluxel `EvtChannel`：`on()` 注册会绑定调用方 Context 并随其 effects 自动清理，
 仍返回幂等 disposer，也可通过 `{ signal }` 主动控制订阅。分发使用 `emitSettled()` 等待异步
 listener 并隔离失败；一个 listener 的异常不能阻止同 channel 的其他 listener，不能阻止精确事件
-channel，也不能使 gateway ack 或 polling offset 丢失。平台事件只有在 codec 明确支持时才额外
-投影到 ChatHub，不能为了跨平台统一而丢掉 callback query、reaction、guild mutation 等语义。
+channel，也不能使 gateway ack 或 polling offset 丢失。bridge 只通过独立的 acknowledged projection
+把 codec 明确支持的事件投影到 ChatHub，不能为了跨平台统一而丢掉 callback query、reaction、guild mutation 等语义。
 
 事件 inventory 与 endpoint inventory 遵循相同的生成规则。外部类型包可枚举事件字段时，codegen
 从权威声明生成可审阅 TXT，`api:check` 双向检查漂移，macro 只把字段名数组内联到 runtime；类型
@@ -650,11 +663,11 @@ definitions.txt / endpoints.txt
 - [ ] 原生事件使用静态 `EvtChannel` 属性，保留权威类型并绑定 Bot。
 - [ ] 同时提供 Bot 局部与 Plugin 聚合事件面，且只有一个 event inventory。
 - [ ] raw/分类/精确事件 channel 的分发顺序与错误隔离有测试。
-- [ ] ChatHub 投影保持 JSON-safe，且带独立 `platform/accountId`。
-- [ ] ChatHub 通过 optional `plugins.use()` 接入；无 Hub 时平台原生能力仍可运行。
+- [ ] ChatHub bridge 保持 JSON-safe，且带独立 `platform/accountId`。
+- [ ] 平台包不声明 contracts/Hub；独立 bridge 通过 acknowledged projection 接入。
 - [ ] 优先复用外部类型包，没有重复造类型。
 - [ ] codegen 显式、确定、可 `--check`，构建不访问网络。
 - [ ] macro 只内联已提交的静态 metadata。
 - [ ] endpoint 方法只安装在共享 prototype 一次。
-- [ ] API、Bot、registry、codec、management 包边界清晰。
+- [ ] API、Bot、registry、management 属于平台包；codec 与 Hub transport 属于 bridge 包。
 - [ ] 生命周期、取消、错误、限流和 multipart 有平台级测试。

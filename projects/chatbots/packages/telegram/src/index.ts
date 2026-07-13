@@ -13,5 +13,9 @@ export type {
 	TelegramPluginUpdateFieldListener,
 	TelegramPluginUpdateListener,
 } from './events.types.ts'
-export { TelegramPlugin, type TelegramBotConfigInput } from './plugin.ts'
+export {
+	TelegramPlugin,
+	type TelegramBotConfigInput,
+	type TelegramUpdateProjection,
+} from './plugin.ts'
 export type { TelegramBotPhase, TelegramBotStatus, TelegramPollingSnapshot } from './status.ts'

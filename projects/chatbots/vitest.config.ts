@@ -20,6 +20,10 @@ export default definePluxelVitestConfig({
 			packageAlias('contracts'),
 			packageAlias('hub'),
 			packageAlias('commands'),
+			packageAlias('kook'),
+			packageAlias('kook-hub'),
+			packageAlias('telegram'),
+			packageAlias('telegram-hub'),
 		],
 	},
 	oxc: {
@@ -27,5 +31,5 @@ export default definePluxelVitestConfig({
 			legacy: true,
 		},
 	},
-	test: { include: ['packages/*/tests/**/*.test.ts'] },
+	test: { include: ['packages/*/tests/**/*.test.ts', 'test/**/*.test.ts'] },
 })

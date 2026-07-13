@@ -1,16 +1,41 @@
+import type { TelegramBot, TelegramUpdate } from '@repo/chatbots-telegram'
 import {
 	contentText,
+	normalizeContent,
 	type ChatBlock,
 	type ChatMessage,
+	type ChatSendRequest,
 	type ChatTransportCapabilities,
 } from '@repo/chatbots-contracts'
-import type { TelegramUpdate } from '@gramio/types'
 
 export const TELEGRAM_TRANSPORT_CAPABILITIES = {
 	blocks: ['text', 'image', 'audio', 'video', 'file'],
 	mixedContent: false,
 	maxTextLength: 4096,
 } as const satisfies ChatTransportCapabilities
+
+export async function sendTelegram(
+	bot: TelegramBot,
+	request: ChatSendRequest,
+	signal?: AbortSignal,
+) {
+	const blocks = normalizeContent(request.content)
+	if (blocks.length !== 1) throw new Error('Telegram transport expects one planned block per send')
+	const payload = telegramOutboundPayload(blocks[0]!)
+	const replyMessageId = request.replyToId === undefined ? undefined : Number(request.replyToId)
+	if (replyMessageId !== undefined && !Number.isSafeInteger(replyMessageId))
+		throw new Error(`Telegram reply message id must be an integer: ${request.replyToId}`)
+	const sent = await bot.$.raw.call(
+		payload.method,
+		{
+			chat_id: request.conversationId,
+			...payload.body,
+			...(replyMessageId === undefined ? {} : { reply_parameters: { message_id: replyMessageId } }),
+		} as never,
+		{ signal },
+	)
+	return { messageId: String(sent.message_id) }
+}
 
 export function normalizeTelegramUpdate(
 	update: TelegramUpdate,
@@ -108,6 +133,7 @@ export function telegramOutboundPayload(block: ChatBlock): {
 function telegramResource(fileId: string): string {
 	return `telegram:file:${fileId}`
 }
+
 function telegramApiResource(value: string): string {
 	return value.startsWith('telegram:file:') ? value.slice('telegram:file:'.length) : value
 }

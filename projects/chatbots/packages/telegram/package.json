@@ -20,16 +20,27 @@
 	},
 	"dependencies": {
 		"@gramio/types": "^10.1.0",
-		"@mantine/core": "^9.4.1",
-		"@pluxel/runtime": "workspace:*",
-		"@repo/chatbots-adapter-kit": "workspace:*",
-		"@repo/chatbots-contracts": "workspace:*",
-		"@repo/chatbots-hub": "workspace:*",
-		"@tabler/icons-react": "^3.37.1",
-		"react": "^19.2.7"
+		"@repo/chatbots-adapter-kit": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/react": "^19.2.14",
 		"typescript": "^6.0.3"
+	},
+	"peerDependencies": {
+		"@mantine/core": "^9.4.1",
+		"@pluxel/runtime": "workspace:*",
+		"@tabler/icons-react": "^3.37.1",
+		"react": "^19.2.7"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		}
 	}
 }

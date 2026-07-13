@@ -1,5 +1,5 @@
 {
-	"name": "@repo/chatbots-builtins",
+	"name": "@repo/chatbots-telegram-hub",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -10,12 +10,14 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit --pretty false",
-		"test": "vitest run --passWithNoTests"
+		"test": "vitest run --config ../../vitest.config.ts tests"
+	},
+	"dependencies": {
+		"@repo/chatbots-contracts": "workspace:*"
 	},
 	"peerDependencies": {
 		"@pluxel/runtime": "workspace:*",
-		"@repo/chatbots-access": "workspace:*",
-		"@repo/chatbots-commands": "workspace:*",
-		"@repo/chatbots-hub": "workspace:*"
+		"@repo/chatbots-hub": "workspace:*",
+		"@repo/chatbots-telegram": "workspace:*"
 	}
 }

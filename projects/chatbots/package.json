@@ -21,8 +21,11 @@
 		"@repo/chatbots-commands": "workspace:*",
 		"@repo/chatbots-hub": "workspace:*",
 		"@repo/chatbots-kook": "workspace:*",
+		"@repo/chatbots-kook-hub": "workspace:*",
 		"@repo/chatbots-sandbox": "workspace:*",
 		"@repo/chatbots-telegram": "workspace:*",
+		"@repo/chatbots-telegram-hub": "workspace:*",
+		"@tabler/icons-react": "^3.37.1",
 		"@worksplit/react": "workspace:*",
 		"react": "^19.2.7",
 		"react-dom": "^19.2.7"

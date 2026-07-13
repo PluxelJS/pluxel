@@ -7,6 +7,6 @@ export {
 	type KookBotRawCallArgs,
 } from './bot.ts'
 export type { KookBotEvents, KookNoticeEvent, KookPluginEvents } from './events.types.ts'
-export { KookPlugin, type KookBotConfigInput } from './plugin.ts'
+export { KookPlugin, type KookBotConfigInput, type KookEventProjection } from './plugin.ts'
 export type { KookAttachment, KookEvent, KookEventExtra } from './protocol.ts'
 export type { KookBotPhase, KookBotStatus } from './status.ts'

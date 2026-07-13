@@ -7,21 +7,25 @@ import {
 	type BotAccountConfig,
 	type BotAccountInput,
 } from '@repo/chatbots-adapter-kit/account-store'
-import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
+import {
+	AcknowledgedProjectionRegistry,
+	type AcknowledgedProjection,
+} from '@repo/chatbots-adapter-kit/projection'
 import {
 	createBotRegistry,
 	normalizeBotId,
 	type BotRegistry,
 	type BotRegistryController,
 } from '@repo/chatbots-adapter-kit/registry'
-import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { KookBot } from './bot.ts'
 import { createKookPluginEvents } from './events.factory.ts'
 import { KookManagementRpc, type KookSettingsDoc, type KookStatusDoc } from './management.ts'
 import type { KookBotStatus } from './status.ts'
+import type { KookEvent } from './protocol.ts'
 
 export type KookBotConfigInput = BotAccountInput
+export type KookEventProjection = AcknowledgedProjection<KookBot, KookEvent>
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'KookPlugin'
@@ -32,12 +36,6 @@ export class KookPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<KookSettingsDoc>
 	private status?: ManagementStateCollection<KookStatusDoc>
 	private accounts?: BotAccountStore
-	private readonly hubBinding = createCapabilityRef<
-		Pick<ChatHubPlugin, 'registerTransport' | 'receive'>
-	>({
-		onObserverError: (error) =>
-			this.ctx.logger.warn('KOOK ChatHub binding observer failed', { error }),
-	})
 	private readonly registryState = createBotRegistry<KookBot>({
 		onObserverError: (error) =>
 			this.ctx.logger.warn('KOOK Bot registry observer failed', { error }),
@@ -46,18 +44,15 @@ export class KookPlugin extends BasePlugin {
 		this.registryState.controller
 	private readonly botDisposers = new Map<string, () => void>()
 	private readonly accountMutations = new KeyedSerialExecutor<string>()
+	private readonly eventProjections = new AcknowledgedProjectionRegistry<KookBot, KookEvent>(
+		'KOOK event projection',
+	)
 
 	/** Live read-only platform capability registry. */
 	readonly bots: BotRegistry<KookBot> = this.registryState.registry
 	readonly events = createKookPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		this.ctx.effects.defer(
-			this.plugins.use(ChatHubPlugin, (hub) => {
-				this.hubBinding.controller.set(hub)
-				return () => this.hubBinding.controller.set(undefined)
-			}),
-		)
 		await this.ctx.webManagement.use(async (web) => {
 			this.settings = web.state.collection<KookSettingsDoc>({ name: 'settings' })
 			this.status = web.state.collection<KookStatusDoc>({ name: 'status' })
@@ -80,6 +75,11 @@ export class KookPlugin extends BasePlugin {
 
 	bot(id: string): KookBot {
 		return this.bots.require(id)
+	}
+
+	/** Registers an acknowledged native-event projection. Failure keeps the gateway SN unchanged. */
+	registerEventProjection(id: string, project: KookEventProjection): () => void {
+		return this.eventProjections.register(id, project)
 	}
 
 	async upsertBot(input: KookBotConfigInput): Promise<KookBot> {
@@ -126,8 +126,8 @@ export class KookPlugin extends BasePlugin {
 			ctx: this.ctx,
 			token,
 			baseUrl: apiBase,
-			hub: this.hubBinding.ref,
 			pluginEvents: this.events,
+			projectEvent: (source, event, signal) => this.projectEvent(source, event, signal),
 			onStatus: (next) => this.projectStatus(id, next),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))
@@ -143,6 +143,10 @@ export class KookPlugin extends BasePlugin {
 
 	private destroyAllBots(): void {
 		for (const id of this.bots.keys()) this.removeRuntimeBot(id)
+	}
+
+	private async projectEvent(bot: KookBot, event: KookEvent, signal: AbortSignal): Promise<void> {
+		await this.eventProjections.dispatch(bot, event, signal)
 	}
 
 	private projectSettings(id: string, stored: BotAccountConfig): void {

@@ -1,5 +1,6 @@
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import type { TelegramUpdate } from '@gramio/types'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import {
@@ -7,15 +8,17 @@ import {
 	type BotAccountConfig,
 	type BotAccountInput,
 } from '@repo/chatbots-adapter-kit/account-store'
-import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
+import {
+	AcknowledgedProjectionRegistry,
+	type AcknowledgedProjection,
+} from '@repo/chatbots-adapter-kit/projection'
 import {
 	createBotRegistry,
 	normalizeBotId,
 	type BotRegistry,
 	type BotRegistryController,
 } from '@repo/chatbots-adapter-kit/registry'
-import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { TelegramBot } from './bot.ts'
 import { createTelegramPluginEvents } from './events.factory.ts'
 import {
@@ -26,6 +29,7 @@ import {
 import type { TelegramBotStatus } from './status.ts'
 
 export type TelegramBotConfigInput = BotAccountInput
+export type TelegramUpdateProjection = AcknowledgedProjection<TelegramBot, TelegramUpdate>
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'TelegramPlugin'
@@ -36,12 +40,6 @@ export class TelegramPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<TelegramSettingsDoc>
 	private status?: ManagementStateCollection<TelegramStatusDoc>
 	private accounts?: BotAccountStore
-	private readonly hubBinding = createCapabilityRef<
-		Pick<ChatHubPlugin, 'registerTransport' | 'receive'>
-	>({
-		onObserverError: (error) =>
-			this.ctx.logger.warn('Telegram ChatHub binding observer failed', { error }),
-	})
 	private readonly registryState = createBotRegistry<TelegramBot>({
 		onObserverError: (error) =>
 			this.ctx.logger.warn('Telegram Bot registry observer failed', { error }),
@@ -50,18 +48,16 @@ export class TelegramPlugin extends BasePlugin {
 		this.registryState.controller
 	private readonly botDisposers = new Map<string, () => void>()
 	private readonly accountMutations = new KeyedSerialExecutor<string>()
+	private readonly updateProjections = new AcknowledgedProjectionRegistry<
+		TelegramBot,
+		TelegramUpdate
+	>('Telegram update projection')
 
 	/** Live read-only platform capability registry. */
 	readonly bots: BotRegistry<TelegramBot> = this.registryState.registry
 	readonly events = createTelegramPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		this.ctx.effects.defer(
-			this.plugins.use(ChatHubPlugin, (hub) => {
-				this.hubBinding.controller.set(hub)
-				return () => this.hubBinding.controller.set(undefined)
-			}),
-		)
 		await this.ctx.webManagement.use(async (web) => {
 			this.settings = web.state.collection<TelegramSettingsDoc>({ name: 'settings' })
 			this.status = web.state.collection<TelegramStatusDoc>({ name: 'status' })
@@ -84,6 +80,11 @@ export class TelegramPlugin extends BasePlugin {
 
 	bot(id: string): TelegramBot {
 		return this.bots.require(id)
+	}
+
+	/** Registers an acknowledged native-update projection. Failure keeps the polling offset unchanged. */
+	registerUpdateProjection(id: string, project: TelegramUpdateProjection): () => void {
+		return this.updateProjections.register(id, project)
 	}
 
 	async upsertBot(input: TelegramBotConfigInput): Promise<TelegramBot> {
@@ -130,8 +131,8 @@ export class TelegramPlugin extends BasePlugin {
 			ctx: this.ctx,
 			token,
 			apiBase,
-			hub: this.hubBinding.ref,
 			pluginEvents: this.events,
+			projectUpdate: (source, update, signal) => this.projectUpdate(source, update, signal),
 			onStatus: (next) => this.projectStatus(id, next),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))
@@ -147,6 +148,14 @@ export class TelegramPlugin extends BasePlugin {
 
 	private destroyAllBots(): void {
 		for (const id of this.bots.keys()) this.removeRuntimeBot(id)
+	}
+
+	private async projectUpdate(
+		bot: TelegramBot,
+		update: TelegramUpdate,
+		signal: AbortSignal,
+	): Promise<void> {
+		await this.updateProjections.dispatch(bot, update, signal)
 	}
 
 	private projectSettings(id: string, stored: BotAccountConfig): void {

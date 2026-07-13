@@ -16,9 +16,14 @@
 		"skipLibCheck": true,
 		"paths": {
 			"@repo/chatbots-adapter-kit/*": ["./packages/adapter-kit/src/*.ts"],
+			"@repo/chatbots-access": ["./packages/access/src/index.ts"],
 			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
 			"@repo/chatbots-hub": ["./packages/hub/src/index.ts"],
-			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"]
+			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"],
+			"@repo/chatbots-kook": ["./packages/kook/src/index.ts"],
+			"@repo/chatbots-kook-hub": ["./packages/kook-hub/src/index.ts"],
+			"@repo/chatbots-telegram": ["./packages/telegram/src/index.ts"],
+			"@repo/chatbots-telegram-hub": ["./packages/telegram-hub/src/index.ts"]
 		}
 	}
 }

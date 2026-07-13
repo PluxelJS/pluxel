@@ -385,6 +385,9 @@ importers:
       '@pluxel/market':
         specifier: ^0.1.0
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@tabler/icons-react':
+        specifier: ^3.37.1
+        version: 3.44.0(react@19.2.7)
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -1138,12 +1141,21 @@ importers:
       '@repo/chatbots-kook':
         specifier: workspace:*
         version: link:packages/kook
+      '@repo/chatbots-kook-hub':
+        specifier: workspace:*
+        version: link:packages/kook-hub
       '@repo/chatbots-sandbox':
         specifier: workspace:*
         version: link:packages/sandbox
       '@repo/chatbots-telegram':
         specifier: workspace:*
         version: link:packages/telegram
+      '@repo/chatbots-telegram-hub':
+        specifier: workspace:*
+        version: link:packages/telegram-hub
+      '@tabler/icons-react':
+        specifier: ^3.37.1
+        version: 3.44.0(react@19.2.7)
       '@worksplit/react':
         specifier: workspace:*
         version: link:../../vendor/split-like-vscode/packages/react
@@ -1258,12 +1270,6 @@ importers:
       '@repo/chatbots-adapter-kit':
         specifier: workspace:*
         version: link:../adapter-kit
-      '@repo/chatbots-contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@repo/chatbots-hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tabler/icons-react':
         specifier: ^3.37.1
         version: 3.44.0(react@19.2.7)
@@ -1277,6 +1283,21 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  projects/chatbots/packages/kook-hub:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/runtime
+      '@repo/chatbots-contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@repo/chatbots-hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@repo/chatbots-kook':
+        specifier: workspace:*
+        version: link:../kook
 
   projects/chatbots/packages/sandbox:
     dependencies:
@@ -1320,12 +1341,6 @@ importers:
       '@repo/chatbots-adapter-kit':
         specifier: workspace:*
         version: link:../adapter-kit
-      '@repo/chatbots-contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@repo/chatbots-hub':
-        specifier: workspace:*
-        version: link:../hub
       '@tabler/icons-react':
         specifier: ^3.37.1
         version: 3.44.0(react@19.2.7)
@@ -1339,6 +1354,21 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  projects/chatbots/packages/telegram-hub:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/runtime
+      '@repo/chatbots-contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@repo/chatbots-hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@repo/chatbots-telegram':
+        specifier: workspace:*
+        version: link:../telegram
 
   projects/external-api-gateway:
     dependencies:

@@ -1,21 +1,13 @@
-import type { CapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
 import { SupersedingAbortScope } from '@repo/chatbots-adapter-kit/scope'
 import type { Context } from '@pluxel/runtime'
-import type { ChatSendRequest } from '@repo/chatbots-contracts'
-import type { ChatHubPlugin } from '@repo/chatbots-hub'
 import { createKookClient, type KookClientOptions } from './api/client.ts'
 import { invokeKookNative, KookNativeApi } from './api/native.ts'
 import type { KookApi, KookApiTools, KookAutoApi, Result } from './api/types.ts'
-import {
-	encodeKookBlock,
-	KOOK_TRANSPORT_CAPABILITIES,
-	normalizeKookEvent,
-	parseKookConversationId,
-} from './codec.ts'
 import { dispatchKookEvent } from './events.dispatch.ts'
 import { createKookBotEvents } from './events.factory.ts'
 import type { KookBotEvents, KookPluginEvents } from './events.types.ts'
 import { createKookGatewaySnapshot, KookGateway, type KookGatewaySnapshot } from './gateway.ts'
+import type { KookEvent } from './protocol.ts'
 import {
 	createKookBotStatus,
 	updateKookBotStatus,
@@ -27,8 +19,8 @@ import type { User } from './types/base.ts'
 export type KookBotOptions = Omit<KookClientOptions, 'signal'> & {
 	id: string
 	ctx: Context
-	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
 	pluginEvents?: KookPluginEvents
+	projectEvent?: (bot: KookBot, event: KookEvent, signal: AbortSignal) => void | Promise<void>
 	onStatus?: (status: KookBotStatus) => void
 }
 
@@ -75,9 +67,6 @@ export class KookBot extends KookNativeApi {
 	readonly #logger: ReturnType<Context['logger']['with']>
 	private readonly connection = new SupersedingAbortScope()
 	private gateway?: KookGateway
-	private disposeTransport?: () => void
-	private readonly disposeHubObserver?: () => void
-	private connectionActive = false
 	private statusValue = createKookBotStatus(createKookGatewaySnapshot())
 
 	constructor(botOptions: KookBotOptions) {
@@ -95,7 +84,6 @@ export class KookBot extends KookNativeApi {
 			fetch: botOptions.fetch,
 			signal: this.#owner.signal,
 		})
-		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: KookBotExtensions = {
 			info: Object.freeze({ id: this.id, baseUrl, apiPrefix }),
 			raw: {
@@ -132,8 +120,6 @@ export class KookBot extends KookNativeApi {
 			this.selfInfo = identity
 			const botId = identity.id
 			const username = identity.username ?? identity.nickname ?? ''
-			this.connectionActive = true
-			this.refreshTransport()
 			this.setStatus('connecting', { botId, username })
 			this.gateway = new KookGateway(
 				{
@@ -149,8 +135,7 @@ export class KookBot extends KookNativeApi {
 					},
 					onEvent: async (event, signal) => {
 						await dispatchKookEvent(this, this.events, this.#options.pluginEvents, event, signal)
-						const message = normalizeKookEvent(event, botId, this.id)
-						if (message) await this.#options.hub?.current?.receive(message, signal)
+						await this.#options.projectEvent?.(this, event, signal)
 					},
 					onOnline: (sessionId) => {
 						this.#logger.info('KOOK gateway online', {
@@ -177,11 +162,8 @@ export class KookBot extends KookNativeApi {
 
 	private stopConnection(updateStatus = true): KookBotStatus {
 		this.connection.abort()
-		this.connectionActive = false
 		this.gateway?.stop()
 		this.gateway = undefined
-		this.disposeTransport?.()
-		this.disposeTransport = undefined
 		return updateStatus && this.statusValue.phase !== 'destroyed'
 			? this.setStatus('offline')
 			: this.statusValue
@@ -190,42 +172,8 @@ export class KookBot extends KookNativeApi {
 	private destroy(): void {
 		if (this.statusValue.phase === 'destroyed') return
 		this.stopConnection(false)
-		this.disposeHubObserver?.()
 		this.#owner.abort(new Error(`KOOK bot destroyed: ${this.id}`))
 		this.setStatus('destroyed')
-	}
-
-	private async sendToPlatform(request: ChatSendRequest, signal?: AbortSignal) {
-		const target = parseKookConversationId(request.conversationId)
-		const content = Array.isArray(request.content) ? request.content : []
-		let lastMessageId = ''
-		for (const block of content) {
-			if (signal?.aborted) throw signal.reason
-			const payload = {
-				target_id: target.targetId,
-				...encodeKookBlock(block),
-				...(request.replyToId ? { quote: request.replyToId } : {}),
-			}
-			const sent = target.direct
-				? unwrap(await this.#api.$raw.call('createDirectMessage', payload, signal))
-				: unwrap(await this.#api.$raw.call('sendMessage', payload, signal))
-			lastMessageId = sent.msg_id
-		}
-		if (!lastMessageId) throw new Error('KOOK send requires non-empty content')
-		return { messageId: lastMessageId }
-	}
-
-	private refreshTransport(): void {
-		this.disposeTransport?.()
-		this.disposeTransport = undefined
-		const hub = this.#options.hub?.current
-		if (!hub || !this.connectionActive) return
-		this.disposeTransport = hub.registerTransport({
-			platform: 'kook',
-			accountId: this.id,
-			capabilities: KOOK_TRANSPORT_CAPABILITIES,
-			send: (request, signal) => this.sendToPlatform(request, signal),
-		})
 	}
 
 	private setStatus(

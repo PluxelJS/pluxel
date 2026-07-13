@@ -1,19 +1,11 @@
-import type { APIMethodParams, APIMethodReturn } from '@gramio/types'
+import type { APIMethodParams, APIMethodReturn, TelegramUpdate } from '@gramio/types'
 import type { Context } from '@pluxel/runtime'
 import { abortableDelay, ExponentialBackoff } from '@repo/chatbots-adapter-kit/backoff'
-import type { CapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
 import { SupersedingAbortScope } from '@repo/chatbots-adapter-kit/scope'
-import { normalizeContent, type ChatSendRequest } from '@repo/chatbots-contracts'
-import type { ChatHubPlugin } from '@repo/chatbots-hub'
 import { createTelegramClient, type TelegramClientOptions, type TelegramApi } from './api/client.ts'
 import type { TelegramMethod } from './api/endpoints.ts'
 import { invokeTelegramNative, TelegramNativeApi } from './api/native.ts'
 import { TELEGRAM_UPDATE_KEYS } from './api/updates.ts'
-import {
-	normalizeTelegramUpdate,
-	TELEGRAM_TRANSPORT_CAPABILITIES,
-	telegramOutboundPayload,
-} from './codec.ts'
 import { dispatchTelegramUpdate } from './events.dispatch.ts'
 import { createTelegramBotEvents } from './events.factory.ts'
 import type { TelegramBotEvents, TelegramPluginEvents } from './events.types.ts'
@@ -36,8 +28,12 @@ export type TelegramRawApi = {
 export type TelegramBotOptions = Omit<TelegramClientOptions, 'signal'> & {
 	id: string
 	ctx: Context
-	hub?: CapabilityRef<Pick<ChatHubPlugin, 'registerTransport' | 'receive'>>
 	pluginEvents?: TelegramPluginEvents
+	projectUpdate?: (
+		bot: TelegramBot,
+		update: TelegramUpdate,
+		signal: AbortSignal,
+	) => void | Promise<void>
 	pollingTimeoutSeconds?: number
 	onStatus?: (status: TelegramBotStatus) => void
 }
@@ -63,9 +59,6 @@ export class TelegramBot extends TelegramNativeApi {
 	readonly #logger: ReturnType<Context['logger']['with']>
 	private readonly connection = new SupersedingAbortScope()
 	private readonly pollingBackoff = new ExponentialBackoff({ initialMs: 2_000, maxMs: 30_000 })
-	private disposeTransport?: () => void
-	private readonly disposeHubObserver?: () => void
-	private connectionActive = false
 	private offset = 0
 	private statusValue = createTelegramBotStatus()
 
@@ -82,7 +75,6 @@ export class TelegramBot extends TelegramNativeApi {
 			fetch: botOptions.fetch,
 			signal: this.#owner.signal,
 		})
-		this.disposeHubObserver = botOptions.hub?.observe(() => this.refreshTransport())
 		const extensions: TelegramBotExtensions = {
 			info: Object.freeze({ id: this.id, apiBase }),
 			raw: {
@@ -110,8 +102,6 @@ export class TelegramBot extends TelegramNativeApi {
 			const identity = await this.#api.call('getMe', undefined, lease.signal)
 			lease.throwIfStale()
 			this.selfInfo = identity
-			this.connectionActive = true
-			this.refreshTransport()
 			const botId = String(identity.id)
 			const username = identity.username ?? ''
 			this.setStatus('online', { botId, username }, { connectedAt: Date.now() })
@@ -149,9 +139,7 @@ export class TelegramBot extends TelegramNativeApi {
 						update,
 						signal,
 					)
-					const message = normalizeTelegramUpdate(update, this.id)
-					const hub = this.#options.hub?.current
-					if (message && hub) await hub.receive(message, signal)
+					await this.#options.projectUpdate?.(this, update, signal)
 					this.offset = Math.max(this.offset, update.update_id + 1)
 					lastUpdateId = update.update_id
 				}
@@ -183,30 +171,8 @@ export class TelegramBot extends TelegramNativeApi {
 		}
 	}
 
-	private async sendToPlatform(request: ChatSendRequest, signal?: AbortSignal) {
-		const blocks = normalizeContent(request.content)
-		if (blocks.length !== 1)
-			throw new Error('Telegram transport expects one planned block per send')
-		const payload = telegramOutboundPayload(blocks[0]!)
-		const sent = await this.#api.call(
-			payload.method,
-			{
-				chat_id: request.conversationId,
-				...payload.body,
-				...(request.replyToId
-					? { reply_parameters: { message_id: Number(request.replyToId) } }
-					: {}),
-			} as never,
-			signal,
-		)
-		return { messageId: String(sent.message_id) }
-	}
-
 	private stopConnection(updateStatus = true): TelegramBotStatus {
 		this.connection.abort()
-		this.connectionActive = false
-		this.disposeTransport?.()
-		this.disposeTransport = undefined
 		return updateStatus && this.statusValue.phase !== 'destroyed'
 			? this.setStatus('offline', {}, { polling: { currentBackoffMs: 0 } })
 			: this.statusValue
@@ -215,7 +181,6 @@ export class TelegramBot extends TelegramNativeApi {
 	private destroy(): void {
 		if (this.statusValue.phase === 'destroyed') return
 		this.stopConnection(false)
-		this.disposeHubObserver?.()
 		this.#owner.abort(new Error(`Telegram bot destroyed: ${this.id}`))
 		this.setStatus('destroyed')
 	}
@@ -240,19 +205,6 @@ export class TelegramBot extends TelegramNativeApi {
 		})
 		this.#options.onStatus?.(this.statusValue)
 		return this.statusValue
-	}
-
-	private refreshTransport(): void {
-		this.disposeTransport?.()
-		this.disposeTransport = undefined
-		const hub = this.#options.hub?.current
-		if (!hub || !this.connectionActive) return
-		this.disposeTransport = hub.registerTransport({
-			platform: 'telegram',
-			accountId: this.id,
-			capabilities: TELEGRAM_TRANSPORT_CAPABILITIES,
-			send: (request, signal) => this.sendToPlatform(request, signal),
-		})
 	}
 
 	private setError(error: unknown, delay = 0): TelegramBotStatus {

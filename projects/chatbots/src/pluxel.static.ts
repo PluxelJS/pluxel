@@ -3,8 +3,10 @@ import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
+import { KookHubBridgePlugin } from '@repo/chatbots-kook-hub'
 import { KookPlugin } from '@repo/chatbots-kook'
 import { ChatSandboxPlugin } from '@repo/chatbots-sandbox'
+import { TelegramHubBridgePlugin } from '@repo/chatbots-telegram-hub'
 import { TelegramPlugin } from '@repo/chatbots-telegram'
 import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 import { createChatbotsPersistence } from './persistence.ts'
@@ -17,10 +19,12 @@ export const chatbotsPlugins = [
 	ChatSandboxPlugin,
 	TelegramPlugin,
 	KookPlugin,
+	TelegramHubBridgePlugin,
+	KookHubBridgePlugin,
 ] as const
 
 // Platform plugins stay enabled so their Vault-backed setup UI remains reachable.
-// They only create Bots and transports after an account is saved.
+// Bridges only create transports for configured Bots; connection loops still belong to each platform.
 export const chatbotsEnabledPlugins = chatbotsPlugins.map((plugin) => plugin.name)
 
 export default defineStaticRuntimeConfig({

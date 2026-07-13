@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
-import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
-import type { ChatTransport } from '@repo/chatbots-contracts'
 import { createTelegramClient, TELEGRAM_ENDPOINTS, TELEGRAM_UPDATE_KEYS } from '../src/api/index.ts'
-import { TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload } from '../src/codec.ts'
 import { dispatchTelegramUpdate } from '../src/events.dispatch.ts'
 import { createTelegramPluginEvents } from '../src/events.factory.ts'
 import { TelegramBot } from '../src/index.ts'
-import { assertTransportConformance } from '../../../test/transport-conformance.ts'
 
 describe('Telegram API client', () => {
 	it('delays later requests after Telegram retry_after without replaying the failed call', async () => {
@@ -74,55 +70,6 @@ describe('Telegram API client', () => {
 		await runtime.dispose()
 	})
 
-	it('keeps native Bot capability alive while an optional ChatHub is replaced', async () => {
-		const runtime = createRuntimeContext()
-		const binding = createCapabilityRef<{
-			registerTransport(transport: ChatTransport): () => void
-			receive(): Promise<void>
-		}>()
-		const transports: ChatTransport[] = []
-		const dispose = vi.fn()
-		const hub = {
-			registerTransport(transport: ChatTransport) {
-				transports.push(transport)
-				return dispose
-			},
-			async receive() {},
-		}
-		binding.controller.set(hub)
-		const bot = new TelegramBot({
-			id: 'notifications',
-			ctx: runtime.ctx,
-			token: 'secret',
-			hub: binding.ref,
-			fetch: async (input, init) => {
-				const method = String(input).split('/').at(-1)
-				if (method === 'getMe')
-					return Response.json({ ok: true, result: { id: 1, is_bot: true, first_name: 'Bot' } })
-				return new Promise<Response>((_resolve, reject) => {
-					init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
-						once: true,
-					})
-				})
-			},
-		})
-
-		await bot.$.start()
-		expect(bot.selfInfo).toMatchObject({ id: 1, is_bot: true })
-		expect(bot.$.status.connectedAt).not.toBeNull()
-		expect(transports.at(-1)).toMatchObject({
-			platform: 'telegram',
-			accountId: 'notifications',
-		})
-		binding.controller.set(undefined)
-		expect(dispose).toHaveBeenCalledTimes(1)
-		binding.controller.set(hub)
-		expect(transports).toHaveLength(2)
-		await expect(bot.getMe()).resolves.toMatchObject({ id: 1 })
-		bot.$.destroy()
-		await runtime.dispose()
-	})
-
 	it('publishes bounded polling diagnostics only when an update arrives', async () => {
 		const runtime = createRuntimeContext()
 		let polls = 0
@@ -172,19 +119,14 @@ describe('Telegram API client', () => {
 		await runtime.dispose()
 	})
 
-	it('advances polling offsets only after Hub accepts an update', async () => {
+	it('advances polling offsets only after acknowledged projections accept an update', async () => {
 		vi.useFakeTimers()
 		const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
 		const runtime = createRuntimeContext()
-		const binding = createCapabilityRef<{
-			registerTransport(transport: ChatTransport): () => void
-			receive(): Promise<void>
-		}>()
-		const receive = vi
+		const projectUpdate = vi
 			.fn<() => Promise<void>>()
 			.mockRejectedValueOnce(new Error('queue full'))
 			.mockResolvedValue(undefined)
-		binding.controller.set({ registerTransport: () => () => {}, receive })
 		const offsets: string[] = []
 		let polls = 0
 		const update = {
@@ -200,7 +142,7 @@ describe('Telegram API client', () => {
 			id: 'checkpoint',
 			ctx: runtime.ctx,
 			token: 'secret',
-			hub: binding.ref,
+			projectUpdate,
 			fetch: async (input, init) => {
 				const url = new URL(String(input))
 				if (url.pathname.endsWith('/getMe'))
@@ -220,7 +162,7 @@ describe('Telegram API client', () => {
 
 		try {
 			await bot.$.start()
-			await vi.waitFor(() => expect(receive).toHaveBeenCalledTimes(1))
+			await vi.waitFor(() => expect(projectUpdate).toHaveBeenCalledTimes(1))
 			expect(bot.$.status.polling.offset).toBe(0)
 			await vi.advanceTimersByTimeAsync(2_000)
 			await vi.waitFor(() => expect(bot.$.status.polling.offset).toBe(10))
@@ -280,7 +222,6 @@ describe('Telegram API client', () => {
 	})
 
 	it('exposes generated per-Bot and aggregate EvtChannel properties', async () => {
-		assertTransportConformance(TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload)
 		const runtime = createRuntimeContext()
 		const bot = new TelegramBot({
 			id: 'events',

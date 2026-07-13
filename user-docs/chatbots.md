@@ -7,6 +7,7 @@
 - 跨平台命令依赖 `ChatCommandsPlugin`，在 `init()` 中注册命令。
 - 跨平台非命令处理依赖 `ChatHubPlugin`，消费 JSON-safe `ChatMessage`。
 - 平台专属事件或 API 直接依赖 `TelegramPlugin` 或 `KookPlugin`，从只读 `bots` registry 取得账号。
+- 只有需要把该平台接入跨平台消息管线时，宿主才安装 `TelegramHubBridgePlugin` 或 `KookHubBridgePlugin`；平台专属插件不依赖 bridge 或 Hub。
 - 不把平台 SDK 对象、session 或发送方法写入 `ChatMessage.metadata`。
 
 ```ts
@@ -50,5 +51,7 @@ await store.put(idempotencyKey)
 平台 token 只保存在 Vault。Bot registry、连接状态和管理 SignalDB 是运行时投影；用户、角色和 grant 属于 Access 业务状态，即使关闭 Web Management 仍然有效。管理面使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
 同一账号的保存、删除、重连和断开按调用顺序执行；不同账号可以并行。调用方不需要额外使用前端锁保证 Vault 与运行时 Bot 一致。
+
+宿主负责提供 React/Mantine/Pluxel runtime 等 peer 和 catalog 中的插件实例；平台包自身不依赖 ChatHub/contracts。这样只使用原生 Telegram 或 KOOK API 的产品不会被迫安装跨平台消息层。
 
 完整运行、配置和扩展示例见 [`projects/chatbots/README.md`](../projects/chatbots/README.md)。

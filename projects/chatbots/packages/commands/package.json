@@ -13,9 +13,11 @@
 		"test": "vitest run --config ../../vitest.config.ts tests"
 	},
 	"dependencies": {
+		"@repo/chatbots-contracts": "workspace:*"
+	},
+	"peerDependencies": {
 		"@pluxel/runtime": "workspace:*",
 		"@repo/chatbots-access": "workspace:*",
-		"@repo/chatbots-contracts": "workspace:*",
 		"@repo/chatbots-hub": "workspace:*"
 	}
 }
