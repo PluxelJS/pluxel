@@ -775,22 +775,15 @@ export function WorkbenchShell() {
 										) : null}
 									</div>
 
-									<div className="plx-workbench__topbarActions">
-										{isPluginsSection ? (
+									{isPluginsSection ? (
+										<div className="plx-workbench__topbarActions">
 											<PluginTopbarActions
 												focusWorkbenchSearch={focusWorkbenchSearch}
 												isPluginDetail={isPluginDetail}
 												togglePluginNav={togglePluginNav}
 											/>
-										) : null}
-										<ColorSchemeToggle
-											label="切换工作台明暗模式"
-											variant="subtle"
-											size="md"
-											radius="sm"
-											className="plx-workbench__mobileThemeToggle"
-										/>
-									</div>
+										</div>
+									) : null}
 								</header>
 
 								{showTabStrip ? (

@@ -308,26 +308,6 @@
 	transform: none;
 }
 
-.plx-workbench__mobileThemeToggle {
-	align-items: center;
-	background: transparent;
-	border: 1px solid transparent;
-	color: var(--plx-text-muted);
-	cursor: pointer;
-	display: none;
-	transition:
-		background-color 140ms ease,
-		color 140ms ease;
-}
-
-.plx-workbench__mobileThemeToggle:hover,
-.plx-workbench__mobileThemeToggle:focus-visible {
-	background: var(--plx-surface-muted);
-	border-color: transparent;
-	color: var(--plx-text);
-	outline: none;
-}
-
 .plx-workbench__toolbarButton--action {
 	border-radius: 7px;
 	gap: 6px;
@@ -781,10 +761,6 @@
 
 	.plx-workbench__title {
 		font-size: 14px;
-	}
-
-	.plx-workbench__mobileThemeToggle {
-		display: inline-flex;
 	}
 
 	.plx-workbench__editorTabStrip {
