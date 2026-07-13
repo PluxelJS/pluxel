@@ -14,7 +14,7 @@ import { ChatRouter } from './router.ts'
 @Plugin({ name: 'ChatHubPlugin' })
 export class ChatHubPlugin extends BasePlugin {
 	private router!: ChatRouter
-	readonly matchers = new ChatMatcherIndex()
+	private readonly matchers = new ChatMatcherIndex()
 	override init(): void {
 		this.router = new ChatRouter(this.ctx.logger)
 		this.ctx.effects.defer(() => this.router.close())

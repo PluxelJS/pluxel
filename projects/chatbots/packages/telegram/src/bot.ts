@@ -14,12 +14,9 @@ import {
 	TELEGRAM_TRANSPORT_CAPABILITIES,
 	telegramOutboundPayload,
 } from './codec.ts'
-import {
-	createTelegramBotEvents,
-	dispatchTelegramUpdate,
-	type TelegramBotEvents,
-	type TelegramPluginEvents,
-} from './events.ts'
+import { dispatchTelegramUpdate } from './events.dispatch.ts'
+import { createTelegramBotEvents } from './events.factory.ts'
+import type { TelegramBotEvents, TelegramPluginEvents } from './events.types.ts'
 import {
 	createTelegramBotStatus,
 	updateTelegramBotStatus,

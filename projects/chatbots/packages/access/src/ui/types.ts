@@ -4,7 +4,7 @@ import type {
 	ChatUser,
 	PermissionDeclaration,
 	PermissionGrant,
-} from '../index.ts'
+} from '../model.ts'
 
 export type UserAccess = { roles: string[]; grants: PermissionGrant[] }
 type MaybePromise<T> = T | Promise<T>

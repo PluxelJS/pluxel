@@ -71,6 +71,7 @@ export class ChatBuiltinsPlugin extends BasePlugin {
 						}`,
 						`handlers: ${snapshot.handlers.map((item) => item.id).join(', ') || 'none'}`,
 						`received: ${snapshot.received} (pending ${snapshot.pendingReceives}, rejected ${snapshot.rejectedReceives})`,
+						`dispatch failures: handlers ${snapshot.failedHandlers}, observers ${snapshot.failedObservers}`,
 						`sent: ${snapshot.sent} (pending ${snapshot.pendingSends}, failed ${snapshot.failedSends}, rejected ${snapshot.rejectedSends})`,
 					].join('\n')
 				},

@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	KookGateway,
-	type KookEvent,
 	type KookGatewayResumeRequest,
 	type KookGatewaySnapshot,
-} from '../src/index.ts'
+} from '../src/gateway.ts'
+import type { KookEvent } from '../src/protocol.ts'
 
 class FakeWebSocket extends EventTarget {
 	readyState = 1

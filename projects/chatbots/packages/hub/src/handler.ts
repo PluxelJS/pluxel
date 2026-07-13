@@ -45,6 +45,7 @@ export type ChatRouterSnapshot = {
 	rejectedReceives: number
 	handled: number
 	failedHandlers: number
+	failedObservers: number
 	sent: number
 	failedSends: number
 	rejectedSends: number

@@ -1,32 +1,3 @@
-export type KookSettingsDoc = {
-	id: string
-	accountId: string
-	hasToken: boolean
-	tokenPreview: string | null
-	apiBase: string
-	updatedAt: number
-}
-export type KookStatusDoc = {
-	id: string
-	accountId: string
-	phase: 'unconfigured' | 'offline' | 'connecting' | 'online' | 'error'
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	startedAt: number
-	connectedAt: number | null
-	gatewayPhase: import('./gateway.ts').KookGatewayPhase
-	lastSequence: number
-	bufferedEvents: number
-	lastEventAt: number | null
-	reconnectAttempts: number
-	resumeAttempts: number
-	duplicateEvents: number
-	outOfOrderEvents: number
-	bufferOverflows: number
-	currentBackoffMs: number
-	updatedAt: number
-}
 export type KookAttachment = {
 	type?: 'image' | 'video' | 'audio' | 'file' | string
 	url?: string

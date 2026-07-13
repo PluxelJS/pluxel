@@ -15,7 +15,7 @@ import {
 import { ChatAccessRpc } from './rpc.ts'
 import { ChatAccessDomain, type ChatAccessChange } from './service.ts'
 import { CoalescedSnapshotWriter } from './snapshot-writer.ts'
-import { normalizeAccessState } from './state.ts'
+import { parseAccessState } from './state.ts'
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const STORAGE_NAMESPACE = 'chatbots/access'
@@ -110,12 +110,7 @@ export class ChatAccessPlugin extends BasePlugin {
 	private async loadState(): Promise<AccessState> {
 		const raw = await this.ctx.root.persistence.namespace(STORAGE_NAMESPACE).getText(STORAGE_KEY)
 		if (!raw) return createEmptyAccessState()
-		try {
-			return normalizeAccessState(JSON.parse(raw))
-		} catch (error) {
-			this.ctx.logger.warn('Ignoring invalid chat access state', { error })
-			return createEmptyAccessState()
-		}
+		return parseAccessState(JSON.parse(raw))
 	}
 
 	private changed(change: ChatAccessChange): void {

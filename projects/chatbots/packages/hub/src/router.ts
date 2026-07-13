@@ -19,7 +19,9 @@ const nullLogger: ChatHubLogger = { debug() {}, warn() {} }
 export type ChatRouterOptions = {
 	dedupeLimit?: number
 	dedupeWindowMs?: number
+	maxPendingReceives?: number
 	maxPendingReceivesPerConversation?: number
+	maxPendingSends?: number
 	maxPendingSendsPerConversation?: number
 	drainTimeoutMs?: number
 	now?: () => number
@@ -29,6 +31,7 @@ type RegisteredHandler = Required<Pick<ChatHandlerSpec, 'id' | 'priority'>> &
 	Pick<ChatHandlerSpec, 'handle'>
 type RegisteredObserver = readonly [id: string, observer: ChatObserver]
 type SerialLane = { tail: Promise<void>; pending: number }
+type RecentMessage = { seenAt: number; task?: Promise<void> }
 
 /** Per-conversation serial router; unrelated conversations remain concurrent. */
 export class ChatRouter {
@@ -38,7 +41,7 @@ export class ChatRouter {
 	private readonly receiveLanes = new Map<string, SerialLane>()
 	private readonly sendLanes = new Map<string, SerialLane>()
 	private readonly sendTasks = new Set<Promise<ChatSendResult>>()
-	private readonly recent = new Map<string, number>()
+	private readonly recent = new Map<string, RecentMessage>()
 	private readonly lifecycle = new AbortController()
 	private handlerPlan?: readonly RegisteredHandler[]
 	private observerPlan?: readonly RegisteredObserver[]
@@ -46,10 +49,14 @@ export class ChatRouter {
 	private closeTask?: Promise<void>
 	private readonly dedupeLimit: number
 	private readonly dedupeWindowMs: number
+	private readonly maxPendingReceives: number
 	private readonly maxPendingReceivesPerConversation: number
+	private readonly maxPendingSends: number
 	private readonly maxPendingSendsPerConversation: number
 	private readonly drainTimeoutMs: number
 	private readonly now: () => number
+	private pendingReceives = 0
+	private pendingSends = 0
 	private runningSends = 0
 	private readonly counters = {
 		received: 0,
@@ -57,6 +64,7 @@ export class ChatRouter {
 		rejectedReceives: 0,
 		handled: 0,
 		failedHandlers: 0,
+		failedObservers: 0,
 		sent: 0,
 		failedSends: 0,
 		rejectedSends: 0,
@@ -69,7 +77,9 @@ export class ChatRouter {
 	) {
 		this.dedupeLimit = options.dedupeLimit ?? 10_000
 		this.dedupeWindowMs = options.dedupeWindowMs ?? 5 * 60_000
+		this.maxPendingReceives = options.maxPendingReceives ?? 4_096
 		this.maxPendingReceivesPerConversation = options.maxPendingReceivesPerConversation ?? 256
+		this.maxPendingSends = options.maxPendingSends ?? 4_096
 		this.maxPendingSendsPerConversation = options.maxPendingSendsPerConversation ?? 256
 		this.drainTimeoutMs = options.drainTimeoutMs ?? 30_000
 		this.now = options.now ?? Date.now
@@ -78,7 +88,9 @@ export class ChatRouter {
 		if (!Number.isFinite(this.dedupeWindowMs) || this.dedupeWindowMs < 0)
 			throw new Error('Chat router dedupeWindowMs must be non-negative')
 		for (const [name, value] of [
+			['maxPendingReceives', this.maxPendingReceives],
 			['maxPendingReceivesPerConversation', this.maxPendingReceivesPerConversation],
+			['maxPendingSends', this.maxPendingSends],
 			['maxPendingSendsPerConversation', this.maxPendingSendsPerConversation],
 		] as const)
 			if (!Number.isInteger(value) || value < 1)
@@ -143,9 +155,9 @@ export class ChatRouter {
 			handlers: this.listHandlers(),
 			observers: [...this.observers.keys()].sort(),
 			activeConversations: this.receiveLanes.size,
-			pendingReceives: pendingCount(this.receiveLanes),
+			pendingReceives: this.pendingReceives,
 			outboundConversations: this.sendLanes.size,
-			pendingSends: pendingCount(this.sendLanes),
+			pendingSends: this.pendingSends,
 			runningSends: this.runningSends,
 			...this.counters,
 		}
@@ -157,36 +169,52 @@ export class ChatRouter {
 		const conversation = conversationKey(message)
 		const unique = messageKey(message)
 		const now = this.now()
-		const seenAt = this.recent.get(unique)
-		if (seenAt !== undefined && now - seenAt <= this.dedupeWindowMs) {
+		const recent = this.recent.get(unique)
+		if (recent && (recent.task || now - recent.seenAt <= this.dedupeWindowMs)) {
 			this.counters.deduplicated++
-			return Promise.resolve()
+			return recent.task ?? Promise.resolve()
 		}
-		if (seenAt !== undefined) this.recent.delete(unique)
+		if (recent) this.recent.delete(unique)
 		const existingLane = this.receiveLanes.get(conversation)
-		if (existingLane && existingLane.pending >= this.maxPendingReceivesPerConversation) {
+		if (
+			this.pendingReceives >= this.maxPendingReceives ||
+			(existingLane && existingLane.pending >= this.maxPendingReceivesPerConversation)
+		) {
 			this.counters.rejectedReceives++
 			return Promise.reject(new Error(`Chat receive queue is full: ${formatMessage(message)}`))
 		}
 		this.pruneRecent(now)
-		this.recent.set(unique, now)
-		if (this.recent.size > this.dedupeLimit) this.recent.delete(this.recent.keys().next().value!)
 		const lane = existingLane ?? { tail: Promise.resolve(), pending: 0 }
 		lane.pending++
+		this.pendingReceives++
 		const dispatchSignal = signal
 			? AbortSignal.any([signal, this.lifecycle.signal])
 			: this.lifecycle.signal
 		const current = lane.tail
 			.catch((): void => undefined)
 			.then(() => this.dispatch(message, dispatchSignal))
+		const entry: RecentMessage = { seenAt: now, task: current }
+		this.recent.set(unique, entry)
+		this.pruneRecentLimit()
 		lane.tail = settle(current)
 		this.receiveLanes.set(conversation, lane)
 		const cleanup = () => {
 			lane.pending--
+			this.pendingReceives--
 			if (lane.pending === 0 && this.receiveLanes.get(conversation) === lane)
 				this.receiveLanes.delete(conversation)
 		}
 		void lane.tail.then(cleanup)
+		void current.then(
+			(): void => {
+				if (this.recent.get(unique) === entry) entry.task = undefined
+				return undefined
+			},
+			(): void => {
+				if (this.recent.get(unique) === entry) this.recent.delete(unique)
+				return undefined
+			},
+		)
 		return current
 	}
 
@@ -221,12 +249,16 @@ export class ChatRouter {
 		this.assertOpen()
 		const key = addressKey(address)
 		const existingLane = this.sendLanes.get(key)
-		if (existingLane && existingLane.pending >= this.maxPendingSendsPerConversation) {
+		if (
+			this.pendingSends >= this.maxPendingSends ||
+			(existingLane && existingLane.pending >= this.maxPendingSendsPerConversation)
+		) {
 			this.counters.rejectedSends++
 			return Promise.reject(new Error(`Chat send queue is full: ${formatAddress(address)}`))
 		}
 		const lane = existingLane ?? { tail: Promise.resolve(), pending: 0 }
 		lane.pending++
+		this.pendingSends++
 		const sendSignal = signal
 			? AbortSignal.any([signal, this.lifecycle.signal])
 			: this.lifecycle.signal
@@ -235,9 +267,6 @@ export class ChatRouter {
 			this.runningSends++
 			try {
 				return await this.sendBatch(address, content, sendSignal, options)
-			} catch (error) {
-				if (!sendSignal.aborted) this.counters.failedSends++
-				throw error
 			} finally {
 				this.runningSends--
 			}
@@ -245,10 +274,12 @@ export class ChatRouter {
 		lane.tail = settle(task)
 		this.sendLanes.set(key, lane)
 		this.sendTasks.add(task)
-		void lane.tail.then(() => {
+		void lane.tail.then((): void => {
 			lane.pending--
+			this.pendingSends--
 			this.sendTasks.delete(task)
 			if (lane.pending === 0 && this.sendLanes.get(key) === lane) this.sendLanes.delete(key)
+			return undefined
 		})
 		return observeAbort(task, sendSignal)
 	}
@@ -273,6 +304,7 @@ export class ChatRouter {
 					})),
 				)
 			} catch (error) {
+				if (!signal.aborted) this.counters.failedSends++
 				if (strategy === 'fail-fast') throw error
 				failures.push({ index, message: error instanceof Error ? error.message : String(error) })
 			}
@@ -313,14 +345,17 @@ export class ChatRouter {
 	}
 
 	private async dispatch(message: ChatMessage, signal: AbortSignal): Promise<void> {
-		if (signal.aborted) return
+		if (signal.aborted) throw signal.reason
 		if (!this.transports.has(transportKey(message)))
 			throw new Error(`Inbound message uses an unregistered transport: ${formatTransport(message)}`)
 		const observerTasks = this.getObserverPlan().map(async ([id, observer]) => {
 			try {
 				await observer(message, signal)
 			} catch (error) {
-				this.logger.warn('Chat observer failed', { observer: id, messageId: message.id, error })
+				if (!signal.aborted) {
+					this.counters.failedObservers++
+					this.logger.warn('Chat observer failed', { observer: id, messageId: message.id, error })
+				}
 			}
 		})
 		const handlers = this.getHandlerPlan()
@@ -357,15 +392,18 @@ export class ChatRouter {
 					break
 				}
 			} catch (error) {
-				this.counters.failedHandlers++
-				this.logger.warn('Chat handler failed', {
-					handler: handler.id,
-					messageId: message.id,
-					error,
-				})
+				if (!signal.aborted) {
+					this.counters.failedHandlers++
+					this.logger.warn('Chat handler failed', {
+						handler: handler.id,
+						messageId: message.id,
+						error,
+					})
+				}
 			}
 		}
 		await Promise.all(observerTasks)
+		if (signal.aborted) throw signal.reason
 		this.logger.debug('Chat message dispatched', {
 			messageId: message.id,
 			handlers: handlers.length,
@@ -383,9 +421,18 @@ export class ChatRouter {
 	}
 
 	private pruneRecent(now: number): void {
-		for (const [key, seenAt] of this.recent) {
-			if (now - seenAt <= this.dedupeWindowMs) break
+		for (const [key, entry] of this.recent) {
+			if (entry.task) continue
+			if (now - entry.seenAt <= this.dedupeWindowMs) break
 			this.recent.delete(key)
+		}
+	}
+
+	private pruneRecentLimit(): void {
+		if (this.recent.size <= this.dedupeLimit) return
+		for (const [key, entry] of this.recent) {
+			if (!entry.task) this.recent.delete(key)
+			if (this.recent.size <= this.dedupeLimit) return
 		}
 	}
 
@@ -402,8 +449,8 @@ export class ChatRouter {
 			this.counters.drainTimeouts++
 			this.logger.warn('Chat router drain timed out', {
 				timeoutMs: this.drainTimeoutMs,
-				pendingReceives: pendingCount(this.receiveLanes),
-				pendingSends: pendingCount(this.sendLanes),
+				pendingReceives: this.pendingReceives,
+				pendingSends: this.pendingSends,
 			})
 		}
 	}
@@ -429,12 +476,6 @@ function formatMessage(message: ChatMessage): string {
 	})
 }
 
-function pendingCount(lanes: ReadonlyMap<string, SerialLane>): number {
-	let total = 0
-	for (const lane of lanes.values()) total += lane.pending
-	return total
-}
-
 function settle(task: Promise<unknown>): Promise<void> {
 	return task.then(
 		(): void => undefined,
@@ -448,13 +489,15 @@ function observeAbort<Value>(task: Promise<Value>, signal: AbortSignal): Promise
 		const abort = () => reject(signal.reason)
 		signal.addEventListener('abort', abort, { once: true })
 		void task.then(
-			(value) => {
+			(value): void => {
 				signal.removeEventListener('abort', abort)
 				resolve(value)
+				return undefined
 			},
-			(error) => {
+			(error): void => {
 				signal.removeEventListener('abort', abort)
 				reject(error)
+				return undefined
 			},
 		)
 	})

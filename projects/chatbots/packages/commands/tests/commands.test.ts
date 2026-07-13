@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import {
-	CommandRegistry,
-	parseCommandLine,
-	runCommandMiddleware,
-	tokenizeCommand,
-	type ChatCommandContext,
-} from '../src/index.ts'
+import { runCommandMiddleware } from '../src/middleware.ts'
+import { parseCommandLine, tokenizeCommand } from '../src/parser.ts'
+import { CommandRegistry } from '../src/registry.ts'
+import type { ChatCommandContext } from '../src/types.ts'
 
 describe('commands', () => {
 	it('tokenizes quoted arguments without a parser framework', () => {

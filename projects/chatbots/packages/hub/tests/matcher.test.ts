@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { AhoMatcher, ChatMatcherIndex, type ChatHandlerContext } from '../src/index.ts'
+import type { ChatHandlerContext } from '../src/handler.ts'
+import { AhoMatcher } from '../src/matcher/aho.ts'
+import { ChatMatcherIndex } from '../src/matcher/index.ts'
 
 describe('chat matcher index', () => {
 	it('finds overlapping patterns with a compact automaton', () => {

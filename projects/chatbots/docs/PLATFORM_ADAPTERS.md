@@ -203,6 +203,10 @@ resume session 默认只属于当前 Bot 生命周期，不写入管理投影。
 只有平台插件可以改变 registry。创建、更新、删除账号的方法由平台插件明确提供，并负责 Vault、
 状态投影和 Bot 生命周期；业务插件只能读取 Bot。
 
+平台插件的常驻方法返回 Bot、平台状态或 `void`，不能返回 management collection DTO，也不能包含
+管理界面的提示文本。可选 Management RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
+Web Management 不改变平台 capability 的类型或行为。
+
 ## Bot、Plugin 与 ChatHub 的边界
 
 推荐拆分如下：
@@ -225,7 +229,7 @@ transport，不能销毁 Bot。Bot 的 timer、gateway、polling、observer 和 
 ChatHub 不得知道平台 SDK 类型。adapter 可以把原生事件投影成 `ChatMessage`，但不能把 Bot、
 session、方法、`Blob` 或循环对象塞进通用消息。
 
-共享的 registry、token config、optional capability binding、退避和 abort lease 只从
+共享的 registry、原子账号存储、optional capability binding、退避和 abort lease 只从
 `@repo/chatbots-adapter-kit` 的对应子入口导入。平台 codec 直接依赖 `@repo/chatbots-contracts`；
 不能为了取得这些原语或消息类型而依赖 Hub 默认出口。连接状态机仍属于具体平台。
 

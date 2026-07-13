@@ -1,4 +1,5 @@
 import { KOOK_ENDPOINTS } from './endpoints.ts'
+import { RetryGate } from '@repo/chatbots-adapter-kit/retry-gate'
 import { invokeKookNative, KookNativeApi } from './native.ts'
 import { createKookTools } from './tools.ts'
 import type {
@@ -55,6 +56,7 @@ export class KookApiClient extends KookNativeApi {
 	readonly #apiPrefix: string
 	readonly #fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 	readonly #lifecycle = new AbortController()
+	readonly #retryGate = new RetryGate()
 
 	constructor(options: KookClientOptions) {
 		super()
@@ -78,13 +80,15 @@ export class KookApiClient extends KookNativeApi {
 		signal?: AbortSignal,
 	): Promise<Result<T>> {
 		try {
+			const requestSignal = combineSignals(this.#lifecycle.signal, this.#options.signal, signal)
+			await this.#retryGate.wait(requestSignal)
 			const query = cleanParams(payload?.searchParams)
 			const url = new URL(`${this.#baseUrl}${this.#apiPrefix}${normalizePath(path)}`)
 			for (const [key, value] of Object.entries(query ?? {})) appendQuery(url, key, value)
 			const body = payload?.body ?? payload?.json
 			const response = await this.#fetchImpl(url, {
 				method,
-				signal: combineSignals(this.#lifecycle.signal, this.#options.signal, signal),
+				signal: requestSignal,
 				headers: {
 					Authorization: `Bot ${this.#token}`,
 					...(body instanceof FormData ? {} : { 'content-type': 'application/json' }),
@@ -95,6 +99,8 @@ export class KookApiClient extends KookNativeApi {
 			})
 			const envelope = (await response.json()) as IBaseAPIResponse<T>
 			if (!response.ok || envelope.code !== 0) {
+				if (response.status === 429)
+					this.#retryGate.blockFor(parseRetryAfter(response.headers.get('retry-after')))
 				return {
 					ok: false,
 					code: envelope.code || response.status,
@@ -197,4 +203,12 @@ function toRequestError(error: unknown): Err {
 		code: -1,
 		message: error instanceof Error ? error.message : String(error),
 	}
+}
+
+function parseRetryAfter(value: string | null): number {
+	if (!value) return 0
+	const seconds = Number(value)
+	if (Number.isFinite(seconds) && seconds > 0) return seconds * 1_000
+	const date = Date.parse(value)
+	return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0
 }

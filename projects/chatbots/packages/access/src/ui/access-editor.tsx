@@ -12,7 +12,7 @@ import {
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
 import { useEffect, useState } from 'react'
-import type { PermissionEffect } from '../index.ts'
+import type { PermissionEffect } from '../model.ts'
 import type { AccessUiApp, UserAccess } from './types.ts'
 
 export function AccessEditor({ app }: { app: AccessUiApp }) {

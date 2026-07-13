@@ -12,12 +12,9 @@ import {
 	normalizeKookEvent,
 	parseKookConversationId,
 } from './codec.ts'
-import {
-	createKookBotEvents,
-	dispatchKookEvent,
-	type KookBotEvents,
-	type KookPluginEvents,
-} from './events.ts'
+import { dispatchKookEvent } from './events.dispatch.ts'
+import { createKookBotEvents } from './events.factory.ts'
+import type { KookBotEvents, KookPluginEvents } from './events.types.ts'
 import { createKookGatewaySnapshot, KookGateway, type KookGatewaySnapshot } from './gateway.ts'
 import {
 	createKookBotStatus,

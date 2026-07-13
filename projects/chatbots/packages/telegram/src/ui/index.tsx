@@ -6,7 +6,7 @@ export default definePluginUIModule({
 	extensions: [
 		{
 			point: ExtensionPoints.PluginTabs,
-			id: 'telegram-adapter-settings',
+			id: 'telegram-settings',
 			priority: 50,
 			meta: { label: 'Telegram 管理', icon: <IconSettings size={16} /> },
 			render: () => <TelegramSettingsPanel />,

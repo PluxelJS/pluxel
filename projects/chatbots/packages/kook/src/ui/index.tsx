@@ -6,7 +6,7 @@ export default definePluginUIModule({
 	extensions: [
 		{
 			point: ExtensionPoints.PluginTabs,
-			id: 'kook-adapter-settings',
+			id: 'kook-settings',
 			priority: 50,
 			meta: { label: 'KOOK 管理', icon: <IconSettings size={16} /> },
 			render: () => <KookSettingsPanel />,

@@ -1,4 +1,5 @@
 import type { APIMethodParams, APIMethodReturn, APIMethods } from '@gramio/types'
+import { RetryGate } from '@repo/chatbots-adapter-kit/retry-gate'
 import { TELEGRAM_ENDPOINTS, type TelegramHttpMethod, type TelegramMethod } from './endpoints.ts'
 import { invokeTelegramNative, TelegramNativeApi } from './native.ts'
 
@@ -16,6 +17,7 @@ export class TelegramApiClient extends TelegramNativeApi {
 	readonly #fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 	readonly #methods = new Map<string, TelegramHttpMethod>(TELEGRAM_ENDPOINTS)
 	readonly #lifecycle = new AbortController()
+	readonly #retryGate = new RetryGate()
 
 	constructor(options: TelegramClientOptions) {
 		super()
@@ -34,6 +36,7 @@ export class TelegramApiClient extends TelegramNativeApi {
 		const method = this.#methods.get(endpoint)
 		if (!method) throw new Error(`Unknown Telegram endpoint: ${endpoint}`)
 		const requestSignal = combineSignals(this.#lifecycle.signal, this.#options.signal, signal)
+		await this.#retryGate.wait(requestSignal)
 		const url = new URL(`${this.#apiBase}/bot${this.#token}/${endpoint}`)
 		if (method === 'GET' && isRecord(payload)) appendQuery(url, payload)
 		const body = method === 'POST' ? telegramRequestBody(payload) : undefined
@@ -47,10 +50,12 @@ export class TelegramApiClient extends TelegramNativeApi {
 				: {}),
 		})
 		const envelope = (await response.json()) as TelegramResponse<APIMethodReturn<M>>
-		if (!response.ok || !envelope.ok || envelope.result === undefined)
+		if (!response.ok || !envelope.ok || envelope.result === undefined) {
+			this.#retryGate.blockFor(retryAfterMs(envelope.parameters?.retry_after))
 			throw new Error(
 				`Telegram ${endpoint} failed (${response.status}): ${envelope.description ?? 'unknown error'}`,
 			)
+		}
 		return envelope.result
 	}
 
@@ -69,7 +74,12 @@ export type TelegramCallArgs<M extends TelegramMethod> =
 		: [payload: APIMethodParams<M>, signal?: AbortSignal]
 export type TelegramApi = TelegramApiClient & APIMethods
 
-type TelegramResponse<T> = { ok: boolean; result?: T; description?: string }
+type TelegramResponse<T> = {
+	ok: boolean
+	result?: T
+	description?: string
+	parameters?: { retry_after?: number }
+}
 
 export function createTelegramClient(options: TelegramClientOptions): TelegramApi {
 	return new TelegramApiClient(options)
@@ -124,4 +134,10 @@ export function telegramRequestBody(payload: unknown): string | FormData {
 
 function serializeQuery(value: unknown): string {
 	return value instanceof Date ? value.toISOString() : String(value)
+}
+
+function retryAfterMs(seconds: number | undefined): number {
+	return typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0
+		? seconds * 1_000
+		: 0
 }

@@ -4,7 +4,7 @@ import {
 	type ChatMessage,
 	type ChatTransportCapabilities,
 } from '@repo/chatbots-contracts'
-import type { TelegramUpdate } from './protocol.ts'
+import type { TelegramUpdate } from '@gramio/types'
 
 export const TELEGRAM_TRANSPORT_CAPABILITIES = {
 	blocks: ['text', 'image', 'audio', 'video', 'file'],

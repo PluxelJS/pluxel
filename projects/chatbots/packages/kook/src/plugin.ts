@@ -2,32 +2,36 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import {
+	BotAccountStore,
+	type BotAccountConfig,
+	type BotAccountInput,
+} from '@repo/chatbots-adapter-kit/account-store'
 import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
-import { TokenBotConfigStore, type TokenBotConfigInput } from '@repo/chatbots-adapter-kit/config'
+import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import {
 	createBotRegistry,
+	normalizeBotId,
 	type BotRegistry,
 	type BotRegistryController,
 } from '@repo/chatbots-adapter-kit/registry'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
-import type { Result } from './api/types.ts'
 import { KookBot } from './bot.ts'
-import { createKookPluginEvents } from './events.ts'
-import type { KookSettingsDoc, KookStatusDoc } from './protocol.ts'
-import { KookAdapterRpc } from './rpc.ts'
+import { createKookPluginEvents } from './events.factory.ts'
+import { KookManagementRpc, type KookSettingsDoc, type KookStatusDoc } from './management.ts'
 import type { KookBotStatus } from './status.ts'
 
-export type KookBotConfigInput = TokenBotConfigInput
+export type KookBotConfigInput = BotAccountInput
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
-const VAULT_NAMESPACE = 'KookAdapterPlugin'
+const VAULT_NAMESPACE = 'KookPlugin'
 const DEFAULT_API_BASE = 'https://www.kookapp.cn'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<KookSettingsDoc>
 	private status?: ManagementStateCollection<KookStatusDoc>
-	private config?: TokenBotConfigStore
+	private accounts?: BotAccountStore
 	private readonly hubBinding = createCapabilityRef<
 		Pick<ChatHubPlugin, 'registerTransport' | 'receive'>
 	>({
@@ -41,6 +45,7 @@ export class KookPlugin extends BasePlugin {
 	private readonly registryController: BotRegistryController<KookBot> =
 		this.registryState.controller
 	private readonly botDisposers = new Map<string, () => void>()
+	private readonly accountMutations = new KeyedSerialExecutor<string>()
 
 	/** Live read-only platform capability registry. */
 	readonly bots: BotRegistry<KookBot> = this.registryState.registry
@@ -58,59 +63,60 @@ export class KookPlugin extends BasePlugin {
 			this.status = web.state.collection<KookStatusDoc>({ name: 'status' })
 			await Promise.all([this.settings.ready(), this.status.ready()])
 			web.ui.register(pluginUi)
-			web.rpc.expose(() => new KookAdapterRpc(this))
+			web.rpc.expose(() => new KookManagementRpc(this))
 		})
 		this.settings?.removeMany({})
 		this.status?.removeMany({})
-		this.config = new TokenBotConfigStore(this.kv(), { defaultApiBase: DEFAULT_API_BASE })
-		for (const id of await this.config.list()) {
-			const stored = await this.config.read(id)
+		this.accounts = new BotAccountStore(this.kv(), DEFAULT_API_BASE)
+		this.ctx.effects.defer(() => this.destroyAllBots())
+		for (const id of await this.accounts.list()) {
+			const stored = await this.accounts.read(id)
 			if (!stored) continue
 			const bot = this.installBot(id, stored.token, stored.apiBase)
 			this.projectSettings(id, stored)
 			void bot.$.start().catch((): void => undefined)
 		}
-		this.ctx.effects.defer(() => this.destroyAllBots())
 	}
 
 	bot(id: string): KookBot {
 		return this.bots.require(id)
 	}
 
-	async upsertBot(input: KookBotConfigInput): Promise<KookSettingsDoc> {
-		const stored = await this.configStore().upsert(input)
-		await this.ctx.vault.flush()
-		const bot = this.installBot(stored.id, stored.token, stored.apiBase)
-		await bot.$.start()
-		return this.projectSettings(stored.id, stored)
+	async upsertBot(input: KookBotConfigInput): Promise<KookBot> {
+		const id = normalizeBotId(input.id)
+		return this.accountMutations.run(id, async () => {
+			const stored = await this.accountStore().upsert({ ...input, id })
+			await this.ctx.vault.flush()
+			const bot = this.installBot(stored.id, stored.token, stored.apiBase)
+			this.projectSettings(stored.id, stored)
+			await bot.$.start()
+			return bot
+		})
 	}
 
-	async removeBot(idInput: string): Promise<{ ok: true }> {
-		const id = await this.configStore().remove(idInput)
-		this.removeRuntimeBot(id)
-		await this.ctx.vault.flush()
-		this.settings?.removeOne({ id })
-		this.status?.removeOne({ id })
-		return { ok: true }
+	async removeBot(idInput: string): Promise<void> {
+		const id = normalizeBotId(idInput)
+		return this.accountMutations.run(id, async () => {
+			await this.accountStore().remove(id)
+			await this.ctx.vault.flush()
+			this.removeRuntimeBot(id)
+			this.settings?.removeOne({ id })
+			this.status?.removeOne({ id })
+		})
 	}
 
-	async testBot(id: string): Promise<{ ok: boolean; message: string }> {
-		try {
-			const identity = unwrap(await this.bot(id).getUserMe())
-			return { ok: true, message: `KOOK Bot ${identity.username ?? identity.id} 鉴权成功。` }
-		} catch (error) {
-			return { ok: false, message: errorMessage(error) }
-		}
+	async reconnectBot(id: string): Promise<KookBotStatus> {
+		const normalized = normalizeBotId(id)
+		return this.accountMutations.run(normalized, async () => {
+			return this.bot(normalized).$.start()
+		})
 	}
 
-	async reconnectBot(id: string): Promise<KookStatusDoc> {
-		await this.bot(id).$.start()
-		return this.currentStatus(id)
-	}
-
-	disconnectBot(id: string): KookStatusDoc {
-		this.bot(id).$.stop()
-		return this.currentStatus(id)
+	disconnectBot(id: string): Promise<KookBotStatus> {
+		const normalized = normalizeBotId(id)
+		return this.accountMutations.run(normalized, async () => {
+			return this.bot(normalized).$.stop()
+		})
 	}
 
 	private installBot(id: string, token: string, apiBase: string): KookBot {
@@ -139,26 +145,19 @@ export class KookPlugin extends BasePlugin {
 		for (const id of this.bots.keys()) this.removeRuntimeBot(id)
 	}
 
-	private projectSettings(
-		id: string,
-		stored: { token?: string; apiBase: string },
-	): KookSettingsDoc {
+	private projectSettings(id: string, stored: BotAccountConfig): void {
 		const doc: KookSettingsDoc = {
 			id,
-			accountId: id,
-			hasToken: Boolean(stored.token),
 			tokenPreview: maskSecret(stored.token),
 			apiBase: stored.apiBase,
 			updatedAt: Date.now(),
 		}
 		this.settings?.replaceOne({ id }, doc, { upsert: true })
-		return doc
 	}
 
-	private projectStatus(id: string, status: KookBotStatus): KookStatusDoc {
+	private projectStatus(id: string, status: KookBotStatus): void {
 		const doc: KookStatusDoc = {
 			id,
-			accountId: id,
 			phase: status.phase === 'destroyed' ? 'offline' : status.phase,
 			botId: status.botId,
 			username: status.username,
@@ -178,43 +177,25 @@ export class KookPlugin extends BasePlugin {
 			updatedAt: status.updatedAt,
 		}
 		this.status?.replaceOne({ id }, doc, { upsert: true })
-		return doc
-	}
-
-	private currentStatus(id: string): KookStatusDoc {
-		const existing = this.status?.findOne({ id })
-		if (existing) return existing
-		return this.projectStatus(id, this.bot(id).$.status)
 	}
 
 	private kv() {
 		return this.ctx.vault.namespace(VAULT_NAMESPACE).kv()
 	}
 
-	private configStore(): TokenBotConfigStore {
-		if (!this.config) throw new Error('KookPlugin is not initialized')
-		return this.config
+	private accountStore(): BotAccountStore {
+		if (!this.accounts) throw new Error('KookPlugin is not initialized')
+		return this.accounts
 	}
 }
 
-function unwrap<Value>(result: Result<Value>): Value {
-	if (result.ok === true) return result.data
-	const failure = result as Extract<Result<Value>, { ok: false }>
-	throw new Error(`KOOK API error ${failure.code}: ${failure.message}`)
-}
-
-function maskSecret(value?: string): string | null {
-	if (!value) return null
+function maskSecret(value: string): string {
 	return value.length <= 8 ? '••••••••' : `${value.slice(0, 4)}••••${value.slice(-4)}`
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error)
 }
 
 declare module '@pluxel/runtime/web' {
 	interface ExtensionUiRpcMap {
-		KookPlugin: KookAdapterRpc
+		KookPlugin: KookManagementRpc
 	}
 
 	interface ExtensionUiSignalDbMap {

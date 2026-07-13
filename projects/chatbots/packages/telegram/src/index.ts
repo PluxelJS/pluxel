@@ -1,9 +1,17 @@
 export type * from '@gramio/types'
-export * from './bot.ts'
-export * from './plugin.ts'
-export * from './api/index.ts'
-export * from './codec.ts'
-export * from './events.ts'
-export * from './protocol.ts'
-export * from './rpc.ts'
-export * from './status.ts'
+export {
+	TelegramBot,
+	type TelegramBotExtensions,
+	type TelegramBotOptions,
+	type TelegramRawApi,
+} from './bot.ts'
+export type {
+	TelegramBotEvents,
+	TelegramBotUpdateFieldListener,
+	TelegramBotUpdateListener,
+	TelegramPluginEvents,
+	TelegramPluginUpdateFieldListener,
+	TelegramPluginUpdateListener,
+} from './events.types.ts'
+export { TelegramPlugin, type TelegramBotConfigInput } from './plugin.ts'
+export type { TelegramBotPhase, TelegramBotStatus, TelegramPollingSnapshot } from './status.ts'

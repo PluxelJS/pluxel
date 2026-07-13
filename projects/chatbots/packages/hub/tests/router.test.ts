@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chat, normalizeContent, type ChatMessage } from '@repo/chatbots-contracts'
-import { ChatRouter, planChatDelivery } from '../src/index.ts'
+import { planChatDelivery } from '../src/delivery.ts'
+import { ChatRouter } from '../src/router.ts'
 
 const message = (id: string, conversationId = 'room'): ChatMessage => ({
 	id,
@@ -65,6 +66,29 @@ describe('ChatRouter', () => {
 		expect(seen).toEqual(['claim'])
 	})
 
+	it('reports isolated handler and observer failures', async () => {
+		const router = new ChatRouter()
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				return { messageId: 'sent' }
+			},
+		})
+		router.registerObserver('broken-observer', () => {
+			throw new Error('observer failed')
+		})
+		router.registerHandler({
+			id: 'broken-handler',
+			handle: () => {
+				throw new Error('handler failed')
+			},
+		})
+
+		await router.receive(message('isolated'))
+		expect(router.snapshot()).toMatchObject({ failedHandlers: 1, failedObservers: 1 })
+	})
+
 	it('deduplicates messages and serializes a conversation', async () => {
 		const router = new ChatRouter()
 		const seen: string[] = []
@@ -88,6 +112,57 @@ describe('ChatRouter', () => {
 			router.receive(message('1')),
 		])
 		expect(seen).toEqual(['1', '2'])
+	})
+
+	it('shares in-flight duplicate results and rolls failed dispatches back', async () => {
+		const router = new ChatRouter()
+		const transport = {
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				return { messageId: 'sent' }
+			},
+		}
+		const dispose = router.registerTransport(transport)
+		const first = router.receive(message('retryable'))
+		const duplicate = router.receive(message('retryable'))
+		dispose()
+
+		const failed = await Promise.allSettled([first, duplicate])
+		expect(failed.map((result) => result.status)).toEqual(['rejected', 'rejected'])
+		expect(router.snapshot().deduplicated).toBe(1)
+
+		router.registerTransport(transport)
+		const seen: string[] = []
+		router.registerHandler({
+			id: 'retry',
+			handle: ({ message: inbound }) => void seen.push(inbound.id),
+		})
+		await router.receive(message('retryable'))
+		expect(seen).toEqual(['retryable'])
+	})
+
+	it('does not commit dedupe state for cancelled dispatches', async () => {
+		const router = new ChatRouter()
+		const seen: string[] = []
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				return { messageId: 'sent' }
+			},
+		})
+		router.registerHandler({
+			id: 'seen',
+			handle: ({ message: inbound }) => void seen.push(inbound.id),
+		})
+		const controller = new AbortController()
+		controller.abort(new Error('cancelled'))
+		await expect(router.receive(message('cancelled'), controller.signal)).rejects.toThrow(
+			'cancelled',
+		)
+		await router.receive(message('cancelled'))
+		expect(seen).toEqual(['cancelled'])
 	})
 
 	it('does not collide ids containing transport separators', async () => {
@@ -199,11 +274,12 @@ describe('ChatRouter', () => {
 			},
 		})
 		const active = router.receive(message('active'))
+		const cancelled = active.catch((error: unknown) => error)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		await router.close()
 
 		expect(drained).toBe(true)
-		await active
+		expect(await cancelled).toMatchObject({ message: 'Chat router is closed' })
 		await expect(router.receive(message('after-close'))).rejects.toThrow('closed')
 	})
 
@@ -350,6 +426,7 @@ describe('ChatRouter', () => {
 				chat.batch('first', 'bad', 'last'),
 			),
 		).rejects.toThrow('rejected')
+		expect(router.snapshot().failedSends).toBe(2)
 	})
 
 	it('keeps each logical send contiguous within one conversation', async () => {
@@ -446,10 +523,43 @@ describe('ChatRouter', () => {
 		expect(router.snapshot()).toMatchObject({ rejectedReceives: 1, rejectedSends: 1 })
 	})
 
+	it('bounds total work across many conversations', async () => {
+		const router = new ChatRouter(undefined, {
+			maxPendingReceives: 2,
+			maxPendingReceivesPerConversation: 2,
+			maxPendingSends: 2,
+			maxPendingSendsPerConversation: 2,
+		})
+		const receiveGate = deferred<void>()
+		const sendGate = deferred<void>()
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				await sendGate.promise
+				return { messageId: 'sent' }
+			},
+		})
+		router.registerHandler({ id: 'wait', handle: () => receiveGate.promise })
+
+		const receives = [router.receive(message('one', 'one')), router.receive(message('two', 'two'))]
+		await expect(router.receive(message('three', 'three'))).rejects.toThrow('receive queue is full')
+		const send = (conversationId: string) =>
+			router.send({ platform: 'test', accountId: 'default', conversationId }, 'hello')
+		const sends = [send('one'), send('two')]
+		await expect(send('three')).rejects.toThrow('send queue is full')
+		expect(router.snapshot()).toMatchObject({ pendingReceives: 2, pendingSends: 2 })
+
+		receiveGate.resolve()
+		sendGate.resolve()
+		await Promise.all([...receives, ...sends])
+		await Promise.all([router.receive(message('three', 'three')), send('three')])
+	})
+
 	it('bounds shutdown when a handler ignores cancellation', async () => {
 		const warnings: string[] = []
 		const router = new ChatRouter(
-			{ debug() {}, warn: (message) => void warnings.push(message) },
+			{ debug() {}, warn: (warning) => void warnings.push(warning) },
 			{ drainTimeoutMs: 5 },
 		)
 		router.registerTransport({

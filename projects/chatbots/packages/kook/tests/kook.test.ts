@@ -1,17 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
 import { createKookClient, KOOK_ENDPOINTS } from '../src/api/index.ts'
+import { KookBot } from '../src/bot.ts'
 import {
 	encodeKookBlock,
-	KookBot,
-	createKookPluginEvents,
-	dispatchKookEvent,
-	KOOK_NOTICE_TYPES,
 	KOOK_TRANSPORT_CAPABILITIES,
 	normalizeKookEvent,
 	parseKookConversationId,
-	type KookEvent,
-} from '../src/index.ts'
+} from '../src/codec.ts'
+import { dispatchKookEvent } from '../src/events.dispatch.ts'
+import { createKookPluginEvents } from '../src/events.factory.ts'
+import { KOOK_NOTICE_TYPES } from '../src/events.inventory.ts'
+import type { KookEvent } from '../src/protocol.ts'
 import { assertTransportConformance } from '../../../test/transport-conformance.ts'
 
 function event(patch: Partial<KookEvent> = {}): KookEvent {
@@ -34,6 +34,32 @@ function event(patch: Partial<KookEvent> = {}): KookEvent {
 }
 
 describe('KOOK adapter contracts', () => {
+	it('delays later requests after an HTTP Retry-After response', async () => {
+		vi.useFakeTimers()
+		const fetch = vi
+			.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+			.mockResolvedValueOnce(
+				Response.json(
+					{ code: 429, message: 'rate limited', data: null },
+					{ status: 429, headers: { 'retry-after': '2' } },
+				),
+			)
+			.mockResolvedValueOnce(Response.json({ code: 0, message: 'ok', data: { items: [] } }))
+		const client = createKookClient({ token: 'secret', fetch })
+
+		try {
+			expect(await client.getGuildList()).toMatchObject({ ok: false, code: 429 })
+			const next = client.getGuildList()
+			await Promise.resolve()
+			expect(fetch).toHaveBeenCalledTimes(1)
+			await vi.advanceTimersByTimeAsync(2_000)
+			await expect(next).resolves.toMatchObject({ ok: true })
+			expect(fetch).toHaveBeenCalledTimes(2)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it('puts native API on Bot prototype and framework helpers only under $', async () => {
 		const runtime = createRuntimeContext()
 		const requests: Request[] = []

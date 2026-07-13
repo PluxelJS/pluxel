@@ -85,7 +85,7 @@ export function KookSettingsPanel() {
 					</Group>
 					<PasswordInput
 						label="Bot Token"
-						description={settings?.hasToken ? `已配置：${settings.tokenPreview}` : '尚未配置'}
+						description={settings ? `已配置：${settings.tokenPreview}` : '尚未配置'}
 						value={token}
 						onChange={(event) => setToken(event.currentTarget.value)}
 						leftSection={<IconKey size={16} />}

@@ -8,6 +8,7 @@ import {
 	type ChatMessage,
 	type ChatSendRequest,
 } from '@repo/chatbots-contracts'
+import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
 
@@ -29,7 +30,7 @@ export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
 	private projection?: ManagementStateCollection<SandboxMessage>
-	private readonly acceptTails = new Map<string, Promise<unknown>>()
+	private readonly accepts = new KeyedSerialExecutor<string>()
 
 	constructor(private readonly hub: ChatHubPlugin) {
 		super()
@@ -78,16 +79,7 @@ export class ChatSandboxPlugin extends BasePlugin {
 
 	accept(input: SandboxInput): Promise<{ message: SandboxMessage; replies: SandboxMessage[] }> {
 		const conversationId = input.conversationId ?? 'default'
-		const previous = this.acceptTails.get(conversationId) ?? Promise.resolve()
-		const current = previous
-			.catch((): void => undefined)
-			.then(() => this.acceptSerial(input, conversationId))
-		this.acceptTails.set(conversationId, current)
-		const cleanup = () => {
-			if (this.acceptTails.get(conversationId) === current) this.acceptTails.delete(conversationId)
-		}
-		void current.then(cleanup, cleanup)
-		return current
+		return this.accepts.run(conversationId, () => this.acceptSerial(input, conversationId))
 	}
 
 	private async acceptSerial(

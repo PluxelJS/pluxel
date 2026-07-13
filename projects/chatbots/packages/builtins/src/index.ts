@@ -1,1 +1,1 @@
-export * from './plugin.ts'
+export { ChatBuiltinsPlugin } from './plugin.ts'

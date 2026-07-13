@@ -125,7 +125,7 @@ function foldInput(input: string): { text: string; starts: number[]; ends: numbe
 	let text = ''
 	const starts: number[] = []
 	const ends: number[] = []
-	for (let index = 0; index < input.length; ) {
+	for (let index = 0; index < input.length;) {
 		const codePoint = input.codePointAt(index)!
 		const source = String.fromCodePoint(codePoint)
 		const folded = source.toLowerCase()

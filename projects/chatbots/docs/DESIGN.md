@@ -44,8 +44,8 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 1. `ChatMessage` 必须可序列化，只包含数据；回复通过 handler context 完成，平台 session 和行为留在 adapter 边界。
 2. handler 是可短路的有序管线，observer 是不参与认领的旁路；二者错误都隔离到单个注册项。
 3. 同一 `(platform, accountId, conversation)` 的入站消息严格串行；同一地址的逻辑出站发送也严格串行，batch 与 planner 拆分不会被其他调用穿插。不同账号或会话不互相阻塞。handler/observer 执行计划只在注册表变化时重建。
-4. 入站与出站队列有固定上限，满载时拒绝且不污染去重记录；注册返回幂等清理函数并挂到 `ctx.effects`。Hub 停止时先中止执行信号，再在固定 deadline 内 drain，忽略取消的 handler 不得无限阻塞插件生命周期。
-5. adapter 管理面常驻运行，token 只保存在 Pluxel Vault；未配置时状态为 `unconfigured`，不会注册 transport、SSE 或重连循环。
+4. 入站与出站队列同时有每会话和全局上限，满载时拒绝且不污染去重记录；注册返回幂等清理函数并挂到 `ctx.effects`。Hub 停止时先中止执行信号，再在固定 deadline 内 drain，忽略取消的 handler 不得无限阻塞插件生命周期。
+5. adapter 管理面常驻运行，token 只保存在 Pluxel Vault；没有账号记录时 Bot registry 为空，不会注册 transport 或启动连接循环。
 6. 插件依赖表达硬前置条件。commands 依赖 hub，builtins 依赖 commands；不使用全局 singleton 或 import-time registry。
 7. 富消息先由 Hub 按 transport capability 做归一化，再决定 mixed、拆分或 `atomicBlocks` 平台原子布局。`mixedContent` 不会绕过 block 校验；`strict` 拒绝能力缺口，`best-effort` 才把不支持的媒体降级成可读文本。
 8. 身份和授权属于持久业务状态；SignalDB 只做可选管理投影，headless host 中授权逻辑保持完整。
@@ -53,7 +53,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 10. 可审阅的静态平台清单使用 macro 在构建期内联。macro 负责消除运行时文件读取和重复方法分配，不隐藏动态业务决策。
 11. 显式 batch 与平台自动拆分是两层语义：batch 表达调用方希望发送多条消息，planner 只处理单条逻辑消息如何适配平台能力。
 12. 固定关键词匹配使用延迟编译的 Aho-Corasick index；claim 有顺序和短路，observe 不参与所有权竞争。普通 handler 不承担批量 pattern 扫描。
-13. adapter 只从 `adapter-kit` 的明确子入口共享 registry、配置、capability binding、纯 `ExponentialBackoff`、可取消 delay 与 superseding abort lease，不通过 Hub 获取这些原语，也不共享连接基类。WebSocket、SSE 和 long polling 各自拥有状态机。
+13. adapter 只从 `adapter-kit` 的明确子入口共享 registry、账号存储、capability binding、纯 `ExponentialBackoff`、可取消 delay 与 superseding abort lease，不通过 Hub 获取这些原语，也不共享连接基类。WebSocket、SSE 和 long polling 各自拥有状态机。
 14. 每个平台 adapter 同时是可依赖的 Pluxel capability plugin：插件公开只读 Bot registry，Bot 顶层公开平台原生 API，`$` 收纳 raw/高级能力/生命周期，raw event 绑定产生它的 Bot。平台专属插件依赖 adapter；只有确实跨平台的业务才依赖 Hub。
 15. Telegram Bot API 的方法参数、返回值和对象模型以 `@gramio/types` 为权威；本仓库只维护构建期 HTTP method inventory、传输实现和 ChatMessage codec。
 16. 多账号路由显式区分 `platform` 与 `accountId`；不能把账号 ID 拼进 platform，也不能让单一 transport 名称在多个 Bot 之间产生歧义。
@@ -61,12 +61,12 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 18. 平台插件不把 ChatHub 声明成 required constructor dependency；通过 `plugins.use()` 动态投影。Hub 缺席或 HMR 替换不影响 Bot 原生 API 和平台事件连接。
 19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。管理 SignalDB 只投影有意义变化，不是运行状态源，heartbeat 与空 poll 不制造固定周期持久化写。
 20. 有序 gateway 的所有 frame 进入同一异步 tail，且 reconnect 必须等待该 tail 收敛后再读取 checkpoint。事件 handler 完成后才推进连续 SN；重复帧丢弃，乱序帧使用有界 buffer。HELLO 与 resume ACK 都有明确 timeout；普通断线保留 session/SN 以 resume，握手超时、协议拒绝、明确 hard reconnect 或 buffer 无法收敛时清空恢复状态并回退全新连接。
-21. Hub 去重是有界进程内优化，不承诺 exactly-once。Telegram 在原始事件和 Hub 投影完成后推进 offset，KOOK 在事件完成后推进 SN；业务副作用使用 `messageKey()` 和业务持久化实现幂等。
+21. Hub 去重是有界进程内优化：并发重复调用共享同一个 in-flight 结果，成功后提交时间窗记录，失败或取消后删除记录以允许重试。它不承诺 exactly-once。Telegram 在原始事件和 Hub 投影完成后推进 offset，KOOK 在事件完成后推进 SN；业务副作用使用 `messageKey()` 和业务持久化实现幂等。
 22. Access 的业务状态使用原子 snapshot，连续变化只写最新待落盘版本；管理投影按受影响的 user/role 增量更新，SignalDB 不是业务状态源。
-
-## 下一步扩展顺序
-
-1. 用真实平台业务插件继续验证 Bot/event 与 handler/command 契约。
-2. 加入 Telegram/KOOK webhook 模式与签名验证，适配无状态部署。
-3. 为平台原生 rate limit header 增加每 Bot 调度策略，不把限流塞进 ChatHub。
-4. 新平台按 `PLATFORM_ADAPTERS.md` 复用 `adapter-kit` 与 macro 原语，但保留自己的连接状态机。
+23. handler 与 observer 必须协作响应 `AbortSignal`。Hub 不通过 timeout race 放行同一会话的后续消息，因为无法终止的旧 Promise 仍可能产生副作用，那会破坏会话串行保证；队列上限负责背压，停机 deadline 只负责释放插件生命周期。
+24. 每个 Bot 账号只对应一个 `accounts.<id>` Vault 记录，token 与 API base 原子读写；账号存储不维护字段级 key 或自己的并发队列。Hub 的失败指标在实际语义边界计数：best-effort 的局部失败可见，生命周期取消不冒充业务失败。
+25. 每个 API client 拥有独立 retry gate。Telegram `parameters.retry_after` 与 KOOK HTTP `Retry-After` 只延迟该 Bot 的后续请求，不自动重放当前请求；Hub 不拥有平台限流策略。
+26. adapter 以本地账号 ID 串行执行配置写入、Bot replacement、删除、重连和断开；不同账号保持并行。配置存储和运行时 registry 必须观察同一账号操作顺序，不能各自拥有互不协调的 mutation tail。
+27. Access 持久化在进入 domain 前按当前 schema 严格校验。损坏、缺字段、重复身份或悬空 user/role 引用会让插件启动失败，不能猜测字段、丢弃记录或回退为空状态继续运行。
+28. 包默认入口只导出稳定作者能力与必要类型。management RPC/DTO、Router、Gateway、codec、parser、registry 和状态解析器属于包内实现，测试使用相对路径，不通过公共 barrel 反向固化内部结构。
+29. 平台插件的常驻能力不返回 management DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Management RPC 自己映射可序列化响应、鉴权提示和 SignalDB 投影。

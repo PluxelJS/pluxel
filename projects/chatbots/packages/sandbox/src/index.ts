@@ -1,2 +1,1 @@
-export * from './plugin.ts'
-export * from './rpc.ts'
+export { ChatSandboxPlugin, type SandboxInput, type SandboxMessage } from './plugin.ts'

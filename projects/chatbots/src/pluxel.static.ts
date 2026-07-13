@@ -19,8 +19,8 @@ export const chatbotsPlugins = [
 	KookPlugin,
 ] as const
 
-// Management adapters must run while unconfigured so their Vault-backed setup UI
-// remains reachable. They only register a live transport after a token is saved.
+// Platform plugins stay enabled so their Vault-backed setup UI remains reachable.
+// They only create Bots and transports after an account is saved.
 export const chatbotsEnabledPlugins = chatbotsPlugins.map((plugin) => plugin.name)
 
 export default defineStaticRuntimeConfig({

@@ -4,11 +4,45 @@ import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
 import type { ChatTransport } from '@repo/chatbots-contracts'
 import { createTelegramClient, TELEGRAM_ENDPOINTS, TELEGRAM_UPDATE_KEYS } from '../src/api/index.ts'
 import { TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload } from '../src/codec.ts'
-import { createTelegramPluginEvents, dispatchTelegramUpdate } from '../src/events.ts'
+import { dispatchTelegramUpdate } from '../src/events.dispatch.ts'
+import { createTelegramPluginEvents } from '../src/events.factory.ts'
 import { TelegramBot } from '../src/index.ts'
 import { assertTransportConformance } from '../../../test/transport-conformance.ts'
 
 describe('Telegram API client', () => {
+	it('delays later requests after Telegram retry_after without replaying the failed call', async () => {
+		vi.useFakeTimers()
+		const fetch = vi
+			.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+			.mockResolvedValueOnce(
+				Response.json(
+					{ ok: false, description: 'Too Many Requests', parameters: { retry_after: 2 } },
+					{ status: 429 },
+				),
+			)
+			.mockResolvedValueOnce(
+				Response.json({
+					ok: true,
+					result: { id: 1, is_bot: true, first_name: 'Bot' },
+				}),
+			)
+		const client = createTelegramClient({ token: 'secret', fetch })
+
+		try {
+			await expect(client.getMe()).rejects.toThrow('Too Many Requests')
+			const next = client.getMe()
+			await Promise.resolve()
+			expect(fetch).toHaveBeenCalledTimes(1)
+			await vi.advanceTimersByTimeAsync(1_999)
+			expect(fetch).toHaveBeenCalledTimes(1)
+			await vi.advanceTimersByTimeAsync(1)
+			await expect(next).resolves.toMatchObject({ id: 1 })
+			expect(fetch).toHaveBeenCalledTimes(2)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it('puts GramIO methods on Bot prototype and keeps raw calls under $', async () => {
 		const runtime = createRuntimeContext()
 		const requests: Request[] = []

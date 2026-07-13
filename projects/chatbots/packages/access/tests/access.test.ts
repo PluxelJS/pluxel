@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import {
-	ChatAccessDomain,
-	createEmptyAccessState,
-	decideGrants,
-	normalizeAccessState,
-} from '../src/index.ts'
+import { createEmptyAccessState } from '../src/model.ts'
+import { decideGrants } from '../src/policy.ts'
+import { ChatAccessDomain } from '../src/service.ts'
+import { parseAccessState } from '../src/state.ts'
 import { CoalescedSnapshotWriter } from '../src/snapshot-writer.ts'
 
 describe('chat access policy', () => {
@@ -135,26 +133,38 @@ describe('chat access policy', () => {
 		expect(changes.filter((kind) => kind === 'declarations')).toHaveLength(2)
 	})
 
-	it('repairs partial persisted state before it enters the domain', () => {
-		const state = normalizeAccessState({
-			sequence: 1,
+	it('accepts only the current complete persistence schema', () => {
+		const state = parseAccessState({
+			sequence: 9,
 			users: [
 				{
 					id: 'user-8',
 					displayName: 'Alice',
-					identities: [{ transport: 'telegram', actorId: '1' }, { broken: true }],
+					identities: [{ platform: 'telegram', actorId: '1' }],
+					createdAt: 1,
+					updatedAt: 2,
 				},
-				{ id: 'broken', identities: [] },
 			],
-			roles: [{ id: 'admin', name: 'Admin', rank: 10, grants: [{ node: '..', effect: 'allow' }] }],
-			userRoles: { 'user-8': ['admin', 'missing'] },
-			userGrants: { 'user-8': [{ node: 'cmd.help', effect: 'allow' }, null] },
+			roles: [{ id: 'admin', name: 'Admin', rank: 10, grants: [] }],
+			userRoles: { 'user-8': ['admin'] },
+			userGrants: { 'user-8': [{ node: 'cmd.help', effect: 'allow' }] },
 		})
 		expect(state.sequence).toBe(9)
 		expect(state.users).toHaveLength(1)
 		expect(state.roles[0]?.grants).toEqual([])
 		expect(state.userRoles['user-8']).toEqual(['admin'])
 		expect(state.userGrants['user-8']).toEqual([{ node: 'cmd.help', effect: 'allow' }])
+		expect(() =>
+			parseAccessState({
+				...state,
+				users: [
+					{
+						...state.users[0],
+						identities: [{ transport: 'telegram', actorId: '1' }],
+					},
+				],
+			}),
+		).toThrow('platform')
 	})
 
 	it('rotates link codes and throttles brute-force attempts', () => {
