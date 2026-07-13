@@ -163,19 +163,18 @@ function WorkspaceCard({ title, description, to, icon, meta }: WorkspaceLink) {
 			className="plx-home__workspaceCard"
 			withBorder
 			radius="md"
-			p={0}
+			p="md"
 		>
 			<div className="plx-home__workspaceIcon">{icon}</div>
 			<div className="plx-home__workspaceCopy">
-				<Group justify="space-between" gap="sm" wrap="nowrap">
-					<Text fw={700}>{title}</Text>
+				<div className="plx-home__workspaceTitleLine">
+					<Text className="plx-home__workspaceTitle">{title}</Text>
 					<Text className="plx-home__workspaceMeta">{meta}</Text>
-				</Group>
+				</div>
 				<Text size="sm" c="dimmed">
 					{description}
 				</Text>
 			</div>
-			<IconArrowRight className="plx-home__workspaceArrow" size={18} aria-hidden="true" />
 		</Paper>
 	)
 }

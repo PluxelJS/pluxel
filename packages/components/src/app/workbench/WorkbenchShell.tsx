@@ -176,6 +176,7 @@ function ActivityRail({
 			<div className="plx-workbench__activityBrand">
 				<ColorSchemeToggle
 					label="切换工作台明暗模式"
+					variant="subtle"
 					size={34}
 					radius="sm"
 					className="plx-workbench__activityBrandMark"
@@ -230,7 +231,7 @@ function ActivityRail({
 	)
 }
 
-function WorkbenchTopbarActions({
+function PluginTopbarActions({
 	focusWorkbenchSearch,
 	isPluginDetail,
 	togglePluginNav,
@@ -240,7 +241,7 @@ function WorkbenchTopbarActions({
 	togglePluginNav: () => void
 }) {
 	return (
-		<div className="plx-workbench__topbarActions">
+		<>
 			{isPluginDetail ? (
 				<WorkbenchActionButton
 					className="plx-workbench__action"
@@ -268,14 +269,7 @@ function WorkbenchTopbarActions({
 			</WorkbenchActionButton>
 
 			{isPluginDetail ? <WorkbenchPaneControls /> : null}
-
-			<ColorSchemeToggle
-				label="切换工作台明暗模式"
-				size="md"
-				radius="sm"
-				className="plx-workbench__mobileThemeToggle"
-			/>
-		</div>
+		</>
 	)
 }
 
@@ -364,19 +358,6 @@ function WorkspacePaneContent() {
 			<div className="plx-workbench__workspaceContent">
 				<Outlet />
 			</div>
-		</div>
-	)
-}
-
-function MobileThemeToggleAction() {
-	return (
-		<div className="plx-workbench__topbarActions">
-			<ColorSchemeToggle
-				label="切换工作台明暗模式"
-				size="md"
-				radius="sm"
-				className="plx-workbench__mobileThemeToggle"
-			/>
 		</div>
 	)
 }
@@ -794,15 +775,22 @@ export function WorkbenchShell() {
 										) : null}
 									</div>
 
-									{isPluginsSection ? (
-										<WorkbenchTopbarActions
-											focusWorkbenchSearch={focusWorkbenchSearch}
-											isPluginDetail={isPluginDetail}
-											togglePluginNav={togglePluginNav}
+									<div className="plx-workbench__topbarActions">
+										{isPluginsSection ? (
+											<PluginTopbarActions
+												focusWorkbenchSearch={focusWorkbenchSearch}
+												isPluginDetail={isPluginDetail}
+												togglePluginNav={togglePluginNav}
+											/>
+										) : null}
+										<ColorSchemeToggle
+											label="切换工作台明暗模式"
+											variant="subtle"
+											size="md"
+											radius="sm"
+											className="plx-workbench__mobileThemeToggle"
 										/>
-									) : (
-										<MobileThemeToggleAction />
-									)}
+									</div>
 								</header>
 
 								{showTabStrip ? (

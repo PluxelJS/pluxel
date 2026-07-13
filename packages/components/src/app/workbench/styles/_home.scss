@@ -113,11 +113,10 @@
 	align-items: start;
 	background: var(--plx-surface-strong);
 	color: inherit;
-	display: grid;
+	display: flex;
 	gap: 12px;
-	grid-template-columns: 40px minmax(0, 1fr) 20px;
-	min-height: 96px;
-	padding: 14px;
+	min-height: 104px;
+	min-width: 0;
 	text-decoration: none;
 	transition:
 		background-color 140ms ease,
@@ -141,6 +140,7 @@
 	border-radius: 10px;
 	color: var(--plx-accent-strong);
 	display: flex;
+	flex: 0 0 40px;
 	height: 40px;
 	justify-content: center;
 	width: 40px;
@@ -148,9 +148,25 @@
 
 .plx-home__workspaceCopy {
 	display: flex;
+	flex: 1;
 	flex-direction: column;
 	gap: 5px;
 	min-width: 0;
+}
+
+.plx-home__workspaceTitleLine {
+	align-items: baseline;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: minmax(0, 1fr) auto;
+	min-width: 0;
+}
+
+.plx-home__workspaceTitle {
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .plx-home__workspaceMeta {
@@ -159,17 +175,6 @@
 	font-weight: 800;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
-}
-
-.plx-home__workspaceArrow {
-	color: var(--plx-text-muted);
-	transition: transform 140ms ease;
-}
-
-.plx-home__workspaceCard:hover .plx-home__workspaceArrow,
-.plx-home__workspaceCard:focus-visible .plx-home__workspaceArrow {
-	color: var(--plx-accent-strong);
-	transform: translateX(3px);
 }
 
 .plx-home__pluginQueues {
@@ -306,14 +311,12 @@
 	}
 
 	.plx-home__workspaceCard {
-		min-height: 88px;
-		padding: 14px;
+		min-height: 96px;
 	}
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.plx-home__workspaceCard,
-	.plx-home__workspaceArrow {
+	.plx-home__workspaceCard {
 		transition: none;
 	}
 }
