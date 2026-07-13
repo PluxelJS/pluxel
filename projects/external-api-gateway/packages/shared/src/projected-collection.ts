@@ -26,8 +26,12 @@ export class ProjectedCollection<T extends IdDocument> {
 
 	async attach(projection: ProjectionCollection<T>): Promise<void> {
 		await projection.ready()
-		projection.removeMany({})
-		for (const document of this.#documents.values()) projection.insert(structuredClone(document))
+		await projection.removeMany({})
+		for (const document of this.#documents.values()) {
+			await projection.replaceOne({ id: document.id } as Partial<T>, structuredClone(document), {
+				upsert: true,
+			})
+		}
 		this.#projection = projection
 	}
 
@@ -55,7 +59,9 @@ export class ProjectedCollection<T extends IdDocument> {
 		if (this.#documents.has(document.id)) throw new Error(`Duplicate document id: ${document.id}`)
 		const next = structuredClone(document)
 		this.#documents.set(document.id, next)
-		this.#projection?.insert(structuredClone(next))
+		this.#mirror((projection) =>
+			projection.replaceOne({ id: next.id } as Partial<T>, structuredClone(next), { upsert: true }),
+		)
 	}
 
 	replaceOne(filter: Pick<T, 'id'>, document: T, options: { upsert?: boolean } = {}): void {
@@ -67,19 +73,32 @@ export class ProjectedCollection<T extends IdDocument> {
 		}
 		const next = structuredClone(document)
 		this.#documents.set(filter.id, next)
-		this.#projection?.replaceOne(filter as Partial<T>, structuredClone(next), options)
+		this.#mirror((projection) =>
+			projection.replaceOne(filter as Partial<T>, structuredClone(next), options),
+		)
 	}
 
 	removeOne(filter: Pick<T, 'id'>): void {
 		if (!this.#documents.delete(filter.id)) return
-		this.#projection?.removeOne(filter as Partial<T>)
+		this.#mirror((projection) => projection.removeOne(filter as Partial<T>))
 	}
 
 	removeMany(_filter: Record<string, never>): void {
 		this.#documents.clear()
-		this.#projection?.removeMany({})
+		this.#mirror((projection) => projection.removeMany({}))
+	}
+
+	#mirror(operation: (projection: ProjectionCollection<T>) => unknown): void {
+		if (!this.#projection) return
+		try {
+			void Promise.resolve(operation(this.#projection)).catch(ignoreProjectionError)
+		} catch {
+			// The optional management projection must not break business-owned state.
+		}
 	}
 }
+
+function ignoreProjectionError(_error: unknown): void {}
 
 function compareDocuments<T>(left: T, right: T, entries: Array<[keyof T, 1 | -1]>): number {
 	for (const [key, direction] of entries) {

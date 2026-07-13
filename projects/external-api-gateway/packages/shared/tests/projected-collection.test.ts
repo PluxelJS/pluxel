@@ -27,12 +27,32 @@ describe('ProjectedCollection', () => {
 		collection.replaceOne({ id: 'status' }, { id: 'status', value: 2 })
 
 		expect(projection.removeMany).toHaveBeenCalledWith({})
-		expect(projection.insert).toHaveBeenCalledWith({ id: 'status', value: 1 })
+		expect(projection.replaceOne).toHaveBeenNthCalledWith(
+			1,
+			{ id: 'status' },
+			{ id: 'status', value: 1 },
+			{ upsert: true },
+		)
 		expect(projection.replaceOne).toHaveBeenCalledWith(
 			{ id: 'status' },
 			{ id: 'status', value: 2 },
 			{},
 		)
+	})
+
+	it('keeps optional projection failures out of business writes', async () => {
+		const collection = new ProjectedCollection<Status>()
+		const projection = {
+			ready: vi.fn(async () => undefined),
+			insert: vi.fn(),
+			replaceOne: vi.fn().mockRejectedValue(new Error('stale projection row')),
+			removeOne: vi.fn(),
+			removeMany: vi.fn(async () => undefined),
+		}
+
+		await collection.attach(projection)
+		expect(() => collection.insert({ id: 'status', value: 1 })).not.toThrow()
+		expect(collection.findOne({ id: 'status' })).toEqual({ id: 'status', value: 1 })
 	})
 
 	it('rejects replacements that would corrupt the id index', () => {

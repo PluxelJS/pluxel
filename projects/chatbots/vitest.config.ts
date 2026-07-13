@@ -1,31 +1,25 @@
 import { resolve } from 'node:path'
-import { defineConfig } from 'vitest/config'
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
-export default defineConfig({
+const packageAlias = (name: string) => ({
+	find: new RegExp(`^@repo/chatbots-${name}$`),
+	replacement: resolve(import.meta.dirname, `packages/${name}/src/index.ts`),
+})
+
+export default definePluxelVitestConfig({
 	root: import.meta.dirname,
 	resolve: {
 		alias: [
-			{
-				find: /^@repo\/chatbots-access$/,
-				replacement: resolve(import.meta.dirname, 'packages/access/src/index.ts'),
-			},
-			{
-				find: /^@pluxel\/runtime$/,
-				replacement: resolve(import.meta.dirname, '../../packages/runtime/dist/index.mjs'),
-			},
-			{
-				find: /^@repo\/chatbots-contracts$/,
-				replacement: resolve(import.meta.dirname, 'packages/contracts/src/index.ts'),
-			},
-			{
-				find: /^@repo\/chatbots-hub$/,
-				replacement: resolve(import.meta.dirname, 'packages/hub/src/index.ts'),
-			},
-			{
-				find: /^@repo\/chatbots-commands$/,
-				replacement: resolve(import.meta.dirname, 'packages/commands/src/index.ts'),
-			},
+			packageAlias('access'),
+			packageAlias('contracts'),
+			packageAlias('hub'),
+			packageAlias('commands'),
 		],
+	},
+	oxc: {
+		decorator: {
+			legacy: true,
+		},
 	},
 	test: { include: ['packages/*/tests/**/*.test.ts'] },
 })

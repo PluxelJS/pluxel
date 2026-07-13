@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
@@ -43,14 +44,12 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	private readonly providers = new ProjectedCollection<BillingProviderSummaryDoc>()
 	private readonly rates = new ProjectedCollection<BillingRateDoc>()
 	private data: ExternalGatewayDbHandle | undefined
-	private seq = 1
 
 	override async init(): Promise<void> {
 		this.data = await useExternalGatewayDB(this.ctx)
 		await this.loadRatesFromDB()
 		this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
-		this.restoreSeq(usageRecords)
 		this.rebuildSummaries(usageRecords)
 		await this.ctx.webManagement.use(async (web) => {
 			await Promise.all([
@@ -78,7 +77,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		const record: BillingUsageRecord = {
 			...input,
 			...(metadata ? { metadata } : {}),
-			id: this.nextId(),
+			id: randomUUID(),
 			at: now,
 			currency: 'CNY',
 			costEstimated: input.costCny === undefined,
@@ -128,15 +127,14 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		return rate
 	}
 
-	clearUsage(): { ok: true } {
+	async clearUsage(): Promise<{ ok: true }> {
+		await this.data?.db.delete(billingUsageRecords).catch((error) => {
+			this.ctx.logger.warn('Failed to clear billing usage database', { error })
+		})
 		this.records.removeMany({})
 		this.users.removeMany({})
 		this.providers.removeMany({})
 		this.overview.replaceOne({ id: OVERVIEW_DOC_ID }, emptyOverview(), { upsert: true })
-		this.seq = 1
-		void this.data?.db.delete(billingUsageRecords).catch((error) => {
-			this.ctx.logger.warn('Failed to clear billing usage database', { error })
-		})
 		return { ok: true }
 	}
 
@@ -406,17 +404,6 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist billing rate', { error })
 		}
-	}
-
-	private restoreSeq(records: BillingUsageRecord[]): void {
-		const maxId = records.reduce((max, record) => Math.max(max, Number(record.id) || 0), 0)
-		this.seq = maxId + 1
-	}
-
-	private nextId(): string {
-		const id = String(this.seq)
-		this.seq += 1
-		return id
 	}
 }
 
