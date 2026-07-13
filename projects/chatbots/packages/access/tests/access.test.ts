@@ -5,8 +5,40 @@ import {
 	decideGrants,
 	normalizeAccessState,
 } from '../src/index.ts'
+import { CoalescedSnapshotWriter } from '../src/snapshot-writer.ts'
 
 describe('chat access policy', () => {
+	it('coalesces snapshot bursts and retains changes made during a write', async () => {
+		let state = 'first'
+		const firstWriteStarted = deferred<void>()
+		const releaseFirstWrite = deferred<void>()
+		const writes: string[] = []
+		const writer = new CoalescedSnapshotWriter(
+			() => state,
+			async (snapshot) => {
+				writes.push(snapshot)
+				if (writes.length === 1) {
+					firstWriteStarted.resolve()
+					await releaseFirstWrite.promise
+				}
+			},
+			() => {},
+		)
+
+		writer.request()
+		state = 'second'
+		writer.request()
+		await firstWriteStarted.promise
+		state = 'third'
+		writer.request()
+		state = 'latest'
+		writer.request()
+		releaseFirstWrite.resolve()
+		await writer.drain()
+
+		expect(writes).toEqual(['second', 'latest'])
+	})
+
 	it('uses exact grants before the longest wildcard', () => {
 		const grants = [
 			{ node: 'cmd.*', effect: 'deny' },
@@ -40,9 +72,34 @@ describe('chat access policy', () => {
 		expect(domain.listUsers()).toHaveLength(1)
 	})
 
+	it('reports focused projection changes instead of requiring full rebuilds', () => {
+		const changes: Array<{
+			kind: string
+			userIds?: readonly string[]
+			removedUserIds?: readonly string[]
+			roleIds?: readonly string[]
+		}> = []
+		const domain = new ChatAccessDomain(createEmptyAccessState(), (change) => changes.push(change))
+		const first = domain.resolveMessage(message('telegram', '1'))
+		const second = domain.resolveMessage(message('kook', '2'))
+		domain.upsertRole({ id: 'member', name: 'Member', rank: 1, grants: [] })
+		const code = domain.createLinkCode(first.id).code
+		domain.consumeLinkCode(second.id, code)
+
+		expect(changes).toEqual([
+			{ kind: 'state', userIds: [first.id] },
+			{ kind: 'state', userIds: [second.id] },
+			{ kind: 'state', roleIds: ['member'] },
+			{ kind: 'state', userIds: [first.id], removedUserIds: [second.id] },
+		])
+		expect(domain.overview()).toEqual({ users: 1, identities: 2, roles: 1, permissions: 0 })
+	})
+
 	it('caches role order safely and keeps declaration disposal idempotent', () => {
 		const changes: string[] = []
-		const domain = new ChatAccessDomain(createEmptyAccessState(), (kind) => changes.push(kind))
+		const domain = new ChatAccessDomain(createEmptyAccessState(), (change) =>
+			changes.push(change.kind),
+		)
 		const user = domain.resolveMessage(message('telegram', '1'))
 		const disposeFirst = domain.declare({
 			node: 'cmd.deploy',
@@ -112,6 +169,14 @@ describe('chat access policy', () => {
 		expect(() => domain.consumeLinkCode(second.id, current)).toThrow('尝试过多')
 	})
 })
+
+function deferred<Value>() {
+	let resolve!: (value: Value | PromiseLike<Value>) => void
+	const promise = new Promise<Value>((resolvePromise) => {
+		resolve = resolvePromise
+	})
+	return { promise, resolve }
+}
 
 function message(platform: string, actorId: string, accountId = 'default') {
 	return {

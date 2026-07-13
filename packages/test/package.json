@@ -2,6 +2,11 @@
 	"name": "@pluxel/test",
 	"version": "0.1.0",
 	"description": "Core/plugin test utilities for Pluxel packages (fixtures + Vitest preset).",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/test"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"

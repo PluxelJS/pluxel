@@ -3,9 +3,9 @@ import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
-import { KookAdapterPlugin } from '@repo/chatbots-kook'
+import { KookPlugin } from '@repo/chatbots-kook'
 import { ChatSandboxPlugin } from '@repo/chatbots-sandbox'
-import { TelegramAdapterPlugin } from '@repo/chatbots-telegram'
+import { TelegramPlugin } from '@repo/chatbots-telegram'
 import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
 import { createChatbotsPersistence } from './persistence.ts'
 
@@ -15,8 +15,8 @@ export const chatbotsPlugins = [
 	ChatCommandsPlugin,
 	ChatBuiltinsPlugin,
 	ChatSandboxPlugin,
-	TelegramAdapterPlugin,
-	KookAdapterPlugin,
+	TelegramPlugin,
+	KookPlugin,
 ] as const
 
 // Management adapters must run while unconfigured so their Vault-backed setup UI

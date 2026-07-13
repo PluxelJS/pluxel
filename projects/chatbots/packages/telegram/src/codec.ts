@@ -3,7 +3,7 @@ import {
 	type ChatBlock,
 	type ChatMessage,
 	type ChatTransportCapabilities,
-} from '@repo/chatbots-hub'
+} from '@repo/chatbots-contracts'
 import type { TelegramUpdate } from './protocol.ts'
 
 export const TELEGRAM_TRANSPORT_CAPABILITIES = {

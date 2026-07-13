@@ -15,10 +15,10 @@
 		"noEmit": true,
 		"skipLibCheck": true,
 		"paths": {
+			"@repo/chatbots-adapter-kit/*": ["./packages/adapter-kit/src/*.ts"],
 			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
 			"@repo/chatbots-hub": ["./packages/hub/src/index.ts"],
 			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"]
-		},
-		"types": ["bun"]
+		}
 	}
 }

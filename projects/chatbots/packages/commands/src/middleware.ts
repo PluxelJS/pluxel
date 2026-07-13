@@ -1,4 +1,4 @@
-import type { ChatPayload } from '@repo/chatbots-hub'
+import type { ChatPayload } from '@repo/chatbots-contracts'
 import type { ChatCommandContext, ChatCommandMiddleware } from './types.ts'
 
 /** Koa-style composition with a guard against executing downstream work twice. */

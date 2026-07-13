@@ -13,10 +13,10 @@ import {
 	strictMode,
 	tolerancePct,
 	verboseBench,
-} from './pluginLifecycle/env'
-import { TASK_METADATA } from './pluginLifecycle/catalog'
-import { createScenario } from './pluginLifecycle/scenario'
-import { registerPluginLifecycleBenchmarks } from './pluginLifecycle/tasks'
+} from './pluginLifecycle/env.ts'
+import { TASK_METADATA } from './pluginLifecycle/catalog.ts'
+import { createScenario } from './pluginLifecycle/scenario.ts'
+import { registerPluginLifecycleBenchmarks } from './pluginLifecycle/tasks.ts'
 import {
 	buildComparison,
 	collectRows,
@@ -27,7 +27,7 @@ import {
 	isLatencyRegression,
 	toMainReport,
 	writeReports,
-} from './pluginLifecycle/report'
+} from './pluginLifecycle/report.ts'
 
 const silencePluginLogs = () => {
 	const methods: Array<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'log'> = [
@@ -85,7 +85,8 @@ const benchmarksDir = outputDirEnvPath
 mkdirSync(fileURLToPath(benchmarksDir), { recursive: true })
 
 const resolvedReferencePath = referenceEnvPath
-	? (resolveReferencePath(referenceEnvPath) ?? fileURLToPath(new URL(referenceEnvPath, benchmarksDir)))
+	? (resolveReferencePath(referenceEnvPath) ??
+		fileURLToPath(new URL(referenceEnvPath, benchmarksDir)))
 	: null
 if (debugBench && referenceEnvPath) {
 	console.log('[bench] reference report resolved to:', resolvedReferencePath ?? '(not found)')
@@ -144,15 +145,12 @@ if (measuredComparison.length > 0 && verboseBench) {
 	)
 }
 
-const regressions = comparison
-	.filter((item) => isLatencyRegression(item, tolerancePct))
+const regressions = comparison.filter((item) => isLatencyRegression(item, tolerancePct))
 
 if (regressions.length > 0) {
 	console.warn(`\nLatency regressions (>${tolerancePct}%):`)
 	for (const item of regressions) {
-		console.warn(
-			`- ${item.name}: latency Δ ${item.latencyDeltaPct?.toFixed(2) ?? '—'}%`,
-		)
+		console.warn(`- ${item.name}: latency Δ ${item.latencyDeltaPct?.toFixed(2) ?? '—'}%`)
 	}
 	if (strictMode) {
 		console.error('[bench] Strict mode: latency regression.')

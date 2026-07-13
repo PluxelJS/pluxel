@@ -1,3 +1,3 @@
 import { pluginUi } from '@pluxel/runtime/web/ui'
 
-export const kookPlugin = pluginUi('KookAdapterPlugin')
+export const kookPlugin = pluginUi('KookPlugin')

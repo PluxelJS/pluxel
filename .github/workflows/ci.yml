@@ -28,39 +28,50 @@ env:
   PLUXEL_FAST_BUILD: 'true'
 
 jobs:
-  test:
-    name: Tests
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
 
     steps:
-      - name: Prepare git
-        run: git config --global core.autocrlf false
-
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+      - name: Install toolchain
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
+          install: true
 
-      - name: Determine test scope
-        id: scope
-        env:
-          DEFAULT_BASE: main
-          PR_BASE_REF: ${{ github.base_ref || '' }}
-        run: bash ./.github/scripts/determine-test-scope.sh
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests
+      - name: Restore dependency and Turbo caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}
+            .turbo
+          key: ${{ runner.os }}-pnpm-turbo-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-turbo-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-pnpm-turbo-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release metadata
+        run: pnpm run release:check
+
+      - name: Build and test
         env:
-          MODE: ${{ steps.scope.outputs.mode }}
-          FILTER_REF: ${{ steps.scope.outputs.filter_ref }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          if [ "${MODE:-full}" = "affected" ] && [ -n "${FILTER_REF:-}" ]; then
-            echo "Running affected tests against ${FILTER_REF}"
-            pnpm -w turbo run test "--filter=...[${FILTER_REF}]"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pnpm exec turbo run build test "--filter=...[origin/${BASE_REF}]"
           else
-            echo "Running full test suite"
-            pnpm -w turbo run test
+            pnpm exec turbo run build test
           fi

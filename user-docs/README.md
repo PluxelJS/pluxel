@@ -31,6 +31,7 @@ CLI 是独立的后续路径，不是理解插件设计的前置知识。
 
 ## 其他任务
 
+- [`chatbots.md`](chatbots.md)：Chatbots 项目的跨平台/原生能力选择、顺序、背压和幂等边界。
 - [`starter-monorepo.md`](starter-monorepo.md)：生成可独立运行、带本地插件指南和完整验证命令的
   canonical application monorepo。
 - [`host-setup.md`](host-setup.md)：选择 static/dynamic Vite route，配置 Web Management 和启动策略。

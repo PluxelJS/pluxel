@@ -27,7 +27,7 @@
 	"scripts": {
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"bench": "bun --conditions=@pluxel/source run bench/compare-diod.bench.ts"
+		"bench": "pnpm --filter diod build && pnpm run build && node bench/compare-diod.bench.ts"
 	},
 	"devDependencies": {
 		"diod": "workspace:*",

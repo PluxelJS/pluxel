@@ -1,4 +1,4 @@
-import { abortableDelay, ExponentialBackoff } from '@repo/chatbots-hub'
+import { abortableDelay, ExponentialBackoff } from '@repo/chatbots-adapter-kit/backoff'
 import {
 	SIGNAL_EVENT,
 	SIGNAL_HELLO,

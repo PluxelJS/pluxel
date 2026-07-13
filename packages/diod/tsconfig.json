@@ -6,7 +6,7 @@
 		"noUnusedParameters": true,
 		"noUncheckedIndexedAccess": true,
 		"noPropertyAccessFromIndexSignature": true,
-		"types": ["reflect-metadata", "@types/bun"],
+		"types": ["reflect-metadata"],
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true
 	},

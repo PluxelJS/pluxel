@@ -36,9 +36,17 @@ export type ChatRouterSnapshot = {
 	handlers: Array<{ id: string; priority: number }>
 	observers: string[]
 	activeConversations: number
+	pendingReceives: number
+	outboundConversations: number
+	pendingSends: number
+	runningSends: number
 	received: number
 	deduplicated: number
+	rejectedReceives: number
 	handled: number
 	failedHandlers: number
 	sent: number
+	failedSends: number
+	rejectedSends: number
+	drainTimeouts: number
 }

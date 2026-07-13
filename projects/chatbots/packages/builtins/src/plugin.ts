@@ -61,23 +61,19 @@ export class ChatBuiltinsPlugin extends BasePlugin {
 				name: 'status',
 				description: '显示传输与处理器状态',
 				permission: false,
-				execute: () =>
-					[
+				execute: () => {
+					const snapshot = this.hub.snapshot()
+					return [
 						`transports: ${
-							this.hub
-								.snapshot()
-								.transports.map(({ platform, accountId }) => `${platform}/${accountId}`)
+							snapshot.transports
+								.map(({ platform, accountId }) => `${platform}/${accountId}`)
 								.join(', ') || 'none'
 						}`,
-						`handlers: ${
-							this.hub
-								.snapshot()
-								.handlers.map((item) => item.id)
-								.join(', ') || 'none'
-						}`,
-						`received: ${this.hub.snapshot().received}`,
-						`sent: ${this.hub.snapshot().sent}`,
-					].join('\n'),
+						`handlers: ${snapshot.handlers.map((item) => item.id).join(', ') || 'none'}`,
+						`received: ${snapshot.received} (pending ${snapshot.pendingReceives}, rejected ${snapshot.rejectedReceives})`,
+						`sent: ${snapshot.sent} (pending ${snapshot.pendingSends}, failed ${snapshot.failedSends}, rejected ${snapshot.rejectedSends})`,
+					].join('\n')
+				},
 			}),
 		]
 		this.ctx.effects.defer(() => {

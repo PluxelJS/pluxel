@@ -1,10 +1,15 @@
 # @pluxel 插件系仓库
 
 ```bash
-pnpm install
-pnpm build
+mise trust
+mise install
+pnpm install --frozen-lockfile
+pnpm verify
 pnpm plugin-host:dynamic
 ```
+
+`mise.toml` 统一跟踪 Node.js LTS 与最新 pnpm；不使用 mise 时也必须满足根 `package.json` 的
+engines 约束。
 
 文档入口（先看这些，避免被历史笔记误导）：
 
@@ -42,3 +47,5 @@ pnpm test:watch -- --project=@pluxel/runtime  # watch a single project
 pnpm --filter @pluxel/runtime test            # run one package's tests (fast path, no turbo graph)
 pnpm -w turbo run test --filter=@pluxel/runtime  # same, but through turbo (cache/graph)
 ```
+
+公开包的版本与发布流程见 [`docs/RELEASING.md`](docs/RELEASING.md)。

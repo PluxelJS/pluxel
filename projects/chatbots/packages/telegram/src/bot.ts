@@ -1,15 +1,10 @@
 import type { APIMethodParams, APIMethodReturn } from '@gramio/types'
 import type { Context } from '@pluxel/runtime'
-import {
-	abortableDelay,
-	ChatHubPlugin,
-	ExponentialBackoff,
-	normalizeContent,
-	SupersedingAbortScope,
-	type CapabilityRef,
-	type ChatMessage,
-	type ChatSendRequest,
-} from '@repo/chatbots-hub'
+import { abortableDelay, ExponentialBackoff } from '@repo/chatbots-adapter-kit/backoff'
+import type { CapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
+import { SupersedingAbortScope } from '@repo/chatbots-adapter-kit/scope'
+import { normalizeContent, type ChatSendRequest } from '@repo/chatbots-contracts'
+import type { ChatHubPlugin } from '@repo/chatbots-hub'
 import { createTelegramClient, type TelegramClientOptions, type TelegramApi } from './api/client.ts'
 import type { TelegramMethod } from './api/endpoints.ts'
 import { invokeTelegramNative, TelegramNativeApi } from './api/native.ts'
@@ -148,11 +143,8 @@ export class TelegramBot extends TelegramNativeApi {
 					signal,
 				)
 				this.pollingBackoff.reset()
-				const messages: ChatMessage[] = []
 				let lastUpdateId: number | null = null
 				for (const update of updates) {
-					this.offset = Math.max(this.offset, update.update_id + 1)
-					lastUpdateId = update.update_id
 					await dispatchTelegramUpdate(
 						this,
 						this.events,
@@ -161,10 +153,11 @@ export class TelegramBot extends TelegramNativeApi {
 						signal,
 					)
 					const message = normalizeTelegramUpdate(update, this.id)
-					if (message) messages.push(message)
+					const hub = this.#options.hub?.current
+					if (message && hub) await hub.receive(message, signal)
+					this.offset = Math.max(this.offset, update.update_id + 1)
+					lastUpdateId = update.update_id
 				}
-				const hub = this.#options.hub?.current
-				if (hub) await Promise.all(messages.map((message) => hub.receive(message, signal)))
 				const recovered = this.statusValue.phase !== 'online' || this.statusValue.lastError !== null
 				this.patchStatus(
 					{

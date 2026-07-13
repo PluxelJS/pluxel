@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { abortableDelay, ExponentialBackoff, SupersedingAbortScope } from '../src/index.ts'
+import { abortableDelay, ExponentialBackoff } from '../src/backoff.ts'
+import { SupersedingAbortScope } from '../src/scope.ts'
 
 describe('adapter retry timing', () => {
 	it('produces capped deterministic exponential delays and resets', () => {

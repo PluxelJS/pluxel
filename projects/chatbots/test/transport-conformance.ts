@@ -1,4 +1,4 @@
-import type { ChatBlock, ChatBlockType, ChatTransportCapabilities } from '@repo/chatbots-hub'
+import type { ChatBlock, ChatBlockType, ChatTransportCapabilities } from '@repo/chatbots-contracts'
 
 const samples: Record<ChatBlockType, ChatBlock> = {
 	text: { type: 'text', text: 'hello' },

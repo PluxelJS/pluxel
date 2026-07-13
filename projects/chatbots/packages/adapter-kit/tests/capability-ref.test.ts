@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCapabilityRef } from '../src/index.ts'
+import { createCapabilityRef } from '../src/capability-ref.ts'
 
 describe('CapabilityRef', () => {
 	it('publishes optional capability replacement without exposing mutation', () => {

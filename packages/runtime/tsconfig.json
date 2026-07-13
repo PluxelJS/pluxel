@@ -22,7 +22,7 @@
 		"outDir": "dist",
 		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM"],
-		"types": ["@types/bun", "vite/client"],
+		"types": ["vite/client"],
 		"allowArbitraryExtensions": true,
 		"emitDeclarationOnly": true,
 		"experimentalDecorators": true,

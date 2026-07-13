@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createBotRegistry } from '../src/index.ts'
+import { createBotRegistry } from '../src/registry.ts'
 
 describe('BotRegistry', () => {
 	it('exposes a read-only live view with strict lookup', () => {

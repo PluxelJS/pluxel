@@ -1,8 +1,6 @@
 # 平台适配器设计规范
 
-本文是 `projects/chatbots` 平台适配器的规范架构。Telegram、KOOK 已采用这里定义的
-Bot registry、原生 Bot API、`$` 扩展和多账号寻址；旧 `requireApi()` 仅作为迁移兼容，不能作为
-新适配器模板。
+本文是 `projects/chatbots` 平台适配器的规范架构。Telegram、KOOK 已采用这里定义的 Bot registry、原生 Bot API、`$` 扩展和多账号寻址。
 
 ## 一句话模型
 
@@ -19,9 +17,7 @@ PlatformPlugin -> BotRegistry -> Bot -> native platform API
 - ChatHub 是可选的跨平台投影，不是平台 SDK 的所有者，也不能限制平台原生能力。
 - 类型优先复用平台维护的包；没有可信类型源时才从 OpenAPI 等规范生成。
 
-公共类命名优先使用 `{Platform}Plugin`、`{Platform}Bot` 和 `{Platform}ApiClient`。现有
-`TelegramAdapterPlugin`、`KookAdapterPlugin` 可保留迁移兼容名，但新代码不应因为 Plugin
-还承担 ChatHub adapter 投影，就把完整的平台 capability 缩减成一个 adapter 外壳。
+公共类命名使用 `{Platform}Plugin`、`{Platform}Bot` 和 `{Platform}ApiClient`。Plugin 即使承担 ChatHub adapter 投影，也不能把完整的平台 capability 缩减成一个 adapter 外壳。
 
 ## 公共调用体验
 
@@ -46,7 +42,7 @@ export class KookModerationPlugin extends BasePlugin {
 }
 ```
 
-原生 API 不应藏在 `api`、`client` 或 `requireApi()` 后面：
+原生 API 直接位于 Bot 顶层：
 
 ```ts
 await bot.sendMessage(payload)
@@ -167,7 +163,7 @@ webhook secret 和带认证信息的错误对象不得进入快照。
 - 鉴权成功后保留 `selfInfo`，短暂断线不能清除 Bot 身份；
 - transient failure 进入 error/backoff 并保留最近错误，下一次成功连接或 poll 才清除；
 - stop/destroy 必须立即终止 heartbeat、retry timer、poll request 和 transport registration；
-- replacement/start generation 使用 abort lease，旧异步完成不得覆盖新状态；
+- replacement/start generation 使用 abort lease，失效 generation 的异步完成不得覆盖当前状态；
 - heartbeat 和空 poll 可以更新 Bot 内部快照，但管理投影只发布有意义的状态变化、错误或新事件，
   避免固定周期持久化写放大；
 - polling 与 WebSocket 不共享“万能连接基类”，只共享纯 backoff、cancel delay 和 lease 原语。
@@ -229,6 +225,10 @@ transport，不能销毁 Bot。Bot 的 timer、gateway、polling、observer 和 
 ChatHub 不得知道平台 SDK 类型。adapter 可以把原生事件投影成 `ChatMessage`，但不能把 Bot、
 session、方法、`Blob` 或循环对象塞进通用消息。
 
+共享的 registry、token config、optional capability binding、退避和 abort lease 只从
+`@repo/chatbots-adapter-kit` 的对应子入口导入。平台 codec 直接依赖 `@repo/chatbots-contracts`；
+不能为了取得这些原语或消息类型而依赖 Hub 默认出口。连接状态机仍属于具体平台。
+
 ### 多账号寻址
 
 多 Bot 后，平台种类与账号实例必须是两个字段：
@@ -246,7 +246,8 @@ type ChatAddress = {
 - 如果产品需要租户隔离，应由 access policy 显式加入 tenant/account scope，不能依赖字符串拼接。
 - 不要把 `kook/community` 整体伪装成新的平台名称，否则 capability 查询、身份关联和统计都会失真。
 
-在 ChatHub 完成该地址模型前，新增多 Bot manager 不得假装已经拥有正确的跨平台出站路由。
+Hub 对该地址执行独立的入站和出站会话队列；adapter 注册 transport 时必须同时提供稳定的
+`platform/accountId`，不能退回单 transport 覆盖多个账号。
 
 ## 原生事件
 
@@ -577,7 +578,7 @@ export class PlatformBot extends PlatformNativeApi {
 因此：
 
 - `bot.sendMessage()` 是直接的原生方法；
-- Bot 不需要 `requireApi()` 或 `api.sendMessage()`；
+- Bot 不需要额外的 API facade；
 - endpoint 方法不成为 Bot own property；
 - 每个 Bot 只保存账号、连接和 `$` 状态；
 - standalone client 与所有 Bot 的同名 endpoint 引用严格相等；
@@ -586,9 +587,9 @@ export class PlatformBot extends PlatformNativeApi {
 不要直接让 Bot 继承一个公开 `call/$raw/$tool` 的 client，否则会破坏顶层原生 API、`$` 扩展能力
 的边界。禁止在 constructor 中循环绑定 endpoint，也禁止在 Client 与 Bot prototype 重复安装。
 
-## 从旧上游保留和改进的部分
+## Codegen 与共享 prototype
 
-旧上游采用了以下有效路径：
+当前生成链路：
 
 ```text
 definitions.txt / endpoints.txt
@@ -599,15 +600,13 @@ definitions.txt / endpoints.txt
   -> concrete Bot
 ```
 
-值得保留：
+约束：
 
 - endpoint 清单独立、可 diff；
 - macro 让生产运行不读取 TXT；
 - 原生具名方法直接出现在 Bot 上；
 - 方法函数存在于共享 prototype，而不是每实例分配；
 - raw API 和 conversation helper 不污染跨平台协议。
-
-新版改进：
 
 - 用静态 `NativeApi` 基类替代额外的 `Object.setPrototypeOf()` prototype 链，并让 Client/Bot 共享唯一方法实现；
 - 用唯一 `$` 收纳 raw、工具和控制面，避免多个 `$xxx` namespace 漂移；

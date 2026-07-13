@@ -1,17 +1,17 @@
 # Chatbots for Pluxel
 
-基于当前 Pluxel static runtime 重写的聊天机器人插件集群。旧仓库只作为需求样本，不作为兼容目标。
+基于当前 Pluxel static runtime 的聊天机器人插件集群。
 
 ## 现在包含什么
 
-- `ChatHubPlugin`：transport-neutral 消息路由、时间窗去重、会话内串行、跨会话并行、处理器隔离和停机 drain。
-- `ChatHubPlugin`：富消息发送规划、严格/降级模式、旁路 observer 和运行指标。
+- `ChatHubPlugin`：transport-neutral 消息路由、时间窗去重、入站与出站会话内串行、有界背压、跨会话并行、处理器隔离和有界停机 drain。
+- `ChatHubPlugin`：富消息发送规划、严格/降级模式、旁路 observer，以及队列、失败和拒绝指标。
 - `ChatAccessPlugin`：跨平台统一用户、角色与分层权限；业务状态持久化，管理面只是投影。
 - `ChatCommandsPlugin`：分层路由、alias、flags、中间件和默认拒绝的权限节点。
 - `ChatBuiltinsPlugin`：`/ping`、`/help`、`/status`。
 - `ChatSandboxPlugin`：无需平台凭据即可进行 HTTP 或管理界面端到端测试。
-- `TelegramAdapterPlugin`：Telegram long polling adapter，带 Vault 管理面板。
-- `KookAdapterPlugin`：KOOK gateway adapter、完整 v3 API client 和 Vault 管理面板。
+- `TelegramPlugin`：Telegram long polling capability，带 Vault 管理面板。
+- `KookPlugin`：KOOK gateway capability、完整 v3 API client 和 Vault 管理面板。
 
 ## 运行
 
@@ -58,7 +58,7 @@ Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API �
 
 ## 源码组织
 
-公共 `index.ts` 只做 barrel export，不承载实现。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；命令按 `types/parser/registry/middleware/plugin` 拆分；平台 adapter 的 `protocol/codec/api/events` 与 Pluxel lifecycle plugin 分离。这样协议转换和规划可单测，只有 plugin 文件接触 Context、Vault 和 Web Management。Telegram 与 KOOK 只共享纯退避策略和 superseding abort lease，各自保留适合 long polling、WebSocket 的连接状态机。
+公共 `index.ts` 只做 barrel export，不承载实现。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；adapter 的 registry、配置、可替换 capability binding、退避和 abort lease 位于独立 `adapter-kit` 明确子入口；命令按 `types/parser/registry/middleware/plugin` 拆分；平台 adapter 的 `protocol/codec/api/events` 与 Pluxel lifecycle plugin 分离。平台 codec 直接依赖 `contracts`，不会为了共享消息类型依赖 Hub。Telegram 与 KOOK 只共享纯连接原语，各自保留适合 long polling、WebSocket 的状态机。
 
 新平台适配器必须遵循 [平台适配器设计规范](docs/PLATFORM_ADAPTERS.md)：平台插件公开只读 Bot registry，Bot 本身优先暴露原生 API，本项目增加的 raw、conversation 和生命周期能力统一收纳到 `$`。该文档同时说明如何从外部类型包或 OpenAPI 显式 codegen 出类型与 endpoint inventory，再通过 Pluxel macro 内联 metadata，并用共享 prototype 让所有 Bot 以最低实例成本获得具名 API 方法。
 
@@ -73,6 +73,10 @@ return chat.batch(chat.of('任务 ', chat.link(url, '详情')), chat.image(previ
 ```
 
 `chat.batch()` 是 fail-fast；`chat.batchBestEffort()` 会继续发送后续条目，并在 `ChatSendResult.failures` 中返回失败索引。平台因能力不足产生的单消息拆分仍由 Hub planner 负责，两种语义不会混淆。
+
+同一 `(platform, accountId, conversationId)` 的逻辑发送会完整执行后再开始下一次发送，因此 batch 或平台自动拆分不会被并发调用穿插；不同会话仍可并行。入站和出站队列默认各自最多保留 256 个待处理调用，满载时明确拒绝而不是无限占用内存。`hub.snapshot()` 与 sandbox `/status` 的 `router` 字段公开当前队列深度、发送失败、拒绝和 drain timeout 计数。
+
+Hub 的时间窗去重是进程内优化，不是持久化 exactly-once。Telegram 只在原始事件和可选 Hub 投影完成后推进 update offset，KOOK 只在事件消费完成后推进连续 SN；崩溃边界仍可能重放。会产生外部副作用的 handler 应使用 `messageKey(message)` 作为稳定幂等键，并把幂等结果保存在自己的业务状态中。
 
 planner 会先逐 block 校验 transport capabilities，再决定 mixed、拆分或平台原子布局；声明 `mixedContent: true` 不代表可以接收未声明的 block。`atomicBlocks` 用于“支持，但必须作为独立平台操作发送”的内容。严格模式直接报错，默认 best-effort 会把不支持的媒体变成带类型标记的可读文本，并合并相邻文本以减少平台调用。超出平台文本上限时会在不切断 Unicode surrogate pair 的前提下自动拆分，只有第一条保留 reply quote。
 
@@ -134,4 +138,4 @@ export class TelegramModerationPlugin extends BasePlugin {
 
 也可以通过 `telegram.bots.require('notifications')` 主动取得指定 Bot，再使用 `bot.events.message.on(...)` 只监听该账号。Telegram 与 KOOK 都提供静态可枚举的 `plugin.events.<name>` 聚合 channel 和 `bot.events.<name>` 局部 channel；它们由 Pluxel `EvtChannel` 管理订阅生命周期与错误隔离。原始事件不会被塞进 `ChatMessage`；跨平台消息保持 JSON-safe，平台能力仍可独立组合为 Pluxel 插件依赖。
 
-更多设计取舍见 [docs/DESIGN.md](docs/DESIGN.md)，旧项目迁移映射见 [docs/MIGRATION.md](docs/MIGRATION.md)。
+更多当前设计取舍见 [docs/DESIGN.md](docs/DESIGN.md)。

@@ -2,13 +2,13 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import {
-	ChatHubPlugin,
 	contentText,
 	normalizeContent,
 	type ChatBlock,
 	type ChatMessage,
 	type ChatSendRequest,
-} from '@repo/chatbots-hub'
+} from '@repo/chatbots-contracts'
+import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
 
 export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
@@ -49,6 +49,7 @@ export class ChatSandboxPlugin extends BasePlugin {
 		await this.ctx.webManagement.use(async (web) => {
 			this.projection = web.state.collection<SandboxMessage>({ name: 'messages' })
 			await this.projection.ready()
+			this.projection.removeMany({})
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new ChatSandboxRpc(this))
 		})
@@ -60,6 +61,7 @@ export class ChatSandboxPlugin extends BasePlugin {
 						messages: this.messages.length,
 						transports: this.hub.listTransports(),
 						handlers: this.hub.listHandlers(),
+						router: this.hub.snapshot(),
 					}))
 					.get('/messages', () => ({ messages: this.messages }))
 					.post('/messages', async ({ body, status }) => {
@@ -142,20 +144,30 @@ export class ChatSandboxPlugin extends BasePlugin {
 
 	private append(message: SandboxMessage): void {
 		this.messages.push(message)
-		this.projection?.insert(structuredClone(message))
+		this.project(() =>
+			this.projection?.replaceOne({ id: message.id }, structuredClone(message), { upsert: true }),
+		)
 		if (this.messages.length > MAX_MESSAGES)
 			for (const removed of this.messages.splice(0, this.messages.length - MAX_MESSAGES))
-				this.projection?.removeOne({ id: removed.id })
+				this.project(() => this.projection?.removeOne({ id: removed.id }))
 	}
 
 	reset(): { ok: true } {
 		this.messages = []
 		this.sequence = 1
-		this.projection?.removeMany({})
+		this.project(() => this.projection?.removeMany({}))
 		return { ok: true }
 	}
 	status() {
 		return { ...this.hub.snapshot(), messages: this.messages.length }
+	}
+
+	private project(operation: () => unknown): void {
+		try {
+			operation()
+		} catch (error) {
+			this.ctx.logger.warn('Failed to update chat sandbox management projection', { error })
+		}
 	}
 }
 

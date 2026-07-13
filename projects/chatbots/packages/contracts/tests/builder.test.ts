@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chat, contentText } from '../src/index.ts'
+import { addressKey, chat, contentText, messageKey } from '../src/index.ts'
 
 describe('chat content builder', () => {
 	it('coalesces adjacent text while preserving semantic blocks', () => {
@@ -29,5 +29,24 @@ describe('chat content builder', () => {
 	it('provides constructors for every media block', () => {
 		expect(chat.audio('audio.mp3', 'audio')).toMatchObject({ type: 'audio', name: 'audio' })
 		expect(chat.video('video.mp4', 'video')).toMatchObject({ type: 'video', name: 'video' })
+	})
+
+	it('builds collision-safe address and idempotency keys', () => {
+		const first = { platform: 'a', accountId: 'b:c', conversationId: 'd' }
+		const second = { platform: 'a:b', accountId: 'c', conversationId: 'd' }
+		expect(addressKey(first)).not.toBe(addressKey(second))
+		expect(
+			messageKey({
+				...first,
+				id: 'message',
+				conversation: { id: first.conversationId },
+			}),
+		).not.toBe(
+			messageKey({
+				...second,
+				id: 'message',
+				conversation: { id: second.conversationId },
+			}),
+		)
 	})
 })

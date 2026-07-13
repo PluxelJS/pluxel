@@ -2,6 +2,11 @@
 	"name": "@pluxel/core",
 	"version": "0.3.0",
 	"description": "Demo example that imports a local package",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/core"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -75,9 +80,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"build": "tsdown",
-		"dev": "bun --conditions=@pluxel/source --watch run tests/start.ts",
-		"bench": "bun --conditions=@pluxel/source run bench/pluginLifecycle.bench.ts",
-		"bench:dist": "pnpm --filter @pluxel/rolldown build && pnpm run build && bun run --tsconfig-override=\"./bench-tsconfig.json\" bench/pluginLifecycle.bench.ts"
+		"bench:dist": "pnpm --filter @pluxel/rolldown build && pnpm run build && node bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",
@@ -93,7 +96,9 @@
 		"@pluxel/context": "workspace:*",
 		"@pluxel/core-di": "workspace:*",
 		"option-t": "^55.1.2",
-		"tinybench": "^6.0.0"
+		"rolldown": "^1.1.5",
+		"tinybench": "^6.0.0",
+		"unplugin-macros": "^0.20.2"
 	},
 	"inlinedDependencies": {
 		"@abraham/reflection": "0.13.0",

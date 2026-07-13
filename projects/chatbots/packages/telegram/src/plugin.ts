@@ -1,17 +1,15 @@
-import type { APIMethods } from '@gramio/types'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
+import { TokenBotConfigStore, type TokenBotConfigInput } from '@repo/chatbots-adapter-kit/config'
 import {
-	ChatHubPlugin,
-	TokenBotConfigStore,
-	createCapabilityRef,
 	createBotRegistry,
 	type BotRegistry,
 	type BotRegistryController,
-	type TokenBotConfigInput,
-} from '@repo/chatbots-hub'
+} from '@repo/chatbots-adapter-kit/registry'
+import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { TelegramBot } from './bot.ts'
 import { createTelegramPluginEvents } from './events.ts'
 import type { TelegramSettingsDoc, TelegramStatusDoc } from './protocol.ts'
@@ -22,13 +20,10 @@ export type TelegramBotConfigInput = TokenBotConfigInput
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'TelegramAdapterPlugin'
-const LEGACY_TOKEN = 'bot.token'
-const LEGACY_API_BASE = 'api.base_url'
 const DEFAULT_API_BASE = 'https://api.telegram.org'
-const DEFAULT_BOT_ID = 'default'
 
-@Plugin({ name: 'TelegramAdapterPlugin' })
-export class TelegramAdapterPlugin extends BasePlugin {
+@Plugin({ name: 'TelegramPlugin' })
+export class TelegramPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<TelegramSettingsDoc>
 	private status?: ManagementStateCollection<TelegramStatusDoc>
 	private config?: TokenBotConfigStore
@@ -66,12 +61,7 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		})
 		this.settings?.removeMany({})
 		this.status?.removeMany({})
-		this.config = new TokenBotConfigStore(this.kv(), {
-			defaultApiBase: DEFAULT_API_BASE,
-			legacyTokenKey: LEGACY_TOKEN,
-			legacyApiBaseKey: LEGACY_API_BASE,
-		})
-		if (await this.config.migrateLegacy()) await this.ctx.vault.flush()
+		this.config = new TokenBotConfigStore(this.kv(), { defaultApiBase: DEFAULT_API_BASE })
 		for (const id of await this.config.list()) {
 			const stored = await this.config.read(id)
 			if (!stored) continue
@@ -82,7 +72,7 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		this.ctx.effects.defer(() => this.destroyAllBots())
 	}
 
-	bot(id = DEFAULT_BOT_ID): TelegramBot {
+	bot(id: string): TelegramBot {
 		return this.bots.require(id)
 	}
 
@@ -103,7 +93,7 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		return { ok: true }
 	}
 
-	async testBot(id = DEFAULT_BOT_ID): Promise<{ ok: boolean; message: string }> {
+	async testBot(id: string): Promise<{ ok: boolean; message: string }> {
 		try {
 			const identity = await this.bot(id).getMe()
 			return { ok: true, message: `Telegram Bot @${identity.username ?? identity.id} 鉴权成功。` }
@@ -112,44 +102,14 @@ export class TelegramAdapterPlugin extends BasePlugin {
 		}
 	}
 
-	async reconnectBot(id = DEFAULT_BOT_ID): Promise<TelegramStatusDoc> {
+	async reconnectBot(id: string): Promise<TelegramStatusDoc> {
 		await this.bot(id).$.start()
 		return this.currentStatus(id)
 	}
 
-	disconnectBot(id = DEFAULT_BOT_ID): TelegramStatusDoc {
+	disconnectBot(id: string): TelegramStatusDoc {
 		this.bot(id).$.stop()
 		return this.currentStatus(id)
-	}
-
-	/** @deprecated Prefer `upsertBot({ id, ... })`. */
-	saveSettings(input: { token?: string; apiBase?: string }): Promise<TelegramSettingsDoc> {
-		return this.upsertBot({ id: DEFAULT_BOT_ID, ...input })
-	}
-
-	/** @deprecated Prefer `removeBot(id)`. */
-	clearToken(): Promise<{ ok: true }> {
-		return this.removeBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `testBot(id)`. */
-	testConnection(): Promise<{ ok: boolean; message: string }> {
-		return this.testBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `reconnectBot(id)`. */
-	reconnect(): Promise<TelegramStatusDoc> {
-		return this.reconnectBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `disconnectBot(id)`. */
-	disconnect(): TelegramStatusDoc {
-		return this.disconnectBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `bots.require(id)` and call GramIO-native methods on the Bot. */
-	requireApi(): APIMethods {
-		return this.bot()
 	}
 
 	private installBot(id: string, token: string, apiBase: string): TelegramBot {
@@ -225,13 +185,10 @@ export class TelegramAdapterPlugin extends BasePlugin {
 	}
 
 	private configStore(): TokenBotConfigStore {
-		if (!this.config) throw new Error('TelegramAdapterPlugin is not initialized')
+		if (!this.config) throw new Error('TelegramPlugin is not initialized')
 		return this.config
 	}
 }
-
-/** Target name for new platform-specific dependencies. */
-export { TelegramAdapterPlugin as TelegramPlugin }
 
 function maskSecret(value?: string): string | null {
 	if (!value) return null
@@ -244,11 +201,11 @@ function errorMessage(error: unknown): string {
 
 declare module '@pluxel/runtime/web' {
 	interface ExtensionUiRpcMap {
-		TelegramAdapterPlugin: TelegramAdapterRpc
+		TelegramPlugin: TelegramAdapterRpc
 	}
 
 	interface ExtensionUiSignalDbMap {
-		TelegramAdapterPlugin: {
+		TelegramPlugin: {
 			settings: TelegramSettingsDoc
 			status: TelegramStatusDoc
 		}

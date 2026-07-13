@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import { cancel, confirm, isCancel, select, text } from '@clack/prompts'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser'
-import { capitalize, kebabCase, pascalCase } from './name'
-import { resolveTemplatesDir, resolveUserDocsDir } from './utils'
+import { capitalize, kebabCase, pascalCase } from './name.ts'
+import { resolveTemplatesDir, resolveUserDocsDir } from './utils.ts'
 
 const TEMPLATE_PROMPT_FILES = new Set(['prompts.json', 'prompts.jsonc'])
 const USER_DOCS_CONFIG_FILES = new Set(['user-docs.json', 'user-docs.jsonc'])

@@ -44,9 +44,25 @@ export function transportKey(ref: ChatTransportRef): string {
 	return `${ref.platform.length}:${ref.platform}${ref.accountId.length}:${ref.accountId}`
 }
 
+export function addressKey(address: ChatAddress): string {
+	const transport = transportKey(address)
+	return `${transport.length}:${transport}${address.conversationId.length}:${address.conversationId}`
+}
+
 export function conversationKey(
 	message: Pick<ChatMessage, 'platform' | 'accountId' | 'conversation'>,
 ): string {
-	const transport = transportKey(message)
-	return `${transport.length}:${transport}${message.conversation.id.length}:${message.conversation.id}`
+	return addressKey({
+		platform: message.platform,
+		accountId: message.accountId,
+		conversationId: message.conversation.id,
+	})
+}
+
+/** Stable process-independent key suitable for idempotency records. */
+export function messageKey(
+	message: Pick<ChatMessage, 'id' | 'platform' | 'accountId' | 'conversation'>,
+): string {
+	const conversation = conversationKey(message)
+	return `${conversation.length}:${conversation}${message.id.length}:${message.id}`
 }

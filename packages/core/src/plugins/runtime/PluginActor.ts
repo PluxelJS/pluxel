@@ -86,17 +86,8 @@ const stateNames = ['idle', 'starting', 'running', 'stopping', 'failing', 'stopp
 type LifecycleState = (typeof stateNames)[number]
 
 const bakedLifecycle = bakeMachine({
-	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'] as const,
-	events: [
-		'start',
-		'startOk',
-		'startErr',
-		'stop',
-		'stopOk',
-		'stopErr',
-		'asyncError',
-		'retry',
-	] as const,
+	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'],
+	events: ['start', 'startOk', 'startErr', 'stop', 'stopOk', 'stopErr', 'asyncError', 'retry'],
 	init: 'idle',
 	transitions: [
 		['idle', 'start', 'starting', 'onStart'],
@@ -111,11 +102,11 @@ const bakedLifecycle = bakeMachine({
 		['stopping', 'stopOk', 'stopped'],
 		['stopping', 'stopErr', 'stopped'],
 		['stopped', 'start', 'starting', 'onStart'],
-	] as const,
+	],
 	hooks: {
 		enter: { running: 'onEnterRunning' },
 		exit: { running: 'onExitRunning' },
-	} as const,
+	},
 	abortOnStateChange: false,
 })
 

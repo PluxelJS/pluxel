@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-	chat,
-	ChatRouter,
-	normalizeContent,
-	planChatDelivery,
-	type ChatMessage,
-} from '../src/index.ts'
+import { chat, normalizeContent, type ChatMessage } from '@repo/chatbots-contracts'
+import { ChatRouter, planChatDelivery } from '../src/index.ts'
 
 const message = (id: string, conversationId = 'room'): ChatMessage => ({
 	id,
@@ -356,4 +351,137 @@ describe('ChatRouter', () => {
 			),
 		).rejects.toThrow('rejected')
 	})
+
+	it('keeps each logical send contiguous within one conversation', async () => {
+		const router = new ChatRouter()
+		const firstStarted = deferred<void>()
+		const releaseFirst = deferred<void>()
+		const sent: string[] = []
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send(request) {
+				const text = normalizeContent(request.content)[0]
+				const value = text?.type === 'text' ? text.text : ''
+				sent.push(value)
+				if (value === 'a1') {
+					firstStarted.resolve()
+					await releaseFirst.promise
+				}
+				return { messageId: value }
+			},
+		})
+		const address = { platform: 'test', accountId: 'default', conversationId: 'room' }
+		const first = router.send(address, chat.batch('a1', 'a2'))
+		await firstStarted.promise
+		const second = router.send(address, chat.batch('b1', 'b2'))
+		await Promise.resolve()
+		expect(sent).toEqual(['a1'])
+		releaseFirst.resolve()
+		await Promise.all([first, second])
+
+		expect(sent).toEqual(['a1', 'a2', 'b1', 'b2'])
+		expect(router.snapshot()).toMatchObject({
+			outboundConversations: 0,
+			pendingSends: 0,
+			runningSends: 0,
+		})
+	})
+
+	it('keeps unrelated outbound conversations concurrent', async () => {
+		const router = new ChatRouter()
+		const started = new Set<string>()
+		const bothStarted = deferred<void>()
+		const release = deferred<void>()
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send(request) {
+				started.add(request.conversationId)
+				if (started.size === 2) bothStarted.resolve()
+				await release.promise
+				return { messageId: request.conversationId }
+			},
+		})
+		const send = (conversationId: string) =>
+			router.send({ platform: 'test', accountId: 'default', conversationId }, 'hello')
+		const tasks = [send('one'), send('two')]
+		await bothStarted.promise
+		expect(started).toEqual(new Set(['one', 'two']))
+		release.resolve()
+		await Promise.all(tasks)
+	})
+
+	it('bounds inbound and outbound queues without poisoning retries', async () => {
+		const router = new ChatRouter(undefined, {
+			maxPendingReceivesPerConversation: 1,
+			maxPendingSendsPerConversation: 1,
+		})
+		const receiveGate = deferred<void>()
+		const sendGate = deferred<void>()
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				await sendGate.promise
+				return { messageId: 'sent' }
+			},
+		})
+		router.registerHandler({ id: 'wait', handle: () => receiveGate.promise })
+
+		const firstReceive = router.receive(message('first'))
+		await expect(router.receive(message('retry'))).rejects.toThrow('receive queue is full')
+		const firstSend = router.send(
+			{ platform: 'test', accountId: 'default', conversationId: 'room' },
+			'first',
+		)
+		await expect(
+			router.send({ platform: 'test', accountId: 'default', conversationId: 'room' }, 'second'),
+		).rejects.toThrow('send queue is full')
+
+		receiveGate.resolve()
+		sendGate.resolve()
+		await Promise.all([firstReceive, firstSend])
+		await router.receive(message('retry'))
+		expect(router.snapshot()).toMatchObject({ rejectedReceives: 1, rejectedSends: 1 })
+	})
+
+	it('bounds shutdown when a handler ignores cancellation', async () => {
+		const warnings: string[] = []
+		const router = new ChatRouter(
+			{ debug() {}, warn: (message) => void warnings.push(message) },
+			{ drainTimeoutMs: 5 },
+		)
+		router.registerTransport({
+			platform: 'test',
+			accountId: 'default',
+			async send() {
+				return { messageId: 'sent' }
+			},
+		})
+		const started = deferred<void>()
+		router.registerHandler({
+			id: 'stuck',
+			async handle() {
+				started.resolve()
+				await new Promise(() => {})
+			},
+		})
+		void router.receive(message('stuck'))
+		await started.promise
+		await router.close()
+
+		expect(warnings).toContain('Chat router drain timed out')
+		expect(router.snapshot().drainTimeouts).toBe(1)
+	})
 })
+
+function deferred<Value>() {
+	let resolve!: (value: Value | PromiseLike<Value>) => void
+	let reject!: (reason?: unknown) => void
+	const promise = new Promise<Value>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise
+		reject = rejectPromise
+	})
+	return { promise, resolve, reject }
+}

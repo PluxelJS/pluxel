@@ -15,6 +15,7 @@
    - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
    - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
 4. [`GOVERNANCE.md`](GOVERNANCE.md)：依赖方向、导出和文档维护规则。
+5. [`RELEASING.md`](RELEASING.md)：维护者工具版本、Changesets 与可信发布流程。
 
 ## 文档职责
 

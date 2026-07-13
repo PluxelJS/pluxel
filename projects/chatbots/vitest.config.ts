@@ -6,11 +6,17 @@ const packageAlias = (name: string) => ({
 	replacement: resolve(import.meta.dirname, `packages/${name}/src/index.ts`),
 })
 
+const packageSubpathAlias = (name: string) => ({
+	find: new RegExp(`^@repo/chatbots-${name}/(.+)$`),
+	replacement: resolve(import.meta.dirname, `packages/${name}/src/$1.ts`),
+})
+
 export default definePluxelVitestConfig({
 	root: import.meta.dirname,
 	resolve: {
 		alias: [
 			packageAlias('access'),
+			packageSubpathAlias('adapter-kit'),
 			packageAlias('contracts'),
 			packageAlias('hub'),
 			packageAlias('commands'),

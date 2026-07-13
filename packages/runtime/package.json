@@ -2,6 +2,11 @@
 	"name": "@pluxel/runtime",
 	"version": "0.3.0",
 	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/runtime"
+	},
 	"files": [
 		"!**/*.map",
 		"dist"

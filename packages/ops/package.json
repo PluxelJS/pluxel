@@ -2,6 +2,11 @@
 	"name": "@pluxel/ops",
 	"version": "0.1.0",
 	"description": "Schema-first operation kernel for Pluxel control-plane adapters",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/ops"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"

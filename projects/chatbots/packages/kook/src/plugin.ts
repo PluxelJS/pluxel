@@ -2,16 +2,15 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
+import { TokenBotConfigStore, type TokenBotConfigInput } from '@repo/chatbots-adapter-kit/config'
 import {
-	ChatHubPlugin,
-	TokenBotConfigStore,
-	createCapabilityRef,
 	createBotRegistry,
 	type BotRegistry,
 	type BotRegistryController,
-	type TokenBotConfigInput,
-} from '@repo/chatbots-hub'
-import type { KookAutoApi, Result } from './api/types.ts'
+} from '@repo/chatbots-adapter-kit/registry'
+import { ChatHubPlugin } from '@repo/chatbots-hub'
+import type { Result } from './api/types.ts'
 import { KookBot } from './bot.ts'
 import { createKookPluginEvents } from './events.ts'
 import type { KookSettingsDoc, KookStatusDoc } from './protocol.ts'
@@ -22,13 +21,10 @@ export type KookBotConfigInput = TokenBotConfigInput
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'KookAdapterPlugin'
-const LEGACY_TOKEN = 'bot.token'
-const LEGACY_API_BASE = 'api.base_url'
 const DEFAULT_API_BASE = 'https://www.kookapp.cn'
-const DEFAULT_BOT_ID = 'default'
 
-@Plugin({ name: 'KookAdapterPlugin', startTimeoutMs: 10_000 })
-export class KookAdapterPlugin extends BasePlugin {
+@Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
+export class KookPlugin extends BasePlugin {
 	private settings?: ManagementStateCollection<KookSettingsDoc>
 	private status?: ManagementStateCollection<KookStatusDoc>
 	private config?: TokenBotConfigStore
@@ -66,12 +62,7 @@ export class KookAdapterPlugin extends BasePlugin {
 		})
 		this.settings?.removeMany({})
 		this.status?.removeMany({})
-		this.config = new TokenBotConfigStore(this.kv(), {
-			defaultApiBase: DEFAULT_API_BASE,
-			legacyTokenKey: LEGACY_TOKEN,
-			legacyApiBaseKey: LEGACY_API_BASE,
-		})
-		if (await this.config.migrateLegacy()) await this.ctx.vault.flush()
+		this.config = new TokenBotConfigStore(this.kv(), { defaultApiBase: DEFAULT_API_BASE })
 		for (const id of await this.config.list()) {
 			const stored = await this.config.read(id)
 			if (!stored) continue
@@ -82,7 +73,7 @@ export class KookAdapterPlugin extends BasePlugin {
 		this.ctx.effects.defer(() => this.destroyAllBots())
 	}
 
-	bot(id = DEFAULT_BOT_ID): KookBot {
+	bot(id: string): KookBot {
 		return this.bots.require(id)
 	}
 
@@ -103,7 +94,7 @@ export class KookAdapterPlugin extends BasePlugin {
 		return { ok: true }
 	}
 
-	async testBot(id = DEFAULT_BOT_ID): Promise<{ ok: boolean; message: string }> {
+	async testBot(id: string): Promise<{ ok: boolean; message: string }> {
 		try {
 			const identity = unwrap(await this.bot(id).getUserMe())
 			return { ok: true, message: `KOOK Bot ${identity.username ?? identity.id} 鉴权成功。` }
@@ -112,44 +103,14 @@ export class KookAdapterPlugin extends BasePlugin {
 		}
 	}
 
-	async reconnectBot(id = DEFAULT_BOT_ID): Promise<KookStatusDoc> {
+	async reconnectBot(id: string): Promise<KookStatusDoc> {
 		await this.bot(id).$.start()
 		return this.currentStatus(id)
 	}
 
-	disconnectBot(id = DEFAULT_BOT_ID): KookStatusDoc {
+	disconnectBot(id: string): KookStatusDoc {
 		this.bot(id).$.stop()
 		return this.currentStatus(id)
-	}
-
-	/** @deprecated Prefer `upsertBot({ id, ... })`. */
-	saveSettings(input: { token?: string; apiBase?: string }): Promise<KookSettingsDoc> {
-		return this.upsertBot({ id: DEFAULT_BOT_ID, ...input })
-	}
-
-	/** @deprecated Prefer `removeBot(id)`. */
-	clearToken(): Promise<{ ok: true }> {
-		return this.removeBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `testBot(id)`. */
-	testConnection(): Promise<{ ok: boolean; message: string }> {
-		return this.testBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `reconnectBot(id)`. */
-	reconnect(): Promise<KookStatusDoc> {
-		return this.reconnectBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `disconnectBot(id)`. */
-	disconnect(): KookStatusDoc {
-		return this.disconnectBot(DEFAULT_BOT_ID)
-	}
-
-	/** @deprecated Prefer `bots.require(id)` and call native methods on the Bot. */
-	requireApi(): KookAutoApi {
-		return this.bot()
 	}
 
 	private installBot(id: string, token: string, apiBase: string): KookBot {
@@ -231,13 +192,10 @@ export class KookAdapterPlugin extends BasePlugin {
 	}
 
 	private configStore(): TokenBotConfigStore {
-		if (!this.config) throw new Error('KookAdapterPlugin is not initialized')
+		if (!this.config) throw new Error('KookPlugin is not initialized')
 		return this.config
 	}
 }
-
-/** Target name for new platform-specific dependencies. */
-export { KookAdapterPlugin as KookPlugin }
 
 function unwrap<Value>(result: Result<Value>): Value {
 	if (result.ok === true) return result.data
@@ -256,11 +214,11 @@ function errorMessage(error: unknown): string {
 
 declare module '@pluxel/runtime/web' {
 	interface ExtensionUiRpcMap {
-		KookAdapterPlugin: KookAdapterRpc
+		KookPlugin: KookAdapterRpc
 	}
 
 	interface ExtensionUiSignalDbMap {
-		KookAdapterPlugin: {
+		KookPlugin: {
 			settings: KookSettingsDoc
 			status: KookStatusDoc
 		}

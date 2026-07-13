@@ -50,11 +50,8 @@ jobs:
       BASE_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - name: Prepare git
-        run: git config --global core.autocrlf false
-
       - name: Checkout head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
@@ -63,10 +60,24 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "$BASE_BRANCH"
 
-      - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+      - name: Install toolchain
+        uses: jdx/mise-action@v4
         with:
-          install: 'false'
+          cache: true
+          install: true
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dependency cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-pnpm-
 
       - name: Run base/head benchmark comparison
         env:

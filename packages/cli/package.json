@@ -2,6 +2,11 @@
 	"name": "@pluxel/cli",
 	"version": "0.3.0",
 	"description": "Pluxel CLI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/cli"
+	},
 	"bin": {
 		"pluxel": "bin/pluxel.mjs"
 	},
@@ -20,10 +25,10 @@
 		}
 	},
 	"scripts": {
-		"dev": "bun src/cli.ts new --dry-run --no-install",
+		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"test:templates": "tsx scripts/smoke-app-monorepo.ts"
+		"test:templates": "node scripts/smoke-app-monorepo.ts"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
@@ -45,7 +50,6 @@
 		"ink": "^6.8.0",
 		"react": "^19.2.7",
 		"tsdown": "^0.22.3",
-		"tsx": "^4.23.0",
 		"typescript": "^6.0.3"
 	},
 	"peerDependencies": {

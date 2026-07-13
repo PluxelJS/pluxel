@@ -1,7 +1,7 @@
 import { Context } from '@pluxel/core'
 import type { Bench, FnOptions } from 'tinybench'
-import { TASK, type TaskName } from './catalog'
-import { ensureOk, type Ctx, type Scenario } from './scenario'
+import { TASK, type TaskName } from './catalog.ts'
+import { ensureOk, type Ctx, type Scenario } from './scenario.ts'
 
 const isContext = (value: unknown): value is Ctx =>
 	typeof value === 'object' &&
@@ -65,11 +65,7 @@ function steadyTask(
 	)
 }
 
-function coldTask(
-	bench: Bench,
-	name: TaskName,
-	run: (ctx: Ctx) => Promise<void> | void,
-) {
+function coldTask(bench: Bench, name: TaskName, run: (ctx: Ctx) => Promise<void> | void) {
 	return bench.add(name, async () => {
 		let ctx: Ctx | undefined
 		const start = bench.now()

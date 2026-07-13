@@ -4,7 +4,7 @@ import {
 	type ChatBlock,
 	type ChatMessage,
 	type ChatTransportCapabilities,
-} from '@repo/chatbots-hub'
+} from '@repo/chatbots-contracts'
 import {
 	KOOK_FILE,
 	KOOK_IMAGE,

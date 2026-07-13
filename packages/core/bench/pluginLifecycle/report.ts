@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { DECISION_SIGNALS, type TaskMetadata } from './catalog'
+import { DECISION_SIGNALS, type TaskMetadata } from './catalog.ts'
 import type {
 	Bench,
 	TaskResult,
@@ -122,7 +122,9 @@ export const resolveReferencePath = (input: string): string | null => {
 	return null
 }
 
-export function loadReferenceReport(referencePath: string | null | undefined): ReferenceReport | null {
+export function loadReferenceReport(
+	referencePath: string | null | undefined,
+): ReferenceReport | null {
 	if (!referencePath || !existsSync(referencePath)) return null
 	try {
 		const parsed = JSON.parse(readFileSync(referencePath, 'utf8'))
@@ -160,8 +162,7 @@ export function buildComparison(rows: BenchRow[], referenceReport: ReferenceRepo
 		const referenceOpsMean = reference?.opsMean ?? null
 		const referenceLatencyMeanMs = reference?.latencyMeanMs ?? null
 		const referenceLatencyRmePct = reference?.latencyRmePct ?? null
-		const opsDelta =
-			referenceOpsMean == null ? null : ratioPct(row.opsMean, referenceOpsMean)
+		const opsDelta = referenceOpsMean == null ? null : ratioPct(row.opsMean, referenceOpsMean)
 		const latencyDelta =
 			referenceLatencyMeanMs == null ? null : ratioPct(row.latencyMeanMs, referenceLatencyMeanMs)
 		const referenceReliable =
@@ -332,9 +333,7 @@ export function renderMarkdown(input: {
 	const { report, taskMetadata, regressionTolerancePct } = input
 	const tracked = report.comparison.filter((row) => row.status === 'measured')
 	const regressions = tracked.filter((row) => isLatencyRegression(row, regressionTolerancePct))
-	const regressionRows = regressions
-		.slice()
-		.sort((a, b) => regressionScore(b) - regressionScore(a))
+	const regressionRows = regressions.slice().sort((a, b) => regressionScore(b) - regressionScore(a))
 	const hotspotRows = report.tasks
 		.slice()
 		.sort((a, b) => b.latencyMeanMs - a.latencyMeanMs)
@@ -375,9 +374,7 @@ export function renderMarkdown(input: {
 						(row) =>
 							`| ${row.name} | ${taskMetadata[row.name]?.area ?? 'unknown'} | ${pctDisplay(
 								row.latencyDeltaPct,
-							)} | ${display(
-								row.latencyMeanMs,
-							)} | ${display(row.referenceLatencyMeanMs)} |`,
+							)} | ${display(row.latencyMeanMs)} | ${display(row.referenceLatencyMeanMs)} |`,
 					),
 				]
 			: ['None.']),

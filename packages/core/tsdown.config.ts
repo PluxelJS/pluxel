@@ -1,5 +1,6 @@
 import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'tsdown'
+import Macros from 'unplugin-macros/rolldown'
 
 const moduleAugmentationMap = {
 	'@pluxel/context': '@pluxel/core',
@@ -36,7 +37,7 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
-	plugins: [createModuleRewritePlugin()],
+	plugins: [Macros(), createModuleRewritePlugin()],
 	sourcemap: true,
 	clean: true,
 	minify: true,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TokenBotConfigStore } from '../src/index.ts'
+import { TokenBotConfigStore } from '../src/config.ts'
 
 class MemoryKv {
 	readonly values = new Map<string, unknown>()
@@ -31,23 +31,6 @@ describe('TokenBotConfigStore', () => {
 			token: 'secret-a',
 			apiBase: 'https://next.test',
 		})
-	})
-
-	it('migrates and removes legacy single-account keys without overwriting new data', async () => {
-		const kv = new MemoryKv()
-		const store = new TokenBotConfigStore(kv, {
-			defaultApiBase: 'https://api.test',
-			legacyTokenKey: 'bot.token',
-			legacyApiBaseKey: 'api.base_url',
-		})
-		await kv.set('bot.token', 'legacy')
-		await kv.set('api.base_url', 'https://legacy.test')
-		expect(await store.migrateLegacy()).toBe(true)
-		expect(await store.read('default')).toMatchObject({
-			token: 'legacy',
-			apiBase: 'https://legacy.test',
-		})
-		expect(await kv.get('bot.token')).toBeUndefined()
 	})
 
 	it('serializes mutations for one bot so later configuration wins', async () => {

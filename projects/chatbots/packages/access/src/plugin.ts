@@ -1,7 +1,8 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
 import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
-import { ChatHubPlugin, type ChatMessage } from '@repo/chatbots-hub'
+import type { ChatMessage } from '@repo/chatbots-contracts'
+import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
 	createEmptyAccessState,
 	type AccessOverviewDoc,
@@ -12,7 +13,8 @@ import {
 	type PermissionGrant,
 } from './model.ts'
 import { ChatAccessRpc } from './rpc.ts'
-import { ChatAccessDomain } from './service.ts'
+import { ChatAccessDomain, type ChatAccessChange } from './service.ts'
+import { CoalescedSnapshotWriter } from './snapshot-writer.ts'
 import { normalizeAccessState } from './state.ts'
 
 const pluginUi = ui(import.meta.url, './ui/index.tsx')
@@ -25,14 +27,23 @@ export class ChatAccessPlugin extends BasePlugin {
 	private overview?: ManagementStateCollection<AccessOverviewDoc>
 	private usersProjection?: ManagementStateCollection<ChatUser>
 	private rolesProjection?: ManagementStateCollection<ChatRole>
-	private saveTail = Promise.resolve()
+	private snapshotWriter?: CoalescedSnapshotWriter
 
 	constructor(private readonly hub: ChatHubPlugin) {
 		super()
 	}
 
 	override async init(): Promise<void> {
-		this.domain = new ChatAccessDomain(await this.loadState(), (kind) => this.changed(kind))
+		this.domain = new ChatAccessDomain(await this.loadState(), (change) => this.changed(change))
+		this.snapshotWriter = new CoalescedSnapshotWriter(
+			() => this.domain.serialize(),
+			(snapshot) =>
+				this.ctx.root.persistence
+					.namespace(STORAGE_NAMESPACE)
+					.put(STORAGE_KEY, snapshot, { atomic: true }),
+			(error) => this.ctx.logger.warn('Failed to persist chat access state', { error }),
+		)
+		this.ctx.effects.defer(() => this.snapshotWriter?.drain())
 		this.ctx.effects.defer(
 			this.hub.registerObserver('chatbots.access.identity', (message) => {
 				this.domain.resolveMessage(message)
@@ -51,7 +62,6 @@ export class ChatAccessPlugin extends BasePlugin {
 			web.ui.register(pluginUi)
 			web.rpc.expose(() => new ChatAccessRpc(this))
 		})
-		this.ctx.effects.defer(() => this.saveTail)
 	}
 
 	resolveMessage(message: ChatMessage) {
@@ -108,17 +118,27 @@ export class ChatAccessPlugin extends BasePlugin {
 		}
 	}
 
-	private changed(kind: 'state' | 'declarations'): void {
-		this.refreshProjection()
-		if (kind === 'declarations') return
-		const snapshot = this.domain.serialize()
-		this.saveTail = this.saveTail
-			.then(() =>
-				this.ctx.root.persistence
-					.namespace(STORAGE_NAMESPACE)
-					.put(STORAGE_KEY, snapshot, { atomic: true }),
-			)
-			.catch((error) => this.ctx.logger.warn('Failed to persist chat access state', { error }))
+	private changed(change: ChatAccessChange): void {
+		if (change.kind === 'state') this.snapshotWriter?.request()
+		try {
+			this.applyProjection(change)
+			this.refreshOverview()
+		} catch (error) {
+			this.ctx.logger.warn('Failed to update chat access management projection', { error })
+		}
+	}
+
+	private applyProjection(change: ChatAccessChange): void {
+		for (const id of change.userIds ?? []) {
+			const user = this.domain.getUser(id)
+			if (user) this.usersProjection?.replaceOne({ id }, user, { upsert: true })
+		}
+		for (const id of change.removedUserIds ?? []) this.usersProjection?.removeOne({ id })
+		for (const id of change.roleIds ?? []) {
+			const role = this.domain.getRole(id)
+			if (role) this.rolesProjection?.replaceOne({ id }, role, { upsert: true })
+		}
+		for (const id of change.removedRoleIds ?? []) this.rolesProjection?.removeOne({ id })
 	}
 
 	private refreshProjection(): void {
@@ -128,14 +148,16 @@ export class ChatAccessPlugin extends BasePlugin {
 		for (const user of users) this.usersProjection?.insert(user)
 		this.rolesProjection?.removeMany({})
 		for (const role of roles) this.rolesProjection?.insert(role)
+		this.refreshOverview()
+	}
+
+	private refreshOverview(): void {
+		const summary = this.domain.overview()
 		this.overview?.replaceOne(
 			{ id: 'overview' },
 			{
 				id: 'overview',
-				users: users.length,
-				identities: users.reduce((sum, user) => sum + user.identities.length, 0),
-				roles: roles.length,
-				permissions: this.domain.listPermissions().length,
+				...summary,
 				updatedAt: Date.now(),
 			},
 			{ upsert: true },

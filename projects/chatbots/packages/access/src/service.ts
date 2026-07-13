@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@repo/chatbots-hub'
+import type { ChatMessage } from '@repo/chatbots-contracts'
 import {
 	identityKey,
 	type AccessState,
@@ -9,6 +9,14 @@ import {
 	type PermissionGrant,
 } from './model.ts'
 import { decideGrants, normalizePermissionNode } from './policy.ts'
+
+export type ChatAccessChange = {
+	kind: 'state' | 'declarations'
+	userIds?: readonly string[]
+	removedUserIds?: readonly string[]
+	roleIds?: readonly string[]
+	removedRoleIds?: readonly string[]
+}
 
 /** Pure identity and authorization domain; no Context, persistence or management dependencies. */
 export class ChatAccessDomain {
@@ -24,7 +32,7 @@ export class ChatAccessDomain {
 
 	constructor(
 		private readonly state: AccessState,
-		private readonly onChange: (kind: 'state' | 'declarations') => void,
+		private readonly onChange: (change: ChatAccessChange) => void,
 	) {
 		for (const user of state.users) {
 			this.usersById.set(user.id, user)
@@ -48,7 +56,7 @@ export class ChatAccessDomain {
 				Object.assign(stored, identity)
 				existing.displayName = identity.displayName ?? identity.username ?? existing.displayName
 				existing.updatedAt = Date.now()
-				this.onChange('state')
+				this.onChange({ kind: 'state', userIds: [existing.id] })
 			}
 			return existing
 		}
@@ -63,7 +71,7 @@ export class ChatAccessDomain {
 		this.state.users.push(user)
 		this.usersById.set(user.id, user)
 		this.usersByIdentity.set(key, user)
-		this.onChange('state')
+		this.onChange({ kind: 'state', userIds: [user.id] })
 		return user
 	}
 
@@ -72,6 +80,22 @@ export class ChatAccessDomain {
 	}
 	listRoles(): ChatRole[] {
 		return structuredClone(this.state.roles)
+	}
+	getUser(id: string): ChatUser | undefined {
+		const user = this.usersById.get(id)
+		return user ? structuredClone(user) : undefined
+	}
+	getRole(id: string): ChatRole | undefined {
+		const role = this.rolesById.get(id)
+		return role ? structuredClone(role) : undefined
+	}
+	overview(): { users: number; identities: number; roles: number; permissions: number } {
+		return {
+			users: this.usersById.size,
+			identities: this.usersByIdentity.size,
+			roles: this.rolesById.size,
+			permissions: this.declarations.size,
+		}
 	}
 	listPermissions(): PermissionDeclaration[] {
 		return structuredClone(
@@ -135,7 +159,11 @@ export class ChatAccessDomain {
 		this.rolePlans.delete(source.id)
 		this.state.users.splice(this.state.users.indexOf(source), 1)
 		this.usersById.delete(source.id)
-		this.onChange('state')
+		this.onChange({
+			kind: 'state',
+			userIds: [target.id],
+			removedUserIds: [source.id],
+		})
 		return structuredClone(target)
 	}
 
@@ -154,7 +182,7 @@ export class ChatAccessDomain {
 		this.declarations.set(declaration.node, declaration)
 		this.declarationRefs.set(declaration.node, 1)
 		this.declarationPlan = undefined
-		this.onChange('declarations')
+		this.onChange({ kind: 'declarations' })
 		return this.declarationDisposer(declaration.node)
 	}
 
@@ -180,7 +208,7 @@ export class ChatAccessDomain {
 		const index = grants.findIndex((item) => item.node === normalized.node)
 		if (index < 0) grants.push(normalized)
 		else grants[index] = normalized
-		this.onChange('state')
+		this.onChange({ kind: 'state' })
 	}
 
 	revokeUserGrant(userId: string, nodeInput: string): void {
@@ -189,7 +217,7 @@ export class ChatAccessDomain {
 		const next = current.filter((item) => item.node !== node)
 		if (next.length === current.length) return
 		this.state.userGrants[userId] = next
-		this.onChange('state')
+		this.onChange({ kind: 'state' })
 	}
 
 	upsertRole(input: ChatRole): ChatRole {
@@ -209,7 +237,7 @@ export class ChatAccessDomain {
 		else this.state.roles[index] = role
 		this.rolesById.set(role.id, role)
 		this.rolePlans.clear()
-		this.onChange('state')
+		this.onChange({ kind: 'state', roleIds: [role.id] })
 		return structuredClone(role)
 	}
 
@@ -220,7 +248,7 @@ export class ChatAccessDomain {
 		if (!roles.includes(roleId)) {
 			roles.push(roleId)
 			this.rolePlans.delete(userId)
-			this.onChange('state')
+			this.onChange({ kind: 'state' })
 		}
 	}
 
@@ -230,7 +258,7 @@ export class ChatAccessDomain {
 		if (next.length === roles.length) return
 		this.state.userRoles[userId] = next
 		this.rolePlans.delete(userId)
-		this.onChange('state')
+		this.onChange({ kind: 'state' })
 	}
 
 	deleteRole(roleId: string): void {
@@ -241,7 +269,7 @@ export class ChatAccessDomain {
 		for (const [userId, roles] of Object.entries(this.state.userRoles))
 			this.state.userRoles[userId] = roles.filter((id) => id !== roleId)
 		this.rolePlans.clear()
-		this.onChange('state')
+		this.onChange({ kind: 'state', removedRoleIds: [roleId] })
 	}
 
 	accessForUser(userId: string) {
@@ -300,7 +328,7 @@ export class ChatAccessDomain {
 		this.declarationRefs.delete(node)
 		if (this.declarations.delete(node)) {
 			this.declarationPlan = undefined
-			this.onChange('declarations')
+			this.onChange({ kind: 'declarations' })
 		}
 	}
 }

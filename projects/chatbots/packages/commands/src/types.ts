@@ -1,5 +1,6 @@
 import type { ChatUser, PermissionEffect } from '@repo/chatbots-access'
-import type { ChatHandlerContext, ChatPayload } from '@repo/chatbots-hub'
+import type { ChatPayload } from '@repo/chatbots-contracts'
+import type { ChatHandlerContext } from '@repo/chatbots-hub'
 
 export type ParsedCommandLine = {
 	tokens: string[]

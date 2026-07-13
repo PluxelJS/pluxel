@@ -17,6 +17,7 @@
 		"skipLibCheck": true,
 		"paths": {
 			"@pluxel/components": ["./src/types/pluxel-components.d.ts"],
+			"@repo/chatbots-adapter-kit/*": ["./packages/adapter-kit/src/*.ts"],
 			"@repo/chatbots-access": ["./packages/access/src/index.ts"],
 			"@repo/chatbots-builtins": ["./packages/builtins/src/index.ts"],
 			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"],

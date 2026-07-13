@@ -1,0 +1,16 @@
+{
+	"name": "@repo/chatbots-adapter-kit",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./backoff": "./src/backoff.ts",
+		"./capability-ref": "./src/capability-ref.ts",
+		"./config": "./src/config.ts",
+		"./registry": "./src/registry.ts",
+		"./scope": "./src/scope.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit --pretty false",
+		"test": "vitest run --config ../../vitest.config.ts tests"
+	}
+}

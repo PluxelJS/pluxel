@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
-import { createCapabilityRef, type ChatTransport } from '@repo/chatbots-hub'
+import { createCapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
+import type { ChatTransport } from '@repo/chatbots-contracts'
 import { createTelegramClient, TELEGRAM_ENDPOINTS, TELEGRAM_UPDATE_KEYS } from '../src/api/index.ts'
 import { TELEGRAM_TRANSPORT_CAPABILITIES, telegramOutboundPayload } from '../src/codec.ts'
 import { createTelegramPluginEvents, dispatchTelegramUpdate } from '../src/events.ts'
@@ -135,6 +136,67 @@ describe('Telegram API client', () => {
 		expect(onStatus.mock.calls.at(-1)?.[0].polling.lastUpdateId).toBe(9)
 		bot.$.destroy()
 		await runtime.dispose()
+	})
+
+	it('advances polling offsets only after Hub accepts an update', async () => {
+		vi.useFakeTimers()
+		const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+		const runtime = createRuntimeContext()
+		const binding = createCapabilityRef<{
+			registerTransport(transport: ChatTransport): () => void
+			receive(): Promise<void>
+		}>()
+		const receive = vi
+			.fn<() => Promise<void>>()
+			.mockRejectedValueOnce(new Error('queue full'))
+			.mockResolvedValue(undefined)
+		binding.controller.set({ registerTransport: () => () => {}, receive })
+		const offsets: string[] = []
+		let polls = 0
+		const update = {
+			update_id: 9,
+			message: {
+				message_id: 1,
+				date: 1,
+				chat: { id: 1, type: 'private' },
+				text: 'hello',
+			},
+		}
+		const bot = new TelegramBot({
+			id: 'checkpoint',
+			ctx: runtime.ctx,
+			token: 'secret',
+			hub: binding.ref,
+			fetch: async (input, init) => {
+				const url = new URL(String(input))
+				if (url.pathname.endsWith('/getMe'))
+					return Response.json({
+						ok: true,
+						result: { id: 1, is_bot: true, first_name: 'Bot' },
+					})
+				offsets.push(url.searchParams.get('offset') ?? '')
+				if (polls++ < 2) return Response.json({ ok: true, result: [update] })
+				return new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+						once: true,
+					})
+				})
+			},
+		})
+
+		try {
+			await bot.$.start()
+			await vi.waitFor(() => expect(receive).toHaveBeenCalledTimes(1))
+			expect(bot.$.status.polling.offset).toBe(0)
+			await vi.advanceTimersByTimeAsync(2_000)
+			await vi.waitFor(() => expect(bot.$.status.polling.offset).toBe(10))
+			expect(offsets.slice(0, 2)).toEqual(['0', '0'])
+		} finally {
+			bot.$.destroy()
+			await runtime.dispose()
+			random.mockRestore()
+			vi.useRealTimers()
+		}
 	})
 
 	it('inlines a complete endpoint inventory onto one shared prototype', async () => {

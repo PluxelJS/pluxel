@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Bench } from 'tinybench'
 import { ContainerBuilder } from 'diod'
-import { DraftGraph, Runtime, classProvider } from '../src'
+import { DraftGraph, Runtime, classProvider } from '../dist/index.mjs'
 
 type BenchCase = {
 	id: string
@@ -80,10 +80,7 @@ const createCoreStar = (count: number) => {
 	const Base = namedClass('CoreBase') as ClassCtor
 	const RootA = namedClass('CoreRootA', Base as any) as ClassCtor
 	const RootB = namedClass('CoreRootB', Base as any) as ClassCtor
-	const leafs = Array.from(
-		{ length: count },
-		(_, i) => namedClass(`CoreLeaf${i}`) as ClassCtor,
-	)
+	const leafs = Array.from({ length: count }, (_, i) => namedClass(`CoreLeaf${i}`) as ClassCtor)
 	const extraLeaf = namedClass('CoreExtraLeaf') as ClassCtor
 	const draft = new DraftGraph()
 	draft.put(classProvider({ key: RootA, tokens: [Base], use: RootA, deps: [] }))
@@ -97,10 +94,7 @@ const createDiodStar = (count: number) => {
 	const Base = namedClass('DiodBase') as ClassCtor
 	const RootA = namedClass('DiodRootA', Base as any) as ClassCtor
 	const RootB = namedClass('DiodRootB', Base as any) as ClassCtor
-	const leafs = Array.from(
-		{ length: count },
-		(_, i) => namedClass(`DiodLeaf${i}`) as ClassCtor,
-	)
+	const leafs = Array.from({ length: count }, (_, i) => namedClass(`DiodLeaf${i}`) as ClassCtor)
 	const extraLeaf = namedClass('DiodExtraLeaf') as ClassCtor
 	const builder = new ContainerBuilder()
 	builder.registerAndUse(RootA).withDependencies([]).asSingleton().addAlias(Base)
@@ -255,7 +249,8 @@ const createCases = (): BenchCase[] => {
 			id: 'hot-retarget-base-star',
 			label: `Hot base retarget star x${STAR_SIZE}`,
 			runCoreDi: () => {
-				const nextRoot = coreCurrentRoot === replaceCore.RootA ? replaceCore.RootB : replaceCore.RootA
+				const nextRoot =
+					coreCurrentRoot === replaceCore.RootA ? replaceCore.RootB : replaceCore.RootA
 				replaceCore.draft.remove(coreCurrentRoot)
 				replaceCore.draft.put(
 					classProvider({
@@ -354,9 +349,7 @@ const median = (values: readonly number[]): number => {
 	if (values.length === 0) return Number.NaN
 	const sorted = [...values].sort((a, b) => a - b)
 	const mid = Math.floor(sorted.length / 2)
-	return sorted.length % 2 === 0
-		? (sorted[mid - 1]! + sorted[mid]!) / 2
-		: sorted[mid]!
+	return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!
 }
 
 const taskPeriod = (task: BenchTask | undefined): number => {
@@ -428,11 +421,12 @@ const table = comparison.map((row) => ({
 	Scenario: row.label,
 	'core-di ops/s': row.coreOps.toFixed(0),
 	'diod ops/s': row.diodOps.toFixed(0),
-		'core-di us/op': row.coreLatencyUs.toFixed(2),
-		'diod us/op': row.diodLatencyUs.toFixed(2),
-		Speedup: row.speedup >= 1 ? `${row.speedup.toFixed(2)}x` : `${(1 / row.speedup).toFixed(2)}x slower`,
-		Winner: row.winner,
-	}))
+	'core-di us/op': row.coreLatencyUs.toFixed(2),
+	'diod us/op': row.diodLatencyUs.toFixed(2),
+	Speedup:
+		row.speedup >= 1 ? `${row.speedup.toFixed(2)}x` : `${(1 / row.speedup).toFixed(2)}x slower`,
+	Winner: row.winner,
+}))
 
 console.table(table)
 

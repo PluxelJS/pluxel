@@ -1,8 +1,8 @@
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import type { TelegramAdapterPlugin } from './plugin.ts'
+import type { TelegramPlugin } from './plugin.ts'
 
 export class TelegramAdapterRpc extends RpcTarget {
-	constructor(private readonly plugin: TelegramAdapterPlugin) {
+	constructor(private readonly plugin: TelegramPlugin) {
 		super()
 	}
 	upsertBot(input: { id: string; token?: string; apiBase?: string }) {
@@ -19,20 +19,5 @@ export class TelegramAdapterRpc extends RpcTarget {
 	}
 	disconnectBot(id: string) {
 		return this.plugin.disconnectBot(id)
-	}
-	saveSettings(input: { token?: string; apiBase?: string }) {
-		return this.plugin.saveSettings(input)
-	}
-	clearToken() {
-		return this.plugin.clearToken()
-	}
-	testConnection() {
-		return this.plugin.testConnection()
-	}
-	reconnect() {
-		return this.plugin.reconnect()
-	}
-	disconnect() {
-		return this.plugin.disconnect()
 	}
 }

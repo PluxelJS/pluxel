@@ -22,15 +22,11 @@ export interface BotConfigKv {
 export type TokenBotConfigStoreOptions = {
 	defaultApiBase: string
 	prefix?: string
-	legacyTokenKey?: string
-	legacyApiBaseKey?: string
-	defaultBotId?: string
 }
 
 /** Optional Vault-KV layout helper for token + API-base platform accounts. */
 export class TokenBotConfigStore {
 	private readonly prefix: string
-	private readonly defaultBotId: string
 	private readonly mutationTails = new Map<string, Promise<void>>()
 
 	constructor(
@@ -38,7 +34,6 @@ export class TokenBotConfigStore {
 		private readonly options: TokenBotConfigStoreOptions,
 	) {
 		this.prefix = options.prefix ?? 'bots.'
-		this.defaultBotId = normalizeBotId(options.defaultBotId ?? 'default')
 	}
 
 	async list(): Promise<string[]> {
@@ -90,24 +85,6 @@ export class TokenBotConfigStore {
 			])
 			return id
 		})
-	}
-
-	async migrateLegacy(): Promise<boolean> {
-		const tokenKey = this.options.legacyTokenKey
-		if (!tokenKey) return false
-		const token = await this.kv.get<string>(tokenKey)
-		if (!token) return false
-		const apiBaseKey = this.options.legacyApiBaseKey
-		const existing = await this.read(this.defaultBotId)
-		if (!existing) {
-			const legacyApiBase = apiBaseKey ? await this.kv.get<string>(apiBaseKey) : undefined
-			await this.upsert({ id: this.defaultBotId, token, apiBase: legacyApiBase })
-		}
-		await Promise.all([
-			this.kv.delete(tokenKey),
-			...(apiBaseKey ? [this.kv.delete(apiBaseKey)] : []),
-		])
-		return true
 	}
 
 	private key(id: string, field: 'token' | 'api_base'): string {

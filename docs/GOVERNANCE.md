@@ -30,6 +30,9 @@
 4. 审计 public exports、workspace 插件、示例和链接。
 5. 如果 proposal 已实现，删除已落地部分。
 
+公开包发生用户可见变化时，同一 PR 必须添加 Changeset。版本提交、发布前验证和 npm trusted
+publishing 的维护流程见 [`RELEASING.md`](RELEASING.md)。
+
 ## 文档
 
 - `user-docs/` 不讲内部类名、迁移历史或 toolchain helper。

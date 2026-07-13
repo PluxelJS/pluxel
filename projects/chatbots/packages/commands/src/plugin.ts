@@ -1,6 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
-import { ChatHubPlugin, type ChatHandlerContext, type ChatPayload } from '@repo/chatbots-hub'
+import type { ChatPayload } from '@repo/chatbots-contracts'
+import { ChatHubPlugin, type ChatHandlerContext } from '@repo/chatbots-hub'
 import { normalizeRoute, parseCommandLine } from './parser.ts'
 import { runCommandMiddleware } from './middleware.ts'
 import { CommandRegistry } from './registry.ts'

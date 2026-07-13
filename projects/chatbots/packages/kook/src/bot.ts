@@ -1,10 +1,8 @@
-import {
-	SupersedingAbortScope,
-	type CapabilityRef,
-	type ChatHubPlugin,
-	type ChatSendRequest,
-} from '@repo/chatbots-hub'
+import type { CapabilityRef } from '@repo/chatbots-adapter-kit/capability-ref'
+import { SupersedingAbortScope } from '@repo/chatbots-adapter-kit/scope'
 import type { Context } from '@pluxel/runtime'
+import type { ChatSendRequest } from '@repo/chatbots-contracts'
+import type { ChatHubPlugin } from '@repo/chatbots-hub'
 import { createKookClient, type KookClientOptions } from './api/client.ts'
 import { invokeKookNative, KookNativeApi } from './api/native.ts'
 import type { KookApi, KookApiTools, KookAutoApi, Result } from './api/types.ts'
