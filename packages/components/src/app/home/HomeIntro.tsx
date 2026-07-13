@@ -1,16 +1,15 @@
-import { Button, Group, Paper, SimpleGrid, Stack, Text, ThemeIcon, Title } from '@mantine/core'
+import { Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
 import {
 	IconArrowRight,
-	IconBolt,
 	IconClockPlay,
 	IconHistory,
-	IconKeyboard,
 	IconPackages,
 	IconPlugConnected,
 	IconShieldCheck,
 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 import { RouterLinkAdapter } from '../RouterLinkAdapter'
+import { usePluginOverview } from '../plugins/pluginOverview'
 
 type WorkspaceLink = {
 	title: string
@@ -53,6 +52,17 @@ const WORKSPACE_LINKS: WorkspaceLink[] = [
 
 export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 	const resume = createResumeAction(lastRoute)
+	const overview = usePluginOverview()
+	const summary = overview.overview?.status.summary
+	const statuses = overview.overview?.status.statuses ?? []
+	const runningPlugins = statuses.filter((plugin) => plugin.isRunning)
+	const attentionPlugins = statuses.filter((plugin) => !plugin.isRunning || !plugin.isEnabled)
+	const metrics = [
+		{ label: '插件总数', value: summary?.total },
+		{ label: '正在运行', value: summary?.running, tone: 'running' },
+		{ label: '已停止', value: summary?.stopped },
+		{ label: '已禁用', value: summary?.disabled, tone: 'disabled' },
+	]
 
 	return (
 		<main className="plx-home">
@@ -60,10 +70,10 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 				<div className="plx-home__heroCopy">
 					<Text className="plx-home__eyebrow">Runtime control center</Text>
 					<Title id="plx-home-title" order={1} className="plx-home__title">
-						管理插件，定位问题，继续工作。
+						运行工作台
 					</Title>
 					<Text className="plx-home__description">
-						这里是 Pluxel 的运行控制台。常用操作集中在一屏内，减少寻找入口和来回跳转。
+						管理插件、依赖与运行日志，常用操作集中在当前页面。
 					</Text>
 					<Group gap="sm" className="plx-home__heroActions">
 						<Button
@@ -79,69 +89,68 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 					</Group>
 				</div>
 
-				<div className="plx-home__heroSummary" aria-label="控制台说明">
-					<div className="plx-home__summaryMark" aria-hidden="true">
-						<IconBolt size={22} stroke={1.7} />
-					</div>
-					<div>
-						<Text fw={700}>面向日常运维</Text>
-						<Text size="sm" c="dimmed">
-							状态、配置、依赖与日志在同一个工作台内完成。
-						</Text>
-					</div>
+				<div className="plx-home__runtimeSummary" aria-label="插件运行概览">
+					{metrics.map((metric) => (
+						<div className="plx-home__metric" data-tone={metric.tone} key={metric.label}>
+							<Text className="plx-home__metricLabel">{metric.label}</Text>
+							<Text className="plx-home__metricValue">
+								{typeof metric.value === 'number' ? metric.value : '—'}
+							</Text>
+						</div>
+					))}
 				</div>
 			</section>
 
-			<div className="plx-home__contentGrid">
-				<section aria-labelledby="plx-home-tools-title">
-					<div className="plx-home__sectionHeader">
-						<div>
-							<Text className="plx-home__sectionKicker">工作区</Text>
-							<Title id="plx-home-tools-title" order={2} className="plx-home__sectionTitle">
-								常用工具
-							</Title>
-						</div>
-						<Text size="sm" c="dimmed">
-							4 个核心入口
-						</Text>
+			<section aria-labelledby="plx-home-tools-title">
+				<div className="plx-home__sectionHeader">
+					<div>
+						<Text className="plx-home__sectionKicker">工作区</Text>
+						<Title id="plx-home-tools-title" order={2} className="plx-home__sectionTitle">
+							常用工具
+						</Title>
 					</div>
+					<Text size="sm" c="dimmed">
+						4 个核心入口
+					</Text>
+				</div>
 
-					<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-						{WORKSPACE_LINKS.map((item) => (
-							<WorkspaceCard key={item.to} {...item} />
-						))}
-					</SimpleGrid>
-				</section>
+				<SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="sm">
+					{WORKSPACE_LINKS.map((item) => (
+						<WorkspaceCard key={item.to} {...item} />
+					))}
+				</SimpleGrid>
+			</section>
 
-				<aside className="plx-home__aside" aria-labelledby="plx-home-guide-title">
-					<div className="plx-home__sectionHeader">
-						<div>
-							<Text className="plx-home__sectionKicker">效率</Text>
-							<Title id="plx-home-guide-title" order={2} className="plx-home__sectionTitle">
-								快速操作
-							</Title>
-						</div>
+			<section aria-labelledby="plx-home-queue-title">
+				<div className="plx-home__sectionHeader">
+					<div>
+						<Text className="plx-home__sectionKicker">实时状态</Text>
+						<Title id="plx-home-queue-title" order={2} className="plx-home__sectionTitle">
+							插件运行队列
+						</Title>
 					</div>
+					<Text component={RouterLinkAdapter} to="/plugins" size="sm" className="plx-home__allLink">
+						查看全部插件
+					</Text>
+				</div>
 
-					<Stack gap={0} className="plx-home__guideList">
-						<GuideRow
-							icon={<IconKeyboard size={18} />}
-							title="打开插件搜索"
-							description="按 / 或 Ctrl/⌘ + F"
-						/>
-						<GuideRow
-							icon={<IconClockPlay size={18} />}
-							title="恢复工作位置"
-							description={resume?.description ?? '打开过的页面会自动保留'}
-						/>
-						<GuideRow
-							icon={<IconShieldCheck size={18} />}
-							title="先检查再变更"
-							description="敏感操作可在安全中心审计"
-						/>
-					</Stack>
-				</aside>
-			</div>
+				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm" className="plx-home__pluginQueues">
+					<PluginQueue
+						title="正在运行"
+						plugins={runningPlugins}
+						empty="当前没有正在运行的插件"
+						loading={!overview.hasSnapshot && overview.isLoading}
+						error={overview.error}
+					/>
+					<PluginQueue
+						title="需要处理"
+						plugins={attentionPlugins}
+						empty="当前没有停止或禁用的插件"
+						loading={!overview.hasSnapshot && overview.isLoading}
+						error={overview.error}
+					/>
+				</SimpleGrid>
+			</section>
 		</main>
 	)
 }
@@ -171,27 +180,54 @@ function WorkspaceCard({ title, description, to, icon, meta }: WorkspaceLink) {
 	)
 }
 
-function GuideRow({
-	icon,
+function PluginQueue({
+	empty,
+	error,
+	loading,
+	plugins,
 	title,
-	description,
 }: {
-	icon: ReactNode
+	empty: string
+	error?: string
+	loading: boolean
+	plugins: Array<{ name: string; isEnabled: boolean; isRunning: boolean }>
 	title: string
-	description: string
 }) {
+	const visiblePlugins = plugins.slice(0, 6)
+	const message = loading ? '正在读取运行状态…' : error ? '运行后端暂时不可用' : empty
+
 	return (
-		<div className="plx-home__guideRow">
-			<ThemeIcon variant="light" size={34} radius="md">
-				{icon}
-			</ThemeIcon>
-			<div>
-				<Text size="sm" fw={700}>
-					{title}
-				</Text>
+		<div className="plx-home__queue">
+			<div className="plx-home__queueHeader">
+				<Text fw={700}>{title}</Text>
 				<Text size="xs" c="dimmed">
-					{description}
+					{plugins.length} 个
 				</Text>
+			</div>
+			<div className="plx-home__queueBody">
+				{visiblePlugins.length > 0 ? (
+					visiblePlugins.map((plugin) => (
+						<RouterLinkAdapter
+							key={plugin.name}
+							to={`/plugins/${encodeURIComponent(plugin.name)}`}
+							className="plx-home__queueRow"
+						>
+							<span
+								className="plx-home__statusDot"
+								data-status={
+									!plugin.isEnabled ? 'disabled' : plugin.isRunning ? 'running' : 'stopped'
+								}
+							/>
+							<span className="plx-home__queueName">{plugin.name}</span>
+							<span className="plx-home__queueStatus">
+								{!plugin.isEnabled ? '已禁用' : plugin.isRunning ? '运行中' : '已停止'}
+							</span>
+							<IconArrowRight size={15} aria-hidden="true" />
+						</RouterLinkAdapter>
+					))
+				) : (
+					<Text className="plx-home__queueEmpty">{message}</Text>
+				)}
 			</div>
 		</div>
 	)

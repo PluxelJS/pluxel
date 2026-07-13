@@ -1,17 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { Center, Stack, Text, Title } from '@mantine/core'
+import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 
-function PluginsPlaceholderRoute() {
+function PluginsIndexRoute() {
 	return (
-		<Center style={{ flex: 1 }}>
-			<Stack align="center" gap="xs">
-				<Title order={4}>欢迎探索插件</Title>
-				<Text c="dimmed">在左侧选择一个插件即可查看详情和配置。</Text>
-			</Stack>
-		</Center>
+		<div className="plx-pluginCatalogPage">
+			<PluginCatalog />
+		</div>
 	)
 }
 
 export const Route = createFileRoute('/_workbench/plugins/')({
-	component: PluginsPlaceholderRoute,
+	component: PluginsIndexRoute,
 })

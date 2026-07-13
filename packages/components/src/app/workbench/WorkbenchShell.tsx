@@ -3,7 +3,6 @@ import { useStore } from '@tanstack/react-store'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMediaQuery } from '@mantine/hooks'
 import {
-	IconBox,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
 	IconLayoutSidebarLeftExpand,
@@ -100,17 +99,6 @@ function dispatchPluginSearchEvent() {
 	}, 0)
 }
 
-function ThemeToggleButton() {
-	return (
-		<ColorSchemeToggle
-			label="切换工作台明暗模式"
-			size="md"
-			radius="sm"
-			className="plx-workbench__themeToggle"
-		/>
-	)
-}
-
 function WorkbenchHotkeys({
 	canTogglePluginRail,
 	onCloseActiveTab,
@@ -185,13 +173,16 @@ function ActivityRail({
 }) {
 	return (
 		<aside className="plx-workbench__activity" aria-label="工作台导航">
-			<div className="plx-workbench__activityBrand" aria-label="Pluxel 工作台">
-				<span className="plx-workbench__activityBrandMark" aria-hidden="true">
-					<IconBox size={20} stroke={1.8} />
-				</span>
+			<div className="plx-workbench__activityBrand">
+				<ColorSchemeToggle
+					label="切换工作台明暗模式"
+					size={34}
+					radius="sm"
+					className="plx-workbench__activityBrandMark"
+				/>
 				<span className="plx-workbench__activityBrandText">
 					<strong>Pluxel</strong>
-					<small>Runtime console</small>
+					<small>点击图标切换主题</small>
 				</span>
 			</div>
 
@@ -250,18 +241,20 @@ function WorkbenchTopbarActions({
 }) {
 	return (
 		<div className="plx-workbench__topbarActions">
-			<WorkbenchActionButton
-				className="plx-workbench__action"
-				label="插件列表"
-				onClick={togglePluginNav}
-				title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
-			>
-				<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
-				<span className="plx-workbench__actionLabel">插件列表</span>
-				<span className="plx-workbench__actionHint">
-					{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
-				</span>
-			</WorkbenchActionButton>
+			{isPluginDetail ? (
+				<WorkbenchActionButton
+					className="plx-workbench__action"
+					label="插件列表"
+					onClick={togglePluginNav}
+					title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
+				>
+					<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+					<span className="plx-workbench__actionLabel">插件列表</span>
+					<span className="plx-workbench__actionHint">
+						{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
+					</span>
+				</WorkbenchActionButton>
+			) : null}
 
 			<WorkbenchActionButton
 				className="plx-workbench__action"
@@ -276,7 +269,12 @@ function WorkbenchTopbarActions({
 
 			{isPluginDetail ? <WorkbenchPaneControls /> : null}
 
-			<ThemeToggleButton />
+			<ColorSchemeToggle
+				label="切换工作台明暗模式"
+				size="md"
+				radius="sm"
+				className="plx-workbench__mobileThemeToggle"
+			/>
 		</div>
 	)
 }
@@ -370,10 +368,15 @@ function WorkspacePaneContent() {
 	)
 }
 
-function ThemeToggleAction() {
+function MobileThemeToggleAction() {
 	return (
 		<div className="plx-workbench__topbarActions">
-			<ThemeToggleButton />
+			<ColorSchemeToggle
+				label="切换工作台明暗模式"
+				size="md"
+				radius="sm"
+				className="plx-workbench__mobileThemeToggle"
+			/>
 		</div>
 	)
 }
@@ -460,13 +463,13 @@ export function WorkbenchShell() {
 		() => (isPluginsSection ? getSectionPaneState({ sectionPanes }, PLUGINS_SECTION_ID) : null),
 		[isPluginsSection, sectionPanes],
 	)
+	const isPluginDetail = isPluginsSection && Boolean(pluginName)
 	useSyncedLayout(
 		pluginLayoutGroupRef,
 		currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT,
-		isPluginsSection && Boolean(currentSectionPane),
+		isPluginDetail && Boolean(currentSectionPane),
 	)
-	const showPluginNav = isPluginsSection && Boolean(currentSectionPane?.visible)
-	const isPluginDetail = isPluginsSection && Boolean(pluginName)
+	const showPluginNav = isPluginDetail && Boolean(currentSectionPane?.visible)
 	const activePluginWorkbenchLayout = useMemo(
 		() => resolvePluginWorkbenchPanelsState(activeTabStateMap[PLUGIN_WORKBENCH_PANELS_SCOPE]),
 		[activeTabStateMap],
@@ -608,15 +611,13 @@ export function WorkbenchShell() {
 	const previousMobilePluginRef = useRef<string | undefined>(undefined)
 
 	useEffect(() => {
-		if (!isNarrowViewport || !isPluginsSection) return
+		if (!isNarrowViewport || !isPluginDetail) return
 		const previousPlugin = previousMobilePluginRef.current
 		previousMobilePluginRef.current = pluginName
 		if (pluginName && pluginName !== previousPlugin) {
 			setSectionPaneVisible(PLUGINS_SECTION_ID, false)
-			return
 		}
-		if (!pluginName) setSectionPaneVisible(PLUGINS_SECTION_ID, true)
-	}, [isNarrowViewport, isPluginsSection, pluginName, setSectionPaneVisible])
+	}, [isNarrowViewport, isPluginDetail, pluginName, setSectionPaneVisible])
 
 	const handleLayoutChanged = useCallback(
 		(layout: Record<string, number>) => {
@@ -658,23 +659,25 @@ export function WorkbenchShell() {
 		}),
 		[currentSectionPane?.layout],
 	)
-	const mobileSinglePane = isNarrowViewport && isPluginsSection
-	const primaryPane = mobileSinglePane
-		? showPluginNav
-			? pluginRailPane
-			: workspacePane
-		: pluginRailPane
-	const secondaryPane = mobileSinglePane ? undefined : workspacePane
+	const mobileSinglePane = isNarrowViewport && isPluginDetail
+	const primaryPane = !isPluginDetail
+		? workspacePane
+		: mobileSinglePane
+			? showPluginNav
+				? pluginRailPane
+				: workspacePane
+			: pluginRailPane
+	const secondaryPane = !isPluginDetail || mobileSinglePane ? undefined : workspacePane
 	const layoutContextValue = useMemo(
 		() => ({
-			leftPaneAvailable: isPluginsSection,
+			leftPaneAvailable: isPluginDetail,
 			leftPaneVisible: showPluginNav,
 			setLeftPaneVisible: (visible: boolean) => {
 				setSectionPaneVisible(PLUGINS_SECTION_ID, visible)
 			},
 			toggleLeftPane: togglePluginNav,
 		}),
-		[isPluginsSection, setSectionPaneVisible, showPluginNav, togglePluginNav],
+		[isPluginDetail, setSectionPaneVisible, showPluginNav, togglePluginNav],
 	)
 	const pluginWorkbenchLayoutValue = useMemo(
 		() => ({
@@ -798,7 +801,7 @@ export function WorkbenchShell() {
 											togglePluginNav={togglePluginNav}
 										/>
 									) : (
-										<ThemeToggleAction />
+										<MobileThemeToggleAction />
 									)}
 								</header>
 
