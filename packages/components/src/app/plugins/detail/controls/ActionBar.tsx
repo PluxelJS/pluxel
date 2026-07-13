@@ -7,20 +7,18 @@ import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-
 import { useCallback, useRef, useState } from 'react'
 import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
-import { useNotify } from '../../../hooks'
+import { useNotify } from '../../../hooks/useNotify'
 import {
 	runPluginStatusAction,
 	useRuntimeTransportClient,
 	type PluginStatusAction,
 } from '../../../../runtime'
 import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
-import { invalidate } from '../../../data/invalidations'
 import { usePluginScope } from '../context'
 import { resolveKnownPluginName } from '../rightPaneState'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
 export interface ActionBarProps {
-	onStatusUpdated?: () => Promise<void> | void
 	compact?: boolean
 	prominent?: boolean
 }
@@ -83,7 +81,7 @@ function ActionBarButton({
 					}
 					variant={isStart ? 'filled' : isRestart ? 'default' : 'light'}
 					color={action === 'stop' ? 'red' : undefined}
-					size="sm"
+					size="compact-sm"
 					leftSection={icon}
 					onClick={() => onAction(action)}
 					disabled={disabled}
@@ -114,12 +112,13 @@ function ActionBarButton({
 	)
 }
 
-export function ActionBar({ onStatusUpdated, compact = false, prominent = false }: ActionBarProps) {
+export function ActionBar({ compact = false, prominent = false }: ActionBarProps) {
 	const transport = useRuntimeTransportClient()
 	const {
 		pluginName,
 		dependencies,
 		knownPluginNames,
+		statusSnapshot,
 		isRunning,
 		isEnabled,
 		lifecycleStage,
@@ -184,14 +183,9 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 		[pluginName, setStatusOverride, isEnabled, isRunning, lifecycleStage],
 	)
 
-	const syncAfterSuccess = useCallback(
-		async (action: PluginStatusAction) => {
-			await refetch()
-			await onStatusUpdated?.()
-			invalidate({ topic: 'plugin-status', pluginName, reason: action })
-		},
-		[onStatusUpdated, pluginName, refetch],
-	)
+	const syncAfterSuccess = useCallback(async () => {
+		await refetch()
+	}, [refetch])
 
 	const performAction = async (action: PluginStatusAction) => {
 		if (!pluginName) return
@@ -217,7 +211,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 			}
 
 			// ② 成功：让返回覆盖乐观态，再进行一次精准对齐
-			await syncAfterSuccess(action)
+			await syncAfterSuccess()
 
 			notify({
 				title: '插件状态已更新',
@@ -247,6 +241,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				includeTargets: true,
 				includeRunningTargets: action === 'restart',
 				requireConfiguredFor: 'dependencies',
+				statusSnapshot,
 			})
 
 			if (plan.missing.length > 0) {
@@ -290,7 +285,7 @@ export function ActionBar({ onStatusUpdated, compact = false, prominent = false 
 				return
 			}
 
-			await syncAfterSuccess(action)
+			await syncAfterSuccess()
 			notify({
 				title: '已级联启动',
 				message: `已按依赖顺序${ACTION_LABEL[action]}：${plan.order.join(' → ')}`,

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDefaults, type ObjectSchema } from 'valibot'
 import { EmptyState } from '../../../components'
 import { SegmentedButtons } from 'valibot-form/web'
-import { useNotify } from '../../hooks'
+import { useNotify } from '../../hooks/useNotify'
+import { commitPluginConfig } from './usePluginConfig'
 import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './ConfigTab'
@@ -88,7 +89,6 @@ export function ConfigForm({
 	const [activeKey, setActiveKey] = useState(keys[0] || '')
 	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
 	const [savingAll, setSavingAll] = useState(false)
-	const [baselineOverrides, setBaselineOverrides] = useState<Record<string, TabValue>>({})
 	const notify = useNotify()
 	const scrollHostsRef = useRef<Record<string, HTMLDivElement | null>>({})
 	const [scrollHostVersion, setScrollHostVersion] = useState(0)
@@ -97,10 +97,9 @@ export function ConfigForm({
 	const formStatesRef = useRef<Record<string, FormState>>({})
 	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
 	const configIdentityRef = useRef('')
-	const markSaved = useCallback((key: string, value: TabValue) => {
+	const markSaved = useCallback((key: string) => {
 		const savedAt = Date.now()
 		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
-		setBaselineOverrides((prev) => ({ ...prev, [key]: value }))
 	}, [])
 	const configIdentity = useMemo(() => `${pluginName}\n${keys.join('\n')}`, [keys, pluginName])
 
@@ -111,7 +110,6 @@ export function ConfigForm({
 		formStatesRef.current = {}
 		lastDraftsRef.current = {}
 		setSavedAtMap({})
-		setBaselineOverrides({})
 		setFormStates({})
 	}, [configIdentity])
 
@@ -128,14 +126,6 @@ export function ConfigForm({
 				Object.entries(prev).filter(([key]) => keySet.has(key)),
 			) as Record<string, FormState>
 			formStatesRef.current = next
-			return deepEqual(prev, next) ? prev : next
-		})
-		setBaselineOverrides((prev) => {
-			const next: Record<string, TabValue> = {}
-			for (const [key, value] of Object.entries(prev)) {
-				if (!keySet.has(key)) continue
-				if (formStatesRef.current[key]?.dirty) next[key] = value
-			}
 			return deepEqual(prev, next) ? prev : next
 		})
 	}, [keys, savedConfig])
@@ -165,7 +155,7 @@ export function ConfigForm({
 			const schema = safeSchemas[key]!
 			const schemaDefaults = toRecord(getDefaults(schema))
 			const defaultValue = { ...schemaDefaults, ...toRecord(defaults[key]) }
-			const savedValue = baselineOverrides[key] ?? toRecord(savedConfig[key])
+			const savedValue = toRecord(savedConfig[key])
 			return {
 				key,
 				schema,
@@ -174,7 +164,7 @@ export function ConfigForm({
 				initialValue: { ...defaultValue, ...savedValue },
 			}
 		})
-	}, [safeSchemas, savedConfig, defaults, keys, baselineOverrides])
+	}, [safeSchemas, savedConfig, defaults, keys])
 
 	const resolvedActiveKey =
 		typeof activeKeyProp === 'string' && keys.includes(activeKeyProp) ? activeKeyProp : activeKey
@@ -300,17 +290,11 @@ export function ConfigForm({
 				return
 			}
 
+			commitPluginConfig(pluginName, result.config)
 			const savedAt = Date.now()
 			setSavedAtMap((prev) => {
 				const next = { ...prev }
 				for (const key of Object.keys(patch)) next[key] = savedAt
-				return next
-			})
-			setBaselineOverrides((prev) => {
-				const next = { ...prev }
-				for (const [key, value] of Object.entries(patch)) {
-					next[key] = value
-				}
 				return next
 			})
 			for (const [key, bridge] of Object.entries(bridges)) {

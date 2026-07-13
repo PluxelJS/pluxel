@@ -3,7 +3,14 @@ import { defineGQLensEntry } from '@gqlens/vite/entry'
 import '@pluxel/runtime-dynamic/register'
 import { createInternalGraphQLSchemaSDL } from '@pluxel/runtime'
 
-const unknownPluginSource = {
+const unknownPluginSource: {
+	__typename: 'PluginSourceInfo'
+	kind: 'unknown'
+	moduleId: string | null
+	packageName: string | null
+	version: string | null
+	tag: string | null
+} = {
 	__typename: 'PluginSourceInfo',
 	kind: 'unknown',
 	moduleId: null,
@@ -15,7 +22,7 @@ const unknownPluginSource = {
 const schemaContext = {
 	logger: console,
 	configService: {
-		getExtra() {
+		getExtra(): unknown[] {
 			return []
 		},
 		setExtra() {},
@@ -27,7 +34,7 @@ const schemaContext = {
 		resolve(target: unknown) {
 			return typeof target === 'function' ? target : undefined
 		},
-		listDependencies() {
+		listDependencies(): unknown[] {
 			return []
 		},
 		resolveSource() {
@@ -41,7 +48,10 @@ const schemaContext = {
 				source: unknownPluginSource,
 			}
 		},
-		statusOverview() {
+		statusOverview(): {
+			statuses: unknown[]
+			summary: { total: number; running: number; stopped: number; disabled: number }
+		} {
 			return {
 				statuses: [],
 				summary: { total: 0, running: 0, stopped: 0, disabled: 0 },

@@ -40,6 +40,9 @@ This folder contains the Pluxel runtime UI application shell.
 5. Public barrels are intentional; internal detours are not.
    Keep a barrel only for real package exports. Avoid internal `index.ts` files that only forward one file for one caller.
 
+6. Keep server state in GQLens.
+   Domain hooks may derive renderable projections from a shared GQLens session, but must not mirror GraphQL data into another writable store. Keep local optimistic drafts local and invalidate the owning GQLens selection after a successful write. RPC-only data stays in a domain resource only when it has multiple consumers; do not add global topic-based invalidation or non-reactive TTL caches.
+
 ## LLM Edit Protocol
 
 1. Identify the owning domain first.

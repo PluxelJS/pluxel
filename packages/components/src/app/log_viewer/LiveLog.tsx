@@ -1225,11 +1225,11 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										>
 											<span style={{ opacity: 0.8 }}>filter</span>
 											<input
-												value={draftFilter.name ?? ''}
+												value={draftFilter.displayName ?? ''}
 												onChange={(e) =>
 													setDraftFilter((f) => ({
 														...f,
-														name: e.currentTarget.value || undefined,
+														displayName: e.currentTarget.value || undefined,
 													}))
 												}
 												onKeyDown={(e) => {

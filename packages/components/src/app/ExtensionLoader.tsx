@@ -1,5 +1,5 @@
 // packages/components/src/app/ExtensionLoader.tsx
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import {
 	type BuiltinExtensionDef,
 	type BuiltinExtensionKind,
@@ -30,21 +30,15 @@ import {
 	upsertExtensionModuleState,
 } from '../extension/internal/runtime-state'
 import { InlineNotice } from '../components'
-import { usePluginOverview } from './plugins/pluginOverviewStore'
+import { usePluginOverview } from './plugins/pluginOverview'
 import { useRuntimeTransportClient } from '../runtime'
 
 interface ExtensionLoaderProps {
 	pollInterval?: number
-	onRunningPluginsChange?: (plugins: ReadonlySet<string>) => void
 	/** Keep extension modules loaded even when plugins stop running. */
 	unloadOnStop?: boolean
 	/** Delay unload when unloadOnStop is true, to avoid flapping. */
 	unloadDelayMs?: number
-}
-
-interface PluginInfo {
-	name: string
-	isRunning: boolean
 }
 
 interface LoadedPluginModule extends CompiledExtensionModule {
@@ -255,7 +249,6 @@ function readyStateFromModule(module: CompiledExtensionModule): ExtensionModuleS
 
 export function ExtensionLoader({
 	pollInterval = 5000,
-	onRunningPluginsChange,
 	unloadOnStop = false,
 	unloadDelayMs = DEFAULT_UNLOAD_DELAY_MS,
 }: ExtensionLoaderProps): null {
@@ -263,70 +256,14 @@ export function ExtensionLoader({
 	const overviewState = usePluginOverview()
 	const rawStatuses = overviewState.overview?.status?.statuses ?? []
 
-	const derivedPlugins: PluginInfo[] = useMemo(() => {
-		return rawStatuses
-			.slice()
-			.sort((a, b) => {
-				const an = typeof a?.name === 'string' ? a.name : ''
-				const bn = typeof b?.name === 'string' ? b.name : ''
-				return an.localeCompare(bn)
-			})
-			.filter(
-				(entry): entry is NonNullable<typeof entry> & { name: string } =>
-					typeof entry?.name === 'string' && entry.name.trim().length > 0,
-			)
-			.map((entry) => ({
-				name: entry.name.trim(),
-				isRunning: Boolean(entry.isRunning),
-			}))
+	const runningPluginNames = useMemo(() => {
+		const running = new Set<string>()
+		for (const entry of rawStatuses) {
+			const name = typeof entry?.name === 'string' ? entry.name.trim() : ''
+			if (name && entry.isRunning) running.add(name)
+		}
+		return running
 	}, [rawStatuses])
-
-	const signature = useMemo(
-		() => derivedPlugins.map((p) => `${p.name}:${p.isRunning ? 1 : 0}`).join('|'),
-		[derivedPlugins],
-	)
-
-	const cachedRef = useRef<{ key: string; plugins: PluginInfo[] }>({
-		key: signature,
-		plugins: derivedPlugins,
-	})
-
-	const [stablePlugins, setStablePlugins] = useState<PluginInfo[]>(derivedPlugins)
-	const isLoading = overviewState.isLoading === true
-	const hasError = !overviewState.hasSnapshot && Boolean(overviewState.error)
-	const statusReadyRef = useRef(false)
-
-	useEffect(() => {
-		// IMPORTANT: during refetch/errors, the GraphQL snapshot may temporarily surface empty arrays.
-		// Never overwrite the stable snapshot with an "empty flash" (would break plugin pages).
-		if (isLoading || hasError) return
-		if (cachedRef.current.key === signature) {
-			setStablePlugins(cachedRef.current.plugins)
-			return
-		}
-		const cloned = derivedPlugins.map((plugin) => ({ ...plugin }))
-		cachedRef.current = { key: signature, plugins: cloned }
-		setStablePlugins(cloned)
-	}, [derivedPlugins, hasError, signature, isLoading])
-
-	const effectivePlugins = isLoading || hasError ? cachedRef.current.plugins : stablePlugins
-
-	useEffect(() => {
-		if (!isLoading && !hasError) {
-			statusReadyRef.current = true
-		}
-	}, [hasError, isLoading])
-
-	useEffect(() => {
-		if (!onRunningPluginsChange) return
-		const next = new Set<string>()
-		for (const plugin of effectivePlugins) {
-			if (plugin.isRunning && plugin.name) {
-				next.add(plugin.name)
-			}
-		}
-		onRunningPluginsChange(next)
-	}, [effectivePlugins, onRunningPluginsChange])
 
 	const shouldSkipManifestSync = useCallback(() => {
 		const state = loaderState.manifestBackoff
@@ -496,24 +433,23 @@ export function ExtensionLoader({
 	// 插件停止后是否卸载扩展模块（避免频繁加载/卸载可延迟执行）
 	useEffect(() => {
 		if (!unloadOnStop) return
-		if (!statusReadyRef.current) return
+		if (!overviewState.hasSnapshot) return
 		const delayMs = Math.max(0, unloadDelayMs)
-		const running = new Set<string>()
-		for (const plugin of effectivePlugins) {
-			if (plugin.isRunning && plugin.name) {
-				running.add(plugin.name)
-			}
-		}
-
 		for (const name of Array.from(loaderState.moduleCache.keys())) {
-			if (!running.has(name)) {
+			if (!runningPluginNames.has(name)) {
 				scheduleUnload(name, delayMs, 'plugin-stop')
 			} else {
 				cancelScheduledUnload(name)
 			}
 		}
 		recomputeManifestSignature()
-	}, [effectivePlugins, recomputeManifestSignature, unloadDelayMs, unloadOnStop])
+	}, [
+		overviewState.hasSnapshot,
+		recomputeManifestSignature,
+		runningPluginNames,
+		unloadDelayMs,
+		unloadOnStop,
+	])
 
 	const ensureModuleLoaded = useCallback(async (module: CompiledExtensionModule) => {
 		const cached = loaderState.moduleCache.get(module.pluginName)

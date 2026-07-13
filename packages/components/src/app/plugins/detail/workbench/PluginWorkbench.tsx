@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { PluginConfigState } from '../../../hooks'
+import { useMediaQuery } from '@mantine/hooks'
+import type { PluginConfigState } from '../../config/usePluginConfig'
 import {
 	DEFAULT_PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT,
 	DEFAULT_PLUGIN_WORKBENCH_VERTICAL_LAYOUT,
@@ -22,6 +23,7 @@ import { PluginWorkbenchPanel, PluginWorkbenchSidebar } from './PluginWorkbenchH
 import { PluginWorkbenchAsideProvider, usePluginWorkbenchLayout } from './context'
 
 export function PluginWorkbench({ config }: { config: PluginConfigState }) {
+	const isNarrowViewport = useMediaQuery('(max-width: 47.99em)')
 	const horizontalGroupRef = useRef<SplitViewHandle | null>(null)
 	const verticalGroupRef = useRef<SplitViewHandle | null>(null)
 	const [assistHost, setAssistHostState] = useState<HTMLDivElement | null>(null)
@@ -50,16 +52,16 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	}, [])
 	const asideContext = useMemo(
 		() => ({
-			asideAvailable: true,
+			asideAvailable: !isNarrowViewport,
 			assistHost,
 			setAssistHost,
 			assistVisible,
 			setAssistClaim,
 		}),
-		[assistHost, assistVisible, setAssistHost, setAssistClaim],
+		[assistHost, assistVisible, isNarrowViewport, setAssistHost, setAssistClaim],
 	)
-	useSyncedLayout(horizontalGroupRef, horizontalLayout, rightPaneVisible)
-	useSyncedLayout(verticalGroupRef, verticalLayout, dockVisible)
+	useSyncedLayout(horizontalGroupRef, horizontalLayout, rightPaneVisible && !isNarrowViewport)
+	useSyncedLayout(verticalGroupRef, verticalLayout, dockVisible && !isNarrowViewport)
 
 	const dockPane = useMemo<SplitViewPane>(
 		() => ({
@@ -106,7 +108,9 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 			id: PLUGIN_WORKBENCH_MAIN_PANEL_ID,
 			defaultSize: horizontalLayout[PLUGIN_WORKBENCH_MAIN_PANEL_ID],
 			minSize: 44,
-			children: (
+			children: isNarrowViewport ? (
+				contentPane.children
+			) : (
 				<WorkbenchSplitView
 					className="plx-pluginWorkbench__vertical"
 					defaultLayout={verticalLayout}
@@ -126,6 +130,7 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 			dockVisible,
 			handleVerticalLayoutChanged,
 			horizontalLayout,
+			isNarrowViewport,
 			verticalLayout,
 		],
 	)
@@ -140,7 +145,7 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 					onLayoutChanged={rightPaneVisible ? handleHorizontalLayoutChanged : undefined}
 					orientation="horizontal"
 					primary={mainPane}
-					secondary={asidePane}
+					secondary={isNarrowViewport ? undefined : asidePane}
 					ref={horizontalGroupRef}
 				/>
 			</div>

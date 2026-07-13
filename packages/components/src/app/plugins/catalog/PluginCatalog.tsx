@@ -1,28 +1,4 @@
-// src/app/plugins/catalog/PluginCatalog.tsx
-/**
- * PluginCatalog（页面/容器）
- * -----------------------------------------------------------------------------
- * 设计目标
- * 1) 混合搜索：单一输入框，匹配（分组名 || 插件 name/ID），无 scope 切换
- *    - useDeferredValue 降压；结果仅作为视图过滤（不触发后端）
- *    - 搜索词 localStorage 持久化，返回页面保持上下文
- *    - 快捷键：'/' 或 Ctrl/⌘+F 聚焦，Esc 清空
- *
- * 2) 本地优先 + 合并提交
- *    - PluginOrganizer 内部本地优先；本容器在 onGroupsChange 时做"尾触发 250ms 合并"
- *    - 多次拖拽/编辑合并为一次 mutation；串行等待前一次完成，确保最终一致
- *    - 同步失败则回滚到 lastSyncedRef + 通知提示
- *
- * 3) 结构/布局
- *    - 页面外层给到 height:100%，内部 Box flex:1 + overflow hidden
- *    - Skeleton/错误/空态对齐
- *
- * 4) 无闪烁优化
- *    - 使用 startTransition 标记搜索更新为低优先级
- *    - 状态切换时保持容器结构稳定，使用 CSS 过渡平滑切换
- *    - 搜索时使用 isPending 状态避免中间态闪烁
- * -----------------------------------------------------------------------------
- */
+/** Host-owned plugin search, organization, bulk actions, and group persistence. */
 
 import { ActionIcon, Box, Group, Skeleton, Stack } from '@mantine/core'
 import {
@@ -37,17 +13,13 @@ import type { JSX } from 'react/jsx-runtime'
 import { PluginOrganizer } from './organizer/PluginOrganizer'
 import type { GroupConfig } from './organizer/types'
 import { EmptyState, ErrorState } from '../../../components'
-import { useNotify } from '../../hooks'
+import { useNotify } from '../../hooks/useNotify'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { PLUGIN_SEARCH_EVENT, PLUGIN_SEARCH_KEY } from '../../constants'
+import { api, defineInvalidation, useMutation } from '../../gqlens'
 import { updatePluginStatuses } from '../pluginStatusActions'
-import {
-	requestPluginOverviewRefetch,
-	setPluginOverviewGroups,
-	usePluginOverview,
-} from '../pluginOverviewStore'
-import { useRuntimeTransportClient, type PluginStatusAction } from '../../../runtime'
-import { invalidate } from '../../data/invalidations'
+import { usePluginOverview } from '../pluginOverview'
+import type { PluginStatusAction } from '../../../runtime'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -72,7 +44,6 @@ import { SearchBar } from './components/SearchBar'
 interface PluginCatalogProps {
 	onCollapse?: () => void
 	pluginName?: string
-	onItemSelect?: () => void
 }
 
 const ACTION_LABEL: Record<PluginStatusAction, string> = {
@@ -84,9 +55,10 @@ const ACTION_LABEL: Record<PluginStatusAction, string> = {
 	disable: '禁用',
 }
 const STATUS_FILTER_KEY = 'pluxel:plugin-status-filter'
+const PLUGIN_GROUPS_INVALIDATION = defineInvalidation((query) => query.pluginCatalog.groups.ids)
 
 export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, pluginName }) => {
-	const transport = useRuntimeTransportClient()
+	const updatePluginGroups = useMutation(api.pluginGroups.update)
 	const [statusFilter, setStatusFilter] = useState<StatusFilterState>(() => {
 		if (typeof window === 'undefined') {
 			return DEFAULT_STATUS_FILTER
@@ -192,12 +164,12 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	// —— 数据源 —— //
 	const [draftGroups, setDraftGroups] = useState<GroupConfig[] | null>(null)
 	const lastSyncedRef = useRef<GroupConfig[]>([])
-	const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 	const [bulkBusy, setBulkBusy] = useState(false)
 	const [organizerResetToken, setOrganizerResetToken] = useState(0)
 	const notify = useNotify()
 
 	const overviewState = usePluginOverview()
+	const refetchOverview = overviewState.refetch
 
 	const overview = useMemo<OverviewSnapshot>(() => {
 		try {
@@ -227,12 +199,6 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		}
 	}, [draftGroups, overview.groups])
 
-	useEffect(() => {
-		if (!overviewState.isLoading && !overviewState.error) {
-			setHasLoadedOnce(true)
-		}
-	}, [overviewState.error, overviewState.isLoading])
-
 	const commitTimerRef = useRef<number | null>(null)
 	const inflightCommitRef = useRef<Promise<void> | null>(null)
 	const pendingCommitRef = useRef<GroupConfig[] | null>(null)
@@ -246,14 +212,17 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			return
 		}
 		pendingCommitRef.current = null
-		const task = transport
-			.withRpc((rpc) => rpc.updatePluginGroups(pending))
+		const task = updatePluginGroups(
+			{ groups: pending },
+			{ invalidates: [PLUGIN_GROUPS_INVALIDATION] },
+		)
 			.then((result): undefined => {
-				const nextGroups = Array.isArray(result) ? result : pending
+				const nextGroups = result.map((group) => ({
+					groupId: group.groupId,
+					name: group.name,
+					pluginIds: [...group.pluginIds],
+				}))
 				lastSyncedRef.current = cloneGroups(nextGroups)
-				setDraftGroups(null)
-				setPluginOverviewGroups(nextGroups)
-				invalidate({ topic: 'plugin-groups', reason: 'rpc' })
 				return undefined
 			})
 			.catch((error: unknown): void => {
@@ -262,10 +231,11 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 						? String((error as { message?: unknown }).message ?? '分组同步失败，请稍后重试。')
 						: '分组同步失败，请稍后重试。'
 				notify({ title: '同步失败', message, color: 'red' })
-				const rollback = cloneGroups(lastSyncedRef.current)
-				setDraftGroups(rollback)
-				setPluginOverviewGroups(rollback)
-				setOrganizerResetToken((n) => n + 1)
+				if (!pendingCommitRef.current) {
+					const rollback = cloneGroups(lastSyncedRef.current)
+					setDraftGroups(rollback)
+					setOrganizerResetToken((n) => n + 1)
+				}
 			})
 			.finally(() => {
 				inflightCommitRef.current = null
@@ -275,7 +245,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				}
 			})
 		inflightCommitRef.current = task
-	}, [transport, notify])
+	}, [notify, updatePluginGroups])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
@@ -301,6 +271,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			setBulkBusy(true)
 			try {
 				const results = await updatePluginStatuses(batch.map((name) => ({ name, action })))
+				if (results.some((result) => result.ok)) refetchOverview()
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
@@ -330,6 +301,9 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 													const undoResults = await updatePluginStatuses(
 														batch.map((name) => ({ name, action: undoAction })),
 													)
+													if (undoResults.some((result) => result.ok)) {
+														refetchOverview()
+													}
 													const undoFailed = undoResults.filter((r) => !r.ok)
 													if (undoFailed.length > 0) {
 														notify({
@@ -382,7 +356,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setBulkBusy(false)
 			}
 		},
-		[selectedIds, notify],
+		[selectedIds, notify, refetchOverview],
 	)
 
 	const handleBulkAction = useCallback(
@@ -397,8 +371,8 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	)
 
 	// —— 视图渲染 —— //
-	const loading = !hasLoadedOnce && overviewState.isLoading
-	const syncing = hasLoadedOnce && overviewState.isLoading
+	const loading = !overviewState.hasSnapshot && overviewState.isLoading
+	const syncing = overviewState.hasSnapshot && overviewState.isLoading
 	const errorMessage = !overviewState.hasSnapshot ? overviewState.error : undefined
 	const filterQuery = deferredSearch
 	const groupsForView = draftGroups ?? overview.groups
@@ -441,7 +415,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			<ErrorState
 				title="加载失败"
 				message={errorMessage}
-				onRetry={() => void requestPluginOverviewRefetch()}
+				onRetry={() => void refetchOverview()}
 				minHeight={160}
 			/>
 		)

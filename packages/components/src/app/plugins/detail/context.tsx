@@ -19,6 +19,7 @@ export interface PluginScopeContextValue {
 	description: string
 	dependencies: readonly PluginDependency[]
 	knownPluginNames: ReadonlySet<string>
+	statusSnapshot: readonly PluginStatusEntry[]
 	status: PluginStatusEntry | null
 	isRunning: boolean
 	isEnabled: boolean

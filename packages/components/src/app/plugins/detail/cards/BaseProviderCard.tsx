@@ -2,15 +2,15 @@ import { ActionIcon, Badge, Box, Group, Paper, Select, Stack, Text, Tooltip } fr
 import { IconRefresh, IconStar } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+	inspectPluginBaseProvider,
 	rpcErrorMessage,
 	selectPluginBaseProvider,
 	useRuntimeTransportClient,
 	type BaseProviderInfo,
 	type PluginDependencyMutationResult,
 } from '../../../../runtime'
-import { useNotify } from '../../../hooks'
+import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
-import { loadBaseProviderInfo } from '../rpcResourceCache'
 
 export function BaseProviderCard() {
 	const { pluginName, refetch } = usePluginScope()
@@ -27,30 +27,27 @@ export function BaseProviderCard() {
 		}
 	}, [])
 
-	const load = useCallback(
-		async (options?: { force?: boolean }) => {
-			if (!pluginName) return
-			setLoading(true)
-			try {
-				const res = await loadBaseProviderInfo(transport, pluginName, options)
-				if (!mountedRef.current) return
-				setInfo(res ?? null)
-			} catch (error) {
-				if (!mountedRef.current) return
-				setInfo(null)
-				notify({
-					title: '读取提供者信息失败',
-					message: rpcErrorMessage(error, '无法读取 base provider 信息'),
-					color: 'red',
-				})
-			} finally {
-				if (mountedRef.current) {
-					setLoading(false)
-				}
+	const load = useCallback(async () => {
+		if (!pluginName) return
+		setLoading(true)
+		try {
+			const res = await transport.withRpc((rpc) => inspectPluginBaseProvider(rpc, pluginName))
+			if (!mountedRef.current) return
+			setInfo(res ?? null)
+		} catch (error) {
+			if (!mountedRef.current) return
+			setInfo(null)
+			notify({
+				title: '读取提供者信息失败',
+				message: rpcErrorMessage(error, '无法读取 base provider 信息'),
+				color: 'red',
+			})
+		} finally {
+			if (mountedRef.current) {
+				setLoading(false)
 			}
-		},
-		[transport, notify, pluginName],
-	)
+		}
+	}, [transport, notify, pluginName])
 
 	useEffect(() => {
 		void load()
@@ -78,7 +75,7 @@ export function BaseProviderCard() {
 						}) as Promise<PluginDependencyMutationResult>,
 				)
 				if (!res.ok) throw new Error(res.error || res.code || '操作失败')
-				await load({ force: true })
+				await load()
 				await refetch()
 				notify({
 					title: '已更新默认实现',
@@ -130,12 +127,7 @@ export function BaseProviderCard() {
 				</Stack>
 
 				<Tooltip label={loading ? '加载中…' : '刷新'} withArrow>
-					<ActionIcon
-						size="sm"
-						variant="subtle"
-						onClick={() => void load({ force: true })}
-						disabled={loading}
-					>
+					<ActionIcon size="sm" variant="subtle" onClick={() => void load()} disabled={loading}>
 						<IconRefresh size={14} />
 					</ActionIcon>
 				</Tooltip>

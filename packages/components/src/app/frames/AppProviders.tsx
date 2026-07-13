@@ -2,7 +2,7 @@ import { useComputedColorScheme } from '@mantine/core'
 import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet } from '@tanstack/react-router'
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import {
 	createGlobalExtensionContext,
 	extensionLocale,
@@ -13,7 +13,7 @@ import {
 import { ExtensionLoader } from '../ExtensionLoader'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
-import { PluginOverviewProvider } from '../plugins/pluginOverviewStore'
+import { usePluginOverview } from '../plugins/pluginOverview'
 import { RUNTIME_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
 
@@ -22,8 +22,16 @@ export function AppProviders() {
 	const isSecurityRoute =
 		pathname === RUNTIME_SECURITY_BASE || pathname.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
-	const [runningPlugins, setRunningPlugins] = useState<ReadonlySet<string>>(() => new Set())
-	const [runningReady, setRunningReady] = useState(false)
+	const pluginOverview = usePluginOverview()
+	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
+		.filter((plugin) => plugin.isRunning)
+		.map((plugin) => plugin.name)
+		.sort((left, right) => left.localeCompare(right))
+		.join('\n')
+	const runningPlugins = useMemo(
+		() => new Set(runningPluginSignature ? runningPluginSignature.split('\n') : []),
+		[runningPluginSignature],
+	)
 	const transportClient = useRuntimeTransportClient()
 	const localeSnapshot = useSyncExternalStore(
 		extensionLocale.subscribe,
@@ -31,31 +39,12 @@ export function AppProviders() {
 		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
 	)
 
-	const handleRunningPluginsChange = useCallback((next: ReadonlySet<string>) => {
-		setRunningPlugins((prev) => {
-			if (prev.size === next.size) {
-				let identical = true
-				for (const name of prev) {
-					if (!next.has(name)) {
-						identical = false
-						break
-					}
-				}
-				if (identical) {
-					return prev
-				}
-			}
-			return new Set(next)
-		})
-		setRunningReady(true)
-	}, [])
-
 	const extensionContext = useMemo<ExtensionContext>(
 		() =>
 			createGlobalExtensionContext({
 				colorScheme,
 				runningPlugins,
-				runningPluginsReady: runningReady,
+				runningPluginsReady: pluginOverview.hasSnapshot,
 				services: {
 					transport: transportClient,
 					locale: extensionLocale,
@@ -95,7 +84,7 @@ export function AppProviders() {
 					},
 				},
 			}),
-		[colorScheme, localeSnapshot, runningPlugins, runningReady, transportClient],
+		[colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPlugins, transportClient],
 	)
 
 	return (
@@ -107,13 +96,10 @@ export function AppProviders() {
 						{isSecurityRoute ? (
 							<Outlet />
 						) : (
-							<PluginOverviewProvider>
-								<ExtensionLoader
-									pollInterval={5000}
-									onRunningPluginsChange={handleRunningPluginsChange}
-								/>
+							<>
+								<ExtensionLoader pollInterval={5000} />
 								<Outlet />
-							</PluginOverviewProvider>
+							</>
 						)}
 					</ModalsProvider>
 				</NotificationCenterProvider>

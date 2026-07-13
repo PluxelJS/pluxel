@@ -1,6 +1,6 @@
 import { Badge, Button, Group, Loader, Paper, Stack, Table, Text } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getRuntimeSecurityClient, type SecurityAuditEvent, rpcErrorMessage } from '../../runtime'
 import { EmptyState, ErrorState } from '../../components'
 
@@ -31,7 +31,7 @@ export function SecurityAuditScreen() {
 	const [refreshing, setRefreshing] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 
-	const refresh = useEffectEvent(async () => {
+	const refresh = useCallback(async () => {
 		setRefreshing(true)
 		setError(null)
 		try {
@@ -42,11 +42,11 @@ export function SecurityAuditScreen() {
 			setLoading(false)
 			setRefreshing(false)
 		}
-	})
+	}, [security])
 
 	useEffect(() => {
 		void refresh()
-	}, [])
+	}, [refresh])
 
 	if (loading) {
 		return (

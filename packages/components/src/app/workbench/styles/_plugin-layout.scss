@@ -40,7 +40,7 @@
 
 .plx-pluginWorkbench__workspace {
 	height: 100%;
-	padding: 4px;
+	padding: 2px;
 }
 
 .plx-pluginWorkbench__contextRail,
@@ -64,13 +64,13 @@
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	padding: 5px 8px 6px;
+	gap: 4px;
+	padding: 3px 6px 4px;
 }
 
 .plx-pluginWorkbench__viewHeader[data-mode='inline'] {
 	gap: 0;
-	padding: 4px 6px;
+	padding: 2px 4px;
 }
 
 .plx-pluginWorkbench__tabsHeaderRow {
@@ -124,7 +124,7 @@
 
 .plx-pluginWorkbench__contextStack {
 	min-height: 100%;
-	padding: 5px 6px;
+	padding: 4px;
 }
 
 .plx-pluginWorkbench__contextStack--compact {
@@ -158,8 +158,8 @@
 	color: var(--plx-text-muted);
 	flex: 0 0 auto;
 	font-weight: 600;
-	min-height: 28px;
-	padding-inline: 10px;
+	min-height: 26px;
+	padding-inline: 8px;
 	transition:
 		background-color 140ms ease,
 		border-color 140ms ease,
@@ -252,7 +252,7 @@
 }
 
 .plx-pluginWorkbench__dockPane {
-	padding: 5px 6px 6px;
+	padding: 3px 4px 4px;
 }
 
 .plx-workbench__resizeHandle--horizontal {
@@ -262,7 +262,7 @@
 
 @include mantine.smaller-than(lg) {
 	.plx-pluginWorkbench__workspace {
-		padding: 4px;
+		padding: 2px;
 	}
 
 	.plx-pluginWorkbench__viewHeader {

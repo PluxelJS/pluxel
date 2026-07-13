@@ -31,6 +31,7 @@ CLI 是独立的后续路径，不是理解插件设计的前置知识。
 
 ## 其他任务
 
+- [`workbench.md`](workbench.md)：管理工作台的导航、标签、插件分栏和高效空间使用。
 - [`chatbots.md`](chatbots.md)：Chatbots 项目的跨平台/原生能力选择、顺序、背压和幂等边界。
 - [`starter-monorepo.md`](starter-monorepo.md)：生成可独立运行、带本地插件指南和完整验证命令的
   canonical application monorepo。

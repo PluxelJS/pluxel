@@ -9,13 +9,8 @@
 	--plx-topbar-bg: var(--plx-workbench-topbar-bg);
 	--plx-tabbar-bg: var(--plx-workbench-tabbar-bg);
 	--plx-surface-canvas: var(--plx-workbench-surface-canvas);
-	--plx-activity-width: 68px;
-	background: linear-gradient(
-		180deg,
-		var(--plx-shell-bg) 0%,
-		var(--plx-shell-bg-alt) 52%,
-		var(--plx-app-bg-alt) 100%
-	);
+	--plx-activity-width: 220px;
+	background: var(--plx-shell-bg-alt);
 	color: var(--plx-text);
 	display: grid;
 	grid-template-columns: var(--plx-activity-width) minmax(0, 1fr);
@@ -60,61 +55,94 @@
 }
 
 .plx-workbench__activity {
-	align-items: center;
+	align-items: stretch;
 	background: var(--plx-activity-bg);
-	backdrop-filter: blur(12px);
 	border-right: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
-	overflow: visible;
-	padding: 10px 8px;
+	gap: 18px;
+	overflow: hidden;
+	padding: 16px 12px;
 	position: relative;
 	z-index: 20;
 }
 
 .plx-workbench__activityBrand {
 	align-items: center;
-	background: var(--plx-surface-strong);
-	border: 1px solid var(--plx-border-strong);
-	border-radius: 8px;
-	box-shadow: var(--plx-shadow);
+	display: flex;
+	gap: 10px;
+	height: 40px;
+	min-width: 0;
+	padding-inline: 4px;
+}
+
+.plx-workbench__activityBrandMark {
+	align-items: center;
+	background: var(--plx-text);
+	border-radius: 9px;
+	color: var(--plx-surface-strong);
 	display: inline-flex;
-	height: 38px;
+	flex: 0 0 auto;
+	height: 34px;
 	justify-content: center;
-	width: 38px;
+	width: 34px;
+}
+
+.plx-workbench__activityBrandText {
+	display: flex;
+	flex-direction: column;
+	line-height: 1.1;
+	min-width: 0;
+}
+
+.plx-workbench__activityBrandText strong {
+	font-size: 14px;
+	letter-spacing: -0.01em;
+}
+
+.plx-workbench__activityBrandText small {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	margin-top: 3px;
+	text-transform: uppercase;
 }
 
 .plx-workbench__activityList {
-	align-items: center;
+	align-items: stretch;
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	gap: 8px;
+	gap: 4px;
 	width: 100%;
 }
 
 .plx-workbench__activityItem {
 	align-items: center;
 	background: transparent;
-	border: 0;
-	border-radius: 8px;
+	border: 1px solid transparent;
+	border-radius: 7px;
 	color: var(--plx-text-muted);
 	cursor: pointer;
-	display: inline-flex;
-	height: 40px;
-	justify-content: center;
+	display: flex;
+	font-size: 13px;
+	font-weight: 620;
+	gap: 11px;
+	height: 38px;
+	padding: 0 10px;
 	position: relative;
+	text-decoration: none;
 	transition:
 		background-color 140ms ease,
 		color 140ms ease,
 		transform 140ms ease;
-	width: 40px;
+	width: 100%;
 }
 
 .plx-workbench__activityItem:hover,
 .plx-workbench__activityItem:focus-visible {
-	background: var(--plx-activity-item-active);
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
 	color: var(--plx-text);
 	outline: none;
 	transform: none;
@@ -122,48 +150,59 @@
 
 .plx-workbench__activityItem[data-active='true'] {
 	background: var(--plx-activity-item-active);
+	border-color: color-mix(in srgb, var(--plx-accent) 18%, transparent);
 	color: var(--plx-accent);
 }
 
-.plx-workbench__activityLabel {
-	background: var(--plx-surface-strong);
-	border: 1px solid var(--plx-border);
-	border-radius: 999px;
-	box-shadow: var(--plx-shadow);
-	color: var(--plx-text);
-	font-size: 12px;
-	font-weight: 600;
-	left: calc(100% + 10px);
-	opacity: 0;
-	padding: 6px 10px;
-	pointer-events: none;
-	position: absolute;
-	top: 50%;
-	transform: translateY(-50%) translateX(-4px);
-	transition:
-		opacity 140ms ease,
-		transform 140ms ease;
-	white-space: nowrap;
-	z-index: 8;
+.plx-workbench__activityIcon {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	justify-content: center;
+	width: 20px;
 }
 
-.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
-.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
-	opacity: 1;
-	transform: translateY(-50%) translateX(0);
+.plx-workbench__activityLabel {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .plx-workbench__activityFooter {
 	align-items: center;
 	display: flex;
-	flex-direction: column;
-	gap: 10px;
+	margin-top: auto;
 	width: 100%;
+}
+
+.plx-workbench__navigationToggle {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: flex;
+	font-size: 12px;
+	font-weight: 620;
+	gap: 11px;
+	height: 36px;
+	padding: 0 10px;
+	text-align: left;
+	width: 100%;
+}
+
+.plx-workbench__navigationToggle:hover,
+.plx-workbench__navigationToggle:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
 }
 
 .plx-workbench__main {
 	display: grid;
-	grid-template-rows: 34px 32px minmax(0, 1fr) auto;
+	grid-template-rows: 44px 34px minmax(0, 1fr) auto;
 	height: 100%;
 	min-height: 0;
 	min-width: 0;
@@ -172,11 +211,14 @@
 	z-index: 1;
 }
 
+.plx-workbench__main[data-has-tabs='false'] {
+	grid-template-rows: 44px minmax(0, 1fr) auto;
+}
+
 .plx-workbench__topbar,
 .plx-workbench__editorTabStrip,
 .plx-workbench__statusbar {
 	align-items: center;
-	backdrop-filter: blur(16px);
 	display: flex;
 	min-width: 0;
 }
@@ -184,35 +226,35 @@
 .plx-workbench__topbar {
 	background: var(--plx-topbar-bg);
 	border-bottom: 1px solid var(--plx-border);
-	gap: 12px;
+	gap: 18px;
 	justify-content: space-between;
-	padding: 0 8px 0 10px;
+	padding: 0 14px 0 18px;
 }
 
 .plx-workbench__topbar[data-compact='true'] {
-	padding-inline: 8px 10px;
+	padding-inline: 18px 14px;
 }
 
 .plx-workbench__topbarTitle {
 	align-items: center;
 	display: flex;
 	flex-direction: row;
-	gap: 8px;
+	gap: 10px;
 	min-width: 0;
 }
 
 .plx-workbench__eyebrow {
 	color: var(--plx-text-muted);
-	font-size: 9px;
+	font-size: 10px;
 	font-weight: 700;
-	letter-spacing: 0.08em;
+	letter-spacing: 0.1em;
 	line-height: 1;
 	text-transform: uppercase;
 	white-space: nowrap;
 }
 
 .plx-workbench__title {
-	font-size: 13px;
+	font-size: 15px;
 	font-weight: 700;
 	line-height: 1.2;
 	overflow: hidden;
@@ -222,7 +264,7 @@
 
 .plx-workbench__subtitle {
 	color: var(--plx-text-muted);
-	font-size: 11px;
+	font-size: 12px;
 	line-height: 1.2;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -232,7 +274,7 @@
 .plx-workbench__topbarActions {
 	align-items: center;
 	display: flex;
-	gap: 6px;
+	gap: 8px;
 }
 
 .plx-workbench__themeToggle,
@@ -260,10 +302,10 @@
 }
 
 .plx-workbench__toolbarButton--action {
-	border-radius: 8px;
+	border-radius: 7px;
 	gap: 6px;
-	height: 26px;
-	min-width: 30px;
+	height: 32px;
+	min-width: 32px;
 	padding: 0 10px;
 }
 
@@ -282,24 +324,18 @@
 .plx-workbench__editorTabStrip {
 	@include theme.tab-strip(surface-muted, border);
 	align-items: center;
-	background: linear-gradient(
-		180deg,
-		color-mix(in srgb, var(--plx-tabbar-bg) 92%, transparent) 0%,
-		color-mix(in srgb, var(--plx-topbar-bg) 28%, var(--plx-tabbar-bg) 72%) 100%
-	);
+	background: var(--plx-tabbar-bg);
 	border-bottom: 1px solid var(--plx-border);
 	border-inline: 0;
 	border-radius: 0;
-	box-shadow:
-		inset 0 1px 0 color-mix(in srgb, var(--plx-surface-strong) 42%, transparent),
-		inset 0 -1px 0 color-mix(in srgb, var(--plx-border) 84%, transparent);
-	gap: 6px;
-	max-height: 32px;
+	box-shadow: none;
+	gap: 4px;
+	max-height: 34px;
 	overflow-x: auto;
 	overflow-y: hidden;
 	overscroll-behavior-x: contain;
 	overscroll-behavior-y: none;
-	padding: 2px 8px 3px;
+	padding: 2px 8px;
 	scrollbar-width: none;
 }
 
@@ -308,7 +344,7 @@
 }
 
 .plx-workbench__editorTabButton {
-	@include theme.tab-button-base(27px, 8px, 10px);
+	@include theme.tab-button-base(28px, 7px, 9px);
 	align-items: center;
 	display: inline-flex;
 	flex: 0 0 auto;
@@ -327,11 +363,9 @@
 }
 
 .plx-workbench__editorTabButton[data-active='true'] {
-	background: color-mix(in srgb, var(--plx-selected-bg) 72%, var(--plx-surface-strong) 28%);
-	border-color: color-mix(in srgb, var(--plx-selected-border) 78%, var(--plx-border-strong) 22%);
-	box-shadow:
-		inset 0 1px 0 color-mix(in srgb, var(--plx-surface-strong) 90%, transparent),
-		inset 0 -2px 0 color-mix(in srgb, var(--plx-accent) 48%, transparent);
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	box-shadow: inset 0 -2px 0 var(--plx-accent);
 	color: var(--plx-text);
 	transform: none;
 }
@@ -447,7 +481,7 @@
 	min-height: 0;
 	min-width: 0;
 	overflow: hidden;
-	padding: 4px;
+	padding: 6px;
 }
 
 .plx-workbench__surface,
@@ -466,6 +500,7 @@
 .plx-workbench__surface {
 	@include theme.panel-surface(surface-canvas, border);
 	border-radius: 8px;
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--plx-text) 5%, transparent);
 	overflow: hidden;
 }
 
@@ -516,7 +551,7 @@
 }
 
 .plx-workbench__workspace {
-	padding: 4px;
+	padding: 0;
 }
 
 .plx-workbench__statusbar {
@@ -531,22 +566,226 @@
 	display: none;
 }
 
-@include mantine.smaller-than(md) {
-	.plx-workbench {
-		grid-template-columns: 60px minmax(0, 1fr);
-	}
+@include mantine.larger-than(sm) {
+	.plx-workbench[data-navigation-collapsed='true'] {
+		--plx-activity-width: 64px;
 
-	.plx-workbench__main {
-		grid-template-rows: 34px 32px minmax(0, 1fr);
-	}
+		.plx-workbench__activity {
+			align-items: center;
+			gap: 12px;
+			overflow: visible;
+			padding-inline: 8px;
+		}
 
+		.plx-workbench__activityBrand {
+			justify-content: center;
+			padding: 0;
+		}
+
+		.plx-workbench__activityBrandText {
+			display: none;
+		}
+
+		.plx-workbench__activityList {
+			align-items: center;
+			gap: 6px;
+		}
+
+		.plx-workbench__activityItem {
+			gap: 0;
+			justify-content: center;
+			padding: 0;
+			width: 42px;
+		}
+
+		.plx-workbench__activityLabel {
+			background: var(--plx-surface-strong);
+			border: 1px solid var(--plx-border);
+			border-radius: 6px;
+			box-shadow: var(--plx-shadow);
+			color: var(--plx-text);
+			font-size: 12px;
+			font-weight: 650;
+			left: calc(100% + 10px);
+			opacity: 0;
+			padding: 6px 9px;
+			pointer-events: none;
+			position: absolute;
+			top: 50%;
+			transform: translateY(-50%) translateX(-4px);
+			transition:
+				opacity 140ms ease,
+				transform 140ms ease;
+			z-index: 8;
+		}
+
+		.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
+		.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
+			opacity: 1;
+			transform: translateY(-50%) translateX(0);
+		}
+
+		.plx-workbench__activityFooter {
+			justify-content: center;
+		}
+
+		.plx-workbench__navigationToggle {
+			justify-content: center;
+			padding: 0;
+			width: 42px;
+		}
+
+		.plx-workbench__navigationToggle span {
+			display: none;
+		}
+	}
+}
+
+@include mantine.smaller-than(lg) {
 	.plx-workbench__topbarActions .plx-workbench__actionLabel,
-	.plx-workbench__actionHint,
-	.plx-workbench__subtitle {
+	.plx-workbench__actionHint {
 		display: none;
 	}
 
 	.plx-workbench__body {
-		padding: 6px;
+		padding: 5px;
+	}
+}
+
+@include mantine.smaller-than(sm) {
+	.plx-workbench {
+		display: block;
+		padding-bottom: 66px;
+		position: relative;
+	}
+
+	.plx-workbench__activity {
+		align-items: stretch;
+		background: color-mix(in srgb, var(--plx-activity-bg) 96%, transparent);
+		border: 0;
+		border-top: 1px solid var(--plx-border-strong);
+		bottom: 0;
+		box-shadow: 0 -8px 24px color-mix(in srgb, var(--plx-text) 8%, transparent);
+		gap: 0;
+		height: 66px;
+		left: 0;
+		overflow: hidden;
+		padding: 5px max(6px, env(safe-area-inset-left)) max(5px, env(safe-area-inset-bottom));
+		position: fixed;
+		right: 0;
+		top: auto;
+		z-index: 50;
+	}
+
+	.plx-workbench__activityBrand {
+		display: none;
+	}
+
+	.plx-workbench__activityFooter {
+		display: none;
+	}
+
+	.plx-workbench__activityList {
+		align-items: stretch;
+		display: grid;
+		gap: 2px;
+		grid-auto-columns: minmax(64px, 1fr);
+		grid-auto-flow: column;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+	}
+
+	.plx-workbench__activityList::-webkit-scrollbar {
+		display: none;
+	}
+
+	.plx-workbench__activityItem {
+		flex-direction: column;
+		font-size: 10px;
+		gap: 3px;
+		height: 54px;
+		justify-content: center;
+		padding: 3px 6px;
+		width: auto;
+	}
+
+	.plx-workbench__activityLabel {
+		background: none;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
+		color: inherit;
+		font-size: 10px;
+		font-weight: 650;
+		left: auto;
+		opacity: 1;
+		padding: 0;
+		position: static;
+		transform: none;
+	}
+
+	.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
+	.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
+		transform: none;
+	}
+
+	.plx-workbench__main {
+		grid-template-rows: 44px 32px minmax(0, 1fr);
+		height: calc(100dvh - 66px);
+	}
+
+	.plx-workbench__main[data-has-tabs='false'] {
+		grid-template-rows: 44px minmax(0, 1fr);
+	}
+
+	.plx-workbench__topbar {
+		padding: 0 10px 0 14px;
+	}
+
+	.plx-workbench__topbar[data-compact='true'] {
+		padding-inline: 14px 10px;
+	}
+
+	.plx-workbench__eyebrow,
+	.plx-workbench__subtitle {
+		display: none;
+	}
+
+	.plx-workbench__title {
+		font-size: 14px;
+	}
+
+	.plx-workbench__editorTabStrip {
+		padding-inline: 6px;
+	}
+
+	.plx-workbench__editorTabButton {
+		max-width: 170px;
+	}
+
+	.plx-workbench__editorTabMeta {
+		display: none;
+	}
+
+	.plx-workbench__layoutControls {
+		display: none;
+	}
+
+	.plx-workbench__body {
+		padding: 4px;
+	}
+
+	.plx-workbench__surface {
+		border-radius: 8px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.plx-workbench__activityItem,
+	.plx-workbench__activityLabel,
+	.plx-workbench__toolbarButton,
+	.plx-workbench__editorTabButton {
+		transition: none;
 	}
 }

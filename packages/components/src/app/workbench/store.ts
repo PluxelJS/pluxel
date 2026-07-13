@@ -115,6 +115,16 @@ export function toggleWorkbenchSectionPane(sectionId: WorkbenchSectionId) {
 	})
 }
 
+export function toggleWorkbenchNavigationCollapsed() {
+	workbenchStore.setState((prev) => ({
+		...prev,
+		uiState: {
+			...prev.uiState,
+			navigationCollapsed: !prev.uiState.navigationCollapsed,
+		},
+	}))
+}
+
 export function setWorkbenchSectionPaneLayout(
 	sectionId: WorkbenchSectionId,
 	layout: Record<string, number>,
@@ -242,6 +252,7 @@ export function resetWorkbenchToHome() {
 		dirtyTabs: {},
 		uiState: {
 			activeTabId: homeTab.id,
+			navigationCollapsed: prev.uiState.navigationCollapsed,
 			sectionPanes: prev.uiState.sectionPanes,
 			tabState: {},
 			tabs: [homeTab],

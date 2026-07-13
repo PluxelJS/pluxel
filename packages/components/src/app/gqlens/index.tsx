@@ -89,6 +89,8 @@ export function PluxelGQLensProvider({ children }: { children?: ReactNode }) {
 	)
 }
 
+export { useMutation } from '@gqlens/react'
+
 export {
 	useQuery,
 	useLiveQuery,

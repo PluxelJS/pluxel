@@ -1,5 +1,5 @@
 import { Group, Loader, Stack, Text } from '@mantine/core'
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	getRuntimeSecurityClient,
 	type SecurityAuditEvent,
@@ -8,7 +8,7 @@ import {
 	rpcErrorMessage,
 } from '../../runtime'
 import { ErrorState } from '../../components'
-import { useNotify } from '../hooks'
+import { useNotify } from '../hooks/useNotify'
 import { useStoredSplitLayout, WorkbenchSplitView } from '../workbench/split'
 import {
 	DEFAULT_SECURITY_SPLIT_LAYOUT,
@@ -57,34 +57,40 @@ export function SecurityScreen() {
 		sanitizeSecuritySplitLayout,
 	)
 
-	function applyOverview(nextOverview: SecurityOverview, options: RefreshOptions = {}) {
-		setOverview(nextOverview)
-		if (options.syncDeployRecipientsDraft) {
-			setDeployRecipientsDraft(formatRecipientsDraft(nextOverview.vault.deploy.recipients))
-		}
-	}
+	const applyOverview = useCallback(
+		(nextOverview: SecurityOverview, options: RefreshOptions = {}) => {
+			setOverview(nextOverview)
+			if (options.syncDeployRecipientsDraft) {
+				setDeployRecipientsDraft(formatRecipientsDraft(nextOverview.vault.deploy.recipients))
+			}
+		},
+		[],
+	)
 
-	const refresh = useEffectEvent(async (options: RefreshOptions = {}) => {
-		setRefreshing(true)
-		setError(null)
-		try {
-			const [nextOverview, nextEvents] = await Promise.all([
-				security.readOverview(),
-				security.listEvents(),
-			])
-			applyOverview(nextOverview, options)
-			setEvents(nextEvents)
-		} catch (cause) {
-			setError(rpcErrorMessage(cause, 'Failed to load security state'))
-		} finally {
-			setLoading(false)
-			setRefreshing(false)
-		}
-	})
+	const refresh = useCallback(
+		async (options: RefreshOptions = {}) => {
+			setRefreshing(true)
+			setError(null)
+			try {
+				const [nextOverview, nextEvents] = await Promise.all([
+					security.readOverview(),
+					security.listEvents(),
+				])
+				applyOverview(nextOverview, options)
+				setEvents(nextEvents)
+			} catch (cause) {
+				setError(rpcErrorMessage(cause, 'Failed to load security state'))
+			} finally {
+				setLoading(false)
+				setRefreshing(false)
+			}
+		},
+		[applyOverview, security],
+	)
 
 	useEffect(() => {
 		void refresh({ syncDeployRecipientsDraft: true })
-	}, [])
+	}, [refresh])
 
 	async function generateDeployKey() {
 		setBusy('vault-deploy-generate')

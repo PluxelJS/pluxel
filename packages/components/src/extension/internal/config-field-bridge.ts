@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useGlobalExtensionContext } from '@pluxel/runtime/web'
-import { usePluginConfig } from '../../app/hooks/usePluginConfig'
+import { commitPluginConfig, usePluginConfig } from '../../app/plugins/config/usePluginConfig'
 import { patchPluginConfigField } from '../../runtime'
 
 export function readString(value: unknown): string | undefined {
@@ -65,18 +65,10 @@ export function useConfigFieldBridge(input: {
 	const transport = ctx.services.transport
 	const config = usePluginConfig(targetPlugin)
 	const [saving, setSaving] = useState(false)
-	const [savedOverride, setSavedOverride] = useState<Record<string, unknown> | null>(null)
-
-	useEffect(() => {
-		setSavedOverride(null)
-	}, [targetPlugin, config.data?.savedConfig])
 
 	const schemaMap = (config.data?.schemaMap ?? {}) as Record<string, unknown>
 	const defaults = (config.data?.defaults ?? {}) as Record<string, Record<string, unknown>>
-	const savedConfig = (savedOverride ?? config.data?.savedConfig ?? {}) as Record<
-		string,
-		Record<string, unknown>
-	>
+	const savedConfig = (config.data?.savedConfig ?? {}) as Record<string, Record<string, unknown>>
 
 	const currentSchemaValue = useMemo(() => {
 		const defaultSchemaValue = defaults?.[schemaKey] as Record<string, unknown> | undefined
@@ -126,7 +118,7 @@ export function useConfigFieldBridge(input: {
 								...((savedConfig ?? {}) as Record<string, unknown>),
 								[schemaKey]: nextSchemaValue,
 							} as Record<string, unknown>)
-				setSavedOverride(nextSavedConfig)
+				commitPluginConfig(targetPlugin, nextSavedConfig)
 				return nextSavedConfig
 			} finally {
 				setSaving(false)

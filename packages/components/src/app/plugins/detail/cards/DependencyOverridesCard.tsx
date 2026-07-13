@@ -14,9 +14,10 @@ import {
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNotify } from '../../../hooks'
+import { useNotify } from '../../../hooks/useNotify'
 import {
 	ensurePluginFork,
+	inspectPluginDependencies,
 	rpcErrorMessage,
 	setPluginDependencyTarget,
 	useRuntimeTransportClient,
@@ -25,7 +26,6 @@ import {
 	type PluginDependencyState,
 } from '../../../../runtime'
 import { usePluginScope } from '../context'
-import { loadDependencyState } from '../rpcResourceCache'
 
 function runtimeColor(isRunning: boolean) {
 	return isRunning ? 'green' : 'gray'
@@ -57,31 +57,28 @@ export function DependencyOverridesCard() {
 		}
 	}, [])
 
-	const load = useCallback(
-		async (options?: { force?: boolean }) => {
-			if (!pluginName) return
-			setLoading(true)
-			try {
-				const deps = await loadDependencyState(transport, pluginName, options)
-				if (!mountedRef.current) return
-				const rows = Array.isArray(deps) ? deps : []
-				// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
-				// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
-				setState(rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'))
-			} catch (error) {
-				if (!mountedRef.current) return
-				setState([])
-				notify({
-					title: '读取依赖失败',
-					message: rpcErrorMessage(error, '无法读取依赖状态'),
-					color: 'red',
-				})
-			} finally {
-				if (mountedRef.current) setLoading(false)
-			}
-		},
-		[transport, notify, pluginName],
-	)
+	const load = useCallback(async () => {
+		if (!pluginName) return
+		setLoading(true)
+		try {
+			const deps = await transport.withRpc((rpc) => inspectPluginDependencies(rpc, pluginName))
+			if (!mountedRef.current) return
+			const rows = Array.isArray(deps) ? deps : []
+			// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
+			// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
+			setState(rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'))
+		} catch (error) {
+			if (!mountedRef.current) return
+			setState([])
+			notify({
+				title: '读取依赖失败',
+				message: rpcErrorMessage(error, '无法读取依赖状态'),
+				color: 'red',
+			})
+		} finally {
+			if (mountedRef.current) setLoading(false)
+		}
+	}, [transport, notify, pluginName])
 
 	useEffect(() => {
 		void load()
@@ -90,7 +87,7 @@ export function DependencyOverridesCard() {
 	const rows = useMemo(() => state ?? [], [state])
 
 	const triggerRefresh = useCallback(async () => {
-		await load({ force: true })
+		await load()
 		await refetch()
 	}, [load, refetch])
 

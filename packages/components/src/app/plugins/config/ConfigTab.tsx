@@ -4,7 +4,8 @@ import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
-import { useNotify } from '../../hooks'
+import { useNotify } from '../../hooks/useNotify'
+import { commitPluginConfig } from './usePluginConfig'
 import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
 import { PLUGIN_DETAIL_HOTKEYS } from '../../workbench/shortcuts'
 import { FormToc } from './components/FormToc'
@@ -72,7 +73,7 @@ export function ConfigTabContent({
 	savedValue: Record<string, any>
 	defaultValue: Record<string, any>
 	draftValue?: Record<string, any>
-	onSaved: (k: string, value: Record<string, any>) => void
+	onSaved?: (k: string, value: Record<string, any>) => void
 	showToc?: boolean
 	active?: boolean
 	sectionIdPrefix?: string
@@ -133,8 +134,9 @@ export function ConfigTabContent({
 						})
 						return
 					}
+					commitPluginConfig(pluginName, result.config)
 					formApi.reset(value as any)
-					onSaved(tabKey, value as any)
+					onSaved?.(tabKey, value as any)
 					notify({ title: '提交成功', message: `配置 ${tabKey} 已保存`, color: 'green' })
 				},
 			}),

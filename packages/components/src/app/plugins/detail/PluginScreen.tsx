@@ -15,9 +15,9 @@ import {
 	PluginStatusEntryLifecycleStage,
 	useQuery,
 } from '../../gqlens'
-import { usePluginConfig } from '../../hooks'
+import { usePluginConfig } from '../config/usePluginConfig'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { usePluginOverview } from '../pluginOverviewStore'
+import { usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { matchesKnownPluginName, resolveKnownPluginName } from './rightPaneState'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
@@ -161,8 +161,9 @@ function resolveVisibleDependencies(params: {
 
 function usePluginDetail(pluginName?: string) {
 	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
-	const overview = usePluginOverview()
-	const statusEntries = overview.overview?.status?.statuses ?? []
+	const overviewState = usePluginOverview()
+	const statusEntries = overviewState.overview?.status?.statuses ?? []
+	const refetchOverview = overviewState.refetch
 
 	const statusMap = useMemo(() => {
 		const map = new Map<string, PluginStatusEntry>()
@@ -232,14 +233,16 @@ function usePluginDetail(pluginName?: string) {
 
 	const refetch = useCallback(async () => {
 		detailQuery.refetch()
-	}, [detailQuery])
+		refetchOverview()
+	}, [detailQuery, refetchOverview])
 
 	return {
 		detail,
+		statusEntries,
 		knownPluginNames,
 		ready,
 		listed,
-		hasStatusSnapshot: overview.hasSnapshot,
+		hasStatusSnapshot: overviewState.hasSnapshot,
 		statusEntry,
 		error,
 		loading,
@@ -268,6 +271,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 
 	const {
 		detail,
+		statusEntries,
 		knownPluginNames,
 		ready,
 		listed,
@@ -363,6 +367,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 			description,
 			dependencies,
 			knownPluginNames,
+			statusSnapshot: statusEntries,
 			status: effectiveStatusEntry,
 			isRunning,
 			isSyncing: syncing,
@@ -379,6 +384,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		handleRefetch,
 		handleStatusOverride,
 		knownPluginNames,
+		statusEntries,
 		effectiveStatusEntry,
 		isRunning,
 		isEnabled,

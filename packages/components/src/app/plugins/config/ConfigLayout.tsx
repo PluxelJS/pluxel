@@ -68,15 +68,9 @@ export function ConfigLayout({
 	onDirtyChange?: (dirty: boolean) => void
 	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
 }) {
-	const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
 	const [formStates, setFormStates] = useState<Record<string, ConfigFormState>>({})
 	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
 	const schemaNodeRefs = useRef<Record<string, HTMLDivElement | null>>({})
-
-	// Reset local baseline when external saved config changes.
-	useEffect(() => {
-		setSavedOverride(null)
-	}, [layout, pluginName, savedConfig])
 
 	useEffect(() => {
 		onDirtyChange?.(Object.values(formStates).some((state) => state?.dirty))
@@ -157,7 +151,6 @@ export function ConfigLayout({
 		return () => window.cancelAnimationFrame(handle)
 	}, [active, activeKey, rendered.chunks, rendered.remaining])
 
-	const finalSavedConfig = (savedOverride ?? savedConfig) as Record<string, unknown>
 	const reportState = useCallback((key: string, state: ConfigFormState) => {
 		setFormStates((prev) => {
 			const existing = prev[key]
@@ -208,15 +201,9 @@ export function ConfigLayout({
 										pluginName={pluginName}
 										tabKey={schemaKey}
 										schema={schema}
-										savedValue={toRecord(finalSavedConfig?.[schemaKey])}
+										savedValue={toRecord(savedConfig?.[schemaKey])}
 										defaultValue={toRecord(defaults?.[schemaKey])}
 										draftValue={toRecord(draftValues?.[schemaKey])}
-										onSaved={(_k, value) =>
-											setSavedOverride((prev) => ({
-												...((prev ?? finalSavedConfig) as any),
-												[schemaKey]: value,
-											}))
-										}
 										reportState={reportState}
 										showToc={false}
 										active={active}
@@ -257,15 +244,9 @@ export function ConfigLayout({
 										pluginName={pluginName}
 										tabKey={schemaKey}
 										schema={schema}
-										savedValue={toRecord(finalSavedConfig?.[schemaKey])}
+										savedValue={toRecord(savedConfig?.[schemaKey])}
 										defaultValue={toRecord(defaults?.[schemaKey])}
 										draftValue={toRecord(draftValues?.[schemaKey])}
-										onSaved={(_k, value) =>
-											setSavedOverride((prev) => ({
-												...((prev ?? finalSavedConfig) as any),
-												[schemaKey]: value,
-											}))
-										}
 										reportState={reportState}
 										showToc={false}
 										active={active}

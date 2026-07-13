@@ -23,6 +23,7 @@ export type WorkbenchSectionPanes = Record<string, WorkbenchSectionPaneState>
 
 export type WorkbenchUiState = {
 	activeTabId: string | null
+	navigationCollapsed: boolean
 	sectionPanes: WorkbenchSectionPanes
 	tabState: WorkbenchTabState
 	tabs: WorkbenchTab[]
@@ -81,6 +82,7 @@ function createDefaultSectionPanes(): WorkbenchSectionPanes {
 export function createDefaultWorkbenchUiState(): WorkbenchUiState {
 	return {
 		activeTabId: null,
+		navigationCollapsed: true,
 		sectionPanes: createDefaultSectionPanes(),
 		tabState: {},
 		tabs: [],
@@ -100,7 +102,7 @@ export function sanitizeWorkbenchSectionPanes(value: unknown): WorkbenchSectionP
 }
 
 export function getSectionPaneState(
-	state: WorkbenchUiState,
+	state: Pick<WorkbenchUiState, 'sectionPanes'>,
 	sectionId: WorkbenchSectionId,
 ): WorkbenchSectionPaneState {
 	return state.sectionPanes[sectionId] ?? createDefaultSectionPaneState(sectionId)
@@ -147,6 +149,7 @@ export function readWorkbenchState(): WorkbenchUiState {
 			: []
 		return {
 			activeTabId: typeof parsed.activeTabId === 'string' ? parsed.activeTabId : null,
+			navigationCollapsed: parsed.navigationCollapsed !== false,
 			sectionPanes: sanitizeWorkbenchSectionPanes(parsed.sectionPanes),
 			tabState: sanitizeWorkbenchTabState(parsed.tabState),
 			tabs,

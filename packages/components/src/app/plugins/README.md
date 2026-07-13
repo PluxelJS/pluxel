@@ -6,14 +6,14 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
 
 - `catalog/`
   Plugin navigation, search/filter tokens, grouped drag/drop organization, and navigation chrome.
-- `pluginOverviewStore.tsx`
-  Shared plugin overview snapshot state consumed across plugin/package screens.
+- `pluginOverview.tsx`
+  Shared-scope GQLens overview projection consumed across plugin/package screens; it does not own a second cache.
 - `pluginStatusActions.ts`
   RPC-backed plugin status and start-plan operations.
 - `detail/`
   Single-plugin screen, workbench composition, scoped context, and detail-only `cards/controls`.
 - `config/`
-  Config form orchestration, schema grouping, saved-state handling, and form TOC helpers.
+  Config form orchestration, schema grouping, saved-state handling, the shared RPC config resource, and form TOC helpers.
 
 ## Hard Rules
 
@@ -27,7 +27,7 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
    Keep RPC, notifications, and persistence logic outside unless strictly needed for DnD itself.
 
 4. `config/` owns config submission flow.
-   Reuse its helpers instead of adding ad-hoc schema sorting, anchor logic, or saved-state badges elsewhere.
+   Reuse its helpers and config resource instead of adding ad-hoc schema caches, schema sorting, anchor logic, or saved-state badges elsewhere.
 
 5. Shared code must be truly shared.
    If only one area uses it, keep it local to that area.
@@ -36,7 +36,7 @@ This directory is the frontend surface for plugin browsing, detail, config, and 
 
 When editing plugin UI:
 
-1. Decide whether the change belongs to `catalog/`, `detail/`, `config/`, `pluginOverviewStore.tsx`, or `pluginStatusActions.ts`.
+1. Decide whether the change belongs to `catalog/`, `detail/`, `config/`, `pluginOverview.tsx`, or `pluginStatusActions.ts`.
 2. Change the narrowest layer first.
 3. Prefer deleting compatibility wrappers instead of adding new ones.
 4. Add a new folder only when at least two files would immediately live under it.

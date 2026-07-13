@@ -16,8 +16,8 @@ export const DEFAULT_PLUGIN_SECTION_LAYOUT = {
 
 export const PLUGIN_WORKBENCH_PANELS_SCOPE = 'plugin:workbench:layout'
 export const DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE = {
-	rightPaneVisible: true,
-	dockVisible: true,
+	rightPaneVisible: false,
+	dockVisible: false,
 } satisfies ResolvedPluginWorkbenchPanelsState
 
 export const PLUGIN_WORKBENCH_MAIN_PANEL_ID = 'pluxel-plugin-workbench-workspace'

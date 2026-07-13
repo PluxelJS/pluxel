@@ -10,13 +10,15 @@ import {
 	type PluginStatusMutationResult,
 	type RuntimeRpcStub,
 } from '../../runtime'
-import { getPluginOverviewSnapshot, requestPluginOverviewRefetch } from './pluginOverviewStore'
-import { invalidate } from '../data/invalidations'
 
 export type StartPlanOptions = {
 	includeTargets?: boolean
 	requireConfiguredFor?: 'all' | 'dependencies' | 'none'
 	includeRunningTargets?: boolean
+	statusSnapshot: readonly {
+		name: string
+		isRunning?: boolean
+	}[]
 }
 
 export type StartPlan = {
@@ -32,17 +34,6 @@ export type StatusActionResult = StartResult & {
 	isRunning?: PluginStatusMutationResult['isRunning']
 	isEnabled?: PluginStatusMutationResult['isEnabled']
 	lifecycleStage?: PluginStatusMutationResult['lifecycleStage']
-}
-
-async function readStatusOverviewSnapshot() {
-	let snapshot = getPluginOverviewSnapshot()
-	if (!snapshot.hasSnapshot || !snapshot.overview) {
-		try {
-			await requestPluginOverviewRefetch()
-		} catch {}
-		snapshot = getPluginOverviewSnapshot()
-	}
-	return snapshot.overview?.status?.statuses ?? []
 }
 
 async function isPluginConfigured(rpc: RuntimeRpcStub, name: string) {
@@ -75,7 +66,7 @@ async function isPluginConfigured(rpc: RuntimeRpcStub, name: string) {
 
 export async function buildStartPlan(
 	targets: string[],
-	options: StartPlanOptions = {},
+	options: StartPlanOptions,
 ): Promise<StartPlan> {
 	return invokeRpc(async (rpc) => {
 		const roots = Array.from(new Set(targets.filter(Boolean)))
@@ -115,15 +106,10 @@ export async function buildStartPlan(
 		// 运行态快照
 		const available = new Set<string>()
 		const running = new Set<string>()
-		try {
-			const statuses = await readStatusOverviewSnapshot()
-			for (const entry of statuses ?? []) {
-				if (typeof entry?.name !== 'string') continue
-				available.add(entry.name)
-				if (entry?.isRunning) running.add(entry.name)
-			}
-		} catch {
-			// ignore snapshot errors; treat as all stopped
+		for (const entry of options.statusSnapshot) {
+			if (typeof entry?.name !== 'string') continue
+			available.add(entry.name)
+			if (entry.isRunning) running.add(entry.name)
 		}
 		const missing = new Set([...maybeMissing].filter((name) => !available.has(name)))
 
@@ -230,17 +216,6 @@ export async function updatePluginStatuses(
 					ok: false,
 					error: result.commitError ?? '未知错误',
 				}))
-			}
-			const succeeded = normalized
-				.map((item, idx) => ({ item, action: actions[idx] }))
-				.filter((entry) => entry.item?.ok)
-			if (succeeded.length > 0) {
-				const first = succeeded[0]?.action
-				invalidate({
-					topic: 'plugin-status',
-					pluginName: succeeded.length === 1 ? first?.name : undefined,
-					reason: succeeded.length === 1 && first ? first.action : 'batch',
-				})
 			}
 			return normalized
 		})

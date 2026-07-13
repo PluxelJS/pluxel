@@ -1,10 +1,12 @@
 import { HotkeysProvider, useHotkey } from '@tanstack/react-hotkeys'
 import { useStore } from '@tanstack/react-store'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
+import { useMediaQuery } from '@mantine/hooks'
 import {
 	IconBox,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
+	IconLayoutSidebarLeftExpand,
 	IconSearch,
 	IconX,
 } from '@tabler/icons-react'
@@ -56,6 +58,7 @@ import {
 	setWorkbenchTabDirty,
 	syncWorkbenchLocation,
 	toggleWorkbenchSectionPane,
+	toggleWorkbenchNavigationCollapsed,
 	workbenchStore,
 } from './store'
 import { deriveTabFromPath } from './tabs'
@@ -169,38 +172,69 @@ function StatusBar({ surface }: { surface: { hasFill: boolean; nodes: ReactNode[
 
 function ActivityRail({
 	activityItems,
+	collapsed,
+	onToggleCollapsed,
 	pathname,
 	requestNavigation,
 }: {
 	activityItems: WorkbenchActivityItem[]
+	collapsed: boolean
+	onToggleCollapsed: () => void
 	pathname: string
 	requestNavigation: (to: string, request?: WorkbenchNavigationMode | 'auto') => string
 }) {
 	return (
 		<aside className="plx-workbench__activity" aria-label="工作台导航">
-			<div className="plx-workbench__activityBrand" aria-hidden="true">
-				<IconBox size={20} stroke={1.8} />
+			<div className="plx-workbench__activityBrand" aria-label="Pluxel 工作台">
+				<span className="plx-workbench__activityBrandMark" aria-hidden="true">
+					<IconBox size={20} stroke={1.8} />
+				</span>
+				<span className="plx-workbench__activityBrandText">
+					<strong>Pluxel</strong>
+					<small>Runtime console</small>
+				</span>
 			</div>
 
 			<nav className="plx-workbench__activityList">
-				{activityItems.map((item) => (
-					<Link
-						key={`${item.href}:${item.label}`}
-						to={item.href}
-						className="plx-workbench__activityItem"
-						onClick={() => {
-							requestNavigation(item.href, 'auto')
-						}}
-						data-active={
-							isWorkbenchActivityActive(pathname, item.href, item.exact) ? 'true' : 'false'
-						}
-						title={item.label}
-					>
-						{item.icon ?? <IconHome2 size={18} stroke={1.7} />}
-						<span className="plx-workbench__activityLabel">{item.label}</span>
-					</Link>
-				))}
+				{activityItems.map((item) => {
+					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
+					return (
+						<Link
+							key={`${item.href}:${item.label}`}
+							to={item.href}
+							className="plx-workbench__activityItem"
+							onClick={() => {
+								requestNavigation(item.href, 'auto')
+							}}
+							data-active={isActive ? 'true' : 'false'}
+							aria-current={isActive ? 'page' : undefined}
+							title={item.label}
+						>
+							<span className="plx-workbench__activityIcon" aria-hidden="true">
+								{item.icon ?? <IconHome2 size={18} stroke={1.7} />}
+							</span>
+							<span className="plx-workbench__activityLabel">{item.label}</span>
+						</Link>
+					)
+				})}
 			</nav>
+
+			<div className="plx-workbench__activityFooter">
+				<button
+					type="button"
+					className="plx-workbench__navigationToggle"
+					onClick={onToggleCollapsed}
+					aria-label={collapsed ? '展开主导航' : '收起主导航为仅图标'}
+					title={collapsed ? '展开主导航' : '收起为仅图标'}
+				>
+					{collapsed ? (
+						<IconLayoutSidebarLeftExpand size={18} stroke={1.7} />
+					) : (
+						<IconLayoutSidebarLeftCollapse size={18} stroke={1.7} />
+					)}
+					<span>{collapsed ? '展开导航' : '仅显示图标'}</span>
+				</button>
+			</div>
 		</aside>
 	)
 }
@@ -216,20 +250,18 @@ function WorkbenchTopbarActions({
 }) {
 	return (
 		<div className="plx-workbench__topbarActions">
-			{!isPluginDetail ? (
-				<WorkbenchActionButton
-					className="plx-workbench__action"
-					label="插件列表"
-					onClick={togglePluginNav}
-					title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
-				>
-					<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
-					<span className="plx-workbench__actionLabel">插件列表</span>
-					<span className="plx-workbench__actionHint">
-						{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
-					</span>
-				</WorkbenchActionButton>
-			) : null}
+			<WorkbenchActionButton
+				className="plx-workbench__action"
+				label="插件列表"
+				onClick={togglePluginNav}
+				title={`切换插件列表 (${WORKBENCH_HOTKEY_LABELS.togglePluginRail})`}
+			>
+				<IconLayoutSidebarLeftCollapse size={16} stroke={1.8} />
+				<span className="plx-workbench__actionLabel">插件列表</span>
+				<span className="plx-workbench__actionHint">
+					{WORKBENCH_HOTKEY_LABELS.togglePluginRail}
+				</span>
+			</WorkbenchActionButton>
 
 			<WorkbenchActionButton
 				className="plx-workbench__action"
@@ -346,7 +378,7 @@ function ThemeToggleAction() {
 	)
 }
 
-function WorkbenchStatePersistence() {
+function WorkbenchStatePersistence(): null {
 	const uiState = useStore(workbenchStore, (state) => state.uiState)
 
 	useEffect(() => {
@@ -371,6 +403,7 @@ function WorkbenchStatePersistence() {
 }
 
 export function WorkbenchShell() {
+	const isNarrowViewport = useMediaQuery('(max-width: 47.99em)')
 	const pathname = useCurrentPathname()
 	const navigate = useNavigate()
 	const pluginLayoutGroupRef = useRef<SplitViewHandle | null>(null)
@@ -382,8 +415,10 @@ export function WorkbenchShell() {
 	const isPluginsSection = currentSection === PLUGINS_SECTION_ID
 	const tabs = useStore(workbenchStore, (state) => state.uiState.tabs)
 	const activeTabId = useStore(workbenchStore, (state) => state.uiState.activeTabId)
+	const navigationCollapsed = useStore(workbenchStore, (state) => state.uiState.navigationCollapsed)
 	const sectionPanes = useStore(workbenchStore, (state) => state.uiState.sectionPanes)
 	const dirtyTabs = useStore(workbenchStore, (state) => state.dirtyTabs)
+	const showTabStrip = tabs.length > 1
 
 	useEffect(() => {
 		const intent = consumeWorkbenchNavigationIntent(pathname)
@@ -415,22 +450,14 @@ export function WorkbenchShell() {
 		[activeTabId, currentTab, tabs],
 	)
 	const resolvedActiveTabId = activeTabId ?? currentTab.id
-	const activeTabStateMap = useStore(
-		workbenchStore,
-		(state) =>
-			resolvedActiveTabId
-				? (state.uiState.tabState[resolvedActiveTabId] ?? EMPTY_TAB_STATE)
-				: EMPTY_TAB_STATE,
+	const activeTabStateMap = useStore(workbenchStore, (state) =>
+		resolvedActiveTabId
+			? (state.uiState.tabState[resolvedActiveTabId] ?? EMPTY_TAB_STATE)
+			: EMPTY_TAB_STATE,
 	)
 	const activeTabDirty = Boolean(activeTab?.id && dirtyTabs[activeTab.id])
 	const currentSectionPane = useMemo(
-		() =>
-			isPluginsSection
-				? getSectionPaneState(
-						{ activeTabId: null, sectionPanes, tabState: {}, tabs: [] },
-						PLUGINS_SECTION_ID,
-					)
-				: null,
+		() => (isPluginsSection ? getSectionPaneState({ sectionPanes }, PLUGINS_SECTION_ID) : null),
 		[isPluginsSection, sectionPanes],
 	)
 	useSyncedLayout(
@@ -441,10 +468,7 @@ export function WorkbenchShell() {
 	const showPluginNav = isPluginsSection && Boolean(currentSectionPane?.visible)
 	const isPluginDetail = isPluginsSection && Boolean(pluginName)
 	const activePluginWorkbenchLayout = useMemo(
-		() =>
-			resolvePluginWorkbenchPanelsState(
-				activeTabStateMap[PLUGIN_WORKBENCH_PANELS_SCOPE],
-			),
+		() => resolvePluginWorkbenchPanelsState(activeTabStateMap[PLUGIN_WORKBENCH_PANELS_SCOPE]),
 		[activeTabStateMap],
 	)
 	const { dockVisible, rightPaneVisible } = activePluginWorkbenchLayout
@@ -539,9 +563,7 @@ export function WorkbenchShell() {
 			if (storeTabs.length <= 1) return
 			const activeIndex = storeTabs.findIndex((tab) => tab.id === storeActiveTabId)
 			const nextIndex =
-				activeIndex === -1
-					? 0
-					: (activeIndex + direction + storeTabs.length) % storeTabs.length
+				activeIndex === -1 ? 0 : (activeIndex + direction + storeTabs.length) % storeTabs.length
 			const nextTab = storeTabs[nextIndex]
 			if (!nextTab) return
 			navigateToWorkbenchTab(nextTab)
@@ -583,6 +605,18 @@ export function WorkbenchShell() {
 	const togglePluginNav = useCallback(() => {
 		toggleSectionPane(PLUGINS_SECTION_ID)
 	}, [toggleSectionPane])
+	const previousMobilePluginRef = useRef<string | undefined>(undefined)
+
+	useEffect(() => {
+		if (!isNarrowViewport || !isPluginsSection) return
+		const previousPlugin = previousMobilePluginRef.current
+		previousMobilePluginRef.current = pluginName
+		if (pluginName && pluginName !== previousPlugin) {
+			setSectionPaneVisible(PLUGINS_SECTION_ID, false)
+			return
+		}
+		if (!pluginName) setSectionPaneVisible(PLUGINS_SECTION_ID, true)
+	}, [isNarrowViewport, isPluginsSection, pluginName, setSectionPaneVisible])
 
 	const handleLayoutChanged = useCallback(
 		(layout: Record<string, number>) => {
@@ -624,6 +658,13 @@ export function WorkbenchShell() {
 		}),
 		[currentSectionPane?.layout],
 	)
+	const mobileSinglePane = isNarrowViewport && isPluginsSection
+	const primaryPane = mobileSinglePane
+		? showPluginNav
+			? pluginRailPane
+			: workspacePane
+		: pluginRailPane
+	const secondaryPane = mobileSinglePane ? undefined : workspacePane
 	const layoutContextValue = useMemo(
 		() => ({
 			leftPaneAvailable: isPluginsSection,
@@ -711,7 +752,10 @@ export function WorkbenchShell() {
 			<WorkbenchTabsProvider value={workbenchTabsValue}>
 				<WorkbenchLayoutProvider value={layoutContextValue}>
 					<PluginWorkbenchLayoutProvider value={pluginWorkbenchLayoutValue}>
-						<div className="plx-workbench">
+						<div
+							className="plx-workbench"
+							data-navigation-collapsed={navigationCollapsed ? 'true' : 'false'}
+						>
 							<WorkbenchHotkeys
 								canTogglePluginRail={isPluginsSection}
 								onCloseActiveTab={() =>
@@ -725,21 +769,24 @@ export function WorkbenchShell() {
 
 							<ActivityRail
 								activityItems={activityItems}
+								collapsed={navigationCollapsed}
+								onToggleCollapsed={toggleWorkbenchNavigationCollapsed}
 								pathname={pathname}
 								requestNavigation={workbenchTabsValue.requestNavigation}
 							/>
 
-							<div className="plx-workbench__main">
+							<div className="plx-workbench__main" data-has-tabs={showTabStrip ? 'true' : 'false'}>
 								<header
 									className="plx-workbench__topbar"
 									data-compact={isPluginDetail ? 'true' : 'false'}
 								>
 									<div className="plx-workbench__topbarTitle">
 										<span className="plx-workbench__eyebrow">{sectionTitle.eyebrow}</span>
-										<span className="plx-workbench__title">
-											{isPluginDetail ? '插件工作台' : sectionTitle.title}
-										</span>
-										{!isPluginDetail && sectionTitle.subtitle ? (
+										<span className="plx-workbench__title">{sectionTitle.title}</span>
+										{activeTabDirty && !showTabStrip ? (
+											<span className="plx-workbench__editorTabDirtyDot" title="未保存更改" />
+										) : null}
+										{sectionTitle.subtitle ? (
 											<span className="plx-workbench__subtitle">{sectionTitle.subtitle}</span>
 										) : null}
 									</div>
@@ -755,13 +802,15 @@ export function WorkbenchShell() {
 									)}
 								</header>
 
-								<EditorTabStrip
-									activeTabId={activeTabId}
-									dirtyTabs={dirtyTabs}
-									onActivateTab={activateTab}
-									onCloseTab={closeTab}
-									tabs={tabs}
-								/>
+								{showTabStrip ? (
+									<EditorTabStrip
+										activeTabId={activeTabId}
+										dirtyTabs={dirtyTabs}
+										onActivateTab={activateTab}
+										onCloseTab={closeTab}
+										tabs={tabs}
+									/>
+								) : null}
 
 								<div className="plx-workbench__body">
 									<div className="plx-workbench__surface">
@@ -771,8 +820,8 @@ export function WorkbenchShell() {
 											id="pluxel-workbench-main"
 											onLayoutChanged={handleLayoutChanged}
 											orientation="horizontal"
-											primary={pluginRailPane}
-											secondary={workspacePane}
+											primary={primaryPane}
+											secondary={secondaryPane}
 											ref={pluginLayoutGroupRef}
 										/>
 									</div>

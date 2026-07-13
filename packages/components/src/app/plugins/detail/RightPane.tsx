@@ -13,19 +13,11 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { IconSettingsOff } from '@tabler/icons-react'
-import {
-	Fragment,
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react'
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { EmptyState, ErrorState } from '../../../components'
 import { ExtensionSlot, useExtensions } from '../../../extension'
-import type { PluginConfigState } from '../../hooks'
+import type { PluginConfigState } from '../config/usePluginConfig'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
@@ -66,10 +58,7 @@ import {
 } from './rightPaneState'
 import { usePluginWorkbenchLayout } from './workbench/context'
 import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
-import {
-	useWorkbenchTabDirty,
-	useWorkbenchTabIdentity,
-} from '../../workbench/context'
+import { useWorkbenchTabDirty, useWorkbenchTabIdentity } from '../../workbench/context'
 import { setWorkbenchActiveTabState } from '../../workbench/store'
 
 interface RightPaneProps {
@@ -88,13 +77,7 @@ type RightPaneRouteIntent = {
 	state: RightPaneState
 }
 
-function PaneScrollBody({
-	children,
-	fill = false,
-}: {
-	children: ReactNode
-	fill?: boolean
-}) {
+function PaneScrollBody({ children, fill = false }: { children: ReactNode; fill?: boolean }) {
 	return (
 		<ScrollArea type="auto" scrollbarSize={10} offsetScrollbars style={COLUMN_STYLE}>
 			<Box p="xs" style={{ minHeight: fill ? '100%' : undefined }}>
@@ -104,10 +87,7 @@ function PaneScrollBody({
 	)
 }
 
-function filterSchemaGroupRecord<T>(
-	values: Record<string, T>,
-	schemaGroup?: string,
-) {
+function filterSchemaGroupRecord<T>(values: Record<string, T>, schemaGroup?: string) {
 	if (!schemaGroup) return values
 	const out: Record<string, T> = {}
 	for (const [key, value] of Object.entries(values)) {
@@ -117,13 +97,7 @@ function filterSchemaGroupRecord<T>(
 	return out
 }
 
-function PaneTabPanel({
-	children,
-	value,
-}: {
-	children: ReactNode
-	value: string
-}) {
+function PaneTabPanel({ children, value }: { children: ReactNode; value: string }) {
 	return (
 		<Tabs.Panel value={value} className="plx-paneTabs__panel" style={COLUMN_STYLE}>
 			{children}
@@ -510,7 +484,9 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 		routeIntent && appliedRouteIntentSignatureRef.current !== routeIntent.signature,
 	)
 	const displayState =
-		routeIntent && routeIntentPending ? mergeDisplayState(storedState, routeIntent.state) : storedState
+		routeIntent && routeIntentPending
+			? mergeDisplayState(storedState, routeIntent.state)
+			: storedState
 
 	useEffect(() => {
 		storedStateRef.current = storedState

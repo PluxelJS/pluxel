@@ -19,7 +19,7 @@ import {
 	type PackageSpecInput,
 	useRuntimeTransportClient,
 } from '../../runtime'
-import { useNotify } from '../hooks'
+import { useNotify } from '../hooks/useNotify'
 import {
 	buildPackageRows,
 	filterPackageRows,
@@ -38,8 +38,7 @@ import { PackageManagerToolbar, type PackageSummaryStat } from './PackageManager
 import { PackageOperationLogModal } from './PackageOperationLogModal'
 import { PackageTable } from './PackageTable'
 import { ErrorState } from '../../components'
-import { usePluginOverview } from '../plugins/pluginOverviewStore'
-import { subscribeInvalidations, invalidate } from '../data/invalidations'
+import { usePluginOverview } from '../plugins/pluginOverview'
 import { useStoredSplitLayout, WorkbenchSplitView } from '../workbench/split'
 import {
 	DEFAULT_PACKAGE_SPLIT_LAYOUT,
@@ -107,56 +106,53 @@ export function PackageManagerScreen() {
 		}
 	}, [overviewState.overview?.status?.statuses])
 
-	const refetch = useCallback(async () => {
-		const snapshotKey = showAllPackages ? 'all' : 'tracked'
-		const hasSnapshot = hasSnapshotRef.current && snapshotKeyRef.current === snapshotKey
-		if (inflightRef.current && inflightKeyRef.current === snapshotKey) {
-			return inflightRef.current
-		}
-		const requestId = ++requestIdRef.current
-		const task = (async () => {
-			setRefreshing(true)
-			setInlineError(null)
-			if (!hasSnapshot) setPageError(null)
-			try {
-				const result = await withPackageManager(async (pkg) => {
-					const snapshot = await pkg.snapshot({ includeUntracked: showAllPackages })
-					return { inventory: snapshot.inventory, issues: snapshot.loadIssues }
-				})
-				if (requestId !== requestIdRef.current) return
-				setInventory(Array.isArray(result.inventory) ? result.inventory : [])
-				setLoadIssues(Array.isArray(result.issues) ? result.issues : [])
-				hasSnapshotRef.current = true
-				snapshotKeyRef.current = snapshotKey
-				setPageError(null)
-			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : error ? String(error) : '无法加载包管理数据'
-				if (requestId !== requestIdRef.current) return
-				if (hasSnapshot) setInlineError(message)
-				else setPageError(error instanceof Error ? error : new Error(message))
-			} finally {
-				if (requestId === requestIdRef.current) {
-					setRefreshing(false)
-					inflightRef.current = null
-					inflightKeyRef.current = null
-				}
+	const refetch = useCallback(
+		async (options?: { force?: boolean }) => {
+			const snapshotKey = showAllPackages ? 'all' : 'tracked'
+			if (inflightRef.current && inflightKeyRef.current === snapshotKey) {
+				if (!options?.force) return inflightRef.current
+				await inflightRef.current
 			}
-		})()
-		inflightRef.current = task
-		inflightKeyRef.current = snapshotKey
-		return task
-	}, [withPackageManager, showAllPackages])
+			const hasSnapshot = hasSnapshotRef.current && snapshotKeyRef.current === snapshotKey
+			const requestId = ++requestIdRef.current
+			const task = (async () => {
+				setRefreshing(true)
+				setInlineError(null)
+				if (!hasSnapshot) setPageError(null)
+				try {
+					const result = await withPackageManager(async (pkg) => {
+						const snapshot = await pkg.snapshot({ includeUntracked: showAllPackages })
+						return { inventory: snapshot.inventory, issues: snapshot.loadIssues }
+					})
+					if (requestId !== requestIdRef.current) return
+					setInventory(Array.isArray(result.inventory) ? result.inventory : [])
+					setLoadIssues(Array.isArray(result.issues) ? result.issues : [])
+					hasSnapshotRef.current = true
+					snapshotKeyRef.current = snapshotKey
+					setPageError(null)
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : error ? String(error) : '无法加载包管理数据'
+					if (requestId !== requestIdRef.current) return
+					if (hasSnapshot) setInlineError(message)
+					else setPageError(error instanceof Error ? error : new Error(message))
+				} finally {
+					if (requestId === requestIdRef.current) {
+						setRefreshing(false)
+						inflightRef.current = null
+						inflightKeyRef.current = null
+					}
+				}
+			})()
+			inflightRef.current = task
+			inflightKeyRef.current = snapshotKey
+			return task
+		},
+		[withPackageManager, showAllPackages],
+	)
 
 	useEffect(() => {
 		void refetch()
-	}, [refetch])
-
-	useEffect(() => {
-		return subscribeInvalidations((event) => {
-			if (event.topic !== 'package-data') return
-			void refetch()
-		})
 	}, [refetch])
 
 	const rows = useMemo(
@@ -319,10 +315,10 @@ export function PackageManagerScreen() {
 			options?: { force?: boolean; fresh?: boolean; reinstall?: boolean },
 		): Promise<PackageBatchResult> => {
 			const result = await withPackageManager((pkg) => pkg.mutate({ action, specs, options }))
-			invalidate({ topic: 'package-data', reason: action })
+			await refetch({ force: true })
 			return result
 		},
-		[withPackageManager],
+		[refetch, withPackageManager],
 	)
 
 	const applyOperationLogs = useCallback((result?: PackageBatchResult | null) => {
@@ -387,9 +383,6 @@ export function PackageManagerScreen() {
 				)
 				applyOperationLogs(result)
 				summarizeBatchResult(result, config.successTitle, config.fallbackError)
-				if (result?.results?.length) {
-					await refetch()
-				}
 				if (config.clearSelection) clearSelection()
 			} catch (error: any) {
 				markOperationLogsFailed(error?.message)
@@ -410,7 +403,6 @@ export function PackageManagerScreen() {
 			markOperationLogsFailed,
 			notify,
 			openBatchOperationLog,
-			refetch,
 			runPackageMutation,
 			selectedRows,
 			summarizeBatchResult,
@@ -477,7 +469,6 @@ export function PackageManagerScreen() {
 					message: config.successMessage,
 					color: 'green',
 				})
-				await refetch()
 			} catch (error: any) {
 				notify({
 					title: config.errorTitle,
@@ -488,7 +479,7 @@ export function PackageManagerScreen() {
 				setBusyKey(null)
 			}
 		},
-		[busy, notify, refetch, runPackageMutation],
+		[busy, notify, runPackageMutation],
 	)
 
 	const openRowConfirm = useCallback(
@@ -582,7 +573,6 @@ export function PackageManagerScreen() {
 				if (successes.length === specs.length) {
 					setInstallInput('')
 				}
-				await refetch()
 			}
 			if (failures.length > 0) {
 				notify({

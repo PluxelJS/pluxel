@@ -15,15 +15,15 @@
 	border-bottom: 1px solid var(--plx-border);
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 4px;
 	min-width: 0;
-	padding: 6px 8px;
+	padding: 4px 6px;
 }
 
 .plx-pluginWorkbench__commandBar {
 	align-items: center;
 	display: flex;
-	gap: 10px;
+	gap: 8px;
 	justify-content: space-between;
 	min-width: 0;
 }
@@ -32,7 +32,7 @@
 	display: flex;
 	flex-direction: column;
 	flex: 1;
-	gap: 4px;
+	gap: 2px;
 	min-width: 0;
 }
 
@@ -40,12 +40,12 @@
 	align-items: center;
 	display: flex;
 	flex-wrap: wrap;
-	gap: 6px;
+	gap: 4px;
 	min-width: 0;
 }
 
 .plx-pluginWorkbench__commandName {
-	font-size: 14px;
+	font-size: 13px;
 	font-weight: 700;
 	line-height: 1.2;
 	margin-right: 2px;
@@ -75,7 +75,7 @@
 .plx-pluginWorkbench__commandActions {
 	align-items: center;
 	display: flex;
-	gap: 5px;
+	gap: 4px;
 	justify-content: flex-end;
 	min-width: 0;
 }
@@ -491,8 +491,8 @@
 	border-radius: 8px;
 	display: flex;
 	gap: 10px;
-	min-height: 32px;
-	padding: 4px 10px;
+	min-height: 28px;
+	padding: 2px 8px;
 }
 
 .plx-pluginWorkbench__actionPersistText {
@@ -505,8 +505,8 @@
 
 .plx-pluginWorkbench__actionButton {
 	border-radius: 8px;
-	min-height: 32px;
-	padding-inline: 10px;
+	min-height: 28px;
+	padding-inline: 8px;
 }
 
 .plx-pluginWorkbench__actionButton--primary {

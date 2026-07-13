@@ -24,7 +24,7 @@ import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
 import { BuiltinResourceSelect } from './ResourceSelect'
 import { BuiltinSignalDbForm } from './SignalDbForm'
-import { usePluginConfig } from '../../app/hooks/usePluginConfig'
+import { usePluginConfig } from '../../app/plugins/config/usePluginConfig'
 import type { ObjectSchema } from 'valibot'
 import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
 import { compareSchemaKeys } from '../../app/plugins/config/schemaKey'
@@ -294,9 +294,6 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 			[schemaMapAll],
 		)
 
-		const [savedOverride, setSavedOverride] = useState<Record<string, any> | null>(null)
-		useEffect(() => setSavedOverride(null), [pluginName, data?.savedConfig])
-
 		if (cfg.loading && !cfg.data) return null
 		if (cfg.error) {
 			return (
@@ -338,7 +335,6 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 		const keys = resolveKeys()
 		if (keys.length === 0) return null
 
-		const finalSavedAll = (savedOverride ?? savedAll) as Record<string, unknown>
 		return (
 			<Box my="sm">
 				{keys.map((schemaKey) => {
@@ -360,14 +356,8 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 									pluginName={pluginName}
 									tabKey={schemaKey}
 									schema={schema}
-									savedValue={toRecord(finalSavedAll?.[schemaKey])}
+									savedValue={toRecord(savedAll?.[schemaKey])}
 									defaultValue={toRecord(defaultsAll?.[schemaKey])}
-									onSaved={(_k, value) =>
-										setSavedOverride((prev) => ({
-											...((prev ?? finalSavedAll) as any),
-											[schemaKey]: value,
-										}))
-									}
 									showToc={false}
 									active={true}
 								/>

@@ -3,25 +3,19 @@ import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BuiltinFormBlock } from '@pluxel/runtime/web/extensions'
 import {
-	type SchemaResult,
-	type RuntimeTransportClient,
 	useGlobalExtensionContext,
 	useSignalDbCollectionsState,
 	useSignalDbQueryState,
 } from '@pluxel/runtime/web'
-import * as v from 'valibot'
-import * as f from 'valibot-form'
+import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
-import { getPluginSchema, type RuntimeRpcStub } from '../../runtime'
+import { usePluginConfig } from '../../app/plugins/config/usePluginConfig'
 import { applySignalDbWrite, isObject, resolveSignalDbRef, stableSignalDbValueKey } from './_shared'
-
-type SchemaCacheEntry = { schema: v.ObjectSchema<any, any>; defaults: Record<string, any> }
-const schemaCache = new Map<string, SchemaCacheEntry>()
 
 type SchemaLoadState =
 	| { status: 'loading' }
 	| { status: 'error'; error: Error }
-	| { status: 'ready'; schema: v.ObjectSchema<any, any>; defaults: Record<string, any> }
+	| { status: 'ready'; schema: ObjectSchema<any, any>; defaults: Record<string, any> }
 
 function normalizeKey(input: unknown): string {
 	return typeof input === 'string' ? input.trim() : ''
@@ -190,77 +184,23 @@ function AutoSubmitSlot({ enabled, debounceMs }: { enabled: boolean; debounceMs:
 	)
 }
 
-function useSignalDbFormSchema(
-	transport: RuntimeTransportClient | null,
-	pluginName: string,
-	schemaKey: string,
-): SchemaLoadState {
-	const [state, setState] = useState<SchemaLoadState>({ status: 'loading' })
-
-	useEffect(() => {
-		if (!schemaKey) {
-			setState({ status: 'error', error: new Error('schemaKey is required') })
-			return undefined
+function useSignalDbFormSchema(pluginName: string, schemaKey: string): SchemaLoadState {
+	const config = usePluginConfig(pluginName)
+	return useMemo(() => {
+		if (!schemaKey) return { status: 'error', error: new Error('schemaKey is required') }
+		if (!config.data) {
+			return config.error ? { status: 'error', error: config.error } : { status: 'loading' }
 		}
-		if (!transport) {
-			setState({ status: 'error', error: new Error('doc form requires ctx.services.transport') })
-			return undefined
+		const schema = config.data.schemaMap[schemaKey]
+		if (!schema) {
+			return { status: 'error', error: new Error(`schema key not found: ${schemaKey}`) }
 		}
-
-		let cancelled = false
-		setState({ status: 'loading' })
-		void (async () => {
-			try {
-				const entry = await loadSchema(transport, pluginName, schemaKey)
-				if (cancelled) return
-				setState({ status: 'ready', schema: entry.schema, defaults: entry.defaults })
-			} catch (error) {
-				if (cancelled) return
-				setState({
-					status: 'error',
-					error: error instanceof Error ? error : new Error('schema load failed'),
-				})
-			}
-		})()
-
-		return () => {
-			cancelled = true
+		return {
+			status: 'ready',
+			schema: schema as ObjectSchema<any, any>,
+			defaults: (config.data.defaults[schemaKey] ?? {}) as Record<string, any>,
 		}
-	}, [pluginName, schemaKey, transport])
-
-	return state
-}
-
-async function loadSchema(
-	transport: RuntimeTransportClient,
-	pluginName: string,
-	schemaKey: string,
-): Promise<SchemaCacheEntry> {
-	const cacheKey = `${pluginName}::${schemaKey}`
-	const cached = schemaCache.get(cacheKey)
-	if (cached) return cached
-
-	const result = (await transport.withRpc((client) =>
-		getPluginSchema(client as RuntimeRpcStub, pluginName),
-	)) as SchemaResult
-	if (!result) {
-		throw new Error('schema_not_found')
-	}
-	if (result.ok === false) {
-		throw new Error(result.message ?? result.code ?? 'schema_not_found')
-	}
-
-	const expr = (result.schemaSource ?? {})[schemaKey]
-	if (typeof expr !== 'string' || !expr.trim())
-		throw new Error(`schema key not found: ${schemaKey}`)
-
-	const schema = new Function('v', 'f', `return ${expr}`)(v, f)
-	if (schema instanceof Promise) throw new Error('async schema not supported in doc form yet')
-
-	const defaults = (result.defaults?.[schemaKey] ?? {}) as Record<string, any>
-	const entry: SchemaCacheEntry = { schema, defaults }
-	schemaCache.set(cacheKey, entry)
-	return entry
+	}, [config.data, config.error, schemaKey])
 }
 
 export function BuiltinSignalDbForm({
@@ -288,7 +228,7 @@ export function BuiltinSignalDbForm({
 			? block.autoSubmitDebounceMs
 			: 250
 
-	const state = useSignalDbFormSchema(transport, pluginName, schemaKey)
+	const state = useSignalDbFormSchema(pluginName, schemaKey)
 	const collections = useSignalDbCollectionsState(
 		transport,
 		pluginName,
