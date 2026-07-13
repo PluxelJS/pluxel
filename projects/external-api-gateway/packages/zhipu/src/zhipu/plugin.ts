@@ -14,9 +14,8 @@ import {
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui } from '@pluxel/runtime/web-management'
+import { managementBinding } from '@pluxel/runtime/management'
 import { desc, eq } from 'drizzle-orm'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
@@ -37,8 +36,8 @@ import type {
 	ZhipuWebSearchInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
+import { ZhipuManagement } from './management-module.ts'
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const ROUTE_BASE = '/zhipu'
 const PROVIDER_ID = 'zhipu'
 const VAULT_NAMESPACE = 'ZhipuProviderPlugin'
@@ -81,15 +80,19 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		await this.ctx.webManagement.use(async (web) => {
-			await Promise.all([
-				this.settings.attach(web.state.collection<ZhipuSettingsDoc>({ name: 'settings' })),
-				this.status.attach(web.state.collection<ZhipuStatusDoc>({ name: 'status' })),
-				this.history.attach(web.state.collection<ZhipuTestRunDoc>({ name: 'history' })),
-			])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new ZhipuProviderRpc(this))
+		const mounted = this.ctx.management.mount(ZhipuManagement, {
+			api: managementBinding.api(() => new ZhipuProviderRpc(this)),
+			settings: managementBinding.collection(),
+			status: managementBinding.collection(),
+			history: managementBinding.collection(),
 		})
+		if (mounted) {
+			await Promise.all([
+				this.settings.attach(mounted.resources.settings),
+				this.status.attach(mounted.resources.status),
+				this.history.attach(mounted.resources.history),
+			])
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('Zhipu provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -1027,19 +1030,6 @@ export class ZhipuProviderRpc extends RpcTarget {
 
 	routeBase() {
 		return this.plugin.routeBase()
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		ZhipuProviderPlugin: ZhipuProviderRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		ZhipuProviderPlugin: {
-			settings: ZhipuSettingsDoc
-			status: ZhipuStatusDoc
-			history: ZhipuTestRunDoc
-		}
 	}
 }
 

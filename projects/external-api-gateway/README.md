@@ -16,7 +16,7 @@ pnpm --filter @repo/project-external-api-gateway headless
 pnpm --filter @repo/project-external-api-gateway verify
 ```
 
-`headless` 关闭整个 Web Management bundle；外部 gateway、provider HTTP 和计费能力仍然启动。
+`headless` 关闭整个 Management Plane bundle；外部 gateway、provider HTTP 和计费能力仍然启动。
 这条入口用于持续验证管理 UI 只是业务状态的可选投影。
 
 `pnpm test:headless` 会使用临时数据目录和随机端口启动同一路线，请求 gateway/provider

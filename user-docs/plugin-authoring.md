@@ -12,19 +12,31 @@ decorator 和 metadata transform。
 1. 插件是依赖和生命周期单元。
 2. constructor 只放没有它就无法工作的插件依赖。
 3. `init()` 负责启动检查、注册运行时能力和登记资源清理。
-4. HTTP 是常驻业务能力；UI/RPC/SSE/management state 必须放进 `webManagement.use()`。
+4. HTTP 是常驻业务能力；Management Module 只通过可选的 `ctx.management.mount()` 挂载。
 
 ## 一个标准插件
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui } from '@pluxel/runtime/web-management'
+import {
+	defineManagementModule,
+	managementBinding,
+	managementResource,
+	managementUi,
+} from '@pluxel/runtime/management'
 
 import { AccountsPlugin } from './AccountsPlugin.ts'
 import { BillingConfig } from './config.ts'
 import { BillingRpc } from './rpc.ts'
 
-const dashboard = ui(import.meta.url, './ui/index.tsx')
+const BillingManagement = defineManagementModule({
+	id: 'BillingPlugin',
+	ui: managementUi(import.meta.url, './ui/index.tsx'),
+	resources: {
+		api: managementResource.api<BillingRpc>(),
+		status: managementResource.collection<BillingStatus>(),
+	},
+})
 
 @Plugin({ name: 'BillingPlugin' })
 export class BillingPlugin extends BasePlugin {
@@ -39,11 +51,11 @@ export class BillingPlugin extends BasePlugin {
 
 		this.ctx.http.plugin.routes((app) => app.get('/invoices', () => this.accounts.listInvoices()))
 
-		this.ctx.webManagement.use((web) => {
-			const status = web.state.collection({ name: 'billing-status' })
-			web.ui.register(dashboard)
-			web.rpc.expose(() => new BillingRpc(this, status))
+		const mounted = this.ctx.management.mount(BillingManagement, {
+			api: managementBinding.api(() => new BillingRpc(this)),
+			status: managementBinding.collection(),
 		})
+		await mounted?.resources.status.ready()
 	}
 }
 ```
@@ -53,7 +65,7 @@ export class BillingPlugin extends BasePlugin {
 - declaration 放在 decorator、class field 或 module scope；
 - required dependency 放在 constructor；
 - 运行时工作放在 `init()`；
-- 管理面贡献放在唯一 optional gate 内。
+- 管理面贡献通过唯一 optional gate 挂载。
 
 ## 依赖：按“缺失时能否工作”选择
 
@@ -163,7 +175,7 @@ override async init(signal: AbortSignal) {
 
 core 的行为是：失败插件不进入 running，required dependents 被阻塞，无关插件继续。是否退出进程、告警或拒绝部署由宿主决定。
 
-## HTTP 与 Web Management
+## HTTP 与 Management Plane
 
 ### 业务 HTTP
 
@@ -177,31 +189,121 @@ override init() {
 }
 ```
 
-HTTP 不依赖 Web Management，适合业务 API、webhook、health endpoint 和外部集成。
+HTTP 不依赖 Management Plane，适合业务 API、webhook、health endpoint 和外部集成。
 
 ### 可选管理面
 
 ```ts
-const dashboard = ui(import.meta.url, './ui/index.tsx')
-
 override init() {
-	this.ctx.webManagement.use((web) => {
-		web.ui.register(dashboard)
-		web.rpc.expose(() => new DashboardRpc(this))
-		web.sse.expose(() => this.createStatusStream())
-		web.state.collection({ name: 'dashboard-status' })
+	this.ctx.management.mount(DashboardManagement, {
+		api: managementBinding.api(() => new DashboardRpc(this)),
+		activity: managementBinding.stream(this.createStatusStream()),
+		status: managementBinding.collection(),
 	})
 }
 ```
 
-`use()` callback 只在宿主启用 Web Management 时执行。因此：
+宿主未启用 Management Plane 时，`mount()` 返回 `undefined`，不注册 module、resource 或 artifact。因此：
 
-- 只服务管理 UI 的状态和资源在 callback 内创建；
-- 插件核心业务不能依赖 callback 的副作用；
-- `web.state` 适合状态面板、表单和管理交互，不是业务数据库；
-- 管理 RPC/SSE 服务插件 UI，不替代公共业务 HTTP API。
+- binding declaration 必须是纯描述；`api()` 只保存 factory，真正实例仅在启用后按需创建；
+- 插件核心业务不能依赖 mount 成功；需要 collection handle 时使用 `mounted?.resources`；
+- module contract 静态声明资源、贡献、placement 和 UI artifact；
+- binding 在运行期把 API、collection、stream 实现绑定到 contract；
+- collection 适合状态面板、表单和管理交互，不是业务数据库；
+- collection 默认是非持久化的管理面投影；只有确实拥有独立管理状态时才显式传入
+  `managementBinding.collection({ persistence: true })`；
+- builtin document 中 ref/write 的 `collection` 是 module resource key；每个 key 独立解析为
+  revision-scoped opaque binding，不使用插件名作为 collection namespace；
+- 管理资源只服务管理员 UI，不替代公共业务 HTTP API。
 
-`ui()` 是纯 declaration，没有 bind 或注册副作用。开发环境由 Vite 编译源码，生产环境注册已构建 artifact，作者调用保持一致。
+`managementUi(import.meta.url, './ui/index.tsx')` 是静态字符串 declaration，没有 import 或注册副作用。
+开发环境由 compiler 按源码 hash 增量构建；`pluxel build` 按 owner 生成
+`dist/management/<owner>/`，无 UI 插件不会加载 Vite，且 UI 源码不会进入服务端插件 bundle。
+UI 使用的 React、React DOM、Mantine 和 `@pluxel/runtime` 由宿主提供 singleton shared；带 UI 的插件包应
+把它们声明为 peer，并作为本地 devDependency 安装供类型检查和 MF named-export 分析，remote 不携带 fallback
+副本。
+
+UI entry 用同一个 typed app 同时定义 exports 和读取当前 layout bindings：
+
+```tsx
+const app = managementApp(DashboardManagement)
+
+export function Overview() {
+	const runtime = app.use()
+	return <Dashboard data={runtime.collection('status').useList()} />
+}
+
+export default app.define({ Overview })
+```
+
+`app.api()` 返回浏览器 RPC client；即使服务端方法同步返回值，跨边界调用也始终是 `Promise`。事件处理器应
+使用 `await` 或显式处理 rejection，不要按本地对象同步读取结果或字段。
+
+### 依赖插件注入统一配置 Tab
+
+provider 不应替 consumer 决定任意 placement。把可复用能力定义成 typed port，由 consumer 明确声明
+Tab 和自己的资源 binding，provider 只提供 renderer：
+
+```tsx
+export const FetchSettingsPort = defineManagementPort('fetch.settings', {
+	settings: managementResource.api<FetchSettingsApi>(),
+})
+
+// consumer module
+const ConsumerManagement = defineManagementModule({
+  id: 'ConsumerPlugin',
+  resources: {
+    fetchSettings: managementResource.api<FetchSettingsApi>(),
+  },
+  contributions: [managementPort({
+    id: 'fetch-settings',
+    placement: ManagementPlacements.PluginTabs,
+    port: FetchSettingsPort,
+    providers: ['FetchPlugin'],
+    bindings: { settings: 'fetchSettings' },
+    meta: { label: 'Fetch' },
+  })],
+})
+
+// consumer init: placement 和授权属于 consumer，API 可委托给 required Fetch capability
+override init() {
+  this.ctx.management.mount(ConsumerManagement, {
+    fetchSettings: managementBinding.api(() => this.fetch.settingsFor(this.ctx.pluginInfo.id)),
+  })
+}
+
+// provider module
+const FetchManagement = defineManagementModule({
+  id: 'FetchPlugin',
+  ui: managementUi(import.meta.url, './ui/index.tsx'),
+  contributions: [managementPortRenderer({
+    id: 'fetch-settings-renderer',
+    port: FetchSettingsPort,
+    view: remoteView('FetchSettings'),
+  })],
+})
+
+// provider UI entry
+const provider = managementApp(FetchManagement)
+const settingsPort = managementApp(FetchSettingsPort)
+
+export function FetchSettings() {
+  const settings = settingsPort.use().api('settings')
+  return <FetchSettingsForm settings={settings} />
+}
+
+export default provider.define({ FetchSettings })
+```
+
+renderer 使用 port app 读取当前 layout 的 `settings` binding，并用拥有 remote 的 provider app 导出
+view。同一个 renderer 可投放到任意数量的 consumer；每个实例都绑定到对应 consumer 授权的配置资源。
+port 不引入隐藏存储：状态可以由 consumer 自己持有，也可以像示例一样显式委托给 Fetch capability 按
+consumer id 持有；renderer 和 Workbench 都不保存服务端 session/draft。layout 只下发
+opaque binding，插件卸载、依赖变化或 HMR revision 更新后旧 binding 自动失效。
+
+provider 若只想把只读能力摘要自动投影给 required dependents，可使用
+`managementAudience.requiredDependents()`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
+route 或 action placement 必须使用 port，由 consumer 显式选择。
 
 ## 公开有限事件集合
 
@@ -256,7 +358,7 @@ Context 时，从 `ctx.logger.with(...)` 派生带资源标识的 logger，不�
 顶层。
 
 长连接或后台 polling capability 的 `$.status` 应返回冻结、有界、无密钥的实时快照，记录 phase、
-累计计数和最近时间点，不保存无界历史。连接状态机是事实源，Web Management state 只是投影；
+累计计数和最近时间点，不保存无界历史。连接状态机是事实源，Management Plane state 只是投影；
 heartbeat、空 poll 等高频内部变化不应造成固定周期持久化写。最低层网络 transport 应支持 factory
 注入，使重连、退避和 teardown 能在不访问真实网络的测试中验证。
 
@@ -287,16 +389,16 @@ this.ctx.effects.defer(() => clearInterval(timer))
 
 宿主使用 static 或 dynamic Vite route 加载插件源码。两条 route 的插件作者 API 完全相同。
 
-Web Management 只有一个顶层配置来源：
+Management Plane 只有一个顶层配置来源：
 
 ```ts
-webManagement: false
+management: false
 ```
 
 或：
 
 ```ts
-webManagement: {
+management: {
 	enabled: true,
 	access: { exposure: 'private' },
 }
@@ -317,7 +419,7 @@ typecheck、tests 和 production build 的 `pnpm verify`。
 - 默认值是否都在 schema？
 - 启动前置条件是否在 `init()` 中验证并诚实失败？
 - 每个资源是否在创建后立即登记 cleanup？
-- 业务 HTTP 是否独立于 Web Management？
-- 管理面资源是否全部在 `webManagement.use()` 内？
+- 业务 HTTP 是否独立于 Management Plane？
+- 管理面资源是否全部通过 `ctx.management.mount()` 挂载？
 - 后台任务是否捕获错误？
 - 插件是否只通过 Vite/Rolldown 宿主入口运行？

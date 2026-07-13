@@ -14,7 +14,7 @@
 
 - `ctx.root.adminAccess`
   host-only access gate
-- `webManagement: false` 不挂 runtime web management，不要求 OIDC
+- `management: false` 不挂载 Management Plane，不要求 OIDC
 - private admin access 下不做任何认证，直接 allow
 - public admin access 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
 - public exposure 使用 issuer discovery + JWKS 校验 bearer JWT

@@ -1,2 +1,3 @@
-import { pluginUi } from '@pluxel/runtime/web/ui'
-export const sandboxPlugin = pluginUi('ChatSandboxPlugin')
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { ChatSandboxManagement } from '../management-module.ts'
+export const sandboxPlugin = managementApp(ChatSandboxManagement)

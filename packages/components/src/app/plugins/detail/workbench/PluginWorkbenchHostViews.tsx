@@ -13,7 +13,7 @@ import {
 } from '@mantine/core'
 import { IconChevronDown } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useExtensionSurface, usePluginUiStatus } from '../../../../extension'
+import { useExtensionSurface } from '../../../../extension'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
@@ -225,7 +225,6 @@ function AssistHostMount({
 function PluginContextSummaryCard() {
 	const { pluginName, source, knownPluginNames } = usePluginScope()
 	const deps = usePluginDependencyEntries()
-	const { diagnostics, summary, hasDiagnostics } = usePluginUiStatus(pluginName)
 	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
 	const sourcePreview = useMemo(
 		() =>
@@ -306,24 +305,6 @@ function PluginContextSummaryCard() {
 						)}
 					</div>
 				</div>
-
-				{hasDiagnostics ? (
-					<div className="plx-pluginWorkbench__summaryRow">
-						<span className="plx-pluginWorkbench__summaryLabel">扩展</span>
-						<div className="plx-pluginWorkbench__summaryValue">
-							<Badge
-								size="xs"
-								variant="light"
-								color={summary.issues.length > 0 ? 'yellow' : 'blue'}
-							>
-								{summary.issues.length > 0 ? `${summary.issues.length} 待处理` : '正常'}
-							</Badge>
-							<Text className="plx-pluginWorkbench__summaryText" size="sm">
-								{diagnostics.surfaces.length} surfaces / {diagnostics.offers.length} offers
-							</Text>
-						</div>
-					</div>
-				) : null}
 
 				<Group gap={6} wrap="wrap">
 					<Badge size="xs" variant="light" color="gray">

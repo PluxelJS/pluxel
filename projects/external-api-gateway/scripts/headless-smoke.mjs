@@ -5,10 +5,10 @@ import { createServer } from 'vite'
 
 const root = resolve(import.meta.dirname, '..')
 const dataRoot = await mkdtemp(join(tmpdir(), 'pluxel-external-gateway-'))
-const previousWebManagement = process.env.PLUXEL_WEB_MANAGEMENT
+const previousManagement = process.env.PLUXEL_MANAGEMENT
 const previousDataRoot = process.env.PLUXEL_STATIC_DATA_ROOT
 
-process.env.PLUXEL_WEB_MANAGEMENT = 'false'
+process.env.PLUXEL_MANAGEMENT = 'false'
 process.env.PLUXEL_STATIC_DATA_ROOT = dataRoot
 
 let server
@@ -38,7 +38,7 @@ try {
 } finally {
 	await server?.close()
 	await rm(dataRoot, { recursive: true, force: true })
-	restoreEnvironment('PLUXEL_WEB_MANAGEMENT', previousWebManagement)
+	restoreEnvironment('PLUXEL_MANAGEMENT', previousManagement)
 	restoreEnvironment('PLUXEL_STATIC_DATA_ROOT', previousDataRoot)
 }
 

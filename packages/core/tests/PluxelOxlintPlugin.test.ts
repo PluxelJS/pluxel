@@ -272,14 +272,11 @@ runRule('features-load-no-class-field', pluxelRules['features-load-no-class-fiel
 	],
 })
 
-runRule(
-	'features-load-requires-defined-spec',
-	pluxelRules['features-load-requires-defined-spec'],
-	{
-		valid: [
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+runRule('features-load-requires-defined-spec', pluxelRules['features-load-requires-defined-spec'], {
+	valid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					const optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
@@ -292,10 +289,10 @@ runRule(
 						}
 					}
 				`,
-			},
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					import { optionalFeature } from './optional-spec'
 
 					@Plugin({ name: 'PluginA' })
@@ -305,12 +302,12 @@ runRule(
 						}
 					}
 				`,
-			},
-		],
-		invalid: [
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+		},
+	],
+	invalid: [
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					@Plugin({ name: 'PluginA' })
 					class PluginA extends BasePlugin {
 						override async init() {
@@ -321,11 +318,11 @@ runRule(
 						}
 					}
 				`,
-				errors: [{ messageId: 'inlineSpec' }],
-			},
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+			errors: [{ messageId: 'inlineSpec' }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					let optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
@@ -338,11 +335,11 @@ runRule(
 						}
 					}
 				`,
-				errors: [{ messageId: 'mutableSpec' }],
-			},
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+			errors: [{ messageId: 'mutableSpec' }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					const optionalFeature = {
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
@@ -355,11 +352,11 @@ runRule(
 						}
 					}
 				`,
-				errors: [{ messageId: 'invalidSpec' }],
-			},
-			{
-				filename: '/repo/packages/core/tests/plugin-a.ts',
-				code: `
+			errors: [{ messageId: 'invalidSpec' }],
+		},
+		{
+			filename: '/repo/packages/core/tests/plugin-a.ts',
+			code: `
 					const optionalFeature = defineLazyFeature({
 						key: 'optional',
 						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
@@ -372,11 +369,10 @@ runRule(
 						}
 					}
 				`,
-				errors: [{ messageId: 'extraArgs' }],
-			},
-		],
-	},
-)
+			errors: [{ messageId: 'extraArgs' }],
+		},
+	],
+})
 
 runRule('features-load-no-static-load', pluxelRules['features-load-no-static-load'], {
 	valid: [
@@ -866,85 +862,6 @@ runRule(
 		],
 	},
 )
-
-runRule('runtime-type-augmentations', pluxelRules['runtime-type-augmentations'], {
-	valid: [
-		{
-			code: `
-				class PluginA extends BasePlugin {
-					override init() {
-						web.rpc.expose(() => new PluginARpc())
-						web.sse.expose(() => null)
-						web.state.collection({ name: 'events' })
-					}
-				}
-
-				declare module '@pluxel/runtime/web' {
-					interface ExtensionUiRpcMap {
-						PluginA: PluginARpc
-					}
-					interface ExtensionUiSseMap {
-						PluginA: { type: 'ready' }
-					}
-					interface ExtensionUiSignalDbMap {
-						PluginA: {
-							events: { id: string }
-						}
-					}
-				}
-			`,
-		},
-		{
-			code: `
-				class PluginA extends BasePlugin {
-					override init() {
-						web.rpc.expose(() => new PluginARpc())
-						web.sse.expose(() => null)
-						web.state.collection({ name: 'events' })
-					}
-				}
-
-				import { PluginARpc, type PluginACollections } from './PluginA.shared'
-			`,
-		},
-		{
-			code: `
-				import './PluginA.contract'
-
-				class PluginA extends BasePlugin {
-					override init() {
-						web.rpc.expose(() => new PluginARpc())
-					}
-				}
-			`,
-		},
-	],
-	invalid: [
-		{
-			code: `
-				class PluginA extends BasePlugin {
-					override init() {
-						web.rpc.expose(() => new PluginARpc())
-						web.sse.expose(() => null)
-						web.state.collection({ name: 'events' })
-					}
-				}
-			`,
-			errors: [{ messageId: 'webRpc' }, { messageId: 'webSse' }, { messageId: 'webSignalDb' }],
-		},
-		{
-			code: `
-				class PluginA extends BasePlugin {
-					override init() {
-						web.ui.register(pluginUi)
-						web.state.collection({ name: 'events' })
-					}
-				}
-			`,
-			errors: [{ messageId: 'webSignalDb' }],
-		},
-	],
-})
 
 describe('pluxel correctness helpers', () => {
 	it('keeps build enforcement sourced from the correctness rule set', () => {

@@ -1,8 +1,5 @@
 export {
-	ui,
 	worker,
-	type PluginUiModuleDeclaration as LoaderHmrUiModuleDeclaration,
-	type PluginUiSourceDeclaration as LoaderHmrUiSourceDeclaration,
 	type PluginWorkerBindOptions as LoaderHmrWorkerBindOptions,
 	type PluginWorkerBinding as LoaderHmrWorkerBinding,
 	type PluginWorkerDeclaration as LoaderHmrWorkerDeclaration,

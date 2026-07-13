@@ -1,120 +1,76 @@
 # Plugin System Architecture
 
-本文档面向维护者，定义当前插件系统的内部边界。插件作者用法以 [`user-docs/plugin-authoring.md`](../user-docs/plugin-authoring.md) 为准。
-
-## 一张图
+本文定义当前插件系统边界。作者用法以 [`user-docs/plugin-authoring.md`](../user-docs/plugin-authoring.md)
+为准。
 
 ```text
 plugin source
-  ├─ constructor dependencies ───────┐
-  ├─ config / feature declarations ──┤ Vite/Rolldown metadata
-  └─ ui() declaration ───────────────┘
-                       ↓
-@pluxel/core: graph / DI / lifecycle / effects
-                       ↓
-@pluxel/runtime: HTTP / persistence / config / runtime services
-                       ↓
+  ├─ constructor dependencies
+  ├─ config / feature declarations
+  └─ ManagementModule declarations
+          ↓
+@pluxel/core: committed graph / DI / lifecycle / effects
+          ↓
+@pluxel/runtime: HTTP / persistence / config / optional capabilities
+          ↓
 static or dynamic route: catalog / Vite / HMR / host policy
-                       ↓
-optional Web Management: UI / RPC / SSE / management state
+          ↓
+optional Management Plane: target layout / artifacts / bound resources
 ```
-
-插件是依赖和生命周期单元，不是部署策略单元。static/dynamic、是否启用管理面、失败是否退出进程都由宿主决定。
 
 ## 依赖与组成
 
-四种关系必须保持正交：
+| 意图                   | API                                       | 生命周期含义                 |
+| ---------------------- | ----------------------------------------- | ---------------------------- |
+| required plugin        | constructor parameter                     | provider 失败会阻塞 consumer |
+| optional plugin        | `this.plugins.use()`                      | provider 可缺失，替换后重绑  |
+| required local feature | `this.features.use()`                     | 随宿主插件启动               |
+| lazy local feature     | `defineLazyFeature()` + `features.load()` | 按需加载                     |
 
-| 意图                   | API                                       | 生命周期含义                        |
-| ---------------------- | ----------------------------------------- | ----------------------------------- |
-| required 插件依赖      | constructor parameter                     | provider 失败会阻塞 consumer        |
-| optional 插件协作      | `this.plugins.use()`                      | provider 不运行时不执行，替换后重绑 |
-| required 本地组成      | `this.features.use()`                     | 随宿主插件共同启动                  |
-| lazy/optional 本地组成 | `defineLazyFeature()` + `features.load()` | 按需加载，可返回空                  |
+constructor 是 required dependency 的唯一作者声明。static/dynamic route 必须读取同一 committed core
+graph；Management resolver 不依赖 loader 私有图。
 
-constructor 是 required dependency 的唯一作者声明。`@Plugin` 从 `design:paramtypes` 读取 runtime token，不再要求重复 metadata。插件源码必须经过 Pluxel Vite/Rolldown 链；原始 TypeScript runner 不是插件入口。
+## 生命周期与资源
 
-## 生命周期
+core commit 顺序为 `draft graph -> verify -> stop plan -> start plan -> CommitSummary`。provider 先启动、
+consumer 先停止；失败插件不进入 running，required dependents 被阻塞。effects 在 stop、replacement、
+rollback 时清理。
 
-core 使用 commit 模型：
+Management mount 绑定 owner effects。`requireRunning` contribution 只有在 owner 真正 running 后才进入
+layout；init 失败不会留下可见 view 或资源。HMR replacement 会撤销旧 layout binding、resource factory、
+stream、collection 和 artifact。
 
-```text
-draft graph -> verify -> stop plan -> start plan -> CommitSummary
-```
+## Optional Management Plane
 
-- start：provider 在 consumer 之前。
-- stop：consumer 在 provider 之前。
-- `init()` 失败记录为 lifecycle issue，并阻塞 required dependents。
-- 无关插件继续执行。
-- effects scope 随插件 replacement、stop 和 rollback 清理。
-- core 只返回事实；进程退出和健康策略属于宿主。
+插件只看到 `ctx.management.enabled` 和 `ctx.management.mount()`。宿主通过顶层 `management` 配置安装
+backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
 
-## Runtime 能力边界
+`ManagementModule` 是静态 contract，`management.mount(module, bindings)` 是唯一发布动作。registry
+生成 target-specific layout，并把每个 resource 转成 revision-scoped opaque binding。浏览器不能按插件
+namespace 任意访问未授予资源。
 
-常驻能力：
+dependent 复用有两条明确路径：
 
-- config、logger、events、effects；
-- HTTP plugin routes；
-- persistence、plugin data、runtime state；
-- registry/lifecycle read models。
+- provider 的只读 capability view 可自动投影到 required dependents 的 host-owned capability 区；
+- consumer 用 typed port 选择 placement 和自己的 binding，provider 用 renderer 实现统一 UI。
 
-可选宿主能力：
-
-- Web Management：插件 UI、管理 RPC/SSE、management state、管理路由和资产；
-- Vault：加密数据和宿主管理能力。
-
-HTTP 不属于 Web Management。关闭管理面不影响插件业务路由。
-
-## Web Management 内部模型
-
-插件只看到 `ctx.webManagement.enabled` 和 `ctx.webManagement.use(callback)`。安装和 required access 是 runtime internal 函数。
-
-隔离策略保持轻量：
-
-- gate 随 plugin Context 隔离，缓存后仍绑定 owner Context；
-- UI/RPC/SSE/state registry 按 host 共享；
-- backend 为每个 Context 缓存绑定视图；
-- registration cleanup 进入对应插件 effects scope；
-- shared registry 不保存可切换的“当前插件 ctx”。
-
-关闭 Web Management 时不安装 backend，也不创建 UI compiler、watcher、管理路由或 state transport；`use()` callback 不执行。
-
-## UI pipeline
-
-`ui()` 只产生 declaration，注册动作始终是 `web.ui.register(declaration)`。
-
-开发：Vite route 接收源码 declaration，编译 remote 并发布诊断。
-
-生产：插件构建生成 federation artifact，runtime 注册 artifact；runtime 不解析源码路径。
-
-工具链可以降低 declaration，但不能替换作者调用或注入另一套运行时 API。
+不维护服务端 UI session/draft。交互状态属于 consumer resource、浏览器局部状态或明确的业务 API。
 
 ## 包边界
 
-- `@pluxel/core`：Context、插件图、DI、生命周期、feature/config 声明。
-- `@pluxel/runtime`：稳定作者面和常驻 runtime services。
-- `@pluxel/runtime/web-management`：服务端管理面 declaration 和类型。
-- `@pluxel/runtime/web`：浏览器插件 UI API。
-- `@pluxel/runtime-static`：fixed catalog route。
-- `@pluxel/runtime-dynamic`：loader、scan、module replacement 和 HMR route。
-- `@pluxel/runtime/toolchain`：仅供生成代码使用的 metadata helper。
-
-## 关键实现
-
-- `packages/core/src/plugins/runtime/PluginService.ts`
-- `packages/core/src/plugins/runtime/PluginDefinitions.ts`
-- `packages/core/src/plugins/decorators/`
-- `packages/runtime/src/services/web-management.ts`
-- `packages/runtime/src/services/web-management/WebManagementService.ts`
-- `packages/runtime/src/services/plugin-interaction/`
-- `packages/runtime-static/src/internal/host.ts`
-- `packages/runtime-dynamic/src/hmr/`
-- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
+- `@pluxel/core`：Context、graph、DI、lifecycle、effects；
+- `@pluxel/runtime`：插件作者和常驻 runtime；
+- `@pluxel/runtime/management`：服务端 Management contract；
+- `@pluxel/runtime/management/ui`：浏览器 resource client；
+- `@pluxel/runtime/management/federation`：artifact shared contract；
+- `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
+- `@pluxel/runtime-dev`：Management compiler；
+- `@pluxel/rolldown/vite/management-ui`：remote build primitive。
 
 ## 不变量
 
-- 作者入口不导出 metadata mutation 或 host installation API。
-- optional capability disabled 时没有隐式初始化。
-- static/dynamic 不改变插件作者写法。
-- toolchain metadata 与 runtime graph 必须可通过 Vite Module Runner 集成测试验证。
-- active docs 不记录已删除 API 清单；历史由 Git 保留。
+- 业务 capability 不依赖 Management Plane；
+- disabled 表示零 backend 初始化；
+- host 拥有 placement，provider 不能任意占据 consumer UI；
+- static/dynamic 的作者 API 和 graph 语义一致；
+- active docs 只描述当前 API，历史由 Git 保存。

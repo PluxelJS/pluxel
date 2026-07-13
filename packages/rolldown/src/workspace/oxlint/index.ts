@@ -10,9 +10,7 @@ export function createPluxelJsPluginEntry(specifier = PLUXEL_OXLINT_PACKAGE_SPEC
 	}
 }
 
-export function createPluxelSourceJsPluginEntry(
-	specifier = PLUXEL_OXLINT_SOURCE_PLUGIN_SPECIFIER,
-) {
+export function createPluxelSourceJsPluginEntry(specifier = PLUXEL_OXLINT_SOURCE_PLUGIN_SPECIFIER) {
 	return createPluxelJsPluginEntry(specifier)
 }
 
@@ -34,7 +32,6 @@ export {
 	pluxelRules,
 } from './plugin.ts'
 export { configsRules } from './rules/configs.ts'
-export { augmentationsRules } from './rules/augmentations.ts'
 export { pluxelOxlintIgnorePatterns } from './config.ts'
 export { importsRules } from './rules/imports.ts'
 export { loggingRules } from './rules/logging.ts'

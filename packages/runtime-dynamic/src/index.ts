@@ -28,6 +28,7 @@ export async function createDynamicDevRuntime(
 		startPromise ??= bootPlannedLoaderHmrHost(plan)
 			.then((result) => {
 				booted = result
+				return undefined
 			})
 			.catch((error) => {
 				startPromise = undefined

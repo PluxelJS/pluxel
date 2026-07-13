@@ -23,13 +23,11 @@ export default defineConfig({
 	ignorePatterns: [...pluxelOxlintIgnorePatterns],
 	rules: {
 		...(prefixPluxelRuleSet(pluxelRules) as RuleMap),
-		'pluxel/runtime-type-augmentations': 'warn',
 	},
 })
 ```
 
-`prefixPluxelRuleSet(pluxelRules)` 默认以 error 启用全部规则。模板只把启发式的
-`runtime-type-augmentations` 降为 warning。建议 lint 命令同时启用
+`prefixPluxelRuleSet(pluxelRules)` 默认以 error 启用全部规则。建议 lint 命令同时启用
 `--report-unused-disable-directives-severity=error`，避免抑制项永久失效。
 
 ## 插件与 feature
@@ -73,16 +71,6 @@ try {
 ```
 
 不要插值 `${error}`、记录 `{ failure: error }`，或提前转换为 `error.message`/`String(error)`。
-
-## Web contract
-
-| 规则                         | 级别          | 保护的约束                                                                                                                                             |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `runtime-type-augmentations` | 模板默认 warn | `web.rpc.expose()`、`web.sse.expose()` 和 UI 使用的 `web.state.collection()` 应有共享 contract import 或对应 `@pluxel/runtime/web` module augmentation |
-
-这是 warning，因为规则只能启发式识别“附近”的 contract 边界。不要直接关闭它：若类型声明位于独立
-文件，从命名清晰的 `.shared.ts`、`.types.ts` 或 `.contract.ts` 导入，使服务端与浏览器端消费同一
-contract，也让规则能够识别边界。
 
 ## 修复顺序
 

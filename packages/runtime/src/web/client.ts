@@ -9,16 +9,17 @@ import {
 	toGlobalFetch,
 } from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
-import type { ExtensionManifest } from './extensions'
-import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
-import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
+import type { ManagementCatalog, ManagementLayout } from '../management/contracts'
+import type { RuntimeRpcApi } from './protocol'
+import { createManagementApiView, createRpcClientFactory, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
 import { createRuntimeSecurityClient } from './security'
 import {
-	RUNTIME_EXTENSIONS_EVENTS_PATH,
+	RUNTIME_MANAGEMENT_EVENTS_PATH,
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_TRANSPORT_PATHS,
-	runtimeSignalDbCollectionPath,
+	runtimeManagementCollectionPath,
+	runtimeManagementStreamPath,
 	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
@@ -31,7 +32,7 @@ export interface RuntimeMeta {
 	sse: {
 		namespaces: string[]
 	}
-	extensions: {
+	management: {
 		version: number
 		modules: number
 	}
@@ -39,7 +40,6 @@ export interface RuntimeMeta {
 		rpc: string
 		graphql: string
 		sse: string
-		signaldb: string
 	}
 }
 
@@ -85,8 +85,12 @@ type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
 
 interface RuntimeTreatyClient {
 	meta: RuntimeTreatyGet<RuntimeMeta>
-	extensions: {
-		manifest: RuntimeTreatyGet<ExtensionManifest>
+	management: {
+		catalog: RuntimeTreatyGet<ManagementCatalog>
+		layout: {
+			global: RuntimeTreatyGet<ManagementLayout>
+			plugin: (params: { target: string }) => RuntimeTreatyGet<ManagementLayout>
+		}
 	}
 	logs: {
 		v1: {
@@ -112,8 +116,10 @@ type RuntimeTransportHttp = {
 	meta: {
 		info(init?: RequestInit): Promise<RuntimeMeta>
 	}
-	extensions: {
-		manifest(init?: RequestInit): Promise<ExtensionManifest>
+	management: {
+		catalog(init?: RequestInit): Promise<ManagementCatalog>
+		globalLayout(init?: RequestInit): Promise<ManagementLayout>
+		pluginLayout(target: string, init?: RequestInit): Promise<ManagementLayout>
 	}
 	logs: {
 		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
@@ -132,16 +138,22 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	signaldbCollection(pluginName: string, collection: string): string
+	managementCollection(binding: string): string
+	managementStream(binding: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
-	extensionEvents(namespaces?: string[]): string
+	managementEvents(): string
 }
 
 export interface RuntimeTransportClient {
 	fetch: RuntimeFetch
 	http: RuntimeTransportHttp
 	links: RuntimeTransportLinks
-	extensions: ExtensionUiRpcMap
+	management: {
+		api<TApi>(binding: string): TApi
+		stream<TEvent = unknown>(
+			binding: string,
+		): SseClientWithNamespaces & { readonly __event?: TEvent }
+	}
 	withRpc: <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
@@ -170,9 +182,15 @@ function createRuntimeTransportHttp(
 		meta: {
 			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
 		},
-		extensions: {
-			manifest: (init) =>
-				expectData<ExtensionManifest>(http.extensions.manifest.get({ fetch: init })),
+		management: {
+			catalog: (init) =>
+				expectData<ManagementCatalog>(http.management.catalog.get({ fetch: init })),
+			globalLayout: (init) =>
+				expectData<ManagementLayout>(http.management.layout.global.get({ fetch: init })),
+			pluginLayout: (target, init) =>
+				expectData<ManagementLayout>(
+					http.management.layout.plugin({ target }).get({ fetch: init }),
+				),
 		},
 		logs: {
 			streams: (init) =>
@@ -242,21 +260,17 @@ export function createRuntimeTransportLinks(
 		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
 		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
-		signaldbCollection: (pluginName: string, collection: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeSignalDbCollectionPath(pluginName, collection))),
+		managementCollection: (binding: string) =>
+			resolveClientUrl(joinPath(apiBase, runtimeManagementCollectionPath(binding))),
+		managementStream: (binding: string) =>
+			resolveClientUrl(joinPath(apiBase, runtimeManagementStreamPath(binding))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
 			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
 			const suffix =
 				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
 			return suffix ? `${base}?${suffix}` : base
 		},
-		extensionEvents: (namespaces?: string[]) => {
-			const base = resolveClientUrl(joinPath(apiBase, RUNTIME_EXTENSIONS_EVENTS_PATH))
-			const params = new URLSearchParams()
-			for (const namespace of namespaces ?? []) params.append('ns', namespace)
-			const suffix = params.toString()
-			return suffix ? `${base}?${suffix}` : base
-		},
+		managementEvents: () => resolveClientUrl(joinPath(apiBase, RUNTIME_MANAGEMENT_EVENTS_PATH)),
 	}
 	return transport
 }
@@ -291,7 +305,7 @@ export function createRuntimeTransportClient(
 		fetch,
 	})
 	const rawRpc = createRpcClientFactory(links.rpc)
-	const extensions = createUiRpcView(rawRpc, { credentials })
+	const managementApis = createManagementApiView(rawRpc, { credentials })
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
 		invokeRpc(runner, { rpcBase: links.rpc, credentials })
 
@@ -338,7 +352,13 @@ export function createRuntimeTransportClient(
 		fetch,
 		http,
 		links,
-		extensions,
+		management: {
+			api: <TApi>(binding: string) => (managementApis as Record<string, unknown>)[binding] as TApi,
+			stream: <TEvent = unknown>(binding: string) =>
+				createSse({ url: links.managementStream(binding) }) as SseClientWithNamespaces & {
+					readonly __event?: TEvent
+				},
+		},
 		withRpc,
 		createSse,
 		get sse() {

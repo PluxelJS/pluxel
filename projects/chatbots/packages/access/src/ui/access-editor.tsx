@@ -10,14 +10,15 @@ import {
 	Text,
 	TextInput,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useEffect, useState } from 'react'
 import type { PermissionEffect } from '../model.ts'
-import type { AccessUiApp, UserAccess } from './types.ts'
+import type { UserAccess } from './types.ts'
+import { accessPlugin } from './runtime.ts'
 
-export function AccessEditor({ app }: { app: AccessUiApp }) {
-	const users = app.db.useList('users')
-	const roles = app.db.useList('roles')
+export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use> }) {
+	const users = app.collection('users').useList()
+	const roles = app.collection('roles').useList()
 	const [userId, setUserId] = useState<string | null>(null)
 	const [access, setAccess] = useState<UserAccess>({ roles: [], grants: [] })
 	const [permissionNodes, setPermissionNodes] = useState<string[]>([])
@@ -33,7 +34,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 	const [error, setError] = useState<string | null>(null)
 
 	useEffect(() => {
-		void Promise.resolve(app.rpc.listPermissions()).then((items) =>
+		void Promise.resolve(app.api('api').listPermissions()).then((items) =>
 			setPermissionNodes(items.map((item) => item.node)),
 		)
 	}, [app])
@@ -42,7 +43,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 			setAccess({ roles: [], grants: [] })
 			return
 		}
-		void Promise.resolve(app.rpc.getUserAccess(userId))
+		void Promise.resolve(app.api('api').getUserAccess(userId))
 			.then(setAccess)
 			.catch((caught) => setError(rpcErrorMessage(caught, '读取用户权限失败')))
 	}, [app, userId])
@@ -100,7 +101,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 							onClick={() =>
 								void run(async () => {
 									setAccess(
-										await app.rpc.setUserGrant(userId!, {
+										await app.api('api').setUserGrant(userId!, {
 											node: grantNode,
 											effect: grantEffect,
 										}),
@@ -120,7 +121,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 								style={{ cursor: 'pointer' }}
 								onClick={() =>
 									void run(async () =>
-										setAccess(await app.rpc.revokeUserGrant(userId!, grant.node)),
+										setAccess(await app.api('api').revokeUserGrant(userId!, grant.node)),
 									)
 								}
 							>
@@ -139,7 +140,9 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 						<Button
 							disabled={!userId || !assignRoleId}
 							onClick={() =>
-								void run(async () => setAccess(await app.rpc.assignRole(userId!, assignRoleId!)))
+								void run(async () =>
+									setAccess(await app.api('api').assignRole(userId!, assignRoleId!)),
+								)
 							}
 						>
 							分配
@@ -151,7 +154,9 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 								key={assigned}
 								style={{ cursor: 'pointer' }}
 								onClick={() =>
-									void run(async () => setAccess(await app.rpc.revokeRole(userId!, assigned)))
+									void run(async () =>
+										setAccess(await app.api('api').revokeRole(userId!, assigned)),
+									)
 								}
 							>
 								{assigned} ×
@@ -185,7 +190,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 							disabled={!roleId.trim() || !roleName.trim()}
 							onClick={() =>
 								void run(async () => {
-									await app.rpc.upsertRole({
+									await app.api('api').upsertRole({
 										id: roleId,
 										name: roleName,
 										rank: roleRank,
@@ -225,7 +230,9 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 									const index = grants.findIndex((grant) => grant.node === next.node)
 									if (index < 0) grants.push(next)
 									else grants[index] = next
-									await app.rpc.upsertRole({ id: roleId, name: roleName, rank: roleRank, grants })
+									await app
+										.api('api')
+										.upsertRole({ id: roleId, name: roleName, rank: roleRank, grants })
 								})
 							}
 						>
@@ -244,7 +251,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 									color="red"
 									onClick={() =>
 										void run(async () => {
-											await app.rpc.deleteRole(role.id)
+											await app.api('api').deleteRole(role.id)
 										})
 									}
 								>
@@ -260,7 +267,7 @@ export function AccessEditor({ app }: { app: AccessUiApp }) {
 										style={{ cursor: 'pointer' }}
 										onClick={() =>
 											void run(async () => {
-												await app.rpc.upsertRole({
+												await app.api('api').upsertRole({
 													...role,
 													grants: role.grants.filter((item) => item.node !== grant.node),
 												})

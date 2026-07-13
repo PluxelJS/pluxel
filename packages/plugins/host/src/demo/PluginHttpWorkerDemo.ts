@@ -4,7 +4,13 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
-import { doc } from '@pluxel/runtime/web-management'
+import {
+	defineManagementModule,
+	ManagementPlacements,
+	managementDoc,
+	managementDocument,
+	managementView,
+} from '@pluxel/runtime/management'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
@@ -22,6 +28,28 @@ type SquareResult = {
 
 // Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
+const d = managementDoc({} as const)
+const HttpWorkerManagement = defineManagementModule({
+	id: 'PluginHttpWorkerDemo',
+	contributions: [
+		managementView({
+			id: 'http-worker',
+			placement: ManagementPlacements.PluginTabs,
+			meta: { label: 'Worker Demo' },
+			view: managementDocument({
+				title: 'HTTP Worker Demo',
+				content: d`
+					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
+
+					- \`GET /status\`: reports whether the loader HMR worker bundler is attached.
+					- \`GET /square/:value\`: invokes the worker under HMR, otherwise uses inline fallback.
+
+					Frozen/static runtimes intentionally use inline execution. Production workers should use a prebuilt stable \`.mjs\` entry.
+				`,
+			}),
+		}),
+	],
+})
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
@@ -29,8 +57,6 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 	private workerBinding: PluginWorkerBinding | null = null
 
 	override async init(): Promise<void> {
-		const d = doc({} as const)
-
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app
@@ -51,24 +77,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.webManagement.use((web) => web.ui.builtin.doc({
-			id: 'plugin-http-worker-demo',
-			point: 'plugin:tabs',
-			title: 'HTTP Worker Demo',
-			meta: {
-				label: 'Worker Demo',
-			},
-			content: d`
-				Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
-
-				Endpoints:
-				- \`GET /status\`: reports whether the loader HMR worker bundler is attached.
-				- \`GET /square/:value\`: invokes the worker when loader HMR is active, otherwise uses inline fallback.
-
-				Frozen/static runtimes intentionally fall back to inline execution.
-				If you need a real production worker, prebuild a stable \`.mjs\` entry with tsdown instead of relying on the HMR bundler.
-			`,
-		}))
+		this.ctx.management.mount(HttpWorkerManagement, {})
 
 		this.workerBinding = await squareWorker.bind(this.ctx, {
 			onError: (error) => {

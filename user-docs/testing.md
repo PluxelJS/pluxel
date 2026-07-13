@@ -44,7 +44,7 @@ export default definePluxelVitestConfig(
 | --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------- |
 | 纯函数、领域模型、schema helper                                 | 直接 Vitest                                         | 不启动 Pluxel，速度最快                                       |
 | DI、required dependency graph、feature、effects、core lifecycle | `@pluxel/test` 的 `withHost()`                      | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
-| config 注入、HTTP、persistence、Vault、Web Management service   | `@pluxel/runtime/test` 的 `withRuntimeHost()`       | 默认 memory backend，callback 结束后自动 dispose              |
+| config 注入、HTTP、persistence、Vault、Management Plane         | `@pluxel/runtime/test` 的 `withRuntimeHost()`       | 默认 memory backend，callback 结束后自动 dispose              |
 | 应用的 static catalog 和完整 fetch boundary                     | `@pluxel/runtime-static` 的 `createStaticRuntime()` | 用于 host/application integration，不是普通插件单测默认选择   |
 | dynamic loader、HMR、UI compiler、真实 Vite route               | 对应 runtime package 的集成测试                     | 需要验证工具链或 route 时才上升到这一层                       |
 
@@ -76,7 +76,7 @@ describe('OrdersPlugin', () => {
 				)
 				expect(response.status).toBe(200)
 			},
-			{ webManagement: false },
+			{ management: false },
 		)
 	})
 })
@@ -86,8 +86,9 @@ describe('OrdersPlugin', () => {
 类型化实例，未运行时会给出明确错误。`withRuntimeHost()` 在成功、断言失败和 callback 抛错时都会
 dispose host，因此优先于手动维护 `afterEach` cleanup。
 
-runtime host 默认使用 memory persistence、config service 和 runtime state，并默认启用私有 Web
-Management。测试业务独立性时必须显式传 `{ webManagement: false }`；只有验证管理面注册时才启用它。
+runtime host 默认使用 memory persistence、config service 和 runtime state，并默认启用私有
+Management Plane。测试业务独立性时必须显式传 `{ management: false }`；只有验证管理面 contract、
+layout 或 resource binding 时才启用它。
 
 ## 只测 core lifecycle
 
@@ -169,8 +170,8 @@ phase、kind 和 `blockedBy` 语义。
 2. 诚实失败：必要外部条件不满足时 lifecycle 是 failed，而不是 running 加一条日志。
 3. required dependency：provider failure 会阻塞 consumer；optional provider 缺失不阻塞核心能力。
 4. cleanup：remove、replacement 或 host dispose 后 timer、listener、route 和连接不再工作；cleanup 可重复。
-5. Web Management disabled：业务 HTTP、领域状态和核心生命周期仍然工作，management callback 不执行。
-6. Web Management enabled：只在插件确实贡献 UI/RPC/SSE/state 时测试 contract 注册和共享类型边界。
+5. Management Plane disabled：业务 HTTP、领域状态和核心生命周期仍然工作，management callback 不执行。
+6. Management Plane enabled：测试 module mount、target layout、opaque binding、cleanup 和 UI artifact。
 7. request-level failure：单次无效请求或上游超时不会错误地停止整个插件。
 
 不要为了行覆盖率直接调用 private lifecycle method。通过 host commit、HTTP fetch、公开 capability、

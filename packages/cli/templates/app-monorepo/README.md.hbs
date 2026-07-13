@@ -14,7 +14,7 @@ from the `user-docs/` bundled with the CLI, so the generated repository uses the
 testing and Oxlint guidance as Pluxel itself. Coding agents are directed there by `AGENTS.md`.
 
 The main plugin is `plugins/example/src/index.ts`. Its test uses `@pluxel/test/vitest` and
-`withRuntimeHost()` to prove that business HTTP works with Web Management disabled. Keep that
+`withRuntimeHost()` to prove that business HTTP works with Management Plane disabled. Keep that
 property as the plugin grows.
 
 Run the complete local verification before finishing a change:
@@ -63,6 +63,6 @@ The Vite plugin order in `web/vite.config.ts` is intentional:
 GQLens middleware stays disabled because GraphQL is served by the Pluxel plugin, not by a second
 development-only backend.
 
-To enable the optional Pluxel management workbench, replace `webManagement: false` in
+To enable the optional Pluxel management workbench, replace `management: false` in
 `web/src/pluxel.static.ts` with a host-owned configuration object. Plugin business routes and
 domain state must remain independent of that capability.

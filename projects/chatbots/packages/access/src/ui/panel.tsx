@@ -4,8 +4,8 @@ import { accessPlugin } from './runtime.ts'
 
 export function AccessPanel() {
 	const app = accessPlugin.use()
-	const overview = app.db.useDocById('overview', 'overview')
-	const users = app.db.useList('users')
+	const overview = app.collection('overview').useDocById('overview')
+	const users = app.collection('users').useList()
 	return (
 		<Stack p="md" gap="md">
 			<Group justify="space-between">

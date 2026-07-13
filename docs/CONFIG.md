@@ -13,13 +13,13 @@ runtime: profile -> persistence/watch -> patch/reset -> management read model
 - `configs.use()` 与 `cfg(schemaMap)` 是作者声明。
 - 配置在实例构造后、`init()` 前注入；constructor 不读取配置值。
 - config metadata 是 build-time 数据，不是 runtime AST 推断。
-- core validation 不依赖文件系统或 Web Management。
+- core validation 不依赖文件系统或 Management Plane。
 
 ## Toolchain metadata
 
 `configSourcePlugin()` 提取 schema source、binding 和 layout，生成代码通过 `@pluxel/runtime/toolchain` 写入 definition metadata。该 subpath 不是作者 API。
 
-runtime 将 metadata 投影为宿主需要的 schema、defaults 和 layout。Web Management 只是其中一个消费者，不拥有配置事实。
+runtime 将 metadata 投影为宿主需要的 schema、defaults 和 layout。Management Plane 只是其中一个消费者，不拥有配置事实。
 
 ## 实现入口
 

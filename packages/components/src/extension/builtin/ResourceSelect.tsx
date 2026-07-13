@@ -1,9 +1,11 @@
 import { Loader, Paper, Select, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import type { BuiltinResourceSelectBlock } from '@pluxel/runtime/web/extensions'
+import type { ManagementResourceSelectBlock as BuiltinResourceSelectBlock } from '@pluxel/runtime/management'
+import { useManagementView } from '@pluxel/runtime/management/ui'
 import {
+	useBoundSignalDbCollectionsState,
 	useGlobalExtensionContext,
-	useSignalDbCollectionState,
+	type SignalDbCollectionView,
 	type SignalDbItem,
 } from '@pluxel/runtime/web'
 import { readNested, readString, useConfigFieldBridge } from '../internal/config-field-bridge'
@@ -26,28 +28,31 @@ function optionKey(value: unknown): string {
 
 export function BuiltinResourceSelect({
 	targetPluginName,
-	sourcePluginName,
 	block,
 }: {
 	targetPluginName: string
-	sourcePluginName: string
 	block: BuiltinResourceSelectBlock
 }) {
 	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
+	const item = useManagementView()
 	const targetPlugin = readString(block.target.pluginName) ?? targetPluginName
-	const sourcePlugin = readString(block.pluginName) ?? sourcePluginName
 	const schemaKey = readString(block.target.schemaKey) ?? ''
 	const fieldPath = readString(block.target.field) ?? ''
 	const valueField = readString(block.valueField) ?? 'id'
 	const labelField = readString(block.labelField) ?? ''
 	const descriptionField = readString(block.descriptionField ?? '') ?? ''
 	const mode = block.target.mode ?? 'value'
-	const collection = useSignalDbCollectionState<Record<string, unknown> & SignalDbItem>(
+	const collections = useBoundSignalDbCollectionsState(
 		transport,
-		sourcePlugin,
-		block.collection,
+		useMemo(() => {
+			const resource = item.resources[block.collection]
+			return resource?.kind === 'collection' ? { [block.collection]: resource.binding } : {}
+		}, [block.collection, item]),
 	)
+	const collection = collections[block.collection] as
+		| SignalDbCollectionView<Record<string, unknown> & SignalDbItem>
+		| undefined
 	const bridge = useConfigFieldBridge({
 		targetPlugin,
 		schemaKey,
@@ -55,6 +60,7 @@ export function BuiltinResourceSelect({
 	})
 
 	const options = useMemo(() => {
+		if (!collection) return []
 		const docs = collection.find()
 		return docs
 			.map((doc) => {
@@ -91,6 +97,16 @@ export function BuiltinResourceSelect({
 		() => options.find((option) => option.value === selectedValue) ?? null,
 		[options, selectedValue],
 	)
+
+	if (!collection) {
+		return (
+			<Paper withBorder radius="md" p="sm" shadow="xs">
+				<Text size="xs" c="red">
+					Management collection resource is unavailable: {block.collection}
+				</Text>
+			</Paper>
+		)
+	}
 
 	if (bridge.loading && !bridge.config.data) {
 		return (
@@ -138,13 +154,13 @@ export function BuiltinResourceSelect({
 	const handleChange = async (nextValue: string | null) => {
 		if (bridge.saving) return
 		const nextOption =
-			nextValue == null ? null : (options.find((item) => item.value === nextValue) ?? null)
+			nextValue == null ? null : (options.find((option) => option.value === nextValue) ?? null)
 		const nextFieldValue =
 			nextOption == null
 				? null
 				: mode === 'ref'
 					? {
-							provider: sourcePlugin,
+							provider: item.owner,
 							kind: readString(block.target.refKind) ?? block.collection,
 							id: nextOption.rawValue,
 							...(block.target.includeLabel === false ? {} : { label: nextOption.rawLabel }),

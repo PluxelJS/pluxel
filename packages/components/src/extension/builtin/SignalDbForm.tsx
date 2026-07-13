@@ -1,10 +1,11 @@
 import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BuiltinFormBlock } from '@pluxel/runtime/web/extensions'
+import type { ManagementFormBlock as BuiltinFormBlock } from '@pluxel/runtime/management'
+import { useManagementView } from '@pluxel/runtime/management/ui'
 import {
 	useGlobalExtensionContext,
-	useSignalDbCollectionsState,
+	useBoundSignalDbCollectionsState,
 	useSignalDbQueryState,
 } from '@pluxel/runtime/web'
 import type { ObjectSchema } from 'valibot'
@@ -214,6 +215,7 @@ export function BuiltinSignalDbForm({
 }) {
 	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
+	const item = useManagementView()
 	const isMountedRef = useRef(true)
 	useEffect(() => {
 		return () => {
@@ -229,14 +231,18 @@ export function BuiltinSignalDbForm({
 			: 250
 
 	const state = useSignalDbFormSchema(pluginName, schemaKey)
-	const collections = useSignalDbCollectionsState(
+	const collections = useBoundSignalDbCollectionsState(
 		transport,
-		pluginName,
 		useMemo(() => {
 			const names = new Set<string>([block.write.collection])
 			if (block.syncFrom?.collection) names.add(block.syncFrom.collection)
-			return Array.from(names)
-		}, [block.syncFrom?.collection, block.write.collection]),
+			return Object.fromEntries(
+				Array.from(names).flatMap((name) => {
+					const resource = item.resources[name]
+					return resource?.kind === 'collection' ? [[name, resource.binding]] : []
+				}),
+			)
+		}, [block.syncFrom?.collection, block.write.collection, item]),
 	)
 	const syncFromKey = useMemo(
 		() => stableSignalDbValueKey(block.syncFrom ?? null),

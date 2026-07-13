@@ -11,7 +11,7 @@ import type {
 	PersistenceRequirement,
 	PersistenceServiceConfig,
 	PluginDataServiceConfig,
-	WebManagementConfig,
+	ManagementConfig,
 } from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
@@ -73,8 +73,8 @@ export type StaticRuntimeHostOptions = {
 	 * admin access config.
 	 */
 	http?: StaticRuntimeHttpConfig
-	/** Optional management UI, plugin UI RPC/SSE/state and access policy. @default false */
-	webManagement?: WebManagementConfig
+	/** Optional Management Plane resources, UI artifacts, and access policy. @default false */
+	management?: ManagementConfig
 	/**
 	 * Runtime logger settings.
 	 */

@@ -1,23 +1,20 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
-import { requireWebManagement } from '../../services/web-management/WebManagementService'
+import { requireManagement } from '../../services/management'
 
-function readInternalMeta(
-	pluginCtx: PluginContext,
-) {
-	const web = requireWebManagement(pluginCtx)
-	const extensionService = web.ui
-	const manifest = extensionService?.getManifest()
-	const modules = Array.isArray(manifest?.modules) ? manifest.modules.length : 0
+function readInternalMeta(pluginCtx: PluginContext) {
+	const management = requireManagement(pluginCtx)
+	const catalog = management.registry.getCatalog()
+	const modules = catalog.modules.length
 	return {
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
 		sse: {
-			namespaces: web.sse.getNamespaces(),
+			namespaces: management.streams.listNamespaces(),
 		},
-		extensions: {
-			version: manifest?.version ?? 0,
+		management: {
+			version: catalog.revision,
 			modules,
 		},
 		transport: RUNTIME_TRANSPORT_PATHS,
@@ -34,6 +31,6 @@ export const metaRoutes = (app: AnyElysiaApp) =>
 			})
 			.get('/sse', ({ set, pluginCtx }) => {
 				set.headers['cache-control'] = 'no-store'
-				return { namespaces: requireWebManagement(pluginCtx).sse.getNamespaces() }
+				return { namespaces: requireManagement(pluginCtx).streams.listNamespaces() }
 			}),
 	)

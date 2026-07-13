@@ -1,12 +1,11 @@
 import './runtime/register/full'
 import './services/vault'
-import { installWebManagement } from './services/web-management'
-import { withWebManagementPluginContext } from './services/web-management/WebManagementService'
-import { isWebManagementEnabled, webManagementAdminAccess } from './web-management-config'
+import { installManagement } from './services/management'
+import { withManagementPluginContext } from './services/management/ManagementService'
+import { isManagementEnabled, managementAdminAccess } from './management-config'
 import {
 	createCoreContext,
 	createCoreHost,
-	withCoreContext,
 	type Context,
 	type CoreHost,
 	type CoreHostConfigHandle,
@@ -67,18 +66,18 @@ export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> 
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	const webManagement = config.webManagement ?? {
+	const management = config.management ?? {
 		enabled: true,
 		access: { exposure: 'private' as const },
 	}
 	const host = createCoreHost(
-		withWebManagementPluginContext({
+		withManagementPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
-			webManagement,
-			adminAccess: config.adminAccess ?? webManagementAdminAccess(webManagement),
+			management,
+			adminAccess: config.adminAccess ?? managementAdminAccess(management),
 		}),
 		{
 			prepareCommit: async (ctx) => {
@@ -86,7 +85,7 @@ export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
 			},
 		},
 	)
-	if (isWebManagementEnabled(webManagement)) installWebManagement(host.ctx)
+	if (isManagementEnabled(management)) installManagement(host.ctx)
 	return host
 }
 
@@ -103,21 +102,21 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	const webManagement = config.webManagement ?? {
+	const management = config.management ?? {
 		enabled: true,
 		access: { exposure: 'private' as const },
 	}
 	const ctx = createCoreContext(
-		withWebManagementPluginContext({
+		withManagementPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
-			webManagement,
-			adminAccess: config.adminAccess ?? webManagementAdminAccess(webManagement),
+			management,
+			adminAccess: config.adminAccess ?? managementAdminAccess(management),
 		}),
 	)
-	if (isWebManagementEnabled(webManagement)) installWebManagement(ctx.ctx)
+	if (isManagementEnabled(management)) installManagement(ctx.ctx)
 	return ctx
 }
 

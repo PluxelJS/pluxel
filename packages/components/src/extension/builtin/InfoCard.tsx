@@ -1,5 +1,8 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
-import type { BuiltinBadgeValue, BuiltinInfoCardBlock } from '@pluxel/runtime/web/extensions'
+import type {
+	ManagementBadgeValue as BuiltinBadgeValue,
+	ManagementInfoCardBlock as BuiltinInfoCardBlock,
+} from '@pluxel/runtime/management'
 import { useSignalDbQueryState } from '@pluxel/runtime/web'
 import {
 	isObject,
@@ -69,32 +72,23 @@ function shouldAutoSpanFullWidth(value: unknown): boolean {
 	return kind === 'json'
 }
 
-export function BuiltinInfoCard({
-	pluginName,
-	block,
-}: {
-	pluginName: string
-	block: BuiltinInfoCardBlock
-}) {
+export function BuiltinInfoCard({ block }: { block: BuiltinInfoCardBlock }) {
 	const rows = Array.isArray(block.rows) ? block.rows : []
 	const rowsKey = stableSignalDbValueKey(rows)
-	const signalDbCollections = useSignalDbForValues(
-		pluginName,
-		rows.map((r) => r?.value),
-	)
+	const signalDbCollections = useSignalDbForValues(rows.map((r) => r?.value))
 
 	const resolvedRows = useSignalDbQueryState(
 		() =>
 			rows.map((row) => {
 				const value: any = row?.value
 				if (!isObject(value)) return row
-					if (value.kind === 'signaldb') {
-						const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
-						return Object.assign({}, row, { value: nextValue as any })
-					}
+				if (value.kind === 'signaldb') {
+					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
+					return Object.assign({}, row, { value: nextValue as any })
+				}
 				return row
 			}),
-		[pluginName, rowsKey],
+		[rowsKey],
 	)
 
 	const layout = block.layout ?? {}

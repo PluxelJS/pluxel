@@ -23,9 +23,8 @@ import {
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { ui } from '@pluxel/runtime/web-management'
+import { managementBinding } from '@pluxel/runtime/management'
 import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import type {
@@ -37,8 +36,8 @@ import type {
 	YiqichaRawCallInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
+import { YiqichaManagement } from './management-module.ts'
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const ROUTE_BASE = '/yiqicha'
 const PROVIDER_ID = 'yiqicha'
 const VAULT_NAMESPACE = 'YiqichaProviderPlugin'
@@ -108,15 +107,19 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		await this.ctx.webManagement.use(async (web) => {
-			await Promise.all([
-				this.settings.attach(web.state.collection<YiqichaSettingsDoc>({ name: 'settings' })),
-				this.status.attach(web.state.collection<YiqichaStatusDoc>({ name: 'status' })),
-				this.history.attach(web.state.collection<YiqichaTestRunDoc>({ name: 'history' })),
-			])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new YiqichaProviderRpc(this))
+		const mounted = this.ctx.management.mount(YiqichaManagement, {
+			api: managementBinding.api(() => new YiqichaProviderRpc(this)),
+			settings: managementBinding.collection(),
+			status: managementBinding.collection(),
+			history: managementBinding.collection(),
 		})
+		if (mounted) {
+			await Promise.all([
+				this.settings.attach(mounted.resources.settings),
+				this.status.attach(mounted.resources.status),
+				this.history.attach(mounted.resources.history),
+			])
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('YiQiCha provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -821,19 +824,6 @@ export class YiqichaProviderRpc extends RpcTarget {
 
 	routeBase() {
 		return this.plugin.routeBase()
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		YiqichaProviderPlugin: YiqichaProviderRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		YiqichaProviderPlugin: {
-			settings: YiqichaSettingsDoc
-			status: YiqichaStatusDoc
-			history: YiqichaTestRunDoc
-		}
 	}
 }
 

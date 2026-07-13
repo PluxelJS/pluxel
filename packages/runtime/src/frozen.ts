@@ -33,10 +33,10 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 	const configPayload = options.config ?? {}
 	const enabled = new Set(options.enabled)
 	const profile = options.profile ?? 'frozen'
-	const webManagement = options.bootstrap?.webManagement ?? false
+	const management = options.bootstrap?.management ?? false
 	const adminAccess =
-		webManagement !== false && webManagement.enabled === true
-			? { ...webManagement.access, enabled: true }
+		management !== false && management.enabled === true
+			? { ...management.access, enabled: true }
 			: { enabled: false, exposure: 'private' }
 	const imports = rows
 		.map((row) =>
@@ -60,12 +60,12 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import '@pluxel/runtime'
-import { withWebManagementPluginContext } from '@pluxel/runtime/internal'
+import { withManagementPluginContext } from '@pluxel/runtime/internal'
 import '@pluxel/runtime/services/vault'
 import '@pluxel/runtime-dynamic/register'
 ${imports}
 
-const ctx = new Context(withWebManagementPluginContext({
+const ctx = new Context(withManagementPluginContext({
 \tprofile: ${JSON.stringify(profile)},
 \tconfigService: {
 \t\t// Frozen hosts still need a mutable bootstrap phase because builtin preload
@@ -87,15 +87,15 @@ const ctx = new Context(withWebManagementPluginContext({
 \t\tstate: { enabled: false },
 \t},
 \thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
-\twebManagement: ${JSON.stringify(webManagement)},
+\tmanagement: ${JSON.stringify(management)},
 \tadminAccess: ${JSON.stringify(adminAccess)},
 }))
 
 await ctx.prepareServices()
 
-if (${JSON.stringify(webManagement !== false && webManagement.enabled === true)}) {
-\tconst { installWebManagement } = await import('@pluxel/runtime/services/web-management')
-\tinstallWebManagement(ctx)
+if (${JSON.stringify(management !== false && management.enabled === true)}) {
+\tconst { installManagement } = await import('@pluxel/runtime/services/management')
+\tinstallManagement(ctx)
 }
 
 await ctx.loader.preloadPlugins(

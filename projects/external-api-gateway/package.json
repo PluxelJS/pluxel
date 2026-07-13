@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --host 127.0.0.1",
-		"headless": "PLUXEL_WEB_MANAGEMENT=false vite --host 127.0.0.1",
+		"headless": "PLUXEL_MANAGEMENT=false vite --host 127.0.0.1",
 		"build": "vite build",
 		"static": "vite --host 127.0.0.1",
 		"test": "vitest run --config vitest.config.ts",

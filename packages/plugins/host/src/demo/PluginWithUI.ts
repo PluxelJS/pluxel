@@ -1,19 +1,15 @@
 // Read this when:
 // - 你要写自定义 UI
-// - 你想看 Web Management UI + RPC + SSE + replicated state 的最小闭环
+// - 你想看 Management Plane UI + RPC + SSE + replicated state 的最小闭环
 
-import { fileURLToPath } from 'node:url'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import {
-	ui,
-	type ManagementStateCollection,
-	type SseChannel,
-} from '@pluxel/runtime/web-management'
+import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
+import type { SseChannel } from '@pluxel/runtime/services/management'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
+import { PluginWithUIManagement } from './PluginWithUI.management'
 
 // Shared server-side data model exposed to the UI.
-type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
+export type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
 const STATUS_DOC_ID = 'status' as const
 const MAX_EVENT_SCAN = 200
 const MAX_EVENT_HISTORY = 80
@@ -38,15 +34,12 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
-// Keep UI entry declaration near the model so readers see the server/UI boundary early.
-const pluginUi = ui(fileURLToPath(new URL('./PluginWithUI/ui/index.tsx', import.meta.url)))
-
 @Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
-	private status!: ManagementStateCollection<PluginWithUIStatusDoc>
-	private events!: ManagementStateCollection<DemoEvent>
+	private status!: MountedManagementResources<typeof PluginWithUIManagement>['status']
+	private events!: MountedManagementResources<typeof PluginWithUIManagement>['events']
 
 	private eventSeq = 1
 	private channels = new Set<SseChannel>()
@@ -54,14 +47,17 @@ export class PluginWithUI extends BasePlugin {
 	override async init() {
 		this.startedAt = Date.now()
 
-		await this.ctx.webManagement.use(async (web) => {
-			this.status = web.state.collection<PluginWithUIStatusDoc>({ name: 'status' })
-			this.events = web.state.collection<DemoEvent>({ name: 'events' })
-			await this.initState()
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new PluginWithUIRpc(this))
-			web.sse.expose(() => this.attachSse())
+		const mounted = this.ctx.management.mount(PluginWithUIManagement, {
+			api: managementBinding.api(() => new PluginWithUIRpc(this)),
+			status: managementBinding.collection(),
+			events: managementBinding.collection(),
+			activity: managementBinding.stream(this.attachSse()),
 		})
+		if (mounted) {
+			this.status = mounted.resources.status
+			this.events = mounted.resources.events
+			await this.initState()
+		}
 
 		this.ctx.logger.info('ready')
 	}
@@ -248,22 +244,5 @@ export class PluginWithUIRpc extends RpcTarget {
 
 	async clearEvents() {
 		return this.plugin.clearEvents()
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		PluginWithUI: PluginWithUIRpc
-	}
-
-	interface ExtensionUiSseMap {
-		PluginWithUI: PluginWithUISsePayload
-	}
-
-	interface ExtensionUiSignalDbMap {
-		PluginWithUI: {
-			status: PluginWithUIStatusDoc
-			events: DemoEvent
-		}
 	}
 }

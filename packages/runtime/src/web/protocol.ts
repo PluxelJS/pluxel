@@ -6,29 +6,7 @@
  */
 export type { VaultKeyPair } from '../services/vault/types'
 
-/**
- * UI extensibility surface.
- *
- * @example
- * declare module '@pluxel/runtime/web' {
- *   interface ExtensionUiRpcMap {
- *     MyPlugin: MyPluginRpc
- *   }
- *
- *   interface ExtensionUiSseMap {
- *     MyPlugin: MyPluginSsePayload
- *   }
- *
- *   interface ExtensionUiSignalDbMap {
- *     MyPlugin: {
- *       events: DemoEvent
- *     }
- *   }
- * }
- */
-export interface ExtensionUiRpcMap {}
-export interface ExtensionUiSseMap {}
-export interface ExtensionUiSignalDbMap {}
+export type ManagementApiView = Record<string, unknown>
 
 export type PluginStatusAction =
 	| 'start'
@@ -65,53 +43,6 @@ export type ConfigResultErr = {
 
 export type ConfigResult = ConfigResultOk | ConfigResultErr
 
-export type ExtensionSessionLoadResultOk = {
-	ok: true
-	input: unknown
-	draft: unknown
-	prepared: unknown
-}
-
-export type ExtensionSessionLoadResultErr = {
-	ok: false
-	code:
-		| 'session_not_found'
-		| 'surface_not_found'
-		| 'offer_not_found'
-		| 'prepare_failed'
-		| 'validation_failed'
-	message?: string
-}
-
-export type ExtensionSessionLoadResult =
-	| ExtensionSessionLoadResultOk
-	| ExtensionSessionLoadResultErr
-
-export type ExtensionSessionDraftSyncInput = {
-	sessionId: string
-	draft: unknown
-}
-
-export type ExtensionSessionCommitInput = {
-	sessionId: string
-	result: unknown
-}
-
-export type ExtensionSessionMutationResult =
-	| {
-			ok: true
-	  }
-	| {
-			ok: false
-			code:
-				| 'session_not_found'
-				| 'surface_not_found'
-				| 'offer_not_found'
-				| 'validation_failed'
-				| 'apply_failed'
-			message?: string
-	  }
-
 export type SchemaResultOk = {
 	ok: true
 	schemaSource: Record<string, string>
@@ -121,7 +52,7 @@ export type SchemaResultOk = {
 	 *
 	 * Extracted from `this.configs.use(cfg(schemaMap)\`...\`)` by build toolchains.
 	 */
-	layout?: import('./plugin-ui/extensions-contracts').BuiltinMarkdownPart[] | null
+	layout?: import('../management/document-contracts').BuiltinMarkdownPart[] | null
 }
 
 export type SchemaResultErr = {
@@ -315,12 +246,6 @@ export interface BuildSnapshotResult {
 	error?: string
 }
 
-export interface ExtensionSessionHandleApi {
-	loadSession: (sessionId: string) => Promise<ExtensionSessionLoadResult>
-	syncDraft: (input: ExtensionSessionDraftSyncInput) => Promise<ExtensionSessionMutationResult>
-	commitSession: (input: ExtensionSessionCommitInput) => Promise<ExtensionSessionMutationResult>
-}
-
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
@@ -342,14 +267,12 @@ export type LoggingHandleApi = {
 	resetPolicy: () => Promise<PluginLogPolicySnapshot>
 }
 
-type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
+type RuntimeRpcApiContract = {
 	ping: () => string
 	features: () => string[]
 	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
 	logging: () => LoggingHandleApi
-	ui: () => ExtensionSessionHandleApi
-	ext: ExtRpc
-	extensions: () => string[]
+	resources: ManagementApiView
 	buildSnapshot: () => Promise<BuildSnapshotResult>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 	pluginSchema: (name: string) => Promise<SchemaResult>
@@ -377,4 +300,4 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
 }
 
-export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>
+export type RuntimeRpcApi = RuntimeRpcApiContract

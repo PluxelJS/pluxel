@@ -22,7 +22,6 @@ export default defineConfig({
 		...(prefixPluxelRuleSet(pluxelRules) as RuleMap),
 		'eslint/no-unused-vars': 'warn',
 		'import/no-unassigned-import': 'off',
-		'pluxel/runtime-type-augmentations': 'warn',
 		'react/exhaustive-deps': 'error',
 		'react/react-in-jsx-scope': 'off',
 		'react/rules-of-hooks': 'error',

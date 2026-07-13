@@ -102,10 +102,13 @@ planner 会先逐 block 校验 transport capabilities，再决定 mixed、拆分
 
 用户可发送 `/account` 查看统一身份，发送 `/link` 生成 5 分钟有效的一次性关联码，再到另一个平台发送 `/link <code>` 合并身份、角色和 grants。
 
-插件 UI 使用模块相对声明：
+Management UI 使用模块相对声明：
 
 ```ts
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
+const ChatManagement = defineManagementModule({
+	id: 'ChatPlugin',
+	ui: managementUi(import.meta.url, './ui/index.tsx'),
+})
 ```
 
 路径到绝对文件名的转换由 Pluxel authoring API 负责，平台插件不再重复 `fileURLToPath(new URL(...))`。

@@ -14,7 +14,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconCheck, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '@repo/external-api-gateway-shared/constants'
@@ -26,36 +26,6 @@ import type {
 	BillingUserSummaryDoc,
 } from '../contracts'
 import { billingPlugin } from './runtime'
-
-type BillingUiApp = {
-	rpc: {
-		clearUsage(): Promise<{ ok: true }>
-		upsertRate(input: Omit<BillingRateDoc, 'id' | 'updatedAt'>): Promise<BillingRateDoc>
-	}
-	db: {
-		useDocById(collection: 'overview', id: 'overview'): BillingOverviewDoc | undefined
-		useList(
-			collection: 'records',
-			spec?: { limit?: number; sort?: Partial<Record<keyof BillingUsageRecord, 1 | -1>> },
-		): BillingUsageRecord[]
-		useList(
-			collection: 'users',
-			spec?: { limit?: number; sort?: Partial<Record<keyof BillingUserSummaryDoc, 1 | -1>> },
-		): BillingUserSummaryDoc[]
-		useList(
-			collection: 'providers',
-			spec?: { limit?: number; sort?: Partial<Record<keyof BillingProviderSummaryDoc, 1 | -1>> },
-		): BillingProviderSummaryDoc[]
-		useList(
-			collection: 'rates',
-			spec?: { limit?: number; sort?: Partial<Record<keyof BillingRateDoc, 1 | -1>> },
-		): BillingRateDoc[]
-	}
-}
-
-function useBillingApp(): BillingUiApp {
-	return billingPlugin.use() as unknown as BillingUiApp
-}
 
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
 	return (
@@ -90,12 +60,16 @@ export function BillingDashboard() {
 }
 
 export function BillingPanel() {
-	const app = useBillingApp()
-	const overview = app.db.useDocById('overview', 'overview')
-	const records = app.db.useList('records', { limit: 30, sort: { at: -1 } })
-	const users = app.db.useList('users', { limit: 10, sort: { totalCostCny: -1 } })
-	const providers = app.db.useList('providers', { limit: 10, sort: { totalCostCny: -1 } })
-	const rates = app.db.useList('rates', {
+	const app = billingPlugin.use()
+	const api = app.api('api')
+	const overview = app.collection('overview').useDocById('overview')
+	const records = app.collection('records').useList({ limit: 30, sort: { at: -1 } })
+	const users = app.collection('users').useList({ limit: 10, sort: { totalCostCny: -1 } })
+	const providers = app.collection('providers').useList({
+		limit: 10,
+		sort: { totalCostCny: -1 },
+	})
+	const rates = app.collection('rates').useList({
 		limit: 100,
 		sort: { provider: 1, operation: 1, model: 1 },
 	})
@@ -106,7 +80,7 @@ export function BillingPanel() {
 
 	const clear = async () => {
 		try {
-			await app.rpc.clearUsage()
+			await api.clearUsage()
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '清空用量失败'))
@@ -159,7 +133,7 @@ export function BillingPanel() {
 			</SimpleGrid>
 			<RatePanel
 				rates={rates}
-				onSave={(input) => app.rpc.upsertRate(input)}
+				onSave={(input) => api.upsertRate(input)}
 				onError={(message) => setError(message)}
 			/>
 			<RecordTable records={records} />

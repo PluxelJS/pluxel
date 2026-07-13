@@ -9,7 +9,10 @@
 标准插件把声明、依赖、运行和可选管理面分开：
 
 ```ts
-const dashboard = ui(import.meta.url, './ui/index.tsx')
+const OrdersManagement = defineManagementModule({
+	id: 'OrdersPlugin',
+	ui: managementUi(import.meta.url, './ui/index.tsx'),
+})
 
 @Plugin({ name: 'OrdersPlugin' })
 export class OrdersPlugin extends BasePlugin {
@@ -25,9 +28,7 @@ export class OrdersPlugin extends BasePlugin {
 
 		this.ctx.http.plugin.routes((app) => app.get('/orders', () => this.list()))
 
-		this.ctx.webManagement.use((web) => {
-			web.ui.register(dashboard)
-		})
+		this.ctx.management.mount(OrdersManagement, {})
 	}
 }
 ```
@@ -35,7 +36,7 @@ export class OrdersPlugin extends BasePlugin {
 - module scope 和 class field 只放 declaration；不要在这里启动 I/O 或 lazy feature。
 - constructor 只声明必需的 plugin dependency；不要读取 config、连接服务或决定宿主策略。
 - `init()` 验证启动条件、创建资源、注册业务能力；无法提供核心能力时直接抛错。
-- `webManagement.use()` 只创建管理面专用资源，业务行为不得依赖 callback 是否执行。
+- `ctx.management.mount()` 只挂载管理面专用资源，业务行为不得依赖其返回值是否存在。
 
 ## Required、optional 与 feature
 
@@ -69,11 +70,11 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 | 能力                                     | 放置位置                                  |
 | ---------------------------------------- | ----------------------------------------- |
 | 业务 HTTP、webhook、外部 health endpoint | `ctx.http.plugin`                         |
-| 插件 UI、管理 RPC/SSE、management state  | `ctx.webManagement.use()`                 |
+| Management UI、API、stream、collection   | `ctx.management.mount(module, bindings)`  |
 | 业务状态和事实源                         | 插件自己的 runtime/persistence capability |
 | 进程退出、部署和健康策略                 | host                                      |
 
-测试至少覆盖一次 `webManagement: false`，证明业务 HTTP 和核心生命周期不依赖管理面。
+测试至少覆盖一次 `management: false`，证明业务 HTTP 和核心生命周期不依赖管理面。
 
 ## API 与日志
 
@@ -89,6 +90,6 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 2. 运行 `pnpm verify`，覆盖 format、unused suppressions、typecheck、tests 和 production build。
 3. 确认 required/optional、plugin/feature、HTTP/management 三组边界都清楚。
 4. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
-5. 确认 disabled Web Management 测试仍通过，公开 contract 类型能被消费者发现。
+5. 确认 disabled Management Plane 测试仍通过，公开 contract 类型能被消费者发现。
 6. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
    raw TypeScript runner？

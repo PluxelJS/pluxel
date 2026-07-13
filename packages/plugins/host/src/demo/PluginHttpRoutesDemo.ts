@@ -3,9 +3,35 @@
 // - 你不需要 worker，只想看 route base、path params 和 builtin doc 说明
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { doc } from '@pluxel/runtime/web-management'
+import {
+	defineManagementModule,
+	ManagementPlacements,
+	managementDoc,
+	managementDocument,
+	managementView,
+} from '@pluxel/runtime/management'
 
 const ROUTE_BASE = '/http-demo'
+const d = managementDoc({} as const)
+const HttpRoutesManagement = defineManagementModule({
+	id: 'PluginHttpRoutesDemo',
+	contributions: [
+		managementView({
+			id: 'http-routes',
+			placement: ManagementPlacements.PluginTabs,
+			meta: { label: 'HTTP Routes' },
+			view: managementDocument({
+				title: 'HTTP Routes Demo',
+				content: d`
+					Route base: \`/__pluxel/plugins/PluginHttpRoutesDemo${ROUTE_BASE}\`.
+
+					- \`GET /status\`: returns a small health payload.
+					- \`GET /echo/:value\`: returns the path param and length.
+				`,
+			}),
+		}),
+	],
+})
 
 @Plugin({ name: 'PluginHttpRoutesDemo' })
 export class PluginHttpRoutesDemo extends BasePlugin {
@@ -28,26 +54,6 @@ export class PluginHttpRoutesDemo extends BasePlugin {
 			},
 		)
 
-		this.registerDoc()
-	}
-
-	private registerDoc() {
-		const d = doc({} as const)
-
-		this.ctx.webManagement.use((web) => web.ui.builtin.doc({
-			id: 'plugin-http-routes-demo',
-			point: 'plugin:tabs',
-			title: 'HTTP Routes Demo',
-			meta: {
-				label: 'HTTP Routes',
-			},
-			content: d`
-				Route base: \`/__pluxel/plugins/PluginHttpRoutesDemo${ROUTE_BASE}\`.
-
-				Endpoints:
-				- \`GET /status\`: returns a small health payload.
-				- \`GET /echo/:value\`: returns the path param and length.
-			`,
-		}))
+		this.ctx.management.mount(HttpRoutesManagement, {})
 	}
 }

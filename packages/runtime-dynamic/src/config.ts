@@ -1,5 +1,5 @@
 import type { Context as CoreContext } from '@pluxel/core'
-import type { WebManagementConfig } from '@pluxel/runtime'
+import type { ManagementConfig } from '@pluxel/runtime'
 import type { BuiltinPluginSpec } from './services'
 import type { LoaderHmrDependencyConfig } from './hmr/engine/config'
 import type { LoaderHmrConfig } from './hmr/engine/LoaderHmrService'
@@ -27,7 +27,7 @@ export type DynamicRuntimeConfig = {
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
-	webManagement?: WebManagementConfig
+	management?: ManagementConfig
 	logger?: CoreContext.Config['logger']
 	context?: CoreContext.Config
 }
@@ -71,6 +71,6 @@ function assertPublicHttpConfig(http: unknown, label: string): void {
 	)
 	if (forbidden.length === 0) return
 	throw new Error(
-		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "webManagement" and let the route launcher own management internals.`,
+		`${label} http must not include ${forbidden.map((key) => `"${key}"`).join(', ')}; use top-level "management" and let the route launcher own management internals.`,
 	)
 }

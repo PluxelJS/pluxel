@@ -14,7 +14,7 @@ type FindOptions<T> = {
 }
 
 /**
- * Business-owned collection with an optional Web Management projection.
+ * Business-owned collection with an optional Management Plane projection.
  *
  * Runtime code always reads and writes the local collection. Attaching a management
  * collection mirrors the current snapshot and future mutations without making the

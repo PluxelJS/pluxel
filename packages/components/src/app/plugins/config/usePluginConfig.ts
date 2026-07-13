@@ -3,7 +3,7 @@ import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 import { getPluginConfig, getPluginSchema, invokeRpc } from '../../../runtime'
-import type { BuiltinMarkdownPart } from '@pluxel/runtime/web/extensions'
+import type { ManagementMarkdownPart as BuiltinMarkdownPart } from '@pluxel/runtime/management'
 
 export type PluginConfigData = {
 	schemaMap: Record<string, any>

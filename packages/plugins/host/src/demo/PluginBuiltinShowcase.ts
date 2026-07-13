@@ -1,20 +1,21 @@
-// Read this when:
-// - 你不打算写自定义 UI
-// - 你只想看 builtin doc/form/action 的完整最小组合
+// Read this when you want host-rendered management documents without a UI bundle.
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import {
-	doc,
-	type ManagementStateCollection,
-	type ManagementStateDocument,
-	type PluginWebManagement,
-} from '@pluxel/runtime/web-management'
+	defineManagementModule,
+	ManagementPlacements,
+	managementBinding,
+	managementDoc,
+	managementDocument,
+	managementResource,
+	managementView,
+	type ManagementSyncRef,
+	type MountedManagementResources,
+} from '@pluxel/runtime/management'
 import {
 	BehaviorConfig,
 	type BuiltinAction,
-	type BuiltinActionWrite,
 	type BuiltinState,
-	type BuiltinTabMeta,
 	DEFAULTS,
 	DisplayConfig,
 	FormatConfig,
@@ -25,41 +26,137 @@ import {
 	formatDuration,
 } from './PluginBuiltinShowcase.shared'
 
-type BuiltinDocBuilder = ReturnType<typeof doc>
-type BuiltinDocContent = ReturnType<BuiltinDocBuilder>
-type TabDocDefinition = {
-	id: string
-	tab: BuiltinTabMeta
-	priority: number
-	content: BuiltinDocContent
+const PLUGIN = 'PluginBuiltinShowcase'
+
+function stateRef<Key extends keyof BuiltinState>(
+	key: Key,
+	fallback: BuiltinState[Key],
+): ManagementSyncRef<BuiltinState[Key]> {
+	return {
+		kind: 'signaldb',
+		collection: RUNTIME_DOC_ID,
+		selector: { id: RUNTIME_DOC_ID },
+		path: String(key),
+		fallback,
+	}
 }
 
-// Builtin doc tabs stay close to the top so readers can see the output shape first.
-const BUILTIN_TABS = {
-	controls: { id: 'controls', label: 'Controls', icon: 'form' },
-	metrics: { id: 'metrics', label: 'Metrics', icon: 'activity' },
-} satisfies Record<string, BuiltinTabMeta>
+const actionInsert = (value: Record<string, unknown>) => ({
+	collection: RUNTIME_ACTIONS_COLLECTION,
+	mode: 'insert' as const,
+	value: {
+		id: { kind: 'generatedId' as const },
+		...value,
+		status: 'pending',
+		createdAt: { kind: 'now' as const },
+	},
+})
 
-const BUILTIN_NOTES = `
-Builtin doc 适合放：
+const d = managementDoc({} as const)
+const summaryRows = [
+	{ label: 'Uptime', value: stateRef('uptimeLabel', '0s') },
+	{ label: 'Ticks', value: stateRef('ticks', 0) },
+	{ label: 'Paused', value: stateRef('paused', false) },
+	{ label: 'Tick step', value: stateRef('tickStep', DEFAULTS.behavior.tickStep) },
+	{ label: 'Refresh (ms)', value: stateRef('refreshMs', DEFAULTS.display.refreshMs) },
+]
 
-- 当前状态摘要
-- 少量即时操作
-- 简短说明文段
+const BuiltinShowcaseManagement = defineManagementModule({
+	id: PLUGIN,
+	resources: {
+		[RUNTIME_DOC_ID]: managementResource.collection<BuiltinState>(),
+		[RUNTIME_ACTIONS_COLLECTION]: managementResource.collection<BuiltinAction>(),
+	},
+	contributions: [
+		managementView({
+			id: 'summary',
+			placement: ManagementPlacements.PluginContext,
+			requireRunning: false,
+			view: managementDocument({
+				title: 'Builtin Overview',
+				description: 'Host-rendered, resource-bound management document.',
+				content: d`
+					${d.block(
+						'Overview',
+						d.card({
+							layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+							rows: [{ label: 'Plugin', value: PLUGIN }, ...summaryRows],
+						}),
+					)}
 
-如果页面需要复杂交互、复杂布局或独立路由，就切到自定义 UI demo。
-`
+					Builtin documents suit status summaries, small forms and immediate actions. Complex flows should use a remote view.
+				`,
+			}),
+		}),
+		managementView({
+			id: 'controls',
+			placement: ManagementPlacements.PluginTabs,
+			priority: 20,
+			meta: {
+				label: 'Controls',
+				icon: 'form',
+				tab: { id: 'controls', label: 'Controls', icon: 'form' },
+			},
+			view: managementDocument({
+				content: d`
+					${d.block('Pause', {
+						kind: 'form',
+						description: 'onChange form writes an action document.',
+						submitMode: 'onChange',
+						autoSubmitDebounceMs: 120,
+						schemaKey: '_runtimeToggle',
+						write: actionInsert({ kind: 'setPaused', paused: { kind: 'field', key: 'paused' } }),
+					})}
+					${d.block('Set ticks', {
+						kind: 'form',
+						description: 'Manual submit writes an action document.',
+						submitLabel: 'Submit',
+						submitMode: 'manual',
+						schemaKey: '_runtime',
+						write: actionInsert({ kind: 'setTicks', ticks: { kind: 'field', key: 'ticks' } }),
+					})}
+					${d.block('Reset ticks', {
+						kind: 'action',
+						label: 'Reset to 0',
+						description: 'No RPC: write to the action collection.',
+						write: actionInsert({ kind: 'setTicks', ticks: 0 }),
+					})}
+				`,
+			}),
+		}),
+		managementView({
+			id: 'metrics',
+			placement: ManagementPlacements.PluginTabs,
+			priority: 10,
+			meta: {
+				label: 'Metrics',
+				icon: 'activity',
+				tab: { id: 'metrics', label: 'Metrics', icon: 'activity' },
+			},
+			view: managementDocument({
+				content: d`${d.block(
+					'Metrics Stream',
+					d.card({
+						description: 'SignalDB-backed values update live.',
+						layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+						rows: [...summaryRows, { label: 'Uptime (ms)', value: stateRef('uptimeMs', 0) }],
+					}),
+				)}`,
+			}),
+		}),
+	],
+})
 
-@Plugin({ name: 'PluginBuiltinShowcase' })
+type ShowcaseResources = MountedManagementResources<typeof BuiltinShowcaseManagement>
+
+@Plugin({ name: PLUGIN })
 export class PluginBuiltinShowcase extends BasePlugin {
 	private startedAt = Date.now()
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
-	private builtinState!: ManagementStateCollection<BuiltinState>
-	private builtinActions!: ManagementStateCollection<BuiltinAction>
-	private managementUi!: PluginWebManagement['ui']
-	private builtin!: ManagementStateDocument<BuiltinState>
+	private builtinState!: ShowcaseResources[typeof RUNTIME_DOC_ID]
+	private builtinActions!: ShowcaseResources[typeof RUNTIME_ACTIONS_COLLECTION]
 	private readonly processingActions = new Set<string>()
 
 	private display = this.configs.use(DisplayConfig)
@@ -71,278 +168,50 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	override async init() {
 		void this._runtime
 		void this._runtimeToggle
-
-		await this.ctx.webManagement.use(async (web) => {
-			this.managementUi = web.ui
-			this.builtinState = web.state.collection<BuiltinState>({ name: RUNTIME_DOC_ID })
-			this.builtinActions = web.state.collection<BuiltinAction>({
-				name: RUNTIME_ACTIONS_COLLECTION,
-				clientWrites: true,
-				persistence: false,
-			})
-			this.startedAt = Date.now()
-			await this.builtinState.ready()
-			await this.builtinActions.ready()
-			this.builtin = this.builtinState.doc({ id: RUNTIME_DOC_ID })
-			this.syncBuiltinState()
-			this.consumePendingActions()
-			const stopWatch = this.builtinActions.watch((event) => {
-				if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot') {
-					this.consumePendingActions()
-				}
-			})
-			this.ctx.effects.defer(() => stopWatch())
-			this.registerBuiltins()
-			this.startTickLoop()
+		const mounted = this.ctx.management.mount(BuiltinShowcaseManagement, {
+			[RUNTIME_DOC_ID]: managementBinding.collection(),
+			[RUNTIME_ACTIONS_COLLECTION]: managementBinding.collection({ clientWrites: true }),
 		})
+		if (!mounted) return
+		this.builtinState = mounted.resources[RUNTIME_DOC_ID]
+		this.builtinActions = mounted.resources[RUNTIME_ACTIONS_COLLECTION]
+		this.startedAt = Date.now()
+		await Promise.all([this.builtinState.ready(), this.builtinActions.ready()])
+		this.syncBuiltinState()
+		this.consumePendingActions()
+		const stopWatch = this.builtinActions.watch((event) => {
+			if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot')
+				this.consumePendingActions()
+		})
+		this.ctx.effects.defer(stopWatch)
+		this.startTickLoop()
 	}
 
-	// Runtime state and builtin write payloads.
 	private buildState(): BuiltinState {
-		const { refreshMs } = this.display
-		const { tickStep, maxTicks } = this.behavior
-		const {
-			uptimeStyle,
-			showMs,
-			timeUnit,
-			separator,
-			padZeros,
-			minDigits,
-			labelStyle,
-			prefix,
-			suffix,
-			uppercaseUnits,
-			template,
-			unitAliases,
-		} = this.format
 		const uptimeMs = Date.now() - this.startedAt
-
 		return {
 			id: RUNTIME_DOC_ID,
 			uptimeMs,
-			uptimeLabel: formatDuration(uptimeMs, {
-				uptimeStyle,
-				showMs,
-				timeUnit,
-				separator,
-				padZeros,
-				minDigits,
-				labelStyle,
-				prefix,
-				suffix,
-				uppercaseUnits,
-				template,
-				unitAliases,
-			}),
+			uptimeLabel: formatDuration(uptimeMs, { ...DEFAULTS.format, ...this.format }),
 			ticks: this.ticks,
 			paused: this.paused,
-			refreshMs,
-			tickStep,
-			maxTicks,
+			refreshMs: this.display.refreshMs,
+			tickStep: this.behavior.tickStep,
+			maxTicks: this.behavior.maxTicks,
 		}
-	}
-
-	private runtimeStateFallback(): BuiltinState {
-		return {
-			id: RUNTIME_DOC_ID,
-			uptimeMs: 0,
-			uptimeLabel: '0s',
-			ticks: 0,
-			paused: false,
-			refreshMs: DEFAULTS.display.refreshMs,
-			tickStep: DEFAULTS.behavior.tickStep,
-			maxTicks: DEFAULTS.behavior.maxTicks,
-		}
-	}
-
-	private queueActionWrite(action: BuiltinActionWrite) {
-		return this.builtinActions.insertSpec({
-			id: { kind: 'generatedId' as const },
-			...action,
-			status: 'pending' as const,
-			createdAt: { kind: 'now' as const },
-		})
-	}
-
-	private runtimeField<Key extends keyof BuiltinState>(key: Key, fallback: BuiltinState[Key]) {
-		return this.builtin.field(key, fallback)
-	}
-
-	private summaryRows() {
-		return [
-			{ label: 'Uptime', value: this.runtimeField('uptimeLabel', '0s') },
-			{ label: 'Ticks', value: this.runtimeField('ticks', 0) },
-			{ label: 'Paused', value: this.runtimeField('paused', false) },
-			{ label: 'Tick step', value: this.runtimeField('tickStep', DEFAULTS.behavior.tickStep) },
-			{ label: 'Refresh (ms)', value: this.runtimeField('refreshMs', DEFAULTS.display.refreshMs) },
-		]
-	}
-
-	private statusRows() {
-		return [
-			...this.summaryRows(),
-			{ label: 'Max ticks', value: this.runtimeField('maxTicks', DEFAULTS.behavior.maxTicks) },
-		]
-	}
-
-	private pauseForm(description: string) {
-		return this.builtin.form({
-			description,
-			submitMode: 'onChange',
-			autoSubmitDebounceMs: 120,
-			schemaKey: '_runtimeToggle',
-			write: this.queueActionWrite({
-				kind: 'setPaused',
-				paused: { kind: 'field', key: 'paused' },
-			}),
-		})
-	}
-
-	private setTicksForm() {
-		return this.builtin.form({
-			description: 'Manual submit → signaldb action doc.',
-			submitLabel: 'Submit',
-			submitMode: 'manual',
-			schemaKey: '_runtime',
-			feedback: { success: { title: 'Submitted', tone: 'success' } },
-			resetOnSuccess: false,
-			write: this.queueActionWrite({
-				kind: 'setTicks',
-				ticks: { kind: 'field', key: 'ticks' },
-			}),
-		})
-	}
-
-	private resetTicksAction() {
-		return this.builtin.action({
-			label: 'Reset to 0',
-			description: '单按钮 action：无需 RPC，只写入 action collection。',
-			write: this.queueActionWrite({ kind: 'setTicks', ticks: 0 }),
-			feedback: { success: { title: 'Queued', tone: 'success' } },
-		})
-	}
-
-	private registerBuiltins() {
-		this.registerOverviewDoc()
-		this.registerTabDocs()
-	}
-
-	// Builtin doc registration.
-	private registerOverviewDoc() {
-		const d = doc({} as const)
-
-		this.registerBuiltinDoc({
-			id: 'summary',
-			point: 'plugin:context',
-			title: 'Builtin Overview',
-			description: 'Host-rendered preset UI (no plugin UI module).',
-			content: d`
-				${d.block(
-					'Overview',
-					d.card({
-						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-						rows: [{ label: 'Plugin', value: this.ctx.pluginInfo.id }, ...this.statusRows()],
-					}),
-				)}
-				${BUILTIN_NOTES}
-			`,
-		})
-	}
-
-	private registerTabDocs() {
-		const d = doc({} as const)
-		const docs: TabDocDefinition[] = [
-			{
-				id: 'controls-doc',
-				tab: BUILTIN_TABS.controls,
-				priority: 20,
-				content: this.buildControlsDoc(d),
-			},
-			{
-				id: 'metrics-doc',
-				tab: BUILTIN_TABS.metrics,
-				priority: 10,
-				content: this.buildMetricsDoc(d),
-			},
-		]
-
-		for (const definition of docs) this.registerTabDoc(definition)
-	}
-
-	private buildControlsDoc(d: BuiltinDocBuilder): BuiltinDocContent {
-		return d`
-			${d.block('Pause', this.pauseForm('submitMode=onChange + signaldb action doc.'))}
-			${d.block('Set ticks', this.setTicksForm())}
-			${d.block('Reset ticks', this.resetTicksAction())}
-		`
-	}
-
-	private buildMetricsDoc(d: BuiltinDocBuilder): BuiltinDocContent {
-		return d`
-			${d.block(
-				'Metrics Stream',
-				d.card({
-					description: 'Compact status list (auto-updated).',
-					layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-					rows: this.buildMetricRows(),
-				}),
-			)}
-		`
-	}
-
-	private registerTabDoc(input: TabDocDefinition) {
-		this.registerBuiltinDoc({
-			id: input.id,
-			point: 'plugin:tabs',
-			priority: input.priority,
-			meta: {
-				label: input.tab.label,
-				icon: input.tab.icon,
-				tab: input.tab,
-			},
-			content: input.content,
-		})
-	}
-
-	private registerBuiltinDoc(
-		input: Parameters<PluginWebManagement['ui']['builtin']['doc']>[0] & {
-			requireRunning?: false
-		},
-	) {
-		this.managementUi.builtin.doc({
-			requireRunning: false,
-			...input,
-		})
-	}
-
-	private buildMetricRows() {
-		return [
-			{
-				label: 'Stream',
-				value: { kind: 'badge', label: 'Live', color: 'green', variant: 'light' } as const,
-			},
-			...this.statusRows(),
-			{ label: 'Uptime (ms)', value: this.runtimeField('uptimeMs', 0) },
-			{
-				label: 'Snapshot',
-				value: this.builtin.snapshot(this.runtimeStateFallback()),
-			},
-		]
 	}
 
 	private startTickLoop() {
 		const tick = () => {
-			const { refreshMs } = this.display
-			const { tickStep, maxTicks, autoPauseAtMax } = this.behavior
 			if (!this.paused) {
-				this.ticks += tickStep
-				if (maxTicks > 0 && this.ticks >= maxTicks) {
-					this.ticks = maxTicks
-					if (autoPauseAtMax) this.paused = true
+				this.ticks += this.behavior.tickStep
+				if (this.behavior.maxTicks > 0 && this.ticks >= this.behavior.maxTicks) {
+					this.ticks = this.behavior.maxTicks
+					if (this.behavior.autoPauseAtMax) this.paused = true
 				}
 			}
 			this.syncBuiltinState()
-			this.tickTimer = setTimeout(tick, refreshMs)
+			this.tickTimer = setTimeout(tick, this.display.refreshMs)
 		}
 		tick()
 		this.ctx.effects.defer(() => {
@@ -361,21 +230,16 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			this.processingActions.add(action.id)
 			Promise.resolve()
 				.then(() => this.applyBuiltinAction(action))
-				.finally(() => {
-					this.processingActions.delete(action.id)
-				})
+				.finally(() => this.processingActions.delete(action.id))
 		}
 	}
 
 	private applyBuiltinAction(action: BuiltinAction) {
 		try {
-			if (action.kind === 'setPaused') {
-				this.paused = Boolean(action.paused)
-			} else if (action.kind === 'setTicks') {
+			if (action.kind === 'setPaused') this.paused = Boolean(action.paused)
+			else if (action.kind === 'setTicks') {
 				const value = Number(action.ticks)
-				if (!Number.isFinite(value) || value < 0) {
-					throw new Error('ticks must be a non-negative number')
-				}
+				if (!Number.isFinite(value) || value < 0) throw new Error('ticks must be non-negative')
 				this.ticks = Math.floor(value)
 			}
 			this.syncBuiltinState()

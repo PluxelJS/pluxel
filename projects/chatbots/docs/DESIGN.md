@@ -46,7 +46,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 - 宿主拥有 `@pluxel/runtime`、React、Mantine 和 Tabler 等 singleton/shared UI 依赖，并显式安装 catalog 中的插件；插件包把 runtime 声明为 peer，把仅管理面使用的 UI 包声明为 optional peer。headless host 不需要安装 UI peers。
 - constructor 中的 required plugin capability 同样是 peer，由宿主选择并保证唯一实例；纯源码实现库如 `contracts`、`adapter-kit` 仍是普通 dependency。
 - 平台包不得声明 `contracts` 或 `hub`。只有 `{platform}-hub` 桥接包声明这条依赖边，因而 Telegram/KOOK capability 可被平台专属插件单独使用。
-- 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.webManagement.use()` 关闭时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
+- 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.management.mount()` 返回 `undefined` 时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
 - `test/package-boundaries.test.ts` 固化上述边界，避免后续 import 或 manifest 修改重新引入反向依赖。
 - `projects/chatbots/packages/*` 当前是 `@repo` 私有源码包；这里的“独立使用”指 workspace 内可单独装配，不宣称已经是可从 npm 安装的公共发行包。
 

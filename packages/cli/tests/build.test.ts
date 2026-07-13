@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createImportTracker } from '@pluxel/rolldown/plugins'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
@@ -133,6 +133,7 @@ const buildFixtures = {
 			null,
 			2,
 		),
+		'package-lock.json': JSON.stringify({ lockfileVersion: 3 }),
 		'tsconfig.json': JSON.stringify(
 			{
 				compilerOptions: {
@@ -160,13 +161,25 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { ui } from '@pluxel/runtime/web-management'",
+			"import { defineManagementModule, managementUi } from '@pluxel/runtime/management'",
 			'',
-			"const pluginUi = ui('./ui/index.tsx')",
+			"const module = defineManagementModule({ id: 'Example', ui: managementUi(import.meta.url, './ui/index.ts') })",
+			"const secondModule = defineManagementModule({ id: 'SecondExample', ui: managementUi(import.meta.url, './ui/second.ts') })",
 			'',
-			'export function registerPluginUi(web: any) {',
-			'\treturn web.ui.register(pluginUi)',
+			'export function registerManagement(management: any) {',
+			'\treturn management.mount(module, {})',
 			'}',
+			'export { secondModule }',
+			'',
+		].join('\n'),
+		'src/ui/index.ts': [
+			"export const UI_ONLY_MARKER = '__PLUXEL_UI_ONLY_MARKER__'",
+			'export default { views: {} }',
+			'',
+		].join('\n'),
+		'src/ui/second.ts': [
+			"export const SECOND_UI_ONLY_MARKER = '__PLUXEL_SECOND_UI_ONLY_MARKER__'",
+			'export default { views: {} }',
 			'',
 		].join('\n'),
 	},
@@ -414,7 +427,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('preserves pure UI declarations and explicit Web Management registration', async () => {
+	it('preserves pure Management declarations and explicit mounting', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 
@@ -426,9 +439,73 @@ describe('build command', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('web.ui.register')
-			expect(output).toContain('@pluxel/runtime/web-management')
+			expect(output).toContain('management.mount')
+			expect(output).toContain('@pluxel/runtime/management')
 			expect(output).not.toContain('.bind(')
+			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
+			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
+
+			const managementRoot = resolve(fixtureDir, 'dist/management')
+			const files = await readdir(managementRoot, { recursive: true })
+			expect(files.filter((file) => String(file).endsWith('mf-manifest.json'))).toHaveLength(2)
+			expect(files.filter((file) => String(file).endsWith('remoteEntry.js'))).toHaveLength(2)
+			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
+			const uiOutput = await Promise.all(
+				jsFiles.map((file) => readFile(resolve(managementRoot, file), 'utf-8')),
+			)
+			expect(uiOutput.join('\n')).toContain('__PLUXEL_UI_ONLY_MARKER__')
+			expect(uiOutput.join('\n')).toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
+
+			const cacheRoot = resolve(fixtureDir, '.pluxel/management-build')
+			const cacheFiles = await readdir(cacheRoot, { recursive: true })
+			const stamp = cacheFiles.find((file) => String(file).endsWith('pluxel-management.json'))
+			expect(stamp).toBeDefined()
+			const firstStamp = await stat(resolve(cacheRoot, String(stamp)))
+
+			await runWithTsdown({
+				context: runtime,
+				onSuccess: async () => {},
+				log: () => {},
+				extraConfig: cliTsdownOverlay,
+			})
+
+			const secondStamp = await stat(resolve(cacheRoot, String(stamp)))
+			expect(secondStamp.mtimeMs).toBe(firstStamp.mtimeMs)
+			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')).not.toContain(
+				'__PLUXEL_UI_ONLY_MARKER__',
+			)
+			const republishedFiles = await readdir(managementRoot, { recursive: true })
+			expect(republishedFiles.some((file) => String(file).endsWith('mf-manifest.json'))).toBe(true)
+
+			await writeFile(
+				resolve(fixtureDir, 'package-lock.json'),
+				JSON.stringify({ lockfileVersion: 3, packages: { '': { version: '1.0.1' } } }),
+			)
+			await runWithTsdown({
+				context: runtime,
+				onSuccess: async () => {},
+				log: () => {},
+				extraConfig: cliTsdownOverlay,
+			})
+			const invalidatedCacheFiles = await readdir(cacheRoot, { recursive: true })
+			expect(
+				invalidatedCacheFiles.filter((file) => String(file).endsWith('pluxel-management.json')),
+			).toHaveLength(4)
+		})
+	}, 45_000)
+
+	it('does not initialize the Management UI builder for plugins without a UI declaration', async () => {
+		await withBuildFixture('basic', async (fixtureDir) => {
+			const runtime = await resolveBuildContext({})
+			await runWithTsdown({
+				context: runtime,
+				onSuccess: async () => {},
+				log: () => {},
+				extraConfig: cliTsdownOverlay,
+			})
+			expect(
+				await stat(resolve(fixtureDir, '.pluxel/management-build')).catch((): null => null),
+			).toBeNull()
 		})
 	})
 

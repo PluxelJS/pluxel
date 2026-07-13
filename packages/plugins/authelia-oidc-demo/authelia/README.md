@@ -37,7 +37,7 @@ adminAccess: {
 ```
 
 OIDC can stay in config while admin access is disabled or private. Pluxel only fails fast
-when `webManagement.enabled=true` and `webManagement.access.exposure` is `public` without OIDC:
+when `management.enabled=true` and `management.access.exposure` is `public` without OIDC:
 
 ```ts
 adminAccess: {

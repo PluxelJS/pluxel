@@ -8,13 +8,14 @@ import {
 } from '../../shared/admin-access-http'
 import {
 	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_MANAGEMENT_RESOURCES_BASE,
 	RUNTIME_SECURITY_BASE,
 	RUNTIME_TRANSPORT_PATHS,
 } from '../../web/paths'
 import { buildAdminAccessRedirectPath } from '../admin-access/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
-import { extensionRoutes } from '../../api/http/extensions'
+import { managementRoutes } from '../../api/http/management'
 import { metaRoutes } from '../../api/http/meta'
 import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
@@ -22,10 +23,8 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import { requireRouteCapability } from '../../runtime/capabilities'
-import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
-import { SignalDbService } from '../plugin-interaction/SignalDbService'
-import { requireWebManagement } from '../web-management/WebManagementService'
+import type { SignalDbItem, SignalDbLoadResponse } from '../../management/collection-contracts'
+import { requireManagement } from '../management'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
 
@@ -171,7 +170,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
-					requireWebManagement(context.pluginCtx).sse.stream(context),
+					requireManagement(context.pluginCtx).streams.stream(context),
 				),
 			),
 		)
@@ -198,22 +197,19 @@ function createInternalTransportPlugins(
 		plugins.push(ctx.internalGraphql.plugin())
 	}
 	if (web || rpc || sse) {
+		plugins.push(createInternalPlugin(ctx, 'management', managementRoutes))
 		plugins.push(
-			createInternalPlugin(ctx, 'signaldb', (app) =>
+			createInternalPlugin(ctx, 'management-resources', (app) =>
 				app
 					.get(
-						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/:binding`,
 						async ({ params, pluginCtx, set }: any) => {
 							set.headers['cache-control'] = 'no-store'
-							return await loadSignalDbSnapshot(
-								pluginCtx,
-								decodePathParam(params.plugin),
-								decodePathParam(params.collection),
-							)
+							return await loadManagementCollection(pluginCtx, decodePathParam(params.binding))
 						},
 					)
 					.post(
-						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
+						`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/:binding`,
 						async ({ params, pluginCtx, request, set, status }: any) => {
 							set.headers['cache-control'] = 'no-store'
 							const body = await request.json().catch((): null => null)
@@ -225,10 +221,9 @@ function createInternalTransportPlugins(
 								})
 							}
 
-							const result = await pushSignalDbChanges(
+							const result = await pushManagementCollectionChanges(
 								pluginCtx,
-								decodePathParam(params.plugin),
-								decodePathParam(params.collection),
+								decodePathParam(params.binding),
 								changes,
 							)
 
@@ -264,14 +259,6 @@ function createInternalTransportPlugins(
 			),
 		)
 	}
-	if (web) {
-		plugins.push(
-			createInternalPlugin(ctx, 'extensions', (app) =>
-				extensionRoutes(app as unknown as Parameters<typeof extensionRoutes>[0]),
-			),
-		)
-	}
-
 	return plugins
 }
 
@@ -307,49 +294,23 @@ function decodePathParam(value: unknown): string {
 	}
 }
 
-async function loadSignalDbSnapshot<T extends SignalDbItem>(
+async function loadManagementCollection<T extends SignalDbItem>(
 	ctx: PluginContext,
-	pluginName: string,
-	collectionName: string,
+	binding: string,
 ): Promise<SignalDbLoadResponse<T>> {
-	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return { items: [], meta: { clientWrites: false } }
-	return await service.loadCollectionSync<T>(collectionName)
+	const management = requireManagement(ctx)
+	const ref = management.registry.resolveResource(binding, 'collection')
+	return await management.collections.loadCollectionFor<T>(ref.owner, ref.resource)
 }
 
-async function pushSignalDbChanges<T extends SignalDbItem>(
+async function pushManagementCollectionChanges<T extends SignalDbItem>(
 	ctx: PluginContext,
-	pluginName: string,
-	collectionName: string,
+	binding: string,
 	changes: Changeset<T>,
 ): Promise<'applied' | 'readonly' | 'missing'> {
-	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return 'missing'
-	return await service.applyCollectionSyncChanges(collectionName, changes)
-}
-
-function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(pluginName)
-	if (!ctor) return null
-
-	const instance = ctx.registry.getInstance(ctor as never) as
-		| {
-				ctx?: {
-					ext?: {
-						signaldb?: unknown
-					}
-				}
-		  }
-		| undefined
-	const signaldb = instance?.ctx?.ext?.signaldb
-	if (!signaldb || typeof signaldb !== 'object') return null
-	if (
-		typeof (signaldb as SignalDbService).loadCollectionSync !== 'function' ||
-		typeof (signaldb as SignalDbService).applyCollectionSyncChanges !== 'function'
-	) {
-		return null
-	}
-	return signaldb as SignalDbService
+	const management = requireManagement(ctx)
+	const ref = management.registry.resolveResource(binding, 'collection')
+	return await management.collections.applyCollectionFor(ref.owner, ref.resource, changes)
 }
 
 function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {

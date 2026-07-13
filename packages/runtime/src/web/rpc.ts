@@ -1,6 +1,6 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
-import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
+import type { ManagementApiView, RuntimeRpcApi } from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
@@ -35,7 +35,9 @@ export function createRpcClient(
 
 export type RpcClientFactory = (options?: RpcClientCreateOptions) => RuntimeRpcStub
 
-export function createRpcClientFactory(rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`): RpcClientFactory {
+export function createRpcClientFactory(
+	rpcBase = `${RUNTIME_INTERNAL_API_BASE}/rpc`,
+): RpcClientFactory {
 	// Capnweb batch RPC sessions must be short-lived per call; reusing a closed
 	// session will surface "Batch RPC request ended." errors in consumers.
 	return (options) => createRpcClient(rpcBase, options)
@@ -101,10 +103,10 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	return fallback
 }
 
-export function createUiRpcView(
+export function createManagementApiView(
 	raw: RpcClientFactory,
 	defaults: RpcClientCreateOptions = {},
-): ExtensionUiRpcMap {
+): ManagementApiView {
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
 	// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
@@ -113,8 +115,8 @@ export function createUiRpcView(
 	// call creates a fresh session.
 	const namespaceCache = new Map<string, unknown>()
 
-	const getNamespaceProxy = (namespace: string) => {
-		const existing = namespaceCache.get(namespace)
+	const getNamespaceProxy = (binding: string) => {
+		const existing = namespaceCache.get(binding)
 		if (existing) return existing
 
 		const methodCache = new Map<string, unknown>()
@@ -133,7 +135,7 @@ export function createUiRpcView(
 						// IMPORTANT: preserve `this` binding for capnweb stubs.
 						// Optional-chaining call like `obj?.[method]?.()` can lose the receiver,
 						// which may break capnweb's dynamic dispatch.
-						const nsTarget = (client.ext as any)?.[namespace]
+						const nsTarget = (client as any).resource(binding)
 						const targetFn = nsTarget?.[method]
 						// Use Reflect.apply() instead of `fn.apply()` because capnweb stubs are
 						// Proxy-based and may intercept the "apply" property access.
@@ -168,17 +170,17 @@ export function createUiRpcView(
 			},
 		)
 
-		namespaceCache.set(namespace, nsProxy)
+		namespaceCache.set(binding, nsProxy)
 		return nsProxy
 	}
 
 	return new Proxy(
 		{},
 		{
-			get(_target, namespace) {
-				if (typeof namespace !== 'string') return undefined
-				return getNamespaceProxy(namespace)
+			get(_target, binding) {
+				if (typeof binding !== 'string') return undefined
+				return getNamespaceProxy(binding)
 			},
 		},
-	) as ExtensionUiRpcMap
+	) as ManagementApiView
 }

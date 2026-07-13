@@ -7,13 +7,15 @@ import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
 	createNodeWorkspaceFsBackend,
-	requireWebManagement,
+	isManagementEnabled,
+	managementAdminAccess,
 	resolveRuntimeStoragePaths,
-	withWebManagementPluginContext,
+	withManagementPluginContext,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
+import { requireManagement } from '@pluxel/runtime/services/management'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
-import { mergeExtensionCompilerViteConfig } from '@pluxel/runtime-dev'
+import { mergeManagementCompilerViteConfig } from '@pluxel/runtime-dev'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
 import { BundlerService } from './compile/bundler/BundlerService'
@@ -26,8 +28,7 @@ import {
 } from './diagnose'
 import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
-import { ExtensionCompilerService } from './extensions/ExtensionCompilerService'
-import { isWebManagementEnabled, webManagementAdminAccess } from '@pluxel/runtime/internal'
+import { ManagementCompilerService } from './management/ManagementCompilerService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
@@ -108,7 +109,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	persistence?: CoreContext.Config['persistence']
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
-	webManagement?: CoreContext.Config['webManagement']
+	management?: CoreContext.Config['management']
 	logger?: CoreContext.Config['logger']
 }
 
@@ -189,7 +190,7 @@ export async function planLoaderHmrHostFromConfig(
 		persistence,
 		pluginData,
 		http,
-		webManagement,
+		management,
 		logger,
 		context,
 		...hostOpts
@@ -226,7 +227,7 @@ export async function planLoaderHmrHostFromConfig(
 			persistence,
 			pluginData,
 			http,
-			webManagement,
+			management,
 			logger,
 		}),
 	})
@@ -271,17 +272,17 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 		},
 	}
-	const contextConfig = withWebManagementPluginContext(
+	const contextConfig = withManagementPluginContext(
 		mergeContextConfig(defaultContext, plan.context),
 	)
-	contextConfig.adminAccess = webManagementAdminAccess(contextConfig.webManagement)
-	if (isWebManagementEnabled(contextConfig.webManagement)) {
-		contextConfig.http = withDevWebManagementHttpConfig(contextConfig.http)
+	contextConfig.adminAccess = managementAdminAccess(contextConfig.management)
+	if (isManagementEnabled(contextConfig.management)) {
+		contextConfig.http = withDevManagementHttpConfig(contextConfig.http)
 	}
 	const ctx = new Context(contextConfig)
-	if (isWebManagementEnabled(contextConfig.webManagement)) {
-		const { installWebManagement } = await import('@pluxel/runtime/services/web-management')
-		installWebManagement(ctx)
+	if (isManagementEnabled(contextConfig.management)) {
+		const { installManagement } = await import('@pluxel/runtime/services/management')
+		installManagement(ctx)
 	}
 	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 	// Materialize the loader route before HMR contributes dev/module capabilities to it.
@@ -311,7 +312,7 @@ function mergeContextConfig(
 		pluginData: mergeRecord(base.pluginData, override.pluginData),
 		http: mergeRecord(base.http, override.http),
 		logger: mergeRecord(base.logger, override.logger),
-		webManagement: override.webManagement ?? base.webManagement,
+		management: override.management ?? base.management,
 	})
 }
 
@@ -348,18 +349,18 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
 	const bundler = new BundlerService(ctx)
-	let extensionCompiler: ExtensionCompilerService | undefined
-	if (ctx.webManagement.enabled) {
-		const extensionCompilerConfig = mergeExtensionCompilerViteConfig(
-			ctx.config.extensionCompiler,
+	let managementCompiler: ManagementCompilerService | undefined
+	if (ctx.management.enabled) {
+		const managementCompilerConfig = mergeManagementCompilerViteConfig(
+			ctx.config.managementCompiler,
 			plan.vite,
 		)
-		ctx.config.extensionCompiler = extensionCompilerConfig
-		const extensionStore = requireWebManagement(ctx).ui
-		extensionCompiler = new ExtensionCompilerService(
+		ctx.config.managementCompiler = managementCompilerConfig
+		const extensionStore = requireManagement(ctx).registry.getArtifacts()
+		managementCompiler = new ManagementCompilerService(
 			ctx,
 			{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },
-			extensionCompilerConfig,
+			managementCompilerConfig,
 		)
 	}
 
@@ -390,11 +391,11 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 					vite: hmr.vite,
 				}),
 		},
-		...(extensionCompiler
+		...(managementCompiler
 			? {
-					uiSource: {
+					managementUiSource: {
 						bind: (ownerCtx, declaration) =>
-							extensionCompiler!.bindDeclaration(ownerCtx, declaration),
+							managementCompiler!.bindDeclaration(ownerCtx, declaration),
 					},
 				}
 			: {}),
@@ -403,14 +404,14 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
 		ctx.runtimeDev = baseDev
-		extensionCompiler?.dispose()
+		managementCompiler?.dispose()
 		return bundler.dispose()
 	})
 
 	return hmr
 }
 
-function withDevWebManagementHttpConfig(
+function withDevManagementHttpConfig(
 	config: CoreContext.Config['http'] | undefined,
 ): CoreContext.Config['http'] {
 	const next = {

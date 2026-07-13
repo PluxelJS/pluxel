@@ -39,6 +39,7 @@
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/packages/core/src/federation.ts",
 				"!README.md",
 				"!**/*.md",
 				"!docs/**",
@@ -190,11 +191,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/runtime-static#build": {
-			"dependsOn": [
-				"@pluxel/core#build",
-				"@pluxel/runtime#build",
-				"@pluxel/runtime-dev#build",
-			],
+			"dependsOn": ["@pluxel/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -214,10 +211,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/cli#build": {
-			"dependsOn": [
-				"@pluxel/rolldown#build",
-				"@pluxel/runtime#build",
-			],
+			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/runtime#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",

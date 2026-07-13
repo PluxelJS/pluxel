@@ -1,6 +1,6 @@
 import type { HttpServiceConfig } from './services/http/HttpService'
 import type { AdminAccessConfig } from './services/admin-access/types'
-import type { WebManagementConfig } from './web-management-config'
+import type { ManagementConfig } from './management-config'
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
@@ -17,8 +17,8 @@ declare module '@pluxel/core' {
 			http?: HttpServiceConfig
 			/** Host admin surface enablement and access policy. */
 			adminAccess?: AdminAccessConfig
-			/** Optional Web Management capability and access policy. */
-			webManagement?: WebManagementConfig
+			/** Optional Management Plane capability and access policy. */
+			management?: ManagementConfig
 		}
 	}
 }

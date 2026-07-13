@@ -1,14 +1,12 @@
 import { defaultOnAdminAccessBlocked, type OnAdminAccessBlocked } from './admin-access'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
-import type { ExtensionManifestEvent } from './extensions'
-import type { ExtensionUiSseMap } from './protocol'
 import { resolveAdminAccessLandingPath, type AdminAccessReason } from '../shared/admin-access-http'
 
 export interface BuiltinSseEvents {
-	extensions: ExtensionManifestEvent | { type: 'ready' }
+	'management.layouts': { revision?: number } | number
 }
 
-export type ResolvedSseEvents = BuiltinSseEvents & ExtensionUiSseMap
+export type ResolvedSseEvents = BuiltinSseEvents
 
 type PayloadForNs<Ns extends string> = Ns extends keyof ResolvedSseEvents
 	? ResolvedSseEvents[Ns]

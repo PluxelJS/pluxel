@@ -21,7 +21,7 @@ import {
 	Textarea,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconCheck, IconCloudUpload, IconKey, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -58,32 +58,14 @@ type ApiCatalogItem = {
 	transport?: 'json' | 'file-parser-upload' | 'file-parser-result'
 }
 
-type ZhipuUiApp = {
-	pluginName: 'ZhipuProviderPlugin'
-	rpc: {
-		saveSettings(input: { apiKey?: string; baseUrl?: string }): Promise<ZhipuSettingsDoc>
-		clearApiKey(): Promise<ZhipuSettingsDoc>
-		testConnection(userId?: string): Promise<{ ok: boolean; message: string }>
-		clearHistory(): Promise<{ ok: true }>
-	}
-	db: {
-		useDocById(collection: 'settings', id: 'settings'): ZhipuSettingsDoc | undefined
-		useDocById(collection: 'status', id: 'status'): ZhipuStatusDoc | undefined
-		useList(
-			collection: 'history',
-			spec?: { limit?: number; sort?: Partial<Record<keyof ZhipuTestRunDoc, 1 | -1>> },
-		): ZhipuTestRunDoc[]
-	}
-}
-
 type RequestState = {
 	loading: boolean
 	error: string | null
 	result: unknown
 }
 
-function useZhipuApp(): ZhipuUiApp {
-	return zhipuPlugin.use() as unknown as ZhipuUiApp
+function useZhipuApp() {
+	return zhipuPlugin.use()
 }
 
 function pluginRoute(pluginName: string, path: string) {
@@ -280,8 +262,8 @@ export function ZhipuDashboard() {
 
 export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const app = useZhipuApp()
-	const settings = app.db.useDocById('settings', 'settings')
-	const status = app.db.useDocById('status', 'status')
+	const settings = app.collection('settings').useDocById('settings')
+	const status = app.collection('status').useDocById('status')
 	const [apiKey, setApiKey] = useState('')
 	const [baseUrl, setBaseUrl] = useState(DEFAULT_ZHIPU_BASE_URL)
 	const baseUrlEdited = useRef(false)
@@ -307,7 +289,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 
 	const save = async () => {
 		const result = await run(
-			() => app.rpc.saveSettings({ apiKey: apiKey.trim() || undefined, baseUrl }),
+			() => app.api('api').saveSettings({ apiKey: apiKey.trim() || undefined, baseUrl }),
 			'保存设置失败',
 		)
 		if (result) {
@@ -319,7 +301,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 	}
 
 	const test = async () => {
-		const result = await run(() => app.rpc.testConnection(testUserId), '测试调用失败')
+		const result = await run(() => app.api('api').testConnection(testUserId), '测试调用失败')
 		if (result) setMessage(result.message)
 	}
 
@@ -373,7 +355,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 						variant="subtle"
 						color="red"
 						leftSection={<IconTrash size={16} />}
-						onClick={() => void run(() => app.rpc.clearApiKey(), '清除 API Key 失败')}
+						onClick={() => void run(() => app.api('api').clearApiKey(), '清除 API Key 失败')}
 					>
 						清除
 					</Button>
@@ -388,7 +370,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 
 export function ZhipuOcrPanel() {
 	const app = useZhipuApp()
-	const settings = app.db.useDocById('settings', 'settings')
+	const settings = app.collection('settings').useDocById('settings')
 	const [mode, setMode] = useState<Mode>('layout-parsing')
 	const [userId, setUserId] = useState('demo-user')
 	const [file, setFile] = useState<File | null>(null)
@@ -407,8 +389,8 @@ export function ZhipuOcrPanel() {
 		try {
 			const endpoint =
 				mode === 'files-ocr'
-					? pluginRoute(app.pluginName, '/files-ocr')
-					: pluginRoute(app.pluginName, '/layout-parsing')
+					? pluginRoute(app.target, '/files-ocr')
+					: pluginRoute(app.target, '/layout-parsing')
 			const response =
 				mode === 'files-ocr'
 					? await submitFilesOcr(endpoint, userId, file)
@@ -417,7 +399,7 @@ export function ZhipuOcrPanel() {
 			if (!response.ok) throw new Error(extractErrorMessage(body) ?? `请求失败：${response.status}`)
 			if (prompt.trim()) {
 				const chatResponse = await submitOcrPostprocess(
-					pluginRoute(app.pluginName, '/chat-completions'),
+					pluginRoute(app.target, '/chat-completions'),
 					userId,
 					postprocessModel,
 					prompt,
@@ -655,7 +637,7 @@ function OcrRequestSummary({
 
 export function ZhipuApiPanel() {
 	const app = useZhipuApp()
-	const settings = app.db.useDocById('settings', 'settings')
+	const settings = app.collection('settings').useDocById('settings')
 	const [mode, setMode] = useState<ApiMode>('chat')
 	const [userId, setUserId] = useState('demo-user')
 	const [rawJson, setRawJson] = useState(defaultApiJson('chat'))
@@ -693,7 +675,7 @@ export function ZhipuApiPanel() {
 			if (item?.transport === 'file-parser-upload') {
 				response = await submitFileParserUpload(
 					pluginRoute(
-						app.pluginName,
+						app.target,
 						mode === 'file-parser-sync' ? '/file-parser-sync' : '/file-parser-create',
 					),
 					userId,
@@ -701,12 +683,12 @@ export function ZhipuApiPanel() {
 					parseJsonObject(rawJson),
 				)
 			} else if (item?.transport === 'file-parser-result') {
-				response = await postJson(pluginRoute(app.pluginName, '/file-parser-result'), {
+				response = await postJson(pluginRoute(app.target, '/file-parser-result'), {
 					userId,
 					...parseJsonObject(rawJson),
 				})
 			} else if (mode === 'raw') {
-				response = await postJson(pluginRoute(app.pluginName, '/openapi'), {
+				response = await postJson(pluginRoute(app.target, '/openapi'), {
 					userId,
 					method: rawMethod,
 					path: rawPath,
@@ -716,7 +698,7 @@ export function ZhipuApiPanel() {
 				})
 			} else {
 				response = await submitCatalogJson(
-					pluginRoute(app.pluginName, '/openapi'),
+					pluginRoute(app.target, '/openapi'),
 					userId,
 					requireApiCatalogItem(mode),
 					parseJsonObject(rawJson),
@@ -844,12 +826,12 @@ export function ZhipuApiPanel() {
 
 export function ZhipuHistoryPanel() {
 	const app = useZhipuApp()
-	const rows = app.db.useList('history', { limit: 30, sort: { at: -1 } })
+	const rows = app.collection('history').useList({ limit: 30, sort: { at: -1 } })
 	const [error, setError] = useState<string | null>(null)
 
 	const clear = async () => {
 		try {
-			await app.rpc.clearHistory()
+			await app.api('api').clearHistory()
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '清空历史失败'))

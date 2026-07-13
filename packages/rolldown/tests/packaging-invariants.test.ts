@@ -62,6 +62,7 @@ describe('toolchain package boundaries', () => {
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
+		expect(rolldown.exports).toHaveProperty('./management/artifact')
 
 		for (const pkg of [runtimeDynamic, runtimeStatic, runtimeDev]) {
 			expect(pkg.dependencies).not.toHaveProperty('vite')
@@ -75,7 +76,20 @@ describe('toolchain package boundaries', () => {
 		}
 	})
 
-	it('keeps plugin UI Module Federation build logic and direct deps in one place', async () => {
+	it('keeps Vite and Module Federation lazy behind Management UI declarations', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const pluginCode = await readFile(
+			`${root}/packages/rolldown/src/rolldown/plugins/managementUiBuildPlugin.ts`,
+			'utf8',
+		)
+
+		expect(pluginCode).toContain("import('../../vite/management-ui.ts')")
+		expect(pluginCode).toContain("from '../../management/build-contract.ts'")
+		expect(pluginCode).not.toMatch(/import\s+\{[^}]*buildManagementUiRemote[^}]*\}\s+from/)
+		expect(pluginCode).not.toContain('@module-federation/vite')
+	})
+
+	it('keeps management UI Module Federation build logic and direct deps in one place', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const runtimeDevFiles = await collectSourceFiles(`${root}/packages/runtime-dev/src`)
@@ -93,7 +107,7 @@ describe('toolchain package boundaries', () => {
 
 		expect(
 			offenders,
-			'runtime-dynamic should call @pluxel/rolldown/vite/plugin-ui instead of owning MF build logic',
+			'runtime-dynamic should call @pluxel/rolldown/vite/management-ui instead of owning MF build logic',
 		).toEqual([])
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@pluxel/rolldown')
 		expect(runtimeStatic.devDependencies).toHaveProperty('@pluxel/rolldown')
@@ -238,7 +252,6 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeIndex).not.toContain("import './runtime/register/static'")
 		expect(runtimeIndex).toContain("export * from './authoring'")
 		expect(runtimeAuthoring).not.toContain('runtime/register')
-		expect(runtimeAuthoring).not.toContain('services/web-management')
 		expect(runtimeStaticIndex).toContain("import '@pluxel/runtime/register/static'")
 		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime/authoring'")
 		expect(configSourcePlugin).toContain(

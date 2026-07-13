@@ -5,11 +5,10 @@ import {
 	ExtensionErrorBoundary,
 	ExtensionPathnameProvider,
 	ExtensionProvider,
-	getPluginUiRouteComponent,
 	type PluginExtensionContext,
 	useGlobalExtensionContext,
-	usePluginUiVersion,
 } from '../../../extension'
+import { getManagementRoute, useManagementRouteVersion } from '../../../management/runtime'
 import { ExtensionRouteStateFallback, ExtensionRouteStatusBanner } from './ExtensionRouteStatus'
 
 type PluginRouteComponent = (ctx: PluginExtensionContext) => ReactNode
@@ -21,10 +20,10 @@ export function useResolvedPluginRoute(opts: {
 }) {
 	const { pluginName, pathname, restPath } = opts
 	const baseCtx = useGlobalExtensionContext()
-	const routeVersion = usePluginUiVersion(pluginName)
+	const routeVersion = useManagementRouteVersion(pluginName)
 
 	const routeRender = useMemo(() => {
-		return getPluginUiRouteComponent(pluginName, restPath)
+		return getManagementRoute(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
 
 	const pluginCtx = useMemo(

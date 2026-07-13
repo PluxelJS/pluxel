@@ -144,7 +144,11 @@ async function safeReadDirs(fs: WorkspaceFs, dir: string) {
 }
 
 function normalizeWorkspacePattern(pattern: string): string {
-	return pattern.trim().replaceAll('\\', '/').replace(/^\.\/+/, '').replace(/\/+$/, '')
+	return pattern
+		.trim()
+		.replaceAll('\\', '/')
+		.replace(/^\.\/+/, '')
+		.replace(/\/+$/, '')
 }
 
 function relativeWorkspacePath(root: string, dir: string): string {
@@ -165,15 +169,13 @@ function segmentMatcher(pattern: string): (segment: string) => boolean {
 }
 
 function globMatcher(pattern: string): (path: string) => boolean {
-	const escaped = escapeRegExp(pattern)
-		.replaceAll('\\*\\*', '.*')
-		.replaceAll('\\*', '[^/]*')
+	const escaped = escapeRegExp(pattern).replaceAll('\\*\\*', '.*').replaceAll('\\*', '[^/]*')
 	const re = new RegExp(`^${escaped}$`)
 	return (path) => re.test(path)
 }
 
 function escapeRegExp(value: string): string {
-	return value.replace(/[|\\{}()[\]^$+?.*]/g, '\\$&')
+	return value.replaceAll(/[|\\{}()[\]^$+?.*]/g, '\\$&')
 }
 
 function shouldSkipGlobDir(name: string): boolean {

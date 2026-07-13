@@ -21,6 +21,7 @@ import { usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { matchesKnownPluginName, resolveKnownPluginName } from './rightPaneState'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
+import { PluginManagementLoader } from '../../../management/runtime'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -441,6 +442,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	return (
 		<ExtensionProvider value={pluginExtensionCtx}>
 			<PluginScopeProvider value={contextValue}>
+				<PluginManagementLoader target={displayName} />
 				<PluginWorkbench config={configState} />
 			</PluginScopeProvider>
 		</ExtensionProvider>

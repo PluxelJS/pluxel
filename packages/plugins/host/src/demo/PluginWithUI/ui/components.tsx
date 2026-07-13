@@ -15,7 +15,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import {
 	IconActivity,
 	IconArrowLeft,
@@ -28,7 +28,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { plugin } from './runtime'
 
 type PluginWithUIRuntime = ReturnType<typeof plugin.use>
-type PluginWithUISseClient = PluginWithUIRuntime['transport']['sse']
+type PluginWithUISseClient = ReturnType<PluginWithUIRuntime['stream']>
 type RpcAction = () => Promise<unknown>
 type SsePayloadWithType = { type: unknown }
 
@@ -64,11 +64,19 @@ function useLatestTick(app: PluginWithUIRuntime) {
 	const [tick, setTick] = useState<number | null>(null)
 
 	useEffect(() => {
-		const off = app.sse.on((msg) => {
-			if (msg.payload.type === 'tick') setTick(msg.payload.now)
+		const stream = app.stream('activity')
+		const off = stream.ns('PluginWithUI:activity').on((msg) => {
+			const payload = msg.payload
+			if (
+				payload &&
+				typeof payload === 'object' &&
+				(payload as any).type === 'tick' &&
+				typeof (payload as any).now === 'number'
+			)
+				setTick((payload as any).now)
 		}, 'tick')
 		return () => off()
-	}, [app.sse])
+	}, [app])
 
 	return tick
 }
@@ -97,9 +105,10 @@ function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
 
 export function OverviewPanel() {
 	const app = plugin.use()
-	const status = app.db.useDocById('status', 'status')
-	const eventCount = app.db.useCount('events')
-	const connected = useLiveConnectionState(app.transport.sse)
+	const status = app.collection('status').useDocById('status')
+	const eventCount = app.collection('events').useCount()
+	const activity = app.stream('activity')
+	const connected = useLiveConnectionState(activity)
 	const tick = useLatestTick(app)
 	const { error, run } = useRpcError()
 
@@ -135,7 +144,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{app.pluginName}</Code>
+						插件：<Code>{app.target}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -155,14 +164,14 @@ export function OverviewPanel() {
 			<Group>
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
-					onClick={() => void run(() => app.rpc.increment(1), '无法执行 +1')}
+					onClick={() => void run(() => app.api('api').increment(1), '无法执行 +1')}
 				>
 					+1
 				</Button>
 				<Button
 					variant="light"
 					leftSection={<IconRestore size={16} />}
-					onClick={() => void run(() => app.rpc.resetCounter(), '无法重置计数器')}
+					onClick={() => void run(() => app.api('api').resetCounter(), '无法重置计数器')}
 				>
 					重置
 				</Button>
@@ -173,7 +182,7 @@ export function OverviewPanel() {
 
 export function EventsPanel() {
 	const app = plugin.use()
-	const eventsCollection = app.db.collection('events')
+	const eventsCollection = app.collection('events')
 	const events = eventsCollection.useView()
 	const recentEvents = eventsCollection.useLiveQuery((view) =>
 		view.find({}, { sort: { at: -1 }, limit: 50 }),
@@ -184,7 +193,7 @@ export function EventsPanel() {
 	const addNote = async () => {
 		const message = text.trim()
 		if (!message) return
-		await run(() => app.rpc.addNote(message), '无法添加事件')
+		await run(() => app.api('api').addNote(message), '无法添加事件')
 		setText('')
 	}
 
@@ -196,7 +205,7 @@ export function EventsPanel() {
 					<Button
 						variant="light"
 						color="red"
-						onClick={() => void run(() => app.rpc.clearEvents(), '无法清空事件')}
+						onClick={() => void run(() => app.api('api').clearEvents(), '无法清空事件')}
 					>
 						清空
 					</Button>
@@ -264,16 +273,18 @@ export function EventsPanel() {
 
 export function StreamsPanel() {
 	const app = plugin.use()
-	const connected = useLiveConnectionState(app.transport.sse)
+	const activity = app.stream('activity')
+	const connected = useLiveConnectionState(activity)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
 	useEffect(() => {
-		const off = app.sse.onAny((msg) => {
+		const stream = app.stream('activity')
+		const off = stream.ns('PluginWithUI:activity').onAny((msg) => {
 			const text = sseLineText(msg.payload, msg.event)
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		})
 		return () => off()
-	}, [app.sse])
+	}, [app])
 
 	return (
 		<Stack gap="md">
@@ -331,14 +342,14 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={pluginRouteHref(app.pluginName, '/dashboard')}
+						href={pluginRouteHref(app.target, '/dashboard')}
 					>
 						返回宿主壳
 					</Button>
 				) : null}
 			</Group>
 			<Text size="sm" c="dimmed">
-				这是插件提供的页面路由，用于演示 `routes` 能力。插件名：<Code>{app.pluginName}</Code>
+				这是插件提供的页面路由，用于演示 Management Module。插件名：<Code>{app.target}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

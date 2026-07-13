@@ -15,8 +15,8 @@
 ## 2. 保持能力所有权清晰
 
 - HTTP、config、logger、events、effects、persistence/plugin data 是常驻 runtime 能力。
-- UI、管理 RPC/SSE 和 management state 只能通过 `ctx.webManagement.use()` 注册。
-- 宿主负责 Web Management 安装、进程退出、部署和健康策略；插件不声明这些策略。
+- Management Module 和资源只能通过 `ctx.management.mount()` 挂载。
+- 宿主负责 Management Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选管理面。
 
 收益：同一插件可在 static、dynamic、headless 和 management-disabled host 中运行。

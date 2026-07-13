@@ -22,6 +22,10 @@
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
 		},
+		"./management/artifact": {
+			"@pluxel/source": "./src/management/artifact.ts",
+			"default": "./dist/management/artifact.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -42,13 +46,13 @@
 			"@pluxel/source": "./src/vite/environment.ts",
 			"default": "./dist/vite/environment.mjs"
 		},
+		"./vite/management-ui": {
+			"@pluxel/source": "./src/vite/management-ui.ts",
+			"default": "./dist/vite/management-ui.mjs"
+		},
 		"./vite/paraglide": {
 			"@pluxel/source": "./src/vite/paraglide.ts",
 			"default": "./dist/vite/paraglide.mjs"
-		},
-		"./vite/plugin-ui": {
-			"@pluxel/source": "./src/vite/plugin-ui.ts",
-			"default": "./dist/vite/plugin-ui.mjs"
 		},
 		"./workspace": {
 			"@pluxel/source": "./src/workspace/index.ts",
@@ -72,13 +76,14 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
+			"./management/artifact": "./dist/management/artifact.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./vite/environment": "./dist/vite/environment.mjs",
+			"./vite/management-ui": "./dist/vite/management-ui.mjs",
 			"./vite/paraglide": "./dist/vite/paraglide.mjs",
-			"./vite/plugin-ui": "./dist/vite/plugin-ui.mjs",
 			"./workspace": "./dist/workspace.mjs",
 			"./workspace/fs": "./dist/workspace/fs.mjs",
 			"./workspace/info": "./dist/workspace/info.mjs",
@@ -93,11 +98,11 @@
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
 		"@module-federation/vite": "^1.16.6",
-		"@pluxel/core": "workspace:*",
 		"oxc-parser": "^0.115.0",
 		"oxc-resolver": "^11.21.3"
 	},
 	"devDependencies": {
+		"@pluxel/core": "workspace:*",
 		"@rolldown/pluginutils": "^1.0.0-rc.5",
 		"fdir": "^6.5.0",
 		"fs-fixture": "^2.13.0",

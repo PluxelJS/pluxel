@@ -213,8 +213,8 @@ Billing UI 已暴露费率编辑入口。新增调用会按当前费率估算成
 
 ## Persistence
 
-SQLite、Vault 和进程内领域集合是业务事实源。Web Management collection 只镜像这些状态，
-用于管理 UI 和 admin RPC；关闭 Web Management 时，gateway 认证、provider 调用、计费记录和
+SQLite、Vault 和进程内领域集合是业务事实源。Management Plane collection 只镜像这些状态，
+用于管理 UI 和 admin RPC；关闭 Management Plane 时，gateway 认证、provider 调用、计费记录和
 业务 HTTP 路由仍然初始化并可用。
 
 本项目仍处于开发阶段，本地数据视为可丢弃缓存。schema 变化时允许清空 SQLite / SignalDB / vault 本地状态并重建，不为旧字段、旧表或旧 namespace 增加兼容分支。

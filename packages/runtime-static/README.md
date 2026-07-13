@@ -24,7 +24,7 @@ export default defineStaticRuntimeConfig({
 	plugins: [DemoPlugin],
 	runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
 	persistence: './.pluxel/persistence',
-	webManagement: {
+	management: {
 		enabled: true,
 		access: { exposure: 'private' },
 	},
@@ -44,6 +44,6 @@ Vite plugin 负责 SSR source loading、decorator/config metadata、host lifecyc
 - production entry 不引入 Vite、Rolldown 或 watcher；
 - `/vite` entry 拥有开发 wiring；
 - runtime common 与 dynamic loader 都不是 static 的依赖；
-- Web Management 是否安装只由 runtime config 的顶层值决定。
+- Management Plane 是否安装只由 runtime config 的顶层值决定。
 
 用户配置路径见 [`../../user-docs/host-setup.md`](../../user-docs/host-setup.md)，内部边界见 [`../../docs/RUNTIME.md`](../../docs/RUNTIME.md)。

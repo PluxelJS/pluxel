@@ -3,8 +3,8 @@ import { defineConfig } from 'tsdown'
 
 const runtimeDynamicRegister = fileURLToPath(new URL('./src/register.ts', import.meta.url))
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
-const runtimeDevExtensions = fileURLToPath(
-	new URL('../runtime-dev/src/extensions.ts', import.meta.url),
+const runtimeDevManagement = fileURLToPath(
+	new URL('../runtime-dev/src/management.ts', import.meta.url),
 )
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
 const runtimeDevVite = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
@@ -34,7 +34,7 @@ export default defineConfig({
 	alias: {
 		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
 		'@pluxel/runtime-dev': runtimeDevEntry,
-		'@pluxel/runtime-dev/extensions': runtimeDevExtensions,
+		'@pluxel/runtime-dev/management': runtimeDevManagement,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevVite,
 	},

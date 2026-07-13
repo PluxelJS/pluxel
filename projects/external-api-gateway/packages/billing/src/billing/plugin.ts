@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
-import { ui } from '@pluxel/runtime/web-management'
+import { managementBinding } from '@pluxel/runtime/management'
 import {
 	DEFAULT_ZHIPU_CHAT_MODEL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
@@ -29,8 +28,8 @@ import type {
 	BillingUsageRecord,
 	BillingUserSummaryDoc,
 } from './contracts.ts'
+import { UsageBillingManagement } from './management-module.ts'
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const OVERVIEW_DOC_ID = 'overview' as const
 const yiqichaApiKeyByCode: Map<string, string> = new Map(
 	Object.entries(yiqichaApiCodes).map(([key, code]) => [code, key]),
@@ -51,19 +50,23 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
 		this.rebuildSummaries(usageRecords)
-		await this.ctx.webManagement.use(async (web) => {
-			await Promise.all([
-				this.overview.attach(web.state.collection<BillingOverviewDoc>({ name: 'overview' })),
-				this.records.attach(web.state.collection<BillingUsageRecord>({ name: 'records' })),
-				this.users.attach(web.state.collection<BillingUserSummaryDoc>({ name: 'users' })),
-				this.providers.attach(
-					web.state.collection<BillingProviderSummaryDoc>({ name: 'providers' }),
-				),
-				this.rates.attach(web.state.collection<BillingRateDoc>({ name: 'rates' })),
-			])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new UsageBillingRpc(this))
+		const mounted = this.ctx.management.mount(UsageBillingManagement, {
+			api: managementBinding.api(() => new UsageBillingRpc(this)),
+			overview: managementBinding.collection(),
+			records: managementBinding.collection(),
+			users: managementBinding.collection(),
+			providers: managementBinding.collection(),
+			rates: managementBinding.collection(),
 		})
+		if (mounted) {
+			await Promise.all([
+				this.overview.attach(mounted.resources.overview),
+				this.records.attach(mounted.resources.records),
+				this.users.attach(mounted.resources.users),
+				this.providers.attach(mounted.resources.providers),
+				this.rates.attach(mounted.resources.rates),
+			])
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('Usage billing ready')
 	}
@@ -440,21 +443,6 @@ function emptyOverview(): BillingOverviewDoc {
 		totalInputBytes: 0,
 		totalOutputBytes: 0,
 		updatedAt: null,
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		UsageBillingPlugin: UsageBillingRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		UsageBillingPlugin: {
-			overview: BillingOverviewDoc
-			records: BillingUsageRecord
-			users: BillingUserSummaryDoc
-			providers: BillingProviderSummaryDoc
-			rates: BillingRateDoc
-		}
 	}
 }
 

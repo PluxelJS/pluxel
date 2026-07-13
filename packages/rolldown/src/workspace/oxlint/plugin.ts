@@ -1,5 +1,4 @@
 import { configsRules } from './rules/configs.ts'
-import { augmentationsRules } from './rules/augmentations.ts'
 import { importsRules } from './rules/imports.ts'
 import { loggingRules } from './rules/logging.ts'
 import { pluginsRules } from './rules/plugins.ts'
@@ -10,7 +9,6 @@ export const pluxelRules = {
 	...configsRules,
 	...importsRules,
 	...pluginsRules,
-	...augmentationsRules,
 }
 
 export type PluxelRuleCategory = 'correctness' | 'logging'
@@ -92,11 +90,6 @@ export const pluxelRulePolicy = {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'fix',
-	},
-	'runtime-type-augmentations': {
-		category: 'correctness',
-		buildCritical: false,
-		remediation: 'diagnostic',
 	},
 } as const satisfies Record<
 	keyof typeof pluxelRules,

@@ -13,12 +13,12 @@ import {
 	type RefObject,
 } from 'react'
 import type {
-	BuiltinDocBlock,
-	BuiltinDocContent,
-	BuiltinDocExtensionDef,
-	BuiltinMarkdownPart,
-	BuiltinDocPart,
-} from '@pluxel/runtime/web/extensions'
+	ManagementDocumentBlock as BuiltinDocBlock,
+	ManagementDocumentContent as BuiltinDocContent,
+	ManagementDocumentDefinition as BuiltinDocExtensionDef,
+	ManagementMarkdownPart as BuiltinMarkdownPart,
+	ManagementDocumentPart as BuiltinDocPart,
+} from '@pluxel/runtime/management'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
@@ -55,7 +55,7 @@ function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
 		if (typeof BuiltinInfoCard !== 'function') {
 			return <BuiltinBlockUnavailable kind={block.kind} />
 		}
-		return <BuiltinInfoCard pluginName={pluginName} block={block} />
+		return <BuiltinInfoCard block={block} />
 	}
 	if (block.kind === 'form') {
 		if (typeof BuiltinSignalDbForm !== 'function') {
@@ -67,19 +67,13 @@ function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
 		if (typeof BuiltinSignalDbAction !== 'function') {
 			return <BuiltinBlockUnavailable kind={block.kind} />
 		}
-		return <BuiltinSignalDbAction pluginName={pluginName} block={block} />
+		return <BuiltinSignalDbAction block={block} />
 	}
 	if (block.kind === 'resourceSelect') {
 		if (typeof BuiltinResourceSelect !== 'function') {
 			return <BuiltinBlockUnavailable kind={block.kind} />
 		}
-		return (
-			<BuiltinResourceSelect
-				targetPluginName={pluginName}
-				sourcePluginName={pluginName}
-				block={block}
-			/>
-		)
+		return <BuiltinResourceSelect targetPluginName={pluginName} block={block} />
 	}
 	return <BuiltinBlockUnavailable kind={(block as BuiltinDocBlock).kind} />
 }
@@ -264,12 +258,8 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 
 	const renderBlock = useCallback(
 		(title: string, block: BuiltinDocBlock) => {
-			const blockPluginName =
-				typeof (block as any)?.pluginName === 'string' && (block as any).pluginName.trim()
-					? (block as any).pluginName.trim()
-					: pluginName
 			return renderBuiltinBlock({
-				pluginName: blockPluginName,
+				pluginName,
 				title,
 				block,
 			})

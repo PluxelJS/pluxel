@@ -1,10 +1,7 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-	importViteSsrModule,
-	pluxelRuntimeSourceVitePlugin,
-} from '@pluxel/runtime-dev/vite'
+import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -17,7 +14,7 @@ import {
 } from '@pluxel/runtime-dev/hmr-log'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
-import { requireWebManagement } from '@pluxel/runtime/internal'
+import { requireManagement } from '@pluxel/runtime/services/management'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
 	normalizePath,
@@ -40,7 +37,7 @@ import type {
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 
-type ExtensionCompilerConfig = {
+type ManagementCompilerConfig = {
 	enabled?: boolean
 	cacheDir?: string
 	cacheKeep?: number
@@ -48,10 +45,11 @@ type ExtensionCompilerConfig = {
 	sharedPackages?: string[]
 	pluginDirs?: Record<string, string>
 	vite?: InlineConfig
+	viteCacheKey?: string
 }
 
 type StaticRuntimeViteHmrConfig = {
-	extensionCompiler?: ExtensionCompilerConfig
+	managementCompiler?: ManagementCompilerConfig
 }
 
 type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
@@ -126,10 +124,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				persistence: config.persistence,
 				pluginData: config.pluginData,
 				http:
-					config.webManagement !== false && config.webManagement?.enabled === true
-						? withDevWebManagementHttpConfig(config.http)
+					config.management !== false && config.management?.enabled === true
+						? withDevManagementHttpConfig(config.http)
 						: config.http,
-				webManagement: config.webManagement,
+				management: config.management,
 				logger: { ...config.logger, preset: 'hmr' },
 				profile: config.profile,
 				context: config.context,
@@ -137,18 +135,14 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			state.host = host
 			await options.prepareHost?.(host)
 
-			if (
-				hmrOptions &&
-				config.webManagement !== false &&
-				config.webManagement?.enabled === true
-			) {
+			if (hmrOptions && config.management !== false && config.management?.enabled === true) {
 				const enabledHmrOptions = hmrOptions ?? {}
 				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
 				await configureStaticRuntimeDevRuntime(server, host, {
 					viteServer: server,
 					...enabledHmrOptions,
-					extensionCompiler: mergeExtensionCompilerPluginDirs(
-						enabledHmrOptions.extensionCompiler,
+					managementCompiler: mergeManagementCompilerPluginDirs(
+						enabledHmrOptions.managementCompiler,
 						pluginDirs,
 					),
 				})
@@ -462,40 +456,40 @@ async function configureStaticRuntimeDevRuntime(
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
 	const previousDev = ctx.runtimeDev
-	if (previousDev?.uiSource) {
-		throw new Error('[runtime-static/vite] extension source UI runtime is already attached')
+	if (previousDev?.managementUiSource) {
+		throw new Error('[runtime-static/vite] management UI source runtime is already attached')
 	}
 	const previousRoute = ctx.runtimeRoute
 	if (!previousRoute) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
 
-	const extensionCompilerConfig = runtimeDev.mergeExtensionCompilerViteConfig(
-		options.extensionCompiler,
+	const managementCompilerConfig = runtimeDev.mergeManagementCompilerViteConfig(
+		options.managementCompiler,
 		undefined,
 	)
-	ctx.config.extensionCompiler = extensionCompilerConfig
-	const extensionStore = requireWebManagement(ctx).ui
-	const extensionCompiler = new runtimeDev.ExtensionCompilerService(
+	ctx.config.managementCompiler = managementCompilerConfig
+	const artifactStore = requireManagement(ctx).registry.getArtifacts()
+	const managementCompiler = new runtimeDev.ManagementCompilerService(
 		ctx,
-		{ store: extensionStore, viteServer: options.viteServer, enabled: true },
-		extensionCompilerConfig,
+		{ store: artifactStore, viteServer: options.viteServer, enabled: true },
+		managementCompilerConfig,
 	)
 
 	ctx.runtimeDev = {
 		...previousDev,
-		uiSource: {
-			bind: (ownerCtx, declaration) => extensionCompiler.bindDeclaration(ownerCtx, declaration),
+		managementUiSource: {
+			bind: (ownerCtx, declaration) => managementCompiler.bindDeclaration(ownerCtx, declaration),
 		},
 	}
 
 	ctx.effects.defer(() => {
-		extensionCompiler.dispose()
+		managementCompiler.dispose()
 		ctx.runtimeDev = previousDev
 	})
 }
 
-function withDevWebManagementHttpConfig(
+function withDevManagementHttpConfig(
 	config: StaticRuntimeConfig['http'] | undefined,
 ): StaticRuntimeConfig['http'] {
 	const next = {
@@ -583,10 +577,10 @@ function findSsrExportDir(
 	return undefined
 }
 
-function mergeExtensionCompilerPluginDirs(
-	config: ExtensionCompilerConfig | undefined,
+function mergeManagementCompilerPluginDirs(
+	config: ManagementCompilerConfig | undefined,
 	pluginDirs: Record<string, string> | undefined,
-): ExtensionCompilerConfig | undefined {
+): ManagementCompilerConfig | undefined {
 	if (!pluginDirs) return config
 	return {
 		...config,

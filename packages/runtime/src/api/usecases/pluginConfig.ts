@@ -4,7 +4,7 @@ import {
 	collectConfigDefaults,
 	validateConfigPatch,
 } from '@pluxel/core/services'
-import type { BuiltinMarkdownPart } from '../../web/extensions'
+import type { BuiltinMarkdownPart } from '../../management/document-contracts'
 import type { ConfigFieldMutation } from '../../web/protocol'
 import { requireRouteCapability } from '../../runtime/capabilities'
 

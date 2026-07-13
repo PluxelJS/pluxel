@@ -1,3 +1,4 @@
-import { pluginUi } from '@pluxel/runtime/web/ui'
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { ExternalGatewayManagement } from '../management-module.ts'
 
-export const gatewayPlugin = pluginUi('ExternalGatewayPlugin')
+export const gatewayPlugin = managementApp(ExternalGatewayManagement)

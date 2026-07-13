@@ -48,11 +48,6 @@ export type {
 	RuntimeLogLine,
 } from './web/logs'
 export {
-	RUNTIME_EXTENSIONS_BASE,
-	RUNTIME_EXTENSIONS_ARTIFACTS_BASE,
-	RUNTIME_EXTENSIONS_EVENTS_PATH,
-	RUNTIME_EXTENSIONS_MANIFEST_PATH,
-	RUNTIME_EXTENSIONS_MODULES_BASE,
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_LOG_STREAMS_BASE,
 	RUNTIME_META_BASE,
@@ -66,29 +61,12 @@ export {
 	RUNTIME_META_SSE_PATH,
 	RUNTIME_TRANSPORT_PATHS,
 	RUNTIME_ADMIN_ACCESS_BASE,
-	runtimeExtensionArtifactBasePath,
-	runtimeExtensionArtifactPath,
-	runtimeExtensionModulePath,
 	runtimeLogStreamPath,
-	runtimeSignalDbCollectionPath,
+	runtimeManagementCollectionPath,
+	runtimeManagementStreamPath,
 	joinPath,
 } from './web/paths'
-export * from './web/plugin-ui/types'
-export type {
-	InteractionContract,
-	InteractionContractRef,
-} from './web/plugin-ui/interaction-contracts'
-export {
-	EXTENSION_FEDERATION_EXPOSE,
-	EXTENSION_FEDERATION_MANIFEST_FILE,
-	EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
-	EXTENSION_FEDERATION_SHARE_STRATEGY,
-	extensionFederationModuleId,
-	extensionFederationRemoteName,
-	extensionFederationSharedPackages,
-	sanitizeExtensionPluginName,
-	type ExtensionFederationSharedPackage,
-} from './web/plugin-ui/federation'
+export * from './web/host-ui'
 export * from './web/protocol'
 export {
 	RuntimeTransportClientProvider,
@@ -97,19 +75,19 @@ export {
 } from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
 export {
+	useBoundSignalDbCollectionsState,
 	useSignalDbCollectionState,
-	useSignalDbCollectionsState,
 	useSignalDbDocState,
 	useSignalDbQueryState,
 	type SignalDbCollectionView,
-} from './web/plugin-ui/signaldb-runtime'
+} from './management/collection-ui-runtime'
 export type {
 	SignalDbFindOptions,
 	SignalDbItem,
 	SignalDbLoadResponse,
 	SignalDbListSpec,
 	SignalDbSelector,
-} from './web/plugin-ui/signaldb-contracts'
+} from './management/collection-contracts'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,

@@ -15,12 +15,12 @@ export {
 } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
-export { isWebManagementEnabled, webManagementAdminAccess } from './web-management-config'
+export { isManagementEnabled, managementAdminAccess } from './management-config'
 export {
-	requireWebManagement,
-	withWebManagementPluginContext,
-} from './services/web-management/WebManagementService'
+	requireManagementBackend,
+	withManagementPluginContext,
+} from './services/management/ManagementService'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'
-export { createCompiledExtensionModule } from './services/plugin-interaction/ExtensionService'
+export type { ManagementArtifactStore } from './services/management/ManagementArtifactService'
+export { createCompiledManagementArtifact } from './services/management/ManagementArtifactService'

@@ -1,26 +1,27 @@
 # @pluxel/runtime
 
-`@pluxel/runtime` 提供插件作者的常驻运行时能力：HTTP、config、logger、effects、events、persistence/pluginData 与 lifecycle/registry 读取面。
-
-可选网页管理能力通过 `@pluxel/runtime/web-management` 声明，并在插件中由唯一 gate 注册：
+Runtime 保持业务 HTTP 与可选 Management Plane 正交。插件以静态 contract 声明管理资源和贡献，
+只在宿主启用管理面时挂载：
 
 ```ts
-this.ctx.webManagement.use((web) => {
-	web.ui.register(pluginUi)
-	web.rpc.expose(() => rpc)
-	web.sse.expose(() => stream)
-	web.state.collection({ name: 'status' })
+const module = defineManagementModule({
+	id: 'ExamplePlugin',
+	resources: { api: managementResource.api<ExampleApi>() },
+})
+
+this.ctx.management.mount(module, {
+	api: managementBinding.api(() => new ExampleApi(this)),
 })
 ```
 
-宿主 launcher 根据顶层 `webManagement` 配置安装 backend；插件和项目入口不导入 service-registration side effect。
-
 公开入口：
 
-- `@pluxel/runtime`：稳定插件作者与常驻 runtime API。
-- `@pluxel/runtime/web-management`：`ui()`、`doc()` 与管理面作者类型。
-- `@pluxel/runtime/web`：浏览器插件 UI API。
-- `@pluxel/runtime/plugin`：worker 声明。
-- `@pluxel/runtime/toolchain`：仅供生成代码使用的元数据 helper。
+- `@pluxel/runtime`：插件、配置和常驻 runtime API；
+- `@pluxel/runtime/management`：module、resource、view、port 和 binding contract；
+- `@pluxel/runtime/management/ui`：浏览器端 typed resource client 与 UI module；
+- `@pluxel/runtime/management/federation`：Management UI artifact 的构建共享约定；
+- `@pluxel/runtime/web`：宿主浏览器 transport 与 Workbench context；
+- `@pluxel/runtime/services/management`：仅供宿主 launcher 安装可选 backend。
 
-内部设计见 `docs/PLUGIN_SYSTEM.md`，插件作者主路径见 `user-docs/plugin-authoring.md`。
+宿主只通过顶层 `management` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact
+route 或资源 transport，插件的业务 HTTP 和生命周期不受影响。

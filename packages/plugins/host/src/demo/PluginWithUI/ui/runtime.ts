@@ -1,4 +1,5 @@
 // Browser entry for the custom UI demo.
-import { pluginUi } from '@pluxel/runtime/web/ui'
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { PluginWithUIManagement } from '../../PluginWithUI.management'
 
-export const plugin = pluginUi('PluginWithUI')
+export const plugin = managementApp(PluginWithUIManagement)

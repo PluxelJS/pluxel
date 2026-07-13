@@ -1,8 +1,7 @@
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { TelegramUpdate } from '@gramio/types'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -27,18 +26,18 @@ import {
 	type TelegramStatusDoc,
 } from './management.ts'
 import type { TelegramBotStatus } from './status.ts'
+import { TelegramManagementModule } from './management-module.ts'
 
 export type TelegramBotConfigInput = BotAccountInput
 export type TelegramUpdateProjection = AcknowledgedProjection<TelegramBot, TelegramUpdate>
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'TelegramPlugin'
 const DEFAULT_API_BASE = 'https://api.telegram.org'
 
 @Plugin({ name: 'TelegramPlugin' })
 export class TelegramPlugin extends BasePlugin {
-	private settings?: ManagementStateCollection<TelegramSettingsDoc>
-	private status?: ManagementStateCollection<TelegramStatusDoc>
+	private settings?: MountedManagementResources<typeof TelegramManagementModule>['settings']
+	private status?: MountedManagementResources<typeof TelegramManagementModule>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<TelegramBot>({
 		onObserverError: (error) =>
@@ -58,13 +57,16 @@ export class TelegramPlugin extends BasePlugin {
 	readonly events = createTelegramPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		await this.ctx.webManagement.use(async (web) => {
-			this.settings = web.state.collection<TelegramSettingsDoc>({ name: 'settings' })
-			this.status = web.state.collection<TelegramStatusDoc>({ name: 'status' })
-			await Promise.all([this.settings.ready(), this.status.ready()])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new TelegramManagementRpc(this))
+		const mounted = this.ctx.management.mount(TelegramManagementModule, {
+			api: managementBinding.api(() => new TelegramManagementRpc(this)),
+			settings: managementBinding.collection(),
+			status: managementBinding.collection(),
 		})
+		if (mounted) {
+			this.settings = mounted.resources.settings
+			this.status = mounted.resources.status
+			await Promise.all([this.settings.ready(), this.status.ready()])
+		}
 		this.settings?.removeMany({})
 		this.status?.removeMany({})
 		this.accounts = new BotAccountStore(this.kv(), DEFAULT_API_BASE)
@@ -198,17 +200,4 @@ export class TelegramPlugin extends BasePlugin {
 
 function maskSecret(value: string): string {
 	return value.length <= 8 ? '••••••••' : `${value.slice(0, 4)}••••${value.slice(-4)}`
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		TelegramPlugin: TelegramManagementRpc
-	}
-
-	interface ExtensionUiSignalDbMap {
-		TelegramPlugin: {
-			settings: TelegramSettingsDoc
-			status: TelegramStatusDoc
-		}
-	}
 }

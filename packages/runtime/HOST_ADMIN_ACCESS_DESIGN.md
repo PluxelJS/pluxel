@@ -14,11 +14,12 @@
 - adminAccess 只回答 host management admin surface 是否允许访问
 - Pluxel 没有 management 非 admin 用户模型；通过验证的人就是 management admin
 - Pluxel 不保存本地账号、密码、OTP secret 或 passkey credential
-- `webManagement: false` 不挂 runtime web management，不要求 OIDC
-- `webManagement.enabled=true` 且 `webManagement.access.exposure='private'` 不要求 OIDC
-- `webManagement.enabled=true` 且 `webManagement.access.exposure='public'` 必须配置 OIDC，否则 fail fast
+- `management: false` 不挂载 Management Plane，不要求 OIDC
+- `management.enabled=true` 且 `management.access.exposure='private'` 不要求 OIDC
+- `management.enabled=true` 且 `management.access.exposure='public'` 必须配置 OIDC，否则 fail fast
 
-`AdminAccessService` 及其 config 是 runtime 内部由 `webManagement` 派生的安全实现，不是独立宿主配置入口。
+`AdminAccessService` 及其 config 是 runtime 内部由 `management` 派生的安全实现，不是独立宿主配置入口。
+
 - OIDC 可以预先保留在 private/disabled 配置里，供后续切 public 使用
 - listen/bind host 属于 launcher/deployment concern，不作为 runtime access policy 的唯一事实来源
 - vault 只负责加密落盘，和 OIDC 身份验证解耦

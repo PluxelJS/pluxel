@@ -76,7 +76,11 @@ export type WorkspacePersistenceBackendFs = {
 	writeBytesAtomic(path: string, bytes: Uint8Array): Promise<void>
 	unlink(path: string): Promise<void>
 	readdir(path: string): Promise<string[]>
-	stat(path: string): Promise<{ type: 'file' | 'dir' | 'directory' | 'other' | 'missing'; size?: number; mtimeMs?: number }>
+	stat(path: string): Promise<{
+		type: 'file' | 'dir' | 'directory' | 'other' | 'missing'
+		size?: number
+		mtimeMs?: number
+	}>
 }
 
 function utf8Encode(s: string): Uint8Array {
@@ -99,15 +103,19 @@ function getErrnoCode(error: unknown): unknown {
 
 function normalizeNamespace(name: string): string {
 	const raw = String(name || 'default').trim()
-	return raw
-		.split(/[\\/]+/g)
-		.filter(Boolean)
-		.map((part) => basename(part).replaceAll(/[^A-Za-z0-9_.-]/g, '_'))
-		.join('/') || 'default'
+	return (
+		raw
+			.split(/[\\/]+/g)
+			.filter(Boolean)
+			.map((part) => basename(part).replaceAll(/[^A-Za-z0-9_.-]/g, '_'))
+			.join('/') || 'default'
+	)
 }
 
 function normalizeKey(key: string): string {
-	return String(key || '').replaceAll('\\', '/').replace(/^\/+/, '')
+	return String(key || '')
+		.replaceAll('\\', '/')
+		.replace(/^\/+/, '')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -142,7 +150,8 @@ export function createMemoryPersistenceBackend(
 	options: MemoryPersistenceBackendOptions = {},
 ): PersistenceBackend {
 	const data = new Map<string, Uint8Array>()
-	const keyFor = (namespace: string, key: string) => `${normalizeNamespace(namespace)}/${normalizeKey(key)}`
+	const keyFor = (namespace: string, key: string) =>
+		`${normalizeNamespace(namespace)}/${normalizeKey(key)}`
 	let warned = false
 	const warnOnWrite = (operation: 'put' | 'delete', namespace: string, key: string) => {
 		if (warned || !options.warnOnWrite) return
@@ -218,16 +227,24 @@ function createLazyNodeWorkspaceFsBackend(): WorkspacePersistenceBackendFs {
 			})
 		return await task
 	}
+	const withFs = async <T>(
+		operation: (fs: WorkspacePersistenceBackendFs) => Promise<T>,
+	): Promise<T> => {
+		const fs = await load()
+		return await operation(fs)
+	}
 
 	return {
 		exists: () => false,
-		readText: async (path) => await (await load()).readText(path),
-		writeTextAtomic: async (path, text) => await (await load()).writeTextAtomic(path, text),
-		readBytes: async (path) => await (await load()).readBytes(path),
-		writeBytesAtomic: async (path, bytes) => await (await load()).writeBytesAtomic(path, bytes),
-		unlink: async (path) => await (await load()).unlink(path),
-		readdir: async (path) => await (await load()).readdir(path),
-		stat: async (path) => await (await load()).stat(path),
+		readText: async (path) => await withFs(async (fs) => await fs.readText(path)),
+		writeTextAtomic: async (path, text) =>
+			await withFs(async (fs) => await fs.writeTextAtomic(path, text)),
+		readBytes: async (path) => await withFs(async (fs) => await fs.readBytes(path)),
+		writeBytesAtomic: async (path, bytes) =>
+			await withFs(async (fs) => await fs.writeBytesAtomic(path, bytes)),
+		unlink: async (path) => await withFs(async (fs) => await fs.unlink(path)),
+		readdir: async (path) => await withFs(async (fs) => await fs.readdir(path)),
+		stat: async (path) => await withFs(async (fs) => await fs.stat(path)),
 	}
 }
 
@@ -317,16 +334,16 @@ export function createWorkspacePersistenceBackend(
 						throw cause
 					}
 				},
-				list: async function* (prefix = '') {
+				list: async function* (listPrefix = '') {
 					let names: string[]
 					try {
-						names = await fs.readdir(pathFor(prefix))
+						names = await fs.readdir(pathFor(listPrefix))
 					} catch (cause) {
 						if (getErrnoCode(cause) === 'ENOENT') return
 						throw cause
 					}
-					for (const name of names) {
-						const key = join(normalizeKey(prefix), name)
+					for (const entryName of names) {
+						const key = join(normalizeKey(listPrefix), entryName)
 						const st = await fs.stat(pathFor(key))
 						if (st.type === 'missing' || st.type === 'other') continue
 						yield {
@@ -397,7 +414,9 @@ export class PersistenceService {
 	}
 }
 
-function resolvePersistenceBackend(config: PersistenceServiceConfig | undefined): PersistenceBackend {
+function resolvePersistenceBackend(
+	config: PersistenceServiceConfig | undefined,
+): PersistenceBackend {
 	if (config === undefined) return createImplicitMemoryPersistenceBackend()
 
 	if (typeof config === 'string') return createFilePersistenceBackend(config)

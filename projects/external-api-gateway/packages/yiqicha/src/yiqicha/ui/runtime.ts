@@ -1,3 +1,4 @@
-import { pluginUi } from '@pluxel/runtime/web/ui'
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { YiqichaManagement } from '../management-module.ts'
 
-export const yiqichaPlugin = pluginUi('YiqichaProviderPlugin')
+export const yiqichaPlugin = managementApp(YiqichaManagement)

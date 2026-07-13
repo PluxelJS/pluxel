@@ -1,3 +1,4 @@
-import { pluginUi } from '@pluxel/runtime/web/ui'
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { UsageBillingManagement } from '../management-module.ts'
 
-export const billingPlugin = pluginUi('UsageBillingPlugin')
+export const billingPlugin = managementApp(UsageBillingManagement)

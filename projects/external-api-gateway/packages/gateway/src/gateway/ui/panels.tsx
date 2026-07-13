@@ -14,31 +14,11 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconCheck, IconCopy, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
-import type {
-	GatewayTokenCreateInput,
-	GatewayTokenDoc,
-} from '@repo/external-api-gateway-shared/gateway'
+import type { GatewayTokenDoc } from '@repo/external-api-gateway-shared/gateway'
 import { gatewayPlugin } from './runtime'
-
-type GatewayUiApp = {
-	rpc: {
-		createToken(input: GatewayTokenCreateInput): Promise<GatewayTokenDoc>
-		revokeToken(id: string): Promise<{ ok: true }>
-	}
-	db: {
-		useList(
-			collection: 'tokens',
-			spec?: { limit?: number; sort?: Partial<Record<keyof GatewayTokenDoc, 1 | -1>> },
-		): GatewayTokenDoc[]
-	}
-}
-
-function useGatewayApp(): GatewayUiApp {
-	return gatewayPlugin.use() as unknown as GatewayUiApp
-}
 
 export function GatewayDashboard() {
 	return (
@@ -58,8 +38,9 @@ export function GatewayDashboard() {
 }
 
 export function GatewayPanel() {
-	const app = useGatewayApp()
-	const tokens = app.db.useList('tokens', { limit: 100, sort: { updatedAt: -1 } })
+	const app = gatewayPlugin.use()
+	const api = app.api('api')
+	const tokens = app.collection('tokens').useList({ limit: 100, sort: { updatedAt: -1 } })
 	const [name, setName] = useState('zhipu-client')
 	const [token, setToken] = useState('')
 	const [error, setError] = useState<string | null>(null)
@@ -67,7 +48,7 @@ export function GatewayPanel() {
 
 	const create = async () => {
 		try {
-			await app.rpc.createToken({
+			await api.createToken({
 				name,
 				token,
 			})
@@ -80,7 +61,7 @@ export function GatewayPanel() {
 
 	const revoke = async (id: string) => {
 		try {
-			await app.rpc.revokeToken(id)
+			await api.revokeToken(id)
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '撤销 token 失败'))

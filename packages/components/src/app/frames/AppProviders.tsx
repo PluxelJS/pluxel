@@ -10,7 +10,7 @@ import {
 	ExtensionPathnameProvider,
 	ExtensionProvider,
 } from '../../extension'
-import { ExtensionLoader } from '../ExtensionLoader'
+import { ManagementLoader } from '../../management/runtime'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { usePluginOverview } from '../plugins/pluginOverview'
@@ -97,7 +97,7 @@ export function AppProviders() {
 							<Outlet />
 						) : (
 							<>
-								<ExtensionLoader pollInterval={5000} />
+								<ManagementLoader />
 								<Outlet />
 							</>
 						)}

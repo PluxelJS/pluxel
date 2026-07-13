@@ -6,8 +6,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RuntimeTransportClient } from '../../src/web/client'
 import {
 	type SignalDbCollectionView,
+	useBoundSignalDbCollectionsState,
 	useSignalDbCollectionState,
-} from '../../src/web/plugin-ui/signaldb-runtime'
+} from '../../src/management/collection-ui-runtime'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -35,6 +36,10 @@ async function waitFor(assertion: () => void, timeoutMs = 2000) {
 
 function createSseStub(initialMessages: Array<{ payload: unknown }> = []) {
 	return {
+		onAny: vi.fn((listener: (message: { payload: unknown }) => void) => {
+			for (const message of initialMessages) listener(message)
+			return () => {}
+		}),
 		ns: vi.fn(() => ({
 			onAny: vi.fn((listener: (message: { payload: unknown }) => void) => {
 				for (const message of initialMessages) listener(message)
@@ -64,9 +69,10 @@ function createTransport(
 		transport: {
 			fetch,
 			links: {
-				signaldbCollection: (pluginName: string, collection: string) =>
-					`/__pluxel/runtime/signaldb/${pluginName}/${collection}`,
+				managementCollection: (binding: string) =>
+					`/__pluxel/runtime/management/resources/collection/${binding}`,
 			},
+			management: { stream: vi.fn(() => sse) },
 			createSse: vi.fn(() => sse),
 			dispose: vi.fn(),
 		} as unknown as RuntimeTransportClient,
@@ -75,6 +81,55 @@ function createTransport(
 }
 
 describe('signaldb browser runtime', () => {
+	it('resolves each collection through its own opaque binding', async () => {
+		const { transport, fetch } = createTransport({ items: [], meta: { clientWrites: false } })
+		fetch.mockImplementation(async (input: RequestInfo | URL) => {
+			const binding = String(input).split('/').at(-1)
+			return new Response(
+				JSON.stringify({
+					items: [{ id: binding, value: binding }],
+					meta: { clientWrites: false },
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			)
+		})
+		const container = document.createElement('div')
+		const root = createRoot(container)
+		let views: Record<string, SignalDbCollectionView<any>> = {}
+
+		function Probe() {
+			views = useBoundSignalDbCollectionsState(transport, {
+				settings: 'opaque-settings',
+				status: 'opaque-status',
+			})
+			return null
+		}
+
+		try {
+			await act(async () => {
+				root.render(<Probe />)
+			})
+			await waitFor(() => {
+				expect(views.settings?.items).toEqual([{ id: 'opaque-settings', value: 'opaque-settings' }])
+				expect(views.status?.items).toEqual([{ id: 'opaque-status', value: 'opaque-status' }])
+			})
+			expect(fetch).toHaveBeenCalledWith(
+				expect.stringContaining('/opaque-settings'),
+				expect.objectContaining({ method: 'GET' }),
+			)
+			expect(fetch).toHaveBeenCalledWith(
+				expect.stringContaining('/opaque-status'),
+				expect.objectContaining({ method: 'GET' }),
+			)
+		} finally {
+			await act(async () => {
+				root.unmount()
+			})
+			transport.dispose()
+			container.remove()
+		}
+	})
+
 	it('treats read-only collections as local read-only and does not push empty sync changes', async () => {
 		const { transport, fetch } = createTransport({
 			items: [{ id: '1', value: 'server' }],
@@ -123,21 +178,18 @@ describe('signaldb browser runtime', () => {
 		const delayedPull = new Promise<unknown>((resolve) => {
 			resolvePull = resolve
 		})
-		const { transport } = createTransport(
-			delayedPull,
-			{
-				initialSseMessages: [
-					{
-						payload: {
-							type: 'snapshot',
-							collection: 'events',
-							version: 7,
-							items: [{ id: 'early', value: 'snapshot' }],
-						},
+		const { transport } = createTransport(delayedPull, {
+			initialSseMessages: [
+				{
+					payload: {
+						type: 'snapshot',
+						collection: 'events',
+						version: 7,
+						items: [{ id: 'early', value: 'snapshot' }],
 					},
-				],
-			},
-		)
+				},
+			],
+		})
 		const container = document.createElement('div')
 		const root = createRoot(container)
 		let view: SignalDbCollectionView<{ id: string; value: string }> | undefined
@@ -155,9 +207,7 @@ describe('signaldb browser runtime', () => {
 			await act(async () => {
 				root.render(<Probe />)
 			})
-			await waitFor(() =>
-				expect(view?.items.some((item) => item.id === 'early')).toBe(true),
-			)
+			await waitFor(() => expect(view?.items.some((item) => item.id === 'early')).toBe(true))
 		} finally {
 			resolvePull({
 				items: [{ id: 'early', value: 'snapshot' }],

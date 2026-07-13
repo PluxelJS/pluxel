@@ -1,6 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
+import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
 import {
 	contentText,
 	normalizeContent,
@@ -11,6 +10,7 @@ import {
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
+import { ChatSandboxManagement } from './management-module.ts'
 
 export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
 
@@ -23,13 +23,12 @@ export type SandboxInput = {
 }
 
 const MAX_MESSAGES = 500
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 
 @Plugin({ name: 'ChatSandboxPlugin' })
 export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
-	private projection?: ManagementStateCollection<SandboxMessage>
+	private projection?: MountedManagementResources<typeof ChatSandboxManagement>['messages']
 	private readonly accepts = new KeyedSerialExecutor<string>()
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -47,13 +46,15 @@ export class ChatSandboxPlugin extends BasePlugin {
 			send: async (request) => this.captureOutbound(request),
 		})
 		this.ctx.effects.defer(dispose)
-		await this.ctx.webManagement.use(async (web) => {
-			this.projection = web.state.collection<SandboxMessage>({ name: 'messages' })
+		const mounted = this.ctx.management.mount(ChatSandboxManagement, {
+			api: managementBinding.api(() => new ChatSandboxRpc(this)),
+			messages: managementBinding.collection(),
+		})
+		if (mounted) {
+			this.projection = mounted.resources.messages
 			await this.projection.ready()
 			this.projection.removeMany({})
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new ChatSandboxRpc(this))
-		})
+		}
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app
@@ -160,14 +161,5 @@ export class ChatSandboxPlugin extends BasePlugin {
 		} catch (error) {
 			this.ctx.logger.warn('Failed to update chat sandbox management projection', { error })
 		}
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		ChatSandboxPlugin: ChatSandboxRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		ChatSandboxPlugin: { messages: SandboxMessage }
 	}
 }

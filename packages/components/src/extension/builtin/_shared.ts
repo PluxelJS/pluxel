@@ -1,13 +1,14 @@
 import type {
-	BuiltinFieldValueRef,
-	BuiltinGeneratedIdValue,
-	BuiltinNowValue,
-	BuiltinSignalDbRef,
-	BuiltinSignalDbWriteSpec,
-	BuiltinTemplateValue,
-} from '@pluxel/runtime/web/extensions'
+	ManagementFieldValueRef as BuiltinFieldValueRef,
+	ManagementGeneratedIdValue as BuiltinGeneratedIdValue,
+	ManagementNowValue as BuiltinNowValue,
+	ManagementCollectionRef as BuiltinSignalDbRef,
+	ManagementCollectionWrite as BuiltinSignalDbWriteSpec,
+	ManagementTemplateValue as BuiltinTemplateValue,
+} from '@pluxel/runtime/management'
 import { useMemo } from 'react'
-import { useGlobalExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web'
+import { useBoundSignalDbCollectionsState, useGlobalExtensionContext } from '@pluxel/runtime/web'
+import { useManagementView } from '@pluxel/runtime/management/ui'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -84,8 +85,9 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 	return Array.from(collections)
 }
 
-export function useSignalDbForValues(namespace: string, values: unknown[]) {
+export function useSignalDbForValues(values: unknown[]) {
 	const transport = useGlobalExtensionContext().services.transport
+	const item = useManagementView()
 	const valuesKey = stableSignalDbValueKey(values)
 	const neededCollections = useMemo(() => {
 		const collections = new Set<string>()
@@ -95,7 +97,17 @@ export function useSignalDbForValues(namespace: string, values: unknown[]) {
 		return Array.from(collections)
 	}, [valuesKey])
 
-	return useSignalDbCollectionsState(transport, namespace, neededCollections)
+	const bindings = useMemo(
+		() =>
+			Object.fromEntries(
+				neededCollections.flatMap((collection) => {
+					const resource = item.resources[collection]
+					return resource?.kind === 'collection' ? [[collection, resource.binding]] : []
+				}),
+			),
+		[item, neededCollections],
+	)
+	return useBoundSignalDbCollectionsState(transport, bindings)
 }
 
 function createGeneratedId() {

@@ -12,12 +12,9 @@ import {
 	type AdminAccessReason,
 } from '../../shared/admin-access-http'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../../web/extensions'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
 import { resolveAdminAccessConfig } from '../admin-access/model'
-import type { SseChannel } from '../plugin-interaction/SseService'
-import { requireWebManagement } from '../web-management/WebManagementService'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
 const serviceName = 'http' as const
@@ -164,7 +161,6 @@ export class HttpService {
 	private readonly hostCtx: PluxelContext
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
-	private sseBuiltinsReady = false
 	private readonly config: ResolvedHttpServiceConfig
 
 	constructor(
@@ -176,11 +172,7 @@ export class HttpService {
 		this.logger = this.hostCtx.logger!
 		const adminAccessConfig = resolveAdminAccessConfig(this.hostCtx.config.adminAccess)
 		const adminAccessEnabled = adminAccessConfig.enabled
-		if (
-			adminAccessEnabled &&
-			adminAccessConfig.exposure === 'public' &&
-			!adminAccessConfig.oidc
-		) {
+		if (adminAccessEnabled && adminAccessConfig.exposure === 'public' && !adminAccessConfig.oidc) {
 			throw new Error('Public admin access requires adminAccess.oidc.')
 		}
 		const useDefaultControlPlane = adminAccessEnabled && runtimeConfig.controlPlane === undefined
@@ -188,11 +180,14 @@ export class HttpService {
 		this.config = {
 			controlPlane: {
 				web:
-					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
 				rpc:
-					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
 				sse:
-					adminAccessEnabled && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
 			},
 			graphql,
 			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
@@ -226,7 +221,6 @@ export class HttpService {
 				boundary: this.createLazyGraphqlBoundary(),
 			})
 		}
-		if (this.config.controlPlane.sse) this.registerSseBuiltins()
 
 		void ensureRuntimePluginPolicyLoaded(ctx).catch((error) => {
 			this.logger.warn('Failed to load persisted plugin log policy', { error })
@@ -489,40 +483,6 @@ export class HttpService {
 		root.get('/', fallback).all('/*', fallback)
 		root.compile()
 		this.fetchPtr = (request) => root.fetch(request)
-	}
-
-	private registerSseBuiltins() {
-		if (this.sseBuiltinsReady) return
-		this.sseBuiltinsReady = true
-
-		const disposers = [
-			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
-		]
-
-		for (const dispose of disposers) this.hostCtx.effects.defer(dispose)
-	}
-
-	private registerBuiltinSse(
-		namespace: string,
-		handler: (channel: SseChannel) => undefined | (() => void),
-	) {
-		return requireWebManagement(this.hostCtx).sse.expose(() => handler, { namespace })
-	}
-
-	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = requireWebManagement(this.hostCtx).ui
-		if (!service) {
-			channel.emit('error', { reason: 'Extension service unavailable' })
-			return undefined
-		}
-
-		channel.emit('ready', { type: 'ready' })
-		channel.emit('sync', { type: 'sync', version: service.getManifest().version })
-
-		const send = (event: ExtensionManifestEvent) => channel.emit(event.type, event)
-		const unsubscribe = service.subscribeManifest(send)
-		channel.onAbort(unsubscribe)
-		return () => unsubscribe()
 	}
 
 	private async guardUiRequest(

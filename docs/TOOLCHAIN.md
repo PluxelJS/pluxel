@@ -1,44 +1,20 @@
-# Toolchain
+# Toolchain Architecture
 
-Pluxel 插件源码通过 Vite/Rolldown 链执行和构建。工具链负责提供 runtime 所依赖的静态事实，不改变作者模型。
+Management UI build primitive 位于 `@pluxel/rolldown/vite/management-ui`。runtime-dev compiler 负责：
 
-## 仓库开发环境
+1. 绑定 `managementUi()` source declaration；
+2. 收集 Vite module graph 和相关源文件；
+3. 计算包含 shared contract、Vite overlay 和 compiler version 的 hash；
+4. 构建 Module Federation remote 到 `.pluxel/management`；
+5. 原子提交 artifact state，并触发统一 Management revision；
+6. owner unload 时停止 watcher 并移除 artifact。
 
-根 `mise.toml` 使用 Node.js `lts` 与 pnpm `latest` 滚动别名，是本地开发与 GitHub Actions 的工具入口。
-依赖版本仍由 `pnpm-lock.yaml` 锁定；mise 不替代包管理器或 Turbo task graph。仓库开发工具链不依赖 Bun。
+生产构建使用同一 federation contract，按 owner 输出到 `dist/management/<owner>/`。Rolldown 只静态提取
+`managementUi(import.meta.url, "...")` 的字符串 declaration；没有 UI 时不加载 Vite，有 UI 时用源码图、
+依赖 lockfile、shared 版本和显式 Vite cache key 复用完整 artifact。缓存命中时只加载轻量签名解析层，不加载
+完整 Vite/MF builder。UI entry 不进入服务端 bundle。shared packages 只包含 React、Mantine 等 UI peer 和
+`@pluxel/runtime/management/ui`；resource transport 实现不进入插件 bundle。
+core 是 federation contract 的源码权威；rolldown 发布物内联这一个 dependency-neutral contract，避免
+“core 用 rolldown 构建、rolldown 启动又读取 core dist”的构建环，Turbo 直接把该源码计入 rolldown cache key。
 
-```sh
-mise install
-pnpm install --frozen-lockfile
-pnpm verify
-```
-
-## 职责
-
-- OXC legacy decorator transform 与 `design:paramtypes`；
-- `unplugin-macros` 在 Rolldown 构建时执行 `with { type: 'macro' }` 导入；macro 参数必须是可独立求值的
-  JavaScript 表达式；
-- config source、binding、layout 和 feature metadata；
-- plugin UI federation artifact；
-- lint guard 与构建边界检查；
-- Vite Module Runner、source conditions 和 singleton resolution。
-
-## 非职责
-
-- 不注入第二套 dependency 或 UI API；
-- 不让 toolchain helper 出现在默认作者入口；
-- 不替代 core graph/lifecycle；
-- 不在 Web Management disabled 时创建 UI compiler 或 watcher。
-
-Node 原生 type stripping 可运行普通代码生成脚本，但不会生成 Pluxel decorator metadata，因此不是插件源码入口。
-
-## 关键入口
-
-- `packages/runtime-dev/src/vite.ts`
-- `packages/core/tsdown.config.ts`
-- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
-- `packages/rolldown/src/rolldown/plugins/lintGuardPlugin.ts`
-- `packages/rolldown/src/workspace/oxlint/`
-- `packages/test/src/vitest.ts`
-
-工具链契约必须由真实 Vite Module Runner 测试验证，不能用 raw TypeScript runner 的行为推断。
+static 与 dynamic route 都通过 `RuntimeDevCapabilities.managementUiSource` 接入 compiler，不复制构建逻辑。

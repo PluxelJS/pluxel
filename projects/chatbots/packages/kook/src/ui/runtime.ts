@@ -1,3 +1,4 @@
-import { pluginUi } from '@pluxel/runtime/web/ui'
+import { managementApp } from '@pluxel/runtime/management/ui'
+import { KookManagementModule } from '../management-module.ts'
 
-export const kookPlugin = pluginUi('KookPlugin')
+export const kookPlugin = managementApp(KookManagementModule)

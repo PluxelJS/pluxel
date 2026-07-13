@@ -1,22 +1,20 @@
 import { Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { useMemo, useState } from 'react'
-import type { BuiltinActionBlock } from '@pluxel/runtime/web/extensions'
-import { useGlobalExtensionContext, useSignalDbCollectionsState } from '@pluxel/runtime/web'
+import type { ManagementActionBlock as BuiltinActionBlock } from '@pluxel/runtime/management'
+import { useBoundSignalDbCollectionsState, useGlobalExtensionContext } from '@pluxel/runtime/web'
+import { useManagementView } from '@pluxel/runtime/management/ui'
 import { applySignalDbWrite } from './_shared'
 
-export function BuiltinSignalDbAction({
-	pluginName,
-	block,
-}: {
-	pluginName: string
-	block: BuiltinActionBlock
-}) {
+export function BuiltinSignalDbAction({ block }: { block: BuiltinActionBlock }) {
 	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
-	const collections = useSignalDbCollectionsState(
+	const item = useManagementView()
+	const collections = useBoundSignalDbCollectionsState(
 		transport,
-		pluginName,
-		useMemo(() => [block.write.collection], [block.write.collection]),
+		useMemo(() => {
+			const resource = item.resources[block.write.collection]
+			return resource?.kind === 'collection' ? { [block.write.collection]: resource.binding } : {}
+		}, [block.write.collection, item]),
 	)
 	const [submitting, setSubmitting] = useState(false)
 

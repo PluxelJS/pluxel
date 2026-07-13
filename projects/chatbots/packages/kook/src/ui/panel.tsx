@@ -11,15 +11,15 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconKey, IconPlugConnected, IconPlugX, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import { kookPlugin } from './runtime.ts'
 
 export function KookSettingsPanel() {
 	const app = kookPlugin.use()
-	const settingsList = app.db.useList('settings')
-	const statusList = app.db.useList('status')
+	const settingsList = app.collection('settings').useList()
+	const statusList = app.collection('status').useList()
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://www.kookapp.cn')
@@ -101,7 +101,7 @@ export function KookSettingsPanel() {
 							onClick={() =>
 								void run(
 									() =>
-										app.rpc.upsertBot({
+										app.api('api').upsertBot({
 											id: accountId,
 											token: token || undefined,
 											apiBase,
@@ -117,7 +117,7 @@ export function KookSettingsPanel() {
 							leftSection={<IconPlugConnected size={16} />}
 							onClick={() =>
 								void run(async () => {
-									const result = await app.rpc.testBot(accountId)
+									const result = await app.api('api').testBot(accountId)
 									if (!result.ok) throw new Error(result.message)
 								}, '鉴权成功')
 							}
@@ -127,7 +127,7 @@ export function KookSettingsPanel() {
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.rpc.reconnectBot(accountId), '正在重连')}
+							onClick={() => void run(() => app.api('api').reconnectBot(accountId), '正在重连')}
 						>
 							重连
 						</Button>
@@ -135,7 +135,7 @@ export function KookSettingsPanel() {
 							variant="light"
 							color="gray"
 							leftSection={<IconPlugX size={16} />}
-							onClick={() => void run(() => app.rpc.disconnectBot(accountId), '已断开')}
+							onClick={() => void run(() => app.api('api').disconnectBot(accountId), '已断开')}
 						>
 							断开
 						</Button>
@@ -143,7 +143,7 @@ export function KookSettingsPanel() {
 							variant="light"
 							color="red"
 							leftSection={<IconTrash size={16} />}
-							onClick={() => void run(() => app.rpc.removeBot(accountId), 'Bot 已删除')}
+							onClick={() => void run(() => app.api('api').removeBot(accountId), 'Bot 已删除')}
 						>
 							删除 Bot
 						</Button>

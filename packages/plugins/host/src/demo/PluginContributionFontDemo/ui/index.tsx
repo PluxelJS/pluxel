@@ -1,55 +1,43 @@
-// Provider-owned session UI for the interaction demo.
-
 import { Paper, Select, Stack, Text } from '@mantine/core'
-import { definePluginUIModule, type InteractionSessionComponentProps } from '@pluxel/runtime/web/ui'
-import type {
-	FontPickerDraft,
-	FontPickerInput,
-	FontPickerResult,
+import { useEffect, useMemo, useState } from 'react'
+import {
+	FONT_KIND,
+	FONT_MANAGER_PLUGIN_NAME,
+	type FontRef,
 } from '../../PluginContributionFontDemo.shared'
-import { plugin } from './runtime'
+import { fontManager, fontSettings } from './runtime'
 
-type FontOption = {
-	value: string
-	label: string
-	description: string
-	previewText: string
-}
+export function FontSettings() {
+	const provider = fontManager.use()
+	const consumer = fontSettings.use()
+	const settings = consumer.api('settings')
+	const fontSets = provider.collection('fontSets').useList({ sort: { name: 1 } })
+	const [selected, setSelected] = useState<string | null>(null)
 
-function FontPickerSession({
-	targetPlugin,
-	draft,
-	setDraft,
-	pushDraft,
-	commit,
-	disabled,
-}: InteractionSessionComponentProps<
-	FontPickerInput,
-	FontPickerDraft,
-	unknown,
-	FontPickerResult
->) {
-	const app = plugin.use()
-	const collection = app.db.collection('fontSets').useView()
-	const options: FontOption[] = app.db
-		.collection('fontSets')
-		.useList({ sort: { name: 1 } })
-		.map((item) => ({
-			value: item.id,
-			label: item.name,
-			description: item.description,
-			previewText: item.previewText,
-		}))
+	useEffect(() => {
+		let active = true
+		void settings.current().then((font): undefined => {
+			if (active) setSelected(font?.id ?? null)
+			return undefined
+		})
+		return () => {
+			active = false
+		}
+	}, [settings])
 
-	const selected = options.find((item) => item.value === draft.selectedId) ?? null
-	const handleChange = async (nextValue: string | null) => {
-		const next = nextValue == null ? null : findOption(options, nextValue)
-		const nextDraft = {
-			selectedId: next?.value ?? null,
-		} satisfies FontPickerDraft
-		setDraft(nextDraft)
-		await pushDraft(nextDraft)
-		await commit(toCommitResult(next))
+	const options = useMemo(
+		() => fontSets.map((font) => ({ value: font.id, label: font.name })),
+		[fontSets],
+	)
+	const selectedFont = fontSets.find((font) => font.id === selected)
+
+	const update = async (id: string | null) => {
+		setSelected(id)
+		const font = fontSets.find((item) => item.id === id)
+		const ref: FontRef | null = font
+			? { provider: FONT_MANAGER_PLUGIN_NAME, kind: FONT_KIND, id: font.id, label: font.name }
+			: null
+		await settings.set(ref)
 	}
 
 	return (
@@ -58,53 +46,18 @@ function FontPickerSession({
 				<Select
 					size="sm"
 					label="Font Set"
-					description={`这个交互面板由 font manager 提供，最终写回 ${targetPlugin}.appearance.fontSetRef`}
+					description={`renderer 来自 ${provider.owner}，配置写回 ${consumer.target}`}
 					placeholder="选择一个字体集"
-					data={options.map((option) => ({
-						value: option.value,
-						label: option.label,
-					}))}
-					value={draft.selectedId}
-					onChange={(nextValue) => void handleChange(nextValue)}
-					disabled={disabled || !collection.ready}
+					data={options}
+					value={selected}
+					onChange={(value) => void update(value)}
 					clearable
 					searchable
-					nothingFoundMessage="暂无字体集"
 				/>
-				{selected ? (
-					<>
-						<Text size="xs" c="dimmed">
-							{selected.description}
-						</Text>
-						<Text size="sm" fw={500}>
-							{selected.previewText}
-						</Text>
-					</>
-				) : null}
+				{selectedFont ? <Text size="sm">{selectedFont.previewText}</Text> : null}
 			</Stack>
 		</Paper>
 	)
 }
 
-export default definePluginUIModule({
-	sessions: {
-		fontPickerSession: FontPickerSession,
-	},
-})
-
-function findOption(options: FontOption[], value: string) {
-	return options.find((item) => item.value === value) ?? null
-}
-
-function toCommitResult(option: FontOption | null): FontPickerResult {
-	if (!option) return { type: 'clear-font' }
-	return {
-		type: 'set-font',
-		ref: {
-			provider: 'PluginContributionFontManager',
-			kind: 'font-set',
-			id: option.value,
-			label: option.label,
-		},
-	}
-}
+export default fontManager.define({ FontSettings })

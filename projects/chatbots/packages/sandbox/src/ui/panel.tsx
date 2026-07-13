@@ -9,12 +9,12 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { rpcErrorMessage } from '@pluxel/runtime/web/ui'
+import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useState } from 'react'
 import { sandboxPlugin } from './runtime.ts'
 export function SandboxPanel() {
 	const app = sandboxPlugin.use()
-	const messages = app.db.useList('messages')
+	const messages = app.collection('messages').useList()
 	const [messageText, setMessageText] = useState('/ping')
 	const [conversationId, setConversationId] = useState('default')
 	const [busy, setBusy] = useState(false)
@@ -23,7 +23,7 @@ export function SandboxPanel() {
 		if (!messageText.trim()) return
 		setBusy(true)
 		try {
-			await app.rpc.send({ text: messageText, conversationId })
+			await app.api('api').send({ text: messageText, conversationId })
 			setMessageText('')
 			setError(null)
 		} catch (caught) {
@@ -41,7 +41,7 @@ export function SandboxPanel() {
 						不需要平台凭据，直接验证完整 Hub、身份、权限和命令管线。
 					</Text>
 				</div>
-				<Button variant="subtle" color="red" onClick={() => void app.rpc.reset()}>
+				<Button variant="subtle" color="red" onClick={() => void app.api('api').reset()}>
 					清空
 				</Button>
 			</Group>

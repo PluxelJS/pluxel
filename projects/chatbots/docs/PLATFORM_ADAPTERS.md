@@ -153,7 +153,7 @@ kookBot.$.status.gateway
 // { phase, sessionId, lastSequence, counters, timestamps, currentBackoffMs, lastError }
 ```
 
-连接状态机拥有快照，Bot 将其投影到 `$.status`，Web Management 再按需投影用于展示；依赖方向不能
+连接状态机拥有快照，Bot 将其投影到 `$.status`，Management Plane 再按需投影用于展示；依赖方向不能
 反过来。诊断只保留固定字段、累计计数和最近时间点，不保存无界事件历史。token、完整连接 URL、
 webhook secret 和带认证信息的错误对象不得进入快照。
 
@@ -205,7 +205,7 @@ resume session 默认只属于当前 Bot 生命周期，不写入管理投影。
 
 平台插件的常驻方法返回 Bot、平台状态或 `void`，不能返回 management collection DTO，也不能包含
 管理界面的提示文本。可选 Management RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
-Web Management 不改变平台 capability 的类型或行为。
+Management Plane 不改变平台 capability 的类型或行为。
 
 ## Bot、Plugin 与 ChatHub 的边界
 
@@ -223,7 +223,7 @@ codec/           平台对象 <-> JSON-safe ChatMessage
 plugin.ts        平台 capability <-> ChatHub transport/projection
 ```
 
-硬依赖放构造函数，可选管理面放 `ctx.webManagement.use()`。ChatHub 投影属于独立 bridge plugin；
+硬依赖放构造函数，可选管理面使用 `ctx.management.mount()`。ChatHub 投影属于独立 bridge plugin；
 bridge 的 constructor 依赖平台 capability 与 ChatHub，平台包本身不得导入 `contracts` 或 Hub。未安装
 bridge 时 Bot 原生 API、gateway/polling 和 raw events 照常启动。bridge 停止时只卸载 transport 和
 确认型 projection，不能销毁 Bot。Bot 的 timer、gateway、polling 和 observer 由平台插件生命周期回收。

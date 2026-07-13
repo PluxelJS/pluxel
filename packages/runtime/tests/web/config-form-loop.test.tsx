@@ -42,19 +42,6 @@ vi.mock('../../../components/src/extension', () => ({
 		items: [],
 	}),
 	ExtensionSlot: () => null,
-	usePluginUiStatus: () => ({
-		diagnostics: {
-			surfaces: [],
-			offers: [],
-			issues: [],
-		},
-		summary: {
-			issues: [],
-		},
-		hasDiagnostics: false,
-		module: null,
-		retrySync: vi.fn(),
-	}),
 }))
 
 vi.mock('../../../components/src/theme', () => ({

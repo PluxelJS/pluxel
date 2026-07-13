@@ -18,12 +18,11 @@ import {
 } from '../../usecases/pluginDependencies'
 import { ensureFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
-import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
-import { requireWebManagement } from '../../../services/web-management/WebManagementService'
+import { requireManagement } from '../../../services/management'
 import type {
 	ConfigFieldMutation,
-	ExtensionUiRpcMap,
+	ManagementApiView,
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
@@ -33,12 +32,10 @@ import type {
 
 export class RuntimeRpcApi extends RpcTarget {
 	private readonly ctx: Context
-	private readonly extView: ExtensionUiRpcMap
 
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
-		this.extView = requireWebManagement(ctx).rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
@@ -60,24 +57,13 @@ export class RuntimeRpcApi extends RpcTarget {
 		return new LoggingHandle(this.ctx)
 	}
 
-	/** Cross-plugin interaction sessions (surface/offer lifecycle). */
-	ui() {
-		return new ExtensionSessionHandle(this.ctx)
-	}
-
-	/**
-	 * 访问插件注册的 RPC 扩展
-	 * @example rpc.ext['my-plugin'].method()
-	 */
-	get ext(): ExtensionUiRpcMap {
-		return this.extView
-	}
-
-	/**
-	 * 列出所有已注册的 RPC 扩展命名空间
-	 */
-	extensions(): string[] {
-		return requireWebManagement(this.ctx).rpc.getNamespaces()
+	resource(binding: string): ManagementApiView {
+		const management = requireManagement(this.ctx)
+		const ref = management.registry.resolveResource(binding, 'api')
+		return management.api.resolve(
+			this.ctx,
+			`${ref.owner}:${ref.resource}`,
+		) as unknown as ManagementApiView
 	}
 
 	async buildSnapshot() {
@@ -133,12 +119,7 @@ export class RuntimeRpcApi extends RpcTarget {
 		baseToken: string
 		providerName: string | null
 	}) {
-		return await pluginBaseProviderSet(
-			this.ctx,
-			input.name,
-			input.baseToken,
-			input.providerName,
-		)
+		return await pluginBaseProviderSet(this.ctx, input.name, input.baseToken, input.providerName)
 	}
 
 	async ensurePluginFork(input: { baseName: string; forkId: string; enable?: boolean }) {

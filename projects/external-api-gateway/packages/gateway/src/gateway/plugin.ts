@@ -17,8 +17,7 @@ import type {
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
-import { ui } from '@pluxel/runtime/web-management'
+import { managementBinding } from '@pluxel/runtime/management'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
 import {
@@ -31,6 +30,7 @@ import {
 	type ExternalGatewayToolSpec,
 } from './tools.ts'
 import { callExternalGatewayTool } from './tool-dispatcher.ts'
+import { ExternalGatewayManagement } from './management-module.ts'
 
 export {
 	EXTERNAL_GATEWAY_TOOL_NAMES,
@@ -54,7 +54,6 @@ export {
 	type YiqichaRecommendedCall,
 } from './tools.ts'
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 export const EXTERNAL_GATEWAY_ROUTE_BASE = '/external-gateway'
 export const EXTERNAL_GATEWAY_RPC_PATH = `${EXTERNAL_GATEWAY_ROUTE_BASE}/rpc`
 
@@ -77,14 +76,17 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		await this.loadTokensFromDB()
 		await this.ensureDevToken()
 		this.syncStatus()
-		await this.ctx.webManagement.use(async (web) => {
-			await Promise.all([
-				this.tokens.attach(web.state.collection<GatewayTokenDoc>({ name: 'tokens' })),
-				this.status.attach(web.state.collection<GatewayStatusDoc>({ name: 'status' })),
-			])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new GatewayAdminRpc(this))
+		const mounted = this.ctx.management.mount(ExternalGatewayManagement, {
+			api: managementBinding.api(() => new GatewayAdminRpc(this)),
+			tokens: managementBinding.collection(),
+			status: managementBinding.collection(),
 		})
+		if (mounted) {
+			await Promise.all([
+				this.tokens.attach(mounted.resources.tokens),
+				this.status.attach(mounted.resources.status),
+			])
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('External CapnWeb gateway ready', {
 			rpcPath: this.rpcBase(),
@@ -366,15 +368,6 @@ export class GatewayAdminRpc extends RpcTarget {
 
 	rpcBase() {
 		return this.gateway.rpcBase()
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		ExternalGatewayPlugin: GatewayAdminRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		ExternalGatewayPlugin: { tokens: GatewayTokenDoc; status: GatewayStatusDoc }
 	}
 }
 

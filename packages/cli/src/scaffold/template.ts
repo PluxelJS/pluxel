@@ -182,9 +182,8 @@ export async function generateFromTemplate(
 		if (!fileSystem.existsSync(sourceDir)) {
 			throw new Error(`Pluxel user docs not found: ${sourceDir}`)
 		}
-		const files =
-			userDocs.files ??
-			(await walkTemplateFiles(sourceDir, fileSystem)).map((path) => relative(sourceDir, path))
+		const discoveredFiles = await walkTemplateFiles(sourceDir, fileSystem)
+		const files = userDocs.files ?? discoveredFiles.map((path) => relative(sourceDir, path))
 		if (files.length === 0) throw new Error(`Pluxel user docs directory is empty: ${sourceDir}`)
 		for (const file of files) {
 			const sourcePath = resolveContainedPath(sourceDir, file, 'user docs source')

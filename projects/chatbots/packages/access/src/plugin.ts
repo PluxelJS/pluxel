@@ -1,6 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
+import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
 import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
@@ -16,17 +15,17 @@ import { ChatAccessRpc } from './rpc.ts'
 import { ChatAccessDomain, type ChatAccessChange } from './service.ts'
 import { CoalescedSnapshotWriter } from './snapshot-writer.ts'
 import { parseAccessState } from './state.ts'
+import { ChatAccessManagement } from './management-module.ts'
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const STORAGE_NAMESPACE = 'chatbots/access'
 const STORAGE_KEY = 'state.json'
 
 @Plugin({ name: 'ChatAccessPlugin' })
 export class ChatAccessPlugin extends BasePlugin {
 	private domain!: ChatAccessDomain
-	private overview?: ManagementStateCollection<AccessOverviewDoc>
-	private usersProjection?: ManagementStateCollection<ChatUser>
-	private rolesProjection?: ManagementStateCollection<ChatRole>
+	private overview?: MountedManagementResources<typeof ChatAccessManagement>['overview']
+	private usersProjection?: MountedManagementResources<typeof ChatAccessManagement>['users']
+	private rolesProjection?: MountedManagementResources<typeof ChatAccessManagement>['roles']
 	private snapshotWriter?: CoalescedSnapshotWriter
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -49,19 +48,23 @@ export class ChatAccessPlugin extends BasePlugin {
 				this.domain.resolveMessage(message)
 			}),
 		)
-		await this.ctx.webManagement.use(async (web) => {
-			this.overview = web.state.collection<AccessOverviewDoc>({ name: 'overview' })
-			this.usersProjection = web.state.collection<ChatUser>({ name: 'users' })
-			this.rolesProjection = web.state.collection<ChatRole>({ name: 'roles' })
+		const mounted = this.ctx.management.mount(ChatAccessManagement, {
+			api: managementBinding.api(() => new ChatAccessRpc(this)),
+			overview: managementBinding.collection(),
+			users: managementBinding.collection(),
+			roles: managementBinding.collection(),
+		})
+		if (mounted) {
+			this.overview = mounted.resources.overview
+			this.usersProjection = mounted.resources.users
+			this.rolesProjection = mounted.resources.roles
 			await Promise.all([
 				this.overview.ready(),
 				this.usersProjection.ready(),
 				this.rolesProjection.ready(),
 			])
 			this.refreshProjection()
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new ChatAccessRpc(this))
-		})
+		}
 	}
 
 	resolveMessage(message: ChatMessage) {
@@ -157,14 +160,5 @@ export class ChatAccessPlugin extends BasePlugin {
 			},
 			{ upsert: true },
 		)
-	}
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		ChatAccessPlugin: ChatAccessRpc
-	}
-	interface ExtensionUiSignalDbMap {
-		ChatAccessPlugin: { overview: AccessOverviewDoc; users: ChatUser; roles: ChatRole }
 	}
 }

@@ -1,7 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import type { ExtensionUiRpcMap as _ExtensionUiRpcMap } from '@pluxel/runtime/web'
-import { ui, type ManagementStateCollection } from '@pluxel/runtime/web-management'
+import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -23,18 +22,18 @@ import { createKookPluginEvents } from './events.factory.ts'
 import { KookManagementRpc, type KookSettingsDoc, type KookStatusDoc } from './management.ts'
 import type { KookBotStatus } from './status.ts'
 import type { KookEvent } from './protocol.ts'
+import { KookManagementModule } from './management-module.ts'
 
 export type KookBotConfigInput = BotAccountInput
 export type KookEventProjection = AcknowledgedProjection<KookBot, KookEvent>
 
-const pluginUi = ui(import.meta.url, './ui/index.tsx')
 const VAULT_NAMESPACE = 'KookPlugin'
 const DEFAULT_API_BASE = 'https://www.kookapp.cn'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
-	private settings?: ManagementStateCollection<KookSettingsDoc>
-	private status?: ManagementStateCollection<KookStatusDoc>
+	private settings?: MountedManagementResources<typeof KookManagementModule>['settings']
+	private status?: MountedManagementResources<typeof KookManagementModule>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<KookBot>({
 		onObserverError: (error) =>
@@ -53,13 +52,16 @@ export class KookPlugin extends BasePlugin {
 	readonly events = createKookPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		await this.ctx.webManagement.use(async (web) => {
-			this.settings = web.state.collection<KookSettingsDoc>({ name: 'settings' })
-			this.status = web.state.collection<KookStatusDoc>({ name: 'status' })
-			await Promise.all([this.settings.ready(), this.status.ready()])
-			web.ui.register(pluginUi)
-			web.rpc.expose(() => new KookManagementRpc(this))
+		const mounted = this.ctx.management.mount(KookManagementModule, {
+			api: managementBinding.api(() => new KookManagementRpc(this)),
+			settings: managementBinding.collection(),
+			status: managementBinding.collection(),
 		})
+		if (mounted) {
+			this.settings = mounted.resources.settings
+			this.status = mounted.resources.status
+			await Promise.all([this.settings.ready(), this.status.ready()])
+		}
 		this.settings?.removeMany({})
 		this.status?.removeMany({})
 		this.accounts = new BotAccountStore(this.kv(), DEFAULT_API_BASE)
@@ -195,17 +197,4 @@ export class KookPlugin extends BasePlugin {
 
 function maskSecret(value: string): string {
 	return value.length <= 8 ? '••••••••' : `${value.slice(0, 4)}••••${value.slice(-4)}`
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiRpcMap {
-		KookPlugin: KookManagementRpc
-	}
-
-	interface ExtensionUiSignalDbMap {
-		KookPlugin: {
-			settings: KookSettingsDoc
-			status: KookStatusDoc
-		}
-	}
 }

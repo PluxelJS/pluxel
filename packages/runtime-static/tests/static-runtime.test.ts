@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
+import { defineManagementModule } from '@pluxel/runtime/management'
 import {
 	BasePlugin,
 	createStaticRuntime,
@@ -155,13 +156,13 @@ describe('@pluxel/runtime-static', () => {
 	})
 
 	it('serves internal GraphQL by default without enabling management UI/RPC/SSE', async () => {
-		let callbackEvaluated = false
+		let mounted = false
 		@Plugin({ name: 'HeadlessWebGate' })
 		class HeadlessWebGate extends BasePlugin {
 			override init(): void {
-				this.ctx.webManagement.use(() => {
-					callbackEvaluated = true
-				})
+				mounted = Boolean(
+					this.ctx.management.mount(defineManagementModule({ id: 'HeadlessWebGate' }), {}),
+				)
 			}
 		}
 
@@ -171,7 +172,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [HeadlessWebGate],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: ['HeadlessWebGate'] } },
-				webManagement: false,
+				management: false,
 			}),
 		)
 		try {
@@ -189,7 +190,7 @@ describe('@pluxel/runtime-static', () => {
 			expect(response.status).toBe(200)
 			const json = (await response.json()) as { data?: { _empty?: string } }
 			expect(json.data?._empty).toBe('ok')
-			expect(callbackEvaluated).toBe(false)
+			expect(mounted).toBe(false)
 			expect(runtime.ctx.registry.isRunning(HeadlessWebGate)).toBe(true)
 		} finally {
 			await runtime.stop()
@@ -217,29 +218,29 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('installs Web Management from the single host configuration boundary', async () => {
-		let callbackEvaluated = false
+	it('installs Management Plane from the single host configuration boundary', async () => {
+		let mounted = false
 		@Plugin({ name: 'ManagedWebGate' })
 		class ManagedWebGate extends BasePlugin {
 			override init(): void {
-				this.ctx.webManagement.use(() => {
-					callbackEvaluated = true
-				})
+				mounted = Boolean(
+					this.ctx.management.mount(defineManagementModule({ id: 'ManagedWebGate' }), {}),
+				)
 			}
 		}
 
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
-				name: 'static-management-with-web-management',
+				name: 'static-runtime-with-management',
 				plugins: [ManagedWebGate],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: ['ManagedWebGate'] } },
-				webManagement: { enabled: true, access: { exposure: 'private' } },
+				management: { enabled: true, access: { exposure: 'private' } },
 			}),
 		)
 		try {
-			expect(runtime.ctx.webManagement.enabled).toBe(true)
-			expect(callbackEvaluated).toBe(true)
+			expect(runtime.ctx.management.enabled).toBe(true)
+			expect(mounted).toBe(true)
 			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
 			const response = await runtime.fetch(
 				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`),

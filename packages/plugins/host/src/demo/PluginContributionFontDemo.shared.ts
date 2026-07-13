@@ -1,6 +1,6 @@
 import { f, v } from '@pluxel/runtime'
-import { defineInteractionContract } from '@pluxel/runtime/web/extensions'
-import type { ExtensionUiSignalDbMap as _ExtensionUiSignalDbMap } from '@pluxel/runtime/web'
+import { defineManagementPort, managementResource } from '@pluxel/runtime/management'
+import type { FontSettingsRpc } from './PluginContributionFontDemo'
 
 export const FONT_MANAGER_PLUGIN_NAME = 'PluginContributionFontManager' as const
 export const FONT_KIND = 'font-set' as const
@@ -33,14 +33,6 @@ export const FONT_SETS: readonly FontSetDoc[] = [
 	},
 ] as const
 
-export type FontPickerInput = {
-	current: FontRef | null
-}
-
-export type FontPickerDraft = {
-	selectedId: string | null
-}
-
 export type FontRef = {
 	provider: string
 	kind: string
@@ -48,44 +40,8 @@ export type FontRef = {
 	label?: string
 }
 
-export type FontPickerResult =
-	| {
-			type: 'set-font'
-			ref: FontRef
-	  }
-	| {
-			type: 'clear-font'
-	  }
-
-export const FontPickerContract = defineInteractionContract<
-	FontPickerInput,
-	FontPickerDraft,
-	FontPickerResult
->({
-	id: 'pluxel.demo.font-picker',
-	version: 1,
-	label: 'Font Picker',
-	validateInput(value) {
-		const current = readFontRef(isRecord(value) ? value.current : undefined)
-		return { current }
-	},
-	validateDraft(value) {
-		const selectedId = isRecord(value) ? value.selectedId : undefined
-		return {
-			selectedId: typeof selectedId === 'string' && selectedId.trim() ? selectedId.trim() : null,
-		}
-	},
-	validateResult(value) {
-		if (isRecord(value) && value.type === 'clear-font') {
-			return { type: 'clear-font' } satisfies FontPickerResult
-		}
-		const ref = readFontRef(isRecord(value) ? value.ref : undefined)
-		if (!ref) throw new Error('Font picker result requires a valid ref')
-		return {
-			type: 'set-font',
-			ref: toFontRef(ref),
-		} satisfies FontPickerResult
-	},
+export const FontSettingsPort = defineManagementPort('pluxel.demo.font-settings', {
+	settings: managementResource.api<FontSettingsRpc>(),
 })
 
 const FontSetRefSchema = v.object({
@@ -105,24 +61,20 @@ export const ConsumerAppearanceConfig = v.object({
 		}),
 		f.formMeta({
 			label: '字体集引用',
-			description: '这个字段始终归 consumer 所有；provider 只提供 UI 和资源集合。',
+			description: '配置归 consumer 所有；provider 只提供 renderer 和候选字体集合。',
 		}),
 	),
 })
 
-export function readFontRef(value: unknown): FontPickerInput['current'] {
-	if (!isRecord(value)) return null
-	const provider = readString(value, 'provider')
-	const kind = readString(value, 'kind')
-	const id = readString(value, 'id')
-	const label = readString(value, 'label')
+export function readFontRef(value: unknown): FontRef | null {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+	const input = value as Record<string, unknown>
+	const provider = readString(input.provider)
+	const kind = readString(input.kind)
+	const id = readString(input.id)
+	const label = readString(input.label)
 	if (!provider || !kind || !id) return null
-	return {
-		provider,
-		kind,
-		id,
-		...(label ? { label } : {}),
-	}
+	return { provider, kind, id, ...(label ? { label } : {}) }
 }
 
 export function toFontRef(ref: FontRef): FontRef {
@@ -134,19 +86,6 @@ export function toFontRef(ref: FontRef): FontRef {
 	}
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function readString(value: Record<string, unknown>, key: string) {
-	const raw = value[key]
-	return typeof raw === 'string' ? raw.trim() : ''
-}
-
-declare module '@pluxel/runtime/web' {
-	interface ExtensionUiSignalDbMap {
-		PluginContributionFontManager: {
-			fontSets: FontSetDoc
-		}
-	}
+function readString(value: unknown): string {
+	return typeof value === 'string' ? value.trim() : ''
 }

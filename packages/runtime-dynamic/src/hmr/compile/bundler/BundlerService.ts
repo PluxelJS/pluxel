@@ -79,7 +79,7 @@ const WATCHER_IGNORED_GLOBS = [
  * Runs Vite's `build()` inside a Tinypool worker.
  *
  * Intended uses:
- * - `ExtensionCompilerService`: HMR-bundle plugin UI entries into a single ESM module for the browser.
+ * - `ManagementCompilerService`: builds Management UI remotes for the browser.
  * - Plugins: optionally bundle TS/ESM into a `.mjs` file (via `cacheKey` + `getBundleFileUrl`) and pass it to `tinypool`.
  */
 @Injectable({ key: serviceName })

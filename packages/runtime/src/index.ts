@@ -31,13 +31,11 @@ export {
 } from './services/http/elysia'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
-export {
-	setPluginEnabled,
-} from './runtime-state'
+export { setPluginEnabled } from './runtime-state'
 export {
 	getPluginRoutingSnapshot,
 	type PluginRoutingSnapshot,
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
 export type { StaticRuntimeRegisteredServices } from './runtime/register/static'
-export type { WebManagementConfig } from './web-management-config'
+export type { ManagementConfig } from './management-config'

@@ -1,43 +1,44 @@
 # Frontend Architecture
 
-插件业务 HTTP 与管理前端是两条独立路径。管理前端属于 optional Web Management。
+业务 HTTP 与 Management UI 是两条独立路径。管理前端是 optional capability，不得成为插件核心能力的
+启动前提。
 
-## Contribution models
+## Contract 与 ownership
 
-- remote UI：插件拥有浏览器代码和复杂交互；
-- builtin UI：宿主渲染可序列化描述；
-- interaction surface：consumer 拥有 placement、input 和 apply；
-- interaction offer：provider 准备资源和 session UI；
-- management state：服务端权威、供管理 UI 同步的状态。
+`ManagementModule` 是唯一服务端声明单元：
 
-这些模型共享插件 namespace，但不能折叠成失去 ownership 的通用 slot。
+- `resources` 声明 typed API、collection、stream；
+- `contributions` 声明 view、consumer port 或 provider renderer；
+- `ui` 只声明 remote entry，不执行注册；
+- plugin Context/effects 拥有 mount 和所有资源 cleanup。
+
+placement 由宿主解析。普通 view 只能投给自己；required-dependent 的自动投影只允许进入
+`plugin.capabilities`。任意 consumer Tab、route、action 等位置必须由 consumer 声明 port，provider 只
+提供匹配 renderer。
 
 ## Server/browser boundary
 
-- server declaration：`@pluxel/runtime/web-management`；
-- browser plugin API：`@pluxel/runtime/web`；
-- host workbench：消费 runtime read model 和 extension manifest；
-- plugin remote：只拥有自己的内容，不控制宿主布局。
+- server contract：`@pluxel/runtime/management`；
+- browser contract：`@pluxel/runtime/management/ui`；
+- artifact contract：`@pluxel/runtime/management/federation`；
+- Workbench 请求 target-specific layout，不读取全局 session manifest；
+- remote view 只能读取当前 layout item 授予的 resource bindings。
 
-`ui()` 是纯 declaration，`web.ui.register()` 是唯一注册动作。开发期编译源码，生产期注册 artifact，作者 API 不变。
+layout 不公开资源 owner/name，只下发 opaque binding。API、collection、stream transport 在每次请求时
+由 registry 解引用并校验 kind；registry revision 变化会撤销旧 binding。
 
-## State ownership
+## 更新与隔离
 
-- GQLens store 是 GraphQL 服务端状态在浏览器中的唯一 cache；领域 hook 可以投影视图模型，但不能再维护可独立写入的镜像 cache。
-- RPC 写操作完成后应失效或刷新对应的 GQLens selection；已有 GraphQL mutation 时优先使用生成的 mutation descriptor。
-- 尚未进入 GraphQL 的 RPC 数据由所属领域 resource 管理。多个消费者共享时，resource 必须提供稳定 snapshot、并发请求去重和 mutation result commit；单消费者数据直接留在组件，不建立全局 TTL cache。
-- 刷新由 mutation 调用方或领域 resource 直接触发，不使用无所有者的全局 topic invalidation bus。
-- 跨组件、需要命令式读取或持久化的 host UI 状态由 workbench store 管理；组件局部交互仍留在 React state。
-- loading、error、refetch 和乐观结果跟随拥有请求的 data layer，不能复制进通用客户端 store。
+module mount、unmount、owner running state 和 artifact build 共用 Management revision。Workbench 对每个
+transport 只维护一条 revision SSE，按需重新请求 global 或 target layout，并仅加载 layout 实际引用的
+remote artifact。
 
-## Context isolation
-
-plugin gate 随 Context 隔离；registry 由 host 共享。每次注册保留插件 id、logger 和 effects owner，异步或并发初始化不能切换共享“当前 ctx”。
+gate 随 plugin Context 隔离，registry 和 artifact store 由 host 共享。registry 不保存可切换的“当前
+Context”；每个 resource factory 保留 immutable owner Context。
 
 ## 实现入口
 
-- `packages/runtime/src/web/`
-- `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
-- `packages/runtime/src/services/plugin-interaction/ExtensionInteractionRegistry.ts`
-- `packages/components/src/app/plugins/`
-- `packages/rolldown/src/vite/plugin-ui.ts`
+- `packages/runtime/src/management/`
+- `packages/runtime/src/services/management/`
+- `packages/components/src/management/`
+- `packages/rolldown/src/vite/management-ui.ts`

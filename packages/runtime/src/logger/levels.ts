@@ -38,7 +38,11 @@ function persistence(ctx: Context): PersistenceLike | undefined {
 	return value as PersistenceLike
 }
 
-function logPolicyPersistenceFailure(ctx: Context, action: 'load' | 'persist', error: unknown): void {
+function logPolicyPersistenceFailure(
+	ctx: Context,
+	action: 'load' | 'persist',
+	error: unknown,
+): void {
 	const logger = (rootContext(ctx) as unknown as { logger?: unknown }).logger
 	if (!logger || typeof logger !== 'object') return
 	const warn = (logger as { warn?: unknown }).warn
@@ -84,9 +88,11 @@ export function persistRuntimePluginPolicy(ctx: Context): Promise<void> {
 				.put(policyKey(ctx), serializePluginLogPolicySnapshot(runtimePluginLogPolicy.snapshot()), {
 					atomic: true,
 				})
+			return undefined
 		})
 		.catch((error) => {
 			logPolicyPersistenceFailure(ctx, 'persist', error)
+			return undefined
 		})
 
 	writeByRoot.set(root, next)

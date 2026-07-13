@@ -35,7 +35,7 @@ export default defineConfig({
 			config: './src/pluxel.static.ts',
 			// @module-federation/vite currently shares build-global virtual state.
 			// Serialize the two adapter remotes to keep their generated entries isolated.
-			hmr: { extensionCompiler: { compileConcurrency: 1 } },
+			hmr: { managementCompiler: { compileConcurrency: 1 } },
 		}),
 		react(),
 	],

@@ -1,18 +1,22 @@
 // packages/runtime/tests/ui-demos/PluginStatusBadge.ts
 // 展示型插件：在宿主公共区域插入 UI（非插件详情页）
 
-import { ui } from '@pluxel/runtime/web-management'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-
-const statusBadgeUi = ui('./PluginStatusBadge/ui/StatusBadge.tsx')
+import { managementBinding } from '@pluxel/runtime/management'
+import { PluginStatusBadgeManagement } from './PluginStatusBadge.management'
 
 @Plugin({ name: 'PluginStatusBadge', type: 'event' })
 export class PluginStatusBadge extends BasePlugin {
 	private counter = 0
 
 	override async init() {
-		// 注册 Header 扩展，强调"非插件页面"的挂载点
-		this.ctx.webManagement.use((web) => web.ui.register(statusBadgeUi))
+		this.ctx.management.mount(PluginStatusBadgeManagement, {
+			activity: managementBinding.stream((channel) => {
+				const timer = setInterval(() => channel.emit('tick', { now: Date.now() }), 1_000)
+				channel.emit('tick', { now: Date.now() })
+				return () => clearInterval(timer)
+			}),
+		})
 
 		// 简单的计时器，供 UI 徽章显示
 		const timer = setInterval(() => {

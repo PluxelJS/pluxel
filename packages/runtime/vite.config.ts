@@ -20,16 +20,16 @@ const runtimeAliases = [
 		replacement: fileURLToPath(new URL('./src/web.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/web\/ui$/,
-		replacement: fileURLToPath(new URL('./src/web/ui.ts', import.meta.url)),
+		find: /^@pluxel\/runtime\/management\/ui$/,
+		replacement: fileURLToPath(new URL('./src/management-ui.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/web\/extensions$/,
-		replacement: fileURLToPath(new URL('./src/web/extensions.ts', import.meta.url)),
+		find: /^@pluxel\/runtime\/management$/,
+		replacement: fileURLToPath(new URL('./src/management.ts', import.meta.url)),
 	},
 	{
-		find: /^@pluxel\/runtime\/web\/federation$/,
-		replacement: fileURLToPath(new URL('./src/web/federation.ts', import.meta.url)),
+		find: /^@pluxel\/runtime\/management\/federation$/,
+		replacement: fileURLToPath(new URL('./src/management/federation.ts', import.meta.url)),
 	},
 	{
 		find: /^@pluxel\/runtime\/capnweb$/,

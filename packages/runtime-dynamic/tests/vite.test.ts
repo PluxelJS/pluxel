@@ -46,12 +46,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
 			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
-			webManagement: { enabled: true, access: { exposure: 'private' } },
+			management: { enabled: true, access: { exposure: 'private' } },
 			logger: { preset: 'hmr' },
 		})
 
 		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
-		expect(config.webManagement).toEqual({
+		expect(config.management).toEqual({
 			enabled: true,
 			access: { exposure: 'private' },
 		})
