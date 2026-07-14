@@ -9,7 +9,7 @@ import {
 	type SignalDbCollectionView,
 	useBoundSignalDbCollectionsState,
 	useSignalDbCollectionState,
-} from '../../src/management/collection-ui-runtime'
+} from '../../src/workbench/collection-ui-runtime'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -89,14 +89,14 @@ function createTransport(
 	transport = {
 		fetch,
 		links: {
-			managementCollection: (binding: string) =>
-				`/__pluxel/runtime/management/resources/collection/${binding}`,
-			managementCollectionEvents: (bindings: readonly string[]) =>
-				`/__pluxel/runtime/management/resources/collections/events?${bindings
+			workbenchCollection: (binding: string) =>
+				`/__pluxel/runtime/workbench/resources/collection/${binding}`,
+			workbenchCollectionEvents: (bindings: readonly string[]) =>
+				`/__pluxel/runtime/workbench/resources/collections/events?${bindings
 					.map((binding) => `binding=${binding}`)
 					.join('&')}`,
 		},
-		management: { stream: vi.fn(() => sse) },
+		workbench: { stream: vi.fn(() => sse) },
 		createSse: vi.fn(() => sse),
 		dispose,
 	} as unknown as RuntimeTransportClient
@@ -108,7 +108,7 @@ function createTransport(
 }
 
 describe('signaldb browser runtime', () => {
-	it('resolves each collection through its own opaque binding', async () => {
+	it('resolves each collection through its own opaque grant', async () => {
 		const { transport, fetch } = createTransport({ items: [], meta: { clientWrites: false } })
 		fetch.mockImplementation(async (input: RequestInfo | URL) => {
 			const binding = String(input).split('/').at(-1)
@@ -144,7 +144,7 @@ describe('signaldb browser runtime', () => {
 			expect(transport.createSse).toHaveBeenCalledWith({
 				url: expect.stringContaining('binding=opaque-settings&binding=opaque-status'),
 			})
-			expect(transport.management.stream).not.toHaveBeenCalled()
+			expect(transport.workbench.stream).not.toHaveBeenCalled()
 			expect(fetch).toHaveBeenCalledWith(
 				expect.stringContaining('/opaque-settings'),
 				expect.objectContaining({ method: 'GET' }),

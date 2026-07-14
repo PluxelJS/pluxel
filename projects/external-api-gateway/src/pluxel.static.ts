@@ -23,8 +23,8 @@ export const externalApiGatewayEnabledPlugins = [
 	'ExternalGatewayPlugin',
 ] as const
 
-const management =
-	process.env.PLUXEL_MANAGEMENT === 'false'
+const workbench =
+	process.env.PLUXEL_WORKBENCH === 'false'
 		? false
 		: { enabled: true as const, access: { exposure: 'private' as const } }
 
@@ -36,5 +36,5 @@ export default defineStaticRuntimeConfig({
 	},
 	persistence: resolve(staticDataRoot, 'persistence'),
 	logger: { preset: 'core' },
-	management,
+	workbench,
 })

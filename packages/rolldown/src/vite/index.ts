@@ -1,3 +1,3 @@
 export * from './environment.ts'
 export * from './paraglide.ts'
-export * from './management-ui.ts'
+export * from './workbench-ui.ts'

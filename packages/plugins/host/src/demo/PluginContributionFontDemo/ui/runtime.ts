@@ -1,6 +1,5 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { FontManagerManagement } from '../../PluginContributionFontDemo.management'
-import type { FontSettingsPort } from '../../PluginContributionFontDemo.shared'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { FontSettingsWorkbenchView } from '../../PluginContributionFontDemo.workbench'
 
-export const fontManager = managementApp<typeof FontManagerManagement>()
-export const fontSettings = managementApp<typeof FontSettingsPort>()
+export const fontSettingsUi = createWorkbenchUi<FontSettingsWorkbenchView>()
+export const fontSettingsView = fontSettingsUi.view('FontSettings')

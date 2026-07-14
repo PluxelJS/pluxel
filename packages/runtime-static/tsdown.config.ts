@@ -18,7 +18,6 @@ export default defineConfig({
 			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
 			'@pluxel/runtime/shared',
-			'@pluxel/runtime/management/federation',
 			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',

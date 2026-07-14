@@ -1,27 +1,25 @@
 # @pluxel/runtime
 
-Runtime 保持业务 HTTP 与可选 Management Plane 正交。插件以静态 contract 声明管理资源和贡献，
-只在宿主启用管理面时挂载：
+Runtime 保持业务 HTTP 与可选 Workbench 正交。插件以静态 extension 声明 view 与 model，
+只在宿主启用 Workbench 时挂载：
 
 ```ts
-const module = defineManagementModule({
-	id: 'ExamplePlugin',
-	resources: { api: managementResource.api<ExampleApi>() },
+const extension = workbench.define({
+	plugin: 'ExamplePlugin',
+	model: { commands: workbench.model.rpc<ExampleRpc>() },
 })
 
-this.ctx.management.mount(module, {
-	api: managementBinding.api(() => new ExampleApi(this)),
+this.ctx.workbench.mount(extension, {
+	commands: workbench.provide.rpc(() => new ExampleRpc(this)),
 })
 ```
 
 公开入口：
 
 - `@pluxel/runtime`：插件、配置和常驻 runtime API；
-- `@pluxel/runtime/management`：module、resource、view、port 和 binding contract；
-- `@pluxel/runtime/management/ui`：浏览器端 typed resource client 与 UI module；
-- `@pluxel/runtime/management/federation`：Management UI artifact 的构建共享约定；
+- `@pluxel/runtime/workbench`：extension、view、model、port 和 provider contract；
+- `@pluxel/runtime/workbench/ui`：浏览器端 view-scoped model 与 UI bundle；
 - `@pluxel/runtime/web`：宿主浏览器 transport 与 Workbench context；
-- `@pluxel/runtime/services/management`：仅供宿主 launcher 安装可选 backend。
 
-宿主只通过顶层 `management` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact
+宿主只通过顶层 `workbench` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact
 route 或资源 transport，插件的业务 HTTP 和生命周期不受影响。

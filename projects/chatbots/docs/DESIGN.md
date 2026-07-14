@@ -22,7 +22,7 @@ Telegram / KOOK adapters         Sandbox HTTP
                |
        ChatBuiltinsPlugin / product plugins
 
-Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
+Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 ```
 
 ## 包边界
@@ -43,10 +43,10 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 
 ## 依赖声明
 
-- 宿主拥有 `@pluxel/runtime`、React、Mantine 和 Tabler 等 singleton/shared UI 依赖，并显式安装 catalog 中的插件；插件包把 runtime 声明为 peer，把仅管理面使用的 UI 包声明为 optional peer。headless host 不需要安装 UI peers。
+- 宿主拥有 `@pluxel/runtime`、React、Mantine 和 Tabler 等 singleton/shared UI 依赖，并显式安装 catalog 中的插件；插件包把 runtime 声明为 peer，把仅Workbench使用的 UI 包声明为 optional peer。headless host 不需要安装 UI peers。
 - constructor 中的 required plugin capability 同样是 peer，由宿主选择并保证唯一实例；纯源码实现库如 `contracts`、`adapter-kit` 仍是普通 dependency。
 - 平台包不得声明 `contracts` 或 `hub`。只有 `{platform}-hub` 桥接包声明这条依赖边，因而 Telegram/KOOK capability 可被平台专属插件单独使用。
-- 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.management.mount()` 返回 `undefined` 时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
+- 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.workbench.mount()` 返回 `undefined` 时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
 - `test/package-boundaries.test.ts` 固化上述边界，避免后续 import 或 manifest 修改重新引入反向依赖。
 - `projects/chatbots/packages/*` 当前是 `@repo` 私有源码包；这里的“独立使用”指 workspace 内可单独装配，不宣称已经是可从 npm 安装的公共发行包。
 
@@ -56,7 +56,7 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 2. handler 是可短路的有序管线，observer 是不参与认领的旁路；二者错误都隔离到单个注册项。
 3. 同一 `(platform, accountId, conversation)` 的入站消息严格串行；同一地址的逻辑出站发送也严格串行，batch 与 planner 拆分不会被其他调用穿插。不同账号或会话不互相阻塞。handler/observer 执行计划只在注册表变化时重建。
 4. 入站与出站队列同时有每会话和全局上限，满载时拒绝且不污染去重记录；注册返回幂等清理函数并挂到 `ctx.effects`。Hub 停止时先中止执行信号，再在固定 deadline 内 drain，忽略取消的 handler 不得无限阻塞插件生命周期。
-5. adapter 管理面常驻运行，token 只保存在 Pluxel Vault；没有账号记录时 Bot registry 为空，不会注册 transport 或启动连接循环。
+5. adapter Workbench常驻运行，token 只保存在 Pluxel Vault；没有账号记录时 Bot registry 为空，不会注册 transport 或启动连接循环。
 6. 插件依赖表达硬前置条件。commands 依赖 hub，builtins 依赖 commands；不使用全局 singleton 或 import-time registry。
 7. 富消息先由 Hub 按 transport capability 做归一化，再决定 mixed、拆分或 `atomicBlocks` 平台原子布局。`mixedContent` 不会绕过 block 校验；`strict` 拒绝能力缺口，`best-effort` 才把不支持的媒体降级成可读文本。
 8. 身份和授权属于持久业务状态；SignalDB 只做可选管理投影，headless host 中授权逻辑保持完整。
@@ -79,6 +79,6 @@ Pluxel management UI -> typed RPC -> Vault + adapter lifecycle
 25. 每个 API client 拥有独立 retry gate。Telegram `parameters.retry_after` 与 KOOK HTTP `Retry-After` 只延迟该 Bot 的后续请求，不自动重放当前请求；Hub 不拥有平台限流策略。
 26. adapter 以本地账号 ID 串行执行配置写入、Bot replacement、删除、重连和断开；不同账号保持并行。配置存储和运行时 registry 必须观察同一账号操作顺序，不能各自拥有互不协调的 mutation tail。
 27. Access 持久化在进入 domain 前按当前 schema 严格校验。损坏、缺字段、重复身份或悬空 user/role 引用会让插件启动失败，不能猜测字段、丢弃记录或回退为空状态继续运行。
-28. 包默认入口只导出稳定作者能力与必要类型。management RPC/DTO、Router、Gateway、codec、parser、registry 和状态解析器属于包内实现，测试使用相对路径，不通过公共 barrel 反向固化内部结构。
-29. 平台插件的常驻能力不返回 management DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Management RPC 自己映射可序列化响应、鉴权提示和 SignalDB 投影。
+28. 包默认入口只导出稳定作者能力与必要类型。workbench RPC/DTO、Router、Gateway、codec、parser、registry 和状态解析器属于包内实现，测试使用相对路径，不通过公共 barrel 反向固化内部结构。
+29. 平台插件的常驻能力不返回 workbench DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Workbench RPC 自己映射可序列化响应、鉴权提示和 SignalDB 投影。
 30. 确认型 projection 按注册顺序 fail-fast，并在每个原生事件开始时冻结执行计划；dispatch 中的注册/注销只影响下一个事件。bridge 的入站 projection 和出站 transport 都必须组合 bridge-owned abort signal，stop、rollback 与 HMR replacement 会先取消在途工作，再释放注册。

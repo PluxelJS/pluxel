@@ -2,18 +2,18 @@
 // 展示型插件：在宿主公共区域插入 UI（非插件详情页）
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { managementBinding } from '@pluxel/runtime/management'
-import { PluginStatusBadgeManagement } from './PluginStatusBadge.management'
+import { workbench } from '@pluxel/runtime/workbench'
+import { PluginStatusBadgeWorkbench } from './PluginStatusBadge.workbench'
 
 @Plugin({ name: 'PluginStatusBadge', type: 'event' })
 export class PluginStatusBadge extends BasePlugin {
 	private counter = 0
 
 	override async init() {
-		this.ctx.management.mount(PluginStatusBadgeManagement, {
-			activity: managementBinding.stream((channel) => {
-				const timer = setInterval(() => channel.emit('tick', { now: Date.now() }), 1_000)
-				channel.emit('tick', { now: Date.now() })
+		this.ctx.workbench.mount(PluginStatusBadgeWorkbench, {
+			activity: workbench.provide.events<{ tick: { now: number } }>(({ emit }) => {
+				const timer = setInterval(() => emit('tick', { now: Date.now() }), 1_000)
+				emit('tick', { now: Date.now() })
 				return () => clearInterval(timer)
 			}),
 		})

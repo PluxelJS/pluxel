@@ -10,7 +10,7 @@ import {
 	ExtensionPathnameProvider,
 	ExtensionProvider,
 } from '../../extension'
-import { ManagementLoader } from '../../management/runtime'
+import { WorkbenchLoader } from '../../workbench/runtime'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { usePluginOverview } from '../plugins/pluginOverview'
@@ -97,7 +97,7 @@ export function AppProviders() {
 							<Outlet />
 						) : (
 							<>
-								<ManagementLoader />
+								<WorkbenchLoader />
 								<Outlet />
 							</>
 						)}

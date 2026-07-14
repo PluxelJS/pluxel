@@ -7,7 +7,7 @@
 plugin source
   ├─ constructor dependencies
   ├─ config / feature declarations
-  └─ ManagementModule declarations
+  └─ WorkbenchModule declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -15,7 +15,7 @@ plugin source
           ↓
 static or dynamic route: catalog / Vite / HMR / host policy
           ↓
-optional Management Plane: target layout / artifacts / bound resources
+optional Workbench Plane: target layout / artifacts / bound resources
 ```
 
 ## 依赖与组成
@@ -28,7 +28,7 @@ optional Management Plane: target layout / artifacts / bound resources
 | lazy local feature     | `defineLazyFeature()` + `features.load()` | 按需加载                     |
 
 constructor 是 required dependency 的唯一作者声明。static/dynamic route 必须读取同一 committed core
-graph；Management resolver 不依赖 loader 私有图。
+graph；Workbench resolver 不依赖 loader 私有图。
 
 ## 生命周期与资源
 
@@ -36,17 +36,17 @@ core commit 顺序为 `draft graph -> verify -> stop plan -> start plan -> Commi
 consumer 先停止；失败插件不进入 running，required dependents 被阻塞。effects 在 stop、replacement、
 rollback 时清理。
 
-Management mount 绑定 owner effects。`requireRunning` contribution 只有在 owner 真正 running 后才进入
+Workbench mount 绑定 owner effects。`requireRunning` contribution 只有在 owner 真正 running 后才进入
 layout；init 失败不会留下可见 view 或资源。HMR replacement 会撤销旧 layout binding、resource factory、
 stream、collection 和 artifact。
 
-## Optional Management Plane
+## Optional Workbench Plane
 
-插件只看到 `ctx.management.enabled` 和 `ctx.management.mount()`。宿主通过顶层 `management` 配置安装
+插件只看到 `ctx.workbench.enabled` 和 `ctx.workbench.mount()`。宿主通过顶层 `workbench` 配置安装
 backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
 
-`ManagementModule` 是静态 contract，`management.mount(module, bindings)` 是唯一发布动作。registry
-生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque binding。
+`WorkbenchModule` 是静态 contract，`workbench.mount(module, bindings)` 是唯一发布动作。registry
+生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque grant。
 artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
 namespace 任意访问未授予资源。
 
@@ -61,16 +61,16 @@ dependent 复用有两条明确路径：
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：插件作者和常驻 runtime；
-- `@pluxel/runtime/management`：服务端 Management contract；
-- `@pluxel/runtime/management/ui`：浏览器 resource client；
-- `@pluxel/runtime/management/federation`：artifact shared contract；
+- `@pluxel/runtime/workbench`：服务端 Workbench contract；
+- `@pluxel/runtime/workbench/ui`：浏览器 resource client；
+- `@pluxel/core/federation`：Workbench bundle build contract；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
-- `@pluxel/runtime-dev`：Management compiler；
-- `@pluxel/rolldown/vite/management-ui`：remote build primitive。
+- `@pluxel/runtime-dev`：Workbench compiler；
+- `@pluxel/rolldown/vite/workbench-ui`：remote build primitive。
 
 ## 不变量
 
-- 业务 capability 不依赖 Management Plane；
+- 业务 capability 不依赖 Workbench Plane；
 - disabled 表示零 backend 初始化；
 - host 拥有 placement，provider 不能任意占据 consumer UI；
 - static/dynamic 的作者 API 和 graph 语义一致；

@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { ExternalGatewayManagement } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { ExternalGatewayWorkbench } from '../workbench-module.ts'
 
-export const gatewayPlugin = managementApp<typeof ExternalGatewayManagement>()
+export const gatewayPlugin = createWorkbenchUi<typeof ExternalGatewayWorkbench>()

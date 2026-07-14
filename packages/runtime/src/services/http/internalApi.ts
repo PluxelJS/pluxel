@@ -8,14 +8,14 @@ import {
 } from '../../shared/admin-access-http'
 import {
 	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_MANAGEMENT_RESOURCES_BASE,
+	RUNTIME_WORKBENCH_MODELS_BASE,
 	RUNTIME_SECURITY_BASE,
 	RUNTIME_TRANSPORT_PATHS,
 } from '../../web/paths'
 import { buildAdminAccessRedirectPath } from '../admin-access/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
-import { managementRoutes } from '../../api/http/management'
+import { workbenchRoutes } from '../../api/http/workbench'
 import { metaRoutes } from '../../api/http/meta'
 import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
@@ -23,8 +23,8 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import type { SignalDbItem } from '../../management/collection-contracts'
-import { requireManagement } from '../management'
+import type { SignalDbItem } from '../../workbench/collection-contracts'
+import { requireWorkbench } from '../workbench'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
 
@@ -170,7 +170,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
-					requireManagement(context.pluginCtx).streams.stream(context),
+					requireWorkbench(context.pluginCtx).events.stream(context),
 				),
 			),
 		)
@@ -197,27 +197,27 @@ function createInternalTransportPlugins(
 		plugins.push(ctx.internalGraphql.plugin())
 	}
 	if (web || rpc || sse) {
-		plugins.push(createInternalPlugin(ctx, 'management', managementRoutes))
+		plugins.push(createInternalPlugin(ctx, 'workbench', workbenchRoutes))
 		plugins.push(
-			createInternalPlugin(ctx, 'management-resources', (app) =>
+			createInternalPlugin(ctx, 'workbench-resources', (app) =>
 				app
 					.get(
-						`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/:binding`,
+						`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/:grantId`,
 						async ({ params, pluginCtx, set, status }: any) => {
 							set.headers['cache-control'] = 'no-store'
-							const management = requireManagement(pluginCtx)
-							const ref = resolveManagementCollection(management, decodePathParam(params.binding))
+							const workbench = requireWorkbench(pluginCtx)
+							const ref = resolveWorkbenchCollection(workbench, decodePathParam(params.grantId))
 							if (!ref) {
 								return status(410, {
 									ok: false,
-									code: 'management_binding_expired',
+									code: 'workbench_grant_expired',
 								})
 							}
-							return await management.collections.loadCollectionFor(ref.owner, ref.resource)
+							return await workbench.collections.loadCollectionFor(ref.ownerPluginId, ref.modelKey)
 						},
 					)
 					.post(
-						`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/:binding`,
+						`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/:grantId`,
 						async ({ params, pluginCtx, request, set, status }: any) => {
 							set.headers['cache-control'] = 'no-store'
 							const body = await request.json().catch((): null => null)
@@ -229,17 +229,17 @@ function createInternalTransportPlugins(
 								})
 							}
 
-							const management = requireManagement(pluginCtx)
-							const ref = resolveManagementCollection(management, decodePathParam(params.binding))
+							const workbench = requireWorkbench(pluginCtx)
+							const ref = resolveWorkbenchCollection(workbench, decodePathParam(params.grantId))
 							if (!ref) {
 								return status(410, {
 									ok: false,
-									code: 'management_binding_expired',
+									code: 'workbench_grant_expired',
 								})
 							}
-							const result = await management.collections.applyCollectionFor(
-								ref.owner,
-								ref.resource,
+							const result = await workbench.collections.applyCollectionFor(
+								ref.ownerPluginId,
+								ref.modelKey,
 								changes,
 							)
 
@@ -310,11 +310,11 @@ function decodePathParam(value: unknown): string {
 	}
 }
 
-function resolveManagementCollection(
-	management: ReturnType<typeof requireManagement>,
-	binding: string,
+function resolveWorkbenchCollection(
+	workbench: ReturnType<typeof requireWorkbench>,
+	grantId: string,
 ) {
-	return management.registry.findResource(binding, 'collection')
+	return workbench.registry.findModel(grantId, 'collection')
 }
 
 function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {

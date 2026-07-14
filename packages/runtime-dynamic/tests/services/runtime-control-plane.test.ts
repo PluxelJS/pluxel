@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import { RuntimeRpcApi } from '../../../runtime/src/api/http/rpc/RuntimeRpcApi'
-import { installManagement } from '../../../runtime/src/services/management'
+import { installWorkbench } from '../../../runtime/src/services/workbench'
 import { createHmrTestContext } from '../support/hmr-context'
 
 function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
@@ -24,7 +24,7 @@ async function loadModule(
 
 function createRpcFixture() {
 	const fixture = createHmrTestContext()
-	installManagement(fixture.ctx)
+	installWorkbench(fixture.ctx)
 	return { ...fixture, rpc: new RuntimeRpcApi(fixture.ctx) }
 }
 

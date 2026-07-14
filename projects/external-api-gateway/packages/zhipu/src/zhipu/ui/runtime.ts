@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { ZhipuManagement } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { ZhipuWorkbench } from '../workbench-module.ts'
 
-export const zhipuPlugin = managementApp<typeof ZhipuManagement>()
+export const zhipuPlugin = createWorkbenchUi<typeof ZhipuWorkbench>()

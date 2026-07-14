@@ -1,8 +1,8 @@
 import { Badge, Box, Divider, Group, Paper, Stack, Text } from '@mantine/core'
 import type {
-	ManagementBadgeValue as BuiltinBadgeValue,
-	ManagementInfoCardBlock as BuiltinInfoCardBlock,
-} from '@pluxel/runtime/management'
+	WorkbenchBadgeValue as BuiltinBadgeValue,
+	WorkbenchInfoCardBlock as BuiltinInfoCardBlock,
+} from '@pluxel/runtime/workbench'
 import { useSignalDbQueryState } from '@pluxel/runtime/web'
 import {
 	isObject,

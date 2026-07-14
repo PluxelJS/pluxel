@@ -13,12 +13,12 @@ import {
 	type RefObject,
 } from 'react'
 import type {
-	ManagementDocumentBlock as BuiltinDocBlock,
-	ManagementDocumentContent as BuiltinDocContent,
-	ManagementDocumentDefinition as BuiltinDocExtensionDef,
-	ManagementMarkdownPart as BuiltinMarkdownPart,
-	ManagementDocumentPart as BuiltinDocPart,
-} from '@pluxel/runtime/management'
+	WorkbenchDocumentBlock as BuiltinDocBlock,
+	WorkbenchDocumentContent as BuiltinDocContent,
+	WorkbenchDocumentDefinition as BuiltinDocExtensionDef,
+	WorkbenchMarkdownPart as BuiltinMarkdownPart,
+	WorkbenchDocumentPart as BuiltinDocPart,
+} from '@pluxel/runtime/workbench'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
 import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'

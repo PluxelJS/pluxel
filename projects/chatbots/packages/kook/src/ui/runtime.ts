@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { KookManagementModule } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { KookWorkbench } from '../workbench-module.ts'
 
-export const kookPlugin = managementApp<typeof KookManagementModule>()
+export const kookPlugin = createWorkbenchUi<typeof KookWorkbench>()

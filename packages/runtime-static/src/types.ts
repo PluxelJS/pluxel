@@ -11,7 +11,7 @@ import type {
 	PersistenceRequirement,
 	PersistenceServiceConfig,
 	PluginDataServiceConfig,
-	ManagementConfig,
+	WorkbenchConfig,
 } from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
@@ -69,12 +69,12 @@ export type StaticRuntimeHostOptions = {
 	 */
 	pluginData?: StaticRuntimePluginDataConfig
 	/**
-	 * HTTP runtime settings. Management UI/RPC/SSE are controlled by the top-level
+	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
 	 * admin access config.
 	 */
 	http?: StaticRuntimeHttpConfig
-	/** Optional Management Plane resources, UI artifacts, and access policy. @default false */
-	management?: ManagementConfig
+	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
+	workbench?: WorkbenchConfig
 	/**
 	 * Runtime logger settings.
 	 */

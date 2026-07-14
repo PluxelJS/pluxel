@@ -1,21 +1,21 @@
 import type { Context as PluginContext } from '@pluxel/core'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { RUNTIME_META_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
-import { requireManagement } from '../../services/management'
+import { requireWorkbench } from '../../services/workbench'
 
 function readInternalMeta(pluginCtx: PluginContext) {
-	const management = requireManagement(pluginCtx)
-	const catalog = management.registry.getCatalog()
-	const modules = catalog.modules.length
+	const workbench = requireWorkbench(pluginCtx)
+	const catalog = workbench.registry.getCatalog()
+	const bundles = catalog.bundles.length
 	return {
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
 		sse: {
-			namespaces: management.streams.listNamespaces(),
+			namespaces: workbench.events.listNamespaces(),
 		},
-		management: {
+		workbench: {
 			version: catalog.revision,
-			modules,
+			bundles,
 		},
 		transport: RUNTIME_TRANSPORT_PATHS,
 	}
@@ -31,6 +31,6 @@ export const metaRoutes = (app: AnyElysiaApp) =>
 			})
 			.get('/sse', ({ set, pluginCtx }) => {
 				set.headers['cache-control'] = 'no-store'
-				return { namespaces: requireManagement(pluginCtx).streams.listNamespaces() }
+				return { namespaces: requireWorkbench(pluginCtx).events.listNamespaces() }
 			}),
 	)

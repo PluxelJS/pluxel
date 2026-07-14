@@ -9,19 +9,19 @@ import {
 	toGlobalFetch,
 } from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
-import type { ManagementCatalog, ManagementLayout } from '../management/contracts'
+import type { WorkbenchCatalog, WorkbenchLayout } from '../workbench/contracts'
 import type { RuntimeRpcApi } from './protocol'
-import { createManagementApiView, createRpcClientFactory, invokeRpc } from './rpc'
+import { createWorkbenchRpcView, createRpcClientFactory, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sseWithLifecycle } from './sse'
 import { createRuntimeSecurityClient } from './security'
 import { runRuntimeTransportCleanups } from './client-lifecycle'
 import {
-	RUNTIME_MANAGEMENT_EVENTS_PATH,
+	RUNTIME_WORKBENCH_EVENTS_PATH,
 	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH,
+	RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH,
 	RUNTIME_TRANSPORT_PATHS,
-	runtimeManagementCollectionPath,
-	runtimeManagementStreamPath,
+	runtimeWorkbenchCollectionPath,
+	runtimeWorkbenchModelEventsPath,
 	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
@@ -34,9 +34,9 @@ export interface RuntimeMeta {
 	sse: {
 		namespaces: string[]
 	}
-	management: {
+	workbench: {
 		version: number
-		modules: number
+		bundles: number
 	}
 	transport: {
 		rpc: string
@@ -87,11 +87,11 @@ type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
 
 interface RuntimeTreatyClient {
 	meta: RuntimeTreatyGet<RuntimeMeta>
-	management: {
-		catalog: RuntimeTreatyGet<ManagementCatalog>
+	workbench: {
+		catalog: RuntimeTreatyGet<WorkbenchCatalog>
 		layout: {
-			global: RuntimeTreatyGet<ManagementLayout>
-			plugin: (params: { target: string }) => RuntimeTreatyGet<ManagementLayout>
+			global: RuntimeTreatyGet<WorkbenchLayout>
+			plugin: (params: { target: string }) => RuntimeTreatyGet<WorkbenchLayout>
 		}
 	}
 	logs: {
@@ -118,10 +118,10 @@ type RuntimeTransportHttp = {
 	meta: {
 		info(init?: RequestInit): Promise<RuntimeMeta>
 	}
-	management: {
-		catalog(init?: RequestInit): Promise<ManagementCatalog>
-		globalLayout(init?: RequestInit): Promise<ManagementLayout>
-		pluginLayout(target: string, init?: RequestInit): Promise<ManagementLayout>
+	workbench: {
+		catalog(init?: RequestInit): Promise<WorkbenchCatalog>
+		globalLayout(init?: RequestInit): Promise<WorkbenchLayout>
+		pluginLayout(target: string, init?: RequestInit): Promise<WorkbenchLayout>
 	}
 	logs: {
 		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
@@ -140,21 +140,21 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	managementCollection(binding: string): string
-	managementCollectionEvents(bindings: readonly string[]): string
-	managementStream(binding: string): string
+	workbenchCollection(grantId: string): string
+	workbenchCollectionEvents(grantIds: readonly string[]): string
+	workbenchModelEvents(grantId: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
-	managementEvents(): string
+	workbenchEvents(): string
 }
 
 export interface RuntimeTransportClient {
 	fetch: RuntimeFetch
 	http: RuntimeTransportHttp
 	links: RuntimeTransportLinks
-	management: {
-		api<TApi>(binding: string): TApi
-		stream<TEvent = unknown>(
-			binding: string,
+	workbench: {
+		rpc<TRpc>(grantId: string): TRpc
+		events<TEvent = unknown>(
+			grantId: string,
 		): SseClientWithNamespaces & { readonly __event?: TEvent }
 	}
 	withRpc: <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => Promise<T>
@@ -185,15 +185,12 @@ function createRuntimeTransportHttp(
 		meta: {
 			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
 		},
-		management: {
-			catalog: (init) =>
-				expectData<ManagementCatalog>(http.management.catalog.get({ fetch: init })),
+		workbench: {
+			catalog: (init) => expectData<WorkbenchCatalog>(http.workbench.catalog.get({ fetch: init })),
 			globalLayout: (init) =>
-				expectData<ManagementLayout>(http.management.layout.global.get({ fetch: init })),
+				expectData<WorkbenchLayout>(http.workbench.layout.global.get({ fetch: init })),
 			pluginLayout: (target, init) =>
-				expectData<ManagementLayout>(
-					http.management.layout.plugin({ target }).get({ fetch: init }),
-				),
+				expectData<WorkbenchLayout>(http.workbench.layout.plugin({ target }).get({ fetch: init })),
 		},
 		logs: {
 			streams: (init) =>
@@ -263,24 +260,24 @@ export function createRuntimeTransportLinks(
 		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
 		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
-		managementCollection: (binding: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeManagementCollectionPath(binding))),
-		managementCollectionEvents: (bindings: readonly string[]) => {
-			const url = resolveClientUrl(joinPath(apiBase, RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH))
+		workbenchCollection: (grantId: string) =>
+			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchCollectionPath(grantId))),
+		workbenchCollectionEvents: (grantIds: readonly string[]) => {
+			const url = resolveClientUrl(joinPath(apiBase, RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH))
 			const params = new URLSearchParams()
-			for (const binding of bindings) params.append('binding', binding)
+			for (const grantId of grantIds) params.append('grantId', grantId)
 			const query = params.toString()
 			return query ? `${url}?${query}` : url
 		},
-		managementStream: (binding: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeManagementStreamPath(binding))),
+		workbenchModelEvents: (grantId: string) =>
+			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchModelEventsPath(grantId))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
 			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
 			const suffix =
 				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
 			return suffix ? `${base}?${suffix}` : base
 		},
-		managementEvents: () => resolveClientUrl(joinPath(apiBase, RUNTIME_MANAGEMENT_EVENTS_PATH)),
+		workbenchEvents: () => resolveClientUrl(joinPath(apiBase, RUNTIME_WORKBENCH_EVENTS_PATH)),
 	}
 	return transport
 }
@@ -315,7 +312,7 @@ export function createRuntimeTransportClient(
 		fetch,
 	})
 	const rawRpc = createRpcClientFactory(links.rpc)
-	const managementApis = createManagementApiView(rawRpc, { credentials })
+	const workbenchRpcs = createWorkbenchRpcView(rawRpc, { credentials })
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
 		invokeRpc(runner, { rpcBase: links.rpc, credentials })
 
@@ -368,10 +365,10 @@ export function createRuntimeTransportClient(
 		fetch,
 		http,
 		links,
-		management: {
-			api: <TApi>(binding: string) => (managementApis as Record<string, unknown>)[binding] as TApi,
-			stream: <TEvent = unknown>(binding: string) =>
-				createSse({ url: links.managementStream(binding) }) as SseClientWithNamespaces & {
+		workbench: {
+			rpc: <TRpc>(grantId: string) => (workbenchRpcs as Record<string, unknown>)[grantId] as TRpc,
+			events: <TEvent = unknown>(grantId: string) =>
+				createSse({ url: links.workbenchModelEvents(grantId) }) as SseClientWithNamespaces & {
 					readonly __event?: TEvent
 				},
 		},

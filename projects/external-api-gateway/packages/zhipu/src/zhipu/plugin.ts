@@ -15,7 +15,7 @@ import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/ga
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { managementBinding } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import { desc, eq } from 'drizzle-orm'
 import { createZhipuClient } from './client/client.ts'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
@@ -36,7 +36,7 @@ import type {
 	ZhipuWebSearchInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
-import { ZhipuManagement } from './management-module.ts'
+import { ZhipuWorkbench } from './workbench-module.ts'
 
 const ROUTE_BASE = '/zhipu'
 const PROVIDER_ID = 'zhipu'
@@ -80,17 +80,17 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		const mounted = this.ctx.management.mount(ZhipuManagement, {
-			api: managementBinding.api(() => new ZhipuProviderRpc(this)),
-			settings: managementBinding.collection(),
-			status: managementBinding.collection(),
-			history: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(ZhipuWorkbench, {
+			commands: workbench.provide.rpc(() => new ZhipuProviderRpc(this)),
+			settings: workbench.provide.collection(),
+			status: workbench.provide.collection(),
+			history: workbench.provide.collection(),
 		})
 		if (mounted) {
 			await Promise.all([
-				this.settings.attach(mounted.resources.settings),
-				this.status.attach(mounted.resources.status),
-				this.history.attach(mounted.resources.history),
+				this.settings.attach(mounted.collections.settings),
+				this.status.attach(mounted.collections.status),
+				this.history.attach(mounted.collections.history),
 			])
 		}
 		this.registerRoutes()

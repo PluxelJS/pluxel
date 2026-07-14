@@ -18,13 +18,13 @@
 			"@pluxel/source": "./src/hmr-log.ts",
 			"default": "./dist/hmr-log.mjs"
 		},
-		"./management": {
-			"@pluxel/source": "./src/management.ts",
-			"default": "./dist/management.mjs"
-		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
+		},
+		"./workbench": {
+			"@pluxel/source": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -32,8 +32,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./hmr-log": "./dist/hmr-log.mjs",
-			"./management": "./dist/management.mjs",
 			"./vite": "./dist/vite.mjs",
+			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
 		}
 	},

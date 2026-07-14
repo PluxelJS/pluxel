@@ -7,7 +7,7 @@
 - static：插件目录由应用代码固定，适合产品内置插件和可审计部署。
 - dynamic：插件来自 workspace scan/loader，适合开发宿主和动态插件目录。
 
-两者都复用同一 core lifecycle、runtime services 和 Management Plane。
+两者都复用同一 core lifecycle、runtime services 和 Workbench Plane。
 
 ## Static host
 
@@ -43,7 +43,7 @@ export default defineStaticRuntimeConfig({
 		},
 	},
 	persistence: './.pluxel/persistence',
-	management: {
+	workbench: {
 		enabled: true,
 		access: { exposure: 'private' },
 	},
@@ -70,26 +70,26 @@ export default defineConfig({
 
 dynamic runtime config 提供 workspace root、loader config、profile 和 runtime state。loader 负责发现和替换模块；插件本身仍按 [`plugin-authoring.md`](plugin-authoring.md) 编写。
 
-## Management Plane
+## Workbench Plane
 
 只有一个顶层来源：
 
 ```ts
-management: false
+workbench: false
 ```
 
 或：
 
 ```ts
-management: {
+workbench: {
 	enabled: true,
 	access: { exposure: 'private' },
 }
 ```
 
-不要再为 UI compiler、management routes 或 resource transport 配置独立开关。route plugin 从这个值派生整套安装行为。
+不要再为 UI compiler、workbench routes 或 resource transport 配置独立开关。route plugin 从这个值派生整套安装行为。
 
-关闭管理面时插件 HTTP 仍然工作；Management Module callback 不执行，也不会初始化 compiler、artifact registry 或资源 transport。
+关闭Workbench时插件 HTTP 仍然工作；Workbench extension callback 不执行，也不会初始化 compiler、artifact registry 或资源 transport。
 
 ## 启动结果
 

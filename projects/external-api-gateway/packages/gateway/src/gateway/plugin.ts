@@ -17,7 +17,7 @@ import type {
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { managementBinding } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import { RpcTarget, newHttpBatchRpcResponse } from 'capnweb'
 import { desc, eq } from 'drizzle-orm'
 import {
@@ -30,7 +30,7 @@ import {
 	type ExternalGatewayToolSpec,
 } from './tools.ts'
 import { callExternalGatewayTool } from './tool-dispatcher.ts'
-import { ExternalGatewayManagement } from './management-module.ts'
+import { ExternalGatewayWorkbench } from './workbench-module.ts'
 
 export {
 	EXTERNAL_GATEWAY_TOOL_NAMES,
@@ -76,15 +76,15 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		await this.loadTokensFromDB()
 		await this.ensureDevToken()
 		this.syncStatus()
-		const mounted = this.ctx.management.mount(ExternalGatewayManagement, {
-			api: managementBinding.api(() => new GatewayAdminRpc(this)),
-			tokens: managementBinding.collection(),
-			status: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(ExternalGatewayWorkbench, {
+			commands: workbench.provide.rpc(() => new GatewayAdminRpc(this)),
+			tokens: workbench.provide.collection(),
+			status: workbench.provide.collection(),
 		})
 		if (mounted) {
 			await Promise.all([
-				this.tokens.attach(mounted.resources.tokens),
-				this.status.attach(mounted.resources.status),
+				this.tokens.attach(mounted.collections.tokens),
+				this.status.attach(mounted.collections.status),
 			])
 		}
 		this.registerRoutes()

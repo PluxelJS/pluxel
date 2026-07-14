@@ -11,7 +11,7 @@ This folder contains the Pluxel runtime UI application shell.
 - `plugins/`
   Plugin list, organizer, detail workbench, and config UI.
 - `packages/`
-  Package management screen and package-specific UI helpers.
+  Package workbench screen and package-specific UI helpers.
 - `frames/`
   App-wide providers and standalone shell wrappers.
 - `notifications/`

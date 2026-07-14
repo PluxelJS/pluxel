@@ -68,7 +68,7 @@ const extensionIconMap: Readonly<Record<string, Icon>> = {
 	users: IconUsers,
 }
 
-// Management contracts carry serializable icon tokens. The host owns their visual mapping.
+// Workbench contracts carry serializable icon tokens. The host owns their visual mapping.
 export function resolveNavIcon(icon: unknown): ReactNode | undefined {
 	if (!icon) return undefined
 	if (isValidElement(icon)) return icon

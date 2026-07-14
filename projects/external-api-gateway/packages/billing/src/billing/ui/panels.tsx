@@ -15,6 +15,7 @@ import {
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { IconCheck, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '@repo/external-api-gateway-shared/constants'
@@ -54,16 +55,19 @@ export function BillingDashboard() {
 }
 
 export function BillingPanel() {
-	const app = billingPlugin.use()
-	const api = app.api('api')
-	const overview = app.collection('overview').useDocById('overview')
-	const records = app.collection('records').useList({ limit: 30, sort: { at: -1 } })
-	const users = app.collection('users').useList({ limit: 10, sort: { totalCostCny: -1 } })
-	const providers = app.collection('providers').useList({
+	const app = {
+		model: billingPlugin.view('BillingPanel', 'BillingDashboard').useModel(),
+		...useWorkbenchHost(),
+	}
+	const api = app.model.commands
+	const overview = app.model.overview.useOneById('overview')
+	const records = app.model.records.useMany({ limit: 30, sort: { at: -1 } })
+	const users = app.model.users.useMany({ limit: 10, sort: { totalCostCny: -1 } })
+	const providers = app.model.providers.useMany({
 		limit: 10,
 		sort: { totalCostCny: -1 },
 	})
-	const rates = app.collection('rates').useList({
+	const rates = app.model.rates.useMany({
 		limit: 100,
 		sort: { provider: 1, operation: 1, model: 1 },
 	})

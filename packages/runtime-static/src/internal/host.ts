@@ -14,9 +14,9 @@ import type {
 	RuntimeRouteCapabilities,
 } from '@pluxel/runtime/plugin-catalog'
 import {
-	isManagementEnabled,
-	managementAdminAccess,
-	withManagementPluginContext,
+	isWorkbenchEnabled,
+	workbenchAdminAccess,
+	withWorkbenchPluginContext,
 } from '@pluxel/runtime/internal'
 import {
 	buildCatalog,
@@ -187,7 +187,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	}
 
 	public async prepare(): Promise<void> {
-		this.assertManagementAvailable()
+		this.assertWorkbenchAvailable()
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
 		await this.ctx.prepareServices()
 	}
@@ -203,11 +203,11 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		return this.report
 	}
 
-	private assertManagementAvailable(): void {
-		if (!staticHostNeedsManagement(this.ctx.config)) return
-		if (this.ctx.management.enabled) return
+	private assertWorkbenchAvailable(): void {
+		if (!staticHostNeedsWorkbench(this.ctx.config)) return
+		if (this.ctx.workbench.enabled) return
 		throw new Error(
-			'[runtime-static:management] enabled configuration was not installed before host startup.',
+			'[runtime-static:workbench] enabled configuration was not installed before host startup.',
 		)
 	}
 
@@ -551,9 +551,9 @@ export async function createStaticRuntimeHost(
 	options: StaticRuntimeHostOptions = {},
 ): Promise<StaticRuntimeHost> {
 	const host = new StaticRuntimeHostImpl(definition, options)
-	if (isManagementEnabled(options.management)) {
-		const { installManagement } = await import('@pluxel/runtime/services/management')
-		installManagement(host.ctx)
+	if (isWorkbenchEnabled(options.workbench)) {
+		const { installWorkbench } = await import('@pluxel/runtime/internal')
+		installWorkbench(host.ctx)
 	}
 	await host.prepare()
 	return host
@@ -583,12 +583,12 @@ function describeStaticDependency(dep: PluginIdentifier): string {
 	return dep.name || '<anonymous>'
 }
 
-function staticHostNeedsManagement(ctxConfig: unknown): boolean {
+function staticHostNeedsWorkbench(ctxConfig: unknown): boolean {
 	if (!ctxConfig || typeof ctxConfig !== 'object') return false
 	const cfg = ctxConfig as {
-		management?: { enabled?: unknown } | false
+		workbench?: { enabled?: unknown } | false
 	}
-	return cfg.management !== false && cfg.management?.enabled === true
+	return cfg.workbench !== false && cfg.workbench?.enabled === true
 }
 
 function createStaticRuntimeContextConfig(
@@ -597,8 +597,8 @@ function createStaticRuntimeContextConfig(
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
 	const http = options.http ?? context.http
-	const management = options.management ?? context.management ?? false
-	const adminAccess = managementAdminAccess(management)
+	const workbench = options.workbench ?? context.workbench ?? false
+	const adminAccess = workbenchAdminAccess(workbench)
 	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
 	const pluginData = options.pluginData ?? context.pluginData
@@ -609,13 +609,13 @@ function createStaticRuntimeContextConfig(
 			: undefined
 	const runtimeState = options.runtimeState ?? context.runtimeState ?? inheritedRuntimeState
 
-	return withManagementPluginContext({
+	return withWorkbenchPluginContext({
 		...context,
 		http: {
 			...(http && typeof http === 'object' ? http : {}),
 		},
 		adminAccess,
-		management,
+		workbench,
 		profile,
 		configService,
 		runtimeState,

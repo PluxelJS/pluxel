@@ -24,7 +24,7 @@ import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/ga
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { managementBinding } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import { desc, eq } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import type {
@@ -36,7 +36,7 @@ import type {
 	YiqichaRawCallInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
-import { YiqichaManagement } from './management-module.ts'
+import { YiqichaWorkbench } from './workbench-module.ts'
 
 const ROUTE_BASE = '/yiqicha'
 const PROVIDER_ID = 'yiqicha'
@@ -107,17 +107,17 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		const mounted = this.ctx.management.mount(YiqichaManagement, {
-			api: managementBinding.api(() => new YiqichaProviderRpc(this)),
-			settings: managementBinding.collection(),
-			status: managementBinding.collection(),
-			history: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(YiqichaWorkbench, {
+			commands: workbench.provide.rpc(() => new YiqichaProviderRpc(this)),
+			settings: workbench.provide.collection(),
+			status: workbench.provide.collection(),
+			history: workbench.provide.collection(),
 		})
 		if (mounted) {
 			await Promise.all([
-				this.settings.attach(mounted.resources.settings),
-				this.status.attach(mounted.resources.status),
-				this.history.attach(mounted.resources.history),
+				this.settings.attach(mounted.collections.settings),
+				this.status.attach(mounted.collections.status),
+				this.history.attach(mounted.collections.history),
 			])
 		}
 		this.registerRoutes()

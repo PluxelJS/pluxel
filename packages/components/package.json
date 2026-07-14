@@ -40,6 +40,7 @@
 		"@gqlens/react": "workspace:*",
 		"@material/material-color-utilities": "^0.4.0",
 		"@module-federation/runtime": "^2.7.0",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@tanstack/react-hotkeys": "^0.8.4",
 		"@tanstack/react-router": "^1.168.8",

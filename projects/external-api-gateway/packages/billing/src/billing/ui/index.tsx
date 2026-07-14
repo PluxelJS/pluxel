@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core'
 import { IconReceipt } from '@tabler/icons-react'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { BillingDashboard, BillingPanel } from './panels'
 import { billingPlugin } from './runtime'
 
@@ -8,11 +9,11 @@ function pluginRouteHref(pluginName: string, path: string) {
 }
 
 export function HeaderAction() {
-	const app = billingPlugin.use()
+	const app = useWorkbenchHost()
 	return (
 		<Button
 			component="a"
-			href={pluginRouteHref(app.target, '/dashboard')}
+			href={pluginRouteHref(app.targetPluginId, '/dashboard')}
 			variant="light"
 			size="xs"
 			leftSection={<IconReceipt size={14} />}
@@ -22,4 +23,4 @@ export function HeaderAction() {
 	)
 }
 
-export default billingPlugin.define({ HeaderAction, BillingPanel, BillingDashboard })
+export default billingPlugin.expose({ HeaderAction, BillingPanel, BillingDashboard })

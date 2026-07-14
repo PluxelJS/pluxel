@@ -62,8 +62,8 @@ export {
 	RUNTIME_TRANSPORT_PATHS,
 	RUNTIME_ADMIN_ACCESS_BASE,
 	runtimeLogStreamPath,
-	runtimeManagementCollectionPath,
-	runtimeManagementStreamPath,
+	runtimeWorkbenchCollectionPath,
+	runtimeWorkbenchModelEventsPath,
 	joinPath,
 } from './web/paths'
 export * from './web/host-ui'
@@ -79,14 +79,14 @@ export {
 	useSignalDbCollectionState,
 	useSignalDbQueryState,
 	type SignalDbCollectionView,
-} from './management/collection-ui-runtime'
+} from './workbench/collection-ui-runtime'
 export type {
 	SignalDbFindOptions,
 	SignalDbItem,
 	SignalDbLoadResponse,
 	SignalDbListSpec,
 	SignalDbSelector,
-} from './management/collection-contracts'
+} from './workbench/collection-contracts'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,

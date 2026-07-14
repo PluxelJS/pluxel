@@ -3,7 +3,7 @@ import { RUNTIME_INTERNAL_API_BASE } from './paths'
 import { resolveAdminAccessLandingPath, type AdminAccessReason } from '../shared/admin-access-http'
 
 export interface BuiltinSseEvents {
-	'management.layouts': { revision?: number } | number
+	'workbench.layouts': { revision?: number } | number
 }
 
 export type ResolvedSseEvents = BuiltinSseEvents

@@ -177,7 +177,7 @@ describe('scaffold template rendering', () => {
 		)
 		expect(pluginTest).toContain("from '@pluxel/runtime/test'")
 		expect(pluginTest).toContain('withRuntimeHost(')
-		expect(pluginTest).toContain('management: false')
+		expect(pluginTest).toContain('workbench: false')
 	})
 
 	it('generates a self-contained publishable plugin package', async () => {

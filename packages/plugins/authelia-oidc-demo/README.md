@@ -37,5 +37,5 @@ Business login entry:
 http://127.0.0.1:3310/__pluxel/plugins/AutheliaOidcDemoPlugin/authelia-oidc-demo/business/login
 ```
 
-Authelia config details, including the host-management OIDC policy, live in
+Authelia config details, including the host-workbench OIDC policy, live in
 [authelia/README.md](./authelia/README.md).

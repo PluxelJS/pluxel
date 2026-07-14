@@ -1,9 +1,9 @@
 import type { HttpServiceConfig } from '../services/http/HttpService'
-import type { ManagementConfig } from '../management-config'
+import type { WorkbenchConfig } from '../workbench-config'
 
 export type FrozenHostBootstrap = {
 	http?: Pick<HttpServiceConfig, 'graphql'>
-	management?: ManagementConfig
+	workbench?: WorkbenchConfig
 }
 
 export type PluginModuleRef = {

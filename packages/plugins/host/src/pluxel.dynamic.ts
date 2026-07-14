@@ -24,5 +24,5 @@ export default defineDynamicRuntimeConfig({
 		mode: 'memory',
 		snapshot: { enabled: enabledDemoPlugins },
 	},
-	management: { enabled: true, access: { exposure: 'private' } },
+	workbench: { enabled: true, access: { exposure: 'private' } },
 })

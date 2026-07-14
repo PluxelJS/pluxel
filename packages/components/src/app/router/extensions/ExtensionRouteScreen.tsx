@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { type ExtensionRoutePrefix } from '../../../extension'
 import { EXTENSION_ROUTE_PREFIX } from '../../../extension/paths'
-import { PluginManagementLoader } from '../../../management/runtime'
+import { PluginWorkbenchLoader } from '../../../workbench/runtime'
 import { useCurrentPathname } from '../useCurrentRoute'
 import { PluginRouteRenderer, useResolvedPluginRoute } from './PluginRouteRenderer'
 
@@ -64,7 +64,7 @@ export function ExtensionRouteScreen({ prefix }: { prefix: ExtensionRoutePrefix 
 
 	return (
 		<>
-			<PluginManagementLoader target={pluginName} />
+			<PluginWorkbenchLoader target={pluginName} />
 			<PluginRouteRenderer
 				pluginName={pluginName}
 				displayPath={displayPath}

@@ -1,17 +1,12 @@
-// Read this when you want host-rendered management documents without a UI bundle.
+// Read this when you want host-rendered workbench documents without a UI bundle.
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import {
-	defineManagementModule,
-	ManagementPlacements,
-	managementBinding,
-	managementDoc,
-	managementDocument,
-	managementResource,
-	managementView,
-	type ManagementSyncRef,
-	type MountedManagementResources,
-} from '@pluxel/runtime/management'
+	workbench,
+	workbenchDoc,
+	type WorkbenchSyncRef,
+	type MountedWorkbenchCollections,
+} from '@pluxel/runtime/workbench'
 import {
 	BehaviorConfig,
 	type BuiltinAction,
@@ -31,7 +26,7 @@ const PLUGIN = 'PluginBuiltinShowcase'
 function stateRef<Key extends keyof BuiltinState>(
 	key: Key,
 	fallback: BuiltinState[Key],
-): ManagementSyncRef<BuiltinState[Key]> {
+): WorkbenchSyncRef<BuiltinState[Key]> {
 	return {
 		kind: 'signaldb',
 		collection: RUNTIME_DOC_ID,
@@ -52,7 +47,7 @@ const actionInsert = (value: Record<string, unknown>) => ({
 	},
 })
 
-const d = managementDoc({} as const)
+const d = workbenchDoc({} as const)
 const summaryRows = [
 	{ label: 'Uptime', value: stateRef('uptimeLabel', '0s') },
 	{ label: 'Ticks', value: stateRef('ticks', 0) },
@@ -61,21 +56,20 @@ const summaryRows = [
 	{ label: 'Refresh (ms)', value: stateRef('refreshMs', DEFAULTS.display.refreshMs) },
 ]
 
-const BuiltinShowcaseManagement = defineManagementModule({
-	id: PLUGIN,
-	resources: {
-		[RUNTIME_DOC_ID]: managementResource.collection<BuiltinState>(),
-		[RUNTIME_ACTIONS_COLLECTION]: managementResource.collection<BuiltinAction>(),
+const BuiltinShowcaseWorkbench = workbench.define({
+	plugin: PLUGIN,
+	model: {
+		[RUNTIME_DOC_ID]: workbench.model.collection<BuiltinState>(),
+		[RUNTIME_ACTIONS_COLLECTION]: workbench.model.collection<BuiltinAction>(),
 	},
-	contributions: [
-		managementView({
-			id: 'summary',
-			placement: ManagementPlacements.PluginContext,
-			requireRunning: false,
-			view: managementDocument({
-				title: 'Builtin Overview',
-				description: 'Host-rendered, resource-bound management document.',
-				content: d`
+	views: {
+		summary: workbench.view.document({
+			slot: workbench.slot.PluginContext,
+			when: 'always',
+			model: [RUNTIME_DOC_ID],
+			title: 'Builtin Overview',
+			description: 'Host-rendered, resource-bound workbench document.',
+			content: d`
 					${d.block(
 						'Overview',
 						d.card({
@@ -86,19 +80,12 @@ const BuiltinShowcaseManagement = defineManagementModule({
 
 					Builtin documents suit status summaries, small forms and immediate actions. Complex flows should use a remote view.
 				`,
-			}),
 		}),
-		managementView({
-			id: 'controls',
-			placement: ManagementPlacements.PluginTabs,
+		controls: workbench.view.document({
+			slot: workbench.slot.PluginTabs,
+			model: [RUNTIME_ACTIONS_COLLECTION],
 			priority: 20,
-			meta: {
-				label: 'Controls',
-				icon: 'form',
-				tab: { id: 'controls', label: 'Controls', icon: 'form' },
-			},
-			view: managementDocument({
-				content: d`
+			content: d`
 					${d.block('Pause', {
 						kind: 'form',
 						description: 'onChange form writes an action document.',
@@ -122,32 +109,24 @@ const BuiltinShowcaseManagement = defineManagementModule({
 						write: actionInsert({ kind: 'setTicks', ticks: 0 }),
 					})}
 				`,
-			}),
 		}),
-		managementView({
-			id: 'metrics',
-			placement: ManagementPlacements.PluginTabs,
+		metrics: workbench.view.document({
+			slot: workbench.slot.PluginTabs,
+			model: [RUNTIME_DOC_ID],
 			priority: 10,
-			meta: {
-				label: 'Metrics',
-				icon: 'activity',
-				tab: { id: 'metrics', label: 'Metrics', icon: 'activity' },
-			},
-			view: managementDocument({
-				content: d`${d.block(
-					'Metrics Stream',
-					d.card({
-						description: 'SignalDB-backed values update live.',
-						layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
-						rows: [...summaryRows, { label: 'Uptime (ms)', value: stateRef('uptimeMs', 0) }],
-					}),
-				)}`,
-			}),
+			content: d`${d.block(
+				'Metrics Stream',
+				d.card({
+					description: 'SignalDB-backed values update live.',
+					layout: { variant: 'list', density: 'compact', valueAlign: 'right' },
+					rows: [...summaryRows, { label: 'Uptime (ms)', value: stateRef('uptimeMs', 0) }],
+				}),
+			)}`,
 		}),
-	],
+	},
 })
 
-type ShowcaseResources = MountedManagementResources<typeof BuiltinShowcaseManagement>
+type ShowcaseResources = MountedWorkbenchCollections<typeof BuiltinShowcaseWorkbench>
 
 @Plugin({ name: PLUGIN })
 export class PluginBuiltinShowcase extends BasePlugin {
@@ -168,13 +147,13 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	override async init() {
 		void this._runtime
 		void this._runtimeToggle
-		const mounted = this.ctx.management.mount(BuiltinShowcaseManagement, {
-			[RUNTIME_DOC_ID]: managementBinding.collection(),
-			[RUNTIME_ACTIONS_COLLECTION]: managementBinding.collection({ clientWrites: true }),
+		const mounted = this.ctx.workbench.mount(BuiltinShowcaseWorkbench, {
+			[RUNTIME_DOC_ID]: workbench.provide.collection(),
+			[RUNTIME_ACTIONS_COLLECTION]: workbench.provide.collection({ uiAccess: 'write' }),
 		})
 		if (!mounted) return
-		this.builtinState = mounted.resources[RUNTIME_DOC_ID]
-		this.builtinActions = mounted.resources[RUNTIME_ACTIONS_COLLECTION]
+		this.builtinState = mounted.collections[RUNTIME_DOC_ID]
+		this.builtinActions = mounted.collections[RUNTIME_ACTIONS_COLLECTION]
 		this.startedAt = Date.now()
 		await Promise.all([this.builtinState.ready(), this.builtinActions.ready()])
 		this.syncBuiltinState()

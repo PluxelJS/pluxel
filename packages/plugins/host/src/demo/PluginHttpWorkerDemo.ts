@@ -4,13 +4,7 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
-import {
-	defineManagementModule,
-	ManagementPlacements,
-	managementDoc,
-	managementDocument,
-	managementView,
-} from '@pluxel/runtime/management'
+import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
@@ -28,17 +22,15 @@ type SquareResult = {
 
 // Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
-const d = managementDoc({} as const)
-const HttpWorkerManagement = defineManagementModule({
-	id: 'PluginHttpWorkerDemo',
-	contributions: [
-		managementView({
-			id: 'http-worker',
-			placement: ManagementPlacements.PluginTabs,
-			meta: { label: 'Worker Demo' },
-			view: managementDocument({
-				title: 'HTTP Worker Demo',
-				content: d`
+const d = workbenchDoc({} as const)
+const HttpWorkerWorkbench = workbench.define({
+	plugin: 'PluginHttpWorkerDemo',
+	views: {
+		documentation: workbench.view.document({
+			slot: workbench.slot.PluginTabs,
+			label: 'Worker Demo',
+			title: 'HTTP Worker Demo',
+			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
 
 					- \`GET /status\`: reports whether the loader HMR worker bundler is attached.
@@ -46,9 +38,8 @@ const HttpWorkerManagement = defineManagementModule({
 
 					Frozen/static runtimes intentionally use inline execution. Production workers should use a prebuilt stable \`.mjs\` entry.
 				`,
-			}),
 		}),
-	],
+	},
 })
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
@@ -77,7 +68,7 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 			},
 		)
 
-		this.ctx.management.mount(HttpWorkerManagement, {})
+		this.ctx.workbench.mount(HttpWorkerWorkbench, {})
 
 		this.workerBinding = await squareWorker.bind(this.ctx, {
 			onError: (error) => {

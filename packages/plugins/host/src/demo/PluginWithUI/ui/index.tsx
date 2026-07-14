@@ -5,6 +5,7 @@
 
 import { Button, Group, Stack, Text } from '@mantine/core'
 import { IconExternalLink, IconRocket } from '@tabler/icons-react'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import {
 	EventsPanel,
 	OverviewPanel,
@@ -31,7 +32,7 @@ export function HeaderAction() {
 }
 
 export function PluginInfo() {
-	const app = plugin.use()
+	const app = useWorkbenchHost()
 	return (
 		<Stack gap="xs">
 			<Text fw={600}>PluginWithUI</Text>
@@ -44,7 +45,7 @@ export function PluginInfo() {
 					size="xs"
 					leftSection={<IconExternalLink size={14} />}
 					component="a"
-					href={pluginRouteHref(app.target, '/dashboard')}
+					href={pluginRouteHref(app.targetPluginId, '/dashboard')}
 				>
 					打开 Dashboard
 				</Button>
@@ -52,7 +53,7 @@ export function PluginInfo() {
 					variant="subtle"
 					size="xs"
 					component="a"
-					href={standaloneRouteHref(app.target, '/standalone')}
+					href={standaloneRouteHref(app.targetPluginId, '/standalone')}
 				>
 					Standalone
 				</Button>
@@ -61,12 +62,13 @@ export function PluginInfo() {
 	)
 }
 
-export default plugin.define({
+export default plugin.expose({
 	HeaderAction,
 	PluginInfo,
 	OverviewPanel,
 	EventsPanel,
 	StreamsPanel,
-	RoutePage,
-	StandaloneRoutePage,
+	DashboardRoute: RoutePage,
+	NotesRoute: RoutePage,
+	StandaloneRoute: StandaloneRoutePage,
 })

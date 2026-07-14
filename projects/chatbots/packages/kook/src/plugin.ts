@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -19,10 +19,10 @@ import {
 } from '@repo/chatbots-adapter-kit/registry'
 import { KookBot } from './bot.ts'
 import { createKookPluginEvents } from './events.factory.ts'
-import { KookManagementRpc, type KookSettingsDoc, type KookStatusDoc } from './management.ts'
+import { KookWorkbenchRpc, type KookSettingsDoc, type KookStatusDoc } from './workbench.ts'
 import type { KookBotStatus } from './status.ts'
 import type { KookEvent } from './protocol.ts'
-import { KookManagementModule } from './management-module.ts'
+import { KookWorkbench } from './workbench-module.ts'
 
 export type KookBotConfigInput = BotAccountInput
 export type KookEventProjection = AcknowledgedProjection<KookBot, KookEvent>
@@ -32,8 +32,8 @@ const DEFAULT_API_BASE = 'https://www.kookapp.cn'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
-	private settings?: MountedManagementResources<typeof KookManagementModule>['settings']
-	private status?: MountedManagementResources<typeof KookManagementModule>['status']
+	private settings?: MountedWorkbenchCollections<typeof KookWorkbench>['settings']
+	private status?: MountedWorkbenchCollections<typeof KookWorkbench>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<KookBot>({
 		onObserverError: (error) =>
@@ -52,14 +52,14 @@ export class KookPlugin extends BasePlugin {
 	readonly events = createKookPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		const mounted = this.ctx.management.mount(KookManagementModule, {
-			api: managementBinding.api(() => new KookManagementRpc(this)),
-			settings: managementBinding.collection(),
-			status: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(KookWorkbench, {
+			commands: workbench.provide.rpc(() => new KookWorkbenchRpc(this)),
+			settings: workbench.provide.collection(),
+			status: workbench.provide.collection(),
 		})
 		if (mounted) {
-			this.settings = mounted.resources.settings
-			this.status = mounted.resources.status
+			this.settings = mounted.collections.settings
+			this.status = mounted.collections.status
 			await Promise.all([this.settings.ready(), this.status.ready()])
 		}
 		this.settings?.removeMany({})

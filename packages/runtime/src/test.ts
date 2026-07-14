@@ -1,8 +1,8 @@
 import './runtime/register/full'
 import './services/vault'
-import { installManagement } from './services/management'
-import { withManagementPluginContext } from './services/management/ManagementService'
-import { isManagementEnabled, managementAdminAccess } from './management-config'
+import { installWorkbench } from './services/workbench'
+import { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
+import { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
 import {
 	createCoreContext,
 	createCoreHost,
@@ -66,18 +66,18 @@ export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> 
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	const management = config.management ?? {
+	const workbench = config.workbench ?? {
 		enabled: true,
 		access: { exposure: 'private' as const },
 	}
 	const host = createCoreHost(
-		withManagementPluginContext({
+		withWorkbenchPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
-			management,
-			adminAccess: config.adminAccess ?? managementAdminAccess(management),
+			workbench,
+			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
 		}),
 		{
 			prepareCommit: async (ctx) => {
@@ -85,7 +85,7 @@ export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
 			},
 		},
 	)
-	if (isManagementEnabled(management)) installManagement(host.ctx)
+	if (isWorkbenchEnabled(workbench)) installWorkbench(host.ctx)
 	return host
 }
 
@@ -102,21 +102,21 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	const management = config.management ?? {
+	const workbench = config.workbench ?? {
 		enabled: true,
 		access: { exposure: 'private' as const },
 	}
 	const ctx = createCoreContext(
-		withManagementPluginContext({
+		withWorkbenchPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
-			management,
-			adminAccess: config.adminAccess ?? managementAdminAccess(management),
+			workbench,
+			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
 		}),
 	)
-	if (isManagementEnabled(management)) installManagement(ctx.ctx)
+	if (isWorkbenchEnabled(workbench)) installWorkbench(ctx.ctx)
 	return ctx
 }
 

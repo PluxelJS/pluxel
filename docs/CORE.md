@@ -13,7 +13,7 @@
 
 ## 不负责
 
-- HTTP、RPC、SSE、Management Plane；
+- HTTP、RPC、SSE、Workbench Plane；
 - 配置或业务数据持久化；
 - workspace scan、package install、Vite、HMR；
 - 进程退出、健康检查和部署策略。

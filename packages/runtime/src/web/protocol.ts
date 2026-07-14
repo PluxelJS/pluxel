@@ -6,7 +6,7 @@
  */
 export type { VaultKeyPair } from '../services/vault/types'
 
-export type ManagementApiView = Record<string, unknown>
+export type WorkbenchRpcView = Record<string, unknown>
 
 export type PluginStatusAction =
 	| 'start'
@@ -52,7 +52,7 @@ export type SchemaResultOk = {
 	 *
 	 * Extracted from `this.configs.use(cfg(schemaMap)\`...\`)` by build toolchains.
 	 */
-	layout?: import('../management/document-contracts').BuiltinMarkdownPart[] | null
+	layout?: import('../workbench/document-contracts').BuiltinMarkdownPart[] | null
 }
 
 export type SchemaResultErr = {
@@ -272,7 +272,7 @@ type RuntimeRpcApiContract = {
 	features: () => string[]
 	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
 	logging: () => LoggingHandleApi
-	resources: ManagementApiView
+	workbenchRpc: (grantId: string) => WorkbenchRpcView
 	buildSnapshot: () => Promise<BuildSnapshotResult>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 	pluginSchema: (name: string) => Promise<SchemaResult>

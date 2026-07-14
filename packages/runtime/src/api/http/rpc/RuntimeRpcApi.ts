@@ -19,10 +19,10 @@ import {
 import { ensureFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
 import { LoggingHandle } from './LoggingHandle'
-import { requireManagement } from '../../../services/management'
+import { requireWorkbench } from '../../../services/workbench'
 import type {
 	ConfigFieldMutation,
-	ManagementApiView,
+	WorkbenchRpcView,
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
@@ -57,13 +57,13 @@ export class RuntimeRpcApi extends RpcTarget {
 		return new LoggingHandle(this.ctx)
 	}
 
-	resource(binding: string): ManagementApiView {
-		const management = requireManagement(this.ctx)
-		const ref = management.registry.resolveResource(binding, 'api')
-		return management.api.resolve(
+	workbenchRpc(grantId: string): WorkbenchRpcView {
+		const workbench = requireWorkbench(this.ctx)
+		const ref = workbench.registry.resolveModel(grantId, 'rpc')
+		return workbench.rpc.resolve(
 			this.ctx,
-			`${ref.owner}:${ref.resource}`,
-		) as unknown as ManagementApiView
+			`${ref.ownerPluginId}:${ref.modelKey}`,
+		) as unknown as WorkbenchRpcView
 	}
 
 	async buildSnapshot() {

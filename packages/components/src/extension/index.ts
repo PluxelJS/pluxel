@@ -1,4 +1,4 @@
-// Workbench-owned placement primitives used by the Management Plane renderer.
+// Workbench-owned placement primitives used by the Workbench Plane renderer.
 export { ExtensionErrorBoundary } from './ErrorBoundary'
 export {
 	createGlobalExtensionContext,

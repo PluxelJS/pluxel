@@ -12,29 +12,32 @@ decorator 和 metadata transform。
 1. 插件是依赖和生命周期单元。
 2. constructor 只放没有它就无法工作的插件依赖。
 3. `init()` 负责启动检查、注册运行时能力和登记资源清理。
-4. HTTP 是常驻业务能力；Management Module 只通过可选的 `ctx.management.mount()` 挂载。
+4. HTTP 是常驻业务能力；Workbench extension 只通过可选的 `ctx.workbench.mount()` 挂载。
 
 ## 一个标准插件
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import {
-	defineManagementModule,
-	managementBinding,
-	managementResource,
-	managementUi,
-} from '@pluxel/runtime/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 
 import { AccountsPlugin } from './AccountsPlugin.ts'
 import { BillingConfig } from './config.ts'
 import { BillingRpc } from './rpc.ts'
 
-const BillingManagement = defineManagementModule({
-	id: 'BillingPlugin',
-	ui: managementUi(import.meta.url, './ui/index.tsx'),
-	resources: {
-		api: managementResource.api<BillingRpc>(),
-		status: managementResource.collection<BillingStatus>(),
+const BillingWorkbench = workbench.define({
+	plugin: 'BillingPlugin',
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+	model: {
+		commands: workbench.model.rpc<BillingRpc>(),
+		status: workbench.model.collection<BillingStatus>(),
+	},
+	views: {
+		Overview: workbench.view.route({
+			path: '/overview',
+			title: 'Billing',
+			navigation: { priority: 50 },
+			model: ['commands', 'status'],
+		}),
 	},
 })
 
@@ -51,11 +54,11 @@ export class BillingPlugin extends BasePlugin {
 
 		this.ctx.http.plugin.routes((app) => app.get('/invoices', () => this.accounts.listInvoices()))
 
-		const mounted = this.ctx.management.mount(BillingManagement, {
-			api: managementBinding.api(() => new BillingRpc(this)),
-			status: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(BillingWorkbench, {
+			commands: workbench.provide.rpc(() => new BillingRpc(this)),
+			status: workbench.provide.collection(),
 		})
-		await mounted?.resources.status.ready()
+		await mounted?.collections.status.ready()
 	}
 }
 ```
@@ -65,7 +68,7 @@ export class BillingPlugin extends BasePlugin {
 - declaration 放在 decorator、class field 或 module scope；
 - required dependency 放在 constructor；
 - 运行时工作放在 `init()`；
-- 管理面贡献通过唯一 optional gate 挂载。
+- Workbench贡献通过唯一 optional gate 挂载。
 
 ## 依赖：按“缺失时能否工作”选择
 
@@ -175,7 +178,7 @@ override async init(signal: AbortSignal) {
 
 core 的行为是：失败插件不进入 running，required dependents 被阻塞，无关插件继续。是否退出进程、告警或拒绝部署由宿主决定。
 
-## HTTP 与 Management Plane
+## HTTP 与 Workbench Plane
 
 ### 业务 HTTP
 
@@ -189,128 +192,128 @@ override init() {
 }
 ```
 
-HTTP 不依赖 Management Plane，适合业务 API、webhook、health endpoint 和外部集成。
+HTTP 不依赖 Workbench Plane，适合业务 API、webhook、health endpoint 和外部集成。
 
-### 可选管理面
+### 可选Workbench
 
 ```ts
 override init() {
-	this.ctx.management.mount(DashboardManagement, {
-		api: managementBinding.api(() => new DashboardRpc(this)),
-		activity: managementBinding.stream(this.createStatusStream()),
-		status: managementBinding.collection(),
+	this.ctx.workbench.mount(DashboardWorkbench, {
+		commands: workbench.provide.rpc(() => new DashboardRpc(this)),
+		activity: workbench.provide.events(({ emit, signal }) => this.publishStatus(emit, signal)),
+		status: workbench.provide.collection(),
 	})
 }
 ```
 
-宿主未启用 Management Plane 时，`mount()` 返回 `undefined`，不注册 module、resource 或 artifact。因此：
+宿主未启用 Workbench Plane 时，`mount()` 返回 `undefined`，不注册 module、resource 或 artifact。因此：
 
-- binding declaration 必须是纯描述；`api()` 只保存 factory，真正实例仅在启用后按需创建；
-- 插件核心业务不能依赖 mount 成功；需要 collection handle 时使用 `mounted?.resources`；
-- module contract 静态声明资源、贡献、placement 和 UI artifact；
-- binding 在运行期把 API、collection、stream 实现绑定到 contract；
+- provider declaration 必须是纯描述；`rpc()` 只保存 factory，真正实例仅在启用后按需创建；
+- 插件核心业务不能依赖 mount 成功；需要 collection handle 时使用 `mounted?.collections`；
+- extension 静态声明 model、view、slot 和 UI entry；
+- provider 在运行期把 RPC、collection、events 实现绑定到 model；
 - collection 适合状态面板、表单和管理交互，不是业务数据库；
-- collection 默认是非持久化的管理面投影；只有确实拥有独立管理状态时才显式传入
-  `managementBinding.collection({ persistence: true })`；
+- collection 默认是非持久化的Workbench投影；只有确实拥有独立管理状态时才显式传入
+  `workbench.provide.collection({ storage: 'plugin-data' })`；
 - builtin document 中 ref/write 的 `collection` 是 module resource key；每个 key 独立解析为
-  resource-graph-revision-scoped opaque binding，不使用插件名作为 collection namespace；
+  resource-graph-revision-scoped opaque grant，不使用插件名作为 collection namespace；
 - 管理资源只服务管理员 UI，不替代公共业务 HTTP API。
 
-`managementUi(import.meta.url, './ui/index.tsx')` 是静态字符串 declaration，没有 import 或注册副作用。
+`workbench.entry(import.meta.url, './ui/index.tsx')` 是静态字符串 declaration，没有 import 或注册副作用。
 开发环境由 compiler 按源码 hash 增量构建；`pluxel build` 按 owner 生成
-`dist/management/<owner>/`，无 UI 插件不会加载 Vite，且 UI 源码不会进入服务端插件 bundle。
+`dist/workbench/<owner>/`，无 UI 插件不会加载 Vite，且 UI 源码不会进入服务端插件 bundle。
 UI 使用的 React、React DOM、Mantine 和 `@pluxel/runtime` 由宿主提供 singleton shared；带 UI 的插件包应
 把它们声明为 peer，并作为本地 devDependency 安装供类型检查和 MF named-export 分析，remote 不携带 fallback
 副本。
 
-UI entry 用同一个 typed app 同时定义 exports 和读取当前 layout bindings：
+UI entry 用同一个 typed UI definition 导出组件，并为每个 view 创建 model facade：
 
 ```tsx
-import type { DashboardManagement } from '../management-module.ts'
+import type { DashboardWorkbench } from '../workbench-module.ts'
 
-const app = managementApp<typeof DashboardManagement>()
+const ui = createWorkbenchUi<typeof DashboardWorkbench>()
+const overview = ui.view('Overview')
 
 export function Overview() {
-	const runtime = app.use()
-	return <Dashboard data={runtime.collection('status').useList()} />
+	const { status } = overview.useModel()
+	return <Dashboard data={status.useMany()} />
 }
 
-export default app.define({ Overview })
+export default ui.expose({ Overview })
 ```
 
-`app.api()` 返回浏览器 RPC client；即使服务端方法同步返回值，跨边界调用也始终是 `Promise`。事件处理器应
+RPC model 返回浏览器 RPC client；即使服务端方法同步返回值，跨边界调用也始终是 `Promise`。事件处理器应
 使用 `await` 或显式处理 rejection，不要按本地对象同步读取结果或字段。
 
 ### 依赖插件注入统一配置 Tab
 
 provider 不应替 consumer 决定任意 placement。把可复用能力定义成 typed port，由 consumer 明确声明
-Tab 和自己的资源 binding，provider 只提供 renderer：
+Tab 和自己的 model mapping，provider 只提供 renderer：
 
 ```tsx
-export const FetchSettingsPort = defineManagementPort('fetch.settings', {
-	settings: managementResource.api<FetchSettingsApi>(),
+export const FetchSettingsPort = workbench.port.define('fetch.settings', {
+	settings: workbench.model.rpc<FetchSettingsApi>(),
 })
 
-// consumer module
-const ConsumerManagement = defineManagementModule({
-  id: 'ConsumerPlugin',
-  resources: {
-    fetchSettings: managementResource.api<FetchSettingsApi>(),
+// consumer extension
+const ConsumerWorkbench = workbench.define({
+  plugin: 'ConsumerPlugin',
+  model: {
+    commands: workbench.model.rpc<FetchSettingsApi>(),
   },
-  contributions: [managementPort({
+  ports: [workbench.port.outlet({
     id: 'fetch-settings',
-    placement: ManagementPlacements.PluginTabs,
+    placement: workbench.slot.PluginTabs,
     port: FetchSettingsPort,
     providers: ['FetchPlugin'],
-    bindings: { settings: 'fetchSettings' },
+    provide: { settings: 'commands' },
     meta: { label: 'Fetch' },
   })],
 })
 
 // consumer init: placement 和授权属于 consumer，API 可委托给 required Fetch capability
 override init() {
-  this.ctx.management.mount(ConsumerManagement, {
-    fetchSettings: managementBinding.api(() => this.fetch.settingsFor(this.ctx.pluginInfo.id)),
+  this.ctx.workbench.mount(ConsumerWorkbench, {
+    commands: workbench.provide.rpc(() => this.fetch.settingsFor(this.ctx.pluginInfo.id)),
   })
 }
 
-// provider module
-export const FetchManagement = defineManagementModule({
-  id: 'FetchPlugin',
-  ui: managementUi(import.meta.url, './ui/index.tsx'),
-  contributions: [managementPortRenderer({
+// provider extension
+export const FetchWorkbench = workbench.define({
+  plugin: 'FetchPlugin',
+  entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+  ports: [workbench.port.renderer({
     id: 'fetch-settings-renderer',
     port: FetchSettingsPort,
-    view: remoteView('FetchSettings'),
+    export: 'FetchSettings',
+    model: [],
   })],
 })
 
-// provider UI entry
-import type { FetchManagement } from '../management-module.ts'
-import type { FetchSettingsPort } from '../shared.ts'
+// provider UI entry；FetchSettingsWorkbenchView 是 port 合并 model 的 type-only contract
+import type { FetchSettingsWorkbenchView } from '../workbench-module.ts'
 
-const provider = managementApp<typeof FetchManagement>()
-const settingsPort = managementApp<typeof FetchSettingsPort>()
+const ui = createWorkbenchUi<FetchSettingsWorkbenchView>()
+const view = ui.view('FetchSettings')
 
 export function FetchSettings() {
-  const settings = settingsPort.use().api('settings')
+	const { settings } = view.useModel()
   return <FetchSettingsForm settings={settings} />
 }
 
-export default provider.define({ FetchSettings })
+export default ui.expose({ FetchSettings })
 ```
 
-renderer 使用 port app 读取当前 layout 的 `settings` binding，并用拥有 remote 的 provider app 导出
-view。同一个 renderer 可投放到任意数量的 consumer；每个实例都绑定到对应 consumer 授权的配置资源。
-UI entry 必须用 `import type` 引入 module/port 类型；remote 只需要类型形状，不应执行服务端
-`managementUi()` declaration 或把 core、Context、Node API 打进浏览器产物。
+renderer view 的 model 是 provider selection 与 consumer `provide` mapping 的并集。同一个 renderer 可
+投放到任意数量的 consumer；每个实例只得到对应 consumer 的 grant。UI entry 必须用 `import type` 引入
+contract 类型；remote 不应执行服务端 `workbench.entry()` declaration 或携带 core、Context、Node API。
 port 不引入隐藏存储：状态可以由 consumer 自己持有，也可以像示例一样显式委托给 Fetch capability 按
 consumer id 持有；renderer 和 Workbench 都不保存服务端 session/draft。layout 只下发
-opaque binding；UI artifact-only 更新会复用仍有效的 binding，插件卸载、实例替换或依赖资源图变化会
+opaque grant；UI bundle-only 更新会复用仍有效的 grant，插件卸载、实例替换或依赖 model 图变化会
 立即撤销旧 grant。
 
 provider 若只想把只读能力摘要自动投影给 required dependents，可使用
-`managementAudience.requiredDependents()`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
+`workbenchAudience.requiredDependents()`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
 route 或 action placement 必须使用 port，由 consumer 显式选择。
 
 ## 公开有限事件集合
@@ -366,7 +369,7 @@ Context 时，从 `ctx.logger.with(...)` 派生带资源标识的 logger，不�
 顶层。
 
 长连接或后台 polling capability 的 `$.status` 应返回冻结、有界、无密钥的实时快照，记录 phase、
-累计计数和最近时间点，不保存无界历史。连接状态机是事实源，Management Plane state 只是投影；
+累计计数和最近时间点，不保存无界历史。连接状态机是事实源，Workbench Plane state 只是投影；
 heartbeat、空 poll 等高频内部变化不应造成固定周期持久化写。最低层网络 transport 应支持 factory
 注入，使重连、退避和 teardown 能在不访问真实网络的测试中验证。
 
@@ -397,22 +400,22 @@ this.ctx.effects.defer(() => clearInterval(timer))
 
 宿主使用 static 或 dynamic Vite route 加载插件源码。两条 route 的插件作者 API 完全相同。
 
-Management Plane 只有一个顶层配置来源：
+Workbench Plane 只有一个顶层配置来源：
 
 ```ts
-management: false
+workbench: false
 ```
 
 或：
 
 ```ts
-management: {
+workbench: {
 	enabled: true,
 	access: { exposure: 'private' },
 }
 ```
 
-关闭时，宿主不创建 UI compiler、watcher、管理路由或 management state backend。
+关闭时，宿主不创建 UI compiler、watcher、管理路由或 workbench state backend。
 
 ## 提交前检查
 
@@ -427,7 +430,7 @@ typecheck、tests 和 production build 的 `pnpm verify`。
 - 默认值是否都在 schema？
 - 启动前置条件是否在 `init()` 中验证并诚实失败？
 - 每个资源是否在创建后立即登记 cleanup？
-- 业务 HTTP 是否独立于 Management Plane？
-- 管理面资源是否全部通过 `ctx.management.mount()` 挂载？
+- 业务 HTTP 是否独立于 Workbench Plane？
+- Workbench资源是否全部通过 `ctx.workbench.mount()` 挂载？
 - 后台任务是否捕获错误？
 - 插件是否只通过 Vite/Rolldown 宿主入口运行？

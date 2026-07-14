@@ -4,7 +4,7 @@ import { ProjectedCollection } from '../src/projected-collection.ts'
 type Status = { id: string; value: number }
 
 describe('ProjectedCollection', () => {
-	it('owns business state before a management projection is attached', () => {
+	it('owns business state before a workbench projection is attached', () => {
 		const collection = new ProjectedCollection<Status>()
 		collection.insert({ id: 'status', value: 1 })
 		collection.replaceOne({ id: 'status' }, { id: 'status', value: 2 })
@@ -12,7 +12,7 @@ describe('ProjectedCollection', () => {
 		expect(collection.findOne({ id: 'status' })).toEqual({ id: 'status', value: 2 })
 	})
 
-	it('mirrors the snapshot and later mutations when management is enabled', async () => {
+	it('mirrors the snapshot and later mutations when workbench is enabled', async () => {
 		const collection = new ProjectedCollection<Status>()
 		collection.insert({ id: 'status', value: 1 })
 		const projection = {

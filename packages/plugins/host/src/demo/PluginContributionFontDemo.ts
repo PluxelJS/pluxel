@@ -1,10 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { managementBinding } from '@pluxel/runtime/management'
-import {
-	FontConsumerManagement,
-	FontManagerManagement,
-} from './PluginContributionFontDemo.management'
+import { workbench } from '@pluxel/runtime/workbench'
+import { FontConsumerWorkbench, FontManagerWorkbench } from './PluginContributionFontDemo.workbench'
 import {
 	ConsumerAppearanceConfig,
 	FONT_SETS,
@@ -16,12 +13,12 @@ import {
 @Plugin({ name: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
-		const mounted = this.ctx.management.mount(FontManagerManagement, {
-			fontSets: managementBinding.collection({
+		const mounted = this.ctx.workbench.mount(FontManagerWorkbench, {
+			fontSets: workbench.provide.collection({
 				initial: FONT_SETS.map((item) => Object.assign({}, item)),
 			}),
 		})
-		await mounted?.resources.fontSets.ready()
+		await mounted?.collections.fontSets.ready()
 	}
 }
 
@@ -34,8 +31,8 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.management.mount(FontConsumerManagement, {
-			settings: managementBinding.api(() => new FontSettingsRpc(this)),
+		this.ctx.workbench.mount(FontConsumerWorkbench, {
+			commands: workbench.provide.rpc(() => new FontSettingsRpc(this)),
 		})
 	}
 

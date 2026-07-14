@@ -16,7 +16,7 @@ export default defineStaticRuntimeConfig({
 	},
 	logger: { preset: 'core' },
 	persistence: resolve(staticDataRoot, 'persistence'),
-	management: {
+	workbench: {
 		enabled: true,
 		access: {
 			exposure: 'public',

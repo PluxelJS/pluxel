@@ -1,4 +1,4 @@
-// rpc/PackageManagerHandle.ts - loader route package-management RPC
+// rpc/PackageManagerHandle.ts - loader route package-workbench RPC
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import {

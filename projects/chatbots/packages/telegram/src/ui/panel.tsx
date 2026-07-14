@@ -17,9 +17,11 @@ import { useEffect, useState } from 'react'
 import { telegramPlugin } from './runtime.ts'
 
 export function TelegramSettingsPanel() {
-	const app = telegramPlugin.use()
-	const settingsList = app.collection('settings').useList()
-	const statusList = app.collection('status').useList()
+	const app = {
+		model: telegramPlugin.view('TelegramSettingsPanel', 'TelegramSettingsRoute').useModel(),
+	}
+	const settingsList = app.model.settings.useMany()
+	const statusList = app.model.status.useMany()
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://api.telegram.org')
@@ -101,7 +103,7 @@ export function TelegramSettingsPanel() {
 							onClick={() =>
 								void run(
 									() =>
-										app.api('api').upsertBot({
+										app.model.commands.upsertBot({
 											id: accountId,
 											token: token || undefined,
 											apiBase,
@@ -117,7 +119,7 @@ export function TelegramSettingsPanel() {
 							leftSection={<IconPlugConnected size={16} />}
 							onClick={() =>
 								void run(async () => {
-									const result = await app.api('api').testBot(accountId)
+									const result = await app.model.commands.testBot(accountId)
 									if (!result.ok) throw new Error(result.message)
 								}, '鉴权成功')
 							}
@@ -127,7 +129,7 @@ export function TelegramSettingsPanel() {
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.api('api').reconnectBot(accountId), '正在重连')}
+							onClick={() => void run(() => app.model.commands.reconnectBot(accountId), '正在重连')}
 						>
 							重连
 						</Button>
@@ -135,7 +137,7 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="gray"
 							leftSection={<IconPlugX size={16} />}
-							onClick={() => void run(() => app.api('api').disconnectBot(accountId), '已断开')}
+							onClick={() => void run(() => app.model.commands.disconnectBot(accountId), '已断开')}
 						>
 							断开
 						</Button>
@@ -143,7 +145,7 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="red"
 							leftSection={<IconTrash size={16} />}
-							onClick={() => void run(() => app.api('api').removeBot(accountId), 'Bot 已删除')}
+							onClick={() => void run(() => app.model.commands.removeBot(accountId), 'Bot 已删除')}
 						>
 							删除 Bot
 						</Button>

@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { TelegramManagementModule } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { TelegramWorkbench } from '../workbench-module.ts'
 
-export const telegramPlugin = managementApp<typeof TelegramManagementModule>()
+export const telegramPlugin = createWorkbenchUi<typeof TelegramWorkbench>()

@@ -18,7 +18,7 @@ export type ChatAccessChange = {
 	removedRoleIds?: readonly string[]
 }
 
-/** Pure identity and authorization domain; no Context, persistence or management dependencies. */
+/** Pure identity and authorization domain; no Context, persistence or workbench dependencies. */
 export class ChatAccessDomain {
 	private readonly usersById = new Map<string, ChatUser>()
 	private readonly usersByIdentity = new Map<string, ChatUser>()

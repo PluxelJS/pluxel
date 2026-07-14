@@ -5,7 +5,7 @@
 ## 审查目标
 
 - `adminAccess` 只回答一件事：
-  当前 host management admin surface 是否允许访问
+  当前 host workbench admin surface 是否允许访问
 - `vault` 只回答一件事：
   敏感数据是否被正确加密存储，并且当前 host 是否具备可用解锁材料
 - host 在插件激活前完成 vault preflight；vault 不可用时不进入后续运行流程
@@ -14,20 +14,20 @@
 
 - `ctx.root.adminAccess`
   host-only access gate
-- `management: false` 不挂载 Management Plane，不要求 OIDC
+- `workbench: false` 不挂载 Workbench Plane，不要求 OIDC
 - private admin access 下不做任何认证，直接 allow
 - public admin access 下必须配置 OIDC，否则 HTTP 服务初始化 fail fast
 - public exposure 使用 issuer discovery + JWKS 校验 bearer JWT
-- Pluxel 没有 management 非 admin 用户模型；满足 OIDC access policy 的请求就是 admin 请求
+- Pluxel 没有 workbench 非 admin 用户模型；满足 OIDC access policy 的请求就是 admin 请求
 - `adminAccess.oidc.requiredClaims` 是 admin 准入策略，不是普通登录策略
 - Pluxel 不保存本地 admin access users、password hash、OTP secret、passkey credential 或 admin access session
 - `data/security/identity.json` 只保存 vault host identity 和 deploy recipients
 - `ctx.vault`
   插件与 runtime 共享的 ready 加密存储面，只负责数据读写，不负责运行期解锁
 - `ctx.root.vaultAdmin`
-  host-only vault 管理面
+  host-only vault Workbench
 - `/security`
-  浏览器管理面；只读展示 access policy，写操作只面向 vault
+  浏览器Workbench；只读展示 access policy，写操作只面向 vault
 
 ## 必须成立的事实
 
@@ -45,7 +45,7 @@
 ## 当前接口语义
 
 - `ctx.root.adminAccess.authorize()`
-  纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 management admin surface
+  纯读；输出 `allow/reason/principal`；`allow=true` 表示允许进入 workbench admin surface
 - `ctx.root.adminAccess.describe()`
   纯读；输出 access policy 概览和当前状态
 - `ctx.root.vaultAdmin.describe()`

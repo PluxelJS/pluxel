@@ -14,7 +14,7 @@ import {
 } from '@pluxel/runtime-dev/hmr-log'
 import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
-import { requireManagement } from '@pluxel/runtime/services/management'
+import { requireWorkbench } from '@pluxel/runtime/internal'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
 	normalizePath,
@@ -37,7 +37,7 @@ import type {
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 
-type ManagementCompilerConfig = {
+type WorkbenchCompilerConfig = {
 	enabled?: boolean
 	cacheDir?: string
 	cacheKeep?: number
@@ -49,7 +49,7 @@ type ManagementCompilerConfig = {
 }
 
 type StaticRuntimeViteHmrConfig = {
-	managementCompiler?: ManagementCompilerConfig
+	workbenchCompiler?: WorkbenchCompilerConfig
 }
 
 type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
@@ -124,10 +124,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				persistence: config.persistence,
 				pluginData: config.pluginData,
 				http:
-					config.management !== false && config.management?.enabled === true
-						? withDevManagementHttpConfig(config.http)
+					config.workbench !== false && config.workbench?.enabled === true
+						? withDevWorkbenchHttpConfig(config.http)
 						: config.http,
-				management: config.management,
+				workbench: config.workbench,
 				logger: { ...config.logger, preset: 'hmr' },
 				profile: config.profile,
 				context: config.context,
@@ -135,14 +135,14 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			state.host = host
 			await options.prepareHost?.(host)
 
-			if (hmrOptions && config.management !== false && config.management?.enabled === true) {
+			if (hmrOptions && config.workbench !== false && config.workbench?.enabled === true) {
 				const enabledHmrOptions = hmrOptions ?? {}
 				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
 				await configureStaticRuntimeDevRuntime(server, host, {
 					viteServer: server,
 					...enabledHmrOptions,
-					managementCompiler: mergeManagementCompilerPluginDirs(
-						enabledHmrOptions.managementCompiler,
+					workbenchCompiler: mergeWorkbenchCompilerPluginDirs(
+						enabledHmrOptions.workbenchCompiler,
 						pluginDirs,
 					),
 				})
@@ -456,40 +456,40 @@ async function configureStaticRuntimeDevRuntime(
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
 	const previousDev = ctx.runtimeDev
-	if (previousDev?.managementUiSource) {
-		throw new Error('[runtime-static/vite] management UI source runtime is already attached')
+	if (previousDev?.workbenchUiSource) {
+		throw new Error('[runtime-static/vite] workbench UI source runtime is already attached')
 	}
 	const previousRoute = ctx.runtimeRoute
 	if (!previousRoute) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
 
-	const managementCompilerConfig = runtimeDev.mergeManagementCompilerViteConfig(
-		options.managementCompiler,
+	const workbenchCompilerConfig = runtimeDev.mergeWorkbenchCompilerViteConfig(
+		options.workbenchCompiler,
 		undefined,
 	)
-	ctx.config.managementCompiler = managementCompilerConfig
-	const artifactStore = requireManagement(ctx).registry.getArtifacts()
-	const managementCompiler = new runtimeDev.ManagementCompilerService(
+	ctx.config.workbenchCompiler = workbenchCompilerConfig
+	const artifactStore = requireWorkbench(ctx).registry.getArtifacts()
+	const workbenchCompiler = new runtimeDev.WorkbenchCompilerService(
 		ctx,
 		{ store: artifactStore, viteServer: options.viteServer, enabled: true },
-		managementCompilerConfig,
+		workbenchCompilerConfig,
 	)
 
 	ctx.runtimeDev = {
 		...previousDev,
-		managementUiSource: {
-			bind: (ownerCtx, declaration) => managementCompiler.bindDeclaration(ownerCtx, declaration),
+		workbenchUiSource: {
+			bind: (ownerCtx, declaration) => workbenchCompiler.bindDeclaration(ownerCtx, declaration),
 		},
 	}
 
 	ctx.effects.defer(() => {
-		managementCompiler.dispose()
+		workbenchCompiler.dispose()
 		ctx.runtimeDev = previousDev
 	})
 }
 
-function withDevManagementHttpConfig(
+function withDevWorkbenchHttpConfig(
 	config: StaticRuntimeConfig['http'] | undefined,
 ): StaticRuntimeConfig['http'] {
 	const next = {
@@ -577,10 +577,10 @@ function findSsrExportDir(
 	return undefined
 }
 
-function mergeManagementCompilerPluginDirs(
-	config: ManagementCompilerConfig | undefined,
+function mergeWorkbenchCompilerPluginDirs(
+	config: WorkbenchCompilerConfig | undefined,
 	pluginDirs: Record<string, string> | undefined,
-): ManagementCompilerConfig | undefined {
+): WorkbenchCompilerConfig | undefined {
 	if (!pluginDirs) return config
 	return {
 		...config,

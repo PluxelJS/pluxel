@@ -8,7 +8,7 @@ import {
 	type PluginExtensionContext,
 	useGlobalExtensionContext,
 } from '../../../extension'
-import { getManagementRoute, useManagementRouteVersion } from '../../../management/runtime'
+import { getWorkbenchRoute, useWorkbenchRouteVersion } from '../../../workbench/runtime'
 import { ExtensionRouteStateFallback, ExtensionRouteStatusBanner } from './ExtensionRouteStatus'
 
 type PluginRouteComponent = (ctx: PluginExtensionContext) => ReactNode
@@ -20,10 +20,10 @@ export function useResolvedPluginRoute(opts: {
 }) {
 	const { pluginName, pathname, restPath } = opts
 	const baseCtx = useGlobalExtensionContext()
-	const routeVersion = useManagementRouteVersion(pluginName)
+	const routeVersion = useWorkbenchRouteVersion(pluginName)
 
 	const routeRender = useMemo(() => {
-		return getManagementRoute(pluginName, restPath)
+		return getWorkbenchRoute(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
 
 	const pluginCtx = useMemo(

@@ -62,7 +62,7 @@ describe('toolchain package boundaries', () => {
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
-		expect(rolldown.exports).toHaveProperty('./management/artifact')
+		expect(rolldown.exports).toHaveProperty('./workbench/artifact')
 
 		for (const pkg of [runtimeDynamic, runtimeStatic, runtimeDev]) {
 			expect(pkg.dependencies).not.toHaveProperty('vite')
@@ -76,20 +76,20 @@ describe('toolchain package boundaries', () => {
 		}
 	})
 
-	it('keeps Vite and Module Federation lazy behind Management UI declarations', async () => {
+	it('keeps Vite and Module Federation lazy behind Workbench UI declarations', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const pluginCode = await readFile(
-			`${root}/packages/rolldown/src/rolldown/plugins/managementUiBuildPlugin.ts`,
+			`${root}/packages/rolldown/src/rolldown/plugins/workbenchUiBuildPlugin.ts`,
 			'utf8',
 		)
 
-		expect(pluginCode).toContain("import('../../vite/management-ui.ts')")
-		expect(pluginCode).toContain("from '../../management/build-contract.ts'")
-		expect(pluginCode).not.toMatch(/import\s+\{[^}]*buildManagementUiRemote[^}]*\}\s+from/)
+		expect(pluginCode).toContain("import('../../vite/workbench-ui.ts')")
+		expect(pluginCode).toContain("from '../../workbench/build-contract.ts'")
+		expect(pluginCode).not.toMatch(/import\s+\{[^}]*buildWorkbenchUiRemote[^}]*\}\s+from/)
 		expect(pluginCode).not.toContain('@module-federation/vite')
 	})
 
-	it('keeps management UI Module Federation build logic and direct deps in one place', async () => {
+	it('keeps workbench UI Module Federation build logic and direct deps in one place', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtimeDynamicFiles = await collectSourceFiles(`${root}/packages/runtime-dynamic/src`)
 		const runtimeDevFiles = await collectSourceFiles(`${root}/packages/runtime-dev/src`)
@@ -107,7 +107,7 @@ describe('toolchain package boundaries', () => {
 
 		expect(
 			offenders,
-			'runtime-dynamic should call @pluxel/rolldown/vite/management-ui instead of owning MF build logic',
+			'runtime-dynamic should call @pluxel/rolldown/vite/workbench-ui instead of owning MF build logic',
 		).toEqual([])
 		expect(runtimeStatic.dependencies).not.toHaveProperty('@pluxel/rolldown')
 		expect(runtimeStatic.devDependencies).toHaveProperty('@pluxel/rolldown')
@@ -277,7 +277,7 @@ describe('toolchain package boundaries', () => {
 		expect(pluginApi).not.toContain('runtimeRoute(ctx)?.dev')
 	})
 
-	it('keeps old HTTP management internals out of public runtime config surfaces', async () => {
+	it('keeps old HTTP workbench internals out of public runtime config surfaces', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
 			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),

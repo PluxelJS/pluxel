@@ -12,7 +12,6 @@ export default defineConfig({
 			'@pluxel/runtime',
 			'@pluxel/runtime/internal',
 			'@pluxel/runtime/shared',
-			'@pluxel/runtime/management/federation',
 			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',
@@ -20,7 +19,7 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
-		management: 'src/management.ts',
+		workbench: 'src/workbench.ts',
 		'hmr-log': 'src/hmr-log.ts',
 		vite: 'src/vite.ts',
 	},

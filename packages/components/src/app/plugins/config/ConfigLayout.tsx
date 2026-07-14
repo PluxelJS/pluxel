@@ -4,7 +4,7 @@ import type { ObjectSchema } from 'valibot'
 import { MarkdownExit } from 'markdown-exit'
 import { type ConfigFormState, ConfigTabContent } from './ConfigTab'
 import { compareSchemaKeys } from './schemaKey'
-import type { ManagementMarkdownPart as BuiltinMarkdownPart } from '@pluxel/runtime/management'
+import type { WorkbenchMarkdownPart as BuiltinMarkdownPart } from '@pluxel/runtime/workbench'
 
 const mdEngine = new MarkdownExit({ html: false, linkify: true })
 

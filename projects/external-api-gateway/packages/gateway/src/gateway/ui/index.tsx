@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core'
 import { IconApi } from '@tabler/icons-react'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { GatewayDashboard, GatewayPanel } from './panels'
 import { gatewayPlugin } from './runtime'
 
@@ -8,11 +9,11 @@ function pluginRouteHref(pluginName: string, path: string) {
 }
 
 export function HeaderAction() {
-	const app = gatewayPlugin.use()
+	const app = useWorkbenchHost()
 	return (
 		<Button
 			component="a"
-			href={pluginRouteHref(app.target, '/dashboard')}
+			href={pluginRouteHref(app.targetPluginId, '/dashboard')}
 			variant="light"
 			size="xs"
 			leftSection={<IconApi size={14} />}
@@ -22,4 +23,4 @@ export function HeaderAction() {
 	)
 }
 
-export default gatewayPlugin.define({ HeaderAction, GatewayPanel, GatewayDashboard })
+export default gatewayPlugin.expose({ HeaderAction, GatewayPanel, GatewayDashboard })

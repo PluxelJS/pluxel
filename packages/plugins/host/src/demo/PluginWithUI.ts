@@ -1,12 +1,11 @@
 // Read this when:
 // - 你要写自定义 UI
-// - 你想看 Management Plane UI + RPC + SSE + replicated state 的最小闭环
+// - 你想看 Workbench Plane UI + RPC + SSE + replicated state 的最小闭环
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
-import type { SseChannel } from '@pluxel/runtime/services/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { PluginWithUIManagement } from './PluginWithUI.management'
+import { PluginWithUIWorkbench } from './PluginWithUI.workbench'
 
 // Shared server-side data model exposed to the UI.
 export type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
@@ -34,60 +33,62 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
+export type PluginWithUIEvents = {
+	ready: Extract<PluginWithUISsePayload, { type: 'ready' }>
+	tick: Extract<PluginWithUISsePayload, { type: 'tick' }>
+	activity: Extract<PluginWithUISsePayload, { type: 'activity' }>
+}
+
 @Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
-	private status!: MountedManagementResources<typeof PluginWithUIManagement>['status']
-	private events!: MountedManagementResources<typeof PluginWithUIManagement>['events']
+	private status!: MountedWorkbenchCollections<typeof PluginWithUIWorkbench>['status']
+	private events!: MountedWorkbenchCollections<typeof PluginWithUIWorkbench>['events']
 
 	private eventSeq = 1
-	private channels = new Set<SseChannel>()
+	private eventSubscribers = new Set<
+		<Key extends keyof PluginWithUIEvents>(event: Key, payload: PluginWithUIEvents[Key]) => void
+	>()
 
 	override async init() {
 		this.startedAt = Date.now()
 
-		const mounted = this.ctx.management.mount(PluginWithUIManagement, {
-			api: managementBinding.api(() => new PluginWithUIRpc(this)),
-			status: managementBinding.collection(),
-			events: managementBinding.collection(),
-			activity: managementBinding.stream(this.attachSse()),
+		const mounted = this.ctx.workbench.mount(PluginWithUIWorkbench, {
+			commands: workbench.provide.rpc(() => new PluginWithUIRpc(this)),
+			status: workbench.provide.collection(),
+			events: workbench.provide.collection(),
+			activity: workbench.provide.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
 		})
 		if (mounted) {
-			this.status = mounted.resources.status
-			this.events = mounted.resources.events
+			this.status = mounted.collections.status
+			this.events = mounted.collections.events
 			await this.initState()
 		}
 
 		this.ctx.logger.info('ready')
 	}
 
-	// SSE lifecycle.
-	private attachSse() {
-		return (channel: SseChannel) => {
-			this.channels.add(channel)
-
-			channel.emit('ready', { type: 'ready', startedAt: this.startedAt })
-
-			const timer = setInterval(() => {
-				channel.emit('tick', { type: 'tick', now: Date.now() })
-			}, 1000)
-
-			const cleanup = () => {
-				clearInterval(timer)
-				this.channels.delete(channel)
-			}
-
-			channel.onAbort(cleanup)
-
-			return cleanup
+	private attachEvents(events: {
+		emit<Key extends keyof PluginWithUIEvents>(event: Key, payload: PluginWithUIEvents[Key]): void
+		signal: AbortSignal
+	}) {
+		const emit = events.emit.bind(events)
+		this.eventSubscribers.add(emit)
+		events.emit('ready', { type: 'ready', startedAt: this.startedAt })
+		const timer = setInterval(() => events.emit('tick', { type: 'tick', now: Date.now() }), 1000)
+		const cleanup = () => {
+			clearInterval(timer)
+			this.eventSubscribers.delete(emit)
 		}
+		events.signal.addEventListener('abort', cleanup, { once: true })
+		return cleanup
 	}
 
 	private broadcast(payload: PluginWithUISsePayload) {
-		for (const ch of this.channels) {
+		for (const emit of this.eventSubscribers) {
 			try {
-				ch.emit(payload.type, payload)
+				emit(payload.type, payload as never)
 			} catch {}
 		}
 	}

@@ -38,5 +38,5 @@ export default defineStaticRuntimeConfig({
 		backend: createChatbotsPersistence('data/persistence'),
 	},
 	logger: { preset: 'core' },
-	management: { enabled: true, access: { exposure: 'private' } },
+	workbench: { enabled: true, access: { exposure: 'private' } },
 })

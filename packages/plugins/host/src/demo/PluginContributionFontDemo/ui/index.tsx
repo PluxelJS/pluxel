@@ -1,17 +1,18 @@
 import { Paper, Select, Stack, Text } from '@mantine/core'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { useEffect, useMemo, useState } from 'react'
 import {
 	FONT_KIND,
 	FONT_MANAGER_PLUGIN_NAME,
 	type FontRef,
 } from '../../PluginContributionFontDemo.shared'
-import { fontManager, fontSettings } from './runtime'
+import { fontSettingsUi, fontSettingsView } from './runtime'
 
 export function FontSettings() {
-	const provider = fontManager.use()
-	const consumer = fontSettings.use()
-	const settings = consumer.api('settings')
-	const fontSets = provider.collection('fontSets').useList({ sort: { name: 1 } })
+	const model = fontSettingsView.useModel()
+	const host = useWorkbenchHost()
+	const settings = model.settings
+	const fontSets = model.fontSets.useMany({ sort: { name: 1 } })
 	const [selected, setSelected] = useState<string | null>(null)
 
 	useEffect(() => {
@@ -46,7 +47,7 @@ export function FontSettings() {
 				<Select
 					size="sm"
 					label="Font Set"
-					description={`renderer 来自 ${provider.owner}，配置写回 ${consumer.target}`}
+					description={`renderer 来自 ${host.ownerPluginId}，配置写回 ${host.targetPluginId}`}
 					placeholder="选择一个字体集"
 					data={options}
 					value={selected}
@@ -60,4 +61,4 @@ export function FontSettings() {
 	)
 }
 
-export default fontManager.define({ FontSettings })
+export default fontSettingsUi.expose({ FontSettings })

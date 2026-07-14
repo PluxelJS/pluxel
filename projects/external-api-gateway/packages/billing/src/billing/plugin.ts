@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { managementBinding } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import {
 	DEFAULT_ZHIPU_CHAT_MODEL,
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
@@ -28,7 +28,7 @@ import type {
 	BillingUsageRecord,
 	BillingUserSummaryDoc,
 } from './contracts.ts'
-import { UsageBillingManagement } from './management-module.ts'
+import { UsageBillingWorkbench } from './workbench-module.ts'
 
 const OVERVIEW_DOC_ID = 'overview' as const
 const yiqichaApiKeyByCode: Map<string, string> = new Map(
@@ -50,21 +50,21 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
 		this.rebuildSummaries(usageRecords)
-		const mounted = this.ctx.management.mount(UsageBillingManagement, {
-			api: managementBinding.api(() => new UsageBillingRpc(this)),
-			overview: managementBinding.collection(),
-			records: managementBinding.collection(),
-			users: managementBinding.collection(),
-			providers: managementBinding.collection(),
-			rates: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(UsageBillingWorkbench, {
+			commands: workbench.provide.rpc(() => new UsageBillingRpc(this)),
+			overview: workbench.provide.collection(),
+			records: workbench.provide.collection(),
+			users: workbench.provide.collection(),
+			providers: workbench.provide.collection(),
+			rates: workbench.provide.collection(),
 		})
 		if (mounted) {
 			await Promise.all([
-				this.overview.attach(mounted.resources.overview),
-				this.records.attach(mounted.resources.records),
-				this.users.attach(mounted.resources.users),
-				this.providers.attach(mounted.resources.providers),
-				this.rates.attach(mounted.resources.rates),
+				this.overview.attach(mounted.collections.overview),
+				this.records.attach(mounted.collections.records),
+				this.users.attach(mounted.collections.users),
+				this.providers.attach(mounted.collections.providers),
+				this.rates.attach(mounted.collections.rates),
 			])
 		}
 		this.registerRoutes()

@@ -1,6 +1,6 @@
 import { Alert, Badge, Center, Loader, Stack, Text } from '@mantine/core'
 import { ErrorState } from '../../../components'
-import { useManagementArtifactState } from '../../../management/runtime'
+import { useWorkbenchArtifactState } from '../../../workbench/runtime'
 
 export function ExtensionRouteStateFallback({
 	pluginName,
@@ -9,7 +9,7 @@ export function ExtensionRouteStateFallback({
 	pluginName: string
 	routeVersion: number
 }) {
-	const artifact = useManagementArtifactState(pluginName)
+	const artifact = useWorkbenchArtifactState(pluginName)
 	if (routeVersion > 0) return null
 	if (artifact?.state === 'error') {
 		return (
@@ -35,7 +35,7 @@ export function ExtensionRouteStateFallback({
 }
 
 export function ExtensionRouteStatusBanner({ pluginName }: { pluginName: string }) {
-	const artifact = useManagementArtifactState(pluginName)
+	const artifact = useWorkbenchArtifactState(pluginName)
 	if (artifact?.state !== 'building') return null
 	return (
 		<Alert

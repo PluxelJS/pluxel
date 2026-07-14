@@ -5,11 +5,11 @@
 ## 阅读路径
 
 1. [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md)：维护者和 coding agent 必须遵守的工程不变量。
-2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：插件、runtime、route、toolchain 和 Management Plane 的总边界。
+2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：插件、runtime、route、toolchain 和 Workbench Plane 的总边界。
 3. 按改动领域阅读：
    - [`CORE.md`](CORE.md)：DI graph、生命周期、feature、effects。
    - [`RUNTIME.md`](RUNTIME.md)：常驻服务、static/dynamic route、可选宿主能力。
-   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和管理面投影。
+   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和Workbench投影。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。

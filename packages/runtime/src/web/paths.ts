@@ -17,17 +17,17 @@ export const RUNTIME_SECURITY_VAULT_UNLOCK_PATH = `${RUNTIME_SECURITY_BASE}/vaul
 export const RUNTIME_SECURITY_VAULT_HOST_KEY_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/host`
 export const RUNTIME_SECURITY_VAULT_DEPLOY_GENERATE_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/deploy/generate`
 export const RUNTIME_SECURITY_VAULT_DEPLOY_RECIPIENTS_PATH = `${RUNTIME_SECURITY_BASE}/vault/keys/deploy`
-export const RUNTIME_MANAGEMENT_BASE = '/management' as const
-export const RUNTIME_MANAGEMENT_ARTIFACTS_BASE = `${RUNTIME_MANAGEMENT_BASE}/artifacts` as const
-export const RUNTIME_MANAGEMENT_CATALOG_PATH = `${RUNTIME_MANAGEMENT_BASE}/catalog` as const
-export const RUNTIME_MANAGEMENT_GLOBAL_LAYOUT_PATH =
-	`${RUNTIME_MANAGEMENT_BASE}/layout/global` as const
-export const RUNTIME_MANAGEMENT_PLUGIN_LAYOUT_BASE =
-	`${RUNTIME_MANAGEMENT_BASE}/layout/plugin` as const
-export const RUNTIME_MANAGEMENT_EVENTS_PATH = `${RUNTIME_MANAGEMENT_BASE}/events` as const
-export const RUNTIME_MANAGEMENT_RESOURCES_BASE = `${RUNTIME_MANAGEMENT_BASE}/resources` as const
-export const RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH =
-	`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collections/events` as const
+export const RUNTIME_WORKBENCH_BASE = '/workbench' as const
+export const RUNTIME_WORKBENCH_ARTIFACTS_BASE = `${RUNTIME_WORKBENCH_BASE}/artifacts` as const
+export const RUNTIME_WORKBENCH_CATALOG_PATH = `${RUNTIME_WORKBENCH_BASE}/catalog` as const
+export const RUNTIME_WORKBENCH_GLOBAL_LAYOUT_PATH =
+	`${RUNTIME_WORKBENCH_BASE}/layout/global` as const
+export const RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE =
+	`${RUNTIME_WORKBENCH_BASE}/layout/plugin` as const
+export const RUNTIME_WORKBENCH_EVENTS_PATH = `${RUNTIME_WORKBENCH_BASE}/events` as const
+export const RUNTIME_WORKBENCH_MODELS_BASE = `${RUNTIME_WORKBENCH_BASE}/models` as const
+export const RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH =
+	`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/events` as const
 
 export function joinPath(base: string, path: string): string {
 	const safeBase = base.replace(/\/+$/, '')
@@ -35,26 +35,26 @@ export function joinPath(base: string, path: string): string {
 	return `${safeBase}${safePath}`
 }
 
-export function runtimeManagementArtifactBasePath(owner: string, sourceHash: string): string {
-	return `${RUNTIME_MANAGEMENT_ARTIFACTS_BASE}/${encodeURIComponent(owner)}/${encodeURIComponent(sourceHash)}`
+export function runtimeWorkbenchArtifactBasePath(owner: string, sourceHash: string): string {
+	return `${RUNTIME_WORKBENCH_ARTIFACTS_BASE}/${encodeURIComponent(owner)}/${encodeURIComponent(sourceHash)}`
 }
 
-export function runtimeManagementArtifactPath(
+export function runtimeWorkbenchArtifactPath(
 	owner: string,
 	sourceHash: string,
 	file: string,
 ): string {
-	return `${runtimeManagementArtifactBasePath(owner, sourceHash)}/${file.replace(/^\/+/, '')}`
+	return `${runtimeWorkbenchArtifactBasePath(owner, sourceHash)}/${file.replace(/^\/+/, '')}`
 }
 
 export function runtimeLogStreamPath(streamId: string, suffix = ''): string {
 	return `${RUNTIME_LOG_STREAMS_BASE}/${encodeURIComponent(streamId)}${suffix}`
 }
 
-export function runtimeManagementCollectionPath(binding: string): string {
-	return `${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/${encodeURIComponent(binding)}`
+export function runtimeWorkbenchCollectionPath(grantId: string): string {
+	return `${RUNTIME_WORKBENCH_MODELS_BASE}/collections/${encodeURIComponent(grantId)}`
 }
 
-export function runtimeManagementStreamPath(binding: string): string {
-	return `${RUNTIME_MANAGEMENT_RESOURCES_BASE}/stream/${encodeURIComponent(binding)}`
+export function runtimeWorkbenchModelEventsPath(grantId: string): string {
+	return `${RUNTIME_WORKBENCH_MODELS_BASE}/events/${encodeURIComponent(grantId)}`
 }

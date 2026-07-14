@@ -1,7 +1,7 @@
 import { Loader, Paper, Select, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
-import type { ManagementResourceSelectBlock as BuiltinResourceSelectBlock } from '@pluxel/runtime/management'
-import { useManagementView } from '@pluxel/runtime/management/ui'
+import type { WorkbenchResourceSelectBlock as BuiltinResourceSelectBlock } from '@pluxel/runtime/workbench'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
 import {
 	useBoundSignalDbCollectionsState,
 	useGlobalExtensionContext,
@@ -35,7 +35,7 @@ export function BuiltinResourceSelect({
 }) {
 	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
-	const item = useManagementView()
+	const item = useWorkbenchView()
 	const targetPlugin = readString(block.target.pluginName) ?? targetPluginName
 	const schemaKey = readString(block.target.schemaKey) ?? ''
 	const fieldPath = readString(block.target.field) ?? ''
@@ -46,8 +46,8 @@ export function BuiltinResourceSelect({
 	const collections = useBoundSignalDbCollectionsState(
 		transport,
 		useMemo(() => {
-			const resource = item.resources[block.collection]
-			return resource?.kind === 'collection' ? { [block.collection]: resource.binding } : {}
+			const resource = item.model[block.collection]
+			return resource?.kind === 'collection' ? { [block.collection]: resource.grantId } : {}
 		}, [block.collection, item]),
 	)
 	const collection = collections[block.collection] as
@@ -102,7 +102,7 @@ export function BuiltinResourceSelect({
 		return (
 			<Paper withBorder radius="md" p="sm" shadow="xs">
 				<Text size="xs" c="red">
-					Management collection resource is unavailable: {block.collection}
+					Workbench collection resource is unavailable: {block.collection}
 				</Text>
 			</Paper>
 		)
@@ -160,7 +160,7 @@ export function BuiltinResourceSelect({
 				? null
 				: mode === 'ref'
 					? {
-							provider: item.owner,
+							provider: item.ownerPluginId,
 							kind: readString(block.target.refKind) ?? block.collection,
 							id: nextOption.rawValue,
 							...(block.target.includeLabel === false ? {} : { label: nextOption.rawLabel }),

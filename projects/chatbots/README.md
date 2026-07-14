@@ -5,12 +5,12 @@
 ## 现在包含什么
 
 - `ChatHubPlugin`：transport-neutral 消息路由、富消息规划、时间窗去重、会话内串行、有界背压、处理器隔离和有界停机 drain。
-- `ChatAccessPlugin`：跨平台统一用户、角色与分层权限；业务状态持久化，管理面只是投影。
+- `ChatAccessPlugin`：跨平台统一用户、角色与分层权限；业务状态持久化，Workbench只是投影。
 - `ChatCommandsPlugin`：分层路由、alias、flags、中间件和默认拒绝的权限节点。
 - `ChatBuiltinsPlugin`：`/ping`、`/help`、`/status`。
 - `ChatSandboxPlugin`：无需平台凭据即可进行 HTTP 或管理界面端到端测试。
-- `TelegramPlugin`：Telegram long polling capability，带 Vault 管理面板。
-- `KookPlugin`：KOOK gateway capability、完整 v3 API client 和 Vault 管理面板。
+- `TelegramPlugin`：Telegram long polling capability，带 Vault Workbench板。
+- `KookPlugin`：KOOK gateway capability、完整 v3 API client 和 Vault Workbench板。
 - `TelegramHubBridgePlugin` / `KookHubBridgePlugin`：独立、可省略的平台 codec 与 ChatHub transport 桥。
 
 ## 运行
@@ -64,13 +64,13 @@ KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会
 
 ## 源码组织
 
-包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、management RPC/DTO、parser 和内部 registry 不通过 barrel 泄漏。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；adapter 的 registry、原子账号存储、串行器、retry gate、退避和 abort lease 位于独立 `adapter-kit` 明确子入口；命令按 `types/parser/registry/middleware/plugin` 拆分。
+包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、workbench RPC/DTO、parser 和内部 registry 不通过 barrel 泄漏。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；adapter 的 registry、原子账号存储、串行器、retry gate、退避和 abort lease 位于独立 `adapter-kit` 明确子入口；命令按 `types/parser/registry/middleware/plugin` 拆分。
 
 `telegram` 与 `kook` 平台包不依赖 `contracts` 或 `hub`，只提供原生 API、Bot registry、原始事件、连接状态机、Vault 账号生命周期和可选管理 UI。`telegram-hub` 与 `kook-hub` 是独立桥接插件，拥有平台 codec、确认型入站投影和 ChatHub transport。平台专属插件因此只安装并依赖平台包；只有跨平台消息产品才同时安装对应 bridge 与 Hub。
 
 bridge 的入站和出站工作绑定自身生命周期：stop、启动回滚或 HMR replacement 会取消在途 Hub receive/API send，再卸载 transport 与 projection。确认型 projection 为每个事件冻结注册顺序；运行中新增或移除 projection 只影响下一个 checkpoint。
 
-依赖声明遵循“谁拥有实例，谁负责安装”：宿主项目声明 React、Mantine、Tabler、Pluxel runtime 和 catalog 插件；插件包将 singleton 或 required plugin capability 声明为 peer，仅管理面使用的 UI 包是 optional peer，headless host 可以不安装。`contracts`、`adapter-kit` 这类会随实现一起使用且没有实例身份的库保留普通 dependency。边界测试会拒绝平台包重新导入 Hub/contracts。
+依赖声明遵循“谁拥有实例，谁负责安装”：宿主项目声明 React、Mantine、Tabler、Pluxel runtime 和 catalog 插件；插件包将 singleton 或 required plugin capability 声明为 peer，仅Workbench使用的 UI 包是 optional peer，headless host 可以不安装。`contracts`、`adapter-kit` 这类会随实现一起使用且没有实例身份的库保留普通 dependency。边界测试会拒绝平台包重新导入 Hub/contracts。
 
 当前 `@repo/chatbots-*` 是本 workspace 的私有源码包；可以被同仓库其他插件独立依赖和注入，但尚未作为 npm 公共包发行。真正外部分发需要统一确定公开 scope、版本线、构建产物和发布责任，不能只去掉 `private` 就假装完成。
 
@@ -102,12 +102,12 @@ planner 会先逐 block 校验 transport capabilities，再决定 mixed、拆分
 
 用户可发送 `/account` 查看统一身份，发送 `/link` 生成 5 分钟有效的一次性关联码，再到另一个平台发送 `/link <code>` 合并身份、角色和 grants。
 
-Management UI 使用模块相对声明：
+Workbench UI 使用模块相对声明：
 
 ```ts
-const ChatManagement = defineManagementModule({
-	id: 'ChatPlugin',
-	ui: managementUi(import.meta.url, './ui/index.tsx'),
+const ChatWorkbench = workbench.define({
+	plugin: 'ChatPlugin',
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 ```
 

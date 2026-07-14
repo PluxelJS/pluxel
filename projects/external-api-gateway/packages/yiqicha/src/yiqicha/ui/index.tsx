@@ -1,5 +1,6 @@
 import { Button } from '@mantine/core'
 import { IconServerCog } from '@tabler/icons-react'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import {
 	YiqichaApiPanel,
 	YiqichaDashboard,
@@ -13,11 +14,11 @@ function pluginRouteHref(pluginName: string, path: string) {
 }
 
 export function HeaderAction() {
-	const app = yiqichaPlugin.use()
+	const app = useWorkbenchHost()
 	return (
 		<Button
 			component="a"
-			href={pluginRouteHref(app.target, '/dashboard')}
+			href={pluginRouteHref(app.targetPluginId, '/dashboard')}
 			variant="light"
 			size="xs"
 			leftSection={<IconServerCog size={14} />}
@@ -27,7 +28,7 @@ export function HeaderAction() {
 	)
 }
 
-export default yiqichaPlugin.define({
+export default yiqichaPlugin.expose({
 	HeaderAction,
 	YiqichaApiPanel,
 	YiqichaDashboard,

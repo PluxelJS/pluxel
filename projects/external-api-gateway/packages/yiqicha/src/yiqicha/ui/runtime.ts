@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { YiqichaManagement } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { YiqichaWorkbench } from '../workbench-module.ts'
 
-export const yiqichaPlugin = managementApp<typeof YiqichaManagement>()
+export const yiqichaPlugin = createWorkbenchUi<typeof YiqichaWorkbench>()

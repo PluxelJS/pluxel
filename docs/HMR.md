@@ -1,25 +1,25 @@
 # HMR Architecture
 
-HMR replacement 必须保持 core lifecycle、Management resources 和 UI artifact 同步：
+HMR replacement 必须保持 core lifecycle、Workbench resources 和 UI artifact 同步：
 
 ```text
 module batch -> committed graph -> stop old owner/effects -> start new owner
-             -> mount module/resources -> compile artifact -> Management revision
+             -> mount module/resources -> compile artifact -> Workbench revision
              -> Workbench refetch target layouts -> lazy load new remote
 ```
 
-`ManagementCompilerService` 位于 `packages/runtime-dev/src/management/`，dynamic/static route 只负责提供
+`WorkbenchCompilerService` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供
 Vite server、plugin directory 和 host policy。旧 artifact 可短暂保留在磁盘供 inflight import 完成。
 artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant；module、实例或依赖资源图变化会推进
 独立的 grant revision，并让旧 layout binding 立即失效。这样 UI-only HMR 不会制造无效 binding 竞态，
 也不会放宽资源图变化时的 capability 撤销语义。
 
 测试至少覆盖 module replacement cleanup、compile error state、cached artifact、target layout refresh 和
-disabled Management Plane。
+disabled Workbench Plane。
 
-## Management UI Federation 构建隔离
+## Workbench UI Federation 构建隔离
 
-`buildManagementUiRemote()` 把每个 remote 作为独立 staging transaction 构建、校验并原子发布。
+`buildWorkbenchUiRemote()` 把每个 remote 作为独立 staging transaction 构建、校验并原子发布。
 相同 build key 的请求在进程内合并；同一输出目录的不同请求按整条 transaction 串行，避免较早构建在
 较晚构建之后覆盖目标目录。
 
@@ -39,7 +39,7 @@ disabled Management Plane。
    无关。
 
 Workbench 的 Federation host 和 `remoteName -> cache-busted entry` registry 保存在 `globalThis` 的
-`Symbol.for('pluxel.management.federation-runtime')` 状态中，以跨越 Vite module HMR。相同 entry 的多个 view
+`Symbol.for('pluxel.workbench.federation-runtime')` 状态中，以跨越 Vite module HMR。相同 entry 的多个 view
 load 是幂等的，不重复 `registerRemotes()`；只有 `sourceHash` 或 `compiledAt` 改变后才以 `force: true` 替换
 remote。不要把该状态退回普通 module local，否则同一插件的多个 view 和 HMR 重载会反复清除 MF remote
 cache 并产生 `already registered` 警告。

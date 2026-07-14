@@ -19,6 +19,7 @@ import {
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { IconCheck, IconKey, IconPlayerPlay, IconSearch, IconTrash } from '@tabler/icons-react'
 import {
 	getYiqichaApi,
@@ -37,8 +38,15 @@ type RequestState = {
 	result: unknown
 }
 
+const yiqichaContent = yiqichaPlugin.view(
+	'YiqichaApiPanel',
+	'YiqichaSettingsPanel',
+	'YiqichaHistoryPanel',
+	'YiqichaDashboard',
+)
+
 function useYiqichaApp() {
-	return yiqichaPlugin.use()
+	return { model: yiqichaContent.useModel(), ...useWorkbenchHost() }
 }
 
 function pluginRoute(pluginName: string, path: string) {
@@ -112,8 +120,8 @@ export function YiqichaDashboard() {
 
 export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const app = useYiqichaApp()
-	const settings = app.collection('settings').useDocById('settings')
-	const status = app.collection('status').useDocById('status')
+	const settings = app.model.settings.useOneById('settings')
+	const status = app.model.status.useOneById('status')
 	const [appkey, setAppkey] = useState('')
 	const [secretKey, setSecretKey] = useState('')
 	const [baseUrl, setBaseUrl] = useState(DEFAULT_YIQICHA_BASE_URL)
@@ -142,7 +150,7 @@ export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean })
 	const save = async () => {
 		const result = await run(
 			() =>
-				app.api('api').saveSettings({
+				app.model.commands.saveSettings({
 					appkey: appkey.trim() || undefined,
 					secretKey: secretKey.trim() || undefined,
 					baseUrl,
@@ -161,9 +169,11 @@ export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean })
 	const test = async () => {
 		const result = await run(
 			() =>
-				app
-					.api('api')
-					.testConnection({ userId: testUserId, api: DEFAULT_API_CODE, keyword: testKeyword }),
+				app.model.commands.testConnection({
+					userId: testUserId,
+					api: DEFAULT_API_CODE,
+					keyword: testKeyword,
+				}),
 			'测试调用失败',
 		)
 		if (result) setMessage(result.message)
@@ -239,7 +249,7 @@ export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean })
 						variant="subtle"
 						color="red"
 						leftSection={<IconTrash size={16} />}
-						onClick={() => void run(() => app.api('api').clearSecrets(), '清除凭据失败')}
+						onClick={() => void run(() => app.model.commands.clearSecrets(), '清除凭据失败')}
 					>
 						清除
 					</Button>
@@ -254,7 +264,7 @@ export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean })
 
 export function YiqichaApiPanel() {
 	const app = useYiqichaApp()
-	const settings = app.collection('settings').useDocById('settings')
+	const settings = app.model.settings.useOneById('settings')
 	const [apiCode, setApiCode] = useState(DEFAULT_API_CODE)
 	const api = getYiqichaApi(apiCode) ?? getYiqichaApi(DEFAULT_API_CODE)
 	const [userId, setUserId] = useState('demo-user')
@@ -279,7 +289,7 @@ export function YiqichaApiPanel() {
 		if (!api) return
 		setState({ loading: true, error: null, result: null })
 		try {
-			const response = await postJson(pluginRoute(app.target, '/call'), {
+			const response = await postJson(pluginRoute(app.targetPluginId, '/call'), {
 				userId,
 				api: api.apiCode,
 				params: parseJsonObject(paramsJson),
@@ -438,12 +448,12 @@ function RequiredParamsTable({ params }: { params: ReturnType<typeof parseParame
 
 export function YiqichaHistoryPanel() {
 	const app = useYiqichaApp()
-	const rows = app.collection('history').useList({ limit: 30, sort: { at: -1 } })
+	const rows = app.model.history.useMany({ limit: 30, sort: { at: -1 } })
 	const [error, setError] = useState<string | null>(null)
 
 	const clear = async () => {
 		try {
-			await app.api('api').clearHistory()
+			await app.model.commands.clearHistory()
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '清空历史失败'))

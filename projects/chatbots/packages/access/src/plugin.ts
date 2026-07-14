@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
@@ -15,7 +15,7 @@ import { ChatAccessRpc } from './rpc.ts'
 import { ChatAccessDomain, type ChatAccessChange } from './service.ts'
 import { CoalescedSnapshotWriter } from './snapshot-writer.ts'
 import { parseAccessState } from './state.ts'
-import { ChatAccessManagement } from './management-module.ts'
+import { ChatAccessWorkbench } from './workbench-module.ts'
 
 const STORAGE_NAMESPACE = 'chatbots/access'
 const STORAGE_KEY = 'state.json'
@@ -23,9 +23,9 @@ const STORAGE_KEY = 'state.json'
 @Plugin({ name: 'ChatAccessPlugin' })
 export class ChatAccessPlugin extends BasePlugin {
 	private domain!: ChatAccessDomain
-	private overview?: MountedManagementResources<typeof ChatAccessManagement>['overview']
-	private usersProjection?: MountedManagementResources<typeof ChatAccessManagement>['users']
-	private rolesProjection?: MountedManagementResources<typeof ChatAccessManagement>['roles']
+	private overview?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['overview']
+	private usersProjection?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['users']
+	private rolesProjection?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['roles']
 	private snapshotWriter?: CoalescedSnapshotWriter
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -48,16 +48,16 @@ export class ChatAccessPlugin extends BasePlugin {
 				this.domain.resolveMessage(message)
 			}),
 		)
-		const mounted = this.ctx.management.mount(ChatAccessManagement, {
-			api: managementBinding.api(() => new ChatAccessRpc(this)),
-			overview: managementBinding.collection(),
-			users: managementBinding.collection(),
-			roles: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(ChatAccessWorkbench, {
+			commands: workbench.provide.rpc(() => new ChatAccessRpc(this)),
+			overview: workbench.provide.collection(),
+			users: workbench.provide.collection(),
+			roles: workbench.provide.collection(),
 		})
 		if (mounted) {
-			this.overview = mounted.resources.overview
-			this.usersProjection = mounted.resources.users
-			this.rolesProjection = mounted.resources.roles
+			this.overview = mounted.collections.overview
+			this.usersProjection = mounted.collections.users
+			this.rolesProjection = mounted.collections.roles
 			await Promise.all([
 				this.overview.ready(),
 				this.usersProjection.ready(),
@@ -122,7 +122,7 @@ export class ChatAccessPlugin extends BasePlugin {
 			this.applyProjection(change)
 			this.refreshOverview()
 		} catch (error) {
-			this.ctx.logger.warn('Failed to update chat access management projection', { error })
+			this.ctx.logger.warn('Failed to update chat access workbench projection', { error })
 		}
 	}
 

@@ -1,11 +1,11 @@
 import { Badge, Card, Group, ScrollArea, Stack, Table, Text, Title } from '@mantine/core'
 import { AccessEditor } from './access-editor.tsx'
-import { accessPlugin } from './runtime.ts'
+import { accessViews } from './runtime.ts'
 
 export function AccessPanel() {
-	const app = accessPlugin.use()
-	const overview = app.collection('overview').useDocById('overview')
-	const users = app.collection('users').useList()
+	const app = { model: accessViews.useModel() }
+	const overview = app.model.overview.useOneById('overview')
+	const users = app.model.users.useMany()
 	return (
 		<Stack p="md" gap="md">
 			<Group justify="space-between">

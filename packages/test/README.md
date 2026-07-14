@@ -5,7 +5,7 @@
 Plugin authors should start with the repository-level
 [`user-docs/testing.md`](../../user-docs/testing.md). It explains the standard Vitest setup, how to
 choose between the core-only and runtime test hosts, lifecycle failure assertions, cleanup, HTTP,
-Management Plane and fixture strategy.
+Workbench Plane and fixture strategy.
 
 Core-side test surface for Pluxel plugin semantics:
 

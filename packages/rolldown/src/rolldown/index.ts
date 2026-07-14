@@ -5,8 +5,8 @@ export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
-export type { ManagementUiBuildPluginOptions } from './plugins/managementUiBuildPlugin.ts'
-export { managementUiBuildPlugin } from './plugins/managementUiBuildPlugin.ts'
+export type { WorkbenchUiBuildPluginOptions } from './plugins/workbenchUiBuildPlugin.ts'
+export { workbenchUiBuildPlugin } from './plugins/workbenchUiBuildPlugin.ts'
 export type {
 	ImportTracker,
 	ImportTrackerPluginOptions,

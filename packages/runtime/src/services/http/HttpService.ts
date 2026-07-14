@@ -42,7 +42,7 @@ export type HttpHandler = (
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
 export interface HttpServiceConfig {
-	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
+	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from workbench RPC/SSE/UI. */
 	graphql?: boolean
 }
 
@@ -237,7 +237,7 @@ export class HttpService {
 	 * HMR hosts can decide UI asset mode at process startup; if the HTTP service is already
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
-	/** @internal Route launchers use this to switch between bundled and dev-server management UI assets. */
+	/** @internal Route launchers use this to switch between bundled and dev-server workbench UI assets. */
 	reconfigureUiAssets(config: { uiAssets?: RuntimeHttpUiAssetMode; uiPublicDir?: string }): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''

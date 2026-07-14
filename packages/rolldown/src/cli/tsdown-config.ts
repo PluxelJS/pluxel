@@ -1,7 +1,7 @@
 import type { InlineConfig } from 'tsdown'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
-import { managementUiBuildPlugin } from '../rolldown/plugins/managementUiBuildPlugin'
+import { workbenchUiBuildPlugin } from '../rolldown/plugins/workbenchUiBuildPlugin'
 import type { BuildRuntimeConfig } from './types'
 
 export const cliTsdownOverlay = (context: BuildRuntimeConfig): InlineConfig => ({
@@ -15,6 +15,6 @@ export const cliTsdownOverlay = (context: BuildRuntimeConfig): InlineConfig => (
 	plugins: [
 		lintGuardPlugin(),
 		configSourcePlugin(),
-		managementUiBuildPlugin({ root: context.projectRoot }),
+		workbenchUiBuildPlugin({ root: context.projectRoot }),
 	],
 })

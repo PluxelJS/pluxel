@@ -1,5 +1,5 @@
 import { f, v } from '@pluxel/runtime'
-import { defineManagementPort, managementResource } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import type { FontSettingsRpc } from './PluginContributionFontDemo'
 
 export const FONT_MANAGER_PLUGIN_NAME = 'PluginContributionFontManager' as const
@@ -40,8 +40,8 @@ export type FontRef = {
 	label?: string
 }
 
-export const FontSettingsPort = defineManagementPort('pluxel.demo.font-settings', {
-	settings: managementResource.api<FontSettingsRpc>(),
+export const FontSettingsPort = workbench.port.define('pluxel.demo.font-settings', {
+	settings: workbench.model.rpc<FontSettingsRpc>(),
 })
 
 const FontSetRefSchema = v.object({

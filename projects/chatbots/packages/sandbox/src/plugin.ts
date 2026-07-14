@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 import {
 	contentText,
 	normalizeContent,
@@ -10,7 +10,7 @@ import {
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
-import { ChatSandboxManagement } from './management-module.ts'
+import { ChatSandboxWorkbench } from './workbench-module.ts'
 
 export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
 
@@ -28,7 +28,7 @@ const MAX_MESSAGES = 500
 export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
-	private projection?: MountedManagementResources<typeof ChatSandboxManagement>['messages']
+	private projection?: MountedWorkbenchCollections<typeof ChatSandboxWorkbench>['messages']
 	private readonly accepts = new KeyedSerialExecutor<string>()
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -46,12 +46,12 @@ export class ChatSandboxPlugin extends BasePlugin {
 			send: async (request) => this.captureOutbound(request),
 		})
 		this.ctx.effects.defer(dispose)
-		const mounted = this.ctx.management.mount(ChatSandboxManagement, {
-			api: managementBinding.api(() => new ChatSandboxRpc(this)),
-			messages: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(ChatSandboxWorkbench, {
+			commands: workbench.provide.rpc(() => new ChatSandboxRpc(this)),
+			messages: workbench.provide.collection(),
 		})
 		if (mounted) {
-			this.projection = mounted.resources.messages
+			this.projection = mounted.collections.messages
 			await this.projection.ready()
 			this.projection.removeMany({})
 		}
@@ -159,7 +159,7 @@ export class ChatSandboxPlugin extends BasePlugin {
 		try {
 			operation()
 		} catch (error) {
-			this.ctx.logger.warn('Failed to update chat sandbox management projection', { error })
+			this.ctx.logger.warn('Failed to update chat sandbox workbench projection', { error })
 		}
 	}
 }

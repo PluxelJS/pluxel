@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { {{className}}Plugin } from '../src/index.ts'
 
 describe('{{className}}Plugin', () => {
-	it('keeps business HTTP available without Management Plane', async () => {
+	it('keeps business HTTP available without Workbench Plane', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add({{className}}Plugin)
@@ -34,7 +34,7 @@ describe('{{className}}Plugin', () => {
 				expect(graphQL.status).toBe(200)
 				expect(await graphQL.json()).toEqual({ data: { greeting: 'Hello, GQLens!' } })
 			},
-			{ management: false },
+			{ workbench: false },
 		)
 	})
 })

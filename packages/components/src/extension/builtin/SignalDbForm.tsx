@@ -1,8 +1,8 @@
 import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ManagementFormBlock as BuiltinFormBlock } from '@pluxel/runtime/management'
-import { useManagementView } from '@pluxel/runtime/management/ui'
+import type { WorkbenchFormBlock as BuiltinFormBlock } from '@pluxel/runtime/workbench'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
 import {
 	useGlobalExtensionContext,
 	useBoundSignalDbCollectionsState,
@@ -215,7 +215,7 @@ export function BuiltinSignalDbForm({
 }) {
 	const ctx = useGlobalExtensionContext()
 	const transport = ctx.services.transport
-	const item = useManagementView()
+	const item = useWorkbenchView()
 	const isMountedRef = useRef(true)
 	useEffect(() => {
 		return () => {
@@ -238,8 +238,8 @@ export function BuiltinSignalDbForm({
 			if (block.syncFrom?.collection) names.add(block.syncFrom.collection)
 			return Object.fromEntries(
 				Array.from(names).flatMap((name) => {
-					const resource = item.resources[name]
-					return resource?.kind === 'collection' ? [[name, resource.binding]] : []
+					const resource = item.model[name]
+					return resource?.kind === 'collection' ? [[name, resource.grantId]] : []
 				}),
 			)
 		}, [block.syncFrom?.collection, block.write.collection, item]),

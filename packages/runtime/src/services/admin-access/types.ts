@@ -12,7 +12,7 @@ export type AdminAccessOidcConfig = {
 	 * Claims required for Pluxel admin access.
 	 *
 	 * Pluxel has no separate non-admin user model; a token that satisfies this
-	 * policy is allowed to enter the management surface as an admin.
+	 * policy is allowed to enter the workbench surface as an admin.
 	 */
 	requiredClaims?: Record<string, AdminAccessClaimRequirement>
 	clockToleranceSeconds?: number

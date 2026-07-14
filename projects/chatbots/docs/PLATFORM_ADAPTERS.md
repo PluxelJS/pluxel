@@ -153,7 +153,7 @@ kookBot.$.status.gateway
 // { phase, sessionId, lastSequence, counters, timestamps, currentBackoffMs, lastError }
 ```
 
-连接状态机拥有快照，Bot 将其投影到 `$.status`，Management Plane 再按需投影用于展示；依赖方向不能
+连接状态机拥有快照，Bot 将其投影到 `$.status`，Workbench Plane 再按需投影用于展示；依赖方向不能
 反过来。诊断只保留固定字段、累计计数和最近时间点，不保存无界事件历史。token、完整连接 URL、
 webhook secret 和带认证信息的错误对象不得进入快照。
 
@@ -203,9 +203,9 @@ resume session 默认只属于当前 Bot 生命周期，不写入管理投影。
 只有平台插件可以改变 registry。创建、更新、删除账号的方法由平台插件明确提供，并负责 Vault、
 状态投影和 Bot 生命周期；业务插件只能读取 Bot。
 
-平台插件的常驻方法返回 Bot、平台状态或 `void`，不能返回 management collection DTO，也不能包含
-管理界面的提示文本。可选 Management RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
-Management Plane 不改变平台 capability 的类型或行为。
+平台插件的常驻方法返回 Bot、平台状态或 `void`，不能返回 workbench collection DTO，也不能包含
+管理界面的提示文本。可选 Workbench RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
+Workbench Plane 不改变平台 capability 的类型或行为。
 
 ## Bot、Plugin 与 ChatHub 的边界
 
@@ -215,7 +215,7 @@ Management Plane 不改变平台 capability 的类型或行为。
 api/             纯平台 HTTP client、类型、endpoint inventory
 bot/             单账号生命周期、事件连接、$ 高级能力
 registry/        Bot 集合和配置协调
-management/      可选 UI、RPC 和状态投影
+workbench/      可选 UI、RPC 和状态投影
 plugin.ts        Pluxel capability 组合根
 
 独立 {platform}-hub package:
@@ -223,7 +223,7 @@ codec/           平台对象 <-> JSON-safe ChatMessage
 plugin.ts        平台 capability <-> ChatHub transport/projection
 ```
 
-硬依赖放构造函数，可选管理面使用 `ctx.management.mount()`。ChatHub 投影属于独立 bridge plugin；
+硬依赖放构造函数，可选Workbench使用 `ctx.workbench.mount()`。ChatHub 投影属于独立 bridge plugin；
 bridge 的 constructor 依赖平台 capability 与 ChatHub，平台包本身不得导入 `contracts` 或 Hub。未安装
 bridge 时 Bot 原生 API、gateway/polling 和 raw events 照常启动。bridge 停止时只卸载 transport 和
 确认型 projection，不能销毁 Bot。Bot 的 timer、gateway、polling 和 observer 由平台插件生命周期回收。
@@ -669,5 +669,5 @@ definitions.txt / endpoints.txt
 - [ ] codegen 显式、确定、可 `--check`，构建不访问网络。
 - [ ] macro 只内联已提交的静态 metadata。
 - [ ] endpoint 方法只安装在共享 prototype 一次。
-- [ ] API、Bot、registry、management 属于平台包；codec 与 Hub transport 属于 bridge 包。
+- [ ] API、Bot、registry、workbench 属于平台包；codec 与 Hub transport 属于 bridge 包。
 - [ ] 生命周期、取消、错误、限流和 multipart 有平台级测试。

@@ -1,23 +1,17 @@
 import { Badge, Tooltip } from '@mantine/core'
-import { managementApp } from '@pluxel/runtime/management/ui'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
 import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import type { PluginStatusBadgeManagement } from '../../PluginStatusBadge.management'
+import type { PluginStatusBadgeWorkbench } from '../../PluginStatusBadge.workbench'
 
-const plugin = managementApp<typeof PluginStatusBadgeManagement>()
+const plugin = createWorkbenchUi<typeof PluginStatusBadgeWorkbench>()
 
 export function StatusBadge() {
-	const app = plugin.use()
-	const activity = app.stream('activity')
+	const { activity } = plugin.view('StatusBadge').useModel()
 	const [connected, setConnected] = useState(false)
 
 	useEffect(() => {
-		const offOpen = activity.onOpen(() => setConnected(true))
-		const offError = activity.onError(() => setConnected(false))
-		return () => {
-			offOpen()
-			offError()
-		}
+		return activity.onConnection(setConnected)
 	}, [activity])
 
 	return (
@@ -34,4 +28,4 @@ export function StatusBadge() {
 	)
 }
 
-export default plugin.define({ StatusBadge })
+export default plugin.expose({ StatusBadge })

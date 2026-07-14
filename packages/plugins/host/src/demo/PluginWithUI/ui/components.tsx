@@ -25,10 +25,9 @@ import {
 	IconWaveSine,
 } from '@tabler/icons-react'
 import { type ReactNode, useEffect, useState } from 'react'
-import { plugin } from './runtime'
+import { usePluginWithUi, type PluginWithUIRuntime } from './runtime'
 
-type PluginWithUIRuntime = ReturnType<typeof plugin.use>
-type PluginWithUISseClient = ReturnType<PluginWithUIRuntime['stream']>
+type PluginWithUIEventsClient = PluginWithUIRuntime['model']['activity']
 type RpcAction = () => Promise<unknown>
 type SsePayloadWithType = { type: unknown }
 
@@ -47,16 +46,9 @@ function useRpcError() {
 	return { error, run }
 }
 
-function useLiveConnectionState(sse: PluginWithUISseClient) {
+function useLiveConnectionState(events: PluginWithUIEventsClient) {
 	const [connected, setConnected] = useState(false)
-	useEffect(() => {
-		const offOpen = sse.onOpen(() => setConnected(true))
-		const offError = sse.onError(() => setConnected(false))
-		return () => {
-			offOpen()
-			offError()
-		}
-	}, [sse])
+	useEffect(() => events.onConnection(setConnected), [events])
 	return connected
 }
 
@@ -64,17 +56,7 @@ function useLatestTick(app: PluginWithUIRuntime) {
 	const [tick, setTick] = useState<number | null>(null)
 
 	useEffect(() => {
-		const stream = app.stream('activity')
-		const off = stream.ns('PluginWithUI:activity').on((msg) => {
-			const payload = msg.payload
-			if (
-				payload &&
-				typeof payload === 'object' &&
-				(payload as any).type === 'tick' &&
-				typeof (payload as any).now === 'number'
-			)
-				setTick((payload as any).now)
-		}, 'tick')
+		const off = app.model.activity.on('tick', (payload) => setTick(payload.now))
 		return () => off()
 	}, [app])
 
@@ -104,10 +86,10 @@ function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
 }
 
 export function OverviewPanel() {
-	const app = plugin.use()
-	const status = app.collection('status').useDocById('status')
-	const eventCount = app.collection('events').useCount()
-	const activity = app.stream('activity')
+	const app = usePluginWithUi()
+	const status = app.model.status.useOneById('status')
+	const eventCount = app.model.events.useCount()
+	const activity = app.model.activity
 	const connected = useLiveConnectionState(activity)
 	const tick = useLatestTick(app)
 	const { error, run } = useRpcError()
@@ -144,7 +126,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{app.target}</Code>
+						插件：<Code>{app.targetPluginId}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -164,14 +146,14 @@ export function OverviewPanel() {
 			<Group>
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
-					onClick={() => void run(() => app.api('api').increment(1), '无法执行 +1')}
+					onClick={() => void run(() => app.model.commands.increment(1), '无法执行 +1')}
 				>
 					+1
 				</Button>
 				<Button
 					variant="light"
 					leftSection={<IconRestore size={16} />}
-					onClick={() => void run(() => app.api('api').resetCounter(), '无法重置计数器')}
+					onClick={() => void run(() => app.model.commands.resetCounter(), '无法重置计数器')}
 				>
 					重置
 				</Button>
@@ -181,9 +163,9 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const app = plugin.use()
-	const eventsCollection = app.collection('events')
-	const events = eventsCollection.useView()
+	const app = usePluginWithUi()
+	const eventsCollection = app.model.events
+	const events = eventsCollection.useCollection()
 	const recentEvents = events.find({}, { sort: { at: -1 }, limit: 50 })
 	const { error, run } = useRpcError()
 	const [text, setText] = useState('')
@@ -191,7 +173,7 @@ export function EventsPanel() {
 	const addNote = async () => {
 		const message = text.trim()
 		if (!message) return
-		await run(() => app.api('api').addNote(message), '无法添加事件')
+		await run(() => app.model.commands.addNote(message), '无法添加事件')
 		setText('')
 	}
 
@@ -203,7 +185,7 @@ export function EventsPanel() {
 					<Button
 						variant="light"
 						color="red"
-						onClick={() => void run(() => app.api('api').clearEvents(), '无法清空事件')}
+						onClick={() => void run(() => app.model.commands.clearEvents(), '无法清空事件')}
 					>
 						清空
 					</Button>
@@ -270,18 +252,22 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const app = plugin.use()
-	const activity = app.stream('activity')
+	const app = usePluginWithUi()
+	const activity = app.model.activity
 	const connected = useLiveConnectionState(activity)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
 	useEffect(() => {
-		const stream = app.stream('activity')
-		const off = stream.ns('PluginWithUI:activity').onAny((msg) => {
-			const text = sseLineText(msg.payload, msg.event)
+		const append = (payload: unknown, event: string) => {
+			const text = sseLineText(payload, event)
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
-		})
-		return () => off()
+		}
+		const stops = [
+			app.model.activity.on('ready', (payload) => append(payload, 'ready')),
+			app.model.activity.on('tick', (payload) => append(payload, 'tick')),
+			app.model.activity.on('activity', (payload) => append(payload, 'activity')),
+		]
+		return () => stops.forEach((stop) => stop())
 	}, [app])
 
 	return (
@@ -328,7 +314,7 @@ type RoutePageProps = {
 }
 
 export function RoutePage({ frame = 'shell' }: RoutePageProps) {
-	const app = plugin.use()
+	const app = usePluginWithUi()
 	const standalone = frame === 'standalone'
 	return (
 		<Stack gap="md" style={standalone ? { minHeight: '100dvh', padding: 24 } : undefined}>
@@ -340,14 +326,15 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={pluginRouteHref(app.target, '/dashboard')}
+						href={pluginRouteHref(app.targetPluginId, '/dashboard')}
 					>
 						返回宿主壳
 					</Button>
 				) : null}
 			</Group>
 			<Text size="sm" c="dimmed">
-				这是插件提供的页面路由，用于演示 Management Module。插件名：<Code>{app.target}</Code>
+				这是插件提供的页面路由，用于演示 Workbench extension。插件名：
+				<Code>{app.targetPluginId}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

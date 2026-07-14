@@ -161,15 +161,15 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { defineManagementModule, managementUi } from '@pluxel/runtime/management'",
+			"import { workbench } from '@pluxel/runtime/workbench'",
 			'',
-			"const module = defineManagementModule({ id: 'Example', ui: managementUi(import.meta.url, './ui/index.ts') })",
-			"const secondModule = defineManagementModule({ id: 'SecondExample', ui: managementUi(import.meta.url, './ui/second.ts') })",
+			"const extension = workbench.define({ plugin: 'Example', entry: workbench.entry(import.meta.url, './ui/index.ts') })",
+			"const secondExtension = workbench.define({ plugin: 'SecondExample', entry: workbench.entry(import.meta.url, './ui/second.ts') })",
 			'',
-			'export function registerManagement(management: any) {',
-			'\treturn management.mount(module, {})',
+			'export function registerWorkbench(gate: any) {',
+			'\treturn gate.mount(extension, {})',
 			'}',
-			'export { secondModule }',
+			'export { secondExtension }',
 			'',
 		].join('\n'),
 		'src/ui/index.ts': [
@@ -427,7 +427,7 @@ describe('build command', () => {
 		}
 	})
 
-	it('preserves pure Management declarations and explicit mounting', async () => {
+	it('preserves pure Workbench declarations and explicit mounting', async () => {
 		await withBuildFixture('runtimeUi', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 
@@ -439,26 +439,26 @@ describe('build command', () => {
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
-			expect(output).toContain('management.mount')
-			expect(output).toContain('@pluxel/runtime/management')
+			expect(output).toContain('gate.mount')
+			expect(output).toContain('@pluxel/runtime/workbench')
 			expect(output).not.toContain('.bind(')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
 
-			const managementRoot = resolve(fixtureDir, 'dist/management')
-			const files = await readdir(managementRoot, { recursive: true })
+			const workbenchRoot = resolve(fixtureDir, 'dist/workbench')
+			const files = await readdir(workbenchRoot, { recursive: true })
 			expect(files.filter((file) => String(file).endsWith('mf-manifest.json'))).toHaveLength(2)
 			expect(files.filter((file) => String(file).endsWith('remoteEntry.js'))).toHaveLength(2)
 			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
 			const uiOutput = await Promise.all(
-				jsFiles.map((file) => readFile(resolve(managementRoot, file), 'utf-8')),
+				jsFiles.map((file) => readFile(resolve(workbenchRoot, file), 'utf-8')),
 			)
 			expect(uiOutput.join('\n')).toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(uiOutput.join('\n')).toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
 
-			const cacheRoot = resolve(fixtureDir, '.pluxel/management-build')
+			const cacheRoot = resolve(fixtureDir, '.pluxel/workbench-build')
 			const cacheFiles = await readdir(cacheRoot, { recursive: true })
-			const stamp = cacheFiles.find((file) => String(file).endsWith('pluxel-management.json'))
+			const stamp = cacheFiles.find((file) => String(file).endsWith('pluxel-workbench.json'))
 			expect(stamp).toBeDefined()
 			const firstStamp = await stat(resolve(cacheRoot, String(stamp)))
 
@@ -474,7 +474,7 @@ describe('build command', () => {
 			expect(await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')).not.toContain(
 				'__PLUXEL_UI_ONLY_MARKER__',
 			)
-			const republishedFiles = await readdir(managementRoot, { recursive: true })
+			const republishedFiles = await readdir(workbenchRoot, { recursive: true })
 			expect(republishedFiles.some((file) => String(file).endsWith('mf-manifest.json'))).toBe(true)
 
 			await writeFile(
@@ -489,12 +489,12 @@ describe('build command', () => {
 			})
 			const invalidatedCacheFiles = await readdir(cacheRoot, { recursive: true })
 			expect(
-				invalidatedCacheFiles.filter((file) => String(file).endsWith('pluxel-management.json')),
+				invalidatedCacheFiles.filter((file) => String(file).endsWith('pluxel-workbench.json')),
 			).toHaveLength(4)
 		})
 	}, 45_000)
 
-	it('does not initialize the Management UI builder for plugins without a UI declaration', async () => {
+	it('does not initialize the Workbench UI builder for plugins without a UI declaration', async () => {
 		await withBuildFixture('basic', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			await runWithTsdown({
@@ -504,7 +504,7 @@ describe('build command', () => {
 				extraConfig: cliTsdownOverlay,
 			})
 			expect(
-				await stat(resolve(fixtureDir, '.pluxel/management-build')).catch((): null => null),
+				await stat(resolve(fixtureDir, '.pluxel/workbench-build')).catch((): null => null),
 			).toBeNull()
 		})
 	})

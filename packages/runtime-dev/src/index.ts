@@ -1,19 +1,19 @@
 import { mergeConfig, type InlineConfig } from 'vite'
 import './context-augment'
 
-import type { ManagementCompilerServiceConfig } from './management/ManagementCompilerService'
+import type { WorkbenchCompilerServiceConfig } from './workbench/WorkbenchCompilerService'
 
 export * from './hmr-log'
 export {
-	ManagementCompilerService,
-	type ManagementCompilerServiceConfig,
-	type ManagementCompilerServiceDeps,
-} from './management/ManagementCompilerService'
+	WorkbenchCompilerService,
+	type WorkbenchCompilerServiceConfig,
+	type WorkbenchCompilerServiceDeps,
+} from './workbench/WorkbenchCompilerService'
 
-export function mergeManagementCompilerViteConfig(
-	base: ManagementCompilerServiceConfig | undefined,
+export function mergeWorkbenchCompilerViteConfig(
+	base: WorkbenchCompilerServiceConfig | undefined,
 	vite: InlineConfig | undefined,
-): ManagementCompilerServiceConfig | undefined {
+): WorkbenchCompilerServiceConfig | undefined {
 	if (!vite) return base
 	return {
 		...base,

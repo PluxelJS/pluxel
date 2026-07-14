@@ -1,6 +1,6 @@
 import { newHttpBatchRpcSession, type RpcStub } from 'capnweb'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
-import type { ManagementApiView, RuntimeRpcApi } from './protocol'
+import type { WorkbenchRpcView, RuntimeRpcApi } from './protocol'
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
@@ -103,10 +103,10 @@ export function rpcErrorMessage(error: unknown, fallback = 'RPC 调用失败'): 
 	return fallback
 }
 
-export function createManagementApiView(
+export function createWorkbenchRpcView(
 	raw: RpcClientFactory,
 	defaults: RpcClientCreateOptions = {},
-): ManagementApiView {
+): WorkbenchRpcView {
 	// Important: capnweb http-batch sessions are short-lived. If we return the raw
 	// stub object and users memoize it (e.g. `const rpc = transport.extensions.MyPlugin`),
 	// the session may already be ended when the next interaction happens.
@@ -115,8 +115,8 @@ export function createManagementApiView(
 	// call creates a fresh session.
 	const namespaceCache = new Map<string, unknown>()
 
-	const getNamespaceProxy = (binding: string) => {
-		const existing = namespaceCache.get(binding)
+	const getNamespaceProxy = (grantId: string) => {
+		const existing = namespaceCache.get(grantId)
 		if (existing) return existing
 
 		const methodCache = new Map<string, unknown>()
@@ -132,10 +132,10 @@ export function createManagementApiView(
 					const fn = (...args: any[]) => {
 						const { signal, clear } = createTimeout(DEFAULT_RPC_TIMEOUT_MS)
 						const client = raw({ ...defaults, signal })
-						// IMPORTANT: preserve `this` binding for capnweb stubs.
+						// IMPORTANT: preserve `this` grantId for capnweb stubs.
 						// Optional-chaining call like `obj?.[method]?.()` can lose the receiver,
 						// which may break capnweb's dynamic dispatch.
-						const nsTarget = (client as any).resource(binding)
+						const nsTarget = (client as any).workbenchRpc(grantId)
 						const targetFn = nsTarget?.[method]
 						// Use Reflect.apply() instead of `fn.apply()` because capnweb stubs are
 						// Proxy-based and may intercept the "apply" property access.
@@ -170,17 +170,17 @@ export function createManagementApiView(
 			},
 		)
 
-		namespaceCache.set(binding, nsProxy)
+		namespaceCache.set(grantId, nsProxy)
 		return nsProxy
 	}
 
 	return new Proxy(
 		{},
 		{
-			get(_target, binding) {
-				if (typeof binding !== 'string') return undefined
-				return getNamespaceProxy(binding)
+			get(_target, grantId) {
+				if (typeof grantId !== 'string') return undefined
+				return getNamespaceProxy(grantId)
 			},
 		},
-	) as ManagementApiView
+	) as WorkbenchRpcView
 }

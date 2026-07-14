@@ -15,12 +15,13 @@ export {
 } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
-export { isManagementEnabled, managementAdminAccess } from './management-config'
+export { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
 export {
-	requireManagementBackend,
-	withManagementPluginContext,
-} from './services/management/ManagementService'
+	requireWorkbenchBackend,
+	withWorkbenchPluginContext,
+} from './services/workbench/WorkbenchService'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { ManagementArtifactStore } from './services/management/ManagementArtifactService'
-export { createCompiledManagementArtifact } from './services/management/ManagementArtifactService'
+export type { WorkbenchArtifactStore } from './services/workbench/WorkbenchArtifactService'
+export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
+export { installWorkbench, requireWorkbench } from './services/workbench'

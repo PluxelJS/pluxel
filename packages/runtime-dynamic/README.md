@@ -23,7 +23,7 @@ export default defineDynamicRuntimeConfig({
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
 	logsDir: 'logs',
-	management: {
+	workbench: {
 		enabled: true,
 		access: { exposure: 'private' },
 	},

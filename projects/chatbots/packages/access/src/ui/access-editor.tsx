@@ -14,11 +14,11 @@ import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useEffect, useState } from 'react'
 import type { PermissionEffect } from '../model.ts'
 import type { UserAccess } from './types.ts'
-import { accessPlugin } from './runtime.ts'
+import type { AccessViewModel } from './runtime.ts'
 
-export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use> }) {
-	const users = app.collection('users').useList()
-	const roles = app.collection('roles').useList()
+export function AccessEditor({ app }: { app: { model: AccessViewModel } }) {
+	const users = app.model.users.useMany()
+	const roles = app.model.roles.useMany()
 	const [userId, setUserId] = useState<string | null>(null)
 	const [access, setAccess] = useState<UserAccess>({ roles: [], grants: [] })
 	const [permissionNodes, setPermissionNodes] = useState<string[]>([])
@@ -34,7 +34,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 	const [error, setError] = useState<string | null>(null)
 
 	useEffect(() => {
-		void Promise.resolve(app.api('api').listPermissions()).then((items) =>
+		void Promise.resolve(app.model.commands.listPermissions()).then((items) =>
 			setPermissionNodes(items.map((item) => item.node)),
 		)
 	}, [app])
@@ -43,7 +43,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 			setAccess({ roles: [], grants: [] })
 			return
 		}
-		void Promise.resolve(app.api('api').getUserAccess(userId))
+		void Promise.resolve(app.model.commands.getUserAccess(userId))
 			.then(setAccess)
 			.catch((caught) => setError(rpcErrorMessage(caught, '读取用户权限失败')))
 	}, [app, userId])
@@ -101,7 +101,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 							onClick={() =>
 								void run(async () => {
 									setAccess(
-										await app.api('api').setUserGrant(userId!, {
+										await app.model.commands.setUserGrant(userId!, {
 											node: grantNode,
 											effect: grantEffect,
 										}),
@@ -121,7 +121,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 								style={{ cursor: 'pointer' }}
 								onClick={() =>
 									void run(async () =>
-										setAccess(await app.api('api').revokeUserGrant(userId!, grant.node)),
+										setAccess(await app.model.commands.revokeUserGrant(userId!, grant.node)),
 									)
 								}
 							>
@@ -141,7 +141,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 							disabled={!userId || !assignRoleId}
 							onClick={() =>
 								void run(async () =>
-									setAccess(await app.api('api').assignRole(userId!, assignRoleId!)),
+									setAccess(await app.model.commands.assignRole(userId!, assignRoleId!)),
 								)
 							}
 						>
@@ -155,7 +155,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 								style={{ cursor: 'pointer' }}
 								onClick={() =>
 									void run(async () =>
-										setAccess(await app.api('api').revokeRole(userId!, assigned)),
+										setAccess(await app.model.commands.revokeRole(userId!, assigned)),
 									)
 								}
 							>
@@ -190,7 +190,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 							disabled={!roleId.trim() || !roleName.trim()}
 							onClick={() =>
 								void run(async () => {
-									await app.api('api').upsertRole({
+									await app.model.commands.upsertRole({
 										id: roleId,
 										name: roleName,
 										rank: roleRank,
@@ -230,9 +230,12 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 									const index = grants.findIndex((grant) => grant.node === next.node)
 									if (index < 0) grants.push(next)
 									else grants[index] = next
-									await app
-										.api('api')
-										.upsertRole({ id: roleId, name: roleName, rank: roleRank, grants })
+									await app.model.commands.upsertRole({
+										id: roleId,
+										name: roleName,
+										rank: roleRank,
+										grants,
+									})
 								})
 							}
 						>
@@ -251,7 +254,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 									color="red"
 									onClick={() =>
 										void run(async () => {
-											await app.api('api').deleteRole(role.id)
+											await app.model.commands.deleteRole(role.id)
 										})
 									}
 								>
@@ -267,7 +270,7 @@ export function AccessEditor({ app }: { app: ReturnType<typeof accessPlugin.use>
 										style={{ cursor: 'pointer' }}
 										onClick={() =>
 											void run(async () => {
-												await app.api('api').upsertRole({
+												await app.model.commands.upsertRole({
 													...role,
 													grants: role.grants.filter((item) => item.node !== grant.node),
 												})

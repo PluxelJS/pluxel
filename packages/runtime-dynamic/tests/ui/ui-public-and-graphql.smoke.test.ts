@@ -6,8 +6,8 @@ import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
-import { createCompiledManagementArtifact } from '@pluxel/runtime/internal'
-import { requireManagement } from '../../../runtime/src/services/management'
+import { createCompiledWorkbenchArtifact } from '@pluxel/runtime/internal'
+import { requireWorkbench } from '../../../runtime/src/services/workbench'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR UI smoke', () => {
@@ -33,7 +33,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -104,7 +104,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -163,7 +163,7 @@ describe('HMR UI smoke', () => {
 		await host.ctx.effects.dispose()
 	}, 15_000)
 
-	it('serves management artifact manifests and files through the internal artifact route', async () => {
+	it('serves workbench artifact manifests and files through the internal artifact route', async () => {
 		await using fixture = await createFixture({
 			artifacts: {
 				'mf-manifest.json': JSON.stringify({
@@ -177,8 +177,8 @@ describe('HMR UI smoke', () => {
 
 		await withRuntimeContext(
 			async (ctx) => {
-				await requireManagement(ctx).artifacts.commitCompiledModule(
-					createCompiledManagementArtifact({
+				await requireWorkbench(ctx).artifacts.commitCompiledModule(
+					createCompiledWorkbenchArtifact({
 						pluginName: 'DemoPlugin',
 						sourceHash: 'demo-hash',
 						compiledAt: 123,
@@ -187,7 +187,7 @@ describe('HMR UI smoke', () => {
 				)
 
 				const manifestUrl =
-					requireManagement(ctx).artifacts.getCompiledModule('DemoPlugin')?.manifestUrl
+					requireWorkbench(ctx).artifacts.getCompiledModule('DemoPlugin')?.manifestUrl
 				expect(manifestUrl).toBeTruthy()
 
 				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))
@@ -197,7 +197,7 @@ describe('HMR UI smoke', () => {
 					metaData?: { publicPath?: string }
 				}
 				expect(manifest.metaData?.publicPath).toBe(
-					`${RUNTIME_INTERNAL_API_BASE}/management/artifacts/DemoPlugin/demo-hash/`,
+					`${RUNTIME_INTERNAL_API_BASE}/workbench/artifacts/DemoPlugin/demo-hash/`,
 				)
 
 				const assetRes = await ctx.http.fetch(
@@ -209,7 +209,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})

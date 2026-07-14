@@ -13,8 +13,8 @@ import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useState } from 'react'
 import { sandboxPlugin } from './runtime.ts'
 export function SandboxPanel() {
-	const app = sandboxPlugin.use()
-	const messages = app.collection('messages').useList()
+	const app = { model: sandboxPlugin.view('SandboxPanel', 'SandboxRoute').useModel() }
+	const messages = app.model.messages.useMany()
 	const [messageText, setMessageText] = useState('/ping')
 	const [conversationId, setConversationId] = useState('default')
 	const [busy, setBusy] = useState(false)
@@ -23,7 +23,7 @@ export function SandboxPanel() {
 		if (!messageText.trim()) return
 		setBusy(true)
 		try {
-			await app.api('api').send({ text: messageText, conversationId })
+			await app.model.commands.send({ text: messageText, conversationId })
 			setMessageText('')
 			setError(null)
 		} catch (caught) {
@@ -41,7 +41,7 @@ export function SandboxPanel() {
 						不需要平台凭据，直接验证完整 Hub、身份、权限和命令管线。
 					</Text>
 				</div>
-				<Button variant="subtle" color="red" onClick={() => void app.api('api').reset()}>
+				<Button variant="subtle" color="red" onClick={() => void app.model.commands.reset()}>
 					清空
 				</Button>
 			</Group>

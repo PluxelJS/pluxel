@@ -33,10 +33,10 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 	const configPayload = options.config ?? {}
 	const enabled = new Set(options.enabled)
 	const profile = options.profile ?? 'frozen'
-	const management = options.bootstrap?.management ?? false
+	const workbench = options.bootstrap?.workbench ?? false
 	const adminAccess =
-		management !== false && management.enabled === true
-			? { ...management.access, enabled: true }
+		workbench !== false && workbench.enabled === true
+			? { ...workbench.access, enabled: true }
 			: { enabled: false, exposure: 'private' }
 	const imports = rows
 		.map((row) =>
@@ -60,12 +60,12 @@ function buildBootstrapSource(options: BuildFrozenHostOptions, rows: readonly Im
 import { Context } from '@pluxel/core'
 import '@pluxel/core/services'
 import '@pluxel/runtime'
-import { withManagementPluginContext } from '@pluxel/runtime/internal'
+import { withWorkbenchPluginContext } from '@pluxel/runtime/internal'
 import '@pluxel/runtime/services/vault'
 import '@pluxel/runtime-dynamic/register'
 ${imports}
 
-const ctx = new Context(withManagementPluginContext({
+const ctx = new Context(withWorkbenchPluginContext({
 \tprofile: ${JSON.stringify(profile)},
 \tconfigService: {
 \t\t// Frozen hosts still need a mutable bootstrap phase because builtin preload
@@ -87,15 +87,15 @@ const ctx = new Context(withManagementPluginContext({
 \t\tstate: { enabled: false },
 \t},
 \thttp: ${JSON.stringify(options.bootstrap?.http ?? {})},
-\tmanagement: ${JSON.stringify(management)},
+\tworkbench: ${JSON.stringify(workbench)},
 \tadminAccess: ${JSON.stringify(adminAccess)},
 }))
 
 await ctx.prepareServices()
 
-if (${JSON.stringify(management !== false && management.enabled === true)}) {
-\tconst { installManagement } = await import('@pluxel/runtime/services/management')
-\tinstallManagement(ctx)
+if (${JSON.stringify(workbench !== false && workbench.enabled === true)}) {
+\tconst { installWorkbench } = await import('@pluxel/runtime/internal')
+\tinstallWorkbench(ctx)
 }
 
 await ctx.loader.preloadPlugins(

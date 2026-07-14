@@ -24,11 +24,11 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 依赖；`packages/*` 只用于真正跨边界复用的中性库。出现第二个独立部署目标时，再将 `web`
 迁入 `apps/*` 层级。
 
-## 为什么默认关闭 Management Plane
+## 为什么默认关闭 Workbench Plane
 
-模板用 `management: false` 验证业务能力不依赖可选管理面。开启管理面时，只修改
+模板用 `workbench: false` 验证业务能力不依赖可选Workbench。开启Workbench时，只修改
 `web/src/pluxel.static.ts` 的宿主配置；业务 HTTP、领域状态和持久化不能迁入
-`ctx.management.mount()`。关闭时 mount 返回 `undefined`，不会注册资源或启动 UI 工具链。
+`ctx.workbench.mount()`。关闭时 mount 返回 `undefined`，不会注册资源或启动 UI 工具链。
 
 ## 依赖规则
 
@@ -38,7 +38,7 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 - Vite、Vitest 和插件源码只使用公开 package subpath，不引用 Pluxel 仓库相对路径。
 - 同一个 Vite pipeline 依次组合 static runtime、GQLens schema codegen 和 React HMR；GraphQL
   业务 endpoint 仍由插件拥有。
-- Vault、Management Plane 和部署路线由根 host 安装；插件只消费稳定 capability。
+- Vault、Workbench Plane 和部署路线由根 host 安装；插件只消费稳定 capability。
 
 根目录生成 `oxlint.config.ts` 和 `.oxfmtrc.json`。Oxlint 配置加载
 `@pluxel/rolldown/oxlint` 的 Pluxel 增补规则；`pnpm verify` 同时检查格式、未使用的 lint
@@ -51,9 +51,9 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 `docs/pluxel/README.md` 包含：
 
 - 标准 plugin shape 与目录所有权；
-- required/optional、plugin/feature、业务/管理面的选择表；
+- required/optional、plugin/feature、业务/Workbench的选择表；
 - `@pluxel/test/vitest`、`withRuntimeHost()` 和必须覆盖的插件测试边界；
-- config、lifecycle、cleanup 和 disabled Management Plane 的实践；
+- config、lifecycle、cleanup 和 disabled Workbench Plane 的实践；
 - 模板启用的每一条 Pluxel Oxlint rule 及修复方向；
 - `lint:fix` 到 `verify` 的完成标准。
 

@@ -8,7 +8,7 @@ import '../../services/http/HttpService'
 import '../../services/http/InternalApiValidationService'
 import '../../services/http/InternalGraphQLService'
 import '../../services/admin-access/AdminAccessService'
-import '../../services/management/ManagementService'
+import '../../services/workbench/WorkbenchService'
 import '../../context-augment'
 import '../../events'
 
@@ -20,7 +20,7 @@ import type { HttpService } from '../../services/http/HttpService'
 import type { InternalApiValidationService } from '../../services/http/InternalApiValidationService'
 import type { InternalGraphQLService } from '../../services/http/InternalGraphQLService'
 import type { AdminAccessService } from '../../services/admin-access/AdminAccessService'
-import type { ManagementService } from '../../services/management/ManagementService'
+import type { WorkbenchService } from '../../services/workbench/WorkbenchService'
 
 export type StaticRuntimeRegisteredServices =
 	| ConfigService
@@ -31,4 +31,4 @@ export type StaticRuntimeRegisteredServices =
 	| InternalApiValidationService
 	| InternalGraphQLService
 	| AdminAccessService
-	| ManagementService
+	| WorkbenchService

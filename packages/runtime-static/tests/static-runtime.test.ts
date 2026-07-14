@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
-import { defineManagementModule } from '@pluxel/runtime/management'
+import { workbench } from '@pluxel/runtime/workbench'
 import {
 	BasePlugin,
 	createStaticRuntime,
@@ -155,13 +155,13 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('serves internal GraphQL by default without enabling management UI/RPC/SSE', async () => {
+	it('serves internal GraphQL by default without enabling workbench UI/RPC/SSE', async () => {
 		let mounted = false
 		@Plugin({ name: 'HeadlessWebGate' })
 		class HeadlessWebGate extends BasePlugin {
 			override init(): void {
 				mounted = Boolean(
-					this.ctx.management.mount(defineManagementModule({ id: 'HeadlessWebGate' }), {}),
+					this.ctx.workbench.mount(workbench.define({ plugin: 'HeadlessWebGate' }), {}),
 				)
 			}
 		}
@@ -172,7 +172,7 @@ describe('@pluxel/runtime-static', () => {
 				plugins: [HeadlessWebGate],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: ['HeadlessWebGate'] } },
-				management: false,
+				workbench: false,
 			}),
 		)
 		try {
@@ -218,28 +218,28 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('installs Management Plane from the single host configuration boundary', async () => {
+	it('installs Workbench Plane from the single host configuration boundary', async () => {
 		let mounted = false
 		@Plugin({ name: 'ManagedWebGate' })
 		class ManagedWebGate extends BasePlugin {
 			override init(): void {
 				mounted = Boolean(
-					this.ctx.management.mount(defineManagementModule({ id: 'ManagedWebGate' }), {}),
+					this.ctx.workbench.mount(workbench.define({ plugin: 'ManagedWebGate' }), {}),
 				)
 			}
 		}
 
 		const runtime = await createStaticRuntime(
 			defineStaticRuntimeConfig({
-				name: 'static-runtime-with-management',
+				name: 'static-runtime-with-workbench',
 				plugins: [ManagedWebGate],
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: ['ManagedWebGate'] } },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			}),
 		)
 		try {
-			expect(runtime.ctx.management.enabled).toBe(true)
+			expect(runtime.ctx.workbench.enabled).toBe(true)
 			expect(mounted).toBe(true)
 			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
 			const response = await runtime.fetch(

@@ -14,11 +14,11 @@ type FindOptions<T> = {
 }
 
 /**
- * Business-owned collection with an optional Management Plane projection.
+ * Business-owned collection with an optional Workbench Plane projection.
  *
- * Runtime code always reads and writes the local collection. Attaching a management
+ * Runtime code always reads and writes the local collection. Attaching a workbench
  * collection mirrors the current snapshot and future mutations without making the
- * business capability depend on the optional management backend.
+ * business capability depend on the optional workbench backend.
  */
 export class ProjectedCollection<T extends IdDocument> {
 	readonly #documents = new Map<string, T>()
@@ -93,7 +93,7 @@ export class ProjectedCollection<T extends IdDocument> {
 		try {
 			void Promise.resolve(operation(this.#projection)).catch(ignoreProjectionError)
 		} catch {
-			// The optional management projection must not break business-owned state.
+			// The optional workbench projection must not break business-owned state.
 		}
 	}
 }

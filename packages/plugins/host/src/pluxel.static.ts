@@ -31,7 +31,7 @@ export default defineStaticRuntimeConfig({
 	runtimeState: {
 		snapshot: { enabled: staticDemoEnabledPlugins },
 	},
-	management: {
+	workbench: {
 		enabled: true,
 		access: { exposure: 'private' },
 	},

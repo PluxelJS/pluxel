@@ -89,7 +89,7 @@ export class LifecycleManager {
 		return lifecycleSelectors.isRunning(this.getSnapshot(plugin))
 	}
 
-	/* ─────────────────────────── Lifecycle Management ─────────────────────────── */
+	/* ─────────────────────────── Lifecycle Workbench ─────────────────────────── */
 
 	async startLifecycle(
 		id: PluginIdentifier | RuntimePluginKey,

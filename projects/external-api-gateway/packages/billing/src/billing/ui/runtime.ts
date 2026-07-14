@@ -1,4 +1,4 @@
-import { managementApp } from '@pluxel/runtime/management/ui'
-import type { UsageBillingManagement } from '../management-module.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import type { UsageBillingWorkbench } from '../workbench-module.ts'
 
-export const billingPlugin = managementApp<typeof UsageBillingManagement>()
+export const billingPlugin = createWorkbenchUi<typeof UsageBillingWorkbench>()

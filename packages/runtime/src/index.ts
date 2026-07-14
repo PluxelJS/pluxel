@@ -38,4 +38,4 @@ export {
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
 export type { StaticRuntimeRegisteredServices } from './runtime/register/static'
-export type { ManagementConfig } from './management-config'
+export type { WorkbenchConfig } from './workbench-config'

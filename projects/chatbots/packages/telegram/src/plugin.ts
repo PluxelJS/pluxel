@@ -1,7 +1,7 @@
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { TelegramUpdate } from '@gramio/types'
-import { managementBinding, type MountedManagementResources } from '@pluxel/runtime/management'
+import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -21,12 +21,12 @@ import {
 import { TelegramBot } from './bot.ts'
 import { createTelegramPluginEvents } from './events.factory.ts'
 import {
-	TelegramManagementRpc,
+	TelegramWorkbenchRpc,
 	type TelegramSettingsDoc,
 	type TelegramStatusDoc,
-} from './management.ts'
+} from './workbench.ts'
 import type { TelegramBotStatus } from './status.ts'
-import { TelegramManagementModule } from './management-module.ts'
+import { TelegramWorkbench } from './workbench-module.ts'
 
 export type TelegramBotConfigInput = BotAccountInput
 export type TelegramUpdateProjection = AcknowledgedProjection<TelegramBot, TelegramUpdate>
@@ -36,8 +36,8 @@ const DEFAULT_API_BASE = 'https://api.telegram.org'
 
 @Plugin({ name: 'TelegramPlugin' })
 export class TelegramPlugin extends BasePlugin {
-	private settings?: MountedManagementResources<typeof TelegramManagementModule>['settings']
-	private status?: MountedManagementResources<typeof TelegramManagementModule>['status']
+	private settings?: MountedWorkbenchCollections<typeof TelegramWorkbench>['settings']
+	private status?: MountedWorkbenchCollections<typeof TelegramWorkbench>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<TelegramBot>({
 		onObserverError: (error) =>
@@ -57,14 +57,14 @@ export class TelegramPlugin extends BasePlugin {
 	readonly events = createTelegramPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		const mounted = this.ctx.management.mount(TelegramManagementModule, {
-			api: managementBinding.api(() => new TelegramManagementRpc(this)),
-			settings: managementBinding.collection(),
-			status: managementBinding.collection(),
+		const mounted = this.ctx.workbench.mount(TelegramWorkbench, {
+			commands: workbench.provide.rpc(() => new TelegramWorkbenchRpc(this)),
+			settings: workbench.provide.collection(),
+			status: workbench.provide.collection(),
 		})
 		if (mounted) {
-			this.settings = mounted.resources.settings
-			this.status = mounted.resources.status
+			this.settings = mounted.collections.settings
+			this.status = mounted.collections.status
 			await Promise.all([this.settings.ready(), this.status.ready()])
 		}
 		this.settings?.removeMany({})

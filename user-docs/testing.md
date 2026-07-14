@@ -44,7 +44,7 @@ export default definePluxelVitestConfig(
 | --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------- |
 | 纯函数、领域模型、schema helper                                 | 直接 Vitest                                         | 不启动 Pluxel，速度最快                                       |
 | DI、required dependency graph、feature、effects、core lifecycle | `@pluxel/test` 的 `withHost()`                      | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
-| config 注入、HTTP、persistence、Vault、Management Plane         | `@pluxel/runtime/test` 的 `withRuntimeHost()`       | 默认 memory backend，callback 结束后自动 dispose              |
+| config 注入、HTTP、persistence、Vault、Workbench Plane          | `@pluxel/runtime/test` 的 `withRuntimeHost()`       | 默认 memory backend，callback 结束后自动 dispose              |
 | 应用的 static catalog 和完整 fetch boundary                     | `@pluxel/runtime-static` 的 `createStaticRuntime()` | 用于 host/application integration，不是普通插件单测默认选择   |
 | dynamic loader、HMR、UI compiler、真实 Vite route               | 对应 runtime package 的集成测试                     | 需要验证工具链或 route 时才上升到这一层                       |
 
@@ -60,7 +60,7 @@ import { describe, expect, it } from 'vitest'
 import { OrdersPlugin } from '../src/index.ts'
 
 describe('OrdersPlugin', () => {
-	it('starts with normalized config and serves business HTTP without management', async () => {
+	it('starts with normalized config and serves business HTTP without workbench', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add(OrdersPlugin)
@@ -76,7 +76,7 @@ describe('OrdersPlugin', () => {
 				)
 				expect(response.status).toBe(200)
 			},
-			{ management: false },
+			{ workbench: false },
 		)
 	})
 })
@@ -87,7 +87,7 @@ describe('OrdersPlugin', () => {
 dispose host，因此优先于手动维护 `afterEach` cleanup。
 
 runtime host 默认使用 memory persistence、config service 和 runtime state，并默认启用私有
-Management Plane。测试业务独立性时必须显式传 `{ management: false }`；只有验证管理面 contract、
+Workbench Plane。测试业务独立性时必须显式传 `{ workbench: false }`；只有验证Workbench contract、
 layout 或 resource binding 时才启用它。
 
 ## 只测 core lifecycle
@@ -170,8 +170,8 @@ phase、kind 和 `blockedBy` 语义。
 2. 诚实失败：必要外部条件不满足时 lifecycle 是 failed，而不是 running 加一条日志。
 3. required dependency：provider failure 会阻塞 consumer；optional provider 缺失不阻塞核心能力。
 4. cleanup：remove、replacement 或 host dispose 后 timer、listener、route 和连接不再工作；cleanup 可重复。
-5. Management Plane disabled：业务 HTTP、领域状态和核心生命周期仍然工作，management callback 不执行。
-6. Management Plane enabled：测试 module mount、target layout、opaque binding、cleanup 和 UI artifact。
+5. Workbench Plane disabled：业务 HTTP、领域状态和核心生命周期仍然工作，workbench callback 不执行。
+6. Workbench Plane enabled：测试 module mount、target layout、opaque grant、cleanup 和 UI artifact。
 7. request-level failure：单次无效请求或上游超时不会错误地停止整个插件。
 
 不要为了行覆盖率直接调用 private lifecycle method。通过 host commit、HTTP fetch、公开 capability、

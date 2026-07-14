@@ -117,7 +117,7 @@ export type RuntimeWorkerWatchOptions = {
 }
 
 export type RuntimeDevCapabilities = {
-	managementUiSource?: {
+	workbenchUiSource?: {
 		bind(ctx: Context, options: { entryPath: string }): () => void
 	}
 	worker?: {

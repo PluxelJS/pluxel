@@ -1,10 +1,10 @@
-import type { ManagementCompilerServiceConfig } from './management/ManagementCompilerService'
+import type { WorkbenchCompilerServiceConfig } from './workbench/WorkbenchCompilerService'
 
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Config {
-			/** HMR UI management compiler config. */
-			managementCompiler?: ManagementCompilerServiceConfig
+			/** HMR UI workbench compiler config. */
+			workbenchCompiler?: WorkbenchCompilerServiceConfig
 		}
 	}
 }

@@ -15,11 +15,11 @@
 ## 2. 保持能力所有权清晰
 
 - HTTP、config、logger、events、effects、persistence/plugin data 是常驻 runtime 能力。
-- Management Module 和资源只能通过 `ctx.management.mount()` 挂载。
-- 宿主负责 Management Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
-- 业务状态和业务 API 不得依赖可选管理面。
+- Workbench extension 和资源只能通过 `ctx.workbench.mount()` 挂载。
+- 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
+- 业务状态和业务 API 不得依赖可选Workbench。
 
-收益：同一插件可在 static、dynamic、headless 和 management-disabled host 中运行。
+收益：同一插件可在 static、dynamic、headless 和 workbench-disabled host 中运行。
 
 ## 3. 可选能力关闭时不得产生隐式成本
 
@@ -27,7 +27,7 @@
 - optional callback 不执行时，插件仍能完成核心生命周期。
 - 不使用 null stateful service 模拟成功注册。
 
-收益：能力边界可验证，headless host 不承担管理面成本，也不会得到虚假成功状态。
+收益：能力边界可验证，headless host 不承担Workbench成本，也不会得到虚假成功状态。
 
 ## 4. Context 必须并发隔离
 

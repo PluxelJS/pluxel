@@ -1,14 +1,14 @@
 import type {
-	ManagementFieldValueRef as BuiltinFieldValueRef,
-	ManagementGeneratedIdValue as BuiltinGeneratedIdValue,
-	ManagementNowValue as BuiltinNowValue,
-	ManagementCollectionRef as BuiltinSignalDbRef,
-	ManagementCollectionWrite as BuiltinSignalDbWriteSpec,
-	ManagementTemplateValue as BuiltinTemplateValue,
-} from '@pluxel/runtime/management'
+	WorkbenchFieldValueRef as BuiltinFieldValueRef,
+	WorkbenchGeneratedIdValue as BuiltinGeneratedIdValue,
+	WorkbenchNowValue as BuiltinNowValue,
+	WorkbenchCollectionRef as BuiltinSignalDbRef,
+	WorkbenchCollectionWrite as BuiltinSignalDbWriteSpec,
+	WorkbenchTemplateValue as BuiltinTemplateValue,
+} from '@pluxel/runtime/workbench'
 import { useMemo } from 'react'
 import { useBoundSignalDbCollectionsState, useGlobalExtensionContext } from '@pluxel/runtime/web'
-import { useManagementView } from '@pluxel/runtime/management/ui'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -87,7 +87,7 @@ export function neededSignalDbCollectionsForValue(value: unknown): string[] {
 
 export function useSignalDbForValues(values: unknown[]) {
 	const transport = useGlobalExtensionContext().services.transport
-	const item = useManagementView()
+	const item = useWorkbenchView()
 	const valuesKey = stableSignalDbValueKey(values)
 	const neededCollections = useMemo(() => {
 		const collections = new Set<string>()
@@ -101,8 +101,8 @@ export function useSignalDbForValues(values: unknown[]) {
 		() =>
 			Object.fromEntries(
 				neededCollections.flatMap((collection) => {
-					const resource = item.resources[collection]
-					return resource?.kind === 'collection' ? [[collection, resource.binding]] : []
+					const resource = item.model[collection]
+					return resource?.kind === 'collection' ? [[collection, resource.grantId]] : []
 				}),
 			),
 		[item, neededCollections],

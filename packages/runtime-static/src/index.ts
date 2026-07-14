@@ -43,7 +43,7 @@ export async function createStaticRuntime(config: StaticRuntimeConfig): Promise<
 		persistence: config.persistence,
 		pluginData: config.pluginData,
 		http: config.http,
-		management: config.management,
+		workbench: config.workbench,
 		logger: config.logger,
 		profile: config.profile,
 		context: config.context,
