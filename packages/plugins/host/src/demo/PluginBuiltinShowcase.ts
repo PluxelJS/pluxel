@@ -62,11 +62,10 @@ const BuiltinShowcaseWorkbench = workbench.define({
 		[RUNTIME_DOC_ID]: workbench.model.collection<BuiltinState>(),
 		[RUNTIME_ACTIONS_COLLECTION]: workbench.model.collection<BuiltinAction>(),
 	},
-	views: {
+	views: (model) => ({
 		summary: workbench.view.document({
-			slot: workbench.slot.PluginContext,
-			when: 'always',
-			model: [RUNTIME_DOC_ID],
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginContext, when: 'always' })],
+			model: [model[RUNTIME_DOC_ID]],
 			title: 'Builtin Overview',
 			description: 'Host-rendered, resource-bound workbench document.',
 			content: d`
@@ -82,9 +81,8 @@ const BuiltinShowcaseWorkbench = workbench.define({
 				`,
 		}),
 		controls: workbench.view.document({
-			slot: workbench.slot.PluginTabs,
-			model: [RUNTIME_ACTIONS_COLLECTION],
-			priority: 20,
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, priority: 20 })],
+			model: [model[RUNTIME_ACTIONS_COLLECTION]],
 			content: d`
 					${d.block('Pause', {
 						kind: 'form',
@@ -111,9 +109,8 @@ const BuiltinShowcaseWorkbench = workbench.define({
 				`,
 		}),
 		metrics: workbench.view.document({
-			slot: workbench.slot.PluginTabs,
-			model: [RUNTIME_DOC_ID],
-			priority: 10,
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, priority: 10 })],
+			model: [model[RUNTIME_DOC_ID]],
 			content: d`${d.block(
 				'Metrics Stream',
 				d.card({
@@ -123,7 +120,7 @@ const BuiltinShowcaseWorkbench = workbench.define({
 				}),
 			)}`,
 		}),
-	},
+	}),
 })
 
 type ShowcaseResources = MountedWorkbenchCollections<typeof BuiltinShowcaseWorkbench>

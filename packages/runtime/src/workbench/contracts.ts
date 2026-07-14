@@ -41,15 +41,23 @@ export type WorkbenchViewMeta = Readonly<{
 	}>
 }>
 
-export type WorkbenchViewSpec<ModelKey extends string = string> = Readonly<{
-	kind: 'view'
+export type WorkbenchPlacementSpec = Readonly<{
 	placement: WorkbenchPlacement
 	audience: WorkbenchAudience
-	view?: Extract<WorkbenchViewRef, { kind: 'builtin' }>
-	model: readonly ModelKey[]
 	priority?: number
 	when?: 'always' | 'running'
 	meta?: WorkbenchViewMeta
+}>
+
+export type WorkbenchViewSpec<
+	ModelKey extends string = string,
+	AcceptedModels extends WorkbenchModelMap = Readonly<Record<never, never>>,
+> = Readonly<{
+	kind: 'view'
+	view?: Extract<WorkbenchViewRef, { kind: 'builtin' }>
+	model: readonly ModelKey[]
+	placements: readonly WorkbenchPlacementSpec[]
+	accepts?: WorkbenchPortContract<AcceptedModels>
 }>
 
 export type WorkbenchPortContract<Models extends WorkbenchModelMap = WorkbenchModelMap> = Readonly<{
@@ -74,13 +82,12 @@ export type WorkbenchPortRenderer = Readonly<{
 	kind: 'port-renderer'
 	id: string
 	port: WorkbenchPortContract<any>
-	export: string
-	model: readonly string[]
-	priority?: number
-	when?: 'always' | 'running'
+	viewId: string
 }>
 
 export type WorkbenchPortContribution = WorkbenchPortOutlet | WorkbenchPortRenderer
+
+type WorkbenchPortOutletDefinition = Omit<WorkbenchPortOutlet, 'id'>
 
 declare const workbenchModelType: unique symbol
 
@@ -108,12 +115,24 @@ export type WorkbenchModelContract =
 
 export type WorkbenchModelMap = Readonly<Record<string, WorkbenchModelContract>>
 
+export type WorkbenchModelToken<
+	Key extends string = string,
+	Model extends WorkbenchModelContract = WorkbenchModelContract,
+> = Readonly<{
+	key: Key
+	readonly contract?: Model
+}>
+
+export type WorkbenchModelTokens<Models extends WorkbenchModelMap> = Readonly<{
+	[Key in keyof Models & string]: WorkbenchModelToken<Key, Models[Key]>
+}>
+
 export type WorkbenchUiEntry = Readonly<{ entryPath: string }>
 
 export type WorkbenchExtension<
 	Models extends WorkbenchModelMap = WorkbenchModelMap,
-	Views extends Readonly<Record<string, WorkbenchViewSpec>> = Readonly<
-		Record<string, WorkbenchViewSpec>
+	Views extends Readonly<Record<string, WorkbenchViewSpec<any, any>>> = Readonly<
+		Record<string, WorkbenchViewSpec<any, any>>
 	>,
 > = Readonly<{
 	plugin: string
@@ -211,52 +230,42 @@ export type WorkbenchCatalog = Readonly<{
 	states: readonly WorkbenchBundleState[]
 }>
 
-type ViewInput<ModelKey extends string> = Readonly<{
-	model?: readonly ModelKey[]
+function slotPlacement(input: {
+	slot: WorkbenchSlot
+	audience?: WorkbenchAudience
+	label?: string
+	icon?: string
+	tab?: { id: string; label: string; icon?: string }
 	priority?: number
 	when?: 'always' | 'running'
-}>
-
-function slotView<const ModelKey extends string>(
-	input: ViewInput<ModelKey> & {
-		slot: WorkbenchSlot
-		audience?: WorkbenchAudience
-		label?: string
-		icon?: string
-		tab?: { id: string; label: string; icon?: string }
-	},
-): WorkbenchViewSpec<ModelKey> {
+}): WorkbenchPlacementSpec {
 	return Object.freeze({
-		kind: 'view',
 		placement: input.slot,
 		audience: input.audience ?? Object.freeze({ kind: 'self' as const }),
-		model: Object.freeze([...(input.model ?? [])]),
 		priority: input.priority,
 		when: input.when,
 		meta: Object.freeze({ label: input.label, icon: input.icon, tab: input.tab }),
 	})
 }
 
-function routeView<const ModelKey extends string>(
-	input: ViewInput<ModelKey> & {
-		path: string
-		title: string
-		icon?: string
-		navigation?: false | { priority?: number }
-		frame?: 'shell' | 'standalone'
-	},
-): WorkbenchViewSpec<ModelKey> {
+function routePlacement(input: {
+	path: string
+	title: string
+	icon?: string
+	navigation?: false | { priority?: number }
+	frame?: 'shell' | 'standalone'
+	priority?: number
+	when?: 'always' | 'running'
+}): WorkbenchPlacementSpec {
 	return Object.freeze({
-		kind: 'view',
 		placement: 'plugin.routes',
 		audience: Object.freeze({ kind: 'self' as const }),
-		model: Object.freeze([...(input.model ?? [])]),
 		priority: input.priority,
 		when: input.when,
 		meta: Object.freeze({
 			route: Object.freeze({
-				path: requiredText('workbench.view.route', 'path', input.path),
-				title: requiredText('workbench.view.route', 'title', input.title),
+				path: requiredText('workbench.place.route', 'path', input.path),
+				title: requiredText('workbench.place.route', 'title', input.title),
 				icon: input.icon,
 				addToNav: input.navigation !== false && input.navigation !== undefined,
 				navPriority: input.navigation === false ? undefined : input.navigation?.priority,
@@ -266,26 +275,62 @@ function routeView<const ModelKey extends string>(
 	})
 }
 
-function documentView<const ModelKey extends string>(
-	input: ViewInput<ModelKey> & {
-		slot: WorkbenchSlot
-		title?: string
-		description?: string
-		content: BuiltinDocContent
-		audience?: WorkbenchAudience
-		label?: string
-		icon?: string
-		tab?: { id: string; label: string; icon?: string }
+type ModelKeyOf<Tokens extends readonly WorkbenchModelToken[]> =
+	Tokens[number] extends WorkbenchModelToken<infer Key, any> ? Key : never
+
+type ViewInput<Tokens extends readonly WorkbenchModelToken[]> = Readonly<{
+	model?: Tokens
+	placements: readonly WorkbenchPlacementSpec[]
+}>
+
+type AcceptedModelsOf<Port> =
+	Port extends WorkbenchPortContract<infer Models> ? Models : Readonly<Record<never, never>>
+
+function remoteView<const Port extends WorkbenchPortContract<any> | undefined = undefined>(
+	input: Omit<ViewInput<readonly []>, 'model'> & { model?: undefined; accepts?: Port },
+): WorkbenchViewSpec<never, AcceptedModelsOf<Port>>
+function remoteView<
+	const Tokens extends readonly WorkbenchModelToken[],
+	const Port extends WorkbenchPortContract<any> | undefined = undefined,
+>(
+	input: ViewInput<Tokens> & { model: Tokens; accepts?: Port },
+): WorkbenchViewSpec<ModelKeyOf<Tokens>, AcceptedModelsOf<Port>>
+function remoteView(
+	input: ViewInput<readonly WorkbenchModelToken[]> & {
+		accepts?: WorkbenchPortContract<any>
 	},
-): WorkbenchViewSpec<ModelKey> {
+): WorkbenchViewSpec<string, any> {
 	return Object.freeze({
 		kind: 'view',
-		placement: input.slot,
-		audience: input.audience ?? Object.freeze({ kind: 'self' as const }),
-		model: Object.freeze([...(input.model ?? [])]),
-		priority: input.priority,
-		when: input.when,
-		meta: Object.freeze({ label: input.label, icon: input.icon, tab: input.tab }),
+		model: selectedModelKeys(input.model),
+		placements: normalizedPlacements(
+			'workbench.view.remote',
+			input.placements,
+			Boolean(input.accepts),
+		),
+		accepts: input.accepts,
+	})
+}
+
+type DocumentViewInput<Tokens extends readonly WorkbenchModelToken[]> = ViewInput<Tokens> & {
+	title?: string
+	description?: string
+	content: BuiltinDocContent
+}
+
+function documentView(
+	input: Omit<DocumentViewInput<readonly []>, 'model'> & { model?: undefined },
+): WorkbenchViewSpec<never>
+function documentView<const Tokens extends readonly WorkbenchModelToken[]>(
+	input: DocumentViewInput<Tokens> & { model: Tokens },
+): WorkbenchViewSpec<ModelKeyOf<Tokens>>
+function documentView(
+	input: DocumentViewInput<readonly WorkbenchModelToken[]>,
+): WorkbenchViewSpec<string> {
+	return Object.freeze({
+		kind: 'view',
+		model: selectedModelKeys(input.model),
+		placements: normalizedPlacements('workbench.view.document', input.placements, false),
 		view: Object.freeze({
 			kind: 'builtin',
 			renderer: 'document',
@@ -300,31 +345,56 @@ function documentView<const ModelKey extends string>(
 
 function defineExtension<
 	const Models extends WorkbenchModelMap,
-	const Views extends Readonly<Record<string, WorkbenchViewSpec<Extract<keyof Models, string>>>>,
+	const Views extends Readonly<
+		Record<string, WorkbenchViewSpec<Extract<keyof Models, string>, any>>
+	>,
 >(input: {
 	plugin: string
 	entry?: WorkbenchUiEntry
 	model?: Models
-	views?: Views
-	ports?: readonly WorkbenchPortContribution[]
+	views?: (model: WorkbenchModelTokens<Models>) => Views
+	ports?: (
+		model: WorkbenchModelTokens<Models>,
+	) => Readonly<Record<string, WorkbenchPortOutletDefinition>>
 }): WorkbenchExtension<Models, Views> {
 	const plugin = requiredText('workbench.define', 'plugin', input.plugin)
 	const model = Object.freeze({ ...input.model }) as Models
-	const views = Object.freeze({ ...input.views }) as Views
+	const modelTokens = Object.freeze(
+		Object.fromEntries(Object.keys(model).map((key) => [key, Object.freeze({ key })])),
+	) as WorkbenchModelTokens<Models>
+	const views = Object.freeze({ ...input.views?.(modelTokens) }) as Views
 	for (const [viewId, view] of Object.entries(views)) {
 		requiredText('workbench.define', 'view id', viewId)
+		if (view.placements.length === 0 && !view.accepts) {
+			throw new Error(`[workbench] view "${viewId}" requires at least one placement`)
+		}
 		for (const key of view.model) {
 			if (!(key in model)) {
 				throw new Error(`[workbench] view "${viewId}" selects unknown model "${key}"`)
 			}
 		}
 	}
+	const ports: WorkbenchPortContribution[] = []
+	for (const [id, outlet] of Object.entries(input.ports?.(modelTokens) ?? {})) {
+		ports.push(Object.freeze({ ...outlet, id: requiredText('workbench.define', 'port id', id) }))
+	}
+	for (const [viewId, view] of Object.entries(views)) {
+		if (!view.accepts) continue
+		ports.push(
+			Object.freeze({
+				kind: 'port-renderer',
+				id: viewId,
+				port: view.accepts,
+				viewId,
+			}),
+		)
+	}
 	return Object.freeze({
 		plugin,
 		entry: input.entry,
 		model,
 		views,
-		ports: Object.freeze([...(input.ports ?? [])]),
+		ports: Object.freeze(ports),
 	})
 }
 
@@ -343,22 +413,27 @@ function definePort<const Models extends WorkbenchModelMap>(
 	})
 }
 
-function portOutlet(input: Omit<WorkbenchPortOutlet, 'kind'>): WorkbenchPortOutlet {
+type PortProvide<Port extends WorkbenchPortContract<any>> = Partial<{
+	[Key in keyof Port['model'] & string]: WorkbenchModelToken<string, Port['model'][Key]>
+}>
+
+function portOutlet<const Port extends WorkbenchPortContract<any>>(
+	input: Omit<WorkbenchPortOutlet, 'kind' | 'id' | 'port' | 'provide'> & {
+		port: Port
+		provide?: PortProvide<Port>
+	},
+): WorkbenchPortOutletDefinition {
 	return Object.freeze({
 		...input,
 		kind: 'port',
-		id: requiredText('workbench.port.outlet', 'id', input.id),
-		provide: Object.freeze({ ...input.provide }),
-	})
-}
-
-function portRenderer(input: Omit<WorkbenchPortRenderer, 'kind'>): WorkbenchPortRenderer {
-	return Object.freeze({
-		...input,
-		kind: 'port-renderer',
-		id: requiredText('workbench.port.renderer', 'id', input.id),
-		export: requiredText('workbench.port.renderer', 'export', input.export),
-		model: Object.freeze([...input.model]),
+		provide: Object.freeze(
+			Object.fromEntries(
+				Object.entries(input.provide ?? {}).map(([key, token]) => [
+					key,
+					(token as WorkbenchModelToken).key,
+				]),
+			),
+		),
 	})
 }
 
@@ -385,14 +460,34 @@ export const workbenchDefinition = Object.freeze({
 			return Object.freeze({ kind: 'events' }) as WorkbenchEventsModel<TEvents>
 		},
 	}),
-	view: Object.freeze({ slot: slotView, route: routeView, document: documentView }),
+	view: Object.freeze({ remote: remoteView, document: documentView }),
+	place: Object.freeze({ slot: slotPlacement, route: routePlacement }),
 	slot: WorkbenchSlots,
 	audience: Object.freeze({
 		self: Object.freeze({ kind: 'self' as const }),
 		requiredDependents: Object.freeze({ kind: 'requiredDependents' as const }),
 	}),
-	port: Object.freeze({ define: definePort, outlet: portOutlet, renderer: portRenderer }),
+	port: Object.freeze({ define: definePort, outlet: portOutlet }),
 })
+
+function selectedModelKeys<const Tokens extends readonly WorkbenchModelToken[]>(
+	model: Tokens | undefined,
+): readonly ModelKeyOf<Tokens>[] {
+	return Object.freeze(
+		(model ?? []).map((token) => requiredText('workbench.view', 'model key', token.key)),
+	) as readonly ModelKeyOf<Tokens>[]
+}
+
+function normalizedPlacements(
+	api: string,
+	placements: readonly WorkbenchPlacementSpec[],
+	allowEmpty: boolean,
+): readonly WorkbenchPlacementSpec[] {
+	if (!Array.isArray(placements) || (!allowEmpty && placements.length === 0)) {
+		throw new Error(`[workbench] ${api}(): placements required`)
+	}
+	return Object.freeze([...placements])
+}
 
 function requiredText(api: string, field: string, value: string): string {
 	const normalized = String(value ?? '').trim()

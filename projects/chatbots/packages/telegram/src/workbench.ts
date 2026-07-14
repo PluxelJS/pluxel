@@ -1,29 +1,8 @@
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { TelegramPlugin } from './plugin.ts'
+import type { TelegramWorkbenchCommands } from './workbench-contract.ts'
 
-export type TelegramSettingsDoc = {
-	id: string
-	tokenPreview: string
-	apiBase: string
-	updatedAt: number
-}
-
-export type TelegramStatusDoc = {
-	id: string
-	phase: 'offline' | 'connecting' | 'online' | 'error'
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	startedAt: number
-	connectedAt: number | null
-	lastUpdateId: number | null
-	lastUpdateAt: number | null
-	consecutiveFailures: number
-	currentBackoffMs: number
-	updatedAt: number
-}
-
-export class TelegramWorkbenchRpc extends RpcTarget {
+export class TelegramWorkbenchRpc extends RpcTarget implements TelegramWorkbenchCommands {
 	constructor(private readonly plugin: TelegramPlugin) {
 		super()
 	}

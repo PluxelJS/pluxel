@@ -7,7 +7,7 @@ import {
 	YiqichaHistoryPanel,
 	YiqichaSettingsPanel,
 } from './panels'
-import { yiqichaPlugin } from './runtime'
+import { yiqichaUi } from './runtime'
 
 function pluginRouteHref(pluginName: string, path: string) {
 	return `/plugins/${encodeURIComponent(pluginName)}${path}`
@@ -28,7 +28,7 @@ export function HeaderAction() {
 	)
 }
 
-export default yiqichaPlugin.expose({
+export default yiqichaUi.expose({
 	HeaderAction,
 	YiqichaApiPanel,
 	YiqichaDashboard,

@@ -9,20 +9,23 @@ export const ChatSandboxWorkbench = workbench.define({
 		commands: workbench.model.rpc<ChatSandboxRpc>(),
 		messages: workbench.model.collection<SandboxMessage>(),
 	},
-	views: {
-		SandboxPanel: workbench.view.slot({
-			slot: workbench.slot.PluginTabs,
-			model: ['commands', 'messages'],
-			priority: 60,
-			label: '消息沙箱',
-			icon: 'test-pipe',
+	views: (model) => ({
+		Sandbox: workbench.view.remote({
+			model: [model.commands, model.messages],
+			placements: [
+				workbench.place.slot({
+					slot: workbench.slot.PluginTabs,
+					priority: 60,
+					label: '消息沙箱',
+					icon: 'test-pipe',
+				}),
+				workbench.place.route({
+					path: '/sandbox',
+					title: '消息沙箱',
+					icon: 'message-chatbot',
+					navigation: { priority: 65 },
+				}),
+			],
 		}),
-		SandboxRoute: workbench.view.route({
-			path: '/sandbox',
-			title: '消息沙箱',
-			icon: 'message-chatbot',
-			navigation: { priority: 65 },
-			model: ['commands', 'messages'],
-		}),
-	},
+	}),
 })

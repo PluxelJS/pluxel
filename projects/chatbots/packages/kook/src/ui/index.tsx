@@ -1,7 +1,4 @@
 import { KookSettingsPanel } from './panel.tsx'
-import { kookPlugin } from './runtime.ts'
+import { kookUi } from './runtime.ts'
 
-export default kookPlugin.expose({
-	KookSettingsPanel,
-	KookSettingsRoute: KookSettingsPanel,
-})
+export default kookUi.expose({ Settings: KookSettingsPanel })

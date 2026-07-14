@@ -8,7 +8,7 @@ import {
 	ZhipuOcrPanel,
 	ZhipuSettingsPanel,
 } from './panels'
-import { zhipuPlugin } from './runtime'
+import { zhipuUi } from './runtime'
 
 function pluginRouteHref(pluginName: string, path: string) {
 	return `/plugins/${encodeURIComponent(pluginName)}${path}`
@@ -29,7 +29,7 @@ export function HeaderAction() {
 	)
 }
 
-export default zhipuPlugin.expose({
+export default zhipuUi.expose({
 	HeaderAction,
 	ZhipuApiPanel,
 	ZhipuDashboard,

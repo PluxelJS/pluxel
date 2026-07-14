@@ -1,10 +1,4 @@
-import {
-	workbench,
-	type WorkbenchCollectionModel,
-	type WorkbenchExtension,
-	type WorkbenchRpcModel,
-	type WorkbenchViewSpec,
-} from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
 import {
 	FONT_MANAGER_PLUGIN_NAME,
 	FontSettingsPort,
@@ -16,28 +10,24 @@ export const FontManagerWorkbench = workbench.define({
 	plugin: FONT_MANAGER_PLUGIN_NAME,
 	entry: workbench.entry(import.meta.url, './PluginContributionFontDemo/ui/index.tsx'),
 	model: { fontSets: workbench.model.collection<FontSetDoc>() },
-	ports: [
-		workbench.port.renderer({
-			id: 'font-settings-renderer',
-			port: FontSettingsPort,
-			export: 'FontSettings',
-			model: ['fontSets'],
-			priority: 40,
-			when: 'running',
+	views: (model) => ({
+		FontSettings: workbench.view.remote({
+			model: [model.fontSets],
+			accepts: FontSettingsPort,
+			placements: [],
 		}),
-	],
+	}),
 })
 
 export const FontConsumerWorkbench = workbench.define({
 	plugin: 'PluginContributionFontConsumer',
 	model: { commands: workbench.model.rpc<FontSettingsRpc>() },
-	ports: [
-		workbench.port.outlet({
-			id: 'appearance-font',
+	ports: (model) => ({
+		AppearanceFont: workbench.port.outlet({
 			placement: workbench.slot.PluginTabs,
 			port: FontSettingsPort,
 			providers: [FONT_MANAGER_PLUGIN_NAME],
-			provide: { settings: 'commands' },
+			provide: { settings: model.commands },
 			priority: 40,
 			meta: {
 				label: 'Typography',
@@ -45,13 +35,5 @@ export const FontConsumerWorkbench = workbench.define({
 				tab: { id: 'typography', label: 'Typography', icon: 'typography' },
 			},
 		}),
-	],
+	}),
 })
-
-export type FontSettingsWorkbenchView = WorkbenchExtension<
-	{
-		fontSets: WorkbenchCollectionModel<FontSetDoc>
-		settings: WorkbenchRpcModel<FontSettingsRpc>
-	},
-	{ FontSettings: WorkbenchViewSpec<'fontSets' | 'settings'> }
->

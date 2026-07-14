@@ -30,7 +30,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_YIQICHA_BASE_URL } from '@repo/external-api-gateway-shared/constants'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from '../contracts'
-import { yiqichaPlugin } from './runtime'
+import { useYiqichaHistoryModel, useYiqichaProviderModel } from './runtime'
 
 type RequestState = {
 	loading: boolean
@@ -38,15 +38,8 @@ type RequestState = {
 	result: unknown
 }
 
-const yiqichaContent = yiqichaPlugin.view(
-	'YiqichaApiPanel',
-	'YiqichaSettingsPanel',
-	'YiqichaHistoryPanel',
-	'YiqichaDashboard',
-)
-
 function useYiqichaApp() {
-	return { model: yiqichaContent.useModel(), ...useWorkbenchHost() }
+	return { model: useYiqichaProviderModel(), ...useWorkbenchHost() }
 }
 
 function pluginRoute(pluginName: string, path: string) {
@@ -447,13 +440,13 @@ function RequiredParamsTable({ params }: { params: ReturnType<typeof parseParame
 }
 
 export function YiqichaHistoryPanel() {
-	const app = useYiqichaApp()
-	const rows = app.model.history.useMany({ limit: 30, sort: { at: -1 } })
+	const model = useYiqichaHistoryModel()
+	const rows = model.history.useMany({ limit: 30, sort: { at: -1 } })
 	const [error, setError] = useState<string | null>(null)
 
 	const clear = async () => {
 		try {
-			await app.model.commands.clearHistory()
+			await model.commands.clearHistory()
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '清空历史失败'))

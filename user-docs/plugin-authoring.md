@@ -31,14 +31,18 @@ const BillingWorkbench = workbench.define({
 		commands: workbench.model.rpc<BillingRpc>(),
 		status: workbench.model.collection<BillingStatus>(),
 	},
-	views: {
-		Overview: workbench.view.route({
-			path: '/overview',
-			title: 'Billing',
-			navigation: { priority: 50 },
-			model: ['commands', 'status'],
+	views: (model) => ({
+		Overview: workbench.view.remote({
+			model: [model.commands, model.status],
+			placements: [
+				workbench.place.route({
+					path: '/overview',
+					title: 'Billing',
+					navigation: { priority: 50 },
+				}),
+			],
 		}),
-	},
+	}),
 })
 
 @Plugin({ name: 'BillingPlugin' })
@@ -226,21 +230,24 @@ UI 使用的 React、React DOM、Mantine 和 `@pluxel/runtime` 由宿主提供 s
 把它们声明为 peer，并作为本地 devDependency 安装供类型检查和 MF named-export 分析，remote 不携带 fallback
 副本。
 
-UI entry 用同一个 typed UI definition 导出组件，并为每个 view 创建 model facade：
+UI entry 用同一个 typed UI definition 导出组件。view 与 model 都通过属性自动补全，不手写协议 ID：
 
 ```tsx
-import type { DashboardWorkbench } from '../workbench-module.ts'
+import type { DashboardWorkbench } from '../workbench-extension.ts'
 
 const ui = createWorkbenchUi<typeof DashboardWorkbench>()
-const overview = ui.view('Overview')
 
 export function Overview() {
-	const { status } = overview.useModel()
+	const { status } = ui.views.Overview.useModel()
 	return <Dashboard data={status.useMany()} />
 }
 
 export default ui.expose({ Overview })
 ```
+
+RPC 泛型应引用独立的 browser-safe interface，而不是 provider 的 RPC 实现类。contract 文件只定义方法
+签名和可序列化数据，不导入 plugin、Context 或服务端依赖；UI 的 `import type` 仍需被独立 Federation
+build 解析，不能用它隐藏错误的依赖方向。
 
 RPC model 返回浏览器 RPC client；即使服务端方法同步返回值，跨边界调用也始终是 `Promise`。事件处理器应
 使用 `await` 或显式处理 rejection，不要按本地对象同步读取结果或字段。
@@ -248,7 +255,7 @@ RPC model 返回浏览器 RPC client；即使服务端方法同步返回值，�
 ### 依赖插件注入统一配置 Tab
 
 provider 不应替 consumer 决定任意 placement。把可复用能力定义成 typed port，由 consumer 明确声明
-Tab 和自己的 model mapping，provider 只提供 renderer：
+Tab 和自己的 model mapping；provider view 声明 `accepts` 后会自动成为该 port 的 renderer：
 
 ```tsx
 export const FetchSettingsPort = workbench.port.define('fetch.settings', {
@@ -261,14 +268,15 @@ const ConsumerWorkbench = workbench.define({
   model: {
     commands: workbench.model.rpc<FetchSettingsApi>(),
   },
-  ports: [workbench.port.outlet({
-    id: 'fetch-settings',
+	ports: (model) => ({
+		FetchSettings: workbench.port.outlet({
     placement: workbench.slot.PluginTabs,
     port: FetchSettingsPort,
     providers: ['FetchPlugin'],
-    provide: { settings: 'commands' },
+		provide: { settings: model.commands },
     meta: { label: 'Fetch' },
-  })],
+		}),
+	}),
 })
 
 // consumer init: placement 和授权属于 consumer，API 可委托给 required Fetch capability
@@ -282,22 +290,21 @@ override init() {
 export const FetchWorkbench = workbench.define({
   plugin: 'FetchPlugin',
   entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-  ports: [workbench.port.renderer({
-    id: 'fetch-settings-renderer',
-    port: FetchSettingsPort,
-    export: 'FetchSettings',
-    model: [],
-  })],
+	views: () => ({
+		FetchSettings: workbench.view.remote({
+			accepts: FetchSettingsPort,
+			placements: [],
+		}),
+	}),
 })
 
-// provider UI entry；FetchSettingsWorkbenchView 是 port 合并 model 的 type-only contract
-import type { FetchSettingsWorkbenchView } from '../workbench-module.ts'
+// provider UI entry；view type 自动包含 port 注入的 settings model
+import type { FetchWorkbench } from '../workbench-extension.ts'
 
-const ui = createWorkbenchUi<FetchSettingsWorkbenchView>()
-const view = ui.view('FetchSettings')
+const ui = createWorkbenchUi<typeof FetchWorkbench>()
 
 export function FetchSettings() {
-	const { settings } = view.useModel()
+	const { settings } = ui.views.FetchSettings.useModel()
   return <FetchSettingsForm settings={settings} />
 }
 
@@ -312,8 +319,11 @@ consumer id 持有；renderer 和 Workbench 都不保存服务端 session/draft�
 opaque grant；UI bundle-only 更新会复用仍有效的 grant，插件卸载、实例替换或依赖 model 图变化会
 立即撤销旧 grant。
 
+`ports` 的对象属性会成为本地 outlet ID，因此不再重复手写字符串。`workbench.port.define()` 的名称与
+版本仍是显式值：它们是跨插件共享、需要在 HMR 和独立构建后保持稳定的互操作协议。
+
 provider 若只想把只读能力摘要自动投影给 required dependents，可使用
-`workbenchAudience.requiredDependents()`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
+`workbench.audience.requiredDependents`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
 route 或 action placement 必须使用 port，由 consumer 显式选择。
 
 ## 公开有限事件集合

@@ -1,37 +1,9 @@
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import type { Result } from './api/types.ts'
-import type { KookGatewayPhase } from './gateway.ts'
 import type { KookPlugin } from './plugin.ts'
+import type { KookWorkbenchCommands } from './workbench-contract.ts'
 
-export type KookSettingsDoc = {
-	id: string
-	tokenPreview: string
-	apiBase: string
-	updatedAt: number
-}
-
-export type KookStatusDoc = {
-	id: string
-	phase: 'offline' | 'connecting' | 'online' | 'error'
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	startedAt: number
-	connectedAt: number | null
-	gatewayPhase: KookGatewayPhase
-	lastSequence: number
-	bufferedEvents: number
-	lastEventAt: number | null
-	reconnectAttempts: number
-	resumeAttempts: number
-	duplicateEvents: number
-	outOfOrderEvents: number
-	bufferOverflows: number
-	currentBackoffMs: number
-	updatedAt: number
-}
-
-export class KookWorkbenchRpc extends RpcTarget {
+export class KookWorkbenchRpc extends RpcTarget implements KookWorkbenchCommands {
 	constructor(private readonly plugin: KookPlugin) {
 		super()
 	}

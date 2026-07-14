@@ -1,4 +1,4 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { KookWorkbench } from '../workbench-module.ts'
+import type { KookWorkbench } from '../workbench-extension.ts'
 
-export const kookPlugin = createWorkbenchUi<typeof KookWorkbench>()
+export const kookUi = createWorkbenchUi<typeof KookWorkbench>()

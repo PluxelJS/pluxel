@@ -1,4 +1,4 @@
 import { AccessPanel } from './panel.tsx'
-import { accessPlugin } from './runtime.ts'
+import { accessUi } from './runtime.ts'
 
-export default accessPlugin.expose({ AccessPanel, AccessRoute: AccessPanel })
+export default accessUi.expose({ Access: AccessPanel })

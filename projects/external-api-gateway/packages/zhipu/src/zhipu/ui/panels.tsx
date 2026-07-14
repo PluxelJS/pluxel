@@ -32,7 +32,7 @@ import {
 	DEFAULT_ZHIPU_TOKENIZER_MODEL,
 } from '@repo/external-api-gateway-shared/constants'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
-import { zhipuPlugin } from './runtime'
+import { useZhipuHistoryModel, useZhipuProviderModel } from './runtime'
 
 type Mode = 'files-ocr' | 'layout-parsing'
 type ApiMode =
@@ -65,16 +65,8 @@ type RequestState = {
 	result: unknown
 }
 
-const zhipuContent = zhipuPlugin.view(
-	'ZhipuOcrPanel',
-	'ZhipuApiPanel',
-	'ZhipuSettingsPanel',
-	'ZhipuHistoryPanel',
-	'ZhipuDashboard',
-)
-
 function useZhipuApp() {
-	return { model: zhipuContent.useModel(), ...useWorkbenchHost() }
+	return { model: useZhipuProviderModel(), ...useWorkbenchHost() }
 }
 
 function pluginRoute(pluginName: string, path: string) {
@@ -834,13 +826,13 @@ export function ZhipuApiPanel() {
 }
 
 export function ZhipuHistoryPanel() {
-	const app = useZhipuApp()
-	const rows = app.model.history.useMany({ limit: 30, sort: { at: -1 } })
+	const model = useZhipuHistoryModel()
+	const rows = model.history.useMany({ limit: 30, sort: { at: -1 } })
 	const [error, setError] = useState<string | null>(null)
 
 	const clear = async () => {
 		try {
-			await app.model.commands.clearHistory()
+			await model.commands.clearHistory()
 			setError(null)
 		} catch (caught) {
 			setError(rpcErrorMessage(caught, '清空历史失败'))

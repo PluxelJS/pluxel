@@ -6,11 +6,12 @@ export const PluginStatusBadgeWorkbench = workbench.define({
 	model: {
 		activity: workbench.model.events<{ tick: { now: number } }>(),
 	},
-	views: {
-		StatusBadge: workbench.view.slot({
-			slot: workbench.slot.GlobalHeaderActions,
-			model: ['activity'],
-			priority: 50,
+	views: (model) => ({
+		StatusBadge: workbench.view.remote({
+			model: [model.activity],
+			placements: [
+				workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions, priority: 50 }),
+			],
 		}),
-	},
+	}),
 })

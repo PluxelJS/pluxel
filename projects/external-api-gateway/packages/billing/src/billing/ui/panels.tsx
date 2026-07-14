@@ -15,12 +15,11 @@ import {
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
-import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { IconCheck, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '@repo/external-api-gateway-shared/constants'
 import type { BillingRateDoc, BillingUsageRecord } from '../contracts'
-import { billingPlugin } from './runtime'
+import { useBillingModel } from './runtime'
 
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
 	return (
@@ -55,19 +54,16 @@ export function BillingDashboard() {
 }
 
 export function BillingPanel() {
-	const app = {
-		model: billingPlugin.view('BillingPanel', 'BillingDashboard').useModel(),
-		...useWorkbenchHost(),
-	}
-	const api = app.model.commands
-	const overview = app.model.overview.useOneById('overview')
-	const records = app.model.records.useMany({ limit: 30, sort: { at: -1 } })
-	const users = app.model.users.useMany({ limit: 10, sort: { totalCostCny: -1 } })
-	const providers = app.model.providers.useMany({
+	const model = useBillingModel()
+	const api = model.commands
+	const overview = model.overview.useOneById('overview')
+	const records = model.records.useMany({ limit: 30, sort: { at: -1 } })
+	const users = model.users.useMany({ limit: 10, sort: { totalCostCny: -1 } })
+	const providers = model.providers.useMany({
 		limit: 10,
 		sort: { totalCostCny: -1 },
 	})
-	const rates = app.model.rates.useMany({
+	const rates = model.rates.useMany({
 		limit: 100,
 		sort: { provider: 1, operation: 1, model: 1 },
 	})

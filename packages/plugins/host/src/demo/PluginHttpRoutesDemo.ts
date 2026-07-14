@@ -9,10 +9,9 @@ const ROUTE_BASE = '/http-demo'
 const d = workbenchDoc({} as const)
 const HttpRoutesWorkbench = workbench.define({
 	plugin: 'PluginHttpRoutesDemo',
-	views: {
+	views: () => ({
 		documentation: workbench.view.document({
-			slot: workbench.slot.PluginTabs,
-			label: 'HTTP Routes',
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, label: 'HTTP Routes' })],
 			title: 'HTTP Routes Demo',
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpRoutesDemo${ROUTE_BASE}\`.
@@ -21,7 +20,7 @@ const HttpRoutesWorkbench = workbench.define({
 					- \`GET /echo/:value\`: returns the path param and length.
 				`,
 		}),
-	},
+	}),
 })
 
 @Plugin({ name: 'PluginHttpRoutesDemo' })

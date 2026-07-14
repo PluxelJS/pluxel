@@ -1,3 +1,3 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { ChatSandboxWorkbench } from '../workbench-module.ts'
-export const sandboxPlugin = createWorkbenchUi<typeof ChatSandboxWorkbench>()
+import type { ChatSandboxWorkbench } from '../workbench-extension.ts'
+export const sandboxUi = createWorkbenchUi<typeof ChatSandboxWorkbench>()

@@ -1,4 +1,4 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { TelegramWorkbench } from '../workbench-module.ts'
+import type { TelegramWorkbench } from '../workbench-extension.ts'
 
-export const telegramPlugin = createWorkbenchUi<typeof TelegramWorkbench>()
+export const telegramUi = createWorkbenchUi<typeof TelegramWorkbench>()

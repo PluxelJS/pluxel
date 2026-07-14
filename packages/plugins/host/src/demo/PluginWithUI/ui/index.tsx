@@ -13,7 +13,7 @@ import {
 	StandaloneRoutePage,
 	StreamsPanel,
 } from './components'
-import { plugin } from './runtime'
+import { pluginUi } from './runtime'
 
 function pluginRouteHref(pluginName: string, path: string) {
 	return `/plugins/${encodeURIComponent(pluginName)}${path}`
@@ -62,13 +62,12 @@ export function PluginInfo() {
 	)
 }
 
-export default plugin.expose({
+export default pluginUi.expose({
 	HeaderAction,
 	PluginInfo,
 	OverviewPanel,
 	EventsPanel,
 	StreamsPanel,
-	DashboardRoute: RoutePage,
-	NotesRoute: RoutePage,
+	RoutePage,
 	StandaloneRoute: StandaloneRoutePage,
 })

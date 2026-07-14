@@ -15,11 +15,10 @@ import {
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
-import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { IconCheck, IconCopy, IconRefresh, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import type { GatewayTokenDoc } from '@repo/external-api-gateway-shared/gateway'
-import { gatewayPlugin } from './runtime'
+import { useGatewayModel } from './runtime'
 
 export function GatewayDashboard() {
 	return (
@@ -39,12 +38,9 @@ export function GatewayDashboard() {
 }
 
 export function GatewayPanel() {
-	const app = {
-		model: gatewayPlugin.view('GatewayPanel', 'GatewayDashboard').useModel(),
-		...useWorkbenchHost(),
-	}
-	const api = app.model.commands
-	const tokens = app.model.tokens.useMany({ limit: 100, sort: { updatedAt: -1 } })
+	const model = useGatewayModel()
+	const api = model.commands
+	const tokens = model.tokens.useMany({ limit: 100, sort: { updatedAt: -1 } })
 	const [name, setName] = useState('zhipu-client')
 	const [token, setToken] = useState('')
 	const [error, setError] = useState<string | null>(null)

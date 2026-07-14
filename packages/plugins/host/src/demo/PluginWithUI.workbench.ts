@@ -15,51 +15,63 @@ export const PluginWithUIWorkbench = workbench.define({
 		events: workbench.model.collection<DemoEvent>(),
 		activity: workbench.model.events<PluginWithUIEvents>(),
 	},
-	views: {
-		HeaderAction: workbench.view.slot({
-			slot: workbench.slot.GlobalHeaderActions,
-			model: ['activity'],
-			priority: 100,
+	views: (model) => ({
+		HeaderAction: workbench.view.remote({
+			placements: [
+				workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions, priority: 100 }),
+			],
 		}),
-		OverviewPanel: workbench.view.slot({
-			slot: workbench.slot.PluginTabs,
-			model: ['commands', 'status', 'events', 'activity'],
-			priority: 20,
-			label: '概览',
+		OverviewPanel: workbench.view.remote({
+			model: [model.commands, model.status, model.events, model.activity],
+			placements: [
+				workbench.place.slot({
+					slot: workbench.slot.PluginTabs,
+					priority: 20,
+					label: '概览',
+				}),
+			],
 		}),
-		EventsPanel: workbench.view.slot({
-			slot: workbench.slot.PluginTabs,
-			model: ['commands', 'events'],
-			priority: 19,
-			label: '事件',
+		EventsPanel: workbench.view.remote({
+			model: [model.commands, model.events],
+			placements: [
+				workbench.place.slot({
+					slot: workbench.slot.PluginTabs,
+					priority: 19,
+					label: '事件',
+				}),
+			],
 		}),
-		StreamsPanel: workbench.view.slot({
-			slot: workbench.slot.PluginTabs,
-			model: ['activity'],
-			priority: 18,
-			label: '实时事件',
+		StreamsPanel: workbench.view.remote({
+			model: [model.activity],
+			placements: [
+				workbench.place.slot({
+					slot: workbench.slot.PluginTabs,
+					priority: 18,
+					label: '实时事件',
+				}),
+			],
 		}),
-		PluginInfo: workbench.view.slot({
-			slot: workbench.slot.PluginInfo,
-			model: ['status', 'activity'],
-			priority: 10,
+		PluginInfo: workbench.view.remote({
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginInfo, priority: 10 })],
 		}),
-		DashboardRoute: workbench.view.route({
-			path: '/dashboard',
-			title: 'PluginWithUI Dashboard',
-			navigation: { priority: 50 },
-			model: ['commands', 'status', 'events', 'activity'],
+		RoutePage: workbench.view.remote({
+			placements: [
+				workbench.place.route({
+					path: '/dashboard',
+					title: 'PluginWithUI Dashboard',
+					navigation: { priority: 50 },
+				}),
+				workbench.place.route({ path: '/notes', title: 'PluginWithUI Notes' }),
+			],
 		}),
-		NotesRoute: workbench.view.route({
-			path: '/notes',
-			title: 'PluginWithUI Notes',
-			model: ['commands', 'status', 'events', 'activity'],
+		StandaloneRoute: workbench.view.remote({
+			placements: [
+				workbench.place.route({
+					path: '/standalone',
+					title: 'PluginWithUI Standalone',
+					frame: 'standalone',
+				}),
+			],
 		}),
-		StandaloneRoute: workbench.view.route({
-			path: '/standalone',
-			title: 'PluginWithUI Standalone',
-			frame: 'standalone',
-			model: ['status', 'activity'],
-		}),
-	},
+	}),
 })

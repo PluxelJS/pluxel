@@ -1,5 +1,5 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { FontSettingsWorkbenchView } from '../../PluginContributionFontDemo.workbench'
+import type { FontManagerWorkbench } from '../../PluginContributionFontDemo.workbench'
 
-export const fontSettingsUi = createWorkbenchUi<FontSettingsWorkbenchView>()
-export const fontSettingsView = fontSettingsUi.view('FontSettings')
+export const fontSettingsUi = createWorkbenchUi<typeof FontManagerWorkbench>()
+export const fontSettingsView = fontSettingsUi.views.FontSettings

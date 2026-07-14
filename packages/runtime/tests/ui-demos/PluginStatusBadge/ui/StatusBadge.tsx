@@ -4,10 +4,10 @@ import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 import type { PluginStatusBadgeWorkbench } from '../../PluginStatusBadge.workbench'
 
-const plugin = createWorkbenchUi<typeof PluginStatusBadgeWorkbench>()
+const ui = createWorkbenchUi<typeof PluginStatusBadgeWorkbench>()
 
 export function StatusBadge() {
-	const { activity } = plugin.view('StatusBadge').useModel()
+	const { activity } = ui.views.StatusBadge.useModel()
 	const [connected, setConnected] = useState(false)
 
 	useEffect(() => {
@@ -28,4 +28,4 @@ export function StatusBadge() {
 	)
 }
 
-export default plugin.expose({ StatusBadge })
+export default ui.expose({ StatusBadge })

@@ -10,7 +10,7 @@ import {
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
-import { ChatSandboxWorkbench } from './workbench-module.ts'
+import { ChatSandboxWorkbench } from './workbench-extension.ts'
 
 export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
 

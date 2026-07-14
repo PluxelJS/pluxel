@@ -2,18 +2,19 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { workbench, type WorkbenchRpcClient } from '@pluxel/runtime/workbench'
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
 import { createRuntimeContext } from '@pluxel/runtime/test'
+import { requireWorkbench } from '../../src/services/workbench'
 
 describe('Workbench authoring API', () => {
 	it('defines one immutable extension with explicit view model grants', () => {
 		const extension = workbench.define({
 			plugin: 'Example',
 			model: { commands: workbench.model.rpc<{ ping(): string }>() },
-			views: {
-				Overview: workbench.view.slot({
-					slot: workbench.slot.PluginTabs,
-					model: ['commands'],
+			views: (model) => ({
+				Overview: workbench.view.remote({
+					model: [model.commands],
+					placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs })],
 				}),
-			},
+			}),
 		})
 		expect(extension).toMatchObject({
 			plugin: 'Example',
@@ -21,12 +22,6 @@ describe('Workbench authoring API', () => {
 			views: { Overview: { model: ['commands'] } },
 		})
 		expect(Object.isFrozen(extension)).toBe(true)
-		expect(() =>
-			workbench.define({
-				plugin: 'Invalid',
-				views: { Broken: workbench.view.slot({ slot: workbench.slot.PluginTabs, model: ['x'] }) },
-			}),
-		).toThrow('selects unknown model')
 	})
 
 	it('types server RPC methods as asynchronous browser calls', () => {
@@ -40,7 +35,11 @@ describe('Workbench authoring API', () => {
 	it('exposes exactly the declared UI views', () => {
 		const extension = workbench.define({
 			plugin: 'UiExample',
-			views: { Overview: workbench.view.slot({ slot: workbench.slot.PluginTabs }) },
+			views: () => ({
+				Overview: workbench.view.remote({
+					placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs })],
+				}),
+			}),
 		})
 		const ui = createWorkbenchUi<typeof extension>()
 		const Overview = () => null
@@ -59,4 +58,46 @@ describe('Workbench authoring API', () => {
 			await runtime.dispose()
 		}
 	})
+
+	it('replaces a stale mount when HMR creates a new owner Context', async () => {
+		const runtime = createRuntimeContext()
+		try {
+			const extension = workbench.define({ plugin: 'Owner' })
+			const first = pluginContext(runtime.ctx, 'Owner')
+			const second = pluginContext(runtime.ctx, 'Owner')
+			const backend = requireWorkbench(runtime.ctx)
+
+			backend.forContext(first.ctx).mount(extension, {})
+			expect(() => backend.forContext(first.ctx).mount(extension, {})).toThrow('already mounted')
+			expect(() => backend.forContext(second.ctx).mount(extension, {})).not.toThrow()
+			expect(first.disposed()).toBe(true)
+		} finally {
+			await runtime.dispose()
+		}
+	})
 })
+
+function pluginContext(root: object, id: string) {
+	const ctx = Object.create(root) as any
+	let disposed = false
+	Object.defineProperties(ctx, {
+		pluginInfo: { value: { id }, configurable: true },
+		effects: {
+			value: {
+				defer(cleanup: () => void) {
+					let active = true
+					return {
+						dispose() {
+							if (!active) return
+							active = false
+							disposed = true
+							cleanup()
+						},
+					}
+				},
+			},
+			configurable: true,
+		},
+	})
+	return { ctx, disposed: () => disposed }
+}

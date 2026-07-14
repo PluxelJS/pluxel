@@ -7,7 +7,7 @@
 plugin source
   ├─ constructor dependencies
   ├─ config / feature declarations
-  └─ WorkbenchModule declarations
+  └─ WorkbenchExtension declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -45,7 +45,7 @@ stream、collection 和 artifact。
 插件只看到 `ctx.workbench.enabled` 和 `ctx.workbench.mount()`。宿主通过顶层 `workbench` 配置安装
 backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
 
-`WorkbenchModule` 是静态 contract，`workbench.mount(module, bindings)` 是唯一发布动作。registry
+`WorkbenchExtension` 是静态 contract，`workbench.mount(extension, bindings)` 是唯一发布动作。registry
 生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque grant。
 artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
 namespace 任意访问未授予资源。

@@ -15,7 +15,7 @@ import { ChatAccessRpc } from './rpc.ts'
 import { ChatAccessDomain, type ChatAccessChange } from './service.ts'
 import { CoalescedSnapshotWriter } from './snapshot-writer.ts'
 import { parseAccessState } from './state.ts'
-import { ChatAccessWorkbench } from './workbench-module.ts'
+import { ChatAccessWorkbench } from './workbench-extension.ts'
 
 const STORAGE_NAMESPACE = 'chatbots/access'
 const STORAGE_KEY = 'state.json'

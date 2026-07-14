@@ -28,7 +28,7 @@ import type {
 	BillingUsageRecord,
 	BillingUserSummaryDoc,
 } from './contracts.ts'
-import { UsageBillingWorkbench } from './workbench-module.ts'
+import { UsageBillingWorkbench } from './workbench-extension.ts'
 
 const OVERVIEW_DOC_ID = 'overview' as const
 const yiqichaApiKeyByCode: Map<string, string> = new Map(

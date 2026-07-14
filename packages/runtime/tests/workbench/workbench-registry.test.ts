@@ -55,16 +55,25 @@ describe('WorkbenchRegistry', () => {
 					commands: workbench.model.rpc<{}>(),
 					secrets: workbench.model.rpc<{}>(),
 				},
-				views: {
-					Overview: workbench.view.slot({
-						slot: workbench.slot.PluginInfo,
-						model: ['commands'],
+				views: (model) => ({
+					Overview: workbench.view.remote({
+						model: [model.commands],
+						placements: [
+							workbench.place.slot({ slot: workbench.slot.PluginInfo }),
+							workbench.place.route({
+								path: '/overview',
+								title: 'Overview',
+							}),
+						],
 					}),
-				},
+				}),
 			}),
 			{ commands: rpcRef('Owner', 'commands'), secrets: rpcRef('Owner', 'secrets') },
 		)
-		const item = registry.getPluginLayout('Owner').items[0]!
+		const items = registry.getPluginLayout('Owner').items
+		expect(items).toHaveLength(2)
+		expect(new Set(items.map((item) => item.model.commands!.grantId)).size).toBe(1)
+		const item = items[0]!
 		expect(Object.keys(item.model)).toEqual(['commands'])
 		expect(registry.resolveModel(item.model.commands!.grantId, 'rpc')).toEqual(
 			rpcRef('Owner', 'commands'),
@@ -78,12 +87,16 @@ describe('WorkbenchRegistry', () => {
 			'Provider',
 			workbench.define({
 				plugin: 'Provider',
-				views: {
-					Capability: workbench.view.slot({
-						slot: workbench.slot.PluginCapabilities,
-						audience: workbench.audience.requiredDependents,
+				views: () => ({
+					Capability: workbench.view.remote({
+						placements: [
+							workbench.place.slot({
+								slot: workbench.slot.PluginCapabilities,
+								audience: workbench.audience.requiredDependents,
+							}),
+						],
 					}),
-				},
+				}),
 			}),
 			{},
 		)
@@ -102,12 +115,12 @@ describe('WorkbenchRegistry', () => {
 			workbench.define({
 				plugin: 'Owner',
 				model: { commands: workbench.model.rpc<{}>() },
-				views: {
-					Overview: workbench.view.slot({
-						slot: workbench.slot.PluginInfo,
-						model: ['commands'],
+				views: (model) => ({
+					Overview: workbench.view.remote({
+						model: [model.commands],
+						placements: [workbench.place.slot({ slot: workbench.slot.PluginInfo })],
 					}),
-				},
+				}),
 			}),
 			{ commands: rpcRef('Owner', 'commands') },
 		)

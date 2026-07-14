@@ -15,6 +15,7 @@ import type {
 	WorkbenchLayoutItem,
 	WorkbenchRpcClient,
 	WorkbenchRpcOf,
+	WorkbenchViewSpec,
 } from './contracts'
 import { useGlobalExtensionContext, type ExtensionServices } from '../web/host-ui'
 import type { SignalDbListSpec, SignalDbSelector } from './collection-contracts'
@@ -55,7 +56,7 @@ export interface WorkbenchEventsClient<TEvents extends Record<string, unknown>> 
 	onConnection(listener: (connected: boolean) => void): () => void
 }
 
-type ModelClient<Model> = Model extends { kind: 'rpc' }
+export type WorkbenchModelClient<Model> = Model extends { kind: 'rpc' }
 	? WorkbenchRpcClient<WorkbenchRpcOf<Model>>
 	: Model extends { kind: 'collection' }
 		? WorkbenchCollectionClient<WorkbenchCollectionOf<Model>>
@@ -68,11 +69,39 @@ type ViewModelKeys<
 	ViewId extends keyof Extension['views'],
 > = Extension['views'][ViewId]['model'][number] & keyof Extension['model']
 
+type ViewAcceptedModels<
+	Extension extends AnyWorkbenchExtension,
+	ViewId extends keyof Extension['views'],
+> =
+	Extension['views'][ViewId] extends WorkbenchViewSpec<any, infer Models>
+		? Models
+		: Readonly<Record<never, never>>
+
+type SelectedViewModelClients<
+	Extension extends AnyWorkbenchExtension,
+	ViewId extends keyof Extension['views'],
+> = {
+	[Key in ViewModelKeys<Extension, ViewId>]: WorkbenchModelClient<Extension['model'][Key]>
+}
+
+type AcceptedViewModelClients<
+	Extension extends AnyWorkbenchExtension,
+	ViewId extends keyof Extension['views'],
+> = {
+	[Key in keyof ViewAcceptedModels<Extension, ViewId>]: WorkbenchModelClient<
+		ViewAcceptedModels<Extension, ViewId>[Key]
+	>
+}
+
 export type WorkbenchViewModel<
 	Extension extends AnyWorkbenchExtension,
 	ViewId extends keyof Extension['views'],
-> = Readonly<{
-	[Key in ViewModelKeys<Extension, ViewId>]: ModelClient<Extension['model'][Key]>
+> = Readonly<
+	SelectedViewModelClients<Extension, ViewId> & AcceptedViewModelClients<Extension, ViewId>
+>
+
+export type WorkbenchModelClients<Extension extends AnyWorkbenchExtension> = Readonly<{
+	[Key in keyof Extension['model']]: WorkbenchModelClient<Extension['model'][Key]>
 }>
 
 export type WorkbenchHost = Readonly<{
@@ -115,12 +144,15 @@ export type WorkbenchUiModule = Readonly<{
 	}) => void | (() => void) | Promise<void | (() => void)>
 }>
 
-export interface WorkbenchUiDefinition<Extension extends AnyWorkbenchExtension> {
-	view<ViewId extends keyof Extension['views'] & string>(
-		...viewIds: readonly ViewId[]
-	): Readonly<{
+export type WorkbenchUiViews<Extension extends AnyWorkbenchExtension> = Readonly<{
+	[ViewId in keyof Extension['views'] & string]: Readonly<{
 		useModel(): WorkbenchViewModel<Extension, ViewId>
 	}>
+}>
+
+export interface WorkbenchUiDefinition<Extension extends AnyWorkbenchExtension> {
+	readonly views: WorkbenchUiViews<Extension>
+	useModel<Selected>(selector: (model: WorkbenchModelClients<Extension>) => Selected): Selected
 	expose<const Views extends Readonly<Record<keyof Extension['views'] & string, ComponentType>>>(
 		views: Views,
 		options?: Omit<WorkbenchUiModule, 'views'>,
@@ -130,28 +162,41 @@ export interface WorkbenchUiDefinition<Extension extends AnyWorkbenchExtension> 
 export function createWorkbenchUi<
 	const Extension extends AnyWorkbenchExtension,
 >(): WorkbenchUiDefinition<Extension> {
-	return Object.freeze({
-		view<ViewId extends keyof Extension['views'] & string>(...viewIds: readonly ViewId[]) {
-			if (viewIds.length === 0) {
-				throw new Error('[workbench-ui] createWorkbenchUi().view(): view id required')
+	const viewFacades = new Map<string, Readonly<{ useModel(): unknown }>>()
+	const views = new Proxy(Object.create(null) as WorkbenchUiViews<Extension>, {
+		get(_target, property) {
+			if (typeof property !== 'string') return undefined
+			let facade = viewFacades.get(property)
+			if (!facade) {
+				facade = Object.freeze({
+					useModel: () => useViewModel<Extension, keyof Extension['views'] & string>(property),
+				})
+				viewFacades.set(property, facade)
 			}
-			return Object.freeze({
-				useModel: () => useViewModel<Extension, (typeof viewIds)[number]>(viewIds),
-			})
+			return facade
+		},
+	})
+	return Object.freeze({
+		views,
+		useModel<Selected>(selector: (model: WorkbenchModelClients<Extension>) => Selected) {
+			if (typeof selector !== 'function') {
+				throw new TypeError('[workbench-ui] createWorkbenchUi().useModel(): selector required')
+			}
+			return selector(useGrantedModel<Extension>())
 		},
 		expose<const Views extends Readonly<Record<keyof Extension['views'] & string, ComponentType>>>(
-			views: Views,
+			components: Views,
 			options: Omit<WorkbenchUiModule, 'views'> = {},
 		) {
-			if (!views || typeof views !== 'object') {
+			if (!components || typeof components !== 'object') {
 				throw new Error('[workbench-ui] createWorkbenchUi().expose(): views required')
 			}
-			for (const [viewId, component] of Object.entries(views)) {
+			for (const [viewId, component] of Object.entries(components)) {
 				if (!viewId.trim() || typeof component !== 'function') {
 					throw new Error(`[workbench-ui] invalid view export: ${viewId || '<empty>'}`)
 				}
 			}
-			return Object.freeze({ ...options, views: Object.freeze({ ...views }) }) as never
+			return Object.freeze({ ...options, views: Object.freeze({ ...components }) }) as never
 		},
 	})
 }
@@ -159,13 +204,19 @@ export function createWorkbenchUi<
 function useViewModel<
 	Extension extends AnyWorkbenchExtension,
 	ViewId extends keyof Extension['views'] & string,
->(viewIds: readonly ViewId[]): WorkbenchViewModel<Extension, ViewId> {
+>(viewId: string): WorkbenchViewModel<Extension, ViewId> {
 	const item = useWorkbenchView()
-	if (!viewIds.includes(item.viewId as ViewId)) {
-		throw new Error(
-			`[workbench-ui] view facade "${viewIds.join(', ')}" cannot render layout view "${item.viewId}"`,
-		)
+	const model = useGrantedModel<Extension>()
+	if (item.viewId !== viewId) {
+		throw new Error(`[workbench-ui] view "${viewId}" cannot render layout view "${item.viewId}"`)
 	}
+	return model as WorkbenchViewModel<Extension, ViewId>
+}
+
+function useGrantedModel<
+	Extension extends AnyWorkbenchExtension,
+>(): WorkbenchModelClients<Extension> {
+	const item = useWorkbenchView()
 	const context = useGlobalExtensionContext()
 	const transport = context.services.transport
 	const eventStreams = useMemo(() => new Map<string, SseClientWithNamespaces>(), [item, transport])
@@ -198,7 +249,16 @@ function useViewModel<
 				}
 			}
 		}
-		return Object.freeze(model) as WorkbenchViewModel<Extension, ViewId>
+		return new Proxy(Object.freeze(model), {
+			get(target, property, receiver) {
+				if (typeof property === 'string' && !(property in target)) {
+					throw new Error(
+						`[workbench-ui] view "${item.viewId}" was not granted model "${property}"`,
+					)
+				}
+				return Reflect.get(target, property, receiver)
+			},
+		}) as WorkbenchModelClients<Extension>
 	}, [eventStreams, item.model, transport])
 }
 

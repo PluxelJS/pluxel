@@ -14,12 +14,12 @@ import {
 import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconKey, IconPlugConnected, IconPlugX, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import { kookPlugin } from './runtime.ts'
+import { kookUi } from './runtime.ts'
 
 export function KookSettingsPanel() {
-	const app = { model: kookPlugin.view('KookSettingsPanel', 'KookSettingsRoute').useModel() }
-	const settingsList = app.model.settings.useMany()
-	const statusList = app.model.status.useMany()
+	const model = kookUi.views.Settings.useModel()
+	const settingsList = model.settings.useMany()
+	const statusList = model.status.useMany()
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://www.kookapp.cn')
@@ -59,7 +59,7 @@ export function KookSettingsPanel() {
 				<Badge
 					color={status?.phase === 'online' ? 'green' : status?.phase === 'error' ? 'red' : 'gray'}
 				>
-					{status?.phase ?? 'loading'}
+					{status?.phase ?? '未配置'}
 				</Badge>
 			</Group>
 			{error || status?.lastError ? <Alert color="red">{error ?? status?.lastError}</Alert> : null}
@@ -101,7 +101,7 @@ export function KookSettingsPanel() {
 							onClick={() =>
 								void run(
 									() =>
-										app.model.commands.upsertBot({
+										model.commands.upsertBot({
 											id: accountId,
 											token: token || undefined,
 											apiBase,
@@ -117,7 +117,7 @@ export function KookSettingsPanel() {
 							leftSection={<IconPlugConnected size={16} />}
 							onClick={() =>
 								void run(async () => {
-									const result = await app.model.commands.testBot(accountId)
+									const result = await model.commands.testBot(accountId)
 									if (!result.ok) throw new Error(result.message)
 								}, '鉴权成功')
 							}
@@ -127,7 +127,7 @@ export function KookSettingsPanel() {
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.model.commands.reconnectBot(accountId), '正在重连')}
+							onClick={() => void run(() => model.commands.reconnectBot(accountId), '正在重连')}
 						>
 							重连
 						</Button>
@@ -135,7 +135,7 @@ export function KookSettingsPanel() {
 							variant="light"
 							color="gray"
 							leftSection={<IconPlugX size={16} />}
-							onClick={() => void run(() => app.model.commands.disconnectBot(accountId), '已断开')}
+							onClick={() => void run(() => model.commands.disconnectBot(accountId), '已断开')}
 						>
 							断开
 						</Button>
@@ -143,7 +143,7 @@ export function KookSettingsPanel() {
 							variant="light"
 							color="red"
 							leftSection={<IconTrash size={16} />}
-							onClick={() => void run(() => app.model.commands.removeBot(accountId), 'Bot 已删除')}
+							onClick={() => void run(() => model.commands.removeBot(accountId), 'Bot 已删除')}
 						>
 							删除 Bot
 						</Button>

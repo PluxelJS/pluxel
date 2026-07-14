@@ -36,7 +36,7 @@ import type {
 	YiqichaRawCallInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
-import { YiqichaWorkbench } from './workbench-module.ts'
+import { YiqichaWorkbench } from './workbench-extension.ts'
 
 const ROUTE_BASE = '/yiqicha'
 const PROVIDER_ID = 'yiqicha'

@@ -1,7 +1,4 @@
 import { TelegramSettingsPanel } from './panel.tsx'
-import { telegramPlugin } from './runtime.ts'
+import { telegramUi } from './runtime.ts'
 
-export default telegramPlugin.expose({
-	TelegramSettingsPanel,
-	TelegramSettingsRoute: TelegramSettingsPanel,
-})
+export default telegramUi.expose({ Settings: TelegramSettingsPanel })

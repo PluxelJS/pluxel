@@ -20,13 +20,10 @@ import {
 } from '@repo/chatbots-adapter-kit/registry'
 import { TelegramBot } from './bot.ts'
 import { createTelegramPluginEvents } from './events.factory.ts'
-import {
-	TelegramWorkbenchRpc,
-	type TelegramSettingsDoc,
-	type TelegramStatusDoc,
-} from './workbench.ts'
+import { TelegramWorkbenchRpc } from './workbench.ts'
+import type { TelegramSettingsDoc, TelegramStatusDoc } from './workbench-contract.ts'
 import type { TelegramBotStatus } from './status.ts'
-import { TelegramWorkbench } from './workbench-module.ts'
+import { TelegramWorkbench } from './workbench-extension.ts'
 
 export type TelegramBotConfigInput = BotAccountInput
 export type TelegramUpdateProjection = AcknowledgedProjection<TelegramBot, TelegramUpdate>

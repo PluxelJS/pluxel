@@ -14,14 +14,12 @@ import {
 import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconKey, IconPlugConnected, IconPlugX, IconTrash } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import { telegramPlugin } from './runtime.ts'
+import { telegramUi } from './runtime.ts'
 
 export function TelegramSettingsPanel() {
-	const app = {
-		model: telegramPlugin.view('TelegramSettingsPanel', 'TelegramSettingsRoute').useModel(),
-	}
-	const settingsList = app.model.settings.useMany()
-	const statusList = app.model.status.useMany()
+	const model = telegramUi.views.Settings.useModel()
+	const settingsList = model.settings.useMany()
+	const statusList = model.status.useMany()
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://api.telegram.org')
@@ -61,7 +59,7 @@ export function TelegramSettingsPanel() {
 				<Badge
 					color={status?.phase === 'online' ? 'green' : status?.phase === 'error' ? 'red' : 'gray'}
 				>
-					{status?.phase ?? 'loading'}
+					{status?.phase ?? '未配置'}
 				</Badge>
 			</Group>
 			{error || status?.lastError ? <Alert color="red">{error ?? status?.lastError}</Alert> : null}
@@ -103,7 +101,7 @@ export function TelegramSettingsPanel() {
 							onClick={() =>
 								void run(
 									() =>
-										app.model.commands.upsertBot({
+										model.commands.upsertBot({
 											id: accountId,
 											token: token || undefined,
 											apiBase,
@@ -119,7 +117,7 @@ export function TelegramSettingsPanel() {
 							leftSection={<IconPlugConnected size={16} />}
 							onClick={() =>
 								void run(async () => {
-									const result = await app.model.commands.testBot(accountId)
+									const result = await model.commands.testBot(accountId)
 									if (!result.ok) throw new Error(result.message)
 								}, '鉴权成功')
 							}
@@ -129,7 +127,7 @@ export function TelegramSettingsPanel() {
 						<Button
 							variant="light"
 							leftSection={<IconPlugConnected size={16} />}
-							onClick={() => void run(() => app.model.commands.reconnectBot(accountId), '正在重连')}
+							onClick={() => void run(() => model.commands.reconnectBot(accountId), '正在重连')}
 						>
 							重连
 						</Button>
@@ -137,7 +135,7 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="gray"
 							leftSection={<IconPlugX size={16} />}
-							onClick={() => void run(() => app.model.commands.disconnectBot(accountId), '已断开')}
+							onClick={() => void run(() => model.commands.disconnectBot(accountId), '已断开')}
 						>
 							断开
 						</Button>
@@ -145,7 +143,7 @@ export function TelegramSettingsPanel() {
 							variant="light"
 							color="red"
 							leftSection={<IconTrash size={16} />}
-							onClick={() => void run(() => app.model.commands.removeBot(accountId), 'Bot 已删除')}
+							onClick={() => void run(() => model.commands.removeBot(accountId), 'Bot 已删除')}
 						>
 							删除 Bot
 						</Button>

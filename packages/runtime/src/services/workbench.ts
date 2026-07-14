@@ -24,6 +24,7 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 	readonly collections: WorkbenchCollectionService
 	readonly registry: WorkbenchRegistry
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
+	private readonly mounts = new Map<string, { owner: Context; dispose: () => void }>()
 
 	constructor(root: Context) {
 		this.artifacts = new WorkbenchArtifactService(root)
@@ -54,18 +55,34 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 		providers: WorkbenchProviders<Extension>,
 	): WorkbenchMount<Extension> {
 		const ownerId = String(owner.pluginInfo.id ?? '').trim()
+		if (extension.plugin !== ownerId) {
+			throw new Error(
+				`[workbench] extension plugin "${extension.plugin}" must match Context owner "${ownerId}"`,
+			)
+		}
 		const cleanup: Array<() => void> = []
 		const mountedCollections: Record<string, unknown> = {}
 		const refs: Record<string, InternalModelRef> = {}
+		for (const [key, contract] of Object.entries(extension.model) as Array<
+			[string, WorkbenchModelContract]
+		>) {
+			const provider = (providers as Record<string, any>)[key]
+			if (!provider || provider.kind !== contract.kind) {
+				throw new Error(`[workbench] model "${key}" requires a ${contract.kind} provider`)
+			}
+		}
+
+		const previous = this.mounts.get(ownerId)
+		if (previous?.owner === owner) {
+			throw new Error(`[workbench] plugin "${ownerId}" already mounted a Workbench extension`)
+		}
+		previous?.dispose()
 
 		try {
 			for (const [key, contract] of Object.entries(extension.model) as Array<
 				[string, WorkbenchModelContract]
 			>) {
 				const provider = (providers as Record<string, any>)[key]
-				if (!provider || provider.kind !== contract.kind) {
-					throw new Error(`[workbench] model "${key}" requires a ${contract.kind} provider`)
-				}
 				refs[key] = Object.freeze({ ownerPluginId: ownerId, modelKey: key, kind: contract.kind })
 				switch (contract.kind) {
 					case 'rpc': {
@@ -112,12 +129,15 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 			if (!active) return
 			active = false
 			for (const cleanupItem of cleanup.toReversed()) cleanupItem()
+			if (this.mounts.get(ownerId)?.owner === owner) this.mounts.delete(ownerId)
 		}
 		const guard = owner.effects.defer(dispose)
+		const mounted = { owner, dispose: () => guard.dispose() }
+		this.mounts.set(ownerId, mounted)
 		return Object.freeze({
 			extension,
 			collections: mountedCollections as MountedWorkbenchCollections<Extension>,
-			dispose: () => guard.dispose(),
+			dispose: mounted.dispose,
 		})
 	}
 }

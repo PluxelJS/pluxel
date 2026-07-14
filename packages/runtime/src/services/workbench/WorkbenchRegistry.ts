@@ -7,6 +7,7 @@ import type {
 	WorkbenchLayout,
 	WorkbenchLayoutItem,
 	WorkbenchModelRef,
+	WorkbenchPlacementSpec,
 	WorkbenchPortOutlet,
 	WorkbenchPortRenderer,
 	WorkbenchViewSpec,
@@ -86,10 +87,22 @@ export class WorkbenchRegistry {
 			for (const [viewId, view] of Object.entries(mounted.extension.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
-				if (!view.placement.startsWith('plugin.')) continue
-				if (!this.matchesAudience(mounted.ownerPluginId, target, view.audience)) continue
-				if (!this.available(mounted.ownerPluginId, view)) continue
-				items.push(this.layoutItem(mounted, viewId, view, target, `plugin:${target}`))
+				for (const [placementIndex, placement] of view.placements.entries()) {
+					if (!placement.placement.startsWith('plugin.')) continue
+					if (!this.matchesAudience(mounted.ownerPluginId, target, placement.audience)) continue
+					if (!this.available(mounted.ownerPluginId, placement)) continue
+					items.push(
+						this.layoutItem(
+							mounted,
+							viewId,
+							view,
+							placement,
+							placementIndex,
+							target,
+							`plugin:${target}`,
+						),
+					)
+				}
 			}
 		}
 		this.resolvePorts(target, items)
@@ -106,16 +119,38 @@ export class WorkbenchRegistry {
 			for (const [viewId, view] of Object.entries(mounted.extension.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
-				if (!this.available(mounted.ownerPluginId, view)) continue
-				if (view.placement === 'plugin.routes') {
-					if (!view.meta?.route?.addToNav) continue
+				for (const [placementIndex, placement] of view.placements.entries()) {
+					if (!this.available(mounted.ownerPluginId, placement)) continue
+					if (placement.placement === 'plugin.routes') {
+						if (!placement.meta?.route?.addToNav) continue
+						items.push(
+							this.layoutItem(
+								mounted,
+								viewId,
+								view,
+								placement,
+								placementIndex,
+								mounted.ownerPluginId,
+								'global-route',
+								false,
+							),
+						)
+						continue
+					}
+					if (!placement.placement.startsWith('global.')) continue
 					items.push(
-						this.layoutItem(mounted, viewId, view, mounted.ownerPluginId, 'global-route', false),
+						this.layoutItem(
+							mounted,
+							viewId,
+							view,
+							placement,
+							placementIndex,
+							mounted.ownerPluginId,
+							'global',
+							true,
+						),
 					)
-					continue
 				}
-				if (!view.placement.startsWith('global.')) continue
-				items.push(this.layoutItem(mounted, viewId, view, mounted.ownerPluginId, 'global', true))
 			}
 		}
 		return Object.freeze({ revision: this.revision, targetPluginId: null, items: sortItems(items) })
@@ -153,23 +188,26 @@ export class WorkbenchRegistry {
 		mounted: MountedExtension,
 		viewId: string,
 		view: WorkbenchViewSpec,
+		placement: WorkbenchPlacementSpec,
+		placementIndex: number,
 		targetPluginId: string,
 		scope: string,
 		includeModel = true,
 	): WorkbenchLayoutItem {
-		const id = `${mounted.ownerPluginId}:${viewId}`
+		const viewKey = `${mounted.ownerPluginId}:${viewId}`
+		const id = `${viewKey}:${placementIndex}`
 		return Object.freeze({
 			id,
 			viewId,
 			ownerPluginId: mounted.ownerPluginId,
 			targetPluginId,
-			placement: view.placement,
+			placement: placement.placement,
 			view: view.view ?? Object.freeze({ kind: 'remote', export: viewId }),
-			priority: view.priority ?? 0,
-			when: view.when ?? 'running',
-			meta: view.meta,
+			priority: placement.priority ?? 0,
+			when: placement.when ?? 'running',
+			meta: placement.meta,
 			model: includeModel
-				? this.grantModel(`${scope}:${id}`, this.selectModel(mounted, view.model, viewId))
+				? this.grantModel(`${scope}:${viewKey}`, this.selectModel(mounted, view.model, viewId))
 				: Object.freeze({}),
 		})
 	}
@@ -209,17 +247,27 @@ export class WorkbenchRegistry {
 					candidates.push({ mounted, renderer: item })
 				}
 			}
-			candidates.sort(
-				(a, b) =>
-					(b.renderer.priority ?? 0) - (a.renderer.priority ?? 0) ||
-					a.mounted.ownerPluginId.localeCompare(b.mounted.ownerPluginId),
-			)
+			candidates.sort((a, b) => {
+				const providers = outlet.providers
+				if (providers) {
+					const order =
+						providers.indexOf(a.mounted.ownerPluginId) - providers.indexOf(b.mounted.ownerPluginId)
+					if (order !== 0) return order
+				}
+				return a.mounted.ownerPluginId.localeCompare(b.mounted.ownerPluginId)
+			})
 			const selected = candidates[0]
 			if (!selected) continue
-			const when = selected.renderer.when ?? outlet.when ?? 'running'
+			const when = outlet.when ?? 'running'
 			if (when === 'running' && !this.isRunning(selected.mounted.ownerPluginId)) continue
+			const view = selected.mounted.extension.views[selected.renderer.viewId]
+			if (!view) {
+				throw new Error(
+					`[workbench] port renderer "${selected.renderer.id}" references an unknown view`,
+				)
+			}
 			const refs: Record<string, InternalModelRef> = {
-				...this.selectModel(selected.mounted, selected.renderer.model, selected.renderer.id),
+				...this.selectModel(selected.mounted, view.model, selected.renderer.id),
 			}
 			for (const [portKey, targetKey] of Object.entries(outlet.provide ?? {})) {
 				const ref = target.modelRefs[targetKey]
@@ -233,12 +281,12 @@ export class WorkbenchRegistry {
 			items.push(
 				Object.freeze({
 					id,
-					viewId: selected.renderer.export,
+					viewId: selected.renderer.viewId,
 					ownerPluginId: selected.mounted.ownerPluginId,
 					targetPluginId,
 					placement: outlet.placement,
-					view: Object.freeze({ kind: 'remote', export: selected.renderer.export }),
-					priority: selected.renderer.priority ?? outlet.priority ?? 0,
+					view: Object.freeze({ kind: 'remote', export: selected.renderer.viewId }),
+					priority: outlet.priority ?? 0,
 					when,
 					meta: outlet.meta,
 					model: this.grantModel(`plugin:${targetPluginId}:${id}`, refs),
@@ -247,8 +295,8 @@ export class WorkbenchRegistry {
 		}
 	}
 
-	private available(ownerPluginId: string, view: WorkbenchViewSpec): boolean {
-		return (view.when ?? 'running') === 'always' || this.isRunning(ownerPluginId)
+	private available(ownerPluginId: string, placement: WorkbenchPlacementSpec): boolean {
+		return (placement.when ?? 'running') === 'always' || this.isRunning(ownerPluginId)
 	}
 
 	private matchesAudience(owner: string, target: string, audience: WorkbenchAudience): boolean {

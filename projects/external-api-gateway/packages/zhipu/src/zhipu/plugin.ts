@@ -36,7 +36,7 @@ import type {
 	ZhipuWebSearchInput,
 } from './provider.ts'
 import { parseUpstreamError, previewJson, requestPreview } from './preview.ts'
-import { ZhipuWorkbench } from './workbench-module.ts'
+import { ZhipuWorkbench } from './workbench-extension.ts'
 
 const ROUTE_BASE = '/zhipu'
 const PROVIDER_ID = 'zhipu'

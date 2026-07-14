@@ -16,6 +16,7 @@ import {
 	Title,
 } from '@mantine/core'
 import { rpcErrorMessage } from '@pluxel/runtime/web'
+import { useWorkbenchHost, type WorkbenchEventsClient } from '@pluxel/runtime/workbench/ui'
 import {
 	IconActivity,
 	IconArrowLeft,
@@ -25,9 +26,10 @@ import {
 	IconWaveSine,
 } from '@tabler/icons-react'
 import { type ReactNode, useEffect, useState } from 'react'
-import { usePluginWithUi, type PluginWithUIRuntime } from './runtime'
+import type { PluginWithUIEvents } from '../../PluginWithUI'
+import { pluginUi } from './runtime'
 
-type PluginWithUIEventsClient = PluginWithUIRuntime['model']['activity']
+type PluginWithUIEventsClient = WorkbenchEventsClient<PluginWithUIEvents>
 type RpcAction = () => Promise<unknown>
 type SsePayloadWithType = { type: unknown }
 
@@ -52,13 +54,13 @@ function useLiveConnectionState(events: PluginWithUIEventsClient) {
 	return connected
 }
 
-function useLatestTick(app: PluginWithUIRuntime) {
+function useLatestTick(activity: PluginWithUIEventsClient) {
 	const [tick, setTick] = useState<number | null>(null)
 
 	useEffect(() => {
-		const off = app.model.activity.on('tick', (payload) => setTick(payload.now))
+		const off = activity.on('tick', (payload) => setTick(payload.now))
 		return () => off()
-	}, [app])
+	}, [activity])
 
 	return tick
 }
@@ -86,12 +88,13 @@ function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
 }
 
 export function OverviewPanel() {
-	const app = usePluginWithUi()
-	const status = app.model.status.useOneById('status')
-	const eventCount = app.model.events.useCount()
-	const activity = app.model.activity
+	const model = pluginUi.views.OverviewPanel.useModel()
+	const host = useWorkbenchHost()
+	const status = model.status.useOneById('status')
+	const eventCount = model.events.useCount()
+	const activity = model.activity
 	const connected = useLiveConnectionState(activity)
-	const tick = useLatestTick(app)
+	const tick = useLatestTick(activity)
 	const { error, run } = useRpcError()
 
 	const now = tick ?? Date.now()
@@ -126,7 +129,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{app.targetPluginId}</Code>
+						插件：<Code>{host.targetPluginId}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -146,14 +149,14 @@ export function OverviewPanel() {
 			<Group>
 				<Button
 					leftSection={<IconCirclePlus size={16} />}
-					onClick={() => void run(() => app.model.commands.increment(1), '无法执行 +1')}
+					onClick={() => void run(() => model.commands.increment(1), '无法执行 +1')}
 				>
 					+1
 				</Button>
 				<Button
 					variant="light"
 					leftSection={<IconRestore size={16} />}
-					onClick={() => void run(() => app.model.commands.resetCounter(), '无法重置计数器')}
+					onClick={() => void run(() => model.commands.resetCounter(), '无法重置计数器')}
 				>
 					重置
 				</Button>
@@ -163,8 +166,8 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const app = usePluginWithUi()
-	const eventsCollection = app.model.events
+	const model = pluginUi.views.EventsPanel.useModel()
+	const eventsCollection = model.events
 	const events = eventsCollection.useCollection()
 	const recentEvents = events.find({}, { sort: { at: -1 }, limit: 50 })
 	const { error, run } = useRpcError()
@@ -173,7 +176,7 @@ export function EventsPanel() {
 	const addNote = async () => {
 		const message = text.trim()
 		if (!message) return
-		await run(() => app.model.commands.addNote(message), '无法添加事件')
+		await run(() => model.commands.addNote(message), '无法添加事件')
 		setText('')
 	}
 
@@ -185,7 +188,7 @@ export function EventsPanel() {
 					<Button
 						variant="light"
 						color="red"
-						onClick={() => void run(() => app.model.commands.clearEvents(), '无法清空事件')}
+						onClick={() => void run(() => model.commands.clearEvents(), '无法清空事件')}
 					>
 						清空
 					</Button>
@@ -252,8 +255,8 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const app = usePluginWithUi()
-	const activity = app.model.activity
+	const model = pluginUi.views.StreamsPanel.useModel()
+	const activity = model.activity
 	const connected = useLiveConnectionState(activity)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
 
@@ -263,12 +266,12 @@ export function StreamsPanel() {
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		}
 		const stops = [
-			app.model.activity.on('ready', (payload) => append(payload, 'ready')),
-			app.model.activity.on('tick', (payload) => append(payload, 'tick')),
-			app.model.activity.on('activity', (payload) => append(payload, 'activity')),
+			model.activity.on('ready', (payload) => append(payload, 'ready')),
+			model.activity.on('tick', (payload) => append(payload, 'tick')),
+			model.activity.on('activity', (payload) => append(payload, 'activity')),
 		]
 		return () => stops.forEach((stop) => stop())
-	}, [app])
+	}, [model])
 
 	return (
 		<Stack gap="md">
@@ -314,7 +317,7 @@ type RoutePageProps = {
 }
 
 export function RoutePage({ frame = 'shell' }: RoutePageProps) {
-	const app = usePluginWithUi()
+	const host = useWorkbenchHost()
 	const standalone = frame === 'standalone'
 	return (
 		<Stack gap="md" style={standalone ? { minHeight: '100dvh', padding: 24 } : undefined}>
@@ -326,7 +329,7 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={pluginRouteHref(app.targetPluginId, '/dashboard')}
+						href={pluginRouteHref(host.targetPluginId, '/dashboard')}
 					>
 						返回宿主壳
 					</Button>
@@ -334,7 +337,7 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 			</Group>
 			<Text size="sm" c="dimmed">
 				这是插件提供的页面路由，用于演示 Workbench extension。插件名：
-				<Code>{app.targetPluginId}</Code>
+				<Code>{host.targetPluginId}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

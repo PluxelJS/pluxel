@@ -5,7 +5,8 @@ Workbench 是可选、宿主拥有的前端扩展能力。它不是通用Workben
 ## Authoring vocabulary
 
 - `WorkbenchExtension`：一个插件的前端扩展声明；`plugin` 是构建期 owner，mount 时必须与 Context owner 一致。
-- `WorkbenchView`：最小渲染、授权和错误隔离单元。route 与 slot 都是 view。
+- `WorkbenchView`：最小渲染、授权和错误隔离单元；一个 view 可以拥有多个 placement。
+- `WorkbenchPlacement`：宿主中的 slot 或 route，只决定 view 出现在哪里，不定义 renderer 或 model。
 - `WorkbenchViewModel`：一个 view 显式选择的 `rpc`、`collection`、`events` model。
 - `WorkbenchLayout`：宿主为 global 或某个 target plugin 解析出的 view 列表。
 - `WorkbenchBundle`：由 Federation 构建、按源码 hash 发布的浏览器产物。
@@ -29,18 +30,23 @@ const BillingWorkbench = workbench.define({
 		status: workbench.model.collection<BillingStatus>(),
 		activity: workbench.model.events<{ updated: { at: number } }>(),
 	},
-	views: {
-		Overview: workbench.view.route({
-			path: '/overview',
-			title: 'Billing',
-			navigation: { priority: 50 },
-			model: ['commands', 'status', 'activity'],
+	views: (model) => ({
+		Overview: workbench.view.remote({
+			model: [model.commands, model.status, model.activity],
+			placements: [
+				workbench.place.slot({ slot: workbench.slot.PluginTabs, label: 'Billing' }),
+				workbench.place.route({
+					path: '/overview',
+					title: 'Billing',
+					navigation: { priority: 50 },
+				}),
+			],
 		}),
-		StatusBadge: workbench.view.slot({
-			slot: workbench.slot.GlobalHeaderActions,
-			model: ['status'],
+		StatusBadge: workbench.view.remote({
+			model: [model.status],
+			placements: [workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions })],
 		}),
-	},
+	}),
 })
 
 ctx.workbench.mount(BillingWorkbench, {
@@ -56,10 +62,9 @@ ctx.workbench.mount(BillingWorkbench, {
 
 ```tsx
 const ui = createWorkbenchUi<typeof BillingWorkbench>()
-const overview = ui.view('Overview')
 
 function Overview() {
-	const { commands, status, activity } = overview.useModel()
+	const { commands, status, activity } = ui.views.Overview.useModel()
 	const host = useWorkbenchHost()
 	// status.useOneById(), status.useMany(), activity.on(), await commands.refresh()
 }
@@ -69,7 +74,8 @@ export default ui.expose({ Overview, StatusBadge })
 
 ## Security and lifecycle
 
-- extension 统一声明 model，但每个 view 必须列出自己的 model keys；registry 绝不把整个 extension model
+- extension 统一声明 model；`views(model)` 通过自动补全的 typed token 选择 model，作者不写协议字符串。
+  registry 绝不把整个 extension model
   发给每个 view。
 - RPC、collection 和 events transport 只接受 `grantId`，不接受 plugin/model namespace。
 - UI bundle 更新不改变 model graph，因此复用 grant；插件卸载、replacement 或依赖图变化立即撤销 grant。

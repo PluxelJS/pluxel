@@ -25,10 +25,9 @@ const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 const d = workbenchDoc({} as const)
 const HttpWorkerWorkbench = workbench.define({
 	plugin: 'PluginHttpWorkerDemo',
-	views: {
+	views: () => ({
 		documentation: workbench.view.document({
-			slot: workbench.slot.PluginTabs,
-			label: 'Worker Demo',
+			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, label: 'Worker Demo' })],
 			title: 'HTTP Worker Demo',
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
@@ -39,7 +38,7 @@ const HttpWorkerWorkbench = workbench.define({
 					Frozen/static runtimes intentionally use inline execution. Production workers should use a prebuilt stable \`.mjs\` entry.
 				`,
 		}),
-	},
+	}),
 })
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })

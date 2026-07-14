@@ -19,10 +19,11 @@ import {
 } from '@repo/chatbots-adapter-kit/registry'
 import { KookBot } from './bot.ts'
 import { createKookPluginEvents } from './events.factory.ts'
-import { KookWorkbenchRpc, type KookSettingsDoc, type KookStatusDoc } from './workbench.ts'
+import { KookWorkbenchRpc } from './workbench.ts'
+import type { KookSettingsDoc, KookStatusDoc } from './workbench-contract.ts'
 import type { KookBotStatus } from './status.ts'
 import type { KookEvent } from './protocol.ts'
-import { KookWorkbench } from './workbench-module.ts'
+import { KookWorkbench } from './workbench-extension.ts'
 
 export type KookBotConfigInput = BotAccountInput
 export type KookEventProjection = AcknowledgedProjection<KookBot, KookEvent>

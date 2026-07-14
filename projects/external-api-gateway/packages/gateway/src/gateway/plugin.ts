@@ -30,7 +30,7 @@ import {
 	type ExternalGatewayToolSpec,
 } from './tools.ts'
 import { callExternalGatewayTool } from './tool-dispatcher.ts'
-import { ExternalGatewayWorkbench } from './workbench-module.ts'
+import { ExternalGatewayWorkbench } from './workbench-extension.ts'
 
 export {
 	EXTERNAL_GATEWAY_TOOL_NAMES,

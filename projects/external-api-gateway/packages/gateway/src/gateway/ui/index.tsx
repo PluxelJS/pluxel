@@ -2,7 +2,7 @@ import { Button } from '@mantine/core'
 import { IconApi } from '@tabler/icons-react'
 import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import { GatewayDashboard, GatewayPanel } from './panels'
-import { gatewayPlugin } from './runtime'
+import { gatewayUi } from './runtime'
 
 function pluginRouteHref(pluginName: string, path: string) {
 	return `/plugins/${encodeURIComponent(pluginName)}${path}`
@@ -23,4 +23,4 @@ export function HeaderAction() {
 	)
 }
 
-export default gatewayPlugin.expose({ HeaderAction, GatewayPanel, GatewayDashboard })
+export default gatewayUi.expose({ HeaderAction, GatewayPanel, GatewayDashboard })
