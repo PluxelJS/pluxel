@@ -1,12 +1,8 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'tsdown'
 import Macros from 'unplugin-macros/rolldown'
+import { rewriteCoreDtsModuleAugmentations } from './tools/rewriteDtsModuleAugmentations.ts'
 
-const moduleAugmentationMap = {
-	'@pluxel/context': '@pluxel/core',
-}
-
-const createModuleRewritePlugin = () => rewriteDtsModuleAugmentations(moduleAugmentationMap)
+const createModuleRewritePlugin = () => rewriteCoreDtsModuleAugmentations()
 
 const transformOptions = {
 	assumptions: {

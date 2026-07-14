@@ -31,30 +31,6 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/rolldown#build": {
-			// Most internal packages resolve workspace sources through `@pluxel/source`
-			// or explicit source aliases. They need dependency source changes hashed,
-			// but they do not need upstream dist artifacts built first.
-			"dependsOn": [],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/packages/core/src/federation.ts",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
 		"@pluxel/test#build": {
 			// `@pluxel/test` is a dev-only helper package. It compiles against the
 			// source-export surface of core/runtime and must not pull those build
@@ -62,26 +38,6 @@
 			// use `@pluxel/test` in devDependencies create a false build cycle.
 			// Its bundled rolldown helpers do need built dist artifacts.
 			"dependsOn": ["@pluxel/rolldown#build"],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
-		"@pluxel/core#build": {
-			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/context#build", "@pluxel/core-di#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",

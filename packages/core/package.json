@@ -80,7 +80,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"build": "tsdown",
-		"bench:dist": "pnpm --filter @pluxel/rolldown build && pnpm run build && node bench/pluginLifecycle.bench.ts"
+		"bench:dist": "pnpm run build && node bench/pluginLifecycle.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",

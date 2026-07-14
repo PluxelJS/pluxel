@@ -20,6 +20,5 @@ export {
 	parseStandaloneWithLang,
 	parseWithLang,
 } from './plugins/pluginUtils.ts'
-export { rewriteDtsModuleAugmentations } from './plugins/rewriteDtsModuleAugmentations.ts'
 export { rewriteDtsText } from './plugins/rewriteDtsText.ts'
 export { assertBundleNoText } from './plugins/assertBundleNoText.ts'

@@ -14,7 +14,8 @@ Management UI build primitive 位于 `@pluxel/rolldown/vite/management-ui`。run
 依赖 lockfile、shared 版本和显式 Vite cache key 复用完整 artifact。缓存命中时只加载轻量签名解析层，不加载
 完整 Vite/MF builder。UI entry 不进入服务端 bundle。shared packages 只包含 React、Mantine 等 UI peer 和
 `@pluxel/runtime/management/ui`；resource transport 实现不进入插件 bundle。
-core 是 federation contract 的源码权威；rolldown 发布物内联这一个 dependency-neutral contract，避免
-“core 用 rolldown 构建、rolldown 启动又读取 core dist”的构建环，Turbo 直接把该源码计入 rolldown cache key。
+`@pluxel/core/federation` 是 dependency-neutral contract 的权威入口。core 的声明产物处理由 core 自己的
+build config 完成，不反向依赖 `@pluxel/rolldown`；Turbo 因而保持 `core -> rolldown` 的单向构建顺序，
+rolldown 从已构建的公开 subpath 内联 contract，不依赖源码 alias 或旧 dist。
 
 static 与 dynamic route 都通过 `RuntimeDevCapabilities.managementUiSource` 接入 compiler，不复制构建逻辑。
