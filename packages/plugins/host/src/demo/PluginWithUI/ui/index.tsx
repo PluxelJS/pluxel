@@ -62,7 +62,7 @@ export function PluginInfo() {
 	)
 }
 
-export default pluginUi.expose({
+export default pluginUi.define({
 	HeaderAction,
 	PluginInfo,
 	OverviewPanel,

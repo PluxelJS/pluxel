@@ -1,94 +1,106 @@
 # Workbench Architecture
 
-Workbench 是可选、宿主拥有的前端扩展能力。它不是通用Workbench，也不是插件可以直接写入的 React registry。
+Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 API，也不是插件可直接写入的 React registry。
 
-## Authoring vocabulary
+## Authoring model
 
-- `WorkbenchExtension`：一个插件的前端扩展声明；`plugin` 是构建期 owner，mount 时必须与 Context owner 一致。
-- `WorkbenchView`：最小渲染、授权和错误隔离单元；一个 view 可以拥有多个 placement。
-- `WorkbenchPlacement`：宿主中的 slot 或 route，只决定 view 出现在哪里，不定义 renderer 或 model。
-- `WorkbenchViewModel`：一个 view 显式选择的 `rpc`、`collection`、`events` model。
-- `WorkbenchLayout`：宿主为 global 或某个 target plugin 解析出的 view 列表。
-- `WorkbenchBundle`：由 Federation 构建、按源码 hash 发布的浏览器产物。
-- `grantId`：layout 为一个 view/model pair 下发的短期 opaque capability；插件图变化时撤销。
+作者模型分成三个边界：
 
-普通插件作者只使用两个入口：
+| 层 | 公开入口 | 内容 |
+| --- | --- | --- |
+| Contract | `@pluxel/runtime/workbench/contract` | browser-safe resources、Views、placements、Ports |
+| Extension | `@pluxel/runtime/workbench` | Contract + server-only UI entry |
+| Binding | `@pluxel/runtime/workbench` | RPC factory、collection projection/managed state、events producer |
 
-```text
-@pluxel/runtime/workbench
-@pluxel/runtime/workbench/ui
-```
-
-服务端声明与 provider：
+Contract 不包含 plugin ID、Context、provider、Node API 或 `import.meta.url`。Extension 不重复 owner；
+`ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
 
 ```ts
-const BillingWorkbench = workbench.define({
-	plugin: 'BillingPlugin',
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-	model: {
-		commands: workbench.model.rpc<BillingRpc>(),
-		status: workbench.model.collection<BillingStatus>(),
-		activity: workbench.model.events<{ updated: { at: number } }>(),
+// workbench-contract.ts
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+
+export const BillingUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<BillingCommands>(),
+		status: workbenchContract.collection<BillingStatus>(),
 	},
-	views: (model) => ({
-		Overview: workbench.view.remote({
-			model: [model.commands, model.status, model.activity],
+	views: {
+		Overview: {
 			placements: [
-				workbench.place.slot({ slot: workbench.slot.PluginTabs, label: 'Billing' }),
-				workbench.place.route({
-					path: '/overview',
-					title: 'Billing',
-					navigation: { priority: 50 },
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					label: 'Billing',
+					order: 20,
 				}),
 			],
-		}),
-		StatusBadge: workbench.view.remote({
-			model: [model.status],
-			placements: [workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions })],
-		}),
-	}),
+		},
+	},
+})
+```
+
+```ts
+// server only
+const BillingWorkbench = workbench.extension({
+	contract: BillingUi,
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
 ctx.workbench.mount(BillingWorkbench, {
-	commands: workbench.provide.rpc(() => new BillingRpc()),
-	status: workbench.provide.collection({ storage: 'memory', uiAccess: 'read' }),
-	activity: workbench.provide.events(({ emit, signal }) => {
-		// provider 不接触 HTTP、SSE namespace 或内部 channel。
+	commands: workbench.bind.rpc(() => new BillingRpc()),
+	status: workbench.bind.collection({
+		read: () => billingStatus.snapshot(),
+		subscribe: (invalidate) => billingStatus.subscribe(invalidate),
 	}),
 })
 ```
 
-浏览器 entry：
+`bind.collection()` 是 business/admin state 的只读实时投影。只有真正属于 Workbench 的管理状态才使用
+`bind.managedCollection()`；其可选 handle 不得成为插件核心生命周期或业务 API 的前提。
+
+## Browser UI
+
+UI entry 直接导入 Contract value：
 
 ```tsx
-const ui = createWorkbenchUi<typeof BillingWorkbench>()
+const ui = createWorkbenchUi(BillingUi)
 
-function Overview() {
-	const { commands, status, activity } = ui.views.Overview.useModel()
-	const host = useWorkbenchHost()
-	// status.useOneById(), status.useMany(), activity.on(), await commands.refresh()
+export function Overview() {
+	const { commands, status } = ui.useResources()
+	const snapshot = status.useSnapshot()
+	// loading | ready | stale | error
 }
 
-export default ui.expose({ Overview, StatusBadge })
+export default ui.define({ Overview })
 ```
+
+同一 Federation bundle 是 owner resources 的前端信任边界，所以普通 View 不声明 `uses`。`useResources()` 返回
+全部 owner resource 的 lazy facade：RPC 首次调用才请求，collection 首次 `useSnapshot()` 才订阅，events 首次
+`subscribe()`/`useConnectionState()` 才连接。
+
+Contract runtime value 只能校验 resource key/kind、View、placement、Port 和 UI exports。TypeScript generic 中的
+RPC payload、collection item 和 event payload 在运行时已擦除，不冒充 runtime schema。
+
+## Cross-plugin UI
+
+Port 是跨插件 UI resource 注入的唯一路径：consumer 声明 outlet、placement 和 resource mapping；provider 声明
+无 placement renderer，并在 UI 中调用 `ui.usePort(Port)`。provider 不能占据 consumer 的 Tab/route/action。
+
+renderer 从 committed direct required dependencies 中按 Port ID + exact version 唯一解析。零个 renderer 时 outlet
+unavailable，多个时显示 ambiguity error，不按注册顺序猜测。Port grant 按 target/render scope 隔离。
 
 ## Security and lifecycle
 
-- extension 统一声明 model；`views(model)` 通过自动补全的 typed token 选择 model，作者不写协议字符串。
-  registry 绝不把整个 extension model
-  发给每个 view。
-- RPC、collection 和 events transport 只接受 `grantId`，不接受 plugin/model namespace。
-- UI bundle 更新不改变 model graph，因此复用 grant；插件卸载、replacement 或依赖图变化立即撤销 grant。
-- collection grant 只对应一个逻辑 collection。浏览器 replica 和 event connection 按 transport/grant 复用，
-  不跨 owner 或 model 合并。
-- `workbench: false` 时不安装 backend，不注册 provider、不构建 UI，也不创建浏览器 transport。
-- view 错误由 view boundary 显示并记录；bundle、layout、RPC、collection、events 错误不得静默吞掉。
+- transport 只接受 opaque grant，不接受 plugin/resource namespace；
+- owner stop 立即撤销 resource 和 Port grant；
+- replacement 可以保留 bundle/page shell，但不能调用已停止 provider；
+- rollback 重新 mount 并签发新 lease，不复活旧 lease；
+- artifact、layout 和 resource revision 分离，bundle-only 更新不撤销 resource lease；
+- disabled Workbench 不创建 backend、compiler、watcher、route、transport 或 persistent state；
+- bundle、RPC、collection、events 和 Port 错误必须进入可见状态或 View error boundary。
 
-## Host rendering
+## Implementation entries
 
-宿主加载 global layout 的 slot 与 route 导航描述；进入插件页或独立 route 时加载 target layout。只加载 layout
-引用的 bundle，先完成新 bundle 加载再原子替换 registrations。route、Tab、header、dock 与 capability slot 最终
-都由 host 映射；builtin document 由 host 渲染，remote view 运行在 `WorkbenchViewProvider` 中。
-
-Federation 常量属于 `@pluxel/core/federation` 的唯一 build contract。runtime 不再转手 re-export，toolchain、
-runtime-dev 和 host 直接依赖该 contract，避免不同 package 的 `dist` 构建顺序制造 missing export。
+- `packages/runtime/src/workbench/`
+- `packages/runtime/src/services/workbench/`
+- `packages/components/src/workbench/`
+- `packages/rolldown/src/rolldown/plugins/workbenchUiBuildPlugin.ts`
+- `packages/runtime-dev/src/workbench/`

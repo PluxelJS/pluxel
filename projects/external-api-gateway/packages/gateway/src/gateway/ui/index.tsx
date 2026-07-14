@@ -23,4 +23,4 @@ export function HeaderAction() {
 	)
 }
 
-export default gatewayUi.expose({ HeaderAction, GatewayPanel, GatewayDashboard })
+export default gatewayUi.define({ HeaderAction, GatewayPanel, GatewayDashboard })

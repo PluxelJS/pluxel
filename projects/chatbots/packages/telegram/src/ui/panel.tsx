@@ -17,9 +17,9 @@ import { useEffect, useState } from 'react'
 import { telegramUi } from './runtime.ts'
 
 export function TelegramSettingsPanel() {
-	const model = telegramUi.views.Settings.useModel()
-	const settingsList = model.settings.useMany()
-	const statusList = model.status.useMany()
+	const model = telegramUi.useResources()
+	const settingsList = model.settings.useSnapshot().items
+	const statusList = model.status.useSnapshot().items
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://api.telegram.org')

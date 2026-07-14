@@ -1,77 +1,65 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import type {
 	DemoEvent,
+	PluginWithUICommands,
 	PluginWithUIEvents,
-	PluginWithUIRpc,
 	PluginWithUIStatusDoc,
-} from './PluginWithUI'
+} from './PluginWithUI.contracts'
 
-export const PluginWithUIWorkbench = workbench.define({
-	plugin: 'PluginWithUI',
-	entry: workbench.entry(import.meta.url, './PluginWithUI/ui/index.tsx'),
-	model: {
-		commands: workbench.model.rpc<PluginWithUIRpc>(),
-		status: workbench.model.collection<PluginWithUIStatusDoc>(),
-		events: workbench.model.collection<DemoEvent>(),
-		activity: workbench.model.events<PluginWithUIEvents>(),
+export const PluginWithUIUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<PluginWithUICommands>(),
+		status: workbenchContract.collection<PluginWithUIStatusDoc>(),
+		events: workbenchContract.collection<DemoEvent>(),
+		activity: workbenchContract.events<PluginWithUIEvents>(),
 	},
-	views: (model) => ({
-		HeaderAction: workbench.view.remote({
+	views: {
+		HeaderAction: {
+			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
+		},
+		OverviewPanel: {
 			placements: [
-				workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions, priority: 100 }),
-			],
-		}),
-		OverviewPanel: workbench.view.remote({
-			model: [model.commands, model.status, model.events, model.activity],
-			placements: [
-				workbench.place.slot({
-					slot: workbench.slot.PluginTabs,
-					priority: 20,
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 20,
 					label: '概览',
 				}),
 			],
-		}),
-		EventsPanel: workbench.view.remote({
-			model: [model.commands, model.events],
+		},
+		EventsPanel: {
 			placements: [
-				workbench.place.slot({
-					slot: workbench.slot.PluginTabs,
-					priority: 19,
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 19,
 					label: '事件',
 				}),
 			],
-		}),
-		StreamsPanel: workbench.view.remote({
-			model: [model.activity],
+		},
+		StreamsPanel: {
 			placements: [
-				workbench.place.slot({
-					slot: workbench.slot.PluginTabs,
-					priority: 18,
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 18,
 					label: '实时事件',
 				}),
 			],
-		}),
-		PluginInfo: workbench.view.remote({
-			placements: [workbench.place.slot({ slot: workbench.slot.PluginInfo, priority: 10 })],
-		}),
-		RoutePage: workbench.view.remote({
+		},
+		PluginInfo: {
+			placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo, { order: 10 })],
+		},
+		RoutePage: {
 			placements: [
-				workbench.place.route({
-					path: '/dashboard',
+				workbenchContract.route('/dashboard', {
 					title: 'PluginWithUI Dashboard',
-					navigation: { priority: 50 },
+					order: 50,
 				}),
-				workbench.place.route({ path: '/notes', title: 'PluginWithUI Notes' }),
+				workbenchContract.route('/notes', { title: 'PluginWithUI Notes' }),
 			],
-		}),
-		StandaloneRoute: workbench.view.remote({
+		},
+		StandaloneRoute: {
 			placements: [
-				workbench.place.route({
-					path: '/standalone',
+				workbenchContract.route('/standalone', {
 					title: 'PluginWithUI Standalone',
 					frame: 'standalone',
 				}),
 			],
-		}),
-	}),
+		},
+	},
 })

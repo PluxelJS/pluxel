@@ -23,7 +23,7 @@ import { normalizeViteId } from './viteNormalizeId.ts'
 
 const WORKBENCH_UI_BUILD_CACHE_VERSION = 1
 const ARTIFACT_STAMP_FILE = 'pluxel-workbench.json'
-const CODE_HINT = /\bworkbench\s*\.\s*define\s*\(/
+const CODE_HINT = /\bworkbench\s*\.\s*extension\s*\(/
 const IMPORT_SOURCE = '@pluxel/runtime/workbench'
 const productionBuilds = new Map<string, Promise<void>>()
 
@@ -37,6 +37,7 @@ type NodeLike = {
 type WorkbenchUiDeclaration = Readonly<{
 	pluginName: string
 	entryPath: string
+	insertOffset: number
 }>
 
 type ArtifactStamp = Readonly<{
@@ -97,7 +98,8 @@ export function workbenchUiBuildPlugin(
 				const id = normalizeViteId(rawId)
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[workbench-ui] failed to parse declaration module: ${id}`)
-				for (const declaration of extractWorkbenchUiDeclarations(ast, code, id)) {
+				const extracted = extractWorkbenchUiDeclarations(ast, code, id, root)
+				for (const declaration of extracted) {
 					const existing = declarations.get(declaration.pluginName)
 					if (existing && existing.entryPath !== declaration.entryPath) {
 						this.error(
@@ -107,7 +109,16 @@ export function workbenchUiBuildPlugin(
 					}
 					declarations.set(declaration.pluginName, declaration)
 				}
-				return null
+				if (extracted.length === 0) return null
+				let transformed = code
+				for (const declaration of [...extracted].sort(
+					(a, b) => b.insertOffset - a.insertOffset,
+				)) {
+					transformed = `${transformed.slice(0, declaration.insertOffset)}, ${JSON.stringify(
+						declaration.pluginName,
+					)}${transformed.slice(declaration.insertOffset)}`
+				}
+				return { code: transformed, map: null }
 			},
 		},
 		async writeBundle() {
@@ -273,6 +284,7 @@ function extractWorkbenchUiDeclarations(
 	ast: Program,
 	code: string,
 	id: string,
+	root: string,
 ): WorkbenchUiDeclaration[] {
 	const namespaces = collectAuthoringImports(ast)
 	if (namespaces.size === 0) return []
@@ -280,39 +292,44 @@ function extractWorkbenchUiDeclarations(
 	visitNode(ast as unknown as NodeLike, (node) => {
 		if (node.type !== 'CallExpression') return
 		const namespace = [...namespaces].find(
-			(local) => sourceSlice(code, node.callee) === `${local}.define`,
+			(local) => sourceSlice(code, node.callee) === `${local}.extension`,
 		)
 		if (!namespace) return
 		const args = array(node.arguments)
 		const input = args[0]
 		if (!input || input.type !== 'ObjectExpression') return
-		const pluginName = literalString(readObjectProperty(input, 'plugin'))
-		if (!pluginName) {
-			throw new Error(`[workbench-ui] workbench.define plugin must be a string literal in ${id}`)
-		}
 		const entry = readObjectProperty(input, 'entry')
 		if (!entry) return
 		if (
 			entry.type !== 'CallExpression' ||
 			sourceSlice(code, entry.callee) !== `${namespace}.entry`
 		) {
-			throw new Error(`[workbench-ui] ${pluginName}.entry must call workbench.entry() directly`)
+			throw new Error(`[workbench-ui] extension.entry must call workbench.entry() directly in ${id}`)
 		}
 		const entryArgs = array(entry.arguments)
 		if (entryArgs.length !== 2 || sourceSlice(code, entryArgs[0]) !== 'import.meta.url') {
 			throw new Error(
-				`[workbench-ui] ${pluginName} must declare workbench.entry(import.meta.url, "./ui-entry")`,
+				`[workbench-ui] extension must declare workbench.entry(import.meta.url, "./ui-entry") in ${id}`,
 			)
 		}
 		const relativeEntry = literalString(entryArgs[1])
 		if (!relativeEntry) {
-			throw new Error(`[workbench-ui] ${pluginName} UI entry must be a string literal`)
+			throw new Error(`[workbench-ui] UI entry must be a string literal in ${id}`)
+		}
+		const pluginName = `artifact-${createHash('sha256')
+			.update(`${relative(root, id)}\0${relativeEntry}`)
+			.digest('hex')
+			.slice(0, 12)}`
+		const insertOffset = Number(entry.end) - 1
+		if (!Number.isInteger(insertOffset) || insertOffset < 0) {
+			throw new Error(`[workbench-ui] cannot locate workbench.entry() call in ${id}`)
 		}
 		out.push({
 			pluginName,
 			entryPath: isAbsolute(relativeEntry)
-				? resolve(relativeEntry)
-				: resolve(dirname(id), relativeEntry),
+					? resolve(relativeEntry)
+					: resolve(dirname(id), relativeEntry),
+			insertOffset,
 		})
 	})
 	return out

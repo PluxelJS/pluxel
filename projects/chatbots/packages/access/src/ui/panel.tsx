@@ -3,9 +3,9 @@ import { AccessEditor } from './access-editor.tsx'
 import { accessUi } from './runtime.ts'
 
 export function AccessPanel() {
-	const model = accessUi.views.Access.useModel()
-	const overview = model.overview.useOneById('overview')
-	const users = model.users.useMany()
+	const model = accessUi.useResources()
+	const overview = model.overview.useSnapshot().items.find((item) => item.id === 'overview')
+	const users = model.users.useSnapshot().items
 	return (
 		<Stack p="md" gap="md">
 			<Group justify="space-between">

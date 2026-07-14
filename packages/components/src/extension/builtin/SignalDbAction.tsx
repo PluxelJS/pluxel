@@ -2,7 +2,7 @@ import { Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { useMemo, useState } from 'react'
 import type { WorkbenchActionBlock as BuiltinActionBlock } from '@pluxel/runtime/workbench'
 import { useBoundSignalDbCollectionsState, useGlobalExtensionContext } from '@pluxel/runtime/web'
-import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui/internal'
 import { applySignalDbWrite } from './_shared'
 
 export function BuiltinSignalDbAction({ block }: { block: BuiltinActionBlock }) {

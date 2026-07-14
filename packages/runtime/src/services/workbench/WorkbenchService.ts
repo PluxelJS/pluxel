@@ -1,7 +1,7 @@
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
 import type {
 	AnyWorkbenchExtension,
-	WorkbenchProviders,
+	WorkbenchBindings,
 	WorkbenchMount,
 	PluginWorkbench,
 } from '../../workbench'
@@ -42,13 +42,13 @@ export class WorkbenchService {
 		return backendFor(this.ctx) !== undefined
 	}
 
-	mount<Extension extends AnyWorkbenchExtension>(
-		extension: Extension,
-		providers: WorkbenchProviders<Extension>,
-	): WorkbenchMount<Extension> | undefined {
+	mount<
+		Extension extends AnyWorkbenchExtension,
+		const Bindings extends WorkbenchBindings<Extension>,
+	>(extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> | undefined {
 		const backend = backendFor(this.ctx)
 		if (!backend) return undefined
-		return backend.forContext(this.ctx).mount(extension, providers)
+		return backend.forContext(this.ctx).mount(extension, bindings)
 	}
 }
 

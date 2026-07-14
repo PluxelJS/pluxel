@@ -162,9 +162,10 @@ const buildFixtures = {
 		].join('\n'),
 		'src/index.ts': [
 			"import { workbench } from '@pluxel/runtime/workbench'",
+			"import { workbenchContract } from '@pluxel/runtime/workbench/contract'",
 			'',
-			"const extension = workbench.define({ plugin: 'Example', entry: workbench.entry(import.meta.url, './ui/index.ts') })",
-			"const secondExtension = workbench.define({ plugin: 'SecondExample', entry: workbench.entry(import.meta.url, './ui/second.ts') })",
+			"const extension = workbench.extension({ contract: workbenchContract.define({}), entry: workbench.entry(import.meta.url, './ui/index.ts') })",
+			"const secondExtension = workbench.extension({ contract: workbenchContract.define({}), entry: workbench.entry(import.meta.url, './ui/second.ts') })",
 			'',
 			'export function registerWorkbench(gate: any) {',
 			'\treturn gate.mount(extension, {})',
@@ -444,6 +445,8 @@ describe('build command', () => {
 			expect(output).not.toContain('.bind(')
 			expect(output).not.toContain('__PLUXEL_UI_ONLY_MARKER__')
 			expect(output).not.toContain('__PLUXEL_SECOND_UI_ONLY_MARKER__')
+			const artifactNames = [...output.matchAll(/artifact-[a-f0-9]{12}/g)].map((match) => match[0])
+			expect(new Set(artifactNames).size).toBe(2)
 
 			const workbenchRoot = resolve(fixtureDir, 'dist/workbench')
 			const files = await readdir(workbenchRoot, { recursive: true })

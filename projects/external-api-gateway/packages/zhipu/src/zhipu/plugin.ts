@@ -80,19 +80,21 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		const mounted = this.ctx.workbench.mount(ZhipuWorkbench, {
-			commands: workbench.provide.rpc(() => new ZhipuProviderRpc(this)),
-			settings: workbench.provide.collection(),
-			status: workbench.provide.collection(),
-			history: workbench.provide.collection(),
+		this.ctx.workbench.mount(ZhipuWorkbench, {
+			commands: workbench.bind.rpc(() => new ZhipuProviderRpc(this)),
+			settings: workbench.bind.collection({
+				read: () => this.settings.snapshot(),
+				subscribe: (invalidate) => this.settings.subscribe(invalidate),
+			}),
+			status: workbench.bind.collection({
+				read: () => this.status.snapshot(),
+				subscribe: (invalidate) => this.status.subscribe(invalidate),
+			}),
+			history: workbench.bind.collection({
+				read: () => this.history.snapshot(),
+				subscribe: (invalidate) => this.history.subscribe(invalidate),
+			}),
 		})
-		if (mounted) {
-			await Promise.all([
-				this.settings.attach(mounted.collections.settings),
-				this.status.attach(mounted.collections.status),
-				this.history.attach(mounted.collections.history),
-			])
-		}
 		this.registerRoutes()
 		this.ctx.logger.info('Zhipu provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,

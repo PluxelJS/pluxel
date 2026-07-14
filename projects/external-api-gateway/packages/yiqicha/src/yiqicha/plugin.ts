@@ -107,19 +107,21 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		const mounted = this.ctx.workbench.mount(YiqichaWorkbench, {
-			commands: workbench.provide.rpc(() => new YiqichaProviderRpc(this)),
-			settings: workbench.provide.collection(),
-			status: workbench.provide.collection(),
-			history: workbench.provide.collection(),
+		this.ctx.workbench.mount(YiqichaWorkbench, {
+			commands: workbench.bind.rpc(() => new YiqichaProviderRpc(this)),
+			settings: workbench.bind.collection({
+				read: () => this.settings.snapshot(),
+				subscribe: (invalidate) => this.settings.subscribe(invalidate),
+			}),
+			status: workbench.bind.collection({
+				read: () => this.status.snapshot(),
+				subscribe: (invalidate) => this.status.subscribe(invalidate),
+			}),
+			history: workbench.bind.collection({
+				read: () => this.history.snapshot(),
+				subscribe: (invalidate) => this.history.subscribe(invalidate),
+			}),
 		})
-		if (mounted) {
-			await Promise.all([
-				this.settings.attach(mounted.collections.settings),
-				this.status.attach(mounted.collections.status),
-				this.history.attach(mounted.collections.history),
-			])
-		}
 		this.registerRoutes()
 		this.ctx.logger.info('YiQiCha provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,

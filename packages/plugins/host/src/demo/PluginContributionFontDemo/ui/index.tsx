@@ -4,15 +4,19 @@ import { useEffect, useMemo, useState } from 'react'
 import {
 	FONT_KIND,
 	FONT_MANAGER_PLUGIN_NAME,
+	FontSettingsPort,
 	type FontRef,
-} from '../../PluginContributionFontDemo.shared'
-import { fontSettingsUi, fontSettingsView } from './runtime'
+} from '../../PluginContributionFontDemo.contract'
+import { fontSettingsUi } from './runtime'
 
 export function FontSettings() {
-	const model = fontSettingsView.useModel()
+	const model = fontSettingsUi.useResources()
+	const port = fontSettingsUi.usePort(FontSettingsPort)
 	const host = useWorkbenchHost()
-	const settings = model.settings
-	const fontSets = model.fontSets.useMany({ sort: { name: 1 } })
+	const settings = port.settings
+	const fontSets = [...model.fontSets.useSnapshot().items].sort((left, right) =>
+		left.name.localeCompare(right.name),
+	)
 	const [selected, setSelected] = useState<string | null>(null)
 
 	useEffect(() => {
@@ -61,4 +65,4 @@ export function FontSettings() {
 	)
 }
 
-export default fontSettingsUi.expose({ FontSettings })
+export default fontSettingsUi.define({ FontSettings })

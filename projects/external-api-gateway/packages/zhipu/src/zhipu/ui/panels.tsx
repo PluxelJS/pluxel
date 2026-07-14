@@ -263,8 +263,8 @@ export function ZhipuDashboard() {
 
 export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const app = useZhipuApp()
-	const settings = app.model.settings.useOneById('settings')
-	const status = app.model.status.useOneById('status')
+	const settings = app.model.settings.useSnapshot().items.find((item) => item.id === 'settings')
+	const status = app.model.status.useSnapshot().items.find((item) => item.id === 'status')
 	const [apiKey, setApiKey] = useState('')
 	const [baseUrl, setBaseUrl] = useState(DEFAULT_ZHIPU_BASE_URL)
 	const baseUrlEdited = useRef(false)
@@ -371,7 +371,7 @@ export function ZhipuSettingsPanel({ compact = false }: { compact?: boolean }) {
 
 export function ZhipuOcrPanel() {
 	const app = useZhipuApp()
-	const settings = app.model.settings.useOneById('settings')
+	const settings = app.model.settings.useSnapshot().items.find((item) => item.id === 'settings')
 	const [mode, setMode] = useState<Mode>('layout-parsing')
 	const [userId, setUserId] = useState('demo-user')
 	const [file, setFile] = useState<File | null>(null)
@@ -638,7 +638,7 @@ function OcrRequestSummary({
 
 export function ZhipuApiPanel() {
 	const app = useZhipuApp()
-	const settings = app.model.settings.useOneById('settings')
+	const settings = app.model.settings.useSnapshot().items.find((item) => item.id === 'settings')
 	const [mode, setMode] = useState<ApiMode>('chat')
 	const [userId, setUserId] = useState('demo-user')
 	const [rawJson, setRawJson] = useState(defaultApiJson('chat'))
@@ -827,7 +827,9 @@ export function ZhipuApiPanel() {
 
 export function ZhipuHistoryPanel() {
 	const model = useZhipuHistoryModel()
-	const rows = model.history.useMany({ limit: 30, sort: { at: -1 } })
+	const rows = [...model.history.useSnapshot().items]
+		.sort((left, right) => right.at - left.at)
+		.slice(0, 30)
 	const [error, setError] = useState<string | null>(null)
 
 	const clear = async () => {

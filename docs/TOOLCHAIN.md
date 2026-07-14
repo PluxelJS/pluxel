@@ -1,26 +1,43 @@
 # Toolchain Architecture
 
-Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。runtime-dev compiler 负责：
+Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
-1. 绑定 `workbench.entry()` source declaration；
-2. 收集 Vite module graph 和相关源文件；
-3. 计算包含 shared contract、Vite overlay 和 compiler version 的 hash；
-4. 构建 Module Federation remote 到 `.pluxel/workbench`；
-5. 原子提交 artifact state，并触发统一 Workbench revision；
+## Source declaration
+
+server Extension 使用：
+
+```ts
+workbench.extension({
+	contract: BrowserSafeContract,
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+})
+```
+
+Rolldown 静态提取 literal entry，并按 declaration module、entry path、source graph、Contract/shared versions 和
+compiler version 生成稳定 artifact key。构建 transform 把该 key 注入 `workbench.entry()` 的 internal 第三参数；
+作者不声明 plugin ID。artifact 按 key 内容寻址，committed mount 时才关联 Context owner。
+
+UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe contract、
+`@pluxel/runtime/workbench/contract`、`@pluxel/runtime/workbench/ui` 和公开 UI peers，不得包含 server Workbench
+entry、Plugin、Context 或 Node API。
+
+## Development compiler
+
+runtime-dev compiler：
+
+1. 将 Extension source declaration 绑定到 mount owner；
+2. 收集 Vite module graph 与相关源文件；
+3. 计算 source/build hash；
+4. 构建 Federation remote 到 `.pluxel/workbench`；
+5. 原子提交 artifact state；
 6. owner unload 时停止 watcher 并移除 artifact。
 
-compiler 在绑定 UI declaration 时即发布 `building`，不等源码 hash 计算完成；Workbench 将其视为等待状态，
-由后续 ready/error revision 驱动结果，不使用客户端超时或轮询猜测构建是否完成。
+compiler 在绑定 declaration 时立即发布 `building`；ready/error revision 驱动 Workbench，不使用客户端轮询猜测。
 
-生产构建使用同一 federation contract，按 owner 输出到 `dist/workbench/<owner>/`。Rolldown 只静态提取
-`workbench.entry(import.meta.url, "...")` 的字符串 declaration；没有 UI 时不加载 Vite，有 UI 时用源码图、
-依赖 lockfile、shared 版本和显式 Vite cache key 复用完整 artifact。缓存命中时只加载轻量签名解析层，不加载
-完整 Vite/MF builder。UI entry 不进入服务端 bundle。shared packages 只包含 React、Mantine 等 UI peer 和
-`@pluxel/runtime/workbench/ui`；resource transport 实现不进入插件 bundle。
-反向边界同样成立：UI entry 对服务端 Workbench extension 只保留 type-only import，remote source graph 不得
-包含 `@pluxel/runtime/workbench`、core Context 或 Node API。
-`@pluxel/core/federation` 是 dependency-neutral contract 的权威入口。core 的声明产物处理由 core 自己的
-build config 完成，不反向依赖 `@pluxel/rolldown`；Turbo 因而保持 `core -> rolldown` 的单向构建顺序，
-rolldown 从已构建的公开 subpath 内联 contract，不依赖源码 alias 或旧 dist。
+## Production build
 
-static 与 dynamic route 都通过 `RuntimeDevCapabilities.workbenchUiSource` 接入 compiler，不复制构建逻辑。
+生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version、
+compiler version 和显式 Vite cache key。UI Contract 和 UI runtime 都是 singleton Federation shared package。
+
+`@pluxel/core/federation` 是唯一 dependency-neutral build contract。runtime-dev、Rolldown 和 host 直接依赖该
+contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。

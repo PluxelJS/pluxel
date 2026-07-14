@@ -25,7 +25,12 @@ class WorkbenchUiRegistry {
 			imported && typeof imported === 'object' && 'default' in imported && imported.default
 				? imported.default
 				: (imported as WorkbenchUiModule)
-		if (!module || typeof module !== 'object' || !module.views) {
+		if (
+			!module ||
+			typeof module !== 'object' ||
+			!module.views ||
+			typeof module.contractFingerprint !== 'string'
+		) {
 			throw new Error(`[workbench-ui] invalid UI module for ${owner}`)
 		}
 		this.unload(owner)
@@ -50,6 +55,10 @@ class WorkbenchUiRegistry {
 
 	view(owner: string, exportName: string): ComponentType | undefined {
 		return this.modules.get(owner)?.views[exportName]
+	}
+
+	contractFingerprint(owner: string): string | undefined {
+		return this.modules.get(owner)?.contractFingerprint
 	}
 
 	private notify(): void {

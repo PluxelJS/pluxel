@@ -3,23 +3,16 @@
 // - 你想看 Workbench Plane UI + RPC + SSE + replicated state 的最小闭环
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
+import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { PluginWithUIWorkbench } from './PluginWithUI.workbench'
+import { PluginWithUIWorkbench } from './PluginWithUI.extension'
+import type { DemoEvent, PluginWithUIEvents, PluginWithUIStatusDoc } from './PluginWithUI.contracts'
 
 // Shared server-side data model exposed to the UI.
-export type PluginWithUIStatusDoc = PluginWithUIStatus & { id: 'status' }
 const STATUS_DOC_ID = 'status' as const
 const MAX_EVENT_SCAN = 200
 const MAX_EVENT_HISTORY = 80
 const TRIMMED_EVENT_HISTORY = 50
-
-export type DemoEvent = {
-	id: string
-	kind: 'system' | 'note' | 'counter'
-	message: string
-	at: number
-}
 
 export type PluginWithUIStatus = {
 	pluginName: string
@@ -33,18 +26,16 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
-export type PluginWithUIEvents = {
-	ready: Extract<PluginWithUISsePayload, { type: 'ready' }>
-	tick: Extract<PluginWithUISsePayload, { type: 'tick' }>
-	activity: Extract<PluginWithUISsePayload, { type: 'activity' }>
-}
-
 @Plugin({ name: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
-	private status!: MountedWorkbenchCollections<typeof PluginWithUIWorkbench>['status']
-	private events!: MountedWorkbenchCollections<typeof PluginWithUIWorkbench>['events']
+	private status!: NonNullable<
+		MountedWorkbenchManagedCollections<typeof PluginWithUIWorkbench>['status']
+	>
+	private events!: NonNullable<
+		MountedWorkbenchManagedCollections<typeof PluginWithUIWorkbench>['events']
+	>
 
 	private eventSeq = 1
 	private eventSubscribers = new Set<
@@ -55,14 +46,14 @@ export class PluginWithUI extends BasePlugin {
 		this.startedAt = Date.now()
 
 		const mounted = this.ctx.workbench.mount(PluginWithUIWorkbench, {
-			commands: workbench.provide.rpc(() => new PluginWithUIRpc(this)),
-			status: workbench.provide.collection(),
-			events: workbench.provide.collection(),
-			activity: workbench.provide.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
+			commands: workbench.bind.rpc(() => new PluginWithUIRpc(this)),
+			status: workbench.bind.managedCollection(),
+			events: workbench.bind.managedCollection(),
+			activity: workbench.bind.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
 		})
 		if (mounted) {
-			this.status = mounted.collections.status
-			this.events = mounted.collections.events
+			this.status = mounted.managedCollections.status!
+			this.events = mounted.managedCollections.events!
 			await this.initState()
 		}
 

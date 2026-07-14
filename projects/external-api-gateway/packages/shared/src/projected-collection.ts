@@ -1,13 +1,5 @@
 type IdDocument = { id: string }
 
-type ProjectionCollection<T extends IdDocument> = {
-	ready(): Promise<unknown>
-	insert(document: T): unknown
-	replaceOne(filter: Partial<T>, document: T, options?: { upsert?: boolean }): unknown
-	removeOne(filter: Partial<T>): unknown
-	removeMany(filter: Record<string, never>): unknown
-}
-
 type FindOptions<T> = {
 	limit?: number
 	sort?: Partial<Record<keyof T, 1 | -1>>
@@ -22,17 +14,15 @@ type FindOptions<T> = {
  */
 export class ProjectedCollection<T extends IdDocument> {
 	readonly #documents = new Map<string, T>()
-	#projection?: ProjectionCollection<T>
+	readonly #listeners = new Set<() => void>()
 
-	async attach(projection: ProjectionCollection<T>): Promise<void> {
-		await projection.ready()
-		await projection.removeMany({})
-		for (const document of this.#documents.values()) {
-			await projection.replaceOne({ id: document.id } as Partial<T>, structuredClone(document), {
-				upsert: true,
-			})
-		}
-		this.#projection = projection
+	snapshot(): T[] {
+		return structuredClone([...this.#documents.values()])
+	}
+
+	subscribe(listener: () => void): () => void {
+		this.#listeners.add(listener)
+		return () => this.#listeners.delete(listener)
 	}
 
 	findOne(filter: Pick<T, 'id'>): T | undefined {
@@ -59,9 +49,7 @@ export class ProjectedCollection<T extends IdDocument> {
 		if (this.#documents.has(document.id)) throw new Error(`Duplicate document id: ${document.id}`)
 		const next = structuredClone(document)
 		this.#documents.set(document.id, next)
-		this.#mirror((projection) =>
-			projection.replaceOne({ id: next.id } as Partial<T>, structuredClone(next), { upsert: true }),
-		)
+		this.#notify()
 	}
 
 	replaceOne(filter: Pick<T, 'id'>, document: T, options: { upsert?: boolean } = {}): void {
@@ -73,32 +61,24 @@ export class ProjectedCollection<T extends IdDocument> {
 		}
 		const next = structuredClone(document)
 		this.#documents.set(filter.id, next)
-		this.#mirror((projection) =>
-			projection.replaceOne(filter as Partial<T>, structuredClone(next), options),
-		)
+		this.#notify()
 	}
 
 	removeOne(filter: Pick<T, 'id'>): void {
 		if (!this.#documents.delete(filter.id)) return
-		this.#mirror((projection) => projection.removeOne(filter as Partial<T>))
+		this.#notify()
 	}
 
 	removeMany(_filter: Record<string, never>): void {
+		if (this.#documents.size === 0) return
 		this.#documents.clear()
-		this.#mirror((projection) => projection.removeMany({}))
+		this.#notify()
 	}
 
-	#mirror(operation: (projection: ProjectionCollection<T>) => unknown): void {
-		if (!this.#projection) return
-		try {
-			void Promise.resolve(operation(this.#projection)).catch(ignoreProjectionError)
-		} catch {
-			// The optional workbench projection must not break business-owned state.
-		}
+	#notify(): void {
+		for (const listener of this.#listeners) listener()
 	}
 }
-
-function ignoreProjectionError(_error: unknown): void {}
 
 function compareDocuments<T>(left: T, right: T, entries: Array<[keyof T, 1 | -1]>): number {
 	for (const [key, direction] of entries) {

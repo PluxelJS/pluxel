@@ -1,7 +1,7 @@
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { TelegramUpdate } from '@gramio/types'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
+import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -33,8 +33,8 @@ const DEFAULT_API_BASE = 'https://api.telegram.org'
 
 @Plugin({ name: 'TelegramPlugin' })
 export class TelegramPlugin extends BasePlugin {
-	private settings?: MountedWorkbenchCollections<typeof TelegramWorkbench>['settings']
-	private status?: MountedWorkbenchCollections<typeof TelegramWorkbench>['status']
+	private settings?: MountedWorkbenchManagedCollections<typeof TelegramWorkbench>['settings']
+	private status?: MountedWorkbenchManagedCollections<typeof TelegramWorkbench>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<TelegramBot>({
 		onObserverError: (error) =>
@@ -55,13 +55,13 @@ export class TelegramPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		const mounted = this.ctx.workbench.mount(TelegramWorkbench, {
-			commands: workbench.provide.rpc(() => new TelegramWorkbenchRpc(this)),
-			settings: workbench.provide.collection(),
-			status: workbench.provide.collection(),
+			commands: workbench.bind.rpc(() => new TelegramWorkbenchRpc(this)),
+			settings: workbench.bind.managedCollection(),
+			status: workbench.bind.managedCollection(),
 		})
 		if (mounted) {
-			this.settings = mounted.collections.settings
-			this.status = mounted.collections.status
+			this.settings = mounted.managedCollections.settings
+			this.status = mounted.managedCollections.status
 			await Promise.all([this.settings.ready(), this.status.ready()])
 		}
 		this.settings?.removeMany({})

@@ -1,7 +1,7 @@
 import { Loader, Paper, Select, Stack, Text } from '@mantine/core'
 import { useMemo } from 'react'
 import type { WorkbenchResourceSelectBlock as BuiltinResourceSelectBlock } from '@pluxel/runtime/workbench'
-import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui/internal'
 import {
 	useBoundSignalDbCollectionsState,
 	useGlobalExtensionContext,

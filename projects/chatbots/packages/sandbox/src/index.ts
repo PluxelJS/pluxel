@@ -1,1 +1,2 @@
-export { ChatSandboxPlugin, type SandboxInput, type SandboxMessage } from './plugin.ts'
+export { ChatSandboxPlugin } from './plugin.ts'
+export type { SandboxInput, SandboxMessage } from './workbench-contract.ts'

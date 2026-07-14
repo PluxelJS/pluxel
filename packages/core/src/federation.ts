@@ -19,6 +19,7 @@ export const workbenchFederationSharedPackages = [
 	'@tanstack/react-virtual',
 	'@mantine/core',
 	'@mantine/hooks',
+	'@pluxel/runtime/workbench/contract',
 	'@pluxel/runtime/workbench/ui',
 ] as const
 

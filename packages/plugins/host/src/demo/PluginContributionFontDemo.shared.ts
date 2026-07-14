@@ -1,48 +1,18 @@
 import { f, v } from '@pluxel/runtime'
-import { workbench } from '@pluxel/runtime/workbench'
-import type { FontSettingsRpc } from './PluginContributionFontDemo'
-
-export const FONT_MANAGER_PLUGIN_NAME = 'PluginContributionFontManager' as const
-export const FONT_KIND = 'font-set' as const
-
-export type FontSetDoc = {
-	id: string
-	name: string
-	previewText: string
-	description: string
-}
-
-export const FONT_SETS: readonly FontSetDoc[] = [
-	{
-		id: 'editorial-serif',
-		name: 'Editorial Serif',
-		previewText: 'The quick brown fox jumps over the lazy dog.',
-		description: '适合长文、说明文与强调阅读质感的插件。',
-	},
-	{
-		id: 'mono-grid',
-		name: 'Mono Grid',
-		previewText: '0123456789 ABC xyz',
-		description: '适合日志、终端、指标与结构化内容场景。',
-	},
-	{
-		id: 'neo-grotesk',
-		name: 'Neo Grotesk',
-		previewText: 'Design systems scale through constraints.',
-		description: '适合偏产品化、信息密度较高的插件页面。',
-	},
-] as const
-
-export type FontRef = {
-	provider: string
-	kind: string
-	id: string
-	label?: string
-}
-
-export const FontSettingsPort = workbench.port.define('pluxel.demo.font-settings', {
-	settings: workbench.model.rpc<FontSettingsRpc>(),
-})
+import {
+	FONT_KIND,
+	FONT_MANAGER_PLUGIN_NAME,
+	type FontRef,
+} from './PluginContributionFontDemo.contract'
+export {
+	FONT_KIND,
+	FONT_MANAGER_PLUGIN_NAME,
+	FONT_SETS,
+	FontSettingsPort,
+	type FontRef,
+	type FontSetDoc,
+	type FontSettingsCommands,
+} from './PluginContributionFontDemo.contract'
 
 const FontSetRefSchema = v.object({
 	provider: v.pipe(v.optional(v.string(), FONT_MANAGER_PLUGIN_NAME), f.stringMeta({})),

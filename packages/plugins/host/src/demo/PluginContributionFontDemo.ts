@@ -1,7 +1,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
-import { FontConsumerWorkbench, FontManagerWorkbench } from './PluginContributionFontDemo.workbench'
+import { FontConsumerUi, FontManagerUi } from './PluginContributionFontDemo.workbench'
 import {
 	ConsumerAppearanceConfig,
 	FONT_SETS,
@@ -10,15 +10,21 @@ import {
 	type FontRef,
 } from './PluginContributionFontDemo.shared'
 
+const FontManagerWorkbench = workbench.extension({
+	contract: FontManagerUi,
+	entry: workbench.entry(import.meta.url, './PluginContributionFontDemo/ui/index.tsx'),
+})
+const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
+
 @Plugin({ name: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
 		const mounted = this.ctx.workbench.mount(FontManagerWorkbench, {
-			fontSets: workbench.provide.collection({
+			fontSets: workbench.bind.managedCollection({
 				initial: FONT_SETS.map((item) => Object.assign({}, item)),
 			}),
 		})
-		await mounted?.collections.fontSets.ready()
+		await mounted?.managedCollections.fontSets?.ready()
 	}
 }
 
@@ -32,7 +38,7 @@ export class PluginContributionFontConsumer extends BasePlugin {
 
 	override init(): void {
 		this.ctx.workbench.mount(FontConsumerWorkbench, {
-			commands: workbench.provide.rpc(() => new FontSettingsRpc(this)),
+			commands: workbench.bind.rpc(() => new FontSettingsRpc(this)),
 		})
 	}
 

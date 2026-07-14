@@ -17,9 +17,9 @@ import { useEffect, useState } from 'react'
 import { kookUi } from './runtime.ts'
 
 export function KookSettingsPanel() {
-	const model = kookUi.views.Settings.useModel()
-	const settingsList = model.settings.useMany()
-	const statusList = model.status.useMany()
+	const model = kookUi.useResources()
+	const settingsList = model.settings.useSnapshot().items
+	const statusList = model.status.useSnapshot().items
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://www.kookapp.cn')

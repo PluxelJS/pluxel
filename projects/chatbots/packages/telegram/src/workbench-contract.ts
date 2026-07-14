@@ -1,3 +1,5 @@
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+
 export type TelegramSettingsDoc = {
 	id: string
 	tokenPreview: string
@@ -27,3 +29,27 @@ export interface TelegramWorkbenchCommands {
 	reconnectBot(id: string): Promise<unknown>
 	disconnectBot(id: string): Promise<unknown>
 }
+
+export const TelegramUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<TelegramWorkbenchCommands>(),
+		settings: workbenchContract.collection<TelegramSettingsDoc>(),
+		status: workbenchContract.collection<TelegramStatusDoc>(),
+	},
+	views: {
+		Settings: {
+			placements: [
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 50,
+					label: 'Telegram 管理',
+					icon: workbenchContract.icons.Settings,
+				}),
+				workbenchContract.route('/settings', {
+					title: 'Telegram Bot',
+					icon: workbenchContract.icons.BrandTelegram,
+					order: 69,
+				}),
+			],
+		},
+	},
+})

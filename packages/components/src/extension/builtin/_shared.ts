@@ -8,7 +8,7 @@ import type {
 } from '@pluxel/runtime/workbench'
 import { useMemo } from 'react'
 import { useBoundSignalDbCollectionsState, useGlobalExtensionContext } from '@pluxel/runtime/web'
-import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui/internal'
 
 export function isObject(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

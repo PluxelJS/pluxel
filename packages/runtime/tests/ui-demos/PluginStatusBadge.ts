@@ -3,7 +3,12 @@
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
-import { PluginStatusBadgeWorkbench } from './PluginStatusBadge.workbench'
+import { PluginStatusBadgeUi } from './PluginStatusBadge.workbench'
+
+const PluginStatusBadgeWorkbench = workbench.extension({
+	contract: PluginStatusBadgeUi,
+	entry: workbench.entry(import.meta.url, './PluginStatusBadge/ui/StatusBadge.tsx'),
+})
 
 @Plugin({ name: 'PluginStatusBadge', type: 'event' })
 export class PluginStatusBadge extends BasePlugin {
@@ -11,7 +16,7 @@ export class PluginStatusBadge extends BasePlugin {
 
 	override async init() {
 		this.ctx.workbench.mount(PluginStatusBadgeWorkbench, {
-			activity: workbench.provide.events<{ tick: { now: number } }>(({ emit }) => {
+			activity: workbench.bind.events<{ tick: { now: number } }>(({ emit }) => {
 				const timer = setInterval(() => emit('tick', { now: Date.now() }), 1_000)
 				emit('tick', { now: Date.now() })
 				return () => clearInterval(timer)

@@ -18,31 +18,34 @@ decorator 和 metadata transform。
 
 ```ts
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
 import { AccountsPlugin } from './AccountsPlugin.ts'
+import type { BillingCommands, BillingStatus } from './browser-contracts.ts'
 import { BillingConfig } from './config.ts'
 import { BillingRpc } from './rpc.ts'
 
-const BillingWorkbench = workbench.define({
-	plugin: 'BillingPlugin',
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-	model: {
-		commands: workbench.model.rpc<BillingRpc>(),
-		status: workbench.model.collection<BillingStatus>(),
+const BillingUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<BillingCommands>(),
+		status: workbenchContract.collection<BillingStatus>(),
 	},
-	views: (model) => ({
-		Overview: workbench.view.remote({
-			model: [model.commands, model.status],
+	views: {
+		Overview: {
 			placements: [
-				workbench.place.route({
-					path: '/overview',
+				workbenchContract.route('/overview', {
 					title: 'Billing',
-					navigation: { priority: 50 },
+					order: 50,
 				}),
 			],
-		}),
-	}),
+		},
+	},
+})
+
+const BillingWorkbench = workbench.extension({
+	contract: BillingUi,
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
 @Plugin({ name: 'BillingPlugin' })
@@ -58,18 +61,20 @@ export class BillingPlugin extends BasePlugin {
 
 		this.ctx.http.plugin.routes((app) => app.get('/invoices', () => this.accounts.listInvoices()))
 
-		const mounted = this.ctx.workbench.mount(BillingWorkbench, {
-			commands: workbench.provide.rpc(() => new BillingRpc(this)),
-			status: workbench.provide.collection(),
+		this.ctx.workbench.mount(BillingWorkbench, {
+			commands: workbench.bind.rpc(() => new BillingRpc(this)),
+			status: workbench.bind.collection({
+				read: () => this.accounts.billingStatus.snapshot(),
+				subscribe: (invalidate) => this.accounts.billingStatus.subscribe(invalidate),
+			}),
 		})
-		await mounted?.collections.status.ready()
 	}
 }
 ```
 
 这个形状刻意把不同所有权分开：
 
-- declaration 放在 decorator、class field 或 module scope；
+- browser-safe Contract、server Extension 和 Plugin implementation 分开；
 - required dependency 放在 constructor；
 - 运行时工作放在 `init()`；
 - Workbench贡献通过唯一 optional gate 挂载。
@@ -198,133 +203,126 @@ override init() {
 
 HTTP 不依赖 Workbench Plane，适合业务 API、webhook、health endpoint 和外部集成。
 
-### 可选Workbench
+### 可选 Workbench
+
+Workbench 使用三个文件边界：
+
+```text
+browser-contracts.ts   RPC/data/event 类型
+workbench-contract.ts  browser-safe Contract
+plugin.ts              Extension、Binding 与业务实现
+ui/index.tsx           直接导入 Contract value
+```
+
+服务端只挂载 Extension 和显式 Binding：
 
 ```ts
+const DashboardWorkbench = workbench.extension({
+	contract: DashboardUi,
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+})
+
 override init() {
 	this.ctx.workbench.mount(DashboardWorkbench, {
-		commands: workbench.provide.rpc(() => new DashboardRpc(this)),
-		activity: workbench.provide.events(({ emit, signal }) => this.publishStatus(emit, signal)),
-		status: workbench.provide.collection(),
+		commands: workbench.bind.rpc(() => new DashboardRpc(this)),
+		status: workbench.bind.collection({
+			read: () => this.status.snapshot(),
+			subscribe: (invalidate) => this.status.subscribe(invalidate),
+		}),
+		activity: workbench.bind.events(({ emit, signal }) =>
+			this.publishStatus(emit, signal),
+		),
 	})
 }
 ```
 
-宿主未启用 Workbench Plane 时，`mount()` 返回 `undefined`，不注册 module、resource 或 artifact。因此：
+- Contract module 只导入 browser-safe 类型和 `@pluxel/runtime/workbench/contract`；
+- Extension 不写 plugin ID，owner 由 `ctx.workbench.mount()` 的 Context 推导；
+- `bind.rpc()`、`bind.collection()`、`bind.events()` 都是纯 declaration，disabled 时不执行 callback；
+- business/admin state 优先使用只读 collection projection，mutation 走 typed RPC；
+- 只有独立 Workbench 管理状态才使用 `bind.managedCollection({ storage: 'plugin-data' })`；
+- managed handle 只服务管理 UI，不得成为业务 API 或核心启动的前提；
+- builtin document 只用于只读内容，交互界面使用 React View + RPC。
 
-- provider declaration 必须是纯描述；`rpc()` 只保存 factory，真正实例仅在启用后按需创建；
-- 插件核心业务不能依赖 mount 成功；需要 collection handle 时使用 `mounted?.collections`；
-- extension 静态声明 model、view、slot 和 UI entry；
-- provider 在运行期把 RPC、collection、events 实现绑定到 model；
-- collection 适合状态面板、表单和管理交互，不是业务数据库；
-- collection 默认是非持久化的Workbench投影；只有确实拥有独立管理状态时才显式传入
-  `workbench.provide.collection({ storage: 'plugin-data' })`；
-- builtin document 中 ref/write 的 `collection` 是 module resource key；每个 key 独立解析为
-  resource-graph-revision-scoped opaque grant，不使用插件名作为 collection namespace；
-- 管理资源只服务管理员 UI，不替代公共业务 HTTP API。
-
-`workbench.entry(import.meta.url, './ui/index.tsx')` 是静态字符串 declaration，没有 import 或注册副作用。
-开发环境由 compiler 按源码 hash 增量构建；`pluxel build` 按 owner 生成
-`dist/workbench/<owner>/`，无 UI 插件不会加载 Vite，且 UI 源码不会进入服务端插件 bundle。
-UI 使用的 React、React DOM、Mantine 和 `@pluxel/runtime` 由宿主提供 singleton shared；带 UI 的插件包应
-把它们声明为 peer，并作为本地 devDependency 安装供类型检查和 MF named-export 分析，remote 不携带 fallback
-副本。
-
-UI entry 用同一个 typed UI definition 导出组件。view 与 model 都通过属性自动补全，不手写协议 ID：
+浏览器直接传入 Contract value：
 
 ```tsx
-import type { DashboardWorkbench } from '../workbench-extension.ts'
+import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import { DashboardUi } from '../workbench-contract.ts'
 
-const ui = createWorkbenchUi<typeof DashboardWorkbench>()
+const ui = createWorkbenchUi(DashboardUi)
 
 export function Overview() {
-	const { status } = ui.views.Overview.useModel()
-	return <Dashboard data={status.useMany()} />
+	const { commands, status } = ui.useResources()
+	const snapshot = status.useSnapshot()
+
+	if (snapshot.state === 'loading') return <Loading />
+	if (snapshot.state === 'error') return <ErrorPanel error={snapshot.error} />
+	return <Dashboard commands={commands} rows={snapshot.items} />
 }
 
-export default ui.expose({ Overview })
+export default ui.define({ Overview })
 ```
 
-RPC 泛型应引用独立的 browser-safe interface，而不是 provider 的 RPC 实现类。contract 文件只定义方法
-签名和可序列化数据，不导入 plugin、Context 或服务端依赖；UI 的 `import type` 仍需被独立 Federation
-build 解析，不能用它隐藏错误的依赖方向。
+`ui.define()` 精确检查全部 remote View，没有额外 export。普通 View 不声明 `uses`；同一 bundle 是
+owner resources 的前端信任边界，facade 按 RPC 调用、snapshot 或 event subscription 延迟连接。
 
-RPC model 返回浏览器 RPC client；即使服务端方法同步返回值，跨边界调用也始终是 `Promise`。事件处理器应
-使用 `await` 或显式处理 rejection，不要按本地对象同步读取结果或字段。
+RPC generic 应引用独立 browser-safe interface，而不是 provider 实现类。TypeScript generic 在运行时会擦除；
+runtime 只验证 envelope、opaque grant、resource kind、Port/version 和结构化错误。
 
 ### 依赖插件注入统一配置 Tab
 
-provider 不应替 consumer 决定任意 placement。把可复用能力定义成 typed port，由 consumer 明确声明
-Tab 和自己的 model mapping；provider view 声明 `accepts` 后会自动成为该 port 的 renderer：
+跨插件 UI 使用 typed Port。consumer 拥有 placement 和注入资源，provider 只提供无 placement renderer：
 
-```tsx
-export const FetchSettingsPort = workbench.port.define('fetch.settings', {
-	settings: workbench.model.rpc<FetchSettingsApi>(),
+```ts
+export const FetchSettingsPort = workbenchContract.port({
+	id: 'fetch.settings',
+	version: 1,
+	resources: {
+		settings: workbenchContract.rpc<FetchSettingsCommands>(),
+	},
 })
 
-// consumer extension
-const ConsumerWorkbench = workbench.define({
-  plugin: 'ConsumerPlugin',
-  model: {
-    commands: workbench.model.rpc<FetchSettingsApi>(),
-  },
-	ports: (model) => ({
-		FetchSettings: workbench.port.outlet({
-    placement: workbench.slot.PluginTabs,
-    port: FetchSettingsPort,
-    providers: ['FetchPlugin'],
-		provide: { settings: model.commands },
-    meta: { label: 'Fetch' },
-		}),
+export const ConsumerUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<FetchSettingsCommands>(),
+	},
+	views: {},
+	outlets: ({ resources }) => ({
+		FetchSettings: {
+			port: FetchSettingsPort,
+			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				label: 'Fetch',
+			}),
+			provide: { settings: resources.commands },
+		},
 	}),
 })
 
-// consumer init: placement 和授权属于 consumer，API 可委托给 required Fetch capability
-override init() {
-  this.ctx.workbench.mount(ConsumerWorkbench, {
-    commands: workbench.provide.rpc(() => this.fetch.settingsFor(this.ctx.pluginInfo.id)),
-  })
-}
-
-// provider extension
-export const FetchWorkbench = workbench.define({
-  plugin: 'FetchPlugin',
-  entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-	views: () => ({
-		FetchSettings: workbench.view.remote({
-			accepts: FetchSettingsPort,
-			placements: [],
-		}),
-	}),
+export const FetchUi = workbenchContract.define({
+	resources: {},
+	views: {
+		FetchSettings: { accepts: FetchSettingsPort },
+	},
 })
-
-// provider UI entry；view type 自动包含 port 注入的 settings model
-import type { FetchWorkbench } from '../workbench-extension.ts'
-
-const ui = createWorkbenchUi<typeof FetchWorkbench>()
-
-export function FetchSettings() {
-	const { settings } = ui.views.FetchSettings.useModel()
-  return <FetchSettingsForm settings={settings} />
-}
-
-export default ui.expose({ FetchSettings })
 ```
 
-renderer view 的 model 是 provider selection 与 consumer `provide` mapping 的并集。同一个 renderer 可
-投放到任意数量的 consumer；每个实例只得到对应 consumer 的 grant。UI entry 必须用 `import type` 引入
-contract 类型；remote 不应执行服务端 `workbench.entry()` declaration 或携带 core、Context、Node API。
-port 不引入隐藏存储：状态可以由 consumer 自己持有，也可以像示例一样显式委托给 Fetch capability 按
-consumer id 持有；renderer 和 Workbench 都不保存服务端 session/draft。layout 只下发
-opaque grant；UI bundle-only 更新会复用仍有效的 grant，插件卸载、实例替换或依赖 model 图变化会
-立即撤销旧 grant。
+```tsx
+const ui = createWorkbenchUi(FetchUi)
 
-`ports` 的对象属性会成为本地 outlet ID，因此不再重复手写字符串。`workbench.port.define()` 的名称与
-版本仍是显式值：它们是跨插件共享、需要在 HMR 和独立构建后保持稳定的互操作协议。
+export function FetchSettings() {
+	const { settings } = ui.usePort(FetchSettingsPort)
+	return <FetchSettingsForm commands={settings} />
+}
 
-provider 若只想把只读能力摘要自动投影给 required dependents，可使用
-`workbench.audience.requiredDependents`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、
-route 或 action placement 必须使用 port，由 consumer 显式选择。
+export default ui.define({ FetchSettings })
+```
+
+renderer 从 consumer 的 committed direct required dependencies 中按 Port ID + exact version 唯一解析。provider
+不能决定 consumer placement；零个 renderer 显示 unavailable，多个显示 ambiguity error，不按注册顺序猜测。
+
+provider stop/replacement 会立即撤销 Port grant。renderer 自己的 owner resources 与 consumer 注入 resources 使用
+独立、target-scoped grant；transport 只提交 opaque grant，不提交 plugin/resource namespace。
 
 ## 公开有限事件集合
 

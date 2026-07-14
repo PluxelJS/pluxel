@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { setParamToken } from '@pluxel/core'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import {
 	BasePlugin,
 	createStaticRuntime,
@@ -161,7 +162,10 @@ describe('@pluxel/runtime-static', () => {
 		class HeadlessWebGate extends BasePlugin {
 			override init(): void {
 				mounted = Boolean(
-					this.ctx.workbench.mount(workbench.define({ plugin: 'HeadlessWebGate' }), {}),
+					this.ctx.workbench.mount(
+						workbench.extension({ contract: workbenchContract.define({}) }),
+						{},
+					),
 				)
 			}
 		}
@@ -224,7 +228,10 @@ describe('@pluxel/runtime-static', () => {
 		class ManagedWebGate extends BasePlugin {
 			override init(): void {
 				mounted = Boolean(
-					this.ctx.workbench.mount(workbench.define({ plugin: 'ManagedWebGate' }), {}),
+					this.ctx.workbench.mount(
+						workbench.extension({ contract: workbenchContract.define({}) }),
+						{},
+					),
 				)
 			}
 		}

@@ -29,7 +29,7 @@ export function HeaderAction() {
 	)
 }
 
-export default zhipuUi.expose({
+export default zhipuUi.define({
 	HeaderAction,
 	ZhipuApiPanel,
 	ZhipuDashboard,

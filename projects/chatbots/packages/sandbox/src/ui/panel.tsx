@@ -13,8 +13,8 @@ import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { useState } from 'react'
 import { sandboxUi } from './runtime.ts'
 export function SandboxPanel() {
-	const model = sandboxUi.views.Sandbox.useModel()
-	const messages = model.messages.useMany()
+	const model = sandboxUi.useResources()
+	const messages = model.messages.useSnapshot().items
 	const [messageText, setMessageText] = useState('/ping')
 	const [conversationId, setConversationId] = useState('default')
 	const [busy, setBusy] = useState(false)

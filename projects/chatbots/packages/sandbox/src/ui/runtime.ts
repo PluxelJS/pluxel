@@ -1,3 +1,3 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { ChatSandboxWorkbench } from '../workbench-extension.ts'
-export const sandboxUi = createWorkbenchUi<typeof ChatSandboxWorkbench>()
+import { ChatSandboxUi } from '../workbench-contract.ts'
+export const sandboxUi = createWorkbenchUi(ChatSandboxUi)

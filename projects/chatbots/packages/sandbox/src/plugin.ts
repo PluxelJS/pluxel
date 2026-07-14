@@ -1,26 +1,11 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
-import {
-	contentText,
-	normalizeContent,
-	type ChatBlock,
-	type ChatMessage,
-	type ChatSendRequest,
-} from '@repo/chatbots-contracts'
+import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
+import { contentText, normalizeContent, type ChatSendRequest } from '@repo/chatbots-contracts'
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
+import type { SandboxInput, SandboxMessage } from './workbench-contract.ts'
 import { ChatSandboxWorkbench } from './workbench-extension.ts'
-
-export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
-
-export type SandboxInput = {
-	text?: string
-	content?: ChatBlock[]
-	conversationId?: string
-	actorId?: string
-	displayName?: string
-}
 
 const MAX_MESSAGES = 500
 
@@ -28,7 +13,7 @@ const MAX_MESSAGES = 500
 export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
-	private projection?: MountedWorkbenchCollections<typeof ChatSandboxWorkbench>['messages']
+	private projection?: MountedWorkbenchManagedCollections<typeof ChatSandboxWorkbench>['messages']
 	private readonly accepts = new KeyedSerialExecutor<string>()
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -47,11 +32,11 @@ export class ChatSandboxPlugin extends BasePlugin {
 		})
 		this.ctx.effects.defer(dispose)
 		const mounted = this.ctx.workbench.mount(ChatSandboxWorkbench, {
-			commands: workbench.provide.rpc(() => new ChatSandboxRpc(this)),
-			messages: workbench.provide.collection(),
+			commands: workbench.bind.rpc(() => new ChatSandboxRpc(this)),
+			messages: workbench.bind.managedCollection(),
 		})
 		if (mounted) {
-			this.projection = mounted.collections.messages
+			this.projection = mounted.managedCollections.messages
 			await this.projection.ready()
 			this.projection.removeMany({})
 		}

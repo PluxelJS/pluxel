@@ -1,28 +1,46 @@
 import type { Context } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
-import {
-	workbenchDefinition,
-	type AnyWorkbenchExtension,
-	type WorkbenchCollectionItem,
-	type WorkbenchCollectionModel,
-	type WorkbenchEventsOf,
-	type WorkbenchModelContract,
-	type WorkbenchRpcOf,
-} from './contracts'
 import type {
-	SignalDbCollectionHandle,
-	SignalDbCollectionOptions,
-} from '../services/workbench/resources/WorkbenchCollectionService'
+	AnyWorkbenchContract,
+	WorkbenchCollectionItem,
+	WorkbenchCollectionOf,
+	WorkbenchCollectionResource,
+	WorkbenchEventsOf,
+	WorkbenchResourceContract,
+	WorkbenchRpcOf,
+} from './contracts'
+import type { SignalDbCollectionHandle } from '../services/workbench/resources/WorkbenchCollectionService'
 import type { SseHandler } from '../services/workbench/resources/WorkbenchEventsService'
 
-export type WorkbenchRpcProvider<TRpc> = Readonly<{
+export type WorkbenchUiEntry = Readonly<{ entryPath: string; artifactName?: string }>
+
+export type WorkbenchExtension<Contract extends AnyWorkbenchContract = AnyWorkbenchContract> =
+	Readonly<{
+		contract: Contract
+		entry?: WorkbenchUiEntry
+	}>
+
+export type AnyWorkbenchExtension = WorkbenchExtension<any>
+
+export type WorkbenchRpcBinding<TRpc> = Readonly<{
 	kind: 'rpc'
 	factory: (ctx: Context) => TRpc
 }>
 
-export type WorkbenchCollectionProvider<TItem extends WorkbenchCollectionItem> = Readonly<{
+export type WorkbenchManagedCollectionBinding<TItem extends WorkbenchCollectionItem> = Readonly<{
 	kind: 'collection'
-	options: Omit<SignalDbCollectionOptions<TItem>, 'name' | 'persistence' | 'clientWrites'>
+	mode: 'managed'
+	options: Readonly<{
+		storage?: 'memory' | 'plugin-data'
+		initial?: TItem[] | (() => TItem[])
+	}>
+}>
+
+export type WorkbenchProjectedCollectionBinding<TItem extends WorkbenchCollectionItem> = Readonly<{
+	kind: 'collection'
+	mode: 'projection'
+	read: () => readonly TItem[]
+	subscribe?: (invalidate: () => void) => void | (() => void)
 }>
 
 export type WorkbenchEventMap = Readonly<Record<string, unknown>>
@@ -32,65 +50,106 @@ export type WorkbenchEventsContext<TEvents extends WorkbenchEventMap> = Readonly
 	signal: AbortSignal
 }>
 
-export type WorkbenchEventsProvider<TEvents extends WorkbenchEventMap> = Readonly<{
+export type WorkbenchEventsBinding<TEvents extends WorkbenchEventMap> = Readonly<{
 	kind: 'events'
 	handler: SseHandler
 	readonly __events?: TEvents
 }>
 
-export type WorkbenchModelProvider<Model extends WorkbenchModelContract> = Model extends {
-	kind: 'rpc'
-}
-	? WorkbenchRpcProvider<WorkbenchRpcOf<Model>>
-	: Model extends WorkbenchCollectionModel<infer TItem>
-		? WorkbenchCollectionProvider<TItem>
-		: Model extends { kind: 'events' }
-			? WorkbenchEventsProvider<WorkbenchEventsOf<Model>>
-			: never
+export type WorkbenchResourceBinding<Resource extends WorkbenchResourceContract> =
+	Resource extends { kind: 'rpc' }
+		? WorkbenchRpcBinding<WorkbenchRpcOf<Resource>>
+		: Resource extends WorkbenchCollectionResource<infer TItem>
+			? WorkbenchManagedCollectionBinding<TItem> | WorkbenchProjectedCollectionBinding<TItem>
+			: Resource extends { kind: 'events' }
+				? WorkbenchEventsBinding<WorkbenchEventsOf<Resource>>
+				: never
 
-export type WorkbenchProviders<Extension extends AnyWorkbenchExtension> = {
-	[Key in keyof Extension['model']]: WorkbenchModelProvider<Extension['model'][Key]>
-}
-
-export type MountedWorkbenchCollections<Extension extends AnyWorkbenchExtension> = {
-	[Key in keyof Extension['model'] as Extension['model'][Key] extends WorkbenchCollectionModel<any>
-		? Key
-		: never]: Extension['model'][Key] extends WorkbenchCollectionModel<infer TItem>
-		? SignalDbCollectionHandle<TItem>
-		: never
+export type WorkbenchBindings<Extension extends AnyWorkbenchExtension> = {
+	[Key in keyof Extension['contract']['resources']]: WorkbenchResourceBinding<
+		Extension['contract']['resources'][Key]
+	>
 }
 
-export type WorkbenchMount<Extension extends AnyWorkbenchExtension> = Readonly<{
+export type MountedWorkbenchManagedCollections<
+	Extension extends AnyWorkbenchExtension,
+	Bindings extends WorkbenchBindings<Extension> = never,
+> = [Bindings] extends [never]
+	? {
+			[Key in keyof Extension['contract']['resources'] as Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<any>
+				? Key
+				: never]: Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<
+				infer TItem
+			>
+				? SignalDbCollectionHandle<TItem>
+				: never
+		}
+	: {
+			[Key in keyof Bindings as Bindings[Key] extends WorkbenchManagedCollectionBinding<any>
+				? Key
+				: never]: Key extends keyof Extension['contract']['resources']
+				? Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<infer TItem>
+					? SignalDbCollectionHandle<TItem>
+					: never
+				: never
+		}
+
+export type WorkbenchMount<
+	Extension extends AnyWorkbenchExtension,
+	Bindings extends WorkbenchBindings<Extension>,
+> = Readonly<{
 	extension: Extension
-	collections: MountedWorkbenchCollections<Extension>
-	dispose(): void
+	managedCollections: MountedWorkbenchManagedCollections<Extension, Bindings>
 }>
 
-const workbenchProvide = Object.freeze({
-	rpc<TRpc extends RpcTarget>(factory: (ctx: Context) => TRpc): WorkbenchRpcProvider<TRpc> {
+function extension<const Contract extends AnyWorkbenchContract>(input: {
+	contract: Contract
+	entry?: WorkbenchUiEntry
+}): WorkbenchExtension<Contract> {
+	if (!input.contract || typeof input.contract !== 'object') {
+		throw new Error('[workbench] workbench.extension(): contract required')
+	}
+	return Object.freeze({ contract: input.contract, entry: input.entry })
+}
+
+const bind = Object.freeze({
+	rpc<TRpc extends RpcTarget>(factory: (ctx: Context) => TRpc): WorkbenchRpcBinding<TRpc> {
+		if (typeof factory !== 'function') {
+			throw new Error('[workbench] workbench.bind.rpc(): factory required')
+		}
 		return Object.freeze({ kind: 'rpc', factory })
 	},
-	collection<TItem extends WorkbenchCollectionItem>(
-		options: {
-			storage?: 'memory' | 'plugin-data'
-			uiAccess?: 'read' | 'write'
-			initial?: TItem[] | (() => TItem[])
-		} = {},
-	): WorkbenchCollectionProvider<TItem> {
+	collection<TItem extends WorkbenchCollectionItem>(input: {
+		read: () => readonly TItem[]
+		subscribe?: (invalidate: () => void) => void | (() => void)
+	}): WorkbenchProjectedCollectionBinding<TItem> {
+		if (typeof input?.read !== 'function') {
+			throw new Error('[workbench] workbench.bind.collection(): read required')
+		}
 		return Object.freeze({
 			kind: 'collection',
-			options: Object.freeze({
-				initial: options.initial,
-				persistence: options.storage === 'plugin-data',
-				clientWrites: options.uiAccess === 'write',
-			} as never),
+			mode: 'projection',
+			read: input.read,
+			subscribe: input.subscribe,
+		})
+	},
+	managedCollection<TItem extends WorkbenchCollectionItem>(
+		options: {
+			storage?: 'memory' | 'plugin-data'
+			initial?: TItem[] | (() => TItem[])
+		} = {},
+	): WorkbenchManagedCollectionBinding<TItem> {
+		return Object.freeze({
+			kind: 'collection',
+			mode: 'managed',
+			options: Object.freeze({ ...options }),
 		})
 	},
 	events<TEvents extends WorkbenchEventMap>(
 		handler: (
 			context: WorkbenchEventsContext<TEvents>,
 		) => void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>,
-	): WorkbenchEventsProvider<TEvents> {
+	): WorkbenchEventsBinding<TEvents> {
 		return Object.freeze({
 			kind: 'events',
 			handler: (channel) => {
@@ -106,13 +165,31 @@ const workbenchProvide = Object.freeze({
 })
 
 export const workbench = Object.freeze({
-	...workbenchDefinition,
-	provide: workbenchProvide,
+	extension,
+	entry(moduleUrl: string | URL, entryPath: string, artifactName?: string): WorkbenchUiEntry {
+		const normalized = String(entryPath ?? '').trim()
+		if (!normalized) throw new Error('[workbench] workbench.entry(): entry path required')
+		const url = new URL(normalized, moduleUrl)
+		if (url.protocol !== 'file:') {
+			throw new Error('[workbench] workbench.entry(): module URL must use the file protocol')
+		}
+		let path = decodeURIComponent(url.pathname)
+		if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
+		const normalizedArtifact = String(artifactName ?? '').trim()
+		return Object.freeze({
+			entryPath: path,
+			...(normalizedArtifact ? { artifactName: normalizedArtifact } : {}),
+		})
+	},
+	bind,
 })
 
 export interface PluginWorkbench {
-	mount<Extension extends AnyWorkbenchExtension>(
+	mount<
+		Extension extends AnyWorkbenchExtension,
+		const Bindings extends WorkbenchBindings<Extension>,
+	>(
 		extension: Extension,
-		providers: WorkbenchProviders<Extension>,
-	): WorkbenchMount<Extension>
+		bindings: Bindings,
+	): WorkbenchMount<Extension, Bindings>
 }

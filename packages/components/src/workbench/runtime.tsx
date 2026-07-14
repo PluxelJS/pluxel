@@ -6,7 +6,7 @@ import type {
 	WorkbenchPlacement,
 	WorkbenchBundle,
 } from '@pluxel/runtime/workbench'
-import { WorkbenchViewProvider } from '@pluxel/runtime/workbench/ui'
+import { WorkbenchViewProvider } from '@pluxel/runtime/workbench/ui/internal'
 import {
 	useGlobalExtensionContext,
 	type ExtensionMeta,
@@ -370,6 +370,14 @@ function renderBuiltinItem(item: WorkbenchLayoutItem): ReactNode {
 
 function renderRemoteItem(item: WorkbenchLayoutItem, point: string): ReactNode {
 	if (item.view.kind !== 'remote') return null
+	const loadedFingerprint = workbenchUiRegistry.contractFingerprint(item.ownerPluginId)
+	if (loadedFingerprint !== item.contractFingerprint) {
+		return (
+			<InlineNotice title="Workbench Contract mismatch">
+				{`expected ${item.contractFingerprint}, loaded ${loadedFingerprint ?? '<missing>'}`}
+			</InlineNotice>
+		)
+	}
 	const View = workbenchUiRegistry.view(item.ownerPluginId, item.view.export)
 	if (!View) return <InlineNotice title="Workbench view not found">{item.view.export}</InlineNotice>
 	return (

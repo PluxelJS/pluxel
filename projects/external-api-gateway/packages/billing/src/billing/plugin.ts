@@ -50,23 +50,29 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
 		this.rebuildSummaries(usageRecords)
-		const mounted = this.ctx.workbench.mount(UsageBillingWorkbench, {
-			commands: workbench.provide.rpc(() => new UsageBillingRpc(this)),
-			overview: workbench.provide.collection(),
-			records: workbench.provide.collection(),
-			users: workbench.provide.collection(),
-			providers: workbench.provide.collection(),
-			rates: workbench.provide.collection(),
+		this.ctx.workbench.mount(UsageBillingWorkbench, {
+			commands: workbench.bind.rpc(() => new UsageBillingRpc(this)),
+			overview: workbench.bind.collection({
+				read: () => this.overview.snapshot(),
+				subscribe: (invalidate) => this.overview.subscribe(invalidate),
+			}),
+			records: workbench.bind.collection({
+				read: () => this.records.snapshot(),
+				subscribe: (invalidate) => this.records.subscribe(invalidate),
+			}),
+			users: workbench.bind.collection({
+				read: () => this.users.snapshot(),
+				subscribe: (invalidate) => this.users.subscribe(invalidate),
+			}),
+			providers: workbench.bind.collection({
+				read: () => this.providers.snapshot(),
+				subscribe: (invalidate) => this.providers.subscribe(invalidate),
+			}),
+			rates: workbench.bind.collection({
+				read: () => this.rates.snapshot(),
+				subscribe: (invalidate) => this.rates.subscribe(invalidate),
+			}),
 		})
-		if (mounted) {
-			await Promise.all([
-				this.overview.attach(mounted.collections.overview),
-				this.records.attach(mounted.collections.records),
-				this.users.attach(mounted.collections.users),
-				this.providers.attach(mounted.collections.providers),
-				this.rates.attach(mounted.collections.rates),
-			])
-		}
 		this.registerRoutes()
 		this.ctx.logger.info('Usage billing ready')
 	}

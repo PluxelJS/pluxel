@@ -23,6 +23,7 @@ import {
 
 type CollectionMeta = {
 	ready: WriteSignal<boolean>
+	error: WriteSignal<Error | null>
 	clientWrites: WriteSignal<boolean | null>
 	version: WriteSignal<number>
 	revision: WriteSignal<number>
@@ -44,6 +45,8 @@ const SIGNALDB_REPLICA_IDLE_TTL_MS = 5_000
 
 type CollectionStreamListener = {
 	onMessage(message: SseMessage<string>): void
+	onOpen(): void
+	onError(error: Error): void
 }
 
 class WorkbenchBindingExpiredError extends Error {
@@ -128,8 +131,15 @@ class CollectionStreamPool {
 		})
 		const stopOpen = sse.onOpen(() => {
 			this.streamErrorReported = false
+			for (const listeners of this.listeners.values()) {
+				for (const listener of listeners) listener.onOpen()
+			}
 		})
 		const stopError = sse.onError(() => {
+			const error = new Error('workbench collection stream disconnected')
+			for (const listeners of this.listeners.values()) {
+				for (const listener of listeners) listener.onError(error)
+			}
 			if (this.streamErrorReported || this.disposed) return
 			this.streamErrorReported = true
 			console.warn(
@@ -155,7 +165,9 @@ export interface SignalDbCollectionView<T extends SignalDbItem> {
 	readonly ready: boolean
 	readonly clientWrites: boolean
 	readonly version: number
+	readonly error: Error | null
 	readonly items: readonly T[]
+	refresh(): Promise<void>
 	find(selector?: SignalDbSelector<T>, options?: SignalDbFindOptions<T>): T[]
 	findOne(selector: SignalDbSelector<T>): T | undefined
 	count(selector?: SignalDbSelector<T>): number
@@ -267,7 +279,12 @@ class SignalDbReplicaNamespace {
 			this.requestSync(collection)
 		}
 		dependOnCollectionState(state)
-		return buildCollectionView(collection, state)
+		return buildCollectionView(collection, state, () => this.refresh(collection))
+	}
+
+	refresh(collection: string): Promise<void> {
+		this.bindingExpired = false
+		return this.syncCollection(collection)
 	}
 
 	dispose(): Promise<void> {
@@ -335,6 +352,7 @@ class SignalDbReplicaNamespace {
 			collection: signalCollection,
 			meta: {
 				ready: signal(false),
+				error: signal<Error | null>(null),
 				clientWrites: signal<boolean | null>(null),
 				version: signal(0),
 				revision: signal(0),
@@ -345,7 +363,7 @@ class SignalDbReplicaNamespace {
 		this.sync.addCollection(signalCollection, { name: collection })
 		const startTask = this.sync
 			.startSync(collection)
-			.catch((error) => {
+			.catch((error): undefined => {
 				this.reportSyncError(collection, error)
 			})
 			.finally(() => {
@@ -374,6 +392,18 @@ class SignalDbReplicaNamespace {
 			onMessage: (message) => {
 				if (this.disposed) return
 				this.trackRemoteTask(this.apply(message.payload as SignalDbSyncEvent), 'remote change')
+			},
+			onOpen: () => {
+				for (const [collection, state] of this.states) {
+					state.meta.error.set(null)
+					this.requestSync(collection)
+				}
+			},
+			onError: (error) => {
+				for (const state of this.states.values()) {
+					state.meta.ready.set(false)
+					state.meta.error.set(error)
+				}
 			},
 		})
 	}
@@ -476,16 +506,23 @@ class SignalDbReplicaNamespace {
 				this.reportedSyncErrors.delete(collection)
 				this.clearRetry(collection)
 				state.meta.ready.set(true)
+				state.meta.error.set(null)
 				return undefined
 			})
-			.catch((error) => {
+			.catch((error): undefined => {
+				const normalized = error instanceof Error ? error : new Error(String(error))
 				if (error instanceof WorkbenchBindingExpiredError) {
 					this.bindingExpired = true
+					const state = this.states.get(collection)
+					if (state) state.meta.error.set(normalized)
 					this.clearRetry(collection)
 					return undefined
 				}
 				const state = this.states.get(collection)
-				if (state) state.meta.ready.set(false)
+				if (state) {
+					state.meta.ready.set(false)
+					state.meta.error.set(normalized)
+				}
 				this.scheduleRetry(collection)
 				throw error
 			})
@@ -618,6 +655,7 @@ function getReplicaRoot(transport: RuntimeTransportClient): SignalDbReplicaRoot 
 function buildCollectionView<T extends SignalDbItem>(
 	name: string,
 	state: CollectionState<T>,
+	refresh: () => Promise<void>,
 ): SignalDbCollectionView<T> {
 	return {
 		name,
@@ -630,6 +668,10 @@ function buildCollectionView<T extends SignalDbItem>(
 		get version() {
 			return state.meta.version()
 		},
+		get error() {
+			return state.meta.error()
+		},
+		refresh,
 		get items() {
 			return fetchSignalDbItems(state)
 		},
@@ -680,6 +722,7 @@ function assertClientWritesEnabled<T extends SignalDbItem>(
 
 function dependOnCollectionState<T extends SignalDbItem>(state: CollectionState<T>) {
 	void state.meta.ready()
+	void state.meta.error()
 	void state.meta.clientWrites()
 	void state.meta.version()
 	void state.meta.revision()

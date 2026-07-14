@@ -1,17 +1,14 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
-export const PluginStatusBadgeWorkbench = workbench.define({
-	plugin: 'PluginStatusBadge',
-	entry: workbench.entry(import.meta.url, './PluginStatusBadge/ui/StatusBadge.tsx'),
-	model: {
-		activity: workbench.model.events<{ tick: { now: number } }>(),
+export const PluginStatusBadgeUi = workbenchContract.define({
+	resources: {
+		activity: workbenchContract.events<{ tick: { now: number } }>(),
 	},
-	views: (model) => ({
-		StatusBadge: workbench.view.remote({
-			model: [model.activity],
+	views: {
+		StatusBadge: {
 			placements: [
-				workbench.place.slot({ slot: workbench.slot.GlobalHeaderActions, priority: 50 }),
+				workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions, { order: 50 }),
 			],
-		}),
-	}),
+		},
+	},
 })

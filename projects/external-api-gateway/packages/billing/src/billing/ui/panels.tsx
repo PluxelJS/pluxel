@@ -56,17 +56,24 @@ export function BillingDashboard() {
 export function BillingPanel() {
 	const model = useBillingModel()
 	const api = model.commands
-	const overview = model.overview.useOneById('overview')
-	const records = model.records.useMany({ limit: 30, sort: { at: -1 } })
-	const users = model.users.useMany({ limit: 10, sort: { totalCostCny: -1 } })
-	const providers = model.providers.useMany({
-		limit: 10,
-		sort: { totalCostCny: -1 },
-	})
-	const rates = model.rates.useMany({
-		limit: 100,
-		sort: { provider: 1, operation: 1, model: 1 },
-	})
+	const overview = model.overview.useSnapshot().items.find((item) => item.id === 'overview')
+	const records = [...model.records.useSnapshot().items]
+		.sort((left, right) => right.at - left.at)
+		.slice(0, 30)
+	const users = [...model.users.useSnapshot().items]
+		.sort((left, right) => right.totalCostCny - left.totalCostCny)
+		.slice(0, 10)
+	const providers = [...model.providers.useSnapshot().items]
+		.sort((left, right) => right.totalCostCny - left.totalCostCny)
+		.slice(0, 10)
+	const rates = [...model.rates.useSnapshot().items]
+		.sort(
+			(left, right) =>
+				left.provider.localeCompare(right.provider) ||
+				left.operation.localeCompare(right.operation) ||
+				String(left.model ?? '').localeCompare(String(right.model ?? '')),
+		)
+		.slice(0, 100)
 	const [error, setError] = useState<string | null>(null)
 	const avgLatency = overview?.requestCount
 		? Math.round((overview.totalLatencyMs / overview.requestCount) * 10) / 10

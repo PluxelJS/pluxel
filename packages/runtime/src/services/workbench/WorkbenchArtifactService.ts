@@ -7,8 +7,8 @@ import type {
 	WorkbenchBundleEvent,
 	WorkbenchBundle,
 	WorkbenchBundleState,
-	WorkbenchUiEntry,
 } from '../../workbench/contracts'
+import type { WorkbenchUiEntry } from '../../workbench/runtime'
 import { runtimeDevCapabilities } from '../../runtime/capabilities'
 import { findRuntimeModuleId, resolveModuleIdBaseDir } from '../../runtime/module-id'
 import {
@@ -52,7 +52,7 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 	registerFor(owner: Context, declaration: WorkbenchUiEntry): () => void {
 		const sourceBinder = runtimeDevCapabilities(owner)?.workbenchUiSource?.bind
 		if (sourceBinder) return sourceBinder(owner, declaration)
-		return this.registerPackaged(owner)
+		return this.registerPackaged(owner, declaration)
 	}
 
 	subscribe(listener: (event: WorkbenchBundleEvent) => void): () => void {
@@ -167,10 +167,10 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		return fullPath
 	}
 
-	private registerPackaged(owner: Context): () => void {
+	private registerPackaged(owner: Context, declaration: WorkbenchUiEntry): () => void {
 		const pluginName = owner.pluginInfo.id
 		let disposed = false
-		void this.registerPackagedModule(pluginName).catch((error) => {
+		void this.registerPackagedModule(pluginName, declaration.artifactName ?? pluginName).catch((error) => {
 			if (!disposed) owner.logger.error('failed to register workbench UI artifact', { error })
 		})
 		const guard = owner.effects.defer(() => {
@@ -180,8 +180,8 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		return () => guard.dispose()
 	}
 
-	private async registerPackagedModule(pluginName: string): Promise<void> {
-		const manifestPath = this.resolvePackagedManifestPath(pluginName)
+	private async registerPackagedModule(pluginName: string, artifactName: string): Promise<void> {
+		const manifestPath = this.resolvePackagedManifestPath(pluginName, artifactName)
 		if (!manifestPath) return
 		const [content, fileStat] = await Promise.all([
 			readFile(manifestPath, 'utf8').catch((): null => null),
@@ -195,7 +195,7 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		if (!remoteEntry) {
 			throw new Error(`incomplete workbench UI artifact for ${pluginName}: remoteEntry.js missing`)
 		}
-		await validatePackagedManifest(artifactRoot, pluginName, content)
+		await validatePackagedManifest(artifactRoot, artifactName, content)
 		const sourceHash = createHash('sha256')
 			.update(content)
 			.update(remoteEntry)
@@ -204,6 +204,7 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		await this.commitCompiledModule(
 			createCompiledWorkbenchArtifact({
 				pluginName,
+				artifactName,
 				sourceHash,
 				compiledAt: Math.floor(fileStat.mtimeMs || Date.now()),
 			}),
@@ -211,7 +212,7 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		)
 	}
 
-	private resolvePackagedManifestPath(pluginName: string): string | null {
+	private resolvePackagedManifestPath(pluginName: string, artifactName: string): string | null {
 		const registryPath = findRuntimeModuleId(this.root, pluginName)
 		if (registryPath) {
 			const baseDir = resolveModuleIdBaseDir(registryPath)
@@ -220,8 +221,8 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 				return resolve(
 					packageRoot ?? baseDir,
 					packageRoot
-						? workbenchFederationBuildManifestPath(pluginName)
-						: workbenchFederationManifestPath(pluginName),
+						? workbenchFederationBuildManifestPath(artifactName)
+						: workbenchFederationManifestPath(artifactName),
 				)
 			}
 		}
@@ -229,8 +230,8 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		return resolve(
 			cwd,
 			/(?:^|[\\/])dist$/i.test(cwd)
-				? workbenchFederationManifestPath(pluginName)
-				: workbenchFederationBuildManifestPath(pluginName),
+				? workbenchFederationManifestPath(artifactName)
+				: workbenchFederationBuildManifestPath(artifactName),
 		)
 	}
 
@@ -303,13 +304,14 @@ async function validatePackagedManifest(
 
 export function createCompiledWorkbenchArtifact(input: {
 	pluginName: string
+	artifactName?: string
 	sourceHash: string
 	compiledAt?: number
 }): WorkbenchBundle {
 	const compiledAt = input.compiledAt ?? Date.now()
 	return {
 		pluginName: input.pluginName,
-		remoteName: workbenchFederationRemoteName(input.pluginName),
+		remoteName: workbenchFederationRemoteName(input.artifactName ?? input.pluginName),
 		manifestUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactPath(
 			input.pluginName,
 			input.sourceHash,

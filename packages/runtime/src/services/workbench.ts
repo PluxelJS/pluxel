@@ -1,9 +1,10 @@
 import type { Context } from '@pluxel/core'
-import type { AnyWorkbenchExtension, WorkbenchModelContract } from '../workbench/contracts'
+import type { WorkbenchResourceContract } from '../workbench/contracts'
 import type {
-	WorkbenchProviders,
+	AnyWorkbenchExtension,
+	WorkbenchBindings,
 	WorkbenchMount,
-	MountedWorkbenchCollections,
+	MountedWorkbenchManagedCollections,
 	PluginWorkbench,
 } from '../workbench/runtime'
 import { WorkbenchArtifactService } from './workbench/WorkbenchArtifactService'
@@ -49,26 +50,32 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 		return view
 	}
 
-	private mount<Extension extends AnyWorkbenchExtension>(
-		owner: Context,
-		extension: Extension,
-		providers: WorkbenchProviders<Extension>,
-	): WorkbenchMount<Extension> {
+	private mount<
+		Extension extends AnyWorkbenchExtension,
+		const Bindings extends WorkbenchBindings<Extension>,
+	>(owner: Context, extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
 		const ownerId = String(owner.pluginInfo.id ?? '').trim()
-		if (extension.plugin !== ownerId) {
+		const cleanup: Array<() => void> = []
+		const managedCollections: Record<string, unknown> = {}
+		const refs: Record<string, InternalModelRef> = {}
+		const resources = extension.contract.resources
+		const expectedKeys = Object.keys(resources).sort()
+		const actualKeys = Object.keys(bindings as object).sort()
+		if (expectedKeys.join('\0') !== actualKeys.join('\0')) {
+			const missing = expectedKeys.filter((key) => !actualKeys.includes(key))
+			const extra = actualKeys.filter((key) => !expectedKeys.includes(key))
 			throw new Error(
-				`[workbench] extension plugin "${extension.plugin}" must match Context owner "${ownerId}"`,
+				`[workbench] bindings must exactly match Contract resources` +
+					`${missing.length ? `; missing: ${missing.join(', ')}` : ''}` +
+					`${extra.length ? `; extra: ${extra.join(', ')}` : ''}`,
 			)
 		}
-		const cleanup: Array<() => void> = []
-		const mountedCollections: Record<string, unknown> = {}
-		const refs: Record<string, InternalModelRef> = {}
-		for (const [key, contract] of Object.entries(extension.model) as Array<
-			[string, WorkbenchModelContract]
+		for (const [key, contract] of Object.entries(resources) as Array<
+			[string, WorkbenchResourceContract]
 		>) {
-			const provider = (providers as Record<string, any>)[key]
-			if (!provider || provider.kind !== contract.kind) {
-				throw new Error(`[workbench] model "${key}" requires a ${contract.kind} provider`)
+			const binding = (bindings as Record<string, any>)[key]
+			if (!binding || binding.kind !== contract.kind) {
+				throw new Error(`[workbench] bindings.${key}: expected ${contract.kind} binding`)
 			}
 		}
 
@@ -79,10 +86,10 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 		previous?.dispose()
 
 		try {
-			for (const [key, contract] of Object.entries(extension.model) as Array<
-				[string, WorkbenchModelContract]
+			for (const [key, contract] of Object.entries(resources) as Array<
+				[string, WorkbenchResourceContract]
 			>) {
-				const provider = (providers as Record<string, any>)[key]
+				const binding = (bindings as Record<string, any>)[key]
 				refs[key] = Object.freeze({ ownerPluginId: ownerId, modelKey: key, kind: contract.kind })
 				switch (contract.kind) {
 					case 'rpc': {
@@ -90,7 +97,7 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 							this.rpc.registerResourceFor(
 								owner,
 								workbenchModelNamespace(ownerId, key),
-								provider.factory,
+								binding.factory,
 							),
 						)
 						break
@@ -100,16 +107,41 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 							this.events.registerResourceFor(
 								owner,
 								workbenchModelNamespace(ownerId, key),
-								provider.handler,
+								binding.handler,
 							),
 						)
 						break
 					}
 					case 'collection': {
-						mountedCollections[key] = this.collections.collectionFor(owner, {
-							...provider.options,
-							name: key,
-						})
+						if (binding.mode === 'managed') {
+							managedCollections[key] = this.collections.collectionFor(owner, {
+								name: key,
+								initial: binding.options.initial,
+								persistence: binding.options.storage === 'plugin-data',
+								clientWrites: false,
+							})
+						} else {
+							const initial = [...binding.read()]
+							const collection = this.collections.collectionFor(owner, {
+								name: key,
+								initial,
+								persistence: false,
+								clientWrites: false,
+							})
+							if (binding.subscribe) {
+								const dispose = binding.subscribe(() => {
+									try {
+										collection.reset([...binding.read()])
+									} catch (error) {
+										owner.logger.error('workbench collection projection refresh failed', {
+											resource: key,
+											error,
+										})
+									}
+								})
+								if (typeof dispose === 'function') cleanup.push(dispose)
+							}
+						}
 						break
 					}
 				}
@@ -136,8 +168,10 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 		this.mounts.set(ownerId, mounted)
 		return Object.freeze({
 			extension,
-			collections: mountedCollections as MountedWorkbenchCollections<Extension>,
-			dispose: mounted.dispose,
+			managedCollections: managedCollections as MountedWorkbenchManagedCollections<
+				Extension,
+				Bindings
+			>,
 		})
 	}
 }

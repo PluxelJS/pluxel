@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
+import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
@@ -33,8 +33,8 @@ const DEFAULT_API_BASE = 'https://www.kookapp.cn'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
-	private settings?: MountedWorkbenchCollections<typeof KookWorkbench>['settings']
-	private status?: MountedWorkbenchCollections<typeof KookWorkbench>['status']
+	private settings?: MountedWorkbenchManagedCollections<typeof KookWorkbench>['settings']
+	private status?: MountedWorkbenchManagedCollections<typeof KookWorkbench>['status']
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<KookBot>({
 		onObserverError: (error) =>
@@ -54,13 +54,13 @@ export class KookPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		const mounted = this.ctx.workbench.mount(KookWorkbench, {
-			commands: workbench.provide.rpc(() => new KookWorkbenchRpc(this)),
-			settings: workbench.provide.collection(),
-			status: workbench.provide.collection(),
+			commands: workbench.bind.rpc(() => new KookWorkbenchRpc(this)),
+			settings: workbench.bind.managedCollection(),
+			status: workbench.bind.managedCollection(),
 		})
 		if (mounted) {
-			this.settings = mounted.collections.settings
-			this.status = mounted.collections.status
+			this.settings = mounted.managedCollections.settings
+			this.status = mounted.managedCollections.status
 			await Promise.all([this.settings.ready(), this.status.ready()])
 		}
 		this.settings?.removeMany({})

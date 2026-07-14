@@ -14,9 +14,29 @@ export const WorkbenchSlots = {
 	PluginCapabilities: 'plugin.capabilities',
 } as const
 
+export const WorkbenchIcons = {
+	Api: 'api',
+	BrandDiscord: 'brand-discord',
+	BrandTelegram: 'brand-telegram',
+	Building: 'building',
+	ChartBar: 'chart-bar',
+	CloudUpload: 'cloud-upload',
+	History: 'history',
+	MessageChatbot: 'message-chatbot',
+	PlugConnected: 'plug-connected',
+	Receipt: 'receipt',
+	Search: 'search',
+	Settings: 'settings',
+	ShieldLock: 'shield-lock',
+	TestPipe: 'test-pipe',
+	TextRecognition: 'text-recognition',
+	Typography: 'typography',
+	Users: 'users',
+} as const
+
+export type WorkbenchIcon = (typeof WorkbenchIcons)[keyof typeof WorkbenchIcons]
 export type WorkbenchSlot = (typeof WorkbenchSlots)[keyof typeof WorkbenchSlots]
 export type WorkbenchPlacement = WorkbenchSlot | 'plugin.routes'
-
 export type WorkbenchAudience = { readonly kind: 'self' } | { readonly kind: 'requiredDependents' }
 
 export type WorkbenchViewRef =
@@ -29,12 +49,12 @@ export type WorkbenchViewRef =
 
 export type WorkbenchViewMeta = Readonly<{
 	label?: string
-	icon?: string
-	tab?: Readonly<{ id: string; label: string; icon?: string }>
+	icon?: WorkbenchIcon
+	tab?: Readonly<{ id: string; label: string; icon?: WorkbenchIcon }>
 	route?: Readonly<{
 		path: string
 		title: string
-		icon?: string
+		icon?: WorkbenchIcon
 		addToNav?: boolean
 		navPriority?: number
 		frame?: 'shell' | 'standalone'
@@ -49,33 +69,75 @@ export type WorkbenchPlacementSpec = Readonly<{
 	meta?: WorkbenchViewMeta
 }>
 
+declare const workbenchResourceType: unique symbol
+
+export type WorkbenchRpcResource<TRpc> = Readonly<{
+	kind: 'rpc'
+	readonly [workbenchResourceType]?: TRpc
+}>
+
+export type WorkbenchCollectionItem = Readonly<{ id: string }>
+
+export type WorkbenchCollectionResource<TItem extends WorkbenchCollectionItem> = Readonly<{
+	kind: 'collection'
+	readonly [workbenchResourceType]?: TItem
+}>
+
+export type WorkbenchEventsResource<TEvents extends Record<string, unknown>> = Readonly<{
+	kind: 'events'
+	readonly [workbenchResourceType]?: TEvents
+}>
+
+export type WorkbenchResourceContract =
+	| WorkbenchRpcResource<unknown>
+	| WorkbenchCollectionResource<WorkbenchCollectionItem>
+	| WorkbenchEventsResource<Record<string, unknown>>
+
+export type WorkbenchResourceMap = Readonly<Record<string, WorkbenchResourceContract>>
+
+export type WorkbenchRpcOf<Resource> =
+	Resource extends WorkbenchRpcResource<infer TRpc> ? TRpc : never
+export type WorkbenchCollectionOf<Resource> =
+	Resource extends WorkbenchCollectionResource<infer TItem> ? TItem : never
+export type WorkbenchEventsOf<Resource> =
+	Resource extends WorkbenchEventsResource<infer TEvents> ? TEvents : never
+
+/** Browser-side RPC facade: only methods cross the boundary and every result is async. */
+export type WorkbenchRpcClient<TRpc> = Readonly<{
+	[Key in keyof TRpc as TRpc[Key] extends (...args: any[]) => any
+		? Key
+		: never]: TRpc[Key] extends (...args: infer Args) => infer Result
+		? (...args: Args) => Promise<Awaited<Result>>
+		: never
+}>
+
+export type WorkbenchPortContract<Resources extends WorkbenchResourceMap = WorkbenchResourceMap> =
+	Readonly<{
+		id: string
+		version: number
+		resources: Resources
+	}>
+
 export type WorkbenchViewSpec<
-	ModelKey extends string = string,
-	AcceptedModels extends WorkbenchModelMap = Readonly<Record<never, never>>,
+	AcceptedResources extends WorkbenchResourceMap = Readonly<Record<never, never>>,
 > = Readonly<{
 	kind: 'view'
 	view?: Extract<WorkbenchViewRef, { kind: 'builtin' }>
-	model: readonly ModelKey[]
 	placements: readonly WorkbenchPlacementSpec[]
-	accepts?: WorkbenchPortContract<AcceptedModels>
+	accepts?: WorkbenchPortContract<AcceptedResources>
 }>
 
-export type WorkbenchPortContract<Models extends WorkbenchModelMap = WorkbenchModelMap> = Readonly<{
-	id: string
-	version: number
-	model: Models
-}>
+export type WorkbenchViewMap = Readonly<Record<string, WorkbenchViewSpec<any>>>
 
 export type WorkbenchPortOutlet = Readonly<{
 	kind: 'port'
 	id: string
 	placement: WorkbenchSlot
 	port: WorkbenchPortContract<any>
-	providers?: readonly string[]
 	priority?: number
 	when?: 'always' | 'running'
 	meta?: WorkbenchViewMeta
-	provide?: Readonly<Record<string, string>>
+	provide: Readonly<Record<string, string>>
 }>
 
 export type WorkbenchPortRenderer = Readonly<{
@@ -87,81 +149,316 @@ export type WorkbenchPortRenderer = Readonly<{
 
 export type WorkbenchPortContribution = WorkbenchPortOutlet | WorkbenchPortRenderer
 
-type WorkbenchPortOutletDefinition = Omit<WorkbenchPortOutlet, 'id'>
-
-declare const workbenchModelType: unique symbol
-
-export type WorkbenchRpcModel<TRpc> = Readonly<{
-	kind: 'rpc'
-	readonly [workbenchModelType]?: TRpc
-}>
-
-export type WorkbenchCollectionItem = Readonly<{ id: string }>
-
-export type WorkbenchCollectionModel<TItem extends WorkbenchCollectionItem> = Readonly<{
-	kind: 'collection'
-	readonly [workbenchModelType]?: TItem
-}>
-
-export type WorkbenchEventsModel<TEvents extends Record<string, unknown>> = Readonly<{
-	kind: 'events'
-	readonly [workbenchModelType]?: TEvents
-}>
-
-export type WorkbenchModelContract =
-	| WorkbenchRpcModel<unknown>
-	| WorkbenchCollectionModel<WorkbenchCollectionItem>
-	| WorkbenchEventsModel<Record<string, unknown>>
-
-export type WorkbenchModelMap = Readonly<Record<string, WorkbenchModelContract>>
-
-export type WorkbenchModelToken<
-	Key extends string = string,
-	Model extends WorkbenchModelContract = WorkbenchModelContract,
+export type WorkbenchContract<
+	Resources extends WorkbenchResourceMap = WorkbenchResourceMap,
+	Views extends WorkbenchViewMap = WorkbenchViewMap,
 > = Readonly<{
-	key: Key
-	readonly contract?: Model
-}>
-
-export type WorkbenchModelTokens<Models extends WorkbenchModelMap> = Readonly<{
-	[Key in keyof Models & string]: WorkbenchModelToken<Key, Models[Key]>
-}>
-
-export type WorkbenchUiEntry = Readonly<{ entryPath: string }>
-
-export type WorkbenchExtension<
-	Models extends WorkbenchModelMap = WorkbenchModelMap,
-	Views extends Readonly<Record<string, WorkbenchViewSpec<any, any>>> = Readonly<
-		Record<string, WorkbenchViewSpec<any, any>>
-	>,
-> = Readonly<{
-	plugin: string
-	entry?: WorkbenchUiEntry
-	model: Models
+	fingerprint: string
+	resources: Resources
 	views: Views
 	ports: readonly WorkbenchPortContribution[]
 }>
 
-export type AnyWorkbenchExtension = WorkbenchExtension<any, any>
+export type AnyWorkbenchContract = WorkbenchContract<any, any>
 
-export type WorkbenchRpcOf<Model> = Model extends WorkbenchRpcModel<infer TRpc> ? TRpc : never
-export type WorkbenchCollectionOf<Model> =
-	Model extends WorkbenchCollectionModel<infer TItem> ? TItem : never
-export type WorkbenchEventsOf<Model> =
-	Model extends WorkbenchEventsModel<infer TEvents> ? TEvents : never
-
-/** Browser-side RPC facade: only methods cross the boundary and every result is async. */
-export type WorkbenchRpcClient<TRpc> = Readonly<{
-	[Key in keyof TRpc as TRpc[Key] extends (...args: any[]) => any
-		? Key
-		: never]: TRpc[Key] extends (...args: infer Args) => infer Result
-		? (...args: Args) => Promise<Awaited<Result>>
-		: never
+export type WorkbenchResourceToken<
+	Key extends string = string,
+	Resource extends WorkbenchResourceContract = WorkbenchResourceContract,
+> = Readonly<{
+	key: Key
+	readonly contract?: Resource
 }>
 
-export type WorkbenchModelRef = Readonly<{
+export type WorkbenchResourceTokens<Resources extends WorkbenchResourceMap> = Readonly<{
+	[Key in keyof Resources & string]: WorkbenchResourceToken<Key, Resources[Key]>
+}>
+
+type WorkbenchViewInput<Port extends WorkbenchPortContract<any> | undefined = undefined> =
+	Readonly<{
+		placements?: readonly WorkbenchPlacementSpec[]
+		accepts?: Port
+	}>
+
+type WorkbenchDocumentInput = Readonly<{
+	placements: readonly WorkbenchPlacementSpec[]
+	title?: string
+	description?: string
+	content: BuiltinDocContent
+}>
+
+type PortResourcesOf<Port> =
+	Port extends WorkbenchPortContract<infer Resources> ? Resources : Readonly<Record<never, never>>
+
+type NormalizedView<Input> =
+	Input extends WorkbenchViewSpec<any>
+		? Input
+		: Input extends { accepts?: infer Port }
+			? WorkbenchViewSpec<PortResourcesOf<Port>>
+			: WorkbenchViewSpec
+
+type NormalizedViews<Views extends Readonly<Record<string, unknown>>> = Readonly<{
+	[Key in keyof Views]: NormalizedView<Views[Key]>
+}>
+
+type PortProvide<Port extends WorkbenchPortContract<any>> = {
+	[Key in keyof Port['resources'] & string]: WorkbenchResourceToken<string, Port['resources'][Key]>
+}
+
+type WorkbenchOutletInput<Port extends WorkbenchPortContract<any>> = Readonly<{
+	port: Port
+	placement: WorkbenchPlacementSpec
+	provide: PortProvide<Port>
+}>
+
+type WorkbenchOutletMap = Readonly<Record<string, WorkbenchOutletInput<any>>>
+
+function defineContract<
+	const Resources extends WorkbenchResourceMap = Readonly<Record<never, never>>,
+	const Views extends Readonly<Record<string, WorkbenchViewInput<any> | WorkbenchViewSpec<any>>> =
+		Readonly<Record<never, never>>,
+>(input: {
+	resources?: Resources
+	views?: Views
+	outlets?: (input: { resources: WorkbenchResourceTokens<Resources> }) => WorkbenchOutletMap
+}): WorkbenchContract<Resources, NormalizedViews<Views>> {
+	const resources = Object.freeze({ ...(input.resources ?? {}) }) as Resources
+	const tokens = Object.freeze(
+		Object.fromEntries(Object.keys(resources).map((key) => [key, Object.freeze({ key })])),
+	) as WorkbenchResourceTokens<Resources>
+	const views = Object.freeze(
+		Object.fromEntries(
+			Object.entries(input.views ?? {}).map(([viewId, raw]) => {
+				requiredText('workbenchContract.define', 'view id', viewId)
+				const view = raw as WorkbenchViewInput<any> | WorkbenchViewSpec<any>
+				const placements = normalizePlacements(view.placements ?? [], Boolean(view.accepts))
+				return [viewId, Object.freeze({ ...view, kind: 'view', placements })]
+			}),
+		),
+	) as NormalizedViews<Views>
+
+	const ports: WorkbenchPortContribution[] = []
+	for (const [outletId, outlet] of Object.entries(input.outlets?.({ resources: tokens }) ?? {})) {
+		const placement = outlet.placement
+		if (!placement || placement.placement === 'plugin.routes') {
+			throw new Error(
+				`[workbench-contract] outlets.${outletId}.placement must be a typed slot placement`,
+			)
+		}
+		const provided = Object.fromEntries(
+			Object.entries(outlet.provide).map(([key, token]) => [
+				key,
+				(token as WorkbenchResourceToken).key,
+			]),
+		)
+		const expectedKeys = Object.keys(outlet.port.resources).sort()
+		const actualKeys = Object.keys(provided).sort()
+		if (expectedKeys.join('\0') !== actualKeys.join('\0')) {
+			throw new Error(
+				`[workbench-contract] outlets.${outletId}.provide must map every Port resource`,
+			)
+		}
+		ports.push(
+			Object.freeze({
+				kind: 'port',
+				id: requiredText('workbenchContract.define', 'outlet id', outletId),
+				placement: placement.placement,
+				port: outlet.port,
+				priority: placement.priority,
+				when: placement.when,
+				meta: placement.meta,
+				provide: Object.freeze(provided),
+			}),
+		)
+	}
+	const renderedPorts = new Set<string>()
+	for (const [viewId, view] of Object.entries(views)) {
+		if (!view.accepts) continue
+		const key = `${view.accepts.id}\0${view.accepts.version}`
+		if (renderedPorts.has(key)) {
+			throw new Error(`[workbench-contract] multiple Views accept Port "${view.accepts.id}"`)
+		}
+		renderedPorts.add(key)
+		ports.push(Object.freeze({ kind: 'port-renderer', id: viewId, port: view.accepts, viewId }))
+	}
+	const frozenPorts = Object.freeze(ports)
+	return Object.freeze({
+		fingerprint: contractFingerprint({ resources, views, ports: frozenPorts }),
+		resources,
+		views,
+		ports: frozenPorts,
+	})
+}
+
+function rpcResource<TRpc>(): WorkbenchRpcResource<TRpc> {
+	return Object.freeze({ kind: 'rpc' }) as WorkbenchRpcResource<TRpc>
+}
+
+function collectionResource<
+	TItem extends WorkbenchCollectionItem,
+>(): WorkbenchCollectionResource<TItem> {
+	return Object.freeze({ kind: 'collection' }) as WorkbenchCollectionResource<TItem>
+}
+
+function eventsResource<
+	TEvents extends Record<string, unknown>,
+>(): WorkbenchEventsResource<TEvents> {
+	return Object.freeze({ kind: 'events' }) as WorkbenchEventsResource<TEvents>
+}
+
+function portContract<const Resources extends WorkbenchResourceMap>(input: {
+	id: string
+	version?: number
+	resources: Resources
+}): WorkbenchPortContract<Resources> {
+	const version = input.version ?? 1
+	if (!Number.isInteger(version) || version <= 0) {
+		throw new Error('[workbench-contract] port.version must be a positive integer')
+	}
+	return Object.freeze({
+		id: requiredText('workbenchContract.port', 'id', input.id),
+		version,
+		resources: Object.freeze({ ...input.resources }),
+	})
+}
+
+function slotPlacement(
+	slot: WorkbenchSlot,
+	input: {
+		label?: string
+		icon?: WorkbenchIcon
+		tab?: { id: string; label: string; icon?: WorkbenchIcon }
+		order?: number
+		when?: 'always' | 'running'
+		audience?: WorkbenchAudience
+	} = {},
+): WorkbenchPlacementSpec {
+	return Object.freeze({
+		placement: slot,
+		audience: input.audience ?? Object.freeze({ kind: 'self' as const }),
+		priority: -(input.order ?? 0),
+		when: input.when,
+		meta: Object.freeze({ label: input.label, icon: input.icon, tab: input.tab }),
+	})
+}
+
+function routePlacement(
+	path: string,
+	input: {
+		title: string
+		icon?: WorkbenchIcon
+		navigation?: boolean
+		frame?: 'shell' | 'standalone'
+		order?: number
+		when?: 'always' | 'running'
+	},
+): WorkbenchPlacementSpec {
+	const order = input.order ?? 0
+	return Object.freeze({
+		placement: 'plugin.routes',
+		audience: Object.freeze({ kind: 'self' as const }),
+		priority: -order,
+		when: input.when,
+		meta: Object.freeze({
+			route: Object.freeze({
+				path: requiredText('workbenchContract.route', 'path', path),
+				title: requiredText('workbenchContract.route', 'title', input.title),
+				icon: input.icon,
+				addToNav: input.navigation !== false,
+				navPriority: -order,
+				frame: input.frame,
+			}),
+		}),
+	})
+}
+
+function documentView(
+	input: WorkbenchDocumentInput,
+): WorkbenchViewSpec & Readonly<{ view: Extract<WorkbenchViewRef, { kind: 'builtin' }> }> {
+	return Object.freeze({
+		kind: 'view',
+		placements: normalizePlacements(input.placements, false),
+		view: Object.freeze({
+			kind: 'builtin',
+			renderer: 'document',
+			props: Object.freeze({
+				title: input.title,
+				description: input.description,
+				content: input.content,
+			}),
+		}),
+	})
+}
+
+function normalizePlacements(
+	placements: readonly WorkbenchPlacementSpec[],
+	allowEmpty: boolean,
+): readonly WorkbenchPlacementSpec[] {
+	if (!Array.isArray(placements) || (!allowEmpty && placements.length === 0)) {
+		throw new Error('[workbench-contract] View requires at least one placement')
+	}
+	const identities = new Set<string>()
+	for (const placement of placements) {
+		const route = placement.meta?.route?.path
+		const identity = route ? `route:${normalizeRoutePath(route)}` : `slot:${placement.placement}`
+		if (identities.has(identity)) {
+			throw new Error(`[workbench-contract] View has duplicate placement "${identity}"`)
+		}
+		identities.add(identity)
+	}
+	return Object.freeze([...placements])
+}
+
+function normalizeRoutePath(path: string): string {
+	const value = requiredText('workbenchContract.route', 'path', path)
+	return `/${value.replace(/^\/+|\/+$/g, '')}`
+}
+
+function requiredText(api: string, field: string, value: string): string {
+	const normalized = String(value ?? '').trim()
+	if (!normalized) throw new Error(`[workbench-contract] ${api}(): ${field} required`)
+	return normalized
+}
+
+function contractFingerprint(value: unknown): string {
+	const input = stableStringify(value)
+	let hash = 2166136261
+	for (let index = 0; index < input.length; index += 1) {
+		hash ^= input.charCodeAt(index)
+		hash = Math.imul(hash, 16777619)
+	}
+	return `wbc-${(hash >>> 0).toString(36)}`
+}
+
+function stableStringify(value: unknown): string {
+	if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
+	if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+	return `{${Object.entries(value as Record<string, unknown>)
+		.filter(([, item]) => item !== undefined)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+		.join(',')}}`
+}
+
+export const workbenchContract = Object.freeze({
+	define: defineContract,
+	rpc: rpcResource,
+	collection: collectionResource,
+	events: eventsResource,
+	port: portContract,
+	slot: slotPlacement,
+	route: routePlacement,
+	document: documentView,
+	slots: WorkbenchSlots,
+	icons: WorkbenchIcons,
+	audience: Object.freeze({
+		self: Object.freeze({ kind: 'self' as const }),
+		requiredDependents: Object.freeze({ kind: 'requiredDependents' as const }),
+	}),
+})
+
+export type WorkbenchResourceRef = Readonly<{
 	grantId: string
-	kind: WorkbenchModelContract['kind']
+	kind: WorkbenchResourceContract['kind']
 }>
 
 export type WorkbenchLayoutItem = Readonly<{
@@ -169,12 +466,20 @@ export type WorkbenchLayoutItem = Readonly<{
 	viewId: string
 	ownerPluginId: string
 	targetPluginId: string
+	contractFingerprint: string
 	placement: WorkbenchPlacement
 	view: WorkbenchViewRef
 	priority: number
 	when: 'always' | 'running'
 	meta?: WorkbenchViewMeta
-	model: Readonly<Record<string, WorkbenchModelRef>>
+	/** @internal Opaque granted resources consumed by the host and browser UI runtime. */
+	model: Readonly<Record<string, WorkbenchResourceRef>>
+	/** @internal Target-scoped resources injected into a cross-plugin renderer. */
+	port?: Readonly<{
+		id: string
+		version: number
+		model: Readonly<Record<string, WorkbenchResourceRef>>
+	}>
 }>
 
 export type WorkbenchLayout = Readonly<{
@@ -229,268 +534,3 @@ export type WorkbenchCatalog = Readonly<{
 	bundles: readonly WorkbenchBundle[]
 	states: readonly WorkbenchBundleState[]
 }>
-
-function slotPlacement(input: {
-	slot: WorkbenchSlot
-	audience?: WorkbenchAudience
-	label?: string
-	icon?: string
-	tab?: { id: string; label: string; icon?: string }
-	priority?: number
-	when?: 'always' | 'running'
-}): WorkbenchPlacementSpec {
-	return Object.freeze({
-		placement: input.slot,
-		audience: input.audience ?? Object.freeze({ kind: 'self' as const }),
-		priority: input.priority,
-		when: input.when,
-		meta: Object.freeze({ label: input.label, icon: input.icon, tab: input.tab }),
-	})
-}
-
-function routePlacement(input: {
-	path: string
-	title: string
-	icon?: string
-	navigation?: false | { priority?: number }
-	frame?: 'shell' | 'standalone'
-	priority?: number
-	when?: 'always' | 'running'
-}): WorkbenchPlacementSpec {
-	return Object.freeze({
-		placement: 'plugin.routes',
-		audience: Object.freeze({ kind: 'self' as const }),
-		priority: input.priority,
-		when: input.when,
-		meta: Object.freeze({
-			route: Object.freeze({
-				path: requiredText('workbench.place.route', 'path', input.path),
-				title: requiredText('workbench.place.route', 'title', input.title),
-				icon: input.icon,
-				addToNav: input.navigation !== false && input.navigation !== undefined,
-				navPriority: input.navigation === false ? undefined : input.navigation?.priority,
-				frame: input.frame,
-			}),
-		}),
-	})
-}
-
-type ModelKeyOf<Tokens extends readonly WorkbenchModelToken[]> =
-	Tokens[number] extends WorkbenchModelToken<infer Key, any> ? Key : never
-
-type ViewInput<Tokens extends readonly WorkbenchModelToken[]> = Readonly<{
-	model?: Tokens
-	placements: readonly WorkbenchPlacementSpec[]
-}>
-
-type AcceptedModelsOf<Port> =
-	Port extends WorkbenchPortContract<infer Models> ? Models : Readonly<Record<never, never>>
-
-function remoteView<const Port extends WorkbenchPortContract<any> | undefined = undefined>(
-	input: Omit<ViewInput<readonly []>, 'model'> & { model?: undefined; accepts?: Port },
-): WorkbenchViewSpec<never, AcceptedModelsOf<Port>>
-function remoteView<
-	const Tokens extends readonly WorkbenchModelToken[],
-	const Port extends WorkbenchPortContract<any> | undefined = undefined,
->(
-	input: ViewInput<Tokens> & { model: Tokens; accepts?: Port },
-): WorkbenchViewSpec<ModelKeyOf<Tokens>, AcceptedModelsOf<Port>>
-function remoteView(
-	input: ViewInput<readonly WorkbenchModelToken[]> & {
-		accepts?: WorkbenchPortContract<any>
-	},
-): WorkbenchViewSpec<string, any> {
-	return Object.freeze({
-		kind: 'view',
-		model: selectedModelKeys(input.model),
-		placements: normalizedPlacements(
-			'workbench.view.remote',
-			input.placements,
-			Boolean(input.accepts),
-		),
-		accepts: input.accepts,
-	})
-}
-
-type DocumentViewInput<Tokens extends readonly WorkbenchModelToken[]> = ViewInput<Tokens> & {
-	title?: string
-	description?: string
-	content: BuiltinDocContent
-}
-
-function documentView(
-	input: Omit<DocumentViewInput<readonly []>, 'model'> & { model?: undefined },
-): WorkbenchViewSpec<never>
-function documentView<const Tokens extends readonly WorkbenchModelToken[]>(
-	input: DocumentViewInput<Tokens> & { model: Tokens },
-): WorkbenchViewSpec<ModelKeyOf<Tokens>>
-function documentView(
-	input: DocumentViewInput<readonly WorkbenchModelToken[]>,
-): WorkbenchViewSpec<string> {
-	return Object.freeze({
-		kind: 'view',
-		model: selectedModelKeys(input.model),
-		placements: normalizedPlacements('workbench.view.document', input.placements, false),
-		view: Object.freeze({
-			kind: 'builtin',
-			renderer: 'document',
-			props: Object.freeze({
-				title: input.title,
-				description: input.description,
-				content: input.content,
-			}),
-		}),
-	})
-}
-
-function defineExtension<
-	const Models extends WorkbenchModelMap,
-	const Views extends Readonly<
-		Record<string, WorkbenchViewSpec<Extract<keyof Models, string>, any>>
-	>,
->(input: {
-	plugin: string
-	entry?: WorkbenchUiEntry
-	model?: Models
-	views?: (model: WorkbenchModelTokens<Models>) => Views
-	ports?: (
-		model: WorkbenchModelTokens<Models>,
-	) => Readonly<Record<string, WorkbenchPortOutletDefinition>>
-}): WorkbenchExtension<Models, Views> {
-	const plugin = requiredText('workbench.define', 'plugin', input.plugin)
-	const model = Object.freeze({ ...input.model }) as Models
-	const modelTokens = Object.freeze(
-		Object.fromEntries(Object.keys(model).map((key) => [key, Object.freeze({ key })])),
-	) as WorkbenchModelTokens<Models>
-	const views = Object.freeze({ ...input.views?.(modelTokens) }) as Views
-	for (const [viewId, view] of Object.entries(views)) {
-		requiredText('workbench.define', 'view id', viewId)
-		if (view.placements.length === 0 && !view.accepts) {
-			throw new Error(`[workbench] view "${viewId}" requires at least one placement`)
-		}
-		for (const key of view.model) {
-			if (!(key in model)) {
-				throw new Error(`[workbench] view "${viewId}" selects unknown model "${key}"`)
-			}
-		}
-	}
-	const ports: WorkbenchPortContribution[] = []
-	for (const [id, outlet] of Object.entries(input.ports?.(modelTokens) ?? {})) {
-		ports.push(Object.freeze({ ...outlet, id: requiredText('workbench.define', 'port id', id) }))
-	}
-	for (const [viewId, view] of Object.entries(views)) {
-		if (!view.accepts) continue
-		ports.push(
-			Object.freeze({
-				kind: 'port-renderer',
-				id: viewId,
-				port: view.accepts,
-				viewId,
-			}),
-		)
-	}
-	return Object.freeze({
-		plugin,
-		entry: input.entry,
-		model,
-		views,
-		ports: Object.freeze(ports),
-	})
-}
-
-function definePort<const Models extends WorkbenchModelMap>(
-	id: string,
-	model: Models,
-	version = 1,
-): WorkbenchPortContract<Models> {
-	if (!Number.isInteger(version) || version <= 0) {
-		throw new Error('[workbench] workbench.port.define(): version must be a positive integer')
-	}
-	return Object.freeze({
-		id: requiredText('workbench.port.define', 'id', id),
-		version,
-		model: Object.freeze({ ...model }),
-	})
-}
-
-type PortProvide<Port extends WorkbenchPortContract<any>> = Partial<{
-	[Key in keyof Port['model'] & string]: WorkbenchModelToken<string, Port['model'][Key]>
-}>
-
-function portOutlet<const Port extends WorkbenchPortContract<any>>(
-	input: Omit<WorkbenchPortOutlet, 'kind' | 'id' | 'port' | 'provide'> & {
-		port: Port
-		provide?: PortProvide<Port>
-	},
-): WorkbenchPortOutletDefinition {
-	return Object.freeze({
-		...input,
-		kind: 'port',
-		provide: Object.freeze(
-			Object.fromEntries(
-				Object.entries(input.provide ?? {}).map(([key, token]) => [
-					key,
-					(token as WorkbenchModelToken).key,
-				]),
-			),
-		),
-	})
-}
-
-/** @internal Public authoring namespace is assembled in ../workbench.ts. */
-export const workbenchDefinition = Object.freeze({
-	define: defineExtension,
-	entry(moduleUrl: string | URL, entryPath: string): WorkbenchUiEntry {
-		const url = new URL(requiredText('workbench.entry', 'entry path', entryPath), moduleUrl)
-		if (url.protocol !== 'file:') {
-			throw new Error('[workbench] workbench.entry(): module URL must use the file protocol')
-		}
-		let path = decodeURIComponent(url.pathname)
-		if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
-		return Object.freeze({ entryPath: path })
-	},
-	model: Object.freeze({
-		rpc<TRpc>(): WorkbenchRpcModel<TRpc> {
-			return Object.freeze({ kind: 'rpc' }) as WorkbenchRpcModel<TRpc>
-		},
-		collection<TItem extends WorkbenchCollectionItem>(): WorkbenchCollectionModel<TItem> {
-			return Object.freeze({ kind: 'collection' }) as WorkbenchCollectionModel<TItem>
-		},
-		events<TEvents extends Record<string, unknown>>(): WorkbenchEventsModel<TEvents> {
-			return Object.freeze({ kind: 'events' }) as WorkbenchEventsModel<TEvents>
-		},
-	}),
-	view: Object.freeze({ remote: remoteView, document: documentView }),
-	place: Object.freeze({ slot: slotPlacement, route: routePlacement }),
-	slot: WorkbenchSlots,
-	audience: Object.freeze({
-		self: Object.freeze({ kind: 'self' as const }),
-		requiredDependents: Object.freeze({ kind: 'requiredDependents' as const }),
-	}),
-	port: Object.freeze({ define: definePort, outlet: portOutlet }),
-})
-
-function selectedModelKeys<const Tokens extends readonly WorkbenchModelToken[]>(
-	model: Tokens | undefined,
-): readonly ModelKeyOf<Tokens>[] {
-	return Object.freeze(
-		(model ?? []).map((token) => requiredText('workbench.view', 'model key', token.key)),
-	) as readonly ModelKeyOf<Tokens>[]
-}
-
-function normalizedPlacements(
-	api: string,
-	placements: readonly WorkbenchPlacementSpec[],
-	allowEmpty: boolean,
-): readonly WorkbenchPlacementSpec[] {
-	if (!Array.isArray(placements) || (!allowEmpty && placements.length === 0)) {
-		throw new Error(`[workbench] ${api}(): placements required`)
-	}
-	return Object.freeze([...placements])
-}
-
-function requiredText(api: string, field: string, value: string): string {
-	const normalized = String(value ?? '').trim()
-	if (!normalized) throw new Error(`[workbench] ${api}(): ${field} required`)
-	return normalized
-}

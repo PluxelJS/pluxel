@@ -98,9 +98,17 @@
 			"@pluxel/source": "./src/workbench.ts",
 			"default": "./dist/workbench.mjs"
 		},
+		"./workbench/contract": {
+			"@pluxel/source": "./src/workbench-contract.ts",
+			"default": "./dist/workbench/contract.mjs"
+		},
 		"./workbench/ui": {
 			"@pluxel/source": "./src/workbench-ui.ts",
 			"default": "./dist/workbench/ui.mjs"
+		},
+		"./workbench/ui/internal": {
+			"@pluxel/source": "./src/workbench-ui-internal.ts",
+			"default": "./dist/workbench/ui/internal.mjs"
 		},
 		"./package.json": "./package.json"
 	},
@@ -127,7 +135,9 @@
 			"./web": "./dist/web.mjs",
 			"./web/paths": "./dist/web/paths.mjs",
 			"./workbench": "./dist/workbench.mjs",
+			"./workbench/contract": "./dist/workbench/contract.mjs",
 			"./workbench/ui": "./dist/workbench/ui.mjs",
+			"./workbench/ui/internal": "./dist/workbench/ui/internal.mjs",
 			"./package.json": "./package.json"
 		}
 	},

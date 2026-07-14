@@ -1,4 +1,3 @@
-export type * from './workbench/contracts'
 export { workbench } from './workbench/runtime'
 export type * from './workbench/runtime'
 export { doc as workbenchDoc } from './workbench/document-contracts'

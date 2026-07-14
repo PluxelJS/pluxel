@@ -1,3 +1,5 @@
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+
 export type KookSettingsDoc = {
 	id: string
 	tokenPreview: string
@@ -33,3 +35,27 @@ export interface KookWorkbenchCommands {
 	reconnectBot(id: string): Promise<unknown>
 	disconnectBot(id: string): Promise<unknown>
 }
+
+export const KookUi = workbenchContract.define({
+	resources: {
+		commands: workbenchContract.rpc<KookWorkbenchCommands>(),
+		settings: workbenchContract.collection<KookSettingsDoc>(),
+		status: workbenchContract.collection<KookStatusDoc>(),
+	},
+	views: {
+		Settings: {
+			placements: [
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 50,
+					label: 'KOOK 管理',
+					icon: workbenchContract.icons.Settings,
+				}),
+				workbenchContract.route('/settings', {
+					title: 'KOOK Bot',
+					icon: workbenchContract.icons.BrandDiscord,
+					order: 70,
+				}),
+			],
+		},
+	},
+})

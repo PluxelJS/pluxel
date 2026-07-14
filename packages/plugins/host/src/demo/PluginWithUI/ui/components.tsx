@@ -26,7 +26,7 @@ import {
 	IconWaveSine,
 } from '@tabler/icons-react'
 import { type ReactNode, useEffect, useState } from 'react'
-import type { PluginWithUIEvents } from '../../PluginWithUI'
+import type { PluginWithUIEvents } from '../../PluginWithUI.contracts'
 import { pluginUi } from './runtime'
 
 type PluginWithUIEventsClient = WorkbenchEventsClient<PluginWithUIEvents>
@@ -49,16 +49,14 @@ function useRpcError() {
 }
 
 function useLiveConnectionState(events: PluginWithUIEventsClient) {
-	const [connected, setConnected] = useState(false)
-	useEffect(() => events.onConnection(setConnected), [events])
-	return connected
+	return events.useConnectionState().state === 'connected'
 }
 
 function useLatestTick(activity: PluginWithUIEventsClient) {
 	const [tick, setTick] = useState<number | null>(null)
 
 	useEffect(() => {
-		const off = activity.on('tick', (payload) => setTick(payload.now))
+		const off = activity.subscribe('tick', (payload) => setTick(payload.now))
 		return () => off()
 	}, [activity])
 
@@ -88,10 +86,10 @@ function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
 }
 
 export function OverviewPanel() {
-	const model = pluginUi.views.OverviewPanel.useModel()
+	const model = pluginUi.useResources()
 	const host = useWorkbenchHost()
-	const status = model.status.useOneById('status')
-	const eventCount = model.events.useCount()
+	const status = model.status.useSnapshot().items.find((item) => item.id === 'status')
+	const eventCount = model.events.useSnapshot().items.length
 	const activity = model.activity
 	const connected = useLiveConnectionState(activity)
 	const tick = useLatestTick(activity)
@@ -166,10 +164,12 @@ export function OverviewPanel() {
 }
 
 export function EventsPanel() {
-	const model = pluginUi.views.EventsPanel.useModel()
+	const model = pluginUi.useResources()
 	const eventsCollection = model.events
-	const events = eventsCollection.useCollection()
-	const recentEvents = events.find({}, { sort: { at: -1 }, limit: 50 })
+	const eventsSnapshot = eventsCollection.useSnapshot()
+	const recentEvents = [...eventsSnapshot.items]
+		.sort((left, right) => right.at - left.at)
+		.slice(0, 50)
 	const { error, run } = useRpcError()
 	const [text, setText] = useState('')
 
@@ -217,7 +217,7 @@ export function EventsPanel() {
 			<Card withBorder radius="md" p={0}>
 				<ScrollArea h={320} type="auto" scrollbarSize={10} offsetScrollbars>
 					<Stack gap="xs" p="sm">
-						{!events.ready && recentEvents.length === 0 ? (
+						{eventsSnapshot.state === 'loading' && recentEvents.length === 0 ? (
 							<Group gap="xs">
 								<Loader size="sm" />
 								<Text size="sm" c="dimmed">
@@ -225,7 +225,7 @@ export function EventsPanel() {
 								</Text>
 							</Group>
 						) : null}
-						{events.ready && events.items.length === 0 ? (
+						{eventsSnapshot.state === 'ready' && eventsSnapshot.items.length === 0 ? (
 							<Text size="sm" c="dimmed">
 								暂无事件，先发一条试试。
 							</Text>
@@ -255,7 +255,7 @@ export function EventsPanel() {
 }
 
 export function StreamsPanel() {
-	const model = pluginUi.views.StreamsPanel.useModel()
+	const model = pluginUi.useResources()
 	const activity = model.activity
 	const connected = useLiveConnectionState(activity)
 	const [lines, setLines] = useState<Array<{ key: string; text: string }>>([])
@@ -266,9 +266,9 @@ export function StreamsPanel() {
 			setLines((prev) => [{ key: `${Date.now()}-${prev.length}`, text }, ...prev].slice(0, 50))
 		}
 		const stops = [
-			model.activity.on('ready', (payload) => append(payload, 'ready')),
-			model.activity.on('tick', (payload) => append(payload, 'tick')),
-			model.activity.on('activity', (payload) => append(payload, 'activity')),
+			model.activity.subscribe('ready', (payload) => append(payload, 'ready')),
+			model.activity.subscribe('tick', (payload) => append(payload, 'tick')),
+			model.activity.subscribe('activity', (payload) => append(payload, 'activity')),
 		]
 		return () => stops.forEach((stop) => stop())
 	}, [model])

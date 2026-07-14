@@ -28,7 +28,7 @@ export function HeaderAction() {
 	)
 }
 
-export default yiqichaUi.expose({
+export default yiqichaUi.define({
 	HeaderAction,
 	YiqichaApiPanel,
 	YiqichaDashboard,

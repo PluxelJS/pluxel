@@ -7,7 +7,7 @@
 plugin source
   ├─ constructor dependencies
   ├─ config / feature declarations
-  └─ WorkbenchExtension declarations
+  └─ Workbench Contract / Extension declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -36,16 +36,18 @@ core commit 顺序为 `draft graph -> verify -> stop plan -> start plan -> Commi
 consumer 先停止；失败插件不进入 running，required dependents 被阻塞。effects 在 stop、replacement、
 rollback 时清理。
 
-Workbench mount 绑定 owner effects。`requireRunning` contribution 只有在 owner 真正 running 后才进入
-layout；init 失败不会留下可见 view 或资源。HMR replacement 会撤销旧 layout binding、resource factory、
-stream、collection 和 artifact。
+Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 只有在 owner 真正 running 后才进入
+layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
+collection 和 grant；rollback 通过重新 mount 获得新 lease。
 
 ## Optional Workbench Plane
 
 插件只看到 `ctx.workbench.enabled` 和 `ctx.workbench.mount()`。宿主通过顶层 `workbench` 配置安装
 backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
 
-`WorkbenchExtension` 是静态 contract，`workbench.mount(extension, bindings)` 是唯一发布动作。registry
+browser-safe `WorkbenchContract` 声明 resource、View、placement 和 Port；server-only `WorkbenchExtension`
+只绑定 Contract 与 UI entry。`workbench.mount(extension, bindings)` 是唯一发布动作，owner 不在 Extension 重复
+声明。registry
 生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque grant。
 artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
 namespace 任意访问未授予资源。
@@ -61,7 +63,8 @@ dependent 复用有两条明确路径：
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：插件作者和常驻 runtime；
-- `@pluxel/runtime/workbench`：服务端 Workbench contract；
+- `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
+- `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource client；
 - `@pluxel/core/federation`：Workbench bundle build contract；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；

@@ -1,5 +1,5 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchCollections } from '@pluxel/runtime/workbench'
+import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
 import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
@@ -23,9 +23,9 @@ const STORAGE_KEY = 'state.json'
 @Plugin({ name: 'ChatAccessPlugin' })
 export class ChatAccessPlugin extends BasePlugin {
 	private domain!: ChatAccessDomain
-	private overview?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['overview']
-	private usersProjection?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['users']
-	private rolesProjection?: MountedWorkbenchCollections<typeof ChatAccessWorkbench>['roles']
+	private overview?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['overview']
+	private usersProjection?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['users']
+	private rolesProjection?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['roles']
 	private snapshotWriter?: CoalescedSnapshotWriter
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -49,15 +49,15 @@ export class ChatAccessPlugin extends BasePlugin {
 			}),
 		)
 		const mounted = this.ctx.workbench.mount(ChatAccessWorkbench, {
-			commands: workbench.provide.rpc(() => new ChatAccessRpc(this)),
-			overview: workbench.provide.collection(),
-			users: workbench.provide.collection(),
-			roles: workbench.provide.collection(),
+			commands: workbench.bind.rpc(() => new ChatAccessRpc(this)),
+			overview: workbench.bind.managedCollection(),
+			users: workbench.bind.managedCollection(),
+			roles: workbench.bind.managedCollection(),
 		})
 		if (mounted) {
-			this.overview = mounted.collections.overview
-			this.usersProjection = mounted.collections.users
-			this.rolesProjection = mounted.collections.roles
+			this.overview = mounted.managedCollections.overview
+			this.usersProjection = mounted.managedCollections.users
+			this.rolesProjection = mounted.managedCollections.roles
 			await Promise.all([
 				this.overview.ready(),
 				this.usersProjection.ready(),

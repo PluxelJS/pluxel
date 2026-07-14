@@ -76,17 +76,17 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		await this.loadTokensFromDB()
 		await this.ensureDevToken()
 		this.syncStatus()
-		const mounted = this.ctx.workbench.mount(ExternalGatewayWorkbench, {
-			commands: workbench.provide.rpc(() => new GatewayAdminRpc(this)),
-			tokens: workbench.provide.collection(),
-			status: workbench.provide.collection(),
+		this.ctx.workbench.mount(ExternalGatewayWorkbench, {
+			commands: workbench.bind.rpc(() => new GatewayAdminRpc(this)),
+			tokens: workbench.bind.collection({
+				read: () => this.tokens.snapshot(),
+				subscribe: (invalidate) => this.tokens.subscribe(invalidate),
+			}),
+			status: workbench.bind.collection({
+				read: () => this.status.snapshot(),
+				subscribe: (invalidate) => this.status.subscribe(invalidate),
+			}),
 		})
-		if (mounted) {
-			await Promise.all([
-				this.tokens.attach(mounted.collections.tokens),
-				this.status.attach(mounted.collections.status),
-			])
-		}
 		this.registerRoutes()
 		this.ctx.logger.info('External CapnWeb gateway ready', {
 			rpcPath: this.rpcBase(),

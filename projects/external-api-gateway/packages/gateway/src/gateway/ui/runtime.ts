@@ -1,6 +1,5 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { ExternalGatewayWorkbench } from '../workbench-extension.ts'
+import { ExternalGatewayUi } from '../workbench-contract.ts'
 
-export const gatewayUi = createWorkbenchUi<typeof ExternalGatewayWorkbench>()
-export const useGatewayModel = () =>
-	gatewayUi.useModel(({ commands, tokens, status }) => ({ commands, tokens, status }))
+export const gatewayUi = createWorkbenchUi(ExternalGatewayUi)
+export const useGatewayModel = () => gatewayUi.useResources()

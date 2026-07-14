@@ -102,16 +102,21 @@ planner 会先逐 block 校验 transport capabilities，再决定 mixed、拆分
 
 用户可发送 `/account` 查看统一身份，发送 `/link` 生成 5 分钟有效的一次性关联码，再到另一个平台发送 `/link <code>` 合并身份、角色和 grants。
 
-Workbench UI 使用模块相对声明：
+Workbench UI 的 browser Contract 与 server entry 分离：
 
 ```ts
-const ChatWorkbench = workbench.define({
-	plugin: 'ChatPlugin',
+const ChatUi = workbenchContract.define({
+	views: {},
+})
+
+const ChatWorkbench = workbench.extension({
+	contract: ChatUi,
 	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 ```
 
-路径到绝对文件名的转换由 Pluxel authoring API 负责，平台插件不再重复 `fileURLToPath(new URL(...))`。
+Contract module 可被浏览器直接导入；entry 只留在 server module。artifact key 和路径转换由工具链负责，插件不
+重复 plugin ID，也不写 `fileURLToPath(new URL(...))`。
 
 ## 增加业务插件
 

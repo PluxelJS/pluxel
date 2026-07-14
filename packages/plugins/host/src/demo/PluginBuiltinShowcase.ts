@@ -1,23 +1,20 @@
-// Read this when you want host-rendered workbench documents without a UI bundle.
+// Read this when you want host-rendered, read-only Workbench documents without a UI bundle.
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import {
 	workbench,
 	workbenchDoc,
+	type MountedWorkbenchManagedCollections,
 	type WorkbenchSyncRef,
-	type MountedWorkbenchCollections,
 } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import {
-	BehaviorConfig,
-	type BuiltinAction,
 	type BuiltinState,
 	DEFAULTS,
 	DisplayConfig,
+	BehaviorConfig,
 	FormatConfig,
-	RUNTIME_ACTIONS_COLLECTION,
 	RUNTIME_DOC_ID,
-	RuntimeFormSchema,
-	RuntimeToggleSchema,
 	formatDuration,
 } from './PluginBuiltinShowcase.shared'
 
@@ -36,17 +33,6 @@ function stateRef<Key extends keyof BuiltinState>(
 	}
 }
 
-const actionInsert = (value: Record<string, unknown>) => ({
-	collection: RUNTIME_ACTIONS_COLLECTION,
-	mode: 'insert' as const,
-	value: {
-		id: { kind: 'generatedId' as const },
-		...value,
-		status: 'pending',
-		createdAt: { kind: 'now' as const },
-	},
-})
-
 const d = workbenchDoc({} as const)
 const summaryRows = [
 	{ label: 'Uptime', value: stateRef('uptimeLabel', '0s') },
@@ -56,61 +42,31 @@ const summaryRows = [
 	{ label: 'Refresh (ms)', value: stateRef('refreshMs', DEFAULTS.display.refreshMs) },
 ]
 
-const BuiltinShowcaseWorkbench = workbench.define({
-	plugin: PLUGIN,
-	model: {
-		[RUNTIME_DOC_ID]: workbench.model.collection<BuiltinState>(),
-		[RUNTIME_ACTIONS_COLLECTION]: workbench.model.collection<BuiltinAction>(),
+const BuiltinShowcaseUi = workbenchContract.define({
+	resources: {
+		[RUNTIME_DOC_ID]: workbenchContract.collection<BuiltinState>(),
 	},
-	views: (model) => ({
-		summary: workbench.view.document({
-			placements: [workbench.place.slot({ slot: workbench.slot.PluginContext, when: 'always' })],
-			model: [model[RUNTIME_DOC_ID]],
+	views: {
+		summary: workbenchContract.document({
+			placements: [
+				workbenchContract.slot(workbenchContract.slots.PluginContext, { when: 'always' }),
+			],
 			title: 'Builtin Overview',
-			description: 'Host-rendered, resource-bound workbench document.',
+			description: 'Host-rendered, resource-bound Workbench document.',
 			content: d`
-					${d.block(
-						'Overview',
-						d.card({
-							layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
-							rows: [{ label: 'Plugin', value: PLUGIN }, ...summaryRows],
-						}),
-					)}
+				${d.block(
+					'Overview',
+					d.card({
+						layout: { variant: 'grid', density: 'compact', columns: 3, labelPlacement: 'top' },
+						rows: [{ label: 'Plugin', value: PLUGIN }, ...summaryRows],
+					}),
+				)}
 
-					Builtin documents suit status summaries, small forms and immediate actions. Complex flows should use a remote view.
-				`,
+				Builtin documents suit read-only status summaries. Interactive flows use a React View and typed RPC.
+			`,
 		}),
-		controls: workbench.view.document({
-			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, priority: 20 })],
-			model: [model[RUNTIME_ACTIONS_COLLECTION]],
-			content: d`
-					${d.block('Pause', {
-						kind: 'form',
-						description: 'onChange form writes an action document.',
-						submitMode: 'onChange',
-						autoSubmitDebounceMs: 120,
-						schemaKey: '_runtimeToggle',
-						write: actionInsert({ kind: 'setPaused', paused: { kind: 'field', key: 'paused' } }),
-					})}
-					${d.block('Set ticks', {
-						kind: 'form',
-						description: 'Manual submit writes an action document.',
-						submitLabel: 'Submit',
-						submitMode: 'manual',
-						schemaKey: '_runtime',
-						write: actionInsert({ kind: 'setTicks', ticks: { kind: 'field', key: 'ticks' } }),
-					})}
-					${d.block('Reset ticks', {
-						kind: 'action',
-						label: 'Reset to 0',
-						description: 'No RPC: write to the action collection.',
-						write: actionInsert({ kind: 'setTicks', ticks: 0 }),
-					})}
-				`,
-		}),
-		metrics: workbench.view.document({
-			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, priority: 10 })],
-			model: [model[RUNTIME_DOC_ID]],
+		metrics: workbenchContract.document({
+			placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs, { order: 10 })],
 			content: d`${d.block(
 				'Metrics Stream',
 				d.card({
@@ -120,10 +76,11 @@ const BuiltinShowcaseWorkbench = workbench.define({
 				}),
 			)}`,
 		}),
-	}),
+	},
 })
 
-type ShowcaseResources = MountedWorkbenchCollections<typeof BuiltinShowcaseWorkbench>
+const BuiltinShowcaseWorkbench = workbench.extension({ contract: BuiltinShowcaseUi })
+type ShowcaseResources = MountedWorkbenchManagedCollections<typeof BuiltinShowcaseWorkbench>
 
 @Plugin({ name: PLUGIN })
 export class PluginBuiltinShowcase extends BasePlugin {
@@ -131,35 +88,20 @@ export class PluginBuiltinShowcase extends BasePlugin {
 	private tickTimer: ReturnType<typeof setTimeout> | null = null
 	private ticks = 0
 	private paused = false
-	private builtinState!: ShowcaseResources[typeof RUNTIME_DOC_ID]
-	private builtinActions!: ShowcaseResources[typeof RUNTIME_ACTIONS_COLLECTION]
-	private readonly processingActions = new Set<string>()
+	private builtinState!: NonNullable<ShowcaseResources[typeof RUNTIME_DOC_ID]>
 
 	private display = this.configs.use(DisplayConfig)
 	private behavior = this.configs.use(BehaviorConfig)
 	private format = this.configs.use(FormatConfig)
-	private _runtime = this.configs.use(RuntimeFormSchema)
-	private _runtimeToggle = this.configs.use(RuntimeToggleSchema)
 
 	override async init() {
-		void this._runtime
-		void this._runtimeToggle
 		const mounted = this.ctx.workbench.mount(BuiltinShowcaseWorkbench, {
-			[RUNTIME_DOC_ID]: workbench.provide.collection(),
-			[RUNTIME_ACTIONS_COLLECTION]: workbench.provide.collection({ uiAccess: 'write' }),
+			[RUNTIME_DOC_ID]: workbench.bind.managedCollection(),
 		})
-		if (!mounted) return
-		this.builtinState = mounted.collections[RUNTIME_DOC_ID]
-		this.builtinActions = mounted.collections[RUNTIME_ACTIONS_COLLECTION]
+		if (!mounted?.managedCollections[RUNTIME_DOC_ID]) return
+		this.builtinState = mounted.managedCollections[RUNTIME_DOC_ID]
 		this.startedAt = Date.now()
-		await Promise.all([this.builtinState.ready(), this.builtinActions.ready()])
-		this.syncBuiltinState()
-		this.consumePendingActions()
-		const stopWatch = this.builtinActions.watch((event) => {
-			if (event.type === 'insert' || event.type === 'update' || event.type === 'snapshot')
-				this.consumePendingActions()
-		})
-		this.ctx.effects.defer(stopWatch)
+		await this.builtinState.ready()
 		this.startTickLoop()
 	}
 
@@ -186,7 +128,7 @@ export class PluginBuiltinShowcase extends BasePlugin {
 					if (this.behavior.autoPauseAtMax) this.paused = true
 				}
 			}
-			this.syncBuiltinState()
+			this.builtinState.replaceOne({ id: RUNTIME_DOC_ID }, this.buildState(), { upsert: true })
 			this.tickTimer = setTimeout(tick, this.display.refreshMs)
 		}
 		tick()
@@ -194,46 +136,5 @@ export class PluginBuiltinShowcase extends BasePlugin {
 			if (this.tickTimer) clearTimeout(this.tickTimer)
 			this.tickTimer = null
 		})
-	}
-
-	private syncBuiltinState() {
-		this.builtinState.replaceOne({ id: RUNTIME_DOC_ID }, this.buildState(), { upsert: true })
-	}
-
-	private consumePendingActions() {
-		for (const action of this.builtinActions.find({ status: 'pending' })) {
-			if (this.processingActions.has(action.id)) continue
-			this.processingActions.add(action.id)
-			Promise.resolve()
-				.then(() => this.applyBuiltinAction(action))
-				.finally(() => this.processingActions.delete(action.id))
-		}
-	}
-
-	private applyBuiltinAction(action: BuiltinAction) {
-		try {
-			if (action.kind === 'setPaused') this.paused = Boolean(action.paused)
-			else if (action.kind === 'setTicks') {
-				const value = Number(action.ticks)
-				if (!Number.isFinite(value) || value < 0) throw new Error('ticks must be non-negative')
-				this.ticks = Math.floor(value)
-			}
-			this.syncBuiltinState()
-			this.builtinActions.replaceOne(
-				{ id: action.id },
-				{ ...action, status: 'done', error: undefined },
-				{ upsert: true },
-			)
-		} catch (error) {
-			this.builtinActions.replaceOne(
-				{ id: action.id },
-				{
-					...action,
-					status: 'error',
-					error: error instanceof Error ? error.message : String(error),
-				},
-				{ upsert: true },
-			)
-		}
 	}
 }

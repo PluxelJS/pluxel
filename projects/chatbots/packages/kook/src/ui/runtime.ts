@@ -1,4 +1,4 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { KookWorkbench } from '../workbench-extension.ts'
+import { KookUi } from '../workbench-contract.ts'
 
-export const kookUi = createWorkbenchUi<typeof KookWorkbench>()
+export const kookUi = createWorkbenchUi(KookUi)

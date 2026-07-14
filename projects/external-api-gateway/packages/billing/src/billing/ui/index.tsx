@@ -23,4 +23,4 @@ export function HeaderAction() {
 	)
 }
 
-export default billingUi.expose({ HeaderAction, BillingPanel, BillingDashboard })
+export default billingUi.define({ HeaderAction, BillingPanel, BillingDashboard })

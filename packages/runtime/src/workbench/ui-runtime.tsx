@@ -8,18 +8,21 @@ import {
 	type ReactNode,
 } from 'react'
 import type {
-	AnyWorkbenchExtension,
+	AnyWorkbenchContract,
 	WorkbenchCollectionItem,
 	WorkbenchCollectionOf,
+	WorkbenchContract,
 	WorkbenchEventsOf,
 	WorkbenchLayoutItem,
+	WorkbenchPortContract,
+	WorkbenchResourceContract,
+	WorkbenchResourceMap,
+	WorkbenchResourceRef,
 	WorkbenchRpcClient,
 	WorkbenchRpcOf,
-	WorkbenchViewSpec,
 } from './contracts'
 import { useGlobalExtensionContext, type ExtensionServices } from '../web/host-ui'
-import type { SignalDbListSpec, SignalDbSelector } from './collection-contracts'
-import { type SignalDbCollectionView, useSignalDbCollectionState } from './collection-ui-runtime'
+import { useSignalDbCollectionState } from './collection-ui-runtime'
 import type { SseClientWithNamespaces, SseMessage } from '../web/sse'
 
 const WorkbenchViewContext = createContext<WorkbenchLayoutItem | null>(null)
@@ -40,68 +43,59 @@ export function useWorkbenchView(): WorkbenchLayoutItem {
 	return value
 }
 
+export type WorkbenchCollectionSnapshot<TItem extends WorkbenchCollectionItem> =
+	| Readonly<{
+			state: 'loading'
+			items: readonly TItem[]
+			error: null
+			refresh(): Promise<void>
+	  }>
+	| Readonly<{
+			state: 'ready'
+			items: readonly TItem[]
+			error: null
+			refresh(): Promise<void>
+	  }>
+	| Readonly<{
+			state: 'stale'
+			items: readonly TItem[]
+			error: Error
+			refresh(): Promise<void>
+	  }>
+	| Readonly<{
+			state: 'error'
+			items: readonly TItem[]
+			error: Error
+			refresh(): Promise<void>
+	  }>
+
 export interface WorkbenchCollectionClient<TItem extends WorkbenchCollectionItem> {
-	useCollection(): SignalDbCollectionView<TItem>
-	useOne(selector: SignalDbSelector<TItem>): TItem | undefined
-	useOneById(id: string): TItem | undefined
-	useMany(spec?: SignalDbListSpec<TItem>): TItem[]
-	useCount(selector?: SignalDbSelector<TItem>): number
+	useSnapshot(): WorkbenchCollectionSnapshot<TItem>
 }
 
+export type WorkbenchEventConnectionState = Readonly<{
+	state: 'connecting' | 'connected' | 'error'
+	error: Error | null
+}>
+
 export interface WorkbenchEventsClient<TEvents extends Record<string, unknown>> {
-	on<Key extends keyof TEvents & string>(
+	subscribe<Key extends keyof TEvents & string>(
 		event: Key,
 		listener: (payload: TEvents[Key]) => void,
 	): () => void
-	onConnection(listener: (connected: boolean) => void): () => void
+	useConnectionState(): WorkbenchEventConnectionState
 }
 
-export type WorkbenchModelClient<Model> = Model extends { kind: 'rpc' }
-	? WorkbenchRpcClient<WorkbenchRpcOf<Model>>
-	: Model extends { kind: 'collection' }
-		? WorkbenchCollectionClient<WorkbenchCollectionOf<Model>>
-		: Model extends { kind: 'events' }
-			? WorkbenchEventsClient<WorkbenchEventsOf<Model>>
+export type WorkbenchResourceClient<Resource> = Resource extends { kind: 'rpc' }
+	? WorkbenchRpcClient<WorkbenchRpcOf<Resource>>
+	: Resource extends { kind: 'collection' }
+		? WorkbenchCollectionClient<WorkbenchCollectionOf<Resource>>
+		: Resource extends { kind: 'events' }
+			? WorkbenchEventsClient<WorkbenchEventsOf<Resource>>
 			: never
 
-type ViewModelKeys<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'],
-> = Extension['views'][ViewId]['model'][number] & keyof Extension['model']
-
-type ViewAcceptedModels<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'],
-> =
-	Extension['views'][ViewId] extends WorkbenchViewSpec<any, infer Models>
-		? Models
-		: Readonly<Record<never, never>>
-
-type SelectedViewModelClients<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'],
-> = {
-	[Key in ViewModelKeys<Extension, ViewId>]: WorkbenchModelClient<Extension['model'][Key]>
-}
-
-type AcceptedViewModelClients<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'],
-> = {
-	[Key in keyof ViewAcceptedModels<Extension, ViewId>]: WorkbenchModelClient<
-		ViewAcceptedModels<Extension, ViewId>[Key]
-	>
-}
-
-export type WorkbenchViewModel<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'],
-> = Readonly<
-	SelectedViewModelClients<Extension, ViewId> & AcceptedViewModelClients<Extension, ViewId>
->
-
-export type WorkbenchModelClients<Extension extends AnyWorkbenchExtension> = Readonly<{
-	[Key in keyof Extension['model']]: WorkbenchModelClient<Extension['model'][Key]>
+export type WorkbenchResourceClients<Resources extends WorkbenchResourceMap> = Readonly<{
+	[Key in keyof Resources]: WorkbenchResourceClient<Resources[Key]>
 }>
 
 export type WorkbenchHost = Readonly<{
@@ -137,6 +131,7 @@ export function useWorkbenchHost(): WorkbenchHost {
 export type WorkbenchViewComponent = ComponentType
 
 export type WorkbenchUiModule = Readonly<{
+	contractFingerprint: string
 	views: Readonly<Record<string, WorkbenchViewComponent>>
 	setup?: (ctx: {
 		ownerPluginId: string
@@ -144,78 +139,83 @@ export type WorkbenchUiModule = Readonly<{
 	}) => void | (() => void) | Promise<void | (() => void)>
 }>
 
-export type WorkbenchUiViews<Extension extends AnyWorkbenchExtension> = Readonly<{
-	[ViewId in keyof Extension['views'] & string]: Readonly<{
-		useModel(): WorkbenchViewModel<Extension, ViewId>
-	}>
-}>
+type RemoteViewKeys<Contract extends AnyWorkbenchContract> = {
+	[Key in keyof Contract['views'] & string]: Contract['views'][Key] extends {
+		view: { kind: 'builtin' }
+	}
+		? never
+		: Key
+}[keyof Contract['views'] & string]
 
-export interface WorkbenchUiDefinition<Extension extends AnyWorkbenchExtension> {
-	readonly views: WorkbenchUiViews<Extension>
-	useModel<Selected>(selector: (model: WorkbenchModelClients<Extension>) => Selected): Selected
-	expose<const Views extends Readonly<Record<keyof Extension['views'] & string, ComponentType>>>(
-		views: Views,
-		options?: Omit<WorkbenchUiModule, 'views'>,
+export interface WorkbenchUiDefinition<Contract extends AnyWorkbenchContract> {
+	useResources(): WorkbenchResourceClients<Contract['resources']>
+	usePort<Port extends WorkbenchPortContract<any>>(
+		port: Port,
+	): WorkbenchResourceClients<Port['resources']>
+	define<const Views extends Readonly<Record<RemoteViewKeys<Contract>, ComponentType>>>(
+		views: Views & Readonly<Record<Exclude<keyof Views, RemoteViewKeys<Contract>>, never>>,
+		options?: Omit<WorkbenchUiModule, 'views' | 'contractFingerprint'>,
 	): Readonly<{ views: Views } & Omit<WorkbenchUiModule, 'views'>>
 }
 
-export function createWorkbenchUi<
-	const Extension extends AnyWorkbenchExtension,
->(): WorkbenchUiDefinition<Extension> {
-	const viewFacades = new Map<string, Readonly<{ useModel(): unknown }>>()
-	const views = new Proxy(Object.create(null) as WorkbenchUiViews<Extension>, {
-		get(_target, property) {
-			if (typeof property !== 'string') return undefined
-			let facade = viewFacades.get(property)
-			if (!facade) {
-				facade = Object.freeze({
-					useModel: () => useViewModel<Extension, keyof Extension['views'] & string>(property),
-				})
-				viewFacades.set(property, facade)
-			}
-			return facade
-		},
-	})
+export function createWorkbenchUi<const Contract extends AnyWorkbenchContract>(
+	contract: Contract,
+): WorkbenchUiDefinition<Contract> {
+	if (!contract || typeof contract !== 'object') {
+		throw new Error('[workbench-ui] createWorkbenchUi(): Contract value required')
+	}
 	return Object.freeze({
-		views,
-		useModel<Selected>(selector: (model: WorkbenchModelClients<Extension>) => Selected) {
-			if (typeof selector !== 'function') {
-				throw new TypeError('[workbench-ui] createWorkbenchUi().useModel(): selector required')
-			}
-			return selector(useGrantedModel<Extension>())
+		useResources() {
+			const item = useWorkbenchView()
+			return useGrantedResources<Contract['resources']>(item.model)
 		},
-		expose<const Views extends Readonly<Record<keyof Extension['views'] & string, ComponentType>>>(
-			components: Views,
-			options: Omit<WorkbenchUiModule, 'views'> = {},
+		usePort<Port extends WorkbenchPortContract<any>>(port: Port) {
+			const item = useWorkbenchView()
+			if (!item.port || item.port.id !== port.id || item.port.version !== port.version) {
+				throw new Error(
+					`[workbench-ui] current View does not accept Port "${port.id}" v${port.version}`,
+				)
+			}
+			return useGrantedResources<Port['resources']>(item.port.model)
+		},
+		define<const Views extends Readonly<Record<RemoteViewKeys<Contract>, ComponentType>>>(
+			components: Views & Readonly<Record<Exclude<keyof Views, RemoteViewKeys<Contract>>, never>>,
+			options: Omit<WorkbenchUiModule, 'views' | 'contractFingerprint'> = {},
 		) {
 			if (!components || typeof components !== 'object') {
-				throw new Error('[workbench-ui] createWorkbenchUi().expose(): views required')
+				throw new Error('[workbench-ui] createWorkbenchUi().define(): views required')
+			}
+			const expected = (
+				Object.entries(contract.views) as Array<
+					[string, Contract['views'][keyof Contract['views']]]
+				>
+			)
+				.filter(([, view]) => view.view?.kind !== 'builtin')
+				.map(([viewId]) => viewId)
+				.sort()
+			const actual = Object.keys(components).sort()
+			if (expected.join('\0') !== actual.join('\0')) {
+				throw new Error(
+					`[workbench-ui] View exports must exactly match Contract; expected ${expected.join(', ') || '<none>'}`,
+				)
 			}
 			for (const [viewId, component] of Object.entries(components)) {
 				if (!viewId.trim() || typeof component !== 'function') {
-					throw new Error(`[workbench-ui] invalid view export: ${viewId || '<empty>'}`)
+					throw new Error(`[workbench-ui] invalid View export: ${viewId || '<empty>'}`)
 				}
 			}
-			return Object.freeze({ ...options, views: Object.freeze({ ...components }) }) as never
+			return Object.freeze({
+				...options,
+				contractFingerprint: contract.fingerprint,
+				views: Object.freeze({ ...components }),
+			}) as never
 		},
 	})
 }
 
-function useViewModel<
-	Extension extends AnyWorkbenchExtension,
-	ViewId extends keyof Extension['views'] & string,
->(viewId: string): WorkbenchViewModel<Extension, ViewId> {
-	const item = useWorkbenchView()
-	const model = useGrantedModel<Extension>()
-	if (item.viewId !== viewId) {
-		throw new Error(`[workbench-ui] view "${viewId}" cannot render layout view "${item.viewId}"`)
-	}
-	return model as WorkbenchViewModel<Extension, ViewId>
-}
-
-function useGrantedModel<
-	Extension extends AnyWorkbenchExtension,
->(): WorkbenchModelClients<Extension> {
+function useGrantedResources<Resources extends WorkbenchResourceMap>(
+	refs: Readonly<Record<string, WorkbenchResourceRef>>,
+): WorkbenchResourceClients<Resources> {
 	const item = useWorkbenchView()
 	const context = useGlobalExtensionContext()
 	const transport = context.services.transport
@@ -229,79 +229,106 @@ function useGrantedModel<
 	)
 
 	return useMemo(() => {
-		const model: Record<string, unknown> = {}
-		for (const [key, ref] of Object.entries(item.model)) {
+		const resources: Record<string, unknown> = {}
+		for (const [key, ref] of Object.entries(refs)) {
 			switch (ref.kind) {
 				case 'rpc':
-					model[key] = transport.workbench.rpc(ref.grantId)
+					resources[key] = transport.workbench.rpc(ref.grantId)
 					break
 				case 'collection':
-					model[key] = createCollectionClient(transport, ref.grantId, key)
+					resources[key] = createCollectionClient(transport, ref.grantId, key)
 					break
-				case 'events': {
-					let stream = eventStreams.get(ref.grantId)
-					if (!stream) {
-						stream = transport.workbench.events(ref.grantId)
-						eventStreams.set(ref.grantId, stream)
-					}
-					model[key] = createEventsClient(stream)
+				case 'events':
+					resources[key] = createEventsClient(() => {
+						let stream = eventStreams.get(ref.grantId)
+						if (!stream) {
+							stream = transport.workbench.events(ref.grantId)
+							eventStreams.set(ref.grantId, stream)
+						}
+						return stream
+					})
 					break
-				}
 			}
 		}
-		return new Proxy(Object.freeze(model), {
+		return new Proxy(Object.freeze(resources), {
 			get(target, property, receiver) {
 				if (typeof property === 'string' && !(property in target)) {
 					throw new Error(
-						`[workbench-ui] view "${item.viewId}" was not granted model "${property}"`,
+						`[workbench-ui] View "${item.viewId}" was not granted resource "${property}"`,
 					)
 				}
 				return Reflect.get(target, property, receiver)
 			},
-		}) as WorkbenchModelClients<Extension>
-	}, [eventStreams, item.model, transport])
-}
-
-function createEventsClient<TEvents extends Record<string, unknown>>(
-	stream: SseClientWithNamespaces,
-): WorkbenchEventsClient<TEvents> {
-	return Object.freeze({
-		on<Key extends keyof TEvents & string>(event: Key, listener: (payload: TEvents[Key]) => void) {
-			return stream.onAny((message: SseMessage<string>) => {
-				if (message.event === event) listener(message.payload as TEvents[Key])
-			})
-		},
-		onConnection(listener: (connected: boolean) => void) {
-			const stopOpen = stream.onOpen(() => listener(true))
-			const stopError = stream.onError(() => listener(false))
-			return () => {
-				stopOpen()
-				stopError()
-			}
-		},
-	})
+		}) as WorkbenchResourceClients<Resources>
+	}, [eventStreams, item.viewId, refs, transport])
 }
 
 function createCollectionClient<TItem extends WorkbenchCollectionItem>(
 	transport: ExtensionServices['transport'],
 	grantId: string,
-	modelKey: string,
+	resourceKey: string,
 ): WorkbenchCollectionClient<TItem> {
-	const useCollection = () => useSignalDbCollectionState<TItem>(transport, grantId, modelKey)
-	const useOne = (selector: SignalDbSelector<TItem>) => useCollection().findOne(selector)
-	const useMany = (spec: SignalDbListSpec<TItem> = {}) => {
-		const collection = useCollection()
-		return collection.find(spec.where, {
-			limit: spec.limit,
-			skip: spec.skip,
-			sort: spec.sort,
-		})
+	return Object.freeze({
+		useSnapshot(): WorkbenchCollectionSnapshot<TItem> {
+			const collection = useSignalDbCollectionState<TItem>(transport, grantId, resourceKey)
+			const items = collection.items
+			const refresh = () => collection.refresh()
+			if (collection.ready) {
+				return Object.freeze({ state: 'ready', items, error: null, refresh })
+			}
+			if (collection.error) {
+				return Object.freeze({
+					state: items.length > 0 ? 'stale' : 'error',
+					items,
+					error: collection.error,
+					refresh,
+				}) as WorkbenchCollectionSnapshot<TItem>
+			}
+			return Object.freeze({ state: 'loading', items, error: null, refresh })
+		},
+	})
+}
+
+function createEventsClient<TEvents extends Record<string, unknown>>(
+	getStream: () => SseClientWithNamespaces,
+): WorkbenchEventsClient<TEvents> {
+	let state: WorkbenchEventConnectionState = Object.freeze({ state: 'connecting', error: null })
+	const listeners = new Set<() => void>()
+	let observed = false
+	const notify = (next: WorkbenchEventConnectionState) => {
+		state = Object.freeze(next)
+		for (const listener of listeners) listener()
+	}
+	const observe = () => {
+		const stream = getStream()
+		if (!observed) {
+			observed = true
+			stream.onOpen(() => notify({ state: 'connected', error: null }))
+			stream.onError(() =>
+				notify({ state: 'error', error: new Error('event stream disconnected') }),
+			)
+		}
+		return stream
 	}
 	return Object.freeze({
-		useCollection,
-		useOne,
-		useOneById: (id: string) => useOne({ id } as SignalDbSelector<TItem>),
-		useMany,
-		useCount: (selector = {} as SignalDbSelector<TItem>) => useCollection().count(selector),
+		subscribe<Key extends keyof TEvents & string>(
+			event: Key,
+			listener: (payload: TEvents[Key]) => void,
+		) {
+			return observe().onAny((message: SseMessage<string>) => {
+				if (message.event === event) listener(message.payload as TEvents[Key])
+			})
+		},
+		useConnectionState() {
+			return useSyncExternalStore(
+				(listener) => {
+					listeners.add(listener)
+					observe()
+					return () => listeners.delete(listener)
+				},
+				() => state,
+				() => state,
+			)
+		},
 	})
 }

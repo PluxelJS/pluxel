@@ -1,13 +1,5 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { UsageBillingWorkbench } from '../workbench-extension.ts'
+import { UsageBillingUi } from '../workbench-contract.ts'
 
-export const billingUi = createWorkbenchUi<typeof UsageBillingWorkbench>()
-export const useBillingModel = () =>
-	billingUi.useModel(({ commands, overview, records, users, providers, rates }) => ({
-		commands,
-		overview,
-		records,
-		users,
-		providers,
-		rates,
-	}))
+export const billingUi = createWorkbenchUi(UsageBillingUi)
+export const useBillingModel = () => billingUi.useResources()

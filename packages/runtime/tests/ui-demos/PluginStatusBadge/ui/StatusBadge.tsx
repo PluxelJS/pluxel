@@ -1,18 +1,13 @@
 import { Badge, Tooltip } from '@mantine/core'
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
 import { IconActivity } from '@tabler/icons-react'
-import { useEffect, useState } from 'react'
-import type { PluginStatusBadgeWorkbench } from '../../PluginStatusBadge.workbench'
+import { PluginStatusBadgeUi } from '../../PluginStatusBadge.workbench'
 
-const ui = createWorkbenchUi<typeof PluginStatusBadgeWorkbench>()
+const ui = createWorkbenchUi(PluginStatusBadgeUi)
 
 export function StatusBadge() {
-	const { activity } = ui.views.StatusBadge.useModel()
-	const [connected, setConnected] = useState(false)
-
-	useEffect(() => {
-		return activity.onConnection(setConnected)
-	}, [activity])
+	const { activity } = ui.useResources()
+	const connected = activity.useConnectionState().state === 'connected'
 
 	return (
 		<Tooltip label={connected ? 'SSE 已连接' : 'SSE 连接中'}>
@@ -28,4 +23,4 @@ export function StatusBadge() {
 	)
 }
 
-export default ui.expose({ StatusBadge })
+export default ui.define({ StatusBadge })

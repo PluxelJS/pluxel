@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { workbench } from '../../src/workbench'
+import { workbenchContract } from '../../src/workbench-contract'
 import {
 	WorkbenchRegistry,
 	type InternalModelRef,
@@ -44,28 +45,25 @@ const rpcRef = (ownerPluginId: string, modelKey: string): InternalModelRef => ({
 })
 
 describe('WorkbenchRegistry', () => {
-	it('grants each view only its selected model', () => {
+	it('grants every owner resource to each owner View', () => {
 		const { registry, running } = fixture()
 		running.add('Owner')
 		registry.mount(
 			'Owner',
-			workbench.define({
-				plugin: 'Owner',
-				model: {
-					commands: workbench.model.rpc<{}>(),
-					secrets: workbench.model.rpc<{}>(),
-				},
-				views: (model) => ({
-					Overview: workbench.view.remote({
-						model: [model.commands],
-						placements: [
-							workbench.place.slot({ slot: workbench.slot.PluginInfo }),
-							workbench.place.route({
-								path: '/overview',
-								title: 'Overview',
-							}),
-						],
-					}),
+			workbench.extension({
+				contract: workbenchContract.define({
+					resources: {
+						commands: workbenchContract.rpc<{}>(),
+						secrets: workbenchContract.rpc<{}>(),
+					},
+					views: {
+						Overview: {
+							placements: [
+								workbenchContract.slot(workbenchContract.slots.PluginInfo),
+								workbenchContract.route('/overview', { title: 'Overview' }),
+							],
+						},
+					},
 				}),
 			}),
 			{ commands: rpcRef('Owner', 'commands'), secrets: rpcRef('Owner', 'secrets') },
@@ -74,7 +72,7 @@ describe('WorkbenchRegistry', () => {
 		expect(items).toHaveLength(2)
 		expect(new Set(items.map((item) => item.model.commands!.grantId)).size).toBe(1)
 		const item = items[0]!
-		expect(Object.keys(item.model)).toEqual(['commands'])
+		expect(Object.keys(item.model)).toEqual(['commands', 'secrets'])
 		expect(registry.resolveModel(item.model.commands!.grantId, 'rpc')).toEqual(
 			rpcRef('Owner', 'commands'),
 		)
@@ -85,17 +83,17 @@ describe('WorkbenchRegistry', () => {
 		running.add('Provider')
 		registry.mount(
 			'Provider',
-			workbench.define({
-				plugin: 'Provider',
-				views: () => ({
-					Capability: workbench.view.remote({
-						placements: [
-							workbench.place.slot({
-								slot: workbench.slot.PluginCapabilities,
-								audience: workbench.audience.requiredDependents,
-							}),
-						],
-					}),
+			workbench.extension({
+				contract: workbenchContract.define({
+					views: {
+						Capability: {
+							placements: [
+								workbenchContract.slot(workbenchContract.slots.PluginCapabilities, {
+									audience: workbenchContract.audience.requiredDependents,
+								}),
+							],
+						},
+					},
 				}),
 			}),
 			{},
@@ -107,19 +105,19 @@ describe('WorkbenchRegistry', () => {
 		})
 	})
 
-	it('keeps grants across bundle updates and revokes them on model graph changes', () => {
+	it('keeps grants across bundle and unrelated plugin updates, then revokes the owner lease', () => {
 		const { registry, running, artifactChanged } = fixture()
 		running.add('Owner')
-		registry.mount(
+		const disposeOwner = registry.mount(
 			'Owner',
-			workbench.define({
-				plugin: 'Owner',
-				model: { commands: workbench.model.rpc<{}>() },
-				views: (model) => ({
-					Overview: workbench.view.remote({
-						model: [model.commands],
-						placements: [workbench.place.slot({ slot: workbench.slot.PluginInfo })],
-					}),
+			workbench.extension({
+				contract: workbenchContract.define({
+					resources: { commands: workbenchContract.rpc<{}>() },
+					views: {
+						Overview: {
+							placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo)],
+						},
+					},
 				}),
 			}),
 			{ commands: rpcRef('Owner', 'commands') },
@@ -127,7 +125,63 @@ describe('WorkbenchRegistry', () => {
 		const grantId = registry.getPluginLayout('Owner').items[0]!.model.commands!.grantId
 		artifactChanged()
 		expect(registry.getPluginLayout('Owner').items[0]!.model.commands!.grantId).toBe(grantId)
-		registry.mount('Other', workbench.define({ plugin: 'Other' }), {})
+		registry.mount('Other', workbench.extension({ contract: workbenchContract.define({}) }), {})
+		expect(registry.findModel(grantId)).toEqual(rpcRef('Owner', 'commands'))
+		disposeOwner()
 		expect(registry.findModel(grantId)).toBeNull()
+	})
+
+	it('renders a required dependency through a target-scoped Port grant', () => {
+		const { registry, running } = fixture([['Consumer', 'Provider']])
+		running.add('Consumer')
+		running.add('Provider')
+		const SettingsPort = workbenchContract.port({
+			id: 'test.settings',
+			version: 1,
+			resources: { settings: workbenchContract.rpc<{}>() },
+		})
+		const ConsumerUi = workbenchContract.define({
+			resources: { commands: workbenchContract.rpc<{}>() },
+			views: {},
+			outlets: ({ resources }) => ({
+				Settings: {
+					port: SettingsPort,
+					placement: workbenchContract.slot(workbenchContract.slots.PluginTabs),
+					provide: { settings: resources.commands },
+				},
+			}),
+		})
+		const ProviderUi = workbenchContract.define({
+			resources: { status: workbenchContract.rpc<{}>() },
+			views: { Settings: { accepts: SettingsPort } },
+		})
+		registry.mount(
+			'Consumer',
+			workbench.extension({ contract: ConsumerUi }),
+			{ commands: rpcRef('Consumer', 'commands') },
+		)
+		expect(registry.getPluginLayout('Consumer').items[0]?.view).toMatchObject({
+			kind: 'builtin',
+			renderer: 'document',
+		})
+		registry.mount(
+			'Provider',
+			workbench.extension({ contract: ProviderUi }),
+			{ status: rpcRef('Provider', 'status') },
+		)
+
+		const item = registry.getPluginLayout('Consumer').items[0]!
+		expect(item).toMatchObject({
+			ownerPluginId: 'Provider',
+			targetPluginId: 'Consumer',
+			viewId: 'Settings',
+			port: { id: 'test.settings', version: 1 },
+		})
+		expect(registry.resolveModel(item.model.status!.grantId)).toEqual(
+			rpcRef('Provider', 'status'),
+		)
+		expect(registry.resolveModel(item.port!.model.settings!.grantId)).toEqual(
+			rpcRef('Consumer', 'commands'),
+		)
 	})
 })

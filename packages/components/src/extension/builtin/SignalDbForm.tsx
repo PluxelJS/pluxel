@@ -2,7 +2,7 @@ import { Box, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkbenchFormBlock as BuiltinFormBlock } from '@pluxel/runtime/workbench'
-import { useWorkbenchView } from '@pluxel/runtime/workbench/ui'
+import { useWorkbenchView } from '@pluxel/runtime/workbench/ui/internal'
 import {
 	useGlobalExtensionContext,
 	useBoundSignalDbCollectionsState,

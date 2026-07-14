@@ -38,10 +38,11 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 
 `hmr/diagnose` 只处理配置、workspace discovery、profile 和 snapshot，不注册 dynamic runtime services。
 
-`pluxel build` 从 `workbench.define()` 静态提取
+`pluxel build` 从 server-only `workbench.extension()` 静态提取
 `workbench.entry(import.meta.url, './ui/index.tsx')`。无 UI declaration 时不会加载 Vite/MF；有 UI 时 server
-bundle 与 `dist/workbench/<owner>/` remote 分开生成。完整 remote 缓存在
-`.pluxel/workbench-build/<owner>/<hash>/`，因此 tsdown 清空 `dist` 后仍可复用；缓存命中不会加载完整
+bundle 与 `dist/workbench/<artifact>/` remote 分开生成。toolchain 按 declaration 与 source graph 注入稳定
+artifact key，不要求 Extension 重复 plugin ID。完整 remote 缓存在
+`.pluxel/workbench-build/<artifact>/<hash>/`，因此 tsdown 清空 `dist` 后仍可复用；缓存命中不会加载完整
 Vite/MF builder，依赖 lockfile 变化则自动失效。可安全删除该目录执行冷构建。
 
 同一进程可同时发现、计算和命中多个插件 UI 缓存；Pluxel 会在底座隔离实际 Federation builder，并按

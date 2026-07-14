@@ -1,39 +1,36 @@
-import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import {
-	FONT_MANAGER_PLUGIN_NAME,
 	FontSettingsPort,
 	type FontSetDoc,
-} from './PluginContributionFontDemo.shared'
-import type { FontSettingsRpc } from './PluginContributionFontDemo'
+	type FontSettingsCommands,
+} from './PluginContributionFontDemo.contract'
 
-export const FontManagerWorkbench = workbench.define({
-	plugin: FONT_MANAGER_PLUGIN_NAME,
-	entry: workbench.entry(import.meta.url, './PluginContributionFontDemo/ui/index.tsx'),
-	model: { fontSets: workbench.model.collection<FontSetDoc>() },
-	views: (model) => ({
-		FontSettings: workbench.view.remote({
-			model: [model.fontSets],
+export const FontManagerUi = workbenchContract.define({
+	resources: { fontSets: workbenchContract.collection<FontSetDoc>() },
+	views: {
+		FontSettings: {
 			accepts: FontSettingsPort,
-			placements: [],
-		}),
-	}),
+		},
+	},
 })
 
-export const FontConsumerWorkbench = workbench.define({
-	plugin: 'PluginContributionFontConsumer',
-	model: { commands: workbench.model.rpc<FontSettingsRpc>() },
-	ports: (model) => ({
-		AppearanceFont: workbench.port.outlet({
-			placement: workbench.slot.PluginTabs,
-			port: FontSettingsPort,
-			providers: [FONT_MANAGER_PLUGIN_NAME],
-			provide: { settings: model.commands },
-			priority: 40,
-			meta: {
+export const FontConsumerUi = workbenchContract.define({
+	resources: { commands: workbenchContract.rpc<FontSettingsCommands>() },
+	views: {},
+	outlets: ({ resources }) => ({
+		AppearanceFont: {
+			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				order: 40,
 				label: 'Typography',
-				icon: 'typography',
-				tab: { id: 'typography', label: 'Typography', icon: 'typography' },
-			},
-		}),
+				icon: workbenchContract.icons.Typography,
+				tab: {
+					id: 'typography',
+					label: 'Typography',
+					icon: workbenchContract.icons.Typography,
+				},
+			}),
+			port: FontSettingsPort,
+			provide: { settings: resources.commands },
+		},
 	}),
 })

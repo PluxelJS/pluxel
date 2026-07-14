@@ -1,8 +1,6 @@
 import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
-import type { ZhipuWorkbench } from '../workbench-extension.ts'
+import { ZhipuUi } from '../workbench-contract.ts'
 
-export const zhipuUi = createWorkbenchUi<typeof ZhipuWorkbench>()
-export const useZhipuProviderModel = () =>
-	zhipuUi.useModel(({ commands, settings, status }) => ({ commands, settings, status }))
-export const useZhipuHistoryModel = () =>
-	zhipuUi.useModel(({ commands, history }) => ({ commands, history }))
+export const zhipuUi = createWorkbenchUi(ZhipuUi)
+export const useZhipuProviderModel = () => zhipuUi.useResources()
+export const useZhipuHistoryModel = () => zhipuUi.useResources()

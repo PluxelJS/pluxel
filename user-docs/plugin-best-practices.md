@@ -9,8 +9,9 @@
 标准插件把声明、依赖、运行和可选Workbench分开：
 
 ```ts
-const OrdersWorkbench = workbench.define({
-	plugin: 'OrdersPlugin',
+const OrdersUi = workbenchContract.define({ views: {} })
+const OrdersWorkbench = workbench.extension({
+	contract: OrdersUi,
 	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
@@ -36,7 +37,7 @@ export class OrdersPlugin extends BasePlugin {
 - module scope 和 class field 只放 declaration；不要在这里启动 I/O 或 lazy feature。
 - constructor 只声明必需的 plugin dependency；不要读取 config、连接服务或决定宿主策略。
 - `init()` 验证启动条件、创建资源、注册业务能力；无法提供核心能力时直接抛错。
-- `ctx.workbench.mount()` 只挂载 Workbench model provider，业务行为不得依赖其返回值是否存在。
+- `ctx.workbench.mount()` 只挂载 Workbench resource Binding，业务行为不得依赖其返回值是否存在。
 
 ## Required、optional 与 feature
 

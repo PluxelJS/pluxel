@@ -5,6 +5,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
 import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
@@ -23,11 +24,12 @@ type SquareResult = {
 // Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
 const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
 const d = workbenchDoc({} as const)
-const HttpWorkerWorkbench = workbench.define({
-	plugin: 'PluginHttpWorkerDemo',
-	views: () => ({
-		documentation: workbench.view.document({
-			placements: [workbench.place.slot({ slot: workbench.slot.PluginTabs, label: 'Worker Demo' })],
+const HttpWorkerUi = workbenchContract.define({
+	views: {
+		documentation: workbenchContract.document({
+			placements: [
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, { label: 'Worker Demo' }),
+			],
 			title: 'HTTP Worker Demo',
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
@@ -38,8 +40,9 @@ const HttpWorkerWorkbench = workbench.define({
 					Frozen/static runtimes intentionally use inline execution. Production workers should use a prebuilt stable \`.mjs\` entry.
 				`,
 		}),
-	}),
+	},
 })
+const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
