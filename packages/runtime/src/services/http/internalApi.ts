@@ -23,7 +23,7 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import type { SignalDbItem, SignalDbLoadResponse } from '../../management/collection-contracts'
+import type { SignalDbItem } from '../../management/collection-contracts'
 import { requireManagement } from '../management'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -203,9 +203,17 @@ function createInternalTransportPlugins(
 				app
 					.get(
 						`${RUNTIME_MANAGEMENT_RESOURCES_BASE}/collection/:binding`,
-						async ({ params, pluginCtx, set }: any) => {
+						async ({ params, pluginCtx, set, status }: any) => {
 							set.headers['cache-control'] = 'no-store'
-							return await loadManagementCollection(pluginCtx, decodePathParam(params.binding))
+							const management = requireManagement(pluginCtx)
+							const ref = resolveManagementCollection(management, decodePathParam(params.binding))
+							if (!ref) {
+								return status(410, {
+									ok: false,
+									code: 'management_binding_expired',
+								})
+							}
+							return await management.collections.loadCollectionFor(ref.owner, ref.resource)
 						},
 					)
 					.post(
@@ -221,9 +229,17 @@ function createInternalTransportPlugins(
 								})
 							}
 
-							const result = await pushManagementCollectionChanges(
-								pluginCtx,
-								decodePathParam(params.binding),
+							const management = requireManagement(pluginCtx)
+							const ref = resolveManagementCollection(management, decodePathParam(params.binding))
+							if (!ref) {
+								return status(410, {
+									ok: false,
+									code: 'management_binding_expired',
+								})
+							}
+							const result = await management.collections.applyCollectionFor(
+								ref.owner,
+								ref.resource,
 								changes,
 							)
 
@@ -294,23 +310,11 @@ function decodePathParam(value: unknown): string {
 	}
 }
 
-async function loadManagementCollection<T extends SignalDbItem>(
-	ctx: PluginContext,
+function resolveManagementCollection(
+	management: ReturnType<typeof requireManagement>,
 	binding: string,
-): Promise<SignalDbLoadResponse<T>> {
-	const management = requireManagement(ctx)
-	const ref = management.registry.resolveResource(binding, 'collection')
-	return await management.collections.loadCollectionFor<T>(ref.owner, ref.resource)
-}
-
-async function pushManagementCollectionChanges<T extends SignalDbItem>(
-	ctx: PluginContext,
-	binding: string,
-	changes: Changeset<T>,
-): Promise<'applied' | 'readonly' | 'missing'> {
-	const management = requireManagement(ctx)
-	const ref = management.registry.resolveResource(binding, 'collection')
-	return await management.collections.applyCollectionFor(ref.owner, ref.resource, changes)
+) {
+	return management.registry.findResource(binding, 'collection')
 }
 
 function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {

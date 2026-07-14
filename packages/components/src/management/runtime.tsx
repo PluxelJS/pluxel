@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type {
 	ManagementCatalog,
 	ManagementLayout,
@@ -37,8 +37,11 @@ const placementMap: Partial<Record<ManagementPlacement, ExtensionPoint>> = {
 }
 
 let catalog: ManagementCatalog = { revision: 0, modules: [], states: [] }
-let catalogPromise: Promise<ManagementCatalog> | null = null
+let catalogLoaded = false
+let catalogInvalidation = -1
+let catalogRequest: Promise<ManagementCatalog> | null = null
 const loaded = new Map<string, string>()
+const ownerLoads = new Map<string, { hash: string; promise: Promise<void> }>()
 const catalogListeners = new Set<() => void>()
 const routeMaps = new Map<string, Map<string, () => ReactNode>>()
 const routeRevisions = new Map<string, number>()
@@ -64,7 +67,18 @@ function managementRevisionStore(
 		url: transport.links.managementEvents(),
 		namespaces: ['management.layouts'],
 	})
+	let streamErrorReported = false
+	stream.onOpen(() => {
+		streamErrorReported = false
+	})
+	stream.onError(() => {
+		if (streamErrorReported) return
+		streamErrorReported = true
+		console.error('[management-ui] layout revision stream disconnected; reconnecting')
+	})
 	stream.ns('management.layouts').on(() => {
+		// This is an invalidation token, not the server revision. Reconnect snapshots
+		// must also invalidate caches after a backend restart resets its revision.
 		revision += 1
 		for (const listener of listeners) listener()
 	})
@@ -79,19 +93,20 @@ function managementRevisionStore(
 	return store
 }
 
-function publishRoutes(target: string, routes: Map<string, () => ReactNode>): () => void {
+function publishRoutes(target: string, routes: Map<string, () => ReactNode>): void {
 	routeMaps.set(target, routes)
 	notifyRoutes(target)
-	return () => {
-		if (routeMaps.get(target) !== routes) return
-		routeMaps.delete(target)
-		notifyRoutes(target)
-	}
 }
 
 function notifyRoutes(target: string): void {
 	routeRevisions.set(target, (routeRevisions.get(target) ?? 0) + 1)
-	for (const listener of routeListeners.get(target) ?? []) listener()
+	for (const listener of routeListeners.get(target) ?? []) {
+		try {
+			listener()
+		} catch (error) {
+			console.error(`[management-ui] route listener failed (${target})`, error)
+		}
+	}
 }
 
 export function useManagementRouteVersion(target: string): number {
@@ -103,7 +118,12 @@ export function useManagementRouteVersion(target: string): number {
 				routeListeners.set(target, listeners)
 			}
 			listeners.add(listener)
-			return () => listeners?.delete(listener)
+			return () => {
+				listeners?.delete(listener)
+				if (listeners?.size === 0 && routeListeners.get(target) === listeners) {
+					routeListeners.delete(target)
+				}
+			}
 		},
 		() => routeRevisions.get(target) ?? 0,
 		() => routeRevisions.get(target) ?? 0,
@@ -116,19 +136,53 @@ export function getManagementRoute(target: string, path: string): (() => ReactNo
 
 async function ensureCatalog(
 	load: () => Promise<ManagementCatalog>,
-	force = false,
+	minimumRevision = 0,
+	invalidation = 0,
 ): Promise<ManagementCatalog> {
-	if (!force && catalog.modules.length > 0) return catalog
-	if (!force && catalogPromise) return await catalogPromise
-	catalogPromise = load().then((next) => {
-		catalog = next
-		for (const listener of catalogListeners) listener()
-		return next
-	})
+	if (isCatalogCurrent(minimumRevision, invalidation)) return catalog
+	if (catalogRequest) {
+		await catalogRequest
+		if (isCatalogCurrent(minimumRevision, invalidation)) return catalog
+	}
+	const request = (async () => {
+		const next = await load()
+		if (!catalogLoaded || invalidation >= catalogInvalidation) publishCatalog(next, invalidation)
+		return catalog
+	})()
+	catalogRequest = request
 	try {
-		return await catalogPromise
+		return await request
 	} finally {
-		catalogPromise = null
+		if (catalogRequest === request) catalogRequest = null
+	}
+}
+
+function isCatalogCurrent(minimumRevision: number, invalidation: number): boolean {
+	if (!catalogLoaded) return false
+	if (catalogInvalidation > invalidation) return true
+	return catalogInvalidation === invalidation && catalog.revision >= minimumRevision
+}
+
+function publishCatalog(next: ManagementCatalog, invalidation: number): void {
+	catalog = next
+	catalogLoaded = true
+	catalogInvalidation = invalidation
+	const retainedOwners = new Set([
+		...next.modules.map((item) => item.pluginName),
+		...next.states.map((item) => item.pluginName),
+	])
+	for (const owner of new Set([...loaded.keys(), ...routeMaps.keys()])) {
+		if (retainedOwners.has(owner)) continue
+		loaded.delete(owner)
+		managementUiRegistry.unload(owner)
+		if (routeMaps.delete(owner)) notifyRoutes(owner)
+	}
+	for (const listener of catalogListeners) {
+		try {
+			listener()
+		} catch (error) {
+			console.error('[management-ui] catalog listener failed', error)
+		}
 	}
 }
 
@@ -146,19 +200,46 @@ export function useManagementArtifactState(owner: string) {
 
 async function ensureOwnerLoaded(
 	owner: string,
-	loadCatalog: () => Promise<ManagementCatalog>,
+	catalogSnapshot: ManagementCatalog,
 	locale: LocaleService,
-): Promise<void> {
-	let current = await ensureCatalog(loadCatalog)
-	let artifact = current.modules.find((item) => item.pluginName === owner)
+): Promise<'loaded' | 'building'> {
+	const artifact = catalogSnapshot.modules.find((item) => item.pluginName === owner)
 	if (!artifact) {
-		current = await ensureCatalog(loadCatalog, true)
-		artifact = current.modules.find((item) => item.pluginName === owner)
+		const artifactState = catalogSnapshot.states.find((item) => item.pluginName === owner)
+		if (artifactState?.state === 'building') return 'building'
+		if (artifactState?.state === 'error') {
+			throw new Error(artifactState.message ?? `Management UI build failed: ${owner}`)
+		}
+		throw new Error(`Management UI artifact not found: ${owner}`)
 	}
-	if (!artifact) throw new Error(`Management UI artifact not found: ${owner}`)
-	if (loaded.get(owner) === artifact.sourceHash) return
-	await loadManagementArtifact(artifact, locale)
-	loaded.set(owner, artifact.sourceHash)
+	if (loaded.get(owner) === artifact.sourceHash) return 'loaded'
+	const pending = ownerLoads.get(owner)
+	if (pending?.hash === artifact.sourceHash) {
+		await pending.promise
+		return 'loaded'
+	}
+	const previous = pending?.promise.catch((error) => {
+		console.warn(`[management-ui] previous artifact load failed (${owner})`, error)
+	})
+	const task = (previous ?? Promise.resolve()).then(async () => {
+		if (loaded.get(owner) === artifact.sourceHash) return undefined
+		await loadManagementArtifact(artifact, locale)
+		const currentArtifact = catalog.modules.find((item) => item.pluginName === owner)
+		if (currentArtifact?.sourceHash !== artifact.sourceHash) {
+			const retained = catalog.states.some((item) => item.pluginName === owner)
+			if (!currentArtifact && !retained) managementUiRegistry.unload(owner)
+			return undefined
+		}
+		loaded.set(owner, artifact.sourceHash)
+		return undefined
+	})
+	ownerLoads.set(owner, { hash: artifact.sourceHash, promise: task })
+	try {
+		await task
+	} finally {
+		if (ownerLoads.get(owner)?.promise === task) ownerLoads.delete(owner)
+	}
+	return 'loaded'
 }
 
 async function loadManagementArtifact(
@@ -208,7 +289,7 @@ function registerLayout(layout: ManagementLayout): () => void {
 			if (!route || item.view.kind !== 'remote') continue
 			const path = normalizeExtensionRouteSubPath(route.path)
 			routes.set(path, () => renderRemoteItem(item, `route:${path}`))
-			if (route.addToNav) {
+			if (route.addToNav && layout.target === null) {
 				registrations.push({
 					point: 'navbar:items',
 					item: {
@@ -243,9 +324,12 @@ function registerLayout(layout: ManagementLayout): () => void {
 		})
 	}
 	const cleanupExtensions = extensionRegistry.registerMany(registrations)
-	const cleanupRoutes = layout.target ? publishRoutes(layout.target, routes) : () => {}
+	// A target route table is an artifact/layout cache, not component-local state.
+	// Keep it alive across route-screen unmounts and replace it atomically when a
+	// newer target layout resolves. Removing it in this cleanup races SPA switches:
+	// the route revision remains non-zero while the actual table has disappeared.
+	if (layout.target) publishRoutes(layout.target, routes)
 	return () => {
-		cleanupRoutes()
 		cleanupExtensions()
 	}
 }
@@ -311,39 +395,109 @@ function useResolvedManagementLayout(target: string | null) {
 		layout: ManagementLayout | null
 		error: Error | null
 	}>({ layout: null, error: null })
+	const activeRegistration = useRef<{
+		target: string | null
+		cleanup: () => void
+	} | null>(null)
+
+	useEffect(
+		() => () => {
+			const active = activeRegistration.current
+			activeRegistration.current = null
+			if (active) extensionRegistry.batch(active.cleanup)
+		},
+		[],
+	)
 
 	useEffect(() => {
 		let disposed = false
-		let unregister: (() => void) | undefined
+		const active = activeRegistration.current
+		if (active && active.target !== target) {
+			activeRegistration.current = null
+			extensionRegistry.batch(active.cleanup)
+		}
 		const sync = async () => {
 			try {
 				const layout = target
 					? await transport.http.management.pluginLayout(target)
 					: await transport.http.management.globalLayout()
-				await ensureCatalog(() => transport.http.management.catalog(), revision > 0)
-				await Promise.all(
-					layout.items
-						.filter((item) => item.view.kind === 'remote')
-						.map((item) =>
-							ensureOwnerLoaded(
-								item.owner,
-								() => transport.http.management.catalog(),
-								extensionContext.services.locale,
-							),
-						),
+				const catalogSnapshot = await ensureCatalog(
+					() => transport.http.management.catalog(),
+					layout.revision,
+					revision,
+				)
+				const owners = [
+					...new Set(
+						layout.items
+							.filter(
+								(item) =>
+									item.view.kind === 'remote' &&
+									(target !== null || item.placement !== 'plugin.routes'),
+							)
+							.map((item) => item.owner),
+					),
+				]
+				const ownerResults = await Promise.allSettled(
+					owners.map((owner) =>
+						ensureOwnerLoaded(owner, catalogSnapshot, extensionContext.services.locale),
+					),
 				)
 				if (disposed) return
-				unregister?.()
-				unregister = registerLayout(layout)
-				setState({ layout, error: null })
+				const failures = ownerResults.flatMap((result, index) =>
+					result.status === 'rejected'
+						? [{ owner: owners[index]!, error: toError(result.reason) }]
+						: [],
+				)
+				const failedOwners = new Set(failures.map((failure) => failure.owner))
+				const buildingOwners = new Set(
+					ownerResults.flatMap((result, index) =>
+						result.status === 'fulfilled' && result.value === 'building' ? [owners[index]!] : [],
+					),
+				)
+				const resolvedLayout: ManagementLayout =
+					failedOwners.size > 0 || buildingOwners.size > 0
+						? {
+								...layout,
+								items: layout.items.filter(
+									(item) =>
+										item.view.kind !== 'remote' ||
+										(!failedOwners.has(item.owner) && !buildingOwners.has(item.owner)),
+								),
+							}
+						: layout
+				const loadError =
+					failures.length > 0
+						? new Error(
+								failures.map((failure) => `${failure.owner}: ${failure.error.message}`).join('\n'),
+							)
+						: null
+				// An artifact build or load failure must not replace a working target
+				// route table with a filtered empty layout. A later management revision
+				// retries and atomically publishes the new table when it is ready.
+				if (target !== null && (buildingOwners.size > 0 || failures.length > 0)) {
+					setState({ layout: null, error: loadError })
+					if (loadError) console.error('[management-ui] failed to load layout views', loadError)
+					return
+				}
+				const nextCleanup = extensionRegistry.batch(() => {
+					const cleanup = registerLayout(resolvedLayout)
+					activeRegistration.current?.cleanup()
+					return cleanup
+				})
+				activeRegistration.current = { target, cleanup: nextCleanup }
+				setState({ layout: resolvedLayout, error: loadError })
+				if (loadError) console.error('[management-ui] failed to load layout views', loadError)
 			} catch (error) {
-				if (!disposed) setState({ layout: null, error: toError(error) })
+				if (!disposed) {
+					const loadError = toError(error)
+					setState({ layout: null, error: loadError })
+					console.error('[management-ui] failed to resolve layout', loadError)
+				}
 			}
 		}
 		void sync()
 		return () => {
 			disposed = true
-			unregister?.()
 		}
 	}, [extensionContext.services.locale, revision, target, transport])
 
@@ -355,9 +509,10 @@ export function ManagementLoader(): null {
 	return null
 }
 
-export function PluginManagementLoader({ target }: { target: string }): null {
-	useResolvedManagementLayout(target)
-	return null
+export function PluginManagementLoader({ target }: { target: string }): ReactNode {
+	const { error } = useResolvedManagementLayout(target)
+	if (!error) return null
+	return <InlineNotice title="Management UI 加载失败">{error.message}</InlineNotice>
 }
 
 function toError(error: unknown): Error {

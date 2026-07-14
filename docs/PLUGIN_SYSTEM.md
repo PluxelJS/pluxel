@@ -46,7 +46,8 @@ stream、collection 和 artifact。
 backend。disabled 时不创建 registry、compiler、watcher、route 或 transport，mount 返回 `undefined`。
 
 `ManagementModule` 是静态 contract，`management.mount(module, bindings)` 是唯一发布动作。registry
-生成 target-specific layout，并把每个 resource 转成 revision-scoped opaque binding。浏览器不能按插件
+生成 target-specific layout，并把每个 resource 转成 resource-graph-revision-scoped opaque binding。
+artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
 namespace 任意访问未授予资源。
 
 dependent 复用有两条明确路径：

@@ -38,7 +38,7 @@ describe('Management Plane public API', () => {
 
 	it('defines UI exports from the same typed app used by views', () => {
 		const module = Management.defineManagementModule({ id: 'UiExample' })
-		const app = ManagementUi.managementApp(module)
+		const app = ManagementUi.managementApp<typeof module>()
 		const Overview = () => null
 		const ui = app.define({ Overview })
 		expect(ui.views).toEqual({ Overview })

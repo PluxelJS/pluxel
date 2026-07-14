@@ -2,9 +2,9 @@ import { Badge, Tooltip } from '@mantine/core'
 import { managementApp } from '@pluxel/runtime/management/ui'
 import { IconActivity } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
-import { PluginStatusBadgeManagement } from '../../PluginStatusBadge.management'
+import type { PluginStatusBadgeManagement } from '../../PluginStatusBadge.management'
 
-const plugin = managementApp(PluginStatusBadgeManagement)
+const plugin = managementApp<typeof PluginStatusBadgeManagement>()
 
 export function StatusBadge() {
 	const app = plugin.use()

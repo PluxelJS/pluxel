@@ -52,9 +52,21 @@ type RegisteredManagementStream = {
 	handler: SseHandler
 }
 
+type StreamSubscription = {
+	/** Public namespace emitted to the browser and unique within the session. */
+	key: string
+	/** Internal resource namespace used to resolve and rebind the handler. */
+	namespace: string
+}
+
+type SessionHandler = {
+	namespace: string
+	cleanup?: () => void | Promise<void>
+}
+
 type SessionState = {
-	requested: Set<string>
-	handlers: Map<string, () => void | Promise<void>>
+	requested: Map<string, string>
+	handlers: Map<string, SessionHandler>
 	query?: URLSearchParams
 	httpCtx?: SseHttpContext
 }
@@ -62,7 +74,7 @@ type SessionState = {
 export class ManagementStreamService {
 	private resources = new Map<string, RegisteredManagementStream>()
 	private readonly sessions = new Set<Session<SessionState>>()
-	private readonly pendingByNamespace = new Map<string, Set<Session<SessionState>>>()
+	private readonly pendingByNamespace = new Map<string, Map<Session<SessionState>, Set<string>>>()
 	private static readonly KEEPALIVE_MS = 25_000
 	private static readonly RETRY_MS = 2_000
 
@@ -80,6 +92,7 @@ export class ManagementStreamService {
 			owner.logger.warn('Management stream "{namespace}" already registered, refreshing', {
 				namespace,
 			})
+			this.resources.delete(namespace)
 			this.detachNamespace(namespace)
 		}
 
@@ -99,14 +112,37 @@ export class ManagementStreamService {
 	stream(c: SseHttpContext, namespaces?: string[]): unknown {
 		const params = new URL(c.request.url).searchParams
 		const requestedRaw = this.normalizeNamespaces(namespaces ?? this.parseNamespaces(params))
-		const available: string[] = []
-		const missing: string[] = []
+		return this.streamSubscriptions(
+			c,
+			params,
+			requestedRaw.map((namespace) => ({ key: namespace, namespace })),
+		)
+	}
 
-		for (const ns of requestedRaw) {
-			;(this.hasResource(ns) ? available : missing).push(ns)
-		}
+	/** @internal Emit internal namespaces through opaque, request-scoped aliases. */
+	streamWithAliases(
+		c: SseHttpContext,
+		subscriptions: ReadonlyArray<{ alias: string; namespace: string }>,
+	): unknown {
+		const params = new URL(c.request.url).searchParams
+		return this.streamSubscriptions(
+			c,
+			params,
+			subscriptions.map(({ alias, namespace }) => ({ key: alias, namespace })),
+		)
+	}
 
-		if (available.length === 0 && missing.length === 0) {
+	private streamSubscriptions(
+		c: SseHttpContext,
+		params: URLSearchParams,
+		subscriptions: StreamSubscription[],
+	): unknown {
+		const requested = this.normalizeSubscriptions(subscriptions)
+		const missing = requested
+			.filter(({ namespace }) => !this.hasResource(namespace))
+			.map(({ namespace }) => namespace)
+
+		if (requested.length === 0) {
 			return c.status(404, 'No Management streams registered')
 		}
 
@@ -121,11 +157,11 @@ export class ManagementStreamService {
 				retry: ManagementStreamService.RETRY_MS,
 				serializer: (value) => this.stringify(value),
 				state: {
-					requested: new Set(requestedRaw),
+					requested: new Map(requested.map(({ key, namespace }) => [key, namespace] as const)),
 					handlers: new Map(),
 				},
 			},
-			(session) => this.attachSession(session, c, params, available, missing),
+			(session) => this.attachSession(session, c, params),
 		)
 	}
 
@@ -141,8 +177,6 @@ export class ManagementStreamService {
 		session: Session<SessionState>,
 		httpCtx: SseHttpContext,
 		query: URLSearchParams,
-		available: string[],
-		missing: string[],
 	) {
 		this.sessions.add(session)
 		const clean = () => this.cleanupSession(session)
@@ -151,13 +185,8 @@ export class ManagementStreamService {
 		session.state.httpCtx = httpCtx
 		session.state.query = query
 
-		for (const ns of available) {
-			void this.attachNamespaceToSession(session, ns)
-		}
-
-		for (const ns of missing) {
-			this.markPending(ns, session)
-			void this.attachNamespaceToSession(session, ns)
+		for (const key of session.state.requested.keys()) {
+			void this.attachSubscriptionToSession(session, key)
 		}
 	}
 
@@ -184,16 +213,18 @@ export class ManagementStreamService {
 		}
 	}
 
-	private async attachNamespaceToSession(session: Session<SessionState>, namespace: string) {
+	private async attachSubscriptionToSession(session: Session<SessionState>, key: string) {
 		const state = session.state
-		if (state.handlers.has(namespace)) return
+		if (state.handlers.has(key)) return
+		const namespace = state.requested.get(key)
+		if (!namespace) return
 		const registered = this.resources.get(namespace)
 		if (!registered) {
-			this.markPending(namespace, session)
+			this.markPending(namespace, session, key)
 			return
 		}
 
-		this.unmarkPending(namespace, session)
+		this.unmarkPending(namespace, session, key)
 
 		const httpCtx = state.httpCtx
 		if (!httpCtx) {
@@ -207,9 +238,21 @@ export class ManagementStreamService {
 			state.query ?? new URL(session.getRequest().url).searchParams,
 			registered.owner,
 		)
-		const channel = this.createChannel(namespace, session, base)
+		const attachment: SessionHandler = { namespace }
+		state.handlers.set(key, attachment)
+		const channel = this.createChannel(key, session, base)
 		const cleanup = await this.runHandler(registered.handler, channel)
-		state.handlers.set(namespace, cleanup)
+		if (
+			!session.isConnected ||
+			state.handlers.get(key) !== attachment ||
+			state.requested.get(key) !== namespace ||
+			this.resources.get(namespace) !== registered
+		) {
+			if (cleanup) this.runCleanup(cleanup, namespace)
+			if (state.handlers.get(key) === attachment) state.handlers.delete(key)
+			return
+		}
+		attachment.cleanup = cleanup
 	}
 
 	private createChannel(
@@ -243,14 +286,13 @@ export class ManagementStreamService {
 		payload: SsePayload,
 	): { data: string; event?: string; id?: string } | null {
 		if (payload === undefined) return null
-		const { event, data, id, raw } = payload as SseEventPayload
-		const eventName = event ?? namespace
-		const body =
+		const structured =
 			typeof payload === 'object' && payload !== null && !(payload instanceof Date)
-				? 'data' in payload
-					? data
-					: payload
-				: payload
+				? (payload as SseEventPayload)
+				: undefined
+		const { event, data, id, raw } = structured ?? {}
+		const eventName = event ?? namespace
+		const body = structured ? ('data' in structured ? data : payload) : payload
 
 		return {
 			id,
@@ -300,61 +342,82 @@ export class ManagementStreamService {
 		return [...new Set(namespaces.filter(Boolean))]
 	}
 
-	private markPending(namespace: string, session: Session<SessionState>) {
-		let set = this.pendingByNamespace.get(namespace)
-		if (!set) {
-			set = new Set()
-			this.pendingByNamespace.set(namespace, set)
+	private normalizeSubscriptions(subscriptions: StreamSubscription[]): StreamSubscription[] {
+		const normalized = new Map<string, string>()
+		for (const subscription of subscriptions) {
+			const key = String(subscription.key ?? '').trim()
+			const namespace = String(subscription.namespace ?? '').trim()
+			if (!key || !namespace) continue
+			const existing = normalized.get(key)
+			if (existing && existing !== namespace) {
+				throw new Error(`[management] stream alias "${key}" resolves to multiple resources`)
+			}
+			normalized.set(key, namespace)
 		}
-		set.add(session)
+		return [...normalized].map(([key, namespace]) => ({ key, namespace }))
 	}
 
-	private unmarkPending(namespace: string, session: Session<SessionState>) {
-		const set = this.pendingByNamespace.get(namespace)
-		if (!set) return
-		set.delete(session)
-		if (set.size === 0) this.pendingByNamespace.delete(namespace)
+	private markPending(namespace: string, session: Session<SessionState>, key: string) {
+		let sessions = this.pendingByNamespace.get(namespace)
+		if (!sessions) {
+			sessions = new Map()
+			this.pendingByNamespace.set(namespace, sessions)
+		}
+		let keys = sessions.get(session)
+		if (!keys) {
+			keys = new Set()
+			sessions.set(session, keys)
+		}
+		keys.add(key)
+	}
+
+	private unmarkPending(namespace: string, session: Session<SessionState>, key: string) {
+		const sessions = this.pendingByNamespace.get(namespace)
+		const keys = sessions?.get(session)
+		if (!sessions || !keys) return
+		keys.delete(key)
+		if (keys.size === 0) sessions.delete(session)
+		if (sessions.size === 0) this.pendingByNamespace.delete(namespace)
 	}
 
 	private tryAttachPending(namespace: string) {
 		const waiters = this.pendingByNamespace.get(namespace)
 		if (!waiters?.size) return
 		const sessions = [...waiters]
-		for (const session of sessions) {
+		for (const [session, keys] of sessions) {
 			if (!session.isConnected) {
-				this.unmarkPending(namespace, session)
+				waiters.delete(session)
 				continue
 			}
-			void this.attachNamespaceToSession(session, namespace)
+			for (const key of keys) void this.attachSubscriptionToSession(session, key)
 		}
+		if (waiters.size === 0) this.pendingByNamespace.delete(namespace)
 	}
 
 	private cleanupSession(session: Session<SessionState>) {
 		this.sessions.delete(session)
-		for (const [ns, set] of this.pendingByNamespace) {
-			if (!set.delete(session)) continue
-			if (set.size === 0) this.pendingByNamespace.delete(ns)
+		for (const [namespace, sessions] of this.pendingByNamespace) {
+			if (!sessions.delete(session)) continue
+			if (sessions.size === 0) this.pendingByNamespace.delete(namespace)
 		}
 
-		for (const [namespace, cleanup] of session.state.handlers) {
-			if (!cleanup) continue
-			this.runCleanup(cleanup, namespace)
+		for (const attachment of session.state.handlers.values()) {
+			if (!attachment.cleanup) continue
+			this.runCleanup(attachment.cleanup, attachment.namespace)
 		}
 		session.state.handlers.clear()
 	}
 
 	private detachNamespace(namespace: string) {
-		const set = this.pendingByNamespace.get(namespace)
-		if (set) {
-			set.clear()
-			this.pendingByNamespace.delete(namespace)
-		}
-
 		for (const session of this.sessions) {
-			const cleanup = session.state.handlers.get(namespace)
-			if (!cleanup) continue
-			this.runCleanup(cleanup, namespace)
-			session.state.handlers.delete(namespace)
+			for (const [key, attachment] of session.state.handlers) {
+				if (attachment.namespace !== namespace) continue
+				if (attachment.cleanup) this.runCleanup(attachment.cleanup, namespace)
+				session.state.handlers.delete(key)
+				if (session.isConnected && session.state.requested.get(key) === namespace) {
+					this.markPending(namespace, session, key)
+				}
+			}
 		}
 	}
 
@@ -367,8 +430,10 @@ export class ManagementStreamService {
 	private rebindNamespace(namespace: string) {
 		for (const session of this.sessions) {
 			if (!session.isConnected) continue
-			if (!session.state.requested.has(namespace)) continue
-			void this.attachNamespaceToSession(session, namespace)
+			for (const [key, requestedNamespace] of session.state.requested) {
+				if (requestedNamespace !== namespace) continue
+				void this.attachSubscriptionToSession(session, key)
+			}
 		}
 	}
 }

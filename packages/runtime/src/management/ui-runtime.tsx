@@ -5,7 +5,6 @@ import {
 	useMemo,
 	useSyncExternalStore,
 	type ComponentType,
-	type DependencyList,
 	type ReactNode,
 } from 'react'
 import type {
@@ -18,12 +17,7 @@ import type {
 } from './contracts'
 import { useGlobalExtensionContext, type ExtensionServices } from '../web/host-ui'
 import type { SignalDbListSpec, SignalDbSelector } from './collection-contracts'
-import {
-	type SignalDbCollectionView,
-	useSignalDbCollectionState,
-	useSignalDbDocState,
-	useSignalDbQueryState,
-} from './collection-ui-runtime'
+import { type SignalDbCollectionView, useSignalDbCollectionState } from './collection-ui-runtime'
 import type { SseClientWithNamespaces } from '../web/sse'
 
 const ManagementViewContext = createContext<ManagementLayoutItem | null>(null)
@@ -67,11 +61,9 @@ export interface ManagementCollectionClient<TItem extends ManagementCollectionIt
 	useDocById(id: string): TItem | undefined
 	useList(spec?: SignalDbListSpec<TItem>): TItem[]
 	useCount(selector?: SignalDbSelector<TItem>): number
-	useLiveQuery<T>(query: (view: SignalDbCollectionView<TItem>) => T, deps?: DependencyList): T
 }
 
 export type ManagementApp<Module extends ManagementResourceHost> = Readonly<{
-	module: Module
 	owner: string
 	target: string
 	colorScheme: 'light' | 'dark'
@@ -122,9 +114,9 @@ function validateManagementUiModule<const Module extends ManagementUiModule>(
 	}) as Module
 }
 
-export function managementApp<const Module extends ManagementResourceHost>(
-	module: Module,
-): ManagementAppDefinition<Module> {
+export function managementApp<
+	const Module extends ManagementResourceHost,
+>(): ManagementAppDefinition<Module> {
 	return Object.freeze({
 		define(views, options = {}) {
 			return validateManagementUiModule({ ...options, views })
@@ -172,7 +164,6 @@ export function managementApp<const Module extends ManagementResourceHost>(
 
 			return useMemo(
 				() => ({
-					module,
 					owner: item.owner,
 					target: item.target,
 					colorScheme: context.colorScheme,
@@ -212,19 +203,14 @@ function createCollectionClient<TItem extends ManagementCollectionItem>(
 	resource: string,
 ): ManagementCollectionClient<TItem> {
 	const useView = () => useSignalDbCollectionState<TItem>(transport, binding, resource)
-	const useDoc = (selector: SignalDbSelector<TItem>) =>
-		useSignalDbDocState<TItem>(transport, binding, resource, selector)
+	const useDoc = (selector: SignalDbSelector<TItem>) => useView().findOne(selector)
 	const useList = (spec: SignalDbListSpec<TItem> = {}) => {
 		const view = useView()
-		return useSignalDbQueryState(
-			() =>
-				view.find(spec.where, {
-					limit: spec.limit,
-					skip: spec.skip,
-					sort: spec.sort,
-				}),
-			[view, spec],
-		)
+		return view.find(spec.where, {
+			limit: spec.limit,
+			skip: spec.skip,
+			sort: spec.sort,
+		})
 	}
 	return {
 		useView,
@@ -233,11 +219,7 @@ function createCollectionClient<TItem extends ManagementCollectionItem>(
 		useList,
 		useCount: (selector = {} as SignalDbSelector<TItem>) => {
 			const view = useView()
-			return useSignalDbQueryState(() => view.count(selector), [view, selector])
-		},
-		useLiveQuery: (query, deps = []) => {
-			const view = useView()
-			return useSignalDbQueryState(() => query(view), [view, ...deps])
+			return view.count(selector)
 		},
 	}
 }

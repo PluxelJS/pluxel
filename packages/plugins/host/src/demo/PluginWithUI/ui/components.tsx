@@ -184,9 +184,7 @@ export function EventsPanel() {
 	const app = plugin.use()
 	const eventsCollection = app.collection('events')
 	const events = eventsCollection.useView()
-	const recentEvents = eventsCollection.useLiveQuery((view) =>
-		view.find({}, { sort: { at: -1 }, limit: 50 }),
-	)
+	const recentEvents = events.find({}, { sort: { at: -1 }, limit: 50 })
 	const { error, run } = useRpcError()
 	const [text, setText] = useState('')
 

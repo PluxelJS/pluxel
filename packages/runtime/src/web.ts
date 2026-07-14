@@ -77,7 +77,6 @@ export { invokeRpc, rpcErrorMessage } from './web/rpc'
 export {
 	useBoundSignalDbCollectionsState,
 	useSignalDbCollectionState,
-	useSignalDbDocState,
 	useSignalDbQueryState,
 	type SignalDbCollectionView,
 } from './management/collection-ui-runtime'

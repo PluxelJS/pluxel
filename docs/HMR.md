@@ -9,8 +9,10 @@ module batch -> committed graph -> stop old owner/effects -> start new owner
 ```
 
 `ManagementCompilerService` 位于 `packages/runtime-dev/src/management/`，dynamic/static route 只负责提供
-Vite server、plugin directory 和 host policy。旧 artifact 可短暂保留在磁盘供 inflight import 完成，但旧
-layout bindings 在 revision 变化后立即失效。
+Vite server、plugin directory 和 host policy。旧 artifact 可短暂保留在磁盘供 inflight import 完成。
+artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant；module、实例或依赖资源图变化会推进
+独立的 grant revision，并让旧 layout binding 立即失效。这样 UI-only HMR 不会制造无效 binding 竞态，
+也不会放宽资源图变化时的 capability 撤销语义。
 
 测试至少覆盖 module replacement cleanup、compile error state、cached artifact、target layout refresh 和
 disabled Management Plane。

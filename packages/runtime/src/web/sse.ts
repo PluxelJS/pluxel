@@ -74,7 +74,10 @@ class SseClient {
 		else Promise.resolve().then(fn)
 	}
 
-	constructor(options: SseClientOptions = {}) {
+	constructor(
+		options: SseClientOptions = {},
+		private readonly onClose?: () => void,
+	) {
 		const url = new URL(options.url ?? `${RUNTIME_INTERNAL_API_BASE}/sse`, window.location.origin)
 		const namespaces = options.namespaces?.filter(Boolean)
 		if (namespaces?.length) url.searchParams.set('ns', namespaces.join(','))
@@ -147,7 +150,8 @@ class SseClient {
 			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
 			try {
 				msg = JSON.parse(ev.data) as { namespace?: unknown; event?: unknown; payload?: unknown }
-			} catch {
+			} catch (error) {
+				console.error('[runtime-sse] malformed event payload', error)
 				return
 			}
 			const namespace = String(msg?.namespace ?? '')
@@ -255,20 +259,40 @@ class SseClient {
 	}
 
 	close(): void {
+		if (this.stopped) return
 		this.stopped = true
 		this.connected = false
 		this.lastByNamespace.clear()
+		this.anyHandlers.clear()
+		this.nsHandlers.clear()
+		this.openHandlers.clear()
+		this.errorHandlers.clear()
+		const source = this.source
+		this.source = null
 		try {
-			this.source?.close()
+			if (source) {
+				source.onopen = null
+				source.onerror = null
+				source.onmessage = null
+				source.close()
+			}
 		} catch {
 			void 0
 		}
-		this.source = null
+		this.onClose?.()
 	}
 }
 
 export function sse(options: SseClientOptions = {}): SseClientWithNamespaces {
-	const client = new SseClient(options) as SseClientWithNamespaces
+	return sseWithLifecycle(options)
+}
+
+/** @internal Create an SSE client that unregisters itself from its transport owner on close. */
+export function sseWithLifecycle(
+	options: SseClientOptions,
+	onClose?: () => void,
+): SseClientWithNamespaces {
+	const client = new SseClient(options, onClose) as SseClientWithNamespaces
 	return new Proxy(client, {
 		get(target, prop, receiver) {
 			if (prop === 'ns') return target.ns.bind(target)

@@ -12,11 +12,13 @@ import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { ManagementCatalog, ManagementLayout } from '../management/contracts'
 import type { RuntimeRpcApi } from './protocol'
 import { createManagementApiView, createRpcClientFactory, invokeRpc } from './rpc'
-import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
+import { type SseClientOptions, type SseClientWithNamespaces, sseWithLifecycle } from './sse'
 import { createRuntimeSecurityClient } from './security'
+import { runRuntimeTransportCleanups } from './client-lifecycle'
 import {
 	RUNTIME_MANAGEMENT_EVENTS_PATH,
 	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH,
 	RUNTIME_TRANSPORT_PATHS,
 	runtimeManagementCollectionPath,
 	runtimeManagementStreamPath,
@@ -139,6 +141,7 @@ type RuntimeTransportLinks = {
 	graphql: string
 	sse: string
 	managementCollection(binding: string): string
+	managementCollectionEvents(bindings: readonly string[]): string
 	managementStream(binding: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
 	managementEvents(): string
@@ -262,6 +265,13 @@ export function createRuntimeTransportLinks(
 		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
 		managementCollection: (binding: string) =>
 			resolveClientUrl(joinPath(apiBase, runtimeManagementCollectionPath(binding))),
+		managementCollectionEvents: (bindings: readonly string[]) => {
+			const url = resolveClientUrl(joinPath(apiBase, RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH))
+			const params = new URLSearchParams()
+			for (const binding of bindings) params.append('binding', binding)
+			const query = params.toString()
+			return query ? `${url}?${query}` : url
+		},
 		managementStream: (binding: string) =>
 			resolveClientUrl(joinPath(apiBase, runtimeManagementStreamPath(binding))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
@@ -340,7 +350,13 @@ export function createRuntimeTransportClient(
 		}
 	}
 
-	const createSse = (opts?: SseClientOptions) => sse(buildSseOptions(opts))
+	const managedSse = new Set<SseClientWithNamespaces>()
+	const createSse = (opts?: SseClientOptions) => {
+		let client: SseClientWithNamespaces
+		client = sseWithLifecycle(buildSseOptions(opts), () => managedSse.delete(client))
+		managedSse.add(client)
+		return client
+	}
 
 	let memoSse: SseClientWithNamespaces | null = null
 	const getSse = () => {
@@ -348,7 +364,7 @@ export function createRuntimeTransportClient(
 		return memoSse
 	}
 
-	return {
+	const client: RuntimeTransportClient = {
 		fetch,
 		http,
 		links,
@@ -365,9 +381,11 @@ export function createRuntimeTransportClient(
 			return getSse()
 		},
 		dispose: () => {
-			if (!memoSse) return
-			memoSse.close()
+			runRuntimeTransportCleanups(client)
+			for (const stream of managedSse) stream.close()
+			managedSse.clear()
 			memoSse = null
 		},
 	}
+	return client
 }

@@ -18,13 +18,7 @@ import { rpcErrorMessage } from '@pluxel/runtime/web'
 import { IconCheck, IconTrash } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { DEFAULT_ZHIPU_LAYOUT_MODEL } from '@repo/external-api-gateway-shared/constants'
-import type {
-	BillingOverviewDoc,
-	BillingProviderSummaryDoc,
-	BillingRateDoc,
-	BillingUsageRecord,
-	BillingUserSummaryDoc,
-} from '../contracts'
+import type { BillingRateDoc, BillingUsageRecord } from '../contracts'
 import { billingPlugin } from './runtime'
 
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
@@ -264,8 +258,8 @@ function SummaryTable({ title, rows }: { title: string; rows: [string, number, n
 						</Table.Tr>
 					</Table.Thead>
 					<Table.Tbody>
-						{rows.map(([label, count, cost]) => (
-							<Table.Tr key={label}>
+						{rows.map(([label, count, cost], index) => (
+							<Table.Tr key={`${title}:${label}:${index}`}>
 								<Table.Td>{label}</Table.Td>
 								<Table.Td>{count}</Table.Td>
 								<Table.Td>

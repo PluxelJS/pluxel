@@ -1,5 +1,31 @@
 import { isValidElement, type ReactNode } from 'react'
-import { IconHistory, IconHome2, IconPackages, IconPuzzle, IconShieldLock } from '@tabler/icons-react'
+import {
+	IconActivity,
+	IconApi,
+	IconBrandDiscord,
+	IconBrandTelegram,
+	IconChartBar,
+	IconCloudUpload,
+	IconForms,
+	IconHistory,
+	IconHome2,
+	IconKey,
+	IconMessageChatbot,
+	IconPackages,
+	IconPlug,
+	IconPlugConnected,
+	IconPuzzle,
+	IconReceipt,
+	IconSearch,
+	IconServerCog,
+	IconSettings,
+	IconShieldLock,
+	IconTestPipe,
+	IconTextRecognition,
+	IconTypography,
+	IconUsers,
+	type Icon,
+} from '@tabler/icons-react'
 
 export interface NavItem {
 	label: string
@@ -18,10 +44,38 @@ export const baseNavItems: NavItem[] = [
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
 ]
 
-// Shell 不再提供图标库，插件若需图标必须传入完整 ReactNode
+const extensionIconMap: Readonly<Record<string, Icon>> = {
+	activity: IconActivity,
+	api: IconApi,
+	'brand-discord': IconBrandDiscord,
+	'brand-telegram': IconBrandTelegram,
+	'chart-bar': IconChartBar,
+	'cloud-upload': IconCloudUpload,
+	form: IconForms,
+	history: IconHistory,
+	key: IconKey,
+	'message-chatbot': IconMessageChatbot,
+	plug: IconPlug,
+	'plug-connected': IconPlugConnected,
+	receipt: IconReceipt,
+	search: IconSearch,
+	'server-cog': IconServerCog,
+	settings: IconSettings,
+	'shield-lock': IconShieldLock,
+	'test-pipe': IconTestPipe,
+	'text-recognition': IconTextRecognition,
+	typography: IconTypography,
+	users: IconUsers,
+}
+
+// Management contracts carry serializable icon tokens. The host owns their visual mapping.
 export function resolveNavIcon(icon: unknown): ReactNode | undefined {
 	if (!icon) return undefined
 	if (isValidElement(icon)) return icon
+	if (typeof icon === 'string') {
+		const Component = extensionIconMap[icon]
+		return Component ? <Component size={18} stroke={1.7} /> : undefined
+	}
 	return undefined
 }
 

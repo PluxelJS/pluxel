@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import type { RuntimeTransportClient } from '../../src/web/client'
+import { runRuntimeTransportCleanups } from '../../src/web/client-lifecycle'
 import {
 	type SignalDbCollectionView,
 	useBoundSignalDbCollectionsState,
@@ -34,26 +35,44 @@ async function waitFor(assertion: () => void, timeoutMs = 2000) {
 	assertion()
 }
 
-function createSseStub(initialMessages: Array<{ payload: unknown }> = []) {
+type SseTestMessage = { namespace: string; payload: unknown }
+
+function createSseStub(initialMessages: SseTestMessage[] = []) {
+	const listeners = new Set<(message: SseTestMessage) => void>()
+	const namespaceListeners = new Map<string, Set<(message: SseTestMessage) => void>>()
 	return {
-		onAny: vi.fn((listener: (message: { payload: unknown }) => void) => {
+		onAny: vi.fn((listener: (message: SseTestMessage) => void) => {
+			listeners.add(listener)
 			for (const message of initialMessages) listener(message)
-			return () => {}
+			return () => listeners.delete(listener)
 		}),
-		ns: vi.fn(() => ({
-			onAny: vi.fn((listener: (message: { payload: unknown }) => void) => {
-				for (const message of initialMessages) listener(message)
-				return () => {}
+		ns: vi.fn((namespace: string) => ({
+			onAny: vi.fn((listener: (message: SseTestMessage) => void) => {
+				let registered = namespaceListeners.get(namespace)
+				if (!registered) {
+					registered = new Set()
+					namespaceListeners.set(namespace, registered)
+				}
+				registered.add(listener)
+				for (const message of initialMessages) {
+					if (message.namespace === namespace) listener(message)
+				}
+				return () => registered?.delete(listener)
 			}),
 		})),
 		onOpen: vi.fn(() => () => {}),
+		onError: vi.fn(() => () => {}),
 		close: vi.fn(),
+		emit: (message: SseTestMessage) => {
+			for (const listener of listeners) listener(message)
+			for (const listener of namespaceListeners.get(message.namespace) ?? []) listener(message)
+		},
 	}
 }
 
 function createTransport(
 	response: unknown | Promise<unknown>,
-	options: { initialSseMessages?: Array<{ payload: unknown }> } = {},
+	options: { initialSseMessages?: SseTestMessage[] } = {},
 ) {
 	const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
 		if (init?.method === 'POST') {
@@ -65,18 +84,26 @@ function createTransport(
 		})
 	})
 	const sse = createSseStub(options.initialSseMessages)
-	return {
-		transport: {
-			fetch,
-			links: {
-				managementCollection: (binding: string) =>
-					`/__pluxel/runtime/management/resources/collection/${binding}`,
-			},
-			management: { stream: vi.fn(() => sse) },
-			createSse: vi.fn(() => sse),
-			dispose: vi.fn(),
-		} as unknown as RuntimeTransportClient,
+	let transport: RuntimeTransportClient
+	const dispose = vi.fn(() => runRuntimeTransportCleanups(transport))
+	transport = {
 		fetch,
+		links: {
+			managementCollection: (binding: string) =>
+				`/__pluxel/runtime/management/resources/collection/${binding}`,
+			managementCollectionEvents: (bindings: readonly string[]) =>
+				`/__pluxel/runtime/management/resources/collections/events?${bindings
+					.map((binding) => `binding=${binding}`)
+					.join('&')}`,
+		},
+		management: { stream: vi.fn(() => sse) },
+		createSse: vi.fn(() => sse),
+		dispose,
+	} as unknown as RuntimeTransportClient
+	return {
+		transport,
+		fetch,
+		sse,
 	}
 }
 
@@ -113,6 +140,11 @@ describe('signaldb browser runtime', () => {
 				expect(views.settings?.items).toEqual([{ id: 'opaque-settings', value: 'opaque-settings' }])
 				expect(views.status?.items).toEqual([{ id: 'opaque-status', value: 'opaque-status' }])
 			})
+			expect(transport.createSse).toHaveBeenCalledOnce()
+			expect(transport.createSse).toHaveBeenCalledWith({
+				url: expect.stringContaining('binding=opaque-settings&binding=opaque-status'),
+			})
+			expect(transport.management.stream).not.toHaveBeenCalled()
 			expect(fetch).toHaveBeenCalledWith(
 				expect.stringContaining('/opaque-settings'),
 				expect.objectContaining({ method: 'GET' }),
@@ -178,9 +210,10 @@ describe('signaldb browser runtime', () => {
 		const delayedPull = new Promise<unknown>((resolve) => {
 			resolvePull = resolve
 		})
-		const { transport } = createTransport(delayedPull, {
+		const { transport, sse } = createTransport(delayedPull, {
 			initialSseMessages: [
 				{
+					namespace: 'PluginWithUI',
 					payload: {
 						type: 'snapshot',
 						collection: 'events',
@@ -193,6 +226,8 @@ describe('signaldb browser runtime', () => {
 		const container = document.createElement('div')
 		const root = createRoot(container)
 		let view: SignalDbCollectionView<{ id: string; value: string }> | undefined
+		let unmounted = false
+		const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
 		function Probe() {
 			view = useSignalDbCollectionState<{ id: string; value: string }>(
@@ -208,15 +243,39 @@ describe('signaldb browser runtime', () => {
 				root.render(<Probe />)
 			})
 			await waitFor(() => expect(view?.items.some((item) => item.id === 'early')).toBe(true))
+			await act(async () => {
+				root.unmount()
+			})
+			unmounted = true
+			sse.emit({
+				namespace: 'PluginWithUI',
+				payload: {
+					type: 'snapshot',
+					collection: 'events',
+					version: 8,
+					items: [{ id: 'late', value: 'during teardown' }],
+				},
+			})
+			transport.dispose()
+			resolvePull({ items: [], meta: { clientWrites: false } })
+			await act(async () => {
+				await sleep(30)
+			})
+			expect(
+				consoleError.mock.calls.some((call) => String(call[0]).includes('remote change failed')),
+			).toBe(false)
 		} finally {
 			resolvePull({
 				items: [{ id: 'early', value: 'snapshot' }],
 				meta: { clientWrites: false },
 			})
-			await act(async () => {
-				root.unmount()
-			})
+			if (!unmounted) {
+				await act(async () => {
+					root.unmount()
+				})
+			}
 			transport.dispose()
+			consoleError.mockRestore()
 			container.remove()
 		}
 	})

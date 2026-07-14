@@ -7,6 +7,7 @@ import { signalDbNamespace } from '../../management/collection-contracts'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_MANAGEMENT_BASE,
+	RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH,
 	runtimeManagementArtifactBasePath,
 } from '../../web/paths'
 
@@ -60,12 +61,48 @@ export const managementRoutes = (app: AnyElysiaApp) =>
 			.get('/events', (context) =>
 				requireManagement(context.pluginCtx).streams.stream(context, ['management.layouts']),
 			)
+			.get(
+				RUNTIME_MANAGEMENT_COLLECTION_EVENTS_PATH.slice(RUNTIME_MANAGEMENT_BASE.length),
+				(context) => {
+					const backend = requireManagement(context.pluginCtx)
+					const bindings = [
+						...new Set(
+							new URL(context.request.url).searchParams
+								.getAll('binding')
+								.map((binding) => binding.trim())
+								.filter(Boolean),
+						),
+					]
+					if (bindings.length === 0) return context.status(400, 'Collection binding required')
+					const subscriptions = bindings.flatMap((binding) => {
+						const ref = backend.registry.findResource(binding, 'collection')
+						if (!ref) {
+							// A revision can leave warm client replicas with expired bindings for a
+							// short grace period. Ignore only those aliases so fresh bindings are not
+							// blocked; an all-invalid request still receives no stream.
+							return []
+						}
+						return [
+							{
+								alias: binding,
+								namespace: signalDbNamespace(ref.owner, ref.resource),
+							},
+						]
+					})
+					if (subscriptions.length === 0) {
+						return context.status(404, 'Collection binding invalid or expired')
+					}
+					return backend.streams.streamWithAliases(context, subscriptions)
+				},
+			)
 			.get('/resources/stream/:binding', (context) => {
 				const backend = requireManagement(context.pluginCtx)
 				const ref = backend.registry.resolveResource(decodeURIComponent(context.params.binding))
 				if (ref.kind === 'api') return context.status(400, 'API bindings are not streams')
 				const namespace =
-					ref.kind === 'collection' ? signalDbNamespace(ref.owner) : `${ref.owner}:${ref.resource}`
+					ref.kind === 'collection'
+						? signalDbNamespace(ref.owner, ref.resource)
+						: `${ref.owner}:${ref.resource}`
 				return backend.streams.stream(context, [namespace])
 			}),
 	)

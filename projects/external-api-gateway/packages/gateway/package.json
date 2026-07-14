@@ -22,6 +22,18 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@sinclair/typebox": "^0.34.48"
+		"@mantine/core": "^9.4.1",
+		"@pluxel/runtime": "workspace:*",
+		"@repo/external-api-gateway-shared": "workspace:*",
+		"@repo/external-api-gateway-yiqicha": "workspace:*",
+		"@repo/external-api-gateway-zhipu": "workspace:*",
+		"@sinclair/typebox": "^0.34.48",
+		"@tabler/icons-react": "^3.37.1",
+		"capnweb": "^0.5.0",
+		"drizzle-orm": "^0.45.2",
+		"react": "^19.2.7"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.10"
 	}
 }

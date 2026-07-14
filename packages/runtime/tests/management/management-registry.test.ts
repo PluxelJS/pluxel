@@ -16,6 +16,7 @@ import {
 } from '../../src/services/management/ManagementRegistry'
 
 function fixture(edges: Array<[string, string]> = []) {
+	let artifactChanged = () => {}
 	const running = new Set<string>()
 	const deps = new Map<string, string[]>()
 	for (const [consumer, provider] of edges)
@@ -34,10 +35,17 @@ function fixture(edges: Array<[string, string]> = []) {
 		},
 	}
 	const artifacts: any = {
-		subscribe: () => () => {},
+		subscribe: (listener: () => void) => {
+			artifactChanged = listener
+			return () => {}
+		},
 		getCatalog: () => ({ revision: 0, modules: [], states: [] }),
 	}
-	return { registry: new ManagementRegistry(ctx, artifacts), running }
+	return {
+		registry: new ManagementRegistry(ctx, artifacts),
+		running,
+		artifactChanged: () => artifactChanged(),
+	}
 }
 
 const apiRef = (owner: string, resource: string): InternalResourceRef => ({
@@ -121,8 +129,8 @@ describe('ManagementRegistry', () => {
 		)
 	})
 
-	it('revokes opaque resource grants whenever the registry revision changes', () => {
-		const { registry, running } = fixture()
+	it('reuses grants for artifact updates and revokes them for resource graph changes', () => {
+		const { registry, running, artifactChanged } = fixture()
 		running.add('Owner')
 		registry.mount(
 			'Owner',
@@ -141,7 +149,11 @@ describe('ManagementRegistry', () => {
 		)
 		const binding = registry.getPluginLayout('Owner').items[0]!.resources.api!.binding
 		expect(registry.resolveResource(binding)).toEqual(apiRef('Owner', 'api'))
+		artifactChanged()
+		expect(registry.getPluginLayout('Owner').items[0]!.resources.api!.binding).toBe(binding)
+		expect(registry.resolveResource(binding)).toEqual(apiRef('Owner', 'api'))
 		registry.mount('Other', defineManagementModule({ id: 'Other' }), {})
+		expect(registry.findResource(binding)).toBeNull()
 		expect(() => registry.resolveResource(binding)).toThrow(/invalid or expired/)
 	})
 

@@ -213,7 +213,7 @@ override init() {
 - collection 默认是非持久化的管理面投影；只有确实拥有独立管理状态时才显式传入
   `managementBinding.collection({ persistence: true })`；
 - builtin document 中 ref/write 的 `collection` 是 module resource key；每个 key 独立解析为
-  revision-scoped opaque binding，不使用插件名作为 collection namespace；
+  resource-graph-revision-scoped opaque binding，不使用插件名作为 collection namespace；
 - 管理资源只服务管理员 UI，不替代公共业务 HTTP API。
 
 `managementUi(import.meta.url, './ui/index.tsx')` 是静态字符串 declaration，没有 import 或注册副作用。
@@ -226,7 +226,9 @@ UI 使用的 React、React DOM、Mantine 和 `@pluxel/runtime` 由宿主提供 s
 UI entry 用同一个 typed app 同时定义 exports 和读取当前 layout bindings：
 
 ```tsx
-const app = managementApp(DashboardManagement)
+import type { DashboardManagement } from '../management-module.ts'
+
+const app = managementApp<typeof DashboardManagement>()
 
 export function Overview() {
 	const runtime = app.use()
@@ -273,7 +275,7 @@ override init() {
 }
 
 // provider module
-const FetchManagement = defineManagementModule({
+export const FetchManagement = defineManagementModule({
   id: 'FetchPlugin',
   ui: managementUi(import.meta.url, './ui/index.tsx'),
   contributions: [managementPortRenderer({
@@ -284,8 +286,11 @@ const FetchManagement = defineManagementModule({
 })
 
 // provider UI entry
-const provider = managementApp(FetchManagement)
-const settingsPort = managementApp(FetchSettingsPort)
+import type { FetchManagement } from '../management-module.ts'
+import type { FetchSettingsPort } from '../shared.ts'
+
+const provider = managementApp<typeof FetchManagement>()
+const settingsPort = managementApp<typeof FetchSettingsPort>()
 
 export function FetchSettings() {
   const settings = settingsPort.use().api('settings')
@@ -297,9 +302,12 @@ export default provider.define({ FetchSettings })
 
 renderer 使用 port app 读取当前 layout 的 `settings` binding，并用拥有 remote 的 provider app 导出
 view。同一个 renderer 可投放到任意数量的 consumer；每个实例都绑定到对应 consumer 授权的配置资源。
+UI entry 必须用 `import type` 引入 module/port 类型；remote 只需要类型形状，不应执行服务端
+`managementUi()` declaration 或把 core、Context、Node API 打进浏览器产物。
 port 不引入隐藏存储：状态可以由 consumer 自己持有，也可以像示例一样显式委托给 Fetch capability 按
 consumer id 持有；renderer 和 Workbench 都不保存服务端 session/draft。layout 只下发
-opaque binding，插件卸载、依赖变化或 HMR revision 更新后旧 binding 自动失效。
+opaque binding；UI artifact-only 更新会复用仍有效的 binding，插件卸载、实例替换或依赖资源图变化会
+立即撤销旧 grant。
 
 provider 若只想把只读能力摘要自动投影给 required dependents，可使用
 `managementAudience.requiredDependents()`，该模式只能进入 host-owned `plugin.capabilities`；任意 Tab、

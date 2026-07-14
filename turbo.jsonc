@@ -222,7 +222,7 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			"dependsOn": ["build", "@pluxel/test#build"],
+			"dependsOn": ["^build", "build", "@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",

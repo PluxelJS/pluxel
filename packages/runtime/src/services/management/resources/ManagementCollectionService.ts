@@ -84,8 +84,8 @@ export class ManagementCollectionService {
 		string,
 		Map<string, ManagedSignalDbCollection<any>>
 	>()
-	private readonly channelsByPlugin = new Map<string, Set<SseChannel>>()
-	private readonly streamRegisteredByPlugin = new Set<string>()
+	private readonly channelsByCollection = new Map<string, Set<SseChannel>>()
+	private readonly streamDisposers = new Map<string, () => void>()
 	private readonly ownersByPlugin = new Map<string, Context>()
 
 	constructor(
@@ -120,19 +120,38 @@ export class ManagementCollectionService {
 			pluginName,
 		})
 		collections.set(name, managed)
-		this.ensureStream(pluginName, owner)
-		void managed.ready().then((): undefined => {
-			this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
-			return undefined
-		})
+		this.ensureStream(pluginName, name, owner)
+		void managed
+			.ready()
+			.then((): undefined => {
+				this.broadcast(pluginName, 'snapshot', managed.snapshotEvent())
+				return undefined
+			})
+			.catch((error) => {
+				owner.logger.error('management collection initialization failed', {
+					pluginName,
+					collection: name,
+					error,
+				})
+			})
 
 		owner.effects.defer(() => {
 			const currentCollections = this.collectionsByPlugin.get(pluginName)
 			if (currentCollections?.get(name) === managed) {
 				currentCollections.delete(name)
-				if (currentCollections.size === 0) this.collectionsByPlugin.delete(pluginName)
+				if (currentCollections.size === 0) {
+					this.collectionsByPlugin.delete(pluginName)
+					this.ownersByPlugin.delete(pluginName)
+				}
 			}
-			void managed.dispose()
+			this.disposeStream(pluginName, name)
+			void managed.dispose().catch((error) => {
+				owner.logger.warn('management collection cleanup failed', {
+					pluginName,
+					collection: name,
+					error,
+				})
+			})
 		})
 
 		return managed.publicApi
@@ -150,7 +169,7 @@ export class ManagementCollectionService {
 		const managed = this.collectionsFor(pluginName).get(name)
 		if (!managed) return { items: [], meta: { clientWrites: false } }
 		const owner = this.ownersByPlugin.get(pluginName)
-		if (owner) this.ensureStream(pluginName, owner)
+		if (owner) this.ensureStream(pluginName, name, owner)
 		await managed.ready()
 		return managed.loadSyncResponse() as SignalDbLoadResponse<T>
 	}
@@ -171,40 +190,57 @@ export class ManagementCollectionService {
 		const managed = this.collectionsFor(pluginName).get(name)
 		if (!managed) return 'missing'
 		const owner = this.ownersByPlugin.get(pluginName)
-		if (owner) this.ensureStream(pluginName, owner)
+		if (owner) this.ensureStream(pluginName, name, owner)
 		await managed.ready()
 		if (!managed.allowsClientWrites()) return 'readonly'
 		managed.applySyncChanges(changes)
 		return 'applied'
 	}
 
-	private ensureStream(pluginName: string, owner: Context) {
-		if (this.streamRegisteredByPlugin.has(pluginName)) return
-		this.streamRegisteredByPlugin.add(pluginName)
+	private ensureStream(pluginName: string, collection: string, owner: Context) {
+		const key = collectionKey(pluginName, collection)
+		if (this.streamDisposers.has(key)) return
 
-		this.streams.registerResourceFor(owner, signalDbNamespace(pluginName), (channel) => {
-			const channels = this.channelsFor(pluginName)
-			channels.add(channel)
-			for (const managed of this.collectionsFor(pluginName).values()) {
-				void managed.ready().then((): undefined => {
-					if (channel.closed || !channels.has(channel)) return undefined
-					channel.emit('snapshot', managed.snapshotEvent())
-					return undefined
+		const dispose = this.streams.registerResourceFor(
+			owner,
+			signalDbNamespace(pluginName, collection),
+			(channel) => {
+				const channels = this.channelsFor(pluginName, collection)
+				channels.add(channel)
+				const managed = this.collectionsFor(pluginName).get(collection)
+				if (managed) {
+					void managed
+						.ready()
+						.then((): undefined => {
+							if (channel.closed || !channels.has(channel)) return undefined
+							channel.emit('snapshot', managed.snapshotEvent())
+							return undefined
+						})
+						.catch((error) => {
+							owner.logger.error('management collection initial stream snapshot failed', {
+								pluginName,
+								collection: managed.publicApi.name,
+								error,
+							})
+						})
+				}
+				channel.onAbort(() => {
+					channels.delete(channel)
 				})
-			}
-			channel.onAbort(() => {
-				channels.delete(channel)
-			})
 
-			return () => {
-				channels.delete(channel)
-			}
-		})
-		owner.effects.defer(() => {
-			this.streamRegisteredByPlugin.delete(pluginName)
-			this.channelsByPlugin.delete(pluginName)
-			this.ownersByPlugin.delete(pluginName)
-		})
+				return () => {
+					channels.delete(channel)
+				}
+			},
+		)
+		this.streamDisposers.set(key, dispose)
+	}
+
+	private disposeStream(pluginName: string, collection: string) {
+		const key = collectionKey(pluginName, collection)
+		this.streamDisposers.get(key)?.()
+		this.streamDisposers.delete(key)
+		this.channelsByCollection.delete(key)
 	}
 
 	broadcast(
@@ -215,10 +251,17 @@ export class ManagementCollectionService {
 		>,
 		payload: SignalDbSyncEvent,
 	) {
-		for (const channel of this.channelsFor(pluginName)) {
+		for (const channel of this.channelsFor(pluginName, payload.collection)) {
 			try {
 				channel.emit(event, payload)
-			} catch {}
+			} catch (error) {
+				this.ownersByPlugin.get(pluginName)?.logger.warn('management collection broadcast failed', {
+					pluginName,
+					collection: payload.collection,
+					event,
+					error,
+				})
+			}
 		}
 	}
 
@@ -235,14 +278,19 @@ export class ManagementCollectionService {
 		return collections
 	}
 
-	private channelsFor(pluginName: string): Set<SseChannel> {
-		let channels = this.channelsByPlugin.get(pluginName)
+	private channelsFor(pluginName: string, collection: string): Set<SseChannel> {
+		const key = collectionKey(pluginName, collection)
+		let channels = this.channelsByCollection.get(key)
 		if (!channels) {
 			channels = new Set()
-			this.channelsByPlugin.set(pluginName, channels)
+			this.channelsByCollection.set(key, channels)
 		}
 		return channels
 	}
+}
+
+function collectionKey(pluginName: string, collection: string): string {
+	return `${pluginName}\u0000${collection}`
 }
 
 type ManagedCollectionOptions<T extends SignalDbItem> = SignalDbCollectionOptions<T> & {
@@ -295,7 +343,15 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	async dispose(): Promise<void> {
-		await this.readyPromise.catch((): undefined => undefined)
+		try {
+			await this.readyPromise
+		} catch (error) {
+			this.ctx.logger.warn('management collection cleanup after initialization failure', {
+				pluginName: this.options.pluginName,
+				collection: this.options.name,
+				error,
+			})
+		}
 		const collection = this.collection
 		if (!collection) return
 		while (collection.isPushing()) {
@@ -303,7 +359,15 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 				collection.once('persistence.pushCompleted', resolve)
 			})
 		}
-		await collection.dispose().catch((): undefined => undefined)
+		try {
+			await collection.dispose()
+		} catch (error) {
+			this.ctx.logger.warn('management collection SignalDB cleanup failed', {
+				pluginName: this.options.pluginName,
+				collection: this.options.name,
+				error,
+			})
+		}
 	}
 
 	snapshotEvent(): SignalDbSyncEvent<T> {
@@ -341,7 +405,14 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 
 		await collection.isReady()
 
-		if (collection.find().count() === 0) {
+		const initialCursor = collection.find()
+		let empty: boolean
+		try {
+			empty = initialCursor.count() === 0
+		} finally {
+			initialCursor.cleanup()
+		}
+		if (empty) {
 			const seeded =
 				typeof this.options.initial === 'function' ? this.options.initial() : this.options.initial
 			if (Array.isArray(seeded) && seeded.length > 0) {
@@ -372,14 +443,39 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	private snapshotItems() {
-		return this.getCollection().find().fetch().map(cloneItem)
+		return this.fetchItems()
+	}
+
+	private fetchItems(selector: SignalDbSelector<T> = {}, options?: SignalDbFindOptions<T>): T[] {
+		const cursor = this.getCollection().find(selector as any, options as any)
+		try {
+			return cursor.fetch().map(cloneItem)
+		} finally {
+			cursor.cleanup()
+		}
+	}
+
+	private countItems(selector: SignalDbSelector<T> = {}): number {
+		const cursor = this.getCollection().find(selector as any)
+		try {
+			return cursor.count()
+		} finally {
+			cursor.cleanup()
+		}
 	}
 
 	private emit(event: SignalDbSyncEvent<T>) {
 		for (const listener of this.listeners) {
 			try {
 				listener(event)
-			} catch {}
+			} catch (error) {
+				this.ctx.logger.error('management collection listener failed', {
+					pluginName: this.options.pluginName,
+					collection: this.options.name,
+					event: event.type,
+					error,
+				})
+			}
 		}
 	}
 
@@ -389,11 +485,19 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 		if (this.initialized) {
 			listener(this.snapshotEvent())
 		} else {
-			void this.ready().then((): undefined => {
-				if (!active || !this.listeners.has(listener)) return undefined
-				listener(this.snapshotEvent())
-				return undefined
-			})
+			void this.ready()
+				.then((): undefined => {
+					if (!active || !this.listeners.has(listener)) return undefined
+					listener(this.snapshotEvent())
+					return undefined
+				})
+				.catch((error) => {
+					this.ctx.logger.error('management collection initial listener snapshot failed', {
+						pluginName: this.options.pluginName,
+						collection: this.options.name,
+						error,
+					})
+				})
 		}
 		return () => {
 			active = false
@@ -407,10 +511,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	find(selector: SignalDbSelector<T> = {}, options?: SignalDbFindOptions<T>): T[] {
-		return this.getCollection()
-			.find(selector as any, options as any)
-			.fetch()
-			.map(cloneItem)
+		return this.fetchItems(selector, options)
 	}
 
 	findOne(selector: SignalDbSelector<T>): T | undefined {
@@ -419,9 +520,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 	}
 
 	count(selector: SignalDbSelector<T> = {}): number {
-		return this.getCollection()
-			.find(selector as any)
-			.count()
+		return this.countItems(selector)
 	}
 
 	insert(item: T): string {
@@ -524,10 +623,7 @@ class ManagedSignalDbCollection<T extends SignalDbItem> {
 
 	removeMany(selector: SignalDbSelector<T>): number {
 		const collection = this.getCollection()
-		const matched = collection
-			.find(selector as any)
-			.fetch()
-			.map((item) => item.id)
+		const matched = this.fetchItems(selector).map((item) => item.id)
 		const removed = collection.removeMany(selector as any)
 		if (!removed) return 0
 		const version = this.bumpVersion()

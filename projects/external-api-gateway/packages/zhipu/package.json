@@ -20,5 +20,16 @@
 	"scripts": {
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@mantine/core": "^9.4.1",
+		"@pluxel/runtime": "workspace:*",
+		"@repo/external-api-gateway-shared": "workspace:*",
+		"@tabler/icons-react": "^3.37.1",
+		"drizzle-orm": "^0.45.2",
+		"react": "^19.2.7"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.10"
 	}
 }

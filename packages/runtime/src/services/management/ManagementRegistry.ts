@@ -30,6 +30,7 @@ type ResourceGrant = InternalResourceRef & { revision: number }
 export class ManagementRegistry {
 	private readonly modules = new Map<string, MountedModule>()
 	private revision = 0
+	private grantRevision = 0
 	private readonly listeners = new Set<() => void>()
 	private readonly grants = new Map<string, ResourceGrant>()
 	private readonly grantKeys = new Map<string, string>()
@@ -38,7 +39,7 @@ export class ManagementRegistry {
 		private readonly ctx: Context,
 		private readonly artifacts: ManagementArtifactService,
 	) {
-		const disposeArtifacts = artifacts.subscribe(() => this.bump())
+		const disposeArtifacts = artifacts.subscribe(() => this.bump(false))
 		ctx.root.effects.defer(disposeArtifacts)
 	}
 
@@ -109,6 +110,22 @@ export class ManagementRegistry {
 		for (const mounted of this.modules.values()) {
 			for (const contribution of mounted.module.contributions) {
 				if (contribution.kind !== 'view') continue
+				if (contribution.placement === 'plugin.routes') {
+					if (!contribution.meta?.route?.addToNav) continue
+					if ((contribution.requireRunning ?? true) && !this.isRunning(mounted.owner)) continue
+					items.push({
+						id: `${mounted.owner}:${contribution.id}`,
+						owner: mounted.owner,
+						target: mounted.owner,
+						placement: contribution.placement,
+						view: contribution.view,
+						priority: contribution.priority ?? 0,
+						requireRunning: contribution.requireRunning ?? true,
+						meta: contribution.meta,
+						resources: Object.freeze({}),
+					})
+					continue
+				}
 				if (!String(contribution.placement).startsWith('global.')) continue
 				if ((contribution.requireRunning ?? true) && !this.isRunning(mounted.owner)) continue
 				const itemId = `${mounted.owner}:${contribution.id}`
@@ -142,10 +159,17 @@ export class ManagementRegistry {
 	}
 
 	resolveResource(binding: string, expected?: ManagementResourceRef['kind']): InternalResourceRef {
+		const resolved = this.findResource(binding, expected)
+		if (!resolved) throw new Error('[management] resource binding is invalid or expired')
+		return resolved
+	}
+
+	findResource(
+		binding: string,
+		expected?: ManagementResourceRef['kind'],
+	): InternalResourceRef | null {
 		const grant = this.grants.get(String(binding ?? ''))
-		if (!grant || grant.revision !== this.revision) {
-			throw new Error('[management] resource binding is invalid or expired')
-		}
+		if (!grant || grant.revision !== this.grantRevision) return null
 		if (expected && grant.kind !== expected) {
 			throw new Error(`[management] resource binding requires ${expected}, got ${grant.kind}`)
 		}
@@ -246,10 +270,13 @@ export class ManagementRegistry {
 		return this.ctx.registry.isRunning(owner as unknown as PluginIdentifier)
 	}
 
-	private bump(): void {
+	private bump(invalidateResources = true): void {
 		this.revision += 1
-		this.grants.clear()
-		this.grantKeys.clear()
+		if (invalidateResources) {
+			this.grantRevision += 1
+			this.grants.clear()
+			this.grantKeys.clear()
+		}
 		for (const listener of this.listeners) listener()
 	}
 
@@ -259,12 +286,12 @@ export class ManagementRegistry {
 	): Readonly<Record<string, ManagementResourceRef>> {
 		const result: Record<string, ManagementResourceRef> = {}
 		for (const [key, ref] of Object.entries(refs)) {
-			const grantKey = `${this.revision}:${scope}:${key}:${ref.owner}:${ref.resource}:${ref.kind}`
+			const grantKey = `${this.grantRevision}:${scope}:${key}:${ref.owner}:${ref.resource}:${ref.kind}`
 			let binding = this.grantKeys.get(grantKey)
 			if (!binding) {
 				binding = randomUUID()
 				this.grantKeys.set(grantKey, binding)
-				this.grants.set(binding, { ...ref, revision: this.revision })
+				this.grants.set(binding, { ...ref, revision: this.grantRevision })
 			}
 			result[key] = Object.freeze({ binding, kind: ref.kind })
 		}

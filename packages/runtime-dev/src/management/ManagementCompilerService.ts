@@ -235,6 +235,12 @@ export class ManagementCompilerService {
 
 		this.entries.set(pluginName, entry)
 		this.setupWatcher(pluginName, entry)
+		void store.markCompiling?.(pluginName).catch((error) => {
+			this.ctx.logger.error('failed to mark management UI as compiling', {
+				pluginName,
+				error,
+			})
+		})
 		this.enqueueCompile(pluginName)
 
 		const guard = ctx.effects.defer(() => {

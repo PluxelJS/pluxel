@@ -40,7 +40,9 @@ class ManagementUiRegistry {
 	unload(owner: string): void {
 		try {
 			this.cleanups.get(owner)?.()
-		} catch {}
+		} catch (error) {
+			console.error(`[management-ui] remote cleanup failed (${owner})`, error)
+		}
 		const changed = this.modules.delete(owner) || this.hashes.delete(owner)
 		this.cleanups.delete(owner)
 		if (changed) this.notify()
@@ -51,7 +53,13 @@ class ManagementUiRegistry {
 	}
 
 	private notify(): void {
-		for (const listener of this.listeners) listener()
+		for (const listener of this.listeners) {
+			try {
+				listener()
+			} catch (error) {
+				console.error('[management-ui] registry listener failed', error)
+			}
+		}
 	}
 }
 

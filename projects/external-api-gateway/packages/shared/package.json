@@ -28,5 +28,13 @@
 	"scripts": {
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@libsql/client": "^0.17.4",
+		"@pluxel/runtime": "workspace:*",
+		"drizzle-orm": "^0.45.2"
+	},
+	"devDependencies": {
+		"vitest": "^4.1.10"
 	}
 }

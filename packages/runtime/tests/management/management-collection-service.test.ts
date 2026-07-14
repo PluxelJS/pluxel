@@ -243,15 +243,25 @@ describe('ManagementCollectionService', () => {
 		})
 	})
 
-	it('replays collection snapshots when a signaldb SSE channel attaches late', async () => {
+	it('scopes late SSE snapshots to the bound collection', async () => {
 		const ctx = createCollectionTestContext()
 		const service = new ManagementCollectionService(ctx, undefined, requireManagement(ctx).streams)
 		const collection = service.collection<{ id: string; value: number }>({
 			name: 'events',
 			persistence: false,
 		})
-		await collection.ready()
+		const other = service.collection<{ id: string; value: number }>({
+			name: 'status',
+			persistence: false,
+		})
+		await Promise.all([collection.ready(), other.ready()])
 		collection.insert({ id: 'a', value: 1 })
+		other.insert({ id: 'b', value: 2 })
+
+		expect(ctx.__sseExpose.mock.calls.map((call: unknown[]) => call[1])).toEqual([
+			'test-plugin:signaldb:events',
+			'test-plugin:signaldb:status',
+		])
 
 		const handler = ctx.__sseExpose.mock.calls[0][2]
 		const channel = {

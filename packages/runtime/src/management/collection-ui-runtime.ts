@@ -8,9 +8,10 @@ import {
 import maverickjsReactivityAdapter from '@signaldb/maverickjs'
 import { createUseReactivityHook } from '@signaldb/react'
 import { SyncManager } from '@signaldb/sync'
-import { useMemo, type DependencyList } from 'react'
+import { useEffect, useMemo, type DependencyList } from 'react'
 import type { RuntimeTransportClient } from '../web/client'
-import type { SseMessage } from '../web/sse'
+import { registerRuntimeTransportCleanup } from '../web/client-lifecycle'
+import type { SseClientWithNamespaces, SseMessage } from '../web/sse'
 import {
 	type SignalDbFindOptions,
 	type SignalDbItem,
@@ -39,6 +40,115 @@ type SyncCollectionOptions = {
 
 const useSignalDbReactive = createUseReactivityHook(effect)
 const SIGNALDB_SYNC_RETRY_MS = 800
+const SIGNALDB_REPLICA_IDLE_TTL_MS = 5_000
+
+type CollectionStreamListener = {
+	onMessage(message: SseMessage<string>): void
+}
+
+class ManagementBindingExpiredError extends Error {
+	constructor(binding: string) {
+		super(`[management-collection] binding expired: ${binding}`)
+	}
+}
+
+class CollectionStreamPool {
+	private readonly listeners = new Map<string, Set<CollectionStreamListener>>()
+	private current:
+		| {
+				signature: string
+				sse: SseClientWithNamespaces
+				stopAny: () => void
+				stopOpen: () => void
+				stopError: () => void
+		  }
+		| undefined
+	private refreshTimer: ReturnType<typeof setTimeout> | undefined
+	private streamErrorReported = false
+	private disposed = false
+
+	constructor(private readonly transport: RuntimeTransportClient) {}
+
+	subscribe(binding: string, listener: CollectionStreamListener): () => void {
+		if (this.disposed) throw new Error('[management-collection] stream pool is disposed')
+		let listeners = this.listeners.get(binding)
+		const bindingAdded = !listeners
+		if (!listeners) {
+			listeners = new Set()
+			this.listeners.set(binding, listeners)
+		}
+		listeners.add(listener)
+		if (bindingAdded) this.scheduleRefresh()
+
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			const current = this.listeners.get(binding)
+			if (!current) return
+			current.delete(listener)
+			if (current.size > 0) return
+			this.listeners.delete(binding)
+			this.scheduleRefresh()
+		}
+	}
+
+	dispose(): void {
+		if (this.disposed) return
+		this.disposed = true
+		if (this.refreshTimer) clearTimeout(this.refreshTimer)
+		this.refreshTimer = undefined
+		this.closeCurrent()
+		this.listeners.clear()
+	}
+
+	private scheduleRefresh() {
+		if (this.disposed || this.refreshTimer) return
+		this.refreshTimer = setTimeout(() => {
+			this.refreshTimer = undefined
+			this.refresh()
+		}, 0)
+	}
+
+	private refresh() {
+		if (this.disposed) return
+		const bindings = [...this.listeners.keys()].sort()
+		const signature = bindings.join('\u0000')
+		if (this.current?.signature === signature) return
+		this.closeCurrent()
+		if (bindings.length === 0) return
+
+		const sse = this.transport.createSse({
+			url: this.transport.links.managementCollectionEvents(bindings),
+		})
+		const stopAny = sse.onAny((message) => {
+			const listeners = this.listeners.get(message.namespace)
+			if (!listeners) return
+			for (const listener of listeners) listener.onMessage(message)
+		})
+		const stopOpen = sse.onOpen(() => {
+			this.streamErrorReported = false
+		})
+		const stopError = sse.onError(() => {
+			if (this.streamErrorReported || this.disposed) return
+			this.streamErrorReported = true
+			console.error(
+				`[management-collection] shared stream disconnected (${bindings.length} bindings); reconnecting`,
+			)
+		})
+		this.current = { signature, sse, stopAny, stopOpen, stopError }
+	}
+
+	private closeCurrent() {
+		const current = this.current
+		if (!current) return
+		this.current = undefined
+		current.stopError()
+		current.stopOpen()
+		current.stopAny()
+		current.sse.close()
+	}
+}
 
 export interface SignalDbCollectionView<T extends SignalDbItem> {
 	readonly name: string
@@ -62,28 +172,31 @@ export interface SignalDbCollectionView<T extends SignalDbItem> {
 }
 
 class SignalDbReplicaNamespace {
-	private readonly sse
-	private readonly bucket
-	private readonly stopBucketSubscription: () => void
-	private readonly stopOpenSubscription: () => void
+	private stopStreamSubscription: (() => void) | null = null
 	private readonly sync: SyncManager<SyncCollectionOptions, SignalDbItem, string>
 	private readonly states = new Map<string, CollectionState<SignalDbItem>>()
-	private readonly remoteHandlers = new Map<
-		string,
-		Set<(data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>>
+	private readonly remoteHandlers = new Set<
+		(data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>
 	>()
-	private readonly queuedRemoteChanges = new Map<string, SignalDbLoadResponse<SignalDbItem>[]>()
+	private readonly queuedRemoteChanges: SignalDbLoadResponse<SignalDbItem>[] = []
+	private readonly remoteTasks = new Set<Promise<void>>()
+	private readonly startTasks = new Map<string, Promise<void>>()
 	private readonly syncTasks = new Map<string, Promise<void>>()
 	private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+	private readonly reportedSyncErrors = new Set<string>()
+	private disposed = false
+	private disposeTask: Promise<void> | null = null
+	private logicalCollection: string | null = null
+	private active = false
+	private bindingExpired = false
 
 	constructor(
 		private readonly binding: string,
 		private readonly transport: RuntimeTransportClient,
+		private readonly streamPool: CollectionStreamPool,
 	) {
-		this.sse = transport.management.stream(binding)
-		this.bucket = this.sse
 		this.sync = new SyncManager<SyncCollectionOptions, SignalDbItem, string>({
-			autostart: true,
+			autostart: false,
 			pull: async ({ name }: SyncCollectionOptions) => {
 				const response = await this.transport.fetch(
 					this.transport.links.managementCollection(this.binding),
@@ -91,6 +204,7 @@ class SignalDbReplicaNamespace {
 						method: 'GET',
 					},
 				)
+				if (response.status === 410) throw new ManagementBindingExpiredError(this.binding)
 				if (!response.ok) throw new Error(`signaldb pull failed: HTTP ${response.status}`)
 				const data = (await response.json()) as SignalDbLoadResponse<SignalDbItem>
 				this.applyResponseMeta(name, data)
@@ -102,9 +216,10 @@ class SignalDbReplicaNamespace {
 			) => {
 				if (!hasSignalDbChanges(changes)) return
 				const state = this.states.get(name)
-				if (state?.meta.clientWrites() !== true) {
-					throw new Error(`signaldb collection "${name}" does not allow client writes`)
-				}
+				// SyncManager also observes mutations produced while applying a server snapshot.
+				// Read-only collections must not echo that hydration back to the server. Public
+				// mutation methods still reject writes in assertClientWritesEnabled().
+				if (state?.meta.clientWrites() !== true) return
 				const response = await this.transport.fetch(
 					this.transport.links.managementCollection(this.binding),
 					{
@@ -113,32 +228,37 @@ class SignalDbReplicaNamespace {
 						body: JSON.stringify({ changes }),
 					},
 				)
+				if (response.status === 410) throw new ManagementBindingExpiredError(this.binding)
 				if (!response.ok) throw new Error(`signaldb push failed: HTTP ${response.status}`)
 			},
 			registerRemoteChange: async (
 				{ name }: SyncCollectionOptions,
 				onChange: (data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>,
 			) => {
-				const handlers = this.remoteHandlers.get(name) ?? new Set()
-				if (!this.remoteHandlers.has(name)) this.remoteHandlers.set(name, handlers)
-				handlers.add(onChange)
+				this.assertLogicalCollection(name)
+				this.remoteHandlers.add(onChange)
 				this.flushQueuedRemoteChanges(name, onChange)
 				return () => {
-					handlers.delete(onChange)
-					if (handlers.size === 0) this.remoteHandlers.delete(name)
+					this.remoteHandlers.delete(onChange)
 				}
 			},
 			onError: ({ name }: SyncCollectionOptions, error: Error) => {
-				console.warn(`[management:${this.binding}] collection sync error (${name})`, error)
+				this.reportSyncError(name, error)
 			},
 		})
+	}
 
-		this.stopBucketSubscription = this.bucket.onAny((msg: SseMessage<string>) => {
-			void this.apply(msg.payload as SignalDbSyncEvent)
-		})
-		this.stopOpenSubscription = this.sse.onOpen(() => {
-			for (const collection of this.states.keys()) this.requestSync(collection)
-		})
+	setActive(active: boolean): void {
+		if (this.disposed || this.active === active) return
+		this.active = active
+		if (!active) {
+			for (const timer of this.retryTimers.values()) clearTimeout(timer)
+			this.retryTimers.clear()
+			return
+		}
+		if (this.bindingExpired) return
+		this.ensureStreamSubscription()
+		for (const collection of this.states.keys()) this.requestSync(collection)
 	}
 
 	getView<T extends SignalDbItem>(collection: string): SignalDbCollectionView<T> {
@@ -150,21 +270,54 @@ class SignalDbReplicaNamespace {
 		return buildCollectionView(collection, state)
 	}
 
-	dispose() {
-		this.stopOpenSubscription()
-		this.stopBucketSubscription()
+	dispose(): Promise<void> {
+		if (this.disposeTask) return this.disposeTask
+		this.disposed = true
+		this.disposeTask = this.disposeInternal()
+		return this.disposeTask
+	}
+
+	private async disposeInternal(): Promise<void> {
+		this.stopStreamSubscription?.()
+		this.stopStreamSubscription = null
 		for (const timer of this.retryTimers.values()) clearTimeout(timer)
 		this.retryTimers.clear()
-		for (const state of this.states.values()) state.stopObserve()
-		this.states.clear()
+
+		await Promise.allSettled(this.startTasks.values())
+		try {
+			await this.sync.pauseAll()
+		} catch (error) {
+			console.warn(`[management-collection] failed to pause sync (${this.binding})`, error)
+		}
+		await Promise.allSettled([...this.remoteTasks, ...this.syncTasks.values()])
+
+		const states = [...this.states.values()]
+		for (const state of states) state.stopObserve()
+		const collectionResults = await Promise.allSettled(
+			states.map((state) => state.collection.dispose()),
+		)
+		for (const result of collectionResults) {
+			if (result.status === 'rejected') {
+				console.warn(
+					`[management-collection] local collection cleanup failed (${this.binding})`,
+					result.reason,
+				)
+			}
+		}
+
+		await this.sync.dispose()
 		this.remoteHandlers.clear()
-		this.queuedRemoteChanges.clear()
+		this.queuedRemoteChanges.length = 0
+		this.remoteTasks.clear()
+		this.startTasks.clear()
 		this.syncTasks.clear()
-		void this.sync.dispose().catch((): undefined => undefined)
-		this.sse.close()
+		this.states.clear()
+		this.reportedSyncErrors.clear()
+		this.logicalCollection = null
 	}
 
 	private ensureState(collection: string): CollectionState<SignalDbItem> {
+		this.assertLogicalCollection(collection)
 		let state = this.states.get(collection)
 		if (state) return state
 
@@ -190,15 +343,72 @@ class SignalDbReplicaNamespace {
 		}
 		this.states.set(collection, state)
 		this.sync.addCollection(signalCollection, { name: collection })
+		const startTask = this.sync
+			.startSync(collection)
+			.catch((error) => {
+				this.reportSyncError(collection, error)
+			})
+			.finally(() => {
+				this.startTasks.delete(collection)
+			})
+		this.startTasks.set(collection, startTask)
 		this.requestSync(collection)
 		return state
 	}
 
+	private assertLogicalCollection(collection: string) {
+		if (this.logicalCollection === null) {
+			this.logicalCollection = collection
+			return
+		}
+		if (this.logicalCollection !== collection) {
+			throw new Error(
+				`[management-collection] opaque binding ${this.binding} was reused for both "${this.logicalCollection}" and "${collection}"`,
+			)
+		}
+	}
+
+	private ensureStreamSubscription() {
+		if (this.stopStreamSubscription || this.disposed) return
+		this.stopStreamSubscription = this.streamPool.subscribe(this.binding, {
+			onMessage: (message) => {
+				if (this.disposed) return
+				this.trackRemoteTask(this.apply(message.payload as SignalDbSyncEvent), 'remote change')
+			},
+		})
+	}
+
+	private trackRemoteTask(task: Promise<void>, operation: string) {
+		let tracked: Promise<void>
+		tracked = task
+			.catch((error) => {
+				console.error(`[management-collection] ${operation} failed (${this.binding})`, error)
+			})
+			.finally(() => {
+				this.remoteTasks.delete(tracked)
+			})
+		this.remoteTasks.add(tracked)
+	}
+
 	private requestSync(collection: string) {
-		void this.syncCollection(collection).catch((): undefined => undefined)
+		if (this.disposed || !this.active || this.bindingExpired) return
+		void this.syncCollection(collection).catch((error) => {
+			this.reportSyncError(collection, error)
+		})
+	}
+
+	private reportSyncError(collection: string, error: unknown) {
+		if (error instanceof ManagementBindingExpiredError) return
+		if (this.reportedSyncErrors.has(collection)) return
+		this.reportedSyncErrors.add(collection)
+		console.error(
+			`[management-collection] sync failed (${this.binding}:${collection}); retrying`,
+			error,
+		)
 	}
 
 	private scheduleRetry(collection: string) {
+		if (this.disposed || !this.active || this.bindingExpired) return
 		if (this.retryTimers.has(collection)) return
 		const timer = setTimeout(() => {
 			this.retryTimers.delete(collection)
@@ -221,35 +431,30 @@ class SignalDbReplicaNamespace {
 		data?: SignalDbLoadResponse<SignalDbItem>,
 	) {
 		this.applyResponseMeta(collection, data)
-		const handlers = this.remoteHandlers.get(collection)
-		if (!handlers?.size) {
-			if (data) this.queueRemoteChange(collection, data)
+		if (this.remoteHandlers.size === 0) {
+			if (data) this.queueRemoteChange(data)
 			return
 		}
-		await Promise.all(Array.from(handlers, (handler) => handler(data)))
+		await Promise.all(Array.from(this.remoteHandlers, (handler) => handler(data)))
 	}
 
-	private queueRemoteChange(collection: string, data: SignalDbLoadResponse<SignalDbItem>) {
-		const queued = this.queuedRemoteChanges.get(collection) ?? []
-		queued.push(data)
-		this.queuedRemoteChanges.set(collection, queued)
+	private queueRemoteChange(data: SignalDbLoadResponse<SignalDbItem>) {
+		this.queuedRemoteChanges.push(data)
 	}
 
 	private flushQueuedRemoteChanges(
 		collection: string,
 		handler: (data?: SignalDbLoadResponse<SignalDbItem>) => Promise<void>,
 	) {
-		const queued = this.queuedRemoteChanges.get(collection)
-		if (!queued?.length) return
-		this.queuedRemoteChanges.delete(collection)
-		void queued
-			.reduce((chain, data) => chain.then(() => handler(data)), Promise.resolve() as Promise<void>)
-			.catch((error) => {
-				console.warn(
-					`[management:${this.binding}] queued remote change failed (${collection})`,
-					error,
-				)
-			})
+		if (this.queuedRemoteChanges.length === 0) return
+		const queued = this.queuedRemoteChanges.splice(0)
+		this.trackRemoteTask(
+			queued.reduce(
+				(chain, data) => chain.then(() => handler(data)),
+				Promise.resolve() as Promise<void>,
+			),
+			`queued remote change (${collection})`,
+		)
 	}
 
 	private applyResponseMeta(collection: string, data?: SignalDbLoadResponse<SignalDbItem>) {
@@ -268,11 +473,17 @@ class SignalDbReplicaNamespace {
 			.then((): undefined => {
 				const state = this.states.get(collection)
 				if (!state) return undefined
+				this.reportedSyncErrors.delete(collection)
 				this.clearRetry(collection)
 				state.meta.ready.set(true)
 				return undefined
 			})
 			.catch((error) => {
+				if (error instanceof ManagementBindingExpiredError) {
+					this.bindingExpired = true
+					this.clearRetry(collection)
+					return undefined
+				}
 				const state = this.states.get(collection)
 				if (state) state.meta.ready.set(false)
 				this.scheduleRetry(collection)
@@ -289,12 +500,14 @@ class SignalDbReplicaNamespace {
 		if (!payload || typeof payload !== 'object') return
 		const data = toLoadResponse(payload)
 		if (!data) return
-		const localCollection =
-			this.states.size === 1 ? this.states.keys().next().value : payload.collection
-		if (typeof localCollection !== 'string') return
+		const localCollection = this.logicalCollection
+		if (localCollection === null) {
+			this.queueRemoteChange(data)
+			return
+		}
 		const state = this.states.get(localCollection)
 		if (!state) {
-			this.queueRemoteChange(localCollection, data)
+			this.queueRemoteChange(data)
 			return
 		}
 
@@ -302,51 +515,102 @@ class SignalDbReplicaNamespace {
 		const current = this.states.get(localCollection)
 		if (!current) return
 		this.clearRetry(localCollection)
+		this.reportedSyncErrors.delete(localCollection)
 		current.meta.ready.set(true)
 		current.meta.version.set(payload.version)
 	}
 }
 
 class SignalDbReplicaRoot {
-	private readonly namespaces = new Map<string, SignalDbReplicaNamespace>()
-
-	constructor(private readonly transport: RuntimeTransportClient) {}
-
-	namespace(binding: string): SignalDbReplicaNamespace {
-		let replica = this.namespaces.get(binding)
-		if (!replica) {
-			replica = new SignalDbReplicaNamespace(binding, this.transport)
-			this.namespaces.set(binding, replica)
+	private readonly streamPool: CollectionStreamPool
+	private readonly namespaces = new Map<
+		string,
+		{
+			replica: SignalDbReplicaNamespace
+			refs: number
+			disposeTimer: ReturnType<typeof setTimeout> | null
 		}
-		return replica
+	>()
+
+	constructor(private readonly transport: RuntimeTransportClient) {
+		this.streamPool = new CollectionStreamPool(transport)
 	}
 
-	dispose() {
-		for (const namespace of this.namespaces.values()) namespace.dispose()
+	namespace(binding: string): SignalDbReplicaNamespace {
+		let entry = this.namespaces.get(binding)
+		if (!entry) {
+			entry = {
+				replica: new SignalDbReplicaNamespace(binding, this.transport, this.streamPool),
+				refs: 0,
+				disposeTimer: null,
+			}
+			this.namespaces.set(binding, entry)
+		}
+		return entry.replica
+	}
+
+	acquire(binding: string, replica: SignalDbReplicaNamespace): () => void {
+		const entry = this.namespaces.get(binding)
+		if (!entry || entry.replica !== replica) {
+			throw new Error(`[management-collection] cannot acquire stale binding: ${binding}`)
+		}
+		if (entry.disposeTimer) {
+			clearTimeout(entry.disposeTimer)
+			entry.disposeTimer = null
+		}
+		if (entry.refs === 0) entry.replica.setActive(true)
+		entry.refs += 1
+		let released = false
+		return () => {
+			if (released) return
+			released = true
+			entry.refs = Math.max(0, entry.refs - 1)
+			if (entry.refs > 0) return
+			entry.replica.setActive(false)
+			if (entry.disposeTimer) return
+			// Keep recently visited views warm so route switches can reuse both their
+			// local replica and the multiplex subscription. The bounded idle TTL avoids
+			// retaining grants from an expired resource-graph revision for the transport lifetime.
+			entry.disposeTimer = setTimeout(() => {
+				entry.disposeTimer = null
+				if (entry.refs > 0 || this.namespaces.get(binding) !== entry) return
+				this.namespaces.delete(binding)
+				void entry.replica.dispose().catch((error) => {
+					console.warn(`[management-collection] namespace cleanup failed (${binding})`, error)
+				})
+			}, SIGNALDB_REPLICA_IDLE_TTL_MS)
+		}
+	}
+
+	async dispose(): Promise<void> {
+		const tasks: Promise<void>[] = []
+		for (const [binding, entry] of this.namespaces) {
+			if (entry.disposeTimer) clearTimeout(entry.disposeTimer)
+			tasks.push(
+				entry.replica.dispose().catch((error) => {
+					console.warn(`[management-collection] namespace cleanup failed (${binding})`, error)
+				}),
+			)
+		}
 		this.namespaces.clear()
+		this.streamPool.dispose()
+		await Promise.all(tasks)
 	}
 }
 
 const roots = new WeakMap<RuntimeTransportClient, SignalDbReplicaRoot>()
-const patchedClients = new WeakSet<RuntimeTransportClient>()
 
 function getReplicaRoot(transport: RuntimeTransportClient): SignalDbReplicaRoot {
 	let root = roots.get(transport)
 	if (!root) {
 		root = new SignalDbReplicaRoot(transport)
 		roots.set(transport, root)
-		if (!patchedClients.has(transport)) {
-			patchedClients.add(transport)
-			const originalDispose = transport.dispose.bind(transport)
-			transport.dispose = (): void => {
-				const current = roots.get(transport)
-				if (current) {
-					current.dispose()
-					roots.delete(transport)
-				}
-				originalDispose()
-			}
-		}
+		const registeredRoot = root
+		registerRuntimeTransportCleanup(transport, async () => {
+			if (roots.get(transport) !== registeredRoot) return
+			roots.delete(transport)
+			await registeredRoot.dispose()
+		})
 	}
 	return root
 }
@@ -516,10 +780,9 @@ export function useSignalDbCollectionState<T extends SignalDbItem>(
 	binding: string,
 	collection: string,
 ): SignalDbCollectionView<T> {
-	const namespace = useMemo(
-		() => getReplicaRoot(transport).namespace(binding),
-		[binding, transport],
-	)
+	const root = useMemo(() => getReplicaRoot(transport), [transport])
+	const namespace = useMemo(() => root.namespace(binding), [binding, root])
+	useEffect(() => root.acquire(binding, namespace), [binding, namespace, root])
 	return useSignalDbReactive(() => namespace.getView<T>(collection), [collection, namespace])
 }
 
@@ -537,33 +800,24 @@ export function useBoundSignalDbCollectionsState(
 				.filter((entry): entry is [string, string] => Boolean(entry[0]) && Boolean(entry[1]))
 				.map(
 					([resource, binding]) =>
-						[resource, getReplicaRoot(transport).namespace(binding)] as const,
+						[resource, binding, getReplicaRoot(transport).namespace(binding)] as const,
 				),
 		[bindingsKey, transport],
 	)
+	useEffect(() => {
+		const root = getReplicaRoot(transport)
+		const releases = resources.map(([, binding, namespace]) => root.acquire(binding, namespace))
+		return () => {
+			for (const release of releases) release()
+		}
+	}, [resources, transport])
 
 	return useSignalDbReactive(
 		() =>
 			Object.fromEntries(
-				resources.map(([resource, namespace]) => [resource, namespace.getView(resource)]),
+				resources.map(([resource, , namespace]) => [resource, namespace.getView(resource)]),
 			),
 		[bindingsKey, resources],
-	)
-}
-
-export function useSignalDbDocState<T extends SignalDbItem>(
-	transport: RuntimeTransportClient,
-	binding: string,
-	collection: string,
-	selector: SignalDbSelector<T>,
-): T | undefined {
-	const namespace = useMemo(
-		() => getReplicaRoot(transport).namespace(binding),
-		[binding, transport],
-	)
-	return useSignalDbReactive(
-		() => namespace.getView<T>(collection).findOne(selector),
-		[collection, namespace, selector],
 	)
 }
 

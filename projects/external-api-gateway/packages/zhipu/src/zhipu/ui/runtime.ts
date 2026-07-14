@@ -1,4 +1,4 @@
 import { managementApp } from '@pluxel/runtime/management/ui'
-import { ZhipuManagement } from '../management-module.ts'
+import type { ZhipuManagement } from '../management-module.ts'
 
-export const zhipuPlugin = managementApp(ZhipuManagement)
+export const zhipuPlugin = managementApp<typeof ZhipuManagement>()

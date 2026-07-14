@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { type ExtensionRoutePrefix } from '../../../extension'
 import { EXTENSION_ROUTE_PREFIX } from '../../../extension/paths'
+import { PluginManagementLoader } from '../../../management/runtime'
 import { useCurrentPathname } from '../useCurrentRoute'
 import { PluginRouteRenderer, useResolvedPluginRoute } from './PluginRouteRenderer'
 
@@ -62,18 +63,21 @@ export function ExtensionRouteScreen({ prefix }: { prefix: ExtensionRoutePrefix 
 	})
 
 	return (
-		<PluginRouteRenderer
-			pluginName={pluginName}
-			displayPath={displayPath}
-			pathname={ctxPathname}
-			pluginCtx={pluginCtx}
-			routeRender={routeRender}
-			routeVersion={routeVersion}
-			wrapContent={(content) => (
-				<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
-					{content}
-				</Stack>
-			)}
-		/>
+		<>
+			<PluginManagementLoader target={pluginName} />
+			<PluginRouteRenderer
+				pluginName={pluginName}
+				displayPath={displayPath}
+				pathname={ctxPathname}
+				pluginCtx={pluginCtx}
+				routeRender={routeRender}
+				routeVersion={routeVersion}
+				wrapContent={(content) => (
+					<Stack gap="sm" style={{ flex: 1, minHeight: 0 }}>
+						{content}
+					</Stack>
+				)}
+			/>
+		</>
 	)
 }

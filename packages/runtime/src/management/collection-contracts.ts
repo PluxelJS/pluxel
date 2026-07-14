@@ -33,6 +33,6 @@ export type SignalDbLoadResponse<T extends SignalDbItem = SignalDbItem> = LoadRe
 	}
 }
 
-export function signalDbNamespace(pluginName: string): string {
-	return `${String(pluginName ?? '').trim()}:signaldb`
+export function signalDbNamespace(pluginName: string, collection: string): string {
+	return `${String(pluginName ?? '').trim()}:signaldb:${String(collection ?? '').trim()}`
 }

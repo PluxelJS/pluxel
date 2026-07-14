@@ -209,7 +209,9 @@ class ExtensionRegistry {
 		for (const cb of this.listeners) {
 			try {
 				cb()
-			} catch {}
+			} catch (error) {
+				console.error('[extension-registry] listener failed', error)
+			}
 		}
 		for (const point of points) {
 			const bucket = this.pointListeners.get(point)
@@ -217,7 +219,9 @@ class ExtensionRegistry {
 			for (const cb of bucket) {
 				try {
 					cb()
-				} catch {}
+				} catch (error) {
+					console.error(`[extension-registry] point listener failed (${point})`, error)
+				}
 			}
 		}
 	}
