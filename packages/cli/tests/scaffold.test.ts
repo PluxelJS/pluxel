@@ -31,6 +31,15 @@ describe('scaffold name helpers', () => {
 })
 
 describe('scaffold template rendering', () => {
+	it('keeps compiler semantics out of standalone plugin overrides', () => {
+		const pluginBuild = fs.readFileSync(
+			resolve(import.meta.dirname, '../templates/plugin/tsdown.config.ts.hbs'),
+			'utf8',
+		)
+		expect(pluginBuild).not.toContain('removeClassFieldsWithoutInitializer')
+		expect(pluginBuild).not.toContain('setPublicClassFields')
+	})
+
 	it('generates the plugin template with plugin-named entry files', async () => {
 		await using fixture = await createFixture({
 			template: {

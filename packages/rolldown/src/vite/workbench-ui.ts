@@ -21,6 +21,7 @@ import {
 	runWorkbenchOutputTransaction,
 } from '../workbench/build-scheduler.ts'
 import { resolveParaglideIntegration } from './paraglide.ts'
+import { pluginSourceVitePlugins } from './plugin-source.ts'
 import { validateWorkbenchUiArtifact } from '../workbench/artifact.ts'
 
 export type BuildWorkbenchUiRemoteOptions = {
@@ -210,7 +211,11 @@ async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
 }
 
 function createWorkbenchUiBuildPlugins(payload: WorkbenchUiBuildPayload): PluginOption[] {
-	const plugins: PluginOption[] = []
+	const plugins: PluginOption[] = pluginSourceVitePlugins({
+		root: payload.root,
+		lintGuard: false,
+		configSource: false,
+	})
 	if (payload.paraglide) {
 		plugins.push(
 			...toPluginArray(

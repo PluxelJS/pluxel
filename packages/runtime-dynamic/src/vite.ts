@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
-import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
+import { importViteSsrModule } from '@pluxel/runtime-dev/vite'
+import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
@@ -136,9 +137,8 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	}
 
 	return [
-		pluxelRuntimeSourceVitePlugin({
+		...pluxelRuntimeSourceVitePlugins({
 			name: 'pluxel:dynamic-runtime-source',
-			serverOnlyName: 'pluxel:dynamic-runtime-transform',
 		}),
 		routePlugin,
 	]

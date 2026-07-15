@@ -65,9 +65,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		}>
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'unplugin-preprocessor-directives',
+			'pluxel-lint-guard',
+			'pluxel-config-source',
 			'pluxel:dynamic-runtime-source',
 			'pluxel:dynamic-runtime',
 		])
-		expect(plugins[1]?.apply).toBe('serve')
+		expect(plugins.at(-1)?.apply).toBe('serve')
 	})
 })

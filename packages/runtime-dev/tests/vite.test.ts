@@ -2,27 +2,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createServer, type ViteDevServer } from 'vite'
+import { createServer, type Plugin, type ViteDevServer } from 'vite'
+import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 
-import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '../src/vite'
-
-async function resolveEnvironmentPluginNames(
-	plugin: ReturnType<typeof pluxelRuntimeSourceVitePlugin>,
-	environment: { name: string; config: { consumer: 'server' | 'client' } },
-): Promise<string[]> {
-	const applied = await plugin.applyToEnvironment?.(environment as never)
-	if (!applied || applied === true) return []
-	const plugins = (
-		Array.isArray(applied) ? applied.flat(Number.POSITIVE_INFINITY) : [applied]
-	) as Array<{
-		name?: string
-	}>
-	return plugins.filter(Boolean).map((item) => item.name ?? '')
-}
+import { importViteSsrModule } from '../src/vite'
 
 describe('runtime-dev Vite plugin stack', () => {
 	it('exposes source/server semantics as a dedicated plugin', () => {
-		const plugin = pluxelRuntimeSourceVitePlugin()
+		const plugins = pluxelRuntimeSourceVitePlugins() as Plugin[]
+		const plugin = plugins.at(-1)!
 		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
 			environments?: { ssr?: { resolve?: { conditions?: string[] } } }
@@ -50,22 +38,63 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
 	})
 
-	it('expands source transforms only inside server Vite environments', async () => {
-		const plugin = pluxelRuntimeSourceVitePlugin({
+	it('exposes one source plugin group with server-only transforms', async () => {
+		const plugins = pluxelRuntimeSourceVitePlugins({
 			root: '/repo',
-			serverOnlyName: 'pluxel:test-source-transform',
-		})
+		}) as Plugin[]
 
-		await expect(
-			resolveEnvironmentPluginNames(plugin, { name: 'ssr', config: { consumer: 'server' } }),
-		).resolves.toEqual([
-			'pluxel:test-source-transform',
+		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'unplugin-preprocessor-directives',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
+			'pluxel:runtime-source',
 		])
-		await expect(
-			resolveEnvironmentPluginNames(plugin, { name: 'client', config: { consumer: 'client' } }),
-		).resolves.toEqual([])
+		for (const plugin of plugins.slice(1, -1)) {
+			const server = await plugin.applyToEnvironment?.({
+				name: 'ssr',
+				config: { consumer: 'server' },
+			} as never)
+			const client = await plugin.applyToEnvironment?.({
+				name: 'client',
+				config: { consumer: 'client' },
+			} as never)
+			expect(server).not.toBe(false)
+			expect(client).toBe(false)
+		}
+	})
+
+	it('applies preprocessor semantics through the real Vite module runner', async () => {
+		const root = await mkdtemp(join(process.cwd(), '.pluxel-runtime-dev-source-pipeline-'))
+		const modulePath = join(root, 'plugin.ts')
+		await writeFile(
+			modulePath,
+			[
+				'// #define PLUXEL_PIPELINE',
+				'',
+				'// #if PLUXEL_PIPELINE',
+				"export const branch = 'included'",
+				'// #else',
+				"export const branch = 'excluded'",
+				'// #endif',
+				'',
+			].join('\n'),
+		)
+
+		let server: ViteDevServer | undefined
+		try {
+			server = await createServer({
+				root,
+				logLevel: 'silent',
+				server: { middlewareMode: true },
+				appType: 'custom',
+				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+			})
+			const mod = await importViteSsrModule<{ branch: string }>(server, modulePath)
+			expect(mod.branch).toBe('included')
+		} finally {
+			await server?.close()
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('loads SSR modules through the source-map aware Vite module runner', async () => {
@@ -118,7 +147,7 @@ describe('runtime-dev Vite plugin stack', () => {
 				logLevel: 'silent',
 				server: { middlewareMode: true },
 				appType: 'custom',
-				plugins: [pluxelRuntimeSourceVitePlugin({ lintGuard: false, configSource: false })],
+				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
 			})
 			const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
 				server,

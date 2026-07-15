@@ -14,14 +14,4 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	inputOptions: {
-		transform: {
-			assumptions: {
-				setPublicClassFields: true,
-			},
-			typescript: {
-				removeClassFieldsWithoutInitializer: true,
-			},
-		},
-	},
 })

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
+import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import { dirname, resolve } from 'pathe'
 import {
 	createLogger,
@@ -438,10 +438,9 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 		},
 		plugins: [
 			clientNodeImportGuardPlugin(),
-			pluxelRuntimeSourceVitePlugin({
+			...pluxelRuntimeSourceVitePlugins({
 				name: 'pluxel:dynamic-runtime-source',
 				root: opts.root,
-				serverOnlyName: 'pluxel:ssr-transform',
 			}),
 			opts.runnerPlugin,
 			opts.httpPlugin,

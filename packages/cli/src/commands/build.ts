@@ -1,9 +1,7 @@
 import { type ArgValues, define } from 'gunshi'
-import type { InlineConfig } from 'tsdown'
 import { buildCommandArgs, buildCommandDefinition } from '../command-manifest'
 
 type BuildRuntimeConfig = import('@pluxel/rolldown/build').BuildRuntimeConfig
-type CliTsdownOverlay = (typeof import('@pluxel/rolldown/build'))['cliTsdownOverlay']
 
 type BuildCommandArgs = typeof buildCommandArgs
 type BuildCommandValues = ArgValues<BuildCommandArgs>
@@ -43,24 +41,11 @@ export const buildCommand = define({
 			context: runtime,
 			onSuccess: pluginHook,
 			log: ctx.log,
-			extraConfig: mergeOverlayPlugins(build.cliTsdownOverlay, [importTracker.plugin]),
+			extraConfig: (context: BuildRuntimeConfig) =>
+				build.pluginPackage({
+					root: context.projectRoot,
+					additionalPlugins: [importTracker.plugin],
+				}),
 		})
 	},
 })
-
-function mergeOverlayPlugins(overlay: CliTsdownOverlay, additional: InlineConfig['plugins']) {
-	return async (ctx: BuildRuntimeConfig): Promise<InlineConfig> => {
-		const awaited = typeof overlay === 'function' ? await overlay(ctx) : overlay
-		// defineConfig 可能返回数组，取第一个
-		const resolved = Array.isArray(awaited) ? awaited[0] : awaited
-		if (!resolved) return { plugins: additional }
-		const overlayPlugins = resolved.plugins
-		const additionalArr = Array.isArray(additional) ? additional : additional ? [additional] : []
-		const plugins = overlayPlugins
-			? Array.isArray(overlayPlugins)
-				? [...overlayPlugins, ...additionalArr]
-				: [overlayPlugins, ...additionalArr]
-			: additional
-		return { ...resolved, plugins }
-	}
-}

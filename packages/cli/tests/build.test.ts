@@ -6,11 +6,15 @@ import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
 	BuildEnvKeys,
-	cliTsdownOverlay,
 	createOptionalDependencyHook,
+	pluginPackage,
 	resolveBuildContext,
 	runWithTsdown,
+	type BuildRuntimeConfig,
 } from '@pluxel/rolldown/build'
+
+const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
+	pluginPackage({ root: context.projectRoot })
 
 const buildFixtures = {
 	basic: {
@@ -497,7 +501,7 @@ describe('build command', () => {
 				context: runtime,
 				onSuccess: async () => {},
 				log: () => {},
-				extraConfig: cliTsdownOverlay,
+				extraConfig: pluginPackageOverlay,
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
@@ -530,7 +534,7 @@ describe('build command', () => {
 				context: runtime,
 				onSuccess: async () => {},
 				log: () => {},
-				extraConfig: cliTsdownOverlay,
+				extraConfig: pluginPackageOverlay,
 			})
 
 			const secondStamp = await stat(resolve(cacheRoot, String(stamp)))
@@ -549,7 +553,7 @@ describe('build command', () => {
 				context: runtime,
 				onSuccess: async () => {},
 				log: () => {},
-				extraConfig: cliTsdownOverlay,
+				extraConfig: pluginPackageOverlay,
 			})
 			const invalidatedCacheFiles = await readdir(cacheRoot, { recursive: true })
 			expect(
@@ -565,7 +569,7 @@ describe('build command', () => {
 				context: runtime,
 				onSuccess: async () => {},
 				log: () => {},
-				extraConfig: cliTsdownOverlay,
+				extraConfig: pluginPackageOverlay,
 			})
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
@@ -584,7 +588,7 @@ describe('build command', () => {
 				context: runtime,
 				onSuccess: async () => {},
 				log: () => {},
-				extraConfig: cliTsdownOverlay,
+				extraConfig: pluginPackageOverlay,
 			})
 			expect(
 				await stat(resolve(fixtureDir, '.pluxel/workbench-build')).catch((): null => null),

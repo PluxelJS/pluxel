@@ -63,7 +63,7 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 - `pluxel hmr`
   提供 loader HMR workspace profile 的诊断、TUI 编辑和辅助索引
 - `pluxel build`
-  走 `@pluxel/rolldown` 的默认 overlay，把 authoring/hmr 语义降成 runtime 可消费的产物
+  走 `@pluxel/rolldown/build` 的 `pluginPackage()` preset，把 authoring/HMR 语义降成 runtime 可消费的产物
 
 也就是说，CLI 是命令入口，不是前端架构本身的一层。
 

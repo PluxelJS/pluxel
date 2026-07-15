@@ -6,11 +6,8 @@ import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
 import type { UserConfig } from 'tsdown'
-import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
-import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 import { parseWithLang } from '../rolldown/plugins/pluginUtils'
-import { workbenchUiBuildPlugin } from '../rolldown/plugins/workbenchUiBuildPlugin'
-import { createPluginSourcePlugins, createPluginTransformOptions } from './plugin-source'
+import { createPluginBuildPipeline } from './plugin-build'
 
 export type StaticApplicationBuildOptions = {
 	entry: string
@@ -38,6 +35,11 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 		throw new Error('[static-application] only the node target is currently supported')
 	const state: StaticApplicationBuildState = { residualPackages: [] }
 	const buildDir = relative(cwd, outDir) || '.'
+	const sourcePipeline = createPluginBuildPipeline({
+		root: cwd,
+		lint: options.lint,
+		workbench: variant === 'workbench' ? { buildDir, minify: options.minify ?? true } : false,
+	})
 
 	return {
 		name: 'pluxel-static-application',
@@ -59,7 +61,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 			onlyBundle: false,
 		},
 		plugins: [
-			...createPluginSourcePlugins(cwd),
+			...(sourcePipeline.plugins ?? []),
 			nf3ExternalsPlugin({
 				cwd,
 				outDir,
@@ -70,19 +72,14 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 					state.residualPackages = Object.keys(packages).sort()
 				},
 			}),
-			options.lint === false ? undefined : lintGuardPlugin({ cwd }),
-			configSourcePlugin(),
-			variant === 'workbench'
-				? workbenchUiBuildPlugin({ root: cwd, buildDir, minify: options.minify ?? true })
-				: undefined,
 			staticApplicationEntryPlugin({ entry, variant, state }),
 			staticApplicationAssemblyPlugin({ cwd, outDir, variant, state }),
 		],
 		inputOptions: {
+			...sourcePipeline.inputOptions,
 			resolve: {
 				conditionNames: ['@pluxel/source', 'node', 'import', 'module', 'production', 'default'],
 			},
-			transform: createPluginTransformOptions(),
 		},
 	}
 }

@@ -1,11 +1,8 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-	importViteSsrModule,
-	invalidateViteSsrModule,
-	pluxelRuntimeSourceVitePlugin,
-} from '@pluxel/runtime-dev/vite'
+import { importViteSsrModule, invalidateViteSsrModule } from '@pluxel/runtime-dev/vite'
+import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -261,7 +258,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 	}
 
-	return [createStaticRuntimeSourcePlugin(), routePlugin]
+	return [...createStaticRuntimeSourcePlugins(), routePlugin]
 }
 
 type StaticRuntimeReportSummary = {
@@ -438,10 +435,9 @@ function countStatuses(entries: readonly StaticRuntimeStartupReport['entries'][n
 	return { started, disabled, blocked }
 }
 
-function createStaticRuntimeSourcePlugin(): Plugin {
-	return pluxelRuntimeSourceVitePlugin({
+function createStaticRuntimeSourcePlugins(): PluginOption[] {
+	return pluxelRuntimeSourceVitePlugins({
 		name: 'pluxel:static-runtime-source',
-		serverOnlyName: 'pluxel:static-runtime-transform',
 	})
 }
 

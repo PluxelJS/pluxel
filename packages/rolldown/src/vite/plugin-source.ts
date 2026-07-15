@@ -1,0 +1,128 @@
+import PreprocessorDirectives from 'unplugin-preprocessor-directives/vite'
+import type { Plugin, PluginOption } from 'vite'
+import {
+	configSourcePlugin,
+	type ConfigSourcePluginOptions,
+} from '../rolldown/plugins/configSourcePlugin'
+import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
+import { serverOnlyVitePlugin } from './environment'
+
+export type PluginSourceVitePluginsOptions = {
+	root?: string
+	configSource?: false | ConfigSourcePluginOptions
+	lintGuard?: false | LintGuardPluginOptions
+}
+
+const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
+	'@pluxel/source',
+	'node',
+	'import',
+	'module',
+	'browser',
+	'development',
+	'production',
+	'default',
+] as const
+
+const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = [
+	'node',
+	'import',
+	'module',
+	'browser',
+	'development',
+	'production',
+	'default',
+] as const
+
+const PLUXEL_SINGLETON_PACKAGES = [
+	'@pluxel/core',
+	'@pluxel/runtime',
+	'@pluxel/runtime-dev',
+	'@pluxel/runtime-dynamic',
+	'@pluxel/runtime-static',
+] as const
+
+const PLUXEL_SSR_EXTERNAL_PACKAGES = [
+	'@pluxel/runtime',
+	'@pluxel/runtime-dev',
+	'@pluxel/runtime-dynamic',
+	'@pluxel/runtime-static',
+] as const
+
+export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptions & {
+	/** Vite plugin name for Pluxel source/server resolution and OXC semantics. */
+	name?: string
+}
+
+/** Vite adapter for source transforms that are safe in a long-lived dev server. */
+export function pluginSourceVitePlugins(
+	options: PluginSourceVitePluginsOptions = {},
+): PluginOption[] {
+	const root = options.root ?? process.cwd()
+	const plugins: PluginOption[] = [PreprocessorDirectives()]
+	if (options.lintGuard !== false) {
+		plugins.push(
+			serverOnlyVitePlugin(
+				'pluxel-lint-guard',
+				lintGuardPlugin({
+					cwd: root,
+					...options.lintGuard,
+				}),
+				{ enforce: 'pre' },
+			),
+		)
+	}
+	if (options.configSource !== false) {
+		plugins.push(
+			serverOnlyVitePlugin('pluxel-config-source', configSourcePlugin(options.configSource ?? {}), {
+				enforce: 'pre',
+			}),
+		)
+	}
+	return plugins
+}
+
+/** Complete Vite source preset consumed by both static and dynamic runtime routes. */
+export function pluxelRuntimeSourceVitePlugins(
+	options: PluxelRuntimeSourceVitePluginsOptions = {},
+): PluginOption[] {
+	const configPlugin: Plugin = {
+		name: options.name ?? 'pluxel:runtime-source',
+		config() {
+			return {
+				resolve: {
+					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
+					dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+					preserveSymlinks: false,
+				},
+				environments: {
+					ssr: {
+						resolve: {
+							conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+							externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
+							dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+							preserveSymlinks: false,
+						},
+					},
+				},
+				ssr: {
+					external: [...PLUXEL_SSR_EXTERNAL_PACKAGES],
+					resolve: {
+						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
+						dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+						preserveSymlinks: false,
+					},
+				},
+				oxc: {
+					decorator: {
+						legacy: true,
+						emitDecoratorMetadata: true,
+					},
+				},
+			}
+		},
+	}
+	return [...pluginSourceVitePlugins(options), configPlugin]
+}

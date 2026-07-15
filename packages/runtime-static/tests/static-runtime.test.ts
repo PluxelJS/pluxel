@@ -79,7 +79,7 @@ class DisabledHotV2 extends BasePlugin {
 }
 
 describe('@pluxel/runtime-static', () => {
-	it('exposes a marked static application and a single route plugin entry', async () => {
+	it('exposes a marked static application and one shared Vite source plugin group', async () => {
 		const application = defineStaticRuntime({
 			name: 'static-vite-config-test',
 			plugins: [],
@@ -130,10 +130,13 @@ describe('@pluxel/runtime-static', () => {
 			),
 		).rejects.toThrow(/context must not include "workbench"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'unplugin-preprocessor-directives',
+			'pluxel-lint-guard',
+			'pluxel-config-source',
 			'pluxel:static-runtime-source',
 			'pluxel:static-runtime',
 		])
-		expect(plugins[1]?.apply).toBe('serve')
+		expect(plugins.at(-1)?.apply).toBe('serve')
 	})
 
 	it('rejects unmarked objects at every application adapter boundary', async () => {

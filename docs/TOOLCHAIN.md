@@ -4,10 +4,23 @@ Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
 ## Plugin package build
 
-`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 通过 tsdown 驱动 Rolldown。普通 dynamic
-插件包与 static application 共用 production source pipeline：preprocessor、macro、legacy decorator、
-`design:paramtypes`、lint、config metadata 和 Workbench declaration extraction。插件包产物保留 runtime peer
-边界；static application freezer 则把固定 catalog 与 runtime closure 组装成部署产物。
+`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
+Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
+legacy decorator、`design:paramtypes`、lint、config metadata、Workbench declaration extraction 和 decorator output
+guard。CLI 只追加 import tracker，不重新列举这些 compiler plugins。
+
+两条 production route 只在输出拓扑处分叉：plugin package 保留 runtime peer boundary、dts 和 package exports；static
+application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
+assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
+
+Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、lint 和 config metadata 语义，并由
+Vite/OXC 提供 legacy decorator transform。preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，同时用于
+Workbench UI production build；lint/config metadata 只应用于 server environment。runtime-dev 只增加 ModuleRunner、
+watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
+
+production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
+sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它
+装入 HMR dev server。该限制不影响 plugin package 与 static application production build 的 macro 等价性。
 
 ## Static application freezer
 
