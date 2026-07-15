@@ -26,7 +26,6 @@ export type { WorkbenchArtifactStore } from './services/workbench/WorkbenchArtif
 export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
 export { resolvePackagedWorkbenchManifest } from './services/workbench/packaged-artifact'
 export { installWorkbench, requireWorkbench } from './services/workbench'
-
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {
 	createRuntimeLogging,

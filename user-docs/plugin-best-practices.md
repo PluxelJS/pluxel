@@ -1,8 +1,9 @@
 # 插件最佳实践
 
-本文是写代码和 code review 时的快速决策指南。完整 API 示例见
-[`plugin-authoring.md`](plugin-authoring.md)，测试策略见 [`testing.md`](testing.md)，能够自动检查的
-约束见 [`oxlint.md`](oxlint.md)。
+本文是写代码和 code review 时的快速决策指南。package、tsdown 和发布边界见
+[`plugin-package.md`](plugin-package.md)，完整 API 示例见
+[`plugin-authoring.md`](plugin-authoring.md)，测试策略见 [`testing.md`](testing.md)，能够自动检查的约束见
+[`oxlint.md`](oxlint.md)。
 
 ## 按所有权组织代码
 
@@ -41,12 +42,13 @@ export class OrdersPlugin extends BasePlugin {
 
 ## Required、optional 与 feature
 
-| 意图                     | 标准写法                                                       | 不要这样写                            |
-| ------------------------ | -------------------------------------------------------------- | ------------------------------------- |
-| 没有 provider 就不能运行 | constructor parameter                                          | 在 decorator 重复依赖或运行时自行查找 |
-| provider 仅提供增强能力  | `this.plugins.use(Provider, callback)`                         | optional provider 放进 constructor    |
-| 插件内部必需组成         | decorator `features` + `this.features.use()`                   | 为内部实现制造独立 plugin             |
-| 插件内部按需组成         | module-level `defineLazyFeature()` + runtime `features.load()` | 静态 import 后伪装 lazy load          |
+| 意图                                 | 标准写法                                                       | 不要这样写                            |
+| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------- |
+| 没有 provider 就不能运行             | constructor parameter                                          | 在 decorator 重复依赖或运行时自行查找 |
+| host-managed provider 仅提供增强能力 | `this.plugins.use(Provider, callback)`                         | optional provider 放进 constructor    |
+| provider package 允许不存在          | module-level `optionalPlugin()` + `plugins.use(Ref)`           | raw import 后自行注册 provider        |
+| 插件内部必需组成                     | decorator `features` + `this.features.use()`                   | 为内部实现制造独立 plugin             |
+| 插件内部按需组成                     | module-level `defineLazyFeature()` + runtime `features.load()` | 静态 import 后伪装 lazy load          |
 
 constructor dependency 必须是 runtime import，不能使用 `import type`。插件源码也必须由 Pluxel
 Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
@@ -89,10 +91,14 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 
 ## 提交前检查
 
-1. 运行 `pnpm lint:fix`，阅读并理解仍未修复的 Pluxel rule；不要用 disable 绕过所有权问题。
-2. 运行 `pnpm verify`，覆盖 format、unused suppressions、typecheck、tests 和 production build。
-3. 确认 required/optional、plugin/feature、HTTP/workbench 三组边界都清楚。
-4. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
-5. 确认 disabled Workbench Plane 测试仍通过，公开 contract 类型能被消费者发现。
-6. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
+1. 确认 `package.json` 入口与 `dist` 一致，runtime 是 peer，插件依赖有明确版本来源；生成的
+   `pluxel.pluginPackages` 不由作者手写。
+2. 确认 `tsdown.config.ts` 只描述 package 输入/输出，没有再次安装 `pluginPackage()`、decorator transform
+   或复制 Pluxel compiler plugin。
+3. 运行 `pnpm lint:fix`，阅读并理解仍未修复的 Pluxel rule；不要用 disable 绕过所有权问题。
+4. 运行 `pnpm verify`，覆盖 format、unused suppressions、typecheck、tests 和 production build。
+5. 确认 required/optional、plugin/feature、HTTP/workbench 三组边界都清楚。
+6. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
+7. 确认 disabled Workbench Plane 测试仍通过，公开 contract 类型能被消费者发现。
+8. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
    raw TypeScript runner？

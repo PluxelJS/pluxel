@@ -2,6 +2,10 @@
 
 {{description}}
 
+Before changing plugin code or package/build configuration, start at
+[`docs/pluxel/README.md`](docs/pluxel/README.md). The CLI copies the same authoring, package,
+testing, and Oxlint guidance used by Pluxel itself.
+
 ## Install
 
 ```sh
@@ -12,9 +16,9 @@ Import the plugin constructor into a static catalog or expose the package throug
 workspace profile. Both routes use the same plugin class.
 
 ```ts
-import {{className}} from '{{packageName}}'
+import { {{className}}Plugin } from '{{packageName}}'
 
-export const plugins = [{{className}}]
+export const plugins = [{{className}}Plugin]
 ```
 
 ## Develop

@@ -131,6 +131,7 @@ describe('@pluxel/runtime-static', () => {
 		).rejects.toThrow(/context must not include "workbench"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:plugin-semantics',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
 			'pluxel:static-runtime-source',

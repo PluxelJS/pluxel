@@ -2,8 +2,14 @@ import { cancel, intro, isCancel, note, outro, spinner, text } from '@clack/prom
 import { type ArgValues, define } from 'gunshi'
 import { basename, resolve } from 'pathe'
 import { newCommandArgs, newCommandDefinition } from '../command-manifest'
-import { detectPm, type PM, runPackageManager } from '../utils/pm'
-import { parsePackageName, pascalCase, suggestPackageName, validatePackageName } from './name'
+import { detectPm, formatPackageScriptCommand, type PM, runPackageManager } from '../utils/pm'
+import {
+	parsePackageIdentity,
+	parsePackageName,
+	pascalCase,
+	suggestPackageName,
+	validatePackageName,
+} from './name'
 import {
 	ensureTemplate,
 	generateFromTemplate,
@@ -17,7 +23,7 @@ import {
 	type WorkspaceReason,
 } from './workspace'
 
-export { parsePackageName } from './name'
+export { parsePackageIdentity, parsePackageName } from './name'
 
 type NewCommandArgs = typeof newCommandArgs
 type NewCommandValues = ArgValues<NewCommandArgs>
@@ -106,7 +112,7 @@ export const newCommand = define({
 				throw error
 			}
 
-			ctx.log(`\n${pm} build`)
+			ctx.log(`\nNext: ${formatPackageScriptCommand(pm, 'verify')}`)
 		}
 
 		outro(`✔ Done.\ncd ${plan.targetDir}`)
@@ -124,7 +130,7 @@ async function ensurePackageName(explicit?: string) {
 	const suggestion = suggestPackageName(process.cwd())
 	const answer = await text({
 		message: 'Package name (@scope/name or name)',
-		placeholder: suggestion ?? '@scope/plugin-example',
+		placeholder: suggestion ?? '@scope/example',
 		defaultValue: suggestion,
 		validate: validatePackageName,
 	})
@@ -149,7 +155,11 @@ function createScaffoldPlan(
 	const destPlan =
 		createsWorkspace && !dest ? { destBase: cwd } : resolveDestination(rootInfo, dest)
 
-	const { name: pluginName, packageName } = parsePackageName(input, resolvePluginPrefixes())
+	const { name: pluginName, packageName } = resolveScaffoldIdentity(
+		input,
+		templateBase,
+		resolvePluginPrefixes(),
+	)
 	const targetDir = resolve(destPlan.destBase, pluginName)
 
 	const plan: ScaffoldPlan = {
@@ -168,6 +178,16 @@ function createScaffoldPlan(
 
 	if (pm) plan.pm = pm
 	return plan
+}
+
+export function resolveScaffoldIdentity(
+	input: string,
+	templateBase: string,
+	pluginPrefixes: string[],
+) {
+	return basename(templateBase) === 'app-monorepo'
+		? parsePackageIdentity(input)
+		: parsePackageName(input, pluginPrefixes)
 }
 
 function resolvePluginPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {

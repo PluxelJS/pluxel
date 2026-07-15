@@ -15,7 +15,7 @@ import {
 	type ScanTaskOptions,
 } from '../scan/types'
 import { PackageServiceError, toError } from './errors'
-import { parseDependOn } from './helpers'
+import { parsePluginPackages } from './helpers'
 import type { PackageRuntime } from './runtime'
 import { type NormalizedPackageSpecifier, tryFromSnapshot } from './specifiers'
 import type { PackageState } from './state'
@@ -25,6 +25,7 @@ import type {
 	PackageInstallResult,
 	PackageLoadIssueSource,
 	PackageLoadResult,
+	PluginPackageDependencies,
 	ResolvedInstallOptions,
 } from './types'
 
@@ -38,7 +39,7 @@ interface PackageManifestMeta {
 	manifestPath?: string
 	manifestVersion?: string
 	resolvedVersion?: string
-	dependOn: string[]
+	pluginPackages: PluginPackageDependencies
 }
 
 type LogEvent = (
@@ -176,7 +177,7 @@ export class PackageLoader {
 					module,
 					moduleId,
 					isAnchor: entry.isAnchor,
-					dependOn: entry.dependOn ?? [],
+					pluginPackages: entry.pluginPackages ?? {},
 					manifestPath: entry.manifestPath,
 					manifestVersion: entry.manifestVersion,
 					resolvedVersion: entry.resolvedVersion ?? entry.manifestVersion,
@@ -230,7 +231,7 @@ export class PackageLoader {
 			moduleId,
 			isAnchor,
 			loadedAt: Date.now(),
-			dependOn: manifestMeta.dependOn,
+			pluginPackages: manifestMeta.pluginPackages,
 			manifestPath: manifestMeta.manifestPath,
 			manifestVersion: manifestMeta.manifestVersion,
 			resolvedVersion: manifestMeta.resolvedVersion ?? manifestMeta.manifestVersion,
@@ -318,16 +319,16 @@ export class PackageLoader {
 				pluxelValue && typeof pluxelValue === 'object'
 					? (pluxelValue as Record<string, unknown>)
 					: undefined
-			const dependOn = parseDependOn(pluxel?.dependOn)
+			const pluginPackages = parsePluginPackages(pluxel?.pluginPackages)
 			return {
 				manifestPath,
 				manifestVersion: version,
 				resolvedVersion: version,
-				dependOn,
+				pluginPackages,
 			}
 		} catch (error) {
 			this.logEvent('warn', 'manifest:unreadable', { manifestPath, error })
-			return { manifestPath, dependOn: [] }
+			return { manifestPath, pluginPackages: {} }
 		}
 	}
 }

@@ -4,16 +4,12 @@ import { dirname, resolve } from 'pathe'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-export function resolveTemplatesDir(...segments: string[]) {
+export function resolveTemplatesDir() {
 	const candidates = [
-		// Bundled CLI (new): dist/./templates
-		resolve(__dirname, './templates', ...segments),
-		// Source layout (new): src/scaffold/../../templates
-		resolve(__dirname, '../../templates', ...segments),
-		// Back-compat (old): dist/./plop-templates
-		resolve(__dirname, './plop-templates', ...segments),
-		// Back-compat (old): src/plop/../../plop-templates
-		resolve(__dirname, '../../plop-templates', ...segments),
+		// Bundled CLI: dist/templates
+		resolve(__dirname, './templates'),
+		// Source layout: packages/cli/src/scaffold -> packages/cli/templates
+		resolve(__dirname, '../../templates'),
 	]
 
 	for (const candidate of candidates) {

@@ -13,11 +13,7 @@ import {
 	resolveInstallDefaults,
 	resolveStateFilePath,
 } from './helpers'
-import {
-	getUnknownErrorStack,
-	normalizeUnknownError,
-	PackageServiceError,
-} from './errors'
+import { getUnknownErrorStack, normalizeUnknownError, PackageServiceError } from './errors'
 import { PackageInstallFlow } from './install-flow'
 import { PackageInstaller } from './installer'
 import { type LoadIntentConfig, PackageLoader } from './loader'
@@ -375,6 +371,7 @@ export class PackageService {
 	/** Drop runtime caches for a package. */
 	invalidatePackage(name: string, options?: { resync?: boolean }) {
 		this.loadRuntime.invalidatePackage(name, options)
+		this.ctx.root.optionalPlugins.invalidate()
 	}
 
 	getPackageSpecByModuleId(moduleId: string): NormalizedPackageSpecifier | undefined {
@@ -446,6 +443,7 @@ export class PackageService {
 			reason: 'install',
 			targets: [result.target],
 		})
+		this.ctx.root.optionalPlugins.invalidate()
 		this.ctx.logger.debug('已清理解析缓存，等待重新扫描。', {
 			name: result.spec.name,
 			target: result.target,

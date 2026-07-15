@@ -22,7 +22,9 @@ class Consumer extends BasePlugin {
 }
 ```
 
-lazy feature 使用 module top-level `defineLazyFeature()` spec 与 `await features.load(spec)`；optional plugin integration 使用 `plugins.get/use()`。
+lazy feature 使用 module top-level `defineLazyFeature()` spec 与 `await features.load(spec)`；host-managed optional
+plugin 使用 `plugins.get/use(Token)`，package-optional implementation 使用 `optionalPlugin()` + `plugins.use(Ref)`，并在
+runtime/route host 中验证 absent、broken、replacement 与 cleanup。
 
 Workbench Plane 至少覆盖：关闭时 callback 不执行且插件可运行；开启时 backend 在首个 init 前安装；module cleanup、target layout、opaque resource binding，以及 dev source 与 production artifact 路径。
 

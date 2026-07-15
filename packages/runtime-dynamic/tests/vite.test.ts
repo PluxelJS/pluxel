@@ -66,6 +66,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:plugin-semantics',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
 			'pluxel:dynamic-runtime-source',

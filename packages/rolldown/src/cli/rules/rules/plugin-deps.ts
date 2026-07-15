@@ -1,40 +1,44 @@
-import { MANIFEST_DEPEND_ON_FIELD } from '../../env'
+import { MANIFEST_PLUGIN_PACKAGES_FIELD } from '../../env'
 import type { WorkspacePackageJson } from '../../../workspace/package-json'
 import type { RuleContext } from '../types'
 
 export function pluginDependencyRule(pkg: WorkspacePackageJson, context: RuleContext) {
-	if (context.pluginUsages.size === 0) return undefined
-
-	const runtimeDependencies = new Set(Object.keys(pkg.dependencies ?? {}))
 	const versions = resolvePluginVersions(pkg, context)
 	const messages: string[] = []
-
-	const peerChanges = ensurePeerDependencies(pkg, versions)
-	if (peerChanges.length > 0) {
-		messages.push(`peerDependencies set ${peerChanges.join(', ')}`)
+	const stalePackages = readGeneratedPluginPackages(pkg, context.manifestField).filter(
+		(name) => !context.pluginUsages.has(name),
+	)
+	const staleRemovals = removeStalePeerDependencies(pkg, stalePackages)
+	if (staleRemovals.length > 0) {
+		messages.push(`stale peerDependencies removed ${staleRemovals.join(', ')}`)
 	}
 
-	const dependencyRemovals = removeEntries(pkg, 'dependencies', versions)
+	const peerChanges = ensurePeerDependencies(pkg, versions)
+	if (peerChanges.length > 0) messages.push(`peerDependencies set ${peerChanges.join(', ')}`)
+
+	const dependencyRemovals = removeRuntimeDependencies(pkg, versions)
 	if (dependencyRemovals.length > 0) {
 		messages.push(`dependencies - ${dependencyRemovals.join(', ')}`)
 	}
 
-	const devDependencyRemovals = removeEntries(pkg, 'devDependencies', versions)
-	if (devDependencyRemovals.length > 0) {
-		messages.push(`devDependencies - ${devDependencyRemovals.join(', ')}`)
+	const peerMetaChanges = syncOptionalPeerMetadata(pkg, context.pluginUsages)
+	if (peerMetaChanges.length > 0) {
+		messages.push(`peerDependenciesMeta updated ${peerMetaChanges.join(', ')}`)
 	}
 
-	const manifestUpdate = syncManifestDependOn(
+	const manifestUpdate = syncPluginPackages(
 		pkg,
 		context.pluginUsages,
-		runtimeDependencies,
 		context.manifestField,
-		MANIFEST_DEPEND_ON_FIELD,
+		MANIFEST_PLUGIN_PACKAGES_FIELD,
 	)
 	if (manifestUpdate) {
-		const { required, optional } = manifestUpdate
 		messages.push(
-			`${context.manifestField}.${MANIFEST_DEPEND_ON_FIELD} updated (required=[${required.join(', ')}], optional=[${optional.join(', ')}])`,
+			`${context.manifestField}.${MANIFEST_PLUGIN_PACKAGES_FIELD} updated (${Object.entries(
+				manifestUpdate,
+			)
+				.map(([name, mode]) => `${name}=${mode}`)
+				.join(', ')})`,
 		)
 	}
 
@@ -45,7 +49,12 @@ function resolvePluginVersions(pkg: WorkspacePackageJson, context: RuleContext) 
 	const versions = new Map<string, string>()
 	for (const name of context.pluginUsages.keys()) {
 		const version =
-			pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.peerDependencies?.[name] ?? '*'
+			pkg.peerDependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.dependencies?.[name]
+		if (!version) {
+			throw new Error(
+				`Plugin package dependency ${name} has no version range in peerDependencies, devDependencies, or dependencies`,
+			)
+		}
 		versions.set(name, version)
 	}
 	return versions
@@ -54,112 +63,137 @@ function resolvePluginVersions(pkg: WorkspacePackageJson, context: RuleContext) 
 function ensurePeerDependencies(pkg: WorkspacePackageJson, versions: Map<string, string>) {
 	const peers = { ...pkg.peerDependencies }
 	const updates: string[] = []
-	let mutated = false
-
 	for (const [name, version] of versions) {
 		if (peers[name] === version) continue
 		peers[name] = version
 		updates.push(`${name}@${version}`)
-		mutated = true
 	}
-
-	if (!mutated) return updates
-	pkg.peerDependencies = sortRecord(peers)
-	updates.sort((a, b) => a.localeCompare(b))
-	return updates
+	if (updates.length > 0) pkg.peerDependencies = sortStringRecord(peers)
+	return updates.sort((a, b) => a.localeCompare(b))
 }
 
-function removeEntries(
-	pkg: WorkspacePackageJson,
-	section: 'dependencies' | 'devDependencies',
-	versions: Map<string, string>,
-) {
-	const source = pkg[section]
+function removeRuntimeDependencies(pkg: WorkspacePackageJson, versions: Map<string, string>) {
+	const source = pkg.dependencies
 	if (!source) return []
-
 	const removed: string[] = []
 	for (const name of versions.keys()) {
 		if (!(name in source)) continue
 		delete source[name]
 		removed.push(name)
 	}
-
-	if (removed.length === 0) return removed
-
-	if (Object.keys(source).length === 0) {
-		delete pkg[section]
-	}
-
-	removed.sort((a, b) => a.localeCompare(b))
-	return removed
+	if (Object.keys(source).length === 0) delete pkg.dependencies
+	return removed.sort((a, b) => a.localeCompare(b))
 }
 
-function syncManifestDependOn(
+function readGeneratedPluginPackages(pkg: WorkspacePackageJson, manifestField: string): string[] {
+	const manifest = isRecord(pkg[manifestField]) ? pkg[manifestField] : undefined
+	if (!manifest) return []
+	const names = new Set<string>()
+	if (isRecord(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])) {
+		for (const name of Object.keys(manifest[MANIFEST_PLUGIN_PACKAGES_FIELD])) names.add(name)
+	}
+	const legacy = isRecord(manifest.dependOn) ? manifest.dependOn : undefined
+	for (const mode of ['required', 'optional'] as const) {
+		if (!Array.isArray(legacy?.[mode])) continue
+		for (const name of legacy[mode]) if (typeof name === 'string' && name) names.add(name)
+	}
+	return [...names]
+}
+
+function removeStalePeerDependencies(pkg: WorkspacePackageJson, names: string[]): string[] {
+	const removed: string[] = []
+	for (const name of names) {
+		let changed = false
+		if (pkg.peerDependencies?.[name] !== undefined) {
+			delete pkg.peerDependencies[name]
+			changed = true
+		}
+		if (pkg.peerDependenciesMeta?.[name] !== undefined) {
+			delete pkg.peerDependenciesMeta[name]
+			changed = true
+		}
+		if (changed) removed.push(name)
+	}
+	if (pkg.peerDependencies && Object.keys(pkg.peerDependencies).length === 0) {
+		delete pkg.peerDependencies
+	}
+	if (pkg.peerDependenciesMeta && Object.keys(pkg.peerDependenciesMeta).length === 0) {
+		delete pkg.peerDependenciesMeta
+	}
+	return removed.sort((a, b) => a.localeCompare(b))
+}
+
+function syncOptionalPeerMetadata(
 	pkg: WorkspacePackageJson,
-	pluginUsages: Map<string, { hasStaticImport: boolean; hasDynamicImport: boolean }>,
-	runtimeDependencies: Set<string>,
-	manifestField: string,
-	dependOnField: string,
-) {
-	const required: string[] = []
-	const optional: string[] = []
-
-	for (const [name, usage] of pluginUsages) {
-		if (!usage.hasStaticImport && !usage.hasDynamicImport) continue
-
-		const declaredInDependencies = runtimeDependencies.has(name)
-
-		if (usage.hasStaticImport && declaredInDependencies) {
-			required.push(name)
+	facts: RuleContext['pluginUsages'],
+): string[] {
+	const meta = { ...pkg.peerDependenciesMeta }
+	const changes: string[] = []
+	for (const [name, mode] of facts) {
+		const current = { ...meta[name] }
+		if (mode === 'optional') {
+			if (current.optional === true) continue
+			current.optional = true
+			meta[name] = current
+			changes.push(`${name}=optional`)
 			continue
 		}
-
-		optional.push(name)
+		if (current.optional !== true) continue
+		delete current.optional
+		if (Object.keys(current).length === 0) delete meta[name]
+		else meta[name] = current
+		changes.push(`${name}=required`)
 	}
+	if (changes.length === 0) return changes
+	if (Object.keys(meta).length === 0) delete pkg.peerDependenciesMeta
+	else pkg.peerDependenciesMeta = sortObjectRecord(meta)
+	return changes.sort((a, b) => a.localeCompare(b))
+}
 
-	required.sort((a, b) => a.localeCompare(b))
-	optional.sort((a, b) => a.localeCompare(b))
-
-	const currentManifest = isRecord(pkg[manifestField])
+function syncPluginPackages(
+	pkg: WorkspacePackageJson,
+	facts: RuleContext['pluginUsages'],
+	manifestField: string,
+	pluginPackagesField: string,
+): Record<string, 'required' | 'optional'> | undefined {
+	const next = Object.fromEntries(
+		[...facts.entries()].sort(([a], [b]) => a.localeCompare(b)),
+	) as Record<string, 'required' | 'optional'>
+	const manifest = isRecord(pkg[manifestField])
 		? (pkg[manifestField] as Record<string, unknown>)
 		: {}
-	const dependOn = isRecord(currentManifest[dependOnField])
-		? (currentManifest[dependOnField] as Record<string, unknown>)
+	const previous = isRecord(manifest[pluginPackagesField])
+		? (manifest[pluginPackagesField] as Record<string, unknown>)
 		: {}
-	const prevRequired = Array.isArray(dependOn.required)
-		? [...dependOn.required].sort(sortStrings)
-		: []
-	const prevOptional = Array.isArray(dependOn.optional)
-		? [...dependOn.optional].sort(sortStrings)
-		: []
+	const hasLegacy = 'dependOn' in manifest
+	if (recordsEqual(previous, next) && !hasLegacy) return undefined
 
-	if (arraysEqual(required, prevRequired) && arraysEqual(optional, prevOptional)) {
-		return undefined
-	}
-
-	const nextManifest = {
-		...currentManifest,
-		[dependOnField]: {
-			...dependOn,
-			required,
-			optional,
-		},
-	}
-
-	pkg[manifestField] = nextManifest as any
-	return { required, optional }
+	const updated = { ...manifest }
+	delete updated.dependOn
+	if (Object.keys(next).length === 0) delete updated[pluginPackagesField]
+	else updated[pluginPackagesField] = next
+	if (Object.keys(updated).length === 0) delete pkg[manifestField]
+	else pkg[manifestField] = updated
+	return next
 }
 
-function arraysEqual(left: string[], right: string[]) {
-	if (left.length !== right.length) return false
-	return left.every((value, index) => value === right[index])
+function recordsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+	const leftEntries = Object.entries(left).sort(([a], [b]) => a.localeCompare(b))
+	const rightEntries = Object.entries(right).sort(([a], [b]) => a.localeCompare(b))
+	return (
+		leftEntries.length === rightEntries.length &&
+		leftEntries.every(([key, value], index) => {
+			const other = rightEntries[index]
+			return other?.[0] === key && other[1] === value
+		})
+	)
 }
 
-function sortStrings(a: string, b: string) {
-	return a.localeCompare(b)
+function sortStringRecord(record: Record<string, string>) {
+	return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
 }
 
-function sortRecord(record: Record<string, string>) {
+function sortObjectRecord<T>(record: Record<string, T>) {
 	return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
 }
 

@@ -1,5 +1,19 @@
 # @pluxel/runtime
 
+插件实现包本身允许不存在时，用 opaque optional ref 声明增强能力：
+
+```ts
+const Audit = optionalPlugin(() =>
+	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
+)
+
+this.plugins.use(Audit, (audit) => audit.registerSource(this))
+```
+
+runtime 在 consumer commit 后解析 ref，使用正常 graph lifecycle、RuntimeState 和 replacement watcher；absent
+不阻塞 consumer，broken provider 产生独立诊断。已由 host catalog 管理的 provider 继续使用
+`plugins.use(Provider, callback)`。
+
 Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
 owner-bound Binding：
 

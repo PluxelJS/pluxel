@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { normalize as normalizePath, resolve as resolvePath } from 'pathe'
 import { resolveRuntimeStoragePaths } from '@pluxel/runtime/internal'
 import type { NormalizedPackageSpecifier } from './specifiers'
-import type { InstallOptions, ResolvedInstallOptions } from './types'
+import type { InstallOptions, PluginPackageDependencies, ResolvedInstallOptions } from './types'
 
 const MANAGED_PLUGIN_PATTERN = /^(?:@[^/]+\/)?pluxel-plugin(?:-|$)/i
 
@@ -60,17 +60,16 @@ export function dedupeByName(specs: NormalizedPackageSpecifier[]): NormalizedPac
 	return [...map.values()]
 }
 
-export function parseDependOn(value: unknown): string[] {
-	if (!value) return []
-	const collect = Array.isArray(value) ? value : [value]
-	const normalized: string[] = []
-	for (const item of collect) {
-		if (typeof item !== 'string') continue
-		const trimmed = item.trim()
-		if (!trimmed) continue
-		if (!normalized.includes(trimmed)) normalized.push(trimmed)
+export function parsePluginPackages(value: unknown): PluginPackageDependencies {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+	const entries: Array<[string, 'required' | 'optional']> = []
+	for (const [name, mode] of Object.entries(value as Record<string, unknown>)) {
+		const normalized = name.trim()
+		if (normalized && (mode === 'required' || mode === 'optional')) {
+			entries.push([normalized, mode])
+		}
 	}
-	return normalized
+	return Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)))
 }
 
 export function isManagedPackageName(name: string): boolean {

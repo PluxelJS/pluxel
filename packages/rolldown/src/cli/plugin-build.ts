@@ -5,6 +5,9 @@ import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils'
 import { workbenchUiBuildPlugin } from '../rolldown/plugins/workbenchUiBuildPlugin'
+import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { createPluginDependencyMetadataHook } from './plugin-metadata'
+import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
 
 type TsdownInputOptions = NonNullable<InlineConfig['inputOptions']>
@@ -22,6 +25,15 @@ export type PluginBuildPipelineOptions = {
 	additionalPlugins?: InlineConfig['plugins']
 }
 
+export type PluginPackageOptions = PluginBuildPipelineOptions & {
+	packageMetadata?: {
+		packageJsonPath: string
+		manifestField: string
+		prefixes: string[]
+		log: BuildLogger
+	}
+}
+
 export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
 
 /**
@@ -33,10 +45,18 @@ export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
 ): PluginBuildPipeline {
+	return createPipeline(options, createPluginSemanticsPlugin().plugin)
+}
+
+function createPipeline(
+	options: PluginBuildPipelineOptions,
+	semanticsPlugin: InlineConfig['plugins'],
+): PluginBuildPipeline {
 	const workbench = options.workbench ?? {}
 	return {
 		plugins: [
 			PreprocessorDirectives(),
+			semanticsPlugin,
 			Macros({
 				viteConfig: {
 					configFile: false,
@@ -48,8 +68,8 @@ export function createPluginBuildPipeline(
 			workbench === false
 				? undefined
 				: workbenchUiBuildPlugin({ root: options.root, ...workbench }),
-			decoratorOutputGuardPlugin(),
 			...toPluginArray(options.additionalPlugins),
+			decoratorOutputGuardPlugin(),
 		],
 		inputOptions: {
 			transform: createPluginTransformOptions(),
@@ -58,7 +78,11 @@ export function createPluginBuildPipeline(
 }
 
 /** Standard tsdown overlay for independently published plugin packages. */
-export function pluginPackage(options: PluginBuildPipelineOptions): InlineConfig {
+export function pluginPackage(options: PluginPackageOptions): InlineConfig {
+	const semantics = createPluginSemanticsPlugin({
+		prefixes: options.packageMetadata?.prefixes,
+		optionalImportMode: 'external',
+	})
 	return {
 		exports: {
 			// Keep linked development packages on the dynamic source condition without exposing raw TS
@@ -68,7 +92,17 @@ export function pluginPackage(options: PluginBuildPipelineOptions): InlineConfig
 		deps: {
 			neverBundle: [/^@pluxel\//],
 		},
-		...createPluginBuildPipeline(options),
+		...createPipeline(options, semantics.plugin),
+		...(options.packageMetadata
+			? {
+					onSuccess: createPluginDependencyMetadataHook({
+						packageJsonPath: options.packageMetadata.packageJsonPath,
+						manifestField: options.packageMetadata.manifestField,
+						log: options.packageMetadata.log,
+						collectPlugins: () => semantics.snapshot(),
+					}),
+				}
+			: {}),
 	}
 }
 

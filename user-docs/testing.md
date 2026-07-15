@@ -7,7 +7,8 @@ transform、reflection setup 和确定的 package resolution conditions，使测
 
 ## 安装与配置
 
-插件 package 至少需要这些 dev dependencies：
+插件 package 的完整依赖分组见 [`plugin-package.md`](plugin-package.md)。测试部分至少需要这些 dev
+dependencies：
 
 ```sh
 pnpm add -D @pluxel/test @pluxel/core vitest oxlint

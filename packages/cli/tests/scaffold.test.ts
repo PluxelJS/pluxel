@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import fs from 'node:fs'
-import { parsePackageName } from '../src/scaffold'
+import { parsePackageIdentity, parsePackageName, resolveScaffoldIdentity } from '../src/scaffold'
 import { generateFromTemplate } from '../src/scaffold/template'
+import { formatPackageScriptCommand } from '../src/utils/pm'
 
 describe('scaffold name helpers', () => {
 	it('prefixes bare package names with the first plugin prefix', () => {
@@ -20,13 +21,40 @@ describe('scaffold name helpers', () => {
 
 	it('detects already prefixed names and avoids duplicates', () => {
 		const result = parsePackageName('pluxel-plugin-bar', ['pluxel-plugin'])
-		expect(result.name).toBe('pluxel-plugin-bar')
+		expect(result.name).toBe('bar')
 		expect(result.packageName).toBe('pluxel-plugin-bar')
 	})
 
 	it('respects any configured prefix when matching existing names', () => {
 		const result = parsePackageName('acme-plugin-extra', ['pluxel-plugin', 'acme-plugin'])
+		expect(result.name).toBe('extra')
 		expect(result.packageName).toBe('acme-plugin-extra')
+	})
+
+	it('keeps application package identities free of plugin prefixes', () => {
+		expect(parsePackageIdentity('@acme/my-app')).toEqual({
+			scope: '@acme',
+			name: 'my-app',
+			packageName: '@acme/my-app',
+		})
+	})
+
+	it('applies plugin prefixes only to the standalone plugin template', () => {
+		expect(
+			resolveScaffoldIdentity('@acme/pluxel-plugin-orders', '/templates/plugin', ['pluxel-plugin']),
+		).toMatchObject({ name: 'orders', packageName: '@acme/pluxel-plugin-orders' })
+		expect(
+			resolveScaffoldIdentity('@acme/my-app', '/templates/app-monorepo', ['pluxel-plugin']),
+		).toMatchObject({ name: 'my-app', packageName: '@acme/my-app' })
+	})
+})
+
+describe('scaffold package-manager guidance', () => {
+	it('prints a valid verify command for each supported package manager', () => {
+		expect(formatPackageScriptCommand('pnpm', 'verify')).toBe('pnpm verify')
+		expect(formatPackageScriptCommand('yarn', 'verify')).toBe('yarn verify')
+		expect(formatPackageScriptCommand('npm', 'verify')).toBe('npm run verify')
+		expect(formatPackageScriptCommand('bun', 'verify')).toBe('bun run verify')
 	})
 })
 
@@ -226,8 +254,19 @@ describe('scaffold template rendering', () => {
 			fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8'),
 		) as Record<string, any>
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
+		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': '^0.3.0' })
+		expect(manifest.exports['.']).toMatchObject({
+			types: './dist/index.d.mts',
+			'@pluxel/runtime-dynamic': './src/hello-world.ts',
+			default: './dist/index.mjs',
+		})
+		expect(manifest.publishConfig.exports['.']).toEqual({
+			types: './dist/index.d.mts',
+			default: './dist/index.mjs',
+		})
+		expect(manifest.files).toEqual(['dist', '!**/*.map'])
 		expect(manifest.devDependencies).toMatchObject({
 			'@pluxel/cli': '^0.3.0',
 			'@pluxel/core': '^0.3.0',
@@ -237,8 +276,31 @@ describe('scaffold template rendering', () => {
 		})
 		expect(fixture.fs.existsSync(resolve(targetDir, 'oxlint.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, '.oxfmtrc.json'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/pluxel/plugin-package.md'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'user-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
+		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
+		expect(source).toContain('export class HelloWorldPlugin extends BasePlugin')
+		expect(source).toContain("@Plugin({ name: 'HelloWorldPlugin' })")
+		expect(source).not.toContain('export default')
+		const pluginTest = fixture.fs.readFileSync(
+			resolve(targetDir, 'tests/hello-world.test.ts'),
+			'utf8',
+		)
+		expect(pluginTest).toContain('await host.commit()')
+		expect(pluginTest).toContain('workbench: false')
+		expect(pluginTest).not.toContain('host.start(')
+		const tsconfig = fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8')
+		expect(tsconfig).toContain('"src/**/*.tsx"')
+		expect(tsconfig).toContain('"tests/**/*.tsx"')
+		const tsdownConfig = fixture.fs.readFileSync(resolve(targetDir, 'tsdown.config.ts'), 'utf8')
+		expect(tsdownConfig).toContain("index: 'src/hello-world.ts'")
+		expect(tsdownConfig).not.toContain('pluginPackage(')
 		const vitestConfig = fixture.fs.readFileSync(resolve(targetDir, 'vitest.config.ts'), 'utf8')
 		expect(vitestConfig).not.toContain("'.*/**'")
+		expect(vitestConfig).toContain('passWithNoTests: false')
+		const readme = fixture.fs.readFileSync(resolve(targetDir, 'README.md'), 'utf8')
+		expect(readme).toContain("import { HelloWorldPlugin } from 'pluxel-plugin-hello-world'")
 	})
 })

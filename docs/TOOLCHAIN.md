@@ -7,7 +7,37 @@ Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
 Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
 legacy decorator、`design:paramtypes`、lint、config metadata、Workbench declaration extraction 和 decorator output
-guard。CLI 只追加 import tracker，不重新列举这些 compiler plugins。
+guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
+`runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
+
+optional plugin source transform 只接受 module-level `const optionalPlugin(() =>
+import(<literal>).then(<export selection>))`。Rolldown 和 Vite 使用同一个 semantic pass 完成声明校验、依赖事实收集和
+route-specific import policy；普通 dynamic import 不获得 plugin 语义。
+
+`pluginPackage()` 从 semantic facts 直接把 detected required provider 和 optional provider 保持为 external peer，
+不依赖 metadata transaction 完成后的下一次构建；optional loader 还会注入仅供运行时区分 direct absent 与
+transitive broken 的目标 package 注记。`staticApplication()` 与 Vite source route 采用 bundle-or-absent：可解析
+candidate 进入 module graph，不可解析 candidate 变成显式 absent virtual module。两种策略共享语义分析，但不混淆
+发布包与固定应用的产物边界。
+
+独立插件包从同一 semantic facts 生成：
+
+```json
+{
+	"pluxel": {
+		"pluginPackages": {
+			"pluxel-plugin-database": "required",
+			"pluxel-plugin-audit": "optional"
+		}
+	}
+}
+```
+
+constructor concrete package usage 是 `required`，optional ref literal import 是 `optional`，required 胜出。
+版本范围只来自 peer/dev/dependency authoring metadata；发布边界统一写入 `peerDependencies`，optional 同步
+`peerDependenciesMeta.optional = true`。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
+连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时，上一版生成的 peer、optional peer metadata 与 legacy
+`dependOn` 会一并清理；devDependencies 保留供作者工具使用。metadata transaction 任何失败都会使 build 失败。
 
 两条 production route 只在输出拓扑处分叉：plugin package 保留 runtime peer boundary、dts 和 package exports；static
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
@@ -39,6 +69,8 @@ export default staticApplication({
 freezer 只接受直接默认导出的 `defineStaticRuntime(...)`。它在同一 graph 中执行 macro、config metadata、lint、Workbench
 remote extraction 和 production preprocessing，然后生成 platform bootstrap。fixed plugins、runtime-static 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
+可解析 optional candidate 形成内部 chunk；不可解析 optional candidate 形成带结构化 absent code 的 virtual chunk，
+不得进入 nf3 residual 或 deployment external。
 
 Node target 用 `nf3` externalize 并追踪 native/non-bundleable residual packages，复制到 distribution 自己的
 `node_modules`。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前 freezer 只发布

@@ -9,7 +9,4 @@
 - 实现后把稳定结论写入对应领域文档，并删除已完成提案内容；
 - 已被替代或没有继续价值的提案直接删除，历史由 Git 保存。
 
-当前 proposals：
-
-- [`PLUGIN_PACKAGE_DEPENDENCY_METADATA.md`](PLUGIN_PACKAGE_DEPENDENCY_METADATA.md)：修正独立插件包 required dependency metadata 的采集、写入和 dynamic loader 消费。
-- [`PACKAGE_OPTIONAL_PLUGIN_INTEGRATION.md`](PACKAGE_OPTIONAL_PLUGIN_INTEGRATION.md)：已收敛、等待实现的 system-owned lazy import package-optional integration 设计。
+当前没有未完成 proposal。已实现设计的稳定事实位于对应领域文档，历史由 Git 保存。

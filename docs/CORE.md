@@ -10,12 +10,14 @@
 - start/stop 顺序、failure propagation 和 `CommitSummary`；
 - per-plugin effects scope；
 - feature/config declaration 与校验快照。
+- opaque `OptionalPluginRef` 声明、instance watcher 与 commit-settled internal scheduling hook。
 
 ## 不负责
 
 - HTTP、RPC、SSE、Workbench Plane；
 - 配置或业务数据持久化；
 - workspace scan、package install、Vite、HMR；
+- optional package import、retry 和 route diagnostics；
 - 进程退出、健康检查和部署策略。
 
 ## 生命周期不变量
@@ -33,7 +35,8 @@ draft graph -> verify -> stop dependents -> start providers -> CommitSummary
 
 - `features.use()`：required plugin-local composition。
 - `features.load()`：通过 `defineLazyFeature()` 声明的 lazy composition。
-- 插件间 optional integration 属于 `plugins.use()`，不属于 FeatureHost。
+- 插件间 optional integration 属于 `plugins.use()`，不属于 FeatureHost；package-optional ref 的解析由 runtime
+  availability service 承担，core 不执行 loader。
 
 ## 实现入口
 

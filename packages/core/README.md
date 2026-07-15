@@ -1,6 +1,7 @@
 # @pluxel/core
 
-`@pluxel/core` 是 Pluxel 的最小稳定内核：提供 `Context`/DI、插件生命周期、以及基础 services 合约。
+`@pluxel/core` 是 Pluxel 的最小稳定内核：提供 `Context`/DI、插件生命周期、opaque `OptionalPluginRef` 声明、
+instance watcher，以及基础 services 合约。optional package import 和 retry 仍由 runtime/route 承担。
 
 它不包含 runtime kernel 的“宿主能力”（HTTP/control-plane、workspace 扫描、包安装、loader HMR 等），这些都在：
 

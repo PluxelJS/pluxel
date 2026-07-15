@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
 import { staticApplication } from '../src/cli/static-application.ts'
 
-function pluginNames(config: ReturnType<typeof staticApplication>): string[] {
+function pluginNames(config: { plugins?: unknown }): string[] {
 	return (config.plugins as Array<{ name?: string } | null | undefined>)
 		.filter((plugin): plugin is { name?: string } => Boolean(plugin))
 		.map((plugin) => plugin.name ?? '')
@@ -17,6 +17,7 @@ describe('staticApplication', () => {
 		expect(pluginNames(config)).toEqual(pluginNames(pipeline))
 		expect(pluginNames(config)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:plugin-semantics',
 			'unplugin-macros',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
@@ -28,6 +29,31 @@ describe('staticApplication', () => {
 			legacy: true,
 			emitDecoratorMetadata: true,
 		})
+	})
+
+	it('keeps semantic package metadata inside the plugin package preset', () => {
+		const config = pluginPackage({
+			root: '/tmp/pluxel-plugin-package',
+			packageMetadata: {
+				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
+				manifestField: 'pluxel',
+				prefixes: ['pluxel-plugin'],
+				log: () => undefined,
+			},
+		})
+		expect(pluginNames(config).filter((name) => name === 'pluxel:plugin-semantics')).toHaveLength(1)
+		expect(config.onSuccess).toBeTypeOf('function')
+	})
+
+	it('runs the final output guard after caller-supplied compiler plugins', () => {
+		const pipeline = createPluginBuildPipeline({
+			root: '/tmp/pluxel-plugin-package',
+			additionalPlugins: [{ name: 'fixture:additional' }],
+		})
+		expect(pluginNames(pipeline).slice(-2)).toEqual([
+			'fixture:additional',
+			'pluxel:decorator-output-guard',
+		])
 	})
 
 	it('builds Node applications with native residual tracing', () => {

@@ -1,21 +1,20 @@
 import { withRuntimeHost } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
-import { {{className}} } from '../src/{{pluginName}}'
+import { {{className}}Plugin } from '../src/{{pluginName}}.ts'
 
-describe('{{className}}', () => {
+describe('{{className}}Plugin', () => {
 	it('starts inside a host with validated config metadata', async () => {
-		await withRuntimeHost(async (host) => {
-			host.add({{className}})
+		await withRuntimeHost(
+			async (host) => {
+				host.add({{className}}Plugin)
+				host.cfg({{className}}Plugin).set({ message: 'configured' })
+				host.cfg({{className}}Plugin).enable()
+				await host.commit()
 
-			host.cfg({{className}}).enable()
-			expect(host.cfg({{className}}).enabled()).toBe(true)
-
-			await host.start({{className}})
-			expect(host.isRunning({{className}})).toBe(true)
-			expect(host.require({{className}}).enabled).toBe(true)
-
-			host.cfg({{className}}).disable()
-			expect(host.cfg({{className}}).enabled()).toBe(false)
-		})
+				expect(host.isRunning({{className}}Plugin)).toBe(true)
+				expect(host.require({{className}}Plugin).message).toBe('configured')
+			},
+			{ workbench: false },
+		)
 	})
 })

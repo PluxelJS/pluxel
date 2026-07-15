@@ -13,6 +13,11 @@ export * from './composition/ConfigHost'
 export * from './composition/cfg'
 export * from './composition/FeatureHost'
 export * from './composition/PluginHost'
+export {
+	optionalPlugin,
+	type OptionalPluginLoader,
+	type OptionalPluginRef,
+} from './composition/OptionalPlugin'
 export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'

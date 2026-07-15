@@ -7,12 +7,6 @@ export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
 export type { WorkbenchUiBuildPluginOptions } from './plugins/workbenchUiBuildPlugin.ts'
 export { workbenchUiBuildPlugin } from './plugins/workbenchUiBuildPlugin.ts'
-export type {
-	ImportTracker,
-	ImportTrackerPluginOptions,
-	TrackedPluginUsage,
-} from './plugins/importTrackerPlugin.ts'
-export { createImportTracker } from './plugins/importTrackerPlugin.ts'
 export type { Lang } from './plugins/pluginUtils.ts'
 export {
 	getLangFromId,

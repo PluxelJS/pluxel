@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -27,14 +27,7 @@ try {
 	await mkdir(tarballRoot, { recursive: true })
 	for (const item of packages) await runPnpm(['--filter', item.name, ...item.build], repositoryRoot)
 
-	const sourceTestingGuide = await readFile(resolve(repositoryRoot, 'user-docs/testing.md'), 'utf8')
-	const bundledTestingGuide = await readFile(
-		resolve(repositoryRoot, 'packages/cli/dist/user-docs/testing.md'),
-		'utf8',
-	)
-	if (bundledTestingGuide !== sourceTestingGuide) {
-		throw new Error('CLI bundled user docs differ from user-docs source')
-	}
+	await verifyBundledUserDocs(repositoryRoot)
 
 	const overrides: Record<string, string> = {}
 	for (const item of packages.filter((candidate) => candidate.name !== '@pluxel/runtime-dev')) {
@@ -74,9 +67,9 @@ try {
 			templateBase: resolve(import.meta.dirname, '../templates/plugin'),
 			targetDir: pluginRoot,
 			data: {
-				pluginName: 'smoke-plugin',
+				pluginName: 'smoke',
 				packageName: 'pluxel-plugin-smoke',
-				className: 'SmokePlugin',
+				className: 'Smoke',
 				year: String(new Date().getFullYear()),
 				description: 'Pluxel standalone plugin template smoke test',
 			},
@@ -99,6 +92,7 @@ try {
 		pluginRoot,
 	)
 	await runPnpm(['verify'], pluginRoot, { CI: '1' })
+	await verifyStandalonePluginPack(pluginRoot)
 	const pluginPackRoot = resolve(pluginRoot, '.pack')
 	await mkdir(pluginPackRoot, { recursive: true })
 	await runPnpm(['pack', '--pack-destination', pluginPackRoot], pluginRoot)
@@ -110,6 +104,42 @@ try {
 	}
 }
 
+async function verifyBundledUserDocs(root: string): Promise<void> {
+	const sourceRoot = resolve(root, 'user-docs')
+	const bundledRoot = resolve(root, 'packages/cli/dist/user-docs')
+	const [sourceEntries, bundledEntries] = await Promise.all([
+		readdir(sourceRoot),
+		readdir(bundledRoot),
+	])
+	const sourceFiles = sourceEntries.sort()
+	const bundledFiles = bundledEntries.sort()
+	if (JSON.stringify(bundledFiles) !== JSON.stringify(sourceFiles)) {
+		throw new Error('CLI bundled user-docs file list differs from source')
+	}
+	for (const file of sourceFiles) {
+		const [source, bundled] = await Promise.all([
+			readFile(resolve(sourceRoot, file), 'utf8'),
+			readFile(resolve(bundledRoot, file), 'utf8'),
+		])
+		if (bundled !== source) throw new Error(`CLI bundled user doc differs from source: ${file}`)
+	}
+}
+
+async function verifyStandalonePluginPack(root: string): Promise<void> {
+	const output = await runPnpmCapture(['pack', '--dry-run', '--json'], root)
+	const manifest = JSON.parse(output) as { files?: Array<{ path?: string }> }
+	const files = (manifest.files ?? []).map((file) => file.path).filter(Boolean) as string[]
+	for (const required of ['dist/index.mjs', 'dist/index.d.mts', 'package.json', 'README.md']) {
+		if (!files.includes(required)) throw new Error(`Standalone plugin pack is missing ${required}`)
+	}
+	const unexpected = files.filter(
+		(file) => file.endsWith('.map') || file.startsWith('src/') || file.startsWith('tests/'),
+	)
+	if (unexpected.length > 0) {
+		throw new Error(`Standalone plugin pack contains development files: ${unexpected.join(', ')}`)
+	}
+}
+
 async function runPnpm(
 	args: string[],
 	cwd: string,
@@ -117,6 +147,34 @@ async function runPnpm(
 ): Promise<void> {
 	const command = process.env.npm_execpath ?? 'pnpm'
 	await runProcess(command, args, cwd, environment)
+}
+
+async function runPnpmCapture(args: string[], cwd: string): Promise<string> {
+	const command = process.env.npm_execpath ?? 'pnpm'
+	return new Promise<string>((resolvePromise, reject) => {
+		const child = spawn(command, args, {
+			cwd,
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: process.env,
+		})
+		let stdout = ''
+		let stderr = ''
+		child.stdout.setEncoding('utf8')
+		child.stderr.setEncoding('utf8')
+		child.stdout.on('data', (chunk: string) => (stdout += chunk))
+		child.stderr.on('data', (chunk: string) => (stderr += chunk))
+		child.once('error', reject)
+		child.once('exit', (code, signal) => {
+			if (code === 0) resolvePromise(stdout)
+			else {
+				reject(
+					new Error(
+						`pnpm ${args.join(' ')} failed (${signal ?? code ?? 'unknown'}): ${stderr || stdout}`,
+					),
+				)
+			}
+		})
+	})
 }
 
 async function runProcess(

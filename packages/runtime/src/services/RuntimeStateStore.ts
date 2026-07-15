@@ -15,6 +15,7 @@ export type RuntimeStateSnapshot = Readonly<{
 	baseProviders: Readonly<Record<string, string>>
 	dependencyOverrides: Readonly<Record<string, Readonly<Record<number, string>>>>
 	builtinsKnown: Readonly<Record<string, 1>>
+	optionalKnown: Readonly<Record<string, 1>>
 	pluginGroups: readonly PluginGroupState[]
 }>
 
@@ -24,6 +25,7 @@ export type RuntimeStateDraft = {
 	baseProviders: Record<string, string>
 	dependencyOverrides: Record<string, Record<number, string>>
 	builtinsKnown: Record<string, 1>
+	optionalKnown: Record<string, 1>
 	pluginGroups: PluginGroupState[]
 }
 
@@ -34,6 +36,7 @@ export type RuntimeStateFile = {
 	baseProviders?: Record<string, string>
 	dependencyOverrides?: Record<string, Record<number, string>>
 	builtinsKnown?: Record<string, 1>
+	optionalKnown?: Record<string, 1>
 	pluginGroups?: PluginGroupState[]
 }
 
@@ -279,6 +282,7 @@ function createDefaultDraft(): RuntimeStateDraft {
 		baseProviders: Object.create(null),
 		dependencyOverrides: Object.create(null),
 		builtinsKnown: Object.create(null),
+		optionalKnown: Object.create(null),
 		pluginGroups: [],
 	}
 }
@@ -290,6 +294,7 @@ function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): voi
 	replaceRecord(target.baseProviders, source.baseProviders)
 	replaceRecord(target.dependencyOverrides, source.dependencyOverrides)
 	replaceRecord(target.builtinsKnown, source.builtinsKnown)
+	replaceRecord(target.optionalKnown, source.optionalKnown)
 	target.pluginGroups = source.pluginGroups.map(clonePluginGroup)
 }
 
@@ -311,6 +316,8 @@ function applySnapshot(
 	}
 	if (snapshot.builtinsKnown)
 		replaceRecord(draft.builtinsKnown, coerceBuiltinsKnown(snapshot.builtinsKnown))
+	if (snapshot.optionalKnown)
+		replaceRecord(draft.optionalKnown, coerceBuiltinsKnown(snapshot.optionalKnown))
 	if (snapshot.pluginGroups) draft.pluginGroups = coercePluginGroups(snapshot.pluginGroups)
 }
 
@@ -321,6 +328,7 @@ function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
 		baseProviders: Object.freeze({ ...draft.baseProviders }),
 		dependencyOverrides: freezeNestedRecord(draft.dependencyOverrides),
 		builtinsKnown: Object.freeze({ ...draft.builtinsKnown }),
+		optionalKnown: Object.freeze({ ...draft.optionalKnown }),
 		pluginGroups: Object.freeze(draft.pluginGroups.map(clonePluginGroup)),
 	})
 }
@@ -333,6 +341,7 @@ function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
 		baseProviders: { ...draft.baseProviders },
 		dependencyOverrides: cloneNestedRecord(draft.dependencyOverrides),
 		builtinsKnown: { ...draft.builtinsKnown },
+		optionalKnown: { ...draft.optionalKnown },
 		pluginGroups: draft.pluginGroups.map(clonePluginGroup),
 	}
 }
@@ -352,6 +361,7 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 		replaceRecord(out.dependencyOverrides, coerceDepOverrides(raw.dependencyOverrides))
 	}
 	if (raw.builtinsKnown) replaceRecord(out.builtinsKnown, coerceBuiltinsKnown(raw.builtinsKnown))
+	if (raw.optionalKnown) replaceRecord(out.optionalKnown, coerceBuiltinsKnown(raw.optionalKnown))
 	if (raw.pluginGroups) out.pluginGroups = coercePluginGroups(raw.pluginGroups)
 	return out
 }

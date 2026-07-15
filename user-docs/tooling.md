@@ -1,56 +1,123 @@
-# CLI 与工具链
+# CLI 与工具链速查
 
-`@pluxel/cli` 是按命令加载的编排入口，不是 runtime 或构建 API 的聚合包。
+插件 package 的完整配置、依赖 metadata 和发布流程见
+[`plugin-package.md`](plugin-package.md)。本页只列 CLI 命令、配置入口和工具所有权，供开发和 CI
+快速查找。
 
-插件写法、最佳实践和 Pluxel 增补 lint rules 分别见
-[`plugin-authoring.md`](plugin-authoring.md)、
-[`plugin-best-practices.md`](plugin-best-practices.md) 和 [`oxlint.md`](oxlint.md)。本页只说明命令
-和 package ownership。
+## 安装
 
-只创建项目时安装 CLI 即可：
+`@pluxel/cli` 按命令延迟加载能力，不是 runtime 或 build API 的聚合包：
 
 ```sh
+# 脚手架和命令入口
 pnpm add -D @pluxel/cli
-pluxel new
-```
 
-按使用的命令补充能力：
-
-```sh
-# 构建无 UI 插件或管理 workspace
+# plugin package build
 pnpm add -D @pluxel/rolldown tsdown oxlint
 
-# 只有声明 Workbench UI 的插件包需要
+# 有 Workbench UI declaration 时
 pnpm add -D vite
 
-# 编辑和诊断 dynamic loader HMR profile
+# dynamic loader HMR profile/diagnostics
 pnpm add -D @pluxel/runtime-dynamic
 ```
 
-缺少可选包时只禁用对应命令，不影响根帮助和脚手架。
+缺少可选工具只会禁用对应命令，不影响根帮助和脚手架。
 
-代码中不要从 CLI 导入 build、Rolldown 或 HMR API，应直接使用所有者入口：
+## 常用命令
+
+| 命令                                                      | 用途                                                |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `pluxel new --template plugin --name @scope/orders`       | 创建 `@scope/pluxel-plugin-orders` 插件 package     |
+| `pluxel new --template app-monorepo --name @scope/my-app` | 创建同名、不会添加插件前缀的应用 monorepo           |
+| `pluxel build`                                            | 用标准 plugin-package preset 构建当前目录           |
+| `pluxel build --watch`                                    | watch 模式；每轮成功构建重新同步 metadata           |
+| `pluxel build --debug`                                    | 输出最终合并的 tsdown 配置、plugin 顺序和 hook 状态 |
+| `pluxel hmr doctor`                                       | 诊断 dynamic loader workspace/profile               |
+| `pluxel hmr enabled`                                      | 编辑 dynamic profile 的 enabled plugin 集合         |
+| `pluxel hmr builtin`                                      | 编辑 dynamic profile 的 builtin plugin 集合         |
+| `pluxel publish --dry-run`                                | 预演 npm publish 和 market 通知流程                 |
+
+在 package script 后传参时保留 `--`：
+
+```sh
+pnpm build -- --debug
+pnpm build -- --watch
+```
+
+## `pluxel build` 读取什么
+
+命令以当前工作目录为 package root，并按顺序完成：
+
+1. 定位当前 package 的 `package.json`；
+2. 读取插件命名前缀和 manifest 字段；
+3. 查找第一个存在的 `tsdown.config.*`；
+4. 把用户 tsdown config 与标准 `pluginPackage()` preset 合并；
+5. 运行 tsdown/Rolldown；
+6. 成功后事务性同步 plugin peer 和 `pluginPackages` metadata；
+7. 最后执行用户 `onSuccess`。
+
+默认配置文件发现顺序是 `.ts`、`.mts`、`.cts`、`.js`、`.mjs`、`.cjs`、`.json`。一个 package
+只导出单个 config object 或返回单个 object 的 async function；CLI 不接受 config array，因为 plugin package
+只有一个明确的输出计划。
+
+构建失败不会提交部分 metadata。相同输入连续构建是幂等的；ESM/CJS 多格式输出共享同一份 semantic
+facts。
+
+## 构建环境变量
+
+| 环境变量                | 默认值          | 用途                                       |
+| ----------------------- | --------------- | ------------------------------------------ |
+| `PLUXEL_PLUGIN_PREFIX`  | `pluxel-plugin` | 逗号分隔的插件 package 名称前缀            |
+| `PLUXEL_MANIFEST_FIELD` | `pluxel`        | `pluginPackages` 所在的顶层 package 字段   |
+| `PLUXEL_TSDOWN_CONFIG`  | 自动发现        | 显式指定相对 package root 的 tsdown config |
+
+CI 与本地必须使用相同的 prefix/manifest 配置，否则同一源码会生成不同 package metadata。常见组织级
+配置：
+
+```sh
+PLUXEL_PLUGIN_PREFIX=pluxel-plugin,acme-plugin pnpm build
+```
+
+## API 从所有者 package 导入
+
+代码不要从 `@pluxel/cli` 导入 API：
 
 ```ts
 import { resolveBuildContext } from '@pluxel/rolldown/build'
 import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose'
 ```
 
-`hmr/diagnose` 只处理配置、workspace discovery、profile 和 snapshot，不注册 dynamic runtime services。
+| 能力                                             | 所有者入口                             |
+| ------------------------------------------------ | -------------------------------------- |
+| plugin package / static application build preset | `@pluxel/rolldown/build`               |
+| Vite source adapter                              | `@pluxel/rolldown/vite`                |
+| Pluxel Oxlint rules                              | `@pluxel/rolldown/oxlint`              |
+| dynamic loader diagnostics                       | `@pluxel/runtime-dynamic/hmr/diagnose` |
+| test preset                                      | `@pluxel/test/vitest`                  |
 
-`pluxel build` 通过 `@pluxel/rolldown/build` 的标准 `pluginPackage()` preset 调用 tsdown/Rolldown。该 preset 与
-static application build 复用同一 source pipeline，统一执行 legacy decorator 与 constructor metadata、
-preprocessor/macro、config metadata、lint、Workbench declaration transform 和输出检查，不依赖项目是否在 tsconfig
-中重复声明这些 bundler 语义。普通插件仍把 Pluxel runtime 保持为 peer dependency，不会变成 static application
-bundle。
+普通插件作者只需要 `pluxel build`，不需要在 `tsdown.config.ts` 直接调用 build preset。直接导入
+`@pluxel/rolldown/build` 主要用于宿主的 `staticApplication()` 配置或构建工具集成。
 
-`pluxel build` 从 server-only `workbench.extension()` 静态提取
-`workbench.entry(import.meta.url, './ui/index.tsx')`。无 UI declaration 时不会加载 Vite/MF；有 UI 时 server
-bundle 与 `dist/workbench/<artifact>/` remote 分开生成。toolchain 按 declaration 与 source graph 注入稳定
-artifact key，不要求 Extension 重复 plugin ID。完整 remote 缓存在
-`.pluxel/workbench-build/<artifact>/<hash>/`，因此 tsdown 清空 `dist` 后仍可复用；缓存命中不会加载完整
-Vite/MF builder，依赖 lockfile 变化则自动失效。可安全删除该目录执行冷构建。
+`hmr/diagnose` 只读取和修改 profile、workspace discovery 与 snapshot，不注册 dynamic runtime services。
 
-同一进程可同时发现、计算和命中多个插件 UI 缓存；Pluxel 会在底座隔离实际 Federation builder，并按
-输出目录串行校验与原子发布。项目无需为多个 Workbench UI 设置 `compileConcurrency: 1`，也不要自行共享
-临时输出目录。
+## Plugin package 与 static application 不要混用
+
+| 构建对象           | 标准入口              | optional provider 策略                | 输出目的                   |
+| ------------------ | --------------------- | ------------------------------------- | -------------------------- |
+| 独立插件 package   | `pluxel build`        | external optional peer                | 发布给多个宿主复用         |
+| static application | `staticApplication()` | present bundle / missing absent chunk | 固定、可部署的完整应用闭包 |
+
+插件 package 不把 Pluxel runtime 或 provider plugin 打入自身 bundle。static application 则冻结所有可解析
+provider；部署目标上后来安装 package 不会改变闭包。完整 package 配置见
+[`plugin-package.md`](plugin-package.md)，宿主构建见 [`host-setup.md`](host-setup.md)。
+
+## Workbench UI 构建缓存
+
+`pluxel build` 从 server-only `workbench.extension()` 提取 literal
+`workbench.entry(import.meta.url, './ui/index.tsx')`。无 UI declaration 时不会加载 Vite/Federation；有 UI
+时 server bundle 与 `dist/workbench/<artifact>/` remote 分开生成。
+
+完整 remote 缓存在 `.pluxel/workbench-build/<artifact>/<hash>/`。缓存 key 包含 source graph、lockfile、
+shared versions 和 compiler version；可以安全删除该目录做冷构建。多个 UI 构建由 Pluxel 负责底层隔离，
+项目不需要设置 `compileConcurrency: 1` 或共享临时输出目录。

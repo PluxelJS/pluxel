@@ -8,7 +8,7 @@ type SuccessArgs = Parameters<BuildSuccessHook>
 
 export interface TsdownRunnerOptions {
 	context: BuildRuntimeConfig
-	onSuccess: BuildSuccessHook
+	onSuccess?: BuildSuccessHook
 	log: BuildLogger
 	extraConfig?: TsdownOverride
 }
@@ -17,7 +17,7 @@ export async function runWithTsdown(options: TsdownRunnerOptions) {
 	const debugEnabled = Boolean(options.context.debug)
 	const sources = await resolveConfigSources(options)
 	const mergedOverrides = mergeInlineConfigs(sources.userOverrides ?? {}, sources.cliOverrides)
-	const configPlan = buildInlineConfig(mergedOverrides, options)
+	const configPlan = buildInlineConfig(mergedOverrides, options, sources)
 
 	emitDebugInfo({
 		enabled: debugEnabled,
@@ -70,14 +70,18 @@ interface InlineConfigBuildResult {
 function buildInlineConfig(
 	mergedOverrides: InlineConfig,
 	options: TsdownRunnerOptions,
+	sources: ResolvedConfigSources,
 ): InlineConfigBuildResult {
 	const {
-		onSuccess: overrideOnSuccess,
+		onSuccess: _mergedOnSuccess,
 		watch: _overrideWatch,
 		plugins,
 		...restOverrides
 	} = mergedOverrides
-	const combinedOnSuccess = combineOnSuccess(options.onSuccess, overrideOnSuccess, options.log)
+	const combinedOnSuccess = combineOnSuccess(
+		[options.onSuccess, sources.cliOverrides?.onSuccess, sources.userOverrides?.onSuccess],
+		options.log,
+	)
 	const mergedPlugins = mergePlugins(plugins)
 
 	return {
@@ -90,7 +94,7 @@ function buildInlineConfig(
 		}),
 		plugins: mergedPlugins,
 		onSuccess: combinedOnSuccess,
-		hasUserOnSuccess: Boolean(overrideOnSuccess),
+		hasUserOnSuccess: Boolean(sources.userOverrides?.onSuccess),
 		hasCombinedOnSuccess: Boolean(combinedOnSuccess),
 	}
 }
@@ -332,19 +336,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 type OnSuccessOverride = InlineConfig['onSuccess']
 
 function combineOnSuccess(
-	baseHook: BuildSuccessHook,
-	overrideHook: OnSuccessOverride | undefined,
+	hooks: Array<OnSuccessOverride | undefined>,
 	log: BuildLogger,
 ): BuildSuccessHook | undefined {
-	const normalizedOverride = normalizeOnSuccess(overrideHook, log)
-	if (!baseHook && !normalizedOverride) return undefined
-	if (!normalizedOverride) return baseHook
-	if (!baseHook) return normalizedOverride
+	const normalized = hooks
+		.map((hook) => normalizeOnSuccess(hook, log))
+		.filter((hook): hook is BuildSuccessHook => Boolean(hook))
+	if (normalized.length === 0) return undefined
 
 	return async (config, signal) => {
-		await baseHook(config, signal)
-		if (!signal.aborted) {
-			await normalizedOverride(config, signal)
+		for (const hook of normalized) {
+			await hook(config, signal)
+			if (signal.aborted) return
 		}
 	}
 }

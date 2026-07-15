@@ -18,10 +18,12 @@ export {
 	cfg,
 	Context,
 	defineLazyFeature,
+	optionalPlugin,
 	ForkablePlugin,
 	HostBoundFeature,
 	Plugin,
 } from '@pluxel/core'
+export type { OptionalPluginRef } from '@pluxel/core'
 
 type ConfigSchema =
 	| ObjectSchema<ObjectEntries, ErrorMessage<ObjectIssue> | undefined>

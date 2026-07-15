@@ -6,7 +6,8 @@ user documentation shipped with the CLI; do not fork their API guidance locally.
 
 Keep these boundaries intact:
 
-- required plugin dependencies belong in constructors; optional integrations use `plugins.use()`;
+- required plugin dependencies belong in constructors; host-managed optional integrations use `plugins.use(Token)`;
+  package-optional implementations use module-level `optionalPlugin()` refs;
 - business HTTP must work with Workbench Plane disabled;
 - deployable web and host policy stay in `web/`; shared neutral logic stays in `packages/domain`;
 - plugin tests use `@pluxel/test/vitest` and the smallest matching core/runtime test host;

@@ -22,13 +22,15 @@
 - `defineLazyFeature(spec)`
 - `this.features.load(spec)`
 - `this.plugins.use(DepPlugin, cb?)`
+- `optionalPlugin(() => import(...))` + `this.plugins.use(Ref, cb)`
 - feature config merge 到宿主 plugin config
 
 当前推荐理解：
 
 - `use()`：required feature，属于宿主静态组成
 - `load()`：lazy feature，负责条件启用与 lazy load
-- `plugins.use()`：运行期 optional plugin integration primitive
+- `plugins.use(Token)`：监听 host-managed optional plugin
+- `optionalPlugin()` + `plugins.use(Ref)`：请求 package-optional implementation，并监听正常 running node
 - plugin constructor：只表达 required deps
 
 `load()` 的边界以 `docs/CORE.md` 为准，不要再回到旧的“所有 feature 都一套模型”。
@@ -57,6 +59,7 @@
 - `composition/FeatureHost.ts`
 - `composition/BaseFeature.ts`
 - `composition/ConfigHost.ts`
+- `composition/OptionalPlugin.ts`
 
 ## 实现注意点
 
@@ -72,7 +75,8 @@
   - `load()` 必须返回 Promise，并且真正经过 dynamic import 边界；不要让它直接或间接回到静态 import 的 feature ctor
   - 这些 feature 应改回 `use()`
 - `@Plugin` 构造函数里按类注入的依赖不能 `import type`；它依赖 runtime constructor metadata。
-- optional plugin integration 使用 `this.plugins.get/use()`，不属于 FeatureHost。
+- graph-optional integration 使用 `this.plugins.get/use(Token)`；package-optional integration 使用 module-level
+  `optionalPlugin()` ref + `plugins.use(Ref)`。两者都不属于 feature composition。
 
 ## 验证入口
 

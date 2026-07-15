@@ -9,10 +9,7 @@ type BuildCommandValues = ArgValues<BuildCommandArgs>
 export const buildCommand = define({
 	...buildCommandDefinition,
 	async run(ctx) {
-		const [build, plugins] = await Promise.all([
-			import('@pluxel/rolldown/build'),
-			import('@pluxel/rolldown/plugins'),
-		])
+		const build = await import('@pluxel/rolldown/build')
 		// 先读取 workspace 配置，这里只负责 build 命令，不做 scaffold 以外的逻辑
 		const runtime = await build.resolveBuildContext(ctx.values as BuildCommandValues)
 
@@ -28,23 +25,19 @@ export const buildCommand = define({
 			ctx.log('[build] debug mode enabled')
 		}
 
-		// 使用 Rolldown 插件在 bundler 内部跟踪 import，效率比提前用 parse-imports 扫目录更高
-		const importTracker = plugins.createImportTracker({ prefixes: runtime.pluginPrefixes })
-		const pluginHook = build.createOptionalDependencyHook({
-			packageJsonPath: runtime.packageJsonPath,
-			manifestField: runtime.manifestField,
-			log: ctx.log,
-			collectPlugins: () => importTracker.flush(),
-		})
-
+		// pluginPackage preset owns source semantics and derived package metadata.
 		await build.runWithTsdown({
 			context: runtime,
-			onSuccess: pluginHook,
 			log: ctx.log,
 			extraConfig: (context: BuildRuntimeConfig) =>
 				build.pluginPackage({
 					root: context.projectRoot,
-					additionalPlugins: [importTracker.plugin],
+					packageMetadata: {
+						packageJsonPath: context.packageJsonPath,
+						manifestField: context.manifestField,
+						prefixes: context.pluginPrefixes,
+						log: ctx.log,
+					},
 				}),
 		})
 	},

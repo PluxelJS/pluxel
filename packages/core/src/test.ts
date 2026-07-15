@@ -23,6 +23,7 @@ export {
 	FeatureHost,
 	ForkablePlugin,
 	HostBoundFeature,
+	optionalPlugin,
 	Plugin,
 	checkPluginDecorator,
 	clearParamToken,

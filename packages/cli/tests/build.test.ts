@@ -1,12 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
-import { createImportTracker } from '@pluxel/rolldown/plugins'
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { resolve } from 'pathe'
 import { readPackageJSON } from 'pkg-types'
 import {
 	BuildEnvKeys,
-	createOptionalDependencyHook,
 	pluginPackage,
 	resolveBuildContext,
 	runWithTsdown,
@@ -14,7 +12,15 @@ import {
 } from '@pluxel/rolldown/build'
 
 const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
-	pluginPackage({ root: context.projectRoot })
+	pluginPackage({
+		root: context.projectRoot,
+		packageMetadata: {
+			packageJsonPath: context.packageJsonPath,
+			manifestField: context.manifestField,
+			prefixes: context.pluginPrefixes,
+			log: () => {},
+		},
+	})
 
 const buildFixtures = {
 	basic: {
@@ -29,8 +35,19 @@ const buildFixtures = {
 				devDependencies: {
 					'pluxel-plugin-beta': '^0.5.0',
 				},
-				peerDependencies: {},
+				peerDependencies: {
+					'pluxel-plugin-stale': '^9.0.0',
+				},
+				peerDependenciesMeta: {
+					'pluxel-plugin-stale': { optional: true },
+				},
 				optionalDependencies: {},
+				pluxel: {
+					dependOn: {
+						required: ['pluxel-plugin-stale'],
+						optional: ['pluxel-plugin-beta'],
+					},
+				},
 			},
 			null,
 			2,
@@ -54,20 +71,23 @@ const buildFixtures = {
 		'tsdown.config.ts': [
 			'export default {',
 			"\tentry: 'src/index.ts',",
-			"\tformat: ['esm'],",
+			"\tformat: ['esm', 'cjs'],",
 			'\tdts: false,',
-			"\tdeps: { neverBundle: ['pluxel-plugin-alpha', 'pluxel-plugin-beta'] },",
 			'\tsourcemap: false,',
 			'\tclean: true,',
 			'}',
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import 'pluxel-plugin-alpha'",
-			"import 'pluxel-plugin-beta'",
+			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
 			'',
-			'// @Plugin marker for import tracking',
-			'export const answer = 42',
+			"const Beta = optionalPlugin(() => import('pluxel-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
+			"@Plugin({ name: 'FixturePlugin' })",
+			'export class FixturePlugin extends BasePlugin {',
+			'  constructor(readonly alpha: AlphaPlugin) { super() }',
+			'  init() { this.plugins.use(Beta, () => undefined) }',
+			'}',
 			'',
 		].join('\n'),
 	},
@@ -112,18 +132,21 @@ const buildFixtures = {
 			"\tentry: 'src/index.ts',",
 			"\tformat: ['esm'],",
 			'\tdts: false,',
-			"\tdeps: { neverBundle: ['acme-plugin-alpha', 'acme-plugin-beta'] },",
 			'\tsourcemap: false,',
 			'\tclean: true,',
 			'}',
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import 'acme-plugin-alpha'",
-			"import 'acme-plugin-beta'",
+			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { AlphaPlugin } from 'acme-plugin-alpha'",
 			'',
-			'// @Plugin marker for import tracking',
-			'export const answer = 24',
+			"const Beta = optionalPlugin(() => import('acme-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
+			"@Plugin({ name: 'CustomFixturePlugin' })",
+			'export class CustomFixturePlugin extends BasePlugin {',
+			'  constructor(readonly alpha: AlphaPlugin) { super() }',
+			'  init() { this.plugins.use(Beta, () => undefined) }',
+			'}',
 			'',
 		].join('\n'),
 	},
@@ -350,21 +373,10 @@ describe('build command', () => {
 			const runtime = await resolveBuildContext({})
 			expect(runtime.projectRoot).toBe(fixtureDir)
 			expect(runtime.packageJsonPath).toBe(resolve(fixtureDir, 'package.json'))
-			const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-			const hook = createOptionalDependencyHook({
-				packageJsonPath: runtime.packageJsonPath,
-				manifestField: runtime.manifestField,
-				log: () => {},
-				collectPlugins: () => tracker.flush(),
-			})
-
 			await runWithTsdown({
 				context: runtime,
-				onSuccess: hook,
 				log: () => {},
-				extraConfig: {
-					plugins: [tracker.plugin],
-				},
+				extraConfig: pluginPackageOverlay(runtime),
 			})
 
 			const pkg = await readPackageJSON(runtime.packageJsonPath)
@@ -372,10 +384,73 @@ describe('build command', () => {
 			expect(pkg.optionalDependencies?.['pluxel-plugin-beta']).toBeUndefined()
 			expect(pkg.peerDependencies?.['pluxel-plugin-alpha']).toBe('^1.0.0')
 			expect(pkg.peerDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(pkg.peerDependencies?.['pluxel-plugin-stale']).toBeUndefined()
+			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-stale']).toBeUndefined()
 			expect(pkg.dependencies?.['pluxel-plugin-alpha']).toBeUndefined()
-			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBeUndefined()
-			expect(pkg.pluxel?.dependOn?.required).toEqual(['pluxel-plugin-alpha'])
-			expect(pkg.pluxel?.dependOn?.optional).toEqual(['pluxel-plugin-beta'])
+			expect(pkg.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(pkg.peerDependenciesMeta?.['pluxel-plugin-beta']?.optional).toBe(true)
+			expect(pkg.pluxel?.pluginPackages).toEqual({
+				'pluxel-plugin-alpha': 'required',
+				'pluxel-plugin-beta': 'optional',
+			})
+			expect(pkg.pluxel?.dependOn).toBeUndefined()
+
+			const firstManifest = await readFile(runtime.packageJsonPath, 'utf8')
+			await runWithTsdown({
+				context: runtime,
+				log: () => {},
+				extraConfig: pluginPackageOverlay(runtime),
+			})
+			expect(await readFile(runtime.packageJsonPath, 'utf8')).toBe(firstManifest)
+
+			await writeFile(
+				resolve(fixtureDir, 'src/index.ts'),
+				[
+					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"@Plugin({ name: 'FixturePlugin' })",
+					'export class FixturePlugin extends BasePlugin {}',
+				].join('\n'),
+			)
+			await runWithTsdown({
+				context: runtime,
+				log: () => {},
+				extraConfig: pluginPackageOverlay(runtime),
+			})
+			const cleaned = await readPackageJSON(runtime.packageJsonPath)
+			expect(cleaned.peerDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
+			expect(cleaned.peerDependencies?.['pluxel-plugin-beta']).toBeUndefined()
+			expect(cleaned.peerDependenciesMeta?.['pluxel-plugin-beta']).toBeUndefined()
+			expect(cleaned.devDependencies?.['pluxel-plugin-beta']).toBe('^0.5.0')
+			expect(cleaned.pluxel?.pluginPackages).toBeUndefined()
+		})
+	})
+
+	it('composes preset metadata and user success hooks', async () => {
+		await withBuildFixture('basic', async (fixtureDir) => {
+			await writeFile(
+				resolve(fixtureDir, 'tsdown.config.ts'),
+				[
+					"import { writeFile } from 'node:fs/promises'",
+					'export default {',
+					"  entry: 'src/index.ts',",
+					"  format: ['esm', 'cjs'],",
+					'  dts: false,',
+					"  onSuccess: () => writeFile('user-success.txt', 'ok'),",
+					'}',
+				].join('\n'),
+			)
+			const runtime = await resolveBuildContext({})
+			await runWithTsdown({
+				context: runtime,
+				log: () => {},
+				extraConfig: pluginPackageOverlay(runtime),
+			})
+			const pkg = await readPackageJSON(runtime.packageJsonPath)
+			expect(pkg.pluxel?.pluginPackages).toEqual({
+				'pluxel-plugin-alpha': 'required',
+				'pluxel-plugin-beta': 'optional',
+			})
+			expect(await readFile(resolve(fixtureDir, 'user-success.txt'), 'utf8')).toBe('ok')
 		})
 	})
 
@@ -386,21 +461,10 @@ describe('build command', () => {
 				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
 
 				const runtime = await resolveBuildContext({})
-				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-				const hook = createOptionalDependencyHook({
-					packageJsonPath: runtime.packageJsonPath,
-					manifestField: runtime.manifestField,
-					log: () => {},
-					collectPlugins: () => tracker.flush(),
-				})
-
 				await runWithTsdown({
 					context: runtime,
-					onSuccess: hook,
 					log: () => {},
-					extraConfig: {
-						plugins: [tracker.plugin],
-					},
+					extraConfig: pluginPackageOverlay(runtime),
 				})
 
 				const pkg = await readPackageJSON(runtime.packageJsonPath)
@@ -409,9 +473,12 @@ describe('build command', () => {
 				expect(pkg.peerDependencies?.['acme-plugin-alpha']).toBe('1.2.3')
 				expect(pkg.peerDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
 				expect(pkg.dependencies?.['acme-plugin-alpha']).toBeUndefined()
-				expect(pkg.devDependencies?.['acme-plugin-beta']).toBeUndefined()
-				expect(pkg.customField?.dependOn?.required).toEqual(['acme-plugin-alpha'])
-				expect(pkg.customField?.dependOn?.optional).toEqual(['acme-plugin-beta'])
+				expect(pkg.devDependencies?.['acme-plugin-beta']).toBe('~1.0.0')
+				expect(pkg.peerDependenciesMeta?.['acme-plugin-beta']?.optional).toBe(true)
+				expect(pkg.customField?.pluginPackages).toEqual({
+					'acme-plugin-alpha': 'required',
+					'acme-plugin-beta': 'optional',
+				})
 			})
 		} finally {
 			vi.unstubAllEnvs()
@@ -425,21 +492,10 @@ describe('build command', () => {
 				vi.stubEnv('GITHUB_REPOSITORY', 'pluxel/example')
 
 				const runtime = await resolveBuildContext({})
-				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-				const hook = createOptionalDependencyHook({
-					packageJsonPath: runtime.packageJsonPath,
-					manifestField: runtime.manifestField,
-					log: () => {},
-					collectPlugins: () => tracker.flush(),
-				})
-
 				await runWithTsdown({
 					context: runtime,
-					onSuccess: hook,
 					log: () => {},
-					extraConfig: {
-						plugins: [tracker.plugin],
-					},
+					extraConfig: pluginPackageOverlay(runtime),
 				})
 
 				const pkg = await readPackageJSON(runtime.packageJsonPath)
@@ -463,21 +519,10 @@ describe('build command', () => {
 				vi.stubEnv('CI_SERVER_HOST', 'gitlab.com')
 
 				const runtime = await resolveBuildContext({})
-				const tracker = createImportTracker({ prefixes: runtime.pluginPrefixes })
-				const hook = createOptionalDependencyHook({
-					packageJsonPath: runtime.packageJsonPath,
-					manifestField: runtime.manifestField,
-					log: () => {},
-					collectPlugins: () => tracker.flush(),
-				})
-
 				await runWithTsdown({
 					context: runtime,
-					onSuccess: hook,
 					log: () => {},
-					extraConfig: {
-						plugins: [tracker.plugin],
-					},
+					extraConfig: pluginPackageOverlay(runtime),
 				})
 
 				const pkg = await readPackageJSON(runtime.packageJsonPath)

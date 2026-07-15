@@ -569,6 +569,11 @@ export class PluginService {
 		return this.watcherRegistry.watch(this._activeGraph ?? this.graph, id, cb)
 	}
 
+	/** @internal Schedule route-owned work after the currently queued commit settles. */
+	public afterCurrentCommit<T>(run: () => T | Promise<T>): Promise<T> {
+		return this._commitLock.then(run)
+	}
+
 	/* ─────────────────────────── Forks ─────────────────────────── */
 
 	/**

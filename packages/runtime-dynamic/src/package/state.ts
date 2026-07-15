@@ -110,7 +110,11 @@ export class PackageState {
 
 	getDependencies(name: string): string[] {
 		const record = this.loaded.get(name)
-		return record ? [...record.dependOn] : []
+		return record
+			? Object.entries(record.pluginPackages)
+					.filter(([, mode]) => mode === 'required')
+					.map(([dependency]) => dependency)
+			: []
 	}
 
 	getDependents(name: string): string[] {
@@ -128,7 +132,8 @@ export class PackageState {
 	}
 
 	private trackDependencies(record: PackageMetadata) {
-		for (const dep of record.dependOn ?? []) {
+		for (const [dep, mode] of Object.entries(record.pluginPackages)) {
+			if (mode !== 'required') continue
 			const trimmed = dep.trim()
 			if (!trimmed) continue
 			const set = this.dependencyIndex.get(trimmed) ?? new Set<string>()
@@ -138,7 +143,8 @@ export class PackageState {
 	}
 
 	private untrackDependencies(record: PackageMetadata) {
-		for (const dep of record.dependOn ?? []) {
+		for (const [dep, mode] of Object.entries(record.pluginPackages)) {
+			if (mode !== 'required') continue
 			const trimmed = dep.trim()
 			if (!trimmed) continue
 			const set = this.dependencyIndex.get(trimmed)
@@ -162,7 +168,7 @@ export class PackageState {
 				moduleId: record.moduleId,
 				isAnchor: record.isAnchor,
 				loadedAt: record.loadedAt,
-				dependOn: record.dependOn ?? [],
+				pluginPackages: { ...record.pluginPackages },
 				manifestPath: record.manifestPath,
 				manifestVersion: record.manifestVersion,
 				resolvedVersion: record.resolvedVersion,

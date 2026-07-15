@@ -1,5 +1,24 @@
 import { parseSync, type Program } from 'oxc-parser'
 
+export type AstNode = {
+	type?: unknown
+	start?: unknown
+	end?: unknown
+	[key: string]: unknown
+}
+
+const AST_METADATA_KEYS = new Set([
+	'type',
+	'start',
+	'end',
+	'loc',
+	'range',
+	'comments',
+	'leadingComments',
+	'trailingComments',
+	'innerComments',
+])
+
 export type Lang = 'ts' | 'tsx' | 'js' | 'jsx'
 
 export function getLangFromId(id: string): Lang {
@@ -43,4 +62,29 @@ export function parseStandaloneWithLang(code: string, id: string): Program | nul
 	} catch {
 		return null
 	}
+}
+
+export function walkAst(value: unknown, visit: (node: AstNode) => void): void {
+	if (!value || typeof value !== 'object') return
+	if (Array.isArray(value)) {
+		for (const item of value) walkAst(item, visit)
+		return
+	}
+	const node = value as AstNode
+	if (typeof node.type === 'string') visit(node)
+	for (const [key, child] of Object.entries(node)) {
+		if (!AST_METADATA_KEYS.has(key) && child && typeof child === 'object') walkAst(child, visit)
+	}
+}
+
+export function readLiteralString(value: unknown): string | undefined {
+	if (!value || typeof value !== 'object') return undefined
+	const node = value as { type?: unknown; value?: unknown }
+	return node.type === 'Literal' && typeof node.value === 'string' ? node.value : undefined
+}
+
+export function readIdentifier(value: unknown): string | undefined {
+	if (!value || typeof value !== 'object') return undefined
+	const node = value as { type?: unknown; name?: unknown }
+	return node.type === 'Identifier' && typeof node.name === 'string' ? node.name : undefined
 }

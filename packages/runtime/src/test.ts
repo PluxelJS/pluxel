@@ -24,6 +24,7 @@ export {
 	FeatureHost,
 	ForkablePlugin,
 	HostBoundFeature,
+	optionalPlugin,
 	Plugin,
 	assertPluginLifecycleIssue,
 	checkPluginDecorator,

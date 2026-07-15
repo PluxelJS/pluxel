@@ -20,15 +20,26 @@ optional Workbench Plane: target layout / artifacts / bound resources
 
 ## 依赖与组成
 
-| 意图                   | API                                       | 生命周期含义                 |
-| ---------------------- | ----------------------------------------- | ---------------------------- |
-| required plugin        | constructor parameter                     | provider 失败会阻塞 consumer |
-| optional plugin        | `this.plugins.use()`                      | provider 可缺失，替换后重绑  |
-| required local feature | `this.features.use()`                     | 随宿主插件启动               |
-| lazy local feature     | `defineLazyFeature()` + `features.load()` | 按需加载                     |
+| 意图                    | API                                       | 生命周期含义                 |
+| ----------------------- | ----------------------------------------- | ---------------------------- |
+| required plugin         | constructor parameter                     | provider 失败会阻塞 consumer |
+| graph-optional plugin   | `this.plugins.use(Token)`                 | 只监听已由 host 管理的 node  |
+| package-optional plugin | `optionalPlugin()` + `plugins.use(Ref)`   | commit 后解析，包可不存在    |
+| required local feature  | `this.features.use()`                     | 随宿主插件启动               |
+| lazy local feature      | `defineLazyFeature()` + `features.load()` | 按需加载                     |
 
 constructor 是 required dependency 的唯一作者声明。static/dynamic route 必须读取同一 committed core
 graph；Workbench resolver 不依赖 loader 私有图。
+
+`OptionalPluginRef` 是 opaque author declaration。core 的 `PluginHost` 只组合 availability subscription 与
+`watchInstance()`；`@pluxel/runtime` 的 root-scoped `OptionalPluginAvailabilityService` 只去重 loader、维护 active
+subscription，并把 candidate 提交给正常 graph transaction。synthetic module owner 直接使用 canonical plugin ID，
+不再维护第二套来源身份。static/dynamic route 只改变 module resolver。首次发现的
+candidate 写入 `optionalKnown` 并默认启用，之后显式 disabled state 优先。
+
+optional load 在当前 commit settled 后执行，不能形成 nested transaction。absent 不阻塞 consumer；import/evaluation、
+constructor、ID collision 和 start failure 进入结构化日志。只有 core running watcher 发布实例，replacement、retry 和
+shutdown 继续复用正常 graph/effects。
 
 ## 生命周期与资源
 

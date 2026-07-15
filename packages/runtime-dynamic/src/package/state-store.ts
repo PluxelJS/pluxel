@@ -1,9 +1,13 @@
 import type { PersistenceNamespace } from '@pluxel/runtime'
 import type { EntryResolutionOk } from '../scan/types'
 import type { PackageSpecifierSnapshot } from './specifiers'
-import type { PackageInstallStatus, PackageLoadIssueSource } from './types'
+import type {
+	PackageInstallStatus,
+	PackageLoadIssueSource,
+	PluginPackageDependencies,
+} from './types'
 
-export const CURRENT_STATE_SCHEMA = 3
+export const CURRENT_STATE_SCHEMA = 4
 
 export interface PersistedInstallMeta {
 	status: PackageInstallStatus
@@ -16,7 +20,7 @@ export interface PersistedPackageEntry {
 	moduleId: string
 	isAnchor: boolean
 	loadedAt: number
-	dependOn: string[]
+	pluginPackages: PluginPackageDependencies
 	manifestPath?: string
 	manifestVersion?: string
 	resolvedVersion?: string

@@ -1,6 +1,7 @@
 # 编写 Pluxel 插件
 
-这是一条面向插件作者的主路径。先按本文建立插件结构，再用
+这是一条面向插件作者的代码主路径。新建或整理可发布 package 时先按
+[`plugin-package.md`](plugin-package.md) 配置入口、依赖、tsdown 和 package metadata，再用
 [`plugin-best-practices.md`](plugin-best-practices.md) review 所有权，并让
 [`oxlint.md`](oxlint.md) 检查可静态判断的约束。
 
@@ -100,7 +101,7 @@ export class OrdersPlugin extends BasePlugin {
 
 ### Optional plugin integration
 
-缺少 provider 只损失增强能力时，使用 `this.plugins.use()`：
+provider 已由宿主 catalog 管理、只需监听其运行状态时，直接使用 `this.plugins.use(Token)`：
 
 ```ts
 override init() {
@@ -110,7 +111,29 @@ override init() {
 
 provider 未运行时 callback 不执行；provider replacement 后会重新绑定。callback 可以返回 cleanup。
 
-不要把 optional integration 放进 constructor，否则它会错误地阻塞主插件。
+实现包本身也允许不存在时，使用 module-level `optionalPlugin()` ref：
+
+```ts
+import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'
+
+const Audit = optionalPlugin(() =>
+	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
+)
+
+@Plugin({ name: 'OrdersPlugin' })
+export class OrdersPlugin extends BasePlugin {
+	override init() {
+		this.plugins.use(Audit, (audit) => audit.registerSource(this))
+	}
+}
+```
+
+ref 必须是 module-level `const`，并包含一个 literal dynamic import 和明确 export selection。Pluxel 在 consumer
+启动完成后解析它；目标包 absent 不会阻塞 consumer，包存在但 evaluation、metadata 或启动损坏会产生明确诊断。
+首次发现的 candidate 默认启用，此后宿主保存的 disabled state 优先。optional request 不会自动安装包。
+
+不要把 optional integration 放进 constructor，否则它会错误地阻塞主插件；也不要自行执行 raw `import()` 后注册
+provider，否则会绕过 graph ownership、dedupe、RuntimeState 和 HMR。
 
 ## Feature：只表示插件内部组成
 

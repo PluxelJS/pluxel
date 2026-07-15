@@ -6,6 +6,7 @@ import {
 } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
 import { serverOnlyVitePlugin } from './environment'
+import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
@@ -59,7 +60,7 @@ export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
 	const root = options.root ?? process.cwd()
-	const plugins: PluginOption[] = [PreprocessorDirectives()]
+	const plugins: PluginOption[] = [PreprocessorDirectives(), createPluginSemanticsPlugin().plugin]
 	if (options.lintGuard !== false) {
 		plugins.push(
 			serverOnlyVitePlugin(

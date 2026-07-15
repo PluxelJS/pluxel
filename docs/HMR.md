@@ -8,6 +8,10 @@ module batch -> committed graph -> stop old owner/effects -> start new owner
              -> Workbench refetch target layouts -> lazy load new remote
 ```
 
+optional plugin candidate 的 canonical plugin ID 生成 synthetic module owner。consumer module replacement 会撤销旧 watcher
+subscription；新 ref 重新解析后，同一 synthetic owner 通过正常 `replace()` transaction 更新 provider，running watcher
+负责 callback cleanup/rebind。package/lockfile discovery invalidation 只重试 active requests，同一失败 generation 不循环重试。
+
 `WorkbenchCompilerService` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供
 Vite server、plugin directory 和 host policy。旧 artifact 可短暂保留在磁盘供 inflight import 完成。
 artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant；module、实例或依赖资源图变化会推进

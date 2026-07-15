@@ -9,6 +9,7 @@ import '../../services/http/InternalApiValidationService'
 import '../../services/http/InternalGraphQLService'
 import '../../services/admin-access/AdminAccessService'
 import '../../services/workbench/WorkbenchService'
+import '../../services/OptionalPluginAvailabilityService'
 import '../../context-augment'
 import '../../events'
 
@@ -21,6 +22,7 @@ import type { InternalApiValidationService } from '../../services/http/InternalA
 import type { InternalGraphQLService } from '../../services/http/InternalGraphQLService'
 import type { AdminAccessService } from '../../services/admin-access/AdminAccessService'
 import type { WorkbenchService } from '../../services/workbench/WorkbenchService'
+import type { OptionalPluginAvailabilityService } from '../../services/OptionalPluginAvailabilityService'
 
 export type StaticRuntimeRegisteredServices =
 	| ConfigService
@@ -32,3 +34,4 @@ export type StaticRuntimeRegisteredServices =
 	| InternalGraphQLService
 	| AdminAccessService
 	| WorkbenchService
+	| OptionalPluginAvailabilityService

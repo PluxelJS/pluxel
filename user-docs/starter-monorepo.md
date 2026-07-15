@@ -51,6 +51,7 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 `docs/pluxel/README.md` 包含：
 
 - 标准 plugin shape 与目录所有权；
+- 独立插件 package 的 `package.json`、`tsconfig.json`、`tsdown.config.ts` 和发布检查；
 - required/optional、plugin/feature、业务/Workbench的选择表；
 - `@pluxel/test/vitest`、`withRuntimeHost()` 和必须覆盖的插件测试边界；
 - config、lifecycle、cleanup 和 disabled Workbench Plane 的实践；
@@ -59,8 +60,9 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 
 根 `AGENTS.md` 要求 coding agent 在修改 `plugins/`、contract、host config 或 lint config 前从
 这份入口开始。生成项目离开 Pluxel 源码仓库后仍拥有完整设计上下文，同时没有需要人工同步的
-模板文档副本；权威说明就是当前目录中的 [`plugin-authoring.md`](plugin-authoring.md)、
-[`testing.md`](testing.md)、[`plugin-best-practices.md`](plugin-best-practices.md) 和
+模板文档副本；权威说明就是当前目录中的 [`plugin-package.md`](plugin-package.md)、
+[`plugin-authoring.md`](plugin-authoring.md)、[`testing.md`](testing.md)、
+[`plugin-best-practices.md`](plugin-best-practices.md) 和
 [`oxlint.md`](oxlint.md)。
 
 ## 何时参考 projects

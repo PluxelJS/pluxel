@@ -22,11 +22,13 @@ export interface PackageInstallResult {
 export interface PackageMetadata {
 	spec: NormalizedPackageSpecifier
 	resolution: EntryResolutionOk
-	dependOn: string[]
+	pluginPackages: PluginPackageDependencies
 	manifestPath?: string
 	manifestVersion?: string
 	resolvedVersion?: string
 }
+
+export type PluginPackageDependencies = Record<string, 'required' | 'optional'>
 
 export interface PackageLoadResult extends PackageMetadata {
 	module: Record<string, unknown>

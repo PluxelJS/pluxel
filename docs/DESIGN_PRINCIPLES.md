@@ -6,7 +6,8 @@
 
 - 未经明确设计决策，不改变现有插件调用方式。
 - required plugin dependency 只写在 constructor；不得要求在 decorator 中重复声明。
-- plugin 间 optional integration 使用 `plugins.use()`；plugin 内部组成使用 feature。
+- 已在 catalog/graph 中的 optional integration 使用 `plugins.use(Token)`；实现包允许不存在时使用
+  `optionalPlugin()` + `plugins.use(Ref)`；plugin 内部组成使用 feature。
 - 同一语义只保留一个公开入口，不新增兼容 alias 或平行 contract。
 - internal、toolchain 和 host installation helper 不进入默认作者入口。
 
