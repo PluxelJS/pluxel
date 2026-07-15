@@ -3,12 +3,8 @@ import { UsageBillingPlugin } from '@repo/external-api-gateway-billing'
 import { ExternalGatewayPlugin } from '@repo/external-api-gateway-gateway'
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
-import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
-
-const projectRoot = resolve(import.meta.dirname, '..')
-const staticDataRoot = process.env.PLUXEL_STATIC_DATA_ROOT
-	? resolve(process.env.PLUXEL_STATIC_DATA_ROOT)
-	: resolve(projectRoot, '.pluxel/static')
+import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { prepareExternalGatewayRuntime } from './runtime-bootstrap'
 
 export const externalApiGatewayPlugins = [
 	UsageBillingPlugin,
@@ -23,18 +19,24 @@ export const externalApiGatewayEnabledPlugins = [
 	'ExternalGatewayPlugin',
 ] as const
 
-const workbench =
-	process.env.PLUXEL_WORKBENCH === 'false'
-		? false
-		: { enabled: true as const, access: { exposure: 'private' as const } }
-
-export default defineStaticRuntimeConfig({
+export default defineStaticRuntime({
 	name: 'external-api-gateway',
 	plugins: externalApiGatewayPlugins,
-	runtimeState: {
-		snapshot: { enabled: externalApiGatewayEnabledPlugins },
+	configure({ env, deployment }) {
+		const projectRoot = resolve(import.meta.dirname, '..')
+		const staticDataRoot = env.PLUXEL_STATIC_DATA_ROOT
+			? resolve(env.PLUXEL_STATIC_DATA_ROOT)
+			: resolve(deployment?.root ?? projectRoot, '.pluxel/static')
+		return {
+			runtimeState: {
+				snapshot: { enabled: externalApiGatewayEnabledPlugins },
+			},
+			persistence: resolve(staticDataRoot, 'persistence'),
+			workbench:
+				env.PLUXEL_WORKBENCH === 'false'
+					? false
+					: { enabled: true, access: { exposure: 'private' } },
+		}
 	},
-	persistence: resolve(staticDataRoot, 'persistence'),
-	logger: { preset: 'core' },
-	workbench,
+	prepare: ({ host }) => prepareExternalGatewayRuntime(host.ctx),
 })

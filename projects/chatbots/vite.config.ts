@@ -21,6 +21,9 @@ export default defineConfig({
 		port: Number(process.env.PLUXEL_HOST_PORT ?? 3314),
 	},
 	build: {
+		outDir: 'dist/public',
+		emptyOutDir: false,
+		manifest: true,
 		chunkSizeWarningLimit: 700,
 		rolldownOptions: {
 			output: {
@@ -32,7 +35,7 @@ export default defineConfig({
 	},
 	plugins: [
 		staticRuntimeVitePlugin({
-			config: './src/pluxel.static.ts',
+			entry: './src/pluxel.static.ts',
 		}),
 		react(),
 	],

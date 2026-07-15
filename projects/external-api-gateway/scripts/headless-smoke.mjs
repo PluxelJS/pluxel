@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from 'node:fs/promises'
+import { createServer as createTcpServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer } from 'vite'
@@ -14,11 +15,12 @@ process.env.PLUXEL_STATIC_DATA_ROOT = dataRoot
 let server
 
 try {
+	const port = await findAvailablePort()
 	server = await createServer({
 		root,
 		configFile: resolve(root, 'vite.config.ts'),
 		logLevel: 'error',
-		server: { host: '127.0.0.1', port: 0, strictPort: true },
+		server: { host: '127.0.0.1', port, strictPort: true },
 	})
 	await server.listen()
 	const address = server.httpServer?.address()
@@ -40,6 +42,25 @@ try {
 	await rm(dataRoot, { recursive: true, force: true })
 	restoreEnvironment('PLUXEL_WORKBENCH', previousWorkbench)
 	restoreEnvironment('PLUXEL_STATIC_DATA_ROOT', previousDataRoot)
+}
+
+function findAvailablePort() {
+	return new Promise((resolvePromise, reject) => {
+		const probe = createTcpServer()
+		probe.once('error', reject)
+		probe.listen(0, '127.0.0.1', () => {
+			const address = probe.address()
+			if (!address || typeof address === 'string') {
+				probe.close()
+				reject(new Error('Port probe has no TCP address'))
+				return
+			}
+			probe.close((error) => {
+				if (error) reject(error)
+				else resolvePromise(address.port)
+			})
+		})
+	})
 }
 
 async function getJson(url) {

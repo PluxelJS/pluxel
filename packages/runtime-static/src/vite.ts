@@ -1,7 +1,11 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { importViteSsrModule, pluxelRuntimeSourceVitePlugin } from '@pluxel/runtime-dev/vite'
+import {
+	importViteSsrModule,
+	invalidateViteSsrModule,
+	pluxelRuntimeSourceVitePlugin,
+} from '@pluxel/runtime-dev/vite'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -14,6 +18,7 @@ import {
 } from '@pluxel/runtime-dev/hmr-log'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 import { requireWorkbench } from '@pluxel/runtime/internal'
+import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
 	normalizePath,
@@ -24,14 +29,17 @@ import {
 } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
-import { isStaticRuntimeConfig } from './config'
+import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
+import { toStaticRuntimeDefinition } from './internal/application'
 import { createStaticRuntimeHost } from './internal/host'
 import type {
+	StaticRuntimeApplication,
+	StaticRuntimeBindings,
 	StaticRuntimeDefinition,
 	StaticRuntimeHost,
 	StaticRuntimeHmrReport,
 	StaticRuntimeStartupReport,
-	StaticRuntimeConfig,
+	StaticRuntimeStartupContext,
 } from './types'
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
@@ -55,52 +63,122 @@ type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
 	viteServer?: ViteDevServer
 }
 
-export type StaticRuntimeViteConfig = StaticRuntimeConfig
-
 export type StaticRuntimeVitePluginOptions = {
-	config: string
+	entry: string
 	hmr?: false | StaticRuntimeViteHmrConfig
-	logging?: StaticRuntimeHost['options']['logging']
-	/**
-	 * Runs after the static runtime host is created and before plugins start.
-	 * Use this for host-owned bootstrapping such as preparing or unlocking vault storage.
-	 */
-	prepareHost?: (host: StaticRuntimeHost) => void | Promise<void>
+	bindings?: StaticRuntimeBindings | (() => StaticRuntimeBindings | Promise<StaticRuntimeBindings>)
 }
 
-export { defineStaticRuntimeConfig } from './config'
+export { defineStaticRuntime } from './application'
 
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
 	const state: {
 		server?: ViteDevServer
-		configPath?: string
+		entryPath?: string
 		configFiles: Set<string>
-		runtimeConfig?: StaticRuntimeViteConfig
+		application?: StaticRuntimeApplication
 		host?: StaticRuntimeHost
-		stopPromise?: Promise<void>
 	} = {
 		configFiles: new Set(),
 	}
 
-	const loadConfig = async (): Promise<StaticRuntimeViteConfig> => {
+	const loadApplication = async (
+		fresh: boolean,
+	): Promise<{ application: StaticRuntimeApplication; configFiles: Set<string> }> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
-		const configPath = (state.configPath ??= resolveRuntimeConfigPath(
+		const entryPath = (state.entryPath ??= resolveRuntimeEntryPath(
 			server,
-			options.config,
+			options.entry,
 			'runtime-static',
 		))
-		const mod = await importViteSsrModule(server, configPath, { fresh: true })
-		const loaded = validateStaticRuntimeConfigModule(mod, configPath)
-		state.configFiles = collectSsrImportFiles(server, configPath)
-		state.runtimeConfig = loaded
-		return loaded
+		const mod = await importViteSsrModule(server, entryPath, { fresh })
+		return {
+			application: validateStaticRuntimeApplicationModule(mod, entryPath),
+			configFiles: collectSsrImportFiles(server, entryPath),
+		}
 	}
 
-	async function stopHost(): Promise<void> {
-		if (!state.host) return
-		state.stopPromise ??= state.host.stop()
-		await state.stopPromise
+	const createHost = async (application: StaticRuntimeApplication): Promise<StaticRuntimeHost> => {
+		const server = state.server
+		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
+		const startup: StaticRuntimeStartupContext = {
+			mode: 'development',
+			env: process.env,
+			bindings: await resolveViteBindings(options.bindings),
+		}
+		const config = await resolveStaticRuntimeHostOptions(application, startup)
+		const host = await createStaticRuntimeHost(
+			toStaticRuntimeDefinition(application),
+			{
+				...config,
+				http:
+					config.workbench !== false && config.workbench?.enabled === true
+						? withDevWorkbenchHttpConfig(config.http)
+						: config.http,
+			},
+			{ installWorkbench },
+		)
+		try {
+			const hmr = options.hmr
+			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
+			if (hmrOptions && config.workbench !== false && config.workbench?.enabled === true) {
+				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
+				await configureStaticRuntimeDevRuntime(server, host, {
+					viteServer: server,
+					...hmrOptions,
+					workbenchCompiler: mergeWorkbenchCompilerPluginDirs(
+						hmrOptions.workbenchCompiler,
+						pluginDirs,
+					),
+				})
+			}
+			await application.prepare?.({ host, startup })
+			return host
+		} catch (error) {
+			await host.stop().catch((): undefined => undefined)
+			throw error
+		}
+	}
+
+	async function replaceHost(
+		application: StaticRuntimeApplication,
+	): Promise<StaticRuntimeStartupReport> {
+		const previousHost = state.host
+		const previousApplication = state.application
+		if (previousHost) {
+			await previousHost.stop()
+			state.host = undefined
+		}
+
+		let next: StaticRuntimeHost | undefined
+		try {
+			next = await createHost(application)
+			const startup = await next.start()
+			state.host = next
+			state.application = application
+			return startup
+		} catch (error) {
+			await next?.stop().catch((): undefined => undefined)
+			if (previousHost && previousApplication) {
+				try {
+					const restored = await createHost(previousApplication)
+					await restored.start()
+					state.host = restored
+					state.application = previousApplication
+				} catch (rollbackError) {
+					const replacementError = new Error(
+						'[runtime-static/vite] host replacement and rollback both failed',
+						{
+							cause: error,
+						},
+					)
+					Object.defineProperty(replacementError, 'rollbackError', { value: rollbackError })
+					throw replacementError
+				}
+			}
+			throw error
+		}
 	}
 
 	const routePlugin: Plugin = {
@@ -113,66 +191,64 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			}
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
-			const config = await loadConfig()
-			const hmr = options.hmr
-			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
-			const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(config), {
-				configService: config.configService,
-				runtimeState: config.runtimeState,
-				persistence: config.persistence,
-				pluginData: config.pluginData,
-				http:
-					config.workbench !== false && config.workbench?.enabled === true
-						? withDevWorkbenchHttpConfig(config.http)
-						: config.http,
-				workbench: config.workbench,
-				logging: options.logging ?? config.logging,
-				profile: config.profile,
-				context: config.context,
-			})
-			state.host = host
-			await options.prepareHost?.(host)
-
-			if (hmrOptions && config.workbench !== false && config.workbench?.enabled === true) {
-				const enabledHmrOptions = hmrOptions ?? {}
-				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
-				await configureStaticRuntimeDevRuntime(server, host, {
-					viteServer: server,
-					...enabledHmrOptions,
-					workbenchCompiler: mergeWorkbenchCompilerPluginDirs(
-						enabledHmrOptions.workbenchCompiler,
-						pluginDirs,
-					),
-				})
-			}
-
-			const startup = await host.start()
+			const loaded = await loadApplication(true)
+			const startup = await replaceHost(loaded.application)
+			state.configFiles = loaded.configFiles
+			const host = state.host!
 			logStaticRuntimeStarted(host, startup, state.configFiles)
 
 			server.httpServer?.once('close', () => {
-				void stopHost()
+				const active = state.host
+				state.host = undefined
+				if (active) {
+					void active.stop().catch((error) => {
+						server.config.logger.error('[runtime-static/vite] failed to stop static runtime', {
+							error: error as Error,
+						})
+					})
+				}
 			})
 
 			server.middlewares.use((req, res, next) => {
-				if (!isStaticRuntimeRouteRequest(req, host)) {
+				const activeHost = state.host
+				if (!activeHost) {
 					next()
 					return
 				}
-				void proxyToStaticRuntime(req, res, server, host, next)
+				if (!isStaticRuntimeRouteRequest(req, activeHost)) {
+					next()
+					return
+				}
+				void proxyToStaticRuntime(req, res, server, activeHost, next)
 			})
 		},
 		async handleHotUpdate(ctx) {
 			const host = state.host
-			if (!host || !state.configFiles.has(ctx.file)) return undefined
+			if (!state.configFiles.has(ctx.file)) return undefined
 			const server = state.server ?? ctx.server
 			state.server = server
 			const viteInvalidated = invalidateStaticRuntimeChangedModules(server, ctx.file)
-			const config = await loadConfig()
+			invalidateViteSsrModule(server, ctx.file)
+			const loaded = await loadApplication(false)
+			const application = loaded.application
 			const start = performance.now()
+			if (
+				!host ||
+				ctx.file === state.entryPath ||
+				application.name !== host.definition.name ||
+				!hasCatalogChanges(host.definition, application)
+			) {
+				const startup = await replaceHost(application)
+				state.configFiles = loaded.configFiles
+				logStaticRuntimeStarted(state.host!, startup, state.configFiles)
+				return []
+			}
 			const report = await reloadStaticRuntime({
 				host,
-				definition: toStaticRuntimeDefinition(config),
+				definition: toStaticRuntimeDefinition(application),
 			})
+			state.application = application
+			state.configFiles = loaded.configFiles
 			logStaticRuntimeHmrUpdated(
 				host,
 				report,
@@ -369,45 +445,43 @@ function createStaticRuntimeSourcePlugin(): Plugin {
 	})
 }
 
-function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: string): string {
-	const raw = String(config ?? '').trim()
-	if (!raw) throw new Error(`[${route}/vite] config is required`)
+function resolveRuntimeEntryPath(server: ViteDevServer, entry: string, route: string): string {
+	const raw = String(entry ?? '').trim()
+	if (!raw) throw new Error(`[${route}/vite] entry is required`)
 	return normalizePath(resolve(server.config.root, raw))
 }
 
-function validateStaticRuntimeConfigModule(
+function validateStaticRuntimeApplicationModule(
 	mod: Record<string, unknown>,
-	configPath: string,
-): StaticRuntimeViteConfig {
+	entryPath: string,
+): StaticRuntimeApplication {
 	const value = mod.default
 	if (value && typeof (value as Promise<unknown>).then === 'function') {
 		throw new Error(
-			`[runtime-static/vite] ${configPath} default export must be a plain object returned by defineStaticRuntimeConfig(...), not a Promise`,
+			`[runtime-static/vite] ${entryPath} default export must be returned by defineStaticRuntime(...), not a Promise`,
 		)
 	}
-	if (!isStaticRuntimeConfig(value)) {
+	if (!isStaticRuntimeApplication(value)) {
 		throw new Error(
-			`[runtime-static/vite] ${configPath} must default-export defineStaticRuntimeConfig(...)`,
-		)
-	}
-	if ('vite' in value) {
-		throw new Error(
-			`[runtime-static/vite] ${configPath} must not include a nested "vite" field; use the host vite.config.ts instead`,
-		)
-	}
-	if ('hmr' in value) {
-		throw new Error(
-			`[runtime-static/vite] ${configPath} must not include an "hmr" field; pass staticRuntimeVitePlugin({ hmr }) options from the host vite.config.ts instead`,
+			`[runtime-static/vite] ${entryPath} must default-export defineStaticRuntime(...)`,
 		)
 	}
 	return value
 }
 
-function toStaticRuntimeDefinition(config: StaticRuntimeViteConfig): StaticRuntimeDefinition {
-	return {
-		name: config.name,
-		plugins: config.plugins,
-	}
+function hasCatalogChanges(
+	current: StaticRuntimeDefinition,
+	next: Pick<StaticRuntimeApplication, 'plugins'>,
+): boolean {
+	if (current.plugins.length !== next.plugins.length) return true
+	return current.plugins.some((plugin, index) => plugin !== next.plugins[index])
+}
+
+async function resolveViteBindings(
+	bindings: StaticRuntimeVitePluginOptions['bindings'],
+): Promise<StaticRuntimeBindings> {
+	if (typeof bindings === 'function') return (await bindings()) ?? {}
+	return bindings ?? {}
 }
 
 function collectSsrImportFiles(server: ViteDevServer, entry: string): Set<string> {
@@ -474,8 +548,8 @@ async function configureStaticRuntimeDevRuntime(
 }
 
 function withDevWorkbenchHttpConfig(
-	config: StaticRuntimeConfig['http'] | undefined,
-): StaticRuntimeConfig['http'] {
+	config: StaticRuntimeHost['options']['http'] | undefined,
+): StaticRuntimeHost['options']['http'] {
 	const next = {
 		...config,
 		controlPlane: { web: true, rpc: true, sse: true },
@@ -507,6 +581,7 @@ function isStaticRuntimeRouteRequest(
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
 	if (url.startsWith('/@') || url.startsWith('/node_modules/') || url.includes('.')) return false
+	if (!host.ctx.workbench.enabled) return false
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
 	return accept.includes('text/html')

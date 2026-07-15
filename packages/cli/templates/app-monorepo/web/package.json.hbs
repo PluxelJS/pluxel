@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --host 127.0.0.1",
-		"build": "vite build",
+		"build": "tsdown && vite build",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
@@ -18,11 +18,13 @@
 	},
 	"devDependencies": {
 		"@gqlens/vite": "0.2.0",
+		"@pluxel/rolldown": "^0.1.0",
 		"@types/node": "^25.0.0",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
 		"graphql": "^16.13.0",
+		"tsdown": "^0.22.5",
 		"vite": "^8.0.0"
 	}
 }

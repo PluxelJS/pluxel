@@ -21,7 +21,7 @@ import {
 	withWorkbenchPluginContext,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
-} from '@pluxel/runtime/internal'
+} from '@pluxel/runtime/internal/static-host'
 import {
 	buildCatalog,
 	collectUnknownConfigEntries,
@@ -563,20 +563,61 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 export async function createStaticRuntimeHost(
 	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions = {},
+	internal: {
+		deployment?: StaticRuntimeHostDeployment
+		installWorkbench?: StaticRuntimeWorkbenchInstaller
+	} = {},
 ): Promise<StaticRuntimeHost> {
 	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
 	await logging.install()
+	let host: StaticRuntimeHostImpl | undefined
 	try {
-		const host = new StaticRuntimeHostImpl(definition, options, logging)
+		host = new StaticRuntimeHostImpl(
+			definition,
+			withStaticRuntimeDeployment(options, internal.deployment),
+			logging,
+		)
 		if (isWorkbenchEnabled(options.workbench)) {
-			const { installWorkbench } = await import('@pluxel/runtime/internal')
-			installWorkbench(host.ctx)
+			if (!internal.installWorkbench) {
+				throw new Error('[runtime-static] Workbench installer is not available for this host')
+			}
+			internal.installWorkbench(host.ctx)
 		}
 		await host.prepare()
 		return host
 	} catch (error) {
-		await logging.dispose()
+		if (host) await host.stop().catch((): undefined => undefined)
+		else await logging.dispose().catch((): undefined => undefined)
 		throw error
+	}
+}
+
+export type StaticRuntimeHostDeployment = {
+	root: string
+	publicDir?: string
+	workbenchDir?: string
+	workbenchIncluded: boolean
+}
+
+export type StaticRuntimeWorkbenchInstaller = (ctx: Context) => void
+
+function withStaticRuntimeDeployment(
+	options: StaticRuntimeHostOptions,
+	deployment: StaticRuntimeHostDeployment | undefined,
+): StaticRuntimeHostOptions {
+	if (!deployment) return options
+	const context = options.context ?? {}
+	const http = options.http
+	return {
+		...options,
+		http: {
+			...(http && typeof http === 'object' ? http : {}),
+			...(deployment.publicDir ? { uiPublicDir: deployment.publicDir } : {}),
+		} as StaticRuntimeHostOptions['http'],
+		context: {
+			...context,
+			...(deployment.workbenchDir ? { workbenchArtifactRoot: deployment.workbenchDir } : {}),
+		} as StaticRuntimeHostOptions['context'],
 	}
 }
 
@@ -584,10 +625,10 @@ function resolveStaticRuntimeLoggingInput(
 	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions,
 ): RuntimeLoggingInput {
-	if (options.logging && options.logging !== false) return options.logging
+	if (options.logging !== undefined && options.logging !== false) return options.logging
 	const root = {
-		profile: options.profile ?? options.context?.profile ?? definition.name,
-		debugTopics: options.context?.debug ?? [],
+		profile: options.profile ?? definition.name,
+		debugTopics: resolveStaticDebugTopics(options.context?.debug),
 	}
 	if (options.logging === false) {
 		return {
@@ -596,7 +637,7 @@ function resolveStaticRuntimeLoggingInput(
 			routes: { runtime: [], plugins: [], debug: [], meta: [] },
 		}
 	}
-	const withStore = isWorkbenchEnabled(options.workbench ?? options.context?.workbench)
+	const withStore = isWorkbenchEnabled(options.workbench)
 	const sinks: RuntimeLoggingInput['sinks'] = {
 		console: {
 			kind: 'console',
@@ -617,6 +658,12 @@ function resolveStaticRuntimeLoggingInput(
 			meta: [{ sink: 'console', minLevel: 'warning' }],
 		},
 	}
+}
+
+function resolveStaticDebugTopics(value: unknown): readonly string[] {
+	return Array.isArray(value)
+		? value.filter((topic): topic is string => typeof topic === 'string')
+		: []
 }
 
 function compactReportEntries(
@@ -654,20 +701,18 @@ function staticHostNeedsWorkbench(ctxConfig: unknown): boolean {
 function createStaticRuntimeContextConfig(
 	options: StaticRuntimeHostOptions,
 	logging: RuntimeLogging,
-): NonNullable<StaticRuntimeHostOptions['context']> {
+): import('@pluxel/core').Context.Config {
 	const context = options.context ?? {}
-	const configService = options.configService ?? context.configService
-	const http = options.http ?? context.http
-	const workbench = options.workbench ?? context.workbench ?? false
+	const configService = options.configService
+	const http = options.http
+	const workbench = options.workbench ?? false
 	const adminAccess = workbenchAdminAccess(workbench)
-	const persistence = options.persistence ?? context.persistence
-	const pluginData = options.pluginData ?? context.pluginData
-	const profile = options.profile ?? context.profile
+	const persistence = options.persistence
+	const pluginData = options.pluginData
+	const profile = options.profile
 	const inheritedRuntimeState =
-		!options.runtimeState && !context.runtimeState && configService?.mode
-			? { mode: configService.mode }
-			: undefined
-	const runtimeState = options.runtimeState ?? context.runtimeState ?? inheritedRuntimeState
+		!options.runtimeState && configService?.mode ? { mode: configService.mode } : undefined
+	const runtimeState = options.runtimeState ?? inheritedRuntimeState
 
 	return withWorkbenchPluginContext({
 		...context,

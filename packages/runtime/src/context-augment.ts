@@ -19,6 +19,14 @@ declare module '@pluxel/core' {
 			adminAccess?: AdminAccessConfig
 			/** Optional Workbench Plane capability and access policy. */
 			workbench?: WorkbenchConfig
+			/** @internal Deployment-owned root containing assembled Workbench artifacts. */
+			workbenchArtifactRoot?: string
+			/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
+			workbenchArtifactResolver?: (
+				root: import('@pluxel/core').Context,
+				pluginName: string,
+				artifactName: string,
+			) => string | null | Promise<string | null>
 		}
 	}
 }

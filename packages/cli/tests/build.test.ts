@@ -184,6 +184,67 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 	},
+	decoratedPlugin: {
+		'package.json': JSON.stringify(
+			{
+				name: 'pluxel-cli-build-fixture-decorated-plugin',
+				version: '1.0.0',
+				type: 'module',
+			},
+			null,
+			2,
+		),
+		'tsconfig.json': JSON.stringify(
+			{
+				compilerOptions: {
+					target: 'ES2020',
+					module: 'ESNext',
+					moduleResolution: 'Bundler',
+					strict: false,
+					declaration: false,
+				},
+				include: ['src'],
+			},
+			null,
+			2,
+		),
+		'tsdown.config.ts': [
+			'export default {',
+			"\tentry: 'src/index.ts',",
+			"\tformat: ['esm'],",
+			'\tdts: false,',
+			'\tminify: false,',
+			'\tsourcemap: false,',
+			'\tclean: true,',
+			'\tinputOptions(options) {',
+			'\t\treturn {',
+			'\t\t\t...options,',
+			'\t\t\ttransform: {',
+			'\t\t\t\t...options.transform,',
+			'\t\t\t\tdefine: { ...options.transform?.define, __FIXTURE_INPUT__: JSON.stringify("preserved") },',
+			'\t\t\t},',
+			'\t\t}',
+			'\t},',
+			'}',
+			'',
+		].join('\n'),
+		'src/index.ts': [
+			"import { BasePlugin, Plugin } from '@pluxel/runtime/authoring'",
+			'declare const __FIXTURE_INPUT__: string',
+			'export const inputOverride = __FIXTURE_INPUT__',
+			'',
+			"@Plugin({ name: 'FixtureProvider' })",
+			'export class FixtureProvider extends BasePlugin {}',
+			'',
+			"@Plugin({ name: 'FixtureConsumer' })",
+			'export class FixtureConsumer extends BasePlugin {',
+			'\tconstructor(readonly provider: FixtureProvider) {',
+			'\t\tsuper()',
+			'\t}',
+			'}',
+			'',
+		].join('\n'),
+	},
 	deprecatedTsdownKeys: {
 		'package.json': JSON.stringify(
 			{
@@ -496,6 +557,25 @@ describe('build command', () => {
 			).toHaveLength(4)
 		})
 	}, 45_000)
+
+	it('always lowers legacy plugin decorators and emits constructor metadata', async () => {
+		await withBuildFixture('decoratedPlugin', async (fixtureDir) => {
+			const runtime = await resolveBuildContext({})
+			await runWithTsdown({
+				context: runtime,
+				onSuccess: async () => {},
+				log: () => {},
+				extraConfig: cliTsdownOverlay,
+			})
+
+			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
+			expect(output).not.toMatch(/@Plugin\b/)
+			expect(output).toContain('design:paramtypes')
+			expect(output).toContain('FixtureProvider')
+			expect(output).toContain('FixtureConsumer')
+			expect(output).toContain('preserved')
+		})
+	})
 
 	it('does not initialize the Workbench UI builder for plugins without a UI declaration', async () => {
 		await withBuildFixture('basic', async (fixtureDir) => {

@@ -1,13 +1,8 @@
-import { fileURLToPath } from 'node:url'
-import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
-import { dirname, resolve } from 'pathe'
+import { resolve } from 'node:path'
+import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { PluginEventsDeclaredConsumer, PluginEventsDeclaredProducer } from './demo/PluginEventsDemo'
 import { PluginFeatureDepsConsumer, PluginFeatureDepsProvider } from './demo/PluginFeatureDepsDemo'
 import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
-
-const here = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(here, '../../../..')
-const staticDataRoot = resolve(repoRoot, 'packages/plugins/host/.pluxel/static')
 
 export const staticDemoPlugins = [
 	PluginEventsDeclaredProducer,
@@ -25,16 +20,22 @@ export const staticDemoEnabledPlugins = [
 	'PluginHttpRoutesDemo',
 ] as const
 
-export default defineStaticRuntimeConfig({
+export default defineStaticRuntime({
 	name: 'plugins-host-static',
 	plugins: staticDemoPlugins,
-	runtimeState: {
-		snapshot: { enabled: staticDemoEnabledPlugins },
+	configure({ env, deployment }) {
+		const staticDataRoot = env.PLUXEL_STATIC_DATA_ROOT
+			? resolve(env.PLUXEL_STATIC_DATA_ROOT)
+			: resolve(deployment?.root ?? resolve(import.meta.dirname, '..'), '.pluxel/static')
+		return {
+			runtimeState: {
+				snapshot: { enabled: staticDemoEnabledPlugins },
+			},
+			workbench:
+				env.PLUXEL_WORKBENCH === 'false'
+					? false
+					: { enabled: true, access: { exposure: 'private' } },
+			persistence: resolve(staticDataRoot, 'persistence'),
+		}
 	},
-	workbench: {
-		enabled: true,
-		access: { exposure: 'private' },
-	},
-	logger: { preset: 'core' },
-	persistence: resolve(staticDataRoot, 'persistence'),
 })

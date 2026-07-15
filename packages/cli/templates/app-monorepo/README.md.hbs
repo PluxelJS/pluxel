@@ -63,6 +63,8 @@ The Vite plugin order in `web/vite.config.ts` is intentional:
 GQLens middleware stays disabled because GraphQL is served by the Pluxel plugin, not by a second
 development-only backend.
 
-To enable the optional Pluxel workbench workbench, replace `workbench: false` in
-`web/src/pluxel.static.ts` with a host-owned configuration object. Plugin business routes and
-domain state must remain independent of that capability.
+To enable the optional Pluxel Workbench, start with `PLUXEL_WORKBENCH=true`. The production build
+uses the same `web/src/pluxel.static.ts` entry through `@pluxel/rolldown/build`; `web/dist` contains
+the server closure, deployment manifest, browser application and Workbench artifacts and can be
+moved as one directory. Plugin business routes and domain state must remain independent of that
+capability.

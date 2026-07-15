@@ -17,6 +17,17 @@ artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant�
 测试至少覆盖 module replacement cleanup、compile error state、cached artifact、target layout refresh 和
 disabled Workbench Plane。
 
+## Static Vite route
+
+`staticRuntimeVitePlugin({ entry })` 通过 Vite SSR ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 plugin
+module 变化会失效精确 module/importer graph，并通过 core replacement lifecycle 更新 fixed catalog；entry 本身或
+只改变 `configure()` 结果的依赖变化会重建 host。single-active logging root 要求重建时先停止旧 host；新 application
+启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。
+
+Workbench UI declaration 仍交给 runtime-dev compiler，因此 static route 在开发期具备与 dynamic route 相同的 UI HMR
+contract。两者的差别是 catalog 来源：static 从 entry imports 得到，dynamic 从 workspace loader 得到。production frozen
+distribution 不携带 watcher、Vite server 或 HMR compiler。
+
 ## Workbench UI Federation 构建隔离
 
 `buildWorkbenchUiRemote()` 把每个 remote 作为独立 staging transaction 构建、校验并原子发布。

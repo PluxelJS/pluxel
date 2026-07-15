@@ -40,13 +40,13 @@ export default definePluxelVitestConfig(
 
 ## 按被测边界选择 host
 
-| 要验证的行为                                                    | 入口                                                | 说明                                                          |
-| --------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------- |
-| 纯函数、领域模型、schema helper                                 | 直接 Vitest                                         | 不启动 Pluxel，速度最快                                       |
-| DI、required dependency graph、feature、effects、core lifecycle | `@pluxel/test` 的 `withHost()`                      | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
-| config 注入、HTTP、persistence、Vault、Workbench Plane          | `@pluxel/runtime/test` 的 `withRuntimeHost()`       | 默认 memory backend，callback 结束后自动 dispose              |
-| 应用的 static catalog 和完整 fetch boundary                     | `@pluxel/runtime-static` 的 `createStaticRuntime()` | 用于 host/application integration，不是普通插件单测默认选择   |
-| dynamic loader、HMR、UI compiler、真实 Vite route               | 对应 runtime package 的集成测试                     | 需要验证工具链或 route 时才上升到这一层                       |
+| 要验证的行为                                                    | 入口                                                             | 说明                                                          |
+| --------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| 纯函数、领域模型、schema helper                                 | 直接 Vitest                                                      | 不启动 Pluxel，速度最快                                       |
+| DI、required dependency graph、feature、effects、core lifecycle | `@pluxel/test` 的 `withHost()`                                   | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
+| config 注入、HTTP、persistence、Vault、Workbench Plane          | `@pluxel/runtime/test` 的 `withRuntimeHost()`                    | 默认 memory backend，callback 结束后自动 dispose              |
+| 应用的 static catalog 和完整 fetch boundary                     | `@pluxel/runtime-static/test` 的 `createStaticRuntimeTestHost()` | 用于 host/application integration，不是普通插件单测默认选择   |
+| dynamic loader、HMR、UI compiler、真实 Vite route               | 对应 runtime package 的集成测试                                  | 需要验证工具链或 route 时才上升到这一层                       |
 
 选择能覆盖行为的最小 host。不要用 core-only host 测 HTTP，也不要为一个纯生命周期断言启动完整
 static application。

@@ -129,4 +129,15 @@ describe('RuntimeLogging', () => {
 			}),
 		).toThrow('Invalid debug topic pattern')
 	})
+
+	it('releases the LogTape process exit hook when disposed', async () => {
+		const before = process.listenerCount('exit')
+		for (let index = 0; index < 12; index++) {
+			logging = createRuntimeLogging(storePlan())
+			await logging.install()
+			await logging.dispose()
+			logging = undefined
+		}
+		expect(process.listenerCount('exit')).toBe(before)
+	})
 })

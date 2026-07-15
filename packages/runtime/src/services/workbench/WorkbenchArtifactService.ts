@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { Context } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
@@ -10,13 +9,11 @@ import type {
 } from '../../workbench/contracts'
 import type { WorkbenchUiEntry } from '../../workbench/runtime'
 import { runtimeDevCapabilities } from '../../runtime/capabilities'
-import { findRuntimeModuleId, resolveModuleIdBaseDir } from '../../runtime/module-id'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
 	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
-	workbenchFederationBuildManifestPath,
-	workbenchFederationManifestPath,
+	sanitizeWorkbenchOwnerName,
 	workbenchFederationModuleId,
 	workbenchFederationRemoteName,
 } from '@pluxel/core/federation'
@@ -170,7 +167,11 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 	private registerPackaged(owner: Context, declaration: WorkbenchUiEntry): () => void {
 		const pluginName = owner.pluginInfo.id
 		let disposed = false
-		void this.registerPackagedModule(pluginName, declaration.artifactName ?? pluginName).catch((error) => {
+		void this.registerPackagedModule(
+			pluginName,
+			declaration.artifactName ?? pluginName,
+			() => disposed,
+		).catch((error) => {
 			if (!disposed) owner.logger.error('failed to register workbench UI artifact', { error })
 		})
 		const guard = owner.effects.defer(() => {
@@ -180,9 +181,13 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		return () => guard.dispose()
 	}
 
-	private async registerPackagedModule(pluginName: string, artifactName: string): Promise<void> {
-		const manifestPath = this.resolvePackagedManifestPath(pluginName, artifactName)
-		if (!manifestPath) return
+	private async registerPackagedModule(
+		pluginName: string,
+		artifactName: string,
+		isDisposed: () => boolean,
+	): Promise<void> {
+		const manifestPath = await this.resolvePackagedManifestPath(pluginName, artifactName)
+		if (!manifestPath || isDisposed()) return
 		const [content, fileStat] = await Promise.all([
 			readFile(manifestPath, 'utf8').catch((): null => null),
 			stat(manifestPath).catch((): null => null),
@@ -196,6 +201,7 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 			throw new Error(`incomplete workbench UI artifact for ${pluginName}: remoteEntry.js missing`)
 		}
 		await validatePackagedManifest(artifactRoot, artifactName, content)
+		if (isDisposed()) return
 		const sourceHash = createHash('sha256')
 			.update(content)
 			.update(remoteEntry)
@@ -212,26 +218,17 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 		)
 	}
 
-	private resolvePackagedManifestPath(pluginName: string, artifactName: string): string | null {
-		const registryPath = findRuntimeModuleId(this.root, pluginName)
-		if (registryPath) {
-			const baseDir = resolveModuleIdBaseDir(registryPath)
-			if (baseDir) {
-				const packageRoot = findNearestPackageRoot(baseDir)
-				return resolve(
-					packageRoot ?? baseDir,
-					packageRoot
-						? workbenchFederationBuildManifestPath(artifactName)
-						: workbenchFederationManifestPath(artifactName),
-				)
-			}
+	private async resolvePackagedManifestPath(
+		pluginName: string,
+		artifactName: string,
+	): Promise<string | null> {
+		const deploymentRoot = String(this.root.config.workbenchArtifactRoot ?? '').trim()
+		if (deploymentRoot) {
+			return resolveDeploymentWorkbenchManifestPath(deploymentRoot, artifactName)
 		}
-		const cwd = process.cwd()
-		return resolve(
-			cwd,
-			/(?:^|[\\/])dist$/i.test(cwd)
-				? workbenchFederationManifestPath(artifactName)
-				: workbenchFederationBuildManifestPath(artifactName),
+		return (
+			(await this.root.config.workbenchArtifactResolver?.(this.root, pluginName, artifactName)) ??
+			null
 		)
 	}
 
@@ -249,6 +246,17 @@ export class WorkbenchArtifactService implements WorkbenchArtifactStore {
 			}
 		}
 	}
+}
+
+export function resolveDeploymentWorkbenchManifestPath(
+	deploymentRoot: string,
+	artifactName: string,
+): string {
+	return resolve(
+		deploymentRoot,
+		sanitizeWorkbenchOwnerName(artifactName),
+		WORKBENCH_FEDERATION_MANIFEST_FILE,
+	)
 }
 
 async function validatePackagedManifest(
@@ -320,16 +328,6 @@ export function createCompiledWorkbenchArtifact(input: {
 		exposedModule: WORKBENCH_FEDERATION_EXPOSE,
 		sourceHash: input.sourceHash,
 		compiledAt,
-	}
-}
-
-function findNearestPackageRoot(start: string): string | null {
-	let current = start
-	while (true) {
-		if (existsSync(resolve(current, 'package.json'))) return current
-		const parent = dirname(current)
-		if (parent === current) return null
-		current = parent
 	}
 }
 

@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import {
 	compareLogLevel,
 	configure,
+	dispose as disposeLogTape,
 	getConfig,
 	getConsoleSink,
 	getJsonLinesFormatter,
@@ -37,6 +38,8 @@ const MAX_DIAGNOSTIC_COUNT = Number.MAX_SAFE_INTEGER
 type RuntimeLoggingGlobal = typeof globalThis & {
 	[ACTIVE_RUNTIME_LOGGING]?: RuntimeLoggingImpl
 }
+
+type ProcessExitListener = (...args: unknown[]) => void
 
 export type RuntimeLoggingState =
 	| 'created'
@@ -343,6 +346,7 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 	private rootState: RuntimeLoggingDescription['root']['state'] = 'created'
 	private wrongRootRecords = 0
 	private malformedCategories = 0
+	private logTapeExitListeners: ProcessExitListener[] = []
 
 	constructor(input: RuntimeLoggingInput) {
 		this.input = input
@@ -433,14 +437,24 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 			throw new Error('LogTape is already configured by a foreign owner')
 		}
 		global[ACTIVE_RUNTIME_LOGGING] = this
+		const previousExitListeners = readProcessExitListeners()
 		try {
 			for (const sink of Object.values(this.input.sinks)) {
 				if (sink.kind === 'file') await mkdir(dirname(sink.path), { recursive: true })
 			}
 			await configure(this.compileConfig())
+			this.logTapeExitListeners = findAddedProcessExitListeners(
+				previousExitListeners,
+				disposeLogTape,
+			)
 			this.installedAtValue = Date.now()
 			this.state = 'installed'
 		} catch (error) {
+			this.logTapeExitListeners = findAddedProcessExitListeners(
+				previousExitListeners,
+				disposeLogTape,
+			)
+			this.removeLogTapeExitListeners()
 			if (global[ACTIVE_RUNTIME_LOGGING] === this) delete global[ACTIVE_RUNTIME_LOGGING]
 			this.state = 'failed'
 			throw error
@@ -573,12 +587,53 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 			await this.flush()
 			if (getConfig()) await reset()
 		} finally {
+			this.removeLogTapeExitListeners()
 			const global = globalThis as RuntimeLoggingGlobal
 			if (global[ACTIVE_RUNTIME_LOGGING] === this) delete global[ACTIVE_RUNTIME_LOGGING]
 			this.rootState = 'disposed'
 			this.state = 'disposed'
 		}
 	}
+
+	private removeLogTapeExitListeners(): void {
+		const proc = readProcessLike()
+		if (proc?.off) {
+			for (const listener of this.logTapeExitListeners) proc.off('exit', listener)
+		}
+		this.logTapeExitListeners = []
+	}
+}
+
+function readProcessLike():
+	| {
+			listeners?(event: string): ProcessExitListener[]
+			off?(event: string, listener: ProcessExitListener): void
+	  }
+	| undefined {
+	return (globalThis as typeof globalThis & { process?: unknown }).process as
+		| {
+				listeners?(event: string): ProcessExitListener[]
+				off?(event: string, listener: ProcessExitListener): void
+		  }
+		| undefined
+}
+
+function readProcessExitListeners(): ProcessExitListener[] {
+	return readProcessLike()?.listeners?.('exit') ?? []
+}
+
+function findAddedProcessExitListeners(
+	previous: readonly ProcessExitListener[],
+	expected: ProcessExitListener,
+): ProcessExitListener[] {
+	const remaining = [...previous]
+	const added: ProcessExitListener[] = []
+	for (const listener of readProcessExitListeners()) {
+		const index = remaining.indexOf(listener)
+		if (index >= 0) remaining.splice(index, 1)
+		else if (listener === expected) added.push(listener)
+	}
+	return added
 }
 
 export function createRuntimeLogging(input: RuntimeLoggingInput): RuntimeLogging {

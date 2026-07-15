@@ -4,6 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"static": "vite --host 127.0.0.1",
+		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
@@ -12,7 +13,9 @@
 		"jose": "^6.2.3"
 	},
 	"devDependencies": {
+		"@pluxel/rolldown": "workspace:*",
 		"@types/node": "^25.9.3",
+		"tsdown": "^0.22.5",
 		"typescript": "^6.0.3",
 		"vite": "^8.0.0-beta.18"
 	}

@@ -49,6 +49,8 @@ export default defineConfig({
 		test: 'src/test.ts',
 		toolchain: 'src/toolchain.ts',
 		internal: 'src/internal.ts',
+		'internal/static': 'src/internal-static.ts',
+		'internal/static-host': 'src/internal-static-host.ts',
 		web: 'src/web.ts',
 		workbench: 'src/workbench.ts',
 		'workbench/contract': 'src/workbench-contract.ts',

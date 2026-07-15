@@ -36,6 +36,25 @@ export async function importViteSsrModule<T = Record<string, unknown>>(
 	return runner.import<T>(id)
 }
 
+export function invalidateViteSsrModule(server: ViteDevServer, file: string): number {
+	const runner = getPluxelViteSsrModuleRunner(server)
+	const queue = [...(runner.evaluatedModules.getModulesByFile(file) ?? [])]
+	const seen = new Set<string>()
+	let invalidated = 0
+	while (queue.length > 0) {
+		const current = queue.shift()!
+		if (seen.has(current.id)) continue
+		seen.add(current.id)
+		for (const importer of current.importers) {
+			const importerModule = runner.evaluatedModules.getModuleById(importer)
+			if (importerModule) queue.push(importerModule)
+		}
+		runner.evaluatedModules.invalidateModule(current)
+		invalidated++
+	}
+	return invalidated
+}
+
 function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {
 	const existing = pluxelSsrModuleRunners.get(server)
 	if (existing && !existing.isClosed()) return existing

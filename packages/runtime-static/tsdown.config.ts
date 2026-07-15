@@ -31,6 +31,9 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
+		'internal/node-application': 'src/internal/node-application.ts',
+		'internal/node-workbench-application': 'src/internal/node-workbench-application.ts',
+		test: 'src/test.ts',
 		vite: 'src/vite.ts',
 	},
 	dts: {

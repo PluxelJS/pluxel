@@ -6,7 +6,7 @@
 		"dev": "vite --host 127.0.0.1",
 		"start": "vite --host 127.0.0.1",
 		"static": "vite --host 127.0.0.1",
-		"build": "vite build",
+		"build": "tsdown && vite build",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false && pnpm -r --filter '@repo/chatbots-*' typecheck"
 	},
@@ -37,6 +37,7 @@
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
+		"tsdown": "^0.22.5",
 		"vite": "^8.0.0-beta.18",
 		"vitest": "^4.1.9"
 	}

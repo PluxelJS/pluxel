@@ -14,6 +14,16 @@ runtime: profile -> persistence/watch -> patch/reset -> workbench read model
 - 配置在实例构造后、`init()` 前注入；constructor 不读取配置值。
 - config metadata 是 build-time 数据，不是 runtime AST 推断。
 - core validation 不依赖文件系统或 Workbench Plane。
+- static application build 固定的是 plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
+
+## Static startup config
+
+`defineStaticRuntime({ configure(startup) {} })` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
+和 deployment facts；resolver 每次 host startup 重新执行，可选择 persistence、ConfigService、RuntimeState、HTTP、
+logging、profile 和 Workbench policy。
+
+插件的 config records 与 enabled state 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨
+启动持久化。production bundle 不把这些记录烘焙成不可变常量。
 
 ## Toolchain metadata
 

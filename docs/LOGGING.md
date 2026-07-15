@@ -93,7 +93,7 @@ static/dynamic launcher 使用 `@pluxel/runtime/internal` 安装 manager。标�
 7. initialize persisted plugin policy
 8. install control plane and start plugin graph
 9. stop plugin graph/effects
-10. flush policy and reset LogTape
+10. flush policy、reset LogTape，并释放 LogTape 安装的 process dispose hook
 ```
 
 `logging: false` 表示安装一个无 sinks/routes 的 silent root，不表示跳过 manager。这样 root identity、policy

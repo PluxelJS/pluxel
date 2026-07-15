@@ -9,6 +9,4 @@
 - 实现后把稳定结论写入对应领域文档，并删除已完成提案内容；
 - 已被替代或没有继续价值的提案直接删除，历史由 Git 保存。
 
-当前提案：
-
-- [`workbench-resource-api.md`](workbench-resource-api.md)
+当前没有尚未实现的提案。

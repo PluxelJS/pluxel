@@ -38,6 +38,11 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 
 `hmr/diagnose` 只处理配置、workspace discovery、profile 和 snapshot，不注册 dynamic runtime services。
 
+`pluxel build` 通过 `@pluxel/rolldown/build` 调用 tsdown/Rolldown。构建 preset 会统一执行 legacy decorator 与
+constructor metadata、preprocessor/macro、config metadata、lint 和 Workbench declaration transform，不依赖项目
+是否在 tsconfig 中重复声明这些 bundler 语义。普通插件仍把 Pluxel runtime 保持为 peer dependency，不会变成
+static application bundle。
+
 `pluxel build` 从 server-only `workbench.extension()` 静态提取
 `workbench.entry(import.meta.url, './ui/index.tsx')`。无 UI declaration 时不会加载 Vite/MF；有 UI 时 server
 bundle 与 `dist/workbench/<artifact>/` remote 分开生成。toolchain 按 declaration 与 source graph 注入稳定

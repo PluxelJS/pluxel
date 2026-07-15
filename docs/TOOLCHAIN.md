@@ -2,6 +2,44 @@
 
 Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
+## Plugin package build
+
+`pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 通过 tsdown 驱动 Rolldown。普通 dynamic
+插件包与 static application 共用 production source pipeline：preprocessor、macro、legacy decorator、
+`design:paramtypes`、lint、config metadata 和 Workbench declaration extraction。插件包产物保留 runtime peer
+边界；static application freezer 则把固定 catalog 与 runtime closure 组装成部署产物。
+
+## Static application freezer
+
+static application 的 build preset 归属 `@pluxel/rolldown/build`：
+
+```ts
+import { staticApplication } from '@pluxel/rolldown/build'
+
+export default staticApplication({
+	entry: './src/pluxel.static.ts',
+	variant: 'workbench',
+	target: 'node',
+})
+```
+
+freezer 只接受直接默认导出的 `defineStaticRuntime(...)`。它在同一 graph 中执行 macro、config metadata、lint、Workbench
+remote extraction 和 production preprocessing，然后生成 platform bootstrap。fixed plugins、runtime-static 和可达的
+runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
+
+Node target 用 `nf3` externalize 并追踪 native/non-bundleable residual packages，复制到 distribution 自己的
+`node_modules`。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前 freezer 只发布
+Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
+
+`pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench artifacts 与 residual package facts。
+runtime 以 bootstrap 注入的 deployment root 读取产物，不从 workspace package root 或 `process.cwd()` 推断。
+
+Workbench shell/remotes 是 browser artifacts，不内联进 server chunk。shell 使用 `workbench/public/`，remote 使用
+`workbench/<artifact>/`；业务 SPA 可以独立输出到 `public/`，不会覆盖 Workbench manifest。`variant: 'workbench'`
+表示产物具备能力；是否在某次启动安装 Workbench 仍由 application `configure()` 返回值决定。
+headless 与 workbench 使用分离的 internal Node adapter；headless dependency graph 不解析 Workbench installer/backend，
+不是只依赖 minifier 删除未用分支。
+
 ## Source declaration
 
 server Extension 使用：

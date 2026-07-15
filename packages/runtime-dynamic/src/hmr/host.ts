@@ -10,8 +10,9 @@ import {
 	createRuntimeLogging,
 	isWorkbenchEnabled,
 	requireWorkbench,
-	workbenchAdminAccess,
+	resolvePackagedWorkbenchManifest,
 	resolveRuntimeStoragePaths,
+	workbenchAdminAccess,
 	withWorkbenchPluginContext,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
@@ -264,6 +265,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			packageService: {
 				state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 			},
+			workbenchArtifactResolver: resolvePackagedWorkbenchManifest,
 		}
 		const contextConfig = withWorkbenchPluginContext(
 			mergeContextConfig(defaultContext, plan.context),

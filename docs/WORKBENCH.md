@@ -6,11 +6,11 @@ Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 A
 
 作者模型分成三个边界：
 
-| 层 | 公开入口 | 内容 |
-| --- | --- | --- |
-| Contract | `@pluxel/runtime/workbench/contract` | browser-safe resources、Views、placements、Ports |
-| Extension | `@pluxel/runtime/workbench` | Contract + server-only UI entry |
-| Binding | `@pluxel/runtime/workbench` | RPC factory、collection projection/managed state、events producer |
+| 层        | 公开入口                             | 内容                                                              |
+| --------- | ------------------------------------ | ----------------------------------------------------------------- |
+| Contract  | `@pluxel/runtime/workbench/contract` | browser-safe resources、Views、placements、Ports                  |
+| Extension | `@pluxel/runtime/workbench`          | Contract + server-only UI entry                                   |
+| Binding   | `@pluxel/runtime/workbench`          | RPC factory、collection projection/managed state、events producer |
 
 Contract 不包含 plugin ID、Context、provider、Node API 或 `import.meta.url`。Extension 不重复 owner；
 `ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
@@ -96,6 +96,17 @@ unavailable，多个时显示 ambiguity error，不按注册顺序猜测。Port 
 - artifact、layout 和 resource revision 分离，bundle-only 更新不撤销 resource lease；
 - disabled Workbench 不创建 backend、compiler、watcher、route、transport 或 persistent state；
 - bundle、RPC、collection、events 和 Port 错误必须进入可见状态或 View error boundary。
+
+## Static distribution capability
+
+static production build 的 `variant` 与启动开关是两层事实：
+
+- `variant: 'workbench'` 组装 shell、extension remotes 和 deployment manifest records；
+- application `configure()` 返回的 `workbench` 决定本次启动是否安装 Plane；
+- `variant: 'headless'` 不携带 browser artifacts，因此启动时请求开启 Workbench 必须失败；
+- 关闭 Workbench 不影响 fixed plugins、业务 HTTP、ConfigService 或插件运行时启停。
+
+Workbench artifact root 由 deployment bootstrap 显式提供。production 不回退到应用 workspace 查找 remote。
 
 ## Implementation entries
 

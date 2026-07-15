@@ -60,6 +60,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStatic.exports).toHaveProperty('./vite')
 		expect(runtimeStatic.exports).not.toHaveProperty('./hmr')
 		expect(rolldown.exports).toHaveProperty('./vite')
+		expect(rolldown.exports).toHaveProperty('./build')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
 		expect(rolldown.exports).toHaveProperty('./workbench/artifact')
@@ -122,6 +123,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStatic.dependencies).not.toHaveProperty('oxc-resolver')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('pathe')
 		expect(runtimeStatic.dependencies).not.toHaveProperty('typescript')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('nf3')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('unplugin-macros')
 		expect(runtimeStaticTsdown).not.toContain('@module-federation/vite')
 		expect(runtimeStaticTsdown).not.toContain('oxc-parser')
 		expect(runtimeStaticTsdown).not.toContain('oxc-resolver')
@@ -215,22 +218,95 @@ describe('toolchain package boundaries', () => {
 		expect(offenders).toEqual([])
 	})
 
-	it('keeps runtime config helpers on route package main entries in app code', async () => {
+	it('keeps runtime application helpers on route package main entries in app code', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
 			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 		]
 		const offenders: string[] = []
-		const staticViteConfigHelper =
-			/import\s+\{[^}]*defineStaticRuntimeConfig[^}]*\}\s+from\s+['"]@pluxel\/runtime-static\/vite['"]/
+		const staticViteApplicationHelper =
+			/import\s+\{[^}]*defineStaticRuntime[^}]*\}\s+from\s+['"]@pluxel\/runtime-static\/vite['"]/
 		const dynamicViteConfigHelper =
 			/import\s+\{[^}]*defineDynamicRuntimeConfig[^}]*\}\s+from\s+['"]@pluxel\/runtime-dynamic\/vite['"]/
 
 		for (const file of files) {
 			const code = await readFile(file, 'utf8')
-			if (staticViteConfigHelper.test(code) || dynamicViteConfigHelper.test(code))
+			if (staticViteApplicationHelper.test(code) || dynamicViteConfigHelper.test(code))
 				offenders.push(file)
+		}
+
+		expect(offenders).toEqual([])
+	})
+
+	it('keeps static application freezing and residual tracing in the rolldown package', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const rolldown = await readJson(`${root}/packages/rolldown/package.json`)
+		const runtime = await readJson(`${root}/packages/runtime/package.json`)
+		const runtimeStatic = await readJson(`${root}/packages/runtime-static/package.json`)
+		const buildEntry = await readFile(`${root}/packages/rolldown/src/cli/index.ts`, 'utf8')
+		const freezer = await readFile(
+			`${root}/packages/rolldown/src/cli/static-application.ts`,
+			'utf8',
+		)
+		const pluginSource = await readFile(
+			`${root}/packages/rolldown/src/cli/plugin-source.ts`,
+			'utf8',
+		)
+		const nodeApplication = await readFile(
+			`${root}/packages/runtime-static/src/internal/node-application.ts`,
+			'utf8',
+		)
+		const nodeWorkbenchApplication = await readFile(
+			`${root}/packages/runtime-static/src/internal/node-workbench-application.ts`,
+			'utf8',
+		)
+		const staticHost = await readFile(
+			`${root}/packages/runtime-static/src/internal/host.ts`,
+			'utf8',
+		)
+
+		expect(buildEntry).toContain("export * from './static-application'")
+		expect(runtimeStatic.exports).toHaveProperty('./internal/node-application')
+		expect(runtimeStatic.exports).toHaveProperty('./internal/node-workbench-application')
+		expect(runtime.exports).toHaveProperty('./internal/static-host')
+		expect(nodeApplication).not.toContain('@pluxel/runtime/internal/static')
+		expect(nodeWorkbenchApplication).toContain('@pluxel/runtime/internal/static')
+		expect(staticHost).toContain('@pluxel/runtime/internal/static-host')
+		expect(staticHost).not.toContain("from '@pluxel/runtime/internal/static'")
+		expect(freezer).toContain('export function staticApplication(')
+		expect(freezer).toContain("await import('nf3')")
+		expect(freezer).toContain('createPluginSourcePlugins(cwd)')
+		expect(freezer).toContain('createPluginTransformOptions()')
+		expect(freezer).toContain('workbenchUiBuildPlugin(')
+		expect(freezer).toContain('configSourcePlugin()')
+		expect(freezer).toContain('entry must default-export defineStaticRuntime(...) directly')
+		expect(pluginSource).toContain("from 'unplugin-macros/rolldown'")
+		expect(pluginSource).toContain("from 'unplugin-preprocessor-directives/rollup'")
+		expect(pluginSource).toContain('legacy: true')
+		expect(pluginSource).toContain('emitDecoratorMetadata: true')
+		expect(pluginSource).toContain("name: 'pluxel:decorator-output-guard'")
+		expect(rolldown.dependencies).toHaveProperty('nf3')
+		expect(rolldown.dependencies).toHaveProperty('unplugin-macros')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('nf3')
+		expect(runtimeStatic.dependencies).not.toHaveProperty('unplugin-macros')
+	})
+
+	it('keeps static runtime state independent from minifiable constructor names', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const sourceFiles = [
+			...(await collectSourceFiles(`${root}/packages/plugins`)),
+			...(await collectSourceFiles(`${root}/projects`)),
+		].filter((file) => file.endsWith('/pluxel.static.ts'))
+		const files = [
+			...sourceFiles,
+			`${root}/packages/cli/templates/app-monorepo/web/src/pluxel.static.ts.hbs`,
+		]
+		const offenders: string[] = []
+
+		for (const file of files) {
+			const code = await readFile(file, 'utf8')
+			if (/\.map\(\s*\([^)]*\)\s*=>\s*[^)]*\.name\s*\)/.test(code)) offenders.push(file)
 		}
 
 		expect(offenders).toEqual([])

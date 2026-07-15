@@ -11,11 +11,16 @@ export default defineConfig(({ mode }) => ({
 		host: process.env.PLUXEL_HOST_BIND ?? '127.0.0.1',
 		port: Number(process.env.PLUXEL_HOST_PORT ?? 3310),
 	},
+	build: {
+		outDir: 'dist/public',
+		emptyOutDir: false,
+		manifest: true,
+	},
 	plugins:
 		mode === 'test'
 			? []
 			: [
-					staticRuntimeVitePlugin({ config: './src/pluxel.static.ts' }),
+					staticRuntimeVitePlugin({ entry: './src/pluxel.static.ts' }),
 					gqlens({
 						output: 'src/client/gqlens',
 						entry: '/src/graphql-entry.ts',

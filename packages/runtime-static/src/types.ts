@@ -29,6 +29,38 @@ export type StaticRuntimePersistenceConfig = PersistenceServiceConfig
 export type StaticRuntimePluginDataConfig = PluginDataServiceConfig
 export type StaticRuntimeHttpHandler = HttpHandler
 export type StaticRuntimeHttpConfig = HttpServiceConfig
+export type StaticRuntimeContextConfig = Omit<
+	CoreContext.Config,
+	| 'configService'
+	| 'runtimeState'
+	| 'persistence'
+	| 'pluginData'
+	| 'http'
+	| 'workbench'
+	| 'logger'
+	| 'profile'
+	| 'adminAccess'
+	| 'workbenchArtifactRoot'
+	| 'workbenchArtifactResolver'
+>
+
+export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>
+export type StaticRuntimeBindings = Readonly<Record<string, unknown>>
+
+export type StaticRuntimeDeployment = Readonly<{
+	root: string
+	target: 'node'
+	variant: 'headless' | 'workbench'
+}>
+
+export type StaticRuntimeStartupContext<
+	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+> = Readonly<{
+	mode: 'development' | 'production' | 'test'
+	env: StaticRuntimeEnvironment
+	bindings: TBindings
+	deployment?: StaticRuntimeDeployment
+}>
 
 export type StaticRuntimeDefinition = {
 	/**
@@ -41,7 +73,24 @@ export type StaticRuntimeDefinition = {
 	plugins: readonly PluginConstructor[]
 }
 
-export type StaticRuntimeConfig = StaticRuntimeDefinition & StaticRuntimeHostOptions
+export type StaticRuntimeApplication<
+	TPlugins extends readonly PluginConstructor[] = readonly PluginConstructor[],
+	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+> = {
+	/** Stable runtime id used for diagnostics, manifests, and read models. */
+	name: string
+	/** Fixed production catalog. Development Vite hosts may replace this graph through HMR. */
+	plugins: TPlugins
+	/** Bundled resolver code. Returned values are resolved again for every host startup. */
+	configure?: (
+		startup: StaticRuntimeStartupContext<TBindings>,
+	) => StaticRuntimeHostOptions | Promise<StaticRuntimeHostOptions>
+	/** Host-owned startup policy run after services are prepared and before plugins start. */
+	prepare?: (input: {
+		host: StaticRuntimeHost
+		startup: StaticRuntimeStartupContext<TBindings>
+	}) => void | Promise<void>
+}
 
 export type StaticRuntimeHostOptions = {
 	/**
@@ -71,7 +120,7 @@ export type StaticRuntimeHostOptions = {
 	pluginData?: StaticRuntimePluginDataConfig
 	/**
 	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
-	 * admin access config.
+	 * Workbench config.
 	 */
 	http?: StaticRuntimeHttpConfig
 	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
@@ -88,7 +137,7 @@ export type StaticRuntimeHostOptions = {
 	 *
 	 * @default {}
 	 */
-	context?: CoreContext.Config
+	context?: StaticRuntimeContextConfig
 }
 
 export type StaticRuntimeHost = {

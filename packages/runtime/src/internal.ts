@@ -24,6 +24,7 @@ export {
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { WorkbenchArtifactStore } from './services/workbench/WorkbenchArtifactService'
 export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
+export { resolvePackagedWorkbenchManifest } from './services/workbench/packaged-artifact'
 export { installWorkbench, requireWorkbench } from './services/workbench'
 
 export { createContextPluginLogPolicyStore } from './logger/levels'

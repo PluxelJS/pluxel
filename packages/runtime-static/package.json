@@ -18,6 +18,18 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./internal/node-application": {
+			"@pluxel/source": "./src/internal/node-application.ts",
+			"default": "./dist/internal/node-application.mjs"
+		},
+		"./internal/node-workbench-application": {
+			"@pluxel/source": "./src/internal/node-workbench-application.ts",
+			"default": "./dist/internal/node-workbench-application.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -27,6 +39,9 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./internal/node-application": "./dist/internal/node-application.mjs",
+			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
+			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}

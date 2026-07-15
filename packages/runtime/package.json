@@ -42,6 +42,14 @@
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
 		},
+		"./internal/static": {
+			"@pluxel/source": "./src/internal-static.ts",
+			"default": "./dist/internal/static.mjs"
+		},
+		"./internal/static-host": {
+			"@pluxel/source": "./src/internal-static-host.ts",
+			"default": "./dist/internal/static-host.mjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
@@ -121,6 +129,8 @@
 			"./events": "./dist/events.mjs",
 			"./frozen": "./dist/frozen.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/static": "./dist/internal/static.mjs",
+			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",
 			"./plugin": "./dist/plugin.mjs",
 			"./plugin-catalog": "./dist/plugin-catalog.mjs",

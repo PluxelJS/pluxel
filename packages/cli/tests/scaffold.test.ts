@@ -117,6 +117,7 @@ describe('scaffold template rendering', () => {
 		expect(ok).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pnpm-workspace.yaml'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/pluxel.static.ts'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'web/tsdown.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/pluxel/README.md'))).toBe(true)
@@ -125,7 +126,17 @@ describe('scaffold template rendering', () => {
 
 		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'web/vite.config.ts'), 'utf8')
 		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
+		expect(hostVite).toContain("entry: './src/pluxel.static.ts'")
 		expect(hostVite).not.toContain('../../packages/')
+		const staticEntry = fixture.fs.readFileSync(
+			resolve(targetDir, 'web/src/pluxel.static.ts'),
+			'utf8',
+		)
+		expect(staticEntry).toContain('export default defineStaticRuntime({')
+		const staticBuild = fixture.fs.readFileSync(resolve(targetDir, 'web/tsdown.config.ts'), 'utf8')
+		expect(staticBuild).toContain("from '@pluxel/rolldown/build'")
+		expect(staticBuild).toContain("entry: './src/pluxel.static.ts'")
+		expect(staticBuild).toContain("variant: 'workbench'")
 
 		const pluginManifest = fixture.fs.readFileSync(
 			resolve(targetDir, 'plugins/example/package.json'),

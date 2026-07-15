@@ -160,7 +160,7 @@ async function resolveOverride(
 	return typeof override === 'function' ? await override(context) : override
 }
 
-const SPECIAL_KEYS = new Set(['plugins', 'deps'])
+const SPECIAL_KEYS = new Set(['plugins', 'deps', 'inputOptions'])
 
 function mergeInlineConfigs(user: InlineConfig, overlay: InlineConfig | undefined) {
 	assertNoDeprecatedDepsKeys(user, 'tsdown user override')
@@ -171,6 +171,7 @@ function mergeInlineConfigs(user: InlineConfig, overlay: InlineConfig | undefine
 	applyOverlay(merged as Record<string, unknown>, overlay as Record<string, unknown>)
 	merged.plugins = mergePlugins(user.plugins, overlay.plugins)
 	merged.deps = mergeDeps(user.deps, overlay.deps)
+	merged.inputOptions = mergeInputOptions(user.inputOptions, overlay.inputOptions)
 	return merged
 }
 
@@ -221,6 +222,51 @@ function mergePlugins(
 		else list.push(source)
 	}
 	return list.length > 0 ? list : undefined
+}
+
+type InputOptionsOverride = NonNullable<InlineConfig['inputOptions']>
+type InputOptionsHook = Extract<InputOptionsOverride, (...args: any[]) => unknown>
+
+function mergeInputOptions(
+	userValue: InlineConfig['inputOptions'],
+	overlayValue: InlineConfig['inputOptions'],
+): InlineConfig['inputOptions'] {
+	if (!overlayValue) return userValue
+	if (!userValue) return overlayValue
+	if (isPlainObject(userValue) && isPlainObject(overlayValue)) {
+		return mergePlainObjects(userValue, overlayValue) as Exclude<
+			InputOptionsOverride,
+			InputOptionsHook
+		>
+	}
+
+	return async (options, format, context) => {
+		const userOptions = await applyInputOptions(userValue, options, format, context)
+		return applyInputOptions(overlayValue, userOptions, format, context)
+	}
+}
+
+async function applyInputOptions(
+	value: InputOptionsOverride,
+	options: Parameters<InputOptionsHook>[0],
+	format: Parameters<InputOptionsHook>[1],
+	context: Parameters<InputOptionsHook>[2],
+): Promise<Parameters<InputOptionsHook>[0]> {
+	if (typeof value === 'function') return (await value(options, format, context)) ?? options
+	return mergePlainObjects(options, value) as Parameters<InputOptionsHook>[0]
+}
+
+function mergePlainObjects(
+	base: Record<string, unknown>,
+	overlay: Record<string, unknown>,
+): Record<string, unknown> {
+	const merged: Record<string, unknown> = { ...base }
+	for (const [key, value] of Object.entries(overlay)) {
+		const current = merged[key]
+		merged[key] =
+			isPlainObject(current) && isPlainObject(value) ? mergePlainObjects(current, value) : value
+	}
+	return merged
 }
 
 function mergeBundleMatchers<T extends BundleMatchValue>(

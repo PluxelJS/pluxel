@@ -3,7 +3,6 @@
 import { staticRuntimeVitePlugin } from '../../packages/runtime-static/src/vite.ts'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { prepareExternalGatewayRuntime } from './src/runtime-bootstrap'
 
 export default defineConfig({
 	appType: 'spa',
@@ -13,8 +12,7 @@ export default defineConfig({
 	},
 	plugins: [
 		staticRuntimeVitePlugin({
-			config: './src/pluxel.static.ts',
-			prepareHost: (host) => prepareExternalGatewayRuntime(host.ctx),
+			entry: './src/pluxel.static.ts',
 		}),
 		react(),
 	],

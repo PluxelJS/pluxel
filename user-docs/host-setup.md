@@ -21,7 +21,7 @@ export default defineConfig({
 	appType: 'spa',
 	plugins: [
 		staticRuntimeVitePlugin({
-			config: './src/pluxel.static.ts',
+			entry: './src/pluxel.static.ts',
 		}),
 	],
 })
@@ -30,27 +30,68 @@ export default defineConfig({
 `src/pluxel.static.ts`：
 
 ```ts
-import { defineStaticRuntimeConfig } from '@pluxel/runtime-static'
+import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { AccountsPlugin } from './plugins/AccountsPlugin.ts'
 import { BillingPlugin } from './plugins/BillingPlugin.ts'
 
-export default defineStaticRuntimeConfig({
+export default defineStaticRuntime({
 	name: 'billing-host',
 	plugins: [AccountsPlugin, BillingPlugin],
-	runtimeState: {
-		snapshot: {
-			enabled: ['AccountsPlugin', 'BillingPlugin'],
-		},
-	},
-	persistence: './.pluxel/persistence',
-	workbench: {
-		enabled: true,
-		access: { exposure: 'private' },
+	configure({ env, deployment }) {
+		return {
+			runtimeState: {
+				snapshot: { enabled: ['AccountsPlugin', 'BillingPlugin'] },
+			},
+			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
+			workbench:
+				env.PLUXEL_WORKBENCH === 'false'
+					? false
+					: { enabled: true, access: { exposure: 'private' } },
+		}
 	},
 })
 ```
 
 用 `vite` 启动。不要用 raw TypeScript runner 执行 `pluxel.static.ts` 或插件入口。
+
+`plugins` 是固定 catalog：production build 后不能从外部增加或替换插件代码。`configure()` 本身进入 bundle，
+但会在每次启动时重新执行，因此环境变量、平台 bindings、persistence、logging、HTTP、plugin config records 和
+runtime enabled state 仍可变。运行时启停只改变 fixed catalog 中哪些插件运行，不改变 catalog 本身。
+`runtimeState.snapshot.enabled` 使用 `@Plugin({ name })` 的稳定 ID；不要从 constructor `.name` 动态生成，class name
+会在 production minify 后改变。
+
+## Static production build
+
+`tsdown.config.ts` 直接指向同一个 canonical entry：
+
+```ts
+import { staticApplication } from '@pluxel/rolldown/build'
+
+export default staticApplication({
+	entry: './src/pluxel.static.ts',
+	variant: 'workbench',
+	target: 'node',
+})
+```
+
+```sh
+pnpm exec tsdown
+node dist/app.mjs
+```
+
+`dist/` 是可搬运的 application distribution：
+
+- server entry 与 code-split chunks；
+- fixed plugins、`runtime-static`、所需 runtime/core closure；
+- `pluxel-deployment.json`；
+- `variant: 'workbench'` 时位于 `workbench/` 的 Workbench shell 和 extension remotes；
+- Node native/dynamic dependencies 需要时生成的最小 `node_modules`。
+
+目标机不需要安装 `@pluxel/*`。`variant` 是 build-time capability：`headless` 不携带 Workbench，启动时不能再开启；
+`workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。Node target 读取
+`PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。当前 freezer 只支持 Node application；不要把 Node runtime closure 标成
+neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 时会以它作为 HTML/static
+fallback；开启 Workbench 时根页面属于 Workbench。Fetch 平台需要未来独立的 platform-neutral runtime adapter。
 
 ## Dynamic host
 

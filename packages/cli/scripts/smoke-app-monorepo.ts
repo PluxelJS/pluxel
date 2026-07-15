@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { parse, stringify } from 'yaml'
 import { generateFromTemplate } from '../src/scaffold/template.ts'
@@ -66,6 +67,7 @@ try {
 
 	await runPnpm(['install', '--frozen-lockfile=false'], applicationRoot)
 	await runPnpm(['verify'], applicationRoot, { CI: '1' })
+	await verifyFrozenApplicationDistribution(applicationRoot)
 
 	await generateFromTemplate(
 		{
@@ -114,6 +116,15 @@ async function runPnpm(
 	environment: Record<string, string> = {},
 ): Promise<void> {
 	const command = process.env.npm_execpath ?? 'pnpm'
+	await runProcess(command, args, cwd, environment)
+}
+
+async function runProcess(
+	command: string,
+	args: string[],
+	cwd: string,
+	environment: Record<string, string> = {},
+): Promise<void> {
 	await new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(command, args, {
 			cwd,
@@ -125,5 +136,44 @@ async function runPnpm(
 			if (code === 0) resolvePromise()
 			else reject(new Error(`pnpm ${args.join(' ')} failed (${signal ?? code ?? 'unknown'})`))
 		})
+	})
+}
+
+async function verifyFrozenApplicationDistribution(root: string): Promise<void> {
+	const dist = resolve(root, 'web/dist')
+	const deployment = JSON.parse(
+		await readFile(resolve(dist, 'pluxel-deployment.json'), 'utf8'),
+	) as {
+		kind?: string
+		capabilities?: { workbench?: { included?: boolean } }
+	}
+	if (
+		deployment.kind !== 'pluxel-static-application' ||
+		deployment.capabilities?.workbench?.included !== true
+	) {
+		throw new Error('Generated application deployment manifest is incomplete')
+	}
+	await Promise.all([
+		readFile(resolve(dist, 'workbench/public/.vite/manifest.json')),
+		readFile(resolve(dist, 'public/index.html')),
+	])
+
+	const entry = pathToFileURL(resolve(dist, 'app.mjs')).href
+	const smoke = [
+		'const app = await import(process.argv[1])',
+		'try {',
+		"\tif (app.ctx.workbench.enabled) throw new Error('Workbench should be disabled by startup config')",
+		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
+		'\tconst health = await fetch(`${origin}/__pluxel/plugins/StarterAppPlugin/api/health`)',
+		'\tif (!health.ok || (await health.json()).ok !== true) throw new Error(`Frozen health route returned ${health.status}`)',
+		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
+		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Frozen SPA fallback returned ${page.status}`)',
+		'} finally {',
+		'\tawait app.stop()',
+		'}',
+	].join('\n')
+	await runProcess(process.execPath, ['--input-type=module', '--eval', smoke, entry], root, {
+		PLUXEL_HOST_PORT: '0',
+		PLUXEL_WORKBENCH: 'false',
 	})
 }

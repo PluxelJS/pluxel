@@ -10,7 +10,7 @@ export default defineConfig({
 	},
 	plugins: [
 		staticRuntimeVitePlugin({
-			config: './src/pluxel.static.ts',
+			entry: './src/pluxel.static.ts',
 		}),
 	],
 })
