@@ -4,14 +4,17 @@ import type { InlineConfig, ViteDevServer } from 'vite'
 
 import '@pluxel/runtime-dynamic/register'
 import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
-import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import {
+	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
+	createRuntimeLogging,
 	isWorkbenchEnabled,
 	requireWorkbench,
 	workbenchAdminAccess,
 	resolveRuntimeStoragePaths,
 	withWorkbenchPluginContext,
+	type RuntimeLogging,
+	type RuntimeLoggingInput,
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
@@ -55,7 +58,7 @@ export type LoaderHmrHostOptions<
 	vite?: InlineConfig
 	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
-	logging?: boolean | EnsurePluxelLoggingOptions
+	logging?: false | RuntimeLoggingInput
 	logsDir?: string
 	logFile?: string
 	storage?: LoaderHmrHostStorageOptions
@@ -79,7 +82,7 @@ export type PlannedLoaderHmrHost<
 	vite?: InlineConfig
 	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
-	logging?: boolean | EnsurePluxelLoggingOptions
+	logging?: false | RuntimeLoggingInput
 	runtimeStorage: RuntimeStoragePaths
 	registry?: Record<string, unknown>
 	context?: CoreContext.Config
@@ -90,6 +93,7 @@ export type BootedLoaderHmrHost = {
 	logsDir: string
 	ctx: import('@pluxel/core').Context
 	hmr: LoaderHmrService
+	stop(): Promise<void>
 }
 
 export type BootLoaderHmrHostOptions = {
@@ -110,7 +114,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
 	workbench?: CoreContext.Config['workbench']
-	logger?: CoreContext.Config['logger']
+	logging?: false | RuntimeLoggingInput
 }
 
 function planRuntimeStorage(
@@ -160,7 +164,7 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		root,
 		chdir: opts.chdir !== false,
 		fs,
-		debug: opts.debug ?? ['pluxel:hmr:*'],
+		debug: opts.debug ?? ['hmr:*', 'bundler', 'workbench:compile'],
 		snapshot,
 		warnings: opts.warnings ?? [],
 		builtins: opts.builtins,
@@ -191,7 +195,7 @@ export async function planLoaderHmrHostFromConfig(
 		pluginData,
 		http,
 		workbench,
-		logger,
+		logging,
 		context,
 		...hostOpts
 	} = opts
@@ -228,8 +232,8 @@ export async function planLoaderHmrHostFromConfig(
 			pluginData,
 			http,
 			workbench,
-			logger,
 		}),
+		logging: logging ?? hostOpts.logging,
 	})
 }
 
@@ -237,62 +241,133 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
-	// `@pluxel/runtime` sets process runtime to "core"; use the hmr runtime preset for loader HMR hosts.
-	// This affects logger preset defaults (category/name injection) and other runtime flags.
 	setPluxelRuntime('hmr')
 
 	if (plan.chdir) process.chdir(plan.root)
+	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
+	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
+	await logging.install()
 
-	const logging = plan.logging ?? true
-	if (logging) {
-		await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
-		const base = typeof logging === 'object' ? { ...logging } : {}
-		await ensurePluxelLogging({
-			preset: base.preset ?? 'hmr',
-			console: base.console,
-			file: base.file ?? plan.runtimeStorage.logFile,
-			ui: base.ui ?? true,
-			debug: base.debug ?? plan.debug,
+	try {
+		const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
+		const defaultContext: CoreContext.Config = {
+			debug: plan.debug,
+			registry: plan.registry,
+			profile: plan.snapshot.activeProfile,
+			logger: logging.contextBinding,
+			persistence: {
+				mode: 'custom',
+				backend: createWorkspacePersistenceBackend(runtimeFsBackend, {
+					root: plan.runtimeStorage.persistenceDir,
+				}),
+			},
+			packageService: {
+				state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
+			},
+		}
+		const contextConfig = withWorkbenchPluginContext(
+			mergeContextConfig(defaultContext, plan.context),
+		)
+		contextConfig.logger = logging.contextBinding
+		contextConfig.adminAccess = workbenchAdminAccess(contextConfig.workbench)
+		if (isWorkbenchEnabled(contextConfig.workbench)) {
+			contextConfig.http = withDevWorkbenchHttpConfig(contextConfig.http)
+		}
+		const ctx = new Context(contextConfig)
+		ctx.effects.defer(() => logging.dispose(), {
+			tag: 'RuntimeLogging',
+			phase: 'shutdown',
 		})
-	}
+		if (isWorkbenchEnabled(contextConfig.workbench)) {
+			const { installWorkbench } = await import('@pluxel/runtime/internal')
+			installWorkbench(ctx)
+		}
+		await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
+		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))
+		void ctx.loader
 
-	const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
-	const defaultContext: CoreContext.Config = {
-		debug: plan.debug,
-		registry: plan.registry,
-		profile: plan.snapshot.activeProfile,
-		logger: { preset: 'hmr' },
-		persistence: {
-			mode: 'custom',
-			backend: createWorkspacePersistenceBackend(runtimeFsBackend, {
-				root: plan.runtimeStorage.persistenceDir,
-			}),
+		const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
+		if (plan.builtins?.length) {
+			await ctx.loader.preloadPlugins([...plan.builtins], { strict: true, commit: true })
+		}
+
+		return {
+			root: plan.root,
+			logsDir: plan.runtimeStorage.logsDir,
+			ctx,
+			hmr,
+			stop: createLoaderRuntimeStop(ctx, logging),
+		}
+	} catch (error) {
+		await logging.dispose()
+		throw error
+	}
+}
+
+function resolveLoaderRuntimeLoggingInput(
+	plan: PlannedLoaderHmrHost<LoaderHmrWorkspaceSnapshot>,
+): RuntimeLoggingInput {
+	if (plan.logging && plan.logging !== false) return plan.logging
+	const root = { profile: plan.snapshot.activeProfile, debugTopics: plan.debug }
+	if (plan.logging === false) {
+		return {
+			root,
+			sinks: {},
+			routes: { runtime: [], plugins: [], debug: [], meta: [] },
+		}
+	}
+	const withStore = isWorkbenchEnabled(plan.context?.workbench)
+	const sinks: RuntimeLoggingInput['sinks'] = {
+		console: {
+			kind: 'console',
+			format: 'pretty',
+			caller: false,
+			timezone: 'local',
 		},
-		packageService: {
-			state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
+		file: {
+			kind: 'file',
+			path: plan.runtimeStorage.logFile,
+			format: 'text',
+			caller: true,
+			timezone: 'local',
 		},
 	}
-	const contextConfig = withWorkbenchPluginContext(mergeContextConfig(defaultContext, plan.context))
-	contextConfig.adminAccess = workbenchAdminAccess(contextConfig.workbench)
-	if (isWorkbenchEnabled(contextConfig.workbench)) {
-		contextConfig.http = withDevWorkbenchHttpConfig(contextConfig.http)
+	if (withStore) sinks.store = { kind: 'store', streamId: 'default', caller: true }
+	const storeRoute = withStore ? [{ sink: 'store', minLevel: 'trace' as const }] : []
+	return {
+		root,
+		sinks,
+		routes: {
+			runtime: [
+				{ sink: 'console', minLevel: 'info' },
+				{ sink: 'file', minLevel: 'trace' },
+				...storeRoute,
+			],
+			plugins: [
+				{ sink: 'console', minLevel: 'trace' },
+				{ sink: 'file', minLevel: 'trace' },
+				...storeRoute,
+			],
+			debug: [
+				{ sink: 'console', minLevel: 'trace' },
+				{ sink: 'file', minLevel: 'trace' },
+				...storeRoute,
+			],
+			meta: [{ sink: 'console', minLevel: 'warning' }],
+		},
 	}
-	const ctx = new Context(contextConfig)
-	if (isWorkbenchEnabled(contextConfig.workbench)) {
-		const { installWorkbench } = await import('@pluxel/runtime/internal')
-		installWorkbench(ctx)
-	}
-	await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
-	// Materialize the loader route before HMR contributes dev/module capabilities to it.
-	void ctx.loader
+}
 
-	const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
-
-	if (plan.builtins?.length) {
-		await ctx.loader.preloadPlugins([...plan.builtins], { strict: true, commit: true })
-	}
-
-	return { root: plan.root, logsDir: plan.runtimeStorage.logsDir, ctx, hmr }
+function createLoaderRuntimeStop(ctx: Context, logging: RuntimeLogging): () => Promise<void> {
+	let promise: Promise<void> | undefined
+	return () =>
+		(promise ??= (async () => {
+			try {
+				await ctx.effects.dispose()
+			} finally {
+				await logging.dispose()
+			}
+		})())
 }
 
 function mergeContextConfig(
@@ -309,7 +384,6 @@ function mergeContextConfig(
 		persistence: mergeRecord(base.persistence, override.persistence),
 		pluginData: mergeRecord(base.pluginData, override.pluginData),
 		http: mergeRecord(base.http, override.http),
-		logger: mergeRecord(base.logger, override.logger),
 		workbench: override.workbench ?? base.workbench,
 	})
 }

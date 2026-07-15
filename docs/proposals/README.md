@@ -12,4 +12,3 @@
 当前提案：
 
 - [`workbench-resource-api.md`](workbench-resource-api.md)
-- [`logger-redesign.md`](logger-redesign.md)

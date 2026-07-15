@@ -1,8 +1,9 @@
 import { compareLogLevel, type LogLevel, type LogRecord, type Sink } from '@logtape/logtape'
-import { captureCaller, formatLogName, pluxelReservedLogPropertyKeySet } from '@pluxel/core/logger'
+import { readPluginLogIdentity } from '@pluxel/core/logger'
+import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
 import { toPlainObject } from './serialization'
-import { runtimeLogStores } from './store'
+import { RuntimeLogStoreRegistry } from './store'
 
 type RuntimeLogSinkCaps = {
 	/** Max chars for the derived `msg` (primary list). Defaults to 4000. */
@@ -99,6 +100,8 @@ function extractErrorLike(value: unknown, seen: WeakSet<object>): RuntimeLogErro
 }
 
 export type RuntimeLogSinkOptions = {
+	/** @internal RuntimeLogging-owned store registry. */
+	registry: RuntimeLogStoreRegistry
 	streamId?: string
 	minLevel?: LogLevel
 
@@ -150,7 +153,7 @@ function pickExtraProps(
 	let kept = 0
 	for (const k in raw) {
 		if (!Object.hasOwn(raw, k)) continue
-		if (pluxelReservedLogPropertyKeySet.has(k) && (k !== 'caller' || !opts.caller)) continue
+		if (isReservedLogProperty(k) && (k !== 'caller' || !opts.caller)) continue
 		if (k === 'caller' && typeof raw[k] !== 'string' && !opts.caller) continue
 		if (opts.hiddenKeys.has(k)) continue
 		if (opts.redactKeys.has(k)) {
@@ -183,7 +186,7 @@ function toRuntimeLogLineInput(
 			? (record.properties as Record<string, unknown>)
 			: (Object.create(null) as Record<string, unknown>)
 
-	const pluginId = typeof rawProps.pluginId === 'string' ? (rawProps.pluginId as string) : undefined
+	const pluginId = readPluginLogIdentity(record.category)?.pluginId
 	const context = typeof rawProps.context === 'string' ? (rawProps.context as string) : undefined
 	const name =
 		typeof rawProps.name === 'string'
@@ -241,7 +244,8 @@ function toRuntimeLogLineInput(
  * Create a LogTape sink that normalizes records into `RuntimeLogLine` and appends
  * to the in-memory runtime log store.
  */
-export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink {
+export function createRuntimeLogSink(options: RuntimeLogSinkOptions): Sink & Disposable {
+	const registry = options.registry
 	const streamId = options.streamId ?? 'default'
 	const minLevel = options.minLevel ?? 'trace'
 	const bufferSize = Math.min(Math.max(1, Math.floor(options.bufferSize ?? 1000)), 50_000)
@@ -285,7 +289,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 		const batch = buf
 		buf = []
 		try {
-			const store = runtimeLogStores.getOrCreate(streamId, { windowLines })
+			const store = registry.getOrCreate(streamId, { windowLines })
 			store.append(batch)
 		} catch {
 			// Sink failures must never break app logging.
@@ -300,7 +304,7 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 		timer = setTimeout(flush, flushIntervalMs)
 	}
 
-	const sink: Sink = (record) => {
+	const sink: Sink & Disposable = (record) => {
 		try {
 			if (compareLogLevel(record.level, minLevel) < 0) return
 
@@ -328,5 +332,6 @@ export function createRuntimeLogSink(options: RuntimeLogSinkOptions = {}): Sink 
 			// Ignore.
 		}
 	}
+	sink[Symbol.dispose] = flush
 	return sink
 }

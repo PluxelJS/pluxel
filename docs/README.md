@@ -9,6 +9,7 @@
 3. 按改动领域阅读：
    - [`CORE.md`](CORE.md)：DI graph、生命周期、feature、effects。
    - [`RUNTIME.md`](RUNTIME.md)：常驻服务、static/dynamic route、可选宿主能力。
+   - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
    - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和Workbench投影。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。

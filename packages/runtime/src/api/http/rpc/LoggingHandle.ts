@@ -1,68 +1,68 @@
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 
-import { ensureRuntimePluginPolicyLoaded, persistRuntimePluginPolicy } from '../../../logger/levels'
-import {
-	runtimePluginLogPolicy,
-	type PluginLogPolicySnapshot,
-	type RuntimePluginLogLevel,
+import { requireContextRuntimeLogging } from '../../../logger/logging'
+import type {
+	PluginLogPolicySnapshot,
+	PluginLogPolicyMutationResult,
+	RuntimePluginLogLevel,
+	VersionedPluginLogPolicySnapshot,
 } from '../../../logger/policy'
 
 export class LoggingHandle extends RpcTarget {
-	private readonly ctx: Context
-
-	constructor(ctx: Context) {
+	constructor(private readonly ctx: Context) {
 		super()
-		this.ctx = ctx
 	}
 
-	async getPolicy(): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	async getPolicy(): Promise<VersionedPluginLogPolicySnapshot> {
+		const logging = requireContextRuntimeLogging(this.ctx)
+		await logging.ready
+		return logging.policy.describe()
 	}
 
-	async replacePolicy(snapshot: PluginLogPolicySnapshot): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.replace(snapshot)
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	async replacePolicy(
+		expectedRevision: number,
+		snapshot: PluginLogPolicySnapshot,
+	): Promise<PluginLogPolicyMutationResult> {
+		const policy = await this.policy(expectedRevision)
+		return policy.replace(snapshot)
 	}
 
-	async setDefaultLevel(level: RuntimePluginLogLevel): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.setDefaultLevel(level)
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
-	}
-
-	async clearDefaultLevel(): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.clearDefaultLevel()
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	async setDefaultLevel(
+		expectedRevision: number,
+		level: RuntimePluginLogLevel,
+	): Promise<PluginLogPolicyMutationResult> {
+		const policy = await this.policy(expectedRevision)
+		return policy.setDefaultLevel(level)
 	}
 
 	async setPluginLevel(
+		expectedRevision: number,
 		pluginId: string,
 		level: RuntimePluginLogLevel,
-	): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.setPluginLevel(String(pluginId), level)
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	): Promise<PluginLogPolicyMutationResult> {
+		const policy = await this.policy(expectedRevision)
+		return policy.setPluginLevel(pluginId, level)
 	}
 
-	async clearPluginLevel(pluginId: string): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.clearPluginLevel(String(pluginId))
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	async clearPluginLevel(
+		expectedRevision: number,
+		pluginId: string,
+	): Promise<PluginLogPolicyMutationResult> {
+		const policy = await this.policy(expectedRevision)
+		return policy.clearPluginLevel(pluginId)
 	}
 
-	async resetPolicy(): Promise<PluginLogPolicySnapshot> {
-		await ensureRuntimePluginPolicyLoaded(this.ctx)
-		runtimePluginLogPolicy.clear()
-		persistRuntimePluginPolicy(this.ctx)
-		return runtimePluginLogPolicy.snapshot()
+	async resetPolicy(expectedRevision: number): Promise<VersionedPluginLogPolicySnapshot> {
+		const policy = await this.policy(expectedRevision)
+		policy.reset()
+		return policy.describe()
+	}
+
+	private async policy(expectedRevision: number) {
+		const logging = requireContextRuntimeLogging(this.ctx)
+		await logging.ready
+		logging.policy.assertRevision(expectedRevision)
+		return logging.policy
 	}
 }

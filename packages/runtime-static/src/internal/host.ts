@@ -14,9 +14,13 @@ import type {
 	RuntimeRouteCapabilities,
 } from '@pluxel/runtime/plugin-catalog'
 import {
+	createContextPluginLogPolicyStore,
+	createRuntimeLogging,
 	isWorkbenchEnabled,
 	workbenchAdminAccess,
 	withWorkbenchPluginContext,
+	type RuntimeLogging,
+	type RuntimeLoggingInput,
 } from '@pluxel/runtime/internal'
 import {
 	buildCatalog,
@@ -88,12 +92,17 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public constructor(
 		public definition: StaticRuntimeDefinition,
 		public readonly options: StaticRuntimeHostOptions,
+		private readonly logging: RuntimeLogging,
 	) {
-		const context = createStaticRuntimeContextConfig(options)
+		const context = createStaticRuntimeContextConfig(options, logging)
 		this.catalog = buildCatalog(definition)
 		this.ctx = new Context({
 			name: definition.name,
 			...context,
+		})
+		this.ctx.effects.defer(() => logging.dispose(), {
+			tag: 'RuntimeLogging',
+			phase: 'shutdown',
 		})
 		this.ctx.runtimeRoute = this.createRuntimeRoute()
 	}
@@ -189,6 +198,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public async prepare(): Promise<void> {
 		this.assertWorkbenchAvailable()
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
+		await this.logging.initializePolicy(createContextPluginLogPolicyStore(this.ctx))
 		await this.ctx.prepareServices()
 	}
 
@@ -238,7 +248,11 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		} finally {
 			this.registeredByName.clear()
 			this.ctx.registry.resetDraft()
-			await this.ctx.effects.dispose()
+			try {
+				await this.ctx.effects.dispose()
+			} finally {
+				await this.logging.dispose()
+			}
 		}
 	}
 
@@ -550,13 +564,59 @@ export async function createStaticRuntimeHost(
 	definition: StaticRuntimeDefinition,
 	options: StaticRuntimeHostOptions = {},
 ): Promise<StaticRuntimeHost> {
-	const host = new StaticRuntimeHostImpl(definition, options)
-	if (isWorkbenchEnabled(options.workbench)) {
-		const { installWorkbench } = await import('@pluxel/runtime/internal')
-		installWorkbench(host.ctx)
+	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
+	await logging.install()
+	try {
+		const host = new StaticRuntimeHostImpl(definition, options, logging)
+		if (isWorkbenchEnabled(options.workbench)) {
+			const { installWorkbench } = await import('@pluxel/runtime/internal')
+			installWorkbench(host.ctx)
+		}
+		await host.prepare()
+		return host
+	} catch (error) {
+		await logging.dispose()
+		throw error
 	}
-	await host.prepare()
-	return host
+}
+
+function resolveStaticRuntimeLoggingInput(
+	definition: StaticRuntimeDefinition,
+	options: StaticRuntimeHostOptions,
+): RuntimeLoggingInput {
+	if (options.logging && options.logging !== false) return options.logging
+	const root = {
+		profile: options.profile ?? options.context?.profile ?? definition.name,
+		debugTopics: options.context?.debug ?? [],
+	}
+	if (options.logging === false) {
+		return {
+			root,
+			sinks: {},
+			routes: { runtime: [], plugins: [], debug: [], meta: [] },
+		}
+	}
+	const withStore = isWorkbenchEnabled(options.workbench ?? options.context?.workbench)
+	const sinks: RuntimeLoggingInput['sinks'] = {
+		console: {
+			kind: 'console',
+			format: 'pretty',
+			caller: false,
+			timezone: 'local',
+		},
+	}
+	if (withStore) sinks.store = { kind: 'store', streamId: 'default', caller: true }
+	const storeRoute = withStore ? [{ sink: 'store', minLevel: 'trace' as const }] : []
+	return {
+		root,
+		sinks,
+		routes: {
+			runtime: [{ sink: 'console', minLevel: 'info' }, ...storeRoute],
+			plugins: [{ sink: 'console', minLevel: 'trace' }, ...storeRoute],
+			debug: [{ sink: 'console', minLevel: 'trace' }, ...storeRoute],
+			meta: [{ sink: 'console', minLevel: 'warning' }],
+		},
+	}
 }
 
 function compactReportEntries(
@@ -593,13 +653,13 @@ function staticHostNeedsWorkbench(ctxConfig: unknown): boolean {
 
 function createStaticRuntimeContextConfig(
 	options: StaticRuntimeHostOptions,
+	logging: RuntimeLogging,
 ): NonNullable<StaticRuntimeHostOptions['context']> {
 	const context = options.context ?? {}
 	const configService = options.configService ?? context.configService
 	const http = options.http ?? context.http
 	const workbench = options.workbench ?? context.workbench ?? false
 	const adminAccess = workbenchAdminAccess(workbench)
-	const logger = options.logger ?? context.logger
 	const persistence = options.persistence ?? context.persistence
 	const pluginData = options.pluginData ?? context.pluginData
 	const profile = options.profile ?? context.profile
@@ -621,6 +681,6 @@ function createStaticRuntimeContextConfig(
 		runtimeState,
 		persistence,
 		pluginData,
-		logger,
+		logger: logging.contextBinding,
 	})
 }

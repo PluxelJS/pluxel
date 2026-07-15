@@ -7,6 +7,7 @@
 - `docs/CORE.md`
 - `docs/CONFIG.md`
 - `docs/GOVERNANCE.md`
+- `docs/LOGGING.md`
 - `docs/proposals/README.md`
 
 ## Public Surface (package exports)
@@ -33,4 +34,4 @@
 ## Logger
 
 - `packages/core/src/logger/index.ts`
-  - logger 服务与 UI log store 的基础构件
+  - Context logger facade 与 category identity；runtime sinks/store 不在 core

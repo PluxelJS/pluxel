@@ -25,3 +25,23 @@ export {
 export type { WorkbenchArtifactStore } from './services/workbench/WorkbenchArtifactService'
 export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
 export { installWorkbench, requireWorkbench } from './services/workbench'
+
+export { createContextPluginLogPolicyStore } from './logger/levels'
+export {
+	createRuntimeLogging,
+	getActiveRuntimeLogging,
+	requireActiveRuntimeLogging,
+	requireContextRuntimeLogging,
+	type ResolvedRuntimeLoggingPlan,
+	type RuntimeConsoleSinkInput,
+	type RuntimeCustomSinkInput,
+	type RuntimeFileSinkInput,
+	type RuntimeLogging,
+	type RuntimeLoggingDescription,
+	type RuntimeLoggingInput,
+	type RuntimeLoggingRootInput,
+	type RuntimeLoggingRouteBinding,
+	type RuntimeLoggingSinkInput,
+	type RuntimeLoggingState,
+	type RuntimeStoreSinkInput,
+} from './logger/logging'

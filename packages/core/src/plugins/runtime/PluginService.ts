@@ -11,6 +11,7 @@
 import { Injectable, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
 import { isProduction } from '../../env'
+import { LoggerService } from '../../logger/LoggerService'
 import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginInfo } from '../decorators/decorator/types'
@@ -268,6 +269,11 @@ export class PluginService {
 		if (!seen.has(effectsSvc)) {
 			seen.add(effectsSvc)
 			isolated.push(effectsSvc)
+		}
+		const loggerSvc = LoggerService as unknown as AnyServiceClass
+		if (!seen.has(loggerSvc)) {
+			seen.add(loggerSvc)
+			isolated.push(loggerSvc)
 		}
 		return isolated
 	}

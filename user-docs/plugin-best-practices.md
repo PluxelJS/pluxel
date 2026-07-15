@@ -82,6 +82,8 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 - 固定事件集合使用具名 `EvtChannel`，不要退化为宽泛的 `Map<string, unknown>`。
 - 外部平台 capability 让原生具名方法留在顶层；raw、诊断和组合工具统一放在 `$`。
 - 从 `ctx.logger` 派生 logger，不直接导入 LogTape `getLogger()`。
+- 调试日志使用 `ctx.logger.getDebugChannel('cache:lookup')`；topic 不带 `pluxel:` 前缀，也不包含 wildcard。
+- 插件级日志等级由 active runtime policy 动态控制；插件不要读取 env 或自行缓存等级。
 - 错误对象通过 `{ error }` 或 `{ err }` 结构化传递，不插值、不 stringify、不只记录 `.message`。
 - UI RPC/SSE/SignalDB contract 放在共享类型边界，并为 `@pluxel/runtime/web` 提供 type augmentation。
 

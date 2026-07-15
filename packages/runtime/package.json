@@ -154,6 +154,7 @@
 		"@gqloom/valibot": "^0.15.1",
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
+		"@logtape/pretty": "^2.0.2",
 		"@maverick-js/signals": "^6.0.0",
 		"@pluxel/core": "workspace:*",
 		"@signaldb/core": "^1.7.2",

@@ -1,5 +1,3 @@
-import { getDebugLogger } from '@pluxel/core/logger'
-
 export function matchesSpecifierPattern(specifier: string, pattern: string) {
 	if (!pattern) return false
 	if (pattern.endsWith('/*')) {
@@ -10,11 +8,8 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
-const batchDebouncerLogger = getDebugLogger('pluxel:hmr:batch').with({
-	name: 'BatchDebouncer',
-})
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
-	batchDebouncerLogger.error('flush failed', { error })
+	console.error('[pluxel:hmr] batch flush failed', error)
 }
 
 export class BatchDebouncer {

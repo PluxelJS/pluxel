@@ -51,7 +51,7 @@ export async function createDynamicDevRuntime(
 			if (stopped) return
 			stopped = true
 			if (startPromise) await startPromise.catch((): void => undefined)
-			await booted?.ctx.effects.dispose()
+			await booted?.stop()
 		},
 	}
 }

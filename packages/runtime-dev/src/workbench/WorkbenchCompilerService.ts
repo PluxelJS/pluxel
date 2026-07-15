@@ -3,7 +3,6 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context } from '@pluxel/runtime'
-import { getDebugLogger } from '@pluxel/runtime/logger'
 import {
 	createCompiledWorkbenchArtifact,
 	type WorkbenchArtifactStore,
@@ -185,18 +184,7 @@ export class WorkbenchCompilerService {
 		this.pluginDirs = new Map(Object.entries(config?.pluginDirs ?? {}))
 		this.vite = config?.vite
 		this.viteCacheKey = config?.viteCacheKey
-		const logger = (this.ctx as unknown as { logger?: unknown }).logger
-		const fn =
-			logger && typeof logger === 'object'
-				? (logger as Record<string, unknown>).getDebugChannel
-				: undefined
-		this.dbg =
-			typeof fn === 'function'
-				? (fn as (t: string) => LogtapeLogger).call(logger, 'pluxel:workbench:compile')
-				: getDebugLogger('pluxel:workbench:compile').with({
-						name: 'workbench',
-						context: this.ctx?.name ?? 'hmr',
-					})
+		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
 	}
 
 	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {

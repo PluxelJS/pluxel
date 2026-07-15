@@ -1,5 +1,6 @@
 import type { Context as CoreContext } from '@pluxel/core'
 import type { WorkbenchConfig } from '@pluxel/runtime'
+import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import type { BuiltinPluginSpec } from './services'
 import type { LoaderHmrDependencyConfig } from './hmr/engine/config'
 import type { LoaderHmrConfig } from './hmr/engine/LoaderHmrService'
@@ -28,7 +29,7 @@ export type DynamicRuntimeConfig = {
 	pluginData?: CoreContext.Config['pluginData']
 	http?: CoreContext.Config['http']
 	workbench?: WorkbenchConfig
-	logger?: CoreContext.Config['logger']
+	logging?: false | RuntimeLoggingInput
 	context?: CoreContext.Config
 }
 

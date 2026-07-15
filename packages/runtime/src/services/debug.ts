@@ -1,27 +1,17 @@
-export {
-	type DebugTopic,
-	getDebugLogger,
-	isDebugTopicEnabled,
-	resolveDebugTopics,
-} from '@pluxel/core/logger'
-
-type PluxelHmrDebugTopics = {
-	'pluxel:hmr': true
-	'pluxel:hmr:*': true
-	'pluxel:hmr:modules': true
-	'pluxel:hmr:fetch': true
-	'pluxel:hmr:time': true
-	'pluxel:hmr:time:entry': true
-	'pluxel:hmr:warmup': true
-	'pluxel:hmr:batch': true
-	'pluxel:hmr:cache': true
-	'pluxel:hmr:graph': true
-	'pluxel:bundler': true
-	'pluxel:ext:compile': true
+type PluxelRuntimeDebugTopics = {
+	'hmr:modules': true
+	'hmr:fetch': true
+	'hmr:time:entry': true
+	'hmr:warmup': true
+	'hmr:batch': true
+	'hmr:cache': true
+	'hmr:graph': true
+	bundler: true
+	'workbench:compile': true
 }
 
 declare module '@pluxel/core' {
 	namespace Context {
-		interface DebugTopics extends PluxelHmrDebugTopics {}
+		interface DebugTopics extends PluxelRuntimeDebugTopics {}
 	}
 }

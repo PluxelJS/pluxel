@@ -12,10 +12,11 @@
 
 - `docs/CORE.md`
 - `docs/CONFIG.md`
+- `docs/LOGGING.md`
 - `docs/proposals/README.md`
 
 对外导出（package exports）：
 
 - `@pluxel/core`：Context + 插件/特性基类
 - `@pluxel/core/services`：基础 services（events/effects/config 等；不包含宿主能力）
-- `@pluxel/core/logger`：日志基础设施
+- `@pluxel/core/logger`：Context logger facade 与 category identity

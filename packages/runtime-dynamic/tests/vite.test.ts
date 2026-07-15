@@ -47,7 +47,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			profile: 'dev',
 			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
 			workbench: { enabled: true, access: { exposure: 'private' } },
-			logger: { preset: 'hmr' },
+			logging: false,
 		})
 
 		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])

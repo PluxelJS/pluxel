@@ -5,7 +5,6 @@ import { cpus } from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
-import { getDebugLogger } from '@pluxel/core/logger'
 import { resolveModuleIdBaseDir, findRuntimeModuleId } from '@pluxel/runtime/internal'
 import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, resolve } from 'pathe'
@@ -92,18 +91,7 @@ export class BundlerService {
 		public ctx: PluxelContext,
 		config?: BundlerServiceConfig,
 	) {
-		const logger = (this.ctx as unknown as { logger?: unknown }).logger
-		const fn =
-			logger && typeof logger === 'object'
-				? (logger as Record<string, unknown>).getDebugChannel
-				: undefined
-		this.dbg =
-			typeof fn === 'function'
-				? (fn as (t: string) => LogtapeLogger).call(logger, 'pluxel:bundler')
-				: getDebugLogger('pluxel:bundler').with({
-						name: 'bundler',
-						context: this.ctx?.name ?? 'hmr',
-					})
+		this.dbg = this.ctx.logger.getDebugChannel('bundler')
 		this.enabled = config?.enabled !== false
 		this.outDir = config?.outDir ?? resolve(process.cwd(), '.pluxel/bundles')
 	}

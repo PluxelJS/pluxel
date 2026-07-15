@@ -50,6 +50,8 @@ export type {
 	PluginGroup,
 	PluginGroupInput,
 	PluginLogPolicySnapshot,
+	PluginLogPolicyMutationResult,
+	VersionedPluginLogPolicySnapshot,
 	PluginStatusAction,
 	PluginStatusBatchAction,
 	PluginStatusBatchResult,

@@ -250,21 +250,41 @@ export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
 export type PluginLogPolicySnapshot = {
-	defaultLevel?: RuntimePluginLogLevel
+	version: 1
+	defaultLevel: RuntimePluginLogLevel
 	overrides: Record<string, RuntimePluginLogLevel>
 }
 
+export type VersionedPluginLogPolicySnapshot = PluginLogPolicySnapshot & {
+	revision: number
+	persistence: 'none' | 'clean' | 'dirty' | 'failed'
+}
+
+export type PluginLogPolicyMutationResult = Pick<
+	VersionedPluginLogPolicySnapshot,
+	'revision' | 'persistence'
+>
+
 export type LoggingHandleApi = {
-	getPolicy: () => Promise<PluginLogPolicySnapshot>
-	replacePolicy: (snapshot: PluginLogPolicySnapshot) => Promise<PluginLogPolicySnapshot>
-	setDefaultLevel: (level: RuntimePluginLogLevel) => Promise<PluginLogPolicySnapshot>
-	clearDefaultLevel: () => Promise<PluginLogPolicySnapshot>
+	getPolicy: () => Promise<VersionedPluginLogPolicySnapshot>
+	replacePolicy: (
+		expectedRevision: number,
+		snapshot: PluginLogPolicySnapshot,
+	) => Promise<PluginLogPolicyMutationResult>
+	setDefaultLevel: (
+		expectedRevision: number,
+		level: RuntimePluginLogLevel,
+	) => Promise<PluginLogPolicyMutationResult>
 	setPluginLevel: (
+		expectedRevision: number,
 		pluginId: string,
 		level: RuntimePluginLogLevel,
-	) => Promise<PluginLogPolicySnapshot>
-	clearPluginLevel: (pluginId: string) => Promise<PluginLogPolicySnapshot>
-	resetPolicy: () => Promise<PluginLogPolicySnapshot>
+	) => Promise<PluginLogPolicyMutationResult>
+	clearPluginLevel: (
+		expectedRevision: number,
+		pluginId: string,
+	) => Promise<PluginLogPolicyMutationResult>
+	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
 }
 
 type RuntimeRpcApiContract = {

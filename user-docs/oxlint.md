@@ -57,7 +57,7 @@ export default defineConfig({
 | ------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
 | `log-no-rendered-error`        | 保留原始 error 的 stack、cause 和结构化查询能力     | 使用 `logger.error('sync failed', { error })`                         |
 | `log-canonical-error-prop`     | error 字段必须一致且保存原对象                      | 使用唯一的 `error` 或 `err` 字段；字段重命名通常可自动修复            |
-| `no-direct-logtape-get-logger` | logger 必须保留 plugin Context 和 cleanup ownership | 使用 `ctx.logger`、debug channel 或公开 Pluxel logger helper          |
+| `no-direct-logtape-get-logger` | logger 必须保留 plugin Context 和 cleanup ownership | 使用 `ctx.logger` 或 `ctx.logger.getDebugChannel(topic)`              |
 | `no-workspace-root-import`     | build-time helper 依赖必须显式且可裁剪              | 从 `/workspace/fs`、`/info`、`/vite` 或 `/oxlint` 等明确 subpath 导入 |
 
 正确的错误日志：

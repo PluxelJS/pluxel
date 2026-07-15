@@ -6,7 +6,8 @@ import {
 	type LogStreamMeta,
 	type RuntimeLogLine,
 } from '../../logger/protocol'
-import { runtimeLogStores, runtimeLogs } from '../../logger/store'
+import { requireActiveRuntimeLogging } from '../../logger/logging'
+import type { RuntimeLogStore } from '../../logger/store'
 
 export type LogsMetaInput = {
 	streamId?: string
@@ -53,25 +54,27 @@ function toStreamId(input?: string): string {
 
 type ResolvedLogStream = {
 	streamId: string
-	store: typeof runtimeLogs
+	store: RuntimeLogStore
 	derivedFilter?: LogFilter
 	virtual: boolean
 }
 
 function resolveStream(input?: string): ResolvedLogStream {
+	const stores = requireActiveRuntimeLogging().stores
+	const defaultStore = stores.getOrCreate('default')
 	const requested = toStreamId(input)
-	if (requested === 'default') return { streamId: 'default', store: runtimeLogs, virtual: false }
-	const existing = runtimeLogStores.get(requested)
+	if (requested === 'default') return { streamId: 'default', store: defaultStore, virtual: false }
+	const existing = stores.get(requested)
 	if (existing) return { streamId: requested, store: existing, virtual: false }
 	if (requested.startsWith('plugin:')) {
 		const pluginId = requested.slice('plugin:'.length)
 		if (!pluginId) throw new Error('Invalid plugin stream id')
-		return { streamId: requested, store: runtimeLogs, virtual: true, derivedFilter: { pluginId } }
+		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { pluginId } }
 	}
 	if (requested.startsWith('context:')) {
 		const context = requested.slice('context:'.length)
 		if (!context) throw new Error('Invalid context stream id')
-		return { streamId: requested, store: runtimeLogs, virtual: true, derivedFilter: { context } }
+		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { context } }
 	}
 	throw new Error(`Log stream not found: ${requested}`)
 }

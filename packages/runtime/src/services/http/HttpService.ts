@@ -2,7 +2,6 @@ import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
 	createAdminAccessBlockedHeaders,
@@ -221,10 +220,6 @@ export class HttpService {
 				boundary: this.createLazyGraphqlBoundary(),
 			})
 		}
-
-		void ensureRuntimePluginPolicyLoaded(ctx).catch((error) => {
-			this.logger.warn('Failed to load persisted plugin log policy', { error })
-		})
 	}
 
 	get fetch() {

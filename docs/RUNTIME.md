@@ -16,3 +16,9 @@ revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
 
 安装入口是 `@pluxel/runtime/internal`，只供 static/dynamic/frozen launcher 使用。插件不得
 直接安装或 require backend。
+
+## Logging
+
+进程日志由 launcher-owned `RuntimeLogging` 统一安装。一个进程只有一个 active root；plugin identity 编码在
+category，动态等级由 root-owned O(1) policy 控制。完整不变量、启动顺序和大插件基数预算见
+[`LOGGING.md`](LOGGING.md)。

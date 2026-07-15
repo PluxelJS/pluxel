@@ -12,7 +12,6 @@ import {
 	type HmrReportLogProps,
 	type HmrUpdatedLogProps,
 } from '@pluxel/runtime-dev/hmr-log'
-import { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from '@pluxel/runtime/logger'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
 import { requireWorkbench } from '@pluxel/runtime/internal'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -61,7 +60,7 @@ export type StaticRuntimeViteConfig = StaticRuntimeConfig
 export type StaticRuntimeVitePluginOptions = {
 	config: string
 	hmr?: false | StaticRuntimeViteHmrConfig
-	logging?: false | EnsurePluxelLoggingOptions
+	logging?: StaticRuntimeHost['options']['logging']
 	/**
 	 * Runs after the static runtime host is created and before plugins start.
 	 * Use this for host-owned bootstrapping such as preparing or unlocking vault storage.
@@ -115,7 +114,6 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
 			const config = await loadConfig()
-			await ensureStaticRuntimeViteLogging(options.logging)
 			const hmr = options.hmr
 			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
 			const host = await createStaticRuntimeHost(toStaticRuntimeDefinition(config), {
@@ -128,7 +126,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 						? withDevWorkbenchHttpConfig(config.http)
 						: config.http,
 				workbench: config.workbench,
-				logger: { ...config.logger, preset: 'hmr' },
+				logging: options.logging ?? config.logging,
 				profile: config.profile,
 				context: config.context,
 			})
@@ -188,20 +186,6 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	}
 
 	return [createStaticRuntimeSourcePlugin(), routePlugin]
-}
-
-async function ensureStaticRuntimeViteLogging(
-	logging: StaticRuntimeVitePluginOptions['logging'],
-): Promise<void> {
-	if (logging === false) return
-	const overrides = logging ?? {}
-	await ensurePluxelLogging({
-		preset: overrides.preset ?? 'hmr',
-		console: overrides.console,
-		file: overrides.file ?? false,
-		ui: overrides.ui ?? true,
-		debug: overrides.debug ?? ['pluxel:runtime:*'],
-	})
 }
 
 type StaticRuntimeReportSummary = {

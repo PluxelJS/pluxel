@@ -15,6 +15,7 @@ import type {
 } from '@pluxel/runtime'
 import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
+import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
 export type StaticRuntimeRegisteredServices = RuntimeStaticRegisteredServices
 
@@ -75,10 +76,8 @@ export type StaticRuntimeHostOptions = {
 	http?: StaticRuntimeHttpConfig
 	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
 	workbench?: WorkbenchConfig
-	/**
-	 * Runtime logger settings.
-	 */
-	logger?: CoreContext.Config['logger']
+	/** Host-owned logging plan. `false` installs a silent root. */
+	logging?: false | RuntimeLoggingInput
 	/**
 	 * Runtime profile used for diagnostics.
 	 */

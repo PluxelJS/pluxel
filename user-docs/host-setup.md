@@ -70,6 +70,55 @@ export default defineConfig({
 
 dynamic runtime config 提供 workspace root、loader config、profile 和 runtime state。loader 负责发现和替换模块；插件本身仍按 [`plugin-authoring.md`](plugin-authoring.md) 编写。
 
+## Logging root
+
+每个进程只安装一个 active logging root。static/dynamic launcher 默认提供 console；dynamic launcher还提供轮转文件
+sink。Workbench enabled 时 launcher 才加入 runtime store。插件只使用 `ctx.logger`，Workbench 修改的是同一个
+root-owned plugin policy，不会为每个插件创建 LogTape logger config。
+
+需要自定义时传入完整、显式的 `logging` plan：
+
+```ts
+logging: {
+	root: {
+		profile: 'dev',
+		debugTopics: ['hmr:*', 'cache:lookup'],
+		initialPluginPolicy: {
+			version: 1,
+			defaultLevel: 'info',
+			overrides: { BillingPlugin: 'debug' },
+		},
+	},
+	sinks: {
+		console: {
+			kind: 'console',
+			format: 'pretty',
+			caller: false,
+			timezone: 'local',
+		},
+		store: { kind: 'store', streamId: 'default', caller: true },
+	},
+	routes: {
+		runtime: [
+			{ sink: 'console', minLevel: 'info' },
+			{ sink: 'store', minLevel: 'trace' },
+		],
+		plugins: [
+			{ sink: 'console', minLevel: 'trace' },
+			{ sink: 'store', minLevel: 'trace' },
+		],
+		debug: [
+			{ sink: 'console', minLevel: 'trace' },
+			{ sink: 'store', minLevel: 'trace' },
+		],
+		meta: [{ sink: 'console', minLevel: 'warning' }],
+	},
+}
+```
+
+`plugins` route 通常保持 `trace`，再由 O(1) 的 plugin policy 查表决定实际等级。`logging: false` 仍会安装一个
+无输出的 root，以保持 Context identity、policy 和控制面所有权一致；它不是“没有 logging manager”。
+
 ## Workbench Plane
 
 只有一个顶层来源：

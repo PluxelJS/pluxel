@@ -4,7 +4,7 @@ export type LogFilter = {
 	pluginId?: string
 	context?: string
 	displayName?: string
-	/** Category string, e.g. "pluxel.plugins" or "pluxel.core". Supports "prefix.*". */
+	/** Category string, e.g. "pluxel.plugins" or "pluxel.runtime". Supports "prefix.*". */
 	category?: string
 }
 

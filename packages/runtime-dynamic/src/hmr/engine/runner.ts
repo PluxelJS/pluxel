@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
 import {
 	createServerModuleRunner,
@@ -42,6 +41,8 @@ export type PrimeModuleCacheEntryParams = {
 }
 
 export type HmrRunnerInitOptions = {
+	/** Runtime-root-bound debug channel. */
+	debug?: Pick<ReturnType<import('@pluxel/core').Context['logger']['getDebugChannel']>, 'debug'>
 	/** Internal cache limit for runner bookkeeping. Defaults to `10_000`. */
 	cacheLimit?: number
 	/**
@@ -68,8 +69,6 @@ export type HmrRunnerInitOptions = {
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/runtime'] as const
 const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/runtime/'] as const
 const HARD_BRIDGE_ID_SET = new Set<string>(HARD_BRIDGE_IDS)
-const dbgFetch = getDebugLogger('pluxel:hmr:fetch').with({ name: 'runner' })
-
 type ExternalizeHint = {
 	externalize: string
 	type: 'module' | 'commonjs'
@@ -89,6 +88,9 @@ export class HmrRunner {
 	private _workspaceSourceConditions: string[] = []
 	private _workspaceDistConditions: string[] = []
 	private _cacheLimit = 10_000
+	private dbg:
+		| Pick<ReturnType<import('@pluxel/core').Context['logger']['getDebugChannel']>, 'debug'>
+		| undefined
 	private realpathCache = new Map<string, Promise<string>>()
 	private packageNameByPackageRoot = new Map<string, Promise<string | null>>()
 	private packageNameByFile = new Map<string, Promise<string | null>>()
@@ -97,6 +99,7 @@ export class HmrRunner {
 	private workspaceEntryByKey = new Map<string, Promise<string | null>>()
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
+		this.dbg = opts.debug
 		this._env = server.environments.ssr
 		this._cacheLimit = resolveCacheLimit(opts.cacheLimit, 10_000)
 
@@ -419,7 +422,7 @@ export class HmrRunner {
 			canonicalId.includes('@napi-rs') ||
 			canonicalId.includes('napi-rs')
 		) {
-			dbgFetch.debug('fetchModule {rawId}', {
+			this.dbg?.debug('fetchModule {rawId}', {
 				url,
 				rawId: canonicalId,
 				importer,
@@ -434,7 +437,7 @@ export class HmrRunner {
 				canonicalId.includes('@napi-rs') ||
 				canonicalId.includes('napi-rs')
 			) {
-				dbgFetch.debug('externalize bare as CJS {rawId}', { rawId: canonicalId })
+				this.dbg?.debug('externalize bare as CJS {rawId}', { rawId: canonicalId })
 			}
 			return await this.externalizeBareId(canonicalId, importer, { typeHint: 'commonjs' })
 		}
@@ -448,7 +451,7 @@ export class HmrRunner {
 		if (this._cjsExternal.length === 0) return null
 		if (!(await this.isCjsExternalFile(fsPath))) return null
 		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
-			dbgFetch.debug('externalize fsPath as CJS {fsPath}', { fsPath })
+			this.dbg?.debug('externalize fsPath as CJS {fsPath}', { fsPath })
 		}
 		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
 	}

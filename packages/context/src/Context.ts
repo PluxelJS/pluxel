@@ -394,8 +394,8 @@ export namespace Context {
 	 * declare module "@pluxel/context" {
 	 *   namespace Context {
 	 *     interface DebugTopics {
-	 *       "pluxel:hmr:*": true
-	 *       "pluxel:bundler": true
+	 *       "hmr:*": true
+	 *       "bundler": true
 	 *     }
 	 *   }
 	 * }
@@ -426,14 +426,14 @@ export namespace Context {
 		/**
 		 * Enable debug topics (pluxel convention).
 		 *
-		 * Values are `:`-separated category strings. Supported patterns:
-		 * - `pluxel:hmr:batch` → enables that exact category
-		 * - `pluxel:hmr:*` → enables the prefix category `["pluxel","hmr"]` (and thus its children)
+		 * Values are `:`-separated topic strings. Supported patterns:
+		 * - `hmr:batch` → enables that exact topic
+		 * - `hmr:*` → enables the `hmr` topic prefix
 		 * - `*` → enables all debug topics (discouraged)
 		 *
 		 * Notes:
-		 * - Used by `@pluxel/runtime` to gate internal debug logs and to seed LogTape auto-config debug rules.
-		 * - Consumers can also pass these to `createPluxelLogtapeConfig({ debug })`.
+		 * - Runtime launchers compile these once into the active root debug matcher.
+		 * - Plugin debug records must also pass that plugin's dynamic log-level policy.
 		 */
 		debug?: readonly DebugTopicPattern[]
 		[key: string]: unknown

@@ -70,7 +70,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			booted,
 			configFiles: collectSsrImportFiles(server, state.configPath!),
 			stop: async () => {
-				await booted.ctx.effects.dispose()
+				await booted.stop()
 			},
 		}
 		state.controller = controller

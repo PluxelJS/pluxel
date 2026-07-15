@@ -411,12 +411,12 @@ export class LoaderHmrService {
 		const getDebugChannel = (topic: string): LogtapeLogger => this.ctx.logger.getDebugChannel(topic)
 
 		this.dbg = {
-			modules: getDebugChannel('pluxel:hmr:modules'),
-			warmup: getDebugChannel('pluxel:hmr:warmup'),
-			batch: getDebugChannel('pluxel:hmr:batch'),
-			cache: getDebugChannel('pluxel:hmr:cache'),
-			graph: getDebugChannel('pluxel:hmr:graph'),
-			timeEntry: getDebugChannel('pluxel:hmr:time:entry'),
+			modules: getDebugChannel('hmr:modules'),
+			warmup: getDebugChannel('hmr:warmup'),
+			batch: getDebugChannel('hmr:batch'),
+			cache: getDebugChannel('hmr:cache'),
+			graph: getDebugChannel('hmr:graph'),
+			timeEntry: getDebugChannel('hmr:time:entry'),
 		}
 
 		this.timing = new TimingTracker({
@@ -699,6 +699,7 @@ export class LoaderHmrService {
 
 	private configureRunner(server: ViteDevServer) {
 		this.runner.init(server, {
+			debug: this.ctx.logger.getDebugChannel('hmr:fetch'),
 			cacheLimit: this.config.runnerCacheLimit,
 			hostCwd: this.cwd,
 			cjsExternal: this.deps.cjsExternal,

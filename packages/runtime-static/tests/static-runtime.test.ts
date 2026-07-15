@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
+import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
@@ -210,13 +211,13 @@ describe('@pluxel/runtime-static', () => {
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 				persistence: { mode: 'memory' },
 				pluginData: { enabled: false },
-				logger: { preset: 'hmr' },
 			}),
 		)
 		try {
 			expect(runtime.ctx.root.persistence.capability).toBe('ephemeral')
 			expect(runtime.ctx.config.pluginData).toEqual({ enabled: false })
-			expect(runtime.ctx.config.logger).toMatchObject({ preset: 'hmr' })
+			expect(runtime.ctx.config.logger?.rootId).toEqual(expect.any(String))
+			expect(getActiveRuntimeLogging()?.resolved.sinks).not.toHaveProperty('store')
 		} finally {
 			await runtime.stop()
 		}
@@ -247,6 +248,7 @@ describe('@pluxel/runtime-static', () => {
 		)
 		try {
 			expect(runtime.ctx.workbench.enabled).toBe(true)
+			expect(getActiveRuntimeLogging()?.resolved.sinks).toHaveProperty('store')
 			expect(mounted).toBe(true)
 			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
 			const response = await runtime.fetch(
