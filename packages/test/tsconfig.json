@@ -5,8 +5,6 @@
 		"customConditions": [],
 		"baseUrl": ".",
 		"paths": {
-			"@pluxel/core-di": ["../core-di/src"],
-			"@pluxel/core-di/*": ["../core-di/src/*"],
 			"@pluxel/test": ["./src"],
 			"@pluxel/test/*": ["./src/*"]
 		}

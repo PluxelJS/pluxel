@@ -1,5 +1,5 @@
 // PluginDefinitions.ts
-// Graph declaration layer around @pluxel/core-di with draft/commit semantics.
+// Plugin declaration layer around core's internal graph kernel.
 //
 // Responsibilities:
 // - register/unregister plugin ctors into the draft graph
@@ -20,7 +20,7 @@ import {
 	type GraphSnapshot,
 	Runtime,
 	type Token,
-} from '@pluxel/core-di'
+} from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
 import { getForkOf } from './fork'
 import { BasePlugin } from '../composition/BasePlugin'

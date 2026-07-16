@@ -7,7 +7,6 @@
 	// ➤ 最核心：references 只能放在最顶层
 	"references": [
 		{ "path": "packages/context" },
-		{ "path": "packages/core-di" },
 		{ "path": "packages/core" },
 		{ "path": "packages/ops" },
 		{ "path": "packages/runtime" },

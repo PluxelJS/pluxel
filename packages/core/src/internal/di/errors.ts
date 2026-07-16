@@ -36,7 +36,7 @@ export class GraphBuildError extends Error {
 	public readonly issues: readonly GraphBuildIssue[]
 
 	constructor(issues: readonly GraphBuildIssue[]) {
-		super('core-di graph build failed')
+		super('core graph build failed')
 		this.issues = issues
 		Object.setPrototypeOf(this, GraphBuildError.prototype)
 	}

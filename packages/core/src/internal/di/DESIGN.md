@@ -1,8 +1,8 @@
-# `@pluxel/core-di` Design
+# Core DI Kernel Design
 
 ## Positioning
 
-`@pluxel/core-di` is not designed as a generic DI container.
+This internal kernel is not designed as a generic DI container.
 
 It is a graph-first kernel for `@pluxel/core` plugin orchestration:
 
@@ -292,9 +292,10 @@ The compile pipeline should work like this.
 
 The current benchmark entry is:
 
-- `pnpm --filter @pluxel/core-di bench`
+- `pnpm --filter @pluxel/core bench:di`
 
-It compares `core-di` against `diod` on a few core-relevant scenarios.
+It compares the internal DI kernel against the archived workspace `diod` implementation on a few
+core-relevant scenarios.
 
 Current signal after the slot-state refactor is positive across the measured scenarios:
 

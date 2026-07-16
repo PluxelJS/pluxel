@@ -1,5 +1,5 @@
 // commit.ts
-// Pure graph/diff utilities and scheduling strategies used by PluginService.commit().
+// Pure graph/diff utilities and lifecycle scheduling used by PluginService.commit().
 //
 // Goal: keep PluginService readable while avoiding scattering across many tiny files.
 // Everything here is intentionally side-effect free.
@@ -7,12 +7,6 @@
 /* ─────────────────────────── Init Plan ─────────────────────────── */
 
 export type InitPlan<T> = {
-	/**
-	 * Topological "levels" (aka depth batches).
-	 * Level boundaries are useful for legacy batching, but the same graph can also
-	 * be scheduled via a ready-queue without barriers.
-	 */
-	levels: T[][]
 	/** All planned nodes (excludes leftovers/cycles). */
 	nodes: T[]
 	leftovers: Set<T>
@@ -47,19 +41,19 @@ export function computeInitPlan<T>(
 		}
 	}
 
-	// Copy, because we'll mutate for level computation but also expose initial inDegree for schedulers.
+	// Copy because topological planning mutates degrees while the scheduler needs the originals.
 	const remaining = new Map(inDegree)
 
-	const levels: T[][] = []
 	let frontier: T[] = []
+	const plannedNodes: T[] = []
 	for (const [id, degree] of remaining) {
 		if (degree === 0) frontier.push(id)
 	}
 
 	while (frontier.length > 0) {
-		levels.push(frontier)
 		const next: T[] = []
 		for (const current of frontier) {
+			plannedNodes.push(current)
 			for (const dependent of graph.get(current)!) {
 				const nextRemaining = remaining.get(dependent)! - 1
 				remaining.set(dependent, nextRemaining)
@@ -72,13 +66,6 @@ export function computeInitPlan<T>(
 	const leftovers = new Set<T>()
 	for (const [id, degree] of remaining) {
 		if (degree > 0) leftovers.add(id)
-	}
-
-	// Expose nodes excluding cycles, so schedulers never need to flatten levels.
-	const plannedNodes: T[] = []
-	for (let i = 0; i < levels.length; i++) {
-		const level = levels[i]!
-		for (let j = 0; j < level.length; j++) plannedNodes.push(level[j]!)
 	}
 
 	// Prune graph/inDegree to only planned nodes. This avoids wasted scheduler work on leftovers.
@@ -113,7 +100,6 @@ export function computeInitPlan<T>(
 	}
 
 	return {
-		levels,
 		nodes: plannedNodes,
 		leftovers,
 		dependencies,
@@ -122,26 +108,18 @@ export function computeInitPlan<T>(
 	}
 }
 
-/* ─────────────────────────── Startup Strategy ─────────────────────────── */
+/* ─────────────────────────── Startup Scheduler ─────────────────────────── */
 
-export type PluginStartStrategy = 'ready-queue' | 'batch'
-
-export type StartStrategyOptions = {
-	/**
-	 * - `ready-queue`: bounded-concurrency topo scheduler (no batch barriers).
-	 * - `batch`: legacy "group by depth + Promise.all per batch".
-	 */
-	strategy?: PluginStartStrategy
-	/** Only used by `ready-queue`. Minimum is 1. */
+export type StartOptions = {
 	concurrency?: number
 	/** Called when a node is skipped because one of its dependencies failed. */
 	onDependencyBlocked?: (id: unknown, dependency: unknown) => void
 }
 
-export async function startPluginsWithStrategy<T>(
+export async function startPluginsTopo<T>(
 	plan: InitPlan<T>,
 	instantiateAndStart: (id: T) => Promise<boolean>,
-	opts: StartStrategyOptions = {},
+	opts: StartOptions = {},
 ): Promise<Set<T>> {
 	const failed = new Set<T>(plan.leftovers)
 	if (plan.nodes.length === 1 && failed.size === 0) {
@@ -154,12 +132,6 @@ export async function startPluginsWithStrategy<T>(
 		}
 	}
 
-	const strategy = opts.strategy ?? 'ready-queue'
-	if (strategy === 'batch') {
-		await startPluginsBatched(plan, instantiateAndStart, failed, opts.onDependencyBlocked)
-		return failed
-	}
-
 	const concurrency = normalizeConcurrency(opts.concurrency, 8)
 	await startPluginsReadyQueue(
 		plan,
@@ -169,52 +141,6 @@ export async function startPluginsWithStrategy<T>(
 		opts.onDependencyBlocked,
 	)
 	return failed
-}
-
-async function startPluginsBatched<T>(
-	plan: InitPlan<T>,
-	instantiateAndStart: (id: T) => Promise<boolean>,
-	failed: Set<T>,
-	onDependencyBlocked?: (id: T, dependency: T) => void,
-): Promise<void> {
-	const { dependencies } = plan
-
-	for (const batch of plan.levels) {
-		let single: Promise<void> | undefined
-		let tasks: Promise<void>[] | undefined
-		for (const id of batch) {
-			if (failed.has(id)) continue
-
-			const deps = dependencies.get(id)
-			if (deps && deps.length > 0) {
-				let blocker: T | undefined
-				for (let i = 0; i < deps.length; i++) {
-					if (failed.has(deps[i])) {
-						blocker = deps[i]
-						break
-					}
-				}
-				if (blocker !== undefined) {
-					failed.add(id)
-					onDependencyBlocked?.(id, blocker)
-					continue
-				}
-			}
-
-			const p = instantiateAndStart(id).then((ok): undefined => {
-				if (!ok) failed.add(id)
-				return undefined
-			})
-			if (!single) single = p
-			else {
-				tasks ??= [single]
-				tasks.push(p)
-			}
-		}
-
-		if (tasks) await Promise.all(tasks)
-		else if (single) await single
-	}
 }
 
 async function startPluginsReadyQueue<T>(

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { classProvider, DraftGraph, InstanceStore, type NodeKey, Runtime } from '../src'
+import {
+	classProvider,
+	DraftGraph,
+	InstanceStore,
+	type NodeKey,
+	Runtime,
+} from '../../src/internal/di'
 
 function buildOk<M>(draft: DraftGraph<M>) {
 	const built = draft.build()

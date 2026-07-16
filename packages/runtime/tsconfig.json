@@ -5,8 +5,6 @@
 	"compilerOptions": {
 		"noEmit": false,
 		"paths": {
-			"@pluxel/core-di": ["packages/core-di/src/index.ts"],
-			"@pluxel/core-di/*": ["packages/core-di/src/*"],
 			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
 			"@pluxel/runtime/*": ["packages/runtime/src/*"],
 			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],

@@ -13,7 +13,6 @@
 			"packages/components",
 			"packages/context",
 			"packages/core",
-			"packages/core-di",
 			"packages/diod",
 			"packages/ops",
 			"packages/plugins/host",

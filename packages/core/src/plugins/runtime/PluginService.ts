@@ -23,13 +23,7 @@ import type {
 	PluginIdentifier,
 	PluginInstance,
 } from '../types'
-import {
-	computeInitPlan,
-	type InitPlan,
-	type PluginStartStrategy,
-	startPluginsWithStrategy,
-	stopPluginsTopo,
-} from './commit'
+import { computeInitPlan, type InitPlan, startPluginsTopo, stopPluginsTopo } from './commit'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
 import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
 import { PluginDefinitions, type PluginGraph, type PluginRuntime } from './PluginDefinitions'
@@ -103,7 +97,6 @@ type PluginServiceConfig = {
 	pluginCTXIsolate?: AnyServiceClass[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
-	startStrategy?: PluginStartStrategy
 	startConcurrency?: number
 	stopConcurrency?: number
 	featureDeclarationPolicy?: FeatureDeclarationPolicy
@@ -121,7 +114,6 @@ type RuntimeUpdateCommitResult = Awaited<ReturnType<PluginService['commit']>>
 
 const DEFAULT_START_TIMEOUT_MS = 1_500
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
-const DEFAULT_START_STRATEGY: PluginStartStrategy = 'ready-queue'
 const DEFAULT_START_CONCURRENCY = 8
 const DEFAULT_STOP_CONCURRENCY = 1
 const FEATURE_DECLARATION_POLICY_KEY = 'pluxel:feature:declarationPolicy'
@@ -170,7 +162,6 @@ export class PluginService {
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private readonly startTimeoutMs: number
 	private readonly stopTimeoutMs: number
-	private readonly startStrategy: PluginStartStrategy
 	private readonly startConcurrency: number
 	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
@@ -224,7 +215,6 @@ export class PluginService {
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS
-		this.startStrategy = config?.startStrategy ?? DEFAULT_START_STRATEGY
 		this.startConcurrency = config?.startConcurrency ?? DEFAULT_START_CONCURRENCY
 		this.stopConcurrency = config?.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
 		this.featureDeclarationPolicyExplicit =
@@ -974,7 +964,7 @@ export class PluginService {
 				message: `Plugin ${String(id)} could not be scheduled because its dependency graph is cyclic.`,
 			})
 		}
-		return startPluginsWithStrategy(
+		return startPluginsTopo(
 			plan,
 			(slot) => {
 				const id = graph.keyOf(slot)
@@ -983,7 +973,6 @@ export class PluginService {
 					: this.instantiateAndStart(runtime, id as RuntimePluginKey, report)
 			},
 			{
-				strategy: this.startStrategy,
 				concurrency: this.startConcurrency,
 				onDependencyBlocked: (slot, dependency) => {
 					const id = graph.keyOf(slot as number)

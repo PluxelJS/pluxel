@@ -1,20 +1,11 @@
 import { type Context as PluxelContext, Injectable, OverrideOf } from '@pluxel/core'
-import {
-	type ConfigSchemaMap,
-	ConfigValidationError,
-	ConfigService as CoreConfigService,
-	normalizeConfigRecord,
-} from '@pluxel/core/services'
+import { ConfigService as CoreConfigService } from '@pluxel/core/services'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export interface PluginConfigFile {
 	version: 1
-	plugins: Record<string, Record<string, unknown>>
-}
-
-export interface ConfigShape {
 	plugins: Record<string, Record<string, unknown>>
 }
 
@@ -35,444 +26,47 @@ declare module '@pluxel/core' {
 	}
 }
 
+/** Persistent runtime adapter over core's single config state and validation engine. */
 @Injectable
 @OverrideOf(CoreConfigService)
-export class ConfigService {
-	private static readonly EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(
-		Object.create(null),
-	)
-
-	public ctx: PluxelContext
-
-	/** Whether the initial on-disk config has been loaded (or initialized). */
-	public isReady = false
-
-	/** Resolves after the initial config file has been loaded (or initialized). */
-	public readonly ready: Promise<void>
-
-	private readonly data: ConfigShape = {
-		plugins: Object.create(null),
-	}
-	private readonly file: string
+export class ConfigService extends CoreConfigService {
+	private readonly file = 'config.json'
 	private readonly saveDelayMs = 200
 	private saveTimer: ReturnType<typeof setTimeout> | null = null
 	private saveScheduled = false
 	private saveInFlight: Promise<void> | null = null
 	private saveAgain = false
-	private pendingWriteDigest: string | undefined
 	private lastWrittenDigest: string | undefined
 	private disposed = false
-	private configSeq = 0
-	private configRevByPlugin = new Map<string, number>()
-	private configDigestByPlugin = new Map<string, string>()
-	private schemaObjectSeq = 0
-	private readonly schemaObjectIds = new WeakMap<object, number>()
-	private readonly rawViews = new Map<string, Readonly<Record<string, unknown>>>()
-	private readonly validated = new Map<
-		string,
-		{
-			rev: number
-			schemaMap: Record<string, unknown>
-			schemaSig?: string
-			snapshot: Readonly<Record<string, unknown>>
-		}
-	>()
-
-	private batching = 0 // 事务计数
+	private batching = 0
 	private pendingSave = false
 	private readonly mode: ConfigServiceMode
 	private readonly readonlyMode: boolean
 	private readonly storage: PersistenceNamespace
 
 	constructor(ctx: PluxelContext, cfg: ConfigServiceConfig = {}) {
-		this.ctx = ctx
+		super(ctx)
 
-		const implicitMode = defaultConfigServiceMode(ctx.root.persistence.capability)
-		this.mode = cfg.mode ?? implicitMode
+		this.mode = cfg.mode ?? defaultConfigServiceMode(ctx.root.persistence.capability)
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = ctx.root.persistence.namespace('config')
 
-		this.file = 'config.json'
-		if (cfg.snapshot) this.applySnapshot(cfg.snapshot)
+		if (cfg.snapshot?.plugins) this.replaceConfigRecords(cfg.snapshot.plugins)
+		if (this.mode === 'file') this.setReadyTask(this.loadFromDisk())
 
-		if (this.mode === 'file') {
-			this.ready = this.loadFromDisk(this.file).finally(() => {
-				this.isReady = true
-			})
-		} else {
-			this.isReady = true
-			this.ready = Promise.resolve()
-		}
-
-		// Ensure pending writes are cleaned up on context disposal (HMR reloads/shutdown).
 		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
 	}
 
-	private requestSave() {
-		if (this.mode !== 'file') return
-		if (this.disposed) return
-		// Avoid scheduling disk writes mid-batch; the outer batch() will trigger once on commit.
-		if (this.batching > 0) {
-			this.pendingSave = true
-			return
-		}
-		this.scheduleSave()
-	}
-
-	private scheduleSave() {
-		if (this.disposed) return
-		this.saveScheduled = true
-		if (this.saveTimer) return
-		this.saveTimer = setTimeout(() => {
-			this.saveTimer = null
-			if (!this.saveScheduled) return
-			this.saveScheduled = false
-			void this.saveToDisk(this.file)
-		}, this.saveDelayMs)
-	}
-
-	private cancelScheduledSave() {
-		this.saveScheduled = false
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer)
-			this.saveTimer = null
-		}
-	}
-
-	/** Flush pending disk writes. Use `force` to flush even if a batch() is in progress. */
-	async flush(options: { force?: boolean } = {}): Promise<void> {
-		if (this.mode !== 'file') return
-		const force = options.force ?? false
-		const hadScheduled = this.saveScheduled || !!this.saveTimer
-		this.cancelScheduledSave()
-		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
-		if (hadScheduled || this.pendingSave) {
-			this.saveScheduled = false
-			this.pendingSave = false
-			await this.saveToDisk(this.file, { force }).catch((): void => undefined)
-		}
-	}
-
-	// —— I/O 层 —— //
-
-	private async loadFromDisk(file: string) {
-		let txt: string
-		const primary = await this.storage.getText(file)
-		if (primary !== undefined) {
-			txt = primary
-		} else {
-			// Missing file is expected on first run: persist the current in-memory seed.
-			await this.saveToDisk(file)
-			return
-		}
-
-		// Ignore self-write events deterministically (content hash), no timing heuristics.
-		const txtDigest = ohash(txt)
-		if (txtDigest === this.pendingWriteDigest || txtDigest === this.lastWrittenDigest) return
-
-		let parsed: Partial<PluginConfigFile>
-		try {
-			parsed = SuperJSON.parse(txt) as Partial<PluginConfigFile>
-		} catch (error) {
-			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', { file, error })
-			await this.isolateBrokenConfigFile(file, txt)
-			this.resetToDefault()
-			this.configRevByPlugin.clear()
-			this.configDigestByPlugin.clear()
-			this.rawViews.clear()
-			this.validated.clear()
-			await this.saveToDisk(file)
-			return
-		}
-
-		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
-		this.reconcilePluginsFromDisk(nextPlugins)
-	}
-
-	private resetToDefault() {
-		clearRecord(this.data.plugins)
-	}
-
-	private applySnapshot(
-		snapshot: Partial<{
-			plugins: Record<string, Record<string, unknown>>
-		}>,
-	) {
-		this.resetToDefault()
-		if (snapshot.plugins) {
-			for (const [name, value] of Object.entries(snapshot.plugins)) {
-				if (!value || typeof value !== 'object') continue
-				this.data.plugins[name] = { ...(value as Record<string, unknown>) }
-				this.configDigestByPlugin.set(name, digest(this.data.plugins[name]!))
-				this.configRevByPlugin.set(name, 1)
-			}
-		}
-	}
-
-	private assertMutable(action: string) {
+	protected override assertConfigMutable(action: string): void {
 		if (!this.readonlyMode) return
 		throw new Error(`[ConfigService] ${action} is disabled in readonly mode.`)
 	}
 
-	private async isolateBrokenConfigFile(file: string, content: string) {
-		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
-		const brokenFile = `${file}.broken.${safeTs}`
-		try {
-			await this.storage.put(brokenFile, content)
-		} catch (error) {
-			this.ctx.logger.warn('failed to isolate broken config file', { file, brokenFile, error })
-		}
+	protected override onConfigChanged(_name: string): void {
+		this.requestSave()
 	}
 
-	private reconcilePluginsFromDisk(next: Record<string, Record<string, unknown>>) {
-		const prev = this.data.plugins
-		const removed = new Set(Object.keys(prev))
-
-		for (const [name, nextRecord] of Object.entries(next)) {
-			removed.delete(name)
-
-			const prevRecord = prev[name]
-			if (!prevRecord) prev[name] = nextRecord
-			else {
-				// Preserve object identity for callers holding onto the raw snapshot reference.
-				clearRecord(prevRecord)
-				Object.assign(prevRecord, nextRecord)
-			}
-
-			// Hashing is not free. Only hash/bump revisions for plugins that can currently benefit:
-			// - plugins with a cached validated snapshot (keep correctness / avoid stale reads);
-			// - plugins we've already started tracking previously (e.g. edited via patchConfig()).
-			//
-			// Note: "enabled in config" alone is not enough reason to hash during disk reload; it doesn't
-			// affect correctness until the plugin actually validates/starts.
-			const shouldTrack = this.validated.has(name) || this.configDigestByPlugin.has(name)
-			if (!shouldTrack) continue
-
-			const nextDigest = digest(prev[name] ?? nextRecord)
-			const prevDigest = this.configDigestByPlugin.get(name)
-			if (prevDigest === nextDigest) continue
-
-			this.configDigestByPlugin.set(name, nextDigest)
-			this.bumpPluginRevision(name)
-		}
-
-		for (const name of removed) {
-			delete prev[name]
-			this.configRevByPlugin.delete(name)
-			this.configDigestByPlugin.delete(name)
-			this.rawViews.delete(name)
-			this.validated.delete(name)
-		}
-	}
-
-	private bumpPluginRevision(name: string) {
-		this.configRevByPlugin.set(name, ++this.configSeq)
-		this.validated.delete(name)
-	}
-
-	// 原子写：交给 ctx.root.persistence backend（tmp + rename for file backend）
-	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
-		const force = options.force ?? false
-		if (!force && this.batching > 0) return // 事务中，先不写；提交时会统一触发
-
-		// Coalesce concurrent save requests: never write multiple times in parallel.
-		if (this.saveInFlight) {
-			this.saveAgain = true
-			await this.saveInFlight.catch((): void => undefined)
-			if (this.saveAgain) {
-				this.saveAgain = false
-				await this.saveToDisk(file, options)
-			}
-			return
-		}
-
-		const content = SuperJSON.stringify({
-			version: 1,
-			plugins: this.data.plugins,
-		} satisfies PluginConfigFile)
-		const nextDigest = ohash(content)
-		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(file))) return
-
-		this.pendingWriteDigest = nextDigest
-		const task = this.storage
-			.put(file, content)
-			.then((): undefined => {
-				this.lastWrittenDigest = nextDigest
-				return undefined
-			})
-			.finally(() => {
-				if (this.pendingWriteDigest === nextDigest) this.pendingWriteDigest = undefined
-			})
-		this.saveInFlight = task.finally(() => {
-			this.saveInFlight = null
-		})
-		await this.saveInFlight
-
-		if (this.saveAgain) {
-			this.saveAgain = false
-			await this.saveToDisk(file, options)
-		}
-	}
-
-	async dispose(): Promise<void> {
-		if (this.disposed) return
-		this.disposed = true
-		this.cancelScheduledSave()
-		await this.flush({ force: true }).catch((): void => undefined)
-	}
-
-	// —— 读接口 —— //
-
-	/**
-	 * 读取某插件的配置（不存在时返回只读“空视图”，避免误改未落盘）
-	 */
-	getRawConfig<T extends object = Record<string, unknown>>(
-		name: string = this.ctx.pluginInfo?.id ?? 'default',
-	): Readonly<T> {
-		const entry = this.data.plugins[name] as Record<string, unknown> | undefined
-		if (!entry) return ConfigService.EMPTY_CONFIG as T
-		const existing = this.rawViews.get(name)
-		if (existing) return existing as T
-		const view = createReadonlyView(entry)
-		this.rawViews.set(name, view)
-		return view as T
-	}
-
-	getConfigRevision(name: string): number {
-		return this.configRevByPlugin.get(name) ?? 0
-	}
-
-	getValidatedConfig<T extends object = Record<string, unknown>>(
-		name: string = this.ctx.pluginInfo?.id ?? 'default',
-	): Readonly<T> {
-		const rev = this.getConfigRevision(name)
-		const cached = this.validated.get(name)
-		if (!cached || cached.rev !== rev) {
-			throw new Error(
-				`[ConfigService] Validated config not ready for "${name}". Call configService.ensureValidated(...) before reading validated config.`,
-			)
-		}
-		return cached.snapshot as T
-	}
-
-	tryGetValidatedConfig<T extends object = Record<string, unknown>>(
-		name: string = this.ctx.pluginInfo?.id ?? 'default',
-	): Readonly<T> | undefined {
-		const rev = this.getConfigRevision(name)
-		const cached = this.validated.get(name)
-		if (!cached || cached.rev !== rev) return undefined
-		return cached.snapshot as T
-	}
-
-	async ensureValidated(
-		pluginName: string,
-		schemaMap: Record<string, unknown>,
-		options: { missingObjectDefault?: unknown } = {},
-	): Promise<Readonly<Record<string, unknown>>> {
-		await this.ready
-
-		// Fast-path: if raw config revision didn't change AND schema is stable, return cached snapshot.
-		//
-		// Schema stability is usually "same object reference" (best case).
-		// If callers recreate the schemaMap object, we lazily compute a signature derived from schema
-		// *references* to avoid revalidation; this keeps hashing/normalization off the hot path.
-		const curRev = this.getConfigRevision(pluginName)
-		const cached = this.validated.get(pluginName)
-		let nextSchemaSig: string | undefined
-		if (cached && cached.rev === curRev) {
-			if (cached.schemaMap === schemaMap) return cached.snapshot
-			const cachedSig =
-				cached.schemaSig ?? (cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
-			nextSchemaSig = this.schemaMapSignature(schemaMap)
-			if (cachedSig === nextSchemaSig) return cached.snapshot
-		}
-
-		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
-		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
-		if (res.ok === false) {
-			const errors = res.errors
-			let where = '_root'
-			let message = 'unknown'
-
-			outer: for (const configKey in errors) {
-				const fields = errors[configKey]
-				if (!fields) continue
-				for (const fieldKey in fields) {
-					const issues = fields[fieldKey]
-					const first = issues?.[0]
-					where = first?.path?.length
-						? first.path.map(String).join('.')
-						: `${configKey}.${fieldKey}`
-					message = first?.message ?? 'unknown'
-					break outer
-				}
-			}
-
-			throw new ConfigValidationError(`插件 ${pluginName} 配置无效：${where} -> ${message}`, errors)
-		}
-
-		if (Object.keys(res.patch).length > 0) {
-			this.patchConfig(pluginName, res.patch)
-		}
-
-		const rev = this.getConfigRevision(pluginName)
-		// Establish a baseline digest for future on-disk reload comparisons, without forcing a revision bump.
-		// If `patchConfig()` ran above, it already recorded the digest.
-		if (!this.configDigestByPlugin.has(pluginName)) {
-			const entry = this.data.plugins[pluginName]
-			if (entry) this.configDigestByPlugin.set(pluginName, digest(entry))
-		}
-		this.validated.set(pluginName, {
-			rev,
-			schemaMap,
-			schemaSig: nextSchemaSig,
-			snapshot: res.snapshot,
-		})
-		return res.snapshot
-	}
-
-	private schemaMapSignature(schemaMap: Record<string, unknown>): string {
-		const keys = Object.keys(schemaMap)
-		if (keys.length === 0) return 'empty'
-		keys.sort()
-		let sig = ''
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i]!
-			const schema = schemaMap[key]
-			if (!schema || (typeof schema !== 'object' && typeof schema !== 'function')) {
-				throw new Error(`[ConfigService] Invalid schemaMap: missing schema for "${key}".`)
-			}
-			const schemaObj = schema as unknown as object
-			let id = this.schemaObjectIds.get(schemaObj)
-			if (!id) {
-				id = ++this.schemaObjectSeq
-				this.schemaObjectIds.set(schemaObj, id)
-			}
-			sig += `${key.length}:${key}#${id};`
-		}
-		return sig
-	}
-
-	/**
-	 * Read a detached snapshot of the plugin config state.
-	 *
-	 * Callers can inspect this for diagnostics and route decisions, but mutating the
-	 * returned object never mutates the live config service.
-	 */
-	getConfigSnapshot(): ConfigShape {
-		const plugins: Record<string, Record<string, unknown>> = Object.create(null)
-		for (const [name, record] of Object.entries(this.data.plugins)) {
-			plugins[name] = { ...record }
-		}
-		return { plugins }
-	}
-
-	// —— 写接口（更简洁的 API）—— //
-
-	/**
-	 * 事务批量修改：函数内多次 set/enable 只触发一次保存
-	 */
-	batch(run: () => void) {
+	override batch(run: () => void): void {
 		this.batching++
 		try {
 			run()
@@ -485,75 +79,130 @@ export class ConfigService {
 		}
 	}
 
-	/**
-	 * 设置 / 覆盖配置条目（存在则浅合并）
-	 */
-	patchConfig<T extends object = Record<string, unknown>>(name: string, partial: Partial<T>) {
-		this.assertMutable('patchConfig')
-		const entry = (this.data.plugins[name] ??= Object.create(null))
-		let changed = false
-		for (const [k, v] of Object.entries(partial as Record<string, unknown>)) {
-			if (entry[k] !== v) {
-				entry[k] = v
-				changed = true
-			}
+	private requestSave(): void {
+		if (this.mode !== 'file' || this.disposed) return
+		if (this.batching > 0) {
+			this.pendingSave = true
+			return
 		}
-		if (changed) {
-			this.configDigestByPlugin.set(name, digest(entry))
-			this.bumpPluginRevision(name)
-			this.requestSave()
+		this.scheduleSave()
+	}
+
+	private scheduleSave(): void {
+		if (this.disposed) return
+		this.saveScheduled = true
+		if (this.saveTimer) return
+		this.saveTimer = setTimeout(() => {
+			this.saveTimer = null
+			if (!this.saveScheduled) return
+			this.saveScheduled = false
+			void this.saveToDisk()
+		}, this.saveDelayMs)
+	}
+
+	private cancelScheduledSave(): void {
+		this.saveScheduled = false
+		if (!this.saveTimer) return
+		clearTimeout(this.saveTimer)
+		this.saveTimer = null
+	}
+
+	/** Flush pending disk writes. Use force while disposing inside a batch. */
+	async flush(options: { force?: boolean } = {}): Promise<void> {
+		if (this.mode !== 'file') return
+		const hadScheduled = this.saveScheduled || this.saveTimer !== null
+		this.cancelScheduledSave()
+		if (this.saveInFlight) await this.saveInFlight.catch((): void => undefined)
+		if (!hadScheduled && !this.pendingSave) return
+		this.pendingSave = false
+		await this.saveToDisk({ force: options.force }).catch((): void => undefined)
+	}
+
+	private async loadFromDisk(): Promise<void> {
+		const text = await this.storage.getText(this.file)
+		if (text === undefined) {
+			await this.saveToDisk()
+			return
+		}
+
+		this.lastWrittenDigest = ohash(text)
+		let parsed: Partial<PluginConfigFile>
+		try {
+			parsed = SuperJSON.parse(text) as Partial<PluginConfigFile>
+		} catch (error) {
+			this.ctx.logger.warn('ConfigService parse failed; isolating broken config', {
+				file: this.file,
+				error,
+			})
+			await this.isolateBrokenConfigFile(text)
+			this.replaceConfigRecords({})
+			await this.saveToDisk()
+			return
+		}
+
+		this.replaceConfigRecords(parsed.plugins ? coercePlugins(parsed.plugins) : {})
+	}
+
+	private async isolateBrokenConfigFile(content: string): Promise<void> {
+		const safeTs = new Date().toISOString().replaceAll(/[:.]/g, '-')
+		const brokenFile = `${this.file}.broken.${safeTs}`
+		try {
+			await this.storage.put(brokenFile, content)
+		} catch (error) {
+			this.ctx.logger.warn('failed to isolate broken config file', {
+				file: this.file,
+				brokenFile,
+				error,
+			})
 		}
 	}
 
-	unsetConfigKeys(name: string, keys: readonly string[]) {
-		this.assertMutable('unsetConfigKeys')
-		const entry = this.data.plugins[name]
-		if (!entry) return
-		let changed = false
-		for (let i = 0; i < keys.length; i++) {
-			const k = keys[i]!
-			if (k in entry) {
-				delete entry[k]
-				changed = true
+	private async saveToDisk(options: { force?: boolean } = {}): Promise<void> {
+		if (!options.force && this.batching > 0) return
+
+		if (this.saveInFlight) {
+			this.saveAgain = true
+			await this.saveInFlight.catch((): void => undefined)
+			if (this.saveAgain) {
+				this.saveAgain = false
+				await this.saveToDisk(options)
 			}
+			return
 		}
-		if (changed) {
-			this.configDigestByPlugin.set(name, digest(entry))
-			this.bumpPluginRevision(name)
-			this.requestSave()
+
+		const content = SuperJSON.stringify({
+			version: 1,
+			plugins: this.getConfigSnapshot().plugins,
+		} satisfies PluginConfigFile)
+		const nextDigest = ohash(content)
+		if (nextDigest === this.lastWrittenDigest && (await this.storage.stat(this.file))) return
+
+		const task = this.storage.put(this.file, content).then((): undefined => {
+			this.lastWrittenDigest = nextDigest
+			return undefined
+		})
+		this.saveInFlight = task.finally(() => {
+			this.saveInFlight = null
+		})
+		await this.saveInFlight
+
+		if (this.saveAgain) {
+			this.saveAgain = false
+			await this.saveToDisk(options)
 		}
 	}
-}
 
-function clearRecord(record: Record<string, unknown>) {
-	for (const k in record) delete record[k]
+	async dispose(): Promise<void> {
+		if (this.disposed) return
+		this.disposed = true
+		await this.flush({ force: true }).catch((): void => undefined)
+	}
 }
 
 function defaultConfigServiceMode(
 	capability: PluxelContext.RootServices['persistence']['capability'],
 ): ConfigServiceMode {
-	if (capability === 'readonly') return 'readonly'
-	return 'file'
-}
-
-function createReadonlyView<T extends Record<string, unknown>>(target: T): Readonly<T> {
-	return new Proxy(target, {
-		set(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
-		defineProperty(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
-		deleteProperty(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
-	}) as Readonly<T>
+	return capability === 'readonly' ? 'readonly' : 'file'
 }
 
 function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {
@@ -562,17 +211,10 @@ function coercePlugins(input: Record<string, unknown>): Record<string, Record<st
 		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
 		const maybe = raw as Record<string, unknown>
 		const record = maybe.configRecord
-		if (record && typeof record === 'object' && !Array.isArray(record)) {
-			out[name] = Object.assign(Object.create(null), record as Record<string, unknown>)
-		} else {
-			out[name] = Object.assign(Object.create(null), raw as Record<string, unknown>)
-		}
+		out[name] = Object.assign(
+			Object.create(null),
+			record && typeof record === 'object' && !Array.isArray(record) ? record : raw,
+		)
 	}
 	return out
-}
-
-function digest(value: unknown): string {
-	// Hash-only change detection (no large intermediate strings like SuperJSON.stringify()).
-	// This is intentionally independent from the on-disk encoding; it only drives in-memory invalidation.
-	return ohash(value)
 }

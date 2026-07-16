@@ -3,7 +3,9 @@ import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { type ConfigSchemaMap, normalizeConfigRecord } from './ops'
 import { ConfigValidationError } from './types'
 
-const EMPTY_CONFIG: Readonly<Record<string, unknown>> = Object.freeze(Object.create(null))
+type ConfigRecord = Record<string, unknown>
+
+const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
 
 const serviceName = 'configService' as const
 declare module '@pluxel/context' {
@@ -15,24 +17,15 @@ declare module '@pluxel/context' {
 }
 
 /**
- * Core config service: provides a stable, minimal contract for plugin config access.
+ * The single in-memory config engine shared by core hosts and persistent runtimes.
  *
- * - Core owns "when/how @Config is injected".
- * - Core also provides the shared validation/defaulting engine via `ensureValidated(...)`.
- * - Apps/HMR override this service mainly for persistence.
- *
- * Readiness contract:
- * - `isReady/ready` exist on the core service so orchestrators can reliably wait for config-backed policies
- *   (HMR loads from disk asynchronously; core resolves immediately).
- *
+ * Core owns records, revisions, validation/defaulting and normalized snapshots. Runtime subclasses
+ * may load records and react to mutations, but persistence and host policy stay outside core.
  */
 @Injectable({ key: serviceName })
 export class ConfigService {
-	public ctx: PluxelContext
-	/** Core is always "ready"; overridden implementations (e.g. HMR) may load from disk asynchronously. */
-	public isReady = true
-	/** Resolves when initial config is ready; core resolves immediately. */
-	public readonly ready: Promise<void> = Promise.resolve()
+	private readonly records = new Map<string, ConfigRecord>()
+	private readonly rawViews = new Map<string, Readonly<ConfigRecord>>()
 	private schemaObjectSeq = 0
 	private readonly schemaObjectIds = new WeakMap<object, number>()
 	private readonly validated = new Map<
@@ -41,15 +34,68 @@ export class ConfigService {
 			rev: number
 			schemaMap: Record<string, StandardSchemaV1>
 			schemaSig?: string
-			snapshot: Readonly<Record<string, unknown>>
+			snapshot: Readonly<ConfigRecord>
 		}
 	>()
-	private store = new Map<string, Record<string, unknown>>()
 	private configSeq = 0
-	private configRevByPlugin = new Map<string, number>()
+	private readonly configRevByPlugin = new Map<string, number>()
+	private readyState = true
+	private readyTask: Promise<void> = Promise.resolve()
 
-	constructor(ctx: PluxelContext, _config: unknown) {
-		this.ctx = ctx
+	constructor(
+		public ctx: PluxelContext,
+		_config?: unknown,
+	) {}
+
+	get isReady(): boolean {
+		return this.readyState
+	}
+
+	get ready(): Promise<void> {
+		return this.readyTask
+	}
+
+	/** Install an asynchronous startup task without exposing persistence concepts to core. */
+	protected setReadyTask(task: Promise<void>): void {
+		this.readyState = false
+		this.readyTask = task.finally(() => {
+			this.readyState = true
+		})
+	}
+
+	/** Runtime policy hook. Core's in-memory implementation is always mutable. */
+	protected assertConfigMutable(_action: string): void {}
+
+	/** Runtime persistence hook, called exactly once after each effective record mutation. */
+	protected onConfigChanged(_name: string): void {}
+
+	/**
+	 * Replace raw records loaded by a host adapter.
+	 *
+	 * Existing record objects are updated in place so cached read views remain valid. Loading is a
+	 * state replacement, not an author mutation, so it intentionally does not call onConfigChanged().
+	 */
+	protected replaceConfigRecords(next: Readonly<Record<string, ConfigRecord>>): void {
+		const removed = new Set(this.records.keys())
+		for (const [name, value] of Object.entries(next)) {
+			if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+			removed.delete(name)
+			const existing = this.records.get(name)
+			if (existing) {
+				for (const key of Object.keys(existing)) delete existing[key]
+				Object.assign(existing, value)
+			} else {
+				this.records.set(name, Object.assign(Object.create(null), value))
+			}
+			this.bumpConfigRevision(name)
+		}
+
+		for (const name of removed) {
+			this.records.delete(name)
+			this.rawViews.delete(name)
+			this.configRevByPlugin.delete(name)
+			this.validated.delete(name)
+		}
 	}
 
 	private schemaMapSignature(schemaMap: Record<string, StandardSchemaV1>): string {
@@ -74,30 +120,24 @@ export class ConfigService {
 		return sig
 	}
 
-	/**
-	 * Raw (unvalidated) config snapshot.
-	 *
-	 * Prefer `getValidatedConfig()` unless you explicitly need to inspect persisted state
-	 * including unknown keys.
-	 */
-	getRawConfig<T extends object = Record<string, unknown>>(name?: string): Readonly<T> {
+	/** Raw persisted input. Prefer getValidatedConfig() in plugin code. */
+	getRawConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> {
 		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
 		if (!resolved) return EMPTY_CONFIG as T
-		return (this.store.get(resolved) as T | undefined) ?? (EMPTY_CONFIG as T)
+		const record = this.records.get(resolved)
+		if (!record) return EMPTY_CONFIG as T
+		const existing = this.rawViews.get(resolved)
+		if (existing) return existing as T
+		const view = createReadonlyView(record)
+		this.rawViews.set(resolved, view)
+		return view as T
 	}
 
 	getConfigRevision(name: string): number {
 		return this.configRevByPlugin.get(name) ?? 0
 	}
 
-	/**
-	 * Get the current validated snapshot for a plugin.
-	 *
-	 * This never falls back to raw config. Callers must either:
-	 * - call `ensureValidated(...)` beforehand; or
-	 * - use `getRawConfig(...)` explicitly.
-	 */
-	getValidatedConfig<T extends object = Record<string, unknown>>(name?: string): Readonly<T> {
+	getValidatedConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> {
 		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
 		if (!resolved) throw new Error('[ConfigService] Missing plugin name (not in plugin context).')
 		const rev = this.getConfigRevision(resolved)
@@ -110,9 +150,7 @@ export class ConfigService {
 		return cached.snapshot as T
 	}
 
-	tryGetValidatedConfig<T extends object = Record<string, unknown>>(
-		name?: string,
-	): Readonly<T> | undefined {
+	tryGetValidatedConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> | undefined {
 		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
 		if (!resolved) return undefined
 		const rev = this.getConfigRevision(resolved)
@@ -121,25 +159,13 @@ export class ConfigService {
 		return cached.snapshot as T
 	}
 
-	/**
-	 * Ensure config is validated and missing defaults are persisted.
-	 *
-	 * Orchestrators (HMR/loader) should call this before enabling/starting a plugin so:
-	 * - invalid config blocks start early;
-	 * - missing values are filled deterministically (defaults become part of persisted config).
-	 */
 	async ensureValidated(
 		pluginName: string,
 		schemaMap: Record<string, StandardSchemaV1>,
 		options: { missingObjectDefault?: unknown } = {},
-	): Promise<Readonly<Record<string, unknown>>> {
+	): Promise<Readonly<ConfigRecord>> {
 		await this.ready
 
-		// Fast-path: if raw config revision didn't change AND schema is stable, return cached snapshot.
-		//
-		// Schema stability is usually "same object reference" (best case).
-		// If callers recreate the schemaMap object, we lazily compute a signature derived from schema
-		// *references* to avoid revalidation; this keeps ohash overhead off the hot path.
 		const curRev = this.getConfigRevision(pluginName)
 		const cached = this.validated.get(pluginName)
 		let nextSchemaSig: string | undefined
@@ -151,10 +177,10 @@ export class ConfigService {
 			if (cachedSig === nextSchemaSig) return cached.snapshot
 		}
 
-		const raw = this.getRawConfig<Record<string, unknown>>(pluginName)
-		const res = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
-		if (res.ok === false) {
-			const errors = res.errors
+		const raw = this.getRawConfig<ConfigRecord>(pluginName)
+		const result = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
+		if (result.ok === false) {
+			const errors = result.errors
 			let where = '_root'
 			let message = 'unknown'
 
@@ -175,56 +201,87 @@ export class ConfigService {
 			throw new ConfigValidationError(`插件 ${pluginName} 配置无效：${where} -> ${message}`, errors)
 		}
 
-		if (Object.keys(res.patch).length > 0) this.patchConfig(pluginName, res.patch)
+		if (Object.keys(result.patch).length > 0) this.patchConfig(pluginName, result.patch)
 
 		const rev = this.getConfigRevision(pluginName)
 		this.validated.set(pluginName, {
 			rev,
 			schemaMap,
 			schemaSig: nextSchemaSig,
-			snapshot: res.snapshot,
+			snapshot: result.snapshot,
 		})
-		return res.snapshot
+		return result.snapshot
 	}
 
-	patchConfig<T extends object = Record<string, unknown>>(name: string, patch: Partial<T>) {
-		let entry = this.store.get(name)
+	/** Detached read model for persistence and host diagnostics. */
+	getConfigSnapshot(): { plugins: Record<string, ConfigRecord> } {
+		const plugins: Record<string, ConfigRecord> = Object.create(null)
+		for (const [name, record] of this.records) plugins[name] = { ...record }
+		return { plugins }
+	}
+
+	patchConfig<T extends object = ConfigRecord>(name: string, patch: Partial<T>): void {
+		this.assertConfigMutable('patchConfig')
+		let entry = this.records.get(name)
 		if (!entry) {
 			entry = Object.create(null)
-			this.store.set(name, entry)
+			this.records.set(name, entry)
 		}
 		let changed = false
-		for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
-			if (entry[k] !== v) {
-				entry[k] = v
+		for (const [key, value] of Object.entries(patch as ConfigRecord)) {
+			if (entry[key] !== value) {
+				entry[key] = value
 				changed = true
 			}
 		}
 		if (!changed) return
-		this.configRevByPlugin.set(name, ++this.configSeq)
-		this.validated.delete(name)
+		this.bumpConfigRevision(name)
+		this.onConfigChanged(name)
 	}
 
-	unsetConfigKeys(name: string, keys: readonly string[]) {
-		const entry = this.store.get(name)
+	unsetConfigKeys(name: string, keys: readonly string[]): void {
+		this.assertConfigMutable('unsetConfigKeys')
+		const entry = this.records.get(name)
 		if (!entry) return
 		let changed = false
 		for (let i = 0; i < keys.length; i++) {
-			const k = keys[i]!
-			if (k in entry) {
-				delete entry[k]
+			const key = keys[i]!
+			if (key in entry) {
+				delete entry[key]
 				changed = true
 			}
 		}
 		if (!changed) return
+		this.bumpConfigRevision(name)
+		this.onConfigChanged(name)
+	}
+
+	batch(run: () => void): void {
+		run()
+	}
+
+	private bumpConfigRevision(name: string): void {
 		this.configRevByPlugin.set(name, ++this.configSeq)
 		this.validated.delete(name)
 	}
+}
 
-	/**
-	 * 事务批量修改：Core 版为同步合批（与 HMR 版 API 对齐）。
-	 */
-	batch(run: () => void) {
-		run()
-	}
+function createReadonlyView<T extends ConfigRecord>(target: T): Readonly<T> {
+	return new Proxy(target, {
+		set(): boolean {
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
+		},
+		defineProperty(): boolean {
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
+		},
+		deleteProperty(): boolean {
+			throw new Error(
+				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
+			)
+		},
+	}) as Readonly<T>
 }

@@ -4,7 +4,7 @@
 
 ```text
 core: schema declaration -> defaults -> validation -> normalized snapshot
-runtime: profile -> persistence/watch -> patch/reset -> workbench read model
+runtime: core engine subclass -> persistence -> patch/reset -> workbench read model
 ```
 
 ## 不变量
@@ -14,6 +14,7 @@ runtime: profile -> persistence/watch -> patch/reset -> workbench read model
 - 配置在实例构造后、`init()` 前注入；constructor 不读取配置值。
 - config metadata 是 build-time 数据，不是 runtime AST 推断。
 - core validation 不依赖文件系统或 Workbench Plane。
+- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；runtime 子类只增加持久化策略。
 - static application build 固定的是 plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
 
 ## Static startup config

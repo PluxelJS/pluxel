@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { Bench } from 'tinybench'
 import { ContainerBuilder } from 'diod'
-import { DraftGraph, Runtime, classProvider } from '../dist/index.mjs'
+import { DraftGraph, Runtime, classProvider } from '../dist/bench/index.mjs'
 
 type BenchCase = {
 	id: string
@@ -463,5 +463,5 @@ const markdown = [
 	'',
 ].join('\n')
 
-writeFileSync(new URL('core-di-vs-diod.json', benchmarksDir), JSON.stringify(jsonReport, null, 2))
-writeFileSync(new URL('core-di-vs-diod.md', benchmarksDir), markdown, 'utf8')
+writeFileSync(new URL('di-kernel-vs-diod.json', benchmarksDir), JSON.stringify(jsonReport, null, 2))
+writeFileSync(new URL('di-kernel-vs-diod.md', benchmarksDir), markdown, 'utf8')

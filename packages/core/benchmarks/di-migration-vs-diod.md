@@ -6,9 +6,9 @@ This document compares the current `@pluxel/core` DI migration against the pre-m
 
 Two benchmark layers were used:
 
-1. Pure DI kernel:
-   `packages/core-di/bench/compare-diod.bench.ts`
-   This runs current `core-di` and workspace `diod` side by side in the same process.
+1. Pure DI kernel archived result:
+   `packages/core/benchmarks/di-kernel-vs-diod.md`
+   This records the internal kernel and `diod` comparison used to validate the migration.
 
 2. Real plugin lifecycle:
    `packages/core/bench/pluginLifecycle.bench.ts`
@@ -35,14 +35,15 @@ PLUXEL_BENCH_TIME=1000 PLUXEL_BENCH_WARMUP_TIME=300 PLUXEL_BENCH_STRICT=0 \
 PLUXEL_BENCH_BASELINE=packages/core/benchmarks/plugin-lifecycle.diod-baseline.json \
   pnpm --filter @pluxel/core bench
 
-# current pure DI kernel vs diod
+# current internal DI kernel vs archived workspace diod
 PLUXEL_DI_BENCH_TIME_MS=1000 PLUXEL_DI_WARMUP_MS=300 PLUXEL_DI_BENCH_ROUNDS=3 \
-  pnpm --filter @pluxel/core-di bench
+  pnpm --filter @pluxel/core bench:di
+
 ```
 
 ## Raw Reports
 
-- Pure DI report: `packages/core-di/benchmarks/core-di-vs-diod.md`
+- Pure DI report: `packages/core/benchmarks/di-kernel-vs-diod.md`
 - Current lifecycle report: `packages/core/benchmarks/plugin-lifecycle.md`
 - Current lifecycle diff JSON: `packages/core/benchmarks/plugin-lifecycle-diff.json`
 - Pre-migration lifecycle baseline JSON: `packages/core/benchmarks/plugin-lifecycle.diod-baseline.json`
@@ -51,7 +52,7 @@ PLUXEL_DI_BENCH_TIME_MS=1000 PLUXEL_DI_WARMUP_MS=300 PLUXEL_DI_BENCH_ROUNDS=3 \
 
 ### 1. Pure DI kernel: clear win
 
-`core-di` won all 8 direct DI scenarios against `diod`.
+The internal DI kernel won all 8 direct DI scenarios against `diod`.
 
 | Scenario | Speedup |
 | --- | ---: |
@@ -113,7 +114,7 @@ The migration is now a confirmed performance win both at the DI kernel layer and
 
 The benchmark-backed statement that is safe to make is:
 
-- `core-di` itself is substantially faster than `diod`.
+- The internal DI kernel is substantially faster than `diod`.
 - In real plugin lifecycle paths, every meaningful measured task improved versus the pre-migration `diod` baseline.
 - The only residual regression is empty-commit ops/sec with unchanged `0.002ms` mean latency, which is below practical concern.
 

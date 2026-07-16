@@ -646,9 +646,9 @@ importers:
       '@pluxel/context':
         specifier: workspace:*
         version: link:../context
-      '@pluxel/core-di':
+      diod:
         specifier: workspace:*
-        version: link:../core-di
+        version: link:../diod
       option-t:
         specifier: ^55.1.2
         version: 55.1.2
@@ -661,15 +661,6 @@ importers:
       unplugin-macros:
         specifier: ^0.20.2
         version: 0.20.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.5)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
-
-  packages/core-di:
-    devDependencies:
-      diod:
-        specifier: workspace:*
-        version: link:../diod
-      tinybench:
-        specifier: ^6.0.0
-        version: 6.0.2
 
   packages/diod:
     devDependencies:
