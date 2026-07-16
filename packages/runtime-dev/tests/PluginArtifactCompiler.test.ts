@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { join } from 'pathe'
+import { pathToFileURL } from 'node:url'
+import { defineNodeModule } from '@pluxel/runtime'
+import { dirname, join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -28,11 +30,18 @@ const pluginBuildMocks = vi.hoisted(() => ({
 	resolveWorkbenchUiBuildSignature: vi.fn(() => 'ui-build-signature'),
 }))
 
+const nodeBuildMocks = vi.hoisted(() => ({
+	buildNodeModule: vi.fn(),
+	validateNodeModuleArtifact: vi.fn(),
+}))
+
 vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 	buildWorkbenchUiRemote: pluginBuildMocks.buildWorkbenchUiRemote,
 	resolveWorkbenchFederationShared: pluginBuildMocks.resolveWorkbenchFederationShared,
 	resolveWorkbenchUiBuildSignature: pluginBuildMocks.resolveWorkbenchUiBuildSignature,
 }))
+
+vi.mock('@pluxel/rolldown/vite/node-module', () => nodeBuildMocks)
 
 import {
 	PluginArtifactCompiler,
@@ -64,6 +73,64 @@ describe('PluginArtifactCompiler', () => {
 		pluginBuildMocks.buildWorkbenchUiRemote.mockClear()
 		pluginBuildMocks.resolveWorkbenchFederationShared.mockClear()
 		pluginBuildMocks.resolveWorkbenchUiBuildSignature.mockClear()
+		nodeBuildMocks.buildNodeModule
+			.mockReset()
+			.mockImplementation(async (input: { outFile: string }) => {
+				await mkdir(dirname(input.outFile), { recursive: true })
+				await writeFile(input.outFile, 'export const ready = true\n')
+			})
+		nodeBuildMocks.validateNodeModuleArtifact.mockReset().mockResolvedValue(undefined)
+	})
+
+	it('shares Node builds, reports failed rebuilds, and keeps the last good artifact', async () => {
+		await using fixture = await createFixture({
+			'plugin.ts': 'export const plugin = true\n',
+			'task.ts': 'export const version = 1\n',
+		})
+		const host = createHost()
+		const service = new PluginArtifactCompiler(
+			host.ctx,
+			{},
+			{ cacheDir: fixture.getPath('.pluxel/artifacts') },
+		)
+		const declaration = defineNodeModule(pathToFileURL(fixture.getPath('plugin.ts')), './task.ts')
+		const updates: URL[][] = [[], []]
+		const errors: unknown[][] = [[], []]
+		const consumers = await Promise.all(
+			[0, 1].map((index) =>
+				service.watchNodeModule(
+					declaration,
+					(url) => void updates[index]!.push(url),
+					(error) => errors[index]!.push(error),
+				),
+			),
+		)
+		expect(nodeBuildMocks.buildNodeModule).toHaveBeenCalledTimes(1)
+		expect(consumers[0]!.url).toEqual(consumers[1]!.url)
+
+		const internals = service as unknown as {
+			nodeEntries: Map<string, { dirty: boolean }>
+			compileNodeEntry(entry: { dirty: boolean }, initial: boolean): Promise<void>
+		}
+		const entry = [...internals.nodeEntries.values()][0]!
+		const rebuildError = new Error('broken rebuild')
+		nodeBuildMocks.buildNodeModule.mockRejectedValueOnce(rebuildError)
+		await writeFile(fixture.getPath('task.ts'), 'export const version = 2\n')
+		entry.dirty = true
+		await internals.compileNodeEntry(entry, false)
+		expect(errors).toEqual([[rebuildError], [rebuildError]])
+		expect(updates).toEqual([[], []])
+
+		await writeFile(fixture.getPath('task.ts'), 'export const version = 3\n')
+		entry.dirty = true
+		await internals.compileNodeEntry(entry, false)
+		expect(updates.map((items) => items.length)).toEqual([1, 1])
+		expect(updates[0]![0]).toEqual(updates[1]![0])
+		expect(nodeBuildMocks.buildNodeModule).toHaveBeenCalledTimes(3)
+
+		await Promise.all(consumers.map((consumer) => consumer.dispose()))
+		service.dispose()
+		await host.dispose()
 	})
 
 	it('resolves relative UI entries from the declaring plugin source file', async () => {

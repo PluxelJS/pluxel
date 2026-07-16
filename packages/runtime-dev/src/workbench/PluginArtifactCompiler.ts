@@ -6,13 +6,13 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context, type NodeModuleDeclaration } from '@pluxel/runtime'
 import {
 	createCompiledWorkbenchArtifact,
+	findNearestPackageRoot,
+	findRuntimeModuleId,
 	readNodeModuleDeclaration,
+	resolveModuleIdBaseDir,
 	type NodeModuleSourceSubscription,
 	type WorkbenchArtifactService,
-	resolveModuleIdBaseDir,
-	findRuntimeModuleId,
 } from '@pluxel/runtime/internal'
-import { findNearestPackageRoot } from '@pluxel/runtime/shared'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -442,6 +442,16 @@ export class PluginArtifactCompiler {
 					consumers: entry.listeners.size,
 					error,
 				})
+				for (const listener of entry.listeners) {
+					try {
+						listener.onError(error)
+					} catch (listenerError) {
+						this.ctx.logger.error('failed to report Node module rebuild error', {
+							artifactKey: entry.key,
+							listenerError,
+						})
+					}
+				}
 			}
 		} while (entry.active && entry.dirty)
 	}
