@@ -68,6 +68,7 @@ export default defineConfig({
 	},
 	tsconfig: './tsconfig.json',
 	dts: {
+		eager: true,
 		sourcemap: true,
 	},
 	format: ['esm'],

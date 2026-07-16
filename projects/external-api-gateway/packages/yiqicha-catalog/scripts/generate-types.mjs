@@ -13,9 +13,8 @@ export async function writeGeneratedSources(apis) {
 
 export function getApiEntries(apis) {
 	const baseNames = apis.map((api) => {
-		const raw =
-			new URL(api.apiUrl).pathname.split('/').filter(Boolean).at(-1) ?? `api${api.apiCode}`
-		let key = raw.replace(/[^A-Za-z0-9_$]/g, '')
+		const raw = new URL(api.apiUrl).pathname.split('/').findLast(Boolean) ?? `api${api.apiCode}`
+		let key = raw.replaceAll(/[^A-Za-z0-9_$]/g, '')
 
 		if (!/^[A-Za-z_$]/.test(key)) key = `api${api.apiCode}`
 
@@ -121,7 +120,7 @@ function renderObject(fields, sample, depth) {
 	const indent = '  '.repeat(depth)
 	const childIndent = '  '.repeat(depth + 1)
 
-	if (fields.length === 0) return '{\n' + `${childIndent}[key: string]: unknown;\n${indent}}`
+	if (fields.length === 0) return `{\n${childIndent}[key: string]: unknown;\n${indent}}`
 
 	return `{\n${renderProperties(fields, sample, 'response', depth + 1).join('\n')}\n${indent}}`
 }
@@ -240,7 +239,7 @@ function isPrimitiveType(type) {
 function normalizeType(type) {
 	const normalized = String(type ?? '')
 		.toLowerCase()
-		.replace(/\s+/g, '')
+		.replaceAll(/\s+/g, '')
 
 	if (normalized === 'array' || normalized === 'list' || normalized.includes('list<')) {
 		return 'array'
@@ -287,7 +286,7 @@ function unique(values) {
 
 function toPascalCase(value) {
 	const words = value
-		.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+		.replaceAll(/([a-z0-9])([A-Z])/g, '$1 $2')
 		.split(/[^A-Za-z0-9]+/)
 		.filter(Boolean)
 	const name = words.map((word) => word.slice(0, 1).toUpperCase() + word.slice(1)).join('')

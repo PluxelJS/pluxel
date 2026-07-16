@@ -1,5 +1,13 @@
-export { EvtChannel } from '@pluxel/core/services'
-export * from './authoring'
+import './context-augment'
+import './events'
+import './services/debug'
+import './services/vault'
+import './services/workbench/WorkbenchService'
+
+export * from '@pluxel/core'
+export { Config, type ConfigSchemaMap } from './base'
+export { f, v } from './config'
+export type { RuntimeEvents } from './events'
 export {
 	PersistenceError,
 	createMemoryPersistenceBackend,

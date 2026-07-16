@@ -73,7 +73,7 @@ dependent 复用有两条明确路径：
 ## 包边界
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
-- `@pluxel/runtime`：插件作者和常驻 runtime；
+- `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
 - `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
 - `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource client；

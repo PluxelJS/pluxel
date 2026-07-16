@@ -10,21 +10,6 @@ import {
 	type ObjectSchemaAsync,
 } from 'valibot'
 
-export type { RuntimeEvents } from './events'
-
-export {
-	BaseFeature,
-	BasePlugin,
-	cfg,
-	Context,
-	defineLazyFeature,
-	optionalPlugin,
-	ForkablePlugin,
-	HostBoundFeature,
-	Plugin,
-} from '@pluxel/core'
-export type { OptionalPluginRef } from '@pluxel/core'
-
 type ConfigSchema =
 	| ObjectSchema<ObjectEntries, ErrorMessage<ObjectIssue> | undefined>
 	| ObjectSchemaAsync<ObjectEntriesAsync, ErrorMessage<ObjectIssue> | undefined>

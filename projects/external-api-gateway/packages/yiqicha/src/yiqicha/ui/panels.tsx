@@ -29,7 +29,7 @@ import {
 } from '@repo/external-api-gateway-yiqicha-catalog'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_YIQICHA_BASE_URL } from '@repo/external-api-gateway-shared/constants'
-import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from '../contracts'
+import type { YiqichaSettingsDoc } from '../contracts'
 import { useYiqichaHistoryModel, useYiqichaProviderModel } from './runtime'
 
 type RequestState = {

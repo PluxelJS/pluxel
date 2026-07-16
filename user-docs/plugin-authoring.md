@@ -8,6 +8,8 @@
 插件测试使用 [`testing.md`](testing.md) 的 `@pluxel/test/vitest` 标准工具链，不用 raw runner 绕过
 decorator 和 metadata transform。
 
+插件作者统一从 `@pluxel/runtime` 导入；默认入口直接转发 core 作者 API，并增加常驻 runtime 能力。
+
 ## 先记住四件事
 
 1. 插件是依赖和生命周期单元。

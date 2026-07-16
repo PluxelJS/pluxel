@@ -4,10 +4,8 @@ import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
 	createEmptyAccessState,
-	type AccessOverviewDoc,
 	type AccessState,
 	type ChatRole,
-	type ChatUser,
 	type PermissionDeclaration,
 	type PermissionGrant,
 } from './model.ts'

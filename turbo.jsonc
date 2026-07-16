@@ -235,6 +235,11 @@
 			],
 			"outputLogs": "errors-only",
 		},
+		"typecheck": {
+			"dependsOn": ["^build", "@pluxel/runtime#build"],
+			"outputs": [],
+			"outputLogs": "errors-only",
+		},
 		"dev": {
 			"cache": false,
 			"persistent": true,

@@ -31,7 +31,7 @@ import {
 	DEFAULT_ZHIPU_LAYOUT_MODEL,
 	DEFAULT_ZHIPU_TOKENIZER_MODEL,
 } from '@repo/external-api-gateway-shared/constants'
-import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from '../contracts'
+import type { ZhipuSettingsDoc } from '../contracts'
 import { useZhipuHistoryModel, useZhipuProviderModel } from './runtime'
 
 type Mode = 'files-ocr' | 'layout-parsing'

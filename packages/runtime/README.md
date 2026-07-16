@@ -41,7 +41,7 @@ this.ctx.workbench.mount(extension, {
 
 公开入口：
 
-- `@pluxel/runtime`：插件、配置和常驻 runtime API；
+- `@pluxel/runtime`：原样转发 core 作者 API，并增加配置和常驻 runtime API；
 - `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
 - `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks 和 UI exports；

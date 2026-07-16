@@ -328,6 +328,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps runtime authoring imports separate from route service registration', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const coreIndex = await readFile(`${root}/packages/core/src/index.ts`, 'utf8')
 		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
 		const runtimeAuthoring = await readFile(`${root}/packages/runtime/src/authoring.ts`, 'utf8')
 		const runtimeStaticIndex = await readFile(
@@ -339,9 +340,13 @@ describe('toolchain package boundaries', () => {
 			'utf8',
 		)
 
+		expect(coreIndex).toContain("import './logger'")
+		expect(coreIndex).toContain("import './services'")
+		expect(coreIndex).toContain("export { EvtChannel } from './services'")
 		expect(runtimeIndex).not.toContain("import './runtime/register/static'")
-		expect(runtimeIndex).toContain("export * from './authoring'")
+		expect(runtimeIndex).toContain("export * from '@pluxel/core'")
 		expect(runtimeAuthoring).not.toContain('runtime/register')
+		expect(runtimeAuthoring).toContain("export * from '@pluxel/core'")
 		expect(runtimeStaticIndex).toContain("import '@pluxel/runtime/register/static'")
 		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime/authoring'")
 		expect(configSourcePlugin).toContain(

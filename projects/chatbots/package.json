@@ -7,8 +7,8 @@
 		"start": "vite --host 127.0.0.1",
 		"static": "vite --host 127.0.0.1",
 		"build": "tsdown && vite build",
-		"test": "vitest run --config vitest.config.ts",
-		"typecheck": "tsc --noEmit --pretty false && pnpm -r --filter '@repo/chatbots-*' typecheck"
+		"test": "vitest run --config vitest.config.ts test/",
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@mantine/core": "^9.4.1",

@@ -65,13 +65,16 @@ jobs:
       - name: Check release metadata
         run: pnpm run release:check
 
-      - name: Build and test
+      - name: Lint and check formatting
+        run: pnpm run lint && pnpm run format:check
+
+      - name: Typecheck, build, and test
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec turbo run build test "--filter=...[origin/${BASE_REF}]"
+            pnpm exec turbo run typecheck build test "--filter=...[origin/${BASE_REF}]"
           else
-            pnpm exec turbo run build test
+            pnpm exec turbo run typecheck build test
           fi
