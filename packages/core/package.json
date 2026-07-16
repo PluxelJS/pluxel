@@ -80,8 +80,8 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"build": "tsdown",
-		"bench:dist": "pnpm run build && node bench/pluginLifecycle.bench.ts",
-		"bench:di": "pnpm --filter diod build && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node bench/compare-diod.bench.ts"
+		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
+		"bench:di": "pnpm --filter diod build && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",

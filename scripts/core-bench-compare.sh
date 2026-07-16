@@ -23,6 +23,12 @@ BASE_SHA="$(git rev-parse "$BASE_REF")"
 HEAD_SHA="$(git rev-parse "$HEAD_REF")"
 CURRENT_SHA="$(git rev-parse HEAD)"
 
+NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
+if [ "$NODE_MAJOR" -lt 24 ]; then
+	echo "[bench] Node 24 or newer is required; found $(node --version)." >&2
+	exit 1
+fi
+
 WORK_ROOT="${PLUXEL_BENCH_WORKDIR:-${TMPDIR:-/tmp}/pluxel-core-bench-${USER:-user}}"
 BASE_DIR="${WORK_ROOT}/core-base"
 HEAD_DIR="$ROOT"
@@ -70,17 +76,34 @@ run_bench() {
 		echo "[bench] ${label} install log: ${install_log}"
 	fi
 
+	# Build historical toolchain helpers explicitly when the core config imports their dist entry.
+	# The current core config is self-contained, so it skips this branch.
+	if grep -q "@pluxel/rolldown" packages/core/tsdown.config.ts; then
+		pnpm --filter @pluxel/rolldown build >"$log_file" 2>&1
+	elif grep -q "@pluxel/build" packages/core/tsdown.config.ts; then
+		pnpm --filter @pluxel/build build >"$log_file" 2>&1
+	else
+		: >"$log_file"
+	fi
+	if ! pnpm --filter @pluxel/core build >>"$log_file" 2>&1; then
+		tail -200 "$log_file"
+		return 1
+	fi
+
 	if [ -n "$reference" ]; then
 		if ! PLUXEL_BENCH_OUTPUT_DIR="$output_dir" \
 			PLUXEL_BENCH_REFERENCE="$reference" \
-			pnpm --filter @pluxel/core bench:dist >"$log_file" 2>&1; then
+			PLUXEL_BENCH_BASELINE="$reference" \
+			node --experimental-strip-types "$ROOT/scripts/core-bench-node-runner.mjs" \
+				packages/core/bench/pluginLifecycle.bench.ts >>"$log_file" 2>&1; then
 			tail -200 "$log_file"
 			return 1
 		fi
 	else
 		if ! PLUXEL_BENCH_OUTPUT_DIR="$output_dir" \
 			PLUXEL_BENCH_STRICT=0 \
-			pnpm --filter @pluxel/core bench:dist >"$log_file" 2>&1; then
+			node --experimental-strip-types "$ROOT/scripts/core-bench-node-runner.mjs" \
+				packages/core/bench/pluginLifecycle.bench.ts >>"$log_file" 2>&1; then
 			tail -200 "$log_file"
 			return 1
 		fi
