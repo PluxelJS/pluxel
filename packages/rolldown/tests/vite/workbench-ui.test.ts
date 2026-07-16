@@ -93,11 +93,14 @@ describe('buildWorkbenchUiRemote', () => {
 				publicPath: '/test/',
 				sharedPackages: ['react'],
 				minify: false,
+				sourcemap: true,
 			}),
 		])
 
-		for (const result of results) {
+		for (const [index, result] of results.entries()) {
 			await access(result.manifestPath)
+			const outputFiles = await readdir(result.outDir, { recursive: true })
+			expect(outputFiles.some((file) => String(file).endsWith('.map'))).toBe(index === 1)
 			const manifest = JSON.parse(await readFile(result.manifestPath, 'utf-8')) as {
 				metaData?: { remoteEntry?: { name?: string } }
 			}

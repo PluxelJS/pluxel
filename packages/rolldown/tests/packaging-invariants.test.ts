@@ -265,6 +265,10 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-static/src/internal/host.ts`,
 			'utf8',
 		)
+		const staticHostRuntimeEntry = await readFile(
+			`${root}/packages/runtime/src/internal-static-host.ts`,
+			'utf8',
+		)
 
 		expect(buildEntry).toContain("export * from './static-application'")
 		expect(runtimeStatic.exports).toHaveProperty('./internal/node-application')
@@ -273,7 +277,12 @@ describe('toolchain package boundaries', () => {
 		expect(nodeApplication).not.toContain('@pluxel/runtime/internal/static')
 		expect(nodeWorkbenchApplication).toContain('@pluxel/runtime/internal/static')
 		expect(staticHost).toContain('@pluxel/runtime/internal/static-host')
+		expect(staticHost).not.toMatch(/from ['"]@pluxel\/runtime\/internal['"]/)
 		expect(staticHost).not.toContain("from '@pluxel/runtime/internal/static'")
+		expect(staticHostRuntimeEntry).toContain("from './services/RuntimeStateHelpers'")
+		expect(staticHostRuntimeEntry).toContain("from './runtime/capabilities'")
+		expect(staticHostRuntimeEntry).not.toContain("from './runtime/module-id'")
+		expect(staticHostRuntimeEntry).not.toContain("from './shared'")
 		expect(freezer).toContain('export function staticApplication(')
 		expect(freezer).toContain("await import('nf3')")
 		expect(freezer).toContain('createPluginBuildPipeline({')

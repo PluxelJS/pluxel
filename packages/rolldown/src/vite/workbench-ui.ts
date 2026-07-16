@@ -31,6 +31,7 @@ export type BuildWorkbenchUiRemoteOptions = {
 	outDir?: string
 	sharedPackages?: readonly string[]
 	minify?: boolean
+	sourcemap?: boolean
 	publicPath?: string
 	/** Extra Vite config merged into this workbench UI remote build. */
 	vite?: InlineConfig
@@ -58,6 +59,7 @@ type WorkbenchUiBuildPayload = {
 	shared: ModuleFederationOptions['shared']
 	publicPath: string
 	minify: boolean
+	sourcemap: boolean
 	paraglide: SerializedParaglideConfig | null
 	vite?: InlineConfig
 }
@@ -92,6 +94,7 @@ export async function buildWorkbenchUiRemote(
 		resolvedShared.signature,
 		publicPath,
 		String(options.minify ?? true),
+		String(options.sourcemap ?? false),
 		paraglide?.project ?? '',
 		paraglide?.outdir ?? '',
 		buildSignature,
@@ -114,6 +117,7 @@ export async function buildWorkbenchUiRemote(
 					shared: resolvedShared.shared,
 					publicPath,
 					minify: options.minify ?? true,
+					sourcemap: options.sourcemap ?? false,
 					vite: options.vite,
 					paraglide: paraglide
 						? {
@@ -194,7 +198,7 @@ async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
 			manifest: false,
 			minify: payload.minify,
 			cssCodeSplit: true,
-			sourcemap: true,
+			sourcemap: payload.sourcemap,
 			rollupOptions: {
 				input: payload.entryPath,
 			},

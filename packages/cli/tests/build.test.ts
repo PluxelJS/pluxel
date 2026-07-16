@@ -562,6 +562,7 @@ describe('build command', () => {
 			const files = await readdir(workbenchRoot, { recursive: true })
 			expect(files.filter((file) => String(file).endsWith('mf-manifest.json'))).toHaveLength(2)
 			expect(files.filter((file) => String(file).endsWith('remoteEntry.js'))).toHaveLength(2)
+			expect(files.some((file) => String(file).endsWith('.map'))).toBe(false)
 			const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
 			const uiOutput = await Promise.all(
 				jsFiles.map((file) => readFile(resolve(workbenchRoot, file), 'utf-8')),

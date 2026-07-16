@@ -794,6 +794,7 @@ export class PluginArtifactCompiler {
 			publicPath,
 			sharedPackages,
 			minify: false,
+			sourcemap: true,
 			vite: this.vite,
 			cacheKey: this.viteCacheKey,
 		})

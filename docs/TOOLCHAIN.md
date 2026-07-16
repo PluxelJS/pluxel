@@ -135,6 +135,7 @@ compiler 在绑定 declaration 时立即发布 `building`；ready/error revision
 
 生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version、
 compiler version 和显式 Vite cache key。UI Contract 和 UI runtime 都是 singleton Federation shared package。
+production remote 不输出内嵌源码的 sourcemap；runtime-dev remote 保留 sourcemap 供开发调试。
 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
 relative file 与 sha256；variant 只改变 browser Workbench closure。

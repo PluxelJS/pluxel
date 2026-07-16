@@ -9,18 +9,16 @@ import {
 } from '@pluxel/core'
 
 import {
+	createContextPluginLogPolicyStore,
+	createRuntimeLogging,
 	isPluginEnabled,
+	isWorkbenchEnabled,
 	setPluginEnabled,
+	workbenchAdminAccess,
+	withWorkbenchPluginContext,
 	type RuntimePluginDependencyInfo,
 	type RuntimePluginSource,
 	type RuntimeRouteCapabilities,
-} from '@pluxel/runtime/internal'
-import {
-	createContextPluginLogPolicyStore,
-	createRuntimeLogging,
-	isWorkbenchEnabled,
-	workbenchAdminAccess,
-	withWorkbenchPluginContext,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
 } from '@pluxel/runtime/internal/static-host'

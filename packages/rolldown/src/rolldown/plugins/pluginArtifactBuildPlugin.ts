@@ -25,7 +25,7 @@ import {
 	resolvePluginArtifactKey,
 } from '../../vite/declaration.ts'
 
-const WORKBENCH_UI_BUILD_CACHE_VERSION = 1
+const WORKBENCH_UI_BUILD_CACHE_VERSION = 2
 const NODE_MODULE_BUILD_CACHE_VERSION = 1
 const ARTIFACT_STAMP_FILE = 'pluxel-workbench.json'
 const CODE_HINT = /\b(?:workbench\s*\.\s*extension|defineNodeModule)\s*\(/
@@ -216,6 +216,7 @@ async function buildProductionRemote(
 				outDir: cachedOutDir,
 				sharedPackages,
 				minify: target.minify ?? true,
+				sourcemap: false,
 				vite: target.vite,
 				cacheKey: target.cacheKey,
 			})
