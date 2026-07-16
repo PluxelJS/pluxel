@@ -19,6 +19,7 @@ defaults:
 
 env:
   CI: 'true'
+  PNPM_CONFIG_PM_ON_FAIL: 'ignore'
 
 jobs:
   publish:

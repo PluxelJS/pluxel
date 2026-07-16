@@ -25,6 +25,7 @@ defaults:
 env:
   CI: 'true'
   NODE_OPTIONS: '--max-old-space-size=4096'
+  PNPM_CONFIG_PM_ON_FAIL: 'ignore'
   PLUXEL_FAST_BUILD: 'true'
 
 jobs:
@@ -53,12 +54,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ${{ steps.pnpm-store.outputs.path }}
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
             .turbo
-          key: ${{ runner.os }}-pnpm-turbo-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ runner.os }}-pnpm-files-v2-turbo-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-turbo-${{ hashFiles('pnpm-lock.yaml') }}-
-            ${{ runner.os }}-pnpm-turbo-
+            ${{ runner.os }}-pnpm-files-v2-turbo-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-pnpm-files-v2-turbo-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

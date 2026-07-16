@@ -31,6 +31,7 @@ on:
 
 env:
   BENCH_TOLERANCE: '5'
+  PNPM_CONFIG_PM_ON_FAIL: 'ignore'
 
 concurrency:
   group: core-bench-${{ github.ref }}
@@ -75,11 +76,13 @@ jobs:
       - name: Restore dependency cache
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ runner.os }}-pnpm-files-v2-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}-
-            ${{ runner.os }}-pnpm-
+            ${{ runner.os }}-pnpm-files-v2-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-pnpm-files-v2-
 
       - name: Run base/head benchmark comparison
         env:
