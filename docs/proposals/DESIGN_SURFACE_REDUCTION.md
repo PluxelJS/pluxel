@@ -8,58 +8,215 @@
 
 建议按以下顺序处理：
 
-| 顺序 | 决策                                                | 置信度 | 主要收益                                         |
-| ---- | --------------------------------------------------- | ------ | ------------------------------------------------ |
-| 1    | 删除 demo-only plugin worker 子系统                 | 高     | 删除一整套无 production 对等语义的能力           |
-| 2    | 删除无消费者的 `runtimeDev.batches` mirror          | 高     | HMR API 不再复制进 runtime common capability bag |
-| 3    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI |
-| 4    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念           |
+| 顺序 | 决策                                                | 置信度 | 主要收益                                          |
+| ---- | --------------------------------------------------- | ------ | ------------------------------------------------- |
+| 1    | 把 Node worker 纳入统一 plugin artifact pipeline    | 高     | 删除 dynamic-only bundler，并补齐 production 闭环 |
+| 2    | 删除无消费者的 `runtimeDev.batches` mirror          | 高     | HMR API 不再复制进 runtime common capability bag  |
+| 3    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI  |
+| 4    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念            |
 
-前三项以删除为主，可以独立落地。第四项只有在不增加新的公开概念时才应推进。
+第一项保留 Node worker 产品能力，但删除其独立编译支线并复用现有 Vite/Rolldown artifact pipeline；第二、三项以
+删除为主。第四项只有在不增加新的公开概念时才应推进。
 
-## 1. 删除 demo-only plugin worker 子系统
+## 1. 把 Node worker 纳入统一 plugin artifact pipeline
+
+### 决策
+
+保留 Node worker authoring，但不保留当前 dynamic-only `BundlerService` 模型。Worker 与 Workbench UI 都是
+“server declaration 指向另一份源码图，开发期即时构建，生产期加载预构建 artifact”，应共享同一套 declaration
+extraction、源码图、hash/cache、watch/rebuild 和 artifact publication 基础设施。
+
+共享发生在编译生命周期，不发生在输出格式：
+
+```text
+plugin source declaration
+  -> canonical Rolldown declaration extraction
+  -> source graph + build key + cache + atomic publication
+       |-> Workbench UI builder -> browser Module Federation remote
+       `-> Node worker builder  -> single Node ESM artifact
+```
+
+不把 Node worker 建模成 Workbench 子能力，也不把两个 builder 抽象成任意 target 的通用任务框架。
 
 ### 问题
 
-当前 worker 设计由以下链条组成：
+Workbench UI 已经有完整闭环：
 
 ```text
-@pluxel/runtime/plugin worker()
-  -> Context.runtimeDev.worker
-  -> runtime-dynamic BundlerService
-  -> bundle-worker.mjs + Tinypool
-  -> PluginHttpWorkerDemo
+workbench.entry(import.meta.url, './ui/index.tsx')
+  -> workbenchUiBuildPlugin static extraction
+  -> buildWorkbenchUiRemote() production artifact
+  -> runtime-dev source compiler + watcher
+  -> packaged/static artifact resolver
 ```
 
-它存在四个结构性问题：
+当前 worker 只复用了 Vite/Rolldown 的最后一步 bundle engine，却在外围重新实现一条不完整的链：
 
-1. 仓库内唯一真实消费者是 `PluginHttpWorkerDemo`；没有 user docs 或业务插件使用；
-2. static/production route 不构建 worker，只返回 fallback，作者仍需自行维护另一份 production worker；
-3. `@pluxel/runtime-dynamic/plugin` 只是给同一 API 增加 `LoaderHmrWorker*` 别名，没有消费者；
-4. Bundler、worker process、module graph、author facade 和 demo 合计形成一套独立生命周期，却没有对应的 production build contract 或独立回归测试。
+```text
+@pluxel/runtime/plugin worker('./worker.ts')
+  -> Context.runtimeDev.worker
+  -> runtime-dynamic BundlerService
+  -> duplicated moduleGraph/hash/watcher/cache
+  -> Tinypool -> bundle-worker.mjs -> vite.build()
+  -> temporary .mjs URL
+```
 
-这违反“开发和生产保持同一插件写法”的工具链方向，也把 dev convenience 提升成了公开 runtime capability。
+具体问题：
 
-### 提案
+1. `worker('./worker.ts')` 没有 `import.meta.url`，相对路径依赖 loader registry 或 cwd 猜测；
+2. `BundlerService` 与 runtime-dev compiler 各自维护几乎相同的 Vite module graph collector、chokidar watcher、
+   source hash 和 rebuild 去重；
+3. `bundle-worker.mjs` 通过额外 Tinypool 才调用 `vite.build()`，隔离、缓存和发布语义不复用 Rolldown 已有的
+   artifact scheduler；
+4. `BundleJob` 同时声称支持 browser/node、CSS injection 和任意 external，但真实产品消费者只有 Node/Tinypool
+   demo，形成没有需求支撑的通用 bundler surface；
+5. `pluxel build` 不提取 worker declaration，插件 package 不输出 worker artifact；
+6. static application freezer 不收集 worker artifact，动态加载已发布插件时也没有 packaged resolver；
+7. static/non-HMR route 退回 inline fallback，导致相同插件在开发与生产采用不同执行模型。
 
-- 删除 `@pluxel/runtime/plugin` 的 worker API；
-- 删除无消费者的 `@pluxel/runtime-dynamic/plugin` alias entry；
-- 删除 `RuntimeDevCapabilities.worker`、`BundlerService`、worker bundle runner 和 demo；
-- dynamic HMR host 不再创建、挂载和释放 BundlerService；
-- 现阶段不设计 replacement。确实需要 production worker 的插件直接使用其构建产物和普通 effects cleanup。
+问题不是 worker 不值得存在，而是它没有像 Workbench UI 一样成为 canonical toolchain artifact。
 
-如果未来要恢复 worker authoring，必须先由 toolchain 定义 production artifact、static/dynamic 一致的 declaration lowering 和 HMR replacement contract；不能只恢复 dev watcher。
+### 作者模型
+
+唯一声明形式改为：
+
+```ts
+import { worker } from '@pluxel/runtime/plugin'
+
+const squareWorker = worker.entry(import.meta.url, './worker.ts')
+```
+
+`worker.entry()` 返回 declaration；插件在 `init()` 中通过 `bind(ctx, { onUpdate, onError })` 获得当前可执行
+artifact URL。构建 transform 可以向内部第三参数注入 artifact key，作者不声明 plugin ID、输出目录或环境模式。
+`bind()` 必须等到首个 source/packaged artifact 完成校验后才 resolve，并以 `{ url, revision }` 调用一次
+`onUpdate`；后续 HMR 成功再推送新 revision。首次构建失败使 `bind()` 失败，已有成功版本后的 rebuild failure 只调用
+`onError` 并继续保留上一 revision。Binding snapshot 不再暴露 `hmr/fallback` mode。
+
+约束：
+
+- entry path 必须是 string literal，第一参数必须是 `import.meta.url`；
+- 一个插件允许多个 worker，artifact key 由 declaration module path + entry path 稳定生成；
+- worker 是 Node ESM/Tinypool artifact，不同时承诺 Web Worker、edge worker 或通用 job queue；
+- worker 输入输出遵循 structured-clone 边界，不捕获 Plugin、Context 或其他进程内 service；
+- declaration 不提供 `external` 和 inline fallback。Node builtins 由 builder 处理；无法安全 bundle 的 native/
+  non-bundleable dependency 先明确报构建错误，不用开放式 external 绕过 production closure；
+- artifact 缺失时 `bind()` 失败，插件 `init()` 诚实失败，不静默切换为 inline execution。
+
+### 统一构建管线
+
+`@pluxel/rolldown` 的 canonical `createPluginBuildPipeline()` 安装一次 internal `pluginArtifactBuildPlugin`。该 plugin
+在同一次源码 transform 中提取 Workbench UI 和 Node worker declaration，并分别调用两个具体 builder：
+
+- `buildWorkbenchUiRemote()`：保留现有 browser Federation contract；
+- `buildNodeWorkerArtifact()`：新增直接调用 `vite.build()`/Rolldown 的 Node ESM builder。
+
+二者共享：
+
+- literal declaration extraction 与内部 artifact key 注入；
+- Vite source graph collection；
+- stable declaration artifact key、source/build signature 与 content-addressed build cache；
+- 同一 artifact target 的 build 去重、staging、校验和原子发布；
+- bounded historical artifact retention，保证 inflight UI import/worker task 不因新版本发布立刻失效；
+- plugin package 与 static application 使用同一 `createPluginBuildPipeline()`，不复制 lowering 规则。
+
+二者不共享输出 validator、runtime manifest 或 target-specific Vite config。Module Federation 的 process-wide
+exclusive section 只包围 UI builder；Node worker build 不进入该临界区。
+
+独立插件 package 输出：
+
+```text
+dist/
+  index.mjs
+  workbench/<ui-artifact>/...
+  workers/<worker-artifact>/entry.mjs
+```
+
+static application freezer 把可达 worker artifacts 复制到 distribution，并把 artifact facts 写入现有 deployment
+manifest。stable artifact key 标识 declaration，源码 hash 标识具体 build revision；不要把两者混成一个身份。
+worker artifact 必须是自包含 Node ESM（Node builtins 除外）；不要新增部署端 package install 模式。只有声明 UI
+或 worker 的 package 才加载对应 Vite builder；没有 artifact declaration 时 canonical pipeline 不创建额外输出目录。
+Node worker 属于业务 runtime artifact，不属于 Workbench variant；headless 与 workbench static distribution 都应收集
+可达 worker。现有 `workbench: false` 只关闭 UI extractor/builder，不能顺带关闭 worker branch。
+
+### 统一开发期 compiler
+
+`@pluxel/runtime-dev` 由每个 runtime root/Vite server 持有一个 source-artifact compiler。它保留两个具体绑定入口：
+
+```text
+bindWorkbenchUi(owner, declaration)
+bindNodeWorker(owner, declaration)
+```
+
+内部共享 module graph refresh、watch set、hash、pending/inflight queue、cache retention 和 effects cleanup。目标构建
+仍分别调用 `buildWorkbenchUiRemote()` 与 `buildNodeWorkerArtifact()`，不保留 `BundleJob` 或 strategy registry。
+
+compiler 必须按 declaration 懒启动：
+
+- 没有 worker declaration 时不创建 worker watcher、cache 或 build；
+- Workbench disabled 时不安装 UI binder、不加载 Federation builder；
+- Workbench disabled 但插件声明 worker 时，只构建 Node artifact；
+- static Vite 与 dynamic HMR 都安装相同 worker source binder，route 只提供自己的 Vite server；
+- owner replacement/stop 通过 owner effects 释放 watcher；旧成功 artifact 保留到 bounded cache cleanup；
+- rebuild 失败时通知 `onError` 并保留最后一个成功 URL，不把半成品发布给 Tinypool。
+
+runtime common 保留一个轻量、root-scoped Node worker artifact resolver。开发期 compiler 直接绑定该 resolver；没有
+source binder 时，resolver 按注入的 artifact key 定位 packaged/static artifact。不要重新引入
+`Context.runtimeDev.worker` 或通用 capability adapter。
+
+### 运行时解析
+
+同一 declaration 在三种环境下保持同一语义：
+
+| 环境                           | artifact 来源                                        |
+| ------------------------------ | ---------------------------------------------------- |
+| dynamic/static Vite            | runtime-dev 编译 source graph，返回 cache-busted URL |
+| dynamic 加载已发布 plugin      | 从 plugin package root 解析 `dist/workers/...`       |
+| static production distribution | 从 deployment root/manifest 解析 frozen artifact     |
+
+`bind()` 只交付 Node ESM URL 和更新事件，不创建 Tinypool、不定义线程数、不代理任务调用。worker execution 仍由插件
+使用 Tinypool/worker_threads 并登记普通 effects cleanup；编译系统只拥有 declaration、artifact 和 HMR 生命周期。
+
+### 删除内容
+
+迁移完成后删除：
+
+- `BundlerService`、`BundleJob` 和 generic browser/node bundling API；
+- `bundle-worker.mjs` 及用于包裹 Vite build 的编译 Tinypool；
+- runtime-dev/runtime-dynamic 两份重复 `moduleGraph.ts`，改用 Rolldown-owned source graph helper；
+- `RuntimeDevCapabilities.worker` 和 dynamic host 的 bundler installation/cleanup；
+- `worker()` 的 cwd/registry fallback resolution、`mode: 'fallback'` 和 inline fallback；
+- 无消费者的 `@pluxel/runtime-dynamic/plugin` type alias entry；
+- demo 中“生产环境自行预构建”的说明，改成同时验证 dev 与 packaged artifact 的真实示例。
+
+不为旧 declaration 保留 compatibility wrapper；当前 major Changeset 承担迁移。
 
 ### 验收
 
-- 搜索不到 `PluginWorkerDeclaration`、`LoaderHmrWorker`、`watchTinypoolWorker` 和 `BundlerService`；
-- dynamic host 不再安装 `runtimeDev.worker`；Workbench compiler 继续直接绑定 root artifact service；
-- static 与 dynamic 的公开作者 API 不再因 worker dev helper 分叉；
-- 删除 demo 后，插件 host catalog、UI build 和 HMR tests 仍通过。
+- plugin package build 从 `worker.entry(import.meta.url, literal)` 生成稳定 key 的 Node ESM artifact，使用
+  content-addressed build cache，并向 server declaration 注入相同 artifact key；
+- static application distribution 包含所有可达 worker artifact，输出不引用 workspace source 或未解析
+  `@pluxel/*` runtime import；
+- headless 与 workbench distribution 对相同 worker declaration 生成相同 artifact，variant 只改变 UI closure；
+- dynamic loader 能从已发布 plugin package 解析 packaged worker，而不要求 Vite server；
+- static/dynamic Vite 修改 worker entry 或其依赖时只触发一次合并 rebuild，并发布新的 cache-busted URL；
+- HMR compile failure 保留最后成功 worker，plugin replacement/stop 释放 watcher 和 update callback；
+- Workbench disabled + worker enabled 不加载 Federation builder，二者都没有 declaration 时不创建 artifact cache；
+- 搜索不到 `BundlerService`、`bundle-worker.mjs`、`watchTinypoolWorker`、`RuntimeDevCapabilities.worker`、
+  `LoaderHmrWorker` 和两份 route-owned module graph helper；
+- package build、static freezer、dynamic packaged resolution 和真实 Tinypool execution 都有端到端测试；
+- 没有新增通用 artifact target registry、service manager 或部署端动态安装协议。
 
-### 未决问题
+### 实施顺序与停止条件
 
-唯一需要产品层确认的是：是否存在仓库外、必须由 Pluxel 负责构建的 production worker。若没有已知消费者，不应为了假设需求保留当前半套实现。
+1. 先在 Rolldown 增加 Node worker builder、artifact layout/validator 和 declaration extraction 测试；
+2. 让独立 plugin package 与 static application 同时产出/记录 worker artifact；
+3. 增加 runtime packaged/static resolver，确保无 Vite 环境能执行预构建 worker；
+4. 把 runtime-dev compiler 的 graph/watch/cache coordinator 提取为两种具体 binding 共用的内部实现；
+5. 迁移 dynamic/static Vite source binder 和 demo；
+6. 最后删除 `BundlerService`、runtimeDev worker bridge、fallback 与 alias entry。
+
+如果 Node worker builder 无法在不开放任意 external、不引入部署端安装的前提下产出可部署 closure，应停止并先
+定义明确的 native dependency contract；不能以保留当前 dynamic-only fallback 作为完成。
 
 ## 2. 删除无消费者的 runtimeDev batch mirror
 
@@ -83,8 +240,8 @@ common 的可选 capability bag。
 
 - 删除 `RuntimeDevCapabilities.batches` 和 dynamic host 的 wrapper assignment；
 - host、CLI 或测试需要等待 batch 时直接使用已经返回的 `LoaderHmrService`；
-- plugin worker 子系统删除后，一并删除空的 `RuntimeDevCapabilities`、`runtimeDevCapabilities()` 和 Context
-  augmentation；
+- Node worker 迁移到 root artifact resolver 并删除 `RuntimeDevCapabilities.worker` 后，一并删除空的
+  `RuntimeDevCapabilities`、`runtimeDevCapabilities()` 和 Context augmentation；
 - 不把 `LoaderHmrService` 或其 batch types 上移到 runtime common，也不设计新的 HMR adapter。
 
 ### 验收
@@ -174,20 +331,22 @@ common 的可选 capability bag。
 - 不合并 static catalog 与 dynamic loader。它们共享 core lifecycle facts，但 code discovery 和 HMR policy 本来就不同；
 - 不创建统一 service manager。常驻服务由 runtime main side-effect 注册，可选 Workbench/Vault 继续显式安装已经足够；
 - 不把 runtime-dev、Vite 或 filesystem helper 移入 core；
+- 不用通用 artifact target/strategy registry 抹平 Workbench remote 与 Node worker 的输出 contract；
 - 不把 Workbench collection、events 和 RPC 强行做成一个通用 transport abstraction；三者的 consistency 和 backpressure 语义不同；
 - 不为删除的入口保留 alias。当前 major Changeset 已经承担 clean-slate surface cleanup。
 
 ## 实施顺序与停止条件
 
-建议每项独立提交，并在删除后立即搜索旧符号。顺序上先删除 worker 和无消费者的 batch mirror，使
-`runtimeDev` capability bag 整体消失；再完成 builtin read-only cut；最后才处理 internal barrel。
+建议每项独立提交，并在删除后立即搜索旧符号。顺序上先完成 Node worker artifact pipeline 并删除旧 bundler
+支线，再删除无消费者的 batch mirror，使 `runtimeDev` capability bag 整体消失；然后完成 builtin read-only
+cut，最后才处理 internal barrel。
 
 任一项遇到以下情况应停止并重新评估，而不是增加 adapter：
 
 - 找到仓库外必须支持的明确 consumer；
 - 删除会迫使 core 依赖 host/toolchain；
 - static/dynamic 必须复制 lifecycle 才能完成迁移；
-- disabled Workbench 开始创建 backend/compiler/watcher；
+- disabled Workbench 在没有 UI declaration 时开始创建 UI backend、Federation compiler 或 watcher；
 - 为保持兼容需要新增与旧概念等量的 facade。
 
 完成某项后，应把稳定结论写入对应领域文档，并从本 proposal 删除已实现部分。
