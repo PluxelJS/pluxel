@@ -5,9 +5,10 @@
 
 ```text
 plugin source
-  ├─ constructor dependencies
-  ├─ config / feature declarations
-  └─ Workbench Contract / Extension declarations
+	├─ constructor dependencies
+	├─ config / feature declarations
+	├─ separately-built Node module declarations
+	└─ Workbench Contract / Extension declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
@@ -70,16 +71,27 @@ dependent 复用有两条明确路径：
 
 不维护服务端 UI session/draft。交互状态属于 consumer resource、浏览器局部状态或明确的业务 API。
 
+## Node module capability
+
+插件用 module-level `defineNodeModule(import.meta.url, literal)` 声明单独构建的 Node ESM entry，并在
+`init()` 中通过 `ctx.nodeModules.use(declaration, setup)` 消费。`NodeModuleService` 是常驻 runtime 能力；
+首次 artifact build/load 或 setup 失败会让插件启动失败。开发期更新先完成新 setup，再清理上一成功消费者；
+更新失败保留 last-known-good。owner stop/replacement 通过 effects 自动释放 source lease 和 active cleanup。
+
+declaration key、build revision 和 owner ID 是三个独立身份。相同 declaration 的多个 owner/consumer 共用
+build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包含单文件 ESM，不定义 worker、线程或任务协议。
+
 ## 包边界
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
+- `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
 - `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource client；
 - `@pluxel/core/federation`：Workbench bundle build contract；
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
-- `@pluxel/runtime-dev`：Workbench compiler；
+- `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 publication lifecycle 的 artifact compiler；
 - `@pluxel/rolldown/vite/workbench-ui`：remote build primitive。
 
 ## 不变量

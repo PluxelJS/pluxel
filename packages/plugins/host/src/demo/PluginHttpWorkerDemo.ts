@@ -1,16 +1,13 @@
-// Read this when:
-// - 你要看 loader HMR worker 存在时启用、否则 inline fallback 的写法
-// - 你需要一个 HTTP endpoint 作为 worker 调用触发器
+// Read this when you need a separately-built Node module consumed by Tinypool.
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { worker, type PluginWorkerBinding } from '@pluxel/runtime/plugin'
+import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
 import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
 	enabled: boolean
-	mode: 'hmr-worker' | 'fallback-inline'
+	mode: 'node-module'
 	workerUrl: string | null
 	note: string
 }
@@ -21,8 +18,7 @@ type SquareResult = {
 	mode: WorkerStatus['mode']
 }
 
-// Loader-HMR-only worker declaration; static/non-HMR hosts fall back inline.
-const squareWorker = worker('./PluginHttpWorkerDemo/ui/worker.ts')
+const squareWorker = defineNodeModule(import.meta.url, './PluginHttpWorkerDemo/ui/worker.ts')
 const d = workbenchDoc({} as const)
 const HttpWorkerUi = workbenchContract.define({
 	views: {
@@ -34,10 +30,10 @@ const HttpWorkerUi = workbenchContract.define({
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
 
-					- \`GET /status\`: reports whether the loader HMR worker bundler is attached.
-					- \`GET /square/:value\`: invokes the worker under HMR, otherwise uses inline fallback.
+					- \`GET /status\`: reports the active Node module artifact.
+					- \`GET /square/:value\`: invokes the artifact through Tinypool.
 
-					Frozen/static runtimes intentionally use inline execution. Production workers should use a prebuilt stable \`.mjs\` entry.
+					Development rebuilds and packaged/static artifacts use the same declaration and lifecycle.
 				`,
 		}),
 	},
@@ -47,7 +43,7 @@ const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 @Plugin({ name: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
 	private pool: Tinypool | null = null
-	private workerBinding: PluginWorkerBinding | null = null
+	private workerUrl: URL | null = null
 
 	override async init(): Promise<void> {
 		this.ctx.http.plugin.routes(
@@ -72,71 +68,42 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 
 		this.ctx.workbench.mount(HttpWorkerWorkbench, {})
 
-		this.workerBinding = await squareWorker.bind(this.ctx, {
-			onError: (error) => {
-				this.ctx.logger.error('Failed to rebuild worker bundle', { error })
-			},
-			onUpdate: async ({ mode, url }) => {
-				if (mode !== 'hmr' || !url) {
-					await this.disposePool()
-					return
-				}
-				await this.replacePool(url)
-			},
+		await this.ctx.nodeModules.use(squareWorker, async (url) => {
+			const pool = new Tinypool({
+				filename: url.href,
+				minThreads: 1,
+				maxThreads: 1,
+				idleTimeout: 10_000,
+			})
+			this.pool = pool
+			this.workerUrl = url
+			return async () => {
+				if (this.pool === pool) this.pool = null
+				if (this.workerUrl === url) this.workerUrl = null
+				await pool.destroy()
+			}
 		})
-
-		this.ctx.effects.defer(() => this.disposePool())
 	}
 
 	// Public route behavior.
 	private async getWorkerStatus(): Promise<WorkerStatus> {
-		const snapshot = this.workerBinding?.snapshot() ?? { mode: 'fallback' as const, url: null }
-		const enabled = snapshot.mode === 'hmr'
 		return {
-			enabled,
-			mode: enabled ? 'hmr-worker' : 'fallback-inline',
-			workerUrl: snapshot.url,
-			note: enabled
-				? 'Loader HMR bundler is available; worker source is compiled on demand.'
-				: 'No HMR bundler attached. This is expected for static/non-HMR runtimes; use tsdown if you need a production worker artifact.',
+			enabled: this.pool !== null,
+			mode: 'node-module',
+			workerUrl: this.workerUrl?.href ?? null,
+			note: 'The Node module artifact is managed by the plugin Context lifecycle.',
 		}
 	}
 
 	private async square(value: number): Promise<SquareResult> {
 		const pool = this.pool
-		if (!pool) {
-			return {
-				input: value,
-				squared: value * value,
-				mode: 'fallback-inline',
-			}
-		}
+		if (!pool) throw new Error('Node module consumer is not ready')
 
 		const result = (await pool.run({ value })) as { squared: number }
 		return {
 			input: value,
 			squared: result.squared,
-			mode: 'hmr-worker',
+			mode: 'node-module',
 		}
-	}
-
-	// Worker lifecycle wiring.
-	private async replacePool(workerUrl: string): Promise<void> {
-		const pool = new Tinypool({
-			filename: workerUrl,
-			minThreads: 1,
-			maxThreads: 1,
-			idleTimeout: 10_000,
-		})
-
-		await this.disposePool()
-		this.pool = pool
-	}
-
-	private async disposePool(): Promise<void> {
-		const pool = this.pool
-		this.pool = null
-		if (!pool) return
-		await pool.destroy().catch((): undefined => undefined)
 	}
 }

@@ -1,10 +1,10 @@
-import type { WorkbenchCompilerServiceConfig } from './workbench/WorkbenchCompilerService'
+import type { PluginArtifactCompilerConfig } from './workbench/PluginArtifactCompiler'
 
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Config {
-			/** HMR UI workbench compiler config. */
-			workbenchCompiler?: WorkbenchCompilerServiceConfig
+			/** HMR plugin artifact compiler config. */
+			pluginArtifactCompiler?: PluginArtifactCompilerConfig
 		}
 	}
 }

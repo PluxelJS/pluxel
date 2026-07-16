@@ -20,11 +20,17 @@ import { collectImportSpecifiers } from './importCollector.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
 import { normalizePatterns, parseStandaloneWithLang, parseWithLang } from './pluginUtils.ts'
 import { normalizeViteId } from './viteNormalizeId.ts'
+import {
+	resolveNodeModuleBuildSignature,
+	resolvePluginArtifactKey,
+} from '../../vite/declaration.ts'
 
 const WORKBENCH_UI_BUILD_CACHE_VERSION = 1
+const NODE_MODULE_BUILD_CACHE_VERSION = 1
 const ARTIFACT_STAMP_FILE = 'pluxel-workbench.json'
-const CODE_HINT = /\bworkbench\s*\.\s*extension\s*\(/
+const CODE_HINT = /\b(?:workbench\s*\.\s*extension|defineNodeModule)\s*\(/
 const IMPORT_SOURCE = '@pluxel/runtime/workbench'
+const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
 const productionBuilds = new Map<string, Promise<void>>()
 
 type NodeLike = {
@@ -40,31 +46,47 @@ type WorkbenchUiDeclaration = Readonly<{
 	insertOffset: number
 }>
 
+type NodeModuleDeclaration = Readonly<{
+	artifactKey: string
+	entryPath: string
+	insertOffset: number
+}>
+
 type ArtifactStamp = Readonly<{
 	version: number
 	pluginName: string
 	sourceHash: string
 }>
 
-export type WorkbenchUiBuildPluginOptions = {
+export type PluginArtifactBuildPluginOptions = {
 	root?: string
 	buildDir?: string
 	cacheDir?: string
 	cacheKeep?: number
-	sharedPackages?: readonly string[]
-	minify?: boolean
-	vite?: InlineConfig
-	cacheKey?: string
+	workbench?:
+		| false
+		| {
+				sharedPackages?: readonly string[]
+				minify?: boolean
+				vite?: InlineConfig
+				cacheKey?: string
+		  }
+	node?: {
+		minify?: boolean
+		vite?: InlineConfig
+		cacheKey?: string
+	}
 	include?: string | string[]
 	exclude?: string | string[]
 	log?: (message: string) => void
 }
 
-export function workbenchUiBuildPlugin(
-	options: WorkbenchUiBuildPluginOptions = {},
+export function pluginArtifactBuildPlugin(
+	options: PluginArtifactBuildPluginOptions = {},
 ): ViteCompatPlugin {
 	const root = resolve(options.root ?? process.cwd())
 	const declarations = new Map<string, WorkbenchUiDeclaration>()
+	const nodeDeclarations = new Map<string, NodeModuleDeclaration>()
 	const includePatterns = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -84,10 +106,11 @@ export function workbenchUiBuildPlugin(
 	]).map(allowOptionalQuerySuffix)
 
 	return {
-		name: 'pluxel-workbench-ui-build',
+		name: 'pluxel-plugin-artifact-build',
 		enforce: 'pre',
 		buildStart() {
 			declarations.clear()
+			nodeDeclarations.clear()
 		},
 		transform: {
 			filter: {
@@ -98,7 +121,9 @@ export function workbenchUiBuildPlugin(
 				const id = normalizeViteId(rawId)
 				const ast = parseWithLang(this, code, id)
 				if (!ast) this.error(`[workbench-ui] failed to parse declaration module: ${id}`)
-				const extracted = extractWorkbenchUiDeclarations(ast, code, id, root)
+				const extracted =
+					options.workbench === false ? [] : extractWorkbenchUiDeclarations(ast, code, id, root)
+				const extractedNode = extractNodeModuleDeclarations(ast, code, id, root)
 				for (const declaration of extracted) {
 					const existing = declarations.get(declaration.pluginName)
 					if (existing && existing.entryPath !== declaration.entryPath) {
@@ -109,23 +134,36 @@ export function workbenchUiBuildPlugin(
 					}
 					declarations.set(declaration.pluginName, declaration)
 				}
-				if (extracted.length === 0) return null
+				for (const declaration of extractedNode) {
+					const existing = nodeDeclarations.get(declaration.artifactKey)
+					if (existing && existing.entryPath !== declaration.entryPath) {
+						this.error(`[node-module] artifact key collision: ${declaration.artifactKey}`)
+					}
+					nodeDeclarations.set(declaration.artifactKey, declaration)
+				}
+				if (extracted.length === 0 && extractedNode.length === 0) return null
 				let transformed = code
-				for (const declaration of [...extracted].sort((a, b) => b.insertOffset - a.insertOffset)) {
-					transformed = `${transformed.slice(0, declaration.insertOffset)}, ${JSON.stringify(
-						declaration.pluginName,
-					)}${transformed.slice(declaration.insertOffset)}`
+				const lowerings = [
+					...extracted.map((item) => ({ key: item.pluginName, offset: item.insertOffset })),
+					...extractedNode.map((item) => ({ key: item.artifactKey, offset: item.insertOffset })),
+				].sort((a, b) => b.offset - a.offset)
+				for (const declaration of lowerings) {
+					transformed = `${transformed.slice(0, declaration.offset)}, ${JSON.stringify(
+						declaration.key,
+					)}${transformed.slice(declaration.offset)}`
 				}
 				return { code: transformed, map: null }
 			},
 		},
 		async writeBundle() {
-			if (declarations.size === 0) return
-			await Promise.all(
-				[...declarations.values()]
+			await Promise.all([
+				...[...declarations.values()]
 					.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
 					.map((declaration) => buildProductionRemote(root, declaration, options)),
-			)
+				...[...nodeDeclarations.values()]
+					.sort((a, b) => a.artifactKey.localeCompare(b.artifactKey))
+					.map((declaration) => buildProductionNodeModule(root, declaration, options)),
+			])
 		},
 	}
 }
@@ -133,13 +171,14 @@ export function workbenchUiBuildPlugin(
 async function buildProductionRemote(
 	root: string,
 	declaration: WorkbenchUiDeclaration,
-	options: WorkbenchUiBuildPluginOptions,
+	options: PluginArtifactBuildPluginOptions,
 ): Promise<void> {
 	if (!existsSync(declaration.entryPath)) {
 		throw new Error(`[workbench-ui] entry file not found: ${declaration.entryPath}`)
 	}
-	const sharedPackages = options.sharedPackages?.length
-		? options.sharedPackages
+	const target = options.workbench === false ? {} : (options.workbench ?? {})
+	const sharedPackages = target.sharedPackages?.length
+		? target.sharedPackages
 		: workbenchFederationSharedPackages
 	const sourceHash = await hashWorkbenchUiGraph(
 		root,
@@ -147,7 +186,7 @@ async function buildProductionRemote(
 		sharedPackages,
 		[
 			resolveWorkbenchFederationShared(root, sharedPackages).signature,
-			resolveWorkbenchUiBuildSignature(options.vite, options.cacheKey),
+			resolveWorkbenchUiBuildSignature(target.vite, target.cacheKey),
 		].join('\n'),
 	)
 	const outDir = resolve(
@@ -176,9 +215,9 @@ async function buildProductionRemote(
 				entryPath: declaration.entryPath,
 				outDir: cachedOutDir,
 				sharedPackages,
-				minify: options.minify ?? true,
-				vite: options.vite,
-				cacheKey: options.cacheKey,
+				minify: target.minify ?? true,
+				vite: target.vite,
+				cacheKey: target.cacheKey,
 			})
 			await writeFile(
 				join(cachedOutDir, ARTIFACT_STAMP_FILE),
@@ -211,6 +250,142 @@ async function loadWorkbenchUiBuildTools(): Promise<typeof import('../../vite/wo
 			{ cause: error },
 		)
 	}
+}
+
+async function buildProductionNodeModule(
+	root: string,
+	declaration: NodeModuleDeclaration,
+	options: PluginArtifactBuildPluginOptions,
+): Promise<void> {
+	if (!existsSync(declaration.entryPath)) {
+		throw new Error(`[node-module] entry file not found: ${declaration.entryPath}`)
+	}
+	const target = options.node ?? {}
+	const sourceHash = await hashNodeModuleGraph(
+		root,
+		declaration,
+		resolveNodeModuleBuildSignature({
+			vite: target.vite,
+			cacheKey: target.cacheKey,
+			minify: target.minify,
+		}),
+	)
+	const cacheRoot = resolve(
+		root,
+		options.cacheDir ?? '.pluxel/plugin-artifacts',
+		'node',
+		declaration.artifactKey,
+	)
+	const cachedFile = join(cacheRoot, `${sourceHash}.mjs`)
+	const outFile = resolve(
+		root,
+		options.buildDir ?? 'dist',
+		'artifacts/node',
+		`${declaration.artifactKey}.mjs`,
+	)
+	const key = `${cachedFile}\u0000${sourceHash}`
+	const existing = productionBuilds.get(key)
+	if (existing) return existing
+
+	const task = (async () => {
+		const buildTools = await import('../../vite/node-module.ts')
+		let reusable = existsSync(cachedFile)
+		if (reusable) {
+			try {
+				await buildTools.validateNodeModuleArtifact(cachedFile)
+			} catch {
+				reusable = false
+				await rm(cachedFile, { force: true })
+			}
+		}
+		if (!reusable) {
+			options.log?.(`[node-module] build ${declaration.artifactKey} (${sourceHash})`)
+			await buildTools.buildNodeModule({
+				root,
+				entryPath: declaration.entryPath,
+				outFile: cachedFile,
+				minify: target.minify ?? true,
+				vite: target.vite,
+			})
+		} else {
+			options.log?.(`[node-module] reuse ${declaration.artifactKey} (${sourceHash})`)
+		}
+		await publishCachedFile(cachedFile, outFile)
+		await cleanupNodeModuleCache(cacheRoot, Math.max(1, options.cacheKeep ?? 3), sourceHash)
+	})()
+	productionBuilds.set(key, task)
+	try {
+		await task
+	} finally {
+		if (productionBuilds.get(key) === task) productionBuilds.delete(key)
+	}
+}
+
+async function publishCachedFile(source: string, target: string): Promise<void> {
+	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+	const staged = `${target}.tmp-${nonce}`
+	const previous = `${target}.previous-${nonce}`
+	await mkdir(dirname(target), { recursive: true })
+	await cp(source, staged, { force: true })
+	let movedPrevious = false
+	try {
+		await rename(target, previous)
+		movedPrevious = true
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+	}
+	try {
+		await rename(staged, target)
+	} catch (error) {
+		if (movedPrevious) await rename(previous, target).catch((): undefined => undefined)
+		throw error
+	}
+	if (movedPrevious) await rm(previous, { force: true })
+}
+
+async function cleanupNodeModuleCache(
+	cacheRoot: string,
+	keep: number,
+	currentHash: string,
+): Promise<void> {
+	const entries = await readdir(cacheRoot).catch((): string[] => [])
+	const builds: Array<{ name: string; mtime: number }> = []
+	for (const name of entries) {
+		if (name === `${currentHash}.mjs` || !/^[a-f\d]{16}\.mjs$/.test(name)) continue
+		const fileStat = await stat(join(cacheRoot, name)).catch((): null => null)
+		if (fileStat?.isFile()) builds.push({ name, mtime: fileStat.mtimeMs })
+	}
+	builds.sort((a, b) => b.mtime - a.mtime)
+	for (const stale of builds.slice(Math.max(0, keep - 1))) {
+		await rm(join(cacheRoot, stale.name), { force: true })
+	}
+}
+
+async function hashNodeModuleGraph(
+	root: string,
+	declaration: NodeModuleDeclaration,
+	buildSignature: string,
+): Promise<string> {
+	const hash = createHash('sha256')
+	hash.update(`node-module-build:${NODE_MODULE_BUILD_CACHE_VERSION}`)
+	hash.update(`artifact:${declaration.artifactKey}`)
+	hash.update(`build:${buildSignature}`)
+	await hashDependencyState(hash, root)
+	const queue = [declaration.entryPath]
+	const visited = new Set<string>()
+	while (queue.length > 0) {
+		const file = resolve(queue.shift()!)
+		if (visited.has(file)) continue
+		visited.add(file)
+		const content = await readFile(file, 'utf8')
+		hash.update(relative(root, file))
+		hash.update(content)
+		for (const specifier of collectSourceImports(file, content)) {
+			const hit = resolveImport(file, specifier)
+			if (hit?.path && existsSync(hit.path)) queue.push(hit.path)
+		}
+	}
+	return hash.digest('hex').slice(0, 16)
 }
 
 async function publishCachedArtifact(source: string, target: string): Promise<void> {
@@ -316,10 +491,7 @@ function extractWorkbenchUiDeclarations(
 		if (!relativeEntry) {
 			throw new Error(`[workbench-ui] UI entry must be a string literal in ${id}`)
 		}
-		const pluginName = `artifact-${createHash('sha256')
-			.update(`${relative(root, id)}\0${relativeEntry}`)
-			.digest('hex')
-			.slice(0, 12)}`
+		const pluginName = resolvePluginArtifactKey('workbench', root, id, relativeEntry)
 		const insertOffset = Number(entry.end) - 1
 		if (!Number.isInteger(insertOffset) || insertOffset < 0) {
 			throw new Error(`[workbench-ui] cannot locate workbench.entry() call in ${id}`)
@@ -333,6 +505,88 @@ function extractWorkbenchUiDeclarations(
 		})
 	})
 	return out
+}
+
+function extractNodeModuleDeclarations(
+	ast: Program,
+	code: string,
+	id: string,
+	root: string,
+): NodeModuleDeclaration[] {
+	const localNames = collectNodeModuleImports(ast)
+	if (localNames.size === 0) return []
+	const out: NodeModuleDeclaration[] = []
+	const moduleConstCalls = collectModuleConstCallInitializers(ast)
+	visitNode(ast as unknown as NodeLike, (node) => {
+		if (node.type !== 'CallExpression') return
+		const callee = sourceSlice(code, object(node.callee) ?? undefined)
+		if (!localNames.has(callee)) return
+		if (!moduleConstCalls.has(node)) {
+			throw new Error(
+				`[node-module] defineNodeModule() must be the direct initializer of a module-level const in ${id}`,
+			)
+		}
+		const args = array(node.arguments)
+		if (args.length !== 2 || sourceSlice(code, args[0]) !== 'import.meta.url') {
+			throw new Error(
+				`[node-module] declaration must call defineNodeModule(import.meta.url, "./entry") in ${id}`,
+			)
+		}
+		const relativeEntry = literalString(args[1])
+		if (!relativeEntry) {
+			throw new Error(`[node-module] entry must be a string literal in ${id}`)
+		}
+		const insertOffset = Number(node.end) - 1
+		if (!Number.isInteger(insertOffset) || insertOffset < 0) {
+			throw new Error(`[node-module] cannot locate declaration call in ${id}`)
+		}
+		const artifactKey = resolvePluginArtifactKey('node', root, id, relativeEntry)
+		out.push({
+			artifactKey,
+			entryPath: isAbsolute(relativeEntry)
+				? resolve(relativeEntry)
+				: resolve(dirname(id), relativeEntry),
+			insertOffset,
+		})
+	})
+	return out
+}
+
+function collectModuleConstCallInitializers(ast: Program): Set<NodeLike> {
+	const calls = new Set<NodeLike>()
+	for (const statement of ast.body) {
+		const candidate =
+			statement.type === 'ExportNamedDeclaration'
+				? object((statement as unknown as NodeLike).declaration)
+				: (statement as unknown as NodeLike)
+		if (candidate?.type !== 'VariableDeclaration' || candidate.kind !== 'const') continue
+		for (const declaration of array(candidate.declarations)) {
+			const initializer = object(declaration.init)
+			if (initializer?.type === 'CallExpression') calls.add(initializer)
+		}
+	}
+	return calls
+}
+
+function collectNodeModuleImports(ast: Program): Set<string> {
+	const names = new Set<string>()
+	for (const statement of ast.body) {
+		if (
+			statement.type !== 'ImportDeclaration' ||
+			statement.source.value !== NODE_MODULE_IMPORT_SOURCE
+		) {
+			continue
+		}
+		for (const specifier of statement.specifiers) {
+			if (specifier.type !== 'ImportSpecifier') continue
+			const imported =
+				specifier.imported.type === 'Identifier'
+					? specifier.imported.name
+					: String((specifier.imported as { value?: unknown }).value ?? '')
+			if (imported === 'defineNodeModule') names.add(specifier.local.name)
+		}
+	}
+	return names
 }
 
 function collectAuthoringImports(ast: Program): Set<string> {

@@ -21,7 +21,7 @@ describe('staticApplication', () => {
 			'unplugin-macros',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
-			'pluxel-workbench-ui-build',
+			'pluxel-plugin-artifact-build',
 			'pluxel:decorator-output-guard',
 		])
 		expect(config.deps?.neverBundle).toEqual([/^@pluxel\//])

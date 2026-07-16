@@ -5,6 +5,7 @@ import './services/debug'
 
 export * from '@pluxel/core'
 export { Config, type ConfigSchemaMap } from './base'
+export { defineNodeModule, type NodeModuleDeclaration } from './node-module'
 export { f, v } from './config'
 export type { RuntimeEvents } from './events'
 export {

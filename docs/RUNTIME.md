@@ -19,6 +19,19 @@ dependency、evaluation、metadata 或 start 失败记录为 broken error。stat
 dynamic package install/invalidation 会触发 availability retry。resolver 只解析已经进入 workspace、安装集合或 static
 distribution closure 的代码，optional request 不授权自动安装包。
 
+## Node module service
+
+`NodeModuleService` 是常驻 root service，`ctx.nodeModules` 是保留 owner Context 的隔离视图。作者只通过
+`ctx.nodeModules.use(declaration, setup)` 使用 module；service 不暴露任意路径 compiler、revision、lease handle
+或 worker facade。
+
+开发 route 安装一个 lazy source provider；无 declaration 时不创建 compiler、watcher 或 cache。没有 source provider
+时，service 只接受 toolchain lowering 后带 stable artifact key 的 declaration，并从 plugin package
+`dist/artifacts/node/` 或 deployment `artifacts/node/` 解析。缺失 artifact 会使 `use()` 失败，不回退 inline execution。
+
+每个 consumer 串行 staged setup：新 setup 成功后才清理上一消费者；rebuild/setup 失败保留 last-known-good。
+owner stop/replacement 使 pending generation 失效，迟到 setup 返回的 cleanup 会立即执行。
+
 Workbench backend 由以下部分组成：
 
 - `WorkbenchService`：每个 plugin Context 隔离的 optional gate；

@@ -121,3 +121,13 @@ provider；部署目标上后来安装 package 不会改变闭包。完整 packa
 完整 remote 缓存在 `.pluxel/workbench-build/<artifact>/<hash>/`。缓存 key 包含 source graph、lockfile、
 shared versions 和 compiler version；可以安全删除该目录做冷构建。多个 UI 构建由 Pluxel 负责底层隔离，
 项目不需要设置 `compileConcurrency: 1` 或共享临时输出目录。
+
+## Node module artifact
+
+`pluxel build` 同样提取 module-level `defineNodeModule(import.meta.url, './entry.ts')`，把 server declaration lowering
+到 stable artifact key，并输出 `dist/artifacts/node/<artifact-key>.mjs`。缓存位于
+`.pluxel/plugin-artifacts/node/<artifact-key>/<source-hash>.mjs`；插件 package 与 static application 使用同一提取和构建
+管线。headless/workbench static variant 都包含可达 Node artifacts。
+
+Node branch 和 Workbench UI branch 共享 source/build cache lifecycle，但目标 graph、validator 与输出配置隔离；
+Workbench disabled 不会加载 Federation builder，只使用 Node module 也不会创建 UI backend。

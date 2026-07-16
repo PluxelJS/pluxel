@@ -82,6 +82,36 @@ export class BillingPlugin extends BasePlugin {
 - 运行时工作放在 `init()`；
 - Workbench贡献通过唯一 optional gate 挂载。
 
+## 单独构建的 Node module
+
+需要把另一份 TS/JS 源码图作为独立 Node ESM 加载，或交给 Tinypool/`worker_threads` 时，在 module level 声明，
+并在当前插件 Context 中消费：
+
+```ts
+import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
+import { Tinypool } from 'tinypool'
+
+const taskModule = defineNodeModule(import.meta.url, './task.ts')
+
+@Plugin({ name: 'TaskPlugin' })
+export class TaskPlugin extends BasePlugin {
+	override async init() {
+		await this.ctx.nodeModules.use(taskModule, async (url) => {
+			const pool = new Tinypool({ filename: url.href })
+			return () => pool.destroy()
+		})
+	}
+}
+```
+
+`defineNodeModule()` 只声明 entry，不创建线程；`use()` 等待首次 artifact 与 setup，失败会让插件启动失败。
+开发期重建会先用新 URL 完成 setup，再清理上一成功消费者；更新失败保留旧消费者。插件 stop/replacement 自动执行
+active cleanup，不保存 binding、revision 或 dispose handle。
+
+也可以在 callback 中直接 `import(url.href)`。artifact 是自包含单文件 Node ESM，可以使用 Node builtin 和可安全
+bundle 的普通 library；不能 value-import Pluxel runtime/core、Plugin/Context/Workbench server API，不能导入 CSS/browser
+asset，也不能嵌套声明 Plugin、Workbench 或 Node module。没有 artifact 时不会回退 inline execution。
+
 ## 依赖：按“缺失时能否工作”选择
 
 ### Required plugin dependency

@@ -1,6 +1,7 @@
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
 import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
 import type { WorkbenchBackend } from '../workbench'
+import { withNodeModulePluginContext } from '../NodeModuleService'
 
 const serviceName = 'workbench' as const
 
@@ -75,12 +76,14 @@ export function withWorkbenchPluginContext<T extends CoreContext.Config>(config:
 	const current = Array.isArray(registry.pluginCTXIsolate)
 		? (registry.pluginCTXIsolate as unknown[])
 		: []
-	if (current.includes(WorkbenchService)) return config
-	return {
-		...config,
-		registry: {
-			...registry,
-			pluginCTXIsolate: [...current, WorkbenchService],
-		},
-	} as T
+	const next = current.includes(WorkbenchService)
+		? config
+		: ({
+				...config,
+				registry: {
+					...registry,
+					pluginCTXIsolate: [...current, WorkbenchService],
+				},
+			} as T)
+	return withNodeModulePluginContext(next)
 }

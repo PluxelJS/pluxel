@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { sanitizeWorkbenchOwnerName } from '@pluxel/core/federation'
 import { describe, expect, it } from 'vitest'
+import { workbench } from '@pluxel/runtime/workbench'
 
 import {
 	resolveDeploymentWorkbenchManifestPath,
@@ -38,12 +39,12 @@ describe('packaged Workbench artifact deployment paths', () => {
 			},
 		}
 		const artifacts = new WorkbenchArtifactService(root as never)
-		const dispose = artifacts.registerFor(
-			owner as never,
-			{
-				artifactName: 'artifact-disposed',
-			} as never,
+		const declaration = (workbench.entry as unknown as (...args: unknown[]) => unknown)(
+			import.meta.url,
+			'./ui.tsx',
+			'artifact-disposed',
 		)
+		const dispose = artifacts.registerFor(owner as never, declaration as never)
 
 		dispose()
 		resolveManifest('/tmp/should-not-be-read/mf-manifest.json')

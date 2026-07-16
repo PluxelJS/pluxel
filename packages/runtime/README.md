@@ -14,6 +14,10 @@ runtime 在 consumer commit 后解析 ref，使用正常 graph lifecycle、Runti
 不阻塞 consumer，broken provider 产生独立诊断。已由 host catalog 管理的 provider 继续使用
 `plugins.use(Provider, callback)`。
 
+单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
+`ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner
+cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。
+
 Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
 owner-bound Binding：
 

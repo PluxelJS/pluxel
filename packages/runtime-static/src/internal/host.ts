@@ -596,6 +596,7 @@ export type StaticRuntimeHostDeployment = {
 	root: string
 	publicDir?: string
 	workbenchDir?: string
+	nodeModulesDir: string
 	workbenchIncluded: boolean
 }
 
@@ -616,6 +617,7 @@ function withStaticRuntimeDeployment(
 		} as StaticRuntimeHostOptions['http'],
 		context: {
 			...context,
+			nodeModuleArtifactRoot: deployment.nodeModulesDir,
 			...(deployment.workbenchDir ? { workbenchArtifactRoot: deployment.workbenchDir } : {}),
 		} as StaticRuntimeHostOptions['context'],
 	}

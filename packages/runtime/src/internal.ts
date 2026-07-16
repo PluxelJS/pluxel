@@ -3,7 +3,6 @@ export type {
 	RuntimeDevCapabilities,
 	RuntimeModuleCacheEntry,
 	RuntimeModuleRuntime,
-	RuntimeWorkerWatchOptions,
 } from './runtime/capabilities'
 
 export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
@@ -17,11 +16,22 @@ export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 export { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
 export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
+export {
+	NodeModuleService,
+	withNodeModulePluginContext,
+	type NodeModuleSourceBinder,
+	type NodeModuleSourceSubscription,
+} from './services/NodeModuleService'
+export { readNodeModuleDeclaration } from './node-module'
+export { readWorkbenchUiEntry } from './workbench/ui-entry'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
 export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
-export { resolvePackagedWorkbenchManifest } from './services/workbench/packaged-artifact'
+export {
+	resolvePackagedNodeModule,
+	resolvePackagedWorkbenchManifest,
+} from './services/workbench/packaged-artifact'
 export { installWorkbench, requireWorkbench } from './services/workbench'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {

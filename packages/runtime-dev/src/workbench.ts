@@ -1,26 +1,29 @@
 import type { Context } from '@pluxel/runtime'
-import { requireWorkbench } from '@pluxel/runtime/internal'
+import { fileURLToPath } from 'node:url'
+import { readWorkbenchUiEntry, requireWorkbench } from '@pluxel/runtime/internal'
 import { mergeConfig, type InlineConfig } from 'vite'
+import { resolve } from 'pathe'
+import { resolvePluginArtifactKey } from '@pluxel/rolldown/vite/declaration'
 
 import './context-augment'
 import {
-	WorkbenchCompilerService,
-	type WorkbenchCompilerServiceConfig,
-	type WorkbenchCompilerViteServer,
-} from './workbench/WorkbenchCompilerService'
+	PluginArtifactCompiler,
+	type PluginArtifactCompilerConfig,
+	type PluginArtifactCompilerViteServer,
+} from './workbench/PluginArtifactCompiler'
 
-export type { WorkbenchCompilerServiceConfig } from './workbench/WorkbenchCompilerService'
+export type { PluginArtifactCompilerConfig } from './workbench/PluginArtifactCompiler'
 
-export type WorkbenchCompilerAttachmentOptions = {
-	config?: WorkbenchCompilerServiceConfig
+export type PluginArtifactCompilerAttachmentOptions = {
+	config?: PluginArtifactCompilerConfig
 	vite?: InlineConfig
-	viteServer?: WorkbenchCompilerViteServer
+	viteServer?: PluginArtifactCompilerViteServer
 }
 
-function mergeWorkbenchCompilerViteConfig(
-	base: WorkbenchCompilerServiceConfig | undefined,
+function mergePluginArtifactCompilerViteConfig(
+	base: PluginArtifactCompilerConfig | undefined,
 	vite: InlineConfig | undefined,
-): WorkbenchCompilerServiceConfig | undefined {
+): PluginArtifactCompilerConfig | undefined {
 	if (!vite) return base
 	return {
 		...base,
@@ -28,39 +31,51 @@ function mergeWorkbenchCompilerViteConfig(
 	}
 }
 
-export function attachWorkbenchCompiler(
+export function attachPluginArtifactCompiler(
 	ctx: Context,
-	options: WorkbenchCompilerAttachmentOptions = {},
+	options: PluginArtifactCompilerAttachmentOptions = {},
 ): () => void | Promise<void> {
 	if (ctx !== ctx.root) {
 		throw new Error('[runtime-dev] Workbench compiler must be attached to the root Context')
 	}
 
-	const config = mergeWorkbenchCompilerViteConfig(
-		options.config ?? ctx.config.workbenchCompiler,
+	const config = mergePluginArtifactCompilerViteConfig(
+		options.config ?? ctx.config.pluginArtifactCompiler,
 		options.vite,
 	)
-	const artifacts = requireWorkbench(ctx).artifacts
-	const compiler = new WorkbenchCompilerService(
-		ctx,
-		{
-			store: artifacts,
-			viteServer: options.viteServer,
-		},
-		config,
-	)
+	const artifacts = ctx.workbench.enabled ? requireWorkbench(ctx).artifacts : undefined
+	let compiler: PluginArtifactCompiler | undefined
+	const getCompiler = () =>
+		(compiler ??= new PluginArtifactCompiler(
+			ctx,
+			{ store: artifacts, viteServer: options.viteServer },
+			config,
+		))
 
 	try {
-		const detach = artifacts.attachSourceBinder((ownerCtx, declaration) =>
-			compiler.bindDeclaration(ownerCtx, declaration),
+		const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
+			getCompiler().watchNodeModule(declaration, onUpdate, onError),
 		)
+		const detachWorkbench = artifacts?.attachSourceBinder((ownerCtx, declaration) => {
+			const descriptor = readWorkbenchUiEntry(declaration)
+			const declarationFile = fileURLToPath(descriptor.moduleUrl)
+			const root = resolve(options.viteServer?.config.root ?? process.cwd())
+			const declarationKey =
+				descriptor.artifactKey ??
+				resolvePluginArtifactKey('workbench', root, declarationFile, descriptor.entryPath)
+			return getCompiler().bindDeclaration(ownerCtx, {
+				entryPath: fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl)),
+				declarationKey,
+			})
+		})
 		const guard = ctx.effects.defer(() => {
-			detach()
-			compiler.dispose()
+			detachWorkbench?.()
+			detachNode()
+			compiler?.dispose()
 		})
 		return () => guard.dispose()
 	} catch (error) {
-		compiler.dispose()
+		compiler?.dispose()
 		throw error
 	}
 }

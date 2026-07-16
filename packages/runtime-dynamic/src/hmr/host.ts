@@ -10,6 +10,7 @@ import {
 	createRuntimeLogging,
 	isWorkbenchEnabled,
 	resolvePackagedWorkbenchManifest,
+	resolvePackagedNodeModule,
 	resolveRuntimeStoragePaths,
 	workbenchAdminAccess,
 	withWorkbenchPluginContext,
@@ -18,10 +19,9 @@ import {
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
-import { attachWorkbenchCompiler } from '@pluxel/runtime-dev/workbench'
+import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
-import { BundlerService } from './compile/bundler/BundlerService'
 import {
 	diagnoseWorkspace,
 	nodeLoaderHmrWorkspaceFs,
@@ -262,6 +262,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 				state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
 			},
 			workbenchArtifactResolver: resolvePackagedWorkbenchManifest,
+			nodeModuleArtifactResolver: resolvePackagedNodeModule,
 		}
 		const contextConfig = withWorkbenchPluginContext(
 			mergeContextConfig(defaultContext, plan.context),
@@ -418,8 +419,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
-	const bundler = new BundlerService(ctx)
-
 	const baseRoute = ctx.runtimeRoute
 	const baseDev = ctx.runtimeDev
 	if (!baseRoute) {
@@ -440,27 +439,17 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 			waitForIdle: hmr.api.waitForIdle,
 			executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
 		},
-		worker: {
-			watch: (ownerCtx, tsEntry, bundlerOptions) =>
-				bundler.watchTinypoolWorker(ownerCtx, tsEntry, {
-					...bundlerOptions,
-					vite: hmr.vite,
-				}),
-		},
 	}
 
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
 		ctx.runtimeDev = baseDev
-		return bundler.dispose()
 	})
 
-	if (ctx.workbench.enabled) {
-		attachWorkbenchCompiler(ctx, {
-			vite: plan.vite,
-			viteServer: viteServer ?? hmr.vite,
-		})
-	}
+	attachPluginArtifactCompiler(ctx, {
+		vite: plan.vite,
+		viteServer: viteServer ?? hmr.vite,
+	})
 
 	return hmr
 }

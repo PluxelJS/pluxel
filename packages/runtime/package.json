@@ -46,10 +46,6 @@
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
 		},
-		"./plugin": {
-			"@pluxel/source": "./src/plugin.ts",
-			"default": "./dist/plugin.mjs"
-		},
 		"./plugin-catalog": {
 			"@pluxel/source": "./src/plugin-catalog.ts",
 			"default": "./dist/plugin-catalog.mjs"
@@ -114,7 +110,6 @@
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",
-			"./plugin": "./dist/plugin.mjs",
 			"./plugin-catalog": "./dist/plugin-catalog.mjs",
 			"./protocol": "./dist/protocol.mjs",
 			"./runtime-state": "./dist/runtime-state.mjs",
@@ -171,6 +166,7 @@
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/react": "^19.2.14",
+		"fs-fixture": "^2.13.0",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",
 		"postcss-simple-vars": "^7.0.1",

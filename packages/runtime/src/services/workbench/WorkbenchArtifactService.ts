@@ -7,7 +7,7 @@ import type {
 	WorkbenchBundle,
 	WorkbenchBundleState,
 } from '../../workbench/contracts'
-import type { WorkbenchUiEntry } from '../../workbench/runtime'
+import { readWorkbenchUiEntry, type WorkbenchUiEntry } from '../../workbench/ui-entry'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -162,13 +162,17 @@ export class WorkbenchArtifactService {
 
 	private registerPackaged(owner: Context, declaration: WorkbenchUiEntry): () => void {
 		const pluginName = owner.pluginInfo.id
+		const descriptor = readWorkbenchUiEntry(declaration)
 		let disposed = false
 		void this.registerPackagedModule(
 			pluginName,
-			declaration.artifactName ?? pluginName,
+			descriptor.artifactKey ?? pluginName,
 			() => disposed,
 		).catch((error) => {
-			if (!disposed) owner.logger.error('failed to register workbench UI artifact', { error })
+			if (!disposed) {
+				void this.markCompileError(pluginName, error)
+				owner.logger.error('failed to register workbench UI artifact', { error })
+			}
 		})
 		const guard = owner.effects.defer(() => {
 			disposed = true
@@ -183,12 +187,19 @@ export class WorkbenchArtifactService {
 		isDisposed: () => boolean,
 	): Promise<void> {
 		const manifestPath = await this.resolvePackagedManifestPath(pluginName, artifactName)
-		if (!manifestPath || isDisposed()) return
+		if (!manifestPath || isDisposed()) {
+			if (!isDisposed()) {
+				throw new Error(`packaged workbench UI artifact not found: ${artifactName}`)
+			}
+			return
+		}
 		const [content, fileStat] = await Promise.all([
 			readFile(manifestPath, 'utf8').catch((): null => null),
 			stat(manifestPath).catch((): null => null),
 		])
-		if (!content || !fileStat?.isFile()) return
+		if (!content || !fileStat?.isFile()) {
+			throw new Error(`packaged workbench UI manifest not found: ${manifestPath}`)
+		}
 		const artifactRoot = dirname(manifestPath)
 		const remoteEntry = await readFile(
 			resolve(artifactRoot, WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE),

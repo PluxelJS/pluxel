@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, stat } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context } from '@pluxel/runtime'
+import { type Context, type NodeModuleDeclaration } from '@pluxel/runtime'
 import {
 	createCompiledWorkbenchArtifact,
+	readNodeModuleDeclaration,
+	type NodeModuleSourceSubscription,
 	type WorkbenchArtifactService,
 	resolveModuleIdBaseDir,
 	findRuntimeModuleId,
@@ -22,11 +25,6 @@ import {
 	RUNTIME_INTERNAL_API_BASE,
 	runtimeWorkbenchArtifactBasePath,
 } from '@pluxel/runtime/web/paths'
-import {
-	buildWorkbenchUiRemote,
-	resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature,
-} from '@pluxel/rolldown/vite/workbench-ui'
 import { validateWorkbenchUiArtifact } from '@pluxel/rolldown/workbench/artifact'
 import type { InlineConfig, ViteDevServer } from 'vite'
 import {
@@ -37,13 +35,17 @@ import {
 import { watch, type FSWatcher } from 'chokidar'
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 
-import { collectModuleGraphFiles } from './moduleGraph'
+import { collectSourceGraphFiles } from '@pluxel/rolldown/vite/source-graph'
+import {
+	resolveNodeModuleBuildSignature,
+	resolvePluginArtifactKey,
+} from '@pluxel/rolldown/vite/declaration'
 
-export type WorkbenchCompilerServiceConfig = {
+export type PluginArtifactCompilerConfig = {
 	/**
-	 * Disk cache directory for compiled workbench UI modules.
+	 * Disk cache directory for compiled plugin artifacts.
 	 *
-	 * Defaults to `.pluxel/workbench` under `process.cwd()`.
+	 * Defaults to `.pluxel/plugin-artifacts` under `process.cwd()`.
 	 */
 	cacheDir?: string
 	/**
@@ -55,7 +57,7 @@ export type WorkbenchCompilerServiceConfig = {
 	 */
 	cacheKeep?: number
 	/**
-	 * Maximum number of workbench UI remotes compiled concurrently.
+	 * Maximum number of target artifacts compiled concurrently.
 	 * @default 2
 	 */
 	compileConcurrency?: number
@@ -78,13 +80,14 @@ export type WorkbenchCompilerServiceConfig = {
 	viteCacheKey?: string
 }
 
-export type WorkbenchCompilerViteServer = {
+export type PluginArtifactCompilerViteServer = {
 	config: Pick<ViteDevServer['config'], 'root'>
 	moduleGraph?: Pick<ViteDevServer['moduleGraph'], 'getModuleByUrl'>
 	transformRequest?: ViteDevServer['transformRequest']
+	environments?: ViteDevServer['environments']
 }
 
-export type WorkbenchCompilerArtifactStore = Pick<
+export type PluginArtifactCompilerWorkbenchStore = Pick<
 	WorkbenchArtifactService,
 	| 'getCompiledModule'
 	| 'commitCompiledModule'
@@ -93,13 +96,14 @@ export type WorkbenchCompilerArtifactStore = Pick<
 	| 'removePlugin'
 >
 
-export type WorkbenchCompilerServiceDeps = {
-	store: WorkbenchCompilerArtifactStore
-	viteServer?: WorkbenchCompilerViteServer
+export type PluginArtifactCompilerDeps = {
+	store?: PluginArtifactCompilerWorkbenchStore
+	viteServer?: PluginArtifactCompilerViteServer
 }
 
 type PluginCompileEntry = {
-	pluginName: string
+	declarationKey: string
+	owners: Set<string>
 	pluginDir: string
 	entryBaseDir: string
 	entryPath: string
@@ -108,6 +112,23 @@ type PluginCompileEntry = {
 	graphDirty: boolean
 	active: boolean
 	watcher?: FSWatcher | null
+}
+
+type NodeModuleListener = {
+	onUpdate: (url: URL) => void | Promise<void>
+	onError: (error: unknown) => void
+}
+
+type NodeModuleCompileEntry = {
+	key: string
+	entryPath: string
+	sourceFiles: string[]
+	listeners: Set<NodeModuleListener>
+	watcher?: FSWatcher | null
+	activeUrl?: URL
+	active: boolean
+	dirty: boolean
+	compileTask?: Promise<void>
 }
 
 const WATCHER_IGNORED_GLOBS: string[] = [
@@ -156,10 +177,10 @@ const HASH_ALLOWED_EXTENSIONS = [
 // Bump when federation build semantics change (invalidates sourceHash cache key).
 const WORKBENCH_COMPILER_VERSION = 15
 
-export class WorkbenchCompilerService {
+export class PluginArtifactCompiler {
 	private readonly dbg: LogtapeLogger
-	private readonly store: WorkbenchCompilerArtifactStore
-	private readonly viteServer?: WorkbenchCompilerViteServer
+	private readonly store?: PluginArtifactCompilerWorkbenchStore
+	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
 	private readonly compileConcurrency: number
@@ -174,15 +195,19 @@ export class WorkbenchCompilerService {
 	private flushTimer: NodeJS.Timeout | null = null
 	private flushPromise: Promise<void> | null = null
 	private readonly compileTasks = new Map<string, Promise<boolean>>()
+	private readonly nodeEntries = new Map<string, NodeModuleCompileEntry>()
+	private readonly ownerWorkbenchDeclarations = new Map<string, string>()
+	private activeNodeBuilds = 0
+	private readonly nodeBuildWaiters: Array<() => void> = []
 
 	constructor(
 		public ctx: Context,
-		deps: WorkbenchCompilerServiceDeps,
-		config?: WorkbenchCompilerServiceConfig,
+		deps: PluginArtifactCompilerDeps,
+		config?: PluginArtifactCompilerConfig,
 	) {
 		this.store = deps.store
 		this.viteServer = deps.viteServer
-		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/workbench')
+		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
 		this.cacheKeep = Math.max(1, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		this.sharedPackages = config?.sharedPackages
@@ -192,29 +217,50 @@ export class WorkbenchCompilerService {
 		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
 	}
 
-	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {
+	bindDeclaration(ctx: Context, config: { entryPath: string; declarationKey: string }): () => void {
 		const store = this.store
+		if (!store) throw new Error('[runtime-dev] Workbench compiler is not attached')
 
-		const pluginName = ctx.pluginInfo.id
-
+		const ownerId = ctx.pluginInfo.id
+		const pluginName = config.declarationKey
 		const existing = this.entries.get(pluginName)
 		if (existing) {
-			this.disposeWatcher(existing)
+			if (existing.entryPath !== config.entryPath) {
+				throw new Error(`[runtime-dev] Workbench declaration key collision: ${pluginName}`)
+			}
+			existing.owners.add(ownerId)
+			this.ownerWorkbenchDeclarations.set(ownerId, pluginName)
+			void store.markCompiling(ownerId)
+			this.enqueueCompile(pluginName)
+			const guard = ctx.effects.defer(() => {
+				existing.owners.delete(ownerId)
+				if (this.ownerWorkbenchDeclarations.get(ownerId) === pluginName) {
+					this.ownerWorkbenchDeclarations.delete(ownerId)
+					void store.removePlugin(ownerId)
+				}
+				if (existing.owners.size > 0) return
+				existing.active = false
+				this.disposeWatcher(existing)
+				this.pendingPlugins.delete(pluginName)
+				if (this.entries.get(pluginName) === existing) this.entries.delete(pluginName)
+			})
+			return () => guard.dispose()
 		}
 
-		let pluginDir = this.findPluginDir(ctx, pluginName)
+		let pluginDir = this.findPluginDir(ctx, ownerId)
 		if (!pluginDir && isAbsolute(config.entryPath)) {
 			pluginDir = dirname(config.entryPath)
 		}
 		if (!pluginDir) {
 			pluginDir = this.findViteRootPluginDir(config.entryPath)
 		}
-		if (!pluginDir) throw new Error(`无法定位插件目录: ${pluginName}`)
-		const entryBaseDir = this.findPluginEntryBaseDir(ctx, pluginName) ?? pluginDir
+		if (!pluginDir) throw new Error(`无法定位插件目录: ${ownerId}`)
+		const entryBaseDir = this.findPluginEntryBaseDir(ctx, ownerId) ?? pluginDir
 
 		const sourceFiles = this.collectSourceFiles(entryBaseDir, pluginDir, config.entryPath)
 		const entry: PluginCompileEntry = {
-			pluginName,
+			declarationKey: pluginName,
+			owners: new Set([ownerId]),
 			pluginDir,
 			entryBaseDir,
 			entryPath: config.entryPath,
@@ -224,12 +270,13 @@ export class WorkbenchCompilerService {
 			active: true,
 			watcher: null,
 		}
+		this.ownerWorkbenchDeclarations.set(ownerId, pluginName)
 
 		this.entries.set(pluginName, entry)
 		this.setupWatcher(pluginName, entry)
-		void store.markCompiling(pluginName).catch((error) => {
+		void store.markCompiling(ownerId).catch((error) => {
 			this.ctx.logger.error('failed to mark workbench UI as compiling', {
-				pluginName,
+				pluginName: ownerId,
 				error,
 			})
 		})
@@ -238,13 +285,76 @@ export class WorkbenchCompilerService {
 		const guard = ctx.effects.defer(() => {
 			const stored = this.entries.get(pluginName)
 			if (stored !== entry) return
+			stored.owners.delete(ownerId)
+			if (this.ownerWorkbenchDeclarations.get(ownerId) === pluginName) {
+				this.ownerWorkbenchDeclarations.delete(ownerId)
+				void store.removePlugin(ownerId)
+			}
+			if (stored.owners.size > 0) return
 			stored.active = false
 			this.disposeWatcher(stored)
 			this.pendingPlugins.delete(pluginName)
 			this.entries.delete(pluginName)
-			void store.removePlugin(pluginName)
 		})
 		return () => guard.dispose()
+	}
+
+	async watchNodeModule(
+		declaration: NodeModuleDeclaration,
+		onUpdate: (url: URL) => void | Promise<void>,
+		onError: (error: unknown) => void,
+	): Promise<NodeModuleSourceSubscription> {
+		const descriptor = readNodeModuleDeclaration(declaration)
+		const declarationFile = fileURLToPath(descriptor.moduleUrl)
+		const entryPath = fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl))
+		const root = resolve(this.viteServer?.config.root ?? process.cwd())
+		const key =
+			descriptor.artifactKey ??
+			resolvePluginArtifactKey('node', root, declarationFile, descriptor.entryPath)
+		const listener: NodeModuleListener = { onUpdate, onError }
+		let entry = this.nodeEntries.get(key)
+		if (entry && entry.entryPath !== entryPath) {
+			throw new Error(`[runtime-dev] Node module declaration key collision: ${key}`)
+		}
+		if (!entry) {
+			entry = {
+				key,
+				entryPath,
+				sourceFiles: [entryPath],
+				listeners: new Set(),
+				active: true,
+				dirty: true,
+				watcher: null,
+			}
+			this.nodeEntries.set(key, entry)
+		}
+		entry.listeners.add(listener)
+		try {
+			if (!entry.activeUrl) await this.compileNodeEntry(entry, true)
+			const url = entry.activeUrl
+			if (!url) throw new Error(`[runtime-dev] Node module build produced no artifact: ${key}`)
+			let active = true
+			return {
+				url,
+				dispose: async () => {
+					if (!active) return
+					active = false
+					entry!.listeners.delete(listener)
+					if (entry!.listeners.size > 0) return
+					entry!.active = false
+					this.disposeNodeWatcher(entry!)
+					if (this.nodeEntries.get(key) === entry) this.nodeEntries.delete(key)
+				},
+			}
+		} catch (error) {
+			entry.listeners.delete(listener)
+			if (entry.listeners.size === 0) {
+				entry.active = false
+				this.disposeNodeWatcher(entry)
+				this.nodeEntries.delete(key)
+			}
+			throw error
+		}
 	}
 
 	dispose(): void {
@@ -258,6 +368,174 @@ export class WorkbenchCompilerService {
 			this.disposeWatcher(entry)
 		}
 		this.entries.clear()
+		this.ownerWorkbenchDeclarations.clear()
+		for (const entry of this.nodeEntries.values()) {
+			entry.active = false
+			this.disposeNodeWatcher(entry)
+			entry.listeners.clear()
+		}
+		this.nodeEntries.clear()
+	}
+
+	private async compileNodeEntry(entry: NodeModuleCompileEntry, initial: boolean): Promise<void> {
+		if (entry.compileTask) {
+			entry.dirty = true
+			return entry.compileTask
+		}
+		const task = this.performNodeCompile(entry, initial)
+		entry.compileTask = task
+		try {
+			await task
+		} finally {
+			if (entry.compileTask === task) entry.compileTask = undefined
+		}
+	}
+
+	private async performNodeCompile(entry: NodeModuleCompileEntry, initial: boolean): Promise<void> {
+		do {
+			entry.dirty = false
+			try {
+				await this.refreshNodeSourceFiles(entry)
+				const sourceHash = await this.computeNodeSourceHash(entry)
+				const outDir = join(this.cacheDir, 'node', entry.key)
+				const outFile = join(outDir, `${sourceHash}.mjs`)
+				const { buildNodeModule, validateNodeModuleArtifact } =
+					await import('@pluxel/rolldown/vite/node-module')
+				let reusable = existsSync(outFile)
+				if (reusable) {
+					try {
+						await validateNodeModuleArtifact(outFile)
+					} catch {
+						reusable = false
+						await rm(outFile, { force: true })
+					}
+				}
+				if (!reusable) {
+					await this.withNodeBuildSlot(async () => {
+						if (!entry.active) return
+						await buildNodeModule({
+							root: resolve(this.viteServer?.config.root ?? process.cwd()),
+							entryPath: entry.entryPath,
+							outFile,
+							minify: false,
+							vite: this.vite,
+						})
+					})
+				}
+				if (!entry.active) return
+				const nextUrl = pathToFileURL(outFile)
+				const previous = entry.activeUrl?.href
+				entry.activeUrl = nextUrl
+				this.setupNodeWatcher(entry)
+				await this.cleanupNodeCache(outDir, sourceHash)
+				if (previous && previous !== nextUrl.href) {
+					await Promise.all(
+						[...entry.listeners].map((listener) =>
+							Promise.resolve(listener.onUpdate(nextUrl)).catch(listener.onError),
+						),
+					)
+				}
+			} catch (error) {
+				if (initial && !entry.activeUrl) throw error
+				this.ctx.logger.error('failed to rebuild Node module', {
+					artifactKey: entry.key,
+					consumers: entry.listeners.size,
+					error,
+				})
+			}
+		} while (entry.active && entry.dirty)
+	}
+
+	private async refreshNodeSourceFiles(entry: NodeModuleCompileEntry): Promise<void> {
+		const environment = this.viteServer?.environments?.ssr
+		if (!environment) return
+		let url = entry.entryPath
+		const root = resolve(environment.config.root)
+		if (url.startsWith(root)) url = url.slice(root.length)
+		if (!url.startsWith('/')) url = `/${url}`
+		await environment.transformRequest(url)
+		const rootModule = await environment.moduleGraph.getModuleByUrl(url)
+		if (!rootModule) return
+		const files = collectSourceGraphFiles(rootModule)
+		if (files.length > 0) entry.sourceFiles = files
+	}
+
+	private setupNodeWatcher(entry: NodeModuleCompileEntry): void {
+		this.disposeNodeWatcher(entry)
+		if (!entry.active || entry.sourceFiles.length === 0) return
+		const watcher = watch(entry.sourceFiles, {
+			ignoreInitial: true,
+			awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
+			ignored: WATCHER_IGNORED_GLOBS,
+		})
+		const invalidate = () => {
+			if (!entry.active) return
+			entry.dirty = true
+			void this.compileNodeEntry(entry, false).catch((error) => {
+				this.ctx.logger.error('failed to schedule Node module rebuild', {
+					artifactKey: entry.key,
+					error,
+				})
+			})
+		}
+		watcher.on('change', invalidate)
+		watcher.on('unlink', invalidate)
+		watcher.on('add', invalidate)
+		entry.watcher = watcher
+	}
+
+	private disposeNodeWatcher(entry: NodeModuleCompileEntry): void {
+		const watcher = entry.watcher
+		entry.watcher = null
+		if (watcher) void watcher.close().catch((): undefined => undefined)
+	}
+
+	private async cleanupNodeCache(dir: string, currentHash: string): Promise<void> {
+		const files = await readdir(dir, { withFileTypes: true }).catch(() => [])
+		const builds: Array<{ path: string; mtime: number }> = []
+		for (const file of files) {
+			if (!file.isFile() || file.name === `${currentHash}.mjs`) continue
+			if (!/^[a-f\d]{16}\.mjs$/.test(file.name)) continue
+			const path = join(dir, file.name)
+			const info = await stat(path).catch((): null => null)
+			if (info) builds.push({ path, mtime: info.mtimeMs })
+		}
+		builds.sort((a, b) => b.mtime - a.mtime)
+		for (const stale of builds.slice(Math.max(0, this.cacheKeep - 1))) {
+			await rm(stale.path, { force: true })
+		}
+	}
+
+	private async computeNodeSourceHash(entry: NodeModuleCompileEntry): Promise<string> {
+		const hash = createHash('sha256')
+		hash.update('node-module-compiler:1')
+		hash.update(entry.key)
+		hash.update(
+			resolveNodeModuleBuildSignature({
+				vite: this.vite,
+				cacheKey: this.viteCacheKey,
+				minify: false,
+			}),
+		)
+		const files = await this.expandHashTargets(entry.sourceFiles)
+		for (const file of files.sort()) {
+			hash.update(file)
+			hash.update(await readFile(file).catch(() => Buffer.alloc(0)))
+		}
+		return hash.digest('hex').slice(0, 16)
+	}
+
+	private async withNodeBuildSlot<T>(build: () => Promise<T>): Promise<T> {
+		if (this.activeNodeBuilds >= this.compileConcurrency) {
+			await new Promise<void>((resolveSlot) => this.nodeBuildWaiters.push(resolveSlot))
+		}
+		this.activeNodeBuilds++
+		try {
+			return await build()
+		} finally {
+			this.activeNodeBuilds--
+			this.nodeBuildWaiters.shift()?.()
+		}
 	}
 
 	async requestCompile(pluginName: string): Promise<void> {
@@ -315,6 +593,7 @@ export class WorkbenchCompilerService {
 
 	private async performCompile(pluginName: string): Promise<boolean> {
 		const store = this.store
+		if (!store) return false
 		const entry = this.entries.get(pluginName)
 		if (!entry) return false
 
@@ -322,23 +601,36 @@ export class WorkbenchCompilerService {
 		try {
 			await this.refreshWatchFiles(entry)
 			const sharedPackages = this.getSharedPackages()
+			const workbenchBuild = await import('@pluxel/rolldown/vite/workbench-ui')
 			const sourceHash = await this.computeSourceHash(
 				entry.sourceFiles,
 				sharedPackages,
 				entry.pluginDir,
-				resolveWorkbenchUiBuildSignature(this.vite, this.viteCacheKey),
+				workbenchBuild.resolveWorkbenchUiBuildSignature(this.vite, this.viteCacheKey),
+				workbenchBuild.resolveWorkbenchFederationShared(entry.pluginDir, sharedPackages).signature,
 			)
-			const current = store.getCompiledModule(pluginName)
+			const owners = this.activeWorkbenchOwners(entry)
+			const currentOwner = owners[0]
+			const current = currentOwner ? store.getCompiledModule(currentOwner) : undefined
 			if (current?.sourceHash === sourceHash) {
-				await store.commitCompiledModule(current)
+				await this.commitWorkbenchOwners(
+					entry,
+					sourceHash,
+					current.compiledAt,
+					this.getCachedModuleDirPath(pluginName, sourceHash),
+				)
 				this.dbg.debug('compile done {pluginName} (cached)', { pluginName })
 				return true
 			}
-			await store.markCompiling(pluginName, {
-				updatedAt: Date.now(),
-				sourceHash: current?.sourceHash,
-				compiledAt: current?.compiledAt,
-			})
+			await Promise.all(
+				this.activeWorkbenchOwners(entry).map((ownerId) =>
+					store.markCompiling(ownerId, {
+						updatedAt: Date.now(),
+						sourceHash: store.getCompiledModule(ownerId)?.sourceHash,
+						compiledAt: store.getCompiledModule(ownerId)?.compiledAt,
+					}),
+				),
+			)
 
 			const manifestFile = this.getManifestFilePath(pluginName, sourceHash)
 			if (existsSync(manifestFile)) {
@@ -346,13 +638,11 @@ export class WorkbenchCompilerService {
 				const cachedDir = this.getCachedModuleDirPath(pluginName, sourceHash)
 				const validation = await validateWorkbenchUiArtifact(cachedDir, pluginName)
 				if (manifestStats?.isFile() && validation.valid) {
-					await store.commitCompiledModule(
-						createCompiledWorkbenchArtifact({
-							pluginName,
-							sourceHash,
-							compiledAt: Math.floor(manifestStats.mtimeMs || Date.now()),
-						}),
-						{ artifactRoot: cachedDir },
+					await this.commitWorkbenchOwners(
+						entry,
+						sourceHash,
+						Math.floor(manifestStats.mtimeMs || Date.now()),
+						cachedDir,
 					)
 					await this.cleanupCacheDir(pluginName)
 					this.dbg.debug('compile done {pluginName} (cached:disk)', { pluginName })
@@ -361,27 +651,53 @@ export class WorkbenchCompilerService {
 			}
 
 			const built = await this.buildFederatedRemote(entry, sharedPackages, sourceHash)
-			await store.commitCompiledModule(
-				createCompiledWorkbenchArtifact({
-					pluginName,
-					sourceHash,
-					compiledAt: built.compiledAt,
-				}),
-				{ artifactRoot: built.outDir },
-			)
+			await this.commitWorkbenchOwners(entry, sourceHash, built.compiledAt, built.outDir)
 			await this.cleanupCacheDir(pluginName)
 			this.dbg.debug('compile done {pluginName}', { pluginName })
 			return true
 		} catch (error) {
-			const current = store.getCompiledModule(pluginName)
-			await store.markCompileError(pluginName, error, {
-				updatedAt: Date.now(),
-				sourceHash: current?.sourceHash,
-				compiledAt: current?.compiledAt,
-			})
+			await Promise.all(
+				this.activeWorkbenchOwners(entry).map((ownerId) => {
+					const current = store.getCompiledModule(ownerId)
+					return store.markCompileError(ownerId, error, {
+						updatedAt: Date.now(),
+						sourceHash: current?.sourceHash,
+						compiledAt: current?.compiledAt,
+					})
+				}),
+			)
 			this.ctx.logger.error('failed to compile {pluginName}', { pluginName, error })
 			return false
 		}
+	}
+
+	private async commitWorkbenchOwners(
+		entry: PluginCompileEntry,
+		sourceHash: string,
+		compiledAt: number,
+		artifactRoot: string,
+	): Promise<void> {
+		const store = this.store
+		if (!store || !entry.active) return
+		await Promise.all(
+			this.activeWorkbenchOwners(entry).map((ownerId) =>
+				store.commitCompiledModule(
+					createCompiledWorkbenchArtifact({
+						pluginName: ownerId,
+						artifactName: entry.declarationKey,
+						sourceHash,
+						compiledAt,
+					}),
+					{ artifactRoot },
+				),
+			),
+		)
+	}
+
+	private activeWorkbenchOwners(entry: PluginCompileEntry): string[] {
+		return [...entry.owners].filter(
+			(ownerId) => this.ownerWorkbenchDeclarations.get(ownerId) === entry.declarationKey,
+		)
 	}
 
 	private async flushWorker(): Promise<void> {
@@ -456,12 +772,13 @@ export class WorkbenchCompilerService {
 			throw new Error(`Entry file not found: ${absoluteEntry}`)
 		}
 
-		const outDir = this.getCachedModuleDirPath(entry.pluginName, sourceHash)
+		const outDir = this.getCachedModuleDirPath(entry.declarationKey, sourceHash)
 
-		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactBasePath(entry.pluginName, sourceHash)}/`
+		const publicPath = `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactBasePath(entry.declarationKey, sourceHash)}/`
+		const { buildWorkbenchUiRemote } = await import('@pluxel/rolldown/vite/workbench-ui')
 		await buildWorkbenchUiRemote({
 			root: entry.pluginDir,
-			pluginName: entry.pluginName,
+			pluginName: entry.declarationKey,
 			entryPath: absoluteEntry,
 			outDir,
 			publicPath,
@@ -470,7 +787,7 @@ export class WorkbenchCompilerService {
 			vite: this.vite,
 			cacheKey: this.viteCacheKey,
 		})
-		const validation = await validateWorkbenchUiArtifact(outDir, entry.pluginName)
+		const validation = await validateWorkbenchUiArtifact(outDir, entry.declarationKey)
 		if (!validation.valid) {
 			throw new Error(
 				`Incomplete workbench UI artifact: ${'reason' in validation ? validation.reason : 'unknown validation failure'}`,
@@ -480,7 +797,7 @@ export class WorkbenchCompilerService {
 		const manifestFile = join(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE)
 		const manifestContent = await readFile(manifestFile, 'utf-8').catch((): null => null)
 		if (!manifestContent) {
-			throw new Error(`Module federation manifest not found for ${entry.pluginName}`)
+			throw new Error(`Module federation manifest not found for ${entry.declarationKey}`)
 		}
 		const manifestStat = await stat(manifestFile)
 		return {
@@ -538,12 +855,11 @@ export class WorkbenchCompilerService {
 		sharedPackages: readonly string[],
 		baseDir?: string,
 		uiBuildSignature?: string,
+		resolvedSharedSignature?: string,
 	): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${WORKBENCH_COMPILER_VERSION}`)
-		const sharedSignature = baseDir
-			? resolveWorkbenchFederationShared(baseDir, sharedPackages).signature
-			: [...sharedPackages].join('|')
+		const sharedSignature = resolvedSharedSignature ?? [...sharedPackages].join('|')
 		hash.update(`shared:${sharedSignature}`)
 		hash.update(`shareStrategy:${WORKBENCH_FEDERATION_SHARE_STRATEGY}`)
 		hash.update(`remoteEntry:${WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE}`)
@@ -627,7 +943,7 @@ export class WorkbenchCompilerService {
 			}
 			if (!rootModule) return
 
-			const nextFiles = collectModuleGraphFiles(rootModule, {
+			const nextFiles = collectSourceGraphFiles(rootModule, {
 				include: (filePath) => this.isTrackedSourceFile(entry, filePath),
 			})
 			if (entry.paraglide) {
@@ -641,7 +957,7 @@ export class WorkbenchCompilerService {
 			if (nextSignature === prevSignature) return
 
 			entry.sourceFiles = nextFiles
-			this.setupWatcher(entry.pluginName, entry)
+			this.setupWatcher(entry.declarationKey, entry)
 		} catch {
 			// Keep previous watcher/hash targets on failure.
 		}

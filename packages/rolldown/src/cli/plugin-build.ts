@@ -4,7 +4,7 @@ import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
 import { lintGuardPlugin } from '../rolldown/plugins/lintGuardPlugin'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils'
-import { workbenchUiBuildPlugin } from '../rolldown/plugins/workbenchUiBuildPlugin'
+import { pluginArtifactBuildPlugin } from '../rolldown/plugins/pluginArtifactBuildPlugin'
 import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
@@ -16,6 +16,7 @@ type TsdownTransformOptions = NonNullable<TsdownInputOptions['transform']>
 export type PluginBuildPipelineOptions = {
 	root: string
 	lint?: boolean
+	artifactBuildDir?: string
 	workbench?:
 		| false
 		| {
@@ -53,6 +54,7 @@ function createPipeline(
 	semanticsPlugin: InlineConfig['plugins'],
 ): PluginBuildPipeline {
 	const workbench = options.workbench ?? {}
+	const workbenchOptions = workbench === false ? {} : workbench
 	return {
 		plugins: [
 			PreprocessorDirectives(),
@@ -65,9 +67,16 @@ function createPipeline(
 			}),
 			options.lint === false ? undefined : lintGuardPlugin({ cwd: options.root }),
 			configSourcePlugin(),
-			workbench === false
-				? undefined
-				: workbenchUiBuildPlugin({ root: options.root, ...workbench }),
+			pluginArtifactBuildPlugin({
+				root: options.root,
+				buildDir: options.artifactBuildDir ?? workbenchOptions.buildDir,
+				workbench:
+					workbench === false
+						? false
+						: {
+								minify: workbenchOptions.minify,
+							},
+			}),
 			...toPluginArray(options.additionalPlugins),
 			decoratorOutputGuardPlugin(),
 		],

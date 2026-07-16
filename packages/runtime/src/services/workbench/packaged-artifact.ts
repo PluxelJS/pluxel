@@ -34,6 +34,19 @@ export function resolvePackagedWorkbenchManifest(
 	)
 }
 
+export function resolvePackagedNodeModule(
+	root: Context,
+	pluginName: string,
+	artifactKey: string,
+): string | null {
+	const registryPath = findRuntimeModuleId(root, pluginName)
+	if (!registryPath) return null
+	const baseDir = resolveModuleIdBaseDir(registryPath)
+	if (!baseDir) return null
+	const packageRoot = findNearestPackageRoot(baseDir)
+	return resolve(packageRoot ?? baseDir, 'dist/artifacts/node', `${artifactKey}.mjs`)
+}
+
 function findNearestPackageRoot(start: string): string | null {
 	let current = start
 	while (true) {

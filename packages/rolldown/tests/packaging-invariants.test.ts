@@ -80,7 +80,7 @@ describe('toolchain package boundaries', () => {
 	it('keeps Vite and Module Federation lazy behind Workbench UI declarations', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const pluginCode = await readFile(
-			`${root}/packages/rolldown/src/rolldown/plugins/workbenchUiBuildPlugin.ts`,
+			`${root}/packages/rolldown/src/rolldown/plugins/pluginArtifactBuildPlugin.ts`,
 			'utf8',
 		)
 
@@ -277,7 +277,7 @@ describe('toolchain package boundaries', () => {
 		expect(freezer).toContain('export function staticApplication(')
 		expect(freezer).toContain("await import('nf3')")
 		expect(freezer).toContain('createPluginBuildPipeline({')
-		expect(freezer).not.toContain('workbenchUiBuildPlugin(')
+		expect(freezer).not.toContain('pluginArtifactBuildPlugin(')
 		expect(freezer).not.toContain('configSourcePlugin()')
 		expect(freezer).not.toContain('lintGuardPlugin(')
 		expect(freezer).toContain('entry must default-export defineStaticRuntime(...) directly')
@@ -287,13 +287,13 @@ describe('toolchain package boundaries', () => {
 		expect(pluginBuild).toContain("from 'unplugin-preprocessor-directives/rollup'")
 		expect(pluginBuild).toContain('lintGuardPlugin(')
 		expect(pluginBuild).toContain('configSourcePlugin()')
-		expect(pluginBuild).toContain('workbenchUiBuildPlugin(')
+		expect(pluginBuild).toContain('pluginArtifactBuildPlugin(')
 		expect(pluginBuild).toContain('legacy: true')
 		expect(pluginBuild).toContain('emitDecoratorMetadata: true')
 		expect(pluginBuild).toContain("name: 'pluxel:decorator-output-guard'")
 		expect(cliBuild).toContain('build.pluginPackage({')
 		expect(cliBuild).not.toContain('configSourcePlugin(')
-		expect(cliBuild).not.toContain('workbenchUiBuildPlugin(')
+		expect(cliBuild).not.toContain('pluginArtifactBuildPlugin(')
 		expect(runtimeDevVite).not.toContain('pluginSourceVitePlugins')
 		expect(runtimeDevVite).not.toContain('configSourcePlugin(')
 		expect(runtimeDevVite).not.toContain('lintGuardPlugin(')
@@ -392,16 +392,17 @@ describe('toolchain package boundaries', () => {
 		const staticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
 		const dynamicHost = await readFile(`${root}/packages/runtime-dynamic/src/hmr/host.ts`, 'utf8')
 
-		expect(runtimeDevWorkbench).toContain('export function attachWorkbenchCompiler(')
-		expect(runtimeDevWorkbench).toContain('new WorkbenchCompilerService(')
-		expect(runtimeDevWorkbench).toContain('artifacts.attachSourceBinder(')
+		expect(runtimeDevWorkbench).toContain('export function attachPluginArtifactCompiler(')
+		expect(runtimeDevWorkbench).toContain('new PluginArtifactCompiler(')
+		expect(runtimeDevWorkbench).toContain('artifacts?.attachSourceBinder(')
+		expect(runtimeDevWorkbench).toContain('ctx.nodeModules.attachSourceBinder(')
 		expect(runtimeDevWorkbench).not.toContain('ctx.runtimeDev =')
 		expect(runtimeCapabilities).not.toContain('workbenchUiSource')
 		expect(workbenchService).not.toContain('interface WorkbenchBackend')
-		expect(staticVite).toContain('runtimeDev.attachWorkbenchCompiler(ctx,')
-		expect(staticVite).not.toContain('new runtimeDev.WorkbenchCompilerService(')
-		expect(dynamicHost).toContain('attachWorkbenchCompiler(ctx,')
-		expect(dynamicHost).not.toContain('new WorkbenchCompilerService(')
+		expect(staticVite).toContain('runtimeDev.attachPluginArtifactCompiler(ctx,')
+		expect(staticVite).not.toContain('new runtimeDev.PluginArtifactCompiler(')
+		expect(dynamicHost).toContain('attachPluginArtifactCompiler(ctx,')
+		expect(dynamicHost).not.toContain('new PluginArtifactCompiler(')
 	})
 
 	it('keeps dev/HMR capabilities out of the runtime route contract', async () => {
@@ -410,7 +411,9 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime/src/runtime/capabilities.ts`,
 			'utf8',
 		)
-		const pluginApi = await readFile(`${root}/packages/runtime/src/plugin.ts`, 'utf8')
+		const runtimePackage = JSON.parse(
+			await readFile(`${root}/packages/runtime/package.json`, 'utf8'),
+		) as { exports?: Record<string, unknown> }
 
 		const routeType = capabilities.match(
 			/export type RuntimeRouteCapabilities = \{[\s\S]*?\n\}/,
@@ -418,8 +421,9 @@ describe('toolchain package boundaries', () => {
 		expect(routeType).toBeTruthy()
 		expect(routeType).not.toContain('dev?:')
 		expect(capabilities).toContain('runtimeDev?: RuntimeDevCapabilities')
-		expect(pluginApi).toContain('runtimeDevCapabilities(ctx)')
-		expect(pluginApi).not.toContain('runtimeRoute(ctx)?.dev')
+		expect(capabilities).not.toContain('RuntimeWorkerWatchOptions')
+		expect(capabilities).not.toMatch(/\bworker\?:\s*\{/)
+		expect(runtimePackage.exports).not.toHaveProperty('./plugin')
 	})
 
 	it('keeps old HTTP workbench internals out of public runtime config surfaces', async () => {

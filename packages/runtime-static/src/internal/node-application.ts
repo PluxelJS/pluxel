@@ -39,6 +39,7 @@ export async function runStaticNodeApplication<
 		},
 		deployment: {
 			root: options.deployment.root,
+			nodeModulesDir: `${options.deployment.root}/artifacts/node`,
 			workbenchIncluded: options.deployment.variant === 'workbench',
 			...(options.deployment.variant === 'workbench'
 				? {

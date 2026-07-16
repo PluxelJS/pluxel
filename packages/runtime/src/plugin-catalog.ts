@@ -23,5 +23,4 @@ export {
 	type RuntimeRouteCapabilities,
 	type RuntimeRouteFeatureHandleFactory,
 	type RuntimeRouteFeatures,
-	type RuntimeWorkerWatchOptions,
 } from './runtime/capabilities'

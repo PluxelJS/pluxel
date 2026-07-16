@@ -370,8 +370,9 @@ PLUXEL_MANIFEST_FIELD=acme pnpm build
 
 ## Workbench UI 插件包
 
-只有使用 `workbench.entry(import.meta.url, './ui/index.tsx')` 的插件需要 Vite。server entry 仍由 tsdown
-构建到 `dist/index.mjs`，UI remote 单独输出到 `dist/workbench/<artifact>/`，不会混入 server bundle。
+使用 `workbench.entry(import.meta.url, './ui/index.tsx')` 或 `defineNodeModule(import.meta.url, './task.ts')` 的插件
+需要 Vite。server entry 仍由 tsdown 构建到 `dist/index.mjs`；UI remote 输出到 `dist/workbench/<artifact>/`，Node ESM
+输出到 `dist/artifacts/node/<artifact>.mjs`，都不会混入 server bundle。
 
 UI source 只能导入 browser-safe Contract、`@pluxel/runtime/workbench/contract`、
 `@pluxel/runtime/workbench/ui` 和公开 UI peers；不能导入 Plugin、Context、server Extension 或 Node API。

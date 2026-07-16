@@ -10,8 +10,8 @@ import type {
 } from './contracts'
 import type { SignalDbCollectionHandle } from '../services/workbench/resources/WorkbenchCollectionService'
 import type { SseHandler } from '../services/workbench/resources/WorkbenchEventsService'
-
-export type WorkbenchUiEntry = Readonly<{ entryPath: string; artifactName?: string }>
+import { createWorkbenchUiEntry, type WorkbenchUiEntry } from './ui-entry'
+export type { WorkbenchUiEntry } from './ui-entry'
 
 export type WorkbenchExtension<Contract extends AnyWorkbenchContract = AnyWorkbenchContract> =
 	Readonly<{
@@ -165,20 +165,8 @@ const bind = Object.freeze({
 
 export const workbench = Object.freeze({
 	extension,
-	entry(moduleUrl: string | URL, entryPath: string, artifactName?: string): WorkbenchUiEntry {
-		const normalized = String(entryPath ?? '').trim()
-		if (!normalized) throw new Error('[workbench] workbench.entry(): entry path required')
-		const url = new URL(normalized, moduleUrl)
-		if (url.protocol !== 'file:') {
-			throw new Error('[workbench] workbench.entry(): module URL must use the file protocol')
-		}
-		let path = decodeURIComponent(url.pathname)
-		if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
-		const normalizedArtifact = String(artifactName ?? '').trim()
-		return Object.freeze({
-			entryPath: path,
-			...(normalizedArtifact ? { artifactName: normalizedArtifact } : {}),
-		})
+	entry(moduleUrl: string | URL, entryPath: string): WorkbenchUiEntry {
+		return createWorkbenchUiEntry(moduleUrl, entryPath, arguments[2])
 	},
 	bind,
 })

@@ -113,5 +113,5 @@ Workbench artifact root 由 deployment bootstrap 显式提供。production 不�
 - `packages/runtime/src/workbench/`
 - `packages/runtime/src/services/workbench/`
 - `packages/components/src/workbench/`
-- `packages/rolldown/src/rolldown/plugins/workbenchUiBuildPlugin.ts`
+- `packages/rolldown/src/rolldown/plugins/pluginArtifactBuildPlugin.ts`
 - `packages/runtime-dev/src/workbench/`

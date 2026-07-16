@@ -42,9 +42,7 @@ export default defineConfig({
 		hmr: 'src/hmr.ts',
 		'hmr/diagnose': 'src/hmr/diagnose.ts',
 		vite: 'src/vite.ts',
-		plugin: 'src/plugin.ts',
 	},
-	copy: ['src/hmr/compile/bundler/bundle-worker.mjs'],
 	dts: {
 		sourcemap: true,
 		eager: true,

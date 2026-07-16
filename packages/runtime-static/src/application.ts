@@ -105,6 +105,8 @@ function assertPublicContextConfig(context: unknown, label: string): void {
 		'adminAccess',
 		'workbenchArtifactRoot',
 		'workbenchArtifactResolver',
+		'nodeModuleArtifactRoot',
+		'nodeModuleArtifactResolver',
 	].filter((key) => key in context)
 	if (forbidden.length > 0) {
 		throw new Error(

@@ -40,7 +40,7 @@ import type {
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 
-type WorkbenchCompilerConfig = {
+type PluginArtifactCompilerConfig = {
 	cacheDir?: string
 	cacheKeep?: number
 	compileConcurrency?: number
@@ -51,7 +51,7 @@ type WorkbenchCompilerConfig = {
 }
 
 type StaticRuntimeViteHmrConfig = {
-	workbenchCompiler?: WorkbenchCompilerConfig
+	pluginArtifactCompiler?: PluginArtifactCompilerConfig
 }
 
 type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
@@ -115,17 +115,18 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		try {
 			const hmr = options.hmr
 			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
-			if (hmrOptions && config.workbench !== false && config.workbench?.enabled === true) {
-				const pluginDirs = resolveStaticRuntimePluginDirs(server, host)
-				await configureStaticRuntimeDevRuntime(server, host, {
-					viteServer: server,
-					...hmrOptions,
-					workbenchCompiler: mergeWorkbenchCompilerPluginDirs(
-						hmrOptions.workbenchCompiler,
-						pluginDirs,
-					),
-				})
-			}
+			const pluginDirs =
+				config.workbench !== false && config.workbench?.enabled === true
+					? resolveStaticRuntimePluginDirs(server, host)
+					: undefined
+			await configureStaticRuntimeDevRuntime(server, host, {
+				viteServer: server,
+				...hmrOptions,
+				pluginArtifactCompiler: mergePluginArtifactCompilerPluginDirs(
+					hmrOptions?.pluginArtifactCompiler,
+					pluginDirs,
+				),
+			})
 			await application.prepare?.({ host, startup })
 			return host
 		} catch (error) {
@@ -508,8 +509,8 @@ async function configureStaticRuntimeDevRuntime(
 	if (!ctx.runtimeRoute) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
-	runtimeDev.attachWorkbenchCompiler(ctx, {
-		config: options.workbenchCompiler,
+	runtimeDev.attachPluginArtifactCompiler(ctx, {
+		config: options.pluginArtifactCompiler,
 		viteServer: options.viteServer,
 	})
 }
@@ -603,10 +604,10 @@ function findSsrExportDir(
 	return undefined
 }
 
-function mergeWorkbenchCompilerPluginDirs(
-	config: WorkbenchCompilerConfig | undefined,
+function mergePluginArtifactCompilerPluginDirs(
+	config: PluginArtifactCompilerConfig | undefined,
 	pluginDirs: Record<string, string> | undefined,
-): WorkbenchCompilerConfig | undefined {
+): PluginArtifactCompilerConfig | undefined {
 	if (!pluginDirs) return config
 	return {
 		...config,

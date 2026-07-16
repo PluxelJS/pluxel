@@ -38,6 +38,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 	const sourcePipeline = createPluginBuildPipeline({
 		root: cwd,
 		lint: options.lint,
+		artifactBuildDir: buildDir,
 		workbench: variant === 'workbench' ? { buildDir, minify: options.minify ?? true } : false,
 	})
 
@@ -265,6 +266,9 @@ function staticApplicationAssemblyPlugin(options: {
 					options.variant === 'workbench'
 						? await collectWorkbenchArtifacts(resolve(options.outDir, 'workbench'))
 						: []
+				const nodeModules = await collectNodeModuleArtifacts(
+					resolve(options.outDir, 'artifacts/node'),
+				)
 				const catalogHash = createHash('sha256')
 					.update(
 						Object.values(bundle)
@@ -290,6 +294,10 @@ function staticApplicationAssemblyPlugin(options: {
 								target: 'node',
 							},
 							capabilities: {
+								nodeModules: {
+									root: 'artifacts/node',
+									artifacts: nodeModules,
+								},
 								workbench: {
 									included: options.variant === 'workbench',
 									publicRoot: options.variant === 'workbench' ? 'workbench/public' : null,
@@ -354,4 +362,20 @@ async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
 	return artifacts.sort((a, b) =>
 		String((a as { name: string }).name).localeCompare(String((b as { name: string }).name)),
 	)
+}
+
+async function collectNodeModuleArtifacts(root: string): Promise<unknown[]> {
+	const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+	const artifacts: Array<{ key: string; file: string; sha256: string }> = []
+	for (const entry of entries) {
+		if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue
+		const file = resolve(root, entry.name)
+		const content = await readFile(file)
+		artifacts.push({
+			key: entry.name.slice(0, -4),
+			file: relative(dirname(dirname(root)), file),
+			sha256: createHash('sha256').update(content).digest('hex'),
+		})
+	}
+	return artifacts.sort((a, b) => a.key.localeCompare(b.key))
 }

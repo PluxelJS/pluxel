@@ -104,16 +104,30 @@ UI entry 不进入 server bundle。反向边界同样成立：UI source graph �
 `@pluxel/runtime/workbench/contract`、`@pluxel/runtime/workbench/ui` 和公开 UI peers，不得包含 server Workbench
 entry、Plugin、Context 或 Node API。
 
+额外 Node entry 使用 module-level declaration：
+
+```ts
+const taskModule = defineNodeModule(import.meta.url, './task.ts')
+```
+
+唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中提取 Workbench 与 Node declaration，并注入由
+package identity/version、package-relative declaration path 和 literal entry 生成的 stable key。Node branch 输出
+`dist/artifacts/node/<artifact-key>.mjs`；它与 UI branch 共享 declaration identity、source/build hash、缓存、去重与
+原子发布，但使用独立 Node graph、validator 和 Vite target config。`workbench: false` 只关闭 UI branch。
+
+Node artifact 必须是自包含单文件 ESM（Node builtins 除外），不得 value-import Pluxel runtime/core、CSS/browser
+asset 或嵌套 Pluxel declaration。它不定义 external escape hatch、worker protocol 或 inline fallback。
+
 ## Development compiler
 
-runtime-dev compiler：
+runtime-dev artifact compiler：
 
-1. 将 Extension source declaration 绑定到 mount owner；
-2. 收集 Vite module graph 与相关源文件；
-3. 计算 source/build hash；
-4. 构建 Federation remote 到 `.pluxel/workbench`；
-5. 原子提交 artifact state；
-6. owner unload 时停止 watcher 并移除 artifact。
+1. 按 target + declaration key 去重 UI/Node source declaration；
+2. 收集各自 Vite module graph 与相关源文件；
+3. 计算 target-specific source/build hash；
+4. 构建 Federation remote 或单文件 Node ESM 到 content-addressed cache；
+5. generation guard 后原子提交 artifact state；
+6. 最后一个 owner lease unload 时停止 watcher，并有界保留历史 artifact。
 
 compiler 在绑定 declaration 时立即发布 `building`；ready/error revision 驱动 Workbench，不使用客户端轮询猜测。
 
@@ -121,6 +135,9 @@ compiler 在绑定 declaration 时立即发布 `building`；ready/error revision
 
 生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version、
 compiler version 和显式 Vite cache key。UI Contract 和 UI runtime 都是 singleton Federation shared package。
+
+static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
+relative file 与 sha256；variant 只改变 browser Workbench closure。
 
 `@pluxel/core/federation` 是唯一 dependency-neutral build contract。runtime-dev、Rolldown 和 host 直接依赖该
 contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。

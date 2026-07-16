@@ -24,6 +24,8 @@ export type StaticRuntimeContextConfig = Omit<
 	| 'adminAccess'
 	| 'workbenchArtifactRoot'
 	| 'workbenchArtifactResolver'
+	| 'nodeModuleArtifactRoot'
+	| 'nodeModuleArtifactResolver'
 >
 
 export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>

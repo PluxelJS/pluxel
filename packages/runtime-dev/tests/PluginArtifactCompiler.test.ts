@@ -35,9 +35,9 @@ vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 }))
 
 import {
-	WorkbenchCompilerService,
-	type WorkbenchCompilerArtifactStore,
-} from '../src/workbench/WorkbenchCompilerService'
+	PluginArtifactCompiler,
+	type PluginArtifactCompilerWorkbenchStore,
+} from '../src/workbench/PluginArtifactCompiler'
 
 function createPluginContext(
 	host: Host,
@@ -59,7 +59,7 @@ function defineTestProperty(target: object, key: string, value: unknown) {
 	})
 }
 
-describe('WorkbenchCompilerService', () => {
+describe('PluginArtifactCompiler', () => {
 	beforeEach(() => {
 		pluginBuildMocks.buildWorkbenchUiRemote.mockClear()
 		pluginBuildMocks.resolveWorkbenchFederationShared.mockClear()
@@ -77,11 +77,12 @@ describe('WorkbenchCompilerService', () => {
 			'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx': 'export default {}\n',
 		})
 
-		const committed: Parameters<WorkbenchCompilerArtifactStore['commitCompiledModule']>[0][] = []
+		const committed: Parameters<PluginArtifactCompilerWorkbenchStore['commitCompiledModule']>[0][] =
+			[]
 		const artifactRoots: string[] = []
-		let currentModule: ReturnType<WorkbenchCompilerArtifactStore['getCompiledModule']>
+		let currentModule: ReturnType<PluginArtifactCompilerWorkbenchStore['getCompiledModule']>
 		const host = createHost()
-		const store: WorkbenchCompilerArtifactStore = {
+		const store: PluginArtifactCompilerWorkbenchStore = {
 			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module, options) {
 				currentModule = module
@@ -95,7 +96,7 @@ describe('WorkbenchCompilerService', () => {
 			async removePlugin() {},
 		}
 
-		const service = new WorkbenchCompilerService(
+		const service = new PluginArtifactCompiler(
 			host.ctx,
 			{ store },
 			{
@@ -126,7 +127,7 @@ describe('WorkbenchCompilerService', () => {
 					},
 				},
 			}),
-			{ entryPath: './PluginWithUI/ui/index.tsx' },
+			{ entryPath: './PluginWithUI/ui/index.tsx', declarationKey: 'PluginWithUI' },
 		)
 
 		await Promise.all([
@@ -175,7 +176,7 @@ describe('WorkbenchCompilerService', () => {
 			'apps/static-host/web/client/main.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const store: WorkbenchCompilerArtifactStore = {
+		const store: PluginArtifactCompilerWorkbenchStore = {
 			getCompiledModule: () => undefined,
 			async commitCompiledModule() {},
 			async markCompiling() {},
@@ -185,7 +186,7 @@ describe('WorkbenchCompilerService', () => {
 			async removePlugin() {},
 		}
 
-		const service = new WorkbenchCompilerService(
+		const service = new PluginArtifactCompiler(
 			host.ctx,
 			{
 				store,
@@ -203,6 +204,7 @@ describe('WorkbenchCompilerService', () => {
 
 		const dispose = service.bindDeclaration(createPluginContext(host, 'StaticCommercialPlugin'), {
 			entryPath: './web/client/main.tsx',
+			declarationKey: 'StaticCommercialPlugin',
 		})
 
 		await service.requestCompile('StaticCommercialPlugin')
@@ -231,8 +233,8 @@ describe('WorkbenchCompilerService', () => {
 			'packages/plugin-builder/src/ui/index.tsx': 'export default { version: 1 }\n',
 		})
 		const host = createHost()
-		let currentModule: ReturnType<WorkbenchCompilerArtifactStore['getCompiledModule']>
-		const store: WorkbenchCompilerArtifactStore = {
+		let currentModule: ReturnType<PluginArtifactCompilerWorkbenchStore['getCompiledModule']>
+		const store: PluginArtifactCompilerWorkbenchStore = {
 			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module) {
 				currentModule = module
@@ -243,7 +245,7 @@ describe('WorkbenchCompilerService', () => {
 			},
 			async removePlugin() {},
 		}
-		const service = new WorkbenchCompilerService(
+		const service = new PluginArtifactCompiler(
 			host.ctx,
 			{ store },
 			{
@@ -262,7 +264,7 @@ describe('WorkbenchCompilerService', () => {
 					},
 				},
 			}),
-			{ entryPath: './ui/index.tsx' },
+			{ entryPath: './ui/index.tsx', declarationKey: 'BuilderPlugin' },
 		)
 
 		await service.requestCompile('BuilderPlugin')
@@ -289,7 +291,7 @@ describe('WorkbenchCompilerService', () => {
 		})
 		const host = createHost()
 		const removed: string[] = []
-		const store: WorkbenchCompilerArtifactStore = {
+		const store: PluginArtifactCompilerWorkbenchStore = {
 			getCompiledModule: () => undefined,
 			async commitCompiledModule() {},
 			async markCompiling() {},
@@ -300,7 +302,7 @@ describe('WorkbenchCompilerService', () => {
 				removed.push(pluginName)
 			},
 		}
-		const service = new WorkbenchCompilerService(
+		const service = new PluginArtifactCompiler(
 			host.ctx,
 			{ store },
 			{
@@ -311,9 +313,11 @@ describe('WorkbenchCompilerService', () => {
 		)
 		const disposeOld = service.bindDeclaration(createPluginContext(host, 'ReplacementPlugin'), {
 			entryPath: './src/old.tsx',
+			declarationKey: 'ReplacementPlugin-old',
 		})
 		const disposeNew = service.bindDeclaration(createPluginContext(host, 'ReplacementPlugin'), {
 			entryPath: './src/new.tsx',
+			declarationKey: 'ReplacementPlugin',
 		})
 
 		disposeOld()

@@ -38,13 +38,25 @@
 			"@pluxel/source": "./src/vite/index.ts",
 			"default": "./dist/vite.mjs"
 		},
+		"./vite/declaration": {
+			"@pluxel/source": "./src/vite/declaration.ts",
+			"default": "./dist/vite/declaration.mjs"
+		},
 		"./vite/environment": {
 			"@pluxel/source": "./src/vite/environment.ts",
 			"default": "./dist/vite/environment.mjs"
 		},
+		"./vite/node-module": {
+			"@pluxel/source": "./src/vite/node-module.ts",
+			"default": "./dist/vite/node-module.mjs"
+		},
 		"./vite/paraglide": {
 			"@pluxel/source": "./src/vite/paraglide.ts",
 			"default": "./dist/vite/paraglide.mjs"
+		},
+		"./vite/source-graph": {
+			"@pluxel/source": "./src/vite/source-graph.ts",
+			"default": "./dist/vite/source-graph.mjs"
 		},
 		"./vite/workbench-ui": {
 			"@pluxel/source": "./src/vite/workbench-ui.ts",
@@ -80,8 +92,11 @@
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
 			"./vite": "./dist/vite.mjs",
+			"./vite/declaration": "./dist/vite/declaration.mjs",
 			"./vite/environment": "./dist/vite/environment.mjs",
+			"./vite/node-module": "./dist/vite/node-module.mjs",
 			"./vite/paraglide": "./dist/vite/paraglide.mjs",
+			"./vite/source-graph": "./dist/vite/source-graph.mjs",
 			"./vite/workbench-ui": "./dist/vite/workbench-ui.mjs",
 			"./workbench/artifact": "./dist/workbench/artifact.mjs",
 			"./workspace": "./dist/workspace.mjs",

@@ -110,20 +110,7 @@ export type RuntimeApiCapabilities = {
 export type RuntimeRouteFeatureHandleFactory = (ctx: Context) => unknown
 export type RuntimeRouteFeatures = Readonly<Record<string, RuntimeRouteFeatureHandleFactory>>
 
-export type RuntimeWorkerWatchOptions = {
-	external?: string[]
-	onUpdate: (workerUrl: string) => void | Promise<void>
-	onError?: (error: unknown) => void
-}
-
 export type RuntimeDevCapabilities = {
-	worker?: {
-		watch(
-			ctx: Context,
-			tsEntry: string,
-			options: RuntimeWorkerWatchOptions,
-		): Promise<() => Promise<void>>
-	}
 	batches?: {
 		lastBatch(): unknown
 		waitForBatch(options?: unknown): Promise<unknown>

@@ -26,10 +26,6 @@
 			"@pluxel/source": "./src/hmr/diagnose.ts",
 			"default": "./dist/hmr/diagnose.mjs"
 		},
-		"./plugin": {
-			"@pluxel/source": "./src/plugin.ts",
-			"default": "./dist/plugin.mjs"
-		},
 		"./services": {
 			"@pluxel/source": "./src/services.ts",
 			"default": "./dist/services.mjs"
@@ -45,7 +41,6 @@
 			".": "./dist/index.mjs",
 			"./hmr": "./dist/hmr.mjs",
 			"./hmr/diagnose": "./dist/hmr/diagnose.mjs",
-			"./plugin": "./dist/plugin.mjs",
 			"./services": "./dist/services.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
@@ -69,7 +64,6 @@
 		"option-t": "^55.1.2",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
-		"tinypool": "^2.1.0",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {

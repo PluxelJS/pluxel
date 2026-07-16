@@ -10,7 +10,7 @@ Rolldown/Vite 工具链入口：
 - `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
 - `configSourcePlugin`：生成 config metadata，并从 `@pluxel/runtime/toolchain` 导入 helper。
 - `lintGuardPlugin`：执行插件声明约束检查。
-- `workbenchUiBuildPlugin`：静态提取纯 `workbench.entry(import.meta.url, path)` declaration，增量构建并
-  原子发布 per-owner federation artifact；无 UI 时不加载 Vite。
+- `pluginArtifactBuildPlugin`：在同一次 transform 中提取 Workbench UI 与 `defineNodeModule()` declaration，
+  分别增量构建并原子发布 browser Federation remote 和单文件 Node ESM；无 declaration 时不加载 target builder。
 
 工具链不包含公开 API bridge 或兼容 rewrite。
