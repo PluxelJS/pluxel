@@ -1,7 +1,3 @@
-import { setPluxelRuntime } from '@pluxel/core'
-
-setPluxelRuntime('core')
-
 export {
 	BaseFeature,
 	BasePlugin,

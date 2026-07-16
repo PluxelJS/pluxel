@@ -3,13 +3,12 @@ import { isAbsolute, resolve } from 'pathe'
 import type { InlineConfig, ViteDevServer } from 'vite'
 
 import '../services'
-import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
+import type { Context as CoreContext } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
 	createRuntimeLogging,
 	isWorkbenchEnabled,
-	requireWorkbench,
 	resolvePackagedWorkbenchManifest,
 	resolveRuntimeStoragePaths,
 	workbenchAdminAccess,
@@ -19,7 +18,7 @@ import {
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
-import { mergeWorkbenchCompilerViteConfig } from '@pluxel/runtime-dev'
+import { attachWorkbenchCompiler } from '@pluxel/runtime-dev/workbench'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
 import { BundlerService } from './compile/bundler/BundlerService'
@@ -32,7 +31,6 @@ import {
 } from './diagnose'
 import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
-import { WorkbenchCompilerService } from '@pluxel/runtime-dev/workbench'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 
@@ -242,8 +240,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	options: BootLoaderHmrHostOptions = {},
 ): Promise<BootedLoaderHmrHost> {
-	setPluxelRuntime('hmr')
-
 	if (plan.chdir) process.chdir(plan.root)
 	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
 	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
@@ -423,20 +419,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
 	const bundler = new BundlerService(ctx)
-	let workbenchCompiler: WorkbenchCompilerService | undefined
-	if (ctx.workbench.enabled) {
-		const workbenchCompilerConfig = mergeWorkbenchCompilerViteConfig(
-			ctx.config.workbenchCompiler,
-			plan.vite,
-		)
-		ctx.config.workbenchCompiler = workbenchCompilerConfig
-		const extensionStore = requireWorkbench(ctx).registry.getArtifacts()
-		workbenchCompiler = new WorkbenchCompilerService(
-			ctx,
-			{ store: extensionStore, viteServer: viteServer ?? hmr.vite, enabled: true },
-			workbenchCompilerConfig,
-		)
-	}
 
 	const baseRoute = ctx.runtimeRoute
 	const baseDev = ctx.runtimeDev
@@ -465,22 +447,20 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 					vite: hmr.vite,
 				}),
 		},
-		...(workbenchCompiler
-			? {
-					workbenchUiSource: {
-						bind: (ownerCtx, declaration) =>
-							workbenchCompiler!.bindDeclaration(ownerCtx, declaration),
-					},
-				}
-			: {}),
 	}
 
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
 		ctx.runtimeDev = baseDev
-		workbenchCompiler?.dispose()
 		return bundler.dispose()
 	})
+
+	if (ctx.workbench.enabled) {
+		attachWorkbenchCompiler(ctx, {
+			vite: plan.vite,
+			viteServer: viteServer ?? hmr.vite,
+		})
+	}
 
 	return hmr
 }

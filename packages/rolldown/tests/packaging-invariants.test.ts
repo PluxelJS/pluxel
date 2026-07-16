@@ -328,6 +328,7 @@ describe('toolchain package boundaries', () => {
 
 	it('keeps one runtime authoring entry and one always-on service registry', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const coreManifest = await readJson(`${root}/packages/core/package.json`)
 		const coreIndex = await readFile(`${root}/packages/core/src/index.ts`, 'utf8')
 		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
 		const runtimeServices = await readFile(`${root}/packages/runtime/src/services/index.ts`, 'utf8')
@@ -353,6 +354,8 @@ describe('toolchain package boundaries', () => {
 		expect(coreIndex).toContain("import './logger'")
 		expect(coreIndex).toContain("import './services'")
 		expect(coreIndex).toContain("export { EvtChannel } from './services'")
+		expect(coreManifest.exports).not.toHaveProperty('./env')
+		expect(existsSync(`${root}/packages/core/src/env.ts`)).toBe(false)
 		expect(runtimeIndex).toContain("import './services'")
 		expect(runtimeIndex).not.toContain("import './services/vault'")
 		expect(runtimeIndex).toContain("export * from '@pluxel/core'")
@@ -365,10 +368,28 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeManifest.exports?.['./authoring']).toBeUndefined()
 		expect(runtimeManifest.exports?.['./register/full']).toBeUndefined()
 		expect(runtimeManifest.exports?.['./register/static']).toBeUndefined()
+		expect(runtimeManifest.exports?.['./frozen']).toBeUndefined()
 		expect(runtimeDynamicManifest.exports?.['./register']).toBeUndefined()
 		expect(configSourcePlugin).toContain(
 			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'",
 		)
+	})
+
+	it('keeps Workbench compiler attachment lifecycle in runtime-dev', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const runtimeDevWorkbench = await readFile(
+			`${root}/packages/runtime-dev/src/workbench.ts`,
+			'utf8',
+		)
+		const staticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
+		const dynamicHost = await readFile(`${root}/packages/runtime-dynamic/src/hmr/host.ts`, 'utf8')
+
+		expect(runtimeDevWorkbench).toContain('export function attachWorkbenchCompiler(')
+		expect(runtimeDevWorkbench).toContain('new WorkbenchCompilerService(')
+		expect(staticVite).toContain('runtimeDev.attachWorkbenchCompiler(ctx,')
+		expect(staticVite).not.toContain('new runtimeDev.WorkbenchCompilerService(')
+		expect(dynamicHost).toContain('attachWorkbenchCompiler(ctx,')
+		expect(dynamicHost).not.toContain('new WorkbenchCompilerService(')
 	})
 
 	it('keeps dev/HMR capabilities out of the runtime route contract', async () => {
@@ -396,8 +417,6 @@ describe('toolchain package boundaries', () => {
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 			`${root}/packages/runtime-static/src/types.ts`,
 			`${root}/packages/runtime-static/src/index.ts`,
-			`${root}/packages/runtime/src/runtime/contracts.ts`,
-			`${root}/packages/runtime/src/frozen.ts`,
 		]
 		const forbidden = ['controlPlane', 'uiAssets', 'uiPublicDir', 'UiAssetStrategy']
 		const offenders: string[] = []

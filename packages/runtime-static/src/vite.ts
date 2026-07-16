@@ -14,7 +14,6 @@ import {
 	type HmrUpdatedLogProps,
 } from '@pluxel/runtime-dev/hmr-log'
 import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
-import { requireWorkbench } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -507,37 +506,12 @@ async function configureStaticRuntimeDevRuntime(
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
-	const previousDev = ctx.runtimeDev
-	if (previousDev?.workbenchUiSource) {
-		throw new Error('[runtime-static/vite] workbench UI source runtime is already attached')
-	}
-	const previousRoute = ctx.runtimeRoute
-	if (!previousRoute) {
+	if (!ctx.runtimeRoute) {
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
-
-	const workbenchCompilerConfig = runtimeDev.mergeWorkbenchCompilerViteConfig(
-		options.workbenchCompiler,
-		undefined,
-	)
-	ctx.config.workbenchCompiler = workbenchCompilerConfig
-	const artifactStore = requireWorkbench(ctx).registry.getArtifacts()
-	const workbenchCompiler = new runtimeDev.WorkbenchCompilerService(
-		ctx,
-		{ store: artifactStore, viteServer: options.viteServer, enabled: true },
-		workbenchCompilerConfig,
-	)
-
-	ctx.runtimeDev = {
-		...previousDev,
-		workbenchUiSource: {
-			bind: (ownerCtx, declaration) => workbenchCompiler.bindDeclaration(ownerCtx, declaration),
-		},
-	}
-
-	ctx.effects.defer(() => {
-		workbenchCompiler.dispose()
-		ctx.runtimeDev = previousDev
+	runtimeDev.attachWorkbenchCompiler(ctx, {
+		config: options.workbenchCompiler,
+		viteServer: options.viteServer,
 	})
 }
 

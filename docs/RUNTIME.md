@@ -30,7 +30,7 @@ Workbench backend 由以下部分组成：
 资源 namespace 只存在于服务端。浏览器收到 binding token，服务端在请求时解析 token、校验 kind，并在
 revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
 
-安装入口是 `@pluxel/runtime/internal`，只供 static/dynamic/frozen launcher 使用。插件不得
+安装入口是 `@pluxel/runtime/internal`，只供 static、dynamic 和 production static launcher 使用。插件不得
 直接安装或 require backend。
 
 ## Static application ownership

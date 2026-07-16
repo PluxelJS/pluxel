@@ -9,7 +9,7 @@ Workbench Plane and fixture strategy.
 
 Core-side test surface for Pluxel plugin semantics:
 
-- Automatic core setup on import (`@pluxel/core/env` + services registration)
+- Automatic core service registration on import
 - A minimal core Host/Context API for integration/unit tests
 - An opinionated Vitest preset (optional)
 

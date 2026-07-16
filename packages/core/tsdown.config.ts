@@ -22,7 +22,6 @@ export default defineConfig({
 		devExports: '@pluxel/source',
 	},
 	entry: {
-		env: 'src/env.ts',
 		federation: 'src/federation.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',

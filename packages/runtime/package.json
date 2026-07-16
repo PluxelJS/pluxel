@@ -30,10 +30,6 @@
 			"@pluxel/source": "./src/events.ts",
 			"default": "./dist/events.mjs"
 		},
-		"./frozen": {
-			"@pluxel/source": "./src/frozen.ts",
-			"default": "./dist/frozen.mjs"
-		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -114,7 +110,6 @@
 			"./api": "./dist/api.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./events": "./dist/events.mjs",
-			"./frozen": "./dist/frozen.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",

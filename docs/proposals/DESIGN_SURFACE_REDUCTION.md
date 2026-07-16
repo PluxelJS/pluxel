@@ -8,52 +8,15 @@
 
 建议按以下顺序处理：
 
-| 顺序 | 决策                                                | 置信度 | 主要收益                                             |
-| ---- | --------------------------------------------------- | ------ | ---------------------------------------------------- |
-| 1    | 删除旧 `@pluxel/runtime/frozen`                     | 高     | production freezer 只保留一条路径                    |
-| 2    | 删除 demo-only plugin worker 子系统                 | 高     | 删除一整套无 production 对等语义的能力               |
-| 3    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI     |
-| 4    | 删除 core process-global runtime/env 标记           | 高     | core 恢复 host-free，Context 不读取可变进程身份      |
-| 5    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念               |
-| 6    | 让 runtime-dev 统一安装 Workbench compiler binding  | 中     | static/dynamic 不再分别手写同一 attachment lifecycle |
+| 顺序 | 决策                                                | 置信度 | 主要收益                                         |
+| ---- | --------------------------------------------------- | ------ | ------------------------------------------------ |
+| 1    | 删除 demo-only plugin worker 子系统                 | 高     | 删除一整套无 production 对等语义的能力           |
+| 2    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI |
+| 3    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念           |
 
-前四项以删除为主，可以独立落地。第五、六项只有在不增加新的公开概念时才应推进。
+前两项以删除为主，可以独立落地。第三项只有在不增加新的公开概念时才应推进。
 
-## 1. 删除旧 runtime frozen host generator
-
-### 问题
-
-当前 production static application 的唯一权威路径已经是：
-
-```text
-defineStaticRuntime() entry
-  -> @pluxel/rolldown/build staticApplication()
-  -> target bootstrap + distribution
-```
-
-但 `@pluxel/runtime/frozen` 仍公开 `buildFrozenHost()`。它生成另一份 bootstrap source，直接创建 `Context`、安装 dynamic loader services 并调用 `ctx.loader.preloadPlugins()`。这不是 canonical static application freezer，也不复用 static catalog、startup resolver、deployment manifest 或 target adapter。
-
-仓库内只有 `packages/runtime/tests/frozen/build-frozen-host.test.ts` 使用该入口；CLI production smoke 使用的是 Rolldown static application distribution。
-
-因此这里不是两个 target，而是两个互不一致的 production model。
-
-### 提案
-
-- 删除 `@pluxel/runtime/frozen` export、tsdown entry 和 tsconfig path；
-- 删除 `packages/runtime/src/frozen.ts`、`packages/runtime/src/runtime/contracts.ts` 和专属测试；
-- production freezer 只保留 `@pluxel/rolldown/build` 的 `staticApplication()`；
-- 将 `docs/RUNTIME.md` 中泛称的 “frozen launcher” 改成明确的 production static launcher，避免再推导出第三种 route。
-
-不提供 compatibility wrapper。公开版本变更通过 Changeset 表达。
-
-### 验收
-
-- 搜索不到 `buildFrozenHost`、`FrozenPluginSpec`、`frozen-host.mjs` 和 `@pluxel/runtime/frozen`；
-- static application 的 Vite 与 production build 仍加载同一个 `defineStaticRuntime()` entry；
-- CLI application template smoke 同时覆盖 headless/workbench distribution；
-- deployment 输出不残留 `@pluxel/*` runtime import。
-
-## 2. 删除 demo-only plugin worker 子系统
+## 1. 删除 demo-only plugin worker 子系统
 
 ### 问题
 
@@ -97,7 +60,7 @@ defineStaticRuntime() entry
 
 唯一需要产品层确认的是：是否存在仓库外、必须由 Pluxel 负责构建的 production worker。若没有已知消费者，不应为了假设需求保留当前半套实现。
 
-## 3. 把 builtin document 收窄为只读
+## 2. 把 builtin document 收窄为只读
 
 ### 问题
 
@@ -145,33 +108,7 @@ defineStaticRuntime() entry
 
 若仓库外确有 builtin interactive document 消费者，需要在实施前二选一：要么把其迁移到 React + RPC，要么修改当前 Workbench 权威设计并正式承担第二套 UI schema。不能继续保持文档只读、实现半可写的状态。
 
-## 4. 删除 core process-global runtime/env 标记
-
-### 问题
-
-`packages/core/src/env.ts` 把 `std-env` 和一个 process-global `'core' | 'hmr'` 标记挂到所有 `Context.prototype.env`。static entry 设置 `'core'`，dynamic host 启动时设置 `'hmr'`。
-
-仓库中没有代码读取 `getPluxelRuntime()`、`isCoreRuntime()`、`isHmrRuntime()` 或 `ctx.env.runtime`；只有 launcher 写入。该状态也不会在 dynamic host stop 时恢复，因此同进程测试、多 host 或先 dynamic 后 static 的场景会观察到与具体 Context 无关的最后写入值。
-
-route 类型是 host policy，不是 core plugin capability。core 因此额外依赖 `std-env`、持有 global symbol 并修改 Context prototype，却没有提供真实语义。
-
-### 提案
-
-- 删除 `PluxelRuntime`、getter/setter、global symbols 和 launcher 写入；
-- 删除 `@pluxel/core/env` export 与 core 对 `std-env` 的依赖；
-- 删除 `Context.prototype.env` 注入；
-- 不新增 Context-local runtime kind 作为替代。
-
-插件需要业务环境值时使用 config；static application 需要部署信息时使用 startup bindings；route 内部需要区分策略时依赖自己的显式对象，而不是作者 Context。
-
-### 验收
-
-- core 不读取进程环境、不修改 Context prototype、不持有 runtime-kind global；
-- static/dynamic host 可以在同一测试进程顺序启动而没有共享 route identity；
-- user docs 和 templates 不使用 `ctx.env`；
-- core main export 和 package dependencies 同步收窄。
-
-## 5. 收回 runtime shared barrel
+## 3. 收回 runtime shared barrel
 
 ### 问题
 
@@ -195,40 +132,6 @@ route 类型是 host policy，不是 core plugin capability。core 因此额外�
 - runtime common 仍不依赖 dynamic 或 Rolldown；
 - static headless bundle closure 不因 internal re-export 增加 Workbench、Vite 或 dynamic loader。
 
-## 6. 统一 Workbench dev compiler attachment
-
-### 问题
-
-static Vite route 与 dynamic HMR host 都手动完成以下步骤：
-
-1. merge `WorkbenchCompilerServiceConfig`；
-2. 从 backend 取得 artifact store；
-3. 创建 `WorkbenchCompilerService`；
-4. 写入 `ctx.runtimeDev.workbenchUiSource.bind`；
-5. 在 effects 中 dispose compiler 并恢复旧 capability。
-
-这不是 route policy，而是 runtime-dev compiler 自身的安装 lifecycle。两处手写会让 duplicate attachment、config merge、cleanup 和 disabled behavior 漂移。
-
-### 提案
-
-在 private `@pluxel/runtime-dev` 中保留一个 internal attachment function，由 static/dynamic 调用。它只负责 Workbench compiler binding，不接管：
-
-- Context 创建；
-- logging；
-- HTTP 配置；
-- dynamic batch/module capability；
-- static catalog 或 host restart。
-
-不要创建通用 `RuntimeHostManager`、`ServiceManager` 或 capability plugin framework。
-
-### 验收
-
-- `new WorkbenchCompilerService()` 只出现在 runtime-dev 内；
-- static/dynamic 分别只做 enabled 判定和提供 Vite server/config；
-- duplicate attach 被拒绝；
-- dispose 后恢复 attachment 前的 `runtimeDev` state；
-- Workbench disabled 时不加载 compiler implementation、不创建 watcher。
-
 ## 不应推进的重构
 
 以下方向当前没有足够收益：
@@ -242,7 +145,7 @@ static Vite route 与 dynamic HMR host 都手动完成以下步骤：
 
 ## 实施顺序与停止条件
 
-建议每项独立提交，并在删除后立即搜索旧符号。顺序上先删除 frozen 和 worker，使 route/host wiring 变小；再完成 builtin read-only cut；然后删除 core env。最后才处理 internal barrel 和 compiler attachment。
+建议每项独立提交，并在删除后立即搜索旧符号。顺序上先删除 worker，使 route/host wiring 变小；再完成 builtin read-only cut；最后才处理 internal barrel。
 
 任一项遇到以下情况应停止并重新评估，而不是增加 adapter：
 

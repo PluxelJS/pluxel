@@ -14,8 +14,7 @@
 			"@pluxel/runtime/plugin-catalog": ["packages/runtime/src/plugin-catalog.ts"],
 			"@pluxel/runtime/protocol": ["packages/runtime/src/protocol.ts"],
 			"@pluxel/runtime/events": ["packages/runtime/src/events.ts"],
-			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"],
-			"@pluxel/runtime/frozen": ["packages/runtime/src/frozen.ts"]
+			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"]
 		},
 		"outDir": "dist",
 		"jsx": "react-jsx",

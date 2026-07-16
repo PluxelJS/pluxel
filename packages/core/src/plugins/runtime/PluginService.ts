@@ -10,7 +10,7 @@
 
 import { Injectable, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-import { isProduction } from '../../env'
+import { isProduction } from 'std-env'
 import { LoggerService } from '../../logger/LoggerService'
 import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'

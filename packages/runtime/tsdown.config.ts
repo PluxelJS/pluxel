@@ -32,7 +32,6 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
-		frozen: 'src/frozen.ts',
 		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
 		events: 'src/events.ts',
 		api: 'src/api/contributions.ts',

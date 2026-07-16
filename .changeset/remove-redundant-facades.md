@@ -22,3 +22,9 @@ of retaining the legacy depth-batch strategy.
 
 Core production sources now share one layout under `src`: the DI and FSM kernels live under
 `src/internal`, while migration changelogs are left to Git history.
+
+Remove the superseded `@pluxel/runtime/frozen` generator so production applications have only the
+canonical `defineStaticRuntime()` + Rolldown freezer path. Remove the unused process-global core
+runtime/environment facade; route identity remains explicit host policy instead of mutable Context
+state. Runtime-dev now owns the single Workbench compiler attachment lifecycle used by both static
+and dynamic development routes.
