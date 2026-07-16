@@ -805,6 +805,9 @@ importers:
       fs-fixture:
         specifier: ^2.13.0
         version: 2.14.0
+      oxlint:
+        specifier: ^1.73.0
+        version: 1.73.0
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
@@ -1058,9 +1061,6 @@ importers:
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
-      oxlint:
-        specifier: ^1.58.0
-        version: 1.72.0
     devDependencies:
       '@platformatic/vfs':
         specifier: ^0.3.0

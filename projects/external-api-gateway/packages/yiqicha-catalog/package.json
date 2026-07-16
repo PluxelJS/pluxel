@@ -23,7 +23,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsdown",
+		"build": "tsdown --no-config src/index.ts --dts --clean",
 		"generate-types": "node scripts/generate-types.mjs",
 		"scrape": "node scripts/scrape.mjs",
 		"typecheck": "tsc --noEmit"

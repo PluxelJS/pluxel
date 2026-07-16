@@ -32,7 +32,7 @@ import {
 } from './diagnose'
 import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
-import { WorkbenchCompilerService } from './workbench/WorkbenchCompilerService'
+import { WorkbenchCompilerService } from '@pluxel/runtime-dev/workbench'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
 

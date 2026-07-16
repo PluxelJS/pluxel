@@ -228,9 +228,7 @@ const result = await registry.invoke(id, input, ctx)
 ```
 
 ```ts
-type OpResult<T> =
-	| { ok: true; value: T }
-	| { ok: false; error: OpError }
+type OpResult<T> = { ok: true; value: T } | { ok: false; error: OpError }
 ```
 
 Throwing invocation is still useful for internal code and transports that already use exception control flow:

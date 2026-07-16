@@ -163,9 +163,7 @@ function isDefineOptionalFeatureCall(node: unknown): node is OxNode {
 	if (!callee) return false
 	if (callee.type === 'Identifier') return callee.name === 'defineLazyFeature'
 	if (callee.type !== 'MemberExpression') return false
-	return (
-		getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineLazyFeature'
-	)
+	return getStaticPropertyName(callee.property, Boolean(callee.computed)) === 'defineLazyFeature'
 }
 
 function getOptionalFeatureLoadFunction(node: OxNode): OxNode | null {

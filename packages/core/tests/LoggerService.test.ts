@@ -1,6 +1,6 @@
 import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LoggerService } from '../src/services/LoggerService'
+import { LoggerService } from '../src/logger/LoggerService'
 import { withCoreContext } from '../src/test'
 
 describe('LoggerService', () => {

@@ -9,8 +9,7 @@
 		}
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false",
-		"test": "vitest run --passWithNoTests"
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@repo/chatbots-adapter-kit": "workspace:*",

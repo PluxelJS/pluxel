@@ -10,7 +10,8 @@ function createMemoryFsLike() {
 	const files = new Map<string, Uint8Array>()
 	const encode = (text: string) => new TextEncoder().encode(text)
 	const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
-	const missing = (path: string) => Object.assign(new Error(`Missing file: ${path}`), { code: 'ENOENT' })
+	const missing = (path: string) =>
+		Object.assign(new Error(`Missing file: ${path}`), { code: 'ENOENT' })
 
 	return {
 		files,
@@ -48,7 +49,9 @@ function createMemoryFsLike() {
 			},
 			stat: async (path: string) => {
 				const value = files.get(path)
-				return value ? { type: 'file' as const, size: value.byteLength, mtimeMs: 0 } : { type: 'missing' as const }
+				return value
+					? { type: 'file' as const, size: value.byteLength, mtimeMs: 0 }
+					: { type: 'missing' as const }
 			},
 		},
 	}
@@ -80,9 +83,9 @@ describe('PersistenceService (runtime)', () => {
 				for await (const entry of ns.list('nested')) nestedEntries.push(entry.key)
 				expect(nestedEntries).toEqual(['nested/b.bin'])
 
-				await expect(
-					host.ctx.root.persistence.preflight({ durable: true }),
-				).rejects.toThrow(/ephemeral/)
+				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toThrow(
+					/ephemeral/,
+				)
 			},
 			{ persistence: { mode: 'memory' } },
 		)

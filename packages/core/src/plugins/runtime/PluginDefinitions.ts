@@ -31,11 +31,7 @@ import {
 	getRequiredPluginDependencies,
 } from '../decorators/PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
-import {
-	runtimePluginKeyOfCtor,
-	type RuntimePluginHandle,
-	type RuntimePluginKey,
-} from './identity'
+import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
 
 export type PluginGraph = GraphSnapshot<ReturnType<typeof getPluginInfo>>
 export type PluginRuntime = Runtime<ReturnType<typeof getPluginInfo>>

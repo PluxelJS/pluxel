@@ -185,9 +185,9 @@ export function resolveActiveRightPaneTab(params: {
 		params.builtinTabFromPath ??
 		(params.showRouteTab
 			? 'route'
-			: (params.showConfigTab
+			: params.showConfigTab
 				? 'config'
-				: (params.tabGroups[0]?.id ?? (params.showLevelsTab ? 'logging' : 'config'))))
+				: (params.tabGroups[0]?.id ?? (params.showLevelsTab ? 'logging' : 'config')))
 	)
 }
 
@@ -224,10 +224,7 @@ export function shortenPathSegments(path: string, keep = 3) {
 	return `…/${segments.slice(-keep).join('/')}`
 }
 
-export function resolveKnownPluginName(
-	knownPluginNames: ReadonlySet<string>,
-	pluginName: string,
-) {
+export function resolveKnownPluginName(knownPluginNames: ReadonlySet<string>, pluginName: string) {
 	if (knownPluginNames.has(pluginName)) return pluginName
 	const hash = pluginName.lastIndexOf('#')
 	return hash > 0 && knownPluginNames.has(pluginName.slice(0, hash))
@@ -235,9 +232,6 @@ export function resolveKnownPluginName(
 		: undefined
 }
 
-export function matchesKnownPluginName(
-	knownPluginNames: ReadonlySet<string>,
-	pluginName: string,
-) {
+export function matchesKnownPluginName(knownPluginNames: ReadonlySet<string>, pluginName: string) {
 	return resolveKnownPluginName(knownPluginNames, pluginName) !== undefined
 }

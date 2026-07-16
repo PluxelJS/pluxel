@@ -1699,12 +1699,7 @@ function generateInjection(
 	parseProgram: (code: string, filename: string) => Program,
 	metadataHelperImportSource: string,
 ): string {
-	if (
-		configs.length === 0 &&
-		bindings.length === 0 &&
-		layouts.length === 0
-	)
-		return ''
+	if (configs.length === 0 && bindings.length === 0 && layouts.length === 0) return ''
 
 	const needsRegister = configs.some(
 		(c) => typeof c.registerExpr === 'string' && c.registerExpr.length > 0,

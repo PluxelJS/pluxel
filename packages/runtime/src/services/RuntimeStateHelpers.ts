@@ -21,19 +21,13 @@ export function setPluginsEnabled(
 	for (const pluginId of pluginIds) setPluginEnabled(draft, pluginId, enabled)
 }
 
-export function replaceEnabledPlugins(
-	draft: RuntimeStateDraft,
-	pluginIds: Iterable<string>,
-): void {
+export function replaceEnabledPlugins(draft: RuntimeStateDraft, pluginIds: Iterable<string>): void {
 	draft.enabled.clear()
 	for (const pluginId of pluginIds) {
 		if (typeof pluginId === 'string' && pluginId) draft.enabled.add(pluginId)
 	}
 }
 
-export function listForkIds(
-	state: RuntimeStateSnapshot,
-	basePluginId: string,
-): readonly string[] {
+export function listForkIds(state: RuntimeStateSnapshot, basePluginId: string): readonly string[] {
 	return state.forks[basePluginId] ?? []
 }

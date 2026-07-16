@@ -101,7 +101,8 @@ export function Plugin(a?: PluginMetadata | PluginIdentifier, b?: PluginMetadata
 						: null
 		s.declaredMeta = mergedMeta ? (__DEV__ ? $freeze(mergedMeta) : mergedMeta) : null
 		for (const feature of features ?? EMPTY_ARR) {
-			if (typeof feature !== 'function') throw new TypeError('@Plugin features must be constructors')
+			if (typeof feature !== 'function')
+				throw new TypeError('@Plugin features must be constructors')
 			__registerUsedFeatures__(ctor, feature as AnyCtor)
 		}
 

@@ -155,20 +155,16 @@ describe('WorkbenchRegistry', () => {
 			resources: { status: workbenchContract.rpc<{}>() },
 			views: { Settings: { accepts: SettingsPort } },
 		})
-		registry.mount(
-			'Consumer',
-			workbench.extension({ contract: ConsumerUi }),
-			{ commands: rpcRef('Consumer', 'commands') },
-		)
+		registry.mount('Consumer', workbench.extension({ contract: ConsumerUi }), {
+			commands: rpcRef('Consumer', 'commands'),
+		})
 		expect(registry.getPluginLayout('Consumer').items[0]?.view).toMatchObject({
 			kind: 'builtin',
 			renderer: 'document',
 		})
-		registry.mount(
-			'Provider',
-			workbench.extension({ contract: ProviderUi }),
-			{ status: rpcRef('Provider', 'status') },
-		)
+		registry.mount('Provider', workbench.extension({ contract: ProviderUi }), {
+			status: rpcRef('Provider', 'status'),
+		})
 
 		const item = registry.getPluginLayout('Consumer').items[0]!
 		expect(item).toMatchObject({
@@ -177,9 +173,7 @@ describe('WorkbenchRegistry', () => {
 			viewId: 'Settings',
 			port: { id: 'test.settings', version: 1 },
 		})
-		expect(registry.resolveModel(item.model.status!.grantId)).toEqual(
-			rpcRef('Provider', 'status'),
-		)
+		expect(registry.resolveModel(item.model.status!.grantId)).toEqual(rpcRef('Provider', 'status'))
 		expect(registry.resolveModel(item.port!.model.settings!.grantId)).toEqual(
 			rpcRef('Consumer', 'commands'),
 		)

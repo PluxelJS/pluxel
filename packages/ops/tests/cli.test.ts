@@ -29,10 +29,12 @@ describe('@pluxel/ops cli adapter v2', () => {
 			ok: true,
 			value: { name: 'demo', verbose: true },
 		})
-		await expect(adapter.dispatchRaw('plugin status --name demo --verbose false')).resolves.toEqual({
-			name: 'demo',
-			verbose: false,
-		})
+		await expect(adapter.dispatchRaw('plugin status --name demo --verbose false')).resolves.toEqual(
+			{
+				name: 'demo',
+				verbose: false,
+			},
+		)
 	})
 
 	it('uses json tail metadata from the binding', async () => {
@@ -103,7 +105,9 @@ describe('@pluxel/ops cli adapter v2', () => {
 			name: 'demo',
 			verbose: true,
 		})
-		await expect(adapter.dispatchRaw('plugin lookup --name explicit -- demo on')).rejects.toMatchObject({
+		await expect(
+			adapter.dispatchRaw('plugin lookup --name explicit -- demo on'),
+		).rejects.toMatchObject({
 			code: 'E_CLI_PARSE',
 			details: { reason: 'tail_conflict', param: 'name' },
 		})

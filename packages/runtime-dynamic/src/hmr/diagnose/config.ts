@@ -93,7 +93,8 @@ export function readLoaderHmrConfigV1(
 	configPath: string,
 	fs: LoaderHmrWorkspaceFs = nodeLoaderHmrWorkspaceFs,
 ): PluxelLoaderHmrConfigV1 {
-	if (!fs.existsSync(configPath)) throw new Error(`[loader-hmr-config] Missing config file: ${configPath}`)
+	if (!fs.existsSync(configPath))
+		throw new Error(`[loader-hmr-config] Missing config file: ${configPath}`)
 	const raw = readLoaderHmrConfigText(configPath, fs)
 	return parseLoaderHmrConfigV1Jsonc(raw, configPath)
 }

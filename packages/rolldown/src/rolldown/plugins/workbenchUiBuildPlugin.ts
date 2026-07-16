@@ -111,9 +111,7 @@ export function workbenchUiBuildPlugin(
 				}
 				if (extracted.length === 0) return null
 				let transformed = code
-				for (const declaration of [...extracted].sort(
-					(a, b) => b.insertOffset - a.insertOffset,
-				)) {
+				for (const declaration of [...extracted].sort((a, b) => b.insertOffset - a.insertOffset)) {
 					transformed = `${transformed.slice(0, declaration.insertOffset)}, ${JSON.stringify(
 						declaration.pluginName,
 					)}${transformed.slice(declaration.insertOffset)}`
@@ -304,7 +302,9 @@ function extractWorkbenchUiDeclarations(
 			entry.type !== 'CallExpression' ||
 			sourceSlice(code, entry.callee) !== `${namespace}.entry`
 		) {
-			throw new Error(`[workbench-ui] extension.entry must call workbench.entry() directly in ${id}`)
+			throw new Error(
+				`[workbench-ui] extension.entry must call workbench.entry() directly in ${id}`,
+			)
 		}
 		const entryArgs = array(entry.arguments)
 		if (entryArgs.length !== 2 || sourceSlice(code, entryArgs[0]) !== 'import.meta.url') {
@@ -327,8 +327,8 @@ function extractWorkbenchUiDeclarations(
 		out.push({
 			pluginName,
 			entryPath: isAbsolute(relativeEntry)
-					? resolve(relativeEntry)
-					: resolve(dirname(id), relativeEntry),
+				? resolve(relativeEntry)
+				: resolve(dirname(id), relativeEntry),
 			insertOffset,
 		})
 	})

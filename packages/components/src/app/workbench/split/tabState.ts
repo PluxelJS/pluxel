@@ -14,10 +14,7 @@ function hasSameState<T extends TabStateRecord>(left: T, right: T) {
 	return keys.every((key) => Object.is(left[key], right[key]))
 }
 
-export function useResolvedWorkbenchTabState<T>(
-	scope: string,
-	resolve: (value: unknown) => T,
-) {
+export function useResolvedWorkbenchTabState<T>(scope: string, resolve: (value: unknown) => T) {
 	const { activeTabId } = useWorkbenchTabIdentity()
 	const scopedValue = useStore(workbenchStore, (state) =>
 		activeTabId ? state.uiState.tabState[activeTabId]?.[scope] : undefined,

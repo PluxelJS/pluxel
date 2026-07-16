@@ -72,10 +72,7 @@ describe('Runtime', () => {
 		first.commit()
 		expect(draft.instances.peek(ImplV1)).toBe(before)
 
-		draft.replace(
-			ImplV1,
-			classProvider({ key: ImplV2, tokens: [BASE, ImplV1], use: ImplV2 }),
-		)
+		draft.replace(ImplV1, classProvider({ key: ImplV2, tokens: [BASE, ImplV1], use: ImplV2 }))
 
 		const second = buildOk(draft)
 		second.commit()

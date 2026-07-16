@@ -66,8 +66,8 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 			const extra = actualKeys.filter((key) => !expectedKeys.includes(key))
 			throw new Error(
 				`[workbench] bindings must exactly match Contract resources` +
-					`${missing.length ? `; missing: ${missing.join(', ')}` : ''}` +
-					`${extra.length ? `; extra: ${extra.join(', ')}` : ''}`,
+					`${missing.length > 0 ? `; missing: ${missing.join(', ')}` : ''}` +
+					`${extra.length > 0 ? `; extra: ${extra.join(', ')}` : ''}`,
 			)
 		}
 		for (const [key, contract] of Object.entries(resources) as Array<

@@ -16,7 +16,11 @@ export type { Static, TAnySchema, TProperties, TSchema } from '@sinclair/typebox
 export const obj = <P extends TProperties>(
 	properties: P,
 	options?: Omit<ObjectOptions, 'additionalProperties'> & { additionalProperties?: boolean },
-): TObject<P> => Type.Object(properties, { ...options, additionalProperties: options?.additionalProperties ?? false })
+): TObject<P> =>
+	Type.Object(properties, {
+		...options,
+		additionalProperties: options?.additionalProperties ?? false,
+	})
 
 export const openObj = <P extends TProperties>(
 	properties: P,
@@ -26,8 +30,7 @@ export const openObj = <P extends TProperties>(
 const TYPECHECK_CACHE = new WeakMap<object, TypeCheck<any>>()
 const NORMALIZED_SCHEMA_CACHE = new WeakMap<object, Record<string, unknown>>()
 
-const decodeJsonPointerToken = (value: string) =>
-	value.replaceAll('~1', '/').replaceAll('~0', '~')
+const decodeJsonPointerToken = (value: string) => value.replaceAll('~1', '/').replaceAll('~0', '~')
 
 const pathFromJsonPointer = (raw: string): Array<string | number> | undefined => {
 	const pointer = String(raw ?? '')
@@ -119,9 +122,7 @@ export const compileValidator = <S extends Schema>(schema: S): JsonValidator<Inf
 	if (!NORMALIZED_SCHEMA_CACHE.has(schema as object)) {
 		NORMALIZED_SCHEMA_CACHE.set(schema as object, normalized)
 	}
-	const compiled =
-		cached ??
-		TypeCompiler.Compile(normalized as S)
+	const compiled = cached ?? TypeCompiler.Compile(normalized as S)
 	if (!cached) TYPECHECK_CACHE.set(schema as object, compiled as TypeCheck<any>)
 
 	return (value: unknown) => {
@@ -129,6 +130,9 @@ export const compileValidator = <S extends Schema>(schema: S): JsonValidator<Inf
 		const ok = compiled.Check(candidate)
 		return ok
 			? { ok: true as const, value: candidate as Infer<S> }
-			: { ok: false as const, issues: issuesFromTypeBoxErrors(compiled.Errors(candidate) as Iterable<ValueError>) }
+			: {
+					ok: false as const,
+					issues: issuesFromTypeBoxErrors(compiled.Errors(candidate) as Iterable<ValueError>),
+				}
 	}
 }

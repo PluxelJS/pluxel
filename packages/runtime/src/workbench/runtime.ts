@@ -3,7 +3,6 @@ import type { RpcTarget } from 'capnweb'
 import type {
 	AnyWorkbenchContract,
 	WorkbenchCollectionItem,
-	WorkbenchCollectionOf,
 	WorkbenchCollectionResource,
 	WorkbenchEventsOf,
 	WorkbenchResourceContract,
@@ -107,7 +106,7 @@ function extension<const Contract extends AnyWorkbenchContract>(input: {
 	entry?: WorkbenchUiEntry
 }): WorkbenchExtension<Contract> {
 	if (!input.contract || typeof input.contract !== 'object') {
-		throw new Error('[workbench] workbench.extension(): contract required')
+		throw new TypeError('[workbench] workbench.extension(): contract required')
 	}
 	return Object.freeze({ contract: input.contract, entry: input.entry })
 }
@@ -115,7 +114,7 @@ function extension<const Contract extends AnyWorkbenchContract>(input: {
 const bind = Object.freeze({
 	rpc<TRpc extends RpcTarget>(factory: (ctx: Context) => TRpc): WorkbenchRpcBinding<TRpc> {
 		if (typeof factory !== 'function') {
-			throw new Error('[workbench] workbench.bind.rpc(): factory required')
+			throw new TypeError('[workbench] workbench.bind.rpc(): factory required')
 		}
 		return Object.freeze({ kind: 'rpc', factory })
 	},
@@ -124,7 +123,7 @@ const bind = Object.freeze({
 		subscribe?: (invalidate: () => void) => void | (() => void)
 	}): WorkbenchProjectedCollectionBinding<TItem> {
 		if (typeof input?.read !== 'function') {
-			throw new Error('[workbench] workbench.bind.collection(): read required')
+			throw new TypeError('[workbench] workbench.bind.collection(): read required')
 		}
 		return Object.freeze({
 			kind: 'collection',

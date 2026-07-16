@@ -187,7 +187,6 @@ export class ConfigService {
 
 		const nextPlugins = parsed.plugins ? coercePlugins(parsed.plugins) : Object.create(null)
 		this.reconcilePluginsFromDisk(nextPlugins)
-
 	}
 
 	private resetToDefault() {

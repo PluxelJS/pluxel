@@ -13,7 +13,7 @@ $breakpoints: (
 	$value: map.get($breakpoints, $name);
 
 	@if $value == null {
-		@error "Unknown Mantine breakpoint `#{$name}`.";
+		@error 'Unknown Mantine breakpoint `#{$name}`.';
 	}
 
 	@return $value;

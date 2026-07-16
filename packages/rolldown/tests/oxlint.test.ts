@@ -8,7 +8,7 @@ import {
 	pluxelRulePolicy,
 	pluxelRules,
 	type OxRule,
-} from '@pluxel/test/oxlint'
+} from '../src/workspace/oxlint/index.ts'
 
 RuleTester.describe = describe
 RuleTester.it = it
@@ -644,10 +644,6 @@ runRule('no-workspace-root-import', pluxelRules['no-workspace-root-import'], {
 		{
 			filename: '/repo/packages/runtime/vite.config.ts',
 			code: "import { createPluxelUiChunkGroups } from '@pluxel/rolldown/workspace/vite'",
-		},
-		{
-			filename: '/repo/packages/test/src/oxlint.ts',
-			code: "export * from '@pluxel/rolldown/oxlint'",
 		},
 		{
 			filename: '/repo/packages/rolldown/src/workspace/index.ts',

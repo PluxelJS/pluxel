@@ -58,7 +58,9 @@ export function DependencyList({
 				)
 
 				const linkTarget = LinkComponent
-					? (resolveLinkTarget ? resolveLinkTarget(dep.name) : dep.name)
+					? resolveLinkTarget
+						? resolveLinkTarget(dep.name)
+						: dep.name
 					: undefined
 				if (!LinkComponent || !linkTarget) {
 					return (

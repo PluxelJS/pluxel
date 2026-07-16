@@ -15,7 +15,7 @@ import {
 	type StaticRuntimePluginStatus,
 } from '@pluxel/runtime-static'
 import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import * as runtimeStaticVite from '@pluxel/runtime-static/vite'
 
 import { createStaticRuntimeHost } from '../src/internal/host'
 import { runStaticNodeApplication } from '../src/internal/node-application'
@@ -88,7 +88,9 @@ describe('@pluxel/runtime-static', () => {
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 			}),
 		})
-		const plugins = staticRuntimeVitePlugin({ entry: './pluxel.static.ts' }) as Array<{
+		const plugins = runtimeStaticVite.staticRuntimeVitePlugin({
+			entry: './pluxel.static.ts',
+		}) as Array<{
 			name?: string
 			apply?: unknown
 		}>
@@ -138,6 +140,7 @@ describe('@pluxel/runtime-static', () => {
 			'pluxel:static-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
+		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)
 	})
 
 	it('rejects unmarked objects at every application adapter boundary', async () => {

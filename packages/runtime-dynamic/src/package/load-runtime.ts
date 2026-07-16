@@ -241,5 +241,4 @@ export class PackageLoadRuntime {
 			this.loader.loadWithIntent(spec, options, intent, installResult),
 		)
 	}
-
 }

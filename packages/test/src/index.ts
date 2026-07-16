@@ -37,7 +37,8 @@ export {
 	setParamTokens,
 } from '@pluxel/core'
 
-export { EffectsService, EventsService, LoggerService } from '@pluxel/core/services'
+export { LoggerService } from '@pluxel/core/logger'
+export { EffectsService, EventsService } from '@pluxel/core/services'
 
 export {
 	assertPluginLifecycleIssue,

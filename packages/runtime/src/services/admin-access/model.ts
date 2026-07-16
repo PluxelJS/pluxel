@@ -95,9 +95,7 @@ function normalizeOidcConfig(value: unknown): AdminAccessOidcConfig | undefined 
 	}
 }
 
-export function resolveAdminAccessConfig(
-	input?: AdminAccessConfigLike,
-): ResolvedAdminAccessConfig {
+export function resolveAdminAccessConfig(input?: AdminAccessConfigLike): ResolvedAdminAccessConfig {
 	const enabled = input?.enabled === true
 	const exposure: AdminAccessExposure =
 		input?.exposure === 'public' ? 'public' : DEFAULT_ADMIN_ACCESS_EXPOSURE

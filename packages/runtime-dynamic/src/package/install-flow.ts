@@ -52,11 +52,15 @@ export class PackageInstallFlow {
 				target: spec.target,
 				message,
 			})
-			throw new PackageServiceError('INSTALL_FAILED', `安装插件 "${spec.target}" 失败：${message}`, {
-				cause: error,
-				spec,
-				options,
-			})
+			throw new PackageServiceError(
+				'INSTALL_FAILED',
+				`安装插件 "${spec.target}" 失败：${message}`,
+				{
+					cause: error,
+					spec,
+					options,
+				},
+			)
 		}
 	}
 

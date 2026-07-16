@@ -16,7 +16,7 @@
 		"api:generate": "node --experimental-strip-types scripts/generate-api.ts",
 		"api:check": "node --experimental-strip-types scripts/generate-api.ts --check",
 		"typecheck": "pnpm api:check && tsc --noEmit --pretty false",
-		"test": "vitest run --passWithNoTests"
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@gramio/types": "^10.1.0",

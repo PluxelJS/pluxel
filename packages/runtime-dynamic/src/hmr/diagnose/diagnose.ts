@@ -1,7 +1,11 @@
 import { resolve } from 'pathe'
 import picomatch from 'picomatch'
 import type { BuiltinsFromDistEntry, LoaderHmrWorkspaceSnapshot } from '../snapshot'
-import { type PluxelLoaderHmrConfigV1, readLoaderHmrConfigV1, resolveDefaultLoaderHmrConfigPath } from './config'
+import {
+	type PluxelLoaderHmrConfigV1,
+	readLoaderHmrConfigV1,
+	resolveDefaultLoaderHmrConfigPath,
+} from './config'
 import {
 	type DiscoveredPlugin,
 	discoverPluginsFromPackages,
@@ -328,10 +332,14 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				`[loader-hmr] ${missingEdges.length} selected plugin package(s) depend on other plugin packages that are not selected in this profile. Consider adding them to profile.enabled to avoid MissingDependency when their plugins are enabled at runtime.`,
 			)
 			for (const edge of shown) {
-				warnings.push(`[loader-hmr] Missing profile packages: ${edge.from} -> ${edge.missing.join(', ')}`)
+				warnings.push(
+					`[loader-hmr] Missing profile packages: ${edge.from} -> ${edge.missing.join(', ')}`,
+				)
 			}
 			if (missingEdges.length > maxEdges) {
-				warnings.push(`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing-deps edge(s).`)
+				warnings.push(
+					`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing-deps edge(s).`,
+				)
 			}
 		}
 	}

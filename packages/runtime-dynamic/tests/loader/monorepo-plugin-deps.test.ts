@@ -4,8 +4,9 @@ import { createHmrTestContext } from '../support/hmr-context'
 import { enablePlugins } from '../support/runtime-state'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void })
-		.defineMetadata?.('design:paramtypes', paramTypes, ctor)
+	;(
+		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
+	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
 describe('monorepo plugin dependencies', () => {
@@ -95,14 +96,12 @@ describe('monorepo plugin dependencies', () => {
 
 		{
 			const batch = loader.beginBatch()
-			await batch.replaceModule(
-				'projects/external-api-gateway/packages/billing/src/index.ts',
-				{ UsageBillingPlugin },
-			)
-			await batch.replaceModule(
-				'projects/external-api-gateway/packages/zhipu/src/index.ts',
-				{ ZhipuProviderPlugin },
-			)
+			await batch.replaceModule('projects/external-api-gateway/packages/billing/src/index.ts', {
+				UsageBillingPlugin,
+			})
+			await batch.replaceModule('projects/external-api-gateway/packages/zhipu/src/index.ts', {
+				ZhipuProviderPlugin,
+			})
 			const res = await core.registry.commit()
 			expect(res.ok).toBe(true)
 			batch.commit()

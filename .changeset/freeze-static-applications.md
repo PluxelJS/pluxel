@@ -11,4 +11,5 @@ Make a default-exported `defineStaticRuntime()` application the shared Vite and 
 add Rolldown-backed frozen Node distributions with optional Workbench artifacts and traced residual
 dependencies, preserve startup-time configuration and fixed-catalog plugin enablement, and move the
 ordinary plugin production source pipeline into the shared `pluginPackage()` and
-`createPluginBuildPipeline()` presets in `@pluxel/rolldown/build`.
+`createPluginBuildPipeline()` presets in `@pluxel/rolldown/build`. Keep application/config helpers on
+the route package main entries while Vite subpaths expose only route integration.

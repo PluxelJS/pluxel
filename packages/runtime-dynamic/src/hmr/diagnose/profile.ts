@@ -1,5 +1,9 @@
 import { isAbsolute, resolve } from 'pathe'
-import { DEFAULT_LOADER_HMR_CONFIG_BASENAME, readLoaderHmrConfigV1, type PluxelLoaderHmrConfigV1 } from './config'
+import {
+	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
+	readLoaderHmrConfigV1,
+	type PluxelLoaderHmrConfigV1,
+} from './config'
 import { diagnoseWorkspace, mergeLoaderHmrProfile, type WorkspaceSnapshot } from './diagnose'
 import { nodeLoaderHmrWorkspaceFs, type LoaderHmrWorkspaceFs } from './fs'
 import { uniqPreserveOrder } from './utils'
@@ -46,16 +50,23 @@ export type LoaderHmrProfileView = {
 	excludeGlobs: string[]
 }
 
-export function resolveLoaderHmrConfigPath(ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath'> = {}) {
+export function resolveLoaderHmrConfigPath(
+	ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath'> = {},
+) {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
 	const raw = ref.configPath?.trim()
 	if (!raw) return resolve(rootDirAbs, DEFAULT_LOADER_HMR_CONFIG_BASENAME)
 	return isAbsolute(raw) ? raw : resolve(rootDirAbs, raw)
 }
 
-export function readLoaderHmrConfigRaw(ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath' | 'fs'> = {}) {
+export function readLoaderHmrConfigRaw(
+	ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath' | 'fs'> = {},
+) {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
-	const configPathAbs = resolveLoaderHmrConfigPath({ rootDir: rootDirAbs, configPath: ref.configPath })
+	const configPathAbs = resolveLoaderHmrConfigPath({
+		rootDir: rootDirAbs,
+		configPath: ref.configPath,
+	})
 	const config = readLoaderHmrConfigV1(configPathAbs, ref.fs ?? nodeLoaderHmrWorkspaceFs)
 	return { rootDir: rootDirAbs, configPath: configPathAbs, config }
 }
@@ -111,7 +122,10 @@ export async function resolveLoaderHmrWorkspace(
 	ref: ResolveLoaderHmrWorkspaceOptions,
 ): Promise<WorkspaceSnapshot> {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
-	const configPathAbs = resolveLoaderHmrConfigPath({ rootDir: rootDirAbs, configPath: ref.configPath })
+	const configPathAbs = resolveLoaderHmrConfigPath({
+		rootDir: rootDirAbs,
+		configPath: ref.configPath,
+	})
 	const env = { ...(ref.env ?? process.env) }
 	if (ref.profile) env.PLUXEL_HMR_PROFILE = ref.profile
 

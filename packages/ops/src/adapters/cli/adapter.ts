@@ -69,7 +69,9 @@ const schemaTypeToParamType = (schema: Record<string, unknown>): ParamSpec['type
 	}
 }
 
-const deriveArrayItemType = (schema: Record<string, unknown>): ParamSpec['itemType'] | undefined => {
+const deriveArrayItemType = (
+	schema: Record<string, unknown>,
+): ParamSpec['itemType'] | undefined => {
 	if (schema.type !== 'array') return undefined
 	const items = schema.items
 	if (!items || typeof items !== 'object' || Array.isArray(items)) return 'json'
@@ -101,7 +103,11 @@ const deriveParamSpecs = (
 		const paramBinding = binding.params?.[inputKey]
 		const canonical = paramBinding?.name?.trim() || kebabCase(inputKey) || inputKey
 		const aliases = Array.from(
-			new Set([canonical, inputKey, ...(paramBinding?.aliases ?? [])].map((entry) => entry.trim()).filter(Boolean)),
+			new Set(
+				[canonical, inputKey, ...(paramBinding?.aliases ?? [])]
+					.map((entry) => entry.trim())
+					.filter(Boolean),
+			),
 		)
 		const itemType = deriveArrayItemType(record)
 		out.push({
@@ -120,7 +126,9 @@ const deriveParamSpecs = (
 }
 
 const normalizeTriggers = (id: string, binding: CliBinding<any>): string[] => {
-	const triggers = Array.from(new Set(binding.triggers.map((entry) => entry.trim()).filter(Boolean)))
+	const triggers = Array.from(
+		new Set(binding.triggers.map((entry) => entry.trim()).filter(Boolean)),
+	)
 	if (triggers.length === 0) {
 		throw new OpError('E_OP_CONFIG', 'Invalid CLI binding', {
 			message: `CLI binding for "${id}" must define at least one trigger`,
@@ -161,11 +169,7 @@ const toTailSpec = (tail: CliTailConfig | undefined): CliTailSpec | undefined =>
 const toParseboxTail = (tail: CliTailConfig | undefined): CliParseboxTailConfig | undefined =>
 	tail?.mode === 'parsebox' ? tail : undefined
 
-const deriveCliUsage = (
-	trigger: string,
-	params: ParamSpec[],
-	tail: CliTailSpec | undefined,
-) => {
+const deriveCliUsage = (trigger: string, params: ParamSpec[], tail: CliTailSpec | undefined) => {
 	const out = [trigger]
 	for (const param of params) {
 		const placeholder =
@@ -363,7 +367,10 @@ export class CliAdapter<Ctx extends OpContext = OpContext> {
 				message: `No CLI operation matched "${text}"`,
 			})
 		}
-		return await match.entry.op.invokeRaw(parseCandidate(match.entry, tokens, match.consumed), ctx) as O
+		return (await match.entry.op.invokeRaw(
+			parseCandidate(match.entry, tokens, match.consumed),
+			ctx,
+		)) as O
 	}
 
 	async dispatch<O = unknown>(text: string, ctx?: Ctx) {
@@ -381,6 +388,5 @@ export class CliAdapter<Ctx extends OpContext = OpContext> {
 	}
 }
 
-export const createCliAdapter = <Ctx extends OpContext = OpContext>(
-	opts?: CliAdapterOptions,
-) => new CliAdapter<Ctx>(opts)
+export const createCliAdapter = <Ctx extends OpContext = OpContext>(opts?: CliAdapterOptions) =>
+	new CliAdapter<Ctx>(opts)

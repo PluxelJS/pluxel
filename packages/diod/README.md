@@ -161,9 +161,7 @@ builder.registerAndUse(SignUpUseCase) // This is an alias of builder.register(Si
 const container = builder.build()
 
 const signUpUseCase = container.get(SignUpUseCase)
-signUpUseCase.execute({
-	/* ... */
-})
+signUpUseCase.execute({/* ... */})
 ```
 
 The previous usage example assumes that you have some concrete implementations of the `Mailer` and the `UserRepository` abstractions. _Note that abstract classes do not need to be extended and can be implemented just like an interface._

@@ -28,7 +28,7 @@ $tokens: (
 	$var-name: map.get($tokens, $name);
 
 	@if $var-name == null {
-		@error "Unknown semantic token `#{$name}`.";
+		@error 'Unknown semantic token `#{$name}`.';
 	}
 
 	@if $fallback == null {

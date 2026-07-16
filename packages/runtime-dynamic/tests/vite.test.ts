@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import * as runtimeDynamic from '@pluxel/runtime-dynamic'
 import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
-import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
+import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
@@ -59,10 +59,9 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 	})
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {
-		const plugins = dynamicRuntimeVitePlugin({ config: './pluxel.dynamic.ts' }) as Array<{
-			name?: string
-			apply?: unknown
-		}>
+		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
+			config: './pluxel.dynamic.ts',
+		}) as Array<{ name?: string; apply?: unknown }>
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
@@ -73,5 +72,6 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			'pluxel:dynamic-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
+		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
 })

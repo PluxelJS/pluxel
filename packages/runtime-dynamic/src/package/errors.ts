@@ -27,7 +27,10 @@ export function getErrorCause(value: unknown): unknown {
 	return (value as { cause?: unknown }).cause
 }
 
-export function unwrapErrorCause(error: unknown, options?: { acceptNonErrorCause?: boolean }): unknown {
+export function unwrapErrorCause(
+	error: unknown,
+	options?: { acceptNonErrorCause?: boolean },
+): unknown {
 	const cause = getErrorCause(error)
 	if (cause instanceof Error) return cause
 	if (options?.acceptNonErrorCause && cause !== undefined && cause !== null) return cause

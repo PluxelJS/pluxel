@@ -41,10 +41,7 @@ export type WorkbenchTabStateContextValue = Pick<
 	'getActiveTabState' | 'setActiveTabState'
 >
 
-export type WorkbenchNavigationContextValue = Pick<
-	WorkbenchTabsContextValue,
-	'requestNavigation'
->
+export type WorkbenchNavigationContextValue = Pick<WorkbenchTabsContextValue, 'requestNavigation'>
 
 const FALLBACK_LAYOUT_CONTEXT: WorkbenchLayoutContextValue = {
 	leftPaneAvailable: false,
@@ -58,7 +55,7 @@ const FALLBACK_TABS_CONTEXT: WorkbenchTabsContextValue = {
 	activeTabPath: null,
 	activeTabDirty: false,
 	isTabDirty: () => false,
-	getActiveTabState: <T = unknown>() => undefined as T | undefined,
+	getActiveTabState: <T = unknown,>() => undefined as T | undefined,
 	setActiveTabState: () => {},
 	requestNavigation: () => 'replace-active',
 	setActiveTabDirty: () => {},
@@ -76,7 +73,7 @@ const FALLBACK_TAB_DIRTY_CONTEXT: WorkbenchTabDirtyContextValue = {
 }
 
 const FALLBACK_TAB_STATE_CONTEXT: WorkbenchTabStateContextValue = {
-	getActiveTabState: <T = unknown>() => undefined as T | undefined,
+	getActiveTabState: <T = unknown,>() => undefined as T | undefined,
 	setActiveTabState: () => {},
 }
 

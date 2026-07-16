@@ -6,13 +6,7 @@ import type {
 	HostBoundOptionalFeature,
 } from './plugins/FeatureLoad.optional'
 
-import {
-	BaseFeature,
-	BasePlugin,
-	defineLazyFeature,
-	Plugin,
-	withCoreHost,
-} from '@pluxel/core/test'
+import { BaseFeature, BasePlugin, defineLazyFeature, Plugin, withCoreHost } from '@pluxel/core/test'
 
 const loadLoads = {
 	dep: 0,
@@ -243,9 +237,7 @@ describe('FeatureHost.load', () => {
 			const instance = host.require(LoadSpecMismatch) as LoadSpecMismatch
 			await instance.features.load(featureA)
 
-			expect(() =>
-				instance.features.load(featureB),
-			).toThrow(/reused with a different spec/)
+			expect(() => instance.features.load(featureB)).toThrow(/reused with a different spec/)
 		})
 	})
 })

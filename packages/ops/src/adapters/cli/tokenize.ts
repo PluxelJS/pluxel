@@ -35,7 +35,10 @@ export const tokenizeCli = (text: string): CliToken[] => {
 					if (index >= text.length) {
 						throw new OpError('E_CLI_PARSE', 'Invalid command text', {
 							message: 'Dangling escape in command text',
-							details: { reason: 'dangling_escape', at: { start, end: index, raw: text.slice(start, index) } },
+							details: {
+								reason: 'dangling_escape',
+								at: { start, end: index, raw: text.slice(start, index) },
+							},
 						})
 					}
 					value += text[index]!
@@ -68,7 +71,10 @@ export const tokenizeCli = (text: string): CliToken[] => {
 				if (index >= text.length) {
 					throw new OpError('E_CLI_PARSE', 'Invalid command text', {
 						message: 'Dangling escape in command text',
-						details: { reason: 'dangling_escape', at: { start, end: index, raw: text.slice(start, index) } },
+						details: {
+							reason: 'dangling_escape',
+							at: { start, end: index, raw: text.slice(start, index) },
+						},
 					})
 				}
 				value += text[index]!
@@ -82,7 +88,10 @@ export const tokenizeCli = (text: string): CliToken[] => {
 		if (mode !== 'plain') {
 			throw new OpError('E_CLI_PARSE', 'Invalid command text', {
 				message: 'Unterminated quoted string',
-				details: { reason: 'unterminated_quote', at: { start, end: index, raw: text.slice(start, index) } },
+				details: {
+					reason: 'unterminated_quote',
+					at: { start, end: index, raw: text.slice(start, index) },
+				},
 			})
 		}
 

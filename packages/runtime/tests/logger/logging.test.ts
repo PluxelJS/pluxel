@@ -1,5 +1,5 @@
 import { configureSync, getConfig, reset } from '@logtape/logtape'
-import { LoggerService } from '@pluxel/core/services'
+import { LoggerService } from '@pluxel/core/logger'
 import {
 	createRuntimeLogging,
 	type RuntimeLogging,

@@ -25,11 +25,7 @@ export type PluginWorkbenchView = {
 
 type PluginWorkbenchViewSearchKey = 'dock' | 'side'
 
-function resolveVisibleViewId(
-	value: unknown,
-	views: PluginWorkbenchView[],
-	pluginName?: string,
-) {
+function resolveVisibleViewId(value: unknown, views: PluginWorkbenchView[], pluginName?: string) {
 	if (typeof value !== 'string') return undefined
 	for (const candidate of getPluginScopedSearchCandidates(value, pluginName)) {
 		if (views.some((view) => view.id === candidate)) return candidate
@@ -99,8 +95,7 @@ export function PluginWorkbenchViewContainer({
 			? createViewIntentSignature(pathname, searchKey, effectiveSearchValue)
 			: null
 	const routeIntentPending = Boolean(
-		routeIntentSignature &&
-			appliedRouteIntentSignatureRef.current !== routeIntentSignature,
+		routeIntentSignature && appliedRouteIntentSignatureRef.current !== routeIntentSignature,
 	)
 	const hasHeading = Boolean(eyebrow || title || subtitle)
 	const activeViewId = useMemo(

@@ -60,7 +60,12 @@ export function pluginSourceVitePlugins(
 	options: PluginSourceVitePluginsOptions = {},
 ): PluginOption[] {
 	const root = options.root ?? process.cwd()
-	const plugins: PluginOption[] = [PreprocessorDirectives(), createPluginSemanticsPlugin().plugin]
+	const plugins: PluginOption[] = [
+		PreprocessorDirectives(),
+		serverOnlyVitePlugin('pluxel:plugin-semantics', createPluginSemanticsPlugin().plugin, {
+			enforce: 'pre',
+		}),
+	]
 	if (options.lintGuard !== false) {
 		plugins.push(
 			serverOnlyVitePlugin(

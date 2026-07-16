@@ -242,8 +242,9 @@ export function PickPackagesPicker(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				[...props.params.discovered]
-					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+				[...props.params.discovered].sort(
+					(a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name),
+				),
 			),
 		[props.params.discovered],
 	)
@@ -678,8 +679,9 @@ export function PickPackagesDualPicker(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				[...props.params.discovered]
-					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+				[...props.params.discovered].sort(
+					(a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name),
+				),
 			),
 		[props.params.discovered],
 	)
@@ -1182,8 +1184,9 @@ export function PickPackagesDualBrowser(props: {
 	const discoveredIndexed = useMemo(
 		() =>
 			indexDiscovered(
-				[...props.discovered]
-					.sort((a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name)),
+				[...props.discovered].sort(
+					(a, b) => a.pkgDir.localeCompare(b.pkgDir) || a.name.localeCompare(b.name),
+				),
 			),
 		[props.discovered],
 	)

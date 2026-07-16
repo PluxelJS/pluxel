@@ -66,8 +66,6 @@ export type StaticRuntimeVitePluginOptions = {
 	bindings?: StaticRuntimeBindings | (() => StaticRuntimeBindings | Promise<StaticRuntimeBindings>)
 }
 
-export { defineStaticRuntime } from './application'
-
 export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions): PluginOption[] {
 	const state: {
 		server?: ViteDevServer

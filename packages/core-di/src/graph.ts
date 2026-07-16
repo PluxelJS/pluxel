@@ -157,7 +157,10 @@ const normalizeDecl = <M>(decl: ProviderDecl<unknown, M>): NormalizedProviderDec
 	}
 }
 
-const declEqual = (a: NormalizedProviderDecl<unknown, unknown>, b: NormalizedProviderDecl<unknown, unknown>) =>
+const declEqual = (
+	a: NormalizedProviderDecl<unknown, unknown>,
+	b: NormalizedProviderDecl<unknown, unknown>,
+) =>
 	a.key === b.key &&
 	a.cache === b.cache &&
 	a.meta === b.meta &&
@@ -234,15 +237,14 @@ const computeDirtySlots = <M>(base: DraftState<M>, draft: DraftState<M>): Set<Sl
 
 const createGraphDeclaration = <M>(
 	decl: NormalizedProviderDecl<unknown, M>,
-): GraphDeclaration<M> =>
-	({
-		key: decl.key,
-		tokens: decl.tokens,
-		depTokens: decl.deps,
-		cache: decl.cache,
-		meta: decl.meta,
-		providerKind: decl.create.kind,
-	})
+): GraphDeclaration<M> => ({
+	key: decl.key,
+	tokens: decl.tokens,
+	depTokens: decl.deps,
+	cache: decl.cache,
+	meta: decl.meta,
+	providerKind: decl.create.kind,
+})
 
 const resolveTokenSlotFromTable = (
 	tokenOwnerSlots: ReadonlyMap<Token, Slot>,
@@ -409,7 +411,10 @@ const visitCycleSlots = (
 	color[slot] = 2
 }
 
-const compileActivator = (create: ProviderCreate<unknown>, depSlots: readonly Slot[]): Activator => {
+const compileActivator = (
+	create: ProviderCreate<unknown>,
+	depSlots: readonly Slot[],
+): Activator => {
 	switch (create.kind) {
 		case 'value':
 			return () => create.value
@@ -687,7 +692,8 @@ export class Runtime<M = unknown> {
 
 	private loadRetainedAtSlot<T>(slot: Slot, nodeKey: NodeKey): T | undefined {
 		const storeChanged = this.syncRetainedRevision()
-		if (!storeChanged && this.retainedKnown[slot] === 1) return this.retainedValues[slot] as T | undefined
+		if (!storeChanged && this.retainedKnown[slot] === 1)
+			return this.retainedValues[slot] as T | undefined
 		const keyRevision = this.instances.getKeyRevision(nodeKey)
 		if (this.retainedKnown[slot] === 1 && this.retainedRevisions[slot] === keyRevision) {
 			return this.retainedValues[slot] as T | undefined
@@ -757,7 +763,9 @@ export class Runtime<M = unknown> {
 
 	public peek<T>(handle: Token | NodeKey): T | undefined {
 		const resolved = this.resolveHandle(handle)
-		return resolved.nodeKey === undefined ? undefined : (this.peekByKey(resolved.nodeKey) as T | undefined)
+		return resolved.nodeKey === undefined
+			? undefined
+			: (this.peekByKey(resolved.nodeKey) as T | undefined)
 	}
 
 	public ensureBySlot<T>(slot: Slot): T {
@@ -958,8 +966,16 @@ const updateTokenOwnersForDirtySlots = <M>(args: {
 	keyBySlot: readonly (NodeKey | undefined)[]
 	issues: GraphBuildIssue[]
 }): void => {
-	const { prevDecls, nextDecls, dirty, tokenOwnerSlots, touchedTokens, slotByKey, keyBySlot, issues } =
-		args
+	const {
+		prevDecls,
+		nextDecls,
+		dirty,
+		tokenOwnerSlots,
+		touchedTokens,
+		slotByKey,
+		keyBySlot,
+		issues,
+	} = args
 
 	for (const slot of dirty) {
 		const before = prevDecls[slot]
@@ -1191,7 +1207,9 @@ const buildIncrementalSnapshot = <M>(
 
 		const currentDeclaration = declarationsBySlot[slot]
 		declarationsBySlot[slot] =
-			declarationChanged || !currentDeclaration ? createGraphDeclaration(afterDecl) : currentDeclaration
+			declarationChanged || !currentDeclaration
+				? createGraphDeclaration(afterDecl)
+				: currentDeclaration
 		createsBySlot[slot] =
 			declarationChanged || !createsBySlot[slot] ? afterDecl.create : createsBySlot[slot]
 		depsBySlot[slot] = finishArray(resolvedDeps)
@@ -1358,7 +1376,10 @@ export class DraftGraph<M = unknown> {
 		return planning
 	}
 
-	private resolvePlanningTokenSlot(token: Token, planning = this.planningState()): Slot | undefined {
+	private resolvePlanningTokenSlot(
+		token: Token,
+		planning = this.planningState(),
+	): Slot | undefined {
 		const explicitOwnerSlot = planning.explicitTokenOwnerSlots.get(token)
 		if (explicitOwnerSlot === null) return undefined
 		if (explicitOwnerSlot !== undefined) return explicitOwnerSlot
@@ -1425,10 +1446,7 @@ export class DraftGraph<M = unknown> {
 	}
 
 	private ensureMutableDraftState() {
-		if (
-			this.draftState !== this.committedState &&
-			!this.sealedDraftStates.has(this.draftState)
-		) {
+		if (this.draftState !== this.committedState && !this.sealedDraftStates.has(this.draftState)) {
 			return
 		}
 		this.draftState = cloneDraftState(this.draftState)
@@ -1444,11 +1462,7 @@ export class DraftGraph<M = unknown> {
 			slot = state.freeSlots.pop() ?? state.keyBySlot.length
 		}
 		const current = state.declsBySlot[slot]
-		if (
-			current &&
-			state.keyBySlot[slot] === normalized.key &&
-			declEqual(current, normalized)
-		) {
+		if (current && state.keyBySlot[slot] === normalized.key && declEqual(current, normalized)) {
 			return undefined
 		}
 		state.slotByKey.set(normalized.key, slot)
@@ -1649,14 +1663,10 @@ export class DraftGraph<M = unknown> {
 		if (this.dirty.size === 0) {
 			const graph = this.committedGraph
 			return ok(
-				this.createBuildArtifact(
-					graph,
-					this.emptyDelta(),
-					() => {
-						if (builtAtVersion === this.mutationVersion) this.dirty.clear()
-						return this.committedGraph
-					},
-				),
+				this.createBuildArtifact(graph, this.emptyDelta(), () => {
+					if (builtAtVersion === this.mutationVersion) this.dirty.clear()
+					return this.committedGraph
+				}),
 			)
 		}
 

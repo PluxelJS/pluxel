@@ -221,7 +221,7 @@ function defineContract<
 	views?: Views
 	outlets?: (input: { resources: WorkbenchResourceTokens<Resources> }) => WorkbenchOutletMap
 }): WorkbenchContract<Resources, NormalizedViews<Views>> {
-	const resources = Object.freeze({ ...(input.resources ?? {}) }) as Resources
+	const resources = Object.freeze({ ...input.resources }) as Resources
 	const tokens = Object.freeze(
 		Object.fromEntries(Object.keys(resources).map((key) => [key, Object.freeze({ key })])),
 	) as WorkbenchResourceTokens<Resources>
@@ -410,7 +410,7 @@ function normalizePlacements(
 
 function normalizeRoutePath(path: string): string {
 	const value = requiredText('workbenchContract.route', 'path', path)
-	return `/${value.replace(/^\/+|\/+$/g, '')}`
+	return `/${value.replaceAll(/^\/+|\/+$/g, '')}`
 }
 
 function requiredText(api: string, field: string, value: string): string {

@@ -85,5 +85,4 @@ export class OperationRegistry<Ctx extends OpContext = OpContext> {
 	}
 }
 
-export const createRegistry = <Ctx extends OpContext = OpContext>() =>
-	new OperationRegistry<Ctx>()
+export const createRegistry = <Ctx extends OpContext = OpContext>() => new OperationRegistry<Ctx>()

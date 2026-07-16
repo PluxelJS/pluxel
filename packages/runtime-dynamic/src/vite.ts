@@ -4,17 +4,11 @@ import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
-import {
-	defineDynamicRuntimeConfig,
-	isDynamicRuntimeConfig,
-	type DynamicRuntimeConfig,
-} from './config'
+import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
-
-export type DynamicRuntimeViteConfig = DynamicRuntimeConfig
 
 export type DynamicRuntimeVitePluginOptions = {
 	config: string
@@ -24,8 +18,6 @@ export type DynamicRuntimeVitePluginOptions = {
 	 */
 	prepareHost?: (host: BootedLoaderHmrHost) => void | Promise<void>
 }
-
-export { defineDynamicRuntimeConfig }
 
 type DynamicRuntimeController = {
 	booted: BootedLoaderHmrHost
@@ -41,7 +33,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		httpInstalled?: boolean
 	} = {}
 
-	const loadConfig = async (): Promise<DynamicRuntimeViteConfig> => {
+	const loadConfig = async (): Promise<DynamicRuntimeConfig> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-dynamic/vite] Vite server is not configured')
 		const configPath = (state.configPath ??= resolveRuntimeConfigPath(
@@ -153,7 +145,7 @@ function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: 
 function validateDynamicRuntimeConfigModule(
 	mod: Record<string, unknown>,
 	configPath: string,
-): DynamicRuntimeViteConfig {
+): DynamicRuntimeConfig {
 	const value = mod.default
 	if (value && typeof (value as Promise<unknown>).then === 'function') {
 		throw new Error(

@@ -133,12 +133,10 @@ export class PluginDataService {
 							const items = getRecordProp(parsed, 'items')
 							if (Array.isArray(items)) return items as T[]
 						}
-					} catch {
-					}
+					} catch {}
 					try {
 						return (options?.deserialize?.(text) ?? SuperJSON.parse(text) ?? []) as T[]
-					} catch {
-					}
+					} catch {}
 				}
 
 				const sharedRawText = await this.readTextOptional(sharedFile)
@@ -164,8 +162,7 @@ export class PluginDataService {
 								}
 							}
 						}
-					} catch {
-					}
+					} catch {}
 					try {
 						const parsed = SuperJSON.parse<unknown>(sharedText)
 						if (isRecord(parsed)) {
@@ -183,8 +180,7 @@ export class PluginDataService {
 								}
 							}
 						}
-					} catch {
-					}
+					} catch {}
 				}
 
 				return []
@@ -224,8 +220,7 @@ export class PluginDataService {
 					}
 					return { collections: parsed }
 				}
-			} catch {
-			}
+			} catch {}
 
 			try {
 				const parsed = SuperJSON.parse<MultiCollectionStore>(text)
@@ -235,8 +230,7 @@ export class PluginDataService {
 					}
 					return { collections: parsed as unknown as Record<string, unknown> }
 				}
-			} catch {
-			}
+			} catch {}
 			return { collections: {} }
 		}
 

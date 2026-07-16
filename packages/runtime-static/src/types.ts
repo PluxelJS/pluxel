@@ -4,11 +4,6 @@ import type {
 	Context,
 	HttpHandler,
 	HttpServiceConfig,
-	PersistenceBackend,
-	PersistenceCapability,
-	PersistenceEntry,
-	PersistenceNamespace,
-	PersistenceRequirement,
 	PersistenceServiceConfig,
 	PluginDataServiceConfig,
 	WorkbenchConfig,
@@ -18,17 +13,6 @@ import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
 export type StaticRuntimeRegisteredServices = RuntimeStaticRegisteredServices
-
-export type StaticRuntimeConfigServiceConfig = ConfigServiceConfig
-export type StaticRuntimePersistenceCapability = PersistenceCapability
-export type StaticRuntimePersistenceEntry = PersistenceEntry
-export type StaticRuntimePersistenceRequirement = PersistenceRequirement
-export type StaticRuntimePersistenceNamespace = PersistenceNamespace
-export type StaticRuntimePersistenceBackend = PersistenceBackend
-export type StaticRuntimePersistenceConfig = PersistenceServiceConfig
-export type StaticRuntimePluginDataConfig = PluginDataServiceConfig
-export type StaticRuntimeHttpHandler = HttpHandler
-export type StaticRuntimeHttpConfig = HttpServiceConfig
 export type StaticRuntimeContextConfig = Omit<
 	CoreContext.Config,
 	| 'configService'
@@ -98,7 +82,7 @@ export type StaticRuntimeHostOptions = {
 	 *
 	 * @default JSON config stored in the configured persistence backend.
 	 */
-	configService?: StaticRuntimeConfigServiceConfig
+	configService?: ConfigServiceConfig
 	/**
 	 * Runtime control-plane state source used for plugin enablement, fork metadata,
 	 * dependency overrides, and built-in catalog state.
@@ -111,18 +95,18 @@ export type StaticRuntimeHostOptions = {
 	 *
 	 * @default In-memory persistence. Node hosts can pass a string root path.
 	 */
-	persistence?: StaticRuntimePersistenceConfig
+	persistence?: PersistenceServiceConfig
 	/**
 	 * Plugin-owned runtime data storage.
 	 *
 	 * @default Uses the shared persistence backend under the plugin-data namespace.
 	 */
-	pluginData?: StaticRuntimePluginDataConfig
+	pluginData?: PluginDataServiceConfig
 	/**
 	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
 	 * Workbench config.
 	 */
-	http?: StaticRuntimeHttpConfig
+	http?: HttpServiceConfig
 	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
 	workbench?: WorkbenchConfig
 	/** Host-owned logging plan. `false` installs a silent root. */
@@ -153,7 +137,7 @@ export type StaticRuntimeHost = {
 
 export type StaticRuntime = {
 	readonly ctx: Context
-	fetch: StaticRuntimeHttpHandler
+	fetch: HttpHandler
 	start(): Promise<StaticRuntimeStartupReport>
 	stop(): Promise<void>
 }

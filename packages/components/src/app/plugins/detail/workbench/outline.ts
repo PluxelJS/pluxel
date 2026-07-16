@@ -57,9 +57,7 @@ export function filterOutlineTree(
 	}
 
 	return {
-		items: items
-			.map((node) => filterNode(node))
-			.filter(Boolean) as OutlineNode[],
+		items: items.map((node) => filterNode(node)).filter(Boolean) as OutlineNode[],
 		matchCount,
 	}
 }

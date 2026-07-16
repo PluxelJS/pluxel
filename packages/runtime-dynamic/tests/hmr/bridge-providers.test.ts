@@ -27,7 +27,10 @@ describe('HMR bridgeProviders', () => {
 			false,
 		)
 
-		const deps = resolveLoaderHmrDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
+		const deps = resolveLoaderHmrDependencyConfig(
+			{ bridgeModules: ['@pluxel/context'] },
+			{ cwd: root },
+		)
 		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 		expect(deps.bridgeModules.includes('@pluxel/core')).toBe(true)
@@ -54,7 +57,10 @@ describe('HMR bridgeProviders', () => {
 			true,
 		)
 
-		const deps = resolveLoaderHmrDependencyConfig({ bridgeModules: ['@pluxel/context'] }, { cwd: root })
+		const deps = resolveLoaderHmrDependencyConfig(
+			{ bridgeModules: ['@pluxel/context'] },
+			{ cwd: root },
+		)
 		expect(deps.bridgeProviders['@pluxel/context']).toBe('@pluxel/core')
 		expect(deps.bridgeModules.includes('@pluxel/context')).toBe(true)
 	})

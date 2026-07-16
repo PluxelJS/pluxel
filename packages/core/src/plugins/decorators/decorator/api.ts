@@ -160,7 +160,7 @@ export function getClassParams<T = unknown>(
 	}
 
 	// 1) 预取 rtypes 作为基数组
-	const out = s.rtypes.length > 0 ? [...s.rtypes as unknown[]] : []
+	const out = s.rtypes.length > 0 ? [...(s.rtypes as unknown[])] : []
 
 	// 2) 应用持久 tokens（数组形态，最快）
 	if (s.tokens) applyOverride(out, s.tokens)
@@ -218,7 +218,7 @@ export function getRequiredPluginDependencies(
 		if (!inherit) break
 		const proto =
 			(cur as { prototype?: unknown }).prototype !== null &&
-				(cur as { prototype?: unknown }).prototype !== undefined
+			(cur as { prototype?: unknown }).prototype !== undefined
 				? Object.getPrototypeOf((cur as { prototype?: unknown }).prototype)
 				: null
 		if (!proto || proto === Object.prototype) break

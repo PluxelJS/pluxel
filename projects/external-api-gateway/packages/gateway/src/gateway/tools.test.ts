@@ -81,9 +81,9 @@ describe('external gateway tool contract', () => {
 		expect(piNames.sort()).toEqual(
 			EXTERNAL_GATEWAY_TOOL_NAMES.map(externalGatewayToolNameToPiName).sort(),
 		)
-		expect(externalGatewayPiTools.every((tool) => /^[A-Za-z0-9_-]{1,64}$/.test(tool.function.name))).toBe(
-			true,
-		)
+		expect(
+			externalGatewayPiTools.every((tool) => /^[A-Za-z0-9_-]{1,64}$/.test(tool.function.name)),
+		).toBe(true)
 		expect(new Set(piNames).size).toBe(EXTERNAL_GATEWAY_TOOL_NAMES.length)
 		expect(() => new PiExtension({ token: '' })).toThrow('PiExtension token is required')
 	})

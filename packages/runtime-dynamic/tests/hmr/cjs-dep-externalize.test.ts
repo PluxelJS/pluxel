@@ -40,7 +40,11 @@ async function getFreePort(host = '127.0.0.1'): Promise<number> {
 	})
 }
 
-async function runHmr(root: string, hmr: LoaderHmrService, depsInput: ReturnType<typeof buildDeps>) {
+async function runHmr(
+	root: string,
+	hmr: LoaderHmrService,
+	depsInput: ReturnType<typeof buildDeps>,
+) {
 	const deps = resolveLoaderHmrDependencyConfig(depsInput)
 	const fsAllow = resolveFsAllowList({
 		cwd: root,

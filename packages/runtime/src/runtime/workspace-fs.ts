@@ -219,11 +219,7 @@ export function createNodeWorkspaceFsBackend(
 		stat: async (path) => {
 			try {
 				const st = await fs.promises.stat(path)
-				const type: WorkspaceFsEntryType = st.isFile()
-					? 'file'
-					: st.isDirectory()
-						? 'dir'
-						: 'other'
+				const type: WorkspaceFsEntryType = st.isFile() ? 'file' : st.isDirectory() ? 'dir' : 'other'
 				return { type, size: st.size, mtimeMs: st.mtimeMs }
 			} catch (cause: unknown) {
 				if (getErrnoCode(cause) === 'ENOENT') return { type: 'missing' }

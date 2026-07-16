@@ -1,6 +1,9 @@
 import type { LoaderHmrConfig } from './engine/LoaderHmrService'
 
-export function applyLoaderHmrEnvOverrides(base: LoaderHmrConfig, env = process.env): LoaderHmrConfig {
+export function applyLoaderHmrEnvOverrides(
+	base: LoaderHmrConfig,
+	env = process.env,
+): LoaderHmrConfig {
 	const out: LoaderHmrConfig = { ...base }
 
 	const portRaw = env.PLUXEL_HMR_PORT

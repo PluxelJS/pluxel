@@ -498,7 +498,9 @@ function stringOrStringArrayArg(args: Record<string, unknown>, key: string): str
 	throw new Error(`${key} must be a string or string array`)
 }
 
-function ocrLanguageType(args: Record<string, unknown>): ZhipuUploadInput['fields']['language_type'] {
+function ocrLanguageType(
+	args: Record<string, unknown>,
+): ZhipuUploadInput['fields']['language_type'] {
 	const hints = optionalStringArrayArg(args, 'languageHints') ?? []
 	const normalized = hints.map((hint) => hint.trim().toLowerCase())
 	if (normalized.some((hint) => ['auto', 'detect'].includes(hint))) return 'AUTO'

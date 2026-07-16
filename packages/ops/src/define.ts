@@ -16,7 +16,10 @@ import {
 
 type ValidationSpec<T, Ctx extends OpContext> = {
 	validate: (value: unknown) => { ok: true; value: T } | { ok: false; issues: ValidationIssue[] }
-	custom?: (value: T, ctx: Ctx) => ReturnType<NonNullable<OperationConfig<T, unknown, Ctx>['validate']>>
+	custom?: (
+		value: T,
+		ctx: Ctx,
+	) => ReturnType<NonNullable<OperationConfig<T, unknown, Ctx>['validate']>>
 }
 
 const nowMs = (ctx?: OpContext) => (typeof ctx?.now === 'number' ? ctx.now : Date.now())

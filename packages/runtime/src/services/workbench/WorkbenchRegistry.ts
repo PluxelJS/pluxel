@@ -317,7 +317,8 @@ export class WorkbenchRegistry {
 			viewId: `${outlet.id}:status`,
 			ownerPluginId: targetPluginId,
 			targetPluginId,
-			contractFingerprint: this.extensions.get(targetPluginId)?.extension.contract.fingerprint ?? '',
+			contractFingerprint:
+				this.extensions.get(targetPluginId)?.extension.contract.fingerprint ?? '',
 			placement: outlet.placement,
 			view: Object.freeze({
 				kind: 'builtin',

@@ -43,10 +43,10 @@ constructor concrete package usage 是 `required`，optional ref literal import 
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
 assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
 
-Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、lint 和 config metadata 语义，并由
-Vite/OXC 提供 legacy decorator transform。preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，同时用于
-Workbench UI production build；lint/config metadata 只应用于 server environment。runtime-dev 只增加 ModuleRunner、
-watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
+Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata
+语义，并由 Vite/OXC 提供 legacy decorator transform。preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
+同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
+runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
 
 production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
 sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它

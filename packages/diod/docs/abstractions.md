@@ -88,7 +88,5 @@ builder.registerAndUse(SignUpUseCase)
 const container = builder.build()
 
 const signUpUseCase = container.get(SignUpUseCase)
-signUpUseCase.execute({
-	/* ... */
-})
+signUpUseCase.execute({/* ... */})
 ```

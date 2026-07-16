@@ -74,7 +74,9 @@ export function assertLoaderHmrWorkspace(
 			}
 			const o = raw as Record<string, unknown>
 			if (typeof o.packageName !== 'string' || !o.packageName.trim()) {
-				throw new Error('[loader-hmr] Invalid snapshot: builtinsFromDist[].packageName must be a string.')
+				throw new Error(
+					'[loader-hmr] Invalid snapshot: builtinsFromDist[].packageName must be a string.',
+				)
 			}
 			if (typeof o.entry !== 'string' || !o.entry.trim()) {
 				throw new Error('[loader-hmr] Invalid snapshot: builtinsFromDist[].entry must be a string.')

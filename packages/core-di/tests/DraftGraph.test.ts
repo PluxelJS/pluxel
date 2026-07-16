@@ -29,7 +29,10 @@ class B {
 	constructor(public readonly a: A) {}
 }
 
-const expectBuildError = (error: GraphBuildError, kind: GraphBuildError['issues'][number]['kind']) => {
+const expectBuildError = (
+	error: GraphBuildError,
+	kind: GraphBuildError['issues'][number]['kind'],
+) => {
 	expect(error.issues.some((issue) => issue.kind === kind)).toBe(true)
 }
 
@@ -203,10 +206,7 @@ describe('DraftGraph', () => {
 		if (!first.ok) return
 		first.val.commit()
 
-		draft.replace(
-			ImplV1,
-			classProvider({ key: ImplV2, tokens: [BASE, ImplV1], use: ImplV2 }),
-		)
+		draft.replace(ImplV1, classProvider({ key: ImplV2, tokens: [BASE, ImplV1], use: ImplV2 }))
 
 		const second = draft.build()
 		expect(second.ok).toBe(true)

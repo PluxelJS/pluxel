@@ -15,17 +15,11 @@ import type {
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
-export async function getPluginSchema(
-	rpc: RuntimeRpcStub,
-	name: string,
-): Promise<SchemaResult> {
+export async function getPluginSchema(rpc: RuntimeRpcStub, name: string): Promise<SchemaResult> {
 	return await rpc.pluginSchema(name)
 }
 
-export async function getPluginConfig(
-	rpc: RuntimeRpcStub,
-	name: string,
-): Promise<ConfigResult> {
+export async function getPluginConfig(rpc: RuntimeRpcStub, name: string): Promise<ConfigResult> {
 	return await rpc.pluginConfig(name)
 }
 
