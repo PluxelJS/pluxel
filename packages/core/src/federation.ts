@@ -7,7 +7,7 @@ export const WORKBENCH_FEDERATION_SHARE_STRATEGY = 'loaded-first' as const
 
 // Keep the MF shared contract limited to plugin-facing surface areas.
 //
-// Do not add SignalDB's internal React/reactivity packages here.
+// Do not add implementation-only state or reactivity packages here.
 // Workbench UI code consumes resources through the workbench UI runtime,
 // so the host only needs to share that contract package.
 export const workbenchFederationSharedPackages = [

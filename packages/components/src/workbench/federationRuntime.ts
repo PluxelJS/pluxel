@@ -15,6 +15,7 @@ import {
 	WORKBENCH_FEDERATION_SHARE_STRATEGY,
 	workbenchFederationModuleId,
 } from '@pluxel/core/federation'
+import * as RuntimeWorkbenchContract from '@pluxel/runtime/workbench/contract'
 import * as RuntimeWorkbenchUi from '@pluxel/runtime/workbench/ui'
 
 type WorkbenchFederationState = {
@@ -28,7 +29,7 @@ const sharedVersions = {
 	mantineCore: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/core']),
 	mantineHooks: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/hooks']),
 	reactVirtual: normalizeSharedVersion(componentsPkg.dependencies['@tanstack/react-virtual']),
-	runtimeWorkbenchUi: runtimePkg.version,
+	runtimeWorkbench: runtimePkg.version,
 }
 
 export function ensureWorkbenchFederationRuntime(): ModuleFederation {
@@ -53,9 +54,13 @@ function ensureWorkbenchFederationState(): WorkbenchFederationState {
 			'@tanstack/react-virtual': sharedModule(ReactVirtual, sharedVersions.reactVirtual),
 			'@mantine/core': sharedModule(MantineCore, sharedVersions.mantineCore),
 			'@mantine/hooks': sharedModule(MantineHooks, sharedVersions.mantineHooks),
+			'@pluxel/runtime/workbench/contract': sharedModule(
+				RuntimeWorkbenchContract,
+				sharedVersions.runtimeWorkbench,
+			),
 			'@pluxel/runtime/workbench/ui': sharedModule(
 				RuntimeWorkbenchUi,
-				sharedVersions.runtimeWorkbenchUi,
+				sharedVersions.runtimeWorkbench,
 			),
 		},
 	} as Parameters<typeof createInstance>[0])
@@ -70,14 +75,16 @@ export async function loadFederatedWorkbenchModule(
 	const state = ensureWorkbenchFederationState()
 	const runtime = state.runtime
 	const entry = withCacheBusting(artifact.manifestUrl, artifact.sourceHash, artifact.compiledAt)
-	let registrationName = state.remoteRegistrations.get(entry)
-	if (!registrationName) {
-		registrationName = `${artifact.remoteName}_${artifact.sourceHash}_${artifact.compiledAt}`
-		runtime.registerRemotes([{ name: registrationName, entry }])
-		state.remoteRegistrations.set(entry, registrationName)
+	const previousEntry = state.remoteRegistrations.get(artifact.remoteName)
+	if (previousEntry !== entry) {
+		runtime.registerRemotes(
+			[{ name: artifact.remoteName, entry }],
+			previousEntry ? { force: true } : undefined,
+		)
+		state.remoteRegistrations.set(artifact.remoteName, entry)
 	}
 	const loaded = await runtime.loadRemote<WorkbenchUiModule | { default?: WorkbenchUiModule }>(
-		`${registrationName}/${workbenchFederationModuleId(artifact.exposedModule)}`,
+		`${artifact.remoteName}/${workbenchFederationModuleId(artifact.exposedModule)}`,
 		{ from: 'runtime' },
 	)
 	if (!loaded) throw new Error(`Failed to load workbench UI module: ${artifact.pluginName}`)
