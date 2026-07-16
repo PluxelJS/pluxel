@@ -63,7 +63,7 @@ run_bench() {
 	pushd "$dir" >/dev/null
 
 	if [ "${PLUXEL_BENCH_SKIP_INSTALL:-0}" != "1" ]; then
-		if ! pnpm install --frozen-lockfile >"$install_log" 2>&1; then
+		if ! pnpm install --filter @pluxel/core... --frozen-lockfile >"$install_log" 2>&1; then
 			tail -200 "$install_log"
 			return 1
 		fi

@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Bench } from 'tinybench'
 import { ContainerBuilder } from 'diod'
 import { DraftGraph, Runtime, classProvider } from '../dist/bench/index.mjs'
@@ -430,11 +431,17 @@ const table = comparison.map((row) => ({
 
 console.table(table)
 
-const benchmarksDir = new URL('../benchmarks/', import.meta.url)
+const benchmarksDir = process.env.PLUXEL_DI_BENCH_OUTPUT_DIR
+	? pathToFileURL(`${path.resolve(process.env.PLUXEL_DI_BENCH_OUTPUT_DIR)}${path.sep}`)
+	: new URL('../benchmarks/', import.meta.url)
 mkdirSync(fileURLToPath(benchmarksDir), { recursive: true })
 
 const jsonReport = {
 	recordedAt: new Date().toISOString(),
+	runtime: {
+		name: process.release.name,
+		version: process.version,
+	},
 	options: {
 		timeMs: BENCH_TIME_MS,
 		warmupTimeMs: WARMUP_TIME_MS,
@@ -448,6 +455,7 @@ const jsonReport = {
 const markdown = [
 	'# core-di vs diod benchmark',
 	'',
+	`- Runtime: ${process.release.name} ${process.version}`,
 	`- Time per task: ${BENCH_TIME_MS}ms`,
 	`- Warmup per task: ${WARMUP_TIME_MS}ms`,
 	`- Rounds (median): ${BENCH_ROUNDS}`,

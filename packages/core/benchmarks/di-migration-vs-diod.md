@@ -14,39 +14,38 @@ Two benchmark layers were used:
    `packages/core/bench/pluginLifecycle.bench.ts`
    This compares current `@pluxel/core` against the pre-migration `diod` baseline from commit `7c800b89`.
 
-## Environment
+## Archived Environment
 
 - Date: `2026-04-14`
 - Runtime: `bun 1.3.4`
 - Current workspace: GitButler workspace HEAD `a41338dc`
 - Pre-migration baseline: `7c800b89` (`origin/main` at benchmark time)
 
+This Bun result is retained as a migration record only. Current benchmark scripts execute directly
+on the workspace Node runtime and same-runner regression checks compare base and head on that Node
+process; the archived Bun result is not a current regression reference.
+
 ## Commands
 
 ```sh
-# pre-migration diod baseline
-git worktree add /tmp/pluxel-bench-7c800 7c800b89
-pnpm install --frozen-lockfile
-PLUXEL_BENCH_TIME=1000 PLUXEL_BENCH_WARMUP_TIME=300 PLUXEL_BENCH_STRICT=0 \
-  pnpm --filter @pluxel/core bench
+# current lifecycle benchmark on Node
+pnpm --filter @pluxel/core bench:dist
 
-# current @pluxel/core vs diod baseline
-PLUXEL_BENCH_TIME=1000 PLUXEL_BENCH_WARMUP_TIME=300 PLUXEL_BENCH_STRICT=0 \
-PLUXEL_BENCH_BASELINE=packages/core/benchmarks/plugin-lifecycle.diod-baseline.json \
-  pnpm --filter @pluxel/core bench
-
-# current internal DI kernel vs archived workspace diod
+# current internal DI kernel vs retained workspace diod
 PLUXEL_DI_BENCH_TIME_MS=1000 PLUXEL_DI_WARMUP_MS=300 PLUXEL_DI_BENCH_ROUNDS=3 \
+PLUXEL_DI_BENCH_OUTPUT_DIR=.bench-results/core/di \
   pnpm --filter @pluxel/core bench:di
 
+# same-runner base/head regression comparison on Node
+pnpm bench:core:compare
 ```
 
 ## Raw Reports
 
 - Pure DI report: `packages/core/benchmarks/di-kernel-vs-diod.md`
-- Current lifecycle report: `packages/core/benchmarks/plugin-lifecycle.md`
-- Current lifecycle diff JSON: `packages/core/benchmarks/plugin-lifecycle-diff.json`
-- Pre-migration lifecycle baseline JSON: `packages/core/benchmarks/plugin-lifecycle.diod-baseline.json`
+- Generated lifecycle reports: `packages/core/benchmarks/plugin-lifecycle.{json,md}` (ignored)
+- Archived Bun pre-migration lifecycle baseline:
+  `packages/core/benchmarks/plugin-lifecycle.diod-baseline.json`
 
 ## Result
 
