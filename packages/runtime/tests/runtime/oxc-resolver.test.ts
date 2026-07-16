@@ -10,7 +10,7 @@ import {
 	resolvePackageJsonPathWithOxc,
 	resolveModulePath,
 	toDirectoryURLString,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 
 describe('runtime/shared OXC resolver helpers', () => {
 	it('normalizes backslashes and enforces a trailing slash', () => {

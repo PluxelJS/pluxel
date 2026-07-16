@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'pathe'
 import picomatch from 'picomatch'
-import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/internal'
 import type { WorkspacePackageJson as PackageJson } from '@pluxel/rolldown/workspace/info'
 import { toPosix, toRootRelative, uniqSorted } from './utils'
 import {

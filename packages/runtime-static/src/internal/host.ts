@@ -7,12 +7,14 @@ import {
 	type PluginLifecycleIssue,
 	Context,
 } from '@pluxel/core'
-import { isPluginEnabled, setPluginEnabled } from '@pluxel/runtime/runtime-state'
-import type {
-	RuntimePluginDependencyInfo,
-	RuntimePluginSource,
-	RuntimeRouteCapabilities,
-} from '@pluxel/runtime/plugin-catalog'
+
+import {
+	isPluginEnabled,
+	setPluginEnabled,
+	type RuntimePluginDependencyInfo,
+	type RuntimePluginSource,
+	type RuntimeRouteCapabilities,
+} from '@pluxel/runtime/internal'
 import {
 	createContextPluginLogPolicyStore,
 	createRuntimeLogging,

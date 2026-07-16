@@ -275,21 +275,14 @@ function BuiltinDocHarness({
 		}),
 		[assistHost],
 	)
-	const def = useMemo(
+	const content = useMemo(
 		() =>
-			({
-				id: 'builtin-doc-test',
-				kind: 'doc',
-				pluginName: 'test-plugin',
-				point: 'plugin:tabs',
-				title: 'Builtin Doc Test',
-				content: [
-					{
-						kind: 'md',
-						text: '# Guide\n\n## Overview\nAlpha\n\n## Usage\nBeta',
-					},
-				],
-			}) as any,
+			[
+				{
+					kind: 'md',
+					text: '# Guide\n\n## Overview\nAlpha\n\n## Usage\nBeta',
+				},
+			] as const,
 		[],
 	)
 
@@ -298,7 +291,12 @@ function BuiltinDocHarness({
 			<PluginWorkbenchAsideProvider value={asideValue}>
 				<PluginWorkbenchTabActivityProvider active={active}>
 					<div data-doc-shell="true">
-						<BuiltinDoc def={def} />
+						<BuiltinDoc
+							id="builtin-doc-test"
+							pluginName="test-plugin"
+							title="Builtin Doc Test"
+							content={content}
+						/>
 					</div>
 				</PluginWorkbenchTabActivityProvider>
 				{mountAssistHost ? <div data-assist-host="true" ref={setAssistHost} /> : null}

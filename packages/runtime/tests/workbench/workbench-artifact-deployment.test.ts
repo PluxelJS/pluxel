@@ -30,7 +30,6 @@ describe('packaged Workbench artifact deployment paths', () => {
 		const owner = {
 			...root,
 			root,
-			runtimeDev: undefined,
 			pluginInfo: { id: 'DisposedPlugin' },
 			effects: {
 				defer(dispose: () => void) {

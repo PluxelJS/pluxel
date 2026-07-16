@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
 import type { Context } from '@pluxel/core'
-import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/internal'
 import { isNotNullOrUndefined, type Maybe } from 'option-t/maybe'
 import { createErr, createOk, isOk, type Result } from 'option-t/plain_result'
 import { resolve as resolvePath } from 'pathe'

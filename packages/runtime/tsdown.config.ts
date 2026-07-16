@@ -34,13 +34,8 @@ export default defineConfig({
 		index: 'src/index.ts',
 		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
 		events: 'src/events.ts',
-		api: 'src/api/contributions.ts',
 		logger: 'src/logger.ts',
-		'plugin-catalog': 'src/plugin-catalog.ts',
-		protocol: 'src/protocol.ts',
 		'services/vault': 'src/services/vault.ts',
-		'runtime-state': 'src/runtime-state.ts',
-		shared: 'src/shared.ts',
 		test: 'src/test.ts',
 		toolchain: 'src/toolchain.ts',
 		internal: 'src/internal.ts',

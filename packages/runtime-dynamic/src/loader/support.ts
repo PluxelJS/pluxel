@@ -9,8 +9,11 @@ import {
 	type PluginIdentifier,
 } from '@pluxel/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
-import { runtimeModuleRuntime, findRuntimeModuleId } from '@pluxel/runtime/internal'
-import { setPluginEnabled } from '@pluxel/runtime/runtime-state'
+import {
+	findRuntimeModuleId,
+	runtimeModuleRuntime,
+	setPluginEnabled,
+} from '@pluxel/runtime/internal'
 import type { ModuleReplacer, ReplaceModuleResult } from './module-replacer'
 import type {
 	PluginLifecycleSnapshot,

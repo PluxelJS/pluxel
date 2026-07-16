@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/shared'
+import { PLUXEL_CONDITION_HMR } from '@pluxel/runtime/internal'
 import { isOk } from 'option-t/plain_result'
 import { PackageLoader } from '../../src/package/loader'
 import { normalizeSpecifier } from '../../src/package/specifiers'

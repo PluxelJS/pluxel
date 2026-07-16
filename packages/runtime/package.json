@@ -18,10 +18,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./api": {
-			"@pluxel/source": "./src/api/contributions.ts",
-			"default": "./dist/api.mjs"
-		},
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
@@ -46,25 +42,9 @@
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
 		},
-		"./plugin-catalog": {
-			"@pluxel/source": "./src/plugin-catalog.ts",
-			"default": "./dist/plugin-catalog.mjs"
-		},
-		"./protocol": {
-			"@pluxel/source": "./src/protocol.ts",
-			"default": "./dist/protocol.mjs"
-		},
-		"./runtime-state": {
-			"@pluxel/source": "./src/runtime-state.ts",
-			"default": "./dist/runtime-state.mjs"
-		},
 		"./services/vault": {
 			"@pluxel/source": "./src/services/vault.ts",
 			"default": "./dist/services/vault.mjs"
-		},
-		"./shared": {
-			"@pluxel/source": "./src/shared.ts",
-			"default": "./dist/shared.mjs"
 		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
@@ -103,18 +83,13 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./api": "./dist/api.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./events": "./dist/events.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",
-			"./plugin-catalog": "./dist/plugin-catalog.mjs",
-			"./protocol": "./dist/protocol.mjs",
-			"./runtime-state": "./dist/runtime-state.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
-			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",

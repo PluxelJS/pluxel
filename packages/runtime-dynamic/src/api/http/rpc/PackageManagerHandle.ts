@@ -13,7 +13,7 @@ import type {
 	PackageLoadIssue,
 	PackageManagerSnapshot,
 	PackageMutationInput,
-} from '@pluxel/runtime/protocol'
+} from '@pluxel/runtime/internal'
 
 export class PackageManagerHandle extends RpcTarget {
 	private readonly ctx: Context

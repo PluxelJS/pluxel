@@ -21,7 +21,7 @@ import {
 	pathVariantsAbs,
 	resolveModulePath,
 	toBasePackage,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 
 export interface LoaderHmrDependencyConfig {

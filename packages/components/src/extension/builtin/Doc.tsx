@@ -15,7 +15,6 @@ import {
 import type {
 	WorkbenchDocumentBlock as BuiltinDocBlock,
 	WorkbenchDocumentContent as BuiltinDocContent,
-	WorkbenchDocumentDefinition as BuiltinDocExtensionDef,
 	WorkbenchMarkdownPart as BuiltinMarkdownPart,
 	WorkbenchDocumentPart as BuiltinDocPart,
 } from '@pluxel/runtime/workbench'
@@ -237,7 +236,19 @@ const DocBody = memo(function DocBody({
 	)
 })
 
-export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
+export function BuiltinDoc({
+	id,
+	pluginName,
+	title,
+	description,
+	content,
+}: {
+	id: string
+	pluginName: string
+	title?: string
+	description?: string
+	content: BuiltinDocContent
+}) {
 	const contentRef = useRef<HTMLDivElement | null>(null)
 	const [activeId, setActiveId] = useState<string | null>(null)
 	const [scrollHost, setScrollHost] = useState<HTMLElement | null>(null)
@@ -245,11 +256,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const tabActive = usePluginWorkbenchTabActivity()
 
 	const docPrefix = useMemo(
-		() => `doc-${toDomSlug(def.pluginName)}-${toDomSlug(def.id)}-`,
-		[def.id, def.pluginName],
+		() => `doc-${toDomSlug(pluginName)}-${toDomSlug(id)}-`,
+		[id, pluginName],
 	)
-
-	const pluginName = def.pluginName
 
 	// Track used schema keys across the rendered doc so `d.schemas()` behaves like cfg layout.
 	const usedSchemaKeysRef = useRef<Set<string> | null>(null)
@@ -257,10 +266,10 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	usedSchemaKeysRef.current.clear()
 
 	const renderBlock = useCallback(
-		(title: string, block: BuiltinDocBlock) => {
+		(blockTitle: string, block: BuiltinDocBlock) => {
 			return renderBuiltinBlock({
 				pluginName,
-				title,
+				title: blockTitle,
 				block,
 			})
 		},
@@ -371,16 +380,16 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	const compiled = useMemo(
 		() =>
 			compileDoc({
-				content: def.content,
+				content,
 				docPrefix,
 			}),
-		[def.content, docPrefix],
+		[content, docPrefix],
 	)
 
 	const headingAnchors = compiled.anchors
 	const hasToc = headingAnchors.length > 1
 
-	const hasHeader = Boolean(def.title || def.description)
+	const hasHeader = Boolean(title || description)
 	const shouldRender = compiled.items.length > 0 || hasHeader
 
 	const resolveScrollContainer = useCallback(
@@ -482,9 +491,9 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	}, [scrollHost, updateActive])
 
 	const scrollToSection = useCallback(
-		(id: string) => {
-			if (!id) return
-			const target = document.getElementById(id)
+		(sectionId: string) => {
+			if (!sectionId) return
+			const target = document.getElementById(sectionId)
 			if (!target) return
 			const scrollMarginTop =
 				Number.parseFloat(getComputedStyle(target).scrollMarginTop || '0') || 0
@@ -508,16 +517,16 @@ export function BuiltinDoc({ def }: { def: BuiltinDocExtensionDef }) {
 	if (!shouldRender) return null
 
 	const headerContent =
-		def.title || def.description ? (
+		title || description ? (
 			<Stack gap={4}>
-				{def.title ? (
+				{title ? (
 					<Text size="sm" fw={650} style={{ lineHeight: 1.25 }}>
-						{def.title}
+						{title}
 					</Text>
 				) : null}
-				{def.description ? (
+				{description ? (
 					<Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
-						{def.description}
+						{description}
 					</Text>
 				) : null}
 			</Stack>

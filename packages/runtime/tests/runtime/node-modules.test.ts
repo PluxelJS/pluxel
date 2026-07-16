@@ -8,7 +8,7 @@ import {
 	installedPackageJsonPath,
 	nodeModulesPackageJsonPath,
 	toBasePackage,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 
 describe('runtime/shared node_modules helpers', () => {
 	it('normalizes package specifiers to their install root', () => {

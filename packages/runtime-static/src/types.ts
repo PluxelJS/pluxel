@@ -8,7 +8,7 @@ import type {
 	PluginDataServiceConfig,
 	WorkbenchConfig,
 } from '@pluxel/runtime'
-import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
+import type { RuntimeStateStoreConfig } from '@pluxel/runtime/internal'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
 export type StaticRuntimeContextConfig = Omit<

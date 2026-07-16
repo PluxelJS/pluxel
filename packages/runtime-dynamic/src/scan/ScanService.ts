@@ -8,7 +8,7 @@ import {
 	getOxcResolveCache,
 	hasNodeModulesPackageJson,
 	resolveModulePath,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import { EntryResolver } from './entry-resolver'
 import { nodeWorkspaceFs, type WorkspaceFs } from './fs'
 import { DEFAULT_SCAN_OPTIONS, resolveScanOptions } from './options'

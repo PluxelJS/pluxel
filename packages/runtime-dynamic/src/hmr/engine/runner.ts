@@ -30,7 +30,7 @@ import {
 	resolveCacheLimit,
 	resolveModulePath,
 	unwrapViteId,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import type { HmrPathApi } from './environment'
 import { matchesSpecifierPattern } from './internals'
 

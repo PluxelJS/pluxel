@@ -45,7 +45,7 @@ function evaluateSchemaSource(pluginName: string, key: string, expr: string): un
 	}
 }
 
-async function loadPluginData(
+async function loadPluginConfigData(
 	pluginName: string,
 	forceSchemaRefresh: boolean,
 	currentSchema?: PluginSchemaData,
@@ -135,7 +135,7 @@ class PluginConfigResource {
 					layout: this.snapshot.data.layout,
 				}
 			: undefined
-		const task = loadPluginData(this.pluginName, forceSchemaRefresh, currentSchema)
+		const task = loadPluginConfigData(this.pluginName, forceSchemaRefresh, currentSchema)
 			.then((data): undefined => {
 				if (version !== this.requestVersion) return undefined
 				this.loadedAt = Date.now()

@@ -119,7 +119,7 @@ export function OverviewPanel() {
 				<Group gap="xs">
 					<Loader size="sm" />
 					<Text size="sm" c="dimmed">
-						正在等待 signaldb 同步…
+						正在等待 collection snapshot…
 					</Text>
 				</Group>
 			) : null}

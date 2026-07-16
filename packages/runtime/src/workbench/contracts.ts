@@ -43,7 +43,7 @@ export type WorkbenchViewRef =
 	| { readonly kind: 'remote'; readonly export: string }
 	| {
 			readonly kind: 'builtin'
-			readonly renderer: 'document' | 'form' | 'table' | 'action'
+			readonly renderer: 'document'
 			readonly props: Readonly<Record<string, unknown>>
 	  }
 

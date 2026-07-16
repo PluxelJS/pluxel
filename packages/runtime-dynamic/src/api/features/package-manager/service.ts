@@ -1,13 +1,4 @@
 import type { Context as PlxContext } from '@pluxel/core'
-import { GraphQLError } from 'graphql'
-import type { InferInput, InferOutput } from 'valibot'
-
-import type {
-	PackageLoadIssueEntry,
-	PackageInventoryEntry,
-	PackageInventoryFilter,
-	PackageSpecifierInput as PackageSpecifierInputSchema,
-} from './schema'
 import {
 	type InstallOptions,
 	type PackageInstallStatus,
@@ -27,18 +18,22 @@ import {
 } from '../../../package/specifiers'
 import type {
 	PackageBatchResult,
+	PackageInventoryEntry,
+	PackageInventoryFilter,
+	PackageLoadIssue,
 	PackageMutationAction,
 	PackageMutationInput,
 	PackageMutationOptions,
 	PackageMutationResult,
-} from '@pluxel/runtime/protocol'
+	PackageSpecInput,
+} from '@pluxel/runtime/internal'
 
-type IssueOutput = InferOutput<typeof PackageLoadIssueEntry>
-type SpecInputValue = InferInput<typeof PackageSpecifierInputSchema>
+type IssueOutput = PackageLoadIssue
+type SpecInputValue = PackageSpecInput
 type MutationResult = PackageMutationResult
 type BatchMutationResult = PackageBatchResult
-type InventoryEntry = InferOutput<typeof PackageInventoryEntry>
-type InventoryFilter = InferInput<typeof PackageInventoryFilter>
+type InventoryEntry = PackageInventoryEntry
+type InventoryFilter = PackageInventoryFilter
 
 type PackageContext = PlxContext & { packageService: PackageService }
 
@@ -76,16 +71,6 @@ export function listLoadIssues(pCtx: PlxContext): IssueOutput[] {
 	return packageCtx.packageService.listLoadIssues().map(serializeIssue)
 }
 
-export function readLoadIssue(pCtx: PlxContext, id: string): IssueOutput {
-	const issue = listLoadIssues(pCtx).find((entry) => entry.id === id)
-	if (!issue) {
-		throw new GraphQLError('Package load issue not found', {
-			extensions: { code: 'NOT_FOUND', id },
-		})
-	}
-	return issue
-}
-
 export async function listPackageInventory(
 	pCtx: PlxContext,
 	filter?: InventoryFilter,
@@ -104,21 +89,6 @@ export async function listPackageInventory(
 		moduleId: entry.moduleId ?? null,
 		issues: entry.issues?.map(serializeIssue) ?? null,
 	}))
-}
-
-export async function readPackageInventoryEntry(
-	pCtx: PlxContext,
-	id: string,
-	filter?: InventoryFilter,
-): Promise<InventoryEntry> {
-	const inventory = await listPackageInventory(pCtx, filter)
-	const entry = inventory.find((item) => item.id === id)
-	if (!entry) {
-		throw new GraphQLError('Package inventory entry not found', {
-			extensions: { code: 'NOT_FOUND', id },
-		})
-	}
-	return entry
 }
 
 export async function applyPackageMutation(

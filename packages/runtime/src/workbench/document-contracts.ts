@@ -1,32 +1,9 @@
-import type {
-	ExtensionPoint,
-	ExtensionPointMap,
-	ExtensionPointMeta,
-	UiConfirmPayload,
-	UiNotifyPayload,
-} from '../web/host-ui'
+import type { UiConfirmPayload, UiNotifyPayload } from '../web/host-ui'
 import {
 	assertValidConfigLayout,
 	normalizeMarkdownTemplate,
 	type ConfigLayoutPart,
 } from '@pluxel/core'
-
-export type BuiltinExtensionKind = 'doc'
-
-type ContributionMetaProp<P extends ExtensionPoint> = ExtensionPointMap[P] extends {
-	metaRequired: true
-}
-	? { meta: ExtensionPointMeta<P> }
-	: { meta?: ExtensionPointMeta<P> }
-
-type ExtensionRuntimeBase<P extends ExtensionPoint = ExtensionPoint> = ContributionMetaProp<P> & {
-	kind: 'doc'
-	point: P
-	id: string
-	pluginName: string
-	priority?: number
-	requireRunning?: boolean
-}
 
 export type BuiltinSignalDbRef<T = unknown> = {
 	kind: 'signaldb'
@@ -175,14 +152,6 @@ export type BuiltinDocBlock =
 	| BuiltinFormBlock
 	| BuiltinActionBlock
 	| BuiltinResourceSelectBlock
-
-export type BuiltinDocExtensionDef<P extends ExtensionPoint = ExtensionPoint> =
-	ExtensionRuntimeBase<P> & {
-		kind: 'doc'
-		title?: string
-		description?: string
-		content: BuiltinDocContent
-	}
 
 export type BuiltinMarkdownPart = ConfigLayoutPart
 

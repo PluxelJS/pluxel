@@ -13,7 +13,7 @@ import {
 	type HmrReportLogProps,
 	type HmrUpdatedLogProps,
 } from '@pluxel/runtime-dev/hmr-log'
-import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+import { isPluginEnabled } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {

@@ -11,4 +11,4 @@
 
 当前提案：
 
-- [`DESIGN_SURFACE_REDUCTION.md`](DESIGN_SURFACE_REDUCTION.md)：近期大规模重构后仍可删除或收窄的设计支线。
+- [`DESIGN_SURFACE_REDUCTION.md`](DESIGN_SURFACE_REDUCTION.md)：保留现有 SignalDB 能力，并为未来自研替代实现约束迁移边界。

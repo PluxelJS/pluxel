@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/runtime-state'
+import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/internal'
 
 export function enablePlugins(ctx: Context, ...names: string[]): void {
 	ctx.runtimeState.update((draft) => setPluginsEnabled(draft, names, true))

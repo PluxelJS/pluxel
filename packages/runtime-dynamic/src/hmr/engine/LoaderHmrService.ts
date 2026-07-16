@@ -15,11 +15,11 @@ import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
+	isPluginEnabled,
 	resolveGlobPatterns,
 	setPkgrootCacheLimit,
 	startTimer,
-} from '@pluxel/runtime/shared'
-import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+} from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,

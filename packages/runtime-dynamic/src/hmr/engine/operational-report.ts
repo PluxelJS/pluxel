@@ -3,7 +3,7 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import type { PluginConstructor } from '@pluxel/core'
 import { resolve } from 'pathe'
 import { normalizePath } from 'vite'
-import { DRIVE_PATH_RE, fsPathFromViteFsId, resolveCacheLimit } from '@pluxel/runtime/shared'
+import { DRIVE_PATH_RE, fsPathFromViteFsId, resolveCacheLimit } from '@pluxel/runtime/internal'
 import type {
 	HmrPluginTotals as PluginTotals,
 	HmrPluginsByRootInfo as PluginsByRootInfo,

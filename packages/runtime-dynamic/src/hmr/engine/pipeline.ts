@@ -6,15 +6,13 @@ import { dirname, join } from 'pathe'
 import type { DevEnvironment, EnvironmentModuleNode as ModuleNode } from 'vite'
 import {
 	disablePluginsOnMissingDependencyError,
-	type MissingDepsCandidate,
-	startTimer,
-} from '@pluxel/runtime/shared'
-import { findRuntimeModuleId } from '@pluxel/runtime/internal'
-import {
+	findRuntimeModuleId,
 	isPluginEnabled,
 	setPluginEnabled,
+	type MissingDepsCandidate,
 	type RuntimeStateDraft,
-} from '@pluxel/runtime/runtime-state'
+	startTimer,
+} from '@pluxel/runtime/internal'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
 import {
 	HMR_CHANGED_PREVIEW_LIMIT,

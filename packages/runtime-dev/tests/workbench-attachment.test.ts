@@ -8,9 +8,7 @@ describe('attachPluginArtifactCompiler', () => {
 	it('attaches one compiler directly to the root Workbench artifacts', async () => {
 		const runtime = createRuntimeContext()
 		const { ctx } = runtime
-		const previousDev = {}
 		const previousConfig = { cacheDir: '.pluxel/previous-workbench' }
-		ctx.runtimeDev = previousDev
 		ctx.config.pluginArtifactCompiler = previousConfig
 		const artifacts = requireWorkbench(ctx).artifacts
 		const attachSourceBinder = vi.spyOn(artifacts, 'attachSourceBinder')
@@ -21,7 +19,6 @@ describe('attachPluginArtifactCompiler', () => {
 		})
 
 		expect(attachSourceBinder).toHaveBeenCalledOnce()
-		expect(ctx.runtimeDev).toBe(previousDev)
 		expect(ctx.config.pluginArtifactCompiler).toBe(previousConfig)
 		expect(() => attachPluginArtifactCompiler(ctx)).toThrow(/already attached/)
 		expect(attachSourceBinder).toHaveBeenCalledTimes(1)

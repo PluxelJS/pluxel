@@ -22,6 +22,10 @@
 - 不为已删除设计保留兼容 alias；
 - toolchain helper 只能从 toolchain/internal subpath 使用。
 
+runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper 和 control-plane server DTO 统一从
+`@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、
+`protocol` 等 public-looking 作者入口。browser contract 的公开权威入口是 `@pluxel/runtime/web`。
+
 ## 变更流程
 
 1. 先读 [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) 和相关领域文档。

@@ -232,20 +232,6 @@ export interface PackageManagerFeatureApi {
 	loadIssues: () => Promise<PackageLoadIssue[]>
 }
 
-export type RuntimeRouteFeatureApiMap = {
-	packageManager: PackageManagerFeatureApi
-}
-
-export type RuntimeRouteFeatureName = keyof RuntimeRouteFeatureApiMap
-export type RuntimeRouteFeatureApi<Name extends RuntimeRouteFeatureName = RuntimeRouteFeatureName> =
-	RuntimeRouteFeatureApiMap[Name]
-
-export interface BuildSnapshotResult {
-	ok: boolean
-	path?: string
-	error?: string
-}
-
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
@@ -289,11 +275,9 @@ export type LoggingHandleApi = {
 
 type RuntimeRpcApiContract = {
 	ping: () => string
-	features: () => string[]
-	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
+	packageManager: () => PackageManagerFeatureApi | null
 	logging: () => LoggingHandleApi
 	workbenchRpc: (grantId: string) => WorkbenchRpcView
-	buildSnapshot: () => Promise<BuildSnapshotResult>
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 	pluginSchema: (name: string) => Promise<SchemaResult>
 	pluginConfig: (name: string) => Promise<ConfigResult>

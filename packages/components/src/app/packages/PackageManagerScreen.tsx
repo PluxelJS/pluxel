@@ -65,36 +65,21 @@ export function PackageManagerScreen() {
 	const requestIdRef = useRef(0)
 	const hasSnapshotRef = useRef(false)
 	const snapshotKeyRef = useRef('')
-	const packageManagerAvailableRef = useRef<boolean | null>(null)
 
 	const [installInput, setInstallInput] = useState('')
 	const [forceInstall, setForceInstall] = useState(false)
 	const notify = useNotify()
 	const pendingInstallSpecs = useMemo(() => parseInstallSpecs(installInput), [installInput])
 
-	const ensurePackageManagerAvailable = useCallback(async (): Promise<void> => {
-		if (packageManagerAvailableRef.current === true) return
-		if (packageManagerAvailableRef.current === false) {
-			throw new Error('当前运行路线不支持包管理功能')
-		}
-		const features = await transport.withRpc((rpc) => rpc.features())
-		const available = features.includes('packageManager')
-		packageManagerAvailableRef.current = available
-		if (!available) {
-			throw new Error('当前运行路线不支持包管理功能')
-		}
-	}, [transport])
-
-	useEffect(() => {
-		packageManagerAvailableRef.current = null
-	}, [transport])
-
 	const withPackageManager = useCallback(
 		async <T,>(runner: (feature: PackageManagerFeatureApi) => Promise<T>): Promise<T> => {
-			await ensurePackageManagerAvailable()
-			return await transport.withRpc((rpc) => runner(rpc.feature('packageManager')))
+			return await transport.withRpc(async (rpc) => {
+				const feature = await rpc.packageManager()
+				if (!feature) throw new Error('当前运行路线不支持包管理功能')
+				return await runner(feature)
+			})
 		},
-		[ensurePackageManagerAvailable, transport],
+		[transport],
 	)
 
 	const statuses = useMemo(() => {

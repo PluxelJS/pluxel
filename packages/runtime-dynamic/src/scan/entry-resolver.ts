@@ -5,7 +5,7 @@ import {
 	type OxcResolveCache,
 	resolveModulePath,
 	withPluxelHmrConditions,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 

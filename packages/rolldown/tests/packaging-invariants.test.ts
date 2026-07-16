@@ -420,10 +420,19 @@ describe('toolchain package boundaries', () => {
 		)?.[0]
 		expect(routeType).toBeTruthy()
 		expect(routeType).not.toContain('dev?:')
-		expect(capabilities).toContain('runtimeDev?: RuntimeDevCapabilities')
+		expect(capabilities).not.toContain('RuntimeDevCapabilities')
 		expect(capabilities).not.toContain('RuntimeWorkerWatchOptions')
 		expect(capabilities).not.toMatch(/\bworker\?:\s*\{/)
 		expect(runtimePackage.exports).not.toHaveProperty('./plugin')
+		for (const subpath of [
+			'./api',
+			'./shared',
+			'./plugin-catalog',
+			'./runtime-state',
+			'./protocol',
+		]) {
+			expect(runtimePackage.exports).not.toHaveProperty(subpath)
+		}
 	})
 
 	it('keeps old HTTP workbench internals out of public runtime config surfaces', async () => {

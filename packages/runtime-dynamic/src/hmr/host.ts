@@ -410,7 +410,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
 ): Promise<LoaderHmrService> {
-	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules || ctx.runtimeDev) {
+	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
 	}
 
@@ -420,7 +420,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
 
 	const baseRoute = ctx.runtimeRoute
-	const baseDev = ctx.runtimeDev
 	if (!baseRoute) {
 		throw new Error(
 			'[loader-hmr-host] Loader route capabilities must be registered before HMR starts',
@@ -430,20 +429,8 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		...baseRoute,
 		modules: hmr,
 	}
-	ctx.runtimeDev = {
-		...baseDev,
-		batches: {
-			lastBatch: hmr.api.lastBatch,
-			waitForBatch: hmr.api.waitForBatch,
-			waitForStable: hmr.api.waitForStable,
-			waitForIdle: hmr.api.waitForIdle,
-			executeFiles: (files, keepOrder) => hmr.executeFiles(files, keepOrder !== false),
-		},
-	}
-
 	ctx.effects.defer(() => {
 		ctx.runtimeRoute = baseRoute
-		ctx.runtimeDev = baseDev
 	})
 
 	attachPluginArtifactCompiler(ctx, {

@@ -9,7 +9,7 @@ import {
 	getOxcResolveCache,
 	installedPackageJsonPath,
 	resolvePackageJsonPathWithOxc,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import type { NormalizedPackageSpecifier, PackageSpecifierInput } from './specifiers'
 import type { PackageInstallResult, ResolvedInstallOptions } from './types'
 

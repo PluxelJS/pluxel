@@ -2,7 +2,6 @@
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { writeGroups } from '../../features/pluginGroups/service'
-import { createRuntimeRouteFeatureHandle, listRuntimeRouteFeatures } from '../../contributions'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
@@ -26,8 +25,7 @@ import type {
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
-	RuntimeRouteFeatureApi,
-	RuntimeRouteFeatureName,
+	PackageManagerFeatureApi,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -42,14 +40,10 @@ export class RuntimeRpcApi extends RpcTarget {
 		return 'runtime-rpc:ok'
 	}
 
-	/** Route-provided optional control-plane features. */
-	features(): string[] {
-		return listRuntimeRouteFeatures(this.ctx)
-	}
-
-	/** Lookup a route feature handle after checking `features()`. */
-	feature<Name extends RuntimeRouteFeatureName>(name: Name): RuntimeRouteFeatureApi<Name> {
-		return createRuntimeRouteFeatureHandle<RuntimeRouteFeatureApi<Name>>(this.ctx, name)
+	packageManager(): PackageManagerFeatureApi | null {
+		const factory =
+			this.ctx.runtimeRoute?.packageManager ?? this.ctx.root.runtimeRoute?.packageManager
+		return factory ? (factory(this.ctx) as PackageManagerFeatureApi) : null
 	}
 
 	/** Logging settings (host-level, persisted). */
@@ -64,13 +58,6 @@ export class RuntimeRpcApi extends RpcTarget {
 			this.ctx,
 			`${ref.ownerPluginId}:${ref.modelKey}`,
 		) as unknown as WorkbenchRpcView
-	}
-
-	async buildSnapshot() {
-		return {
-			ok: false as const,
-			error: 'Snapshot builder is temporarily unavailable while the plugin is being rewritten.',
-		}
 	}
 
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {

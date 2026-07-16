@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { normalize } from 'pathe'
-import { getOxcResolveCache } from '@pluxel/runtime/shared'
+import { getOxcResolveCache } from '@pluxel/runtime/internal'
 import { EntryResolver } from '../../src/scan/entry-resolver'
 import type { ResolvedScanOptions } from '../../src/scan/types'
 

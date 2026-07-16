@@ -16,7 +16,7 @@ import {
 	type ConfigSchemaMap as CoreConfigSchemaMap,
 	isStandardSchemaV1,
 } from '@pluxel/core/services'
-import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/runtime-state'
+import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/internal'
 import * as v from 'valibot'
 type ModuleId = string
 type PluginName = string

@@ -39,7 +39,6 @@ export {
 } from './services/http/elysia'
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
-export { setPluginEnabled } from './runtime-state'
 export {
 	getPluginRoutingSnapshot,
 	type PluginRoutingSnapshot,

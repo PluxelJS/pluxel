@@ -2,7 +2,7 @@ import '../../src/services'
 import { afterEach } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
 import type { Context } from '@pluxel/core'
-import { setPluginsEnabled } from '@pluxel/runtime/runtime-state'
+import { setPluginsEnabled } from '@pluxel/runtime/internal'
 
 export type HmrTestState = {
 	enabled?: Set<string>

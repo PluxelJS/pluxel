@@ -336,13 +336,6 @@ function registerLayout(layout: WorkbenchLayout): () => void {
 
 function renderBuiltinItem(item: WorkbenchLayoutItem): ReactNode {
 	if (item.view.kind !== 'builtin') return null
-	if (item.view.renderer !== 'document') {
-		return (
-			<InlineNotice title="Builtin workbench renderer unavailable">
-				{item.view.renderer}
-			</InlineNotice>
-		)
-	}
 	const props = item.view.props as {
 		title?: string
 		description?: string
@@ -354,15 +347,11 @@ function renderBuiltinItem(item: WorkbenchLayoutItem): ReactNode {
 	return (
 		<WorkbenchViewProvider item={item}>
 			<BuiltinDoc
-				def={{
-					kind: 'doc',
-					point: placementMap[item.placement] ?? 'plugin:context',
-					id: item.id,
-					pluginName: item.targetPluginId,
-					title: props.title,
-					description: props.description,
-					content: props.content as any,
-				}}
+				id={item.id}
+				pluginName={item.targetPluginId}
+				title={props.title}
+				description={props.description}
+				content={props.content as any}
 			/>
 		</WorkbenchViewProvider>
 	)

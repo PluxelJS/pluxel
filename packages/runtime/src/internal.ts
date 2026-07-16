@@ -1,9 +1,9 @@
-export { runtimeDevCapabilities, runtimeModuleRuntime } from './runtime/capabilities'
-export type {
-	RuntimeDevCapabilities,
-	RuntimeModuleCacheEntry,
-	RuntimeModuleRuntime,
-} from './runtime/capabilities'
+export * from './shared'
+export * from './plugin-catalog'
+export * from './runtime-state'
+export type * from './web/protocol'
+export { runtimeModuleRuntime } from './runtime/capabilities'
+export type { RuntimeModuleCacheEntry, RuntimeModuleRuntime } from './runtime/capabilities'
 
 export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
 export { resolveRuntimeStoragePaths } from './runtime/paths'

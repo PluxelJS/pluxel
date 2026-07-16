@@ -3,8 +3,7 @@ import {
 	ensureForkBaseFromCatalog,
 	type RuntimePluginSource,
 	type RuntimeRouteCapabilities,
-} from '@pluxel/runtime/plugin-catalog'
-import { createPackageManagerResolver } from '../api/features/package-manager/resolver'
+} from '@pluxel/runtime/internal'
 import { PackageManagerHandle } from '../api/http/rpc/PackageManagerHandle'
 import type { LoaderApi } from '../loader/LoaderService'
 
@@ -76,11 +75,6 @@ export function createLoaderRuntimeRoute(ctx: Context, api: LoaderApi): RuntimeR
 		source: {
 			resolveSource,
 		},
-		api: {
-			resolvers: [createPackageManagerResolver],
-		},
-		features: {
-			packageManager: (rpcCtx) => new PackageManagerHandle(rpcCtx),
-		},
+		packageManager: (rpcCtx) => new PackageManagerHandle(rpcCtx),
 	}
 }
