@@ -1,17 +1,8 @@
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
-import type {
-	AnyWorkbenchExtension,
-	WorkbenchBindings,
-	WorkbenchMount,
-	PluginWorkbench,
-} from '../../workbench'
+import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
+import type { WorkbenchBackend } from '../workbench'
 
 const serviceName = 'workbench' as const
-
-export interface WorkbenchBackend {
-	forContext(ctx: CoreContext): PluginWorkbench
-	dispose?(): void | Promise<void>
-}
 
 const installedBackends = new WeakMap<WorkbenchService, WorkbenchBackend>()
 
@@ -53,14 +44,14 @@ export class WorkbenchService {
 }
 
 /** @internal */
-export function requireWorkbenchBackend(ctx: CoreContext): WorkbenchBackend {
+export function requireInstalledWorkbench(ctx: CoreContext): WorkbenchBackend {
 	const backend = backendFor(ctx)
 	if (!backend) throw new Error('[pluxel/runtime] Workbench is not enabled for this host.')
 	return backend
 }
 
 /** @internal */
-export function installWorkbenchBackend(ctx: CoreContext, backend: WorkbenchBackend): () => void {
+export function installWorkbenchForRoot(ctx: CoreContext, backend: WorkbenchBackend): () => void {
 	const gate = rootGate(ctx)
 	if (installedBackends.has(gate)) {
 		throw new Error('[pluxel/runtime] Workbench is already installed.')
@@ -72,7 +63,6 @@ export function installWorkbenchBackend(ctx: CoreContext, backend: WorkbenchBack
 		active = false
 		if (installedBackends.get(gate) !== backend) return
 		installedBackends.delete(gate)
-		void backend.dispose?.()
 	}
 }
 

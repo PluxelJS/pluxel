@@ -9,11 +9,7 @@ import {
 	type WorkbenchCompilerViteServer,
 } from './workbench/WorkbenchCompilerService'
 
-export {
-	WorkbenchCompilerService,
-	type WorkbenchCompilerServiceConfig,
-	type WorkbenchCompilerServiceDeps,
-} from './workbench/WorkbenchCompilerService'
+export type { WorkbenchCompilerServiceConfig } from './workbench/WorkbenchCompilerService'
 
 export type WorkbenchCompilerAttachmentOptions = {
 	config?: WorkbenchCompilerServiceConfig
@@ -21,7 +17,7 @@ export type WorkbenchCompilerAttachmentOptions = {
 	viteServer?: WorkbenchCompilerViteServer
 }
 
-export function mergeWorkbenchCompilerViteConfig(
+function mergeWorkbenchCompilerViteConfig(
 	base: WorkbenchCompilerServiceConfig | undefined,
 	vite: InlineConfig | undefined,
 ): WorkbenchCompilerServiceConfig | undefined {
@@ -36,44 +32,35 @@ export function attachWorkbenchCompiler(
 	ctx: Context,
 	options: WorkbenchCompilerAttachmentOptions = {},
 ): () => void | Promise<void> {
-	const previousDev = ctx.runtimeDev
-	if (previousDev?.workbenchUiSource) {
-		throw new Error('[runtime-dev] Workbench compiler is already attached')
+	if (ctx !== ctx.root) {
+		throw new Error('[runtime-dev] Workbench compiler must be attached to the root Context')
 	}
 
-	const previousConfig = ctx.config.workbenchCompiler
-	const config = mergeWorkbenchCompilerViteConfig(options.config ?? previousConfig, options.vite)
+	const config = mergeWorkbenchCompilerViteConfig(
+		options.config ?? ctx.config.workbenchCompiler,
+		options.vite,
+	)
+	const artifacts = requireWorkbench(ctx).artifacts
 	const compiler = new WorkbenchCompilerService(
 		ctx,
 		{
-			store: requireWorkbench(ctx).registry.getArtifacts(),
+			store: artifacts,
 			viteServer: options.viteServer,
-			enabled: true,
 		},
 		config,
 	)
 
-	ctx.config.workbenchCompiler = config
-	ctx.runtimeDev = {
-		...previousDev,
-		workbenchUiSource: {
-			bind: (ownerCtx, declaration) => compiler.bindDeclaration(ownerCtx, declaration),
-		},
-	}
-
 	try {
+		const detach = artifacts.attachSourceBinder((ownerCtx, declaration) =>
+			compiler.bindDeclaration(ownerCtx, declaration),
+		)
 		const guard = ctx.effects.defer(() => {
+			detach()
 			compiler.dispose()
-			ctx.runtimeDev = previousDev
-			if (ctx.config.workbenchCompiler === config) {
-				ctx.config.workbenchCompiler = previousConfig
-			}
 		})
 		return () => guard.dispose()
 	} catch (error) {
 		compiler.dispose()
-		ctx.runtimeDev = previousDev
-		ctx.config.workbenchCompiler = previousConfig
 		throw error
 	}
 }

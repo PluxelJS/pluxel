@@ -11,10 +11,11 @@
 | 顺序 | 决策                                                | 置信度 | 主要收益                                         |
 | ---- | --------------------------------------------------- | ------ | ------------------------------------------------ |
 | 1    | 删除 demo-only plugin worker 子系统                 | 高     | 删除一整套无 production 对等语义的能力           |
-| 2    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI |
-| 3    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念           |
+| 2    | 删除无消费者的 `runtimeDev.batches` mirror          | 高     | HMR API 不再复制进 runtime common capability bag |
+| 3    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI |
+| 4    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念           |
 
-前两项以删除为主，可以独立落地。第三项只有在不增加新的公开概念时才应推进。
+前三项以删除为主，可以独立落地。第四项只有在不增加新的公开概念时才应推进。
 
 ## 1. 删除 demo-only plugin worker 子系统
 
@@ -52,7 +53,7 @@
 ### 验收
 
 - 搜索不到 `PluginWorkerDeclaration`、`LoaderHmrWorker`、`watchTinypoolWorker` 和 `BundlerService`；
-- dynamic host 的 `runtimeDev` 只保留真正由 route 提供的 batch/Workbench 能力；
+- dynamic host 不再安装 `runtimeDev.worker`；Workbench compiler 继续直接绑定 root artifact service；
 - static 与 dynamic 的公开作者 API 不再因 worker dev helper 分叉；
 - 删除 demo 后，插件 host catalog、UI build 和 HMR tests 仍通过。
 
@@ -60,7 +61,40 @@
 
 唯一需要产品层确认的是：是否存在仓库外、必须由 Pluxel 负责构建的 production worker。若没有已知消费者，不应为了假设需求保留当前半套实现。
 
-## 2. 把 builtin document 收窄为只读
+## 2. 删除无消费者的 runtimeDev batch mirror
+
+### 问题
+
+dynamic host 已经持有唯一的 `LoaderHmrService`，其 `api` 原生提供 `lastBatch()`、`waitForBatch()`、
+`waitForStable()` 和 `waitForIdle()`，host 返回值也直接暴露同一个 `hmr` 实例。但启动时仍把这些方法再次包装到
+`ctx.runtimeDev.batches`：
+
+```text
+LoaderHmrService.api
+  -> ctx.runtimeDev.batches wrapper
+  -> no consumer
+```
+
+全仓没有代码读取 `runtimeDev.batches`；HMR 测试直接使用 `LoaderHmrService`。Workbench compiler 已不再经过
+`runtimeDev`，因此这个 mirror 既不是作者能力，也不是跨 route contract，只是把 dynamic 私有 API 复制到 runtime
+common 的可选 capability bag。
+
+### 提案
+
+- 删除 `RuntimeDevCapabilities.batches` 和 dynamic host 的 wrapper assignment；
+- host、CLI 或测试需要等待 batch 时直接使用已经返回的 `LoaderHmrService`；
+- plugin worker 子系统删除后，一并删除空的 `RuntimeDevCapabilities`、`runtimeDevCapabilities()` 和 Context
+  augmentation；
+- 不把 `LoaderHmrService` 或其 batch types 上移到 runtime common，也不设计新的 HMR adapter。
+
+### 验收
+
+- 搜索不到 `runtimeDev.batches` 和 runtime common 中的 HMR batch method mirror；
+- dynamic host 仍通过自己的 `hmr` handle 提供精确类型的 batch API；
+- runtime common 不再声明只由 dynamic route 写入的 dev capability bag；
+- batch debounce、stable wait、host stop 和 HMR replacement tests 继续通过。
+
+## 3. 把 builtin document 收窄为只读
 
 ### 问题
 
@@ -74,7 +108,7 @@
 - collection `clientWrites`、push、POST route 和 server-side changeset apply；
 - `SignalDbCollectionHandle.doc()/form()/action()/*Spec()` author helpers。
 
-这些分支只有实现测试，没有业务消费者。更关键的是，`DefaultWorkbenchBackend.mount()` 对 projected 和 managed collection 都固定传入 `clientWrites: false`，所以公开 binding 创建的 collection mutation 请求必然返回 readonly。当前代码同时宣称 builtin document 只读，又维护一条公开路径无法启用的写入协议。
+这些分支只有实现测试，没有业务消费者。更关键的是，`WorkbenchBackend.mount()` 对 projected 和 managed collection 都固定传入 `clientWrites: false`，所以公开 binding 创建的 collection mutation 请求必然返回 readonly。当前代码同时宣称 builtin document 只读，又维护一条公开路径无法启用的写入协议。
 
 ### 提案
 
@@ -108,7 +142,7 @@
 
 若仓库外确有 builtin interactive document 消费者，需要在实施前二选一：要么把其迁移到 React + RPC，要么修改当前 Workbench 权威设计并正式承担第二套 UI schema。不能继续保持文档只读、实现半可写的状态。
 
-## 3. 收回 runtime shared barrel
+## 4. 收回 runtime shared barrel
 
 ### 问题
 
@@ -145,7 +179,8 @@
 
 ## 实施顺序与停止条件
 
-建议每项独立提交，并在删除后立即搜索旧符号。顺序上先删除 worker，使 route/host wiring 变小；再完成 builtin read-only cut；最后才处理 internal barrel。
+建议每项独立提交，并在删除后立即搜索旧符号。顺序上先删除 worker 和无消费者的 batch mirror，使
+`runtimeDev` capability bag 整体消失；再完成 builtin read-only cut；最后才处理 internal barrel。
 
 任一项遇到以下情况应停止并重新评估，而不是增加 adapter：
 

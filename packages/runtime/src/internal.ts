@@ -16,13 +16,10 @@ export {
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
 export { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
-export {
-	requireWorkbenchBackend,
-	withWorkbenchPluginContext,
-} from './services/workbench/WorkbenchService'
+export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { WorkbenchArtifactStore } from './services/workbench/WorkbenchArtifactService'
+export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
 export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
 export { resolvePackagedWorkbenchManifest } from './services/workbench/packaged-artifact'
 export { installWorkbench, requireWorkbench } from './services/workbench'

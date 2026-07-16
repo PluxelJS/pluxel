@@ -14,8 +14,9 @@ subscription；新 ref 重新解析后，同一 synthetic owner 通过正常 `re
 
 `WorkbenchCompilerService` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供
 Vite server、plugin directory 和 host policy。旧 artifact 可短暂保留在磁盘供 inflight import 完成。
-runtime-dev 的 attachment 统一拥有 compiler config merge、`workbenchUiSource` binding 和 effects cleanup；
-static/dynamic route 不直接构造 compiler，也不各自恢复 Context capability。
+runtime-dev 的 attachment 统一拥有 compiler config merge、artifact source binding 和 effects cleanup；compiler
+直接附着到 root-scoped Workbench artifact service，不经过 Context capability adapter。static/dynamic route 不直接
+构造 compiler，也不各自恢复 Context 状态。
 artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant；module、实例或依赖资源图变化会推进
 独立的 grant revision，并让旧 layout binding 立即失效。这样 UI-only HMR 不会制造无效 binding 竞态，
 也不会放宽资源图变化时的 capability 撤销语义。

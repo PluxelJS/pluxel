@@ -165,10 +165,6 @@ export class WorkbenchRegistry {
 		return { revision: this.revision, bundles: catalog.bundles, states: catalog.states }
 	}
 
-	getArtifacts(): WorkbenchArtifactService {
-		return this.artifacts
-	}
-
 	resolveModel(grantId: string, expected?: WorkbenchResourceRef['kind']): InternalModelRef {
 		const model = this.findModel(grantId, expected)
 		if (!model) throw new Error('[workbench] model grant is invalid or expired')

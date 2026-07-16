@@ -5,7 +5,7 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context } from '@pluxel/runtime'
 import {
 	createCompiledWorkbenchArtifact,
-	type WorkbenchArtifactStore,
+	type WorkbenchArtifactService,
 	resolveModuleIdBaseDir,
 	findRuntimeModuleId,
 } from '@pluxel/runtime/internal'
@@ -40,7 +40,6 @@ import { dirname, isAbsolute, join, relative, resolve } from 'pathe'
 import { collectModuleGraphFiles } from './moduleGraph'
 
 export type WorkbenchCompilerServiceConfig = {
-	enabled?: boolean
 	/**
 	 * Disk cache directory for compiled workbench UI modules.
 	 *
@@ -85,10 +84,18 @@ export type WorkbenchCompilerViteServer = {
 	transformRequest?: ViteDevServer['transformRequest']
 }
 
+export type WorkbenchCompilerArtifactStore = Pick<
+	WorkbenchArtifactService,
+	| 'getCompiledModule'
+	| 'commitCompiledModule'
+	| 'markCompiling'
+	| 'markCompileError'
+	| 'removePlugin'
+>
+
 export type WorkbenchCompilerServiceDeps = {
-	store: WorkbenchArtifactStore
+	store: WorkbenchCompilerArtifactStore
 	viteServer?: WorkbenchCompilerViteServer
-	enabled?: boolean
 }
 
 type PluginCompileEntry = {
@@ -150,9 +157,8 @@ const HASH_ALLOWED_EXTENSIONS = [
 const WORKBENCH_COMPILER_VERSION = 15
 
 export class WorkbenchCompilerService {
-	private readonly enabled: boolean
 	private readonly dbg: LogtapeLogger
-	private readonly store: WorkbenchArtifactStore
+	private readonly store: WorkbenchCompilerArtifactStore
 	private readonly viteServer?: WorkbenchCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
@@ -176,7 +182,6 @@ export class WorkbenchCompilerService {
 	) {
 		this.store = deps.store
 		this.viteServer = deps.viteServer
-		this.enabled = (deps.enabled ?? true) && config?.enabled !== false
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/workbench')
 		this.cacheKeep = Math.max(1, Math.floor(config?.cacheKeep ?? 5))
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
@@ -188,7 +193,6 @@ export class WorkbenchCompilerService {
 	}
 
 	bindDeclaration(ctx: Context, config: { entryPath: string }): () => void {
-		if (!this.enabled) return () => {}
 		const store = this.store
 
 		const pluginName = ctx.pluginInfo.id
@@ -223,7 +227,7 @@ export class WorkbenchCompilerService {
 
 		this.entries.set(pluginName, entry)
 		this.setupWatcher(pluginName, entry)
-		void store.markCompiling?.(pluginName).catch((error) => {
+		void store.markCompiling(pluginName).catch((error) => {
 			this.ctx.logger.error('failed to mark workbench UI as compiling', {
 				pluginName,
 				error,
@@ -257,7 +261,6 @@ export class WorkbenchCompilerService {
 	}
 
 	async requestCompile(pluginName: string): Promise<void> {
-		if (!this.enabled) return
 		const entry = this.entries.get(pluginName)
 		if (!entry || !entry.active) return
 		await this.compilePlugin(pluginName)
@@ -331,7 +334,7 @@ export class WorkbenchCompilerService {
 				this.dbg.debug('compile done {pluginName} (cached)', { pluginName })
 				return true
 			}
-			await store.markCompiling?.(pluginName, {
+			await store.markCompiling(pluginName, {
 				updatedAt: Date.now(),
 				sourceHash: current?.sourceHash,
 				compiledAt: current?.compiledAt,
@@ -371,7 +374,7 @@ export class WorkbenchCompilerService {
 			return true
 		} catch (error) {
 			const current = store.getCompiledModule(pluginName)
-			await store.markCompileError?.(pluginName, error, {
+			await store.markCompileError(pluginName, error, {
 				updatedAt: Date.now(),
 				sourceHash: current?.sourceHash,
 				compiledAt: current?.compiledAt,

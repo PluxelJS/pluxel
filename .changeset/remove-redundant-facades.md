@@ -27,4 +27,5 @@ Remove the superseded `@pluxel/runtime/frozen` generator so production applicati
 canonical `defineStaticRuntime()` + Rolldown freezer path. Remove the unused process-global core
 runtime/environment facade; route identity remains explicit host policy instead of mutable Context
 state. Runtime-dev now owns the single Workbench compiler attachment lifecycle used by both static
-and dynamic development routes.
+and dynamic development routes, binding it directly to the root Workbench artifact service without
+a generic Context capability adapter.

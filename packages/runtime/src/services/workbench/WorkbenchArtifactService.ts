@@ -8,7 +8,6 @@ import type {
 	WorkbenchBundleState,
 } from '../../workbench/contracts'
 import type { WorkbenchUiEntry } from '../../workbench/runtime'
-import { runtimeDevCapabilities } from '../../runtime/capabilities'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -19,36 +18,33 @@ import {
 } from '@pluxel/core/federation'
 import { RUNTIME_INTERNAL_API_BASE, runtimeWorkbenchArtifactPath } from '../../web/paths'
 
-export interface WorkbenchArtifactStore {
-	getCompiledModule(pluginName: string): WorkbenchBundle | undefined
-	commitCompiledModule(
-		module: WorkbenchBundle,
-		options?: { artifactRoot?: string | null },
-	): Promise<void>
-	markCompiling?(
-		pluginName: string,
-		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
-	): Promise<void>
-	markCompileError?(
-		pluginName: string,
-		error: unknown,
-		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
-	): Promise<void>
-	removePlugin(pluginName: string): Promise<void>
-}
+type WorkbenchSourceBinder = (owner: Context, declaration: WorkbenchUiEntry) => () => void
 
-export class WorkbenchArtifactService implements WorkbenchArtifactStore {
+export class WorkbenchArtifactService {
 	private revision = 0
 	private bundles: WorkbenchBundle[] = []
 	private readonly states = new Map<string, WorkbenchBundleState>()
 	private readonly roots = new Map<string, { sourceHash: string; dir: string }>()
 	private readonly listeners = new Set<(event: WorkbenchBundleEvent) => void>()
+	private sourceBinder?: WorkbenchSourceBinder
 
 	constructor(private readonly root: Context) {}
 
+	attachSourceBinder(sourceBinder: WorkbenchSourceBinder): () => void {
+		if (this.sourceBinder) {
+			throw new Error('[pluxel/runtime] Workbench source compiler is already attached.')
+		}
+		this.sourceBinder = sourceBinder
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			if (this.sourceBinder === sourceBinder) this.sourceBinder = undefined
+		}
+	}
+
 	registerFor(owner: Context, declaration: WorkbenchUiEntry): () => void {
-		const sourceBinder = runtimeDevCapabilities(owner)?.workbenchUiSource?.bind
-		if (sourceBinder) return sourceBinder(owner, declaration)
+		if (this.sourceBinder) return this.sourceBinder(owner, declaration)
 		return this.registerPackaged(owner, declaration)
 	}
 

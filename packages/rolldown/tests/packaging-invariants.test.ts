@@ -381,11 +381,23 @@ describe('toolchain package boundaries', () => {
 			`${root}/packages/runtime-dev/src/workbench.ts`,
 			'utf8',
 		)
+		const runtimeCapabilities = await readFile(
+			`${root}/packages/runtime/src/runtime/capabilities.ts`,
+			'utf8',
+		)
+		const workbenchService = await readFile(
+			`${root}/packages/runtime/src/services/workbench/WorkbenchService.ts`,
+			'utf8',
+		)
 		const staticVite = await readFile(`${root}/packages/runtime-static/src/vite.ts`, 'utf8')
 		const dynamicHost = await readFile(`${root}/packages/runtime-dynamic/src/hmr/host.ts`, 'utf8')
 
 		expect(runtimeDevWorkbench).toContain('export function attachWorkbenchCompiler(')
 		expect(runtimeDevWorkbench).toContain('new WorkbenchCompilerService(')
+		expect(runtimeDevWorkbench).toContain('artifacts.attachSourceBinder(')
+		expect(runtimeDevWorkbench).not.toContain('ctx.runtimeDev =')
+		expect(runtimeCapabilities).not.toContain('workbenchUiSource')
+		expect(workbenchService).not.toContain('interface WorkbenchBackend')
 		expect(staticVite).toContain('runtimeDev.attachWorkbenchCompiler(ctx,')
 		expect(staticVite).not.toContain('new runtimeDev.WorkbenchCompilerService(')
 		expect(dynamicHost).toContain('attachWorkbenchCompiler(ctx,')

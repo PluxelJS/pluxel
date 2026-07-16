@@ -1,5 +1,4 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import type { WorkbenchArtifactStore } from '@pluxel/runtime/internal'
 import { join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
@@ -35,7 +34,10 @@ vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 	resolveWorkbenchUiBuildSignature: pluginBuildMocks.resolveWorkbenchUiBuildSignature,
 }))
 
-import { WorkbenchCompilerService } from '../src/workbench/WorkbenchCompilerService'
+import {
+	WorkbenchCompilerService,
+	type WorkbenchCompilerArtifactStore,
+} from '../src/workbench/WorkbenchCompilerService'
 
 function createPluginContext(
 	host: Host,
@@ -75,11 +77,11 @@ describe('WorkbenchCompilerService', () => {
 			'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx': 'export default {}\n',
 		})
 
-		const committed: Parameters<WorkbenchArtifactStore['commitCompiledModule']>[0][] = []
+		const committed: Parameters<WorkbenchCompilerArtifactStore['commitCompiledModule']>[0][] = []
 		const artifactRoots: string[] = []
-		let currentModule: ReturnType<WorkbenchArtifactStore['getCompiledModule']>
+		let currentModule: ReturnType<WorkbenchCompilerArtifactStore['getCompiledModule']>
 		const host = createHost()
-		const store: WorkbenchArtifactStore = {
+		const store: WorkbenchCompilerArtifactStore = {
 			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module, options) {
 				currentModule = module
@@ -95,7 +97,7 @@ describe('WorkbenchCompilerService', () => {
 
 		const service = new WorkbenchCompilerService(
 			host.ctx,
-			{ store, enabled: true },
+			{ store },
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 1,
@@ -173,7 +175,7 @@ describe('WorkbenchCompilerService', () => {
 			'apps/static-host/web/client/main.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const store: WorkbenchArtifactStore = {
+		const store: WorkbenchCompilerArtifactStore = {
 			getCompiledModule: () => undefined,
 			async commitCompiledModule() {},
 			async markCompiling() {},
@@ -187,7 +189,6 @@ describe('WorkbenchCompilerService', () => {
 			host.ctx,
 			{
 				store,
-				enabled: true,
 				viteServer: {
 					config: {
 						root: fixture.getPath('apps/static-host'),
@@ -230,8 +231,8 @@ describe('WorkbenchCompilerService', () => {
 			'packages/plugin-builder/src/ui/index.tsx': 'export default { version: 1 }\n',
 		})
 		const host = createHost()
-		let currentModule: ReturnType<WorkbenchArtifactStore['getCompiledModule']>
-		const store: WorkbenchArtifactStore = {
+		let currentModule: ReturnType<WorkbenchCompilerArtifactStore['getCompiledModule']>
+		const store: WorkbenchCompilerArtifactStore = {
 			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module) {
 				currentModule = module
@@ -244,7 +245,7 @@ describe('WorkbenchCompilerService', () => {
 		}
 		const service = new WorkbenchCompilerService(
 			host.ctx,
-			{ store, enabled: true },
+			{ store },
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 0,
@@ -288,7 +289,7 @@ describe('WorkbenchCompilerService', () => {
 		})
 		const host = createHost()
 		const removed: string[] = []
-		const store: WorkbenchArtifactStore = {
+		const store: WorkbenchCompilerArtifactStore = {
 			getCompiledModule: () => undefined,
 			async commitCompiledModule() {},
 			async markCompiling() {},
@@ -301,7 +302,7 @@ describe('WorkbenchCompilerService', () => {
 		}
 		const service = new WorkbenchCompilerService(
 			host.ctx,
-			{ store, enabled: true },
+			{ store },
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 1,

@@ -12,13 +12,9 @@ import { WorkbenchRpcService } from './workbench/resources/WorkbenchRpcService'
 import { WorkbenchCollectionService } from './workbench/resources/WorkbenchCollectionService'
 import { WorkbenchEventsService } from './workbench/resources/WorkbenchEventsService'
 import { WorkbenchRegistry, type InternalModelRef } from './workbench/WorkbenchRegistry'
-import {
-	installWorkbenchBackend,
-	requireWorkbenchBackend,
-	type WorkbenchBackend,
-} from './workbench/WorkbenchService'
+import { installWorkbenchForRoot, requireInstalledWorkbench } from './workbench/WorkbenchService'
 
-export class DefaultWorkbenchBackend implements WorkbenchBackend {
+export class WorkbenchBackend {
 	readonly artifacts: WorkbenchArtifactService
 	readonly rpc: WorkbenchRpcService
 	readonly events: WorkbenchEventsService
@@ -177,19 +173,15 @@ export class DefaultWorkbenchBackend implements WorkbenchBackend {
 }
 
 export function installWorkbench(ctx: Context): () => void {
-	const backend = new DefaultWorkbenchBackend(ctx.root)
-	const dispose = installWorkbenchBackend(ctx, backend)
+	const backend = new WorkbenchBackend(ctx.root)
+	const dispose = installWorkbenchForRoot(ctx, backend)
 	const guard = ctx.root.effects.defer(dispose)
 	return () => guard.dispose()
 }
 
 /** @internal */
-export function requireWorkbench(ctx: Context): DefaultWorkbenchBackend {
-	const backend = requireWorkbenchBackend(ctx)
-	if (!(backend instanceof DefaultWorkbenchBackend)) {
-		throw new Error('[pluxel/runtime] Unsupported Workbench backend.')
-	}
-	return backend
+export function requireWorkbench(ctx: Context): WorkbenchBackend {
+	return requireInstalledWorkbench(ctx)
 }
 
 export function workbenchModelNamespace(ownerPluginId: string, modelKey: string): string {

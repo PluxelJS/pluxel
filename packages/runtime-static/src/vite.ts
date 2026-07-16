@@ -41,7 +41,6 @@ import type {
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
 
 type WorkbenchCompilerConfig = {
-	enabled?: boolean
 	cacheDir?: string
 	cacheKeep?: number
 	compileConcurrency?: number
