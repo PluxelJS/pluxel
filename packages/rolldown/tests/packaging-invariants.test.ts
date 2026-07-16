@@ -326,15 +326,25 @@ describe('toolchain package boundaries', () => {
 		expect(offenders).toEqual([])
 	})
 
-	it('keeps runtime authoring imports separate from route service registration', async () => {
+	it('keeps one runtime authoring entry and one always-on service registry', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreIndex = await readFile(`${root}/packages/core/src/index.ts`, 'utf8')
 		const runtimeIndex = await readFile(`${root}/packages/runtime/src/index.ts`, 'utf8')
-		const runtimeAuthoring = await readFile(`${root}/packages/runtime/src/authoring.ts`, 'utf8')
+		const runtimeServices = await readFile(`${root}/packages/runtime/src/services/index.ts`, 'utf8')
 		const runtimeStaticIndex = await readFile(
 			`${root}/packages/runtime-static/src/index.ts`,
 			'utf8',
 		)
+		const runtimeDynamicIndex = await readFile(
+			`${root}/packages/runtime-dynamic/src/index.ts`,
+			'utf8',
+		)
+		const runtimeManifest = JSON.parse(
+			await readFile(`${root}/packages/runtime/package.json`, 'utf8'),
+		) as { exports?: Record<string, unknown> }
+		const runtimeDynamicManifest = JSON.parse(
+			await readFile(`${root}/packages/runtime-dynamic/package.json`, 'utf8'),
+		) as { exports?: Record<string, unknown> }
 		const configSourcePlugin = await readFile(
 			`${root}/packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`,
 			'utf8',
@@ -343,12 +353,19 @@ describe('toolchain package boundaries', () => {
 		expect(coreIndex).toContain("import './logger'")
 		expect(coreIndex).toContain("import './services'")
 		expect(coreIndex).toContain("export { EvtChannel } from './services'")
-		expect(runtimeIndex).not.toContain("import './runtime/register/static'")
+		expect(runtimeIndex).toContain("import './services'")
+		expect(runtimeIndex).not.toContain("import './services/vault'")
 		expect(runtimeIndex).toContain("export * from '@pluxel/core'")
-		expect(runtimeAuthoring).not.toContain('runtime/register')
-		expect(runtimeAuthoring).toContain("export * from '@pluxel/core'")
-		expect(runtimeStaticIndex).toContain("import '@pluxel/runtime/register/static'")
-		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime/authoring'")
+		expect(runtimeServices).toContain("import './ConfigService'")
+		expect(runtimeServices).toContain("import './workbench/WorkbenchService'")
+		expect(runtimeServices).not.toContain('vault')
+		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime'")
+		expect(runtimeStaticIndex).not.toContain('/register/')
+		expect(runtimeDynamicIndex).toContain("import './services'")
+		expect(runtimeManifest.exports?.['./authoring']).toBeUndefined()
+		expect(runtimeManifest.exports?.['./register/full']).toBeUndefined()
+		expect(runtimeManifest.exports?.['./register/static']).toBeUndefined()
+		expect(runtimeDynamicManifest.exports?.['./register']).toBeUndefined()
 		expect(configSourcePlugin).toContain(
 			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'",
 		)
@@ -402,7 +419,6 @@ describe('toolchain package boundaries', () => {
 			: []
 		const builtEntries = [
 			`${root}/packages/runtime/dist/index.mjs`,
-			`${root}/packages/runtime/dist/register/static.mjs`,
 			`${root}/packages/runtime-static/dist/index.mjs`,
 			...runtimeStaticDistFiles
 				.filter((file) => /^host-.*\.mjs$/.test(file))

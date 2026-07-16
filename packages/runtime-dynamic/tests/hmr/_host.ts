@@ -1,4 +1,4 @@
-import '@pluxel/runtime-dynamic/register'
+import '@pluxel/runtime-dynamic/services'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
 import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
 

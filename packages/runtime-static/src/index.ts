@@ -1,4 +1,3 @@
-import '@pluxel/runtime/register/static'
 import { setPluxelRuntime } from '@pluxel/core'
 
 setPluxelRuntime('core')
@@ -16,7 +15,7 @@ export {
 	Plugin,
 	v,
 	type ConfigSchemaMap,
-} from '@pluxel/runtime/authoring'
+} from '@pluxel/runtime'
 
 export type {
 	StaticRuntime,
@@ -32,7 +31,6 @@ export type {
 	StaticRuntimeHost,
 	StaticRuntimeHostOptions,
 	StaticRuntimePluginStatus,
-	StaticRuntimeRegisteredServices,
 	StaticRuntimeReportEntry,
 	StaticRuntimeStartupContext,
 	StaticRuntimeStartupReport,

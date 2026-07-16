@@ -8,11 +8,9 @@ import type {
 	PluginDataServiceConfig,
 	WorkbenchConfig,
 } from '@pluxel/runtime'
-import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
-export type StaticRuntimeRegisteredServices = RuntimeStaticRegisteredServices
 export type StaticRuntimeContextConfig = Omit<
 	CoreContext.Config,
 	| 'configService'

@@ -11,12 +11,7 @@ const buildLintConfigPath = fileURLToPath(
 	new URL('../../../../oxlint.build.config.ts', import.meta.url),
 )
 
-const CONFIG_SOURCE_EXTERNALS = [
-	'valibot',
-	'@pluxel/core',
-	'@pluxel/runtime',
-	'@pluxel/runtime/authoring',
-]
+const CONFIG_SOURCE_EXTERNALS = ['valibot', '@pluxel/core', '@pluxel/runtime']
 const CONFIG_SOURCE_FORM_EXTERNALS = ['valibot', 'valibot-form', '@pluxel/core', '@pluxel/runtime']
 
 const fixtureFiles = {

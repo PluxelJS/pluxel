@@ -1,7 +1,7 @@
 // file: test/fsm.test.ts
 import { describe, expect, test } from 'vitest'
-import { defineMachine } from '../defineMachine.macro'
-import { fsm } from '../machine.runtime'
+import { defineMachine } from '../../../src/internal/fsm/defineMachine.macro'
+import { fsm } from '../../../src/internal/fsm/machine.runtime'
 
 describe('Ultra FSM', () => {
 	test('basic transitions', async () => {

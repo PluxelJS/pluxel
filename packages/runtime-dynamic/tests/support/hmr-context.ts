@@ -1,4 +1,4 @@
-import '../../src/register'
+import '../../src/services'
 import { afterEach } from 'vitest'
 import { createHost, type Host } from '@pluxel/test'
 import type { Context } from '@pluxel/core'

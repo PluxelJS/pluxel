@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'pathe'
 import type { InlineConfig, ViteDevServer } from 'vite'
 
-import '@pluxel/runtime-dynamic/register'
+import '../services'
 import { setPluxelRuntime, type Context as CoreContext } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,

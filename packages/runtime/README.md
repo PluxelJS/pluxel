@@ -41,7 +41,8 @@ this.ctx.workbench.mount(extension, {
 
 公开入口：
 
-- `@pluxel/runtime`：原样转发 core 作者 API，并增加配置和常驻 runtime API；
+- `@pluxel/runtime`：唯一作者入口，原样转发 core API，并注册配置、HTTP、persistence 等常驻能力；
+- `@pluxel/runtime/services/vault`：宿主显式启用 Vault；未导入时不注册 Vault backend 或 eager preflight；
 - `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
 - `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks 和 UI exports；

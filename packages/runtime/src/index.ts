@@ -1,8 +1,7 @@
 import './context-augment'
 import './events'
+import './services'
 import './services/debug'
-import './services/vault'
-import './services/workbench/WorkbenchService'
 
 export * from '@pluxel/core'
 export { Config, type ConfigSchemaMap } from './base'
@@ -45,5 +44,4 @@ export {
 	type PluginRoutingSnapshot,
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
-export type { StaticRuntimeRegisteredServices } from './runtime/register/static'
 export type { WorkbenchConfig } from './workbench-config'

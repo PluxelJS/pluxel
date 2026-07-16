@@ -1,0 +1,11 @@
+// Always-on runtime services. Optional capabilities such as Vault keep explicit entry points.
+import './persistence/PersistenceService'
+import './ConfigService'
+import './RuntimeStateStore'
+import './PluginDataService'
+import './http/HttpService'
+import './http/InternalApiValidationService'
+import './http/InternalGraphQLService'
+import './admin-access/AdminAccessService'
+import './workbench/WorkbenchService'
+import './OptionalPluginAvailabilityService'

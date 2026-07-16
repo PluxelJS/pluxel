@@ -5,7 +5,7 @@ import {
 	InstanceStore,
 	type NodeKey,
 	Runtime,
-} from '../../src/internal/di'
+} from '../../../src/internal/di'
 
 function buildOk<M>(draft: DraftGraph<M>) {
 	const built = draft.build()

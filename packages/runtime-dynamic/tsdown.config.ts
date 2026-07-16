@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 
-const runtimeDynamicRegister = fileURLToPath(new URL('./src/register.ts', import.meta.url))
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 const runtimeDevWorkbench = fileURLToPath(
 	new URL('../runtime-dev/src/workbench.ts', import.meta.url),
@@ -32,7 +31,6 @@ export default defineConfig({
 		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
 	},
 	alias: {
-		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
 		'@pluxel/runtime-dev': runtimeDevEntry,
 		'@pluxel/runtime-dev/workbench': runtimeDevWorkbench,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
@@ -40,7 +38,6 @@ export default defineConfig({
 	},
 	entry: {
 		index: 'src/index.ts',
-		register: 'src/register.ts',
 		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
 		'hmr/diagnose': 'src/hmr/diagnose.ts',

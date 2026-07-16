@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { defineMachine } from '../defineMachine.macro'
+import { defineMachine } from '../../../src/internal/fsm/defineMachine.macro'
 
 describe('defineMachine validation', () => {
 	test('rejects duplicate states', () => {

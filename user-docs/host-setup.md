@@ -9,6 +9,16 @@
 
 两者都复用同一 core lifecycle、runtime services 和 Workbench Plane。
 
+HTTP、config、logger、events、persistence 和 plugin data 随 `@pluxel/runtime` 主入口注册。Vault
+不是常驻能力；只有需要保存密钥的宿主才在 canonical runtime entry 顶部显式启用：
+
+```ts
+import '@pluxel/runtime/services/vault'
+```
+
+未导入时不会注册 Vault service 或执行 eager preflight。插件只消费 `ctx.vault`，不应在各插件内重复决定
+宿主是否启用 Vault。
+
 ## Static host
 
 `vite.config.ts`：

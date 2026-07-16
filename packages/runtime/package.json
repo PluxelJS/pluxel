@@ -22,10 +22,6 @@
 			"@pluxel/source": "./src/api/contributions.ts",
 			"default": "./dist/api.mjs"
 		},
-		"./authoring": {
-			"@pluxel/source": "./src/authoring.ts",
-			"default": "./dist/authoring.mjs"
-		},
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
@@ -65,14 +61,6 @@
 		"./protocol": {
 			"@pluxel/source": "./src/protocol.ts",
 			"default": "./dist/protocol.mjs"
-		},
-		"./register/full": {
-			"@pluxel/source": "./src/runtime/register/full.ts",
-			"default": "./dist/register/full.mjs"
-		},
-		"./register/static": {
-			"@pluxel/source": "./src/runtime/register/static.ts",
-			"default": "./dist/register/static.mjs"
 		},
 		"./runtime-state": {
 			"@pluxel/source": "./src/runtime-state.ts",
@@ -124,7 +112,6 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./api": "./dist/api.mjs",
-			"./authoring": "./dist/authoring.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./events": "./dist/events.mjs",
 			"./frozen": "./dist/frozen.mjs",
@@ -135,8 +122,6 @@
 			"./plugin": "./dist/plugin.mjs",
 			"./plugin-catalog": "./dist/plugin-catalog.mjs",
 			"./protocol": "./dist/protocol.mjs",
-			"./register/full": "./dist/register/full.mjs",
-			"./register/static": "./dist/register/static.mjs",
 			"./runtime-state": "./dist/runtime-state.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
 			"./shared": "./dist/shared.mjs",

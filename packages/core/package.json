@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/core",
 	"version": "0.3.0",
-	"description": "Demo example that imports a local package",
+	"description": "Pluxel plugin graph, lifecycle, Context, and core services",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

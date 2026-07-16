@@ -2,9 +2,9 @@
 
 ## Runtime entry
 
-- `src/index.ts`：插件作者与常驻 runtime；
-- `src/runtime/register/static.ts`：common service registration；
-- `src/runtime/register/full.ts`：dynamic/dev common registration；
+- `src/index.ts`：唯一插件作者入口，并加载常驻 runtime services；
+- `src/services/index.ts`：常驻 service 注册清单；
+- `src/services/vault.ts`：显式启用的 optional Vault capability；
 - `src/services/workbench.ts`：宿主显式安装的 optional Workbench backend。
 
 ## Workbench Plane

@@ -1,7 +1,8 @@
 # Runtime Architecture
 
-`@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state、Vault 和可选 Workbench
-Plane。业务路由是常驻能力；Workbench由宿主 launcher 显式安装。
+`@pluxel/runtime` 在 core 之上提供 HTTP、config、persistence、runtime state 和可选 Workbench
+Plane。主入口注册全部常驻服务；Vault 只由 `@pluxel/runtime/services/vault` 显式启用，Workbench由宿主
+launcher 显式安装。
 
 ## Optional plugin availability
 

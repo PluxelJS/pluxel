@@ -49,7 +49,9 @@ const macroEntrySource = [
 	'',
 ].join('\n')
 
-const macroSourcePath = fileURLToPath(new URL('../defineMachine.macro.ts', import.meta.url))
+const macroSourcePath = fileURLToPath(
+	new URL('../../../src/internal/fsm/defineMachine.macro.ts', import.meta.url),
+)
 
 describe('macro baked fsm', () => {
 	test('Rolldown should execute macros and output a usable factory', async () => {

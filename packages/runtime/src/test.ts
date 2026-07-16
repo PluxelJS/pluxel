@@ -1,4 +1,4 @@
-import './runtime/register/full'
+import './index'
 import './services/vault'
 import { installWorkbench } from './services/workbench'
 import { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'

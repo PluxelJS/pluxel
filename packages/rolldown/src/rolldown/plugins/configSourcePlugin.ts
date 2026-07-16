@@ -140,11 +140,7 @@ interface ResolveContext {
 }
 
 const DEFAULT_EXPORT = '__pluxel_default_export__'
-const CONFIG_DECORATOR_SOURCES = [
-	'@pluxel/core',
-	'@pluxel/runtime',
-	'@pluxel/runtime/authoring',
-] as const
+const CONFIG_DECORATOR_SOURCES = ['@pluxel/core', '@pluxel/runtime'] as const
 const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'
 
 const CODE_HINT =

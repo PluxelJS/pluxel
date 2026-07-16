@@ -43,7 +43,8 @@ draft graph -> verify -> stop dependents -> start providers -> CommitSummary
 - `packages/core/src/plugins/runtime/PluginService.ts`
 - `packages/core/src/plugins/runtime/PluginDefinitions.ts`
 - `packages/core/src/internal/di/`
-- `packages/core/src/plugins/runtime/LifecycleManager.ts`
+- `packages/core/src/internal/fsm/`
+- `packages/core/src/plugins/runtime/plugin-service/LifecycleManager.ts`
 - `packages/core/src/plugins/decorators/`
 - `packages/core/src/plugins/composition/`
 - `packages/core/src/services/effects/EffectsService.ts`

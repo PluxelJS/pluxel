@@ -1,4 +1,4 @@
-import './register'
+import './services'
 
 import type { Context } from '@pluxel/runtime'
 import { defineDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'

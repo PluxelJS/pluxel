@@ -5,7 +5,7 @@ import {
 	factoryProvider,
 	type GraphBuildError,
 	valueProvider,
-} from '../../src/internal/di'
+} from '../../../src/internal/di'
 
 class Clock {
 	now() {

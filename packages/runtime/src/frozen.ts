@@ -62,7 +62,7 @@ import '@pluxel/core/services'
 import '@pluxel/runtime'
 import { withWorkbenchPluginContext } from '@pluxel/runtime/internal'
 import '@pluxel/runtime/services/vault'
-import '@pluxel/runtime-dynamic/register'
+import '@pluxel/runtime-dynamic/services'
 ${imports}
 
 const ctx = new Context(withWorkbenchPluginContext({

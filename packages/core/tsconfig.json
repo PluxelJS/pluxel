@@ -1,6 +1,6 @@
 {
 	"extends": "../../tsconfig.src.json",
-	"include": ["src", "tests", "fsm", "../context/src", "../context/tests"],
+	"include": ["src", "tests", "../context/src", "../context/tests"],
 	"compilerOptions": {
 		"rootDir": "..",
 		"baseUrl": ".",

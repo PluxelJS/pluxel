@@ -1,3 +1,5 @@
+import '@pluxel/runtime'
+
 export {
 	LoaderService,
 	type BuiltinForkSpec,

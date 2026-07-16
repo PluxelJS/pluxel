@@ -354,11 +354,7 @@ function propertyName(value: unknown): string | undefined {
 }
 
 function isAuthoringPackage(source: string): boolean {
-	return (
-		source === '@pluxel/core' ||
-		source === '@pluxel/runtime' ||
-		source === '@pluxel/runtime/authoring'
-	)
+	return source === '@pluxel/core' || source === '@pluxel/runtime'
 }
 
 function normalizePackage(source: string, prefixes: readonly string[]): string | undefined {

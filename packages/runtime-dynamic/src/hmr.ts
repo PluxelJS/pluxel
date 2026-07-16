@@ -1,4 +1,4 @@
-import '@pluxel/runtime-dynamic/register'
+import './services'
 
 export {
 	DEFAULT_LOADER_HMR_CONFIG_BASENAME,

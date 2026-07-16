@@ -26,6 +26,12 @@
   - 当前唯一插件 authoring、dependency/feature 与 optional capability 设计
   - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
 
+## Internal kernels
+
+- `packages/core/src/internal/di/`：plugin-specialized incremental dependency graph；
+- `packages/core/src/internal/fsm/`：PluginActor 使用的 baked lifecycle state machine；
+- 两者都属于 core 实现，不是 package subpath 或作者 API。
+
 ## Services
 
 - `packages/core/src/services/index.ts`

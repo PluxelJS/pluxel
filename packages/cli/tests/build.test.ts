@@ -256,7 +256,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, Plugin } from '@pluxel/runtime/authoring'",
+			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
 			'declare const __FIXTURE_INPUT__: string',
 			'export const inputOverride = __FIXTURE_INPUT__',
 			'',
