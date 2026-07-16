@@ -10,23 +10,26 @@
 
 | 顺序 | 决策                                                | 置信度 | 主要收益                                         |
 | ---- | --------------------------------------------------- | ------ | ------------------------------------------------ |
-| 1    | 把额外 Node 源码收敛为 Node artifact                | 高     | 删除 worker-only bundler，并补齐 production 闭环 |
+| 1    | 用 `defineNodeModule()` 声明额外 Node module        | 高     | 删除 worker-only bundler，并补齐 production 闭环 |
 | 2    | 删除无消费者的 `runtimeDev.batches` mirror          | 高     | HMR API 不再复制进 runtime common capability bag |
 | 3    | 把 builtin document 真正收窄为只读                  | 高     | 删除第二套表单、action 和 collection mutation UI |
 | 4    | 收回 `@pluxel/runtime/shared` public-looking barrel | 中     | internal helper 不再伪装成稳定用户概念           |
 
-第一项保留额外 Node 源码入口的编译能力，但删除 worker-specific 支线并复用现有 Vite/Rolldown artifact pipeline；第二、三项以
+第一项保留额外 Node 源码入口的编译能力，作者只看到 Node module 声明和使用，artifact 只是工具链内部术语；
+同时删除 worker-specific 支线并复用现有 Vite/Rolldown artifact pipeline。第二、三项以
 删除为主。第四项只有在不增加新的公开概念时才应推进。
 
-## 1. 把额外 Node 源码收敛为 Node artifact
+## 1. 用 `defineNodeModule()` 声明额外 Node module
 
 ### 决策
 
-保留插件声明“需要由 Pluxel 工具链单独构建的 Node 源码入口”的能力，但不把执行方式命名成编译
-能力，也不保留当前 dynamic-only `BundlerService` 模型。额外 Node entry 与 Workbench UI 都是“server
-declaration 指向另一份源码图，开发期即时构建，生产期加载预构建 artifact”，应共享同一套 declaration
-extraction、源码图、hash/cache、watch/rebuild 和 artifact publication 基础设施。它不是插件在运行时传入任意路径的
-TypeScript compiler，也不负责启动或调度构建结果。
+保留插件声明“需要由 Pluxel 工具链单独构建的 Node 源码入口”的能力，但公开概念只叫 Node
+module，不把内部的 artifact key、URL revision 或 binding lifecycle 暴露给作者。它不是插件在运行时传入
+任意路径的 TypeScript compiler，也不代表 worker 或任务协议。
+
+额外 Node module 与 Workbench UI 都是“server declaration 指向另一份源码图，开发期即时构建，生产期加载
+预构建产物”，应共享 declaration extraction、源码图、hash/cache、watch/rebuild 和 atomic publication。
+这些是实现共享，不是新的作者抽象。
 
 共享发生在编译生命周期，不发生在输出格式：
 
@@ -35,10 +38,10 @@ plugin source declaration
   -> canonical Rolldown declaration extraction
   -> source graph + build key + cache + atomic publication
        |-> Workbench UI builder -> browser Module Federation remote
-       `-> Node artifact builder -> single Node ESM artifact
+       `-> Node module builder   -> single Node ESM artifact
 ```
 
-不把 Node artifact 建模成 Workbench 子能力，也不把两个 builder 抽象成任意 target 的通用任务框架。
+不把 Node module 建模成 Workbench 子能力，也不把两个 builder 抽象成任意 target 的通用任务框架。
 
 ### 问题
 
@@ -77,71 +80,100 @@ workbench.entry(import.meta.url, './ui/index.tsx')
    packaged resolver；
 7. static/non-HMR route 退回 inline fallback，导致相同插件在开发与生产采用不同执行模型。
 
-问题不是 Node 源码入口不值得存在，而是当前 API 把“编译 artifact”误命名成“执行 worker”，且没有像
+问题不是 Node 源码入口不值得存在，而是当前 API 把“构建额外 module”误命名成“执行 worker”，且没有像
 Workbench UI 一样成为 canonical toolchain artifact。
 
 ### 作者模型
 
-唯一声明形式改为：
+唯一声明形式与普通使用形式为：
 
 ```ts
-import { nodeArtifact } from '@pluxel/runtime'
+import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
+import { Tinypool } from 'tinypool'
 
-const taskArtifact = nodeArtifact(import.meta.url, './task.ts')
+const taskModule = defineNodeModule(import.meta.url, './task.ts')
+
+@Plugin({ name: 'TaskPlugin' })
+export class TaskPlugin extends BasePlugin {
+	private pool: Tinypool | undefined
+
+	override async init() {
+		await this.ctx.nodeModules.use(taskModule, async (url) => {
+			const pool = new Tinypool({ filename: url.href })
+			this.pool = pool
+
+			return async () => {
+				if (this.pool === pool) this.pool = undefined
+				await pool.destroy()
+			}
+		})
+	}
+}
 ```
 
-`nodeArtifact()` 返回 declaration；插件在 `init()` 中通过 `bind(ctx, { onUpdate, onError })` 获得当前可加载的
-Node ESM URL。构建 transform 可以向内部第三参数注入 artifact key，作者不声明 plugin ID、输出目录或环境模式。
-`bind()` 必须等到首个 source/packaged artifact 完成校验后才 resolve，并以 `{ url, revision }` 调用一次
-`onUpdate`；后续 HMR 成功再推送新 revision。首次构建失败使 `bind()` 失败，已有成功版本后的 rebuild failure 只调用
-`onError` 并继续保留上一 revision。Binding snapshot 只包含 `{ url, revision }`，不暴露 `hmr/fallback` mode。
+`defineNodeModule()` 只返回可静态提取的 opaque declaration；它不编译、不加载，也不需要作者传入
+plugin ID。`ctx.nodeModules.use()` 是唯一使用动作：Context 直接提供 owner，成功 callback 返回当前消费者的
+cleanup，不再要求作者手工保存 binding handle、读 snapshot 或订阅 `onUpdate`。
 
-选择 `nodeArtifact` 而不是其他名字是有意的：
+`use()` 的生命周期语义是：
 
-- 不叫 `worker`：编译系统不创建线程、Tinypool 或任务协议；
-- 不叫 `compileTs`：输入可以是工具链支持的 TS/JS 源码；这是可静态提取的声明，不是运行时接受任意路径的
-  命令，production 也不会现场编译；
-- 不叫 `nodeEntry`：它只描述源码输入，也容易与 application/server entry 混淆，没有表达作者最终绑定的是
-  带 revision 和 deployment lifecycle 的独立产物；
-- 不叫 `nodeModule`：普通插件 server source 本身就是 Node module，该名字无法表达“独立产物”；
-- `artifact` 与现有 Workbench/toolchain 术语一致，明确表达它有独立 build key、输出和 deployment lifecycle；
-- 使用直接函数而不是 `nodeArtifact.entry()`，避免在“artifact 已代表独立 entry”之上再增加一层 namespace。
+1. 首次 source/packaged module 就绪后才调用 callback；`use()` 等待 callback 完成，首次构建或 setup 失败直接
+   使 plugin `init()` 失败；
+2. 开发期构建成功时，用新的 cache-busted `URL` 调用 callback；新 setup 成功后再清理上一个消费者，
+   保持 last-known-good；
+3. rebuild 失败或新 setup 失败时保留旧消费者并记录结构化错误，不需要每个插件重复 `onError`；
+4. plugin replacement/stop 通过 owner effects 自动取消订阅并执行 active cleanup；作者不再调用 `dispose()`。
 
-`nodeArtifact` 从 `@pluxel/runtime` 主作者入口导出。原 `@pluxel/runtime/plugin` 只承载 worker facade，迁移后整个
-subpath 删除，不再建立另一个 authoring entry。
+普通 ESM 使用同一个接口，不为 worker 另建 API：
 
-名称一次对应到真实责任，实施时不再派生 manager、adapter 或 target registry：
+```ts
+await this.ctx.nodeModules.use(taskModule, async (url) => {
+	const task = (await import(url.href)) as typeof import('./task.ts')
+	return this.installTaskModule(task)
+})
+```
 
-| 责任                     | 名称                      |
-| ------------------------ | ------------------------- |
-| 作者声明函数             | `nodeArtifact()`          |
-| 可静态提取的声明         | `NodeArtifactDeclaration` |
-| 当前 URL/revision lease  | `NodeArtifactBinding`     |
-| runtime 解析与 binder    | `NodeArtifactService`     |
-| 开发期图、watch 与 cache | `PluginArtifactCompiler`  |
-| Node 目标具体 builder    | `buildNodeArtifact()`     |
+选择 `defineNodeModule` 是因为它对 agent 和作者都直说三件事：这是 declaration，目标是 Node，结果是可加载
+module。不叫 `worker`，因为系统不创建线程；不叫 `compileTs`，因为输入也可以是 JS 且 production 不现场
+编译；不叫 `nodeArtifact`，因为 artifact 是构建与部署实现，不是作者意图。
+`Node module` 在此特指单独构建的 Node ESM entry，不是插件主模块，也不是 `node_modules` dependency。
 
-`NodeArtifactService` 不叫 compiler，因为 production 路径只做解析；`PluginArtifactCompiler` 不叫 manager，
-因为它直接拥有唯一的开发期 source graph、watch、build queue 和 cache。
+`defineNodeModule` 从 `@pluxel/runtime` 主作者入口导出。原 `@pluxel/runtime/plugin` 只承载 worker facade，迁移后整个
+subpath 删除，不再建立另一个 authoring entry。声明保持 module-level `const`，让工具链只识别显式导入的
+`defineNodeModule(import.meta.url, <literal>)`，不猜测任意 `ctx` property access。
+
+不把 module 重复写入 `@Plugin({ ... })`。Decorator 是 core graph metadata，Node module 是 runtime/toolchain 能力；
+`ctx.nodeModules.use()` 已经提供了唯一 owner 和可达性事实，在 decorator 中再列一次只会制造两份来源。
+
+公开命名只保留三个可理解概念：
+
+| 作者意图             | 名称                    |
+| -------------------- | ----------------------- |
+| 声明额外 Node module | `defineNodeModule()`    |
+| opaque 声明类型      | `NodeModuleDeclaration` |
+| 在插件上使用 module  | `ctx.nodeModules.use()` |
+
+consumer lease、revision 和 artifact key 均为 internal state，不再为它们定义公开类型；也不公开 manager、
+adapter 或 target registry。
 
 约束：
 
 - entry path 必须是 string literal，第一参数必须是 `import.meta.url`；
-- 一个插件允许多个 Node artifacts，artifact key 由 declaration module path + entry path 稳定生成；
+- 一个插件允许多个 Node modules，internal artifact key 由 declaration module path + entry path 稳定生成；
 - 输出 contract 只是可加载的单文件 Node ESM，不承诺 Tinypool、worker_threads、Web Worker、edge worker 或
   通用 job queue；
 - artifact module 可以导出普通 ESM API；是否要求 structured clone 由 Tinypool/worker_threads 等具体消费者决定；
 - declaration 不提供 `external` 和 inline fallback。Node builtins 由 builder 处理；无法安全 bundle 的 native/
   non-bundleable dependency 先明确报构建错误，不用开放式 external 绕过 production closure；
-- artifact 缺失时 `bind()` 失败，插件 `init()` 诚实失败，不静默切换为 inline execution。
+- module 缺失时 `use()` 失败，插件 `init()` 诚实失败，不静默切换为 inline execution。
 
 ### 统一构建管线
 
 `@pluxel/rolldown` 的 canonical `createPluginBuildPipeline()` 安装一次 internal `pluginArtifactBuildPlugin`。该 plugin
-在同一次源码 transform 中提取 Workbench UI 和 `nodeArtifact()` declaration，并分别调用两个具体 builder：
+在同一次源码 transform 中提取 Workbench UI 和 `defineNodeModule()` declaration，并分别调用两个具体 builder：
 
 - `buildWorkbenchUiRemote()`：保留现有 browser Federation contract；
-- `buildNodeArtifact()`：新增直接调用 `vite.build()`/Rolldown 的单文件 Node ESM builder。
+- `buildNodeModule()`：新增直接调用 `vite.build()`/Rolldown 的单文件 Node ESM builder。
 
 二者共享：
 
@@ -161,52 +193,56 @@ exclusive section 只包围 UI builder；Node artifact build 不进入该临界�
 dist/
   index.mjs
   workbench/<ui-artifact>/...
-  node-artifacts/<artifact-key>.mjs
+  artifacts/node/<artifact-key>.mjs
 ```
 
 static application freezer 把可达 Node artifacts 复制到 distribution，并把 artifact facts 写入现有 deployment
 manifest。stable artifact key 标识 declaration，源码 hash 标识具体 build revision；不要把两者混成一个身份。
 Node artifact 必须是自包含 ESM（Node builtins 除外）；不要新增部署端 package install 模式。只有声明 UI 或
-`nodeArtifact()` 的 package 才加载对应 Vite builder；没有 artifact declaration 时 canonical pipeline 不创建额外
-输出目录。Node artifact 属于业务 runtime，不属于 Workbench variant；headless 与 workbench static distribution
-都应收集可达 Node artifacts。现有 `workbench: false` 只关闭 UI extractor/builder，不能顺带关闭 Node branch。
+`defineNodeModule()` 的 package 才加载对应 Vite builder；没有 declaration 时 canonical pipeline 不创建额外
+输出目录。Node module 属于业务 runtime，不属于 Workbench variant；headless 与 workbench static distribution
+都应收集可达 Node module artifacts。现有 `workbench: false` 只关闭 UI extractor/builder，不能顺带关闭 Node branch。
 
 ### 统一开发期 compiler
 
 `@pluxel/runtime-dev` 允许每个 runtime root/Vite server 持有至多一个 internal `PluginArtifactCompiler`。它保留
-两个具体绑定入口：
+两个具体 watch 入口：
 
 ```text
-bindWorkbenchUi(owner, declaration)
-bindNodeArtifact(owner, declaration)
+watchWorkbenchUi(owner, declaration, publish)
+watchNodeModule(owner, declaration, publish)
 ```
 
 内部共享 module graph refresh、watch set、hash、pending/inflight queue、cache retention 和 effects cleanup。目标构建
-仍分别调用 `buildWorkbenchUiRemote()` 与 `buildNodeArtifact()`，不保留 `BundleJob` 或 strategy registry。
+仍分别调用 `buildWorkbenchUiRemote()` 与 `buildNodeModule()`，不保留 `BundleJob` 或 strategy registry。
 
 现有 `WorkbenchCompilerService` 迁移为该 concrete compiler，而不是在外面再包一层 manager。static/dynamic Vite
 route 都调用一次 `attachPluginArtifactCompiler(ctx, viteServer, options)`，不再以 Workbench enabled 作为整个
-attachment 的开关。attachment 只把 UI binder 绑定到已启用的 Workbench artifact service，并始终把 Node binder
-绑定到 `NodeArtifactService`。两个 binder 共享一个 lazy `getCompiler()`；首个 UI/Node declaration bind 时才构造
-compiler，完全没有 declaration 时只有两个轻量回调，不创建 compiler、watcher、cache 或 target builder。cleanup
-detach binder，并只在 compiler 已创建时 dispose。所有 target-specific build code 保持在两个明确方法内，不注册
-handler map。
+attachment 的开关。attachment 只把 UI source provider 安装到已启用的 Workbench artifact service，并始终把
+Node source provider 安装到 root `NodeModuleService`。两个 provider 共享一个 lazy `getCompiler()`；首个 UI/Node
+declaration 被使用时才构造 compiler，完全没有 declaration 时只有两个轻量回调，不创建 compiler、watcher、
+cache 或 target builder。cleanup detach provider，并只在 compiler 已创建时 dispose。所有 target-specific build code
+保持在两个明确方法内，不注册 handler map。
 
 compiler 必须按 declaration 懒启动：
 
-- 没有 Node artifact declaration 时不创建 Node watcher、cache 或 build；
-- Workbench disabled 时不安装 UI binder、不加载 Federation builder；
-- Workbench disabled 但插件声明 Node artifact 时，只构建 Node artifact；
-- static Vite 与 dynamic HMR 都安装相同 Node artifact source binder，route 只提供自己的 Vite server；
-- compile state 按 artifact key 去重，binding 以 owner Context lease 订阅；多个 binding 共用 watcher/build，但各自拥有
-  update callback 和 effects cleanup；
-- 最后一个 lease 释放时停止 watcher；旧 owner cleanup 只能删除自己的 lease，不能移除 replacement 的 active binding；
-- 旧成功 artifact 保留到 bounded cache cleanup；rebuild 失败时通知 `onError` 并保留最后一个成功 URL，不发布
-  半成品 URL。
+- 没有 Node module declaration 时不创建 Node watcher、cache 或 build；
+- Workbench disabled 时不安装 UI source provider、不加载 Federation builder；
+- Workbench disabled 但插件使用 Node module 时，只构建 Node artifact；
+- static Vite 与 dynamic HMR 都安装相同 Node module source provider，route 只提供自己的 Vite server；
+- compile state 按 artifact key 去重，每次 `use()` 在内部建立 owner lease；多个消费者共用 watcher/build，但各自拥有
+  setup callback 和 effects cleanup；
+- 最后一个 lease 释放时停止 watcher；旧 owner cleanup 只能删除自己的 lease，不能移除 replacement 的 active lease；
+- 旧成功 artifact 保留到 bounded cache cleanup；rebuild 失败时由 service 记录结构化错误并保留最后一个成功
+  URL，不发布半成品 URL，也不重新调用 setup callback；
 
-runtime common 注册一个轻量、root-scoped `NodeArtifactService`。它只负责 declaration binding、唯一 source binder
-和 packaged/static URL resolution，不暴露任意路径编译方法。开发期 compiler 直接绑定该 service；没有 source
-binder 时，service 按注入的 artifact key 定位 packaged/static artifact。不要重新引入
+runtime common 只注册一个 concrete `NodeModuleService`。`ctx.nodeModules` 是现有 Context isolation 机制产生的轻量
+plugin view，持有 owner Context；root 上的同类实例持有共享 declaration/lease state、唯一 dev source provider 和
+packaged/static resolver。plugin view 直接调用 root 实例的内部方法，不再定义 service interface、adapter 或可变
+“current Context”。
+
+`NodeModuleService` 不暴露任意路径编译方法。有 dev source provider 时，它把 active declaration 交给
+`PluginArtifactCompiler`；没有时按 transform 注入的 artifact key 定位 packaged/static artifact。不要重新引入
 `Context.runtimeDev.worker`、`ctx.compiler` 或通用 capability adapter。
 
 ### 运行时解析
@@ -216,12 +252,12 @@ binder 时，service 按注入的 artifact key 定位 packaged/static artifact�
 | 环境                           | artifact 来源                                         |
 | ------------------------------ | ----------------------------------------------------- |
 | dynamic/static Vite            | runtime-dev 编译 source graph，返回 cache-busted URL  |
-| dynamic 加载已发布 plugin      | 从 plugin package root 解析 `dist/node-artifacts/...` |
+| dynamic 加载已发布 plugin      | 从 plugin package root 解析 `dist/artifacts/node/...` |
 | static production distribution | 从 deployment root/manifest 解析 frozen artifact      |
 
-`bind()` 只交付 Node ESM URL 和更新事件。插件可以 `import(url)`，也可以把 URL 交给 Tinypool/worker_threads，并
-为具体执行器登记普通 effects cleanup；编译系统不创建执行器、不定义线程数、不代理任务调用，只拥有 declaration、
-artifact 和 HMR 生命周期。
+`ctx.nodeModules.use()` 只把当前 Node ESM `URL` 交给 setup callback。插件可以 `import(url.href)`，也可以
+把 URL 交给 Tinypool/worker_threads；编译系统不创建执行器、不定义线程数、不代理任务调用，只拥有
+declaration、artifact 和 HMR 生命周期。具体消费者的 cleanup 由 callback 返回，然后并入 plugin owner effects。
 
 ### 删除内容
 
@@ -233,22 +269,24 @@ artifact 和 HMR 生命周期。
 - `RuntimeDevCapabilities.worker` 和 dynamic host 的 bundler installation/cleanup；
 - `worker()` 的 cwd/registry fallback resolution、`mode: 'fallback'` 和 inline fallback；
 - 只承载 worker facade 的 `@pluxel/runtime/plugin`，以及无消费者的 `@pluxel/runtime-dynamic/plugin` alias entry；
-- demo 中“生产环境自行预构建”的说明，改成使用 `nodeArtifact()` 并同时验证 dev 与 packaged artifact。
+- demo 中“生产环境自行预构建”的说明，改成使用 `defineNodeModule()` 和
+  `ctx.nodeModules.use()`，并同时验证 dev 与 packaged module。
 
 不为旧 declaration 保留 compatibility wrapper；当前 major Changeset 承担迁移。
 
 ### 验收
 
-- plugin package build 从 `nodeArtifact(import.meta.url, literal)` 生成稳定 key 的 Node ESM artifact，使用
+- plugin package build 从 `defineNodeModule(import.meta.url, literal)` 生成稳定 key 的 Node ESM artifact，使用
   content-addressed build cache，并向 server declaration 注入相同 artifact key；
-- static application distribution 包含所有可达 Node artifacts，输出不引用 workspace source 或未解析
+- `ctx.nodeModules.use()` 首次使用失败会阻止 plugin 启动，更新失败保留上一个成功 consumer；
+- static application distribution 包含所有可达 Node module artifacts，输出不引用 workspace source 或未解析
   `@pluxel/*` runtime import；
-- headless 与 workbench distribution 对相同 Node declaration 生成相同 artifact，variant 只改变 UI closure；
-- dynamic loader 能从已发布 plugin package 解析 packaged Node artifact，而不要求 Vite server；
+- headless 与 workbench distribution 对相同 Node module declaration 生成相同 artifact，variant 只改变 UI closure；
+- dynamic loader 能从已发布 plugin package 解析 packaged Node module，而不要求 Vite server；
 - static/dynamic Vite 修改 Node entry 或其依赖时只触发一次合并 rebuild，并发布新的 cache-busted URL；
-- 同一 artifact 的多个 binding 共用一次 compile/watch；HMR compile failure 保留最后成功 artifact；
-- plugin replacement/stop 只释放对应 owner lease，最后一个 binding 释放后才关闭 watcher；
-- Workbench disabled + Node artifact declared 不加载 Federation builder；二者都没有 declaration 时不创建 cache；
+- 同一 declaration 的多个 consumer 共用一次 compile/watch；HMR compile failure 保留最后成功 artifact；
+- plugin replacement/stop 只释放对应 owner lease，最后一个 consumer 释放后才关闭 watcher；
+- Workbench disabled + Node module used 不加载 Federation builder；二者都没有 declaration 时不创建 cache；
 - 搜索不到 `BundlerService`、`bundle-worker.mjs`、`watchTinypoolWorker`、`RuntimeDevCapabilities.worker`、
   `LoaderHmrWorker` 和两份 route-owned module graph helper；
 - package build、static freezer、dynamic packaged resolution、普通 `import()` 和真实 Tinypool consumption 都有
@@ -257,14 +295,16 @@ artifact 和 HMR 生命周期。
 
 ### 实施顺序与停止条件
 
-1. 先在 Rolldown 增加 `buildNodeArtifact()`、artifact layout/validator 和 declaration extraction 测试；
-2. 让独立 plugin package 与 static application 同时产出/记录 Node artifact；
-3. 增加 `NodeArtifactService` packaged/static resolver，确保无 Vite 环境能加载预构建 artifact；
-4. 把 `WorkbenchCompilerService` 收敛为 `PluginArtifactCompiler`，让两种具体 binding 共享 graph/watch/cache；
-5. 迁移 dynamic/static Vite source binder 和 demo；
+1. 先确定 `defineNodeModule()` + `ctx.nodeModules.use()` 的 lowering 与 owner cleanup 测试；
+2. 在 Rolldown 增加 `buildNodeModule()`、artifact layout/validator，让 plugin package 与 static application
+   同时产出/记录 Node module artifacts；
+3. 增加 `NodeModuleService` packaged/static resolver，确保无 Vite 环境能使用预构建 module；
+4. 把 `WorkbenchCompilerService` 收敛为 `PluginArtifactCompiler`，让两种具体 source watch 共享
+   graph/hash/cache；
+5. 迁移 dynamic/static Vite source provider 和 demo；
 6. 最后删除 `BundlerService`、runtimeDev worker bridge、fallback 与两个 plugin subpath。
 
-如果 Node artifact builder 无法在不开放任意 external、不引入部署端安装的前提下产出可部署 closure，应停止并先
+如果 Node module builder 无法在不开放任意 external、不引入部署端安装的前提下产出可部署 closure，应停止并先
 定义明确的 native dependency contract；不能以保留当前 dynamic-only fallback 作为完成。
 
 ## 2. 删除无消费者的 runtimeDev batch mirror
@@ -289,7 +329,7 @@ common 的可选 capability bag。
 
 - 删除 `RuntimeDevCapabilities.batches` 和 dynamic host 的 wrapper assignment；
 - host、CLI 或测试需要等待 batch 时直接使用已经返回的 `LoaderHmrService`；
-- Node artifact 迁移到 `NodeArtifactService` 并删除 `RuntimeDevCapabilities.worker` 后，一并删除空的
+- Node module 迁移到 `NodeModuleService` 并删除 `RuntimeDevCapabilities.worker` 后，一并删除空的
   `RuntimeDevCapabilities`、`runtimeDevCapabilities()` 和 Context augmentation；
 - 不把 `LoaderHmrService` 或其 batch types 上移到 runtime common，也不设计新的 HMR adapter。
 
@@ -386,7 +426,7 @@ common 的可选 capability bag。
 
 ## 实施顺序与停止条件
 
-建议每项独立提交，并在删除后立即搜索旧符号。顺序上先完成 Node artifact pipeline 并删除旧 worker bundler
+建议每项独立提交，并在删除后立即搜索旧符号。顺序上先完成 Node module pipeline 并删除旧 worker bundler
 支线，再删除无消费者的 batch mirror，使 `runtimeDev` capability bag 整体消失；然后完成 builtin read-only
 cut，最后才处理 internal barrel。
 
