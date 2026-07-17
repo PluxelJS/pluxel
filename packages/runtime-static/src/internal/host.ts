@@ -163,7 +163,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			},
 			configMetadata: {
 				getSchema: (name) => this.catalog.byName.get(name)?.info.configMap ?? undefined,
-				getSchemaSource: () => undefined,
+				getSchemaSource: (name) => this.catalog.byName.get(name)?.info.configSourceMap ?? undefined,
 				getConfigLayout: (name) => this.catalog.byName.get(name)?.info.configLayoutMap ?? undefined,
 			},
 			dependencies: {

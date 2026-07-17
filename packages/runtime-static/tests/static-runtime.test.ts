@@ -52,6 +52,11 @@ class InvalidConfigPlugin extends BasePlugin {
 	value = this.configs.use(RequiredStringSchema as never)
 }
 
+@Plugin({ name: 'SchemaSourcePlugin' })
+class SchemaSourcePlugin extends BasePlugin {
+	value = this.configs.use(RequiredStringSchema as never)
+}
+
 const hotConfigRuns: string[] = []
 
 @Plugin({ name: 'HotConfig' })
@@ -417,6 +422,31 @@ describe('@pluxel/runtime-static', () => {
 			})
 			expect(host.ctx.registry.isRunning(StaticA)).toBe(true)
 			expect(host.ctx.registry.isRunning(StaticB)).toBe(false)
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('exposes injected config schema source through the static runtime route', async () => {
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-schema-source', plugins: [SchemaSourcePlugin] }),
+			{
+				configService: {
+					mode: 'memory',
+					snapshot: { plugins: { SchemaSourcePlugin: { value: 'configured' } } },
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['SchemaSourcePlugin'] },
+				},
+			},
+		)
+		try {
+			await host.start()
+
+			const source = host.ctx.runtimeRoute?.configMetadata?.getSchemaSource('SchemaSourcePlugin')
+			expect(source).toEqual({ value: expect.any(String) })
+			expect(source?.value.length).toBeGreaterThan(0)
 		} finally {
 			await host.stop()
 		}
