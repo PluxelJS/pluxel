@@ -79,11 +79,11 @@
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
 		"fs-fixture": "^2.13.0",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.3.4",

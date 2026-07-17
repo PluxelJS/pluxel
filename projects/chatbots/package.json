@@ -11,8 +11,8 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@mantine/core": "^9.4.1",
-		"@mantine/notifications": "^9.4.1",
+		"@mantine/core": "catalog:",
+		"@mantine/notifications": "catalog:",
 		"@pluxel/components": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
@@ -25,20 +25,20 @@
 		"@repo/chatbots-sandbox": "workspace:*",
 		"@repo/chatbots-telegram": "workspace:*",
 		"@repo/chatbots-telegram-hub": "workspace:*",
-		"@tabler/icons-react": "^3.37.1",
+		"@tabler/icons-react": "catalog:",
 		"@worksplit/react": "workspace:*",
-		"react": "^19.2.7",
-		"react-dom": "^19.2.7"
+		"react": "catalog:",
+		"react-dom": "catalog:"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/node": "^25.9.3",
-		"@types/react": "^19.2.14",
-		"@types/react-dom": "^19.2.3",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
 		"@vitejs/plugin-react": "^5.1.4",
-		"tsdown": "^0.22.5",
+		"tsdown": "catalog:",
 		"vite": "^8.0.0-beta.18",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	}
 }

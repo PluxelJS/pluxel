@@ -369,31 +369,57 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@mantine/core':
+      specifier: ^9.4.1
+      version: 9.4.1
+    '@mantine/dates':
+      specifier: ^9.4.1
+      version: 9.4.1
+    '@mantine/hooks':
+      specifier: ^9.4.1
+      version: 9.4.1
+    '@mantine/modals':
+      specifier: ^9.4.1
+      version: 9.4.1
+    '@mantine/notifications':
+      specifier: ^9.4.1
+      version: 9.4.1
+    '@pluxel/market':
+      specifier: ^0.1.0
+      version: 0.1.0
+    '@tabler/icons-react':
+      specifier: ^3.37.1
+      version: 3.44.0
+    '@types/react':
+      specifier: ^19.2.14
+      version: 19.2.17
+    '@types/react-dom':
+      specifier: ^19.2.3
+      version: 19.2.3
+    drizzle-orm:
+      specifier: ^0.45.2
+      version: 0.45.2
+    react:
+      specifier: ^19.2.7
+      version: 19.2.7
+    react-dom:
+      specifier: ^19.2.7
+      version: 19.2.7
+    tsdown:
+      specifier: ^0.22.5
+      version: 0.22.5
+    typescript:
+      specifier: ^6.0.3
+      version: 6.0.3
+    vitest:
+      specifier: ^4.1.10
+      version: 4.1.10
+
 importers:
 
   .:
-    dependencies:
-      '@mantine/core':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@mantine/hooks':
-        specifier: ^9.4.1
-        version: 9.4.1(react@19.2.7)
-      '@mantine/notifications':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/market':
-        specifier: ^0.1.0
-        version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@tabler/icons-react':
-        specifier: ^3.37.1
-        version: 3.44.0(react@19.2.7)
-      react:
-        specifier: ^19.2.7
-        version: 19.2.7
-      react-dom:
-        specifier: ^19.2.7
-        version: 19.2.7(react@19.2.7)
     devDependencies:
       '@changesets/cli':
         specifier: ^2.31.0
@@ -423,19 +449,19 @@ importers:
         specifier: ^0.12.0
         version: 0.12.0
       tsdown:
-        specifier: ^0.22.5
+        specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       turbo:
         specifier: ^2.10.4
         version: 2.10.4
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       unplugin-preprocessor-directives:
         specifier: ^1.2.0
         version: 1.2.0(esbuild@0.28.1)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
       vitest:
-        specifier: ^4.1.10
+        specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
 
   packages/cli:
@@ -469,7 +495,7 @@ importers:
         version: 2.9.0
     devDependencies:
       '@pluxel/market':
-        specifier: ^0.1.0
+        specifier: 'catalog:'
         version: 0.1.0(ramda@0.32.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/rolldown':
         specifier: workspace:*
@@ -484,19 +510,19 @@ importers:
         specifier: ^4.0.2
         version: 4.0.3
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       ink:
         specifier: ^6.8.0
         version: 6.8.0(@types/react@19.2.17)(react@19.2.7)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
       tsdown:
-        specifier: ^0.22.5
+        specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
   packages/components:
@@ -516,21 +542,6 @@ importers:
       '@gqlens/react':
         specifier: workspace:*
         version: link:../../vendor/gqlens/packages/react
-      '@mantine/core':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@mantine/dates':
-        specifier: ^9.0.0
-        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(dayjs@1.11.19)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@mantine/hooks':
-        specifier: ^9.4.1
-        version: 9.4.1(react@19.2.7)
-      '@mantine/modals':
-        specifier: ^9.0.0
-        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@mantine/notifications':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@material/material-color-utilities':
         specifier: ^0.4.0
         version: 0.4.0
@@ -543,9 +554,6 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@tabler/icons-react':
-        specifier: ^3.37.1
-        version: 3.44.0(react@19.2.7)
       '@tanstack/react-form':
         specifier: ^1.28.3
         version: 1.33.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -567,12 +575,6 @@ importers:
       markdown-exit:
         specifier: ^1.0.0-beta.8
         version: 1.0.0-beta.9
-      react:
-        specifier: ^19.2.7
-        version: 19.2.7
-      react-dom:
-        specifier: ^19.2.7
-        version: 19.2.7(react@19.2.7)
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -580,20 +582,38 @@ importers:
       '@gqlens/vite':
         specifier: workspace:*
         version: link:../../vendor/gqlens/packages/vite
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@mantine/dates':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(dayjs@1.11.19)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@mantine/hooks':
+        specifier: 'catalog:'
+        version: 9.4.1(react@19.2.7)
+      '@mantine/modals':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@mantine/notifications':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
       '@pluxel/runtime-dynamic':
         specifier: workspace:*
         version: link:../runtime-dynamic
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
       '@tanstack/router-plugin':
         specifier: ^1.167.9
         version: 1.168.19(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(esbuild@0.28.1)(rolldown@1.1.4)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
@@ -613,6 +633,12 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.5.16)
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       sass-embedded:
         specifier: ^1.93.2
         version: 1.100.0
@@ -671,10 +697,10 @@ importers:
         specifier: ^0.2.2
         version: 0.2.2
       tsdown:
-        specifier: ^0.22.3
-        version: 0.22.3(@tsdown/css@0.22.3)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
   packages/ops:
@@ -682,86 +708,6 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.48
         version: 0.34.49
-
-  packages/plugins/authelia-oidc-demo:
-    dependencies:
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@pluxel/runtime-static':
-        specifier: workspace:*
-        version: link:../../runtime-static
-      jose:
-        specifier: ^6.2.3
-        version: 6.2.3
-    devDependencies:
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../rolldown
-      '@types/node':
-        specifier: ^25.9.3
-        version: 25.9.4
-      tsdown:
-        specifier: ^0.22.5
-        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vite:
-        specifier: ^8.0.0-beta.18
-        version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
-
-  packages/plugins/host:
-    dependencies:
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@pluxel/runtime-dynamic':
-        specifier: workspace:*
-        version: link:../../runtime-dynamic
-      '@pluxel/runtime-static':
-        specifier: workspace:*
-        version: link:../../runtime-static
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
-    devDependencies:
-      '@mantine/core':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../../cli
-      '@pluxel/rolldown':
-        specifier: workspace:*
-        version: link:../../rolldown
-      '@tabler/icons-react':
-        specifier: ^3.37.1
-        version: 3.44.0(react@19.2.7)
-      '@types/react':
-        specifier: ^19.2.14
-        version: 19.2.17
-      '@types/react-dom':
-        specifier: ^19.2.3
-        version: 19.2.3(@types/react@19.2.17)
-      pathe:
-        specifier: ^2.0.3
-        version: 2.0.3
-      react:
-        specifier: ^19.2.7
-        version: 19.2.7
-      react-dom:
-        specifier: ^19.2.7
-        version: 19.2.7(react@19.2.7)
-      tinypool:
-        specifier: ^2.1.0
-        version: 2.1.0
-      tsdown:
-        specifier: ^0.22.5
-        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
-      vite:
-        specifier: ^8.0.0-beta.18
-        version: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
   packages/rolldown:
     dependencies:
@@ -812,10 +758,10 @@ importers:
         specifier: ^1.0.0-rc.5
         version: 1.1.4
       tsdown:
-        specifier: ^0.22.5
+        specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
@@ -850,9 +796,6 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.48
         version: 0.34.49
-      '@tabler/icons-react':
-        specifier: '*'
-        version: 3.44.0(react@19.2.7)
       age-encryption:
         specifier: ^0.3.0
         version: 0.3.0
@@ -863,7 +806,7 @@ importers:
         specifier: ^0.5.0
         version: 0.5.0
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       elysia:
         specifier: ^1.4.27
@@ -902,18 +845,30 @@ importers:
       '@gqlens/vite':
         specifier: workspace:*
         version: link:../../vendor/gqlens/packages/vite
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@mantine/notifications':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/rolldown':
         specifier: workspace:*
         version: link:../rolldown
       '@pluxel/test':
         specifier: workspace:*
         version: link:../test
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.17)
       fs-fixture:
         specifier: ^2.13.0
         version: 2.14.0
@@ -926,6 +881,12 @@ importers:
       postcss-simple-vars:
         specifier: ^7.0.1
         version: 7.0.1(postcss@8.5.16)
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
       valibot-form:
         specifier: workspace:*
         version: link:../valibot-form
@@ -958,7 +919,7 @@ importers:
         specifier: workspace:*
         version: link:../test
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
@@ -1019,7 +980,7 @@ importers:
         specifier: ^2.2.6
         version: 2.2.6
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
@@ -1063,8 +1024,8 @@ importers:
         specifier: ^2.13.0
         version: 2.14.0
       vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
 
   packages/valibot-form:
     dependencies:
@@ -1082,22 +1043,22 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.7)
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@mantine/hooks':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(react@19.2.7)
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       '@tanstack/react-form':
         specifier: ^1.28.3
         version: 1.33.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
@@ -1106,28 +1067,56 @@ importers:
         specifier: ^28.1.0
         version: 28.1.0(@noble/hashes@2.2.0)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
       react-dom:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
       tsdown:
-        specifier: ^0.22.3
-        version: 0.22.3(@tsdown/css@0.22.3)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
         version: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
+  projects/authelia-oidc-demo:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@pluxel/runtime-static':
+        specifier: workspace:*
+        version: link:../../packages/runtime-static
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
+    devDependencies:
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vite:
+        specifier: ^8.0.0-beta.18
+        version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
+
   projects/chatbots:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@mantine/notifications':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/components':
         specifier: workspace:*
@@ -1140,42 +1129,42 @@ importers:
         version: link:../../packages/runtime-static
       '@repo/chatbots-access':
         specifier: workspace:*
-        version: link:packages/access
+        version: link:plugins/access
       '@repo/chatbots-builtins':
         specifier: workspace:*
-        version: link:packages/builtins
+        version: link:plugins/builtins
       '@repo/chatbots-commands':
         specifier: workspace:*
-        version: link:packages/commands
+        version: link:plugins/commands
       '@repo/chatbots-hub':
         specifier: workspace:*
-        version: link:packages/hub
+        version: link:plugins/hub
       '@repo/chatbots-kook':
         specifier: workspace:*
-        version: link:packages/kook
+        version: link:plugins/kook
       '@repo/chatbots-kook-hub':
         specifier: workspace:*
-        version: link:packages/kook-hub
+        version: link:plugins/kook-hub
       '@repo/chatbots-sandbox':
         specifier: workspace:*
-        version: link:packages/sandbox
+        version: link:plugins/sandbox
       '@repo/chatbots-telegram':
         specifier: workspace:*
-        version: link:packages/telegram
+        version: link:plugins/telegram
       '@repo/chatbots-telegram-hub':
         specifier: workspace:*
-        version: link:packages/telegram-hub
+        version: link:plugins/telegram-hub
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       '@worksplit/react':
         specifier: workspace:*
         version: link:../../vendor/split-like-vscode/packages/react
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
       react-dom:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
     devDependencies:
       '@pluxel/rolldown':
@@ -1188,48 +1177,23 @@ importers:
         specifier: ^25.9.3
         version: 25.9.4
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
         version: 5.2.0(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
       tsdown:
-        specifier: ^0.22.5
+        specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       vite:
         specifier: ^8.0.0-beta.18
         version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
       vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@types/node@25.9.4)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
-
-  projects/chatbots/packages/access:
-    dependencies:
-      '@mantine/core':
-        specifier: ^9.4.1
-        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../../../packages/runtime
-      '@repo/chatbots-contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@repo/chatbots-hub':
-        specifier: workspace:*
-        version: link:../hub
-      '@tabler/icons-react':
-        specifier: ^3.37.1
-        version: 3.44.0(react@19.2.7)
-      react:
-        specifier: ^19.2.7
-        version: 19.2.7
-    devDependencies:
-      '@types/react':
-        specifier: ^19.2.14
-        version: 19.2.17
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@25.9.4)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
 
   projects/chatbots/packages/adapter-kit:
     dependencies:
@@ -1237,10 +1201,37 @@ importers:
         specifier: workspace:*
         version: link:../../../../packages/runtime
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
 
-  projects/chatbots/packages/builtins:
+  projects/chatbots/packages/contracts: {}
+
+  projects/chatbots/plugins/access:
+    dependencies:
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/runtime
+      '@repo/chatbots-contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@repo/chatbots-hub':
+        specifier: workspace:*
+        version: link:../hub
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+    devDependencies:
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.17
+
+  projects/chatbots/plugins/builtins:
     dependencies:
       '@pluxel/runtime':
         specifier: workspace:*
@@ -1255,7 +1246,7 @@ importers:
         specifier: workspace:*
         version: link:../hub
 
-  projects/chatbots/packages/commands:
+  projects/chatbots/plugins/commands:
     dependencies:
       '@pluxel/runtime':
         specifier: workspace:*
@@ -1265,55 +1256,53 @@ importers:
         version: link:../access
       '@repo/chatbots-contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../packages/contracts
       '@repo/chatbots-hub':
         specifier: workspace:*
         version: link:../hub
 
-  projects/chatbots/packages/contracts: {}
-
-  projects/chatbots/packages/hub:
+  projects/chatbots/plugins/hub:
     dependencies:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../packages/contracts
 
-  projects/chatbots/packages/kook:
+  projects/chatbots/plugins/kook:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-adapter-kit':
         specifier: workspace:*
-        version: link:../adapter-kit
+        version: link:../../packages/adapter-kit
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
     devDependencies:
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
-  projects/chatbots/packages/kook-hub:
+  projects/chatbots/plugins/kook-hub:
     dependencies:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../packages/contracts
       '@repo/chatbots-hub':
         specifier: workspace:*
         version: link:../hub
@@ -1321,70 +1310,70 @@ importers:
         specifier: workspace:*
         version: link:../kook
 
-  projects/chatbots/packages/sandbox:
+  projects/chatbots/plugins/sandbox:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-adapter-kit':
         specifier: workspace:*
-        version: link:../adapter-kit
+        version: link:../../packages/adapter-kit
       '@repo/chatbots-contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../packages/contracts
       '@repo/chatbots-hub':
         specifier: workspace:*
         version: link:../hub
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
     devDependencies:
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
 
-  projects/chatbots/packages/telegram:
+  projects/chatbots/plugins/telegram:
     dependencies:
       '@gramio/types':
         specifier: ^10.1.0
         version: 10.1.0
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-adapter-kit':
         specifier: workspace:*
-        version: link:../adapter-kit
+        version: link:../../packages/adapter-kit
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
     devDependencies:
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
 
-  projects/chatbots/packages/telegram-hub:
+  projects/chatbots/plugins/telegram-hub:
     dependencies:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/chatbots-contracts':
         specifier: workspace:*
-        version: link:../contracts
+        version: link:../../packages/contracts
       '@repo/chatbots-hub':
         specifier: workspace:*
         version: link:../hub
@@ -1395,10 +1384,10 @@ importers:
   projects/external-api-gateway:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@mantine/hooks':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
@@ -1408,36 +1397,36 @@ importers:
         version: link:../../packages/runtime-static
       '@repo/external-api-gateway-billing':
         specifier: workspace:*
-        version: link:packages/billing
+        version: link:plugins/billing
       '@repo/external-api-gateway-gateway':
         specifier: workspace:*
-        version: link:packages/gateway
+        version: link:plugins/gateway
       '@repo/external-api-gateway-shared':
         specifier: workspace:*
         version: link:packages/shared
       '@repo/external-api-gateway-yiqicha':
         specifier: workspace:*
-        version: link:packages/yiqicha
+        version: link:plugins/yiqicha
       '@repo/external-api-gateway-yiqicha-catalog':
         specifier: workspace:*
         version: link:packages/yiqicha-catalog
       '@repo/external-api-gateway-zhipu':
         specifier: workspace:*
-        version: link:packages/zhipu
+        version: link:plugins/zhipu
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       capnweb:
         specifier: ^0.5.0
         version: 0.5.0
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
       react-dom:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
     devDependencies:
       '@pluxel/rolldown':
@@ -1447,59 +1436,74 @@ importers:
         specifier: ^25.9.3
         version: 25.9.4
       '@types/react':
-        specifier: ^19.2.14
+        specifier: 'catalog:'
         version: 19.2.17
       '@types/react-dom':
-        specifier: ^19.2.3
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.17)
       '@vitejs/plugin-react':
         specifier: ^5.1.4
         version: 5.2.0(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
       tsdown:
-        specifier: ^0.22.5
+        specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
       typescript:
-        specifier: ^6.0.3
+        specifier: 'catalog:'
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
         version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
-  projects/external-api-gateway/packages/billing:
+  projects/external-api-gateway/packages/shared:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../../../packages/runtime
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
+    devDependencies:
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+
+  projects/external-api-gateway/packages/yiqicha-catalog: {}
+
+  projects/external-api-gateway/plugins/billing:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/external-api-gateway-shared':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../../packages/shared
       '@repo/external-api-gateway-yiqicha-catalog':
         specifier: workspace:*
-        version: link:../yiqicha-catalog
+        version: link:../../packages/yiqicha-catalog
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
 
-  projects/external-api-gateway/packages/gateway:
+  projects/external-api-gateway/plugins/gateway:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/external-api-gateway-shared':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../../packages/shared
       '@repo/external-api-gateway-yiqicha':
         specifier: workspace:*
         version: link:../yiqicha
@@ -1510,85 +1514,125 @@ importers:
         specifier: ^0.34.48
         version: 0.34.49
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       capnweb:
         specifier: ^0.5.0
         version: 0.5.0
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
     devDependencies:
       vitest:
-        specifier: ^4.1.10
+        specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
 
-  projects/external-api-gateway/packages/shared:
-    dependencies:
-      '@pluxel/runtime':
-        specifier: workspace:*
-        version: link:../../../../packages/runtime
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
-    devDependencies:
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
-
-  projects/external-api-gateway/packages/yiqicha:
+  projects/external-api-gateway/plugins/yiqicha:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/external-api-gateway-shared':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../../packages/shared
       '@repo/external-api-gateway-yiqicha-catalog':
         specifier: workspace:*
-        version: link:../yiqicha-catalog
+        version: link:../../packages/yiqicha-catalog
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
 
-  projects/external-api-gateway/packages/yiqicha-catalog: {}
-
-  projects/external-api-gateway/packages/zhipu:
+  projects/external-api-gateway/plugins/zhipu:
     dependencies:
       '@mantine/core':
-        specifier: ^9.4.1
+        specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
       '@repo/external-api-gateway-shared':
         specifier: workspace:*
-        version: link:../shared
+        version: link:../../packages/shared
       '@tabler/icons-react':
-        specifier: ^3.37.1
+        specifier: 'catalog:'
         version: 3.44.0(react@19.2.7)
       drizzle-orm:
-        specifier: ^0.45.2
+        specifier: 'catalog:'
         version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
       react:
-        specifier: ^19.2.7
+        specifier: 'catalog:'
         version: 19.2.7
     devDependencies:
       vitest:
-        specifier: ^4.1.10
+        specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+
+  projects/plugin-host:
+    dependencies:
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@pluxel/runtime-dynamic':
+        specifier: workspace:*
+        version: link:../../packages/runtime-dynamic
+      '@pluxel/runtime-static':
+        specifier: workspace:*
+        version: link:../../packages/runtime-static
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.17.4)(@types/pg@8.20.0)(@types/sql.js@1.4.11)(better-sqlite3@12.11.1)(bun-types@1.3.14)(kysely@0.28.17)(pg@8.22.0)(sql.js@1.14.1)
+    devDependencies:
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.17)
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
+      tinypool:
+        specifier: ^2.1.0
+        version: 2.1.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vite:
+        specifier: ^8.0.0-beta.18
+        version: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
   vendor/gqlens/packages/codegen:
     dependencies:
@@ -1730,10 +1774,6 @@ packages:
   '@babel/generator@7.29.7':
     resolution: {integrity: sha512-DkXD5OJQaAQIdZ1bt3UZdEnHAn9Imd3IVBdX03UFe+ony9Ojw5pzr9YVKGDY1jt+Gcn/FnGkNf8r+Vj5NOJWtQ==}
     engines: {node: '>=6.9.0'}
-
-  '@babel/generator@8.0.0':
-    resolution: {integrity: sha512-NT9NrVwJsbSV6Y2FSstWa71EETOnzrjkL5/wX3D2mYHtKM+qvqB1DvR4D0Setb/gDBsHzRICifwEWMO8CnTF6g==}
-    engines: {node: ^22.18.0 || >=24.11.0}
 
   '@babel/helper-compilation-targets@7.29.7':
     resolution: {integrity: sha512-wem6WaBj4NaVYVdNhLPPVacES6ZJ+KBBfSkTMD3YZxbP3rm3Di85tJU5ljaUNhaOynt+Aj0xruhYuzQBt8n71g==}
@@ -4006,28 +4046,6 @@ packages:
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
 
-  '@tsdown/css@0.22.3':
-    resolution: {integrity: sha512-kmb/31lcI/Pk26WeWJxQDLy8qkvoyfBkw3n9aN6bflKkoeLqnV2BRbndzfPRJY+Ziahi796gfgDVc+ftLIgWVw==}
-    engines: {node: ^22.18.0 || >=24.11.0}
-    peerDependencies:
-      postcss: ^8.4.0
-      postcss-import: ^16.0.0
-      postcss-modules: ^6.0.0
-      sass: '*'
-      sass-embedded: '*'
-      tsdown: 0.22.3
-    peerDependenciesMeta:
-      postcss:
-        optional: true
-      postcss-import:
-        optional: true
-      postcss-modules:
-        optional: true
-      sass:
-        optional: true
-      sass-embedded:
-        optional: true
-
   '@tsdown/css@0.22.5':
     resolution: {integrity: sha512-sTaQnd5+kTTmRZ48nSGeaMrbcV7kaUQaLcU7V2e/WfdyOFZXPNeF4qn6Fqef10qscfYIcx0/3tJ7iKOJY+p2Rg==}
     engines: {node: ^22.18.0 || >=24.11.0}
@@ -4113,9 +4131,6 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/jsesc@2.5.1':
-    resolution: {integrity: sha512-9VN+6yxLOPLOav+7PwjZbxiID2bVaeq0ED4qSQmdQTdjnXJSaCVKTR58t15oqH1H5t8Ng2ZX1SabJVoN9Q34bw==}
-
   '@types/linkify-it@5.0.0':
     resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==}
 
@@ -4160,22 +4175,8 @@ packages:
   '@vitest/expect@4.1.10':
     resolution: {integrity: sha512-YsCn+qAk1GWjQOWFEsEcL2gNQ0zmVmQu3T03qP6UyjhtmdtwtbuI+DASn/7iQB3HGTXkdBwGddzxPlmiql5vlA==}
 
-  '@vitest/expect@4.1.9':
-    resolution: {integrity: sha512-vl/rYsUKcBr3SnQn166+XR5ZQcgMx3DQhFWdfli/cWpLnLUmbxZvyrJZotLFUryib+LtArYMSTJ5RbQ57ZqrlA==}
-
   '@vitest/mocker@4.1.10':
     resolution: {integrity: sha512-v0xaezt+DKEmKfaxg133ldzADrwLGd7Ze1MfQQTYfvs8OqZIwbxyxaYURivwV7sWy5fqn3rH5uOrSp07bp44Ow==}
-    peerDependencies:
-      msw: ^2.4.9
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
-    peerDependenciesMeta:
-      msw:
-        optional: true
-      vite:
-        optional: true
-
-  '@vitest/mocker@4.1.9':
-    resolution: {integrity: sha512-EVkXzBjrPGM+cK8/ANWgBrkUCfJfb38/EfTSO8h7pWvKkyPkpWxvR7BkD2MyItMF62C97zAEoqdpUixwR/e+Rw==}
     peerDependencies:
       msw: ^2.4.9
       vite: ^6.0.0 || ^7.0.0 || ^8.0.0
@@ -4188,32 +4189,17 @@ packages:
   '@vitest/pretty-format@4.1.10':
     resolution: {integrity: sha512-W1HsjSH4MXQ9YfmmhLAoIYf1HRfekQCGngeIgcei6MP5QQGWUe0gkopdZQaVCFO+JDJMrAJGwa5pRpNpvy4P8Q==}
 
-  '@vitest/pretty-format@4.1.9':
-    resolution: {integrity: sha512-s0iufns3iIFitdgm+YR7g1whCAaGtXz459VS9/PqyKDEEFgYIhsHOQmXgIgDuYCt7DeQmiZT0Qe2OA2p4ZPu5A==}
-
   '@vitest/runner@4.1.10':
     resolution: {integrity: sha512-IKI6kpIH+LmpROplyLwBBaCfMgOZOMsygVa6BARD6ahA04VRuJSa6OaVG7kRvSEMD870Vd91rSSw0eegtWyLGg==}
-
-  '@vitest/runner@4.1.9':
-    resolution: {integrity: sha512-KXLMDtc7oe70+3mJfGrPUWPesswH+3sTxAMAMl8DG7I8IUQT4XW718dY5ID3vPUcmlu27CcKfY4P3h3I29SLJg==}
 
   '@vitest/snapshot@4.1.10':
     resolution: {integrity: sha512-xRkfOT1qpTAi/Ti4Y1LtfRc3kEuqxGw59eN2jN9pRWMtS/XDevekhcFSqvQqjUNGksfjMJu3Y+oJ+4Ypn2OaJw==}
 
-  '@vitest/snapshot@4.1.9':
-    resolution: {integrity: sha512-Jc7RKGNBo8Z28WYIm0Niej4xdSPByRf6mU58VpHQkd6Zh05rlnA+twjbK5HyeIGHxrzsc3mJgS43uM0CZKzaIA==}
-
   '@vitest/spy@4.1.10':
     resolution: {integrity: sha512-PLf/Ugvoq5wO/b4rwYCR1h2PSIdXz7wnkQFMiUpLdtM7l6pqVFcQIBEHyT1+l+cj7mNwAfZHzqXqDyjvOuwbDw==}
 
-  '@vitest/spy@4.1.9':
-    resolution: {integrity: sha512-fHpsS6mIi+PiEW+vcRVOMkX1oSaPKne3VOclSFICPcGOmfKgXPU5iAah+wcNcj2xPrCCmfq99IDGf+EojhhvhA==}
-
   '@vitest/utils@4.1.10':
     resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
-
-  '@vitest/utils@4.1.9':
-    resolution: {integrity: sha512-A51o8ymO5PpqlWNnBP9ZHPXDIpuMtTLlGSjN7la4US+LJzoUMyhwjA5QXlm39JexgwHKW4Xjs8Z2d3dLCXOeuA==}
 
   '@whatwg-node/disposablestack@0.0.6':
     resolution: {integrity: sha512-LOtTn+JgJvX8WfBVJtF08TGrdjuFzGJc4mkP8EdDI8ADbvO7kiexYep1o8dwnt0okb0jYclCDXF13xU7Ge4zSw==}
@@ -4471,9 +4457,6 @@ packages:
 
   bindings@1.5.0:
     resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
-
-  birpc@4.0.0:
-    resolution: {integrity: sha512-LShSxJP0KTmd101b6DRyGBj57LZxSDYWKitQNW/mi8GRMvZb078Uf9+pveax1DrVL89vm7mWe+TovdI/UDOuPw==}
 
   bl@4.1.0:
     resolution: {integrity: sha512-1W07cM9gS6DcLperZfFSj+bWLtaPGSOHWhPiGzXmvVJbRLdG82sH/Kn8EtW1VqWVA54AKf2h5k5BbnIbwF3h6w==}
@@ -5919,25 +5902,6 @@ packages:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
     engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
 
-  rolldown-plugin-dts@0.26.0:
-    resolution: {integrity: sha512-e+kEPtUiDES0htk5iqkSeF4EzAV7R+vugGB44iPDuw1Kw9E+WyL1VG7PaV0IIjGHLiacztMBcMTyrr8ON9CT1Q==}
-    engines: {node: ^22.18.0 || >=24.11.0}
-    peerDependencies:
-      '@ts-macro/tsc': ^0.3.6
-      '@typescript/native-preview': '>=7.0.0-dev.20260325.1'
-      rolldown: ^1.0.0
-      typescript: ^5.0.0 || ^6.0.0
-      vue-tsc: ~3.2.0 || ~3.3.0
-    peerDependenciesMeta:
-      '@ts-macro/tsc':
-        optional: true
-      '@typescript/native-preview':
-        optional: true
-      typescript:
-        optional: true
-      vue-tsc:
-        optional: true
-
   rolldown-plugin-dts@0.27.6:
     resolution: {integrity: sha512-LK/2xsCvFwpppMPlAYTmBSLcxqYXwPye/BSTgH0hpe1iEbs1j5bYHchRahADh1uHOqLzOOlgciRIJ201yPb0yQ==}
     engines: {node: ^22.18.0 || >=24.11.0}
@@ -6364,40 +6328,6 @@ packages:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
 
-  tsdown@0.22.3:
-    resolution: {integrity: sha512-louqbfA8Qf//B9jTTL0FPtXTNpjCWv1VPkbcmQMph2pTpzs+LnB1tbe4tDDRVpo2BjF5SgUXaTZe45SxB8pWHg==}
-    engines: {node: ^22.18.0 || >=24.11.0}
-    hasBin: true
-    peerDependencies:
-      '@arethetypeswrong/core': ^0.18.1
-      '@tsdown/css': 0.22.3
-      '@tsdown/exe': 0.22.3
-      '@vitejs/devtools': '*'
-      publint: ^0.3.8
-      tsx: '*'
-      typescript: ^5.0.0 || ^6.0.0
-      unplugin-unused: ^0.5.0
-      unrun: '*'
-    peerDependenciesMeta:
-      '@arethetypeswrong/core':
-        optional: true
-      '@tsdown/css':
-        optional: true
-      '@tsdown/exe':
-        optional: true
-      '@vitejs/devtools':
-        optional: true
-      publint:
-        optional: true
-      tsx:
-        optional: true
-      typescript:
-        optional: true
-      unplugin-unused:
-        optional: true
-      unrun:
-        optional: true
-
   tsdown@0.22.5:
     resolution: {integrity: sha512-0iEpnuOVBGo7mPW+FlyglErHBExYOAlpLBlCl/QcTrRUJ+TF2prfzl6ipQS5VsjJejFXnmbkdh0Ta53B3stWxg==}
     engines: {node: ^22.18.0 || >=24.11.0}
@@ -6725,47 +6655,6 @@ packages:
       jsdom:
         optional: true
 
-  vitest@4.1.9:
-    resolution: {integrity: sha512-nE3/LEyc0z87uHYLZebqCUOaJr2hdtuPp7BQ4BosVFnfltxgAvMG08NyrSGlPpOUWvR27c5flSmYFTNr78L9GQ==}
-    engines: {node: ^20.0.0 || ^22.0.0 || >=24.0.0}
-    hasBin: true
-    peerDependencies:
-      '@edge-runtime/vm': '*'
-      '@opentelemetry/api': ^1.9.0
-      '@types/node': ^20.0.0 || ^22.0.0 || >=24.0.0
-      '@vitest/browser-playwright': 4.1.9
-      '@vitest/browser-preview': 4.1.9
-      '@vitest/browser-webdriverio': 4.1.9
-      '@vitest/coverage-istanbul': 4.1.9
-      '@vitest/coverage-v8': 4.1.9
-      '@vitest/ui': 4.1.9
-      happy-dom: '*'
-      jsdom: '*'
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
-    peerDependenciesMeta:
-      '@edge-runtime/vm':
-        optional: true
-      '@opentelemetry/api':
-        optional: true
-      '@types/node':
-        optional: true
-      '@vitest/browser-playwright':
-        optional: true
-      '@vitest/browser-preview':
-        optional: true
-      '@vitest/browser-webdriverio':
-        optional: true
-      '@vitest/coverage-istanbul':
-        optional: true
-      '@vitest/coverage-v8':
-        optional: true
-      '@vitest/ui':
-        optional: true
-      happy-dom:
-        optional: true
-      jsdom:
-        optional: true
-
   w3c-xmlserializer@5.0.0:
     resolution: {integrity: sha512-o8qghlI8NZHU1lLPrpi2+Uq7abh4GGPpYANlalzWxyWteJOCsr/P+oPBA49TOLu5FTZO4d3F9MnWJfiMo4BkmA==}
     engines: {node: '>=18'}
@@ -6936,15 +6825,6 @@ snapshots:
       '@babel/types': 7.29.7
       '@jridgewell/gen-mapping': 0.3.13
       '@jridgewell/trace-mapping': 0.3.31
-      jsesc: 3.1.0
-
-  '@babel/generator@8.0.0':
-    dependencies:
-      '@babel/parser': 8.0.0
-      '@babel/types': 8.0.0
-      '@jridgewell/gen-mapping': 0.3.13
-      '@jridgewell/trace-mapping': 0.3.31
-      '@types/jsesc': 2.5.1
       jsesc: 3.1.0
 
   '@babel/helper-compilation-targets@7.29.7':
@@ -8730,22 +8610,6 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@tsdown/css@0.22.3(jiti@2.7.0)(postcss@8.5.16)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.3)(tsx@4.23.0)(yaml@2.9.0)':
-    dependencies:
-      lightningcss: 1.32.0
-      postcss-load-config: 6.0.1(jiti@2.7.0)(postcss@8.5.16)(tsx@4.23.0)(yaml@2.9.0)
-      rolldown: 1.1.5
-      tsdown: 0.22.3(@tsdown/css@0.22.3)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
-    optionalDependencies:
-      postcss: 8.5.16
-      sass: 1.100.0
-      sass-embedded: 1.100.0
-    transitivePeerDependencies:
-      - jiti
-      - tsx
-      - yaml
-    optional: true
-
   '@tsdown/css@0.22.5(jiti@2.7.0)(postcss@8.5.16)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.5)(tsx@4.23.0)(yaml@2.9.0)':
     dependencies:
       lightningcss: 1.32.0
@@ -8824,8 +8688,6 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/jsesc@2.5.1': {}
-
   '@types/linkify-it@5.0.0': {}
 
   '@types/mdurl@2.0.0': {}
@@ -8901,14 +8763,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/expect@4.1.9':
+  '@vitest/mocker@4.1.10(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
-      '@standard-schema/spec': 1.1.0
-      '@types/chai': 5.2.3
-      '@vitest/spy': 4.1.9
-      '@vitest/utils': 4.1.9
-      chai: 6.2.2
-      tinyrainbow: 3.1.0
+      '@vitest/spy': 4.1.10
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
   '@vitest/mocker@4.1.10(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
@@ -8918,38 +8779,13 @@ snapshots:
     optionalDependencies:
       vite: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
 
-  '@vitest/mocker@4.1.9(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))':
-    dependencies:
-      '@vitest/spy': 4.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
-
-  '@vitest/mocker@4.1.9(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))':
-    dependencies:
-      '@vitest/spy': 4.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
-
   '@vitest/pretty-format@4.1.10':
-    dependencies:
-      tinyrainbow: 3.1.0
-
-  '@vitest/pretty-format@4.1.9':
     dependencies:
       tinyrainbow: 3.1.0
 
   '@vitest/runner@4.1.10':
     dependencies:
       '@vitest/utils': 4.1.10
-      pathe: 2.0.3
-
-  '@vitest/runner@4.1.9':
-    dependencies:
-      '@vitest/utils': 4.1.9
       pathe: 2.0.3
 
   '@vitest/snapshot@4.1.10':
@@ -8959,26 +8795,11 @@ snapshots:
       magic-string: 0.30.21
       pathe: 2.0.3
 
-  '@vitest/snapshot@4.1.9':
-    dependencies:
-      '@vitest/pretty-format': 4.1.9
-      '@vitest/utils': 4.1.9
-      magic-string: 0.30.21
-      pathe: 2.0.3
-
   '@vitest/spy@4.1.10': {}
-
-  '@vitest/spy@4.1.9': {}
 
   '@vitest/utils@4.1.10':
     dependencies:
       '@vitest/pretty-format': 4.1.10
-      convert-source-map: 2.0.0
-      tinyrainbow: 3.1.0
-
-  '@vitest/utils@4.1.9':
-    dependencies:
-      '@vitest/pretty-format': 4.1.9
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
@@ -9175,8 +8996,6 @@ snapshots:
     dependencies:
       file-uri-to-path: 1.0.0
     optional: true
-
-  birpc@4.0.0: {}
 
   bl@4.1.0:
     dependencies:
@@ -10630,22 +10449,6 @@ snapshots:
 
   reusify@1.1.0: {}
 
-  rolldown-plugin-dts@0.26.0(oxc-resolver@11.23.0)(rolldown@1.1.4)(typescript@6.0.3):
-    dependencies:
-      '@babel/generator': 8.0.0
-      '@babel/helper-validator-identifier': 8.0.2
-      '@babel/parser': 8.0.0
-      ast-kit: 3.0.0
-      birpc: 4.0.0
-      dts-resolver: 3.0.0(oxc-resolver@11.23.0)
-      get-tsconfig: 5.0.0-beta.5
-      obug: 2.1.3
-      rolldown: 1.1.4
-    optionalDependencies:
-      typescript: 6.0.3
-    transitivePeerDependencies:
-      - oxc-resolver
-
   rolldown-plugin-dts@0.27.6(oxc-resolver@11.23.0)(rolldown@1.1.5)(typescript@6.0.3):
     dependencies:
       dts-resolver: 3.0.0(oxc-resolver@11.23.0)
@@ -11072,34 +10875,6 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
-  tsdown@0.22.3(@tsdown/css@0.22.3)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39):
-    dependencies:
-      ansis: 4.3.1
-      cac: 7.0.0
-      defu: 6.1.7
-      empathic: 2.0.1
-      hookable: 6.1.1
-      import-without-cache: 0.4.0
-      obug: 2.1.3
-      picomatch: 4.0.5
-      rolldown: 1.1.4
-      rolldown-plugin-dts: 0.26.0(oxc-resolver@11.23.0)(rolldown@1.1.4)(typescript@6.0.3)
-      semver: 7.8.5
-      tinyexec: 1.2.4
-      tinyglobby: 0.2.17
-      tree-kill: 1.2.2
-      unconfig-core: 7.5.0
-    optionalDependencies:
-      '@tsdown/css': 0.22.3(jiti@2.7.0)(postcss@8.5.16)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.3)(tsx@4.23.0)(yaml@2.9.0)
-      tsx: 4.23.0
-      typescript: 6.0.3
-      unrun: 0.2.39
-    transitivePeerDependencies:
-      - '@ts-macro/tsc'
-      - '@typescript/native-preview'
-      - oxc-resolver
-      - vue-tsc
-
   tsdown@0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39):
     dependencies:
       ansis: 4.3.1
@@ -11397,10 +11172,10 @@ snapshots:
       tsx: 4.23.0
       yaml: 2.9.0
 
-  vitest@4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)):
+  vitest@4.1.10(@types/node@25.9.4)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.10(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -11417,34 +11192,6 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
-      why-is-node-running: 2.3.0
-    optionalDependencies:
-      '@types/node': 26.1.0
-      jsdom: 29.1.1(@noble/hashes@2.2.0)
-    transitivePeerDependencies:
-      - msw
-
-  vitest@4.1.9(@types/node@25.9.4)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)):
-    dependencies:
-      '@vitest/expect': 4.1.9
-      '@vitest/mocker': 4.1.9(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
-      '@vitest/pretty-format': 4.1.9
-      '@vitest/runner': 4.1.9
-      '@vitest/snapshot': 4.1.9
-      '@vitest/spy': 4.1.9
-      '@vitest/utils': 4.1.9
-      es-module-lexer: 2.3.0
-      expect-type: 1.4.0
-      magic-string: 0.30.21
-      obug: 2.1.3
-      pathe: 2.0.3
-      picomatch: 4.0.5
-      std-env: 4.1.0
-      tinybench: 2.9.0
-      tinyexec: 1.2.4
-      tinyglobby: 0.2.17
-      tinyrainbow: 3.1.0
       vite: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
@@ -11453,22 +11200,22 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vitest@4.1.9(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)):
+  vitest@4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
-      '@vitest/expect': 4.1.9
-      '@vitest/mocker': 4.1.9(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
-      '@vitest/pretty-format': 4.1.9
-      '@vitest/runner': 4.1.9
-      '@vitest/snapshot': 4.1.9
-      '@vitest/spy': 4.1.9
-      '@vitest/utils': 4.1.9
+      '@vitest/expect': 4.1.10
+      '@vitest/mocker': 4.1.10(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+      '@vitest/pretty-format': 4.1.10
+      '@vitest/runner': 4.1.10
+      '@vitest/snapshot': 4.1.10
+      '@vitest/spy': 4.1.10
+      '@vitest/utils': 4.1.10
       es-module-lexer: 2.3.0
       expect-type: 1.4.0
       magic-string: 0.30.21
       obug: 2.1.3
       pathe: 2.0.3
       picomatch: 4.0.5
-      std-env: 4.1.0
+      std-env: 4.2.0
       tinybench: 2.9.0
       tinyexec: 1.2.4
       tinyglobby: 0.2.17

@@ -41,23 +41,23 @@
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
-		"@pluxel/market": "^0.1.0",
+		"@pluxel/market": "catalog:",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
-		"@types/react": "^19.2.14",
+		"@types/react": "catalog:",
 		"ink": "^6.8.0",
-		"react": "^19.2.7",
-		"tsdown": "^0.22.5",
-		"typescript": "^6.0.3"
+		"react": "catalog:",
+		"tsdown": "catalog:",
+		"typescript": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "^0.1.0",
+		"@pluxel/market": "catalog:",
 		"@pluxel/rolldown": "^0.1.0",
 		"@pluxel/runtime-dynamic": "^0.3.0",
 		"oxlint": "^1.58.0",
-		"tsdown": "^0.22.5"
+		"tsdown": "catalog:"
 	},
 	"peerDependenciesMeta": {
 		"@pluxel/market": {

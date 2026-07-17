@@ -135,13 +135,13 @@ describe('PluginArtifactCompiler', () => {
 
 	it('resolves relative UI entries from the declaring plugin source file', async () => {
 		await using fixture = await createFixture({
-			'packages/plugins/host/package.json': JSON.stringify({
+			'projects/plugin-host/package.json': JSON.stringify({
 				name: '@pluxel/plugins-host',
 				private: true,
 				type: 'module',
 			}),
-			'packages/plugins/host/src/demo/PluginWithUI.ts': 'export const marker = true\n',
-			'packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx': 'export default {}\n',
+			'projects/plugin-host/src/demo/PluginWithUI.ts': 'export const marker = true\n',
+			'projects/plugin-host/src/demo/PluginWithUI/ui/index.tsx': 'export default {}\n',
 		})
 
 		const committed: Parameters<PluginArtifactCompilerWorkbenchStore['commitCompiledModule']>[0][] =
@@ -186,7 +186,7 @@ describe('PluginArtifactCompiler', () => {
 					api: {
 						registry: {
 							findModuleIdByName: () =>
-								fixture.getPath('packages/plugins/host/src/demo/PluginWithUI.ts'),
+								fixture.getPath('projects/plugin-host/src/demo/PluginWithUI.ts'),
 						},
 						anchors: {
 							list: () => [],
@@ -207,8 +207,8 @@ describe('PluginArtifactCompiler', () => {
 		expect(artifactRoots[0]).toContain('.pluxel/workbench/PluginWithUI')
 		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledWith(
 			expect.objectContaining({
-				root: fixture.getPath('packages/plugins/host'),
-				entryPath: fixture.getPath('packages/plugins/host/src/demo/PluginWithUI/ui/index.tsx'),
+				root: fixture.getPath('projects/plugin-host'),
+				entryPath: fixture.getPath('projects/plugin-host/src/demo/PluginWithUI/ui/index.tsx'),
 				pluginName: 'PluginWithUI',
 				vite: {
 					plugins: [{ name: 'test:ui-transform' }],

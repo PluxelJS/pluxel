@@ -113,7 +113,7 @@ runRule('log-canonical-error-prop', pluxelRules['log-canonical-error-prop'], {
 runRule('configs-use-top-level-class', pluxelRules['configs-use-top-level-class'], {
 	valid: [
 		{
-			filename: '/repo/packages/plugins/host/src/demo/PluginA.ts',
+			filename: '/repo/projects/plugin-host/src/demo/PluginA.ts',
 			code: `
 				class PluginA extends BasePlugin {
 					config = this.configs.use(ConfigSchema)
@@ -121,7 +121,7 @@ runRule('configs-use-top-level-class', pluxelRules['configs-use-top-level-class'
 			`,
 		},
 		{
-			filename: '/repo/packages/plugins/host/src/demo/PluginB.ts',
+			filename: '/repo/projects/plugin-host/src/demo/PluginB.ts',
 			code: `
 				const PluginB = class extends BasePlugin {
 					config = this.configs.use(ConfigSchema)

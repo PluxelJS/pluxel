@@ -179,19 +179,25 @@ describe('scaffold template rendering', () => {
 			resolve(targetDir, 'plugins/example/package.json'),
 			'utf8',
 		)
-		expect(pluginManifest).toContain('"@pluxel/runtime": "^0.3.0"')
+		expect(pluginManifest).toContain('"@pluxel/runtime": "catalog:"')
 		expect(pluginManifest).not.toContain('"@pluxel/runtime": "workspace:*"')
 
 		const rootManifest = fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')
-		expect(rootManifest).toContain('"@pluxel/rolldown": "^0.1.0"')
-		expect(rootManifest).toContain('"oxfmt": "^0.57.0"')
+		expect(rootManifest).toContain('"@pluxel/rolldown": "catalog:"')
+		expect(rootManifest).toContain('"oxfmt": "catalog:"')
 		expect(rootManifest).not.toContain('"react":')
 		expect(rootManifest).not.toContain('"@pluxel/core"')
 		expect(rootManifest).not.toContain('"tsdown"')
 
 		const webManifest = fixture.fs.readFileSync(resolve(targetDir, 'web/package.json'), 'utf8')
-		expect(webManifest).toContain('"react": "^19.2.7"')
-		expect(webManifest).toContain('"@gqlens/react": "0.2.0"')
+		expect(webManifest).toContain('"react": "catalog:"')
+		expect(webManifest).toContain('"@gqlens/react": "catalog:"')
+		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
+			"'@pluxel/runtime': ^0.3.0",
+		)
+		expect(
+			fixture.fs.existsSync(resolve(targetDir, 'scripts/check-workspace-governance.mjs')),
+		).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/client/main.tsx'))).toBe(true)
 
@@ -256,7 +262,7 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
-		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': '^0.3.0' })
+		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
 		expect(manifest.exports['.']).toMatchObject({
 			types: './dist/index.d.mts',
 			'@pluxel/runtime-dynamic': './src/hello-world.ts',
@@ -268,12 +274,15 @@ describe('scaffold template rendering', () => {
 		})
 		expect(manifest.files).toEqual(['dist', '!**/*.map'])
 		expect(manifest.devDependencies).toMatchObject({
-			'@pluxel/cli': '^0.3.0',
-			'@pluxel/core': '^0.3.0',
-			'@pluxel/rolldown': '^0.1.0',
-			'@pluxel/test': '^0.1.0',
-			oxfmt: '^0.57.0',
+			'@pluxel/cli': 'catalog:',
+			'@pluxel/core': 'catalog:',
+			'@pluxel/rolldown': 'catalog:',
+			'@pluxel/test': 'catalog:',
+			oxfmt: 'catalog:',
 		})
+		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
+			"'@pluxel/runtime': ^0.3.0",
+		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'oxlint.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, '.oxfmtrc.json'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)

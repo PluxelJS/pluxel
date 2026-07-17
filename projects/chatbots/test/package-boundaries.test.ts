@@ -12,12 +12,12 @@ type PackageJson = {
 
 function packageJson(name: string): PackageJson {
 	return JSON.parse(
-		readFileSync(resolve(root, 'packages', name, 'package.json'), 'utf8'),
+		readFileSync(resolve(root, 'plugins', name, 'package.json'), 'utf8'),
 	) as PackageJson
 }
 
 function packageSource(name: string): string {
-	const directory = resolve(root, 'packages', name, 'src')
+	const directory = resolve(root, 'plugins', name, 'src')
 	return readdirSync(directory, { recursive: true, encoding: 'utf8' })
 		.filter((file) => file.endsWith('.ts') || file.endsWith('.tsx'))
 		.map((file) => readFileSync(resolve(directory, file), 'utf8'))
@@ -28,11 +28,11 @@ describe('chatbots package boundaries', () => {
 	it('keeps host-owned UI and bridge assembly at the project root', () => {
 		const host = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as PackageJson
 		expect(host.dependencies).toMatchObject({
-			'@mantine/core': '^9.4.1',
+			'@mantine/core': 'catalog:',
 			'@repo/chatbots-kook-hub': 'workspace:*',
 			'@repo/chatbots-telegram-hub': 'workspace:*',
-			'@tabler/icons-react': '^3.37.1',
-			react: '^19.2.7',
+			'@tabler/icons-react': 'catalog:',
+			react: 'catalog:',
 		})
 	})
 
@@ -66,10 +66,10 @@ describe('chatbots package boundaries', () => {
 			const manifest = packageJson(name)
 			const peers = manifest.peerDependencies
 			expect(peers).toMatchObject({
-				'@mantine/core': '^9.4.1',
+				'@mantine/core': 'catalog:',
 				'@pluxel/runtime': 'workspace:*',
-				'@tabler/icons-react': '^3.37.1',
-				react: '^19.2.7',
+				'@tabler/icons-react': 'catalog:',
+				react: 'catalog:',
 			})
 			expect(manifest.peerDependenciesMeta).toMatchObject({
 				'@mantine/core': { optional: true },

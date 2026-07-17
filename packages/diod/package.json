@@ -50,8 +50,8 @@
 	"devDependencies": {
 		"option-t": "^55.1.2",
 		"reflect-metadata": "^0.2.2",
-		"tsdown": "^0.22.3",
-		"typescript": "^6.0.3"
+		"tsdown": "catalog:",
+		"typescript": "catalog:"
 	},
 	"browserslist": [
 		"> 1%, not dead, not ie 11, not op_mini all"

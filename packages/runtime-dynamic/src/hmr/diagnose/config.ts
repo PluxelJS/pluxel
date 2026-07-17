@@ -13,7 +13,7 @@ export type PluxelLoaderHmrConfigV1 = {
 		 * Extra entry globs (workspace-relative unless absolute).
 		 *
 		 * This is for non-package entry modules (e.g. demo modules like
-		 * `packages/plugins/host/src/demo/PluginEventsDemo.ts`).
+		 * `projects/plugin-host/src/demo/PluginEventsDemo.ts`).
 		 */
 		include?: string[]
 		exclude?: string[]

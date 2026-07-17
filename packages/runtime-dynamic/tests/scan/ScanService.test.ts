@@ -168,8 +168,8 @@ describe('ScanService', () => {
 	it('resolves project-local workspace packages from nested pnpm patterns', async () => {
 		await using fixture = await createDiskFixture({
 			'package.json': JSON.stringify({ name: 'root', version: '1.0.0' }, null, 2),
-			'pnpm-workspace.yaml': ['packages:', '  - projects/*/packages/*', ''].join('\n'),
-			'projects/external-api-gateway/packages/billing/package.json': JSON.stringify(
+			'pnpm-workspace.yaml': ['packages:', '  - projects/*/plugins/*', ''].join('\n'),
+			'projects/external-api-gateway/plugins/billing/package.json': JSON.stringify(
 				{
 					name: '@repo/nested-fixture-billing',
 					version: '0.0.0',
@@ -184,9 +184,9 @@ describe('ScanService', () => {
 				null,
 				2,
 			),
-			'projects/external-api-gateway/packages/billing/src/index.ts':
+			'projects/external-api-gateway/plugins/billing/src/index.ts':
 				"export const source = 'billing-source'\n",
-			'projects/external-api-gateway/packages/billing/dist/index.mjs':
+			'projects/external-api-gateway/plugins/billing/dist/index.mjs':
 				"export const source = 'billing-dist'\n",
 		})
 		const fixtureRoot = normalize(fixture.path)
@@ -199,7 +199,7 @@ describe('ScanService', () => {
 
 		expect(resolution.ok).toBe(true)
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(
-			/projects\/external-api-gateway\/packages\/billing\/src\/index\.ts$/,
+			/projects\/external-api-gateway\/plugins\/billing\/src\/index\.ts$/,
 		)
 	})
 

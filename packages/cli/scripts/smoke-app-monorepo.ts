@@ -79,10 +79,13 @@ try {
 		() => {},
 	)
 
-	await writeFile(
-		resolve(pluginRoot, 'pnpm-workspace.yaml'),
-		stringify({ packages: ['.'], overrides }),
-	)
+	const pluginWorkspacePath = resolve(pluginRoot, 'pnpm-workspace.yaml')
+	const pluginWorkspace = parse(await readFile(pluginWorkspacePath, 'utf8')) as Record<
+		string,
+		unknown
+	>
+	pluginWorkspace.overrides = overrides
+	await writeFile(pluginWorkspacePath, stringify(pluginWorkspace, { singleQuote: true }))
 
 	await runPnpm(['install', '--frozen-lockfile=false'], pluginRoot)
 	// This workspace file belongs to the smoke harness rather than the published template. Keep it

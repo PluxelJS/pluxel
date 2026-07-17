@@ -12,8 +12,8 @@
 		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-gateway test && tsc --noEmit --pretty false && pnpm build && pnpm test:headless"
 	},
 	"dependencies": {
-		"@mantine/core": "^9.4.1",
-		"@mantine/hooks": "^9.4.1",
+		"@mantine/core": "catalog:",
+		"@mantine/hooks": "catalog:",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
 		"@repo/external-api-gateway-billing": "workspace:*",
@@ -22,20 +22,20 @@
 		"@repo/external-api-gateway-yiqicha": "workspace:*",
 		"@repo/external-api-gateway-yiqicha-catalog": "workspace:*",
 		"@repo/external-api-gateway-zhipu": "workspace:*",
-		"@tabler/icons-react": "^3.37.1",
+		"@tabler/icons-react": "catalog:",
 		"capnweb": "^0.5.0",
-		"drizzle-orm": "^0.45.2",
-		"react": "^19.2.7",
-		"react-dom": "^19.2.7"
+		"drizzle-orm": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "workspace:*",
 		"@types/node": "^25.9.3",
-		"@types/react": "^19.2.14",
-		"@types/react-dom": "^19.2.3",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
 		"@vitejs/plugin-react": "^5.1.4",
-		"tsdown": "^0.22.5",
-		"typescript": "^6.0.3",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	}
 }

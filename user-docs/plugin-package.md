@@ -13,7 +13,8 @@ pnpm verify
 ```
 
 模板同时生成 `docs/pluxel/` 和根 `AGENTS.md`；本地开发者与 coding agent 使用的规范就是当前这套
-user docs，不维护一份容易漂移的模板专用教程。
+user docs，不维护一份容易漂移的模板专用教程。模板还生成最小 `pnpm-workspace.yaml`，用 catalog
+集中兼容范围，并通过 `allowBuilds` 明确许可工具链需要的 esbuild 安装脚本。
 
 已有 package 不需要重新生成；按本文校准目录、`package.json`、`tsconfig.json` 和
 `tsdown.config.ts` 即可。
@@ -141,6 +142,10 @@ pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 | 其他插件的 peer、`peerDependenciesMeta`              | `pluxel build` | 根据源码声明同步；作者只需提供可用版本范围                          |
 | `pluxel.pluginPackages`                              | `pluxel build` | 生成字段，不手写、不在 review 中人工排序                            |
 | `publishConfig.exports`                              | 作者           | 发布时移除本地源码 condition，防止 consumer 直接执行 raw TypeScript |
+
+示例中的 `<compatible-version>` 表示发布后的正常 semver。使用 pnpm catalog 时，workspace 内的
+`package.json` 写 `catalog:`，范围由 `pnpm-workspace.yaml` 维护；`pnpm pack/publish` 会把它转换成
+catalog 中的 semver，不要把同一范围再复制回每个 manifest。
 
 `@pluxel/runtime-dynamic` condition 只服务受控的本地 dynamic development route。npm 发布产物通过
 `publishConfig.exports` 只暴露编译后的 JS 和声明文件；不要发布通用 `source` condition。

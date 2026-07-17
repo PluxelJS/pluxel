@@ -20,9 +20,9 @@ docs             当前模板的插件作者与 Oxlint 就地指南
 AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 ```
 
-根目录只负责编排 workspace 和共享质量工具。唯一部署单元 `web` 直接拥有前端与 static runtime
-依赖；`packages/*` 只用于真正跨边界复用的中性库。出现第二个独立部署目标时，再将 `web`
-迁入 `apps/*` 层级。
+根目录只负责编排 workspace、pnpm catalog 和共享质量工具，不声明业务 `dependencies`。唯一部署
+单元 `web` 直接拥有前端与 static runtime 依赖；`packages/*` 只用于真正跨边界复用的中性库，
+`plugins/*` 只用于具体插件 package。出现第二个独立部署目标时，再将 `web` 迁入 `apps/*` 层级。
 
 ## 为什么默认关闭 Workbench Plane
 
@@ -32,17 +32,20 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 
 ## 依赖规则
 
-- Pluxel 发布包使用正常 semver，不使用 `workspace:*`。
+- Pluxel 发布包的正常 semver 范围集中在 `pnpm-workspace.yaml`，各 workspace 使用 `catalog:` 引用。
 - 只有当前应用自己拥有的 package 使用 `workspace:*`。
+- catalog 只统一版本，不提供隐式依赖；每个 package 必须声明自己实际 import 的依赖。
 - React、React DOM、GQLens client 和 Vite 是 `web` 的直接依赖，不进入根、插件或中性 package。
+- 插件新增 Mantine/React UI 时将 singleton 声明为 peer 并提供开发期副本；使用 Drizzle 的 package
+  自己直接声明 `drizzle-orm`，不能依赖根目录 hoist。
 - Vite、Vitest 和插件源码只使用公开 package subpath，不引用 Pluxel 仓库相对路径。
 - 同一个 Vite pipeline 依次组合 static runtime、GQLens schema codegen 和 React HMR；GraphQL
   业务 endpoint 仍由插件拥有。
 - Vault、Workbench Plane 和部署路线由根 host 安装；插件只消费稳定 capability。
 
-根目录生成 `oxlint.config.ts` 和 `.oxfmtrc.json`。Oxlint 配置加载
-`@pluxel/rolldown/oxlint` 的 Pluxel 增补规则；`pnpm verify` 同时检查格式、未使用的 lint
-抑制、类型、测试和生产构建。
+根目录生成 `oxlint.config.ts`、`.oxfmtrc.json` 和 workspace governance 检查。Oxlint 配置加载
+`@pluxel/rolldown/oxlint` 的 Pluxel 增补规则；`pnpm verify` 同时检查目录/依赖治理、格式、未使用的
+lint 抑制、类型、测试和生产构建。
 
 ## 模板内文档
 

@@ -5,12 +5,6 @@
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel"
 	},
-	"workspaces": [
-		"packages/*",
-		"packages/plugins/*",
-		"projects/*",
-		"projects/*/packages/*"
-	],
 	"type": "module",
 	"scripts": {
 		"test": "turbo run test",
@@ -19,12 +13,13 @@
 		"build": "turbo run build",
 		"build:full": "turbo run build --force",
 		"typecheck": "turbo run typecheck",
+		"governance:check": "node scripts/check-workspace-governance.mjs",
 		"bench:core:compare": "scripts/core-bench-compare.sh",
 		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts",
 		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
-		"verify": "pnpm run release:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test",
+		"verify": "pnpm run release:check && pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test",
 		"changeset": "changeset",
 		"release:check": "node scripts/check-release-invariants.mjs",
 		"release:smoke": "pnpm --filter @pluxel/cli test:templates",
@@ -38,15 +33,6 @@
 		"project:external-api-gateway": "pnpm --filter @repo/project-external-api-gateway dev",
 		"project:chatbots": "pnpm --filter @repo/project-chatbots dev"
 	},
-	"dependencies": {
-		"@mantine/core": "^9.4.1",
-		"@mantine/hooks": "^9.4.1",
-		"@mantine/notifications": "^9.4.1",
-		"@pluxel/market": "^0.1.0",
-		"@tabler/icons-react": "^3.37.1",
-		"react": "^19.2.7",
-		"react-dom": "^19.2.7"
-	},
 	"devDependencies": {
 		"@changesets/cli": "^2.31.0",
 		"@gqlens/vite": "workspace:*",
@@ -57,11 +43,11 @@
 		"oxfmt": "^0.58.0",
 		"oxlint": "^1.73.0",
 		"pncat": "^0.12.0",
-		"tsdown": "^0.22.5",
+		"tsdown": "catalog:",
 		"turbo": "^2.10.4",
-		"typescript": "^6.0.3",
+		"typescript": "catalog:",
 		"unplugin-preprocessor-directives": "^1.2.0",
-		"vitest": "^4.1.10"
+		"vitest": "catalog:"
 	},
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx,cjs,mjs,md,json,jsonc}": [

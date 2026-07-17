@@ -198,7 +198,7 @@ describe('toolchain package boundaries', () => {
 	it('keeps demo plugins off the broad runtime services barrel', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
-			...(await collectSourceFiles(`${root}/packages/plugins/host/src/demo`)),
+			...(await collectSourceFiles(`${root}/projects/plugin-host/src/demo`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 		]
 		const offenders: string[] = []
@@ -221,7 +221,7 @@ describe('toolchain package boundaries', () => {
 	it('keeps runtime application helpers on route package main entries in app code', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
-			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
+			...(await collectSourceFiles(`${root}/projects/plugin-host/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 		]
 		const offenders: string[] = []
@@ -447,7 +447,7 @@ describe('toolchain package boundaries', () => {
 	it('keeps old HTTP workbench internals out of public runtime config surfaces', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const files = [
-			...(await collectSourceFiles(`${root}/packages/plugins/host/src`)),
+			...(await collectSourceFiles(`${root}/projects/plugin-host/src`)),
 			...(await collectSourceFiles(`${root}/packages/cli/templates/plugin/src`)),
 			`${root}/packages/runtime-static/src/types.ts`,
 			`${root}/packages/runtime-static/src/index.ts`,

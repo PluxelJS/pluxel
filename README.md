@@ -20,7 +20,7 @@ engines 约束。
 - 新应用模板：`user-docs/starter-monorepo.md`
 - 高级参考项目：`projects/README.md`
 
-开发宿主走 `packages/plugins/host`，但建议直接从仓库根目录使用这些入口：
+开发宿主走 `projects/plugin-host`，但建议直接从仓库根目录使用这些入口：
 
 ```bash
 pnpm plugin-host:dynamic
@@ -35,7 +35,9 @@ pnpm plugin-host:static
 - `@pluxel/runtime-static`：固定插件路线；`/vite` 提供 static route，承载 fixed catalog startup、startup/change report 与轻量 static HMR
 - `@pluxel/cli`：命令行入口（build/scaffold/hmr）
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
-- `packages/plugins/*`：workspace 内置插件与宿主样例（internal；不属于发布包集合）
+- `packages/*`：框架库与其他非具体插件的可复用 package
+- `plugins/*`：可独立装配的具体插件 package（当前根 workspace 没有此类包时可以为空）
+- `projects/*`：可运行产品与宿主样例；项目内部同样用 `packages/*` 放通用库、`plugins/*` 放具体插件
 
 ## Tests
 

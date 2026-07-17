@@ -133,13 +133,13 @@
 		"oxlint": "^1.73.0",
 		"pathe": "^2.0.3",
 		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "^0.22.5",
-		"typescript": "^6.0.3",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
 		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "^0.22.5",
+		"tsdown": "catalog:",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
 	"peerDependenciesMeta": {

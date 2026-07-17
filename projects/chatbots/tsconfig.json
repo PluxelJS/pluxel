@@ -18,15 +18,15 @@
 		"paths": {
 			"@pluxel/components": ["./src/types/pluxel-components.d.ts"],
 			"@repo/chatbots-adapter-kit/*": ["./packages/adapter-kit/src/*.ts"],
-			"@repo/chatbots-access": ["./packages/access/src/index.ts"],
-			"@repo/chatbots-builtins": ["./packages/builtins/src/index.ts"],
-			"@repo/chatbots-commands": ["./packages/commands/src/index.ts"],
+			"@repo/chatbots-access": ["./plugins/access/src/index.ts"],
+			"@repo/chatbots-builtins": ["./plugins/builtins/src/index.ts"],
+			"@repo/chatbots-commands": ["./plugins/commands/src/index.ts"],
 			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
-			"@repo/chatbots-hub": ["./packages/hub/src/index.ts"],
-			"@repo/chatbots-kook": ["./packages/kook/src/index.ts"],
-			"@repo/chatbots-sandbox": ["./packages/sandbox/src/index.ts"],
-			"@repo/chatbots-telegram": ["./packages/telegram/src/index.ts"],
-			"@repo/chatbots-telegram/api": ["./packages/telegram/src/api/index.ts"]
+			"@repo/chatbots-hub": ["./plugins/hub/src/index.ts"],
+			"@repo/chatbots-kook": ["./plugins/kook/src/index.ts"],
+			"@repo/chatbots-sandbox": ["./plugins/sandbox/src/index.ts"],
+			"@repo/chatbots-telegram": ["./plugins/telegram/src/index.ts"],
+			"@repo/chatbots-telegram/api": ["./plugins/telegram/src/api/index.ts"]
 		},
 		"types": ["node", "vite/client"]
 	},

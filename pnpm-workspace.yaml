@@ -1,6 +1,6 @@
 packages:
   - packages/*
-  - packages/plugins/*
+  - plugins/*
   - vendor/gqlens/packages/codegen
   - vendor/gqlens/packages/core
   - vendor/gqlens/packages/react
@@ -9,6 +9,24 @@ packages:
   - vendor/split-like-vscode/packages/react
   - projects/*
   - projects/*/packages/*
+  - projects/*/plugins/*
+
+catalog:
+  '@mantine/core': ^9.4.1
+  '@mantine/dates': ^9.4.1
+  '@mantine/hooks': ^9.4.1
+  '@mantine/modals': ^9.4.1
+  '@mantine/notifications': ^9.4.1
+  '@pluxel/market': ^0.1.0
+  '@tabler/icons-react': ^3.37.1
+  '@types/react': ^19.2.14
+  '@types/react-dom': ^19.2.3
+  drizzle-orm: ^0.45.2
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  tsdown: ^0.22.5
+  typescript: ^6.0.3
+  vitest: ^4.1.10
 
 managePackageManagerVersions: false
 

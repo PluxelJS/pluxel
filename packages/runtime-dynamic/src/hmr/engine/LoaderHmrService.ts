@@ -952,10 +952,11 @@ export class LoaderHmrService {
 		const isUnder = (child: string, root: string) =>
 			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
 
-		// Common monorepo layout: built-in plugin sources live under `packages/plugins/*`.
+		// Common monorepo layout: built-in plugin sources live under `plugins/*`.
 		// If users set scan roots to the workspace root (pnpm workspace), those sources get picked up
 		// by path-based scanning and can conflict with the synthetic builtin module id.
 		const candidates = [
+			'plugins',
 			'packages/plugins',
 			'packages/plugin',
 			'packages/builtins',

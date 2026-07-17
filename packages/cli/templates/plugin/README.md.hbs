@@ -30,4 +30,5 @@ pnpm verify
 
 `verify` checks Oxfmt, Oxlint with the Pluxel rule plugin, unused lint suppressions, types, tests, and
 the production plugin build. Runtime is a peer dependency; build and test tooling stays in
-development dependencies.
+development dependencies. `pnpm-workspace.yaml` owns their shared compatible ranges through the
+catalog and explicitly allows the esbuild install script required by the toolchain.

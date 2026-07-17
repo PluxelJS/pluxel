@@ -47,8 +47,10 @@ curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
 - `plugins/example`: plugin lifecycle, configuration and business HTTP routes.
 - `packages/domain`: neutral logic shared by `web` and the plugin.
 
-The repository root only coordinates workspaces and shared quality tooling. `web/package.json` owns
-React, GQLens, Vite and static runtime dependencies. Pluxel packages are normal registry
+The repository root only coordinates workspaces, the pnpm version catalog and shared quality
+tooling. Every workspace still declares every package it imports: `catalog:` centralizes external
+versions but does not make a dependency implicitly available. `web/package.json` owns React,
+GQLens, Vite and static runtime dependencies. Pluxel packages are catalog-managed registry
 dependencies; only packages owned here use `workspace:*`. If the repository gains multiple
 deployable applications, move `web` under an `apps/*` convention then.
 

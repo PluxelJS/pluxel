@@ -1,29 +1,29 @@
 import { resolve } from 'node:path'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
-const packageAlias = (name: string) => ({
+const workspaceAlias = (kind: 'packages' | 'plugins', name: string) => ({
 	find: new RegExp(`^@repo/chatbots-${name}$`),
-	replacement: resolve(import.meta.dirname, `packages/${name}/src/index.ts`),
+	replacement: resolve(import.meta.dirname, `${kind}/${name}/src/index.ts`),
 })
 
-const packageSubpathAlias = (name: string) => ({
+const workspaceSubpathAlias = (kind: 'packages' | 'plugins', name: string) => ({
 	find: new RegExp(`^@repo/chatbots-${name}/(.+)$`),
-	replacement: resolve(import.meta.dirname, `packages/${name}/src/$1.ts`),
+	replacement: resolve(import.meta.dirname, `${kind}/${name}/src/$1.ts`),
 })
 
 export default definePluxelVitestConfig({
 	root: import.meta.dirname,
 	resolve: {
 		alias: [
-			packageAlias('access'),
-			packageSubpathAlias('adapter-kit'),
-			packageAlias('contracts'),
-			packageAlias('hub'),
-			packageAlias('commands'),
-			packageAlias('kook'),
-			packageAlias('kook-hub'),
-			packageAlias('telegram'),
-			packageAlias('telegram-hub'),
+			workspaceAlias('plugins', 'access'),
+			workspaceSubpathAlias('packages', 'adapter-kit'),
+			workspaceAlias('packages', 'contracts'),
+			workspaceAlias('plugins', 'hub'),
+			workspaceAlias('plugins', 'commands'),
+			workspaceAlias('plugins', 'kook'),
+			workspaceAlias('plugins', 'kook-hub'),
+			workspaceAlias('plugins', 'telegram'),
+			workspaceAlias('plugins', 'telegram-hub'),
 		],
 	},
 	oxc: {
@@ -31,5 +31,7 @@ export default definePluxelVitestConfig({
 			legacy: true,
 		},
 	},
-	test: { include: ['packages/*/tests/**/*.test.ts', 'test/**/*.test.ts'] },
+	test: {
+		include: ['packages/*/tests/**/*.test.ts', 'plugins/*/tests/**/*.test.ts', 'test/**/*.test.ts'],
+	},
 })

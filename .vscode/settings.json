@@ -30,6 +30,6 @@
 	},
 	"ColorfulMonorepo.data": {
 		"workspaces": [],
-		"scriptFavorites": [".#build", ".#dev", ".#hmr", ".#test", "packages/plugins/host#dev"]
+		"scriptFavorites": [".#build", ".#dev", ".#hmr", ".#test", "projects/plugin-host#dynamic"]
 	}
 }

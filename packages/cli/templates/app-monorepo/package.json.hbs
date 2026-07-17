@@ -10,19 +10,20 @@
 	"scripts": {
 		"dev": "pnpm --filter {{packageName}}-web dev",
 		"build": "pnpm --filter {{packageName}}-web build",
-		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error web packages plugins oxlint.config.ts",
+		"governance:check": "node scripts/check-workspace-governance.mjs",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error web packages plugins scripts oxlint.config.ts",
 		"lint:fix": "pnpm lint --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
 		"test": "pnpm -r --if-present test",
 		"typecheck": "pnpm -r --if-present typecheck",
-		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"devDependencies": {
-		"@pluxel/rolldown": "^0.1.0",
-		"oxfmt": "^0.57.0",
-		"oxlint": "^1.72.0",
-		"typescript": "^6.0.3",
-		"vitest": "^4.1.9"
+		"@pluxel/rolldown": "catalog:",
+		"oxfmt": "catalog:",
+		"oxlint": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	}
 }
