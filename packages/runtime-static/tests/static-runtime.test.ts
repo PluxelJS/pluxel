@@ -293,13 +293,13 @@ describe('@pluxel/runtime-static', () => {
 					configService: { mode: 'memory' },
 					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
 					persistence: { mode: 'memory' },
-					pluginData: { enabled: false },
+					database: false,
 				}),
 			}),
 		)
 		try {
 			expect(runtime.ctx.root.persistence.capability).toBe('ephemeral')
-			expect(runtime.ctx.config.pluginData).toEqual({ enabled: false })
+			expect(runtime.ctx.config.database).toBe(false)
 			expect(runtime.ctx.config.logger?.rootId).toEqual(expect.any(String))
 			expect(getActiveRuntimeLogging()?.resolved.sinks).not.toHaveProperty('store')
 		} finally {

@@ -15,12 +15,13 @@
 - `src/services/workbench/WorkbenchService.ts`：Context-isolated gate；
 - `src/services/workbench/WorkbenchRegistry.ts`：target layout、relations、opaque grants、revision；
 - `src/services/workbench/WorkbenchArtifactService.ts`：artifact store；
-- `src/services/workbench/resources/`：RPC、collection、events 实现；
+- `src/services/workbench/resources/`：RPC、live query、events 实现；
 - `src/api/http/workbench.ts`：catalog/layout/artifact/resource/event routes。
 
 ## 常驻服务
 
 - `src/services/http/HttpService.ts`：HTTP 与 UI assets；
+- `src/services/DatabaseService.ts`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 invalidation；
 - `src/services/admin-access/AdminAccessService.ts`：host admin gate；
 - `src/services/vault/VaultService.ts`：加密存储；
 - `src/services/persistence/PersistenceService.ts`：persistence backend；

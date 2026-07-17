@@ -2,7 +2,7 @@
 import './persistence/PersistenceService'
 import './ConfigService'
 import './RuntimeStateStore'
-import './PluginDataService'
+import './DatabaseService'
 import './http/HttpService'
 import './http/InternalApiValidationService'
 import './http/InternalGraphQLService'

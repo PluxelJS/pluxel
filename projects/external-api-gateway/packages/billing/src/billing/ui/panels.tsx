@@ -56,17 +56,17 @@ export function BillingDashboard() {
 export function BillingPanel() {
 	const model = useBillingModel()
 	const api = model.commands
-	const overview = model.overview.useSnapshot().items.find((item) => item.id === 'overview')
-	const records = [...model.records.useSnapshot().items]
+	const overview = model.overview.useQuery().rows.find((item) => item.id === 'overview')
+	const records = [...model.records.useQuery().rows]
 		.sort((left, right) => right.at - left.at)
 		.slice(0, 30)
-	const users = [...model.users.useSnapshot().items]
+	const users = [...model.users.useQuery().rows]
 		.sort((left, right) => right.totalCostCny - left.totalCostCny)
 		.slice(0, 10)
-	const providers = [...model.providers.useSnapshot().items]
+	const providers = [...model.providers.useQuery().rows]
 		.sort((left, right) => right.totalCostCny - left.totalCostCny)
 		.slice(0, 10)
-	const rates = [...model.rates.useSnapshot().items]
+	const rates = [...model.rates.useQuery().rows]
 		.sort(
 			(left, right) =>
 				left.provider.localeCompare(right.provider) ||

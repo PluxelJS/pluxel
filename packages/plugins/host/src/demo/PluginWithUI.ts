@@ -3,10 +3,16 @@
 // - 你想看 Workbench Plane UI + RPC + SSE + replicated state 的最小闭环
 
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { PluginWithUIWorkbench } from './PluginWithUI.extension'
 import type { DemoEvent, PluginWithUIEvents, PluginWithUIStatusDoc } from './PluginWithUI.contracts'
+import {
+	demoDatabase,
+	demoProjectionQuery,
+	demoProjections,
+	DemoProjectionStore,
+} from './workbench-projection'
 
 // Shared server-side data model exposed to the UI.
 const STATUS_DOC_ID = 'status' as const
@@ -30,12 +36,9 @@ export type PluginWithUISsePayload =
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
-	private status!: NonNullable<
-		MountedWorkbenchManagedCollections<typeof PluginWithUIWorkbench>['status']
-	>
-	private events!: NonNullable<
-		MountedWorkbenchManagedCollections<typeof PluginWithUIWorkbench>['events']
-	>
+	private statusDoc?: PluginWithUIStatusDoc
+	private eventDocs: DemoEvent[] = []
+	private projections?: DemoProjectionStore
 
 	private eventSeq = 1
 	private eventSubscribers = new Set<
@@ -45,16 +48,25 @@ export class PluginWithUI extends BasePlugin {
 	override async init() {
 		this.startedAt = Date.now()
 
-		const mounted = this.ctx.workbench.mount(PluginWithUIWorkbench, {
-			commands: workbench.bind.rpc(() => new PluginWithUIRpc(this)),
-			status: workbench.bind.managedCollection(),
-			events: workbench.bind.managedCollection(),
-			activity: workbench.bind.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
-		})
-		if (mounted) {
-			this.status = mounted.managedCollections.status!
-			this.events = mounted.managedCollections.events!
-			await this.initState()
+		this.initState()
+		if (this.ctx.workbench.enabled) {
+			const database = await this.ctx.database.use(demoDatabase)
+			this.projections = new DemoProjectionStore(database)
+			await this.syncProjection()
+			this.ctx.workbench.mount(PluginWithUIWorkbench, {
+				commands: workbench.bind.rpc(() => new PluginWithUIRpc(this)),
+				status: workbench.bind.liveQuery({
+					database,
+					dependsOn: [demoProjections],
+					query: demoProjectionQuery<PluginWithUIStatusDoc>('status'),
+				}),
+				events: workbench.bind.liveQuery({
+					database,
+					dependsOn: [demoProjections],
+					query: demoProjectionQuery<DemoEvent>('events'),
+				}),
+				activity: workbench.bind.events<PluginWithUIEvents>((events) => this.attachEvents(events)),
+			})
 		}
 
 		this.ctx.logger.info('ready')
@@ -84,10 +96,8 @@ export class PluginWithUI extends BasePlugin {
 		}
 	}
 
-	private async initState() {
-		await Promise.all([this.status.ready(), this.events.ready()])
-
-		const existingList = this.events.find({}, { limit: MAX_EVENT_SCAN })
+	private initState() {
+		const existingList = this.eventDocs.slice(0, MAX_EVENT_SCAN)
 		const maxId = existingList.reduce((acc, e) => Math.max(acc, Number(e.id) || 0), 0)
 		this.eventSeq = Math.max(maxId, 0) + 1
 
@@ -105,13 +115,13 @@ export class PluginWithUI extends BasePlugin {
 			pluginName: status?.pluginName ?? this.ctx.pluginInfo.id,
 			startedAt: status?.startedAt ?? this.startedAt,
 			counter: status?.counter ?? 0,
-			eventCount: status?.eventCount ?? this.events.count(),
+			eventCount: status?.eventCount ?? this.eventDocs.length,
 		}
 	}
 
 	listEvents(limit = 50): DemoEvent[] {
 		const capped = Math.max(0, Math.min(MAX_EVENT_SCAN, Math.floor(limit)))
-		const docs = this.events.find({}, { limit: capped, sort: { at: -1 } })
+		const docs = this.eventDocs.toSorted((left, right) => right.at - left.at).slice(0, capped)
 		return docs.slice(0, capped).map((event: DemoEvent) => Object.assign({}, event))
 	}
 
@@ -126,7 +136,7 @@ export class PluginWithUI extends BasePlugin {
 			at: Date.now(),
 		}
 
-		this.events.insert(event)
+		this.eventDocs.push(event)
 		this.trimEventHistory()
 		this.syncStatus()
 		this.broadcast({ type: 'activity', message: `event:${kind}` })
@@ -149,7 +159,7 @@ export class PluginWithUI extends BasePlugin {
 	}
 
 	clearEvents() {
-		this.events.removeMany({})
+		this.eventDocs = []
 		this.appendEvent('system', '事件已清空')
 		return { ok: true }
 	}
@@ -168,12 +178,12 @@ export class PluginWithUI extends BasePlugin {
 	}
 
 	private getStatusDoc() {
-		return this.status.findOne({ id: STATUS_DOC_ID })
+		return this.statusDoc ? { ...this.statusDoc } : undefined
 	}
 
 	private allocateEventId() {
 		let nextId = this.eventSeq
-		while (this.events.findOne({ id: String(nextId) })) {
+		while (this.eventDocs.some((event) => event.id === String(nextId))) {
 			nextId += 1
 		}
 		this.eventSeq = nextId + 1
@@ -181,10 +191,11 @@ export class PluginWithUI extends BasePlugin {
 	}
 
 	private trimEventHistory() {
-		const all = this.events.find({}, { sort: { at: 1 } })
+		const all = this.eventDocs.toSorted((left, right) => left.at - right.at)
 		if (all.length <= MAX_EVENT_HISTORY) return
 		const overflow = all.slice(0, Math.max(0, all.length - TRIMMED_EVENT_HISTORY))
-		for (const old of overflow) this.events.removeOne({ id: old.id })
+		const removed = new Set(overflow.map(({ id }) => id))
+		this.eventDocs = this.eventDocs.filter(({ id }) => !removed.has(id))
 	}
 
 	private buildStatusDoc(
@@ -199,7 +210,7 @@ export class PluginWithUI extends BasePlugin {
 			pluginName: this.ctx.pluginInfo.id,
 			startedAt: this.startedAt,
 			counter: input.counter ?? current?.counter ?? 0,
-			eventCount: input.eventCount ?? this.events.count(),
+			eventCount: input.eventCount ?? this.eventDocs.length,
 		}
 	}
 
@@ -208,7 +219,16 @@ export class PluginWithUI extends BasePlugin {
 			counter: override.counter,
 			eventCount: override.eventCount,
 		})
-		this.status.replaceOne({ id: STATUS_DOC_ID }, next, { upsert: true })
+		this.statusDoc = next
+		void this.syncProjection()
+	}
+
+	private async syncProjection(): Promise<void> {
+		if (!this.projections) return
+		await Promise.all([
+			this.projections.replaceAll('status', this.statusDoc ? [this.statusDoc] : []),
+			this.projections.replaceAll('events', this.eventDocs),
+		])
 	}
 }
 

@@ -15,7 +15,7 @@
 
 ## 2. 保持能力所有权清晰
 
-- HTTP、config、logger、events、effects、persistence/plugin data 是常驻 runtime 能力。
+- HTTP、config、logger、events、effects、persistence/database 是常驻 runtime 能力。
 - Workbench extension 和资源只能通过 `ctx.workbench.mount()` 挂载。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。

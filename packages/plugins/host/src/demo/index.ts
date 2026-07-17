@@ -1,5 +1,4 @@
 // Start here: the smallest, most standard authoring paths.
-export * from './PluginBuiltinShowcase'
 export * from './PluginFeatureConfigDemo'
 export * from './PluginFeatureDepsDemo'
 

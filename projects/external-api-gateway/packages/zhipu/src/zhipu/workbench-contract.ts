@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/external-api-gateway-shared/wire-schema'
 import type { ZhipuSettingsDoc, ZhipuStatusDoc, ZhipuTestRunDoc } from './contracts.ts'
 export interface ZhipuProviderCommands {
 	saveSettings(input: { apiKey?: string; baseUrl?: string }): Promise<ZhipuSettingsDoc>
@@ -10,9 +11,9 @@ export interface ZhipuProviderCommands {
 export const ZhipuUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<ZhipuProviderCommands>(),
-		settings: workbenchContract.collection<ZhipuSettingsDoc>(),
-		status: workbenchContract.collection<ZhipuStatusDoc>(),
-		history: workbenchContract.collection<ZhipuTestRunDoc>(),
+		settings: workbenchContract.liveQuery({ row: jsonObjectSchema<ZhipuSettingsDoc>(), key: 'id' }),
+		status: workbenchContract.liveQuery({ row: jsonObjectSchema<ZhipuStatusDoc>(), key: 'id' }),
+		history: workbenchContract.liveQuery({ row: jsonObjectSchema<ZhipuTestRunDoc>(), key: 'id' }),
 	},
 	views: {
 		HeaderAction: {

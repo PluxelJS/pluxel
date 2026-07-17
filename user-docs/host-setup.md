@@ -9,7 +9,7 @@
 
 两者都复用同一 core lifecycle、runtime services 和 Workbench Plane。
 
-HTTP、config、logger、events、persistence 和 plugin data 随 `@pluxel/runtime` 主入口注册。Vault
+HTTP、config、logger、events、persistence 和 database capability 随 `@pluxel/runtime` 主入口注册。Vault
 不是常驻能力；只有需要保存密钥的宿主才在 canonical runtime entry 顶部显式启用：
 
 ```ts
@@ -49,6 +49,13 @@ export default defineStaticRuntime({
 	plugins: [AccountsPlugin, BillingPlugin],
 	configure({ env, deployment }) {
 		return {
+			database: env.DATABASE_URL
+				? {
+						driver: 'postgres',
+						connectionString: env.DATABASE_URL,
+						pool: { max: 20 },
+					}
+				: undefined,
 			runtimeState: {
 				snapshot: { enabled: ['AccountsPlugin', 'BillingPlugin'] },
 			},
@@ -62,6 +69,10 @@ export default defineStaticRuntime({
 })
 ```
 
+`database` 省略时使用 persistence root 下的共享 PGlite，不自动读取 `DATABASE_URL`。远端连接必须由 startup resolver
+显式传入；`database: false` 会完全关闭 capability，任何数据库插件都会诚实启动失败。测试若需要内存数据库，显式传
+`{ driver: 'pglite', dataDir: 'memory://' }`。PGlite 的 durability 定位见 [`database.md`](database.md)。
+
 用 `vite` 启动。不要用 raw TypeScript runner 执行 `pluxel.static.ts` 或插件入口。
 
 `plugins` 是固定 catalog：production build 后不能从外部增加或替换插件代码。`configure()` 本身进入 bundle，
@@ -69,6 +80,10 @@ export default defineStaticRuntime({
 runtime enabled state 仍可变。运行时启停只改变 fixed catalog 中哪些插件运行，不改变 catalog 本身。
 `runtimeState.snapshot.enabled` 使用 `@Plugin({ name })` 的稳定 ID；不要从 constructor `.name` 动态生成，class name
 会在 production minify 后改变。
+
+`prepare()` 是可选的 application-wide eager policy，不是共享基础设施的唯一所有权入口。同一作者控制的 static plugins 可以
+直接调用普通 application module 的无参数 lazy `use()`；只有希望数据库失败阻止任何 plugin 启动时，才在 `prepare()` 中调用
+同一个入口预热。完整组织方式见 [`database.md`](database.md#static-application-共享数据库)。
 
 ## Static production build
 

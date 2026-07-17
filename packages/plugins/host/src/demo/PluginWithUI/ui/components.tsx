@@ -88,8 +88,8 @@ function hasPayloadType(payload: unknown): payload is SsePayloadWithType {
 export function OverviewPanel() {
 	const model = pluginUi.useResources()
 	const host = useWorkbenchHost()
-	const status = model.status.useSnapshot().items.find((item) => item.id === 'status')
-	const eventCount = model.events.useSnapshot().items.length
+	const status = model.status.useQuery().rows.find((item) => item.id === 'status')
+	const eventCount = model.events.useQuery().rows.length
 	const activity = model.activity
 	const connected = useLiveConnectionState(activity)
 	const tick = useLatestTick(activity)
@@ -166,8 +166,8 @@ export function OverviewPanel() {
 export function EventsPanel() {
 	const model = pluginUi.useResources()
 	const eventsCollection = model.events
-	const eventsSnapshot = eventsCollection.useSnapshot()
-	const recentEvents = [...eventsSnapshot.items]
+	const eventsSnapshot = eventsCollection.useQuery()
+	const recentEvents = [...eventsSnapshot.rows]
 		.sort((left, right) => right.at - left.at)
 		.slice(0, 50)
 	const { error, run } = useRpcError()
@@ -225,7 +225,7 @@ export function EventsPanel() {
 								</Text>
 							</Group>
 						) : null}
-						{eventsSnapshot.state === 'ready' && eventsSnapshot.items.length === 0 ? (
+						{eventsSnapshot.state === 'ready' && eventsSnapshot.rows.length === 0 ? (
 							<Text size="sm" c="dimmed">
 								暂无事件，先发一条试试。
 							</Text>

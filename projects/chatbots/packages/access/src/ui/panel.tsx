@@ -4,8 +4,8 @@ import { accessUi } from './runtime.ts'
 
 export function AccessPanel() {
 	const model = accessUi.useResources()
-	const overview = model.overview.useSnapshot().items.find((item) => item.id === 'overview')
-	const users = model.users.useSnapshot().items
+	const overview = model.overview.useQuery().rows.find((item) => item.id === 'overview')
+	const users = model.users.useQuery().rows
 	return (
 		<Stack p="md" gap="md">
 			<Group justify="space-between">

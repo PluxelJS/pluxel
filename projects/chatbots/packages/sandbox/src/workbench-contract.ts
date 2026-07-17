@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/chatbots-adapter-kit/wire-schema'
 import type { ChatBlock, ChatMessage } from '@repo/chatbots-contracts'
 
 export type SandboxMessage = ChatMessage & { direction: 'inbound' | 'outbound' }
@@ -19,7 +20,7 @@ export interface ChatSandboxCommands {
 export const ChatSandboxUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<ChatSandboxCommands>(),
-		messages: workbenchContract.collection<SandboxMessage>(),
+		messages: workbenchContract.liveQuery({ row: jsonObjectSchema<SandboxMessage>(), key: 'id' }),
 	},
 	views: {
 		Sandbox: {

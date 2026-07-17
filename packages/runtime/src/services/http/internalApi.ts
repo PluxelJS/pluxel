@@ -1,5 +1,4 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import type { Changeset } from '@signaldb/core'
 import {
 	canAccessSecurityAdmin,
 	createAdminAccessBlockedHeaders,
@@ -23,7 +22,6 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import type { SignalDbItem } from '../../workbench/collection-contracts'
 import { requireWorkbench } from '../workbench'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -34,10 +32,6 @@ type InternalApiOptions = {
 	rpc?: boolean
 	sse?: boolean
 	graphql?: boolean
-}
-
-type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
-	changes: Changeset<T>
 }
 
 function resolveRequestKind(path: string): 'api' | 'graphql' {
@@ -200,66 +194,28 @@ function createInternalTransportPlugins(
 		plugins.push(createInternalPlugin(ctx, 'workbench', workbenchRoutes))
 		plugins.push(
 			createInternalPlugin(ctx, 'workbench-resources', (app) =>
-				app
-					.get(
-						`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/:grantId`,
-						async ({ params, pluginCtx, set, status }: any) => {
-							set.headers['cache-control'] = 'no-store'
-							const workbench = requireWorkbench(pluginCtx)
-							const ref = resolveWorkbenchCollection(workbench, decodePathParam(params.grantId))
-							if (!ref) {
-								return status(410, {
-									ok: false,
-									code: 'workbench_grant_expired',
-								})
-							}
-							return await workbench.collections.loadCollectionFor(ref.ownerPluginId, ref.modelKey)
-						},
-					)
-					.post(
-						`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/:grantId`,
-						async ({ params, pluginCtx, request, set, status }: any) => {
-							set.headers['cache-control'] = 'no-store'
-							const body = await request.json().catch((): null => null)
-							const changes = readSignalDbChanges(body)
-							if (!changes) {
-								return status(400, {
-									ok: false,
-									code: 'invalid_signaldb_changes',
-								})
-							}
-
-							const workbench = requireWorkbench(pluginCtx)
-							const ref = resolveWorkbenchCollection(workbench, decodePathParam(params.grantId))
-							if (!ref) {
-								return status(410, {
-									ok: false,
-									code: 'workbench_grant_expired',
-								})
-							}
-							const result = await workbench.collections.applyCollectionFor(
+				app.get(
+					`${RUNTIME_WORKBENCH_MODELS_BASE}/live-queries/:grantId`,
+					async ({ params, pluginCtx, request, set, status }: any) => {
+						set.headers['cache-control'] = 'no-store'
+						const workbench = requireWorkbench(pluginCtx)
+						const ref = workbench.registry.findModel(decodePathParam(params.grantId), 'liveQuery')
+						if (!ref) return status(410, { code: 'workbench_grant_expired' })
+						try {
+							const raw = new URL(request.url).searchParams.get('params')
+							return await workbench.liveQueries.loadFor(
 								ref.ownerPluginId,
 								ref.modelKey,
-								changes,
+								raw ? JSON.parse(raw) : undefined,
 							)
-
-							if (result === 'missing') {
-								return status(409, {
-									ok: false,
-									code: 'signaldb_unavailable',
-								})
-							}
-							if (result === 'readonly') {
-								return status(403, {
-									ok: false,
-									code: 'signaldb_readonly',
-								})
-							}
-
-							return { ok: true }
-						},
-						{ parse: 'none' },
-					),
+						} catch (error) {
+							return status(400, {
+								code: 'invalid_live_query',
+								message: error instanceof Error ? error.message : String(error),
+							})
+						}
+					},
+				),
 			),
 			createInternalPlugin(ctx, 'meta', (app) =>
 				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
@@ -308,34 +264,4 @@ function decodePathParam(value: unknown): string {
 	} catch {
 		return String(value ?? '').trim()
 	}
-}
-
-function resolveWorkbenchCollection(
-	workbench: ReturnType<typeof requireWorkbench>,
-	grantId: string,
-) {
-	return workbench.registry.findModel(grantId, 'collection')
-}
-
-function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {
-	if (!body || typeof body !== 'object') return null
-	const changes = (body as SignalDbPushBody<SignalDbItem>).changes
-	if (!changes || typeof changes !== 'object') return null
-
-	return {
-		added: sanitizeSignalDbItems(changes.added),
-		modified: sanitizeSignalDbItems(changes.modified),
-		removed: sanitizeSignalDbItems(changes.removed),
-	}
-}
-
-function sanitizeSignalDbItems<T extends SignalDbItem>(items: readonly T[] | undefined): T[] {
-	if (!Array.isArray(items)) return []
-	return items
-		.filter((item): item is T => !!item && typeof item.id === 'string' && item.id.length > 0)
-		.map((item) => cloneSignalDbItem(item))
-}
-
-function cloneSignalDbItem<T>(item: T): T {
-	return item && typeof item === 'object' ? ({ ...(item as Record<string, unknown>) } as T) : item
 }

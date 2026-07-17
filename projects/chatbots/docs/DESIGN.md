@@ -59,7 +59,7 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 5. adapter Workbench常驻运行，token 只保存在 Pluxel Vault；没有账号记录时 Bot registry 为空，不会注册 transport 或启动连接循环。
 6. 插件依赖表达硬前置条件。commands 依赖 hub，builtins 依赖 commands；不使用全局 singleton 或 import-time registry。
 7. 富消息先由 Hub 按 transport capability 做归一化，再决定 mixed、拆分或 `atomicBlocks` 平台原子布局。`mixedContent` 不会绕过 block 校验；`strict` 拒绝能力缺口，`best-effort` 才把不支持的媒体降级成可读文本。
-8. 身份和授权属于持久业务状态；SignalDB 只做可选管理投影，headless host 中授权逻辑保持完整。
+8. 身份和授权属于持久业务状态；Workbench `liveQuery` 只做可选 PostgreSQL-backed 管理投影，headless host 中授权逻辑保持完整。
 9. `index.ts` 只定义公共出口。纯 model/codec/planner 不依赖 Pluxel Context；平台连接状态机和管理投影只在平台 plugin 层组合，codec 只在桥接包组合。
 10. 可审阅的静态平台清单使用 macro 在构建期内联。macro 负责消除运行时文件读取和重复方法分配，不隐藏动态业务决策。
 11. 显式 batch 与平台自动拆分是两层语义：batch 表达调用方希望发送多条消息，planner 只处理单条逻辑消息如何适配平台能力。
@@ -70,15 +70,15 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 16. 多账号路由显式区分 `platform` 与 `accountId`；不能把账号 ID 拼进 platform，也不能让单一 transport 名称在多个 Bot 之间产生歧义。
 17. codegen 与 macro 分阶段：显式 codegen 生成并提交类型/inventory，macro 只把本地静态 metadata 内联到 bundle；正常构建不访问网络、不改写源码。
 18. 平台插件不导入 ChatHub 或 contracts。独立 bridge plugin 通过 constructor 依赖平台 capability 与 Hub，并注册确认型原生事件 projection；不安装 bridge 时 Bot 原生 API 和平台事件连接完全独立运行。
-19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。管理 SignalDB 只投影有意义变化，不是运行状态源，heartbeat 与空 poll 不制造固定周期持久化写。
+19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。管理 live query 只投影有意义变化，不是运行状态源，heartbeat 与空 poll 不制造固定周期持久化写。
 20. 有序 gateway 的所有 frame 进入同一异步 tail，且 reconnect 必须等待该 tail 收敛后再读取 checkpoint。事件 handler 完成后才推进连续 SN；重复帧丢弃，乱序帧使用有界 buffer。HELLO 与 resume ACK 都有明确 timeout；普通断线保留 session/SN 以 resume，握手超时、协议拒绝、明确 hard reconnect 或 buffer 无法收敛时清空恢复状态并回退全新连接。
 21. Hub 去重是有界进程内优化：并发重复调用共享同一个 in-flight 结果，成功后提交时间窗记录，失败或取消后删除记录以允许重试。它不承诺 exactly-once。Telegram 在原始事件和所有确认型 projection 完成后推进 offset，KOOK 同样只在 projection 完成后推进 SN；业务副作用使用 `messageKey()` 和业务持久化实现幂等。
-22. Access 的业务状态使用原子 snapshot，连续变化只写最新待落盘版本；管理投影按受影响的 user/role 增量更新，SignalDB 不是业务状态源。
+22. Access 的业务状态使用原子 snapshot，连续变化只写最新待落盘版本；管理投影按受影响的 user/role 更新 PostgreSQL projection table，live query 不是业务状态源。
 23. handler 与 observer 必须协作响应 `AbortSignal`。Hub 不通过 timeout race 放行同一会话的后续消息，因为无法终止的旧 Promise 仍可能产生副作用，那会破坏会话串行保证；队列上限负责背压，停机 deadline 只负责释放插件生命周期。
 24. 每个 Bot 账号只对应一个 `accounts.<id>` Vault 记录，token 与 API base 原子读写；账号存储不维护字段级 key 或自己的并发队列。Hub 的失败指标在实际语义边界计数：best-effort 的局部失败可见，生命周期取消不冒充业务失败。
 25. 每个 API client 拥有独立 retry gate。Telegram `parameters.retry_after` 与 KOOK HTTP `Retry-After` 只延迟该 Bot 的后续请求，不自动重放当前请求；Hub 不拥有平台限流策略。
 26. adapter 以本地账号 ID 串行执行配置写入、Bot replacement、删除、重连和断开；不同账号保持并行。配置存储和运行时 registry 必须观察同一账号操作顺序，不能各自拥有互不协调的 mutation tail。
 27. Access 持久化在进入 domain 前按当前 schema 严格校验。损坏、缺字段、重复身份或悬空 user/role 引用会让插件启动失败，不能猜测字段、丢弃记录或回退为空状态继续运行。
 28. 包默认入口只导出稳定作者能力与必要类型。workbench RPC/DTO、Router、Gateway、codec、parser、registry 和状态解析器属于包内实现，测试使用相对路径，不通过公共 barrel 反向固化内部结构。
-29. 平台插件的常驻能力不返回 workbench DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Workbench RPC 自己映射可序列化响应、鉴权提示和 SignalDB 投影。
+29. 平台插件的常驻能力不返回 workbench DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Workbench RPC 自己映射可序列化响应、鉴权提示和 live-query 投影。
 30. 确认型 projection 按注册顺序 fail-fast，并在每个原生事件开始时冻结执行计划；dispatch 中的注册/注销只影响下一个事件。bridge 的入站 projection 和出站 transport 都必须组合 bridge-owned abort signal，stop、rollback 与 HMR replacement 会先取消在途工作，再释放注册。

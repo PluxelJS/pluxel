@@ -22,6 +22,10 @@
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
 		},
+		"./database": {
+			"@pluxel/source": "./src/database/index.ts",
+			"default": "./dist/database.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -88,6 +92,7 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
+			"./database": "./dist/database.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
@@ -114,6 +119,7 @@
 		"@inlang/paraglide-js": "^2.15.1",
 		"@module-federation/vite": "^1.16.16",
 		"@pluxel/core": "workspace:*",
+		"drizzle-kit": "^0.31.5",
 		"nf3": "^0.3.22",
 		"oxc-parser": "^0.115.0",
 		"oxc-resolver": "^11.21.3",

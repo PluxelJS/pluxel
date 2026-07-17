@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/external-api-gateway-shared/wire-schema'
 import type {
 	GatewayStatusDoc,
 	GatewayTokenCreateInput,
@@ -13,8 +14,8 @@ export interface GatewayAdminCommands {
 export const ExternalGatewayUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<GatewayAdminCommands>(),
-		tokens: workbenchContract.collection<GatewayTokenDoc>(),
-		status: workbenchContract.collection<GatewayStatusDoc>(),
+		tokens: workbenchContract.liveQuery({ row: jsonObjectSchema<GatewayTokenDoc>(), key: 'id' }),
+		status: workbenchContract.liveQuery({ row: jsonObjectSchema<GatewayStatusDoc>(), key: 'id' }),
 	},
 	views: {
 		HeaderAction: {

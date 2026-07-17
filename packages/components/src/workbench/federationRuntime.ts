@@ -1,6 +1,9 @@
-import componentsPkg from '../../package.json'
+import {
+	dependencies as componentDependencies,
+	peerDependencies as componentPeerDependencies,
+} from '../../package.json'
 import * as MantineHooks from '@mantine/hooks'
-import runtimePkg from '@pluxel/runtime/package.json'
+import { version as runtimeVersion } from '@pluxel/runtime/package.json'
 import { createInstance, type ModuleFederation } from '@module-federation/runtime'
 import * as MantineCore from '@mantine/core'
 import * as React from 'react'
@@ -26,10 +29,10 @@ type WorkbenchFederationState = {
 const WORKBENCH_FEDERATION_STATE = Symbol.for('pluxel.workbench.federation-runtime')
 const federationGlobal = globalThis as typeof globalThis & Record<PropertyKey, unknown>
 const sharedVersions = {
-	mantineCore: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/core']),
-	mantineHooks: normalizeSharedVersion(componentsPkg.peerDependencies['@mantine/hooks']),
-	reactVirtual: normalizeSharedVersion(componentsPkg.dependencies['@tanstack/react-virtual']),
-	runtimeWorkbench: runtimePkg.version,
+	mantineCore: normalizeSharedVersion(componentPeerDependencies['@mantine/core']),
+	mantineHooks: normalizeSharedVersion(componentPeerDependencies['@mantine/hooks']),
+	reactVirtual: normalizeSharedVersion(componentDependencies['@tanstack/react-virtual']),
+	runtimeWorkbench: runtimeVersion,
 }
 
 export function ensureWorkbenchFederationRuntime(): ModuleFederation {

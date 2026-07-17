@@ -18,6 +18,7 @@ import {
 	type ExternalGatewayDbHandle,
 	useExternalGatewayDB,
 } from '@repo/external-api-gateway-shared/db'
+import { createWorkbenchProjection } from '@repo/external-api-gateway-shared/workbench-projection'
 import { yiqichaApiCodes, yiqichaCatalog } from '@repo/external-api-gateway-yiqicha-catalog'
 import { desc } from 'drizzle-orm'
 import type {
@@ -50,29 +51,23 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
 		this.rebuildSummaries(usageRecords)
-		this.ctx.workbench.mount(UsageBillingWorkbench, {
-			commands: workbench.bind.rpc(() => new UsageBillingRpc(this)),
-			overview: workbench.bind.collection({
-				read: () => this.overview.snapshot(),
-				subscribe: (invalidate) => this.overview.subscribe(invalidate),
-			}),
-			records: workbench.bind.collection({
-				read: () => this.records.snapshot(),
-				subscribe: (invalidate) => this.records.subscribe(invalidate),
-			}),
-			users: workbench.bind.collection({
-				read: () => this.users.snapshot(),
-				subscribe: (invalidate) => this.users.subscribe(invalidate),
-			}),
-			providers: workbench.bind.collection({
-				read: () => this.providers.snapshot(),
-				subscribe: (invalidate) => this.providers.subscribe(invalidate),
-			}),
-			rates: workbench.bind.collection({
-				read: () => this.rates.snapshot(),
-				subscribe: (invalidate) => this.rates.subscribe(invalidate),
-			}),
+		const projection = await createWorkbenchProjection(this.ctx, {
+			overview: this.overview,
+			records: this.records,
+			users: this.users,
+			providers: this.providers,
+			rates: this.rates,
 		})
+		if (projection) {
+			this.ctx.workbench.mount(UsageBillingWorkbench, {
+				commands: workbench.bind.rpc(() => new UsageBillingRpc(this)),
+				overview: projection.binding('overview'),
+				records: projection.binding('records'),
+				users: projection.binding('users'),
+				providers: projection.binding('providers'),
+				rates: projection.binding('rates'),
+			})
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('Usage billing ready')
 	}
@@ -137,9 +132,11 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	}
 
 	async clearUsage(): Promise<{ ok: true }> {
-		await this.data?.db.delete(billingUsageRecords).catch((error) => {
-			this.ctx.logger.warn('Failed to clear billing usage database', { error })
-		})
+		await this.data
+			?.transaction((tx) => tx.delete(billingUsageRecords))
+			.catch((error) => {
+				this.ctx.logger.warn('Failed to clear billing usage database', { error })
+			})
 		this.records.removeMany({})
 		this.users.removeMany({})
 		this.providers.removeMany({})
@@ -360,7 +357,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	private async loadRatesFromDB(): Promise<void> {
 		this.rates.removeMany({})
 		if (!this.data) return
-		const rows = await this.data.db.select().from(billingRates)
+		const rows = await this.data.read((db) => db.select().from(billingRates))
 		for (const row of rows) {
 			this.rates.replaceOne({ id: row.id }, rateFromRow(row), { upsert: true })
 		}
@@ -369,10 +366,9 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	private async loadUsageFromDB(): Promise<BillingUsageRecord[]> {
 		this.records.removeMany({})
 		if (!this.data) return []
-		const rows = await this.data.db
-			.select()
-			.from(billingUsageRecords)
-			.orderBy(desc(billingUsageRecords.at))
+		const rows = await this.data.read((db) =>
+			db.select().from(billingUsageRecords).orderBy(desc(billingUsageRecords.at)),
+		)
 		const allRecords = rows.map(recordFromRow)
 		for (const record of allRecords.slice(0, MAX_BILLING_RECORDS).toReversed()) {
 			this.records.insert(record)
@@ -394,7 +390,9 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	private async persistRecord(record: BillingUsageRecord): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db.insert(billingUsageRecords).values(recordToRow(record))
+			await this.data.transaction((tx) =>
+				tx.insert(billingUsageRecords).values(recordToRow(record)),
+			)
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist billing usage record', { error })
 		}
@@ -403,13 +401,15 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	private async persistRate(rate: BillingRateDoc): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db
-				.insert(billingRates)
-				.values(rateToRow(rate))
-				.onConflictDoUpdate({
-					target: billingRates.id,
-					set: rateToRow(rate),
-				})
+			await this.data.transaction((tx) =>
+				tx
+					.insert(billingRates)
+					.values(rateToRow(rate))
+					.onConflictDoUpdate({
+						target: billingRates.id,
+						set: rateToRow(rate),
+					}),
+			)
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist billing rate', { error })
 		}

@@ -213,22 +213,19 @@ Billing UI 已暴露费率编辑入口。新增调用会按当前费率估算成
 
 ## Persistence
 
-SQLite、Vault 和进程内领域集合是业务事实源。Workbench Plane collection 只镜像这些状态，
-用于管理 UI 和 admin RPC；关闭 Workbench Plane 时，gateway 认证、provider 调用、计费记录和
+插件 owner schema 下的 PostgreSQL tables、Vault 和进程内领域状态是业务事实源。Workbench Plane `liveQuery`
+只投影经过校验的管理 DTO；关闭 Workbench Plane 时，gateway 认证、provider 调用、计费记录和
 业务 HTTP 路由仍然初始化并可用。
 
-本项目仍处于开发阶段，本地数据视为可丢弃缓存。schema 变化时允许清空 SQLite / SignalDB / vault 本地状态并重建，不为旧字段、旧表或旧 namespace 增加兼容分支。
+schema 变化通过 `drizzle/` 中不可变 PostgreSQL migration 前进，不重写已提交 history，也不为旧 namespace 增加兼容分支。
 
-插件运行数据使用项目内 SQLite 文件：
-
-```text
-.pluxel/static/persistence/plugin-data/external-api-gateway.sqlite
-```
+零配置本机运行使用宿主持久化 root 下的共享 PGlite；生产由 host 显式提供 PostgreSQL。插件只看到自己的
+physical schema，不取得文件路径或 driver。
 
 当前持久化内容：
 
 - gateway tokens：保存 token hash、启用/吊销状态和最近使用时间；UI 只展示预览。
-- billing usage records / rates：账单明细和价格表会跨重启保留；UI 明细只加载最近 500 条，汇总按 SQLite 全量记录重建。
+- billing usage records / rates：账单明细和价格表会跨重启保留；UI 明细只加载最近 500 条，汇总按 PostgreSQL 全量记录重建。
 - provider call history：插件 UI 的 API 测试历史按 provider 统一保存。
 
 清理本地开发数据：

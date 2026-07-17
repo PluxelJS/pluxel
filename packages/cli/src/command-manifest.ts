@@ -48,6 +48,71 @@ export const buildCommandDefinition = {
 	args: buildCommandArgs,
 } as const
 
+export const databaseCommonArgs = {
+	root: { type: 'string', description: 'Plugin package root', default: '.' },
+	schema: { type: 'string', description: 'Database schema module (auto-detected by default)' },
+	out: { type: 'string', description: 'Migration directory', default: 'drizzle' },
+} as const
+
+export const databaseGenerateArgs = {
+	...databaseCommonArgs,
+	name: { type: 'string', description: 'Migration name passed to Drizzle Kit' },
+} as const
+
+export const databaseGenerateDefinition = {
+	name: 'generate',
+	description: 'Generate a checked-in PostgreSQL migration',
+	args: databaseGenerateArgs,
+} as const
+
+export const databaseCheckDefinition = {
+	name: 'check',
+	description: 'Validate migration history, checksums, and schema drift',
+	args: databaseCommonArgs,
+} as const
+
+export const databaseRebaseArgs = {
+	...databaseGenerateArgs,
+	lineage: { type: 'string', description: 'New immutable database lineage' },
+} as const
+
+export const databaseRebaseDefinition = {
+	name: 'rebase',
+	description: 'Start a fresh database lineage while preserving deployed instances',
+	args: databaseRebaseArgs,
+} as const
+
+export const databaseSubCommands = new Map([
+	[
+		'generate',
+		lazy(
+			() => import('./commands/database').then((module) => module.databaseGenerateCommand),
+			databaseGenerateDefinition,
+		),
+	],
+	[
+		'check',
+		lazy(
+			() => import('./commands/database').then((module) => module.databaseCheckCommand),
+			databaseCheckDefinition,
+		),
+	],
+	[
+		'rebase',
+		lazy(
+			() => import('./commands/database').then((module) => module.databaseRebaseCommand),
+			databaseRebaseDefinition,
+		),
+	],
+])
+
+export const databaseCommandDefinition = {
+	name: 'database',
+	description: 'Generate and validate plugin database migrations',
+	args: databaseCommonArgs,
+	subCommands: databaseSubCommands,
+} as const
+
 export const publishCommandArgs = {
 	access: { type: 'string', description: 'npm publish --access value', default: 'public' },
 	dryRun: { type: 'boolean', description: 'Plan publish without executing', default: false },

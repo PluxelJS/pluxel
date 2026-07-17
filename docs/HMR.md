@@ -1,5 +1,11 @@
 # HMR Architecture
 
+Database handle 与 plugin generation 绑定，并固定引用一个 active database instance。replacement 撤销旧 handle 和
+live-query lease；同 lineage 新 generation 复用 instance，`migrations` evolution 只应用缺失 migration，
+`reset-on-schema-change` 的 schema-derived lineage 改变时则构建空 candidate、原子激活
+并归档旧 instance。PGlite backend、PG pool、instance registry 和 durable rows 属于 root，不随 module replacement 重建；
+candidate 失败保持原 active instance，但 core rollback 仍通过新 handle acquisition 验证 artifact 与 lineage。
+
 HMR replacement 必须保持 core lifecycle、Workbench resources 和 UI artifact 同步：
 
 ```text

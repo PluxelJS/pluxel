@@ -62,8 +62,8 @@ export {
 	RUNTIME_TRANSPORT_PATHS,
 	RUNTIME_ADMIN_ACCESS_BASE,
 	runtimeLogStreamPath,
-	runtimeWorkbenchCollectionPath,
 	runtimeWorkbenchModelEventsPath,
+	runtimeWorkbenchLiveQueryPath,
 	joinPath,
 } from './web/paths'
 export * from './web/host-ui'
@@ -74,19 +74,6 @@ export {
 	useRuntimeTransportClient,
 } from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
-export {
-	useBoundSignalDbCollectionsState,
-	useSignalDbCollectionState,
-	useSignalDbQueryState,
-	type SignalDbCollectionView,
-} from './workbench/collection-ui-runtime'
-export type {
-	SignalDbFindOptions,
-	SignalDbItem,
-	SignalDbLoadResponse,
-	SignalDbListSpec,
-	SignalDbSelector,
-} from './workbench/collection-contracts'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,

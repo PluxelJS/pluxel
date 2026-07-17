@@ -76,11 +76,27 @@ export type WorkbenchRpcResource<TRpc> = Readonly<{
 	readonly [workbenchResourceType]?: TRpc
 }>
 
-export type WorkbenchCollectionItem = Readonly<{ id: string }>
+export type StandardSchema<Input = unknown, Output = Input> = Readonly<{
+	'~standard': Readonly<{
+		version: 1
+		vendor: string
+		validate(
+			value: unknown,
+		):
+			| { value: Output; issues?: undefined }
+			| { value?: undefined; issues: readonly unknown[] }
+			| Promise<
+					{ value: Output; issues?: undefined } | { value?: undefined; issues: readonly unknown[] }
+			  >
+	}>
+}>
 
-export type WorkbenchCollectionResource<TItem extends WorkbenchCollectionItem> = Readonly<{
-	kind: 'collection'
-	readonly [workbenchResourceType]?: TItem
+export type WorkbenchLiveQueryResource<Params, Row> = Readonly<{
+	kind: 'liveQuery'
+	params?: StandardSchema<any, Params>
+	row: StandardSchema<any, Row>
+	key: keyof Row & string
+	readonly [workbenchResourceType]?: { params: Params; row: Row }
 }>
 
 export type WorkbenchEventsResource<TEvents extends Record<string, unknown>> = Readonly<{
@@ -90,17 +106,34 @@ export type WorkbenchEventsResource<TEvents extends Record<string, unknown>> = R
 
 export type WorkbenchResourceContract =
 	| WorkbenchRpcResource<unknown>
-	| WorkbenchCollectionResource<WorkbenchCollectionItem>
+	| WorkbenchLiveQueryResource<unknown, Record<string, unknown>>
 	| WorkbenchEventsResource<Record<string, unknown>>
 
 export type WorkbenchResourceMap = Readonly<Record<string, WorkbenchResourceContract>>
 
 export type WorkbenchRpcOf<Resource> =
 	Resource extends WorkbenchRpcResource<infer TRpc> ? TRpc : never
-export type WorkbenchCollectionOf<Resource> =
-	Resource extends WorkbenchCollectionResource<infer TItem> ? TItem : never
 export type WorkbenchEventsOf<Resource> =
 	Resource extends WorkbenchEventsResource<infer TEvents> ? TEvents : never
+export type WorkbenchLiveQueryOf<Resource> =
+	Resource extends WorkbenchLiveQueryResource<infer Params, infer Row>
+		? { params: Params; row: Row }
+		: never
+
+export type WorkbenchLiveQuerySnapshot<Row> = Readonly<{
+	generation: string
+	revision: number
+	rows: readonly Row[]
+}>
+
+export type WorkbenchLiveQueryPatch<Row, Key extends string | number = string | number> = Readonly<{
+	generation: string
+	fromRevision: number
+	toRevision: number
+	upserted: readonly Row[]
+	removed: readonly Key[]
+	order: readonly Key[]
+}>
 
 /** Browser-side RPC facade: only methods cross the boundary and every result is async. */
 export type WorkbenchRpcClient<TRpc> = Readonly<{
@@ -293,10 +326,30 @@ function rpcResource<TRpc>(): WorkbenchRpcResource<TRpc> {
 	return Object.freeze({ kind: 'rpc' }) as WorkbenchRpcResource<TRpc>
 }
 
-function collectionResource<
-	TItem extends WorkbenchCollectionItem,
->(): WorkbenchCollectionResource<TItem> {
-	return Object.freeze({ kind: 'collection' }) as WorkbenchCollectionResource<TItem>
+function liveQueryResource<Row>(input: {
+	row: StandardSchema<any, Row>
+	key: keyof Row & string
+}): WorkbenchLiveQueryResource<undefined, Row>
+function liveQueryResource<Params, Row>(input: {
+	params: StandardSchema<any, Params>
+	row: StandardSchema<any, Row>
+	key: keyof Row & string
+}): WorkbenchLiveQueryResource<Params, Row>
+function liveQueryResource<Params, Row>(input: {
+	params?: StandardSchema<any, Params>
+	row: StandardSchema<any, Row>
+	key: keyof Row & string
+}): WorkbenchLiveQueryResource<Params, Row> {
+	if (!input?.row?.['~standard']) {
+		throw new TypeError('[workbench-contract] liveQuery.row must implement Standard Schema V1')
+	}
+	if (input.params && !input.params['~standard']) {
+		throw new TypeError('[workbench-contract] liveQuery.params must implement Standard Schema V1')
+	}
+	if (!String(input.key ?? '').trim()) {
+		throw new TypeError('[workbench-contract] liveQuery.key is required')
+	}
+	return Object.freeze({ kind: 'liveQuery', params: input.params, row: input.row, key: input.key })
 }
 
 function eventsResource<
@@ -442,7 +495,7 @@ function stableStringify(value: unknown): string {
 export const workbenchContract = Object.freeze({
 	define: defineContract,
 	rpc: rpcResource,
-	collection: collectionResource,
+	liveQuery: liveQueryResource,
 	events: eventsResource,
 	port: portContract,
 	slot: slotPlacement,

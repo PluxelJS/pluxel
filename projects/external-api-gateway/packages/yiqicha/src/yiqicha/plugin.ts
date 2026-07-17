@@ -21,11 +21,12 @@ import {
 	type YiqichaResponseCacheRow,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
+import { createWorkbenchProjection } from '@repo/external-api-gateway-shared/workbench-projection'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import { workbench } from '@pluxel/runtime/workbench'
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, inArray, sql } from 'drizzle-orm'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 import type {
 	YiqichaApiDoc,
@@ -107,21 +108,19 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		this.ctx.workbench.mount(YiqichaWorkbench, {
-			commands: workbench.bind.rpc(() => new YiqichaProviderRpc(this)),
-			settings: workbench.bind.collection({
-				read: () => this.settings.snapshot(),
-				subscribe: (invalidate) => this.settings.subscribe(invalidate),
-			}),
-			status: workbench.bind.collection({
-				read: () => this.status.snapshot(),
-				subscribe: (invalidate) => this.status.subscribe(invalidate),
-			}),
-			history: workbench.bind.collection({
-				read: () => this.history.snapshot(),
-				subscribe: (invalidate) => this.history.subscribe(invalidate),
-			}),
+		const projection = await createWorkbenchProjection(this.ctx, {
+			settings: this.settings,
+			status: this.status,
+			history: this.history,
 		})
+		if (projection) {
+			this.ctx.workbench.mount(YiqichaWorkbench, {
+				commands: workbench.bind.rpc(() => new YiqichaProviderRpc(this)),
+				settings: projection.binding('settings'),
+				status: projection.binding('status'),
+				history: projection.binding('history'),
+			})
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('YiQiCha provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -241,9 +240,10 @@ export class YiqichaProviderPlugin extends BasePlugin {
 
 	async clearHistory(): Promise<{ ok: true }> {
 		this.history.removeMany({})
-		await this.data?.db
-			.delete(providerCallHistory)
-			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+		await this.data
+			?.transaction((tx) =>
+				tx.delete(providerCallHistory).where(eq(providerCallHistory.provider, PROVIDER_ID)),
+			)
 			.catch((error) => {
 				this.ctx.logger.warn('Failed to clear YiQiCha test history database', { error })
 			})
@@ -504,24 +504,24 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async readCachedOutcome(cacheKey: CacheKey): Promise<UpstreamOutcome | undefined> {
 		if (!this.data) return undefined
 		try {
-			const rows = await this.data.db
-				.select()
-				.from(yiqichaResponseCache)
-				.where(eq(yiqichaResponseCache.id, cacheKey.id))
-				.limit(1)
+			const rows = await this.data.read((db) =>
+				db
+					.select()
+					.from(yiqichaResponseCache)
+					.where(eq(yiqichaResponseCache.id, cacheKey.id))
+					.limit(1),
+			)
 			const row = rows[0]
 			if (!row) return undefined
 			const now = Date.now()
 			const cached = outcomeFromCacheRow(row, now)
-			this.data.client
-				.execute({
-					sql: `
-						UPDATE yiqicha_response_cache
-						SET last_hit_at = ?, hit_count = hit_count + 1
-						WHERE id = ?
-					`,
-					args: [now, cacheKey.id],
-				})
+			this.data
+				.transaction((tx) =>
+					tx
+						.update(yiqichaResponseCache)
+						.set({ lastHitAt: now, hitCount: sql`${yiqichaResponseCache.hitCount} + 1` })
+						.where(eq(yiqichaResponseCache.id, cacheKey.id)),
+				)
 				.catch((error) => {
 					this.ctx.logger.warn('Failed to update YiQiCha response cache hit stats', {
 						error,
@@ -546,52 +546,43 @@ export class YiqichaProviderPlugin extends BasePlugin {
 		if (!this.data || !outcome.bodyText) return undefined
 		try {
 			const now = Date.now()
-			await this.data.client.execute({
-				sql: `
-					INSERT INTO yiqicha_response_cache (
-						id,
-						api_code,
-						api_key,
-						params_json,
-						status,
-						http_status,
-						content_type,
-						body_text,
-						output_bytes,
-						upstream_request_id,
-						created_at,
-						updated_at,
-						last_hit_at,
-						hit_count
-					)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
-					ON CONFLICT(id) DO UPDATE SET
-						api_code = excluded.api_code,
-						api_key = excluded.api_key,
-						params_json = excluded.params_json,
-						status = excluded.status,
-						http_status = excluded.http_status,
-						content_type = excluded.content_type,
-						body_text = excluded.body_text,
-						output_bytes = excluded.output_bytes,
-						upstream_request_id = excluded.upstream_request_id,
-						updated_at = excluded.updated_at
-				`,
-				args: [
-					cacheKey.id,
-					api.apiCode,
-					apiKeyByCode.get(api.apiCode) ?? api.apiCode,
-					cacheKey.paramsJson,
-					outcome.status,
-					outcome.response.status,
+			const row = {
+				id: cacheKey.id,
+				apiCode: api.apiCode,
+				apiKey: apiKeyByCode.get(api.apiCode) ?? api.apiCode,
+				paramsJson: cacheKey.paramsJson,
+				status: outcome.status,
+				httpStatus: outcome.response.status,
+				contentType:
 					outcome.response.headers.get('content-type') ?? 'application/json; charset=utf-8',
-					outcome.bodyText,
-					outcome.outputBytes,
-					outcome.upstreamRequestId ?? null,
-					now,
-					now,
-				],
-			})
+				bodyText: outcome.bodyText,
+				outputBytes: outcome.outputBytes,
+				upstreamRequestId: outcome.upstreamRequestId ?? null,
+				createdAt: now,
+				updatedAt: now,
+				lastHitAt: null as number | null,
+				hitCount: 0,
+			} satisfies typeof yiqichaResponseCache.$inferInsert
+			await this.data.transaction((tx) =>
+				tx
+					.insert(yiqichaResponseCache)
+					.values(row)
+					.onConflictDoUpdate({
+						target: yiqichaResponseCache.id,
+						set: {
+							apiCode: row.apiCode,
+							apiKey: row.apiKey,
+							paramsJson: row.paramsJson,
+							status: row.status,
+							httpStatus: row.httpStatus,
+							contentType: row.contentType,
+							bodyText: row.bodyText,
+							outputBytes: row.outputBytes,
+							upstreamRequestId: row.upstreamRequestId,
+							updatedAt: row.updatedAt,
+						},
+					}),
+			)
 			void this.trimResponseCache()
 			return now
 		} catch (error) {
@@ -606,17 +597,25 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async trimResponseCache(): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.client.execute({
-				sql: `
-					DELETE FROM yiqicha_response_cache
-					WHERE id IN (
-						SELECT id
-						FROM yiqicha_response_cache
-						ORDER BY COALESCE(last_hit_at, updated_at) DESC, updated_at DESC
-						LIMIT -1 OFFSET ?
+			await this.data.transaction(async (tx) => {
+				const overflow = await tx
+					.select({ id: yiqichaResponseCache.id })
+					.from(yiqichaResponseCache)
+					.orderBy(
+						desc(
+							sql`coalesce(${yiqichaResponseCache.lastHitAt}, ${yiqichaResponseCache.updatedAt})`,
+						),
+						desc(yiqichaResponseCache.updatedAt),
 					)
-				`,
-				args: [MAX_YIQICHA_RESPONSE_CACHE_ROWS],
+					.offset(MAX_YIQICHA_RESPONSE_CACHE_ROWS)
+				if (overflow.length > 0) {
+					await tx.delete(yiqichaResponseCache).where(
+						inArray(
+							yiqichaResponseCache.id,
+							overflow.map(({ id }) => id),
+						),
+					)
+				}
 			})
 		} catch (error) {
 			this.ctx.logger.warn('Failed to trim YiQiCha response cache', { error })
@@ -706,7 +705,9 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async persistHistory(doc: YiqichaTestRunDoc): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db.insert(providerCallHistory).values(toProviderHistoryRow(doc))
+			await this.data.transaction((tx) =>
+				tx.insert(providerCallHistory).values(toProviderHistoryRow(doc)),
+			)
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist YiQiCha test history', { error })
 		}
@@ -760,12 +761,14 @@ export class YiqichaProviderPlugin extends BasePlugin {
 	private async loadHistoryFromDB(): Promise<void> {
 		this.history.removeMany({})
 		if (!this.data) return
-		const rows = await this.data.db
-			.select()
-			.from(providerCallHistory)
-			.where(eq(providerCallHistory.provider, PROVIDER_ID))
-			.orderBy(desc(providerCallHistory.at))
-			.limit(MAX_YIQICHA_HISTORY)
+		const rows = await this.data.read((db) =>
+			db
+				.select()
+				.from(providerCallHistory)
+				.where(eq(providerCallHistory.provider, PROVIDER_ID))
+				.orderBy(desc(providerCallHistory.at))
+				.limit(MAX_YIQICHA_HISTORY),
+		)
 		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
 	}
 

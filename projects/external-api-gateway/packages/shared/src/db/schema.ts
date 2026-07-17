@@ -1,80 +1,86 @@
 import type { InferSelectModel } from 'drizzle-orm'
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import {
+	bigint,
+	boolean,
+	doublePrecision,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	primaryKey,
+	text,
+} from 'drizzle-orm/pg-core'
+import { defineDatabase } from '@pluxel/runtime/database'
 
 const historySources = ['ui', 'rpc', 'settings'] as const
 
-export const gatewayMeta = sqliteTable('gateway_meta', {
-	key: text('key').primaryKey(),
-	value: text('value').notNull(),
-})
-
-export const gatewayTokens = sqliteTable('gateway_tokens', {
+export const gatewayTokens = pgTable('gateway_tokens', {
 	id: text('id').primaryKey(),
 	name: text('name').notNull(),
 	tokenHash: text('token_hash').notNull(),
 	tokenPreview: text('token_preview').notNull(),
-	enabled: integer('enabled', { mode: 'boolean' }).notNull(),
-	createdAt: integer('created_at').notNull(),
-	updatedAt: integer('updated_at').notNull(),
-	lastUsedAt: integer('last_used_at'),
+	enabled: boolean('enabled').notNull(),
+	createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+	updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+	lastUsedAt: bigint('last_used_at', { mode: 'number' }),
 })
 
-export const billingUsageRecords = sqliteTable(
+export const billingUsageRecords = pgTable(
 	'billing_usage_records',
 	{
 		id: text('id').primaryKey(),
-		at: integer('at').notNull(),
+		at: bigint('at', { mode: 'number' }).notNull(),
 		userId: text('user_id').notNull(),
 		provider: text('provider').notNull(),
 		pluginId: text('plugin_id').notNull(),
 		operation: text('operation').notNull(),
 		model: text('model'),
-		ok: integer('ok', { mode: 'boolean' }).notNull(),
+		ok: boolean('ok').notNull(),
 		status: text('status').notNull(),
 		latencyMs: integer('latency_ms').notNull(),
 		inputBytes: integer('input_bytes').notNull(),
 		outputBytes: integer('output_bytes').notNull(),
-		units: real('units').notNull(),
+		units: doublePrecision('units').notNull(),
 		unitName: text('unit_name').notNull(),
-		costCny: real('cost_cny').notNull(),
+		costCny: doublePrecision('cost_cny').notNull(),
 		currency: text('currency').notNull(),
-		costEstimated: integer('cost_estimated', { mode: 'boolean' }).notNull(),
+		costEstimated: boolean('cost_estimated').notNull(),
 		upstreamRequestId: text('upstream_request_id'),
 		metadataJson: text('metadata_json'),
 	},
-	(table) => ({
-		atIdx: index('idx_billing_usage_records_at').on(table.at),
-		providerOperationAtIdx: index('idx_billing_usage_records_provider_operation_at').on(
+	(table) => [
+		index('idx_billing_usage_records_at').on(table.at),
+		index('idx_billing_usage_records_provider_operation_at').on(
 			table.provider,
 			table.operation,
 			table.at,
 		),
-		userAtIdx: index('idx_billing_usage_records_user_at').on(table.userId, table.at),
-	}),
+		index('idx_billing_usage_records_user_at').on(table.userId, table.at),
+	],
 )
 
-export const billingRates = sqliteTable('billing_rates', {
+export const billingRates = pgTable('billing_rates', {
 	id: text('id').primaryKey(),
 	provider: text('provider').notNull(),
 	operation: text('operation').notNull(),
 	model: text('model'),
 	unitName: text('unit_name').notNull(),
-	unitCostCny: real('unit_cost_cny').notNull(),
-	updatedAt: integer('updated_at').notNull(),
+	unitCostCny: doublePrecision('unit_cost_cny').notNull(),
+	updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 })
 
-export const providerCallHistory = sqliteTable(
+export const providerCallHistory = pgTable(
 	'provider_call_history',
 	{
 		id: text('id').primaryKey(),
 		provider: text('provider').notNull(),
 		providerRecordId: text('provider_record_id').notNull(),
-		at: integer('at').notNull(),
+		at: bigint('at', { mode: 'number' }).notNull(),
 		source: text('source', { enum: historySources }).notNull(),
 		userId: text('user_id').notNull(),
 		operation: text('operation').notNull(),
 		model: text('model'),
-		ok: integer('ok', { mode: 'boolean' }).notNull(),
+		ok: boolean('ok').notNull(),
 		status: text('status').notNull(),
 		latencyMs: integer('latency_ms').notNull(),
 		inputBytes: integer('input_bytes').notNull(),
@@ -85,16 +91,13 @@ export const providerCallHistory = sqliteTable(
 		error: text('error'),
 		detailsJson: text('details_json'),
 	},
-	(table) => ({
-		providerAtIdx: index('idx_provider_call_history_provider_at').on(table.provider, table.at),
-		providerRecordIdx: index('idx_provider_call_history_provider_record').on(
-			table.provider,
-			table.providerRecordId,
-		),
-	}),
+	(table) => [
+		index('idx_provider_call_history_provider_at').on(table.provider, table.at),
+		index('idx_provider_call_history_provider_record').on(table.provider, table.providerRecordId),
+	],
 )
 
-export const yiqichaResponseCache = sqliteTable(
+export const yiqichaResponseCache = pgTable(
 	'yiqicha_response_cache',
 	{
 		id: text('id').primaryKey(),
@@ -107,26 +110,43 @@ export const yiqichaResponseCache = sqliteTable(
 		bodyText: text('body_text').notNull(),
 		outputBytes: integer('output_bytes').notNull(),
 		upstreamRequestId: text('upstream_request_id'),
-		createdAt: integer('created_at').notNull(),
-		updatedAt: integer('updated_at').notNull(),
-		lastHitAt: integer('last_hit_at'),
+		createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+		updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+		lastHitAt: bigint('last_hit_at', { mode: 'number' }),
 		hitCount: integer('hit_count').notNull(),
 	},
-	(table) => ({
-		apiCodeIdx: index('idx_yiqicha_response_cache_api_code').on(table.apiCode),
-		lastHitAtIdx: index('idx_yiqicha_response_cache_last_hit_at').on(table.lastHitAt),
-		updatedAtIdx: index('idx_yiqicha_response_cache_updated_at').on(table.updatedAt),
-	}),
+	(table) => [
+		index('idx_yiqicha_response_cache_api_code').on(table.apiCode),
+		index('idx_yiqicha_response_cache_last_hit_at').on(table.lastHitAt),
+		index('idx_yiqicha_response_cache_updated_at').on(table.updatedAt),
+	],
+)
+
+export const workbenchProjections = pgTable(
+	'workbench_projections',
+	{
+		resource: text('resource').notNull(),
+		id: text('id').notNull(),
+		payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+		position: integer('position').notNull(),
+		updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.resource, table.id] }),
+		index('workbench_projections_resource_position_idx').on(table.resource, table.position),
+	],
 )
 
 export const gatewaySchema = {
 	billingRates,
 	billingUsageRecords,
-	gatewayMeta,
 	gatewayTokens,
 	providerCallHistory,
 	yiqichaResponseCache,
+	workbenchProjections,
 }
+
+export const externalGatewayDatabase = defineDatabase({ schema: gatewaySchema })
 
 export type BillingRateRow = InferSelectModel<typeof billingRates>
 export type BillingUsageRecordRow = InferSelectModel<typeof billingUsageRecords>

@@ -23,7 +23,7 @@ describe('platform bridge plugin graph', () => {
 	] as const)(
 		'keeps %s running when its optional bridge and Hub are removed',
 		async (Platform, Bridge) => {
-			host = createRuntimeHost()
+			host = createRuntimeHost({ workbench: false })
 			host.add([ChatHubPlugin, Platform, Bridge])
 			const started = await host.commitAllowFail()
 			expect(started.lifecycleReport.issues).toEqual([])

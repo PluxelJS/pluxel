@@ -18,8 +18,8 @@ import { telegramUi } from './runtime.ts'
 
 export function TelegramSettingsPanel() {
 	const model = telegramUi.useResources()
-	const settingsList = model.settings.useSnapshot().items
-	const statusList = model.status.useSnapshot().items
+	const settingsList = model.settings.useQuery().rows
+	const statusList = model.status.useQuery().rows
 	const [accountId, setAccountId] = useState('default')
 	const [token, setToken] = useState('')
 	const [apiBase, setApiBase] = useState('https://api.telegram.org')

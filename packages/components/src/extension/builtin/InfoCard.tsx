@@ -3,13 +3,10 @@ import type {
 	WorkbenchBadgeValue as BuiltinBadgeValue,
 	WorkbenchInfoCardBlock as BuiltinInfoCardBlock,
 } from '@pluxel/runtime/workbench'
-import { useSignalDbQueryState } from '@pluxel/runtime/web'
-import {
-	isObject,
-	resolveSignalDbRef,
-	stableSignalDbValueKey,
-	useSignalDbForValues,
-} from './_shared'
+
+function isObject(value: unknown): value is Record<string, unknown> {
+	return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
 
 function isBadgeValue(value: unknown): value is BuiltinBadgeValue {
 	return Boolean(value) && typeof value === 'object' && (value as any).kind === 'badge'
@@ -74,22 +71,6 @@ function shouldAutoSpanFullWidth(value: unknown): boolean {
 
 export function BuiltinInfoCard({ block }: { block: BuiltinInfoCardBlock }) {
 	const rows = Array.isArray(block.rows) ? block.rows : []
-	const rowsKey = stableSignalDbValueKey(rows)
-	const signalDbCollections = useSignalDbForValues(rows.map((r) => r?.value))
-
-	const resolvedRows = useSignalDbQueryState(
-		() =>
-			rows.map((row) => {
-				const value: any = row?.value
-				if (!isObject(value)) return row
-				if (value.kind === 'signaldb') {
-					const nextValue = resolveSignalDbRef(value as any, signalDbCollections as any)
-					return Object.assign({}, row, { value: nextValue as any })
-				}
-				return row
-			}),
-		[rowsKey],
-	)
 
 	const layout = block.layout ?? {}
 	const density = layout.density ?? 'comfortable'
@@ -118,7 +99,7 @@ export function BuiltinInfoCard({ block }: { block: BuiltinInfoCardBlock }) {
 					</Stack>
 				) : null}
 
-				{resolvedRows.length > 0 ? (
+				{rows.length > 0 ? (
 					<>
 						{block.description ? <Divider /> : null}
 						{variant === 'grid' || columns > 1 ? (
@@ -129,7 +110,7 @@ export function BuiltinInfoCard({ block }: { block: BuiltinInfoCardBlock }) {
 									gap: density === 'compact' ? 8 : 10,
 								}}
 							>
-								{resolvedRows.map((row, index) => {
+								{rows.map((row, index) => {
 									const span =
 										typeof (row as any).span === 'number' && (row as any).span > 0
 											? Math.min(columns, Math.max(1, Math.floor((row as any).span)))
@@ -175,7 +156,7 @@ export function BuiltinInfoCard({ block }: { block: BuiltinInfoCardBlock }) {
 							</Box>
 						) : (
 							<Stack gap={bodyGap}>
-								{resolvedRows.map((row, index) => (
+								{rows.map((row, index) => (
 									<Group
 										key={`${row.label}:${index}`}
 										justify="space-between"

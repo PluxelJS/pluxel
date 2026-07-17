@@ -1,54 +1,8 @@
-import type { UiConfirmPayload, UiNotifyPayload } from '../web/host-ui'
 import {
 	assertValidConfigLayout,
 	normalizeMarkdownTemplate,
 	type ConfigLayoutPart,
 } from '@pluxel/core'
-
-export type BuiltinSignalDbRef<T = unknown> = {
-	kind: 'signaldb'
-	collection: string
-	selector?: Record<string, unknown>
-	path?: string
-	fallback?: T
-}
-
-export type BuiltinSyncRef<T = unknown> = BuiltinSignalDbRef<T>
-
-export type BuiltinFieldValueRef = {
-	kind: 'field'
-	key: string
-}
-
-export type BuiltinGeneratedIdValue = {
-	kind: 'generatedId'
-}
-
-export type BuiltinNowValue = {
-	kind: 'now'
-	format?: 'ms' | 'iso'
-}
-
-export type BuiltinTemplateValue =
-	| null
-	| string
-	| number
-	| boolean
-	| BuiltinFieldValueRef
-	| BuiltinGeneratedIdValue
-	| BuiltinNowValue
-	| { [key: string]: BuiltinTemplateValue }
-	| BuiltinTemplateValue[]
-
-export type BuiltinSignalDbWriteMode = 'patch' | 'replace' | 'insert' | 'remove'
-
-export type BuiltinSignalDbWriteSpec = {
-	collection: string
-	mode?: BuiltinSignalDbWriteMode
-	selector?: Record<string, unknown>
-	upsert?: boolean
-	value?: BuiltinTemplateValue
-}
 
 export type BuiltinBadgeValue = {
 	kind: 'badge'
@@ -66,7 +20,6 @@ export type BuiltinValue =
 	| null
 	| BuiltinBadgeValue
 	| { kind: 'json'; value: unknown }
-	| BuiltinSyncRef
 
 export type BuiltinInfoCardRow = {
 	label: string
@@ -82,7 +35,7 @@ export type BuiltinInfoCardLayout = {
 	valueAlign?: 'left' | 'right'
 }
 
-export type BuiltinDocBlockKind = 'infoCard' | 'form' | 'action' | 'resourceSelect'
+export type BuiltinDocBlockKind = 'infoCard'
 
 export type BuiltinInfoCardBlock = {
 	kind: 'infoCard'
@@ -91,67 +44,7 @@ export type BuiltinInfoCardBlock = {
 	layout?: BuiltinInfoCardLayout
 }
 
-export type BuiltinFormBlock = {
-	kind: 'form'
-	description?: string
-	submitLabel?: string
-	submitMode?: 'manual' | 'onChange'
-	autoSubmitDebounceMs?: number
-	syncFrom?: BuiltinSignalDbRef<Record<string, unknown>>
-	schemaKey: string
-	write: BuiltinSignalDbWriteSpec
-	confirm?: UiConfirmPayload
-	feedback?: {
-		success?: UiNotifyPayload
-		error?: UiNotifyPayload
-	}
-	resetOnSuccess?: boolean
-}
-
-export type BuiltinActionBlock = {
-	kind: 'action'
-	label: string
-	description?: string
-	write: BuiltinSignalDbWriteSpec
-	confirm?: UiConfirmPayload
-	feedback?: {
-		success?: UiNotifyPayload
-		error?: UiNotifyPayload
-	}
-}
-
-export type BuiltinResourceSelectTarget = {
-	pluginName?: string
-	schemaKey: string
-	field: string
-	mode?: 'value' | 'ref'
-	refKind?: string
-	includeLabel?: boolean
-}
-
-export type BuiltinResourceSelectBlock = {
-	kind: 'resourceSelect'
-	label: string
-	description?: string
-	placeholder?: string
-	clearable?: boolean
-	nothingFoundMessage?: string
-	collection: string
-	valueField?: string
-	labelField: string
-	descriptionField?: string
-	target: BuiltinResourceSelectTarget
-	feedback?: {
-		success?: UiNotifyPayload
-		error?: UiNotifyPayload
-	}
-}
-
-export type BuiltinDocBlock =
-	| BuiltinInfoCardBlock
-	| BuiltinFormBlock
-	| BuiltinActionBlock
-	| BuiltinResourceSelectBlock
+export type BuiltinDocBlock = BuiltinInfoCardBlock
 
 export type BuiltinMarkdownPart = ConfigLayoutPart
 

@@ -9,6 +9,12 @@ import {
 	toFontRef,
 	type FontRef,
 } from './PluginContributionFontDemo.shared'
+import {
+	demoDatabase,
+	demoProjectionQuery,
+	demoProjections,
+	DemoProjectionStore,
+} from './workbench-projection'
 
 const FontManagerWorkbench = workbench.extension({
 	contract: FontManagerUi,
@@ -19,12 +25,16 @@ const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
 @Plugin({ name: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
-		const mounted = this.ctx.workbench.mount(FontManagerWorkbench, {
-			fontSets: workbench.bind.managedCollection({
-				initial: FONT_SETS.map((item) => Object.assign({}, item)),
+		if (!this.ctx.workbench.enabled) return
+		const database = await this.ctx.database.use(demoDatabase)
+		await new DemoProjectionStore(database).replaceAll('fontSets', FONT_SETS)
+		this.ctx.workbench.mount(FontManagerWorkbench, {
+			fontSets: workbench.bind.liveQuery({
+				database,
+				dependsOn: [demoProjections],
+				query: demoProjectionQuery('fontSets'),
 			}),
 		})
-		await mounted?.managedCollections.fontSets?.ready()
 	}
 }
 

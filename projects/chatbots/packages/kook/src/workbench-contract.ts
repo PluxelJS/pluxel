@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/chatbots-adapter-kit/wire-schema'
 
 export type KookSettingsDoc = {
 	id: string
@@ -39,8 +40,8 @@ export interface KookWorkbenchCommands {
 export const KookUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<KookWorkbenchCommands>(),
-		settings: workbenchContract.collection<KookSettingsDoc>(),
-		status: workbenchContract.collection<KookStatusDoc>(),
+		settings: workbenchContract.liveQuery({ row: jsonObjectSchema<KookSettingsDoc>(), key: 'id' }),
+		status: workbenchContract.liveQuery({ row: jsonObjectSchema<KookStatusDoc>(), key: 'id' }),
 	},
 	views: {
 		Settings: {

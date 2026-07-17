@@ -40,7 +40,7 @@ export function GatewayDashboard() {
 export function GatewayPanel() {
 	const model = useGatewayModel()
 	const api = model.commands
-	const tokens = [...model.tokens.useSnapshot().items]
+	const tokens = [...model.tokens.useQuery().rows]
 		.sort((left, right) => right.updatedAt - left.updatedAt)
 		.slice(0, 100)
 	const [name, setName] = useState('zhipu-client')

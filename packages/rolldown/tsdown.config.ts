@@ -24,6 +24,7 @@ export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
 		build: 'src/cli/index.ts',
+		database: 'src/database/index.ts',
 		plugins: 'src/rolldown/index.ts',
 		'resolver/oxc': 'src/resolver/oxc.ts',
 		'workbench/artifact': 'src/workbench/artifact.ts',

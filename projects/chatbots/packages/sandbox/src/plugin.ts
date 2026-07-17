@@ -1,7 +1,13 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
 import { contentText, normalizeContent, type ChatSendRequest } from '@repo/chatbots-contracts'
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
+import {
+	workbenchProjectionQuery,
+	WorkbenchProjectionStore,
+	workbenchProjectionDatabase,
+	workbenchProjections,
+} from '@repo/chatbots-adapter-kit/workbench-projection'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
 import type { SandboxInput, SandboxMessage } from './workbench-contract.ts'
@@ -13,7 +19,7 @@ const MAX_MESSAGES = 500
 export class ChatSandboxPlugin extends BasePlugin {
 	private messages: SandboxMessage[] = []
 	private sequence = 1
-	private projection?: MountedWorkbenchManagedCollections<typeof ChatSandboxWorkbench>['messages']
+	private projections?: WorkbenchProjectionStore
 	private readonly accepts = new KeyedSerialExecutor<string>()
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -31,14 +37,18 @@ export class ChatSandboxPlugin extends BasePlugin {
 			send: async (request) => this.captureOutbound(request),
 		})
 		this.ctx.effects.defer(dispose)
-		const mounted = this.ctx.workbench.mount(ChatSandboxWorkbench, {
-			commands: workbench.bind.rpc(() => new ChatSandboxRpc(this)),
-			messages: workbench.bind.managedCollection(),
-		})
-		if (mounted) {
-			this.projection = mounted.managedCollections.messages
-			await this.projection.ready()
-			this.projection.removeMany({})
+		if (this.ctx.workbench.enabled) {
+			const database = await this.ctx.database.use(workbenchProjectionDatabase)
+			this.projections = new WorkbenchProjectionStore(database)
+			await this.projections.replaceAll('messages', [])
+			this.ctx.workbench.mount(ChatSandboxWorkbench, {
+				commands: workbench.bind.rpc(() => new ChatSandboxRpc(this)),
+				messages: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<SandboxMessage>('messages'),
+				}),
+			})
 		}
 		this.ctx.http.plugin.routes(
 			(app) =>
@@ -122,29 +132,25 @@ export class ChatSandboxPlugin extends BasePlugin {
 
 	private append(message: SandboxMessage): void {
 		this.messages.push(message)
-		this.project(() =>
-			this.projection?.replaceOne({ id: message.id }, structuredClone(message), { upsert: true }),
-		)
+		this.project(this.projections?.upsert('messages', structuredClone(message)))
 		if (this.messages.length > MAX_MESSAGES)
 			for (const removed of this.messages.splice(0, this.messages.length - MAX_MESSAGES))
-				this.project(() => this.projection?.removeOne({ id: removed.id }))
+				this.project(this.projections?.remove('messages', removed.id))
 	}
 
 	reset(): { ok: true } {
 		this.messages = []
 		this.sequence = 1
-		this.project(() => this.projection?.removeMany({}))
+		this.project(this.projections?.replaceAll('messages', []))
 		return { ok: true }
 	}
 	status() {
 		return { ...this.hub.snapshot(), messages: this.messages.length }
 	}
 
-	private project(operation: () => unknown): void {
-		try {
-			operation()
-		} catch (error) {
-			this.ctx.logger.warn('Failed to update chat sandbox workbench projection', { error })
-		}
+	private project(operation: Promise<void> | undefined): void {
+		void operation?.catch((error) =>
+			this.ctx.logger.warn('Failed to update chat sandbox workbench projection', { error }),
+		)
 	}
 }

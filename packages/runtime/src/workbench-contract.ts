@@ -1,12 +1,12 @@
 export { workbenchContract } from './workbench/contracts'
 export type {
 	AnyWorkbenchContract,
-	WorkbenchCollectionItem,
-	WorkbenchCollectionOf,
-	WorkbenchCollectionResource,
 	WorkbenchContract,
 	WorkbenchEventsOf,
 	WorkbenchEventsResource,
+	StandardSchema,
+	WorkbenchLiveQueryOf,
+	WorkbenchLiveQueryResource,
 	WorkbenchIcon,
 	WorkbenchPlacementSpec,
 	WorkbenchPortContract,

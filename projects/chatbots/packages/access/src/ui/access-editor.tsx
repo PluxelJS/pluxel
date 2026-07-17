@@ -17,8 +17,8 @@ import type { UserAccess } from './types.ts'
 import type { AccessViewModel } from './runtime.ts'
 
 export function AccessEditor({ app }: { app: { model: AccessViewModel } }) {
-	const users = app.model.users.useSnapshot().items
-	const roles = app.model.roles.useSnapshot().items
+	const users = app.model.users.useQuery().rows
+	const roles = app.model.roles.useQuery().rows
 	const [userId, setUserId] = useState<string | null>(null)
 	const [access, setAccess] = useState<UserAccess>({ roles: [], grants: [] })
 	const [permissionNodes, setPermissionNodes] = useState<string[]>([])

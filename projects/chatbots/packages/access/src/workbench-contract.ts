@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/chatbots-adapter-kit/wire-schema'
 import type {
 	AccessOverviewDoc,
 	ChatRole,
@@ -24,9 +25,12 @@ export interface ChatAccessCommands {
 export const ChatAccessUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<ChatAccessCommands>(),
-		overview: workbenchContract.collection<AccessOverviewDoc>(),
-		users: workbenchContract.collection<ChatUser>(),
-		roles: workbenchContract.collection<ChatRole>(),
+		overview: workbenchContract.liveQuery({
+			row: jsonObjectSchema<AccessOverviewDoc>(),
+			key: 'id',
+		}),
+		users: workbenchContract.liveQuery({ row: jsonObjectSchema<ChatUser>(), key: 'id' }),
+		roles: workbenchContract.liveQuery({ row: jsonObjectSchema<ChatRole>(), key: 'id' }),
 	},
 	views: {
 		Access: {

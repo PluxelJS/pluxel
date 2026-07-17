@@ -110,7 +110,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	configService?: CoreContext.Config['configService']
 	runtimeState?: CoreContext.Config['runtimeState']
 	persistence?: CoreContext.Config['persistence']
-	pluginData?: CoreContext.Config['pluginData']
+	database?: CoreContext.Config['database']
 	http?: CoreContext.Config['http']
 	workbench?: CoreContext.Config['workbench']
 	logging?: false | RuntimeLoggingInput
@@ -191,7 +191,7 @@ export async function planLoaderHmrHostFromConfig(
 		configService,
 		runtimeState,
 		persistence,
-		pluginData,
+		database,
 		http,
 		workbench,
 		logging,
@@ -228,7 +228,7 @@ export async function planLoaderHmrHostFromConfig(
 			configService,
 			runtimeState,
 			persistence,
-			pluginData,
+			database,
 			http,
 			workbench,
 		}),
@@ -381,7 +381,7 @@ function mergeContextConfig(
 		configService: mergeRecord(base.configService, override.configService),
 		runtimeState: mergeRecord(base.runtimeState, override.runtimeState),
 		persistence: mergeRecord(base.persistence, override.persistence),
-		pluginData: mergeRecord(base.pluginData, override.pluginData),
+		database: override.database !== undefined ? override.database : base.database,
 		http: mergeRecord(base.http, override.http),
 		workbench: override.workbench ?? base.workbench,
 	})

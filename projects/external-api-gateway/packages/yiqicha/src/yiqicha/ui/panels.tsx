@@ -113,8 +113,8 @@ export function YiqichaDashboard() {
 
 export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean }) {
 	const app = useYiqichaApp()
-	const settings = app.model.settings.useSnapshot().items.find((item) => item.id === 'settings')
-	const status = app.model.status.useSnapshot().items.find((item) => item.id === 'status')
+	const settings = app.model.settings.useQuery().rows.find((item) => item.id === 'settings')
+	const status = app.model.status.useQuery().rows.find((item) => item.id === 'status')
 	const [appkey, setAppkey] = useState('')
 	const [secretKey, setSecretKey] = useState('')
 	const [baseUrl, setBaseUrl] = useState(DEFAULT_YIQICHA_BASE_URL)
@@ -257,7 +257,7 @@ export function YiqichaSettingsPanel({ compact = false }: { compact?: boolean })
 
 export function YiqichaApiPanel() {
 	const app = useYiqichaApp()
-	const settings = app.model.settings.useSnapshot().items.find((item) => item.id === 'settings')
+	const settings = app.model.settings.useQuery().rows.find((item) => item.id === 'settings')
 	const [apiCode, setApiCode] = useState(DEFAULT_API_CODE)
 	const api = getYiqichaApi(apiCode) ?? getYiqichaApi(DEFAULT_API_CODE)
 	const [userId, setUserId] = useState('demo-user')
@@ -441,7 +441,7 @@ function RequiredParamsTable({ params }: { params: ReturnType<typeof parseParame
 
 export function YiqichaHistoryPanel() {
 	const model = useYiqichaHistoryModel()
-	const rows = [...model.history.useSnapshot().items]
+	const rows = [...model.history.useQuery().rows]
 		.sort((left, right) => right.at - left.at)
 		.slice(0, 30)
 	const [error, setError] = useState<string | null>(null)

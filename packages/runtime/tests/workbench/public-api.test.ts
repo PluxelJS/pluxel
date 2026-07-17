@@ -87,32 +87,6 @@ describe('Workbench authoring API', () => {
 		expect(module.contractFingerprint).toBe(first.fingerprint)
 	})
 
-	it('returns only concretely managed collections from mount()', async () => {
-		const runtime = createRuntimeContext()
-		try {
-			const extension = workbench.extension({
-				contract: workbenchContract.define({
-					resources: {
-						managed: workbenchContract.collection<{ id: string }>(),
-						projected: workbenchContract.collection<{ id: string }>(),
-					},
-				}),
-			})
-			const owner = pluginContext(runtime.ctx, 'ManagedOwner')
-			const mounted = requireWorkbench(runtime.ctx)
-				.forContext(owner.ctx)
-				.mount(extension, {
-					managed: workbench.bind.managedCollection(),
-					projected: workbench.bind.collection({ read: () => [] }),
-				})
-			expectTypeOf(mounted.managedCollections).toHaveProperty('managed')
-			expectTypeOf(mounted.managedCollections).not.toHaveProperty('projected')
-			expect(mounted.managedCollections.managed).toBeDefined()
-		} finally {
-			await runtime.dispose()
-		}
-	})
-
 	it('keeps the optional capability inert when disabled', async () => {
 		const runtime = createRuntimeContext({ workbench: false })
 		try {

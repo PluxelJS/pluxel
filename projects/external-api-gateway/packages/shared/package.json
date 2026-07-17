@@ -23,6 +23,8 @@
 			"types": "./src/usage/contracts.ts",
 			"default": "./src/usage/contracts.ts"
 		},
+		"./wire-schema": "./src/wire-schema.ts",
+		"./workbench-projection": "./src/workbench-projection.ts",
 		"./package.json": "./package.json"
 	},
 	"scripts": {
@@ -30,7 +32,6 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@libsql/client": "^0.17.4",
 		"@pluxel/runtime": "workspace:*",
 		"drizzle-orm": "^0.45.2"
 	},

@@ -14,8 +14,8 @@ Node builtin 或 server-only package。toolchain 独立构建每个 UI entry，�
 普通 View 使用 `ui.useResources()` 取得全部 owner resources。跨插件 renderer 另外使用 `ui.usePort(Port)` 取得当前
 consumer outlet 注入的 target-scoped resources。两组 grant 独立。
 
-collection UI 只暴露只读 `useSnapshot()`，返回 `loading | ready | stale | error` 可判别联合与 `refresh()`；mutation
-走 typed RPC。events 使用 imperative `subscribe()` 和独立 `useConnectionState()`，collection/events 共享底层
+live-query UI 暴露只读 `useQuery(params)`，返回 `loading | ready | stale | error` 可判别联合，并提供
+`getSnapshot()/subscribe()/refresh()`；mutation 走 typed RPC。events 使用 imperative `subscribe()` 和独立 `useConnectionState()`，两者共享底层
 multiplex transport。
 
 ## Layout and rendering

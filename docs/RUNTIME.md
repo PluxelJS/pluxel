@@ -4,6 +4,13 @@
 Plane。主入口注册全部常驻服务；Vault 只由 `@pluxel/runtime/services/vault` 显式启用，Workbench由宿主
 launcher 显式安装。
 
+## Database capability
+
+`DatabaseService` 是每个 plugin Context 隔离的 owner view，底层 coordinator 按 root lazy 创建。它统一管理 PGlite/PG、
+fair admission、immutable database instance registry、lineage promotion、physical schema/role、migration、operation timeout 和
+transactional outbox；Workbench 只是可选消费者。
+完整约束见 [`DATABASE.md`](DATABASE.md)。
+
 ## Optional plugin availability
 
 `OptionalPluginAvailabilityService` 是 root-scoped 常驻协调器。它在 consumer commit 后解析 opaque
@@ -37,7 +44,7 @@ Workbench backend 由以下部分组成：
 - `WorkbenchService`：每个 plugin Context 隔离的 optional gate；
 - `WorkbenchRegistry`：module、关系、target layout、opaque grant 和统一 revision；
 - `WorkbenchArtifactService`：dev/package artifact 与 build state；
-- resource services：request-scoped API、collection sync、stream；
+- resource services：request-scoped API、live-query snapshot/patch、stream；
 - HTTP：catalog、global layout、plugin layout、artifact、resource 和 revision event。
 
 资源 namespace 只存在于服务端。浏览器收到 binding token，服务端在请求时解析 token、校验 kind，并在

@@ -48,7 +48,7 @@ await store.put(idempotencyKey)
 
 ## 管理和持久状态
 
-平台 token 只保存在 Vault。Bot registry、连接状态和管理 SignalDB 是运行时投影；用户、角色和 grant 属于 Access 业务状态，即使关闭 Workbench Plane 仍然有效。Workbench使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
+平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实，Workbench 通过 PostgreSQL-backed `liveQuery` 读取安全 DTO；用户、角色和 grant 属于 Access 业务状态，即使关闭 Workbench Plane 仍然有效。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
 同一账号的保存、删除、重连和断开按调用顺序执行；不同账号可以并行。调用方不需要额外使用前端锁保证 Vault 与运行时 Bot 一致。
 

@@ -1,117 +1,89 @@
 # Workbench Architecture
 
-Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 API，也不是插件可直接写入的 React registry。
+Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 API，也不拥有插件数据库生命周期。
 
 ## Authoring model
 
-作者模型分成三个边界：
+| 层        | 公开入口                             | 内容                                         |
+| --------- | ------------------------------------ | -------------------------------------------- |
+| Contract  | `@pluxel/runtime/workbench/contract` | browser-safe RPC、live query、events、Views  |
+| Extension | `@pluxel/runtime/workbench`          | Contract + server-only UI entry              |
+| Binding   | `@pluxel/runtime/workbench`          | RPC factory、database query、events producer |
 
-| 层        | 公开入口                             | 内容                                                              |
-| --------- | ------------------------------------ | ----------------------------------------------------------------- |
-| Contract  | `@pluxel/runtime/workbench/contract` | browser-safe resources、Views、placements、Ports                  |
-| Extension | `@pluxel/runtime/workbench`          | Contract + server-only UI entry                                   |
-| Binding   | `@pluxel/runtime/workbench`          | RPC factory、collection projection/managed state、events producer |
-
-Contract 不包含 plugin ID、Context、provider、Node API 或 `import.meta.url`。Extension 不重复 owner；
+Contract 不包含 plugin ID、Context、Drizzle table、provider 或 Node API。Extension 不重复 owner；
 `ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
 
 ```ts
-// workbench-contract.ts
-import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-
-export const BillingUi = workbenchContract.define({
+export const NotesUi = workbenchContract.define({
 	resources: {
-		commands: workbenchContract.rpc<BillingCommands>(),
-		status: workbenchContract.collection<BillingStatus>(),
+		commands: workbenchContract.rpc<NotesCommands>(),
+		notes: workbenchContract.liveQuery({
+			params: v.object({ search: v.optional(v.string()) }),
+			row: v.object({ id: v.string(), title: v.string(), createdAt: v.string() }),
+			key: 'id',
+		}),
 	},
-	views: {
-		Overview: {
-			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
-					label: 'Billing',
-					order: 20,
-				}),
-			],
-		},
-	},
+	views: {},
 })
 ```
 
-```ts
-// server only
-const BillingWorkbench = workbench.extension({
-	contract: BillingUi,
-	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
-})
+服务端 Binding 显式声明 database owner、依赖表和查询。查询只返回 contract DTO；Date、BigInt、Buffer、
+Drizzle row 等 server value 必须先投影成可序列化数据。
 
-ctx.workbench.mount(BillingWorkbench, {
-	commands: workbench.bind.rpc(() => new BillingRpc()),
-	status: workbench.bind.collection({
-		read: () => billingStatus.snapshot(),
-		subscribe: (invalidate) => billingStatus.subscribe(invalidate),
+```ts
+ctx.workbench.mount(NotesWorkbench, {
+	commands: workbench.bind.rpc(() => new NotesRpc(this)),
+	notes: workbench.bind.liveQuery({
+		database: this.db,
+		dependsOn: [notes],
+		query: async (db, params) => {
+			const rows = await db.select().from(notes).orderBy(notes.createdAt)
+			return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }))
+		},
 	}),
 })
 ```
 
-`bind.collection()` 是 business/admin state 的只读实时投影。只有真正属于 Workbench 的管理状态才使用
-`bind.managedCollection()`；其可选 handle 不得成为插件核心生命周期或业务 API 的前提。
+`dependsOn` 必须完整，且只能包含同一 database definition 的 table。写操作不进入 `liveQuery`；浏览器 mutation
+始终调用 typed RPC，RPC 在 server transaction commit 后返回。
 
-## Browser UI
-
-UI entry 直接导入 Contract value：
+## Browser facade
 
 ```tsx
-const ui = createWorkbenchUi(BillingUi)
+const ui = createWorkbenchUi(NotesUi)
 
 export function Overview() {
-	const { commands, status } = ui.useResources()
-	const snapshot = status.useSnapshot()
+	const { commands, notes } = ui.useResources()
+	const result = notes.useQuery({ search: '' })
 	// loading | ready | stale | error
 }
-
-export default ui.define({ Overview })
 ```
 
-同一 Federation bundle 是 owner resources 的前端信任边界，所以普通 View 不声明 `uses`。`useResources()` 返回
-全部 owner resource 的 lazy facade：RPC 首次调用才请求，collection 首次 `useSnapshot()` 才订阅，events 首次
-`subscribe()`/`useConnectionState()` 才连接。
+facade 同时提供 `getSnapshot()`、`subscribe()` 和 `refresh()`。每组 canonical params 拥有独立 lease、generation
+和 revision。snapshot/patch 都经过 Standard Schema 校验；stable key 重复、revision gap、generation mismatch 或
+patch 校验失败会重新取得完整 snapshot。query 失败保留 last-known-good rows 并进入 `stale`。
 
-Contract runtime value 只能校验 resource key/kind、View、placement、Port 和 UI exports。TypeScript generic 中的
-RPC payload、collection item 和 event payload 在运行时已擦除，不冒充 runtime schema。
+服务端在依赖表 transaction commit 后重跑完整 query，以 stable key 生成 `upserted`、`removed` 和完整 `order`。
+完整 order 保证仅排序变化或分页窗口成员变化仍能正确重建结果。并发 invalidation 会合并，不把 SQL、table identity、
+commit token 或 outbox revision 暴露给浏览器。
 
 ## Cross-plugin UI
 
-Port 是跨插件 UI resource 注入的唯一路径：consumer 声明 outlet、placement 和 resource mapping；provider 声明
-无 placement renderer，并在 UI 中调用 `ui.usePort(Port)`。provider 不能占据 consumer 的 Tab/route/action。
-
-renderer 从 committed direct required dependencies 中按 Port ID + exact version 唯一解析。零个 renderer 时 outlet
-unavailable，多个时显示 ambiguity error，不按注册顺序猜测。Port grant 按 target/render scope 隔离。
+Port 是跨插件 UI resource 注入的唯一路径。consumer 声明 outlet、placement 和 resource mapping；provider 声明
+无 placement renderer，并在 UI 中调用 `ui.usePort(Port)`。一个 View 需要多个 owner 的数据时组合多个获授权
+resource snapshot，不建立跨插件 SQL join。
 
 ## Security and lifecycle
 
 - transport 只接受 opaque grant，不接受 plugin/resource namespace；
-- owner stop 立即撤销 resource 和 Port grant；
-- replacement 可以保留 bundle/page shell，但不能调用已停止 provider；
+- owner stop/replacement 撤销 database query subscription 和 resource grant；
 - rollback 重新 mount 并签发新 lease，不复活旧 lease；
-- artifact、layout 和 resource revision 分离，bundle-only 更新不撤销 resource lease；
-- disabled Workbench 不创建 backend、compiler、watcher、route、transport 或 persistent state；
-- bundle、RPC、collection、events 和 Port 错误必须进入可见状态或 View error boundary。
+- disabled Workbench 不执行 query、不订阅 outbox，也不创建 browser cache、route 或 transport；
+- active variants、rows 与 serialized bytes 受 server quota 限制；idle variant 按 LRU 回收，并发 invalidation 合并重跑；
+- RPC、live query、events、bundle 和 Port 错误进入明确状态或 View error boundary。
 
 ## Static distribution capability
 
-static production build 的 `variant` 与启动开关是两层事实：
-
-- `variant: 'workbench'` 组装 shell、extension remotes 和 deployment manifest records；
-- application `configure()` 返回的 `workbench` 决定本次启动是否安装 Plane；
-- `variant: 'headless'` 不携带 browser artifacts，因此启动时请求开启 Workbench 必须失败；
-- 关闭 Workbench 不影响 fixed plugins、业务 HTTP、ConfigService 或插件运行时启停。
-
-Workbench artifact root 由 deployment bootstrap 显式提供。production 不回退到应用 workspace 查找 remote。
-
-## Implementation entries
-
-- `packages/runtime/src/workbench/`
-- `packages/runtime/src/services/workbench/`
-- `packages/components/src/workbench/`
-- `packages/rolldown/src/rolldown/plugins/pluginArtifactBuildPlugin.ts`
-- `packages/runtime-dev/src/workbench/`
+`variant: 'workbench'` 决定 distribution 是否携带 shell/remotes；application `configure()` 返回的 `workbench`
+决定本次启动是否安装 Plane。`variant: 'headless'` 不能在启动时提升。Workbench 关闭不影响数据库、业务 HTTP、
+ConfigService 或插件运行时启停。

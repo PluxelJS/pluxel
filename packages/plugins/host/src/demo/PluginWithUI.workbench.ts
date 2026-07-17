@@ -5,12 +5,16 @@ import type {
 	PluginWithUIEvents,
 	PluginWithUIStatusDoc,
 } from './PluginWithUI.contracts'
+import { jsonObjectSchema } from './wire-schema'
 
 export const PluginWithUIUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<PluginWithUICommands>(),
-		status: workbenchContract.collection<PluginWithUIStatusDoc>(),
-		events: workbenchContract.collection<DemoEvent>(),
+		status: workbenchContract.liveQuery({
+			row: jsonObjectSchema<PluginWithUIStatusDoc>(),
+			key: 'id',
+		}),
+		events: workbenchContract.liveQuery({ row: jsonObjectSchema<DemoEvent>(), key: 'id' }),
 		activity: workbenchContract.events<PluginWithUIEvents>(),
 	},
 	views: {

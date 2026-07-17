@@ -25,14 +25,13 @@ import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
 import { AccountsPlugin } from './AccountsPlugin.ts'
-import type { BillingCommands, BillingStatus } from './browser-contracts.ts'
+import type { BillingCommands } from './browser-contracts.ts'
 import { BillingConfig } from './config.ts'
 import { BillingRpc } from './rpc.ts'
 
 const BillingUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<BillingCommands>(),
-		status: workbenchContract.collection<BillingStatus>(),
 	},
 	views: {
 		Overview: {
@@ -66,10 +65,6 @@ export class BillingPlugin extends BasePlugin {
 
 		this.ctx.workbench.mount(BillingWorkbench, {
 			commands: workbench.bind.rpc(() => new BillingRpc(this)),
-			status: workbench.bind.collection({
-				read: () => this.accounts.billingStatus.snapshot(),
-				subscribe: (invalidate) => this.accounts.billingStatus.subscribe(invalidate),
-			}),
 		})
 	}
 }
@@ -280,9 +275,10 @@ const DashboardWorkbench = workbench.extension({
 override init() {
 	this.ctx.workbench.mount(DashboardWorkbench, {
 		commands: workbench.bind.rpc(() => new DashboardRpc(this)),
-		status: workbench.bind.collection({
-			read: () => this.status.snapshot(),
-			subscribe: (invalidate) => this.status.subscribe(invalidate),
+		notes: workbench.bind.liveQuery({
+			database: this.database,
+			dependsOn: [notes],
+			query: (db) => db.select({ id: notes.id, title: notes.title }).from(notes),
 		}),
 		activity: workbench.bind.events(({ emit, signal }) =>
 			this.publishStatus(emit, signal),
@@ -293,10 +289,9 @@ override init() {
 
 - Contract module 只导入 browser-safe 类型和 `@pluxel/runtime/workbench/contract`；
 - Extension 不写 plugin ID，owner 由 `ctx.workbench.mount()` 的 Context 推导；
-- `bind.rpc()`、`bind.collection()`、`bind.events()` 都是纯 declaration，disabled 时不执行 callback；
-- business/admin state 优先使用只读 collection projection，mutation 走 typed RPC；
-- 只有独立 Workbench 管理状态才使用 `bind.managedCollection({ storage: 'plugin-data' })`；
-- managed handle 只服务管理 UI，不得成为业务 API 或核心启动的前提；
+- `bind.rpc()`、`bind.liveQuery()`、`bind.events()` 都是纯 declaration，disabled 时不执行 query 或 producer；
+- `liveQuery` 只投影当前 plugin database 的 runtime-validated DTO，mutation 走 typed RPC；
+- `dependsOn` 完整列出查询读取的普通 Drizzle tables，并与 database handle 保持同 owner；
 - builtin document 只用于只读内容，交互界面使用 React View + RPC。
 
 浏览器直接传入 Contract value：
@@ -308,19 +303,19 @@ import { DashboardUi } from '../workbench-contract.ts'
 const ui = createWorkbenchUi(DashboardUi)
 
 export function Overview() {
-	const { commands, status } = ui.useResources()
-	const snapshot = status.useSnapshot()
+	const { commands, notes } = ui.useResources()
+	const snapshot = notes.useQuery()
 
 	if (snapshot.state === 'loading') return <Loading />
 	if (snapshot.state === 'error') return <ErrorPanel error={snapshot.error} />
-	return <Dashboard commands={commands} rows={snapshot.items} />
+	return <Dashboard commands={commands} rows={snapshot.rows} />
 }
 
 export default ui.define({ Overview })
 ```
 
 `ui.define()` 精确检查全部 remote View，没有额外 export。普通 View 不声明 `uses`；同一 bundle 是
-owner resources 的前端信任边界，facade 按 RPC 调用、snapshot 或 event subscription 延迟连接。
+owner resources 的前端信任边界，facade 按 RPC 调用、query variant 或 event subscription 延迟连接。
 
 RPC generic 应引用独立 browser-safe interface，而不是 provider 实现类。TypeScript generic 在运行时会擦除；
 runtime 只验证 envelope、opaque grant、resource kind、Port/version 和结构化错误。

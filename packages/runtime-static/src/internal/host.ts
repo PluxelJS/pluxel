@@ -710,7 +710,7 @@ function createStaticRuntimeContextConfig(
 	const workbench = options.workbench ?? false
 	const adminAccess = workbenchAdminAccess(workbench)
 	const persistence = options.persistence
-	const pluginData = options.pluginData
+	const database = options.database
 	const profile = options.profile
 	const inheritedRuntimeState =
 		!options.runtimeState && configService?.mode ? { mode: configService.mode } : undefined
@@ -727,7 +727,7 @@ function createStaticRuntimeContextConfig(
 		configService,
 		runtimeState,
 		persistence,
-		pluginData,
+		database,
 		logger: logging.contextBinding,
 	})
 }

@@ -70,12 +70,13 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 
 ## 保持业务面独立
 
-| 能力                                     | 放置位置                                  |
-| ---------------------------------------- | ----------------------------------------- |
-| 业务 HTTP、webhook、外部 health endpoint | `ctx.http.plugin`                         |
-| Workbench UI、API、stream、collection    | `ctx.workbench.mount(module, bindings)`   |
-| 业务状态和事实源                         | 插件自己的 runtime/persistence capability |
-| 进程退出、部署和健康策略                 | host                                      |
+| 能力                                     | 放置位置                                |
+| ---------------------------------------- | --------------------------------------- |
+| 业务 HTTP、webhook、外部 health endpoint | `ctx.http.plugin`                       |
+| Workbench UI、RPC、stream、live query    | `ctx.workbench.mount(module, bindings)` |
+| 独立 plugin 的关系型状态                 | `ctx.database.use(definition)`          |
+| static application 的统一关系型状态      | application-private database module     |
+| 进程退出、部署和健康策略                 | host                                    |
 
 测试至少覆盖一次 `workbench: false`，证明业务 HTTP 和核心生命周期不依赖Workbench。
 
@@ -87,7 +88,7 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 - 调试日志使用 `ctx.logger.getDebugChannel('cache:lookup')`；topic 不带 `pluxel:` 前缀，也不包含 wildcard。
 - 插件级日志等级由 active runtime policy 动态控制；插件不要读取 env 或自行缓存等级。
 - 错误对象通过 `{ error }` 或 `{ err }` 结构化传递，不插值、不 stringify、不只记录 `.message`。
-- UI RPC/SSE/SignalDB contract 放在共享类型边界，并为 `@pluxel/runtime/web` 提供 type augmentation。
+- UI RPC/events/live-query contract 放在 browser-safe 共享边界，并为 `@pluxel/runtime/web` 提供 type augmentation。
 
 ## 提交前检查
 
@@ -100,5 +101,6 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 5. 确认 required/optional、plugin/feature、HTTP/workbench 三组边界都清楚。
 6. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
 7. 确认 disabled Workbench Plane 测试仍通过，公开 contract 类型能被消费者发现。
-8. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
+8. 独立数据库 plugin 是否提交/检查 `drizzle/` 或显式声明 reset；application database 是否只有一个 module owner、pool 和 migration 入口？
+9. 测试是否通过 `@pluxel/test/vitest` 和匹配边界的 core/runtime host 运行，而不是 mock Context 或
    raw TypeScript runner？

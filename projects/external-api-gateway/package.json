@@ -12,7 +12,6 @@
 		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-gateway test && tsc --noEmit --pretty false && pnpm build && pnpm test:headless"
 	},
 	"dependencies": {
-		"@libsql/client": "^0.17.4",
 		"@mantine/core": "^9.4.1",
 		"@mantine/hooks": "^9.4.1",
 		"@pluxel/runtime": "workspace:*",

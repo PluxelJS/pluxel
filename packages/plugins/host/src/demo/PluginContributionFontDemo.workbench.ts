@@ -4,9 +4,12 @@ import {
 	type FontSetDoc,
 	type FontSettingsCommands,
 } from './PluginContributionFontDemo.contract'
+import { jsonObjectSchema } from './wire-schema'
 
 export const FontManagerUi = workbenchContract.define({
-	resources: { fontSets: workbenchContract.collection<FontSetDoc>() },
+	resources: {
+		fontSets: workbenchContract.liveQuery({ row: jsonObjectSchema<FontSetDoc>(), key: 'id' }),
+	},
 	views: {
 		FontSettings: {
 			accepts: FontSettingsPort,

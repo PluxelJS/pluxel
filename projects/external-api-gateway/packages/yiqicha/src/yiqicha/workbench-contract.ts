@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/external-api-gateway-shared/wire-schema'
 import type { YiqichaSettingsDoc, YiqichaStatusDoc, YiqichaTestRunDoc } from './contracts.ts'
 export interface YiqichaProviderCommands {
 	saveSettings(input: {
@@ -18,9 +19,12 @@ export interface YiqichaProviderCommands {
 export const YiqichaUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<YiqichaProviderCommands>(),
-		settings: workbenchContract.collection<YiqichaSettingsDoc>(),
-		status: workbenchContract.collection<YiqichaStatusDoc>(),
-		history: workbenchContract.collection<YiqichaTestRunDoc>(),
+		settings: workbenchContract.liveQuery({
+			row: jsonObjectSchema<YiqichaSettingsDoc>(),
+			key: 'id',
+		}),
+		status: workbenchContract.liveQuery({ row: jsonObjectSchema<YiqichaStatusDoc>(), key: 'id' }),
+		history: workbenchContract.liveQuery({ row: jsonObjectSchema<YiqichaTestRunDoc>(), key: 'id' }),
 	},
 	views: {
 		HeaderAction: {

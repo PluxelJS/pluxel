@@ -7,6 +7,7 @@ import {
 import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugins/lintGuardPlugin'
 import { serverOnlyVitePlugin } from './environment'
 import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
+import { databaseSourceVitePlugin } from './database-source'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
@@ -62,6 +63,9 @@ export function pluginSourceVitePlugins(
 	const root = options.root ?? process.cwd()
 	const plugins: PluginOption[] = [
 		PreprocessorDirectives(),
+		serverOnlyVitePlugin('pluxel:database-source', databaseSourceVitePlugin({ root }), {
+			enforce: 'pre',
+		}),
 		serverOnlyVitePlugin('pluxel:plugin-semantics', createPluginSemanticsPlugin().plugin, {
 			enforce: 'pre',
 		}),

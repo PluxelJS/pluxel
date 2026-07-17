@@ -1,7 +1,6 @@
 # Host demos
 
 - `PluginWithUI`：完整 Workbench extension、API、collection、stream、route 和 remote views。
-- `PluginBuiltinShowcase`：无需 UI bundle 的 host-rendered workbench documents。
 - `PluginContributionFontDemo`：consumer-owned port placement + provider renderer，演示同一配置 UI 注入多个 dependents。
 - `PluginHttpRoutesDemo`：常驻业务 HTTP + 可选说明文档。
 - `PluginHttpWorkerDemo`：HMR worker 与 static fallback；Workbench只负责展示说明。

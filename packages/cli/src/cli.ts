@@ -3,6 +3,7 @@ import { cli, define, lazy } from 'gunshi'
 import pkg from '../package.json'
 import {
 	buildCommandDefinition,
+	databaseCommandDefinition,
 	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
@@ -19,6 +20,13 @@ const commands = new Map([
 		lazy(
 			() => import('./commands/build').then((module) => module.buildCommand),
 			buildCommandDefinition,
+		),
+	],
+	[
+		'database',
+		lazy(
+			() => import('./commands/database').then((module) => module.databaseCommand),
+			databaseCommandDefinition,
 		),
 	],
 	[
@@ -70,6 +78,7 @@ function formatCliError(error: unknown, command: string | undefined): string {
 	const message = error instanceof Error ? error.message : String(error)
 	const dependencyByCommand: Record<string, string> = {
 		build: '@pluxel/rolldown',
+		database: '@pluxel/rolldown',
 		hmr: '@pluxel/runtime-dynamic',
 		workspace: '@pluxel/rolldown',
 	}

@@ -18,10 +18,9 @@ import { runRuntimeTransportCleanups } from './client-lifecycle'
 import {
 	RUNTIME_WORKBENCH_EVENTS_PATH,
 	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH,
 	RUNTIME_TRANSPORT_PATHS,
-	runtimeWorkbenchCollectionPath,
 	runtimeWorkbenchModelEventsPath,
+	runtimeWorkbenchLiveQueryPath,
 	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
@@ -140,8 +139,7 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	workbenchCollection(grantId: string): string
-	workbenchCollectionEvents(grantIds: readonly string[]): string
+	workbenchLiveQuery(grantId: string, params?: unknown): string
 	workbenchModelEvents(grantId: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
 	workbenchEvents(): string
@@ -260,14 +258,11 @@ export function createRuntimeTransportLinks(
 		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
 		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
-		workbenchCollection: (grantId: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchCollectionPath(grantId))),
-		workbenchCollectionEvents: (grantIds: readonly string[]) => {
-			const url = resolveClientUrl(joinPath(apiBase, RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH))
-			const params = new URLSearchParams()
-			for (const grantId of grantIds) params.append('grantId', grantId)
-			const query = params.toString()
-			return query ? `${url}?${query}` : url
+		workbenchLiveQuery: (grantId: string, params?: unknown) => {
+			const url = resolveClientUrl(joinPath(apiBase, runtimeWorkbenchLiveQueryPath(grantId)))
+			if (params === undefined) return url
+			const query = new URLSearchParams({ params: JSON.stringify(params) })
+			return `${url}?${query}`
 		},
 		workbenchModelEvents: (grantId: string) =>
 			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchModelEventsPath(grantId))),

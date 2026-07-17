@@ -3,11 +3,9 @@ import { extname } from 'pathe'
 import type { AnyElysiaApp } from '../../services/http/elysia'
 import { requireWorkbench } from '../../services/workbench'
 import { WORKBENCH_FEDERATION_MANIFEST_FILE } from '@pluxel/core/federation'
-import { signalDbNamespace } from '../../workbench/collection-contracts'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_WORKBENCH_BASE,
-	RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH,
 	runtimeWorkbenchArtifactBasePath,
 } from '../../web/paths'
 
@@ -61,46 +59,12 @@ export const workbenchRoutes = (app: AnyElysiaApp) =>
 			.get('/events', (context) =>
 				requireWorkbench(context.pluginCtx).events.stream(context, ['workbench.layouts']),
 			)
-			.get(
-				RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH.slice(RUNTIME_WORKBENCH_BASE.length),
-				(context) => {
-					const backend = requireWorkbench(context.pluginCtx)
-					const grantIds = [
-						...new Set(
-							new URL(context.request.url).searchParams
-								.getAll('grantId')
-								.map((grantId) => grantId.trim())
-								.filter(Boolean),
-						),
-					]
-					if (grantIds.length === 0) return context.status(400, 'Collection grant required')
-					const subscriptions = grantIds.flatMap((grantId) => {
-						const ref = backend.registry.findModel(grantId, 'collection')
-						if (!ref) {
-							// A revision can leave warm client replicas with expired grants for a
-							// short grace period. Ignore only those aliases so fresh grants are not
-							// blocked; an all-invalid request still receives no stream.
-							return []
-						}
-						return [
-							{
-								alias: grantId,
-								namespace: signalDbNamespace(ref.ownerPluginId, ref.modelKey),
-							},
-						]
-					})
-					if (subscriptions.length === 0) {
-						return context.status(404, 'Collection grant invalid or expired')
-					}
-					return backend.events.streamWithAliases(context, subscriptions)
-				},
-			)
 			.get('/models/events/:grantId', (context) => {
 				const backend = requireWorkbench(context.pluginCtx)
-				const ref = backend.registry.resolveModel(
-					decodeURIComponent(context.params.grantId),
-					'events',
-				)
+				const ref = backend.registry.resolveModel(decodeURIComponent(context.params.grantId))
+				if (ref.kind !== 'events' && ref.kind !== 'liveQuery') {
+					return context.status(400, 'Resource does not expose an event stream')
+				}
 				const namespace = `${ref.ownerPluginId}:${ref.modelKey}`
 				return backend.events.stream(context, [namespace])
 			}),

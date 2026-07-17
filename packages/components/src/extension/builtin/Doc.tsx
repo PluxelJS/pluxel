@@ -19,10 +19,7 @@ import type {
 	WorkbenchDocumentPart as BuiltinDocPart,
 } from '@pluxel/runtime/workbench'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
-import { BuiltinSignalDbAction } from './SignalDbAction'
 import { BuiltinInfoCard } from './InfoCard'
-import { BuiltinResourceSelect } from './ResourceSelect'
-import { BuiltinSignalDbForm } from './SignalDbForm'
 import { usePluginConfig } from '../../app/plugins/config/usePluginConfig'
 import type { ObjectSchema } from 'valibot'
 import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
@@ -49,30 +46,12 @@ type BuiltinBlockRendererProps = {
 }
 
 function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
-	const { pluginName, title, block } = input
+	const { block } = input
 	if (block.kind === 'infoCard') {
 		if (typeof BuiltinInfoCard !== 'function') {
 			return <BuiltinBlockUnavailable kind={block.kind} />
 		}
 		return <BuiltinInfoCard block={block} />
-	}
-	if (block.kind === 'form') {
-		if (typeof BuiltinSignalDbForm !== 'function') {
-			return <BuiltinBlockUnavailable kind={block.kind} />
-		}
-		return <BuiltinSignalDbForm pluginName={pluginName} title={title} block={block} />
-	}
-	if (block.kind === 'action') {
-		if (typeof BuiltinSignalDbAction !== 'function') {
-			return <BuiltinBlockUnavailable kind={block.kind} />
-		}
-		return <BuiltinSignalDbAction block={block} />
-	}
-	if (block.kind === 'resourceSelect') {
-		if (typeof BuiltinResourceSelect !== 'function') {
-			return <BuiltinBlockUnavailable kind={block.kind} />
-		}
-		return <BuiltinResourceSelect targetPluginName={pluginName} block={block} />
 	}
 	return <BuiltinBlockUnavailable kind={(block as BuiltinDocBlock).kind} />
 }

@@ -33,6 +33,9 @@ pnpm add -D @pluxel/runtime-dynamic
 | `pluxel build`                                            | 用标准 plugin-package preset 构建当前目录           |
 | `pluxel build --watch`                                    | watch 模式；每轮成功构建重新同步 metadata           |
 | `pluxel build --debug`                                    | 输出最终合并的 tsdown 配置、plugin 顺序和 hook 状态 |
+| `pluxel database generate --name <name>`                  | 生成 PostgreSQL migration 与 checksum manifest      |
+| `pluxel database check`                                   | 检查 migration history、rewrite 和 schema drift     |
+| `pluxel database rebase --lineage <id>`                   | 生成全新 lineage baseline，部署后保留旧 instance    |
 | `pluxel hmr doctor`                                       | 诊断 dynamic loader workspace/profile               |
 | `pluxel hmr enabled`                                      | 编辑 dynamic profile 的 enabled plugin 集合         |
 | `pluxel hmr builtin`                                      | 编辑 dynamic profile 的 builtin plugin 集合         |
@@ -100,6 +103,12 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 `@pluxel/rolldown/build` 主要用于宿主的 `staticApplication()` 配置或构建工具集成。
 
 `hmr/diagnose` 只读取和修改 profile、workspace discovery 与 snapshot，不注册 dynamic runtime services。
+
+数据库命令以当前 package 为 root，默认自动寻找唯一 `defineDatabase()` module 和 `drizzle/`。定义不唯一时用
+`--schema` 明确指定。默认 `migrations` 策略必须一起提交 SQL、Drizzle meta 与 `pluxel-migrations.json`，CI 在 build 前运行
+`pluxel database check`；普通变更只追加 migration，明确放弃旧 history 时才执行 `database rebase`。显式
+`reset-on-schema-change` 不运行这些命令也不提交 `drizzle/`，`pluxel build` 自动生成当前 baseline 和 schema-derived lineage。
+详细作者流程见 [`database.md`](database.md)。
 
 ## Plugin package 与 static application 不要混用
 

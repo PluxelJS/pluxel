@@ -23,6 +23,16 @@ export {
 	type NodeModuleSourceSubscription,
 } from './services/NodeModuleService'
 export { readNodeModuleDeclaration } from './node-module'
+export {
+	withDatabasePluginContext,
+	subscribeDatabaseHandle,
+	databaseHandleOwnsTables,
+} from './services/DatabaseService'
+export {
+	readDatabaseDefinition,
+	type DatabaseArtifact,
+	type DatabaseMigration,
+} from './database-internal'
 export { readWorkbenchUiEntry } from './workbench/ui-entry'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).

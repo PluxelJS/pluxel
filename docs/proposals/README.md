@@ -9,6 +9,5 @@
 - 实现后把稳定结论写入对应领域文档，并删除已完成提案内容；
 - 已被替代或没有继续价值的提案直接删除，历史由 Git 保存。
 
-当前提案：
-
-- [`DESIGN_SURFACE_REDUCTION.md`](DESIGN_SURFACE_REDUCTION.md)：保留现有 SignalDB 能力，并为未来自研替代实现约束迁移边界。
+当前没有数据库兼容提案；已实施结论见 [`../DATABASE.md`](../DATABASE.md) 与
+[`../WORKBENCH.md`](../WORKBENCH.md)。

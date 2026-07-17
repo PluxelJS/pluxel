@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { jsonObjectSchema } from '@repo/chatbots-adapter-kit/wire-schema'
 
 export type TelegramSettingsDoc = {
 	id: string
@@ -33,8 +34,11 @@ export interface TelegramWorkbenchCommands {
 export const TelegramUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<TelegramWorkbenchCommands>(),
-		settings: workbenchContract.collection<TelegramSettingsDoc>(),
-		status: workbenchContract.collection<TelegramStatusDoc>(),
+		settings: workbenchContract.liveQuery({
+			row: jsonObjectSchema<TelegramSettingsDoc>(),
+			key: 'id',
+		}),
+		status: workbenchContract.liveQuery({ row: jsonObjectSchema<TelegramStatusDoc>(), key: 'id' }),
 	},
 	views: {
 		Settings: {

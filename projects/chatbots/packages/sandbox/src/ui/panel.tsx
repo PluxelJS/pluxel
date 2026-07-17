@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { sandboxUi } from './runtime.ts'
 export function SandboxPanel() {
 	const model = sandboxUi.useResources()
-	const messages = model.messages.useSnapshot().items
+	const messages = model.messages.useQuery().rows
 	const [messageText, setMessageText] = useState('/ping')
 	const [conversationId, setConversationId] = useState('default')
 	const [busy, setBusy] = useState(false)

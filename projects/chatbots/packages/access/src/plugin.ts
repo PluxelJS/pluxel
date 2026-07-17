@@ -1,11 +1,19 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
+import {
+	workbenchProjectionQuery,
+	WorkbenchProjectionStore,
+	workbenchProjectionDatabase,
+	workbenchProjections,
+} from '@repo/chatbots-adapter-kit/workbench-projection'
 import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {
 	createEmptyAccessState,
+	type AccessOverviewDoc,
 	type AccessState,
 	type ChatRole,
+	type ChatUser,
 	type PermissionDeclaration,
 	type PermissionGrant,
 } from './model.ts'
@@ -21,9 +29,7 @@ const STORAGE_KEY = 'state.json'
 @Plugin({ name: 'ChatAccessPlugin' })
 export class ChatAccessPlugin extends BasePlugin {
 	private domain!: ChatAccessDomain
-	private overview?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['overview']
-	private usersProjection?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['users']
-	private rolesProjection?: MountedWorkbenchManagedCollections<typeof ChatAccessWorkbench>['roles']
+	private projections?: WorkbenchProjectionStore
 	private snapshotWriter?: CoalescedSnapshotWriter
 
 	constructor(private readonly hub: ChatHubPlugin) {
@@ -46,22 +52,28 @@ export class ChatAccessPlugin extends BasePlugin {
 				this.domain.resolveMessage(message)
 			}),
 		)
-		const mounted = this.ctx.workbench.mount(ChatAccessWorkbench, {
-			commands: workbench.bind.rpc(() => new ChatAccessRpc(this)),
-			overview: workbench.bind.managedCollection(),
-			users: workbench.bind.managedCollection(),
-			roles: workbench.bind.managedCollection(),
-		})
-		if (mounted) {
-			this.overview = mounted.managedCollections.overview
-			this.usersProjection = mounted.managedCollections.users
-			this.rolesProjection = mounted.managedCollections.roles
-			await Promise.all([
-				this.overview.ready(),
-				this.usersProjection.ready(),
-				this.rolesProjection.ready(),
-			])
-			this.refreshProjection()
+		if (this.ctx.workbench.enabled) {
+			const database = await this.ctx.database.use(workbenchProjectionDatabase)
+			this.projections = new WorkbenchProjectionStore(database)
+			await this.refreshProjection()
+			this.ctx.workbench.mount(ChatAccessWorkbench, {
+				commands: workbench.bind.rpc(() => new ChatAccessRpc(this)),
+				overview: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<AccessOverviewDoc>('overview'),
+				}),
+				users: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<ChatUser>('users'),
+				}),
+				roles: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<ChatRole>('roles'),
+				}),
+			})
 		}
 	}
 
@@ -117,46 +129,46 @@ export class ChatAccessPlugin extends BasePlugin {
 	private changed(change: ChatAccessChange): void {
 		if (change.kind === 'state') this.snapshotWriter?.request()
 		try {
-			this.applyProjection(change)
-			this.refreshOverview()
+			void this.applyProjection(change)
+			void this.refreshOverview()
 		} catch (error) {
 			this.ctx.logger.warn('Failed to update chat access workbench projection', { error })
 		}
 	}
 
-	private applyProjection(change: ChatAccessChange): void {
+	private async applyProjection(change: ChatAccessChange): Promise<void> {
+		const operations: Array<Promise<void> | undefined> = []
 		for (const id of change.userIds ?? []) {
 			const user = this.domain.getUser(id)
-			if (user) this.usersProjection?.replaceOne({ id }, user, { upsert: true })
+			if (user) operations.push(this.projections?.upsert('users', user))
 		}
-		for (const id of change.removedUserIds ?? []) this.usersProjection?.removeOne({ id })
+		for (const id of change.removedUserIds ?? [])
+			operations.push(this.projections?.remove('users', id))
 		for (const id of change.roleIds ?? []) {
 			const role = this.domain.getRole(id)
-			if (role) this.rolesProjection?.replaceOne({ id }, role, { upsert: true })
+			if (role) operations.push(this.projections?.upsert('roles', role))
 		}
-		for (const id of change.removedRoleIds ?? []) this.rolesProjection?.removeOne({ id })
+		for (const id of change.removedRoleIds ?? [])
+			operations.push(this.projections?.remove('roles', id))
+		await Promise.all(operations)
 	}
 
-	private refreshProjection(): void {
+	private async refreshProjection(): Promise<void> {
 		const users = this.domain.listUsers()
 		const roles = this.domain.listRoles()
-		this.usersProjection?.removeMany({})
-		for (const user of users) this.usersProjection?.insert(user)
-		this.rolesProjection?.removeMany({})
-		for (const role of roles) this.rolesProjection?.insert(role)
-		this.refreshOverview()
+		await Promise.all([
+			this.projections?.replaceAll('users', users),
+			this.projections?.replaceAll('roles', roles),
+			this.refreshOverview(),
+		])
 	}
 
-	private refreshOverview(): void {
+	private async refreshOverview(): Promise<void> {
 		const summary = this.domain.overview()
-		this.overview?.replaceOne(
-			{ id: 'overview' },
-			{
-				id: 'overview',
-				...summary,
-				updatedAt: Date.now(),
-			},
-			{ upsert: true },
-		)
+		await this.projections?.upsert('overview', {
+			id: 'overview',
+			...summary,
+			updatedAt: Date.now(),
+		})
 	}
 }

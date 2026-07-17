@@ -26,7 +26,7 @@ export type DynamicRuntimeConfig = {
 	configService?: CoreContext.Config['configService']
 	runtimeState?: CoreContext.Config['runtimeState']
 	persistence?: CoreContext.Config['persistence']
-	pluginData?: CoreContext.Config['pluginData']
+	database?: CoreContext.Config['database']
 	http?: CoreContext.Config['http']
 	workbench?: WorkbenchConfig
 	logging?: false | RuntimeLoggingInput

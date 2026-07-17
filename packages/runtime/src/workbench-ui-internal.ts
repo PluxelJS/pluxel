@@ -1,1 +1,5 @@
-export { WorkbenchViewProvider, useWorkbenchView } from './workbench/ui-runtime'
+export {
+	createLiveQueryClient,
+	WorkbenchViewProvider,
+	useWorkbenchView,
+} from './workbench/ui-runtime'

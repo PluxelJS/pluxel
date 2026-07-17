@@ -6,6 +6,7 @@ import './services/debug'
 export * from '@pluxel/core'
 export { Config, type ConfigSchemaMap } from './base'
 export { defineNodeModule, type NodeModuleDeclaration } from './node-module'
+export type { DatabaseConfig } from './services/DatabaseService'
 export { f, v } from './config'
 export type { RuntimeEvents } from './events'
 export {
@@ -25,7 +26,6 @@ export {
 	type WorkspacePersistenceBackendOptions,
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
-export type { PluginDataServiceConfig } from './services/PluginDataService'
 export {
 	PLUGIN_HTTP_BASE,
 	type ElysiaRouteHandle,

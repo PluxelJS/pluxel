@@ -5,7 +5,7 @@ import type {
 	HttpHandler,
 	HttpServiceConfig,
 	PersistenceServiceConfig,
-	PluginDataServiceConfig,
+	DatabaseConfig,
 	WorkbenchConfig,
 } from '@pluxel/runtime'
 import type { RuntimeStateStoreConfig } from '@pluxel/runtime/internal'
@@ -16,7 +16,7 @@ export type StaticRuntimeContextConfig = Omit<
 	| 'configService'
 	| 'runtimeState'
 	| 'persistence'
-	| 'pluginData'
+	| 'database'
 	| 'http'
 	| 'workbench'
 	| 'logger'
@@ -91,17 +91,13 @@ export type StaticRuntimeHostOptions = {
 	 */
 	runtimeState?: RuntimeStateStoreConfig
 	/**
-	 * Shared runtime persistence backend used by config/state/plugin data/logger/vault.
+	 * Shared runtime persistence backend used by config/state/logger/vault.
 	 *
 	 * @default In-memory persistence. Node hosts can pass a string root path.
 	 */
 	persistence?: PersistenceServiceConfig
-	/**
-	 * Plugin-owned runtime data storage.
-	 *
-	 * @default Uses the shared persistence backend under the plugin-data namespace.
-	 */
-	pluginData?: PluginDataServiceConfig
+	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
+	database?: DatabaseConfig
 	/**
 	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
 	 * Workbench config.

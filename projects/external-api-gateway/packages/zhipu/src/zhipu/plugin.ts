@@ -12,6 +12,7 @@ import {
 	useExternalGatewayDB,
 } from '@repo/external-api-gateway-shared'
 import type { GatewayBillingContext } from '@repo/external-api-gateway-shared/gateway'
+import { createWorkbenchProjection } from '@repo/external-api-gateway-shared/workbench-projection'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
@@ -80,21 +81,19 @@ export class ZhipuProviderPlugin extends BasePlugin {
 		await this.loadHistoryFromDB()
 		await this.syncSettingsDoc()
 		this.ensureStatusDoc()
-		this.ctx.workbench.mount(ZhipuWorkbench, {
-			commands: workbench.bind.rpc(() => new ZhipuProviderRpc(this)),
-			settings: workbench.bind.collection({
-				read: () => this.settings.snapshot(),
-				subscribe: (invalidate) => this.settings.subscribe(invalidate),
-			}),
-			status: workbench.bind.collection({
-				read: () => this.status.snapshot(),
-				subscribe: (invalidate) => this.status.subscribe(invalidate),
-			}),
-			history: workbench.bind.collection({
-				read: () => this.history.snapshot(),
-				subscribe: (invalidate) => this.history.subscribe(invalidate),
-			}),
+		const projection = await createWorkbenchProjection(this.ctx, {
+			settings: this.settings,
+			status: this.status,
+			history: this.history,
 		})
+		if (projection) {
+			this.ctx.workbench.mount(ZhipuWorkbench, {
+				commands: workbench.bind.rpc(() => new ZhipuProviderRpc(this)),
+				settings: projection.binding('settings'),
+				status: projection.binding('status'),
+				history: projection.binding('history'),
+			})
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('Zhipu provider adapter ready', {
 			dependsOn: this.usageRecorder.ctx.pluginInfo.id,
@@ -172,9 +171,10 @@ export class ZhipuProviderPlugin extends BasePlugin {
 
 	async clearHistory(): Promise<{ ok: true }> {
 		this.history.removeMany({})
-		await this.data?.db
-			.delete(providerCallHistory)
-			.where(eq(providerCallHistory.provider, PROVIDER_ID))
+		await this.data
+			?.transaction((tx) =>
+				tx.delete(providerCallHistory).where(eq(providerCallHistory.provider, PROVIDER_ID)),
+			)
 			.catch((error) => {
 				this.ctx.logger.warn('Failed to clear Zhipu test history database', { error })
 			})
@@ -906,7 +906,9 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	private async persistHistory(doc: ZhipuTestRunDoc): Promise<void> {
 		if (!this.data) return
 		try {
-			await this.data.db.insert(providerCallHistory).values(toProviderHistoryRow(doc))
+			await this.data.transaction((tx) =>
+				tx.insert(providerCallHistory).values(toProviderHistoryRow(doc)),
+			)
 		} catch (error) {
 			this.ctx.logger.warn('Failed to persist Zhipu test history', { error })
 		}
@@ -974,12 +976,14 @@ export class ZhipuProviderPlugin extends BasePlugin {
 	private async loadHistoryFromDB(): Promise<void> {
 		this.history.removeMany({})
 		if (!this.data) return
-		const rows = await this.data.db
-			.select()
-			.from(providerCallHistory)
-			.where(eq(providerCallHistory.provider, PROVIDER_ID))
-			.orderBy(desc(providerCallHistory.at))
-			.limit(MAX_ZHIPU_HISTORY)
+		const rows = await this.data.read((db) =>
+			db
+				.select()
+				.from(providerCallHistory)
+				.where(eq(providerCallHistory.provider, PROVIDER_ID))
+				.orderBy(desc(providerCallHistory.at))
+				.limit(MAX_ZHIPU_HISTORY),
+		)
 		for (const row of rows.toReversed()) this.history.insert(fromProviderHistoryRow(row))
 	}
 

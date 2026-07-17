@@ -14,7 +14,7 @@ export function FontSettings() {
 	const port = fontSettingsUi.usePort(FontSettingsPort)
 	const host = useWorkbenchHost()
 	const settings = port.settings
-	const fontSets = [...model.fontSets.useSnapshot().items].sort((left, right) =>
+	const fontSets = [...model.fontSets.useQuery().rows].sort((left, right) =>
 		left.name.localeCompare(right.name),
 	)
 	const [selected, setSelected] = useState<string | null>(null)

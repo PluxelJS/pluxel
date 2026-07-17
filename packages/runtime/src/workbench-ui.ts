@@ -1,5 +1,4 @@
 export type {
-	WorkbenchCollectionItem,
 	WorkbenchContract,
 	WorkbenchPortContract,
 	WorkbenchRpcClient,
@@ -7,10 +6,10 @@ export type {
 export {
 	createWorkbenchUi,
 	useWorkbenchHost,
-	type WorkbenchCollectionClient,
-	type WorkbenchCollectionSnapshot,
 	type WorkbenchEventConnectionState,
 	type WorkbenchEventsClient,
+	type WorkbenchLiveQueryClient,
+	type WorkbenchLiveQueryResult,
 	type WorkbenchHost,
 	type WorkbenchResourceClient,
 	type WorkbenchResourceClients,

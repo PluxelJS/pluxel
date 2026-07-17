@@ -2,13 +2,13 @@ import type { Context } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
 import type {
 	AnyWorkbenchContract,
-	WorkbenchCollectionItem,
-	WorkbenchCollectionResource,
 	WorkbenchEventsOf,
+	WorkbenchLiveQueryOf,
+	WorkbenchLiveQueryResource,
 	WorkbenchResourceContract,
 	WorkbenchRpcOf,
 } from './contracts'
-import type { SignalDbCollectionHandle } from '../services/workbench/resources/WorkbenchCollectionService'
+import type { DatabaseDefinition, PluginDatabaseClient, PluginDatabaseHandle } from '../database'
 import type { SseHandler } from '../services/workbench/resources/WorkbenchEventsService'
 import { createWorkbenchUiEntry, type WorkbenchUiEntry } from './ui-entry'
 export type { WorkbenchUiEntry } from './ui-entry'
@@ -26,20 +26,11 @@ export type WorkbenchRpcBinding<TRpc> = Readonly<{
 	factory: (ctx: Context) => TRpc
 }>
 
-export type WorkbenchManagedCollectionBinding<TItem extends WorkbenchCollectionItem> = Readonly<{
-	kind: 'collection'
-	mode: 'managed'
-	options: Readonly<{
-		storage?: 'memory' | 'plugin-data'
-		initial?: TItem[] | (() => TItem[])
-	}>
-}>
-
-export type WorkbenchProjectedCollectionBinding<TItem extends WorkbenchCollectionItem> = Readonly<{
-	kind: 'collection'
-	mode: 'projection'
-	read: () => readonly TItem[]
-	subscribe?: (invalidate: () => void) => void | (() => void)
+export type WorkbenchLiveQueryBinding<Params, Row> = Readonly<{
+	kind: 'liveQuery'
+	database: PluginDatabaseHandle<any>
+	dependsOn: readonly unknown[]
+	query: (db: any, params: Params) => readonly Row[] | Promise<readonly Row[]>
 }>
 
 export type WorkbenchEventMap = Readonly<Record<string, unknown>>
@@ -58,8 +49,11 @@ export type WorkbenchEventsBinding<TEvents extends WorkbenchEventMap> = Readonly
 export type WorkbenchResourceBinding<Resource extends WorkbenchResourceContract> =
 	Resource extends { kind: 'rpc' }
 		? WorkbenchRpcBinding<WorkbenchRpcOf<Resource>>
-		: Resource extends WorkbenchCollectionResource<infer TItem>
-			? WorkbenchManagedCollectionBinding<TItem> | WorkbenchProjectedCollectionBinding<TItem>
+		: Resource extends WorkbenchLiveQueryResource<any, any>
+			? WorkbenchLiveQueryBinding<
+					WorkbenchLiveQueryOf<Resource>['params'],
+					WorkbenchLiveQueryOf<Resource>['row']
+				>
 			: Resource extends { kind: 'events' }
 				? WorkbenchEventsBinding<WorkbenchEventsOf<Resource>>
 				: never
@@ -70,35 +64,11 @@ export type WorkbenchBindings<Extension extends AnyWorkbenchExtension> = {
 	>
 }
 
-export type MountedWorkbenchManagedCollections<
-	Extension extends AnyWorkbenchExtension,
-	Bindings extends WorkbenchBindings<Extension> = never,
-> = [Bindings] extends [never]
-	? {
-			[Key in keyof Extension['contract']['resources'] as Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<any>
-				? Key
-				: never]: Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<
-				infer TItem
-			>
-				? SignalDbCollectionHandle<TItem>
-				: never
-		}
-	: {
-			[Key in keyof Bindings as Bindings[Key] extends WorkbenchManagedCollectionBinding<any>
-				? Key
-				: never]: Key extends keyof Extension['contract']['resources']
-				? Extension['contract']['resources'][Key] extends WorkbenchCollectionResource<infer TItem>
-					? SignalDbCollectionHandle<TItem>
-					: never
-				: never
-		}
-
 export type WorkbenchMount<
 	Extension extends AnyWorkbenchExtension,
-	Bindings extends WorkbenchBindings<Extension>,
+	_Bindings extends WorkbenchBindings<Extension>,
 > = Readonly<{
 	extension: Extension
-	managedCollections: MountedWorkbenchManagedCollections<Extension, Bindings>
 }>
 
 function extension<const Contract extends AnyWorkbenchContract>(input: {
@@ -118,31 +88,22 @@ const bind = Object.freeze({
 		}
 		return Object.freeze({ kind: 'rpc', factory })
 	},
-	collection<TItem extends WorkbenchCollectionItem>(input: {
-		read: () => readonly TItem[]
-		subscribe?: (invalidate: () => void) => void | (() => void)
-	}): WorkbenchProjectedCollectionBinding<TItem> {
-		if (typeof input?.read !== 'function') {
-			throw new TypeError('[workbench] workbench.bind.collection(): read required')
+	liveQuery<Definition extends DatabaseDefinition, Params, Row>(
+		input: Readonly<{
+			database: PluginDatabaseHandle<Definition>
+			dependsOn: readonly unknown[]
+			query: (
+				db: PluginDatabaseClient<Definition>,
+				params: Params,
+			) => readonly Row[] | Promise<readonly Row[]>
+		}>,
+	): WorkbenchLiveQueryBinding<Params, Row> {
+		if (!input?.database || !Array.isArray(input.dependsOn) || typeof input.query !== 'function') {
+			throw new TypeError(
+				'[workbench] workbench.bind.liveQuery() requires database, dependsOn, and query',
+			)
 		}
-		return Object.freeze({
-			kind: 'collection',
-			mode: 'projection',
-			read: input.read,
-			subscribe: input.subscribe,
-		})
-	},
-	managedCollection<TItem extends WorkbenchCollectionItem>(
-		options: {
-			storage?: 'memory' | 'plugin-data'
-			initial?: TItem[] | (() => TItem[])
-		} = {},
-	): WorkbenchManagedCollectionBinding<TItem> {
-		return Object.freeze({
-			kind: 'collection',
-			mode: 'managed',
-			options: Object.freeze({ ...options }),
-		})
+		return Object.freeze({ kind: 'liveQuery', ...input }) as WorkbenchLiveQueryBinding<Params, Row>
 	},
 	events<TEvents extends WorkbenchEventMap>(
 		handler: (

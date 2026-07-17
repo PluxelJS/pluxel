@@ -1,12 +1,18 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
-import { workbench, type MountedWorkbenchManagedCollections } from '@pluxel/runtime/workbench'
+import { workbench } from '@pluxel/runtime/workbench'
 import {
 	BotAccountStore,
 	type BotAccountConfig,
 	type BotAccountInput,
 } from '@repo/chatbots-adapter-kit/account-store'
 import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
+import {
+	workbenchProjectionQuery,
+	WorkbenchProjectionStore,
+	workbenchProjectionDatabase,
+	workbenchProjections,
+} from '@repo/chatbots-adapter-kit/workbench-projection'
 import {
 	AcknowledgedProjectionRegistry,
 	type AcknowledgedProjection,
@@ -33,8 +39,7 @@ const DEFAULT_API_BASE = 'https://www.kookapp.cn'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
-	private settings?: MountedWorkbenchManagedCollections<typeof KookWorkbench>['settings']
-	private status?: MountedWorkbenchManagedCollections<typeof KookWorkbench>['status']
+	private projections?: WorkbenchProjectionStore
 	private accounts?: BotAccountStore
 	private readonly registryState = createBotRegistry<KookBot>({
 		onObserverError: (error) =>
@@ -53,25 +58,34 @@ export class KookPlugin extends BasePlugin {
 	readonly events = createKookPluginEvents(this.ctx)
 
 	override async init(): Promise<void> {
-		const mounted = this.ctx.workbench.mount(KookWorkbench, {
-			commands: workbench.bind.rpc(() => new KookWorkbenchRpc(this)),
-			settings: workbench.bind.managedCollection(),
-			status: workbench.bind.managedCollection(),
-		})
-		if (mounted) {
-			this.settings = mounted.managedCollections.settings
-			this.status = mounted.managedCollections.status
-			await Promise.all([this.settings.ready(), this.status.ready()])
+		if (this.ctx.workbench.enabled) {
+			const database = await this.ctx.database.use(workbenchProjectionDatabase)
+			this.projections = new WorkbenchProjectionStore(database)
+			await Promise.all([
+				this.projections.replaceAll('settings', []),
+				this.projections.replaceAll('status', []),
+			])
+			this.ctx.workbench.mount(KookWorkbench, {
+				commands: workbench.bind.rpc(() => new KookWorkbenchRpc(this)),
+				settings: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<KookSettingsDoc>('settings'),
+				}),
+				status: workbench.bind.liveQuery({
+					database,
+					dependsOn: [workbenchProjections],
+					query: workbenchProjectionQuery<KookStatusDoc>('status'),
+				}),
+			})
 		}
-		this.settings?.removeMany({})
-		this.status?.removeMany({})
 		this.accounts = new BotAccountStore(this.kv(), DEFAULT_API_BASE)
 		this.ctx.effects.defer(() => this.destroyAllBots())
 		for (const id of await this.accounts.list()) {
 			const stored = await this.accounts.read(id)
 			if (!stored) continue
 			const bot = this.installBot(id, stored.token, stored.apiBase)
-			this.projectSettings(id, stored)
+			await this.projectSettings(id, stored)
 			void bot.$.start().catch((): void => undefined)
 		}
 	}
@@ -91,7 +105,7 @@ export class KookPlugin extends BasePlugin {
 			const stored = await this.accountStore().upsert({ ...input, id })
 			await this.ctx.vault.flush()
 			const bot = this.installBot(stored.id, stored.token, stored.apiBase)
-			this.projectSettings(stored.id, stored)
+			await this.projectSettings(stored.id, stored)
 			await bot.$.start()
 			return bot
 		})
@@ -103,8 +117,10 @@ export class KookPlugin extends BasePlugin {
 			await this.accountStore().remove(id)
 			await this.ctx.vault.flush()
 			this.removeRuntimeBot(id)
-			this.settings?.removeOne({ id })
-			this.status?.removeOne({ id })
+			await Promise.all([
+				this.projections?.remove('settings', id),
+				this.projections?.remove('status', id),
+			])
 		})
 	}
 
@@ -134,7 +150,7 @@ export class KookPlugin extends BasePlugin {
 			onStatus: (next) => this.projectStatus(id, next),
 		})
 		this.botDisposers.set(id, this.registryController.register(id, bot))
-		this.projectStatus(id, bot.$.status)
+		void this.projectStatus(id, bot.$.status)
 		return bot
 	}
 
@@ -152,17 +168,17 @@ export class KookPlugin extends BasePlugin {
 		await this.eventProjections.dispatch(bot, event, signal)
 	}
 
-	private projectSettings(id: string, stored: BotAccountConfig): void {
+	private async projectSettings(id: string, stored: BotAccountConfig): Promise<void> {
 		const doc: KookSettingsDoc = {
 			id,
 			tokenPreview: maskSecret(stored.token),
 			apiBase: stored.apiBase,
 			updatedAt: Date.now(),
 		}
-		this.settings?.replaceOne({ id }, doc, { upsert: true })
+		await this.projections?.upsert('settings', doc)
 	}
 
-	private projectStatus(id: string, status: KookBotStatus): void {
+	private async projectStatus(id: string, status: KookBotStatus): Promise<void> {
 		const doc: KookStatusDoc = {
 			id,
 			phase: status.phase === 'destroyed' ? 'offline' : status.phase,
@@ -183,7 +199,7 @@ export class KookPlugin extends BasePlugin {
 			currentBackoffMs: status.gateway.currentBackoffMs,
 			updatedAt: status.updatedAt,
 		}
-		this.status?.replaceOne({ id }, doc, { upsert: true })
+		await this.projections?.upsert('status', doc)
 	}
 
 	private kv() {

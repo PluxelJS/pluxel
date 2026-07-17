@@ -4,13 +4,12 @@ import type {
 	AnyWorkbenchExtension,
 	WorkbenchBindings,
 	WorkbenchMount,
-	MountedWorkbenchManagedCollections,
 	PluginWorkbench,
 } from '../workbench/runtime'
 import { WorkbenchArtifactService } from './workbench/WorkbenchArtifactService'
 import { WorkbenchRpcService } from './workbench/resources/WorkbenchRpcService'
-import { WorkbenchCollectionService } from './workbench/resources/WorkbenchCollectionService'
 import { WorkbenchEventsService } from './workbench/resources/WorkbenchEventsService'
+import { WorkbenchLiveQueryService } from './workbench/resources/WorkbenchLiveQueryService'
 import { WorkbenchRegistry, type InternalModelRef } from './workbench/WorkbenchRegistry'
 import { installWorkbenchForRoot, requireInstalledWorkbench } from './workbench/WorkbenchService'
 
@@ -18,7 +17,7 @@ export class WorkbenchBackend {
 	readonly artifacts: WorkbenchArtifactService
 	readonly rpc: WorkbenchRpcService
 	readonly events: WorkbenchEventsService
-	readonly collections: WorkbenchCollectionService
+	readonly liveQueries: WorkbenchLiveQueryService
 	readonly registry: WorkbenchRegistry
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
 	private readonly mounts = new Map<string, { owner: Context; dispose: () => void }>()
@@ -27,7 +26,7 @@ export class WorkbenchBackend {
 		this.artifacts = new WorkbenchArtifactService(root)
 		this.rpc = new WorkbenchRpcService(root, undefined)
 		this.events = new WorkbenchEventsService(root, undefined)
-		this.collections = new WorkbenchCollectionService(root, undefined, this.events)
+		this.liveQueries = new WorkbenchLiveQueryService(root, this.events)
 		this.registry = new WorkbenchRegistry(root, this.artifacts)
 		this.events.registerResourceFor(root, 'workbench.layouts', (channel) => {
 			const emit = () => channel.emit('revision', this.registry.getCatalog().revision)
@@ -52,7 +51,6 @@ export class WorkbenchBackend {
 	>(owner: Context, extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
 		const ownerId = String(owner.pluginInfo.id ?? '').trim()
 		const cleanup: Array<() => void> = []
-		const managedCollections: Record<string, unknown> = {}
 		const refs: Record<string, InternalModelRef> = {}
 		const resources = extension.contract.resources
 		const expectedKeys = Object.keys(resources).sort()
@@ -108,36 +106,8 @@ export class WorkbenchBackend {
 						)
 						break
 					}
-					case 'collection': {
-						if (binding.mode === 'managed') {
-							managedCollections[key] = this.collections.collectionFor(owner, {
-								name: key,
-								initial: binding.options.initial,
-								persistence: binding.options.storage === 'plugin-data',
-								clientWrites: false,
-							})
-						} else {
-							const initial = [...binding.read()]
-							const collection = this.collections.collectionFor(owner, {
-								name: key,
-								initial,
-								persistence: false,
-								clientWrites: false,
-							})
-							if (binding.subscribe) {
-								const dispose = binding.subscribe(() => {
-									try {
-										collection.reset([...binding.read()])
-									} catch (error) {
-										owner.logger.error('workbench collection projection refresh failed', {
-											resource: key,
-											error,
-										})
-									}
-								})
-								if (typeof dispose === 'function') cleanup.push(dispose)
-							}
-						}
+					case 'liveQuery': {
+						cleanup.push(this.liveQueries.registerResourceFor(owner, key, contract, binding))
 						break
 					}
 				}
@@ -164,10 +134,6 @@ export class WorkbenchBackend {
 		this.mounts.set(ownerId, mounted)
 		return Object.freeze({
 			extension,
-			managedCollections: managedCollections as MountedWorkbenchManagedCollections<
-				Extension,
-				Bindings
-			>,
 		})
 	}
 }

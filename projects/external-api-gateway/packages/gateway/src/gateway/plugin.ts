@@ -14,6 +14,7 @@ import type {
 	GatewayTokenCreateInput,
 	GatewayTokenDoc,
 } from '@repo/external-api-gateway-shared/gateway'
+import { createWorkbenchProjection } from '@repo/external-api-gateway-shared/workbench-projection'
 import { YiqichaProviderPlugin } from '@repo/external-api-gateway-yiqicha'
 import { ZhipuProviderPlugin } from '@repo/external-api-gateway-zhipu'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
@@ -76,17 +77,17 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		await this.loadTokensFromDB()
 		await this.ensureDevToken()
 		this.syncStatus()
-		this.ctx.workbench.mount(ExternalGatewayWorkbench, {
-			commands: workbench.bind.rpc(() => new GatewayAdminRpc(this)),
-			tokens: workbench.bind.collection({
-				read: () => this.tokens.snapshot(),
-				subscribe: (invalidate) => this.tokens.subscribe(invalidate),
-			}),
-			status: workbench.bind.collection({
-				read: () => this.status.snapshot(),
-				subscribe: (invalidate) => this.status.subscribe(invalidate),
-			}),
+		const projection = await createWorkbenchProjection(this.ctx, {
+			tokens: this.tokens,
+			status: this.status,
 		})
+		if (projection) {
+			this.ctx.workbench.mount(ExternalGatewayWorkbench, {
+				commands: workbench.bind.rpc(() => new GatewayAdminRpc(this)),
+				tokens: projection.binding('tokens'),
+				status: projection.binding('status'),
+			})
+		}
 		this.registerRoutes()
 		this.ctx.logger.info('External CapnWeb gateway ready', {
 			rpcPath: this.rpcBase(),
@@ -126,10 +127,12 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			{ ...existing, enabled: false, updatedAt: Date.now() },
 			{ upsert: true },
 		)
-		await this.data?.db
-			.update(gatewayTokens)
-			.set({ enabled: false, updatedAt: Date.now() })
-			.where(eq(gatewayTokens.id, id))
+		await this.data?.transaction((tx) =>
+			tx
+				.update(gatewayTokens)
+				.set({ enabled: false, updatedAt: Date.now() })
+				.where(eq(gatewayTokens.id, id)),
+		)
 		this.syncStatus()
 		return { ok: true }
 	}
@@ -148,10 +151,12 @@ export class ExternalGatewayPlugin extends BasePlugin {
 			if (!constantTimeEquals(expected, tokenHash(token))) continue
 			const next = { ...doc, lastUsedAt: Date.now(), updatedAt: Date.now() }
 			this.tokens.replaceOne({ id: doc.id }, next, { upsert: true })
-			await this.data?.db
-				.update(gatewayTokens)
-				.set({ lastUsedAt: next.lastUsedAt, updatedAt: next.updatedAt })
-				.where(eq(gatewayTokens.id, doc.id))
+			await this.data?.transaction((tx) =>
+				tx
+					.update(gatewayTokens)
+					.set({ lastUsedAt: next.lastUsedAt, updatedAt: next.updatedAt })
+					.where(eq(gatewayTokens.id, doc.id)),
+			)
 			return {
 				tokenId: doc.id,
 				name: doc.name,
@@ -245,10 +250,9 @@ export class ExternalGatewayPlugin extends BasePlugin {
 		this.tokens.removeMany({})
 		this.tokenHashes.clear()
 		if (!this.data) return
-		const rows = await this.data.db
-			.select()
-			.from(gatewayTokens)
-			.orderBy(desc(gatewayTokens.updatedAt))
+		const rows = await this.data.read((db) =>
+			db.select().from(gatewayTokens).orderBy(desc(gatewayTokens.updatedAt)),
+		)
 		for (const row of rows.toReversed()) {
 			const doc = tokenDocFromRow(row)
 			this.tokens.replaceOne({ id: doc.id }, doc, { upsert: true })
@@ -258,20 +262,22 @@ export class ExternalGatewayPlugin extends BasePlugin {
 
 	private async persistToken(row: GatewayTokenRow): Promise<void> {
 		if (!this.data) return
-		await this.data.db
-			.insert(gatewayTokens)
-			.values(row)
-			.onConflictDoUpdate({
-				target: gatewayTokens.id,
-				set: {
-					name: row.name,
-					tokenHash: row.tokenHash,
-					tokenPreview: row.tokenPreview,
-					enabled: row.enabled,
-					updatedAt: row.updatedAt,
-					lastUsedAt: row.lastUsedAt,
-				},
-			})
+		await this.data.transaction((tx) =>
+			tx
+				.insert(gatewayTokens)
+				.values(row)
+				.onConflictDoUpdate({
+					target: gatewayTokens.id,
+					set: {
+						name: row.name,
+						tokenHash: row.tokenHash,
+						tokenPreview: row.tokenPreview,
+						enabled: row.enabled,
+						updatedAt: row.updatedAt,
+						lastUsedAt: row.lastUsedAt,
+					},
+				}),
+		)
 	}
 
 	apiFor(auth: GatewayAuthContext): AuthedApi {

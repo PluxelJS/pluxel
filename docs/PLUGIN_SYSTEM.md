@@ -50,7 +50,12 @@ rollback 时清理。
 
 Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 只有在 owner 真正 running 后才进入
 layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
-collection 和 grant；rollback 通过重新 mount 获得新 lease。
+live query 和 grant；rollback 通过重新 mount 获得新 lease。
+
+`ctx.database.use()` 保留 immutable plugin owner，并在返回 handle 前解析 active database instance、完成 migration prepare。
+handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；stop/replacement 撤销旧 generation handle。默认
+`migrations` evolution 用 checked immutable history；显式 `reset-on-schema-change` 由 compiler 从 schema snapshot 派生 lineage，
+不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
 
 ## Optional Workbench Plane
 
@@ -85,6 +90,7 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
+- `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
 - `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；

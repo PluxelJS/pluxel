@@ -26,8 +26,6 @@ export const RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE =
 	`${RUNTIME_WORKBENCH_BASE}/layout/plugin` as const
 export const RUNTIME_WORKBENCH_EVENTS_PATH = `${RUNTIME_WORKBENCH_BASE}/events` as const
 export const RUNTIME_WORKBENCH_MODELS_BASE = `${RUNTIME_WORKBENCH_BASE}/models` as const
-export const RUNTIME_WORKBENCH_COLLECTION_EVENTS_PATH =
-	`${RUNTIME_WORKBENCH_MODELS_BASE}/collections/events` as const
 
 export function joinPath(base: string, path: string): string {
 	const safeBase = base.replace(/\/+$/, '')
@@ -51,8 +49,8 @@ export function runtimeLogStreamPath(streamId: string, suffix = ''): string {
 	return `${RUNTIME_LOG_STREAMS_BASE}/${encodeURIComponent(streamId)}${suffix}`
 }
 
-export function runtimeWorkbenchCollectionPath(grantId: string): string {
-	return `${RUNTIME_WORKBENCH_MODELS_BASE}/collections/${encodeURIComponent(grantId)}`
+export function runtimeWorkbenchLiveQueryPath(grantId: string): string {
+	return `${RUNTIME_WORKBENCH_MODELS_BASE}/live-queries/${encodeURIComponent(grantId)}`
 }
 
 export function runtimeWorkbenchModelEventsPath(grantId: string): string {
