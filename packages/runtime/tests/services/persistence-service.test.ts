@@ -1,5 +1,5 @@
 import { withRuntimeHost } from '@pluxel/runtime/test'
-import { createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import { createMemoryPersistenceBackend, createWorkspacePersistenceBackend } from '@pluxel/runtime'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -88,6 +88,23 @@ describe('PersistenceService (runtime)', () => {
 				)
 			},
 			{ persistence: { mode: 'memory' } },
+		)
+	})
+
+	it('enforces declared capabilities when a custom backend omits preflight', async () => {
+		const memory = createMemoryPersistenceBackend()
+		const backend = {
+			capability: memory.capability,
+			namespace: memory.namespace,
+		}
+
+		await withRuntimeHost(
+			async (host) => {
+				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toMatchObject({
+					code: 'UNAVAILABLE',
+				})
+			},
+			{ persistence: { mode: 'custom', backend } },
 		)
 	})
 

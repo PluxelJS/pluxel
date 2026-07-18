@@ -307,6 +307,45 @@ describe('PluginService commit()', () => {
 		})
 	})
 
+	it('restarts dependents when a provider dependency override changes', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-PROVIDER' })
+			class Provider extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Provider, 0, DepA)
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly provider: Provider) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, Provider)
+
+			host.add([DepA, DepB, Provider, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+			const initialConsumer = host.get(Consumer)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Provider, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+
+			const replacedConsumer = host.get(Consumer)
+			expect(replacedConsumer).not.toBe(initialConsumer)
+			expect(replacedConsumer?.provider.dep).toBeInstanceOf(DepB)
+		})
+	})
+
 	it('rolls back runtime dependency override overlays with runtime update failure', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'TX-OVERRIDE-ROLLBACK-A' })

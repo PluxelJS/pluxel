@@ -409,8 +409,20 @@ export class PersistenceService {
 		return this.backend.namespace(name)
 	}
 
-	preflight(requirement?: PersistenceRequirement): Promise<void> {
-		return this.backend.preflight?.(requirement) ?? Promise.resolve()
+	async preflight(requirement?: PersistenceRequirement): Promise<void> {
+		if (requirement?.durable && this.backend.capability !== 'durable') {
+			throw new PersistenceError(
+				'UNAVAILABLE',
+				`[PersistenceService] durable persistence required, but the configured backend is ${this.backend.capability}.`,
+			)
+		}
+		if (requirement?.writable && this.backend.capability === 'readonly') {
+			throw new PersistenceError(
+				'READONLY',
+				'[PersistenceService] writable persistence required, but the configured backend is readonly.',
+			)
+		}
+		await this.backend.preflight?.(requirement)
 	}
 }
 

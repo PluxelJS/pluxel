@@ -13,6 +13,16 @@ Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 A
 Contract 不包含 plugin ID、Context、Drizzle table、provider 或 Node API。Extension 不重复 owner；
 `ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
 
+## Host-owned dependency selection
+
+Workbench 的插件详情页可以投影 constructor dependency，但这不是 plugin extension。若参数 token 是未装饰的抽象
+`BasePlugin`，host 从 catalog 中查找所有 `@Plugin(Token, ...)` provider，并允许选择具体实现。选择结果属于
+RuntimeState；host 启用目标 provider、应用 runtime dependency override 并 commit graph。commit 会重启被修改 plugin
+及其 dependent closure，保证旧 caller-bound capability view 不会继续调用先前实现。
+
+因此 memory/Redis backend、不同数据库 provider 或应用自定义 capability provider 不需要各自注册管理 UI。关闭
+Workbench 后，static/dynamic/headless host 仍通过同一 constructor dependency 与 runtime state 完成选择。
+
 ```ts
 export const NotesUi = workbenchContract.define({
 	resources: {

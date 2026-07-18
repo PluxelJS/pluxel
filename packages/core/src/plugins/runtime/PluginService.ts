@@ -480,7 +480,9 @@ export class PluginService {
 		this.definitions.replace(canonical, current, {
 			provideBase,
 		})
-		this._pendingRestart.add(canonical)
+		for (const target of this.collectPlanningCascadeTargets(canonical, true)) {
+			this._pendingRestart.add(target)
+		}
 	}
 
 	private resolveRuntimeDependencyOverrideOwner(

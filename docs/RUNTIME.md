@@ -4,6 +4,9 @@
 Plane。主入口注册全部常驻服务；Vault 只由 `@pluxel/runtime/services/vault` 显式启用，Workbench由宿主
 launcher 显式安装。
 
+`PersistenceService.preflight()` 先统一校验 backend 声明的 durable/readonly capability，再调用 backend 可选的
+preflight hook 做写入探针等实现检查。custom backend 即使省略 hook，也不能让不满足的 durable/writable 要求静默成功。
+
 ## Database capability
 
 `DatabaseService` 是每个 plugin Context 隔离的 owner view，底层 coordinator 按 root lazy 创建。它统一管理 PGlite/PG、

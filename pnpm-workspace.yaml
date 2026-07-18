@@ -24,6 +24,7 @@ catalog:
   drizzle-orm: ^0.45.2
   react: ^19.2.7
   react-dom: ^19.2.7
+  redis: ^6.1.0
   tsdown: ^0.22.5
   typescript: ^6.0.3
   undici: ^7.16.0

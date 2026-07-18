@@ -10,11 +10,14 @@
 2. [`plugin-authoring.md`](plugin-authoring.md)：从标准插件形状开始，掌握依赖、配置、生命周期、
    HTTP、Workbench Plane 和公开 capability。
 3. [`database.md`](database.md)：选择 plugin/application database ownership、migration/reset evolution、transaction 与 live query。
-4. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
+4. [`cache.md`](cache.md)：使用同步 L1、异步外部缓存、显式跨插件共享与请求合并。
+5. [`redis.md`](redis.md)：使用独立 Redis capability、选择 provider 并桥接 cache backend。
+6. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
+7. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
    插件生命周期、HTTP、失败传播、cleanup 与 disabled Workbench Plane。
-5. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
+8. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
    常见反模式与提交检查表。
-6. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
+9. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
 
 CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到生成仓库的
 `docs/pluxel/`，根 `AGENTS.md` 会要求 coding agent 从 `docs/pluxel/README.md` 开始。生成项目

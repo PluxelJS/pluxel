@@ -32,6 +32,10 @@ optional Workbench Plane: target layout / artifacts / bound resources
 constructor 是 required dependency 的唯一作者声明。static/dynamic route 必须读取同一 committed core
 graph；Workbench resolver 不依赖 loader 私有图。
 
+宿主修改 runtime dependency override 时，commit 必须重启被修改 plugin 与其 dependent closure。只重建 provider
+而保留 dependent 的旧 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续
+调用旧 provider。
+
 `OptionalPluginRef` 是 opaque author declaration。core 的 `PluginHost` 只组合 availability subscription 与
 `watchInstance()`；`@pluxel/runtime` 的 root-scoped `OptionalPluginAvailabilityService` 只去重 loader、维护 active
 subscription，并把 candidate 提交给正常 graph transaction。synthetic module owner 直接使用 canonical plugin ID，
