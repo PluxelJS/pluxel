@@ -170,7 +170,7 @@ export class ExternalGatewayPlugin extends BasePlugin {
 	}
 
 	private registerRoutes(): void {
-		const buildRoutes = (app: ReturnType<typeof this.ctx.http.host.app>) =>
+		const buildRoutes = (app: ReturnType<typeof this.ctx.http.plugin.app>) =>
 			app
 				.get('/status', () => ({
 					ok: true,
@@ -205,8 +205,8 @@ export class ExternalGatewayPlugin extends BasePlugin {
 					},
 					{ parse: 'none' },
 				)
-		this.ctx.http.host.routes(buildRoutes, {
-			path: EXTERNAL_GATEWAY_ROUTE_BASE,
+		this.ctx.http.plugin.routes(buildRoutes, {
+			publicPath: EXTERNAL_GATEWAY_ROUTE_BASE,
 			id: 'ExternalGatewayPlugin:external-http',
 		})
 	}

@@ -111,6 +111,12 @@ export interface HostHttpMountSpec {
 
 export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
 	path?: string
+	/**
+	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
+	 * default `/__pluxel/plugins/<plugin-id>` namespace. This changes routing only;
+	 * authentication remains the plugin's responsibility.
+	 */
+	publicPath?: string
 	id?: string
 }
 
@@ -137,6 +143,17 @@ function normalizePluginPath(path = '/'): string {
 	const raw = path.trim()
 	if (!raw || raw === '/') return '/'
 	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
+}
+
+function normalizePluginPublicPath(path: string): string {
+	const raw = path.trim()
+	if (!raw.startsWith('/')) throw new Error('Plugin publicPath must be an absolute path')
+	const normalized = normalizeMountBase(raw)
+	if (normalized === '/') throw new Error('Plugin publicPath cannot own the runtime root')
+	if (normalized === '/__pluxel' || normalized.startsWith('/__pluxel/')) {
+		throw new Error('Plugin publicPath cannot use the reserved /__pluxel namespace')
+	}
+	return normalized
 }
 
 function encodePathSegment(input: string): string {
@@ -353,11 +370,18 @@ export class HttpService {
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
+		if (options.path !== undefined && options.publicPath !== undefined) {
+			throw new Error('Plugin HTTP mount cannot combine path and publicPath')
+		}
 		const path = normalizePluginPath(options.path)
-		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path)
+		const base =
+			options.publicPath === undefined
+				? this.resolvePluginBase(pluginId, path)
+				: normalizePluginPublicPath(options.publicPath)
+		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path, options.publicPath)
 		return this.mountAtPath(pluginCtx, {
 			id: routeId,
-			base: this.resolvePluginBase(pluginId, path),
+			base,
 			boundary,
 		})
 	}
@@ -567,6 +591,12 @@ export class HttpService {
 
 	private upsertMounted(spec: MountedBoundarySpec): MountedBoundary {
 		const base = normalizeMountBase(spec.base)
+		const conflict = this.mountedIndex.find((slot) => slot.id !== spec.id && slot.base === base)
+		if (conflict) {
+			throw new Error(
+				`HTTP mount path "${base}" is already owned by "${conflict.id}"; "${spec.id}" cannot mount the same path`,
+			)
+		}
 		const slot: MountedBoundary = {
 			id: spec.id,
 			base,
@@ -639,7 +669,14 @@ export class HttpService {
 		return suffix === '/' ? base : `${base}${suffix}`
 	}
 
-	private defaultPluginBoundaryId(pluginId: string, path: string): string {
+	private defaultPluginBoundaryId(
+		pluginId: string,
+		path: string,
+		publicPath: string | undefined,
+	): string {
+		if (publicPath !== undefined) {
+			return `${pluginId}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
+		}
 		return path === '/'
 			? `${pluginId}:http`
 			: `${pluginId}:http:${path.slice(1).replaceAll('/', ':')}`

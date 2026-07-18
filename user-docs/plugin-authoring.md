@@ -253,6 +253,22 @@ override init() {
 
 HTTP 不依赖 Workbench Plane，适合业务 API、webhook、health endpoint 和外部集成。
 
+默认路由位于 `/__pluxel/plugins/<plugin-id>`，适合不需要宿主级稳定地址的插件 API。产品协议需要
+固定根路径时，仍由插件直接声明，不要改用 `ctx.http.host`：
+
+```ts
+override init() {
+	this.ctx.http.plugin.routes(
+		(app) => app.get('/health', () => ({ ok: true })),
+		{ publicPath: '/orders' },
+	)
+}
+```
+
+`publicPath` 只改变挂载地址，不表示匿名访问；鉴权仍由插件负责。它与 scoped `path` 互斥，不能占用
+runtime root 或 `/__pluxel` 保留命名空间。路由依旧归当前 plugin Context 所有，插件停止、替换和 HMR
+时自动清理。不要从插件调用 `ctx.http.host.routes()` 绕过这个 ownership。
+
 ### 可选 Workbench
 
 Workbench 使用三个文件边界：
