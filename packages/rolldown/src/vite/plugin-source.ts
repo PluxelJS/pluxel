@@ -42,6 +42,7 @@ const PLUXEL_SINGLETON_PACKAGES = [
 	'@pluxel/runtime-dev',
 	'@pluxel/runtime-dynamic',
 	'@pluxel/runtime-static',
+	'drizzle-orm',
 ] as const
 
 const PLUXEL_SSR_EXTERNAL_PACKAGES = [

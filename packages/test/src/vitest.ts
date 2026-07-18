@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
+import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
 import {
 	defineConfig,
 	mergeConfig,
@@ -147,6 +148,7 @@ export function definePluxelVitestConfig(
 		const projectRoot = resolve(merged.root ?? process.cwd())
 		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
 			...asPluginArray(options.prePlugins),
+			databaseSourceVitePlugin({ root: projectRoot }),
 			lintGuardPlugin({ cwd: projectRoot }),
 			configSourcePlugin({ include, exclude }),
 		]

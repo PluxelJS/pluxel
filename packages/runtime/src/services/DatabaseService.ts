@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { Injectable, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
@@ -1025,6 +1026,7 @@ async function createAdapter(
 	])
 	const configured = config && config.driver === 'pglite' ? config.dataDir : undefined
 	const dataDir = configured ?? defaultPgliteDataDir(persistence)
+	if (!dataDir.includes('://')) await mkdir(dirname(dataDir), { recursive: true })
 	const client = new PGlite(dataDir)
 	await client.waitReady
 	return {

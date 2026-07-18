@@ -1,4 +1,6 @@
-export function jsonObjectSchema<T extends object>() {
+import type { StandardSchema } from '@pluxel/runtime/workbench/contract'
+
+export function jsonObjectSchema<T extends object>(): StandardSchema<unknown, T> {
 	return Object.freeze({
 		'~standard': Object.freeze({
 			version: 1 as const,

@@ -66,9 +66,9 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 			nf3ExternalsPlugin({
 				cwd,
 				outDir,
-				include: [...NodeNativePackages, ...NonBundleablePackages],
+				include: [...NodeNativePackages, ...NonBundleablePackages, '@electric-sql/pglite'],
 				conditions: ['node', 'import', 'default'],
-				fullTraceInclude: [...FullTracePackages, 'tslib'],
+				fullTraceInclude: [...FullTracePackages, 'tslib', '@electric-sql/pglite'],
 				onTracedPackages(packages) {
 					state.residualPackages = Object.keys(packages).sort()
 				},

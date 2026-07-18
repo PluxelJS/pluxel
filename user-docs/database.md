@@ -104,6 +104,10 @@ export const database = defineDatabase({
 Document 风格数据可以在稳定的 `id`、`version`、`jsonb data` 表中自行兼容多个 document version；JSON 字段变化不要求
 SQL migration，但新增物理 index、constraint 或 column 仍属于 schema 变化。
 
+插件测试使用 `@pluxel/test/vitest` preset。它会对 database declaration 运行与开发/生产相同的 artifact
+transform：migration 策略读取并校验已提交历史，reset 策略生成临时 baseline。不要在测试里调用 internal helper 或手工构造
+artifact；这样测试才能覆盖作者实际发布的 schema 与 evolution policy。
+
 ## Static application 共享数据库
 
 当 fixed catalog、schema 和部署都由同一作者维护时，把 schema、Drizzle client、repositories 与 migration 放进普通的

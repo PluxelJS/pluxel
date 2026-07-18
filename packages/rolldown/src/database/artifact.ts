@@ -106,12 +106,16 @@ export async function listMigrationSqlFiles(migrationsDir: string): Promise<stri
 
 export function findDatabasePackageRoot(sourceFile: string, boundary: string): string | undefined {
 	const limit = resolve(boundary)
-	let current = dirname(resolve(sourceFile))
+	const source = resolve(sourceFile)
+	const enforceBoundary = !relative(limit, source).startsWith('..')
+	let current = dirname(source)
 	for (;;) {
 		if (existsSync(join(current, 'package.json'))) return current
-		if (current === limit) return undefined
+		if (enforceBoundary && current === limit) return undefined
 		const parent = dirname(current)
-		if (parent === current || relative(limit, parent).startsWith('..')) return undefined
+		if (parent === current || (enforceBoundary && relative(limit, parent).startsWith('..'))) {
+			return undefined
+		}
 		current = parent
 	}
 }

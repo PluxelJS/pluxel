@@ -93,5 +93,8 @@ describe('staticApplication', () => {
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
+		expect(source).toContain(
+			"fullTraceInclude: [...FullTracePackages, 'tslib', '@electric-sql/pglite']",
+		)
 	})
 })

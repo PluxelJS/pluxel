@@ -34,6 +34,8 @@ export default definePluxelVitestConfig(
 
 - `include`/`exclude` 决定 Pluxel metadata transform 的源码范围，不是 Vitest test glob。
 - preset 会在 transform 前运行 Pluxel build-correctness lint，因此需要安装 `oxlint`。
+- preset 会为 `defineDatabase()` 注入与正常构建相同的 checked migration 或 reset baseline；database
+  plugin test 不要手写 hidden artifact，也不要绕过 `@pluxel/test/vitest` 直接加载源码。
 - 不要用 raw TypeScript runner 替代这条路径；constructor DI 和 config/feature metadata 依赖
   Pluxel toolchain。
 - 需要其他 Vite plugin 时使用 `definePluxelVitestConfig(overrides, { prePlugins })` 明确它位于

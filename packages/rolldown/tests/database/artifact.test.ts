@@ -4,10 +4,29 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { loadDatabaseArtifact } from '../../src/database/artifact.ts'
+import { findDatabasePackageRoot, loadDatabaseArtifact } from '../../src/database/artifact.ts'
 import { generateResetDatabaseArtifact } from '../../src/database/reset-artifact.ts'
 
 describe('database migration artifact', () => {
+	it('locates a linked plugin package outside the application root', async () => {
+		const root = await mkdtemp(join(process.cwd(), '.database-linked-package-test-'))
+		const application = join(root, 'application')
+		const linkedPlugin = join(root, 'linked-plugin')
+		try {
+			await Promise.all([
+				mkdir(application, { recursive: true }),
+				mkdir(join(linkedPlugin, 'src'), { recursive: true }),
+			])
+			await writeFile(join(linkedPlugin, 'package.json'), JSON.stringify({ type: 'module' }))
+
+			expect(findDatabasePackageRoot(join(linkedPlugin, 'src/database.ts'), application)).toBe(
+				linkedPlugin,
+			)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	it('loads an immutable lineage and checked migration history', async () => {
 		const migration = 'CREATE TABLE items (id text PRIMARY KEY)'
 		const checksum = createHash('sha256').update(migration).digest('hex')

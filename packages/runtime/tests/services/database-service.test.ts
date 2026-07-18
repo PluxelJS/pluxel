@@ -272,6 +272,28 @@ describe('DatabaseService', () => {
 		}
 	}, 30_000)
 
+	it('creates the default PGlite parent under a new persistence root', async () => {
+		const definition = databaseFixture('default-persistence')
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-default-'))
+		const persistence = join(root, 'nested', 'persistence')
+		const host = createRuntimeHost({ workbench: false, persistence })
+		try {
+			@Plugin({ name: 'DefaultPersistenceDatabasePlugin' })
+			class DefaultPersistenceDatabasePlugin extends BasePlugin {
+				override async init() {
+					await this.ctx.database.use(definition.database)
+				}
+			}
+			host.add(DefaultPersistenceDatabasePlugin)
+			host.cfg(DefaultPersistenceDatabasePlugin).enable()
+			await host.commit()
+			expect(host.isRunning(DefaultPersistenceDatabasePlugin)).toBe(true)
+		} finally {
+			await host.dispose()
+			await rm(root, { recursive: true, force: true })
+		}
+	}, 30_000)
+
 	it('adopts the previous owner-schema layout without losing plugin rows', async () => {
 		const definition = databaseFixture('main')
 		const ownerId = 'LegacyDatabasePlugin'

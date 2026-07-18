@@ -30,6 +30,11 @@ catalog:
 
 managePackageManagerVersions: false
 
+packageExtensions:
+  '@mantine/hooks@9.4.1':
+    peerDependencies:
+      react-dom: ^19.2.0
+
 allowBuilds:
   '@parcel/watcher': false
   better-sqlite3: false

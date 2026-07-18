@@ -12,11 +12,18 @@ const rolldownMocks = vi.hoisted(() => {
 		name: `config-source-${configSourcePlugin.mock.calls.length}`,
 		options,
 	}))
+	const databaseSourceVitePlugin = vi.fn((options?: unknown) => ({
+		name: `database-source-${databaseSourceVitePlugin.mock.calls.length}`,
+		options,
+	}))
 
-	return { lintGuardPlugin, configSourcePlugin }
+	return { lintGuardPlugin, configSourcePlugin, databaseSourceVitePlugin }
 })
 
 vi.mock('@pluxel/rolldown/plugins', () => rolldownMocks)
+vi.mock('@pluxel/rolldown/vite', () => ({
+	databaseSourceVitePlugin: rolldownMocks.databaseSourceVitePlugin,
+}))
 
 afterEach(() => {
 	vi.clearAllMocks()
@@ -33,6 +40,10 @@ describe('@pluxel/test/vitest', () => {
 			cwd: resolve(process.cwd(), 'packages/test'),
 		})
 		expect(config.plugins?.[0]).toMatchObject({
+			name: expect.stringMatching(/^database-source-/),
+			options: { root: resolve(process.cwd(), 'packages/test') },
+		})
+		expect(config.plugins?.[1]).toMatchObject({
 			options: {
 				cwd: resolve(process.cwd(), 'packages/test'),
 			},
