@@ -1,4 +1,7 @@
 
+# Independent downstream repositories linked against this Pluxel source tree.
+/local-projects/
+
 # Created by https://www.toptal.com/developers/gitignore/api/node,visualstudiocode,intellij
 # Edit at https://www.toptal.com/developers/gitignore?templates=node,visualstudiocode,intellij
 

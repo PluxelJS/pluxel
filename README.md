@@ -11,6 +11,17 @@ pnpm plugin-host:dynamic
 `mise.toml` 统一跟踪 Node.js LTS 与最新 pnpm；不使用 mise 时也必须满足根 `package.json` 的
 engines 约束。
 
+## 本地协同项目
+
+需要与 Pluxel 源码同步演进、但拥有独立 Git、pnpm workspace 和发布生命周期的项目放在
+`local-projects/<name>`。该目录被 Pluxel 永久忽略，也不属于 Pluxel 根 workspace；下游项目通过相对
+路径 `link:` 当前 `packages/*`、`vendor/*` 或正式 `projects/*` 源码。上游工作树的修改会直接参与下游
+安装、构建和验证，不使用发布版本或 Git SHA pin。
+
+`projects/*` 仍是 Pluxel 仓库正式提交并由根 pnpm/Turbo 管理的第一方项目。独立项目不要嵌入该目录，
+避免一个 package 同时属于父、子两个 workspace。进入下游项目前先完成 Pluxel 根目录的安装和所需包
+构建；两个仓库分别维护 lockfile、验证命令和提交历史。
+
 文档入口（先看这些，避免被历史笔记误导）：
 
 - 插件作者：`user-docs/README.md`
