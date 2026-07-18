@@ -63,6 +63,10 @@ Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocess
 语义，并由 Vite/OXC 提供 legacy decorator transform。preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
 同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
 runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
+static/dynamic route 分别使用 `.pluxel/vite/static-runtime` 和 `.pluxel/vite/dynamic-runtime` 作为默认 Vite cache，
+避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
+Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
+目录，不把 Rust/N-API 编译缓存纳入插件源码 HMR。
 
 production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
 sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它

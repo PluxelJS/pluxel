@@ -98,6 +98,7 @@ describe('@pluxel/runtime-static', () => {
 		}) as Array<{
 			name?: string
 			apply?: unknown
+			config?: (config: { cacheDir?: string }) => unknown
 		}>
 
 		expect(Object.keys(application)).toEqual(['name', 'plugins', 'configure'])
@@ -138,6 +139,7 @@ describe('@pluxel/runtime-static', () => {
 		).rejects.toThrow(/context must not include "workbench"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
 			'pluxel:plugin-semantics',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
@@ -145,6 +147,10 @@ describe('@pluxel/runtime-static', () => {
 			'pluxel:static-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
+		expect(plugins.at(-1)?.config?.({})).toEqual({
+			cacheDir: '.pluxel/vite/static-runtime',
+		})
+		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).toBeUndefined()
 		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)
 	})
 

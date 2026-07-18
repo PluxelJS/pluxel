@@ -23,6 +23,7 @@ import {
 	toBasePackage,
 } from '@pluxel/runtime/internal'
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
+import { DEFAULT_VITE_WATCH_IGNORED } from '../vite-watch'
 
 export interface LoaderHmrDependencyConfig {
 	/** Reuse host exports for these specifiers so class singletons survive HMR. */
@@ -411,6 +412,9 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			port: opts.port ?? 3000,
 			middlewareMode: false,
 			preTransformRequests: false,
+			watch: {
+				ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+			},
 			fs: {
 				allow: opts.fsAllow,
 			},

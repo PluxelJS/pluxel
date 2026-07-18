@@ -2,10 +2,12 @@ import { getConsoleSink, type LogRecord, type Sink } from '@logtape/logtape'
 import { getPrettyFormatter } from '@logtape/pretty'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { formatPrettyTimestamp, isReservedLogProperty } from './host'
+import { toPlainObject } from './serialization'
 
 export function createRuntimePrettyConsoleSink(options: {
 	caller: boolean
 	timezone: 'local' | 'utc'
+	console?: Console
 }): Sink {
 	const formatter = getPrettyFormatter({
 		timestamp: (timestamp) => formatPrettyTimestamp(timestamp, options.timezone),
@@ -13,14 +15,16 @@ export function createRuntimePrettyConsoleSink(options: {
 		timestampStyle: null,
 		categoryStyle: null,
 		messageStyle: null,
+		properties: true,
 	})
 	return getConsoleSink({
+		console: options.console,
 		formatter: (record) => {
 			const caller = options.caller ? readCaller(record) : undefined
 			const rendered = formatter({
 				...record,
 				category: displayCategory(record.category),
-				properties: displayProperties(record.properties),
+				properties: displayProperties(record),
 			})
 			return caller ? `${rendered}  ⤷ ${caller}` : rendered
 		},
@@ -38,12 +42,18 @@ function displayCategory(category: readonly string[]): string[] {
 	return [...category]
 }
 
-function displayProperties(properties: Readonly<Record<string, unknown>>): Record<string, unknown> {
+function displayProperties(record: LogRecord): Record<string, unknown> {
+	if (!isDiagnosticLevel(record.level)) return {}
 	const out: Record<string, unknown> = {}
-	for (const [key, value] of Object.entries(properties)) {
-		if (!isReservedLogProperty(key)) out[key] = value
+	const seen = new WeakSet<object>()
+	for (const [key, value] of Object.entries(record.properties)) {
+		if (!isReservedLogProperty(key)) out[key] = toPlainObject(value, 6, seen)
 	}
 	return out
+}
+
+function isDiagnosticLevel(level: LogRecord['level']): boolean {
+	return level === 'warning' || level === 'error' || level === 'fatal'
 }
 
 function readCaller(record: LogRecord): string | undefined {

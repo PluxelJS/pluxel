@@ -31,7 +31,12 @@ export async function generateResetDatabaseArtifact(options: {
 	const stagingRoot = await mkdtemp(join(stagingParent, 'database-reset-'))
 	const stagingOut = join(stagingRoot, 'drizzle')
 	try {
-		await runDrizzleKit('generate', { root, schema, out: stagingOut }, ['--name', 'baseline'])
+		await runDrizzleKit(
+			'generate',
+			{ root, schema, out: stagingOut },
+			['--name', 'baseline'],
+			'capture',
+		)
 		const lineage = await resetLineageFromSnapshot(stagingOut)
 		const migrations = await readGeneratedMigrations(stagingOut)
 		if (migrations.length === 0) {

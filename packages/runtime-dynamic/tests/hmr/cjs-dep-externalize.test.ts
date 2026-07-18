@@ -1,7 +1,7 @@
 import { createServer as createNetServer } from 'node:net'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { join } from 'pathe'
-import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import { createServer, mergeConfig, normalizePath, type Plugin as VitePlugin } from 'vite'
 import { describe, expect, it } from 'vitest'
 import { createHmrTestHost, type ErrorLog } from './_host'
 import {
@@ -53,20 +53,22 @@ async function runHmr(
 	})
 
 	const hmrPort = await getFreePort()
-	const server = await createServer({
-		...buildLoaderHmrViteConfig({
-			root,
-			fsAllow,
-			deps,
-			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
-			httpPlugin: { name: 'noop' },
-			port: 0,
-		}),
-		// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
-		// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
-		// allocate a unique free port to prevent cross-test / local dev conflicts.
-		server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } },
-	})
+	const server = await createServer(
+		mergeConfig(
+			buildLoaderHmrViteConfig({
+				root,
+				fsAllow,
+				deps,
+				runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
+				httpPlugin: { name: 'noop' },
+				port: 0,
+			}),
+			// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
+			// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
+			// allocate a unique free port to prevent cross-test / local dev conflicts.
+			{ server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } } },
+		),
+	)
 
 	try {
 		await hmr.executeFiles([join(root, 'entry.ts')])

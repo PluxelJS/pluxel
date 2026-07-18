@@ -130,6 +130,10 @@ type RuntimeLoggingInput = {
 - store：bounded in-memory runtime log stream；
 - logtape：host 提供的 raw `Sink`。
 
+pretty console 对 trace/debug/info 保持单行；warning/error/fatal 会在下一行展开非保留 structured
+properties，因此插件启动失败的 `error`、`cause` 和 lifecycle diagnostics 会直接包含在终端输出中。`context`、
+plugin identity 和 caller 等宿主保留字段仍由 category/专用 caller 展示负责，不重复打印。
+
 等级属于 route，不属于 physical sink。同一 console 可以对 runtime 使用 `info`、对 plugins 使用 `trace`。
 
 固定处理顺序：

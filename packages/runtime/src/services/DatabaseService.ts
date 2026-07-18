@@ -40,7 +40,6 @@ type DatabaseAdapter = {
 
 type QueueItem<T = unknown> = {
 	owner: string
-	token: object
 	run: () => Promise<T>
 	resolve(value: T): void
 	reject(error: unknown): void
@@ -50,6 +49,7 @@ type QueueItem<T = unknown> = {
 class FairScheduler {
 	private readonly queues = new Map<string, QueueItem[]>()
 	private readonly ownerOrder: string[] = []
+	private readonly tasksByToken = new Map<object, Set<Promise<unknown>>>()
 	private running = 0
 	private cursor = 0
 
@@ -71,28 +71,54 @@ class FairScheduler {
 				new Error(`[pluxel/database] pending operation limit exceeded for plugin "${owner}"`),
 			)
 		}
-		return new Promise<T>((resolve, reject) => {
-			let item!: QueueItem<T>
-			const timer = setTimeout(() => {
-				if (!this.remove(item)) return
-				reject(
-					new Error(`[pluxel/database] operation timed out while queued for plugin "${owner}"`),
-				)
-			}, this.timeoutMs)
-			item = { owner, token, run: operation, resolve, reject, timer }
-			queue!.push(item as QueueItem)
-			this.flush()
+		let resolveItem!: QueueItem<T>['resolve']
+		let rejectItem!: QueueItem<T>['reject']
+		const promise = new Promise<T>((resolve, reject) => {
+			resolveItem = resolve
+			rejectItem = reject
 		})
+		let item!: QueueItem<T>
+		const timer = setTimeout(() => {
+			if (!this.remove(item)) return
+			rejectItem(
+				new Error(`[pluxel/database] operation timed out while queued for plugin "${owner}"`),
+			)
+		}, this.timeoutMs)
+		item = {
+			owner,
+			run: operation,
+			resolve: resolveItem,
+			reject: rejectItem,
+			timer,
+		}
+		let tokenTasks = this.tasksByToken.get(token)
+		if (!tokenTasks) {
+			tokenTasks = new Set()
+			this.tasksByToken.set(token, tokenTasks)
+		}
+		tokenTasks.add(promise)
+		void promise.then(
+			() => this.finish(token, promise),
+			() => this.finish(token, promise),
+		)
+		queue.push(item as QueueItem)
+		this.flush()
+		return promise
 	}
 
-	cancel(token: object): void {
-		for (const queue of this.queues.values()) {
-			for (let index = queue.length - 1; index >= 0; index -= 1) {
-				const item = queue[index]!
-				if (item.token !== token || !this.remove(item)) continue
-				item.reject(new Error('[pluxel/database] database owner stopped before operation started'))
-			}
+	async drain(token: object): Promise<void> {
+		for (;;) {
+			const tasks = this.tasksByToken.get(token)
+			if (!tasks?.size) return
+			await Promise.allSettled(tasks)
 		}
+	}
+
+	private finish(token: object, promise: Promise<unknown>): void {
+		const tasks = this.tasksByToken.get(token)
+		if (!tasks) return
+		tasks.delete(promise)
+		if (tasks.size === 0) this.tasksByToken.delete(token)
 	}
 
 	private remove(item: QueueItem): boolean {
@@ -151,6 +177,7 @@ type PreparedDatabaseInstance = Readonly<{
 class DatabaseCoordinator {
 	private adapterTask?: Promise<DatabaseAdapter>
 	private schedulerTask?: Promise<FairScheduler>
+	private schedulerValue?: FairScheduler
 	private systemReady?: Promise<void>
 	private readonly preparing = new Map<string, Promise<PreparedDatabaseInstance>>()
 	private readonly activeInstances = new Map<string, PreparedDatabaseInstance>()
@@ -180,16 +207,21 @@ class DatabaseCoordinator {
 		return new OwnerDatabaseHandle(this, owner, definition, instance)
 	}
 
-	async operation<T>(
+	operation<T>(
 		ownerId: string,
 		token: object,
 		instance: PreparedDatabaseInstance,
 		readonly: boolean,
 		callback: (database: AnyDatabase) => T | Promise<T>,
 	): Promise<T> {
-		if (this.disposed) throw new Error('[pluxel/database] database coordinator is stopped')
-		const scheduler = await this.scheduler()
-		return await scheduler.run(ownerId, token, async () => {
+		if (this.disposed) {
+			return Promise.reject(new Error('[pluxel/database] database coordinator is stopped'))
+		}
+		const scheduler = this.schedulerValue
+		if (!scheduler) {
+			return Promise.reject(new Error('[pluxel/database] database scheduler is not ready'))
+		}
+		return scheduler.run(ownerId, token, async () => {
 			const adapter = await this.adapter()
 			let changed = false
 			const result = await adapter.db.transaction(async (tx: AnyDatabase) => {
@@ -222,8 +254,8 @@ class DatabaseCoordinator {
 		})
 	}
 
-	cancel(token: object): void {
-		void this.schedulerTask?.then((scheduler) => scheduler.cancel(token))
+	async drain(token: object): Promise<void> {
+		await this.schedulerValue?.drain(token)
 	}
 
 	subscribe(ownerSchema: string, tables: ReadonlySet<string>, listener: () => void): () => void {
@@ -262,6 +294,7 @@ class DatabaseCoordinator {
 		const fingerprint = databaseArtifactFingerprint(definition, artifact, tables)
 		await this.ensureSystem()
 		const adapter = await this.adapter()
+		await this.scheduler()
 		const cached = this.activeInstances.get(ownerId)
 		if (
 			adapter.driver === 'pglite' &&
@@ -591,7 +624,11 @@ class DatabaseCoordinator {
 	}
 
 	private scheduler(): Promise<FairScheduler> {
-		this.schedulerTask ??= this.adapter().then((adapter) => new FairScheduler(adapter.concurrency))
+		this.schedulerTask ??= this.adapter().then((adapter) => {
+			const scheduler = new FairScheduler(adapter.concurrency)
+			this.schedulerValue = scheduler
+			return scheduler
+		})
 		return this.schedulerTask
 	}
 
@@ -657,10 +694,10 @@ class OwnerDatabaseHandle<
 		)
 	}
 
-	private dispose(): void {
+	private async dispose(): Promise<void> {
 		if (!this.active) return
 		this.active = false
-		this.coordinator.cancel(this.token)
+		await this.coordinator.drain(this.token)
 	}
 
 	private assertActive(): void {

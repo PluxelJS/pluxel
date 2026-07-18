@@ -23,6 +23,8 @@ describe('HMR client optimizeDeps', () => {
 		expect((config.optimizeDeps as { include?: string[] }).include).toEqual(
 			expect.arrayContaining(['react', 'react-dom/client', '@tabler/icons-react']),
 		)
+		const ignored = config.server?.watch?.ignored as RegExp[]
+		expect(ignored.some((pattern) => pattern.test('/workspace/native/target/debug'))).toBe(true)
 
 		const resolveConfig = config.resolve as {
 			alias?: Array<{ find: RegExp; replacement: string }>

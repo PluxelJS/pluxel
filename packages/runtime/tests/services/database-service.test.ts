@@ -151,6 +151,55 @@ function resetDatabaseFixture(sql: string) {
 }
 
 describe('DatabaseService', () => {
+	it('drains accepted owner operations before teardown completes', async () => {
+		const definition = databaseFixture('owner-cancellation')
+		const host = createRuntimeHost({
+			workbench: false,
+			database: { driver: 'pglite', dataDir: 'memory://' },
+		})
+		let releaseOperation: (() => void) | undefined
+		let runningOperation: Promise<void> | undefined
+		try {
+			@Plugin({ name: 'QueuedDatabasePlugin' })
+			class QueuedDatabasePlugin extends BasePlugin {
+				db!: PluginDatabaseHandle<typeof definition.database>
+				override async init() {
+					this.db = await this.ctx.database.use(definition.database)
+				}
+			}
+
+			host.add(QueuedDatabasePlugin)
+			host.cfg(QueuedDatabasePlugin).enable()
+			await host.commit()
+			const database = host.require(QueuedDatabasePlugin).db
+			let markRunning!: () => void
+			const running = new Promise<void>((resolveRunning) => {
+				markRunning = resolveRunning
+			})
+			const release = new Promise<void>((resolveRelease) => {
+				releaseOperation = resolveRelease
+			})
+			runningOperation = database.read(async () => {
+				markRunning()
+				await release
+			})
+			await running
+
+			const queuedOperation = database.read(() => 'completed')
+			host.remove(QueuedDatabasePlugin)
+			const stopping = host.commit()
+			await new Promise<void>((resolveTurn) => setImmediate(resolveTurn))
+			releaseOperation()
+			releaseOperation = undefined
+			await stopping
+			await expect(queuedOperation).resolves.toBe('completed')
+		} finally {
+			releaseOperation?.()
+			await runningOperation?.catch(() => undefined)
+			await host.dispose()
+		}
+	}, 30_000)
+
 	it('runs migrations and isolates same-named tables by canonical plugin owner', async () => {
 		const definition = databaseFixture()
 		const host = createRuntimeHost({

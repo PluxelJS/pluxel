@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 
 import type { HttpHandler } from '@pluxel/runtime'
+import { DEFAULT_VITE_WATCH_IGNORED } from './vite-watch'
 
 export interface FetchHmrServerPluginOptions {
 	exclude?: Array<string | RegExp>
@@ -125,7 +126,7 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 			return {
 				server: {
 					watch: {
-						ignored: [/\.wrangler/, /\.mf/],
+						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
 					},
 				},
 			}

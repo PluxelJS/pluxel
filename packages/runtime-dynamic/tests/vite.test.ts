@@ -61,10 +61,15 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {
 		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
 			config: './pluxel.dynamic.ts',
-		}) as Array<{ name?: string; apply?: unknown }>
+		}) as Array<{
+			name?: string
+			apply?: unknown
+			config?: (config: { cacheDir?: string }) => unknown
+		}>
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
 			'pluxel:plugin-semantics',
 			'pluxel-lint-guard',
 			'pluxel-config-source',
@@ -72,6 +77,13 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			'pluxel:dynamic-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
+		expect(plugins.at(-1)?.config?.({})).toMatchObject({
+			cacheDir: '.pluxel/vite/dynamic-runtime',
+			server: { watch: { ignored: expect.arrayContaining([/(^|[/\\])target([/\\]|$)/]) } },
+		})
+		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
+			'cacheDir',
+		)
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
 })

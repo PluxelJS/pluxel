@@ -74,6 +74,8 @@ export default defineStaticRuntime({
 `{ driver: 'pglite', dataDir: 'memory://' }`。PGlite 的 durability 定位见 [`database.md`](database.md)。
 
 用 `vite` 启动。不要用 raw TypeScript runner 执行 `pluxel.static.ts` 或插件入口。
+route plugin 默认把 static/dynamic optimizer cache 隔离到各自的 `.pluxel/vite/` 子目录，因此同一项目 root 下的
+业务前端可以使用自己的 Vite cache。宿主显式配置 `cacheDir` 时仍以宿主值为准。
 
 `plugins` 是固定 catalog：production build 后不能从外部增加或替换插件代码。`configure()` 本身进入 bundle，
 但会在每次启动时重新执行，因此环境变量、平台 bindings、persistence、logging、HTTP、plugin config records 和
@@ -184,6 +186,8 @@ logging: {
 
 `plugins` route 通常保持 `trace`，再由 O(1) 的 plugin policy 查表决定实际等级。`logging: false` 仍会安装一个
 无输出的 root，以保持 Context identity、policy 和控制面所有权一致；它不是“没有 logging manager”。
+pretty console 会保持 info 日志紧凑，并在 warning/error/fatal 时直接展开错误和 lifecycle diagnostics；排查启动失败
+不需要切换 JSON formatter 或只依赖 Workbench log store。
 
 ## Workbench Plane
 

@@ -39,6 +39,7 @@ import type {
 } from './types'
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
+const STATIC_RUNTIME_CACHE_DIR = '.pluxel/vite/static-runtime'
 
 type PluginArtifactCompilerConfig = {
 	cacheDir?: string
@@ -178,6 +179,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 	const routePlugin: Plugin = {
 		name: 'pluxel:static-runtime',
 		apply: 'serve',
+		config(config) {
+			if (config.cacheDir !== undefined) return
+			return { cacheDir: STATIC_RUNTIME_CACHE_DIR }
+		},
 		async configureServer(server) {
 			const marked = server as ViteDevServer & { [STATIC_RUNTIME_SERVER_KEY]?: true }
 			if (marked[STATIC_RUNTIME_SERVER_KEY]) {

@@ -7,8 +7,10 @@ import type { BootedLoaderHmrHost } from './hmr/host'
 import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
+import { DEFAULT_VITE_WATCH_IGNORED } from './hmr/vite-watch'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
+const DYNAMIC_RUNTIME_CACHE_DIR = '.pluxel/vite/dynamic-runtime'
 
 export type DynamicRuntimeVitePluginOptions = {
 	config: string
@@ -74,11 +76,12 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	const routePlugin: Plugin = {
 		name: 'pluxel:dynamic-runtime',
 		apply: 'serve',
-		config() {
+		config(config) {
 			return {
+				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
 				server: {
 					watch: {
-						ignored: [/\.wrangler/, /\.mf/],
+						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
 					},
 				},
 			}

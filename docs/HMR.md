@@ -5,6 +5,8 @@ live-query lease；同 lineage 新 generation 复用 instance，`migrations` evo
 `reset-on-schema-change` 的 schema-derived lineage 改变时则构建空 candidate、原子激活
 并归档旧 instance。PGlite backend、PG pool、instance registry 和 durable rows 属于 root，不随 module replacement 重建；
 candidate 失败保持原 active instance，但 core rollback 仍通过新 handle acquisition 验证 artifact 与 lineage。
+owner teardown 先使 handle 拒绝新操作，再等待已经接受的运行中和排队操作排空；plugin stop 完成后才允许 replacement
+generation 启动。因此不会产生预期取消的 unhandled rejection，也不会让旧 generation 的数据库操作跨越 replacement。
 
 HMR replacement 必须保持 core lifecycle、Workbench resources 和 UI artifact 同步：
 

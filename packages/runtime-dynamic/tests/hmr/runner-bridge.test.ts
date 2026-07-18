@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
-import { createServer, normalizePath } from 'vite'
+import { createServer, mergeConfig, normalizePath } from 'vite'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { workspaceRoot } from './_paths'
 import {
@@ -35,22 +35,26 @@ describe('HMR runner bridge', () => {
 			scanRoots: [normalizePath(fixturesDir)],
 		})
 
-		const server = await createServer({
-			...buildLoaderHmrViteConfig({
-				root: cwd,
-				fsAllow,
-				deps,
-				runnerPlugin: { name: 'noop' },
-				httpPlugin: { name: 'noop' },
-			}),
-			server: {
-				port: 0,
-				hmr: false,
-				ws: false,
-				middlewareMode: true,
-				fs: { allow: fsAllow },
-			},
-		})
+		const server = await createServer(
+			mergeConfig(
+				buildLoaderHmrViteConfig({
+					root: cwd,
+					fsAllow,
+					deps,
+					runnerPlugin: { name: 'noop' },
+					httpPlugin: { name: 'noop' },
+				}),
+				{
+					server: {
+						port: 0,
+						hmr: false,
+						ws: false,
+						middlewareMode: true,
+						fs: { allow: fsAllow },
+					},
+				},
+			),
+		)
 		try {
 			await withTestDynamicContext(async (ctx) => {
 				const hmr = new LoaderHmrService(ctx, {

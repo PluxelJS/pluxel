@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
 import { rmSync, symlinkSync } from 'node:fs'
-import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import { createServer, mergeConfig, normalizePath, type Plugin as VitePlugin } from 'vite'
 import {
 	captureLoaderModules,
 	createHmrTestHost,
@@ -72,17 +72,19 @@ async function withPluginRunner<T>(
 	hmr.setServerRoot(root)
 	const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
 
-	const server = await createServer({
-		...buildLoaderHmrViteConfig({
-			root,
-			fsAllow,
-			deps,
-			runnerPlugin,
-			httpPlugin: { name: 'noop' },
-			port: 0,
-		}),
-		server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false },
-	})
+	const server = await createServer(
+		mergeConfig(
+			buildLoaderHmrViteConfig({
+				root,
+				fsAllow,
+				deps,
+				runnerPlugin,
+				httpPlugin: { name: 'noop' },
+				port: 0,
+			}),
+			{ server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false } },
+		),
+	)
 
 	try {
 		return await run(async (pluginEntry) => {
