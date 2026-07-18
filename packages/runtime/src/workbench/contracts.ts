@@ -69,11 +69,10 @@ export type WorkbenchPlacementSpec = Readonly<{
 	meta?: WorkbenchViewMeta
 }>
 
-declare const workbenchResourceType: unique symbol
-
 export type WorkbenchRpcResource<TRpc> = Readonly<{
 	kind: 'rpc'
-	readonly [workbenchResourceType]?: TRpc
+	/** @internal Type-only marker retained in declarations; no runtime property is emitted. */
+	readonly __workbenchRpcType?: TRpc
 }>
 
 export type StandardSchema<Input = unknown, Output = Input> = Readonly<{
@@ -96,12 +95,14 @@ export type WorkbenchLiveQueryResource<Params, Row> = Readonly<{
 	params?: StandardSchema<any, Params>
 	row: StandardSchema<any, Row>
 	key: keyof Row & string
-	readonly [workbenchResourceType]?: { params: Params; row: Row }
+	/** @internal Type-only marker retained in declarations; no runtime property is emitted. */
+	readonly __workbenchLiveQueryType?: { params: Params; row: Row }
 }>
 
 export type WorkbenchEventsResource<TEvents extends Record<string, unknown>> = Readonly<{
 	kind: 'events'
-	readonly [workbenchResourceType]?: TEvents
+	/** @internal Type-only marker retained in declarations; no runtime property is emitted. */
+	readonly __workbenchEventsType?: TEvents
 }>
 
 export type WorkbenchResourceContract =

@@ -43,6 +43,21 @@ this.ctx.workbench.mount(extension, {
 })
 ```
 
+consumer 只需把一个 Port 的同名 resources 一对一注入 placement 时，用 `portOutlet()` 省略重复 Contract：
+
+```ts
+const settings = workbench.portOutlet({
+	port: SettingsPort,
+	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs),
+})
+
+this.ctx.workbench.mount(settings, {
+	settings: workbench.bind.rpc(() => new SettingsRpc(this)),
+})
+```
+
+需要重命名、组合或只提供部分 consumer resources 时继续使用显式 `workbenchContract.define({ outlets })`。
+
 公开入口：
 
 - `@pluxel/runtime`：唯一作者入口，原样转发 core API，并注册配置、HTTP、persistence 等常驻能力；

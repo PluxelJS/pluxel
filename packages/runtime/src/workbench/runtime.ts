@@ -1,12 +1,17 @@
 import type { Context } from '@pluxel/core'
 import type { RpcTarget } from 'capnweb'
-import type {
-	AnyWorkbenchContract,
-	WorkbenchEventsOf,
-	WorkbenchLiveQueryOf,
-	WorkbenchLiveQueryResource,
-	WorkbenchResourceContract,
-	WorkbenchRpcOf,
+import {
+	workbenchContract,
+	type AnyWorkbenchContract,
+	type WorkbenchContract,
+	type WorkbenchEventsOf,
+	type WorkbenchLiveQueryOf,
+	type WorkbenchLiveQueryResource,
+	type WorkbenchPlacementSpec,
+	type WorkbenchPortContract,
+	type WorkbenchResourceContract,
+	type WorkbenchResourceMap,
+	type WorkbenchRpcOf,
 } from './contracts'
 import type { DatabaseDefinition, PluginDatabaseClient, PluginDatabaseHandle } from '../database'
 import type { SseHandler } from '../services/workbench/resources/WorkbenchEventsService'
@@ -20,6 +25,13 @@ export type WorkbenchExtension<Contract extends AnyWorkbenchContract = AnyWorkbe
 	}>
 
 export type AnyWorkbenchExtension = WorkbenchExtension<any>
+
+type WorkbenchPortResources<Port extends WorkbenchPortContract<any>> =
+	Port extends WorkbenchPortContract<infer Resources> ? Resources : never
+
+type WorkbenchPortOutletExtension<Port extends WorkbenchPortContract<any>> = WorkbenchExtension<
+	WorkbenchContract<WorkbenchPortResources<Port>, Readonly<Record<never, never>>>
+>
 
 export type WorkbenchRpcBinding<TRpc> = Readonly<{
 	kind: 'rpc'
@@ -81,6 +93,28 @@ function extension<const Contract extends AnyWorkbenchContract>(input: {
 	return Object.freeze({ contract: input.contract, entry: input.entry })
 }
 
+function portOutlet<const Port extends WorkbenchPortContract<WorkbenchResourceMap>>(input: {
+	port: Port
+	placement: WorkbenchPlacementSpec
+	id?: string
+}): WorkbenchPortOutletExtension<Port> {
+	if (!input?.port || typeof input.port !== 'object') {
+		throw new TypeError('[workbench] workbench.portOutlet(): port required')
+	}
+	const contract = workbenchContract.define({
+		resources: input.port.resources,
+		views: {},
+		outlets: ({ resources }) => ({
+			[input.id ?? input.port.id]: {
+				port: input.port,
+				placement: input.placement,
+				provide: resources,
+			},
+		}),
+	})
+	return extension({ contract }) as WorkbenchPortOutletExtension<Port>
+}
+
 const bind = Object.freeze({
 	rpc<TRpc extends RpcTarget>(factory: (ctx: Context) => TRpc): WorkbenchRpcBinding<TRpc> {
 		if (typeof factory !== 'function') {
@@ -126,6 +160,7 @@ const bind = Object.freeze({
 
 export const workbench = Object.freeze({
 	extension,
+	portOutlet,
 	entry(moduleUrl: string | URL, entryPath: string): WorkbenchUiEntry {
 		return createWorkbenchUiEntry(moduleUrl, entryPath, arguments[2])
 	},

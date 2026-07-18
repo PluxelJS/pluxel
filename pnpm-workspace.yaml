@@ -26,7 +26,9 @@ catalog:
   react-dom: ^19.2.7
   tsdown: ^0.22.5
   typescript: ^6.0.3
+  undici: ^7.16.0
   vitest: ^4.1.10
+  wretch: ^3.0.9
 
 managePackageManagerVersions: false
 

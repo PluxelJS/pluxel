@@ -24,6 +24,30 @@ describe('Workbench authoring API', () => {
 		expect(Object.isFrozen(extension)).toBe(true)
 	})
 
+	it('creates a one-to-one consumer Port outlet without repeating resource declarations', () => {
+		const SettingsPort = workbenchContract.port({
+			id: 'example.settings',
+			resources: { settings: workbenchContract.rpc<{ get(): string }>() },
+		})
+		const extension = workbench.portOutlet({
+			id: 'Http',
+			port: SettingsPort,
+			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				label: 'HTTP',
+			}),
+		})
+
+		expect(extension.contract.resources).toEqual(SettingsPort.resources)
+		expect(extension.contract.ports).toEqual([
+			expect.objectContaining({
+				kind: 'port',
+				id: 'Http',
+				port: SettingsPort,
+				provide: { settings: 'settings' },
+			}),
+		])
+	})
+
 	it('types server RPC methods as asynchronous browser calls', () => {
 		type Rpc = { ping(input: string): string; save(): Promise<number>; localState: string }
 		type Client = WorkbenchRpcClient<Rpc>

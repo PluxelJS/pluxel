@@ -69,9 +69,10 @@ commit token 或 outbox revision 暴露给浏览器。
 
 ## Cross-plugin UI
 
-Port 是跨插件 UI resource 注入的唯一路径。consumer 声明 outlet、placement 和 resource mapping；provider 声明
-无 placement renderer，并在 UI 中调用 `ui.usePort(Port)`。一个 View 需要多个 owner 的数据时组合多个获授权
-resource snapshot，不建立跨插件 SQL join。
+Port 是跨插件 UI resource 注入的唯一路径。provider 声明无 placement renderer，并在 UI 中调用
+`ui.usePort(Port)`。consumer resources 与 Port 一对一同名时使用 `workbench.portOutlet()` 只声明 Port 和
+placement；需要重命名、组合或部分映射时使用显式 `workbenchContract.define({ outlets })`。一个 View 需要多个
+owner 的数据时组合多个获授权 resource snapshot，不建立跨插件 SQL join。
 
 ## Security and lifecycle
 

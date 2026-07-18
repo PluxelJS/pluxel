@@ -349,19 +349,11 @@ export const FetchSettingsPort = workbenchContract.port({
 	},
 })
 
-export const ConsumerUi = workbenchContract.define({
-	resources: {
-		commands: workbenchContract.rpc<FetchSettingsCommands>(),
-	},
-	views: {},
-	outlets: ({ resources }) => ({
-		FetchSettings: {
-			port: FetchSettingsPort,
-			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
-				label: 'Fetch',
-			}),
-			provide: { settings: resources.commands },
-		},
+export const ConsumerWorkbench = workbench.portOutlet({
+	id: 'FetchSettings',
+	port: FetchSettingsPort,
+	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+		label: 'Fetch',
 	}),
 })
 
@@ -386,6 +378,9 @@ export default ui.define({ FetchSettings })
 
 renderer 从 consumer 的 committed direct required dependencies 中按 Port ID + exact version 唯一解析。provider
 不能决定 consumer placement；零个 renderer 显示 unavailable，多个显示 ambiguity error，不按注册顺序猜测。
+
+`portOutlet()` 自动声明与 Port 同名的一对一 resources 和 mapping。consumer 需要重命名、组合多个 resource
+或只注入部分已有 resource 时，使用完整的 `workbenchContract.define({ resources, outlets })`。
 
 provider stop/replacement 会立即撤销 Port grant。renderer 自己的 owner resources 与 consumer 注入 resources 使用
 独立、target-scoped grant；transport 只提交 opaque grant，不提交 plugin/resource namespace。
