@@ -13,6 +13,16 @@ provider 和 backend，但相同业务 key 不会互相污染。只有确实消�
 用于覆盖 provider 默认 TTL、容量、异步读取策略和批量失效。淘汰算法固定为 SIEVE，TTL 可以由 provider、scope
 或单次 `set(..., { ttlMs })` 提供。
 
+`getOrLoad()` 的标准顺序是 `local -> async backend -> loader -> backend/local write`。key 可以是 primitive、primitive
+tuple 或 primitive-value plain record；不要手工拼接有歧义的复合 key，也不要把 credential 当 key。
+
+数据库是权威来源、Redis 只是加速时，在稳定 scope 上显式使用 `backendFailure: 'bypass'`；backend failure 会绕过到
+loader，但 database/external error不会被吞掉。默认 `required` 适合把 backend 可用性视为业务前提的场景。
+
+`@Cached` 可以直接装饰返回数据库 DTO 的 Promise method。它只负责短期 cache-aside；数据库长期 freshness、外部 API
+刷新、跨实例 claim/CAS 和 stale-if-error 放在 repository 中。不要创建 database-specific cache decorator；missing
+result 使用 `null`，`undefined` 不缓存。
+
 同一进程内，相同 owner namespace、可选 scope 和 encoded key 的 backend read 与 read-through loader 会自动合并。
 这避免多个插件同时 miss 时重复请求 Redis、数据库或上游 API。它不声称提供跨进程锁；多实例部署需要在 adapter
 或领域 loader 中选择具备 fencing 语义的协调方案。
@@ -44,6 +54,9 @@ Workbench 使用已有“依赖注入”卡片读取 `CachePlugin` 的 `CacheBac
 只消费 cache 的插件依赖 `@pluxel/cache`。需要 Redis command、transaction、stream 或 pub/sub 的插件依赖
 `@pluxel/redis` 的独立 `Redis` capability，不通过 `Cache` 获取 raw client。Redis package 已经自带可选 cache backend，
 无需再安装第三个 adapter package。
+
+caller stop/replacement 后旧 scope/decorator handle 会撤销；global 只共享 value namespace，不转移 cleanup ownership。
+同名 scope 的显式 normalized policy 必须一致，避免 TTL/read policy 静默 first-wins。
 
 ## 可选的 memory backend 恢复
 

@@ -15,9 +15,16 @@ const DEFAULT_TTL_MS = 5 * 60_000
 const DEFAULT_MAX_ENTRIES = 1_000
 const DEFAULT_MAX_IN_FLIGHT = 256
 const MAX_TIMER_DELAY_MS = 2_147_483_647
+const MAX_KEY_PARTS = 16
+const MAX_CANONICAL_KEY_BYTES = 1_024
 
-export type CacheKey = string | number | bigint | boolean
+export type CacheKeyPart = string | number | bigint | boolean
+export type CacheKey =
+	| CacheKeyPart
+	| readonly CacheKeyPart[]
+	| Readonly<Record<string, CacheKeyPart>>
 export type CacheReadPolicy = 'cache-first' | 'cache-and-refresh' | 'remote-first'
+export type CacheBackendFailurePolicy = 'required' | 'bypass'
 
 export const CacheConfig = v.object({
 	ttlMs: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), DEFAULT_TTL_MS),
@@ -27,6 +34,7 @@ export const CacheConfig = v.object({
 		v.picklist(['cache-first', 'cache-and-refresh', 'remote-first'] as const),
 		'cache-first',
 	),
+	backendFailure: v.optional(v.picklist(['required', 'bypass'] as const), 'required'),
 })
 
 export const MemoryCacheBackendConfig = v.object({
@@ -54,6 +62,8 @@ export interface CacheNamespaceOptions {
 	maxInFlight?: number
 	/** Async read order. Defaults to the CachePlugin configuration. */
 	readPolicy?: CacheReadPolicy
+	/** Whether getOrLoad requires the backend or may bypass it to the loader. */
+	backendFailure?: CacheBackendFailurePolicy
 }
 
 export interface CacheSetOptions {
@@ -83,6 +93,8 @@ export interface CacheStats {
 	readonly rejected: number
 	readonly refreshes: number
 	readonly refreshErrors: number
+	readonly backendReadErrors: number
+	readonly backendWriteErrors: number
 	readonly evictions: number
 	readonly entries: number
 	readonly inFlight: number
@@ -92,7 +104,7 @@ export class CacheStoppedError extends Error {
 	override name = 'CacheStoppedError'
 
 	constructor() {
-		super('Cache handle belongs to a stopped or replaced provider.')
+		super('Cache handle belongs to a stopped or replaced caller or provider.')
 	}
 }
 
@@ -104,6 +116,25 @@ export class CacheBusyError extends Error {
 		readonly limit: number,
 	) {
 		super(`Cache "${cacheName}" reached its maxInFlight limit (${limit}).`)
+	}
+}
+
+export type ResolvedCachePolicy = Readonly<{
+	ttlMs: number
+	maxEntries: number
+	maxInFlight: number
+	readPolicy: CacheReadPolicy
+	backendFailure: CacheBackendFailurePolicy
+}>
+
+export class CachePolicyConflictError extends Error {
+	override name = 'CachePolicyConflictError'
+
+	constructor(
+		readonly active: ResolvedCachePolicy,
+		readonly requested: ResolvedCachePolicy,
+	) {
+		super('An active cache scope uses a different normalized policy.')
 	}
 }
 
@@ -132,12 +163,14 @@ export interface MemoizedOptions<Args extends unknown[] = unknown[]>
 	extends CacheSetOptions, Pick<CacheNamespaceOptions, 'maxEntries'> {
 	/** Caller-local method scope name. Defaults to the decorated method name. */
 	name?: string
-	/** Maps arguments to a primitive cache key. Primitive tuples have a stable default. */
+	/** Maps arguments to a cache key. Primitive argument tuples have a stable default. */
 	key?: (...args: Args) => CacheKey
 }
 
 export interface CachedOptions<Args extends unknown[] = unknown[]>
-	extends MemoizedOptions<Args>, Pick<CacheNamespaceOptions, 'maxInFlight' | 'readPolicy'> {
+	extends
+		MemoizedOptions<Args>,
+		Pick<CacheNamespaceOptions, 'maxInFlight' | 'readPolicy' | 'backendFailure'> {
 	skipBackendWrite?: boolean
 }
 
@@ -216,6 +249,8 @@ type MutableStats = {
 	rejected: number
 	refreshes: number
 	refreshErrors: number
+	backendReadErrors: number
+	backendWriteErrors: number
 	evictions: number
 }
 
@@ -233,9 +268,8 @@ type Bucket = {
 	hand?: Entry
 }
 
-type InternalNamespace = Required<CacheNamespaceOptions> & {
+type InternalNamespace = ResolvedCachePolicy & {
 	name: string
-	encodeKey: (key: CacheKey) => string
 }
 
 type CacheDefaults = {
@@ -243,12 +277,42 @@ type CacheDefaults = {
 	maxEntries: number
 	maxInFlight: number
 	readPolicy: CacheReadPolicy
+	backendFailure: CacheBackendFailurePolicy
 }
 
 type Resolved = {
 	namespace: InternalNamespace
 	backendPrefix: string
 	bucket: Bucket
+}
+
+type OwnerContext = {
+	readonly pluginInfo: { readonly id: string }
+	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): unknown }
+	readonly registry: { getInstance(identifier: unknown): unknown }
+}
+
+type CacheOwnerState = {
+	active: boolean
+	readonly context: OwnerContext
+	readonly handles: Map<
+		string,
+		{ readonly view: CacheNamespace; readonly policy: InternalNamespace }
+	>
+	readonly registrations: Set<string>
+}
+
+type CacheRegistration = {
+	readonly namespace: InternalNamespace
+	readonly backendPrefix: string
+	readonly bucket: Bucket
+	readonly owners: Set<CacheOwnerState>
+}
+
+type CacheRuntime = {
+	active: boolean
+	readonly owners: WeakMap<object, CacheOwnerState>
+	readonly registrations: Map<string, CacheRegistration>
 }
 
 type MemoryCachePersistenceMode = MemoryCacheBackendPluginConfig['persistence']['mode']
@@ -280,46 +344,107 @@ type MemoryCacheBackendRuntime = {
 const MEMORY_CACHE_PERSISTENCE_NAMESPACE = '@pluxel/cache'
 const MEMORY_CACHE_SNAPSHOT_KEY = 'memory-backend.snapshot'
 
-function defaultEncodeKey(key: unknown): string {
-	switch (typeof key) {
+function defaultEncodeKey(key: CacheKey): string {
+	let encoded: string
+	if (isCacheKeyPart(key)) {
+		encoded = `p|${encodeKeyPart(key)}`
+	} else if (Array.isArray(key)) {
+		if (Object.getPrototypeOf(key) !== Array.prototype)
+			throw new TypeError('Cache tuple keys must be plain arrays.')
+		if (key.length > MAX_KEY_PARTS)
+			throw new RangeError(`Cache tuple keys must not exceed ${MAX_KEY_PARTS} parts.`)
+		const descriptors = Object.getOwnPropertyDescriptors(key)
+		const keys = Object.keys(descriptors).filter((part) => part !== 'length')
+		if (keys.length !== key.length || keys.some((part, index) => part !== String(index))) {
+			throw new TypeError('Cache tuple keys must be dense and contain only indexed parts.')
+		}
+		if (Object.getOwnPropertySymbols(key).length > 0)
+			throw new TypeError('Cache keys must not contain symbol fields.')
+		encoded = `t|${key.length}|${keys
+			.map((part) => {
+				const descriptor = descriptors[part]!
+				if (
+					!descriptor.enumerable ||
+					!('value' in descriptor) ||
+					!isCacheKeyPart(descriptor.value)
+				) {
+					throw new TypeError('Cache tuple parts must be enumerable primitive data properties.')
+				}
+				return encodeKeyPart(descriptor.value)
+			})
+			.join('')}`
+	} else {
+		if (!isPlainObject(key)) throw new TypeError('Cache record keys must be plain objects.')
+		if (Object.getOwnPropertySymbols(key).length > 0)
+			throw new TypeError('Cache keys must not contain symbol fields.')
+		const descriptors = Object.getOwnPropertyDescriptors(key)
+		const keys = Object.keys(descriptors).sort()
+		if (keys.length > MAX_KEY_PARTS)
+			throw new RangeError(`Cache record keys must not exceed ${MAX_KEY_PARTS} parts.`)
+		encoded = `r|${keys.length}|${keys
+			.map((part) => {
+				const descriptor = descriptors[part]!
+				if (
+					!descriptor.enumerable ||
+					!('value' in descriptor) ||
+					!isCacheKeyPart(descriptor.value)
+				) {
+					throw new TypeError('Cache record values must be enumerable primitive data properties.')
+				}
+				return `${utf8Length(part)}:${part}${encodeKeyPart(descriptor.value)}`
+			})
+			.join('')}`
+	}
+	const canonical = `v1|${encoded}`
+	if (utf8Length(canonical) > MAX_CANONICAL_KEY_BYTES) {
+		throw new RangeError(
+			`Cache canonical keys must not exceed ${MAX_CANONICAL_KEY_BYTES} UTF-8 bytes.`,
+		)
+	}
+	return canonical
+}
+
+function encodeKeyPart(value: CacheKeyPart): string {
+	switch (typeof value) {
 		case 'string':
-			return `s:${key}`
+			return `s${utf8Length(value)}:${value}`
 		case 'number':
-			if (!Number.isFinite(key)) throw new TypeError('Cache number keys must be finite.')
-			return `n:${Object.is(key, -0) ? '-0' : String(key)}`
+			if (!Number.isFinite(value)) throw new TypeError('Cache number keys must be finite.')
+			return `n${Object.is(value, -0) ? '-0' : String(value)};`
 		case 'bigint':
-			return `i:${key}`
+			return `i${value};`
 		case 'boolean':
-			return key ? 'b:1' : 'b:0'
-		default:
-			throw new TypeError('Object and symbol cache keys require an explicit key encoder.')
+			return value ? 'b1;' : 'b0;'
 	}
 }
 
-function encodeMethodArguments(args: unknown[]): string {
-	if (args.length === 0) return 'call:0'
-	return args
-		.map((arg) => {
-			if (arg === null) return 'z:'
-			if (arg === undefined) return 'u:'
-			if (typeof arg === 'string') return `s:${arg.length}:${arg}`
-			return defaultEncodeKey(arg)
-		})
-		.join('|')
-}
-
-function defaultMethodKey(args: unknown[]): CacheKey {
-	if (args.length === 0) return '__call__'
-	if (args.length === 1 && isCacheKey(args[0])) return args[0]
-	return encodeMethodArguments(args)
-}
-
-function isCacheKey(value: unknown): value is CacheKey {
+function isCacheKeyPart(value: unknown): value is CacheKeyPart {
 	return (
 		typeof value === 'string' ||
 		typeof value === 'number' ||
 		typeof value === 'bigint' ||
 		typeof value === 'boolean'
+	)
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	if (value === null || typeof value !== 'object') return false
+	const prototype = Object.getPrototypeOf(value)
+	return prototype === Object.prototype || prototype === null
+}
+
+function utf8Length(value: string): number {
+	return new TextEncoder().encode(value).byteLength
+}
+
+function defaultMethodKey(args: unknown[]): CacheKey {
+	if (args.length === 0) return []
+	if (args.length === 1 && isCacheKeyPart(args[0])) return args[0]
+	if (args.length <= MAX_KEY_PARTS && args.every(isCacheKeyPart)) {
+		return args.slice() as CacheKeyPart[]
+	}
+	throw new TypeError(
+		'Decorated methods require an explicit key() for non-primitive or oversized argument lists.',
 	)
 }
 
@@ -335,6 +460,7 @@ function namespaceOptions(options: CacheNamespaceOptions): CacheNamespaceOptions
 		maxEntries: options.maxEntries,
 		maxInFlight: options.maxInFlight,
 		readPolicy: options.readPolicy,
+		backendFailure: options.backendFailure,
 	}
 }
 
@@ -343,6 +469,7 @@ function normalizeNamespace(
 	options: CacheNamespaceOptions,
 	defaults: CacheDefaults,
 ): InternalNamespace {
+	validateNamespaceOptions(options)
 	const ttlMs = normalizeDuration(options.ttlMs ?? defaults.ttlMs, 'ttlMs')
 	const maxEntries = options.maxEntries ?? defaults.maxEntries
 	if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
@@ -353,7 +480,31 @@ function normalizeNamespace(
 		throw new RangeError('Cache maxInFlight must be a positive safe integer.')
 	}
 	const readPolicy = options.readPolicy ?? defaults.readPolicy
-	return { name, ttlMs, maxEntries, maxInFlight, readPolicy, encodeKey: defaultEncodeKey }
+	const backendFailure = options.backendFailure ?? defaults.backendFailure
+	return Object.freeze({ name, ttlMs, maxEntries, maxInFlight, readPolicy, backendFailure })
+}
+
+function validateNamespaceOptions(options: CacheNamespaceOptions): void {
+	if (!isPlainObject(options))
+		throw new TypeError('Cache scope policy must be an exact plain object.')
+	if (Object.getOwnPropertySymbols(options).length > 0)
+		throw new TypeError('Cache scope policy must not contain symbol fields.')
+	const allowed = new Set(['ttlMs', 'maxEntries', 'maxInFlight', 'readPolicy', 'backendFailure'])
+	for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(options))) {
+		if (!allowed.has(key)) throw new TypeError(`Cache scope policy contains unknown field ${key}.`)
+		if (!descriptor.enumerable || !('value' in descriptor))
+			throw new TypeError(`Cache scope policy field ${key} must be an enumerable data property.`)
+	}
+}
+
+function cachePoliciesEqual(a: ResolvedCachePolicy, b: ResolvedCachePolicy): boolean {
+	return (
+		a.ttlMs === b.ttlMs &&
+		a.maxEntries === b.maxEntries &&
+		a.maxInFlight === b.maxInFlight &&
+		a.readPolicy === b.readPolicy &&
+		a.backendFailure === b.backendFailure
+	)
 }
 
 function validateScopeName(name: string): string {
@@ -411,6 +562,8 @@ function emptyStats(): MutableStats {
 		rejected: 0,
 		refreshes: 0,
 		refreshErrors: 0,
+		backendReadErrors: 0,
+		backendWriteErrors: 0,
 		evictions: 0,
 	}
 }
@@ -440,11 +593,18 @@ export abstract class Cache extends BasePlugin implements CacheNamespace {
 @Plugin(Cache, { name: 'CachePlugin' })
 export class CachePlugin extends Cache {
 	protected readonly config = this.configs.use(CacheConfig)
-	private readonly buckets = new Map<string, Bucket>()
-	private readonly views = new Map<string, CacheNamespace>()
+	private readonly runtime: CacheRuntime = {
+		active: false,
+		owners: new WeakMap(),
+		registrations: new Map(),
+	}
 
 	constructor(private readonly backend: CacheBackend) {
 		super()
+	}
+
+	protected override init(): void {
+		this.runtime.active = true
 	}
 
 	override get local(): LocalCache {
@@ -476,64 +636,99 @@ export class CachePlugin extends Cache {
 	}
 
 	override get global(): CacheNamespace {
-		return this.open({ id: 'global', backendPrefix: 'global:' }, '', {})
+		return this.open(this.owner(), true, '', undefined)
 	}
 
-	override scope(name: string, options: CacheNamespaceOptions = {}): CacheNamespace {
-		return this.open(this.callerOwner(), validateScopeName(name), options)
+	override scope(name: string, options?: CacheNamespaceOptions): CacheNamespace {
+		return this.open(this.owner(), false, validateScopeName(name), options)
 	}
 
 	override stats(): CacheStats {
 		return this.current().stats()
 	}
 
-	protected override async stop(): Promise<void> {
-		for (const bucket of this.buckets.values()) {
-			bucket.active = false
-			clearEntries(bucket)
+	protected override stop(): void {
+		this.runtime.active = false
+		for (const registration of this.runtime.registrations.values()) {
+			deactivateBucket(registration.bucket)
 		}
-		this.buckets.clear()
-		this.views.clear()
+		this.runtime.registrations.clear()
 	}
 
 	private current(): CacheNamespace {
-		return this.open(this.callerOwner(), '', {})
+		return this.open(this.owner(), false, '', undefined)
 	}
 
-	private callerOwner(): NamespaceOwner {
-		const pluginId = this.ctx.caller?.pluginInfo.id ?? this.ctx.pluginInfo.id
-		return { id: `plugin:${pluginId}`, backendPrefix: `plugin:${escapePart(pluginId)}:` }
+	private owner(): CacheOwnerState {
+		this.assertActive()
+		const context = (this.ctx.caller ?? this.ctx) as unknown as OwnerContext
+		let owner = this.runtime.owners.get(context)
+		if (owner) {
+			this.assertHandleActive(owner)
+			return owner
+		}
+		owner = { active: true, context, handles: new Map(), registrations: new Set() }
+		this.runtime.owners.set(context, owner)
+		const cleanupOwner = owner
+		try {
+			context.effects.defer(() => this.releaseOwner(cleanupOwner), { tag: 'cache-bindings' })
+		} catch {
+			owner.active = false
+			throw new CacheStoppedError()
+		}
+		return owner
 	}
 
 	private open(
-		owner: NamespaceOwner,
+		owner: CacheOwnerState,
+		global: boolean,
 		name: string,
-		options: CacheNamespaceOptions,
+		options: CacheNamespaceOptions | undefined,
+		parentPolicy?: ResolvedCachePolicy,
 	): CacheNamespace {
-		const namespace = normalizeNamespace(name, options, this.config as CacheDefaults)
-		const viewId = `${owner.id}\0${name}`
-		const resolved = this.resolve(owner, namespace)
-		let view = this.views.get(viewId)
-		if (!view) {
-			view = new NamespaceView(resolved, this.backend, (child, childOptions) => {
-				const childName = name ? `${name}/${validateScopeName(child)}` : validateScopeName(child)
-				return this.open(owner, childName, {
-					ttlMs: childOptions.ttlMs ?? namespace.ttlMs,
-					maxEntries: childOptions.maxEntries ?? namespace.maxEntries,
-					maxInFlight: childOptions.maxInFlight ?? namespace.maxInFlight,
-					readPolicy: childOptions.readPolicy ?? namespace.readPolicy,
-				})
-			})
-			this.views.set(viewId, view)
+		this.assertHandleActive(owner)
+		const ownerHandleId = `${global ? 'g' : 'l'}\0${name}`
+		const existingHandle = owner.handles.get(ownerHandleId)
+		if (existingHandle) {
+			if (options !== undefined) {
+				const requested = normalizeNamespace(
+					name,
+					options,
+					(parentPolicy ?? this.config) as CacheDefaults,
+				)
+				if (!cachePoliciesEqual(existingHandle.policy, requested)) {
+					throw new CachePolicyConflictError(existingHandle.policy, requested)
+				}
+			}
+			return existingHandle.view
 		}
-		return view
-	}
 
-	private resolve(owner: NamespaceOwner, namespace: InternalNamespace): Resolved {
-		const bucketId = `${owner.id}\0${namespace.name}`
-		let bucket = this.buckets.get(bucketId)
-		if (!bucket) {
-			bucket = {
+		const pluginId = owner.context.pluginInfo.id
+		const registrationId = global ? `g\0${name}` : `l\0${pluginId}\0${name}`
+		let registration = this.runtime.registrations.get(registrationId)
+		let namespace: InternalNamespace
+		if (registration) {
+			namespace = registration.namespace
+			if (options !== undefined) {
+				const requested = normalizeNamespace(
+					name,
+					options,
+					(parentPolicy ?? this.config) as CacheDefaults,
+				)
+				if (!cachePoliciesEqual(namespace, requested)) {
+					throw new CachePolicyConflictError(namespace, requested)
+				}
+			}
+		} else {
+			namespace = normalizeNamespace(
+				name,
+				options ?? {},
+				(parentPolicy ?? this.config) as CacheDefaults,
+			)
+			const backendPrefix = global
+				? `global:${name ? `${escapePart(name)}:` : ''}`
+				: `plugin:${escapePart(pluginId)}:${name ? `${escapePart(name)}:` : ''}`
+			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
 				inFlight: new Map(),
@@ -542,24 +737,62 @@ export class CachePlugin extends Cache {
 				maxEntries: namespace.maxEntries,
 				maxInFlight: namespace.maxInFlight,
 			}
-			this.buckets.set(bucketId, bucket)
-		} else if (
-			bucket.maxEntries !== namespace.maxEntries ||
-			bucket.maxInFlight !== namespace.maxInFlight
-		) {
-			throw new Error(
-				`Cache namespace conflict for "${namespace.name || '<default>'}": capacity limits must match.`,
-			)
+			registration = { namespace, backendPrefix, bucket, owners: new Set() }
+			this.runtime.registrations.set(registrationId, registration)
 		}
-		return {
+		registration.owners.add(owner)
+		owner.registrations.add(registrationId)
+		const resolved: Resolved = {
 			namespace,
-			backendPrefix: `${owner.backendPrefix}${namespace.name ? `${escapePart(namespace.name)}:` : ''}`,
-			bucket,
+			backendPrefix: registration.backendPrefix,
+			bucket: registration.bucket,
 		}
+		const view = new NamespaceView(
+			resolved,
+			this.backend,
+			() => this.assertHandleActive(owner),
+			(child, childOptions) => {
+				const childName = name ? `${name}/${validateScopeName(child)}` : validateScopeName(child)
+				return this.open(owner, global, childName, childOptions, namespace)
+			},
+		)
+		owner.handles.set(ownerHandleId, { view, policy: namespace })
+		return view
+	}
+
+	private releaseOwner(owner: CacheOwnerState): void {
+		if (!owner.active) return
+		owner.active = false
+		for (const id of owner.registrations) {
+			const registration = this.runtime.registrations.get(id)
+			if (!registration) continue
+			registration.owners.delete(owner)
+			if (registration.owners.size === 0) {
+				deactivateBucket(registration.bucket)
+				this.runtime.registrations.delete(id)
+			}
+		}
+		owner.registrations.clear()
+		owner.handles.clear()
+	}
+
+	private assertActive(): void {
+		if (!this.runtime.active) throw new CacheStoppedError()
+		const current = (
+			this.ctx.registry as unknown as { getInstance(identifier: unknown): unknown }
+		).getInstance(Cache) as CachePlugin | undefined
+		if (!current || current.runtime !== this.runtime) throw new CacheStoppedError()
+	}
+
+	private assertHandleActive(owner: CacheOwnerState): void {
+		this.assertActive()
+		if (!owner.active) throw new CacheStoppedError()
+		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.id) as
+			| { ctx?: unknown }
+			| undefined
+		if (!activeOwner || activeOwner.ctx !== owner.context) throw new CacheStoppedError()
 	}
 }
-
-type NamespaceOwner = { id: string; backendPrefix: string }
 
 @Plugin(CacheBackend, { name: 'MemoryCacheBackendPlugin' })
 export class MemoryCacheBackendPlugin extends CacheBackend {
@@ -824,7 +1057,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 				maxEntries,
 				maxInFlight: 1,
 				readPolicy: 'cache-first',
-				encodeKey: defaultEncodeKey,
+				backendFailure: 'required',
 			},
 			backendPrefix: '',
 			bucket,
@@ -845,8 +1078,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 	private deactivate(): void {
 		this.cancelScheduledSnapshot()
 		if (this.holder.state) {
-			this.holder.state.bucket.active = false
-			clearEntries(this.holder.state.bucket)
+			deactivateBucket(this.holder.state.bucket)
 			this.holder.state = undefined
 		}
 		this.holder.serializedValues.clear()
@@ -863,10 +1095,14 @@ class NamespaceView implements CacheNamespace {
 	constructor(
 		resolved: Resolved,
 		backend: CacheBackendStore,
-		private readonly openChild: (name: string, options: CacheNamespaceOptions) => CacheNamespace,
+		assertHandleActive: () => void,
+		private readonly openChild: (
+			name: string,
+			options: CacheNamespaceOptions | undefined,
+		) => CacheNamespace,
 	) {
-		this.local = new LocalView(resolved)
-		this.access = new AsyncView(resolved, backend)
+		this.local = new LocalView(resolved, assertHandleActive)
+		this.access = new AsyncView(resolved, assertHandleActive, backend)
 	}
 
 	get<V>(key: CacheKey, options?: CacheGetOptions): Promise<V | undefined> {
@@ -889,7 +1125,8 @@ class NamespaceView implements CacheNamespace {
 		return this.access.getOrLoad(key, load, options)
 	}
 
-	scope(name: string, options: CacheNamespaceOptions = {}): CacheNamespace {
+	scope(name: string, options?: CacheNamespaceOptions): CacheNamespace {
+		this.access.assertUsable()
 		return this.openChild(name, options)
 	}
 
@@ -899,15 +1136,19 @@ class NamespaceView implements CacheNamespace {
 }
 
 class CacheViewBase {
-	constructor(protected readonly resolved: Resolved) {}
+	constructor(
+		protected readonly resolved: Resolved,
+		private readonly assertHandleActive: () => void,
+	) {}
+
+	assertUsable(): void {
+		this.assertHandleActive()
+		assertActive(this.resolved.bucket)
+	}
 
 	protected encode(key: CacheKey): string {
-		assertActive(this.resolved.bucket)
-		const encoded = this.resolved.namespace.encodeKey(key)
-		if (typeof encoded !== 'string' || encoded.length === 0) {
-			throw new TypeError('Cache key encoder must return a non-empty string.')
-		}
-		return encoded
+		this.assertUsable()
+		return defaultEncodeKey(key)
 	}
 }
 
@@ -933,7 +1174,7 @@ class LocalView extends CacheViewBase implements LocalCache {
 	}
 
 	clear(): void {
-		assertActive(this.resolved.bucket)
+		this.assertUsable()
 		clearEntries(this.resolved.bucket)
 	}
 
@@ -951,23 +1192,30 @@ class LocalView extends CacheViewBase implements LocalCache {
 	}
 
 	stats(): CacheStats {
-		assertActive(this.resolved.bucket)
+		this.assertUsable()
 		return snapshotStats(this.resolved.bucket)
+	}
+}
+
+class BackendReadFailure extends Error {
+	constructor(readonly cause: unknown) {
+		super('Cache backend read failed.', { cause })
 	}
 }
 
 class AsyncView extends CacheViewBase {
 	constructor(
 		resolved: Resolved,
+		assertHandleActive: () => void,
 		private readonly backend: CacheBackendStore,
 	) {
-		super(resolved)
+		super(resolved, assertHandleActive)
 	}
 
 	async get<V>(key: CacheKey, options: CacheGetOptions = {}): Promise<V | undefined> {
 		const encoded = this.encode(key)
 		await this.awaitMutation(encoded)
-		assertActive(this.resolved.bucket)
+		this.assertUsable()
 		const policy = options.readPolicy ?? this.resolved.namespace.readPolicy
 		if (policy !== 'remote-first') {
 			const l1 = readEntry(this.resolved.bucket, encoded)
@@ -982,9 +1230,10 @@ class AsyncView extends CacheViewBase {
 		const active = this.resolved.bucket.inFlight.get(encoded)
 		if (active) {
 			this.resolved.bucket.stats.deduplicated++
-			return waitFor(active as Promise<V | undefined>, options.signal)
+			return this.waitForRead(active as Promise<V | undefined>, options.signal)
 		}
 		const pending = this.singleFlight(encoded, async () => {
+			this.assertUsable()
 			if (policy !== 'remote-first') {
 				const lateLocal = readEntry(this.resolved.bucket, encoded)
 				if (lateLocal !== undefined) {
@@ -992,8 +1241,8 @@ class AsyncView extends CacheViewBase {
 					return lateLocal as V
 				}
 			}
-			const found = await this.backend.get<V>(this.backendKey(encoded))
-			assertActive(this.resolved.bucket)
+			const found = await this.readBackend<V>(encoded)
+			this.assertUsable()
 			if (!found) {
 				this.resolved.bucket.stats.misses++
 				return undefined
@@ -1003,7 +1252,7 @@ class AsyncView extends CacheViewBase {
 			writeEntry(this.resolved, encoded, found.value, backendTtl(this.resolved, found))
 			return found.value
 		})
-		return waitFor(pending, options.signal)
+		return this.waitForRead(pending, options.signal)
 	}
 
 	async set<V>(key: CacheKey, value: V, options?: CacheSetOptions): Promise<void> {
@@ -1011,33 +1260,48 @@ class AsyncView extends CacheViewBase {
 		const encoded = this.encode(key)
 		const ttlMs = ttlFor(this.resolved, options)
 		await this.mutate(encoded, async () => {
-			assertActive(this.resolved.bucket)
-			await this.backend.set(this.backendKey(encoded), value, { ttlMs })
+			this.assertUsable()
+			await this.writeBackend(encoded, value, ttlMs)
+			this.assertUsable()
 			writeEntry(this.resolved, encoded, value, ttlMs)
 		})
+		this.assertUsable()
 	}
 
 	async delete(key: CacheKey): Promise<boolean> {
 		const encoded = this.encode(key)
-		return this.mutate(encoded, async () => {
-			assertActive(this.resolved.bucket)
-			await this.backend.delete(this.backendKey(encoded))
+		const deleted = await this.mutate(encoded, async () => {
+			this.assertUsable()
+			try {
+				await this.backend.delete(this.backendKey(encoded))
+			} catch (error) {
+				this.resolved.bucket.stats.backendWriteErrors++
+				throw error
+			}
+			this.assertUsable()
 			return deleteEntry(this.resolved.bucket, encoded)
 		})
+		this.assertUsable()
+		return deleted
 	}
 
 	async clear(): Promise<void> {
 		const bucket = this.resolved.bucket
-		assertActive(bucket)
+		this.assertUsable()
 		const priorClear = bucket.clearBarrier
 		const priorMutations = [...bucket.mutations.values()]
 		const pending = Promise.resolve().then(async (): Promise<void> => {
 			await priorClear
 			await Promise.all(priorMutations)
 			await Promise.allSettled(bucket.inFlight.values())
-			assertActive(bucket)
-			await this.backend.clear?.(this.resolved.backendPrefix)
-			assertActive(bucket)
+			this.assertUsable()
+			try {
+				await this.backend.clear?.(this.resolved.backendPrefix)
+			} catch (error) {
+				bucket.stats.backendWriteErrors++
+				throw error
+			}
+			this.assertUsable()
 			clearEntries(bucket)
 			return undefined
 		})
@@ -1050,7 +1314,8 @@ class AsyncView extends CacheViewBase {
 			() => this.clearGlobalBarrier(barrier),
 			() => this.clearGlobalBarrier(barrier),
 		)
-		return pending
+		await pending
+		this.assertUsable()
 	}
 
 	async getOrLoad<V>(
@@ -1060,7 +1325,7 @@ class AsyncView extends CacheViewBase {
 	): Promise<V> {
 		const encoded = this.encode(key)
 		await this.awaitMutation(encoded)
-		assertActive(this.resolved.bucket)
+		this.assertUsable()
 		const policy = options.readPolicy ?? this.resolved.namespace.readPolicy
 		if (policy !== 'remote-first') {
 			const l1 = readEntry(this.resolved.bucket, encoded)
@@ -1072,15 +1337,27 @@ class AsyncView extends CacheViewBase {
 				return l1 as V
 			}
 		}
-		let backendAlreadyMissed = false
+		let backendAlreadyChecked = false
 		const active = this.resolved.bucket.inFlight.get(encoded)
 		if (active) {
 			this.resolved.bucket.stats.deduplicated++
-			const joined = await waitFor(active as Promise<V | undefined>, options.signal)
-			if (joined !== undefined) return joined
-			backendAlreadyMissed = true
+			try {
+				const joined = await waitFor(active as Promise<V | undefined>, options.signal)
+				this.assertUsable()
+				if (joined !== undefined) return joined
+				backendAlreadyChecked = true
+			} catch (error) {
+				if (
+					!(error instanceof BackendReadFailure) ||
+					this.resolved.namespace.backendFailure !== 'bypass'
+				) {
+					throw unwrapBackendReadFailure(error)
+				}
+				backendAlreadyChecked = true
+			}
 		}
 		const pending = this.singleFlight(encoded, async () => {
+			this.assertUsable()
 			if (policy !== 'remote-first') {
 				const lateLocal = readEntry(this.resolved.bucket, encoded)
 				if (lateLocal !== undefined) {
@@ -1088,30 +1365,51 @@ class AsyncView extends CacheViewBase {
 					return lateLocal as V
 				}
 			}
-			if (!backendAlreadyMissed) {
-				const found = await this.backend.get<V>(this.backendKey(encoded))
-				assertActive(this.resolved.bucket)
-				if (found) {
-					assertBackendValue(found.value)
-					this.resolved.bucket.stats.backendHits++
-					writeEntry(this.resolved, encoded, found.value, backendTtl(this.resolved, found))
-					return found.value
+			if (!backendAlreadyChecked) {
+				try {
+					const found = await this.readBackend<V>(encoded)
+					this.assertUsable()
+					if (found) {
+						assertBackendValue(found.value)
+						this.resolved.bucket.stats.backendHits++
+						writeEntry(this.resolved, encoded, found.value, backendTtl(this.resolved, found))
+						return found.value
+					}
+					this.resolved.bucket.stats.misses++
+				} catch (error) {
+					if (
+						!(error instanceof BackendReadFailure) ||
+						this.resolved.namespace.backendFailure !== 'bypass'
+					) {
+						throw error
+					}
 				}
+				this.assertUsable()
 			}
-			if (!backendAlreadyMissed) this.resolved.bucket.stats.misses++
 			this.resolved.bucket.stats.loads++
 			// A subscriber abort must not cancel shared work for every other subscriber.
 			const value = await load()
 			if (value === undefined) throw new TypeError('Cache values cannot be undefined.')
-			assertActive(this.resolved.bucket)
+			this.assertUsable()
 			const ttlMs = ttlFor(this.resolved, options)
 			if (!options.skipBackendWrite) {
-				await this.backend.set(this.backendKey(encoded), value, { ttlMs })
+				try {
+					await this.writeBackend(encoded, value, ttlMs)
+				} catch (error) {
+					if (this.resolved.namespace.backendFailure !== 'bypass') throw error
+				}
 			}
+			this.assertUsable()
 			writeEntry(this.resolved, encoded, value, ttlMs)
 			return value
 		})
-		return waitFor(pending, options.signal)
+		try {
+			const value = await waitFor(pending, options.signal)
+			this.assertUsable()
+			return value
+		} catch (error) {
+			throw unwrapBackendReadFailure(error)
+		}
 	}
 
 	private refreshInBackground<V>(
@@ -1122,8 +1420,14 @@ class AsyncView extends CacheViewBase {
 		this.resolved.bucket.stats.refreshes++
 		try {
 			const refresh = this.singleFlight(encoded, async () => {
-				const found = await this.backend.get<V>(this.backendKey(encoded))
-				assertActive(this.resolved.bucket)
+				this.assertUsable()
+				let found: CacheValue<V> | undefined
+				try {
+					found = await this.readBackend<V>(encoded)
+				} catch (error) {
+					if (!load || this.resolved.namespace.backendFailure !== 'bypass') throw error
+				}
+				this.assertUsable()
 				if (found) {
 					assertBackendValue(found.value)
 					this.resolved.bucket.stats.backendHits++
@@ -1134,11 +1438,16 @@ class AsyncView extends CacheViewBase {
 				this.resolved.bucket.stats.loads++
 				const value = await load()
 				if (value === undefined) throw new TypeError('Cache values cannot be undefined.')
-				assertActive(this.resolved.bucket)
+				this.assertUsable()
 				const ttlMs = ttlFor(this.resolved, options)
 				if (!options.skipBackendWrite) {
-					await this.backend.set(this.backendKey(encoded), value, { ttlMs })
+					try {
+						await this.writeBackend(encoded, value, ttlMs)
+					} catch (error) {
+						if (this.resolved.namespace.backendFailure !== 'bypass') throw error
+					}
 				}
+				this.assertUsable()
 				writeEntry(this.resolved, encoded, value, ttlMs)
 				return value
 			})
@@ -1151,7 +1460,7 @@ class AsyncView extends CacheViewBase {
 	}
 
 	stats(): CacheStats {
-		assertActive(this.resolved.bucket)
+		this.assertUsable()
 		return snapshotStats(this.resolved.bucket)
 	}
 
@@ -1228,6 +1537,41 @@ class AsyncView extends CacheViewBase {
 	private backendKey(encoded: string): string {
 		return `${this.resolved.backendPrefix}${escapePart(encoded)}`
 	}
+
+	private async readBackend<V>(encoded: string): Promise<CacheValue<V> | undefined> {
+		try {
+			return await this.backend.get<V>(this.backendKey(encoded))
+		} catch (error) {
+			this.resolved.bucket.stats.backendReadErrors++
+			throw new BackendReadFailure(error)
+		}
+	}
+
+	private async writeBackend<V>(encoded: string, value: V, ttlMs: number): Promise<void> {
+		try {
+			await this.backend.set(this.backendKey(encoded), value, { ttlMs })
+		} catch (error) {
+			this.resolved.bucket.stats.backendWriteErrors++
+			throw error
+		}
+	}
+
+	private async waitForRead<V>(
+		pending: Promise<V | undefined>,
+		signal: AbortSignal | undefined,
+	): Promise<V | undefined> {
+		try {
+			const value = await waitFor(pending, signal)
+			this.assertUsable()
+			return value
+		} catch (error) {
+			throw unwrapBackendReadFailure(error)
+		}
+	}
+}
+
+function unwrapBackendReadFailure(error: unknown): unknown {
+	return error instanceof BackendReadFailure ? error.cause : error
 }
 
 function readEntry(bucket: Bucket, encoded: string): unknown {
@@ -1378,6 +1722,14 @@ function clearEntries(bucket: Bucket): void {
 	bucket.newest = undefined
 	bucket.oldest = undefined
 	bucket.hand = undefined
+}
+
+function deactivateBucket(bucket: Bucket): void {
+	bucket.active = false
+	clearEntries(bucket)
+	bucket.inFlight.clear()
+	bucket.mutations.clear()
+	bucket.clearBarrier = undefined
 }
 
 function ttlFor(resolved: Resolved, options?: CacheSetOptions): number {

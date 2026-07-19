@@ -7,7 +7,7 @@
 1. 注入的 `Cache` 已按 caller plugin 自动隔离；
 2. `local` 永远同步，顶层 `get/set/getOrLoad` 永远返回 Promise；
 3. TTL 决定有效期，SIEVE 决定容量满时淘汰谁；
-4. 普通 namespace 继承 provider 配置，只有 `scope()` 才覆盖策略。
+4. 普通 namespace 继承 provider 配置，只有 `scope()` 才绑定独立策略。
 
 `@pluxel/cache` 是普通 Pluxel plugin。所有 caller 共享一个 local coordinator 和同一个 async backend，但默认
 有效 key 自动包含 `ctx.caller.pluginInfo.id`：
@@ -17,8 +17,9 @@ plugin:AccountsPlugin:user:1
 plugin:BillingPlugin:user:1
 ```
 
-`cache.global` 显式移除 caller 隔离，供确认 value contract 相同的插件共享。它仍受 local cache、TTL、single-flight、
-SIEVE、统计和 lifecycle 管理，不是 raw Redis client。
+`cache.global` 显式移除 caller value namespace 隔离，供确认 value contract 相同的插件共享。global handle 仍绑定发起
+caller Context；caller stop/replacement 后旧 handle 撤销，最后一个 owner 停止后释放进程内 registration。backend value
+继续按 TTL 独立存续。
 
 ## 同步与异步边界
 
@@ -51,7 +52,8 @@ await cache.set(key, value, { ttlMs: 5_000 })
 - `ttlMs`：默认 value TTL；
 - `maxEntries`：每个有效 namespace 的 local 容量；
 - `maxInFlight`：不同 key 的最大异步工作数；
-- `readPolicy`：默认异步读取策略。
+- `readPolicy`：默认异步读取策略；
+- `backendFailure`：`getOrLoad()` 遇到 backend failure 时 required-fail 或显式 bypass。
 
 普通 consumer 不重复配置。只有确实需要独立容量、TTL、读取顺序或批量失效时才使用 scope：
 
@@ -64,6 +66,22 @@ const responses = cache.scope('responses', {
 ```
 
 scope 只覆盖传入字段，其他字段继承父 namespace 的有效配置；root scope 的父配置就是 provider defaults。
+
+`scope()` 同步拷贝、校验并冻结 normalized policy。同一 caller + name + policy 返回同一 handle；显式传入不同 policy
+立即抛 `CachePolicyConflictError`。只写 `scope(name)` 可以取得已经绑定的 scope，供 decorator invalidation 使用；尚未
+绑定时继承 parent policy。policy 必须是拒绝 accessor、symbol 和 unknown field 的 exact plain object。
+
+local scope registration 属于 caller effects。caller stop、Cache/backend replacement 或 Cache stop 后，旧 handle 的新操作
+稳定抛 `CacheStoppedError`。进程内 local entries 随最后 owner 清理，Redis/backend value 不主动删除。
+
+## Key model
+
+公开 key 支持 primitive、最多 16 项的 primitive tuple，以及 primitive-value plain record。框架使用版本化 canonical
+encoding：primitive 保留类型与 `-0`，tuple 保留位置，record 按字段名 code-unit order 排序；拒绝 nested object、accessor、
+symbol、非 plain object 和非 finite number。canonical key 最多 1,024 UTF-8 bytes。
+
+decorator 的零/多参数默认 key 使用同一 bounded codec；包含 object、function 或其他非 key 参数时必须显式提供 `key()`。
+cache key 不是 secret protection contract，credential/token 不得作为 key。
 
 ## 唯一 eviction：SIEVE
 
@@ -104,6 +122,17 @@ TTL 与 SIEVE 正交。TTL 使用绝对 `expiresAt` 并在读取时惰性删除�
 每次调用可以覆盖 `readPolicy`，但稳定策略优先放在 provider config 或 scope。更复杂的流程，例如超时后降级
 local、双读比对、条件刷新，应由作者显式组合 `local` 与顶层 Promise API。
 
+### Backend failure
+
+`getOrLoad()` 的 `backendFailure` 只有两种 scope policy：
+
+- `required`（默认）：backend read/write failure reject，不伪造 hit；
+- `bypass`：backend read failure 作为 miss 继续 loader，loader 成功后的 backend write failure 只记录统计并发布 local。
+
+`bypass` 不吞 loader/database/external error，也不改变显式 `get/set/delete/clear` 的严格失败语义。它必须显式选择，因为
+backend outage 时绕过 Redis 可能放大 database/source 流量。同 scope 所有调用共享该策略，避免 same-key single-flight
+由首个请求偶然决定失败语义。
+
 ## Single-flight 与 mutation ordering
 
 同一个 owner namespace、scope 和 encoded key 最多有一个异步工作：
@@ -125,6 +154,11 @@ Pluxel `pluginMethodDecorator(Cache, ...)` 声明 required dependency，construc
 一个 primitive 参数直接作为 key；零参数使用固定 key；多个 primitive 参数使用稳定 tuple encoding。配置 `name`
 后可通过 `cache.scope(name).delete(key)` 或 `.local.delete(key)` 主动失效。decorator 不提供 global 模式，跨插件
 共享必须在业务代码中显式使用 `cache.global`。
+
+`@Cached` 可以直接装饰返回数据库 DTO 的 Promise method。它只隐藏短期 cache-aside；数据库 `refreshedAt`、外部 API、
+refresh claim/CAS、stale-if-error 和长期 freshness 仍属于 method 调用的 repository。不要增加 database/external-specific
+decorator，也不要缓存 transaction handle、Response、stream、函数或 credential。`undefined` 不缓存；负缓存使用 `null`
+或显式 domain result。
 
 ## Backend 多态与 raw 边界
 
@@ -167,9 +201,9 @@ backend-specific raw key、codec、connection 与 schema 属于 adapter package�
 
 ## Lifecycle 与统计
 
-provider stop/replacement 会撤销旧 handle 并抛出 `CacheStoppedError`。统计包括 local/backend hit、miss、load、
-deduplicated waiter、capacity rejection、background refresh/error、eviction、entry 与 in-flight 数量，不记录原始 key
-或 value。
+caller/provider stop/replacement 会撤销旧 handle 并抛出 `CacheStoppedError`。统计包括 local/backend hit、miss、load、
+deduplicated waiter、capacity rejection、backend read/write error、background refresh/error、eviction、entry 与 in-flight
+数量，不记录原始 key 或 value。
 
 Workbench 不属于 cache capability。现有 host-owned dependency override UI 根据 `CachePlugin(CacheBackend)` 自动发现
 所有 `@Plugin(CacheBackend, ...)` provider。选择实现后，runtime commit 会重启被修改 plugin 及其 dependent closure，

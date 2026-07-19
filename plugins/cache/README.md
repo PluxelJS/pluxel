@@ -47,6 +47,7 @@ host.cfg(CachePlugin).set({
 		maxEntries: 1_000,
 		maxInFlight: 256,
 		readPolicy: 'cache-first',
+		backendFailure: 'required',
 	},
 })
 ```
@@ -62,6 +63,7 @@ const responses = cache.scope('responses', {
 	ttlMs: 30_000,
 	maxEntries: 5_000,
 	readPolicy: 'cache-and-refresh',
+	backendFailure: 'required',
 })
 
 const response = await responses.getOrLoad(url, () => fetchResponse(url))
@@ -69,6 +71,19 @@ await responses.clear()
 ```
 
 淘汰算法固定为 SIEVE，没有 LRU 选择。
+
+scope policy 在首次绑定时 copy/freeze。同一 caller + name 重复绑定必须使用相同 normalized policy；不同 policy 抛
+`CachePolicyConflictError`。已经绑定后，`cache.scope(name)` 可以不重复 options 地取得相同 handle，用于 invalidation。
+
+## Composite key
+
+```ts
+await cache.getOrLoad({ tenantId, provider, recordId }, load)
+await cache.getOrLoad([tenantId, provider, recordId], load)
+```
+
+record 字段顺序不影响 key；tuple 位置和 primitive 类型参与 key。tuple/record 最多 16 parts，canonical key 最多
+1,024 UTF-8 bytes。拒绝 nested object、accessor、symbol 和非 finite number。key 不是 secret protection contract。
 
 ## Async read policy
 
@@ -84,6 +99,20 @@ await cache.getOrLoad(key, load, { readPolicy: 'remote-first' })
 ```
 
 稳定策略优先配置在 provider 或 scope；单次 override 用于少数明确场景。
+
+## Backend failure
+
+默认 `backendFailure: 'required'`。数据库是权威来源且 Redis 只用于加速时，可以在 scope 上显式选择：
+
+```ts
+const records = cache.scope('external-records', {
+	ttlMs: 10 * 60_000,
+	backendFailure: 'bypass',
+})
+```
+
+此时 `getOrLoad()` 的 backend read failure 会继续 loader；loader 成功后的 backend write failure 仍返回结果并写 local。
+loader/database/external error照常 reject。显式 `get/set/delete/clear` 始终严格传播 backend failure。
 
 ## Decorator
 
@@ -104,19 +133,35 @@ class AccountsPlugin extends BasePlugin {
 		return this.readFeatureFlag(name)
 	}
 
-	@Cached({ name: 'permissions', key: (tenant: string, user: string) => `${tenant}/${user}` })
+	@Cached({ name: 'permissions', key: (tenant: string, user: string) => [tenant, user] })
 	async permissionsFor(tenant: string, user: string): Promise<PermissionSet> {
 		return this.database.loadPermissions(tenant, user)
 	}
 
 	invalidatePermissions(tenant: string, user: string) {
-		return this.cache.scope('permissions').delete(`${tenant}/${user}`)
+		return this.cache.scope('permissions').delete([tenant, user])
 	}
 }
 ```
 
 `@Cached` 只接受 Promise method；`@Memoized` 只接受同步 method。constructor 中的 `Cache` 仍是 required
 dependency。
+
+数据库长期保存、短缓存、按月刷新外部 API 的推荐分层：
+
+```ts
+@Cached({
+	name: 'external-records',
+	ttlMs: 10 * 60_000,
+	backendFailure: 'bypass',
+})
+async getRecord(id: string): Promise<RecordDto | null> {
+	return this.records.loadFresh(id) // repository owns refreshedAt/claim/CAS/external fetch
+}
+```
+
+不要增加 database-specific decorator。decorator 只负责 local/backend cache-aside；长期 freshness、stale fallback 和
+distributed refresh fencing 属于 repository。missing result 用 `null`，因为 `undefined` 不缓存。
 
 ## Backend 多态
 

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
 	Cache,
 	CacheBackend,
+	CachePolicyConflictError,
 	CacheBusyError,
 	Cached,
 	CachePlugin,
@@ -34,6 +35,7 @@ class DecoratedConsumer extends BasePlugin {
 	syncCalls = 0
 	explicitCalls = 0
 	pairCalls = 0
+	defaultPairCalls = 0
 	gate: Promise<void> = Promise.resolve()
 
 	constructor(readonly cache: Cache) {
@@ -61,10 +63,16 @@ class DecoratedConsumer extends BasePlugin {
 
 	@Cached({
 		name: 'pairs',
-		key: (group: string, id: string) => `${group}/${id}`,
+		key: (group: string, id: string) => [group, id],
 	})
 	async pair(group: string, id: string): Promise<User> {
 		this.pairCalls++
+		return { id, name: `${group}-${id}` }
+	}
+
+	@Cached({ name: 'default-pairs' })
+	async defaultPair(group: string, id: string): Promise<User> {
+		this.defaultPairCalls++
 		return { id, name: `${group}-${id}` }
 	}
 }
@@ -74,15 +82,19 @@ class TestCacheBackendPlugin extends CacheBackend {
 	readonly values = new Map<string, CacheValue<unknown>>()
 	readonly metrics = { gets: 0, sets: 0, deletes: 0 }
 	getGate: Promise<void> | undefined
+	getError: Error | undefined
+	setError: Error | undefined
 
 	async get<V>(key: string): Promise<CacheValue<V> | undefined> {
 		this.metrics.gets++
 		await this.getGate
+		if (this.getError) throw this.getError
 		return this.values.get(key) as CacheValue<V> | undefined
 	}
 
 	async set<V>(key: string, value: V, { ttlMs }: { ttlMs: number }): Promise<void> {
 		this.metrics.sets++
+		if (this.setError) throw this.setError
 		this.values.set(key, { value, ttlMs })
 	}
 
@@ -228,6 +240,17 @@ describe('@pluxel/cache', () => {
 				a.getOrLoad('bad', async () => Promise.reject(new Error('boom'))),
 			).rejects.toThrow('boom')
 			expect(await a.get('bad')).toBeUndefined()
+
+			let missingLoads = 0
+			expect(
+				await a.getOrLoad('missing', () => {
+					missingLoads++
+					return null
+				}),
+			).toBeNull()
+			expect(await a.getOrLoad('missing', () => 'unexpected')).toBeNull()
+			expect(missingLoads).toBe(1)
+			await expect(a.getOrLoad('undefined', () => undefined)).rejects.toThrow(/undefined/)
 		})
 	})
 
@@ -269,25 +292,22 @@ describe('@pluxel/cache', () => {
 			await host.commit()
 			const backend = host.require(TestCacheBackendPlugin)
 			const cache = host.require(ConsumerA).cache
-			const externalKey = (scope: string) =>
-				`plugin:CacheConsumerA:${scope}:${encodeURIComponent('s:k')}`
-
 			const cacheFirst = cache.scope('cache-first')
+			await cacheFirst.set('k', 'remote')
 			cacheFirst.local.set('k', 'memory')
-			backend.values.set(externalKey('cache-first'), { value: 'remote' })
 			const getsBefore = backend.metrics.gets
 			expect(await cacheFirst.get<string>('k')).toBe('memory')
 			expect(backend.metrics.gets).toBe(getsBefore)
 
 			const refresh = cache.scope('refresh', { readPolicy: 'cache-and-refresh' })
+			await refresh.set('k', 'remote')
 			refresh.local.set('k', 'memory')
-			backend.values.set(externalKey('refresh'), { value: 'remote' })
 			expect(await refresh.get<string>('k')).toBe('memory')
 			await vi.waitFor(() => expect(refresh.local.get<string>('k')).toBe('remote'))
 
 			const remoteFirst = cache.scope('remote-first', { readPolicy: 'remote-first' })
+			await remoteFirst.set('k', 'remote')
 			remoteFirst.local.set('k', 'memory')
-			backend.values.set(externalKey('remote-first'), { value: 'remote' })
 			expect(await remoteFirst.get<string>('k')).toBe('remote')
 		})
 	})
@@ -316,6 +336,54 @@ describe('@pluxel/cache', () => {
 			host.remove(CachePlugin)
 			await host.commit()
 			await expect(handle.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
+		})
+	})
+
+	it('revokes old handles when the provider generation restarts', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+			await host.commit()
+			const old = host.require(ConsumerA).cache.scope('generation')
+			await old.set('value', 1)
+			host.restart(CachePlugin, { cascadeDependents: true })
+			await host.commit()
+			await expect(old.get('value')).rejects.toBeInstanceOf(CacheStoppedError)
+		})
+	})
+
+	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
+			await host.commit()
+			const consumer = host.require(DecoratedConsumer)
+			const local = consumer.cache.scope('saved')
+			const global = consumer.cache.global
+			await local.set('live', 1)
+			await global.set('live', 1)
+			await consumer.user('1')
+
+			host.remove(DecoratedConsumer)
+			await host.commit()
+
+			await expect(local.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
+			await expect(global.get('live')).rejects.toBeInstanceOf(CacheStoppedError)
+			await expect(consumer.user('1')).rejects.toBeInstanceOf(CacheStoppedError)
+		})
+	})
+
+	it('keeps a shared global registration alive until its final owner stops', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
+			await host.commit()
+			const a = host.require(ConsumerA).cache.global
+			const b = host.require(ConsumerB).cache.global
+			await a.set('shared', 1)
+
+			host.remove(ConsumerA)
+			await host.commit()
+
+			await expect(a.get('shared')).rejects.toBeInstanceOf(CacheStoppedError)
+			expect(await b.get('shared')).toBe(1)
 		})
 	})
 
@@ -374,6 +442,9 @@ describe('@pluxel/cache', () => {
 			await consumer.pair('admins', '3')
 			await consumer.pair('admins', '3')
 			expect(consumer.pairCalls).toBe(1)
+			await consumer.defaultPair('admins', '3')
+			await consumer.defaultPair('admins', '3')
+			expect(consumer.defaultPairCalls).toBe(1)
 		})
 	})
 
@@ -402,6 +473,99 @@ describe('@pluxel/cache', () => {
 			expect(() => cache.scope('bad name')).toThrow(/Cache scope/)
 			expect(() => cache.scope('valid', { maxEntries: 0 })).toThrow(/maxEntries/)
 			await expect(cache.set(Number.NaN, 1)).rejects.toThrow(/finite/)
+		})
+	})
+
+	it('binds one exact normalized policy to each scope', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+			await host.commit()
+			const cache = host.require(ConsumerA).cache
+			const original = cache.scope('policy', {
+				ttlMs: 10,
+				readPolicy: 'remote-first',
+				backendFailure: 'bypass',
+			})
+			expect(cache.scope('policy')).toBe(original)
+			expect(
+				cache.scope('policy', {
+					ttlMs: 10,
+					readPolicy: 'remote-first',
+					backendFailure: 'bypass',
+				}),
+			).toBe(original)
+			expect(() => cache.scope('policy', { ttlMs: 11 })).toThrow(CachePolicyConflictError)
+			expect(() => cache.scope('unknown', { extra: true } as never)).toThrow(/unknown field/)
+			const accessor = Object.defineProperty({}, 'ttlMs', { get: () => 1, enumerable: true })
+			expect(() => cache.scope('accessor', accessor)).toThrow(/data property/)
+			expect(() => cache.scope('symbol', { [Symbol('x')]: true } as never)).toThrow(/symbol/)
+			expect(() => cache.scope('nonplain', new (class {})() as never)).toThrow(/plain object/)
+		})
+	})
+
+	it('encodes bounded typed tuple and record keys without ambiguity', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+			await host.commit()
+			const cache = host.require(ConsumerA).cache
+			await cache.set({ tenant: 'a', id: 1 }, 'record')
+			expect(await cache.get({ id: 1, tenant: 'a' })).toBe('record')
+			await cache.set(['a', 1], 'tuple')
+			await cache.set('a', 'primitive')
+			expect(await cache.get(['a', 1])).toBe('tuple')
+			expect(await cache.get('a')).toBe('primitive')
+			await cache.set(-0, 'negative-zero')
+			await cache.set(0, 'zero')
+			expect(await cache.get(-0)).toBe('negative-zero')
+			expect(await cache.get(0)).toBe('zero')
+
+			await expect(cache.set({ nested: {} } as never, 1)).rejects.toThrow(/primitive/)
+			const accessorKey = Object.defineProperty({}, 'id', { get: () => 1, enumerable: true })
+			await expect(cache.set(accessorKey as never, 1)).rejects.toThrow(/data propert/)
+			await expect(cache.set({ id: 1, [Symbol('x')]: 2 } as never, 1)).rejects.toThrow(/symbol/)
+			await expect(
+				cache.set(
+					Array.from({ length: 17 }, (_, index) => index),
+					1,
+				),
+			).rejects.toThrow(/16/)
+			await expect(cache.set('x'.repeat(1_025), 1)).rejects.toThrow(/1024/)
+			await expect(cache.set(Number.POSITIVE_INFINITY, 1)).rejects.toThrow(/finite/)
+		})
+	})
+
+	it('supports required and bypass backend failure policies for getOrLoad only', async () => {
+		await withHost(async (host) => {
+			host.add([TestCacheBackendPlugin, CachePlugin, ConsumerA])
+			await host.commit()
+			const backend = host.require(TestCacheBackendPlugin)
+			const cache = host.require(ConsumerA).cache
+			backend.getError = new Error('read unavailable')
+
+			await expect(cache.getOrLoad('required', () => 1)).rejects.toThrow('read unavailable')
+			const bypass = cache.scope('bypass', { backendFailure: 'bypass' })
+			let loads = 0
+			const load = () => {
+				loads++
+				return 2
+			}
+			expect(
+				await Promise.all([bypass.getOrLoad('read', load), bypass.getOrLoad('read', load)]),
+			).toEqual([2, 2])
+			expect(loads).toBe(1)
+			expect(bypass.stats().backendReadErrors).toBe(1)
+
+			backend.getError = undefined
+			backend.setError = new Error('write unavailable')
+			expect(await bypass.getOrLoad('write', () => 3)).toBe(3)
+			expect(bypass.local.get('write')).toBe(3)
+			expect(bypass.stats().backendWriteErrors).toBe(1)
+			await expect(bypass.set('explicit', 4)).rejects.toThrow('write unavailable')
+			backend.getError = new Error('read unavailable')
+			await expect(bypass.get('explicit')).rejects.toThrow('read unavailable')
+			await expect(
+				bypass.getOrLoad('loader-error', () => Promise.reject(new Error('loader failed'))),
+			).rejects.toThrow('loader failed')
 		})
 	})
 })
