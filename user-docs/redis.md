@@ -51,6 +51,10 @@ import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 ```
 
+业务侧仍使用 `cache.scope() + getOrLoad()`；Redis adapter 只保存 caller-aware managed key/value 和剩余 TTL，不拥有数据库
+freshness、外部 API 刷新或 distributed lock。Redis 只是可丢失加速层时，可在 Cache scope 上显式选择
+`backendFailure: 'bypass'`。
+
 Workbench 会从 `CachePlugin(CacheBackend)` 和 `RedisCacheBackendPlugin(Redis)` 两层 constructor dependency 自动生成
 provider 选择。caller-aware admission control 使用 `RatesPlugin` 与本包的 `RedisRatesBackendPlugin`；四种算法都通过
 server time + digest key + 单 key Lua 跨实例原子判定。Redis、cache 或 rates 都不需要专属管理 UI。详细配置和 adapter 见

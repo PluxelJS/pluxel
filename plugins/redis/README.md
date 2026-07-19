@@ -120,10 +120,15 @@ adapter 使用上述 script helper 原子读取 GET + PTTL，处理 TTL、struct
 memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；
+- Cache canonical key 直接追加到 managed prefix，不再 URI 二次转义，保持 byte bound 与 Redis key 紧凑；
 - `ttlMs: 0` 表示无 expiry，正 TTL 使用 millisecond PX；
 - value codec 使用版本头与 Node `v8.serialize()`，支持 BigInt、Date、Buffer、Map/Set；
 - clear 转义 Redis glob metacharacter，使用 cursor SCAN 和 `deleteBatchSize` 限制 UNLINK；
 - same-key request/load single-flight 仍由 `CachePlugin` 负责，adapter 不维护第二套队列。
+
+adapter 遵循通用 `CacheBackend` contract：`undefined` 只表示 miss，`null` 是合法 hit，读取返回剩余 TTL，delete/clear
+幂等且 backend error 原样 reject。数据库 freshness、loader failure policy 与主动失效顺序仍由 `CachePlugin`/consumer
+负责。
 
 ## 内置 rates backend
 

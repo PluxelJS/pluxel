@@ -12,6 +12,10 @@ Redis raw capability 不提供 caller namespace、distributed lock、queue abstr
 single-flight 仍由 `@pluxel/cache` 拥有，rates namespace 与 decision 仍由 `@pluxel/rates` 拥有；本包内 adapter 只桥接
 两侧 contract。
 
+cache adapter 不重新编码 managed canonical key，也不解释 loader/database 语义。它只添加 Redis keyspace prefix、保存
+opaque defined value、原子返回 value + remaining TTL，并对 exact managed prefix 执行有界 clear。`undefined` 只表示 miss，
+`null` 是合法 hit，adapter failure 必须 reject。
+
 ## API
 
 公开作者面只有：

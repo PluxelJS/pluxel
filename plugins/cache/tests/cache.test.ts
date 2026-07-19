@@ -8,6 +8,7 @@ import {
 	Cached,
 	CachePlugin,
 	CacheStoppedError,
+	type CacheNamespace,
 	type CacheValue,
 	MemoryCacheBackendPlugin,
 	Memoized,
@@ -26,6 +27,19 @@ class ConsumerA extends BasePlugin {
 class ConsumerB extends BasePlugin {
 	constructor(readonly cache: Cache) {
 		super()
+	}
+}
+
+@Plugin({ name: 'EagerScopeConsumer' })
+class EagerScopeConsumer extends BasePlugin {
+	users!: CacheNamespace
+
+	constructor(readonly cache: Cache) {
+		super()
+	}
+
+	protected override init(): void {
+		this.users = this.cache.scope('users', { ttlMs: 60_000 })
 	}
 }
 
@@ -121,6 +135,16 @@ function deferred<T>() {
 }
 
 describe('@pluxel/cache', () => {
+	it('supports binding a stable scope during consumer init', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, EagerScopeConsumer])
+			await host.commit()
+			const users = host.require(EagerScopeConsumer).users
+			expect(await users.getOrLoad('1', () => 'Ada')).toBe('Ada')
+			expect(await users.get('1')).toBe('Ada')
+		})
+	})
+
 	it('inherits CachePlugin defaults while scopes may override them', async () => {
 		vi.useFakeTimers()
 		try {
@@ -210,6 +234,8 @@ describe('@pluxel/cache', () => {
 				[...backend.values.keys()].some((key) => key.startsWith('plugin:CacheConsumerA:')),
 			).toBe(true)
 			expect([...backend.values.keys()].some((key) => key.startsWith('global:'))).toBe(true)
+			expect(backend.values.has('plugin:CacheConsumerA:v1|p|s6:user:1')).toBe(true)
+			expect(backend.values.has('global:v1|p|s6:user:1')).toBe(true)
 		})
 	})
 

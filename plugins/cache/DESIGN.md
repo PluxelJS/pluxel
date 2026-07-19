@@ -9,6 +9,9 @@
 3. TTL 决定有效期，SIEVE 决定容量满时淘汰谁；
 4. 普通 namespace 继承 provider 配置，只有 `scope()` 才绑定独立策略。
 
+作者主路径是 `scope() + getOrLoad()`：scope 负责稳定策略、生命周期、统计和失效，`getOrLoad()` 负责短期
+cache-aside 与进程内 single-flight。`@Cached` / `@Memoized` 只是简单 method 的便利入口，不定义第二套缓存模型。
+
 `@pluxel/cache` 是普通 Pluxel plugin。所有 caller 共享一个 local coordinator 和同一个 async backend，但默认
 有效 key 自动包含 `ctx.caller.pluginInfo.id`：
 
@@ -67,6 +70,17 @@ const responses = cache.scope('responses', {
 
 scope 只覆盖传入字段，其他字段继承父 namespace 的有效配置；root scope 的父配置就是 provider defaults。
 
+需要主动失效、读取统计或长期复用策略的 consumer 应在 `init()` 中绑定一次 handle，而不是等待首次业务请求：
+
+```ts
+protected override init(): void {
+	this.records = this.cache.scope('records', {
+		ttlMs: 10 * 60_000,
+		backendFailure: 'bypass',
+	})
+}
+```
+
 `scope()` 同步拷贝、校验并冻结 normalized policy。同一 caller + name + policy 返回同一 handle；显式传入不同 policy
 立即抛 `CachePolicyConflictError`。只写 `scope(name)` 可以取得已经绑定的 scope，供 decorator invalidation 使用；尚未
 绑定时继承 parent policy。policy 必须是拒绝 accessor、symbol 和 unknown field 的 exact plain object。
@@ -79,6 +93,9 @@ local scope registration 属于 caller effects。caller stop、Cache/backend rep
 公开 key 支持 primitive、最多 16 项的 primitive tuple，以及 primitive-value plain record。框架使用版本化 canonical
 encoding：primitive 保留类型与 `-0`，tuple 保留位置，record 按字段名 code-unit order 排序；拒绝 nested object、accessor、
 symbol、非 plain object 和非 finite number。canonical key 最多 1,024 UTF-8 bytes。
+
+backend key 是 managed namespace prefix 加 canonical key。canonical codec 已经通过版本、类型和 length framing 保证
+无歧义，因此不再做 URI 二次转义；这避免非 ASCII 和 delimiter 被放大，也让公开 byte bound 对应实际 key 主体。
 
 decorator 的零/多参数默认 key 使用同一 bounded codec；包含 object、function 或其他非 key 参数时必须显式提供 `key()`。
 cache key 不是 secret protection contract，credential/token 不得作为 key。
@@ -152,13 +169,32 @@ async set 先成功写 backend，再发布 local。
 Pluxel `pluginMethodDecorator(Cache, ...)` 声明 required dependency，constructor 仍必须包含 `Cache`。
 
 一个 primitive 参数直接作为 key；零参数使用固定 key；多个 primitive 参数使用稳定 tuple encoding。配置 `name`
-后可通过 `cache.scope(name).delete(key)` 或 `.local.delete(key)` 主动失效。decorator 不提供 global 模式，跨插件
-共享必须在业务代码中显式使用 `cache.global`。
+后，在 scope 已绑定的前提下可通过 `cache.scope(name)` 取得同一个 handle。需要在 method 首次调用前主动失效、集中
+复用策略或读取统计时，标准写法是显式 scope；不为 decorator 再增加 definition/region abstraction。decorator 不提供
+global 模式，跨插件共享必须在业务代码中显式使用 `cache.global`。
 
-`@Cached` 可以直接装饰返回数据库 DTO 的 Promise method。它只隐藏短期 cache-aside；数据库 `refreshedAt`、外部 API、
-refresh claim/CAS、stale-if-error 和长期 freshness 仍属于 method 调用的 repository。不要增加 database/external-specific
-decorator，也不要缓存 transaction handle、Response、stream、函数或 credential。`undefined` 不缓存；负缓存使用 `null`
-或显式 domain result。
+`@Cached` 可以装饰简单返回数据库 DTO 的 Promise method，但只隐藏短期 cache-aside。数据库长期 freshness、外部 API、
+refresh claim/CAS 和 stale-if-error 一旦出现，就应改成显式 scope 包裹 repository loader。不要增加
+database/external-specific decorator，也不要缓存 transaction handle、Response、stream、函数或 credential。
+`undefined` 不缓存；负缓存使用 `null` 或显式 domain result。
+
+## 多层缓存的职责组合
+
+数据库长期保存、短期 Cache、按月刷新外部 API 的标准结构是：
+
+```text
+Cache local/backend（分钟级 TTL）
+        ↓ miss
+Repository/Database（长期 value + refreshedAt）
+        ↓ stale
+External API（claim/CAS/fencing 后刷新）
+```
+
+Cache 不知道“一个月”、数据库 transaction、external 404 或 stale fallback。repository 先读取数据库，fresh 时直接返回；
+stale 时以短 transaction 获取 refresh claim，在 transaction 外调用 external API，再以 fencing token 提交。external failure
+是否返回数据库旧值由领域决定。missing 可以作为带 `refreshedAt` 的 tombstone 持久化，并向 Cache 返回 `null`。
+
+这种边界让单进程请求合并由 Cache 完成，多实例刷新协调由数据库完成；两者不会形成隐藏的 distributed lock 或事务协议。
 
 ## Backend 多态与 raw 边界
 

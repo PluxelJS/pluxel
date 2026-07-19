@@ -119,6 +119,12 @@ describe('@pluxel/redis cache backend', () => {
 			expect(await backend.get<typeof value>('forever')).toEqual({ value, ttlMs: 0 })
 			await backend.delete('forever')
 			expect(await backend.get('forever')).toBeUndefined()
+
+			await backend.set('negative', null, { ttlMs: 1_000 })
+			expect(await backend.get('negative')).toEqual({ value: null, ttlMs: 1_000 })
+			await expect(backend.set('undefined', undefined, { ttlMs: 1_000 })).rejects.toThrow(
+				/undefined/,
+			)
 		})
 	})
 

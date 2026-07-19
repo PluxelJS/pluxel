@@ -664,7 +664,7 @@ export class CachePlugin extends Cache {
 		const context = (this.ctx.caller ?? this.ctx) as unknown as OwnerContext
 		let owner = this.runtime.owners.get(context)
 		if (owner) {
-			this.assertHandleActive(owner)
+			this.assertOwnerActive(owner)
 			return owner
 		}
 		owner = { active: true, context, handles: new Map(), registrations: new Set() }
@@ -686,7 +686,7 @@ export class CachePlugin extends Cache {
 		options: CacheNamespaceOptions | undefined,
 		parentPolicy?: ResolvedCachePolicy,
 	): CacheNamespace {
-		this.assertHandleActive(owner)
+		this.assertOwnerActive(owner)
 		const ownerHandleId = `${global ? 'g' : 'l'}\0${name}`
 		const existingHandle = owner.handles.get(ownerHandleId)
 		if (existingHandle) {
@@ -785,12 +785,16 @@ export class CachePlugin extends Cache {
 	}
 
 	private assertHandleActive(owner: CacheOwnerState): void {
-		this.assertActive()
-		if (!owner.active) throw new CacheStoppedError()
+		this.assertOwnerActive(owner)
 		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.id) as
 			| { ctx?: unknown }
 			| undefined
 		if (!activeOwner || activeOwner.ctx !== owner.context) throw new CacheStoppedError()
+	}
+
+	private assertOwnerActive(owner: CacheOwnerState): void {
+		this.assertActive()
+		if (!owner.active) throw new CacheStoppedError()
 	}
 }
 
@@ -1535,7 +1539,7 @@ class AsyncView extends CacheViewBase {
 	}
 
 	private backendKey(encoded: string): string {
-		return `${this.resolved.backendPrefix}${escapePart(encoded)}`
+		return `${this.resolved.backendPrefix}${encoded}`
 	}
 
 	private async readBackend<V>(encoded: string): Promise<CacheValue<V> | undefined> {

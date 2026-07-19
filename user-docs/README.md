@@ -10,7 +10,7 @@
 2. [`plugin-authoring.md`](plugin-authoring.md)：从标准插件形状开始，掌握依赖、配置、生命周期、
    HTTP、Workbench Plane 和公开 capability。
 3. [`database.md`](database.md)：选择 plugin/application database ownership、migration/reset evolution、transaction 与 live query。
-4. [`cache.md`](cache.md)：使用同步 L1、异步外部缓存、显式跨插件共享与请求合并。
+4. [`cache.md`](cache.md)：用显式 scope 组合同步 L1、异步 backend、数据库 loader、主动失效与请求合并。
 5. [`rates.md`](rates.md)：使用 caller-aware 四算法 admission control、处理 deny/error 并选择 memory/Redis backend。
 6. [`redis.md`](redis.md)：使用独立 Redis capability、选择 provider 并桥接 cache/rates backend。
 7. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
