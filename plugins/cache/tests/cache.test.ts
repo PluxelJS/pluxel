@@ -353,6 +353,35 @@ describe('@pluxel/cache', () => {
 		})
 	})
 
+	it('fails loudly instead of reporting a local-only clear as successful', async () => {
+		@Plugin(CacheBackend, { name: 'MissingClearCacheBackend' })
+		class MissingClearCacheBackend extends CacheBackend {
+			private readonly values = new Map<string, CacheValue<unknown>>()
+			override clear = undefined as never
+
+			async get<V>(key: string): Promise<CacheValue<V> | undefined> {
+				return this.values.get(key) as CacheValue<V> | undefined
+			}
+
+			async set<V>(key: string, value: V, options: { ttlMs: number }): Promise<void> {
+				this.values.set(key, { value, ttlMs: options.ttlMs })
+			}
+
+			async delete(key: string): Promise<void> {
+				this.values.delete(key)
+			}
+		}
+
+		await withHost(async (host) => {
+			host.add([MissingClearCacheBackend, CachePlugin, ConsumerA])
+			await host.commit()
+			const cache = host.require(ConsumerA).cache
+			await cache.set('value', 1)
+			await expect(cache.clear()).rejects.toBeInstanceOf(TypeError)
+			expect(cache.local.get('value')).toBe(1)
+		})
+	})
+
 	it('revokes cached namespace handles when provider stops', async () => {
 		await withHost(async (host) => {
 			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
@@ -544,8 +573,16 @@ describe('@pluxel/cache', () => {
 			await cache.set(0, 'zero')
 			expect(await cache.get(-0)).toBe('negative-zero')
 			expect(await cache.get(0)).toBe('zero')
+			await cache.set('\u{1f680}', 'rocket')
+			expect(await cache.get('\u{1f680}')).toBe('rocket')
+			await cache.set({ ['\u{1f680}']: 'value' }, 'unicode-field')
+			expect(await cache.get({ ['\u{1f680}']: 'value' })).toBe('unicode-field')
 
 			await expect(cache.set({ nested: {} } as never, 1)).rejects.toThrow(/primitive/)
+			await expect(cache.set('\ud800', 1)).rejects.toThrow(/well-formed Unicode/)
+			await expect(cache.set('\ud801', 1)).rejects.toThrow(/well-formed Unicode/)
+			await expect(cache.set({ ['\ud800']: 'value' }, 1)).rejects.toThrow(/well-formed Unicode/)
+			await expect(cache.set({ field: '\ud801' }, 1)).rejects.toThrow(/well-formed Unicode/)
 			const accessorKey = Object.defineProperty({}, 'id', { get: () => 1, enumerable: true })
 			await expect(cache.set(accessorKey as never, 1)).rejects.toThrow(/data propert/)
 			await expect(cache.set({ id: 1, [Symbol('x')]: 2 } as never, 1)).rejects.toThrow(/symbol/)
@@ -557,6 +594,16 @@ describe('@pluxel/cache', () => {
 			).rejects.toThrow(/16/)
 			await expect(cache.set('x'.repeat(1_025), 1)).rejects.toThrow(/1024/)
 			await expect(cache.set(Number.POSITIVE_INFINITY, 1)).rejects.toThrow(/finite/)
+		})
+	})
+
+	it('rejects non-well-formed scope names synchronously', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
+			await host.commit()
+			const cache = host.require(ConsumerA).cache
+			expect(() => cache.scope(`scope\ud800`)).toThrow(/well-formed Unicode/)
+			expect(() => cache.scope(`scope\ud801`)).toThrow(/well-formed Unicode/)
 		})
 	})
 

@@ -68,7 +68,8 @@ profiles.getOrLoad({ tenantId, provider, profileId }, load)
 ```
 
 tuple/record 最多 16 parts，canonical key 最多 1,024 UTF-8 bytes。类型、tuple 位置、record 字段和 `-0` 都参与编码；
-不要手工拼接有歧义的复合 key，也不要把 credential/token 当 key。
+string value 和 record 字段名必须是 well-formed Unicode（不含未配对 surrogate）。不要手工拼接有歧义的复合 key，
+也不要把 credential/token 当 key。
 
 `undefined` 始终表示 miss，不能缓存。需要缓存“不存在”时返回 `null` 或明确 domain value。同 scope、encoded key 的
 backend read 和 loader 在一个进程内自动合并；它不提供跨进程锁。

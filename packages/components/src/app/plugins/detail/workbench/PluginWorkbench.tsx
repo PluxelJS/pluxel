@@ -113,9 +113,9 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 			) : (
 				<WorkbenchSplitView
 					className="plx-pluginWorkbench__vertical"
-					defaultLayout={verticalLayout}
+					layout={verticalLayout}
 					id="pluxel-plugin-workbench-vertical"
-					onLayoutChanged={dockVisible ? handleVerticalLayoutChanged : undefined}
+					onLayoutCommit={dockVisible ? handleVerticalLayoutChanged : undefined}
 					orientation="vertical"
 					primary={contentPane}
 					secondary={dockPane}
@@ -140,9 +140,9 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 			<div className="plx-pluginWorkbench">
 				<WorkbenchSplitView
 					className="plx-pluginWorkbench__horizontal"
-					defaultLayout={horizontalLayout}
+					layout={horizontalLayout}
 					id="pluxel-plugin-workbench-horizontal"
-					onLayoutChanged={rightPaneVisible ? handleHorizontalLayoutChanged : undefined}
+					onLayoutCommit={rightPaneVisible ? handleHorizontalLayoutChanged : undefined}
 					orientation="horizontal"
 					primary={mainPane}
 					secondary={isNarrowViewport ? undefined : asidePane}

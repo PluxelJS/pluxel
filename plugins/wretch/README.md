@@ -103,6 +103,10 @@ provider middleware 才被追加到末尾。因此 consumer 的 retry middleware
 `.fetchPolyfill()` 仍按 Wretch 原生语义工作，并且不会绕过 provider middleware，适合测试或自定义 fetch
 boundary。只有显式清空 deferred callbacks 才会移除 provider policy，不应在受管 client 上这样做。
 
+client 与取得它的 consumer/provider lifecycle generation 绑定。任一方 stop 或 replacement 后，缓存的旧 client
+会拒绝新请求，等待并发槽的请求会被解除排队；已经进入 fetch 的请求会收到 lifecycle abort signal。自定义 fetch
+需要遵守标准 `AbortSignal`，才能在 teardown 时立即结束。
+
 retry、dedupe、缓存、鉴权刷新和业务错误解析不属于进程级安全不变量，插件不会替 consumer 决定。需要缓存
 时显式组合 `@pluxel/cache`。
 
@@ -147,6 +151,9 @@ UI 当前统一管理：
 
 设置按 caller plugin ID 持久化。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
 已经缓存的 client 也会自动生效，不需要重建。
+同一 caller 并发调用 `enableManagedSettings()` 会共享一次初始化；缓存的 settings RPC 在 caller/provider stop 或
+replacement 后会撤销，不能继续写入旧 generation。provider cleanup 也会主动释放全部 managed ProxyAgent，不依赖
+consumer 必须级联停止。
 
 Authorization、Cookie、Proxy-Authorization、X-API-Key，以及带路径或凭据的 proxy URL 会被拒绝。
 当前设置页不支持 authenticated proxy；secret 不进入普通 persistence、日志或 browser contract。

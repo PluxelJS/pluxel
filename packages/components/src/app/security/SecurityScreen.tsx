@@ -157,9 +157,9 @@ export function SecurityScreen() {
 			/>
 			<WorkbenchSplitView
 				className="plx-workbench__panelGroup"
-				defaultLayout={securitySplitLayout}
+				layout={securitySplitLayout}
 				id="pluxel-security-split"
-				onLayoutChanged={handleSecuritySplitLayoutChanged}
+				onLayoutCommit={handleSecuritySplitLayoutChanged}
 				orientation="horizontal"
 				primary={{
 					id: SECURITY_CONTROLS_PANEL_ID,

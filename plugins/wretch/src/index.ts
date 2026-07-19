@@ -19,16 +19,40 @@ import { WretchWorkbench } from './workbench-extension.ts'
 
 const SETTINGS_NAMESPACE = '@pluxel/wretch'
 
+type ClientLease = {
+	active: boolean
+	readonly controller: AbortController
+}
+
+function stoppedClientError(): Error {
+	return new Error('Wretch client belongs to a stopped or replaced plugin generation')
+}
+
 @Plugin({ name: 'WretchPlugin' })
 export class WretchPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WretchConfig)
-	private readonly managed = new WeakMap<Context, ManagedSettingsState>()
+	private readonly managed = new Map<Context, ManagedSettingsState>()
+	private readonly managedInitializations = new WeakMap<Context, Promise<ManagedSettingsState>>()
+	private readonly clients = new WeakMap<Context, ClientLease>()
 	private policy?: OutboundPolicy
 	private storage?: PersistenceNamespace
 
 	override init(): void {
-		this.policy = createOutboundPolicy(this.config)
-		this.storage = this.ctx.root.persistence.namespace(SETTINGS_NAMESPACE)
+		const policy = createOutboundPolicy(this.config)
+		const storage = this.ctx.root.persistence.namespace(SETTINGS_NAMESPACE)
+		this.policy = policy
+		this.storage = storage
+		this.ctx.effects.defer(
+			async () => {
+				policy.dispose()
+				if (this.policy === policy) this.policy = undefined
+				if (this.storage === storage) this.storage = undefined
+				const states = [...this.managed.values()]
+				this.managed.clear()
+				await Promise.all(states.map(disposeManagedSettings))
+			},
+			{ tag: 'wretch-policy' },
+		)
 		this.ctx.workbench.mount(WretchWorkbench, {})
 	}
 
@@ -38,9 +62,10 @@ export class WretchPlugin extends BasePlugin {
 	 */
 	get client(): Wretch {
 		const policy = this.requirePolicy()
-		const owner = this.ctx.caller
+		const owner = this.ctx.caller ?? this.ctx
+		const lease = this.clientLease(owner)
 		return wretch().defer((client, _url, options) => {
-			const state = owner ? this.managed.get(owner) : undefined
+			const state = this.managed.get(owner)
 			let configured = client
 			if (state) {
 				const headers = new Headers(options.headers)
@@ -57,7 +82,10 @@ export class WretchPlugin extends BasePlugin {
 				)
 			}
 			return configured.middlewares([
-				policy.middleware(() => this.effectiveTimeout(state?.current.timeoutMs)),
+				policy.middleware(
+					() => this.effectiveTimeout(state?.current.timeoutMs),
+					lease.controller.signal,
+				),
 			])
 		})
 	}
@@ -66,12 +94,18 @@ export class WretchPlugin extends BasePlugin {
 	async enableManagedSettings(): Promise<void> {
 		const owner = this.requireCaller()
 		if (this.managed.has(owner)) return
-		const state = await loadManagedSettings(this.requireStorage(), this.settingsKey(owner))
-		this.managed.set(owner, state)
-		owner.effects.defer(async () => {
-			if (this.managed.get(owner) === state) this.managed.delete(owner)
-			await disposeManagedSettings(state)
-		})
+		let initialization = this.managedInitializations.get(owner)
+		if (!initialization) {
+			initialization = this.initializeManagedSettings(owner)
+			this.managedInitializations.set(owner, initialization)
+		}
+		try {
+			await initialization
+		} finally {
+			if (this.managedInitializations.get(owner) === initialization) {
+				this.managedInitializations.delete(owner)
+			}
+		}
 	}
 
 	/** RPC resource for a consumer-owned `WretchWorkbenchPort` outlet. */
@@ -83,10 +117,34 @@ export class WretchPlugin extends BasePlugin {
 		}
 		const storage = this.requireStorage()
 		const key = this.settingsKey(owner)
+		const assertActive = (): void => {
+			if (!this.policy || this.storage !== storage || this.managed.get(owner) !== state) {
+				throw stoppedClientError()
+			}
+		}
 		return new ManagedSettingsRpc(
-			() => this.snapshot(state),
-			(settings) => replaceManagedSettings(state, storage, key, settings, this.config.timeoutMs),
-			() => resetManagedSettings(state, storage, key),
+			() => {
+				assertActive()
+				return this.snapshot(state)
+			},
+			async (settings) => {
+				assertActive()
+				const current = await replaceManagedSettings(
+					state,
+					storage,
+					key,
+					settings,
+					this.config.timeoutMs,
+				)
+				assertActive()
+				return current
+			},
+			async () => {
+				assertActive()
+				const current = await resetManagedSettings(state, storage, key)
+				assertActive()
+				return current
+			},
 		)
 	}
 
@@ -94,6 +152,56 @@ export class WretchPlugin extends BasePlugin {
 		if (!consumerTimeout) return this.config.timeoutMs
 		if (this.config.timeoutMs <= 0) return consumerTimeout
 		return Math.min(this.config.timeoutMs, consumerTimeout)
+	}
+
+	private clientLease(owner: Context): ClientLease {
+		const existing = this.clients.get(owner)
+		if (existing) {
+			if (!existing.active) throw stoppedClientError()
+			return existing
+		}
+		const lease: ClientLease = { active: true, controller: new AbortController() }
+		this.clients.set(owner, lease)
+		try {
+			owner.effects.defer(
+				() => {
+					if (!lease.active) return
+					lease.active = false
+					lease.controller.abort(stoppedClientError())
+					if (this.clients.get(owner) === lease) this.clients.delete(owner)
+				},
+				{ tag: 'wretch-client' },
+			)
+		} catch {
+			lease.active = false
+			if (this.clients.get(owner) === lease) this.clients.delete(owner)
+			throw stoppedClientError()
+		}
+		return lease
+	}
+
+	private async initializeManagedSettings(owner: Context): Promise<ManagedSettingsState> {
+		const policy = this.requirePolicy()
+		const storage = this.requireStorage()
+		const state = await loadManagedSettings(storage, this.settingsKey(owner))
+		if (this.policy !== policy || this.storage !== storage) {
+			await disposeManagedSettings(state)
+			throw stoppedClientError()
+		}
+		try {
+			owner.effects.defer(
+				async () => {
+					if (this.managed.get(owner) === state) this.managed.delete(owner)
+					await disposeManagedSettings(state)
+				},
+				{ tag: 'wretch-managed-settings' },
+			)
+		} catch (error) {
+			await disposeManagedSettings(state)
+			throw error
+		}
+		this.managed.set(owner, state)
+		return state
 	}
 
 	private snapshot(state: ManagedSettingsState): WretchManagedSettingsSnapshot {

@@ -3,6 +3,7 @@ import { CacheBackend, type CacheValue } from '@pluxel/cache'
 import { Plugin, v } from '@pluxel/runtime'
 import { Redis } from './client.ts'
 import { defineRedisScript } from './scripts.ts'
+import { isWellFormedUnicode } from './validation.ts'
 
 const REDIS_CACHE_FORMAT = 'pluxel-cache:v1:'
 
@@ -35,7 +36,10 @@ return {redis.call('PTTL', KEYS[1]), value}
 })
 
 export const RedisCacheBackendConfig = v.object({
-	keyPrefix: v.optional(v.string(), 'pluxel:cache:'),
+	keyPrefix: v.optional(
+		v.pipe(v.string(), v.check(isWellFormedUnicode, 'keyPrefix must be well-formed Unicode')),
+		'pluxel:cache:',
+	),
 	scanCount: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 200),
 	deleteBatchSize: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1)), 200),
 })

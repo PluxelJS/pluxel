@@ -93,7 +93,7 @@ key 支持：
 - 最多 16 个字段的 primitive-value plain record。
 
 canonical encoding 保留 primitive 类型、tuple 位置和 `-0`；record 字段按 code-unit order 排序。拒绝 nested object、
-accessor、symbol、非 plain object 和非 finite number。canonical key 最多 1,024 UTF-8 bytes，并直接作为 managed backend
+accessor、symbol、非 plain object、非 finite number 和包含未配对 surrogate 的 string。canonical key 最多 1,024 UTF-8 bytes，并直接作为 managed backend
 key 的主体，避免二次转义膨胀。cache key 不是 secret protection contract，不要放 credential 或 token。
 
 `undefined` 始终表示 miss，不能缓存。负缓存使用 `null` 或明确的 domain value：
@@ -221,7 +221,8 @@ host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 Workbench 通过 `CachePlugin(CacheBackend)` constructor dependency 使用标准 provider 选择，不需要 cache 专属 UI。
 
 第三方 `CacheBackend` adapter 必须遵守：`get()` 仅以 `undefined` 表示 miss、hit value 不得为 `undefined`、TTL 返回剩余
-毫秒且 `0` 表示不失效、`delete/clear` 幂等、`clear(prefix)` 不得越过 managed prefix、backend failure 必须 reject。
+毫秒且 `0` 表示不失效、required `delete/clear` 幂等、`clear(prefix)` 不得越过 managed prefix、backend failure 必须
+reject。
 
 ## Memory backend 重启预热
 

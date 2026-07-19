@@ -771,9 +771,9 @@ export function PackageManagerScreen() {
 
 			<WorkbenchSplitView
 				className="plx-workbench__panelGroup"
-				defaultLayout={packageSplitLayout}
+				layout={packageSplitLayout}
 				id="pluxel-packages-split"
-				onLayoutChanged={handlePackageSplitLayoutChanged}
+				onLayoutCommit={handlePackageSplitLayoutChanged}
 				orientation="horizontal"
 				primary={{
 					id: PACKAGE_INSTALL_PANEL_ID,

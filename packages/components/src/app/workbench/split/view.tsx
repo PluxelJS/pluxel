@@ -1,4 +1,9 @@
-import { Pane, SplitView, type SplitViewHandle as WorksplitHandle } from '@worksplit/react'
+import {
+	Pane,
+	SplitView,
+	type SplitViewHandle as WorksplitHandle,
+	type SplitViewLayoutEvent,
+} from '@worksplit/react'
 import '@worksplit/react/style.css'
 import {
 	forwardRef,
@@ -39,9 +44,9 @@ export type SplitViewPane = {
 
 export type WorkbenchSplitViewProps = {
 	className?: string
-	defaultLayout: SplitViewLayout
+	layout: SplitViewLayout
 	id: string
-	onLayoutChanged?: (layout: SplitViewLayout) => void
+	onLayoutCommit?: (layout: SplitViewLayout) => void
 	orientation: 'horizontal' | 'vertical'
 	primary: SplitViewPane
 	secondary?: SplitViewPane
@@ -121,9 +126,9 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 	(
 		{
 			className,
-			defaultLayout,
+			layout,
 			id,
-			onLayoutChanged,
+			onLayoutCommit,
 			orientation,
 			primary,
 			secondary,
@@ -133,7 +138,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 	) => {
 		const splitRef = useRef<WorksplitHandle | null>(null)
 		const hostRef = useRef<HTMLDivElement | null>(null)
-		const layoutRef = useRef<SplitViewLayout>({ ...defaultLayout })
+		const layoutRef = useRef<SplitViewLayout>({ ...layout })
 		const syncedLayoutSignatureRef = useRef('')
 		const { axisSize, axisSizeRef } = useObservedAxisSize(hostRef, orientation)
 		const panes = useMemo(
@@ -142,37 +147,38 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 		)
 		const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes])
 		const defaultSizeById = useMemo(
-			() => (axisSize > 0 ? toPixelSizes(paneIds, defaultLayout, axisSize) : undefined),
-			[axisSize, defaultLayout, paneIds],
+			() => (axisSize > 0 ? toPixelSizes(paneIds, layout, axisSize) : undefined),
+			[axisSize, layout, paneIds],
 		)
 
 		useLayoutEffect(() => {
-			layoutRef.current = { ...defaultLayout }
+			layoutRef.current = { ...layout }
 			const currentAxisSize = axisSizeRef.current || axisSize
 			if (currentAxisSize <= 0) return
-			const signature = createLayoutSignature(paneIds, defaultLayout, currentAxisSize)
+			const signature = createLayoutSignature(paneIds, layout, currentAxisSize)
 			if (syncedLayoutSignatureRef.current === signature) return
 			syncedLayoutSignatureRef.current = signature
-			splitRef.current?.setPaneSizes(toPixelSizes(paneIds, defaultLayout, currentAxisSize))
-		}, [axisSize, axisSizeRef, defaultLayout, paneIds])
+			splitRef.current?.setPaneSizes(toPixelSizes(paneIds, layout, currentAxisSize))
+		}, [axisSize, axisSizeRef, layout, paneIds])
 
 		useImperativeHandle(
 			ref,
 			() => ({
 				getLayout: () => ({ ...layoutRef.current }),
-				setLayout: (layout) => {
-					layoutRef.current = { ...layout }
+				setLayout: (nextLayout) => {
+					layoutRef.current = { ...nextLayout }
 					if (axisSizeRef.current > 0) {
-						splitRef.current?.setPaneSizes(toPixelSizes(paneIds, layout, axisSizeRef.current))
+						splitRef.current?.setPaneSizes(toPixelSizes(paneIds, nextLayout, axisSizeRef.current))
 					}
 				},
 			}),
 			[paneIds],
 		)
 
-		const handleDragEnd = useMemo(() => {
-			if (!onLayoutChanged) return undefined
-			return ({ sizes }: { sizes: number[] }) => {
+		const handleLayoutCommit = useMemo(() => {
+			if (!onLayoutCommit) return undefined
+			return ({ phase, reason, sizes }: SplitViewLayoutEvent) => {
+				if (phase !== 'commit' || (reason !== 'pointer' && reason !== 'keyboard')) return
 				const nextLayout = toPercentLayout(
 					panes,
 					sizes,
@@ -180,9 +186,9 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 					layoutRef.current,
 				)
 				layoutRef.current = nextLayout
-				onLayoutChanged(nextLayout)
+				onLayoutCommit(nextLayout)
 			}
-		}, [axisSize, axisSizeRef, onLayoutChanged, panes])
+		}, [axisSize, axisSizeRef, onLayoutCommit, panes])
 
 		const renderedPanes = useMemo(
 			() =>
@@ -210,7 +216,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 				<SplitView
 					defaultSizeById={defaultSizeById}
 					id={id}
-					onResizeEnd={handleDragEnd}
+					onLayout={handleLayoutCommit}
 					proportionalResize
 					ref={splitRef}
 					onPaneVisibilityChange={({ id: paneId, visible }) => {

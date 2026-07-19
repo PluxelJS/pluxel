@@ -57,5 +57,6 @@ freshness、外部 API 刷新或 distributed lock。Redis 只是可丢失加速�
 
 Workbench 会从 `CachePlugin(CacheBackend)` 和 `RedisCacheBackendPlugin(Redis)` 两层 constructor dependency 自动生成
 provider 选择。caller-aware admission control 使用 `RatesPlugin` 与本包的 `RedisRatesBackendPlugin`；四种算法都通过
-server time + digest key + 单 key Lua 跨实例原子判定。Redis、cache 或 rates 都不需要专属管理 UI。详细配置和 adapter 见
+server time + digest key + 单 key Lua 跨实例原子判定。cache/rates adapter 的 `keyPrefix` 必须是 well-formed Unicode。
+Redis、cache 或 rates 都不需要专属管理 UI。详细配置和 adapter 见
 [`../plugins/redis/README.md`](../plugins/redis/README.md)。

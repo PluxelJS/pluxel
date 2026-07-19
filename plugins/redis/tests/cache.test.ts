@@ -1,7 +1,13 @@
 import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
+import { v } from '@pluxel/runtime'
 import { BasePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
-import { Redis, RedisCacheBackendPlugin, type RedisClient } from '../src/index.ts'
+import {
+	Redis,
+	RedisCacheBackendConfig,
+	RedisCacheBackendPlugin,
+	type RedisClient,
+} from '../src/index.ts'
 
 type FakeSetOptions = { expiration?: { type: 'PX'; value: number } }
 
@@ -86,6 +92,14 @@ class RedisCacheConsumer extends BasePlugin {
 }
 
 describe('@pluxel/redis cache backend', () => {
+	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
+		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
+			true,
+		)
+		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800' }).success).toBe(false)
+		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud801:' }).success).toBe(false)
+	})
 	it('ships CacheBackend while preserving Redis and Cache capability boundaries', () => {
 		expect(getPluginInfo(RedisCacheBackendPlugin).base).toBe(CacheBackend)
 		expect(getPluginInfo(FakeRedisPlugin).base).toBe(Redis)

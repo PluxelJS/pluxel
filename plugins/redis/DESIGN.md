@@ -16,6 +16,14 @@ cache adapter 不重新编码 managed canonical key，也不解释 loader/databa
 opaque defined value、原子返回 value + remaining TTL，并对 exact managed prefix 执行有界 clear。`undefined` 只表示 miss，
 `null` 是合法 hit，adapter failure 必须 reject。
 
+cache/rates `keyPrefix` 必须是 well-formed Unicode，避免不同的未配对 surrogate 在 Redis UTF-8 transport 上折叠为同一
+byte prefix。
+
+rates sliding log 的常规 allow 不全量读取 event ZSET：脚本以 metadata、cardinality 和首尾 event 验证结构，cleanup 只读取
+到期 score 区间，全部到期直接删除；deny 用一次最多 10,000 条的 bounded range read 计算 retry，并核对 live event cost
+总和。rates storage key 必须由 adapter Lua 独占，外部 writer 不属于完整性边界；被读取的非法 metadata/event 仍会
+fail closed。这样正常 allow 保持与 `limit` 无关的读取量，deny 不使用在同一 Lua invocation 内反复跳过 offset 的伪分页。
+
 ## API
 
 公开作者面只有：

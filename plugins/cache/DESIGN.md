@@ -92,7 +92,7 @@ local scope registration 属于 caller effects。caller stop、Cache/backend rep
 
 公开 key 支持 primitive、最多 16 项的 primitive tuple，以及 primitive-value plain record。框架使用版本化 canonical
 encoding：primitive 保留类型与 `-0`，tuple 保留位置，record 按字段名 code-unit order 排序；拒绝 nested object、accessor、
-symbol、非 plain object 和非 finite number。canonical key 最多 1,024 UTF-8 bytes。
+symbol、非 plain object、非 finite number 和包含未配对 surrogate 的 string。canonical key 最多 1,024 UTF-8 bytes。
 
 backend key 是 managed namespace prefix 加 canonical key。canonical codec 已经通过版本、类型和 length framing 保证
 无歧义，因此不再做 URI 二次转义；这避免非 ASCII 和 delimiter 被放大，也让公开 byte bound 对应实际 key 主体。
@@ -202,8 +202,9 @@ stale 时以短 transaction 获取 refresh claim，在 transaction 外调用 ext
 local hot set 与较大的异步内存 backend；外部 package 用 `@Plugin(CacheBackend, ...)` 提供 Redis、数据库或其他实现。
 Pluxel graph 负责 provider 选择、失败传播、replacement 与 cleanup，cache consumer 永远只依赖 `Cache`。
 
-`CacheBackend` 只有异步 `get/set/delete/clear?`。序列化、Redis command、数据库 schema、连接池和 timeout 由实现
-plugin 管理。`MemoryCacheBackendPlugin` 同样使用 SIEVE，并有独立的 backend 容量配置。
+`CacheBackend` 只有异步 `get/set/delete/clear`。`clear(prefix)` 是 required contract，避免 public `cache.clear()`
+只清 local 后静默成功。序列化、Redis command、数据库 schema、连接池和 timeout 由实现 plugin 管理。
+`MemoryCacheBackendPlugin` 同样使用 SIEVE，并有独立的 backend 容量配置。
 
 ### Memory backend 快照恢复
 

@@ -45,8 +45,10 @@ declare module '@worksplit/react' {
 		getLayout(): SplitLayout | null
 	}
 
-	export interface SplitViewLayoutChange {
+	export interface SplitViewLayoutEvent {
 		layout: SplitLayout
+		phase: 'start' | 'change' | 'commit'
+		reason: 'pointer' | 'keyboard' | 'visibility' | 'reset' | 'imperative'
 		sizes: number[]
 		sizeById: Record<string, number>
 	}
@@ -67,10 +69,8 @@ declare module '@worksplit/react' {
 		disabled?: boolean
 		proportionalResize?: boolean
 		style?: CSSProperties
-		onLayoutChange?: (event: SplitViewLayoutChange) => void
+		onLayout?: (event: SplitViewLayoutEvent) => void
 		onPaneVisibilityChange?: (event: SplitViewPaneVisibilityChange) => void
-		onResizeStart?: (event: SplitViewLayoutChange) => void
-		onResizeEnd?: (event: SplitViewLayoutChange) => void
 	}
 
 	export const Pane: ForwardRefExoticComponent<PaneProps & RefAttributes<HTMLDivElement>>

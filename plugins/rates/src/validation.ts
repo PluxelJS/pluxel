@@ -6,6 +6,7 @@ export const MAX_STATE_TTL_MS = 2 * MAX_WINDOW_MS
 export const MAX_IDENTITY_BYTES = 1_024
 const MAX_PARTS = 16
 const MAX_NAME_LENGTH = 128
+const UTF8_ENCODER = new TextEncoder()
 const ALGORITHMS = new Set([
 	'token-bucket',
 	'fixed-window',
@@ -15,6 +16,7 @@ const ALGORITHMS = new Set([
 
 export function normalizeName(name: string): string {
 	if (typeof name !== 'string') invalid('name', 'must be a string')
+	assertWellFormedString(name, 'name', 'name')
 	if (!name || name.trim() !== name) invalid('name', 'must be non-empty and unchanged by trim')
 	if (name.length > MAX_NAME_LENGTH)
 		invalid('name', `must not exceed ${MAX_NAME_LENGTH} code units`)
@@ -118,7 +120,10 @@ export function encodeIdentity(identity: RateIdentity): string {
 			}
 		}
 		encoded = `r|${keys.length}|${keys
-			.map((key) => `${byteLength(key)}:${key}${encodePartChecked(descriptors[key]!.value)}`)
+			.map((key) => {
+				assertWellFormedString(key, 'identity', 'identity record field names')
+				return `${byteLength(key)}:${key}${encodePartChecked(descriptors[key]!.value)}`
+			})
 			.join('')}`
 	}
 	if (byteLength(encoded) > MAX_IDENTITY_BYTES) {
@@ -148,6 +153,7 @@ function encodePartChecked(value: unknown): string {
 function encodePart(value: RateIdentityPart): string {
 	switch (typeof value) {
 		case 'string':
+			assertWellFormedString(value, 'identity', 'identity string parts')
 			return `s${byteLength(value)}:${value}`
 		case 'number':
 			if (!Number.isFinite(value)) invalid('identity', 'number parts must be finite')
@@ -191,7 +197,28 @@ function assertSafeProduct(
 }
 
 function byteLength(value: string): number {
-	return new TextEncoder().encode(value).byteLength
+	return UTF8_ENCODER.encode(value).byteLength
+}
+
+function assertWellFormedString(
+	value: string,
+	argument: 'name' | 'identity',
+	subject: string,
+): void {
+	for (let index = 0; index < value.length; index++) {
+		const code = value.charCodeAt(index)
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(index + 1)
+			if (next >= 0xdc00 && next <= 0xdfff) {
+				index++
+				continue
+			}
+			invalid(argument, `${subject} must be well-formed Unicode`)
+		}
+		if (code >= 0xdc00 && code <= 0xdfff) {
+			invalid(argument, `${subject} must be well-formed Unicode`)
+		}
+	}
 }
 
 function bounded(value: string): string {

@@ -1,8 +1,14 @@
 import { MemoryRatesBackendPlugin, Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { RatesBackend } from '@pluxel/rates/backend'
+import { v } from '@pluxel/runtime'
 import { BasePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
-import { Redis, RedisRatesBackendPlugin, type RedisClient } from '../src/index.ts'
+import {
+	Redis,
+	RedisRatesBackendConfig,
+	RedisRatesBackendPlugin,
+	type RedisClient,
+} from '../src/index.ts'
 
 type ScriptOptions = { keys: string[]; arguments: string[] }
 
@@ -54,6 +60,14 @@ const policies = [
 ] satisfies RatePolicy[]
 
 describe('@pluxel/redis rates backend', () => {
+	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
+		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\u{1f680}:' }).success).toBe(
+			true,
+		)
+		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800:' }).success).toBe(false)
+		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800' }).success).toBe(false)
+		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud801:' }).success).toBe(false)
+	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		expect(getPluginInfo(RedisRatesBackendPlugin).base).toBe(RatesBackend)
 		await withHost(async (host) => {
@@ -62,6 +76,7 @@ describe('@pluxel/redis rates backend', () => {
 			await host.commit()
 			const consumer = host.require(RedisRatesConsumer)
 			const redis = host.require(FakeRatesRedisPlugin).fake
+			let slidingLogSource = ''
 
 			for (const policy of policies) {
 				redis.scriptLoaded = false
@@ -72,6 +87,7 @@ describe('@pluxel/redis rates backend', () => {
 				const call = redis.evalCalls.at(-1)!
 				expect(call.source).toContain("redis.call('TIME')")
 				expect(call.source).toContain("redis.call('PEXPIRE'")
+				if (policy.algorithm === 'sliding-window-log') slidingLogSource = call.source
 				expect(call.options.keys).toHaveLength(1)
 				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v1:[a-f0-9]{64}$/)
 				expect(call.options.keys[0]).not.toContain('secret-tenant')
@@ -82,6 +98,10 @@ describe('@pluxel/redis rates backend', () => {
 					'1',
 				])
 			}
+			expect(slidingLogSource).not.toContain("redis.call('ZRANGE', key, 0, -1")
+			expect(slidingLogSource).not.toContain('SCAN_BATCH')
+			expect(slidingLogSource).not.toContain("'WITHSCORES', 'LIMIT', offset")
+			expect(slidingLogSource).toContain("'(' .. cutoff, '+inf', 'WITHSCORES'")
 			expect(redis.evalShaCalls).toHaveLength(4)
 			expect(redis.evalCalls).toHaveLength(4)
 		})
@@ -94,10 +114,10 @@ describe('@pluxel/redis rates backend', () => {
 			const limiter = host.require(RedisRatesConsumer).rates.use('stable', policies[0]!)
 			const redis = host.require(FakeRatesRedisPlugin).fake
 			await limiter.consume('first')
-			redis.reply = [0, 1, 250, 5_001_000]
+			redis.reply = [0, 0, 250, 5_001_000]
 			expect(await limiter.consume('second')).toEqual({
 				denied: true,
-				remaining: 1,
+				remaining: 0,
 				retryAfterMs: 250,
 				resetAt: 5_001_000,
 			})

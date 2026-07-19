@@ -17,6 +17,7 @@ const DEFAULT_MAX_IN_FLIGHT = 256
 const MAX_TIMER_DELAY_MS = 2_147_483_647
 const MAX_KEY_PARTS = 16
 const MAX_CANONICAL_KEY_BYTES = 1_024
+const UTF8_ENCODER = new TextEncoder()
 
 export type CacheKeyPart = string | number | bigint | boolean
 export type CacheKey =
@@ -383,6 +384,7 @@ function defaultEncodeKey(key: CacheKey): string {
 			throw new RangeError(`Cache record keys must not exceed ${MAX_KEY_PARTS} parts.`)
 		encoded = `r|${keys.length}|${keys
 			.map((part) => {
+				assertWellFormedString(part, 'Cache record field names')
 				const descriptor = descriptors[part]!
 				if (
 					!descriptor.enumerable ||
@@ -407,6 +409,7 @@ function defaultEncodeKey(key: CacheKey): string {
 function encodeKeyPart(value: CacheKeyPart): string {
 	switch (typeof value) {
 		case 'string':
+			assertWellFormedString(value, 'Cache string keys')
 			return `s${utf8Length(value)}:${value}`
 		case 'number':
 			if (!Number.isFinite(value)) throw new TypeError('Cache number keys must be finite.')
@@ -434,7 +437,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function utf8Length(value: string): number {
-	return new TextEncoder().encode(value).byteLength
+	return UTF8_ENCODER.encode(value).byteLength
+}
+
+function assertWellFormedString(value: string, subject: string): void {
+	for (let index = 0; index < value.length; index++) {
+		const code = value.charCodeAt(index)
+		if (code >= 0xd800 && code <= 0xdbff) {
+			const next = value.charCodeAt(index + 1)
+			if (next >= 0xdc00 && next <= 0xdfff) {
+				index++
+				continue
+			}
+			throw new TypeError(`${subject} must contain only well-formed Unicode.`)
+		}
+		if (code >= 0xdc00 && code <= 0xdfff) {
+			throw new TypeError(`${subject} must contain only well-formed Unicode.`)
+		}
+	}
 }
 
 function defaultMethodKey(args: unknown[]): CacheKey {
@@ -508,6 +528,8 @@ function cachePoliciesEqual(a: ResolvedCachePolicy, b: ResolvedCachePolicy): boo
 }
 
 function validateScopeName(name: string): string {
+	if (typeof name !== 'string') throw new TypeError('Cache scope must be a string.')
+	assertWellFormedString(name, 'Cache scope names')
 	if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(name)) {
 		throw new TypeError(
 			'Cache scope must start with an alphanumeric character and contain only A-Z, a-z, 0-9, ., _, :, /, or -.',
@@ -1300,7 +1322,7 @@ class AsyncView extends CacheViewBase {
 			await Promise.allSettled(bucket.inFlight.values())
 			this.assertUsable()
 			try {
-				await this.backend.clear?.(this.resolved.backendPrefix)
+				await this.backend.clear(this.resolved.backendPrefix)
 			} catch (error) {
 				bucket.stats.backendWriteErrors++
 				throw error

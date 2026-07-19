@@ -19,7 +19,7 @@ export interface CacheBackendStore {
 	/** Idempotently remove one key. Backend failures must reject. */
 	delete(key: string): Promise<void>
 	/** Idempotently remove every key starting with the exact managed prefix. */
-	clear?(prefix: string): Promise<void>
+	clear(prefix: string): Promise<void>
 }
 
 /** Polymorphic async backend token implemented by memory, Redis, database, or other plugins. */
@@ -27,5 +27,5 @@ export abstract class CacheBackend extends BasePlugin implements CacheBackendSto
 	abstract get<V>(key: string): Promise<CacheValue<V> | undefined>
 	abstract set<V>(key: string, value: V, options: Readonly<{ ttlMs: number }>): Promise<void>
 	abstract delete(key: string): Promise<void>
-	abstract clear?(prefix: string): Promise<void>
+	abstract clear(prefix: string): Promise<void>
 }

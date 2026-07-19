@@ -48,6 +48,7 @@ export type {
 
 const DEFAULT_MAX_IDENTITIES = 10_000
 const MAX_IDENTITIES = 1_000_000
+const EXPIRY_CLEANUP_BUDGET = 64
 
 export const MemoryRatesBackendConfig = v.object({
 	maxIdentities: v.optional(
@@ -201,7 +202,11 @@ export class RatesPlugin extends Rates {
 	private async consumeBackend(request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		this.assertActive()
 		try {
-			return await this.backend.consume(request)
+			return validateBackendDecision(
+				await this.backend.consume(request),
+				request.policy,
+				request.cost,
+			)
 		} catch (error) {
 			if (
 				error instanceof RatesStoppedError ||
@@ -271,12 +276,22 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 	async consume(request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		this.assertActive()
 		const now = Date.now()
-		this.deleteExpired(now)
+		this.deleteExpired(now, EXPIRY_CLEANUP_BUDGET)
 		let state = this.runtime.states.get(request.key)
+		if (state && state.expiresAt <= now) {
+			this.runtime.expiry.delete(request.key)
+			this.runtime.states.delete(request.key)
+			state = undefined
+		}
 		if (state && !policiesEqual(state.policy, request.policy)) {
 			throw new RatesPolicyConflictError(state.policy, request.policy)
 		}
 		if (!state) {
+			if (this.runtime.states.size >= this.config.maxIdentities) {
+				// Reclaim only enough expired state to admit this identity. If the root is live,
+				// every remaining state is live and capacity must fail closed.
+				this.deleteExpired(now, this.runtime.states.size - this.config.maxIdentities + 1)
+			}
 			if (this.runtime.states.size >= this.config.maxIdentities) {
 				const expiresAt = this.runtime.expiry.peek()?.expiresAt
 				throw new RatesUnavailableError({
@@ -297,8 +312,8 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 		this.runtime.expiry.clear()
 	}
 
-	private deleteExpired(now: number): void {
-		for (;;) {
+	private deleteExpired(now: number, budget: number): void {
+		for (let deleted = 0; deleted < budget; deleted++) {
 			const next = this.runtime.expiry.peek()
 			if (!next || next.expiresAt > now) return
 			this.runtime.expiry.delete(next.key)
@@ -309,6 +324,80 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 	private assertActive(): void {
 		if (!this.runtime.active) throw new RatesStoppedError()
 	}
+}
+
+function validateBackendDecision(
+	value: unknown,
+	policy: Readonly<ResolvedRatePolicy>,
+	cost: number,
+): RateDecision {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+		throw new TypeError('Expected a rates decision object.')
+	}
+	if (Object.getOwnPropertySymbols(value).length > 0) {
+		throw new TypeError('Rates decision must not contain symbol fields.')
+	}
+	const prototype = Object.getPrototypeOf(value)
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw new TypeError('Expected a plain rates decision object.')
+	}
+	const descriptors = Object.getOwnPropertyDescriptors(value)
+	const denied = decisionField(descriptors, 'denied')
+	if (denied !== true && denied !== false) {
+		throw new TypeError('Expected an exact rates decision shape.')
+	}
+	const keys = Object.keys(descriptors)
+	const expectedKeyCount = denied ? 4 : 3
+	if (
+		keys.length !== expectedKeyCount ||
+		keys.some(
+			(key) =>
+				key !== 'denied' &&
+				key !== 'remaining' &&
+				key !== 'resetAt' &&
+				(denied === false || key !== 'retryAfterMs'),
+		)
+	) {
+		throw new TypeError('Expected an exact rates decision shape.')
+	}
+	const remaining = nonNegativeSafeInteger(decisionField(descriptors, 'remaining'), 'remaining')
+	const resetAt = nonNegativeSafeInteger(decisionField(descriptors, 'resetAt'), 'resetAt')
+	const capacity = policy.algorithm === 'token-bucket' ? policy.burst : policy.limit
+	const maximumRemaining = denied ? cost - 1 : capacity - cost
+	if (remaining > maximumRemaining) {
+		throw new TypeError('Rates decision remaining is inconsistent with the policy and cost.')
+	}
+	if (denied === false) return { denied, remaining, resetAt }
+	return {
+		denied,
+		remaining,
+		retryAfterMs: positiveSafeInteger(decisionField(descriptors, 'retryAfterMs'), 'retryAfterMs'),
+		resetAt,
+	}
+}
+
+function decisionField(
+	descriptors: PropertyDescriptorMap,
+	name: 'denied' | 'remaining' | 'retryAfterMs' | 'resetAt',
+): unknown {
+	const descriptor = descriptors[name]
+	if (!descriptor?.enumerable || !('value' in descriptor)) {
+		throw new TypeError('Rates decision fields must be enumerable data properties.')
+	}
+	return descriptor.value
+}
+
+function nonNegativeSafeInteger(value: unknown, name: string): number {
+	if (!Number.isSafeInteger(value) || (value as number) < 0) {
+		throw new TypeError(`Expected non-negative safe integer ${name}.`)
+	}
+	return value as number
+}
+
+function positiveSafeInteger(value: unknown, name: string): number {
+	const number = nonNegativeSafeInteger(value, name)
+	if (number < 1) throw new TypeError(`Expected positive safe integer ${name}.`)
+	return number
 }
 
 function validateConsumeOptions(options: RateConsumeOptions): void {

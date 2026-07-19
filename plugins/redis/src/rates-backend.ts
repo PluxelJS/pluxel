@@ -4,6 +4,7 @@ import { type RateDecision, type ResolvedRatePolicy, RatesPolicyConflictError } 
 import { Plugin, v } from '@pluxel/runtime'
 import { Redis } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
+import { isWellFormedUnicode } from './validation.ts'
 
 type RedisRatesReply =
 	| { kind: 'decision'; decision: RateDecision }
@@ -60,36 +61,23 @@ local function parse_log_event(member, score)
   if not at or not sequence or sequence > 10000 or not cost or not score or score ~= at then return nil end
   return {member=member, at=at, sequence=sequence, cost=cost}
 end
-local function read_log_state(key)
+local function read_log_header(key)
   local metas = redis.call('ZRANGEBYSCORE', key, -1, -1)
   if #metas ~= 1 then return nil end
   local metaMember = metas[1]
   local meta = parse_log_meta(metaMember)
   if not meta then return nil end
-  local raw = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
-  local events = {}; local used = 0; local lastAt = nil; local sequenceCounts = {}; local sequenceMax = {}
-  for index = 1, #raw, 2 do
-    local member = raw[index]; local score = tonumber(raw[index + 1])
-    if score == -1 then
-      if member ~= metaMember then return nil end
-    else
-      local event = parse_log_event(member, score)
-      if not event or event.at > meta.observed then return nil end
-      if lastAt and event.at < lastAt then return nil end
-      used = used + event.cost
-      if used > meta.limit then return nil end
-      events[#events + 1] = event
-      lastAt = event.at
-      sequenceCounts[event.at] = (sequenceCounts[event.at] or 0) + 1
-      sequenceMax[event.at] = math.max(sequenceMax[event.at] or -1, event.sequence)
-    end
-  end
-  if #events < 1 or #events > meta.limit or used ~= meta.used or lastAt ~= meta.lastAt then return nil end
-  for at, count in pairs(sequenceCounts) do
-    if count ~= sequenceMax[at] + 1 then return nil end
-  end
-  if sequenceMax[meta.lastAt] ~= meta.sequence then return nil end
-  return {meta=meta, metaMember=metaMember, events=events}
+  local eventCount = redis.call('ZCARD', key) - 1
+  if eventCount < 1 or eventCount > meta.used then return nil end
+  local firstRaw = redis.call('ZRANGE', key, 1, 1, 'WITHSCORES')
+  local lastRaw = redis.call('ZREVRANGE', key, 0, 0, 'WITHSCORES')
+  if #firstRaw ~= 2 or #lastRaw ~= 2 then return nil end
+  local first = parse_log_event(firstRaw[1], firstRaw[2])
+  local last = parse_log_event(lastRaw[1], lastRaw[2])
+  if not first or not last or first.sequence ~= 0 or first.at > last.at or
+     first.at + meta.window <= meta.observed or last.at ~= meta.lastAt or
+     redis.call('ZCOUNT', key, meta.lastAt, meta.lastAt) ~= meta.sequence + 1 then return nil end
+  return {meta=meta, metaMember=metaMember, eventCount=eventCount}
 end
 local function read_hash_state(key)
   local common = redis.call('HMGET', key, 'version', 'algorithm', 'limit', 'window', 'burst', 'observedAt')
@@ -138,7 +126,7 @@ local function existing_hash_or_conflict(key, requestedAlgorithm, requestedLimit
   local kind = redis.call('TYPE', key).ok
   if kind == 'none' then return nil end
   if kind == 'zset' then
-    local state = read_log_state(key)
+    local state = read_log_header(key)
     if not state then return {-2} end
     return conflict(state.meta.algorithm, state.meta.limit, state.meta.window, 0)
   end
@@ -261,6 +249,10 @@ const ConsumeSlidingLog = defineRedisScript<
 	name: 'pluxel.rates.consume-sliding-window-log-v1',
 	numberOfKeys: 1,
 	source: `${LUA_COMMON}\n${String.raw`
+local function log_meta_member(meta, observed)
+  return 'm|1|sliding-window-log|' .. meta.limit .. '|' .. meta.window .. '|' .. meta.used .. '|' ..
+    observed .. '|' .. meta.lastAt .. '|' .. meta.sequence
+end
 local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local cost = positive(ARGV[4])
 if not limit or limit > 10000 or not window or window > MAX_WINDOW or not cost or cost > limit then return {-2} end
 local kind = redis.call('TYPE', KEYS[1]).ok
@@ -269,29 +261,39 @@ if kind == 'hash' then
   if not active then return {-2} end
   return conflict(active.algorithm, active.limit, active.window, active.burst)
 elseif kind ~= 'none' and kind ~= 'zset' then return {-2} end
-local now = now_ms(); local metaMember; local meta; local events = {}
+local now = now_ms(); local metaMember; local meta; local eventCount = 0
+local expiredCount = 0; local releasedExpired = 0; local deleteExisting = false
 if kind == 'zset' then
-  local state = read_log_state(KEYS[1])
+  local state = read_log_header(KEYS[1])
   if not state then return {-2} end
-  metaMember = state.metaMember; meta = state.meta
+  metaMember = state.metaMember; meta = state.meta; eventCount = state.eventCount
   if now < meta.observed then now = meta.observed end
-  local cutoff = now - meta.window; local expired = {}; local released = 0
-  for _, event in ipairs(state.events) do
-    if event.at <= cutoff then
-      expired[#expired + 1] = event.member; released = released + event.cost
-    else
-      events[#events + 1] = event
+  local cutoff = now - meta.window
+  if meta.lastAt <= cutoff then
+    deleteExisting = true; meta = nil; eventCount = 0
+  else
+    local rawExpired = redis.call('ZRANGEBYSCORE', KEYS[1], 0, cutoff, 'WITHSCORES')
+    local previousAt = nil; local sequenceCounts = {}; local sequenceMax = {}
+    for index = 1, #rawExpired, 2 do
+      local event = parse_log_event(rawExpired[index], rawExpired[index + 1])
+      if not event or event.at > state.meta.observed or (previousAt and event.at < previousAt) then return {-2} end
+      releasedExpired = releasedExpired + event.cost
+      if releasedExpired >= state.meta.used then return {-2} end
+      expiredCount = expiredCount + 1; previousAt = event.at
+      sequenceCounts[event.at] = (sequenceCounts[event.at] or 0) + 1
+      sequenceMax[event.at] = math.max(sequenceMax[event.at] or -1, event.sequence)
     end
+    for at, count in pairs(sequenceCounts) do
+      if count ~= sequenceMax[at] + 1 then return {-2} end
+    end
+    if expiredCount >= eventCount then return {-2} end
+    eventCount = eventCount - expiredCount; meta.used = meta.used - releasedExpired
+    if meta.used < eventCount then return {-2} end
   end
-  if #expired > 0 then redis.call('ZREM', KEYS[1], unpack(expired)) end
-  meta.used = meta.used - released
-  if #events == 0 then
-    if meta.used ~= 0 then return {-2} end
-    redis.call('DEL', KEYS[1]); meta = nil; metaMember = nil
-  elseif meta.used < 1 then return {-2} end
 end
 if meta and (meta.limit ~= limit or meta.window ~= window) then
-  local activeMeta = 'm|1|sliding-window-log|' .. meta.limit .. '|' .. meta.window .. '|' .. meta.used .. '|' .. now .. '|' .. meta.lastAt .. '|' .. meta.sequence
+  local activeMeta = log_meta_member(meta, now)
+  if expiredCount > 0 and redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, now - meta.window) ~= expiredCount then return {-2} end
   redis.call('ZREM', KEYS[1], metaMember)
   redis.call('ZADD', KEYS[1], -1, activeMeta)
   redis.call('PEXPIRE', KEYS[1], math.max(1, meta.lastAt + meta.window - now))
@@ -303,23 +305,32 @@ if cost <= limit - meta.used then
   allowed = 1
   if meta.lastAt == now then meta.sequence = meta.sequence + 1 else meta.lastAt = now; meta.sequence = 0 end
   if meta.sequence > 10000 then return {-2} end
-  local member = 'e|' .. now .. '|' .. meta.sequence .. '|' .. cost
-  redis.call('ZADD', KEYS[1], now, member)
-  events[#events + 1] = {member=member, at=now, sequence=meta.sequence, cost=cost}
   meta.used = meta.used + cost
 end
-if #events == 0 then return {-2} end
 local resetAt = meta.lastAt + window; local remaining = limit - meta.used
-local nextMeta = 'm|1|sliding-window-log|' .. limit .. '|' .. window .. '|' .. meta.used .. '|' .. now .. '|' .. meta.lastAt .. '|' .. meta.sequence
-if metaMember then redis.call('ZREM', KEYS[1], metaMember) end
-redis.call('ZADD', KEYS[1], -1, nextMeta)
+local retryAt = nil
+if allowed == 0 then
+  local deficit = cost - (limit - meta.used); local released = 0; local scanned = 0
+  local previousAt = nil; local cutoff = now - window
+  local raw = redis.call('ZRANGEBYSCORE', KEYS[1], '(' .. cutoff, '+inf', 'WITHSCORES')
+  if #raw / 2 ~= eventCount then return {-2} end
+  for index = 1, #raw, 2 do
+    local event = parse_log_event(raw[index], raw[index + 1])
+    if not event or event.at > meta.observed or (previousAt and event.at < previousAt) then return {-2} end
+    scanned = scanned + 1; released = released + event.cost; previousAt = event.at
+    if not retryAt and released >= deficit then retryAt = event.at + window end
+  end
+  if scanned ~= eventCount or released ~= meta.used or not retryAt then return {-2} end
+end
+if deleteExisting then redis.call('DEL', KEYS[1])
+elseif expiredCount > 0 and redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, now - window) ~= expiredCount then return {-2} end
+if allowed == 1 then
+  redis.call('ZADD', KEYS[1], now, 'e|' .. now .. '|' .. meta.sequence .. '|' .. cost)
+end
+if metaMember and not deleteExisting then redis.call('ZREM', KEYS[1], metaMember) end
+redis.call('ZADD', KEYS[1], -1, log_meta_member(meta, now))
 redis.call('PEXPIRE', KEYS[1], math.max(1, resetAt - now))
 if allowed == 1 then return {1, remaining, resetAt} end
-local deficit = cost - (limit - meta.used); local released = 0; local retryAt = now + 1
-for _, event in ipairs(events) do
-  released = released + event.cost
-  if released >= deficit then retryAt = event.at + window; break end
-end
 return {0, remaining, math.max(1, retryAt - now), resetAt}
 `}`,
 	decode: decodeReply,
@@ -340,7 +351,14 @@ const SCRIPTS: Record<
 }
 
 export const RedisRatesBackendConfig = v.object({
-	keyPrefix: v.optional(v.pipe(v.string(), v.maxLength(256)), 'pluxel:rates:'),
+	keyPrefix: v.optional(
+		v.pipe(
+			v.string(),
+			v.maxLength(256),
+			v.check(isWellFormedUnicode, 'keyPrefix must be well-formed Unicode'),
+		),
+		'pluxel:rates:',
+	),
 })
 
 export type RedisRatesBackendPluginConfig = v.InferOutput<typeof RedisRatesBackendConfig>

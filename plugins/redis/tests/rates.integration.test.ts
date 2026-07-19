@@ -65,6 +65,34 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				)
 				expect(decisions.filter((decision) => !decision.denied)).toHaveLength(50)
 
+				const largeDeny = consumer.rates.use('integration.large-log-deny', {
+					algorithm: 'sliding-window-log',
+					limit: 130,
+					windowMs: 60_000,
+				})
+				const largeAllows = await Promise.all(
+					Array.from({ length: 130 }, () => largeDeny.consume('same')),
+				)
+				expect(largeAllows.every((decision) => !decision.denied)).toBe(true)
+				await expect(largeDeny.consume('same', { cost: 130 })).resolves.toMatchObject({
+					denied: true,
+					remaining: 0,
+				})
+
+				const partialExpiry = consumer.rates.use('integration.partial-expiry', {
+					algorithm: 'sliding-window-log',
+					limit: 5,
+					windowMs: 1_000,
+				})
+				await partialExpiry.consume('same', { cost: 2 })
+				await new Promise((resolve) => setTimeout(resolve, 550))
+				await partialExpiry.consume('same', { cost: 2 })
+				await new Promise((resolve) => setTimeout(resolve, 550))
+				await expect(partialExpiry.consume('same', { cost: 3 })).resolves.toMatchObject({
+					denied: false,
+					remaining: 0,
+				})
+
 				const backend = host.require(RedisRatesBackendPlugin)
 				const fixed = Object.freeze({
 					algorithm: 'fixed-window',

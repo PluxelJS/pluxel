@@ -103,6 +103,8 @@ describe('@pluxel/rates public API', () => {
 			expect(await limiter.consume('a')).toMatchObject({ denied: false })
 			expect(await limiter.consume(-0)).toMatchObject({ denied: false })
 			expect(await limiter.consume(0)).toMatchObject({ denied: false })
+			expect(await limiter.consume('\u{1f680}')).toMatchObject({ denied: false })
+			expect(await limiter.consume({ ['\u{1f680}']: 'value' })).toMatchObject({ denied: false })
 		})
 	})
 
@@ -111,8 +113,11 @@ describe('@pluxel/rates public API', () => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
 			await host.commit()
 			const rates = host.require(ConsumerA).rates
+			expect(() => rates.use('valid-\u{1f680}', Fixed)).not.toThrow()
 			expect(() => rates.use(' padded ', Fixed)).toThrow(RatesInvalidArgumentError)
 			expect(() => rates.use('control\u0000', Fixed)).toThrow(RatesInvalidArgumentError)
+			expect(() => rates.use('invalid\ud800', Fixed)).toThrow(RatesInvalidArgumentError)
+			expect(() => rates.use('invalid\ud801', Fixed)).toThrow(RatesInvalidArgumentError)
 			expect(() => rates.use('bad', { ...Fixed, extra: true } as never)).toThrow(
 				RatesInvalidArgumentError,
 			)
@@ -147,6 +152,14 @@ describe('@pluxel/rates public API', () => {
 				RatesInvalidArgumentError,
 			)
 			const limiter = rates.use('valid', Fixed)
+			await expect(limiter.consume('\ud800')).rejects.toBeInstanceOf(RatesInvalidArgumentError)
+			await expect(limiter.consume('\ud801')).rejects.toBeInstanceOf(RatesInvalidArgumentError)
+			await expect(limiter.consume({ ['\ud800']: 'value' })).rejects.toBeInstanceOf(
+				RatesInvalidArgumentError,
+			)
+			await expect(limiter.consume({ field: '\ud801' })).rejects.toBeInstanceOf(
+				RatesInvalidArgumentError,
+			)
 			await expect(limiter.consume(Number.NaN)).rejects.toMatchObject({
 				code: 'RATES_INVALID_ARGUMENT',
 				argument: 'identity',
@@ -202,6 +215,38 @@ describe('@pluxel/rates public API', () => {
 			await expect(host.require(ConsumerA).local.consume('user')).rejects.toBeInstanceOf(
 				RatesUnavailableError,
 			)
+		})
+	})
+
+	it('rejects malformed third-party backend decisions at the coordinator boundary', async () => {
+		@Plugin(RatesBackend, { name: 'MalformedRatesBackend' })
+		class MalformedRatesBackend extends RatesBackend {
+			private calls = 0
+
+			async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
+				this.calls += 1
+				if (this.calls === 1) {
+					return { denied: false, remaining: Number.NaN, resetAt: 1 }
+				}
+				if (this.calls === 2) return { denied: false, remaining: 3, resetAt: 1 }
+				return { denied: true, remaining: 1, retryAfterMs: 1, resetAt: 1 }
+			}
+		}
+		await withHost(async (host) => {
+			host.add([MalformedRatesBackend, RatesPlugin, ConsumerA])
+			await host.commit()
+			await expect(host.require(ConsumerA).local.consume('user')).rejects.toMatchObject({
+				code: 'RATES_UNAVAILABLE',
+				cause: expect.any(TypeError),
+			})
+			await expect(host.require(ConsumerA).local.consume('other')).rejects.toMatchObject({
+				code: 'RATES_UNAVAILABLE',
+				cause: expect.any(TypeError),
+			})
+			await expect(host.require(ConsumerA).local.consume('third')).rejects.toMatchObject({
+				code: 'RATES_UNAVAILABLE',
+				cause: expect.any(TypeError),
+			})
 		})
 	})
 
@@ -368,6 +413,63 @@ describe('@pluxel/rates memory algorithms', () => {
 			})
 			vi.advanceTimersByTime(1_000)
 			await expect(limiter.consume('attacker')).resolves.toMatchObject({ denied: false })
+		})
+	})
+
+	it('bounds routine expiry cleanup while reclaiming one slot at capacity', async () => {
+		vi.useFakeTimers()
+		vi.setSystemTime(20_000)
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			host.cfg(MemoryRatesBackendPlugin).set({ config: { maxIdentities: 1_000 } })
+			await host.commit()
+			const limiter = host.require(ConsumerA).rates.use('bounded-cleanup', Fixed)
+			await Promise.all(
+				Array.from({ length: 1_000 }, (_, index) => limiter.consume(`identity-${index}`)),
+			)
+			vi.advanceTimersByTime(1_000)
+			const deletes = vi.spyOn(ExpiryHeap.prototype, 'delete')
+
+			await expect(limiter.consume('new-identity')).resolves.toMatchObject({ denied: false })
+			expect(deletes).toHaveBeenCalledTimes(64)
+			deletes.mockClear()
+
+			// A second request also pays only the fixed routine budget even though hundreds
+			// of expired identities remain queued.
+			await expect(limiter.consume('another-new-identity')).resolves.toMatchObject({
+				denied: false,
+			})
+			expect(deletes.mock.calls.length).toBeLessThanOrEqual(64)
+		})
+	})
+
+	it('recreates the requested expired identity even when it is beyond the cleanup budget', async () => {
+		vi.useFakeTimers()
+		vi.setSystemTime(30_000)
+		await withHost(async (host) => {
+			host.add(MemoryRatesBackendPlugin)
+			await host.commit()
+			const backend = host.require(MemoryRatesBackendPlugin)
+			for (let index = 0; index < 100; index++) {
+				await backend.consume({
+					key: index === 99 ? 'zzzz' : `key-${String(index).padStart(3, '0')}`,
+					policy: Fixed,
+					cost: 1,
+				})
+			}
+			vi.advanceTimersByTime(1_000)
+			await expect(
+				backend.consume({
+					key: 'zzzz',
+					policy: Object.freeze({
+						algorithm: 'token-bucket',
+						limit: 1,
+						windowMs: 1_000,
+						burst: 1,
+					}),
+					cost: 1,
+				}),
+			).resolves.toMatchObject({ denied: false })
 		})
 	})
 

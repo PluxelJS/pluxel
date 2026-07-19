@@ -800,9 +800,9 @@ export function WorkbenchShell() {
 									<div className="plx-workbench__surface">
 										<WorkbenchSplitView
 											className="plx-workbench__panelGroup"
-											defaultLayout={currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT}
+											layout={currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT}
 											id="pluxel-workbench-main"
-											onLayoutChanged={handleLayoutChanged}
+											onLayoutCommit={handleLayoutChanged}
 											orientation="horizontal"
 											primary={primaryPane}
 											secondary={secondaryPane}

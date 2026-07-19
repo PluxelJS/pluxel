@@ -41,7 +41,7 @@ policy 在同步 `use()` 时拷贝、解析并冻结；配置错误会使 consum
 - `sliding-window-counter`：O(1) 状态的近似滚动窗口；
 - `sliding-window-log`：精确滚动窗口，`limit` 上限为 10,000。
 
-`consume(identity, { cost? })` 的 cost 默认是 `1`。identity 可为 primitive、最多 16 项的 tuple，或值均为 primitive 的 plain record；框架进行带类型的 canonical encoding，record 字段顺序不影响 identity。不要使用 credential 或 access token 作为 identity。
+`consume(identity, { cost? })` 的 cost 默认是 `1`。identity 可为 primitive、最多 16 项的 tuple，或值均为 primitive 的 plain record；框架进行带类型的 canonical encoding，record 字段顺序不影响 identity。name、string identity 和 record 字段名必须是 well-formed Unicode，不得包含未配对 surrogate。不要使用 credential 或 access token 作为 identity。
 
 ## Decision 与错误
 
@@ -91,6 +91,8 @@ import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 ```
 
-第三方 adapter 从 `@pluxel/rates/backend` 导入 `RatesBackend` 和 request contract。Redis adapter 对 canonical key 做 SHA-256，在一个 server-timed 单 key Lua 调用中完成 policy check、状态转移和 TTL。
+第三方 adapter 从 `@pluxel/rates/backend` 导入 `RatesBackend` 和 request contract；返回值不是 exact、safe-integer 且
+符合 resolved policy capacity bound 的 `RateDecision` 时，coordinator 以 `RATES_UNAVAILABLE` 拒绝。Redis adapter 对 canonical key 做 SHA-256，在一个
+server-timed 单 key Lua 调用中完成 policy check、状态转移和 TTL。
 
 维护约束见 [`DESIGN.md`](DESIGN.md)。

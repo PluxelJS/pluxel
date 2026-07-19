@@ -120,6 +120,7 @@ adapter 使用上述 script helper 原子读取 GET + PTTL，处理 TTL、struct
 memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；
+- cache/rates `keyPrefix` 必须是 well-formed Unicode，不接受未配对 surrogate；
 - Cache canonical key 直接追加到 managed prefix，不再 URI 二次转义，保持 byte bound 与 Redis key 紧凑；
 - `ttlMs: 0` 表示无 expiry，正 TTL 使用 millisecond PX；
 - value codec 使用版本头与 Node `v8.serialize()`，支持 BigInt、Date、Buffer、Map/Set；
@@ -148,6 +149,10 @@ adapter 为 token bucket、fixed window、sliding window counter 和 sliding win
 identity 的 SHA-256 digest，不暴露 raw identity，policy 也不参与 key。多个进程不会因 `GET` + `SET` 竞态超发；
 SCRIPT FLUSH 后由 Lua helper 自动回退 EVAL。单 key 操作不产生 Cluster cross-slot 问题，需要固定 hash tag 时可在
 `keyPrefix` 中配置。
+
+sliding window log 的正常 allow 只读取固定大小的 metadata/边界信息；过期清理只读取到期事件，deny 使用一次最多
+10,000 条的 bounded read 计算 `retryAfterMs` 并核对 live cost 总和。rates storage key 必须由 adapter 独占，不能由
+其他 Redis writer 修改。
 
 ## Workbench 多态选择
 

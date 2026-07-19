@@ -1,15 +1,17 @@
-import { v } from '@pluxel/runtime'
+import { createMemoryPersistenceBackend, type PersistenceBackend, v } from '@pluxel/runtime'
 import { withRuntimeHost } from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
 } from '@pluxel/runtime/web/paths'
-import type { FetchLike } from 'wretch'
+import { ProxyAgent } from 'undici'
+import wretch, { type FetchLike } from 'wretch'
 import { retry } from 'wretch/middlewares'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchConfig } from '../src/config.ts'
+import { createOutboundPolicy } from '../src/outbound-policy.ts'
 import {
 	ConsumerA,
 	ConsumerB,
@@ -22,6 +24,36 @@ let fetchB: FetchLike
 
 function jsonResponse(value: unknown, status = 200): Response {
 	return Response.json(value, { status })
+}
+
+function gatedSettingsPersistence(): {
+	backend: PersistenceBackend
+	reads: () => number
+	release: () => void
+} {
+	const memory = createMemoryPersistenceBackend()
+	let settingsReads = 0
+	let releaseRead!: () => void
+	const readGate = new Promise<void>((resolve) => (releaseRead = resolve))
+	return {
+		reads: () => settingsReads,
+		release: () => releaseRead(),
+		backend: {
+			...memory,
+			namespace(name) {
+				const namespace = memory.namespace(name)
+				if (name !== '@pluxel/wretch') return namespace
+				return {
+					...namespace,
+					getText: async (key) => {
+						settingsReads += 1
+						await readGate
+						return namespace.getText(key)
+					},
+				}
+			},
+		},
+	}
 }
 
 beforeEach(() => {
@@ -208,6 +240,54 @@ describe('WretchPlugin', () => {
 		)
 	})
 
+	it('shares one managed-settings initialization across concurrent calls', async () => {
+		const persistence = gatedSettingsPersistence()
+
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerB])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+
+				const http = host.require(ConsumerB).http
+				const first = http.enableManagedSettings()
+				const second = http.enableManagedSettings()
+				await Promise.resolve()
+				expect(persistence.reads()).toBe(1)
+				persistence.release()
+				await Promise.all([first, second])
+				expect(http.workbenchSettings().get().settings.headers).toEqual({})
+			},
+			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+		)
+	})
+
+	it('does not publish managed settings loaded by a replaced provider generation', async () => {
+		const persistence = gatedSettingsPersistence()
+
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerB])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+
+				const http = host.require(ConsumerB).http
+				const stale = http.enableManagedSettings()
+				await waitFor(() => expect(persistence.reads()).toBe(1))
+				host.restart(WretchPlugin, { cascadeDependents: false })
+				await host.commit()
+				persistence.release()
+
+				await expect(stale).rejects.toThrow('stopped or replaced plugin generation')
+				host.restart(WretchPlugin, { cascadeDependents: true })
+				await host.commit()
+				await expect(host.require(ConsumerB).http.enableManagedSettings()).resolves.toBeUndefined()
+				expect(persistence.reads()).toBe(2)
+			},
+			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+		)
+	})
+
 	it('rejects a consumer timeout above the host limit', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -304,6 +384,208 @@ describe('WretchPlugin', () => {
 			},
 			{ workbench: false },
 		)
+	})
+
+	it('revokes cached clients with caller and provider generations', async () => {
+		let calls = 0
+		fetchB = async () => {
+			calls += 1
+			return jsonResponse({ ok: true })
+		}
+		setFixtureFetches(fetchA, fetchB)
+
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerB])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+
+				const callerClient = host.require(ConsumerB).client
+				host.remove(ConsumerB)
+				await host.commit()
+				await expect(callerClient.get('/stale-caller').json()).rejects.toThrow(
+					'stopped or replaced plugin generation',
+				)
+
+				host.add(ConsumerB)
+				await host.commit()
+				const providerClient = host.require(ConsumerB).client
+				host.restart(WretchPlugin, { cascadeDependents: true })
+				await host.commit()
+				await expect(providerClient.get('/stale-provider').json()).rejects.toThrow(
+					'stopped or replaced plugin generation',
+				)
+				await expect(host.require(ConsumerB).client.get('/current').json()).resolves.toEqual({
+					ok: true,
+				})
+				expect(calls).toBe(1)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('revokes cached managed-settings RPC with its caller generation', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerA])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+
+				const commands = host.require(ConsumerA).http.workbenchSettings()
+				host.remove(ConsumerA)
+				await host.commit()
+
+				expect(() => commands.get()).toThrow('stopped or replaced plugin generation')
+				await expect(commands.update({ headers: {} })).rejects.toThrow(
+					'stopped or replaced plugin generation',
+				)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('releases managed proxy state on a non-cascade provider restart', async () => {
+		const close = vi.spyOn(ProxyAgent.prototype, 'close')
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					host.add([WretchPlugin, ConsumerA])
+					host.cfg(WretchPlugin).enable()
+					await host.commit()
+
+					await host.require(ConsumerA).http.workbenchSettings().update({
+						headers: {},
+						proxyUrl: 'http://proxy.example:8080',
+					})
+					const before = close.mock.calls.length
+					host.restart(WretchPlugin, { cascadeDependents: false })
+					await host.commit()
+					expect(close.mock.calls.length).toBeGreaterThan(before)
+				},
+				{ workbench: false },
+			)
+		} finally {
+			close.mockRestore()
+		}
+	})
+
+	it('rejects queued attempts and aborts in-flight fetches during teardown', async () => {
+		let started = 0
+		fetchA = async (_url, options) => {
+			started += 1
+			return new Promise((_resolve, reject) => {
+				const signal = options.signal
+				if (signal?.aborted) reject(signal.reason)
+				else signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+			})
+		}
+		setFixtureFetches(fetchA, fetchB)
+
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerA])
+				host.cfg(WretchPlugin).set({ config: { maxConcurrentRequests: 1, maxQueuedRequests: 1 } })
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+
+				const client = host.require(ConsumerA).client
+				const first = client
+					.get('/active')
+					.json()
+					.then(
+						() => undefined,
+						(error: unknown) => error,
+					)
+				await waitFor(() => expect(started).toBe(1))
+				const queued = client
+					.get('/queued')
+					.json()
+					.then(
+						() => undefined,
+						(error: unknown) => error,
+					)
+
+				host.remove(WretchPlugin)
+				await host.commit()
+				const [activeError, queuedError] = await Promise.all([first, queued])
+				expect(activeError).toMatchObject({
+					message: expect.stringContaining('stopped or replaced plugin generation'),
+				})
+				expect(queuedError).toMatchObject({
+					message: expect.stringContaining('stopped or replaced plugin generation'),
+				})
+				expect(started).toBe(1)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('disposes the provider scheduler independently of caller cleanup', async () => {
+		let started = 0
+		const policy = createOutboundPolicy({
+			timeoutMs: 0,
+			maxConcurrentRequests: 1,
+			maxQueuedRequests: 1,
+			allowedOrigins: [],
+		})
+		const client = wretch('https://policy.example')
+			.middlewares([policy.middleware()])
+			.fetchPolyfill(async (_url, options) => {
+				started += 1
+				return new Promise((_resolve, reject) => {
+					const signal = options.signal
+					if (signal?.aborted) reject(signal.reason)
+					else signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+				})
+			})
+
+		const active = client
+			.get('/active')
+			.res()
+			.then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+		await waitFor(() => expect(started).toBe(1))
+		const queued = client
+			.get('/queued')
+			.res()
+			.then(
+				() => undefined,
+				(error: unknown) => error,
+			)
+		policy.dispose()
+
+		const [activeError, queuedError] = await Promise.all([active, queued])
+		expect(activeError).toMatchObject({
+			message: expect.stringContaining('stopped or replaced plugin generation'),
+		})
+		expect(queuedError).toMatchObject({
+			message: expect.stringContaining('stopped or replaced plugin generation'),
+		})
+		expect(started).toBe(1)
+	})
+
+	it('does not enter fetch when policy disposal wins the admission continuation race', async () => {
+		let started = 0
+		const policy = createOutboundPolicy({
+			timeoutMs: 0,
+			maxConcurrentRequests: 1,
+			maxQueuedRequests: 1,
+			allowedOrigins: [],
+		})
+		const pending = wretch('https://policy.example')
+			.middlewares([policy.middleware()])
+			.fetchPolyfill(async () => {
+				started += 1
+				return jsonResponse({ ok: true })
+			})
+			.get('/race')
+			.res()
+		policy.dispose()
+
+		await expect(pending).rejects.toThrow('stopped or replaced plugin generation')
+		expect(started).toBe(0)
 	})
 
 	it('applies the host timeout to a custom fetch boundary', async () => {
