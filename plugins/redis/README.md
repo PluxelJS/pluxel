@@ -1,6 +1,6 @@
 # `@pluxel/redis`
 
-Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin` 与 typed Lua script helper。Redis 原生 consumer
+Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`RedisRatesBackendPlugin` 与 typed Lua script helper。Redis 原生 consumer
 依赖抽象 `Redis`；host 选择默认 standalone provider、Vault-aware provider、Sentinel、Cluster 或平台 binding 实现。
 
 ```ts
@@ -21,8 +21,7 @@ host.add([RedisPlugin, QueuePlugin])
 ```
 
 `Redis` 是 raw server capability，不自动添加 caller namespace。使用普通 Redis command、transaction、stream 或
-pub/sub 的插件需要定义自己的 key/channel contract。需要 caller-aware cache 时直接使用本包导出的
-`RedisCacheBackendPlugin`。
+pub/sub 的插件需要定义自己的 key/channel contract。需要 caller-aware cache/rates 时使用本包导出的对应 backend。
 
 ## 默认 standalone provider
 
@@ -63,7 +62,7 @@ class PlatformRedisPlugin extends Redis {
 ```
 
 该 provider 自己通过 Vault 或平台 secret binding 创建 client，并遵守同样的 lifecycle cleanup。consumer 与
-`RedisCacheBackendPlugin` 都不需要修改。
+`RedisCacheBackendPlugin`、`RedisRatesBackendPlugin` 都不需要修改。
 
 ## Lua script helper
 
@@ -96,7 +95,7 @@ runner；偶发调用也可以直接使用 `redis.scripts.run(definition, call)`
 ## 多连接
 
 `Redis` opt-in `ForkablePlugin`，因此同一 host 可以创建 cache、queue、session 等多个 Redis connection fork，并为每个
-fork 配置不同 endpoint/database。consumer 或 `RedisCacheBackendPlugin` 通过正常 dependency override 选择具体 fork，
+fork 配置不同 endpoint/database。consumer 或内置 backend 通过正常 dependency override 选择具体 fork，
 不需要在 Redis API 中增加 connection name 参数。
 
 ## 内置 cache backend
@@ -126,13 +125,32 @@ memory-only host 仍不会安装 node-redis。
 - clear 转义 Redis glob metacharacter，使用 cursor SCAN 和 `deleteBatchSize` 限制 UNLINK；
 - same-key request/load single-flight 仍由 `CachePlugin` 负责，adapter 不维护第二套队列。
 
+## 内置 rates backend
+
+```ts
+import { RatesPlugin } from '@pluxel/rates'
+import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
+
+host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
+
+host.cfg(RedisRatesBackendPlugin).set({
+	config: { keyPrefix: 'pluxel:rates:' },
+})
+```
+
+adapter 为 token bucket、fixed window、sliding window counter 和 sliding window log 各使用一个静态单 key Lua script。
+脚本读取 Redis `TIME`，校验完整 resolved policy、原子完成状态转移并设置行为影响期 TTL；storage key 是 canonical
+identity 的 SHA-256 digest，不暴露 raw identity，policy 也不参与 key。多个进程不会因 `GET` + `SET` 竞态超发；
+SCRIPT FLUSH 后由 Lua helper 自动回退 EVAL。单 key 操作不产生 Cluster cross-slot 问题，需要固定 hash tag 时可在
+`keyPrefix` 中配置。
+
 ## Workbench 多态选择
 
 Workbench 的 host-owned“依赖注入”卡片会根据 constructor 中的抽象 `Redis` 自动列出全部
 `@Plugin(Redis, ...)` providers。选择结果属于 RuntimeState，commit 会重启被修改 plugin 及其 dependent closure。
 `@pluxel/redis` 不注册专属 Workbench extension，headless host 使用同一 graph contract。
 
-同一个卡片也会根据 `CachePlugin(CacheBackend)` 列出 `MemoryCacheBackendPlugin` 与本包的
-`RedisCacheBackendPlugin`，因此 host 可以独立选择 cache backend 和底层 Redis provider。
+同一个卡片也会根据 `CachePlugin(CacheBackend)`、`RatesPlugin(RatesBackend)` 列出 memory 与本包 Redis provider，
+因此 host 可以独立选择 cache backend、rates backend 和底层 Redis provider。
 
 完整约束见 [`DESIGN.md`](DESIGN.md)。

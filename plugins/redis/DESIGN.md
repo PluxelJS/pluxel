@@ -2,14 +2,15 @@
 
 ## 目标与边界
 
-`@pluxel/redis` 拥有 Redis connection capability，并附带最常用的 Redis cache adapter 与 Lua authoring primitive：
+`@pluxel/redis` 拥有 Redis connection capability，并附带常用的 Redis cache/rates adapter 与 Lua authoring primitive：
 
 ```text
 Redis consumer -> Redis abstract token -> selected Redis provider -> node-redis/platform client
 ```
 
 Redis raw capability 不提供 caller namespace、distributed lock、queue abstraction 或业务 schema。cache namespace 与
-single-flight 仍由 `@pluxel/cache` 拥有；本包内的 adapter 只桥接两侧 contract。
+single-flight 仍由 `@pluxel/cache` 拥有，rates namespace 与 decision 仍由 `@pluxel/rates` 拥有；本包内 adapter 只桥接
+两侧 contract。
 
 ## API
 
@@ -20,6 +21,7 @@ single-flight 仍由 `@pluxel/cache` 拥有；本包内的 adapter 只桥接两�
 - `defineRedisScript()` / `Redis.scripts`：typed Lua definition、EVALSHA 与 NOSCRIPT fallback；
 - `RedisPlugin`：credential-free standalone provider；
 - `RedisCacheBackendPlugin`：内置 `CacheBackend` adapter；
+- `RedisRatesBackendPlugin`：内置四算法 `RatesBackend` adapter；
 - `RedisConfig`：连接与有界 queue 配置；
 - `RedisClient`：client type；
 - `RedisNotRunningError` / `RedisConnectionError`：明确 lifecycle failure。
@@ -67,14 +69,17 @@ provider 使用宿主已经安装的安全能力。
 
 ## Package composition
 
-`@pluxel/redis` 依赖 node-redis 与轻量 `@pluxel/cache`，并直接导出 cache adapter。依赖方向是：
+`@pluxel/redis` 依赖 node-redis 与轻量 `@pluxel/cache`，并从显式 `@pluxel/rates/backend` subpath 实现 adapter。依赖方向是：
 
 ```text
 @pluxel/cache <- @pluxel/redis
 CachePlugin   <- RedisCacheBackendPlugin -> Redis
+
+@pluxel/rates <- @pluxel/redis
+RatesPlugin   <- RedisRatesBackendPlugin -> Redis
 ```
 
-Redis consumer 只安装一个 Redis package，就同时拥有 raw capability、Lua helper 与可选 cache integration；
-memory-only cache consumer 仍不安装 node-redis。adapter 源码是本包内唯一同时知道 `CacheBackend` 与 `Redis` 的模块。
+Redis consumer 只安装一个 Redis package，就同时拥有 raw capability、Lua helper 与可选 cache/rates integration；
+memory-only consumer 仍不安装 node-redis。adapter 源码是本包内唯一同时知道 backend contract 与 `Redis` 的模块。
 
 Workbench 只投影 constructor dependency selection，不属于 Redis capability，也不影响 headless 生命周期。

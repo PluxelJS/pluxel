@@ -45,9 +45,10 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 ## 首批插件
 
 - [`@pluxel/cache`](cache/README.md)：同步 local cache、多态异步 backend 与跨 consumer 请求合并。
-- [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache backend。
+- [`@pluxel/rates`](rates/README.md)：caller-aware 四算法 admission control、原子 decision 与 memory backend。
+- [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
 - [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
   - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
 
-`@pluxel/cache` 已实现但仍保持 private，以便在首批真实 consumer 中稳定 contract；`@pluxel/wretch` 提供
+首批官方插件仍保持 private，以便在真实 consumer 中稳定 contract；`@pluxel/wretch` 提供
 原生 immutable Wretch base、最小宿主级出站策略和可选的统一 Workbench HTTP 设置 Port。

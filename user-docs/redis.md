@@ -42,7 +42,7 @@ const acquired = await claim({ keys: [`job:${id}`], arguments: [ownerId] })
 ```
 
 Redis 是 raw capability，不按 caller 自动添加 key prefix。业务 key/channel contract 属于 consumer。需要 caller-aware
-缓存时安装三个独立 package：
+缓存时安装：
 
 ```ts
 import { CachePlugin } from '@pluxel/cache'
@@ -52,5 +52,6 @@ host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 ```
 
 Workbench 会从 `CachePlugin(CacheBackend)` 和 `RedisCacheBackendPlugin(Redis)` 两层 constructor dependency 自动生成
-provider 选择，不需要 Redis 或 cache 注册专属管理 UI。详细配置、Lua helper 和 cache adapter 见
+provider 选择。caller-aware admission control 使用 `RatesPlugin` 与本包的 `RedisRatesBackendPlugin`；四种算法都通过
+server time + digest key + 单 key Lua 跨实例原子判定。Redis、cache 或 rates 都不需要专属管理 UI。详细配置和 adapter 见
 [`../plugins/redis/README.md`](../plugins/redis/README.md)。

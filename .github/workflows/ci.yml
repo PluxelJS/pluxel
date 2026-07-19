@@ -33,6 +33,17 @@ jobs:
     name: Verify
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -74,6 +85,7 @@ jobs:
       - name: Typecheck, build, and test
         env:
           BASE_REF: ${{ github.base_ref }}
+          PLUXEL_REDIS_TEST_URL: redis://127.0.0.1:6379
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
