@@ -1,7 +1,13 @@
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, relative } from 'node:path'
+import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
 import { staticApplication } from '../src/cli/static-application.ts'
+
+vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
 function pluginNames(config: { plugins?: unknown }): string[] {
 	return (config.plugins as Array<{ name?: string } | null | undefined>)
@@ -102,6 +108,122 @@ describe('staticApplication', () => {
 		expect(resolve).toHaveBeenCalledWith('pg', '/tmp/pluxel-static-node/src/app.ts', {})
 	})
 
+	it('traces declared runtime packages that are absent from the module graph', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-static-residual-'))
+		const packageRoot = join(root, 'workspace', 'fixture-runtime')
+		try {
+			await mkdir(packageRoot, { recursive: true })
+			await mkdir(join(root, 'node_modules'), { recursive: true })
+			await symlink(packageRoot, join(root, 'node_modules', 'fixture-runtime'), 'dir')
+			await writeFile(
+				join(packageRoot, 'package.json'),
+				JSON.stringify({ name: 'fixture-runtime', version: '1.0.0', main: './index.cjs' }),
+			)
+			await writeFile(join(packageRoot, 'index.cjs'), 'module.exports = { loaded: true }\n')
+			await writeFile(join(packageRoot, 'runtime.asset'), 'runtime-only asset\n')
+
+			const config = staticApplication({
+				cwd: root,
+				entry: './src/pluxel.static.ts',
+				outDir: './dist',
+				variant: 'headless',
+				target: 'node',
+				lint: false,
+				residualDependencies: { fullTrace: ['fixture-runtime'] },
+			})
+			const plugin = (
+				config.plugins as Array<{
+					name?: string
+					buildStart?: unknown
+					writeBundle?: unknown
+				}>
+			).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+			const buildStart = plugin?.buildStart as
+				| ((this: {
+						resolve: ReturnType<typeof vi.fn>
+						error(message: string): never
+				  }) => Promise<void>)
+				| undefined
+			const writeBundle = (
+				plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
+			)?.handler
+			const resolve = vi.fn()
+			vi.mocked(traceNodeModules).mockImplementationOnce(async (input, traceOptions) => {
+				const base = traceOptions.nft?.base ?? '/'
+				const fileList = new Set(
+					input
+						.flatMap((file) => [file, join(dirname(file), 'package.json')])
+						.map((file) => relative(base, file)),
+				)
+				await traceOptions.hooks?.traceResult?.({ fileList } as never)
+				await traceOptions.hooks?.tracedPackages?.({})
+			})
+
+			await buildStart?.call({
+				resolve,
+				error(message) {
+					throw new Error(message)
+				},
+			})
+			await writeBundle?.call({})
+
+			expect(resolve).not.toHaveBeenCalled()
+			expect(traceNodeModules).toHaveBeenCalledWith(
+				[join(packageRoot, 'index.cjs')],
+				expect.objectContaining({
+					rootDir: root,
+					outDir: join(root, 'dist'),
+					fullTraceInclude: expect.arrayContaining(['fixture-runtime']),
+				}),
+			)
+			await expect(
+				readFile(join(root, 'dist/node_modules/fixture-runtime/runtime.asset'), 'utf8'),
+			).resolves.toBe('runtime-only asset\n')
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('rejects residual dependency subpaths and invalid scoped names', () => {
+		for (const packageName of ['fixture-runtime/subpath', '@scope', 'node:fs']) {
+			expect(() =>
+				staticApplication({
+					entry: './src/pluxel.static.ts',
+					residualDependencies: { packages: [packageName] },
+				}),
+			).toThrow('must be a package name without a subpath')
+		}
+	})
+
+	it('fails the build when a declared residual package cannot be resolved', async () => {
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-missing-residual',
+			entry: './src/pluxel.static.ts',
+			residualDependencies: { packages: ['missing-runtime-package'] },
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				buildStart?: unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+		const buildStart = plugin?.buildStart as
+			| ((this: {
+					resolve: ReturnType<typeof vi.fn>
+					error(message: string): never
+			  }) => Promise<void>)
+			| undefined
+
+		await expect(
+			buildStart?.call({
+				resolve: vi.fn(async () => null),
+				error(message) {
+					throw new Error(message)
+				},
+			}),
+		).rejects.toThrow('residual dependency "missing-runtime-package" cannot be resolved')
+	})
+
 	it('rejects unsupported platform targets instead of emitting incomplete bundles', () => {
 		expect(() =>
 			staticApplication({
@@ -113,15 +235,14 @@ describe('staticApplication', () => {
 	})
 
 	it('keeps production bootstrap imports inside the directly installed route package', async () => {
-		const source = await import('node:fs/promises').then(({ readFile }) =>
-			readFile(new URL('../src/cli/static-application.ts', import.meta.url), 'utf8'),
+		const source = await import('node:fs/promises').then(({ readFile: readSourceFile }) =>
+			readSourceFile(new URL('../src/cli/static-application.ts', import.meta.url), 'utf8'),
 		)
 
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
 		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
-		expect(source).toContain(
-			'fullTraceInclude: [...FullTracePackages, ...RuntimeFullTracePackages]',
-		)
+		expect(source).toContain('...RuntimeFullTracePackages')
+		expect(source).toContain('...residualDependencies.fullTrace')
 	})
 })

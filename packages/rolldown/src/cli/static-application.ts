@@ -15,14 +15,27 @@ export type StaticApplicationBuildOptions = {
 	outDir?: string
 	variant?: 'headless' | 'workbench'
 	target?: 'node'
+	residualDependencies?: StaticApplicationResidualDependencies
 	minify?: boolean
 	sourcemap?: boolean
 	lint?: boolean
 }
 
+export type StaticApplicationResidualDependencies = {
+	packages?: readonly string[]
+	fullTrace?: readonly string[]
+}
+
 type StaticApplicationBuildState = {
 	name?: string
 	residualPackages: string[]
+}
+
+type DeclaredWorkspacePackage = {
+	name: string
+	root: string
+	version: string
+	packageJson: Record<string, unknown>
 }
 
 const RuntimeResidualPackages = ['@electric-sql/pglite', 'pg'] as const
@@ -36,6 +49,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
 		throw new Error('[static-application] only the node target is currently supported')
+	const residualDependencies = resolveResidualDependencies(options.residualDependencies)
 	const state: StaticApplicationBuildState = { residualPackages: [] }
 	const buildDir = relative(cwd, outDir) || '.'
 	const sourcePipeline = createPluginBuildPipeline({
@@ -69,9 +83,20 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 			nf3ExternalsPlugin({
 				cwd,
 				outDir,
-				include: [...NodeNativePackages, ...NonBundleablePackages, ...RuntimeResidualPackages],
+				include: [
+					...NodeNativePackages,
+					...NonBundleablePackages,
+					...RuntimeResidualPackages,
+					...residualDependencies.packages,
+				],
+				declaredPackages: residualDependencies.packages,
+				declaredFullTracePackages: residualDependencies.fullTrace,
 				conditions: ['node', 'import', 'default'],
-				fullTraceInclude: [...FullTracePackages, ...RuntimeFullTracePackages],
+				fullTraceInclude: [
+					...FullTracePackages,
+					...RuntimeFullTracePackages,
+					...residualDependencies.fullTrace,
+				],
 				onTracedPackages(packages) {
 					state.residualPackages = Object.keys(packages).sort()
 				},
@@ -92,14 +117,48 @@ function nf3ExternalsPlugin(options: {
 	cwd: string
 	outDir: string
 	include: readonly string[]
+	declaredPackages: readonly string[]
+	declaredFullTracePackages: readonly string[]
 	conditions: string[]
 	fullTraceInclude: string[]
 	onTracedPackages(packages: Record<string, unknown>): void
 }): Plugin {
 	const include = new Set(options.include)
 	const tracedPaths = new Set<string>()
+	const declaredWorkspacePackages = new Map<string, DeclaredWorkspacePackage>()
 	return {
 		name: 'pluxel:nf3-externals',
+		async buildStart() {
+			tracedPaths.clear()
+			declaredWorkspacePackages.clear()
+			const requireFromApplication = createRequire(resolve(options.cwd, 'package.json'))
+			for (const packageName of options.declaredPackages) {
+				let resolved: string | undefined
+				let requireError: unknown
+				try {
+					resolved = requireFromApplication.resolve(packageName)
+				} catch (error) {
+					requireError = error
+				}
+				if (!resolved || !isAbsolute(resolved)) {
+					const imported = await this.resolve(packageName, resolve(options.cwd, 'package.json'), {
+						skipSelf: true,
+					})
+					if (imported?.id && isAbsolute(imported.id)) resolved = imported.id
+				}
+				if (!resolved || !isAbsolute(resolved)) {
+					const detail = requireError instanceof Error ? `: ${requireError.message}` : ''
+					this.error(
+						`[static-application] residual dependency ${JSON.stringify(packageName)} cannot be resolved from ${options.cwd}${detail}`,
+					)
+				}
+				tracedPaths.add(resolved.split('?', 1)[0])
+				const declaredPackage = await findDeclaredPackage(resolved, packageName)
+				if (!/(^|[\\/])node_modules([\\/]|$)/.test(declaredPackage.root)) {
+					declaredWorkspacePackages.set(packageName, declaredPackage)
+				}
+			}
+		},
 		async resolveId(id, importer, resolveOptions) {
 			const packageName = readPackageName(id)
 			if (!packageName || !include.has(packageName)) return null
@@ -115,21 +174,169 @@ function nf3ExternalsPlugin(options: {
 		writeBundle: {
 			order: 'post',
 			async handler() {
-				if (tracedPaths.size === 0) return
+				if (tracedPaths.size === 0) {
+					options.onTracedPackages({})
+					return
+				}
 				const { traceNodeModules } = await import('nf3')
+				const traceBase = findFilesystemRoot(options.cwd)
+				const workspaceFiles = new Map<string, Set<string>>()
 				await traceNodeModules([...tracedPaths], {
 					rootDir: options.cwd,
 					outDir: options.outDir,
 					conditions: options.conditions,
+					nft: { base: traceBase },
 					writePackageJson: false,
 					fullTraceInclude: options.fullTraceInclude,
 					hooks: {
-						tracedPackages: options.onTracedPackages,
+						traceResult(result) {
+							for (const rawFile of result.fileList) {
+								const file = isAbsolute(rawFile) ? rawFile : resolve(traceBase, rawFile)
+								for (const declaredPackage of declaredWorkspacePackages.values()) {
+									if (!isPathInside(declaredPackage.root, file)) continue
+									let files = workspaceFiles.get(declaredPackage.name)
+									if (!files) {
+										files = new Set()
+										workspaceFiles.set(declaredPackage.name, files)
+									}
+									files.add(file)
+								}
+							}
+						},
+						async tracedPackages(packages) {
+							for (const declaredPackage of declaredWorkspacePackages.values()) {
+								const files = options.declaredFullTracePackages.includes(declaredPackage.name)
+									? await listPackageFiles(declaredPackage.root)
+									: [...(workspaceFiles.get(declaredPackage.name) ?? [])]
+								if (files.length === 0) {
+									throw new Error(
+										`[static-application] residual dependency ${JSON.stringify(declaredPackage.name)} produced no runtime files`,
+									)
+								}
+								await copyWorkspacePackage(
+									declaredPackage,
+									files,
+									resolve(options.outDir, 'node_modules', declaredPackage.name),
+								)
+								const existing = packages[declaredPackage.name] as
+									| { name?: string; versions?: Record<string, unknown> }
+									| undefined
+								packages[declaredPackage.name] = {
+									name: declaredPackage.name,
+									versions: {
+										...existing?.versions,
+										[declaredPackage.version]: {
+											pkgJSON: declaredPackage.packageJson,
+											path: declaredPackage.root,
+											files,
+										},
+									},
+								}
+							}
+							options.onTracedPackages(packages)
+						},
 					},
 				})
 			},
 		},
 	}
+}
+
+async function findDeclaredPackage(
+	entry: string,
+	expectedName: string,
+): Promise<DeclaredWorkspacePackage> {
+	let root = dirname(entry)
+	while (true) {
+		const packageJsonPath = resolve(root, 'package.json')
+		if (existsSync(packageJsonPath)) {
+			const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8')) as Record<
+				string,
+				unknown
+			>
+			if (packageJson.name === expectedName) {
+				return {
+					name: expectedName,
+					root,
+					version: typeof packageJson.version === 'string' ? packageJson.version : '0.0.0',
+					packageJson,
+				}
+			}
+		}
+		const parent = dirname(root)
+		if (parent === root) break
+		root = parent
+	}
+	throw new Error(
+		`[static-application] residual dependency ${JSON.stringify(expectedName)} resolved outside its package root: ${entry}`,
+	)
+}
+
+function findFilesystemRoot(path: string): string {
+	let root = resolve(path)
+	while (dirname(root) !== root) root = dirname(root)
+	return root
+}
+
+function isPathInside(root: string, file: string): boolean {
+	const child = relative(root, file)
+	return child !== '' && child !== '..' && !child.startsWith('../') && !isAbsolute(child)
+}
+
+async function listPackageFiles(root: string): Promise<string[]> {
+	const entries = await readdir(root, { recursive: true, withFileTypes: true })
+	return entries
+		.filter((entry) => entry.isFile())
+		.map((entry) => resolve(entry.parentPath, entry.name))
+		.filter((file) => !relative(root, file).split('/').includes('node_modules'))
+}
+
+async function copyWorkspacePackage(
+	declaredPackage: DeclaredWorkspacePackage,
+	files: readonly string[],
+	destinationRoot: string,
+): Promise<void> {
+	await Promise.all(
+		files.map(async (file) => {
+			const subpath = relative(declaredPackage.root, file)
+			if (!subpath || subpath === '..' || subpath.startsWith('../') || isAbsolute(subpath)) return
+			const destination = resolve(destinationRoot, subpath)
+			await mkdir(dirname(destination), { recursive: true })
+			await cp(file, destination, { force: true })
+		}),
+	)
+}
+
+function resolveResidualDependencies(
+	value: StaticApplicationResidualDependencies | undefined,
+): Required<StaticApplicationResidualDependencies> {
+	const packages = readResidualPackageList(value?.packages, 'packages')
+	const fullTrace = [...new Set(readResidualPackageList(value?.fullTrace, 'fullTrace'))]
+	return {
+		packages: [...new Set([...packages, ...fullTrace])],
+		fullTrace,
+	}
+}
+
+function readResidualPackageList(value: readonly string[] | undefined, field: string): string[] {
+	if (value === undefined) return []
+	if (!Array.isArray(value)) {
+		throw new TypeError(`[static-application] residualDependencies.${field} must be an array`)
+	}
+	return value.map((packageName, index) => {
+		if (
+			typeof packageName !== 'string' ||
+			packageName.length === 0 ||
+			/\s/.test(packageName) ||
+			readPackageName(packageName) !== packageName ||
+			(packageName.startsWith('@') && packageName.split('/').length !== 2)
+		) {
+			throw new TypeError(
+				`[static-application] residualDependencies.${field}[${index}] must be a package name without a subpath`,
+			)
+		}
+		return packageName
+	})
 }
 
 function readPackageName(id: string): string | null {

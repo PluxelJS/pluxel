@@ -98,8 +98,17 @@ export default staticApplication({
 	entry: './src/pluxel.static.ts',
 	variant: 'workbench',
 	target: 'node',
+	residualDependencies: {
+		packages: ['@vendor/native-runtime'],
+		fullTrace: ['@vendor/runtime-with-dynamic-assets'],
+	},
 })
 ```
+
+通常不需要手写 `residualDependencies`；Pluxel 与 nf3 已覆盖框架 runtime 和已知原生 package。应用自己的 package
+若只通过 `createRequire()`、原生 binding loader 或运行时路径加载，加入 `packages` 后会从应用根解析并由 NFT 精确追踪。
+只有 package 内还有 NFT 无法静态发现的动态资源时才加入 `fullTrace`；`fullTrace` 自动隐含 `packages`。声明的 package
+无法解析会直接使构建失败，目标机不需要再运行 package install 或手工复制脚本。
 
 ```sh
 pnpm exec tsdown
