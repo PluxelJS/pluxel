@@ -22,6 +22,7 @@ import {
 	useSyncExternalStore,
 } from 'react'
 import { type PlxLogTheme, useThemeModel } from '../../theme'
+import { stringifyUnknown } from '../../utils/unknown'
 
 interface Props {
 	module?: string
@@ -446,9 +447,10 @@ function messageToText(record: RuntimeLogLine): string {
 		if (typeof part === 'string') return part
 		if (typeof part === 'number' || typeof part === 'boolean' || typeof part === 'bigint')
 			return String(part)
-		if (part === null || part === undefined) return String(part)
+		if (part === null) return 'null'
+		if (part === undefined) return 'undefined'
 		if (typeof part === 'object') return previewObject(part as object)
-		return String(part)
+		return stringifyUnknown(part)
 	}
 
 	for (let i = 0; i < parts.length; i++) {
@@ -745,12 +747,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	useEffect(() => {
 		setDraftFilter(defaultsFilter)
 		setActiveFilter(defaultsFilter)
-	}, [
-		defaultsFilter.pluginId,
-		defaultsFilter.context,
-		defaultsFilter.displayName,
-		defaultsFilter.category,
-	])
+	}, [defaultsFilter])
 
 	const dirty = useMemo(
 		() => !sameFilter(normalizeFilter(draftFilter), activeFilter),
@@ -950,7 +947,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 			es.onerror = () => {
 				setConnected(false)
-				if (adminAccessProbeInFlightRef.current) return
+				if (adminAccessProbeInFlightRef.current !== null) return
 				adminAccessProbeInFlightRef.current = probeAdminAccessBlocked().finally(() => {
 					adminAccessProbeInFlightRef.current = null
 				})
@@ -964,7 +961,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 		}
 
 		let es: EventSource | null = null
-		;(async () => {
+		void (async () => {
 			try {
 				const m = await fetchMeta()
 				if (disposed || ac.signal.aborted) return
@@ -993,7 +990,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 			rafRef.current = null
 			es?.close()
 		}
-	}, [filterQuery, transport, streamId])
+	}, [activeFilter, filterQuery, transport, streamId])
 
 	useEffect(() => {
 		followRef.current = follow
@@ -1214,7 +1211,9 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 										</button>
 										<datalist id={streamDatalistId}>
 											{streams.map((s) => (
-												<option key={s} value={s} />
+												<option key={s} value={s}>
+													{s}
+												</option>
 											))}
 										</datalist>
 									</div>

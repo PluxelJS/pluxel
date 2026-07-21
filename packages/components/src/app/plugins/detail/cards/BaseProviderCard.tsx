@@ -16,12 +16,14 @@ export function BaseProviderCard() {
 	const { pluginName, refetch } = usePluginScope()
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
-	const [info, setInfo] = useState<BaseProviderInfo | null>(null)
-	const [loading, setLoading] = useState(false)
+	const [infoByPlugin, setInfoByPlugin] = useState(() => new Map<string, BaseProviderInfo | null>())
+	const [loadingPlugins, setLoadingPlugins] = useState(() => new Set<string>())
+	const requestIdsRef = useRef(new Map<string, number>())
 	const mountedRef = useRef(true)
+	const info = infoByPlugin.get(pluginName) ?? null
+	const loading = loadingPlugins.has(pluginName)
 
 	useEffect(() => {
-		mountedRef.current = true
 		return () => {
 			mountedRef.current = false
 		}
@@ -29,22 +31,28 @@ export function BaseProviderCard() {
 
 	const load = useCallback(async () => {
 		if (!pluginName) return
-		setLoading(true)
+		const requestId = (requestIdsRef.current.get(pluginName) ?? 0) + 1
+		requestIdsRef.current.set(pluginName, requestId)
+		setLoadingPlugins((prev) => new Set(prev).add(pluginName))
 		try {
 			const res = await transport.withRpc((rpc) => inspectPluginBaseProvider(rpc, pluginName))
-			if (!mountedRef.current) return
-			setInfo(res ?? null)
+			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
+			setInfoByPlugin((prev) => new Map(prev).set(pluginName, res ?? null))
 		} catch (error) {
-			if (!mountedRef.current) return
-			setInfo(null)
+			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
+			setInfoByPlugin((prev) => new Map(prev).set(pluginName, null))
 			notify({
 				title: '读取提供者信息失败',
 				message: rpcErrorMessage(error, '无法读取 base provider 信息'),
 				color: 'red',
 			})
 		} finally {
-			if (mountedRef.current) {
-				setLoading(false)
+			if (mountedRef.current && requestIdsRef.current.get(pluginName) === requestId) {
+				setLoadingPlugins((prev) => {
+					const next = new Set(prev)
+					next.delete(pluginName)
+					return next
+				})
 			}
 		}
 	}, [transport, notify, pluginName])

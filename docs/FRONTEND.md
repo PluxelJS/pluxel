@@ -31,3 +31,17 @@ bundle。builtin document 由 host 渲染且只用于只读内容；交互流程
 registry 与 artifact store 可由 host 共享，但 owner registration、Binding 和 cleanup 保留 immutable Context。
 bundle-only HMR 复用 resource lease；plugin stop/replacement 撤销旧 lease。不同 target 不共享 grant，但可以共享
 底层 transport connection。
+
+## React state correctness
+
+- `packages/components/src` 与 `packages/valibot-form/src/web` 强制检查 Hooks 调用、完整依赖和 render 期间的组件身份稳定性；
+  不用 disable 或遗漏依赖表达“只想执行一次”。
+- 跨组件共享事实使用带 `subscribe/getSnapshot` 的 store/resource；`useEffect` 只同步外部系统，不在父 effect 中清空由子
+  effect 注册的命令式引用。
+- 空数组、空对象和 Context value 必须保持稳定身份，避免无事实变化时重复触发 memo、effect 或 transport subscription。
+- RPC/HTTP 读操作必须具备 latest-request、AbortSignal 或 resource revision 语义；仅用 mounted boolean 不能阻止旧请求覆盖新
+  plugin/route 的状态。
+- 配置、mutation 和 lifecycle 控件至少覆盖一次“用户动作 -> 状态变化或 transport 副作用”的测试；仅断言按钮存在不足以验证
+  wiring。
+- 前端 lint 同时启用 React DOM/Context 正确性、JSX accessibility，以及类型感知的 Promise 和安全字符串化规则；新增异步
+  handler 必须显式 await、catch 或用 `void` 表达有意忽略。

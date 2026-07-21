@@ -3,6 +3,8 @@ import { useGlobalExtensionContext } from '@pluxel/runtime/web'
 import { commitPluginConfig, usePluginConfig } from '../../app/plugins/config/usePluginConfig'
 import { patchPluginConfigField } from '../../runtime'
 
+const EMPTY_CONFIG_RECORD: Record<string, unknown> = {}
+
 export function readString(value: unknown): string | undefined {
 	return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
@@ -66,9 +68,15 @@ export function useConfigFieldBridge(input: {
 	const config = usePluginConfig(targetPlugin)
 	const [saving, setSaving] = useState(false)
 
-	const schemaMap = (config.data?.schemaMap ?? {}) as Record<string, unknown>
-	const defaults = (config.data?.defaults ?? {}) as Record<string, Record<string, unknown>>
-	const savedConfig = (config.data?.savedConfig ?? {}) as Record<string, Record<string, unknown>>
+	const schemaMap = config.data?.schemaMap ?? EMPTY_CONFIG_RECORD
+	const defaults = (config.data?.defaults ?? EMPTY_CONFIG_RECORD) as Record<
+		string,
+		Record<string, unknown>
+	>
+	const savedConfig = (config.data?.savedConfig ?? EMPTY_CONFIG_RECORD) as Record<
+		string,
+		Record<string, unknown>
+	>
 
 	const currentSchemaValue = useMemo(() => {
 		const defaultSchemaValue = defaults?.[schemaKey] as Record<string, unknown> | undefined

@@ -58,12 +58,12 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 				if (targetIsCurrent && to !== '/') return
 				if (to === '/') {
 					// 主动点击首页链接时，通过 state 传递 manual 标记
-					navigate({
+					void navigate({
 						to,
 						state: (prev) => ({ ...(prev as any), manual: true }) as any,
 					})
 				} else {
-					navigate({ to })
+					void navigate({ to })
 				}
 			},
 			[href, navigate, onClick, requestNavigation, target, to, workbenchMode],

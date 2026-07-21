@@ -46,12 +46,16 @@ export function DependencyOverridesCard() {
 	const { pluginName, refetch } = usePluginScope()
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
-	const [state, setState] = useState<PluginDependencyState[] | null>(null)
-	const [loading, setLoading] = useState(false)
+	const [stateByPlugin, setStateByPlugin] = useState(
+		() => new Map<string, PluginDependencyState[]>(),
+	)
+	const [loadingPlugins, setLoadingPlugins] = useState(() => new Set<string>())
+	const requestIdsRef = useRef(new Map<string, number>())
 	const mountedRef = useRef(true)
+	const state = stateByPlugin.get(pluginName) ?? null
+	const loading = loadingPlugins.has(pluginName)
 
 	useEffect(() => {
-		mountedRef.current = true
 		return () => {
 			mountedRef.current = false
 		}
@@ -59,24 +63,37 @@ export function DependencyOverridesCard() {
 
 	const load = useCallback(async () => {
 		if (!pluginName) return
-		setLoading(true)
+		const requestId = (requestIdsRef.current.get(pluginName) ?? 0) + 1
+		requestIdsRef.current.set(pluginName, requestId)
+		setLoadingPlugins((prev) => new Set(prev).add(pluginName))
 		try {
 			const deps = await transport.withRpc((rpc) => inspectPluginDependencies(rpc, pluginName))
-			if (!mountedRef.current) return
+			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
 			const rows = Array.isArray(deps) ? deps : []
 			// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
 			// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
-			setState(rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'))
+			setStateByPlugin((prev) =>
+				new Map(prev).set(
+					pluginName,
+					rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'),
+				),
+			)
 		} catch (error) {
-			if (!mountedRef.current) return
-			setState([])
+			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
+			setStateByPlugin((prev) => new Map(prev).set(pluginName, []))
 			notify({
 				title: '读取依赖失败',
 				message: rpcErrorMessage(error, '无法读取依赖状态'),
 				color: 'red',
 			})
 		} finally {
-			if (mountedRef.current) setLoading(false)
+			if (mountedRef.current && requestIdsRef.current.get(pluginName) === requestId) {
+				setLoadingPlugins((prev) => {
+					const next = new Set(prev)
+					next.delete(pluginName)
+					return next
+				})
+			}
 		}
 	}, [transport, notify, pluginName])
 
@@ -119,7 +136,7 @@ export function DependencyOverridesCard() {
 			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
 			return res.forkName ?? `${baseName}#${forkId}`
 		},
-		[transport, pluginName],
+		[transport],
 	)
 
 	const handleForkCreate = useCallback(
@@ -152,21 +169,23 @@ export function DependencyOverridesCard() {
 					</Box>
 				),
 				labels: { confirm: '创建并选择', cancel: '取消' },
-				onConfirm: async () => {
-					try {
-						const fid = forkId.trim()
-						if (!fid) throw new Error('forkId 不能为空')
-						const forkName = await ensureFork(baseName, fid)
-						await setDependencyTarget(row.index, forkName)
-						await triggerRefresh()
-						notify({ title: 'Fork 已创建', message: forkName, color: 'green' })
-					} catch (error) {
-						notify({
-							title: '创建 Fork 失败',
-							message: rpcErrorMessage(error, '操作失败'),
-							color: 'red',
-						})
-					}
+				onConfirm: () => {
+					void (async () => {
+						try {
+							const fid = forkId.trim()
+							if (!fid) throw new Error('forkId 不能为空')
+							const forkName = await ensureFork(baseName, fid)
+							await setDependencyTarget(row.index, forkName)
+							await triggerRefresh()
+							notify({ title: 'Fork 已创建', message: forkName, color: 'green' })
+						} catch (error) {
+							notify({
+								title: '创建 Fork 失败',
+								message: rpcErrorMessage(error, '操作失败'),
+								color: 'red',
+							})
+						}
+					})()
 				},
 			})
 		},

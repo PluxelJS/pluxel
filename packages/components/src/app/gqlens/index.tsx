@@ -9,6 +9,7 @@ import type {
 } from './types'
 
 import { getRuntimeTransportClient } from '../../runtime'
+import { stringifyUnknown } from '../../utils/unknown'
 
 export const PluginStatusEntryLifecycleStage = {
 	running: 'running',
@@ -39,14 +40,14 @@ function graphqlKey(input: {
 	try {
 		return JSON.stringify(input) ?? ''
 	} catch {
-		return String(input.query ?? '')
+		return stringifyUnknown(input.query)
 	}
 }
 
 export const graphqlFetcher: Fetcher = async (operation) => {
 	const key = graphqlKey(operation)
 	const existing = inflightGraphql.get(key)
-	if (existing) return existing
+	if (existing !== undefined) return existing
 
 	const task = (async () => {
 		const response = await transport.fetch(transport.links.graphql, {

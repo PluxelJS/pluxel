@@ -34,58 +34,58 @@ export function AppProviders() {
 	)
 	const transportClient = useRuntimeTransportClient()
 	const localeSnapshot = useSyncExternalStore(
-		extensionLocale.subscribe,
+		(listener) => extensionLocale.subscribe(listener),
 		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
 		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
 	)
 
-	const extensionContext = useMemo<ExtensionContext>(
-		() =>
-			createGlobalExtensionContext({
-				colorScheme,
-				runningPlugins,
-				runningPluginsReady: pluginOverview.hasSnapshot,
-				services: {
-					transport: transportClient,
-					locale: extensionLocale,
-					ui: {
-						notify: (payload) => {
-							const tone = payload?.tone ?? 'info'
-							notifyAndRecord({
+	const extensionContext = useMemo<ExtensionContext>(() => {
+		// extensionLocale is mutable; the external-store snapshot invalidates this context value.
+		void localeSnapshot
+		return createGlobalExtensionContext({
+			colorScheme,
+			runningPlugins,
+			runningPluginsReady: pluginOverview.hasSnapshot,
+			services: {
+				transport: transportClient,
+				locale: extensionLocale,
+				ui: {
+					notify: (payload) => {
+						const tone = payload?.tone ?? 'info'
+						notifyAndRecord({
+							title: payload?.title,
+							message: payload?.message,
+							color:
+								tone === 'success'
+									? 'green'
+									: tone === 'warning'
+										? 'yellow'
+										: tone === 'error'
+											? 'red'
+											: 'blue',
+						})
+					},
+					confirm: async (payload) => {
+						return new Promise<boolean>((resolve) => {
+							openConfirmModal({
 								title: payload?.title,
-								message: payload?.message,
-								color:
-									tone === 'success'
-										? 'green'
-										: tone === 'warning'
-											? 'yellow'
-											: tone === 'error'
-												? 'red'
-												: 'blue',
+								children: payload?.message,
+								labels: {
+									confirm: payload?.confirmLabel ?? '确认',
+									cancel: payload?.cancelLabel ?? '取消',
+								},
+								confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
+								onConfirm: () => resolve(true),
+								onCancel: () => resolve(false),
+								onClose: () => resolve(false),
+								closeOnConfirm: true,
 							})
-						},
-						confirm: async (payload) => {
-							return new Promise<boolean>((resolve) => {
-								openConfirmModal({
-									title: payload?.title,
-									children: payload?.message,
-									labels: {
-										confirm: payload?.confirmLabel ?? '确认',
-										cancel: payload?.cancelLabel ?? '取消',
-									},
-									confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
-									onConfirm: () => resolve(true),
-									onCancel: () => resolve(false),
-									onClose: () => resolve(false),
-									closeOnConfirm: true,
-								})
-							})
-						},
+						})
 					},
 				},
-			}),
-		[colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPlugins, transportClient],
-	)
+			},
+		})
+	}, [colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPlugins, transportClient])
 
 	return (
 		<ExtensionPathnameProvider value={pathname}>

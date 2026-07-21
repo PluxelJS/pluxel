@@ -98,6 +98,8 @@ type PluginStatusSnapshot = {
 	source: NonNullable<PluginStatusEntry['source']> | null
 }
 
+const EMPTY_STATUS_ENTRIES: PluginStatusEntry[] = []
+
 function clonePluginDetailView(detail: PluginDetailView): PluginDetailView {
 	return {
 		...detail,
@@ -163,7 +165,7 @@ function resolveVisibleDependencies(params: {
 function usePluginDetail(pluginName?: string) {
 	// Reuse the global overview snapshot to avoid duplicate status requests on plugin pages.
 	const overviewState = usePluginOverview()
-	const statusEntries = overviewState.overview?.status?.statuses ?? []
+	const statusEntries = overviewState.overview?.status?.statuses ?? EMPTY_STATUS_ENTRIES
 	const refetchOverview = overviewState.refetch
 
 	const statusMap = useMemo(() => {
@@ -390,6 +392,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		isRunning,
 		isEnabled,
 		lifecycleStage,
+		detail,
+		resolvedStatus,
 		stable,
 		syncing,
 	])

@@ -39,11 +39,18 @@ type CompiledItem =
 	| { kind: 'block'; key: string; id: string; title: string; block: BuiltinDocBlock }
 	| { kind: 'cfg'; key: string; directive: DocConfigDirective }
 
+type ResolvedDocConfigDirective = {
+	keys: string[] | null
+	excludedKeys: string[]
+}
+
 type BuiltinBlockRendererProps = {
 	pluginName: string
 	title: string
 	block: BuiltinDocBlock
 }
+
+const EMPTY_CONFIG_RECORD: Record<string, unknown> = {}
 
 function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
 	const { block } = input
@@ -74,6 +81,118 @@ function BuiltinConfigRendererUnavailable() {
 			</Text>
 		</Paper>
 	)
+}
+
+function toRecord(value: unknown): Record<string, any> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+	return value as Record<string, any>
+}
+
+function DocCfgDirective({
+	pluginName,
+	resolution,
+}: {
+	pluginName: string
+	resolution: ResolvedDocConfigDirective
+}) {
+	const cfg = usePluginConfig(pluginName)
+	const data = cfg.data
+	const schemaMapAll = (data?.schemaMap ?? EMPTY_CONFIG_RECORD) as Record<
+		string,
+		ObjectSchema<any, any>
+	>
+	const defaultsAll = data?.defaults ?? EMPTY_CONFIG_RECORD
+	const savedAll = data?.savedConfig ?? EMPTY_CONFIG_RECORD
+	const schemaKeys = useMemo(
+		() => Object.keys(schemaMapAll).sort(compareSchemaKeys),
+		[schemaMapAll],
+	)
+
+	if (cfg.loading && !cfg.data) return null
+	if (cfg.error) {
+		return (
+			<Paper withBorder radius="md" p="sm" my="sm">
+				<Text size="sm" c="red">
+					Failed to load config: {cfg.error.message}
+				</Text>
+			</Paper>
+		)
+	}
+
+	const excludedKeys = new Set(resolution.excludedKeys)
+	const keys = resolution.keys ?? schemaKeys.filter((key) => !excludedKeys.has(key))
+	if (keys.length === 0) return null
+
+	return (
+		<Box my="sm">
+			{keys.map((schemaKey) => {
+				const schema = schemaMapAll[schemaKey]
+				if (!schema) {
+					return (
+						<Paper key={`cfg-unknown-${schemaKey}`} withBorder radius="md" p="sm" my="sm">
+							<Text size="sm" c="red">
+								Unknown schema key: {schemaKey}
+							</Text>
+						</Paper>
+					)
+				}
+
+				return (
+					<Box key={`cfg-schema-${schemaKey}`} my="sm">
+						{typeof ConfigTabContent === 'function' ? (
+							<ConfigTabContent
+								pluginName={pluginName}
+								tabKey={schemaKey}
+								schema={schema}
+								savedValue={toRecord(savedAll[schemaKey])}
+								defaultValue={toRecord(defaultsAll[schemaKey])}
+								showToc={false}
+								showActions
+								active={false}
+							/>
+						) : (
+							<BuiltinConfigRendererUnavailable />
+						)}
+					</Box>
+				)
+			})}
+		</Box>
+	)
+}
+
+export function resolveDocConfigDirectives(
+	items: CompiledItem[],
+): ReadonlyMap<string, ResolvedDocConfigDirective> {
+	const resolved = new Map<string, ResolvedDocConfigDirective>()
+	const used = new Set<string>()
+
+	for (const item of items) {
+		if (item.kind !== 'cfg') continue
+		const directive = item.directive
+		if (directive.kind === 'schema') {
+			const key = String(directive.key ?? '').trim()
+			const keys = key && !used.has(key) ? [key] : []
+			if (keys.length > 0) used.add(key)
+			resolved.set(item.key, { keys, excludedKeys: [] })
+			continue
+		}
+
+		if (directive.keys === null) {
+			resolved.set(item.key, { keys: null, excludedKeys: [...used] })
+			continue
+		}
+
+		const keys: string[] = []
+		for (const raw of directive.keys ?? []) {
+			const key = String(raw ?? '').trim()
+			if (!key || used.has(key)) continue
+			used.add(key)
+			keys.push(key)
+		}
+		resolved.set(item.key, { keys, excludedKeys: [] })
+	}
+
+	return resolved
 }
 
 function extractInlineText(token: any): string {
@@ -239,10 +358,18 @@ export function BuiltinDoc({
 		[id, pluginName],
 	)
 
-	// Track used schema keys across the rendered doc so `d.schemas()` behaves like cfg layout.
-	const usedSchemaKeysRef = useRef<Set<string> | null>(null)
-	usedSchemaKeysRef.current = usedSchemaKeysRef.current ?? new Set<string>()
-	usedSchemaKeysRef.current.clear()
+	const compiled = useMemo(
+		() =>
+			compileDoc({
+				content,
+				docPrefix,
+			}),
+		[content, docPrefix],
+	)
+	const configDirectives = useMemo(
+		() => resolveDocConfigDirectives(compiled.items),
+		[compiled.items],
+	)
 
 	const renderBlock = useCallback(
 		(blockTitle: string, block: BuiltinDocBlock) => {
@@ -255,114 +382,13 @@ export function BuiltinDoc({
 		[pluginName],
 	)
 
-	function toRecord(value: unknown): Record<string, any> {
-		if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-		return value as Record<string, any>
-	}
-
-	function DocCfgDirective({ directive }: { directive: DocConfigDirective }) {
-		const cfg = usePluginConfig(pluginName)
-		const data = cfg.data
-		const schemaMapAll = (data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
-		const defaultsAll = (data?.defaults ?? {}) as Record<string, unknown>
-		const savedAll = (data?.savedConfig ?? {}) as Record<string, unknown>
-
-		const schemaKeys = useMemo(
-			() => Object.keys(schemaMapAll ?? {}).sort(compareSchemaKeys),
-			[schemaMapAll],
-		)
-
-		if (cfg.loading && !cfg.data) return null
-		if (cfg.error) {
-			return (
-				<Paper withBorder radius="md" p="sm" my="sm">
-					<Text size="sm" c="red">
-						Failed to load config: {cfg.error.message}
-					</Text>
-				</Paper>
-			)
-		}
-
-		const used = usedSchemaKeysRef.current ?? new Set<string>()
-		const resolveKeys = (): string[] => {
-			if (directive.kind === 'schema') {
-				const key = String(directive.key ?? '').trim()
-				if (!key) return []
-				if (used.has(key)) return []
-				used.add(key)
-				return [key]
-			}
-
-			if (directive.keys === null) {
-				const remaining = schemaKeys.filter((k) => !used.has(k))
-				for (const k of remaining) used.add(k)
-				return remaining
-			}
-
-			const out: string[] = []
-			for (const raw of directive.keys ?? []) {
-				const key = String(raw ?? '').trim()
-				if (!key) continue
-				if (used.has(key)) continue
-				used.add(key)
-				out.push(key)
-			}
-			return out
-		}
-
-		const keys = resolveKeys()
-		if (keys.length === 0) return null
-
-		return (
-			<Box my="sm">
-				{keys.map((schemaKey) => {
-					const schema = schemaMapAll?.[schemaKey]
-					if (!schema) {
-						return (
-							<Paper key={`cfg-unknown-${schemaKey}`} withBorder radius="md" p="sm" my="sm">
-								<Text size="sm" c="red">
-									Unknown schema key: {schemaKey}
-								</Text>
-							</Paper>
-						)
-					}
-
-					return (
-						<Box key={`cfg-schema-${schemaKey}`} my="sm">
-							{typeof ConfigTabContent === 'function' ? (
-								<ConfigTabContent
-									pluginName={pluginName}
-									tabKey={schemaKey}
-									schema={schema}
-									savedValue={toRecord(savedAll?.[schemaKey])}
-									defaultValue={toRecord(defaultsAll?.[schemaKey])}
-									showToc={false}
-									active={true}
-								/>
-							) : (
-								<BuiltinConfigRendererUnavailable />
-							)}
-						</Box>
-					)
-				})}
-			</Box>
-		)
-	}
-
 	const renderCfg = useCallback(
 		(item: CompiledItem & { kind: 'cfg' }) => {
-			return <DocCfgDirective directive={item.directive as any} />
+			const resolution = configDirectives.get(item.key)
+			if (!resolution) return null
+			return <DocCfgDirective pluginName={pluginName} resolution={resolution} />
 		},
-		[pluginName],
-	)
-
-	const compiled = useMemo(
-		() =>
-			compileDoc({
-				content,
-				docPrefix,
-			}),
-		[content, docPrefix],
+		[configDirectives, pluginName],
 	)
 
 	const headingAnchors = compiled.anchors
@@ -521,7 +547,7 @@ export function BuiltinDoc({
 			/>
 		) : null
 
-	const renderInlineToc = () => (
+	const inlineToc = (
 		<Paper withBorder radius="md" p="sm">
 			<OutlineNavigator
 				anchors={headingAnchors}
@@ -555,7 +581,7 @@ export function BuiltinDoc({
 		</Paper>
 	)
 
-	const renderSidebarToc = () => (
+	const sidebarToc = (
 		<div className="plx-pluginWorkbench__assistSection">
 			<OutlineNavigator
 				anchors={headingAnchors}
@@ -602,11 +628,7 @@ export function BuiltinDoc({
 	return (
 		<>
 			{documentContent}
-			{tocVisible
-				? assistHost
-					? createPortal(renderSidebarToc(), assistHost)
-					: renderInlineToc()
-				: null}
+			{tocVisible ? (assistHost ? createPortal(sidebarToc, assistHost) : inlineToc) : null}
 		</>
 	)
 }

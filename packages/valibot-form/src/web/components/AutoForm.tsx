@@ -70,7 +70,7 @@ export function AutoForm<S extends ObjectLikeSchema>({
 			sections: fieldPlan.sections,
 			hiddenFields: fieldPlan.hiddenFields,
 			defaultValues,
-			submit: () => form.handleSubmit(),
+			submit: () => void form.handleSubmit(),
 			reset: (values?: Record<string, any>) => form.reset(values as any),
 		}),
 		[form, fieldPlan, defaultValues],
@@ -84,7 +84,7 @@ export function AutoForm<S extends ObjectLikeSchema>({
 	const onSubmit = useCallback(
 		(e: React.FormEvent) => {
 			e.preventDefault()
-			form.handleSubmit()
+			void form.handleSubmit()
 		},
 		[form],
 	)

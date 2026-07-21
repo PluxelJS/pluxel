@@ -72,6 +72,8 @@ const COLUMN_STYLE = {
 	display: 'flex',
 	flexDirection: 'column' as const,
 }
+
+const EMPTY_CONFIG_RECORD: Record<string, unknown> = {}
 type RightPaneRouteIntent = {
 	signature: string
 	state: RightPaneState
@@ -757,9 +759,12 @@ function ConfigContent({
 	onSchemaChange: (key: string) => void
 	onDirtyChange?: (dirty: boolean) => void
 }) {
-	const schemaMapAll = (config.data?.schemaMap ?? {}) as Record<string, ObjectSchema<any, any>>
-	const savedConfigAll = (config.data?.savedConfig ?? {}) as Record<string, unknown>
-	const defaultsAll = (config.data?.defaults ?? {}) as Record<string, unknown>
+	const schemaMapAll = (config.data?.schemaMap ?? EMPTY_CONFIG_RECORD) as Record<
+		string,
+		ObjectSchema<any, any>
+	>
+	const savedConfigAll = config.data?.savedConfig ?? EMPTY_CONFIG_RECORD
+	const defaultsAll = config.data?.defaults ?? EMPTY_CONFIG_RECORD
 
 	const schemaMap = useMemo(
 		() => filterSchemaGroupRecord(schemaMapAll, schemaGroup),

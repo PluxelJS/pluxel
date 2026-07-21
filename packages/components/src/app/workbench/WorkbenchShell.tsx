@@ -514,7 +514,7 @@ export function WorkbenchShell() {
 			setSectionPaneVisible(PLUGINS_SECTION_ID, true)
 			queueWorkbenchNavigationIntent({ to: '/plugins', mode })
 			if (!pathname.startsWith('/plugins')) {
-				navigate({ to: '/plugins' })
+				void navigate({ to: '/plugins' })
 			}
 			dispatchPluginSearchEvent()
 		},
@@ -529,7 +529,7 @@ export function WorkbenchShell() {
 			setWorkbenchActiveTabId(tab.id)
 			if (tab.path === pathname) return
 			startTransition(() => {
-				navigate({ to: tab.path })
+				void navigate({ to: tab.path })
 			})
 		},
 		[navigate, pathname],
@@ -567,7 +567,7 @@ export function WorkbenchShell() {
 			}
 			if (storeTabs.length <= 1) {
 				resetWorkbenchToHome()
-				navigate({ to: '/' })
+				void navigate({ to: '/' })
 				return
 			}
 			const index = storeTabs.findIndex((tab) => tab.id === tabId)

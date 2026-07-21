@@ -94,7 +94,7 @@ export function PackageManagerScreen() {
 	const refetch = useCallback(
 		async (options?: { force?: boolean }) => {
 			const snapshotKey = showAllPackages ? 'all' : 'tracked'
-			if (inflightRef.current && inflightKeyRef.current === snapshotKey) {
+			if (inflightRef.current !== null && inflightKeyRef.current === snapshotKey) {
 				if (!options?.force) return inflightRef.current
 				await inflightRef.current
 			}

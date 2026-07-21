@@ -16,8 +16,8 @@ export const DEFAULT_PLUGIN_SECTION_LAYOUT = {
 
 export const PLUGIN_WORKBENCH_PANELS_SCOPE = 'plugin:workbench:layout'
 export const DEFAULT_PLUGIN_WORKBENCH_PANELS_STATE = {
-	rightPaneVisible: false,
-	dockVisible: false,
+	rightPaneVisible: true,
+	dockVisible: true,
 } satisfies ResolvedPluginWorkbenchPanelsState
 
 export const PLUGIN_WORKBENCH_MAIN_PANEL_ID = 'pluxel-plugin-workbench-workspace'
@@ -27,12 +27,12 @@ export const PLUGIN_WORKBENCH_DOCK_PANEL_ID = 'pluxel-plugin-workbench-dock'
 export const PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT_STORAGE_KEY = 'pluxel:plugin:workbench:h'
 export const PLUGIN_WORKBENCH_VERTICAL_LAYOUT_STORAGE_KEY = 'pluxel:plugin:workbench:v'
 export const DEFAULT_PLUGIN_WORKBENCH_HORIZONTAL_LAYOUT = {
-	[PLUGIN_WORKBENCH_MAIN_PANEL_ID]: 82,
-	[PLUGIN_WORKBENCH_ASIDE_PANEL_ID]: 18,
+	[PLUGIN_WORKBENCH_MAIN_PANEL_ID]: 76,
+	[PLUGIN_WORKBENCH_ASIDE_PANEL_ID]: 24,
 }
 export const DEFAULT_PLUGIN_WORKBENCH_VERTICAL_LAYOUT = {
-	[PLUGIN_WORKBENCH_CONTENT_PANEL_ID]: 90,
-	[PLUGIN_WORKBENCH_DOCK_PANEL_ID]: 10,
+	[PLUGIN_WORKBENCH_CONTENT_PANEL_ID]: 72,
+	[PLUGIN_WORKBENCH_DOCK_PANEL_ID]: 28,
 }
 
 export function sanitizePluginSectionLayout(layout: Record<string, number>) {

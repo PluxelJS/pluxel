@@ -1,5 +1,5 @@
 function normalizeTopic(input: unknown): string | null {
-	const s = String(input ?? '').trim()
+	const s = typeof input === 'string' ? input.trim() : ''
 	return s ? s : null
 }
 

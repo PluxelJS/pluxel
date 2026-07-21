@@ -3,6 +3,7 @@ import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 import { getPluginConfig, getPluginSchema, invokeRpc } from '../../../runtime'
+import { stringifyUnknown } from '../../../utils/unknown'
 import type { WorkbenchMarkdownPart as BuiltinMarkdownPart } from '@pluxel/runtime/workbench'
 
 export type PluginConfigData = {
@@ -30,8 +31,7 @@ const PLUGIN_CONFIG_TTL = 30_000
 const configResources = new Map<string, PluginConfigResource>()
 
 function errorMessage(error: unknown): string {
-	if (error instanceof Error) return error.message
-	return String(error)
+	return stringifyUnknown(error, 'Unknown error')
 }
 
 function evaluateSchemaSource(pluginName: string, key: string, expr: string): unknown {
@@ -117,7 +117,7 @@ class PluginConfigResource {
 	readonly getSnapshot = (): PluginConfigSnapshot => this.snapshot
 
 	load(forceSchemaRefresh = false): Promise<void> {
-		if (this.inflight) return this.inflight
+		if (this.inflight !== null) return this.inflight
 		if (
 			!forceSchemaRefresh &&
 			this.snapshot.data &&

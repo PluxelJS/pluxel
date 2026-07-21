@@ -21,6 +21,7 @@ import { extensionRegistry } from '../extension/internal/registry'
 import { buildExtensionHref, normalizeExtensionRouteSubPath } from '../extension/paths'
 import { useRuntimeTransportClient } from '../runtime'
 import { workbenchUiRegistry } from './internal/uiRegistry'
+import { stringifyUnknown } from '../utils/unknown'
 
 const placementMap: Partial<Record<WorkbenchPlacement, ExtensionPoint>> = {
 	'global.headerActions': 'header:actions',
@@ -140,7 +141,7 @@ async function ensureCatalog(
 	invalidation = 0,
 ): Promise<WorkbenchCatalog> {
 	if (isCatalogCurrent(minimumRevision, invalidation)) return catalog
-	if (catalogRequest) {
+	if (catalogRequest !== null) {
 		await catalogRequest
 		if (isCatalogCurrent(minimumRevision, invalidation)) return catalog
 	}
@@ -218,7 +219,7 @@ async function ensureOwnerLoaded(
 		await pending.promise
 		return 'loaded'
 	}
-	const previous = pending?.promise.catch((error) => {
+	const previous = pending?.promise.catch((error: unknown) => {
 		console.warn(`[workbench-ui] previous artifact load failed (${owner})`, error)
 	})
 	const task: Promise<void> = (previous ?? Promise.resolve()).then(async (): Promise<void> => {
@@ -383,9 +384,9 @@ function useResolvedWorkbenchLayout(target: string | null) {
 	const extensionContext = useGlobalExtensionContext()
 	const revisionStore = workbenchRevisionStore(transport)
 	const revision = useSyncExternalStore(
-		revisionStore.subscribe,
-		revisionStore.getSnapshot,
-		revisionStore.getSnapshot,
+		(listener) => revisionStore.subscribe(listener),
+		() => revisionStore.getSnapshot(),
+		() => revisionStore.getSnapshot(),
 	)
 	const [state, setState] = useState<{
 		layout: WorkbenchLayout | null
@@ -513,5 +514,5 @@ export function PluginWorkbenchLoader({ target }: { target: string }): ReactNode
 }
 
 function toError(error: unknown): Error {
-	return error instanceof Error ? error : new Error(String(error))
+	return error instanceof Error ? error : new Error(stringifyUnknown(error, 'Unknown error'))
 }

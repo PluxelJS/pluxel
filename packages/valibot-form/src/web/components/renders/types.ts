@@ -28,6 +28,23 @@ export interface TriggerOptions {
 	blur?: boolean
 }
 
+export function toInputString(value: unknown): string {
+	if (value == null) return ''
+	if (
+		typeof value === 'string' ||
+		typeof value === 'number' ||
+		typeof value === 'bigint' ||
+		typeof value === 'boolean'
+	) {
+		return String(value)
+	}
+	try {
+		return JSON.stringify(value) ?? ''
+	} catch {
+		return ''
+	}
+}
+
 export function triggerFormEvents<T>(props: InputProps, value: T, options: TriggerOptions = {}) {
 	if (props.disabled || props.readOnly) return
 	const { name, onChange, onBlur } = props

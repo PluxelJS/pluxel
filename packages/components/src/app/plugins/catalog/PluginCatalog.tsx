@@ -20,6 +20,7 @@ import { api, defineInvalidation, useMutation } from '../../gqlens'
 import { updatePluginStatuses } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
 import type { PluginStatusAction } from '../../../runtime'
+import { stringifyUnknown } from '../../../utils/unknown'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -207,7 +208,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const flushGroupCommit = useCallback(() => {
 		const pending = pendingCommitRef.current
 		if (!pending) return
-		if (inflightCommitRef.current) {
+		if (inflightCommitRef.current !== null) {
 			queuedCommitRef.current = true
 			return
 		}
@@ -228,7 +229,10 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 			.catch((error: unknown): void => {
 				const message =
 					error && typeof error === 'object' && 'message' in error
-						? String((error as { message?: unknown }).message ?? '分组同步失败，请稍后重试。')
+						? stringifyUnknown(
+								(error as { message?: unknown }).message,
+								'分组同步失败，请稍后重试。',
+							)
 						: '分组同步失败，请稍后重试。'
 				notify({ title: '同步失败', message, color: 'red' })
 				if (!pendingCommitRef.current) {

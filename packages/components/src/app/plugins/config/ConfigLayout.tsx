@@ -92,6 +92,8 @@ export function ConfigLayout({
 	}, [formStates, onDraftChange])
 
 	const schemaKeys = useMemo(() => Object.keys(schemas ?? {}).sort(compareSchemaKeys), [schemas])
+	const resolvedActiveKey =
+		activeKey && schemaKeys.includes(activeKey) ? activeKey : (schemaKeys[0] ?? '')
 
 	const rendered = useMemo(() => {
 		const used = new Set<string>()
@@ -141,15 +143,17 @@ export function ConfigLayout({
 	}, [layout, schemaKeys])
 
 	useEffect(() => {
-		if (!active || !activeKey) return undefined
+		if (!active || !resolvedActiveKey) return undefined
 		const handle = window.requestAnimationFrame(() => {
-			schemaNodeRefs.current[activeKey]?.scrollIntoView({
+			const node = schemaNodeRefs.current[resolvedActiveKey]
+			if (typeof node?.scrollIntoView !== 'function') return
+			node.scrollIntoView({
 				block: 'start',
 				inline: 'nearest',
 			})
 		})
 		return () => window.cancelAnimationFrame(handle)
-	}, [active, activeKey, rendered.chunks, rendered.remaining])
+	}, [active, rendered.chunks, rendered.remaining, resolvedActiveKey])
 
 	const reportState = useCallback((key: string, state: ConfigFormState) => {
 		setFormStates((prev) => {
@@ -206,7 +210,8 @@ export function ConfigLayout({
 										draftValue={toRecord(draftValues?.[schemaKey])}
 										reportState={reportState}
 										showToc={false}
-										active={active}
+										showActions
+										active={active && resolvedActiveKey === schemaKey}
 									/>
 								</Box>
 							)
@@ -249,7 +254,8 @@ export function ConfigLayout({
 										draftValue={toRecord(draftValues?.[schemaKey])}
 										reportState={reportState}
 										showToc={false}
-										active={active}
+										showActions
+										active={active && resolvedActiveKey === schemaKey}
 									/>
 								</Box>
 							)

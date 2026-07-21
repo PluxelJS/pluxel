@@ -23,6 +23,8 @@ export function useResolvedPluginRoute(opts: {
 	const routeVersion = useWorkbenchRouteVersion(pluginName)
 
 	const routeRender = useMemo(() => {
+		// The registry is mutable; its version is the reactive invalidation signal.
+		void routeVersion
 		return getWorkbenchRoute(pluginName, restPath)
 	}, [pluginName, restPath, routeVersion])
 

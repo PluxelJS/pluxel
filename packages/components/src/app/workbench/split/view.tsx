@@ -172,7 +172,7 @@ export const WorkbenchSplitView = forwardRef<SplitViewHandle, WorkbenchSplitView
 					}
 				},
 			}),
-			[paneIds],
+			[axisSizeRef, paneIds],
 		)
 
 		const handleLayoutCommit = useMemo(() => {

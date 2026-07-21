@@ -29,7 +29,7 @@ export function HomeScreen() {
 		// 非主动访问首页时，尝试恢复上次路由
 		if (last && last !== '/') {
 			hasNavigatedRef.current = true
-			navigate({ to: last, replace: true })
+			void navigate({ to: last, replace: true })
 			return
 		}
 

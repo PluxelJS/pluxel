@@ -12,6 +12,7 @@ import { type ConfigFormBridge, type ConfigFormState, ConfigTabPanel } from './C
 import { ConfigActionDock } from './components/ConfigActionDock'
 import { compareSchemaKeys, formatSchemaGroupLabel, splitSchemaKey } from './schemaKey'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
+import { stringifyUnknown } from '../../../utils/unknown'
 
 export interface ConfigFormProps {
 	pluginName: string
@@ -28,14 +29,28 @@ export interface ConfigFormProps {
 	onDraftChange?: (drafts: Record<string, Record<string, unknown>>) => void
 }
 
+export function ConfigForm(props: ConfigFormProps) {
+	const configIdentity = `${props.pluginName}\n${Object.keys(props.schemas ?? {})
+		.sort(compareSchemaKeys)
+		.join('\n')}`
+
+	return <ConfigFormInstance key={configIdentity} {...props} />
+}
+
 type FormBridge = ConfigFormBridge
 type FormState = ConfigFormState
 type TabValue = Record<string, unknown>
 type FieldIssue = { message?: unknown; path?: unknown }
 type FieldErrors = Record<string, FieldIssue[]>
+type MutableFormLike = {
+	state: { values?: unknown }
+	setFieldValue: (fieldName: string, value: unknown) => void
+}
 type FormLike = {
 	setFieldMeta: (fieldName: string, updater: (meta: unknown) => unknown) => void
 }
+
+const EMPTY_SCHEMAS: Record<string, ObjectSchema<any, any>> = {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
@@ -71,7 +86,13 @@ function toIssueArray(value: unknown): FieldIssue[] {
 	return Array.isArray(value) ? (value as FieldIssue[]) : []
 }
 
-export function ConfigForm({
+function replaceFormValues(form: MutableFormLike, values: Record<string, unknown>): void {
+	const current = toRecord(form.state.values)
+	const keys = new Set([...Object.keys(current), ...Object.keys(values)])
+	for (const key of keys) form.setFieldValue(key, values[key])
+}
+
+function ConfigFormInstance({
 	pluginName,
 	schemas,
 	savedConfig,
@@ -84,7 +105,7 @@ export function ConfigForm({
 	onDraftChange,
 }: ConfigFormProps) {
 	const transport = useRuntimeTransportClient()
-	const safeSchemas = schemas ?? {}
+	const safeSchemas = schemas ?? EMPTY_SCHEMAS
 	const keys = useMemo(() => Object.keys(safeSchemas).sort(compareSchemaKeys), [safeSchemas])
 	const [activeKey, setActiveKey] = useState(keys[0] || '')
 	const [savedAtMap, setSavedAtMap] = useState<Record<string, number | undefined>>({})
@@ -96,23 +117,10 @@ export function ConfigForm({
 	const [formStates, setFormStates] = useState<Record<string, FormState>>({})
 	const formStatesRef = useRef<Record<string, FormState>>({})
 	const lastDraftsRef = useRef<Record<string, Record<string, unknown>>>({})
-	const configIdentityRef = useRef('')
 	const markSaved = useCallback((key: string) => {
 		const savedAt = Date.now()
 		setSavedAtMap((m) => ({ ...m, [key]: savedAt }))
 	}, [])
-	const configIdentity = useMemo(() => `${pluginName}\n${keys.join('\n')}`, [keys, pluginName])
-
-	useEffect(() => {
-		if (configIdentityRef.current === configIdentity) return
-		configIdentityRef.current = configIdentity
-		formBridgeRef.current = {}
-		formStatesRef.current = {}
-		lastDraftsRef.current = {}
-		setSavedAtMap({})
-		setFormStates({})
-	}, [configIdentity])
-
 	useEffect(() => {
 		const keySet = new Set(keys)
 		setSavedAtMap((prev) => {
@@ -230,7 +238,7 @@ export function ConfigForm({
 				const first = issues[0]
 				const dotPath = Array.isArray(first?.path) ? (first?.path as unknown[]) : []
 				const message = issues
-					.map((i) => (typeof i?.message === 'string' ? i.message : String(i?.message ?? '')))
+					.map((i) => stringifyUnknown(i?.message))
 					.filter((x) => x.length > 0)
 					.join('; ')
 				return {
@@ -324,7 +332,11 @@ export function ConfigForm({
 		const bridge = formBridgeRef.current[resolvedActiveKey]
 		const current = schemaItems.find((item) => item.key === resolvedActiveKey)
 		if (!bridge || !current) return
-		bridge.reset(current.defaultValue)
+		if (deepEqual(current.initialValue, current.defaultValue)) {
+			bridge.reset(current.initialValue)
+			return
+		}
+		replaceFormValues(bridge.form as MutableFormLike, current.defaultValue)
 	}, [resolvedActiveKey, schemaItems])
 
 	const setScrollHost = useCallback((key: string, node: HTMLDivElement | null) => {
@@ -491,7 +503,7 @@ export function ConfigForm({
 										onActiveKeyChange?.(nextKey)
 									}}
 									onSubmitCurrent={submitCurrent}
-									onSubmitAll={saveAll}
+									onSubmitAll={() => void saveAll()}
 									onResetCurrent={resetCurrent}
 									onResetDefaults={resetToDefaults}
 								/>

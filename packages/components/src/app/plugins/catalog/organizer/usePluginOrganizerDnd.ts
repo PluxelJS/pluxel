@@ -239,16 +239,7 @@ export function usePluginOrganizerDnd({
 				onGroupsChangeRef.current(groupsRef.current)
 			})
 		},
-		[
-			groupsRef,
-			onGroupsChangeRef,
-			selectedIds,
-			selectOnly,
-			selectedSet,
-			setGroups,
-			setUngroupedOrder,
-			ungroupedRef,
-		],
+		[groupsRef, onGroupsChangeRef, selectedIds, setGroups, setUngroupedOrder, ungroupedRef],
 	)
 
 	return {

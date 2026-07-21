@@ -1,4 +1,4 @@
-import { Box } from '@mantine/core'
+import { Box, Button, Group } from '@mantine/core'
 import { useHotkeys } from '@mantine/hooks'
 import { formOptions } from '@tanstack/react-form'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -50,6 +50,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
 	return false
 }
 
+function replaceFormValues(form: any, values: Record<string, any>): void {
+	const current = isRecord(form.state?.values) ? form.state.values : {}
+	const keys = new Set([...Object.keys(current), ...Object.keys(values)])
+	for (const key of keys) form.setFieldValue(key, values[key])
+}
+
 export function ConfigTabContent({
 	pluginName,
 	tabKey,
@@ -59,6 +65,7 @@ export function ConfigTabContent({
 	draftValue,
 	onSaved,
 	showToc,
+	showActions = false,
 	active = true,
 	sectionIdPrefix,
 	fieldIdPrefix,
@@ -75,6 +82,7 @@ export function ConfigTabContent({
 	draftValue?: Record<string, any>
 	onSaved?: (k: string, value: Record<string, any>) => void
 	showToc?: boolean
+	showActions?: boolean
 	active?: boolean
 	sectionIdPrefix?: string
 	fieldIdPrefix?: string
@@ -168,8 +176,65 @@ export function ConfigTabContent({
 						scrollHostVersion={scrollHostVersion ?? 0}
 					/>
 				) : null}
+				{showActions ? (
+					<ConfigTabActions initialValue={initialValue} defaultValue={defaultValue} />
+				) : null}
 			</Box>
 		</AutoForm>
+	)
+}
+
+function ConfigTabActions({
+	initialValue,
+	defaultValue,
+}: {
+	initialValue: Record<string, any>
+	defaultValue: Record<string, any>
+}) {
+	const { form, reset, submit } = useAutoFormCtx<any>()
+	return (
+		<form.Subscribe
+			selector={(state: any) => ({
+				dirty: state.isDirty,
+				canSubmit: state.canSubmit,
+				submitting: state.isSubmitting,
+			})}
+		>
+			{({ dirty, canSubmit, submitting }) => (
+				<Group justify="flex-end" gap="xs" px="xs" pb="md">
+					<Button
+						type="button"
+						size="xs"
+						variant="default"
+						disabled={!dirty || submitting}
+						onClick={() => reset(initialValue)}
+					>
+						撤销此配置
+					</Button>
+					<Button
+						type="button"
+						size="xs"
+						variant="subtle"
+						disabled={submitting}
+						onClick={() => {
+							if (deepEqual(initialValue, defaultValue)) reset(initialValue)
+							else replaceFormValues(form, defaultValue)
+						}}
+					>
+						重置默认
+					</Button>
+					<Button
+						type="button"
+						size="xs"
+						loading={submitting}
+						disabled={!dirty || !canSubmit}
+						onClick={submit}
+					>
+						提交此配置
+					</Button>
+				</Group>
+			)}
+		</form.Subscribe>
 	)
 }
 
@@ -187,13 +252,13 @@ function FormBridge({
 		return () => {
 			if (typeof disposer === 'function') disposer()
 		}
-	}, [form, registerForm, reset, tabKey])
+	}, [form, registerForm, reset, submit, tabKey])
 
 	return null
 }
 
 function FormDraftRestore({ draftValue }: { draftValue: Record<string, any> }): null {
-	const { form, reset } = useAutoFormCtx<any>()
+	const { form } = useAutoFormCtx<any>()
 	const restoredDraftRef = useRef(false)
 
 	useEffect(() => {
@@ -203,8 +268,8 @@ function FormDraftRestore({ draftValue }: { draftValue: Record<string, any> }): 
 		}
 		if (restoredDraftRef.current || form.state.isDirty) return
 		restoredDraftRef.current = true
-		reset(draftValue)
-	}, [draftValue, form.state.isDirty, reset])
+		if (!deepEqual(form.state.values, draftValue)) replaceFormValues(form, draftValue)
+	}, [draftValue, form, form.state.isDirty])
 
 	return null
 }
