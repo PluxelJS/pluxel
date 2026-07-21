@@ -61,4 +61,11 @@ pnpm --filter @pluxel/runtime test            # run one package's tests (fast pa
 pnpm -w turbo run test --filter=@pluxel/runtime  # same, but through turbo (cache/graph)
 ```
 
+Turbo uses all logical CPUs for pure build/typecheck runs and caches build outputs plus successful
+test/typecheck results. Test and combined verify runs reserve half of the Turbo slots because each
+Vitest process has its own worker pool; this avoids slower nested over-parallelization.
+`pnpm test:full` and `pnpm build:full` force a fresh run. Tests normally resolve workspace source
+and do not wait for unrelated production builds; packaging invariant tests keep explicit dist build
+prerequisites.
+
 公开包的版本与发布流程见 [`docs/RELEASING.md`](docs/RELEASING.md)。

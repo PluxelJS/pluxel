@@ -66,7 +66,12 @@ runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维�
 static/dynamic route 分别使用 `.pluxel/vite/static-runtime` 和 `.pluxel/vite/dynamic-runtime` 作为默认 Vite cache，
 避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
 Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
-目录，不把 Rust/N-API 编译缓存纳入插件源码 HMR。
+目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。
+
+仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
+`@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
+`@pluxel/runtime-dynamic` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
+因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
 
 production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
 sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它

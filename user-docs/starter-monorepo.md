@@ -24,6 +24,13 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 单元 `web` 直接拥有前端与 static runtime 依赖；`packages/*` 只用于真正跨边界复用的中性库，
 `plugins/*` 只用于具体插件 package。出现第二个独立部署目标时，再将 `web` 迁入 `apps/*` 层级。
 
+根脚本由 Turborepo 编排。`turbo.json` 根据 workspace 依赖图先构建依赖；纯 build/typecheck 使用全部
+逻辑 CPU，test/verify 为 Vitest 自身的 worker pool 保留一半 Turbo 槽位，避免双层过度并行。`dist/**`、
+成功的测试结果和类型检查结果都会进入本地 `.turbo` 缓存。`pnpm verify` 用同一次 Turbo 调度运行
+`typecheck test build`，所以同一轮不会重复执行任务，第二次
+运行或切换分支后输入未变的任务会直接命中缓存。需要排除缓存诊断时使用 `pnpm test:full` 或
+`pnpm build:full`；机器资源受限时可继续降低 `--concurrency`。
+
 ## 为什么默认关闭 Workbench Plane
 
 模板用 `workbench: false` 验证业务能力不依赖可选Workbench。开启Workbench时，只修改
@@ -43,7 +50,7 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
   业务 endpoint 仍由插件拥有。
 - Vault、Workbench Plane 和部署路线由根 host 安装；插件只消费稳定 capability。
 
-根目录生成 `oxlint.config.ts`、`.oxfmtrc.json` 和 workspace governance 检查。Oxlint 配置加载
+根目录生成 `turbo.json`、`oxlint.config.ts`、`.oxfmtrc.json` 和 workspace governance 检查。Oxlint 配置加载
 `@pluxel/rolldown/oxlint` 的 Pluxel 增补规则；`pnpm verify` 同时检查目录/依赖治理、格式、未使用的
 lint 抑制、类型、测试和生产构建。
 

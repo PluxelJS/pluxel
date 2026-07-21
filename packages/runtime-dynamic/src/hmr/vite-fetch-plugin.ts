@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 
 import type { HttpHandler } from '@pluxel/runtime'
-import { DEFAULT_VITE_WATCH_IGNORED } from './vite-watch'
+import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './vite-watch'
 
 export interface FetchHmrServerPluginOptions {
 	exclude?: Array<string | RegExp>
@@ -127,6 +127,7 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 				server: {
 					watch: {
 						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+						usePolling: VITE_WATCH_USE_POLLING,
 					},
 				},
 			}

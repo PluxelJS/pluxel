@@ -9,20 +9,24 @@
 	},
 	"scripts": {
 		"dev": "pnpm --filter {{packageName}}-web dev",
-		"build": "pnpm --filter {{packageName}}-web build",
+		"build": "turbo run build",
+		"build:full": "turbo run build --force",
 		"governance:check": "node scripts/check-workspace-governance.mjs",
 		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error web packages plugins scripts oxlint.config.ts",
 		"lint:fix": "pnpm lint --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
-		"test": "pnpm -r --if-present test",
-		"typecheck": "pnpm -r --if-present typecheck",
-		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+		"test": "turbo run test --concurrency=50%",
+		"test:full": "turbo run test --force --concurrency=50%",
+		"typecheck": "turbo run typecheck",
+		"verify:workspaces": "turbo run typecheck test build --concurrency=50%",
+		"verify": "pnpm governance:check && pnpm format:check && pnpm lint && pnpm verify:workspaces"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "catalog:",
 		"oxfmt": "catalog:",
 		"oxlint": "catalog:",
+		"turbo": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	}

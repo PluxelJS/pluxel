@@ -7,7 +7,7 @@ import type { BootedLoaderHmrHost } from './hmr/host'
 import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
-import { DEFAULT_VITE_WATCH_IGNORED } from './hmr/vite-watch'
+import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
 
 const DYNAMIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.dynamicRuntimeVitePlugin')
 const DYNAMIC_RUNTIME_CACHE_DIR = '.pluxel/vite/dynamic-runtime'
@@ -82,6 +82,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 				server: {
 					watch: {
 						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+						usePolling: VITE_WATCH_USE_POLLING,
 					},
 				},
 			}

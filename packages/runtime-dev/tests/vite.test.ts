@@ -45,6 +45,7 @@ describe('runtime-dev Vite plugin stack', () => {
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
 			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
 			'pluxel:plugin-semantics',
 			'pluxel-lint-guard',
 			'pluxel-config-source',

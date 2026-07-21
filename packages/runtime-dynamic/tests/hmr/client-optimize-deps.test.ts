@@ -25,6 +25,7 @@ describe('HMR client optimizeDeps', () => {
 		)
 		const ignored = config.server?.watch?.ignored as RegExp[]
 		expect(ignored.some((pattern) => pattern.test('/workspace/native/target/debug'))).toBe(true)
+		expect(ignored.some((pattern) => pattern.test('/workspace/.turbo/cache/task.json'))).toBe(true)
 
 		const resolveConfig = config.resolve as {
 			alias?: Array<{ find: RegExp; replacement: string }>

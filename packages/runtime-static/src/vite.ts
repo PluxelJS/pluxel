@@ -180,7 +180,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		name: 'pluxel:static-runtime',
 		apply: 'serve',
 		config(config) {
-			if (config.cacheDir !== undefined) return
+			if (config.cacheDir !== undefined) return undefined
 			return { cacheDir: STATIC_RUNTIME_CACHE_DIR }
 		},
 		async configureServer(server) {

@@ -82,9 +82,39 @@ export class RedisCacheBackendPlugin extends CacheBackend {
 	async clear(prefix: string): Promise<void> {
 		const client = this.redis.client
 		const match = `${escapeRedisGlob(this.redisKey(prefix))}*`
-		for await (const keys of client.scanIterator({ MATCH: match, COUNT: this.config.scanCount })) {
+		if ('masters' in client) {
+			// Cluster clients scan each master separately. Delete keys individually because a single
+			// multi-key UNLINK can span hash slots and be rejected with CROSSSLOT.
+			for (const master of client.masters) {
+				const node = await client.nodeClient(master)
+				for await (const keys of node.scanIterator({
+					MATCH: match,
+					COUNT: this.config.scanCount,
+				})) {
+					for (let offset = 0; offset < keys.length; offset += this.config.deleteBatchSize) {
+						await Promise.all(
+							keys
+								.slice(offset, offset + this.config.deleteBatchSize)
+								.map((key) => node.unlink(key)),
+						)
+					}
+				}
+			}
+			return
+		}
+
+		// The standalone and Sentinel clients expose the same scan/unlink surface, but node-redis
+		// models their methods with incompatible private `this` types, so use their shared shape.
+		const scannable = client as unknown as {
+			scanIterator(options: { MATCH: string; COUNT: number }): AsyncGenerator<string[]>
+			unlink(keys: string[]): Promise<unknown>
+		}
+		for await (const keys of scannable.scanIterator({
+			MATCH: match,
+			COUNT: this.config.scanCount,
+		})) {
 			for (let offset = 0; offset < keys.length; offset += this.config.deleteBatchSize) {
-				await client.unlink(keys.slice(offset, offset + this.config.deleteBatchSize))
+				await scannable.unlink(keys.slice(offset, offset + this.config.deleteBatchSize))
 			}
 		}
 	}

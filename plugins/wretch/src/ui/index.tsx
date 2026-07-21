@@ -10,7 +10,7 @@ import {
 	TextInput,
 	Title,
 } from '@mantine/core'
-import { createWorkbenchUi } from '@pluxel/runtime/workbench/ui'
+import { createWorkbenchUi, type WorkbenchUiModule } from '@pluxel/runtime/workbench/ui'
 import { IconDeviceFloppy, IconPlus, IconRestore, IconTrash } from '@tabler/icons-react'
 import { useCallback, useEffect, useState } from 'react'
 import { WretchWorkbenchPort, type WretchManagedSettingsSnapshot } from '../workbench-contract.ts'
@@ -260,4 +260,6 @@ export function HttpSettings() {
 	)
 }
 
-export default ui.define({ HttpSettings })
+const wretchWorkbenchUi: WorkbenchUiModule = ui.define({ HttpSettings })
+
+export default wretchWorkbenchUi

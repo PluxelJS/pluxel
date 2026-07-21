@@ -269,14 +269,16 @@ describe('@pluxel/cache', () => {
 
 			let missingLoads = 0
 			expect(
-				await a.getOrLoad('missing', () => {
+				await a.getOrLoad('missing', (): null => {
 					missingLoads++
 					return null
 				}),
 			).toBeNull()
 			expect(await a.getOrLoad('missing', () => 'unexpected')).toBeNull()
 			expect(missingLoads).toBe(1)
-			await expect(a.getOrLoad('undefined', () => undefined)).rejects.toThrow(/undefined/)
+			await expect(a.getOrLoad('undefined', (): undefined => undefined)).rejects.toThrow(
+				/undefined/,
+			)
 		})
 	})
 

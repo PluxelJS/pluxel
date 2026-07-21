@@ -29,7 +29,7 @@
 	},
 	"scripts": {
 		"dev": "pnpm -w run build:gqlens && vite",
-		"build": "pnpm -w run build:gqlens && vite build",
+		"build": "vite build",
 		"preview": "vite preview",
 		"test": "pnpm exec vitest run"
 	},

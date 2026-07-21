@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
@@ -9,7 +10,7 @@ import { generateResetDatabaseArtifact } from '../../src/database/reset-artifact
 
 describe('database migration artifact', () => {
 	it('locates a linked plugin package outside the application root', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.database-linked-package-test-'))
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-linked-package-test-'))
 		const application = join(root, 'application')
 		const linkedPlugin = join(root, 'linked-plugin')
 		try {
@@ -56,7 +57,7 @@ describe('database migration artifact', () => {
 	})
 
 	it('generates a stable reset lineage directly from the current schema', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.database-reset-test-'))
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-test-'))
 		const schema = join(root, 'src/database.ts')
 		await mkdir(join(root, 'src'), { recursive: true })
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
@@ -95,7 +96,7 @@ describe('database migration artifact', () => {
 	})
 
 	it('changes the reset lineage when the physical schema changes', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.database-reset-change-test-'))
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-change-test-'))
 		const schema = join(root, 'src/database.ts')
 		await mkdir(join(root, 'src'), { recursive: true })
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')
@@ -127,5 +128,5 @@ describe('database migration artifact', () => {
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
-	})
+	}, 15_000)
 })

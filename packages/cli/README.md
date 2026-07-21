@@ -25,7 +25,9 @@ pluxel new
 
 `user-docs/` 是插件作者文档的唯一真源。CLI build 将它原样打包到 `dist/user-docs/`；
 `app-monorepo` 只声明目标目录，`pluxel new` 会把当前 CLI 版本携带的完整文档递归复制到生成仓库的
-`docs/pluxel/`。模板不维护改写版 Markdown，也不对文档执行 Handlebars 渲染。
+`docs/pluxel/`。模板不维护改写版 Markdown，也不对文档执行 Handlebars 渲染。生成的 workspace
+默认安装 Turborepo，以全 CPU 并发和本地缓存编排 build、test、typecheck；`verify` 在一个任务图中
+复用这些结果。
 
 新产品优先使用：
 

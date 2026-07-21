@@ -153,6 +153,7 @@ describe('scaffold template rendering', () => {
 
 		expect(ok).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pnpm-workspace.yaml'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'turbo.json'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/pluxel.static.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/tsdown.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
@@ -185,9 +186,13 @@ describe('scaffold template rendering', () => {
 		const rootManifest = fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')
 		expect(rootManifest).toContain('"@pluxel/rolldown": "catalog:"')
 		expect(rootManifest).toContain('"oxfmt": "catalog:"')
+		expect(rootManifest).toContain('"turbo": "catalog:"')
 		expect(rootManifest).not.toContain('"react":')
 		expect(rootManifest).not.toContain('"@pluxel/core"')
 		expect(rootManifest).not.toContain('"tsdown"')
+		const turboConfig = fixture.fs.readFileSync(resolve(targetDir, 'turbo.json'), 'utf8')
+		expect(turboConfig).toContain('"concurrency": "100%"')
+		expect(turboConfig).toContain('"dependsOn": ["^build"]')
 
 		const webManifest = fixture.fs.readFileSync(resolve(targetDir, 'web/package.json'), 'utf8')
 		expect(webManifest).toContain('"react": "catalog:"')

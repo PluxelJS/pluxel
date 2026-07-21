@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
@@ -40,7 +41,7 @@ describe('pluginArtifactBuildPlugin', () => {
 	})
 
 	it('builds reset-on-schema-change without a checked-in migration directory', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.database-reset-build-test-'))
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-build-test-'))
 		await mkdir(join(root, 'src'), { recursive: true })
 		await writeFile(
 			join(root, 'package.json'),
@@ -99,7 +100,7 @@ describe('pluginArtifactBuildPlugin', () => {
 	})
 
 	it('injects the generated reset baseline in the Vite server source transform', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.database-reset-source-test-'))
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-source-test-'))
 		await mkdir(join(root, 'src'), { recursive: true })
 		await mkdir(join(root, 'node_modules/@pluxel/runtime'), { recursive: true })
 		await writeFile(join(root, 'package.json'), JSON.stringify({ type: 'module' }), 'utf8')

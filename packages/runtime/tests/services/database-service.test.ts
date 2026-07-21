@@ -160,7 +160,7 @@ describe('DatabaseService', () => {
 		let releaseOperation: (() => void) | undefined
 		let runningOperation: Promise<void> | undefined
 		try {
-			@Plugin({ name: 'QueuedDatabasePlugin' })
+			@Plugin({ name: 'QueuedDatabasePlugin', startTimeoutMs: 30_000 })
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {

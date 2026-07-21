@@ -139,7 +139,7 @@ async function connectWithin(client: RedisClientType, timeoutMs: number): Promis
 	let timer: ReturnType<typeof setTimeout> | undefined
 	try {
 		await Promise.race([
-			client.connect().then(() => undefined),
+			client.connect().then((): undefined => undefined),
 			new Promise<never>((_, reject) => {
 				timer = setTimeout((): void => {
 					reject(new Error(`Redis connection did not become ready within ${timeoutMs}ms.`))

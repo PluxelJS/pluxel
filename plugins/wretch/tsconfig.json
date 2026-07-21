@@ -1,11 +1,9 @@
 {
-	"extends": "../../tsconfig.workspace.json",
+	"extends": "../../tsconfig.plugin.json",
 	"include": ["src", "tsdown.config.ts"],
 	"compilerOptions": {
-		"noEmit": true,
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
-		"customConditions": ["@pluxel/runtime-dynamic"],
 		"jsx": "react-jsx",
 		"lib": ["ES2024", "DOM", "DOM.Iterable"],
 		"types": ["vite/client"]
