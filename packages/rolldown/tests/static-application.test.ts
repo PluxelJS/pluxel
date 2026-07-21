@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
 import { staticApplication } from '../src/cli/static-application.ts'
@@ -75,6 +75,33 @@ describe('staticApplication', () => {
 		})
 	})
 
+	it('keeps PostgreSQL on the Node residual boundary', async () => {
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-node',
+			entry: './src/pluxel.static.ts',
+			variant: 'headless',
+			target: 'node',
+			lint: false,
+		})
+		const plugin = (config.plugins as Array<{ name?: string; resolveId?: unknown }>).find(
+			(candidate) => candidate?.name === 'pluxel:nf3-externals',
+		)
+		const resolveId = plugin?.resolveId as
+			| ((
+					this: { resolve: ReturnType<typeof vi.fn> },
+					id: string,
+					importer: string,
+					options: object,
+			  ) => Promise<unknown>)
+			| undefined
+		const resolve = vi.fn(async () => ({ id: '/tmp/node_modules/pg/esm/index.mjs' }))
+
+		await expect(
+			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-node/src/app.ts', {}),
+		).resolves.toMatchObject({ id: 'pg', external: true })
+		expect(resolve).toHaveBeenCalledWith('pg', '/tmp/pluxel-static-node/src/app.ts', {})
+	})
+
 	it('rejects unsupported platform targets instead of emitting incomplete bundles', () => {
 		expect(() =>
 			staticApplication({
@@ -94,7 +121,7 @@ describe('staticApplication', () => {
 		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
 		expect(source).toContain(
-			"fullTraceInclude: [...FullTracePackages, 'tslib', '@electric-sql/pglite']",
+			'fullTraceInclude: [...FullTracePackages, ...RuntimeFullTracePackages]',
 		)
 	})
 })

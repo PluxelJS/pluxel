@@ -92,9 +92,10 @@ runtime/core 默认属于 application bundle closure；code splitting 允许，�
 可解析 optional candidate 形成内部 chunk；不可解析 optional candidate 形成带结构化 absent code 的 virtual chunk，
 不得进入 nf3 residual 或 deployment external。
 
-Node target 用 `nf3` externalize 并追踪 native/non-bundleable residual packages，复制到 distribution 自己的
-`node_modules`。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前 freezer 只发布
-Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
+Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安全跨 CommonJS/ESM 边界内联的 residual packages，
+复制到 distribution 自己的 `node_modules`。PostgreSQL `pg` 属于后一类：freezer 保留它的 Node package boundary，避免改变
+`pg-pool` 的 CommonJS 构造器语义。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前
+freezer 只发布 Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
 
 `pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench artifacts 与 residual package facts。
 runtime 以 bootstrap 注入的 deployment root 读取产物，不从 workspace package root 或 `process.cwd()` 推断。

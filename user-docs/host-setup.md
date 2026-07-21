@@ -112,7 +112,7 @@ node dist/app.mjs
 - fixed plugins、`runtime-static`、所需 runtime/core closure；
 - `pluxel-deployment.json`；
 - `variant: 'workbench'` 时位于 `workbench/` 的 Workbench shell 和 extension remotes；
-- Node native/dynamic dependencies 需要时生成的最小 `node_modules`。
+- Node native/dynamic 依赖以及 PostgreSQL `pg` 等无法安全内联的依赖所需的最小 `node_modules`。
 
 目标机不需要安装 `@pluxel/*`。`variant` 是 build-time capability：`headless` 不携带 Workbench，启动时不能再开启；
 `workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。Node target 读取

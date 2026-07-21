@@ -25,6 +25,9 @@ type StaticApplicationBuildState = {
 	residualPackages: string[]
 }
 
+const RuntimeResidualPackages = ['@electric-sql/pglite', 'pg'] as const
+const RuntimeFullTracePackages = ['tslib', '@electric-sql/pglite'] as const
+
 export function staticApplication(options: StaticApplicationBuildOptions): UserConfig {
 	const cwd = resolve(options.cwd ?? process.cwd())
 	const entry = resolve(cwd, options.entry)
@@ -66,9 +69,9 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 			nf3ExternalsPlugin({
 				cwd,
 				outDir,
-				include: [...NodeNativePackages, ...NonBundleablePackages, '@electric-sql/pglite'],
+				include: [...NodeNativePackages, ...NonBundleablePackages, ...RuntimeResidualPackages],
 				conditions: ['node', 'import', 'default'],
-				fullTraceInclude: [...FullTracePackages, 'tslib', '@electric-sql/pglite'],
+				fullTraceInclude: [...FullTracePackages, ...RuntimeFullTracePackages],
 				onTracedPackages(packages) {
 					state.residualPackages = Object.keys(packages).sort()
 				},
