@@ -57,6 +57,12 @@ export type WorkbenchViewMeta = Readonly<{
 		icon?: WorkbenchIcon
 		addToNav?: boolean
 		navPriority?: number
+		navigationLabel?: string
+		navigationGroup?: Readonly<{
+			id: string
+			label: string
+			icon?: WorkbenchIcon
+		}>
 		frame?: 'shell' | 'standalone'
 	}>
 }>
@@ -400,13 +406,34 @@ function routePlacement(
 	input: {
 		title: string
 		icon?: WorkbenchIcon
-		navigation?: boolean
+		navigation?:
+			| boolean
+			| {
+					label?: string
+					group: {
+						id: string
+						label: string
+						icon?: WorkbenchIcon
+					}
+			  }
 		frame?: 'shell' | 'standalone'
 		order?: number
 		when?: 'always' | 'running'
 	},
 ): WorkbenchPlacementSpec {
 	const order = input.order ?? 0
+	const navigation = typeof input.navigation === 'object' ? input.navigation : undefined
+	const navigationGroup = navigation
+		? Object.freeze({
+				id: requiredText('workbenchContract.route', 'navigation.group.id', navigation.group.id),
+				label: requiredText(
+					'workbenchContract.route',
+					'navigation.group.label',
+					navigation.group.label,
+				),
+				icon: navigation.group.icon,
+			})
+		: undefined
 	return Object.freeze({
 		placement: 'plugin.routes',
 		audience: Object.freeze({ kind: 'self' as const }),
@@ -419,6 +446,8 @@ function routePlacement(
 				icon: input.icon,
 				addToNav: input.navigation !== false,
 				navPriority: -order,
+				navigationLabel: navigation?.label?.trim() || undefined,
+				navigationGroup,
 				frame: input.frame,
 			}),
 		}),

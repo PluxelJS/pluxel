@@ -13,6 +13,7 @@
 		"test": "vitest run --config ../../vitest.config.ts tests"
 	},
 	"dependencies": {
+		"@repo/chatbots-adapter-kit": "workspace:*",
 		"@repo/chatbots-contracts": "workspace:*"
 	},
 	"devDependencies": {

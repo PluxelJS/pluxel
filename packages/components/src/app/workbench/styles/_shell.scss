@@ -21,6 +21,10 @@
 	width: 100%;
 }
 
+.plx-workbench[data-has-route-group='true'] {
+	grid-template-columns: var(--plx-activity-width) 188px minmax(0, 1fr);
+}
+
 .plx-workbench :where(.mantine-Badge-root) {
 	box-sizing: border-box;
 	min-height: 20px;
@@ -183,6 +187,77 @@
 	display: flex;
 	margin-top: auto;
 	width: 100%;
+}
+
+.plx-workbench__routeGroup {
+	background: var(--plx-shell-bg);
+	border-right: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 16px 10px;
+}
+
+.plx-workbench__routeGroupHeader {
+	align-items: center;
+	display: flex;
+	font-size: 13px;
+	gap: 8px;
+	height: 40px;
+	padding-inline: 8px;
+}
+
+.plx-workbench__routeGroupIcon {
+	align-items: center;
+	color: var(--plx-accent);
+	display: inline-flex;
+	justify-content: center;
+	width: 20px;
+}
+
+.plx-workbench__routeGroupList {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 10px;
+	overflow-y: auto;
+}
+
+.plx-workbench__routeGroupItem {
+	align-items: center;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	display: flex;
+	font-size: 12px;
+	font-weight: 620;
+	gap: 9px;
+	height: 36px;
+	min-width: 0;
+	padding-inline: 9px;
+	text-decoration: none;
+}
+
+.plx-workbench__routeGroupItem > span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__routeGroupItem:hover,
+.plx-workbench__routeGroupItem:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__routeGroupItem[data-active='true'] {
+	background: var(--plx-activity-item-active);
+	border-color: color-mix(in srgb, var(--plx-accent) 18%, transparent);
+	color: var(--plx-accent);
 }
 
 .plx-workbench__navigationToggle {
@@ -664,6 +739,45 @@
 		display: block;
 		padding-bottom: 66px;
 		position: relative;
+	}
+
+	.plx-workbench[data-has-route-group='true'] {
+		display: flex;
+		flex-direction: column;
+		padding-bottom: 66px;
+	}
+
+	.plx-workbench__routeGroup {
+		border-bottom: 1px solid var(--plx-border);
+		border-right: 0;
+		flex: 0 0 48px;
+		order: -1;
+		overflow: hidden;
+		padding: 5px 8px;
+	}
+
+	.plx-workbench__routeGroupHeader {
+		display: none;
+	}
+
+	.plx-workbench__routeGroupList {
+		align-items: center;
+		flex-direction: row;
+		gap: 4px;
+		margin: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.plx-workbench__routeGroupItem {
+		flex: 0 0 auto;
+		height: 36px;
+	}
+
+	.plx-workbench[data-has-route-group='true'] .plx-workbench__main {
+		flex: 1;
+		height: auto;
+		min-height: 0;
 	}
 
 	.plx-workbench__activity {

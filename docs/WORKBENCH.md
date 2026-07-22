@@ -77,6 +77,13 @@ patch 校验失败会重新取得完整 snapshot。query 失败保留 last-known
 完整 order 保证仅排序变化或分页窗口成员变化仍能正确重建结果。并发 invalidation 会合并，不把 SQL、table identity、
 commit token 或 outbox revision 暴露给浏览器。
 
+## Route navigation groups
+
+多个独立插件的 route 属于同一运维领域时，可在 `workbenchContract.route()` 的
+`navigation.group` 中声明稳定 group ID、标题和图标。宿主把它们折叠为一个一级活动入口，
+并在当前分组内渲染二级导航；子项和默认入口都沿用 route `order`。分组只影响宿主布局，
+不合并 route owner、resource grant 或 bundle；插件停止或撤销 mount 后，对应子项随 global layout 自动移除。
+
 ## Cross-plugin UI
 
 Port 是跨插件 UI resource 注入的唯一路径。provider 声明无 placement renderer，并在 UI 中调用

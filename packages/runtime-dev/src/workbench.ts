@@ -56,18 +56,21 @@ export function attachPluginArtifactCompiler(
 		const detachNode = ctx.nodeModules.attachSourceBinder((declaration, onUpdate, onError) =>
 			getCompiler().watchNodeModule(declaration, onUpdate, onError),
 		)
-		const detachWorkbench = artifacts?.attachSourceBinder((ownerCtx, declaration) => {
-			const descriptor = readWorkbenchUiEntry(declaration)
-			const declarationFile = fileURLToPath(descriptor.moduleUrl)
-			const root = resolve(options.viteServer?.config.root ?? process.cwd())
-			const declarationKey =
-				descriptor.artifactKey ??
-				resolvePluginArtifactKey('workbench', root, declarationFile, descriptor.entryPath)
-			return getCompiler().bindDeclaration(ownerCtx, {
-				entryPath: fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl)),
-				declarationKey,
-			})
-		})
+		const detachWorkbench = artifacts?.attachSourceBinder(
+			(ownerCtx, declaration, contractFingerprint) => {
+				const descriptor = readWorkbenchUiEntry(declaration)
+				const declarationFile = fileURLToPath(descriptor.moduleUrl)
+				const root = resolve(options.viteServer?.config.root ?? process.cwd())
+				const declarationKey =
+					descriptor.artifactKey ??
+					resolvePluginArtifactKey('workbench', root, declarationFile, descriptor.entryPath)
+				return getCompiler().bindDeclaration(ownerCtx, {
+					entryPath: fileURLToPath(new URL(descriptor.entryPath, descriptor.moduleUrl)),
+					declarationKey,
+					contractFingerprint,
+				})
+			},
+		)
 		const guard = ctx.effects.defer(() => {
 			detachWorkbench?.()
 			detachNode()

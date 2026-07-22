@@ -44,7 +44,7 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 ## 启用 Telegram
 
-打开 Pluxel 中的 `Telegram Bot` 设置页，为账号填写稳定的本地 Bot ID 与 Token 后点击“保存并连接”。同一插件可管理多个账号；Token 只写入持久化加密 Vault，Workbench live query 和浏览器端只能看到是否存在及掩码。设置页可选择账号执行鉴权测试、重连、断开和删除。
+插件详情中的 `Telegram 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 Telegram 独立管理台。为账号填写稳定的本地 Bot ID 与 Token 后点击“创建并连接”。同一插件可管理多个账号；管理台可搜索账号，扫视在线/异常数量，并查看每个 Bot 的 Polling offset、最近 poll/update、连续失败、退避和连接时长。Token 只写入持久化加密 Vault，Workbench live query 和浏览器端只能看到是否存在及掩码。当前账号可执行鉴权测试、重连、断开和带确认的删除。
 
 Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。独立 client 与受管 Bot 继承同一个 native API prototype，180 个方法在整个包中只安装一份；Bot 不会因此暴露 client 的 `call`。
 
@@ -54,7 +54,7 @@ Telegram API 返回 `parameters.retry_after` 后，该 Bot 的后续 HTTP 调用
 
 ## 启用 KOOK
 
-打开 Pluxel 中的 `KOOK Bot` 设置页，为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。设置页支持多账号选择、鉴权测试、重连、断开及删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
+插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。管理台支持多账号搜索和状态扫视，显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
 完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 与 `KookBot` 共享唯一 native API prototype，但 client 的 `$raw/$tool` 不会沿继承链泄漏到 Bot；raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
 

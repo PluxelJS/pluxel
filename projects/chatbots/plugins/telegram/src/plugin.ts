@@ -192,6 +192,7 @@ export class TelegramPlugin extends BasePlugin {
 			lastError: status.lastError,
 			startedAt: status.startedAt,
 			connectedAt: status.connectedAt,
+			lastPollAt: status.polling.lastPollAt,
 			lastUpdateId: status.polling.lastUpdateId,
 			lastUpdateAt: status.polling.lastUpdateAt,
 			consecutiveFailures: status.polling.consecutiveFailures,

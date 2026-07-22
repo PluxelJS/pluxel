@@ -114,7 +114,9 @@ export class WorkbenchBackend {
 			}
 
 			if (extension.entry) {
-				cleanup.push(this.artifacts.registerFor(owner, extension.entry))
+				cleanup.push(
+					this.artifacts.registerFor(owner, extension.entry, extension.contract.fingerprint),
+				)
 			}
 			cleanup.push(this.registry.mount(ownerId, extension, Object.freeze(refs)))
 		} catch (error) {

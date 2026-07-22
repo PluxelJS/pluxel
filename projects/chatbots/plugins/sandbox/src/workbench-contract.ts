@@ -33,7 +33,15 @@ export const ChatSandboxUi = workbenchContract.define({
 				workbenchContract.route('/sandbox', {
 					title: '消息沙箱',
 					icon: workbenchContract.icons.MessageChatbot,
-					order: 65,
+					navigation: {
+						label: 'Sandbox',
+						group: {
+							id: 'bots',
+							label: 'Bots',
+							icon: workbenchContract.icons.MessageChatbot,
+						},
+					},
+					order: 90,
 				}),
 			],
 		},

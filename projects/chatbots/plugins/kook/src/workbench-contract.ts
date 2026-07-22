@@ -20,8 +20,13 @@ export type KookStatusDoc = {
 	lastSequence: number
 	bufferedEvents: number
 	lastEventAt: number | null
+	lastPongAt: number | null
+	connectAttempts: number
 	reconnectAttempts: number
 	resumeAttempts: number
+	eventsReceived: number
+	pingSent: number
+	pongReceived: number
 	duplicateEvents: number
 	outOfOrderEvents: number
 	bufferOverflows: number
@@ -44,17 +49,29 @@ export const KookUi = workbenchContract.define({
 		status: workbenchContract.liveQuery({ row: jsonObjectSchema<KookStatusDoc>(), key: 'id' }),
 	},
 	views: {
-		Settings: {
+		Overview: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
 					order: 50,
-					label: 'KOOK 管理',
+					label: 'KOOK 状态',
 					icon: workbenchContract.icons.Settings,
 				}),
+			],
+		},
+		Manager: {
+			placements: [
 				workbenchContract.route('/settings', {
-					title: 'KOOK Bot',
+					title: 'KOOK Bots',
 					icon: workbenchContract.icons.BrandDiscord,
-					order: 70,
+					navigation: {
+						label: 'KOOK',
+						group: {
+							id: 'bots',
+							label: 'Bots',
+							icon: workbenchContract.icons.MessageChatbot,
+						},
+					},
+					order: 66,
 				}),
 			],
 		},

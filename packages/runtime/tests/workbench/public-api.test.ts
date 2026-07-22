@@ -48,6 +48,43 @@ describe('Workbench authoring API', () => {
 		])
 	})
 
+	it('defines grouped global navigation without changing the route owner', () => {
+		const placement = workbenchContract.route('/settings', {
+			title: 'Telegram Bots',
+			icon: workbenchContract.icons.BrandTelegram,
+			navigation: {
+				label: 'Telegram',
+				group: {
+					id: 'bots',
+					label: 'Bots',
+					icon: workbenchContract.icons.MessageChatbot,
+				},
+			},
+		})
+
+		expect(placement).toMatchObject({
+			placement: 'plugin.routes',
+			meta: {
+				route: {
+					path: '/settings',
+					navigationLabel: 'Telegram',
+					navigationGroup: {
+						id: 'bots',
+						label: 'Bots',
+						icon: 'message-chatbot',
+					},
+				},
+			},
+		})
+		expect(Object.isFrozen(placement.meta?.route?.navigationGroup)).toBe(true)
+		expect(() =>
+			workbenchContract.route('/broken', {
+				title: 'Broken',
+				navigation: { group: { id: '', label: 'Bots' } },
+			}),
+		).toThrow('navigation.group.id required')
+	})
+
 	it('types server RPC methods as asynchronous browser calls', () => {
 		type Rpc = { ping(input: string): string; save(): Promise<number>; localState: string }
 		type Client = WorkbenchRpcClient<Rpc>

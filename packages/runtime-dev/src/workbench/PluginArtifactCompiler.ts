@@ -107,6 +107,7 @@ type PluginCompileEntry = {
 	pluginDir: string
 	entryBaseDir: string
 	entryPath: string
+	contractFingerprint: string
 	sourceFiles: string[]
 	paraglide: ResolvedParaglideIntegration | null
 	graphDirty: boolean
@@ -217,7 +218,10 @@ export class PluginArtifactCompiler {
 		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
 	}
 
-	bindDeclaration(ctx: Context, config: { entryPath: string; declarationKey: string }): () => void {
+	bindDeclaration(
+		ctx: Context,
+		config: { entryPath: string; declarationKey: string; contractFingerprint?: string },
+	): () => void {
 		const store = this.store
 		if (!store) throw new Error('[runtime-dev] Workbench compiler is not attached')
 
@@ -228,6 +232,7 @@ export class PluginArtifactCompiler {
 			if (existing.entryPath !== config.entryPath) {
 				throw new Error(`[runtime-dev] Workbench declaration key collision: ${pluginName}`)
 			}
+			existing.contractFingerprint = config.contractFingerprint ?? ''
 			existing.owners.add(ownerId)
 			this.ownerWorkbenchDeclarations.set(ownerId, pluginName)
 			void store.markCompiling(ownerId)
@@ -264,6 +269,7 @@ export class PluginArtifactCompiler {
 			pluginDir,
 			entryBaseDir,
 			entryPath: config.entryPath,
+			contractFingerprint: config.contractFingerprint ?? '',
 			sourceFiles,
 			paraglide: resolveParaglideIntegration(pluginDir),
 			graphDirty: true,
@@ -618,6 +624,7 @@ export class PluginArtifactCompiler {
 				entry.pluginDir,
 				workbenchBuild.resolveWorkbenchUiBuildSignature(this.vite, this.viteCacheKey),
 				workbenchBuild.resolveWorkbenchFederationShared(entry.pluginDir, sharedPackages).signature,
+				entry.contractFingerprint,
 			)
 			const owners = this.activeWorkbenchOwners(entry)
 			const currentOwner = owners[0]
@@ -867,6 +874,7 @@ export class PluginArtifactCompiler {
 		baseDir?: string,
 		uiBuildSignature?: string,
 		resolvedSharedSignature?: string,
+		contractFingerprint?: string,
 	): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${WORKBENCH_COMPILER_VERSION}`)
@@ -875,6 +883,7 @@ export class PluginArtifactCompiler {
 		hash.update(`shareStrategy:${WORKBENCH_FEDERATION_SHARE_STRATEGY}`)
 		hash.update(`remoteEntry:${WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE}`)
 		hash.update(`expose:${WORKBENCH_FEDERATION_EXPOSE}`)
+		hash.update(`contract:${contractFingerprint ?? ''}`)
 		if (uiBuildSignature) hash.update(`ui:${uiBuildSignature}`)
 		const expanded = await this.expandHashTargets(files)
 		expanded.sort()

@@ -14,7 +14,12 @@ import { ExtensionPoints, useExtensionSurface } from '../../extension'
 import { ColorSchemeToggle } from '../../theme'
 import { PluginCatalog } from '../plugins/catalog/PluginCatalog'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
-import { baseNavItems, buildExtensionNavItems } from '../navigation/navConfig'
+import {
+	baseNavItems,
+	buildExtensionNavItems,
+	groupNavItems,
+	type NavSection,
+} from '../navigation/navConfig'
 import { WorkbenchPaneControls } from '../plugins/detail/controls/WorkbenchPaneControls'
 import { PluginWorkbenchLayoutProvider } from '../plugins/detail/workbench/context'
 import { useCurrentPathname } from '../router/useCurrentRoute'
@@ -73,13 +78,6 @@ import './styles.scss'
 
 const PLUGIN_PATH_PATTERN = /^\/plugins\/([^/]+)/
 const EMPTY_TAB_STATE: Record<string, unknown> = {}
-type WorkbenchActivityItem = {
-	exact?: boolean
-	href: string
-	icon?: ReactNode
-	label: string
-}
-
 function resolvePluginNameFromPath(pathname: string) {
 	const match = pathname.match(PLUGIN_PATH_PATTERN)
 	if (!match?.[1]) return undefined
@@ -165,7 +163,7 @@ function ActivityRail({
 	pathname,
 	requestNavigation,
 }: {
-	activityItems: WorkbenchActivityItem[]
+	activityItems: NavSection[]
 	collapsed: boolean
 	onToggleCollapsed: () => void
 	pathname: string
@@ -189,7 +187,11 @@ function ActivityRail({
 
 			<nav className="plx-workbench__activityList">
 				{activityItems.map((item) => {
-					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
+					const isActive = item.children?.length
+						? item.children.some((child) =>
+								isWorkbenchActivityActive(pathname, child.href, child.exact),
+							)
+						: isWorkbenchActivityActive(pathname, item.href, item.exact)
 					return (
 						<Link
 							key={`${item.href}:${item.label}`}
@@ -227,6 +229,45 @@ function ActivityRail({
 					<span>{collapsed ? '展开导航' : '仅显示图标'}</span>
 				</button>
 			</div>
+		</aside>
+	)
+}
+
+function RouteGroupRail({
+	group,
+	pathname,
+	requestNavigation,
+}: {
+	group: NavSection
+	pathname: string
+	requestNavigation: (to: string, request?: WorkbenchNavigationMode | 'auto') => string
+}) {
+	return (
+		<aside className="plx-workbench__routeGroup" aria-label={`${group.label} 导航`}>
+			<div className="plx-workbench__routeGroupHeader">
+				<span className="plx-workbench__routeGroupIcon" aria-hidden="true">
+					{group.icon}
+				</span>
+				<strong>{group.label}</strong>
+			</div>
+			<nav className="plx-workbench__routeGroupList">
+				{group.children?.map((item) => {
+					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
+					return (
+						<Link
+							key={`${item.href}:${item.label}`}
+							to={item.href}
+							className="plx-workbench__routeGroupItem"
+							data-active={isActive ? 'true' : 'false'}
+							aria-current={isActive ? 'page' : undefined}
+							onClick={() => requestNavigation(item.href, 'auto')}
+						>
+							<span aria-hidden="true">{item.icon}</span>
+							<span>{item.label}</span>
+						</Link>
+					)
+				})}
+			</nav>
 		</aside>
 	)
 }
@@ -423,12 +464,34 @@ export function WorkbenchShell() {
 				icon: meta.icon,
 				rightSection: meta.rightSection,
 				exact: meta.exact === true,
+				group: meta.group,
 			})),
 		).filter((item) => typeof item.href === 'string' && item.href !== '#')
 	}, [navbarSurface.items])
 
-	const activityItems = useMemo(() => [...baseNavItems, ...extensionNavItems], [extensionNavItems])
-	const sectionTitle = getWorkbenchSectionTitle(pathname)
+	const activityItems = useMemo(
+		() => groupNavItems([...baseNavItems, ...extensionNavItems]),
+		[extensionNavItems],
+	)
+	const activeRouteGroup = useMemo(
+		() =>
+			activityItems.find((item) =>
+				item.children?.some((child) =>
+					isWorkbenchActivityActive(pathname, child.href, child.exact),
+				),
+			),
+		[activityItems, pathname],
+	)
+	const activeRouteGroupItem = activeRouteGroup?.children?.find((item) =>
+		isWorkbenchActivityActive(pathname, item.href, item.exact),
+	)
+	const sectionTitle = activeRouteGroup
+		? {
+				eyebrow: 'Workbench',
+				title: activeRouteGroup.label,
+				subtitle: activeRouteGroupItem?.label,
+			}
+		: getWorkbenchSectionTitle(pathname)
 	const activeTab = useMemo(
 		() => tabs.find((tab) => tab.id === activeTabId) ?? currentTab,
 		[activeTabId, currentTab, tabs],
@@ -739,6 +802,7 @@ export function WorkbenchShell() {
 						<div
 							className="plx-workbench"
 							data-navigation-collapsed={navigationCollapsed ? 'true' : 'false'}
+							data-has-route-group={activeRouteGroup ? 'true' : 'false'}
 						>
 							<WorkbenchHotkeys
 								canTogglePluginRail={isPluginsSection}
@@ -758,6 +822,14 @@ export function WorkbenchShell() {
 								pathname={pathname}
 								requestNavigation={workbenchTabsValue.requestNavigation}
 							/>
+
+							{activeRouteGroup ? (
+								<RouteGroupRail
+									group={activeRouteGroup}
+									pathname={pathname}
+									requestNavigation={workbenchTabsValue.requestNavigation}
+								/>
+							) : null}
 
 							<div className="plx-workbench__main" data-has-tabs={showTabStrip ? 'true' : 'false'}>
 								<header

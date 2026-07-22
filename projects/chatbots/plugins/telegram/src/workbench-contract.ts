@@ -16,6 +16,7 @@ export type TelegramStatusDoc = {
 	lastError: string | null
 	startedAt: number
 	connectedAt: number | null
+	lastPollAt: number | null
 	lastUpdateId: number | null
 	lastUpdateAt: number | null
 	consecutiveFailures: number
@@ -41,17 +42,29 @@ export const TelegramUi = workbenchContract.define({
 		status: workbenchContract.liveQuery({ row: jsonObjectSchema<TelegramStatusDoc>(), key: 'id' }),
 	},
 	views: {
-		Settings: {
+		Overview: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
 					order: 50,
-					label: 'Telegram 管理',
+					label: 'Telegram 状态',
 					icon: workbenchContract.icons.Settings,
 				}),
+			],
+		},
+		Manager: {
+			placements: [
 				workbenchContract.route('/settings', {
-					title: 'Telegram Bot',
+					title: 'Telegram Bots',
 					icon: workbenchContract.icons.BrandTelegram,
-					order: 69,
+					navigation: {
+						label: 'Telegram',
+						group: {
+							id: 'bots',
+							label: 'Bots',
+							icon: workbenchContract.icons.MessageChatbot,
+						},
+					},
+					order: 65,
 				}),
 			],
 		},

@@ -18,7 +18,11 @@ import {
 } from '@pluxel/core/federation'
 import { RUNTIME_INTERNAL_API_BASE, runtimeWorkbenchArtifactPath } from '../../web/paths'
 
-type WorkbenchSourceBinder = (owner: Context, declaration: WorkbenchUiEntry) => () => void
+type WorkbenchSourceBinder = (
+	owner: Context,
+	declaration: WorkbenchUiEntry,
+	contractFingerprint: string,
+) => () => void
 
 export class WorkbenchArtifactService {
 	private revision = 0
@@ -43,8 +47,12 @@ export class WorkbenchArtifactService {
 		}
 	}
 
-	registerFor(owner: Context, declaration: WorkbenchUiEntry): () => void {
-		if (this.sourceBinder) return this.sourceBinder(owner, declaration)
+	registerFor(
+		owner: Context,
+		declaration: WorkbenchUiEntry,
+		contractFingerprint: string,
+	): () => void {
+		if (this.sourceBinder) return this.sourceBinder(owner, declaration, contractFingerprint)
 		return this.registerPackaged(owner, declaration)
 	}
 

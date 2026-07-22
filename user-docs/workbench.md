@@ -8,8 +8,29 @@ Pluxel 管理工作台优先把空间留给当前任务。导航、插件列表�
 - 点击左下角的导航按钮可在“仅图标”和“文字导航”之间切换，选择会自动保存。
 - 点击桌面侧栏顶部的主题图标可切换明暗模式。
 - 手机端固定使用底部导航，不受桌面折叠设置影响。
+- 同一领域的多个插件页面可共享一个一级入口；桌面端在独立二级侧栏中切换页面，手机端则使用顶部横向切换条。
 
 只有同时打开多个工作标签时，标签栏才会出现。单标签场景直接在顶栏显示页面或插件名称；存在未保存配置时，名称旁会显示状态点。
+
+插件 route 需要加入分组时，对同一领域使用相同的 group ID：
+
+```ts
+workbenchContract.route('/settings', {
+	title: 'Telegram Bots',
+	icon: workbenchContract.icons.BrandTelegram,
+	order: 65,
+	navigation: {
+		label: 'Telegram',
+		group: {
+			id: 'bots',
+			label: 'Bots',
+			icon: workbenchContract.icons.MessageChatbot,
+		},
+	},
+})
+```
+
+分组不会共享或扩大插件的资源授权；每个页面仍只使用所属插件的 Contract 和 grant。
 
 ## 插件工作台
 

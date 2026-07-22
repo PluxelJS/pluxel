@@ -350,6 +350,56 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
+	it('rebuilds the UI artifact when only the Workbench Contract changes', async () => {
+		await using fixture = await createFixture({
+			'plugin/package.json': JSON.stringify({ name: 'contract-plugin', type: 'module' }),
+			'plugin/src/ui.tsx': 'export default {}\n',
+		})
+		const host = createHost()
+		let currentModule: ReturnType<PluginArtifactCompilerWorkbenchStore['getCompiledModule']>
+		const store: PluginArtifactCompilerWorkbenchStore = {
+			getCompiledModule: () => currentModule,
+			async commitCompiledModule(module) {
+				currentModule = module
+			},
+			async markCompiling() {},
+			async markCompileError(_pluginName, error) {
+				throw error
+			},
+			async removePlugin() {
+				currentModule = undefined
+			},
+		}
+		const service = new PluginArtifactCompiler(
+			host.ctx,
+			{ store },
+			{
+				cacheDir: fixture.getPath('.pluxel/workbench'),
+				pluginDirs: { ContractPlugin: fixture.getPath('plugin') },
+			},
+		)
+		const bind = (contractFingerprint: string) =>
+			service.bindDeclaration(createPluginContext(host, 'ContractPlugin'), {
+				entryPath: './src/ui.tsx',
+				declarationKey: 'ContractPlugin',
+				contractFingerprint,
+			})
+
+		const disposeFirst = bind('wbc-first')
+		await service.requestCompile('ContractPlugin')
+		const firstHash = currentModule?.sourceHash
+		disposeFirst()
+		const disposeSecond = bind('wbc-second')
+		await service.requestCompile('ContractPlugin')
+
+		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledTimes(2)
+		expect(currentModule?.sourceHash).not.toBe(firstHash)
+
+		disposeSecond()
+		service.dispose()
+		await host.dispose()
+	})
+
 	it('does not let an old replacement cleanup remove the active declaration', async () => {
 		await using fixture = await createFixture({
 			'plugin/package.json': JSON.stringify({ name: 'replacement-plugin', type: 'module' }),

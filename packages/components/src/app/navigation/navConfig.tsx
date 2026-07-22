@@ -34,6 +34,17 @@ export interface NavItem {
 	rightSection?: ReactNode
 	exact?: boolean
 	disabled?: boolean
+	group?: NavGroup
+}
+
+export interface NavGroup {
+	id: string
+	label: string
+	icon?: ReactNode
+}
+
+export interface NavSection extends NavItem {
+	children?: NavItem[]
 }
 
 export const baseNavItems: NavItem[] = [
@@ -86,6 +97,11 @@ export interface ExtensionNavMeta {
 	icon?: unknown
 	rightSection?: unknown
 	exact?: boolean
+	group?: {
+		id: string
+		label: string
+		icon?: unknown
+	}
 }
 
 export function buildExtensionNavItems(entries: ExtensionNavMeta[]): NavItem[] {
@@ -101,6 +117,41 @@ export function buildExtensionNavItems(entries: ExtensionNavMeta[]): NavItem[] {
 			icon: resolveNavIcon(entry.icon),
 			rightSection,
 			exact: entry.exact === true,
+			group: entry.group
+				? {
+						id: entry.group.id,
+						label: entry.group.label,
+						icon: resolveNavIcon(entry.group.icon),
+					}
+				: undefined,
 		}
 	})
+}
+
+export function groupNavItems(items: readonly NavItem[]): NavSection[] {
+	const output: NavSection[] = []
+	const groups = new Map<string, { index: number; group: NavGroup; children: NavItem[] }>()
+	for (const item of items) {
+		if (!item.group) {
+			output.push(item)
+			continue
+		}
+		const existing = groups.get(item.group.id)
+		if (existing) {
+			existing.children.push(item)
+			continue
+		}
+		const entry = { index: output.length, group: item.group, children: [item] }
+		groups.set(item.group.id, entry)
+		output.push({ label: item.group.label, href: item.href, icon: item.group.icon })
+	}
+	for (const { index, group, children } of groups.values()) {
+		output[index] = {
+			label: group.label,
+			href: children[0]?.href ?? '#',
+			icon: group.icon,
+			children: children.map(({ group: _group, ...child }) => child),
+		}
+	}
+	return output
 }

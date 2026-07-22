@@ -1359,6 +1359,9 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
+      '@repo/chatbots-adapter-kit':
+        specifier: workspace:*
+        version: link:../../packages/adapter-kit
       '@repo/chatbots-contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

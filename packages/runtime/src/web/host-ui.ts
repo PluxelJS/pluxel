@@ -86,6 +86,11 @@ export interface ExtensionPointMap {
 			icon?: string | ReactNode
 			rightSection?: ReactNode
 			exact?: boolean
+			group?: {
+				id: string
+				label: string
+				icon?: string | ReactNode
+			}
 		}
 		metaRequired: true
 	}

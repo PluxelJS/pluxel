@@ -50,6 +50,8 @@ await store.put(idempotencyKey)
 
 平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实，Workbench 通过 PostgreSQL-backed `liveQuery` 读取安全 DTO；用户、角色和 grant 属于 Access 业务状态，即使关闭 Workbench Plane 仍然有效。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
+插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口，二级导航按 Telegram、KOOK、Sandbox 组织已启用的管理页；新平台只需声明相同导航 group，不再占用新的一级图标。完整管理台以账号列表和当前账号详情分区，可搜索、创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 页显示 Polling offset、最近 poll/update、连续失败和退避；KOOK 页显示 Gateway phase、SN、事件、恢复、Ping/Pong、乱序与缓冲指标。删除会先要求确认，且页面会区分加载、陈旧数据和查询错误。
+
 同一账号的保存、删除、重连和断开按调用顺序执行；不同账号可以并行。调用方不需要额外使用前端锁保证 Vault 与运行时 Bot 一致。
 
 宿主负责提供 React/Mantine/Pluxel runtime 等 peer 和 catalog 中的插件实例；平台包自身不依赖 ChatHub/contracts。这样只使用原生 Telegram 或 KOOK API 的产品不会被迫安装跨平台消息层。
