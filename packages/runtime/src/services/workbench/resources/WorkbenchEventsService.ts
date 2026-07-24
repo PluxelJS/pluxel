@@ -186,7 +186,7 @@ export class WorkbenchEventsService {
 		session.state.query = query
 
 		for (const key of session.state.requested.keys()) {
-			void this.attachSubscriptionToSession(session, key)
+			this.scheduleSubscriptionAttachment(session, key)
 		}
 	}
 
@@ -389,7 +389,7 @@ export class WorkbenchEventsService {
 				waiters.delete(session)
 				continue
 			}
-			for (const key of keys) void this.attachSubscriptionToSession(session, key)
+			for (const key of keys) this.scheduleSubscriptionAttachment(session, key)
 		}
 		if (waiters.size === 0) this.pendingByNamespace.delete(namespace)
 	}
@@ -422,8 +422,18 @@ export class WorkbenchEventsService {
 	}
 
 	private runCleanup(cleanup: () => void | Promise<void>, namespace: string) {
-		Promise.resolve(cleanup()).catch((err) => {
+		try {
+			Promise.resolve(cleanup()).catch((err) => {
+				this.ctx.logger.warn('cleanup failed for "{namespace}"', { namespace, error: err })
+			})
+		} catch (err) {
 			this.ctx.logger.warn('cleanup failed for "{namespace}"', { namespace, error: err })
+		}
+	}
+
+	private scheduleSubscriptionAttachment(session: Session<SessionState>, key: string): void {
+		void this.attachSubscriptionToSession(session, key).catch((error: unknown) => {
+			this.ctx.logger.error('Workbench stream subscription attach failed', { error, key })
 		})
 	}
 
@@ -432,7 +442,7 @@ export class WorkbenchEventsService {
 			if (!session.isConnected) continue
 			for (const [key, requestedNamespace] of session.state.requested) {
 				if (requestedNamespace !== namespace) continue
-				void this.attachSubscriptionToSession(session, key)
+				this.scheduleSubscriptionAttachment(session, key)
 			}
 		}
 	}

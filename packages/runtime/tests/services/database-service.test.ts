@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,7 +18,10 @@ import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { requireWorkbench } from '../../src/services/workbench'
-import { subscribeDatabaseHandle } from '../../src/services/DatabaseService'
+import {
+	attachPostgresPoolErrorHandler,
+	subscribeDatabaseHandle,
+} from '../../src/services/DatabaseService'
 
 const migrationSql = `
 	CREATE TABLE items (
@@ -151,6 +155,21 @@ function resetDatabaseFixture(sql: string) {
 }
 
 describe('DatabaseService', () => {
+	it('contains idle PostgreSQL pool errors at the database service boundary', () => {
+		const pool = new EventEmitter()
+		const report = vi.fn()
+		attachPostgresPoolErrorHandler(pool as never, report)
+		const failure = new Error('idle connection failed')
+
+		expect(() => pool.emit('error', failure)).not.toThrow()
+		expect(report).toHaveBeenCalledWith(failure)
+
+		report.mockImplementation(() => {
+			throw new Error('logger failed')
+		})
+		expect(() => pool.emit('error', failure)).not.toThrow()
+	})
+
 	it('drains accepted owner operations before teardown completes', async () => {
 		const definition = databaseFixture('owner-cancellation')
 		const host = createRuntimeHost({

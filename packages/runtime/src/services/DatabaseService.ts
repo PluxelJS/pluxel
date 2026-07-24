@@ -5,6 +5,7 @@ import { Injectable, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
+import type { Pool } from 'pg'
 import {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
@@ -619,7 +620,13 @@ class DatabaseCoordinator {
 	}
 
 	private adapter(): Promise<DatabaseAdapter> {
-		this.adapterTask ??= createAdapter(this.root.config.database, this.root.config.persistence)
+		this.adapterTask ??= createAdapter(
+			this.root.config.database,
+			this.root.config.persistence,
+			(error) => {
+				this.root.logger.error('database PostgreSQL pool connection failed', { error })
+			},
+		)
 		return this.adapterTask
 	}
 
@@ -1035,6 +1042,7 @@ async function grantOwnerTables(
 async function createAdapter(
 	config: DatabaseConfig | undefined,
 	persistence: CoreContext.Config['persistence'],
+	onPostgresPoolError: (error: Error) => void,
 ): Promise<DatabaseAdapter> {
 	if (config && config.driver === 'postgres') {
 		const [{ Pool }, { drizzle }] = await Promise.all([
@@ -1053,6 +1061,7 @@ async function createAdapter(
 						? { rejectUnauthorized: true }
 						: { rejectUnauthorized: false },
 		})
+		attachPostgresPoolErrorHandler(pool, onPostgresPoolError)
 		return {
 			driver: 'postgres',
 			db: drizzle(pool) as AnyDatabase,
@@ -1076,6 +1085,21 @@ async function createAdapter(
 		concurrency: 1,
 		close: async () => await client.close(),
 	}
+}
+
+/** @internal Keeps pg-pool idle-client failures operational instead of process-fatal. */
+export function attachPostgresPoolErrorHandler(
+	pool: Pick<Pool, 'on'>,
+	report: (error: Error) => void,
+): void {
+	pool.on('error', (error) => {
+		try {
+			report(error)
+		} catch {
+			// EventEmitter treats a thrown `error` listener as process-fatal too. Reporting must be a
+			// terminal boundary because pg-pool has already removed the failed idle client.
+		}
+	})
 }
 
 function defaultPgliteDataDir(persistence: CoreContext.Config['persistence']): string {

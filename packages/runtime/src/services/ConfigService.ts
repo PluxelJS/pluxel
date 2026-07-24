@@ -96,7 +96,9 @@ export class ConfigService extends CoreConfigService {
 			this.saveTimer = null
 			if (!this.saveScheduled) return
 			this.saveScheduled = false
-			void this.saveToDisk()
+			void this.saveToDisk().catch((error: unknown) => {
+				this.ctx.logger.error('ConfigService background save failed', { error })
+			})
 		}, this.saveDelayMs)
 	}
 

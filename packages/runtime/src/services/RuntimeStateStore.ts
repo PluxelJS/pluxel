@@ -179,7 +179,9 @@ export class RuntimeStateStore {
 			this.saveTimer = null
 			if (!this.saveScheduled) return
 			this.saveScheduled = false
-			void this.saveToDisk(this.file)
+			void this.saveToDisk(this.file).catch((error: unknown) => {
+				this.ctx.logger.error('RuntimeStateStore background save failed', { error })
+			})
 		}, this.saveDelayMs)
 	}
 
