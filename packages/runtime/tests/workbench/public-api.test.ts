@@ -85,6 +85,35 @@ describe('Workbench authoring API', () => {
 		).toThrow('navigation.group.id required')
 	})
 
+	it('keeps host-only route grouping out of the browser Contract fingerprint', () => {
+		const define = (grouped: boolean) =>
+			workbenchContract.define({
+				views: {
+					Manager: {
+						placements: [
+							workbenchContract.route('/settings', {
+								title: 'KOOK Bots',
+								icon: workbenchContract.icons.BrandDiscord,
+								order: 66,
+								navigation: grouped
+									? {
+											label: 'KOOK',
+											group: {
+												id: 'bots',
+												label: 'Bots',
+												icon: workbenchContract.icons.MessageChatbot,
+											},
+										}
+									: undefined,
+							}),
+						],
+					},
+				},
+			})
+
+		expect(define(true).fingerprint).toBe(define(false).fingerprint)
+	})
+
 	it('types server RPC methods as asynchronous browser calls', () => {
 		type Rpc = { ping(input: string): string; save(): Promise<number>; localState: string }
 		type Client = WorkbenchRpcClient<Rpc>

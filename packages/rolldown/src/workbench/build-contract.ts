@@ -12,7 +12,7 @@ export type ResolvedFederationShared = {
 }
 
 const require = createRequire(import.meta.url)
-const WORKBENCH_UI_BUILD_CONTRACT_VERSION = 1
+const WORKBENCH_UI_BUILD_CONTRACT_VERSION = 2
 const workbenchUiToolchainSignature = [
 	`pluxel@${WORKBENCH_UI_BUILD_CONTRACT_VERSION}`,
 	`@module-federation/vite@${resolveToolchainPackageVersion('@module-federation/vite')}`,

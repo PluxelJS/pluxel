@@ -322,11 +322,42 @@ function defineContract<
 	}
 	const frozenPorts = Object.freeze(ports)
 	return Object.freeze({
-		fingerprint: contractFingerprint({ resources, views, ports: frozenPorts }),
+		fingerprint: contractFingerprint({
+			resources,
+			views: contractFingerprintViews(views),
+			ports: frozenPorts,
+		}),
 		resources,
 		views,
 		ports: frozenPorts,
 	})
+}
+
+function contractFingerprintViews(views: WorkbenchViewMap): WorkbenchViewMap {
+	return Object.fromEntries(
+		Object.entries(views).map(([viewId, view]) => [
+			viewId,
+			{
+				...view,
+				placements: view.placements.map((placement) => {
+					const route = placement.meta?.route
+					if (!route?.navigationGroup && !route?.navigationLabel) return placement
+					const fingerprintRoute = Object.fromEntries(
+						Object.entries(route).filter(
+							([key]) => key !== 'navigationGroup' && key !== 'navigationLabel',
+						),
+					)
+					return {
+						...placement,
+						meta: {
+							...placement.meta,
+							route: fingerprintRoute,
+						},
+					}
+				}),
+			},
+		]),
+	) as WorkbenchViewMap
 }
 
 function rpcResource<TRpc>(): WorkbenchRpcResource<TRpc> {

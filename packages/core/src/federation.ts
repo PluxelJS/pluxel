@@ -4,6 +4,8 @@ export const WORKBENCH_FEDERATION_OUT_DIR = 'workbench' as const
 export const WORKBENCH_FEDERATION_MANIFEST_FILE = 'mf-manifest.json' as const
 export const WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE = 'remoteEntry.js' as const
 export const WORKBENCH_FEDERATION_SHARE_STRATEGY = 'loaded-first' as const
+export const WORKBENCH_SHELL_BUILD_INFO_FILE = 'pluxel-workbench-shell.json' as const
+export const WORKBENCH_SHELL_BUILD_INFO_VERSION = 1 as const
 
 // Keep the MF shared contract limited to plugin-facing surface areas.
 //

@@ -3,9 +3,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { traceNodeModules } from 'nf3'
 import { describe, expect, it, vi } from 'vitest'
+import {
+	WORKBENCH_SHELL_BUILD_INFO_FILE,
+	WORKBENCH_SHELL_BUILD_INFO_VERSION,
+} from '@pluxel/core/federation'
 
 import { createPluginBuildPipeline, pluginPackage } from '../src/cli/plugin-build.ts'
-import { staticApplication } from '../src/cli/static-application.ts'
+import {
+	assertWorkbenchShellContractProtocol,
+	staticApplication,
+} from '../src/cli/static-application.ts'
 
 vi.mock('nf3', () => ({ traceNodeModules: vi.fn() }))
 
@@ -232,6 +239,35 @@ describe('staticApplication', () => {
 				target: 'fetch' as never,
 			}),
 		).toThrow('only the node target is currently supported')
+	})
+
+	it('rejects a stale Workbench shell contract protocol during static assembly', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-workbench-shell-'))
+		try {
+			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
+				'build info is missing or invalid',
+			)
+			await writeFile(
+				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
+				JSON.stringify({
+					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
+					contractProtocol: 1,
+				}),
+			)
+			await expect(assertWorkbenchShellContractProtocol(root, 2)).rejects.toThrow(
+				'expected 2, built 1',
+			)
+			await writeFile(
+				join(root, WORKBENCH_SHELL_BUILD_INFO_FILE),
+				JSON.stringify({
+					version: WORKBENCH_SHELL_BUILD_INFO_VERSION,
+					contractProtocol: 2,
+				}),
+			)
+			await expect(assertWorkbenchShellContractProtocol(root, 2)).resolves.toBeUndefined()
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
 	})
 
 	it('keeps production bootstrap imports inside the directly installed route package', async () => {

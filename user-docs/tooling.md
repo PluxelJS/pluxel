@@ -128,8 +128,10 @@ provider；部署目标上后来安装 package 不会改变闭包。完整 packa
 时 server bundle 与 `dist/workbench/<artifact>/` remote 分开生成。
 
 完整 remote 缓存在 `.pluxel/workbench-build/<artifact>/<hash>/`。缓存 key 包含 source graph、lockfile、
-shared versions 和 compiler version；可以安全删除该目录做冷构建。多个 UI 构建由 Pluxel 负责底层隔离，
-项目不需要设置 `compileConcurrency: 1` 或共享临时输出目录。
+shared versions 和 compiler/build-contract version；可以安全删除该目录做冷构建。static application 还会校验
+Workbench shell 与 runtime 的 contract protocol；若提示 shell protocol 不一致，应先重新构建当前
+`@pluxel/runtime`，不能继续发布混合产物。多个 UI 构建由 Pluxel 负责底层隔离，项目不需要设置
+`compileConcurrency: 1` 或共享临时输出目录。
 
 ## Node module artifact
 

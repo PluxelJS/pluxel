@@ -436,7 +436,7 @@ export default { Component }
 
 		const resolved = resolveWorkbenchFederationShared(fixture.path, ['shared-exported'])
 
-		expect(resolved.signature).toContain('builder:pluxel@1')
+		expect(resolved.signature).toContain('builder:pluxel@2')
 		expect(resolved.signature).toContain('@module-federation/vite@1.16.16')
 		expect(resolved.signature).toContain('vite@8.1.3')
 		expect(resolved.signature).toContain('shared:shared-exported@1.2.3')

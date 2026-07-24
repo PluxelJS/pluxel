@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import {
+	WORKBENCH_SHELL_BUILD_INFO_FILE,
+	WORKBENCH_SHELL_BUILD_INFO_VERSION,
+} from '@pluxel/core/federation'
 import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf3/db'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
@@ -462,8 +466,9 @@ function staticApplicationAssemblyPlugin(options: {
 				assertBundledPluxelClosure(bundle)
 				await mkdir(options.outDir, { recursive: true })
 				if (options.variant === 'workbench') {
-					const runtimePublic = resolveRuntimePublicDir(options.cwd)
-					await cp(runtimePublic, resolve(options.outDir, 'workbench/public'), {
+					const runtime = resolveRuntimeWorkbenchDistribution(options.cwd)
+					await assertWorkbenchShellContractProtocol(runtime.publicDir, runtime.contractProtocol)
+					await cp(runtime.publicDir, resolve(options.outDir, 'workbench/public'), {
 						recursive: true,
 						force: true,
 					})
@@ -542,17 +547,55 @@ function assertBundledPluxelClosure(bundle: OutputBundle): void {
 	}
 }
 
-function resolveRuntimePublicDir(cwd: string): string {
+function resolveRuntimeWorkbenchDistribution(cwd: string): {
+	publicDir: string
+	contractProtocol: number
+} {
 	const applicationRequire = createRequire(resolve(cwd, 'package.json'))
 	const routeRoot = dirname(applicationRequire.resolve('@pluxel/runtime-static/package.json'))
 	const routeRequire = createRequire(resolve(routeRoot, 'package.json'))
-	const packageRoot = dirname(routeRequire.resolve('@pluxel/runtime/package.json'))
+	const packageJsonPath = routeRequire.resolve('@pluxel/runtime/package.json')
+	const packageRoot = dirname(packageJsonPath)
+	const metadata = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
+		pluxel?: { workbenchContractProtocol?: unknown }
+	}
+	const contractProtocol = metadata.pluxel?.workbenchContractProtocol
+	if (!Number.isInteger(contractProtocol) || Number(contractProtocol) <= 0) {
+		throw new Error(
+			'[static-application] @pluxel/runtime does not declare pluxel.workbenchContractProtocol',
+		)
+	}
 	for (const candidate of [resolve(packageRoot, 'dist/public'), resolve(packageRoot, 'public')]) {
-		if (existsSync(candidate)) return candidate
+		if (existsSync(candidate)) {
+			return { publicDir: candidate, contractProtocol: Number(contractProtocol) }
+		}
 	}
 	throw new Error(
 		'[static-application] Workbench variant requires the built @pluxel/runtime public shell',
 	)
+}
+
+export async function assertWorkbenchShellContractProtocol(
+	publicDir: string,
+	expectedProtocol: number,
+): Promise<void> {
+	const buildInfoPath = resolve(publicDir, WORKBENCH_SHELL_BUILD_INFO_FILE)
+	let buildInfo: { version?: unknown; contractProtocol?: unknown }
+	try {
+		buildInfo = JSON.parse(await readFile(buildInfoPath, 'utf-8')) as typeof buildInfo
+	} catch {
+		throw new Error(
+			`[static-application] Workbench shell build info is missing or invalid: ${buildInfoPath}; rebuild @pluxel/runtime`,
+		)
+	}
+	if (
+		buildInfo.version !== WORKBENCH_SHELL_BUILD_INFO_VERSION ||
+		buildInfo.contractProtocol !== expectedProtocol
+	) {
+		throw new Error(
+			`[static-application] Workbench shell contract protocol mismatch: expected ${expectedProtocol}, built ${String(buildInfo.contractProtocol ?? '<missing>')}; rebuild @pluxel/runtime`,
+		)
+	}
 }
 
 async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
