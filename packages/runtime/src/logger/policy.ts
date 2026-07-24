@@ -269,7 +269,7 @@ export class RuntimePluginLogPolicy {
 		this.persistenceValue = 'dirty'
 		if (this.persistPromise) return
 		this.persistPromise = Promise.resolve()
-			.then(async () => {
+			.then(async (): Promise<undefined> => {
 				while (this.persistRequested) {
 					this.persistRequested = false
 					await this.store!.save(this.profile, this.snapshot())

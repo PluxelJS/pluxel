@@ -204,8 +204,12 @@ async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
 			},
 		},
 	}
+	const buildConfig = mergeConfig(internalConfig, payload.vite ?? {})
+	// This is a bounded production artifact build. It never serves or hot-reloads files. Assign
+	// after merging because Vite ignores null overrides, and user config must not re-enable a watcher.
+	buildConfig.server = { ...buildConfig.server, watch: null }
 	try {
-		await build(mergeConfig(internalConfig, payload.vite ?? {}))
+		await build(buildConfig)
 	} catch (error) {
 		await rm(payload.outDir, { recursive: true, force: true })
 		throw error

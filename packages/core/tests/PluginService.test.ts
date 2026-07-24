@@ -6,6 +6,7 @@ import {
 	Plugin,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,
+	type CommitSummary,
 	type PluginIdentifier,
 	setParamToken,
 	withCoreHost,
@@ -25,12 +26,12 @@ function createDeferred() {
 function collectCommitSummaries(host: {
 	ctx: {
 		internalEvent: {
-			runtimeCommitted: { on(listener: (summary: unknown) => void): unknown }
+			runtimeCommitted: { on(listener: (summary: CommitSummary) => void): unknown }
 		}
 	}
 }) {
-	const summaries: unknown[] = []
-	host.ctx.internalEvent.runtimeCommitted.on((summary: unknown) => {
+	const summaries: CommitSummary[] = []
+	host.ctx.internalEvent.runtimeCommitted.on((summary) => {
 		summaries.push(summary)
 	})
 	return summaries
@@ -1118,9 +1119,7 @@ describe('PluginService commit()', () => {
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
 		await withCoreHost(async (host) => {
-			const summaries = collectCommitSummaries(host) as Array<{
-				added?: unknown[]
-			}>
+			const summaries = collectCommitSummaries(host)
 
 			const slowInit = createDeferred()
 			let slowInitCalled = false

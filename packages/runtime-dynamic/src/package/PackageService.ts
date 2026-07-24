@@ -213,7 +213,7 @@ export class PackageService {
 		)
 		this.ready = this.installDefaultsReady
 			.then(() => this.initializeFromState())
-			.catch((error) => {
+			.catch((error): undefined => {
 				this.logEvent('warn', 'init:restore_failed', { error })
 				return undefined
 			})
@@ -221,7 +221,7 @@ export class PackageService {
 				this.initialized = true
 				return this.syncTrackedPlugins()
 			})
-			.catch((error) => {
+			.catch((error): undefined => {
 				this.logEvent('warn', 'init:sync_failed', { error })
 				return undefined
 			})

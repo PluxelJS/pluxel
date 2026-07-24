@@ -104,7 +104,7 @@ export function TelegramOverviewPanel() {
 				<Metric label="异常" value={String(issueCount)} tone={issueCount ? 'red' : undefined} />
 				<Metric label="已配置" value={String(settingsQuery.rows.length)} />
 			</SimpleGrid>
-			{statuses.length ? (
+			{statuses.length > 0 ? (
 				<Stack gap={0}>
 					{statuses.slice(0, 4).map(({ settings, status }, index) => {
 						const phase = PHASE_META[status?.phase ?? 'offline']
@@ -360,8 +360,8 @@ export function TelegramManagerPanel() {
 							value={search}
 							onChange={(event) => setSearch(event.currentTarget.value)}
 						/>
-						{isLoading && !settingsList.length ? <Loader size="sm" /> : null}
-						{!isLoading && !filteredAccounts.length ? (
+						{isLoading && settingsList.length === 0 ? <Loader size="sm" /> : null}
+						{!isLoading && filteredAccounts.length === 0 ? (
 							<Paper withBorder p="md" radius="sm">
 								<Text size="sm" fw={600}>
 									{search ? '没有匹配账号' : '还没有 Bot'}
@@ -467,7 +467,7 @@ export function TelegramManagerPanel() {
 												: '保存后将立即启动 long polling'}
 										</Text>
 										<Group gap="xs">
-											{creating && settingsList.length ? (
+											{creating && settingsList.length > 0 ? (
 												<Button
 													variant="subtle"
 													color="gray"

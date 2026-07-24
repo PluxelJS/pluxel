@@ -26,7 +26,7 @@ export class WorkbenchBackend {
 		this.artifacts = new WorkbenchArtifactService(root)
 		this.rpc = new WorkbenchRpcService(root, undefined)
 		this.events = new WorkbenchEventsService(root, undefined)
-		this.liveQueries = new WorkbenchLiveQueryService(root, this.events)
+		this.liveQueries = new WorkbenchLiveQueryService(this.events)
 		this.registry = new WorkbenchRegistry(root, this.artifacts)
 		this.events.registerResourceFor(root, 'workbench.layouts', (channel) => {
 			const emit = () => channel.emit('revision', this.registry.getCatalog().revision)

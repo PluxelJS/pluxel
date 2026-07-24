@@ -386,11 +386,11 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		this.rootState = 'initializing'
 		this.initializePromise = this.policy
 			.initialize(this.resolved.root.profile, store)
-			.then(() => {
+			.then((): undefined => {
 				this.rootState = 'ready'
 				return undefined
 			})
-			.catch((error) => {
+			.catch((error): undefined => {
 				this.rootState = 'degraded'
 				if (this.resolved.root.policyLoadFailure === 'fail') throw error
 				getLogger(['pluxel', 'runtime', this.resolved.root.id]).warn(

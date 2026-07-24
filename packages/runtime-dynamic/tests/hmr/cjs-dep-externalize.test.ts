@@ -53,22 +53,24 @@ async function runHmr(
 	})
 
 	const hmrPort = await getFreePort()
-	const server = await createServer(
-		mergeConfig(
-			buildLoaderHmrViteConfig({
-				root,
-				fsAllow,
-				deps,
-				runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
-				httpPlugin: { name: 'noop' },
-				port: 0,
-			}),
-			// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
-			// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
-			// allocate a unique free port to prevent cross-test / local dev conflicts.
-			{ server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } } },
-		),
+	const serverConfig = mergeConfig(
+		buildLoaderHmrViteConfig({
+			root,
+			fsAllow,
+			deps,
+			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
+			httpPlugin: { name: 'noop' },
+			port: 0,
+		}),
+		// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
+		// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
+		// allocate a unique free port to prevent cross-test / local dev conflicts.
+		{ server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } } },
 	)
+	// The module runner triggers imports explicitly. Assign after mergeConfig because null overrides are ignored.
+	serverConfig.server = { ...serverConfig.server, watch: null }
+	const server = await createServer(serverConfig)
+	expect(server.config.server.watch).toBeNull()
 
 	try {
 		await hmr.executeFiles([join(root, 'entry.ts')])

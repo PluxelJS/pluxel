@@ -39,7 +39,6 @@ import {
 	type CommitExecutionDelta,
 	type CommitExecutionPlan,
 	type CommitSummary,
-	type PluginReplacement,
 } from './plugin-service/CommitPlan'
 import {
 	assignValidatedConfigBindings,
@@ -1054,11 +1053,7 @@ export class PluginService {
 		this._activeRuntime = runtime
 		try {
 			const oldGraph = this.graph
-			const plan = this.buildCommitPlan(oldGraph, graph, {
-				added: delta.added as readonly RuntimePluginKey[],
-				replaced: delta.replaced as readonly PluginReplacement[],
-				removed: delta.removed as readonly RuntimePluginKey[],
-			})
+			const plan = this.buildCommitPlan(oldGraph, graph, delta)
 
 			// No-op commit: still report state (after applying pending restarts/retries).
 			if (isCommitExecutionPlanEmpty(delta, plan)) {

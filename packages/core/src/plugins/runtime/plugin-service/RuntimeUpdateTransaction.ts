@@ -165,7 +165,9 @@ export class PluginRuntimeUpdateTransaction<
 			? collectPluginLifecycleNotStarted(this.controller.lastCommitSummary()?.lifecycleReport)
 			: []
 		if (failed.length > 0) {
-			return createErr(createPluginsFailedToStartError(failed)) as TCommitResult
+			// The controller's concrete commit result is a plain-result union. This generic preserves that
+			// exact return type, but TypeScript cannot prove its error branch from the `{ ok: boolean }` bound.
+			return createErr(createPluginsFailedToStartError(failed)) as unknown as TCommitResult
 		}
 
 		return result

@@ -9,8 +9,7 @@
 		}
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false",
-		"test": "vitest run --config ../../vitest.config.ts tests"
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@repo/chatbots-adapter-kit": "workspace:*",

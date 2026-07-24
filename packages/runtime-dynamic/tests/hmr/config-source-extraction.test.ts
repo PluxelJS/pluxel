@@ -72,19 +72,22 @@ async function withPluginRunner<T>(
 	hmr.setServerRoot(root)
 	const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
 
-	const server = await createServer(
-		mergeConfig(
-			buildLoaderHmrViteConfig({
-				root,
-				fsAllow,
-				deps,
-				runnerPlugin,
-				httpPlugin: { name: 'noop' },
-				port: 0,
-			}),
-			{ server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false } },
-		),
+	const serverConfig = mergeConfig(
+		buildLoaderHmrViteConfig({
+			root,
+			fsAllow,
+			deps,
+			runnerPlugin,
+			httpPlugin: { name: 'noop' },
+			port: 0,
+		}),
+		{ server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false } },
 	)
+	// Vite's mergeConfig intentionally ignores null overrides. Assign after merging because this test
+	// drives the module runner explicitly and must not recursively watch the workspace root.
+	serverConfig.server = { ...serverConfig.server, watch: null }
+	const server = await createServer(serverConfig)
+	expect(server.config.server.watch).toBeNull()
 
 	try {
 		return await run(async (pluginEntry) => {

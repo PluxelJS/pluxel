@@ -10,6 +10,7 @@ import type {
 } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
+type ContextInstanceState = { instances: Record<symbol, unknown> }
 
 // "Any service" should allow arbitrary instance types and method proxy lists.
 // Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
@@ -253,13 +254,14 @@ function createServiceGetter<T>(
 	if (scope === 'root') {
 		return function (this: Context) {
 			const root = this.root
-			let inst = root.instances[sk] as T
+			const rootInstances = contextInstanceState(root).instances
+			let inst = rootInstances[sk] as T
 			if (inst) return bindServiceContext(inst, root)
 
 			const cfg = (root.config as Record<string, unknown>)[key]
 			inst = new ctor(root, cfg)
 			bindServiceContext(inst, root)
-			root.instances[sk] = inst
+			rootInstances[sk] = inst
 			return inst
 		}
 	}
@@ -272,7 +274,8 @@ function createServiceGetter<T>(
 		//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
 		//   (after isolate() via Object.create), so lookups still hit.
 		// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
-		let inst = this.instances[ik] as T
+		const instances = contextInstanceState(this).instances
+		let inst = instances[ik] as T
 		if (inst) return bindServiceContext(inst, this)
 
 		const cfg = (this.config as Record<string, unknown>)[key]
@@ -281,9 +284,16 @@ function createServiceGetter<T>(
 		// Only decide where to store on miss:
 		// - `ik === sk` -> shared root space (avoid accidental isolation)
 		// - `ik !== sk` -> this context's isolated space
-		;(ik === sk ? this.root.instances : this.instances)[ik] = inst
+		const targetInstances = ik === sk ? contextInstanceState(this.root).instances : instances
+		targetInstances[ik] = inst
 		return inst
 	}
+}
+
+function contextInstanceState(ctx: Context): ContextInstanceState {
+	// Keep the cache private on the public Context type while allowing this module's installed getters
+	// to access the same implementation state.
+	return ctx as unknown as ContextInstanceState
 }
 
 function bindServiceContext<T>(inst: T, ctx: Context) {

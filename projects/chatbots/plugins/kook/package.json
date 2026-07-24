@@ -14,8 +14,7 @@
 	},
 	"scripts": {
 		"api:check": "node --experimental-strip-types scripts/check-api.ts",
-		"typecheck": "pnpm api:check && tsc --noEmit --pretty false",
-		"test": "vitest run --config ../../vitest.config.ts tests"
+		"typecheck": "pnpm api:check && tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@repo/chatbots-adapter-kit": "workspace:*"

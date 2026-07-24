@@ -675,6 +675,11 @@ class OwnerDatabaseHandle<
 		return this.coordinator.subscribe(this.instance.ownerSchema, tables, listener)
 	}
 
+	ownsTables(tables: readonly unknown[]): boolean {
+		const known = new Set(schemaTableNames(this.definition))
+		return tables.every((table) => known.has(readTableName(table)))
+	}
+
 	private run<Result>(
 		readonly: boolean,
 		callback: (database: AnyDatabase) => Result | Promise<Result>,
@@ -792,8 +797,7 @@ export function databaseHandleOwnsTables(
 	tables: readonly unknown[],
 ): boolean {
 	if (!(handle instanceof OwnerDatabaseHandle)) return false
-	const known = new Set(schemaTableNames((handle as any).definition))
-	return tables.every((table) => known.has(readTableName(table)))
+	return handle.ownsTables(tables)
 }
 
 function schemaTableNames(definition: DatabaseDefinition): string[] {

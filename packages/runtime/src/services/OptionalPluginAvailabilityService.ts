@@ -9,10 +9,10 @@ import { isPluginEnabled } from './RuntimeStateHelpers'
 
 const OPTIONAL_PLUGIN_REF = Symbol.for('pluxel:plugin:optional-ref')
 
-type Entry<T extends PluginConstructor = PluginConstructor> = {
-	readonly ref: OptionalPluginRef<T>
-	readonly subscribers: Set<(token: T) => void>
-	token?: T
+type Entry = {
+	readonly ref: OptionalPluginRef<PluginConstructor>
+	readonly subscribers: Set<(token: PluginConstructor) => void>
+	token?: PluginConstructor
 	inFlight?: Promise<void>
 	version: number
 }
@@ -32,7 +32,7 @@ export class OptionalPluginAvailabilityService {
 	private updates: Promise<void> = Promise.resolve()
 	private disposed = false
 
-	constructor(private readonly ctx: CoreContext) {
+	constructor(public ctx: CoreContext) {
 		this.ctx.effects.defer(() => {
 			this.disposed = true
 			for (const entry of this.entries.values()) entry.subscribers.clear()
@@ -45,19 +45,21 @@ export class OptionalPluginAvailabilityService {
 		onResolved: (token: T) => void,
 	): () => void {
 		if (this.disposed) throw new Error('[pluxel/runtime] optional plugin service is disposed')
-		let entry = this.entries.get(ref) as Entry<T> | undefined
+		const erasedRef = ref as unknown as OptionalPluginRef<PluginConstructor>
+		let entry = this.entries.get(erasedRef)
 		if (!entry) {
-			entry = { ref, subscribers: new Set(), version: 0 }
-			this.entries.set(ref, entry as Entry)
+			entry = { ref: erasedRef, subscribers: new Set(), version: 0 }
+			this.entries.set(erasedRef, entry)
 		}
-		entry.subscribers.add(onResolved)
-		if (entry.token) onResolved(entry.token)
+		const subscriber = (token: PluginConstructor) => onResolved(token as T)
+		entry.subscribers.add(subscriber)
+		if (entry.token) subscriber(entry.token)
 		else this.schedule(entry)
 
 		return () => {
-			if (!entry!.subscribers.delete(onResolved) || entry!.subscribers.size > 0) return
+			if (!entry!.subscribers.delete(subscriber) || entry!.subscribers.size > 0) return
 			entry!.version++
-			this.entries.delete(ref)
+			this.entries.delete(erasedRef)
 		}
 	}
 
@@ -71,13 +73,13 @@ export class OptionalPluginAvailabilityService {
 		}
 	}
 
-	private schedule<T extends PluginConstructor>(entry: Entry<T>): void {
+	private schedule(entry: Entry): void {
 		if (entry.inFlight || this.disposed || entry.subscribers.size === 0) return
 		const version = entry.version
 		entry.inFlight = this.ctx.registry
 			.afterCurrentCommit(() => {
 				const task = this.updates.then(() => this.activate(entry, version))
-				this.updates = task.catch(() => undefined)
+				this.updates = task.catch((): undefined => undefined)
 				return task
 			})
 			.catch((error) => this.report('resolve', error))
@@ -87,11 +89,11 @@ export class OptionalPluginAvailabilityService {
 			})
 	}
 
-	private async activate<T extends PluginConstructor>(entry: Entry<T>, version: number) {
+	private async activate(entry: Entry, version: number) {
 		if (!this.isCurrent(entry, version)) return
-		const load = entry.ref as unknown as () => Promise<T>
+		const load = entry.ref as unknown as () => Promise<PluginConstructor>
 		const expectedPackage = (entry.ref as unknown as Record<symbol, unknown>)[OPTIONAL_PLUGIN_REF]
-		let ctor: T
+		let ctor: PluginConstructor
 		try {
 			ctor = await load()
 		} catch (error) {
@@ -156,7 +158,7 @@ export class OptionalPluginAvailabilityService {
 		}
 	}
 
-	private publish<T extends PluginConstructor>(entry: Entry<T>, version: number, token: T) {
+	private publish(entry: Entry, version: number, token: PluginConstructor) {
 		if (!this.isCurrent(entry, version)) return
 		if (entry.token === token) return
 		entry.token = token
@@ -187,7 +189,7 @@ export class OptionalPluginAvailabilityService {
 		}
 	}
 
-	private report(stage: string, error: unknown) {
+	private report(stage: string, error: unknown): void {
 		this.ctx.logger.error('optional plugin unavailable', { stage, error })
 	}
 }

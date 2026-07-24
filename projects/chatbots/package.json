@@ -7,7 +7,7 @@
 		"start": "vite --host 127.0.0.1",
 		"static": "vite --host 127.0.0.1",
 		"build": "tsdown && vite build",
-		"test": "vitest run --config vitest.config.ts test/",
+		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {

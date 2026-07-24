@@ -35,26 +35,28 @@ describe('HMR runner bridge', () => {
 			scanRoots: [normalizePath(fixturesDir)],
 		})
 
-		const server = await createServer(
-			mergeConfig(
-				buildLoaderHmrViteConfig({
-					root: cwd,
-					fsAllow,
-					deps,
-					runnerPlugin: { name: 'noop' },
-					httpPlugin: { name: 'noop' },
-				}),
-				{
-					server: {
-						port: 0,
-						hmr: false,
-						ws: false,
-						middlewareMode: true,
-						fs: { allow: fsAllow },
-					},
+		const serverConfig = mergeConfig(
+			buildLoaderHmrViteConfig({
+				root: cwd,
+				fsAllow,
+				deps,
+				runnerPlugin: { name: 'noop' },
+				httpPlugin: { name: 'noop' },
+			}),
+			{
+				server: {
+					port: 0,
+					hmr: false,
+					ws: false,
+					middlewareMode: true,
+					fs: { allow: fsAllow },
 				},
-			),
+			},
 		)
+		// Imports are triggered directly below. Assign after mergeConfig because null overrides are ignored.
+		serverConfig.server = { ...serverConfig.server, watch: null }
+		const server = await createServer(serverConfig)
+		expect(server.config.server.watch).toBeNull()
 		try {
 			await withTestDynamicContext(async (ctx) => {
 				const hmr = new LoaderHmrService(ctx, {

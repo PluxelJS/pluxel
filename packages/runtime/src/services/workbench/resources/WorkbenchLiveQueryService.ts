@@ -50,10 +50,7 @@ const MAX_BYTES = 5 * 1024 * 1024
 export class WorkbenchLiveQueryService {
 	private readonly resources = new Map<string, RegisteredLiveQuery>()
 
-	constructor(
-		private readonly root: Context,
-		private readonly events: WorkbenchEventsService,
-	) {}
+	constructor(private readonly events: WorkbenchEventsService) {}
 
 	registerResourceFor<Params, Row>(
 		owner: Context,

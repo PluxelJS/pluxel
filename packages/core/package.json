@@ -71,6 +71,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
 		"bench:di": "pnpm --filter diod build && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},

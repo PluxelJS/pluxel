@@ -31,7 +31,8 @@
 		"dev": "pnpm -w run build:gqlens && vite",
 		"build": "vite build",
 		"preview": "vite preview",
-		"test": "pnpm exec vitest run"
+		"test": "pnpm exec vitest run",
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@dnd-kit/core": "^6.3.1",

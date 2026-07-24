@@ -14,8 +14,7 @@
 		"./wire-schema": "./src/wire-schema.ts"
 	},
 	"scripts": {
-		"typecheck": "tsc --noEmit --pretty false",
-		"test": "vitest run --config ../../vitest.config.ts tests"
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"@pluxel/runtime": "workspace:*",

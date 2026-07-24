@@ -259,6 +259,25 @@
 			],
 			"outputLogs": "errors-only",
 		},
+		"@repo/project-chatbots#test": {
+			// Drizzle Kit loads workspace package exports from dist while transforming database schemas.
+			// Keep those artifacts stable instead of testing while this project's build graph cleans them.
+			"dependsOn": ["build", "@pluxel/test#build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/oxlint.config.ts",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"$TURBO_ROOT$/vitest.config.ts",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+			],
+			"outputLogs": "errors-only",
+		},
 		"typecheck": {
 			// Product projects intentionally validate the published runtime declaration boundary.
 			// Their Vite configs import runtime-static source, whose compiler bridge consumes

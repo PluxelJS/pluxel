@@ -71,11 +71,7 @@
 
 ```ts
 // 默认 public entry point：只包含已知调用方需要的契约
-export {
-	createEngine,
-	type Engine,
-	type EngineConfig,
-}
+export { createEngine, type Engine, type EngineConfig }
 ```
 
 **合理例外**
@@ -109,9 +105,7 @@ type AmbiguousBuildResult = {
 }
 
 // 默认：类型直接表达真实状态
-type BuildResult =
-	| { ok: true; output: string }
-	| { ok: false; error: BuildError }
+type BuildResult = { ok: true; output: string } | { ok: false; error: BuildError }
 ```
 
 从 JSON、环境变量、网络、存储或第三方插件进入的数据，必须在进入内部契约时验证。
@@ -161,8 +155,7 @@ Message 面向人，稳定类型或 `code` 面向程序，`cause` / `details` �
 
 ```ts
 type LoadResult =
-	| { ok: true; value: Config }
-	| { ok: false; code: 'NOT_FOUND' | 'INVALID_CONFIG'; cause?: unknown }
+	{ ok: true; value: Config } | { ok: false; code: 'NOT_FOUND' | 'INVALID_CONFIG'; cause?: unknown }
 
 // 调用方可以稳定分支
 if (!result.ok && result.code === 'NOT_FOUND') {
@@ -373,9 +366,7 @@ Mutable builder 或动态配置本身就是领域模型时，可以可变，但�
 Discriminated union 让分支缩小后的字段可用性与真实运行时状态一致。Literal union 能补全、检查拼写并列出库真正支持的闭合集合。对象返回值为字段命名，新增可选字段时也不改变解构顺序。
 
 ```ts
-type ParseResult =
-	| { ok: true; ast: Ast; warnings: Warning[] }
-	| { ok: false; error: ParseError }
+type ParseResult = { ok: true; ast: Ast; warnings: Warning[] } | { ok: false; error: ParseError }
 
 type ParseMode = 'strict' | 'loose' | 'recover'
 ```
@@ -482,11 +473,7 @@ compileCache.get({
 
 // 自定义多字段协议也默认结构化
 transform({
-	pipeline: [
-		{ type: 'parse' },
-		{ type: 'minify' },
-		{ type: 'emit', format: 'cjs' },
-	],
+	pipeline: [{ type: 'parse' }, { type: 'minify' }, { type: 'emit', format: 'cjs' }],
 })
 ```
 

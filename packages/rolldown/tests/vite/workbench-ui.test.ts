@@ -294,6 +294,7 @@ export default { marker }
 
 		const root = join(fixture.path, 'packages/plugins/demo')
 		const outDir = join(fixture.path, 'dist/workbench-ui')
+		let resolvedWatch: unknown
 		await buildWorkbenchUiRemote({
 			root,
 			pluginName: 'PluginWithTransform',
@@ -306,6 +307,9 @@ export default { marker }
 				plugins: [
 					{
 						name: 'test:workbench-ui-transform',
+						configResolved(config) {
+							resolvedWatch = config.server.watch
+						},
 						transform: {
 							filter: {
 								id: /\/src\/ui\/index\.ts$/,
@@ -322,6 +326,7 @@ export default { marker }
 		const files = await readdir(outDir, { recursive: true })
 		const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
 		const contents = await Promise.all(jsFiles.map((file) => readFile(join(outDir, file), 'utf-8')))
+		expect(resolvedWatch).toBeNull()
 		expect(contents.join('\n')).toContain('transformed-by-user-plugin')
 		expect(contents.join('\n')).not.toContain('__PLUGIN_UI_MARKER__')
 	}, 45_000)
