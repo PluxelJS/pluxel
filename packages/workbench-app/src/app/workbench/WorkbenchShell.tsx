@@ -93,7 +93,7 @@ export function WorkbenchShell() {
 	)
 	const sectionPanes = useStore(workspace.store, (state) => state.uiState.sectionPanes)
 	const dirtyTabs = useStore(workspace.store, (state) => state.dirtyTabs)
-	const showTabStrip = tabs.length > 1
+	const showTabStrip = tabs.length > 0
 
 	useEffect(() => {
 		const intent = workspace.consumeNavigation(pathname)
@@ -500,6 +500,7 @@ export function WorkbenchShell() {
 								<RouteGroupRail
 									group={activeRouteGroup}
 									pathname={pathname}
+									openTab={openTab}
 									requestNavigation={workbenchTabsValue.requestNavigation}
 								/>
 							) : null}

@@ -96,4 +96,25 @@ describe('Workbench native document tabs', () => {
 		const updated = syncWorkbenchTabs(second, renamed, 'open-tab')
 		expect(updated.tabs).toEqual([renamed])
 	})
+
+	it('opens a second native tab without replacing the current plugin workbench', () => {
+		const first = {
+			...deriveTabFromPath('/plugins/TelegramPlugin'),
+			kind: 'document' as const,
+		}
+		const second = {
+			...deriveTabFromPath('/workbench/TelegramPlugin/accounts/default'),
+			title: 'default',
+			meta: 'Telegram Bot',
+			kind: 'document' as const,
+		}
+		const state = syncWorkbenchTabs(createDefaultWorkbenchUiState(), first, 'open-tab')
+		const next = syncWorkbenchTabs(state, second, 'open-tab')
+
+		expect(next.tabs.map((tab) => tab.path)).toEqual([
+			'/plugins/TelegramPlugin',
+			'/workbench/TelegramPlugin/accounts/default',
+		])
+		expect(next.activeTabId).toBe(second.id)
+	})
 })

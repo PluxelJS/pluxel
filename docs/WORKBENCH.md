@@ -122,6 +122,10 @@ route、未注册路径和空标题都会失败。规范化后的完整宿主路
 聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。`routeParams` 只包含当前
 route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
 
+宿主对带 `navigation.group` 的 route 同时提供普通导航和“在新工作标签打开”操作。普通点击遵循当前工作区的
+`auto` 策略（未保存的当前 Tab 会保留并打开新 Tab），显式新 Tab 操作始终走同一套 `openTab()` 路径校验、去重和
+`WorkspaceController`；Workbench 至少有一个原生 Tab 时显示 Tab strip，单个 Tab 也可以被关闭并回到首页。
+
 ## Cross-plugin UI
 
 Port 是跨插件 UI resource 注入的唯一路径。provider 声明无 placement renderer，并在 UI 中调用

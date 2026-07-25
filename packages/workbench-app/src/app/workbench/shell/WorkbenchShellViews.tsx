@@ -1,6 +1,7 @@
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { Link, Outlet } from '@tanstack/react-router'
 import {
+	IconExternalLink,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
 	IconLayoutSidebarLeftExpand,
@@ -138,10 +139,12 @@ export function ActivityRail({
 export function RouteGroupRail({
 	group,
 	pathname,
+	openTab,
 	requestNavigation,
 }: {
 	group: NavSection
 	pathname: string
+	openTab: (input: { to: string; title: string; meta?: string }) => void
 	requestNavigation: RequestNavigation
 }) {
 	return (
@@ -156,17 +159,27 @@ export function RouteGroupRail({
 				{group.children?.map((item) => {
 					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
 					return (
-						<Link
-							key={`${item.href}:${item.label}`}
-							to={item.href}
-							className="plx-workbench__routeGroupItem"
-							data-active={isActive ? 'true' : 'false'}
-							aria-current={isActive ? 'page' : undefined}
-							onClick={() => requestNavigation(item.href, 'auto')}
-						>
-							<span aria-hidden="true">{item.icon}</span>
-							<span>{item.label}</span>
-						</Link>
+						<div key={`${item.href}:${item.label}`} className="plx-workbench__routeGroupItemRow">
+							<Link
+								to={item.href}
+								className="plx-workbench__routeGroupItem"
+								data-active={isActive ? 'true' : 'false'}
+								aria-current={isActive ? 'page' : undefined}
+								onClick={() => requestNavigation(item.href, 'auto')}
+							>
+								<span aria-hidden="true">{item.icon}</span>
+								<span>{item.label}</span>
+							</Link>
+							<button
+								type="button"
+								className="plx-workbench__routeGroupItemOpen"
+								aria-label={`在新工作标签打开 ${item.label}`}
+								title="在新工作标签打开"
+								onClick={() => openTab({ to: item.href, title: item.label, meta: group.label })}
+							>
+								<IconExternalLink size={14} stroke={1.8} />
+							</button>
+						</div>
 					)
 				})}
 			</nav>

@@ -42,8 +42,6 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 					return
 				}
 
-				event.preventDefault()
-				requestNavigation(to, workbenchMode)
 				const targetIsCurrent = (() => {
 					try {
 						const targetUrl = new URL(href, window.location.origin)
@@ -55,7 +53,12 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 						return false
 					}
 				})()
-				if (targetIsCurrent && to !== '/') return
+				if (targetIsCurrent && to !== '/') {
+					event.preventDefault()
+					return
+				}
+				event.preventDefault()
+				requestNavigation(to, workbenchMode)
 				if (to === '/') {
 					// 主动点击首页链接时，通过 state 传递 manual 标记
 					void navigate({
