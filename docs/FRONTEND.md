@@ -37,6 +37,18 @@ URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implement
 snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。React 只订阅 snapshot 和渲染，不拥有 artifact 或 route
 生命周期。Workspace tabs、router intent 和持久化由独立 `WorkspaceController` 实例拥有，不使用 module-level store。
 
+## Worksplit adapter boundary
+
+`split-like-vscode` 是独立的通用 UI library，只拥有 pane 约束、resize math、React 组件、CSS 与可序列化 layout value；
+它不知道 Pluxel plugin、route、Remote View、Tab identity 或持久化政策。Pluxel 只把 `@worksplit/react` 当作普通依赖，
+不为它增加 Vite plugin、codegen、virtual module 或 Pluxel-specific library API。
+
+所有直接 Worksplit import 和 pixel/percentage 转换收敛在
+`packages/workbench-app/src/app/workbench/split/view.tsx`。Workbench App 以百分比保存布局，只在 pointer、keyboard 或
+visibility 变更 commit 后写入 `WorkspaceController`；实时拖动不产生同步持久化。Remote plugin UI 只能使用 `openTab()` 等
+host capability，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
+[`README.md`](../packages/workbench-app/src/app/workbench/split/README.md)。
+
 ## Updates and isolation
 
 registry 与 artifact store 可由 host 共享，但 owner registration、Binding 和 cleanup 保留 immutable Context。
