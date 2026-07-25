@@ -472,6 +472,7 @@ function staticApplicationAssemblyPlugin(options: {
 						recursive: true,
 						force: true,
 					})
+					await copyBundledPackageWorkbenchArtifacts(bundle, resolve(options.outDir, 'workbench'))
 				}
 				const entry = Object.values(bundle).find(
 					(item): item is OutputChunk => item.type === 'chunk' && item.isEntry,
@@ -531,6 +532,57 @@ function staticApplicationAssemblyPlugin(options: {
 				)
 			},
 		},
+	}
+}
+
+async function copyBundledPackageWorkbenchArtifacts(
+	bundle: OutputBundle,
+	destinationRoot: string,
+): Promise<void> {
+	const packageRoots = new Set<string>()
+	for (const item of Object.values(bundle)) {
+		if (item.type !== 'chunk') continue
+		for (const rawId of Object.keys(item.modules)) {
+			const id = rawId.split('?', 1)[0]
+			if (!isAbsolute(id)) continue
+			const packageRoot = await findNearestPackageRoot(id)
+			if (packageRoot) packageRoots.add(packageRoot)
+		}
+	}
+
+	for (const packageRoot of packageRoots) {
+		const sourceRoot = resolve(packageRoot, 'dist/workbench')
+		if (sourceRoot === destinationRoot) continue
+		const entries = await readdir(sourceRoot, { withFileTypes: true }).catch(() => [])
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue
+			const source = resolve(sourceRoot, entry.name)
+			const sourceManifest = resolve(source, 'mf-manifest.json')
+			if (!existsSync(sourceManifest)) continue
+			const destination = resolve(destinationRoot, entry.name)
+			const destinationManifest = resolve(destination, 'mf-manifest.json')
+			if (existsSync(destinationManifest)) {
+				const [sourceContent, destinationContent] = await Promise.all([
+					readFile(sourceManifest),
+					readFile(destinationManifest),
+				])
+				if (!sourceContent.equals(destinationContent)) {
+					throw new Error(`[static-application] Workbench artifact collision: ${entry.name}`)
+				}
+				continue
+			}
+			await cp(source, destination, { recursive: true, force: true })
+		}
+	}
+}
+
+async function findNearestPackageRoot(file: string): Promise<string | null> {
+	let current = dirname(file)
+	while (true) {
+		if (existsSync(resolve(current, 'package.json'))) return current
+		const parent = dirname(current)
+		if (parent === current) return null
+		current = parent
 	}
 }
 
