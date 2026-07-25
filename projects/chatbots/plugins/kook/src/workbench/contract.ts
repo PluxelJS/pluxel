@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { WretchWorkbenchPort } from '@pluxel/wretch/workbench'
 import type {
 	BotAdminAccount,
 	BotAdminCommands,
@@ -32,6 +33,7 @@ export type KookWorkbenchCommands = BotAdminCommands
 export const KookUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<KookWorkbenchCommands>(),
+		httpSettings: WretchWorkbenchPort.resources.settings,
 		state: workbenchContract.events<KookWorkbenchEvents>(),
 	},
 	views: {
@@ -62,4 +64,15 @@ export const KookUi = workbenchContract.define({
 			],
 		},
 	},
+	outlets: ({ resources }) => ({
+		Http: {
+			port: WretchWorkbenchPort,
+			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				order: 49,
+				label: 'HTTP',
+				icon: workbenchContract.icons.Settings,
+			}),
+			provide: { settings: resources.httpSettings },
+		},
+	}),
 })

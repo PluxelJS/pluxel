@@ -23,9 +23,9 @@ class RequestScheduler {
 		private readonly maxQueued: number,
 	) {}
 
-	acquire(rawSignals: readonly (AbortSignal | undefined)[]): Promise<() => void> {
+	acquire(rawSignals: readonly (AbortSignal | null | undefined)[]): Promise<() => void> {
 		if (this.stopped) return Promise.reject(this.stopped)
-		const signals = rawSignals.filter((signal): signal is AbortSignal => signal !== undefined)
+		const signals = rawSignals.filter((signal): signal is AbortSignal => signal != null)
 		const aborted = signals.find((signal) => signal.aborted)
 		if (aborted) return Promise.reject(abortError(aborted))
 		if (this.active < this.maxConcurrent) {

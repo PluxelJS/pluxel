@@ -8,7 +8,7 @@ import { KookBotManager, type KookBotConfigInput, type KookEventConsumer } from 
 import { createKookPluginEvents } from './bot/events.factory.ts'
 import type { KookBotStatus } from './bot/status.ts'
 import type { KookWorkbenchEvents } from './workbench/contract.ts'
-import { KookHttpWorkbench, KookWorkbench } from './workbench/extension.ts'
+import { KookWorkbench } from './workbench/extension.ts'
 import { attachKookWorkbenchState, KookWorkbenchRpc } from './workbench/service.ts'
 
 export type { KookBotConfigInput, KookEventConsumer } from './bot/manager.ts'
@@ -40,12 +40,10 @@ export class KookPlugin extends BasePlugin {
 			await this.http.enableManagedSettings()
 			this.ctx.workbench.mount(KookWorkbench, {
 				commands: workbench.bind.rpc(() => new KookWorkbenchRpc(manager)),
+				httpSettings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 				state: workbench.bind.events<KookWorkbenchEvents>((events) =>
 					attachKookWorkbenchState(manager, events),
 				),
-			})
-			this.ctx.workbench.mount(KookHttpWorkbench, {
-				settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 			})
 		}
 	}

@@ -159,7 +159,7 @@ async function rawResponse(chain: WretchResponseChain): Promise<Response> {
 
 function hasResponse(error: unknown): error is { response: Response } {
 	return (
-		Boolean(error) &&
+		error !== null &&
 		typeof error === 'object' &&
 		'response' in error &&
 		(error as { response?: unknown }).response instanceof Response
