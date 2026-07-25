@@ -1,7 +1,6 @@
 {
 	"extends": "../../tsconfig.workspace.json",
 	"include": ["src"],
-	"exclude": ["src/client.tsx"],
 	"compilerOptions": {
 		"noEmit": false,
 		"paths": {

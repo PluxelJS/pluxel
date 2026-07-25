@@ -59,7 +59,7 @@ describe('WorkbenchRegistry', () => {
 					views: {
 						Overview: {
 							placements: [
-								workbenchContract.slot(workbenchContract.slots.PluginTabs),
+								workbenchContract.tab(),
 								workbenchContract.route('/overview', { title: 'Overview' }),
 							],
 						},
@@ -78,33 +78,6 @@ describe('WorkbenchRegistry', () => {
 		)
 	})
 
-	it('projects views only to required dependents', () => {
-		const { registry, running } = fixture([['Consumer', 'Provider']])
-		running.add('Provider')
-		registry.mount(
-			'Provider',
-			workbench.extension({
-				contract: workbenchContract.define({
-					views: {
-						Capability: {
-							placements: [
-								workbenchContract.slot(workbenchContract.slots.PluginTabs, {
-									audience: workbenchContract.audience.requiredDependents,
-								}),
-							],
-						},
-					},
-				}),
-			}),
-			{},
-		)
-		expect(registry.getPluginLayout('Provider').items).toHaveLength(0)
-		expect(registry.getPluginLayout('Consumer').items[0]).toMatchObject({
-			ownerPluginId: 'Provider',
-			targetPluginId: 'Consumer',
-		})
-	})
-
 	it('keeps grants across bundle and unrelated plugin updates, then revokes the owner lease', () => {
 		const { registry, running, artifactChanged } = fixture()
 		running.add('Owner')
@@ -115,7 +88,7 @@ describe('WorkbenchRegistry', () => {
 					resources: { commands: workbenchContract.rpc<{}>() },
 					views: {
 						Overview: {
-							placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+							placements: [workbenchContract.tab()],
 						},
 					},
 				}),
@@ -146,7 +119,7 @@ describe('WorkbenchRegistry', () => {
 			outlets: ({ resources }) => ({
 				Settings: {
 					port: SettingsPort,
-					placement: workbenchContract.slot(workbenchContract.slots.PluginTabs),
+					placement: workbenchContract.tab(),
 					provide: { settings: resources.commands },
 				},
 			}),

@@ -36,7 +36,7 @@ export const UsageBillingUi = workbenchContract.define({
 	views: {
 		BillingPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 20,
 					label: '用量总览',
 					icon: workbenchContract.icons.ChartBar,

@@ -7,11 +7,11 @@ import {
 	type WorkbenchEventsOf,
 	type WorkbenchLiveQueryOf,
 	type WorkbenchLiveQueryResource,
-	type WorkbenchPlacementSpec,
 	type WorkbenchPortContract,
 	type WorkbenchResourceContract,
 	type WorkbenchResourceMap,
 	type WorkbenchRpcOf,
+	type WorkbenchTabPlacementSpec,
 } from './contracts'
 import type { DatabaseDefinition, PluginDatabaseClient, PluginDatabaseHandle } from '../database'
 import type { SseHandler } from '../services/workbench/resources/WorkbenchEventsService'
@@ -95,7 +95,7 @@ function extension<const Contract extends AnyWorkbenchContract>(input: {
 
 function portOutlet<const Port extends WorkbenchPortContract<WorkbenchResourceMap>>(input: {
 	port: Port
-	placement: WorkbenchPlacementSpec
+	placement: WorkbenchTabPlacementSpec
 	id?: string
 }): WorkbenchPortOutletExtension<Port> {
 	if (!input?.port || typeof input.port !== 'object') {

@@ -1,10 +1,6 @@
 import type { BuiltinDocContent } from './document-contracts'
 
-export const WorkbenchSlots = {
-	PluginTabs: 'plugin.tabs',
-} as const
-
-export const WorkbenchIcons = {
+export const WorkbenchIcons = Object.freeze({
 	Api: 'api',
 	BrandDiscord: 'brand-discord',
 	BrandTelegram: 'brand-telegram',
@@ -22,12 +18,10 @@ export const WorkbenchIcons = {
 	TextRecognition: 'text-recognition',
 	Typography: 'typography',
 	Users: 'users',
-} as const
+} as const)
 
 export type WorkbenchIcon = (typeof WorkbenchIcons)[keyof typeof WorkbenchIcons]
-export type WorkbenchSlot = (typeof WorkbenchSlots)[keyof typeof WorkbenchSlots]
-export type WorkbenchPlacement = WorkbenchSlot | 'plugin.routes'
-export type WorkbenchAudience = { readonly kind: 'self' } | { readonly kind: 'requiredDependents' }
+export type WorkbenchPlacement = 'plugin.tabs' | 'plugin.routes'
 
 export type WorkbenchViewRef =
 	| { readonly kind: 'remote'; readonly export: string }
@@ -37,11 +31,18 @@ export type WorkbenchViewRef =
 			readonly props: Readonly<Record<string, unknown>>
 	  }
 
-export type WorkbenchViewMeta = Readonly<{
+export type WorkbenchTabMeta = Readonly<{
 	label?: string
 	icon?: WorkbenchIcon
-	tab?: Readonly<{ id: string; label: string; icon?: WorkbenchIcon }>
-	route?: Readonly<{
+	tabGroup?: Readonly<{ id: string; label: string; icon?: WorkbenchIcon }>
+	route?: never
+}>
+
+export type WorkbenchRouteMeta = Readonly<{
+	label?: never
+	icon?: never
+	tabGroup?: never
+	route: Readonly<{
 		path: string
 		title: string
 		icon?: WorkbenchIcon
@@ -57,13 +58,25 @@ export type WorkbenchViewMeta = Readonly<{
 	}>
 }>
 
-export type WorkbenchPlacementSpec = Readonly<{
-	placement: WorkbenchPlacement
-	audience: WorkbenchAudience
+export type WorkbenchViewMeta = WorkbenchTabMeta | WorkbenchRouteMeta
+
+type WorkbenchPlacementBase = Readonly<{
 	priority?: number
-	when?: 'always' | 'running'
-	meta?: WorkbenchViewMeta
 }>
+
+export type WorkbenchTabPlacementSpec = WorkbenchPlacementBase &
+	Readonly<{
+		placement: 'plugin.tabs'
+		meta: WorkbenchTabMeta
+	}>
+
+export type WorkbenchRoutePlacementSpec = WorkbenchPlacementBase &
+	Readonly<{
+		placement: 'plugin.routes'
+		meta: WorkbenchRouteMeta
+	}>
+
+export type WorkbenchPlacementSpec = WorkbenchTabPlacementSpec | WorkbenchRoutePlacementSpec
 
 export type WorkbenchRpcResource<TRpc> = Readonly<{
 	kind: 'rpc'
@@ -162,11 +175,10 @@ export type WorkbenchViewMap = Readonly<Record<string, WorkbenchViewSpec<any>>>
 export type WorkbenchPortOutlet = Readonly<{
 	kind: 'port'
 	id: string
-	placement: WorkbenchSlot
+	placement: 'plugin.tabs'
 	port: WorkbenchPortContract<any>
 	priority?: number
-	when?: 'always' | 'running'
-	meta?: WorkbenchViewMeta
+	meta?: WorkbenchTabMeta
 	provide: Readonly<Record<string, string>>
 }>
 
@@ -236,7 +248,7 @@ type PortProvide<Port extends WorkbenchPortContract<any>> = {
 
 type WorkbenchOutletInput<Port extends WorkbenchPortContract<any>> = Readonly<{
 	port: Port
-	placement: WorkbenchPlacementSpec
+	placement: WorkbenchTabPlacementSpec
 	provide: PortProvide<Port>
 }>
 
@@ -269,9 +281,9 @@ function defineContract<
 	const ports: WorkbenchPortContribution[] = []
 	for (const [outletId, outlet] of Object.entries(input.outlets?.({ resources: tokens }) ?? {})) {
 		const placement = outlet.placement
-		if (!placement || placement.placement === 'plugin.routes') {
+		if (!placement || placement.placement !== 'plugin.tabs') {
 			throw new Error(
-				`[workbench-contract] outlets.${outletId}.placement must be a typed slot placement`,
+				`[workbench-contract] outlets.${outletId}.placement must use workbenchContract.tab()`,
 			)
 		}
 		const provided = Object.fromEntries(
@@ -294,7 +306,6 @@ function defineContract<
 				placement: placement.placement,
 				port: outlet.port,
 				priority: placement.priority,
-				when: placement.when,
 				meta: placement.meta,
 				provide: Object.freeze(provided),
 			}),
@@ -402,23 +413,25 @@ function portContract<const Resources extends WorkbenchResourceMap>(input: {
 	})
 }
 
-function slotPlacement(
-	slot: WorkbenchSlot,
+function tabPlacement(
 	input: {
 		label?: string
 		icon?: WorkbenchIcon
-		tab?: { id: string; label: string; icon?: WorkbenchIcon }
+		group?: { id: string; label: string; icon?: WorkbenchIcon }
 		order?: number
-		when?: 'always' | 'running'
-		audience?: WorkbenchAudience
 	} = {},
-): WorkbenchPlacementSpec {
+): WorkbenchTabPlacementSpec {
+	const tabGroup = input.group
+		? Object.freeze({
+				id: requiredText('workbenchContract.tab', 'group.id', input.group.id),
+				label: requiredText('workbenchContract.tab', 'group.label', input.group.label),
+				icon: input.group.icon,
+			})
+		: undefined
 	return Object.freeze({
-		placement: slot,
-		audience: input.audience ?? Object.freeze({ kind: 'self' as const }),
-		priority: -(input.order ?? 0),
-		when: input.when,
-		meta: Object.freeze({ label: input.label, icon: input.icon, tab: input.tab }),
+		placement: 'plugin.tabs',
+		priority: placementPriority('workbenchContract.tab', input.order),
+		meta: Object.freeze({ label: input.label, icon: input.icon, tabGroup }),
 	})
 }
 
@@ -439,10 +452,9 @@ function routePlacement(
 			  }
 		frame?: 'shell' | 'standalone'
 		order?: number
-		when?: 'always' | 'running'
 	},
-): WorkbenchPlacementSpec {
-	const order = input.order ?? 0
+): WorkbenchRoutePlacementSpec {
+	const priority = placementPriority('workbenchContract.route', input.order)
 	const normalizedPath = normalizeRoutePath(path)
 	const routeParams = routeParameterNames(normalizedPath)
 	if (routeParams.length > 0 && input.navigation !== false) {
@@ -462,16 +474,14 @@ function routePlacement(
 		: undefined
 	return Object.freeze({
 		placement: 'plugin.routes',
-		audience: Object.freeze({ kind: 'self' as const }),
-		priority: -order,
-		when: input.when,
+		priority,
 		meta: Object.freeze({
 			route: Object.freeze({
 				path: normalizedPath,
 				title: requiredText('workbenchContract.route', 'title', input.title),
 				icon: input.icon,
 				addToNav: input.navigation !== false,
-				navPriority: -order,
+				navPriority: priority,
 				navigationLabel: navigation?.label?.trim() || undefined,
 				navigationGroup,
 				frame: input.frame,
@@ -507,14 +517,32 @@ function normalizePlacements(
 	}
 	const identities = new Set<string>()
 	for (const placement of placements) {
+		if (
+			!placement ||
+			(placement.placement !== 'plugin.tabs' && placement.placement !== 'plugin.routes')
+		) {
+			throw new TypeError('[workbench-contract] View contains an invalid placement')
+		}
+		if (placement.placement === 'plugin.routes' && !placement.meta.route) {
+			throw new TypeError('[workbench-contract] route placement requires route metadata')
+		}
 		const route = placement.meta?.route?.path
-		const identity = route ? `route:${normalizeRoutePath(route)}` : `slot:${placement.placement}`
+		const identity = route
+			? `route:${normalizeRoutePath(route)}`
+			: `placement:${placement.placement}`
 		if (identities.has(identity)) {
 			throw new Error(`[workbench-contract] View has duplicate placement "${identity}"`)
 		}
 		identities.add(identity)
 	}
 	return Object.freeze([...placements])
+}
+
+function placementPriority(api: string, order: number | undefined): number {
+	if (order === undefined) return 0
+	if (!Number.isFinite(order))
+		throw new TypeError(`[workbench-contract] ${api}(): order must be finite`)
+	return -order
 }
 
 function normalizeRoutePath(path: string): string {
@@ -574,15 +602,10 @@ export const workbenchContract = Object.freeze({
 	liveQuery: liveQueryResource,
 	events: eventsResource,
 	port: portContract,
-	slot: slotPlacement,
+	tab: tabPlacement,
 	route: routePlacement,
 	document: documentView,
-	slots: WorkbenchSlots,
 	icons: WorkbenchIcons,
-	audience: Object.freeze({
-		self: Object.freeze({ kind: 'self' as const }),
-		requiredDependents: Object.freeze({ kind: 'requiredDependents' as const }),
-	}),
 })
 
 export type WorkbenchResourceRef = Readonly<{
@@ -599,7 +622,6 @@ export type WorkbenchLayoutItem = Readonly<{
 	placement: WorkbenchPlacement
 	view: WorkbenchViewRef
 	priority: number
-	when: 'always' | 'running'
 	meta?: WorkbenchViewMeta
 	/** @internal Opaque granted resources consumed by the host and browser UI runtime. */
 	model: Readonly<Record<string, WorkbenchResourceRef>>

@@ -24,13 +24,16 @@ packages/*             框架库、contract、adapter 与其他非具体插件�
 plugins/*              可独立装配的具体插件 package
 projects/*             可运行应用、宿主和产品级参考实现
 projects/*/packages/*  项目私有的非具体插件 package
+projects/*/platforms/* 项目私有的外部平台 capability 与桥接插件 package
 projects/*/plugins/*   项目私有的具体插件 package
 vendor/*               明确纳入的上游源码；不套用第一方目录语义
 ```
 
 判断依据是所有权而不是“是否导入 Pluxel”：contract 或 adapter 即使依赖 runtime 类型，只要不声明
-具体 `@Plugin`，仍可位于 `packages/*`；声明具体插件生命周期的 package 位于 `plugins/*`。可运行 host
-不是插件 package，位于 `projects/*`。新应用模板与仓库内项目遵循同一结构。
+具体 `@Plugin`，仍可位于 `packages/*`；声明具体插件生命周期的 package 位于 `plugins/*`，或位于
+`platforms/*` 这种有明确领域语义的项目私有插件容器。`platforms/*` 不能成为模糊的第二个
+`plugins/*`：它只容纳外部平台 capability 及其直接 bridge。可运行 host 不是插件 package，位于
+`projects/*`。新应用模板与仓库内项目遵循同一结构。
 
 ## 依赖与版本
 

@@ -5,12 +5,12 @@
 	"generatedAt": "2026-06-11T11:44:58.540Z",
 	"config": {
 		"path": "projects/plugin-host/pluxel.loader.hmr.jsonc",
-		"activeProfile": "plugins-host"
+		"activeProfile": "plugins-host",
 	},
 	"workspace": {
 		"rootsExpanded": [
 			"packages/cli",
-			"packages/components",
+			"packages/workbench-app",
 			"packages/context",
 			"packages/core",
 			"packages/diod",
@@ -21,7 +21,7 @@
 			"packages/runtime-dynamic",
 			"packages/runtime-static",
 			"packages/test",
-			"packages/valibot-form"
+			"packages/valibot-form",
 		],
 		"excludeGlobs": [
 			"**/node_modules/**",
@@ -30,14 +30,14 @@
 			"**/*.map",
 			"projects/plugin-host/src/demo/**/ui/**",
 			"projects/plugin-host/src/demo/env.ts",
-			"projects/plugin-host/src/demo/index.ts"
-		]
+			"projects/plugin-host/src/demo/index.ts",
+		],
 	},
 	"builtin": {},
 	"discovered": {
 		"count": 0,
 		"packageNames": [],
 		"enabledCandidates": [],
-		"pluginPackages": []
-	}
+		"pluginPackages": [],
+	},
 }

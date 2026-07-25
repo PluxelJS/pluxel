@@ -48,7 +48,8 @@ pnpm plugin-host:static
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/*`：框架库与其他非具体插件的可复用 package
 - `plugins/*`：可独立装配的具体插件 package（当前根 workspace 没有此类包时可以为空）
-- `projects/*`：可运行产品与宿主样例；项目内部同样用 `packages/*` 放通用库、`plugins/*` 放具体插件
+- `projects/*`：可运行产品与宿主样例；内部用 `packages/*` 放通用库、`plugins/*` 放业务插件，
+  必要时可用 `platforms/*` 明确隔离外部平台 capability 与直接 bridge
 
 ## Tests
 

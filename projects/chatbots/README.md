@@ -64,6 +64,11 @@ KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会
 
 ## 源码组织
 
+外部平台边界统一位于 `platforms/*`：Telegram、KOOK、Sandbox 以及两个可选 Hub bridge；
+产品和业务能力位于 `plugins/*`：Hub、Access、Commands 与 Builtins；无插件实例身份的共享实现
+位于 `packages/*`。目录只表达所有权和依赖方向，不承担平台清单注册：每个平台仍通过自己的
+Workbench contract 自主加入统一的 `bots` navigation group。
+
 包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、Workbench RPC/DTO、Manager 和内部 registry 不通过 barrel 泄漏。每个平台遵循 `plugin.ts -> bot/manager.ts -> bot/bot.ts -> api/client.ts`：主插件只组合生命周期，Manager 拥有 Vault/registry/replacement，Bot 拥有单账号连接与原生事件，API client 只处理平台 HTTP；可选管理平面完整收进 `workbench/`。
 
 两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的 launcher、表单和操作壳层；平台自行声明 `/accounts/:accountId` 与 `/create` 非导航 route，公共 UI 只调用宿主 `openTab()`，不依赖宿主组件或 router。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。

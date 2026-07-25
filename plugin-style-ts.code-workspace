@@ -10,7 +10,7 @@
 		},
 		{
 			"name": "📁 @pluxel/workbench-app",
-			"path": "packages/components",
+			"path": "packages/workbench-app",
 		},
 		{
 			"name": "📁 @pluxel/context",
@@ -58,7 +58,7 @@
 				"background": "#8a7e4e",
 			},
 			{
-				"path": "/home/ahdg/code/plugin-style-ts/packages/components",
+				"path": "/home/ahdg/code/plugin-style-ts/packages/workbench-app",
 				"packageName": "@pluxel/workbench-app",
 				"label": "📁 @pluxel/workbench-app",
 				"foreground": "#ffffff",
@@ -117,11 +117,11 @@
 		"files.exclude": {},
 		"typescript.tsdk": "🌱  monorepo\\node_modules\\typescript\\lib",
 		"exportall.config.folderListener": [
-			"/packages/components/src/components/Plugin",
-			"/packages/components/src/form/schema",
+			"/packages/workbench-app/src/components/Plugin",
+			"/packages/workbench-app/src/form/schema",
 			"/packages/runtime-dynamic/tests/ui-demos",
 		],
-		"exportall.config.relExclusion": ["/packages/components/src/app/Dashboard/Example.tsx"],
+		"exportall.config.relExclusion": ["/packages/workbench-app/src/app/Dashboard/Example.tsx"],
 		"cSpell.words": ["gqloom", "Gqty", "tabler"],
 	},
 }

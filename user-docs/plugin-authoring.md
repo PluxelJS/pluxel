@@ -398,7 +398,7 @@ export const FetchSettingsPort = workbenchContract.port({
 export const ConsumerWorkbench = workbench.portOutlet({
 	id: 'FetchSettings',
 	port: FetchSettingsPort,
-	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+	placement: workbenchContract.tab({
 		label: 'Fetch',
 	}),
 })

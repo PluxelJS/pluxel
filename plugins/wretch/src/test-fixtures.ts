@@ -16,7 +16,7 @@ export function setFixtureFetches(a: FetchLike, b: FetchLike = a): void {
 const ConsumerWorkbench = workbench.portOutlet({
 	id: 'Http',
 	port: WretchWorkbenchPort,
-	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+	placement: workbenchContract.tab({
 		label: 'HTTP',
 		icon: workbenchContract.icons.Settings,
 	}),

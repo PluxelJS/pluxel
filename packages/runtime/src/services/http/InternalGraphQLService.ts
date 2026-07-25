@@ -109,7 +109,7 @@ export class InternalGraphQLService {
 		if (process.env.NODE_ENV === 'production') return
 		if (this.codegenRunning) return
 		this.codegenRunning = true
-		const destination = new URL('../../../../components/src/app/gqlens/', import.meta.url)
+		const destination = new URL('../../../../workbench-app/src/app/gqlens/', import.meta.url)
 		try {
 			this.logger.info('Generating GQLens client…', { destination })
 

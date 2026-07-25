@@ -7,7 +7,7 @@ export const PluginStatusBadgeUi = workbenchContract.define({
 	views: {
 		StatusBadge: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 50,
 					label: '状态',
 				}),

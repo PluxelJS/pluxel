@@ -11,9 +11,7 @@ const d = workbenchDoc({} as const)
 const HttpRoutesUi = workbenchContract.define({
 	views: {
 		documentation: workbenchContract.document({
-			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, { label: 'HTTP Routes' }),
-			],
+			placements: [workbenchContract.tab({ label: 'HTTP Routes' })],
 			title: 'HTTP Routes Demo',
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpRoutesDemo${ROUTE_BASE}\`.

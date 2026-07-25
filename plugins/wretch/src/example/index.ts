@@ -10,7 +10,7 @@ import { WretchExampleConfig } from './config.ts'
 const WretchExampleWorkbench = workbench.portOutlet({
 	id: 'Http',
 	port: WretchWorkbenchPort,
-	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+	placement: workbenchContract.tab({
 		label: 'HTTP',
 		icon: workbenchContract.icons.Settings,
 	}),

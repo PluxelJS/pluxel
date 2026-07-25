@@ -8,7 +8,7 @@ import {
 	PluginOrganizer,
 	type GroupConfig,
 	type PluginStatuses,
-} from '../../../components/src/app/plugins/catalog/organizer/PluginOrganizer'
+} from '../../../workbench-app/src/app/plugins/catalog/organizer/PluginOrganizer'
 
 type MountedApp = {
 	container: HTMLDivElement

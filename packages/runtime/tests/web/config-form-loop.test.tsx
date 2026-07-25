@@ -7,24 +7,24 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
-import { WorkbenchTabsProvider } from '../../../components/src/app/workbench/context'
-import { WorkspaceController } from '../../../components/src/app/workbench/store'
-import { resolvePluginWorkbenchPanelsState } from '../../../components/src/app/workbench/split'
-import { ConfigLayout } from '../../../components/src/app/plugins/config/ConfigLayout'
-import { ConfigForm } from '../../../components/src/app/plugins/config/ConfigForm'
-import { PluginScopeProvider } from '../../../components/src/app/plugins/detail/context'
-import { BaseProviderCard } from '../../../components/src/app/plugins/detail/cards/BaseProviderCard'
-import { PluginWorkbenchSidebar } from '../../../components/src/app/plugins/detail/workbench/PluginWorkbenchHostViews'
+import { WorkbenchTabsProvider } from '../../../workbench-app/src/app/workbench/context'
+import { WorkspaceController } from '../../../workbench-app/src/app/workbench/store'
+import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
+import { ConfigLayout } from '../../../workbench-app/src/app/plugins/config/ConfigLayout'
+import { ConfigForm } from '../../../workbench-app/src/app/plugins/config/ConfigForm'
+import { PluginScopeProvider } from '../../../workbench-app/src/app/plugins/detail/context'
+import { BaseProviderCard } from '../../../workbench-app/src/app/plugins/detail/cards/BaseProviderCard'
+import { PluginWorkbenchSidebar } from '../../../workbench-app/src/app/plugins/detail/workbench/PluginWorkbenchHostViews'
 import {
 	BuiltinDoc,
 	resolveDocConfigDirectives,
-} from '../../../components/src/workbench/builtin/Doc'
+} from '../../../workbench-app/src/workbench/builtin/Doc'
 import {
 	PluginWorkbenchAsideProvider,
 	PluginWorkbenchLayoutProvider,
 	usePluginWorkbenchAssistVisibility,
-} from '../../../components/src/app/plugins/detail/workbench/context'
-import { PluginWorkbenchTabActivityProvider } from '../../../components/src/app/plugins/detail/workbench/tabActivity'
+} from '../../../workbench-app/src/app/plugins/detail/workbench/context'
+import { PluginWorkbenchTabActivityProvider } from '../../../workbench-app/src/app/plugins/detail/workbench/tabActivity'
 
 const ThemeCustomizer = () => null
 const EMPTY_CONFIG: Record<string, unknown> = {}
@@ -35,7 +35,7 @@ const mockPluginDetailSearch = {
 	tab: undefined as string | undefined,
 }
 let RightPaneComponent:
-	| (typeof import('../../../components/src/app/plugins/detail/RightPane'))['RightPane']
+	| (typeof import('../../../workbench-app/src/app/plugins/detail/RightPane'))['RightPane']
 	| null = null
 
 function deferred<T>() {
@@ -46,7 +46,7 @@ function deferred<T>() {
 	return { promise, resolve }
 }
 
-vi.mock('../../../components/src/workbench/runtime', () => ({
+vi.mock('../../../workbench-app/src/workbench/runtime', () => ({
 	useWorkbenchSurface: () => ({
 		nodes: [],
 		items: [],
@@ -54,7 +54,7 @@ vi.mock('../../../components/src/workbench/runtime', () => ({
 	}),
 }))
 
-vi.mock('../../../components/src/theme', () => ({
+vi.mock('../../../workbench-app/src/theme', () => ({
 	useDynamicTheme: () => ({
 		theme: {},
 		colorKey: 'teal',
@@ -89,7 +89,7 @@ vi.mock('@tanstack/react-router', async () => {
 	}
 })
 
-vi.mock('../../../components/src/app/router/useCurrentRoute', () => ({
+vi.mock('../../../workbench-app/src/app/router/useCurrentRoute', () => ({
 	useCurrentPathname: () => '/plugins/test-plugin/config',
 }))
 
@@ -559,7 +559,7 @@ async function mount(ui: ReactNode) {
 }
 
 beforeAll(async () => {
-	const module = await import('../../../components/src/app/plugins/detail/RightPane')
+	const module = await import('../../../workbench-app/src/app/plugins/detail/RightPane')
 	RightPaneComponent = module.RightPane
 })
 

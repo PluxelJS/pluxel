@@ -7,7 +7,7 @@
 - `packages/runtime/src/services/vault.ts`
   显式 vault boundary，注册 `ctx.vault` 和 eager `ctx.root.vaultAdmin`
 - `packages/runtime/src/api/http/security.ts`
-- `packages/components/src/app/security/SecurityScreen.tsx`
+- `packages/workbench-app/src/app/security/SecurityScreen.tsx`
 
 ## 核心原则
 

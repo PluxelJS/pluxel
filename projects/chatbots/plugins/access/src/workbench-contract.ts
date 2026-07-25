@@ -35,7 +35,7 @@ export const ChatAccessUi = workbenchContract.define({
 	views: {
 		Access: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 45,
 					label: '用户与权限',
 					icon: workbenchContract.icons.ShieldLock,

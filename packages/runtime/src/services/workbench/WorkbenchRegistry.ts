@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Context, PluginIdentifier, RuntimePluginKey } from '@pluxel/core'
 import type {
-	WorkbenchAudience,
 	WorkbenchCatalog,
 	WorkbenchLayout,
 	WorkbenchLayoutItem,
@@ -87,14 +86,12 @@ export class WorkbenchRegistry {
 	getPluginLayout(targetPluginId: string): WorkbenchLayout {
 		const target = String(targetPluginId ?? '').trim()
 		const items: WorkbenchLayoutItem[] = []
-		for (const mounted of this.extensions.values()) {
+		const mounted = this.extensions.get(target)
+		if (mounted && this.isRunning(mounted.ownerPluginId)) {
 			for (const [viewId, view] of Object.entries(mounted.extension.contract.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
 				for (const [placementIndex, placement] of view.placements.entries()) {
-					if (!placement.placement.startsWith('plugin.')) continue
-					if (!this.matchesAudience(mounted.ownerPluginId, target, placement.audience)) continue
-					if (!this.available(mounted.ownerPluginId, placement)) continue
 					items.push(
 						this.layoutItem(
 							mounted,
@@ -120,11 +117,11 @@ export class WorkbenchRegistry {
 	getGlobalLayout(): WorkbenchLayout {
 		const items: WorkbenchLayoutItem[] = []
 		for (const mounted of this.extensions.values()) {
+			if (!this.isRunning(mounted.ownerPluginId)) continue
 			for (const [viewId, view] of Object.entries(mounted.extension.contract.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
 				for (const [placementIndex, placement] of view.placements.entries()) {
-					if (!this.available(mounted.ownerPluginId, placement)) continue
 					if (placement.placement !== 'plugin.routes' || !placement.meta?.route?.addToNav) {
 						continue
 					}
@@ -192,7 +189,6 @@ export class WorkbenchRegistry {
 			placement: placement.placement,
 			view: view.view ?? Object.freeze({ kind: 'remote', export: viewId }),
 			priority: placement.priority ?? 0,
-			when: placement.when ?? 'running',
 			meta: placement.meta,
 			model: includeModel
 				? this.grantModel(`${scope}:${viewKey}`, mounted.modelRefs)
@@ -242,8 +238,6 @@ export class WorkbenchRegistry {
 				)
 				continue
 			}
-			const when = outlet.when ?? 'running'
-			if (when === 'running' && !this.isRunning(selected.mounted.ownerPluginId)) continue
 			const view = selected.mounted.extension.contract.views[selected.renderer.viewId]
 			if (!view) {
 				throw new Error(
@@ -272,7 +266,6 @@ export class WorkbenchRegistry {
 					placement: outlet.placement,
 					view: Object.freeze({ kind: 'remote', export: selected.renderer.viewId }),
 					priority: outlet.priority ?? 0,
-					when,
 					meta: outlet.meta,
 					model: this.grantModel(
 						`plugin:${targetPluginId}:${id}:owner`,
@@ -308,18 +301,9 @@ export class WorkbenchRegistry {
 				props: Object.freeze({ title, description, content: Object.freeze([]) }),
 			}),
 			priority: outlet.priority ?? 0,
-			when: outlet.when ?? 'running',
 			meta: outlet.meta,
 			model: Object.freeze({}),
 		})
-	}
-
-	private available(ownerPluginId: string, placement: WorkbenchPlacementSpec): boolean {
-		return (placement.when ?? 'running') === 'always' || this.isRunning(ownerPluginId)
-	}
-
-	private matchesAudience(owner: string, target: string, audience: WorkbenchAudience): boolean {
-		return audience.kind === 'self' ? owner === target : this.isRequiredDependent(owner, target)
 	}
 
 	private isRequiredDependent(provider: string, consumer: string): boolean {

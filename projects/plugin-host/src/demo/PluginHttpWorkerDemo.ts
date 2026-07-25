@@ -23,9 +23,7 @@ const d = workbenchDoc({} as const)
 const HttpWorkerUi = workbenchContract.define({
 	views: {
 		documentation: workbenchContract.document({
-			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, { label: 'Worker Demo' }),
-			],
+			placements: [workbenchContract.tab({ label: 'Worker Demo' })],
 			title: 'HTTP Worker Demo',
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.

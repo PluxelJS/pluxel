@@ -21,7 +21,7 @@ multiplex transport。
 ## Layout and rendering
 
 Contract placement 只有两种产品语义：`plugin.tabs` 把管理 View 放进目标插件工作区，`plugin.routes` 声明可导航页面。
-同一 View 可以拥有多个 placement，identity 来自 owner + View + normalized slot/path，不依赖数组 index。不提供尚无真实
+同一 View 可以拥有多个 placement，identity 来自 owner + View + normalized tab/path，不依赖数组 index。不提供尚无真实
 消费方的 header、dock、status bar 等通用插槽；出现新产品需求时先确定宿主所有权，再扩展 Contract。
 
 global layout 可以下发 route navigation metadata，但打开 target screen 后才取得 resource grant并加载实际引用的
@@ -45,7 +45,7 @@ bundle-only HMR 复用 resource lease；plugin stop/replacement 撤销旧 lease�
 
 ## React state correctness
 
-- `packages/components/src` 与 `packages/valibot-form/src/web` 强制检查 Hooks 调用、完整依赖和 render 期间的组件身份稳定性；
+- `packages/workbench-app/src` 与 `packages/valibot-form/src/web` 强制检查 Hooks 调用、完整依赖和 render 期间的组件身份稳定性；
   不用 disable 或遗漏依赖表达“只想执行一次”。
 - 跨组件共享事实使用带 `subscribe/getSnapshot` 的 store/resource；`useEffect` 只同步外部系统，不在父 effect 中清空由子
   effect 注册的命令式引用。

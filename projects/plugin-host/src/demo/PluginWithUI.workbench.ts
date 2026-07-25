@@ -20,7 +20,7 @@ export const PluginWithUIUi = workbenchContract.define({
 	views: {
 		OverviewPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 20,
 					label: '概览',
 				}),
@@ -28,7 +28,7 @@ export const PluginWithUIUi = workbenchContract.define({
 		},
 		EventsPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 19,
 					label: '事件',
 				}),
@@ -36,7 +36,7 @@ export const PluginWithUIUi = workbenchContract.define({
 		},
 		StreamsPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 18,
 					label: '实时事件',
 				}),
@@ -44,7 +44,7 @@ export const PluginWithUIUi = workbenchContract.define({
 		},
 		PluginInfo: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 10,
 					label: '信息',
 				}),

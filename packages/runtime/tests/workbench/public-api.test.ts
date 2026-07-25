@@ -15,7 +15,7 @@ describe('Workbench authoring API', () => {
 			resources: { commands: workbenchContract.rpc<{ ping(): string }>() },
 			views: {
 				Overview: {
-					placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+					placements: [workbenchContract.tab()],
 				},
 			},
 		})
@@ -28,6 +28,25 @@ describe('Workbench authoring API', () => {
 		expect(Object.isFrozen(extension)).toBe(true)
 	})
 
+	it('expresses the only host tab placement without a generic slot registry', () => {
+		const placement = workbenchContract.tab({
+			label: 'Settings',
+			group: { id: 'operations', label: 'Operations' },
+		})
+		expect(placement).toMatchObject({
+			placement: 'plugin.tabs',
+			meta: { label: 'Settings', tabGroup: { id: 'operations', label: 'Operations' } },
+		})
+		expect(Object.isFrozen(placement.meta?.tabGroup)).toBe(true)
+		expect(Object.isFrozen(workbenchContract.icons)).toBe(true)
+		expect(workbenchContract).not.toHaveProperty('slot')
+		expect(workbenchContract).not.toHaveProperty('slots')
+		expect(() => workbenchContract.tab({ group: { id: '', label: 'Operations' } })).toThrow(
+			'group.id required',
+		)
+		expect(() => workbenchContract.tab({ order: Number.NaN })).toThrow('order must be finite')
+	})
+
 	it('creates a one-to-one consumer Port outlet without repeating resource declarations', () => {
 		const SettingsPort = workbenchContract.port({
 			id: 'example.settings',
@@ -36,7 +55,7 @@ describe('Workbench authoring API', () => {
 		const extension = workbench.portOutlet({
 			id: 'Http',
 			port: SettingsPort,
-			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+			placement: workbenchContract.tab({
 				label: 'HTTP',
 			}),
 		})
@@ -166,7 +185,7 @@ describe('Workbench authoring API', () => {
 		const contract = workbenchContract.define({
 			views: {
 				Overview: {
-					placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+					placements: [workbenchContract.tab()],
 				},
 			},
 		})
@@ -181,7 +200,7 @@ describe('Workbench authoring API', () => {
 		const contract = workbenchContract.define({
 			views: {
 				About: workbenchContract.document({
-					placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+					placements: [workbenchContract.tab()],
 					content: [] as never,
 				}),
 			},
@@ -196,7 +215,7 @@ describe('Workbench authoring API', () => {
 				resources: { commands: workbenchContract.rpc<{ ping(): string }>() },
 				views: {
 					Overview: {
-						placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+						placements: [workbenchContract.tab()],
 					},
 				},
 			})
@@ -206,9 +225,7 @@ describe('Workbench authoring API', () => {
 			resources: { commands: workbenchContract.rpc<{ ping(): string }>() },
 			views: {
 				Overview: {
-					placements: [
-						workbenchContract.slot(workbenchContract.slots.PluginTabs, { label: 'Changed' }),
-					],
+					placements: [workbenchContract.tab({ label: 'Changed' })],
 				},
 			},
 		})

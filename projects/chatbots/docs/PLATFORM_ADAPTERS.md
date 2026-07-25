@@ -2,6 +2,9 @@
 
 本文是 `projects/chatbots` 平台适配器的规范架构。Telegram、KOOK 已采用这里定义的 Bot registry、原生 Bot API、`$` 扩展和多账号寻址。
 
+平台 capability 及其可选 Hub bridge 物理归属于 `projects/chatbots/platforms/*`；跨平台业务插件
+归属于 `plugins/*`，无插件实例身份的复用原语归属于 `packages/*`。新增平台不得放回业务插件目录。
+
 ## 一句话模型
 
 ```text

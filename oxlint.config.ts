@@ -31,7 +31,7 @@ type IgnorePatterns = NonNullable<OxlintConfig['ignorePatterns']>
 type GlobSet = NonNullable<OxlintOverride['files']>
 
 const reactHooksGlobs: GlobSet = [
-	'packages/components/src/**/*.{ts,tsx}',
+	'packages/workbench-app/src/**/*.{ts,tsx}',
 	'packages/valibot-form/src/web/**/*.{ts,tsx}',
 ]
 

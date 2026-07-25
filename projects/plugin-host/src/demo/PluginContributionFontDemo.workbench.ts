@@ -22,11 +22,11 @@ export const FontConsumerUi = workbenchContract.define({
 	views: {},
 	outlets: ({ resources }) => ({
 		AppearanceFont: {
-			placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+			placement: workbenchContract.tab({
 				order: 40,
 				label: 'Typography',
 				icon: workbenchContract.icons.Typography,
-				tab: {
+				group: {
 					id: 'typography',
 					label: 'Typography',
 					icon: workbenchContract.icons.Typography,

@@ -20,7 +20,7 @@ export const ExternalGatewayUi = workbenchContract.define({
 	views: {
 		GatewayPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 30,
 					label: '外部访问',
 					icon: workbenchContract.icons.ShieldLock,

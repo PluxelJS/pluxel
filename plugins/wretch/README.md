@@ -122,7 +122,7 @@ import { WretchWorkbenchPort } from '@pluxel/wretch/workbench'
 export const CustomerWorkbench = workbench.portOutlet({
 	id: 'Http',
 	port: WretchWorkbenchPort,
-	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+	placement: workbenchContract.tab({
 		label: 'HTTP',
 		icon: workbenchContract.icons.Settings,
 	}),

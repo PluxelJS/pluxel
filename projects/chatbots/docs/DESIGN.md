@@ -51,9 +51,9 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 - 平台包不得声明 `contracts` 或 `hub`。只有 `{platform}-hub-bridge` 桥接包声明这条依赖边，因而 Telegram/KOOK capability 可被平台专属插件单独使用。
 - 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.workbench.mount()` 返回 `undefined` 时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
 - `test/package-boundaries.test.ts` 固化上述边界，避免后续 import 或 manifest 修改重新引入反向依赖。
-- `projects/chatbots/packages/*` 放 contract 与 adapter 等通用源码包，`projects/chatbots/plugins/*`
-  放具体插件；两者当前都是 `@repo` 私有包。这里的“独立使用”指 workspace 内可单独装配，不宣称
-  已经是可从 npm 安装的公共发行包。
+- `projects/chatbots/packages/*` 放无插件实例身份的共享源码，`platforms/*` 放外部平台 capability
+  与其可选 Hub bridge，`plugins/*` 只放产品/业务插件。三者当前都是 `@repo` 私有包。这里的
+  “独立使用”指 workspace 内可单独装配，不宣称已经是可从 npm 安装的公共发行包。
 
 ## 关键约束
 

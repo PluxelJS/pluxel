@@ -9,6 +9,7 @@ packages:
   - vendor/split-like-vscode/packages/react
   - projects/*
   - projects/*/packages/*
+  - projects/*/platforms/*
   - projects/*/plugins/*
 
 catalog:

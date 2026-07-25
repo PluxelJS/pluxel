@@ -73,10 +73,8 @@ browser-safe `WorkbenchContract` 声明 resource、View、placement 和 Port；s
 artifact 状态更新可以复用相同 grant；module、实例或依赖图变化会立即撤销旧 grant。浏览器不能按插件
 namespace 任意访问未授予资源。
 
-dependent 复用有两条明确路径：
-
-- provider 的只读 capability view 可自动投影到 required dependents 的 host-owned capability 区；
-- consumer 用 typed port 选择 placement 和自己的 binding，provider 用 renderer 实现统一 UI。
+跨插件 UI 只使用 typed Port：consumer 选择 placement 并绑定自己的 resource，provider 提供 renderer。
+Workbench 不根据 dependency graph 隐式投影 provider View。
 
 不维护服务端 UI session/draft。交互状态属于 consumer resource、浏览器局部状态或明确的业务 API。
 

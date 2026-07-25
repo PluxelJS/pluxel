@@ -18,7 +18,7 @@ export const ZhipuUi = workbenchContract.define({
 	views: {
 		ZhipuOcrPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 30,
 					label: 'OCR',
 					icon: workbenchContract.icons.CloudUpload,
@@ -27,7 +27,7 @@ export const ZhipuUi = workbenchContract.define({
 		},
 		ZhipuApiPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 25,
 					label: '模型/工具',
 					icon: workbenchContract.icons.PlugConnected,
@@ -35,13 +35,11 @@ export const ZhipuUi = workbenchContract.define({
 			],
 		},
 		ZhipuSettingsPanel: {
-			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, { order: 20, label: '设置' }),
-			],
+			placements: [workbenchContract.tab({ order: 20, label: '设置' })],
 		},
 		ZhipuHistoryPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 10,
 					label: '历史',
 					icon: workbenchContract.icons.History,

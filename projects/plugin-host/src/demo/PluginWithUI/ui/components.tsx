@@ -64,7 +64,7 @@ function useLatestTick(activity: PluginWithUIEventsClient) {
 }
 
 function pluginRouteHref(pluginName: string, path: string) {
-	return `/plugins/${encodeURIComponent(pluginName)}${path}`
+	return `/workbench/${encodeURIComponent(pluginName)}${path}`
 }
 
 function panelTitle(icon: ReactNode, title: string) {

@@ -484,8 +484,8 @@ function uniqSorted(list: readonly string[]): string[] {
 }
 
 function resolveDefaultClientEntries(cwd: string): string[] {
-	const runtimeClientEntry = resolve(cwd, 'packages/runtime/src/client.tsx')
-	return existsSync(runtimeClientEntry) ? [runtimeClientEntry] : []
+	const workbenchClientEntry = resolve(cwd, 'packages/workbench-app/src/client.tsx')
+	return existsSync(workbenchClientEntry) ? [workbenchClientEntry] : []
 }
 
 function resolveBuiltinsFromDistEntries(

@@ -1,12 +1,14 @@
 import { resolve } from 'node:path'
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
-const workspaceAlias = (kind: 'packages' | 'plugins', name: string) => ({
+type WorkspaceKind = 'packages' | 'platforms' | 'plugins'
+
+const workspaceAlias = (kind: WorkspaceKind, name: string) => ({
 	find: new RegExp(`^@repo/chatbots-${name}$`),
 	replacement: resolve(import.meta.dirname, `${kind}/${name}/src/index.ts`),
 })
 
-const workspaceSubpathAlias = (kind: 'packages' | 'plugins', name: string) => ({
+const workspaceSubpathAlias = (kind: WorkspaceKind, name: string) => ({
 	find: new RegExp(`^@repo/chatbots-${name}/(.+)$`),
 	replacement: resolve(import.meta.dirname, `${kind}/${name}/src/$1.ts`),
 })
@@ -21,10 +23,10 @@ export default definePluxelVitestConfig({
 			workspaceAlias('packages', 'contracts'),
 			workspaceAlias('plugins', 'hub'),
 			workspaceAlias('plugins', 'commands'),
-			workspaceAlias('plugins', 'kook'),
-			workspaceAlias('plugins', 'kook-hub-bridge'),
-			workspaceAlias('plugins', 'telegram'),
-			workspaceAlias('plugins', 'telegram-hub-bridge'),
+			workspaceAlias('platforms', 'kook'),
+			workspaceAlias('platforms', 'kook-hub-bridge'),
+			workspaceAlias('platforms', 'telegram'),
+			workspaceAlias('platforms', 'telegram-hub-bridge'),
 		],
 	},
 	oxc: {
@@ -33,6 +35,11 @@ export default definePluxelVitestConfig({
 		},
 	},
 	test: {
-		include: ['packages/*/tests/**/*.test.ts', 'plugins/*/tests/**/*.test.ts', 'test/**/*.test.ts'],
+		include: [
+			'packages/*/tests/**/*.test.ts',
+			'platforms/*/tests/**/*.test.ts',
+			'plugins/*/tests/**/*.test.ts',
+			'test/**/*.test.ts',
+		],
 	},
 })

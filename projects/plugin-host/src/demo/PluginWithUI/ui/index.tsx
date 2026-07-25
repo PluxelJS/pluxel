@@ -1,5 +1,5 @@
 // Browser module registration for the custom UI demo:
-// - extensions
+// - plugin tabs
 // - routes
 // - standalone route
 
@@ -15,12 +15,8 @@ import {
 } from './components'
 import { pluginUi } from './runtime'
 
-function pluginRouteHref(pluginName: string, path: string) {
-	return `/plugins/${encodeURIComponent(pluginName)}${path}`
-}
-
 function standaloneRouteHref(pluginName: string, path: string) {
-	return `/ext-standalone/${encodeURIComponent(pluginName)}${path}`
+	return `/workbench-standalone/${encodeURIComponent(pluginName)}${path}`
 }
 
 export function PluginInfo() {
@@ -29,15 +25,14 @@ export function PluginInfo() {
 		<Stack gap="xs">
 			<Text fw={600}>PluginWithUI</Text>
 			<Text size="sm" c="dimmed">
-				演示扩展 UI：Tab、Route、Standalone Route、SSE、RPC。
+				演示 Workbench UI：Tab、Route、Standalone Route、SSE、RPC。
 			</Text>
 			<Group gap="xs">
 				<Button
 					variant="light"
 					size="xs"
 					leftSection={<IconExternalLink size={14} />}
-					component="a"
-					href={pluginRouteHref(app.targetPluginId, '/dashboard')}
+					onClick={() => app.openTab({ path: '/dashboard', title: 'PluginWithUI Dashboard' })}
 				>
 					打开 Dashboard
 				</Button>

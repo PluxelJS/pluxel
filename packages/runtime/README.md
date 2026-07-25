@@ -27,7 +27,7 @@ const ExampleUi = workbenchContract.define({
 	resources: { commands: workbenchContract.rpc<ExampleCommands>() },
 	views: {
 		Overview: {
-			placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
+			placements: [workbenchContract.tab()],
 		},
 	},
 })
@@ -48,7 +48,7 @@ consumer 只需把一个 Port 的同名 resources 一对一注入 placement 时�
 ```ts
 const settings = workbench.portOutlet({
 	port: SettingsPort,
-	placement: workbenchContract.slot(workbenchContract.slots.PluginTabs),
+	placement: workbenchContract.tab(),
 })
 
 this.ctx.workbench.mount(settings, {

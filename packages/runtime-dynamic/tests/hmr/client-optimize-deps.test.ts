@@ -10,14 +10,14 @@ describe('HMR client optimizeDeps', () => {
 		const config = buildLoaderHmrViteConfig({
 			root: '/tmp/pluxel-runtime',
 			fsAllow: [],
-			clientEntries: ['/workspace/packages/runtime/src/client.tsx'],
+			clientEntries: ['/workspace/packages/workbench-app/src/client.tsx'],
 			deps: resolveLoaderHmrDependencyConfig(),
 			runnerPlugin: { name: 'runner-noop' },
 			httpPlugin: { name: 'http-noop' },
 		})
 
 		expect(config.optimizeDeps).toMatchObject({
-			entries: ['/workspace/packages/runtime/src/client.tsx'],
+			entries: ['/workspace/packages/workbench-app/src/client.tsx'],
 			needsInterop: ['react', 'react-dom'],
 		})
 		expect((config.optimizeDeps as { include?: string[] }).include).toEqual(

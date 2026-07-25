@@ -29,7 +29,7 @@ export const YiqichaUi = workbenchContract.define({
 	views: {
 		YiqichaApiPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 30,
 					label: '接口测试',
 					icon: workbenchContract.icons.Search,
@@ -38,7 +38,7 @@ export const YiqichaUi = workbenchContract.define({
 		},
 		YiqichaSettingsPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 20,
 					label: '设置',
 				}),
@@ -46,7 +46,7 @@ export const YiqichaUi = workbenchContract.define({
 		},
 		YiqichaHistoryPanel: {
 			placements: [
-				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+				workbenchContract.tab({
 					order: 10,
 					label: '历史',
 					icon: workbenchContract.icons.History,

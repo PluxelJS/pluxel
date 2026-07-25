@@ -5,7 +5,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
-import { PluginWithUIWorkbench } from './PluginWithUI.extension'
+import { PluginWithUIWorkbench } from './PluginWithUI.workbench-extension'
 import type { DemoEvent, PluginWithUIEvents, PluginWithUIStatusDoc } from './PluginWithUI.contracts'
 import {
 	demoDatabase,
