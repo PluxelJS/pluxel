@@ -1,7 +1,6 @@
 import { useStore } from '@tanstack/react-store'
 import { useCallback, useMemo } from 'react'
-import { useWorkbenchTabIdentity } from '../context'
-import { setWorkbenchActiveTabState, workbenchStore } from '../store'
+import { useWorkbenchTabIdentity, useWorkspaceController } from '../context'
 import { mergeLayout } from './storage'
 import type { SplitViewLayout } from './view'
 
@@ -16,7 +15,8 @@ function hasSameState<T extends TabStateRecord>(left: T, right: T) {
 
 export function useResolvedWorkbenchTabState<T>(scope: string, resolve: (value: unknown) => T) {
 	const { activeTabId } = useWorkbenchTabIdentity()
-	const scopedValue = useStore(workbenchStore, (state) =>
+	const workspace = useWorkspaceController()
+	const scopedValue = useStore(workspace.store, (state) =>
 		activeTabId ? state.uiState.tabState[activeTabId]?.[scope] : undefined,
 	)
 	return useMemo(() => resolve(scopedValue), [resolve, scopedValue])
@@ -27,15 +27,16 @@ export function usePatchedWorkbenchTabState<T extends TabStateRecord>(
 	resolve: (value: unknown) => T,
 ) {
 	const { activeTabId } = useWorkbenchTabIdentity()
+	const workspace = useWorkspaceController()
 	const state = useResolvedWorkbenchTabState(scope, resolve)
 
 	const patchState = useCallback(
 		(patch: Partial<T>) => {
 			const nextState = { ...state, ...patch }
 			if (hasSameState(state, nextState)) return
-			setWorkbenchActiveTabState(activeTabId, scope, nextState)
+			workspace.setActiveTabState(activeTabId, scope, nextState)
 		},
-		[activeTabId, scope, state],
+		[activeTabId, scope, state, workspace],
 	)
 
 	return [state, patchState] as const
@@ -47,13 +48,14 @@ export function useWorkbenchSplitLayout<T extends NumericLayout>(
 	sanitize: (layout: T) => T,
 ) {
 	const { activeTabId } = useWorkbenchTabIdentity()
+	const workspace = useWorkspaceController()
 	const layout = useResolvedWorkbenchTabState(scope, resolve)
 
 	const handleLayoutChanged = useCallback(
 		(nextLayout: SplitViewLayout) => {
-			setWorkbenchActiveTabState(activeTabId, scope, mergeLayout(layout, nextLayout, sanitize))
+			workspace.setActiveTabState(activeTabId, scope, mergeLayout(layout, nextLayout, sanitize))
 		},
-		[activeTabId, layout, sanitize, scope],
+		[activeTabId, layout, sanitize, scope, workspace],
 	)
 
 	return [layout, handleLayoutChanged] as const

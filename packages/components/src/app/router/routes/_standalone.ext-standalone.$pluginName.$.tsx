@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { EXTENSION_STANDALONE_ROUTE_PREFIX } from '../../../extension'
-import { ExtensionRouteScreen } from '../extensions/ExtensionRouteScreen'
+import { WORKBENCH_STANDALONE_ROUTE_PREFIX } from '../../../workbench/paths'
+import { WorkbenchRouteScreen } from '../workbench/WorkbenchRouteScreen'
 
 export const Route = createFileRoute('/_standalone/ext-standalone/$pluginName/$')({
-	component: () => <ExtensionRouteScreen prefix={EXTENSION_STANDALONE_ROUTE_PREFIX} />,
+	component: () => <WorkbenchRouteScreen prefix={WORKBENCH_STANDALONE_ROUTE_PREFIX} />,
 })

@@ -125,23 +125,9 @@ export class WorkbenchRegistry {
 			>) {
 				for (const [placementIndex, placement] of view.placements.entries()) {
 					if (!this.available(mounted.ownerPluginId, placement)) continue
-					if (placement.placement === 'plugin.routes') {
-						if (!placement.meta?.route?.addToNav) continue
-						items.push(
-							this.layoutItem(
-								mounted,
-								viewId,
-								view,
-								placement,
-								placementIndex,
-								mounted.ownerPluginId,
-								'global-route',
-								false,
-							),
-						)
+					if (placement.placement !== 'plugin.routes' || !placement.meta?.route?.addToNav) {
 						continue
 					}
-					if (!placement.placement.startsWith('global.')) continue
 					items.push(
 						this.layoutItem(
 							mounted,
@@ -150,8 +136,8 @@ export class WorkbenchRegistry {
 							placement,
 							placementIndex,
 							mounted.ownerPluginId,
-							'global',
-							true,
+							'global-route',
+							false,
 						),
 					)
 				}

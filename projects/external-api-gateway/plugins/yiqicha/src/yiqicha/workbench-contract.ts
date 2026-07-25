@@ -27,9 +27,6 @@ export const YiqichaUi = workbenchContract.define({
 		history: workbenchContract.liveQuery({ row: jsonObjectSchema<YiqichaTestRunDoc>(), key: 'id' }),
 	},
 	views: {
-		HeaderAction: {
-			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
-		},
 		YiqichaApiPanel: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {

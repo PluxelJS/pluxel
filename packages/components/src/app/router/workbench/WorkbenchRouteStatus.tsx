@@ -1,21 +1,22 @@
 import { Alert, Badge, Center, Loader, Stack, Text } from '@mantine/core'
 import { ErrorState } from '../../../components'
+import type { WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { useWorkbenchArtifactState } from '../../../workbench/runtime'
 
-export function ExtensionRouteStateFallback({
+export function WorkbenchRouteStateFallback({
 	pluginName,
-	routeVersion,
+	snapshot,
 }: {
 	pluginName: string
-	routeVersion: number
+	snapshot: WorkbenchTargetSnapshot
 }) {
 	const artifact = useWorkbenchArtifactState(pluginName)
-	if (routeVersion > 0) return null
-	if (artifact?.state === 'error') {
+	if (snapshot.layout) return null
+	if (snapshot.state === 'error' || artifact?.state === 'error') {
 		return (
 			<ErrorState
 				title="管理界面构建失败"
-				message={artifact.message ?? pluginName}
+				message={snapshot.error?.message ?? artifact?.message ?? pluginName}
 				withBorder
 				minHeight="100%"
 			/>
@@ -34,7 +35,7 @@ export function ExtensionRouteStateFallback({
 	)
 }
 
-export function ExtensionRouteStatusBanner({ pluginName }: { pluginName: string }) {
+export function WorkbenchRouteStatusBanner({ pluginName }: { pluginName: string }) {
 	const artifact = useWorkbenchArtifactState(pluginName)
 	if (artifact?.state !== 'building') return null
 	return (

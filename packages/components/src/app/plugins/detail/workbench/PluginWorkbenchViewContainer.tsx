@@ -5,9 +5,8 @@ import {
 	PaneTabLabel,
 	getPaneTabsRootClassName,
 } from '../../../workbench/PaneTabs'
-import { useWorkbenchTabIdentity } from '../../../workbench/context'
+import { useWorkbenchTabIdentity, useWorkspaceController } from '../../../workbench/context'
 import { useResolvedWorkbenchTabState } from '../../../workbench/split'
-import { setWorkbenchActiveTabState } from '../../../workbench/store'
 import { useCurrentPathname } from '../../../router/useCurrentRoute'
 import {
 	getPluginScopedSearchCandidates,
@@ -76,6 +75,7 @@ export function PluginWorkbenchViewContainer({
 	headerMode?: 'stacked' | 'inline'
 }) {
 	const { activeTabId } = useWorkbenchTabIdentity()
+	const workspace = useWorkspaceController()
 	const pathname = useCurrentPathname()
 	const routeSearch = usePluginDetailSearch()
 	const [localSearchValue, setLocalSearchValue] = useState<string | undefined>()
@@ -114,13 +114,13 @@ export function PluginWorkbenchViewContainer({
 		if (!routeViewId || !routeIntentSignature) return
 		if (appliedRouteIntentSignatureRef.current === routeIntentSignature) return
 		appliedRouteIntentSignatureRef.current = routeIntentSignature
-		setWorkbenchActiveTabState(activeTabId, scope, routeViewId)
-	}, [activeTabId, routeIntentSignature, routeViewId, scope])
+		workspace.setActiveTabState(activeTabId, scope, routeViewId)
+	}, [activeTabId, routeIntentSignature, routeViewId, scope, workspace])
 
 	const selectView = useCallback(
 		(viewId: string | null) => {
 			if (!viewId || viewId === activeViewId) return
-			setWorkbenchActiveTabState(activeTabId, scope, viewId)
+			workspace.setActiveTabState(activeTabId, scope, viewId)
 			if (searchKey) {
 				appliedRouteIntentSignatureRef.current = createViewIntentSignature(
 					pathname,
@@ -131,7 +131,7 @@ export function PluginWorkbenchViewContainer({
 				replacePluginDetailSearchParams({ [searchKey]: viewId })
 			}
 		},
-		[activeTabId, activeViewId, pathname, scope, searchKey],
+		[activeTabId, activeViewId, pathname, scope, searchKey, workspace],
 	)
 
 	return (

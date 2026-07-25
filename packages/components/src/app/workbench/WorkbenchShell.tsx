@@ -9,14 +9,15 @@ import {
 	IconSearch,
 	IconX,
 } from '@tabler/icons-react'
-import { startTransition, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react'
-import { ExtensionPoints, useExtensionSurface } from '../../extension'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { buildWorkbenchHref } from '../../workbench/paths'
+import { useWorkbenchNavigationRoutes } from '../../workbench/runtime'
 import { ColorSchemeToggle } from '../../theme'
 import { PluginCatalog } from '../plugins/catalog/PluginCatalog'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
 import {
 	baseNavItems,
-	buildExtensionNavItems,
+	buildWorkbenchNavItems,
 	groupNavItems,
 	type NavSection,
 } from '../navigation/navConfig'
@@ -51,24 +52,9 @@ import {
 	type WorkbenchSectionId,
 	type WorkbenchTab,
 } from './state'
-import {
-	closeWorkbenchTab,
-	pruneWorkbenchDirtyTabs,
-	resetWorkbenchToHome,
-	setWorkbenchActiveTabId,
-	setWorkbenchActiveTabState,
-	setWorkbenchSectionPaneLayout,
-	setWorkbenchSectionPaneVisible,
-	setWorkbenchTabDirty,
-	syncWorkbenchLocation,
-	toggleWorkbenchSectionPane,
-	toggleWorkbenchNavigationCollapsed,
-	workbenchStore,
-} from './store'
+import { WorkspaceController } from './store'
 import { deriveTabFromPath } from './tabs'
 import {
-	consumeWorkbenchNavigationIntent,
-	queueWorkbenchNavigationIntent,
 	type WorkbenchNavigationMode,
 	WorkbenchLayoutProvider,
 	WorkbenchTabsProvider,
@@ -149,11 +135,6 @@ function WorkbenchHotkeys({
 		{ ignoreInputs: true, preventDefault: true },
 	)
 	return null
-}
-
-function StatusBar({ surface }: { surface: { hasFill: boolean; nodes: ReactNode[] } }) {
-	if (!surface.hasFill) return null
-	return <div className="plx-workbench__statusbar">{surface.nodes}</div>
 }
 
 function ActivityRail({
@@ -403,8 +384,8 @@ function WorkspacePaneContent() {
 	)
 }
 
-function WorkbenchStatePersistence(): null {
-	const uiState = useStore(workbenchStore, (state) => state.uiState)
+function WorkbenchStatePersistence({ controller }: { controller: WorkspaceController }): null {
+	const uiState = useStore(controller.store, (state) => state.uiState)
 
 	useEffect(() => {
 		if (typeof window === 'undefined') return undefined
@@ -428,46 +409,52 @@ function WorkbenchStatePersistence(): null {
 }
 
 export function WorkbenchShell() {
+	const [workspace] = useState(() => new WorkspaceController())
 	const isNarrowViewport = useMediaQuery('(max-width: 47.99em)')
 	const pathname = useCurrentPathname()
 	const navigate = useNavigate()
 	const pluginLayoutGroupRef = useRef<SplitViewHandle | null>(null)
-	const navbarSurface = useExtensionSurface(ExtensionPoints.NavbarItems, { renderNodes: false })
-	const statusBarSurface = useExtensionSurface(ExtensionPoints.GlobalStatusBar)
+	const navigationRoutes = useWorkbenchNavigationRoutes()
 	const currentTab = deriveTabFromPath(pathname)
 	const currentSection = getWorkbenchSectionId(pathname)
 	const pluginName = resolvePluginNameFromPath(pathname)
 	const isPluginsSection = currentSection === PLUGINS_SECTION_ID
-	const tabs = useStore(workbenchStore, (state) => state.uiState.tabs)
-	const activeTabId = useStore(workbenchStore, (state) => state.uiState.activeTabId)
-	const navigationCollapsed = useStore(workbenchStore, (state) => state.uiState.navigationCollapsed)
-	const sectionPanes = useStore(workbenchStore, (state) => state.uiState.sectionPanes)
-	const dirtyTabs = useStore(workbenchStore, (state) => state.dirtyTabs)
+	const tabs = useStore(workspace.store, (state) => state.uiState.tabs)
+	const activeTabId = useStore(workspace.store, (state) => state.uiState.activeTabId)
+	const navigationCollapsed = useStore(
+		workspace.store,
+		(state) => state.uiState.navigationCollapsed,
+	)
+	const sectionPanes = useStore(workspace.store, (state) => state.uiState.sectionPanes)
+	const dirtyTabs = useStore(workspace.store, (state) => state.dirtyTabs)
 	const showTabStrip = tabs.length > 1
 
 	useEffect(() => {
-		const intent = consumeWorkbenchNavigationIntent(pathname)
-		syncWorkbenchLocation(pathname, intent?.mode ?? 'replace-active')
-	}, [pathname])
+		const intent = workspace.consumeNavigation(pathname)
+		workspace.syncLocation(pathname, intent?.mode ?? 'replace-active')
+	}, [pathname, workspace])
 
 	useEffect(() => {
-		pruneWorkbenchDirtyTabs()
-	}, [tabs])
+		workspace.pruneDirtyTabs()
+	}, [tabs, workspace])
 
 	const extensionNavItems = useMemo(() => {
-		if (navbarSurface.items.length === 0) return []
-		return buildExtensionNavItems(
-			navbarSurface.items.map(({ meta }) => ({
-				id: meta.id,
-				label: typeof meta.label === 'string' ? meta.label : undefined,
-				href: typeof meta.href === 'string' ? meta.href : undefined,
-				icon: meta.icon,
-				rightSection: meta.rightSection,
-				exact: meta.exact === true,
-				group: meta.group,
-			})),
+		if (navigationRoutes.length === 0) return []
+		return buildWorkbenchNavItems(
+			navigationRoutes.map((item) => {
+				const route = item.meta?.route
+				return {
+					id: item.id,
+					label: route?.navigationLabel ?? route?.title,
+					href: route
+						? buildWorkbenchHref(item.targetPluginId, route.path, route.frame ?? 'shell')
+						: undefined,
+					icon: route?.icon,
+					group: route?.navigationGroup,
+				}
+			}),
 		).filter((item) => typeof item.href === 'string' && item.href !== '#')
-	}, [navbarSurface.items])
+	}, [navigationRoutes])
 
 	const activityItems = useMemo(
 		() => groupNavItems([...baseNavItems, ...extensionNavItems]),
@@ -497,7 +484,7 @@ export function WorkbenchShell() {
 		[activeTabId, currentTab, tabs],
 	)
 	const resolvedActiveTabId = activeTabId ?? currentTab.id
-	const activeTabStateMap = useStore(workbenchStore, (state) =>
+	const activeTabStateMap = useStore(workspace.store, (state) =>
 		resolvedActiveTabId
 			? (state.uiState.tabState[resolvedActiveTabId] ?? EMPTY_TAB_STATE)
 			: EMPTY_TAB_STATE,
@@ -520,17 +507,23 @@ export function WorkbenchShell() {
 	)
 	const { dockVisible, rightPaneVisible } = activePluginWorkbenchLayout
 
-	const setSectionPaneVisible = useCallback((sectionId: WorkbenchSectionId, visible: boolean) => {
-		setWorkbenchSectionPaneVisible(sectionId, visible)
-	}, [])
-	const toggleSectionPane = useCallback((sectionId: WorkbenchSectionId) => {
-		toggleWorkbenchSectionPane(sectionId)
-	}, [])
+	const setSectionPaneVisible = useCallback(
+		(sectionId: WorkbenchSectionId, visible: boolean) => {
+			workspace.setSectionPaneVisible(sectionId, visible)
+		},
+		[workspace],
+	)
+	const toggleSectionPane = useCallback(
+		(sectionId: WorkbenchSectionId) => {
+			workspace.toggleSectionPane(sectionId)
+		},
+		[workspace],
+	)
 	const setActivePluginWorkbenchLayout = useCallback(
 		(nextValue: Partial<PluginWorkbenchPanelsState>) => {
-			const tabId = workbenchStore.state.uiState.activeTabId ?? currentTab.id
+			const tabId = workspace.state.uiState.activeTabId ?? currentTab.id
 			const currentState = resolvePluginWorkbenchPanelsState(
-				workbenchStore.state.uiState.tabState[tabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE],
+				workspace.state.uiState.tabState[tabId]?.[PLUGIN_WORKBENCH_PANELS_SCOPE],
 			)
 			const nextState = { ...currentState, ...nextValue }
 			if (
@@ -539,9 +532,9 @@ export function WorkbenchShell() {
 			) {
 				return
 			}
-			setWorkbenchActiveTabState(tabId, PLUGIN_WORKBENCH_PANELS_SCOPE, nextState)
+			workspace.setActiveTabState(tabId, PLUGIN_WORKBENCH_PANELS_SCOPE, nextState)
 		},
-		[currentTab.id],
+		[currentTab.id, workspace],
 	)
 	const setDockVisibleDeferred = useCallback(
 		(visible: boolean) => {
@@ -575,13 +568,13 @@ export function WorkbenchShell() {
 	const openPluginWorkspace = useCallback(
 		(mode: 'open-tab' | 'replace-active') => {
 			setSectionPaneVisible(PLUGINS_SECTION_ID, true)
-			queueWorkbenchNavigationIntent({ to: '/plugins', mode })
+			workspace.queueNavigation('/plugins', mode)
 			if (!pathname.startsWith('/plugins')) {
 				void navigate({ to: '/plugins' })
 			}
 			dispatchPluginSearchEvent()
 		},
-		[navigate, pathname, setSectionPaneVisible],
+		[navigate, pathname, setSectionPaneVisible, workspace],
 	)
 	const focusWorkbenchSearch = useCallback(() => {
 		openPluginWorkspace('replace-active')
@@ -589,13 +582,24 @@ export function WorkbenchShell() {
 
 	const navigateToWorkbenchTab = useCallback(
 		(tab: Pick<WorkbenchTab, 'id' | 'path'>) => {
-			setWorkbenchActiveTabId(tab.id)
+			workspace.setActiveTabId(tab.id)
 			if (tab.path === pathname) return
 			startTransition(() => {
 				void navigate({ to: tab.path })
 			})
 		},
-		[navigate, pathname],
+		[navigate, pathname, workspace],
+	)
+	const openTab = useCallback(
+		(input: { to: string; title: string; meta?: string }) => {
+			workspace.openTab({ path: input.to, title: input.title, meta: input.meta })
+			if (input.to === pathname) return
+			workspace.queueNavigation(input.to, 'open-tab')
+			startTransition(() => {
+				void navigate({ to: input.to })
+			})
+		},
+		[navigate, pathname, workspace],
 	)
 
 	const activateTab = useCallback(
@@ -606,7 +610,7 @@ export function WorkbenchShell() {
 	)
 	const stepTab = useCallback(
 		(direction: 1 | -1) => {
-			const { tabs: storeTabs, activeTabId: storeActiveTabId } = workbenchStore.state.uiState
+			const { tabs: storeTabs, activeTabId: storeActiveTabId } = workspace.state.uiState
 			if (storeTabs.length <= 1) return
 			const activeIndex = storeTabs.findIndex((tab) => tab.id === storeActiveTabId)
 			const nextIndex =
@@ -615,12 +619,12 @@ export function WorkbenchShell() {
 			if (!nextTab) return
 			navigateToWorkbenchTab(nextTab)
 		},
-		[navigateToWorkbenchTab],
+		[navigateToWorkbenchTab, workspace],
 	)
 
 	const closeTab = useCallback(
 		(tabId: string) => {
-			const { tabs: storeTabs, activeTabId: storeActiveTabId } = workbenchStore.state.uiState
+			const { tabs: storeTabs, activeTabId: storeActiveTabId } = workspace.state.uiState
 			if (dirtyTabs[tabId]) {
 				const tab = storeTabs.find((item) => item.id === tabId)
 				const confirmed = window.confirm(
@@ -629,7 +633,7 @@ export function WorkbenchShell() {
 				if (!confirmed) return
 			}
 			if (storeTabs.length <= 1) {
-				resetWorkbenchToHome()
+				workspace.resetToHome()
 				void navigate({ to: '/' })
 				return
 			}
@@ -641,12 +645,12 @@ export function WorkbenchShell() {
 				nextTabs[Math.max(0, index - 1)] ??
 				nextTabs[Math.min(index, nextTabs.length - 1)] ??
 				nextTabs[0]
-			closeWorkbenchTab(tabId)
+			workspace.closeTab(tabId)
 			if (closingActive && fallbackTab) {
 				navigateToWorkbenchTab(fallbackTab)
 			}
 		},
-		[dirtyTabs, navigate, navigateToWorkbenchTab],
+		[dirtyTabs, navigate, navigateToWorkbenchTab, workspace],
 	)
 
 	const togglePluginNav = useCallback(() => {
@@ -665,7 +669,7 @@ export function WorkbenchShell() {
 
 	const handleLayoutChanged = useCallback(
 		(layout: Record<string, number>) => {
-			setWorkbenchSectionPaneLayout(
+			workspace.setSectionPaneLayout(
 				PLUGINS_SECTION_ID,
 				mergeLayout(
 					currentSectionPane?.layout ?? DEFAULT_PLUGIN_SECTION_LAYOUT,
@@ -674,7 +678,7 @@ export function WorkbenchShell() {
 				),
 			)
 		},
-		[currentSectionPane?.layout],
+		[currentSectionPane?.layout, workspace],
 	)
 	const pluginRailPane = useMemo<SplitViewPane>(
 		() => ({
@@ -754,15 +758,15 @@ export function WorkbenchShell() {
 	)
 	const setActiveTabState = useCallback(
 		(scope: string, value: unknown) => {
-			setWorkbenchActiveTabState(resolvedActiveTabId, scope, value)
+			workspace.setActiveTabState(resolvedActiveTabId, scope, value)
 		},
-		[resolvedActiveTabId],
+		[resolvedActiveTabId, workspace],
 	)
 	const setActiveTabDirty = useCallback(
 		(dirty: boolean) => {
-			setWorkbenchTabDirty(resolvedActiveTabId, dirty)
+			workspace.setTabDirty(resolvedActiveTabId, dirty)
 		},
-		[resolvedActiveTabId],
+		[resolvedActiveTabId, workspace],
 	)
 	const workbenchTabsValue = useMemo(
 		() => ({
@@ -771,6 +775,7 @@ export function WorkbenchShell() {
 			activeTabDirty,
 			isTabDirty,
 			getActiveTabState,
+			openTab,
 			setActiveTabState,
 			requestNavigation: (to: string, request: WorkbenchNavigationMode | 'auto' = 'auto') => {
 				const mode =
@@ -779,7 +784,7 @@ export function WorkbenchShell() {
 							? 'open-tab'
 							: 'replace-active'
 						: request
-				if (activeTab?.path !== to) queueWorkbenchNavigationIntent({ to, mode })
+				if (activeTab?.path !== to) workspace.queueNavigation(to, mode)
 				return mode
 			},
 			setActiveTabDirty,
@@ -789,14 +794,16 @@ export function WorkbenchShell() {
 			activeTabDirty,
 			getActiveTabState,
 			isTabDirty,
+			openTab,
 			setActiveTabDirty,
 			setActiveTabState,
+			workspace,
 		],
 	)
 
 	return (
 		<HotkeysProvider defaultOptions={{ hotkey: { ignoreInputs: true } }}>
-			<WorkbenchTabsProvider value={workbenchTabsValue}>
+			<WorkbenchTabsProvider controller={workspace} value={workbenchTabsValue}>
 				<WorkbenchLayoutProvider value={layoutContextValue}>
 					<PluginWorkbenchLayoutProvider value={pluginWorkbenchLayoutValue}>
 						<div
@@ -807,7 +814,7 @@ export function WorkbenchShell() {
 							<WorkbenchHotkeys
 								canTogglePluginRail={isPluginsSection}
 								onCloseActiveTab={() =>
-									closeTab(workbenchStore.state.uiState.activeTabId ?? currentTab.id)
+									closeTab(workspace.state.uiState.activeTabId ?? currentTab.id)
 								}
 								onFocusSearch={focusWorkbenchSearch}
 								onNextTab={() => stepTab(1)}
@@ -818,7 +825,7 @@ export function WorkbenchShell() {
 							<ActivityRail
 								activityItems={activityItems}
 								collapsed={navigationCollapsed}
-								onToggleCollapsed={toggleWorkbenchNavigationCollapsed}
+								onToggleCollapsed={() => workspace.toggleNavigationCollapsed()}
 								pathname={pathname}
 								requestNavigation={workbenchTabsValue.requestNavigation}
 							/>
@@ -883,8 +890,7 @@ export function WorkbenchShell() {
 									</div>
 								</div>
 
-								<StatusBar surface={statusBarSurface} />
-								<WorkbenchStatePersistence />
+								<WorkbenchStatePersistence controller={workspace} />
 							</div>
 						</div>
 					</PluginWorkbenchLayoutProvider>

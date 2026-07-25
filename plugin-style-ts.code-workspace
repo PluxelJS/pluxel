@@ -9,7 +9,7 @@
 			"path": "packages/cli",
 		},
 		{
-			"name": "📁 @pluxel/components",
+			"name": "📁 @pluxel/workbench-app",
 			"path": "packages/components",
 		},
 		{
@@ -59,8 +59,8 @@
 			},
 			{
 				"path": "/home/ahdg/code/plugin-style-ts/packages/components",
-				"packageName": "@pluxel/components",
-				"label": "📁 @pluxel/components",
+				"packageName": "@pluxel/workbench-app",
+				"label": "📁 @pluxel/workbench-app",
 				"foreground": "#ffffff",
 				"background": "#0e9105",
 			},

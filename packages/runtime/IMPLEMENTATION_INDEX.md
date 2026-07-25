@@ -32,4 +32,5 @@
 
 - `src/web/client.ts`：HTTP/RPC/SSE transport；
 - `src/web/rpc.ts`：request-scoped Cap'n Web proxy；
-- `src/web/host-ui.ts`：Workbench context 与 placement types；
+- `src/workbench/ui-runtime.tsx`：Remote View environment、host capabilities 与 resource clients；
+- `../components/src/workbench/client.ts`：browser catalog、target snapshot、route index 与 staged module lease；

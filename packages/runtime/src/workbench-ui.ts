@@ -6,10 +6,12 @@ export type {
 export {
 	createWorkbenchUi,
 	useWorkbenchHost,
+	type WorkbenchOpenTabInput,
 	type WorkbenchEventConnectionState,
 	type WorkbenchEventsClient,
 	type WorkbenchLiveQueryClient,
 	type WorkbenchLiveQueryResult,
+	type WorkbenchLocaleService,
 	type WorkbenchHost,
 	type WorkbenchResourceClient,
 	type WorkbenchResourceClients,

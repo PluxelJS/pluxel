@@ -66,7 +66,6 @@ export {
 	runtimeWorkbenchLiveQueryPath,
 	joinPath,
 } from './web/paths'
-export * from './web/host-ui'
 export * from './web/protocol'
 export {
 	RuntimeTransportClientProvider,

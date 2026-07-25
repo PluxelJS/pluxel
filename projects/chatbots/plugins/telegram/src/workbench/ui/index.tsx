@@ -1,4 +1,14 @@
-import { TelegramManagerPanel, TelegramOverviewPanel } from './panel.tsx'
+import {
+	TelegramAccountPanel,
+	TelegramCreatePanel,
+	TelegramManagerPanel,
+	TelegramOverviewPanel,
+} from './panel.tsx'
 import { telegramUi } from './runtime.ts'
 
-export default telegramUi.define({ Manager: TelegramManagerPanel, Overview: TelegramOverviewPanel })
+export default telegramUi.define({
+	Account: TelegramAccountPanel,
+	Create: TelegramCreatePanel,
+	Manager: TelegramManagerPanel,
+	Overview: TelegramOverviewPanel,
+})

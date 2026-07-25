@@ -4,7 +4,7 @@
 // - standalone route
 
 import { Button, Group, Stack, Text } from '@mantine/core'
-import { IconExternalLink, IconRocket } from '@tabler/icons-react'
+import { IconExternalLink } from '@tabler/icons-react'
 import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import {
 	EventsPanel,
@@ -21,14 +21,6 @@ function pluginRouteHref(pluginName: string, path: string) {
 
 function standaloneRouteHref(pluginName: string, path: string) {
 	return `/ext-standalone/${encodeURIComponent(pluginName)}${path}`
-}
-
-export function HeaderAction() {
-	return (
-		<Button variant="light" size="xs" leftSection={<IconRocket size={14} />} color="grape">
-			PluginWithUI
-		</Button>
-	)
 }
 
 export function PluginInfo() {
@@ -63,7 +55,6 @@ export function PluginInfo() {
 }
 
 export default pluginUi.define({
-	HeaderAction,
 	PluginInfo,
 	OverviewPanel,
 	EventsPanel,

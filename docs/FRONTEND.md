@@ -20,11 +20,22 @@ multiplex transport。
 
 ## Layout and rendering
 
-Contract placement 由 host 映射为 route、Tab、header、dock 或 capability slot。同一 View 可以拥有多个 placement，
-placement identity 来自 owner + View + normalized slot/path，不依赖数组 index。
+Contract placement 只有两种产品语义：`plugin.tabs` 把管理 View 放进目标插件工作区，`plugin.routes` 声明可导航页面。
+同一 View 可以拥有多个 placement，identity 来自 owner + View + normalized slot/path，不依赖数组 index。不提供尚无真实
+消费方的 header、dock、status bar 等通用插槽；出现新产品需求时先确定宿主所有权，再扩展 Contract。
 
 global layout 可以下发 route navigation metadata，但打开 target screen 后才取得 resource grant并加载实际引用的
 bundle。builtin document 由 host 渲染且只用于只读内容；交互流程使用 React View + typed RPC。
+
+集合页需要打开对象详情时使用 Workbench 原生 document Tab。Contract 以 `navigation: false` 声明整段参数 route，
+Remote View 通过 `useWorkbenchHost().openTab()` 打开当前 target 的插件相对路径，并通过 `routeParams` 读取匹配参数。
+宿主负责路径归一化、route 存在性与 shell frame 校验、按完整路径去重以及标题 metadata 恢复；插件不能传入任意宿主
+URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
+
+浏览器只创建一个 `WorkbenchClientRuntime` 实例。它拥有 layout SSE、catalog、按 target 引用计数的 session、route index
+以及 Remote module revision。一次 target 更新先加载并 setup 所需 module、校验 Contract 和 route，再原子发布 layout
+snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。React 只订阅 snapshot 和渲染，不拥有 artifact 或 route
+生命周期。Workspace tabs、router intent 和持久化由独立 `WorkspaceController` 实例拥有，不使用 module-level store。
 
 ## Updates and isolation
 

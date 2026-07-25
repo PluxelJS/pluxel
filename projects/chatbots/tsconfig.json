@@ -16,7 +16,7 @@
 		"noEmit": true,
 		"skipLibCheck": true,
 		"paths": {
-			"@pluxel/components": ["./src/types/pluxel-components.d.ts"],
+			"@pluxel/workbench-app": ["./src/types/pluxel-workbench-app.d.ts"],
 			"@repo/chatbots-platform-kit/*": ["./packages/platform-kit/src/*.ts"],
 			"@repo/chatbots-workbench-support/*": ["./packages/workbench-support/src/*.ts"],
 			"@repo/chatbots-access": ["./plugins/access/src/index.ts"],

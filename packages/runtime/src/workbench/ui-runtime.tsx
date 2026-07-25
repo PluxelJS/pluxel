@@ -21,24 +21,87 @@ import type {
 	WorkbenchRpcClient,
 	WorkbenchRpcOf,
 } from './contracts'
-import { useGlobalExtensionContext, type ExtensionServices } from '../web/host-ui'
+import type { RuntimeTransportClient } from '../web/client'
 import type { SseClientWithNamespaces, SseMessage } from '../web/sse'
 
-const WorkbenchViewContext = createContext<WorkbenchLayoutItem | null>(null)
+export interface WorkbenchLocaleService {
+	readonly locale: string
+	readonly fallbackLocale?: string
+	setLocale(locale: string, options?: { fallbackLocale?: string }): void
+	subscribe(listener: () => void): () => void
+	formatDate(value: Date | number, options?: Intl.DateTimeFormatOptions): string
+	formatNumber(value: number, options?: Intl.NumberFormatOptions): string
+}
+
+export type WorkbenchUiNotifyPayload = Readonly<{
+	title?: string
+	message?: string
+	tone?: 'info' | 'success' | 'warning' | 'error'
+}>
+
+export type WorkbenchUiConfirmPayload = Readonly<{
+	title?: string
+	message: string
+	confirmLabel?: string
+	cancelLabel?: string
+	tone?: 'default' | 'danger'
+}>
+
+/** @internal Host-owned capabilities injected into one remote View render. */
+export type WorkbenchViewEnvironment = Readonly<{
+	colorScheme: 'light' | 'dark'
+	transport: RuntimeTransportClient
+	locale: WorkbenchLocaleService
+	notify(payload: WorkbenchUiNotifyPayload): void
+	confirm(payload: WorkbenchUiConfirmPayload): Promise<boolean>
+}>
+
+export type WorkbenchOpenTabInput = Readonly<{
+	/** Plugin-relative route path registered by the current Workbench target. */
+	path: string
+	/** Visible editor tab title. */
+	title: string
+	/** Optional secondary label shown with the tab. */
+	meta?: string
+}>
+
+export type WorkbenchViewRuntime = Readonly<{
+	item: WorkbenchLayoutItem
+	environment: WorkbenchViewEnvironment
+	openTab?: (input: WorkbenchOpenTabInput) => void
+	routeParams: Readonly<Record<string, string>>
+}>
+
+const EMPTY_ROUTE_PARAMS = Object.freeze({})
+const WorkbenchViewContext = createContext<WorkbenchViewRuntime | null>(null)
 
 export function WorkbenchViewProvider({
 	item,
+	environment,
+	openTab,
+	routeParams = EMPTY_ROUTE_PARAMS,
 	children,
 }: {
 	item: WorkbenchLayoutItem
+	environment: WorkbenchViewEnvironment
+	openTab?: (input: WorkbenchOpenTabInput) => void
+	routeParams?: Readonly<Record<string, string>>
 	children: ReactNode
 }) {
-	return <WorkbenchViewContext.Provider value={item}>{children}</WorkbenchViewContext.Provider>
+	const value = useMemo<WorkbenchViewRuntime>(
+		() => ({ item, environment, openTab, routeParams }),
+		[environment, item, openTab, routeParams],
+	)
+	return <WorkbenchViewContext.Provider value={value}>{children}</WorkbenchViewContext.Provider>
 }
 
 export function useWorkbenchView(): WorkbenchLayoutItem {
+	return useWorkbenchViewRuntime().item
+}
+
+function useWorkbenchViewRuntime(): WorkbenchViewRuntime {
 	const value = useContext(WorkbenchViewContext)
-	if (!value) throw new Error('useWorkbenchView() requires a WorkbenchViewProvider')
+	if (!value) throw new Error('Workbench View must be rendered by its host runtime')
 	return value
 }
 
@@ -93,28 +156,36 @@ export type WorkbenchHost = Readonly<{
 	targetPluginId: string
 	colorScheme: 'light' | 'dark'
 	locale: string
-	notify: ExtensionServices['ui']['notify']
-	confirm: ExtensionServices['ui']['confirm']
+	notify(payload: WorkbenchUiNotifyPayload): void
+	confirm(payload: WorkbenchUiConfirmPayload): Promise<boolean>
+	openTab(input: WorkbenchOpenTabInput): void
+	routeParams: Readonly<Record<string, string>>
 }>
 
 export function useWorkbenchHost(): WorkbenchHost {
-	const item = useWorkbenchView()
-	const context = useGlobalExtensionContext()
+	const view = useWorkbenchViewRuntime()
+	const { item } = view
+	const { environment } = view
 	const locale = useSyncExternalStore(
-		(listener) => context.services.locale.subscribe(listener),
-		() => context.services.locale.locale,
-		() => context.services.locale.locale,
+		(listener) => environment.locale.subscribe(listener),
+		() => environment.locale.locale,
+		() => environment.locale.locale,
 	)
 	return useMemo(
 		() => ({
 			ownerPluginId: item.ownerPluginId,
 			targetPluginId: item.targetPluginId,
-			colorScheme: context.colorScheme,
+			colorScheme: environment.colorScheme,
 			locale,
-			notify: context.services.ui.notify,
-			confirm: context.services.ui.confirm,
+			notify: environment.notify,
+			confirm: environment.confirm,
+			openTab: (input) => {
+				if (!view.openTab) throw new Error('[workbench-ui] current host does not support openTab')
+				view.openTab(input)
+			},
+			routeParams: view.routeParams,
 		}),
-		[context, item.ownerPluginId, item.targetPluginId, locale],
+		[environment, item.ownerPluginId, item.targetPluginId, locale, view.openTab, view.routeParams],
 	)
 }
 
@@ -125,7 +196,7 @@ export type WorkbenchUiModule = Readonly<{
 	views: Readonly<Record<string, WorkbenchViewComponent>>
 	setup?: (ctx: {
 		ownerPluginId: string
-		locale: ExtensionServices['locale']
+		locale: WorkbenchLocaleService
 	}) => void | (() => void) | Promise<void | (() => void)>
 }>
 
@@ -207,9 +278,9 @@ function useGrantedResources<Resources extends WorkbenchResourceMap>(
 	refs: Readonly<Record<string, WorkbenchResourceRef>>,
 	contracts: Resources,
 ): WorkbenchResourceClients<Resources> {
-	const item = useWorkbenchView()
-	const context = useGlobalExtensionContext()
-	const transport = context.services.transport
+	const view = useWorkbenchViewRuntime()
+	const item = view.item
+	const transport = view.environment.transport
 	const eventStreams = useMemo(() => new Map<string, SseClientWithNamespaces>(), [item, transport])
 	useEffect(
 		() => () => {
@@ -275,7 +346,7 @@ class BrowserLiveQueryVariant<Row> {
 	private task: Promise<void> = Promise.resolve()
 
 	constructor(
-		private readonly transport: ExtensionServices['transport'],
+		private readonly transport: RuntimeTransportClient,
 		private readonly grantId: string,
 		private readonly params: unknown,
 		private readonly contract: WorkbenchLiveQueryResource<any, Row>,
@@ -439,7 +510,7 @@ class BrowserLiveQueryVariant<Row> {
 }
 
 export function createLiveQueryClient<Params, Row>(
-	transport: ExtensionServices['transport'],
+	transport: RuntimeTransportClient,
 	grantId: string,
 	contract: WorkbenchLiveQueryResource<Params, Row>,
 ): WorkbenchLiveQueryClient<Params, Row> {

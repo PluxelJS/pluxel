@@ -50,7 +50,7 @@ await store.put(idempotencyKey)
 
 平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实；Workbench 订阅时立即取得完整、有界的安全 snapshot，之后只接收有意义的状态变化，不把 polling/gateway 状态复制到 PostgreSQL。用户、角色和 grant 仍属于 Access 持久业务状态。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
-插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口；Telegram、KOOK、Sandbox 通过相同 navigation group 自主注册二级页面，未安装的平台不会出现，新增平台也不需要修改中央列表。完整管理台采用可拖拽并记住尺寸的账号/详情分栏，可搜索、创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 详情保留 Polling offset、最近 poll/update、连续失败和退避；KOOK 详情保留 Gateway phase、SN、事件、恢复、Ping/Pong、乱序、重复、缓冲与溢出指标。删除会先要求确认，页面会明确显示状态流连接与操作错误。
+插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口；Telegram、KOOK、Sandbox 通过相同 navigation group 自主注册二级页面，未安装的平台不会出现，新增平台也不需要修改中央列表。每个平台的管理首页使用全宽账号卡片和搜索；点击账号或“添加 Bot”会打开 Workbench 原生 Tab，因此账号详情参与统一 Tab 切换、关闭和恢复，不占用常驻侧栏。管理能力包括创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 详情保留 Polling offset、最近 poll/update、连续失败和退避；KOOK 详情保留 Gateway phase、SN、事件、恢复、Ping/Pong、乱序、重复、缓冲与溢出指标。删除会先要求确认，页面会明确显示状态流连接与操作错误。
 
 通用 `ChatMessage` 的媒体 `url` 必须是目标 transport 可用的跨平台资源地址。Telegram `file_id` 只对特定 Bot 账号有意义，因此不会伪装成通用 URL；bridge 会生成可读附件占位，并把 JSON-safe 文件标识放在 `metadata.telegramAttachments`。需要真正读取或复用 Telegram 文件时，直接依赖 `TelegramPlugin` 消费原生 update。
 

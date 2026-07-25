@@ -61,7 +61,8 @@ function sameWorkbenchTab(left: WorkbenchTab, right: WorkbenchTab) {
 		left.id === right.id &&
 		left.path === right.path &&
 		left.title === right.title &&
-		left.meta === right.meta
+		left.meta === right.meta &&
+		left.kind === right.kind
 	)
 }
 

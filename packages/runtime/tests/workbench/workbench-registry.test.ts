@@ -59,7 +59,7 @@ describe('WorkbenchRegistry', () => {
 					views: {
 						Overview: {
 							placements: [
-								workbenchContract.slot(workbenchContract.slots.PluginInfo),
+								workbenchContract.slot(workbenchContract.slots.PluginTabs),
 								workbenchContract.route('/overview', { title: 'Overview' }),
 							],
 						},
@@ -88,7 +88,7 @@ describe('WorkbenchRegistry', () => {
 					views: {
 						Capability: {
 							placements: [
-								workbenchContract.slot(workbenchContract.slots.PluginCapabilities, {
+								workbenchContract.slot(workbenchContract.slots.PluginTabs, {
 									audience: workbenchContract.audience.requiredDependents,
 								}),
 							],
@@ -115,7 +115,7 @@ describe('WorkbenchRegistry', () => {
 					resources: { commands: workbenchContract.rpc<{}>() },
 					views: {
 						Overview: {
-							placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo)],
+							placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
 						},
 					},
 				}),

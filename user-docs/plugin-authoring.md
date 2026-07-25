@@ -333,6 +333,52 @@ export default ui.define({ Overview })
 `ui.define()` 精确检查全部 remote View，没有额外 export。普通 View 不声明 `uses`；同一 bundle 是
 owner resources 的前端信任边界，facade 按 RPC 调用、query variant 或 event subscription 延迟连接。
 
+集合页需要把不同对象作为 Workbench 原生 Tab 打开时，声明一个不进入导航的参数化 route：
+
+```ts
+const AccountsUi = workbenchContract.define({
+	views: {
+		Launcher: {
+			placements: [workbenchContract.route('/accounts', { title: 'Accounts' })],
+		},
+		Account: {
+			placements: [
+				workbenchContract.route('/accounts/:accountId', {
+					title: 'Account',
+					navigation: false,
+				}),
+			],
+		},
+	},
+})
+```
+
+```tsx
+import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
+
+export function Launcher() {
+	const host = useWorkbenchHost()
+	return (
+		<button
+			onClick={() =>
+				host.openTab({ path: '/accounts/notifications', title: 'notifications', meta: 'Bot' })
+			}
+		>
+			Open
+		</button>
+	)
+}
+
+export function Account() {
+	const { routeParams } = useWorkbenchHost()
+	return <AccountDetails accountId={routeParams.accountId ?? ''} />
+}
+```
+
+参数只匹配完整路径段，参数名必须以字母开头；参数化 route 必须设置 `navigation: false`。`openTab()` 的
+`path` 只能指向当前 Workbench target 已注册的 shell route，不能跳转到任意宿主 URL。相同规范化路径只保留一个
+Tab，再次打开会聚焦并更新标题；Tab 和 metadata 会随 Workbench 恢复。
+
 RPC generic 应引用独立 browser-safe interface，而不是 provider 实现类。TypeScript generic 在运行时会擦除；
 runtime 只验证 envelope、opaque grant、resource kind、Port/version 和结构化错误。
 

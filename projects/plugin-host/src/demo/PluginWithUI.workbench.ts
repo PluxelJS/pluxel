@@ -18,9 +18,6 @@ export const PluginWithUIUi = workbenchContract.define({
 		activity: workbenchContract.events<PluginWithUIEvents>(),
 	},
 	views: {
-		HeaderAction: {
-			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
-		},
 		OverviewPanel: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
@@ -46,7 +43,12 @@ export const PluginWithUIUi = workbenchContract.define({
 			],
 		},
 		PluginInfo: {
-			placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo, { order: 10 })],
+			placements: [
+				workbenchContract.slot(workbenchContract.slots.PluginTabs, {
+					order: 10,
+					label: '信息',
+				}),
+			],
 		},
 		RoutePage: {
 			placements: [

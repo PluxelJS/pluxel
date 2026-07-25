@@ -1,13 +1,13 @@
-export const EXTENSION_ROUTE_PREFIX = '/ext' as const
-export const EXTENSION_STANDALONE_ROUTE_PREFIX = '/ext-standalone' as const
+export const WORKBENCH_ROUTE_PREFIX = '/ext' as const
+export const WORKBENCH_STANDALONE_ROUTE_PREFIX = '/ext-standalone' as const
 
-export type ExtensionFrame = 'shell' | 'standalone'
-export type ExtensionRoutePrefix =
-	| typeof EXTENSION_ROUTE_PREFIX
-	| typeof EXTENSION_STANDALONE_ROUTE_PREFIX
+export type WorkbenchFrame = 'shell' | 'standalone'
+export type WorkbenchRoutePrefix =
+	| typeof WORKBENCH_ROUTE_PREFIX
+	| typeof WORKBENCH_STANDALONE_ROUTE_PREFIX
 
-export function getExtensionRoutePrefix(frame: ExtensionFrame): ExtensionRoutePrefix {
-	return frame === 'standalone' ? EXTENSION_STANDALONE_ROUTE_PREFIX : EXTENSION_ROUTE_PREFIX
+export function getWorkbenchRoutePrefix(frame: WorkbenchFrame): WorkbenchRoutePrefix {
+	return frame === 'standalone' ? WORKBENCH_STANDALONE_ROUTE_PREFIX : WORKBENCH_ROUTE_PREFIX
 }
 
 /**
@@ -17,7 +17,7 @@ export function getExtensionRoutePrefix(frame: ExtensionFrame): ExtensionRoutePr
  * - Trims and removes `.`, `..` segments
  * - Ensures leading slash for non-empty paths
  */
-export function normalizeExtensionRouteSubPath(path: string): string {
+export function normalizeWorkbenchPath(path: string): string {
 	if (!path) return ''
 	const trimmed = path.trim()
 	if (!trimmed || trimmed === '/') return ''
@@ -29,12 +29,12 @@ export function normalizeExtensionRouteSubPath(path: string): string {
 	return `/${segments.join('/')}`
 }
 
-export function buildExtensionHref(
+export function buildWorkbenchHref(
 	pluginName: string,
 	path: string,
-	frame: ExtensionFrame = 'shell',
+	frame: WorkbenchFrame = 'shell',
 ): string {
-	const normalizedPath = normalizeExtensionRouteSubPath(path)
+	const normalizedPath = normalizeWorkbenchPath(path)
 	const encodedName = (() => {
 		try {
 			return encodeURIComponent(pluginName)
@@ -42,6 +42,6 @@ export function buildExtensionHref(
 			return pluginName
 		}
 	})()
-	const prefix = getExtensionRoutePrefix(frame)
+	const prefix = getWorkbenchRoutePrefix(frame)
 	return `${prefix}/${encodedName}${normalizedPath}`
 }

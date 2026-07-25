@@ -3,14 +3,8 @@ import { ModalsProvider, openConfirmModal } from '@mantine/modals'
 import { Notifications } from '@mantine/notifications'
 import { Outlet } from '@tanstack/react-router'
 import { useMemo, useSyncExternalStore } from 'react'
-import {
-	createGlobalExtensionContext,
-	extensionLocale,
-	type ExtensionContext,
-	ExtensionPathnameProvider,
-	ExtensionProvider,
-} from '../../extension'
-import { WorkbenchLoader } from '../../workbench/runtime'
+import { workbenchLocale } from '../../workbench/locale'
+import { WorkbenchRuntimeProvider, type WorkbenchBrowserHost } from '../../workbench/runtime'
 import { notifyAndRecord } from '../notifications/notifyBridge'
 import { NotificationCenterProvider } from '../notifications/NotificationCenterProvider'
 import { usePluginOverview } from '../plugins/pluginOverview'
@@ -19,8 +13,8 @@ import { useCurrentPathname } from '../router/useCurrentRoute'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
-	const isSecurityRoute =
-		pathname === RUNTIME_SECURITY_BASE || pathname.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+	const workbenchActive =
+		pathname !== RUNTIME_SECURITY_BASE && !pathname.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	const colorScheme = useComputedColorScheme('light', { getInitialValueInEffect: true })
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
@@ -34,76 +28,65 @@ export function AppProviders() {
 	)
 	const transportClient = useRuntimeTransportClient()
 	const localeSnapshot = useSyncExternalStore(
-		(listener) => extensionLocale.subscribe(listener),
-		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
-		() => `${extensionLocale.locale}::${extensionLocale.fallbackLocale ?? ''}`,
+		(listener) => workbenchLocale.subscribe(listener),
+		() => `${workbenchLocale.locale}::${workbenchLocale.fallbackLocale ?? ''}`,
+		() => `${workbenchLocale.locale}::${workbenchLocale.fallbackLocale ?? ''}`,
 	)
 
-	const extensionContext = useMemo<ExtensionContext>(() => {
-		// extensionLocale is mutable; the external-store snapshot invalidates this context value.
+	const workbenchHost = useMemo<WorkbenchBrowserHost>(() => {
+		// The locale service is mutable; its snapshot invalidates the host environment.
 		void localeSnapshot
-		return createGlobalExtensionContext({
-			colorScheme,
+		return {
 			runningPlugins,
 			runningPluginsReady: pluginOverview.hasSnapshot,
-			services: {
+			environment: {
+				colorScheme,
 				transport: transportClient,
-				locale: extensionLocale,
-				ui: {
-					notify: (payload) => {
-						const tone = payload?.tone ?? 'info'
-						notifyAndRecord({
+				locale: workbenchLocale,
+				notify: (payload) => {
+					const tone = payload?.tone ?? 'info'
+					notifyAndRecord({
+						title: payload?.title,
+						message: payload?.message,
+						color:
+							tone === 'success'
+								? 'green'
+								: tone === 'warning'
+									? 'yellow'
+									: tone === 'error'
+										? 'red'
+										: 'blue',
+					})
+				},
+				confirm: async (payload) => {
+					return new Promise<boolean>((resolve) => {
+						openConfirmModal({
 							title: payload?.title,
-							message: payload?.message,
-							color:
-								tone === 'success'
-									? 'green'
-									: tone === 'warning'
-										? 'yellow'
-										: tone === 'error'
-											? 'red'
-											: 'blue',
+							children: payload?.message,
+							labels: {
+								confirm: payload?.confirmLabel ?? '确认',
+								cancel: payload?.cancelLabel ?? '取消',
+							},
+							confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
+							onConfirm: () => resolve(true),
+							onCancel: () => resolve(false),
+							onClose: () => resolve(false),
+							closeOnConfirm: true,
 						})
-					},
-					confirm: async (payload) => {
-						return new Promise<boolean>((resolve) => {
-							openConfirmModal({
-								title: payload?.title,
-								children: payload?.message,
-								labels: {
-									confirm: payload?.confirmLabel ?? '确认',
-									cancel: payload?.cancelLabel ?? '取消',
-								},
-								confirmProps: payload?.tone === 'danger' ? { color: 'red' } : undefined,
-								onConfirm: () => resolve(true),
-								onCancel: () => resolve(false),
-								onClose: () => resolve(false),
-								closeOnConfirm: true,
-							})
-						})
-					},
+					})
 				},
 			},
-		})
+		}
 	}, [colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPlugins, transportClient])
 
 	return (
-		<ExtensionPathnameProvider value={pathname}>
-			<ExtensionProvider value={extensionContext}>
-				<NotificationCenterProvider>
-					<ModalsProvider>
-						<Notifications position="top-center" />
-						{isSecurityRoute ? (
-							<Outlet />
-						) : (
-							<>
-								<WorkbenchLoader />
-								<Outlet />
-							</>
-						)}
-					</ModalsProvider>
-				</NotificationCenterProvider>
-			</ExtensionProvider>
-		</ExtensionPathnameProvider>
+		<WorkbenchRuntimeProvider active={workbenchActive} host={workbenchHost}>
+			<NotificationCenterProvider>
+				<ModalsProvider>
+					<Notifications position="top-center" />
+					<Outlet />
+				</ModalsProvider>
+			</NotificationCenterProvider>
+		</WorkbenchRuntimeProvider>
 	)
 }

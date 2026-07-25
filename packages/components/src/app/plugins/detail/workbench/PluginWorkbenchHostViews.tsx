@@ -13,7 +13,6 @@ import {
 } from '@mantine/core'
 import { IconChevronDown } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useExtensionSurface } from '../../../../extension'
 import { RouterLinkAdapter } from '../../../RouterLinkAdapter'
 import { LiveLog as LiveLogRaw } from '../../../log_viewer/LiveLog'
 import { usePluginMeta, usePluginScope } from '../context'
@@ -97,11 +96,6 @@ function PluginDependencyInjectionControls() {
 export function PluginWorkbenchSidebar() {
 	const { description, isRunning, isSyncing, pluginName } = usePluginMeta()
 	const { assistVisible, setAssistHost } = usePluginWorkbenchAside()
-	const contextSurface = useExtensionSurface('plugin:context')
-	const contextNodes = useMemo(
-		() => [...contextSurface.nodes].filter(Boolean),
-		[contextSurface.nodes],
-	)
 	const statusBadges = useMemo(
 		() => (
 			<Group gap="xs" wrap="nowrap">
@@ -131,15 +125,8 @@ export function PluginWorkbenchSidebar() {
 					</WorkbenchScrollPane>
 				),
 			},
-			{
-				id: 'extensions',
-				label: '扩展',
-				count: contextNodes.length,
-				hidden: contextNodes.length === 0,
-				content: <WorkbenchScrollPane>{contextNodes}</WorkbenchScrollPane>,
-			},
 		],
-		[assistVisible, contextNodes, description, setAssistHost],
+		[assistVisible, description, setAssistHost],
 	)
 
 	return (
@@ -323,7 +310,6 @@ function PluginContextSummaryCard() {
 
 export function PluginWorkbenchPanel() {
 	const { pluginName } = usePluginMeta()
-	const dockSurface = useExtensionSurface('plugin:dock')
 	const views = useMemo<PluginWorkbenchView[]>(
 		() => [
 			{
@@ -344,15 +330,8 @@ export function PluginWorkbenchPanel() {
 					</WorkbenchScrollPane>
 				),
 			},
-			{
-				id: 'tools',
-				label: '工具',
-				count: dockSurface.nodes.length,
-				hidden: dockSurface.nodes.length === 0,
-				content: <WorkbenchScrollPane compact>{dockSurface.nodes}</WorkbenchScrollPane>,
-			},
 		],
-		[dockSurface.nodes, pluginName],
+		[pluginName],
 	)
 
 	return (

@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import type { WorkspaceController } from './store'
 
 export type WorkbenchLayoutContextValue = {
 	leftPaneAvailable: boolean
@@ -10,17 +11,13 @@ export type WorkbenchLayoutContextValue = {
 export type WorkbenchNavigationMode = 'replace-active' | 'open-tab'
 export type WorkbenchNavigationRequest = WorkbenchNavigationMode | 'auto'
 
-type PendingNavigationIntent = {
-	mode: WorkbenchNavigationMode
-	to: string
-}
-
 export type WorkbenchTabsContextValue = {
 	activeTabId: string | null
 	activeTabPath: string | null
 	activeTabDirty: boolean
 	isTabDirty: (tabId: string | null) => boolean
 	getActiveTabState: <T = unknown>(scope: string) => T | undefined
+	openTab: (input: { to: string; title: string; meta?: string }) => void
 	setActiveTabState: (scope: string, value: unknown) => void
 	requestNavigation: (to: string, request?: WorkbenchNavigationRequest) => WorkbenchNavigationMode
 	setActiveTabDirty: (dirty: boolean) => void
@@ -50,17 +47,6 @@ const FALLBACK_LAYOUT_CONTEXT: WorkbenchLayoutContextValue = {
 	toggleLeftPane: () => {},
 }
 
-const FALLBACK_TABS_CONTEXT: WorkbenchTabsContextValue = {
-	activeTabId: null,
-	activeTabPath: null,
-	activeTabDirty: false,
-	isTabDirty: () => false,
-	getActiveTabState: <T = unknown,>() => undefined as T | undefined,
-	setActiveTabState: () => {},
-	requestNavigation: () => 'replace-active',
-	setActiveTabDirty: () => {},
-}
-
 const FALLBACK_TAB_IDENTITY_CONTEXT: WorkbenchTabIdentityContextValue = {
 	activeTabId: null,
 	activeTabPath: null,
@@ -87,19 +73,7 @@ const WorkbenchTabIdentityContext = createContext<WorkbenchTabIdentityContextVal
 const WorkbenchTabDirtyContext = createContext<WorkbenchTabDirtyContextValue | null>(null)
 const WorkbenchTabStateContext = createContext<WorkbenchTabStateContextValue | null>(null)
 const WorkbenchNavigationContext = createContext<WorkbenchNavigationContextValue | null>(null)
-
-let pendingNavigationIntent: PendingNavigationIntent | null = null
-
-export function queueWorkbenchNavigationIntent(intent: PendingNavigationIntent) {
-	pendingNavigationIntent = intent
-}
-
-export function consumeWorkbenchNavigationIntent(pathname: string): PendingNavigationIntent | null {
-	const intent = pendingNavigationIntent
-	pendingNavigationIntent = null
-	if (!intent) return null
-	return intent.to === pathname ? intent : null
-}
+const WorkspaceControllerContext = createContext<WorkspaceController | null>(null)
 
 export function WorkbenchLayoutProvider({
 	value,
@@ -112,9 +86,11 @@ export function WorkbenchLayoutProvider({
 }
 
 export function WorkbenchTabsProvider({
+	controller,
 	value,
 	children,
 }: {
+	controller: WorkspaceController
 	value: WorkbenchTabsContextValue
 	children: ReactNode
 }) {
@@ -148,17 +124,19 @@ export function WorkbenchTabsProvider({
 	)
 
 	return (
-		<WorkbenchTabsContext.Provider value={value}>
-			<WorkbenchTabIdentityContext.Provider value={identityValue}>
-				<WorkbenchTabDirtyContext.Provider value={dirtyValue}>
-					<WorkbenchTabStateContext.Provider value={stateValue}>
-						<WorkbenchNavigationContext.Provider value={navigationValue}>
-							{children}
-						</WorkbenchNavigationContext.Provider>
-					</WorkbenchTabStateContext.Provider>
-				</WorkbenchTabDirtyContext.Provider>
-			</WorkbenchTabIdentityContext.Provider>
-		</WorkbenchTabsContext.Provider>
+		<WorkspaceControllerContext.Provider value={controller}>
+			<WorkbenchTabsContext.Provider value={value}>
+				<WorkbenchTabIdentityContext.Provider value={identityValue}>
+					<WorkbenchTabDirtyContext.Provider value={dirtyValue}>
+						<WorkbenchTabStateContext.Provider value={stateValue}>
+							<WorkbenchNavigationContext.Provider value={navigationValue}>
+								{children}
+							</WorkbenchNavigationContext.Provider>
+						</WorkbenchTabStateContext.Provider>
+					</WorkbenchTabDirtyContext.Provider>
+				</WorkbenchTabIdentityContext.Provider>
+			</WorkbenchTabsContext.Provider>
+		</WorkspaceControllerContext.Provider>
 	)
 }
 
@@ -166,8 +144,8 @@ export function useWorkbenchLayout() {
 	return useContext(WorkbenchLayoutContext) ?? FALLBACK_LAYOUT_CONTEXT
 }
 
-export function useWorkbenchTabs() {
-	return useContext(WorkbenchTabsContext) ?? FALLBACK_TABS_CONTEXT
+export function useOptionalWorkspaceTabs() {
+	return useContext(WorkbenchTabsContext)
 }
 
 export function useWorkbenchTabIdentity() {
@@ -184,4 +162,10 @@ export function useWorkbenchTabState() {
 
 export function useWorkbenchNavigation() {
 	return useContext(WorkbenchNavigationContext) ?? FALLBACK_NAVIGATION_CONTEXT
+}
+
+export function useWorkspaceController(): WorkspaceController {
+	const controller = useContext(WorkspaceControllerContext)
+	if (!controller) throw new Error('WorkspaceController provider required')
+	return controller
 }

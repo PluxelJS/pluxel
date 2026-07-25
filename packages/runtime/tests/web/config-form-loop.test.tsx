@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import { WorkbenchTabsProvider } from '../../../components/src/app/workbench/context'
+import { WorkspaceController } from '../../../components/src/app/workbench/store'
 import { resolvePluginWorkbenchPanelsState } from '../../../components/src/app/workbench/split'
 import { ConfigLayout } from '../../../components/src/app/plugins/config/ConfigLayout'
 import { ConfigForm } from '../../../components/src/app/plugins/config/ConfigForm'
@@ -17,7 +18,7 @@ import { PluginWorkbenchSidebar } from '../../../components/src/app/plugins/deta
 import {
 	BuiltinDoc,
 	resolveDocConfigDirectives,
-} from '../../../components/src/extension/builtin/Doc'
+} from '../../../components/src/workbench/builtin/Doc'
 import {
 	PluginWorkbenchAsideProvider,
 	PluginWorkbenchLayoutProvider,
@@ -45,17 +46,12 @@ function deferred<T>() {
 	return { promise, resolve }
 }
 
-vi.mock('../../../components/src/extension', () => ({
-	useExtensionSurface: () => ({
-		nodes: new Set(),
-		items: [],
-		hasFill: false,
-	}),
-	useExtensions: () => ({
+vi.mock('../../../components/src/workbench/runtime', () => ({
+	useWorkbenchSurface: () => ({
 		nodes: [],
 		items: [],
+		hasItems: false,
 	}),
-	ExtensionSlot: () => null,
 }))
 
 vi.mock('../../../components/src/theme', () => ({
@@ -200,6 +196,7 @@ function Harness({
 }
 
 function WorkbenchHarness({ active = true }: { active?: boolean }) {
+	const workspace = useMemo(() => new WorkspaceController(), [])
 	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
 	const [dirty, setDirty] = useState(false)
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
@@ -225,12 +222,14 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
 			<MantineProvider>
 				<WorkbenchTabsProvider
+					controller={workspace}
 					value={{
 						activeTabId: 'test-tab',
 						activeTabPath: '/plugins/test-plugin/config',
 						activeTabDirty: dirty,
 						isTabDirty: () => dirty,
 						getActiveTabState: () => {},
+						openTab: () => {},
 						setActiveTabState: () => {},
 						requestNavigation: () => 'replace-active',
 						setActiveTabDirty: () => {},
@@ -471,6 +470,7 @@ function RenderRightPane() {
 }
 
 function RightPaneDirtyHarness() {
+	const workspace = useMemo(() => new WorkspaceController(), [])
 	const [activeTabDirty, setActiveTabDirtyState] = useState(false)
 	const tabsValue = useMemo(
 		() => ({
@@ -479,6 +479,7 @@ function RightPaneDirtyHarness() {
 			activeTabDirty,
 			isTabDirty: () => activeTabDirty,
 			getActiveTabState: () => {},
+			openTab: () => {},
 			setActiveTabState: () => {},
 			requestNavigation: () => 'replace-active' as const,
 			setActiveTabDirty: (dirty: boolean) => {
@@ -503,7 +504,7 @@ function RightPaneDirtyHarness() {
 		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
 			<MantineProvider>
 				<div data-tab-dirty={activeTabDirty ? 'true' : 'false'}>
-					<WorkbenchTabsProvider value={tabsValue}>
+					<WorkbenchTabsProvider controller={workspace} value={tabsValue}>
 						<PluginWorkbenchLayoutProvider value={layoutValue}>
 							<PluginScopeProvider
 								value={{

@@ -88,4 +88,4 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 29. 平台插件的常驻能力不返回 workbench DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Workbench RPC 和 snapshot event 自己映射安全 DTO 与管理文案。
 30. 入站 consumer 按注册顺序 fail-fast，并在每个原生事件开始时冻结执行计划；dispatch 中的注册/注销只影响下一个事件。bridge 的 consumer 和 transport 都必须组合 bridge-owned abort signal，stop、rollback 与 HMR replacement 会先取消在途工作，再释放注册。
 31. 通用媒体 block 的 `url` 只承载目标 transport 可消费的跨平台资源。账号本地文件句柄不得伪装成 URL；Telegram `file_id` 等原生引用留在 JSON-safe metadata 和原生事件面，通用内容使用可读占位。下载、重传或平台内复用由显式平台插件实现，不能偷偷扩张 Hub 协议。
-32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。共享 Bot 管理页使用 Pluxel 的 Worksplit adapter 提供可持久化账号/详情分栏，平台诊断仍由精确的 Telegram/KOOK renderer 拥有。
+32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。管理首页使用全宽 launcher；账号详情和创建流程通过平台自己的参数化 route 打开 Workbench 原生 Tab，平台诊断仍由精确的 Telegram/KOOK renderer 拥有。

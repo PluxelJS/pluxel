@@ -63,6 +63,22 @@ export const KookUi = workbenchContract.define({
 				}),
 			],
 		},
+		Account: {
+			placements: [
+				workbenchContract.route('/accounts/:accountId', {
+					title: 'KOOK Bot',
+					navigation: false,
+				}),
+			],
+		},
+		Create: {
+			placements: [
+				workbenchContract.route('/create', {
+					title: 'New KOOK Bot',
+					navigation: false,
+				}),
+			],
+		},
 	},
 	outlets: ({ resources }) => ({
 		Http: {

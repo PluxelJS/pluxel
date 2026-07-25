@@ -1,7 +1,11 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { createWorkbenchUi, type WorkbenchRpcClient } from '@pluxel/runtime/workbench/ui'
+import {
+	createWorkbenchUi,
+	type WorkbenchHost,
+	type WorkbenchRpcClient,
+} from '@pluxel/runtime/workbench/ui'
 import { createRuntimeContext } from '@pluxel/runtime/test'
 import { requireWorkbench } from '../../src/services/workbench'
 
@@ -85,6 +89,32 @@ describe('Workbench authoring API', () => {
 		).toThrow('navigation.group.id required')
 	})
 
+	it('defines parameterized non-navigation routes for native tabs', () => {
+		const placement = workbenchContract.route('/accounts/:accountId', {
+			title: 'Bot account',
+			navigation: false,
+		})
+		expect(placement.meta?.route).toMatchObject({
+			path: '/accounts/:accountId',
+			addToNav: false,
+		})
+		expect(() => workbenchContract.route('/accounts/:accountId', { title: 'Broken' })).toThrow(
+			'parameterized routes must set navigation: false',
+		)
+		expect(() =>
+			workbenchContract.route('/accounts/:bad-name', {
+				title: 'Broken',
+				navigation: false,
+			}),
+		).toThrow('invalid route parameter')
+		expect(() =>
+			workbenchContract.route('/:id/children/:id', {
+				title: 'Broken',
+				navigation: false,
+			}),
+		).toThrow('duplicate route parameter')
+	})
+
 	it('keeps host-only route grouping out of the browser Contract fingerprint', () => {
 		const define = (grouped: boolean) =>
 			workbenchContract.define({
@@ -122,6 +152,16 @@ describe('Workbench authoring API', () => {
 		expectTypeOf<Client>().not.toHaveProperty('localState')
 	})
 
+	it('exposes a plugin-scoped native tab capability to Workbench views', () => {
+		expectTypeOf<WorkbenchHost['openTab']>().toBeFunction()
+		expectTypeOf<Parameters<WorkbenchHost['openTab']>[0]>().toMatchObjectType<{
+			path: string
+			title: string
+			meta?: string
+		}>()
+		expectTypeOf<WorkbenchHost['routeParams']>().toEqualTypeOf<Readonly<Record<string, string>>>()
+	})
+
 	it('exposes exactly the declared UI views', () => {
 		const contract = workbenchContract.define({
 			views: {
@@ -141,7 +181,7 @@ describe('Workbench authoring API', () => {
 		const contract = workbenchContract.define({
 			views: {
 				About: workbenchContract.document({
-					placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo)],
+					placements: [workbenchContract.slot(workbenchContract.slots.PluginTabs)],
 					content: [] as never,
 				}),
 			},
@@ -166,7 +206,9 @@ describe('Workbench authoring API', () => {
 			resources: { commands: workbenchContract.rpc<{ ping(): string }>() },
 			views: {
 				Overview: {
-					placements: [workbenchContract.slot(workbenchContract.slots.PluginInfo)],
+					placements: [
+						workbenchContract.slot(workbenchContract.slots.PluginTabs, { label: 'Changed' }),
+					],
 				},
 			},
 		})

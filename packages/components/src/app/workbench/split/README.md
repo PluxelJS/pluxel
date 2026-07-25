@@ -23,7 +23,3 @@ Rules:
 - `WorkbenchSplitView` receives the current percentage `layout` and emits `onLayoutCommit` only
   after user pointer or keyboard resizing commits.
 - Pane visibility state is scoped to the active workbench tab unless explicitly section-owned.
-
-Workbench extension bundles outside `@pluxel/components` consume the narrow
-`@pluxel/components/workbench-split` entry. It exposes the host-integrated two-pane view and
-committed-layout persistence helpers without exposing Worksplit pointer events or shell internals.

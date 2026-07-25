@@ -1,4 +1,4 @@
-import type { LocaleService } from '@pluxel/runtime/web'
+import type { WorkbenchLocaleService } from '@pluxel/runtime/workbench/ui'
 
 type Locale = string
 
@@ -46,7 +46,7 @@ function getNumberFormatter(locale: string, options?: Intl.NumberFormatOptions) 
 	return formatter
 }
 
-export const extensionLocale: LocaleService = {
+export const workbenchLocale: WorkbenchLocaleService = {
 	get locale() {
 		return currentLocale
 	},

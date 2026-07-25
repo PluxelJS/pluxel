@@ -77,12 +77,50 @@ patch 校验失败会重新取得完整 snapshot。query 失败保留 last-known
 完整 order 保证仅排序变化或分页窗口成员变化仍能正确重建结果。并发 invalidation 会合并，不把 SQL、table identity、
 commit token 或 outbox revision 暴露给浏览器。
 
+Remote View 的运行环境由当前 target snapshot 显式注入，包含 opaque grants、locale、theme、dialog 和受限 host
+commands；它不读取全局 Extension context。浏览器 host 直接索引服务端 layout，不再把 placement 转换进第二套 registry。
+catalog、module、route 和 contribution 因而共享同一个 revision 与清理所有者。
+
 ## Route navigation groups
 
 多个独立插件的 route 属于同一运维领域时，可在 `workbenchContract.route()` 的
 `navigation.group` 中声明稳定 group ID、标题和图标。宿主把它们折叠为一个一级活动入口，
 并在当前分组内渲染二级导航；子项和默认入口都沿用 route `order`。分组只影响宿主布局，
 不合并 route owner、resource grant 或 bundle；插件停止或撤销 mount 后，对应子项随 global layout 自动移除。
+
+## Native document tabs
+
+需要从集合页打开多个独立工作对象时，Contract 使用整段参数声明非导航 route：
+
+```ts
+workbenchContract.route('/accounts/:accountId', {
+	title: 'Account',
+	navigation: false,
+})
+```
+
+参数名必须是字母开头的 ASCII identifier，同一路径不能重复；参数化 route 必须显式设置
+`navigation: false`，不能成为静态导航入口。精确 route 优先于参数化 route，宿主会拒绝两个能匹配
+同一路径的参数化模式，避免插件注册顺序改变结果。
+
+Remote View 通过 host facade 打开当前 target 已注册的 shell route，并读取当前 route 参数：
+
+```tsx
+const host = useWorkbenchHost()
+
+host.openTab({
+	path: '/accounts/notifications',
+	title: 'notifications',
+	meta: 'Telegram Bot',
+})
+
+const accountId = host.routeParams.accountId
+```
+
+`path` 是插件相对路径，不是任意宿主 URL。宿主只接受当前 target route table 中的 shell route；standalone
+route、未注册路径和空标题都会失败。规范化后的完整宿主路径是 document Tab 的唯一 identity：再次打开同一路径会
+聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。`routeParams` 只包含当前
+route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
 
 ## Cross-plugin UI
 

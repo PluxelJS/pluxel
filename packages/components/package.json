@@ -1,8 +1,8 @@
 {
-	"name": "@pluxel/components",
+	"name": "@pluxel/workbench-app",
 	"version": "0.1.0",
 	"private": true,
-	"description": "Internal Pluxel runtime UI shell and component library",
+	"description": "Private Pluxel Workbench host application",
 	"type": "module",
 	"main": "./src/index.ts",
 	"exports": {
@@ -10,26 +10,7 @@
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
 		},
-		"./components": {
-			"types": "./src/components/index.ts",
-			"default": "./src/components/index.ts"
-		},
-		"./extension": {
-			"types": "./src/extension/index.ts",
-			"default": "./src/extension/index.ts"
-		},
-		"./theme": {
-			"types": "./src/theme/index.ts",
-			"default": "./src/theme/index.ts"
-		},
-		"./hooks": {
-			"types": "./src/hooks/index.ts",
-			"default": "./src/hooks/index.ts"
-		},
-		"./workbench-split": {
-			"types": "./src/workbench-split.ts",
-			"default": "./src/workbench-split.ts"
-		}
+		"./package.json": "./package.json"
 	},
 	"scripts": {
 		"dev": "pnpm -w run build:gqlens && vite",

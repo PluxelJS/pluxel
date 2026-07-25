@@ -1263,15 +1263,15 @@ importers:
       '@mantine/notifications':
         specifier: 'catalog:'
         version: 9.4.1(@mantine/core@9.4.1(@mantine/hooks@9.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@mantine/hooks@9.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/components':
-        specifier: workspace:*
-        version: link:../../packages/components
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
       '@pluxel/runtime-static':
         specifier: workspace:*
         version: link:../../packages/runtime-static
+      '@pluxel/workbench-app':
+        specifier: workspace:*
+        version: link:../../packages/components
       '@pluxel/wretch':
         specifier: workspace:*
         version: link:../../plugins/wretch
@@ -1350,9 +1350,6 @@ importers:
       '@mantine/core':
         specifier: 'catalog:'
         version: 9.4.1(@mantine/hooks@9.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@pluxel/components':
-        specifier: workspace:*
-        version: link:../../../../packages/components
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime

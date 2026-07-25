@@ -44,7 +44,7 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 ## 启用 Telegram
 
-插件详情中的 `Telegram 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 Telegram 独立管理台。Telegram 自主声明 `bots` navigation group，宿主负责形成统一入口，不存在枚举平台的中央 Workbench 插件。为账号填写稳定的本地 Bot ID 与 Token 后点击“创建并连接”。同一插件可管理多个账号；管理台使用基于 Worksplit 的可持久化分栏，左侧搜索和选择账号，右侧查看完整 Polling 诊断、连接设置和运行控制。Token 只写入持久化加密 Vault；Workbench 从运行中 BotManager 取得安全 snapshot，只能看到掩码，不再把连接状态复制到数据库。
+插件详情中的 `Telegram 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 Telegram 独立管理台。Telegram 自主声明 `bots` navigation group，宿主负责形成统一入口，不存在枚举平台的中央 Workbench 插件。管理首页以全宽卡片搜索和选择账号；点击账号或“添加 Bot”会打开可独立切换、关闭和恢复的 Workbench 原生 Tab。为账号填写稳定的本地 Bot ID 与 Token 后点击“创建并连接”，详情 Tab 提供完整 Polling 诊断、连接设置和运行控制。Token 只写入持久化加密 Vault；Workbench 从运行中 BotManager 取得安全 snapshot，只能看到掩码，不再把连接状态复制到数据库。
 
 Telegram API client 从 `@repo/chatbots-telegram/api` 导出并要求传入 Wretch base。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 类型，`Blob` 输入会自动编码为 `attach://` multipart。独立 client 与受管 Bot 继承同一个 native API prototype；原生方法位于顶层，allowlist raw call 只位于 `client.$.raw` / `bot.$.raw`。
 
@@ -54,7 +54,7 @@ Telegram API 返回 `parameters.retry_after` 后，该 Bot 的后续 HTTP 调用
 
 ## 启用 KOOK
 
-插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。KOOK 和未来平台都通过相同 group 自主注册自己的 route、grant 和 bundle。为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。可调整分栏的详情侧显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲、溢出和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
+插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。KOOK 和未来平台都通过相同 group 自主注册自己的 route、grant 和 bundle。管理首页以全宽卡片搜索和选择账号；每个账号详情和创建流程使用独立 Workbench Tab。为每个账号填写稳定 Bot ID、Token 和可选 API Base，插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。详情显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲、溢出和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
 完整 KOOK 原生 client 从 `@repo/chatbots-kook/api` 导出并要求传入 Wretch base。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 双向比较 inventory 与 `KookAutoApi`。client 与 `KookBot` 共享唯一 native API prototype；raw 位于 `$`，频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息等增强只位于 `bot.$`，不再公开平行 `$tool`。
 
@@ -66,7 +66,7 @@ KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会
 
 包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、Workbench RPC/DTO、Manager 和内部 registry 不通过 barrel 泄漏。每个平台遵循 `plugin.ts -> bot/manager.ts -> bot/bot.ts -> api/client.ts`：主插件只组合生命周期，Manager 拥有 Vault/registry/replacement，Bot 拥有单账号连接与原生事件，API client 只处理平台 HTTP；可选管理平面完整收进 `workbench/`。
 
-两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的列表、表单和操作壳层；管理页通过 `@pluxel/components/workbench-split` 复用宿主的 Worksplit 适配层，只在 resize commit 后持久化百分比布局。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
+两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的 launcher、表单和操作壳层；平台自行声明 `/accounts/:accountId` 与 `/create` 非导航 route，公共 UI 只调用宿主 `openTab()`，不依赖宿主组件或 router。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
 
 `telegram` 与 `kook` 平台包不依赖 `contracts` 或 `hub`，只提供原生 API、Bot registry、原始事件、连接状态机、Vault 账号生命周期和可选管理 UI。它们 required-depend 官方 `WretchPlugin`。`telegram-hub-bridge` 与 `kook-hub-bridge` 是独立桥接插件，拥有平台 codec、checkpoint-critical 入站 consumer 和 ChatHub transport。
 

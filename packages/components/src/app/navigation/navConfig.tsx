@@ -90,7 +90,7 @@ export function resolveNavIcon(icon: unknown): ReactNode | undefined {
 	return undefined
 }
 
-export interface ExtensionNavMeta {
+export interface WorkbenchNavMeta {
 	id: string
 	label?: string
 	href?: string
@@ -104,7 +104,7 @@ export interface ExtensionNavMeta {
 	}
 }
 
-export function buildExtensionNavItems(entries: ExtensionNavMeta[]): NavItem[] {
+export function buildWorkbenchNavItems(entries: WorkbenchNavMeta[]): NavItem[] {
 	return entries.map((entry) => {
 		const label = typeof entry.label === 'string' && entry.label.length > 0 ? entry.label : entry.id
 		const href = typeof entry.href === 'string' && entry.href.length > 0 ? entry.href : '#'

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { WorkbenchLayoutItem } from '@pluxel/runtime/workbench'
 
 export type RightPaneState = {
 	path?: string
@@ -52,11 +53,6 @@ function readStringProp(obj: Record<string, unknown>, key: string): string | und
 	return typeof value === 'string' ? value : undefined
 }
 
-function readNumberProp(obj: Record<string, unknown>, key: string): number | undefined {
-	const value = obj[key]
-	return typeof value === 'number' ? value : undefined
-}
-
 function readStringMap(value: unknown): Record<string, string> | undefined {
 	if (!isRecord(value)) return undefined
 	const out: Record<string, string> = {}
@@ -102,24 +98,24 @@ export function sanitizeRightPaneState(value: unknown): RightPaneState {
 
 export function buildRightPaneTabGroups(
 	pluginName: string,
-	tabItems: Array<{ meta?: unknown }>,
+	tabItems: readonly WorkbenchLayoutItem[],
 	tabNodes: ReactNode[],
 ): RightPaneTabGroup[] {
 	const entries = tabItems.map((item, index) => {
 		const meta = isRecord(item.meta) ? item.meta : {}
 		return {
 			meta,
+			itemId: item.id,
+			itemPriority: item.priority,
 			node: tabNodes[index],
-			nodeKey: readStringProp(meta, 'id') ?? `${pluginName}:tab:${index}`,
+			nodeKey: item.id,
 		}
 	})
 	const byId = new Map<string, RightPaneTabGroup>()
 
-	for (const { meta, node, nodeKey } of entries) {
+	for (const { meta, itemId, itemPriority, node, nodeKey } of entries) {
 		const tabMeta =
 			isRecord(meta) && isRecord(meta.tab) ? (meta.tab as Record<string, unknown>) : undefined
-		const itemId = readStringProp(meta, 'id')
-		const itemPriority = readNumberProp(meta, 'priority') ?? 0
 		const rawGroupId =
 			typeof tabMeta?.id === 'string' && tabMeta.id.trim().length > 0
 				? tabMeta.id.trim()

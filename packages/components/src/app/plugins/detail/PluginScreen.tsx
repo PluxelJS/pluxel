@@ -3,11 +3,6 @@ import { useMediaQuery } from '@mantine/hooks'
 import { IconPuzzle } from '@tabler/icons-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EmptyState, ErrorState } from '../../../components'
-import {
-	createPluginExtensionContext,
-	ExtensionProvider,
-	useGlobalExtensionContext,
-} from '../../../extension'
 import { useDebouncedFlag } from '../../../hooks'
 import {
 	type PluginDependency,
@@ -21,7 +16,7 @@ import { usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { matchesKnownPluginName, resolveKnownPluginName } from './rightPaneState'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
-import { PluginWorkbenchLoader } from '../../../workbench/runtime'
+import { WorkbenchTargetProvider } from '../../../workbench/runtime'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -284,7 +279,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		loading,
 		refetch,
 	} = usePluginDetail(pluginName)
-	const parentExtensionCtx = useGlobalExtensionContext()
 	const pathname = useCurrentPathname()
 
 	// 稳定快照：refetch/同步期间，详情查询可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
@@ -398,14 +392,6 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		syncing,
 	])
 
-	const pluginExtensionCtx = useMemo(() => {
-		if (!parentExtensionCtx) return null
-		return createPluginExtensionContext(parentExtensionCtx, {
-			pluginName: displayName,
-			pathname,
-		})
-	}, [parentExtensionCtx, displayName, pathname])
-
 	if (!pluginName) {
 		return (
 			<EmptyState
@@ -441,14 +427,13 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	}
 
 	if (!viewReady) return <PluginSkeleton stacked={Boolean(isStacked)} />
-	if (!contextValue || !pluginExtensionCtx) return null
+	if (!contextValue) return null
 
 	return (
-		<ExtensionProvider value={pluginExtensionCtx}>
+		<WorkbenchTargetProvider target={displayName} pathname={pathname}>
 			<PluginScopeProvider value={contextValue}>
-				<PluginWorkbenchLoader target={displayName} />
 				<PluginWorkbench config={configState} />
 			</PluginScopeProvider>
-		</ExtensionProvider>
+		</WorkbenchTargetProvider>
 	)
 })

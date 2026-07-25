@@ -15,8 +15,6 @@ function createInitialState(): WorkbenchState {
 	}
 }
 
-export const workbenchStore = new Store<WorkbenchState>(createInitialState())
-
 function isPlainStateRecord(value: unknown): value is Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
 	const proto = Object.getPrototypeOf(value)
@@ -43,9 +41,15 @@ function hasSameStateValue(left: unknown, right: unknown, depth = 0): boolean {
 	return false
 }
 
-export function syncWorkbenchLocation(pathname: string, mode: 'replace-active' | 'open-tab') {
-	const currentTab = deriveTabFromPath(pathname)
-	workbenchStore.setState((prev) => {
+function syncWorkbenchLocation(
+	store: Store<WorkbenchState>,
+	pathname: string,
+	mode: 'replace-active' | 'open-tab',
+) {
+	const derivedTab = deriveTabFromPath(pathname)
+	store.setState((prev) => {
+		const existing = prev.uiState.tabs.find((tab) => tab.id === derivedTab.id)
+		const currentTab = existing?.kind === 'document' ? existing : derivedTab
 		const nextUiState = syncWorkbenchTabs(prev.uiState, currentTab, mode)
 		if (nextUiState === prev.uiState) return prev
 		return {
@@ -55,8 +59,26 @@ export function syncWorkbenchLocation(pathname: string, mode: 'replace-active' |
 	})
 }
 
-export function pruneWorkbenchDirtyTabs() {
-	workbenchStore.setState((prev) => {
+function openWorkbenchTab(
+	store: Store<WorkbenchState>,
+	input: { path: string; title: string; meta?: string },
+) {
+	const derived = deriveTabFromPath(input.path)
+	const tab = {
+		...derived,
+		title: input.title,
+		meta: input.meta,
+		kind: 'document' as const,
+	}
+	store.setState((prev) => {
+		const nextUiState = syncWorkbenchTabs(prev.uiState, tab, 'open-tab')
+		if (nextUiState === prev.uiState) return prev
+		return { ...prev, uiState: nextUiState }
+	})
+}
+
+function pruneWorkbenchDirtyTabs(store: Store<WorkbenchState>) {
+	store.setState((prev) => {
 		const next: Record<string, boolean> = {}
 		for (const tab of prev.uiState.tabs) {
 			next[tab.id] = prev.dirtyTabs[tab.id] ?? false
@@ -76,8 +98,12 @@ export function pruneWorkbenchDirtyTabs() {
 	})
 }
 
-export function setWorkbenchSectionPaneVisible(sectionId: WorkbenchSectionId, visible: boolean) {
-	workbenchStore.setState((prev) => {
+function setWorkbenchSectionPaneVisible(
+	store: Store<WorkbenchState>,
+	sectionId: WorkbenchSectionId,
+	visible: boolean,
+) {
+	store.setState((prev) => {
 		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
 		if (currentPaneState.visible === visible) return prev
 		return {
@@ -96,8 +122,8 @@ export function setWorkbenchSectionPaneVisible(sectionId: WorkbenchSectionId, vi
 	})
 }
 
-export function toggleWorkbenchSectionPane(sectionId: WorkbenchSectionId) {
-	workbenchStore.setState((prev) => {
+function toggleWorkbenchSectionPane(store: Store<WorkbenchState>, sectionId: WorkbenchSectionId) {
+	store.setState((prev) => {
 		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
 		return {
 			...prev,
@@ -115,8 +141,8 @@ export function toggleWorkbenchSectionPane(sectionId: WorkbenchSectionId) {
 	})
 }
 
-export function toggleWorkbenchNavigationCollapsed() {
-	workbenchStore.setState((prev) => ({
+function toggleWorkbenchNavigationCollapsed(store: Store<WorkbenchState>) {
+	store.setState((prev) => ({
 		...prev,
 		uiState: {
 			...prev.uiState,
@@ -125,11 +151,12 @@ export function toggleWorkbenchNavigationCollapsed() {
 	}))
 }
 
-export function setWorkbenchSectionPaneLayout(
+function setWorkbenchSectionPaneLayout(
+	store: Store<WorkbenchState>,
 	sectionId: WorkbenchSectionId,
 	layout: Record<string, number>,
 ) {
-	workbenchStore.setState((prev) => {
+	store.setState((prev) => {
 		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
 		if (hasSameLayout(currentPaneState.layout, layout)) return prev
 		return {
@@ -148,8 +175,8 @@ export function setWorkbenchSectionPaneLayout(
 	})
 }
 
-export function setWorkbenchActiveTabId(tabId: string | null) {
-	workbenchStore.setState((prev) => {
+function setWorkbenchActiveTabId(store: Store<WorkbenchState>, tabId: string | null) {
+	store.setState((prev) => {
 		if (prev.uiState.activeTabId === tabId) return prev
 		return {
 			...prev,
@@ -161,9 +188,14 @@ export function setWorkbenchActiveTabId(tabId: string | null) {
 	})
 }
 
-export function setWorkbenchActiveTabState(tabId: string | null, scope: string, value: unknown) {
+function setWorkbenchActiveTabState(
+	store: Store<WorkbenchState>,
+	tabId: string | null,
+	scope: string,
+	value: unknown,
+) {
 	if (!tabId || !scope) return
-	workbenchStore.setState((prev) => {
+	store.setState((prev) => {
 		const currentState = prev.uiState.tabState[tabId] ?? {}
 		if (value === undefined) {
 			if (!(scope in currentState)) return prev
@@ -197,9 +229,9 @@ export function setWorkbenchActiveTabState(tabId: string | null, scope: string, 
 	})
 }
 
-export function setWorkbenchTabDirty(tabId: string | null, dirty: boolean) {
+function setWorkbenchTabDirty(store: Store<WorkbenchState>, tabId: string | null, dirty: boolean) {
 	if (!tabId) return
-	workbenchStore.setState((prev) => {
+	store.setState((prev) => {
 		if ((prev.dirtyTabs[tabId] ?? false) === dirty) return prev
 		return {
 			...prev,
@@ -211,8 +243,8 @@ export function setWorkbenchTabDirty(tabId: string | null, dirty: boolean) {
 	})
 }
 
-export function closeWorkbenchTab(tabId: string) {
-	workbenchStore.setState((prev) => {
+function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
+	store.setState((prev) => {
 		if (!prev.uiState.tabs.some((tab) => tab.id === tabId)) return prev
 		const nextTabs = prev.uiState.tabs.filter((tab) => tab.id !== tabId)
 		const closingActive = prev.uiState.activeTabId === tabId
@@ -245,9 +277,9 @@ export function closeWorkbenchTab(tabId: string) {
 	})
 }
 
-export function resetWorkbenchToHome() {
+function resetWorkbenchToHome(store: Store<WorkbenchState>) {
 	const homeTab = deriveTabFromPath('/')
-	workbenchStore.setState((prev) => ({
+	store.setState((prev) => ({
 		...prev,
 		dirtyTabs: {},
 		uiState: {
@@ -258,4 +290,73 @@ export function resetWorkbenchToHome() {
 			tabs: [homeTab],
 		},
 	}))
+}
+
+export type WorkspaceNavigationMode = 'replace-active' | 'open-tab'
+
+export class WorkspaceController {
+	readonly store = new Store<WorkbenchState>(createInitialState())
+	private pendingNavigation: { to: string; mode: WorkspaceNavigationMode } | null = null
+
+	get state(): WorkbenchState {
+		return this.store.state
+	}
+
+	syncLocation(pathname: string, mode: WorkspaceNavigationMode): void {
+		syncWorkbenchLocation(this.store, pathname, mode)
+	}
+
+	openTab(input: { path: string; title: string; meta?: string }): void {
+		openWorkbenchTab(this.store, input)
+	}
+
+	pruneDirtyTabs(): void {
+		pruneWorkbenchDirtyTabs(this.store)
+	}
+
+	setSectionPaneVisible(sectionId: WorkbenchSectionId, visible: boolean): void {
+		setWorkbenchSectionPaneVisible(this.store, sectionId, visible)
+	}
+
+	toggleSectionPane(sectionId: WorkbenchSectionId): void {
+		toggleWorkbenchSectionPane(this.store, sectionId)
+	}
+
+	toggleNavigationCollapsed(): void {
+		toggleWorkbenchNavigationCollapsed(this.store)
+	}
+
+	setSectionPaneLayout(sectionId: WorkbenchSectionId, layout: Record<string, number>): void {
+		setWorkbenchSectionPaneLayout(this.store, sectionId, layout)
+	}
+
+	setActiveTabId(tabId: string | null): void {
+		setWorkbenchActiveTabId(this.store, tabId)
+	}
+
+	setActiveTabState(tabId: string | null, scope: string, value: unknown): void {
+		setWorkbenchActiveTabState(this.store, tabId, scope, value)
+	}
+
+	setTabDirty(tabId: string | null, dirty: boolean): void {
+		setWorkbenchTabDirty(this.store, tabId, dirty)
+	}
+
+	closeTab(tabId: string): void {
+		closeWorkbenchTab(this.store, tabId)
+	}
+
+	resetToHome(): void {
+		resetWorkbenchToHome(this.store)
+	}
+
+	queueNavigation(to: string, mode: WorkspaceNavigationMode): void {
+		this.pendingNavigation = { to, mode }
+	}
+
+	consumeNavigation(pathname: string): { to: string; mode: WorkspaceNavigationMode } | null {
+		const pending = this.pendingNavigation
+		this.pendingNavigation = null
+		return pending?.to === pathname ? pending : null
+	}
 }

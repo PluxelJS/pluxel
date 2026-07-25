@@ -187,7 +187,7 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/components#build": {
+		"@pluxel/workbench-app#build": {
 			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dynamic#build", "valibot-form#build"],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [

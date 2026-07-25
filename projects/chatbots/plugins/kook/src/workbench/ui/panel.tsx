@@ -1,6 +1,7 @@
 import { Group, Paper, SimpleGrid, Stack, Text } from '@mantine/core'
 import {
-	BotAdminManager,
+	BotAdminDetails,
+	BotAdminLauncher,
 	BotAdminOverview,
 	durationSince,
 	Metric,
@@ -108,5 +109,17 @@ export function KookOverviewPanel() {
 
 export function KookManagerPanel() {
 	const { commands, state } = kookUi.useResources()
-	return <BotAdminManager commands={commands} state={state} descriptor={descriptor} />
+	return <BotAdminLauncher commands={commands} state={state} descriptor={descriptor} />
+}
+
+export function KookAccountPanel() {
+	const { commands, state } = kookUi.useResources()
+	return (
+		<BotAdminDetails commands={commands} state={state} descriptor={descriptor} mode="account" />
+	)
+}
+
+export function KookCreatePanel() {
+	const { commands, state } = kookUi.useResources()
+	return <BotAdminDetails commands={commands} state={state} descriptor={descriptor} mode="create" />
 }

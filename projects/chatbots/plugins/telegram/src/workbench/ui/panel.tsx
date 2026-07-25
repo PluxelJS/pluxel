@@ -1,6 +1,7 @@
 import { Group, Paper, SimpleGrid, Stack, Text } from '@mantine/core'
 import {
-	BotAdminManager,
+	BotAdminDetails,
+	BotAdminLauncher,
 	BotAdminOverview,
 	durationSince,
 	Metric,
@@ -86,5 +87,17 @@ export function TelegramOverviewPanel() {
 
 export function TelegramManagerPanel() {
 	const { commands, state } = telegramUi.useResources()
-	return <BotAdminManager commands={commands} state={state} descriptor={descriptor} />
+	return <BotAdminLauncher commands={commands} state={state} descriptor={descriptor} />
+}
+
+export function TelegramAccountPanel() {
+	const { commands, state } = telegramUi.useResources()
+	return (
+		<BotAdminDetails commands={commands} state={state} descriptor={descriptor} mode="account" />
+	)
+}
+
+export function TelegramCreatePanel() {
+	const { commands, state } = telegramUi.useResources()
+	return <BotAdminDetails commands={commands} state={state} descriptor={descriptor} mode="create" />
 }

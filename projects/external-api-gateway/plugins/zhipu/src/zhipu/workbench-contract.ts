@@ -16,9 +16,6 @@ export const ZhipuUi = workbenchContract.define({
 		history: workbenchContract.liveQuery({ row: jsonObjectSchema<ZhipuTestRunDoc>(), key: 'id' }),
 	},
 	views: {
-		HeaderAction: {
-			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
-		},
 		ZhipuOcrPanel: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { groupNavItems } from '../src/app/navigation/navConfig'
+import { createDefaultWorkbenchUiState } from '../src/app/workbench/state'
+import { WorkspaceController } from '../src/app/workbench/store'
+import { deriveTabFromPath, syncWorkbenchTabs } from '../src/app/workbench/tabs'
+import {
+	compileWorkbenchRoute,
+	matchWorkbenchRoute,
+	workbenchRoutesOverlap,
+} from '../src/workbench/routes'
 
 describe('Workbench navigation groups', () => {
 	it('collapses grouped routes into one primary section and preserves child order', () => {
@@ -37,5 +45,55 @@ describe('Workbench navigation groups', () => {
 
 		expect(items).toHaveLength(2)
 		expect(items.map((item) => item.children?.[0]?.href)).toEqual(['/a', '/b'])
+	})
+})
+
+describe('Workbench native document tabs', () => {
+	it('isolates workspace state and navigation intent per controller instance', () => {
+		const first = new WorkspaceController()
+		const second = new WorkspaceController()
+		first.openTab({ path: '/ext/KookPlugin/accounts/default', title: 'default' })
+		first.queueNavigation('/ext/KookPlugin/accounts/default', 'open-tab')
+
+		expect(first.state.uiState.tabs).toHaveLength(1)
+		expect(second.state.uiState.tabs).toHaveLength(0)
+		expect(first.consumeNavigation('/ext/KookPlugin/accounts/default')?.mode).toBe('open-tab')
+		expect(first.consumeNavigation('/ext/KookPlugin/accounts/default')).toBeNull()
+	})
+
+	it('matches whole-segment route parameters and decodes their values', () => {
+		const route = compileWorkbenchRoute('/accounts/:accountId')
+		expect(route.identity).toBe('accounts/:')
+		expect(matchWorkbenchRoute(route, '/accounts/alerts%2Dbot')).toEqual({
+			accountId: 'alerts-bot',
+		})
+		expect(matchWorkbenchRoute(route, '/accounts')).toBeNull()
+		expect(matchWorkbenchRoute(route, '/accounts/default/diagnostics')).toBeNull()
+	})
+
+	it('detects overlapping parameterized route patterns', () => {
+		const account = compileWorkbenchRoute('/accounts/:accountId')
+		expect(workbenchRoutesOverlap(account, compileWorkbenchRoute('/:section/settings'))).toBe(true)
+		expect(workbenchRoutesOverlap(account, compileWorkbenchRoute('/projects/:projectId'))).toBe(
+			false,
+		)
+	})
+
+	it('deduplicates native tabs by path while retaining document metadata', () => {
+		const path = '/ext/KookPlugin/accounts/default'
+		const document = {
+			...deriveTabFromPath(path),
+			title: 'default',
+			meta: 'KOOK Bot',
+			kind: 'document' as const,
+		}
+		const first = syncWorkbenchTabs(createDefaultWorkbenchUiState(), document, 'open-tab')
+		const second = syncWorkbenchTabs(first, document, 'open-tab')
+		expect(second.tabs).toEqual([document])
+		expect(second.activeTabId).toBe(document.id)
+
+		const renamed = { ...document, title: 'alerts', meta: 'Connected' }
+		const updated = syncWorkbenchTabs(second, renamed, 'open-tab')
+		expect(updated.tabs).toEqual([renamed])
 	})
 })

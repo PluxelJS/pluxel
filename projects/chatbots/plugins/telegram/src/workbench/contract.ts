@@ -52,5 +52,21 @@ export const TelegramUi = workbenchContract.define({
 				}),
 			],
 		},
+		Account: {
+			placements: [
+				workbenchContract.route('/accounts/:accountId', {
+					title: 'Telegram Bot',
+					navigation: false,
+				}),
+			],
+		},
+		Create: {
+			placements: [
+				workbenchContract.route('/create', {
+					title: 'New Telegram Bot',
+					navigation: false,
+				}),
+			],
+		},
 	},
 })

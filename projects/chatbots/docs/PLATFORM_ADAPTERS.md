@@ -218,9 +218,10 @@ projection，也不得让管理 DTO 或 UI 写入失败进入 Vault/Bot replacem
 折叠成一个一级入口，不使用 `ChatbotsWorkbenchPlugin` 或其他中央清单枚举平台。平台停止、未安装或撤销 mount 后，
 自己的二级入口、grant 和 bundle 自动消失；新增平台不修改 Telegram、KOOK 或宿主聚合代码。
 
-共享账号管理页使用 `@pluxel/components/workbench-split`，而不直接导入 `@worksplit/react`。左侧账号列表和右侧
-平台详情拥有百分比布局，只有用户完成指针或键盘 resize 后才写入持久化状态。公共壳层不解释 diagnostics；
-Telegram Polling 与 KOOK Gateway renderer 继续展示各自完整、有界的原生计数和时间点。
+共享账号管理首页使用全宽 launcher 和账号卡片。每个平台自行声明 `/accounts/:accountId` 和 `/create` 非导航
+route，公共 UI 只通过 `useWorkbenchHost().openTab()` 打开当前平台的 Workbench 原生 Tab，并从 `routeParams`
+读取账号 ID；它不导入宿主组件、router 或 Tab store。公共壳层不解释 diagnostics；Telegram Polling 与 KOOK
+Gateway renderer 继续展示各自完整、有界的原生计数和时间点。
 
 平台 Workbench 另外使用官方 `WretchWorkbenchPort`，统一管理 consumer timeout、非敏感 headers 和 proxy。
 只有 Workbench enabled 时才调用 `enableManagedSettings()` 和挂载 Port；headless 平台 API 仍通过同一
@@ -692,5 +693,5 @@ definitions.txt / endpoints.txt
 - [ ] macro 只内联已提交的静态 metadata。
 - [ ] endpoint 方法只安装在共享 prototype 一次。
 - [ ] API、Bot、registry、workbench 属于平台包；codec 与 Hub transport 属于 bridge 包。
-- [ ] 平台 Workbench 自主注册 `bots` navigation group；共享 UI 不枚举平台，分栏只通过 Pluxel Worksplit adapter。
+- [ ] 平台 Workbench 自主注册 `bots` navigation group、账号详情和创建 route；共享 UI 不枚举平台，只通过宿主 `openTab()` 打开原生 Tab。
 - [ ] 生命周期、取消、错误、限流和 multipart 有平台级测试。

@@ -1,4 +1,4 @@
-import { App } from '@pluxel/components'
+import { App } from '@pluxel/workbench-app'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
 import { StrictMode } from 'react'

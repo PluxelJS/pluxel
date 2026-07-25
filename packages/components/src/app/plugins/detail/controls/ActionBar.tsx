@@ -5,7 +5,6 @@ import { useHotkeys } from '@mantine/hooks'
 import { openConfirmModal } from '@mantine/modals'
 import { IconPlayerPlay, IconRotateClockwise, IconSquareX } from '@tabler/icons-react'
 import { useCallback, useRef, useState } from 'react'
-import { ExtensionSlot } from '../../../../extension'
 import { PluginStatusEntryLifecycleStage } from '../../../gqlens'
 import { useNotify } from '../../../hooks/useNotify'
 import {
@@ -435,8 +434,6 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 					onAction={handleAction}
 					prominent
 				/>
-
-				<ExtensionSlot point="plugin:actions" fallback={null} />
 			</Group>
 		)
 	}
@@ -448,8 +445,6 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 			wrap="nowrap"
 			className="plx-pluginWorkbench__actionBar"
 		>
-			<ExtensionSlot point="plugin:actions" fallback={null} />
-
 			<Tooltip
 				label={
 					busy ? '同步中…' : isEnabled ? '禁用后将停止运行并移除持久启用' : '启用后可持久保留该插件'

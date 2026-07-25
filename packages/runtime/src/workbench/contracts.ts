@@ -1,17 +1,7 @@
 import type { BuiltinDocContent } from './document-contracts'
 
 export const WorkbenchSlots = {
-	GlobalHeaderActions: 'global.headerActions',
-	GlobalNavbarItems: 'global.navbarItems',
-	GlobalNavbarFooter: 'global.navbarFooter',
-	GlobalStatusBar: 'global.statusBar',
-	PluginHeader: 'plugin.header',
 	PluginTabs: 'plugin.tabs',
-	PluginActions: 'plugin.actions',
-	PluginContext: 'plugin.context',
-	PluginInfo: 'plugin.info',
-	PluginDock: 'plugin.dock',
-	PluginCapabilities: 'plugin.capabilities',
 } as const
 
 export const WorkbenchIcons = {
@@ -453,6 +443,11 @@ function routePlacement(
 	},
 ): WorkbenchPlacementSpec {
 	const order = input.order ?? 0
+	const normalizedPath = normalizeRoutePath(path)
+	const routeParams = routeParameterNames(normalizedPath)
+	if (routeParams.length > 0 && input.navigation !== false) {
+		throw new Error('[workbench-contract] parameterized routes must set navigation: false')
+	}
 	const navigation = typeof input.navigation === 'object' ? input.navigation : undefined
 	const navigationGroup = navigation
 		? Object.freeze({
@@ -472,7 +467,7 @@ function routePlacement(
 		when: input.when,
 		meta: Object.freeze({
 			route: Object.freeze({
-				path: requiredText('workbenchContract.route', 'path', path),
+				path: normalizedPath,
 				title: requiredText('workbenchContract.route', 'title', input.title),
 				icon: input.icon,
 				addToNav: input.navigation !== false,
@@ -524,7 +519,27 @@ function normalizePlacements(
 
 function normalizeRoutePath(path: string): string {
 	const value = requiredText('workbenchContract.route', 'path', path)
-	return `/${value.replaceAll(/^\/+|\/+$/g, '')}`
+	const normalized = `/${value.replaceAll(/^\/+|\/+$/g, '')}`
+	routeParameterNames(normalized)
+	return normalized
+}
+
+function routeParameterNames(path: string): string[] {
+	const names: string[] = []
+	const seen = new Set<string>()
+	for (const segment of path.split('/').filter(Boolean)) {
+		if (!segment.startsWith(':')) continue
+		const name = segment.slice(1)
+		if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
+			throw new Error(`[workbench-contract] invalid route parameter: ${segment}`)
+		}
+		if (seen.has(name)) {
+			throw new Error(`[workbench-contract] duplicate route parameter: ${name}`)
+		}
+		seen.add(name)
+		names.push(name)
+	}
+	return names
 }
 
 function requiredText(api: string, field: string, value: string): string {

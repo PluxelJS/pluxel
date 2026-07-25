@@ -13,9 +13,9 @@
 	"dependencies": {
 		"@mantine/core": "catalog:",
 		"@mantine/notifications": "catalog:",
-		"@pluxel/components": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
+		"@pluxel/workbench-app": "workspace:*",
 		"@pluxel/wretch": "workspace:*",
 		"@repo/chatbots-access": "workspace:*",
 		"@repo/chatbots-builtins": "workspace:*",

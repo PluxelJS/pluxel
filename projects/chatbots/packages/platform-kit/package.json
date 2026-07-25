@@ -24,14 +24,10 @@
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:",
-		"@pluxel/components": "workspace:*",
 		"react": "catalog:"
 	},
 	"peerDependenciesMeta": {
 		"@mantine/core": {
-			"optional": true
-		},
-		"@pluxel/components": {
 			"optional": true
 		},
 		"react": {

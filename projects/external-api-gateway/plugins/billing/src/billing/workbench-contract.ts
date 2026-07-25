@@ -34,9 +34,6 @@ export const UsageBillingUi = workbenchContract.define({
 		rates: workbenchContract.liveQuery({ row: jsonObjectSchema<BillingRateDoc>(), key: 'id' }),
 	},
 	views: {
-		HeaderAction: {
-			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
-		},
 		BillingPanel: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {

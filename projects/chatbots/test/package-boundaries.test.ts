@@ -91,11 +91,18 @@ describe('chatbots package boundaries', () => {
 		},
 	)
 
-	it('uses the host Workbench split adapter without coupling Bot UI to worksplit internals', () => {
+	it('opens Bot documents as native Workbench tabs without an embedded account split', () => {
 		const ui = readFileSync(resolve(root, 'packages/platform-kit/src/workbench-ui.tsx'), 'utf8')
-		expect(ui).toContain("from '@pluxel/components/workbench-split'")
-		expect(ui).not.toContain("from '@worksplit/react'")
+		expect(ui).toContain('host.openTab')
+		expect(ui).not.toContain('WorkbenchSplitView')
+		expect(ui).not.toContain('@worksplit/react')
+		expect(ui).not.toContain('@pluxel/workbench-app')
 		expect(ui).not.toContain('ChatbotsWorkbenchPlugin')
+		for (const name of ['telegram', 'kook']) {
+			const contract = sourceFile(name, 'workbench/contract.ts')
+			expect(contract).toContain("route('/accounts/:accountId'")
+			expect(contract).toContain('navigation: false')
+		}
 	})
 
 	it('keeps application Workbench persistence outside the platform kit', () => {

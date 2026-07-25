@@ -16,15 +16,12 @@ import { IconSettingsOff } from '@tabler/icons-react'
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ObjectSchema } from 'valibot'
 import { EmptyState, ErrorState } from '../../../components'
-import { ExtensionSlot, useExtensions } from '../../../extension'
+import { useResolvedWorkbenchRoute, useWorkbenchSurface } from '../../../workbench/runtime'
 import type { PluginConfigState } from '../config/usePluginConfig'
 import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import type { PluginDetailSearch } from '../../router/pluginDetailSearch'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import {
-	PluginRouteRenderer,
-	useResolvedPluginRoute,
-} from '../../router/extensions/PluginRouteRenderer'
+import { WorkbenchRouteRenderer } from '../../router/workbench/WorkbenchRouteRenderer'
 import { PANE_TABS_PROPS, PaneTabLabel, getPaneTabsRootClassName } from '../../workbench/PaneTabs'
 import { useResolvedWorkbenchTabState } from '../../workbench/split'
 import { ConfigForm } from '../config/ConfigForm'
@@ -58,8 +55,11 @@ import {
 } from './rightPaneState'
 import { usePluginWorkbenchLayout } from './workbench/context'
 import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
-import { useWorkbenchTabDirty, useWorkbenchTabIdentity } from '../../workbench/context'
-import { setWorkbenchActiveTabState } from '../../workbench/store'
+import {
+	useWorkbenchTabDirty,
+	useWorkbenchTabIdentity,
+	useWorkspaceController,
+} from '../../workbench/context'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -215,15 +215,6 @@ function PluginWorkbenchToolbar({
 
 				<div className="plx-pluginWorkbench__commandActions">
 					<ActionBar prominent />
-					<ExtensionSlot
-						point="plugin:header"
-						wrapper={(nodes) => (
-							<Group gap={6} wrap="nowrap" className="plx-pluginWorkbench__headerExtensions">
-								{nodes}
-							</Group>
-						)}
-						fallback={null}
-					/>
 				</div>
 			</div>
 
@@ -302,7 +293,8 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const { rightPaneVisible } = usePluginWorkbenchLayout()
 	const { activeTabId } = useWorkbenchTabIdentity()
 	const { setActiveTabDirty } = useWorkbenchTabDirty()
-	const { nodes: tabNodes, items: tabItems } = useExtensions('plugin:tabs')
+	const workspace = useWorkspaceController()
+	const { nodes: tabNodes, items: tabItems } = useWorkbenchSurface('plugin.tabs')
 	const pathname = useCurrentPathname()
 	const routeSearch = usePluginDetailSearch()
 	const [localSearchOverride, setLocalSearchOverride] = useState<PluginDetailSearch | null>(null)
@@ -557,9 +549,9 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 			)
 			if (deepEqual(previous, merged)) return
 			storedStateRef.current = merged
-			setWorkbenchActiveTabState(activeTabId, RIGHT_PANE_VIEW_STATE_KEY, merged)
+			workspace.setActiveTabState(activeTabId, RIGHT_PANE_VIEW_STATE_KEY, merged)
 		},
-		[activeSchemaKey, activeTab, activeTabId, restPath],
+		[activeSchemaKey, activeTab, activeTabId, restPath, workspace],
 	)
 
 	useEffect(() => {
@@ -836,20 +828,15 @@ function RouteContent({ pluginName, restPath }: { pluginName: string; restPath: 
 	const fullPath = useMemo(() => {
 		return `/plugins/${encodeURIComponentSafe(pluginName)}${restPath}`
 	}, [pluginName, restPath])
-	const { pluginCtx, routeRender, routeVersion } = useResolvedPluginRoute({
-		pluginName,
-		pathname: fullPath,
-		restPath,
-	})
+	const { route, snapshot } = useResolvedWorkbenchRoute(pluginName, restPath)
 
 	return (
-		<PluginRouteRenderer
+		<WorkbenchRouteRenderer
 			pluginName={pluginName}
 			displayPath={fullPath}
 			pathname={fullPath}
-			pluginCtx={pluginCtx}
-			routeRender={routeRender}
-			routeVersion={routeVersion}
+			route={route}
+			snapshot={snapshot}
 			backContent={
 				<Button
 					size="xs"

@@ -11,6 +11,7 @@ export type WorkbenchTab = {
 	path: string
 	title: string
 	meta?: string
+	kind?: 'document'
 }
 
 export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'other'
@@ -145,6 +146,7 @@ export function readWorkbenchState(): WorkbenchUiState {
 					path: typeof tab.path === 'string' ? tab.path : '/',
 					title: typeof tab.title === 'string' ? tab.title : '页面',
 					meta: typeof tab.meta === 'string' ? tab.meta : undefined,
+					kind: tab.kind === 'document' ? ('document' as const) : undefined,
 				}))
 			: []
 		return {

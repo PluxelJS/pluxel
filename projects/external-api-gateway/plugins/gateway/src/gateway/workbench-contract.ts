@@ -18,9 +18,6 @@ export const ExternalGatewayUi = workbenchContract.define({
 		status: workbenchContract.liveQuery({ row: jsonObjectSchema<GatewayStatusDoc>(), key: 'id' }),
 	},
 	views: {
-		HeaderAction: {
-			placements: [workbenchContract.slot(workbenchContract.slots.GlobalHeaderActions)],
-		},
 		GatewayPanel: {
 			placements: [
 				workbenchContract.slot(workbenchContract.slots.PluginTabs, {

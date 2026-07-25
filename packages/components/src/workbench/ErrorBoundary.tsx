@@ -1,33 +1,33 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
-interface ExtensionErrorBoundaryProps {
+interface WorkbenchErrorBoundaryProps {
 	pluginName: string
-	extensionId: string
+	contributionId: string
 	point: string
 	children: ReactNode
 	fallback?: ReactNode | ((info: { error: Error | null }) => ReactNode)
 	onError?: (error: Error, info: ErrorInfo) => void
 }
 
-interface ExtensionErrorBoundaryState {
+interface WorkbenchErrorBoundaryState {
 	hasError: boolean
 	error: Error | null
 }
 
-class ExtensionErrorBoundaryImpl extends Component<
-	ExtensionErrorBoundaryProps,
-	ExtensionErrorBoundaryState
+class WorkbenchErrorBoundaryImpl extends Component<
+	WorkbenchErrorBoundaryProps,
+	WorkbenchErrorBoundaryState
 > {
-	state: ExtensionErrorBoundaryState = { hasError: false, error: null }
+	state: WorkbenchErrorBoundaryState = { hasError: false, error: null }
 
-	static getDerivedStateFromError(error: Error): ExtensionErrorBoundaryState {
+	static getDerivedStateFromError(error: Error): WorkbenchErrorBoundaryState {
 		return { hasError: true, error }
 	}
 
 	override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-		const { pluginName, point, extensionId, onError } = this.props
+		const { pluginName, point, contributionId, onError } = this.props
 		console.error(
-			`[Extension:${pluginName}] Failed to render "${point}" (${extensionId})`,
+			`[Workbench:${pluginName}] Failed to render "${point}" (${contributionId})`,
 			error,
 			errorInfo,
 		)
@@ -47,7 +47,7 @@ class ExtensionErrorBoundaryImpl extends Component<
 	}
 }
 
-export function ExtensionErrorBoundary(props: ExtensionErrorBoundaryProps) {
-	const { extensionId, pluginName, point } = props
-	return <ExtensionErrorBoundaryImpl key={`${pluginName}:${extensionId}:${point}`} {...props} />
+export function WorkbenchErrorBoundary(props: WorkbenchErrorBoundaryProps) {
+	const { contributionId, pluginName, point } = props
+	return <WorkbenchErrorBoundaryImpl key={`${pluginName}:${contributionId}:${point}`} {...props} />
 }
