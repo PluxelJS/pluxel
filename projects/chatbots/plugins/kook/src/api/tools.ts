@@ -14,10 +14,7 @@ export function createKookTools(api: KookApi): KookApiTools {
 			if ('message' in result) return result
 			return { ok: true, data: result.data.url }
 		},
-		createMessageBuilder: (targetId, defaults) => createConversation(api, targetId, defaults).send,
 		createConversation: (targetId, defaults) => createConversation(api, targetId, defaults),
-		createDirectMessageBuilder: (direct, defaults) =>
-			createDirectConversation(api, direct, defaults).send,
 		createDirectConversation: (direct, defaults) => createDirectConversation(api, direct, defaults),
 	}
 }

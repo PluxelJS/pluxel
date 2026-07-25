@@ -1,13 +1,13 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
 import { contentText, normalizeContent, type ChatSendRequest } from '@repo/chatbots-contracts'
-import { KeyedSerialExecutor } from '@repo/chatbots-adapter-kit/keyed-serial'
+import { KeyedSerialExecutor } from '@repo/chatbots-platform-kit/keyed-serial'
 import {
 	workbenchProjectionQuery,
 	WorkbenchProjectionStore,
 	workbenchProjectionDatabase,
 	workbenchProjections,
-} from '@repo/chatbots-adapter-kit/workbench-projection'
+} from '@repo/chatbots-workbench-support/projection'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import { ChatSandboxRpc } from './rpc.ts'
 import type { SandboxInput, SandboxMessage } from './workbench-contract.ts'

@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
+import wretch from 'wretch'
 import { createTelegramClient, TELEGRAM_ENDPOINTS, TELEGRAM_UPDATE_KEYS } from '../src/api/index.ts'
-import { dispatchTelegramUpdate } from '../src/events.dispatch.ts'
-import { createTelegramPluginEvents } from '../src/events.factory.ts'
+import { dispatchTelegramUpdate } from '../src/bot/events.dispatch.ts'
+import { createTelegramPluginEvents } from '../src/bot/events.factory.ts'
 import { TelegramBot } from '../src/index.ts'
+import type { TelegramBotManager } from '../src/bot/manager.ts'
+import { attachTelegramWorkbenchState } from '../src/workbench/service.ts'
 
 describe('Telegram API client', () => {
 	it('delays later requests after Telegram retry_after without replaying the failed call', async () => {
@@ -22,7 +25,10 @@ describe('Telegram API client', () => {
 					result: { id: 1, is_bot: true, first_name: 'Bot' },
 				}),
 			)
-		const client = createTelegramClient({ token: 'secret', fetch })
+		const client = createTelegramClient({
+			http: wretch().fetchPolyfill(fetch),
+			token: 'secret',
+		})
 
 		try {
 			await expect(client.getMe()).rejects.toThrow('Too Many Requests')
@@ -42,18 +48,22 @@ describe('Telegram API client', () => {
 	it('puts GramIO methods on Bot prototype and keeps raw calls under $', async () => {
 		const runtime = createRuntimeContext()
 		const requests: Request[] = []
+		const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push(new Request(input, init))
+			return Response.json({ ok: true, result: { message_id: 1 } })
+		}
 		const options = {
 			id: 'notifications',
 			ctx: runtime.ctx,
+			http: wretch().fetchPolyfill(fetch),
 			token: 'secret',
-			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
-				requests.push(new Request(input, init))
-				return Response.json({ ok: true, result: { message_id: 1 } })
-			},
 		} satisfies ConstructorParameters<typeof TelegramBot>[0]
 		const first = new TelegramBot(options)
 		const second = new TelegramBot(options)
-		const standalone = createTelegramClient({ token: 'secret', fetch: options.fetch })
+		const standalone = createTelegramClient({
+			http: options.http,
+			token: 'secret',
+		})
 
 		expect(first.sendMessage).toBe(second.sendMessage)
 		expect(first.sendMessage).toBe(standalone.sendMessage)
@@ -77,9 +87,7 @@ describe('Telegram API client', () => {
 		const bot = new TelegramBot({
 			id: 'diagnostics',
 			ctx: runtime.ctx,
-			token: 'secret',
-			onStatus,
-			fetch: async (input, init) => {
+			http: wretch().fetchPolyfill(async (input, init) => {
 				const method = String(input).split('/').at(-1)
 				if (method === 'getMe')
 					return Response.json({ ok: true, result: { id: 1, is_bot: true, first_name: 'Bot' } })
@@ -103,7 +111,9 @@ describe('Telegram API client', () => {
 						once: true,
 					})
 				})
-			},
+			}),
+			token: 'secret',
+			onStatus,
 		})
 
 		await bot.$.start()
@@ -119,11 +129,11 @@ describe('Telegram API client', () => {
 		await runtime.dispose()
 	})
 
-	it('advances polling offsets only after acknowledged projections accept an update', async () => {
+	it('advances polling offsets only after inbound consumers accept an update', async () => {
 		vi.useFakeTimers()
 		const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
 		const runtime = createRuntimeContext()
-		const projectUpdate = vi
+		const consumeUpdate = vi
 			.fn<() => Promise<void>>()
 			.mockRejectedValueOnce(new Error('queue full'))
 			.mockResolvedValue(undefined)
@@ -141,9 +151,7 @@ describe('Telegram API client', () => {
 		const bot = new TelegramBot({
 			id: 'checkpoint',
 			ctx: runtime.ctx,
-			token: 'secret',
-			projectUpdate,
-			fetch: async (input, init) => {
+			http: wretch().fetchPolyfill(async (input, init) => {
 				const url = new URL(String(input))
 				if (url.pathname.endsWith('/getMe'))
 					return Response.json({
@@ -157,12 +165,14 @@ describe('Telegram API client', () => {
 						once: true,
 					})
 				})
-			},
+			}),
+			token: 'secret',
+			consumeUpdate,
 		})
 
 		try {
 			await bot.$.start()
-			await vi.waitFor(() => expect(projectUpdate).toHaveBeenCalledTimes(1))
+			await vi.waitFor(() => expect(consumeUpdate).toHaveBeenCalledTimes(1))
 			expect(bot.$.status.polling.offset).toBe(0)
 			await vi.advanceTimersByTimeAsync(2_000)
 			await vi.waitFor(() => expect(bot.$.status.polling.offset).toBe(10))
@@ -181,15 +191,16 @@ describe('Telegram API client', () => {
 			requests.push(new Request(input, init))
 			return Response.json({ ok: true, result: { id: 1 } })
 		}
-		const first = createTelegramClient({ token: 'secret', fetch })
-		const second = createTelegramClient({ token: 'secret', fetch })
+		const http = wretch().fetchPolyfill(fetch)
+		const first = createTelegramClient({ http, token: 'secret' })
+		const second = createTelegramClient({ http, token: 'secret' })
 
 		expect(TELEGRAM_ENDPOINTS).toHaveLength(180)
 		expect(new Set(TELEGRAM_ENDPOINTS.map(([name]) => name)).size).toBe(TELEGRAM_ENDPOINTS.length)
 		expect(Object.getPrototypeOf(first).getMe).toBe(Object.getPrototypeOf(second).getMe)
 		await first.getMe()
-		await first.call('getUpdates', { offset: 42, allowed_updates: ['message'] })
-		await first.call('sendMessage', { chat_id: 1, text: 'hello' })
+		await first.$.raw.call('getUpdates', { offset: 42, allowed_updates: ['message'] })
+		await first.$.raw.call('sendMessage', { chat_id: 1, text: 'hello' })
 		expect(requests[1]?.method).toBe('GET')
 		expect(requests[1]?.url).toContain('offset=42')
 		expect(requests[1]?.url).toContain('allowed_updates=%5B%22message%22%5D')
@@ -198,19 +209,21 @@ describe('Telegram API client', () => {
 	})
 
 	it('rejects calls outside the reviewed endpoint allowlist', async () => {
-		const client = createTelegramClient({ token: 'secret' })
+		const client = createTelegramClient({ http: wretch(), token: 'secret' })
 		// @ts-expect-error APIMethods is the public compile-time allowlist.
-		await expect(client.call('futureUnreviewedMethod')).rejects.toThrow('Unknown Telegram endpoint')
+		await expect(client.$.raw.call('futureUnreviewedMethod')).rejects.toThrow(
+			'Unknown Telegram endpoint',
+		)
 	})
 
 	it('encodes GramIO Blob input files as Telegram multipart attachments', async () => {
 		let request: Request | undefined
 		const client = createTelegramClient({
-			token: 'secret',
-			fetch: async (input, init) => {
+			http: wretch().fetchPolyfill(async (input, init) => {
 				request = new Request(input, init)
 				return Response.json({ ok: true, result: { message_id: 1 } })
-			},
+			}),
+			token: 'secret',
 		})
 		await client.sendPhoto({
 			chat_id: 1,
@@ -226,6 +239,7 @@ describe('Telegram API client', () => {
 		const bot = new TelegramBot({
 			id: 'events',
 			ctx: runtime.ctx,
+			http: wretch(),
 			token: 'secret',
 		})
 		const aggregate = createTelegramPluginEvents(runtime.ctx)
@@ -256,5 +270,71 @@ describe('Telegram API client', () => {
 		bot.$.destroy()
 		await runtime.dispose()
 		expect(bot.events.message.count()).toBe(0)
+	})
+})
+
+describe('Telegram Workbench state', () => {
+	it('publishes an initial bounded snapshot and follows manager changes', () => {
+		const listeners = new Set<() => void>()
+		const manager = {
+			listAccounts: () => [
+				{
+					config: {
+						id: 'notifications',
+						token: 'super-secret-token',
+						apiBase: 'https://api.telegram.org',
+					},
+					bot: {
+						$: {
+							status: {
+								phase: 'online',
+								botId: '42',
+								username: 'notify_bot',
+								lastError: null as string | null,
+								startedAt: 1,
+								connectedAt: 2,
+								updatedAt: 3,
+								polling: {
+									offset: 8,
+									consecutiveFailures: 0,
+									currentBackoffMs: 0,
+									lastPollAt: 4,
+									lastUpdateId: 7,
+									lastUpdateAt: 5,
+								},
+							},
+						},
+					},
+				},
+			],
+			subscribe: (listener: () => void) => {
+				listeners.add(listener)
+				return () => listeners.delete(listener)
+			},
+		} as unknown as TelegramBotManager
+		const controller = new AbortController()
+		const emit = vi.fn()
+		const cleanup = attachTelegramWorkbenchState(manager, {
+			emit,
+			signal: controller.signal,
+		})
+
+		expect(emit).toHaveBeenCalledWith(
+			'snapshot',
+			expect.objectContaining({
+				accounts: [
+					expect.objectContaining({
+						id: 'notifications',
+						tokenPreview: 'supe••••oken',
+						phase: 'online',
+						diagnostics: expect.objectContaining({ offset: 8 }),
+					}),
+				],
+			}),
+		)
+		for (const listener of listeners) listener()
+		expect(emit).toHaveBeenCalledTimes(2)
+		cleanup()
+		expect(listeners.size).toBe(0)
 	})
 })

@@ -3,8 +3,8 @@ import {
 	KookGateway,
 	type KookGatewayResumeRequest,
 	type KookGatewaySnapshot,
-} from '../src/gateway.ts'
-import type { KookEvent } from '../src/protocol.ts'
+} from '../src/bot/gateway.ts'
+import type { KookEvent } from '../src/bot/events.types.ts'
 
 class FakeWebSocket extends EventTarget {
 	readyState = 1

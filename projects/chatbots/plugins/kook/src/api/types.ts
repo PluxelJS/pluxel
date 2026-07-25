@@ -1,5 +1,10 @@
-import type * as Kook from '../types'
-import type { BotOnlineStatus, DirectMessageGetType, IBaseAPIResponse, IVoiceInfo } from '../types'
+import type * as Kook from '../types/platform.ts'
+import type {
+	BotOnlineStatus,
+	DirectMessageGetType,
+	IBaseAPIResponse,
+	IVoiceInfo,
+} from '../types/platform.ts'
 
 /* ------------------------ Core types ------------------------ */
 
@@ -15,27 +20,21 @@ export type RequestPayload = {
 export type Ok<T> = { ok: true; data: T }
 export type Err = { ok: false; code: number; message: string }
 export type Result<T> = Ok<T> | Err
-
-export interface KookApiOptions {
-	/** API prefix, default `/api/v3` */
-	apiPrefix?: string
-}
+export type KookCallOptions = { signal?: AbortSignal }
 
 export type KookRequest = <T>(
 	method: HttpMethod,
 	path: string,
 	payload?: RequestPayload,
-	signal?: AbortSignal,
+	options?: KookCallOptions,
 ) => Promise<Result<T>>
 
 /* ------------------------- Public API surface ------------------------- */
 
 /* biome-ignore lint/suspicious/noUnsafeDeclarationMerging: intended interface merge for API typing */
 export interface KookApi extends KookAutoApi {
-	/** Escape hatch for low-level requests / typed call. */
-	$raw: import('./client.ts').KookRawApi
-	/** Higher-level helpers that preserve platform semantics. */
-	$tool: KookApiTools
+	/** Non-native escape hatches stay under one namespace. */
+	readonly $: Readonly<{ raw: import('./client.ts').KookRawApi }>
 }
 
 export type KookApiTools = {
@@ -43,15 +42,7 @@ export type KookApiTools = {
 		file: Blob | ArrayBuffer | ArrayBufferView | string | FormData,
 		name?: string,
 	): Promise<Result<string>>
-	createMessageBuilder(
-		targetId: string,
-		defaults?: KookConversation['defaults'],
-	): KookConversation['send']
 	createConversation(targetId: string, defaults?: KookConversation['defaults']): KookConversation
-	createDirectMessageBuilder(
-		direct: Kook.DirectMessageGetType,
-		defaults?: KookDirectConversation['defaults'],
-	): KookDirectConversation['send']
 	createDirectConversation(
 		direct: Kook.DirectMessageGetType,
 		defaults?: KookDirectConversation['defaults'],

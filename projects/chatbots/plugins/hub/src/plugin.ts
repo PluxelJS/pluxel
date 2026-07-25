@@ -8,26 +8,14 @@ import type {
 	ChatTransport,
 } from '@repo/chatbots-contracts'
 import type { ChatHandlerSpec, ChatObserver, ChatRouterSnapshot } from './handler.ts'
-import { ChatMatcherIndex, type ChatMatcherSpec } from './matcher/index.ts'
 import { ChatRouter } from './router.ts'
 
 @Plugin({ name: 'ChatHubPlugin' })
 export class ChatHubPlugin extends BasePlugin {
 	private router!: ChatRouter
-	private readonly matchers = new ChatMatcherIndex()
 	override init(): void {
 		this.router = new ChatRouter(this.ctx.logger)
 		this.ctx.effects.defer(() => this.router.close())
-		this.ctx.effects.defer(
-			this.router.registerHandler({
-				id: 'chatbots.matchers',
-				priority: 50,
-				handle: (context) =>
-					this.matchers.dispatch(context, (matcher, error) =>
-						this.ctx.logger.warn('Chat observe matcher failed', { matcher, error }),
-					),
-			}),
-		)
 	}
 	registerTransport(transport: ChatTransport): () => void {
 		return this.ready().registerTransport(transport)
@@ -37,9 +25,6 @@ export class ChatHubPlugin extends BasePlugin {
 	}
 	registerObserver(id: string, observer: ChatObserver): () => void {
 		return this.ready().registerObserver(id, observer)
-	}
-	registerMatcher<T>(spec: ChatMatcherSpec<T>): () => void {
-		return this.matchers.register(spec)
 	}
 	receive(message: ChatMessage, signal?: AbortSignal): Promise<void> {
 		return this.ready().receive(message, signal)

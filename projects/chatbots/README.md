@@ -9,8 +9,8 @@
 - `ChatCommandsPlugin`：分层路由、alias、flags、中间件和默认拒绝的权限节点。
 - `ChatBuiltinsPlugin`：`/ping`、`/help`、`/status`。
 - `ChatSandboxPlugin`：无需平台凭据即可进行 HTTP 或管理界面端到端测试。
-- `TelegramPlugin`：Telegram long polling capability，带 Vault Workbench板。
-- `KookPlugin`：KOOK gateway capability、完整 v3 API client 和 Vault Workbench板。
+- `TelegramPlugin`：Telegram long polling capability，使用 Wretch 出站能力和 Vault 多账号管理。
+- `KookPlugin`：KOOK gateway capability、完整 v3 原生 API 和 Vault 多账号管理。
 - `TelegramHubBridgePlugin` / `KookHubBridgePlugin`：独立、可省略的平台 codec 与 ChatHub transport 桥。
 
 ## 运行
@@ -44,9 +44,9 @@ POST /__pluxel/plugins/ChatSandboxPlugin/api/reset
 
 ## 启用 Telegram
 
-插件详情中的 `Telegram 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 Telegram 独立管理台。为账号填写稳定的本地 Bot ID 与 Token 后点击“创建并连接”。同一插件可管理多个账号；管理台可搜索账号，扫视在线/异常数量，并查看每个 Bot 的 Polling offset、最近 poll/update、连续失败、退避和连接时长。Token 只写入持久化加密 Vault，Workbench live query 和浏览器端只能看到是否存在及掩码。当前账号可执行鉴权测试、重连、断开和带确认的删除。
+插件详情中的 `Telegram 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 Telegram 独立管理台。Telegram 自主声明 `bots` navigation group，宿主负责形成统一入口，不存在枚举平台的中央 Workbench 插件。为账号填写稳定的本地 Bot ID 与 Token 后点击“创建并连接”。同一插件可管理多个账号；管理台使用基于 Worksplit 的可持久化分栏，左侧搜索和选择账号，右侧查看完整 Polling 诊断、连接设置和运行控制。Token 只写入持久化加密 Vault；Workbench 从运行中 BotManager 取得安全 snapshot，只能看到掩码，不再把连接状态复制到数据库。
 
-Telegram API client 从 `@repo/chatbots-telegram/api` 导出。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 的 Bot API 10.1 类型，`Blob` 输入会自动编码为 `attach://` multipart。`api:generate/api:check` 使用 TypeScript compiler API 从外部声明同步完整方法集合及 `TelegramUpdate` 事件字段，macro 再于构建期内联两个 inventory。独立 client 与受管 Bot 继承同一个 native API prototype，180 个方法在整个包中只安装一份；Bot 不会因此暴露 client 的 `call`。
+Telegram API client 从 `@repo/chatbots-telegram/api` 导出并要求传入 Wretch base。180 个 Bot API 方法与 `@gramio/types` 的 `APIMethods` 对齐：参数和返回值直接使用 GramIO 类型，`Blob` 输入会自动编码为 `attach://` multipart。独立 client 与受管 Bot 继承同一个 native API prototype；原生方法位于顶层，allowlist raw call 只位于 `client.$.raw` / `bot.$.raw`。
 
 `telegramBot.$.status.polling` 提供冻结的 offset、连续失败次数、当前退避、最近 poll 和最近 update 快照。空 poll 只更新 Bot 内存诊断，不触发管理投影持久化；恢复成功或收到 update 时才发布有意义变化。
 
@@ -54,9 +54,9 @@ Telegram API 返回 `parameters.retry_after` 后，该 Bot 的后续 HTTP 调用
 
 ## 启用 KOOK
 
-插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。管理台支持多账号搜索和状态扫视，显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
+插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。KOOK 和未来平台都通过相同 group 自主注册自己的 route、grant 和 bundle。为每个账号填写稳定 Bot ID、Token 和可选 API Base。插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。可调整分栏的详情侧显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲、溢出和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
-完整 KOOK OpenAPI client 从 `@repo/chatbots-kook/api` 导出。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 会双向比较 inventory 与 `KookAutoApi`，避免只有数量相同的假同步。独立 client 与 `KookBot` 共享唯一 native API prototype，但 client 的 `$raw/$tool` 不会沿继承链泄漏到 Bot；raw、频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息工具统一位于 `bot.$`。
+完整 KOOK 原生 client 从 `@repo/chatbots-kook/api` 导出并要求传入 Wretch base。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 双向比较 inventory 与 `KookAutoApi`。client 与 `KookBot` 共享唯一 native API prototype；raw 位于 `$`，频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息等增强只位于 `bot.$`，不再公开平行 `$tool`。
 
 `kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。普通网络断开会携带 session/SN 恢复；所有 frame 经单一异步 tail 串行处理，事件按连续 SN 消费，重复帧被丢弃，乱序帧进入有界 buffer，无法收敛时主动重连。只有 listener 完成后才推进 SN，因此恢复点不会越过尚未完成的业务处理。gateway transport factory 可注入，握手、resume、heartbeat、断线退避和 teardown 都可以脱离真实网络做确定性测试。
 
@@ -64,13 +64,15 @@ KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会
 
 ## 源码组织
 
-包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、workbench RPC/DTO、parser 和内部 registry 不通过 barrel 泄漏。跨平台协议按 `content/message/transport` 拆分；Hub 按 `handler/delivery/router/plugin` 拆分；adapter 的 registry、原子账号存储、串行器、retry gate、退避和 abort lease 位于独立 `adapter-kit` 明确子入口；命令按 `types/parser/registry/middleware/plugin` 拆分。
+包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、Workbench RPC/DTO、Manager 和内部 registry 不通过 barrel 泄漏。每个平台遵循 `plugin.ts -> bot/manager.ts -> bot/bot.ts -> api/client.ts`：主插件只组合生命周期，Manager 拥有 Vault/registry/replacement，Bot 拥有单账号连接与原生事件，API client 只处理平台 HTTP；可选管理平面完整收进 `workbench/`。
 
-`telegram` 与 `kook` 平台包不依赖 `contracts` 或 `hub`，只提供原生 API、Bot registry、原始事件、连接状态机、Vault 账号生命周期和可选管理 UI。`telegram-hub` 与 `kook-hub` 是独立桥接插件，拥有平台 codec、确认型入站投影和 ChatHub transport。平台专属插件因此只安装并依赖平台包；只有跨平台消息产品才同时安装对应 bridge 与 Hub。
+两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的列表、表单和操作壳层；管理页通过 `@pluxel/components/workbench-split` 复用宿主的 Worksplit 适配层，只在 resize commit 后持久化百分比布局。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
 
-bridge 的入站和出站工作绑定自身生命周期：stop、启动回滚或 HMR replacement 会取消在途 Hub receive/API send，再卸载 transport 与 projection。确认型 projection 为每个事件冻结注册顺序；运行中新增或移除 projection 只影响下一个 checkpoint。
+`telegram` 与 `kook` 平台包不依赖 `contracts` 或 `hub`，只提供原生 API、Bot registry、原始事件、连接状态机、Vault 账号生命周期和可选管理 UI。它们 required-depend 官方 `WretchPlugin`。`telegram-hub-bridge` 与 `kook-hub-bridge` 是独立桥接插件，拥有平台 codec、checkpoint-critical 入站 consumer 和 ChatHub transport。
 
-依赖声明遵循“谁拥有实例，谁负责安装”：宿主项目声明 React、Mantine、Tabler、Pluxel runtime 和 catalog 插件；插件包将 singleton 或 required plugin capability 声明为 peer，仅Workbench使用的 UI 包是 optional peer，headless host 可以不安装。`contracts`、`adapter-kit` 这类会随实现一起使用且没有实例身份的库保留普通 dependency。边界测试会拒绝平台包重新导入 Hub/contracts。
+bridge 的入站和出站工作绑定自身生命周期：stop、启动回滚或 HMR replacement 会取消在途 Hub receive/API send，再卸载 transport 与 consumer。入站 consumer 为每个事件冻结注册顺序并 fail-fast；运行中新增或移除 consumer 只影响下一个 checkpoint。
+
+依赖声明遵循“谁拥有实例，谁负责安装”：宿主项目声明 React、Mantine、Tabler、Pluxel runtime 和 catalog 插件；插件包将 singleton 或 required plugin capability 声明为 peer，仅Workbench使用的 UI 包是 optional peer，headless host 可以不安装。`contracts`、`platform-kit` 和 `workbench-support` 这类没有实例身份的源码库保留普通 dependency；后者只服务 Access/Sandbox 的持久管理投影，不进入平台实现。边界测试会拒绝平台包重新导入 Hub/contracts。
 
 当前 `@repo/chatbots-*` 是本 workspace 的私有源码包；可以被同仓库其他插件独立依赖和注入，但尚未作为 npm 公共包发行。真正外部分发需要统一确定公开 scope、版本线、构建产物和发布责任，不能只去掉 `private` 就假装完成。
 
@@ -90,11 +92,13 @@ return chat.batch(chat.of('任务 ', chat.link(url, '详情')), chat.image(previ
 
 同一 `(platform, accountId, conversationId)` 的逻辑发送会完整执行后再开始下一次发送，因此 batch 或平台自动拆分不会被并发调用穿插；不同会话仍可并行。入站和出站队列默认每会话最多保留 256 个、全局最多保留 4096 个待处理调用，满载时明确拒绝而不是无限占用内存。`hub.snapshot()` 与 sandbox `/status` 的 `router` 字段公开当前队列深度、handler/observer 失败、逻辑消息发送失败、拒绝和 drain timeout 计数；取消不计作业务失败。
 
-Hub 的时间窗去重是进程内优化，不是持久化 exactly-once。并发重复消息共享第一次 dispatch 的结果；只有成功 dispatch 才提交去重记录，失败或取消会回滚并允许重试。Telegram 只在原始事件和所有确认型 projection 完成后推进 update offset，KOOK 只在 projection 完成后推进连续 SN；bridge 中的 Hub receive 失败因此不会越过 checkpoint。崩溃边界仍可能重放。会产生外部副作用的 handler 应使用 `messageKey(message)` 作为稳定幂等键，并把幂等结果保存在自己的业务状态中。
+Hub 的时间窗去重是进程内优化，不是持久化 exactly-once。并发重复消息共享第一次 dispatch 的结果；只有成功 dispatch 才提交去重记录，失败或取消会回滚并允许重试。Telegram 只在原始事件和所有入站 consumer 完成后推进 update offset，KOOK 只在 consumer 完成后推进连续 SN；bridge 中的 Hub receive 失败因此不会越过 checkpoint。崩溃边界仍可能重放。会产生外部副作用的 handler 应使用 `messageKey(message)` 作为稳定幂等键，并把幂等结果保存在自己的业务状态中。
 
 planner 会先逐 block 校验 transport capabilities，再决定 mixed、拆分或平台原子布局；声明 `mixedContent: true` 不代表可以接收未声明的 block。`atomicBlocks` 用于“支持，但必须作为独立平台操作发送”的内容。严格模式直接报错，默认 best-effort 会把不支持的媒体变成带类型标记的可读文本，并合并相邻文本以减少平台调用。超出平台文本上限时会在不切断 Unicode surrogate pair 的前提下自动拆分，只有第一条保留 reply quote。
 
-大量固定关键词不要注册一串普通 handler。使用 `hub.registerMatcher()`，它会把 patterns 编译成压缩 alphabet + TypedArray DFA 的 Aho-Corasick automaton；`claim` matcher 可按 priority 短路，`observe` matcher 不认领消息。
+通用媒体 block 的 `url` 只表示可由目标 transport 使用的跨平台资源地址。Telegram 入站 `file_id` 绑定具体 Bot 账号，bridge 不再把它伪装成 `telegram:file:*` URL；通用消息只得到可读的附件占位文本，JSON-safe 的原生文件标识留在 `metadata.telegramAttachments`。需要下载、复用或处理该文件的 Telegram 专属插件应直接消费原生 update。
+
+Hub 只保留实际使用的 transport、handler 和 observer。固定关键词匹配属于具体业务插件；在出现真实调用点前不进入 Hub 公共 API。
 
 ## 用户与权限
 

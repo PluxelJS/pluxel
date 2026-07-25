@@ -46,6 +46,27 @@ describe('buildWorkbenchUiRemote', () => {
 		})
 	})
 
+	it('resolves assets-prefixed references from the artifact root', async () => {
+		await using fixture = await createFixture({
+			'artifact/mf-manifest.json': JSON.stringify({
+				metaData: { remoteEntry: { name: 'remoteEntry.js' } },
+				exposes: [
+					{
+						name: 'ui-module',
+						assets: { js: { sync: ['assets/index.js'], async: [] } },
+					},
+				],
+			}),
+			'artifact/remoteEntry.js': 'export const load = () => import("./assets/index.js")\n',
+			'artifact/assets/index.js': 'export const stylesheet = "assets/index.css"\n',
+			'artifact/assets/index.css': '.split-view { display: flex; }\n',
+		})
+
+		await expect(
+			validateWorkbenchUiArtifact(join(fixture.path, 'artifact'), 'PluginWithUI'),
+		).resolves.toMatchObject({ valid: true })
+	})
+
 	it('builds multiple remotes from the same package root without cross-build corruption', async () => {
 		await using fixture = await createFixture({
 			'packages/plugins/demo/package.json': JSON.stringify({

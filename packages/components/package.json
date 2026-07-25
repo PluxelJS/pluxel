@@ -25,6 +25,10 @@
 		"./hooks": {
 			"types": "./src/hooks/index.ts",
 			"default": "./src/hooks/index.ts"
+		},
+		"./workbench-split": {
+			"types": "./src/workbench-split.ts",
+			"default": "./src/workbench-split.ts"
 		}
 	},
 	"scripts": {

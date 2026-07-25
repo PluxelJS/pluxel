@@ -1,5 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { jsonObjectSchema } from '@repo/chatbots-adapter-kit/wire-schema'
+import { jsonObjectSchema } from '@repo/chatbots-workbench-support/wire-schema'
 import type {
 	AccessOverviewDoc,
 	ChatRole,

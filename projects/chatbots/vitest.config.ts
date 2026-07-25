@@ -16,14 +16,15 @@ export default definePluxelVitestConfig({
 	resolve: {
 		alias: [
 			workspaceAlias('plugins', 'access'),
-			workspaceSubpathAlias('packages', 'adapter-kit'),
+			workspaceSubpathAlias('packages', 'platform-kit'),
+			workspaceSubpathAlias('packages', 'workbench-support'),
 			workspaceAlias('packages', 'contracts'),
 			workspaceAlias('plugins', 'hub'),
 			workspaceAlias('plugins', 'commands'),
 			workspaceAlias('plugins', 'kook'),
-			workspaceAlias('plugins', 'kook-hub'),
+			workspaceAlias('plugins', 'kook-hub-bridge'),
 			workspaceAlias('plugins', 'telegram'),
-			workspaceAlias('plugins', 'telegram-hub'),
+			workspaceAlias('plugins', 'telegram-hub-bridge'),
 		],
 	},
 	oxc: {

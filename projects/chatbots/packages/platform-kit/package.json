@@ -1,0 +1,41 @@
+{
+	"name": "@repo/chatbots-platform-kit",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./account-store": "./src/account-store.ts",
+		"./bot-admin": "./src/bot-admin.ts",
+		"./backoff": "./src/backoff.ts",
+		"./keyed-serial": "./src/keyed-serial.ts",
+		"./inbound-consumers": "./src/inbound-consumers.ts",
+		"./registry": "./src/registry.ts",
+		"./retry-gate": "./src/retry-gate.ts",
+		"./scope": "./src/scope.ts",
+		"./workbench-ui": "./src/workbench-ui.tsx"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@pluxel/runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/react": "catalog:"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:",
+		"@pluxel/components": "workspace:*",
+		"react": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@pluxel/components": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		}
+	}
+}

@@ -59,6 +59,7 @@ export function mergeLayout<T extends NumericLayout>(
 	return sanitize ? sanitize(merged) : merged
 }
 
+/** Normalizes a two-pane percentage layout and enforces the supplied minimum percentages. */
 export function sanitizeTwoPanelLayout<T extends NumericLayout>(
 	layout: T,
 	fallback: T,
@@ -122,6 +123,10 @@ export function useStoredLayout<T extends NumericLayout>(
 	return [layout, setLayout] as const
 }
 
+/**
+ * Owns a sanitized percentage layout in localStorage. Pass the returned callback to a split
+ * view's commit event; calling it directly also persists the supplied layout.
+ */
 export function useStoredSplitLayout<T extends NumericLayout>(
 	key: string,
 	fallback: T,

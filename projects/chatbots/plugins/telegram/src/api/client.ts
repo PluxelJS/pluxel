@@ -1,22 +1,31 @@
 import type { APIMethodParams, APIMethodReturn, APIMethods } from '@gramio/types'
-import { RetryGate } from '@repo/chatbots-adapter-kit/retry-gate'
+import type { Wretch } from '@pluxel/wretch'
+import { RetryGate } from '@repo/chatbots-platform-kit/retry-gate'
 import { TELEGRAM_ENDPOINTS, type TelegramHttpMethod, type TelegramMethod } from './endpoints.ts'
 import { invokeTelegramNative, TelegramNativeApi } from './native.ts'
 
 export type TelegramClientOptions = {
+	http: Wretch
 	token: string
 	apiBase?: string
 	signal?: AbortSignal
-	fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+}
+
+export type TelegramCallOptions = { signal?: AbortSignal }
+export type TelegramRawApi = {
+	call<M extends TelegramMethod>(
+		endpoint: M,
+		...args: TelegramCallArgs<M>
+	): Promise<APIMethodReturn<M>>
 }
 
 export class TelegramApiClient extends TelegramNativeApi {
+	readonly $: Readonly<{ raw: TelegramRawApi }>
 	readonly #options: TelegramClientOptions
 	readonly #token: string
 	readonly #apiBase: string
-	readonly #fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+	readonly #http: Wretch
 	readonly #methods = new Map<string, TelegramHttpMethod>(TELEGRAM_ENDPOINTS)
-	readonly #lifecycle = new AbortController()
 	readonly #retryGate = new RetryGate()
 
 	constructor(options: TelegramClientOptions) {
@@ -25,30 +34,36 @@ export class TelegramApiClient extends TelegramNativeApi {
 		this.#token = options.token.trim()
 		if (!this.#token) throw new Error('Telegram client requires a Bot token')
 		this.#apiBase = (options.apiBase?.trim() || 'https://api.telegram.org').replace(/\/+$/, '')
-		this.#fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
+		this.#http = options.http
+		this.$ = Object.freeze({
+			raw: Object.freeze({
+				call: <M extends TelegramMethod>(endpoint: M, ...args: TelegramCallArgs<M>) =>
+					this.requestEndpoint(endpoint, ...args),
+			}),
+		})
 	}
 
-	async call<M extends TelegramMethod>(
+	private async requestEndpoint<M extends TelegramMethod>(
 		endpoint: M,
 		...args: TelegramCallArgs<M>
 	): Promise<APIMethodReturn<M>> {
-		const [payload = {}, signal] = args
+		const [payload = {}, callOptions] = args
 		const method = this.#methods.get(endpoint)
 		if (!method) throw new Error(`Unknown Telegram endpoint: ${endpoint}`)
-		const requestSignal = combineSignals(this.#lifecycle.signal, this.#options.signal, signal)
+		const requestSignal = combineSignals(this.#options.signal, callOptions?.signal)
 		await this.#retryGate.wait(requestSignal)
 		const url = new URL(`${this.#apiBase}/bot${this.#token}/${endpoint}`)
 		if (method === 'GET' && isRecord(payload)) appendQuery(url, payload)
 		const body = method === 'POST' ? telegramRequestBody(payload) : undefined
-		const response = await this.#fetchImpl(url, {
-			method,
-			signal: requestSignal,
-			...(method === 'POST'
-				? body instanceof FormData
-					? { body }
-					: { headers: { 'content-type': 'application/json' }, body }
-				: {}),
-		})
+		let request = this.#http.url(url.toString(), true)
+		if (requestSignal) request = request.options({ signal: requestSignal })
+		const response = await rawResponse(
+			method === 'GET'
+				? request.get()
+				: body instanceof FormData
+					? request.post(body)
+					: request.content('application/json').post(body),
+		)
 		const envelope = (await response.json()) as TelegramResponse<APIMethodReturn<M>>
 		if (!response.ok || !envelope.ok || envelope.result === undefined) {
 			this.#retryGate.blockFor(retryAfterMs(envelope.parameters?.retry_after))
@@ -59,19 +74,35 @@ export class TelegramApiClient extends TelegramNativeApi {
 		return envelope.result
 	}
 
-	protected closeClient(reason?: unknown): void {
-		if (!this.#lifecycle.signal.aborted) this.#lifecycle.abort(reason)
-	}
-
 	protected [invokeTelegramNative](endpoint: TelegramMethod, payload?: unknown): unknown {
-		return this.call(endpoint, payload as never)
+		return this.requestEndpoint(endpoint, payload as never)
 	}
+}
+
+type WretchResponseChain = { res(): Promise<Response> }
+
+async function rawResponse(chain: WretchResponseChain): Promise<Response> {
+	try {
+		return await chain.res()
+	} catch (error) {
+		if (hasResponse(error)) return error.response
+		throw error
+	}
+}
+
+function hasResponse(error: unknown): error is { response: Response } {
+	return (
+		Boolean(error) &&
+		typeof error === 'object' &&
+		'response' in error &&
+		(error as { response?: unknown }).response instanceof Response
+	)
 }
 
 export type TelegramCallArgs<M extends TelegramMethod> =
 	undefined extends APIMethodParams<M>
-		? [payload?: APIMethodParams<M>, signal?: AbortSignal]
-		: [payload: APIMethodParams<M>, signal?: AbortSignal]
+		? [payload?: APIMethodParams<M>, options?: TelegramCallOptions]
+		: [payload: APIMethodParams<M>, options?: TelegramCallOptions]
 export type TelegramApi = TelegramApiClient & APIMethods
 
 type TelegramResponse<T> = {

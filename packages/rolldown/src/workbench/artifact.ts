@@ -102,7 +102,9 @@ async function validateAssetGraph(outDir: string, entries: string[]): Promise<st
 		const content = await readFile(path, 'utf-8').catch((): null => null)
 		if (!content) return `artifact asset unreadable: ${asset}`
 		for (const reference of collectLocalAssetReferences(content)) {
-			const nested = normalizeAssetPath(join(asset, '..', reference))
+			const nested = normalizeAssetPath(
+				reference.startsWith('assets/') ? reference : join(asset, '..', reference),
+			)
 			if (!nested) return `invalid artifact asset reference in ${asset}: ${reference}`
 			if (!visited.has(nested)) queue.push(nested)
 		}

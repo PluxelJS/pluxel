@@ -5,7 +5,7 @@ import {
 	WorkbenchProjectionStore,
 	workbenchProjectionDatabase,
 	workbenchProjections,
-} from '@repo/chatbots-adapter-kit/workbench-projection'
+} from '@repo/chatbots-workbench-support/projection'
 import type { ChatMessage } from '@repo/chatbots-contracts'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
 import {

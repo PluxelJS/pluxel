@@ -17,15 +17,17 @@
 		"typecheck": "pnpm api:check && tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@repo/chatbots-adapter-kit": "workspace:*"
+		"@repo/chatbots-platform-kit": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/react": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"wretch": "catalog:"
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/wretch": "workspace:*",
 		"@tabler/icons-react": "catalog:",
 		"react": "catalog:"
 	},

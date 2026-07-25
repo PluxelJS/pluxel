@@ -1,7 +1,7 @@
 import { KOOK_ENDPOINTS } from './endpoints.ts'
-import { RetryGate } from '@repo/chatbots-adapter-kit/retry-gate'
+import type { Wretch } from '@pluxel/wretch'
+import { RetryGate } from '@repo/chatbots-platform-kit/retry-gate'
 import { invokeKookNative, KookNativeApi } from './native.ts'
-import { createKookTools } from './tools.ts'
 import type {
 	Err,
 	HttpMethod,
@@ -9,12 +9,14 @@ import type {
 	JsonLike,
 	KookApi,
 	KookAutoApi,
+	KookCallOptions,
 	KookRequest,
 	RequestPayload,
 	Result,
 } from './types.ts'
 
 export type KookClientOptions = {
+	http: Wretch
 	token: string
 	/** @default "https://www.kookapp.cn" */
 	baseUrl?: string
@@ -22,17 +24,21 @@ export type KookClientOptions = {
 	apiPrefix?: string
 	/** Aborts every request owned by this client instance. */
 	signal?: AbortSignal
-	fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 export type KookRawApi = {
 	request: KookRequest
 	call<K extends keyof KookAutoApi>(
 		endpoint: K,
-		payload?: Parameters<KookAutoApi[K]>[0],
-		signal?: AbortSignal,
+		...args: KookRawCallArgs<K>
 	): ReturnType<KookAutoApi[K]>
 }
+
+export type KookRawCallArgs<K extends keyof KookAutoApi> = undefined extends Parameters<
+	KookAutoApi[K]
+>[0]
+	? [payload?: Parameters<KookAutoApi[K]>[0], options?: KookCallOptions]
+	: [payload: Parameters<KookAutoApi[K]>[0], options?: KookCallOptions]
 
 type EndpointMeta = {
 	method: HttpMethod
@@ -48,14 +54,12 @@ const endpointMap = new Map<string, EndpointMeta>(
 )
 
 export class KookApiClient extends KookNativeApi {
-	readonly $raw: KookRawApi
-	readonly $tool: KookApi['$tool']
+	readonly $: Readonly<{ raw: KookRawApi }>
 	readonly #options: KookClientOptions
 	readonly #token: string
 	readonly #baseUrl: string
 	readonly #apiPrefix: string
-	readonly #fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-	readonly #lifecycle = new AbortController()
+	readonly #http: Wretch
 	readonly #retryGate = new RetryGate()
 
 	constructor(options: KookClientOptions) {
@@ -65,38 +69,38 @@ export class KookApiClient extends KookNativeApi {
 		if (!this.#token) throw new Error('KOOK client requires a Bot token')
 		this.#baseUrl = (options.baseUrl?.trim() || 'https://www.kookapp.cn').replace(/\/+$/, '')
 		this.#apiPrefix = normalizePrefix(options.apiPrefix ?? '/api/v3')
-		this.#fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
-		this.$raw = {
-			request: (method, path, payload, signal) => this.request(method, path, payload, signal),
-			call: (endpoint, payload, signal) => this.call(endpoint, payload, signal) as never,
+		this.#http = options.http.auth(`Bot ${this.#token}`).accept('application/json')
+		const raw: KookRawApi = {
+			request: <T>(
+				method: HttpMethod,
+				path: string,
+				payload?: RequestPayload,
+				callOptions?: KookCallOptions,
+			) => this.requestRaw<T>(method, path, payload, callOptions),
+			call: <K extends keyof KookAutoApi>(endpoint: K, ...args: KookRawCallArgs<K>) =>
+				this.callEndpoint(endpoint, ...args),
 		}
-		this.$tool = createKookTools(this)
+		this.$ = Object.freeze({ raw: Object.freeze(raw) })
 	}
 
-	async request<T>(
+	private async requestRaw<T>(
 		method: HttpMethod,
 		path: string,
 		payload?: RequestPayload,
-		signal?: AbortSignal,
+		callOptions?: KookCallOptions,
 	): Promise<Result<T>> {
 		try {
-			const requestSignal = combineSignals(this.#lifecycle.signal, this.#options.signal, signal)
+			const requestSignal = combineSignals(this.#options.signal, callOptions?.signal)
 			await this.#retryGate.wait(requestSignal)
 			const query = cleanParams(payload?.searchParams)
 			const url = new URL(`${this.#baseUrl}${this.#apiPrefix}${normalizePath(path)}`)
 			for (const [key, value] of Object.entries(query ?? {})) appendQuery(url, key, value)
 			const body = payload?.body ?? payload?.json
-			const response = await this.#fetchImpl(url, {
-				method,
-				signal: requestSignal,
-				headers: {
-					Authorization: `Bot ${this.#token}`,
-					...(body instanceof FormData ? {} : { 'content-type': 'application/json' }),
-				},
-				...(method === 'GET' || method === 'HEAD'
-					? {}
-					: { body: isBodyInit(body) ? body : JSON.stringify(body ?? {}) }),
-			})
+			let request = this.#http.url(url.toString(), true)
+			if (requestSignal) request = request.options({ signal: requestSignal })
+			if (method !== 'GET' && method !== 'HEAD')
+				request = isBodyInit(body) ? request.body(body) : request.json(body ?? {})
+			const response = await rawResponse(request.fetch(method))
 			const envelope = (await response.json()) as IBaseAPIResponse<T>
 			if (!response.ok || envelope.code !== 0) {
 				if (response.status === 429)
@@ -113,15 +117,11 @@ export class KookApiClient extends KookNativeApi {
 		}
 	}
 
-	protected closeClient(reason?: unknown): void {
-		if (!this.#lifecycle.signal.aborted) this.#lifecycle.abort(reason)
-	}
-
-	call<K extends keyof KookAutoApi>(
+	private callEndpoint<K extends keyof KookAutoApi>(
 		endpoint: K,
-		payload?: Parameters<KookAutoApi[K]>[0],
-		signal?: AbortSignal,
+		...args: KookRawCallArgs<K>
 	): ReturnType<KookAutoApi[K]> {
+		const [payload, callOptions] = args
 		const meta = endpointMap.get(String(endpoint))
 		if (!meta)
 			return Promise.resolve({
@@ -129,7 +129,7 @@ export class KookApiClient extends KookNativeApi {
 				code: -404,
 				message: `Unknown KOOK endpoint: ${String(endpoint)}`,
 			}) as ReturnType<KookAutoApi[K]>
-		return this.request(
+		return this.requestRaw(
 			meta.method,
 			meta.path,
 			meta.query
@@ -137,13 +137,33 @@ export class KookApiClient extends KookNativeApi {
 				: isBodyInit(payload)
 					? { body: payload }
 					: { json: payload as JsonLike },
-			signal,
+			callOptions,
 		) as ReturnType<KookAutoApi[K]>
 	}
 
 	protected [invokeKookNative](endpoint: keyof KookAutoApi, payload?: unknown): unknown {
-		return this.call(endpoint, payload as never)
+		return this.callEndpoint(endpoint, payload as never)
 	}
+}
+
+type WretchResponseChain = { res(): Promise<Response> }
+
+async function rawResponse(chain: WretchResponseChain): Promise<Response> {
+	try {
+		return await chain.res()
+	} catch (error) {
+		if (hasResponse(error)) return error.response
+		throw error
+	}
+}
+
+function hasResponse(error: unknown): error is { response: Response } {
+	return (
+		Boolean(error) &&
+		typeof error === 'object' &&
+		'response' in error &&
+		(error as { response?: unknown }).response instanceof Response
+	)
 }
 
 export function createKookClient(options: KookClientOptions): KookApi {

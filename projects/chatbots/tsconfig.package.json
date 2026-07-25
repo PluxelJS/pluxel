@@ -15,15 +15,16 @@
 		"noEmit": true,
 		"skipLibCheck": true,
 		"paths": {
-			"@repo/chatbots-adapter-kit/*": ["./packages/adapter-kit/src/*.ts"],
+			"@repo/chatbots-platform-kit/*": ["./packages/platform-kit/src/*.ts"],
+			"@repo/chatbots-workbench-support/*": ["./packages/workbench-support/src/*.ts"],
 			"@repo/chatbots-access": ["./plugins/access/src/index.ts"],
 			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
 			"@repo/chatbots-hub": ["./plugins/hub/src/index.ts"],
 			"@repo/chatbots-commands": ["./plugins/commands/src/index.ts"],
 			"@repo/chatbots-kook": ["./plugins/kook/src/index.ts"],
-			"@repo/chatbots-kook-hub": ["./plugins/kook-hub/src/index.ts"],
+			"@repo/chatbots-kook-hub-bridge": ["./plugins/kook-hub-bridge/src/index.ts"],
 			"@repo/chatbots-telegram": ["./plugins/telegram/src/index.ts"],
-			"@repo/chatbots-telegram-hub": ["./plugins/telegram-hub/src/index.ts"]
+			"@repo/chatbots-telegram-hub-bridge": ["./plugins/telegram-hub-bridge/src/index.ts"]
 		}
 	}
 }

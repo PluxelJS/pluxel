@@ -12,8 +12,8 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@repo/chatbots-adapter-kit": "workspace:*",
-		"@repo/chatbots-contracts": "workspace:*"
+		"@repo/chatbots-contracts": "workspace:*",
+		"@repo/chatbots-workbench-support": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/react": "catalog:"

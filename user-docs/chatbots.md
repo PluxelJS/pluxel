@@ -23,7 +23,7 @@ Bot 顶层是平台原生 API；raw、conversation helper、状态和生命周�
 
 平台插件的 `upsertBot()` 返回已安装的受管 Bot，`reconnectBot()/disconnectBot()` 返回平台状态，`removeBot()` 不返回管理 DTO。管理 RPC 只服务配置页面，不是业务插件 API。
 
-平台返回 Telegram `retry_after` 或 KOOK HTTP `Retry-After` 时，client 会延迟该 Bot 的后续请求，但不会自动重放失败调用。调用方仍需明确处理当前错误，尤其不能假定非幂等请求会被安全重试。
+平台插件 required-depend `WretchPlugin`，所有 API 请求使用 caller-bound 原生 Wretch base，自动继承宿主的 timeout、并发、等待队列、origin policy 和 lifecycle cancellation。Telegram `retry_after` 或 KOOK HTTP `Retry-After` 仍由每个 Bot 的平台 gate 处理，只延迟后续请求，不重放当前失败调用。
 
 ## 顺序、背压与重试
 
@@ -48,12 +48,14 @@ await store.put(idempotencyKey)
 
 ## 管理和持久状态
 
-平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实，Workbench 通过 PostgreSQL-backed `liveQuery` 读取安全 DTO；用户、角色和 grant 属于 Access 业务状态，即使关闭 Workbench Plane 仍然有效。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
+平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实；Workbench 订阅时立即取得完整、有界的安全 snapshot，之后只接收有意义的状态变化，不把 polling/gateway 状态复制到 PostgreSQL。用户、角色和 grant 仍属于 Access 持久业务状态。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
-插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口，二级导航按 Telegram、KOOK、Sandbox 组织已启用的管理页；新平台只需声明相同导航 group，不再占用新的一级图标。完整管理台以账号列表和当前账号详情分区，可搜索、创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 页显示 Polling offset、最近 poll/update、连续失败和退避；KOOK 页显示 Gateway phase、SN、事件、恢复、Ping/Pong、乱序与缓冲指标。删除会先要求确认，且页面会区分加载、陈旧数据和查询错误。
+插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口；Telegram、KOOK、Sandbox 通过相同 navigation group 自主注册二级页面，未安装的平台不会出现，新增平台也不需要修改中央列表。完整管理台采用可拖拽并记住尺寸的账号/详情分栏，可搜索、创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 详情保留 Polling offset、最近 poll/update、连续失败和退避；KOOK 详情保留 Gateway phase、SN、事件、恢复、Ping/Pong、乱序、重复、缓冲与溢出指标。删除会先要求确认，页面会明确显示状态流连接与操作错误。
+
+通用 `ChatMessage` 的媒体 `url` 必须是目标 transport 可用的跨平台资源地址。Telegram `file_id` 只对特定 Bot 账号有意义，因此不会伪装成通用 URL；bridge 会生成可读附件占位，并把 JSON-safe 文件标识放在 `metadata.telegramAttachments`。需要真正读取或复用 Telegram 文件时，直接依赖 `TelegramPlugin` 消费原生 update。
 
 同一账号的保存、删除、重连和断开按调用顺序执行；不同账号可以并行。调用方不需要额外使用前端锁保证 Vault 与运行时 Bot 一致。
 
-宿主负责提供 React/Mantine/Pluxel runtime 等 peer 和 catalog 中的插件实例；平台包自身不依赖 ChatHub/contracts。这样只使用原生 Telegram 或 KOOK API 的产品不会被迫安装跨平台消息层。
+宿主负责提供 React/Mantine/Pluxel runtime、Wretch capability 和 catalog 中的插件实例；平台包自身不依赖 ChatHub/contracts。这样只使用原生 Telegram 或 KOOK API 的产品不会被迫安装跨平台消息层。
 
 完整运行、配置和扩展示例见 [`projects/chatbots/README.md`](../projects/chatbots/README.md)。

@@ -4,9 +4,13 @@ export type TextBlock = { type: 'text'; text: string }
 export type MentionBlock = { type: 'mention'; actorId: ChatId; label?: string }
 export type LinkBlock = { type: 'link'; url: string; label?: string }
 export type CodeBlock = { type: 'code'; code: string; language?: string; inline?: boolean }
+/** A transport-independent media URL. Account-local platform file IDs do not belong here. */
 export type ImageBlock = { type: 'image'; url: string; alt?: string }
+/** A transport-independent media URL. Account-local platform file IDs do not belong here. */
 export type AudioBlock = { type: 'audio'; url: string; name?: string; mediaType?: string }
+/** A transport-independent media URL. Account-local platform file IDs do not belong here. */
 export type VideoBlock = { type: 'video'; url: string; name?: string; mediaType?: string }
+/** A transport-independent media URL. Account-local platform file IDs do not belong here. */
 export type FileBlock = { type: 'file'; url: string; name?: string; mediaType?: string }
 export type ChatBlock =
 	| TextBlock

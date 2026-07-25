@@ -8,7 +8,7 @@
 PlatformPlugin -> BotRegistry -> Bot -> native platform API
                                      -> $.raw / $.conversation / $.lifecycle
                                      -> native events
-                                     -> optional ChatHub projection
+                                     -> optional ChatHub consumer
 ```
 
 - 平台插件管理账号集合，是可被其他 Pluxel 插件注入的 capability。
@@ -17,7 +17,7 @@ PlatformPlugin -> BotRegistry -> Bot -> native platform API
 - ChatHub 是可选的跨平台投影，不是平台 SDK 的所有者，也不能限制平台原生能力。
 - 类型优先复用平台维护的包；没有可信类型源时才从 OpenAPI 等规范生成。
 
-公共类命名使用 `{Platform}Plugin`、`{Platform}Bot` 和 `{Platform}ApiClient`。Plugin 即使承担 ChatHub adapter 投影，也不能把完整的平台 capability 缩减成一个 adapter 外壳。
+公共类命名使用 `{Platform}Plugin`、`{Platform}Bot` 和 `{Platform}ApiClient`。平台 Plugin 不承担 ChatHub codec/transport；可选 `{Platform}HubBridgePlugin` 只能消费平台 capability，不能把原生能力缩减成 adapter 外壳。
 
 ## 公共调用体验
 
@@ -60,7 +60,7 @@ const channel = bot.$.channel(channelId)
 await channel.send('hello')
 await channel.reply(messageId, 'done')
 await channel.upsert('progress: 50%')
-await channel.transient('temporary', { ttlMs: 5_000 })
+await channel.transient('temporary', undefined, 5_000)
 
 await bot.$.start()
 await bot.$.stop()
@@ -134,9 +134,9 @@ await bot.sendMessage(payload)
 `bot.$.info`，token、secret、内部 client 和 Context 不得进入 info、status 或 JSON 序列化结果。
 
 Bot 已拥有 owner Context 时，不应再从构造参数重复注入 logger。使用
-`ctx.logger.with({ platform, accountId })` 创建账号级 logger，并只把明确的 token/base/fetch/signal
-字段传给底层 API client，不能用 `{ ...botOptions }` 把 Context、Hub binding 或事件对象扩散到
-HTTP client 的配置和生命周期中。
+`ctx.logger.with({ platform, accountId })` 创建账号级 logger。平台插件从 required `WretchPlugin`
+取得 caller-bound base，Bot 只把明确的 Wretch base、token、API base 与 owner signal 传给 API client；
+不能用 `{ ...botOptions }` 把 Context、Hub binding 或事件对象扩散到 HTTP 配置和生命周期中。
 
 ## 连接状态与诊断快照
 
@@ -207,43 +207,63 @@ resume session 默认只属于当前 Bot 生命周期，不写入管理投影。
 管理界面的提示文本。可选 Workbench RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
 Workbench Plane 不改变平台 capability 的类型或行为。
 
+平台管理界面统一实现、不统一所有权。每个平台仍挂载自己的 Contract/grant，但共同复用
+`platform-kit/bot-admin` 的 RPC 转发、snapshot subscription、凭据掩码，以及 `workbench-ui` 的账号列表、表单、
+操作和连接状态壳层；平台只提供鉴权调用、名称、图标、默认 API base、身份格式与原生诊断 renderer。
+BotManager 是运行状态源；Workbench events producer 在每次订阅时立即发送
+完整、有界的安全 snapshot，并在有意义变化时重新发送。不得为了展示 polling/gateway 状态创建数据库
+projection，也不得让管理 DTO 或 UI 写入失败进入 Vault/Bot replacement 的核心操作路径。
+
+平台 route 必须自主声明同一个稳定 `navigation.group.id = "bots"`。Workbench 宿主只负责把独立 route
+折叠成一个一级入口，不使用 `ChatbotsWorkbenchPlugin` 或其他中央清单枚举平台。平台停止、未安装或撤销 mount 后，
+自己的二级入口、grant 和 bundle 自动消失；新增平台不修改 Telegram、KOOK 或宿主聚合代码。
+
+共享账号管理页使用 `@pluxel/components/workbench-split`，而不直接导入 `@worksplit/react`。左侧账号列表和右侧
+平台详情拥有百分比布局，只有用户完成指针或键盘 resize 后才写入持久化状态。公共壳层不解释 diagnostics；
+Telegram Polling 与 KOOK Gateway renderer 继续展示各自完整、有界的原生计数和时间点。
+
+平台 Workbench 另外使用官方 `WretchWorkbenchPort`，统一管理 consumer timeout、非敏感 headers 和 proxy。
+只有 Workbench enabled 时才调用 `enableManagedSettings()` 和挂载 Port；headless 平台 API 仍通过同一
+caller-bound Wretch base 运行，但不初始化设置 persistence 或 proxy。
+
 ## Bot、Plugin 与 ChatHub 的边界
 
 推荐拆分如下：
 
 ```text
-api/             纯平台 HTTP client、类型、endpoint inventory
-bot/             单账号生命周期、事件连接、$ 高级能力
-registry/        Bot 集合和配置协调
-workbench/      可选 UI、RPC 和状态投影
-plugin.ts        Pluxel capability 组合根
+plugin.ts          很薄的 Pluxel capability 组合根
+bot/manager.ts     Vault、Bot registry、同账号串行变更和 replacement
+bot/bot.ts         单账号生命周期、事件连接、$ 高级能力
+bot/{gateway,...}  平台专属连接状态机、事件 dispatch 与诊断
+api/               纯平台 HTTP client、类型、endpoint inventory；只消费 Wretch base
+workbench/         可选 contract、RPC/state adapter、extension 与 UI
 
-独立 {platform}-hub package:
+独立 {platform}-hub-bridge package:
 codec/           平台对象 <-> JSON-safe ChatMessage
-plugin.ts        平台 capability <-> ChatHub transport/projection
+plugin.ts        平台 capability <-> ChatHub transport/consumer
 ```
 
 硬依赖放构造函数，可选Workbench使用 `ctx.workbench.mount()`。ChatHub 投影属于独立 bridge plugin；
 bridge 的 constructor 依赖平台 capability 与 ChatHub，平台包本身不得导入 `contracts` 或 Hub。未安装
 bridge 时 Bot 原生 API、gateway/polling 和 raw events 照常启动。bridge 停止时只卸载 transport 和
-确认型 projection，不能销毁 Bot。Bot 的 timer、gateway、polling 和 observer 由平台插件生命周期回收。
+checkpoint-critical consumer，不能销毁 Bot。Bot 的 timer、gateway、polling 和 observer 由平台插件生命周期回收。
 
 普通原生事件 channel 使用 `emitSettled()` 隔离业务 listener 错误。需要参与 polling offset 或 gateway
-SN 确认的 bridge 不能伪装成普通 listener；平台 capability 必须提供窄的 acknowledged projection 注册口。
-projection 接收 Bot、原生事件与 signal，不包含 ChatMessage/Hub 类型；任一 projection 失败都阻止本次
-checkpoint 前移，由平台状态机按原事件重试。projection registry 在事件开始时冻结有序执行计划并
+SN 确认的 bridge 不能伪装成普通 listener；平台 capability 必须提供窄的 inbound consumer 注册口。
+consumer 接收 Bot、原生事件与 signal，不包含 ChatMessage/Hub 类型；任一 consumer 失败都阻止本次
+checkpoint 前移，由平台状态机按原事件重试。consumer registry 在事件开始时冻结有序执行计划并
 fail-fast；执行中发生的注册或注销只影响下一个事件，避免 HMR/并发配置改变当前 checkpoint 的含义。
 
 bridge 还必须拥有独立 lifetime abort controller。入站 `hub.receive()` 与出站 transport send 都组合
 平台/Hub signal 和 bridge lifetime signal；stop、init rollback 或 replacement 时先 abort，再卸载
-transport/projection。已有 Bot 的 transport cleanup 必须在首次 attach 之前登记，避免 bridge init
+transport/consumer。已有 Bot 的 transport cleanup 必须在首次 attach 之前登记，避免 bridge init
 中途失败留下部分注册。
 
 ChatHub 不得知道平台 SDK 类型。adapter 可以把原生事件投影成 `ChatMessage`，但不能把 Bot、
 session、方法、`Blob` 或循环对象塞进通用消息。
 
 共享的 registry、原子账号存储、串行器、retry gate、退避和 abort lease 只从
-`@repo/chatbots-adapter-kit` 的对应子入口导入。codec 与 `@repo/chatbots-contracts` 只存在于 bridge；
+`@repo/chatbots-platform-kit` 的对应子入口导入。codec 与 `@repo/chatbots-contracts` 只存在于 bridge；
 平台包不能为了取得消息类型依赖 contracts 或 Hub。连接状态机仍属于具体平台。
 
 ### 多账号寻址
@@ -298,7 +318,7 @@ telegram.events.callback_query.on(async (sourceBot, query, update, signal) => {
 所有 channel 使用 Pluxel `EvtChannel`：`on()` 注册会绑定调用方 Context 并随其 effects 自动清理，
 仍返回幂等 disposer，也可通过 `{ signal }` 主动控制订阅。分发使用 `emitSettled()` 等待异步
 listener 并隔离失败；一个 listener 的异常不能阻止同 channel 的其他 listener，不能阻止精确事件
-channel，也不能使 gateway ack 或 polling offset 丢失。bridge 只通过独立的 acknowledged projection
+channel，也不能使 gateway ack 或 polling offset 丢失。bridge 只通过独立的 checkpoint-critical consumer
 把 codec 明确支持的事件投影到 ChatHub，不能为了跨平台统一而丢掉 callback query、reaction、guild mutation 等语义。
 
 事件 inventory 与 endpoint inventory 遵循相同的生成规则。外部类型包可枚举事件字段时，codegen
@@ -664,10 +684,13 @@ definitions.txt / endpoints.txt
 - [ ] 同时提供 Bot 局部与 Plugin 聚合事件面，且只有一个 event inventory。
 - [ ] raw/分类/精确事件 channel 的分发顺序与错误隔离有测试。
 - [ ] ChatHub bridge 保持 JSON-safe，且带独立 `platform/accountId`。
-- [ ] 平台包不声明 contracts/Hub；独立 bridge 通过 acknowledged projection 接入。
+- [ ] 平台包不声明 contracts/Hub；独立 bridge 通过 checkpoint-critical consumer 接入。
+- [ ] 平台插件 required-depend `WretchPlugin`，API client 不自行拥有全局 fetch、宿主 timeout 或并发队列。
+- [ ] API client 只有一个 `http: Wretch` transport 入口；测试通过 Wretch 的 fetch polyfill 注入 fake transport，不增加平行 fetch option。
 - [ ] 优先复用外部类型包，没有重复造类型。
 - [ ] codegen 显式、确定、可 `--check`，构建不访问网络。
 - [ ] macro 只内联已提交的静态 metadata。
 - [ ] endpoint 方法只安装在共享 prototype 一次。
 - [ ] API、Bot、registry、workbench 属于平台包；codec 与 Hub transport 属于 bridge 包。
+- [ ] 平台 Workbench 自主注册 `bots` navigation group；共享 UI 不枚举平台，分栏只通过 Pluxel Worksplit adapter。
 - [ ] 生命周期、取消、错误、限流和 multipart 有平台级测试。

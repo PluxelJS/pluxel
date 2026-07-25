@@ -3,16 +3,18 @@ import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
-import { KookHubBridgePlugin } from '@repo/chatbots-kook-hub'
+import { KookHubBridgePlugin } from '@repo/chatbots-kook-hub-bridge'
 import { KookPlugin } from '@repo/chatbots-kook'
 import { ChatSandboxPlugin } from '@repo/chatbots-sandbox'
-import { TelegramHubBridgePlugin } from '@repo/chatbots-telegram-hub'
+import { TelegramHubBridgePlugin } from '@repo/chatbots-telegram-hub-bridge'
 import { TelegramPlugin } from '@repo/chatbots-telegram'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { WretchPlugin } from '@pluxel/wretch'
 import { resolve } from 'node:path'
 import { createChatbotsPersistence } from './persistence.ts'
 
 export const chatbotsPlugins = [
+	WretchPlugin,
 	ChatHubPlugin,
 	ChatAccessPlugin,
 	ChatCommandsPlugin,
@@ -27,6 +29,7 @@ export const chatbotsPlugins = [
 // Platform plugins stay enabled so their Vault-backed setup UI remains reachable.
 // Bridges only create transports for configured Bots; connection loops still belong to each platform.
 export const chatbotsEnabledPlugins = [
+	'WretchPlugin',
 	'ChatHubPlugin',
 	'ChatAccessPlugin',
 	'ChatCommandsPlugin',
