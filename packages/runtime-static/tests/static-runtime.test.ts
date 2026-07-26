@@ -154,7 +154,7 @@ describe('@pluxel/runtime-static', () => {
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
 		expect(plugins.at(-1)?.config?.({})).toEqual({
-			cacheDir: '.pluxel/vite/static-runtime',
+			cacheDir: '.pluxel/vite/static-runtime-v2',
 		})
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).toBeUndefined()
 		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(

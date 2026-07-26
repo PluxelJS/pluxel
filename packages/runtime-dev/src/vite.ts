@@ -1,8 +1,14 @@
-import { createServerModuleRunner, type ViteDevServer } from 'vite'
+import { createServerModuleRunner, normalizePath, type ViteDevServer } from 'vite'
 import type { ModuleRunner } from 'vite/module-runner'
 
 const pluxelSsrModuleRunners = new WeakMap<ViteDevServer, ModuleRunner>()
 const pluxelSsrModuleRunnerClosePatched = new WeakSet<ViteDevServer>()
+
+const WORKBENCH_CLIENT_OPTIMIZE_DEPS = [
+	'@tabler/icons-react',
+	'@pluxel/runtime > @elysiajs/eden',
+	'@pluxel/runtime > capnweb',
+] as const
 
 export type ImportViteSsrModuleOptions = {
 	/**
@@ -12,12 +18,6 @@ export type ImportViteSsrModuleOptions = {
 	 */
 	fresh?: boolean
 }
-
-const WORKBENCH_CLIENT_LATE_OPTIMIZE_DEPS = [
-	'@tabler/icons-react',
-	'@pluxel/runtime > @elysiajs/eden',
-	'@pluxel/runtime > capnweb',
-] as const
 
 export async function importViteSsrModule<T = Record<string, unknown>>(
 	server: ViteDevServer,
@@ -48,7 +48,40 @@ export function invalidateViteSsrModule(server: ViteDevServer, file: string): nu
 	return invalidated
 }
 
-/** Adds the optional Workbench graph to Vite's native optimizer/listen warmup lifecycle. */
+type ViteSsrModuleGraphEntry = {
+	file?: string | null
+	importedModules?: Set<ViteSsrModuleGraphEntry>
+}
+
+export function collectViteSsrImportFiles(server: ViteDevServer, entry: string): Set<string> {
+	const files = new Set<string>([normalizePath(entry)])
+	const queue = [...(server.moduleGraph.getModulesByFile(entry) ?? [])] as ViteSsrModuleGraphEntry[]
+
+	while (queue.length > 0) {
+		const module = queue.shift()!
+		if (module.file) files.add(normalizePath(module.file))
+		for (const imported of module.importedModules ?? []) {
+			if (imported.file && !files.has(normalizePath(imported.file))) queue.push(imported)
+		}
+	}
+	return files
+}
+
+export function invalidateViteModuleGraphFiles(
+	server: ViteDevServer,
+	files: Iterable<string>,
+): number {
+	let invalidated = 0
+	for (const file of files) {
+		for (const module of server.moduleGraph.getModulesByFile(file) ?? []) {
+			server.moduleGraph.invalidateModule(module)
+			invalidated++
+		}
+	}
+	return invalidated
+}
+
+/** Adds the optional Workbench graph to Vite's native optimizer and warmup lifecycle. */
 export function prepareWorkbenchViteClient(server: ViteDevServer, clientEntryUrl: string): void {
 	const clientConfig = server.environments.client.config
 	const optimizeDeps = clientConfig.optimizeDeps
@@ -62,10 +95,8 @@ export function prepareWorkbenchViteClient(server: ViteDevServer, clientEntryUrl
 		: clientEntryUrl
 	optimizeDeps.entries = [...new Set([...entries, entry])]
 	optimizeDeps.include = [
-		...new Set([...(optimizeDeps.include ?? []), ...WORKBENCH_CLIENT_LATE_OPTIMIZE_DEPS]),
+		...new Set([...(optimizeDeps.include ?? []), ...WORKBENCH_CLIENT_OPTIMIZE_DEPS]),
 	]
-	optimizeDeps.holdUntilCrawlEnd = true
-	optimizeDeps.ignoreOutdatedRequests = true
 	clientConfig.dev.warmup = [...new Set([...clientConfig.dev.warmup, entry])]
 }
 

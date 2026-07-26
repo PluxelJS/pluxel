@@ -26,7 +26,7 @@ import {
 	runtimeWorkbenchArtifactBasePath,
 } from '@pluxel/runtime/web/paths'
 import { validateWorkbenchUiArtifact } from '@pluxel/rolldown/workbench/artifact'
-import type { InlineConfig, ViteDevServer } from 'vite'
+import type { ViteDevServer } from 'vite'
 import {
 	isParaglideGeneratedFile,
 	resolveParaglideIntegration,
@@ -41,7 +41,7 @@ import {
 	resolvePluginArtifactKey,
 } from '@pluxel/rolldown/vite/declaration'
 
-export type PluginArtifactCompilerConfig = {
+type PluginArtifactCompilerOptions = {
 	/**
 	 * Disk cache directory for compiled plugin artifacts.
 	 *
@@ -57,27 +57,12 @@ export type PluginArtifactCompilerConfig = {
 	 */
 	cacheKeep?: number
 	/**
-	 * Maximum number of target artifacts compiled concurrently.
-	 * @default 1
-	 */
-	compileConcurrency?: number
-	/**
-	 * Override the shared package list exposed by the host runtime.
-	 *
-	 * Defaults to `@pluxel/runtime/web`'s `workbenchFederationSharedPackages`.
-	 */
-	sharedPackages?: string[]
-	/**
 	 * Explicit plugin package directories keyed by plugin name.
 	 *
 	 * Static hosts do not have a dynamic loader anchor table, so Vite/static
 	 * integrations can provide these after loading the fixed catalog.
 	 */
 	pluginDirs?: Record<string, string>
-	/** Extra Vite config merged into workbench UI remote builds. */
-	vite?: InlineConfig
-	/** Explicit cache key for behavior/options hidden inside user Vite plugin closures. */
-	viteCacheKey?: string
 }
 
 export type PluginArtifactCompilerViteServer = {
@@ -177,6 +162,8 @@ const HASH_ALLOWED_EXTENSIONS = [
 
 // Bump when federation build semantics change (invalidates sourceHash cache key).
 const WORKBENCH_COMPILER_VERSION = 15
+const ARTIFACT_BUILD_CONCURRENCY = 2
+const ARTIFACT_CACHE_KEEP = 5
 
 export class PluginArtifactCompiler {
 	private readonly dbg: LogtapeLogger
@@ -184,11 +171,7 @@ export class PluginArtifactCompiler {
 	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
-	private readonly compileConcurrency: number
-	private readonly sharedPackages?: readonly string[]
 	private readonly pluginDirs: ReadonlyMap<string, string>
-	private readonly vite?: InlineConfig
-	private readonly viteCacheKey?: string
 
 	private readonly entries = new Map<string, PluginCompileEntry>()
 	private pendingPlugins = new Set<string>()
@@ -204,20 +187,13 @@ export class PluginArtifactCompiler {
 	constructor(
 		public ctx: Context,
 		deps: PluginArtifactCompilerDeps,
-		config?: PluginArtifactCompilerConfig,
+		options?: PluginArtifactCompilerOptions,
 	) {
 		this.store = deps.store
 		this.viteServer = deps.viteServer
-		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
-		this.cacheKeep = Math.max(1, Math.floor(config?.cacheKeep ?? 5))
-		// Hashing, cache checks and graph preparation are safe to overlap. The actual
-		// Module Federation builder is serialized process-wide by @pluxel/rolldown,
-		// so keep a small worker pool without allowing its non-reentrant phase to race.
-		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
-		this.sharedPackages = config?.sharedPackages
-		this.pluginDirs = new Map(Object.entries(config?.pluginDirs ?? {}))
-		this.vite = config?.vite
-		this.viteCacheKey = config?.viteCacheKey
+		this.cacheDir = options?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
+		this.cacheKeep = Math.max(1, Math.floor(options?.cacheKeep ?? ARTIFACT_CACHE_KEEP))
+		this.pluginDirs = new Map(Object.entries(options?.pluginDirs ?? {}))
 		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
 	}
 
@@ -427,7 +403,6 @@ export class PluginArtifactCompiler {
 							entryPath: entry.entryPath,
 							outFile,
 							minify: false,
-							vite: this.vite,
 						})
 					})
 				}
@@ -531,8 +506,6 @@ export class PluginArtifactCompiler {
 		hash.update(entry.key)
 		hash.update(
 			resolveNodeModuleBuildSignature({
-				vite: this.vite,
-				cacheKey: this.viteCacheKey,
 				minify: false,
 			}),
 		)
@@ -545,7 +518,7 @@ export class PluginArtifactCompiler {
 	}
 
 	private async withNodeBuildSlot<T>(build: () => Promise<T>): Promise<T> {
-		if (this.activeNodeBuilds >= this.compileConcurrency) {
+		if (this.activeNodeBuilds >= ARTIFACT_BUILD_CONCURRENCY) {
 			await new Promise<void>((resolveSlot) => this.nodeBuildWaiters.push(resolveSlot))
 		}
 		this.activeNodeBuilds++
@@ -583,7 +556,9 @@ export class PluginArtifactCompiler {
 
 		const task = (async () => {
 			const workers = Array.from(
-				{ length: Math.min(this.compileConcurrency, Math.max(this.pendingPlugins.size, 1)) },
+				{
+					length: Math.min(ARTIFACT_BUILD_CONCURRENCY, Math.max(this.pendingPlugins.size, 1)),
+				},
 				() => this.flushWorker(),
 			)
 			await Promise.all(workers)
@@ -619,16 +594,14 @@ export class PluginArtifactCompiler {
 		this.dbg.debug('compile start {pluginName}', { pluginName })
 		try {
 			await this.refreshWatchFiles(entry)
-			const sharedPackages = this.getSharedPackages()
 			const workbenchBuild = await import('@pluxel/rolldown/vite/workbench-ui')
-			const sourceHash = await this.computeSourceHash(
-				entry.sourceFiles,
-				sharedPackages,
-				entry.pluginDir,
-				workbenchBuild.resolveWorkbenchUiBuildSignature(this.vite, this.viteCacheKey),
-				workbenchBuild.resolveWorkbenchFederationShared(entry.pluginDir, sharedPackages).signature,
-				entry.contractFingerprint,
-			)
+			const sourceHash = await this.computeSourceHash({
+				files: entry.sourceFiles,
+				baseDir: entry.pluginDir,
+				resolvedSharedSignature: workbenchBuild.resolveWorkbenchFederationShared(entry.pluginDir)
+					.signature,
+				contractFingerprint: entry.contractFingerprint,
+			})
 			const owners = this.activeWorkbenchOwners(entry)
 			const currentOwner = owners[0]
 			const current = currentOwner ? store.getCompiledModule(currentOwner) : undefined
@@ -670,7 +643,7 @@ export class PluginArtifactCompiler {
 				}
 			}
 
-			const built = await this.buildFederatedRemote(entry, sharedPackages, sourceHash)
+			const built = await this.buildFederatedRemote(entry, sourceHash)
 			await this.commitWorkbenchOwners(entry, sourceHash, built.compiledAt, built.outDir)
 			await this.cleanupCacheDir(pluginName)
 			this.dbg.debug('compile done {pluginName}', { pluginName })
@@ -784,7 +757,6 @@ export class PluginArtifactCompiler {
 
 	private async buildFederatedRemote(
 		entry: PluginCompileEntry,
-		sharedPackages: readonly string[],
 		sourceHash: string,
 	): Promise<{ compiledAt: number; outDir: string }> {
 		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
@@ -802,11 +774,8 @@ export class PluginArtifactCompiler {
 			entryPath: absoluteEntry,
 			outDir,
 			publicPath,
-			sharedPackages,
 			minify: false,
 			sourcemap: true,
-			vite: this.vite,
-			cacheKey: this.viteCacheKey,
 		})
 		const validation = await validateWorkbenchUiArtifact(outDir, entry.declarationKey)
 		if (!validation.valid) {
@@ -857,12 +826,6 @@ export class PluginArtifactCompiler {
 		}
 	}
 
-	private getSharedPackages(): readonly string[] {
-		const configured = this.sharedPackages
-		if (Array.isArray(configured) && configured.length > 0) return configured
-		return workbenchFederationSharedPackages
-	}
-
 	private collectSourceFiles(entryBaseDir: string, pluginDir: string, entryPath: string): string[] {
 		const entryFile = this.resolvePluginFile(entryBaseDir, entryPath)
 		const paraglide = resolveParaglideIntegration(pluginDir)
@@ -871,31 +834,30 @@ export class PluginArtifactCompiler {
 		return [...new Set(sourceFiles)]
 	}
 
-	private async computeSourceHash(
-		files: string[],
-		sharedPackages: readonly string[],
-		baseDir?: string,
-		uiBuildSignature?: string,
-		resolvedSharedSignature?: string,
-		contractFingerprint?: string,
-	): Promise<string> {
+	private async computeSourceHash(options: {
+		files: string[]
+		baseDir?: string
+		resolvedSharedSignature?: string
+		contractFingerprint?: string
+	}): Promise<string> {
 		const hash = createHash('sha256')
 		hash.update(`compiler:${WORKBENCH_COMPILER_VERSION}`)
-		const sharedSignature = resolvedSharedSignature ?? [...sharedPackages].join('|')
-		hash.update(`shared:${sharedSignature}`)
+		hash.update(
+			`shared:${options.resolvedSharedSignature ?? workbenchFederationSharedPackages.join('|')}`,
+		)
 		hash.update(`shareStrategy:${WORKBENCH_FEDERATION_SHARE_STRATEGY}`)
 		hash.update(`remoteEntry:${WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE}`)
 		hash.update(`expose:${WORKBENCH_FEDERATION_EXPOSE}`)
-		hash.update(`contract:${contractFingerprint ?? ''}`)
-		if (uiBuildSignature) hash.update(`ui:${uiBuildSignature}`)
-		const expanded = await this.expandHashTargets(files)
+		hash.update(`contract:${options.contractFingerprint ?? ''}`)
+		const expanded = await this.expandHashTargets(options.files)
 		expanded.sort()
 
 		for (const file of expanded) {
 			try {
 				if (existsSync(file)) {
 					const content = await readFile(file, 'utf-8')
-					if (baseDir && file.startsWith(baseDir)) hash.update(relative(baseDir, file))
+					if (options.baseDir && file.startsWith(options.baseDir))
+						hash.update(relative(options.baseDir, file))
 					else hash.update(file)
 					hash.update(content)
 				}

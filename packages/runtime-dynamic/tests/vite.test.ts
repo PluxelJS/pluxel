@@ -84,7 +84,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
 		expect(plugins.at(-1)?.config?.({})).toMatchObject({
-			cacheDir: '.pluxel/vite/dynamic-runtime',
+			cacheDir: '.pluxel/vite/dynamic-runtime-v2',
 			server: { watch: { ignored: expect.arrayContaining([/(^|[/\\])target([/\\]|$)/]) } },
 		})
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import type { ModuleFederationOptions } from '@module-federation/vite'
 import { resolve } from 'pathe'
-import type { InlineConfig, Plugin, PluginOption } from 'vite'
+import { workbenchFederationSharedPackages } from '@pluxel/core/federation'
 import { resolvePackageJsonPathWithOxc } from '../resolver/oxc.ts'
 
 export type ResolvedFederationShared = {
@@ -12,65 +12,16 @@ export type ResolvedFederationShared = {
 }
 
 const require = createRequire(import.meta.url)
-const WORKBENCH_UI_BUILD_CONTRACT_VERSION = 2
+const WORKBENCH_UI_BUILD_CONTRACT_VERSION = 3
 const workbenchUiToolchainSignature = [
 	`pluxel@${WORKBENCH_UI_BUILD_CONTRACT_VERSION}`,
 	`@module-federation/vite@${resolveToolchainPackageVersion('@module-federation/vite')}`,
 	`vite@${resolveToolchainPackageVersion('vite')}`,
 ].join('|')
 
-function collectPluginNames(input: PluginOption | undefined, out: string[]): void {
-	if (!input) return
-	if (Array.isArray(input)) {
-		for (const item of input) collectPluginNames(item, out)
-		return
-	}
-	const plugin = input as Plugin
-	if (typeof plugin.name === 'string' && plugin.name.length > 0) out.push(plugin.name)
-	else out.push('anonymous')
-}
-
-export function resolveWorkbenchUiBuildSignature(
-	vite: InlineConfig | undefined,
-	cacheKey?: string,
-): string {
-	const pluginNames: string[] = []
-	collectPluginNames(vite?.plugins, pluginNames)
-
-	return [
-		cacheKey?.trim() ? `cacheKey:${cacheKey.trim()}` : '',
-		pluginNames.length > 0 ? `plugins:${pluginNames.join('|')}` : '',
-		vite?.resolve ? `resolve:${stableJsonish(vite.resolve)}` : '',
-		vite?.define ? `define:${stableJsonish(vite.define)}` : '',
-		vite?.build ? `build:${stableJsonish(vite.build)}` : '',
-		vite?.css ? `css:${stableJsonish(vite.css)}` : '',
-	]
-		.filter(Boolean)
-		.join('\n')
-}
-
-function stableJsonish(value: unknown): string {
-	if (value === null || value === undefined) return ''
-	if (typeof value === 'function') {
-		return `[function ${(value as { readonly name?: string }).name || 'anonymous'}]`
-	}
-	if (value instanceof RegExp) return value.toString()
-	if (Array.isArray(value)) return `[${value.map((item) => stableJsonish(item)).join(',')}]`
-	if (typeof value === 'object') {
-		const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
-			a.localeCompare(b),
-		)
-		return `{${entries.map(([key, item]) => `${key}:${stableJsonish(item)}`).join(',')}}`
-	}
-	return JSON.stringify(value)
-}
-
-export function resolveWorkbenchFederationShared(
-	root: string,
-	sharedPackages: readonly string[],
-): ResolvedFederationShared {
+export function resolveWorkbenchFederationShared(root: string): ResolvedFederationShared {
 	const resolveRoot = findWorkspaceRoot(root) ?? root
-	const specs = sharedPackages.map((pkg) => ({
+	const specs = workbenchFederationSharedPackages.map((pkg) => ({
 		packageName: pkg,
 		version: resolveSharedPackageVersion(resolveRoot, pkg),
 	}))

@@ -335,10 +335,10 @@ export function createCompiledWorkbenchArtifact(input: {
 	return {
 		pluginName: input.pluginName,
 		remoteName: workbenchFederationRemoteName(input.artifactName ?? input.pluginName),
-		manifestUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactPath(
+		remoteEntryUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactPath(
 			input.pluginName,
 			input.sourceHash,
-			WORKBENCH_FEDERATION_MANIFEST_FILE,
+			WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
 		)}`,
 		exposedModule: WORKBENCH_FEDERATION_EXPOSE,
 		sourceHash: input.sourceHash,

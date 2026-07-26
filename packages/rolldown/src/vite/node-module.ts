@@ -2,7 +2,6 @@ import { builtinModules } from 'node:module'
 import { mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve } from 'pathe'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
-import type { InlineConfig, Rollup } from 'vite'
 import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
 import { parseStandaloneWithLang } from '../rolldown/plugins/pluginUtils.ts'
 import { resolveWithOxc } from '../resolver/oxc.ts'
@@ -12,7 +11,6 @@ export type BuildNodeModuleOptions = Readonly<{
 	entryPath: string
 	outFile: string
 	minify?: boolean
-	vite?: InlineConfig
 }>
 
 const forbiddenRuntimeImport = /^@pluxel\/(?:core|runtime)(?:\/|$)/
@@ -34,18 +32,15 @@ export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<
 	const stagedFile = join(stagingDir, fileName)
 	try {
 		await vite.build({
-			...options.vite,
 			configFile: false,
 			root,
-			logLevel: options.vite?.logLevel ?? 'silent',
-			plugins: [PreprocessorDirectives(), ...(toPluginArray(options.vite?.plugins) as never[])],
+			logLevel: 'silent',
+			plugins: [PreprocessorDirectives()],
 			resolve: {
-				...options.vite?.resolve,
 				conditions: ['node', 'import', 'module', 'default'],
 			},
-			ssr: { ...options.vite?.ssr, noExternal: true },
+			ssr: { noExternal: true },
 			build: {
-				...options.vite?.build,
 				ssr: true,
 				target: 'node24',
 				outDir: stagingDir,
@@ -53,11 +48,9 @@ export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<
 				minify: options.minify ?? false,
 				sourcemap: false,
 				rollupOptions: {
-					...options.vite?.build?.rollupOptions,
 					input: entryPath,
 					external: (id: string) => builtins.has(id),
 					output: {
-						...asOutputOptions(options.vite?.build?.rollupOptions?.output),
 						format: 'es',
 						codeSplitting: false,
 						entryFileNames: fileName,
@@ -177,15 +170,6 @@ async function validateNodeModuleOutput(outFile: string): Promise<void> {
 
 function isStyle(path: string): boolean {
 	return ['.css', '.scss', '.sass', '.less', '.styl', '.stylus'].includes(extname(path))
-}
-
-function toPluginArray(plugins: InlineConfig['plugins']): unknown[] {
-	if (!plugins) return []
-	return Array.isArray(plugins) ? plugins : [plugins]
-}
-
-function asOutputOptions(output: Rollup.RollupOptions['output']): Rollup.OutputOptions {
-	return Array.isArray(output) ? (output[0] ?? {}) : (output ?? {})
 }
 
 async function loadVite(): Promise<typeof import('vite')> {

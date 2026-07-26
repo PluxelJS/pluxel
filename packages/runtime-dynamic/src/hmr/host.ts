@@ -434,7 +434,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	})
 
 	attachPluginArtifactCompiler(ctx, {
-		vite: plan.vite,
 		viteServer: viteServer ?? hmr.vite,
 	})
 

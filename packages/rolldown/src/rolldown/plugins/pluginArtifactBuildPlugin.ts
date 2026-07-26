@@ -1,14 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import {
-	workbenchFederationBuildOutDir,
-	workbenchFederationSharedPackages,
-	sanitizeWorkbenchOwnerName,
-} from '@pluxel/core/federation'
+import { workbenchFederationBuildOutDir, sanitizeWorkbenchOwnerName } from '@pluxel/core/federation'
 import type { Program } from 'oxc-parser'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'pathe'
-import type { InlineConfig } from 'vite'
 import {
 	findDatabasePackageRoot,
 	loadDatabaseArtifactForSource,
@@ -18,10 +13,7 @@ import { extractDatabaseDeclarations } from '../../database/declaration.ts'
 import { generateResetDatabaseArtifact } from '../../database/reset-artifact.ts'
 import { resolveWithOxc } from '../../resolver/oxc.ts'
 import { validateWorkbenchUiArtifact } from '../../workbench/artifact.ts'
-import {
-	resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature,
-} from '../../workbench/build-contract.ts'
+import { resolveWorkbenchFederationShared } from '../../workbench/build-contract.ts'
 import { runWorkbenchOutputTransaction } from '../../workbench/build-scheduler.ts'
 import { collectImportSpecifiers } from './importCollector.ts'
 import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
@@ -34,6 +26,7 @@ import {
 
 const WORKBENCH_UI_BUILD_CACHE_VERSION = 2
 const NODE_MODULE_BUILD_CACHE_VERSION = 1
+const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
 const ARTIFACT_STAMP_FILE = 'pluxel-workbench.json'
 const CODE_HINT = /\b(?:workbench\s*\.\s*extension|defineNodeModule)\s*\(/
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
@@ -76,20 +69,13 @@ type ArtifactStamp = Readonly<{
 export type PluginArtifactBuildPluginOptions = {
 	root?: string
 	buildDir?: string
-	cacheDir?: string
-	cacheKeep?: number
 	workbench?:
 		| false
 		| {
-				sharedPackages?: readonly string[]
 				minify?: boolean
-				vite?: InlineConfig
-				cacheKey?: string
 		  }
 	node?: {
 		minify?: boolean
-		vite?: InlineConfig
-		cacheKey?: string
 	}
 	include?: string | string[]
 	exclude?: string | string[]
@@ -252,17 +238,10 @@ async function buildProductionRemote(
 		throw new Error(`[workbench-ui] entry file not found: ${declaration.entryPath}`)
 	}
 	const target = options.workbench === false ? {} : (options.workbench ?? {})
-	const sharedPackages = target.sharedPackages?.length
-		? target.sharedPackages
-		: workbenchFederationSharedPackages
 	const sourceHash = await hashWorkbenchUiGraph(
 		root,
 		declaration,
-		sharedPackages,
-		[
-			resolveWorkbenchFederationShared(root, sharedPackages).signature,
-			resolveWorkbenchUiBuildSignature(target.vite, target.cacheKey),
-		].join('\n'),
+		resolveWorkbenchFederationShared(root).signature,
 	)
 	const outDir = resolve(
 		root,
@@ -270,7 +249,7 @@ async function buildProductionRemote(
 	)
 	const ownerCacheDir = resolve(
 		root,
-		options.cacheDir ?? '.pluxel/workbench-build',
+		'.pluxel/workbench-build',
 		sanitizeWorkbenchOwnerName(declaration.pluginName),
 	)
 	const cachedOutDir = join(ownerCacheDir, sourceHash)
@@ -289,11 +268,8 @@ async function buildProductionRemote(
 				pluginName: declaration.pluginName,
 				entryPath: declaration.entryPath,
 				outDir: cachedOutDir,
-				sharedPackages,
 				minify: target.minify ?? true,
 				sourcemap: false,
-				vite: target.vite,
-				cacheKey: target.cacheKey,
 			})
 			await writeFile(
 				join(cachedOutDir, ARTIFACT_STAMP_FILE),
@@ -306,7 +282,7 @@ async function buildProductionRemote(
 			)
 		}
 		await publishCachedArtifact(cachedOutDir, outDir)
-		await cleanupProductionCache(ownerCacheDir, Math.max(1, options.cacheKeep ?? 3), sourceHash)
+		await cleanupProductionCache(ownerCacheDir, PRODUCTION_ARTIFACT_CACHE_KEEP, sourceHash)
 	})
 
 	productionBuilds.set(key, task)
@@ -341,17 +317,10 @@ async function buildProductionNodeModule(
 		root,
 		declaration,
 		resolveNodeModuleBuildSignature({
-			vite: target.vite,
-			cacheKey: target.cacheKey,
 			minify: target.minify,
 		}),
 	)
-	const cacheRoot = resolve(
-		root,
-		options.cacheDir ?? '.pluxel/plugin-artifacts',
-		'node',
-		declaration.artifactKey,
-	)
+	const cacheRoot = resolve(root, '.pluxel/plugin-artifacts', 'node', declaration.artifactKey)
 	const cachedFile = join(cacheRoot, `${sourceHash}.mjs`)
 	const outFile = resolve(
 		root,
@@ -381,13 +350,12 @@ async function buildProductionNodeModule(
 				entryPath: declaration.entryPath,
 				outFile: cachedFile,
 				minify: target.minify ?? true,
-				vite: target.vite,
 			})
 		} else {
 			options.log?.(`[node-module] reuse ${declaration.artifactKey} (${sourceHash})`)
 		}
 		await publishCachedFile(cachedFile, outFile)
-		await cleanupNodeModuleCache(cacheRoot, Math.max(1, options.cacheKeep ?? 3), sourceHash)
+		await cleanupNodeModuleCache(cacheRoot, PRODUCTION_ARTIFACT_CACHE_KEEP, sourceHash)
 	})()
 	productionBuilds.set(key, task)
 	try {
@@ -703,13 +671,11 @@ function collectAuthoringImports(ast: Program): Set<string> {
 async function hashWorkbenchUiGraph(
 	root: string,
 	declaration: WorkbenchUiDeclaration,
-	sharedPackages: readonly string[],
 	buildSignature: string,
 ): Promise<string> {
 	const hash = createHash('sha256')
 	hash.update(`workbench-ui-build:${WORKBENCH_UI_BUILD_CACHE_VERSION}`)
 	hash.update(`plugin:${declaration.pluginName}`)
-	hash.update(`shared:${[...sharedPackages].sort().join('|')}`)
 	hash.update(`build:${buildSignature}`)
 	const queue = [declaration.entryPath]
 	const visited = new Set<string>()

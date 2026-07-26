@@ -30,8 +30,6 @@ describe('runtime-dev Vite plugin stack', () => {
 				'@pluxel/runtime > @elysiajs/eden',
 				'@pluxel/runtime > capnweb',
 			]),
-			holdUntilCrawlEnd: true,
-			ignoreOutdatedRequests: true,
 		})
 		expect(server.environments.client.config.dev.warmup).toEqual([
 			'/workspace/workbench/client.tsx',

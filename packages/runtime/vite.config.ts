@@ -1,4 +1,3 @@
-// vite.config.ts
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
@@ -11,9 +10,7 @@ import {
 	buildPluxelFrontendResolveConditions,
 	createPluxelUiChunkGroups,
 	PLUXEL_UI_DEDUPE_PACKAGES,
-	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
 } from '@pluxel/rolldown/workspace/vite'
-import { createRuntimeWebPlugins } from './vite/plugins'
 
 const runtimePackage = JSON.parse(
 	readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf-8'),
@@ -23,56 +20,14 @@ if (!Number.isInteger(workbenchContractProtocol) || Number(workbenchContractProt
 	throw new Error('packages/runtime/package.json must declare pluxel.workbenchContractProtocol')
 }
 
-const runtimeAliases = [
-	{
-		find: /^@pluxel\/runtime$/,
-		replacement: fileURLToPath(new URL('./src/index.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/web$/,
-		replacement: fileURLToPath(new URL('./src/web.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/workbench\/ui$/,
-		replacement: fileURLToPath(new URL('./src/workbench-ui.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/workbench$/,
-		replacement: fileURLToPath(new URL('./src/workbench.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/capnweb$/,
-		replacement: fileURLToPath(new URL('./src/capnweb.ts', import.meta.url)),
-	},
-	{
-		find: /^@pluxel\/runtime\/logger$/,
-		replacement: fileURLToPath(new URL('./src/logger.ts', import.meta.url)),
-	},
-]
-
 export default defineConfig({
 	appType: 'custom',
-	// 输出目录与 public 相同，为了避免 Vite 拷贝 public -> public 产生警告，直接关闭 publicDir
 	publicDir: false,
-	plugins: [...createRuntimeWebPlugins(), workbenchShellBuildInfoPlugin()],
-	ssr: {
-		external: ['react', 'react-dom'],
-		resolve: {
-			conditions: buildPluxelFrontendResolveConditions(),
-		},
-	},
+	plugins: [workbenchShellBuildInfoPlugin()],
 
 	resolve: {
 		conditions: buildPluxelFrontendResolveConditions(),
-		alias: runtimeAliases,
-		// 避免多份实例导致上下文不一致（Mantine/React）
 		dedupe: [...PLUXEL_UI_DEDUPE_PACKAGES],
-	},
-
-	optimizeDeps: {
-		// 关键2：预构建阶段就别再动它，避免二次语义压缩
-		exclude: ['immutable'],
-		include: [...PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE],
 	},
 
 	build: {
@@ -81,12 +36,7 @@ export default defineConfig({
 		emptyOutDir: true,
 		rolldownOptions: {
 			input: resolve(__dirname, '../workbench-app/src/client.tsx'),
-			treeshake: {
-				// 关键4：对 immutable 保留副作用标记，避免把内部 runtime 标记摇没
-				moduleSideEffects: (id) => (/immutable/.test(id) ? true : undefined),
-			},
 			output: {
-				// 更合理的生产分包：react/mantine/emotion/tabler 独立缓存
 				codeSplitting: {
 					groups: createPluxelUiChunkGroups(),
 				},

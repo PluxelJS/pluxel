@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
+import { pluxelViteSourceBridgeExternal } from '../runtime-dev/tsdown-source-bridge.ts'
 
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 const runtimeDevWorkbench = fileURLToPath(
@@ -34,18 +35,7 @@ export default defineConfig({
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevVite,
 	},
-	plugins: [
-		{
-			name: 'pluxel:externalize-rolldown-vite-source-bridge',
-			enforce: 'pre',
-			resolveId: {
-				filter: { id: /^\.\.\/\.\.\/rolldown\/src\/vite\/index\.ts$/ },
-				handler() {
-					return { id: '@pluxel/rolldown/vite', external: true }
-				},
-			},
-		},
-	],
+	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
 		services: 'src/services.ts',

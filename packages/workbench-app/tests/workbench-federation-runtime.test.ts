@@ -19,7 +19,7 @@ const stateKey = Symbol.for('pluxel.workbench.federation-runtime')
 const firstArtifact: Parameters<typeof loadFederatedWorkbenchModule>[0] = {
 	pluginName: 'Billing',
 	remoteName: 'pluxel_workbench_billing',
-	manifestUrl: '/workbench/billing/mf-manifest.json',
+	remoteEntryUrl: '/workbench/billing/remoteEntry.js',
 	exposedModule: './ui-module',
 	sourceHash: 'source-a',
 	compiledAt: 1,
@@ -46,12 +46,24 @@ it('provides every declared shared package and force-replaces only changed remot
 	expect(federation.runtime.registerRemotes).toHaveBeenCalledTimes(2)
 	expect(federation.runtime.registerRemotes).toHaveBeenNthCalledWith(
 		1,
-		[{ name: firstArtifact.remoteName, entry: `${firstArtifact.manifestUrl}?v=source-a:1` }],
+		[
+			{
+				name: firstArtifact.remoteName,
+				entry: `${firstArtifact.remoteEntryUrl}?v=source-a:1`,
+				type: 'module',
+			},
+		],
 		undefined,
 	)
 	expect(federation.runtime.registerRemotes).toHaveBeenNthCalledWith(
 		2,
-		[{ name: firstArtifact.remoteName, entry: `${firstArtifact.manifestUrl}?v=source-b:2` }],
+		[
+			{
+				name: firstArtifact.remoteName,
+				entry: `${firstArtifact.remoteEntryUrl}?v=source-b:2`,
+				type: 'module',
+			},
+		],
 		{ force: true },
 	)
 	expect(federation.runtime.loadRemote).toHaveBeenCalledTimes(3)

@@ -27,7 +27,6 @@ const pluginBuildMocks = vi.hoisted(() => ({
 		},
 	),
 	resolveWorkbenchFederationShared: vi.fn(() => ({ signature: 'shared-signature' })),
-	resolveWorkbenchUiBuildSignature: vi.fn(() => 'ui-build-signature'),
 }))
 
 const nodeBuildMocks = vi.hoisted(() => ({
@@ -38,7 +37,6 @@ const nodeBuildMocks = vi.hoisted(() => ({
 vi.mock('@pluxel/rolldown/vite/workbench-ui', () => ({
 	buildWorkbenchUiRemote: pluginBuildMocks.buildWorkbenchUiRemote,
 	resolveWorkbenchFederationShared: pluginBuildMocks.resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature: pluginBuildMocks.resolveWorkbenchUiBuildSignature,
 }))
 
 vi.mock('@pluxel/rolldown/vite/node-module', () => nodeBuildMocks)
@@ -72,7 +70,6 @@ describe('PluginArtifactCompiler', () => {
 	beforeEach(() => {
 		pluginBuildMocks.buildWorkbenchUiRemote.mockClear()
 		pluginBuildMocks.resolveWorkbenchFederationShared.mockClear()
-		pluginBuildMocks.resolveWorkbenchUiBuildSignature.mockClear()
 		nodeBuildMocks.buildNodeModule
 			.mockReset()
 			.mockImplementation(async (input: { outFile: string }) => {
@@ -169,14 +166,6 @@ describe('PluginArtifactCompiler', () => {
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 1,
-				vite: {
-					plugins: [{ name: 'test:ui-transform' }],
-					resolve: {
-						alias: {
-							'@generated/workbench-ui': fixture.getPath('generated/workbench-ui.ts'),
-						},
-					},
-				},
 			},
 		)
 
@@ -210,22 +199,10 @@ describe('PluginArtifactCompiler', () => {
 				root: fixture.getPath('projects/plugin-host'),
 				entryPath: fixture.getPath('projects/plugin-host/src/demo/PluginWithUI/ui/index.tsx'),
 				pluginName: 'PluginWithUI',
-				vite: {
-					plugins: [{ name: 'test:ui-transform' }],
-					resolve: {
-						alias: {
-							'@generated/workbench-ui': fixture.getPath('generated/workbench-ui.ts'),
-						},
-					},
-				},
 			}),
 		)
-		expect(pluginBuildMocks.resolveWorkbenchUiBuildSignature).toHaveBeenCalledWith(
-			expect.objectContaining({
-				plugins: [{ name: 'test:ui-transform' }],
-			}),
-			undefined,
-		)
+		expect(pluginBuildMocks.buildWorkbenchUiRemote.mock.calls[0]?.[0]).not.toHaveProperty('vite')
+		expect(pluginBuildMocks.resolveWorkbenchFederationShared).toHaveBeenCalledOnce()
 		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledTimes(1)
 
 		dispose()

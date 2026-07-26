@@ -162,6 +162,6 @@
 		"@tabler/icons-react": "catalog:"
 	},
 	"pluxel": {
-		"workbenchContractProtocol": 1
+		"workbenchContractProtocol": 2
 	}
 }

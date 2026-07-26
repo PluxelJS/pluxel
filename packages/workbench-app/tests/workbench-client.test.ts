@@ -10,7 +10,7 @@ import { WorkbenchClientRuntime } from '../src/workbench/client'
 const bundle = (hash: string): WorkbenchBundle => ({
 	pluginName: 'BotPlugin',
 	remoteName: 'bot',
-	manifestUrl: '/bot/mf-manifest.json',
+	remoteEntryUrl: '/bot/remoteEntry.js',
 	exposedModule: 'workbench',
 	sourceHash: hash,
 	compiledAt: 1,

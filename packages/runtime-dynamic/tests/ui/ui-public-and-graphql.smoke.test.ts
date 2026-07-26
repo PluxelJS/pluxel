@@ -186,9 +186,10 @@ describe('HMR UI smoke', () => {
 					{ artifactRoot: resolve(fixture.path, 'artifacts') },
 				)
 
-				const manifestUrl =
-					requireWorkbench(ctx).artifacts.getCompiledModule('DemoPlugin')?.manifestUrl
-				expect(manifestUrl).toBeTruthy()
+				const remoteEntryUrl =
+					requireWorkbench(ctx).artifacts.getCompiledModule('DemoPlugin')?.remoteEntryUrl
+				expect(remoteEntryUrl).toBeTruthy()
+				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')
 
 				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))
 				expect(manifestRes.status).toBe(200)
@@ -200,9 +201,7 @@ describe('HMR UI smoke', () => {
 					`${RUNTIME_INTERNAL_API_BASE}/workbench/artifacts/DemoPlugin/demo-hash/`,
 				)
 
-				const assetRes = await ctx.http.fetch(
-					new Request(`http://local${manifest.metaData?.publicPath}remoteEntry.js`),
-				)
+				const assetRes = await ctx.http.fetch(new Request(`http://local${remoteEntryUrl}`))
 				expect(assetRes.status).toBe(200)
 				expect(assetRes.headers.get('content-type')).toContain('application/javascript')
 				expect(await assetRes.text()).toContain('export const ok = 1')

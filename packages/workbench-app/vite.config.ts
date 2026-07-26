@@ -7,17 +7,10 @@ import {
 	PLUXEL_UI_DEDUPE_PACKAGES,
 	PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE,
 } from '@pluxel/rolldown/workspace/vite'
-// Vite externalizes config dependencies before project resolve.conditions apply.
-// Use the GQLens workspace source here; app/runtime imports still use package conditions.
 import { gqlens } from '@gqlens/vite'
-import { createWorkbenchFrontendPlugins } from './vite/plugins'
+import react from '@vitejs/plugin-react'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
 
-const VALIBOT_FORM_SOURCE_ENTRY = fileURLToPath(
-	new URL('../valibot-form/src/index.ts', import.meta.url),
-)
-const VALIBOT_FORM_WEB_SOURCE_ENTRY = fileURLToPath(
-	new URL('../valibot-form/src/web/index.ts', import.meta.url),
-)
 const MANTINE_SASS_ENTRY = fileURLToPath(
 	new URL('./src/styles/theme/_mantine.scss', import.meta.url),
 ).replaceAll('\\', '/')
@@ -25,7 +18,6 @@ const MANTINE_SASS_ENTRY = fileURLToPath(
 export default defineConfig(({ mode }) => {
 	const isDev = mode !== 'production'
 	const resolveConditions = buildPluxelFrontendResolveConditions(mode)
-	const developmentResolveConditions = ['development', ...resolveConditions]
 
 	return {
 		server: {
@@ -38,19 +30,11 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		resolve: {
-			conditions: developmentResolveConditions,
+			conditions: resolveConditions,
 			dedupe: [...PLUXEL_UI_DEDUPE_PACKAGES],
 			alias: {
-				// Workspace frontend should always consume current source, not stale package dist output.
-				'valibot-form/web': VALIBOT_FORM_WEB_SOURCE_ENTRY,
-				'valibot-form': VALIBOT_FORM_SOURCE_ENTRY,
 				// Avoid splitting each icon into a separate chunk.
 				'@tabler/icons-react': PLUXEL_TABLER_ICONS_ESM_ENTRY_SPECIFIER,
-			},
-		},
-		ssr: {
-			resolve: {
-				conditions: developmentResolveConditions,
 			},
 		},
 
@@ -68,7 +52,13 @@ export default defineConfig(({ mode }) => {
 				framework: 'react',
 				middleware: false,
 			}),
-			...createWorkbenchFrontendPlugins(),
+			tanstackRouter({
+				target: 'react',
+				autoCodeSplitting: true,
+				routesDirectory: './src/app/router/routes',
+				generatedRouteTree: './src/app/router/routeTree.gen.ts',
+			}),
+			react(),
 		],
 
 		css: {
@@ -80,12 +70,10 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 
-		// Pre-bundle common deps for faster cold start and more stable HMR.
 		optimizeDeps: {
 			include: [...PLUXEL_UI_OPTIMIZE_DEPS_INCLUDE],
 		},
 
-		// Production chunking: keep common libraries cache-friendly.
 		build: {
 			sourcemap: isDev ? true : 'hidden',
 			rolldownOptions: {

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+	collectViteSsrImportFiles,
 	importViteSsrModule,
 	invalidateViteSsrModule,
 	prepareWorkbenchViteClient,
@@ -20,13 +21,7 @@ import {
 import { isPluginEnabled, resolveDevWorkbenchClientEntryUrl } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import {
-	normalizePath,
-	type InlineConfig,
-	type Plugin,
-	type PluginOption,
-	type ViteDevServer,
-} from 'vite'
+import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
 import { reloadStaticRuntime } from './hmr'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
@@ -43,29 +38,10 @@ import type {
 } from './types'
 
 const STATIC_RUNTIME_SERVER_KEY = Symbol.for('pluxel.staticRuntimeVitePlugin')
-const STATIC_RUNTIME_CACHE_DIR = '.pluxel/vite/static-runtime'
-
-type PluginArtifactCompilerConfig = {
-	cacheDir?: string
-	cacheKeep?: number
-	compileConcurrency?: number
-	sharedPackages?: string[]
-	pluginDirs?: Record<string, string>
-	vite?: InlineConfig
-	viteCacheKey?: string
-}
-
-type StaticRuntimeViteHmrConfig = {
-	pluginArtifactCompiler?: PluginArtifactCompilerConfig
-}
-
-type StaticRuntimeDevRuntimeOptions = StaticRuntimeViteHmrConfig & {
-	viteServer?: ViteDevServer
-}
+const STATIC_RUNTIME_CACHE_DIR = '.pluxel/vite/static-runtime-v2'
 
 export type StaticRuntimeVitePluginOptions = {
 	entry: string
-	hmr?: false | StaticRuntimeViteHmrConfig
 	bindings?: StaticRuntimeBindings | (() => StaticRuntimeBindings | Promise<StaticRuntimeBindings>)
 }
 
@@ -93,7 +69,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		const mod = await importViteSsrModule(server, entryPath, { fresh })
 		return {
 			application: validateStaticRuntimeApplicationModule(mod, entryPath),
-			configFiles: collectSsrImportFiles(server, entryPath),
+			configFiles: collectViteSsrImportFiles(server, entryPath),
 		}
 	}
 
@@ -122,17 +98,8 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			if (workbenchEnabled) {
 				prepareWorkbenchViteClient(server, resolveDevWorkbenchClientEntryUrl())
 			}
-			const hmr = options.hmr
-			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
 			const pluginDirs = workbenchEnabled ? resolveStaticRuntimePluginDirs(server, host) : undefined
-			await configureStaticRuntimeDevRuntime(server, host, {
-				viteServer: server,
-				...hmrOptions,
-				pluginArtifactCompiler: mergePluginArtifactCompilerPluginDirs(
-					hmrOptions?.pluginArtifactCompiler,
-					pluginDirs,
-				),
-			})
+			await configureStaticRuntimeDevRuntime(server, host, pluginDirs)
 			await application.prepare?.({ host, startup })
 			return host
 		} catch (error) {
@@ -487,32 +454,10 @@ async function resolveViteBindings(
 	return bindings ?? {}
 }
 
-function collectSsrImportFiles(server: ViteDevServer, entry: string): Set<string> {
-	type ModuleLike = {
-		file?: string | null
-		importedModules?: Set<ModuleLike>
-	}
-
-	const files = new Set<string>([normalizePath(entry)])
-	const queue: ModuleLike[] = []
-	for (const mod of server.moduleGraph.getModulesByFile(entry) ?? []) queue.push(mod as ModuleLike)
-
-	while (queue.length > 0) {
-		const mod = queue.shift()!
-		if (mod.file) files.add(normalizePath(mod.file))
-		for (const imported of mod.importedModules ?? []) {
-			if (imported.file && !files.has(normalizePath(imported.file))) {
-				queue.push(imported)
-			}
-		}
-	}
-	return files
-}
-
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-	options: StaticRuntimeDevRuntimeOptions,
+	pluginDirs: Record<string, string> | undefined,
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
@@ -520,8 +465,8 @@ async function configureStaticRuntimeDevRuntime(
 		throw new Error('[runtime-static/vite] static route capabilities must be registered first')
 	}
 	runtimeDev.attachPluginArtifactCompiler(ctx, {
-		config: options.pluginArtifactCompiler,
-		viteServer: options.viteServer,
+		pluginDirs,
+		viteServer: server,
 	})
 }
 
@@ -612,20 +557,6 @@ function findSsrExportDir(
 		}
 	}
 	return undefined
-}
-
-function mergePluginArtifactCompilerPluginDirs(
-	config: PluginArtifactCompilerConfig | undefined,
-	pluginDirs: Record<string, string> | undefined,
-): PluginArtifactCompilerConfig | undefined {
-	if (!pluginDirs) return config
-	return {
-		...config,
-		pluginDirs: {
-			...pluginDirs,
-			...config?.pluginDirs,
-		},
-	}
 }
 
 async function proxyToStaticRuntime(

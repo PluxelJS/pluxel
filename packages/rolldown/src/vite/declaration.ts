@@ -19,19 +19,8 @@ export function resolvePluginArtifactKey(
 		.slice(0, length)}`
 }
 
-export function resolveNodeModuleBuildSignature(input: {
-	vite?: unknown
-	cacheKey?: string
-	minify?: boolean
-}): string {
-	return [
-		'node-module-builder:1',
-		`minify:${input.minify === false ? 'false' : 'true'}`,
-		input.cacheKey?.trim() ? `cacheKey:${input.cacheKey.trim()}` : '',
-		input.vite ? `vite:${stableJsonish(input.vite)}` : '',
-	]
-		.filter(Boolean)
-		.join('\n')
+export function resolveNodeModuleBuildSignature(input: { minify?: boolean }): string {
+	return ['node-module-builder:2', `minify:${input.minify === false ? 'false' : 'true'}`].join('\n')
 }
 
 function canonicalDeclarationModuleId(root: string, id: string): string {
@@ -57,20 +46,4 @@ function canonicalDeclarationModuleId(root: string, id: string): string {
 		current = parent
 	}
 	return `application:${relative(resolve(root), id)}`
-}
-
-function stableJsonish(value: unknown): string {
-	if (value === null || value === undefined) return ''
-	if (typeof value === 'function') {
-		return `[function ${(value as { readonly name?: string }).name || 'anonymous'}]`
-	}
-	if (value instanceof RegExp) return value.toString()
-	if (Array.isArray(value)) return `[${value.map(stableJsonish).join(',')}]`
-	if (typeof value === 'object') {
-		return `{${Object.entries(value as Record<string, unknown>)
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([key, item]) => `${key}:${stableJsonish(item)}`)
-			.join(',')}}`
-	}
-	return JSON.stringify(value)
 }

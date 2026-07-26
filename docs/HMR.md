@@ -54,12 +54,17 @@ Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此
 `hostAutoInitModule` 和部分 shared caches 也属于模块级单例；manifest 和 bundle hooks 会在稍后重新读取这些
 状态。因此同一 Node.js 进程内并发执行两个 `vite.build()` 会发生 remote name、virtual entry 或 shared
 配置串扰。Pluxel 将实际 Federation builder 调用建模为 process-wide exclusive resource；源码 hash、缓存
-检查和图准备等前置工作由小型 worker pool 并发，精确相同的构建仍会去重。项目不应自行配置
-`compileConcurrency: 1`：它不会增加 Federation builder 的隔离性，只会把安全的前置工作也串行化。
+检查和图准备等前置工作由内核 worker pool 并发，精确相同的构建仍会去重。并发和 shared package 集合不是
+项目配置面，避免调用方意外串行化安全阶段或生成与宿主不一致的 remote。
 
 static/dynamic Vite route 在确认 Workbench 启用后会预热浏览器 client graph，让 Vite 在首个页面请求前完成
 依赖发现与 CJS interop。Workbench 关闭时不会扫描或预构建这套 UI 依赖；项目也不需要维护
 `optimizeDeps.include`、`noDiscovery` 或包管理器路径 alias。
+
+这项可选配置必须在 `configureServer` 阶段加入 client `optimizeDeps.entries/include` 与 `dev.warmup`，再由 Vite 的
+environment `listen()` 顺序执行 optimizer init 和 warmup；不得在 optimizer 初始化前直接调用
+`warmupRequest()`。route cache directory 随这项 optimizer contract 版本化，避免把旧 dependency graph metadata
+带入新 contract 后触发 Vite 的增量比较缺陷。
 
 升级上游后不要凭版本号删除该隔离。移除前必须同时确认：
 
@@ -74,3 +79,8 @@ Workbench 的 Federation host 和 `remoteName -> cache-busted entry` registry �
 load 是幂等的，不重复 `registerRemotes()`；只有 `sourceHash` 或 `compiledAt` 改变后才以 `force: true` 替换
 remote。不要把该状态退回普通 module local，否则同一插件的多个 view 和 HMR 重载会反复清除 MF remote
 cache 并产生 `already registered` 警告。
+
+浏览器通过 Federation Runtime API 把 cache-busted `remoteEntry.js` 明确注册为 ESM remote，再调用
+`loadRemote()`；`mf-manifest.json` 保留上游生成的完整 asset graph，只用于 artifact 校验和诊断。构建器不得
+改写 MF virtual module 或清空 manifest preload 字段来修正初始化次序；remote container 的 `init -> get`
+顺序由 runtime contract 负责。

@@ -6,7 +6,6 @@ import { workbenchFederationRemoteName } from '@pluxel/core/federation'
 import {
 	buildWorkbenchUiRemote,
 	resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature,
 } from '../../src/vite/workbench-ui'
 import { validateWorkbenchUiArtifact } from '../../src/workbench/artifact'
 
@@ -103,7 +102,6 @@ describe('buildWorkbenchUiRemote', () => {
 				entryPath: join(root, 'src/ui/a.ts'),
 				outDir: join(tempRoot, 'plugin-a'),
 				publicPath: '/test/',
-				sharedPackages: ['react'],
 				minify: false,
 			}),
 			buildWorkbenchUiRemote({
@@ -112,7 +110,6 @@ describe('buildWorkbenchUiRemote', () => {
 				entryPath: join(root, 'src/ui/b.ts'),
 				outDir: join(tempRoot, 'plugin-b'),
 				publicPath: '/test/',
-				sharedPackages: ['react'],
 				minify: false,
 				sourcemap: true,
 			}),
@@ -182,9 +179,6 @@ export default { marker }
 				marker: 'zhipu-workbench-ui',
 			},
 		] as const
-		let activeBuilds = 0
-		let maximumActiveBuilds = 0
-
 		const results = await Promise.all(
 			cases.map(({ root, pluginName }) =>
 				buildWorkbenchUiRemote({
@@ -193,28 +187,10 @@ export default { marker }
 					entryPath: join(root, 'src/ui/index.ts'),
 					outDir: join(fixture.path, `dist/${pluginName}`),
 					publicPath: '/test/',
-					sharedPackages: ['react'],
 					minify: false,
-					vite: {
-						plugins: [
-							{
-								name: `test:track-${pluginName}`,
-								async buildStart() {
-									activeBuilds += 1
-									maximumActiveBuilds = Math.max(maximumActiveBuilds, activeBuilds)
-									try {
-										await new Promise((resolve) => setTimeout(resolve, 25))
-									} finally {
-										activeBuilds -= 1
-									}
-								},
-							},
-						],
-					},
 				}),
 			),
 		)
-		expect(maximumActiveBuilds).toBe(1)
 
 		for (const [index, result] of results.entries()) {
 			const expected = cases[index]!
@@ -267,7 +243,6 @@ export default { marker }
 			entryPath,
 			outDir: join(fixture.path, 'pwui-test-1'),
 			publicPath: '/test/',
-			sharedPackages: ['react'],
 			minify: false,
 		})
 		const second = await buildWorkbenchUiRemote({
@@ -276,7 +251,6 @@ export default { marker }
 			entryPath,
 			outDir: join(fixture.path, 'pwui-test-2'),
 			publicPath: '/test/',
-			sharedPackages: ['react'],
 			minify: false,
 		})
 
@@ -291,68 +265,7 @@ export default { marker }
 		}
 	}, 45_000)
 
-	it('runs user Vite plugins before building the federated UI remote', async () => {
-		await using fixture = await createFixture({
-			'packages/plugins/demo/package.json': JSON.stringify({
-				name: '@pluxel/plugins-demo',
-				private: true,
-				type: 'module',
-				dependencies: {
-					react: '19.2.0',
-				},
-			}),
-			'packages/plugins/demo/src/ui/index.ts': `
-const marker = "__PLUGIN_UI_MARKER__"
-export default { marker }
-`,
-			'packages/plugins/demo/node_modules/react/package.json': JSON.stringify({
-				name: 'react',
-				version: '19.2.0',
-				main: 'index.js',
-			}),
-			'packages/plugins/demo/node_modules/react/index.js': 'module.exports = {}\n',
-		})
-
-		const root = join(fixture.path, 'packages/plugins/demo')
-		const outDir = join(fixture.path, 'dist/workbench-ui')
-		let resolvedWatch: unknown
-		await buildWorkbenchUiRemote({
-			root,
-			pluginName: 'PluginWithTransform',
-			entryPath: join(root, 'src/ui/index.ts'),
-			outDir,
-			publicPath: '/test/',
-			sharedPackages: ['react'],
-			minify: false,
-			vite: {
-				plugins: [
-					{
-						name: 'test:workbench-ui-transform',
-						configResolved(config) {
-							resolvedWatch = config.server.watch
-						},
-						transform: {
-							filter: {
-								id: /\/src\/ui\/index\.ts$/,
-							},
-							handler(code) {
-								return code.replace('__PLUGIN_UI_MARKER__', 'transformed-by-user-plugin')
-							},
-						},
-					},
-				],
-			},
-		})
-
-		const files = await readdir(outDir, { recursive: true })
-		const jsFiles = files.filter((file) => String(file).endsWith('.js')).map(String)
-		const contents = await Promise.all(jsFiles.map((file) => readFile(join(outDir, file), 'utf-8')))
-		expect(resolvedWatch).toBeNull()
-		expect(contents.join('\n')).toContain('transformed-by-user-plugin')
-		expect(contents.join('\n')).not.toContain('__PLUGIN_UI_MARKER__')
-	}, 45_000)
-
-	it('waits for host shared initialization before importing exposed entry chunks', async () => {
+	it('keeps the official manifest asset graph while externalizing host shared packages', async () => {
 		await using fixture = await createFixture({
 			'packages/plugins/demo/package.json': JSON.stringify({
 				name: '@pluxel/plugins-demo',
@@ -385,7 +298,6 @@ export default { Component }
 			entryPath: join(root, 'src/ui/index.ts'),
 			outDir,
 			publicPath: '/test/',
-			sharedPackages: ['react'],
 			minify: false,
 		})
 
@@ -395,74 +307,36 @@ export default { Component }
 			jsFiles.map((file) => readFile(join(outDir, 'assets', file), 'utf-8')),
 		)
 		const allContents = contents.join('\n')
-		const exposesChunk = contents.find((code) => code.includes('importExposedModule')) ?? ''
 		const manifest = JSON.parse(await readFile(join(outDir, 'mf-manifest.json'), 'utf-8')) as {
 			exposes?: Array<{ assets?: { js?: { async?: string[]; sync?: string[] } } }>
 		}
 
-		expect(exposesChunk).toContain('__pluxelMfRemoteInitPromise')
-		expect(exposesChunk).toContain('__mf_init__virtual:mf:__mfe_internal__')
-		expect(exposesChunk).not.toContain('hostAutoInit')
-		expect(exposesChunk.indexOf('await __pluxelMfRemoteInitPromise')).toBeLessThan(
-			exposesChunk.indexOf('const importModule = await importExposedModule'),
-		)
-		expect(manifest.exposes?.[0]?.assets?.js).toMatchObject({ async: [], sync: [] })
+		const assets = manifest.exposes?.[0]?.assets?.js
+		expect([...(assets?.sync ?? []), ...(assets?.async ?? [])].length).toBeGreaterThan(0)
 		expect(allContents).not.toContain('react.forward_ref')
 	}, 45_000)
 
-	it('creates a stable signature for user build additions', () => {
-		const signature = resolveWorkbenchUiBuildSignature({
-			plugins: [{ name: 'test:plugin-a' }, [{ name: 'test:plugin-b' }]],
-			resolve: {
-				alias: {
-					'@demo/generated': '/abs/generated.ts',
-				},
-			},
-			define: {
-				__SCHEMA_VERSION__: JSON.stringify('schema-v1'),
-			},
-			build: {
-				target: 'chrome120',
-			},
-			css: {
-				modules: {
-					localsConvention: 'camelCaseOnly',
-				},
-			},
-		})
-
-		expect(signature).toContain('plugins:test:plugin-a|test:plugin-b')
-		expect(signature).toContain('resolve:')
-		expect(signature).toContain('@demo/generated')
-		expect(signature).toContain('define:')
-		expect(signature).toContain('__SCHEMA_VERSION__')
-		expect(signature).toContain('build:')
-		expect(signature).toContain('chrome120')
-		expect(signature).toContain('css:')
-		expect(signature).toContain('camelCaseOnly')
-	})
-
 	it('reads shared package versions from OXC package metadata', async () => {
 		await using fixture = await createFixture({
-			'node_modules/shared-exported/package.json': JSON.stringify({
-				name: 'shared-exported',
+			'node_modules/react/package.json': JSON.stringify({
+				name: 'react',
 				version: '1.2.3',
 				type: 'module',
 				exports: {
 					'.': './dist/index.js',
 				},
 			}),
-			'node_modules/shared-exported/dist/index.js': 'export {}\n',
+			'node_modules/react/dist/index.js': 'export {}\n',
 		})
 
-		const resolved = resolveWorkbenchFederationShared(fixture.path, ['shared-exported'])
+		const resolved = resolveWorkbenchFederationShared(fixture.path)
 
-		expect(resolved.signature).toContain('builder:pluxel@2')
+		expect(resolved.signature).toContain('builder:pluxel@3')
 		expect(resolved.signature).toContain('@module-federation/vite@1.16.16')
 		expect(resolved.signature).toContain('vite@8.1.3')
-		expect(resolved.signature).toContain('shared:shared-exported@1.2.3')
+		expect(resolved.signature).toContain('react@1.2.3')
 		expect(resolved.shared).toMatchObject({
-			'shared-exported': {
+			react: {
 				version: '1.2.3',
 				singleton: true,
 				import: false,

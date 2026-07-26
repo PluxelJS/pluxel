@@ -66,7 +66,10 @@ Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocess
 preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
 同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
 runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
-static/dynamic route 分别使用 `.pluxel/vite/static-runtime` 和 `.pluxel/vite/dynamic-runtime` 作为默认 Vite cache，
+static/dynamic 对配置 import graph 的收集与失效复用同一个 runtime-dev helper；artifact compiler 的 worker 数、
+缓存保留和 Federation shared package 集合属于内核不变量，不进入 Context 或 route config。
+static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/vite/dynamic-runtime-v2` 作为当前
+optimizer contract 的默认 Vite cache，
 避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
 Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
 目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。
@@ -172,9 +175,10 @@ compiler 在绑定 declaration 时立即发布 `building`；ready/error revision
 
 ## Production build
 
-生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version、
-compiler/build-contract version 和显式 Vite cache key。UI Contract 和 UI runtime 都是 singleton Federation shared
-package。Workbench shell 写入 contract protocol build info；static freezer 在复制 shell 前必须与当前 runtime package
+生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version 和
+compiler/build-contract version。UI Contract 和 UI runtime 都是 singleton Federation shared package；shared 集合来自
+`@pluxel/core/federation` 的唯一 contract，remote builder 不接受调用方 Vite、shared、并发或缓存策略覆盖。
+Workbench shell 写入 contract protocol build info；static freezer 在复制 shell 前必须与当前 runtime package
 metadata 核对，缺失或不一致直接使构建失败，不能生成 server/shell 跨版本的静态闭包。
 production remote 不输出内嵌源码的 sourcemap；runtime-dev remote 保留 sourcemap 供开发调试。
 

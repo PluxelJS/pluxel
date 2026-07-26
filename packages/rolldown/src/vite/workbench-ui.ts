@@ -1,4 +1,4 @@
-import { readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { rename, rm } from 'node:fs/promises'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	workbenchFederationBuildOutDir,
@@ -6,16 +6,12 @@ import {
 	WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
 	WORKBENCH_FEDERATION_SHARE_STRATEGY,
 	workbenchFederationRemoteName,
-	workbenchFederationSharedPackages,
 } from '@pluxel/core/federation'
 import { resolve } from 'pathe'
 import { paraglideVitePlugin } from '@inlang/paraglide-js'
 import { federation, type ModuleFederationOptions } from '@module-federation/vite'
-import { build, type InlineConfig, mergeConfig, type Plugin, type PluginOption } from 'vite'
-import {
-	resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature,
-} from '../workbench/build-contract.ts'
+import { build, type InlineConfig, type PluginOption } from 'vite'
+import { resolveWorkbenchFederationShared } from '../workbench/build-contract.ts'
 import {
 	runWorkbenchFederationBuild,
 	runWorkbenchOutputTransaction,
@@ -29,19 +25,13 @@ export type BuildWorkbenchUiRemoteOptions = {
 	entryPath: string
 	root?: string
 	outDir?: string
-	sharedPackages?: readonly string[]
 	minify?: boolean
 	sourcemap?: boolean
 	publicPath?: string
-	/** Extra Vite config merged into this workbench UI remote build. */
-	vite?: InlineConfig
-	/** Explicitly invalidates caches when a user Vite plugin changes behavior or options. */
-	cacheKey?: string
 }
 
 export {
 	resolveWorkbenchFederationShared,
-	resolveWorkbenchUiBuildSignature,
 	type ResolvedFederationShared,
 } from '../workbench/build-contract.ts'
 
@@ -61,7 +51,6 @@ type WorkbenchUiBuildPayload = {
 	minify: boolean
 	sourcemap: boolean
 	paraglide: SerializedParaglideConfig | null
-	vite?: InlineConfig
 }
 
 const inflightBuilds = new Map<string, Promise<{ outDir: string; manifestPath: string }>>()
@@ -74,13 +63,9 @@ export async function buildWorkbenchUiRemote(
 	const outDir = resolve(root, options.outDir ?? workbenchFederationBuildOutDir(options.pluginName))
 	const entryPath = resolve(root, options.entryPath)
 	const remoteName = workbenchFederationRemoteName(options.pluginName)
-	const sharedPackages = options.sharedPackages?.length
-		? options.sharedPackages
-		: workbenchFederationSharedPackages
 	const publicPath = options.publicPath ?? '/'
-	const resolvedShared = resolveWorkbenchFederationShared(root, sharedPackages)
+	const resolvedShared = resolveWorkbenchFederationShared(root)
 	const paraglide = resolveParaglideIntegration(root)
-	const buildSignature = resolveWorkbenchUiBuildSignature(options.vite, options.cacheKey)
 	const result = {
 		outDir,
 		manifestPath: resolve(outDir, WORKBENCH_FEDERATION_MANIFEST_FILE),
@@ -97,7 +82,6 @@ export async function buildWorkbenchUiRemote(
 		String(options.sourcemap ?? false),
 		paraglide?.project ?? '',
 		paraglide?.outdir ?? '',
-		buildSignature,
 	].join('\u0000')
 	const existing = inflightBuilds.get(buildKey)
 	if (existing) return existing
@@ -118,7 +102,6 @@ export async function buildWorkbenchUiRemote(
 					publicPath,
 					minify: options.minify ?? true,
 					sourcemap: options.sourcemap ?? false,
-					vite: options.vite,
 					paraglide: paraglide
 						? {
 								project: paraglide.project,
@@ -127,8 +110,6 @@ export async function buildWorkbenchUiRemote(
 						: null,
 				}),
 			)
-			const stagedManifest = resolve(stagedOutDir, WORKBENCH_FEDERATION_MANIFEST_FILE)
-			await disableExposedEntryPreloads(stagedManifest)
 			const validation = await validateWorkbenchUiArtifact(stagedOutDir, options.pluginName)
 			if (!validation.valid) {
 				throw new Error(
@@ -179,7 +160,7 @@ function isTestLikeProcessEnv(env: NodeJS.ProcessEnv): boolean {
 }
 
 async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
-	const internalConfig: InlineConfig = {
+	const buildConfig: InlineConfig = {
 		configFile: false,
 		root: payload.root,
 		cacheDir: payload.cacheDir,
@@ -203,11 +184,8 @@ async function runViteBuild(payload: WorkbenchUiBuildPayload): Promise<void> {
 				input: payload.entryPath,
 			},
 		},
+		server: { watch: null },
 	}
-	const buildConfig = mergeConfig(internalConfig, payload.vite ?? {})
-	// This is a bounded production artifact build. It never serves or hot-reloads files. Assign
-	// after merging because Vite ignores null overrides, and user config must not re-enable a watcher.
-	buildConfig.server = { ...buildConfig.server, watch: null }
 	try {
 		await build(buildConfig)
 	} catch (error) {
@@ -235,7 +213,6 @@ function createWorkbenchUiBuildPlugins(payload: WorkbenchUiBuildPayload): Plugin
 		)
 	}
 	plugins.push(...createFederationPlugin(payload))
-	plugins.push(createAwaitRemoteInitPlugin(payload.remoteName))
 	return plugins
 }
 
@@ -278,67 +255,4 @@ function toPluginArray(input: PluginOption | undefined): PluginOption[] {
 	if (Array.isArray(input)) return input.flatMap((item) => toPluginArray(item))
 	if (!input) return []
 	return [input]
-}
-
-function createAwaitRemoteInitPlugin(remoteName: string): Plugin {
-	const initGlobalKey = `__mf_init__virtual:mf:__mfe_internal__${remoteName}__mf_v__runtimeInit__mf_v__.js__`
-
-	return {
-		name: 'pluxel-workbench-ui-await-remote-init',
-		enforce: 'post',
-		transform(code, id) {
-			if (!id.includes('virtual:mf-exposes:')) return null
-			if (id.includes('virtual:mf-exposes-ssr:')) return null
-			if (code.includes('__pluxelMfRemoteInitPromise')) return null
-
-			const marker = 'await injectCssAssets('
-			if (!code.includes(marker)) return null
-
-			const awaitRemoteInit = [
-				`const __pluxelMfRemoteInitState = globalThis[${JSON.stringify(initGlobalKey)}];`,
-				'const __pluxelMfRemoteInitPromise = __pluxelMfRemoteInitState?.initPromise ?? Promise.resolve();',
-			].join('\n')
-
-			return [
-				awaitRemoteInit,
-				code.replaceAll(
-					marker,
-					'await __pluxelMfRemoteInitPromise;\n          await injectCssAssets(',
-				),
-			].join('\n')
-		},
-	}
-}
-
-async function disableExposedEntryPreloads(manifestPath: string): Promise<void> {
-	type FederationManifest = {
-		exposes?: Array<{
-			assets?: {
-				js?: {
-					async?: string[]
-					sync?: string[]
-				}
-			}
-		}>
-	}
-
-	const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as FederationManifest
-	let changed = false
-
-	for (const expose of manifest.exposes ?? []) {
-		const jsAssets = expose.assets?.js
-		if (!jsAssets) continue
-		if ((jsAssets.async?.length ?? 0) > 0) {
-			jsAssets.async = []
-			changed = true
-		}
-		if ((jsAssets.sync?.length ?? 0) > 0) {
-			jsAssets.sync = []
-			changed = true
-		}
-	}
-
-	if (changed) {
-		await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf-8')
-	}
 }

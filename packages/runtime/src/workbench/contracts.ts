@@ -642,7 +642,7 @@ export type WorkbenchLayout = Readonly<{
 export type WorkbenchBundle = Readonly<{
 	pluginName: string
 	remoteName: string
-	manifestUrl: string
+	remoteEntryUrl: string
 	exposedModule: string
 	sourceHash: string
 	compiledAt: number
@@ -673,7 +673,7 @@ export type WorkbenchBundleEvent =
 			revision: number
 			pluginName: string
 			remoteName: string
-			manifestUrl: string
+			remoteEntryUrl: string
 			exposedModule: string
 			sourceHash: string
 			compiledAt: number

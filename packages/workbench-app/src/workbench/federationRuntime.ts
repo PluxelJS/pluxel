@@ -77,11 +77,11 @@ export async function loadFederatedWorkbenchModule(
 ): Promise<WorkbenchUiModule | { default?: WorkbenchUiModule }> {
 	const state = ensureWorkbenchFederationState()
 	const runtime = state.runtime
-	const entry = withCacheBusting(artifact.manifestUrl, artifact.sourceHash, artifact.compiledAt)
+	const entry = withCacheBusting(artifact.remoteEntryUrl, artifact.sourceHash, artifact.compiledAt)
 	const previousEntry = state.remoteRegistrations.get(artifact.remoteName)
 	if (previousEntry !== entry) {
 		runtime.registerRemotes(
-			[{ name: artifact.remoteName, entry }],
+			[{ name: artifact.remoteName, entry, type: 'module' }],
 			previousEntry ? { force: true } : undefined,
 		)
 		state.remoteRegistrations.set(artifact.remoteName, entry)
