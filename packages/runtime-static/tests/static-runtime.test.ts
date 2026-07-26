@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
@@ -853,6 +853,81 @@ describe('@pluxel/runtime-static', () => {
 			expect(apiMiss.status).toBe(404)
 		} finally {
 			await Promise.all([runtime.stop(), runtime.stop()])
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('aborts Fetch work and cancels a streaming response when the Node client disconnects', async () => {
+		let requestAborted = false
+		let responseCancelled = false
+
+		@Plugin({ name: 'StreamingDisconnect' })
+		class StreamingDisconnect extends BasePlugin {
+			override init(): void {
+				this.ctx.http.plugin.routes(
+					(app) =>
+						app.get('/events', ({ request }) => {
+							request.signal.addEventListener(
+								'abort',
+								() => {
+									requestAborted = true
+								},
+								{ once: true },
+							)
+							return new Response(
+								new ReadableStream<Uint8Array>({
+									start(controller) {
+										controller.enqueue(new TextEncoder().encode('ready\n'))
+									},
+									cancel() {
+										responseCancelled = true
+									},
+								}),
+								{ headers: { 'content-type': 'text/event-stream' } },
+							)
+						}),
+					{ publicPath: '/streaming-disconnect', id: 'StreamingDisconnect:public-http' },
+				)
+			}
+		}
+
+		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-static-disconnect-'))
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-disconnect',
+				plugins: [StreamingDisconnect],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: ['StreamingDisconnect'] },
+					},
+					workbench: false,
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root, target: 'node', variant: 'headless' },
+			},
+		)
+
+		try {
+			const controller = new AbortController()
+			const origin = `http://${runtime.address.host}:${runtime.address.port}`
+			const response = await fetch(`${origin}/streaming-disconnect/events`, {
+				signal: controller.signal,
+			})
+			const reader = response.body!.getReader()
+			await expect(reader.read()).resolves.toMatchObject({ done: false })
+
+			controller.abort()
+			await reader.cancel().catch(() => undefined)
+			await vi.waitFor(() => {
+				expect(requestAborted).toBe(true)
+				expect(responseCancelled).toBe(true)
+			})
+		} finally {
+			await runtime.stop()
 			await rm(root, { recursive: true, force: true })
 		}
 	})

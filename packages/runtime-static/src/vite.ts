@@ -28,6 +28,7 @@ import { reloadStaticRuntime } from './hmr'
 import { isStaticRuntimeApplication, resolveStaticRuntimeHostOptions } from './application'
 import { toStaticRuntimeDefinition } from './internal/application'
 import { createStaticRuntimeHost } from './internal/host'
+import { createNodeFetchRequest, writeNodeFetchResponse } from './internal/node-http'
 import type {
 	StaticRuntimeApplication,
 	StaticRuntimeBindings,
@@ -566,34 +567,15 @@ async function proxyToStaticRuntime(
 	host: StaticRuntimeHost,
 	next: (error?: unknown) => void,
 ): Promise<void> {
+	const exchange = createNodeFetchRequest(req, res, resolveViteOrigin(server))
 	try {
-		const response = await host.ctx.http.fetch(toRequest(req, server))
-		await writeResponse(res, response)
+		const response = await host.ctx.http.fetch(exchange.request)
+		await writeNodeFetchResponse(res, response, exchange.signal)
 	} catch (error) {
-		next(error)
+		if (!exchange.signal.aborted && !res.destroyed) next(error)
+	} finally {
+		exchange.dispose()
 	}
-}
-
-function toRequest(req: IncomingMessage, server: ViteDevServer): Request {
-	const origin = resolveViteOrigin(server)
-	const method = req.method ?? 'GET'
-	const headers = new Headers()
-	for (const [key, value] of Object.entries(req.headers)) {
-		if (value === undefined) continue
-		if (Array.isArray(value)) {
-			for (const item of value) headers.append(key, item)
-			continue
-		}
-		headers.set(key, value)
-	}
-
-	const init: RequestInit & { duplex?: 'half' } = { method, headers }
-	if (method !== 'GET' && method !== 'HEAD') {
-		init.body = req as unknown as BodyInit
-		init.duplex = 'half'
-	}
-
-	return new Request(new URL(req.url ?? '/', origin), init)
 }
 
 function resolveViteOrigin(server: ViteDevServer): string {
@@ -601,22 +583,4 @@ function resolveViteOrigin(server: ViteDevServer): string {
 	const port =
 		typeof address === 'object' && address ? address.port : (server.config.server.port ?? 5173)
 	return `http://127.0.0.1:${port}`
-}
-
-async function writeResponse(res: ServerResponse, response: Response): Promise<void> {
-	res.statusCode = response.status
-	response.headers.forEach((value, key) => res.setHeader(key, value))
-	if (!response.body) {
-		res.end()
-		return
-	}
-
-	const { Readable } = await import('node:stream')
-	await new Promise<void>((resolveStream, reject) => {
-		Readable.fromWeb(response.body as unknown as import('node:stream/web').ReadableStream)
-			.on('error', reject)
-			.pipe(res)
-			.on('finish', resolveStream)
-			.on('error', reject)
-	})
 }

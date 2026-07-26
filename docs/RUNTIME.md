@@ -81,7 +81,9 @@ module，产物不留下目标 external import。目标机安装新包不能改�
 Workbench 有两个正交边界：build variant 决定 distribution 是否携带 shell/remotes，startup config 决定本次进程是否
 安装 Workbench Plane。headless distribution 不能在启动时提升为 Workbench distribution。
 
-Node adapter 拥有 listener、signal shutdown 和 deployment filesystem root。Node distribution 可以另外携带业务 SPA
+Node adapter 拥有 listener、signal shutdown 和 deployment filesystem root。它把客户端中止请求或提前关闭响应传播到
+Fetch `Request.signal`，并取消尚未完成的 Web response body；长请求和流式 handler 可以据此及时释放 owner resource。
+Node distribution 可以另外携带业务 SPA
 `public/`：Workbench disabled 时它是 runtime 404 后的 HTML/static fallback，Workbench enabled 时根 navigation 仍由
 Workbench shell 拥有。平台 adapter 不进入 `runtime-static` application definition。当前 production freezer 只支持
 Node；Worker/Fetch target 必须等待 runtime services 具备真正 platform-neutral closure 后再开放。

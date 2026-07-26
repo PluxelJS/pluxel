@@ -127,8 +127,9 @@ node dist/app.mjs
 
 目标机不需要安装 `@pluxel/*`。`variant` 是 build-time capability：`headless` 不携带 Workbench，启动时不能再开启；
 `workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。Node target 读取
-`PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。当前 freezer 只支持 Node application；不要把 Node runtime closure 标成
-neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 时会以它作为 HTML/static
+`PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。Node host 会在客户端中止请求或提前关闭流式响应时 abort 对应的 Fetch
+`Request.signal` 并取消 response body；长请求应监听该 signal，流式 body 的 `cancel()` 应释放订阅、定时器等资源。
+当前 freezer 只支持 Node application；不要把 Node runtime closure 标成 neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 时会以它作为 HTML/static
 fallback；开启 Workbench 时根页面属于 Workbench。Fetch 平台需要未来独立的 platform-neutral runtime adapter。
 
 ## Dynamic host

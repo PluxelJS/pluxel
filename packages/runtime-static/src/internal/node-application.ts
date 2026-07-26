@@ -5,6 +5,7 @@ import { extname, isAbsolute, relative, resolve as resolvePath } from 'node:path
 import { Readable } from 'node:stream'
 import type { PluginConstructor } from '@pluxel/core'
 import { startStaticRuntimeApplication } from './application'
+import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
 import type { StaticRuntimeWorkbenchInstaller } from './host'
 import type {
 	StaticRuntime,
@@ -130,17 +131,29 @@ async function dispatch(
 	response: ServerResponse,
 	options: { applicationPublicDir: string; serveApplicationPublic: boolean },
 ): Promise<void> {
+	const exchange = createNodeFetchRequest(
+		request,
+		response,
+		`http://${request.headers.host ?? 'localhost'}`,
+	)
 	try {
-		const input = toRequest(request)
+		const input = exchange.request
 		const result = await runtime.fetch(input)
 		const applicationAsset =
 			result.status === 404 && options.serveApplicationPublic
 				? await resolveApplicationAsset(input, options.applicationPublicDir)
 				: null
-		await writeResponse(response, applicationAsset ?? result)
+		await writeNodeFetchResponse(response, applicationAsset ?? result, exchange.signal)
 	} catch (error) {
-		response.statusCode = 500
-		response.end(error instanceof Error ? error.message : String(error))
+		if (exchange.signal.aborted || response.destroyed) return
+		if (response.headersSent)
+			response.destroy(error instanceof Error ? error : new Error(String(error)))
+		else {
+			response.statusCode = 500
+			response.end(error instanceof Error ? error.message : String(error))
+		}
+	} finally {
+		exchange.dispose()
 	}
 }
 
@@ -207,34 +220,6 @@ function applicationContentType(path: string): string {
 		default:
 			return 'application/octet-stream'
 	}
-}
-
-function toRequest(request: IncomingMessage): Request {
-	const host = request.headers.host ?? 'localhost'
-	const url = new URL(request.url ?? '/', `http://${host}`)
-	const method = (request.method ?? 'GET').toUpperCase()
-	const headers = new Headers()
-	for (const [key, value] of Object.entries(request.headers)) {
-		if (Array.isArray(value)) for (const item of value) headers.append(key, item)
-		else if (value !== undefined) headers.set(key, value)
-	}
-	const body = method === 'GET' || method === 'HEAD' ? undefined : Readable.toWeb(request)
-	return new Request(url, {
-		method,
-		headers,
-		body: body as BodyInit | undefined,
-		duplex: body ? ('half' as never) : undefined,
-	})
-}
-
-async function writeResponse(response: ServerResponse, result: Response): Promise<void> {
-	response.statusCode = result.status
-	for (const [key, value] of result.headers) response.setHeader(key, value)
-	if (!result.body) {
-		response.end()
-		return
-	}
-	Readable.fromWeb(result.body as never).pipe(response)
 }
 
 function readProcessEnvironment(): StaticRuntimeEnvironment {
