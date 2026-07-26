@@ -53,7 +53,6 @@ export type LoaderHmrHostOptions<
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	cjsExternal?: readonly string[]
 	logging?: false | RuntimeLoggingInput
 	logsDir?: string
 	logFile?: string
@@ -75,7 +74,6 @@ export type PlannedLoaderHmrHost<
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	cjsExternal?: readonly string[]
 	logging?: false | RuntimeLoggingInput
 	runtimeStorage: RuntimeStoragePaths
 	registry?: Record<string, unknown>
@@ -165,7 +163,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		builtinsFromDist,
 		warmup: opts.warmup,
 		printUrls: opts.printUrls,
-		cjsExternal: opts.cjsExternal,
 		logging: opts.logging,
 		runtimeStorage,
 		registry: opts.registry,
@@ -463,7 +460,6 @@ function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 			plan.snapshot.excludeGlobs.length > 0 ? uniqSorted(plan.snapshot.excludeGlobs) : undefined,
 		clientEntries: resolveDefaultClientEntries(plan.root),
 		builtinsFromDist,
-		cjsExternal: plan.cjsExternal,
 	})
 }
 

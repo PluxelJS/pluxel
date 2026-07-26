@@ -30,10 +30,9 @@ export default defineDynamicRuntimeConfig({
 })
 ```
 
-React、GraphQL、macro 和 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript runner 绕开 route plugin。
-
-runner bridge、SSR 与 optimizer policy 是内核不变量。确需让 CommonJS/native package 在 Node host 执行时，只追加
-顶层 `cjsExternal: ['package-name', '@scope/*']`；不要提供第二份 Vite 或 dependency tuning config。
+React、GraphQL 和业务 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript
+runner 绕开 route plugin，也不要复制 Pluxel 的 resolve、SSR、optimizer 或 host-module 配置。static/dynamic route 使用同一个
+package classifier，让 CommonJS 与 native package 自动留在 Node host 执行；项目不维护 package 名单。
 
 ## Internal entry
 

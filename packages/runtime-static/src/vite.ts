@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
 	collectViteSsrImportFiles,
+	createHostModuleVitePlugin,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteSsrModule,
@@ -231,7 +232,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		},
 	}
 
-	return [...createStaticRuntimeSourcePlugins(), routePlugin]
+	return [...createStaticRuntimeSourcePlugins(), createHostModuleVitePlugin(), routePlugin]
 }
 
 type StaticRuntimeReportSummary = {

@@ -5,8 +5,9 @@ import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { workspaceRoot } from './_paths'
 import {
 	buildLoaderHmrViteConfig,
+	LOADER_HMR_BRIDGE_MODULES,
+	LOADER_HMR_BRIDGE_PROVIDERS,
 	resolveFsAllowList,
-	resolveLoaderHmrDependencies,
 } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { HmrRunner } from '../../src/hmr/engine/runner'
@@ -28,7 +29,6 @@ describe('HMR runner bridge', () => {
 		const fixturesDir = fixture.path
 		const pluginFile = join(fixturesDir, 'PluginWithUI.ts')
 
-		const deps = resolveLoaderHmrDependencies()
 		const fsAllow = resolveFsAllowList({
 			cwd,
 			cwdNormalized: normalizePath(cwd),
@@ -67,14 +67,14 @@ describe('HMR runner bridge', () => {
 				const runner = new HmrRunner()
 				runner.init(server, {
 					hostCwd: cwd,
-					bridgeProviders: deps.bridgeProviders,
+					bridgeProviders: LOADER_HMR_BRIDGE_PROVIDERS,
 				})
-				await runner.bridgeHostModules(deps.bridgeModules, hmr.path, {
+				await runner.bridgeHostModules(LOADER_HMR_BRIDGE_MODULES, hmr.path, {
 					warn: () => {},
 				})
 				const runnerBox = inspectHmrRunner(runner)
 				expect(runnerBox.bridgedRunnerUrls?.has('/packages/core/src/index.ts')).toBe(true)
-				await runner.assertBridgedSingletons(deps.bridgeModules)
+				await runner.assertBridgedSingletons(LOADER_HMR_BRIDGE_MODULES)
 
 				const hostCore = runnerBox.bridgedHostExports?.get('@pluxel/core') as
 					| { BasePlugin?: unknown; checkPluginDecorator?: unknown }

@@ -16,19 +16,13 @@ import {
 import { clientNodeImportGuardPlugin } from './plugins/clientNodeImportGuard'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from '../vite-watch'
 
-export interface LoaderHmrDependencies {
-	bridgeModules: readonly string[]
-	bridgeProviders: Readonly<Record<string, string>>
-	cjsExternal: readonly string[]
-}
-
 /**
  * Modules that are required to be singletons between the host process and the runner.
  *
  * These are internal invariants rather than host configuration: changing the set can evaluate a
  * second Context/runtime implementation inside the runner.
  */
-const REQUIRED_BRIDGE_MODULES = [
+export const LOADER_HMR_BRIDGE_MODULES = [
 	'@pluxel/context',
 	'@pluxel/core',
 	'@pluxel/core/services',
@@ -38,16 +32,15 @@ const REQUIRED_BRIDGE_MODULES = [
 	'@pluxel/runtime/capnweb',
 ] as const
 
-const REQUIRED_BRIDGE_PROVIDERS = Object.freeze({
+export const LOADER_HMR_BRIDGE_PROVIDERS = Object.freeze({
 	'@pluxel/context': '@pluxel/core',
 } satisfies Record<string, string>)
 
 const REQUIRED_DEDUPE_PACKAGES = [
-	...new Set([...REQUIRED_BRIDGE_MODULES.map(toBasePackage), '@pluxel/rolldown']),
+	...new Set([...LOADER_HMR_BRIDGE_MODULES.map(toBasePackage), '@pluxel/rolldown']),
 ] as const
 
-const DEFAULT_SSR_NO_EXTERNAL = ['react', 'react-dom', ...REQUIRED_BRIDGE_MODULES] as const
-const DEFAULT_CJS_EXTERNAL = ['pluxel-plugin-napi-rs/*', '@napi-rs/*'] as const
+const DEFAULT_SSR_NO_EXTERNAL = ['react', 'react-dom', ...LOADER_HMR_BRIDGE_MODULES] as const
 const DEFAULT_CLIENT_DEDUPE = [
 	'react',
 	'react-dom',
@@ -101,26 +94,6 @@ const DEFAULT_RESOLVE_CONDITIONS = [
 	'production',
 	'default',
 ]
-
-const DEFAULT_LOADER_HMR_DEPENDENCIES: LoaderHmrDependencies = {
-	bridgeModules: REQUIRED_BRIDGE_MODULES,
-	bridgeProviders: REQUIRED_BRIDGE_PROVIDERS,
-	cjsExternal: DEFAULT_CJS_EXTERNAL,
-}
-
-const mergeRequired = (required: readonly string[], extra?: readonly string[]) =>
-	extra ? [...new Set([...required, ...extra])] : [...required]
-
-export function resolveLoaderHmrDependencies(
-	options: {
-		cjsExternal?: readonly string[]
-	} = {},
-): LoaderHmrDependencies {
-	return {
-		...DEFAULT_LOADER_HMR_DEPENDENCIES,
-		cjsExternal: mergeRequired(DEFAULT_CJS_EXTERNAL, options.cjsExternal),
-	}
-}
 
 export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []

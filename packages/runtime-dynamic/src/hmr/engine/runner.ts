@@ -2,12 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve } from 'pathe'
-import {
-	createServerModuleRunner,
-	type DevEnvironment,
-	type Plugin,
-	type ViteDevServer,
-} from 'vite'
+import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
 import {
 	ESModulesEvaluator,
 	type EvaluatedModuleNode,
@@ -31,6 +26,11 @@ import {
 	resolveModulePath,
 	unwrapViteId,
 } from '@pluxel/runtime/internal'
+import {
+	createHostModuleClassifier,
+	type HostModuleClassifier,
+	type HostModuleDecision,
+} from '@pluxel/runtime-dev/vite'
 import type { HmrPathApi } from './environment'
 import { matchesSpecifierPattern } from './internals'
 
@@ -52,10 +52,6 @@ export type HmrRunnerInitOptions = {
 	 * We still need a stable way to resolve "host-installed" packages, especially in linked repos.
 	 */
 	hostCwd?: string
-	/** CJS-only specifiers/prefixes that must be executed via Node/require. */
-	cjsExternal?: readonly string[]
-	/** The Vite plugin that owns HMR resolveId hooks, skipped when resolving CJS externals to real files. */
-	skipPlugin?: Plugin
 	/** Modules that must be shared as host singletons (loaded by host and runner). */
 	bridgeModules?: readonly string[]
 	/** Optional bridge specifier → provider specifier mapping. */
@@ -81,8 +77,7 @@ export class HmrRunner {
 	private _runner: ModuleRunner | null = null
 	private _hostResolver!: OxcResolver
 	private _hostCwdAbs: string | null = null
-	private _cjsExternal: readonly string[] = []
-	private _skipPlugin: Plugin | null = null
+	private _hostModules: HostModuleClassifier | null = null
 	private _bridgeModules: readonly string[] = []
 	private _bridgeProviders: Readonly<Record<string, string>> = Object.freeze({})
 	private _workspaceSourceConditions: string[] = []
@@ -133,8 +128,10 @@ export class HmrRunner {
 			evaluator: new ESModulesEvaluator(),
 		})
 
-		this._cjsExternal = opts.cjsExternal ?? []
-		this._skipPlugin = opts.skipPlugin ?? null
+		this._hostModules = createHostModuleClassifier({
+			root: this._hostCwdAbs,
+			cacheLimit: this._cacheLimit,
+		})
 		this._bridgeProviders = opts.bridgeProviders ?? Object.freeze({})
 		const baseBridgeModules = opts.bridgeModules ?? []
 		const providerModules = Object.values(this._bridgeProviders).filter(
@@ -207,6 +204,7 @@ export class HmrRunner {
 	}
 
 	clearResolutionCaches() {
+		this._hostModules?.clear()
 		this.workspaceEntryByKey.clear()
 		clearSieveState(this.workspaceEntryByKey)
 		this.realpathCache.clear()
@@ -417,92 +415,30 @@ export class HmrRunner {
 		) {
 			console.error('[hmr:runner] fetchModule', { url, canonicalId, importer })
 		}
-		if (
-			canonicalId.includes('cjs') ||
-			canonicalId.includes('@napi-rs') ||
-			canonicalId.includes('napi-rs')
-		) {
-			this.dbg?.debug('fetchModule {rawId}', {
-				url,
-				rawId: canonicalId,
-				importer,
-				cjsExternal: this._cjsExternal,
-			})
-		}
-
 		if (isBarePackageSpecifier(canonicalId)) {
-			if (!this.isCjsExternal(canonicalId)) return null
-			if (
-				canonicalId.includes('cjs') ||
-				canonicalId.includes('@napi-rs') ||
-				canonicalId.includes('napi-rs')
-			) {
-				this.dbg?.debug('externalize bare as CJS {rawId}', { rawId: canonicalId })
-			}
-			return await this.externalizeBareId(canonicalId, importer, { typeHint: 'commonjs' })
+			const decision = await this._hostModules?.classifySpecifier(canonicalId, importer)
+			return decision ? await this.externalizeHostModule(decision) : null
 		}
 
-		// Some resolvers (tsconfig paths, workspace aliases, export conditions) can turn a bare import into a
-		// /@fs/ file URL before the runner sees it. Intercept these as well so:
-		// - CJS-only deps are loaded via Node/require.
+		// Aliases and workspace resolution can turn a bare host dependency into `/@fs/*` before the
+		// runner sees it. Classify the owning package again at the resolved file boundary.
 		const fsPath = urlToFsPath(this.env.config.root, canonicalId)
 		if (!fsPath) return null
-
-		if (this._cjsExternal.length === 0) return null
-		if (!(await this.isCjsExternalFile(fsPath))) return null
-		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
-			this.dbg?.debug('externalize fsPath as CJS {fsPath}', { fsPath })
-		}
-		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
+		const decision = await this._hostModules?.classifyFile(fsPath)
+		return decision ? await this.externalizeHostModule(decision) : null
 	}
 
-	private async externalizeBareId(
-		rawId: string,
-		importer: string | undefined,
-		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<ExternalizeHint | null> {
-		const env = this.env
-		const options: { skip?: Set<Plugin> } = {}
-		if (this._skipPlugin) options.skip = new Set([this._skipPlugin])
-
-		const resolved = await env.pluginContainer.resolveId(rawId, importer, options)
-		const fsPath =
-			typeof resolved?.id === 'string' ? urlToFsPath(env.config.root, resolved.id) : null
-		if (!fsPath) return null
-
-		const canonical = await this.realpathCached(fsPath)
-
-		const ext = canonical.toLowerCase()
-		const type =
-			ext.endsWith('.cjs') || ext.endsWith('.cts')
-				? 'commonjs'
-				: opts.typeHint === 'commonjs'
-					? 'commonjs'
-					: 'module'
-
+	private async externalizeHostModule(decision: HostModuleDecision): Promise<ExternalizeHint> {
+		const canonical = await this.realpathCached(decision.resolvedPath)
+		this.dbg?.debug('externalize host module {packageName}', {
+			packageName: decision.packageName ?? decision.resolvedPath,
+			format: decision.format,
+			reason: decision.reason,
+		})
 		return {
 			externalize: pathToFileURL(canonical).toString(),
-			type,
+			type: decision.format,
 		}
-	}
-
-	private async externalizeFsPath(
-		fsPath: string,
-		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<ExternalizeHint> {
-		const canonical = await this.realpathCached(fsPath)
-		const type = inferModuleTypeFromPath(canonical, opts.typeHint)
-		return {
-			externalize: pathToFileURL(canonical).toString(),
-			type,
-		}
-	}
-
-	private isCjsExternal(specifier: string) {
-		for (const pattern of this._cjsExternal) {
-			if (matchesSpecifierPattern(specifier, pattern)) return true
-		}
-		return false
 	}
 
 	private cachedPromise<K, V>(
@@ -525,17 +461,6 @@ export class HmrRunner {
 			() => this.resolvePackageNameForFile(canonical),
 			{ evictIf: (name) => !name },
 		)
-	}
-
-	private async isCjsExternalFile(fsPath: string) {
-		const canonical = await this.realpathCached(fsPath)
-		const name = await this.cachedPromise(
-			this.packageNameByFile,
-			canonical,
-			() => this.resolvePackageNameForFile(canonical),
-			{ evictIf: (resolvedName) => !resolvedName },
-		)
-		return name ? this.isCjsExternal(name) : false
 	}
 
 	private resolvePackageNameForFile(fsPath: string): Promise<string | null> {
@@ -685,11 +610,4 @@ function urlToFsPath(serverRoot: string, idOrUrl: string): string | null {
 	if (existsSync(rebased)) return rebased
 	if (existsSync(cleaned)) return cleaned
 	return rebased
-}
-
-function inferModuleTypeFromPath(fsPath: string, hint: 'module' | 'commonjs') {
-	const lower = fsPath.toLowerCase()
-	if (lower.endsWith('.mjs') || lower.endsWith('.mts')) return 'module'
-	if (lower.endsWith('.cjs') || lower.endsWith('.cts')) return 'commonjs'
-	return hint
 }

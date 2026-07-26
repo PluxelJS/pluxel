@@ -1,6 +1,13 @@
 import { createServerModuleRunner, normalizePath, type UserConfig, type ViteDevServer } from 'vite'
 import type { ModuleRunner } from 'vite/module-runner'
 
+export {
+	createHostModuleClassifier,
+	createHostModuleVitePlugin,
+	type HostModuleClassifier,
+	type HostModuleDecision,
+} from './host-modules'
+
 const pluxelSsrModuleRunners = new WeakMap<ViteDevServer, ModuleRunner>()
 const pluxelSsrModuleRunnerClosePatched = new WeakSet<ViteDevServer>()
 

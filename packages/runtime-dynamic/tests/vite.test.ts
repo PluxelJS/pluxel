@@ -41,6 +41,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(() =>
 			defineDynamicRuntimeConfig({
 				root: '/repo',
+				cjsExternal: ['legacy-commonjs'],
+			} as never),
+		).toThrow(/CommonJS and native host modules are detected automatically/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
 				http: { controlPlane: { rpc: true } },
 			} as never),
 		).toThrow(/http must not include "controlPlane"/i)
@@ -86,6 +92,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			'pluxel-lint-guard',
 			'pluxel-config-source',
 			'pluxel:dynamic-runtime-source',
+			'pluxel:host-modules',
 			'pluxel:dynamic-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
@@ -100,7 +107,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
 			'cacheDir',
 		)
-		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(
+		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
 			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)

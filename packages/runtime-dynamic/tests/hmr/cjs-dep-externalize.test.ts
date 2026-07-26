@@ -71,13 +71,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
@@ -111,13 +109,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const cjsExternal = ['pluxel-plugin-napi-rs/*']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
@@ -148,7 +144,6 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({
 			errorLogs,
 			scanService: {
@@ -162,7 +157,6 @@ describe('HMR CJS dependency handling', () => {
 			roots: [root],
 			entries: [],
 			report: false,
-			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
@@ -176,7 +170,7 @@ describe('HMR CJS dependency handling', () => {
 		expect(executeFailed).toBeUndefined()
 	})
 
-	it('fails fast with a helpful hint for unmarked CJS deps', async () => {
+	it('auto-externalizes CJS files resolved through workspace aliases', async () => {
 		await using fixture = await createFixture({
 			// Force a bare specifier to resolve into workspace source (not node_modules),
 			// so Vite's runner inlines the CJS file and triggers "require is not defined".
@@ -198,31 +192,26 @@ describe('HMR CJS dependency handling', () => {
 			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
 		})
 		const root = fixture.path
-		const cjsExternal: string[] = []
-		const host = createHmrTestHost()
+		const errorLogs: ErrorLog[] = []
+		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
-		let thrown: unknown = null
 		try {
 			await runHmr(root, hmr)
-		} catch (e) {
-			thrown = e
 		} finally {
 			await host.dispose()
 		}
 
-		expect(thrown).toBeTruthy()
-		expect(String(thrown?.message ?? '')).toContain('cjs-pkg')
-		expect(String(thrown?.message ?? '')).not.toContain('rolldown-vite')
+		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
+		expect(executeFailed).toBeUndefined()
 	})
 
-	it('externalizes marked CJS deps even when resolved to /@fs/ file URLs', async () => {
+	it('auto-externalizes CJS deps even when resolved to /@fs/ file URLs', async () => {
 		await using fixture = await createFixture({
 			// Force a bare specifier to resolve into a local .cjs file via tsconfig paths.
 			'tsconfig.json': JSON.stringify(
@@ -244,13 +233,11 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 

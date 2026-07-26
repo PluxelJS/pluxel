@@ -18,7 +18,6 @@ export type DynamicRuntimeConfig = {
 	storage?: LoaderHmrHostStorageOptions
 	warmup?: boolean
 	printUrls?: boolean
-	cjsExternal?: readonly string[]
 	builtins?: readonly BuiltinPluginSpec[]
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	configService?: CoreContext.Config['configService']
@@ -48,7 +47,12 @@ export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(confi
 	}
 	if ('deps' in config) {
 		throw new Error(
-			'[runtime-dynamic] Dynamic runtime config must not include a "deps" tuning object; bridge, SSR and optimizer policy belong to the runtime. Use top-level "cjsExternal" only for packages that must execute in the host runtime.',
+			'[runtime-dynamic] Dynamic runtime config must not include a "deps" tuning object; bridge, host-module, SSR and optimizer policy belong to the runtime.',
+		)
+	}
+	if ('cjsExternal' in config) {
+		throw new Error(
+			'[runtime-dynamic] Dynamic runtime config must not include "cjsExternal"; CommonJS and native host modules are detected automatically.',
 		)
 	}
 	assertPublicHttpConfig(config.http, '[runtime-dynamic] Dynamic runtime config')

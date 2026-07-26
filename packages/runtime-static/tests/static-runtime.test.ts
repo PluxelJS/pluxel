@@ -150,6 +150,7 @@ describe('@pluxel/runtime-static', () => {
 			'pluxel-lint-guard',
 			'pluxel-config-source',
 			'pluxel:static-runtime-source',
+			'pluxel:host-modules',
 			'pluxel:static-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
@@ -163,7 +164,7 @@ describe('@pluxel/runtime-static', () => {
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
 			'cacheDir',
 		)
-		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(
+		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
 			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
 		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)

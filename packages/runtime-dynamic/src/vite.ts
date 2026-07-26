@@ -3,6 +3,7 @@ import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } fro
 import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
+	createHostModuleVitePlugin,
 	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteModuleGraphFiles,
@@ -134,6 +135,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		...pluxelRuntimeSourceVitePlugins({
 			name: 'pluxel:dynamic-runtime-source',
 		}),
+		createHostModuleVitePlugin(),
 		routePlugin,
 	]
 }

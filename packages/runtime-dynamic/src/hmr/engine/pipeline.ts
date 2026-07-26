@@ -589,7 +589,7 @@ export class HmrExecutor {
 				) as Record<string, unknown>
 			} catch (err) {
 				endEvaluate()
-				const cjsHint = buildCjsExternalizeHint(err)
+				const cjsHint = buildHostModuleClassificationHint(err)
 				if (cjsHint) {
 					this.ctx.logger.error('execute failed for {file}', { file: id, error: err })
 					const error = new Error(cjsHint, { cause: err })
@@ -722,7 +722,7 @@ function disablePluginsOnMissingDepsFromCommitError(ctx: Context, error: unknown
 	})
 }
 
-function buildCjsExternalizeHint(error: unknown): string | null {
+function buildHostModuleClassificationHint(error: unknown): string | null {
 	const ref = findRequireNotDefinedError(error)
 	if (!ref) return null
 
@@ -731,13 +731,12 @@ function buildCjsExternalizeHint(error: unknown): string | null {
 	const pkgFromFile = offendingFile ? tryReadNearestPackageName(offendingFile) : null
 	const pkgFromStack = extractPackageNameFromStack(stack)
 	const pkg = pkgFromFile ?? pkgFromStack
-	const suggestion = pkg ? buildCjsExternalSuggestion(pkg) : '<your-cjs-package>'
 
 	return [
-		'[HMR] Detected a CommonJS-only dependency being evaluated as ESM (require is not defined).',
-		'Add it to `cjsExternal` so it is externalized and executed by the host runtime.',
+		'[HMR] A CommonJS dependency reached the ESM evaluator after automatic host-module classification.',
+		'Ensure its package.json declares CommonJS (`type`, `require` export) or native (`napi`, `binary`, `gypfile`) metadata.',
 		offendingFile ? `Offending file: ${offendingFile}` : null,
-		`Suggested entry: ${suggestion}`,
+		pkg ? `Package: ${pkg}` : null,
 	]
 		.filter(Boolean)
 		.join('\n')
@@ -753,11 +752,6 @@ function findRequireNotDefinedError(error: unknown): { stack?: unknown } | null 
 		if (name === 'ReferenceError' && message.includes('require is not defined')) return c
 	}
 	return null
-}
-
-function buildCjsExternalSuggestion(pkg: string) {
-	// Most packages should be externalized via exact specifier; use `/*` when importing subpaths.
-	return `${pkg} (or ${pkg}/* for subpath imports)`
 }
 
 function extractOffendingFileFromStack(stack: string): string | null {

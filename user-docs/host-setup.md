@@ -149,8 +149,9 @@ export default defineConfig({
 
 dynamic runtime config 提供 workspace root、loader config、profile 和 runtime state。loader 负责发现和替换模块；插件本身仍按 [`plugin-authoring.md`](plugin-authoring.md) 编写。
 
-bridge、SSR、optimizer、cache 和 Vite plugins 由 dynamic runtime 统一管理，不在 config 中重复声明。只有确实必须由
-Node host 执行的 CommonJS/native package 才使用顶层 `cjsExternal`，支持完整 package 名或 `@scope/*` 前缀。
+bridge、SSR、optimizer、cache 和 Pluxel Vite plugins 由 runtime 统一管理，不在 config 中重复声明。CommonJS 与 N-API/
+native package 会根据解析结果、扩展名和 package metadata 自动留在 Node host 执行；static 与 dynamic host 都不需要维护
+`ssr.external` 或额外 package 名单。require-only exports 等 package 自身的 Node 调用约束仍应按该 package 文档使用。
 
 ## Logging root
 

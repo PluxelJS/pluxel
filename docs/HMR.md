@@ -43,9 +43,11 @@ Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此
 相同的 artifact HMR contract。两者的差别是 catalog 来源：static 从 entry imports 得到，dynamic 从 workspace loader
 得到。production frozen distribution 不携带 watcher、Vite server 或 HMR compiler。
 
-dynamic loader 的 bridge modules/providers、SSR external/noExternal、dedupe、optimizer 和 Vite cache 都是运行时不变量，
-不接受宿主覆盖，也不再合并第二份 `InlineConfig`。唯一保留的依赖 escape hatch 是顶层 `cjsExternal`：它只为必须由
-Node host 执行的 CommonJS/native package 或 `scope/*` 前缀追加 external 规则，且不能移除内核默认规则。
+dynamic loader 的 bridge modules/providers、SSR、dedupe、optimizer 和 Vite cache 都是运行时不变量，不接受宿主覆盖，
+也不合并第二份 `InlineConfig`。模块执行边界按固定优先级处理：bridge 首先保持 host singleton identity；随后由
+runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其余 workspace ESM source 才进入 Vite transform
+和 HMR graph。dynamic runner 在 bare specifier 与 Vite 已解析的 `/@fs/` 边界调用同一个 classifier，因此 workspace alias
+不会绕过分类，也不需要 package 名单。
 
 ## Workbench UI Federation 构建隔离
 

@@ -17,9 +17,9 @@ import {
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,
-	type LoaderHmrDependencies,
+	LOADER_HMR_BRIDGE_MODULES,
+	LOADER_HMR_BRIDGE_PROVIDERS,
 	resolveFsAllowList,
-	resolveLoaderHmrDependencies,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
 import { AsyncSerialLock, BatchDebouncer, matchesSpecifierPattern } from './internals'
@@ -122,8 +122,6 @@ export interface LoaderHmrConfig {
 	 * Paths may be absolute or relative to `cwd`.
 	 */
 	clientEntries?: string[]
-	/** Additional CommonJS packages or `scope/*` prefixes that must execute in the host runtime. */
-	cjsExternal?: readonly string[]
 	/**
 	 * When commit fails due to missing dependencies, automatically disable the offending plugins
 	 * (persisted) and retry commit so the rest of the batch can still load.
@@ -286,7 +284,6 @@ export class LoaderHmrService {
 	private readonly excludeGlobs?: string[]
 	private readonly builtinDistDirsClean: readonly string[]
 
-	private readonly deps: LoaderHmrDependencies
 	private readonly runtimeShims: RuntimeShimRegistry
 	private readonly useRequireShims: boolean
 
@@ -382,8 +379,6 @@ export class LoaderHmrService {
 			this.path,
 			this.workspaceConditions,
 		)
-
-		this.deps = resolveLoaderHmrDependencies({ cjsExternal: this.config.cjsExternal })
 
 		const runtimeResolved: Record<string, RuntimeShimConfig> = this.config.runtimeShims ?? {}
 		this.runtimeShims = new RuntimeShimRegistry({ shims: runtimeResolved })
@@ -679,10 +674,8 @@ export class LoaderHmrService {
 			debug: this.ctx.logger.getDebugChannel('hmr:fetch'),
 			cacheLimit: this.config.runnerCacheLimit,
 			hostCwd: this.cwd,
-			cjsExternal: this.deps.cjsExternal,
-			bridgeModules: this.deps.bridgeModules,
-			bridgeProviders: this.deps.bridgeProviders,
-			skipPlugin: this.plugin,
+			bridgeModules: LOADER_HMR_BRIDGE_MODULES,
+			bridgeProviders: LOADER_HMR_BRIDGE_PROVIDERS,
 			resolveCache: this.scanService.resolverCache,
 			workspaceConditions: this.workspaceConditions,
 		})
@@ -690,10 +683,10 @@ export class LoaderHmrService {
 	}
 
 	private async bridgeHostModules() {
-		await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, {
+		await this.runner.bridgeHostModules(LOADER_HMR_BRIDGE_MODULES, this.path, {
 			warn: (message, props) => this.ctx.logger.warn(message, props),
 		})
-		await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
+		await this.runner.assertBridgedSingletons(LOADER_HMR_BRIDGE_MODULES)
 	}
 
 	private configurePipeline() {
@@ -1350,7 +1343,7 @@ export class LoaderHmrService {
 	}
 
 	private isBridgeModule(specifier: string) {
-		for (const pattern of this.deps.bridgeModules) {
+		for (const pattern of LOADER_HMR_BRIDGE_MODULES) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
