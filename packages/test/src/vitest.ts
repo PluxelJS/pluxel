@@ -26,7 +26,7 @@ export type PluxelVitestOptions = {
 	prePlugins?: NonNullable<ViteUserConfig['plugins']>
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/runtime-dynamic'] as const
+export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/hmr'] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
@@ -98,7 +98,7 @@ function normalizeGlobs(patterns: string[]): string[] {
 
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
- * - enables fixed Pluxel resolution conditions (`@pluxel/source` for internals, `@pluxel/runtime-dynamic` for plugin dev entries)
+ * - enables fixed Pluxel resolution conditions (`@pluxel/source` for internals, `@pluxel/hmr` for plugin dev entries)
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
  * - runs the local core-only `@pluxel/test/setup` module once per worker
  */
@@ -154,7 +154,7 @@ export function definePluxelVitestConfig(
 		]
 
 		// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
-		// plugin packages use @pluxel/runtime-dynamic. Do not let per-package config widen this.
+		// plugin packages use @pluxel/hmr. Do not let per-package config widen this.
 		merged.resolve = { ...merged.resolve, conditions: baseConditions }
 		merged.ssr = merged.ssr ?? {}
 		merged.ssr.resolve = {

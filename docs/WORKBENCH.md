@@ -73,6 +73,9 @@ facade 同时提供 `getSnapshot()`、`subscribe()` 和 `refresh()`。每组 can
 和 revision。snapshot/patch 都经过 Standard Schema 校验；stable key 重复、revision gap、generation mismatch 或
 patch 校验失败会重新取得完整 snapshot。query 失败保留 last-known-good rows 并进入 `stale`。
 
+`useResources()` / `usePort()` 返回普通冻结 record。安全边界是服务端 layout 下发的 opaque grant，而不是会观察任意
+属性读取的 Proxy；未提供的属性遵循 JavaScript 语义返回 `undefined`，使 React、DevTools、序列化器和检查器可以安全反射。
+
 服务端在依赖表 transaction commit 后重跑完整 query，以 stable key 生成 `upserted`、`removed` 和完整 `order`。
 完整 order 保证仅排序变化或分页窗口成员变化仍能正确重建结果。并发 invalidation 会合并，不把 SQL、table identity、
 commit token 或 outbox revision 暴露给浏览器。
@@ -125,6 +128,10 @@ route 的解码后整段参数，静态 route 和非 route placement 得到空�
 宿主对带 `navigation.group` 的 route 同时提供普通导航和“在新工作标签打开”操作。普通点击遵循当前工作区的
 `auto` 策略（未保存的当前 Tab 会保留并打开新 Tab），显式新 Tab 操作始终走同一套 `openTab()` 路径校验、去重和
 `WorkspaceController`；Workbench 至少有一个原生 Tab 时显示 Tab strip，单个 Tab 也可以被关闭并回到首页。
+
+Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。`openTab()` 必须先原子写入
+document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；否则普通 route reconciliation 会把
+显式新 tab 误判成 `replace-active`。
 
 ## Cross-plugin UI
 

@@ -98,7 +98,13 @@ describe('@pluxel/runtime-static', () => {
 		}) as Array<{
 			name?: string
 			apply?: unknown
-			config?: (config: { cacheDir?: string }) => unknown
+			config?: (config: { cacheDir?: string }) =>
+				| {
+						resolve?: { dedupe?: string[] }
+						cacheDir?: string
+						[key: string]: unknown
+				  }
+				| undefined
 		}>
 
 		expect(Object.keys(application)).toEqual(['name', 'plugins', 'configure'])
@@ -151,6 +157,9 @@ describe('@pluxel/runtime-static', () => {
 			cacheDir: '.pluxel/vite/static-runtime',
 		})
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).toBeUndefined()
+		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(
+			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
+		)
 		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)
 	})
 

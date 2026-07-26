@@ -75,7 +75,9 @@ export default defineStaticRuntime({
 
 用 `vite` 启动。不要用 raw TypeScript runner 执行 `pluxel.static.ts` 或插件入口。
 route plugin 默认把 static/dynamic optimizer cache 隔离到各自的 `.pluxel/vite/` 子目录，因此同一项目 root 下的
-业务前端可以使用自己的 Vite cache。宿主显式配置 `cacheDir` 时仍以宿主值为准。
+业务前端可以使用自己的 Vite cache，并自动应用 Pluxel source conditions、core/runtime 与 React/Mantine singleton
+dedupe。插件 package 的 `@pluxel/hmr` dev export 也由两种 route 自动解析，static host 不需要额外 source
+alias。宿主显式配置 `cacheDir` 时仍以宿主值为准；不要在项目里重复维护这些 Workbench/MF 底层默认值。
 
 `plugins` 是固定 catalog：production build 后不能从外部增加或替换插件代码。`configure()` 本身进入 bundle，
 但会在每次启动时重新执行，因此环境变量、平台 bindings、persistence、logging、HTTP、plugin config records 和

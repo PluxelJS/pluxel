@@ -2,7 +2,7 @@ import { HotkeysProvider } from '@tanstack/react-hotkeys'
 import { useStore } from '@tanstack/react-store'
 import { useNavigate } from '@tanstack/react-router'
 import { useMediaQuery } from '@mantine/hooks'
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef } from 'react'
 import { buildWorkbenchHref } from '../../workbench/paths'
 import { useWorkbenchNavigationRoutes } from '../../workbench/runtime'
 import { PLUGIN_SEARCH_EVENT } from '../constants'
@@ -34,12 +34,12 @@ import {
 	type WorkbenchSectionId,
 	type WorkbenchTab,
 } from './state'
-import { WorkspaceController } from './store'
 import { deriveTabFromPath } from './tabs'
 import {
 	type WorkbenchNavigationMode,
 	WorkbenchLayoutProvider,
 	WorkbenchTabsProvider,
+	useWorkspaceController,
 } from './context'
 import {
 	ActivityRail,
@@ -75,7 +75,7 @@ function dispatchPluginSearchEvent() {
 }
 
 export function WorkbenchShell() {
-	const [workspace] = useState(() => new WorkspaceController())
+	const workspace = useWorkspaceController()
 	const isNarrowViewport = useMediaQuery('(max-width: 47.99em)')
 	const pathname = useCurrentPathname()
 	const navigate = useNavigate()
@@ -450,7 +450,16 @@ export function WorkbenchShell() {
 							? 'open-tab'
 							: 'replace-active'
 						: request
-				if (activeTab?.path !== to) workspace.queueNavigation(to, mode)
+				if (activeTab?.path !== to) {
+					// Materialize an explicit new-tab request before routing. The route effect
+					// still reconciles the URL, but a navigation cannot accidentally fall back
+					// to replace-active if another router update runs first.
+					if (mode === 'open-tab') {
+						const tab = deriveTabFromPath(to)
+						workspace.openTab({ path: tab.path, title: tab.title, meta: tab.meta })
+					}
+					workspace.queueNavigation(to, mode)
+				}
 				return mode
 			},
 			setActiveTabDirty,

@@ -88,7 +88,7 @@ pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
-			"@pluxel/runtime-dynamic": "./src/orders.ts",
+			"@pluxel/hmr": "./src/orders.ts",
 			"default": "./dist/index.mjs",
 		},
 		"./package.json": "./package.json",
@@ -147,7 +147,7 @@ pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 `package.json` 写 `catalog:`，范围由 `pnpm-workspace.yaml` 维护；`pnpm pack/publish` 会把它转换成
 catalog 中的 semver，不要把同一范围再复制回每个 manifest。
 
-`@pluxel/runtime-dynamic` condition 只服务受控的本地 dynamic development route。npm 发布产物通过
+`@pluxel/hmr` condition 统一服务 static/dynamic 本地开发 route，插件不感知宿主采用哪种启动方式。npm 发布产物通过
 `publishConfig.exports` 只暴露编译后的 JS 和声明文件；不要发布通用 `source` condition。
 
 ## `tsconfig.json` 标准形状
@@ -170,7 +170,7 @@ TypeScript 只做类型检查，不负责生成插件产物：
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
 		"isolatedModules": true,
-		"customConditions": ["@pluxel/source", "@pluxel/runtime-dynamic"],
+		"customConditions": ["@pluxel/source", "@pluxel/hmr"],
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true
 	},

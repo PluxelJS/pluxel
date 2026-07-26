@@ -16,15 +16,15 @@
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
-			"@pluxel/runtime-dynamic": "./src/index.ts",
+			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
 		"./example": {
-			"@pluxel/runtime-dynamic": "./src/example/index.ts",
+			"@pluxel/hmr": "./src/example/index.ts",
 			"default": "./dist/example.mjs"
 		},
 		"./workbench": {
-			"@pluxel/runtime-dynamic": "./src/workbench-contract.ts",
+			"@pluxel/hmr": "./src/workbench-contract.ts",
 			"default": "./dist/workbench.mjs"
 		},
 		"./package.json": "./package.json"

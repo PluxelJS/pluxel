@@ -34,6 +34,7 @@ export {
 	type DatabaseMigration,
 } from './database-internal'
 export { readWorkbenchUiEntry } from './workbench/ui-entry'
+export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
 export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'

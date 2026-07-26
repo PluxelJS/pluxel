@@ -7,6 +7,8 @@ import '../styles/index.scss'
 import { appCssVariablesResolver, useAppTheme } from '../theme'
 import { PluxelGQLensProvider } from './gqlens'
 import { createAppRouter } from './router'
+import { WorkspaceControllerProvider } from './workbench/context'
+import { WorkspaceController } from './workbench/store'
 
 export interface AppProps {
 	history?: RouterHistory
@@ -15,6 +17,7 @@ export interface AppProps {
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
 	const [transportClient] = useState(() => getRuntimeTransportClient())
+	const [workspace] = useState(() => new WorkspaceController())
 	const { theme } = useAppTheme()
 	return (
 		<MantineProvider
@@ -26,7 +29,9 @@ export function App({ history }: AppProps = {}) {
 		>
 			<RuntimeTransportClientProvider client={transportClient}>
 				<PluxelGQLensProvider>
-					<RouterProvider router={router} />
+					<WorkspaceControllerProvider controller={workspace}>
+						<RouterProvider router={router} />
+					</WorkspaceControllerProvider>
 				</PluxelGQLensProvider>
 			</RuntimeTransportClientProvider>
 		</MantineProvider>

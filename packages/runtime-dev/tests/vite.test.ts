@@ -5,35 +5,60 @@ import { describe, expect, it } from 'vitest'
 import { createServer, type Plugin, type ViteDevServer } from 'vite'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 
-import { importViteSsrModule } from '../src/vite'
+import { importViteSsrModule, prepareWorkbenchViteClient } from '../src/vite'
 
 describe('runtime-dev Vite plugin stack', () => {
+	it('prepares the optional Workbench client graph before warmup', async () => {
+		const server = {
+			environments: {
+				client: {
+					config: {
+						optimizeDeps: { include: ['react'] },
+						dev: { warmup: [] },
+					},
+				},
+			},
+		} as unknown as ViteDevServer
+
+		prepareWorkbenchViteClient(server, '/@fs/workspace/workbench/client.tsx')
+
+		expect(server.environments.client.config.optimizeDeps).toMatchObject({
+			entries: ['/workspace/workbench/client.tsx'],
+			include: expect.arrayContaining([
+				'react',
+				'@tabler/icons-react',
+				'@pluxel/runtime > @elysiajs/eden',
+				'@pluxel/runtime > capnweb',
+			]),
+			holdUntilCrawlEnd: true,
+			ignoreOutdatedRequests: true,
+		})
+		expect(server.environments.client.config.dev.warmup).toEqual([
+			'/workspace/workbench/client.tsx',
+		])
+	})
+
 	it('exposes source/server semantics as a dedicated plugin', () => {
 		const plugins = pluxelRuntimeSourceVitePlugins() as Plugin[]
 		const plugin = plugins.at(-1)!
 		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
-			environments?: { ssr?: { resolve?: { conditions?: string[] } } }
 			ssr?: { external?: string[]; resolve?: { conditions?: string[] } }
 			oxc?: { decorator?: { legacy?: boolean; emitDecoratorMetadata?: boolean } }
 		}
 
 		expect(plugin.name).toBe('pluxel:runtime-source')
 		expect(config.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
-		)
-		expect(config.environments?.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
+			expect.arrayContaining(['@pluxel/hmr', '@pluxel/source', 'node', 'import', 'default']),
 		)
 		expect(config.ssr?.resolve?.conditions).toEqual(
 			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
 		)
 		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
-		expect(config.resolve?.dedupe).toEqual(
-			expect.arrayContaining(['@pluxel/core', '@pluxel/runtime']),
-		)
+		expect(config.resolve?.dedupe).toEqual(expect.arrayContaining(['@pluxel/runtime']))
+		expect(config.resolve?.dedupe).not.toContain('@pluxel/core')
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
-		expect(config.ssr?.external).not.toContain('@pluxel/core')
+		expect(config.ssr?.external).toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
 		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
 	})

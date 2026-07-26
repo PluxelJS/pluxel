@@ -8,6 +8,7 @@ import { lintGuardPlugin, type LintGuardPluginOptions } from '../rolldown/plugin
 import { serverOnlyVitePlugin } from './environment'
 import { createPluginSemanticsPlugin } from '../rolldown/plugins/pluginSemanticsPlugin'
 import { databaseSourceVitePlugin } from './database-source'
+import { PLUXEL_UI_DEDUPE_PACKAGES } from '../workspace/vite'
 
 export type PluginSourceVitePluginsOptions = {
 	root?: string
@@ -16,6 +17,9 @@ export type PluginSourceVitePluginsOptions = {
 }
 
 const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
+	// Plugin packages use a dedicated dev export so their generated manifests do
+	// not expose raw TypeScript through the framework-only source condition.
+	'@pluxel/hmr',
 	'@pluxel/source',
 	'node',
 	'import',
@@ -37,7 +41,6 @@ const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = [
 ] as const
 
 const PLUXEL_SINGLETON_PACKAGES = [
-	'@pluxel/core',
 	'@pluxel/runtime',
 	'@pluxel/runtime-dev',
 	'@pluxel/runtime-dynamic',
@@ -45,10 +48,18 @@ const PLUXEL_SINGLETON_PACKAGES = [
 	'drizzle-orm',
 ] as const
 
+// Browser UI singletons are part of the Pluxel host boundary. Keep them in
+// the shared source preset so static and dynamic projects do not each have to
+// repeat the same Module Federation dedupe configuration.
+const PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES = [
+	...PLUXEL_SINGLETON_PACKAGES,
+	...PLUXEL_UI_DEDUPE_PACKAGES,
+] as const
+
 const PLUXEL_SSR_EXTERNAL_PACKAGES = [
+	'@pluxel/core',
 	'@pluxel/runtime',
 	'@pluxel/runtime-dev',
-	'@pluxel/runtime-dynamic',
 	'@pluxel/runtime-static',
 ] as const
 
@@ -104,25 +115,15 @@ export function pluxelRuntimeSourceVitePlugins(
 				resolve: {
 					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
 					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-					dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+					dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
 					preserveSymlinks: false,
-				},
-				environments: {
-					ssr: {
-						resolve: {
-							conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
-							externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-							dedupe: [...PLUXEL_SINGLETON_PACKAGES],
-							preserveSymlinks: false,
-						},
-					},
 				},
 				ssr: {
 					external: [...PLUXEL_SSR_EXTERNAL_PACKAGES],
 					resolve: {
 						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
 						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
-						dedupe: [...PLUXEL_SINGLETON_PACKAGES],
+						dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
 						preserveSymlinks: false,
 					},
 				},

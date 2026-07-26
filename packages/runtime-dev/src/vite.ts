@@ -13,6 +13,12 @@ export type ImportViteSsrModuleOptions = {
 	fresh?: boolean
 }
 
+const WORKBENCH_CLIENT_LATE_OPTIMIZE_DEPS = [
+	'@tabler/icons-react',
+	'@pluxel/runtime > @elysiajs/eden',
+	'@pluxel/runtime > capnweb',
+] as const
+
 export async function importViteSsrModule<T = Record<string, unknown>>(
 	server: ViteDevServer,
 	id: string,
@@ -40,6 +46,27 @@ export function invalidateViteSsrModule(server: ViteDevServer, file: string): nu
 		invalidated++
 	}
 	return invalidated
+}
+
+/** Adds the optional Workbench graph to Vite's native optimizer/listen warmup lifecycle. */
+export function prepareWorkbenchViteClient(server: ViteDevServer, clientEntryUrl: string): void {
+	const clientConfig = server.environments.client.config
+	const optimizeDeps = clientConfig.optimizeDeps
+	const entries = Array.isArray(optimizeDeps.entries)
+		? optimizeDeps.entries
+		: optimizeDeps.entries
+			? [optimizeDeps.entries]
+			: []
+	const entry = clientEntryUrl.startsWith('/@fs/')
+		? clientEntryUrl.slice('/@fs'.length)
+		: clientEntryUrl
+	optimizeDeps.entries = [...new Set([...entries, entry])]
+	optimizeDeps.include = [
+		...new Set([...(optimizeDeps.include ?? []), ...WORKBENCH_CLIENT_LATE_OPTIMIZE_DEPS]),
+	]
+	optimizeDeps.holdUntilCrawlEnd = true
+	optimizeDeps.ignoreOutdatedRequests = true
+	clientConfig.dev.warmup = [...new Set([...clientConfig.dev.warmup, entry])]
 }
 
 function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {

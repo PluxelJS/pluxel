@@ -34,6 +34,18 @@ export default defineConfig({
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevVite,
 	},
+	plugins: [
+		{
+			name: 'pluxel:externalize-rolldown-vite-source-bridge',
+			enforce: 'pre',
+			resolveId: {
+				filter: { id: /^\.\.\/\.\.\/rolldown\/src\/vite\/index\.ts$/ },
+				handler() {
+					return { id: '@pluxel/rolldown/vite', external: true }
+				},
+			},
+		},
+	],
 	entry: {
 		index: 'src/index.ts',
 		services: 'src/services.ts',

@@ -26,7 +26,7 @@ class KeyedSerialTaskQueue {
 			(): void => undefined,
 		)
 		this.tails.set(key, tail)
-		void tail.then(() => {
+		void tail.then((): void => {
 			if (this.tails.get(key) === tail) this.tails.delete(key)
 			return undefined
 		})

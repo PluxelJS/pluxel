@@ -35,7 +35,11 @@ URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implement
 浏览器只创建一个 `WorkbenchClientRuntime` 实例。它拥有 layout SSE、catalog、按 target 引用计数的 session、route index
 以及 Remote module revision。一次 target 更新先加载并 setup 所需 module、校验 Contract 和 route，再原子发布 layout
 snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。React 只订阅 snapshot 和渲染，不拥有 artifact 或 route
-生命周期。Workspace tabs、router intent 和持久化由独立 `WorkspaceController` 实例拥有，不使用 module-level store。
+生命周期。target 降到零引用后延迟到当前 microtask 末尾回收；React StrictMode 的 effect replay 会立即恢复同一 lease，
+不重复请求 layout、加载 Remote 或终止唯一 runtime。Provider cleanup 不把 render-stable runtime 标记为永久 disposed，
+真正的 SSE、module setup 和 target snapshot 清理由引用 lease 完成。Workspace tabs、router intent 和持久化由独立
+`WorkspaceController` 实例拥有；该实例位于 Router 之上的稳定根 Provider，不随 Shell 或 route tree 重建，也不使用 module-level store。
+显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。
 
 ## Worksplit adapter boundary
 

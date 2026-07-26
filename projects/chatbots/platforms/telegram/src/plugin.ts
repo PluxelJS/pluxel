@@ -12,7 +12,7 @@ import {
 import { createTelegramPluginEvents } from './bot/events.factory.ts'
 import type { TelegramBotStatus } from './bot/status.ts'
 import type { TelegramWorkbenchEvents } from './workbench/contract.ts'
-import { TelegramHttpWorkbench, TelegramWorkbench } from './workbench/extension.ts'
+import { TelegramWorkbench } from './workbench/extension.ts'
 import { attachTelegramWorkbenchState, TelegramWorkbenchRpc } from './workbench/service.ts'
 
 export type { TelegramBotConfigInput, TelegramUpdateConsumer } from './bot/manager.ts'
@@ -47,9 +47,7 @@ export class TelegramPlugin extends BasePlugin {
 				state: workbench.bind.events<TelegramWorkbenchEvents>((events) =>
 					attachTelegramWorkbenchState(manager, events),
 				),
-			})
-			this.ctx.workbench.mount(TelegramHttpWorkbench, {
-				settings: workbench.bind.rpc(() => this.http.workbenchSettings()),
+				httpSettings: workbench.bind.rpc(() => this.http.workbenchSettings()),
 			})
 		}
 	}

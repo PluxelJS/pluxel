@@ -61,7 +61,6 @@ export function WorkbenchRuntimeProvider({
 		() => new WorkbenchClientRuntime(host.environment.transport, host.environment.locale),
 	)
 	useEffect(() => (active ? runtime.retain(null) : undefined), [active, runtime])
-	useEffect(() => () => runtime.dispose(), [runtime])
 	const value = useMemo<WorkbenchRuntimeContextValue>(() => ({ ...host, runtime }), [host, runtime])
 	return (
 		<WorkbenchRuntimeContext.Provider value={value}>{children}</WorkbenchRuntimeContext.Provider>

@@ -75,6 +75,20 @@ const WorkbenchTabStateContext = createContext<WorkbenchTabStateContextValue | n
 const WorkbenchNavigationContext = createContext<WorkbenchNavigationContextValue | null>(null)
 const WorkspaceControllerContext = createContext<WorkspaceController | null>(null)
 
+export function WorkspaceControllerProvider({
+	controller,
+	children,
+}: {
+	controller: WorkspaceController
+	children: ReactNode
+}) {
+	return (
+		<WorkspaceControllerContext.Provider value={controller}>
+			{children}
+		</WorkspaceControllerContext.Provider>
+	)
+}
+
 export function WorkbenchLayoutProvider({
 	value,
 	children,

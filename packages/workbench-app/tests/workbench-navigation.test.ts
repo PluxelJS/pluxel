@@ -117,4 +117,31 @@ describe('Workbench native document tabs', () => {
 		])
 		expect(next.activeTabId).toBe(second.id)
 	})
+
+	it('preserves an explicit openTab across the following route reconciliation', () => {
+		const workspace = new WorkspaceController()
+		const managerPath = '/workbench/TelegramPlugin/settings'
+		const createPath = '/workbench/TelegramPlugin/create'
+		workspace.syncLocation(managerPath, 'replace-active')
+		workspace.openTab({
+			path: createPath,
+			title: '新建 Telegram Bot',
+			meta: 'Telegram',
+		})
+		workspace.queueNavigation(createPath, 'open-tab')
+
+		const intent = workspace.consumeNavigation(createPath)
+		workspace.syncLocation(createPath, intent?.mode ?? 'replace-active')
+
+		expect(workspace.state.uiState.tabs).toEqual([
+			expect.objectContaining({ path: managerPath }),
+			expect.objectContaining({
+				path: createPath,
+				title: '新建 Telegram Bot',
+				meta: 'Telegram',
+				kind: 'document',
+			}),
+		])
+		expect(workspace.state.uiState.activeTabId).toBe('workbench:TelegramPlugin:/create')
+	})
 })

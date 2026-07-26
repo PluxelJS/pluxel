@@ -54,7 +54,12 @@ Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此
 `hostAutoInitModule` 和部分 shared caches 也属于模块级单例；manifest 和 bundle hooks 会在稍后重新读取这些
 状态。因此同一 Node.js 进程内并发执行两个 `vite.build()` 会发生 remote name、virtual entry 或 shared
 配置串扰。Pluxel 将实际 Federation builder 调用建模为 process-wide exclusive resource；源码 hash、缓存
-检查等前置工作仍可并发，精确相同的构建仍会去重。项目不应再通过 `compileConcurrency: 1` 自行规避。
+检查和图准备等前置工作由小型 worker pool 并发，精确相同的构建仍会去重。项目不应自行配置
+`compileConcurrency: 1`：它不会增加 Federation builder 的隔离性，只会把安全的前置工作也串行化。
+
+static/dynamic Vite route 在确认 Workbench 启用后会预热浏览器 client graph，让 Vite 在首个页面请求前完成
+依赖发现与 CJS interop。Workbench 关闭时不会扫描或预构建这套 UI 依赖；项目也不需要维护
+`optimizeDeps.include`、`noDiscovery` 或包管理器路径 alias。
 
 升级上游后不要凭版本号删除该隔离。移除前必须同时确认：
 

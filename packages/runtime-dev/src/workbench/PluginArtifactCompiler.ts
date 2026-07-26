@@ -58,7 +58,7 @@ export type PluginArtifactCompilerConfig = {
 	cacheKeep?: number
 	/**
 	 * Maximum number of target artifacts compiled concurrently.
-	 * @default 2
+	 * @default 1
 	 */
 	compileConcurrency?: number
 	/**
@@ -210,6 +210,9 @@ export class PluginArtifactCompiler {
 		this.viteServer = deps.viteServer
 		this.cacheDir = config?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
 		this.cacheKeep = Math.max(1, Math.floor(config?.cacheKeep ?? 5))
+		// Hashing, cache checks and graph preparation are safe to overlap. The actual
+		// Module Federation builder is serialized process-wide by @pluxel/rolldown,
+		// so keep a small worker pool without allowing its non-reentrant phase to race.
 		this.compileConcurrency = Math.max(1, Math.floor(config?.compileConcurrency ?? 2))
 		this.sharedPackages = config?.sharedPackages
 		this.pluginDirs = new Map(Object.entries(config?.pluginDirs ?? {}))

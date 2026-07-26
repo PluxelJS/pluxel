@@ -270,7 +270,7 @@ describe('scaffold template rendering', () => {
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
 		expect(manifest.exports['.']).toMatchObject({
 			types: './dist/index.d.mts',
-			'@pluxel/runtime-dynamic': './src/hello-world.ts',
+			'@pluxel/hmr': './src/hello-world.ts',
 			default: './dist/index.mjs',
 		})
 		expect(manifest.publishConfig.exports['.']).toEqual({

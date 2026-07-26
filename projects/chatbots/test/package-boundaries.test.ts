@@ -53,6 +53,14 @@ describe('chatbots package boundaries', () => {
 		})
 	})
 
+	it('inherits Pluxel runtime Vite defaults instead of patching Workbench dependencies', () => {
+		const viteConfig = readFileSync(resolve(root, 'vite.config.ts'), 'utf8')
+		expect(viteConfig).toContain('staticRuntimeVitePlugin')
+		expect(viteConfig).not.toContain('optimizeDeps')
+		expect(viteConfig).not.toContain("'@pluxel/wretch':")
+		expect(viteConfig).not.toContain("'@pluxel/wretch/workbench':")
+	})
+
 	it.each(['telegram', 'kook'])('%s stays independent from ChatHub contracts', (name) => {
 		const manifest = platformPackageJson(name)
 		const declared = { ...manifest.dependencies, ...manifest.peerDependencies }
@@ -101,6 +109,14 @@ describe('chatbots package boundaries', () => {
 			expect(plugin).toContain('this.ctx.workbench.mount')
 		},
 	)
+
+	it('composes Telegram HTTP settings into its single Workbench extension', () => {
+		const plugin = platformSourceFile('telegram', 'plugin.ts')
+		const contract = platformSourceFile('telegram', 'workbench/contract.ts')
+		expect(plugin.match(/this\.ctx\.workbench\.mount/g)).toHaveLength(1)
+		expect(contract).toContain('WretchWorkbenchPort')
+		expect(contract).toContain('httpSettings')
+	})
 
 	it('opens Bot documents as native Workbench tabs without an embedded account split', () => {
 		const ui = sourceDirectory(resolve(root, 'packages/platform-kit/src'))

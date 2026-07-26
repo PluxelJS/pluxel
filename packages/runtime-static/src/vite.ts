@@ -1,8 +1,12 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { importViteSsrModule, invalidateViteSsrModule } from '@pluxel/runtime-dev/vite'
-import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
+import {
+	importViteSsrModule,
+	invalidateViteSsrModule,
+	prepareWorkbenchViteClient,
+} from '../../runtime-dev/src/vite.ts'
+import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
 import {
 	HMR_PATH_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -12,8 +16,8 @@ import {
 	type HmrPluginTotals,
 	type HmrReportLogProps,
 	type HmrUpdatedLogProps,
-} from '@pluxel/runtime-dev/hmr-log'
-import { isPluginEnabled } from '@pluxel/runtime/internal'
+} from '../../runtime-dev/src/hmr-log.ts'
+import { isPluginEnabled, resolveDevWorkbenchClientEntryUrl } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -114,12 +118,13 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			{ installWorkbench },
 		)
 		try {
+			const workbenchEnabled = config.workbench !== false && config.workbench?.enabled === true
+			if (workbenchEnabled) {
+				prepareWorkbenchViteClient(server, resolveDevWorkbenchClientEntryUrl())
+			}
 			const hmr = options.hmr
 			const hmrOptions = hmr === false ? undefined : (hmr ?? {})
-			const pluginDirs =
-				config.workbench !== false && config.workbench?.enabled === true
-					? resolveStaticRuntimePluginDirs(server, host)
-					: undefined
+			const pluginDirs = workbenchEnabled ? resolveStaticRuntimePluginDirs(server, host) : undefined
 			await configureStaticRuntimeDevRuntime(server, host, {
 				viteServer: server,
 				...hmrOptions,

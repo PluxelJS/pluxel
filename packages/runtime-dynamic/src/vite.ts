@@ -1,7 +1,8 @@
 import { resolve } from 'node:path'
-import { importViteSsrModule } from '@pluxel/runtime-dev/vite'
-import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
+import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
+import { importViteSsrModule, prepareWorkbenchViteClient } from '../../runtime-dev/src/vite.ts'
+import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
 import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
@@ -57,9 +58,13 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 	const startController = async (server: ViteDevServer): Promise<DynamicRuntimeController> => {
 		const config = await loadConfig()
 		await state.controller?.stop()
-		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } = await import('./hmr/host')
+		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } =
+			await loadDynamicHmrHostModule(server)
 		const plan = await planLoaderHmrHostFromConfig(config)
 		const booted = await bootPlannedLoaderHmrHost(plan, { viteServer: server })
+		if (booted.ctx.workbench.enabled) {
+			prepareWorkbenchViteClient(server, resolveDevWorkbenchClientEntryUrl())
+		}
 		await options.prepareHost?.(booted)
 		const controller: DynamicRuntimeController = {
 			booted,
@@ -138,6 +143,20 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		}),
 		routePlugin,
 	]
+}
+
+async function loadDynamicHmrHostModule(
+	server: ViteDevServer,
+): Promise<
+	Pick<typeof import('./hmr/host'), 'bootPlannedLoaderHmrHost' | 'planLoaderHmrHostFromConfig'>
+> {
+	const resolved = await server.environments.ssr.pluginContainer.resolveId(
+		'@pluxel/runtime-dynamic/hmr',
+	)
+	if (!resolved) {
+		throw new Error('[runtime-dynamic/vite] cannot resolve @pluxel/runtime-dynamic/hmr')
+	}
+	return importViteSsrModule(server, resolved.id)
 }
 
 function resolveRuntimeConfigPath(server: ViteDevServer, config: string, route: string): string {

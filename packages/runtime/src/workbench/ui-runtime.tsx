@@ -290,15 +290,9 @@ function useGrantedResources<Resources extends WorkbenchResourceMap>(
 					break
 			}
 		}
-		return new Proxy(Object.freeze(resources), {
-			get(target, property, receiver) {
-				if (typeof property === 'string' && !(property in target)) {
-					throw new Error(
-						`[workbench-ui] View "${item.viewId}" was not granted resource "${property}"`,
-					)
-				}
-				return Reflect.get(target, property, receiver)
-			},
-		}) as WorkbenchResourceClients<Resources>
-	}, [contracts, eventStreams, item.viewId, refs, transport])
+		// Capability safety comes from the opaque refs above, not from an observable
+		// Proxy trap. React and developer tools reflect over hook values using keys such
+		// as `$$typeof`; a normal frozen record must return undefined for those reads.
+		return Object.freeze(resources) as WorkbenchResourceClients<Resources>
+	}, [contracts, eventStreams, refs, transport])
 }

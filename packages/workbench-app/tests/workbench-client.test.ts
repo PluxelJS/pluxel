@@ -61,11 +61,12 @@ function fixture() {
 	let fingerprint = 'fp-1'
 	let invalidated: (() => void) | undefined
 	const close = vi.fn()
+	const pluginLayout = vi.fn(async () => layout(revision, fingerprint))
 	const transport = {
 		links: { workbenchEvents: () => '/events' },
 		http: {
 			workbench: {
-				pluginLayout: async () => layout(revision, fingerprint),
+				pluginLayout,
 				globalLayout: async () => ({ revision, targetPluginId: null, items: [] }),
 				catalog: async (): Promise<WorkbenchCatalog> => ({
 					revision,
@@ -89,6 +90,7 @@ function fixture() {
 	return {
 		transport,
 		close,
+		pluginLayout,
 		invalidate(nextRevision: number, nextFingerprint: string) {
 			revision = nextRevision
 			fingerprint = nextFingerprint
@@ -128,6 +130,31 @@ describe('WorkbenchClientRuntime', () => {
 		expect(runtime.view('BotPlugin', snapshot.layout!.items[0]!)).toBe(Panel)
 
 		release()
+		await Promise.resolve()
+		expect(source.close).toHaveBeenCalledOnce()
+	})
+
+	it('reuses an in-flight target across React effect cleanup replay', async () => {
+		const source = fixture()
+		const loadModule = vi.fn(async () => ({
+			contractFingerprint: 'fp-1',
+			views: { Panel: () => null, Account: () => null },
+		}))
+		const runtime = new WorkbenchClientRuntime(source.transport, locale, loadModule)
+
+		const releaseFirstEffect = runtime.retain('BotPlugin')
+		releaseFirstEffect()
+		const releaseReplayedEffect = runtime.retain('BotPlugin')
+		await ready(runtime)
+		await Promise.resolve()
+
+		expect(source.pluginLayout).toHaveBeenCalledOnce()
+		expect(loadModule).toHaveBeenCalledOnce()
+		expect(runtime.getSnapshot('BotPlugin').state).toBe('ready')
+		expect(source.close).not.toHaveBeenCalled()
+
+		releaseReplayedEffect()
+		await Promise.resolve()
 		expect(source.close).toHaveBeenCalledOnce()
 	})
 
@@ -163,6 +190,7 @@ describe('WorkbenchClientRuntime', () => {
 		expect(runtime.view('BotPlugin', snapshot.layout!.items[0]!)).toBe(OldPanel)
 		expect(cleanup).not.toHaveBeenCalled()
 		release()
+		await Promise.resolve()
 		expect(cleanup).toHaveBeenCalledOnce()
 	})
 
@@ -189,6 +217,7 @@ describe('WorkbenchClientRuntime', () => {
 		expect(runtime.view('BotPlugin', snapshot.layout!.items[0]!)).toBe(OldPanel)
 		expect(cleanup).toHaveBeenCalledOnce()
 		release()
+		await Promise.resolve()
 		expect(cleanup).toHaveBeenCalledTimes(2)
 	})
 })

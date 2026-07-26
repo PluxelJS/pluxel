@@ -94,9 +94,9 @@ export function pluginPackage(options: PluginPackageOptions): InlineConfig {
 	})
 	return {
 		exports: {
-			// Keep linked development packages on the dynamic source condition without exposing raw TS
+			// Keep linked development packages on the HMR source condition without exposing raw TS
 			// through the generic @pluxel/source condition.
-			devExports: '@pluxel/runtime-dynamic',
+			devExports: '@pluxel/hmr',
 		},
 		deps: {
 			neverBundle: [/^@pluxel\//],

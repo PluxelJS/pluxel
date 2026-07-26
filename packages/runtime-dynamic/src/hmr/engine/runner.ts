@@ -611,7 +611,7 @@ export class HmrRunner {
 
 	private async importHostExports(specifier: string): Promise<unknown> {
 		try {
-			return await import(specifier)
+			return await import(/* @vite-ignore */ specifier)
 		} catch (error) {
 			// Only fall back to workspace resolution when the bare specifier cannot be resolved.
 			// If the import throws during evaluation, surfacing the original error is more useful
@@ -636,7 +636,7 @@ export class HmrRunner {
 				})
 			}
 			try {
-				return await import(pathToFileURL(dist).toString())
+				return await import(/* @vite-ignore */ pathToFileURL(dist).toString())
 			} catch (importError) {
 				throw new Error(`[hmr] Failed to import host export for "${specifier}" (${dist}).`, {
 					cause: importError,

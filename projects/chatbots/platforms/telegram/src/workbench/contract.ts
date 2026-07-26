@@ -1,4 +1,5 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import { WretchWorkbenchPort } from '@pluxel/wretch/workbench'
 import type {
 	BotAdminAccount,
 	BotAdminCommands,
@@ -23,6 +24,7 @@ export type TelegramWorkbenchCommands = BotAdminCommands
 export const TelegramUi = workbenchContract.define({
 	resources: {
 		commands: workbenchContract.rpc<TelegramWorkbenchCommands>(),
+		httpSettings: WretchWorkbenchPort.resources.settings,
 		state: workbenchContract.events<TelegramWorkbenchEvents>(),
 	},
 	views: {
@@ -69,4 +71,15 @@ export const TelegramUi = workbenchContract.define({
 			],
 		},
 	},
+	outlets: ({ resources }) => ({
+		Http: {
+			port: WretchWorkbenchPort,
+			placement: workbenchContract.tab({
+				order: 49,
+				label: 'HTTP',
+				icon: workbenchContract.icons.Settings,
+			}),
+			provide: { settings: resources.httpSettings },
+		},
+	}),
 })

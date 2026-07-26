@@ -33,7 +33,7 @@ function toViteFsPath(absPath: string): string {
 	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
 }
 
-function resolveHmrClientEntryUrl(): string {
+export function resolveDevWorkbenchClientEntryUrl(): string {
 	const candidates = [
 		resolve(moduleDir, '../../../workbench-app/src/client.tsx'),
 		resolve(moduleDir, '../../workbench-app/src/client.tsx'),
@@ -47,7 +47,7 @@ function resolveHmrClientEntryUrl(): string {
 }
 
 export const DEV_ASSETS: Assets = {
-	js: resolveHmrClientEntryUrl(),
+	js: resolveDevWorkbenchClientEntryUrl(),
 	css: [],
 	preload: [],
 }

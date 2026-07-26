@@ -59,8 +59,11 @@ constructor concrete package usage 是 `required`，optional ref literal import 
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
 assembly 塞进 source pipeline，也不要在 CLI 复制 pipeline plugin 列表。
 
-Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint 和 config metadata
-语义，并由 Vite/OXC 提供 legacy decorator transform。preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
+Vite route 使用 `@pluxel/rolldown/vite` 的 source adapter，复用 preprocessor、plugin semantics、lint、config metadata
+以及 React/Mantine UI singleton dedupe 语义，并由 Vite/OXC 提供 legacy decorator transform。source preset 同时识别
+框架 package 的 `@pluxel/source` 与插件 package 的 `@pluxel/hmr` dev export；static/dynamic route plugin
+会自动组合这套配置，项目不应重复配置 Pluxel core/runtime/UI 的 resolve conditions、dedupe 或插件 source alias。
+preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
 同时用于 Workbench UI production build；plugin semantics、lint 和 config metadata 只应用于 server environment。
 runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
 static/dynamic route 分别使用 `.pluxel/vite/static-runtime` 和 `.pluxel/vite/dynamic-runtime` 作为默认 Vite cache，
@@ -68,9 +71,14 @@ static/dynamic route 分别使用 `.pluxel/vite/static-runtime` 和 `.pluxel/vit
 Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
 目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。
 
+仓库 source checkout 中，static/dynamic Vite adapter 通过 relative source bridge 组合当前 Rolldown source preset，
+不能回落到上一次构建的 `dist/vite.mjs`；各 runtime package 的 production build 用 pre-resolve externalizer 把这条
+bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核 Vite 默认后无需先手工 build 才能启动项目，也不会
+把 Rolldown 工具链内联进 runtime 发布物或增加 dev-only package export。
+
 仓库内 TypeScript 解析分成两个边界：框架实现 package 通过 `tsconfig.workspace.json` 的
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
-`@pluxel/runtime-dynamic` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
+`@pluxel/hmr` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
 因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
 
 production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级

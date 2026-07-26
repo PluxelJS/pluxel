@@ -64,12 +64,6 @@ export class WorkbenchModuleStore {
 		}
 	}
 
-	dispose(): void {
-		for (const record of this.records.values()) this.cleanup(record)
-		this.records.clear()
-		this.pending.clear()
-	}
-
 	private async load(key: string, artifact: WorkbenchBundle): Promise<WorkbenchModuleRecord> {
 		const imported = await this.loadModule(artifact)
 		const module =

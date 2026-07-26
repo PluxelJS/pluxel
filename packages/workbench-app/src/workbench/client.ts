@@ -29,6 +29,8 @@ export type {
 type TargetEntry = {
 	refs: number
 	loadVersion: number
+	resolvedInvalidation: number
+	releaseVersion: number
 	loading: Promise<void> | null
 	listeners: Set<() => void>
 	snapshot: WorkbenchTargetSnapshot
@@ -46,7 +48,6 @@ export class WorkbenchClientRuntime {
 	private catalogInvalidation = -1
 	private catalogRequest: Promise<WorkbenchCatalog> | null = null
 	private invalidation = 0
-	private disposed = false
 	private stream: ReturnType<RuntimeTransportClient['createSse']> | null = null
 
 	constructor(
@@ -58,7 +59,7 @@ export class WorkbenchClientRuntime {
 	}
 
 	private startStream(): void {
-		if (this.stream || this.disposed) return
+		if (this.stream) return
 		const stream = this.transport.createSse({
 			url: this.transport.links.workbenchEvents(),
 			namespaces: ['workbench.layouts'],
@@ -79,9 +80,12 @@ export class WorkbenchClientRuntime {
 	retain(target: WorkbenchTargetId): () => void {
 		const entry = this.entry(target)
 		entry.refs += 1
+		entry.releaseVersion += 1
 		if (entry.refs === 1) {
 			this.startStream()
-			void this.loadTarget(target, entry)
+			if (entry.loading === null && entry.resolvedInvalidation !== this.invalidation) {
+				void this.loadTarget(target, entry)
+			}
 		}
 		let active = true
 		return () => {
@@ -89,13 +93,8 @@ export class WorkbenchClientRuntime {
 			active = false
 			entry.refs -= 1
 			if (entry.refs > 0) return
-			entry.loadVersion += 1
-			this.targets.delete(targetKey(target))
-			this.modules.releaseActive(entry.snapshot.modules.values())
-			if ([...this.targets.values()].every((candidate) => candidate.refs === 0)) {
-				this.stream?.close()
-				this.stream = null
-			}
+			const releaseVersion = ++entry.releaseVersion
+			queueMicrotask(() => this.collectReleasedTarget(target, entry, releaseVersion))
 		}
 	}
 
@@ -136,23 +135,29 @@ export class WorkbenchClientRuntime {
 		return this.catalog.states.find((state) => state.pluginName === owner)
 	}
 
-	dispose(): void {
-		if (this.disposed) return
-		this.disposed = true
-		this.stream?.close()
-		this.stream = null
-		for (const entry of this.targets.values()) {
-			this.modules.releaseActive(entry.snapshot.modules.values())
-		}
-		this.targets.clear()
-		this.modules.dispose()
-	}
-
 	private invalidate(): void {
-		if (this.disposed) return
 		this.invalidation += 1
 		for (const entry of this.targets.values()) {
-			if (entry.refs > 0) void this.loadTarget(entry.snapshot.target, entry)
+			if (entry.refs > 0 && entry.loading === null) {
+				void this.loadTarget(entry.snapshot.target, entry)
+			}
+		}
+	}
+
+	private collectReleasedTarget(
+		target: WorkbenchTargetId,
+		entry: TargetEntry,
+		releaseVersion: number,
+	): void {
+		if (entry.refs > 0 || entry.releaseVersion !== releaseVersion) return
+		const key = targetKey(target)
+		if (this.targets.get(key) !== entry) return
+		entry.loadVersion += 1
+		this.targets.delete(key)
+		this.modules.releaseActive(entry.snapshot.modules.values())
+		if ([...this.targets.values()].every((candidate) => candidate.refs === 0)) {
+			this.stream?.close()
+			this.stream = null
 		}
 	}
 
@@ -163,6 +168,8 @@ export class WorkbenchClientRuntime {
 			entry = {
 				refs: 0,
 				loadVersion: 0,
+				resolvedInvalidation: -1,
+				releaseVersion: 0,
 				loading: null,
 				listeners: new Set(),
 				snapshot: createInitialWorkbenchSnapshot(target),
@@ -173,7 +180,7 @@ export class WorkbenchClientRuntime {
 	}
 
 	private async loadTarget(target: WorkbenchTargetId, entry: TargetEntry): Promise<void> {
-		if (this.disposed || entry.refs === 0) return
+		if (entry.refs === 0) return
 		const version = ++entry.loadVersion
 		const invalidation = this.invalidation
 		if (!entry.snapshot.layout) {
@@ -184,19 +191,20 @@ export class WorkbenchClientRuntime {
 		const loading = task
 			.then(
 				(next): void => {
-					if (this.disposed || entry.refs === 0 || entry.loadVersion !== version) {
+					if (entry.refs === 0 || entry.loadVersion !== version) {
 						this.modules.releasePrepared(next.modules.values())
 						return
 					}
 					this.modules.promote(next.modules.values())
 					const previous = entry.snapshot
 					entry.snapshot = next
+					entry.resolvedInvalidation = invalidation
 					this.modules.releaseActive(previous.modules.values())
 					this.notify(entry)
 					return undefined
 				},
 				(error: unknown): void => {
-					if (this.disposed || entry.refs === 0 || entry.loadVersion !== version) return
+					if (entry.refs === 0 || entry.loadVersion !== version) return
 					const cause = toError(error)
 					entry.snapshot = Object.freeze({
 						...entry.snapshot,
@@ -209,7 +217,7 @@ export class WorkbenchClientRuntime {
 			)
 			.finally(() => {
 				if (entry.loading === loading) entry.loading = null
-				if (!this.disposed && entry.refs > 0 && this.invalidation !== invalidation) {
+				if (entry.refs > 0 && this.invalidation !== invalidation) {
 					void this.loadTarget(target, entry)
 				}
 			})

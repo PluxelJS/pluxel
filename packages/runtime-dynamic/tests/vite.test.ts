@@ -64,7 +64,13 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		}) as Array<{
 			name?: string
 			apply?: unknown
-			config?: (config: { cacheDir?: string }) => unknown
+			config?: (config: { cacheDir?: string }) =>
+				| {
+						resolve?: { dedupe?: string[] }
+						cacheDir?: string
+						[key: string]: unknown
+				  }
+				| undefined
 		}>
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
@@ -83,6 +89,9 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		})
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
 			'cacheDir',
+		)
+		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(
+			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
