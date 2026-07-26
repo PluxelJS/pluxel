@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'pathe'
-import type { InlineConfig, ViteDevServer } from 'vite'
+import type { ViteDevServer } from 'vite'
 
 import '../services'
 import type { Context as CoreContext } from '@pluxel/core'
@@ -29,7 +29,6 @@ import {
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceSnapshot,
 } from './diagnose'
-import type { LoaderHmrDependencyConfig } from './engine/config'
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
@@ -54,8 +53,6 @@ export type LoaderHmrHostOptions<
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	vite?: InlineConfig
-	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	logging?: false | RuntimeLoggingInput
 	logsDir?: string
@@ -78,8 +75,6 @@ export type PlannedLoaderHmrHost<
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
 	warmup?: boolean
 	printUrls?: boolean
-	vite?: InlineConfig
-	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	logging?: false | RuntimeLoggingInput
 	runtimeStorage: RuntimeStoragePaths
@@ -170,8 +165,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		builtinsFromDist,
 		warmup: opts.warmup,
 		printUrls: opts.printUrls,
-		vite: opts.vite,
-		deps: opts.deps,
 		cjsExternal: opts.cjsExternal,
 		logging: opts.logging,
 		runtimeStorage,
@@ -454,9 +447,6 @@ function withDevWorkbenchHttpConfig(
 function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 ): LoaderHmrConfig {
-	const deps: LoaderHmrDependencyConfig | undefined = plan.cjsExternal?.length
-		? { ...plan.deps, cjsExternal: plan.cjsExternal }
-		: plan.deps
 	const builtinsFromDist = resolveBuiltinsFromDistEntries(
 		plan.root,
 		plan.builtinsFromDist ?? plan.snapshot.builtinsFromDist,
@@ -473,8 +463,7 @@ function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 			plan.snapshot.excludeGlobs.length > 0 ? uniqSorted(plan.snapshot.excludeGlobs) : undefined,
 		clientEntries: resolveDefaultClientEntries(plan.root),
 		builtinsFromDist,
-		vite: plan.vite,
-		deps,
+		cjsExternal: plan.cjsExternal,
 	})
 }
 

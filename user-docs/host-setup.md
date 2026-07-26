@@ -149,6 +149,9 @@ export default defineConfig({
 
 dynamic runtime config 提供 workspace root、loader config、profile 和 runtime state。loader 负责发现和替换模块；插件本身仍按 [`plugin-authoring.md`](plugin-authoring.md) 编写。
 
+bridge、SSR、optimizer、cache 和 Vite plugins 由 dynamic runtime 统一管理，不在 config 中重复声明。只有确实必须由
+Node host 执行的 CommonJS/native package 才使用顶层 `cjsExternal`，支持完整 package 名或 `@scope/*` 前缀。
+
 ## Logging root
 
 每个进程只安装一个 active logging root。static/dynamic launcher 默认提供 console；dynamic launcher还提供轮转文件

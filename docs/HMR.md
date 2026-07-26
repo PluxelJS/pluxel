@@ -43,6 +43,10 @@ Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此
 相同的 artifact HMR contract。两者的差别是 catalog 来源：static 从 entry imports 得到，dynamic 从 workspace loader
 得到。production frozen distribution 不携带 watcher、Vite server 或 HMR compiler。
 
+dynamic loader 的 bridge modules/providers、SSR external/noExternal、dedupe、optimizer 和 Vite cache 都是运行时不变量，
+不接受宿主覆盖，也不再合并第二份 `InlineConfig`。唯一保留的依赖 escape hatch 是顶层 `cjsExternal`：它只为必须由
+Node host 执行的 CommonJS/native package 或 `scope/*` 前缀追加 external 规则，且不能移除内核默认规则。
+
 ## Workbench UI Federation 构建隔离
 
 `buildWorkbenchUiRemote()` 把每个 remote 作为独立 staging transaction 构建、校验并原子发布。
@@ -57,14 +61,14 @@ Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此
 检查和图准备等前置工作由内核 worker pool 并发，精确相同的构建仍会去重。并发和 shared package 集合不是
 项目配置面，避免调用方意外串行化安全阶段或生成与宿主不一致的 remote。
 
-static/dynamic Vite route 在确认 Workbench 启用后会预热浏览器 client graph，让 Vite 在首个页面请求前完成
-依赖发现与 CJS interop。Workbench 关闭时不会扫描或预构建这套 UI 依赖；项目也不需要维护
-`optimizeDeps.include`、`noDiscovery` 或包管理器路径 alias。
+static/dynamic Vite route 在 `config` hook 声明同一个 Workbench client entry 与必要的 CJS interop include，配置会进入
+Vite 的首轮 optimizer plan 和 config hash；项目不需要维护 `optimizeDeps.include`、`noDiscovery` 或包管理器路径
+alias。不得在 `configureServer` 后修改 resolved client config，也不额外并发 client warmup。
 
-这项可选配置必须在 `configureServer` 阶段加入 client `optimizeDeps.entries/include` 与 `dev.warmup`，再由 Vite 的
-environment `listen()` 顺序执行 optimizer init 和 warmup；不得在 optimizer 初始化前直接调用
-`warmupRequest()`。route cache directory 随这项 optimizer contract 版本化，避免把旧 dependency graph metadata
-带入新 contract 后触发 Vite 的增量比较缺陷。
+artifact compiler 收集插件 UI watch graph 时只使用 SSR environment 的 transform/module graph；这属于服务端编译
+元数据，不得调用 host client `transformRequest()` 污染 browser optimizer。否则插件 UI 的部分依赖会与全局
+Workbench entry scan 形成两个 metadata 集合，触发 Vite 增量比较缺陷。route cache directory 随 optimizer contract
+版本化，避免旧 dependency graph metadata 跨 contract 复用。
 
 升级上游后不要凭版本号删除该隔离。移除前必须同时确认：
 

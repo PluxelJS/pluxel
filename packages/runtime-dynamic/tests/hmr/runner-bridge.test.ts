@@ -6,7 +6,7 @@ import { workspaceRoot } from './_paths'
 import {
 	buildLoaderHmrViteConfig,
 	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
+	resolveLoaderHmrDependencies,
 } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { HmrRunner } from '../../src/hmr/engine/runner'
@@ -28,7 +28,7 @@ describe('HMR runner bridge', () => {
 		const fixturesDir = fixture.path
 		const pluginFile = join(fixturesDir, 'PluginWithUI.ts')
 
-		const deps = resolveLoaderHmrDependencyConfig()
+		const deps = resolveLoaderHmrDependencies()
 		const fsAllow = resolveFsAllowList({
 			cwd,
 			cwdNormalized: normalizePath(cwd),
@@ -39,7 +39,6 @@ describe('HMR runner bridge', () => {
 			buildLoaderHmrViteConfig({
 				root: cwd,
 				fsAllow,
-				deps,
 				runnerPlugin: { name: 'noop' },
 				httpPlugin: { name: 'noop' },
 			}),

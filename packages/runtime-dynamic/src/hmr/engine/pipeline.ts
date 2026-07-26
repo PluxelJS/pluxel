@@ -735,7 +735,7 @@ function buildCjsExternalizeHint(error: unknown): string | null {
 
 	return [
 		'[HMR] Detected a CommonJS-only dependency being evaluated as ESM (require is not defined).',
-		'Add it to `loaderHmr.deps.cjsExternal` so it is externalized and executed by the host runtime.',
+		'Add it to `cjsExternal` so it is externalized and executed by the host runtime.',
 		offendingFile ? `Offending file: ${offendingFile}` : null,
 		`Suggested entry: ${suggestion}`,
 	]

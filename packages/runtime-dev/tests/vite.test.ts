@@ -2,38 +2,26 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createServer, type Plugin, type ViteDevServer } from 'vite'
+import { createServer, type Plugin } from 'vite'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 
-import { importViteSsrModule, prepareWorkbenchViteClient } from '../src/vite'
+import { createWorkbenchViteClientConfig, importViteSsrModule } from '../src/vite'
 
 describe('runtime-dev Vite plugin stack', () => {
-	it('prepares the optional Workbench client graph before warmup', async () => {
-		const server = {
-			environments: {
-				client: {
-					config: {
-						optimizeDeps: { include: ['react'] },
-						dev: { warmup: [] },
-					},
-				},
+	it('declares the Workbench client graph before optimizer startup', () => {
+		expect(createWorkbenchViteClientConfig('/@fs/workspace/workbench/client.tsx')).toEqual({
+			optimizeDeps: {
+				entries: ['/workspace/workbench/client.tsx'],
+				include: [
+					'@tabler/icons-react',
+					'@pluxel/runtime > @elysiajs/eden',
+					'@pluxel/runtime > capnweb',
+				],
+				noDiscovery: false,
+				holdUntilCrawlEnd: true,
+				ignoreOutdatedRequests: true,
 			},
-		} as unknown as ViteDevServer
-
-		prepareWorkbenchViteClient(server, '/@fs/workspace/workbench/client.tsx')
-
-		expect(server.environments.client.config.optimizeDeps).toMatchObject({
-			entries: ['/workspace/workbench/client.tsx'],
-			include: expect.arrayContaining([
-				'react',
-				'@tabler/icons-react',
-				'@pluxel/runtime > @elysiajs/eden',
-				'@pluxel/runtime > capnweb',
-			]),
 		})
-		expect(server.environments.client.config.dev.warmup).toEqual([
-			'/workspace/workbench/client.tsx',
-		])
 	})
 
 	it('exposes source/server semantics as a dedicated plugin', () => {

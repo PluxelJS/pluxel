@@ -266,6 +266,55 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
+	it('collects UI watch graphs without touching the client optimizer', async () => {
+		await using fixture = await createFixture({
+			'ui/index.tsx': 'export default {}\n',
+		})
+		const entryFile = fixture.getPath('ui/index.tsx')
+		const rootModule = {
+			id: entryFile,
+			file: entryFile,
+			importedModules: new Set(),
+		}
+		const getModuleByUrl = vi.fn().mockResolvedValueOnce(null).mockResolvedValue(rootModule)
+		const ssrTransformRequest = vi.fn().mockResolvedValue(undefined)
+		const clientTransformRequest = vi.fn()
+		const host = createHost()
+		const service = new PluginArtifactCompiler(host.ctx, {
+			viteServer: {
+				config: { root: fixture.path },
+				environments: {
+					ssr: {
+						config: { root: fixture.path },
+						moduleGraph: { getModuleByUrl },
+						transformRequest: ssrTransformRequest,
+					},
+					client: { transformRequest: clientTransformRequest },
+				} as never,
+			},
+		})
+		const entry = {
+			entryBaseDir: fixture.path,
+			entryPath: './ui/index.tsx',
+			pluginDir: fixture.path,
+			declarationKey: 'UiGraphPlugin',
+			graphDirty: true,
+			sourceFiles: [entryFile],
+			paraglide: null,
+		}
+
+		await (
+			service as unknown as {
+				refreshWatchFiles(value: typeof entry): Promise<void>
+			}
+		).refreshWatchFiles(entry)
+
+		expect(ssrTransformRequest).toHaveBeenCalledWith('/ui/index.tsx')
+		expect(clientTransformRequest).not.toHaveBeenCalled()
+		service.dispose()
+		await host.dispose()
+	})
+
 	it('hashes sources in package names containing build and always retains the active artifact', async () => {
 		await using fixture = await createFixture({
 			'packages/plugin-builder/package.json': JSON.stringify({

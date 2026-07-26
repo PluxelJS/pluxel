@@ -4,13 +4,7 @@ import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type CommitSummary, type Context, checkPluginDecorator, getPluginInfo } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
-import {
-	createServer,
-	type DevEnvironment,
-	normalizePath,
-	type ViteDevServer,
-	type InlineConfig,
-} from 'vite'
+import { createServer, type DevEnvironment, normalizePath, type ViteDevServer } from 'vite'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
@@ -23,10 +17,9 @@ import {
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,
-	type LoaderHmrDependencyConfig,
-	type ResolvedLoaderHmrDependencyConfig,
+	type LoaderHmrDependencies,
 	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
+	resolveLoaderHmrDependencies,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
 import { AsyncSerialLock, BatchDebouncer, matchesSpecifierPattern } from './internals'
@@ -100,12 +93,6 @@ export interface LoaderHmrConfig {
 	runnerCacheLimit?: number
 	/** Nearest package root cache size. Defaults to `2_000`. */
 	pkgrootCacheLimit?: number
-	/** Enable Vite dep optimization for the UI (client env). Defaults to `false`. */
-	optimizeDeps?: boolean
-	/** Enable Vite dep optimization for the SSR runner env. Defaults to `false`. */
-	ssrOptimizeDeps?: boolean
-	/** Custom Vite cacheDir (advanced). Defaults to Vite's own cacheDir. */
-	viteCacheDir?: string
 	/**
 	 * 额外的 HMR include glob（优先级高于默认的 `roots/**` + `.ts`）。
 	 * - 需要完整路径或相对 cwd 的 glob
@@ -135,8 +122,8 @@ export interface LoaderHmrConfig {
 	 * Paths may be absolute or relative to `cwd`.
 	 */
 	clientEntries?: string[]
-	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
-	deps?: LoaderHmrDependencyConfig
+	/** Additional CommonJS packages or `scope/*` prefixes that must execute in the host runtime. */
+	cjsExternal?: readonly string[]
 	/**
 	 * When commit fails due to missing dependencies, automatically disable the offending plugins
 	 * (persisted) and retry commit so the rest of the batch can still load.
@@ -150,8 +137,6 @@ export interface LoaderHmrConfig {
 	 * @default 8
 	 */
 	commitAutoDisableMaxPasses?: number
-	/** Extra Vite config merged into the loader HMR Vite server. */
-	vite?: InlineConfig
 	/**
 	 * Preloaded plugin constructors that should be enabled without needing a scanned entry file.
 	 *
@@ -301,7 +286,7 @@ export class LoaderHmrService {
 	private readonly excludeGlobs?: string[]
 	private readonly builtinDistDirsClean: readonly string[]
 
-	private readonly deps: ResolvedLoaderHmrDependencyConfig
+	private readonly deps: LoaderHmrDependencies
 	private readonly runtimeShims: RuntimeShimRegistry
 	private readonly useRequireShims: boolean
 
@@ -398,10 +383,7 @@ export class LoaderHmrService {
 			this.workspaceConditions,
 		)
 
-		this.deps = resolveLoaderHmrDependencyConfig(this.config.deps, {
-			cwd: this.cwd,
-			resolveCache: this.scanService.resolverCache,
-		})
+		this.deps = resolveLoaderHmrDependencies({ cjsExternal: this.config.cjsExternal })
 
 		const runtimeResolved: Record<string, RuntimeShimConfig> = this.config.runtimeShims ?? {}
 		this.runtimeShims = new RuntimeShimRegistry({ shims: runtimeResolved })
@@ -557,8 +539,6 @@ export class LoaderHmrService {
 			fsAllow: serverFsAllow,
 			clientEntries,
 			port: this.config.port,
-			deps: this.deps,
-			vite: this.config.vite,
 			runnerPlugin: this.plugin,
 			httpPlugin: createFetchHmrServerPlugin({
 				exclude: [
@@ -578,9 +558,6 @@ export class LoaderHmrService {
 					return []
 				},
 			}),
-			optimizeDepsEnabled: this.config.optimizeDeps === true,
-			ssrOptimizeDepsEnabled: this.config.ssrOptimizeDeps === true,
-			cacheDir: this.config.viteCacheDir,
 		})
 		const server = await createServer(serverConfig)
 		this.ownsViteServer = true
@@ -975,7 +952,7 @@ export class LoaderHmrService {
 			'loaderHmr.builtins/builtinsFromDist 与 loaderHmr.roots/include 可能发生“重复加载”冲突（检测到扫描范围覆盖 {dirs}）。' +
 				' builtins 会以 moduleId（builtins: "pluxel:builtins"；builtinsFromDist: packageName）建立 baseline；若同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。' +
 				' 建议：1) 从扫描范围排除这些 builtin 插件目录（loaderHmr.exclude）；或 2) 移除 builtins，让它们由扫描/loader HMR 管理；' +
-				' 注意 deps.bridgeModules 仅影响“按 specifier 导入”的单例，不会阻止按路径扫描。',
+				' bridge 只保证按 specifier 导入的内核单例，不会阻止按路径扫描。',
 			{ dirs: overlaps.join(', ') },
 		)
 	}

@@ -4,24 +4,8 @@ import { join } from 'pathe'
 import { createServer, mergeConfig, normalizePath, type Plugin as VitePlugin } from 'vite'
 import { describe, expect, it } from 'vitest'
 import { createHmrTestHost, type ErrorLog } from './_host'
-import {
-	buildLoaderHmrViteConfig,
-	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
-} from '../../src/hmr/engine/config'
+import { buildLoaderHmrViteConfig, resolveFsAllowList } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-
-const baseDeps = {
-	bridgeModules: [],
-	ssrExternal: [],
-	ssrNoExternal: [],
-	optimizeDepsInclude: [],
-	optimizeDepsInterop: [],
-}
-
-function buildDeps(cjsExternal: string[]) {
-	return { ...baseDeps, cjsExternal }
-}
 
 async function getFreePort(host = '127.0.0.1'): Promise<number> {
 	return await new Promise((resolve, reject) => {
@@ -40,12 +24,7 @@ async function getFreePort(host = '127.0.0.1'): Promise<number> {
 	})
 }
 
-async function runHmr(
-	root: string,
-	hmr: LoaderHmrService,
-	depsInput: ReturnType<typeof buildDeps>,
-) {
-	const deps = resolveLoaderHmrDependencyConfig(depsInput)
+async function runHmr(root: string, hmr: LoaderHmrService) {
 	const fsAllow = resolveFsAllowList({
 		cwd: root,
 		cwdNormalized: normalizePath(root),
@@ -57,7 +36,6 @@ async function runHmr(
 		buildLoaderHmrViteConfig({
 			root,
 			fsAllow,
-			deps,
 			runnerPlugin: (hmr as unknown as { plugin: VitePlugin }).plugin,
 			httpPlugin: { name: 'noop' },
 			port: 0,
@@ -93,18 +71,18 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const depsInput = buildDeps(['cjs-pkg'])
+		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			deps: depsInput,
+			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
 		try {
-			await runHmr(root, hmr, depsInput)
+			await runHmr(root, hmr)
 		} finally {
 			await host.dispose()
 		}
@@ -133,18 +111,18 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const depsInput = buildDeps(['pluxel-plugin-napi-rs/*'])
+		const cjsExternal = ['pluxel-plugin-napi-rs/*']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			deps: depsInput,
+			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
 		try {
-			await runHmr(root, hmr, depsInput)
+			await runHmr(root, hmr)
 		} finally {
 			await host.dispose()
 		}
@@ -170,7 +148,7 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const depsInput = buildDeps(['cjs-pkg'])
+		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({
 			errorLogs,
 			scanService: {
@@ -184,12 +162,12 @@ describe('HMR CJS dependency handling', () => {
 			roots: [root],
 			entries: [],
 			report: false,
-			deps: depsInput,
+			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
 		try {
-			await runHmr(root, hmr, depsInput)
+			await runHmr(root, hmr)
 		} finally {
 			await host.dispose()
 		}
@@ -220,19 +198,19 @@ describe('HMR CJS dependency handling', () => {
 			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
 		})
 		const root = fixture.path
-		const depsInput = buildDeps([])
+		const cjsExternal: string[] = []
 		const host = createHmrTestHost()
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			deps: depsInput,
+			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
 		let thrown: unknown = null
 		try {
-			await runHmr(root, hmr, depsInput)
+			await runHmr(root, hmr)
 		} catch (e) {
 			thrown = e
 		} finally {
@@ -266,18 +244,18 @@ describe('HMR CJS dependency handling', () => {
 		})
 		const root = fixture.path
 		const errorLogs: ErrorLog[] = []
-		const depsInput = buildDeps(['cjs-pkg'])
+		const cjsExternal = ['cjs-pkg']
 		const host = createHmrTestHost({ errorLogs })
 		const hmr = new LoaderHmrService(host.ctx, {
 			roots: [root],
 			entries: [],
 			report: false,
-			deps: depsInput,
+			cjsExternal,
 		})
 		hmr.setServerRoot(root)
 
 		try {
-			await runHmr(root, hmr, depsInput)
+			await runHmr(root, hmr)
 		} finally {
 			await host.dispose()
 		}

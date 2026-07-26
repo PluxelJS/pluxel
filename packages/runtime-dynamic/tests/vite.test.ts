@@ -35,6 +35,12 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(() =>
 			defineDynamicRuntimeConfig({
 				root: '/repo',
+				deps: {},
+			} as never),
+		).toThrow(/must not include a "deps" tuning object/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				root: '/repo',
 				http: { controlPlane: { rpc: true } },
 			} as never),
 		).toThrow(/http must not include "controlPlane"/i)
@@ -85,6 +91,10 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(plugins.at(-1)?.apply).toBe('serve')
 		expect(plugins.at(-1)?.config?.({})).toMatchObject({
 			cacheDir: '.pluxel/vite/dynamic-runtime-v2',
+			optimizeDeps: {
+				entries: [expect.stringContaining('/packages/workbench-app/src/client.tsx')],
+				include: expect.arrayContaining(['@tabler/icons-react']),
+			},
 			server: { watch: { ignored: expect.arrayContaining([/(^|[/\\])target([/\\]|$)/]) } },
 		})
 		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(

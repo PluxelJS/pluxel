@@ -2,7 +2,6 @@ import type { Context as CoreContext } from '@pluxel/core'
 import type { WorkbenchConfig } from '@pluxel/runtime'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 import type { BuiltinPluginSpec } from './services'
-import type { LoaderHmrDependencyConfig } from './hmr/engine/config'
 import type { LoaderHmrConfig } from './hmr/engine/LoaderHmrService'
 import type { LoaderHmrHostStorageOptions } from './hmr/host'
 
@@ -19,7 +18,6 @@ export type DynamicRuntimeConfig = {
 	storage?: LoaderHmrHostStorageOptions
 	warmup?: boolean
 	printUrls?: boolean
-	deps?: LoaderHmrDependencyConfig
 	cjsExternal?: readonly string[]
 	builtins?: readonly BuiltinPluginSpec[]
 	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
@@ -46,6 +44,11 @@ export function defineDynamicRuntimeConfig<T extends DynamicRuntimeConfig>(confi
 	if ('hmr' in config) {
 		throw new Error(
 			'[runtime-dynamic] Dynamic runtime config must not include an "hmr" field; loader HMR belongs to @pluxel/runtime-dynamic internals and host Vite wiring.',
+		)
+	}
+	if ('deps' in config) {
+		throw new Error(
+			'[runtime-dynamic] Dynamic runtime config must not include a "deps" tuning object; bridge, SSR and optimizer policy belong to the runtime. Use top-level "cjsExternal" only for packages that must execute in the host runtime.',
 		)
 	}
 	assertPublicHttpConfig(config.http, '[runtime-dynamic] Dynamic runtime config')

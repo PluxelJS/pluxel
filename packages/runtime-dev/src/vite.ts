@@ -1,4 +1,4 @@
-import { createServerModuleRunner, normalizePath, type ViteDevServer } from 'vite'
+import { createServerModuleRunner, normalizePath, type UserConfig, type ViteDevServer } from 'vite'
 import type { ModuleRunner } from 'vite/module-runner'
 
 const pluxelSsrModuleRunners = new WeakMap<ViteDevServer, ModuleRunner>()
@@ -81,23 +81,26 @@ export function invalidateViteModuleGraphFiles(
 	return invalidated
 }
 
-/** Adds the optional Workbench graph to Vite's native optimizer and warmup lifecycle. */
-export function prepareWorkbenchViteClient(server: ViteDevServer, clientEntryUrl: string): void {
-	const clientConfig = server.environments.client.config
-	const optimizeDeps = clientConfig.optimizeDeps
-	const entries = Array.isArray(optimizeDeps.entries)
-		? optimizeDeps.entries
-		: optimizeDeps.entries
-			? [optimizeDeps.entries]
-			: []
+/**
+ * Declares the Workbench browser graph before Vite creates its dependency optimizer.
+ *
+ * This must be returned from a plugin `config` hook. Mutating the resolved client environment from
+ * `configureServer` races Vite's initial scan and can leave an incremental optimizer batch without
+ * metadata for dependencies from the previous batch.
+ */
+export function createWorkbenchViteClientConfig(clientEntryUrl: string): UserConfig {
 	const entry = clientEntryUrl.startsWith('/@fs/')
 		? clientEntryUrl.slice('/@fs'.length)
 		: clientEntryUrl
-	optimizeDeps.entries = [...new Set([...entries, entry])]
-	optimizeDeps.include = [
-		...new Set([...(optimizeDeps.include ?? []), ...WORKBENCH_CLIENT_OPTIMIZE_DEPS]),
-	]
-	clientConfig.dev.warmup = [...new Set([...clientConfig.dev.warmup, entry])]
+	return {
+		optimizeDeps: {
+			entries: [entry],
+			include: [...WORKBENCH_CLIENT_OPTIMIZE_DEPS],
+			noDiscovery: false,
+			holdUntilCrawlEnd: true,
+			ignoreOutdatedRequests: true,
+		},
+	}
 }
 
 function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {

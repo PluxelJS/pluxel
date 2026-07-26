@@ -3,9 +3,9 @@ import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } fro
 import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
 import {
 	collectViteSsrImportFiles,
+	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteModuleGraphFiles,
-	prepareWorkbenchViteClient,
 } from '../../runtime-dev/src/vite.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
 
@@ -60,9 +60,6 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			await loadDynamicHmrHostModule(server)
 		const plan = await planLoaderHmrHostFromConfig(config)
 		const booted = await bootPlannedLoaderHmrHost(plan, { viteServer: server })
-		if (booted.ctx.workbench.enabled) {
-			prepareWorkbenchViteClient(server, resolveDevWorkbenchClientEntryUrl())
-		}
 		await options.prepareHost?.(booted)
 		const controller: DynamicRuntimeController = {
 			booted,
@@ -80,7 +77,9 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		name: 'pluxel:dynamic-runtime',
 		apply: 'serve',
 		config(config) {
+			const workbenchClient = createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl())
 			return {
+				...workbenchClient,
 				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
 				server: {
 					watch: {

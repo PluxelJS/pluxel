@@ -32,6 +32,9 @@ export default defineDynamicRuntimeConfig({
 
 React、GraphQL、macro 和 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript runner 绕开 route plugin。
 
+runner bridge、SSR 与 optimizer policy 是内核不变量。确需让 CommonJS/native package 在 Node host 执行时，只追加
+顶层 `cjsExternal: ['package-name', '@scope/*']`；不要提供第二份 Vite 或 dependency tuning config。
+
 ## Internal entry
 
 `@pluxel/runtime-dynamic/hmr` 提供 CLI/test 使用的 diagnose、snapshot 和 loader HMR primitives。应用宿主优先使用 `/vite`。

@@ -3,9 +3,9 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
 	collectViteSsrImportFiles,
+	createWorkbenchViteClientConfig,
 	importViteSsrModule,
 	invalidateViteSsrModule,
-	prepareWorkbenchViteClient,
 } from '../../runtime-dev/src/vite.ts'
 import { pluxelRuntimeSourceVitePlugins } from '../../rolldown/src/vite/index.ts'
 import {
@@ -95,9 +95,6 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		)
 		try {
 			const workbenchEnabled = config.workbench !== false && config.workbench?.enabled === true
-			if (workbenchEnabled) {
-				prepareWorkbenchViteClient(server, resolveDevWorkbenchClientEntryUrl())
-			}
 			const pluginDirs = workbenchEnabled ? resolveStaticRuntimePluginDirs(server, host) : undefined
 			await configureStaticRuntimeDevRuntime(server, host, pluginDirs)
 			await application.prepare?.({ host, startup })
@@ -152,8 +149,10 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		name: 'pluxel:static-runtime',
 		apply: 'serve',
 		config(config) {
-			if (config.cacheDir !== undefined) return undefined
-			return { cacheDir: STATIC_RUNTIME_CACHE_DIR }
+			return {
+				...createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl()),
+				...(config.cacheDir === undefined ? { cacheDir: STATIC_RUNTIME_CACHE_DIR } : {}),
+			}
 		},
 		async configureServer(server) {
 			const marked = server as ViteDevServer & { [STATIC_RUNTIME_SERVER_KEY]?: true }

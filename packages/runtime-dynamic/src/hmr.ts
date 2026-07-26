@@ -44,6 +44,5 @@ export {
 } from './hmr/diagnose'
 export type { BuiltinsFromDistEntry, LoaderHmrWorkspaceSnapshot } from './hmr/snapshot'
 export { assertLoaderHmrWorkspace } from './hmr/snapshot'
-export type { LoaderHmrDependencyConfig } from './hmr/engine/config'
 export type { LoaderHmrService } from './hmr/engine/LoaderHmrService'
 export { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from './hmr/host'

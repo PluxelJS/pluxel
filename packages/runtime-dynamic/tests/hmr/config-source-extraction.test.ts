@@ -9,22 +9,8 @@ import {
 	type LoaderModuleCapture,
 } from './_host'
 import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
-import {
-	buildLoaderHmrViteConfig,
-	type LoaderHmrDependencyConfig,
-	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
-} from '../../src/hmr/engine/config'
+import { buildLoaderHmrViteConfig, resolveFsAllowList } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-
-const baseDeps: LoaderHmrDependencyConfig = {
-	bridgeModules: [],
-	ssrExternal: [],
-	ssrNoExternal: [],
-	optimizeDepsInclude: [],
-	optimizeDepsInterop: [],
-	cjsExternal: [],
-}
 
 type CoreApi = {
 	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
@@ -52,7 +38,6 @@ async function withPluginRunner<T>(
 	const errorLogs: ErrorLog[] = []
 	const host = createHmrTestHost({ errorLogs })
 	captureLoaderModules(host, capture)
-	const deps = resolveLoaderHmrDependencyConfig(baseDeps)
 	const rootsRel = opts?.rootsRelFromWorkspace ?? fixturesPluginsRelFromWorkspace
 	const scanRootsAbs = opts?.scanRootsAbs ?? [normalizePath(fixturesPluginsDir)]
 	const fsAllow = resolveFsAllowList({
@@ -65,7 +50,6 @@ async function withPluginRunner<T>(
 		roots: [rootsRel],
 		entries: [],
 		report: false,
-		deps: baseDeps,
 		include: opts?.include,
 		exclude: opts?.exclude,
 	})
@@ -76,7 +60,6 @@ async function withPluginRunner<T>(
 		buildLoaderHmrViteConfig({
 			root,
 			fsAllow,
-			deps,
 			runnerPlugin,
 			httpPlugin: { name: 'noop' },
 			port: 0,

@@ -67,8 +67,6 @@ type PluginArtifactCompilerOptions = {
 
 export type PluginArtifactCompilerViteServer = {
 	config: Pick<ViteDevServer['config'], 'root'>
-	moduleGraph?: Pick<ViteDevServer['moduleGraph'], 'getModuleByUrl'>
-	transformRequest?: ViteDevServer['transformRequest']
 	environments?: ViteDevServer['environments']
 }
 
@@ -908,23 +906,24 @@ export class PluginArtifactCompiler {
 	}
 
 	private async refreshWatchFiles(entry: PluginCompileEntry): Promise<void> {
-		const vite = this.viteServer
-		if (!vite) return
-		if (!vite.moduleGraph || !vite.transformRequest) return
+		const environment = this.viteServer?.environments?.ssr
+		if (!environment) return
 
 		const absoluteEntry = this.resolvePluginFile(entry.entryBaseDir, entry.entryPath)
 		if (!absoluteEntry || !existsSync(absoluteEntry)) return
 
-		const root = vite.config.root
+		const root = environment.config.root
 		let url = absoluteEntry
 		if (url.startsWith(root)) url = url.slice(root.length)
 		if (!url.startsWith('/')) url = '/' + url
 
 		try {
-			let rootModule = await vite.moduleGraph.getModuleByUrl(url)
+			let rootModule = await environment.moduleGraph.getModuleByUrl(url)
 			if (!rootModule || entry.graphDirty) {
-				await vite.transformRequest(url)
-				rootModule = await vite.moduleGraph.getModuleByUrl(url)
+				// Source graph collection is compiler metadata. Keep it in the SSR environment so UI
+				// artifact discovery cannot enqueue partial batches in the browser dependency optimizer.
+				await environment.transformRequest(url)
+				rootModule = await environment.moduleGraph.getModuleByUrl(url)
 			}
 			if (!rootModule) return
 

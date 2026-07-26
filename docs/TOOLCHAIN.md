@@ -68,6 +68,8 @@ preprocessor 作为顶层 Vite plugin 参与完整 transform 生命周期，
 runtime-dev 只增加 ModuleRunner、watcher 和 Workbench UI compiler，不维护另一份安全可复用的 source transform 列表。
 static/dynamic 对配置 import graph 的收集与失效复用同一个 runtime-dev helper；artifact compiler 的 worker 数、
 缓存保留和 Federation shared package 集合属于内核不变量，不进入 Context 或 route config。
+Workbench browser entry 在 route `config` hook 进入 Vite optimizer；插件 UI 的 watch graph 则通过 SSR environment
+收集，不能为了编译元数据调用 client transform 并向 optimizer 注入不完整依赖批次。
 static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/vite/dynamic-runtime-v2` 作为当前
 optimizer contract 的默认 Vite cache，
 避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部

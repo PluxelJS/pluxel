@@ -153,10 +153,16 @@ describe('@pluxel/runtime-static', () => {
 			'pluxel:static-runtime',
 		])
 		expect(plugins.at(-1)?.apply).toBe('serve')
-		expect(plugins.at(-1)?.config?.({})).toEqual({
+		expect(plugins.at(-1)?.config?.({})).toMatchObject({
 			cacheDir: '.pluxel/vite/static-runtime-v2',
+			optimizeDeps: {
+				entries: [expect.stringContaining('/packages/workbench-app/src/client.tsx')],
+				include: expect.arrayContaining(['@tabler/icons-react']),
+			},
 		})
-		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).toBeUndefined()
+		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
+			'cacheDir',
+		)
 		expect(plugins.at(-2)?.config?.({})?.resolve?.dedupe).toEqual(
 			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
