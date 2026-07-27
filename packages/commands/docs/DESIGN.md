@@ -136,6 +136,30 @@ Schema references must be self-contained descriptor facts. `Type.Module().Import
 and is supported; a standalone `Type.Ref(schema)` is rejected as `unresolved_reference` because its
 target is not present in the command schema, compiled validator, or carrier projection.
 
+## Definition compilation
+
+Each author schema identity compiles into one immutable `CompiledSchema`:
+
+```text
+author TypeBox schema
+  -> clone + strict-object normalization
+  -> portable/reference/default checks
+  -> frozen JSON Schema projection
+  -> TypeBox validator + Transform codec
+  -> CompiledSchema { jsonSchema, validateInput, validateOutput, decode, encode }
+```
+
+The complete artifact is cached by author schema identity. Descriptor construction and command
+execution receive that artifact explicitly; they do not coordinate through separate normalization
+and validator caches. Reusing one schema for input, output, examples, or multiple commands therefore
+reuses exactly the same compiled facts. Schema objects are declarative definitions: the first
+compilation captures their value, and later mutation of the author object is not observed.
+
+`compileCommand()` validates command metadata and examples against its input/output
+`CompiledSchema`s, then returns the final frozen descriptor and both compiled schemas as one
+immutable plan. `defineCommand()` only captures custom validators and the implementation around that
+plan; it does not compile or project schemas independently.
+
 Every wire value is cloned and checked as strict JSON before schema validation, including values
 accepted by `Any` and `Unknown`. This rejects JavaScript values that JSON serialization would throw
 on, coerce, or silently discard. Declared defaults apply to input normalization only. Output and
@@ -193,8 +217,8 @@ the same wire string and enter the same Transform exactly once.
 
 ## Performance
 
-- TypeBox validators compile once and are cached by schema identity.
-- JSON descriptors are normalized and frozen once.
+- The complete `CompiledSchema` projection, validators, and codec compile once per schema identity.
+- Final command descriptors and examples are normalized and frozen once by `compileCommand()`.
 - Registry lookup is `Map`-based; locale-independent sorted descriptor lists are revision-cached.
 - Tool projections cache frozen command descriptor/list identities. Mutable external descriptors
   are cloned and are never frozen or cached by the projection.

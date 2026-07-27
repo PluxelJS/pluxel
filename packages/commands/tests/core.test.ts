@@ -9,6 +9,7 @@ import {
 	type CommandContext,
 	type ValidationIssue,
 } from '../src/index'
+import { compileSchema } from '../src/schema'
 import { Type, obj, openObj } from '../src/typebox'
 
 function incrementCommand() {
@@ -80,6 +81,29 @@ describe('@pluxel/commands core', () => {
 		expect(Object.isFrozen(command.descriptor.behavior)).toBe(true)
 		expect(JSON.parse(JSON.stringify(command.descriptor))).toEqual(command.descriptor)
 		await expect(command.executeOrThrow({ value: 2 })).resolves.toEqual({ value: 3 })
+	})
+
+	it('compiles schema projection and runtime validation into one cached artifact', async () => {
+		const schema = obj({ value: Type.Integer({ default: 4 }) })
+		const compiled = compileSchema(schema)
+
+		expect(compileSchema(schema)).toBe(compiled)
+		expect(Object.isFrozen(compiled)).toBe(true)
+		expect(Object.isFrozen(compiled.jsonSchema)).toBe(true)
+		expect(compiled.validateInput({})).toEqual({ ok: true, value: { value: 4 } })
+		expect(compiled.validateOutput({})).toMatchObject({ ok: false })
+
+		const command = defineCommand({
+			name: 'schema.compiled.once',
+			description: 'Reuse one compiled schema artifact.',
+			behavior: { kind: 'query', world: 'closed' },
+			input: schema,
+			output: schema,
+			execute: ({ value }) => ({ value }),
+		})
+		expect(command.descriptor.inputSchema).toBe(compiled.jsonSchema)
+		expect(command.descriptor.outputSchema).toBe(compiled.jsonSchema)
+		await expect(command.executeOrThrow({})).resolves.toEqual({ value: 4 })
 	})
 
 	it('captures the implementation without freezing the public command handle', async () => {
@@ -528,6 +552,26 @@ describe('@pluxel/commands core', () => {
 		})
 		expect(command.descriptor.inputSchema).toHaveProperty('properties.value.$defs.Value')
 		await expect(command.executeOrThrow({ value: { id: 'value-1' } })).resolves.toBeUndefined()
+	})
+
+	it('reports compiler failures from the unified schema compilation stage', () => {
+		let failure: unknown
+		try {
+			defineCommand({
+				name: 'reference.missing.local',
+				description: 'Reject a missing local reference.',
+				behavior: { kind: 'query', world: 'closed' },
+				input: obj({ value: Type.Ref('#/$defs/Missing') }),
+				execute() {},
+			})
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toMatchObject({
+			code: 'COMMAND_CONFIG',
+			details: { field: 'input', reason: 'schema_compile_failed' },
+			cause: expect.anything(),
+		})
 	})
 
 	it('uses TypeBox transforms as private codecs around the JSON command boundary', async () => {

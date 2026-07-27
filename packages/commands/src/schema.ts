@@ -10,7 +10,13 @@ import {
 import { TypeCompiler, type TypeCheck } from '@sinclair/typebox/compiler'
 import type { ValueError } from '@sinclair/typebox/errors'
 import { Value } from '@sinclair/typebox/value'
-import { assertJsonValue, cloneJsonValue, JsonValueError } from './internal/json'
+import { deepFreeze } from './internal/freeze'
+import {
+	assertJsonValue,
+	cloneJsonValue,
+	JsonValueError,
+	markStrictJsonSnapshot,
+} from './internal/json'
 import { issue, type Infer, type Schema, type ValidationIssue, type Wire } from './types'
 
 /** JSON-only TypeBox builder. JavaScript-only schemas cannot cross tool boundaries. */
@@ -43,8 +49,7 @@ export function openObj<P extends TProperties>(
 	return Type.Object(properties, { ...options, additionalProperties: true })
 }
 
-const typecheckCache = new WeakMap<object, TypeCheck<any>>()
-const normalizedSchemaCache = new WeakMap<object, Record<string, unknown>>()
+const compiledSchemaCache = new WeakMap<object, CompiledSchema<any>>()
 
 export class SchemaDefaultError extends TypeError {
 	readonly path: Array<string | number>
@@ -68,17 +73,11 @@ export class SchemaReferenceError extends TypeError {
 	}
 }
 
-function cloneValue<T>(value: T): T {
-	if (Array.isArray(value)) return value.map((entry) => cloneValue(entry)) as T
-	if (!value || typeof value !== 'object') return value
-	const output = Object.create(Object.getPrototypeOf(value))
-	for (const key of Reflect.ownKeys(value)) {
-		const descriptor = Object.getOwnPropertyDescriptor(value, key)
-		if (!descriptor) continue
-		if ('value' in descriptor) descriptor.value = cloneValue(descriptor.value)
-		Object.defineProperty(output, key, descriptor)
+export class SchemaCompilationError extends Error {
+	constructor(cause: unknown) {
+		super('Schema could not be compiled', { cause })
+		this.name = 'SchemaCompilationError'
 	}
-	return output
 }
 
 function normalizeStrictObjects<T>(value: T): T {
@@ -132,18 +131,7 @@ function issuesFromTypeBoxErrors(errors: Iterable<ValueError>): ValidationIssue[
 	return output.length > 0 ? output : [issue('Invalid value')]
 }
 
-export function toJsonSchema(schema: Schema): Record<string, unknown> {
-	assertPortableSchema(schema)
-	const cached = normalizedSchemaCache.get(schema as object)
-	if (cached) return jsonSchemaClone(cached)
-	const normalized = normalizeStrictObjects(cloneValue(schema)) as Record<string, unknown>
-	assertValidDefaults(normalized as Schema)
-	normalizedSchemaCache.set(schema as object, normalized)
-	return jsonSchemaClone(normalized)
-}
-
-function assertValidDefaults(schema: Schema): void {
-	const references = collectSchemaReferences(schema)
+function assertValidDefaults(schema: Schema, references: TSchema[]): void {
 	const seen = new WeakSet<object>()
 	visit(schema, [])
 
@@ -226,9 +214,9 @@ const javascriptOnlyKinds = new Set([
 	'Void',
 ])
 
-function assertPortableSchema(schema: Schema): void {
+function assertPortableSchema(schema: Schema, references: TSchema[]): void {
 	const seen = new WeakSet<object>()
-	const embeddedIds = new Set(collectSchemaReferences(schema).map((reference) => reference.$id!))
+	const embeddedIds = new Set(references.map((reference) => reference.$id!))
 	visit(schema, '$')
 
 	function visit(value: unknown, path: string): void {
@@ -270,25 +258,30 @@ export type JsonValidationResult<T> =
 	| { ok: false; issues: ValidationIssue[] }
 export type JsonValidator<T> = (value: unknown) => JsonValidationResult<T>
 
-export type JsonCodec<S extends Schema> = {
+export type CompiledSchema<S extends Schema> = {
+	readonly jsonSchema: Readonly<Record<string, unknown>>
 	/** Clone strict JSON, apply declared defaults, then validate the wire input. */
-	input: JsonValidator<Wire<S>>
+	readonly validateInput: JsonValidator<Wire<S>>
 	/** Clone strict JSON and validate exactly what the handler encoded. */
-	output: JsonValidator<Wire<S>>
-	decode(value: Wire<S>): Infer<S>
-	encode(value: Infer<S>): Wire<S>
+	readonly validateOutput: JsonValidator<Wire<S>>
+	readonly decode: (value: Wire<S>) => Infer<S>
+	readonly encode: (value: Infer<S>) => Wire<S>
 }
 
-export function compileCodec<S extends Schema>(schema: S): JsonCodec<S> {
-	const cached = typecheckCache.get(schema as object) as TypeCheck<S> | undefined
-	const normalized =
-		normalizedSchemaCache.get(schema as object) ??
-		(normalizeStrictObjects(cloneValue(schema)) as Record<string, unknown>)
-	if (!normalizedSchemaCache.has(schema as object)) {
-		normalizedSchemaCache.set(schema as object, normalized)
+export function compileSchema<S extends Schema>(schema: S): CompiledSchema<S> {
+	const cached = compiledSchemaCache.get(schema as object) as CompiledSchema<S> | undefined
+	if (cached) return cached
+	const normalized = normalizeStrictObjects(schema) as S
+	const references = collectSchemaReferences(normalized)
+	assertPortableSchema(normalized, references)
+	assertValidDefaults(normalized, references)
+	const jsonSchema = markStrictJsonSnapshot(deepFreeze(jsonSchemaClone(normalized)))
+	let compiled: TypeCheck<S>
+	try {
+		compiled = TypeCompiler.Compile(normalized)
+	} catch (error) {
+		throw new SchemaCompilationError(error)
 	}
-	const compiled = cached ?? TypeCompiler.Compile(normalized as S)
-	if (!cached) typecheckCache.set(schema as object, compiled as TypeCheck<any>)
 	const transformed = hasTransform(normalized)
 	const validate = (value: unknown, defaults: boolean): JsonValidationResult<Wire<S>> => {
 		let candidate: unknown
@@ -308,16 +301,19 @@ export function compileCodec<S extends Schema>(schema: S): JsonCodec<S> {
 					issues: issuesFromTypeBoxErrors(compiled.Errors(candidate)),
 				}
 	}
-	return {
-		input: (value) => validate(value, true),
-		output: (value) => validate(value, false),
+	const output: CompiledSchema<S> = Object.freeze({
+		jsonSchema,
+		validateInput: (value) => validate(value, true),
+		validateOutput: (value) => validate(value, false),
 		decode: transformed
 			? (value) => compiled.Decode(value)
 			: (value) => value as unknown as Infer<S>,
 		encode: transformed
 			? (value) => compiled.Encode(value)
 			: (value) => value as unknown as Wire<S>,
-	}
+	})
+	compiledSchemaCache.set(schema as object, output as CompiledSchema<any>)
+	return output
 }
 
 function jsonValueIssue(error: unknown): ValidationIssue {

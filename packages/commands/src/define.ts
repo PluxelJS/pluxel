@@ -1,6 +1,6 @@
-import { compileDescriptor, withExamples } from './compile'
+import { compileCommand } from './compile'
 import { TransformDecodeError } from '@sinclair/typebox/value'
-import { compileCodec, type JsonCodec, type JsonValidator } from './schema'
+import type { CompiledSchema } from './schema'
 import {
 	CommandError,
 	toCommandError,
@@ -8,20 +8,18 @@ import {
 	type CommandContext,
 	type CommandContextArgs,
 	type CommandErrorCode,
-	type CommandExample,
 	type CommandResult,
 	type DefineCommandConfig,
 	type Infer,
 	type ObjectSchema,
 	type OutputCommandDefinition,
-	type ValidationIssue,
 	type Validator,
 	type VoidCommandDefinition,
 	type Wire,
 } from './types'
 
 type ValidationSpec<S extends ObjectSchema, Ctx extends CommandContext> = {
-	codec: JsonCodec<S>
+	compiled: CompiledSchema<S>
 	custom?: Validator<Infer<S>, Ctx>
 }
 
@@ -51,7 +49,7 @@ async function validateInput<S extends ObjectSchema, Ctx extends CommandContext>
 	candidate: unknown,
 	context: Ctx,
 ): Promise<Infer<S>> {
-	const result = spec.codec.input(candidate)
+	const result = spec.compiled.validateInput(candidate)
 	if (result.ok !== true) {
 		throw new CommandError('INPUT_VALIDATION', validationPublicMessage('INPUT_VALIDATION'), {
 			details: { issues: result.issues },
@@ -59,7 +57,7 @@ async function validateInput<S extends ObjectSchema, Ctx extends CommandContext>
 	}
 	let decoded: Infer<S>
 	try {
-		decoded = spec.codec.decode(result.value)
+		decoded = spec.compiled.decode(result.value)
 	} catch (error) {
 		const intentional = intentionalInputDecodeError(error)
 		if (intentional) throw intentional
@@ -87,11 +85,11 @@ async function validateOutput<S extends ObjectSchema, Ctx extends CommandContext
 ): Promise<Wire<S>> {
 	let encoded: Wire<S>
 	try {
-		encoded = spec.codec.encode(candidate)
+		encoded = spec.compiled.encode(candidate)
 	} catch (error) {
 		throw codecError('OUTPUT_VALIDATION', 'encode', error)
 	}
-	const result = spec.codec.output(encoded)
+	const result = spec.compiled.validateOutput(encoded)
 	if (result.ok !== true) {
 		throw new CommandError('OUTPUT_VALIDATION', validationPublicMessage('OUTPUT_VALIDATION'), {
 			details: { issues: result.issues },
@@ -100,7 +98,7 @@ async function validateOutput<S extends ObjectSchema, Ctx extends CommandContext
 	if (spec.custom) {
 		let decoded: Infer<S>
 		try {
-			decoded = spec.codec.decode(result.value)
+			decoded = spec.compiled.decode(result.value)
 		} catch (error) {
 			throw codecError('OUTPUT_VALIDATION', 'decode', error)
 		}
@@ -170,26 +168,20 @@ export function defineCommand<
 >(config: DefineCommandConfig<SIn, SOut, Ctx>): Command<Wire<SIn>, PublicOutput<SOut>, Ctx> {
 	type OutputSchema = Extract<SOut, ObjectSchema>
 	type WireOutput = PublicOutput<SOut>
-	const baseDescriptor = compileDescriptor(config)
+	const compiled = compileCommand(config)
 	const input: ValidationSpec<SIn, Ctx> = {
-		codec: commandCodec(config.name, 'input', config.input),
+		compiled: compiled.input,
 		...(config.validate ? { custom: config.validate } : {}),
 	}
-	const output: ValidationSpec<OutputSchema, Ctx> | undefined = config.output
+	const output: ValidationSpec<OutputSchema, Ctx> | undefined = compiled.output
 		? {
-				codec: commandCodec(config.name, 'output', config.output as OutputSchema),
+				compiled: compiled.output,
 				...(config.validateOutput
 					? { custom: config.validateOutput as Validator<Infer<OutputSchema>, Ctx> }
 					: {}),
 			}
 		: undefined
-	const examples = normalizeExamples(
-		config.name,
-		config.examples,
-		input.codec.input,
-		output?.codec.output,
-	)
-	const descriptor = withExamples(baseDescriptor, examples)
+	const descriptor = compiled.descriptor
 	const name = config.name
 	const implementation = config.execute
 
@@ -248,79 +240,5 @@ function unexpectedOutput(): CommandError<'OUTPUT_VALIDATION'> {
 				},
 			],
 		},
-	})
-}
-
-function commandCodec<S extends ObjectSchema>(
-	command: string,
-	field: 'input' | 'output',
-	schema: S,
-): JsonCodec<S> {
-	try {
-		return compileCodec(schema)
-	} catch (error) {
-		throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-			message: `Command "${command}" ${field} schema could not be compiled`,
-			details: { command, field, reason: 'schema_compile_failed' },
-			cause: error,
-		})
-	}
-}
-
-function normalizeExamples<Input, Output>(
-	command: string,
-	examples: readonly CommandExample<Input, Output>[] | undefined,
-	validateExampleInput: JsonValidator<Input>,
-	validateExampleOutput: JsonValidator<Output> | undefined,
-): readonly CommandExample[] | undefined {
-	if (!examples?.length) return undefined
-	return examples.map((example, index) => {
-		const input = validateExampleInput(example.input)
-		if (input.ok !== true) throw invalidExample(command, index, 'input', input.issues)
-		const hasOutput = Object.hasOwn(example, 'output')
-		if (hasOutput && !validateExampleOutput) {
-			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-				message: `Command "${command}" example ${index + 1} declares output without an output schema`,
-				details: { command, field: 'examples', reason: 'unexpected_example_output' },
-			})
-		}
-		const output = hasOutput ? validateExampleOutput!(example.output) : undefined
-		if (output && output.ok !== true) {
-			throw invalidExample(command, index, 'output', output.issues)
-		}
-		const title = normalizeExampleTitle(command, index, example.title)
-		return {
-			...(title ? { title } : {}),
-			input: input.value,
-			...(output?.ok ? { output: output.value } : {}),
-		}
-	})
-}
-
-function normalizeExampleTitle(
-	command: string,
-	index: number,
-	value: string | undefined,
-): string | undefined {
-	const title = value?.trim()
-	if (!title) return undefined
-	if (title.includes('\n') || title.length > 120) {
-		throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-			message: `Command "${command}" example ${index + 1} title must be one line of at most 120 characters`,
-			details: { command, field: 'examples', reason: 'invalid_example_title' },
-		})
-	}
-	return title
-}
-
-function invalidExample(
-	command: string,
-	index: number,
-	part: 'input' | 'output',
-	issues: ValidationIssue[],
-): CommandError<'COMMAND_CONFIG'> {
-	return new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
-		message: `Command "${command}" example ${index + 1} has invalid ${part}: ${issues.map((issue) => issue.message).join('; ')}`,
-		details: { command, field: 'examples', reason: `invalid_example_${part}` },
 	})
 }

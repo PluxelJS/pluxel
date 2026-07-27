@@ -603,6 +603,10 @@ validate(input) {
 The pipeline is:
 
 ```text
+defineCommand
+  -> one cached CompiledSchema per author schema identity
+  -> final descriptor + input/output validators + Transform codec
+
 unknown JSON input
   -> strict JSON clone + input defaults + compiled wire validation
   -> Transform Decode

@@ -24,7 +24,9 @@ Runtime and host integrations must preserve these boundaries:
 
 Implementation entry points:
 
-- `packages/commands/src/define.ts`: validated execution boundary;
+- `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;
+- `packages/commands/src/compile.ts`: final command plan, descriptor, and example compilation;
+- `packages/commands/src/define.ts`: validated call-time execution boundary;
 - `packages/commands/src/registry.ts`: lookup and lifecycle-neutral registration;
 - `packages/commands/src/tool/project.ts`: Agent-neutral tool projection;
 - `packages/commands/src/argv/compile.ts`: schema-derived argv binding and help compilation;
