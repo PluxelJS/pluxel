@@ -15,6 +15,7 @@
 		"@repo/chatbots-contracts": "workspace:*"
 	},
 	"peerDependencies": {
+		"@pluxel/commands": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@repo/chatbots-access": "workspace:*",
 		"@repo/chatbots-hub": "workspace:*"

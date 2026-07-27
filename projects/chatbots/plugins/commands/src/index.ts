@@ -1,9 +1,8 @@
 export { ChatCommandsPlugin } from './plugin.ts'
-export {
-	ChatCommandError,
-	type ChatCommand,
-	type ChatCommandContext,
-	type ChatCommandMiddleware,
-	type ChatCommandPermission,
-	type RegisteredChatCommand,
+export type {
+	ChatCommandBinding,
+	ChatCommandContext,
+	ChatCommandDescriptor,
+	ChatCommandMiddleware,
+	ChatCommandPermission,
 } from './types.ts'

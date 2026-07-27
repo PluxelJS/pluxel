@@ -12,6 +12,7 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"peerDependencies": {
+		"@pluxel/commands": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@repo/chatbots-access": "workspace:*",
 		"@repo/chatbots-commands": "workspace:*",

@@ -4,7 +4,7 @@
 
 ## 选择依赖
 
-- 跨平台命令依赖 `ChatCommandsPlugin`，在 `init()` 中注册命令。
+- 跨平台命令依赖 `ChatCommandsPlugin`，把 `@pluxel/commands` 定义绑定为消息 route，并让返回的 registration 由当前插件 effects 持有。
 - 跨平台非命令处理依赖 `ChatHubPlugin`，消费 JSON-safe `ChatMessage`。
 - 平台专属事件或 API 直接依赖 `TelegramPlugin` 或 `KookPlugin`，从只读 `bots` registry 取得账号。
 - 只有需要把该平台接入跨平台消息管线时，宿主才安装 `TelegramHubBridgePlugin` 或 `KookHubBridgePlugin`；平台专属插件不依赖 bridge 或 Hub。
@@ -20,6 +20,37 @@ bot.events.callback_query.on(async (query, signal) => {
 ```
 
 Bot 顶层是平台原生 API；raw、conversation helper、状态和生命周期只存在于 `bot.$`。
+
+## 跨平台命令
+
+命令的结构化输入、输出和行为只定义一次；消息 route、alias、positionals、flags、权限和回复格式放在 Chat carrier binding：
+
+```ts
+import { defineCommand } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const lookup = defineCommand({
+	name: 'weather.lookup',
+	description: '查询天气',
+	behavior: { kind: 'query', world: 'open' },
+	input: obj({ city: Type.String() }),
+	output: obj({ forecast: Type.String() }),
+	execute: async ({ city }) => ({ forecast: await weather.lookup(city) }),
+})
+
+override init() {
+	this.ctx.effects.own(
+		this.commands.register(lookup, {
+			routes: ['weather', 'forecast'],
+			positionals: ['city'],
+			permission: false,
+			respond: ({ forecast }) => forecast,
+		}),
+	)
+}
+```
+
+公开命令必须显式设置 `permission: false`；否则默认声明 deny 的 `cmd.<command.name>`。匹配成功后 carrier 构造包含 `message`、`user`、`signal`、`reply` 和 `send` 的 `ChatCommandContext`。只要求基础 `CommandContext` 的命令还能复用到 runtime、CLI、KOOK 或 Agent；要求 Chat 上下文的命令不能进入基础 runtime catalog。未知 route 会继续 Hub handler 管线，已匹配但参数错误的 route 会回复安全错误并停止管线。
 
 平台插件的 `upsertBot()` 返回已安装的受管 Bot，`reconnectBot()/disconnectBot()` 返回平台状态，`removeBot()` 不返回管理 DTO。管理 RPC 只服务配置页面，不是业务插件 API。
 

@@ -86,6 +86,12 @@ describe('chatbots package boundaries', () => {
 		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
 	})
 
+	it.each(['commands', 'builtins'])('plugins/%s uses the host-owned command kernel', (name) => {
+		const manifest = packageJson('plugins', name)
+		expect(manifest.dependencies ?? {}).not.toHaveProperty('@pluxel/commands')
+		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
+	})
+
 	it.each(['telegram', 'kook'])('%s keeps its plugin entry as a thin composition root', (name) => {
 		const plugin = platformSourceFile(name, 'plugin.ts')
 		const manager = platformSourceFile(name, 'bot/manager.ts')

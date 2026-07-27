@@ -6,8 +6,8 @@
 
 - `ChatHubPlugin`：transport-neutral 消息路由、富消息规划、时间窗去重、会话内串行、有界背压、处理器隔离和有界停机 drain。
 - `ChatAccessPlugin`：跨平台统一用户、角色与分层权限；业务状态持久化，Workbench只是投影。
-- `ChatCommandsPlugin`：分层路由、alias、flags、中间件和默认拒绝的权限节点。
-- `ChatBuiltinsPlugin`：`/ping`、`/help`、`/status`。
+- `ChatCommandsPlugin`：把 `@pluxel/commands` 的结构化命令绑定为跨平台消息路由，并提供权限、响应投影和中间件。
+- `ChatBuiltinsPlugin`：`/ping`、`/help`、`/account`、`/link`、`/status`。
 - `ChatSandboxPlugin`：无需平台凭据即可进行 HTTP 或管理界面端到端测试。
 - `TelegramPlugin`：Telegram long polling capability，使用 Wretch 出站能力和 Vault 多账号管理。
 - `KookPlugin`：KOOK gateway capability、完整 v3 原生 API 和 Vault 多账号管理。
@@ -107,7 +107,7 @@ Hub 只保留实际使用的 transport、handler 和 observer。固定关键词�
 
 ## 用户与权限
 
-每条入站消息都会把 `(platform, actorId)` 投影为稳定 `ChatUser`；`accountId` 单独参与消息路由，因此同一平台用户不会仅因通过两个 Bot 到达而被拆成两人。命令默认声明 `cmd.<route>` 权限并采用 deny 默认值；公开命令必须显式写 `permission: false`，或将声明设为 `{ defaultEffect: 'allow' }`。用户覆盖优先于角色，角色按 rank 从高到低决策，最后才使用节点默认值；exact 规则优先于最长 `prefix.*`。
+每条入站消息都会把 `(platform, actorId)` 投影为稳定 `ChatUser`；`accountId` 单独参与消息路由，因此同一平台用户不会仅因通过两个 Bot 到达而被拆成两人。命令默认声明 `cmd.<command.name>` 权限并采用 deny 默认值；公开命令必须在 carrier binding 显式写 `permission: false`，或将声明设为 `{ defaultEffect: 'allow' }`。用户覆盖优先于角色，角色按 rank 从高到低决策，最后才使用节点默认值；exact 规则优先于最长 `prefix.*`。
 
 用户可发送 `/account` 查看统一身份，发送 `/link` 生成 5 分钟有效的一次性关联码，再到另一个平台发送 `/link <code>` 合并身份、角色和 grants。
 
@@ -132,6 +132,18 @@ Contract module 可被浏览器直接导入；entry 只留在 server module。ar
 命令型能力依赖 `ChatCommandsPlugin` 并在 `init()` 注册：
 
 ```ts
+import { defineCommand } from '@pluxel/commands'
+import { Type, obj } from '@pluxel/commands/typebox'
+
+const weather = defineCommand({
+	name: 'weather.lookup',
+	description: '查询天气',
+	behavior: { kind: 'query', world: 'open' },
+	input: obj({ city: Type.String() }),
+	output: obj({ forecast: Type.String() }),
+	execute: async ({ city }) => ({ forecast: await lookupWeather(city) }),
+})
+
 @Plugin({ name: 'WeatherPlugin' })
 export class WeatherPlugin extends BasePlugin {
 	constructor(private readonly commands: ChatCommandsPlugin) {
@@ -139,16 +151,19 @@ export class WeatherPlugin extends BasePlugin {
 	}
 
 	override init() {
-		const dispose = this.commands.register({
-			name: 'weather',
-			description: '查询天气',
-			permission: false,
-			execute: async ({ args }) => lookupWeather(args.join(' ')),
-		})
-		this.ctx.effects.defer(dispose)
+		this.ctx.effects.own(
+			this.commands.register(weather, {
+				routes: ['weather'],
+				positionals: ['city'],
+				permission: false,
+				respond: ({ forecast }) => forecast,
+			}),
+		)
 	}
 }
 ```
+
+route、alias、positionals 和 flags 属于 carrier binding；命令本身只描述结构化输入、输出与行为。同一个只要求基础 `CommandContext` 的 `Command` 可以同时绑定到 Chat、KOOK、CLI 或 runtime catalog。只有读取 `message`、`user`、`reply` 等事实的实现才声明 `ChatCommandContext`，它不能注册到基础 runtime catalog。已匹配但参数无效的命令会安全回复并停止 Hub 管线，未知 route 则继续交给后续 handler。
 
 非命令的跨平台能力直接依赖 `ChatHubPlugin`，通过 `registerHandler()` 订阅稳定的 `ChatMessage`。平台专属能力直接依赖平台插件，而不是扩张通用协议：
 

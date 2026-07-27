@@ -1,51 +1,38 @@
+import type { CommandContext } from '@pluxel/commands'
+import type { ArgvBinding, ArgvCommandDescriptor } from '@pluxel/commands/argv'
 import type { ChatUser, PermissionEffect } from '@repo/chatbots-access'
 import type { ChatPayload } from '@repo/chatbots-contracts'
 import type { ChatHandlerContext } from '@repo/chatbots-hub'
 
-export type ParsedCommandLine = {
-	tokens: string[]
-	tokenSpans: Array<{ start: number; end: number }>
-	positionals: string[]
-	flags: Readonly<Record<string, string | boolean | readonly string[]>>
+/** Invocation facts available when a command is carried by ChatHub. */
+export interface ChatCommandContext extends CommandContext, ChatHandlerContext {
+	readonly signal: AbortSignal
+	readonly user: ChatUser
 }
-export type ChatCommandContext = ChatHandlerContext & {
-	user: ChatUser
-	args: readonly string[]
-	rawArgs: string
-	flags: ParsedCommandLine['flags']
-}
+
 export type ChatCommandPermission =
 	| false
 	| string
 	| { node?: string; defaultEffect?: PermissionEffect }
-export type ChatCommand = {
-	/** Space-separated hierarchical route, for example `admin reload`. */
-	name: string
-	title?: string
-	description: string
-	usage?: string
-	aliases?: readonly string[]
-	hidden?: boolean
+
+export type ChatCommandBinding<Input, Output> = ArgvBinding<Input> & {
 	/** Commands are denied by default until explicitly granted. Use false for public commands. */
 	permission?: ChatCommandPermission
-	execute(context: ChatCommandContext): ChatPayload | void | Promise<ChatPayload | void>
+	/** Omit this command from ordinary command discovery. */
+	hidden?: boolean
+	/** Project a validated command result to a ChatHub payload. Omit when the handler replies itself. */
+	respond?: (
+		output: Output,
+		context: ChatCommandContext,
+	) => ChatPayload | undefined | Promise<ChatPayload | undefined>
 }
-export type RegisteredChatCommand = Pick<
-	ChatCommand,
-	'name' | 'title' | 'description' | 'usage' | 'aliases' | 'hidden' | 'permission'
->
+
+export type ChatCommandDescriptor = ArgvCommandDescriptor & {
+	readonly hidden: boolean
+	readonly permission?: ChatCommandPermission
+}
+
 export type ChatCommandMiddleware = (
 	context: ChatCommandContext,
-	next: () => Promise<ChatPayload | void>,
-) => ChatPayload | void | Promise<ChatPayload | void>
-export type RegisteredCommand = ChatCommand & { name: string; route: readonly string[] }
-
-export class ChatCommandError extends Error {
-	constructor(
-		public readonly code: 'PARSE' | 'FORBIDDEN' | 'USAGE',
-		message: string,
-	) {
-		super(message)
-		this.name = 'ChatCommandError'
-	}
-}
+	next: () => Promise<unknown>,
+) => unknown | Promise<unknown>

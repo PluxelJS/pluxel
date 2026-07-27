@@ -1551,6 +1551,9 @@ importers:
 
   projects/chatbots/plugins/builtins:
     dependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../../../../packages/commands
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
@@ -1566,6 +1569,9 @@ importers:
 
   projects/chatbots/plugins/commands:
     dependencies:
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../../../../packages/commands
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
