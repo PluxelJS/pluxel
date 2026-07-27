@@ -1,0 +1,78 @@
+{
+	"name": "@pluxel/commands",
+	"version": "0.1.0",
+	"description": "Schema-first command kernel for agent tools, CLIs, and message adapters",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/commands"
+	},
+	"files": [
+		"dist",
+		"docs",
+		"!**/*.map",
+		"!**/*.tsbuildinfo"
+	],
+	"type": "module",
+	"main": "./dist/index.cjs",
+	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.cts",
+	"exports": {
+		".": {
+			"@pluxel/source": "./src/index.ts",
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs"
+		},
+		"./argv": {
+			"@pluxel/source": "./src/argv.ts",
+			"import": "./dist/argv.mjs",
+			"require": "./dist/argv.cjs"
+		},
+		"./tool": {
+			"@pluxel/source": "./src/tool.ts",
+			"import": "./dist/tool.mjs",
+			"require": "./dist/tool.cjs"
+		},
+		"./typebox": {
+			"@pluxel/source": "./src/typebox.ts",
+			"import": "./dist/typebox.mjs",
+			"require": "./dist/typebox.cjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": {
+				"import": "./dist/index.mjs",
+				"require": "./dist/index.cjs"
+			},
+			"./argv": {
+				"import": "./dist/argv.mjs",
+				"require": "./dist/argv.cjs"
+			},
+			"./tool": {
+				"import": "./dist/tool.mjs",
+				"require": "./dist/tool.cjs"
+			},
+			"./typebox": {
+				"import": "./dist/typebox.mjs",
+				"require": "./dist/typebox.cjs"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"test": "pnpm exec vitest run",
+		"bench": "pnpm exec vitest bench bench/commands.bench.ts",
+		"typecheck": "tsc --noEmit --pretty false",
+		"build": "tsdown"
+	},
+	"dependencies": {
+		"@sinclair/typebox": "^0.34.48"
+	},
+	"devDependencies": {
+		"@pluxel/test": "workspace:*",
+		"@sinclair/parsebox": "^0.11.6",
+		"@types/node": "^25.9.3"
+	}
+}

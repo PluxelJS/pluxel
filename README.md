@@ -45,6 +45,7 @@ pnpm plugin-host:static
 - `@pluxel/runtime-dynamic`：动态插件路线；`/vite` 提供 host-owned Vite route，`/hmr` 保留内部 workspace/HMR primitives
 - `@pluxel/runtime-static`：固定插件路线；`/vite` 提供 static route，承载 fixed catalog startup、startup/change report 与轻量 static HMR
 - `@pluxel/cli`：命令行入口（build/scaffold/hmr）
+- `@pluxel/commands`：可投影为 Agent tool、CLI 或消息指令的 schema-first command kernel
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/*`：框架库与其他非具体插件的可复用 package
 - `plugins/*`：可独立装配的具体插件 package（当前根 workspace 没有此类包时可以为空）

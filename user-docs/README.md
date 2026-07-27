@@ -16,9 +16,10 @@
 7. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
 8. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
    插件生命周期、HTTP、失败传播、cleanup 与 disabled Workbench Plane。
-9. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
-   常见反模式与提交检查表。
-10. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
+9. [`commands.md`](commands.md)：把同一能力暴露为 Agent tool、CLI 或消息指令，并保持权限与 carrier 所有权。
+10. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
+    常见反模式与提交检查表。
+11. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
 
 CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到生成仓库的
 `docs/pluxel/`，根 `AGENTS.md` 会要求 coding agent 从 `docs/pluxel/README.md` 开始。生成项目

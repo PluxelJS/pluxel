@@ -539,6 +539,22 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  packages/commands:
+    dependencies:
+      '@sinclair/typebox':
+        specifier: ^0.34.48
+        version: 0.34.49
+    devDependencies:
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../test
+      '@sinclair/parsebox':
+        specifier: ^0.11.6
+        version: 0.11.6
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+
   packages/context: {}
 
   packages/core:
@@ -4140,6 +4156,9 @@ packages:
 
   '@scure/base@2.2.0':
     resolution: {integrity: sha512-b8XEupJibegiXV+tDUseI8oLQc8ei3d/4Jkb2RpbHh3MfE054ov3uIz2dhFkB3FI8iwYkEh0gGCApkrYggkPNg==}
+
+  '@sinclair/parsebox@0.11.6':
+    resolution: {integrity: sha512-e/sDaTu3mD4gx22aCyZ2M7o7BXFi2FUY+1XeoVLhDNqLjlIpypNPJ3fMLyn761lhMdMFt4j/BKQZTFbQwE001A==}
 
   '@sinclair/typebox@0.31.28':
     resolution: {integrity: sha512-/s55Jujywdw/Jpan+vsy6JZs1z2ZTGxTmbZTPiuSL2wz9mfzA2gN1zzaqmvfi4pq+uOt7Du85fkiwv5ymW84aQ==}
@@ -8743,6 +8762,8 @@ snapshots:
   '@rolldown/pluginutils@1.0.1': {}
 
   '@scure/base@2.2.0': {}
+
+  '@sinclair/parsebox@0.11.6': {}
 
   '@sinclair/typebox@0.31.28': {}
 
