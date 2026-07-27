@@ -19,6 +19,8 @@ export default defineConfig({
 		alwaysBundle: [...inlineWorkspaceHelpers, 'valibot-form', 'valibot-form/*'],
 		onlyBundle: [],
 		neverBundle: [
+			'@pluxel/commands',
+			'@pluxel/commands/*',
 			'@pluxel/core',
 			'@pluxel/core/services',
 			'@pluxel/core/logger',

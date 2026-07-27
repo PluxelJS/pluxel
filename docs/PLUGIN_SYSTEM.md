@@ -12,7 +12,7 @@ plugin source
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
           ↓
-@pluxel/runtime: HTTP / persistence / config / optional capabilities
+@pluxel/runtime: HTTP / persistence / config / commands / optional capabilities
           ↓
 static or dynamic route: catalog / Vite / HMR / host policy
           ↓
@@ -61,6 +61,11 @@ handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；st
 `migrations` evolution 用 checked immutable history；显式 `reset-on-schema-change` 由 compiler 从 schema snapshot 派生 lineage，
 不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
 
+`ctx.commands.register()` 共享一个 root command catalog，但注册所有权属于调用插件的 Context。registration 会进入
+owner effects，因此 plugin stop、replacement、start rollback 和 shutdown 都会撤销对应命令；已经取得 command
+引用的调用不被隐式取消，长操作仍使用 call-scoped `AbortSignal`。runtime 自身固定注册基础插件查询与生命周期命令，
+这些 handler 只调用既有 runtime use case，不复制 graph 或 commit 逻辑。
+
 ## Optional Workbench Plane
 
 插件只看到 `ctx.workbench.enabled` 和 `ctx.workbench.mount()`。宿主通过顶层 `workbench` 配置安装
@@ -92,6 +97,7 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
+- `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
 - `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；

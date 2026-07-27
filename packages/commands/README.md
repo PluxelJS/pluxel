@@ -243,6 +243,10 @@ The owner that registers a command owns the disposer. In a Pluxel plugin, bind i
 Disposal removes future lookup and discovery; it does not cancel an invocation that already obtained
 the command. Abort in-flight work through its call-scoped `signal` when the host requires that policy.
 
+`@pluxel/runtime` provides this ownership binding through `ctx.commands.register(command)`. Runtime
+plugins should use that service; direct registry construction remains for standalone hosts and carrier
+implementations.
+
 ## Project Agent/MCP tool information
 
 ```ts

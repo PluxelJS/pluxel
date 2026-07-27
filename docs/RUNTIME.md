@@ -4,6 +4,17 @@
 Plane。主入口注册全部常驻服务；Vault 只由 `@pluxel/runtime/services/vault` 显式启用，Workbench由宿主
 launcher 显式安装。
 
+## Commands capability
+
+runtime 提供 owner-bound `ctx.commands` 和每个 root 唯一的 command registry。插件注册直接进入该 registry，
+同时把 disposer 登记到插件自己的 effects；stop、replacement、启动回滚与 shutdown 因此使用同一套资源回收语义。
+registry 的 lookup 和 revision-cached catalog 仍由 `@pluxel/commands` 实现，runtime 不维护第二份索引。
+
+基础 `plugin.list`、`plugin.status.get`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands
+服务固定提供。查询委托 `pluginsList` / `pluginStatus`，mutation 委托 `applyStatusActions`，生命周期与一次 commit
+规则仍只有 runtime use case 一个事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、过滤与
+principal 映射，不拥有 command 定义或插件生命周期。
+
 `PersistenceService.preflight()` 先统一校验 backend 声明的 durable/readonly capability，再调用 backend 可选的
 preflight hook 做写入探针等实现检查。custom backend 即使省略 hook，也不能让不满足的 durable/writable 要求静默成功。
 

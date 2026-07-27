@@ -22,6 +22,12 @@ Runtime and host integrations must preserve these boundaries:
 - Agent adapters filter descriptors before publishing a tool catalog and map behavior to standard
   read-only, destructive, idempotent, and open-world annotations.
 
+`@pluxel/runtime` installs one root catalog behind `ctx.commands`. `register()` binds the returned
+registry registration to the calling plugin Context's effects, so stop, replacement, failed startup,
+and shutdown remove future discovery and lookup automatically. The runtime's built-in plugin management
+commands use the same catalog; carriers must consume `ctx.root.commands.list()` and dispatch through
+`execute()` rather than copying descriptors or handlers.
+
 Implementation entry points:
 
 - `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;

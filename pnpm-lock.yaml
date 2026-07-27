@@ -696,6 +696,9 @@ importers:
       '@logtape/pretty':
         specifier: ^2.0.2
         version: 2.2.3(@logtape/logtape@2.2.3)
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@pluxel/core':
         specifier: workspace:*
         version: link:../core

@@ -65,6 +65,25 @@ same command with `@pluxel/commands/argv`. Do not create a second command regist
 Use `createCommandRegistry()` and `createArgvRouter()` to construct them; their class names are
 type-only exports, so external code has one runtime construction style.
 
+Inside a Pluxel plugin, register with the runtime service instead of constructing a registry:
+
+```ts
+class ExamplePlugin extends BasePlugin {
+	override init() {
+		this.ctx.commands.register(status)
+	}
+}
+```
+
+All plugins in one runtime share the same catalog. The registration belongs to `ExamplePlugin`'s
+Context effects and is removed automatically on stop, replacement, failed startup, or shutdown.
+Manual disposal remains available when a plugin wants to withdraw a command before it stops.
+
+The runtime catalog already contains `plugin.list`, `plugin.status.get`, `plugin.start`,
+`plugin.stop`, and `plugin.restart`. These commands operate through the existing runtime lifecycle
+use cases and return the resulting plugin status. Hosts project and filter this catalog for CLI,
+Workbench, HTTP, or Agent use; plugins do not register separate carrier-specific copies.
+
 Call `execute()` at untrusted boundaries and branch on its result. Use `executeOrThrow()` only when a
 carrier already translates `CommandError`; it still performs all validation.
 

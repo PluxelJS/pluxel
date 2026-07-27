@@ -3,6 +3,7 @@ import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '.
 import type { WorkbenchBackend } from '../workbench'
 import { withNodeModulePluginContext } from '../NodeModuleService'
 import { withDatabasePluginContext } from '../DatabaseService'
+import { withCommandsPluginContext } from '../CommandsService'
 
 const serviceName = 'workbench' as const
 
@@ -86,5 +87,5 @@ export function withWorkbenchPluginContext<T extends CoreContext.Config>(config:
 					pluginCTXIsolate: [...current, WorkbenchService],
 				},
 			} as T)
-	return withDatabasePluginContext(withNodeModulePluginContext(next))
+	return withCommandsPluginContext(withDatabasePluginContext(withNodeModulePluginContext(next)))
 }

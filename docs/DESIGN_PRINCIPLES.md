@@ -15,7 +15,7 @@
 
 ## 2. 保持能力所有权清晰
 
-- HTTP、config、logger、events、effects、persistence/database 是常驻 runtime 能力。
+- HTTP、config、logger、events、effects、commands、persistence/database 是常驻 runtime 能力。
 - Workbench extension 和资源只能通过 `ctx.workbench.mount()` 挂载。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
@@ -62,13 +62,15 @@
 ## 7. 保持依赖方向
 
 ```text
-@pluxel/core <- @pluxel/runtime <- runtime route <- host
-                       ^
-                       |
-                 build-time tooling
+@pluxel/core     <-\
+                   @pluxel/runtime <- runtime route <- host
+@pluxel/commands <-/         ^
+                             |
+                       build-time tooling
 ```
 
 - core 不依赖 HTTP、持久化、Vite 或宿主策略。
+- core 与 commands 彼此独立；runtime 组合两者，但不把 command 变成插件内部生命周期协议。
 - runtime common 不依赖 dynamic loader。
 - static/dynamic route 不复制 core lifecycle。
 - build-time tooling 不进入 runtime service graph。
