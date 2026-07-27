@@ -28,6 +28,12 @@ and shutdown remove future discovery and lookup automatically. The runtime's bui
 commands use the same catalog; carriers must consume `ctx.root.commands.list()` and dispatch through
 `execute()` rather than copying descriptors or handlers.
 
+The runtime catalog accepts commands requiring the common `CommandContext`. A carrier that constructs
+additional invocation facts owns a registry/router parameterized by its extended context. Common commands
+can bind to that carrier; commands requiring the extended context cannot enter the runtime catalog.
+Carrier bindings own route syntax and result rendering, while the same `Command` remains the reusable
+business definition.
+
 Implementation entry points:
 
 - `packages/commands/src/schema.ts`: single schema projection, validation, and codec compiler;

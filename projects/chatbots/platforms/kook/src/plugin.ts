@@ -10,16 +10,21 @@ import type { KookBotStatus } from './bot/status.ts'
 import type { KookWorkbenchEvents } from './workbench/contract.ts'
 import { KookWorkbench } from './workbench/extension.ts'
 import { attachKookWorkbenchState, KookWorkbenchRpc } from './workbench/service.ts'
+import { KookCommandCarrier, type KookCommands } from './commands.ts'
 
 export type { KookBotConfigInput, KookEventConsumer } from './bot/manager.ts'
 
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
 	private manager?: KookBotManager
+	private readonly commandCarrier: KookCommandCarrier
+	readonly commands: KookCommands
 	readonly events = createKookPluginEvents(this.ctx)
 
 	constructor(private readonly http: WretchPlugin) {
 		super()
+		this.commandCarrier = new KookCommandCarrier(this.ctx)
+		this.commands = this.commandCarrier
 	}
 
 	get bots(): BotRegistry<KookBot> {
@@ -27,10 +32,12 @@ export class KookPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
+		this.ctx.effects.own(this.commandCarrier, { tag: 'KookCommands' })
 		const manager = new KookBotManager({
 			ctx: this.ctx,
 			http: this.http.client,
 			events: this.events,
+			dispatchCommand: (bot, event, signal) => this.commandCarrier.dispatch(bot, event, signal),
 		})
 		this.manager = manager
 		this.ctx.effects.defer(() => manager.dispose())

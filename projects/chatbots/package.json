@@ -13,6 +13,7 @@
 	"dependencies": {
 		"@mantine/core": "catalog:",
 		"@mantine/notifications": "catalog:",
+		"@pluxel/commands": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/runtime-static": "workspace:*",
 		"@pluxel/workbench-app": "workspace:*",

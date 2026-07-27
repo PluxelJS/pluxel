@@ -90,6 +90,12 @@ carrier already translates `CommandError`; it still performs all validation.
 The base `CommandContext` is optional. A host that extends it with required request-scoped fields
 must provide that context through direct, registry, and argv execution.
 
+Keep a command on the base context when it should run through several carriers. A typed carrier may
+extend the context with facts it alone can construct—for example, a bot account and incoming message.
+Its registry can accept base-context commands as well as carrier-specific commands, while the base
+runtime registry rejects commands that require the extended context. Put route parsing and output
+rendering in the carrier binding instead of importing carrier details into a reusable handler.
+
 For argv, use explicit positionals and generated scalar options. Help displays one canonical
 kebab-case option name, while input matching ignores case and treats `_` like `-`; use aliases for
 short or genuinely different names. `argv.help()` also exposes scalar types, string choices, schema

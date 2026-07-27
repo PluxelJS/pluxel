@@ -85,6 +85,11 @@ adapters from turning a typed implementation function into an accidental unvalid
 Context is passed per call. No registry or adapter stores mutable current Context, principal, or
 owner identity.
 
+Registries and argv routers preserve their `CommandContext` requirement. A carrier-specific context
+may extend the base context and accept portable base-context commands, but a base registry cannot
+safely accept a command requiring carrier-only fields. Adapters must preserve this variance rather
+than erase it with `AnyCommand<any>` or an optional-field union of every carrier context.
+
 ## One registry
 
 `CommandRegistry` is the only stateful catalog. Tool conversion is a cached pure function over its

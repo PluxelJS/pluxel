@@ -80,6 +80,12 @@ describe('chatbots package boundaries', () => {
 		expect(contents).not.toContain('globalThis.fetch')
 	})
 
+	it('uses the host-owned command kernel for the KOOK typed carrier', () => {
+		const manifest = platformPackageJson('kook')
+		expect(manifest.dependencies).not.toHaveProperty('@pluxel/commands')
+		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
+	})
+
 	it.each(['telegram', 'kook'])('%s keeps its plugin entry as a thin composition root', (name) => {
 		const plugin = platformSourceFile(name, 'plugin.ts')
 		const manager = platformSourceFile(name, 'bot/manager.ts')

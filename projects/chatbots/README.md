@@ -169,4 +169,43 @@ export class TelegramModerationPlugin extends BasePlugin {
 
 也可以通过 `telegram.bots.require('notifications')` 主动取得指定 Bot，再使用 `bot.events.message.on(...)` 只监听该账号。Telegram 与 KOOK 都提供静态可枚举的 `plugin.events.<name>` 聚合 channel 和 `bot.events.<name>` 局部 channel；它们由 Pluxel `EvtChannel` 管理订阅生命周期与错误隔离。原始事件不会被塞进 `ChatMessage`；跨平台消息保持 JSON-safe，平台能力仍可独立组合为 Pluxel 插件依赖。
 
+只在 KOOK 消息上下文中成立的命令依赖 `KookPlugin` 的 typed carrier。registration 由消费插件的 effects 持有；
+命中 route 后不会再把同一 event 交给 Hub bridge：
+
+```ts
+const inspect = defineCommand<typeof input, typeof output, KookCommandContext>({
+	name: 'kook.inspect',
+	description: 'Inspect the current KOOK message.',
+	behavior: { kind: 'query', world: 'closed' },
+	input,
+	output,
+	execute: ({ detail }, { bot, event }) => ({
+		text: `${bot.id}:${event.author_id}:${detail}`,
+	}),
+})
+
+@Plugin({ name: 'KookInspectPlugin' })
+class KookInspectPlugin extends BasePlugin {
+	constructor(private readonly kook: KookPlugin) {
+		super()
+	}
+
+	override init() {
+		this.ctx.effects.own(
+			this.kook.commands.register(inspect, {
+				routes: ['inspect'],
+				positionals: ['detail'],
+				respond: async ({ text }, ctx) => {
+					await ctx.reply(text)
+				},
+			}),
+		)
+	}
+}
+```
+
+如果同一业务命令还要给 CLI、Workbench 或 Agent 使用，它只能要求基础 `CommandContext`；随后把同一个
+`Command` 分别注册到 `ctx.commands` 和 `kook.commands`。要求 `KookCommandContext` 的命令不能进入 runtime
+通用 catalog。
+
 更多当前设计取舍见 [docs/DESIGN.md](docs/DESIGN.md)。

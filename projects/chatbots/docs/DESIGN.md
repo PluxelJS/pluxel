@@ -29,20 +29,20 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 
 ## 包边界
 
-| 包                    | 责任                                                                   | 不负责                 |
-| --------------------- | ---------------------------------------------------------------------- | ---------------------- |
-| `contracts`           | JSON-safe 富消息、内容块、transport 契约                               | 路由、状态、平台 API   |
-| `platform-kit`        | Bot registry、账号存储、入站 consumer、串行/重试/取消原语、共享管理 UI | Hub 路由、平台状态机   |
-| `workbench-support`   | Access/Sandbox 的数据库管理投影与 wire schema                          | 平台账号和连接状态     |
-| `hub`                 | transport/handler/observer、调度、发送规划和指标                       | 命令、权限、用户数据库 |
-| `access`              | 统一用户、角色、grant 与持久化                                         | 平台连接、命令解析     |
-| `commands`            | 分层路由、flags、中间件与权限接缝                                      | 消息接入、角色存储     |
-| `sandbox`             | 可重复的端到端输入输出与历史                                           | 伪装具体平台全部语义   |
-| `telegram`            | GramIO 类型 API、Bot registry、polling、原始 update、账号管理          | ChatMessage 与 Hub     |
-| `telegram-hub-bridge` | Telegram codec、确认型入站 consumer 与 transport                       | 账号和连接生命周期     |
-| `kook`                | KOOK API、Bot registry、原始 event、gateway 心跳重连、账号管理         | ChatMessage 与 Hub     |
-| `kook-hub-bridge`     | KOOK codec、确认型入站 consumer 与 transport                           | 账号和连接生命周期     |
-| `builtins`            | 最小运维命令                                                           | 框架级默认策略         |
+| 包                    | 责任                                                                          | 不负责                 |
+| --------------------- | ----------------------------------------------------------------------------- | ---------------------- |
+| `contracts`           | JSON-safe 富消息、内容块、transport 契约                                      | 路由、状态、平台 API   |
+| `platform-kit`        | Bot registry、账号存储、入站 consumer、串行/重试/取消原语、共享管理 UI        | Hub 路由、平台状态机   |
+| `workbench-support`   | Access/Sandbox 的数据库管理投影与 wire schema                                 | 平台账号和连接状态     |
+| `hub`                 | transport/handler/observer、调度、发送规划和指标                              | 命令、权限、用户数据库 |
+| `access`              | 统一用户、角色、grant 与持久化                                                | 平台连接、命令解析     |
+| `commands`            | 分层路由、flags、中间件与权限接缝                                             | 消息接入、角色存储     |
+| `sandbox`             | 可重复的端到端输入输出与历史                                                  | 伪装具体平台全部语义   |
+| `telegram`            | GramIO 类型 API、Bot registry、polling、原始 update、账号管理                 | ChatMessage 与 Hub     |
+| `telegram-hub-bridge` | Telegram codec、确认型入站 consumer 与 transport                              | 账号和连接生命周期     |
+| `kook`                | KOOK API、Bot registry、原始 event、typed command carrier、gateway 与账号管理 | ChatMessage 与 Hub     |
+| `kook-hub-bridge`     | KOOK codec、确认型入站 consumer 与 transport                                  | 账号和连接生命周期     |
+| `builtins`            | 最小运维命令                                                                  | 框架级默认策略         |
 
 ## 依赖声明
 
@@ -89,3 +89,4 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 30. 入站 consumer 按注册顺序 fail-fast，并在每个原生事件开始时冻结执行计划；dispatch 中的注册/注销只影响下一个事件。bridge 的 consumer 和 transport 都必须组合 bridge-owned abort signal，stop、rollback 与 HMR replacement 会先取消在途工作，再释放注册。
 31. 通用媒体 block 的 `url` 只承载目标 transport 可消费的跨平台资源。账号本地文件句柄不得伪装成 URL；Telegram `file_id` 等原生引用留在 JSON-safe metadata 和原生事件面，通用内容使用可读占位。下载、重传或平台内复用由显式平台插件实现，不能偷偷扩张 Hub 协议。
 32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。管理首页使用全宽 launcher；账号详情和创建流程通过平台自己的参数化 route 打开 Workbench 原生 Tab，平台诊断仍由精确的 Telegram/KOOK renderer 拥有。
+33. 通用 command 只依赖基础 `CommandContext`，可以同时进入 runtime catalog 与平台 carrier。KOOK 专属 command 显式要求 `KookCommandContext`，只进入 KOOK typed router；router 命中后在 Hub bridge 前消费该 event，未命中才继续普通 consumer。Workbench 不伪造平台 event context。

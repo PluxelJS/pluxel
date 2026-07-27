@@ -32,6 +32,7 @@ type KookBotManagerOptions = {
 	ctx: Context
 	http: Wretch
 	events: KookPluginEvents
+	dispatchCommand?: (bot: KookBot, event: KookEvent, signal: AbortSignal) => Promise<boolean>
 }
 
 const DEFAULT_API_BASE = 'https://www.kookapp.cn'
@@ -154,13 +155,18 @@ export class KookBotManager {
 			token: config.token,
 			baseUrl: config.apiBase,
 			pluginEvents: this.options.events,
-			consumeEvent: (source, event, signal) => this.consumers.dispatch(source, event, signal),
+			consumeEvent: (source, event, signal) => this.dispatchEvent(source, event, signal),
 			onStatus: () => this.publish(),
 		})
 		this.configs.set(config.id, { ...config })
 		this.disposers.set(config.id, this.registryController.register(config.id, bot))
 		this.publish()
 		return bot
+	}
+
+	private async dispatchEvent(bot: KookBot, event: KookEvent, signal: AbortSignal): Promise<void> {
+		if (await this.options.dispatchCommand?.(bot, event, signal)) return
+		await this.consumers.dispatch(bot, event, signal)
 	}
 
 	private uninstall(id: string): void {
