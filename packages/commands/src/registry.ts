@@ -1,5 +1,10 @@
 import { deepFreeze, isDeepFrozen } from './internal/freeze'
-import { cloneJsonValue } from './internal/json'
+import {
+	assertJsonValue,
+	cloneJsonValue,
+	isStrictJsonSnapshot,
+	markStrictJsonSnapshot,
+} from './internal/json'
 import { compareStrings } from './internal/compare'
 import {
 	CommandError,
@@ -109,9 +114,13 @@ export class CommandRegistry<Ctx extends CommandContext = CommandContext> {
 }
 
 function descriptorSnapshot(descriptor: CommandDescriptor, command: string): CommandDescriptor {
-	if (isDeepFrozen(descriptor)) return descriptor
 	try {
-		return deepFreeze(cloneJsonValue(descriptor) as CommandDescriptor)
+		if (isStrictJsonSnapshot(descriptor)) return descriptor
+		if (isDeepFrozen(descriptor)) {
+			assertJsonValue(descriptor)
+			return markStrictJsonSnapshot(descriptor)
+		}
+		return markStrictJsonSnapshot(deepFreeze(cloneJsonValue(descriptor) as CommandDescriptor))
 	} catch (error) {
 		throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
 			message: `Command "${command}" descriptor must be strict JSON`,

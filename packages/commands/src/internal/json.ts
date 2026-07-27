@@ -10,6 +10,18 @@ export class JsonValueError extends TypeError {
 	}
 }
 
+const strictJsonSnapshots = new WeakSet<object>()
+
+/** Marks a snapshot only after its complete value has crossed the strict JSON boundary. */
+export function markStrictJsonSnapshot<T>(value: T): T {
+	if (value && typeof value === 'object') strictJsonSnapshots.add(value)
+	return value
+}
+
+export function isStrictJsonSnapshot(value: unknown): boolean {
+	return !!value && typeof value === 'object' && strictJsonSnapshots.has(value)
+}
+
 /** Clones a JSON value without the coercions and data loss of JSON.stringify(). */
 export function cloneJsonValue(value: unknown, options?: { ignoreSymbols?: boolean }): unknown {
 	return walk(value, [], new WeakSet<object>(), true, options?.ignoreSymbols === true)

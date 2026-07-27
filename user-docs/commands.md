@@ -36,6 +36,10 @@ JSON-backed `Type.Transform()` when the handler should receive a domain value: t
 validated input before `validate`/`execute` and encodes handler output before returning it. Schemas,
 examples, command results, and carriers always use the underlying JSON representation.
 
+References must be embedded in the schema snapshot. Use `Type.Module().Import()` for reusable
+definitions; a standalone `Type.Ref(schema)` is rejected because its target would be absent from the
+published descriptor.
+
 Wire values must be real JSON even under `Type.Any()`: functions, BigInt, class instances, NaN,
 cycles, and values that JSON would silently discard are rejected. Input defaults are applied before
 Decode. Output defaults are annotations only; commands must explicitly return every output value
@@ -97,6 +101,9 @@ allowlist: unlisted scalar fields still receive canonical kebab-case options. Lo
 `--name value` and `--name=value`; explicit one-character aliases accept `-n value`; boolean options
 also accept `--flag=false`, `--no-flag`, and all-boolean short groups. Duplicate scalars fail and
 repeated arrays accumulate.
+
+Exact names take precedence over negation: a real boolean option named `no-cache` is addressed by
+`--no-cache`; otherwise that spelling means `cache=false`.
 
 `tail.text(key)` suggests only string wire fields from the Command input, including string-backed
 Transforms. `tail.json(key)` suggests every input field and parses the remainder as one JSON value.

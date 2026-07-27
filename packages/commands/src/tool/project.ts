@@ -1,5 +1,10 @@
 import { deepFreeze, isDeepFrozen } from '../internal/freeze'
-import { cloneJsonValue } from '../internal/json'
+import {
+	assertJsonValue,
+	cloneJsonValue,
+	isStrictJsonSnapshot,
+	markStrictJsonSnapshot,
+} from '../internal/json'
 import type { CommandBehavior, CommandDescriptor } from '../types'
 
 export type ToolAnnotations = {
@@ -31,6 +36,10 @@ export function toToolDescriptor(descriptor: CommandDescriptor): ToolDescriptor 
 	const cached = descriptorCache.get(descriptor)
 	if (cached) return cached
 	const cacheable = isDeepFrozen(descriptor)
+	if (cacheable && !isStrictJsonSnapshot(descriptor)) {
+		assertJsonValue(descriptor)
+		markStrictJsonSnapshot(descriptor)
+	}
 	const tool = deepFreeze({
 		name: descriptor.name,
 		...(descriptor.title ? { title: descriptor.title } : {}),

@@ -1,5 +1,6 @@
 import { deepFreeze } from './internal/freeze'
-import { SchemaDefaultError, toJsonSchema } from './schema'
+import { assertJsonValue, markStrictJsonSnapshot } from './internal/json'
+import { SchemaDefaultError, SchemaReferenceError, toJsonSchema } from './schema'
 import {
 	CommandError,
 	type CommandBehavior,
@@ -73,6 +74,9 @@ function normalizeBehavior(name: string, behavior: CommandBehavior | undefined):
 export function compileDescriptor<SIn extends ObjectSchema, SOut extends ObjectSchema | undefined>(
 	config: DefineCommandConfig<SIn, SOut, any>,
 ): CommandDescriptor {
+	if (typeof config.name !== 'string') {
+		configError('Command name must be a string', undefined, 'name')
+	}
 	if (!commandNamePattern.test(config.name)) {
 		configError(
 			`Command name "${config.name}" must contain 1-128 letters, digits, dots, underscores, or hyphens`,
@@ -91,7 +95,7 @@ export function compileDescriptor<SIn extends ObjectSchema, SOut extends ObjectS
 	if (outputSchema && outputSchema.type !== 'object') {
 		configError(`Command "${config.name}" output must be an object schema`, config.name, 'output')
 	}
-	return deepFreeze({
+	return freezeJsonSnapshot({
 		name: config.name,
 		...(title ? { title } : {}),
 		description: normalizeDescription(config.description, config.name),
@@ -105,7 +109,12 @@ export function withExamples(
 	descriptor: CommandDescriptor,
 	examples: readonly CommandExample[] | undefined,
 ): CommandDescriptor {
-	return examples?.length ? deepFreeze({ ...descriptor, examples }) : descriptor
+	return examples?.length ? freezeJsonSnapshot({ ...descriptor, examples }) : descriptor
+}
+
+function freezeJsonSnapshot<T extends object>(value: T): T {
+	assertJsonValue(value)
+	return markStrictJsonSnapshot(deepFreeze(value))
 }
 
 function normalizeSchema(
@@ -124,6 +133,17 @@ function normalizeSchema(
 					field,
 					reason: 'invalid_default',
 					path: error.path,
+				},
+				cause: error,
+			})
+		}
+		if (error instanceof SchemaReferenceError) {
+			throw new CommandError('COMMAND_CONFIG', 'Invalid command configuration', {
+				message: `Command "${command}" ${field} schema ${error.message.charAt(0).toLowerCase()}${error.message.slice(1)}`,
+				details: {
+					command,
+					field,
+					reason: 'unresolved_reference',
 				},
 				cause: error,
 			})

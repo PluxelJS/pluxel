@@ -257,11 +257,18 @@ export type DefineCommandConfig<
 	? OutputCommandDefinition<SIn, SOut, Ctx>
 	: VoidCommandDefinition<SIn, Ctx>
 
-export interface Command<_I = unknown, O = unknown, Ctx extends CommandContext = CommandContext> {
+declare const commandInputType: unique symbol
+
+export interface Command<I = unknown, O = unknown, Ctx extends CommandContext = CommandContext> {
 	readonly name: string
 	readonly descriptor: CommandDescriptor
-	execute(candidate: unknown, ...context: CommandContextArgs<Ctx>): Promise<CommandResult<O>>
-	executeOrThrow(candidate: unknown, ...context: CommandContextArgs<Ctx>): Promise<O>
+	/** @internal Keeps the argv input type invariant without exposing an unchecked input method. */
+	readonly [commandInputType]?: (input: I) => I
+	readonly execute: (
+		candidate: unknown,
+		...context: CommandContextArgs<Ctx>
+	) => Promise<CommandResult<O>>
+	readonly executeOrThrow: (candidate: unknown, ...context: CommandContextArgs<Ctx>) => Promise<O>
 }
 
 export type AnyCommand<Ctx extends CommandContext = CommandContext> = Command<any, any, Ctx>

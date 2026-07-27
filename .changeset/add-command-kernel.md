@@ -13,6 +13,11 @@ The argv router accepts both raw command text and token arrays already split by 
 Bindings use explicit `positionals`, generated `options`, and optional tails; `--` disables option
 parsing without skipping pending positionals. Registry and router construction use one public
 factory entry each, with their class names retained only as types.
+Required host Context remains enforced through direct, registry, and argv calls, including when
+commands cross generic catalog boundaries. Frozen external descriptors are still validated as
+strict JSON before their identity is reused. Self-contained TypeBox modules are supported while
+unresolved references fail with a stable configuration reason. Exact `no-*` boolean option names
+take precedence over the conventional negation shorthand.
 Conventional scalar inputs and trailing prose remain positionals, generated options, and text tails
 rather than being reparsed through ParseBox. Shared domain DSLs remain one annotated string contract
 and use the existing TypeBox Transform boundary to deliver the application-owned ParseBox mapping

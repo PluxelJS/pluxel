@@ -132,6 +132,10 @@ Direct `Date`, `BigInt`, function, or byte-array schemas remain invalid because 
 values cannot represent those types honestly. Authors encode them as strings or numbers underneath
 a Transform. Codec failures stay on the relevant input/output validation boundary.
 
+Schema references must be self-contained descriptor facts. `Type.Module().Import()` embeds `$defs`
+and is supported; a standalone `Type.Ref(schema)` is rejected as `unresolved_reference` because its
+target is not present in the command schema, compiled validator, or carrier projection.
+
 Every wire value is cloned and checked as strict JSON before schema validation, including values
 accepted by `Any` and `Unknown`. This rejects JavaScript values that JSON serialization would throw
 on, coerce, or silently discard. Declared defaults apply to input normalization only. Output and
@@ -162,6 +166,8 @@ option recognition: pending positionals are consumed normally, then any remainde
 Duplicate scalars fail, repeated arrays accumulate, and grouped short aliases are accepted only when
 all members are boolean. Once a tail begins, later option-looking text belongs to that tail; this
 keeps natural grammars deterministic and `--` available when a hyphen-leading positional is needed.
+Long-option parsing checks an exact name before treating `no-` as boolean negation, so a genuine
+`no-cache` field and the `cache=false` shorthand remain deterministic.
 
 Unknown option, route, and closed-choice suggestions are deterministic facts over the current argv
 binding. They are computed only on failed input, capped at three close values, and never affect the
@@ -208,6 +214,30 @@ evidence, not portable correctness thresholds.
 
 Ordinary route matching stays in JavaScript. A native matcher is justified only by measured large
 multi-pattern workloads and should batch raw UTF-8 data rather than callback across N-API per match.
+
+## CLI ecosystem boundaries
+
+[`usage`](https://usage.jdx.dev/spec/) is a useful future projection target, not an argv parser. A
+standalone CLI host that needs shell completion, manpages, Markdown, or SDK generation can project
+`ArgvCommandDescriptor` catalogs into Usage KDL without changing command execution. The projection
+must remain host-owned because binary metadata, global flags, environment/config precedence, hidden
+commands, and command mounting are host facts. `CommandBehavior` can conservatively map query to
+`read`, destructive mutation to `destructive`, and other mutation to `write`; `world` and
+`idempotent` have no lossless Usage equivalent.
+
+[`args-tokens`](https://github.com/kazupon/args-tokens) tokenizes argv arrays and resolves a separate
+option schema. It does not replace raw message tokenization with source spans, route matching,
+schema-derived bindings, text/JSON tails, or the shared Command validation pipeline. Successful argv
+dispatch is already measured in the low-microsecond range, so adding it to core currently has no
+demonstrated correctness or performance benefit.
+
+[`gunshi`](https://github.com/kazupon/gunshi) is a complete CLI framework with its own command,
+argument, context, plugin, and rendering model. It may be used by a host that deliberately adapts a
+filtered commands catalog, but core must not depend on it or recreate command definitions in it.
+
+Argv internals follow these ownership boundaries: `compile.ts` derives immutable bindings and help,
+`parse.ts` constructs an untrusted candidate, `tokenize.ts` preserves raw text spans, and `router.ts`
+owns trie registration and dispatch.
 
 ## Non-goals
 

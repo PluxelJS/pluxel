@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
 import * as argvPublic from '../src/argv'
-import { CommandError, defineCommand, validation } from '../src/index'
+import { CommandError, defineCommand, validation, type Command } from '../src/index'
 import { createArgvRouter, tail } from '../src/argv'
 import { tokenizeArgv } from '../src/argv/tokenize'
 import { Type, obj } from '../src/typebox'
@@ -39,6 +39,9 @@ describe('@pluxel/commands argv', () => {
 			// @ts-expect-error The surrounding command binding infers that force is boolean.
 			tail: tail.text('force'),
 		})
+		const retagInput = (_command: Command<{ missing: string }>): void => {}
+		// @ts-expect-error Command input types are invariant and cannot be relabeled for argv binding.
+		retagInput(deploy)
 	}
 	void assertTextTailTypes
 
@@ -100,6 +103,9 @@ describe('@pluxel/commands argv', () => {
 				}),
 			]),
 		)
+		expect(router.resolve('deploy api --environment stage --no-force')?.candidate).toMatchObject({
+			force: false,
+		})
 		expect(() => router.resolve('deploy api --enviroment prod')).toThrow(
 			/Did you mean "--environment"/,
 		)
@@ -229,6 +235,28 @@ describe('@pluxel/commands argv', () => {
 			expect.objectContaining({ name: 'retry-count', aliases: [] }),
 		])
 		expect(() => router.resolve('retry configure --retryCount 2')).toThrow(/Unknown option/)
+	})
+
+	it('prefers an exact no-prefixed boolean option before boolean negation shorthand', () => {
+		const command = defineCommand({
+			name: 'cache.configure',
+			description: 'Configure cache behavior.',
+			behavior: { kind: 'mutation', destructive: false, idempotent: true, world: 'closed' },
+			input: obj({
+				cache: Type.Optional(Type.Boolean()),
+				noCache: Type.Optional(Type.Boolean()),
+			}),
+			execute() {},
+		})
+		const router = createArgvRouter()
+		router.bind(command, { routes: ['cache configure'] })
+
+		expect(router.help('cache.configure')?.usage).toContain('--no-cache')
+		expect(router.resolve('cache configure --no-cache')?.candidate).toEqual({ noCache: true })
+		expect(router.resolve('cache configure --no-cache=false')?.candidate).toEqual({
+			noCache: false,
+		})
+		expect(router.resolve('cache configure --cache=false')?.candidate).toEqual({ cache: false })
 	})
 
 	it('treats schema field names as data instead of object prototype operations', () => {

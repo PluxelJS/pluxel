@@ -25,6 +25,30 @@ function incrementCommand() {
 	})
 }
 
+const assertCommandContextVariance = () => {
+	type HostContext = CommandContext & { tenant: string }
+	const input = obj({})
+	const output = obj({ tenant: Type.String() })
+	const hosted = defineCommand<typeof input, typeof output, HostContext>({
+		name: 'context.variance',
+		description: 'Keep required host context on every dispatch path.',
+		behavior: { kind: 'query', world: 'closed' },
+		input,
+		output,
+		execute: (_input, context) => ({ tenant: context.tenant }),
+	})
+
+	const baseRegistry = createCommandRegistry()
+	// @ts-expect-error A base registry cannot safely invoke a command that requires HostContext.
+	baseRegistry.register(hosted)
+
+	const hostRegistry = createCommandRegistry<HostContext>()
+	hostRegistry.register(hosted)
+	// @ts-expect-error A registry with required host context must receive it for every invocation.
+	void hostRegistry.execute('context.variance', {})
+}
+void assertCommandContextVariance
+
 describe('@pluxel/commands core', () => {
 	it('exposes one factory construction path at runtime', () => {
 		expect(corePublic).toHaveProperty('createCommandRegistry')
@@ -377,6 +401,25 @@ describe('@pluxel/commands core', () => {
 		).toThrow(/destructive and idempotent/)
 	})
 
+	it('rejects non-string command names at the runtime configuration boundary', () => {
+		let failure: unknown
+		try {
+			defineCommand({
+				name: new String('boxed.name'),
+				description: 'Reject a boxed command name.',
+				behavior: { kind: 'query', world: 'closed' },
+				input: obj({}),
+				execute() {},
+			} as never)
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toMatchObject({
+			code: 'COMMAND_CONFIG',
+			details: { field: 'name' },
+		})
+	})
+
 	it('rejects non-object schemas at runtime as well as at the type boundary', () => {
 		expect(() =>
 			defineCommand({
@@ -453,6 +496,38 @@ describe('@pluxel/commands core', () => {
 				execute: () => ({ value: 'never' }),
 			}),
 		).toThrow(/input must be a portable JSON Schema/)
+	})
+
+	it('accepts self-contained TypeBox modules and rejects unresolved schema references', async () => {
+		const external = Type.Object({ id: Type.String() }, { $id: 'ExternalValue' })
+		let failure: unknown
+		try {
+			defineCommand({
+				name: 'reference.external',
+				description: 'Reject an external schema reference.',
+				behavior: { kind: 'query', world: 'closed' },
+				input: obj({ value: Type.Ref(external) }),
+				execute() {},
+			})
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toMatchObject({
+			code: 'COMMAND_CONFIG',
+			details: { field: 'input', reason: 'unresolved_reference' },
+		})
+		expect(failure).toHaveProperty('message', expect.stringContaining('Type.Module().Import()'))
+
+		const values = Type.Module({ Value: Type.Object({ id: Type.String() }) })
+		const command = defineCommand({
+			name: 'reference.embedded',
+			description: 'Accept a self-contained schema reference.',
+			behavior: { kind: 'query', world: 'closed' },
+			input: obj({ value: values.Import('Value') }),
+			execute() {},
+		})
+		expect(command.descriptor.inputSchema).toHaveProperty('properties.value.$defs.Value')
+		await expect(command.executeOrThrow({ value: { id: 'value-1' } })).resolves.toBeUndefined()
 	})
 
 	it('uses TypeBox transforms as private codecs around the JSON command boundary', async () => {
@@ -690,5 +765,31 @@ describe('@pluxel/commands core', () => {
 		expect(Object.isFrozen(descriptor)).toBe(false)
 		Object.assign(descriptor, { description: 'Changed externally.' })
 		expect(registry.list()[0]?.description).toBe('Increment a number.')
+	})
+
+	it('validates deeply frozen external descriptors before reusing their identity', () => {
+		const command = incrementCommand()
+		const descriptor = Object.freeze({
+			name: command.name,
+			description: command.descriptor.description,
+			behavior: Object.freeze({ kind: 'query', world: 'closed' } as const),
+			inputSchema: Object.freeze({
+				type: 'object',
+				annotation: Object.freeze(new Date('2026-07-27T00:00:00.000Z')),
+			}),
+		})
+		const registry = createCommandRegistry()
+
+		let failure: unknown
+		try {
+			registry.register({ ...command, descriptor })
+		} catch (error) {
+			failure = error
+		}
+		expect(failure).toMatchObject({
+			code: 'COMMAND_CONFIG',
+			details: { command: 'math.increment', reason: 'invalid_descriptor' },
+			cause: expect.objectContaining({ message: expect.stringContaining('not valid JSON') }),
+		})
 	})
 })

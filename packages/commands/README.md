@@ -57,6 +57,20 @@ JSON, and functions have no JSON representation.
 Object properties are closed by default, including nested `Type.Object()` schemas. Use `openObj()`
 only where arbitrary extra JSON properties are part of the public contract.
 
+Schema references must be self-contained because descriptors travel without a TypeBox reference
+registry. Use `Type.Module().Import()` when a schema needs reusable definitions:
+
+```ts
+const Models = Type.Module({
+	Resource: Type.Object({ id: Type.String() }),
+})
+
+const input = obj({ resource: Models.Import('Resource') })
+```
+
+A standalone `Type.Ref(schema)` is rejected with `COMMAND_CONFIG` reason `unresolved_reference`;
+the referenced schema is not embedded in either the compiled validator or published descriptor.
+
 Use a JSON-backed `Type.Transform()` when the implementation benefits from a domain value:
 
 ```ts
@@ -367,6 +381,10 @@ The accepted grammar is deliberately small and conventional:
 | option before or after a positional   | accepted until tail input begins                                          |
 | `--`                                  | stop option parsing; remaining positionals are still consumed before tail |
 
+An exact option name wins before boolean negation is considered. If the schema contains a boolean
+field named `noCache`, canonical `--no-cache` sets that field to `true`. When there is no exact
+`no-cache` option, `--no-cache` remains shorthand for setting boolean `cache` to `false`.
+
 Scalar options may appear before or after positionals. Duplicate scalar options are rejected rather
 than silently choosing a winner; repeated array options accumulate. A hyphen-leading positional such
 as `-5` should follow `--`. Once all positionals are filled and tail input begins, the remainder
@@ -619,4 +637,5 @@ keeps the arbitrary `AbortSignal.reason` as `cause` rather than placing it in pu
 - `@pluxel/commands/tool`: cached provider-neutral tool projection;
 - `@pluxel/commands/argv`: route trie, argv parsing, help data, and text/JSON tails.
 
-Maintainer invariants are in [`docs/DESIGN.md`](docs/DESIGN.md).
+Repository integration constraints are in [`docs/COMMANDS.md`](../../docs/COMMANDS.md); package
+implementation invariants and CLI ecosystem decisions are in [`docs/DESIGN.md`](docs/DESIGN.md).

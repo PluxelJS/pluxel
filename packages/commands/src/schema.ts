@@ -56,6 +56,18 @@ export class SchemaDefaultError extends TypeError {
 	}
 }
 
+export class SchemaReferenceError extends TypeError {
+	readonly reference: string
+
+	constructor(reference: string) {
+		super(
+			`Schema reference ${JSON.stringify(reference)} is not embedded in the command schema; use Type.Module().Import() for a self-contained reference`,
+		)
+		this.name = 'SchemaReferenceError'
+		this.reference = reference
+	}
+}
+
 function cloneValue<T>(value: T): T {
 	if (Array.isArray(value)) return value.map((entry) => cloneValue(entry)) as T
 	if (!value || typeof value !== 'object') return value
@@ -216,6 +228,7 @@ const javascriptOnlyKinds = new Set([
 
 function assertPortableSchema(schema: Schema): void {
 	const seen = new WeakSet<object>()
+	const embeddedIds = new Set(collectSchemaReferences(schema).map((reference) => reference.$id!))
 	visit(schema, '$')
 
 	function visit(value: unknown, path: string): void {
@@ -224,6 +237,13 @@ function assertPortableSchema(schema: Schema): void {
 		seen.add(value)
 		const current = value as Record<PropertyKey, unknown>
 		const kind = current[Kind]
+		if (
+			typeof current.$ref === 'string' &&
+			!current.$ref.startsWith('#') &&
+			!embeddedIds.has(current.$ref)
+		) {
+			throw new SchemaReferenceError(current.$ref)
+		}
 		if (typeof kind === 'string' && javascriptOnlyKinds.has(kind)) {
 			throw new TypeError(`${kind} schema at ${path} is not JSON-compatible`)
 		}

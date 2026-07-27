@@ -124,4 +124,18 @@ describe('@pluxel/commands tool projection', () => {
 		expect(second).not.toBe(first)
 		expect(second.inputSchema).toMatchObject({ properties: { changed: { type: 'boolean' } } })
 	})
+
+	it('rejects non-JSON schemas even when an external descriptor is deeply frozen', () => {
+		const descriptor = Object.freeze({
+			name: 'frozen.invalid',
+			description: 'Invalid frozen descriptor.',
+			behavior: Object.freeze({ kind: 'query', world: 'closed' } as const),
+			inputSchema: Object.freeze({
+				type: 'object',
+				annotation: Object.freeze(new Date('2026-07-27T00:00:00.000Z')),
+			}),
+		})
+
+		expect(() => toToolDescriptor(descriptor)).toThrow(/not valid JSON/)
+	})
 })
