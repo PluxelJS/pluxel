@@ -1,7 +1,13 @@
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 import type { PluginConstructor } from '@pluxel/runtime'
-import { BasePlugin, createRuntimeHost, Plugin, type RuntimeHost } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	createRuntimeHost,
+	Plugin,
+	setParamToken,
+	type RuntimeHost,
+} from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
 
 function valueCommand(value: string, name = 'example.value.get') {
@@ -302,6 +308,54 @@ describe('CommandsService', () => {
 				isEnabled: true,
 				lifecycleStage: 'stopped',
 			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('restarts the required dependent closure through management commands', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			@Plugin({ name: 'ManagedProvider' })
+			class ManagedProvider extends BasePlugin {}
+
+			@Plugin({ name: 'ManagedConsumer' })
+			class ManagedConsumer extends BasePlugin {
+				constructor(readonly provider: ManagedProvider) {
+					super()
+				}
+			}
+			setParamToken(ManagedConsumer, 0, ManagedProvider)
+
+			installTestRoute(
+				host,
+				new Map([
+					['ManagedProvider', ManagedProvider],
+					['ManagedConsumer', ManagedConsumer],
+				]),
+			)
+			host.add([ManagedProvider, ManagedConsumer])
+			host.cfg(ManagedProvider).enable()
+			host.cfg(ManagedConsumer).enable()
+			await host.commit()
+
+			const firstProvider = host.require(ManagedProvider)
+			const firstConsumer = host.require(ManagedConsumer)
+			const restarted = await host.ctx.commands.executeOrThrow('plugin.restart', {
+				name: 'ManagedProvider',
+			})
+
+			expect(restarted).toMatchObject({
+				name: 'ManagedProvider',
+				isRunning: true,
+				isEnabled: true,
+				lifecycleStage: 'running',
+			})
+			expect(host.require(ManagedProvider)).not.toBe(firstProvider)
+			expect(host.require(ManagedConsumer)).not.toBe(firstConsumer)
+			expect(Object.getPrototypeOf(host.require(ManagedConsumer).provider)).toBe(
+				host.require(ManagedProvider),
+			)
 		} finally {
 			await host.dispose()
 		}

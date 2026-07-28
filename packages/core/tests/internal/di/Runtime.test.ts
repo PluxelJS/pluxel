@@ -159,6 +159,37 @@ describe('Runtime', () => {
 		expect(beforeEnsureB).toBe(warmPeekCalls)
 	})
 
+	it('refreshes every retained slot after another runtime replaces shared instances', () => {
+		class A {
+			public readonly id = Symbol('a')
+		}
+
+		class B {
+			public readonly id = Symbol('b')
+		}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: A, use: A }))
+		draft.put(classProvider({ key: B, use: B }))
+
+		const built = buildOk(draft)
+		built.commit()
+
+		const observer = new Runtime(draft.graph, draft.instances)
+		const mutator = new Runtime(draft.graph, draft.instances)
+		const firstA = observer.ensure<A>(A)
+		const firstB = observer.ensure<B>(B)
+
+		mutator.deleteMany([A, B])
+		const secondA = mutator.ensure<A>(A)
+		const secondB = mutator.ensure<B>(B)
+
+		expect(observer.peek<A>(A)).toBe(secondA)
+		expect(observer.peek<B>(B)).toBe(secondB)
+		expect(secondA).not.toBe(firstA)
+		expect(secondB).not.toBe(firstB)
+	})
+
 	it('deleteMany consumes one-shot iterables only once', () => {
 		class A {
 			public readonly id = Symbol('a')

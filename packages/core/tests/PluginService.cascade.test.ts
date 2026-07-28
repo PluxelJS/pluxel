@@ -114,6 +114,29 @@ describe('PluginService cascade options', () => {
 		})
 	})
 
+	it('restart cascades to required dependents by default', async () => {
+		await withCoreHost(async (host) => {
+			const { A, B } = defineDependentPair('CASCADE-RESTART-DEFAULT')
+
+			host.add([A, B])
+			await host.commit()
+
+			const firstA = host.require(A)
+			const firstB = host.require(B)
+			host.restart(A)
+			const summary = await host.commit()
+
+			expect(summary.lifecycleReport.issues).toEqual([])
+			expect(summary.pluginChanges.restarted).toEqual([
+				'CASCADE-RESTART-DEFAULT-A',
+				'CASCADE-RESTART-DEFAULT-B',
+			])
+			expect(host.require(A)).not.toBe(firstA)
+			expect(host.require(B)).not.toBe(firstB)
+			expect(Object.getPrototypeOf(host.require(B).dep)).toBe(host.require(A))
+		})
+	})
+
 	it('restart fails early when the draft no longer has a provider for the requested root', async () => {
 		await withCoreHost(async (host) => {
 			const { A, B } = defineDependentPair('CASCADE-RESTART-MISSING')

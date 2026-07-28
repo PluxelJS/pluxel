@@ -671,8 +671,8 @@ export class Runtime<M = unknown> {
 	private readonly resolvingMarks: Uint8Array
 	private readonly retainedValues: unknown[] = []
 	private readonly retainedRevisions: number[] = []
+	private readonly retainedStoreRevisions: number[] = []
 	private retainedKnown: Uint8Array
-	private storeRevision: number
 
 	public constructor(
 		public readonly graph: GraphSnapshot<M>,
@@ -680,22 +680,15 @@ export class Runtime<M = unknown> {
 	) {
 		this.resolvingMarks = new Uint8Array(graph.slotCount())
 		this.retainedKnown = new Uint8Array(graph.slotCount())
-		this.storeRevision = instances.getRevision()
-	}
-
-	private syncRetainedRevision(): boolean {
-		const revision = this.instances.getRevision()
-		if (revision === this.storeRevision) return false
-		this.storeRevision = revision
-		return true
 	}
 
 	private loadRetainedAtSlot<T>(slot: Slot, nodeKey: NodeKey): T | undefined {
-		const storeChanged = this.syncRetainedRevision()
-		if (!storeChanged && this.retainedKnown[slot] === 1)
+		const storeRevision = this.instances.getRevision()
+		if (this.retainedKnown[slot] === 1 && this.retainedStoreRevisions[slot] === storeRevision)
 			return this.retainedValues[slot] as T | undefined
 		const keyRevision = this.instances.getKeyRevision(nodeKey)
 		if (this.retainedKnown[slot] === 1 && this.retainedRevisions[slot] === keyRevision) {
+			this.retainedStoreRevisions[slot] = storeRevision
 			return this.retainedValues[slot] as T | undefined
 		}
 		if (keyRevision === 0) {
@@ -705,6 +698,7 @@ export class Runtime<M = unknown> {
 		const value = this.instances.peek(nodeKey) as T | undefined
 		this.retainedValues[slot] = value
 		this.retainedRevisions[slot] = keyRevision
+		this.retainedStoreRevisions[slot] = storeRevision
 		this.retainedKnown[slot] = 1
 		return value
 	}
@@ -713,13 +707,14 @@ export class Runtime<M = unknown> {
 		this.instances.set(nodeKey, value)
 		this.retainedValues[slot] = value
 		this.retainedRevisions[slot] = this.instances.getKeyRevision(nodeKey)
+		this.retainedStoreRevisions[slot] = this.instances.getRevision()
 		this.retainedKnown[slot] = 1
-		this.storeRevision = this.instances.getRevision()
 	}
 
 	private clearRetainedAtSlot(slot: Slot): void {
 		this.retainedKnown[slot] = 0
 		this.retainedRevisions[slot] = 0
+		this.retainedStoreRevisions[slot] = 0
 		this.retainedValues[slot] = undefined
 	}
 
@@ -813,7 +808,6 @@ export class Runtime<M = unknown> {
 		if (resolved.slot !== undefined) this.clearRetainedAtSlot(resolved.slot)
 		if (resolved.nodeKey === undefined) return
 		this.instances.delete(resolved.nodeKey)
-		this.storeRevision = this.instances.getRevision()
 	}
 
 	public deleteMany(keys: Iterable<NodeKey>): void {
@@ -823,7 +817,6 @@ export class Runtime<M = unknown> {
 			if (slot !== undefined) this.clearRetainedAtSlot(slot)
 		}
 		this.instances.deleteMany(handles)
-		this.storeRevision = this.instances.getRevision()
 	}
 }
 
