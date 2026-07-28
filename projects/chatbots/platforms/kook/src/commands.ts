@@ -1,14 +1,23 @@
 import {
 	CommandError,
+	defineCommand,
 	type Command,
 	type CommandContext,
+	type ObjectSchema,
 	type Registration,
+	type VoidCommandDefinition,
+	type Wire,
 } from '@pluxel/commands'
 import {
 	createArgvRouter,
 	type ArgvBinding,
 	type ArgvCommandDescriptor,
 } from '@pluxel/commands/argv'
+import {
+	closeOwnerInvocations,
+	enterOwnerInvocation,
+	type OwnerInvocationLease,
+} from '@pluxel/core/internal'
 import type { Context } from '@pluxel/runtime'
 import type { KookBot } from './bot/bot.ts'
 import type { KookEvent } from './bot/events.types.ts'
@@ -16,62 +25,103 @@ import { MessageType } from './types/base.ts'
 
 export interface KookCommandContext extends CommandContext {
 	readonly carrier: 'kook'
+	/** Aborted when the gateway call, KOOK provider, or registering plugin stops. */
 	readonly signal: AbortSignal
 	readonly bot: KookBot
 	readonly event: KookEvent
-	/** Reply to the message that invoked this command and return the created KOOK message ID. */
+	/** Reply to the invoking message and return the created KOOK message ID. */
 	reply(content: string): Promise<string>
 }
 
-export type KookCommandBinding<Input, Output> = ArgvBinding<Input> & {
-	/** Project a validated command result back to KOOK. Omit when the handler replies itself. */
-	respond?: (output: Output, context: KookCommandContext) => void | Promise<void>
+const kookCommandBrand = Symbol('KookCommand')
+
+/** A KOOK-native command whose handler owns all user responses and returns no public output. */
+export type KookCommand<Input = unknown> = Command<Input, void, KookCommandContext> & {
+	readonly [kookCommandBrand]: true
 }
 
+/**
+ * Define a KOOK-native command. Its handler receives `KookCommandContext`, replies directly, and
+ * returns no structured output. Use `defineCommand()` plus `kook.commands.bind()` for a portable
+ * command whose output needs a KOOK projection.
+ */
+export function defineKookCommand<SIn extends ObjectSchema>(
+	config: VoidCommandDefinition<SIn, KookCommandContext>,
+): KookCommand<Wire<SIn>> {
+	if (Object.hasOwn(config, 'output')) {
+		throw new TypeError(
+			'defineKookCommand() does not accept output; use defineCommand() and kook.commands.bind()',
+		)
+	}
+	const command = defineCommand<SIn, KookCommandContext>(config)
+	Object.defineProperty(command, kookCommandBrand, { value: true })
+	return command as KookCommand<Wire<SIn>>
+}
+
+/** KOOK syntax and terminal response projection for a portable Command. */
+export type KookCommandProjection<Input, Output> = ArgvBinding<Input> & {
+	respond(output: Output, context: KookCommandContext): void | Promise<void>
+}
+
+/**
+ * Owner-bound KOOK command routes.
+ *
+ * Manual registration disposal only withdraws the route, so an already admitted invocation may
+ * finish. Stopping its owner aborts and drains admitted invocations before owner teardown.
+ */
 export interface KookCommands {
-	register<Input, Output>(
-		command: Command<Input, Output, KookCommandContext>,
-		binding: KookCommandBinding<Input, Output>,
+	/**
+	 * Register a KOOK-native command; its execute handler owns the response.
+	 *
+	 * The route belongs to the calling plugin and is withdrawn when that plugin stops.
+	 */
+	register<Input>(command: KookCommand<Input>, binding: ArgvBinding<Input>): Registration
+	/**
+	 * Bind a portable Command and project its validated output to KOOK.
+	 *
+	 * The route belongs to the calling plugin and is withdrawn when that plugin stops.
+	 */
+	bind<Input, Output>(
+		command: Command<Input, Output, CommandContext>,
+		projection: KookCommandProjection<Input, Output>,
 	): Registration
 	list(): readonly ArgvCommandDescriptor[]
 }
 
 type ActiveBinding = {
-	registration: Registration
-	respond?: (output: unknown, context: KookCommandContext) => void | Promise<void>
+	owner: Context
+	respond: ((output: unknown, context: KookCommandContext) => void | Promise<void>) | undefined
+	dispose(): void
 }
 
 /** @internal KOOK owns parsing and constructs the context required by its command registry. */
-export class KookCommandCarrier implements KookCommands {
+export class KookCommandCarrier {
 	private readonly router = createArgvRouter<KookCommandContext>()
 	private readonly bindings = new Map<string, ActiveBinding>()
+	private readonly views = new WeakMap<Context, KookCommands>()
+	private readonly ownersWithInvocationCleanup = new WeakSet<Context>()
 	private active = true
 
 	constructor(private readonly ctx: Context) {}
 
-	register<Input, Output>(
-		command: Command<Input, Output, KookCommandContext>,
-		binding: KookCommandBinding<Input, Output>,
-	): Registration {
-		this.assertActive()
-		const { respond, ...argv } = binding
-		const registration = this.router.bind(command, argv)
-		const active: ActiveBinding = {
-			registration,
-			...(respond
-				? {
-						respond: respond as (
-							output: unknown,
-							context: KookCommandContext,
-						) => void | Promise<void>,
-					}
-				: {}),
+	/** @internal Return one stable owner-bound author view. */
+	forOwner(owner: Context): KookCommands {
+		if (owner.root !== this.ctx.root) {
+			throw new TypeError('KOOK command owner must belong to the carrier runtime')
 		}
-		this.bindings.set(command.name, active)
-		return Object.freeze({
-			name: command.name,
-			dispose: () => this.remove(command.name, active),
+		let view = this.views.get(owner)
+		if (view) return view
+		view = Object.freeze({
+			register: <Input>(command: KookCommand<Input>, binding: ArgvBinding<Input>) =>
+				this.register(owner, command, binding),
+			bind: <Input, Output>(
+				command: Command<Input, Output, CommandContext>,
+				projection: KookCommandProjection<Input, Output>,
+			) => this.bind(owner, command, projection),
+			list: () => this.list(),
 		})
+		this.views.set(owner, view)
+		return view
 	}
 
 	list(): readonly ArgvCommandDescriptor[] {
@@ -81,20 +131,33 @@ export class KookCommandCarrier implements KookCommands {
 	async dispatch(bot: KookBot, event: KookEvent, signal: AbortSignal): Promise<boolean> {
 		const source = commandSource(bot, event)
 		if (source === undefined) return false
-		const context = createKookCommandContext(bot, event, signal)
-		let commandName: string | undefined
+		let context: KookCommandContext | undefined
 
 		try {
 			const resolution = this.router.resolve(source)
 			if (!resolution) return false
-			commandName = resolution.command.name
-			const binding = this.bindings.get(commandName)
-			const output = await resolution.command.executeOrThrow(resolution.candidate, context)
-			await binding?.respond?.(output, context)
-			return true
+			const binding = this.bindings.get(resolution.command.name)!
+			let carrierLease: OwnerInvocationLease | undefined
+			let ownerLease: OwnerInvocationLease | undefined
+			try {
+				carrierLease = enterInvocation(this.ctx, signal)
+				ownerLease =
+					binding.owner === this.ctx
+						? carrierLease
+						: enterInvocation(binding.owner, carrierLease.signal)
+				context = createKookCommandContext(bot, event, ownerLease.signal)
+				const output = await resolution.command.executeOrThrow(resolution.candidate, context)
+				await binding.respond?.(output, context)
+				return true
+			} finally {
+				if (ownerLease && ownerLease !== carrierLease) ownerLease.dispose()
+				carrierLease?.dispose()
+			}
 		} catch (error) {
-			if (signal.aborted) throw signal.reason
-			await this.reportFailure(error, context, commandName)
+			if (signal.aborted) throw signal.reason ?? error
+			if (context?.signal.aborted || isCancellation(error)) return true
+			context ??= createKookCommandContext(bot, event, signal)
+			await this.reportFailure(error, context)
 			return true
 		}
 	}
@@ -102,26 +165,93 @@ export class KookCommandCarrier implements KookCommands {
 	dispose(): void {
 		if (!this.active) return
 		this.active = false
-		for (const [name, binding] of this.bindings) this.remove(name, binding)
+		for (const binding of this.bindings.values()) binding.dispose()
 	}
 
-	private remove(name: string, expected: ActiveBinding): void {
-		if (this.bindings.get(name) !== expected) return
-		this.bindings.delete(name)
-		expected.registration.dispose()
+	private register<Input>(
+		owner: Context,
+		command: KookCommand<Input>,
+		binding: ArgvBinding<Input>,
+	): Registration {
+		if (!isKookCommand(command)) {
+			throw new TypeError('commands.register() requires a command from defineKookCommand()')
+		}
+		if (Object.hasOwn(binding, 'respond')) {
+			throw new TypeError(
+				'KOOK-native commands respond inside execute(); binding.respond is invalid',
+			)
+		}
+		return this.install(owner, command, binding)
 	}
 
-	private async reportFailure(
-		error: unknown,
-		context: KookCommandContext,
-		command: string | undefined,
-	): Promise<void> {
+	private bind<Input, Output>(
+		owner: Context,
+		command: Command<Input, Output, CommandContext>,
+		projection: KookCommandProjection<Input, Output>,
+	): Registration {
+		if (isKookCommand(command)) {
+			throw new TypeError('commands.bind() accepts portable commands; use commands.register()')
+		}
+		if (typeof projection.respond !== 'function') {
+			throw new TypeError('commands.bind() requires a respond function')
+		}
+		const { respond, ...binding } = projection
+		return this.install(owner, command, binding, respond)
+	}
+
+	private install<Input, Output>(
+		owner: Context,
+		command: Command<Input, Output, KookCommandContext>,
+		binding: ArgvBinding<Input>,
+		respond?: (output: Output, context: KookCommandContext) => void | Promise<void>,
+	): Registration {
+		this.assertActive()
+		const registration = this.router.bind(command, binding)
+		let published = true
+		let guard: { cancel(): void } | undefined
+		let active!: ActiveBinding
+		const cleanup = () => {
+			if (!published) return
+			published = false
+			if (this.bindings.get(command.name) === active) this.bindings.delete(command.name)
+			registration.dispose()
+		}
+		active = {
+			owner,
+			respond: respond as
+				| ((output: unknown, context: KookCommandContext) => void | Promise<void>)
+				| undefined,
+			dispose: () => {
+				guard?.cancel()
+				cleanup()
+			},
+		}
+		this.bindings.set(command.name, active)
+		try {
+			this.ownInvocationCleanup(owner)
+			guard = owner.effects.defer(cleanup, { tag: `KookCommand:${command.name}` })
+		} catch (error) {
+			cleanup()
+			throw error
+		}
+		return Object.freeze({ name: command.name, dispose: active.dispose })
+	}
+
+	private ownInvocationCleanup(owner: Context): void {
+		if (this.ownersWithInvocationCleanup.has(owner)) return
+		owner.effects.defer(() => closeOwnerInvocations(owner), {
+			tag: 'KookCommandInvocations',
+			phase: 'shutdown',
+		})
+		this.ownersWithInvocationCleanup.add(owner)
+	}
+
+	private async reportFailure(error: unknown, context: KookCommandContext): Promise<void> {
 		if (error instanceof CommandError && error.kind === 'expected') {
 			await context.reply(error.publicMessage)
 			return
 		}
 		this.ctx.logger.warn('KOOK command failed', {
-			command,
 			accountId: context.bot.id,
 			error,
 		})
@@ -131,6 +261,22 @@ export class KookCommandCarrier implements KookCommands {
 	private assertActive(): void {
 		if (!this.active) throw new Error('KOOK command carrier is stopped')
 	}
+}
+
+function isKookCommand(command: object): boolean {
+	return (command as { [kookCommandBrand]?: unknown })[kookCommandBrand] === true
+}
+
+function enterInvocation(owner: Context, signal: AbortSignal): OwnerInvocationLease {
+	try {
+		return enterOwnerInvocation(owner, signal)
+	} catch (error) {
+		throw new CommandError('ABORTED', 'Command cancelled', { cause: error })
+	}
+}
+
+function isCancellation(error: unknown): boolean {
+	return error instanceof CommandError && error.code === 'ABORTED'
 }
 
 function commandSource(bot: KookBot, event: KookEvent): string | undefined {
@@ -153,10 +299,20 @@ function createKookCommandContext(
 		bot,
 		event,
 		reply: async (content: string) => {
+			signal.throwIfAborted()
 			const result =
 				event.channel_type === 'PERSON'
-					? await bot.$.direct({ target_id: event.author_id }).reply(event.msg_id, content)
-					: await bot.$.channel(event.target_id).reply(event.msg_id, content)
+					? await bot.$.raw.call(
+							'createDirectMessage',
+							{ target_id: event.author_id, quote: event.msg_id, content },
+							{ signal },
+						)
+					: await bot.$.raw.call(
+							'sendMessage',
+							{ target_id: event.target_id, quote: event.msg_id, content },
+							{ signal },
+						)
+			signal.throwIfAborted()
 			if (result.ok === false) {
 				throw new Error(`KOOK API error ${result.code}: ${result.message}`)
 			}

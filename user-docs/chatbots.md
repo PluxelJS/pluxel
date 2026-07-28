@@ -52,6 +52,49 @@ override init() {
 
 公开命令必须显式设置 `permission: false`；否则默认声明 deny 的 `cmd.<command.name>`。匹配成功后 carrier 构造包含 `message`、`user`、`signal`、`reply` 和 `send` 的 `ChatCommandContext`。只要求基础 `CommandContext` 的命令还能复用到 runtime、CLI、KOOK 或 Agent；要求 Chat 上下文的命令不能进入基础 runtime catalog。未知 route 会继续 Hub handler 管线，已匹配但参数错误的 route 会回复安全错误并停止管线。
 
+## KOOK 命令
+
+KOOK carrier 用方法名区分两种真实语义。KOOK 原生命令用 `defineKookCommand()` 定义，handler 直接读取
+`bot`、`event`、`signal` 并调用 `reply()`；它没有 output，也不需要 response marker：
+
+```ts
+import { defineKookCommand } from '@repo/chatbots-kook'
+
+const inspect = defineKookCommand({
+	name: 'kook.inspect',
+	description: 'Inspect the invoking KOOK message.',
+	behavior: { kind: 'query', world: 'closed' },
+	input: obj({ detail: Type.String() }),
+	async execute({ detail }, ctx) {
+		await ctx.reply(`${ctx.bot.id}:${ctx.event.author_id}:${detail}`)
+	},
+})
+
+override init() {
+	this.kook.commands.register(inspect, {
+		routes: ['inspect'],
+		positionals: ['detail'],
+	})
+}
+```
+
+需要复用到 runtime、CLI 或其他 carrier 的普通 `Command` 保持基础 context 和结构化 output，通过 `bind()`
+补上 KOOK 语法与必需的终端回复：
+
+```ts
+this.kook.commands.bind(lookup, {
+	routes: ['weather', 'forecast'],
+	positionals: ['city'],
+	respond: async ({ forecast }, ctx) => {
+		await ctx.reply(forecast)
+	},
+})
+```
+
+`register()` 与 `bind()` 都自动归属于调用 `KookPlugin` 的消费插件，无需 `effects.own()`。手动 dispose 只撤销
+route，不取消已经开始的调用；消费插件或 KOOK provider 停止时会拒绝新调用、abort 并 drain 在途调用。额外的
+网络 IO 必须传递 `ctx.signal`；`ctx.reply()` 已自动传播该 signal。匹配的 KOOK route 会在 Hub bridge 前消费 event。
+
 平台插件的 `upsertBot()` 返回已安装的受管 Bot，`reconnectBot()/disconnectBot()` 返回平台状态，`removeBot()` 不返回管理 DTO。管理 RPC 只服务配置页面，不是业务插件 API。
 
 平台插件 required-depend `WretchPlugin`，所有 API 请求使用 caller-bound 原生 Wretch base，自动继承宿主的 timeout、并发、等待队列、origin policy 和 lifecycle cancellation。Telegram `retry_after` 或 KOOK HTTP `Retry-After` 仍由每个 Bot 的平台 gate 处理，只延迟后续请求，不重放当前失败调用。

@@ -18,13 +18,15 @@ export type { KookBotConfigInput, KookEventConsumer } from './bot/manager.ts'
 export class KookPlugin extends BasePlugin {
 	private manager?: KookBotManager
 	private readonly commandCarrier: KookCommandCarrier
-	readonly commands: KookCommands
 	readonly events = createKookPluginEvents(this.ctx)
 
 	constructor(private readonly http: WretchPlugin) {
 		super()
 		this.commandCarrier = new KookCommandCarrier(this.ctx)
-		this.commands = this.commandCarrier
+	}
+
+	get commands(): KookCommands {
+		return this.commandCarrier.forOwner(this.ctx.caller ?? this.ctx)
 	}
 
 	get bots(): BotRegistry<KookBot> {

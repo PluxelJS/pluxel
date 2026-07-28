@@ -84,6 +84,8 @@ describe('chatbots package boundaries', () => {
 		const manifest = platformPackageJson('kook')
 		expect(manifest.dependencies).not.toHaveProperty('@pluxel/commands')
 		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
+		expect(manifest.dependencies).not.toHaveProperty('@pluxel/core')
+		expect(manifest.peerDependencies).toHaveProperty('@pluxel/core', 'workspace:*')
 	})
 
 	it.each(['commands', 'builtins'])('plugins/%s uses the host-owned command kernel', (name) => {

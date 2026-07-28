@@ -237,6 +237,12 @@ export type OutputCommandDefinition<
 	execute(input: Infer<SIn>, context: Ctx): Infer<SOut> | Promise<Infer<SOut>>
 }
 
+/**
+ * Definition contract for a command with no structured business output.
+ *
+ * Carrier packages may reuse this shape to provide a context-specific command definer while
+ * keeping validation and execution semantics aligned with `defineCommand()`.
+ */
 export type VoidCommandDefinition<
 	SIn extends ObjectSchema,
 	Ctx extends CommandContext = CommandContext,

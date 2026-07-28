@@ -14,3 +14,6 @@ its commit and returns `void`, preventing an owner invocation from awaiting its 
 
 Clarify that EffectsService owns only explicit disposable handles and awaitable cleanup; it does not
 publish an ambient lifetime signal.
+
+Export `VoidCommandDefinition` so carrier packages can build context-specific command definers
+without duplicating the command definition contract.

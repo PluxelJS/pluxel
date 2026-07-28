@@ -26,6 +26,7 @@ export type {
 	Schema,
 	ValidationIssue,
 	Validator,
+	VoidCommandDefinition,
 	Wire,
 } from './types'
 

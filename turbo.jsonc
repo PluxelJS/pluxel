@@ -300,6 +300,15 @@
 		"@repo/project-chatbots#typecheck": {
 			"dependsOn": ["@pluxel/runtime-static#build"],
 		},
+		"@repo/chatbots-kook#typecheck": {
+			// KOOK consumes Commands/Core declarations directly; their builds clean dist before emit.
+			"dependsOn": [
+				"@pluxel/commands#build",
+				"@pluxel/core#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
+			],
+		},
 		"@repo/project-external-api-gateway#typecheck": {
 			"dependsOn": ["@pluxel/runtime-static#build"],
 		},

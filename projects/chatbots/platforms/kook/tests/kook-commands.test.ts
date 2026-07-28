@@ -1,14 +1,21 @@
 import { defineCommand } from '@pluxel/commands'
 import { tail } from '@pluxel/commands/argv'
 import { Type, obj } from '@pluxel/commands/typebox'
-import { createRuntimeContext } from '@pluxel/runtime/test'
+import {
+	BasePlugin,
+	createRuntimeContext,
+	createRuntimeHost,
+	Plugin,
+	setParamTokens,
+} from '@pluxel/runtime/test'
 import { describe, expect, it, vi } from 'vitest'
 import wretch from 'wretch'
 import { KookBot } from '../src/bot/bot.ts'
 import type { KookEvent } from '../src/bot/events.types.ts'
 import { createKookPluginEvents } from '../src/bot/events.factory.ts'
 import { KookBotManager } from '../src/bot/manager.ts'
-import { KookCommandCarrier, type KookCommandContext, type KookCommands } from '../src/commands.ts'
+import { defineKookCommand, KookCommandCarrier, type KookCommands } from '../src/commands.ts'
+import { KookPlugin } from '../src/plugin.ts'
 
 const input = obj({ text: Type.String({ minLength: 1 }) })
 const output = obj({ reply: Type.String() })
@@ -22,22 +29,70 @@ const portableCommand = defineCommand({
 	execute: ({ text }) => ({ reply: text }),
 })
 
-const kookCommand = defineCommand<typeof input, typeof output, KookCommandContext>({
+const kookCommand = defineKookCommand({
 	name: 'kook.echo',
 	description: 'Echo text with KOOK invocation facts.',
 	behavior: { kind: 'query', world: 'closed' },
 	input,
-	output,
-	execute: ({ text }, context) => ({
-		reply: `${context.carrier}:${context.bot.id}:${context.event.author_id}:${text}`,
-	}),
+	execute: async ({ text }, context) => {
+		await context.reply(`${context.carrier}:${context.bot.id}:${context.event.author_id}:${text}`)
+	},
 })
+
+@Plugin({ name: 'KookCommandTestHttpPlugin' })
+class KookCommandTestHttpPlugin extends BasePlugin {
+	readonly client = wretch()
+}
+
+@Plugin({ name: 'KookCommandConsumerPlugin' })
+class KookCommandConsumerPlugin extends BasePlugin {
+	constructor(private readonly kook: KookPlugin) {
+		super()
+	}
+
+	override init(): void {
+		this.kook.commands.register(kookCommand, {
+			routes: ['consumer-owned'],
+			tail: tail.text('text'),
+		})
+	}
+}
+
+setParamTokens(KookPlugin, [KookCommandTestHttpPlugin])
+setParamTokens(KookCommandConsumerPlugin, [KookPlugin])
 
 function assertContextDirection(
 	commands: KookCommands,
 	runtime: ReturnType<typeof createRuntimeContext>,
 ) {
-	commands.register(portableCommand, { routes: ['portable'], tail: tail.text('text') })
+	commands.bind(portableCommand, {
+		routes: ['portable'],
+		tail: tail.text('text'),
+		respond: () => undefined,
+	})
+	commands.register(kookCommand, { routes: ['kook'], tail: tail.text('text') })
+	// @ts-expect-error Portable commands need an explicit KOOK output projection.
+	commands.register(portableCommand, { routes: ['invalid-portable'], tail: tail.text('text') })
+	// @ts-expect-error KOOK-native commands own their reply and cannot be projected again.
+	commands.bind(kookCommand, {
+		routes: ['invalid-kook'],
+		tail: tail.text('text'),
+		respond: () => undefined,
+	})
+	// @ts-expect-error A portable command binding must define its terminal KOOK response.
+	commands.bind(portableCommand, {
+		routes: ['missing-response'],
+		tail: tail.text('text'),
+	})
+	defineKookCommand({
+		name: 'kook.invalid-output',
+		description: 'Invalid KOOK command shape.',
+		behavior: { kind: 'query', world: 'closed' },
+		input,
+		// @ts-expect-error KOOK-native commands cannot declare structured output.
+		output,
+		execute: () => undefined,
+	})
 	// @ts-expect-error Runtime cannot execute a command that requires KOOK invocation context.
 	runtime.ctx.commands.register(kookCommand)
 }
@@ -62,6 +117,66 @@ function event(source: string, patch: Partial<KookEvent> = {}): KookEvent {
 }
 
 describe('KOOK command carrier', () => {
+	it('attributes injected KookPlugin registrations to the consuming plugin', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			host.add([KookCommandTestHttpPlugin, KookPlugin, KookCommandConsumerPlugin])
+			const started = await host.commitAllowFail()
+			expect(started.lifecycleReport.issues).toEqual([])
+			expect(host.require(KookPlugin).commands.list()).toEqual([
+				expect.objectContaining({ name: 'kook.echo', routes: ['consumer-owned'] }),
+			])
+
+			host.remove(KookCommandConsumerPlugin)
+			await host.commit()
+			expect(host.isRunning(KookPlugin)).toBe(true)
+			expect(host.require(KookPlugin).commands.list()).toEqual([])
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('keeps native registration and portable projection as disjoint contracts', async () => {
+		const runtime = createRuntimeContext()
+		const carrier = new KookCommandCarrier(runtime.ctx)
+		const commands = carrier.forOwner(runtime.ctx)
+
+		try {
+			expect(() =>
+				commands.register(portableCommand as never, {
+					routes: ['invalid-portable'],
+					tail: tail.text('text'),
+				}),
+			).toThrow('commands.register() requires a command from defineKookCommand()')
+			expect(() =>
+				commands.bind(kookCommand as never, {
+					routes: ['invalid-kook'],
+					tail: tail.text('text'),
+					respond: () => undefined,
+				}),
+			).toThrow('commands.bind() accepts portable commands')
+			expect(() =>
+				commands.bind(portableCommand, {
+					routes: ['missing-response'],
+					tail: tail.text('text'),
+				} as never),
+			).toThrow('commands.bind() requires a respond function')
+			expect(() =>
+				defineKookCommand({
+					name: 'kook.invalid-output',
+					description: 'Invalid KOOK command shape.',
+					behavior: { kind: 'query', world: 'closed' },
+					input,
+					output,
+					execute: ({ text }: { text: string }) => ({ reply: text }),
+				} as never),
+			).toThrow('defineKookCommand() does not accept output')
+		} finally {
+			carrier.dispose()
+			await runtime.dispose()
+		}
+	})
+
 	it('consumes matched commands before ordinary event consumers', async () => {
 		const runtime = createRuntimeContext()
 		const bot = new KookBot({
@@ -117,8 +232,9 @@ describe('KOOK command carrier', () => {
 			token: 'secret',
 		})
 		const carrier = new KookCommandCarrier(runtime.ctx)
+		const commands = carrier.forOwner(runtime.ctx)
 		const runtimeRegistration = runtime.ctx.commands.register(portableCommand)
-		const kookRegistration = carrier.register(portableCommand, {
+		const kookRegistration = commands.bind(portableCommand, {
 			routes: ['portable'],
 			tail: tail.text('text'),
 			respond: async ({ reply }, context) => {
@@ -160,15 +276,11 @@ describe('KOOK command carrier', () => {
 			token: 'secret',
 		})
 		const carrier = new KookCommandCarrier(runtime.ctx)
-		const ownerEffects = runtime.ctx.effects.scope({ tag: 'KookCommandOwner' })
-		const registration = carrier.register(kookCommand, {
+		const commands = carrier.forOwner(runtime.ctx)
+		commands.register(kookCommand, {
 			routes: ['echo'],
 			tail: tail.text('text'),
-			respond: async ({ reply }, context) => {
-				await context.reply(reply)
-			},
 		})
-		ownerEffects.own(registration)
 
 		try {
 			expect(carrier.list()).toEqual([
@@ -185,14 +297,13 @@ describe('KOOK command carrier', () => {
 				content: 'kook:community:user-1:hello world',
 			})
 
-			await ownerEffects.dispose()
+			await runtime.ctx.effects.dispose()
 			expect(carrier.list()).toEqual([])
 			await expect(
 				carrier.dispatch(bot, event('/echo ignored'), new AbortController().signal),
 			).resolves.toBe(false)
 			expect(requests).toHaveLength(1)
 		} finally {
-			await ownerEffects.dispose()
 			carrier.dispose()
 			bot.$.destroy()
 			await runtime.dispose()
@@ -216,25 +327,22 @@ describe('KOOK command carrier', () => {
 		})
 		const started = Promise.withResolvers<void>()
 		const gate = Promise.withResolvers<void>()
-		const delayed = defineCommand<typeof input, typeof output, KookCommandContext>({
+		const delayed = defineKookCommand({
 			name: 'kook.delayed',
 			description: 'Wait before producing one reply.',
 			behavior: { kind: 'query', world: 'closed' },
 			input,
-			output,
-			async execute({ text }) {
+			async execute({ text }, context) {
 				started.resolve()
 				await gate.promise
-				return { reply: text }
+				await context.reply(text)
 			},
 		})
 		const carrier = new KookCommandCarrier(runtime.ctx)
-		const registration = carrier.register(delayed, {
+		const commands = carrier.forOwner(runtime.ctx)
+		const registration = commands.register(delayed, {
 			routes: ['delayed'],
 			tail: tail.text('text'),
-			respond: async ({ reply }, context) => {
-				await context.reply(reply)
-			},
 		})
 
 		try {
@@ -250,6 +358,82 @@ describe('KOOK command carrier', () => {
 			expect(fetch).toHaveBeenCalledOnce()
 		} finally {
 			gate.resolve()
+			carrier.dispose()
+			bot.$.destroy()
+			await runtime.dispose()
+		}
+	})
+
+	it('aborts reply IO and drains admitted invocations when the registering owner stops', async () => {
+		const runtime = createRuntimeContext()
+		const owner = runtime.ctx.extend({ name: 'KookCommandConsumer' })
+		const requestStarted = Promise.withResolvers<AbortSignal>()
+		const handlerExited = Promise.withResolvers<void>()
+		const order: string[] = []
+		const bot = new KookBot({
+			id: 'owner-cancelled',
+			ctx: runtime.ctx,
+			http: wretch().fetchPolyfill(async (request, init) => {
+				const requestSignal = new Request(request, init).signal
+				requestStarted.resolve(requestSignal)
+				return new Promise<Response>((_resolve, reject) => {
+					const abort = () => {
+						order.push('io-abort')
+						reject(requestSignal.reason)
+					}
+					if (requestSignal.aborted) abort()
+					else requestSignal.addEventListener('abort', abort, { once: true })
+				})
+			}),
+			token: 'secret',
+		})
+		const command = defineKookCommand({
+			name: 'kook.owner-cancelled',
+			description: 'Reply until the registering owner stops.',
+			behavior: { kind: 'query', world: 'open' },
+			input,
+			async execute({ text }, context) {
+				try {
+					await context.reply(text)
+				} finally {
+					order.push('handler-exit')
+					handlerExited.resolve()
+				}
+			},
+		})
+		const carrier = new KookCommandCarrier(runtime.ctx)
+		const commands = carrier.forOwner(owner)
+		commands.register(command, {
+			routes: ['owner-cancelled'],
+			tail: tail.text('text'),
+		})
+
+		try {
+			const invocation = carrier.dispatch(
+				bot,
+				event('/owner-cancelled pending'),
+				new AbortController().signal,
+			)
+			const requestSignal = await requestStarted.promise
+			expect(requestSignal.aborted).toBe(false)
+
+			const stopping = owner.effects.dispose().then(() => order.push('owner-disposed'))
+			await handlerExited.promise
+			await expect(invocation).resolves.toBe(true)
+			await stopping
+
+			expect(requestSignal.aborted).toBe(true)
+			expect(order).toEqual(['io-abort', 'handler-exit', 'owner-disposed'])
+			expect(carrier.list()).toEqual([])
+			expect(() =>
+				commands.register(command, {
+					routes: ['stale-owner'],
+					tail: tail.text('text'),
+				}),
+			).toThrow('Effects service is disposed')
+			expect(carrier.list()).toEqual([])
+		} finally {
+			await owner.effects.dispose()
 			carrier.dispose()
 			bot.$.destroy()
 			await runtime.dispose()
@@ -273,7 +457,8 @@ describe('KOOK command carrier', () => {
 			token: 'secret',
 		})
 		const carrier = new KookCommandCarrier(runtime.ctx)
-		carrier.register(kookCommand, {
+		const commands = carrier.forOwner(runtime.ctx)
+		commands.register(kookCommand, {
 			routes: ['echo'],
 			tail: tail.text('text'),
 		})

@@ -9,4 +9,10 @@ export type {
 } from './bot/events.types.ts'
 export { KookPlugin, type KookBotConfigInput, type KookEventConsumer } from './plugin.ts'
 export type { KookBotPhase, KookBotStatus } from './bot/status.ts'
-export type { KookCommandBinding, KookCommandContext, KookCommands } from './commands.ts'
+export { defineKookCommand } from './commands.ts'
+export type {
+	KookCommand,
+	KookCommandContext,
+	KookCommandProjection,
+	KookCommands,
+} from './commands.ts'

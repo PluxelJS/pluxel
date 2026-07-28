@@ -27,6 +27,7 @@
 	"peerDependencies": {
 		"@mantine/core": "catalog:",
 		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/wretch": "workspace:*",
 		"@tabler/icons-react": "catalog:",

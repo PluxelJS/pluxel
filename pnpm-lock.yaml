@@ -1400,6 +1400,9 @@ importers:
       '@pluxel/commands':
         specifier: workspace:*
         version: link:../../../../packages/commands
+      '@pluxel/core':
+        specifier: workspace:*
+        version: link:../../../../packages/core
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../../../packages/runtime
