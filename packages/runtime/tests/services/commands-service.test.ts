@@ -16,6 +16,144 @@ function valueCommand(value: string, name = 'example.value.get') {
 }
 
 describe('CommandsService', () => {
+	it('aborts and drains owner commands before the plugin stop hook', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			const order: string[] = []
+			let started!: () => void
+			const didStart = new Promise<void>((resolve) => (started = resolve))
+
+			@Plugin({ name: 'LongCommandOwner' })
+			class LongCommandOwner extends BasePlugin {
+				override init(): void {
+					this.ctx.commands.register(
+						defineCommand({
+							name: 'owner.long.run',
+							description: 'Run until the owner stops.',
+							behavior: { kind: 'query', world: 'closed' },
+							input: obj({}),
+							async execute(_input, { signal }) {
+								started()
+								await new Promise<void>((_resolve, reject) => {
+									signal?.addEventListener(
+										'abort',
+										() => {
+											order.push('abort')
+											reject(signal.reason)
+										},
+										{ once: true },
+									)
+								})
+							},
+						}),
+					)
+				}
+
+				override stop(): void {
+					order.push('stop')
+				}
+			}
+
+			host.add(LongCommandOwner)
+			host.cfg(LongCommandOwner).enable()
+			await host.commit()
+			const captured = host.ctx.commands.get('owner.long.run')!
+			const pending = host.ctx.commands.execute('owner.long.run', {})
+			await didStart
+			host.remove(LongCommandOwner)
+			await host.commit()
+
+			await expect(pending).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'ABORTED' },
+			})
+			expect(order).toEqual(['abort', 'stop'])
+			expect(host.ctx.commands.get('owner.long.run')).toBeUndefined()
+			await expect(captured.execute({}, {})).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'ABORTED' },
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('withdraws a manual registration without cancelling its admitted invocation', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			let registration!: { dispose(): void }
+			let started!: () => void
+			const didStart = new Promise<void>((resolve) => (started = resolve))
+			let release!: () => void
+			const released = new Promise<void>((resolve) => (release = resolve))
+
+			@Plugin({ name: 'WithdrawnCommandOwner' })
+			class WithdrawnCommandOwner extends BasePlugin {
+				override init(): void {
+					registration = this.ctx.commands.register(
+						defineCommand({
+							name: 'owner.withdraw.run',
+							description: 'Finish an admitted call after publication is withdrawn.',
+							behavior: { kind: 'query', world: 'closed' },
+							input: obj({}),
+							async execute() {
+								started()
+								await released
+							},
+						}),
+					)
+				}
+			}
+
+			host.add(WithdrawnCommandOwner)
+			host.cfg(WithdrawnCommandOwner).enable()
+			await host.commit()
+			const pending = host.ctx.commands.executeOrThrow('owner.withdraw.run', {})
+			await didStart
+			registration.dispose()
+			expect(host.ctx.commands.get('owner.withdraw.run')).toBeUndefined()
+			release()
+			await expect(pending).resolves.toBeUndefined()
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('schedules owner self-shutdown after its command invocation releases', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			@Plugin({ name: 'SelfStoppingCommandOwner' })
+			class SelfStoppingCommandOwner extends BasePlugin {
+				override init(): void {
+					this.ctx.commands.register(
+						defineCommand({
+							name: 'owner.self.stop',
+							description: 'Stop this command owner.',
+							behavior: {
+								kind: 'mutation',
+								destructive: false,
+								idempotent: true,
+								world: 'closed',
+							},
+							input: obj({}),
+							execute: () => this.ctx.registry.shutdownSelf(),
+						}),
+					)
+				}
+			}
+
+			host.add(SelfStoppingCommandOwner)
+			host.cfg(SelfStoppingCommandOwner).enable()
+			await host.commit()
+			await expect(host.ctx.commands.executeOrThrow('owner.self.stop', {})).resolves.toBeUndefined()
+			await host.commit()
+			expect(host.isRunning(SelfStoppingCommandOwner)).toBe(false)
+			expect(host.ctx.commands.get('owner.self.stop')).toBeUndefined()
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('publishes the built-in plugin management catalog once', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {

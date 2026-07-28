@@ -233,9 +233,26 @@ override async init(signal: AbortSignal) {
 
 资源创建成功后立即登记 cleanup。普通资源优先使用 `ctx.effects.defer()`；只有需要明确业务停止顺序时才实现 `stop()`。cleanup 必须幂等。
 
+后台工作应返回可释放 handle，让 `effects.own()` 等待它真正停止：
+
+```ts
+const worker = startWorker()
+this.ctx.effects.own(worker, { tag: 'worker' })
+```
+
+`worker.dispose()` 应停止接单、取消底层工作并等待退出。已有 task 使用 `cancel()` 时可写
+`this.ctx.effects.defer(() => task.cancel())`，但 `cancel()` 必须在任务真正停止后才 settle。底层 API 只接受
+`AbortSignal` 时，在 worker/task 内部持有局部 `AbortController`，由 `dispose()` abort 后再 await task。
+
+EffectsService 不提供全局 lifetime signal，因为只传 signal 不能让它发现或等待 Promise。HTTP、Command、timeout
+等调用级 signal 仍由对应调用边界传递；不要用 effects 生命周期替代请求取消。
+
 不要捕获启动错误后只记日志继续运行。那会制造“生命周期显示 running、能力实际不可用”的半启动状态。
 
 core 的行为是：失败插件不进入 running，required dependents 被阻塞，无关插件继续。是否退出进程、告警或拒绝部署由宿主决定。
+
+插件确实需要停止自身时调用 `this.ctx.registry.shutdownSelf()`。它会登记 removal 并调度后续 commit，返回
+`void`；不要 `await`，因为 lifecycle 必须先等待当前 owner invocation 返回，才能安全停止这个 generation。
 
 ## HTTP 与 Workbench Plane
 

@@ -1,0 +1,72 @@
+import type { Context } from '@pluxel/context'
+
+export type OwnerInvocationLease = {
+	readonly signal: AbortSignal
+	dispose(): void
+}
+
+class OwnerInvocationGate {
+	private readonly lifetime = new AbortController()
+	private active = 0
+	private idle?: {
+		promise: Promise<void>
+		resolve(value?: void | PromiseLike<void>): void
+		reject(reason?: unknown): void
+	}
+
+	enter(callSignal?: AbortSignal): OwnerInvocationLease {
+		if (this.lifetime.signal.aborted) throw abortReason(this.lifetime.signal)
+		if (callSignal?.aborted) throw abortReason(callSignal)
+
+		this.active += 1
+		const signal = callSignal
+			? callSignal === this.lifetime.signal
+				? callSignal
+				: AbortSignal.any([callSignal, this.lifetime.signal])
+			: this.lifetime.signal
+		let active = true
+		return Object.freeze({
+			signal,
+			dispose: () => {
+				if (!active) return
+				active = false
+				this.active -= 1
+				if (this.active === 0) this.idle?.resolve()
+			},
+		})
+	}
+
+	async close(reason: unknown): Promise<void> {
+		if (!this.lifetime.signal.aborted) this.lifetime.abort(reason)
+		if (this.active === 0) return
+		this.idle ??= Promise.withResolvers<void>()
+		await this.idle.promise
+	}
+}
+
+const ownerInvocations = new WeakMap<Context, OwnerInvocationGate>()
+
+/** @internal Enter one owner generation call boundary. */
+export function enterOwnerInvocation(
+	owner: Context,
+	callSignal?: AbortSignal,
+): OwnerInvocationLease {
+	let gate = ownerInvocations.get(owner)
+	if (!gate) {
+		gate = new OwnerInvocationGate()
+		ownerInvocations.set(owner, gate)
+	}
+	return gate.enter(callSignal)
+}
+
+/** @internal Stop admission, cancel active calls, and wait until their leases are released. */
+export function closeOwnerInvocations(
+	owner: Context,
+	reason: unknown = new Error('Plugin owner stopped'),
+): Promise<void> {
+	return ownerInvocations.get(owner)?.close(reason) ?? Promise.resolve()
+}
+
+function abortReason(signal: AbortSignal): unknown {
+	return signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
+}

@@ -49,6 +49,42 @@ Every field has one job:
 There is no descriptor version, nested `doc`, transport metadata, or second unchecked execution
 method.
 
+## One input contract, three layers
+
+The Command input object is the only public argument contract. Carrier syntax and domain decoding
+are projections around it, not additional schemas:
+
+```text
+argv route/options/positionals/tail --\
+Agent or HTTP JSON -------------------> wire input object
+direct or registry call -------------/         |
+                                                 v
+                                  defaults + validation + Transform Decode
+                                                 |
+                                                 v
+                                      decoded values for execute()
+```
+
+Each layer answers one different question:
+
+| Layer         | Owns                                                              | Does not own                      |
+| ------------- | ----------------------------------------------------------------- | --------------------------------- |
+| Carrier       | How transport input reaches fields in the input object            | Field meaning or business parsing |
+| Command input | JSON shape, defaults, validation, and string-backed domain codecs | CLI routes, quoting, or aliases   |
+| Handler       | Business behavior over decoded values                             | Untrusted transport parsing       |
+
+For example, argv may place `--condition "players >= 30"` into
+`{ condition: 'players >= 30' }`. A ParseBox-backed `Type.Transform(Type.String())` on the
+`condition` field then decodes that string before `execute()`. The same Transform runs when the
+string comes from a positional, `tail.text()`, Agent JSON, HTTP, or a registry call. ParseBox is not
+an argv parser, and ordinary string fields are not parsed unless their schema explicitly defines a
+Transform.
+
+With `tail.text('content')`, input such as
+`--condition "players >= 30" -- notify moderators` first becomes
+`{ condition: 'players >= 30', content: 'notify moderators' }`. Only fields whose input schema has a
+Transform are domain-decoded; `content` remains a normal string unless it declares its own codec.
+
 `Type` is the JSON TypeBox builder. Commands reject schemas whose wire values are JavaScript-only,
 such as `Type.Function()`, `Type.Date()`, `Type.BigInt()`, and byte arrays. JSON Schema has no such
 types: dates serialize as strings without preserving their class, BigInt cannot be serialized by
@@ -244,8 +280,10 @@ Disposal removes future lookup and discovery; it does not cancel an invocation t
 the command. Abort in-flight work through its call-scoped `signal` when the host requires that policy.
 
 `@pluxel/runtime` provides this ownership binding through `ctx.commands.register(command)`. Runtime
-plugins should use that service; direct registry construction remains for standalone hosts and carrier
-implementations.
+plugins should use that service; it also closes owner admission, aborts the combined owner/call signal,
+and drains admitted invocations before the plugin stops. Direct registry construction remains
+lifecycle-neutral for standalone hosts and carrier implementations. Manually disposing one runtime
+registration still only withdraws publication and does not cancel a call that already started.
 
 ## Project Agent/MCP tool information
 
@@ -286,7 +324,30 @@ implements task ownership, polling, cancellation, and retention.
 Permissions, user confirmation, rate limits, credentials, audit, icons, provider `_meta`, and tool
 selection remain carrier/host concerns. Filter descriptors before sending them to a model.
 
-## Add argv or message syntax
+## Project a catalog to default argv
+
+```ts
+import { createCommandArgv } from '@pluxel/commands/argv'
+
+const argv = createCommandArgv(commands)
+await argv.dispatchOrThrow(['config.patch', '--name', 'CachePlugin', '--patch', '{"enabled":true}'])
+```
+
+`createCommandArgv()` is the default catalog projection for a CLI carrier. It uses the exact command
+name as the first token, generated named options for scalar fields, and field-level JSON for complex
+fields. It resolves the current command on every call and dispatches through the catalog, so
+registration replacement is observed without rebuilding a mirrored registry. Routers are compiled
+lazily and cached by the current command handle.
+
+The adapter does not install a process entry, authorize commands, confirm destructive work, render
+output, or select exit codes. In Pluxel, the workspace `@pluxel/cli` executable is not implicitly
+attached to a runtime; an installed host carrier passes its allowed catalog to this adapter.
+
+Use this default unless the carrier has a real human-facing syntax requirement. Plugin registration
+does not attach CLI metadata to the shared runtime catalog. A custom grammar remains available, but
+the host or carrier installs it explicitly with `createArgvRouter().bind()`.
+
+## Add custom argv or message syntax
 
 ```ts
 import { createArgvRouter } from '@pluxel/commands/argv'
@@ -334,12 +395,21 @@ Routes use a canonical lowercase grammar. Matching is case-insensitive by defaul
 `caseInsensitive: false` when uppercase input should be rejected. Command text is limited to 16 KiB
 by default, and `maxTextLength` must be a positive safe integer.
 
-An `ArgvBinding` has one direct role for each field:
+An `ArgvBinding` only maps existing input-object fields into carrier syntax:
 
-- `routes`: complete command routes; the first is canonical and the rest are aliases;
-- `positionals`: schema fields consumed in their declared order;
-- `options`: overrides for generated options, not an allowlist;
-- `tail`: one text or JSON field that owns the remaining source.
+| Binding       | Consumption                                                                   | Use it for                                               |
+| ------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `routes`      | Selects the command; first route is canonical, the rest are aliases           | Human-facing command paths                               |
+| `options`     | Named, reorderable values; unlisted scalar fields still get generated options | Optional or easily confused values, names, short aliases |
+| `positionals` | One argv token per field, in declared order                                   | One or two obvious required values such as an ID or name |
+| `tail`        | One field consumes all remaining source as text or one JSON value             | Free text, a primary DSL expression, or a payload        |
+
+Positionals and tail stay separate because they terminate parsing differently: a positional consumes
+one token and normal option parsing continues, while tail consumes the remainder and later
+option-looking text belongs to that field. This does not force every command into two sections.
+Without a tail there is no remainder phase; with one, options and positionals may still interleave
+until tail consumption begins. `--` explicitly stops option recognition, fills any pending
+positionals, and then sends the remainder to tail.
 
 `tail.text(key)` contextually suggests only string wire fields from the bound Command, including a
 DSL field whose `Type.Transform()` is backed by `Type.String()`. `tail.json(key)` accepts any command
@@ -357,7 +427,8 @@ Top-level string, number, integer, boolean, string-enum, and scalar-array fields
 Each option has one canonical kebab-case long name, which is what help output displays. Option
 matching is case-insensitive and treats `_` like `-`, so `--retry-count`, `--RETRY-COUNT`, and
 `--retry_count` address the same option. Use explicit `aliases` for short names or genuinely
-different spellings. Positionals are explicit. Complex schemas must opt into JSON decoding:
+different spellings. Positionals are explicit. In a custom binding, complex schemas must opt into
+JSON decoding:
 
 ```ts
 argv.bind(patchConfig, {
@@ -452,8 +523,10 @@ error. ParseBox would add grammar code here without improving the public syntax.
 
 ## Decode a shared DSL with ParseBox
 
-When a DSL is part of the command's domain contract, keep it as one public string and decode it with
-the existing `Type.Transform()` boundary. Agent tools, argv, HTTP, and direct callers then submit the
+The input object remains the authority when a field contains a domain language. Keep that field as
+one public string and decode it with the existing `Type.Transform()` boundary. An argv option,
+positional, or text tail only decides how the string reaches the field; ParseBox runs later in the
+normal Command pipeline. Agent tools, argv, HTTP, registry, and direct callers therefore submit the
 same language, while validators and `execute()` receive the ParseBox mapping product. Do not force
 Agents to construct a second public AST representation.
 
@@ -643,7 +716,8 @@ keeps the arbitrary `AbortSignal.reason` as `cause` rather than placing it in pu
 - `@pluxel/commands`: definition, execution, validation, errors, and registry;
 - `@pluxel/commands/typebox`: JSON-only TypeBox builder and strict object helpers;
 - `@pluxel/commands/tool`: cached provider-neutral tool projection;
-- `@pluxel/commands/argv`: route trie, argv parsing, help data, and text/JSON tails.
+- `@pluxel/commands/argv`: default catalog projection, custom route binding, argv parsing, help
+  data, and text/JSON tails.
 
 Repository integration constraints are in [`docs/COMMANDS.md`](../../docs/COMMANDS.md); package
 implementation invariants and CLI ecosystem decisions are in [`docs/DESIGN.md`](docs/DESIGN.md).

@@ -146,7 +146,14 @@ function validationPublicMessage(
 	return code === 'INPUT_VALIDATION' ? 'Invalid command input' : 'Command failed'
 }
 
-function normalizeFailure(error: unknown): CommandError {
+function normalizeFailure(error: unknown, context?: CommandContext): CommandError {
+	if (!(error instanceof CommandError) && context?.signal?.aborted) {
+		const reason = context.signal.reason
+		if (reason instanceof CommandError) return reason
+		return new CommandError('ABORTED', 'Command cancelled', {
+			cause: reason ?? error,
+		})
+	}
 	return toCommandError(error, 'INTERNAL', 'Command failed')
 }
 
@@ -208,7 +215,7 @@ export function defineCommand<
 			assertActive(currentContext)
 			return outputValue
 		} catch (error) {
-			throw normalizeFailure(error)
+			throw normalizeFailure(error, currentContext)
 		}
 	}
 

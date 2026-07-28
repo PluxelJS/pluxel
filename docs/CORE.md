@@ -30,6 +30,8 @@ draft graph -> verify -> stop dependents -> start providers -> CommitSummary
 - provider 启动失败只阻塞 required dependents。
 - replacement 复用 stop/start 和 effects cleanup。
 - lifecycle report 是事实源，宿主基于它制定策略。
+- generation 停止时先关闭内部 owner invocation gate 并等待已接纳调用退出，再执行插件 `stop()`。
+- effects 只 drain 显式登记的 cleanup、Disposable 和 acquired resource；异步任务应返回可等待释放的 handle。
 
 ## Feature 边界
 

@@ -273,6 +273,16 @@ function schemaType(schema: Record<string, unknown>): ArgvValueType | 'array' | 
 	return undefined
 }
 
+export function requiresJsonArgvFormat(schema: Record<string, unknown>): boolean {
+	const type = schemaType(schema)
+	if (!type) return true
+	if (type !== 'array') return false
+	const items = schema.items
+	if (!items || typeof items !== 'object' || Array.isArray(items)) return true
+	const itemType = schemaType(items as Record<string, unknown>)
+	return !itemType || itemType === 'array'
+}
+
 function stringChoices(schema: Record<string, unknown>): readonly string[] | undefined {
 	let values: string[] | undefined
 	if (Array.isArray(schema.enum) && schema.enum.every((value) => typeof value === 'string')) {

@@ -718,15 +718,17 @@ export class PluginService {
 	 * Shutdown (unload) the current plugin (and optionally its dependents) from within a plugin context.
 	 *
 	 * This is an orchestration-layer operation and intentionally lives on PluginService (registry),
-	 * not on `effects`.
+	 * not on `effects`. The commit is scheduled and cannot be awaited from the owner call being stopped.
 	 */
-	public shutdownSelf(opts?: CascadeOptions) {
+	public shutdownSelf(opts?: CascadeOptions): void {
 		const pluginInfo = (this.ctx as unknown as { pluginInfo?: { class?: unknown } }).pluginInfo
 		if (!pluginInfo?.class) {
 			throw new Error(SHUTDOWN_OUTSIDE_PLUGIN_CONTEXT_MESSAGE)
 		}
 		this.unregister(pluginInfo.class as PluginIdentifier, opts)
-		return this.commit()
+		// Self-shutdown cannot be awaited from an owner invocation: lifecycle stop must first wait
+		// for that invocation lease. Queue the commit and let the current call return.
+		void this.commit()
 	}
 
 	/**

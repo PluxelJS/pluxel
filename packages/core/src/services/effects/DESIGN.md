@@ -26,6 +26,7 @@
    - 避免 snapshot-only / swap-set 导致漏清理
 3. **API 极简且语义硬**：不要 add/addMany、不要啰嗦工厂模式
 4. 与原生 ES `using` **可组合**：可在块结束时提前释放，并自动避免 unload double-free
+5. 异步工作必须通过可释放 handle 或可等待 cleanup 显式纳管，不发布只通知、不托管的 ambient signal
 
 ---
 
@@ -125,6 +126,19 @@ ES `using` 组合：
 - `fn(tx)` 失败：rollback（执行并注销 tx 期间登记的所有条目），再抛出错误
 
 关键实现：**checkpoint unwind + freeze**（见 §4.4）
+
+### 2.6 异步任务所有权
+
+EffectsService 不暴露 ambient lifetime signal。signal 只通知协作式取消，既不表示任务所有权，也不能让
+`dispose()` 找到并等待未登记的 Promise；把它放在 effects 上会产生“已传 signal 就已回收”的错误契约。
+
+默认模式：
+
+- 后台任务返回 `DisposableLike`，其 `dispose()` 完成停止接单、取消和等待退出，再交给 `effects.own()`；
+- 已有 task handle 使用 `effects.defer(() => task.cancel())`，其中 `cancel()` 必须在任务真正停止后才 settle；
+- 底层只接受 `AbortSignal` 时，局部 `AbortController` 属于 task/resource 实现，并在其 cleanup 中 abort 后 await；
+- request、command、timeout signal 属于调用边界，不由 EffectsService 合成；
+- 只有通过 `defer()` / `own()` / `acquire()` 登记的工作才进入 drain 与错误聚合。
 
 ---
 
@@ -325,11 +339,13 @@ Guard 只保存：
 ## 7. 推荐卸载流程（host 层）
 
 1. registry 标记 plugin unloading（可选：阻止新 side-effect）
-2. 调用插件 stop hooks（如果有）
-3. `await ctx.effects.dispose()`（drain）
-4. registry.unregister(plugin) + commit（真正卸载）
+2. 关闭内部 owner invocation admission，abort 并等待已接纳调用退出
+3. 调用插件 stop hooks（如果有）
+4. `await ctx.effects.dispose()`（drain）
+5. registry.unregister(plugin) + commit（真正卸载）
 
-插件自毁（例如 `await ctx.registry.shutdownSelf()`）只是触发上述流程的入口，不属于 effects 核心。
+插件自毁使用 `ctx.registry.shutdownSelf()` 调度后续 commit，不能从正在被停止的 owner invocation 中等待自己
+释放；该入口属于 lifecycle orchestration，不属于 effects 核心。
 
 ---
 

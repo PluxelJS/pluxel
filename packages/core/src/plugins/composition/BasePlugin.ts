@@ -11,6 +11,7 @@
 import type { Context } from '@pluxel/context'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { getPluginInfo } from '../decorators/decorator/api'
+import { closeOwnerInvocations } from '../../internal/owner-invocations'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
 import { PluginHost } from './PluginHost'
@@ -120,7 +121,10 @@ export abstract class BasePlugin<C extends Context = Context> {
 					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
-			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
+			stop: async (signal: AbortSignal) => {
+				await closeOwnerInvocations(ctx)
+				if (typeof plugin.stop === 'function') await plugin.stop(signal)
+			},
 			dispose: typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'

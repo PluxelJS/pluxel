@@ -1,4 +1,5 @@
 import {
+	CommandError,
 	createCommandRegistry,
 	type AnyCommand,
 	type CommandContext,
@@ -7,6 +8,7 @@ import {
 	type Registration,
 } from '@pluxel/commands'
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
+import { closeOwnerInvocations, enterOwnerInvocation } from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
 
 const serviceName = 'commands' as const
@@ -26,6 +28,7 @@ declare module '@pluxel/core' {
 @Injectable({ key: serviceName })
 export class CommandsService {
 	private state?: RootState
+	private ownsInvocationCleanup = false
 
 	constructor(
 		public ctx: CoreContext,
@@ -84,7 +87,7 @@ export class CommandsService {
 		command: AnyCommand,
 		state = this.rootState(),
 	): Registration {
-		const registration = state.registry.register(command)
+		const registration = state.registry.register(bindCommandOwner(owner, command))
 		let active = true
 		const cleanup = () => {
 			if (!active) return
@@ -94,6 +97,7 @@ export class CommandsService {
 
 		let guard: { cancel(): void }
 		try {
+			this.ownInvocationCleanup(owner)
 			guard = owner.effects.defer(cleanup, { tag: `Command:${registration.name}` })
 		} catch (error) {
 			cleanup()
@@ -108,6 +112,59 @@ export class CommandsService {
 			},
 		})
 	}
+
+	private ownInvocationCleanup(owner: CoreContext): void {
+		if (this.ownsInvocationCleanup) return
+		owner.effects.defer(() => closeOwnerInvocations(owner), {
+			tag: 'CommandInvocations',
+			phase: 'shutdown',
+		})
+		this.ownsInvocationCleanup = true
+	}
+}
+
+function bindCommandOwner(owner: CoreContext, command: AnyCommand): AnyCommand {
+	const executeOrThrow = async (candidate: unknown, context?: CommandContext): Promise<unknown> => {
+		let lease
+		try {
+			lease = enterOwnerInvocation(owner, context?.signal)
+		} catch (error) {
+			throw cancellationError(error)
+		}
+		try {
+			return await command.executeOrThrow(candidate, {
+				...context,
+				signal: lease.signal,
+			})
+		} finally {
+			lease.dispose()
+		}
+	}
+
+	return {
+		name: command.name,
+		descriptor: command.descriptor,
+		executeOrThrow,
+		async execute(candidate: unknown, context?: CommandContext): Promise<CommandResult<unknown>> {
+			try {
+				return { ok: true, value: await executeOrThrow(candidate, context) }
+			} catch (error) {
+				return {
+					ok: false,
+					error:
+						error instanceof CommandError
+							? error
+							: new CommandError('INTERNAL', 'Command failed', { cause: error }),
+				}
+			}
+		},
+	}
+}
+
+function cancellationError(error: unknown): CommandError {
+	return error instanceof CommandError
+		? error
+		: new CommandError('ABORTED', 'Command cancelled', { cause: error })
 }
 
 /** @internal Keep the owner-bearing Commands view isolated per plugin Context. */

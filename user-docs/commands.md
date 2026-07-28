@@ -79,10 +79,45 @@ All plugins in one runtime share the same catalog. The registration belongs to `
 Context effects and is removed automatically on stop, replacement, failed startup, or shutdown.
 Manual disposal remains available when a plugin wants to withdraw a command before it stops.
 
+Runtime execution also belongs to that plugin generation. When the generation stops, new calls are
+rejected, the current command signal is aborted, and Pluxel waits for admitted calls to settle before
+running the plugin `stop()` hook. Command implementations must cooperate with `context.signal`; arbitrary
+in-process work that ignores cancellation cannot be forcibly terminated. Disposing only the returned
+registration withdraws the command but deliberately lets an already-started call finish.
+
 The runtime catalog already contains `plugin.list`, `plugin.status.get`, `plugin.start`,
 `plugin.stop`, and `plugin.restart`. These commands operate through the existing runtime lifecycle
 use cases and return the resulting plugin status. Hosts project and filter this catalog for CLI,
 Workbench, HTTP, or Agent use; plugins do not register separate carrier-specific copies.
+
+## Provide the default CLI projection
+
+A host can expose every allowed runtime command through one argv adapter. Plugin authors do not call
+`bind()` for this default syntax:
+
+```ts
+import { createCommandArgv } from '@pluxel/commands/argv'
+
+const argv = createCommandArgv(ctx.root.commands)
+await argv.dispatchOrThrow(process.argv.slice(2), {
+	signal: processSignal,
+})
+```
+
+The exact first token is the command name. Input fields become generated named options; object, tuple,
+union, and other complex fields are decoded as JSON for that field:
+
+```sh
+config.patch --name CachePlugin --patch '{"enabled":true}'
+```
+
+The adapter follows the live catalog, so stop and replacement do not require a route rebuild. It does not
+choose authorization, destructive-command confirmation, output formatting, or exit codes; the host still
+filters the catalog and enforces those policies. The `@pluxel/cli` executable is a workspace build and
+development tool, not an automatically attached runtime process.
+
+Use `createArgvRouter().bind()` only when a carrier intentionally needs aliases, positionals, or a custom
+text/message grammar.
 
 Call `execute()` at untrusted boundaries and branch on its result. Use `executeOrThrow()` only when a
 carrier already translates `CommandError`; it still performs all validation.

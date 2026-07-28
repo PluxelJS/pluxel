@@ -22,6 +22,7 @@ export default defineConfig({
 			'@pluxel/commands',
 			'@pluxel/commands/*',
 			'@pluxel/core',
+			'@pluxel/core/internal',
 			'@pluxel/core/services',
 			'@pluxel/core/logger',
 			'react',

@@ -4,16 +4,26 @@
 Carriers project that authority; they do not recreate it.
 
 ```text
-CommandDescriptor (JSON facts) --------> Agent/MCP projection
-              |                         HTTP/Workbench discovery
-              |                         generated docs
-              |
-unknown input + call-scoped context
-              v
-       Command.execute()
-              |
- input -> custom validation -> handler -> output validation
+CommandDescriptor (JSON facts) ----------------> discovery and carrier projection
+
+Agent / HTTP JSON --------------------\
+argv syntax -> candidate object -------> Command wire input object
+registry / direct call ---------------/             |
+                                                     v
+                                      validate -> Transform Decode
+                                                     |
+                                                     v
+                                                  handler
+                                                     |
+                                                     v
+                                      Transform Encode -> validate
 ```
+
+The object-root Command input is the only argument authority. An argv binding maps routes and tokens
+to its existing fields; it cannot add a second input contract. A string-backed Transform gives one
+field domain meaning regardless of whether its wire string came from an option, positional, text
+tail, Agent, HTTP, registry, or direct execution. ParseBox therefore belongs inside such a Transform,
+not in the argv router.
 
 ## Public contract
 
@@ -95,12 +105,29 @@ than erase it with `AnyCommand<any>` or an optional-field union of every carrier
 `CommandRegistry` is the only stateful catalog. Tool conversion is a cached pure function over its
 descriptor list. This avoids duplicate registration, cleanup, revision, naming, and conflict rules.
 
-The public runtime exposes `createCommandRegistry()` and `createArgvRouter()` as the sole
-construction functions. Their class names are type-only exports. This preserves useful annotations
-without offering parallel `new` and factory styles or implying subclass extension points.
+The public package uses factories rather than public constructors. `createCommandRegistry()` and
+`createArgvRouter()` construct the stateful catalog and custom router primitives;
+`createCommandArgv()` constructs the lazy catalog adapter. Class names remain type-only exports.
+This preserves useful annotations without offering parallel `new` and factory styles or implying
+subclass extension points.
 
 Carrier-specific names require an adapter-owned reversible map. They do not rename the underlying
 command.
+
+## Default catalog argv projection
+
+`createCommandArgv(catalog)` provides conservative CLI availability without requiring each command
+owner to repeat `bind()` metadata. The exact first token selects `CommandDescriptor.name`; remaining
+schema fields use generated named options, with complex fields opting into the existing field-level
+JSON parser. It does not guess positionals, aliases, tails, or a whole-input JSON protocol.
+
+The adapter looks up only the selected current command and compiles one single-command router lazily.
+A `WeakMap` keyed by executable command identity retains that router while the handle is current;
+replacement naturally receives a new parser without catalog revisions, subscriptions, a mirrored
+registry, or a catalog-wide route trie. Parsed candidates dispatch back through
+`catalog.executeOrThrow(name, ...)`, so cached handles never bypass current ownership or replacement
+policy. Hosts remain responsible for filtering, authorization, confirmation, rendering, and process
+behavior.
 
 ## JSON Schema and argv
 
@@ -189,6 +216,11 @@ reserve ordered fields, `options` customizes generated options, and tail owns re
 `options` is deliberately an override map rather than an allowlist; unlisted scalar fields still
 derive options from the command schema. Positionals, fixed tail fields, and option overrides are
 mutually exclusive at binding time. There is no parallel argv argument schema.
+
+Positionals consume one token each and allow option parsing to continue. Tail consumes all remaining
+source into one field and ends structural argv parsing, so it is a distinct terminal operation rather
+than a variadic positional disguised with extra ordering rules. Tail is optional and does not impose
+a two-stage grammar on bindings that do not need free text, a primary DSL, or a whole JSON remainder.
 
 Options may occur before or after positionals until tail consumption begins. `--` only disables
 option recognition: pending positionals are consumed normally, then any remainder enters the tail.

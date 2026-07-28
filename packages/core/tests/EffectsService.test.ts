@@ -3,6 +3,36 @@ import { withCoreContext } from '@pluxel/core/test'
 import { EffectsDisposedError, EffectsFrozenError } from '../src/services/effects/EffectsService'
 
 describe('EffectsService', () => {
+	it('awaits an owned task whose disposal cancels and drains its work', async () => {
+		await withCoreContext(async (ctx) => {
+			const controller = new AbortController()
+			let drained = false
+			const task = new Promise<void>((resolve) => {
+				controller.signal.addEventListener(
+					'abort',
+					() => {
+						queueMicrotask(() => {
+							drained = true
+							resolve()
+						})
+					},
+					{ once: true },
+				)
+			})
+
+			ctx.effects.own({
+				async dispose() {
+					controller.abort()
+					await task
+				},
+			})
+
+			await ctx.effects.dispose()
+			expect(controller.signal.aborted).toBe(true)
+			expect(drained).toBe(true)
+		})
+	})
+
 	it('defer: cancel prevents disposal; dispose is idempotent', async () => {
 		await withCoreContext(async (ctx) => {
 			let ran = 0

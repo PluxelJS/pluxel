@@ -62,9 +62,11 @@ handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；st
 不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
 
 `ctx.commands.register()` 共享一个 root command catalog，但注册所有权属于调用插件的 Context。registration 会进入
-owner effects，因此 plugin stop、replacement、start rollback 和 shutdown 都会撤销对应命令；已经取得 command
-引用的调用不被隐式取消，长操作仍使用 call-scoped `AbortSignal`。runtime 自身固定注册基础插件查询与生命周期命令，
-这些 handler 只调用既有 runtime use case，不复制 graph 或 commit 逻辑。
+owner effects，因此 plugin stop、replacement、start rollback 和 shutdown 都会撤销对应命令。runtime registration
+同时保留 owner invocation lease；generation 停止时先拒绝新调用、abort call/owner 合成 signal，并等待已接纳调用退出，
+再执行插件 `stop()`。此前取得的 command wrapper 也不能越过已关闭的 owner gate。手动 dispose 单个 registration 只撤销
+publication，不取消已经开始的调用。runtime 自身固定注册基础插件查询与生命周期命令，这些 handler 只调用既有
+runtime use case，不复制 graph 或 commit 逻辑。
 
 ## Optional Workbench Plane
 

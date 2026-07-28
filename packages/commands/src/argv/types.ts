@@ -22,6 +22,7 @@ export type ArgvOptionBinding = {
 	format?: 'json'
 }
 
+/** One input-object field that consumes one argv token in positional order. */
 export type ArgvPositionalBinding<Input> =
 	| (keyof Input & string)
 	| {
@@ -36,23 +37,27 @@ export type ArgvStringField<Input> = {
 
 export type ArgvTailConfig<Input> =
 	| {
+			/** Assign all remaining source to one string wire field without interpreting it. */
 			mode: 'text'
 			key: ArgvStringField<Input>
 			placeholder?: string
 	  }
 	| {
+			/** Parse all remaining source as one JSON value for the selected field. */
 			mode: 'json'
 			key: keyof Input & string
 			placeholder?: string
 	  }
 
+/** Carrier syntax over existing Command input fields, not a second input schema. */
 export type ArgvBinding<Input> = {
 	/** Complete token routes. The first route is canonical; the rest are aliases. */
 	routes: readonly string[]
 	/** Overrides for schema fields exposed as options. Unlisted scalar fields use generated options. */
 	options?: Partial<Record<keyof Input & string, ArgvOptionBinding>>
-	/** Positional order. Fields listed here are not also exposed as options. */
+	/** One-token positional order. Options may interleave until tail consumption begins. */
 	positionals?: readonly ArgvPositionalBinding<Input>[]
+	/** One field that consumes the remaining source and ends structural argv parsing. */
 	tail?: ArgvTailConfig<Input>
 }
 

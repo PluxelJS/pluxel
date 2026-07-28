@@ -1,4 +1,5 @@
 export { createArgvRouter } from './argv/router'
+export { createCommandArgv } from './argv/catalog'
 export type { ArgvRouter } from './argv/router'
 export { tail } from './argv/tail'
 export type {
@@ -13,3 +14,4 @@ export type {
 	ArgvTailConfig,
 	ArgvValueType,
 } from './argv/types'
+export type { CommandArgvAdapter, CommandArgvCatalog } from './argv/catalog'

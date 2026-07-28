@@ -26,6 +26,11 @@
 			"import": "./dist/federation.mjs",
 			"require": "./dist/federation.cjs"
 		},
+		"./internal": {
+			"@pluxel/source": "./src/internal.ts",
+			"import": "./dist/internal.mjs",
+			"require": "./dist/internal.cjs"
+		},
 		"./logger": {
 			"@pluxel/source": "./src/logger/index.ts",
 			"import": "./dist/logger.mjs",
@@ -52,6 +57,10 @@
 			"./federation": {
 				"import": "./dist/federation.mjs",
 				"require": "./dist/federation.cjs"
+			},
+			"./internal": {
+				"import": "./dist/internal.mjs",
+				"require": "./dist/internal.cjs"
 			},
 			"./logger": {
 				"import": "./dist/logger.mjs",

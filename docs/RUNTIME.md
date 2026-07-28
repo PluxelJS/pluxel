@@ -10,10 +10,19 @@ runtime 提供 owner-bound `ctx.commands` 和每个 root 唯一的 command regis
 同时把 disposer 登记到插件自己的 effects；stop、replacement、启动回滚与 shutdown 因此使用同一套资源回收语义。
 registry 的 lookup 和 revision-cached catalog 仍由 `@pluxel/commands` 实现，runtime 不维护第二份索引。
 
+runtime registration 会用插件 Context 对执行入口做 owner binding。插件 generation 离开 running 时，core 先关闭
+该 owner 的内部 invocation gate：拒绝新调用、abort 已接纳调用的 call/owner 合成 signal，并等待 lease 释放；之后才
+进入插件 `stop()` 和 effects drain。这个 gate 按首次执行惰性创建，不是插件 API 或新的 lifecycle hook。单独调用
+registration disposer 只撤销 catalog publication，不会取消已经开始的调用。
+
 基础 `plugin.list`、`plugin.status.get`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands
 服务固定提供。查询委托 `pluginsList` / `pluginStatus`，mutation 委托 `applyStatusActions`，生命周期与一次 commit
 规则仍只有 runtime use case 一个事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、过滤与
 principal 映射，不拥有 command 定义或插件生命周期。
+
+宿主需要常规 CLI 时可用 `createCommandArgv(ctx.root.commands)` 惰性投影当前 catalog；插件无需逐项 `bind()`。
+该默认投影使用精确 command name、生成的标量 options 与 field-level JSON。`@pluxel/cli` 本身是工作区构建/开发工具，
+不持有运行中的 runtime；进程接入、授权、确认、输出与退出码仍由安装 carrier 的宿主负责。
 
 `PersistenceService.preflight()` 先统一校验 backend 声明的 durable/readonly capability，再调用 backend 可选的
 preflight hook 做写入探针等实现检查。custom backend 即使省略 hook，也不能让不满足的 durable/writable 要求静默成功。
