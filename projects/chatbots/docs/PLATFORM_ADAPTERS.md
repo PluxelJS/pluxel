@@ -22,6 +22,19 @@ PlatformPlugin -> BotRegistry -> Bot -> native platform API
 
 公共类命名使用 `{Platform}Plugin`、`{Platform}Bot` 和 `{Platform}ApiClient`。平台 Plugin 不承担 ChatHub codec/transport；可选 `{Platform}HubBridgePlugin` 只能消费平台 capability，不能把原生能力缩减成 adapter 外壳。
 
+## 帮助工具原则
+
+平台帮助工具只消除已经出现的重复机械工作，不建立第二套平台 SDK：
+
+- **原生优先**：官方 endpoint 和 wire type 位于 Bot 顶层；项目增加的便捷能力只进入 `$`，名称不能掩盖平台真实语义。
+- **只绑定稳定输入**：可以绑定频道、用户和消息默认值；消息 ID、业务 key、锁和持久状态必须显式输入输出。帮助句柄默认无业务状态，因此可并发复用。
+- **部署无关**：同一个发送、编辑或渲染操作必须同时适用于单进程与集群。内存、Redis、数据库、队列和 scheduler 由业务协调层选择，平台包不依赖或模拟它们。
+- **失败透明**：不把失败的编辑悄悄降级为发送，不隐藏重试或补偿；网络操作继承 Bot 生命周期，并允许组合调用方 `AbortSignal`。
+- **简写不分叉协议**：实用 Card 等简写只能组合官方全量类型并委托同一校验/序列化边界；高级需求直接使用原生类型，不增加任意透传、builder 或 preset 注册系统。
+- **公开面靠用例增长**：新 helper 必须对应真实重复调用，并明确默认值、所有权、并发和失败语义；仅为了潜在扩展性不增加 adapter、factory 或可配置层。
+
+连接、gateway 和 Bot 状态本身属于运行时资源，可由 Bot 持有；这里限制的是不应藏在便捷句柄里的业务身份和协调状态。
+
 ## 公共调用体验
 
 平台专属插件应直接依赖平台插件：
@@ -59,17 +72,39 @@ await bot.createDirectMessage(payload)
 await bot.$.raw.call('sendMessage', payload, { signal })
 await bot.$.raw.request('POST', '/message/create', { json: payload }, { signal })
 
-const channel = bot.$.channel(channelId)
+const channel = bot.$.channel(channelId, {
+	type: MessageType.kmarkdown,
+	template_id: 'progress',
+	// KOOK channel temporary message: visible only to this user.
+	temp_target_id: userId,
+}).withSignal(signal)
 await channel.send('hello')
 await channel.reply(messageId, 'done')
-await channel.upsert('progress: 50%')
-await channel.transient('temporary', undefined, 5_000)
+await channel.sendOrEdit({ msg_id: messageId, content: 'progress: 50%' })
 
 await bot.$.start()
 await bot.$.stop()
 bot.$.info // stable, non-secret local account/API metadata
 bot.$.status
 ```
+
+`channel()` 与 `direct()` 返回无消息状态的绑定发送句柄。目标和默认消息参数会在创建时复制并冻结；句柄始终继承
+Bot owner 生命周期，`withSignal()` 再组合调用方取消并传播到网络请求。
+`sendOrEdit({ msg_id, content })` 显式消费旧消息 ID 并返回当前消息 ID：缺省 ID 时发送，存在时编辑，编辑失败不会
+补发重复消息。逻辑消息 ID 的内存、Redis 或数据库存储，以及同 key 串行化/分布式锁，属于业务协调层；平台
+adapter 不保存进程局部消息身份，也不使用进程内 timer 冒充持久 scheduler。KOOK 的 `temp_target_id` 只控制
+频道消息对指定用户可见。
+
+常用 Card 使用包级 `renderKookCard()`：它只组合 header、KMarkdown section、context 和 action group；按钮
+每四个自动换成一个有序操作行，并在存在 action 时生成独立的 `invisible` 操作卡。该 helper 返回可直接作为
+`MessageType.card` content 发送的 JSON string；它不拥有发送、可见性或交互回调生命周期。`invisible` 只是
+Card 表面主题，单用户可见仍由 channel sender 的 `temp_target_id` 决定。超出该布局的能力直接使用平台
+原生 `Card` 类型，不给 helper 增加任意 module passthrough。
+
+全量 Card 使用 `Card.Message` + `renderKookCardMessage()`。`Card` 是官方 wire contract 的 discriminated
+union：普通与 invisible card 拥有不同 module 集合，section accessory、button click、paragraph、媒体、
+countdown 和 invite 都保持原生字段；序列化边界验证官方的 card/module/element 数量、文本长度、URL、颜色和
+时间约束。`renderKookCard()` 只能构造该全量类型并委托同一个序列化边界，不能维护第二套 Card JSON 结构。
 
 `$` 是保留名称。不要再平行增加 `$raw`、`$tool`、`$control`，也不要把
 conversation builder 等高级能力伪装成平台官方 endpoint。推荐内部结构：

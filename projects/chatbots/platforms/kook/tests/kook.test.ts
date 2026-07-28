@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeContext } from '@pluxel/runtime/test'
 import wretch from 'wretch'
-import { createKookClient, KOOK_ENDPOINTS } from '../src/api/index.ts'
+import {
+	createKookClient,
+	KOOK_ENDPOINTS,
+	MessageType as ApiMessageType,
+} from '../src/api/index.ts'
 import { KookBot } from '../src/bot/bot.ts'
 import type { KookBotManager } from '../src/bot/manager.ts'
 import { dispatchKookEvent } from '../src/bot/events.dispatch.ts'
@@ -9,6 +13,7 @@ import { createKookPluginEvents } from '../src/bot/events.factory.ts'
 import { KOOK_NOTICE_TYPES } from '../src/bot/events.inventory.ts'
 import type { KookEvent } from '../src/bot/events.types.ts'
 import { createKookGatewaySnapshot } from '../src/bot/gateway.ts'
+import { MessageType } from '../src/index.ts'
 import { attachKookWorkbenchState } from '../src/workbench/service.ts'
 
 function event(patch: Partial<KookEvent> = {}): KookEvent {
@@ -104,6 +109,7 @@ describe('KOOK adapter contracts', () => {
 	it('exposes the complete v3 endpoint catalog without duplicate method names', () => {
 		expect(KOOK_ENDPOINTS).toHaveLength(84)
 		expect(new Set(KOOK_ENDPOINTS.map(([name]) => name)).size).toBe(KOOK_ENDPOINTS.length)
+		expect(ApiMessageType).toBe(MessageType)
 	})
 
 	it('dispatches typed GET and POST methods through the shared authenticated client', async () => {
@@ -133,29 +139,146 @@ describe('KOOK adapter contracts', () => {
 		expect(await requests[1]?.json()).toMatchObject({ target_id: 'channel-1', content: 'hello' })
 	})
 
-	it('provides stateful conversation tools without leaking platform state into ChatMessage', async () => {
+	it('keeps bound senders stateless while sendOrEdit explicitly carries message identity', async () => {
 		const runtime = createRuntimeContext()
 		const payloads: unknown[] = []
 		const bot = new KookBot({
 			id: 'conversation',
 			ctx: runtime.ctx,
 			http: wretch().fetchPolyfill(async (input, init) => {
-				payloads.push(await new Request(input, init).json())
+				const request = new Request(input, init)
+				const payload = await request.json()
+				payloads.push(payload)
+				if (request.url.endsWith('/message/update') && payload.content === 'failed update') {
+					return Response.json({ code: 500, message: 'update failed', data: null })
+				}
 				return Response.json({ code: 0, message: 'ok', data: { msg_id: 'message-42' } })
 			}),
 			token: 'vault-secret',
 		})
-		const conversation = bot.$.channel('channel-1', { type: 9 })
+		const defaults = {
+			type: MessageType.card,
+			template_id: 'progress-card',
+			temp_target_id: 'user-1',
+		}
+		const conversation = bot.$.channel('channel-1', defaults)
+		defaults.template_id = 'mutated-after-creation'
 
-		await conversation.reply('message-1', 'hello')
+		const initial = await conversation.sendOrEdit({ content: 'hello', quote: 'message-1' })
+		expect(initial).toEqual({ ok: true, data: 'message-42' })
+		if ('message' in initial) throw new Error(initial.message)
+		const messageId = initial.data
 
-		expect(conversation.lastMessageId).toBe('message-42')
+		expect(Object.isFrozen(conversation)).toBe(true)
+		expect(Object.isFrozen(conversation.defaults)).toBe(true)
+		expect(conversation.defaults).toEqual({
+			type: MessageType.card,
+			template_id: 'progress-card',
+			temp_target_id: 'user-1',
+		})
 		expect(payloads[0]).toMatchObject({
 			target_id: 'channel-1',
 			content: 'hello',
 			quote: 'message-1',
-			type: 9,
+			type: MessageType.card,
+			template_id: 'progress-card',
+			temp_target_id: 'user-1',
 		})
+
+		await expect(
+			conversation.sendOrEdit({
+				msg_id: messageId,
+				content: '50%',
+				template_id: 'next-card',
+			}),
+		).resolves.toMatchObject({ ok: true, data: 'message-42' })
+		expect(payloads[1]).toMatchObject({
+			msg_id: 'message-42',
+			content: '50%',
+			type: MessageType.card,
+			template_id: 'next-card',
+			temp_target_id: 'user-1',
+		})
+		expect(payloads[1]).not.toHaveProperty('target_id')
+
+		await expect(
+			conversation.sendOrEdit({ msg_id: messageId, content: 'failed update' }),
+		).resolves.toMatchObject({
+			ok: false,
+			code: 500,
+		})
+		expect(payloads).toHaveLength(3)
+
+		await expect(conversation.delete(messageId)).resolves.toMatchObject({ ok: true })
+		bot.$.destroy()
+		await runtime.dispose()
+	})
+
+	it('uses the same explicit send-or-edit contract for direct messages', async () => {
+		const runtime = createRuntimeContext()
+		const requests: Array<{ url: string; payload: unknown }> = []
+		const bot = new KookBot({
+			id: 'direct-conversation',
+			ctx: runtime.ctx,
+			http: wretch().fetchPolyfill(async (input, init) => {
+				const request = new Request(input, init)
+				requests.push({ url: request.url, payload: await request.json() })
+				return Response.json({
+					code: 0,
+					message: 'ok',
+					data: { msg_id: 'direct-message-42', msg_timestamp: 1, nonce: 'nonce' },
+				})
+			}),
+			token: 'vault-secret',
+		})
+		const direct = bot.$.direct({ target_id: 'user-1' }, { type: MessageType.kmarkdown })
+
+		const created = await direct.sendOrEdit({ content: 'started' })
+		expect(created).toEqual({ ok: true, data: 'direct-message-42' })
+		const updated = await direct.sendOrEdit({
+			msg_id: 'direct-message-42',
+			content: 'finished',
+		})
+		expect(updated).toEqual({ ok: true, data: 'direct-message-42' })
+		expect(requests).toMatchObject([
+			{
+				url: expect.stringContaining('/direct-message/create'),
+				payload: { target_id: 'user-1', type: MessageType.kmarkdown, content: 'started' },
+			},
+			{
+				url: expect.stringContaining('/direct-message/update'),
+				payload: { msg_id: 'direct-message-42', content: 'finished' },
+			},
+		])
+		bot.$.destroy()
+		await runtime.dispose()
+	})
+
+	it('binds caller cancellation to conversation IO', async () => {
+		const runtime = createRuntimeContext()
+		const requests: Request[] = []
+		const bot = new KookBot({
+			id: 'cancelled-conversation',
+			ctx: runtime.ctx,
+			http: wretch().fetchPolyfill(async (input, init) => {
+				requests.push(new Request(input, init))
+				return Response.json({
+					code: 0,
+					message: 'ok',
+					data: { msg_id: 'message-42' },
+				})
+			}),
+			token: 'vault-secret',
+		})
+		const controller = new AbortController()
+		const conversation = bot.$.channel('channel-1', { temp_target_id: 'user-1' }).withSignal(
+			controller.signal,
+		)
+
+		await conversation.send('message')
+		expect(requests).toHaveLength(1)
+		controller.abort()
+		expect(requests[0]?.signal.aborted).toBe(true)
 		bot.$.destroy()
 		await runtime.dispose()
 	})

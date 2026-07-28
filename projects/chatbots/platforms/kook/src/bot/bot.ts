@@ -65,7 +65,7 @@ export class KookBot extends KookNativeApi {
 			apiPrefix,
 			signal: this.#owner.signal,
 		})
-		const tools = createKookTools(this.#api)
+		const tools = createKookTools(this.#api, this.#owner.signal)
 		const extensions: KookBotExtensions = {
 			info: Object.freeze({ id: this.id, baseUrl, apiPrefix }),
 			raw: this.#api.$.raw,

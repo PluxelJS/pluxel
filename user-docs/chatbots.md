@@ -21,6 +21,123 @@ bot.events.callback_query.on(async (query, signal) => {
 
 Bot 顶层是平台原生 API；raw、conversation helper、状态和生命周期只存在于 `bot.$`。
 
+## KOOK 绑定发送句柄
+
+连续向相同频道和用户发送消息时，创建一个绑定句柄，把稳定目标、消息类型、模板和可见性设为默认值。
+句柄不保存消息 ID，因此可安全用于单进程或集群；消息引用由业务的 memory、Redis 或数据库状态槽持有：
+
+```ts
+import { MessageType } from '@repo/chatbots-kook'
+
+bot.events.group_message.on(async (event, signal) => {
+	const progress = bot.$.channel(event.target_id, {
+		type: MessageType.kmarkdown,
+		template_id: 'job-progress',
+		temp_target_id: event.author_id,
+	}).withSignal(signal)
+
+	const writeProgress = (content: string) =>
+		messageRefs.update(`job:${jobId}:progress`, async (msg_id) => {
+			const result = await progress.sendOrEdit({ msg_id, content, quote: event.msg_id })
+			if ('message' in result) throw new Error(result.message)
+			return result.data
+		})
+
+	await writeProgress('任务已开始')
+	await writeProgress('任务进度：50%')
+	await writeProgress('任务已完成')
+})
+```
+
+`messageRefs.update(key, callback)` 表示由业务提供的“按逻辑 key 串行更新消息引用”能力：单进程可以使用
+按 key 排队的内存 Map，集群则使用 Redis 锁/脚本或数据库事务。两种部署运行完全相同的 callback；KOOK 核心不
+假装提供分布式锁。`sendOrEdit()` 在 `msg_id` 缺省时发送，存在时编辑，并始终返回当前 `msg_id`；编辑失败会原样
+返回错误，不会静默补发重复消息。
+
+目标和默认参数在创建时复制并冻结；单次 `send()`、`reply()` 和 `sendOrEdit()` 仍可覆盖字段。
+私聊使用 `bot.$.direct({ target_id: userId }, defaults)`，拥有相同的显式条件写入契约。
+
+`temp_target_id` 是 KOOK 的频道临时消息：消息只对指定用户可见。需要延迟删除时，在发送成功后把 `msg_id`
+交给业务已有的 scheduler；核心不使用进程内 timer 冒充可恢复任务。事件 listener 或命令中的网络调用应通过
+`withSignal(signal)` 组合调用方生命周期；句柄本身始终随 Bot 销毁而取消。
+
+## KOOK 实用 Card
+
+`renderKookCard()` 覆盖最常见的展示卡 + 交互操作组，不要求业务手写完整 Card JSON。内容卡默认使用
+`secondary` 与 `lg`；只要提供 action，按钮就会自动放进第二张 `invisible` 卡，使内容与操作区保持整洁：
+
+```ts
+import { MessageType, renderKookCard } from '@repo/chatbots-kook'
+
+const content = renderKookCard({
+	title: '你的音乐控制面板已准备就绪',
+	description: '点击下方按钮或复制链接到浏览器开始音乐体验',
+	sections: [`> ${url}`],
+	color: '#9826d3',
+	context: {
+		iconUrl: brandIconUrl,
+		text: '使用 [Blaze.FM](https://www.kookapp.cn/app/invite/Q3cl1q) 一起听歌',
+		textType: 'kmarkdown',
+	},
+	actions: [{ type: 'link', label: '进入控制面板', url }],
+	actionContext: { iconUrl: privateIconUrl, text: '此条消息仅你可见' },
+})
+
+const panel = bot.$.channel(event.target_id, {
+	type: MessageType.card,
+	temp_target_id: event.author_id,
+}).withSignal(signal)
+
+await panel.send(content)
+```
+
+action 支持 `{ type: 'link', url }` 和 `{ type: 'return-val', value }`，默认按钮主题为 `secondary`；超过四个
+action 时会保持顺序并自动换行成多个操作组。`actionContext` 只负责视觉提示；真正的单用户可见性仍必须通过发送参数
+`temp_target_id` 建立。
+
+需要完整 Card 能力时，使用同一入口导出的 `Card.Message` wire 类型和 `renderKookCardMessage()`：
+
+```ts
+import { MessageType, renderKookCardMessage, type Card } from '@repo/chatbots-kook'
+
+const message = [
+	{
+		type: 'card',
+		theme: 'none',
+		modules: [
+			{ type: 'header', text: '活动即将开始' },
+			{ type: 'divider' },
+			{
+				type: 'section',
+				text: {
+					type: 'paragraph',
+					cols: 2,
+					fields: ['频道', channelName, '主持人', hostName],
+				},
+			},
+			{
+				type: 'container',
+				elements: [{ type: 'image', src: coverUrl, fallbackUrl }],
+			},
+			{
+				type: 'countdown',
+				mode: 'second',
+				startTime: Date.now() + 1_000,
+				endTime: startsAt,
+			},
+		],
+	},
+] satisfies Card.Message
+
+await bot.$.channel(channelId, { type: MessageType.card }).send(renderKookCardMessage(message))
+```
+
+全量类型覆盖 header、section/paragraph/accessory、image-group、container、action-group、context、divider、
+file/audio/video、countdown 和 invite。类型会阻止 invisible card 使用不兼容 module、按钮放在 section 左侧、
+link button 缺少 value、非 second countdown 携带 startTime 等非法组合；序列化时还会检查最多 5 张 card、
+总计 50 个 module，以及图片组、context、action-group、文本长度、URL、颜色和未来时间戳等动态限制。
+`renderKookCard()` 本身只生成这套全量类型并调用同一个序列化器，因此简写和全量不会形成两套协议。
+
 ## 跨平台命令
 
 命令的结构化输入、输出和行为只定义一次；消息 route、alias、positionals、flags、权限和回复格式放在 Chat carrier binding：

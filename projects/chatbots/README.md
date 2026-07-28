@@ -56,7 +56,13 @@ Telegram API 返回 `parameters.retry_after` 后，该 Bot 的后续 HTTP 调用
 
 插件详情中的 `KOOK 状态` Tab 只保留运行摘要和快捷添加入口；点击 Workbench 一级导航的 `Bots`，再从二级导航进入 KOOK 独立管理台。KOOK 和未来平台都通过相同 group 自主注册自己的 route、grant 和 bundle。管理首页以全宽卡片搜索和选择账号；每个账号详情和创建流程使用独立 Workbench Tab。为每个账号填写稳定 Bot ID、Token 和可选 API Base，插件会为每个 Vault 配置创建独立 `KookBot`，调用 `user/me` 后分别建立 gateway。详情显示 Gateway phase、连接时长、最近事件、SN、连接/重连/Resume、Ping/Pong、乱序/重复、缓冲、溢出和退避指标，并提供鉴权测试、重连、断开及带确认的删除；群聊 conversation id 为 `channel:<channelId>`，私聊为 `direct:<userId>`。
 
-完整 KOOK 原生 client 从 `@repo/chatbots-kook/api` 导出并要求传入 Wretch base。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 双向比较 inventory 与 `KookAutoApi`。client 与 `KookBot` 共享唯一 native API prototype；raw 位于 `$`，频道/私聊 conversation、上传、回复、编辑、跟踪和临时消息等增强只位于 `bot.$`，不再公开平行 `$tool`。
+完整 KOOK 原生 client 从 `@repo/chatbots-kook/api` 导出并要求传入 Wretch base。84 个 v3 endpoints 由 `endpoints.txt` 在构建期通过 macro 内联；`api:check` 双向比较 inventory 与 `KookAutoApi`。client 与 `KookBot` 共享唯一 native API prototype；raw 位于 `$`，频道/私聊 bound sender、上传、回复和编辑等增强只位于 `bot.$`，不再公开平行 `$tool`。
+
+`bot.$.channel(channelId, defaults)` 与 `bot.$.direct(target, defaults)` 是无消息状态的绑定发送句柄：创建时快照目标和默认消息参数，可用 `temp_target_id` 固定频道消息的单用户可见性，并通过 `withSignal(signal)` 组合事件取消；句柄始终继承 Bot owner 生命周期。`sendOrEdit({ msg_id, content })` 显式输入并返回消息 ID，因而单机内存与集群 Redis/DB 可以复用同一写入逻辑；消息引用协调和持久 scheduler 不伪装成平台能力。
+
+`renderKookCard()` 提供项目常用的精简 Card 布局：默认 `secondary`/`lg` 内容卡，包含标题、KMarkdown sections 与 context；link 或 return-value actions 自动进入单独的 `invisible` 卡片。它只负责确定性 JSON 渲染，不接管 `temp_target_id` 可见性、发送或按钮事件处理；高级模块继续使用同一入口导出的原生 `Card` 类型。
+
+需要全量 Card 时使用 `Card.Message` 与 `renderKookCardMessage()`。原生类型覆盖所有官方 module，并在类型层约束 invisible module subset、section accessory、paragraph、button 与 countdown 组合；序列化边界再验证最多 5 张 card、总计 50 个 module 及各元素数量、文本、URL、颜色和时间戳。简写 renderer 委托同一边界，不维护平行协议。
 
 `kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。普通网络断开会携带 session/SN 恢复；所有 frame 经单一异步 tail 串行处理，事件按连续 SN 消费，重复帧被丢弃，乱序帧进入有界 buffer，无法收敛时主动重连。只有 listener 完成后才推进 SN，因此恢复点不会越过尚未完成的业务处理。gateway transport factory 可注入，握手、resume、heartbeat、断线退避和 teardown 都可以脱离真实网络做确定性测试。
 

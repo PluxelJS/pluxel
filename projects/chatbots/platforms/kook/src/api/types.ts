@@ -42,138 +42,92 @@ export type KookApiTools = {
 		file: Blob | ArrayBuffer | ArrayBufferView | string | FormData,
 		name?: string,
 	): Promise<Result<string>>
+	/** Create one stateless sender with a fixed channel and immutable message defaults. */
 	createConversation(targetId: string, defaults?: KookConversation['defaults']): KookConversation
+	/** Create one stateless sender with a fixed direct-message target and immutable defaults. */
 	createDirectConversation(
 		direct: Kook.DirectMessageGetType,
 		defaults?: KookDirectConversation['defaults'],
 	): KookDirectConversation
 }
 
+/** Defaults and per-send overrides supported by a bound channel sender. */
+export type KookChannelMessageOptions = Readonly<{
+	type?: Kook.MessageType
+	quote?: string
+	template_id?: string
+	/** When set, KOOK only shows the channel message to this user. */
+	temp_target_id?: string
+}>
+
+/** Defaults and per-send overrides supported by a bound direct-message sender. */
+export type KookDirectMessageOptions = Readonly<{
+	type?: Kook.MessageType
+	quote?: string
+	template_id?: string
+}>
+
+export type KookChannelSendOrEditInput = KookChannelMessageOptions &
+	Readonly<{
+		content: string
+		/** Existing KOOK message ID. Omit to send the first message. */
+		msg_id?: string
+	}>
+
+export type KookDirectSendOrEditInput = KookDirectMessageOptions &
+	Readonly<{
+		content: string
+		/** Existing KOOK message ID. Omit to send the first message. */
+		msg_id?: string
+	}>
+
+/**
+ * A stateless channel sender with an immutable destination and default snapshot.
+ * Message identity remains caller-owned so the same API works with memory, Redis, or a database.
+ */
 export interface KookConversation {
-	target_id: string
-	readonly defaults?:
-		| {
-				type?: Kook.MessageType
-				quote?: string
-				template_id?: string
-				temp_target_id?: string
-		  }
-		| undefined
-	readonly lastMessageId?: string
-	send(
-		content: string,
-		options?: {
-			type?: Kook.MessageType
-			quote?: string
-			template_id?: string
-			temp_target_id?: string
-		},
-	): Promise<Result<Kook.MessageReturn>>
+	readonly target_id: string
+	readonly defaults?: KookChannelMessageOptions | undefined
+	send(content: string, options?: KookChannelMessageOptions): Promise<Result<Kook.MessageReturn>>
 	reply(
 		quote: string,
 		content: string,
-		options?: { type?: Kook.MessageType; template_id?: string; temp_target_id?: string },
+		options?: Omit<KookChannelMessageOptions, 'quote'>,
 	): Promise<Result<Kook.MessageReturn>>
 	edit(
 		msg_id: string,
 		content: string,
-		options?: {
+		options?: Omit<KookChannelMessageOptions, 'type'> & {
 			type?: Kook.MessageType.kmarkdown | Kook.MessageType.card
-			quote?: string
-			template_id?: string
-			temp_target_id?: string
-		},
-	): Promise<Result<void>>
-	editLast(
-		content: string,
-		options?: {
-			type?: Kook.MessageType.kmarkdown | Kook.MessageType.card
-			quote?: string
-			template_id?: string
-			temp_target_id?: string
 		},
 	): Promise<Result<void>>
 	delete(msg_id: string): Promise<Result<void>>
-	deleteLast(): Promise<Result<void>>
-	upsert(
-		content: string,
-		options?: {
-			type?: Kook.MessageType
-			quote?: string
-			template_id?: string
-			temp_target_id?: string
-		},
-	): Promise<Result<Kook.MessageReturn | void>>
-	transient(
-		content: string,
-		options?: {
-			type?: Kook.MessageType
-			quote?: string
-			template_id?: string
-			temp_target_id?: string
-		},
-		ttlMs?: number,
-	): Promise<Result<Kook.MessageReturn>>
-	track(msg_id?: string | null): string | undefined
-	withDefaults(overrides: {
-		type?: Kook.MessageType
-		quote?: string
-		template_id?: string
-		temp_target_id?: string
-	}): KookConversation
+	/** Send when `msg_id` is absent; otherwise edit it. Returns the current message ID. */
+	sendOrEdit(input: KookChannelSendOrEditInput): Promise<Result<string>>
+	/** Derive an independent handle that combines this handle's lifetime with the supplied signal. */
+	withSignal(signal: AbortSignal): KookConversation
 }
 
+/** Direct-message counterpart of `KookConversation`. */
 export interface KookDirectConversation {
-	direct: DirectMessageGetType
-	readonly defaults?:
-		| {
-				type?: Kook.MessageType
-				quote?: string
-				template_id?: string
-		  }
-		| undefined
-	readonly lastMessageId?: string
-	send(
-		content: string,
-		options?: { type?: Kook.MessageType; quote?: string; template_id?: string },
-	): Promise<Result<Kook.MessageReturn>>
+	readonly direct: Readonly<DirectMessageGetType>
+	readonly defaults?: KookDirectMessageOptions | undefined
+	send(content: string, options?: KookDirectMessageOptions): Promise<Result<Kook.MessageReturn>>
 	reply(
 		quote: string,
 		content: string,
-		options?: { type?: Kook.MessageType; template_id?: string },
+		options?: Omit<KookDirectMessageOptions, 'quote'>,
 	): Promise<Result<Kook.MessageReturn>>
 	edit(
 		msg_id: string,
 		content: string,
-		options?: {
-			quote?: string
-			template_id?: string
-		},
-	): Promise<Result<void>>
-	editLast(
-		content: string,
-		options?: {
-			quote?: string
-			template_id?: string
-		},
+		options?: Omit<KookDirectMessageOptions, 'type'>,
 	): Promise<Result<void>>
 	delete(msg_id: string): Promise<Result<void>>
-	deleteLast(): Promise<Result<void>>
-	upsert(
-		content: string,
-		options?: { type?: Kook.MessageType; quote?: string; template_id?: string },
-	): Promise<Result<Kook.MessageReturn | void>>
-	transient(
-		content: string,
-		options?: { type?: Kook.MessageType; quote?: string; template_id?: string },
-		ttlMs?: number,
-	): Promise<Result<Kook.MessageReturn>>
-	track(msg_id?: string | null): string | undefined
-	withDefaults(overrides: {
-		type?: Kook.MessageType
-		quote?: string
-		template_id?: string
-	}): KookDirectConversation
+	/** Send when `msg_id` is absent; otherwise edit it. Returns the current message ID. */
+	sendOrEdit(input: KookDirectSendOrEditInput): Promise<Result<string>>
+	/** Derive an independent handle that combines this handle's lifetime with the supplied signal. */
+	withSignal(signal: AbortSignal): KookDirectConversation
 }
 
 /* ------------------------- Auto endpoints typing ------------------------- */

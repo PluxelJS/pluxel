@@ -1,4 +1,13 @@
 export { KookBot } from './bot/bot.ts'
+export { MessageType } from './types/base.ts'
+export type { Card } from './types/message.ts'
+export {
+	renderKookCard,
+	renderKookCardMessage,
+	type KookCardAction,
+	type KookCardContext,
+	type KookCardLayout,
+} from './api/card.ts'
 export type {
 	KookAttachment,
 	KookBotEvents,

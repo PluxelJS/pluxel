@@ -2,20 +2,22 @@ import { MessageType } from '../types/index.ts'
 import type {
 	KookApi,
 	KookApiTools,
+	KookChannelMessageOptions,
 	KookConversation,
 	KookDirectConversation,
-	Result,
 } from './types.ts'
 
-export function createKookTools(api: KookApi): KookApiTools {
+export function createKookTools(api: KookApi, ownerSignal?: AbortSignal): KookApiTools {
 	return {
 		async createAsset(file, name = 'asset') {
 			const result = await api.createAsset(toFormData(file, name))
 			if ('message' in result) return result
 			return { ok: true, data: result.data.url }
 		},
-		createConversation: (targetId, defaults) => createConversation(api, targetId, defaults),
-		createDirectConversation: (direct, defaults) => createDirectConversation(api, direct, defaults),
+		createConversation: (targetId, defaults) =>
+			createConversation(api, targetId, defaults, ownerSignal),
+		createDirectConversation: (direct, defaults) =>
+			createDirectConversation(api, direct, defaults, ownerSignal),
 	}
 }
 
@@ -23,136 +25,108 @@ function createConversation(
 	api: KookApi,
 	target_id: string,
 	defaults?: KookConversation['defaults'],
+	signal?: AbortSignal,
 ): KookConversation {
-	let trackedId: string | undefined
-	const options = <T extends object | undefined>(value: T) => ({ ...defaults, ...value })
+	const defaultSnapshot = freezeSnapshot(defaults)
+	const options = <T extends object | undefined>(value: T) => ({ ...defaultSnapshot, ...value })
 
-	const send: KookConversation['send'] = async (content, value) => {
-		const result = await api.sendMessage({ target_id, content, ...options(value) })
-		if (result.ok) trackedId = result.data.msg_id
-		return result
-	}
+	const send: KookConversation['send'] = (content, value) =>
+		api.$.raw.call('sendMessage', { target_id, content, ...options(value) }, { signal })
 	const reply: KookConversation['reply'] = (quote, content, value) =>
 		send(content, { ...value, quote })
-	const edit: KookConversation['edit'] = (msg_id, content, value) =>
-		api.updateMessage({ msg_id, content, ...options(value) })
-	const remove: KookConversation['delete'] = (msg_id) => api.deleteMessage({ msg_id })
-	const editLast: KookConversation['editLast'] = (content, value) =>
-		trackedId ? edit(trackedId, content, value) : missingTracked()
-	const deleteLast: KookConversation['deleteLast'] = () =>
-		trackedId ? remove(trackedId) : missingTracked()
-	const upsert: KookConversation['upsert'] = async (content, value) => {
-		if (trackedId) {
-			const result = await edit(trackedId, content, {
-				...value,
-				type:
-					value?.type === MessageType.kmarkdown || value?.type === MessageType.card
-						? value.type
-						: undefined,
-			})
-			if (result.ok) return result
-			trackedId = undefined
-		}
-		return send(content, value)
+	const edit: KookConversation['edit'] = (msg_id, content, value) => {
+		const merged = options(value)
+		const type =
+			merged.type === MessageType.kmarkdown || merged.type === MessageType.card
+				? merged.type
+				: undefined
+		return api.$.raw.call('updateMessage', { msg_id, content, ...merged, type }, { signal })
 	}
-	const transient: KookConversation['transient'] = async (content, value, ttlMs = 5_000) => {
+	const remove: KookConversation['delete'] = (msg_id) =>
+		api.$.raw.call('deleteMessage', { msg_id }, { signal })
+	const sendOrEdit: KookConversation['sendOrEdit'] = async ({ msg_id, content, ...value }) => {
+		if (msg_id) {
+			const result = await edit(msg_id, content, toChannelEditOptions(value))
+			if ('message' in result) return result
+			return { ok: true, data: msg_id }
+		}
 		const result = await send(content, value)
-		if (result.ok && result.data.msg_id && ttlMs > 0) {
-			scheduleDelete(() => remove(result.data.msg_id), ttlMs)
-		}
-		return result
-	}
-	const track: KookConversation['track'] = (msgId) => {
-		trackedId = msgId || undefined
-		return trackedId
+		if ('message' in result) return result
+		return { ok: true, data: result.data.msg_id }
 	}
 
-	return {
+	const conversation: KookConversation = {
 		target_id,
-		defaults,
-		get lastMessageId() {
-			return trackedId
-		},
+		defaults: defaultSnapshot,
 		send,
 		reply,
 		edit,
-		editLast,
 		delete: remove,
-		deleteLast,
-		upsert,
-		transient,
-		track,
-		withDefaults(value) {
-			const next = createConversation(api, target_id, { ...defaults, ...value })
-			if (trackedId) next.track(trackedId)
-			return next
+		sendOrEdit,
+		withSignal(nextSignal) {
+			return createConversation(api, target_id, defaultSnapshot, combineSignals(signal, nextSignal))
 		},
 	}
+	return Object.freeze(conversation)
 }
 
 function createDirectConversation(
 	api: KookApi,
 	direct: KookDirectConversation['direct'],
 	defaults?: KookDirectConversation['defaults'],
+	signal?: AbortSignal,
 ): KookDirectConversation {
-	let trackedId: string | undefined
-	const options = <T extends object | undefined>(value: T) => ({ ...defaults, ...value })
+	const directSnapshot = freezeSnapshot(direct)!
+	const defaultSnapshot = freezeSnapshot(defaults)
+	const options = <T extends object | undefined>(value: T) => ({ ...defaultSnapshot, ...value })
 
-	const send: KookDirectConversation['send'] = async (content, value) => {
-		const result = await api.createDirectMessage({ ...direct, content, ...options(value) })
-		if (result.ok) trackedId = result.data.msg_id
-		return result
-	}
+	const send: KookDirectConversation['send'] = (content, value) =>
+		api.$.raw.call(
+			'createDirectMessage',
+			{ ...directSnapshot, content, ...options(value) },
+			{ signal },
+		)
 	const reply: KookDirectConversation['reply'] = (quote, content, value) =>
 		send(content, { ...value, quote })
-	const edit: KookDirectConversation['edit'] = (msg_id, content, value) =>
-		api.updateDirectMessage({ msg_id, content, ...options(value) })
-	const remove: KookDirectConversation['delete'] = (msg_id) => api.deleteDirectMessage({ msg_id })
-	const editLast: KookDirectConversation['editLast'] = (content, value) =>
-		trackedId ? edit(trackedId, content, value) : missingTracked()
-	const deleteLast: KookDirectConversation['deleteLast'] = () =>
-		trackedId ? remove(trackedId) : missingTracked()
-	const upsert: KookDirectConversation['upsert'] = async (content, value) => {
-		if (trackedId) {
-			const result = await edit(trackedId, content, value)
-			if (result.ok) return result
-			trackedId = undefined
-		}
-		return send(content, value)
+	const edit: KookDirectConversation['edit'] = (msg_id, content, value) => {
+		const { type: _type, ...editable } = options(value)
+		return api.$.raw.call('updateDirectMessage', { msg_id, content, ...editable }, { signal })
 	}
-	const transient: KookDirectConversation['transient'] = async (content, value, ttlMs = 5_000) => {
+	const remove: KookDirectConversation['delete'] = (msg_id) =>
+		api.$.raw.call('deleteDirectMessage', { msg_id }, { signal })
+	const sendOrEdit: KookDirectConversation['sendOrEdit'] = async ({
+		msg_id,
+		content,
+		...value
+	}) => {
+		if (msg_id) {
+			const result = await edit(msg_id, content, value)
+			if ('message' in result) return result
+			return { ok: true, data: msg_id }
+		}
 		const result = await send(content, value)
-		if (result.ok && result.data.msg_id && ttlMs > 0) {
-			scheduleDelete(() => remove(result.data.msg_id), ttlMs)
-		}
-		return result
-	}
-	const track: KookDirectConversation['track'] = (msgId) => {
-		trackedId = msgId || undefined
-		return trackedId
+		if ('message' in result) return result
+		return { ok: true, data: result.data.msg_id }
 	}
 
-	return {
-		direct,
-		defaults,
-		get lastMessageId() {
-			return trackedId
-		},
+	const conversation: KookDirectConversation = {
+		direct: directSnapshot,
+		defaults: defaultSnapshot,
 		send,
 		reply,
 		edit,
-		editLast,
 		delete: remove,
-		deleteLast,
-		upsert,
-		transient,
-		track,
-		withDefaults(value) {
-			const next = createDirectConversation(api, direct, { ...defaults, ...value })
-			if (trackedId) next.track(trackedId)
-			return next
+		sendOrEdit,
+		withSignal(nextSignal) {
+			return createDirectConversation(
+				api,
+				directSnapshot,
+				defaultSnapshot,
+				combineSignals(signal, nextSignal),
+			)
 		},
 	}
+	return Object.freeze(conversation)
 }
 
 function toFormData(
@@ -172,11 +146,26 @@ function toFormData(
 	return form
 }
 
-function missingTracked<T>(): Promise<Result<T>> {
-	return Promise.resolve({ ok: false, code: -404, message: 'No tracked message' })
+function freezeSnapshot<T extends object>(value: T | undefined): Readonly<T> | undefined {
+	return value === undefined ? undefined : Object.freeze({ ...value })
 }
 
-function scheduleDelete(task: () => Promise<unknown>, ttlMs: number): void {
-	const timer = setTimeout(() => void task().catch((): void => undefined), ttlMs)
-	if (typeof timer === 'object' && 'unref' in timer) timer.unref()
+function toChannelEditOptions(
+	value: KookChannelMessageOptions | undefined,
+): Parameters<KookConversation['edit']>[2] {
+	if (!value) return undefined
+	const { type, ...rest } = value
+	if (!Object.hasOwn(value, 'type')) return rest
+	return {
+		...rest,
+		type: type === MessageType.kmarkdown || type === MessageType.card ? type : undefined,
+	}
+}
+
+function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+	const active = [
+		...new Set(signals.filter((signal): signal is AbortSignal => signal !== undefined)),
+	]
+	if (active.length === 0) return undefined
+	return active.length === 1 ? active[0] : AbortSignal.any(active)
 }

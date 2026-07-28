@@ -96,90 +96,210 @@ export interface Emoji {
 	name: string
 }
 
-export interface Card {
-	type: 'card'
-	theme?: Card.Theme
-	size?: 'lg' | 'sm'
-	color?: string
-	modules: Card.Module[]
-}
+/** KOOK Card wire object. Serialize a `Card.Message` with `renderKookCardMessage()`. */
+export type Card = Card.Visible | Card.Invisible
 
+/** @see https://developer.kookapp.cn/doc/cardmessage */
 export namespace Card {
-	export type Theme = 'primary' | 'secondary' | 'warning' | 'danger' | 'info'
-	export type Module = Section | ImageGroup | Header | Divider | File | Countdown | Context
+	export type NonEmpty<T> = readonly [T, ...T[]]
+	// oxlint-disable-next-line no-shadow -- `Card.Message` is the public wire-message name.
+	export type Message = readonly [Card, Card?, Card?, Card?, Card?]
+	export type Size = 'lg' | 'sm'
+	export type Theme =
+		| 'primary'
+		| 'secondary'
+		| 'success'
+		| 'warning'
+		| 'danger'
+		| 'info'
+		| 'none'
+		| 'invisible'
+	export type VisibleTheme = Exclude<Theme, 'invisible'>
+	export type ButtonTheme = VisibleTheme
 
-	export interface Text {
-		type: 'plain-text' | 'kmarkdown'
-		content: string
-		emoji?: boolean
+	export interface Base {
+		readonly type: 'card'
+		readonly size?: Size
+		/** Six-digit hexadecimal side color. Overrides `theme` when present. */
+		readonly color?: string
 	}
+
+	export interface Visible extends Base {
+		readonly theme?: VisibleTheme
+		readonly modules: NonEmpty<Module>
+	}
+
+	/** Invisible cards accept only the module subset supported by KOOK. */
+	export interface Invisible extends Base {
+		readonly theme: 'invisible'
+		readonly modules: NonEmpty<InvisibleModule>
+	}
+
+	export type Module =
+		| Section
+		| ImageGroup
+		| Container
+		| Header
+		| Divider
+		| ActionGroup
+		| Context
+		| File
+		| Audio
+		| Video
+		| Countdown
+		| Invite
+
+	export type InvisibleModule =
+		| SectionWithoutAccessory
+		| Container
+		| Header
+		| Divider
+		| ActionGroup
+		| Context
+		| File
+		| Audio
+		| Video
+
+	export interface PlainText {
+		readonly type: 'plain-text'
+		readonly content: string
+		readonly emoji?: boolean
+	}
+
+	export interface KMarkdown {
+		readonly type: 'kmarkdown'
+		readonly content: string
+	}
+
+	/** KOOK also accepts a string wherever a plain-text element is accepted. */
+	export type Text = string | PlainText | KMarkdown
 
 	export interface Paragraph {
-		type: 'paragraph'
-		content: string
-		cols: number
-		fields: Text[]
+		readonly type: 'paragraph'
+		readonly cols: 1 | 2 | 3
+		readonly fields: NonEmpty<Text>
 	}
 
-	export interface Section {
-		type: 'section'
-		mode?: 'left' | 'right'
-		text: Text | Paragraph
-		accessory?: Image | Button
+	export interface SectionWithoutAccessory {
+		readonly type: 'section'
+		readonly text: Text | Paragraph
 	}
+
+	export interface ImageSection {
+		readonly type: 'section'
+		readonly text: Text | Paragraph
+		readonly mode?: 'left' | 'right'
+		readonly accessory: Image
+	}
+
+	export interface ButtonSection {
+		readonly type: 'section'
+		readonly text: Text | Paragraph
+		readonly mode?: 'right'
+		readonly accessory: Button
+	}
+
+	export type Section = SectionWithoutAccessory | ImageSection | ButtonSection
 
 	export interface Image {
-		type: 'image'
-		size?: 'lg' | 'sm'
-		src: string
-		alt?: string
-		circle?: boolean
+		readonly type: 'image'
+		readonly src: string
+		readonly alt?: string
+		readonly size?: Size
+		readonly circle?: boolean
+		readonly fallbackUrl?: string
 	}
 
-	export interface Button {
-		type: 'button'
-		theme?: Theme
-		value: string
-		text: Text
-		click?: string
+	export interface ButtonBase {
+		readonly type: 'button'
+		readonly theme?: ButtonTheme
+		readonly text: Text
 	}
+
+	export interface PassiveButton extends ButtonBase {
+		readonly click?: ''
+		readonly value?: string
+	}
+
+	export interface LinkButton extends ButtonBase {
+		readonly click: 'link'
+		readonly value: string
+	}
+
+	export interface ReturnValueButton extends ButtonBase {
+		readonly click: 'return-val'
+		readonly value: string
+	}
+
+	export type Button = PassiveButton | LinkButton | ReturnValueButton
 
 	export interface ImageGroup {
-		type: 'image-group'
-		elements: Image[]
+		readonly type: 'image-group'
+		readonly elements: NonEmpty<Image>
+	}
+
+	export interface Container {
+		readonly type: 'container'
+		readonly elements: NonEmpty<Image>
 	}
 
 	export interface Header {
-		type: 'header'
-		text: Text
+		readonly type: 'header'
+		readonly text: string | PlainText
 	}
 
 	export interface Divider {
-		type: 'divider'
+		readonly type: 'divider'
 	}
 
 	export interface ActionGroup {
-		type: 'action-group'
-		elements: Button[]
+		readonly type: 'action-group'
+		readonly elements: readonly [Button, Button?, Button?, Button?]
 	}
 
 	export interface Context {
-		type: 'context'
-		elements: (Text | Image)[]
+		readonly type: 'context'
+		readonly elements: NonEmpty<Text | Image>
 	}
 
 	export interface File {
-		type: 'file' | 'audio' | 'video'
-		src: string
-		title: string
-		cover?: string
+		readonly type: 'file'
+		readonly src: string
+		readonly title: string
 	}
 
-	export interface Countdown {
-		type: 'countdown'
-		end_time: string
-		start_time: string
-		mode: 'day' | 'hour' | 'second'
+	export interface Audio {
+		readonly type: 'audio'
+		readonly src: string
+		readonly title: string
+		readonly cover?: string
+	}
+
+	export interface Video {
+		readonly type: 'video'
+		readonly src: string
+		readonly title: string
+	}
+
+	export type Countdown = DayHourCountdown | SecondCountdown
+
+	export interface DayHourCountdown {
+		readonly type: 'countdown'
+		readonly endTime: number
+		readonly mode: 'day' | 'hour'
+		readonly startTime?: never
+	}
+
+	export interface SecondCountdown {
+		readonly type: 'countdown'
+		readonly endTime: number
+		readonly mode: 'second'
+		readonly startTime?: number
+	}
+
+	export interface Invite {
+		readonly type: 'invite'
+		readonly code: string
 	}
 }
 
