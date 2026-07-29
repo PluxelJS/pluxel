@@ -11,10 +11,10 @@ export const publishCommand = define({
 		const values = ctx.values as PublishValues
 		await publishPackage({
 			access: values.access,
-			dryRun: values.dryRun,
+			dryRun: values['dry-run'],
 			debug: values.debug,
 			webhook: values.webhook,
-			skipVersionCheck: values.skipVersionCheck,
+			skipVersionCheck: values['skip-version-check'],
 			log: ctx.log,
 		})
 	},

@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import fs from 'node:fs'
-import { parsePackageIdentity, parsePackageName, resolveScaffoldIdentity } from '../src/scaffold'
-import { generateFromTemplate } from '../src/scaffold/template'
+import { parse as parseYaml } from 'yaml'
+import {
+	parsePackageIdentity,
+	parsePackageName,
+	resolveBuiltInTemplatePackageManager,
+	resolveScaffoldDestinationInput,
+	resolveScaffoldIdentity,
+} from '../src/scaffold'
+import { generateFromTemplate, promptTemplateData } from '../src/scaffold/template'
 import { formatPackageScriptCommand } from '../src/utils/pm'
 
 describe('scaffold name helpers', () => {
@@ -39,6 +46,14 @@ describe('scaffold name helpers', () => {
 		})
 	})
 
+	it('normalizes scoped package identities to npm-safe lowercase', () => {
+		expect(parsePackageIdentity('@Acme/My-App')).toEqual({
+			scope: '@acme',
+			name: 'my-app',
+			packageName: '@acme/my-app',
+		})
+	})
+
 	it('applies plugin prefixes only to the standalone plugin template', () => {
 		expect(
 			resolveScaffoldIdentity('@acme/pluxel-plugin-orders', '/templates/plugin', ['pluxel-plugin']),
@@ -50,6 +65,24 @@ describe('scaffold name helpers', () => {
 })
 
 describe('scaffold package-manager guidance', () => {
+	it('keeps the positional destination optional while rejecting ambiguous values', () => {
+		expect(resolveScaffoldDestinationInput(undefined)).toBeUndefined()
+		expect(resolveScaffoldDestinationInput([])).toBeUndefined()
+		expect(resolveScaffoldDestinationInput(['apps'])).toBe('apps')
+		expect(() => resolveScaffoldDestinationInput(['apps', 'extra'])).toThrow(
+			'Expected at most one scaffold destination',
+		)
+	})
+
+	it('pins built-in templates to their declared pnpm workspace contract', () => {
+		expect(resolveBuiltInTemplatePackageManager('/templates/app-monorepo', '/templates')).toBe(
+			'pnpm',
+		)
+		expect(resolveBuiltInTemplatePackageManager('/templates/plugin', '/templates')).toBe('pnpm')
+		expect(resolveBuiltInTemplatePackageManager('/templates/custom', '/templates')).toBeUndefined()
+		expect(resolveBuiltInTemplatePackageManager('/custom/plugin', '/templates')).toBeUndefined()
+	})
+
 	it('prints a valid verify command for each supported package manager', () => {
 		expect(formatPackageScriptCommand('pnpm', 'verify')).toBe('pnpm verify')
 		expect(formatPackageScriptCommand('yarn', 'verify')).toBe('yarn verify')
@@ -59,6 +92,46 @@ describe('scaffold package-manager guidance', () => {
 })
 
 describe('scaffold template rendering', () => {
+	it('uses explicit prompt defaults without opening a TTY prompt', async () => {
+		await using fixture = await createFixture({
+			template: {
+				'prompts.jsonc': JSON.stringify([
+					{
+						name: 'description',
+						message: 'Description for {{className}}',
+						default: 'Plugin {{className}}',
+					},
+				]),
+			},
+		})
+		await expect(
+			promptTemplateData(
+				resolve(fixture.path, 'template'),
+				{ className: 'Orders' },
+				{
+					fs: fixture.fs as unknown as typeof fs,
+				},
+			),
+		).resolves.toEqual({ description: 'Plugin Orders' })
+	})
+
+	it('rejects non-interactive prompts without an explicit default', async () => {
+		await using fixture = await createFixture({
+			template: {
+				'prompts.jsonc': JSON.stringify([{ name: 'description', message: 'Description' }]),
+			},
+		})
+		await expect(
+			promptTemplateData(
+				resolve(fixture.path, 'template'),
+				{},
+				{
+					fs: fixture.fs as unknown as typeof fs,
+				},
+			),
+		).rejects.toThrow('Non-interactive prompt "description" requires a string default')
+	})
+
 	it('keeps compiler semantics out of standalone plugin overrides', () => {
 		const pluginBuild = fs.readFileSync(
 			resolve(import.meta.dirname, '../templates/plugin/tsdown.config.ts.hbs'),
@@ -142,7 +215,7 @@ describe('scaffold template rendering', () => {
 					packageName: '@acme/acme-app',
 					className: 'AcmeApp',
 					year: '2026',
-					description: 'Acme application',
+					description: 'Acme "application"\\workspace\nstarter',
 				},
 				force: false,
 				dryRun: false,
@@ -183,7 +256,10 @@ describe('scaffold template rendering', () => {
 		expect(pluginManifest).toContain('"@pluxel/runtime": "catalog:"')
 		expect(pluginManifest).not.toContain('"@pluxel/runtime": "workspace:*"')
 
-		const rootManifest = fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')
+		const rootManifest = String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8'))
+		expect(JSON.parse(rootManifest)).toMatchObject({
+			description: 'Acme "application"\\workspace\nstarter',
+		})
 		expect(rootManifest).toContain('"@pluxel/rolldown": "catalog:"')
 		expect(rootManifest).toContain('"oxfmt": "catalog:"')
 		expect(rootManifest).toContain('"turbo": "catalog:"')
@@ -192,19 +268,31 @@ describe('scaffold template rendering', () => {
 		expect(rootManifest).not.toContain('"tsdown"')
 		const turboConfig = fixture.fs.readFileSync(resolve(targetDir, 'turbo.json'), 'utf8')
 		expect(turboConfig).toContain('"concurrency": "100%"')
-		expect(turboConfig).toContain('"dependsOn": ["^build"]')
+		expect(turboConfig).toContain('"dependsOn": ["^build", "^typecheck"]')
 
 		const webManifest = fixture.fs.readFileSync(resolve(targetDir, 'web/package.json'), 'utf8')
 		expect(webManifest).toContain('"react": "catalog:"')
 		expect(webManifest).toContain('"@gqlens/react": "catalog:"')
-		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/runtime': ^0.3.0",
+		const workspaceSource = String(
+			fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8'),
 		)
+		expect(workspaceSource).toContain("'@pluxel/runtime': ^0.3.0")
+		expect(parseYaml(workspaceSource)).toMatchObject({
+			packages: ['web', 'packages/*', 'plugins/*'],
+			catalog: { '@pluxel/runtime': '^0.3.0' },
+		})
 		expect(
 			fixture.fs.existsSync(resolve(targetDir, 'scripts/check-workspace-governance.mjs')),
 		).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/domain/vitest.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'web/src/client/main.tsx'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, '.gitignore'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, '.github/workflows/ci.yml'))).toBe(true)
+		const rootTsconfig = JSON.parse(
+			String(fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.base.json'), 'utf8')),
+		) as { compilerOptions?: { customConditions?: string[] } }
+		expect(rootTsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
 
 		const oxlintConfig = fixture.fs.readFileSync(resolve(targetDir, 'oxlint.config.ts'), 'utf8')
 		expect(oxlintConfig).toContain("from '@pluxel/rolldown/oxlint'")
@@ -237,6 +325,20 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain("from '@pluxel/runtime/test'")
 		expect(pluginTest).toContain('withRuntimeHost(')
 		expect(pluginTest).toContain('workbench: false')
+
+		expect(
+			String(
+				fixture.fs.readFileSync(
+					resolve(targetDir, 'scripts/check-workspace-governance.mjs'),
+					'utf8',
+				),
+			),
+		).toBe(
+			fs.readFileSync(
+				resolve(import.meta.dirname, '../../../scripts/check-workspace-governance.mjs'),
+				'utf8',
+			),
+		)
 	})
 
 	it('generates a self-contained publishable plugin package', async () => {
@@ -262,7 +364,7 @@ describe('scaffold template rendering', () => {
 
 		expect(ok).toBe(true)
 		const manifest = JSON.parse(
-			fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8'),
+			String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')),
 		) as Record<string, any>
 		expect(manifest.scripts).not.toHaveProperty('build:plugin')
 		expect(manifest.scripts.build).toBe('pluxel build')
@@ -290,6 +392,7 @@ describe('scaffold template rendering', () => {
 		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'oxlint.config.ts'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, '.oxfmtrc.json'))).toBe(true)
+		expect(fixture.fs.existsSync(resolve(targetDir, '.gitignore'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'AGENTS.md'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'docs/pluxel/plugin-package.md'))).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'user-docs.jsonc'))).toBe(false)
@@ -305,9 +408,15 @@ describe('scaffold template rendering', () => {
 		expect(pluginTest).toContain('await host.commit()')
 		expect(pluginTest).toContain('workbench: false')
 		expect(pluginTest).not.toContain('host.start(')
-		const tsconfig = fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8')
-		expect(tsconfig).toContain('"src/**/*.tsx"')
-		expect(tsconfig).toContain('"tests/**/*.tsx"')
+		const tsconfigSource = String(
+			fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8'),
+		)
+		expect(tsconfigSource).toContain('"src/**/*.tsx"')
+		expect(tsconfigSource).toContain('"tests/**/*.tsx"')
+		const tsconfig = JSON.parse(tsconfigSource) as {
+			compilerOptions?: { customConditions?: string[] }
+		}
+		expect(tsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
 		const tsdownConfig = fixture.fs.readFileSync(resolve(targetDir, 'tsdown.config.ts'), 'utf8')
 		expect(tsdownConfig).toContain("index: 'src/hello-world.ts'")
 		expect(tsdownConfig).not.toContain('pluginPackage(')

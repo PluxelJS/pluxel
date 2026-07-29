@@ -3,8 +3,10 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"dev": "pnpm run static",
 		"static": "vite --host 127.0.0.1",
 		"build": "tsdown",
+		"start": "node dist/app.mjs",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {

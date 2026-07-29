@@ -223,9 +223,10 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			// Vitest resolves workspace packages from source. Only its shared config package needs a
-			// built entry; tests that inspect production artifacts declare that dependency below.
-			"dependsOn": ["@pluxel/test#build"],
+			// Vitest usually resolves workspace packages from source, but public runtime subpaths and
+			// compiler-backed fixtures can cross the dist boundary. Keep runtime declarations stable
+			// instead of testing while its build task cleans and replaces them.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -277,6 +278,10 @@
 				"!**/bench/**",
 			],
 			"outputLogs": "errors-only",
+		},
+		"@repo/project-external-api-gateway#test": {
+			// The headless smoke loads the same static source graph after its production closure is built.
+			"dependsOn": ["build", "@pluxel/runtime-static#build"],
 		},
 		"typecheck": {
 			// Product projects intentionally validate the published runtime declaration boundary.

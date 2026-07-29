@@ -48,7 +48,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 	override async init(): Promise<void> {
 		this.data = await useExternalGatewayDB(this.ctx)
 		await this.loadRatesFromDB()
-		this.seedDefaultRates()
+		await this.seedDefaultRates()
 		const usageRecords = await this.loadUsageFromDB()
 		this.rebuildSummaries(usageRecords)
 		const projection = await createWorkbenchProjection(this.ctx, {
@@ -159,7 +159,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		)
 	}
 
-	private seedDefaultRates(): void {
+	private async seedDefaultRates(): Promise<void> {
 		const now = Date.now()
 		const defaults: BillingRateDoc[] = [
 			{
@@ -273,7 +273,7 @@ export class UsageBillingPlugin extends UsageRecorderPlugin {
 		for (const rate of defaults) {
 			if (this.rates.findOne({ id: rate.id })) continue
 			this.rates.replaceOne({ id: rate.id }, rate, { upsert: true })
-			void this.persistRate(rate)
+			await this.persistRate(rate)
 		}
 	}
 

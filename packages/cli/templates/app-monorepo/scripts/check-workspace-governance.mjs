@@ -24,8 +24,16 @@ const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'ut
 for (const pattern of ['packages/*', 'plugins/*']) {
 	if (!workspaceSource.includes(`- ${pattern}`)) errors.push(`workspace is missing ${pattern}`)
 }
+if ((await isDirectory(resolve(root, 'apps'))) && !workspaceSource.includes('- apps/*')) {
+	errors.push('workspace is missing apps/*')
+}
 if (await isDirectory(resolve(root, 'projects'))) {
-	for (const pattern of ['projects/*', 'projects/*/packages/*', 'projects/*/plugins/*']) {
+	for (const pattern of [
+		'projects/*',
+		'projects/*/packages/*',
+		'projects/*/platforms/*',
+		'projects/*/plugins/*',
+	]) {
 		if (!workspaceSource.includes(`- ${pattern}`)) errors.push(`workspace is missing ${pattern}`)
 	}
 }
@@ -38,7 +46,11 @@ const packageContainers = [
 	resolve(root, 'apps'),
 	resolve(root, 'packages'),
 	resolve(root, 'plugins'),
-	...projectRoots.flatMap((project) => [resolve(project, 'packages'), resolve(project, 'plugins')]),
+	...projectRoots.flatMap((project) => [
+		resolve(project, 'packages'),
+		resolve(project, 'platforms'),
+		resolve(project, 'plugins'),
+	]),
 ]
 const packageContainerChildren = await Promise.all(packageContainers.map(childDirectories))
 const candidateRoots = [resolve(root, 'web'), ...projectRoots, ...packageContainerChildren.flat()]
@@ -84,7 +96,7 @@ const reusablePackageSources = await Promise.all(
 for (const { packageRoot, sources } of reusablePackageSources) {
 	if (/^\s*@Plugin\s*\(\s*\{/m.test(sources)) {
 		errors.push(
-			`${relative(packageRoot)} declares a concrete @Plugin; move concrete plugins to plugins/`,
+			`${relative(packageRoot)} declares a concrete @Plugin; move it to plugins/ or a domain-specific plugin container such as platforms/`,
 		)
 	}
 }

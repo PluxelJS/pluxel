@@ -10,6 +10,10 @@ pnpm verify
 pnpm dev
 ```
 
+该模板固定使用 pnpm 11；CLI 会拒绝对内置模板传入 npm/yarn，根 `devEngines.packageManager`
+也会阻止误用另一套包管理器生成第二份 lockfile。生成的 `.github/workflows/ci.yml` 使用 frozen
+install 并执行同一个 `pnpm verify` 门禁。
+
 生成结构只包含三个所有权边界：
 
 ```text
@@ -30,6 +34,17 @@ AGENTS.md        指示 coding agent 先读取就地指南和验证要求
 `typecheck test build`，所以同一轮不会重复执行任务，第二次
 运行或切换分支后输入未变的任务会直接命中缓存。需要排除缓存诊断时使用 `pnpm test:full` 或
 `pnpm build:full`；机器资源受限时可继续降低 `--concurrency`。
+`build` 同时依赖上游 workspace 的 `typecheck` task，因此 source-only 的 domain/plugin 变化也会进入
+`web` 生产构建 hash，不会恢复旧的部署产物。
+
+生产构建和本地启动使用：
+
+```sh
+pnpm build
+PLUXEL_WORKBENCH=false pnpm start
+```
+
+`pnpm start` 运行 `web/dist/app.mjs`；整个 `web/dist` 仍是唯一需要搬运的部署目录。
 
 ## 为什么默认关闭 Workbench Plane
 

@@ -4,9 +4,11 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --host 127.0.0.1",
+		"start": "node dist/app.mjs",
 		"headless": "PLUXEL_WORKBENCH=false vite --host 127.0.0.1",
 		"build": "tsdown",
 		"static": "vite --host 127.0.0.1",
+		"test": "pnpm run test:headless",
 		"test:headless": "node scripts/headless-smoke.mjs",
 		"typecheck": "tsc --noEmit --pretty false",
 		"verify": "pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-billing --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-yiqicha --filter @repo/external-api-gateway-gateway --filter @repo/external-api-gateway-yiqicha-catalog typecheck && pnpm --filter @repo/external-api-gateway-shared --filter @repo/external-api-gateway-zhipu --filter @repo/external-api-gateway-gateway test && tsc --noEmit --pretty false && pnpm build && pnpm test:headless"

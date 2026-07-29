@@ -24,6 +24,9 @@ const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'ut
 for (const pattern of ['packages/*', 'plugins/*']) {
 	if (!workspaceSource.includes(`- ${pattern}`)) errors.push(`workspace is missing ${pattern}`)
 }
+if ((await isDirectory(resolve(root, 'apps'))) && !workspaceSource.includes('- apps/*')) {
+	errors.push('workspace is missing apps/*')
+}
 if (await isDirectory(resolve(root, 'projects'))) {
 	for (const pattern of [
 		'projects/*',

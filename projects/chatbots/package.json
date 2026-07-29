@@ -4,7 +4,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite --host 127.0.0.1",
-		"start": "vite --host 127.0.0.1",
+		"start": "node dist/app.mjs",
+		"preview": "vite --host 127.0.0.1",
 		"static": "vite --host 127.0.0.1",
 		"build": "tsdown && vite build",
 		"test": "vitest run --config vitest.config.ts",

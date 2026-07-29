@@ -3,6 +3,9 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
+		"dev": "pnpm run static",
+		"build": "pnpm run build:static",
+		"start": "node dist/app.mjs",
 		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts --host 127.0.0.1",
 		"static": "pnpm exec vite --config vite.static.config.ts --host 127.0.0.1",
 		"build:static": "pnpm exec tsdown --config tsdown.static.config.ts",

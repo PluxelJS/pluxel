@@ -301,6 +301,7 @@ export async function promptTemplateData(
 
 	const reserved = new Set(Object.keys(baseData))
 	const answers: Record<string, string> = {}
+	const interactive = isInteractive()
 
 	for (const prompt of prompts) {
 		const name = assertPromptName(prompt)
@@ -314,6 +315,10 @@ export async function promptTemplateData(
 		const promptScope = { ...baseData, ...answers }
 		const message = renderPromptValue(assertPromptMessage(prompt, name), promptScope, 'message')
 		const type = normalizePromptType(prompt.type)
+		if (!interactive) {
+			answers[name] = resolveNonInteractivePromptDefault(prompt, promptScope, name, type)
+			continue
+		}
 
 		if (type === 'confirm') {
 			const result = await confirm({
@@ -370,6 +375,32 @@ export async function promptTemplateData(
 	return answers
 }
 
+function resolveNonInteractivePromptDefault(
+	prompt: TemplatePrompt,
+	scope: Record<string, string>,
+	name: string,
+	type: ReturnType<typeof normalizePromptType>,
+): string {
+	if (type === 'confirm') {
+		if (typeof prompt.default !== 'boolean') {
+			throw new TypeError(`Non-interactive prompt "${name}" requires a boolean default`)
+		}
+		return prompt.default ? 'true' : 'false'
+	}
+
+	if (typeof prompt.default !== 'string') {
+		throw new TypeError(`Non-interactive prompt "${name}" requires a string default`)
+	}
+	const value = renderPromptValue(prompt.default, scope, 'default')
+	if (type === 'select') {
+		const options = normalizePromptOptions(prompt, name)
+		if (!options.some((option) => option.value === value)) {
+			throw new Error(`Non-interactive prompt "${name}" default is not one of its choices`)
+		}
+	}
+	return value
+}
+
 function isInteractive() {
 	return Boolean(process.stdout.isTTY && process.stdin.isTTY)
 }
@@ -386,6 +417,8 @@ function resolveHelper(name: string) {
 			return pascalCase
 		case 'capitalize':
 			return capitalize
+		case 'json':
+			return (value: string) => JSON.stringify(value)
 		default:
 			return undefined
 	}

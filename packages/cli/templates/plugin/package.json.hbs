@@ -1,9 +1,16 @@
 {
 	"$schema": "https://market.pluxel.dev/schema/package.json",
 	"name": "{{packageName}}",
-	"description": "{{description}}",
+	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": ">=11 <12",
+			"onFail": "error"
+		}
+	},
 	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {

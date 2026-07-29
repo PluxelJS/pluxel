@@ -23,6 +23,10 @@ pluxel new
 - `plugin`：在已有 workspace 中创建可发布插件包。
 - `app-monorepo`：创建独立的 static host、示例插件和纯领域包，适合新业务仓库。
 
+两个内置模板都以 pnpm catalog/workspace 为唯一包管理契约，因此固定使用 pnpm 11；自定义模板仍可
+使用 `--pm` 选择自己的安装器。非交互调用使用模板显式声明的 prompt default，模板缺少 default 时
+直接失败，不在 CI 中等待输入。
+
 `user-docs/` 是插件作者文档的唯一真源。CLI build 将它原样打包到 `dist/user-docs/`；
 `app-monorepo` 只声明目标目录，`pluxel new` 会把当前 CLI 版本携带的完整文档递归复制到生成仓库的
 `docs/pluxel/`。模板不维护改写版 Markdown，也不对文档执行 Handlebars 渲染。生成的 workspace
@@ -35,9 +39,10 @@ pluxel new
 pluxel new --template app-monorepo --name @acme/my-app
 ```
 
-维护者可运行 `pnpm --filter @pluxel/cli test:templates`。该检查会打包当前 workspace 的
-Pluxel 发布包，在仓库外分别生成 standalone plugin 和 app monorepo，并完成独立安装、lint、
-typecheck、test、build 和 package smoke。
+维护者可运行 `pnpm --filter @pluxel/cli test:templates`。该检查会计算并打包当前 workspace 的本地
+发布依赖闭包，安装生成的 CLI tarball，再通过其中的 `pluxel new` 在仓库外分别生成 standalone
+plugin 和 app monorepo，并完成独立安装、lint、typecheck、test、build 和 package smoke。测试不会
+绕过 npm pack，因此也覆盖模板 dotfile 和 bundled user docs。
 
 只使用 `pluxel new` 不需要安装其他 Pluxel runtime 或 toolchain 包。按命令安装可选能力：
 

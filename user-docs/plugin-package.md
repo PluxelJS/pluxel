@@ -152,7 +152,9 @@ catalog 中的 semver，不要把同一范围再复制回每个 manifest。
 
 ## `tsconfig.json` 标准形状
 
-TypeScript 只做类型检查，不负责生成插件产物：
+TypeScript 只做类型检查，不负责生成插件产物。外部 monorepo 只启用插件开发入口
+`@pluxel/hmr`；`@pluxel/source` 属于 Pluxel 框架实现 workspace，不应让消费侧 typecheck
+穿透并重新检查框架源码：
 
 ```json
 {
@@ -170,7 +172,7 @@ TypeScript 只做类型检查，不负责生成插件产物：
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
 		"isolatedModules": true,
-		"customConditions": ["@pluxel/source", "@pluxel/hmr"],
+		"customConditions": ["@pluxel/hmr"],
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true
 	},

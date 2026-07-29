@@ -20,6 +20,12 @@ such as `pnpm turbo run test --filter=@repo/project-chatbots...` for one project
 dependencies. Project TypeScript configs intentionally validate Pluxel's built declarations; normal
 package tests resolve workspace source so they do not wait for unrelated production builds.
 
+Every static project root exposes the same operational scripts: `dev` for the source route, `build`
+for the movable production closure, `start` for `dist/app.mjs`, and `typecheck` for its host boundary.
+Projects with a real automated suite additionally expose `test`; projects without one do not use a
+pass-with-no-tests placeholder. Domain-specific aliases such as `dynamic`, `static`, `headless` and
+`test:headless` remain available for focused workflows.
+
 For a new application, generate the canonical monorepo starter instead:
 
 ```bash

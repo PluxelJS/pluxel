@@ -30,7 +30,14 @@ Workspace build, test and typecheck tasks run through Turborepo. Pure builds can
 CPUs; tests and combined verification reserve half of the Turbo slots for Vitest's own worker pool.
 Results are stored in `.turbo`, so an unchanged second `pnpm verify` restores build outputs and skips
 successful checks. Use `pnpm test:full` or `pnpm build:full` when you intentionally need to bypass
-the cache, or lower `--concurrency` further on a memory-constrained machine.
+the cache, or lower `--concurrency` further on a memory-constrained machine. The source-only plugin
+and domain workspaces participate through upstream typecheck task hashes, so changing either one
+invalidates the deployable `web` build cache.
+
+This repository intentionally uses pnpm 11. The CLI rejects another `--pm` for this template, and
+`devEngines.packageManager` prevents an accidental npm/yarn install from producing a second
+lockfile. The generated GitHub Actions workflow runs a frozen install followed by the same
+`pnpm verify` gate.
 
 ## Start the application
 
@@ -46,6 +53,13 @@ route directly:
 curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
 ```
 
+Build and run the movable production distribution locally:
+
+```sh
+pnpm build
+PLUXEL_WORKBENCH=false pnpm start
+```
+
 ## Project boundaries
 
 - `web`: deployable Vite application, static host policy and React/GQLens frontend.
@@ -54,9 +68,9 @@ curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
 
 The repository root only coordinates workspaces, the pnpm version catalog, Turbo task graph and
 shared quality tooling. Every workspace still declares every package it imports: `catalog:`
-centralizes external versions but does not make a dependency implicitly available. `web/package.json` owns React,
-GQLens, Vite and static runtime dependencies. Pluxel packages are catalog-managed registry
-dependencies; only packages owned here use `workspace:*`. If the repository gains multiple
+centralizes external versions but does not make a dependency implicitly available. `web/package.json`
+owns React, GQLens, Vite and static runtime dependencies. Pluxel packages are catalog-managed
+registry dependencies; only packages owned here use `workspace:*`. If the repository gains multiple
 deployable applications, move `web` under an `apps/*` convention then.
 
 ## Host composition

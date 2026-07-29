@@ -22,6 +22,7 @@ import {
 	resolveWorkspaceRoot,
 	type WorkspaceReason,
 } from './workspace'
+import { resolveTemplatesDir } from './utils'
 
 export { parsePackageIdentity, parsePackageName } from './name'
 
@@ -146,12 +147,20 @@ function createScaffoldPlan(
 	template: string,
 	values: NewCommandValues,
 ): ScaffoldPlan {
-	const { dest, root, force = false, dryRun = false, install = true, pm } = values
+	const { dest: destValues, root, force = false, install = true, pm } = values
+	const dryRun = values['dry-run']
+	const dest = resolveScaffoldDestinationInput(destValues)
 	const cwd = process.cwd()
 
 	const rootInfo = resolveWorkspaceRoot(cwd, root)
 	const templateBase = resolveTemplateBase(template)
 	const createsWorkspace = basename(templateBase) === 'app-monorepo'
+	const builtInPackageManager = resolveBuiltInTemplatePackageManager(templateBase)
+	if (builtInPackageManager && pm && pm !== builtInPackageManager) {
+		throw new Error(
+			`The ${basename(templateBase)} template requires ${builtInPackageManager}; received --pm ${pm}.`,
+		)
+	}
 	const destPlan =
 		createsWorkspace && !dest ? { destBase: cwd } : resolveDestination(rootInfo, dest)
 
@@ -176,8 +185,28 @@ function createScaffoldPlan(
 		year: new Date().getFullYear(),
 	}
 
-	if (pm) plan.pm = pm
+	const planPackageManager = builtInPackageManager ?? pm
+	if (planPackageManager) plan.pm = planPackageManager
 	return plan
+}
+
+export function resolveScaffoldDestinationInput(
+	input: readonly string[] | string | undefined,
+): string | undefined {
+	const values = typeof input === 'string' ? [input] : input
+	if (!values || values.length === 0) return undefined
+	if (values.length > 1) throw new Error('Expected at most one scaffold destination')
+	return values[0]
+}
+
+export function resolveBuiltInTemplatePackageManager(
+	templateBase: string,
+	templatesDir = resolveTemplatesDir(),
+): PM | undefined {
+	const resolvedBase = resolve(templateBase)
+	return ['app-monorepo', 'plugin'].some((name) => resolvedBase === resolve(templatesDir, name))
+		? 'pnpm'
+		: undefined
 }
 
 export function resolveScaffoldIdentity(

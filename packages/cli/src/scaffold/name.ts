@@ -64,7 +64,7 @@ export function parsePackageIdentity(input: string) {
 		const name = kebabCase(raw)
 		return { scope: '', name, packageName: name }
 	}
-	const scope = match[1]!
+	const scope = match[1]!.toLowerCase()
 	const name = kebabCase(match[2])
 	return { scope, name, packageName: `${scope}/${name}` }
 }

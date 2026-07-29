@@ -66,7 +66,12 @@ function findAvailablePort() {
 async function getJson(url) {
 	const response = await fetch(url)
 	if (!response.ok) throw new Error(`${url} returned ${response.status}`)
-	return response.json()
+	const body = await response.text()
+	try {
+		return JSON.parse(body)
+	} catch (error) {
+		throw new Error(`${url} did not return JSON: ${body.slice(0, 120)}`, { cause: error })
+	}
 }
 
 function restoreEnvironment(name, value) {

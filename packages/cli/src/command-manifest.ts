@@ -3,6 +3,7 @@ import { lazy } from 'gunshi'
 export const newCommandArgs = {
 	dest: {
 		type: 'positional',
+		multiple: true,
 		description: 'Destination base dir (relative to --root; auto when omitted)',
 	},
 	root: { type: 'string', description: 'Workspace root (auto-detect by default)' },
@@ -19,7 +20,7 @@ export const newCommandArgs = {
 		default: true,
 		negatable: true,
 	},
-	dryRun: {
+	'dry-run': {
 		type: 'boolean',
 		description: 'Show the plan without touching the filesystem',
 		default: false,
@@ -30,6 +31,7 @@ export const newCommandArgs = {
 export const newCommandDefinition = {
 	name: 'new',
 	description: 'Scaffold from templates',
+	toKebab: true,
 	args: newCommandArgs,
 } as const
 
@@ -115,7 +117,7 @@ export const databaseCommandDefinition = {
 
 export const publishCommandArgs = {
 	access: { type: 'string', description: 'npm publish --access value', default: 'public' },
-	dryRun: { type: 'boolean', description: 'Plan publish without executing', default: false },
+	'dry-run': { type: 'boolean', description: 'Plan publish without executing', default: false },
 	debug: {
 		type: 'boolean',
 		description: 'Print npm args/env keys before running publish',
@@ -126,7 +128,7 @@ export const publishCommandArgs = {
 		description: 'Notify market webhook even if npm publish is skipped (requires OIDC token)',
 		default: false,
 	},
-	skipVersionCheck: {
+	'skip-version-check': {
 		type: 'boolean',
 		description: 'Skip checking if version already published',
 		default: false,
@@ -136,6 +138,7 @@ export const publishCommandArgs = {
 export const publishCommandDefinition = {
 	name: 'publish',
 	description: 'Publish current package to npm and notify market',
+	toKebab: true,
 	args: publishCommandArgs,
 } as const
 

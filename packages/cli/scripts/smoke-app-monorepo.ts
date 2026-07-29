@@ -4,54 +4,67 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { parse, stringify } from 'yaml'
-import { generateFromTemplate } from '../src/scaffold/template.ts'
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
-const templateBase = resolve(import.meta.dirname, '../templates/app-monorepo')
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'pluxel-app-template-'))
 const tarballRoot = resolve(temporaryRoot, 'tarballs')
-const applicationRoot = resolve(temporaryRoot, 'starter-app')
-const pluginRoot = resolve(temporaryRoot, 'standalone-plugin')
-
-const packages = [
-	{ name: '@pluxel/core', path: 'packages/core', build: ['build'] },
-	{ name: '@pluxel/rolldown', path: 'packages/rolldown', build: ['build'] },
-	{ name: '@pluxel/runtime', path: 'packages/runtime', build: ['build:lib'] },
-	{ name: '@pluxel/runtime-dev', path: 'packages/runtime-dev', build: ['build'] },
-	{ name: '@pluxel/runtime-static', path: 'packages/runtime-static', build: ['build'] },
-	{ name: '@pluxel/test', path: 'packages/test', build: ['build'] },
-	{ name: '@pluxel/cli', path: 'packages/cli', build: ['build'] },
+const cliInstallRoot = resolve(temporaryRoot, 'cli-install')
+const applicationScaffoldRoot = resolve(temporaryRoot, 'applications')
+const pluginScaffoldRoot = resolve(temporaryRoot, 'plugins')
+const applicationRoot = resolve(applicationScaffoldRoot, 'starter-app')
+const pluginRoot = resolve(pluginScaffoldRoot, 'smoke')
+const publishRoots = [
+	'@pluxel/core',
+	'@pluxel/rolldown',
+	'@pluxel/runtime',
+	'@pluxel/runtime-static',
+	'@pluxel/test',
+	'@pluxel/cli',
 ] as const
 
 try {
 	await mkdir(tarballRoot, { recursive: true })
-	for (const item of packages) await runPnpm(['--filter', item.name, ...item.build], repositoryRoot)
+	const publishPackages = await resolveLocalPublishClosure(repositoryRoot, publishRoots)
+	await runPnpm(
+		['exec', 'turbo', 'run', 'build', ...publishPackages.map(({ name }) => `--filter=${name}`)],
+		repositoryRoot,
+	)
 
 	await verifyBundledUserDocs(repositoryRoot)
 
 	const overrides: Record<string, string> = {}
-	for (const item of packages.filter((candidate) => candidate.name !== '@pluxel/runtime-dev')) {
+	for (const item of publishPackages) {
 		const tarball = resolve(tarballRoot, `${item.name.replaceAll(/[@/]/g, '-')}.tgz`)
-		await runPnpm(['--dir', resolve(repositoryRoot, item.path), 'pack', '--out', tarball])
+		await runPnpmCapture(['--dir', resolve(repositoryRoot, item.path), 'pack', '--out', tarball])
 		overrides[item.name] = `file:${tarball}`
 	}
 
-	await generateFromTemplate(
-		{
-			templateBase,
-			targetDir: applicationRoot,
-			data: {
-				pluginName: 'starter-app',
-				packageName: '@smoke/starter-app',
-				className: 'StarterApp',
-				year: String(new Date().getFullYear()),
-				description: 'Pluxel application template smoke test',
-			},
-			force: false,
-			dryRun: false,
-		},
-		() => {},
-	)
+	const cliTarball = overrides['@pluxel/cli']
+	if (!cliTarball) throw new Error('Local publish closure did not include @pluxel/cli')
+	await installPackedCli(cliInstallRoot, cliTarball)
+	await mkdir(applicationScaffoldRoot, { recursive: true })
+	await runPackedCli(cliInstallRoot, applicationScaffoldRoot, [
+		'new',
+		'--template',
+		'app-monorepo',
+		'--name',
+		'@smoke/dry-run',
+		'--dry-run',
+		'--no-install',
+	])
+	const dryRunEntries = await readdir(applicationScaffoldRoot)
+	if (dryRunEntries.includes('dry-run')) {
+		throw new Error('Scaffold dry run wrote a target directory')
+	}
+	await runPackedCli(cliInstallRoot, applicationScaffoldRoot, [
+		'new',
+		'--template',
+		'app-monorepo',
+		'--name',
+		'@smoke/starter-app',
+		'--no-install',
+	])
+	await assertGeneratedGitIgnore(applicationRoot)
 
 	const workspacePath = resolve(applicationRoot, 'pnpm-workspace.yaml')
 	const workspace = parse(await readFile(workspacePath, 'utf8')) as Record<string, unknown>
@@ -62,22 +75,16 @@ try {
 	await runPnpm(['verify'], applicationRoot, { CI: '1' })
 	await verifyFrozenApplicationDistribution(applicationRoot)
 
-	await generateFromTemplate(
-		{
-			templateBase: resolve(import.meta.dirname, '../templates/plugin'),
-			targetDir: pluginRoot,
-			data: {
-				pluginName: 'smoke',
-				packageName: 'pluxel-plugin-smoke',
-				className: 'Smoke',
-				year: String(new Date().getFullYear()),
-				description: 'Pluxel standalone plugin template smoke test',
-			},
-			force: false,
-			dryRun: false,
-		},
-		() => {},
-	)
+	await mkdir(pluginScaffoldRoot, { recursive: true })
+	await runPackedCli(cliInstallRoot, pluginScaffoldRoot, [
+		'new',
+		'--template',
+		'plugin',
+		'--name',
+		'pluxel-plugin-smoke',
+		'--no-install',
+	])
+	await assertGeneratedGitIgnore(pluginRoot)
 
 	const pluginWorkspacePath = resolve(pluginRoot, 'pnpm-workspace.yaml')
 	const pluginWorkspace = parse(await readFile(pluginWorkspacePath, 'utf8')) as Record<
@@ -104,6 +111,98 @@ try {
 		console.info(`Template smoke workspace kept at ${temporaryRoot}`)
 	} else {
 		await rm(temporaryRoot, { recursive: true, force: true })
+	}
+}
+
+type LocalPublishPackage = {
+	name: string
+	path: string
+	manifest: {
+		dependencies?: Record<string, string>
+		optionalDependencies?: Record<string, string>
+		peerDependencies?: Record<string, string>
+		peerDependenciesMeta?: Record<string, { optional?: boolean }>
+	}
+}
+
+async function resolveLocalPublishClosure(
+	root: string,
+	rootNames: readonly string[],
+): Promise<LocalPublishPackage[]> {
+	const packagesRoot = resolve(root, 'packages')
+	const entries = await readdir(packagesRoot, { withFileTypes: true })
+	const discovered = new Map<string, LocalPublishPackage>()
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue
+		const path = `packages/${entry.name}`
+		const manifestPath = resolve(root, path, 'package.json')
+		let manifest: LocalPublishPackage['manifest'] & {
+			name?: string
+			private?: boolean
+		}
+		try {
+			manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as typeof manifest
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+			throw error
+		}
+		if (manifest.private === true || !manifest.name) continue
+		discovered.set(manifest.name, { name: manifest.name, path, manifest })
+	}
+
+	const closure = new Map<string, LocalPublishPackage>()
+	const pending = [...rootNames]
+	while (pending.length > 0) {
+		const name = pending.shift()!
+		if (closure.has(name)) continue
+		const item = discovered.get(name)
+		if (!item) throw new Error(`Local publish package not found: ${name}`)
+		closure.set(name, item)
+		const dependencies = {
+			...item.manifest.dependencies,
+			...item.manifest.optionalDependencies,
+		}
+		for (const dependency of Object.keys(dependencies)) {
+			if (discovered.has(dependency)) pending.push(dependency)
+		}
+		for (const dependency of Object.keys(item.manifest.peerDependencies ?? {})) {
+			if (
+				discovered.has(dependency) &&
+				item.manifest.peerDependenciesMeta?.[dependency]?.optional !== true
+			) {
+				pending.push(dependency)
+			}
+		}
+	}
+	return [...closure.values()].sort((left, right) => left.name.localeCompare(right.name))
+}
+
+async function installPackedCli(root: string, cliTarball: string): Promise<void> {
+	await mkdir(root, { recursive: true })
+	await writeFile(
+		resolve(root, 'package.json'),
+		`${JSON.stringify(
+			{
+				name: 'pluxel-cli-smoke-install',
+				private: true,
+				dependencies: { '@pluxel/cli': cliTarball },
+			},
+			null,
+			2,
+		)}\n`,
+	)
+	await runPnpm(['install', '--frozen-lockfile=false'], root)
+}
+
+async function runPackedCli(root: string, cwd: string, args: string[]): Promise<void> {
+	const cli = resolve(root, 'node_modules/@pluxel/cli/bin/pluxel.mjs')
+	await runProcess(process.execPath, [cli, ...args], cwd)
+}
+
+async function assertGeneratedGitIgnore(root: string): Promise<void> {
+	const contents = await readFile(resolve(root, '.gitignore'), 'utf8')
+	if (!contents.includes('node_modules/') || !contents.includes('.pluxel/')) {
+		throw new Error(`Generated .gitignore is incomplete: ${root}`)
 	}
 }
 
@@ -195,7 +294,7 @@ async function runProcess(
 		child.once('error', reject)
 		child.once('exit', (code, signal) => {
 			if (code === 0) resolvePromise()
-			else reject(new Error(`pnpm ${args.join(' ')} failed (${signal ?? code ?? 'unknown'})`))
+			else reject(new Error(`${command} ${args.join(' ')} failed (${signal ?? code ?? 'unknown'})`))
 		})
 	})
 }
