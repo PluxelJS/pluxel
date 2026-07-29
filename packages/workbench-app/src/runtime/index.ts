@@ -25,10 +25,17 @@ export {
 }
 
 export type {
+	AgentToolAssignment,
+	AgentToolsAdminSnapshot,
+	AgentToolsHandleApi,
+	AgentToolsPolicy,
+	AgentToolsPolicyInput,
 	BaseProviderInfo,
 	ConfigResult,
 	ConfigResultErr,
 	ConfigResultOk,
+	CommandInventoryItem,
+	CommandToolset,
 	EnsureForkResult,
 	LogFilter,
 	LogLevel,

@@ -14,6 +14,7 @@ import {
 	IconPlugConnected,
 	IconPuzzle,
 	IconReceipt,
+	IconRobot,
 	IconSearch,
 	IconSettings,
 	IconShieldLock,
@@ -48,6 +49,7 @@ export const baseNavItems: NavItem[] = [
 	{ label: '首页', href: '/', exact: true, icon: <IconHome2 size={18} stroke={1.7} /> },
 	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
 	{ label: '安全', href: '/security', icon: <IconShieldLock size={18} stroke={1.7} /> },
+	{ label: 'Agent 工具', href: '/agent-tools', icon: <IconRobot size={18} stroke={1.7} /> },
 	{ label: '包管理', href: '/packages', icon: <IconPackages size={18} stroke={1.7} /> },
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
 ]

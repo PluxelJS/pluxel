@@ -2,6 +2,10 @@
 
 Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 API，也不拥有插件数据库生命周期。
 
+宿主内置的 `/agent-tools` 页面管理 runtime-owned Toolset 与 Agent assignment。页面不是 command registry，也不拥有
+命令生命周期；它通过宿主 RPC 编辑持久化策略并投影当前动态 catalog。Workbench 关闭后，Agent carrier 继续使用
+`ctx.root.agentTools.catalog(agentId)` 解析相同策略。
+
 ## Authoring model
 
 | 层        | 公开入口                             | 内容                                         |

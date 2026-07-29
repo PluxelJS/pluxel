@@ -4,7 +4,16 @@
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
+import type { AgentToolsAdminSnapshot, AgentToolsPolicyInput } from '../agent-tools'
 export type { VaultKeyPair } from '../services/vault/types'
+export type {
+	AgentToolAssignment,
+	AgentToolsAdminSnapshot,
+	AgentToolsPolicy,
+	AgentToolsPolicyInput,
+	CommandInventoryItem,
+	CommandToolset,
+} from '../agent-tools'
 
 export type WorkbenchRpcView = Record<string, unknown>
 
@@ -273,10 +282,19 @@ export type LoggingHandleApi = {
 	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
 }
 
+export type AgentToolsHandleApi = {
+	snapshot: () => Promise<AgentToolsAdminSnapshot>
+	replacePolicy: (
+		expectedRevision: number,
+		policy: AgentToolsPolicyInput,
+	) => Promise<AgentToolsAdminSnapshot>
+}
+
 type RuntimeRpcApiContract = {
 	ping: () => string
 	packageManager: () => PackageManagerFeatureApi | null
 	logging: () => LoggingHandleApi
+	agentTools: () => AgentToolsHandleApi
 	workbenchRpc: (grantId: string) => WorkbenchRpcView
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 	pluginSchema: (name: string) => Promise<SchemaResult>

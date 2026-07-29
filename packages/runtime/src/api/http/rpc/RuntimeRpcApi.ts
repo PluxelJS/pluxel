@@ -18,6 +18,7 @@ import {
 import { ensureFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
 import { LoggingHandle } from './LoggingHandle'
+import { AgentToolsHandle } from './AgentToolsHandle'
 import { requireWorkbench } from '../../../services/workbench'
 import type {
 	ConfigFieldMutation,
@@ -49,6 +50,11 @@ export class RuntimeRpcApi extends RpcTarget {
 	/** Logging settings (host-level, persisted). */
 	logging() {
 		return new LoggingHandle(this.ctx)
+	}
+
+	/** Persisted Agent toolsets and assignments over the live command catalog. */
+	agentTools() {
+		return new AgentToolsHandle(this.ctx)
 	}
 
 	workbenchRpc(grantId: string): WorkbenchRpcView {

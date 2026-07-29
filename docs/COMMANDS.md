@@ -22,6 +22,23 @@ Runtime and host integrations must preserve these boundaries:
 - Agent adapters filter descriptors before publishing a tool catalog and map behavior to standard
   read-only, destructive, idempotent, and open-world annotations.
 
+Runtime hosts use `ctx.root.agentTools` when the filtered catalog must be managed persistently. It keeps
+user-defined Toolsets and Agent assignments outside command definitions: a Toolset is an explicit set of
+stable command names, and one Agent receives the union of its assigned Toolsets. An Agent with no assignment
+receives no commands. Missing command names remain in policy and become available again when a plugin
+publishes the same stable name.
+
+`await ctx.root.agentTools.catalog(agentId)` returns a live constrained catalog. Its `list()` and `get()`
+only expose currently registered commands assigned to that Agent; `execute()` and `executeOrThrow()` enforce
+the same assignment again before dispatching through the root command catalog. Carriers must use this bound
+catalog for both publication and execution. Calling `ctx.root.commands.execute()` directly would bypass the
+Agent assignment and is only appropriate for a separately authorized host control path.
+
+The bound catalog publishes `{ catalogRevision, policyRevision }` snapshots and subscriptions. Command
+registration, withdrawal, replacement, or Toolset edits therefore invalidate carrier projections without
+creating a second registry. A policy edit does not cancel calls already admitted before the edit; it prevents
+subsequent calls, matching command publication withdrawal semantics.
+
 `@pluxel/runtime` installs one root catalog behind `ctx.commands`. `register()` binds the returned
 registry registration to the calling plugin Context's effects, so stop, replacement, failed startup,
 and shutdown remove future discovery and lookup automatically. Runtime registration also wraps execution
@@ -29,8 +46,9 @@ in the owner's internal invocation gate. Leaving the running generation closes a
 combined call/owner signal, and waits for admitted invocations before the plugin `stop()` hook. A manually
 disposed registration only withdraws publication and does not cancel work that already started.
 
-The runtime's built-in plugin management commands use the same catalog; carriers must consume
-`ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or handlers.
+The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
+consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or
+handlers; Agent carriers with a persisted assignment consume their bound `agentTools.catalog()` view.
 
 `createCommandArgv(catalog)` is the conservative default argv projection for an installed CLI carrier.
 Its first token is the exact command name, scalar input fields become generated named options, and complex
@@ -57,3 +75,5 @@ Implementation entry points:
 - `packages/commands/src/argv/router.ts`: trie registration, routing, and dispatch;
 - `packages/commands/src/argv/catalog.ts`: lazy default argv projection over a live catalog;
 - `packages/commands/src/argv/tail.ts`: text and JSON remainder binding.
+- `packages/runtime/src/services/commands/AgentToolsService.ts`: persisted Toolsets, Agent assignments,
+  constrained catalog projection, and call-time enforcement.

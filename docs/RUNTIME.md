@@ -20,6 +20,12 @@ registration disposer 只撤销 catalog publication，不会取消已经开始�
 规则仍只有 runtime use case 一个事实源。CLI、Agent、HTTP 和 Workbench 是宿主 carrier；它们负责授权、确认、过滤与
 principal 映射，不拥有 command 定义或插件生命周期。
 
+`ctx.root.agentTools` 在唯一 command registry 之上维护持久化 Toolset 与 Agent assignment。Toolset 只保存稳定
+command name，不复制 descriptor 或 handler；插件停止时命令从投影消失，同名命令恢复时自动重新进入。Agent carrier
+必须用 `await ctx.root.agentTools.catalog(agentId)` 得到的 bound catalog 同时完成工具发布与执行，因为该 catalog 会在
+调用时再次检查 assignment。Workbench 的 `/agent-tools` 只是该宿主策略的管理面，Workbench disabled 不影响已经保存
+的 Agent catalog。
+
 宿主需要常规 CLI 时可用 `createCommandArgv(ctx.root.commands)` 惰性投影当前 catalog；插件无需逐项 `bind()`。
 该默认投影使用精确 command name、生成的标量 options 与 field-level JSON。`@pluxel/cli` 本身是工作区构建/开发工具，
 不持有运行中的 runtime；进程接入、授权、确认、输出与退出码仍由安装 carrier 的宿主负责。

@@ -90,6 +90,46 @@ The runtime catalog already contains `plugin.list`, `plugin.status.get`, `plugin
 use cases and return the resulting plugin status. Hosts project and filter this catalog for CLI,
 Workbench, HTTP, or Agent use; plugins do not register separate carrier-specific copies.
 
+## Assign focused toolsets to Agents
+
+Open **Agent 工具** in Workbench to create Toolsets, select their commands, and assign one or more
+Toolsets to a stable Agent ID. Assignments are explicit allowlists: newly installed commands are not
+silently granted, an Agent without an assignment receives no tools, and deleting a Toolset removes it from
+every Agent assignment in the same saved policy.
+
+Toolsets retain command names that are temporarily unavailable. If the owning plugin stops, the command
+disappears from the Agent catalog and Workbench marks it unavailable; restarting or replacing the plugin
+restores the same name without changing the Toolset.
+
+An Agent carrier obtains its catalog from the runtime and uses that same object for publication and calls:
+
+```ts
+import { toToolDescriptors } from '@pluxel/commands/tool'
+
+const catalog = await ctx.root.agentTools.catalog('pi-researcher')
+let tools = toToolDescriptors(catalog.list())
+
+const unsubscribe = catalog.subscribe((snapshot) => {
+	tools = toToolDescriptors(snapshot.descriptors)
+	// Notify or refresh the provider's tool list here.
+})
+
+try {
+	const result = await catalog.execute(toolCall.name, toolCall.arguments, {
+		signal: request.signal,
+	})
+	// Translate result for the provider.
+} finally {
+	unsubscribe()
+}
+```
+
+Do not publish from the bound catalog and then dispatch through `ctx.root.commands`: that would make the
+Toolset a prompt-size optimization rather than an authorization boundary. The bound catalog rejects an
+unassigned command with `FORBIDDEN`, even if the command exists in the root registry. Normal principal
+authorization, confirmation for destructive calls, credentials, rate limits, and audit still apply in
+addition to the Toolset.
+
 ## Provide the default CLI projection
 
 A host can expose every allowed runtime command through one argv adapter. Plugin authors do not call

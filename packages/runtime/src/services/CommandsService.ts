@@ -15,7 +15,14 @@ const serviceName = 'commands' as const
 
 type RootState = {
 	registry: ReturnType<typeof createCommandRegistry<CommandContext>>
+	revision: number
+	listeners: Set<(snapshot: CommandCatalogSnapshot) => void>
 }
+
+export type CommandCatalogSnapshot = Readonly<{
+	revision: number
+	descriptors: readonly CommandDescriptor[]
+}>
 
 declare module '@pluxel/core' {
 	namespace Context {
@@ -48,6 +55,24 @@ export class CommandsService {
 		return this.rootState().registry.list()
 	}
 
+	/** Return the current live catalog revision and its immutable descriptor snapshot. */
+	catalogSnapshot(): CommandCatalogSnapshot {
+		const state = this.rootState()
+		return Object.freeze({ revision: state.revision, descriptors: state.registry.list() })
+	}
+
+	/** Subscribe to command publication changes. The caller owns the returned disposer. */
+	subscribe(listener: (snapshot: CommandCatalogSnapshot) => void): () => void {
+		const state = this.rootState()
+		state.listeners.add(listener)
+		let active = true
+		return () => {
+			if (!active) return
+			active = false
+			state.listeners.delete(listener)
+		}
+	}
+
 	execute(
 		name: string,
 		candidate: unknown,
@@ -67,7 +92,7 @@ export class CommandsService {
 		if (state) return state
 
 		const managementCommands = createPluginManagementCommands(this.ctx.root)
-		state = { registry: createCommandRegistry() }
+		state = { registry: createCommandRegistry(), revision: 0, listeners: new Set() }
 		rootService.state = state
 		const registrations: Registration[] = []
 		try {
@@ -88,11 +113,13 @@ export class CommandsService {
 		state = this.rootState(),
 	): Registration {
 		const registration = state.registry.register(bindCommandOwner(owner, command))
+		this.bumpCatalog(state)
 		let active = true
 		const cleanup = () => {
 			if (!active) return
 			active = false
 			registration.dispose()
+			this.bumpCatalog(state)
 		}
 
 		let guard: { cancel(): void }
@@ -120,6 +147,21 @@ export class CommandsService {
 			phase: 'shutdown',
 		})
 		this.ownsInvocationCleanup = true
+	}
+
+	private bumpCatalog(state: RootState): void {
+		state.revision += 1
+		const snapshot = Object.freeze({
+			revision: state.revision,
+			descriptors: state.registry.list(),
+		})
+		for (const listener of state.listeners) {
+			try {
+				listener(snapshot)
+			} catch (error) {
+				this.ctx.root.logger.error('Command catalog listener failed', { error })
+			}
+		}
 	}
 }
 

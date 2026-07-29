@@ -122,6 +122,85 @@
 			"/packages/runtime-dynamic/tests/ui-demos",
 		],
 		"exportall.config.relExclusion": ["/packages/workbench-app/src/app/Dashboard/Example.tsx"],
-		"cSpell.words": ["gqloom", "Gqty", "tabler"],
+		"cSpell.words": [
+			"gqloom",
+			"Gqty",
+			"tabler"
+		],
+		"ColorfulMonorepo.data": {
+			"workspaces": [
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel",
+					"label": "🌱  pluxel",
+					"background": "#1e7bfe",
+					"foreground": "#ffffff",
+					"packageName": "pluxel"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/cli",
+					"label": "🍀  @pluxel/cli",
+					"background": "#43ad6c",
+					"foreground": "#000000",
+					"packageName": "@pluxel/cli"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/workbench-app",
+					"label": "🍀  @pluxel/workbench-app",
+					"background": "#d9ceba",
+					"foreground": "#000000",
+					"packageName": "@pluxel/workbench-app"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/context",
+					"label": "🍀  @pluxel/context",
+					"background": "#c2d6d5",
+					"foreground": "#000000",
+					"packageName": "@pluxel/context"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/core",
+					"label": "🍀  @pluxel/core",
+					"background": "#1a82ef",
+					"foreground": "#ffffff",
+					"packageName": "@pluxel/core"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/diod",
+					"label": "🍀  diod",
+					"background": "#88482e",
+					"foreground": "#ffffff",
+					"packageName": "diod"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/runtime-dynamic",
+					"label": "🍀  @pluxel/runtime-dynamic",
+					"background": "#1c655f",
+					"foreground": "#ffffff",
+					"packageName": "@pluxel/runtime-dynamic"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/runtime-static",
+					"label": "🍀  @pluxel/runtime-static",
+					"background": "#4c0697",
+					"foreground": "#ffffff",
+					"packageName": "@pluxel/runtime-static"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/rolldown",
+					"label": "🍀  @pluxel/rolldown",
+					"background": "#e160f4",
+					"foreground": "#ffffff",
+					"packageName": "@pluxel/rolldown"
+				},
+				{
+					"path": "/home/ahdg/.var/app/io.github.trumank.CodeStudio/home/code/pluxel-code/pluxel/packages/valibot-form",
+					"label": "🍀  valibot-form",
+					"background": "#0d0645",
+					"foreground": "#ffffff",
+					"packageName": "valibot-form"
+				}
+			],
+			"scriptFavorites": []
+		},
 	},
 }
