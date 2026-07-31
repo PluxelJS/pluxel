@@ -214,6 +214,7 @@ class KookInspectPlugin extends BasePlugin {
 
 	override init() {
 		this.kook.commands.register(inspect, {
+			prefix: '.',
 			routes: ['inspect'],
 			positionals: ['detail'],
 		})
@@ -234,7 +235,8 @@ this.kook.commands.bind(weather, {
 })
 ```
 
-`register()` 只接受 `defineKookCommand()` 的 KOOK 原生命令；`bind()` 只接受基础 `Command`，并强制提供
+`prefix` 省略时为 `/`，也可由每个 binding 配置为 `.`、`!` 等 1–16 个不含空白的字符；descriptor usage
+会包含实际前缀。`register()` 只接受 `defineKookCommand()` 的 KOOK 原生命令；`bind()` 只接受基础 `Command`，并强制提供
 `respond`。两者都会从 caller Context 取得消费插件 owner，自动随该插件停止、替换或启动回滚撤销 route，调用方
 不应再包一层 `effects.own()`。手动 `registration.dispose()` 只撤销发布，已经接纳的调用可以完成；owner 停止则会
 abort 并 drain 在途调用。命令中的额外 IO 应传递 `ctx.signal`，`ctx.reply()` 已自动把它传给 KOOK HTTP 请求。

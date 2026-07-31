@@ -278,16 +278,25 @@ describe('KOOK command carrier', () => {
 		const carrier = new KookCommandCarrier(runtime.ctx)
 		const commands = carrier.forOwner(runtime.ctx)
 		commands.register(kookCommand, {
+			prefix: '.',
 			routes: ['echo'],
 			tail: tail.text('text'),
 		})
 
 		try {
 			expect(carrier.list()).toEqual([
-				expect.objectContaining({ name: 'kook.echo', routes: ['echo'] }),
+				expect.objectContaining({
+					name: 'kook.echo',
+					prefix: '.',
+					routes: ['echo'],
+					usage: '.echo <text>',
+				}),
 			])
 			await expect(
-				carrier.dispatch(bot, event('/echo hello world'), new AbortController().signal),
+				carrier.dispatch(bot, event('/echo ignored'), new AbortController().signal),
+			).resolves.toBe(false)
+			await expect(
+				carrier.dispatch(bot, event('.echo hello world'), new AbortController().signal),
 			).resolves.toBe(true)
 			expect(requests).toHaveLength(1)
 			expect(requests[0]?.url).toContain('/api/v3/message/create')
@@ -436,6 +445,27 @@ describe('KOOK command carrier', () => {
 			await owner.effects.dispose()
 			carrier.dispose()
 			bot.$.destroy()
+			await runtime.dispose()
+		}
+	})
+
+	it('rejects empty, whitespace, and oversized command prefixes', async () => {
+		const runtime = createRuntimeContext()
+		const carrier = new KookCommandCarrier(runtime.ctx)
+		const commands = carrier.forOwner(runtime.ctx)
+
+		try {
+			for (const prefix of ['', 'two words', '12345678901234567']) {
+				expect(() =>
+					commands.register(kookCommand, {
+						prefix,
+						routes: ['invalid-prefix'],
+						tail: tail.text('text'),
+					}),
+				).toThrow('prefix must contain 1-16 non-whitespace characters')
+			}
+		} finally {
+			carrier.dispose()
 			await runtime.dispose()
 		}
 	})

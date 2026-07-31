@@ -189,6 +189,7 @@ const inspect = defineKookCommand({
 
 override init() {
 	this.kook.commands.register(inspect, {
+		prefix: '.',
 		routes: ['inspect'],
 		positionals: ['detail'],
 	})
@@ -208,7 +209,9 @@ this.kook.commands.bind(lookup, {
 })
 ```
 
-`register()` 与 `bind()` 都自动归属于调用 `KookPlugin` 的消费插件，无需 `effects.own()`。手动 dispose 只撤销
+`prefix` 省略时为 `/`，也可以在每个 binding 上改成 `.`、`!` 等 1–16 个不含空白的字符；生成的命令描述和
+usage 会包含实际前缀。`register()` 与 `bind()` 都自动归属于调用 `KookPlugin` 的消费插件，无需
+`effects.own()`。手动 dispose 只撤销
 route，不取消已经开始的调用；消费插件或 KOOK provider 停止时会拒绝新调用、abort 并 drain 在途调用。额外的
 网络 IO 必须传递 `ctx.signal`；`ctx.reply()` 已自动传播该 signal。匹配的 KOOK route 会在 Hub bridge 前消费 event。
 
