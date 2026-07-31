@@ -221,7 +221,7 @@ function validateModule(module: Card.Module, field: string, now: number): void {
 		case 'action-group':
 			validateCount(module.elements, 1, 4, `${field}.elements`)
 			module.elements.forEach((button, index) =>
-				validateButton(button, `${field}.elements[${index}]`),
+				validateButton(button!, `${field}.elements[${index}]`),
 			)
 			return
 		case 'context':
