@@ -83,6 +83,33 @@ describe('RuntimeLogging', () => {
 		).toEqual([{ message: 'accepted', pluginId: 'PluginA' }])
 	})
 
+	it('preserves an error-like property in both structured log views', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const diagnostic = Object.assign(new Error('source unavailable'), {
+			code: 'unavailable',
+			retryable: false,
+		})
+		diagnostic.name = 'ProviderError'
+
+		pluginLogger(logging, 'PluginA').warn('playback failed', { error: diagnostic })
+
+		const line = logging.stores.getOrCreate('default').tailWindow(1)[0]
+		expect(line?.props?.error).toMatchObject({
+			name: 'ProviderError',
+			message: 'source unavailable',
+			code: 'unavailable',
+			retryable: false,
+		})
+		expect(line?.error).toMatchObject({
+			name: 'ProviderError',
+			message: 'source unavailable',
+			code: 'unavailable',
+			retryable: false,
+		})
+	})
+
 	it('intersects plugin policy with the root debug topic matcher', async () => {
 		logging = createRuntimeLogging(storePlan())
 		await logging.install()

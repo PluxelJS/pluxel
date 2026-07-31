@@ -177,8 +177,7 @@ function toRuntimeLogLineInput(
 	},
 ): Omit<RuntimeLogLine, 'epoch' | 'seq' | 'streamId'> {
 	const ts = record.timestamp
-	const seen = new WeakSet<object>()
-	const message = sanitizeMessageParts(record.message, seen, opts.caps)
+	const message = sanitizeMessageParts(record.message, new WeakSet<object>(), opts.caps)
 	const msg = deriveFastMsg(record.message, opts.caps)
 
 	const rawProps =
@@ -203,13 +202,14 @@ function toRuntimeLogLineInput(
 			redactKeys: opts.redactKeys,
 			maxPropsKeys: opts.caps.maxPropsKeys,
 		},
-		seen,
+		new WeakSet<object>(),
 	)
 
+	const errorSeen = new WeakSet<object>()
 	let error: RuntimeLogError | undefined
-	if (rawProps.error !== undefined) error = extractErrorLike(rawProps.error, seen)
-	if (!error && rawProps.err !== undefined) error = extractErrorLike(rawProps.err, seen)
-	if (!error && rawProps.cause !== undefined) error = extractErrorLike(rawProps.cause, seen)
+	if (rawProps.error !== undefined) error = extractErrorLike(rawProps.error, errorSeen)
+	if (!error && rawProps.err !== undefined) error = extractErrorLike(rawProps.err, errorSeen)
+	if (!error && rawProps.cause !== undefined) error = extractErrorLike(rawProps.cause, errorSeen)
 
 	const raw = opts.includeRaw
 		? toPlainObject(
@@ -221,7 +221,7 @@ function toRuntimeLogLineInput(
 					properties: props,
 				},
 				6,
-				seen,
+				new WeakSet<object>(),
 			)
 		: undefined
 
