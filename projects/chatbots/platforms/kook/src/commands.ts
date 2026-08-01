@@ -12,8 +12,6 @@ import {
 	createArgvRouter,
 	type ArgvBinding,
 	type ArgvCommandDescriptor,
-	type ArgvResolution,
-	type ArgvRouter,
 } from '@pluxel/commands/argv'
 import {
 	closeOwnerInvocations,
@@ -42,12 +40,6 @@ export type KookCommand<Input = unknown> = Command<Input, void, KookCommandConte
 	readonly [kookCommandBrand]: true
 }
 
-/** KOOK command route syntax projected over one standard Command input. */
-export type KookCommandBinding<Input> = ArgvBinding<Input> & {
-	/** Prefix matched before the first route token. @defaultValue "/" */
-	prefix?: string
-}
-
 /**
  * Define a KOOK-native command. Its handler receives `KookCommandContext`, replies directly, and
  * returns no structured output. Use `defineCommand()` plus `kook.commands.bind()` for a portable
@@ -67,12 +59,8 @@ export function defineKookCommand<SIn extends ObjectSchema>(
 }
 
 /** KOOK syntax and terminal response projection for a portable Command. */
-export type KookCommandProjection<Input, Output> = KookCommandBinding<Input> & {
+export type KookCommandProjection<Input, Output> = ArgvBinding<Input> & {
 	respond(output: Output, context: KookCommandContext): void | Promise<void>
-}
-
-export type KookCommandDescriptor = ArgvCommandDescriptor & {
-	readonly prefix: string
 }
 
 /**
@@ -87,7 +75,7 @@ export interface KookCommands {
 	 *
 	 * The route belongs to the calling plugin and is withdrawn when that plugin stops.
 	 */
-	register<Input>(command: KookCommand<Input>, binding: KookCommandBinding<Input>): Registration
+	register<Input>(command: KookCommand<Input>, binding: ArgvBinding<Input>): Registration
 	/**
 	 * Bind a portable Command and project its validated output to KOOK.
 	 *
@@ -97,7 +85,7 @@ export interface KookCommands {
 		command: Command<Input, Output, CommandContext>,
 		projection: KookCommandProjection<Input, Output>,
 	): Registration
-	list(): readonly KookCommandDescriptor[]
+	list(): readonly ArgvCommandDescriptor[]
 }
 
 type ActiveBinding = {
@@ -108,13 +96,19 @@ type ActiveBinding = {
 
 /** @internal KOOK owns parsing and constructs the context required by its command registry. */
 export class KookCommandCarrier {
-	private readonly routers = new Map<string, ArgvRouter<KookCommandContext>>()
+	private readonly router = createArgvRouter<KookCommandContext>()
 	private readonly bindings = new Map<string, ActiveBinding>()
 	private readonly views = new WeakMap<Context, KookCommands>()
 	private readonly ownersWithInvocationCleanup = new WeakSet<Context>()
+	private readonly prefix: () => string
 	private active = true
 
-	constructor(private readonly ctx: Context) {}
+	constructor(
+		private readonly ctx: Context,
+		prefix: string | (() => string) = '/',
+	) {
+		this.prefix = typeof prefix === 'function' ? prefix : () => prefix
+	}
 
 	/** @internal Return one stable owner-bound author view. */
 	forOwner(owner: Context): KookCommands {
@@ -124,7 +118,7 @@ export class KookCommandCarrier {
 		let view = this.views.get(owner)
 		if (view) return view
 		view = Object.freeze({
-			register: <Input>(command: KookCommand<Input>, binding: KookCommandBinding<Input>) =>
+			register: <Input>(command: KookCommand<Input>, binding: ArgvBinding<Input>) =>
 				this.register(owner, command, binding),
 			bind: <Input, Output>(
 				command: Command<Input, Output, CommandContext>,
@@ -136,25 +130,17 @@ export class KookCommandCarrier {
 		return view
 	}
 
-	list(): readonly KookCommandDescriptor[] {
-		return [...this.routers].flatMap(([prefix, router]) =>
-			router.list().map((descriptor) =>
-				Object.freeze({
-					...descriptor,
-					prefix,
-					usage: `${prefix}${descriptor.usage}`,
-				}),
-			),
-		)
+	list(): readonly ArgvCommandDescriptor[] {
+		return this.router.list()
 	}
 
 	async dispatch(bot: KookBot, event: KookEvent, signal: AbortSignal): Promise<boolean> {
-		const source = commandSource(bot, event)
+		const source = commandSource(bot, event, this.prefix())
 		if (source === undefined) return false
 		let context: KookCommandContext | undefined
 
 		try {
-			const resolution = this.resolve(source)
+			const resolution = this.router.resolve(source)
 			if (!resolution) return false
 			const binding = this.bindings.get(resolution.command.name)!
 			let carrierLease: OwnerInvocationLease | undefined
@@ -186,13 +172,12 @@ export class KookCommandCarrier {
 		if (!this.active) return
 		this.active = false
 		for (const binding of this.bindings.values()) binding.dispose()
-		this.routers.clear()
 	}
 
 	private register<Input>(
 		owner: Context,
 		command: KookCommand<Input>,
-		binding: KookCommandBinding<Input>,
+		binding: ArgvBinding<Input>,
 	): Registration {
 		if (!isKookCommand(command)) {
 			throw new TypeError('commands.register() requires a command from defineKookCommand()')
@@ -223,27 +208,11 @@ export class KookCommandCarrier {
 	private install<Input, Output>(
 		owner: Context,
 		command: Command<Input, Output, KookCommandContext>,
-		binding: KookCommandBinding<Input>,
+		binding: ArgvBinding<Input>,
 		respond?: (output: Output, context: KookCommandContext) => void | Promise<void>,
 	): Registration {
 		this.assertActive()
-		if (this.bindings.has(command.name)) {
-			throw new TypeError(`KOOK command already has a binding: ${command.name}`)
-		}
-		const { prefix: prefixInput, ...argv } = binding
-		const prefix = normalizeCommandPrefix(prefixInput)
-		const existingRouter = this.routers.get(prefix)
-		const router = existingRouter ?? createArgvRouter<KookCommandContext>()
-		if (!existingRouter) {
-			this.routers.set(prefix, router)
-		}
-		let registration: Registration
-		try {
-			registration = router.bind(command, argv)
-		} catch (error) {
-			if (!existingRouter) this.routers.delete(prefix)
-			throw error
-		}
+		const registration = this.router.bind(command, binding)
 		let published = true
 		let guard: { cancel(): void } | undefined
 		let active!: ActiveBinding
@@ -252,7 +221,6 @@ export class KookCommandCarrier {
 			published = false
 			if (this.bindings.get(command.name) === active) this.bindings.delete(command.name)
 			registration.dispose()
-			if (router.list().length === 0) this.routers.delete(prefix)
 		}
 		active = {
 			owner,
@@ -273,19 +241,6 @@ export class KookCommandCarrier {
 			throw error
 		}
 		return Object.freeze({ name: command.name, dispose: active.dispose })
-	}
-
-	private resolve(source: string): ArgvResolution<KookCommandContext> | undefined {
-		for (const [prefix, router] of [...this.routers].toSorted(
-			(left, right) => right[0].length - left[0].length,
-		)) {
-			if (!source.startsWith(prefix)) continue
-			const candidate = source.slice(prefix.length).trim()
-			if (!candidate) continue
-			const resolution = router.resolve(candidate)
-			if (resolution) return resolution
-		}
-		return undefined
 	}
 
 	private ownInvocationCleanup(owner: Context): void {
@@ -330,19 +285,13 @@ function isCancellation(error: unknown): boolean {
 	return error instanceof CommandError && error.code === 'ABORTED'
 }
 
-function commandSource(bot: KookBot, event: KookEvent): string | undefined {
+function commandSource(bot: KookBot, event: KookEvent, prefix: string): string | undefined {
 	if (event.type !== MessageType.text && event.type !== MessageType.kmarkdown) return undefined
 	if (event.author_id === bot.selfInfo?.id || event.extra?.author?.bot) return undefined
 	const text = (event.extra?.kmarkdown?.raw_content ?? event.content ?? '').trimStart()
-	return text || undefined
-}
-
-function normalizeCommandPrefix(value: string | undefined): string {
-	const prefix = value ?? '/'
-	if (!prefix || prefix.length > 16 || /\s/u.test(prefix)) {
-		throw new TypeError('KOOK command prefix must contain 1-16 non-whitespace characters')
-	}
-	return prefix
+	if (!text.startsWith(prefix)) return undefined
+	const source = text.slice(prefix.length).trim()
+	return source || undefined
 }
 
 function createKookCommandContext(

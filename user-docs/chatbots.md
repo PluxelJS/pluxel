@@ -189,12 +189,15 @@ const inspect = defineKookCommand({
 
 override init() {
 	this.kook.commands.register(inspect, {
-		prefix: '.',
 		routes: ['inspect'],
 		positionals: ['detail'],
 	})
 }
 ```
+
+KOOK command prefix 由 `KookPlugin.prefix` 统一配置，省略时为 `/`，并限制为 1–16 个不含空白的字符。
+依赖 KOOK 的插件不在 command binding 重复声明 prefix；需要生成帮助或操作提示时读取
+`this.kook.commandPrefix`，确保展示的语法与 carrier 实际接受的语法一致。
 
 需要复用到 runtime、CLI 或其他 carrier 的普通 `Command` 保持基础 context 和结构化 output，通过 `bind()`
 补上 KOOK 语法与必需的终端回复：
@@ -209,9 +212,7 @@ this.kook.commands.bind(lookup, {
 })
 ```
 
-`prefix` 省略时为 `/`，也可以在每个 binding 上改成 `.`、`!` 等 1–16 个不含空白的字符；生成的命令描述和
-usage 会包含实际前缀。`register()` 与 `bind()` 都自动归属于调用 `KookPlugin` 的消费插件，无需
-`effects.own()`。手动 dispose 只撤销
+`register()` 与 `bind()` 都自动归属于调用 `KookPlugin` 的消费插件，无需 `effects.own()`。手动 dispose 只撤销
 route，不取消已经开始的调用；消费插件或 KOOK provider 停止时会拒绝新调用、abort 并 drain 在途调用。额外的
 网络 IO 必须传递 `ctx.signal`；`ctx.reply()` 已自动传播该 signal。匹配的 KOOK route 会在 Hub bridge 前消费 event。
 

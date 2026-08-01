@@ -13,33 +13,38 @@ const workspaceSubpathAlias = (kind: WorkspaceKind, name: string) => ({
 	replacement: resolve(import.meta.dirname, `${kind}/${name}/src/$1.ts`),
 })
 
-export default definePluxelVitestConfig({
-	root: import.meta.dirname,
-	resolve: {
-		alias: [
-			workspaceAlias('plugins', 'access'),
-			workspaceSubpathAlias('packages', 'platform-kit'),
-			workspaceSubpathAlias('packages', 'workbench-support'),
-			workspaceAlias('packages', 'contracts'),
-			workspaceAlias('plugins', 'hub'),
-			workspaceAlias('plugins', 'commands'),
-			workspaceAlias('platforms', 'kook'),
-			workspaceAlias('platforms', 'kook-hub-bridge'),
-			workspaceAlias('platforms', 'telegram'),
-			workspaceAlias('platforms', 'telegram-hub-bridge'),
-		],
-	},
-	oxc: {
-		decorator: {
-			legacy: true,
+export default definePluxelVitestConfig(
+	{
+		root: import.meta.dirname,
+		resolve: {
+			alias: [
+				workspaceAlias('plugins', 'access'),
+				workspaceSubpathAlias('packages', 'platform-kit'),
+				workspaceSubpathAlias('packages', 'workbench-support'),
+				workspaceAlias('packages', 'contracts'),
+				workspaceAlias('plugins', 'hub'),
+				workspaceAlias('plugins', 'commands'),
+				workspaceAlias('platforms', 'kook'),
+				workspaceAlias('platforms', 'kook-hub-bridge'),
+				workspaceAlias('platforms', 'telegram'),
+				workspaceAlias('platforms', 'telegram-hub-bridge'),
+			],
+		},
+		oxc: {
+			decorator: {
+				legacy: true,
+			},
+		},
+		test: {
+			include: [
+				'packages/*/tests/**/*.test.ts',
+				'platforms/*/tests/**/*.test.ts',
+				'plugins/*/tests/**/*.test.ts',
+				'test/**/*.test.ts',
+			],
 		},
 	},
-	test: {
-		include: [
-			'packages/*/tests/**/*.test.ts',
-			'platforms/*/tests/**/*.test.ts',
-			'plugins/*/tests/**/*.test.ts',
-			'test/**/*.test.ts',
-		],
+	{
+		include: ['packages/**/src/**/*.ts', 'packages/**/tests/**/*.ts', 'platforms/**/src/**/*.ts'],
 	},
-})
+)

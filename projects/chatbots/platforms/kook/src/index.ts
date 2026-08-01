@@ -21,9 +21,7 @@ export type { KookBotPhase, KookBotStatus } from './bot/status.ts'
 export { defineKookCommand } from './commands.ts'
 export type {
 	KookCommand,
-	KookCommandBinding,
 	KookCommandContext,
-	KookCommandDescriptor,
 	KookCommandProjection,
 	KookCommands,
 } from './commands.ts'

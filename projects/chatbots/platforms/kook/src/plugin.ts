@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { workbench } from '@pluxel/runtime/workbench'
 import { WretchPlugin } from '@pluxel/wretch'
@@ -14,19 +14,28 @@ import { KookCommandCarrier, type KookCommands } from './commands.ts'
 
 export type { KookBotConfigInput, KookEventConsumer } from './bot/manager.ts'
 
+const KookConfig = v.object({
+	prefix: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(16), v.regex(/^\S+$/u)), '/'),
+})
+
 @Plugin({ name: 'KookPlugin', startTimeoutMs: 10_000 })
 export class KookPlugin extends BasePlugin {
+	private readonly config = this.configs.use(KookConfig)
 	private manager?: KookBotManager
-	private readonly commandCarrier: KookCommandCarrier
+	private readonly commandCarrier = new KookCommandCarrier(this.ctx, () => this.config.prefix)
 	readonly events = createKookPluginEvents(this.ctx)
 
 	constructor(private readonly http: WretchPlugin) {
 		super()
-		this.commandCarrier = new KookCommandCarrier(this.ctx)
 	}
 
 	get commands(): KookCommands {
 		return this.commandCarrier.forOwner(this.ctx.caller ?? this.ctx)
+	}
+
+	/** Prefix accepted by the shared KOOK command carrier. */
+	get commandPrefix(): string {
+		return this.config.prefix
 	}
 
 	get bots(): BotRegistry<KookBot> {

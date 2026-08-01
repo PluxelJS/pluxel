@@ -214,13 +214,16 @@ class KookInspectPlugin extends BasePlugin {
 
 	override init() {
 		this.kook.commands.register(inspect, {
-			prefix: '.',
 			routes: ['inspect'],
 			positionals: ['detail'],
 		})
 	}
 }
 ```
+
+KOOK command prefix 由 `KookPlugin.prefix` 统一配置，省略时为 `/`，并限制为 1–16 个不含空白的字符。
+依赖 KOOK 的插件不在 command binding 重复声明 prefix；需要生成帮助或操作提示时读取
+`this.kook.commandPrefix`，确保展示的语法与 carrier 实际接受的语法一致。
 
 如果同一业务命令还要给 CLI、Workbench、Agent 或 runtime 使用，就继续用普通 `defineCommand()` 返回结构化
 output，再用 `bind()` 明确 KOOK 的终端回复投影：
@@ -235,8 +238,7 @@ this.kook.commands.bind(weather, {
 })
 ```
 
-`prefix` 省略时为 `/`，也可由每个 binding 配置为 `.`、`!` 等 1–16 个不含空白的字符；descriptor usage
-会包含实际前缀。`register()` 只接受 `defineKookCommand()` 的 KOOK 原生命令；`bind()` 只接受基础 `Command`，并强制提供
+`register()` 只接受 `defineKookCommand()` 的 KOOK 原生命令；`bind()` 只接受基础 `Command`，并强制提供
 `respond`。两者都会从 caller Context 取得消费插件 owner，自动随该插件停止、替换或启动回滚撤销 route，调用方
 不应再包一层 `effects.own()`。手动 `registration.dispose()` 只撤销发布，已经接纳的调用可以完成；owner 停止则会
 abort 并 drain 在途调用。命令中的额外 IO 应传递 `ctx.signal`，`ctx.reply()` 已自动把它传给 KOOK HTTP 请求。

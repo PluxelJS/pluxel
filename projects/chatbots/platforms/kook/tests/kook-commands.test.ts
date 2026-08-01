@@ -121,8 +121,10 @@ describe('KOOK command carrier', () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
 			host.add([KookCommandTestHttpPlugin, KookPlugin, KookCommandConsumerPlugin])
+			host.cfg(KookPlugin).set({ config: { prefix: '!' } })
 			const started = await host.commitAllowFail()
 			expect(started.lifecycleReport.issues).toEqual([])
+			expect(host.require(KookPlugin).commandPrefix).toBe('!')
 			expect(host.require(KookPlugin).commands.list()).toEqual([
 				expect.objectContaining({ name: 'kook.echo', routes: ['consumer-owned'] }),
 			])
@@ -275,22 +277,16 @@ describe('KOOK command carrier', () => {
 			}),
 			token: 'secret',
 		})
-		const carrier = new KookCommandCarrier(runtime.ctx)
+		const carrier = new KookCommandCarrier(runtime.ctx, '.')
 		const commands = carrier.forOwner(runtime.ctx)
 		commands.register(kookCommand, {
-			prefix: '.',
 			routes: ['echo'],
 			tail: tail.text('text'),
 		})
 
 		try {
 			expect(carrier.list()).toEqual([
-				expect.objectContaining({
-					name: 'kook.echo',
-					prefix: '.',
-					routes: ['echo'],
-					usage: '.echo <text>',
-				}),
+				expect.objectContaining({ name: 'kook.echo', routes: ['echo'] }),
 			])
 			await expect(
 				carrier.dispatch(bot, event('/echo ignored'), new AbortController().signal),
@@ -309,7 +305,7 @@ describe('KOOK command carrier', () => {
 			await runtime.ctx.effects.dispose()
 			expect(carrier.list()).toEqual([])
 			await expect(
-				carrier.dispatch(bot, event('/echo ignored'), new AbortController().signal),
+				carrier.dispatch(bot, event('.echo ignored'), new AbortController().signal),
 			).resolves.toBe(false)
 			expect(requests).toHaveLength(1)
 		} finally {
@@ -445,27 +441,6 @@ describe('KOOK command carrier', () => {
 			await owner.effects.dispose()
 			carrier.dispose()
 			bot.$.destroy()
-			await runtime.dispose()
-		}
-	})
-
-	it('rejects empty, whitespace, and oversized command prefixes', async () => {
-		const runtime = createRuntimeContext()
-		const carrier = new KookCommandCarrier(runtime.ctx)
-		const commands = carrier.forOwner(runtime.ctx)
-
-		try {
-			for (const prefix of ['', 'two words', '12345678901234567']) {
-				expect(() =>
-					commands.register(kookCommand, {
-						prefix,
-						routes: ['invalid-prefix'],
-						tail: tail.text('text'),
-					}),
-				).toThrow('prefix must contain 1-16 non-whitespace characters')
-			}
-		} finally {
-			carrier.dispose()
 			await runtime.dispose()
 		}
 	})
