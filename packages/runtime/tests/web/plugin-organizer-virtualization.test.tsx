@@ -195,8 +195,9 @@ describe('PluginOrganizer virtualization', () => {
 		})
 
 		expect(container.textContent).toContain('未分组')
-		expect(container.textContent).toContain('我的分组')
+		expect(container.textContent).toContain('插件分类')
 		expect(container.textContent).toContain('Alpha')
+		expect(container.textContent).not.toContain('新建分组')
 		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
 		expect(container.querySelectorAll('[data-plugin-row="true"]')).toHaveLength(6)
 	})

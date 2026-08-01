@@ -55,4 +55,4 @@ export {
 	type PluginRoutingSnapshot,
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
-export type { WorkbenchConfig } from './workbench-config'
+export type { WorkbenchConfig, WorkbenchPluginGroupConfig } from './workbench-config'

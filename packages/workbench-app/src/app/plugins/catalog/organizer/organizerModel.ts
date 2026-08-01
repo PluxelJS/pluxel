@@ -1,9 +1,5 @@
 import type { GroupConfig } from './types'
 
-export const genGroupId = () =>
-	globalThis.crypto?.randomUUID?.() ??
-	`g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-
 export function sanitize(allIds: string[], groups: GroupConfig[]) {
 	const seen = new Set<string>()
 	const allow = new Set(allIds)
@@ -17,8 +13,6 @@ export function sanitize(allIds: string[], groups: GroupConfig[]) {
 	const ungrouped = allIds.filter((id) => !seen.has(id))
 	return { groups: nextGroups, ungrouped }
 }
-
-export const unique = (arr: string[]) => Array.from(new Set(arr))
 
 export const arraysEqual = (a: string[], b: string[]) => {
 	if (a === b) return true
@@ -64,30 +58,4 @@ export const readCollapsedState = (): Record<string, boolean> => {
 		console.warn('[PluginOrganizer] Failed to parse collapse state', error)
 	}
 	return {}
-}
-
-export function deriveRootLabel(moduleId: string | null | undefined, statusName: string) {
-	if (!moduleId) return '本地插件'
-	const normalized = moduleId.replaceAll('\\', '/')
-	const parts = normalized.split('/').filter(Boolean)
-	if (parts.length === 0) return '本地插件'
-	const last = parts.at(-1) ?? ''
-	if (/\.[a-z0-9]+$/i.test(last)) parts.pop()
-	const skip = new Set(['src', 'lib', 'dist', 'build'])
-	let candidate = parts.at(-1) ?? ''
-	while (candidate && skip.has(candidate) && parts.length > 1) {
-		parts.pop()
-		candidate = parts.at(-1) ?? ''
-	}
-	const normalizedCandidate = candidate.toLowerCase()
-	const normalizedName = statusName.toLowerCase()
-	if (normalizedCandidate === normalizedName && parts.length > 1) {
-		parts.pop()
-		candidate = parts.at(-1) ?? candidate
-		while (candidate && skip.has(candidate) && parts.length > 1) {
-			parts.pop()
-			candidate = parts.at(-1) ?? candidate
-		}
-	}
-	return candidate || '本地插件'
 }

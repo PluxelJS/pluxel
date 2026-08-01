@@ -3,9 +3,9 @@
  * PluginOrganizer
  * -----------------------------------------------------------------------------
  * 设计目标
- * 1) 布局：上（未分组）与下（我的分组）弹性分配
- *    - 无分组时：未分组尽可能占满竖向空间；我的分组仅展示提示
- *    - 有分组时：未分组:我的分组 ≈ 1:2 分配空间，二者各自可滚动
+ * 1) 布局：上（未分组）与下（宿主/包分类）弹性分配
+ *    - 无分类时：未分组尽可能占满竖向空间；分类区仅展示提示
+ *    - 有分类时：未分组:分类 ≈ 1:2 分配空间，二者各自可滚动
  *
  * 2) 状态流转（本地优先）
  *    - 仅在首次挂载时读取 external initialGroups；之后完全本地化
@@ -43,8 +43,7 @@ import { closestCorners, DndContext, DragOverlay, MeasuringStrategy } from '@dnd
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ActionIcon, Badge, Box, Card, ScrollArea, Stack, Text, Tooltip } from '@mantine/core'
-import { openConfirmModal } from '@mantine/modals'
-import { IconArrowsShuffle, IconFolderPlus, IconLayoutKanban } from '@tabler/icons-react'
+import { IconArrowsShuffle, IconFolderMinus } from '@tabler/icons-react'
 import {
 	useCallback,
 	useEffect,
@@ -66,22 +65,13 @@ import {
 import { parseSearchTokens } from '../searchTokens'
 import { DroppableContainer } from './components/DroppableContainer'
 import { FlatPluginList } from './components/FlatPluginList'
-import { GroupEditorModal } from './components/GroupEditorModal'
 import { GroupPlacementModal } from './components/GroupPlacementModal'
 import { GroupCard } from './components/GroupCard'
 import { SortableRow } from './components/SortableRow'
 import { cid, gid, iid } from './controllerModel'
 import { DENSITY, FILTERED_FLAT_VIRTUALIZE_THRESHOLD, type Density } from './constants'
 import type { GroupConfig, PluginStatuses } from './types'
-import {
-	arraysEqual,
-	COLLAPSE_STORAGE_KEY,
-	deriveRootLabel,
-	genGroupId,
-	readCollapsedState,
-	sanitize,
-	unique,
-} from './organizerModel'
+import { arraysEqual, COLLAPSE_STORAGE_KEY, readCollapsedState, sanitize } from './organizerModel'
 import { movePluginIdsToTarget, sortPluginIdsByOrder } from './groupOperations'
 import { usePluginOrganizerDnd } from './usePluginOrganizerDnd'
 import { usePluginSelectionController } from './usePluginSelectionController'
@@ -120,11 +110,6 @@ type Props = {
 	className?: string
 	style?: CSSProperties
 }
-
-type GroupEditorState =
-	| { mode: 'create'; initialName: string; pluginIds?: string[] }
-	| { mode: 'rename'; groupId: string; initialName: string }
-	| null
 
 const groupsEqual = (a: GroupConfig[], b: GroupConfig[]) => {
 	if (a === b) return true
@@ -188,7 +173,6 @@ export function PluginOrganizer({
 	const [groups, setGroups] = useState<GroupConfig[]>(() => saneGroups)
 	const [ungroupedOrder, setUngroupedOrder] = useState<string[]>(() => saneUngrouped)
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => readCollapsedState())
-	const [groupEditor, setGroupEditor] = useState<GroupEditorState>(null)
 	const [placementModalOpen, setPlacementModalOpen] = useState(false)
 
 	// Refs for stable, local-first updates
@@ -254,34 +238,7 @@ export function PluginOrganizer({
 		return count
 	}, [runningSet, visibleUngrouped])
 
-	const hmrUngrouped = useMemo(
-		() => visibleUngrouped.filter((id) => statuses[id]?.sourceKind === 'hmr'),
-		[statuses, visibleUngrouped],
-	)
-	const packageUngrouped = useMemo(
-		() => visibleUngrouped.filter((id) => statuses[id]?.sourceKind !== 'hmr'),
-		[statuses, visibleUngrouped],
-	)
-
-	const hmrVirtualGroups = useMemo(() => {
-		const map = new Map<string, { label: string; pluginIds: string[] }>()
-		for (const id of hmrUngrouped) {
-			const st = statuses[id]
-			const label = deriveRootLabel(st?.moduleId ?? null, st?.name ?? id)
-			const key = label || '本地插件'
-			const group = map.get(key) ?? { label: key, pluginIds: [] }
-			group.pluginIds.push(id)
-			map.set(key, group)
-		}
-		return [...map.values()]
-	}, [hmrUngrouped, statuses])
-
-	const ungroupedDisplayOrder = useMemo(() => {
-		const ordered: string[] = []
-		for (const group of hmrVirtualGroups) ordered.push(...group.pluginIds)
-		ordered.push(...packageUngrouped)
-		return ordered
-	}, [hmrVirtualGroups, packageUngrouped])
+	const ungroupedDisplayOrder = visibleUngrouped
 
 	// 混合搜索：组名命中 -> 展示完整组；否则裁剪到命中插件子集
 	const visibleGroups = useMemo(() => {
@@ -381,86 +338,6 @@ export function PluginOrganizer({
 		queueMicrotask(() => onGroupsChangeRef.current(nextGroups))
 	}, [])
 
-	const openCreateGroupModal = useCallback((pluginIds?: string[]) => {
-		setGroupEditor({ mode: 'create', initialName: '', pluginIds })
-	}, [])
-
-	const renameGroup = useCallback((groupId: string) => {
-		const target = groupsRef.current.find((group) => group.groupId === groupId)
-		if (!target) return
-		setGroupEditor({ mode: 'rename', groupId, initialName: target.name })
-	}, [])
-
-	const handleGroupEditorSubmit = useCallback(
-		(name: string) => {
-			if (groupEditor?.mode === 'rename') {
-				const nextGroups = groupsRef.current.map((group) =>
-					group.groupId === groupEditor.groupId ? { ...group, name } : group,
-				)
-				setGroups(nextGroups)
-				emitGroupsChange(nextGroups)
-				setGroupEditor(null)
-				return
-			}
-
-			const orderedPluginIds = groupEditor?.pluginIds?.length
-				? sortPluginIdsByOrder(groupEditor.pluginIds, groupsRef.current, ungroupedRef.current)
-				: []
-			const normalized =
-				orderedPluginIds.length > 0
-					? movePluginIdsToTarget({
-							groups: groupsRef.current,
-							ungroupedOrder: ungroupedRef.current,
-							pluginIds: orderedPluginIds,
-							targetGroupId: 'ROOT_UNGROUPED',
-						})
-					: { groups: groupsRef.current, ungroupedOrder: ungroupedRef.current }
-			const nextGroups: GroupConfig[] = [
-				...normalized.groups,
-				{ groupId: genGroupId(), name, pluginIds: orderedPluginIds },
-			]
-			setGroups(nextGroups)
-			if (orderedPluginIds.length > 0) {
-				setUngroupedOrder(normalized.ungroupedOrder)
-			}
-			emitGroupsChange(nextGroups)
-			setGroupEditor(null)
-		},
-		[emitGroupsChange, groupEditor],
-	)
-
-	const deleteGroup = useCallback(
-		(groupId: string) => {
-			const target = groupsRef.current.find((group) => group.groupId === groupId)
-			if (!target) return
-			openConfirmModal({
-				title: '删除分组',
-				centered: true,
-				labels: { confirm: '删除', cancel: '取消' },
-				confirmProps: { color: 'red' },
-				children: (
-					<Text size="sm" c="dimmed">
-						删除“{target.name || '未命名分组'}”后，组内 {target.pluginIds.length}{' '}
-						个插件会回到未分组区。
-					</Text>
-				),
-				onConfirm: () => {
-					const nextGroups = groupsRef.current.filter((group) => group.groupId !== groupId)
-					const nextUngrouped = unique([...ungroupedRef.current, ...target.pluginIds])
-					setGroups(nextGroups)
-					setUngroupedOrder(nextUngrouped)
-					setCollapsed((current) => {
-						const next = { ...current }
-						delete next[groupId]
-						return next
-					})
-					emitGroupsChange(nextGroups)
-				},
-			})
-		},
-		[emitGroupsChange],
-	)
-
 	const toggleGroupCollapse = useCallback((groupId: string) => {
 		setCollapsed((prev) => {
 			if (prev[groupId]) {
@@ -490,7 +367,6 @@ export function PluginOrganizer({
 		onSelectedIdsChange,
 		visibleGroups: showFlatResults ? [] : visibleGroups,
 		ungroupedDisplayOrder: showFlatResults ? flatVisibleIds : ungroupedDisplayOrder,
-		onCreateGroup: () => openCreateGroupModal(selectedIds.length > 0 ? selectedIds : undefined),
 		onMoveSelection: () => setPlacementModalOpen(true),
 		onMoveToUngrouped: () => moveSelectedPlugins('ROOT_UNGROUPED'),
 		locked,
@@ -606,22 +482,6 @@ export function PluginOrganizer({
 									<Badge size="xs" variant="light" color="gray">
 										已选 {selectedCount}
 									</Badge>
-									<Tooltip
-										label="把当前所选插件建立成新分组"
-										withinPortal
-										withArrow
-										openDelay={200}
-									>
-										<ActionIcon
-											size="sm"
-											variant="light"
-											onClick={() => openCreateGroupModal(selectedIds)}
-											disabled={locked}
-											aria-label="从所选创建分组"
-										>
-											<IconLayoutKanban size={14} />
-										</ActionIcon>
-									</Tooltip>
 									<Tooltip label="移动到其他分组" withinPortal withArrow openDelay={200}>
 										<ActionIcon
 											size="sm"
@@ -641,28 +501,17 @@ export function PluginOrganizer({
 											disabled={locked}
 											aria-label="移回未分组"
 										>
-											<IconFolderPlus size={14} />
+											<IconFolderMinus size={14} />
 										</ActionIcon>
 									</Tooltip>
 								</>
 							) : null}
-							<Tooltip label="新建分组" withinPortal withArrow openDelay={200}>
-								<ActionIcon
-									size="sm"
-									variant="light"
-									onClick={() => openCreateGroupModal()}
-									disabled={locked}
-									aria-label="新建分组"
-								>
-									<IconFolderPlus size={14} />
-								</ActionIcon>
-							</Tooltip>
 						</Box>
 					</div>
 					<Text className="plx-pluginCatalog__sectionNote">
 						{showFlatResults
 							? '当前按筛选结果平铺显示，清空筛选后恢复分组编辑。'
-							: 'G 创建或收拢为分组，M 移动到分组，U 移回未分组。'}
+							: 'M 移动到已注册分类，U 移回未分组。分类由宿主或插件包提供。'}
 					</Text>
 
 					{showFlatResults ? (
@@ -700,45 +549,15 @@ export function PluginOrganizer({
 								strategy={verticalListSortingStrategy}
 							>
 								<Stack gap={0} align="stretch" role="list" aria-label="未分组插件">
-									{hmrVirtualGroups.map((group) => (
-										<Box key={`hmr-group-${group.label}`} className="plx-pluginCatalog__subgroup">
-											<div className="plx-pluginCatalog__subgroupHeader">
-												<Text className="plx-pluginCatalog__subgroupLabel">{group.label}</Text>
-												<Text className="plx-pluginCatalog__subgroupCount">
-													{group.pluginIds.length} 个
-												</Text>
-											</div>
-											{group.pluginIds.map((id) => (
-												<SortableRow
-													key={id}
-													pid={id}
-													name={getName(id)}
-													running={runningSet.has(id)}
-													enabled={enabledSet.has(id)}
-													selected={selectedSet.has(id)}
-													active={activeSet.has(id)}
-													onSelect={handleRowSelect}
-													LinkComp={LinkComp}
-													dragDisabled={isFiltering || locked}
-													focused={focusedId === id}
-													meta={getMeta(id)}
-													dh={dh}
-													sortableId={iid(id)}
-												/>
-											))}
-										</Box>
-									))}
-									{packageUngrouped.length > 0 && (
+									{ungroupedDisplayOrder.length > 0 && (
 										<Box className="plx-pluginCatalog__subgroup">
 											<div className="plx-pluginCatalog__subgroupHeader">
-												<Text className="plx-pluginCatalog__subgroupLabel">
-													{hmrVirtualGroups.length > 0 ? '包管理安装' : '未分组插件'}
-												</Text>
+												<Text className="plx-pluginCatalog__subgroupLabel">未分组插件</Text>
 												<Text className="plx-pluginCatalog__subgroupCount">
-													{packageUngrouped.length} 个
+													{ungroupedDisplayOrder.length} 个
 												</Text>
 											</div>
-											{packageUngrouped.map((id) => (
+											{ungroupedDisplayOrder.map((id) => (
 												<SortableRow
 													key={id}
 													pid={id}
@@ -764,7 +583,7 @@ export function PluginOrganizer({
 					)}
 				</Card>
 
-				{/* 我的分组：有分组时占下半区并可滚动；无分组时收缩为提示行 */}
+				{/* 已注册分类：有分类时占下半区并可滚动；无分类时收缩为提示行 */}
 				{groups.length > 0 && !showFlatResults ? (
 					<Card
 						className="plx-theme-panel plx-pluginCatalog__sectionCard"
@@ -783,7 +602,7 @@ export function PluginOrganizer({
 						<Stack gap={2} style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
 							<div className="plx-pluginCatalog__sectionHeader">
 								<div className="plx-pluginCatalog__sectionHeading">
-									<Text className="plx-pluginCatalog__sectionTitle">我的分组</Text>
+									<Text className="plx-pluginCatalog__sectionTitle">插件分类</Text>
 									<Text className="plx-pluginCatalog__sectionMetric">
 										{visibleGroups.length} 个
 									</Text>
@@ -803,7 +622,7 @@ export function PluginOrganizer({
 										<Stack gap={2} align="stretch" py={2}>
 											{visibleGroups.length === 0 ? (
 												<Text c="dimmed" size="xs" pl="xs">
-													暂无分组，可在上方创建。
+													没有匹配当前筛选的分类。
 												</Text>
 											) : (
 												visibleGroups.map((g) => {
@@ -830,8 +649,6 @@ export function PluginOrganizer({
 															getMeta={getMeta}
 															getItemSortableId={(id) => iid(id)}
 															dh={dh}
-															onRename={renameGroup}
-															onDelete={deleteGroup}
 															locked={locked}
 														/>
 													)
@@ -856,14 +673,14 @@ export function PluginOrganizer({
 					>
 						<div className="plx-pluginCatalog__sectionHeader">
 							<div className="plx-pluginCatalog__sectionHeading">
-								<Text className="plx-pluginCatalog__sectionTitle">我的分组</Text>
+								<Text className="plx-pluginCatalog__sectionTitle">插件分类</Text>
 								<Text className="plx-pluginCatalog__sectionMetric">{groups.length} 个</Text>
 							</div>
 						</div>
 						<Text className="plx-pluginCatalog__sectionNote">
 							{groups.length > 0 && showFlatResults
 								? '筛选或长列表模式下暂时隐藏分组卡，清空筛选后恢复分组编辑。'
-								: '暂无分组，可在上方创建。'}
+								: '当前宿主未注册分类，也没有可识别包来源。'}
 						</Text>
 					</Card>
 				)}
@@ -879,23 +696,6 @@ export function PluginOrganizer({
 					</div>
 				) : null}
 			</DragOverlay>
-
-			<GroupEditorModal
-				opened={groupEditor !== null}
-				title={groupEditor?.mode === 'rename' ? '重命名分组' : '新建分组'}
-				description={
-					groupEditor?.mode === 'rename'
-						? '更新分组名称，不会影响当前插件归属。'
-						: groupEditor?.pluginIds?.length
-							? `把当前选中的 ${groupEditor.pluginIds.length} 个插件收拢成一个新分组。`
-							: '创建一个新的插件分组，后续可把插件拖进去。'
-				}
-				confirmLabel={groupEditor?.mode === 'rename' ? '保存' : '创建'}
-				initialValue={groupEditor?.initialName ?? ''}
-				onClose={() => setGroupEditor(null)}
-				onSubmit={handleGroupEditorSubmit}
-			/>
-
 			<GroupPlacementModal
 				opened={placementModalOpen}
 				count={selectedCount}

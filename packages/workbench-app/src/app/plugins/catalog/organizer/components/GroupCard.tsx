@@ -1,24 +1,6 @@
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import {
-	ActionIcon,
-	Badge,
-	Box,
-	Collapse,
-	Flex,
-	Group,
-	Menu,
-	Stack,
-	Text,
-	Tooltip,
-} from '@mantine/core'
-import {
-	IconChevronDown,
-	IconChevronRight,
-	IconDotsVertical,
-	IconGripVertical,
-	IconPencil,
-	IconTrash,
-} from '@tabler/icons-react'
+import { ActionIcon, Badge, Box, Collapse, Flex, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { IconChevronDown, IconChevronRight, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
 	memo,
@@ -59,8 +41,6 @@ type Props = {
 	getMeta: (id: string) => { tag?: string; version?: string }
 	getItemSortableId: (id: string) => UniqueIdentifier
 	dh: RowDensity
-	onRename: (gid: string) => void
-	onDelete: (gid: string) => void
 	locked: boolean
 }
 
@@ -84,8 +64,6 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 		getMeta,
 		getItemSortableId,
 		dh,
-		onRename,
-		onDelete,
 		locked,
 	} = props
 
@@ -158,36 +136,6 @@ export const GroupCard = memo(function GroupCard(props: Props) {
 							{isCollapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
 						</ActionIcon>
 					</Tooltip>
-
-					<Menu withinPortal position="bottom-end">
-						<Menu.Target>
-							<ActionIcon
-								size="xs"
-								variant="subtle"
-								aria-label="更多操作"
-								style={{ flexShrink: 0 }}
-							>
-								<IconDotsVertical size={14} />
-							</ActionIcon>
-						</Menu.Target>
-						<Menu.Dropdown>
-							<Menu.Item
-								leftSection={<IconPencil size={14} />}
-								onClick={() => onRename(g.groupId)}
-								disabled={locked}
-							>
-								重命名
-							</Menu.Item>
-							<Menu.Item
-								leftSection={<IconTrash size={14} />}
-								color="red"
-								onClick={() => onDelete(g.groupId)}
-								disabled={locked}
-							>
-								删除分组
-							</Menu.Item>
-						</Menu.Dropdown>
-					</Menu>
 
 					<Tooltip
 						label={locked ? '云端同步中' : '拖拽分组'}

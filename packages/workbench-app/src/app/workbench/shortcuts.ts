@@ -33,7 +33,7 @@ export const CATALOG_SHORTCUT_ITEMS = [
 	['Ctrl/⌘ + Enter', '在独立工作标签打开当前焦点插件'],
 	['Space', '切换当前项选择状态'],
 	['Ctrl/⌘ + A', '全选当前可见插件'],
-	['G / M / U', '创建分组、移动到分组、移回未分组'],
+	['M / U', '移动到已注册分类、移回未分组'],
 ] as const
 
 export const PLUGIN_DETAIL_HOTKEYS = {

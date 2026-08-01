@@ -1,48 +1,51 @@
 import type { Context as PlxContext } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
-import * as v from 'valibot'
 
-import { PluginGroupInput, type PluginGroupInputValue, type PluginGroupOutput } from './schema'
+import { requireWorkbench } from '../../../services/workbench'
+import type { PluginGroupInputValue, PluginGroupOutput } from './schema'
 
-export function readGroups(pCtx: PlxContext): PluginGroupOutput[] {
-	const raw = pCtx.runtimeState.snapshot().pluginGroups
-	return raw
-		.filter((item): item is PluginGroupInputValue => v.safeParse(PluginGroupInput, item).success)
-		.map((item) => ({
-			__typename: 'PluginGroup' as const,
-			id: item.groupId,
-			groupId: item.groupId,
-			name: item.name,
-			pluginIds: item.pluginIds.map(String),
-		})) satisfies PluginGroupOutput[]
+export async function readGroups(pCtx: PlxContext): Promise<PluginGroupOutput[]> {
+	const groups = await requireWorkbench(pCtx).pluginCatalog.listGroups()
+	return groups.map(toOutput)
 }
 
-export function readGroup(pCtx: PlxContext, id: string): PluginGroupOutput {
-	const group = readGroups(pCtx).find((item) => item.id === id)
+export async function readGroup(pCtx: PlxContext, id: string): Promise<PluginGroupOutput> {
+	const group = await requireWorkbench(pCtx).pluginCatalog.getGroup(id)
 	if (!group) {
 		throw new GraphQLError('Plugin group not found', {
 			extensions: { code: 'NOT_FOUND', id },
 		})
 	}
-	return group
+	return toOutput(group)
 }
 
-export function writeGroups(
+export async function writeGroups(
 	pCtx: PlxContext,
 	groups: PluginGroupInputValue[],
-): PluginGroupOutput[] {
-	pCtx.runtimeState.update((draft) => {
-		draft.pluginGroups = groups.map((group) => ({
-			groupId: group.groupId,
-			name: group.name,
-			pluginIds: group.pluginIds,
-		}))
-	})
-	return groups.map((group) => ({
+): Promise<PluginGroupOutput[]> {
+	try {
+		const result = await requireWorkbench(pCtx).pluginCatalog.updateGroups(groups)
+		return result.map(toOutput)
+	} catch (error) {
+		if (error && typeof error === 'object' && 'code' in error) {
+			throw new GraphQLError(error instanceof Error ? error.message : 'Invalid plugin groups', {
+				extensions: { code: String(error.code) },
+			})
+		}
+		throw error
+	}
+}
+
+function toOutput(group: {
+	groupId: string
+	name: string
+	pluginIds: readonly string[]
+}): PluginGroupOutput {
+	return {
 		__typename: 'PluginGroup' as const,
 		id: group.groupId,
 		groupId: group.groupId,
 		name: group.name,
-		pluginIds: group.pluginIds,
-	})) satisfies PluginGroupOutput[]
+		pluginIds: [...group.pluginIds],
+	}
 }

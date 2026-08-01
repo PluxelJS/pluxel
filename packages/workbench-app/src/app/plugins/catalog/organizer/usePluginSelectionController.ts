@@ -22,7 +22,6 @@ type UsePluginSelectionControllerArgs = {
 	onSelectedIdsChange?: (ids: string[]) => void
 	visibleGroups: GroupConfig[]
 	ungroupedDisplayOrder: string[]
-	onCreateGroup: () => void
 	onMoveSelection: () => void
 	onMoveToUngrouped: () => void
 	locked: boolean
@@ -36,7 +35,6 @@ export function usePluginSelectionController({
 	onSelectedIdsChange,
 	visibleGroups,
 	ungroupedDisplayOrder,
-	onCreateGroup,
 	onMoveSelection,
 	onMoveToUngrouped,
 	locked,
@@ -282,14 +280,6 @@ export function usePluginSelectionController({
 					event.preventDefault()
 					if (focusedId) activateFocusedPlugin(focusedId, mod ? 'open-tab' : 'replace-active')
 					break
-				case 'g':
-				case 'G': {
-					if (!(mod || event.altKey || locked)) {
-						event.preventDefault()
-						onCreateGroup()
-					}
-					break
-				}
 				case 'm':
 				case 'M': {
 					if (!(mod || event.altKey || locked || selectedIds.length === 0)) {
@@ -314,7 +304,6 @@ export function usePluginSelectionController({
 			activateFocusedPlugin,
 			focusedId,
 			locked,
-			onCreateGroup,
 			onMoveSelection,
 			onMoveToUngrouped,
 			selectedIds.length,

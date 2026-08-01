@@ -16,6 +16,7 @@
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
    - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
    - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
+   - [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)：Workbench 插件目录分类、包默认值与用户偏好。
    - [`COMMANDS.md`](COMMANDS.md)：Agent/CLI/message command kernel 与 carrier 边界。
 4. [`GOVERNANCE.md`](GOVERNANCE.md)：依赖方向、导出和文档维护规则。
 5. [`RELEASING.md`](RELEASING.md)：维护者工具版本、Changesets 与可信发布流程。

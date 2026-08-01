@@ -88,6 +88,16 @@ Remote View 的运行环境由当前 target snapshot 显式注入，包含 opaqu
 commands；它不读取全局 Extension context。浏览器 host 直接索引服务端 layout，不再把 placement 转换进第二套 registry。
 catalog、module、route 和 contribution 因而共享同一个 revision 与清理所有者。
 
+## Plugin catalog classification
+
+插件目录分类属于 Workbench host layout，不进入 `@Plugin`、PluginInfo、Extension 或 Contract。宿主通过
+`workbench.pluginGroups` 注册产品分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
+用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
+
+Workbench backend 持久化相对默认分类的 assignment 与排序偏好，不再把完整开放式 group 写进 RuntimeState。
+disabled/stopped plugin 仍按 catalog source 分类；Workbench disabled 时不创建分类 service 或偏好文件。完整身份、匹配、
+冲突和迁移规则见 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
+
 ## Route navigation groups
 
 多个独立插件的 route 属于同一运维领域时，可在 `workbenchContract.route()` 的

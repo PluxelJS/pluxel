@@ -28,8 +28,7 @@ export const chatbotsPlugins = [
 
 // Platform plugins stay enabled so their Vault-backed setup UI remains reachable.
 // Bridges only create transports for configured Bots; connection loops still belong to each platform.
-export const chatbotsEnabledPlugins = [
-	'WretchPlugin',
+export const chatbotsCatalogPluginIds = [
 	'ChatHubPlugin',
 	'ChatAccessPlugin',
 	'ChatCommandsPlugin',
@@ -40,6 +39,8 @@ export const chatbotsEnabledPlugins = [
 	'TelegramHubBridgePlugin',
 	'KookHubBridgePlugin',
 ] as const
+
+export const chatbotsEnabledPlugins = ['WretchPlugin', ...chatbotsCatalogPluginIds] as const
 
 export default defineStaticRuntime({
 	name: 'chatbots',
@@ -59,7 +60,18 @@ export default defineStaticRuntime({
 			workbench:
 				env.PLUXEL_WORKBENCH === 'false'
 					? false
-					: { enabled: true, access: { exposure: 'private' } },
+					: {
+							enabled: true,
+							access: { exposure: 'private' },
+							pluginGroups: [
+								{
+									id: 'chatbots',
+									name: 'Chatbots',
+									plugins: chatbotsCatalogPluginIds,
+									packages: ['@repo/chatbots-*'],
+								},
+							],
+						},
 		}
 	},
 })

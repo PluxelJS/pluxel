@@ -16,6 +16,7 @@ export type RuntimeStateSnapshot = Readonly<{
 	dependencyOverrides: Readonly<Record<string, Readonly<Record<number, string>>>>
 	builtinsKnown: Readonly<Record<string, 1>>
 	optionalKnown: Readonly<Record<string, 1>>
+	/** @deprecated Legacy input read once by Workbench catalog preference migration. */
 	pluginGroups: readonly PluginGroupState[]
 }>
 
@@ -37,6 +38,7 @@ export type RuntimeStateFile = {
 	dependencyOverrides?: Record<string, Record<number, string>>
 	builtinsKnown?: Record<string, 1>
 	optionalKnown?: Record<string, 1>
+	/** @deprecated Legacy Workbench group layout retained for non-destructive migration. */
 	pluginGroups?: PluginGroupState[]
 }
 

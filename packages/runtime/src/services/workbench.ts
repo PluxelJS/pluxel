@@ -11,6 +11,7 @@ import { WorkbenchRpcService } from './workbench/resources/WorkbenchRpcService'
 import { WorkbenchEventsService } from './workbench/resources/WorkbenchEventsService'
 import { WorkbenchLiveQueryService } from './workbench/resources/WorkbenchLiveQueryService'
 import { WorkbenchRegistry, type InternalModelRef } from './workbench/WorkbenchRegistry'
+import { WorkbenchPluginCatalogService } from './workbench/WorkbenchPluginCatalogService'
 import { installWorkbenchForRoot, requireInstalledWorkbench } from './workbench/WorkbenchService'
 
 export class WorkbenchBackend {
@@ -19,6 +20,7 @@ export class WorkbenchBackend {
 	readonly events: WorkbenchEventsService
 	readonly liveQueries: WorkbenchLiveQueryService
 	readonly registry: WorkbenchRegistry
+	readonly pluginCatalog: WorkbenchPluginCatalogService
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
 	private readonly mounts = new Map<string, { owner: Context; dispose: () => void }>()
 
@@ -28,6 +30,7 @@ export class WorkbenchBackend {
 		this.events = new WorkbenchEventsService(root, undefined)
 		this.liveQueries = new WorkbenchLiveQueryService(this.events)
 		this.registry = new WorkbenchRegistry(root, this.artifacts)
+		this.pluginCatalog = new WorkbenchPluginCatalogService(root)
 		this.events.registerResourceFor(root, 'workbench.layouts', (channel) => {
 			const emit = () => channel.emit('revision', this.registry.getCatalog().revision)
 			emit()

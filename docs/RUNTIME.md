@@ -71,6 +71,7 @@ owner stop/replacement 使 pending generation 失效，迟到 setup 返回的 cl
 Workbench backend 由以下部分组成：
 
 - `WorkbenchService`：每个 plugin Context 隔离的 optional gate；
+- `WorkbenchPluginCatalogService`：宿主/package 分类解析与 Workbench-owned 用户偏好；
 - `WorkbenchRegistry`：module、关系、target layout、opaque grant 和统一 revision；
 - `WorkbenchArtifactService`：dev/package artifact 与 build state；
 - resource services：request-scoped API、live-query snapshot/patch、stream；
