@@ -446,12 +446,8 @@ export interface KookAutoApi {
 
 	// game
 	getGameList(param?: { type?: 0 | 1 | 2 }): Promise<Result<Kook.List<Kook.Game>>>
-	createGame(param: { name: string; icon?: string }): Promise<Result<Kook.List<Kook.Game>>>
-	updateGame(param: {
-		id: number
-		name?: string
-		icon?: string
-	}): Promise<Result<Kook.List<Kook.Game>>>
+	createGame(param: { name: string; icon?: string }): Promise<Result<Kook.Game>>
+	updateGame(param: { id: number; name?: string; icon?: string }): Promise<Result<Kook.Game>>
 	deleteGame(param: { id: number }): Promise<Result<void>>
 	createGameActivity(param: { data_type: 1; id: number }): Promise<Result<void>>
 	createGameActivity(param: {
