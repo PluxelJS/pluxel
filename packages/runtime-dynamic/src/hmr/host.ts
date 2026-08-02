@@ -19,6 +19,7 @@ import {
 	type RuntimeStoragePaths,
 } from '@pluxel/runtime/internal'
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
 import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
 
@@ -90,6 +91,7 @@ export type BootedLoaderHmrHost = {
 
 export type BootLoaderHmrHostOptions = {
 	viteServer?: ViteDevServer
+	product?: ProductDescriptor | null
 }
 
 export type LoaderHmrHostConfigInput = Omit<
@@ -269,7 +271,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		})
 		if (isWorkbenchEnabled(contextConfig.workbench)) {
 			const { installWorkbench } = await import('@pluxel/runtime/internal')
-			installWorkbench(ctx)
+			installWorkbench(ctx, { product: options.product ?? null })
 		}
 		await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))

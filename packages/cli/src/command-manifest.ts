@@ -115,6 +115,109 @@ export const databaseCommandDefinition = {
 	subCommands: databaseSubCommands,
 } as const
 
+export const distributionRootArgs = {
+	root: { type: 'positional', description: 'Unpacked distribution root', default: '.' },
+} as const
+
+export const distributionCreateDefinition = {
+	name: 'create',
+	description: 'Create the deterministic artifact manifest for a finalized distribution',
+	args: distributionRootArgs,
+} as const
+
+export const distributionInspectDefinition = {
+	name: 'inspect',
+	description: 'Compare a distribution with its artifact manifest without authenticating an issuer',
+	args: distributionRootArgs,
+} as const
+
+export const distributionVerifyArgs = {
+	...distributionRootArgs,
+	key: {
+		type: 'string',
+		multiple: true,
+		description: 'Trusted issuer public key PEM (repeatable)',
+	},
+	report: { type: 'string', description: 'Write the versioned verification report as JSON' },
+} as const
+
+export const distributionVerifyDefinition = {
+	name: 'verify',
+	description: 'Verify DSSE issuer trust, signed manifest digest, and the complete artifact set',
+	args: distributionVerifyArgs,
+} as const
+
+export const distributionMarkArgs = {
+	...distributionRootArgs,
+	claims: { type: 'string', description: 'Private release claims JSON path' },
+	'record-out': { type: 'string', description: 'Private delivery record output path' },
+} as const
+
+export const distributionMarkDefinition = {
+	name: 'mark',
+	description: 'Add one inert random delivery marker before artifact finalization',
+	toKebab: true,
+	args: distributionMarkArgs,
+} as const
+
+export const distributionCorrelateArgs = {
+	...distributionRootArgs,
+	'delivery-record': { type: 'string', description: 'Private delivery record JSON path' },
+	report: { type: 'string', description: 'Write the correlation result as JSON' },
+} as const
+
+export const distributionCorrelateDefinition = {
+	name: 'correlate',
+	description: 'Compare an inert delivery marker with one private delivery record',
+	toKebab: true,
+	args: distributionCorrelateArgs,
+} as const
+
+export const distributionSubCommands = new Map([
+	[
+		'create',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionCreateCommand),
+			distributionCreateDefinition,
+		),
+	],
+	[
+		'inspect',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionInspectCommand),
+			distributionInspectDefinition,
+		),
+	],
+	[
+		'verify',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionVerifyCommand),
+			distributionVerifyDefinition,
+		),
+	],
+	[
+		'mark',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionMarkCommand),
+			distributionMarkDefinition,
+		),
+	],
+	[
+		'correlate',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionCorrelateCommand),
+			distributionCorrelateDefinition,
+		),
+	],
+])
+
+export const distributionCommandDefinition = {
+	name: 'distribution',
+	description: 'Create, inspect, verify, and correlate static application distributions',
+	args: distributionRootArgs,
+	subCommands: distributionSubCommands,
+} as const
+
 export const publishCommandArgs = {
 	access: { type: 'string', description: 'npm publish --access value', default: 'public' },
 	'dry-run': { type: 'boolean', description: 'Plan publish without executing', default: false },

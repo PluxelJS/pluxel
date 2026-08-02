@@ -1,0 +1,60 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://pluxel.dev/schemas/distribution/v1",
+	"title": "Pluxel Artifact Set v1",
+	"$comment": "Canonical v1 encoding additionally requires compact UTF-8 JSON with LF, fixed field order, NFC relative paths, UTF-8 byte-sorted unique entries, no portable case-fold collisions, and safe relative symlink targets. These invariants are enforced by @pluxel/rolldown/distribution and are not fully expressible in JSON Schema.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schemaVersion", "kind", "producer", "application", "entries"],
+	"properties": {
+		"schemaVersion": { "const": 1 },
+		"kind": { "const": "pluxel-artifact-set" },
+		"producer": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kind", "target", "variant"],
+			"properties": {
+				"kind": { "const": "static-application" },
+				"target": { "const": "node" },
+				"variant": { "enum": ["headless", "workbench"] }
+			}
+		},
+		"application": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "catalogHash"],
+			"properties": {
+				"name": { "type": "string", "minLength": 1 },
+				"catalogHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+			}
+		},
+		"entries": {
+			"type": "array",
+			"items": {
+				"oneOf": [
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["path", "type", "size", "sha256"],
+						"properties": {
+							"path": { "type": "string", "minLength": 1 },
+							"type": { "const": "file" },
+							"size": { "type": "integer", "minimum": 0 },
+							"sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+						}
+					},
+					{
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["path", "type", "target"],
+						"properties": {
+							"path": { "type": "string", "minLength": 1 },
+							"type": { "const": "symlink" },
+							"target": { "type": "string", "minLength": 1 }
+						}
+					}
+				]
+			}
+		}
+	}
+}

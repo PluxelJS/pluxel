@@ -9,6 +9,7 @@ import {
 	IconX,
 } from '@tabler/icons-react'
 import { ColorSchemeToggle } from '../../../theme'
+import { useProduct } from '../../product'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import type { NavSection } from '../../navigation/navConfig'
 import { WorkbenchPaneControls } from '../../plugins/detail/controls/WorkbenchPaneControls'
@@ -74,6 +75,7 @@ export function ActivityRail({
 	pathname: string
 	requestNavigation: RequestNavigation
 }) {
+	const product = useProduct()
 	return (
 		<aside className="plx-workbench__activity" aria-label="工作台导航">
 			<div className="plx-workbench__activityBrand">
@@ -85,8 +87,8 @@ export function ActivityRail({
 					className="plx-workbench__activityBrandMark"
 				/>
 				<span className="plx-workbench__activityBrandText">
-					<strong>Pluxel</strong>
-					<small>点击图标切换主题</small>
+					<strong>{product?.displayName ?? 'Pluxel'}</strong>
+					<small>{product?.publisher ?? '点击图标切换主题'}</small>
 				</span>
 			</div>
 
@@ -117,6 +119,26 @@ export function ActivityRail({
 			</nav>
 
 			<div className="plx-workbench__activityFooter">
+				{product && (product.copyright || (product.legalLinks?.length ?? 0) > 0) ? (
+					<div className="plx-workbench__productLegal">
+						{product.copyright ? <small>{product.copyright}</small> : null}
+						{product.legalLinks?.length ? (
+							<nav aria-label={`${product.displayName} 法律信息`}>
+								{product.legalLinks.map((link, index) => (
+									<a
+										key={`${index}:${link.label}:${link.href}`}
+										href={link.href}
+										{...(isExternalHref(link.href)
+											? { target: '_blank', rel: 'noreferrer noopener' }
+											: {})}
+									>
+										{link.label}
+									</a>
+								))}
+							</nav>
+						) : null}
+					</div>
+				) : null}
 				<button
 					type="button"
 					className="plx-workbench__navigationToggle"
@@ -134,6 +156,10 @@ export function ActivityRail({
 			</div>
 		</aside>
 	)
+}
+
+function isExternalHref(href: string): boolean {
+	return !href.startsWith('/')
 }
 
 export function RouteGroupRail({

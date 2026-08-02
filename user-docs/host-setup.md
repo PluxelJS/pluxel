@@ -9,6 +9,32 @@
 
 两者都复用同一 core lifecycle、runtime services 和 Workbench Plane。
 
+## 应用展示信息
+
+Static 与 dynamic 都在各自已经必需的 canonical host module 中导出同一个可选 `product` named export。它是产品展示与
+法律链接的唯一事实源，不属于 runtime config，也不会从 `package.json`、application name 或其他 metadata 推导：
+
+```ts
+import { defineProduct } from '@pluxel/runtime/product'
+
+export const product = defineProduct({
+	displayName: 'Rhythm',
+	publisher: 'Example Company',
+	copyright: '© 2026 Example Company',
+	legalLinks: [
+		{ label: '软件许可', href: '/legal/license' },
+		{ label: '第三方声明', href: 'https://example.com/notices' },
+	],
+})
+```
+
+`defineProduct()` 提供类型提示，并在运行时复制、校验和深度冻结结果。`displayName` 必填；链接只接受 `http:`、`https:`
+或单 `/` 开头的站内路径。未知字段、首尾空白、控制字符、Promise 和非法 URL 会使宿主加载失败，不会静默改用其他来源。
+
+未导出 `product` 时，host meta 明确为 `null`，Workbench 显示 Pluxel 默认标识。业务 SPA 需要复用同一对象时，可以把定义放在
+普通 browser-safe module 中，再从 static/dynamic canonical module 使用 `export { product } from './product'` 标准
+re-export；不需要新增 JSON、路径配置或 watcher。
+
 HTTP、config、logger、events、persistence 和 database capability 随 `@pluxel/runtime` 主入口注册。Vault
 不是常驻能力；只有需要保存密钥的宿主才在 canonical runtime entry 顶部显式启用：
 
@@ -41,8 +67,11 @@ export default defineConfig({
 
 ```ts
 import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { product } from './product.ts'
 import { AccountsPlugin } from './plugins/AccountsPlugin.ts'
 import { BillingPlugin } from './plugins/BillingPlugin.ts'
+
+export { product }
 
 export default defineStaticRuntime({
 	name: 'billing-host',
@@ -125,6 +154,10 @@ node dist/app.mjs
 - `variant: 'workbench'` 时位于 `workbench/` 的 Workbench shell 和 extension remotes；
 - Node native/dynamic 依赖以及 PostgreSQL `pg` 等无法安全内联的依赖所需的最小 `node_modules`。
 
+Freezer 在 final assembly 末尾自动生成覆盖完整目录的 `pluxel-distribution.json`。如果业务 SPA、SBOM 或 packaging task 在此后继续
+写入 `dist/`，必须在最后一次写入后运行 `pluxel distribution create ./dist`。检查、DSSE 签名和可选 delivery marker 流程见
+[`distribution.md`](distribution.md)。
+
 目标机不需要安装 `@pluxel/*`。`variant` 是 build-time capability：`headless` 不携带 Workbench，启动时不能再开启；
 `workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。Node target 读取
 `PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。Node host 会在客户端中止请求或提前关闭流式响应时 abort 对应的 Fetch
@@ -133,6 +166,19 @@ node dist/app.mjs
 fallback；开启 Workbench 时根页面属于 Workbench。Fetch 平台需要未来独立的 platform-neutral runtime adapter。
 
 ## Dynamic host
+
+`src/pluxel.dynamic.ts` 同样可以导出上文的 `product`；其结构与 static 完全一致，不写入
+`defineDynamicRuntimeConfig()`：
+
+```ts
+import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+
+export { product } from './product.ts'
+
+export default defineDynamicRuntimeConfig({
+	// ...
+})
+```
 
 ```ts
 import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'

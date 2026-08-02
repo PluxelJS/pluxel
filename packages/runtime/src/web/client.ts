@@ -10,6 +10,7 @@ import {
 } from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { WorkbenchCatalog, WorkbenchLayout } from '../workbench/contracts'
+import type { HostApplicationMeta } from '../product-contract'
 import type { RuntimeRpcApi } from './protocol'
 import { createWorkbenchRpcView, createRpcClientFactory, invokeRpc } from './rpc'
 import { type SseClientOptions, type SseClientWithNamespaces, sseWithLifecycle } from './sse'
@@ -30,6 +31,7 @@ import { resolveClientUrl } from './http-utils'
 export interface RuntimeMeta {
 	service: 'pluxel-runtime'
 	ready: true
+	application: HostApplicationMeta
 	sse: {
 		namespaces: string[]
 	}

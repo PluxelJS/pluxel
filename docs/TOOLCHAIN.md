@@ -112,7 +112,10 @@ export default staticApplication({
 ```
 
 freezer 只接受直接默认导出的 `defineStaticRuntime(...)`。它在同一 graph 中执行 macro、config metadata、lint、Workbench
-remote extraction 和 production preprocessing，然后生成 platform bootstrap。fixed plugins、runtime-static 和可达的
+remote extraction 和 production preprocessing，然后生成以 canonical entry 为 namespace import 的 platform bootstrap。Wrapper
+从 module namespace 消费 default application，并用 runtime shared reader 消费可选 `product` named export；它不按 identifier
+猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
+因此具有相同语义。fixed plugins、runtime-static 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
 可解析 optional candidate 形成内部 chunk；不可解析 optional candidate 形成带结构化 absent code 的 virtual chunk，
 不得进入 nf3 residual 或 deployment external。
@@ -129,6 +132,10 @@ freezer 只发布 Node application；在提供真正 platform-neutral 的 runtim
 
 `pluxel-deployment.json` 记录 server entry、catalog hash、target、variant、Workbench artifacts 与 residual package facts。
 runtime 以 bootstrap 注入的 deployment root 读取产物，不从 workspace package root 或 `process.cwd()` 推断。
+
+同一 final assembly 的最后一步调用 `@pluxel/rolldown/distribution` 生成确定性 `pluxel-distribution.json`。如果外部任务之后继续写入
+目录，必须用 `pluxel distribution create` 调用同一 finalizer。完整 inventory、DSSE、offline verification 和 marker 不变量见
+[`DISTRIBUTION.md`](DISTRIBUTION.md)。
 
 Workbench shell/remotes 是 browser artifacts，不内联进 server chunk。shell 使用 `workbench/public/`，remote 使用
 `workbench/<artifact>/`；业务 SPA 可以独立输出到 `public/`，不会覆盖 Workbench manifest。`variant: 'workbench'`

@@ -17,6 +17,12 @@ export default defineConfig({
 ```ts
 // src/pluxel.dynamic.ts
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { defineProduct } from '@pluxel/runtime/product'
+
+export const product = defineProduct({
+	displayName: 'Rhythm',
+	publisher: 'Example Company',
+})
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
@@ -29,6 +35,10 @@ export default defineDynamicRuntimeConfig({
 	},
 })
 ```
+
+可选 named export `product` 与 static route 使用完全相同的 contract 和 reader。它不属于
+`defineDynamicRuntimeConfig()`；缺失时为 `null`，非法值使 canonical module 加载失败。产品定义可以从普通 browser-safe
+module 标准 re-export，不需要 JSON 或独立 watcher。
 
 React、GraphQL 和业务 alias 属于 host `vite.config.ts`；loader/runtime 配置属于 dynamic config。不要用 raw TypeScript
 runner 绕开 route plugin，也不要复制 Pluxel 的 resolve、SSR、optimizer 或 host-module 配置。static/dynamic route 使用同一个

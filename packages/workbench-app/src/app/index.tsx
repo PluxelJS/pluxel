@@ -6,6 +6,7 @@ import './bootstrap'
 import '../styles/index.scss'
 import { appCssVariablesResolver, useAppTheme } from '../theme'
 import { PluxelGQLensProvider } from './gqlens'
+import { ProductProvider } from './product'
 import { createAppRouter } from './router'
 import { WorkspaceControllerProvider } from './workbench/context'
 import { WorkspaceController } from './workbench/store'
@@ -28,11 +29,13 @@ export function App({ history }: AppProps = {}) {
 			cssVariablesResolver={appCssVariablesResolver}
 		>
 			<RuntimeTransportClientProvider client={transportClient}>
-				<PluxelGQLensProvider>
-					<WorkspaceControllerProvider controller={workspace}>
-						<RouterProvider router={router} />
-					</WorkspaceControllerProvider>
-				</PluxelGQLensProvider>
+				<ProductProvider transport={transportClient}>
+					<PluxelGQLensProvider>
+						<WorkspaceControllerProvider controller={workspace}>
+							<RouterProvider router={router} />
+						</WorkspaceControllerProvider>
+					</PluxelGQLensProvider>
+				</ProductProvider>
 			</RuntimeTransportClientProvider>
 		</MantineProvider>
 	)

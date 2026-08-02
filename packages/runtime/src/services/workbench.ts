@@ -1,4 +1,9 @@
 import type { Context } from '@pluxel/core'
+import {
+	readProductDescriptor,
+	type HostApplicationMeta,
+	type ProductDescriptor,
+} from '../product-contract'
 import type { WorkbenchResourceContract } from '../workbench/contracts'
 import type {
 	AnyWorkbenchExtension,
@@ -15,6 +20,7 @@ import { WorkbenchPluginCatalogService } from './workbench/WorkbenchPluginCatalo
 import { installWorkbenchForRoot, requireInstalledWorkbench } from './workbench/WorkbenchService'
 
 export class WorkbenchBackend {
+	readonly application: HostApplicationMeta
 	readonly artifacts: WorkbenchArtifactService
 	readonly rpc: WorkbenchRpcService
 	readonly events: WorkbenchEventsService
@@ -24,7 +30,13 @@ export class WorkbenchBackend {
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
 	private readonly mounts = new Map<string, { owner: Context; dispose: () => void }>()
 
-	constructor(root: Context) {
+	constructor(root: Context, options: WorkbenchInstallOptions = {}) {
+		this.application = Object.freeze({
+			product:
+				options.product === undefined || options.product === null
+					? null
+					: readProductDescriptor(options.product, '[workbench] product'),
+		})
 		this.artifacts = new WorkbenchArtifactService(root)
 		this.rpc = new WorkbenchRpcService(root, undefined)
 		this.events = new WorkbenchEventsService(root, undefined)
@@ -143,8 +155,12 @@ export class WorkbenchBackend {
 	}
 }
 
-export function installWorkbench(ctx: Context): () => void {
-	const backend = new WorkbenchBackend(ctx.root)
+export type WorkbenchInstallOptions = Readonly<{
+	product?: ProductDescriptor | null
+}>
+
+export function installWorkbench(ctx: Context, options: WorkbenchInstallOptions = {}): () => void {
+	const backend = new WorkbenchBackend(ctx.root, options)
 	const dispose = installWorkbenchForRoot(ctx, backend)
 	const guard = ctx.root.effects.defer(dispose)
 	return () => guard.dispose()

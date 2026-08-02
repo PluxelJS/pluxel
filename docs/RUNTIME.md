@@ -83,6 +83,20 @@ revision 变化时撤销 grant。Workbench API 不暴露全局资源字典。
 安装入口是 `@pluxel/runtime/internal`，只供 static、dynamic 和 production static launcher 使用。插件不得
 直接安装或 require backend。
 
+## Host application metadata
+
+Static application entry 与 dynamic config module 都可以提供同一个可选 named export `product`。公共作者入口
+`@pluxel/runtime/product` 只包含 browser-safe `ProductDescriptor` 与 `defineProduct()`；helper 和 route boundary 复用同一个
+结构 validator，复制并深度冻结 snapshot。Named export 缺失得到 `null`，显式但非法的值使 module load 失败。
+
+Product 是 route-neutral host metadata，不进入 static/dynamic config、Context、ConfigService、RuntimeState、Plugin API 或
+package metadata。Runtime definition `name` 继续只承担 diagnostics identity。两条 Vite route 已经监听 canonical module
+import graph，因此产品变化复用正常 host replacement，并在 Workbench 可见内容变化时触发 browser full reload，不建立独立 watcher
+或 HMR protocol。
+
+Workbench backend 安装时接收 nullable snapshot，并通过既有 runtime meta read model 暴露
+`application.product`。Workbench disabled/headless 不安装 backend，也不创建 product service、route、registry 或持久状态。
+
 ## Static application ownership
 
 `@pluxel/runtime-static` 的公开源码入口是默认导出的 `defineStaticRuntime()` application：
@@ -95,8 +109,9 @@ defineStaticRuntime entry
 ```
 
 Vite 和 production freezer 必须加载同一个 entry。production bootstrap 由
-`@pluxel/rolldown/build` 生成并内联 `runtime-static` production adapter；用户不维护第二个 server entry，部署端也不
-解析 Pluxel packages。
+`@pluxel/rolldown/build` 生成，以标准 ESM namespace 分别读取 default application 与 route-neutral product，再内联
+`runtime-static` production adapter；用户不维护第二个 server entry，部署端也不解析 Pluxel packages。Freezer 只静态检查
+default export 的 application authoring boundary，不求值 product，也不把产品字段复制进 deployment manifest。
 
 fixed catalog 只限制可用插件代码集合，不移除运行时启停。ConfigService 与 RuntimeState 仍在每次启动时加载 plugin
 config records、enabled state、dependency overrides 和 persistence state。`configure()` 的返回值同样在每次 host startup

@@ -99,6 +99,7 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
 - `@pluxel/runtime`：原样转发 core 作者面，并增加常驻 runtime 能力；
+- `@pluxel/runtime/product`：browser-safe host product descriptor 与无副作用 `defineProduct()`；
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
@@ -116,4 +117,5 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 - disabled 表示零 backend 初始化；
 - host 拥有 placement，provider 不能任意占据 consumer UI；
 - static/dynamic 的作者 API 和 graph 语义一致；
+- static/dynamic canonical module 共用可选 `product` named export，不把 host metadata 塞入 route config；
 - active docs 只描述当前 API，历史由 Git 保存。

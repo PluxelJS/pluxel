@@ -10,6 +10,7 @@ function readInternalMeta(pluginCtx: PluginContext) {
 	return {
 		service: 'pluxel-runtime' as const,
 		ready: true as const,
+		application: workbench.application,
 		sse: {
 			namespaces: workbench.events.listNamespaces(),
 		},

@@ -14,6 +14,7 @@
    - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和Workbench投影。
    - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
    - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
+   - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。
    - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
    - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
    - [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)：Workbench 插件目录分类、包默认值与用户偏好。

@@ -16,6 +16,7 @@ Pluxel CLI（对外发布包之一）。
 pluxel build
 pluxel hmr
 pluxel new
+pluxel distribution inspect ./dist
 ```
 
 `pluxel new` 当前提供两条主路径：
@@ -50,6 +51,9 @@ plugin 和 app monorepo，并完成独立安装、lint、typecheck、test、buil
 # pluxel build / pluxel workspace
 pnpm add -D @pluxel/rolldown tsdown oxlint
 
+# pluxel distribution
+pnpm add -D @pluxel/rolldown
+
 # pluxel hmr
 pnpm add -D @pluxel/runtime-dynamic
 ```
@@ -82,6 +86,8 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
   组装无 runtime 注册副作用的 `@pluxel/runtime-dynamic/hmr/diagnose`
 - `pluxel build`
   组装 `@pluxel/rolldown` + 相关 build helper
+- `pluxel distribution`
+  组装 `@pluxel/rolldown/distribution` 的 deterministic finalizer、离线验证和 marker helper
 - `pluxel new`
   组装脚手架能力
 

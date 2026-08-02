@@ -94,6 +94,7 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 | 能力                                             | 所有者入口                             |
 | ------------------------------------------------ | -------------------------------------- |
 | plugin package / static application build preset | `@pluxel/rolldown/build`               |
+| static distribution manifest / DSSE helper       | `@pluxel/rolldown/distribution`        |
 | Vite source adapter                              | `@pluxel/rolldown/vite`                |
 | Pluxel Oxlint rules                              | `@pluxel/rolldown/oxlint`              |
 | dynamic loader diagnostics                       | `@pluxel/runtime-dynamic/hmr/diagnose` |

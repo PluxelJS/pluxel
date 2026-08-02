@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
 import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
+import { installWorkbench } from '@pluxel/runtime/internal/static'
+import { defineProduct } from '@pluxel/runtime/product'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
@@ -370,6 +372,35 @@ describe('@pluxel/runtime-static', () => {
 			expect(response.status).toBeLessThan(500)
 		} finally {
 			await runtime.stop()
+		}
+	})
+
+	it('projects a host-owned product snapshot through the existing runtime meta route', async () => {
+		const product = defineProduct({
+			displayName: 'Rhythm',
+			publisher: 'Example Company',
+			legalLinks: [{ label: 'Legal', href: '/legal' }],
+		})
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-product-meta', plugins: [] }),
+			{
+				configService: { mode: 'memory' },
+				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
+			},
+			{ installWorkbench, product },
+		)
+		try {
+			await host.start()
+			const response = await host.ctx.http.fetch(
+				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}/meta`),
+			)
+			expect(response.status).toBe(200)
+			await expect(response.json()).resolves.toMatchObject({
+				application: { product },
+			})
+		} finally {
+			await host.stop()
 		}
 	})
 

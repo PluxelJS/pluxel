@@ -4,6 +4,7 @@ import pkg from '../package.json'
 import {
 	buildCommandDefinition,
 	databaseCommandDefinition,
+	distributionCommandDefinition,
 	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
@@ -27,6 +28,13 @@ const commands = new Map([
 		lazy(
 			() => import('./commands/database').then((module) => module.databaseCommand),
 			databaseCommandDefinition,
+		),
+	],
+	[
+		'distribution',
+		lazy(
+			() => import('./commands/distribution').then((module) => module.distributionCommand),
+			distributionCommandDefinition,
 		),
 	],
 	[
@@ -79,6 +87,7 @@ function formatCliError(error: unknown, command: string | undefined): string {
 	const dependencyByCommand: Record<string, string> = {
 		build: '@pluxel/rolldown',
 		database: '@pluxel/rolldown',
+		distribution: '@pluxel/rolldown',
 		hmr: '@pluxel/runtime-dynamic',
 		workspace: '@pluxel/rolldown',
 	}

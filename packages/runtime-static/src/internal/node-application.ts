@@ -4,6 +4,7 @@ import { stat } from 'node:fs/promises'
 import { extname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
 import { Readable } from 'node:stream'
 import type { PluginConstructor } from '@pluxel/core'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { startStaticRuntimeApplication } from './application'
 import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
 import type { StaticRuntimeWorkbenchInstaller } from './host'
@@ -28,6 +29,7 @@ export async function runStaticNodeApplication<
 		bindings?: TBindings
 		deployment: StaticRuntimeDeployment
 		installWorkbench?: StaticRuntimeWorkbenchInstaller
+		product?: ProductDescriptor | null
 	},
 ): Promise<StaticNodeApplication> {
 	const env = options.env ?? readProcessEnvironment()
@@ -50,6 +52,7 @@ export async function runStaticNodeApplication<
 				: {}),
 		},
 		installWorkbench: options.installWorkbench,
+		product: options.product ?? null,
 	})
 	const host = env.PLUXEL_HOST_BIND?.trim() || '127.0.0.1'
 	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)

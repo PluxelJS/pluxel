@@ -1,5 +1,6 @@
 import type { PluginConstructor } from '@pluxel/core'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { runStaticNodeApplication, type StaticNodeApplication } from './node-application'
 import type {
 	StaticRuntimeApplication,
@@ -16,6 +17,7 @@ export function runStaticNodeWorkbenchApplication<
 		env?: StaticRuntimeEnvironment
 		bindings?: TBindings
 		deployment: StaticRuntimeDeployment
+		product?: ProductDescriptor | null
 	},
 ): Promise<StaticNodeApplication> {
 	return runStaticNodeApplication(application, { ...options, installWorkbench })

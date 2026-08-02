@@ -8,6 +8,10 @@ Rolldown/Vite 工具链入口：
   `pluxel.pluginPackages` 与 peer metadata，并从第一次构建起保持 detected required/optional provider external；
   static application 使用 bundle-or-absent。CLI 不追加 import tracker。
 - `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
+- `@pluxel/rolldown/distribution`：static artifact-set finalizer、in-toto/DSSE helper、offline verifier 和 inert delivery
+  marker；raw v1 schema 位于 `@pluxel/rolldown/distribution/schema.json`。用户流程见
+  [`../../user-docs/distribution.md`](../../user-docs/distribution.md)，维护约束见
+  [`../../docs/DISTRIBUTION.md`](../../docs/DISTRIBUTION.md)。
 - `configSourcePlugin`：生成 config metadata，并从 `@pluxel/runtime/toolchain` 导入 helper。
 - `lintGuardPlugin`：执行插件声明约束检查。
 - `pluginArtifactBuildPlugin`：在同一次 transform 中提取 Workbench UI 与 `defineNodeModule()` declaration，

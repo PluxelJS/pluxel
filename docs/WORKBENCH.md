@@ -88,6 +88,17 @@ Remote View 的运行环境由当前 target snapshot 显式注入，包含 opaqu
 commands；它不读取全局 Extension context。浏览器 host 直接索引服务端 layout，不再把 placement 转换进第二套 registry。
 catalog、module、route 和 contribution 因而共享同一个 revision 与清理所有者。
 
+## Host application projection
+
+Workbench backend 安装时接收 host 已校验的 nullable product snapshot，并通过既有 runtime `/meta` read model 的
+`application.product` 返回。Shell 初始化时读取该 snapshot：有值时投影 display name、publisher、copyright、legal links 与页面标题；
+为 `null` 时由 UI 使用唯一的 Pluxel 默认标识。外部法律链接使用独立 navigation 与 `noopener`/`noreferrer`，所有作者字符串均按
+text 渲染。
+
+Product 不表示 verified build 或 release identity。Workbench 不从 package metadata、runtime config、application name 或发行
+sidecar 推导它，也不创建 product service、额外 HTTP route、polling 或 browser registry。Workbench disabled/headless 时 backend
+与该 projection 都不存在。
+
 ## Plugin catalog classification
 
 插件目录分类属于 Workbench host layout，不进入 `@Plugin`、PluginInfo、Extension 或 Contract。宿主通过

@@ -61,6 +61,8 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeStatic.exports).not.toHaveProperty('./hmr')
 		expect(rolldown.exports).toHaveProperty('./vite')
 		expect(rolldown.exports).toHaveProperty('./build')
+		expect(rolldown.exports).toHaveProperty('./distribution')
+		expect(rolldown.exports).toHaveProperty('./distribution/schema.json')
 		expect(rolldown.exports).toHaveProperty('./vite/environment')
 		expect(rolldown.exports).toHaveProperty('./resolver/oxc')
 		expect(rolldown.exports).toHaveProperty('./workbench/artifact')

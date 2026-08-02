@@ -19,8 +19,14 @@ import {
 	type HmrReportLogProps,
 	type HmrUpdatedLogProps,
 } from '../../runtime-dev/src/hmr-log.ts'
-import { isPluginEnabled, resolveDevWorkbenchClientEntryUrl } from '@pluxel/runtime/internal'
+import {
+	isPluginEnabled,
+	readHostProduct,
+	resolveDevWorkbenchClientEntryUrl,
+	sameProduct,
+} from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
@@ -53,6 +59,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		entryPath?: string
 		configFiles: Set<string>
 		application?: StaticRuntimeApplication
+		product?: ProductDescriptor | null
 		host?: StaticRuntimeHost
 	} = {
 		configFiles: new Set(),
@@ -60,7 +67,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 
 	const loadApplication = async (
 		fresh: boolean,
-	): Promise<{ application: StaticRuntimeApplication; configFiles: Set<string> }> => {
+	): Promise<{
+		application: StaticRuntimeApplication
+		product: ProductDescriptor | null
+		configFiles: Set<string>
+	}> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
 		const entryPath = (state.entryPath ??= resolveRuntimeEntryPath(
@@ -71,11 +82,15 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 		const mod = await importViteSsrModule(server, entryPath, { fresh })
 		return {
 			application: validateStaticRuntimeApplicationModule(mod, entryPath),
+			product: readHostProduct(mod, `[runtime-static/vite] ${entryPath}`),
 			configFiles: collectViteSsrImportFiles(server, entryPath),
 		}
 	}
 
-	const createHost = async (application: StaticRuntimeApplication): Promise<StaticRuntimeHost> => {
+	const createHost = async (
+		application: StaticRuntimeApplication,
+		product: ProductDescriptor | null,
+	): Promise<StaticRuntimeHost> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-static/vite] Vite server is not configured')
 		const startup: StaticRuntimeStartupContext = {
@@ -93,7 +108,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 						? withDevWorkbenchHttpConfig(config.http)
 						: config.http,
 			},
-			{ installWorkbench },
+			{ installWorkbench, product },
 		)
 		try {
 			const workbenchEnabled = config.workbench !== false && config.workbench?.enabled === true
@@ -109,9 +124,11 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 
 	async function replaceHost(
 		application: StaticRuntimeApplication,
+		product: ProductDescriptor | null,
 	): Promise<StaticRuntimeStartupReport> {
 		const previousHost = state.host
 		const previousApplication = state.application
+		const previousProduct = state.product ?? null
 		if (previousHost) {
 			await previousHost.stop()
 			state.host = undefined
@@ -119,19 +136,21 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 
 		let next: StaticRuntimeHost | undefined
 		try {
-			next = await createHost(application)
+			next = await createHost(application, product)
 			const startup = await next.start()
 			state.host = next
 			state.application = application
+			state.product = product
 			return startup
 		} catch (error) {
 			await next?.stop().catch((): undefined => undefined)
 			if (previousHost && previousApplication) {
 				try {
-					const restored = await createHost(previousApplication)
+					const restored = await createHost(previousApplication, previousProduct)
 					await restored.start()
 					state.host = restored
 					state.application = previousApplication
+					state.product = previousProduct
 				} catch (rollbackError) {
 					const replacementError = new Error(
 						'[runtime-static/vite] host replacement and rollback both failed',
@@ -164,7 +183,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			marked[STATIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
 			const loaded = await loadApplication(true)
-			const startup = await replaceHost(loaded.application)
+			const startup = await replaceHost(loaded.application, loaded.product)
 			state.configFiles = loaded.configFiles
 			const host = state.host!
 			logStaticRuntimeStarted(host, startup, state.configFiles)
@@ -203,16 +222,19 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 			invalidateViteSsrModule(server, ctx.file)
 			const loaded = await loadApplication(false)
 			const application = loaded.application
+			const productChanged = !sameProduct(state.product ?? null, loaded.product)
 			const start = performance.now()
 			if (
 				!host ||
 				ctx.file === state.entryPath ||
 				application.name !== host.definition.name ||
+				productChanged ||
 				!hasCatalogChanges(host.definition, application)
 			) {
-				const startup = await replaceHost(application)
+				const startup = await replaceHost(application, loaded.product)
 				state.configFiles = loaded.configFiles
 				logStaticRuntimeStarted(state.host!, startup, state.configFiles)
+				if (productChanged) ctx.server.ws.send({ type: 'full-reload' })
 				return []
 			}
 			const report = await reloadStaticRuntime({
@@ -220,6 +242,7 @@ export function staticRuntimeVitePlugin(options: StaticRuntimeVitePluginOptions)
 				definition: toStaticRuntimeDefinition(application),
 			})
 			state.application = application
+			state.product = loaded.product
 			state.configFiles = loaded.configFiles
 			logStaticRuntimeHmrUpdated(
 				host,

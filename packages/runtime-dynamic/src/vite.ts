@@ -9,6 +9,8 @@ import {
 	invalidateViteModuleGraphFiles,
 } from '../../runtime-dev/src/vite.ts'
 import { resolveDevWorkbenchClientEntryUrl } from '../../runtime/src/server/assets.ts'
+import { readHostProduct, sameProduct } from '@pluxel/runtime/internal'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
 import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
@@ -31,6 +33,7 @@ export type DynamicRuntimeVitePluginOptions = {
 type DynamicRuntimeController = {
 	booted: BootedLoaderHmrHost
 	configFiles: Set<string>
+	product: ProductDescriptor | null
 	stop(): Promise<void>
 }
 
@@ -42,7 +45,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		httpInstalled?: boolean
 	} = {}
 
-	const loadConfig = async (): Promise<DynamicRuntimeConfig> => {
+	const loadConfig = async (): Promise<{
+		config: DynamicRuntimeConfig
+		product: ProductDescriptor | null
+	}> => {
 		const server = state.server
 		if (!server) throw new Error('[runtime-dynamic/vite] Vite server is not configured')
 		const configPath = (state.configPath ??= resolveRuntimeConfigPath(
@@ -51,20 +57,27 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			'runtime-dynamic',
 		))
 		const mod = await importViteSsrModule(server, configPath, { fresh: true })
-		return validateDynamicRuntimeConfigModule(mod, configPath)
+		return {
+			config: validateDynamicRuntimeConfigModule(mod, configPath),
+			product: readHostProduct(mod, `[runtime-dynamic/vite] ${configPath}`),
+		}
 	}
 
 	const startController = async (server: ViteDevServer): Promise<DynamicRuntimeController> => {
-		const config = await loadConfig()
+		const loaded = await loadConfig()
 		await state.controller?.stop()
 		const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } =
 			await loadDynamicHmrHostModule(server)
-		const plan = await planLoaderHmrHostFromConfig(config)
-		const booted = await bootPlannedLoaderHmrHost(plan, { viteServer: server })
+		const plan = await planLoaderHmrHostFromConfig(loaded.config)
+		const booted = await bootPlannedLoaderHmrHost(plan, {
+			viteServer: server,
+			product: loaded.product,
+		})
 		await options.prepareHost?.(booted)
 		const controller: DynamicRuntimeController = {
 			booted,
 			configFiles: collectViteSsrImportFiles(server, state.configPath!),
+			product: loaded.product,
 			stop: async () => {
 				await booted.stop()
 			},
@@ -109,7 +122,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			if (controller.configFiles.has(ctx.file)) {
 				state.server = ctx.server
 				invalidateViteModuleGraphFiles(ctx.server, controller.configFiles)
-				await startController(ctx.server)
+				const next = await startController(ctx.server)
+				if (!sameProduct(controller.product, next.product)) {
+					ctx.server.ws.send({ type: 'full-reload' })
+				}
 				return []
 			}
 			if (controller.booted.ctx.http.consumeFullReloadRequest()) {

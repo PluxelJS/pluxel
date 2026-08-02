@@ -46,6 +46,10 @@
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
 		},
+		"./product": {
+			"@pluxel/source": "./src/product.ts",
+			"default": "./dist/product.mjs"
+		},
 		"./services/vault": {
 			"@pluxel/source": "./src/services/vault.ts",
 			"default": "./dist/services/vault.mjs"
@@ -94,6 +98,7 @@
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",
+			"./product": "./dist/product.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
 			"./test": "./dist/test.mjs",
 			"./toolchain": "./dist/toolchain.mjs",

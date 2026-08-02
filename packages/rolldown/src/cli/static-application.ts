@@ -11,6 +11,7 @@ import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
 import type { UserConfig } from 'tsdown'
 import { parseWithLang } from '../rolldown/plugins/pluginUtils'
+import { createDistributionManifest } from '../distribution'
 import { createPluginBuildPipeline } from './plugin-build'
 
 export type StaticApplicationBuildOptions = {
@@ -44,6 +45,8 @@ type DeclaredWorkspacePackage = {
 
 const RuntimeResidualPackages = ['@electric-sql/pglite', 'pg'] as const
 const RuntimeFullTracePackages = ['tslib', '@electric-sql/pglite'] as const
+const STATIC_APPLICATION_BOOTSTRAP_ID = 'pluxel:static-application-bootstrap'
+const RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID = `\0${STATIC_APPLICATION_BOOTSTRAP_ID}`
 
 export function staticApplication(options: StaticApplicationBuildOptions): UserConfig {
 	const cwd = resolve(options.cwd ?? process.cwd())
@@ -66,7 +69,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 	return {
 		name: 'pluxel-static-application',
 		cwd,
-		entry: { app: entry },
+		entry: { app: STATIC_APPLICATION_BOOTSTRAP_ID },
 		outDir,
 		platform: 'node',
 		target: 'node24',
@@ -357,6 +360,16 @@ function staticApplicationEntryPlugin(options: {
 }): Plugin {
 	return {
 		name: 'pluxel-static-application-entry',
+		resolveId(id) {
+			if (id === STATIC_APPLICATION_BOOTSTRAP_ID) {
+				return RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID
+			}
+			return null
+		},
+		load(id) {
+			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
+			return buildBootstrap(options.entry, options.variant)
+		},
 		transform(code, rawId) {
 			const id = rawId.split('?', 1)[0]
 			if (resolve(id) !== options.entry) return null
@@ -391,18 +404,12 @@ function staticApplicationEntryPlugin(options: {
 				this.error('[static-application] cannot locate defineStaticRuntime(...) source range')
 			}
 			options.state.name = readApplicationName(expression.arguments?.[0])
-			const applicationExpression = code.slice(expression.start, expression.end)
-			const replacement = `const __pluxelStaticApplication = ${applicationExpression}\nexport default __pluxelStaticApplication`
-			const bootstrap = buildBootstrap(options.variant)
-			return {
-				code: `${code.slice(0, declaration.start)}${replacement}${code.slice(declaration.end)}\n${bootstrap}\n`,
-				map: null,
-			}
+			return null
 		},
 	}
 }
 
-function buildBootstrap(variant: 'headless' | 'workbench'): string {
+function buildBootstrap(entry: string, variant: 'headless' | 'workbench'): string {
 	const deployment = `{ root: import.meta.dirname, target: 'node', variant: ${JSON.stringify(variant)} }`
 	const [runnerModule, runner] =
 		variant === 'workbench'
@@ -412,10 +419,14 @@ function buildBootstrap(variant: 'headless' | 'workbench'): string {
 				]
 			: ['@pluxel/runtime-static/internal/node-application', 'runStaticNodeApplication']
 	return `
+import * as __pluxelHostModule from ${JSON.stringify(entry)}
+import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal'
 import { ${runner} as __runStaticNodeApplication } from ${JSON.stringify(runnerModule)}
-const __pluxelStaticRuntime = await __runStaticNodeApplication(__pluxelStaticApplication, {
+const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
+const __pluxelStaticRuntime = await __runStaticNodeApplication(__pluxelHostModule.default, {
 	env: process.env,
 	deployment: ${deployment},
+	product: __pluxelProduct,
 })
 export const ctx = __pluxelStaticRuntime.ctx
 export const fetch = __pluxelStaticRuntime.fetch
@@ -530,6 +541,7 @@ function staticApplicationAssemblyPlugin(options: {
 					)}\n`,
 					'utf-8',
 				)
+				await createDistributionManifest(options.outDir)
 			},
 		},
 	}

@@ -5,6 +5,14 @@ const inlineRuntimeDeps = ['@rolldown/pluginutils', 'fdir', 'pathe']
 
 export default defineConfig({
 	exports: {
+		customExports(exports, { isPublish }) {
+			return {
+				...exports,
+				'./distribution/schema.json': isPublish
+					? './dist/schemas/pluxel-distribution-v1.schema.json'
+					: './schemas/pluxel-distribution-v1.schema.json',
+			}
+		},
 		devExports: '@pluxel/source',
 	},
 	deps: {
@@ -25,6 +33,7 @@ export default defineConfig({
 		index: 'src/index.ts',
 		build: 'src/cli/index.ts',
 		database: 'src/database/index.ts',
+		distribution: 'src/distribution/index.ts',
 		plugins: 'src/rolldown/index.ts',
 		'resolver/oxc': 'src/resolver/oxc.ts',
 		'workbench/artifact': 'src/workbench/artifact.ts',
@@ -41,6 +50,7 @@ export default defineConfig({
 		'workspace/vite': 'src/workspace/vite.ts',
 		oxlint: 'src/workspace/oxlint/index.ts',
 	},
+	copy: ['schemas'],
 	dts: {
 		sourcemap: !fastBuild,
 		eager: true,

@@ -26,6 +26,10 @@
 			"@pluxel/source": "./src/database/index.ts",
 			"default": "./dist/database.mjs"
 		},
+		"./distribution": {
+			"@pluxel/source": "./src/distribution/index.ts",
+			"default": "./dist/distribution.mjs"
+		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
 			"default": "./dist/oxlint.mjs"
@@ -86,13 +90,15 @@
 			"@pluxel/source": "./src/workspace/vite.ts",
 			"default": "./dist/workspace/vite.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./distribution/schema.json": "./schemas/pluxel-distribution-v1.schema.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
 			"./database": "./dist/database.mjs",
+			"./distribution": "./dist/distribution.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
@@ -108,7 +114,8 @@
 			"./workspace/fs": "./dist/workspace/fs.mjs",
 			"./workspace/info": "./dist/workspace/info.mjs",
 			"./workspace/vite": "./dist/workspace/vite.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./distribution/schema.json": "./dist/schemas/pluxel-distribution-v1.schema.json"
 		}
 	},
 	"scripts": {

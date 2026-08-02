@@ -183,10 +183,43 @@
 }
 
 .plx-workbench__activityFooter {
-	align-items: center;
+	align-items: stretch;
 	display: flex;
+	flex-direction: column;
+	gap: 8px;
 	margin-top: auto;
 	width: 100%;
+}
+
+.plx-workbench__productLegal {
+	color: var(--plx-text-muted);
+	display: flex;
+	flex-direction: column;
+	font-size: 10px;
+	gap: 4px;
+	line-height: 1.35;
+	min-width: 0;
+}
+
+.plx-workbench__productLegal small {
+	overflow-wrap: anywhere;
+}
+
+.plx-workbench__productLegal nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+}
+
+.plx-workbench__productLegal a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.plx-workbench__productLegal a:hover,
+.plx-workbench__productLegal a:focus-visible {
+	color: var(--plx-text);
+	text-decoration: underline;
 }
 
 .plx-workbench__routeGroup {
@@ -739,6 +772,10 @@
 
 		.plx-workbench__activityFooter {
 			justify-content: center;
+		}
+
+		.plx-workbench__productLegal {
+			display: none;
 		}
 
 		.plx-workbench__navigationToggle {

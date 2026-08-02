@@ -24,6 +24,7 @@ export {
 	type NodeModuleSourceSubscription,
 } from './services/NodeModuleService'
 export { readNodeModuleDeclaration } from './node-module'
+export { readHostProduct, sameProduct } from './product-internal'
 export {
 	withDatabasePluginContext,
 	subscribeDatabaseHandle,
@@ -44,7 +45,11 @@ export {
 	resolvePackagedNodeModule,
 	resolvePackagedWorkbenchManifest,
 } from './services/workbench/packaged-artifact'
-export { installWorkbench, requireWorkbench } from './services/workbench'
+export {
+	installWorkbench,
+	requireWorkbench,
+	type WorkbenchInstallOptions,
+} from './services/workbench'
 export { createContextPluginLogPolicyStore } from './logger/levels'
 export {
 	createRuntimeLogging,

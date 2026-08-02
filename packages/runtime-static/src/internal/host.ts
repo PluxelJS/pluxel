@@ -7,6 +7,7 @@ import {
 	type PluginLifecycleIssue,
 	Context,
 } from '@pluxel/core'
+import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import {
 	createContextPluginLogPolicyStore,
@@ -566,6 +567,7 @@ export async function createStaticRuntimeHost(
 	internal: {
 		deployment?: StaticRuntimeHostDeployment
 		installWorkbench?: StaticRuntimeWorkbenchInstaller
+		product?: ProductDescriptor | null
 	} = {},
 ): Promise<StaticRuntimeHost> {
 	const logging = createRuntimeLogging(resolveStaticRuntimeLoggingInput(definition, options))
@@ -581,7 +583,7 @@ export async function createStaticRuntimeHost(
 			if (!internal.installWorkbench) {
 				throw new Error('[runtime-static] Workbench installer is not available for this host')
 			}
-			internal.installWorkbench(host.ctx)
+			internal.installWorkbench(host.ctx, { product: internal.product ?? null })
 		}
 		await host.prepare()
 		return host
@@ -600,7 +602,10 @@ export type StaticRuntimeHostDeployment = {
 	workbenchIncluded: boolean
 }
 
-export type StaticRuntimeWorkbenchInstaller = (ctx: Context) => void
+export type StaticRuntimeWorkbenchInstaller = (
+	ctx: Context,
+	options: { product: ProductDescriptor | null },
+) => void
 
 function withStaticRuntimeDeployment(
 	options: StaticRuntimeHostOptions,
