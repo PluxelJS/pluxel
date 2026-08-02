@@ -44,6 +44,7 @@ export class DiscordBotManager {
 	private readonly configs = new Map<string, BotAccountConfig>()
 	private readonly mutations = new KeyedSerialExecutor<string>()
 	private readonly listeners = new Set<() => void>()
+	private readonly syncedCatalogs = new Map<string, Readonly<{ epoch: number; revision: number }>>()
 	private commandSyncTail: Promise<void> = Promise.resolve()
 	private disposed = false
 
@@ -118,7 +119,10 @@ export class DiscordBotManager {
 		const id = normalizeBotId(idInput)
 		await this.mutations.run(id, async () => {
 			this.assertActive()
+			const bot = this.registryState.registry.get(id)
+			if (bot?.snapshot().state === 'ready') await this.withdrawCommands(bot)
 			await this.accounts.remove(id)
+			await this.managedCommands.delete(id)
 			await this.options.ctx.vault.flush()
 			this.uninstall(id)
 		})
@@ -161,10 +165,14 @@ export class DiscordBotManager {
 		const catalog = this.options.commandCatalog()
 		await Promise.all(
 			[...this.registryState.registry.values()].map(async (bot) => {
-				if (bot.snapshot().state !== 'ready') return
+				const snapshot = bot.snapshot()
+				if (snapshot.state !== 'ready') return
+				const synced = this.syncedCatalogs.get(bot.id)
+				if (synced?.epoch === snapshot.epoch && synced.revision === catalog.revision) return
 				const previous = await this.managedCommands.read(bot.id)
 				const current = await bot.refreshCommands(catalog, previous)
 				await this.managedCommands.write(bot.id, current)
+				this.syncedCatalogs.set(bot.id, { epoch: snapshot.epoch, revision: catalog.revision })
 			}),
 		)
 		await this.options.ctx.vault.flush()
@@ -193,6 +201,7 @@ export class DiscordBotManager {
 		this.disposers.get(id)?.()
 		this.disposers.delete(id)
 		this.configs.delete(id)
+		this.syncedCatalogs.delete(id)
 		this.publish()
 	}
 
@@ -208,6 +217,14 @@ export class DiscordBotManager {
 
 	private assertActive(): void {
 		if (this.disposed) throw new Error('Discord bot manager is stopped')
+	}
+
+	private async withdrawCommands(bot: DiscordBot): Promise<void> {
+		const previous = await this.managedCommands.read(bot.id)
+		await bot.refreshCommands(
+			{ revision: this.options.commandCatalog().revision, definitions: [] },
+			previous,
+		)
 	}
 
 	private reportError(error: unknown, botId: string): void {
