@@ -42,13 +42,14 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 | `telegram-hub-bridge` | Telegram codec、确认型入站 consumer 与 transport                              | 账号和连接生命周期     |
 | `kook`                | KOOK API、Bot registry、原始 event、typed command carrier、gateway 与账号管理 | ChatMessage 与 Hub     |
 | `kook-hub-bridge`     | KOOK codec、确认型入站 consumer 与 transport                                  | 账号和连接生命周期     |
+| `discord`             | Discord Bot/Vault/Workbench、消息组件与 owner-bound slash carrier             | Rhythm 或 ChatHub 业务 |
 | `builtins`            | 最小运维命令                                                                  | 框架级默认策略         |
 
 ## 依赖声明
 
 - 宿主拥有 `@pluxel/runtime`、`@pluxel/wretch`、React、Mantine 和 Tabler 等 singleton/shared UI 依赖，并显式安装 catalog 中的插件；平台插件通过 constructor 依赖 caller-bound Wretch capability，不自行持有全局 fetch、宿主并发队列或 HTTP 生命周期。
 - constructor 中的 required plugin capability 同样是 peer，由宿主选择并保证唯一实例；纯源码实现库如 `contracts`、`platform-kit` 仍是普通 dependency。
-- 平台包不得声明 `contracts` 或 `hub`。只有 `{platform}-hub-bridge` 桥接包声明这条依赖边，因而 Telegram/KOOK capability 可被平台专属插件单独使用。
+- 平台包不得声明 `contracts` 或 `hub`。只有 `{platform}-hub-bridge` 桥接包声明这条依赖边，因而 Telegram/KOOK/Discord capability 可被平台专属插件单独使用。
 - 平台管理 UI 与 Vault 账号生命周期仍由平台插件拥有；`ctx.workbench.mount()` 返回 `undefined` 时不会初始化管理状态或 UI。它们不另拆成常驻对接包。
 - `test/package-boundaries.test.ts` 固化上述边界，避免后续 import 或 manifest 修改重新引入反向依赖。
 - `projects/chatbots/packages/*` 放无插件实例身份的共享源码，`platforms/*` 放外部平台 capability
@@ -90,3 +91,4 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 31. 通用媒体 block 的 `url` 只承载目标 transport 可消费的跨平台资源。账号本地文件句柄不得伪装成 URL；Telegram `file_id` 等原生引用留在 JSON-safe metadata 和原生事件面，通用内容使用可读占位。下载、重传或平台内复用由显式平台插件实现，不能偷偷扩张 Hub 协议。
 32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。管理首页使用全宽 launcher；账号详情和创建流程通过平台自己的参数化 route 打开 Workbench 原生 Tab，平台诊断仍由精确的 Telegram/KOOK renderer 拥有。
 33. 通用 command 只依赖基础 `CommandContext`、返回结构化 output，可以同时进入 runtime catalog 与 typed carrier。跨平台消息命令按 schema 绑定到 `ChatCommandsPlugin` 的 argv router，由它构造 `ChatCommandContext`、授权并投影回复。KOOK carrier 把两种语义分成两个入口：普通 `defineCommand()` 通过 `commands.bind()` 绑定 argv 并强制提供 `respond`；KOOK 专属命令通过 `defineKookCommand()` 固定 `KookCommandContext` 和 void output，由 handler 自行回复，再用 `commands.register()` 发布。两类 KOOK route 都从 caller Context 自动取得消费插件 owner；手动 dispose 只撤销发布，owner/provider 停止会关闭 admission、组合取消 signal 并 drain 在途调用。KOOK router 命中后在 Hub bridge 前消费该 event，未命中才继续普通 consumer。Workbench 不伪造平台 event context。
+34. Discord carrier 使用同样的 portable Command，但 carrier syntax 是原生 application command：binding 显式映射 root/subcommand option、candidate、业务 context 和 terminal response。carrier 合并 root、同步 Bot 注册并拥有 interaction admission；不把 slash interaction 转成 ChatMessage，也不复制业务 schema 或 handler。

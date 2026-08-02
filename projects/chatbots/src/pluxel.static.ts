@@ -3,6 +3,7 @@ import { ChatBuiltinsPlugin } from '@repo/chatbots-builtins'
 import { ChatAccessPlugin } from '@repo/chatbots-access'
 import { ChatCommandsPlugin } from '@repo/chatbots-commands'
 import { ChatHubPlugin } from '@repo/chatbots-hub'
+import { DiscordPlugin } from '@repo/chatbots-discord'
 import { KookHubBridgePlugin } from '@repo/chatbots-kook-hub-bridge'
 import { KookPlugin } from '@repo/chatbots-kook'
 import { ChatSandboxPlugin } from '@repo/chatbots-sandbox'
@@ -20,6 +21,7 @@ export const chatbotsPlugins = [
 	ChatCommandsPlugin,
 	ChatBuiltinsPlugin,
 	ChatSandboxPlugin,
+	DiscordPlugin,
 	TelegramPlugin,
 	KookPlugin,
 	TelegramHubBridgePlugin,
@@ -34,6 +36,7 @@ export const chatbotsCatalogPluginIds = [
 	'ChatCommandsPlugin',
 	'ChatBuiltinsPlugin',
 	'ChatSandboxPlugin',
+	'DiscordPlugin',
 	'TelegramPlugin',
 	'KookPlugin',
 	'TelegramHubBridgePlugin',

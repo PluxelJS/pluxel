@@ -24,6 +24,7 @@ export default definePluxelVitestConfig(
 				workspaceAlias('packages', 'contracts'),
 				workspaceAlias('plugins', 'hub'),
 				workspaceAlias('plugins', 'commands'),
+				workspaceAlias('platforms', 'discord'),
 				workspaceAlias('platforms', 'kook'),
 				workspaceAlias('platforms', 'kook-hub-bridge'),
 				workspaceAlias('platforms', 'telegram'),

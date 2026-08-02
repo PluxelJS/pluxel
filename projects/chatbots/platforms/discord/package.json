@@ -1,0 +1,40 @@
+{
+	"name": "@repo/chatbots-discord",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@repo/chatbots-platform-kit": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/react": "catalog:"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:",
+		"@pluxel/commands": "workspace:*",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@tabler/icons-react": "catalog:",
+		"discord.js": "catalog:",
+		"react": "catalog:"
+	},
+	"peerDependenciesMeta": {
+		"@mantine/core": {
+			"optional": true
+		},
+		"@tabler/icons-react": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		}
+	}
+}

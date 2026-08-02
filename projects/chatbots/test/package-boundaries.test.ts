@@ -61,16 +61,19 @@ describe('chatbots package boundaries', () => {
 		expect(viteConfig).not.toContain("'@pluxel/wretch/workbench':")
 	})
 
-	it.each(['telegram', 'kook'])('%s stays independent from ChatHub contracts', (name) => {
-		const manifest = platformPackageJson(name)
-		const declared = { ...manifest.dependencies, ...manifest.peerDependencies }
-		expect(declared).not.toHaveProperty('@repo/chatbots-contracts')
-		expect(declared).not.toHaveProperty('@repo/chatbots-hub')
+	it.each(['telegram', 'kook', 'discord'])(
+		'%s stays independent from ChatHub contracts',
+		(name) => {
+			const manifest = platformPackageJson(name)
+			const declared = { ...manifest.dependencies, ...manifest.peerDependencies }
+			expect(declared).not.toHaveProperty('@repo/chatbots-contracts')
+			expect(declared).not.toHaveProperty('@repo/chatbots-hub')
 
-		const contents = platformSource(name)
-		expect(contents).not.toContain('@repo/chatbots-contracts')
-		expect(contents).not.toContain('@repo/chatbots-hub')
-	})
+			const contents = platformSource(name)
+			expect(contents).not.toContain('@repo/chatbots-contracts')
+			expect(contents).not.toContain('@repo/chatbots-hub')
+		},
+	)
 
 	it.each(['telegram', 'kook'])('%s uses the host-owned Wretch capability', (name) => {
 		const manifest = platformPackageJson(name)
@@ -82,6 +85,14 @@ describe('chatbots package boundaries', () => {
 
 	it('uses the host-owned command kernel for the KOOK typed carrier', () => {
 		const manifest = platformPackageJson('kook')
+		expect(manifest.dependencies).not.toHaveProperty('@pluxel/commands')
+		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
+		expect(manifest.dependencies).not.toHaveProperty('@pluxel/core')
+		expect(manifest.peerDependencies).toHaveProperty('@pluxel/core', 'workspace:*')
+	})
+
+	it('uses the host-owned command kernel for the Discord slash carrier', () => {
+		const manifest = platformPackageJson('discord')
 		expect(manifest.dependencies).not.toHaveProperty('@pluxel/commands')
 		expect(manifest.peerDependencies).toHaveProperty('@pluxel/commands', 'workspace:*')
 		expect(manifest.dependencies).not.toHaveProperty('@pluxel/core')

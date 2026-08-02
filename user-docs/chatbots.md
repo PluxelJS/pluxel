@@ -1,12 +1,12 @@
 # Chatbots 项目
 
-`projects/chatbots` 是固定 catalog 的聊天机器人宿主，同时提供跨平台业务层和 Telegram、KOOK 原生平台能力。
+`projects/chatbots` 是固定 catalog 的聊天机器人宿主，同时提供跨平台业务层和 Telegram、KOOK、Discord 原生平台能力。
 
 ## 选择依赖
 
 - 跨平台命令依赖 `ChatCommandsPlugin`，把 `@pluxel/commands` 定义绑定为消息 route，并让返回的 registration 由当前插件 effects 持有。
 - 跨平台非命令处理依赖 `ChatHubPlugin`，消费 JSON-safe `ChatMessage`。
-- 平台专属事件或 API 直接依赖 `TelegramPlugin` 或 `KookPlugin`，从只读 `bots` registry 取得账号。
+- 平台专属事件或 API 直接依赖 `TelegramPlugin`、`KookPlugin` 或 `DiscordPlugin`，从只读 `bots` registry 取得账号。
 - 只有需要把该平台接入跨平台消息管线时，宿主才安装 `TelegramHubBridgePlugin` 或 `KookHubBridgePlugin`；平台专属插件不依赖 bridge 或 Hub。
 - 不把平台 SDK 对象、session 或发送方法写入 `ChatMessage.metadata`。
 
@@ -60,6 +60,17 @@ bot.events.group_message.on(async (event, signal) => {
 `temp_target_id` 是 KOOK 的频道临时消息：消息只对指定用户可见。需要延迟删除时，在发送成功后把 `msg_id`
 交给业务已有的 scheduler；核心不使用进程内 timer 冒充可恢复任务。事件 listener 或命令中的网络调用应通过
 `withSignal(signal)` 组合调用方生命周期；句柄本身始终随 Bot 销毁而取消。
+
+## Discord 原生 slash 命令
+
+`DiscordPlugin` 拥有 Gateway、Vault Bot registry、消息组件和 application command 同步，但不依赖 ChatHub。
+业务插件通过 `discord.commands.bind(command, projection)` 复用已有 `@pluxel/commands` 定义；projection 只映射
+root/subcommand、Discord options、candidate、请求 context 与 terminal response。多个 subcommand 会合并为同一
+root command，目录变化后只合并同步已就绪 Bot，不删除 application 的其他命令。
+
+binding 从调用方 Context 取得 owner；消费插件停止时会撤销 route、取消并 drain 在途 interaction。需要业务
+capability 的 Command 必须显式提供 `context(source)`，不得在 Discord adapter 复制 schema 或 handler，也不得把
+原生 slash interaction 伪装为 `ChatMessage`。
 
 ## KOOK 实用 Card
 
@@ -218,7 +229,7 @@ route，不取消已经开始的调用；消费插件或 KOOK provider 停止时
 
 平台插件的 `upsertBot()` 返回已安装的受管 Bot，`reconnectBot()/disconnectBot()` 返回平台状态，`removeBot()` 不返回管理 DTO。管理 RPC 只服务配置页面，不是业务插件 API。
 
-平台插件 required-depend `WretchPlugin`，所有 API 请求使用 caller-bound 原生 Wretch base，自动继承宿主的 timeout、并发、等待队列、origin policy 和 lifecycle cancellation。Telegram `retry_after` 或 KOOK HTTP `Retry-After` 仍由每个 Bot 的平台 gate 处理，只延迟后续请求，不重放当前失败调用。
+Telegram/KOOK 平台插件 required-depend `WretchPlugin`，所有 HTTP API 请求使用 caller-bound 原生 Wretch base，自动继承宿主的 timeout、并发、等待队列、origin policy 和 lifecycle cancellation。Telegram `retry_after` 或 KOOK HTTP `Retry-After` 仍由每个 Bot 的平台 gate 处理，只延迟后续请求，不重放当前失败调用。
 
 ## 顺序、背压与重试
 

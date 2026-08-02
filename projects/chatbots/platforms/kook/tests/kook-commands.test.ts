@@ -1,4 +1,4 @@
-import { defineCommand } from '@pluxel/commands'
+import { defineCommand, type CommandContext } from '@pluxel/commands'
 import { tail } from '@pluxel/commands/argv'
 import { Type, obj } from '@pluxel/commands/typebox'
 import {
@@ -27,6 +27,19 @@ const portableCommand = defineCommand({
 	input,
 	output,
 	execute: ({ text }) => ({ reply: text }),
+})
+
+interface ActorCommandContext extends CommandContext {
+	readonly actorId: string
+}
+
+const actorCommand = defineCommand<typeof input, typeof output, ActorCommandContext>({
+	name: 'portable.actor',
+	description: 'Read one carrier-projected actor identity.',
+	behavior: { kind: 'query', world: 'closed' },
+	input,
+	output,
+	execute: ({ text }, context) => ({ reply: `${context.actorId}:${text}` }),
 })
 
 const kookCommand = defineKookCommand({
@@ -67,6 +80,18 @@ function assertContextDirection(
 ) {
 	commands.bind(portableCommand, {
 		routes: ['portable'],
+		tail: tail.text('text'),
+		respond: () => undefined,
+	})
+	commands.bind(actorCommand, {
+		routes: ['actor'],
+		tail: tail.text('text'),
+		context: (source) => ({ signal: source.signal, actorId: source.event.author_id }),
+		respond: () => undefined,
+	})
+	// @ts-expect-error A command with required custom context needs an explicit KOOK projection.
+	commands.bind(actorCommand, {
+		routes: ['actor-without-context'],
 		tail: tail.text('text'),
 		respond: () => undefined,
 	})
@@ -255,6 +280,45 @@ describe('KOOK command carrier', () => {
 		} finally {
 			kookRegistration.dispose()
 			runtimeRegistration.dispose()
+			carrier.dispose()
+			bot.$.destroy()
+			await runtime.dispose()
+		}
+	})
+
+	it('projects KOOK invocation facts into a required portable command context', async () => {
+		const runtime = createRuntimeContext()
+		const requests: Request[] = []
+		const bot = new KookBot({
+			id: 'projected',
+			ctx: runtime.ctx,
+			http: wretch().fetchPolyfill(async (request, init) => {
+				requests.push(new Request(request, init))
+				return Response.json({
+					code: 0,
+					message: 'ok',
+					data: { msg_id: 'reply-1', msg_timestamp: 1, nonce: 'nonce-1' },
+				})
+			}),
+			token: 'secret',
+		})
+		const carrier = new KookCommandCarrier(runtime.ctx)
+		const registration = carrier.forOwner(runtime.ctx).bind(actorCommand, {
+			routes: ['actor'],
+			tail: tail.text('text'),
+			context: (source) => ({ signal: source.signal, actorId: source.event.author_id }),
+			respond: async ({ reply }, source) => {
+				await source.reply(reply)
+			},
+		})
+
+		try {
+			await expect(
+				carrier.dispatch(bot, event('/actor hello'), new AbortController().signal),
+			).resolves.toBe(true)
+			expect(await requests[0]?.json()).toMatchObject({ content: 'user-1:hello' })
+		} finally {
+			registration.dispose()
 			carrier.dispose()
 			bot.$.destroy()
 			await runtime.dispose()

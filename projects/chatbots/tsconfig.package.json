@@ -21,6 +21,7 @@
 			"@repo/chatbots-contracts": ["./packages/contracts/src/index.ts"],
 			"@repo/chatbots-hub": ["./plugins/hub/src/index.ts"],
 			"@repo/chatbots-commands": ["./plugins/commands/src/index.ts"],
+			"@repo/chatbots-discord": ["./platforms/discord/src/index.ts"],
 			"@repo/chatbots-kook": ["./platforms/kook/src/index.ts"],
 			"@repo/chatbots-kook-hub-bridge": ["./platforms/kook-hub-bridge/src/index.ts"],
 			"@repo/chatbots-telegram": ["./platforms/telegram/src/index.ts"],

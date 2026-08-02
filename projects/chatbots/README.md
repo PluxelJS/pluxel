@@ -11,6 +11,7 @@
 - `ChatSandboxPlugin`：无需平台凭据即可进行 HTTP 或管理界面端到端测试。
 - `TelegramPlugin`：Telegram long polling capability，使用 Wretch 出站能力和 Vault 多账号管理。
 - `KookPlugin`：KOOK gateway capability、完整 v3 原生 API 和 Vault 多账号管理。
+- `DiscordPlugin`：Discord Gateway、Vault 多账号、消息/按钮能力与 owner-bound 原生 slash carrier。
 - `TelegramHubBridgePlugin` / `KookHubBridgePlugin`：独立、可省略的平台 codec 与 ChatHub transport 桥。
 
 ## 运行
@@ -70,7 +71,7 @@ KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会
 
 ## 源码组织
 
-外部平台边界统一位于 `platforms/*`：Telegram、KOOK、Sandbox 以及两个可选 Hub bridge；
+外部平台边界统一位于 `platforms/*`：Telegram、KOOK、Discord、Sandbox 以及两个可选 Hub bridge；
 产品和业务能力位于 `plugins/*`：Hub、Access、Commands 与 Builtins；无插件实例身份的共享实现
 位于 `packages/*`。目录只表达所有权和依赖方向，不承担平台清单注册：每个平台仍通过自己的
 Workbench contract 自主加入统一的 `bots` navigation group。
@@ -79,7 +80,7 @@ Workbench contract 自主加入统一的 `bots` navigation group。
 
 两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的 launcher、表单和操作壳层；平台自行声明 `/accounts/:accountId` 与 `/create` 非导航 route，公共 UI 只调用宿主 `openTab()`，不依赖宿主组件或 router。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
 
-`telegram` 与 `kook` 平台包不依赖 `contracts` 或 `hub`，只提供原生 API、Bot registry、原始事件、连接状态机、Vault 账号生命周期和可选管理 UI。它们 required-depend 官方 `WretchPlugin`。`telegram-hub-bridge` 与 `kook-hub-bridge` 是独立桥接插件，拥有平台 codec、checkpoint-critical 入站 consumer 和 ChatHub transport。
+`telegram`、`kook` 与 `discord` 平台包不依赖 `contracts` 或 `hub`，只提供平台 capability、Bot registry、连接状态机、Vault 账号生命周期和可选管理 UI。Discord 额外提供原生 slash command carrier；`telegram-hub-bridge` 与 `kook-hub-bridge` 是独立桥接插件，拥有平台 codec、checkpoint-critical 入站 consumer 和 ChatHub transport。
 
 bridge 的入站和出站工作绑定自身生命周期：stop、启动回滚或 HMR replacement 会取消在途 Hub receive/API send，再卸载 transport 与 consumer。入站 consumer 为每个事件冻结注册顺序并 fail-fast；运行中新增或移除 consumer 只影响下一个 checkpoint。
 
@@ -242,6 +243,12 @@ this.kook.commands.bind(weather, {
 `respond`。两者都会从 caller Context 取得消费插件 owner，自动随该插件停止、替换或启动回滚撤销 route，调用方
 不应再包一层 `effects.own()`。手动 `registration.dispose()` 只撤销发布，已经接纳的调用可以完成；owner 停止则会
 abort 并 drain 在途调用。命令中的额外 IO 应传递 `ctx.signal`，`ctx.reply()` 已自动把它传给 KOOK HTTP 请求。
+
+Discord 原生 slash 命令通过 `DiscordPlugin.commands.bind()` 绑定同一个 `Command`。binding 只声明 root、
+subcommand、Discord option builder、candidate/context 映射和 terminal response；输入校验与业务 handler 仍由
+`@pluxel/commands` 唯一拥有。route 从 caller Context 自动取得 owner，插件停止时撤销注册、取消并 drain 在途
+interaction。多个 subcommand 共享一个 root 时，carrier 合并为一条 application command，并在目录变更后合并
+同步已就绪的 Bot；它不会依赖 ChatHub 或把 slash 伪装成聊天文本。
 命中 route 后不会再把同一 event 交给 Hub bridge。要求 `KookCommandContext` 的原生命令不能进入 runtime 通用
 catalog。
 

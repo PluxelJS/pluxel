@@ -23,6 +23,7 @@ catalog:
   '@types/react': ^19.2.14
   '@types/react-dom': ^19.2.3
   drizzle-orm: ^0.45.2
+  discord.js: ^14.27.0
   react: ^19.2.7
   react-dom: ^19.2.7
   redis: ^6.1.0

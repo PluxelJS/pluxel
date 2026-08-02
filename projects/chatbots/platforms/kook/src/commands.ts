@@ -58,10 +58,21 @@ export function defineKookCommand<SIn extends ObjectSchema>(
 	return command as KookCommand<Wire<SIn>>
 }
 
-/** KOOK syntax and terminal response projection for a portable Command. */
-export type KookCommandProjection<Input, Output> = ArgvBinding<Input> & {
-	respond(output: Output, context: KookCommandContext): void | Promise<void>
-}
+type KookContextProjection<CommandCtx extends CommandContext> = CommandContext extends CommandCtx
+	? { context?: never }
+	: { context(source: KookCommandContext): CommandCtx }
+
+/** KOOK syntax, invocation-context mapping, and terminal response projection for a Command. */
+export type KookCommandProjection<
+	Input,
+	Output,
+	CommandCtx extends CommandContext = CommandContext,
+> = ArgvBinding<Input> &
+	KookContextProjection<CommandCtx> & {
+		respond(output: Output, context: KookCommandContext): void | Promise<void>
+		/** Return a safe terminal message for a command-specific failure, or defer to the carrier. */
+		presentError?(error: unknown, context: KookCommandContext): string | undefined
+	}
 
 /**
  * Owner-bound KOOK command routes.
@@ -81,16 +92,18 @@ export interface KookCommands {
 	 *
 	 * The route belongs to the calling plugin and is withdrawn when that plugin stops.
 	 */
-	bind<Input, Output>(
-		command: Command<Input, Output, CommandContext>,
-		projection: KookCommandProjection<Input, Output>,
+	bind<Input, Output, Context extends CommandContext>(
+		command: Command<Input, Output, Context>,
+		projection: KookCommandProjection<Input, Output, Context>,
 	): Registration
 	list(): readonly ArgvCommandDescriptor[]
 }
 
 type ActiveBinding = {
 	owner: Context
+	execute(candidate: unknown, context: KookCommandContext): Promise<unknown>
 	respond: ((output: unknown, context: KookCommandContext) => void | Promise<void>) | undefined
+	presentError: ((error: unknown, context: KookCommandContext) => string | undefined) | undefined
 	dispose(): void
 }
 
@@ -120,9 +133,9 @@ export class KookCommandCarrier {
 		view = Object.freeze({
 			register: <Input>(command: KookCommand<Input>, binding: ArgvBinding<Input>) =>
 				this.register(owner, command, binding),
-			bind: <Input, Output>(
-				command: Command<Input, Output, CommandContext>,
-				projection: KookCommandProjection<Input, Output>,
+			bind: <Input, Output, CommandCtx extends CommandContext>(
+				command: Command<Input, Output, CommandCtx>,
+				projection: KookCommandProjection<Input, Output, CommandCtx>,
 			) => this.bind(owner, command, projection),
 			list: () => this.list(),
 		})
@@ -138,11 +151,12 @@ export class KookCommandCarrier {
 		const source = commandSource(bot, event, this.prefix())
 		if (source === undefined) return false
 		let context: KookCommandContext | undefined
+		let binding: ActiveBinding | undefined
 
 		try {
 			const resolution = this.router.resolve(source)
 			if (!resolution) return false
-			const binding = this.bindings.get(resolution.command.name)!
+			binding = this.bindings.get(resolution.command.name)!
 			let carrierLease: OwnerInvocationLease | undefined
 			let ownerLease: OwnerInvocationLease | undefined
 			try {
@@ -152,7 +166,7 @@ export class KookCommandCarrier {
 						? carrierLease
 						: enterInvocation(binding.owner, carrierLease.signal)
 				context = createKookCommandContext(bot, event, ownerLease.signal)
-				const output = await resolution.command.executeOrThrow(resolution.candidate, context)
+				const output = await binding.execute(resolution.candidate, context)
 				await binding.respond?.(output, context)
 				return true
 			} finally {
@@ -163,6 +177,11 @@ export class KookCommandCarrier {
 			if (signal.aborted) throw signal.reason ?? error
 			if (context?.signal.aborted || isCancellation(error)) return true
 			context ??= createKookCommandContext(bot, event, signal)
+			const presented = binding?.presentError?.(error, context)
+			if (presented !== undefined) {
+				await context.reply(presented)
+				return true
+			}
 			await this.reportFailure(error, context)
 			return true
 		}
@@ -187,13 +206,20 @@ export class KookCommandCarrier {
 				'KOOK-native commands respond inside execute(); binding.respond is invalid',
 			)
 		}
-		return this.install(owner, command, binding)
+		return this.install(
+			owner,
+			command,
+			binding,
+			(candidate, context) => command.executeOrThrow(candidate, context),
+			undefined,
+			undefined,
+		)
 	}
 
-	private bind<Input, Output>(
+	private bind<Input, Output, CommandCtx extends CommandContext>(
 		owner: Context,
-		command: Command<Input, Output, CommandContext>,
-		projection: KookCommandProjection<Input, Output>,
+		command: Command<Input, Output, CommandCtx>,
+		projection: KookCommandProjection<Input, Output, CommandCtx>,
 	): Registration {
 		if (isKookCommand(command)) {
 			throw new TypeError('commands.bind() accepts portable commands; use commands.register()')
@@ -201,18 +227,34 @@ export class KookCommandCarrier {
 		if (typeof projection.respond !== 'function') {
 			throw new TypeError('commands.bind() requires a respond function')
 		}
-		const { respond, ...binding } = projection
-		return this.install(owner, command, binding, respond)
+		const { respond, presentError, context: projectContext, ...binding } = projection
+		return this.install(
+			owner,
+			command,
+			binding,
+			(candidate, context) =>
+				command.executeOrThrow(
+					candidate,
+					(projectContext ? projectContext(context) : context) as CommandCtx,
+				),
+			respond,
+			presentError,
+		)
 	}
 
-	private install<Input, Output>(
+	private install<Input, Output, CommandCtx extends CommandContext>(
 		owner: Context,
-		command: Command<Input, Output, KookCommandContext>,
+		command: Command<Input, Output, CommandCtx>,
 		binding: ArgvBinding<Input>,
+		execute: (candidate: unknown, context: KookCommandContext) => Promise<Output>,
 		respond?: (output: Output, context: KookCommandContext) => void | Promise<void>,
+		presentError?: (error: unknown, context: KookCommandContext) => string | undefined,
 	): Registration {
 		this.assertActive()
-		const registration = this.router.bind(command, binding)
+		const registration = this.router.bind(
+			command as unknown as Command<Input, Output, KookCommandContext>,
+			binding,
+		)
 		let published = true
 		let guard: { cancel(): void } | undefined
 		let active!: ActiveBinding
@@ -224,9 +266,11 @@ export class KookCommandCarrier {
 		}
 		active = {
 			owner,
+			execute,
 			respond: respond as
 				| ((output: unknown, context: KookCommandContext) => void | Promise<void>)
 				| undefined,
+			presentError,
 			dispose: () => {
 				guard?.cancel()
 				cleanup()
