@@ -66,11 +66,16 @@ bot.events.group_message.on(async (event, signal) => {
 `DiscordPlugin` 拥有 Gateway、Vault Bot registry、消息组件和 application command 同步，但不依赖 ChatHub。
 业务插件通过 `discord.commands.bind(command, projection)` 复用已有 `@pluxel/commands` 定义；projection 只映射
 root/subcommand、Discord options、candidate、请求 context 与 terminal response。多个 subcommand 会合并为同一
-root command，目录变化后只合并同步已就绪 Bot，不删除 application 的其他命令。
+root command。同步按 Bot 严格串行，并持久记录 carrier 管理过的 root；目录变化或进程重启后会撤销陈旧 root，
+但不删除 application 的其他命令。
 
 binding 从调用方 Context 取得 owner；消费插件停止时会撤销 route、取消并 drain 在途 interaction。需要业务
 capability 的 Command 必须显式提供 `context(source)`，不得在 Discord adapter 复制 schema 或 handler，也不得把
 原生 slash interaction 伪装为 `ChatMessage`。
+
+组件按钮通过 `discord.interactions.on(customIdPrefix, handler)` 注册。它按最长 prefix 路由，并从 caller
+Context 自动取得 owner；插件停止会撤销 route、组合取消 signal 并 drain 已开始的 handler，无需手动把 disposer
+塞入 effects。
 
 ## KOOK 实用 Card
 

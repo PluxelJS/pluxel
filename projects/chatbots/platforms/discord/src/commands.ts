@@ -58,9 +58,13 @@ export interface DiscordCommands {
 	list(): readonly RESTPostAPIChatInputApplicationCommandsJSONBody[]
 }
 
+export type DiscordCommandCatalogSnapshot = Readonly<{
+	revision: number
+	definitions: readonly RESTPostAPIChatInputApplicationCommandsJSONBody[]
+}>
+
 type ActiveBinding = Readonly<{
 	owner: Context
-	commandName: string
 	root: Readonly<{ name: string; description: string }>
 	subcommand: DiscordCommandProjection<unknown, unknown, CommandContext>['subcommand']
 	input(source: DiscordCommandSource): unknown
@@ -74,6 +78,8 @@ export class DiscordCommandCarrier {
 	private readonly bindings = new Map<string, ActiveBinding>()
 	private readonly views = new WeakMap<Context, DiscordCommands>()
 	private readonly ownersWithInvocationCleanup = new WeakSet<Context>()
+	private revision = 0
+	private snapshotCache?: DiscordCommandCatalogSnapshot
 	private active = true
 
 	constructor(
@@ -99,13 +105,18 @@ export class DiscordCommandCarrier {
 	}
 
 	list(): readonly RESTPostAPIChatInputApplicationCommandsJSONBody[] {
+		return this.snapshot().definitions
+	}
+
+	snapshot(): DiscordCommandCatalogSnapshot {
+		if (this.snapshotCache) return this.snapshotCache
 		const groups = new Map<string, ActiveBinding[]>()
 		for (const binding of this.bindings.values()) {
 			const group = groups.get(binding.root.name)
 			if (group) group.push(binding)
 			else groups.set(binding.root.name, [binding])
 		}
-		return Object.freeze(
+		const definitions = Object.freeze(
 			[...groups.values()]
 				.sort(([left], [right]) => left!.root.name.localeCompare(right!.root.name))
 				.map((bindings) => {
@@ -126,6 +137,7 @@ export class DiscordCommandCarrier {
 					return builder.toJSON()
 				}),
 		)
+		return (this.snapshotCache = Object.freeze({ revision: this.revision, definitions }))
 	}
 
 	async dispatch(source: DiscordCommandSource): Promise<boolean> {
@@ -192,12 +204,11 @@ export class DiscordCommandCarrier {
 			published = false
 			if (this.bindings.get(key) === active) {
 				this.bindings.delete(key)
-				this.onChanged()
+				this.publishChanged()
 			}
 		}
 		active = {
 			owner,
-			commandName: command.name,
 			root: projection.root,
 			subcommand: projection.subcommand,
 			input: projection.input,
@@ -214,7 +225,7 @@ export class DiscordCommandCarrier {
 			},
 		}
 		this.bindings.set(key, active)
-		this.onChanged()
+		this.publishChanged()
 		try {
 			this.ownInvocationCleanup(owner)
 			guard = owner.effects.defer(cleanup, { tag: `DiscordCommand:${command.name}` })
@@ -245,6 +256,12 @@ export class DiscordCommandCarrier {
 
 	private assertActive(): void {
 		if (!this.active) throw new Error('Discord command carrier is stopped')
+	}
+
+	private publishChanged(): void {
+		this.revision += 1
+		this.snapshotCache = undefined
+		this.onChanged()
 	}
 }
 

@@ -1,13 +1,13 @@
 export { DiscordPlugin } from './plugin.ts'
 export type { DiscordCommandProjection, DiscordCommandSource, DiscordCommands } from './commands.ts'
+export type { DiscordButtonConsumer, DiscordInteractions } from './interactions.ts'
 export type {
 	DiscordActivity,
 	DiscordBot,
 	DiscordBotConfigInput,
 	DiscordBotDirectory,
 	DiscordBotSnapshot,
-	DiscordInteractionConsumer,
-	DiscordInteractionContext,
+	DiscordButtonContext,
 	DiscordMessage,
 	DiscordMessageButton,
 	DiscordVoiceHuman,

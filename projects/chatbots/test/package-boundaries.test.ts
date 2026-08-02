@@ -124,6 +124,21 @@ describe('chatbots package boundaries', () => {
 		expect(botEntries).not.toContain('protocol.ts')
 	})
 
+	it('keeps Discord plugin composition separate from Bot and command synchronization', () => {
+		const plugin = platformSourceFile('discord', 'plugin.ts')
+		const manager = platformSourceFile('discord', 'bot/manager.ts')
+		const bot = platformSourceFile('discord', 'bot/bot.ts')
+		expect(plugin).toContain("from './bot/manager.ts'")
+		expect(plugin).toContain("from './bot/bot.ts'")
+		expect(plugin).not.toContain('BotAccountStore')
+		expect(plugin).not.toContain('class DiscordBotManager')
+		expect(plugin).not.toContain('class DiscordBot implements')
+		expect(manager).toContain('BotAccountStore')
+		expect(manager).toContain('createBotRegistry')
+		expect(manager).toContain('KeyedSerialExecutor')
+		expect(bot).toContain('reconcileDiscordCommands')
+	})
+
 	it.each(['telegram', 'kook'])(
 		'%s owns its Workbench route inside the shared Bots navigation group',
 		(name) => {

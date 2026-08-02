@@ -247,8 +247,9 @@ abort 并 drain 在途调用。命令中的额外 IO 应传递 `ctx.signal`，`c
 Discord 原生 slash 命令通过 `DiscordPlugin.commands.bind()` 绑定同一个 `Command`。binding 只声明 root、
 subcommand、Discord option builder、candidate/context 映射和 terminal response；输入校验与业务 handler 仍由
 `@pluxel/commands` 唯一拥有。route 从 caller Context 自动取得 owner，插件停止时撤销注册、取消并 drain 在途
-interaction。多个 subcommand 共享一个 root 时，carrier 合并为一条 application command，并在目录变更后合并
-同步已就绪的 Bot；它不会依赖 ChatHub 或把 slash 伪装成聊天文本。
+interaction。多个 subcommand 共享一个 root 时，carrier 合并为一条 application command。每个 Bot 的同步严格
+串行，并在 Vault 记录 carrier 管理过的 root；HMR 或重启后会撤销已消失的 root，但不会删除其他 application
+command。按钮使用 `DiscordPlugin.interactions.on(prefix, handler)`，同样自动绑定 caller owner、取消与 drain。
 命中 route 后不会再把同一 event 交给 Hub bridge。要求 `KookCommandContext` 的原生命令不能进入 runtime 通用
 catalog。
 

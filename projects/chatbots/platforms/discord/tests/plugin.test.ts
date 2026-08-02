@@ -11,7 +11,7 @@ class DiscordInteractionConsumerTestPlugin extends BasePlugin {
 	}
 
 	override init(): void {
-		this.ctx.effects.defer(this.discord.registerInteractionConsumer('test:', () => undefined))
+		this.discord.interactions.on('test:', () => undefined)
 	}
 }
 setParamToken(DiscordInteractionConsumerTestPlugin, 0, DiscordPlugin)
@@ -77,14 +77,14 @@ describe('Discord client plugin', () => {
 				await host.commit()
 
 				const discord = host.require(DiscordPlugin)
-				expect(() => discord.registerInteractionConsumer('test:', () => undefined)).toThrow(
+				expect(() => discord.interactions.on('test:', () => undefined)).toThrow(
 					/interaction prefix is already registered/,
 				)
 
 				host.remove(DiscordInteractionConsumerTestPlugin)
 				await host.commit()
-				const unregister = discord.registerInteractionConsumer('test:', () => undefined)
-				unregister()
+				const registration = discord.interactions.on('test:', () => undefined)
+				registration.dispose()
 			},
 			{ workbench: false },
 		)

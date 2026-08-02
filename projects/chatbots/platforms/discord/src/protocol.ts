@@ -75,13 +75,8 @@ type DiscordInteractionBase = Readonly<{
 	responded(): boolean
 }>
 
-export type DiscordInteractionContext =
-	| (DiscordInteractionBase & Readonly<{ kind: 'command'; guildId: string }>)
-	| (DiscordInteractionBase & Readonly<{ kind: 'button'; customId: string }>)
-
-export type DiscordInteractionConsumer = (
-	context: Extract<DiscordInteractionContext, Readonly<{ kind: 'button' }>>,
-) => void | Promise<void>
+export type DiscordButtonContext = DiscordInteractionBase &
+	Readonly<{ kind: 'button'; customId: string }>
 
 export interface DiscordBotDirectory {
 	list(): readonly DiscordBotSnapshot[]
