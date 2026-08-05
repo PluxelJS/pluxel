@@ -1,10 +1,49 @@
-import type { LoaderHmrWorkspaceSnapshot } from '@pluxel/runtime-dynamic/hmr'
+import {
+	bootPlannedLoaderHmrHost,
+	planLoaderHmrHostFromConfig,
+	type LoaderHmrWorkspaceSnapshot,
+} from '@pluxel/runtime-dynamic/hmr'
 import { createFixture } from '@pluxel/test/fixtures'
 import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
+	it('initializes plugin config from the dynamic host environment', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
+			'pluxel.loader.hmr.jsonc': [
+				'{',
+				'  "version": 1,',
+				'  "profile": "dev",',
+				'  "defaults": { "roots": "auto" },',
+				'  "profiles": { "dev": { "enabled": [] } }',
+				'}',
+				'',
+			].join('\n'),
+		})
+
+		const plan = await planLoaderHmrHostFromConfig({
+			root: fixture.path,
+			fs: fixture.fs,
+			chdir: false,
+			logging: false,
+			configService: { mode: 'memory' },
+			runtimeState: { mode: 'memory' },
+			env: {
+				PLUXEL_CONFIG__ExamplePlugin__config__endpoint: 'https://api.example.test',
+			},
+		})
+		const host = await bootPlannedLoaderHmrHost(plan)
+		try {
+			expect(host.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
+				config: { endpoint: 'https://api.example.test' },
+			})
+		} finally {
+			await host.stop()
+		}
+	})
+
 	it('stores config and runtime state under the shared persistence root', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),

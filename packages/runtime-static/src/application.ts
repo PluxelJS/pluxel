@@ -5,6 +5,7 @@ import type {
 	StaticRuntimeHostOptions,
 	StaticRuntimeStartupContext,
 } from './types'
+import { withPluginConfigEnvironment } from '@pluxel/runtime/internal'
 
 const STATIC_RUNTIME_APPLICATION_MARKER = Symbol.for('pluxel.staticRuntimeApplication')
 
@@ -71,7 +72,8 @@ export async function resolveStaticRuntimeHostOptions<TBindings extends StaticRu
 	assertKnownFields(options, HOST_OPTION_FIELDS, '[runtime-static] configure() result')
 	assertPublicHttpConfig(options.http, '[runtime-static] configure() result')
 	assertPublicContextConfig(options.context, '[runtime-static] configure() result')
-	return options
+	const configService = withPluginConfigEnvironment(options.configService, startup.env)
+	return configService === options.configService ? options : { ...options, configService }
 }
 
 function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: string): void {

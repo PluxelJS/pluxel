@@ -51,6 +51,10 @@ UI/RPC 往往需要：
 
 上层运行时通过继承 `ConfigService` 并覆盖受保护的加载、可变策略与 mutation hook 增加 I/O。record/revision/validation 状态必须继续由 core 基类持有，避免出现第二套配置引擎。
 
+当前 persistent runtime 还会把 host 提供的 `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]`
+environment record 合并进初始 snapshot；这仍只是 raw record 的启动来源，校验、默认回填和 revision 全部由本 core
+service 处理。已有 file config 在加载后替换启动 snapshot。
+
 ## 测试策略
 
 优先用 core test host 走真实插件启动流程：

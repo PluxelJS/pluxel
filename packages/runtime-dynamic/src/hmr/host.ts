@@ -13,6 +13,7 @@ import {
 	resolvePackagedNodeModule,
 	resolveRuntimeStoragePaths,
 	workbenchAdminAccess,
+	withPluginConfigEnvironment,
 	withWorkbenchPluginContext,
 	type RuntimeLogging,
 	type RuntimeLoggingInput,
@@ -217,7 +218,7 @@ export async function planLoaderHmrHostFromConfig(
 		snapshot: diagnosed.snapshot,
 		warnings: diagnosed.warnings,
 		context: mergeContextConfig(context, {
-			configService,
+			configService: withPluginConfigEnvironment(configService, env),
 			runtimeState,
 			persistence,
 			database,

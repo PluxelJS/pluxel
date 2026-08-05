@@ -114,6 +114,30 @@ runtime enabled state 仍可变。运行时启停只改变 fixed catalog 中哪�
 `runtimeState.snapshot.enabled` 使用 `@Plugin({ name })` 的稳定 ID；不要从 constructor `.name` 动态生成，class name
 会在 production minify 后改变。
 
+### 用环境变量初始化插件配置
+
+Static 与 dynamic Node host 原生识别以下变量，不需要在 `configure()` 中按 plugin ID 手写 config snapshot：
+
+```text
+PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]
+```
+
+例如：
+
+```dotenv
+PLUXEL_CONFIG__WorkerPlugin__config__endpoint=https://worker.example.com
+PLUXEL_CONFIG__WorkerPlugin__config__concurrency=8
+PLUXEL_CONFIG__WebPlugin__config__allowedOrigins=["https://app.example.com"]
+```
+
+值能被 JSON 解析时保留 array、object、boolean、number 或 null 类型，否则作为普通 string；之后仍由插件声明的
+Standard Schema 完成校验和归一化。变量只初始化新的 config store，并会像 Workbench 保存的配置一样进入普通
+持久化；已有 file config 始终优先，因此重启或升级不会用 env 覆盖管理员配置。host 明确传入的初始 snapshot 与 env
+同时存在时，env 中的同路径优先。
+
+这个入口用于非秘密的部署默认值。token、Cookie 和账号凭据仍使用插件拥有的 Vault/credential 流程，不要为了 env
+方便把秘密降级成普通 plugin config。
+
 `prepare()` 是可选的 application-wide eager policy，不是共享基础设施的唯一所有权入口。同一作者控制的 static plugins 可以
 直接调用普通 application module 的无参数 lazy `use()`；只有希望数据库失败阻止任何 plugin 启动时，才在 `prepare()` 中调用
 同一个入口预热。完整组织方式见 [`database.md`](database.md#static-application-共享数据库)。

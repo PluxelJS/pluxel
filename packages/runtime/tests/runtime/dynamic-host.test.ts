@@ -64,4 +64,84 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			process.chdir(prev)
 		}
 	})
+
+	it('initializes typed nested plugin config from the host environment', async () => {
+		const runtime = createRuntimeContext({
+			configService: {
+				mode: 'memory',
+				snapshot: {
+					plugins: {
+						ExamplePlugin: { config: { preserved: 'snapshot', overridden: 'snapshot' } },
+					},
+				},
+				environment: {
+					PLUXEL_CONFIG__ExamplePlugin__config__allowedOrigins: '["https://app.example.test"]',
+					PLUXEL_CONFIG__ExamplePlugin__config__enabled: 'true',
+					PLUXEL_CONFIG__ExamplePlugin__config__limit: '12',
+					PLUXEL_CONFIG__ExamplePlugin__config__overridden: 'environment',
+				},
+			},
+		})
+		try {
+			expect(runtime.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
+				config: {
+					allowedOrigins: ['https://app.example.test'],
+					enabled: true,
+					limit: 12,
+					overridden: 'environment',
+					preserved: 'snapshot',
+				},
+			})
+		} finally {
+			await runtime.dispose()
+		}
+	})
+
+	it('rejects malformed reserved plugin config environment names', () => {
+		expect(
+			() =>
+				createRuntimeContext({
+					configService: {
+						mode: 'memory',
+						environment: { PLUXEL_CONFIG__MissingSchema: 'value' },
+					},
+				}).ctx.configService,
+		).toThrow('Invalid plugin config environment name')
+	})
+
+	it('keeps persisted plugin config authoritative on later starts', async () => {
+		await using fixture = await createFixture({})
+		const environmentName = 'PLUXEL_CONFIG__ExamplePlugin__config__publicUrl'
+		const first = createRuntimeContext({
+			persistence: fixture.path,
+			configService: {
+				mode: 'file',
+				environment: { [environmentName]: 'https://first.example.test' },
+			},
+		})
+		try {
+			await first.ctx.configService.ready
+			expect(first.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
+				config: { publicUrl: 'https://first.example.test' },
+			})
+		} finally {
+			await first.dispose()
+		}
+
+		const second = createRuntimeContext({
+			persistence: fixture.path,
+			configService: {
+				mode: 'file',
+				environment: { [environmentName]: 'https://second.example.test' },
+			},
+		})
+		try {
+			await second.ctx.configService.ready
+			expect(second.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
+				config: { publicUrl: 'https://first.example.test' },
+			})
+		} finally {
+			await second.dispose()
+		}
+	})
 })

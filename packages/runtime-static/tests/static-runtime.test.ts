@@ -204,6 +204,33 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
+	it('uses reserved environment entries as initial plugin config without application mapping', async () => {
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
+				name: 'static-environment-config',
+				plugins: [SchemaSourcePlugin],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: ['SchemaSourcePlugin'] },
+					},
+				}),
+			}),
+			{
+				env: { PLUXEL_CONFIG__SchemaSourcePlugin__value: 'from-environment' },
+			},
+		)
+		try {
+			expect(runtime.ctx.configService.getRawConfig('SchemaSourcePlugin')).toEqual({
+				value: 'from-environment',
+			})
+			expect(runtime.ctx.registry.getInstance(SchemaSourcePlugin)?.value).toBe('from-environment')
+		} finally {
+			await runtime.stop()
+		}
+	})
+
 	it('creates a direct fetch runtime from the route-neutral config', async () => {
 		@Plugin({ name: 'DirectHttp' })
 		class DirectHttp extends BasePlugin {

@@ -26,6 +26,17 @@ logging、profile 和 Workbench policy。
 插件的 config records 与 enabled state 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨
 启动持久化。production bundle 不把这些记录烘焙成不可变常量。
 
+Static 与 dynamic Node host 会把 `PLUXEL_CONFIG__` 前缀的启动环境交给 runtime ConfigService。变量名直接描述
+raw config 路径：
+
+```text
+PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]
+```
+
+值能被 JSON 解析时保留 array、object、boolean、number 或 null 类型，否则作为 string。environment record 覆盖
+host snapshot 中的同路径，并只用于初始化新的 config store；已有 file config 仍是权威来源。解析结果继续进入同一
+Standard Schema 校验、raw record、revision、Workbench 和持久化链，不建立第二套 env config 状态。
+
 ## Toolchain metadata
 
 `configSourcePlugin()` 提取 schema source、binding 和 layout，生成代码通过 `@pluxel/runtime/toolchain` 写入 definition metadata。该 subpath 不是作者 API。

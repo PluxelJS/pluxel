@@ -3,6 +3,7 @@ import { ConfigService as CoreConfigService } from '@pluxel/core/services'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
+import { configRecordsFromEnvironment, mergeConfigRecords } from './config-environment'
 
 export interface PluginConfigFile {
 	version: 1
@@ -16,6 +17,14 @@ export interface ConfigServiceConfig {
 	snapshot?: Partial<{
 		plugins: Record<string, Record<string, unknown>>
 	}>
+	/**
+	 * Host startup environment used to initialize a new config store from
+	 * `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]` entries.
+	 * Static and dynamic Node hosts provide their startup environment when this is omitted;
+	 * set `false` only when a custom host must disable environment initialization.
+	 * Existing file-backed config remains authoritative.
+	 */
+	environment?: false | Readonly<Record<string, string | undefined>>
 }
 
 declare module '@pluxel/core' {
@@ -51,7 +60,11 @@ export class ConfigService extends CoreConfigService {
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = ctx.root.persistence.namespace('config')
 
-		if (cfg.snapshot?.plugins) this.replaceConfigRecords(cfg.snapshot.plugins)
+		const initialPlugins = mergeConfigRecords(
+			cfg.snapshot?.plugins,
+			configRecordsFromEnvironment(cfg.environment),
+		)
+		if (Object.keys(initialPlugins).length > 0) this.replaceConfigRecords(initialPlugins)
 		if (this.mode === 'file') this.setReadyTask(this.loadFromDisk())
 
 		this.ctx.effects.defer(() => this.dispose(), { tag: 'ConfigService' })
