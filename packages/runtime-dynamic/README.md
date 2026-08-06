@@ -20,6 +20,7 @@ export default defineConfig({
 // src/pluxel.dynamic.ts
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { defineProduct } from '@pluxel/runtime/product'
+import { HostOperationsPlugin } from './HostOperationsPlugin'
 
 export const product = defineProduct({
 	displayName: 'Rhythm',
@@ -28,6 +29,8 @@ export const product = defineProduct({
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
+	plugins: [HostOperationsPlugin],
+	runtimeState: { snapshot: { enabled: ['HostOperationsPlugin'] } },
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
 	sources: [
@@ -54,8 +57,12 @@ package classifier，让 CommonJS 与 native package 自动留在 Node host 执�
 
 - `file` 表示一个精确入口；文件暂时不存在时仍监听其父目录；
 - `directory` 表示一个可变入口目录，必须给出相对该目录的正向 `include` glob；目录暂时不存在时仍作为 watch root；
-- 启动时存在的匹配文件进入初始 catalog，之后的 add/change/unlink 进入同一 HMR batch；
+- 启动时存在的匹配文件必须完成初始 graph commit 后 runtime 才报告 ready，之后的 add/change/unlink 进入同一 HMR batch；
 - source producer 只需原子发布或删除普通 ESM 文件，不需要调用 loader、RPC 或 package API。
+
+`plugins` 是宿主显式 import 的固定 catalog；省略时为空。它只声明代码 availability，不会隐式启用插件。固定插件和
+mutable source 插件都由同一个 Vite SSR ModuleRunner 求值，并统一读取 RuntimeState、constructor dependency、graph commit
+和 effects lifecycle。固定插件 import graph 变化会重建整个 dynamic host；mutable source 变化只处理受影响的 entry。
 
 `path` 相对 `root` 解析，也可以显式使用绝对路径。`include` 不接受 absolute、negation、`.` 或 `..` segment，避免 watcher
 越过声明目录。一次配置最多解析 10,000 个 entry；达到上限应收窄 glob，而不是把源码仓库或 `node_modules` 整体当作 entry
@@ -68,8 +75,13 @@ package classifier，让 CommonJS 与 native package 自动留在 Node host 执�
 ## Internal entry
 
 `@pluxel/runtime-dynamic/hmr` 是 `/vite` 与 route tests 使用的 host bridge；workspace diagnostics 只从
-`@pluxel/runtime-dynamic/hmr/diagnose` 导出。应用宿主优先使用 `/vite`，根入口只公开 config、direct launcher 和它们需要的
-source/builtin types，不公开或在 config import 时注册 Loader/Scan service；direct launcher 创建时才加载 route internals。
+`@pluxel/runtime-dynamic/hmr/diagnose` 导出。应用宿主优先使用 `/vite`，根入口只公开 config、direct launcher 和
+`DynamicPluginSource`；direct launcher 接收 config module path，并在启动时才加载 Vite/route internals：
+
+```ts
+const runtime = await createDynamicDevRuntime({ config: 'src/pluxel.dynamic.ts' })
+await runtime.start()
+```
 
 source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running plugin instance，也不复制 lifecycle。
 成功的 mutable source batch 会使 active optional requests 失效并重新解析；optional request 自身不会授权自动安装。

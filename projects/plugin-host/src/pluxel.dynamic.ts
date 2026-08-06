@@ -8,6 +8,7 @@ const repoRoot = resolve(here, '../../..')
 const activeProfile = process.env.PLUXEL_HMR_PROFILE ?? 'plugins-host'
 const configPath = process.env.PLUXEL_HMR_CONFIG ?? 'projects/plugin-host/pluxel.loader.hmr.jsonc'
 const enabledDemoPlugins = [
+	'PackageManagerPlugin',
 	'PluginEventsDeclaredProducer',
 	'PluginEventsDeclaredConsumer',
 	'PluginFeatureDepsProvider',
@@ -21,7 +22,7 @@ export default defineDynamicRuntimeConfig({
 	configPath,
 	profile: activeProfile,
 	logsDir: 'projects/plugin-host/logs',
-	builtins: [PackageManagerPlugin],
+	plugins: [PackageManagerPlugin],
 	sources: [
 		{
 			kind: 'directory',

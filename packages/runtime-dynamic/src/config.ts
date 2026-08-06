@@ -1,7 +1,6 @@
-import type { Context as CoreContext } from '@pluxel/core'
+import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
 import type { WorkbenchConfig } from '@pluxel/runtime'
 import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
-import type { BuiltinDistPluginSpec, BuiltinPluginSpec } from './builtin-spec'
 import { assertDynamicPluginSources, type DynamicPluginSource } from './sources'
 
 const DYNAMIC_RUNTIME_CONFIG_MARKER = Symbol.for('pluxel.dynamicRuntimeConfig')
@@ -14,10 +13,8 @@ const DYNAMIC_RUNTIME_CONFIG_FIELDS = new Set([
 	'logsDir',
 	'logFile',
 	'storage',
-	'warmup',
 	'printUrls',
-	'builtins',
-	'builtinsFromDist',
+	'plugins',
 	'sources',
 	'configService',
 	'runtimeState',
@@ -43,10 +40,9 @@ export type DynamicRuntimeConfig = {
 	logsDir?: string
 	logFile?: string
 	storage?: DynamicRuntimeStorageOptions
-	warmup?: boolean
 	printUrls?: boolean
-	builtins?: readonly BuiltinPluginSpec[]
-	builtinsFromDist?: readonly BuiltinDistPluginSpec[]
+	/** Fixed catalog constructors. Availability does not implicitly enable a plugin. */
+	plugins?: readonly PluginConstructor[]
 	/**
 	 * Exact files or explicitly filtered directories whose entries form the mutable catalog.
 	 * When omitted, only entries selected by the workspace HMR profile are loaded.
@@ -106,9 +102,18 @@ export function assertDynamicRuntimeConfig(
 		DYNAMIC_RUNTIME_CONFIG_FIELDS,
 		'[runtime-dynamic] Dynamic runtime config',
 	)
-	assertPublicHttpConfig(config.http, '[runtime-dynamic] Dynamic runtime config')
-	assertStorageConfig(config.storage)
-	assertDynamicPluginSources(config.sources)
+	const runtimeConfig = config as DynamicRuntimeConfig
+	assertPublicHttpConfig(runtimeConfig.http, '[runtime-dynamic] Dynamic runtime config')
+	assertStorageConfig(runtimeConfig.storage)
+	assertFixedPlugins(runtimeConfig.plugins)
+	assertDynamicPluginSources(runtimeConfig.sources)
+}
+
+function assertFixedPlugins(value: unknown): asserts value is readonly PluginConstructor[] {
+	if (value === undefined) return
+	if (!Array.isArray(value) || value.some((plugin) => typeof plugin !== 'function')) {
+		throw new TypeError('[runtime-dynamic] plugins must be an array of plugin constructors')
+	}
 }
 
 function assertKnownFields(value: object, allowed: ReadonlySet<string>, label: string): void {

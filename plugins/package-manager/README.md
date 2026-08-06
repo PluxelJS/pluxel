@@ -11,7 +11,7 @@ import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
-	builtins: [PackageManagerPlugin],
+	plugins: [PackageManagerPlugin],
 	sources: [
 		{
 			kind: 'directory',
@@ -19,11 +19,14 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
+	runtimeState: { snapshot: { enabled: ['PackageManagerPlugin'] } },
 	workbench: { enabled: true, access: { exposure: 'private' } },
 })
 ```
 
-`builtins` 使管理插件本身随 host 启动；`sources` 是唯一的 runtime 接缝。两者路径必须和插件的 `rootDir` 配置一致。
+`plugins` 把管理插件加入固定 catalog，RuntimeState 显式启用它；`sources` 是唯一的 runtime 接缝。source directory 必须和
+插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录或注册 commands/UI 前验证这项声明；static host
+会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
 Workbench enabled 时插件贡献 plugin-relative `/packages` route，完整地址是
 `/workbench/PackageManagerPlugin/packages`；headless host 仍可使用 `package.install` 和 `package.remove` commands。
 

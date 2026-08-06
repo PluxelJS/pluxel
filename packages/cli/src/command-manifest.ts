@@ -280,14 +280,7 @@ export const loaderHmrDoctorDefinition = {
 
 export const loaderHmrEnabledDefinition = {
 	name: 'enabled',
-	description: 'Edit enabled plugin set (TUI or --set)',
-	toKebab: true,
-	args: loaderHmrSetArgs,
-} as const
-
-export const loaderHmrBuiltinDefinition = {
-	name: 'builtin',
-	description: 'Edit builtin plugin set (TUI or --set)',
+	description: 'Select mutable package entries for initial load and HMR (TUI or --set)',
 	toKebab: true,
 	args: loaderHmrSetArgs,
 } as const
@@ -312,13 +305,6 @@ export const hmrSubCommands = new Map([
 		lazy(
 			() => import('./commands/hmr').then((module) => module.loaderHmrEnabledCommand),
 			loaderHmrEnabledDefinition,
-		),
-	],
-	[
-		'builtin',
-		lazy(
-			() => import('./commands/hmr').then((module) => module.loaderHmrBuiltinCommand),
-			loaderHmrBuiltinDefinition,
 		),
 	],
 ])

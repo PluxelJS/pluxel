@@ -9,6 +9,7 @@ import {
 	createHostModuleClassifier,
 	createHostModuleVitePlugin,
 	createWorkbenchViteClientConfig,
+	getPluxelViteSsrModuleRunner,
 	importViteSsrModule,
 } from '../src/vite'
 
@@ -285,6 +286,35 @@ describe('runtime-dev Vite plugin stack', () => {
 			await server?.close()
 			await rm(root, { recursive: true, force: true })
 		}
+	})
+
+	it('owns one SSR runner per Vite server and closes it with the server', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-runtime-dev-runner-owner-'))
+		let runner: ReturnType<typeof getPluxelViteSsrModuleRunner> | undefined
+		let runnerOpenDuringCloseBundle = false
+		const server = await createServer({
+			root,
+			logLevel: 'silent',
+			server: { middlewareMode: true },
+			appType: 'custom',
+			plugins: [
+				{
+					name: 'test:runner-close-order',
+					closeBundle() {
+						runnerOpenDuringCloseBundle = Boolean(runner && !runner.isClosed())
+					},
+				},
+			],
+		})
+		const first = getPluxelViteSsrModuleRunner(server)
+		runner = first
+		const second = getPluxelViteSsrModuleRunner(server)
+		expect(second).toBe(first)
+		await server.close()
+		expect(runnerOpenDuringCloseBundle).toBe(true)
+		expect(first.isClosed()).toBe(true)
+		await server.close()
+		await rm(root, { recursive: true, force: true })
 	})
 
 	it('emits constructor dependency metadata through the real Vite module runner', async () => {

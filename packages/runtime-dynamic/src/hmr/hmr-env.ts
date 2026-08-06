@@ -30,24 +30,5 @@ export function applyLoaderHmrEnvOverrides(
 		}
 	}
 
-	const builtinsStrictRaw = env.PLUXEL_HMR_BUILTINS_PRELOAD_STRICT
-	if (builtinsStrictRaw !== undefined) {
-		out.builtinsPreloadStrict =
-			builtinsStrictRaw === '1' || builtinsStrictRaw === 'true' || builtinsStrictRaw === 'yes'
-	}
-	const autoDisableRaw = env.PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MISSING_DEPS
-	if (autoDisableRaw !== undefined) {
-		out.builtinsAutoDisableMissingDependencies = !(
-			autoDisableRaw === '0' ||
-			autoDisableRaw === 'false' ||
-			autoDisableRaw === 'no'
-		)
-	}
-	const maxPassesRaw = env.PLUXEL_HMR_BUILTINS_AUTO_DISABLE_MAX_PASSES
-	if (maxPassesRaw !== undefined) {
-		const n = Number(maxPassesRaw)
-		if (Number.isFinite(n) && n >= 0) out.builtinsAutoDisableMaxPasses = Math.floor(n)
-	}
-
 	return out
 }

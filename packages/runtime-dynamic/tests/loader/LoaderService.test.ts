@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import {
-	BasePlugin,
-	ForkablePlugin,
-	Plugin,
-	assertPluginLifecycleIssue,
-	setParamToken,
-} from '@pluxel/runtime/test'
+import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
 import type { ForkablePluginConstructor } from '@pluxel/core'
 import { createHmrTestContext } from '../support/hmr-context'
-import { disablePlugins, enablePlugins, isEnabled } from '../support/runtime-state'
+import { enablePlugins, isEnabled } from '../support/runtime-state'
 
 function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 	;(
@@ -16,230 +10,115 @@ function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
 	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
 }
 
+const fixedOwner = 'pluxel:fixed:/workspace/pluxel.dynamic.ts'
+
 describe('LoaderService', () => {
-	it('preloadPlugins supports forkable builtins (including enabled forks)', async () => {
+	it('registers disabled fixed plugins in the catalog without changing enablement', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		class Fixed extends BasePlugin {}
+		Plugin({ name: 'Fixed' })(Fixed)
 
-		class Forky extends ForkablePlugin {}
-		Plugin({ name: 'Forky' })(Forky)
+		await expect(
+			ctx.loader.registerFixedPlugins([Fixed], { moduleId: fixedOwner }),
+		).resolves.toEqual(['Fixed'])
 
-		await loader.preloadPlugins([
-			{
-				plugin: Forky,
-				enable: false,
-				forks: ['a', { id: 'b', enable: true }, { id: 'c', enable: false }],
-			},
-		])
-
-		expect(isEnabled(ctx, 'Forky')).toBe(false)
-		expect(isEnabled(ctx, 'Forky#a')).toBe(true)
-		expect(isEnabled(ctx, 'Forky#b')).toBe(true)
-		expect(isEnabled(ctx, 'Forky#c')).toBe(false)
-
-		const catalog = ctx.runtimeState.snapshot().forks
-		expect(catalog?.Forky?.slice().sort()).toEqual(['a', 'b', 'c'])
-
-		const ForkA = core.registry.fork(Forky as unknown as ForkablePluginConstructor, 'a')
-		const ForkB = core.registry.fork(Forky as unknown as ForkablePluginConstructor, 'b')
-		expect(core.registry.isRunning(Forky)).toBe(false)
-		expect(core.registry.isRunning(ForkA)).toBe(true)
-		expect(core.registry.isRunning(ForkB)).toBe(true)
-
-		// Fork source should resolve to the base plugin module id.
-		expect(loader.api.registry.findModuleId('Forky#a')).toBe('pluxel:builtins')
+		expect(isEnabled(ctx, 'Fixed')).toBe(false)
+		expect(ctx.loader.api.registry.getCtor('Fixed')).toBe(Fixed)
+		expect(ctx.loader.api.registry.findModuleId('Fixed')).toBe(fixedOwner)
+		expect(core.registry.isRunning(Fixed)).toBe(false)
 	})
 
-	it('cleans up failed fork registrations after committed lifecycle reports', async () => {
+	it('starts enabled fixed providers before consumers through the normal graph commit', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		const started: string[] = []
 
-		class Worker extends ForkablePlugin {
-			protected override init() {
-				throw new Error('fork boom')
+		class Provider extends BasePlugin {
+			override init() {
+				started.push('provider')
 			}
 		}
-		Plugin({ name: 'Worker' })(Worker)
+		Plugin({ name: 'Provider' })(Provider)
 
-		ctx.runtimeState.update((draft) => {
-			draft.forks = { Worker: ['f1'] }
-		})
-		enablePlugins(ctx, 'Worker#f1')
-
-		const batch = loader.beginBatch()
-		await batch.replaceModule('Worker.ts', { Worker })
-		const Fork = core.registry.fork(Worker as unknown as ForkablePluginConstructor, 'f1')
-		expect(core.registry.isRegistered(Fork)).toBe(true)
-
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-		assertPluginLifecycleIssue(core.registry.lastCommit!, 'Worker#f1', { kind: 'start-failed' })
-		expect(core.registry.isRegistered(Fork)).toBe(false)
-		batch.commit()
-	})
-
-	it('preloadPlugins auto-disables missing-dependency builtins and commits the rest', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		class Good extends BasePlugin {}
-		Plugin({ name: 'Good' })(Good)
-
-		abstract class MissingBase extends BasePlugin {}
-
-		class Bad extends BasePlugin {
-			constructor(_dep: MissingBase) {
+		class Consumer extends BasePlugin {
+			constructor(readonly provider: Provider) {
 				super()
 			}
-		}
-		defineParamTypes(Bad, [MissingBase])
-		Plugin({ name: 'Bad' })(Bad)
-		setParamToken(Bad, 0, MissingBase)
-
-		const names = await loader.preloadPlugins([Good, Bad])
-		expect(names.slice().sort()).toEqual(['Bad', 'Good'])
-
-		expect(isEnabled(ctx, 'Good')).toBe(true)
-		expect(isEnabled(ctx, 'Bad')).toBe(false)
-		expect(core.registry.isRunning(Good)).toBe(true)
-		expect(core.registry.isRunning(Bad)).toBe(false)
-	})
-
-	it('preloadPlugins does not re-enable disabled builtins on subsequent startups', async () => {
-		const state = {
-			enabled: new Set<string>(),
-			extra: Object.create(null) as Record<string, unknown>,
-		}
-
-		class Good extends BasePlugin {}
-		Plugin({ name: 'Good' })(Good)
-
-		abstract class MissingBase extends BasePlugin {}
-
-		class Bad extends BasePlugin {
-			constructor(_dep: MissingBase) {
-				super()
+			override init() {
+				started.push('consumer')
 			}
 		}
-		defineParamTypes(Bad, [MissingBase])
-		Plugin({ name: 'Bad' })(Bad)
-		setParamToken(Bad, 0, MissingBase)
+		defineParamTypes(Consumer, [Provider])
+		Plugin({ name: 'Consumer' })(Consumer)
+		setParamToken(Consumer, 0, Provider)
 
-		{
-			const { core, ctx } = createHmrTestContext(state)
-			const loader = ctx.loader
+		enablePlugins(ctx, 'Provider', 'Consumer')
+		await ctx.loader.registerFixedPlugins([Consumer, Provider], { moduleId: fixedOwner })
 
-			await loader.preloadPlugins([Good, Bad])
-			expect(isEnabled(ctx, 'Good')).toBe(true)
-			expect(isEnabled(ctx, 'Bad')).toBe(false)
-			expect(core.registry.isRunning(Good)).toBe(true)
-			expect(core.registry.isRunning(Bad)).toBe(false)
-
-			// Simulate user disabling the healthy plugin as well.
-			disablePlugins(ctx, 'Good')
-		}
-
-		// New startup: should respect disabled bits and should not "seed enable" again.
-		{
-			const { core, ctx } = createHmrTestContext(state)
-			const loader = ctx.loader
-
-			await loader.preloadPlugins([Good, Bad])
-			expect(isEnabled(ctx, 'Good')).toBe(false)
-			expect(isEnabled(ctx, 'Bad')).toBe(false)
-			expect(core.registry.isRunning(Good)).toBe(false)
-			expect(core.registry.isRunning(Bad)).toBe(false)
-
-			const known = ctx.runtimeState.snapshot().builtinsKnown
-			expect(known?.Good).toBe(1)
-			expect(known?.Bad).toBe(1)
-		}
+		expect(started).toEqual(['provider', 'consumer'])
+		expect(core.registry.getInstance(Consumer)?.provider).toBeInstanceOf(Provider)
 	})
 
-	it('preloadPlugins strict mode throws on missing dependency', async () => {
+	it('rejects distinct fixed constructors with the same plugin id', async () => {
 		const { ctx } = createHmrTestContext()
-		const loader = ctx.loader
+		class First extends BasePlugin {}
+		class Second extends BasePlugin {}
+		Plugin({ name: 'Duplicate' })(First)
+		Plugin({ name: 'Duplicate' })(Second)
 
-		class Good extends BasePlugin {}
-		Plugin({ name: 'Good' })(Good)
+		await expect(
+			ctx.loader.registerFixedPlugins([First, Second], { moduleId: fixedOwner }),
+		).rejects.toThrow(/fixed catalog contains duplicate plugin id "Duplicate"/i)
+		expect(ctx.loader.api.registry.getCtor('Duplicate')).toBeUndefined()
+	})
 
-		abstract class MissingBase extends BasePlugin {}
+	it('rejects the same constructor when a mutable entry re-exports a fixed plugin', async () => {
+		const { ctx } = createHmrTestContext()
+		class Fixed extends BasePlugin {}
+		Plugin({ name: 'Fixed' })(Fixed)
 
-		class Bad extends BasePlugin {
-			constructor(_dep: MissingBase) {
+		await ctx.loader.registerFixedPlugins([Fixed], { moduleId: fixedOwner })
+
+		await expect(
+			ctx.loader.replaceModule('/workspace/entries/reexport.ts', { Fixed }),
+		).rejects.toThrow(/插件名冲突.*Fixed/)
+		expect(ctx.loader.api.registry.getCtor('Fixed')).toBe(Fixed)
+		expect(ctx.loader.api.registry.findModuleId('Fixed')).toBe(fixedOwner)
+	})
+
+	it('fails fixed catalog verification without auto-disabling persisted state', async () => {
+		const { ctx } = createHmrTestContext()
+		abstract class Missing extends BasePlugin {}
+		class Consumer extends BasePlugin {
+			constructor(_missing: Missing) {
 				super()
 			}
 		}
-		defineParamTypes(Bad, [MissingBase])
-		Plugin({ name: 'Bad' })(Bad)
-		setParamToken(Bad, 0, MissingBase)
+		defineParamTypes(Consumer, [Missing])
+		Plugin({ name: 'Consumer' })(Consumer)
+		setParamToken(Consumer, 0, Missing)
+		enablePlugins(ctx, 'Consumer')
 
-		await expect(loader.preloadPlugins([Good, Bad], { strict: true })).rejects.toThrow(
-			/builtin preload commit failed/i,
-		)
-		// rollback should revert enable bits introduced by this call
-		expect(isEnabled(ctx, 'Good')).toBe(false)
-		expect(isEnabled(ctx, 'Bad')).toBe(false)
+		await expect(
+			ctx.loader.registerFixedPlugins([Consumer], { moduleId: fixedOwner }),
+		).rejects.toThrow(/fixed catalog commit failed/i)
+		expect(isEnabled(ctx, 'Consumer')).toBe(true)
+		expect(ctx.loader.api.registry.getCtor('Consumer')).toBeUndefined()
 	})
 
-	it('preloadPlugins enables and commits builtins', async () => {
+	it('derives enabled forks exclusively from RuntimeState', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-		let moduleItemsSeenDuringStartupCommit: Function[] = []
-
-		class Builtin extends BasePlugin {}
-		Plugin({ name: 'Builtin' })(Builtin)
-
-		ctx.internalEvent.runtimeCommitted.on((summary) => {
-			if ((summary as { runtimeUpdate?: { reason?: string } }).runtimeUpdate?.reason !== 'startup')
-				return
-			moduleItemsSeenDuringStartupCommit = core.registry
-				.listRuntimeModuleItems('pluxel:builtins')
-				.map((item) => item.ctor)
+		class FixedForkable extends ForkablePlugin {}
+		Plugin({ name: 'FixedForkable' })(FixedForkable)
+		ctx.runtimeState.update((draft) => {
+			draft.forks = { FixedForkable: ['worker'] }
 		})
+		enablePlugins(ctx, 'FixedForkable#worker')
 
-		const names = await loader.preloadPlugins([Builtin])
-		expect(names).toEqual(['Builtin'])
-		expect(isEnabled(ctx, 'Builtin')).toBe(true)
-		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
-		expect(loader.api.registry.findModuleId('Builtin')).toBe('pluxel:builtins')
-		expect(core.registry.isRunning(Builtin)).toBe(true)
-		expect(moduleItemsSeenDuringStartupCommit).toEqual([Builtin])
-	})
-
-	it('preloaded builtin baseline survives later failed batch rollback', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		class Builtin extends BasePlugin {}
-		Plugin({ name: 'Builtin' })(Builtin)
-
-		await loader.preloadPlugins([Builtin])
-		expect(core.registry.isRunning(Builtin)).toBe(true)
-
-		abstract class MissingBase extends BasePlugin {}
-
-		class Bad extends BasePlugin {
-			constructor(_dep: MissingBase) {
-				super()
-			}
-		}
-		defineParamTypes(Bad, [MissingBase])
-		Plugin({ name: 'Bad' })(Bad)
-		setParamToken(Bad, 0, MissingBase)
-
-		enablePlugins(ctx, 'Bad')
-		{
-			const batch = loader.beginBatch()
-			await batch.replaceModule('Bad.ts', { Bad })
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(false)
-			batch.rollback()
-			core.registry.resetDraft()
-		}
-
-		expect(core.registry.isRunning(Builtin)).toBe(true)
-		expect(loader.api.registry.getCtor('Builtin')).toBe(Builtin)
+		await ctx.loader.registerFixedPlugins([FixedForkable], { moduleId: fixedOwner })
+		const Fork = core.registry.fork(FixedForkable as unknown as ForkablePluginConstructor, 'worker')
+		expect(core.registry.isRunning(FixedForkable)).toBe(false)
+		expect(core.registry.isRunning(Fork)).toBe(true)
+		expect(ctx.loader.api.registry.findModuleId('FixedForkable#worker')).toBe(fixedOwner)
 	})
 
 	it('dependency inspector tolerates abstract/base tokens', async () => {

@@ -46,6 +46,7 @@
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"@tabler/icons-react": "catalog:",
 		"@types/react": "catalog:",
@@ -60,6 +61,7 @@
 		"@mantine/core": "catalog:",
 		"@pluxel/commands": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
 		"@tabler/icons-react": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:"

@@ -49,7 +49,9 @@ describe('LoaderService HMR lifecycle', () => {
 		Plugin({ name: 'Consumer' })(Consumer)
 		setParamToken(Consumer, 0, DepShadow)
 
-		await loader.preloadPlugins([Dep])
+		await loader.registerFixedPlugins([Dep], {
+			moduleId: 'pluxel:fixed:/workspace/pluxel.dynamic.ts',
+		})
 		expect(core.registry.isRunning(Dep)).toBe(true)
 
 		{

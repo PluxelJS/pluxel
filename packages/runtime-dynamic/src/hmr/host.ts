@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
 import '../register-services'
-import type { Context as CoreContext } from '@pluxel/core'
+import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
@@ -22,7 +22,6 @@ import {
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
-import type { BuiltinPluginSpec } from '../builtin-spec'
 import type { DynamicRuntimeStorageOptions } from '../config'
 
 import {
@@ -51,9 +50,7 @@ export type LoaderHmrHostOptions<
 	snapshot: TSnapshot
 	warnings?: readonly string[]
 	snapshotPatch?: (snapshot: TSnapshot) => TSnapshot
-	builtins?: readonly BuiltinPluginSpec[]
-	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
-	warmup?: boolean
+	plugins?: readonly PluginConstructor[]
 	printUrls?: boolean
 	logging?: false | RuntimeLoggingInput
 	logsDir?: string
@@ -72,9 +69,9 @@ export type PlannedLoaderHmrHost<
 	debug: readonly string[]
 	snapshot: TSnapshot
 	warnings: readonly string[]
-	builtins?: readonly BuiltinPluginSpec[]
-	builtinsFromDist?: LoaderHmrConfig['builtinsFromDist']
-	warmup?: boolean
+	plugins?: readonly PluginConstructor[]
+	fixedModuleId: string
+	dynamicSources: readonly DynamicPluginSource[]
 	printUrls?: boolean
 	logging?: false | RuntimeLoggingInput
 	runtimeStorage: RuntimeStoragePaths
@@ -113,6 +110,11 @@ export type LoaderHmrHostConfigInput = Omit<
 	sources?: readonly DynamicPluginSource[]
 }
 
+type PlanLoaderHmrHostInternalOptions = {
+	configModuleId?: string
+	dynamicSources?: readonly DynamicPluginSource[]
+}
+
 function planRuntimeStorage(
 	root: string,
 	storage: LoaderHmrHostStorageOptions | undefined,
@@ -133,6 +135,7 @@ function planRuntimeStorage(
 
 export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	opts: LoaderHmrHostOptions<TSnapshot>,
+	internal: PlanLoaderHmrHostInternalOptions = {},
 ): PlannedLoaderHmrHost<TSnapshot> {
 	const root = resolve(opts.root ?? process.cwd())
 	const fs = opts.fs ?? nodeHostFs
@@ -146,11 +149,6 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	if (opts.snapshotPatch) snapshot = opts.snapshotPatch(snapshot)
 	assertLoaderHmrWorkspace(snapshot)
 
-	let builtinsFromDist = opts.builtinsFromDist
-	if (builtinsFromDist === undefined && opts.builtins === undefined) {
-		builtinsFromDist = snapshot.builtinsFromDist?.length ? snapshot.builtinsFromDist : undefined
-	}
-
 	const { runtimeStorage } = planRuntimeStorage(root, opts.storage, {
 		logsDir: opts.logsDir,
 		logFile: opts.logFile,
@@ -163,9 +161,9 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		debug: opts.debug ?? ['hmr:*', 'bundler', 'workbench:compile'],
 		snapshot,
 		warnings: opts.warnings ?? [],
-		builtins: opts.builtins,
-		builtinsFromDist,
-		warmup: opts.warmup,
+		plugins: opts.plugins,
+		fixedModuleId: `pluxel:fixed:${normalizeFixedModuleId(internal.configModuleId ?? resolve(root, 'pluxel.dynamic.ts'))}`,
+		dynamicSources: internal.dynamicSources ?? [],
 		printUrls: opts.printUrls,
 		logging: opts.logging,
 		runtimeStorage,
@@ -176,6 +174,7 @@ export function planLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 export async function planLoaderHmrHostFromConfig(
 	opts: LoaderHmrHostConfigInput,
+	internal: PlanLoaderHmrHostInternalOptions = {},
 ): Promise<PlannedLoaderHmrHost<WorkspaceSnapshot>> {
 	const {
 		configPath,
@@ -231,21 +230,31 @@ export async function planLoaderHmrHostFromConfig(
 		]),
 	}
 
-	return planLoaderHmrHost({
-		...hostOpts,
-		root: rootDir,
-		snapshot,
-		warnings: diagnosed.warnings,
-		context: mergeContextConfig(context, {
-			configService: withPluginConfigEnvironment(configService, env),
-			runtimeState,
-			persistence,
-			database,
-			http,
-			workbench,
-		}),
-		logging: logging ?? hostOpts.logging,
-	})
+	return planLoaderHmrHost(
+		{
+			...hostOpts,
+			root: rootDir,
+			snapshot,
+			warnings: diagnosed.warnings,
+			context: mergeContextConfig(context, {
+				configService: withPluginConfigEnvironment(configService, env),
+				runtimeState,
+				persistence,
+				database,
+				http,
+				workbench,
+			}),
+			logging,
+		},
+		{
+			configModuleId: internal.configModuleId,
+			dynamicSources: dynamicSources.declarations,
+		},
+	)
+}
+
+function normalizeFixedModuleId(value: string): string {
+	return resolve(value).replaceAll('\\', '/')
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
@@ -321,7 +330,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 function resolveLoaderRuntimeLoggingInput(
 	plan: PlannedLoaderHmrHost<LoaderHmrWorkspaceSnapshot>,
 ): RuntimeLoggingInput {
-	if (plan.logging && plan.logging !== false) return plan.logging
+	if (plan.logging) return plan.logging
 	const root = { profile: plan.snapshot.activeProfile, debugTopics: plan.debug }
 	if (plan.logging === false) {
 		return {
@@ -431,9 +440,6 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 
 	const loaderHmr = resolveLoaderHmrConfig(plan)
 	ctx.config.loaderHmr = loaderHmr
-
-	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
-
 	const baseRoute = ctx.runtimeRoute
 	if (!baseRoute) {
 		throw new Error(
@@ -442,6 +448,14 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	}
 	ctx.runtimeRoute = {
 		...baseRoute,
+		dynamicPluginSources: createDynamicPluginSourceReader(plan.dynamicSources),
+	}
+
+	const hmr = new LoaderHmrService(ctx, loaderHmr, viteServer)
+
+	const routeWithSources = ctx.runtimeRoute
+	ctx.runtimeRoute = {
+		...routeWithSources,
 		modules: hmr,
 	}
 	ctx.effects.defer(() => {
@@ -453,6 +467,34 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	})
 
 	return hmr
+}
+
+function createDynamicPluginSourceReader(sources: readonly DynamicPluginSource[]) {
+	const files = new Set(
+		sources.flatMap((source) =>
+			source.kind === 'file' ? [resolve(source.path).replaceAll('\\', '/')] : [],
+		),
+	)
+	const directories = sources.flatMap((source) =>
+		source.kind === 'directory'
+			? [{ path: resolve(source.path).replaceAll('\\', '/'), include: new Set(source.include) }]
+			: [],
+	)
+	return {
+		hasFile(path: string): boolean {
+			return files.has(resolve(path).replaceAll('\\', '/'))
+		},
+		hasDirectory(path: string, include: readonly string[]): boolean {
+			const normalizedPath = resolve(path).replaceAll('\\', '/')
+			const normalizedInclude = new Set(include.map((pattern) => pattern.replaceAll('\\', '/')))
+			return directories.some(
+				(directory) =>
+					directory.path === normalizedPath &&
+					directory.include.size === normalizedInclude.size &&
+					[...normalizedInclude].every((pattern) => directory.include.has(pattern)),
+			)
+		},
+	}
 }
 
 function withDevWorkbenchHttpConfig(
@@ -469,24 +511,17 @@ function withDevWorkbenchHttpConfig(
 function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 ): LoaderHmrConfig {
-	const builtinsFromDist = resolveBuiltinsFromDistEntries(
-		plan.root,
-		plan.builtinsFromDist ?? plan.snapshot.builtinsFromDist,
-	)
-
 	return applyLoaderHmrEnvOverrides({
 		roots: plan.snapshot.watchRoots,
 		printUrls: plan.printUrls ?? true,
-		warmup: plan.warmup ?? true,
 		include:
 			plan.snapshot.includeGlobs.length > 0 ? uniqSorted(plan.snapshot.includeGlobs) : undefined,
 		entries: plan.snapshot.enabledEntries,
 		exclude:
 			plan.snapshot.excludeGlobs.length > 0 ? uniqSorted(plan.snapshot.excludeGlobs) : undefined,
 		clientEntries: resolveDefaultClientEntries(plan.root),
-		builtins: plan.builtins,
-		builtinsFromDist,
-		builtinsPreloadStrict: plan.builtins?.length ? true : undefined,
+		fixedPlugins: plan.plugins,
+		fixedModuleId: plan.fixedModuleId,
 	})
 }
 
@@ -497,22 +532,4 @@ function uniqSorted(list: readonly string[]): string[] {
 function resolveDefaultClientEntries(cwd: string): string[] {
 	const workbenchClientEntry = resolve(cwd, 'packages/workbench-app/src/client.tsx')
 	return existsSync(workbenchClientEntry) ? [workbenchClientEntry] : []
-}
-
-function resolveBuiltinsFromDistEntries(
-	cwd: string,
-	list: LoaderHmrConfig['builtinsFromDist'],
-): LoaderHmrConfig['builtinsFromDist'] {
-	if (!list?.length) return list
-	return list
-		.map((entry) => ({
-			...entry,
-			packageName: String(entry.packageName ?? '').trim(),
-			entry: (() => {
-				const raw = String(entry.entry ?? '').trim()
-				if (!raw) return raw
-				return isAbsolute(raw) ? raw : resolve(cwd, raw)
-			})(),
-		}))
-		.filter((entry) => entry.packageName && entry.entry)
 }

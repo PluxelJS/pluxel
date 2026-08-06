@@ -1048,7 +1048,7 @@ export class HmrBatchProcessor {
 		}
 
 		const activeServices = this.ctx.registry.graph.activeCount()
-		const { plugins: pluginTotals } = collectPluginTotals({
+		const pluginTotals = collectPluginTotals({
 			registryView: this.ctx.loader.api.registry,
 			isPluginEnabled: (name) => isPluginEnabled(this.ctx.runtimeState.snapshot(), name),
 			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),

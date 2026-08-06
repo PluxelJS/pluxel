@@ -57,6 +57,7 @@ describe('toolchain package boundaries', () => {
 		).toBe(false)
 		expect(runtimeDynamic.exports).toHaveProperty('./vite')
 		expect(runtimeDynamic.exports).toHaveProperty('./hmr')
+		expect(runtimeDynamic.exports).toHaveProperty('./source-producer')
 		expect(runtimeDynamic.exports).not.toHaveProperty('./services')
 		expect(existsSync(`${root}/packages/runtime-dynamic/src/services.ts`)).toBe(false)
 		expect(runtimeStatic.exports).toHaveProperty('./vite')
@@ -140,6 +141,28 @@ describe('toolchain package boundaries', () => {
 		const runtimeDynamic = await readJson(`${root}/packages/runtime-dynamic/package.json`)
 
 		expect(runtimeDynamic.dependencies).not.toHaveProperty('@rolldown/pluginutils')
+	})
+
+	it('keeps the dynamic source-producer contract isolated from route and producer machinery', async () => {
+		const root = fileURLToPath(new URL('../../..', import.meta.url))
+		const source = await readFile(`${root}/packages/runtime-dynamic/src/source-producer.ts`, 'utf8')
+		expect(source).toContain("import { resolve } from 'node:path'")
+		expect(source).toContain("import type { Context } from '@pluxel/core'")
+		expect(source).toContain("import type { DynamicPluginSource } from './sources'")
+
+		const forbidden = [
+			"from 'vite'",
+			'chokidar',
+			'picomatch',
+			'LoaderHmrService',
+			'PackageManager',
+			'@pnpm/napi',
+		]
+		for (const token of forbidden) expect(source).not.toContain(token)
+
+		const built = `${root}/packages/runtime-dynamic/dist/source-producer.mjs`
+		const builtCode = existsSync(built) ? await readFile(built, 'utf8') : ''
+		for (const token of forbidden) expect(builtCode).not.toContain(token)
 	})
 
 	it('keeps published consumers from vendoring complex rolldown toolchain entries', async () => {
@@ -504,6 +527,10 @@ describe('toolchain package boundaries', () => {
 			'createNodeFsServiceBackend',
 			'ctx.root.fs',
 			'chokidar',
+			'picomatch',
+			'@pluxel/runtime-dynamic',
+			'PackageManager',
+			'@pnpm/napi',
 			'@pluxel/runtime-dev',
 		]
 		const forbiddenImports = [/[;}]\s*from["']vite["']/, /import\(["']vite["']\)/]

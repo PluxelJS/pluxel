@@ -1,8 +1,8 @@
 import { isAbsolute, resolve } from 'pathe'
 import {
 	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-	readLoaderHmrConfigV1,
-	type PluxelLoaderHmrConfigV1,
+	readLoaderHmrConfigV2,
+	type PluxelLoaderHmrConfigV2,
 } from './config'
 import { diagnoseWorkspace, mergeLoaderHmrProfile, type WorkspaceSnapshot } from './diagnose'
 import { nodeLoaderHmrWorkspaceFs, type LoaderHmrWorkspaceFs } from './fs'
@@ -41,11 +41,10 @@ export type LoaderHmrProfileRef = {
 export type LoaderHmrProfileView = {
 	rootDir: string
 	configPath: string
-	config: PluxelLoaderHmrConfigV1
+	config: PluxelLoaderHmrConfigV2
 	activeProfile: string
 	roots: 'auto' | string[]
 	enabled: string[]
-	builtinPackages: string[]
 	includeGlobs: string[]
 	excludeGlobs: string[]
 }
@@ -67,7 +66,7 @@ export function readLoaderHmrConfigRaw(
 		rootDir: rootDirAbs,
 		configPath: ref.configPath,
 	})
-	const config = readLoaderHmrConfigV1(configPathAbs, ref.fs ?? nodeLoaderHmrWorkspaceFs)
+	const config = readLoaderHmrConfigV2(configPathAbs, ref.fs ?? nodeLoaderHmrWorkspaceFs)
 	return { rootDir: rootDirAbs, configPath: configPathAbs, config }
 }
 
@@ -89,14 +88,9 @@ export function readLoaderHmrProfileView(ref: LoaderHmrProfileRef = {}): LoaderH
 		activeProfile: merged.activeProfile,
 		roots: merged.roots,
 		enabled: uniqPreserveOrder(merged.enabled),
-		builtinPackages: uniqPreserveOrder(merged.builtinPackages),
 		includeGlobs: uniqPreserveOrder(merged.includeGlobs),
 		excludeGlobs: uniqPreserveOrder(merged.excludeGlobs),
 	}
-}
-
-export function getLoaderHmrProfileBuiltinPackages(ref: LoaderHmrProfileRef = {}): string[] {
-	return readLoaderHmrProfileView(ref).builtinPackages
 }
 
 export function getLoaderHmrProfileEnabledPackages(ref: LoaderHmrProfileRef = {}): string[] {
@@ -106,9 +100,6 @@ export function getLoaderHmrProfileEnabledPackages(ref: LoaderHmrProfileRef = {}
 export type ResolveLoaderHmrWorkspaceOptions = LoaderHmrProfileRef & {
 	/**
 	 * Package names to omit from discovery/enabled resolution.
-	 *
-	 * Primary use case: hosts that preload certain packages as builtins and want to avoid
-	 * double-loading their `@pluxel/hmr` source entries.
 	 */
 	omitPackages?: string[]
 }

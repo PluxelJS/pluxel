@@ -55,6 +55,17 @@ dependency、evaluation、metadata 或 start 失败记录为 broken error。stat
 dynamic route 的成功 file-source batch 会触发 availability retry。resolver 只解析已经进入 workspace、显式 dynamic
 source 或 static distribution closure 的代码，optional request 不授权自动安装包。
 
+## Dynamic fixed catalog
+
+Dynamic config 使用 `plugins` 声明宿主显式 import 的固定 catalog，使用 `sources` 声明运行时可增删的文件 catalog。
+`plugins` 只提供 availability；启停、fork、dependency override 和 config validation 全部读取统一 RuntimeState。固定 constructor
+即使 disabled 也可由 catalog resolve，但不会因首次出现而自动启用。RuntimeState 写盘格式是 version 2；读取 version 1 时保留
+enabled、forks、base provider、dependency override 与 optional availability，并丢弃旧的 route 私有固定目录历史；未知持久化
+版本会 fail-fast，不由旧 runtime 猜测解释。
+
+程序化 dynamic launcher 只接受 config module path，让 config、固定插件和 mutable source 都经由 launcher 所有的 canonical
+Vite SSR runner 求值。object config 不跨 module realm 传递 constructor。
+
 ## Node module service
 
 `NodeModuleService` 是常驻 root service，`ctx.nodeModules` 是保留 owner Context 的隔离视图。作者只通过

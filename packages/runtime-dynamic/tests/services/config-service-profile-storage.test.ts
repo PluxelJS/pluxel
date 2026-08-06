@@ -14,7 +14,7 @@ describe('HMR runtime persistence storage', () => {
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
 				'{',
-				'  "version": 1,',
+				'  "version": 2,',
 				'  "profile": "dev",',
 				'  "defaults": { "roots": "auto" },',
 				'  "profiles": { "dev": { "enabled": [] } }',
@@ -49,7 +49,7 @@ describe('HMR runtime persistence storage', () => {
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
 				'{',
-				'  "version": 1,',
+				'  "version": 2,',
 				'  "profile": "dev",',
 				'  "defaults": { "roots": "auto" },',
 				'  "profiles": { "dev": { "enabled": ["pluxel-plugin-a"] } }',
@@ -78,7 +78,6 @@ describe('HMR runtime persistence storage', () => {
 				activeProfile: 'dev',
 				roots: ['packages/a'],
 				enabled: ['pluxel-plugin-a'],
-				builtinPackages: [],
 				enabledEntries: ['packages/a/src/index.ts'],
 				includedEntries: [],
 				watchRoots: ['packages/a'],
@@ -116,7 +115,7 @@ describe('HMR runtime persistence storage', () => {
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
 				'{',
-				'  "version": 1,',
+				'  "version": 2,',
 				'  "profile": "dev",',
 				'  "defaults": { "roots": "auto" },',
 				'  "profiles": { "dev": { "enabled": [] } }',
@@ -132,7 +131,6 @@ describe('HMR runtime persistence storage', () => {
 				activeProfile: 'dev',
 				roots: [],
 				enabled: [],
-				builtinPackages: [],
 				enabledEntries: [],
 				includedEntries: [],
 				watchRoots: [],

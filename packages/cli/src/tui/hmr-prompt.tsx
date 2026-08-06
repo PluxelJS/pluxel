@@ -1,22 +1,22 @@
 import { existsSync } from 'node:fs'
 import {
-	backupAndRewriteLoaderHmrConfigV1,
+	backupAndRewriteLoaderHmrConfigV2,
 	buildLoaderHmrWorkspaceFromScan,
-	createDefaultLoaderHmrConfigV1,
+	createDefaultLoaderHmrConfigV2,
 	discoverPluginsFromPackages,
 	mergeLoaderHmrProfile,
-	type PluxelLoaderHmrConfigV1,
-	readLoaderHmrConfigV1,
+	type PluxelLoaderHmrConfigV2,
+	readLoaderHmrConfigV2,
 	resolveLoaderHmrRootsExpanded,
 	scanWorkspacePackages,
 	type LoaderHmrWorkspace,
-	writeLoaderHmrConfigV1,
+	writeLoaderHmrConfigV2,
 } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { writeLoaderHmrDiscoveredIndex } from '../hmr/discovered-index'
-import { type PickPackagesDiscoveredPlugin, PickPackagesDualBrowser } from './pick-packages'
+import { PickPackagesBrowser, type PickPackagesDiscoveredPlugin } from './pick-packages'
 
 type TabKey = 'packages' | 'paths' | 'doctor' | 'snapshot'
 
@@ -28,10 +28,6 @@ type Overlay = 'profiles' | 'help' | null
 
 function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
-}
-
-function uniqSorted(items: readonly string[]): string[] {
-	return [...new Set(items)].sort((a, b) => a.localeCompare(b))
 }
 
 function uniqPreserveOrder(items: readonly string[]): string[] {
@@ -49,7 +45,7 @@ function uniqPreserveOrder(items: readonly string[]): string[] {
 type PathsFocus = 'roots' | 'include' | 'exclude'
 
 type InitialOpen =
-	| { kind: 'packages'; mode?: 'enabled' | 'builtin' }
+	| { kind: 'packages' }
 	| { kind: 'profiles' }
 	| { kind: 'paths'; focus?: PathsFocus }
 
@@ -620,7 +616,7 @@ function LoaderHmrPromptApp(props: {
 	configPath: string
 	env: Record<string, string | undefined>
 	skipPackages: Set<string>
-	initialCfg: PluxelLoaderHmrConfigV1
+	initialCfg: PluxelLoaderHmrConfigV2
 	initialProfile: string
 	initialDirty: boolean
 	initialParseError: string | null
@@ -637,7 +633,7 @@ function LoaderHmrPromptApp(props: {
 		return 'roots'
 	})
 	const [scope, setScope] = useState<ConfigScope>('profile')
-	const [cfg, setCfg] = useState<PluxelLoaderHmrConfigV1>(props.initialCfg)
+	const [cfg, setCfg] = useState<PluxelLoaderHmrConfigV2>(props.initialCfg)
 	const [activeProfile, setActiveProfile] = useState(props.initialProfile)
 	const [dirty, setDirty] = useState(props.initialDirty)
 	const [toast, setToast] = useState<string>('')
@@ -645,11 +641,6 @@ function LoaderHmrPromptApp(props: {
 	const [overlay, setOverlay] = useState<Overlay>(null)
 	const [initialOpen, setInitialOpen] = useState<InitialOpen | null>(props.initialOpen ?? null)
 	const [typing, setTyping] = useState(false)
-	const [packagesInitialMode] = useState<'enabled' | 'builtin' | undefined>(() => {
-		if (props.initialOpen?.kind !== 'packages') return undefined
-		return props.initialOpen.mode
-	})
-
 	const [scan, setScan] = useState<ScanState>({ status: 'idle' })
 	const [snapshot, setSnapshot] = useState<SnapshotState>({ status: 'idle' })
 	const [doctorOffset, setDoctorOffset] = useState(0)
@@ -703,8 +694,8 @@ function LoaderHmrPromptApp(props: {
 			defaultFocus: 'confirm',
 			onConfirm: () => {
 				try {
-					const repaired = createDefaultLoaderHmrConfigV1()
-					backupAndRewriteLoaderHmrConfigV1(props.configPath, repaired)
+					const repaired = createDefaultLoaderHmrConfigV2()
+					backupAndRewriteLoaderHmrConfigV2(props.configPath, repaired)
 					setCfg(repaired)
 					setActiveProfile(repaired.profile)
 					setDirty(false)
@@ -779,8 +770,6 @@ function LoaderHmrPromptApp(props: {
 					rootsExpandedAbs,
 					excludeGlobs: merged.excludeGlobs,
 					hiddenPackages: [...props.skipPackages],
-					builtinPackages: merged.builtinPackages,
-					omitFromEntries: merged.builtinPackages,
 					discovered,
 				})
 
@@ -827,9 +816,6 @@ function LoaderHmrPromptApp(props: {
 			async function run() {
 				try {
 					const rootDirAbs = resolve(props.rootDir)
-					const omitPackages = merged.builtinPackages?.length
-						? uniqSorted(merged.builtinPackages)
-						: undefined
 					const snapshotRes = await buildLoaderHmrWorkspaceFromScan({
 						rootDir: rootDirAbs,
 						merged,
@@ -840,7 +826,6 @@ function LoaderHmrPromptApp(props: {
 							pkgDirAbs: p.pkgDirAbs,
 						})),
 						discovered: scan.discovered,
-						omitPackages,
 					})
 					if (cancelled) return
 					if (!snapshotRes.ok) {
@@ -872,7 +857,6 @@ function LoaderHmrPromptApp(props: {
 	}, [
 		merged.activeProfile,
 		merged.enabled.join('\n'),
-		merged.builtinPackages.join('\n'),
 		merged.includeGlobs.join('\n'),
 		merged.excludeGlobs.join('\n'),
 		scan.status === 'ready' ? scan.key : 'no-scan',
@@ -881,7 +865,7 @@ function LoaderHmrPromptApp(props: {
 
 	function saveConfig() {
 		try {
-			writeLoaderHmrConfigV1(props.configPath, { ...cfg, profile: activeProfile })
+			writeLoaderHmrConfigV2(props.configPath, { ...cfg, profile: activeProfile })
 			setDirty(false)
 			setToast(`Saved ${props.configPath}`)
 		} catch (error) {
@@ -1154,16 +1138,14 @@ function LoaderHmrPromptApp(props: {
 		}
 	})
 
-	function setPackagesValue(next: { enabled: string[]; builtin: string[] }) {
+	function setPackagesValue(enabled: string[]) {
 		setCfg((prev) => {
 			const profiles = { ...prev.profiles }
 			const profile = profiles[activeProfile] ?? { enabled: [] }
 			profiles[activeProfile] = {
 				...profile,
-				enabled: next.enabled,
-				...(next.builtin.length > 0 ? { builtin: next.builtin } : {}),
+				enabled,
 			}
-			if (next.builtin.length === 0) delete profiles[activeProfile].builtin
 			return { ...prev, profiles }
 		})
 		setDirty(true)
@@ -1266,7 +1248,7 @@ function LoaderHmrPromptApp(props: {
 		return remembered.length > 0 ? remembered : []
 	}
 
-	// Auto-open flows (when invoked via `pluxel hmr enabled/builtin` etc).
+	// Auto-open flows used by focused HMR commands.
 	useEffect(() => {
 		if (!initialOpen) return
 		if (modal) return
@@ -1303,7 +1285,7 @@ function LoaderHmrPromptApp(props: {
 		const s = snapshot.snapshot
 		const lines: string[] = [
 			`profile: ${s.activeProfile}`,
-			`enabled: ${s.enabled.length} • builtin: ${s.builtinPackages.length}`,
+			`selected packages: ${s.enabled.length}`,
 			`entries: ${s.enabledEntries.length} (+include ${s.includedEntries.length})`,
 			`watch roots: ${s.watchRoots.length}`,
 			`discovered: ${s.discovered.length}${doctorDetails ? '' : ' (d details)'}`,
@@ -1342,7 +1324,6 @@ function LoaderHmrPromptApp(props: {
 	const excludeCount = (excludeValue ?? []).length
 
 	const enabledPreview = formatListInline(profile.enabled ?? [], 6)
-	const builtinPreview = formatListInline(profile.builtin ?? [], 6)
 	const pathsTabs: Array<{ key: PathsFocus; label: string }> = [
 		{
 			key: 'roots',
@@ -1439,7 +1420,7 @@ function LoaderHmrPromptApp(props: {
 						const data = prev.profiles[act.from] ?? { enabled: [] }
 						const cloned = JSON.parse(
 							JSON.stringify(data),
-						) as PluxelLoaderHmrConfigV1['profiles'][string]
+						) as PluxelLoaderHmrConfigV2['profiles'][string]
 						return { ...prev, profiles: { ...prev.profiles, [name]: cloned } }
 					})
 					setDirty(true)
@@ -1494,7 +1475,6 @@ function LoaderHmrPromptApp(props: {
 			? `${activeProfile} (${profilePos}/${profileNames.length})`
 			: activeProfile
 	const enabledCount = (profile.enabled ?? []).length
-	const builtinCount = (profile.builtin ?? []).length
 	const scanInfo =
 		scan.status === 'ready'
 			? {
@@ -1544,9 +1524,7 @@ function LoaderHmrPromptApp(props: {
 				<Text color="gray">Profile </Text>
 				<Text color="cyan">{` ${profileBadge} `}</Text>
 				{dirty ? <Text color="yellow">{' unsaved '}</Text> : <Text color="gray"> </Text>}
-				{tab !== 'packages' ? (
-					<Text color="gray">{` enabled ${enabledCount} • builtin ${builtinCount}`}</Text>
-				) : null}
+				{tab !== 'packages' ? <Text color="gray">{` selected ${enabledCount}`}</Text> : null}
 				<Text color="gray"> • </Text>
 				{statusParts.map((part, i) => {
 					return (
@@ -1561,14 +1539,12 @@ function LoaderHmrPromptApp(props: {
 			<Box flexDirection="column" flexGrow={1} height={bodyRows}>
 				{tab === 'packages' ? (
 					<Box flexDirection="column" width="100%">
-						<Text color="gray">Enter/Space toggle • / filter • e mode • Tab(hold) profiles</Text>
+						<Text color="gray">Enter/Space toggle • / filter • Tab(hold) profiles</Text>
 						{scanSummary ? <Text color="gray">{scanSummary}</Text> : null}
 						{scan.status === 'ready' ? (
-							<PickPackagesDualBrowser
+							<PickPackagesBrowser
 								discovered={scan.discoveredForUi}
 								enabled={profile.enabled ?? []}
-								builtin={profile.builtin ?? []}
-								initialMode={packagesInitialMode}
 								height={packagesBodyRows}
 								disabled={Boolean(modal) || Boolean(overlay)}
 								onTypingChange={setTyping}
@@ -1645,8 +1621,7 @@ function LoaderHmrPromptApp(props: {
 					<Box flexDirection="column" width="100%">
 						<Text>Snapshot</Text>
 						<Text color="gray">Ctrl+S save • Ctrl+R rescan • Ctrl+←/→ tabs • q/Ctrl+C exit</Text>
-						<Text>enabled: {enabledPreview}</Text>
-						<Text>builtin: {builtinPreview}</Text>
+						<Text>selected packages: {enabledPreview}</Text>
 						<Text>
 							roots({scope}): {rootsValue === 'auto' ? 'auto' : `${rootsCount} item(s)`}
 						</Text>
@@ -1927,21 +1902,21 @@ export async function runLoaderHmrPromptTui(params: {
 		throw new Error('Interactive `pluxel hmr` requires a TTY.')
 	}
 
-	let initialCfg: PluxelLoaderHmrConfigV1
+	let initialCfg: PluxelLoaderHmrConfigV2
 	let initialProfile = 'hmr'
 	let initialDirty = false
 	let initialParseError: string | null = null
 
 	if (!existsSync(params.configPath)) {
-		initialCfg = createDefaultLoaderHmrConfigV1()
+		initialCfg = createDefaultLoaderHmrConfigV2()
 		initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		initialDirty = true
 	} else {
 		try {
-			initialCfg = readLoaderHmrConfigV1(params.configPath)
+			initialCfg = readLoaderHmrConfigV2(params.configPath)
 			initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		} catch (e) {
-			initialCfg = createDefaultLoaderHmrConfigV1()
+			initialCfg = createDefaultLoaderHmrConfigV2()
 			initialProfile = initialCfg.profile
 			initialDirty = false
 			initialParseError = e instanceof Error ? e.message : String(e)
@@ -1958,7 +1933,7 @@ export async function runLoaderHmrPromptTui(params: {
 
 	const defaultInitialOpen: InitialOpen | undefined = (() => {
 		// First-time setup: prompt user to pick packages instead of a blank snapshot screen.
-		if (!existsSync(params.configPath)) return { kind: 'packages', mode: 'enabled' }
+		if (!existsSync(params.configPath)) return { kind: 'packages' }
 		return undefined
 	})()
 

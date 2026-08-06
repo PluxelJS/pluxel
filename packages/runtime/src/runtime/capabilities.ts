@@ -107,6 +107,11 @@ export type RuntimeRouteCapabilities = {
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
 	modules?: RuntimeModuleRuntime
+	/** Internal route capability used by file-source producers to validate their publication target. */
+	dynamicPluginSources?: {
+		hasFile(path: string): boolean
+		hasDirectory(path: string, include: readonly string[]): boolean
+	}
 }
 
 const identityModuleRuntime: RuntimeModuleRuntime = {

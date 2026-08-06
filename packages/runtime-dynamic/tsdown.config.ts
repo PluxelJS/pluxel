@@ -41,6 +41,7 @@ export default defineConfig({
 		hmr: 'src/hmr.ts',
 		'hmr/diagnose': 'src/hmr/diagnose.ts',
 		vite: 'src/vite.ts',
+		'source-producer': 'src/source-producer.ts',
 	},
 	dts: {
 		sourcemap: true,

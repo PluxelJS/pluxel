@@ -2,11 +2,10 @@ import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, resolve } from 'pathe'
-import { createServerModuleRunner, type DevEnvironment, type ViteDevServer } from 'vite'
+import { type DevEnvironment, type ViteDevServer } from 'vite'
 import {
-	ESModulesEvaluator,
 	type EvaluatedModuleNode,
-	EvaluatedModules,
+	type EvaluatedModules,
 	type ModuleRunner,
 } from 'vite/module-runner'
 import {
@@ -28,9 +27,10 @@ import {
 } from '@pluxel/runtime/internal'
 import {
 	createHostModuleClassifier,
+	getPluxelViteSsrModuleRunner,
 	type HostModuleClassifier,
 	type HostModuleDecision,
-} from '@pluxel/runtime-dev/vite'
+} from '../../../../runtime-dev/src/vite.ts'
 import type { HmrPathApi } from './environment'
 import { matchesSpecifierPattern } from './internals'
 
@@ -71,8 +71,6 @@ type ExternalizeHint = {
 }
 
 export class HmrRunner {
-	public readonly evaluatedModules = new EvaluatedModules()
-
 	private _env: DevEnvironment | null = null
 	private _runner: ModuleRunner | null = null
 	private _hostResolver!: OxcResolver
@@ -114,19 +112,7 @@ export class HmrRunner {
 			? [...opts.workspaceConditions]
 			: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
 		this._workspaceDistConditions = [...PLUXEL_DIST_EXPORT_CONDITIONS]
-		const hasNativeSourcemapSupport =
-			typeof (globalThis as unknown as { process?: { setSourceMapsEnabled?: unknown } })?.process
-				?.setSourceMapsEnabled === 'function'
-		this._runner = createServerModuleRunner(this.env, {
-			hmr: false,
-			evaluatedModules: this.evaluatedModules,
-			// Prefer Node/Bun native sourcemap support when available; fall back to Vite's
-			// prepareStackTrace interceptor (older runtimes / edge environments).
-			sourcemapInterceptor: hasNativeSourcemapSupport ? 'node' : 'prepareStackTrace',
-			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
-			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
-			evaluator: new ESModulesEvaluator(),
-		})
+		this._runner = getPluxelViteSsrModuleRunner(server)
 
 		this._hostModules = createHostModuleClassifier({
 			root: this._hostCwdAbs,
@@ -152,6 +138,10 @@ export class HmrRunner {
 	get runner(): ModuleRunner {
 		if (!this._runner) throw new Error('HmrRunner not initialized')
 		return this._runner
+	}
+
+	get evaluatedModules(): EvaluatedModules {
+		return this.runner.evaluatedModules
 	}
 
 	import(id: string) {
@@ -328,36 +318,48 @@ export class HmrRunner {
 	private installFetchModuleInterceptor() {
 		const transport = (this._runner as unknown as { transport?: unknown })?.transport
 		if (!transport || typeof transport !== 'object') return
-		const invoke = (transport as Record<string, unknown>).invoke
+		const record = transport as Record<PropertyKey, unknown>
+		const interceptorKey = Symbol.for('pluxel.dynamicHmrFetchInterceptor')
+		const installed = record[interceptorKey] as
+			| { current: HmrRunner; originalInvoke: (name: string, data: unknown) => Promise<unknown> }
+			| undefined
+		if (installed) {
+			installed.current = this
+			return
+		}
+		const invoke = record.invoke
 		if (typeof invoke !== 'function') return
 
 		const originalInvoke = (invoke as (name: string, data: unknown) => Promise<unknown>).bind(
 			transport,
 		)
-		;(transport as Record<string, unknown>).invoke = async (name: string, data: unknown) => {
+		const state = { current: this, originalInvoke }
+		record[interceptorKey] = state
+		record.invoke = async (name: string, data: unknown) => {
+			const current = state.current
 			if (name === 'fetchModule' && Array.isArray(data)) {
 				const url = typeof data[0] === 'string' ? data[0] : null
 				if (url) {
 					const rawId = unwrapViteId(url)
 					const canonicalId = cleanUrl(rawId)
 					if (
-						this.bridgedRunnerUrls.has(url) ||
-						this.bridgedRunnerUrls.has(rawId) ||
-						this.bridgedRunnerUrls.has(canonicalId)
+						current.bridgedRunnerUrls.has(url) ||
+						current.bridgedRunnerUrls.has(rawId) ||
+						current.bridgedRunnerUrls.has(canonicalId)
 					) {
 						const cached =
-							this.evaluatedModules.getModuleByUrl(url) ??
-							this.evaluatedModules.getModuleByUrl(rawId) ??
-							this.evaluatedModules.getModuleByUrl(canonicalId)
+							current.evaluatedModules.getModuleByUrl(url) ??
+							current.evaluatedModules.getModuleByUrl(rawId) ??
+							current.evaluatedModules.getModuleByUrl(canonicalId)
 						if (cached?.promise && cached.meta) return { cache: true }
 					}
 				}
-				const intercepted = await this.tryInterceptFetchModule(data as unknown[])
+				const intercepted = await current.tryInterceptFetchModule(data as unknown[])
 				if (intercepted) return intercepted
-				const result = await originalInvoke(name, data)
-				return await this.maybePatchFetchModuleResult(data as unknown[], result)
+				const result = await state.originalInvoke(name, data)
+				return await current.maybePatchFetchModuleResult(data as unknown[], result)
 			}
-			return originalInvoke(name, data)
+			return state.originalInvoke(name, data)
 		}
 	}
 

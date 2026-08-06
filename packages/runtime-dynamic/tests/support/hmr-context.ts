@@ -10,7 +10,6 @@ export type HmrTestState = {
 		forks?: Record<string, string[]>
 		baseProviders?: Record<string, string>
 		dependencyOverrides?: Record<string, Record<number, string>>
-		builtinsKnown?: Record<string, 1>
 	}
 }
 
@@ -56,7 +55,6 @@ export function createHmrTestContext(state: HmrTestState = {}): HmrTestContext {
 		if (persisted.dependencyOverrides) {
 			draft.dependencyOverrides = cloneNestedStringRecord(persisted.dependencyOverrides)
 		}
-		if (persisted.builtinsKnown) draft.builtinsKnown = cloneBuiltinsKnown(persisted.builtinsKnown)
 	})
 	syncExternalState(ctx, state)
 
@@ -83,7 +81,6 @@ function syncExternalState(ctx: Context, state: HmrTestState): void {
 	runtimeState.forks = cloneRecordOfArrays(snapshot.forks)
 	runtimeState.baseProviders = { ...snapshot.baseProviders }
 	runtimeState.dependencyOverrides = cloneNestedStringRecord(snapshot.dependencyOverrides)
-	runtimeState.builtinsKnown = { ...snapshot.builtinsKnown }
 }
 
 function cloneRecordOfArrays(value: unknown): Record<string, string[]> {
@@ -115,15 +112,6 @@ function cloneNestedStringRecord(value: unknown): Record<string, Record<number, 
 			if (typeof target === 'string') entry[Number(index)] = target
 		}
 		out[key] = entry
-	}
-	return out
-}
-
-function cloneBuiltinsKnown(value: unknown): Record<string, 1> {
-	const out: Record<string, 1> = Object.create(null)
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return out
-	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-		if (raw === 1) out[key] = 1
 	}
 	return out
 }

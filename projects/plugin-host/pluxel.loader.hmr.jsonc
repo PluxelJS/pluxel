@@ -2,7 +2,7 @@
 // Prefer using the interactive prompt to edit this file.
 // Manual edits are allowed but may be overwritten by the generator.
 {
-	"version": 1,
+	"version": 2,
 	"profile": "plugins-host",
 	"defaults": {
 		"roots": "auto",
@@ -11,7 +11,6 @@
 	"profiles": {
 		"plugins-host": {
 			"enabled": [],
-			"builtin": [],
 			"include": ["projects/plugin-host/src/demo/**/*.ts"],
 			"exclude": [
 				"projects/plugin-host/src/demo/**/ui/**",

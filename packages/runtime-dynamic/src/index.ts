@@ -1,13 +1,8 @@
 import type { Context } from '@pluxel/runtime'
-import {
-	assertDynamicRuntimeConfig,
-	defineDynamicRuntimeConfig,
-	type DynamicRuntimeConfig,
-} from './config'
+import { defineDynamicRuntimeConfig } from './config'
 
 export { defineDynamicRuntimeConfig }
 export type { DynamicRuntimeConfig, DynamicRuntimeStorageOptions } from './config'
-export type { BuiltinDistPluginSpec, BuiltinForkSpec, BuiltinPluginSpec } from './builtin-spec'
 export type { DynamicPluginSource } from './sources'
 
 export type DynamicDevRuntime = {
@@ -21,28 +16,25 @@ export type DynamicDevRuntime = {
 
 /** Plans an unstarted dynamic runtime. Call `start()` before reading its Context. */
 export async function createDynamicDevRuntime(
-	config: DynamicRuntimeConfig,
+	options: Readonly<{ config: string }>,
 ): Promise<DynamicDevRuntime> {
-	assertDynamicRuntimeConfig(config)
-	const { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } = await import('./hmr/host')
-	const plan = await planLoaderHmrHostFromConfig(config)
-	let booted: Awaited<ReturnType<typeof bootPlannedLoaderHmrHost>> | undefined
+	const configPath = String(options?.config ?? '').trim()
+	if (!configPath)
+		throw new TypeError('[runtime-dynamic] createDynamicDevRuntime config is required')
+	let server: import('vite').ViteDevServer | undefined
 	let startPromise: Promise<void> | undefined
 	let stopped = false
 
 	const start = async (): Promise<void> => {
 		if (stopped) throw new Error('[runtime-dynamic] cannot start a stopped runtime')
-		if (booted) return
-		startPromise ??= bootPlannedLoaderHmrHost(plan)
-			.then(async (result) => {
-				try {
-					await result.hmr.start()
-					booted = result
-					return undefined
-				} catch (error) {
-					await result.stop()
-					throw error
-				}
+		if (server) return
+		startPromise ??= import('./launcher-internal')
+			.then(({ startOwnedDynamicRuntimeViteServer }) =>
+				startOwnedDynamicRuntimeViteServer({ config: configPath }),
+			)
+			.then((result) => {
+				server = result
+				return undefined
 			})
 			.catch((error) => {
 				startPromise = undefined
@@ -56,19 +48,31 @@ export async function createDynamicDevRuntime(
 			if (stopped) {
 				throw new Error('[runtime-dynamic] runtime has stopped; its Context is no longer available')
 			}
-			if (!booted) {
+			if (!server) {
 				throw new Error(
 					'[runtime-dynamic] runtime has not started; call await runtime.start() before accessing ctx',
 				)
 			}
-			return booted.ctx as Context
+			const controller = readDynamicRuntimeController(server)
+			if (!controller)
+				throw new Error('[runtime-dynamic] dynamic runtime controller is unavailable')
+			return controller.booted.ctx as Context
 		},
 		start,
 		stop: async () => {
 			if (stopped) return
 			stopped = true
 			if (startPromise) await startPromise.catch((): void => undefined)
-			await booted?.stop()
+			await server?.close()
 		},
 	}
+}
+
+function readDynamicRuntimeController(
+	server: import('vite').ViteDevServer,
+): { booted: { ctx: Context } } | undefined {
+	const key = Symbol.for('pluxel.dynamicRuntimeController')
+	return (server as unknown as Record<PropertyKey, unknown>)[key] as
+		| { booted: { ctx: Context } }
+		| undefined
 }

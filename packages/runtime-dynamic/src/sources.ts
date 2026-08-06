@@ -24,6 +24,7 @@ export type ResolvedDynamicPluginSources = Readonly<{
 	roots: readonly string[]
 	entries: readonly string[]
 	includeGlobs: readonly string[]
+	declarations: readonly DynamicPluginSource[]
 }>
 
 export async function resolveDynamicPluginSources(
@@ -33,11 +34,13 @@ export async function resolveDynamicPluginSources(
 	const roots = new Set<string>()
 	const entries = new Set<string>()
 	const includeGlobs = new Set<string>()
+	const declarations: DynamicPluginSource[] = []
 
 	for (const source of sources ?? []) {
 		assertDynamicPluginSource(source)
 		if (source.kind === 'file') {
 			const entry = normalizePath(resolve(root, source.path.trim()))
+			declarations.push(Object.freeze({ kind: 'file', path: entry }))
 			roots.add(normalizePath(resolve(entry, '..')))
 			includeGlobs.add(entry)
 			if (existsSync(entry)) {
@@ -49,6 +52,9 @@ export async function resolveDynamicPluginSources(
 
 		const directory = normalizePath(resolve(root, source.path.trim()))
 		const patterns = source.include.map(normalizeSourcePattern)
+		declarations.push(
+			Object.freeze({ kind: 'directory', path: directory, include: Object.freeze(patterns) }),
+		)
 		const matches = picomatch(patterns, { dot: true })
 		roots.add(directory)
 		for (const pattern of patterns) includeGlobs.add(normalizePath(resolve(directory, pattern)))
@@ -66,6 +72,7 @@ export async function resolveDynamicPluginSources(
 		roots: Object.freeze([...roots].sort()),
 		entries: Object.freeze([...entries].sort()),
 		includeGlobs: Object.freeze([...includeGlobs].sort()),
+		declarations: Object.freeze(declarations),
 	})
 }
 

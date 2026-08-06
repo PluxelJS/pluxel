@@ -3,22 +3,14 @@ import {
 	collectPluginLifecycleNotStarted,
 	type CommitSummary,
 	type Context as PluxelContext,
-	type ForkablePluginConstructor,
-	formatForkPluginId,
 	getPluginInfo,
 	Injectable,
 	type PluginConstructor,
 } from '@pluxel/core'
-import {
-	disablePluginsOnMissingDependencyError,
-	isPluginEnabled,
-	setPluginsEnabled,
-	type MissingDepsCandidate,
-} from '@pluxel/runtime/internal'
+import { isPluginEnabled } from '@pluxel/runtime/internal'
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'
-import type { BuiltinPluginSpec } from '../builtin-spec'
 import {
 	AnchorStore,
 	type LoaderBatch,
@@ -38,7 +30,6 @@ export type { ReplaceModuleResult } from './module-replacer'
 export type { LoaderApi, LoaderBatch, LoaderSyncModulesOptions, RemovalScope } from './support'
 
 const serviceName = 'loader' as const
-const BUILTIN_MODULE_ID_DEFAULT = 'pluxel:builtins'
 type RuntimeModuleUpdateBridge = {
 	upsertModule(module: {
 		moduleId: string
@@ -47,38 +38,6 @@ type RuntimeModuleUpdateBridge = {
 	removeModule(moduleId: string): void
 }
 
-export type PreloadBuiltinsOptions = {
-	moduleId?: string
-	/**
-	 * Whether to commit immediately after enabling builtins.
-	 *
-	 * @default true
-	 */
-	commit?: boolean
-	/**
-	 * Strict mode:
-	 * - `true`: commit failures throw (fail-fast).
-	 * - `false`: commit failures are logged and ignored (best-effort; UI remains available).
-	 *
-	 * @default false
-	 */
-	strict?: boolean
-	/**
-	 * When `strict=false`, automatically disable plugins that fail DI verification due to missing dependencies
-	 * (then retry preload/commit with the remaining enabled plugins).
-	 *
-	 * This keeps the host usable even when a plugin is temporarily broken or its dependency is not installed.
-	 *
-	 * @default true
-	 */
-	autoDisableMissingDependencies?: boolean
-	/**
-	 * Safety cap for auto-disable retries (avoid infinite loops on unexpected errors).
-	 *
-	 * @default 8
-	 */
-	autoDisableMaxPasses?: number
-}
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Services {
@@ -86,15 +45,6 @@ declare module '@pluxel/core' {
 		}
 	}
 }
-
-function cloneStringArrayRecord(
-	input: Readonly<Record<string, readonly string[]>>,
-): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) out[key] = [...value]
-	return out
-}
-
 @Injectable({ key: serviceName })
 export class LoaderService {
 	/** 仅记录“当前是插件锚点”的文件，供外部(HMR)过滤 */
@@ -146,10 +96,6 @@ export class LoaderService {
 		return isPluginEnabled(this.ctx.runtimeState.snapshot(), name)
 	}
 
-	private setEnabled(names: Iterable<string>, enabled: boolean): void {
-		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, names, enabled))
-	}
-
 	private cleanupNotStartedRuntimeRegistrations(summary: CommitSummary): void {
 		for (const key of collectPluginLifecycleNotStarted(summary.lifecycleReport)) {
 			const name = String(key)
@@ -159,238 +105,52 @@ export class LoaderService {
 		}
 	}
 
-	/**
-	 * Preload "built-in" plugin constructors without requiring a scanned entry file.
-	 *
-	 * Notes:
-	 * - This commits immediately by default so the resulting baseline container survives later batch rollbacks.
-	 * - The loader declaration layer is updated under a synthetic module id so UI tooling can locate them.
-	 */
-	async preloadPlugins(
-		plugins: readonly BuiltinPluginSpec[],
-		options: PreloadBuiltinsOptions = {},
-	): Promise<string[]> {
+	/** Registers the immutable catalog owned by one dynamic config generation. */
+	async registerFixedPlugins(
+		plugins: readonly PluginConstructor[],
+		options: { moduleId: string },
+	): Promise<readonly string[]> {
 		if (plugins.length === 0) return []
-		const defaultModuleId = options.moduleId ?? BUILTIN_MODULE_ID_DEFAULT
-		const shouldCommit = options.commit !== false
-		const strict = options.strict ?? false
-		const autoDisableMissingDependencies = options.autoDisableMissingDependencies ?? !strict
-		const autoDisableMaxPasses = options.autoDisableMaxPasses ?? 8
+		if (!options.moduleId.startsWith('pluxel:fixed:')) {
+			throw new Error(
+				'[runtime-dynamic] fixed catalog owner must be derived from the config module',
+			)
+		}
 
-		const runtimeUpdate = shouldCommit ? this.ctx.registry.beginUpdate({ reason: 'startup' }) : null
-		const tx = this.registry.beginTransaction({
-			runtimeUpdate: runtimeUpdate ?? undefined,
-		})
+		const runtimeUpdate = this.ctx.registry.beginUpdate({ reason: 'startup' })
+		const tx = this.registry.beginTransaction({ runtimeUpdate })
 		const seen = new Set<PluginConstructor>()
-		const declared: Array<{ name: string; ctor: PluginConstructor; defaultEnable: boolean }> = []
-		const declaredForks: Array<{
-			name: string
-			ctor: PluginConstructor
-			defaultEnable: boolean
-		}> = []
-		let coreDraftChanged = false
-		const runtimeState = this.ctx.runtimeState.snapshot()
-		const prevForks = cloneStringArrayRecord(runtimeState.forks)
-		let forksExtraDirty = false
-		const forkSets = new Map<string, Set<string>>()
-		const prevKnown = { ...runtimeState.builtinsKnown }
-		let knownDirty = false
-		let nextKnown: Record<string, 1> | undefined
-		const enabledByUs: string[] = []
+		const constructorById = new Map<string, PluginConstructor>()
+		const declared: Array<{ name: string; ctor: PluginConstructor }> = []
 
 		try {
-			for (const spec of plugins) {
-				const ctor = typeof spec === 'function' ? spec : spec.plugin
+			for (const ctor of plugins) {
 				if (seen.has(ctor)) continue
 				seen.add(ctor)
-				const enable = typeof spec === 'function' ? true : spec.enable !== false
-				const moduleId =
-					typeof spec === 'function' ? defaultModuleId : (spec.moduleId ?? defaultModuleId)
-				const exportKey = typeof spec === 'function' ? 'default' : (spec.exportKey ?? 'default')
-
-				const declaredName = this.registry.declarePlugin(moduleId, ctor, exportKey, tx)
-				declared.push({ name: declaredName, ctor, defaultEnable: enable })
-
-				const forks = typeof spec === 'function' ? undefined : spec.forks
-				if (forks?.length) {
-					for (const forkSpec of forks) {
-						const forkId = typeof forkSpec === 'string' ? forkSpec.trim() : forkSpec.id.trim()
-						if (!forkId) continue
-
-						let set = forkSets.get(declaredName)
-						if (!set) {
-							const seed = Array.isArray(prevForks[declaredName]) ? prevForks[declaredName] : []
-							set = new Set(seed)
-							forkSets.set(declaredName, set)
-						}
-						const before = set.size
-						set.add(forkId)
-						if (set.size !== before) forksExtraDirty = true
-
-						const forkEnable = typeof forkSpec === 'string' ? true : forkSpec.enable !== false
-						const forkName = formatForkPluginId(declaredName, forkId)
-						const forkCtor = this.ctx.registry.fork(
-							ctor as unknown as ForkablePluginConstructor,
-							forkId,
-						) as PluginConstructor
-						declaredForks.push({ name: forkName, ctor: forkCtor, defaultEnable: forkEnable })
-					}
+				const name = getPluginInfo(ctor).id
+				const existing = constructorById.get(name)
+				if (existing && existing !== ctor) {
+					throw new Error(`[runtime-dynamic] fixed catalog contains duplicate plugin id "${name}"`)
 				}
+				constructorById.set(name, ctor)
+				this.registry.declarePlugin(options.moduleId, ctor, name, tx)
+				declared.push({ name, ctor })
 			}
 
-			const enableTargets: Array<{
-				name: string
-				ctor: PluginConstructor
-				defaultEnable: boolean
-				knownBefore: boolean
-			}> = []
+			await this.registry.syncRuntimeForModule(options.moduleId)
 
-			const ensureKnown = (name: string) => {
-				if (prevKnown[name] === 1) return
-				if (!nextKnown) nextKnown = { ...prevKnown }
-				if (nextKnown[name] === 1) return
-				nextKnown[name] = 1
-				knownDirty = true
-			}
-
-			for (const item of declared) {
-				const knownBefore = prevKnown[item.name] === 1
-				enableTargets.push({
-					name: item.name,
-					ctor: item.ctor,
-					defaultEnable: item.defaultEnable,
-					knownBefore,
-				})
-				if (!knownBefore) ensureKnown(item.name)
-			}
-			for (const fork of declaredForks) {
-				const knownBefore = prevKnown[fork.name] === 1
-				enableTargets.push({
-					name: fork.name,
-					ctor: fork.ctor,
-					defaultEnable: fork.defaultEnable,
-					knownBefore,
-				})
-				if (!knownBefore) ensureKnown(fork.name)
-			}
-
-			if (forksExtraDirty || knownDirty) {
-				this.ctx.runtimeState.update((draft) => {
-					if (forksExtraDirty) {
-						const next = cloneStringArrayRecord(prevForks)
-						for (const [baseName, set] of forkSets) next[baseName] = [...set]
-						draft.forks = next
-					}
-					if (knownDirty) {
-						draft.builtinsKnown = { ...nextKnown! }
-					}
-				})
-			}
-
-			const startTargetsWithSeeding = async () => {
-				for (const t of enableTargets) {
-					const wasEnabled = this.isEnabled(t.name)
-					const shouldSeed = t.defaultEnable && !t.knownBefore
-					if (!wasEnabled && !shouldSeed) continue
-					await this.registry.enable(t.name, t.ctor)
-					coreDraftChanged = true
-					if (!wasEnabled) enabledByUs.push(t.name)
-				}
-			}
-
-			const enableTargetsIfEnabledInConfig = async () => {
-				for (const t of enableTargets) {
-					if (!this.isEnabled(t.name)) continue
-					await this.registry.enable(t.name, t.ctor)
-					coreDraftChanged = true
-				}
-			}
-
-			await startTargetsWithSeeding()
-
-			if (shouldCommit) {
-				const candidates: MissingDepsCandidate[] = enableTargets.map((t) => {
-					let pluginId: string | undefined
-					try {
-						pluginId = getPluginInfo(t.ctor).id
-					} catch {
-						pluginId = undefined
-					}
-					return { name: t.name, ctorName: t.ctor?.name, pluginId }
-				})
-
-				let pass = 0
-				const autoDisabled = new Set<string>()
-				let commitResult = await runtimeUpdate!.commit({
-					rollbackOnFailure: false,
-				})
-				while (
-					!commitResult.ok &&
-					!strict &&
-					autoDisableMissingDependencies &&
-					pass < autoDisableMaxPasses
-				) {
-					const disabled = disablePluginsOnMissingDependencyError({
-						error: commitResult.err,
-						candidates,
-						isEnabled: (name) => this.isEnabled(name),
-						disable: (name) => this.setEnabled([name], false),
-						batch: (run) => this.ctx.runtimeState.update(() => run()),
-						logger: this.ctx.logger,
-						stage: 'builtins preload',
-					})
-					if (disabled.size === 0) break
-					for (const name of disabled) autoDisabled.add(name)
-
-					// Commit failure rolls core draft back internally; enable remaining plugins again and retry
-					// within the same runtime update transaction.
-					await enableTargetsIfEnabledInConfig()
-					commitResult = await runtimeUpdate!.commit({
-						rollbackOnFailure: false,
-						autoDisabled: [...autoDisabled].sort(),
-					})
-					pass++
-				}
-
-				if (!commitResult.ok) {
-					// Keep persisted state consistent: revert enable bits that were introduced by this call.
-					this.setEnabled(enabledByUs, false)
-					this.revertPreloadRuntimeState({ forksExtraDirty, knownDirty, prevForks, prevKnown })
-					tx.rollback()
-					runtimeUpdate!.rollback()
-
-					if (strict) {
-						throw new Error('builtin preload commit failed', { cause: commitResult.err })
-					}
-					this.ctx.logger.error('builtin preload commit failed', { error: commitResult.err })
-					return []
-				}
+			const commitResult = await runtimeUpdate.commit({ rollbackOnFailure: false })
+			if (!commitResult.ok) {
+				throw new Error('fixed catalog commit failed', { cause: commitResult.err })
 			}
 
 			tx.commit()
-			return declared.map((d) => d.name)
+			return declared.map((item) => item.name)
 		} catch (error) {
-			// Keep persisted state consistent: revert enable bits introduced by this call.
-			this.setEnabled(enabledByUs, false)
-			this.revertPreloadRuntimeState({ forksExtraDirty, knownDirty, prevForks, prevKnown })
 			tx.rollback()
-			if (runtimeUpdate) runtimeUpdate.rollback()
-			else if (coreDraftChanged) this.ctx.registry.resetDraft()
+			runtimeUpdate.rollback()
 			throw error
 		}
-	}
-
-	private revertPreloadRuntimeState(options: {
-		forksExtraDirty: boolean
-		knownDirty: boolean
-		prevForks: Record<string, string[]>
-		prevKnown: Record<string, 1>
-	}): void {
-		if (!options.forksExtraDirty && !options.knownDirty) return
-		this.ctx.runtimeState.update((draft) => {
-			if (options.forksExtraDirty) draft.forks = cloneStringArrayRecord(options.prevForks)
-			if (options.knownDirty) draft.builtinsKnown = { ...options.prevKnown }
-		})
 	}
 
 	// 先停旧运行态，再把"已执行的新模块"导出解析并装入。

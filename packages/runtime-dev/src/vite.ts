@@ -110,7 +110,8 @@ export function createWorkbenchViteClientConfig(clientEntryUrl: string): UserCon
 	}
 }
 
-function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {
+/** Returns the single Pluxel-owned SSR runner/evaluated namespace for a Vite server. */
+export function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {
 	const existing = pluxelSsrModuleRunners.get(server)
 	if (existing && !existing.isClosed()) return existing
 
@@ -129,8 +130,11 @@ function getPluxelViteSsrModuleRunner(server: ViteDevServer): ModuleRunner {
 		server.close = async () => {
 			const current = pluxelSsrModuleRunners.get(server)
 			pluxelSsrModuleRunners.delete(server)
-			if (current && !current.isClosed()) await current.close()
-			await close()
+			try {
+				await close()
+			} finally {
+				if (current && !current.isClosed()) await current.close()
+			}
 		}
 	}
 	return runner

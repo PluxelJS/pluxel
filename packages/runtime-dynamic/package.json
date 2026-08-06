@@ -26,6 +26,10 @@
 			"@pluxel/source": "./src/hmr/diagnose.ts",
 			"default": "./dist/hmr/diagnose.mjs"
 		},
+		"./source-producer": {
+			"@pluxel/source": "./src/source-producer.ts",
+			"default": "./dist/source-producer.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -37,6 +41,7 @@
 			".": "./dist/index.mjs",
 			"./hmr": "./dist/hmr.mjs",
 			"./hmr/diagnose": "./dist/hmr/diagnose.mjs",
+			"./source-producer": "./dist/source-producer.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}
@@ -59,6 +64,7 @@
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"superjson": "^2.2.6",
+		"tsx": "^4.23.0",
 		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},

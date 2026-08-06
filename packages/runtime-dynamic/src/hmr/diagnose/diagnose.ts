@@ -1,9 +1,9 @@
 import { resolve } from 'pathe'
 import picomatch from 'picomatch'
-import type { BuiltinsFromDistEntry, LoaderHmrWorkspaceSnapshot } from '../snapshot'
+import type { LoaderHmrWorkspaceSnapshot } from '../snapshot'
 import {
-	type PluxelLoaderHmrConfigV1,
-	readLoaderHmrConfigV1,
+	type PluxelLoaderHmrConfigV2,
+	readLoaderHmrConfigV2,
 	resolveDefaultLoaderHmrConfigPath,
 } from './config'
 import {
@@ -28,10 +28,6 @@ export type DiagnoseWorkspaceInput = {
 	env?: Record<string, string | undefined>
 	/**
 	 * Package names to omit from discovery/enabled resolution.
-	 *
-	 * Primary use case: the host preloads certain packages as builtins (baseline),
-	 * so workspace profiles should not also load their `@pluxel/hmr` source entries
-	 * (prevents "plugin name conflict" from double-loading the same package).
 	 */
 	omitPackages?: string[]
 	fs?: LoaderHmrWorkspaceFs
@@ -47,32 +43,12 @@ type MergedProfile = {
 	activeProfile: string
 	roots: 'auto' | string[]
 	enabled: string[]
-	builtinPackages: string[]
 	includeGlobs: string[]
 	excludeGlobs: string[]
 }
 
-function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
-	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
-	const exportsField = (manifest as Record<string, unknown>).exports
-	const dot =
-		exportsField && typeof exportsField === 'object' && !Array.isArray(exportsField)
-			? (exportsField as Record<string, unknown>)['.']
-			: undefined
-	if (!dot) return null
-
-	// Intentional simplification (no compat burden): builtin packages must provide a direct dist ESM entry.
-	// We only accept a string `.mjs` at `exports["."].import|default|module` or `exports["."]` itself.
-	const pick = (v: unknown) =>
-		typeof v === 'string' && v.trim().endsWith('.mjs') ? v.trim() : null
-	if (typeof dot === 'string') return pick(dot)
-	if (typeof dot !== 'object' || Array.isArray(dot)) return null
-	const obj = dot as Record<string, unknown>
-	return pick(obj.import) ?? pick(obj.default) ?? pick(obj.module)
-}
-
 export function mergeLoaderHmrProfile(
-	cfg: PluxelLoaderHmrConfigV1,
+	cfg: PluxelLoaderHmrConfigV2,
 	env?: Record<string, string | undefined>,
 ): MergedProfile {
 	const activeProfile = env?.PLUXEL_HMR_PROFILE ?? cfg.profile
@@ -85,11 +61,10 @@ export function mergeLoaderHmrProfile(
 
 	const roots = profile.roots ?? cfg.defaults?.roots ?? 'auto'
 	const enabled = profile.enabled
-	const builtinPackages = profile.builtin ?? []
 	const includeGlobs = [...(cfg.defaults?.include ?? []), ...(profile.include ?? [])]
 	const excludeGlobs = [...(cfg.defaults?.exclude ?? []), ...(profile.exclude ?? [])]
 
-	return { activeProfile, roots, enabled, builtinPackages, includeGlobs, excludeGlobs }
+	return { activeProfile, roots, enabled, includeGlobs, excludeGlobs }
 }
 
 export async function resolveLoaderHmrRootsExpanded(
@@ -237,12 +212,8 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 
 	const omit = new Set((params.omitPackages ?? []).map((s) => String(s).trim()).filter(Boolean))
 	const effectiveEnabled: string[] = []
-	const skippedEnabled: string[] = []
 	for (const name of params.merged.enabled) {
-		if (omit.has(name)) {
-			skippedEnabled.push(name)
-			continue
-		}
+		if (omit.has(name)) continue
 		effectiveEnabled.push(name)
 	}
 
@@ -271,13 +242,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	if (errors.length > 0) return { ok: false, errors, discovered: params.discovered }
 
 	const warnings: string[] = []
-	if (skippedEnabled.length > 0) {
-		warnings.push(
-			`[loader-hmr] Skipped ${skippedEnabled.length} enabled package(s) because they are provided by builtins: ${skippedEnabled.join(
-				', ',
-			)}`,
-		)
-	}
 
 	{
 		// Monorepo correctness: if an enabled plugin package declares another plugin package as a dependency,
@@ -341,7 +305,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		activeProfile: params.merged.activeProfile,
 		roots,
 		enabled: effectiveEnabled,
-		builtinPackages: uniqSorted(params.merged.builtinPackages),
 		enabledEntries,
 		includedEntries,
 		discovered: params.discovered,
@@ -363,9 +326,9 @@ export async function diagnoseWorkspace(
 	if (!fs.existsSync(configPathAbs))
 		return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
 
-	let cfg: PluxelLoaderHmrConfigV1
+	let cfg: PluxelLoaderHmrConfigV2
 	try {
-		cfg = readLoaderHmrConfigV1(configPathAbs, fs)
+		cfg = readLoaderHmrConfigV2(configPathAbs, fs)
 	} catch (error) {
 		return { ok: false, errors: [error instanceof Error ? error.message : String(error)] }
 	}
@@ -392,10 +355,7 @@ export async function diagnoseWorkspace(
 	})
 	const discovered = discoverPluginsFromPackages(rootDirAbs, packages)
 
-	const omitPackages = uniqSorted([
-		...(input.omitPackages ?? []),
-		...(merged.builtinPackages ?? []),
-	])
+	const omitPackages = uniqSorted(input.omitPackages ?? [])
 
 	const base = await buildWorkspaceSnapshotFromScan({
 		rootDir: rootDirAbs,
@@ -407,46 +367,7 @@ export async function diagnoseWorkspace(
 		fs,
 	})
 
-	if (!base.ok) return base
-
-	const builtinPkgs = base.snapshot.builtinPackages
-	if (builtinPkgs.length === 0) return base
-
-	const byName = new Map(packages.map((p) => [p.name, p]))
-	const builtinsFromDist: BuiltinsFromDistEntry[] = []
-	for (const pkgName of builtinPkgs) {
-		const pkg = byName.get(pkgName)
-		if (!pkg)
-			return {
-				ok: false,
-				errors: [`[loader-hmr] Builtin package not found in workspace: ${pkgName}`],
-				discovered: base.snapshot.discovered,
-			}
-
-		const rel = resolveDefaultDistEntryFromManifest(pkg.manifest)
-		if (!rel) {
-			return {
-				ok: false,
-				errors: [
-					`[loader-hmr] Builtin package missing dist .mjs export entry (check package.json exports): ${pkgName}`,
-				],
-				discovered: base.snapshot.discovered,
-			}
-		}
-
-		const entryAbs = resolve(pkg.pkgDirAbs, rel)
-		if (!fs.existsSync(entryAbs)) {
-			return {
-				ok: false,
-				errors: [`[loader-hmr] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`],
-				discovered: base.snapshot.discovered,
-			}
-		}
-
-		builtinsFromDist.push({ packageName: pkgName, entry: toRootRelative(rootDirAbs, entryAbs) })
-	}
-
-	return { ok: true, snapshot: { ...base.snapshot, builtinsFromDist }, warnings: base.warnings }
+	return base
 }
 
 export function resolveLoaderHmrConfigPathFromCwd(cwd = process.cwd()) {

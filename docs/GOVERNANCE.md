@@ -70,6 +70,10 @@ runtime route wiring、RuntimeState draft helper、resolver/cache/Vite helper �
 `@pluxel/runtime/internal` 供 workspace runtime packages 使用，不创建 `shared`、`plugin-catalog`、`runtime-state`、
 `protocol` 等 public-looking 作者入口。browser contract 的公开权威入口是 `@pluxel/runtime/web`。
 
+Dynamic source producer 的唯一 low-level public boundary 是 `@pluxel/runtime-dynamic/source-producer` 的声明校验；它不得导入
+Vite、watcher、workspace scanner 或 package manager。固定 catalog 只从 dynamic config 的 `plugins` 进入，不提供 package、
+module、export key 或首次启用 author options。
+
 ## 变更流程
 
 1. 先读 [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md) 和相关领域文档。

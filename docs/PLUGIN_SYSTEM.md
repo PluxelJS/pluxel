@@ -116,6 +116,10 @@ dynamic route 与 package manager 之间只有文件协议：producer 在宿主�
 route 观察文件并执行正常 graph transaction。runtime 不提供 package-manager capability、RPC DTO、内置页面或 market
 抽象；其他 registry、离线 bundle 或本地开发工具也可以实现同一文件协议，不需要进入核心。
 
+两条 route 的 catalog 语义是 `static = fixed plugins`、`dynamic = fixed plugins + mutable file sources`。Dynamic fixed catalog
+使用普通 `plugins`，不拥有单独的 enablement、fork 或持久状态；fixed 与 mutable constructor 在同一个 Vite evaluated namespace
+中求值。Package Manager 是宿主显式 import、RuntimeState 显式启用的 dynamic-only fixed plugin。
+
 ## 不变量
 
 - 业务 capability 不依赖 Workbench Plane；

@@ -84,8 +84,10 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 	})
 
 	it('accepts explicit mutable file sources without package-manager configuration', () => {
+		class FixedPlugin {}
 		const config = defineDynamicRuntimeConfig({
 			root: '/repo',
+			plugins: [FixedPlugin as never],
 			sources: [
 				{ kind: 'file', path: 'plugins/local.ts' },
 				{ kind: 'directory', path: '.pluxel/plugins/entries', include: ['*.mjs'] },
@@ -93,6 +95,13 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		})
 
 		expect(config.sources).toHaveLength(2)
+		expect(config.plugins).toEqual([FixedPlugin])
+		expect(() =>
+			defineDynamicRuntimeConfig({ root: '/repo', builtins: [FixedPlugin] } as never),
+		).toThrow(/unsupported "builtins"/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({ root: '/repo', builtinsFromDist: [] } as never),
+		).toThrow(/unsupported "builtinsFromDist"/i)
 		expect(() =>
 			defineDynamicRuntimeConfig({
 				sources: [{ kind: 'directory', path: '/plugins', include: ['nested/../../outside/*.mjs'] }],
@@ -127,6 +136,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		}>
 
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'pluxel:dynamic-singleton-bridge',
 			'unplugin-preprocessor-directives',
 			'pluxel:database-source',
 			'pluxel:plugin-semantics',

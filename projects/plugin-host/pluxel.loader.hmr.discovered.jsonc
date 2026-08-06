@@ -33,7 +33,6 @@
 			"projects/plugin-host/src/demo/index.ts",
 		],
 	},
-	"builtin": {},
 	"discovered": {
 		"count": 0,
 		"packageNames": [],

@@ -19,8 +19,6 @@ export type RegistryViewLike = {
 	findModuleIdByName: (name: string) => string | null
 }
 
-export type BuiltinsTotals = PluginTotals
-
 const FILE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json)$/i
 
 function isLikelyFileModuleId(moduleId: string) {
@@ -59,36 +57,18 @@ export function collectPluginTotals(params: {
 	registryView: RegistryViewLike
 	isPluginEnabled: (name: string) => boolean
 	isRunning: (ctor: PluginConstructor) => boolean
-	builtinsModuleId?: string
-	builtinsModuleIds?: readonly string[]
-}): { plugins: PluginTotals; builtins: BuiltinsTotals } {
-	const builtinsModuleId = params.builtinsModuleId ?? 'pluxel:builtins'
-	const builtinsSet = new Set<string>([
-		builtinsModuleId,
-		...((params.builtinsModuleIds ?? []).map((s) => String(s).trim()).filter(Boolean) as string[]),
-	])
-
+}): PluginTotals {
 	const plugins: PluginTotals = { loaded: 0, enabled: 0, running: 0 }
-	const builtins: BuiltinsTotals = { loaded: 0, enabled: 0, running: 0 }
 
 	for (const [name, ctor] of params.registryView.listRegistered()) {
-		const moduleId = params.registryView.findModuleIdByName(name)
 		const enabled = params.isPluginEnabled(name)
 		const running = params.isRunning(ctor)
-
-		if (moduleId && builtinsSet.has(moduleId)) {
-			builtins.loaded++
-			if (enabled) builtins.enabled++
-			if (running) builtins.running++
-			continue
-		}
-
 		plugins.loaded++
 		if (enabled) plugins.enabled++
 		if (running) plugins.running++
 	}
 
-	return { plugins, builtins }
+	return plugins
 }
 
 export async function buildHmrOperationalReport(params: {
@@ -104,16 +84,9 @@ export async function buildHmrOperationalReport(params: {
 	isRunning: (ctor: PluginConstructor) => boolean
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
-	builtinsModuleId?: string
-	builtinsModuleIds?: readonly string[]
 	hotspots?: Array<{ id: string; ms: number }>
 	dbg?: LogtapeLogger
 }): Promise<HmrOperationalReportProps> {
-	const builtinsModuleId = params.builtinsModuleId ?? 'pluxel:builtins'
-	const builtinsSet = new Set<string>([
-		builtinsModuleId,
-		...((params.builtinsModuleIds ?? []).map((s) => String(s).trim()).filter(Boolean) as string[]),
-	])
 	const resolveLimit = resolveCacheLimit(params.resolveLimit, 50)
 
 	const rootsAbs = params.rootsAbs
@@ -126,12 +99,10 @@ export async function buildHmrOperationalReport(params: {
 	const enabledByRoot = Array<number>(rootsAbs.length).fill(0)
 	const runningByRoot = Array<number>(rootsAbs.length).fill(0)
 
-	const { plugins: pluginTotals, builtins } = collectPluginTotals({
+	const pluginTotals = collectPluginTotals({
 		registryView: params.registryView,
 		isPluginEnabled: params.isPluginEnabled,
 		isRunning: params.isRunning,
-		builtinsModuleId,
-		builtinsModuleIds: params.builtinsModuleIds,
 	})
 
 	const stats = {
@@ -168,7 +139,7 @@ export async function buildHmrOperationalReport(params: {
 
 	for (const [name, ctor] of params.registryView.listRegistered()) {
 		const moduleId = params.registryView.findModuleIdByName(name)
-		if (!moduleId || builtinsSet.has(moduleId)) continue
+		if (!moduleId) continue
 
 		const enabled = params.isPluginEnabled(name)
 		const running = params.isRunning(ctor)
@@ -245,7 +216,6 @@ export async function buildHmrOperationalReport(params: {
 		roots,
 		plugins: pluginTotals,
 		pluginsByRoot,
-		builtins,
 		hotspots: params.hotspots,
 	}
 }

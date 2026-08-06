@@ -4,6 +4,10 @@ import { resolve } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../src/hmr/host.ts'
+import {
+	DynamicPluginSourceRequirementError,
+	requireDynamicPluginSource,
+} from '../src/source-producer.ts'
 import { resolveDynamicPluginSources } from '../src/sources.ts'
 
 const roots: string[] = []
@@ -34,6 +38,21 @@ describe('dynamic plugin sources', () => {
 		)
 	})
 
+	it('exposes stable source requirement errors', () => {
+		const context = { root: {} } as never
+		expect(() =>
+			requireDynamicPluginSource(context, {
+				kind: 'directory',
+				path: '/tmp/entries',
+				include: ['*.mjs'],
+			}),
+		).toThrowError(
+			expect.objectContaining<Partial<DynamicPluginSourceRequirementError>>({
+				code: 'DYNAMIC_SOURCE_REQUIRED',
+			}),
+		)
+	})
+
 	it('loads and unloads a plugin added to a previously missing source directory', async () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-source-lifecycle-'))
 		roots.push(root)
@@ -41,7 +60,7 @@ describe('dynamic plugin sources', () => {
 		await writeFile(
 			resolve(root, 'pluxel.loader.hmr.jsonc'),
 			JSON.stringify({
-				version: 1,
+				version: 2,
 				profile: 'test',
 				defaults: { roots: [] },
 				profiles: { test: { enabled: [] } },
@@ -52,7 +71,6 @@ describe('dynamic plugin sources', () => {
 			root,
 			chdir: false,
 			logging: false,
-			warmup: false,
 			printUrls: false,
 			configService: { mode: 'memory' },
 			runtimeState: {
@@ -116,14 +134,14 @@ describe('dynamic plugin sources', () => {
 		}
 	}, 60_000)
 
-	it('starts builtin source producers only after their source watcher is installed', async () => {
+	it('starts fixed source producers only after their source watcher is installed', async () => {
 		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-source-producer-'))
 		roots.push(root)
 		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
 		await writeFile(
 			resolve(root, 'pluxel.loader.hmr.jsonc'),
 			JSON.stringify({
-				version: 1,
+				version: 2,
 				profile: 'test',
 				defaults: { roots: [] },
 				profiles: { test: { enabled: [] } },
@@ -133,14 +151,19 @@ describe('dynamic plugin sources', () => {
 		class SourceProducerPlugin extends BasePlugin {
 			override async init(): Promise<void> {
 				const entriesDir = resolve(root, 'entries')
+				requireDynamicPluginSource(this.ctx, {
+					kind: 'directory',
+					path: entriesDir,
+					include: ['*.mjs'],
+				})
 				const temporary = resolve(root, 'published.mjs.tmp')
 				await mkdir(entriesDir, { recursive: true })
 				await writeFile(
 					temporary,
 					[
 						"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-						'export class PublishedByBuiltinPlugin extends BasePlugin {}',
-						"Plugin({ name: 'PublishedByBuiltinPlugin' })(PublishedByBuiltinPlugin)",
+						'export class PublishedByFixedPlugin extends BasePlugin {}',
+						"Plugin({ name: 'PublishedByFixedPlugin' })(PublishedByFixedPlugin)",
 						'',
 					].join('\n'),
 				)
@@ -153,14 +176,13 @@ describe('dynamic plugin sources', () => {
 			root,
 			chdir: false,
 			logging: false,
-			warmup: false,
 			printUrls: false,
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: ['SourceProducerPlugin', 'PublishedByBuiltinPlugin'] },
+				snapshot: { enabled: ['SourceProducerPlugin', 'PublishedByFixedPlugin'] },
 			},
-			builtins: [SourceProducerPlugin],
+			plugins: [SourceProducerPlugin],
 			sources: [{ kind: 'directory', path: 'entries', include: ['*.mjs'] }],
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
@@ -173,7 +195,7 @@ describe('dynamic plugin sources', () => {
 
 			expect(host.ctx.registry.isRunning(SourceProducerPlugin)).toBe(true)
 			expect(published.ok).toBe(true)
-			expect(published.pluginChanges?.added).toContain('PublishedByBuiltinPlugin')
+			expect(published.pluginChanges?.added).toContain('PublishedByFixedPlugin')
 		} finally {
 			await host.stop()
 		}

@@ -196,12 +196,15 @@ fallback；开启 Workbench 时根页面属于 Workbench。Fetch 平台需要未
 
 ```ts
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { HostOperationsPlugin } from './HostOperationsPlugin'
 
 export { product } from './product.ts'
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
+	plugins: [HostOperationsPlugin],
 	sources: [{ kind: 'directory', path: 'plugins/runtime', include: ['*.mjs'] }],
+	runtimeState: { snapshot: { enabled: ['HostOperationsPlugin'] } },
 })
 ```
 
@@ -219,12 +222,22 @@ export default defineConfig({
 })
 ```
 
-dynamic runtime config 提供 workspace root、loader config、profile、runtime state 和显式 mutable `sources`。`file`
+dynamic runtime config 使用 `plugins` 声明宿主显式 import 的 fixed catalog，使用 `sources` 声明 mutable file catalog。
+`plugins` 不隐式启用，启停仍由 RuntimeState 决定；fixed import graph 变化重建 host，source add/change/unlink 走增量 batch。`file`
 source 是精确入口，`directory` source 必须用相对、正向 include glob 选择入口；glob 不能包含 negation、`.` 或 `..` segment。
 目录或文件暂时不存在也可以先声明，runtime 会保留 watch root。一次配置最多解析 10,000 个 entry；普通 import dependency
 不需要列入 entry glob，进入 module graph 后仍会触发所属插件 replacement。loader 负责文件 add/change/unlink 的发现与 graph
 transaction；插件本身仍按
 [`plugin-authoring.md`](plugin-authoring.md) 编写。
+
+不经过宿主 Vite config 的程序化开发入口同样加载 config module，不接受含 constructor 的 object config：
+
+```ts
+import { createDynamicDevRuntime } from '@pluxel/runtime-dynamic'
+
+const runtime = await createDynamicDevRuntime({ config: 'src/pluxel.dynamic.ts' })
+await runtime.start()
+```
 
 runtime 不安装 package，也不提供 package-manager RPC 或内置页面。需要 registry 安装能力时使用官方
 [`@pluxel/package-manager`](package-manager.md)，并把它发布的 entry directory 声明为 source。

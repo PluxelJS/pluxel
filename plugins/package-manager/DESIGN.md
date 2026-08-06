@@ -17,6 +17,10 @@ package acquisition 是可替换的产品策略；file-source lifecycle 是 dyna
 runtime 不知道 registry、market、版本选择、lockfile、安装进度或管理 UI，package plugin 不调用 loader 或直接修改 running
 plugin instance。
 
+插件只允许在声明了 `rootDir/entries` 与 `['*.mjs']` 的 dynamic host generation 中运行。`init()` 先解析目标目录并通过
+`@pluxel/runtime-dynamic/source-producer` 校验声明，之后才加载 `@pnpm/napi`、创建 managed project、发布 entry 或注册
+commands/RPC/Workbench。校验只读取 route generation 的 resolved declaration，不扫描文件系统，也不返回 loader handle。
+
 ## Mutation model
 
 `@pnpm/napi` 暴露 full-manifest `install()`，不是 selected `add/remove`。store 因而维护一个受控 private manifest：
@@ -62,6 +66,7 @@ native engine callback 默认不转发日志，因为事件可能携带 registry
 - 安装、enablement、lifecycle 是三个独立事实；
 - package mutation 不直接调用 dynamic/core internals；
 - dynamic runtime 不依赖 package-manager package；
+- static/普通 test host 和 source 声明不匹配在任何 native/filesystem/UI 副作用前失败；
 - failed install 不发布新 entry；
 - successful source batch 由 dynamic runtime 统一触发 optional availability retry；
 - Workbench 是插件自带的可选投影，不是 runtime 内置控制面；

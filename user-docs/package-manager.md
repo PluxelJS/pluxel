@@ -9,7 +9,7 @@ import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
-	builtins: [PackageManagerPlugin],
+	plugins: [PackageManagerPlugin],
 	sources: [
 		{
 			kind: 'directory',
@@ -17,6 +17,7 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
+	runtimeState: { snapshot: { enabled: ['PackageManagerPlugin'] } },
 	workbench: { enabled: true, access: { exposure: 'private' } },
 })
 ```
@@ -31,6 +32,10 @@ package.remove  { "specs": ["@scope/plugin"] }
 安装成功表示 package 已进入受管 pnpm project 并发布为 dynamic source，不表示插件已启用。启停继续使用 RuntimeState、
 Workbench plugin status 或 `plugin.start` / `plugin.stop` commands。这样 package acquisition failure、代码加载 failure 与
 lifecycle failure 保持可区分。
+
+Package Manager 只能在声明了对应 `rootDir/entries` directory source 和 `['*.mjs']` include 的 dynamic host 中运行。校验在
+native pnpm engine 与所有文件/UI/command 副作用之前完成；因此把它放入 static catalog 或写错 source path 会直接得到可分支的
+`DYNAMIC_SOURCE_REQUIRED` / `DYNAMIC_SOURCE_NOT_DECLARED` 启动错误。
 
 默认不执行 dependency scripts，并拒绝发布未满一天的版本。确实需要 native build 时，由宿主为
 `PackageManagerPlugin` 同时设置 `ignoreScripts: false` 和非空 exact `allowBuilds`；矛盾配置会拒绝启动，不会退化成全局开放

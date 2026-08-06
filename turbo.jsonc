@@ -6,6 +6,8 @@
 	// Keep a useful local history without allowing build artifacts to grow without bounds.
 	"cacheMaxAge": "30d",
 	"cacheMaxSize": "5GB",
+	// Test fixtures start file watchers; let constrained hosts opt into polling for every task.
+	"globalPassThroughEnv": ["CHOKIDAR_USEPOLLING"],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
@@ -281,6 +283,11 @@
 		},
 		"@pluxel/plugins-authelia-oidc-demo#typecheck": {
 			"dependsOn": ["@pluxel/runtime-static#build"],
+		},
+		"@pluxel/package-manager#typecheck": {
+			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
+			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
+			"dependsOn": ["@pluxel/runtime-dynamic#build"],
 		},
 		"@repo/project-chatbots#typecheck": {
 			"dependsOn": ["@pluxel/runtime-static#build"],

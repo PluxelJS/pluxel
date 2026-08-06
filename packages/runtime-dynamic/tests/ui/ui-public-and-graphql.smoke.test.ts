@@ -136,7 +136,6 @@ describe('HMR UI smoke', () => {
 			activeProfile: 'dev',
 			roots: ['packages/a'],
 			enabled: ['pluxel-plugin-a'],
-			builtinPackages: [],
 			enabledEntries: ['packages/a/src/index.ts'],
 			includedEntries: [],
 			watchRoots: ['packages/a'],

@@ -37,8 +37,7 @@ pnpm add -D @pluxel/runtime-dynamic
 | `pluxel database check`                                   | 检查 migration history、rewrite 和 schema drift     |
 | `pluxel database rebase --lineage <id>`                   | 生成全新 lineage baseline，部署后保留旧 instance    |
 | `pluxel hmr doctor`                                       | 诊断 dynamic loader workspace/profile               |
-| `pluxel hmr enabled`                                      | 编辑 dynamic profile 的 enabled plugin 集合         |
-| `pluxel hmr builtin`                                      | 编辑 dynamic profile 的 builtin plugin 集合         |
+| `pluxel hmr enabled`                                      | 选择初始加载并纳入 HMR 的 mutable package entries   |
 | `pluxel publish --dry-run`                                | 预演 npm publish 和 market 通知流程                 |
 
 在 package script 后传参时保留 `--`：

@@ -40,8 +40,14 @@ module 变化会失效精确 module/importer graph，并通过 core replacement 
 启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。
 
 Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此 static route 在开发期具备与 dynamic route
-相同的 artifact HMR contract。两者的差别是 catalog 来源：static 从 entry imports 得到，dynamic 从 workspace loader
-得到。production frozen distribution 不携带 watcher、Vite server 或 HMR compiler。
+相同的 artifact HMR contract。两者的差别是 catalog policy：static 只有 application import 的 fixed catalog；dynamic 先提交
+config import 的 fixed baseline，再处理 workspace profile 和显式 `sources` 得到的 mutable entries。production frozen distribution
+不携带 watcher、Vite server 或 HMR compiler。
+
+每个 `ViteDevServer` 只有一个 Pluxel SSR ModuleRunner 与 evaluated module namespace。dynamic config、它 import 的 fixed plugins、
+mutable source anchors 和普通 ESM dependencies 都经由该实例求值；HMR runner 只增加 path、bridge、host-module classification、
+invalidation 与诊断，不创建第二个 cache。config import graph 变化重建 dynamic host，mutable dependency 变化沿 importer graph
+精确回到 source anchor。
 
 dynamic loader 的 bridge modules/providers、SSR、dedupe、optimizer 和 Vite cache 都是运行时不变量，不接受宿主覆盖，
 也不合并第二份 `InlineConfig`。模块执行边界按固定优先级处理：bridge 首先保持 host singleton identity；随后由
@@ -51,10 +57,21 @@ runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其
 
 dynamic source 只接受精确文件和带显式、相对、正向 include glob 的目录；glob 不允许越过 source directory，解析结果有
 10,000 entry 的内核上限。启动 discovery 与 watcher add/change/unlink 共用同一入口语义；暂时不存在的目录仍保留为 watch root。
-source entry 已进入 module graph 后，目录外的普通 import dependency 变化会沿 importer graph 回到 source anchor；没有任何
+初始 entries 必须完成 graph commit 后 host 才报告 ready，不存在可跳过正确性的 optional warmup。source entry 已进入 module graph
+后，目录外的普通 import dependency 变化会沿 importer graph 回到 source anchor；没有任何
 source-owned importer 的过期事件作为 debug-level no-op，不制造失败告警。source producer 负责在目标目录原子发布普通 ESM entry，dynamic route
 负责解析、执行、batch commit、卸载和 optional availability invalidation。registry client、lockfile、market、安装状态、
 RPC 与 UI 都必须位于 source producer 插件，不得进入 HMR pipeline。
+
+source watcher 和 resolved source declaration reader 在 fixed baseline commit 前安装。producer 可通过隔离的
+`@pluxel/runtime-dynamic/source-producer` 校验目标 file/directory；该入口不创建 watcher 或 publication lease，也不加载 Vite、
+workspace scanner 或 package manager。
+
+Workspace profile 的 `enabled` 是 mutable package entry selection：CLI 选择的 package entry 会进入初始加载列表，其 workspace
+dependency closure 会成为 watch roots。它不直接启用插件 lifecycle；module 求值后，插件是否启动仍只读取 RuntimeState。config
+的 `plugins` 是 fixed availability，不进入 CLI discovery；同一 plugin ID 同时由 fixed 与 mutable catalog 提供时启动失败。
+generation shutdown 先停止 watcher/batch admission，丢弃尚未开始的 debounce queue，等待正在执行的 batch 完成，再进入 core
+lifecycle/effects cleanup；Vite/plugin close hooks 完成后才关闭 canonical ModuleRunner。
 
 ## Workbench UI Federation 构建隔离
 
