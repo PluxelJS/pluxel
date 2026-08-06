@@ -132,9 +132,20 @@ describe('KOOK practical card renderer', () => {
 		expect(cards[1]?.modules).toMatchObject([
 			{
 				type: 'action-group',
-				elements: [{ value: '0' }, { value: '1' }, { value: '2' }, { value: '3' }],
+				elements: [
+					{ value: '0', theme: 'secondary' },
+					{ value: '1', theme: 'secondary' },
+					{ value: '2', theme: 'secondary' },
+					{ value: '3', theme: 'secondary' },
+				],
 			},
-			{ type: 'action-group', elements: [{ value: '4' }, { value: '5' }] },
+			{
+				type: 'action-group',
+				elements: [
+					{ value: '4', theme: 'secondary' },
+					{ value: '5', theme: 'secondary' },
+				],
+			},
 		])
 	})
 

@@ -12,14 +12,19 @@ export type KookCardAction =
 			type: 'link'
 			label: string
 			url: string
+			/** Keep routine actions visually neutral; use a colored theme only for exceptional emphasis. @defaultValue "secondary" */
 			theme?: Card.ButtonTheme
 	  }>
 	| Readonly<{
 			type: 'return-val'
 			label: string
 			value: string
+			/** Keep routine actions visually neutral; use a colored theme only for exceptional emphasis. @defaultValue "secondary" */
 			theme?: Card.ButtonTheme
 	  }>
+
+const defaultCardTheme: Card.VisibleTheme = 'secondary'
+const defaultButtonTheme: Card.ButtonTheme = 'secondary'
 
 /**
  * Common KOOK presentation layout. Advanced card modules remain available through the native
@@ -68,7 +73,7 @@ export function renderKookCard(layout: KookCardLayout): string {
 	]
 	const contentCard: Card.Visible = {
 		type: 'card',
-		theme: layout.theme ?? 'secondary',
+		theme: layout.theme ?? defaultCardTheme,
 		size,
 		...(layout.color ? { color: layout.color } : {}),
 		modules,
@@ -121,7 +126,7 @@ function renderActionGroups(actions: readonly KookCardAction[]): Card.NonEmpty<C
 			const url = validHttpUrl(action.url, `actions[${index}].url`)
 			return {
 				type: 'button',
-				theme: action.theme ?? 'secondary',
+				theme: action.theme ?? defaultButtonTheme,
 				click: 'link',
 				value: url,
 				text: { type: 'plain-text', content: label },
@@ -129,7 +134,7 @@ function renderActionGroups(actions: readonly KookCardAction[]): Card.NonEmpty<C
 		}
 		return {
 			type: 'button',
-			theme: action.theme ?? 'secondary',
+			theme: action.theme ?? defaultButtonTheme,
 			click: 'return-val',
 			value: requiredText(action.value, `actions[${index}].value`),
 			text: { type: 'plain-text', content: label },
