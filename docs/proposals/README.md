@@ -9,11 +9,6 @@
 - 实现后把稳定结论写入对应领域文档，并删除已完成提案内容；
 - 已被替代或没有继续价值的提案直接删除，历史由 Git 保存。
 
-当前进行中的提案：
-
-- [`METRICS_PLUGIN.md`](METRICS_PLUGIN.md)：caller-aware operation metrics 官方插件、OTLP/HTTP 生产路径、
-  Prometheus pull、lifecycle ownership 与基数预算。
-
 Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
 [`../RUNTIME.md`](../RUNTIME.md)。
 

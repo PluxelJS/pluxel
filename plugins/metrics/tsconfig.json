@@ -1,0 +1,8 @@
+{
+	"extends": "../../tsconfig.plugin.json",
+	"include": ["src", "tests", "tests-node", "bench", "tsdown.config.ts", "vitest.config.ts"],
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true
+	}
+}

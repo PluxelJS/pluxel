@@ -1,0 +1,55 @@
+{
+	"name": "@pluxel/metrics",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Official OTLP-first operation RED metrics for Pluxel plugins",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/metrics"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"bench": "vitest bench --config vitest.config.ts bench/metrics.bench.ts",
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts && node --test tests-node/*.test.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@opentelemetry/api": "catalog:",
+		"@opentelemetry/exporter-metrics-otlp-proto": "catalog:",
+		"@opentelemetry/resources": "catalog:",
+		"@opentelemetry/sdk-metrics": "catalog:"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"@types/node": "^25.9.3",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"@pluxel/runtime": "workspace:*"
+	}
+}
