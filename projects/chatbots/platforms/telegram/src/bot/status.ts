@@ -1,4 +1,6 @@
-export type TelegramBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
+import type { BotPhase, BotStatus } from '@repo/chatbots-platform-kit/bot-status'
+
+export type TelegramBotPhase = BotPhase
 
 export type TelegramPollingSnapshot = Readonly<{
 	offset: number
@@ -9,16 +11,11 @@ export type TelegramPollingSnapshot = Readonly<{
 	lastUpdateAt: number | null
 }>
 
-export type TelegramBotStatus = Readonly<{
-	phase: TelegramBotPhase
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	startedAt: number
-	connectedAt: number | null
-	updatedAt: number
-	polling: TelegramPollingSnapshot
-}>
+export type TelegramBotStatus = Readonly<
+	BotStatus & {
+		polling: TelegramPollingSnapshot
+	}
+>
 
 export function createTelegramBotStatus(): TelegramBotStatus {
 	const now = Date.now()

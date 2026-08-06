@@ -3,5 +3,5 @@ import { DiscordUi } from './contract.ts'
 
 export const DiscordWorkbench = workbench.extension({
 	contract: DiscordUi,
-	entry: workbench.entry(import.meta.url, './ui.tsx'),
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })

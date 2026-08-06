@@ -1,35 +1,38 @@
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
+import type {
+	BotAdminAccount,
+	BotAdminCommands,
+	BotAdminEvents,
+} from '@repo/chatbots-platform-kit/bot-admin'
 
-export type DiscordAdminAccount = Readonly<{
-	id: string
-	tokenPreview: string
-	state: 'connecting' | 'ready' | 'failed' | 'stopped'
-	username?: string
-	applicationId?: string
-	guilds: number
+/** Bounded Discord gateway diagnostics sent to the optional management plane. */
+export type DiscordBotDiagnostics = {
+	startedAt: number
 	epoch: number
-	connectedAt?: number
-	lastHealthyAt?: number
-	failureMessage?: string
-}>
-
-export interface DiscordAdminCommands {
-	upsertBot(input: { id: string; token?: string }): Promise<void>
-	removeBot(id: string): Promise<void>
-	reconnectBot(id: string): Promise<void>
-	disconnectBot(id: string): Promise<void>
+	applicationId: string | null
+	guilds: number
+	lastHealthyAt: number | null
 }
 
-export type DiscordAdminEvents = {
-	snapshot: { accounts: readonly DiscordAdminAccount[] }
-}
+export type DiscordAdminAccount = BotAdminAccount<DiscordBotDiagnostics>
+export type DiscordWorkbenchEvents = BotAdminEvents<DiscordAdminAccount>
+export type DiscordWorkbenchCommands = BotAdminCommands
 
 export const DiscordUi = workbenchContract.define({
 	resources: {
-		commands: workbenchContract.rpc<DiscordAdminCommands>(),
-		state: workbenchContract.events<DiscordAdminEvents>(),
+		commands: workbenchContract.rpc<DiscordWorkbenchCommands>(),
+		state: workbenchContract.events<DiscordWorkbenchEvents>(),
 	},
 	views: {
+		Overview: {
+			placements: [
+				workbenchContract.tab({
+					order: 50,
+					label: 'Discord 状态',
+					icon: workbenchContract.icons.Settings,
+				}),
+			],
+		},
 		Manager: {
 			placements: [
 				workbenchContract.route('/settings', {
@@ -44,6 +47,22 @@ export const DiscordUi = workbenchContract.define({
 						},
 					},
 					order: 67,
+				}),
+			],
+		},
+		Account: {
+			placements: [
+				workbenchContract.route('/accounts/:accountId', {
+					title: 'Discord Bot',
+					navigation: false,
+				}),
+			],
+		},
+		Create: {
+			placements: [
+				workbenchContract.route('/create', {
+					title: 'New Discord Bot',
+					navigation: false,
 				}),
 			],
 		},

@@ -31,6 +31,7 @@ PlatformPlugin -> BotRegistry -> Bot -> native platform API
 - **部署无关**：同一个发送、编辑或渲染操作必须同时适用于单进程与集群。内存、Redis、数据库、队列和 scheduler 由业务协调层选择，平台包不依赖或模拟它们。
 - **失败透明**：不把失败的编辑悄悄降级为发送，不隐藏重试或补偿；网络操作继承 Bot 生命周期，并允许组合调用方 `AbortSignal`。
 - **简写不分叉协议**：实用 Card 等简写只能组合官方全量类型并委托同一校验/序列化边界；高级需求直接使用原生类型，不增加任意透传、builder 或 preset 注册系统。
+- **纯函数留在包级**：不依赖 Bot、账号、网络或生命周期的 renderer、bitmask 和 immutable wire helper 从包入口导出，不为了形式统一挂到 `$` 或创建 service。
 - **公开面靠用例增长**：新 helper 必须对应真实重复调用，并明确默认值、所有权、并发和失败语义；仅为了潜在扩展性不增加 adapter、factory 或可配置层。
 
 连接、gateway 和 Bot 状态本身属于运行时资源，可由 Bot 持有；这里限制的是不应藏在便捷句柄里的业务身份和协调状态。
@@ -123,6 +124,15 @@ export interface KookBotExtensions {
 
 各平台不必拥有相同的 `$` 成员。只有命名规则和职责边界统一，平台语义不应被强行统一。
 
+Discord 使用有状态的 discord.js Client，不能像 HTTP endpoint inventory 一样把全部方法复制到 Bot prototype。
+它在 Bot 顶层通过 `client` 暴露在线的原生 Client，通过 `selfInfo` 暴露原生 `ClientUser`；消息、语音、presence
+helper 与生命周期仍只放在 `$`。`client` 离线时明确失败，不返回 null client 或伪造成功的占位实现。
+
+KOOK 权限是适合包级纯函数的 wire 计算：公开常量必须是能直接写入 `permissions/allow/deny` 的最终 mask，不能
+把 bit index 暴露成看似可直接提交的值。组合、查询和 channel overwrite 修改使用安全整数计算，避免 JavaScript
+有符号 32-bit 位运算；管理员绕过、allow/deny 冲突、三态 inherit 和未知 future bit 保留都必须有测试。helper
+只处理调用方提供的 mask/overwrite，不获取角色或隐式桥接 ChatAccess。
+
 ## Bot registry
 
 插件公开只读 registry，而不是可被外部写入的对象：
@@ -172,8 +182,9 @@ await bot.sendMessage(payload)
 `bot.$.info`，token、secret、内部 client 和 Context 不得进入 info、status 或 JSON 序列化结果。
 
 Bot 已拥有 owner Context 时，不应再从构造参数重复注入 logger。使用
-`ctx.logger.with({ platform, accountId })` 创建账号级 logger。平台插件从 required `WretchPlugin`
-取得 caller-bound base，Bot 只把明确的 Wretch base、token、API base 与 owner signal 传给 API client；
+`ctx.logger.with({ platform, accountId })` 创建账号级 logger。Telegram、KOOK 这类 HTTP adapter 从 required
+`WretchPlugin` 取得 caller-bound base，Bot 只把明确的 Wretch base、token、API base 与 owner signal 传给 API client；
+使用权威有状态 SDK 的平台则把 API base 等明确配置传给该 SDK，不能另外创建一套平行 HTTP client。
 不能用 `{ ...botOptions }` 把 Context、Hub binding 或事件对象扩散到 HTTP 配置和生命周期中。
 
 ## 连接状态与诊断快照
@@ -189,11 +200,17 @@ telegramBot.$.status.polling
 
 kookBot.$.status.gateway
 // { phase, sessionId, lastSequence, counters, timestamps, currentBackoffMs, lastError }
+
+discordBot.$.status.gateway
+// { epoch, applicationId, guilds, lastHealthyAt }
 ```
 
 连接状态机拥有快照，Bot 将其投影到 `$.status`，Workbench Plane 再按需投影用于展示；依赖方向不能
 反过来。诊断只保留固定字段、累计计数和最近时间点，不保存无界事件历史。token、完整连接 URL、
 webhook secret 和带认证信息的错误对象不得进入快照。
+
+三端共同的 `phase/botId/username/lastError/startedAt/connectedAt/updatedAt` 由
+`platform-kit/bot-status` 约束；具体平台只增加自己的 `polling` 或 `gateway` 冻结诊断，不共享万能状态机。
 
 状态更新遵循以下规则：
 
@@ -245,7 +262,7 @@ resume session 默认只属于当前 Bot 生命周期，不写入管理投影。
 管理界面的提示文本。可选 Workbench RPC 负责把核心操作映射成可序列化响应和 UI 文案；关闭
 Workbench Plane 不改变平台 capability 的类型或行为。
 
-平台管理界面统一实现、不统一所有权。每个平台仍挂载自己的 Contract/grant，但共同复用
+平台管理界面统一实现、不统一所有权。每个平台仍挂载自己的 Contract/grant，但 Telegram、KOOK、Discord 共同复用
 `platform-kit/bot-admin` 的 RPC 转发、snapshot subscription、凭据掩码，以及 `workbench-ui` 的账号列表、表单、
 操作和连接状态壳层；平台只提供鉴权调用、名称、图标、默认 API base、身份格式与原生诊断 renderer。
 BotManager 是运行状态源；Workbench events producer 在每次订阅时立即发送
@@ -258,10 +275,10 @@ projection，也不得让管理 DTO 或 UI 写入失败进入 Vault/Bot replacem
 
 共享账号管理首页使用全宽 launcher 和账号卡片。每个平台自行声明 `/accounts/:accountId` 和 `/create` 非导航
 route，公共 UI 只通过 `useWorkbenchHost().openTab()` 打开当前平台的 Workbench 原生 Tab，并从 `routeParams`
-读取账号 ID；它不导入宿主组件、router 或 Tab store。公共壳层不解释 diagnostics；Telegram Polling 与 KOOK
-Gateway renderer 继续展示各自完整、有界的原生计数和时间点。
+读取账号 ID；它不导入宿主组件、router 或 Tab store。公共壳层不解释 diagnostics；Telegram Polling、KOOK
+Gateway 与 Discord Gateway renderer 继续展示各自完整、有界的原生计数和时间点。
 
-平台 Workbench 另外使用官方 `WretchWorkbenchPort`，统一管理 consumer timeout、非敏感 headers 和 proxy。
+使用 Wretch 的平台 Workbench 另外挂载官方 `WretchWorkbenchPort`，统一管理 consumer timeout、非敏感 headers 和 proxy。
 只有 Workbench enabled 时才调用 `enableManagedSettings()` 和挂载 Port；headless 平台 API 仍通过同一
 caller-bound Wretch base 运行，但不初始化设置 persistence 或 proxy。
 
@@ -724,8 +741,8 @@ definitions.txt / endpoints.txt
 - [ ] raw/分类/精确事件 channel 的分发顺序与错误隔离有测试。
 - [ ] ChatHub bridge 保持 JSON-safe，且带独立 `platform/accountId`。
 - [ ] 平台包不声明 contracts/Hub；独立 bridge 通过 checkpoint-critical consumer 接入。
-- [ ] 平台插件 required-depend `WretchPlugin`，API client 不自行拥有全局 fetch、宿主 timeout 或并发队列。
-- [ ] API client 只有一个 `http: Wretch` transport 入口；测试通过 Wretch 的 fetch polyfill 注入 fake transport，不增加平行 fetch option。
+- [ ] HTTP adapter required-depend `WretchPlugin`，API client 不自行拥有全局 fetch、宿主 timeout 或并发队列；权威 SDK adapter 只配置该 SDK，不另建平行 client。
+- [ ] 自有 HTTP API client 只有一个 `http: Wretch` transport 入口；测试通过 Wretch 的 fetch polyfill 注入 fake transport，不增加平行 fetch option。
 - [ ] 优先复用外部类型包，没有重复造类型。
 - [ ] codegen 显式、确定、可 `--check`，构建不访问网络。
 - [ ] macro 只内联已提交的静态 metadata。

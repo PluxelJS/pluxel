@@ -65,9 +65,25 @@ Telegram API 返回 `parameters.retry_after` 后，该 Bot 的后续 HTTP 调用
 
 需要全量 Card 时使用 `Card.Message` 与 `renderKookCardMessage()`。原生类型覆盖所有官方 module，并在类型层约束 invisible module subset、section accessory、paragraph、button 与 countdown 组合；序列化边界再验证最多 5 张 card、总计 50 个 module 及各元素数量、文本、URL、颜色和时间戳。简写 renderer 委托同一边界，不维护平行协议。
 
+KOOK 原生权限使用包级纯函数处理。`KookPermission` 直接给出 bit 0–30 的 wire mask；
+`combineKookPermissions()`、`hasKookPermission()`、`hasAllKookPermissions()` 和
+`hasAnyKookPermission()` 负责组合与管理员绕过；`create/get/set/applyKookPermissionOverwrite()` 用冻结的
+`{ allow, deny }` 表达频道权限三态并拒绝冲突。它们不发网络请求、不解析业务角色，也不与 ChatAccess 的
+`cmd.*` grant 自动互转。
+
 `kookBot.$.status.gateway` 提供冻结的连接 phase、session ID、最后 SN、事件/心跳/重连计数、最近时间点与当前退避。普通网络断开会携带 session/SN 恢复；所有 frame 经单一异步 tail 串行处理，事件按连续 SN 消费，重复帧被丢弃，乱序帧进入有界 buffer，无法收敛时主动重连。只有 listener 完成后才推进 SN，因此恢复点不会越过尚未完成的业务处理。gateway transport factory 可注入，握手、resume、heartbeat、断线退避和 teardown 都可以脱离真实网络做确定性测试。
 
 KOOK API 返回 HTTP `429 Retry-After` 后，同一 Bot 的后续 HTTP 调用会等待冷却期；调用方仍明确处理本次失败结果。
+
+## 启用 Discord
+
+Discord 与 Telegram、KOOK 共享 `BotRegistry`、`selfInfo`、`$.info/status/start/stop/destroy` 和统一的 Workbench
+账号管理壳层。在线时 `discordBot.client` 暴露原生 discord.js Client；项目增加的消息、语音与 presence helper
+只位于 `discordBot.$`。`$.status.gateway` 保留有界的 epoch、application ID、guild 数和最近健康时间。
+
+Discord API Base 会实际传入 discord.js REST 配置；默认值是 `https://discord.com/api/v10`，adapter 会把末尾
+版本拆成 discord.js 的独立 `api/version` 配置，避免重复版本路径。Workbench 提供与其他平台一致的创建、详情、
+凭据更新、鉴权测试、重连、断开和删除操作。
 
 ## 源码组织
 
@@ -78,7 +94,7 @@ Workbench contract 自主加入统一的 `bots` navigation group。
 
 包默认入口只导出稳定插件能力与作者需要的类型；Router、Gateway、codec、Workbench RPC/DTO、Manager 和内部 registry 不通过 barrel 泄漏。每个平台遵循 `plugin.ts -> bot/manager.ts -> bot/bot.ts -> api/client.ts`：主插件只组合生命周期，Manager 拥有 Vault/registry/replacement，Bot 拥有单账号连接与原生事件，API client 只处理平台 HTTP；可选管理平面完整收进 `workbench/`。
 
-两个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的 launcher、表单和操作壳层；平台自行声明 `/accounts/:accountId` 与 `/create` 非导航 route，公共 UI 只调用宿主 `openTab()`，不依赖宿主组件或 router。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
+三个平台的 Workbench 各自拥有 contract、route、grant、挂载点、鉴权方法和原生诊断映射，并通过相同 `bots` navigation group 自主出现在一个一级入口下。它们共同复用 `platform-kit/bot-admin` 的 RPC 转发、snapshot 订阅清理、凭据掩码，以及 `workbench-ui` 的 launcher、表单和操作壳层；平台自行声明 `/accounts/:accountId` 与 `/create` 非导航 route，公共 UI 只调用宿主 `openTab()`，不依赖宿主组件或 router。统一的是管理机制和交互，不是平台清单、Bot、Gateway/Polling 或业务状态的所有权。
 
 `telegram`、`kook` 与 `discord` 平台包不依赖 `contracts` 或 `hub`，只提供平台 capability、Bot registry、连接状态机、Vault 账号生命周期和可选管理 UI。Discord 额外提供原生 slash command carrier；`telegram-hub-bridge` 与 `kook-hub-bridge` 是独立桥接插件，拥有平台 codec、checkpoint-critical 入站 consumer 和 ChatHub transport。
 

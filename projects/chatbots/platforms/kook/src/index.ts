@@ -1,5 +1,19 @@
 export { KookBot } from './bot/bot.ts'
 export { MessageType } from './types/base.ts'
+export {
+	applyKookPermissionOverwrite,
+	combineKookPermissions,
+	createKookPermissionOverwrite,
+	getKookPermissionOverwriteEffect,
+	hasAllKookPermissions,
+	hasAnyKookPermission,
+	hasKookPermission,
+	KookPermission,
+	setKookPermissionOverwrite,
+	type KookPermissionOverwrite,
+	type KookPermissionOverwriteEffect,
+	type KookPermissionOverwriteInput,
+} from './api/permissions.ts'
 export type { Card } from './types/message.ts'
 export {
 	renderKookCard,

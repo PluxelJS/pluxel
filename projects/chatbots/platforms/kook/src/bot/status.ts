@@ -1,18 +1,10 @@
+import type { BotPhase, BotStatus } from '@repo/chatbots-platform-kit/bot-status'
 import type { KookGatewaySnapshot } from './gateway.ts'
 
 /** Lifecycle phase reported by a managed KOOK Bot. */
-export type KookBotPhase = 'offline' | 'connecting' | 'online' | 'error' | 'destroyed'
+export type KookBotPhase = BotPhase
 
-export type KookBotStatus = Readonly<{
-	phase: KookBotPhase
-	botId: string | null
-	username: string | null
-	lastError: string | null
-	startedAt: number
-	connectedAt: number | null
-	updatedAt: number
-	gateway: KookGatewaySnapshot
-}>
+export type KookBotStatus = Readonly<BotStatus & { gateway: KookGatewaySnapshot }>
 
 export function createKookBotStatus(gateway: KookGatewaySnapshot): KookBotStatus {
 	const now = Date.now()

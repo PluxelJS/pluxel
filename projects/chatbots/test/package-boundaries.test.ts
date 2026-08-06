@@ -129,7 +129,7 @@ describe('chatbots package boundaries', () => {
 		const manager = platformSourceFile('discord', 'bot/manager.ts')
 		const bot = platformSourceFile('discord', 'bot/bot.ts')
 		expect(plugin).toContain("from './bot/manager.ts'")
-		expect(plugin).toContain("from './bot/bot.ts'")
+		expect(plugin).toContain("from './protocol.ts'")
 		expect(plugin).not.toContain('BotAccountStore')
 		expect(plugin).not.toContain('class DiscordBotManager')
 		expect(plugin).not.toContain('class DiscordBot implements')
@@ -139,13 +139,15 @@ describe('chatbots package boundaries', () => {
 		expect(bot).toContain('reconcileDiscordCommands')
 	})
 
-	it.each(['telegram', 'kook'])(
+	it.each(['telegram', 'kook', 'discord'])(
 		'%s owns its Workbench route inside the shared Bots navigation group',
 		(name) => {
 			const contract = platformSourceFile(name, 'workbench/contract.ts')
 			const plugin = platformSourceFile(name, 'plugin.ts')
 			expect(contract).toContain("id: 'bots'")
-			expect(contract).toContain(`label: '${name === 'kook' ? 'KOOK' : 'Telegram'}'`)
+			expect(contract).toContain(
+				`label: '${name === 'kook' ? 'KOOK' : name === 'discord' ? 'Discord' : 'Telegram'}'`,
+			)
 			expect(plugin).toContain('this.ctx.workbench.mount')
 		},
 	)
@@ -165,7 +167,7 @@ describe('chatbots package boundaries', () => {
 		expect(ui).not.toContain('@worksplit/react')
 		expect(ui).not.toContain('@pluxel/workbench-app')
 		expect(ui).not.toContain('ChatbotsWorkbenchPlugin')
-		for (const name of ['telegram', 'kook']) {
+		for (const name of ['telegram', 'kook', 'discord']) {
 			const contract = platformSourceFile(name, 'workbench/contract.ts')
 			expect(contract).toContain("route('/accounts/:accountId'")
 			expect(contract).toContain('navigation: false')

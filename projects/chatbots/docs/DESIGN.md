@@ -5,7 +5,7 @@
 本项目覆盖可靠平台接入、稳定富消息协议、可组合业务处理、统一身份授权和低成本本地验证。公共协议保持 JSON-safe，平台差异停留在 adapter 边界。
 
 平台适配器的规范性作者模型、Bot registry、原生 API 分层及 codegen/macro 流水线见
-[PLATFORM_ADAPTERS.md](PLATFORM_ADAPTERS.md)。Telegram、KOOK 已按该公共模型提供多账号 Bot。
+[PLATFORM_ADAPTERS.md](PLATFORM_ADAPTERS.md)。Telegram、KOOK、Discord 已按该公共模型提供多账号 Bot。
 
 ```text
 TelegramPlugin / KookPlugin      Sandbox HTTP
@@ -32,7 +32,7 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 | 包                    | 责任                                                                          | 不负责                 |
 | --------------------- | ----------------------------------------------------------------------------- | ---------------------- |
 | `contracts`           | JSON-safe 富消息、内容块、transport 契约                                      | 路由、状态、平台 API   |
-| `platform-kit`        | Bot registry、账号存储、入站 consumer、串行/重试/取消原语、共享管理 UI        | Hub 路由、平台状态机   |
+| `platform-kit`        | Bot status/registry、账号存储、入站 consumer、串行/重试/取消原语、共享管理 UI | Hub 路由、平台状态机   |
 | `workbench-support`   | Access/Sandbox 的数据库管理投影与 wire schema                                 | 平台账号和连接状态     |
 | `hub`                 | transport/handler/observer、调度、发送规划和指标                              | 命令、权限、用户数据库 |
 | `access`              | 统一用户、角色、grant 与持久化                                                | 平台连接、命令解析     |
@@ -76,19 +76,20 @@ Pluxel workbench UI -> typed RPC -> Vault + adapter lifecycle
 16. 多账号路由显式区分 `platform` 与 `accountId`；不能把账号 ID 拼进 platform，也不能让单一 transport 名称在多个 Bot 之间产生歧义。
 17. codegen 与 macro 分阶段：显式 codegen 生成并提交类型/inventory，macro 只把本地静态 metadata 内联到 bundle；正常构建不访问网络、不改写源码。
 18. 平台插件不导入 ChatHub 或 contracts。独立 bridge plugin 通过 constructor 依赖平台 capability 与 Hub，并注册 checkpoint-critical 原生事件 consumer；不安装 bridge 时 Bot 原生 API 和平台事件连接完全独立运行。
-19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling 与 KOOK gateway 分别记录有界计数、最近时间点、offset/SN 和退避状态。Workbench 通过 events 取得完整运行 snapshot，不把临时连接状态复制到数据库。
+19. `bot.$.status` 是连接状态机拥有的冻结平台快照；Telegram polling、KOOK gateway 与 Discord gateway 分别记录有界计数、最近时间点、offset/SN、连接代次和退避状态。Workbench 通过 events 取得完整运行 snapshot，不把临时连接状态复制到数据库。
 20. 有序 gateway 的所有 frame 进入同一异步 tail，且 reconnect 必须等待该 tail 收敛后再读取 checkpoint。事件 handler 完成后才推进连续 SN；重复帧丢弃，乱序帧使用有界 buffer。HELLO 与 resume ACK 都有明确 timeout；普通断线保留 session/SN 以 resume，握手超时、协议拒绝、明确 hard reconnect 或 buffer 无法收敛时清空恢复状态并回退全新连接。
 21. Hub 去重是有界进程内优化：并发重复调用共享同一个 in-flight 结果，成功后提交时间窗记录，失败或取消后删除记录以允许重试。它不承诺 exactly-once。Telegram 在原始事件和所有入站 consumer 完成后推进 offset，KOOK 同样只在 consumer 完成后推进 SN；业务副作用使用 `messageKey()` 和业务持久化实现幂等。
 22. Access 的业务状态使用原子 snapshot，连续变化只写最新待落盘版本；管理投影按受影响的 user/role 更新 PostgreSQL projection table，live query 不是业务状态源。
 23. handler 与 observer 必须协作响应 `AbortSignal`。Hub 不通过 timeout race 放行同一会话的后续消息，因为无法终止的旧 Promise 仍可能产生副作用，那会破坏会话串行保证；队列上限负责背压，停机 deadline 只负责释放插件生命周期。
 24. 每个 Bot 账号只对应一个 `accounts.<id>` Vault 记录，token 与 API base 原子读写；账号存储不维护字段级 key 或自己的并发队列。Hub 的失败指标在实际语义边界计数：best-effort 的局部失败可见，生命周期取消不冒充业务失败。
-25. 平台 API 从 required `WretchPlugin` 取得 caller-bound native Wretch base，复用宿主 timeout、并发、队列、origin policy 和生命周期；每个 Bot 仍拥有独立平台 retry gate。Telegram `parameters.retry_after` 与 KOOK HTTP `Retry-After` 只延迟该 Bot 的后续请求，不自动重放当前请求。
+25. Telegram/KOOK API 从 required `WretchPlugin` 取得 caller-bound native Wretch base，复用宿主 timeout、并发、队列、origin policy 和生命周期；每个 Bot 仍拥有独立平台 retry gate。Telegram `parameters.retry_after` 与 KOOK HTTP `Retry-After` 只延迟该 Bot 的后续请求，不自动重放当前请求。Discord 使用权威 discord.js Client/REST，并把 Vault 中的完整 API base 明确拆成 SDK 的 `api/version` 配置，不另建平行 HTTP client。
 26. adapter 以本地账号 ID 串行执行配置写入、Bot replacement、删除、重连和断开；不同账号保持并行。配置存储和运行时 registry 必须观察同一账号操作顺序，不能各自拥有互不协调的 mutation tail。
 27. Access 持久化在进入 domain 前按当前 schema 严格校验。损坏、缺字段、重复身份或悬空 user/role 引用会让插件启动失败，不能猜测字段、丢弃记录或回退为空状态继续运行。
 28. 包默认入口只导出稳定作者能力与必要类型。workbench RPC/DTO、Router、Gateway、codec、parser、registry 和状态解析器属于包内实现，测试使用相对路径，不通过公共 barrel 反向固化内部结构。
 29. 平台插件的常驻能力不返回 workbench DTO，也不包含 UI 提示文本。账号配置返回受管 Bot，连接操作返回平台状态，删除返回 `void`；可选 Workbench RPC 和 snapshot event 自己映射安全 DTO 与管理文案。
 30. 入站 consumer 按注册顺序 fail-fast，并在每个原生事件开始时冻结执行计划；dispatch 中的注册/注销只影响下一个事件。bridge 的 consumer 和 transport 都必须组合 bridge-owned abort signal，stop、rollback 与 HMR replacement 会先取消在途工作，再释放注册。
 31. 通用媒体 block 的 `url` 只承载目标 transport 可消费的跨平台资源。账号本地文件句柄不得伪装成 URL；Telegram `file_id` 等原生引用留在 JSON-safe metadata 和原生事件面，通用内容使用可读占位。下载、重传或平台内复用由显式平台插件实现，不能偷偷扩张 Hub 协议。
-32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。管理首页使用全宽 launcher；账号详情和创建流程通过平台自己的参数化 route 打开 Workbench 原生 Tab，平台诊断仍由精确的 Telegram/KOOK renderer 拥有。
+32. 平台 Workbench route 通过共同的 `bots` navigation group 自主注册，宿主只聚合导航，不枚举平台或合并 owner/grant。管理首页使用全宽 launcher；账号详情和创建流程通过平台自己的参数化 route 打开 Workbench 原生 Tab，平台诊断仍由精确的 Telegram/KOOK/Discord renderer 拥有。
 33. 通用 command 只依赖基础 `CommandContext`、返回结构化 output，可以同时进入 runtime catalog 与 typed carrier。跨平台消息命令按 schema 绑定到 `ChatCommandsPlugin` 的 argv router，由它构造 `ChatCommandContext`、授权并投影回复。KOOK carrier 把两种语义分成两个入口：普通 `defineCommand()` 通过 `commands.bind()` 绑定 argv 并强制提供 `respond`；KOOK 专属命令通过 `defineKookCommand()` 固定 `KookCommandContext` 和 void output，由 handler 自行回复，再用 `commands.register()` 发布。两类 KOOK route 都从 caller Context 自动取得消费插件 owner；手动 dispose 只撤销发布，owner/provider 停止会关闭 admission、组合取消 signal 并 drain 在途调用。KOOK router 命中后在 Hub bridge 前消费该 event，未命中才继续普通 consumer。Workbench 不伪造平台 event context。
 34. Discord carrier 使用同样的 portable Command，但 carrier syntax 是原生 application command：binding 显式映射 root/subcommand option、candidate、业务 context 和 terminal response。carrier 合并 root；每 Bot 串行 reconcile，并持久记录自己管理的 root，从而只撤销自身陈旧命令。按钮 prefix route 同样 caller/owner-bound。两者都不把 interaction 转成 ChatMessage，也不复制业务 schema 或 handler。
+35. Discord 与 Telegram/KOOK 共用只读 `BotRegistry`、`selfInfo` 和 `$` 生命周期/状态表面；在线原生 discord.js Client 位于 Bot 顶层 `client`，项目消息/语音/presence helper 只位于 `$`。三个平台的 Workbench 共用 bot-admin RPC、snapshot 和 UI 壳层，平台只拥有自己的诊断映射。KOOK 权限 helper 是包级纯函数：常量直接表示 wire mask，覆盖当前 bit 0–30，管理员绕过和 channel overwrite 三态显式，不发请求也不映射 ChatAccess grant。

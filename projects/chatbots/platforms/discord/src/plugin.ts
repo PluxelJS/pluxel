@@ -1,12 +1,13 @@
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 import type { VaultServiceConfig as _VaultServiceConfig } from '@pluxel/runtime/services/vault'
 import { workbench } from '@pluxel/runtime/workbench'
+import type { BotRegistry } from '@repo/chatbots-platform-kit/registry'
 import { DiscordCommandCarrier, type DiscordCommands } from './commands.ts'
 import { DiscordInteractionCarrier, type DiscordInteractions } from './interactions.ts'
-import { DiscordBot } from './bot/bot.ts'
 import { DiscordBotManager } from './bot/manager.ts'
-import type { DiscordBotDirectory, DiscordBotSnapshot } from './protocol.ts'
-import type { DiscordAdminAccount, DiscordAdminEvents } from './workbench/contract.ts'
+import type { DiscordBot, DiscordBotConfigInput } from './protocol.ts'
+import type { DiscordBotStatus } from './bot/status.ts'
+import type { DiscordWorkbenchEvents } from './workbench/contract.ts'
 import { DiscordWorkbench } from './workbench/extension.ts'
 import { attachDiscordAdminState, DiscordWorkbenchRpc } from './workbench/service.ts'
 
@@ -39,7 +40,7 @@ export class DiscordPlugin extends BasePlugin {
 		return this.interactionCarrier.forOwner(this.ctx.caller ?? this.ctx)
 	}
 
-	get bots(): DiscordBotDirectory {
+	get bots(): BotRegistry<DiscordBot> {
 		return this.ready().bots
 	}
 
@@ -64,7 +65,7 @@ export class DiscordPlugin extends BasePlugin {
 		if (this.ctx.workbench.enabled) {
 			this.ctx.workbench.mount(DiscordWorkbench, {
 				commands: workbench.bind.rpc(() => new DiscordWorkbenchRpc(manager)),
-				state: workbench.bind.events<DiscordAdminEvents>((events) =>
+				state: workbench.bind.events<DiscordWorkbenchEvents>((events) =>
 					attachDiscordAdminState(manager, events),
 				),
 			})
@@ -72,14 +73,14 @@ export class DiscordPlugin extends BasePlugin {
 		this.ctx.http.plugin.routes(
 			(app) =>
 				app.get('/health', () => {
-					const bots = manager.bots.list()
-					return { ok: bots.every((bot) => bot.state !== 'failed'), bots }
+					const bots = [...manager.bots].map((bot) => ({ id: bot.id, ...bot.$.status }))
+					return { ok: bots.every((bot) => bot.phase !== 'error'), bots }
 				}),
 			{ path: '/api', id: 'DiscordPlugin:api' },
 		)
 	}
 
-	upsertBot(input: import('./protocol.ts').DiscordBotConfigInput): Promise<DiscordBot> {
+	upsertBot(input: DiscordBotConfigInput): Promise<DiscordBot> {
 		return this.ready().upsert(input)
 	}
 
@@ -87,20 +88,12 @@ export class DiscordPlugin extends BasePlugin {
 		return this.ready().remove(id)
 	}
 
-	reconnectBot(id: string): Promise<DiscordBotSnapshot> {
+	reconnectBot(id: string): Promise<DiscordBotStatus> {
 		return this.ready().reconnect(id)
 	}
 
-	disconnectBot(id: string): Promise<DiscordBotSnapshot> {
+	disconnectBot(id: string): Promise<DiscordBotStatus> {
 		return this.ready().disconnect(id)
-	}
-
-	adminAccounts(): DiscordAdminAccount[] {
-		return this.ready().adminAccounts()
-	}
-
-	observeAdmin(observer: () => void): () => void {
-		return this.ready().observe(observer)
 	}
 
 	private scheduleCommandSync(): void {

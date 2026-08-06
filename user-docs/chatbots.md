@@ -61,9 +61,26 @@ bot.events.group_message.on(async (event, signal) => {
 交给业务已有的 scheduler；核心不使用进程内 timer 冒充可恢复任务。事件 listener 或命令中的网络调用应通过
 `withSignal(signal)` 组合调用方生命周期；句柄本身始终随 Bot 销毁而取消。
 
-## Discord 原生 slash 命令
+## Discord Bot 与原生 slash 命令
 
 `DiscordPlugin` 拥有 Gateway、Vault Bot registry、消息组件和 application command 同步，但不依赖 ChatHub。
+它与 Telegram、KOOK 使用相同的只读 `BotRegistry` 和生命周期表面：`bot.selfInfo` 是鉴权后的原生
+`ClientUser`，`bot.client` 是在线时的原生 discord.js `Client`，项目提供的消息、语音和 presence helper
+以及连接状态统一位于 `bot.$`：
+
+```ts
+const bot = discord.bots.require('community')
+const guild = await bot.client.guilds.fetch(guildId)
+await bot.$.sendChannelMessage(channelId, { content: 'hello' })
+
+bot.$.status.phase // offline | connecting | online | error | destroyed
+bot.$.status.gateway // epoch、applicationId、guilds、lastHealthyAt
+```
+
+`bot.client` 在 Bot 未在线时会明确抛错；配置存在与 Gateway 在线仍是两个不同事实。`$.stop()` 只断开并允许
+之后重连，`$.destroy()` 由账号 replacement/removal 使用，销毁后不能重新启动。Discord Workbench 与另外两个
+平台复用相同的账号列表、详情、创建、鉴权测试和运行控制壳层，但保留自己的 Gateway 诊断。
+
 业务插件通过 `discord.commands.bind(command, projection)` 复用已有 `@pluxel/commands` 定义；projection 只映射
 root/subcommand、Discord options、candidate、请求 context 与 terminal response。多个 subcommand 会合并为同一
 root command。同步按 Bot 严格串行，并持久记录 carrier 管理过的 root；目录变化或进程重启后会撤销陈旧 root，
@@ -153,6 +170,56 @@ file/audio/video、countdown 和 invite。类型会阻止 invisible card 使用�
 link button 缺少 value、非 second countdown 携带 startTime 等非法组合；序列化时还会检查最多 5 张 card、
 总计 50 个 module，以及图片组、context、action-group、文本长度、URL、颜色和未来时间戳等动态限制。
 `renderKookCard()` 本身只生成这套全量类型并调用同一个序列化器，因此简写和全量不会形成两套协议。
+
+## KOOK 原生权限
+
+KOOK 的 `permissions`、频道 `allow` 和 `deny` 都是 unsigned integer bitmask。使用 `KookPermission` 的值可以
+直接构造 wire mask；这些常量已经是 `1 << bit` 的最终值，不是 bit index：
+
+```ts
+import {
+	KookPermission,
+	combineKookPermissions,
+	createKookPermissionOverwrite,
+	hasAllKookPermissions,
+	setKookPermissionOverwrite,
+} from '@repo/chatbots-kook'
+
+const posting = combineKookPermissions([
+	KookPermission.CHANNEL_VIEW,
+	KookPermission.CHANNEL_MESSAGE,
+	KookPermission.CHANNEL_UPLOAD,
+])
+
+if (hasAllKookPermissions(role.permissions, [KookPermission.CHANNEL_MESSAGE])) {
+	// GUILD_ADMIN 也会在这里通过，因为 KOOK 定义管理员绕过其他权限限制。
+}
+
+let overwrite = createKookPermissionOverwrite({
+	allow: [KookPermission.CHANNEL_VIEW, KookPermission.CHANNEL_MESSAGE],
+	deny: [KookPermission.CHANNEL_UPLOAD],
+})
+overwrite = setKookPermissionOverwrite(overwrite, {
+	permissions: [KookPermission.CHANNEL_UPLOAD],
+	effect: 'inherit',
+})
+
+await bot.updateChannelRole({
+	channel_id: channelId,
+	type: 'role_id',
+	value: String(roleId),
+	...overwrite,
+})
+```
+
+`createKookPermissionOverwrite()` 会拒绝同时 allow/deny 同一权限；返回值和后续
+`setKookPermissionOverwrite()` 结果都是冻结的新对象。`applyKookPermissionOverwrite()` 只应用调用方给出的单个
+overwrite，并保留管理员绕过语义；它不会查询角色、猜测角色优先级或替业务选择 role/user overwrite 顺序。
+`getKookPermissionOverwriteEffect()` 返回明确的 `inherit | allow | deny`。
+
+权限运算使用安全整数而不是 JavaScript 有符号 32-bit 位运算，并覆盖当前 KOOK bit 0–30。未知的未来 bit 在修改
+已有 overwrite 时会保留。这里处理的是 KOOK 服务器/频道原生权限；`ChatAccessPlugin` 的 `cmd.*` grant 是独立的
+产品授权，adapter 不在两者之间做隐式映射。
 
 ## 跨平台命令
 
@@ -261,7 +328,7 @@ await store.put(idempotencyKey)
 
 平台 token 只保存在 Vault。Bot registry 与连接状态是运行时事实；Workbench 订阅时立即取得完整、有界的安全 snapshot，之后只接收有意义的状态变化，不把 polling/gateway 状态复制到 PostgreSQL。用户、角色和 grant 仍属于 Access 持久业务状态。Workbench 使用多账号方法 `upsertBot/removeBot/testBot/reconnectBot/disconnectBot`，账号 ID 是稳定的本地 ID，不是远端 Bot ID。
 
-插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口；Telegram、KOOK、Sandbox 通过相同 navigation group 自主注册二级页面，未安装的平台不会出现，新增平台也不需要修改中央列表。每个平台的管理首页使用全宽账号卡片和搜索；点击账号或“添加 Bot”会打开 Workbench 原生 Tab，因此账号详情参与统一 Tab 切换、关闭和恢复，不占用常驻侧栏。管理能力包括创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 详情保留 Polling offset、最近 poll/update、连续失败和退避；KOOK 详情保留 Gateway phase、SN、事件、恢复、Ping/Pong、乱序、重复、缓冲与溢出指标。删除会先要求确认，页面会明确显示状态流连接与操作错误。
+插件详情 Tab 只提供在线/异常/已配置数量、少量账号状态和“添加 Bot / 打开管理台”快捷入口。Workbench 的一级导航只显示一个 `Bots` 入口；Telegram、KOOK、Discord、Sandbox 通过相同 navigation group 自主注册二级页面，未安装的平台不会出现，新增平台也不需要修改中央列表。每个平台的管理首页使用全宽账号卡片和搜索；点击账号或“添加 Bot”会打开 Workbench 原生 Tab，因此账号详情参与统一 Tab 切换、关闭和恢复，不占用常驻侧栏。管理能力包括创建、更换凭据、测试鉴权、重连、断开和删除。Telegram 详情保留 Polling offset、最近 poll/update、连续失败和退避；KOOK 详情保留 Gateway phase、SN、事件、恢复、Ping/Pong、乱序、重复、缓冲与溢出指标；Discord 详情保留连接代次、application ID、服务器数和最近健康时间。删除会先要求确认，页面会明确显示状态流连接与操作错误。
 
 通用 `ChatMessage` 的媒体 `url` 必须是目标 transport 可用的跨平台资源地址。Telegram `file_id` 只对特定 Bot 账号有意义，因此不会伪装成通用 URL；bridge 会生成可读附件占位，并把 JSON-safe 文件标识放在 `metadata.telegramAttachments`。需要真正读取或复用 Telegram 文件时，直接依赖 `TelegramPlugin` 消费原生 update。
 

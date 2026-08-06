@@ -1,19 +1,5 @@
-import type { InternalDiscordGatewayAdapterCreator } from 'discord.js'
-
-export type DiscordBotState = 'connecting' | 'ready' | 'failed' | 'stopped'
-
-export type DiscordBotSnapshot = Readonly<{
-	id: string
-	state: DiscordBotState
-	epoch: number
-	applicationId?: string
-	userId?: string
-	username?: string
-	guilds: number
-	connectedAt?: number
-	lastHealthyAt?: number
-	failureMessage?: string
-}>
+import type { Client, ClientUser, InternalDiscordGatewayAdapterCreator } from 'discord.js'
+import type { DiscordBotStatus } from './bot/status.ts'
 
 export type DiscordVoiceTarget = Readonly<{
 	guildId: string
@@ -48,16 +34,32 @@ export type DiscordMessage = Readonly<{
 	buttons?: readonly DiscordMessageButton[]
 }>
 
-export interface DiscordBot {
-	readonly id: string
-	snapshot(): DiscordBotSnapshot
+/** Framework-added Discord helpers and lifecycle controls. */
+export interface DiscordBotExtensions {
+	readonly info: Readonly<{ id: string; apiBase: string }>
+	readonly status: Readonly<DiscordBotStatus>
 	resolveUserVoiceTarget(guildId: string, userId: string): Promise<DiscordVoiceTarget>
 	resolveVoiceTarget(guildId: string, channelId: string): Promise<DiscordVoiceTarget>
 	listVoiceHumans(guildId: string, channelId: string): Promise<readonly DiscordVoiceHuman[]>
 	sendUserMessage(userId: string, message: string | DiscordMessage): Promise<void>
-	sendChannelMessage(channelId: string, message: DiscordMessage): Promise<Readonly<{ id: string }>>
+	sendChannelMessage(
+		channelId: string,
+		message: DiscordMessage,
+	): Promise<Readonly<{ id: string }>>
 	editChannelMessage(channelId: string, messageId: string, message: DiscordMessage): Promise<void>
 	setActivity(activity: DiscordActivity | undefined): void
+	start(): Promise<DiscordBotStatus>
+	stop(): Promise<DiscordBotStatus>
+	destroy(): void
+}
+
+export interface DiscordBot {
+	readonly id: string
+	/** Native Discord identity after a successful login. */
+	readonly selfInfo: ClientUser | undefined
+	/** Native discord.js client. Throws while the Bot is not online. */
+	readonly client: Client<true>
+	readonly $: DiscordBotExtensions
 }
 
 type DiscordInteractionBase = Readonly<{
@@ -78,13 +80,8 @@ type DiscordInteractionBase = Readonly<{
 export type DiscordButtonContext = DiscordInteractionBase &
 	Readonly<{ kind: 'button'; customId: string }>
 
-export interface DiscordBotDirectory {
-	list(): readonly DiscordBotSnapshot[]
-	get(id: string): DiscordBot | undefined
-	observe(observer: () => void): () => void
-}
-
 export type DiscordBotConfigInput = Readonly<{
 	id: string
 	token?: string
+	apiBase?: string
 }>

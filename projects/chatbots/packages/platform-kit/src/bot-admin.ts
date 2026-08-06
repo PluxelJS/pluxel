@@ -1,6 +1,7 @@
 import { RpcTarget } from '@pluxel/runtime/capnweb'
+import type { BotPhase } from './bot-status.ts'
 
-export type BotAdminPhase = 'offline' | 'connecting' | 'online' | 'error'
+export type BotAdminPhase = Exclude<BotPhase, 'destroyed'>
 
 export type BotAdminAccount<Diagnostics extends object> = Readonly<{
 	id: string

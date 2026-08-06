@@ -12,6 +12,7 @@ import {
 	Options,
 	type ButtonInteraction,
 	type ChatInputCommandInteraction,
+	type ClientUser,
 } from 'discord.js'
 import type { DiscordCommandCatalogSnapshot, DiscordCommandSource } from '../commands.ts'
 import {
@@ -22,12 +23,18 @@ import {
 import type {
 	DiscordActivity,
 	DiscordBot as DiscordBotCapability,
-	DiscordBotSnapshot,
+	DiscordBotExtensions,
 	DiscordButtonContext,
 	DiscordMessage,
 	DiscordVoiceHuman,
 	DiscordVoiceTarget,
 } from '../protocol.ts'
+import {
+	createDiscordBotStatus,
+	updateDiscordBotStatus,
+	type DiscordBotStatus,
+} from './status.ts'
+import { resolveDiscordRestOptions } from './rest.ts'
 
 export type DiscordBotOptions = Readonly<{
 	commandGuildIds: readonly string[]
@@ -41,59 +48,75 @@ export type DiscordBotOptions = Readonly<{
 }>
 
 export class DiscordBot implements DiscordBotCapability {
-	private client?: Client
-	private epoch = 0
-	private state: DiscordBotSnapshot['state'] = 'stopped'
-	private connectedAt?: number
-	private lastHealthyAt?: number
-	private failureMessage?: string
-	private operation?: Promise<DiscordBotSnapshot>
+	private clientValue?: Client
+	private operation?: Promise<DiscordBotStatus>
 	private eventController?: AbortController
+	private statusValue = createDiscordBotStatus()
+	private selfInfoValue?: ClientUser
 
 	readonly id: string
+	readonly $: DiscordBotExtensions
 
 	constructor(
 		private readonly config: BotAccountConfig,
 		private readonly options: DiscordBotOptions,
 	) {
 		this.id = config.id
-	}
-
-	snapshot(): DiscordBotSnapshot {
-		const user = this.client?.user
-		return {
-			id: this.id,
-			state: this.state,
-			epoch: this.epoch,
-			...(this.client?.application?.id ? { applicationId: this.client.application.id } : {}),
-			...(user?.id ? { userId: user.id } : {}),
-			...(user?.username ? { username: user.username } : {}),
-			guilds: this.client?.guilds.cache.size ?? 0,
-			...(this.connectedAt === undefined ? {} : { connectedAt: this.connectedAt }),
-			...(this.lastHealthyAt === undefined ? {} : { lastHealthyAt: this.lastHealthyAt }),
-			...(this.failureMessage === undefined ? {} : { failureMessage: this.failureMessage }),
+		const extensions: DiscordBotExtensions = {
+			info: Object.freeze({ id: this.id, apiBase: config.apiBase }),
+			status: this.statusValue,
+			resolveUserVoiceTarget: (guildId, userId) =>
+				this.#resolveUserVoiceTarget(guildId, userId),
+			resolveVoiceTarget: (guildId, channelId) => this.#resolveVoiceTarget(guildId, channelId),
+			listVoiceHumans: (guildId, channelId) => this.#listVoiceHumans(guildId, channelId),
+			sendUserMessage: (userId, message) => this.#sendUserMessage(userId, message),
+			sendChannelMessage: (channelId, message) => this.#sendChannelMessage(channelId, message),
+			editChannelMessage: (channelId, messageId, message) =>
+				this.#editChannelMessage(channelId, messageId, message),
+			setActivity: (activity) => this.#setActivity(activity),
+			start: () => this.#connect(),
+			stop: () => this.#stopConnection(),
+			destroy: () => this.#destroy(),
 		}
+		Object.defineProperty(extensions, 'status', {
+			enumerable: true,
+			get: () => this.statusValue,
+		})
+		this.$ = Object.freeze(extensions)
 	}
 
-	start(): Promise<DiscordBotSnapshot> {
+	get selfInfo(): ClientUser | undefined {
+		return this.selfInfoValue
+	}
+
+	get client(): Client<true> {
+		return this.#requireReady()
+	}
+
+	#connect(): Promise<DiscordBotStatus> {
+		this.#assertAlive()
 		if (this.operation) return this.operation
-		const operation = this.startNow().finally(() => {
+		const operation = this.#startNow().finally(() => {
 			if (this.operation === operation) this.operation = undefined
 		})
 		this.operation = operation
 		return operation
 	}
 
-	private async startNow(): Promise<DiscordBotSnapshot> {
+	async #startNow(): Promise<DiscordBotStatus> {
 		this.eventController?.abort('Discord bot reconnecting')
-		this.client?.destroy()
-		this.epoch += 1
-		this.state = 'connecting'
-		this.failureMessage = undefined
+		this.clientValue?.destroy()
+		const epoch = this.statusValue.gateway.epoch + 1
+		this.#setStatus('connecting', {
+			lastError: null,
+			connectedAt: null,
+			gateway: { epoch, applicationId: null, guilds: 0, lastHealthyAt: null },
+		})
 		const controller = new AbortController()
 		this.eventController = controller
 		const client = new Client({
 			intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+			rest: resolveDiscordRestOptions(this.config.apiBase),
 			makeCache: Options.cacheWithLimits({
 				MessageManager: 0,
 				ReactionManager: 0,
@@ -101,7 +124,7 @@ export class DiscordBot implements DiscordBotCapability {
 				PresenceManager: 0,
 			}),
 		})
-		this.client = client
+		this.clientValue = client
 		client.on(Events.InteractionCreate, (interaction) => {
 			if (!interaction.isChatInputCommand() && !interaction.isButton()) return
 			if (interaction.isButton() && !this.options.matchesInteraction(interaction.customId)) return
@@ -115,63 +138,79 @@ export class DiscordBot implements DiscordBotCapability {
 			void this.handleInteraction(interaction, controller.signal)
 		})
 		client.on(Events.ShardDisconnect, () => {
-			if (this.client !== client || this.state === 'stopped') return
-			this.state = 'connecting'
-			this.options.onChanged()
+			if (this.clientValue !== client || this.statusValue.phase === 'destroyed') return
+			this.#setStatus('connecting', { connectedAt: null })
 		})
 		client.on(Events.ShardResume, () => {
-			if (this.client !== client) return
-			this.state = 'ready'
-			this.lastHealthyAt = Date.now()
-			this.options.onChanged()
+			if (this.clientValue !== client) return
+			this.#setOnline(client)
 		})
 		client.on(Events.ShardError, (error) => this.options.onError(error))
 		try {
 			await withTimeout(client.login(this.config.token), this.options.readyTimeoutMs)
-			if (this.client !== client) throw new Error('Discord client was replaced while connecting')
-			this.state = 'ready'
-			this.connectedAt = Date.now()
-			this.lastHealthyAt = this.connectedAt
-			this.options.onChanged()
-			return this.snapshot()
+			if (this.clientValue !== client) throw new Error('Discord client was replaced while connecting')
+			return this.#setOnline(client)
 		} catch (error) {
 			controller.abort(error)
 			client.destroy()
-			if (this.client === client) {
-				this.state = 'failed'
-				this.failureMessage = error instanceof Error ? error.message : String(error)
+			if (this.clientValue === client) {
+				this.clientValue = undefined
+				this.#setStatus('error', {
+					lastError: error instanceof Error ? error.message : String(error),
+					connectedAt: null,
+					gateway: { applicationId: null, guilds: 0 },
+				})
 			}
-			this.options.onChanged()
 			throw error
 		}
 	}
 
-	async stop(): Promise<DiscordBotSnapshot> {
-		this.destroy()
+	async #stopConnection(): Promise<DiscordBotStatus> {
+		if (this.statusValue.phase === 'destroyed') return this.statusValue
+		this.#stopClient()
+		this.#setStatus('offline', {
+			lastError: null,
+			connectedAt: null,
+			gateway: { applicationId: null, guilds: 0 },
+		})
 		await this.operation?.catch((): undefined => undefined)
-		return this.snapshot()
+		return this.statusValue
 	}
 
-	destroy(): void {
+	#destroy(): void {
+		if (this.statusValue.phase === 'destroyed') return
+		this.#stopClient()
+		this.#setStatus('destroyed', {
+			lastError: null,
+			connectedAt: null,
+			gateway: { applicationId: null, guilds: 0 },
+		})
+	}
+
+	#stopClient(): void {
 		this.eventController?.abort('Discord bot stopped')
 		this.eventController = undefined
-		this.client?.destroy()
-		this.client = undefined
-		this.state = 'stopped'
-		this.options.onChanged()
+		this.clientValue?.destroy()
+		this.clientValue = undefined
 	}
 
-	async resolveUserVoiceTarget(guildId: string, userId: string): Promise<DiscordVoiceTarget> {
-		const client = this.requireReady()
+	async #resolveUserVoiceTarget(
+		guildId: string,
+		userId: string,
+	): Promise<DiscordVoiceTarget> {
+		const client = this.#requireReady()
 		const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId))
 		const member = await guild.members.fetch(userId)
 		const channel = member.voice.channel
 		if (!channel) throw new Error('请先加入一个 Discord 语音频道。')
-		return this.resolveVoiceTarget(guildId, channel.id)
+		return this.#resolveVoiceTarget(guildId, channel.id)
 	}
 
-	async resolveVoiceTarget(guildId: string, channelId: string): Promise<DiscordVoiceTarget> {
-		const client = this.requireReady()
+	async #resolveVoiceTarget(
+		guildId: string,
+		channelId: string,
+	): Promise<DiscordVoiceTarget> {
+		const client = this.#requireReady()
 		const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId))
 		const channel = await guild.channels.fetch(channelId)
 		if (!channel) throw new Error(`Discord voice channel is unavailable: ${channelId}`)
@@ -187,8 +226,11 @@ export class DiscordBot implements DiscordBotCapability {
 		}
 	}
 
-	async listVoiceHumans(guildId: string, channelId: string): Promise<readonly DiscordVoiceHuman[]> {
-		const client = this.requireReady()
+	async #listVoiceHumans(
+		guildId: string,
+		channelId: string,
+	): Promise<readonly DiscordVoiceHuman[]> {
+		const client = this.#requireReady()
 		const guild = client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId))
 		const channel = await guild.channels.fetch(channelId)
 		if (!channel || channel.type !== ChannelType.GuildVoice) {
@@ -205,33 +247,33 @@ export class DiscordBot implements DiscordBotCapability {
 			})
 	}
 
-	async sendUserMessage(userId: string, message: string | DiscordMessage): Promise<void> {
-		const user = await this.requireReady().users.fetch(userId)
+	async #sendUserMessage(userId: string, message: string | DiscordMessage): Promise<void> {
+		const user = await this.#requireReady().users.fetch(userId)
 		await user.send(discordMessageOptions(message))
 	}
 
-	async sendChannelMessage(
+	async #sendChannelMessage(
 		channelId: string,
 		message: DiscordMessage,
 	): Promise<Readonly<{ id: string }>> {
-		const channel = await this.requireReady().channels.fetch(channelId)
+		const channel = await this.#requireReady().channels.fetch(channelId)
 		if (!channel?.isSendable()) throw new Error(`Discord channel is not sendable: ${channelId}`)
 		const sent = await channel.send(discordMessageOptions(message))
 		return { id: sent.id }
 	}
 
-	async editChannelMessage(
+	async #editChannelMessage(
 		channelId: string,
 		messageId: string,
 		message: DiscordMessage,
 	): Promise<void> {
-		const channel = await this.requireReady().channels.fetch(channelId)
+		const channel = await this.#requireReady().channels.fetch(channelId)
 		if (!channel?.isSendable()) throw new Error(`Discord channel is not sendable: ${channelId}`)
 		await channel.messages.edit(messageId, discordMessageOptions(message))
 	}
 
-	setActivity(activity: DiscordActivity | undefined): void {
-		const client = this.requireReady()
+	#setActivity(activity: DiscordActivity | undefined): void {
+		const client = this.#requireReady()
 		client.user.setPresence({
 			activities: activity
 				? [
@@ -248,8 +290,9 @@ export class DiscordBot implements DiscordBotCapability {
 		catalog: DiscordCommandCatalogSnapshot,
 		previouslyManaged: ReadonlyMap<string, ReadonlySet<string>>,
 	): Promise<ReadonlyMap<string, ReadonlySet<string>>> {
-		if (this.state !== 'ready' || !this.client?.isReady()) return previouslyManaged
-		return this.syncCommands(this.client, catalog.definitions, previouslyManaged)
+		if (this.statusValue.phase !== 'online' || !this.clientValue?.isReady())
+			return previouslyManaged
+		return this.syncCommands(this.clientValue, catalog.definitions, previouslyManaged)
 	}
 
 	private async syncCommands(
@@ -345,11 +388,41 @@ export class DiscordBot implements DiscordBotCapability {
 		}
 	}
 
-	private requireReady(): Client<true> {
-		if (this.state !== 'ready' || !this.client?.isReady()) {
+	#requireReady(): Client<true> {
+		if (this.statusValue.phase !== 'online' || !this.clientValue?.isReady()) {
 			throw new Error(`Discord bot is not ready: ${this.id}`)
 		}
-		return this.client
+		return this.clientValue
+	}
+
+	#setOnline(client: Client): DiscordBotStatus {
+		const now = Date.now()
+		this.selfInfoValue = client.user ?? undefined
+		return this.#setStatus('online', {
+			botId: client.user?.id ?? null,
+			username: client.user?.username ?? null,
+			lastError: null,
+			connectedAt: this.statusValue.connectedAt ?? now,
+			gateway: {
+				applicationId: client.application?.id ?? null,
+				guilds: client.guilds.cache.size,
+				lastHealthyAt: now,
+			},
+		})
+	}
+
+	#setStatus(
+		phase: DiscordBotStatus['phase'],
+		patch: Parameters<typeof updateDiscordBotStatus>[1] = {},
+	): DiscordBotStatus {
+		this.statusValue = updateDiscordBotStatus(this.statusValue, { ...patch, phase })
+		this.options.onChanged()
+		return this.statusValue
+	}
+
+	#assertAlive(): void {
+		if (this.statusValue.phase === 'destroyed')
+			throw new Error(`Discord bot is destroyed: ${this.id}`)
 	}
 }
 

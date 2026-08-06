@@ -5,6 +5,7 @@
 	"exports": {
 		"./account-store": "./src/account-store.ts",
 		"./bot-admin": "./src/bot-admin.ts",
+		"./bot-status": "./src/bot-status.ts",
 		"./backoff": "./src/backoff.ts",
 		"./keyed-serial": "./src/keyed-serial.ts",
 		"./inbound-consumers": "./src/inbound-consumers.ts",

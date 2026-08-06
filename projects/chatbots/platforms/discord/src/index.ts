@@ -5,11 +5,14 @@ export type {
 	DiscordActivity,
 	DiscordBot,
 	DiscordBotConfigInput,
-	DiscordBotDirectory,
-	DiscordBotSnapshot,
 	DiscordButtonContext,
 	DiscordMessage,
 	DiscordMessageButton,
 	DiscordVoiceHuman,
 	DiscordVoiceTarget,
 } from './protocol.ts'
+export type {
+	DiscordBotPhase,
+	DiscordBotStatus,
+	DiscordGatewaySnapshot,
+} from './bot/status.ts'
