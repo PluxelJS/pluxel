@@ -5,7 +5,7 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import { type CommitSummary, type Context, checkPluginDecorator, getPluginInfo } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
 import { createServer, type DevEnvironment, normalizePath, type ViteDevServer } from 'vite'
-import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
+import type { BuiltinDistPluginSpec, BuiltinPluginSpec } from '../../builtin-spec'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
@@ -153,21 +153,7 @@ export interface LoaderHmrConfig {
 	 * The host resolves each `entry` path (from `exports["."]`, e.g. `dist/index.mjs`) and HMR evaluates
 	 * it via the runner, then commits all detected plugin ctors via `LoaderService.preloadPlugins()`.
 	 */
-	builtinsFromDist?: ReadonlyArray<{
-		/** Workspace package name (also used as Loader moduleId). */
-		packageName: string
-		/** Dist entry file path (absolute or workspace-relative). Prefer `.mjs`. */
-		entry: string
-		/**
-		 * Optional export key.
-		 *
-		 * Note: when omitted, HMR auto-detects all `@Plugin`-decorated constructors from the module's
-		 * **named exports** (fail-fast; does not rely on default export).
-		 */
-		exportKey?: string
-		/** Whether to enable this builtin in config. Defaults to `true`. */
-		enable?: boolean
-	}>
+	builtinsFromDist?: readonly BuiltinDistPluginSpec[]
 	/**
 	 * Builtins preload policy:
 	 * - `true`: fail-fast if builtin preload commit fails (host startup crashes).
@@ -973,6 +959,7 @@ export class LoaderHmrService {
 	}
 
 	private registerWatchers(server: ViteDevServer) {
+		server.watcher.add(this.scanRootsAbs)
 		const events = ['change', 'add', 'unlink'] as const
 		for (const event of events) {
 			const listener = (file: string) => this.enqueueFileChange(file)
@@ -981,6 +968,7 @@ export class LoaderHmrService {
 		}
 		this.ctx.effects.defer(() => {
 			for (const dispose of this.watcherDisposers.splice(0)) dispose()
+			void server.watcher.unwatch(this.scanRootsAbs)
 		})
 	}
 
@@ -1114,6 +1102,7 @@ export class LoaderHmrService {
 
 	private onBatchSummary(summary: HmrBatchSummary) {
 		this.lastBatchSummary = summary
+		if (summary.ok && summary.affected > 0) this.ctx.root.optionalPlugins.invalidate()
 		if (this.batchWaiters.size === 0) return
 
 		const waiters = [...this.batchWaiters]

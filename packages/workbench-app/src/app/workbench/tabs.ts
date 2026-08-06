@@ -25,9 +25,6 @@ export function deriveTabFromPath(pathname: string): WorkbenchTab {
 	if (pathname === '/agent-tools') {
 		return { id: 'agent-tools', path: pathname, title: 'Agent 工具', meta: 'Runtime' }
 	}
-	if (pathname === '/packages') {
-		return { id: 'packages', path: pathname, title: '包管理', meta: 'Registry' }
-	}
 	if (pathname === '/plugins') {
 		return { id: 'plugins', path: pathname, title: '插件', meta: 'Overview' }
 	}

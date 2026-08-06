@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { dirname, resolve } from 'pathe'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -20,6 +21,14 @@ export default defineDynamicRuntimeConfig({
 	configPath,
 	profile: activeProfile,
 	logsDir: 'projects/plugin-host/logs',
+	builtins: [PackageManagerPlugin],
+	sources: [
+		{
+			kind: 'directory',
+			path: '.pluxel/managed-plugins/entries',
+			include: ['*.mjs'],
+		},
+	],
 	runtimeState: {
 		mode: 'memory',
 		snapshot: { enabled: enabledDemoPlugins },

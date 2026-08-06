@@ -389,6 +389,9 @@ catalogs:
     '@pluxel/market':
       specifier: ^0.1.0
       version: 0.1.0
+    '@pnpm/napi':
+      specifier: 12.0.0-rc.0
+      version: 12.0.0-rc.0
     '@tabler/icons-react':
       specifier: ^3.37.1
       version: 3.44.0
@@ -815,9 +818,6 @@ importers:
 
   packages/runtime-dynamic:
     dependencies:
-      '@gqloom/core':
-        specifier: ^0.16.1
-        version: 0.16.1(graphql@16.14.2)
       '@logtape/logtape':
         specifier: ^2.0.2
         version: 2.2.3
@@ -830,24 +830,9 @@ importers:
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../runtime
-      capnweb:
-        specifier: ^0.5.0
-        version: 0.5.0
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
-      graphql:
-        specifier: ^16.13.0
-        version: 16.14.2
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
-      nypm:
-        specifier: ^0.6.5
-        version: 0.6.8
-      option-t:
-        specifier: ^55.1.2
-        version: 55.1.2
       pathe:
         specifier: ^2.0.3
         version: 2.0.3
@@ -1114,6 +1099,55 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
+
+  plugins/package-manager:
+    dependencies:
+      '@pnpm/napi':
+        specifier: 'catalog:'
+        version: 12.0.0-rc.0
+    devDependencies:
+      '@mantine/core':
+        specifier: 'catalog:'
+        version: 9.4.1(@mantine/hooks@9.4.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@pluxel/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@pluxel/commands':
+        specifier: workspace:*
+        version: link:../../packages/commands
+      '@pluxel/rolldown':
+        specifier: workspace:*
+        version: link:../../packages/rolldown
+      '@pluxel/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@pluxel/test':
+        specifier: workspace:*
+        version: link:../../packages/test
+      '@tabler/icons-react':
+        specifier: 'catalog:'
+        version: 3.44.0(react@19.2.7)
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.17
+      react:
+        specifier: 'catalog:'
+        version: 19.2.7
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.2.7(react@19.2.7)
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vite:
+        specifier: ^8.0.0-beta.18
+        version: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0)
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(tsx@4.23.0)(yaml@2.9.0))
@@ -1813,6 +1847,9 @@ importers:
 
   projects/plugin-host:
     dependencies:
+      '@pluxel/package-manager':
+        specifier: workspace:*
+        version: link:../../plugins/package-manager
       '@pluxel/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -3880,6 +3917,54 @@ packages:
       react: ^19
       react-dom: ^19
 
+  '@pnpm/napi.darwin-arm64@12.0.0-rc.0':
+    resolution: {integrity: sha512-s2vUp6SpEa1hh98uHZyi+E16MpDKn+vR//pPJYTZsb0Jlj/VPGxHGIlK3zGTWi5f9jrJVSi3kRWHL51azi0x0Q==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@pnpm/napi.darwin-x64@12.0.0-rc.0':
+    resolution: {integrity: sha512-CpUBSs48mT/svKYZPQIKy5gW1FC8JkbCgg8t8mtnzsUMrRi3+Y6bFctWIdbfZT76OD45RtFs6KUSziZJErfRgg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0':
+    resolution: {integrity: sha512-4KUou1RsFxTiYVm5O+d2wATSYkTtZAYHo3N3u3q5Jp/SLpEZBV/6dcFEME0vh7ssxf2EKjGMZCMerfsNh0UX7g==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/napi.linux-arm64@12.0.0-rc.0':
+    resolution: {integrity: sha512-qulxK0+SqOHBM/0r4zOi+/Jc7CKMCGOipn0/snDqRDlOcqoDKtmwn/IPnBhbpD6E94SvWANeH9mUUWOtKsohwg==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/napi.linux-x64-musl@12.0.0-rc.0':
+    resolution: {integrity: sha512-wth73s5LERyBeRDYMe6M/kTN6HIvi6Q8Cuku9yrJdKvK+Ljvst9nIzw3cuZL8sn0hfpgi4GA58qA6xL1HP6C3g==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@pnpm/napi.linux-x64@12.0.0-rc.0':
+    resolution: {integrity: sha512-1M2SMwlJGAiFAKcugCKcVrq65dOZsu6LSV0m/rEQxG43jruxwVS/a9WuF1JqxKUtJmoMLJp3H7R3fzIrd5Jq6w==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@pnpm/napi.win32-arm64@12.0.0-rc.0':
+    resolution: {integrity: sha512-X1/jty/Jrr5ORuAbpWF8ds87v5a451dRJc5xpNSF2g6EzXYoTlOsfo/RKrrJfKxob0cx08DXWf4jAY1XEbkA2Q==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@pnpm/napi.win32-x64@12.0.0-rc.0':
+    resolution: {integrity: sha512-qmZSEs8JMm14jo9d7FsrozYKw8wWHrVfuVU9GO+49E2r7OXW7w1TLD2fx9BNLlWcLpebkzvT78Je2fMtHa7cow==}
+    cpu: [x64]
+    os: [win32]
+
+  '@pnpm/napi@12.0.0-rc.0':
+    resolution: {integrity: sha512-y/PA7F8gIporezPiaUPLJ7gg4sxST5D+iRncpOVprxqG9nUFABXvyjVx4b8bvR9h7vxMktppUWC1erKdGL8Pyg==}
+    engines: {node: '>=18.*'}
+
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
 
@@ -4869,9 +4954,6 @@ packages:
   chownr@1.1.4:
     resolution: {integrity: sha512-jJ0bqzaylmJtVnNgzTeSOs8DPavpbYgEr/b0YL8/2GO3xJEhInFmhKMUnEJQjZumK7KXGFhUy89PrsJWlakBVg==}
 
-  citty@0.2.2:
-    resolution: {integrity: sha512-+6vJA3L98yv+IdfKGZHBNiGW5KHn22e/JwID0Strsz8h4S/csAu/OuICwxrg44k5MRiZHWIo8XXuJgQTriRP4w==}
-
   cli-boxes@3.0.0:
     resolution: {integrity: sha512-/lzGpEWL/8PfI0BmBOPRwp0c/wFNX1RdUML3jK/RcSBA9T8mZDdQpqYBKtCFTOfQbwPqWEOpjqW+Fnayc0969g==}
     engines: {node: '>=10'}
@@ -5828,11 +5910,6 @@ packages:
     resolution: {integrity: sha512-OXdegQq03OmXEjt2hZP33W2YPs/E5BcFQks46+G2gAxs4gHOIVD1u7EqlYLYSKsaIpyKCK9Gbk0ta1/gjRSMRQ==}
     engines: {node: '>=6'}
 
-  nypm@0.6.8:
-    resolution: {integrity: sha512-Q9K4Diu6l5u6xJQogeFSs/zKtyMSgFKFtRQV+tHP4kL7KPm2grpBU0dFIwFaXwNxN0MtfKWc43VpCugAa+LPsw==}
-    engines: {node: '>=18'}
-    hasBin: true
-
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
     engines: {node: '>=0.10.0'}
@@ -6253,9 +6330,6 @@ packages:
   redis@6.1.0:
     resolution: {integrity: sha512-0kvUPM8RHP/ZMa0xYaDTcG5e8tIGW6kz6MToVT0V8iOnk6bkXp2jncGRGe2bZEk41lZwiDspUqjZCSk5ohjcKw==}
     engines: {node: '>= 20.0.0'}
-
-  reflect-metadata@0.2.2:
-    resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
 
   require-from-string@2.0.2:
     resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
@@ -8731,6 +8805,41 @@ snapshots:
     transitivePeerDependencies:
       - ramda
 
+  '@pnpm/napi.darwin-arm64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.darwin-x64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.linux-arm64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.linux-x64-musl@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.linux-x64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.win32-arm64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi.win32-x64@12.0.0-rc.0':
+    optional: true
+
+  '@pnpm/napi@12.0.0-rc.0':
+    optionalDependencies:
+      '@pnpm/napi.darwin-arm64': 12.0.0-rc.0
+      '@pnpm/napi.darwin-x64': 12.0.0-rc.0
+      '@pnpm/napi.linux-arm64': 12.0.0-rc.0
+      '@pnpm/napi.linux-arm64-musl': 12.0.0-rc.0
+      '@pnpm/napi.linux-x64': 12.0.0-rc.0
+      '@pnpm/napi.linux-x64-musl': 12.0.0-rc.0
+      '@pnpm/napi.win32-arm64': 12.0.0-rc.0
+      '@pnpm/napi.win32-x64': 12.0.0-rc.0
+
   '@quansync/fs@1.0.0':
     dependencies:
       quansync: 1.0.0
@@ -9573,8 +9682,6 @@ snapshots:
 
   chownr@1.1.4:
     optional: true
-
-  citty@0.2.2: {}
 
   cli-boxes@3.0.0: {}
 
@@ -10472,12 +10579,6 @@ snapshots:
       long-timeout: 0.1.1
       sorted-array-functions: 1.3.0
 
-  nypm@0.6.8:
-    dependencies:
-      citty: 0.2.2
-      pathe: 2.0.3
-      tinyexec: 1.2.4
-
   object-assign@4.1.1: {}
 
   obug@2.1.3: {}
@@ -10969,8 +11070,6 @@ snapshots:
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
-
-  reflect-metadata@0.2.2: {}
 
   require-from-string@2.0.2: {}
 

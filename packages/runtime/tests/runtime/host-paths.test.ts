@@ -9,7 +9,6 @@ describe('runtime host path policy', () => {
 		const paths = resolveRuntimeStoragePaths(root)
 
 		expect(paths.persistenceDir).toBe(resolve(root, 'data/persistence'))
-		expect(paths.packageStateFile).toBe(resolve(root, 'data/runtime/package-state.json'))
 		expect(paths.logsDir).toBe(resolve(root, 'logs'))
 		expect(paths.logFile).toBe(resolve(root, 'logs/runtime.log'))
 	})

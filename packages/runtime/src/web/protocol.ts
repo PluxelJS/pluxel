@@ -148,99 +148,6 @@ export type BaseProviderInfo = {
 	providers: PluginDependencyOption[]
 }
 
-export type PackageSpecInput = {
-	raw?: string | null
-	name?: string | null
-	version?: string | null
-	tag?: string | null
-}
-
-export type PackageIssueSpec = {
-	__typename: 'PackageIssueSpec'
-	key: string
-	name: string
-	version: string | null
-	tag: string | null
-	target: string
-	raw: string
-}
-
-export type PackageLoadIssue = {
-	__typename: 'PackageLoadIssue'
-	id: string
-	spec: PackageIssueSpec
-	source: 'load' | 'restore' | 'retry'
-	message: string
-	error: string | null
-	moduleId: string | null
-	recordedAt: number
-}
-
-export type PackageInventoryEntry = {
-	__typename: 'PackageInventoryEntry'
-	id: string
-	spec: PackageIssueSpec
-	installedVersion: string | null
-	requestedVersion: string | null
-	loaded: boolean
-	moduleId: string | null
-	issues: PackageLoadIssue[] | null
-}
-
-export type PackageInventoryFilter = {
-	includeUntracked?: boolean
-}
-
-export type PackageMutationAction =
-	| 'install'
-	| 'uninstall'
-	| 'remove'
-	| 'reinstall'
-	| 'reload'
-	| 'retry'
-
-export type PackageMutationOptions = {
-	force?: boolean
-	fresh?: boolean
-	reinstall?: boolean
-}
-
-export type PackageMutationInput = {
-	action: PackageMutationAction
-	specs: PackageSpecInput[]
-	options?: PackageMutationOptions
-}
-
-export type PackageMutationResult = {
-	__typename: 'PackageMutationResult'
-	id: string
-	ok: boolean
-	code: string
-	spec: PackageIssueSpec | null
-	installStatus: 'installed' | 'reused' | null
-	error: string | null
-}
-
-export type PackageBatchResult = {
-	__typename: 'PackageBatchMutationResult'
-	ok: boolean
-	results: PackageMutationResult[]
-	error: string | null
-}
-
-export type PackageManagerSnapshot = {
-	__typename: 'PackageManagerSnapshot'
-	inventory: PackageInventoryEntry[]
-	loadIssues: PackageLoadIssue[]
-}
-
-export interface PackageManagerFeatureApi {
-	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
-	snapshot: (filter?: PackageInventoryFilter) => Promise<PackageManagerSnapshot>
-	inventory: (filter?: PackageInventoryFilter) => Promise<PackageInventoryEntry[]>
-	loadIssues: () => Promise<PackageLoadIssue[]>
-}
-
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
@@ -292,7 +199,6 @@ export type AgentToolsHandleApi = {
 
 type RuntimeRpcApiContract = {
 	ping: () => string
-	packageManager: () => PackageManagerFeatureApi | null
 	logging: () => LoggingHandleApi
 	agentTools: () => AgentToolsHandleApi
 	workbenchRpc: (grantId: string) => WorkbenchRpcView

@@ -1,4 +1,4 @@
-import type { ScanService } from '@pluxel/runtime-dynamic/services'
+import type { ScanService } from '../../scan/ScanService'
 import {
 	clearSieveState,
 	getOrCreatePromise,

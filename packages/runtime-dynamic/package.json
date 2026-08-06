@@ -1,7 +1,7 @@
 {
 	"name": "@pluxel/runtime-dynamic",
 	"version": "0.3.0",
-	"description": "Pluxel runtime dynamic route (dynamic plugin loading, scanning, and package installs)",
+	"description": "Pluxel mutable file-source runtime route",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
@@ -26,10 +26,6 @@
 			"@pluxel/source": "./src/hmr/diagnose.ts",
 			"default": "./dist/hmr/diagnose.mjs"
 		},
-		"./services": {
-			"@pluxel/source": "./src/services.ts",
-			"default": "./dist/services.mjs"
-		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -41,7 +37,6 @@
 			".": "./dist/index.mjs",
 			"./hmr": "./dist/hmr.mjs",
 			"./hmr/diagnose": "./dist/hmr/diagnose.mjs",
-			"./services": "./dist/services.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}
@@ -51,17 +46,11 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@gqloom/core": "^0.16.1",
 		"@logtape/logtape": "^2.0.2",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"capnweb": "^0.5.0",
-		"chokidar": "^5.0.0",
-		"graphql": "^16.13.0",
 		"jsonc-parser": "^3.3.1",
-		"nypm": "^0.6.5",
-		"option-t": "^55.1.2",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
 		"valibot": "^1.2.0"
@@ -80,5 +69,9 @@
 		"vite": {
 			"optional": true
 		}
+	},
+	"inlinedDependencies": {
+		"chokidar": "5.0.0",
+		"readdirp": "5.0.0"
 	}
 }

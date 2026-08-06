@@ -57,6 +57,8 @@ describe('toolchain package boundaries', () => {
 		).toBe(false)
 		expect(runtimeDynamic.exports).toHaveProperty('./vite')
 		expect(runtimeDynamic.exports).toHaveProperty('./hmr')
+		expect(runtimeDynamic.exports).not.toHaveProperty('./services')
+		expect(existsSync(`${root}/packages/runtime-dynamic/src/services.ts`)).toBe(false)
 		expect(runtimeStatic.exports).toHaveProperty('./vite')
 		expect(runtimeStatic.exports).not.toHaveProperty('./hmr')
 		expect(rolldown.exports).toHaveProperty('./vite')
@@ -337,7 +339,7 @@ describe('toolchain package boundaries', () => {
 		expect(offenders).toEqual([])
 	})
 
-	it('keeps one runtime authoring entry and one always-on service registry', async () => {
+	it('keeps one runtime authoring entry and route-owned dynamic services', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const coreManifest = await readJson(`${root}/packages/core/package.json`)
 		const coreIndex = await readFile(`${root}/packages/core/src/index.ts`, 'utf8')
@@ -349,6 +351,14 @@ describe('toolchain package boundaries', () => {
 		)
 		const runtimeDynamicIndex = await readFile(
 			`${root}/packages/runtime-dynamic/src/index.ts`,
+			'utf8',
+		)
+		const runtimeDynamicHost = await readFile(
+			`${root}/packages/runtime-dynamic/src/hmr/host.ts`,
+			'utf8',
+		)
+		const runtimeDynamicServices = await readFile(
+			`${root}/packages/runtime-dynamic/src/register-services.ts`,
 			'utf8',
 		)
 		const runtimeManifest = JSON.parse(
@@ -375,7 +385,10 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeServices).not.toContain('vault')
 		expect(runtimeStaticIndex).toContain("from '@pluxel/runtime'")
 		expect(runtimeStaticIndex).not.toContain('/register/')
-		expect(runtimeDynamicIndex).toContain("import './services'")
+		expect(runtimeDynamicIndex).not.toContain('register-services')
+		expect(runtimeDynamicHost).toContain("import '../register-services'")
+		expect(runtimeDynamicServices).toContain("import './loader/LoaderService'")
+		expect(runtimeDynamicServices).toContain("import './scan/ScanService'")
 		expect(runtimeManifest.exports?.['./authoring']).toBeUndefined()
 		expect(runtimeManifest.exports?.['./register/full']).toBeUndefined()
 		expect(runtimeManifest.exports?.['./register/static']).toBeUndefined()

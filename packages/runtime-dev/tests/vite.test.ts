@@ -134,6 +134,15 @@ describe('runtime-dev Vite plugin stack', () => {
 				type: 'module',
 				main: './index.js',
 			})
+			await writePackage(root, 'fixture-dual', {
+				name: 'fixture-dual',
+				type: 'module',
+				exports: { import: './index.mjs', require: './index.cjs' },
+			})
+			await Promise.all([
+				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
+				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.cjs'), 'module.exports = 42\n'),
+			])
 			const explicitCommonjs = join(root, 'node_modules', 'fixture-esm', 'explicit.cjs')
 			const explicitNative = join(root, 'node_modules', 'fixture-esm', 'binding.node')
 			await Promise.all([writeFile(explicitCommonjs, ''), writeFile(explicitNative, '')])
@@ -150,6 +159,7 @@ describe('runtime-dev Vite plugin stack', () => {
 				reason: 'native',
 			})
 			await expect(classifier.classifySpecifier('fixture-esm')).resolves.toBeNull()
+			await expect(classifier.classifySpecifier('fixture-dual')).resolves.toBeNull()
 			await expect(classifier.classifyFile(explicitCommonjs)).resolves.toMatchObject({
 				format: 'commonjs',
 				reason: 'commonjs',
@@ -158,6 +168,43 @@ describe('runtime-dev Vite plugin stack', () => {
 				format: 'commonjs',
 				reason: 'native',
 			})
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-host-module-dual-'))
+		const entryPath = join(root, 'entry.ts')
+		try {
+			await writePackage(root, 'fixture-dual', {
+				name: 'fixture-dual',
+				type: 'module',
+				exports: { import: './index.mjs', require: './index.cjs' },
+			})
+			await Promise.all([
+				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
+				writeFile(
+					join(root, 'node_modules', 'fixture-dual', 'index.cjs'),
+					"throw new Error('CJS entry must not be evaluated')\n",
+				),
+				writeFile(entryPath, "import answer from 'fixture-dual'\nexport { answer }\n"),
+			])
+
+			let server: ViteDevServer | undefined
+			try {
+				server = await createServer({
+					root,
+					logLevel: 'silent',
+					server: { middlewareMode: true },
+					appType: 'custom',
+					plugins: [createHostModuleVitePlugin()],
+				})
+				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
+				expect(mod.answer).toBe(42)
+			} finally {
+				await server?.close()
+			}
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}

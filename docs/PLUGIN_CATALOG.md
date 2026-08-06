@@ -45,9 +45,10 @@ workbench: {
 3. runtime source 提供可信 `packageName` 时，进入 `package:<packageName>` 自动分类；
 4. 无可信包来源时进入未分组区。
 
-自动 package group 的 ID 为 `package:` 加精确 package name，展示名就是 package name。它只由当前 runtime source
-生成，插件 metadata、类名、module path 和用户输入都不能伪造 package group。动态安装第三方包因此无需作者 API：
-同一包导出的多个插件天然聚合，卸载最后一个插件后对应自动分类消失。
+自动 package group 的 ID 为 `package:` 加精确 package name，展示名就是 package name。它只由能够提供可信
+`packageName` 的 runtime source 生成，插件 metadata、类名、module path 和用户输入都不能伪造 package group。普通 dynamic
+file source 不推断 npm 身份；官方 package-manager 在自己的 Workbench 页面管理 package，而它发布的 plugin 在全局目录中仍按
+宿主 `plugins` 规则分类，未显式分类时进入未分组区。
 
 ## User preferences
 
@@ -72,7 +73,7 @@ assignment 可以保留，以便相同 canonical plugin ID 重新出现时恢复
 未知 plugin、重复 membership 和非 canonical group name，不能把无效输入静默保存。
 
 有效布局由一次 catalog 扫描和偏好覆盖得到；实现不得按插件启动状态建立第二份分组图。disabled/stopped 插件仍在
-catalog 中分类，HMR 和动态安装只使 catalog projection 重新计算，不参与 plugin lifecycle transaction。
+catalog 中分类，HMR 和 dynamic source add/remove 只使 catalog projection 重新计算，不参与 plugin lifecycle transaction。
 
 ## Persistence and migration
 

@@ -18,7 +18,7 @@ module batch -> committed graph -> stop old owner/effects -> start new owner
 
 optional plugin candidate 的 canonical plugin ID 生成 synthetic module owner。consumer module replacement 会撤销旧 watcher
 subscription；新 ref 重新解析后，同一 synthetic owner 通过正常 `replace()` transaction 更新 provider，running watcher
-负责 callback cleanup/rebind。package/lockfile discovery invalidation 只重试 active requests，同一失败 generation 不循环重试。
+负责 callback cleanup/rebind。成功的 dynamic file-source batch 只重试 active requests，同一失败 generation 不循环重试。
 
 `PluginArtifactCompiler` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供 Vite server、
 plugin directory 和 host policy。attachment 始终安装 Node source provider，并只在 Workbench enabled 时安装 UI
@@ -48,6 +48,13 @@ dynamic loader 的 bridge modules/providers、SSR、dedupe、optimizer 和 Vite 
 runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其余 workspace ESM source 才进入 Vite transform
 和 HMR graph。dynamic runner 在 bare specifier 与 Vite 已解析的 `/@fs/` 边界调用同一个 classifier，因此 workspace alias
 不会绕过分类，也不需要 package 名单。
+
+dynamic source 只接受精确文件和带显式、相对、正向 include glob 的目录；glob 不允许越过 source directory，解析结果有
+10,000 entry 的内核上限。启动 discovery 与 watcher add/change/unlink 共用同一入口语义；暂时不存在的目录仍保留为 watch root。
+source entry 已进入 module graph 后，目录外的普通 import dependency 变化会沿 importer graph 回到 source anchor；没有任何
+source-owned importer 的过期事件作为 debug-level no-op，不制造失败告警。source producer 负责在目标目录原子发布普通 ESM entry，dynamic route
+负责解析、执行、batch commit、卸载和 optional availability invalidation。registry client、lockfile、market、安装状态、
+RPC 与 UI 都必须位于 source producer 插件，不得进入 HMR pipeline。
 
 ## Workbench UI Federation 构建隔离
 

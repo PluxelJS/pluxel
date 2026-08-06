@@ -1,6 +1,8 @@
 # @pluxel/runtime-dynamic
 
-Dynamic route 为 workspace-driven plugin loading 提供 scan、loader、module replacement 和 HMR。Vite server 仍由 host application 持有。
+Dynamic route 把一组可变文件入口接入 OXC resolution、module execution、core graph transaction 和 HMR。它只拥有
+文件级 source lifecycle；package 下载、market、安装状态、管理 RPC 和管理页面不属于本包。Vite server 仍由 host
+application 持有。
 
 ## Host entry
 
@@ -28,6 +30,10 @@ export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
+	sources: [
+		{ kind: 'file', path: 'plugins/local.ts' },
+		{ kind: 'directory', path: '.pluxel/generated-entries', include: ['*.mjs'] },
+	],
 	logsDir: 'logs',
 	workbench: {
 		enabled: true,
@@ -44,13 +50,28 @@ React、GraphQL 和业务 alias 属于 host `vite.config.ts`；loader/runtime �
 runner 绕开 route plugin，也不要复制 Pluxel 的 resolve、SSR、optimizer 或 host-module 配置。static/dynamic route 使用同一个
 package classifier，让 CommonJS 与 native package 自动留在 Node host 执行；项目不维护 package 名单。
 
+`sources` 是 dynamic 特有的最小扩展点：
+
+- `file` 表示一个精确入口；文件暂时不存在时仍监听其父目录；
+- `directory` 表示一个可变入口目录，必须给出相对该目录的正向 `include` glob；目录暂时不存在时仍作为 watch root；
+- 启动时存在的匹配文件进入初始 catalog，之后的 add/change/unlink 进入同一 HMR batch；
+- source producer 只需原子发布或删除普通 ESM 文件，不需要调用 loader、RPC 或 package API。
+
+`path` 相对 `root` 解析，也可以显式使用绝对路径。`include` 不接受 absolute、negation、`.` 或 `..` segment，避免 watcher
+越过声明目录。一次配置最多解析 10,000 个 entry；达到上限应收窄 glob，而不是把源码仓库或 `node_modules` 整体当作 entry
+目录。source entry 的普通 import dependency 不受 entry glob 限制：已进入 Vite graph 后，它的变化会沿 importer graph 回到
+对应 entry。
+
+需要 registry package 安装时，装配官方 [`@pluxel/package-manager`](../../plugins/package-manager/README.md)。该插件把
+受管 package 发布成 `.mjs` source entry，dynamic core 不知道 package manager 的存在。
+
 ## Internal entry
 
-`@pluxel/runtime-dynamic/hmr` 提供 CLI/test 使用的 diagnose、snapshot 和 loader HMR primitives。应用宿主优先使用 `/vite`。
+`@pluxel/runtime-dynamic/hmr` 是 `/vite` 与 route tests 使用的 host bridge；workspace diagnostics 只从
+`@pluxel/runtime-dynamic/hmr/diagnose` 导出。应用宿主优先使用 `/vite`，根入口只公开 config、direct launcher 和它们需要的
+source/builtin types，不公开或在 config import 时注册 Loader/Scan service；direct launcher 创建时才加载 route internals。
 
 source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running plugin instance，也不复制 lifecycle。
-package manifest 使用 `pluxel.pluginPackages: Record<package, 'required' | 'optional'>`；只有 required facts 进入
-安装/卸载依赖索引，optional facts 用于 inventory、availability retry 和诊断。package install 会使 active optional
-requests 失效并重新解析，但 optional request 自身不会授权自动安装。
+成功的 mutable source batch 会使 active optional requests 失效并重新解析；optional request 自身不会授权自动安装。
 
 用户配置路径见 [`../../user-docs/host-setup.md`](../../user-docs/host-setup.md)，内部边界见 [`../../docs/HMR.md`](../../docs/HMR.md)。

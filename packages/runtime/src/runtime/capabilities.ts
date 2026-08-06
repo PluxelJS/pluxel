@@ -100,15 +100,12 @@ export interface RuntimeModuleRuntime {
 	dropModuleCacheEntries(ids: Iterable<string>): void
 }
 
-export type RuntimePackageManagerHandleFactory = (ctx: Context) => unknown
-
 export type RuntimeRouteCapabilities = {
 	catalog: PluginCatalogRead
 	lifecycle?: PluginLifecycleControl
 	configMetadata?: PluginConfigMetadataRead
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
-	packageManager?: RuntimePackageManagerHandleFactory
 	modules?: RuntimeModuleRuntime
 }
 

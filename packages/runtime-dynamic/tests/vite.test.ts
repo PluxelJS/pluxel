@@ -2,12 +2,24 @@ import { describe, expect, it } from 'vitest'
 
 import * as runtimeDynamic from '@pluxel/runtime-dynamic'
 import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
+import * as runtimeDynamicHmr from '@pluxel/runtime-dynamic/hmr'
 import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
 		expect(runtimeDynamic.createDynamicDevRuntime).toBe(createDynamicDevRuntime)
-		expect('createDynamicRuntime' in runtimeDynamic).toBe(false)
+		expect(Object.keys(runtimeDynamic).sort()).toEqual([
+			'createDynamicDevRuntime',
+			'defineDynamicRuntimeConfig',
+		])
+	})
+
+	it('keeps the HMR bridge separate from workspace diagnostics', () => {
+		expect(Object.keys(runtimeDynamicHmr).sort()).toEqual([
+			'bootPlannedLoaderHmrHost',
+			'planLoaderHmrHost',
+			'planLoaderHmrHostFromConfig',
+		])
 	})
 
 	it('marks dynamic runtime config without exposing nested Vite or HMR config', () => {
@@ -20,6 +32,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 
 		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile', 'runtimeState'])
 		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(() => defineDynamicRuntimeConfig(null as never)).toThrow(/must be an object/i)
 		expect(() =>
 			defineDynamicRuntimeConfig({
 				root: '/repo',
@@ -68,6 +81,34 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			access: { exposure: 'private' },
 		})
 		expect(config.context).toBeUndefined()
+	})
+
+	it('accepts explicit mutable file sources without package-manager configuration', () => {
+		const config = defineDynamicRuntimeConfig({
+			root: '/repo',
+			sources: [
+				{ kind: 'file', path: 'plugins/local.ts' },
+				{ kind: 'directory', path: '.pluxel/plugins/entries', include: ['*.mjs'] },
+			],
+		})
+
+		expect(config.sources).toHaveLength(2)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				sources: [{ kind: 'directory', path: '/plugins', include: ['nested/../../outside/*.mjs'] }],
+			}),
+		).toThrow(/must stay inside/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({
+				sources: [{ kind: 'directory', path: '/plugins' } as never],
+			}),
+		).toThrow(/include must be a non-empty array/i)
+		expect(() =>
+			defineDynamicRuntimeConfig({ root: '/repo', unknownPolicy: true } as never),
+		).toThrow(/unsupported "unknownPolicy"/i)
+		expect(() => defineDynamicRuntimeConfig({ root: '/repo', context: {} } as never)).toThrow(
+			/unsupported "context"/i,
+		)
 	})
 
 	it('exposes a serve-only route plugin plus route-neutral source semantics', () => {

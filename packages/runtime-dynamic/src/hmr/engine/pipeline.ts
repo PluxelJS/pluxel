@@ -13,7 +13,7 @@ import {
 	type RuntimeStateDraft,
 	startTimer,
 } from '@pluxel/runtime/internal'
-import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
+import type { LoaderBatch } from '../../loader/support'
 import {
 	HMR_CHANGED_PREVIEW_LIMIT,
 	hmrChangedPreviewProps,
@@ -119,7 +119,7 @@ type BatchGraph = {
 
 type ScopeFilter = (cleanId: string) => boolean
 
-class GraphTools {
+export class GraphTools {
 	private readonly visited = new Set<string>()
 	private readonly affectedIds = new Set<string>()
 	private readonly idToNode = new Map<string, ModuleNode>()
@@ -206,14 +206,17 @@ class GraphTools {
 
 			const id = toClean(m.id)
 			if (id.startsWith('\0')) continue
-			if (!inScope(id)) continue
 			if (visited.has(id)) continue
 
 			visited.add(id)
-			affectedIds.add(id)
-			idToNode.set(id, m)
-			distance.set(id, d)
+			if (inScope(id)) {
+				affectedIds.add(id)
+				idToNode.set(id, m)
+				distance.set(id, d)
+			}
 
+			// A changed dependency may sit outside declared source globs. Continue through its
+			// importer chain until reaching source-owned modules instead of dropping the batch.
 			for (const importer of m.importers) {
 				if (!importer || !importer.id) continue
 				queue.push(importer)
@@ -422,14 +425,14 @@ class HmrRuntimeCommitScheduler {
 	async commitBatch(params: {
 		batch: LoaderBatch
 		runtimeUpdate: RuntimeUpdate
-		replacedModules: readonly string[]
+		changedModules: readonly string[]
 	}): Promise<HmrExecutionResult> {
-		const { batch, runtimeUpdate, replacedModules } = params
+		const { batch, runtimeUpdate, changedModules } = params
 		const affectedModules = readBatchAffectedModules(batch)
 		const syncedModules = new Set<string>()
-		runtimeUpdate.markAffectedModules([...replacedModules, ...affectedModules])
+		runtimeUpdate.markAffectedModules([...changedModules, ...affectedModules])
 
-		const affectedOnlyModules = excludeIds(affectedModules, replacedModules)
+		const affectedOnlyModules = excludeIds(affectedModules, changedModules)
 		if (affectedOnlyModules.length > 0) {
 			addAll(syncedModules, await this.syncModulesToCoreDraft(batch, affectedOnlyModules))
 		}
@@ -445,7 +448,7 @@ class HmrRuntimeCommitScheduler {
 					batch,
 					runtimeUpdate,
 					commitResult,
-					replacedModules,
+					changedModules,
 					affectedModules,
 					autoDisabled,
 					syncedModules,
@@ -471,7 +474,7 @@ class HmrRuntimeCommitScheduler {
 		batch: LoaderBatch
 		runtimeUpdate: RuntimeUpdate
 		commitResult: RuntimeCommitResult
-		replacedModules: readonly string[]
+		changedModules: readonly string[]
 		affectedModules: readonly string[]
 		autoDisabled: Set<string>
 		syncedModules: Set<string>
@@ -490,7 +493,7 @@ class HmrRuntimeCommitScheduler {
 			addAll(
 				params.syncedModules,
 				await this.syncModulesToCoreDraft(params.batch, [
-					...params.replacedModules,
+					...params.changedModules,
 					...params.affectedModules,
 				]),
 			)
@@ -565,8 +568,9 @@ export class HmrExecutor {
 	async runAndLoadAllClean(
 		cleanIds: readonly string[],
 		_keepOrder = true,
+		removedIds: readonly string[] = [],
 	): Promise<HmrExecutionResult | undefined> {
-		if (cleanIds.length === 0) return undefined
+		if (cleanIds.length === 0 && removedIds.length === 0) return undefined
 
 		// Historically `keepOrder=false` did not change ordering; preserve that behavior.
 		const ordered = dedupeIds(cleanIds)
@@ -575,7 +579,12 @@ export class HmrExecutor {
 		const batch = this.ctx.loader.beginBatch({ runtimeUpdate })
 		const dbg = this.cfg.dbgModules
 		const debugModules = dbg ? isLogEnabled(dbg, 'debug') : false
-		const replacedModules: string[] = []
+		const changedModules: string[] = []
+
+		for (const id of dedupeIds(removedIds)) {
+			batch.removeModule(id)
+			changedModules.push(id)
+		}
 
 		for (let i = 0; i < ordered.length; i++) {
 			const id = ordered[i]!
@@ -623,7 +632,7 @@ export class HmrExecutor {
 			try {
 				const result = await batch.replaceModule(id, mod)
 				hasPlugin = result.isAnchor
-				replacedModules.push(id)
+				changedModules.push(id)
 			} catch (err) {
 				this.ctx.logger.error('replaceModule failed for {file}', { file: id, error: err })
 				batch.rollback()
@@ -647,7 +656,7 @@ export class HmrExecutor {
 			}
 		}
 
-		return await this.commitScheduler.commitBatch({ batch, runtimeUpdate, replacedModules })
+		return await this.commitScheduler.commitBatch({ batch, runtimeUpdate, changedModules })
 	}
 
 	async runAndLoadAll(
@@ -974,12 +983,12 @@ export class HmrBatchProcessor {
 
 		this.logBatchList('changed files', changed)
 
-		this.pruneMissingModules(changed)
 		this.anchorsClean = this.getAnchorsClean()
 		this.anchorFinder.clear()
 		const anchorsClean = this.anchorsClean
 
 		const graph = this.graphTools.collectBatchGraph(changed)
+		const removed = changed.filter((file) => !existsSync(file))
 		this.logGraphDebug(graph)
 		const invalidated = this.invalidateCaches(graph.affectedIds)
 		let prefetchFailed = 0
@@ -991,6 +1000,7 @@ export class HmrBatchProcessor {
 			toClean: (id) => id,
 			findNearestAnchor: (startCleanId, anchors) => this.anchorFinder.find(startCleanId, anchors),
 		})
+		for (const file of removed) targets.delete(file)
 		this.logBatchList('targets', [...targets])
 
 		if (this.cfg.prefetchConcurrency > 0 && this.cfg.prefetchLimit > 0) {
@@ -1012,7 +1022,10 @@ export class HmrBatchProcessor {
 		}
 
 		const execOrder = buildOrderedList(targets, graph.distance, 'near', targets.size || 1)
-		const executed = await this.executor.runAndLoadAllClean(execOrder, true)
+		const ignored = graph.affectedIds.size === 0
+		const executed = ignored
+			? null
+			: await this.executor.runAndLoadAllClean(execOrder, true, removed)
 		const commitMs = executed ? roundHmrMs(executed.commitMs) : null
 		const affectedModules = executed?.affectedModules ?? []
 		const syncedModules = executed?.syncedModules ?? []
@@ -1042,7 +1055,7 @@ export class HmrBatchProcessor {
 		})
 		const hotspots = collectHotspots(this.timing, (id) => this.path.pretty(id))
 		const batchMs = roundHmrMs(endBatch())
-		const commitOk = Boolean(executed?.commitResult.ok)
+		const commitOk = ignored || Boolean(executed?.commitResult.ok)
 		const commitError =
 			!executeError && !injectError && executed?.commitResult.ok === false
 				? String(executed.commitResult.err ?? 'commit failed')
@@ -1079,7 +1092,8 @@ export class HmrBatchProcessor {
 			...(injectError ? { injectError } : {}),
 			...(commitError ? { commitError } : {}),
 		} satisfies HmrUpdatedLogProps
-		if (commitOk) this.ctx.logger.info('HMR updated', logProps)
+		if (ignored) this.ctx.logger.debug('HMR ignored', logProps)
+		else if (commitOk) this.ctx.logger.info('HMR updated', logProps)
 		else this.ctx.logger.warn('HMR updated', logProps)
 
 		return {
@@ -1128,17 +1142,6 @@ export class HmrBatchProcessor {
 			const roots = graph.roots.map((r) => this.path.pretty(r))
 			return l`roots (${roots.length})\n${roots.map((x) => `    ${x}`).join('\n')}`
 		})
-	}
-
-	private pruneMissingModules(files: readonly string[]) {
-		for (const file of files) {
-			// Only prune for actual deletions. New files may not exist in the module graph yet.
-			// The watcher reports real filesystem paths here (normalized to `toClean` upstream).
-			if (existsSync(file)) continue
-
-			if (this.ctx.loader.api.anchors.has(file)) this.ctx.loader.api.anchors.remove(file)
-			this.ctx.loader.pruneModule(file)
-		}
 	}
 
 	private invalidateCaches(affectedIds: ReadonlySet<string>) {

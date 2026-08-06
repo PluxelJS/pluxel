@@ -14,7 +14,7 @@ export type WorkbenchTab = {
 	kind?: 'document'
 }
 
-export type WorkbenchSectionId = 'home' | 'plugins' | 'packages' | 'logs' | 'other'
+export type WorkbenchSectionId = 'home' | 'plugins' | 'logs' | 'other'
 export type WorkbenchTabState = Record<string, Record<string, unknown>>
 export type WorkbenchSectionPaneState = {
 	visible: boolean

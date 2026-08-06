@@ -17,5 +17,4 @@ export {
 	type RuntimePluginStatusOverview,
 	type RuntimePluginStatusSnapshot,
 	type RuntimeRouteCapabilities,
-	type RuntimePackageManagerHandleFactory,
 } from './runtime/capabilities'

@@ -13,6 +13,7 @@ packages:
   - projects/*/plugins/*
 
 catalog:
+  '@pnpm/napi': 12.0.0-rc.0
   '@mantine/core': ^9.4.1
   '@mantine/dates': ^9.4.1
   '@mantine/hooks': ^9.4.1
@@ -50,6 +51,15 @@ minimumReleaseAgeExclude:
   - '@gqlens/core@0.2.0'
   - '@gqlens/react@0.2.0'
   - '@gqlens/vite@0.2.0'
+  - '@pnpm/napi.darwin-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.darwin-x64@12.0.0-rc.0'
+  - '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0'
+  - '@pnpm/napi.linux-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.linux-x64-musl@12.0.0-rc.0'
+  - '@pnpm/napi.linux-x64@12.0.0-rc.0'
+  - '@pnpm/napi.win32-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.win32-x64@12.0.0-rc.0'
+  - '@pnpm/napi@12.0.0-rc.0'
 
 onlyBuiltDependencies:
   - esbuild
@@ -66,4 +76,6 @@ public-hoist-pattern:
   - tsdown
 
 trustPolicy: no-downgrade
+trustPolicyExclude:
+  - '@pnpm/napi@12.0.0-rc.0'
 trustPolicyIgnoreAfter: 43200

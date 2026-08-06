@@ -1,6 +1,5 @@
 import { defineGQLensEntry } from '@gqlens/vite/entry'
 
-import '@pluxel/runtime-dynamic/services'
 import { createInternalGraphQLSchemaSDL } from '@pluxel/runtime'
 
 const unknownPluginSource: {

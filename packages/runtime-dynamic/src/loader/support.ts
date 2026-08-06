@@ -35,6 +35,7 @@ export type LoaderSyncModulesOptions = { exclude?: Iterable<string> }
 
 export type LoaderBatch = {
 	replaceModule(moduleId: string, mod: Record<string, unknown>): Promise<ReplaceModuleResult>
+	removeModule(moduleId: string): ReplaceModuleResult
 	getAffectedModules(): readonly string[]
 	syncModules(
 		moduleIds: Iterable<string>,
@@ -128,6 +129,16 @@ export class LoaderBatchSession implements LoaderBatch {
 	async replaceModule(moduleId: string, mod: Record<string, unknown>) {
 		this.assertOpen()
 		const result = await this.moduleReplacer.replaceModule(moduleId, mod, {
+			tx: this.tx,
+			anchors: this.anchors,
+		})
+		for (const affected of result.affectedModules) this.affectedModules.add(affected)
+		return result
+	}
+
+	removeModule(moduleId: string): ReplaceModuleResult {
+		this.assertOpen()
+		const result = this.moduleReplacer.removeModule(moduleId, {
 			tx: this.tx,
 			anchors: this.anchors,
 		})

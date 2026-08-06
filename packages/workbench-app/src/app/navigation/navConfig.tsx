@@ -10,7 +10,6 @@ import {
 	IconHistory,
 	IconHome2,
 	IconMessageChatbot,
-	IconPackages,
 	IconPlugConnected,
 	IconPuzzle,
 	IconReceipt,
@@ -50,7 +49,6 @@ export const baseNavItems: NavItem[] = [
 	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
 	{ label: '安全', href: '/security', icon: <IconShieldLock size={18} stroke={1.7} /> },
 	{ label: 'Agent 工具', href: '/agent-tools', icon: <IconRobot size={18} stroke={1.7} /> },
-	{ label: '包管理', href: '/packages', icon: <IconPackages size={18} stroke={1.7} /> },
 	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
 ]
 

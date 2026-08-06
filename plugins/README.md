@@ -49,6 +49,7 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 - [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
 - [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
   - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
+- [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
 
 首批官方插件仍保持 private，以便在真实 consumer 中稳定 contract；`@pluxel/wretch` 提供
 原生 immutable Wretch base、最小宿主级出站策略和可选的统一 Workbench HTTP 设置 Port。

@@ -18,6 +18,7 @@ import {
 import { ModuleReplacer, type ReplaceModuleResult } from './module-replacer'
 import { PluginRegistry } from './PluginRegistry'
 import { createLoaderRuntimeRoute } from '../catalog/LoaderRuntimeRoute'
+import type { BuiltinPluginSpec } from '../builtin-spec'
 import {
 	AnchorStore,
 	type LoaderBatch,
@@ -46,7 +47,6 @@ type RuntimeModuleUpdateBridge = {
 	removeModule(moduleId: string): void
 }
 
-export type BuiltinForkSpec = string | { id: string; enable?: boolean }
 export type PreloadBuiltinsOptions = {
 	moduleId?: string
 	/**
@@ -79,31 +79,6 @@ export type PreloadBuiltinsOptions = {
 	 */
 	autoDisableMaxPasses?: number
 }
-export type BuiltinPluginSpec =
-	| PluginConstructor
-	| {
-			plugin: PluginConstructor
-			enable?: boolean
-			/**
-			 * Source module specifier for this builtin.
-			 *
-			 * Defaults to a synthetic module id ("pluxel:builtins") so builtins are easy to identify
-			 * in reports and UI tooling.
-			 */
-			moduleId?: string
-			/**
-			 * Workspace package name for this builtin (used by workspace-profile discovery to omit
-			 * the same package from startup entries and prevent "plugin name conflict").
-			 *
-			 * Keep this separate from `moduleId`: `moduleId` is for "who declared the plugin",
-			 * while `packageName` is for "which workspace package should not be scanned as a plugin entry".
-			 */
-			packageName?: string
-			/** Export key within `moduleId` (e.g. "default" or "MyPlugin"). */
-			exportKey?: string
-			forks?: readonly BuiltinForkSpec[]
-	  }
-
 declare module '@pluxel/core' {
 	namespace Context {
 		interface Services {

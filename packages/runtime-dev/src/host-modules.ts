@@ -2,6 +2,12 @@ import { readFile } from 'node:fs/promises'
 import { createRequire, isBuiltin } from 'node:module'
 import { dirname, extname, isAbsolute, parse, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+	getCachedResolver,
+	getOxcResolveCache,
+	resolveModulePath,
+	type OxcResolver,
+} from '@pluxel/runtime/internal'
 import type { Plugin } from 'vite'
 
 export type HostModuleDecision = Readonly<{
@@ -43,6 +49,7 @@ export function createHostModuleClassifier(options: {
 	const specifierCache = new Map<string, Promise<HostModuleDecision | null>>()
 	const fileCache = new Map<string, Promise<HostModuleDecision | null>>()
 	const packageCache = new Map<string, Promise<PackageInfo | null>>()
+	const resolvers = new Set<OxcResolver>()
 
 	const classifyFile = async (filePath: string): Promise<HostModuleDecision | null> => {
 		const normalized = normalizeFilePath(root, filePath)
@@ -81,11 +88,26 @@ export function createHostModuleClassifier(options: {
 			const base = resolveImporterBase(root, importer)
 			const key = `${base}\u0000${specifier}`
 			return await cached(specifierCache, key, cacheLimit, async () => {
-				let resolvedPath: string
+				let resolvedPath: string | null = null
 				try {
-					resolvedPath = createRequire(base).resolve(specifier)
-				} catch {
-					return null
+					const resolver = getCachedResolver(
+						getOxcResolveCache(),
+						'runtime-dev:host-module-classifier',
+						[dirname(base)],
+						{ limit: 32 },
+					)
+					resolvers.add(resolver)
+					resolvedPath = resolveModulePath(resolver, specifier, {
+						mode: 'distPreferEsm',
+						conditions: ['node', 'import', 'require', 'default'],
+					})
+				} catch {}
+				if (!resolvedPath) {
+					try {
+						resolvedPath = createRequire(base).resolve(specifier)
+					} catch {
+						return null
+					}
 				}
 				return await classifyFile(resolvedPath)
 			})
@@ -95,6 +117,8 @@ export function createHostModuleClassifier(options: {
 			specifierCache.clear()
 			fileCache.clear()
 			packageCache.clear()
+			for (const resolver of resolvers) resolver.clearCache()
+			resolvers.clear()
 		},
 	}
 }

@@ -110,6 +110,11 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 - `@pluxel/runtime-static` / `runtime-dynamic`：route policy；
 - `@pluxel/runtime-dev`：共享 UI/Node source graph、watch、cache 与 publication lifecycle 的 artifact compiler；
 - `@pluxel/rolldown/vite/workbench-ui`：remote build primitive。
+- `@pluxel/package-manager`：官方可选 source producer，拥有 pnpm、安装命令、owner-bound RPC 和 Workbench 页面。
+
+dynamic route 与 package manager 之间只有文件协议：producer 在宿主声明的 `sources` 目录原子发布/删除 ESM entry，
+route 观察文件并执行正常 graph transaction。runtime 不提供 package-manager capability、RPC DTO、内置页面或 market
+抽象；其他 registry、离线 bundle 或本地开发工具也可以实现同一文件协议，不需要进入核心。
 
 ## 不变量
 

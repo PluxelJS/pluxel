@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import '@pluxel/runtime-dynamic/services'
+import '../../src/register-services'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { HmrExecutor } from '../../src/hmr/engine/pipeline'
 

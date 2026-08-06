@@ -26,7 +26,6 @@ import type {
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
-	PackageManagerFeatureApi,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
@@ -39,12 +38,6 @@ export class RuntimeRpcApi extends RpcTarget {
 
 	ping() {
 		return 'runtime-rpc:ok'
-	}
-
-	packageManager(): PackageManagerFeatureApi | null {
-		const factory =
-			this.ctx.runtimeRoute?.packageManager ?? this.ctx.root.runtimeRoute?.packageManager
-		return factory ? (factory(this.ctx) as PackageManagerFeatureApi) : null
 	}
 
 	/** Logging settings (host-level, persisted). */

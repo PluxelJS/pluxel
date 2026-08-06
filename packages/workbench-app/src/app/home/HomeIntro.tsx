@@ -3,7 +3,6 @@ import {
 	IconArrowRight,
 	IconClockPlay,
 	IconHistory,
-	IconPackages,
 	IconPlugConnected,
 	IconShieldCheck,
 } from '@tabler/icons-react'
@@ -26,13 +25,6 @@ const WORKSPACE_LINKS: WorkspaceLink[] = [
 		to: '/plugins',
 		icon: <IconPlugConnected size={20} stroke={1.7} />,
 		meta: '管理',
-	},
-	{
-		title: '包管理',
-		description: '安装依赖并处理版本与加载问题',
-		to: '/packages',
-		icon: <IconPackages size={20} stroke={1.7} />,
-		meta: '依赖',
 	},
 	{
 		title: '实时日志',
@@ -245,7 +237,6 @@ function createResumeAction(lastRoute: string | null) {
 
 	const map: Record<string, { title: string; description: string; to: string }> = {
 		'/plugins': { title: '继续上次工作', description: '返回插件工作台', to: '/plugins' },
-		'/packages': { title: '继续上次工作', description: '返回包管理', to: '/packages' },
 		'/logs': { title: '继续上次工作', description: '返回实时日志', to: '/logs' },
 		'/security': { title: '继续上次工作', description: '返回安全中心', to: '/security' },
 	}

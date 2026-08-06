@@ -13,7 +13,11 @@ import { readHostProduct, sameProduct } from '@pluxel/runtime/internal'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
 import type { BootedLoaderHmrHost } from './hmr/host'
-import { isDynamicRuntimeConfig, type DynamicRuntimeConfig } from './config'
+import {
+	assertDynamicRuntimeConfig,
+	isDynamicRuntimeConfig,
+	type DynamicRuntimeConfig,
+} from './config'
 import { createFetchHmrServerPlugin } from './hmr/vite-fetch-plugin'
 import { isRuntimeHttpRouteRequest } from './hmr/runtime-route-request'
 import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './hmr/vite-watch'
@@ -191,6 +195,7 @@ function validateDynamicRuntimeConfigModule(
 			`[runtime-dynamic/vite] ${configPath} must default-export defineDynamicRuntimeConfig(...)`,
 		)
 	}
+	assertDynamicRuntimeConfig(value)
 	if ('vite' in value) {
 		throw new Error(
 			`[runtime-dynamic/vite] ${configPath} must not include a nested "vite" field; use the host vite.config.ts instead`,

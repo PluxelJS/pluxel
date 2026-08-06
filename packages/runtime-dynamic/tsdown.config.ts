@@ -38,7 +38,6 @@ export default defineConfig({
 	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
-		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
 		'hmr/diagnose': 'src/hmr/diagnose.ts',
 		vite: 'src/vite.ts',

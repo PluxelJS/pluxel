@@ -52,8 +52,8 @@ dependency、evaluation、metadata 或 start 失败记录为 broken error。stat
 不会把真实 provider 故障静默当成缺包。
 
 首次发现的 candidate 写入 RuntimeState `optionalKnown` 并默认启用；之后显式 disable 不会被 descriptor 请求覆盖。
-dynamic package install/invalidation 会触发 availability retry。resolver 只解析已经进入 workspace、安装集合或 static
-distribution closure 的代码，optional request 不授权自动安装包。
+dynamic route 的成功 file-source batch 会触发 availability retry。resolver 只解析已经进入 workspace、显式 dynamic
+source 或 static distribution closure 的代码，optional request 不授权自动安装包。
 
 ## Node module service
 

@@ -200,7 +200,8 @@ import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 export { product } from './product.ts'
 
 export default defineDynamicRuntimeConfig({
-	// ...
+	root: process.cwd(),
+	sources: [{ kind: 'directory', path: 'plugins/runtime', include: ['*.mjs'] }],
 })
 ```
 
@@ -218,7 +219,15 @@ export default defineConfig({
 })
 ```
 
-dynamic runtime config 提供 workspace root、loader config、profile 和 runtime state。loader 负责发现和替换模块；插件本身仍按 [`plugin-authoring.md`](plugin-authoring.md) 编写。
+dynamic runtime config 提供 workspace root、loader config、profile、runtime state 和显式 mutable `sources`。`file`
+source 是精确入口，`directory` source 必须用相对、正向 include glob 选择入口；glob 不能包含 negation、`.` 或 `..` segment。
+目录或文件暂时不存在也可以先声明，runtime 会保留 watch root。一次配置最多解析 10,000 个 entry；普通 import dependency
+不需要列入 entry glob，进入 module graph 后仍会触发所属插件 replacement。loader 负责文件 add/change/unlink 的发现与 graph
+transaction；插件本身仍按
+[`plugin-authoring.md`](plugin-authoring.md) 编写。
+
+runtime 不安装 package，也不提供 package-manager RPC 或内置页面。需要 registry 安装能力时使用官方
+[`@pluxel/package-manager`](package-manager.md)，并把它发布的 entry directory 声明为 source。
 
 bridge、SSR、optimizer、cache 和 Pluxel Vite plugins 由 runtime 统一管理，不在 config 中重复声明。CommonJS 与 N-API/
 native package 会根据解析结果、扩展名和 package metadata 自动留在 Node host 执行；static 与 dynamic host 都不需要维护

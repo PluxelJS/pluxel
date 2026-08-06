@@ -18,7 +18,6 @@ import {
 	loadWorkspaceInfoWithFs,
 	nodeLoaderHmrWorkspaceFs,
 	nodeWorkspaceFs,
-	readTextFile,
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceFs,
 } from './fs'
@@ -53,12 +52,6 @@ type MergedProfile = {
 	excludeGlobs: string[]
 }
 
-const MANAGED_PLUGIN_PKG_RE = /^(?:@[^/]+\/)?pluxel-plugin-/i
-
-function isManagedPluginPackageName(name: string) {
-	return MANAGED_PLUGIN_PKG_RE.test(name)
-}
-
 function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
 	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
 	const exportsField = (manifest as Record<string, unknown>).exports
@@ -76,31 +69,6 @@ function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
 	if (typeof dot !== 'object' || Array.isArray(dot)) return null
 	const obj = dot as Record<string, unknown>
 	return pick(obj.import) ?? pick(obj.default) ?? pick(obj.module)
-}
-
-function collectManifestDeps(manifest: unknown): Set<string> {
-	const out = new Set<string>()
-	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return out
-	const m = manifest as Record<string, unknown>
-	for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
-		const rec = m[field]
-		if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue
-		for (const k of Object.keys(rec)) out.add(k)
-	}
-	return out
-}
-
-async function readWorkspaceRootDeclaredPluginDeps(
-	rootDirAbs: string,
-	fs: WorkspaceFs = nodeWorkspaceFs,
-): Promise<Set<string>> {
-	try {
-		const raw = await readTextFile(fs, resolve(rootDirAbs, 'package.json'))
-		const json = JSON.parse(raw) as unknown
-		return collectManifestDeps(json)
-	} catch {
-		return new Set<string>()
-	}
 }
 
 export function mergeLoaderHmrProfile(
@@ -256,7 +224,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	fs?: WorkspaceFs
 }): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(params.rootDir)
-	const rootDeclaredDeps = await readWorkspaceRootDeclaredPluginDeps(rootDirAbs, params.fs)
 	const fs = params.fs ?? nodeWorkspaceFs
 
 	const depsByName = new Map(params.packages.map((p) => [p.name, p.deps]))
@@ -343,42 +310,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 			}
 		}
 	}
-	{
-		// PackageService correctness: managed plugin packages installed via node_modules are typically auto-loaded
-		// only when they are declared in the workspace root manifest (see PackageService.syncTrackedPlugins()).
-		//
-		// When a selected workspace plugin package depends on a managed plugin package, but the root manifest does
-		// not declare it, the plugin may be installed transitively yet never loaded into LoaderService (unless the
-		// host explicitly loads it via PackageService or provides it as a builtin).
-		const missingEdges: Array<{ from: string; missing: string[] }> = []
-		for (const name of effectiveEnabled) {
-			const deps = depsByName.get(name) ?? []
-			const missing = deps
-				.filter((d) => isManagedPluginPackageName(d))
-				.filter((d) => !discoveredSet.has(d)) // not a workspace plugin package
-				.filter((d) => !rootDeclaredDeps.has(d)) // not declared at workspace root
-				.filter((d) => !omit.has(d))
-			if (missing.length > 0) missingEdges.push({ from: name, missing: uniqSorted(missing) })
-		}
-
-		if (missingEdges.length > 0) {
-			const maxEdges = 20
-			warnings.push(
-				`[loader-hmr] ${missingEdges.length} selected plugin package(s) depend on managed (node_modules) plugin packages that are not declared in the workspace root package.json. If you rely on PackageService auto-load, add them to root deps (or load them manually / provide as builtins).`,
-			)
-			for (const edge of missingEdges.slice(0, maxEdges)) {
-				warnings.push(
-					`[loader-hmr] Missing root deps (managed plugins): ${edge.from} -> ${edge.missing.join(', ')}`,
-				)
-			}
-			if (missingEdges.length > maxEdges) {
-				warnings.push(
-					`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing managed-plugin edge(s).`,
-				)
-			}
-		}
-	}
-
 	const roots = params.rootsExpandedAbs.map((r) => toRootRelative(rootDirAbs, r))
 	const includeGlobs = uniqPreserveOrder(params.merged.includeGlobs)
 	const excludeGlobs = uniqPreserveOrder(params.merged.excludeGlobs)

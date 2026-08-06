@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { isAbsolute, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
-import '../services'
+import '../register-services'
 import type { Context as CoreContext } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,
@@ -22,7 +22,8 @@ import {
 import { Context, createWorkspacePersistenceBackend } from '@pluxel/runtime'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { attachPluginArtifactCompiler } from '@pluxel/runtime-dev/workbench'
-import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
+import type { BuiltinPluginSpec } from '../builtin-spec'
+import type { DynamicRuntimeStorageOptions } from '../config'
 
 import {
 	diagnoseWorkspace,
@@ -34,12 +35,11 @@ import {
 import { LoaderHmrService, type LoaderHmrConfig } from './engine/LoaderHmrService'
 import { applyLoaderHmrEnvOverrides } from './hmr-env'
 import { assertLoaderHmrWorkspace, type LoaderHmrWorkspaceSnapshot } from './snapshot'
+import { resolveDynamicPluginSources, type DynamicPluginSource } from '../sources'
 
 const nodeHostFs = nodeLoaderHmrWorkspaceFs
 
-export type LoaderHmrHostStorageOptions = {
-	persistenceDir?: string
-}
+export type LoaderHmrHostStorageOptions = DynamicRuntimeStorageOptions
 
 export type LoaderHmrHostOptions<
 	TSnapshot extends LoaderHmrWorkspaceSnapshot = LoaderHmrWorkspaceSnapshot,
@@ -110,6 +110,7 @@ export type LoaderHmrHostConfigInput = Omit<
 	http?: CoreContext.Config['http']
 	workbench?: CoreContext.Config['workbench']
 	logging?: false | RuntimeLoggingInput
+	sources?: readonly DynamicPluginSource[]
 }
 
 function planRuntimeStorage(
@@ -188,6 +189,7 @@ export async function planLoaderHmrHostFromConfig(
 		http,
 		workbench,
 		logging,
+		sources,
 		context,
 		...hostOpts
 	} = opts
@@ -211,11 +213,28 @@ export async function planLoaderHmrHostFromConfig(
 		fs: hostOpts.fs,
 	})
 	if (diagnosed.ok === false) throw new Error(diagnosed.errors.join('\n'))
+	const dynamicSources = await resolveDynamicPluginSources(rootDir, sources)
+	const snapshot: WorkspaceSnapshot = {
+		...diagnosed.snapshot,
+		enabledEntries: uniqueStrings([
+			...diagnosed.snapshot.enabledEntries,
+			...dynamicSources.entries,
+		]),
+		includedEntries: uniqueStrings([
+			...diagnosed.snapshot.includedEntries,
+			...dynamicSources.entries,
+		]),
+		watchRoots: uniqueStrings([...diagnosed.snapshot.watchRoots, ...dynamicSources.roots]),
+		includeGlobs: uniqueStrings([
+			...diagnosed.snapshot.includeGlobs,
+			...dynamicSources.includeGlobs,
+		]),
+	}
 
 	return planLoaderHmrHost({
 		...hostOpts,
 		root: rootDir,
-		snapshot: diagnosed.snapshot,
+		snapshot,
 		warnings: diagnosed.warnings,
 		context: mergeContextConfig(context, {
 			configService: withPluginConfigEnvironment(configService, env),
@@ -229,6 +248,10 @@ export async function planLoaderHmrHostFromConfig(
 	})
 }
 
+function uniqueStrings(values: readonly string[]): string[] {
+	return [...new Set(values)].sort((left, right) => left.localeCompare(right))
+}
+
 export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	options: BootLoaderHmrHostOptions = {},
@@ -237,6 +260,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 	await plan.fs.promises.mkdir(plan.runtimeStorage.logsDir, { recursive: true })
 	const logging = createRuntimeLogging(resolveLoaderRuntimeLoggingInput(plan))
 	await logging.install()
+	let ctx: Context | undefined
 
 	try {
 		const runtimeFsBackend = createNodeWorkspaceFsBackend(plan.fs)
@@ -251,9 +275,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 					root: plan.runtimeStorage.persistenceDir,
 				}),
 			},
-			packageService: {
-				state: { enabled: true, file: plan.runtimeStorage.packageStateFile },
-			},
 			workbenchArtifactResolver: resolvePackagedWorkbenchManifest,
 			nodeModuleArtifactResolver: resolvePackagedNodeModule,
 		}
@@ -265,7 +286,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		if (isWorkbenchEnabled(contextConfig.workbench)) {
 			contextConfig.http = withDevWorkbenchHttpConfig(contextConfig.http)
 		}
-		const ctx = new Context(contextConfig)
+		ctx = new Context(contextConfig)
 		ctx.effects.defer(() => logging.dispose(), {
 			tag: 'RuntimeLogging',
 			phase: 'shutdown',
@@ -279,9 +300,6 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		void ctx.loader
 
 		const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
-		if (plan.builtins?.length) {
-			await ctx.loader.preloadPlugins([...plan.builtins], { strict: true, commit: true })
-		}
 
 		return {
 			root: plan.root,
@@ -291,7 +309,11 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			stop: createLoaderRuntimeStop(ctx, logging),
 		}
 	} catch (error) {
-		await logging.dispose()
+		try {
+			await ctx?.effects.dispose()
+		} finally {
+			await logging.dispose()
+		}
 		throw error
 	}
 }
@@ -462,7 +484,9 @@ function resolveLoaderHmrConfig<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 		exclude:
 			plan.snapshot.excludeGlobs.length > 0 ? uniqSorted(plan.snapshot.excludeGlobs) : undefined,
 		clientEntries: resolveDefaultClientEntries(plan.root),
+		builtins: plan.builtins,
 		builtinsFromDist,
+		builtinsPreloadStrict: plan.builtins?.length ? true : undefined,
 	})
 }
 

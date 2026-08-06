@@ -7,7 +7,8 @@ instance watcher，以及基础 services 合约。optional package import 和 re
 
 - `@pluxel/runtime`（kernel services + 稳定协议/路由）
 - `@pluxel/runtime-dynamic/vite`（dynamic route 安装到 host-owned Vite server）
-- `@pluxel/runtime-dynamic/hmr`（CLI/test-facing workspace diagnose 和 loader HMR internals）
+- `@pluxel/runtime-dynamic/hmr`（dynamic Vite route/test host bridge）与
+  `@pluxel/runtime-dynamic/hmr/diagnose`（CLI workspace diagnostics）
 
 文档入口：
 

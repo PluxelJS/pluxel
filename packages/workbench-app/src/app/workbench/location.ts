@@ -21,9 +21,6 @@ export function getWorkbenchSectionTitle(pathname: string) {
 		}
 		return { eyebrow: 'Plugins', title: '插件', subtitle: '浏览、配置与运行验证' }
 	}
-	if (pathname.startsWith('/packages')) {
-		return { eyebrow: 'Packages', title: '包管理', subtitle: '依赖、安装与同步' }
-	}
 	if (pathname.startsWith('/security')) {
 		return { eyebrow: 'Security', title: '安全', subtitle: '访问验证与加密存储' }
 	}
@@ -41,7 +38,6 @@ export function getWorkbenchSectionId(pathname: string): WorkbenchSectionId {
 	if (pathname.startsWith('/plugins')) return 'plugins'
 	if (pathname.startsWith('/security')) return 'other'
 	if (pathname.startsWith('/agent-tools')) return 'other'
-	if (pathname.startsWith('/packages')) return 'packages'
 	if (pathname.startsWith('/logs')) return 'logs'
 	return 'other'
 }

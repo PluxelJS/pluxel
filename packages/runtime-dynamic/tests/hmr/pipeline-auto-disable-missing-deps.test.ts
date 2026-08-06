@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import '@pluxel/runtime-dynamic/services'
+import '../../src/register-services'
 import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
 
 import {

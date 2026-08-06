@@ -12,10 +12,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			const runtime = createRuntimeContext({
 				profile: 'test',
 				configService: { mode: 'memory' },
-				packageService: {
-					policy: { allowInstall: false, allowUninstall: false },
-					state: { enabled: false },
-				},
 			})
 			const ctx = runtime.ctx
 
@@ -46,10 +42,6 @@ describe('@pluxel/runtime Context bootstrap', () => {
 				runtimeState: {
 					mode: 'readonly',
 					snapshot: { enabled: ['ExamplePlugin'] },
-				},
-				packageService: {
-					policy: { allowInstall: false, allowUninstall: false },
-					state: { enabled: false },
 				},
 			})
 			const ctx = runtime.ctx

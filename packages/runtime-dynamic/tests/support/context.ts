@@ -1,5 +1,5 @@
 import '@pluxel/runtime'
-import '@pluxel/runtime-dynamic/services'
+import '../../src/register-services'
 
 import { createHost, type Host } from '@pluxel/test'
 import type { Context } from '@pluxel/core'
