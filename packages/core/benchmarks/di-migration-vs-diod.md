@@ -31,7 +31,7 @@ process; the archived Bun result is not a current regression reference.
 # current lifecycle benchmark on Node
 pnpm --filter @pluxel/core bench:dist
 
-# current internal DI kernel vs retained workspace diod
+# current internal DI kernel vs retained benchmark-local diod
 PLUXEL_DI_BENCH_TIME_MS=1000 PLUXEL_DI_WARMUP_MS=300 PLUXEL_DI_BENCH_ROUNDS=3 \
 PLUXEL_DI_BENCH_OUTPUT_DIR=.bench-results/core/di \
   pnpm --filter @pluxel/core bench:di

@@ -14,8 +14,9 @@ always-on service entry. Vault keeps its explicit optional entry; the parallel r
 route registration subpaths are removed. Oxlint implementation tests and exports belong directly to
 `@pluxel/rolldown/oxlint` instead of a test-package forwarding facade.
 
-Core now owns its plugin-specialized DI kernel directly while the standalone `diod` baseline and
-comparison benchmark remain available for maintenance measurements. Config records, revisions,
+Core now owns its plugin-specialized DI kernel directly while the benchmark-local `diod` fixture and
+comparison benchmark remain available for maintenance measurements. The superseded `@pluxel/ops`
+package is removed now that `@pluxel/commands` is the sole command kernel. Config records, revisions,
 validation, and normalized snapshots use one lightweight core engine; runtime extends it only with
 persistence and readonly policy. Plugin startup now has one bounded topological scheduler instead
 of retaining the legacy depth-batch strategy.

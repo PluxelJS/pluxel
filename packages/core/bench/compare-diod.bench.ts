@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Bench } from 'tinybench'
-import { ContainerBuilder } from 'diod'
+import { ContainerBuilder } from './vendor/diod/dist/index.mjs'
 import { DraftGraph, Runtime, classProvider } from '../dist/bench/index.mjs'
 
 type BenchCase = {

@@ -4,7 +4,6 @@ coverage/
 .turbo/
 vendor/
 **/*.hbs
-packages/diod/docs/api/
 packages/core/benchmarks/
 packages/core-di/benchmarks/
 packages/workbench-app/src/app/gqlens/

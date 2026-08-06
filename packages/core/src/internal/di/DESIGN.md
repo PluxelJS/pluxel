@@ -294,7 +294,7 @@ The current benchmark entry is:
 
 - `pnpm --filter @pluxel/core bench:di`
 
-It compares the internal DI kernel against the archived workspace `diod` implementation on a few
+It compares the internal DI kernel against the archived `diod` fixture under `bench/vendor` on a few
 core-relevant scenarios.
 
 Current signal after the slot-state refactor is positive across the measured scenarios:

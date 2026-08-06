@@ -82,7 +82,7 @@
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit --pretty false",
 		"bench:dist": "pnpm run build && node --experimental-strip-types bench/pluginLifecycle.bench.ts",
-		"bench:di": "pnpm --filter diod build && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
+		"bench:di": "pnpm exec tsdown bench/vendor/diod/src/index.ts --no-config --format esm --out-dir bench/vendor/diod/dist --minify && pnpm exec tsdown src/internal/di/index.ts --no-config --format esm --out-dir dist/bench --minify && node --experimental-strip-types bench/compare-diod.bench.ts"
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",
@@ -93,7 +93,6 @@
 	"devDependencies": {
 		"@abraham/reflection": "^0.13.0",
 		"@pluxel/context": "workspace:*",
-		"diod": "workspace:*",
 		"option-t": "^55.1.2",
 		"rolldown": "^1.1.5",
 		"tinybench": "^6.0.0",

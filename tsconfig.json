@@ -8,11 +8,9 @@
 	"references": [
 		{ "path": "packages/context" },
 		{ "path": "packages/core" },
-		{ "path": "packages/ops" },
 		{ "path": "packages/runtime" },
 		{ "path": "packages/runtime-dev" },
 		{ "path": "packages/runtime-dynamic" },
-		{ "path": "packages/runtime-static" },
-		{ "path": "packages/diod" }
+		{ "path": "packages/runtime-static" }
 	]
 }
