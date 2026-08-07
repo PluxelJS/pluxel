@@ -96,10 +96,10 @@ describe('monorepo plugin dependencies', () => {
 
 		{
 			const batch = loader.beginBatch()
-			await batch.replaceModule('projects/external-api-gateway/plugins/billing/src/index.ts', {
+			await batch.replaceModule('projects/example-app/plugins/billing/src/index.ts', {
 				UsageBillingPlugin,
 			})
-			await batch.replaceModule('projects/external-api-gateway/plugins/zhipu/src/index.ts', {
+			await batch.replaceModule('projects/example-app/plugins/provider/src/index.ts', {
 				ZhipuProviderPlugin,
 			})
 			const res = await core.registry.commit()
@@ -118,13 +118,13 @@ describe('monorepo plugin dependencies', () => {
 		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPluginNext)
 
 		const batch = loader.beginBatch()
-		await batch.replaceModule('projects/external-api-gateway/plugins/billing/src/index.ts', {
+		await batch.replaceModule('projects/example-app/plugins/billing/src/index.ts', {
 			UsageBillingPlugin: UsageBillingPluginNext,
 		})
 		expect(new Set(batch.getAffectedModules())).toEqual(
 			new Set([
-				'projects/external-api-gateway/plugins/billing/src/index.ts',
-				'projects/external-api-gateway/plugins/zhipu/src/index.ts',
+				'projects/example-app/plugins/billing/src/index.ts',
+				'projects/example-app/plugins/provider/src/index.ts',
 			]),
 		)
 		await batch.syncModules(batch.getAffectedModules())

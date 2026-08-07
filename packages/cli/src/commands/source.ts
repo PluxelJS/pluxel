@@ -73,9 +73,17 @@ export const sourceBuildCommand = define({
 export const sourceInstallCommand = define({
 	...sourceInstallDefinition,
 	async run(ctx) {
-		const values = ctx.values as SourceWorkspaceValues & { build: boolean }
+		const values = ctx.values as SourceWorkspaceValues & {
+			build: boolean
+			'frozen-lockfile': boolean
+		}
 		const plan = await loadCheckedPlan(values)
-		await installSourceWorkspace({ plan, build: values.build, log: ctx.log })
+		await installSourceWorkspace({
+			plan,
+			build: values.build,
+			frozenLockfile: values['frozen-lockfile'],
+			log: ctx.log,
+		})
 	},
 })
 

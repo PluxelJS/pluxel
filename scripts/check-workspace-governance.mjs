@@ -28,12 +28,7 @@ if ((await isDirectory(resolve(root, 'apps'))) && !workspaceSource.includes('- a
 	errors.push('workspace is missing apps/*')
 }
 if (await isDirectory(resolve(root, 'projects'))) {
-	for (const pattern of [
-		'projects/*',
-		'projects/*/packages/*',
-		'projects/*/platforms/*',
-		'projects/*/plugins/*',
-	]) {
+	for (const pattern of ['projects/*']) {
 		if (!workspaceSource.includes(`- ${pattern}`)) errors.push(`workspace is missing ${pattern}`)
 	}
 }
@@ -46,11 +41,6 @@ const packageContainers = [
 	resolve(root, 'apps'),
 	resolve(root, 'packages'),
 	resolve(root, 'plugins'),
-	...projectRoots.flatMap((project) => [
-		resolve(project, 'packages'),
-		resolve(project, 'platforms'),
-		resolve(project, 'plugins'),
-	]),
 ]
 const packageContainerChildren = await Promise.all(packageContainers.map(childDirectories))
 const candidateRoots = [resolve(root, 'web'), ...projectRoots, ...packageContainerChildren.flat()]
@@ -81,11 +71,7 @@ for (const { manifestPath, manifest } of packageManifests) {
 	}
 }
 
-const reusablePackageChildren = await Promise.all(
-	[resolve(root, 'packages'), ...projectRoots.map((project) => resolve(project, 'packages'))].map(
-		childDirectories,
-	),
-)
+const reusablePackageChildren = await Promise.all([resolve(root, 'packages')].map(childDirectories))
 const reusablePackageRoots = reusablePackageChildren.flat()
 const reusablePackageSources = await Promise.all(
 	reusablePackageRoots.map(async (packageRoot) => ({

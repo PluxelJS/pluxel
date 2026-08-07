@@ -142,6 +142,10 @@ describe('source workspace planning', () => {
 	it('loads generated source policy without placing machine paths in workspace config', () => {
 		const args = createSourceInstallArgs({ '@acme/a': 'link:/src/a' })
 		expect(args).toEqual(['install'])
+		expect(createSourceInstallArgs({ '@acme/a': 'link:/src/a' }, true)).toEqual([
+			'install',
+			'--frozen-lockfile',
+		])
 		expect(createSourceInstallArgs({})).toEqual(['install', '--frozen-lockfile'])
 		expect(createPnpmInvocation('pnpm@11.12.0', args)).toEqual({
 			command: 'corepack',

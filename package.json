@@ -29,10 +29,7 @@
 		"build:gqlens": "turbo run build --filter=@gqlens/core --filter=@gqlens/react --filter=@gqlens/codegen --filter=@gqlens/vite",
 		"generate:gqlens": "pnpm run build:gqlens && node scripts/generate-gqlens.ts",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
-		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static",
-		"plugin-demo:authelia-oidc": "pnpm --filter @pluxel/plugins-authelia-oidc-demo static",
-		"project:external-api-gateway": "pnpm --filter @repo/project-external-api-gateway dev",
-		"project:chatbots": "pnpm --filter @repo/project-chatbots dev"
+		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
 	},
 	"devDependencies": {
 		"@changesets/cli": "^2.31.0",

@@ -242,14 +242,8 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@repo/project-external-api-gateway#test": {
-			// The headless smoke loads the same static source graph after its production closure is built.
-			"dependsOn": ["build", "@pluxel/runtime-static#build"],
-		},
 		"typecheck": {
-			// Product projects intentionally validate the published runtime declaration boundary.
-			// Their Vite configs import runtime-static source, whose compiler bridge consumes
-			// runtime-dev declarations before Vite resolve conditions are active.
+			// Workspace consumers validate the published runtime declaration boundary.
 			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
 			"outputs": [],
 			"inputs": [
@@ -262,16 +256,10 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@pluxel/plugins-authelia-oidc-demo#typecheck": {
-			"dependsOn": ["@pluxel/runtime-static#build"],
-		},
 		"@pluxel/package-manager#typecheck": {
 			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
 			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
-		},
-		"@repo/project-external-api-gateway#typecheck": {
-			"dependsOn": ["@pluxel/runtime-static#build"],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			// The maintainer host is the explicit dist-boundary smoke check.

@@ -10,4 +10,3 @@ packages/workbench-app/src/app/gqlens/
 packages/workbench-app/src/app/router/routeTree.gen.ts
 projects/plugin-host/pluxel.loader.hmr.discovered.jsonc
 packages/plugins/static-commercial-demo/web/gqlens/
-projects/external-api-gateway/packages/yiqicha-catalog/data/apis.json

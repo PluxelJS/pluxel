@@ -308,8 +308,6 @@ pluxel.hmr.discovered.jsonc
 pluxel.hmr.jsonc.bak.*
 data/
 packages/*/data/
-!projects/external-api-gateway/packages/yiqicha-catalog/data/
-!projects/external-api-gateway/packages/yiqicha-catalog/data/apis.json
 
 # Temporary type probes (elysia typing checks)
 **/.tmp-elysia-typing-check.ts

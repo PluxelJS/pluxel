@@ -55,16 +55,22 @@ export async function discoverCheckoutRepository(root: string): Promise<string |
 export async function installSourceWorkspace(options: {
 	plan: SourceWorkspacePlan
 	build: boolean
+	frozenLockfile: boolean
 	log: (...args: unknown[]) => void
 }) {
 	for (const checkout of options.plan.checkouts) {
 		const overrides = sourceCheckoutInstallOverrides(checkout, options.plan)
 		options.log(`\n→ Installing source checkout ${checkout.repository}`)
-		await runPnpmInstall(checkout.root, overrides, options.plan.checkouts)
+		await runPnpmInstall(checkout.root, overrides, options.plan.checkouts, options.frozenLockfile)
 		if (options.build) await buildSourceCheckout(checkout, options.plan, options.log)
 	}
 	options.log('\n→ Installing consumer workspace with source overlay')
-	await runPnpmInstall(options.plan.root, options.plan.overrides, options.plan.checkouts)
+	await runPnpmInstall(
+		options.plan.root,
+		options.plan.overrides,
+		options.plan.checkouts,
+		options.frozenLockfile,
+	)
 }
 
 export async function buildSourceWorkspace(options: {
@@ -76,8 +82,10 @@ export async function buildSourceWorkspace(options: {
 	}
 }
 
-export function createSourceInstallArgs(overrides: Record<string, string>) {
-	if (Object.keys(overrides).length === 0) return ['install', '--frozen-lockfile']
+export function createSourceInstallArgs(overrides: Record<string, string>, frozenLockfile = false) {
+	if (frozenLockfile || Object.keys(overrides).length === 0) {
+		return ['install', '--frozen-lockfile']
+	}
 	return ['install']
 }
 
@@ -105,13 +113,14 @@ async function runPnpmInstall(
 	root: string,
 	overrides: Record<string, string>,
 	checkouts: ResolvedSourceCheckout[],
+	frozenLockfile: boolean,
 ) {
 	if (Object.keys(overrides).length > 0) {
 		const stableOverrides = materializeSourceOverrides(root, overrides, checkouts)
 		ensureSourcePnpmfileBootstrap(root)
 		writeSourcePnpmfile(root, stableOverrides)
 	}
-	await runPnpm(createSourceInstallArgs(overrides), root)
+	await runPnpm(createSourceInstallArgs(overrides, frozenLockfile), root)
 }
 
 export function materializeSourceOverrides(

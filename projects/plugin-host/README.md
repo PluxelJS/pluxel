@@ -49,6 +49,3 @@ semantics.
 
 Capability-specific demos that need local state, such as `PluginVaultDemo`, stay in `src/demo` for
 discovery/manual enablement but are not part of the default enabled set.
-
-Authelia/OIDC setup lives in `projects/authelia-oidc-demo`. Keep that integration separate
-from this general-purpose host package.

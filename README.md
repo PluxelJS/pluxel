@@ -14,13 +14,13 @@ engines 约束。
 ## 本地协同项目
 
 需要与 Pluxel 源码同步演进、但拥有独立 Git、pnpm workspace 和发布生命周期的项目放在
-`local-projects/<name>`。该目录被 Pluxel 永久忽略，也不属于 Pluxel 根 workspace；下游项目通过相对
-路径 `link:` 当前 `packages/*`、`vendor/*` 或正式 `projects/*` 源码。上游工作树的修改会直接参与下游
-安装、构建和验证，不使用发布版本或 Git SHA pin。
+`local-projects/<name>`。该目录被 Pluxel 永久忽略，也不属于 Pluxel 根 workspace；下游项目提交
+`pluxel.sources.jsonc` 中的仓库身份，并通过 `pluxel source register/install/build` 使用当前 checkout。
+机器路径只保存在用户 registry 与被忽略的 `.pluxel/` 代理中，不得提交手写跨仓库 `link:` override。
 
-`projects/*` 仍是 Pluxel 仓库正式提交并由根 pnpm/Turbo 管理的第一方项目。独立项目不要嵌入该目录，
-避免一个 package 同时属于父、子两个 workspace。进入下游项目前先完成 Pluxel 根目录的安装和所需包
-构建；两个仓库分别维护 lockfile、验证命令和提交历史。
+`projects/*` 只保留必须随 Pluxel 一起演进的维护者宿主。产品项目不要嵌入该目录，避免一个 package
+同时属于父、子两个 workspace；各仓库分别维护 lockfile、验证命令和提交历史。完整流程见
+[`user-docs/source-workspaces.md`](user-docs/source-workspaces.md)。
 
 文档入口（先看这些，避免被历史笔记误导）：
 
@@ -29,7 +29,7 @@ engines 约束。
 - 插件系统总边界：`docs/PLUGIN_SYSTEM.md`
 - 未实现研究：`docs/proposals/README.md`
 - 新应用模板：`user-docs/starter-monorepo.md`
-- 高级参考项目：`projects/README.md`
+- 维护者宿主：`projects/README.md`
 
 开发宿主走 `projects/plugin-host`，但建议直接从仓库根目录使用这些入口：
 
@@ -49,8 +49,7 @@ pnpm plugin-host:static
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/*`：框架库与其他非具体插件的可复用 package
 - `plugins/*`：可独立装配的具体插件 package（当前根 workspace 没有此类包时可以为空）
-- `projects/*`：可运行产品与宿主样例；内部用 `packages/*` 放通用库、`plugins/*` 放业务插件，
-  必要时可用 `platforms/*` 明确隔离外部平台 capability 与直接 bridge
+- `projects/*`：必须随框架一起演进的可运行维护者宿主；产品级应用使用独立源码工作区
 
 ## Tests
 

@@ -19,7 +19,8 @@ core/runtime。
 
 - `plugins/*`：具体 `@Plugin` 实现及其包内 Workbench extension。
 - `packages/*`：不声明具体插件生命周期的通用 contract、adapter 和框架库。
-- `projects/*`：应用与产品集成，也是多个官方插件在真实 host 中共同运行的验证场所。
+- `projects/plugin-host`：框架维护者的动态/静态真实 host 验证场所。
+- 独立产品 workspace：通过 `pluxel source` 验证多个插件的产品级组合。
 - 官方插件只使用 `@pluxel/runtime` 的公开入口，不使用 toolchain 或 host installation internal helper。
 - 必需 capability 写成 constructor dependency；可选集成使用 `plugins.use()`。
 - 调用方状态从依赖注入时绑定的 `ctx.caller` 推导。共享 provider 状态不得依赖可变的全局“当前调用方”。

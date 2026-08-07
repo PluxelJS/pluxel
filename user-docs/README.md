@@ -41,7 +41,6 @@ CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到�
 ## 其他任务
 
 - [`workbench.md`](workbench.md)：管理工作台的导航、标签、插件分栏和高效空间使用。
-- [`chatbots.md`](chatbots.md)：Chatbots 项目的跨平台/原生能力选择、顺序、背压和幂等边界。
 - [`starter-monorepo.md`](starter-monorepo.md)：生成可独立运行、带本地插件指南和完整验证命令的
   canonical application monorepo。
 - [`source-workspaces.md`](source-workspaces.md)：让多个独立 pnpm 仓库按语义仓库身份消费本地源码，

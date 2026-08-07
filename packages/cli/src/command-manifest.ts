@@ -375,6 +375,11 @@ export const sourceInstallDefinition = {
 			default: true,
 			negatable: true,
 		},
+		'frozen-lockfile': {
+			type: 'boolean',
+			description: 'Fail instead of updating any source or consumer lockfile',
+			default: false,
+		},
 	},
 } as const
 

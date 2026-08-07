@@ -118,8 +118,11 @@ CI 需要显式 checkout 每个私有源码仓库，在临时 registry 中注册
 ```sh
 pluxel source register "$PLUXEL_CHECKOUT" --registry "$RUNNER_TEMP/pluxel-sources.json"
 pluxel source register "$CHATBOT_CHECKOUT" --registry "$RUNNER_TEMP/pluxel-sources.json"
-pluxel source install --registry "$RUNNER_TEMP/pluxel-sources.json"
+pluxel source install --frozen-lockfile --registry "$RUNNER_TEMP/pluxel-sources.json"
 ```
+
+`--frozen-lockfile` 会同时应用于每个 source checkout 和消费方；任何 lockfile 漂移都会直接失败。首次建立
+源码 overlay 或明确更新依赖时不使用该参数，review 并提交各仓库更新后的 lockfile，再恢复 frozen CI。
 
 不要重新添加手写 `link:` override，也不要自行链接另一个 checkout 的 `node_modules`。React 等宿主/UI
 身份优先由 package peer、宿主直接依赖和 Vite dedupe 处理；Drizzle 这种类型期也要求同一声明实例的已知
