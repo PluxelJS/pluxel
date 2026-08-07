@@ -90,11 +90,11 @@ lint 抑制、类型、测试和生产构建。
 [`plugin-best-practices.md`](plugin-best-practices.md) 和
 [`oxlint.md`](oxlint.md)。
 
-## 何时参考 projects
+## 何时参考完整项目
 
 基础结构稳定后，再按需求阅读：
 
-- `projects/chatbots`：复杂 capability、optional integration、长连接和多插件领域模型。
+- [PluxelJS/chatbot](https://github.com/PluxelJS/chatbot)：独立维护的复杂 capability、optional integration、长连接和多插件领域模型。
 - `projects/external-api-gateway`：外部 API、provider、计费、Vault 和公开 gateway 协议。
 
 这些是高级参考应用，不是生成模板的权威源；标准作者模型仍以

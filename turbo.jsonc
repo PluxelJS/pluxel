@@ -242,25 +242,6 @@
 			],
 			"outputLogs": "errors-only",
 		},
-		"@repo/project-chatbots#test": {
-			// Drizzle Kit loads workspace package exports from dist while transforming database schemas.
-			// Keep those artifacts stable instead of testing while this project's build graph cleans them.
-			"dependsOn": ["build", "@pluxel/test#build"],
-			"outputs": [],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/oxlint.config.ts",
-				"$TURBO_ROOT$/tsconfig*.json",
-				"$TURBO_ROOT$/vitest.config.ts",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-			],
-			"outputLogs": "errors-only",
-		},
 		"@repo/project-external-api-gateway#test": {
 			// The headless smoke loads the same static source graph after its production closure is built.
 			"dependsOn": ["build", "@pluxel/runtime-static#build"],
@@ -288,18 +269,6 @@
 			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
 			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
-		},
-		"@repo/project-chatbots#typecheck": {
-			"dependsOn": ["@pluxel/runtime-static#build"],
-		},
-		"@repo/chatbots-kook#typecheck": {
-			// KOOK consumes Commands/Core declarations directly; their builds clean dist before emit.
-			"dependsOn": [
-				"@pluxel/commands#build",
-				"@pluxel/core#build",
-				"@pluxel/runtime#build",
-				"@pluxel/runtime-dev#build",
-			],
 		},
 		"@repo/project-external-api-gateway#typecheck": {
 			"dependsOn": ["@pluxel/runtime-static#build"],

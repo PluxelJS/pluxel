@@ -20,10 +20,10 @@ workbench: {
 	enabled: true,
 	pluginGroups: [
 		{
-			id: 'chatbots',
-			name: 'Chatbots',
-			plugins: ['ChatHubPlugin', 'ChatAccessPlugin'],
-			packages: ['@repo/chatbots-*'],
+			id: 'observability',
+			name: 'Observability',
+			plugins: ['MetricsPlugin'],
+			packages: ['@pluxel/metrics'],
 		},
 	],
 }
