@@ -8,6 +8,7 @@ import {
 	hmrCommandDefinition,
 	newCommandDefinition,
 	publishCommandDefinition,
+	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
 
@@ -47,6 +48,13 @@ const commands = new Map([
 	[
 		'hmr',
 		lazy(() => import('./commands/hmr').then((module) => module.hmrCommand), hmrCommandDefinition),
+	],
+	[
+		'source',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceCommand),
+			sourceCommandDefinition,
+		),
 	],
 	[
 		'workspace',

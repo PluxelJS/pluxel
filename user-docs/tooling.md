@@ -38,6 +38,10 @@ pnpm add -D @pluxel/runtime-dynamic
 | `pluxel database rebase --lineage <id>`                   | 生成全新 lineage baseline，部署后保留旧 instance    |
 | `pluxel hmr doctor`                                       | 诊断 dynamic loader workspace/profile               |
 | `pluxel hmr enabled`                                      | 选择初始加载并纳入 HMR 的 mutable package entries   |
+| `pluxel source register <checkout>`                       | 登记当前机器上的源码仓库目录                        |
+| `pluxel source doctor`                                    | 诊断跨仓库源码声明、package 所有权与依赖闭包        |
+| `pluxel source install`                                   | 按依赖顺序安装/构建源码 checkout 和消费方           |
+| `pluxel source build`                                     | 只刷新当前项目实际消费的上游 artifact               |
 | `pluxel publish --dry-run`                                | 预演 npm publish 和 market 通知流程                 |
 
 在 package script 后传参时保留 `--`：
@@ -103,6 +107,9 @@ import { diagnoseLoaderHmrWorkspace } from '@pluxel/runtime-dynamic/hmr/diagnose
 `@pluxel/rolldown/build` 主要用于宿主的 `staticApplication()` 配置或构建工具集成。
 
 `hmr/diagnose` 只读取和修改 profile、workspace discovery 与 snapshot，不注册 dynamic runtime services。
+
+跨仓库源码协作使用 [`source-workspaces.md`](source-workspaces.md) 的 `pluxel source`。它是 CLI 自有的
+pnpm 编排能力，不进入 runtime、HMR diagnostics 或 package-manager 插件 API。
 
 数据库命令以当前 package 为 root，默认自动寻找唯一 `defineDatabase()` module 和 `drizzle/`。定义不唯一时用
 `--schema` 明确指定。默认 `migrations` 策略必须一起提交 SQL、Drizzle meta 与 `pluxel-migrations.json`，CI 在 build 前运行

@@ -44,6 +44,8 @@ CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到�
 - [`chatbots.md`](chatbots.md)：Chatbots 项目的跨平台/原生能力选择、顺序、背压和幂等边界。
 - [`starter-monorepo.md`](starter-monorepo.md)：生成可独立运行、带本地插件指南和完整验证命令的
   canonical application monorepo。
+- [`source-workspaces.md`](source-workspaces.md)：让多个独立 pnpm 仓库按语义仓库身份消费本地源码，
+  不提交机器路径或手写 override。
 - [`host-setup.md`](host-setup.md)：选择 static/dynamic Vite route，配置 Workbench Plane 和启动策略。
 - [`package-manager.md`](package-manager.md)：为 dynamic host 装配官方 pnpm package source producer。
 - [`distribution.md`](distribution.md)：finalize、检查、签名和可选关联 static application 发行物。

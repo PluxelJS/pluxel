@@ -317,6 +317,106 @@ export const hmrCommandDefinition = {
 	subCommands: hmrSubCommands,
 } as const
 
+export const sourceWorkspaceArgs = {
+	root: { type: 'string', description: 'Consumer workspace root', default: '.' },
+	config: {
+		type: 'string',
+		description: 'Semantic source declaration',
+		default: 'pluxel.sources.jsonc',
+	},
+	registry: {
+		type: 'string',
+		description: 'Machine-local checkout registry (auto-detected by default)',
+	},
+} as const
+
+export const sourceRegisterArgs = {
+	checkout: { type: 'positional', description: 'Source checkout root', default: '.' },
+	repository: {
+		type: 'string',
+		description: 'Repository URL (auto-detected from package.json or Git origin)',
+	},
+	registry: {
+		type: 'string',
+		description: 'Machine-local checkout registry (auto-detected by default)',
+	},
+} as const
+
+export const sourceRegisterDefinition = {
+	name: 'register',
+	description: 'Register or move a source checkout on this machine',
+	toKebab: true,
+	args: sourceRegisterArgs,
+} as const
+
+export const sourceDoctorDefinition = {
+	name: 'doctor',
+	description: 'Validate source declarations, checkouts, and package ownership',
+	toKebab: true,
+	args: sourceWorkspaceArgs,
+} as const
+
+export const sourceBuildDefinition = {
+	name: 'build',
+	description: 'Build only required source artifacts for this workspace',
+	toKebab: true,
+	args: sourceWorkspaceArgs,
+} as const
+
+export const sourceInstallDefinition = {
+	name: 'install',
+	description: 'Install and build source checkouts, then install the consumer overlay',
+	toKebab: true,
+	args: {
+		...sourceWorkspaceArgs,
+		build: {
+			type: 'boolean',
+			description: 'Build required source artifacts before installing the consumer',
+			default: true,
+			negatable: true,
+		},
+	},
+} as const
+
+export const sourceSubCommands = new Map([
+	[
+		'register',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceRegisterCommand),
+			sourceRegisterDefinition,
+		),
+	],
+	[
+		'doctor',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceDoctorCommand),
+			sourceDoctorDefinition,
+		),
+	],
+	[
+		'build',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceBuildCommand),
+			sourceBuildDefinition,
+		),
+	],
+	[
+		'install',
+		lazy(
+			() => import('./commands/source').then((module) => module.sourceInstallCommand),
+			sourceInstallDefinition,
+		),
+	],
+])
+
+export const sourceCommandDefinition = {
+	name: 'source',
+	description: 'Use registered source checkouts without committing machine-local paths',
+	toKebab: true,
+	args: sourceWorkspaceArgs,
+	subCommands: sourceSubCommands,
+} as const
+
 export const workspaceRootArgs = {
 	root: { type: 'string', description: 'Workspace root', default: '.' },
 } as const

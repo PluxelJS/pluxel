@@ -2,6 +2,31 @@
 
 Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
+## Independent source workspaces
+
+`pluxel source` 是 CLI 拥有的开发期 pnpm 编排层。消费仓库只在 `pluxel.sources.jsonc` 声明稳定 Git
+repository identity；机器级 registry 将 identity 映射到 checkout。CLI 扫描各 checkout 自己的
+`pnpm-workspace.yaml` 和 package manifest，拒绝 package name collision 与 source dependency cycle，
+再从消费方依赖递归推导需要链接和安装的 package closure。源码 package 的 devDependency 属于其自身
+checkout，不进入消费方 closure。
+
+少数外部 package 同时具有类型期 nominal/private identity 时，项目可声明 `singletons`。CLI 只接受在
+本次实际选中的源码 package 中有唯一 direct dependency owner 的名称，并在该 owner checkout 安装后
+解析物理实例；不得把 owner 的 `node_modules` 相对路径写进项目配置。
+
+pnpm override 是一次安装的生成细节，不进入项目 workspace 配置。CLI 在 `.pluxel/` 原子生成 pnpmfile
+和 repository-hash checkout link；lockfile 因而只记录稳定代理路径，保留外部依赖可复现性且不泄漏机器
+目录。移动 checkout 只更新 machine registry 和代理 link。每个 checkout 始终按自己的依赖闭包生成
+overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。
+上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时
+回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
+consumer 需要产物：CLI 只选择 live manifest 引用顶层标准构建目录或暴露 executable bin 的 package，
+直接导出 `src` 的 package 保持零构建；上游任务图仍拥有目标内部的 artifact prerequisites。
+
+该能力不改变 pnpm workspace membership，也不合并独立仓库 lockfile/release。现有 `pluxel workspace`
+仍只管理一个仓库内部的 workspace patterns。它同样不复用 dynamic source producer：后者拥有 runtime
+file entry publication，`pluxel source` 只发生在开发期 package resolution/build。
+
 ## Database migrations
 
 `pluxel database generate` 从当前 package 唯一的 `defineDatabase()` schema module 调用 Drizzle Kit，生成 PostgreSQL

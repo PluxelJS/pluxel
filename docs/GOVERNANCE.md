@@ -47,6 +47,9 @@ vendor/*               明确纳入的上游源码；不套用第一方目录语
   workspace 之间仍逐包声明直接依赖。
 - standalone plugin 模板使用最小单 package pnpm workspace，让 catalog 与 `allowBuilds` 安全政策有明确
   所有者；发布时 pnpm 把 catalog 引用转换为正常 semver 范围。
+- 独立仓库共同开发未发布源码时使用 `pluxel source`；项目提交 repository identity 和正常
+  catalog/semver，机器 checkout 路径只进入用户 registry 与 `.pluxel/` 代理。不得手写跨仓库 `link:`
+  override 或链接另一个 checkout 的 `node_modules`。
 - peer 表示必须与宿主共享的运行时身份，不是减少安装声明的手段。peer 的本地构建/测试副本同时放
   `devDependencies`。
 
