@@ -17,6 +17,7 @@ export type DefaultFontSnapshot = Readonly<{
 	family: string
 	/** CSS-safe family token or quoted family string. */
 	cssFamily: string
+	/** Selection layer that produced `family`, not the kind of font resource. */
 	source: 'workbench' | 'config' | 'system' | 'generic'
 	/** Persisted Workbench preference. It may be temporarily unavailable. */
 	workbenchFamily?: string
@@ -30,6 +31,7 @@ export type FontSelectionSnapshot = Readonly<{
 }>
 
 export interface FontSelectionCommands {
+	/** Reads a detached snapshot; modifying it does not update FontsPlugin. */
 	snapshot(): Promise<FontSelectionSnapshot>
 	/** Sets the FontsPlugin provider-wide default; `null` restores config/automatic selection. */
 	setDefaultFamily(family: string | null): Promise<FontSelectionSnapshot>

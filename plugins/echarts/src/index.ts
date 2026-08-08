@@ -82,21 +82,26 @@ export type EChartsRasterOutput =
 export type EChartsRenderInput = Readonly<{
 	width: number
 	height: number
+	/** Read without mutation; worker execution additionally requires structured-clone-compatible values. */
 	option: EChartsOption
-	/** Caller-owned registered name, built-in `default`/`dark`, or an inline JSON theme. */
+	/** Caller-owned registered name, built-in `default`/`dark`, or an inline JSON theme. Omission uses the default-font base theme. */
 	theme?: string | EChartsTheme
 	/** Uses the plugin's configured default when omitted. */
 	devicePixelRatio?: number
-	/** ECharts built-in locale name. */
+	/** ECharts built-in locale name. Omission uses ECharts' default locale. */
 	locale?: string
+	/** Omission uses ECharts' `setOption()` defaults. */
 	setOption?: Readonly<SetOptionOpts>
+	/** Raster encoding policy. Omission produces PNG. */
 	output?: EChartsRasterOutput
 	/** Worker is bounded and non-blocking; inline supports functions/native objects. @defaultValue 'worker' */
 	execution?: 'worker' | 'inline'
+	/** Cancels admission or worker execution; inline mode observes cancellation at renderer checkpoints. */
 	signal?: AbortSignal
 }>
 
 export type EChartsRenderResult = Readonly<{
+	/** Caller-owned encoded bytes detached from the worker result. */
 	data: Buffer
 	mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
 	width: number

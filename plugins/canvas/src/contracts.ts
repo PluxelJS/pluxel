@@ -38,7 +38,7 @@ export type CanvasWorkerFontSnapshot = Readonly<{
 	cssFamily: string
 	/** FontsPlugin revision used to invalidate Pretext measurement caches. */
 	revision: number
-	/** Concrete selected family that must exist in the native worker registry. */
+	/** Concrete selected family that must exist in the native worker registry. Omitted for CSS generic families. */
 	requiredFamily?: string
 }>
 
@@ -62,7 +62,9 @@ export type CanvasTextFontInput =
 	  }>
 
 export type CanvasTextPreparationOptions = Readonly<{
+	/** Whitespace collapsing mode. @defaultValue 'normal' */
 	whiteSpace?: 'normal' | 'pre-wrap'
+	/** Word-breaking mode. @defaultValue 'normal' */
 	wordBreak?: 'normal' | 'keep-all'
 	/** CSS pixel value matching the eventual renderer. @defaultValue 0 */
 	letterSpacing?: number
@@ -76,8 +78,11 @@ export type PrepareTextInput = Readonly<{
 
 export type CanvasRichInlineItem = Readonly<{
 	text: string
+	/** Extra horizontal spacing between graphemes in CSS pixels. @defaultValue 0 */
 	letterSpacing?: number
+	/** `never` keeps this item atomic during wrapping. @defaultValue 'normal' */
 	break?: 'normal' | 'never'
+	/** Caller-owned horizontal chrome such as padding and borders. @defaultValue 0 */
 	extraWidth?: number
 }> &
 	CanvasTextFontInput
@@ -109,15 +114,20 @@ export class CanvasError extends Error {
 
 /** Thread-local native adapter created from one immutable host policy snapshot. */
 export interface CanvasWorkerAdapter {
+	/** Normalized, nested-frozen policy used by every operation on this adapter. */
 	readonly snapshot: CanvasWorkerSnapshot
+	/** Creates a caller-owned native surface after checking its initial allocation budget. */
 	createCanvas(width: number, height: number): Canvas
+	/** Creates a caller-owned native SVG surface after checking its initial allocation budget. */
 	createSvgCanvas(width: number, height: number, options?: SvgCanvasOptions): SvgCanvas
+	/** Creates an unloaded native placeholder; load bytes through `decodeImage()`. */
 	createImage(): Image
 	decodeImage(data: Uint8Array, options?: DecodeImageOptions): Promise<Image>
 }
 
 /** Bounded Pretext preparation bound to one immutable host policy snapshot. */
 export interface CanvasWorkerTextLayout {
+	/** Normalized, nested-frozen policy used by every preparation on this adapter. */
 	readonly snapshot: CanvasWorkerSnapshot
 	prepareText(input: PrepareTextInput): PreparedText
 	prepareTextWithSegments(input: PrepareTextInput): PreparedTextWithSegments

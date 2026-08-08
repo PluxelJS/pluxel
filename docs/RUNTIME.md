@@ -95,6 +95,10 @@ Worker task 只接受 structured clone 边界；Canvas、Image、数据库 handl
 security boundary，native crash 仍可能终止进程。开发 HMR 让新任务读取 content-addressed 新 URL，已运行任务继续使用旧
 module；idle retirement 有界清除 worker 内的旧 ESM cache。
 
+Node declaration、artifact consumer、worker specialization 与共享 pool 实现共同位于
+`packages/runtime/src/node-artifact/`。这是一个 runtime 领域目录，不包含 Vite/Rolldown compiler；build-time lowering 继续属于
+`@pluxel/rolldown`，避免 runtime graph 反向依赖工具链。
+
 Workbench backend 由以下部分组成：
 
 - `WorkbenchService`：每个 plugin Context 隔离的 optional gate；

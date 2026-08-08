@@ -12,10 +12,12 @@ export type BuildNodeModuleOptions = Readonly<{
 	root: string
 	entryPath: string
 	outFile: string
+	/** Minifies the generated single-file ESM artifact. @defaultValue false */
 	minify?: boolean
 }>
 
 export type ValidateNodeModuleArtifactOptions = Readonly<{
+	/** Fallback owner root when `entryPath` is outside a package. Defaults to the entry directory. */
 	root?: string
 	/** Re-analyzes source ownership so cached artifacts accept the same native residuals as builds. */
 	entryPath?: string

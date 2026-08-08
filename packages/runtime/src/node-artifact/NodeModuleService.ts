@@ -6,7 +6,7 @@ import {
 	type NodeModuleCleanup,
 	type NodeModuleDeclaration,
 	type NodeModuleSetup,
-} from '../node-module'
+} from './node-module'
 
 const serviceName = 'nodeModules' as const
 

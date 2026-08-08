@@ -85,12 +85,12 @@ describe('toolchain package boundaries', () => {
 	it('keeps Vite and Module Federation lazy behind Workbench UI declarations', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const pluginCode = await readFile(
-			`${root}/packages/rolldown/src/rolldown/plugins/pluginArtifactBuildPlugin.ts`,
+			`${root}/packages/rolldown/src/plugin-artifact/pluginArtifactBuildPlugin.ts`,
 			'utf8',
 		)
 
-		expect(pluginCode).toContain("import('../../vite/workbench-ui.ts')")
-		expect(pluginCode).toContain("from '../../workbench/build-contract.ts'")
+		expect(pluginCode).toContain("import('../vite/workbench-ui.ts')")
+		expect(pluginCode).toContain("from '../workbench/build-contract.ts'")
 		expect(pluginCode).not.toMatch(/import\s+\{[^}]*buildWorkbenchUiRemote[^}]*\}\s+from/)
 		expect(pluginCode).not.toContain('@module-federation/vite')
 	})

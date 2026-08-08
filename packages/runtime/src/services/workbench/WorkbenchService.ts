@@ -1,8 +1,8 @@
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
 import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
 import type { WorkbenchBackend } from '../workbench'
-import { withNodeModulePluginContext } from '../NodeModuleService'
-import { withWorkerTaskPluginContext } from '../WorkerTaskService'
+import { withNodeModulePluginContext } from '../../node-artifact/NodeModuleService'
+import { withWorkerTaskPluginContext } from '../../node-artifact/WorkerTaskService'
 import { withDatabasePluginContext } from '../DatabaseService'
 import { withCommandsPluginContext } from '../CommandsService'
 

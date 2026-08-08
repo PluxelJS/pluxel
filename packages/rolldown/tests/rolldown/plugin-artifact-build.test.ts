@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createFixture } from 'fs-fixture'
 import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
-import { pluginArtifactBuildPlugin } from '../../src/rolldown/plugins/pluginArtifactBuildPlugin.ts'
+import { pluginArtifactBuildPlugin } from '../../src/plugin-artifact/pluginArtifactBuildPlugin.ts'
 import { databaseSourceVitePlugin } from '../../src/vite/database-source.ts'
 
 describe('pluginArtifactBuildPlugin', () => {

@@ -23,9 +23,9 @@ export {
 	withNodeModulePluginContext,
 	type NodeModuleSourceBinder,
 	type NodeModuleSourceSubscription,
-} from './services/NodeModuleService'
-export { WorkerTaskService, withWorkerTaskPluginContext } from './services/WorkerTaskService'
-export { readNodeModuleDeclaration } from './node-module'
+} from './node-artifact/NodeModuleService'
+export { WorkerTaskService, withWorkerTaskPluginContext } from './node-artifact/WorkerTaskService'
+export { readNodeModuleDeclaration } from './node-artifact/node-module'
 export { readHostProduct, sameProduct } from './product-internal'
 export {
 	withDatabasePluginContext,

@@ -2,7 +2,10 @@ import { readFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
-import { buildNodeModule, resolveNodeModuleNativeResiduals } from '../../src/vite/node-module.ts'
+import {
+	buildNodeModule,
+	resolveNodeModuleNativeResiduals,
+} from '../../src/plugin-artifact/node-module.ts'
 
 describe('buildNodeModule', () => {
 	it('builds a loadable single-file Node ESM closure', async () => {

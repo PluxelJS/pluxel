@@ -2,49 +2,19 @@ import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { Injectable, type Context as CoreContext } from '@pluxel/core'
 import { Tinypool } from 'tinypool'
-import type { NodeModuleDeclaration } from '../node-module'
-import type { WorkerTaskDeclaration } from '../worker-task'
+import type { NodeModuleDeclaration } from './node-module'
+import {
+	WorkerTaskError,
+	type WorkerRunOptions,
+	type WorkersConfig,
+	type WorkerTaskDeclaration,
+} from './worker-task'
 
 const serviceName = 'workers' as const
 
 const DEFAULT_MAX_QUEUED_TASKS = 128
 const DEFAULT_MAX_QUEUED_TASKS_PER_PLUGIN = 32
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000
-
-export type WorkerTaskErrorCode =
-	| 'NOT_RUNNING'
-	| 'QUEUE_FULL'
-	| 'OWNER_QUEUE_FULL'
-	| 'INVALID_INPUT'
-	| 'TASK_UNAVAILABLE'
-	| 'TASK_FAILED'
-
-export class WorkerTaskError extends Error {
-	override readonly name = 'WorkerTaskError'
-
-	constructor(
-		readonly code: WorkerTaskErrorCode,
-		message: string,
-		options?: ErrorOptions,
-	) {
-		super(message, options)
-	}
-}
-
-export type WorkerRunOptions = Readonly<{
-	signal?: AbortSignal
-}>
-
-export type WorkersConfig = Readonly<{
-	/** Shared root thread budget. Defaults to min(4, available CPUs minus one). */
-	maxThreads?: number
-	/** Waiting jobs across all plugin owners. Running jobs do not count. @defaultValue 128 */
-	maxQueuedTasks?: number
-	/** Waiting jobs owned by one plugin Context. @defaultValue 32 */
-	maxQueuedTasksPerPlugin?: number
-	/** Retires idle threads and their loaded module caches. @defaultValue 30000 */
-	idleTimeoutMs?: number
-}>
 
 type ResolvedWorkersConfig = Readonly<{
 	maxThreads: number

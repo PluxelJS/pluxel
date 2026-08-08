@@ -8,21 +8,22 @@ import {
 	findDatabasePackageRoot,
 	loadDatabaseArtifactForSource,
 	type DatabaseBuildArtifact,
-} from '../../database/artifact.ts'
-import { extractDatabaseDeclarations } from '../../database/declaration.ts'
-import { generateResetDatabaseArtifact } from '../../database/reset-artifact.ts'
-import { resolveWithOxc } from '../../resolver/oxc.ts'
-import { validateWorkbenchUiArtifact } from '../../workbench/artifact.ts'
-import { resolveWorkbenchFederationShared } from '../../workbench/build-contract.ts'
-import { runWorkbenchOutputTransaction } from '../../workbench/build-scheduler.ts'
-import { collectImportSpecifiers } from './importCollector.ts'
-import { allowOptionalQuerySuffix, type ViteCompatPlugin } from './compat.ts'
-import { normalizePatterns, parseStandaloneWithLang, parseWithLang } from './pluginUtils.ts'
-import { normalizeViteId } from './viteNormalizeId.ts'
+} from '../database/artifact.ts'
+import { extractDatabaseDeclarations } from '../database/declaration.ts'
+import { generateResetDatabaseArtifact } from '../database/reset-artifact.ts'
+import { resolveWithOxc } from '../resolver/oxc.ts'
+import { collectImportSpecifiers } from '../rolldown/plugins/importCollector.ts'
+import { allowOptionalQuerySuffix, type ViteCompatPlugin } from '../rolldown/plugins/compat.ts'
 import {
-	resolveNodeModuleBuildSignature,
-	resolvePluginArtifactKey,
-} from '../../vite/declaration.ts'
+	normalizePatterns,
+	parseStandaloneWithLang,
+	parseWithLang,
+} from '../rolldown/plugins/pluginUtils.ts'
+import { normalizeViteId } from '../rolldown/plugins/viteNormalizeId.ts'
+import { validateWorkbenchUiArtifact } from '../workbench/artifact.ts'
+import { resolveWorkbenchFederationShared } from '../workbench/build-contract.ts'
+import { runWorkbenchOutputTransaction } from '../workbench/build-scheduler.ts'
+import { resolveNodeModuleBuildSignature, resolvePluginArtifactKey } from './declaration.ts'
 
 const WORKBENCH_UI_BUILD_CACHE_VERSION = 2
 const NODE_MODULE_BUILD_CACHE_VERSION = 1
@@ -68,22 +69,31 @@ type ArtifactStamp = Readonly<{
 }>
 
 export type PluginArtifactBuildPluginOptions = {
+	/** Package/application root used for declaration identity and relative entries. @defaultValue process.cwd() */
 	root?: string
+	/** Output directory relative to `root`. @defaultValue 'dist' */
 	buildDir?: string
+	/** Workbench remote policy. `false` disables only the browser artifact branch; omission enables default builds. */
 	workbench?:
 		| false
 		| {
+				/** Minifies Workbench remote output when true. @defaultValue true */
 				minify?: boolean
 		  }
+	/** Node artifact build policy. Omission enables Node artifacts with default minification. */
 	node?: {
+		/** Minifies the single-file Node artifact. @defaultValue true */
 		minify?: boolean
 		/** @internal Reports controlled native imports to the static deployment tracer. */
 		onNativeResidual?: (name: string, resolvedEntry: string) => void
 		/** @internal Clears native residual facts at the next build generation. */
 		onNativeResidualReset?: () => void
 	}
+	/** Source files eligible for declaration extraction. Omission uses the built-in JS/TS patterns. */
 	include?: string | string[]
+	/** Source files excluded from declaration extraction. Omission excludes dependencies, dist, and declarations. */
 	exclude?: string | string[]
+	/** Optional build/reuse diagnostic sink. Omission emits no plugin artifact messages. */
 	log?: (message: string) => void
 }
 
@@ -305,9 +315,9 @@ async function buildProductionRemote(
 	}
 }
 
-async function loadWorkbenchUiBuildTools(): Promise<typeof import('../../vite/workbench-ui.ts')> {
+async function loadWorkbenchUiBuildTools(): Promise<typeof import('../vite/workbench-ui.ts')> {
 	try {
-		return await import('../../vite/workbench-ui.ts')
+		return await import('../vite/workbench-ui.ts')
 	} catch (error) {
 		throw new Error(
 			'[workbench-ui] building a declared UI requires Vite. Install it in the plugin package with `pnpm add -D vite`.',
@@ -345,7 +355,7 @@ async function buildProductionNodeModule(
 	if (existing) return existing
 
 	const task = (async () => {
-		const buildTools = await import('../../vite/node-module.ts')
+		const buildTools = await import('./node-module.ts')
 		const nativeResiduals = await buildTools.resolveNodeModuleNativeResiduals(
 			declaration.entryPath,
 			root,

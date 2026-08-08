@@ -47,7 +47,7 @@
 			"default": "./dist/vite.mjs"
 		},
 		"./vite/declaration": {
-			"@pluxel/source": "./src/vite/declaration.ts",
+			"@pluxel/source": "./src/plugin-artifact/declaration.ts",
 			"default": "./dist/vite/declaration.mjs"
 		},
 		"./vite/environment": {
@@ -55,7 +55,7 @@
 			"default": "./dist/vite/environment.mjs"
 		},
 		"./vite/node-module": {
-			"@pluxel/source": "./src/vite/node-module.ts",
+			"@pluxel/source": "./src/plugin-artifact/node-module.ts",
 			"default": "./dist/vite/node-module.mjs"
 		},
 		"./vite/paraglide": {

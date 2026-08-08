@@ -28,6 +28,13 @@
 - `src/services/ConfigService.ts`：配置读写；
 - `src/api/http/rpc/RuntimeRpcApi.ts`：host control-plane 与 bound Workbench API dispatch。
 
+## Node artifact 与共享 worker
+
+- `src/node-artifact/node-module.ts`：opaque Node module declaration 与 setup/cleanup contract；
+- `src/node-artifact/NodeModuleService.ts`：owner lease、staged replacement 与 packaged/source artifact resolution；
+- `src/node-artifact/worker-task.ts`：typed worker specialization、稳定错误与 host pool config contract；
+- `src/node-artifact/WorkerTaskService.ts`：root shared pool、bounded fair admission、cancellation 与 shutdown。
+
 ## Browser
 
 - `src/web/client.ts`：HTTP/RPC/SSE transport；

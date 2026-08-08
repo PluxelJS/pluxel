@@ -5,7 +5,12 @@ declare const nodeModuleBrand: unique symbol
 /** A separately-built Node ESM entry owned by the declaring source module. */
 export type NodeModuleDeclaration = Readonly<{ [nodeModuleBrand]: true }>
 
+/** Owner cleanup invoked at most once by runtime after a successful setup is replaced or stopped. */
 export type NodeModuleCleanup = () => void | Promise<void>
+
+/**
+ * Stages one built module URL. A returned cleanup remains active until replacement or owner stop.
+ */
 export type NodeModuleSetup = (
 	url: URL,
 ) => void | NodeModuleCleanup | Promise<void | NodeModuleCleanup>

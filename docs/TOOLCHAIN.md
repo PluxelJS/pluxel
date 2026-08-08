@@ -207,6 +207,10 @@ package identity/version、package-relative declaration path 和 literal entry �
 `dist/artifacts/node/<artifact-key>.mjs`；它与 UI branch 共享 declaration identity、source/build hash、缓存、去重与
 原子发布，但使用独立 Node graph、validator 和 Vite target config。`workbench: false` 只关闭 UI branch。
 
+production lowering 的 stable identity、`pluginArtifactBuildPlugin` coordinator 与 Node artifact compiler 共同位于
+`packages/rolldown/src/plugin-artifact/`。Workbench remote validator/build primitive 仍留在 `src/workbench/` 与 `src/vite/`：
+co-location 只收拢共同 declaration/build lifecycle，不把 browser artifact 实现和 Node compiler 混成一个模块。
+
 Node artifact 必须是单文件 ESM，不得 value-import Pluxel runtime/core、CSS/browser asset 或嵌套 Pluxel declaration。
 普通 JS/TS dependency 继续内联。唯一受控 residual 是 source graph 中某个 package 自己 direct
 `dependencies` / `optionalDependencies` 声明，且 metadata 明确含 `napi`、`binary`、`gypfile` 或入口解析为 `.node` 的 native
