@@ -48,6 +48,7 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 - [`@pluxel/cache`](cache/README.md)：显式 scope、同步 local cache、多态异步 backend 与进程内请求合并。
 - [`@pluxel/rates`](rates/README.md)：caller-aware 四算法 admission control、原子 decision 与 memory backend。
 - [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
+- [`@pluxel/storage`](storage/README.md)：以 s3mini API 为契约、通过配置选择 local/remote 的单一 S3 provider。
 - [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
   - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
 - [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
