@@ -10,6 +10,7 @@ packages:
   - projects/*
 
 catalog:
+  '@chenglou/pretext': ^0.0.8
   '@grpc/grpc-js': ^1.14.4
   '@napi-rs/canvas': ^1.0.3
   '@opentelemetry/api': ^1.9.0

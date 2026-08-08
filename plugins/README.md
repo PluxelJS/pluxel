@@ -54,6 +54,7 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 - [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
 - [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
 - [`@pluxel/fonts`](fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Port。
+- [`@pluxel/canvas`](canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas，并以 Fonts 插件管理字体。
 
 仍标记为 private 的官方插件会先在真实 consumer 中稳定 contract；开放发布的插件也保持普通 package 与公开作者
 API，不获得 runtime 特例。`@pluxel/wretch` 提供原生 immutable Wretch base、最小宿主级出站策略和可选的统一

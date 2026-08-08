@@ -17,12 +17,13 @@
 8. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
 9. [`otel.md`](otel.md)：直接使用标准 OpenTelemetry Meter/Tracer/Logger，并选择 OTLP signal 与 Prometheus pull。
 10. [`fonts.md`](fonts.md)：统一管理系统字体、Pluxel 上传字体、程序化注册、默认选择与 Fonts Selection Port。
-11. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
+11. [`canvas.md`](canvas.md)：使用有资源预算的原生服务端 Canvas，并与 Fonts 插件组合。
+12. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
     插件生命周期、HTTP、失败传播、cleanup 与 disabled Workbench Plane。
-12. [`commands.md`](commands.md)：把同一能力暴露为 Agent tool、CLI 或消息指令，并保持权限与 carrier 所有权。
-13. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
+13. [`commands.md`](commands.md)：把同一能力暴露为 Agent tool、CLI 或消息指令，并保持权限与 carrier 所有权。
+14. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
     常见反模式与提交检查表。
-14. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
+15. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
 
 CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到生成仓库的
 `docs/pluxel/`，根 `AGENTS.md` 会要求 coding agent 从 `docs/pluxel/README.md` 开始。生成项目
