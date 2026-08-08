@@ -57,9 +57,11 @@ describe('@pluxel/test/vitest', () => {
 		expect(config.resolve?.conditions).toEqual(
 			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
+		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 		expect(config.ssr?.resolve?.conditions).toEqual(
 			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
+		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 	})
 
 	it('keeps node conditions deterministic', () => {
@@ -68,11 +70,9 @@ describe('@pluxel/test/vitest', () => {
 			'@pluxel/hmr',
 			'node',
 			'import',
-			'module',
 			'development',
 			'production',
 			'default',
-			'browser',
 			'test',
 		])
 	})

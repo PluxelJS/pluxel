@@ -94,6 +94,7 @@ const DEFAULT_RESOLVE_CONDITIONS = [
 	'production',
 	'default',
 ]
+const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
 export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_RESOLVE_CONDITIONS.includes(env) ? [env] : []
@@ -201,6 +202,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 			// Ensure linked workspaces resolve to real filesystem paths so the runner does not
 			// evaluate the same physical file under both symlink and realpath ids.
 			preserveSymlinks: false,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 			// Vite 8: built-in tsconfig paths support.
 			// (We intentionally avoid `vite-tsconfig-paths` to keep behavior consistent across environments.)
 			tsconfigPaths: true,
@@ -212,6 +214,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 					conditions: ssrConditions,
 					dedupe: dedupePackages,
 					preserveSymlinks: false,
+					externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 				} as unknown as InlineConfig['resolve'],
 			},
 		},
@@ -246,6 +249,7 @@ export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConf
 				conditions: ssrConditions,
 				dedupe: dedupePackages,
 				preserveSymlinks: false,
+				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 			} as unknown as InlineConfig['resolve'],
 		},
 	}

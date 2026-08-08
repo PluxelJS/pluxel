@@ -15,7 +15,7 @@
 6. [`redis.md`](redis.md)：使用独立 Redis capability、选择 provider 并桥接 cache/rates backend。
 7. [`storage.md`](storage.md)：使用统一 s3mini API 并在 local、S3 与平台 provider 之间切换。
 8. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
-9. [`metrics.md`](metrics.md)：用 `measure()` 记录 operation RED metrics，并通过标准 OTel 环境变量连接 Collector。
+9. [`otel.md`](otel.md)：直接使用标准 OpenTelemetry Meter/Tracer/Logger，并选择 OTLP signal 与 Prometheus pull。
 10. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
     插件生命周期、HTTP、失败传播、cleanup 与 disabled Workbench Plane。
 11. [`commands.md`](commands.md)：把同一能力暴露为 Agent tool、CLI 或消息指令，并保持权限与 carrier 所有权。

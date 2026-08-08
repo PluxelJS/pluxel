@@ -22,8 +22,8 @@ workbench: {
 		{
 			id: 'observability',
 			name: 'Observability',
-			plugins: ['MetricsPlugin'],
-			packages: ['@pluxel/metrics'],
+			plugins: ['OtelPlugin'],
+			packages: ['@pluxel/otel'],
 		},
 	],
 }

@@ -25,6 +25,7 @@ describe('HMR client optimizeDeps', () => {
 
 		const resolveConfig = config.resolve as {
 			alias?: Array<{ find: RegExp; replacement: string }>
+			externalConditions?: string[]
 		}
 		expect(resolveConfig.alias).toEqual(
 			expect.arrayContaining([
@@ -35,5 +36,12 @@ describe('HMR client optimizeDeps', () => {
 		)
 		expect(resolveConfig.alias?.[0]?.replacement).toContain('@tabler/icons-react')
 		expect(resolveConfig.alias?.[0]?.replacement).toContain('index.mjs')
+		expect(resolveConfig.externalConditions).toEqual(['node', 'import', 'default'])
+		const environmentResolve = config.environments?.ssr?.resolve as
+			| { externalConditions?: string[] }
+			| undefined
+		const legacySsrResolve = config.ssr?.resolve as { externalConditions?: string[] } | undefined
+		expect(environmentResolve?.externalConditions).toEqual(['node', 'import', 'default'])
+		expect(legacySsrResolve?.externalConditions).toEqual(['node', 'import', 'default'])
 	})
 })

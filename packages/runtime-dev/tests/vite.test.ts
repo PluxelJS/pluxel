@@ -35,7 +35,10 @@ describe('runtime-dev Vite plugin stack', () => {
 		const plugin = plugins.at(-1)!
 		const config = plugin.config?.({} as never, { command: 'serve', mode: 'development' }) as {
 			resolve?: { conditions?: string[]; externalConditions?: string[]; dedupe?: string[] }
-			ssr?: { external?: string[]; resolve?: { conditions?: string[] } }
+			ssr?: {
+				external?: string[]
+				resolve?: { conditions?: string[]; externalConditions?: string[] }
+			}
 			oxc?: { decorator?: { legacy?: boolean; emitDecoratorMetadata?: boolean } }
 		}
 
@@ -47,6 +50,8 @@ describe('runtime-dev Vite plugin stack', () => {
 			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
 		)
 		expect(config.resolve?.externalConditions).not.toContain('@pluxel/source')
+		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
+		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 		expect(config.resolve?.dedupe).toEqual(expect.arrayContaining(['@pluxel/runtime']))
 		expect(config.resolve?.dedupe).not.toContain('@pluxel/core')
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
@@ -112,6 +117,49 @@ describe('runtime-dev Vite plugin stack', () => {
 			expect(mod.branch).toBe('included')
 		} finally {
 			await server?.close()
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('uses Node conditions for external packages in the real Vite runner', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-node-external-conditions-'))
+		const entryPath = join(root, 'entry.ts')
+		try {
+			await writePackage(root, 'fixture-bundler-condition', {
+				name: 'fixture-bundler-condition',
+				type: 'module',
+				exports: { module: './bundler.js', default: './node.cjs' },
+			})
+			await Promise.all([
+				writeFile(
+					join(root, 'node_modules', 'fixture-bundler-condition', 'bundler.js'),
+					"import './missing-extension'\nexport default 'bundler'\n",
+				),
+				writeFile(
+					join(root, 'node_modules', 'fixture-bundler-condition', 'node.cjs'),
+					"module.exports = 'node'\n",
+				),
+				writeFile(
+					entryPath,
+					"import selected from 'fixture-bundler-condition'\nexport { selected }\n",
+				),
+			])
+
+			let server: ViteDevServer | undefined
+			try {
+				server = await createServer({
+					root,
+					logLevel: 'silent',
+					server: { middlewareMode: true },
+					appType: 'custom',
+					plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+				})
+				const mod = await importViteSsrModule<{ selected: string }>(server, entryPath)
+				expect(mod.selected).toBe('node')
+			} finally {
+				await server?.close()
+			}
+		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
 	})

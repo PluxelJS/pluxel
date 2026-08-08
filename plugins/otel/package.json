@@ -1,12 +1,12 @@
 {
-	"name": "@pluxel/metrics",
+	"name": "@pluxel/otel",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Official OTLP-first operation RED metrics for Pluxel plugins",
+	"description": "Official OpenTelemetry metrics, traces, and logs runtime for Pluxel plugins",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
-		"directory": "plugins/metrics"
+		"directory": "plugins/otel"
 	},
 	"files": [
 		"dist",
@@ -28,18 +28,32 @@
 		}
 	},
 	"scripts": {
-		"bench": "vitest bench --config vitest.config.ts bench/metrics.bench.ts",
 		"build": "pluxel build",
 		"test": "vitest run --config vitest.config.ts && node --test tests-node/*.test.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@opentelemetry/api": "catalog:",
+		"@grpc/grpc-js": "catalog:",
+		"@opentelemetry/context-async-hooks": "catalog:",
+		"@opentelemetry/core": "catalog:",
+		"@opentelemetry/exporter-logs-otlp-grpc": "catalog:",
+		"@opentelemetry/exporter-logs-otlp-http": "catalog:",
+		"@opentelemetry/exporter-logs-otlp-proto": "catalog:",
+		"@opentelemetry/exporter-metrics-otlp-grpc": "catalog:",
+		"@opentelemetry/exporter-metrics-otlp-http": "catalog:",
 		"@opentelemetry/exporter-metrics-otlp-proto": "catalog:",
+		"@opentelemetry/exporter-prometheus": "catalog:",
+		"@opentelemetry/exporter-trace-otlp-grpc": "catalog:",
+		"@opentelemetry/exporter-trace-otlp-http": "catalog:",
+		"@opentelemetry/exporter-trace-otlp-proto": "catalog:",
 		"@opentelemetry/resources": "catalog:",
-		"@opentelemetry/sdk-metrics": "catalog:"
+		"@opentelemetry/sdk-logs": "catalog:",
+		"@opentelemetry/sdk-metrics": "catalog:",
+		"@opentelemetry/sdk-trace-base": "catalog:"
 	},
 	"devDependencies": {
+		"@opentelemetry/api": "catalog:",
+		"@opentelemetry/api-logs": "catalog:",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
@@ -50,6 +64,8 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
+		"@opentelemetry/api": "catalog:",
+		"@opentelemetry/api-logs": "catalog:",
 		"@pluxel/runtime": "workspace:*"
 	}
 }

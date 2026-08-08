@@ -31,15 +31,18 @@ export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/hmr'] 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
 	'node',
-	// Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
+	// `import` is a Node contract; `module` is only a bundler convention and may
+	// point at ESM that Node cannot execute without extension rewriting.
 	'import',
-	'module',
 	'development',
 	'production',
 	'default',
-	// Keep `browser` last; it should never win over `node`.
-	'browser',
 ] as const
+
+// Externalized dependencies are executed directly by Node. Keep bundler-only
+// conditions such as `module` and `browser` out of this set: packages may map
+// them to ESM that intentionally relies on extension rewriting or bundling.
+const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
 export function buildPluxelResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_NODE_RESOLVE_CONDITIONS.includes(env as any) ? [env] : []
@@ -116,9 +119,15 @@ export function definePluxelVitestConfig(
 	)
 
 	const base: ViteUserConfig = {
-		resolve: { conditions: baseConditions },
+		resolve: {
+			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+		},
 		ssr: {
-			resolve: { conditions: baseConditions },
+			resolve: {
+				conditions: baseConditions,
+				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+			},
 			// Generated metadata imports must share the same source-mode core instance as tests.
 			noExternal: ['@pluxel/runtime/toolchain'],
 		},
@@ -155,11 +164,16 @@ export function definePluxelVitestConfig(
 
 		// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
 		// plugin packages use @pluxel/hmr. Do not let per-package config widen this.
-		merged.resolve = { ...merged.resolve, conditions: baseConditions }
+		merged.resolve = {
+			...merged.resolve,
+			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+		}
 		merged.ssr = merged.ssr ?? {}
 		merged.ssr.resolve = {
 			...merged.ssr.resolve,
 			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 		}
 
 		// Always keep core setup in place. Caller can add more setup files.

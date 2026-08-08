@@ -30,15 +30,7 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 	'default',
 ] as const
 
-const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = [
-	'node',
-	'import',
-	'module',
-	'browser',
-	'development',
-	'production',
-	'default',
-] as const
+const PLUXEL_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
 const PLUXEL_SINGLETON_PACKAGES = [
 	'@pluxel/runtime',
