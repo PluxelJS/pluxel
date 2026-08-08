@@ -18,6 +18,20 @@
 - `createImage()` 只创建未加载 placeholder，服务需要同步返回 Image 的 platform adapter。真实 bytes 仍通过
   `decodeImage()`，所以 placeholder factory 不能绕过 decode budget。
 
+## Worker boundary
+
+`CanvasPlugin` 包含 caller lease、Fonts dependency、effects 和可选 Workbench mount，不能 structured clone，也不会在线程中
+重新启动。主线程通过 `canvas.workerSnapshot` 输出 nested-frozen 纯数据：native/text limits、默认 CSS family、Fonts revision，
+以及具体默认 family 存在时的验证名。它不包含字体文件、native key、registry mutation 或 Context。
+
+`@pluxel/canvas/worker` 是无 Pluxel runtime dependency 的 Node-only adapter。每个 task 用 snapshot 创建轻量 adapter；
+`@napi-rs/canvas` module 和 ESM cache 仍按 worker lifetime 复用，只有 caller-owned Canvas/Image/ECharts surface 按任务创建。
+adapter 在 native allocation/decode 前后执行与主插件相同的 limit contract，并在 worker registry 中验证具体默认字体。
+
+`@pluxel/canvas/worker/pretext` 单独提供 `createCanvasWorkerTextLayout()` 和纯 layout/walker exports。它与主 CanvasPlugin
+复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的
+worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/native/Pretext cache，不需要模拟 plugin stop。
+
 ## Pretext 排版
 
 `@chenglou/pretext` 0.0.8 的测量入口仍只寻找 browser `OffscreenCanvas` / DOM。Canvas 在第一次受控 prepare 时临时
@@ -53,7 +67,9 @@ selector 只能读取候选和修改统一默认值，上传/删除仍只在 Fon
 fonts 和 Canvas 业务能力保持完整。`canvas.defaultFont` 返回同一 provider snapshot，调用方调整字号时可以复用其中的
 `cssFamily`。
 
-## 不修改内核的原因
+## Runtime boundary
 
 constructor dependency、caller-bound Context、effects、persistence 与 typed Port 已经覆盖依赖、归属、回收和 UI 组合。
-把 native Canvas 或字体路径加入 runtime 会制造单一集成特例，不能形成第三方 provider 可复用的不变量。
+把 native Canvas 或字体路径加入 runtime 会制造单一集成特例。唯一反馈给通用工具链的规则是 package-local native
+ownership：artifact graph 中每个 package 可以拥有自己 direct 声明的 native dependency；构建器生成 owner-aware loader bridge，
+不能要求最外层业务插件重复声明 `@napi-rs/canvas`，也不能借传递依赖越过 package contract。

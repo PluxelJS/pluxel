@@ -46,8 +46,10 @@ CanvasPlugin 的 dimension/pixel budget。每次调用都会在 `finally` dispos
 instance registry 项。
 
 默认 `execution: 'worker'`：ECharts layout、文字测量、ZRender flush、图片 decode 与 encode 整条路径提交给 host
-共享的 `ctx.workers`，不会为 ECharts 单独创建 Tinypool。宿主统一配置 thread 和 bounded queue，Canvas budget 会在主线程
-无分配预检，并在线程内再次检查。worker input 使用 structured clone；formatter 函数和 native Canvas/Image 需要明确选择：
+共享的 `ctx.workers`，不会为 ECharts 单独创建 Tinypool。宿主统一配置 thread 和 bounded queue；主线程把
+`CanvasPlugin.workerSnapshot` 作为纯数据传入，worker 通过 `@pluxel/canvas/worker` 重建 adapter 并再次检查 Canvas/font
+budget，不启动第二个 CanvasPlugin，也不要求 ECharts 直接依赖 native binding。worker input 使用 structured clone；
+formatter 函数和 native Canvas/Image 需要明确选择：
 
 ```ts
 await this.charts.render({

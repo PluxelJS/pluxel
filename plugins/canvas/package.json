@@ -19,11 +19,21 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./worker": {
+			"@pluxel/hmr": "./src/worker.ts",
+			"default": "./dist/worker.mjs"
+		},
+		"./worker/pretext": {
+			"@pluxel/hmr": "./src/worker-pretext.ts",
+			"default": "./dist/worker/pretext.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./worker": "./dist/worker.mjs",
+			"./worker/pretext": "./dist/worker/pretext.mjs",
 			"./package.json": "./package.json"
 		}
 	},

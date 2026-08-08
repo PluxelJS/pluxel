@@ -208,11 +208,15 @@ package identity/version、package-relative declaration path 和 literal entry �
 原子发布，但使用独立 Node graph、validator 和 Vite target config。`workbench: false` 只关闭 UI branch。
 
 Node artifact 必须是单文件 ESM，不得 value-import Pluxel runtime/core、CSS/browser asset 或嵌套 Pluxel declaration。
-普通 JS/TS dependency 继续内联。唯一受控 residual 是声明 package 的 direct `dependencies` / `optionalDependencies` 中，
-且 package metadata 明确含 `napi`、`binary`、`gypfile` 或入口解析为 `.node` 的 native package；validator 只允许这些 bare
-import 与 Node builtins 留在输出中。这个规则让 `@napi-rs/canvas` 等预编译 binding 保持可加载 package boundary，但不形成
-任意 external escape hatch。`defineNodeModule` 本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与
-调度生命周期由 runtime 统一拥有。
+普通 JS/TS dependency 继续内联。唯一受控 residual 是 source graph 中某个 package 自己 direct
+`dependencies` / `optionalDependencies` 声明，且 metadata 明确含 `napi`、`binary`、`gypfile` 或入口解析为 `.node` 的 native
+package。所有权按发出该 import 的文件最近 package root 校验，而不是要求最外层插件重复声明传递依赖；未声明 native import
+与同名多 entry 解析都会失败。构建器把静态 default/named native import 编译成 package-owner-aware bridge：产物先定位 entry
+package，再沿 source graph 的 package chain 定位真正 owner，最后从 owner manifest 用 `createRequire` 加载 binding。这样 pnpm
+strict layout 下也不会错误地从最外层 artifact 解析 Canvas 的私有依赖；dynamic/namespace/`export *` native import 会被明确拒绝。
+artifact 的静态 import 仍只剩 Node builtins，`onNativeResidual` 继续报告 binding 给部署追踪。workspace build 优先使用
+`@pluxel/hmr` source condition，发布包使用 `publishConfig` 的 default entry，两条图应用相同 validator。`defineNodeModule`
+本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与调度生命周期由 runtime 统一拥有。
 
 ## Development compiler
 

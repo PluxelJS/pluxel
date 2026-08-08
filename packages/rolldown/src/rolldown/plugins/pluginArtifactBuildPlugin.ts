@@ -32,6 +32,7 @@ const CODE_HINT = /\b(?:workbench\s*\.\s*extension\s*\(|defineNodeModule\s*\(|de
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 const IMPORT_SOURCE = '@pluxel/runtime/workbench'
 const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
+const NODE_ARTIFACT_RESOLVE_CONDITIONS = ['@pluxel/hmr', 'node', 'import', 'module', 'default']
 const productionBuilds = new Map<string, Promise<void>>()
 
 type NodeLike = {
@@ -356,7 +357,8 @@ async function buildProductionNodeModule(
 		if (reusable) {
 			try {
 				await buildTools.validateNodeModuleArtifact(cachedFile, {
-					root: buildTools.resolveNodeModuleDependencyRoot(declaration.entryPath, root),
+					root,
+					entryPath: declaration.entryPath,
 				})
 			} catch {
 				reusable = false
@@ -445,7 +447,7 @@ async function hashNodeModuleGraph(
 		hash.update(relative(root, file))
 		hash.update(content)
 		for (const specifier of collectSourceImports(file, content)) {
-			const hit = resolveImport(file, specifier)
+			const hit = resolveImport(file, specifier, NODE_ARTIFACT_RESOLVE_CONDITIONS)
 			if (hit?.path && existsSync(hit.path)) queue.push(hit.path)
 		}
 	}
@@ -776,9 +778,11 @@ function collectSourceImports(file: string, content: string): string[] {
 function resolveImport(
 	importer: string,
 	specifier: string,
+	conditionNames?: readonly string[],
 ): { path: string; packageJsonPath?: string } | null {
 	if (/^(?:https?:|data:|node:)/.test(specifier)) return null
 	const hit = resolveWithOxc(dirname(importer), specifier, {
+		conditionNames,
 		extensions: [
 			'.tsx',
 			'.ts',

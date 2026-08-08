@@ -126,8 +126,39 @@ host.cfg(CanvasPlugin).set({
 ```
 
 默认 pixel budget 对应 64 MiB raw RGBA。超出边界会在 factory 返回前抛出带稳定 `code` 的 `CanvasError`。
-需要把纯数据渲染任务交给 `ctx.workers` 时，先用 `assertDimensions(width, height)` 在主线程做无分配校验，并把只读
-`canvas.limits` snapshot 传给 worker adapter 在线程内复验；不要把 native Canvas/Image 本身作为 task input。
+需要把纯数据渲染任务交给 `ctx.workers` 时，主线程传递 `canvas.workerSnapshot`，不要传 native Canvas/Image：
+
+```ts
+// plugin method
+return this.ctx.workers.run(renderTask, {
+	canvas: this.canvas.workerSnapshot,
+	width: 1200,
+	height: 630,
+})
+
+// render-worker.ts
+import { createCanvasWorkerAdapter } from '@pluxel/canvas/worker'
+
+export default async (input: RenderInput) => {
+	const native = createCanvasWorkerAdapter(input.canvas)
+	const canvas = native.createCanvas(input.width, input.height)
+	return canvas.encode('png')
+}
+```
+
+snapshot 同时包含当前 FontsPlugin 默认 family/revision 和所有 Canvas 配置上限；adapter 会在线程内重新校验分配、decode
+和具体字体可用性。worker 不构造 CanvasPlugin，也没有 Workbench/Context。多行排版使用独立的
+`@pluxel/canvas/worker/pretext`：
+
+```ts
+import { createCanvasWorkerTextLayout, layoutWithLines } from '@pluxel/canvas/worker/pretext'
+
+const text = createCanvasWorkerTextLayout(input.canvas)
+const prepared = text.prepareTextWithSegments({ text: input.title, fontSize: 24 })
+const lines = layoutWithLines(prepared, input.width, 32)
+```
+
+Pretext 子入口复用主插件的文本/rich-inline/cache budget；不需要排版的 worker 不会打入这部分代码。
 返回值是 caller-owned native object，由 GC 管理；provider stop 不会隐式销毁已经返回的 Canvas/Image。原生 Canvas 的
 `width` / `height` 仍可由调用方修改，因此 factory budget 不应被误解成对后续所有原生 mutation 的代理。
 

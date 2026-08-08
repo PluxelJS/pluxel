@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest'
 import { GlobalFonts } from '@napi-rs/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } from '../src/index.ts'
+import { createCanvasWorkerAdapter } from '../src/worker.ts'
+import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 
 @Plugin({ name: 'CanvasTestConsumer' })
 class CanvasTestConsumer extends BasePlugin {
@@ -48,6 +50,57 @@ describe('CanvasPlugin', () => {
 		)
 	})
 
+	it('creates a bounded native worker adapter from a detached host snapshot', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
+				host.cfg(FontsPlugin).enable()
+				await host.commit()
+				const capability = host.require(CanvasTestConsumer).canvas
+				const snapshot = capability.workerSnapshot
+				const workerCanvas = createCanvasWorkerAdapter(structuredClone(snapshot))
+				const canvas = workerCanvas.createCanvas(24, 12)
+				canvas.getContext('2d').fillRect(0, 0, 24, 12)
+				const image = await workerCanvas.decodeImage(await canvas.encode('png'))
+
+				expect({ width: image.width, height: image.height }).toEqual({ width: 24, height: 12 })
+				expect(workerCanvas.snapshot.font.cssFamily).toBe(snapshot.font.cssFamily)
+				expect(Object.isFrozen(workerCanvas.snapshot.limits)).toBe(true)
+				expect(capability.workerSnapshot).toBe(snapshot)
+				expect(() => workerCanvas.createCanvas(snapshot.limits.maxWidth + 1, 1)).toThrowError(
+					expect.objectContaining({ code: 'DIMENSIONS_EXCEEDED' }),
+				)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('provides bounded Pretext preparation without starting another CanvasPlugin', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
+				host.cfg(FontsPlugin).enable()
+				await host.commit()
+				const snapshot = host.require(CanvasTestConsumer).canvas.workerSnapshot
+				const text = createCanvasWorkerTextLayout(structuredClone(snapshot))
+				const prepared = text.prepareTextWithSegments({
+					text: 'Worker 中的 Pretext 仍然使用统一字体快照',
+					fontSize: 18,
+				})
+				const result = layoutWithLines(prepared, 100, 24)
+
+				expect(result.lineCount).toBeGreaterThan(1)
+				expect(result.lines.map((line) => line.text).join('')).toContain('Pretext')
+				expect(() =>
+					text.prepareText({
+						text: 'x'.repeat(snapshot.textLimits.maxTextCharacters + 1),
+					}),
+				).toThrowError(expect.objectContaining({ code: 'TEXT_TOO_LARGE' }))
+			},
+			{ workbench: false },
+		)
+	})
+
 	it('creates an SVG canvas without wrapping its native drawing context', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -75,14 +128,21 @@ describe('CanvasPlugin', () => {
 					host.cfg(FontsPlugin).enable()
 					await host.commit()
 					const consumer = host.require(CanvasFontAdminConsumer)
+					const initialWorkerSnapshot = consumer.canvas.workerSnapshot
 
 					await consumer.fonts.selectionManager().setDefaultFamily(discoveredFamily!)
 					expect(consumer.canvas.createCanvas(2, 2).getContext('2d').font).toContain(
 						discoveredFamily,
 					)
+					expect(consumer.canvas.workerSnapshot).not.toBe(initialWorkerSnapshot)
+					expect(consumer.canvas.workerSnapshot.font.requiredFamily).toBe(discoveredFamily)
 
 					await consumer.fonts.selectionManager().setDefaultFamily('monospace')
 					expect(consumer.canvas.createSvgCanvas(2, 2).getContext('2d').font).toBe('10px monospace')
+					expect(consumer.canvas.workerSnapshot.font.requiredFamily).toBeUndefined()
+					expect(() =>
+						createCanvasWorkerAdapter(consumer.canvas.workerSnapshot).createCanvas(2, 2),
+					).not.toThrow()
 				},
 				{ workbench: false },
 			)

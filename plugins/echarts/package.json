@@ -33,7 +33,6 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@napi-rs/canvas": "catalog:",
 		"@pluxel/canvas": "workspace:*",
 		"@pluxel/fonts": "workspace:*",
 		"echarts": "catalog:"

@@ -142,7 +142,9 @@ export default run
 输入输出遵循 structured clone；函数、闭包、native Canvas/Image、数据库连接和 Context 不能跨线程。宿主通过顶层
 `workers.maxThreads`、global/per-plugin queue limit 与 `idleTimeoutMs` 控制整个进程，不接受插件私有线程预算。取消运行中
 任务会终止对应 worker；因此网络/数据库 I/O、短调用、不可重试 side effect 或非 thread-safe binding 不应放入该池。
-Native package 必须是声明 package 的 direct dependency，并由构建器识别明确 native metadata。
+Native residual 必须是发出该 import 的 package 自己的 direct dependency，并由构建器识别明确 native metadata；使用
+`@pluxel/canvas/worker` 时 binding 由 Canvas package 声明，业务插件不重复依赖 `@napi-rs/canvas`。构建器会保留 package
+owner 的解析边界；worker 源码应静态使用 default/named native import，不支持 dynamic、namespace 或 `export *` native import。
 
 ## 依赖：按“缺失时能否工作”选择
 

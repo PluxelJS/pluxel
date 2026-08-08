@@ -1,5 +1,4 @@
 import {
-	clearCache as clearPretextCache,
 	layout,
 	layoutNextLine,
 	layoutNextLineRange,
@@ -7,8 +6,6 @@ import {
 	materializeLineRange,
 	measureLineStats,
 	measureNaturalWidth,
-	prepare as prepareWithPretext,
-	prepareWithSegments as prepareWithPretextSegments,
 	walkLineRanges,
 	type LayoutCursor,
 	type LayoutLine,
@@ -23,7 +20,6 @@ import {
 	layoutNextRichInlineLineRange,
 	materializeRichInlineLineRange,
 	measureRichInlineStats,
-	prepareRichInline as prepareRichInlineWithPretext,
 	walkRichInlineLineRanges,
 	type PreparedRichInline,
 	type RichInlineCursor,
@@ -57,6 +53,26 @@ import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import { CanvasConfig, type CanvasPluginConfig } from './config.ts'
+import {
+	CanvasError,
+	type CanvasErrorCode,
+	type CanvasResourceLimits,
+	type CanvasRichInlineItem,
+	type CanvasTextFontInput,
+	type CanvasTextPreparationOptions,
+	type CanvasTextResourceLimits,
+	type CanvasWorkerAdapter,
+	type CanvasWorkerFontSnapshot,
+	type CanvasWorkerSnapshot,
+	type CanvasWorkerTextLayout,
+	type DecodeImageOptions,
+	type PrepareTextInput,
+	type SvgCanvasOptions,
+} from './contracts.ts'
+import { CanvasTextLayoutController } from './text-layout.ts'
+import { assertCanvasDimensions } from './worker-internal.ts'
+
+const GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
 
 const CanvasWorkbench = workbench.portOutlet({
 	id: 'Fonts',
@@ -66,86 +82,6 @@ const CanvasWorkbench = workbench.portOutlet({
 		icon: workbenchContract.icons.Typography,
 	}),
 })
-
-export type SvgCanvasOptions = Readonly<{
-	/**
-	 * Upstream exposes these as mutually exclusive enum variants rather than combinable flags.
-	 * @defaultValue 'compact'
-	 */
-	mode?: 'text-to-paths' | 'compact' | 'relative-paths'
-}>
-
-export type DecodeImageOptions = Readonly<{
-	/**
-	 * Stops waiting for the native decode. The current upstream decoder cannot cancel work already
-	 * submitted to native code, so a late result is discarded.
-	 */
-	signal?: AbortSignal
-}>
-
-/** Detached host ceilings suitable for validating allocations in a worker task. */
-export type CanvasResourceLimits = Readonly<{
-	maxWidth: number
-	maxHeight: number
-	maxPixels: number
-	maxImageBytes: number
-}>
-
-type TextFontInput =
-	| Readonly<{
-			/** Full Canvas font shorthand. When present it owns both size and family. */
-			font: string
-			fontSize?: never
-	  }>
-	| Readonly<{
-			/** Font size paired with the current Pluxel default family. @defaultValue 16 */
-			font?: never
-			fontSize?: number
-	  }>
-
-type TextPreparationOptions = Readonly<{
-	whiteSpace?: 'normal' | 'pre-wrap'
-	wordBreak?: 'normal' | 'keep-all'
-	/** CSS pixel value matching the eventual renderer. @defaultValue 0 */
-	letterSpacing?: number
-}>
-
-export type PrepareTextInput = Readonly<{
-	text: string
-}> &
-	TextFontInput &
-	TextPreparationOptions
-
-export type CanvasRichInlineItem = Readonly<{
-	text: string
-	letterSpacing?: number
-	break?: 'normal' | 'never'
-	extraWidth?: number
-}> &
-	TextFontInput
-
-export type CanvasErrorCode =
-	| 'NOT_RUNNING'
-	| 'INVALID_DIMENSIONS'
-	| 'DIMENSIONS_EXCEEDED'
-	| 'PIXELS_EXCEEDED'
-	| 'INVALID_IMAGE'
-	| 'IMAGE_BYTES_EXCEEDED'
-	| 'INVALID_TEXT'
-	| 'TEXT_TOO_LARGE'
-	| 'TEXT_LAYOUT_UNAVAILABLE'
-
-export class CanvasError extends Error {
-	override readonly name = 'CanvasError'
-
-	constructor(
-		readonly code: CanvasErrorCode,
-		message: string,
-		options?: ErrorOptions,
-	) {
-		super(message, options)
-	}
-}
 
 type CanvasLease = {
 	readonly owner: Context
@@ -159,7 +95,8 @@ export class CanvasPlugin extends BasePlugin {
 	private readonly config = this.configs.use(CanvasConfig)
 	private readonly leases = new Set<CanvasLease>()
 	private readonly leasesByOwner = new WeakMap<Context, CanvasLease>()
-	private readonly textLayoutState = { characters: 0, fontRevision: -1 }
+	private readonly textLayout = new CanvasTextLayoutController()
+	private workerPolicy?: Readonly<{ revision: number; snapshot: CanvasWorkerSnapshot }>
 	private generation?: object
 
 	constructor(private readonly fonts: FontsPlugin) {
@@ -168,6 +105,7 @@ export class CanvasPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		const generation = Object.freeze({})
+		this.workerPolicy = undefined
 		this.generation = generation
 		this.ctx.effects.defer(
 			() => {
@@ -190,12 +128,29 @@ export class CanvasPlugin extends BasePlugin {
 	/** Current host ceilings for adapters that must recreate native Canvas resources off-thread. */
 	get limits(): CanvasResourceLimits {
 		this.requireLease()
-		return Object.freeze({
-			maxWidth: this.config.maxWidth,
-			maxHeight: this.config.maxHeight,
-			maxPixels: this.config.maxPixels,
-			maxImageBytes: this.config.maxImageBytes,
+		return this.resourceLimits()
+	}
+
+	/** Detached native/text/font policy for `@pluxel/canvas/worker` adapters. */
+	get workerSnapshot(): CanvasWorkerSnapshot {
+		this.requireLease()
+		const revision = this.fonts.revision
+		if (this.workerPolicy?.revision === revision) return this.workerPolicy.snapshot
+		const defaultFont = this.fonts.defaultFont
+		const requiredFamily = GENERIC_FONT_FAMILIES.has(defaultFont.family.toLowerCase())
+			? undefined
+			: defaultFont.family
+		const snapshot = Object.freeze({
+			limits: this.resourceLimits(),
+			textLimits: this.textResourceLimits(),
+			font: Object.freeze({
+				cssFamily: defaultFont.cssFamily,
+				revision,
+				...(requiredFamily === undefined ? {} : { requiredFamily }),
+			}),
 		})
+		this.workerPolicy = Object.freeze({ revision, snapshot })
+		return snapshot
 	}
 
 	/**
@@ -263,62 +218,17 @@ export class CanvasPlugin extends BasePlugin {
 	 * default font changes.
 	 */
 	prepareText(input: PrepareTextInput): PreparedText {
-		const normalized = this.normalizeTextInput(input)
-		return this.runTextPreparation(normalized.text.length, () =>
-			prepareWithPretext(normalized.text, normalized.font, normalized.options),
-		)
+		return this.textLayout.prepareText(input, this.workerSnapshot)
 	}
 
 	/** Prepares the richer Pretext representation required for manual Canvas line rendering. */
 	prepareTextWithSegments(input: PrepareTextInput): PreparedTextWithSegments {
-		const normalized = this.normalizeTextInput(input)
-		return this.runTextPreparation(normalized.text.length, () =>
-			prepareWithPretextSegments(normalized.text, normalized.font, normalized.options),
-		)
+		return this.textLayout.prepareTextWithSegments(input, this.workerSnapshot)
 	}
 
 	/** Prepares inline fragments while applying the Pluxel default family to items without `font`. */
 	prepareRichInline(items: readonly CanvasRichInlineItem[]): PreparedRichInline {
-		this.requireLease()
-		if (!Array.isArray(items) || items.length > this.config.maxRichTextItems) {
-			throw new CanvasError(
-				'TEXT_TOO_LARGE',
-				`Rich text item count exceeds the configured limit of ${this.config.maxRichTextItems}`,
-			)
-		}
-		let characters = 0
-		const normalized = items.map((item, index) => {
-			if (!item || typeof item !== 'object' || typeof item.text !== 'string') {
-				throw new CanvasError('INVALID_TEXT', `Rich text item ${index} requires text`)
-			}
-			characters += item.text.length
-			if (!Number.isSafeInteger(characters) || characters > this.config.maxTextCharacters) {
-				throw new CanvasError(
-					'TEXT_TOO_LARGE',
-					`Rich text exceeds the configured ${this.config.maxTextCharacters} character limit`,
-				)
-			}
-			const font = this.normalizeFont(item)
-			const letterSpacing = normalizeFiniteNumber(
-				item.letterSpacing,
-				`Rich text item ${index} letterSpacing`,
-			)
-			const extraWidth = normalizeFiniteNumber(
-				item.extraWidth,
-				`Rich text item ${index} extraWidth`,
-			)
-			if (item.break !== undefined && item.break !== 'normal' && item.break !== 'never') {
-				throw new CanvasError('INVALID_TEXT', `Rich text item ${index} break mode is invalid`)
-			}
-			return {
-				text: item.text,
-				font,
-				...(letterSpacing === undefined ? {} : { letterSpacing }),
-				...(item.break === undefined ? {} : { break: item.break }),
-				...(extraWidth === undefined ? {} : { extraWidth }),
-			}
-		})
-		return this.runTextPreparation(characters, () => prepareRichInlineWithPretext(normalized))
+		return this.textLayout.prepareRichInline(items, this.workerSnapshot)
 	}
 
 	private requireLease(): CanvasLease {
@@ -365,204 +275,29 @@ export class CanvasPlugin extends BasePlugin {
 	/** Validate dimensions without allocating a native surface. */
 	assertDimensions(width: number, height: number): void {
 		this.requireLease()
-		if (
-			!Number.isSafeInteger(width) ||
-			!Number.isSafeInteger(height) ||
-			width <= 0 ||
-			height <= 0
-		) {
-			throw new CanvasError(
-				'INVALID_DIMENSIONS',
-				'Canvas width and height must be positive integers',
-			)
-		}
-		if (width > this.config.maxWidth || height > this.config.maxHeight) {
-			throw new CanvasError(
-				'DIMENSIONS_EXCEEDED',
-				`Canvas ${width}×${height} exceeds configured ${this.config.maxWidth}×${this.config.maxHeight} dimensions`,
-			)
-		}
-		const pixels = width * height
-		if (!Number.isSafeInteger(pixels) || pixels > this.config.maxPixels) {
-			throw new CanvasError(
-				'PIXELS_EXCEEDED',
-				`Canvas ${width}×${height} has ${pixels} pixels; the configured limit is ${this.config.maxPixels}`,
-			)
-		}
+		assertCanvasDimensions(width, height, this.resourceLimits())
 	}
 
 	private applyDefaultFont(canvas: Canvas | SvgCanvas): void {
 		canvas.getContext('2d').font = `10px ${this.fonts.defaultFont.cssFamily}`
 	}
 
-	private normalizeTextInput(input: PrepareTextInput): Readonly<{
-		text: string
-		font: string
-		options: TextPreparationOptions
-	}> {
-		this.requireLease()
-		if (!input || typeof input !== 'object' || typeof input.text !== 'string') {
-			throw new CanvasError('INVALID_TEXT', 'Text preparation requires a text string')
-		}
-		if (input.text.length > this.config.maxTextCharacters) {
-			throw new CanvasError(
-				'TEXT_TOO_LARGE',
-				`Text has ${input.text.length} characters; the configured limit is ${this.config.maxTextCharacters}`,
-			)
-		}
-		if (
-			input.whiteSpace !== undefined &&
-			input.whiteSpace !== 'normal' &&
-			input.whiteSpace !== 'pre-wrap'
-		) {
-			throw new CanvasError('INVALID_TEXT', 'whiteSpace must be normal or pre-wrap')
-		}
-		if (
-			input.wordBreak !== undefined &&
-			input.wordBreak !== 'normal' &&
-			input.wordBreak !== 'keep-all'
-		) {
-			throw new CanvasError('INVALID_TEXT', 'wordBreak must be normal or keep-all')
-		}
-		const letterSpacing = normalizeFiniteNumber(input.letterSpacing, 'letterSpacing')
+	private resourceLimits(): CanvasResourceLimits {
 		return Object.freeze({
-			text: input.text,
-			font: this.normalizeFont(input),
-			options: Object.freeze({
-				...(input.whiteSpace === undefined ? {} : { whiteSpace: input.whiteSpace }),
-				...(input.wordBreak === undefined ? {} : { wordBreak: input.wordBreak }),
-				...(letterSpacing === undefined ? {} : { letterSpacing }),
-			}),
+			maxWidth: this.config.maxWidth,
+			maxHeight: this.config.maxHeight,
+			maxPixels: this.config.maxPixels,
+			maxImageBytes: this.config.maxImageBytes,
 		})
 	}
 
-	private normalizeFont(input: TextFontInput): string {
-		if (input.font !== undefined) {
-			if (typeof input.font !== 'string') {
-				throw new CanvasError('INVALID_TEXT', 'font must be Canvas font shorthand text')
-			}
-			const font = input.font.trim()
-			if (!font || font.length > 512 || hasControlCharacters(font)) {
-				throw new CanvasError('INVALID_TEXT', 'font shorthand is empty or invalid')
-			}
-			if (input.fontSize !== undefined) {
-				throw new CanvasError('INVALID_TEXT', 'font and fontSize are mutually exclusive')
-			}
-			return font
-		}
-		const fontSize = input.fontSize ?? 16
-		if (!Number.isFinite(fontSize) || fontSize <= 0 || fontSize > 4_096) {
-			throw new CanvasError('INVALID_TEXT', 'fontSize must be greater than 0 and at most 4096')
-		}
-		return `${fontSize}px ${this.fonts.defaultFont.cssFamily}`
-	}
-
-	private runTextPreparation<T>(characters: number, prepare: () => T): T {
-		this.requireLease()
-		const fontRevision = this.fonts.revision
-		if (this.textLayoutState.fontRevision !== fontRevision) {
-			clearPretextCache()
-			this.textLayoutState.characters = 0
-			this.textLayoutState.fontRevision = fontRevision
-		}
-		ensurePretextServerCanvas(this)
-		if (
-			this.textLayoutState.characters > 0 &&
-			this.textLayoutState.characters + characters > this.config.maxTextCacheCharacters
-		) {
-			clearPretextCache()
-			this.textLayoutState.characters = 0
-		}
-		const clearAfter = characters >= this.config.maxTextCacheCharacters
-		try {
-			const result = prepare()
-			if (!clearAfter) this.textLayoutState.characters += characters
-			return result
-		} catch (cause) {
-			throw new CanvasError('INVALID_TEXT', 'Pretext could not prepare the supplied text', {
-				cause,
-			})
-		} finally {
-			if (clearAfter) {
-				clearPretextCache()
-				this.textLayoutState.characters = 0
-			}
-		}
-	}
-}
-
-let pretextServerCanvasReady = false
-
-function ensurePretextServerCanvas(canvas: CanvasPlugin): void {
-	if (pretextServerCanvasReady) return
-	const globalRecord = globalThis as unknown as Record<PropertyKey, unknown>
-	const previous = Object.getOwnPropertyDescriptor(globalThis, 'OffscreenCanvas')
-	if (previous && !previous.configurable) {
-		try {
-			prepareWithPretext('', '10px sans-serif')
-			pretextServerCanvasReady = true
-			clearPretextCache()
-			return
-		} catch (cause) {
-			throw new CanvasError(
-				'TEXT_LAYOUT_UNAVAILABLE',
-				'Pretext cannot use the host OffscreenCanvas implementation',
-				{ cause },
-			)
-		}
-	}
-	class PretextOffscreenCanvas {
-		private readonly native: Canvas
-
-		constructor(width: number, height: number) {
-			if (width !== 1 || height !== 1) {
-				throw new CanvasError(
-					'TEXT_LAYOUT_UNAVAILABLE',
-					'Pretext requested an unexpected measurement canvas size',
-				)
-			}
-			this.native = canvas.createCanvas(width, height)
-		}
-
-		getContext(kind: string): SKRSContext2D | null {
-			return kind === '2d' ? this.native.getContext('2d') : null
-		}
-	}
-	try {
-		Object.defineProperty(globalThis, 'OffscreenCanvas', {
-			configurable: true,
-			value: PretextOffscreenCanvas,
-			writable: true,
+	private textResourceLimits(): CanvasTextResourceLimits {
+		return Object.freeze({
+			maxTextCharacters: this.config.maxTextCharacters,
+			maxRichTextItems: this.config.maxRichTextItems,
+			maxTextCacheCharacters: this.config.maxTextCacheCharacters,
 		})
-		prepareWithPretext('', '10px sans-serif')
-		pretextServerCanvasReady = true
-		clearPretextCache()
-	} catch (cause) {
-		throw cause instanceof CanvasError
-			? cause
-			: new CanvasError('TEXT_LAYOUT_UNAVAILABLE', 'Cannot initialize Pretext on server Canvas', {
-					cause,
-				})
-	} finally {
-		if (previous) Object.defineProperty(globalThis, 'OffscreenCanvas', previous)
-		else delete globalRecord.OffscreenCanvas
 	}
-}
-
-function normalizeFiniteNumber(value: unknown, label: string): number | undefined {
-	if (value === undefined) return undefined
-	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		throw new CanvasError('INVALID_TEXT', `${label} must be a finite number`)
-	}
-	return value
-}
-
-function hasControlCharacters(value: string): boolean {
-	for (let index = 0; index < value.length; index += 1) {
-		const code = value.charCodeAt(index)
-		if (code <= 0x1f || code === 0x7f) return true
-	}
-	return false
 }
 
 async function waitForDecode<T>(
@@ -611,6 +346,7 @@ function decodeNativeImage(data: Uint8Array): Promise<Image> {
 }
 
 export {
+	CanvasError,
 	CanvasConfig,
 	DOMMatrix,
 	DOMPoint,
@@ -635,7 +371,18 @@ export {
 }
 export type {
 	Canvas,
+	CanvasErrorCode,
 	CanvasPluginConfig,
+	CanvasResourceLimits,
+	CanvasRichInlineItem,
+	CanvasTextFontInput,
+	CanvasTextPreparationOptions,
+	CanvasTextResourceLimits,
+	CanvasWorkerAdapter,
+	CanvasWorkerFontSnapshot,
+	CanvasWorkerSnapshot,
+	CanvasWorkerTextLayout,
+	DecodeImageOptions,
 	Image,
 	LayoutCursor,
 	LayoutLine,
@@ -646,6 +393,7 @@ export type {
 	PreparedRichInline,
 	PreparedText,
 	PreparedTextWithSegments,
+	PrepareTextInput,
 	RichInlineCursor,
 	RichInlineFragment,
 	RichInlineFragmentRange,
@@ -653,5 +401,6 @@ export type {
 	RichInlineLineRange,
 	RichInlineStats,
 	SKRSContext2D,
+	SvgCanvasOptions,
 	SvgCanvas,
 }

@@ -32,8 +32,10 @@ export class ReportsPlugin extends BasePlugin {
 
 The host catalog contains `[FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin]`. `render()`
 defaults to `execution: 'worker'` and uses the host-wide `ctx.workers` thread/queue budget. The worker
-creates a native Canvas, initializes ECharts in SSR mode, waits for tracked images, flushes, encodes,
-and disposes the instance in `finally`. PNG is the default; JPEG/WebP and DPR are explicit options.
+reconstructs the bounded `@pluxel/canvas/worker` adapter from `canvas.workerSnapshot`, initializes
+ECharts in SSR mode, waits for tracked images, flushes, encodes, and disposes the instance in
+`finally`. ECharts does not initialize another CanvasPlugin or directly depend on the native binding.
+PNG is the default; JPEG/WebP and DPR are explicit options.
 
 ## Themes and fonts
 
@@ -64,8 +66,8 @@ single managed collection remains server-process-only and survives Canvas/EChart
 ## Images and outbound policy
 
 Data URL image strings in plain `image` fields and `image://data:` values are replaced with short
-render-local keys before they reach ZRender, decoded through `CanvasPlugin`, and subject to both
-ECharts and Canvas byte/dimension budgets. Ordinary text beginning with `data:` is left untouched.
+render-local keys before they reach ZRender, decoded through the Canvas worker adapter, and subject
+to both ECharts and Canvas byte/dimension budgets. Ordinary text beginning with `data:` is left untouched.
 A native Image or formatter function cannot cross the structured-clone worker boundary. Callers that
 need those ECharts escape hatches must explicitly set `execution: 'inline'`; this compatibility mode
 can block the event loop and still uses CanvasPlugin budgets.

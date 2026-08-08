@@ -1,4 +1,4 @@
-import { CanvasPlugin } from '@pluxel/canvas'
+import { CanvasPlugin, type CanvasWorkerSnapshot } from '@pluxel/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
 import { FontsSelectionPort } from '@pluxel/fonts/workbench'
 import {
@@ -224,14 +224,9 @@ export class EChartsPlugin extends BasePlugin {
 		const abortLink = linkAbortSignals([lease.controller.signal, input.signal])
 		try {
 			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
-			const defaultFont = this.fonts.defaultFont
-			const fontRevision = this.fonts.revision
-			const defaultFontCssFamily = rendererFontFamily(defaultFont.cssFamily, fontRevision)
-			const requiredFontFamily = this.fonts.families.some(
-				(family) => family.family === defaultFont.family,
-			)
-				? defaultFont.family
-				: undefined
+			const canvasSnapshot = this.canvas.workerSnapshot
+			const fontRevision = canvasSnapshot.font.revision
+			const defaultFontCssFamily = rendererFontFamily(canvasSnapshot.font.cssFamily, fontRevision)
 			const resolvedTheme = this.resolveTheme(lease, normalized.theme, defaultFontCssFamily)
 			const physicalWidth = Math.ceil(normalized.width * normalized.devicePixelRatio)
 			const physicalHeight = Math.ceil(normalized.height * normalized.devicePixelRatio)
@@ -257,7 +252,7 @@ export class EChartsPlugin extends BasePlugin {
 							this.canvas as unknown as RenderCanvasAdapter,
 							abortLink.signal,
 						)
-					: await this.renderInWorker(render, abortLink.signal, requiredFontFamily)
+					: await this.renderInWorker(render, abortLink.signal, canvasSnapshot)
 			return toPublicResult(result)
 		} catch (cause) {
 			if (cause instanceof EChartsError) throw cause
@@ -271,7 +266,7 @@ export class EChartsPlugin extends BasePlugin {
 	private async renderInWorker(
 		render: RenderEngineInput,
 		signal: AbortSignal,
-		requiredFontFamily: string | undefined,
+		canvas: CanvasWorkerSnapshot,
 	): Promise<RenderEngineResult> {
 		let response: EChartsWorkerOutput
 		try {
@@ -279,8 +274,7 @@ export class EChartsPlugin extends BasePlugin {
 				renderTask,
 				{
 					render,
-					canvasLimits: this.canvas.limits,
-					...(requiredFontFamily ? { requiredFontFamily } : {}),
+					canvas,
 				},
 				{ signal },
 			)

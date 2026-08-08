@@ -382,16 +382,14 @@ export class PluginArtifactCompiler {
 				const sourceHash = await this.computeNodeSourceHash(entry)
 				const outDir = join(this.cacheDir, 'node', entry.key)
 				const outFile = join(outDir, `${sourceHash}.mjs`)
-				const { buildNodeModule, resolveNodeModuleDependencyRoot, validateNodeModuleArtifact } =
+				const { buildNodeModule, validateNodeModuleArtifact } =
 					await import('@pluxel/rolldown/vite/node-module')
 				let reusable = existsSync(outFile)
 				if (reusable) {
 					try {
 						await validateNodeModuleArtifact(outFile, {
-							root: resolveNodeModuleDependencyRoot(
-								entry.entryPath,
-								resolve(this.viteServer?.config.root ?? process.cwd()),
-							),
+							root: resolve(this.viteServer?.config.root ?? process.cwd()),
+							entryPath: entry.entryPath,
 						})
 					} catch {
 						reusable = false

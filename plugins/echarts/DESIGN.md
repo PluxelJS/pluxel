@@ -10,8 +10,8 @@ runtime special case: the plugin declares a typed worker artifact and submits cl
   ZRender flush and native encoding—runs off the main event loop. Moving only `encode()` would leave
   most blocking work behind.
 - Native Canvas/Image instances cannot cross a worker boundary. A job contains normalized option,
-  resolved theme, output policy, current default-font family/revision, and a detached Canvas resource
-  limit snapshot. The worker reconstructs native objects and rechecks all allocation/decode limits.
+  resolved theme, output policy, and `CanvasPlugin.workerSnapshot`. The worker reconstructs native
+  objects through `@pluxel/canvas/worker` and rechecks allocation, decode and font availability.
 - `execution: 'inline'` is explicit compatibility for formatter functions and native objects. Clone
   failure never silently changes execution semantics.
 - Worker cancellation terminates its thread. Jobs must therefore be independently retryable and must
@@ -21,9 +21,11 @@ runtime special case: the plugin declares a typed worker artifact and submits cl
 
 ECharts does not depend on Tinypool. Its module-level `defineWorkerTask()` is lowered by the same
 content-addressed Node artifact compiler used in development and production. The artifact bundles
-ECharts/engine JavaScript and preserves only the directly declared `@napi-rs/canvas` native package
-as a controlled residual import. HMR gives new jobs the new URL while in-flight jobs finish on the
-old module; runtime's idle worker retirement bounds old ESM caches.
+ECharts/engine and the Canvas worker facade. Its native residual metadata records Canvas's directly
+declared `@napi-rs/canvas`; an owner-aware bridge locates the Canvas package before loading the
+binding, so strict dependency layouts work without making ECharts repeat that dependency. HMR gives
+new jobs the new URL while in-flight jobs finish on the old module; runtime's idle worker retirement
+bounds old ESM caches.
 
 The root worker service owns one lazy pool, bounded global/per-owner queues, round-robin scheduling,
 owner abort/drain and shutdown. This lets future Takumi or other CPU/native plugins share the same
@@ -40,8 +42,10 @@ changes affect subsequent jobs. For a concrete system/registered selection the w
 clearly instead of silently falling back to another font.
 
 `CanvasPlugin` remains the resource-policy owner. Main-thread validation uses `assertDimensions()`;
-the worker receives `canvas.limits` and applies the same dimension, pixel and image-byte ceilings
-before native allocation. This narrow snapshot is not a second Canvas capability.
+the worker receives `canvas.workerSnapshot`, and the worker-safe Canvas entry applies the same
+dimension, pixel and image-byte ceilings before native allocation. It is a pure adapter, not a second
+CanvasPlugin lifecycle. ECharts uses ZRender text layout, so it does not import the separate Pretext
+worker entry.
 
 ## Process-global ECharts state
 

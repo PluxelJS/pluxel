@@ -1214,9 +1214,6 @@ importers:
 
   plugins/echarts:
     dependencies:
-      '@napi-rs/canvas':
-        specifier: 'catalog:'
-        version: 1.0.3
       '@pluxel/canvas':
         specifier: workspace:*
         version: link:../canvas
