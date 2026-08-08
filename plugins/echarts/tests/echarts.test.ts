@@ -1,0 +1,207 @@
+import { CanvasPlugin } from '@pluxel/canvas'
+import { FontsPlugin } from '@pluxel/fonts'
+import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
+import {
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
+} from '@pluxel/runtime/web/paths'
+import { describe, expect, it } from 'vitest'
+import {
+	EChartsError,
+	EChartsPlugin,
+	type EChartsOption,
+	type EChartsThemeRegistration,
+} from '../src/index.ts'
+
+@Plugin({ name: 'EChartsTestConsumer' })
+class EChartsTestConsumer extends BasePlugin {
+	constructor(
+		readonly echarts: EChartsPlugin,
+		readonly canvas: CanvasPlugin,
+	) {
+		super()
+	}
+}
+
+@Plugin({ name: 'EChartsOtherConsumer' })
+class EChartsOtherConsumer extends BasePlugin {
+	constructor(readonly echarts: EChartsPlugin) {
+		super()
+	}
+}
+
+const barOption: EChartsOption = {
+	title: { text: 'Pluxel' },
+	xAxis: { type: 'category', data: ['A', 'B', 'C'] },
+	yAxis: { type: 'value' },
+	series: [{ type: 'bar', data: [3, 7, 5] }],
+}
+
+function addEChartsHost(host: Parameters<Parameters<typeof withRuntimeHost>[0]>[0]): void {
+	host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
+	host.cfg(FontsPlugin).enable()
+}
+
+describe('EChartsPlugin', () => {
+	it('renders Apache ECharts to PNG in a headless host and disposes its chart', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const capability = host.require(EChartsTestConsumer).echarts
+				const result = await capability.render({ width: 480, height: 240, option: barOption })
+
+				expect(result.mediaType).toBe('image/png')
+				expect(result.width).toBe(480)
+				expect([...result.data.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+				expect(capability.defaultFont.family.length).toBeGreaterThan(0)
+				expect(host.ctx.workbench.enabled).toBe(false)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('keeps named themes caller-owned instead of using the irreversible ECharts registry', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.add(EChartsOtherConsumer)
+				await host.commit()
+				const capability = host.require(EChartsTestConsumer).echarts
+				const other = host.require(EChartsOtherConsumer).echarts
+				const registration = capability.registerTheme({
+					name: 'reporting',
+					theme: { color: ['#2563eb'], textStyle: { fontWeight: 500 } },
+				})
+				const otherRegistration = other.registerTheme({
+					name: 'reporting',
+					theme: { color: ['#dc2626'] },
+				})
+
+				expect(capability.themes).toEqual([
+					expect.objectContaining({ name: 'reporting', byteLength: expect.any(Number) }),
+				])
+				await expect(
+					capability.render({ width: 240, height: 120, option: barOption, theme: 'reporting' }),
+				).resolves.toMatchObject({ mediaType: 'image/png' })
+				await expect(
+					other.render({ width: 240, height: 120, option: barOption, theme: 'reporting' }),
+				).resolves.toMatchObject({ mediaType: 'image/png' })
+
+				registration.dispose()
+				expect(registration.active).toBe(false)
+				await expect(
+					capability.render({ width: 240, height: 120, option: barOption, theme: 'reporting' }),
+				).rejects.toMatchObject({ code: 'THEME_NOT_FOUND' })
+				expect(otherRegistration.active).toBe(true)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('decodes data URL images through CanvasPlugin and rejects implicit outbound loading', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const consumer = host.require(EChartsTestConsumer)
+				const source = consumer.canvas.createCanvas(4, 4)
+				source.getContext('2d').fillRect(0, 0, 4, 4)
+				const sourceBytes = await source.encode('png')
+				const dataUrl = `data:image/png;base64,${sourceBytes.toString('base64')}`
+				const svgDataUrl = `data:image/svg+xml,${encodeURIComponent(
+					'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#2563eb"/></svg>',
+				)}`
+				const imageOption = (image: string): EChartsOption => ({
+					graphic: {
+						elements: [{ type: 'image', left: 0, top: 0, style: { image, width: 4, height: 4 } }],
+					},
+				})
+
+				const concurrent = await Promise.all([
+					consumer.echarts.render({ width: 32, height: 32, option: imageOption(dataUrl) }),
+					consumer.echarts.render({ width: 48, height: 24, option: imageOption(svgDataUrl) }),
+				])
+				expect(concurrent.map(({ mediaType }) => mediaType)).toEqual(['image/png', 'image/png'])
+				await expect(
+					consumer.echarts.render({
+						width: 32,
+						height: 32,
+						option: imageOption('https://example.invalid/private.png'),
+					}),
+				).rejects.toMatchObject({ code: 'UNSUPPORTED_IMAGE_SOURCE' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('does not reinterpret ordinary data URL text as an image source', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				host.cfg(EChartsPlugin).set({ config: { maxDataUrlBytes: 4 } })
+				await host.commit()
+
+				await expect(
+					host.require(EChartsTestConsumer).echarts.render({
+						width: 240,
+						height: 120,
+						option: {
+							...barOption,
+							title: { text: 'data:text/plain,this-is-label-text' },
+						},
+					}),
+				).resolves.toMatchObject({ mediaType: 'image/png' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('revokes theme handles and cached capability views with the caller generation', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const capability = host.require(EChartsTestConsumer).echarts
+				const theme: EChartsThemeRegistration = capability.registerTheme({
+					name: 'ephemeral',
+					theme: { color: ['#16a34a'] },
+				})
+
+				host.remove(EChartsTestConsumer)
+				await host.commit()
+
+				expect(theme.active).toBe(false)
+				expect(() => capability.themes).toThrow(
+					expect.objectContaining<Partial<EChartsError>>({ code: 'NOT_RUNNING' }),
+				)
+			},
+			{ workbench: false },
+		)
+	})
+
+	it('mounts the Fonts provider Port in the ECharts target workbench', async () => {
+		await withRuntimeHost(async (host) => {
+			host.add([FontsPlugin, CanvasPlugin, EChartsPlugin])
+			host.cfg(FontsPlugin).enable()
+			await host.commit()
+
+			const response = await host.ctx.http.fetch(
+				new Request(
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/EChartsPlugin`,
+				),
+			)
+			expect(response.status).toBe(200)
+			const layout = (await response.json()) as WorkbenchLayout
+			expect(layout.items).toEqual([
+				expect.objectContaining({
+					ownerPluginId: 'FontsPlugin',
+					targetPluginId: 'EChartsPlugin',
+					viewId: 'FontSelection',
+					port: expect.objectContaining({ id: '@pluxel/fonts.selection' }),
+				}),
+			])
+		})
+	})
+})
