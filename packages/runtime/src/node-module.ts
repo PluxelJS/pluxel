@@ -21,19 +21,29 @@ export function defineNodeModule(
 	moduleUrl: string | URL,
 	entryPath: string,
 ): NodeModuleDeclaration {
+	return createNodeModuleDeclaration(moduleUrl, entryPath, arguments[2], 'defineNodeModule')
+}
+
+/** @internal Shared declaration representation used by specialized Node artifact capabilities. */
+export function createNodeModuleDeclaration(
+	moduleUrl: string | URL,
+	entryPath: string,
+	loweredArtifactKey: unknown,
+	declarationName: 'defineNodeModule' | 'defineWorkerTask',
+): NodeModuleDeclaration {
 	const normalizedModuleUrl = String(moduleUrl)
 	const normalizedEntryPath = String(entryPath ?? '').trim()
 	if (!normalizedModuleUrl) {
-		throw new Error('[pluxel/runtime] defineNodeModule(): module URL is required')
+		throw new Error(`[pluxel/runtime] ${declarationName}(): module URL is required`)
 	}
 	if (!normalizedEntryPath) {
-		throw new Error('[pluxel/runtime] defineNodeModule(): entry path is required')
+		throw new Error(`[pluxel/runtime] ${declarationName}(): entry path is required`)
 	}
 	const parsed = new URL(normalizedModuleUrl)
 	if (parsed.protocol !== 'file:') {
-		throw new Error('[pluxel/runtime] defineNodeModule(): module URL must use the file protocol')
+		throw new Error(`[pluxel/runtime] ${declarationName}(): module URL must use the file protocol`)
 	}
-	const artifactKey = readLoweredArtifactKey(arguments[2])
+	const artifactKey = readLoweredArtifactKey(loweredArtifactKey)
 	return Object.freeze({
 		[NODE_MODULE_DECLARATION]: Object.freeze({
 			moduleUrl: parsed.href,

@@ -18,6 +18,10 @@ runtime 在 consumer commit 后解析 ref，使用正常 graph lifecycle、Runti
 `ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner
 cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。
 
+CPU-bound / thread-safe native 工作使用 `defineWorkerTask<Input, Output>()` 和 `ctx.workers.run()`。所有插件共享一个
+root-owned、lazy、bounded、owner-fair 的 worker-thread pool；Tinypool 不进入插件 API。输入输出必须可 structured clone，
+插件 stop 会取消并等待已接纳工作。普通异步 I/O 与短小 native 调用不应为了“统一”而额外跨线程。
+
 Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
 owner-bound Binding：
 

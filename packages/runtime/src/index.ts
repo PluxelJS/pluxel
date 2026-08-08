@@ -6,6 +6,13 @@ import './services/debug'
 export * from '@pluxel/core'
 export { Config, type ConfigSchemaMap } from './base'
 export { defineNodeModule, type NodeModuleDeclaration } from './node-module'
+export { defineWorkerTask, type WorkerTaskDeclaration, type WorkerTaskHandler } from './worker-task'
+export {
+	WorkerTaskError,
+	type WorkerRunOptions,
+	type WorkersConfig,
+	type WorkerTaskErrorCode,
+} from './services/WorkerTaskService'
 export type { DatabaseConfig } from './services/DatabaseService'
 export { f, v } from './config'
 export type { RuntimeEvents } from './events'

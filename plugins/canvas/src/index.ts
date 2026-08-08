@@ -83,6 +83,14 @@ export type DecodeImageOptions = Readonly<{
 	signal?: AbortSignal
 }>
 
+/** Detached host ceilings suitable for validating allocations in a worker task. */
+export type CanvasResourceLimits = Readonly<{
+	maxWidth: number
+	maxHeight: number
+	maxPixels: number
+	maxImageBytes: number
+}>
+
 type TextFontInput =
 	| Readonly<{
 			/** Full Canvas font shorthand. When present it owns both size and family. */
@@ -179,12 +187,22 @@ export class CanvasPlugin extends BasePlugin {
 		return this.fonts.defaultFont
 	}
 
+	/** Current host ceilings for adapters that must recreate native Canvas resources off-thread. */
+	get limits(): CanvasResourceLimits {
+		this.requireLease()
+		return Object.freeze({
+			maxWidth: this.config.maxWidth,
+			maxHeight: this.config.maxHeight,
+			maxPixels: this.config.maxPixels,
+			maxImageBytes: this.config.maxImageBytes,
+		})
+	}
+
 	/**
 	 * Creates a native raster Canvas after enforcing the host's initial allocation budget.
 	 * The returned native object is caller-owned and may be resized independently afterwards.
 	 */
 	createCanvas(width: number, height: number): Canvas {
-		this.requireLease()
 		this.assertDimensions(width, height)
 		const canvas = createNativeCanvas(width, height)
 		this.applyDefaultFont(canvas)
@@ -199,7 +217,6 @@ export class CanvasPlugin extends BasePlugin {
 
 	/** Creates a native SVG Canvas after enforcing the same dimension and pixel budget. */
 	createSvgCanvas(width: number, height: number, options: SvgCanvasOptions = {}): SvgCanvas {
-		this.requireLease()
 		this.assertDimensions(width, height)
 		const flags =
 			options.mode === 'text-to-paths'
@@ -345,7 +362,9 @@ export class CanvasPlugin extends BasePlugin {
 		if (this.leasesByOwner.get(lease.owner) === lease) this.leasesByOwner.delete(lease.owner)
 	}
 
-	private assertDimensions(width: number, height: number): void {
+	/** Validate dimensions without allocating a native surface. */
+	assertDimensions(width: number, height: number): void {
+		this.requireLease()
 		if (
 			!Number.isSafeInteger(width) ||
 			!Number.isSafeInteger(height) ||

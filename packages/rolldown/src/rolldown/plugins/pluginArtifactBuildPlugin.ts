@@ -28,7 +28,7 @@ const WORKBENCH_UI_BUILD_CACHE_VERSION = 2
 const NODE_MODULE_BUILD_CACHE_VERSION = 1
 const PRODUCTION_ARTIFACT_CACHE_KEEP = 3
 const ARTIFACT_STAMP_FILE = 'pluxel-workbench.json'
-const CODE_HINT = /\b(?:workbench\s*\.\s*extension|defineNodeModule)\s*\(/
+const CODE_HINT = /\b(?:workbench\s*\.\s*extension\s*\(|defineNodeModule\s*\(|defineWorkerTask\b)/
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 const IMPORT_SOURCE = '@pluxel/runtime/workbench'
 const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
@@ -76,6 +76,10 @@ export type PluginArtifactBuildPluginOptions = {
 		  }
 	node?: {
 		minify?: boolean
+		/** @internal Reports controlled native imports to the static deployment tracer. */
+		onNativeResidual?: (name: string, resolvedEntry: string) => void
+		/** @internal Clears native residual facts at the next build generation. */
+		onNativeResidualReset?: () => void
 	}
 	include?: string | string[]
 	exclude?: string | string[]
@@ -111,6 +115,7 @@ export function pluginArtifactBuildPlugin(
 		name: 'pluxel-plugin-artifact-build',
 		enforce: 'pre',
 		async buildStart() {
+			options.node?.onNativeResidualReset?.()
 			await cleanupGeneratedDatabaseArtifacts(databasePackages)
 			declarations.clear()
 			nodeDeclarations.clear()
@@ -191,20 +196,20 @@ export function pluginArtifactBuildPlugin(
 				let transformed = code
 				const lowerings = [
 					...extracted.map((item) => ({
-						value: JSON.stringify(item.pluginName),
+						value: injectedArgument(code, item.insertOffset, JSON.stringify(item.pluginName)),
 						offset: item.insertOffset,
 					})),
 					...extractedNode.map((item) => ({
-						value: JSON.stringify(item.artifactKey),
+						value: injectedArgument(code, item.insertOffset, JSON.stringify(item.artifactKey)),
 						offset: item.insertOffset,
 					})),
 					...databaseDeclarations.map((item) => ({
-						value: databaseArtifact!,
+						value: injectedArgument(code, item.insertOffset, databaseArtifact!),
 						offset: item.insertOffset,
 					})),
 				].sort((a, b) => b.offset - a.offset)
 				for (const declaration of lowerings) {
-					transformed = `${transformed.slice(0, declaration.offset)}, ${declaration.value}${transformed.slice(declaration.offset)}`
+					transformed = `${transformed.slice(0, declaration.offset)}${declaration.value}${transformed.slice(declaration.offset)}`
 				}
 				return { code: transformed, map: null }
 			},
@@ -227,6 +232,12 @@ export function pluginArtifactBuildPlugin(
 			databasePackages.clear()
 		},
 	}
+}
+
+function injectedArgument(code: string, insertOffset: number, value: string): string {
+	let index = insertOffset - 1
+	while (index >= 0 && /\s/u.test(code[index]!)) index--
+	return code[index] === ',' ? ` ${value}` : `, ${value}`
 }
 
 async function buildProductionRemote(
@@ -334,10 +345,19 @@ async function buildProductionNodeModule(
 
 	const task = (async () => {
 		const buildTools = await import('../../vite/node-module.ts')
+		const nativeResiduals = await buildTools.resolveNodeModuleNativeResiduals(
+			declaration.entryPath,
+			root,
+		)
+		for (const residual of nativeResiduals) {
+			options.node?.onNativeResidual?.(residual.name, residual.entryPath)
+		}
 		let reusable = existsSync(cachedFile)
 		if (reusable) {
 			try {
-				await buildTools.validateNodeModuleArtifact(cachedFile)
+				await buildTools.validateNodeModuleArtifact(cachedFile, {
+					root: buildTools.resolveNodeModuleDependencyRoot(declaration.entryPath, root),
+				})
 			} catch {
 				reusable = false
 				await rm(cachedFile, { force: true })
@@ -567,13 +587,13 @@ function extractNodeModuleDeclarations(
 		if (!localNames.has(callee)) return
 		if (!moduleConstCalls.has(node)) {
 			throw new Error(
-				`[node-module] defineNodeModule() must be the direct initializer of a module-level const in ${id}`,
+				`[node-module] defineNodeModule()/defineWorkerTask() must be the direct initializer of a module-level const in ${id}`,
 			)
 		}
 		const args = array(node.arguments)
 		if (args.length !== 2 || sourceSlice(code, args[0]) !== 'import.meta.url') {
 			throw new Error(
-				`[node-module] declaration must call defineNodeModule(import.meta.url, "./entry") in ${id}`,
+				`[node-module] declaration must call defineNodeModule()/defineWorkerTask(import.meta.url, "./entry") in ${id}`,
 			)
 		}
 		const relativeEntry = literalString(args[1])
@@ -646,7 +666,9 @@ function collectNodeModuleImports(ast: Program): Set<string> {
 				specifier.imported.type === 'Identifier'
 					? specifier.imported.name
 					: String((specifier.imported as { value?: unknown }).value ?? '')
-			if (imported === 'defineNodeModule') names.add(specifier.local.name)
+			if (imported === 'defineNodeModule' || imported === 'defineWorkerTask') {
+				names.add(specifier.local.name)
+			}
 		}
 	}
 	return names

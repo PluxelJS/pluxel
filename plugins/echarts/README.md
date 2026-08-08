@@ -1,8 +1,9 @@
 # @pluxel/echarts
 
-`@pluxel/echarts` uses Apache ECharts 6 and `@pluxel/canvas` to render charts on the server. It
-requires both `CanvasPlugin` and `FontsPlugin`: Canvas owns native allocation and image decode,
-while Fonts supplies managed fonts, the provider-wide default family, and the Fonts Selection Port.
+`@pluxel/echarts` uses Apache ECharts 6 and `@pluxel/canvas` to render charts on the server. Normal
+renders run through Pluxel's root-owned shared worker pool, so layout, text measurement, ZRender flush
+and native encoding do not block the main event loop. Canvas owns resource limits; Fonts supplies the
+managed registry, provider-wide default family, and Fonts Selection Port.
 
 ```ts
 import { EChartsPlugin } from '@pluxel/echarts'
@@ -30,9 +31,9 @@ export class ReportsPlugin extends BasePlugin {
 ```
 
 The host catalog contains `[FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin]`. `render()`
-creates one caller-owned native Canvas, initializes ECharts in SSR Canvas mode, waits for tracked
-images, flushes, encodes, and disposes the ECharts instance in `finally`. PNG is the default;
-JPEG/WebP and device pixel ratio are explicit output options.
+defaults to `execution: 'worker'` and uses the host-wide `ctx.workers` thread/queue budget. The worker
+creates a native Canvas, initializes ECharts in SSR mode, waits for tracked images, flushes, encodes,
+and disposes the instance in `finally`. PNG is the default; JPEG/WebP and DPR are explicit options.
 
 ## Themes and fonts
 
@@ -65,8 +66,9 @@ single managed collection remains server-process-only and survives Canvas/EChart
 Data URL image strings in plain `image` fields and `image://data:` values are replaced with short
 render-local keys before they reach ZRender, decoded through `CanvasPlugin`, and subject to both
 ECharts and Canvas byte/dimension budgets. Ordinary text beginning with `data:` is left untouched.
-A caller may also pass an already decoded native Image in the option; non-plain native objects are
-preserved by the option rewrite.
+A native Image or formatter function cannot cross the structured-clone worker boundary. Callers that
+need those ECharts escape hatches must explicitly set `execution: 'inline'`; this compatibility mode
+can block the event loop and still uses CanvasPlugin budgets.
 
 HTTP(S) URLs and server file paths are rejected. Fetch bytes first through an outbound HTTP
 capability, call `CanvasPlugin.decodeImage()`, and use that Image in the option. This keeps redirect,

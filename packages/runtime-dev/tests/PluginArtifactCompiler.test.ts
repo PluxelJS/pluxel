@@ -31,6 +31,9 @@ const pluginBuildMocks = vi.hoisted(() => ({
 
 const nodeBuildMocks = vi.hoisted(() => ({
 	buildNodeModule: vi.fn(),
+	resolveNodeModuleDependencyRoot: vi.fn(
+		(_entryPath: string, fallbackRoot: string) => fallbackRoot,
+	),
 	validateNodeModuleArtifact: vi.fn(),
 }))
 
@@ -77,6 +80,7 @@ describe('PluginArtifactCompiler', () => {
 				await writeFile(input.outFile, 'export const ready = true\n')
 			})
 		nodeBuildMocks.validateNodeModuleArtifact.mockReset().mockResolvedValue(undefined)
+		nodeBuildMocks.resolveNodeModuleDependencyRoot.mockClear()
 	})
 
 	it('shares Node builds, reports failed rebuilds, and keeps the last good artifact', async () => {

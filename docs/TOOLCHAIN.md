@@ -193,13 +193,26 @@ entry、Plugin、Context 或 Node API。
 const taskModule = defineNodeModule(import.meta.url, './task.ts')
 ```
 
+共享 worker task 使用相同 artifact pipeline，但声明同时携带 input/output 类型：
+
+```ts
+const resizeTask = defineWorkerTask<ResizeInput, ResizeOutput>(
+	import.meta.url,
+	'./resize-worker.ts',
+)
+```
+
 唯一的 `pluginArtifactBuildPlugin` 在同一次 server transform 中提取 Workbench 与 Node declaration，并注入由
 package identity/version、package-relative declaration path 和 literal entry 生成的 stable key。Node branch 输出
 `dist/artifacts/node/<artifact-key>.mjs`；它与 UI branch 共享 declaration identity、source/build hash、缓存、去重与
 原子发布，但使用独立 Node graph、validator 和 Vite target config。`workbench: false` 只关闭 UI branch。
 
-Node artifact 必须是自包含单文件 ESM（Node builtins 除外），不得 value-import Pluxel runtime/core、CSS/browser
-asset 或嵌套 Pluxel declaration。它不定义 external escape hatch、worker protocol 或 inline fallback。
+Node artifact 必须是单文件 ESM，不得 value-import Pluxel runtime/core、CSS/browser asset 或嵌套 Pluxel declaration。
+普通 JS/TS dependency 继续内联。唯一受控 residual 是声明 package 的 direct `dependencies` / `optionalDependencies` 中，
+且 package metadata 明确含 `napi`、`binary`、`gypfile` 或入口解析为 `.node` 的 native package；validator 只允许这些 bare
+import 与 Node builtins 留在输出中。这个规则让 `@napi-rs/canvas` 等预编译 binding 保持可加载 package boundary，但不形成
+任意 external escape hatch。`defineNodeModule` 本身不定义 worker protocol；`defineWorkerTask` 的 default export contract 与
+调度生命周期由 runtime 统一拥有。
 
 ## Development compiler
 
@@ -224,7 +237,8 @@ metadata 核对，缺失或不一致直接使构建失败，不能生成 server/
 production remote 不输出内嵌源码的 sourcemap；runtime-dev remote 保留 sourcemap 供开发调试。
 
 static freezer 无论 headless/workbench variant 都收集可达 Node artifacts，并在 `pluxel-deployment.json` 记录 key、
-relative file 与 sha256；variant 只改变 browser Workbench closure。
+relative file 与 sha256；artifact builder 同时把受控 native residual 的已解析 entry 交给 NF3，因此只在 worker entry 中出现的
+binding 也会被复制进 deployment `node_modules`。variant 只改变 browser Workbench closure。
 
 `@pluxel/core/federation` 是唯一 dependency-neutral build contract。runtime-dev、Rolldown 和 host 直接依赖该
 contract，不通过 runtime 转手 re-export，也不引入反向 build dependency。

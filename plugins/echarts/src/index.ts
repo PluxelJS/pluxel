@@ -1,18 +1,35 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
-import { CanvasError, CanvasPlugin, type Image, type SKRSContext2D } from '@pluxel/canvas'
+import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin, type DefaultFontSnapshot } from '@pluxel/fonts'
 import { FontsSelectionPort } from '@pluxel/fonts/workbench'
-import { BasePlugin, Plugin, type Context } from '@pluxel/runtime'
+import {
+	BasePlugin,
+	defineWorkerTask,
+	Plugin,
+	type Context,
+	WorkerTaskError,
+} from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import * as echarts from 'echarts'
-import type { EChartsOption, EChartsType, SetOptionOpts } from 'echarts'
+import type { EChartsOption, SetOptionOpts } from 'echarts'
 import { EChartsConfig, type EChartsPluginConfig } from './config.ts'
+import { EChartsError, type EChartsErrorCode } from './errors.ts'
+import {
+	assertEChartsVersion,
+	renderECharts,
+	type RenderCanvasAdapter,
+	type RenderEngineInput,
+	type RenderEngineResult,
+} from './render-engine.ts'
+import type { EChartsWorkerInput, EChartsWorkerOutput } from './worker.ts'
 
 const MAX_THEME_NAME_LENGTH = 128
 const MAX_THEME_DEPTH = 64
-const PLATFORM_STATE_KEY = Symbol.for('@pluxel/echarts.platform-state.v1')
 const BUILTIN_THEMES = new Set(['default', 'dark'])
+
+const renderTask = defineWorkerTask<EChartsWorkerInput, EChartsWorkerOutput>(
+	import.meta.url,
+	'./worker.ts',
+)
 
 const EChartsWorkbench = workbench.portOutlet({
 	id: 'Fonts',
@@ -74,6 +91,8 @@ export type EChartsRenderInput = Readonly<{
 	locale?: string
 	setOption?: Readonly<SetOptionOpts>
 	output?: EChartsRasterOutput
+	/** Worker is bounded and non-blocking; inline supports functions/native objects. @defaultValue 'worker' */
+	execution?: 'worker' | 'inline'
 	signal?: AbortSignal
 }>
 
@@ -84,32 +103,6 @@ export type EChartsRenderResult = Readonly<{
 	height: number
 	devicePixelRatio: number
 }>
-
-export type EChartsErrorCode =
-	| 'NOT_RUNNING'
-	| 'INVALID_INPUT'
-	| 'INVALID_THEME'
-	| 'THEME_TOO_LARGE'
-	| 'THEME_LIMIT_EXCEEDED'
-	| 'THEME_CONFLICT'
-	| 'THEME_NOT_FOUND'
-	| 'INVALID_IMAGE_SOURCE'
-	| 'IMAGE_SOURCE_TOO_LARGE'
-	| 'UNSUPPORTED_IMAGE_SOURCE'
-	| 'IMAGE_LOAD_FAILED'
-	| 'RENDER_FAILED'
-
-export class EChartsError extends Error {
-	override readonly name = 'EChartsError'
-
-	constructor(
-		readonly code: EChartsErrorCode,
-		message: string,
-		options?: ErrorOptions,
-	) {
-		super(message, options)
-	}
-}
 
 type NormalizedTheme = Readonly<{
 	value: EChartsTheme
@@ -129,24 +122,17 @@ type EChartsLease = {
 	active: boolean
 }
 
-type RenderScope = {
-	readonly canvas: CanvasPlugin
-	readonly defaultFont: DefaultFontSnapshot
-	readonly signal: AbortSignal
-	readonly maxDataUrlBytes: number
-	readonly imageSources: Map<string, Uint8Array>
-	readonly imageKeys: Map<string, string>
-	readonly pendingImages: Set<Promise<void>>
-	readonly renderId: number
-	nextImageId: number
-	measureContext?: SKRSContext2D
-}
-
-type PlatformState = {
-	readonly version: 1
-	readonly storage: AsyncLocalStorage<RenderScope>
-	nextRenderId: number
-}
+type NormalizedRenderInput = Readonly<{
+	width: number
+	height: number
+	devicePixelRatio: number
+	option: EChartsOption
+	theme?: string | EChartsTheme
+	locale?: string
+	setOption?: Readonly<SetOptionOpts>
+	output: Readonly<{ format: 'png' | 'jpeg' | 'webp'; quality?: number }>
+	execution: 'worker' | 'inline'
+}>
 
 @Plugin({ name: 'EChartsPlugin' })
 export class EChartsPlugin extends BasePlugin {
@@ -163,19 +149,13 @@ export class EChartsPlugin extends BasePlugin {
 	}
 
 	override async init(): Promise<void> {
-		if (!echarts.version.startsWith('6.')) {
-			throw new EChartsError(
-				'RENDER_FAILED',
-				`@pluxel/echarts requires Apache ECharts 6.x; found ${echarts.version}`,
-			)
-		}
+		assertEChartsVersion()
 		if (this.config.defaultDevicePixelRatio > this.config.maxDevicePixelRatio) {
 			throw new EChartsError(
 				'INVALID_INPUT',
 				'defaultDevicePixelRatio must not exceed maxDevicePixelRatio',
 			)
 		}
-		installPlatformApi()
 		const generation = Object.freeze({})
 		this.generation = generation
 		this.ctx.effects.defer(
@@ -206,10 +186,7 @@ export class EChartsPlugin extends BasePlugin {
 		)
 	}
 
-	/**
-	 * Registers a theme under the current caller instead of ECharts' irreversible global registry.
-	 * The name is automatically removed with the caller generation.
-	 */
+	/** Register an immutable JSON theme until the current caller generation stops. */
 	registerTheme(input: EChartsThemeRegistrationInput): EChartsThemeRegistration {
 		const lease = this.requireLease()
 		if (!input || typeof input !== 'object') {
@@ -240,83 +217,104 @@ export class EChartsPlugin extends BasePlugin {
 		return handle
 	}
 
-	/**
-	 * Renders one ECharts option into a bounded caller-owned Canvas and always disposes the chart.
-	 * Data URL images are decoded through CanvasPlugin; network and file image sources are rejected.
-	 */
+	/** Render through the shared worker pool by default, or explicitly inline for non-cloneable options. */
 	async render(input: EChartsRenderInput): Promise<EChartsRenderResult> {
 		const lease = this.requireLease()
 		const normalized = this.normalizeRenderInput(input)
 		const abortLink = linkAbortSignals([lease.controller.signal, input.signal])
-		if (abortLink.signal.aborted) {
-			abortLink.dispose()
-			throw abortReason(abortLink.signal)
-		}
-		const platformState = getPlatformState()
-		const scope: RenderScope = {
-			canvas: this.canvas,
-			defaultFont: this.fonts.defaultFont,
-			signal: abortLink.signal,
-			maxDataUrlBytes: this.config.maxDataUrlBytes,
-			imageSources: new Map(),
-			imageKeys: new Map(),
-			pendingImages: new Set(),
-			renderId: platformState.nextRenderId++,
-			nextImageId: 0,
-		}
-		let chart: EChartsType | undefined
 		try {
-			const option = rewriteDataUrls(normalized.option, scope)
-			const resolvedTheme = this.resolveTheme(lease, normalized.theme, scope.defaultFont)
-			const optionWithFont = resolvedTheme.injectOptionFont
-				? applyOptionDefaultFont(option, scope.defaultFont.cssFamily)
-				: option
+			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
+			const defaultFont = this.fonts.defaultFont
+			const fontRevision = this.fonts.revision
+			const defaultFontCssFamily = rendererFontFamily(defaultFont.cssFamily, fontRevision)
+			const requiredFontFamily = this.fonts.families.some(
+				(family) => family.family === defaultFont.family,
+			)
+				? defaultFont.family
+				: undefined
+			const resolvedTheme = this.resolveTheme(lease, normalized.theme, defaultFontCssFamily)
 			const physicalWidth = Math.ceil(normalized.width * normalized.devicePixelRatio)
 			const physicalHeight = Math.ceil(normalized.height * normalized.devicePixelRatio)
-			const root = this.canvas.createCanvas(physicalWidth, physicalHeight)
-
-			const data = await platformState.storage.run(scope, async () => {
-				chart = echarts.init(root as unknown as HTMLElement, resolvedTheme.value, {
-					renderer: 'canvas',
-					ssr: true,
-					width: normalized.width,
-					height: normalized.height,
-					devicePixelRatio: normalized.devicePixelRatio,
-					...(normalized.locale === undefined ? {} : { locale: normalized.locale }),
-				})
-				chart.setOption(optionWithFont, normalized.setOption)
-				await flushWithImages(chart, scope)
-				const encoded =
-					normalized.output.format === 'png'
-						? root.encode('png')
-						: root.encode(normalized.output.format, normalized.output.quality)
-				return waitForSignal(encoded, scope.signal)
-			})
-			return Object.freeze({
-				data,
-				mediaType: mediaTypeFor(normalized.output.format),
+			this.canvas.assertDimensions(physicalWidth, physicalHeight)
+			const render: RenderEngineInput = Object.freeze({
 				width: normalized.width,
 				height: normalized.height,
 				devicePixelRatio: normalized.devicePixelRatio,
+				option: normalized.option,
+				theme: resolvedTheme.value,
+				injectOptionFont: resolvedTheme.injectOptionFont,
+				defaultFontCssFamily,
+				fontRevision,
+				...(normalized.locale === undefined ? {} : { locale: normalized.locale }),
+				...(normalized.setOption === undefined ? {} : { setOption: normalized.setOption }),
+				output: normalized.output,
+				maxDataUrlBytes: this.config.maxDataUrlBytes,
 			})
+			const result =
+				normalized.execution === 'inline'
+					? await renderECharts(
+							render,
+							this.canvas as unknown as RenderCanvasAdapter,
+							abortLink.signal,
+						)
+					: await this.renderInWorker(render, abortLink.signal, requiredFontFamily)
+			return toPublicResult(result)
 		} catch (cause) {
 			if (cause instanceof EChartsError) throw cause
 			if (abortLink.signal.aborted) throw abortReason(abortLink.signal)
 			throw new EChartsError('RENDER_FAILED', 'Apache ECharts server rendering failed', { cause })
 		} finally {
-			chart?.dispose()
 			abortLink.dispose()
 		}
+	}
+
+	private async renderInWorker(
+		render: RenderEngineInput,
+		signal: AbortSignal,
+		requiredFontFamily: string | undefined,
+	): Promise<RenderEngineResult> {
+		let response: EChartsWorkerOutput
+		try {
+			response = await this.ctx.workers.run(
+				renderTask,
+				{
+					render,
+					canvasLimits: this.canvas.limits,
+					...(requiredFontFamily ? { requiredFontFamily } : {}),
+				},
+				{ signal },
+			)
+		} catch (cause) {
+			if (signal.aborted) throw abortReason(signal)
+			if (cause instanceof WorkerTaskError && cause.code === 'INVALID_INPUT') {
+				throw new EChartsError(
+					'WORKER_INPUT_UNSUPPORTED',
+					'ECharts worker mode requires options compatible with structured clone; use execution: "inline" for formatter functions or native Canvas objects',
+					{ cause },
+				)
+			}
+			if (
+				cause instanceof WorkerTaskError &&
+				(cause.code === 'QUEUE_FULL' || cause.code === 'OWNER_QUEUE_FULL')
+			) {
+				throw new EChartsError('RENDER_BUSY', 'Shared worker task queue is full', { cause })
+			}
+			throw cause
+		}
+		if (response.ok === false) {
+			throw new EChartsError(response.error.code, response.error.message)
+		}
+		return response.result
 	}
 
 	private resolveTheme(
 		lease: EChartsLease,
 		theme: string | EChartsTheme | undefined,
-		defaultFont: DefaultFontSnapshot,
+		defaultFontCssFamily: string,
 	): Readonly<{ value: string | EChartsTheme; injectOptionFont: boolean }> {
 		if (theme === undefined) {
 			return Object.freeze({
-				value: themeWithDefaultFont(Object.freeze({}), defaultFont.cssFamily),
+				value: themeWithDefaultFont(Object.freeze({}), defaultFontCssFamily),
 				injectOptionFont: false,
 			})
 		}
@@ -325,7 +323,7 @@ export class EChartsPlugin extends BasePlugin {
 			const registered = lease.themes.get(name)
 			if (registered) {
 				return Object.freeze({
-					value: themeWithDefaultFont(registered.theme.value, defaultFont.cssFamily),
+					value: themeWithDefaultFont(registered.theme.value, defaultFontCssFamily),
 					injectOptionFont: false,
 				})
 			}
@@ -336,21 +334,12 @@ export class EChartsPlugin extends BasePlugin {
 		}
 		const normalized = normalizeTheme(theme, this.config.maxThemeBytes)
 		return Object.freeze({
-			value: themeWithDefaultFont(normalized.value, defaultFont.cssFamily),
+			value: themeWithDefaultFont(normalized.value, defaultFontCssFamily),
 			injectOptionFont: false,
 		})
 	}
 
-	private normalizeRenderInput(input: EChartsRenderInput): Readonly<{
-		width: number
-		height: number
-		devicePixelRatio: number
-		option: EChartsOption
-		theme?: string | EChartsTheme
-		locale?: string
-		setOption?: Readonly<SetOptionOpts>
-		output: Readonly<{ format: 'png' | 'jpeg' | 'webp'; quality?: number }>
-	}> {
+	private normalizeRenderInput(input: EChartsRenderInput): NormalizedRenderInput {
 		if (!input || typeof input !== 'object') {
 			throw new EChartsError('INVALID_INPUT', 'render() requires an input object')
 		}
@@ -383,7 +372,13 @@ export class EChartsPlugin extends BasePlugin {
 		) {
 			throw new EChartsError('INVALID_INPUT', 'locale must be a valid ECharts locale name')
 		}
-		const output = normalizeOutput(input.output)
+		if (
+			input.execution !== undefined &&
+			input.execution !== 'worker' &&
+			input.execution !== 'inline'
+		) {
+			throw new EChartsError('INVALID_INPUT', 'execution must be worker or inline')
+		}
 		return Object.freeze({
 			width: input.width,
 			height: input.height,
@@ -392,7 +387,8 @@ export class EChartsPlugin extends BasePlugin {
 			...(input.theme === undefined ? {} : { theme: input.theme }),
 			...(input.locale === undefined ? {} : { locale: input.locale.trim() }),
 			...(input.setOption === undefined ? {} : { setOption: input.setOption }),
-			output,
+			output: normalizeOutput(input.output),
+			execution: input.execution ?? 'worker',
 		})
 	}
 
@@ -460,284 +456,6 @@ class ThemeRegistrationHandle implements EChartsThemeRegistration {
 	}
 }
 
-function installPlatformApi(): void {
-	getPlatformState()
-	echarts.setPlatformAPI({
-		createCanvas(width = 32, height = 32) {
-			const scope = requireRenderScope()
-			return scope.canvas.createCanvas(width, height) as unknown as HTMLCanvasElement
-		},
-		measureText(text, font) {
-			const scope = requireRenderScope()
-			const context = (scope.measureContext ??= scope.canvas.createCanvas(1, 1).getContext('2d'))
-			context.font = font || `12px ${scope.defaultFont.cssFamily}`
-			return context.measureText(text)
-		},
-		loadImage(src, onload, onerror) {
-			const scope = requireRenderScope()
-			const image = scope.canvas.createImage()
-			const task = loadPlatformImage(scope, image, src, onload, onerror)
-			scope.pendingImages.add(task)
-			void task.then(
-				() => scope.pendingImages.delete(task),
-				() => scope.pendingImages.delete(task),
-			)
-			void task.catch((): void => undefined)
-			return image as unknown as HTMLImageElement
-		},
-	})
-}
-
-function requireRenderScope(): RenderScope {
-	const scope = getPlatformState().storage.getStore()
-	if (!scope) {
-		throw new EChartsError(
-			'RENDER_FAILED',
-			'ECharts platform resources are only available inside EChartsPlugin.render()',
-		)
-	}
-	return scope
-}
-
-function getPlatformState(): PlatformState {
-	const globalRecord = globalThis as unknown as Record<PropertyKey, unknown>
-	const existing = globalRecord[PLATFORM_STATE_KEY]
-	if (existing !== undefined) {
-		if (
-			!existing ||
-			typeof existing !== 'object' ||
-			(existing as Partial<PlatformState>).version !== 1 ||
-			!((existing as Partial<PlatformState>).storage instanceof AsyncLocalStorage) ||
-			typeof (existing as Partial<PlatformState>).nextRenderId !== 'number' ||
-			!Number.isSafeInteger((existing as Partial<PlatformState>).nextRenderId)
-		) {
-			throw new EChartsError(
-				'RENDER_FAILED',
-				'Process-global @pluxel/echarts platform state is incompatible',
-			)
-		}
-		return existing as PlatformState
-	}
-	const state: PlatformState = Object.seal({
-		version: 1,
-		storage: new AsyncLocalStorage<RenderScope>(),
-		nextRenderId: 0,
-	})
-	Object.defineProperty(globalThis, PLATFORM_STATE_KEY, {
-		configurable: false,
-		enumerable: false,
-		value: state,
-		writable: false,
-	})
-	return state
-}
-
-async function loadPlatformImage(
-	scope: RenderScope,
-	image: Image,
-	src: string,
-	onload: () => void,
-	onerror: () => void,
-): Promise<void> {
-	let callbackInvoked = false
-	try {
-		const bytes = resolveImageSource(scope, src)
-		const decoded = await scope.canvas.decodeImage(bytes, { signal: scope.signal })
-		await new Promise<void>((resolve, reject) => {
-			image.onload = () => {
-				callbackInvoked = true
-				try {
-					onload.call(image)
-					resolve()
-				} catch (cause) {
-					reject(
-						cause instanceof Error
-							? cause
-							: new EChartsError('IMAGE_LOAD_FAILED', 'ECharts image callback failed', {
-									cause,
-								}),
-					)
-				}
-			}
-			image.onerror = (cause) => {
-				callbackInvoked = true
-				try {
-					onerror.call(image)
-				} finally {
-					reject(
-						new EChartsError('IMAGE_LOAD_FAILED', 'Native image adapter rejected decoded bytes', {
-							cause,
-						}),
-					)
-				}
-			}
-			image.src = decoded.src
-		})
-	} catch (cause) {
-		if (!callbackInvoked) {
-			try {
-				onerror.call(image)
-			} catch {
-				// Preserve the image failure as the public branch signal.
-			}
-		}
-		if (cause instanceof EChartsError) throw cause
-		if (cause instanceof CanvasError) {
-			throw new EChartsError('IMAGE_LOAD_FAILED', 'CanvasPlugin rejected an ECharts image', {
-				cause,
-			})
-		}
-		throw new EChartsError('IMAGE_LOAD_FAILED', 'ECharts image loading failed', { cause })
-	}
-}
-
-async function flushWithImages(chart: EChartsType, scope: RenderScope): Promise<void> {
-	for (let pass = 0; pass < 100; pass += 1) {
-		if (scope.signal.aborted) throw abortReason(scope.signal)
-		chart.getZr().flush()
-		if (scope.pendingImages.size === 0) return
-		await waitForSignal(Promise.all(scope.pendingImages), scope.signal)
-	}
-	throw new EChartsError('RENDER_FAILED', 'ECharts image loading did not settle after 100 passes')
-}
-
-function rewriteDataUrls(option: EChartsOption, scope: RenderScope): EChartsOption {
-	const seen = new WeakMap<object, unknown>()
-	return rewriteValue(option, scope, seen) as EChartsOption
-}
-
-function rewriteValue(
-	value: unknown,
-	scope: RenderScope,
-	seen: WeakMap<object, unknown>,
-	property?: string,
-): unknown {
-	if (typeof value === 'string') {
-		if (value.startsWith('image://data:')) return rewriteDataUrlString(value, scope)
-		return property === 'image' && value.startsWith('data:')
-			? rewriteDataUrlString(value, scope)
-			: value
-	}
-	if (!value || typeof value !== 'object') return value
-	const existing = seen.get(value)
-	if (existing !== undefined) return existing
-	if (Array.isArray(value)) {
-		const result: unknown[] = []
-		seen.set(value, result)
-		for (const item of value) result.push(rewriteValue(item, scope, seen, property))
-		return result
-	}
-	if (!isPlainRecord(value)) return value
-	const result: Record<string, unknown> = {}
-	seen.set(value, result)
-	for (const [key, item] of Object.entries(value)) {
-		Object.defineProperty(result, key, {
-			configurable: true,
-			enumerable: true,
-			value: rewriteValue(item, scope, seen, key),
-			writable: true,
-		})
-	}
-	return result
-}
-
-function rewriteDataUrlString(value: string, scope: RenderScope): string {
-	if (value.startsWith('data:')) return registerImageSource(scope, value)
-	if (value.startsWith('image://data:')) {
-		return `image://${registerImageSource(scope, value.slice('image://'.length))}`
-	}
-	return value
-}
-
-function registerImageSource(scope: RenderScope, source: string): string {
-	const existing = scope.imageKeys.get(source)
-	if (existing) return existing
-	const bytes = decodeDataUrl(source, scope.maxDataUrlBytes)
-	const key = `pluxel-image:${scope.renderId}:${scope.nextImageId++}`
-	scope.imageKeys.set(source, key)
-	scope.imageSources.set(key, bytes)
-	return key
-}
-
-function resolveImageSource(scope: RenderScope, source: string): Uint8Array {
-	const registered = scope.imageSources.get(source)
-	if (registered) return registered
-	if (source.startsWith('data:')) return decodeDataUrl(source, scope.maxDataUrlBytes)
-	throw new EChartsError(
-		'UNSUPPORTED_IMAGE_SOURCE',
-		'ECharts server rendering accepts data URL strings or caller-decoded Image objects; fetch remote images before render()',
-	)
-}
-
-function decodeDataUrl(source: string, maxBytes: number): Uint8Array {
-	if (source.length > maxBytes * 4 + 4_096) {
-		throw new EChartsError(
-			'IMAGE_SOURCE_TOO_LARGE',
-			`Image data URL exceeds the configured ${maxBytes} byte limit`,
-		)
-	}
-	const comma = source.indexOf(',')
-	if (!source.startsWith('data:') || comma < 5) {
-		throw new EChartsError('INVALID_IMAGE_SOURCE', 'Image source is not a valid data URL')
-	}
-	const metadata = source.slice(5, comma)
-	const payload = source.slice(comma + 1)
-	let bytes: Buffer
-	try {
-		const base64 = metadata
-			.split(';')
-			.some((token) => token.trim().toLocaleLowerCase('en-US') === 'base64')
-		if (base64) {
-			const compact = payload.replaceAll(/\s/gu, '')
-			if (!/^[A-Za-z0-9+/]*={0,2}$/u.test(compact) || compact.length % 4 === 1) {
-				throw new TypeError('Invalid base64 payload')
-			}
-			bytes = Buffer.from(compact, 'base64')
-		} else {
-			bytes = decodePercentEncodedBytes(payload)
-		}
-	} catch (cause) {
-		throw new EChartsError('INVALID_IMAGE_SOURCE', 'Image data URL payload is invalid', { cause })
-	}
-	if (bytes.byteLength <= 0) {
-		throw new EChartsError('INVALID_IMAGE_SOURCE', 'Image data URL payload is empty')
-	}
-	if (bytes.byteLength > maxBytes) {
-		throw new EChartsError(
-			'IMAGE_SOURCE_TOO_LARGE',
-			`Image data URL decodes to ${bytes.byteLength} bytes; the configured limit is ${maxBytes}`,
-		)
-	}
-	return bytes
-}
-
-function decodePercentEncodedBytes(payload: string): Buffer {
-	const source = Buffer.from(payload, 'utf8')
-	const decoded = Buffer.allocUnsafe(source.byteLength)
-	let writeOffset = 0
-	for (let readOffset = 0; readOffset < source.byteLength; readOffset += 1) {
-		const byte = source[readOffset]!
-		if (byte !== 0x25) {
-			decoded[writeOffset++] = byte
-			continue
-		}
-		if (readOffset + 2 >= source.byteLength) throw new TypeError('Incomplete percent escape')
-		const high = hexValue(source[readOffset + 1]!)
-		const low = hexValue(source[readOffset + 2]!)
-		if (high < 0 || low < 0) throw new TypeError('Invalid percent escape')
-		decoded[writeOffset++] = high * 16 + low
-		readOffset += 2
-	}
-	return decoded.subarray(0, writeOffset)
-}
-
-function hexValue(byte: number): number {
-	if (byte >= 0x30 && byte <= 0x39) return byte - 0x30
-	if (byte >= 0x41 && byte <= 0x46) return byte - 0x41 + 10
-	if (byte >= 0x61 && byte <= 0x66) return byte - 0x61 + 10
-	return -1
-}
-
 function normalizeThemeName(value: unknown): string {
 	if (typeof value !== 'string') throw new EChartsError('INVALID_THEME', 'Theme name must be text')
 	const name = value.trim()
@@ -770,8 +488,9 @@ function cloneThemeValue(value: unknown, seen: WeakSet<object>, depth: number): 
 	if (value === null) return null
 	if (typeof value === 'string' || typeof value === 'boolean') return value
 	if (typeof value === 'number') {
-		if (!Number.isFinite(value))
+		if (!Number.isFinite(value)) {
 			throw new EChartsError('INVALID_THEME', 'Theme numbers must be finite')
+		}
 		return value
 	}
 	if (!value || typeof value !== 'object') {
@@ -810,14 +529,8 @@ function themeWithDefaultFont(theme: EChartsTheme, cssFamily: string): EChartsTh
 	})
 }
 
-function applyOptionDefaultFont(option: EChartsOption, cssFamily: string): EChartsOption {
-	const record = option as unknown as Record<string, unknown>
-	const textStyle = isPlainRecord(record.textStyle) ? record.textStyle : {}
-	if (typeof textStyle.fontFamily === 'string' && textStyle.fontFamily.trim()) return option
-	return {
-		...option,
-		textStyle: { fontFamily: cssFamily, ...textStyle },
-	}
+function rendererFontFamily(cssFamily: string, revision: number): string {
+	return `${cssFamily}, "__pluxel_font_revision_${revision}"`
 }
 
 function deepFreeze<T>(value: T): T {
@@ -855,8 +568,11 @@ function normalizeOutput(
 	return Object.freeze({ format, ...(quality === undefined ? {} : { quality }) })
 }
 
-function mediaTypeFor(format: 'png' | 'jpeg' | 'webp'): EChartsRenderResult['mediaType'] {
-	return format === 'png' ? 'image/png' : format === 'jpeg' ? 'image/jpeg' : 'image/webp'
+function toPublicResult(result: RenderEngineResult): EChartsRenderResult {
+	return Object.freeze({
+		...result,
+		data: Buffer.from(result.data),
+	})
 }
 
 function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{
@@ -883,21 +599,6 @@ function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readon
 	})
 }
 
-async function waitForSignal<T>(task: Promise<T>, signal: AbortSignal): Promise<T> {
-	if (signal.aborted) throw abortReason(signal)
-	let rejectAbort!: (reason: Error) => void
-	const aborted = new Promise<never>((_resolve, reject) => {
-		rejectAbort = reject
-	})
-	const listener = () => rejectAbort(abortReason(signal))
-	signal.addEventListener('abort', listener, { once: true })
-	try {
-		return await Promise.race([task, aborted])
-	} finally {
-		signal.removeEventListener('abort', listener)
-	}
-}
-
 function abortReason(signal: AbortSignal): Error {
 	return signal.reason instanceof Error
 		? signal.reason
@@ -912,5 +613,5 @@ function hasControlCharacters(value: string): boolean {
 	return false
 }
 
-export { EChartsConfig }
-export type { EChartsOption, EChartsPluginConfig, SetOptionOpts }
+export { EChartsConfig, EChartsError }
+export type { EChartsErrorCode, EChartsOption, EChartsPluginConfig, SetOptionOpts }

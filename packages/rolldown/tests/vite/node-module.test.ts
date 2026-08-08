@@ -44,4 +44,48 @@ describe('buildNodeModule', () => {
 			).rejects.toThrow(message)
 		}
 	})
+
+	it('preserves a directly declared native package as the only non-builtin residual', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ private: true }),
+			'plugin/package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
+			'plugin/task.ts': "import native from 'fake-native'\nexport default () => native\n",
+			'plugin/node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '1.0.0',
+				main: 'index.js',
+				napi: { binaryName: 'fake' },
+			}),
+			'plugin/node_modules/fake-native/index.js': 'module.exports = 42\n',
+		})
+		const outFile = `${fixture.path}/dist/task.mjs`
+		await buildNodeModule({
+			root: fixture.path,
+			entryPath: `${fixture.path}/plugin/task.ts`,
+			outFile,
+		})
+		const output = await readFile(outFile, 'utf8')
+		expect(output).toMatch(/from ["']fake-native["']/)
+	})
+
+	it('rejects an imported native package that is not a direct dependency', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ dependencies: {} }),
+			'task.ts': "import native from 'fake-native'\nexport default () => native\n",
+			'node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '1.0.0',
+				main: 'index.js',
+				napi: { binaryName: 'fake' },
+			}),
+			'node_modules/fake-native/index.js': 'module.exports = 42\n',
+		})
+		await expect(
+			buildNodeModule({
+				root: fixture.path,
+				entryPath: `${fixture.path}/task.ts`,
+				outFile: `${fixture.path}/dist/task.mjs`,
+			}),
+		).rejects.toThrow('must be declared directly')
+	})
 })

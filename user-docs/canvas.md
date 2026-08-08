@@ -126,6 +126,8 @@ host.cfg(CanvasPlugin).set({
 ```
 
 默认 pixel budget 对应 64 MiB raw RGBA。超出边界会在 factory 返回前抛出带稳定 `code` 的 `CanvasError`。
+需要把纯数据渲染任务交给 `ctx.workers` 时，先用 `assertDimensions(width, height)` 在主线程做无分配校验，并把只读
+`canvas.limits` snapshot 传给 worker adapter 在线程内复验；不要把 native Canvas/Image 本身作为 task input。
 返回值是 caller-owned native object，由 GC 管理；provider stop 不会隐式销毁已经返回的 Canvas/Image。原生 Canvas 的
 `width` / `height` 仍可由调用方修改，因此 factory budget 不应被误解成对后续所有原生 mutation 的代理。
 

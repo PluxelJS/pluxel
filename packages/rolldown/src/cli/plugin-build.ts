@@ -17,6 +17,13 @@ export type PluginBuildPipelineOptions = {
 	root: string
 	lint?: boolean
 	artifactBuildDir?: string
+	node?: {
+		minify?: boolean
+		/** @internal Static applications use this to trace native worker artifacts. */
+		onNativeResidual?: (name: string, resolvedEntry: string) => void
+		/** @internal Static applications clear native worker facts between generations. */
+		onNativeResidualReset?: () => void
+	}
 	workbench?:
 		| false
 		| {
@@ -76,6 +83,7 @@ function createPipeline(
 						: {
 								minify: workbenchOptions.minify,
 							},
+				node: options.node,
 			}),
 			...toPluginArray(options.additionalPlugins),
 			decoratorOutputGuardPlugin(),

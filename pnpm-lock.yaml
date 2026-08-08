@@ -482,6 +482,9 @@ catalogs:
     s3mini:
       specifier: ^1.0.0
       version: 1.0.0
+    tinypool:
+      specifier: ^2.1.0
+      version: 2.1.0
     tsdown:
       specifier: ^0.22.5
       version: 0.22.5
@@ -795,6 +798,9 @@ importers:
       superjson:
         specifier: ^2.2.6
         version: 2.2.6
+      tinypool:
+        specifier: 'catalog:'
+        version: 2.1.0
       valibot:
         specifier: ^1.2.0
         version: 1.4.2(typescript@6.0.3)
@@ -1208,6 +1214,9 @@ importers:
 
   plugins/echarts:
     dependencies:
+      '@napi-rs/canvas':
+        specifier: 'catalog:'
+        version: 1.0.3
       '@pluxel/canvas':
         specifier: workspace:*
         version: link:../canvas
@@ -1603,9 +1612,6 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
-      tinypool:
-        specifier: ^2.1.0
-        version: 2.1.0
       tsdown:
         specifier: 'catalog:'
         version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)

@@ -1,60 +1,58 @@
 # ECharts plugin design
 
-`@pluxel/echarts` turns Apache ECharts' browser-oriented Canvas integration into a bounded,
-caller-aware server capability without making ECharts a runtime special case.
+`@pluxel/echarts` is the first consumer of Pluxel's shared worker-task capability. ECharts is not a
+runtime special case: the plugin declares a typed worker artifact and submits cloneable jobs through
+`ctx.workers`, while runtime owns thread admission and lifecycle.
 
-## Required capabilities and render lifecycle
+## Execution boundary
 
-- `CanvasPlugin` and `FontsPlugin` are direct constructor dependencies. Canvas owns native factory,
-  decode, dimensions and pixels; Fonts owns managed files, native font keys and default selection.
-- `render()` is the resource boundary: validate input, allocate the physical DPR canvas, enter a
-  render-local platform scope, initialize ECharts with `ssr: true`, set the option, flush/load/flush,
-  encode, then dispose the ECharts instance in `finally`.
-- The ECharts instance is not returned. A raw long-lived instance could invoke process-global
-  platform callbacks outside its caller scope and would make disposal ownership ambiguous.
-- Caller/provider stop aborts image waits. Native image decode and encode cannot be interrupted once
-  submitted, so cancellation stops waiting and discards late results rather than claiming to stop
-  native work.
+- `execution: 'worker'` is the default. The whole synchronous path—ECharts layout, text measurement,
+  ZRender flush and native encoding—runs off the main event loop. Moving only `encode()` would leave
+  most blocking work behind.
+- Native Canvas/Image instances cannot cross a worker boundary. A job contains normalized option,
+  resolved theme, output policy, current default-font family/revision, and a detached Canvas resource
+  limit snapshot. The worker reconstructs native objects and rechecks all allocation/decode limits.
+- `execution: 'inline'` is explicit compatibility for formatter functions and native objects. Clone
+  failure never silently changes execution semantics.
+- Worker cancellation terminates its thread. Jobs must therefore be independently retryable and must
+  not own external side effects.
+
+## Pool and artifact ownership
+
+ECharts does not depend on Tinypool. Its module-level `defineWorkerTask()` is lowered by the same
+content-addressed Node artifact compiler used in development and production. The artifact bundles
+ECharts/engine JavaScript and preserves only the directly declared `@napi-rs/canvas` native package
+as a controlled residual import. HMR gives new jobs the new URL while in-flight jobs finish on the
+old module; runtime's idle worker retirement bounds old ESM caches.
+
+The root worker service owns one lazy pool, bounded global/per-owner queues, round-robin scheduling,
+owner abort/drain and shutdown. This lets future Takumi or other CPU/native plugins share the same
+host thread budget instead of multiplying `availableParallelism()` per plugin.
+
+## Fonts and Canvas
+
+`FontsPlugin` remains the only font manager. ECharts consumes its current selection and registry; it
+does not own upload files or choose from an independent font catalog. `@napi-rs/canvas` 1.0.x exposes
+one process-wide native font registry across worker threads, while every job still carries the
+selected CSS family and revision so selection and cache invalidation are deterministic. Workbench
+changes affect subsequent jobs. For a concrete system/registered selection the worker also verifies
+`GlobalFonts.has(family)` before rendering, so an upstream change in thread-sharing behavior fails
+clearly instead of silently falling back to another font.
+
+`CanvasPlugin` remains the resource-policy owner. Main-thread validation uses `assertDimensions()`;
+the worker receives `canvas.limits` and applies the same dimension, pixel and image-byte ceilings
+before native allocation. This narrow snapshot is not a second Canvas capability.
 
 ## Process-global ECharts state
 
-`setPlatformAPI()` mutates ZRender's process-global singleton and has no restore contract. The
-installed callbacks are therefore stable, inert outside `render()`, and resolve Canvas capability
-through Node `AsyncLocalStorage`. The versioned storage is kept behind `Symbol.for()` so HMR/module
-re-evaluation reuses the same routing scope instead of leaving callbacks bound to an obsolete module
-instance. Concurrent renders receive separate Canvas/default-font/image maps; no mutable global
-“current render” variable exists.
+Each worker has its own ECharts module singleton. `setPlatformAPI()` installs stable callbacks once
+per JavaScript realm and resolves the active adapter through `AsyncLocalStorage`, so concurrent inline
+renders and future per-worker concurrency cannot use a mutable global “current render”. The ECharts
+instance is always disposed and never returned.
 
-ECharts' theme table is also global and only supports overwrite, not unregister. `registerTheme()`
-on this plugin instead stores a validated, frozen JSON clone under the current caller Context and
-passes a theme object directly to `echarts.init()`. The caller lease provides deterministic manual
-and lifecycle cleanup even though upstream cannot clean its own registry. Built-in `default` and
-`dark` remain available without exposing arbitrary third-party global registrations.
+Named themes are caller-owned frozen JSON snapshots and are passed directly to `echarts.init()`;
+they never enter ECharts' irreversible global theme registry. Data URL images are rewritten to short
+render-local keys, decoded under Canvas limits, and never trigger implicit network/file I/O.
 
-ECharts/ZRender retains an upstream LRU of at most 50 loaded Image objects. Plain option data URLs
-are rewritten to short unique keys so encoded source text is not used as a process-global cache key;
-the native decoded objects still follow that bounded upstream LRU. Data URL values created later by
-arbitrary formatter callbacks cannot be rewritten in advance.
-
-## Font and image semantics
-
-At render time, a default theme gets `FontsPlugin.defaultFont.cssFamily`. Registered/inline themes
-with an explicit global family keep it, and option-level text style remains highest priority.
-Workbench changes therefore affect future renders; existing prepared options and encoded results do
-not mutate. ECharts mounts `FontsSelectionPort` only as a consumer-selected placement: its resource
-is a provider-owned candidate/default projection and cannot upload or delete fonts. The canonical
-manager View and managed collection remain owned by FontsPlugin.
-
-Only data URL strings are accepted by the platform loader. The option walker rewrites `image://data:`
-values and plain `image` fields, clones arrays and plain records, preserves functions/typed arrays/native
-Canvas objects by identity, deduplicates equal image sources inside one render, and sends decoded bytes
-through `CanvasPlugin.decodeImage()`. Ordinary label/data text beginning with `data:` remains text.
-Network and file loading remain caller-owned I/O.
-
-## Why core/runtime is unchanged
-
-Required dependencies, Context-bound views, effects, AbortSignal, config and typed Workbench Ports
-already express the needed ownership. The reusable lesson is documented in the plugin author model:
-irreversible third-party globals should contain stable routing callbacks or immutable implementation
-facts, while caller registrations and mutable state remain in Context-owned registries. ECharts does
-not justify a runtime-specific hook.
+Worker threads are an event-loop isolation and resource-admission mechanism, not a security boundary.
+A native crash can still terminate the process.

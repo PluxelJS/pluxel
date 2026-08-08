@@ -7,7 +7,7 @@
 plugin source
 	├─ constructor dependencies
 	├─ config / feature declarations
-	├─ separately-built Node module declarations
+	├─ separately-built Node module / worker task declarations
 	└─ Workbench Contract / Extension declarations
           ↓
 @pluxel/core: committed graph / DI / lifecycle / effects
@@ -105,6 +105,11 @@ Workbench 不根据 dependency graph 隐式投影 provider View。
 declaration key、build revision 和 owner ID 是三个独立身份。相同 declaration 的多个 owner/consumer 共用
 build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包含单文件 ESM，不定义 worker、线程或任务协议。
 
+`defineWorkerTask()` 是同一 artifact primitive 上的 typed specialization。`ctx.workers` 把不同插件的 cloneable CPU/native
+任务提交到 root 共享线程预算，执行 owner-aware bounded admission、round-robin、公用 cancellation 和 shutdown drain。
+插件不 direct-depend Tinypool，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的 native API
+继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。
+
 ## 包边界
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；
@@ -113,6 +118,7 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 - `@pluxel/commands`：独立的 command 定义、validation、registry 与 carrier projection 内核；
 - `@pluxel/runtime/database`：server-only database definition 与 owner-bound handle；
 - `@pluxel/runtime` 的 `NodeModuleService`：Node module owner lease、staged consumer 与 packaged resolver；
+- `@pluxel/runtime` 的 `WorkerTaskService`：root shared pool、fair bounded admission 与 owner cancellation；
 - `@pluxel/runtime/workbench/contract`：browser-safe Workbench Contract；
 - `@pluxel/runtime/workbench`：服务端 Extension、entry 和 Binding；
 - `@pluxel/runtime/workbench/ui`：浏览器 resource client；

@@ -79,12 +79,11 @@ export class BillingPlugin extends BasePlugin {
 
 ## 单独构建的 Node module
 
-需要把另一份 TS/JS 源码图作为独立 Node ESM 加载，或交给 Tinypool/`worker_threads` 时，在 module level 声明，
+需要把另一份 TS/JS 源码图作为独立 Node ESM 加载时，在 module level 声明，
 并在当前插件 Context 中消费：
 
 ```ts
 import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
-import { Tinypool } from 'tinypool'
 
 const taskModule = defineNodeModule(import.meta.url, './task.ts')
 
@@ -92,8 +91,8 @@ const taskModule = defineNodeModule(import.meta.url, './task.ts')
 export class TaskPlugin extends BasePlugin {
 	override async init() {
 		await this.ctx.nodeModules.use(taskModule, async (url) => {
-			const pool = new Tinypool({ filename: url.href })
-			return () => pool.destroy()
+			const module = await import(url.href)
+			return module.setup()
 		})
 	}
 }
@@ -106,6 +105,44 @@ active cleanup，不保存 binding、revision 或 dispose handle。
 也可以在 callback 中直接 `import(url.href)`。artifact 是自包含单文件 Node ESM，可以使用 Node builtin 和可安全
 bundle 的普通 library；不能 value-import Pluxel runtime/core、Plugin/Context/Workbench server API，不能导入 CSS/browser
 asset，也不能嵌套声明 Plugin、Workbench 或 Node module。没有 artifact 时不会回退 inline execution。
+
+## 共享 CPU / native worker task
+
+不要让每个插件分别创建 Tinypool。能用纯数据描述、会明显阻塞 event loop 的 CPU 或 thread-safe native 工作使用 runtime
+共享池：
+
+```ts
+import { BasePlugin, defineWorkerTask, Plugin } from '@pluxel/runtime'
+
+type Input = { values: number[] }
+type Output = { total: number }
+
+const sumTask = defineWorkerTask<Input, Output>(import.meta.url, './sum-worker.ts')
+
+@Plugin({ name: 'ReportPlugin' })
+export class ReportPlugin extends BasePlugin {
+	calculate(values: number[], signal?: AbortSignal) {
+		return this.ctx.workers.run(sumTask, { values }, { signal })
+	}
+}
+```
+
+`sum-worker.ts` 是没有 Pluxel Context 的 default export：
+
+```ts
+import type { WorkerTaskHandler } from '@pluxel/runtime'
+
+const run: WorkerTaskHandler<Input, Output> = ({ values }) => ({
+	total: values.reduce((sum, value) => sum + value, 0),
+})
+
+export default run
+```
+
+输入输出遵循 structured clone；函数、闭包、native Canvas/Image、数据库连接和 Context 不能跨线程。宿主通过顶层
+`workers.maxThreads`、global/per-plugin queue limit 与 `idleTimeoutMs` 控制整个进程，不接受插件私有线程预算。取消运行中
+任务会终止对应 worker；因此网络/数据库 I/O、短调用、不可重试 side effect 或非 thread-safe binding 不应放入该池。
+Native package 必须是声明 package 的 direct dependency，并由构建器识别明确 native metadata。
 
 ## 依赖：按“缺失时能否工作”选择
 

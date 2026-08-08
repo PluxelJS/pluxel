@@ -46,6 +46,9 @@ Host catalog 至少包含 `[FontsPlugin, CanvasPlugin, BadgePlugin]`。FontsPlug
 resize，因此这些限制只保证通过插件 factory 发生的初始分配。native decode 无法中止；abort 会停止等待并丢弃迟到
 结果，底层 decode 可能继续到完成。
 
+`canvas.assertDimensions()` 可在分配前复用同一校验；`canvas.limits` 返回 detached resource snapshot，供
+`defineWorkerTask()` 这类在线程内重建 native surface 的 adapter 再次执行 host budget。它们不转移字体管理 ownership。
+
 Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareText()` / `prepareTextWithSegments()` /
 `prepareRichInline()` 负责选择 Pluxel 默认 family、检查输入预算并在 Node 上提供 native measurement context；
 `layoutWithLines()`、`measureLineStats()`、rich-inline walkers 等纯 arithmetic helper 从本包直接导出。Pretext 的共享

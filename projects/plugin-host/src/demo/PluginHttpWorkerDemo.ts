@@ -1,14 +1,12 @@
-// Read this when you need a separately-built Node module consumed by Tinypool.
+// Read this when you need a CPU-bound task on the runtime's shared worker pool.
 
-import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
+import { BasePlugin, defineWorkerTask, Plugin } from '@pluxel/runtime'
 import { workbench, workbenchDoc } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
-import { Tinypool } from 'tinypool'
 
 type WorkerStatus = {
 	enabled: boolean
-	mode: 'node-module'
-	workerUrl: string | null
+	mode: 'shared-worker'
 	note: string
 }
 
@@ -18,7 +16,10 @@ type SquareResult = {
 	mode: WorkerStatus['mode']
 }
 
-const squareWorker = defineNodeModule(import.meta.url, './PluginHttpWorkerDemo/ui/worker.ts')
+const squareWorker = defineWorkerTask<{ value: number }, { squared: number }>(
+	import.meta.url,
+	'./PluginHttpWorkerDemo/ui/worker.ts',
+)
 const d = workbenchDoc({} as const)
 const HttpWorkerUi = workbenchContract.define({
 	views: {
@@ -28,10 +29,10 @@ const HttpWorkerUi = workbenchContract.define({
 			content: d`
 					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
 
-					- \`GET /status\`: reports the active Node module artifact.
-					- \`GET /square/:value\`: invokes the artifact through Tinypool.
+					- \`GET /status\`: reports the shared worker capability.
+					- \`GET /square/:value\`: invokes the typed task through \`ctx.workers\`.
 
-					Development rebuilds and packaged/static artifacts use the same declaration and lifecycle.
+					Development rebuilds and packaged/static artifacts use the same declaration; the root runtime owns the pool.
 				`,
 		}),
 	},
@@ -40,9 +41,6 @@ const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 
 @Plugin({ name: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
-	private pool: Tinypool | null = null
-	private workerUrl: URL | null = null
-
 	override async init(): Promise<void> {
 		this.ctx.http.plugin.routes(
 			(app) =>
@@ -65,43 +63,23 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 		)
 
 		this.ctx.workbench.mount(HttpWorkerWorkbench, {})
-
-		await this.ctx.nodeModules.use(squareWorker, async (url) => {
-			const pool = new Tinypool({
-				filename: url.href,
-				minThreads: 1,
-				maxThreads: 1,
-				idleTimeout: 10_000,
-			})
-			this.pool = pool
-			this.workerUrl = url
-			return async () => {
-				if (this.pool === pool) this.pool = null
-				if (this.workerUrl === url) this.workerUrl = null
-				await pool.destroy()
-			}
-		})
 	}
 
 	// Public route behavior.
 	private async getWorkerStatus(): Promise<WorkerStatus> {
 		return {
-			enabled: this.pool !== null,
-			mode: 'node-module',
-			workerUrl: this.workerUrl?.href ?? null,
-			note: 'The Node module artifact is managed by the plugin Context lifecycle.',
+			enabled: true,
+			mode: 'shared-worker',
+			note: 'The runtime root owns lazy threads, queue limits, fairness, and plugin cancellation.',
 		}
 	}
 
 	private async square(value: number): Promise<SquareResult> {
-		const pool = this.pool
-		if (!pool) throw new Error('Node module consumer is not ready')
-
-		const result = (await pool.run({ value })) as { squared: number }
+		const result = await this.ctx.workers.run(squareWorker, { value })
 		return {
 			input: value,
 			squared: result.squared,
-			mode: 'node-module',
+			mode: 'shared-worker',
 		}
 	}
 }

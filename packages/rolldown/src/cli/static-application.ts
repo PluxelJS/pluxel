@@ -58,12 +58,27 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 		throw new Error('[static-application] only the node target is currently supported')
 	const residualDependencies = resolveResidualDependencies(options.residualDependencies)
 	const state: StaticApplicationBuildState = { residualPackages: [] }
+	const artifactNativeResiduals = new Map<string, Set<string>>()
 	const buildDir = relative(cwd, outDir) || '.'
 	const sourcePipeline = createPluginBuildPipeline({
 		root: cwd,
 		lint: options.lint,
 		artifactBuildDir: buildDir,
 		workbench: variant === 'workbench' ? { buildDir, minify: options.minify ?? true } : false,
+		node: {
+			minify: options.minify,
+			onNativeResidualReset() {
+				artifactNativeResiduals.clear()
+			},
+			onNativeResidual(name, resolvedEntry) {
+				let entries = artifactNativeResiduals.get(name)
+				if (!entries) {
+					entries = new Set()
+					artifactNativeResiduals.set(name, entries)
+				}
+				entries.add(resolvedEntry)
+			},
+		},
 	})
 
 	return {
@@ -104,6 +119,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 					...RuntimeFullTracePackages,
 					...residualDependencies.fullTrace,
 				],
+				artifactNativeResiduals,
 				onTracedPackages(packages) {
 					state.residualPackages = Object.keys(packages).sort()
 				},
@@ -128,6 +144,7 @@ function nf3ExternalsPlugin(options: {
 	declaredFullTracePackages: readonly string[]
 	conditions: string[]
 	fullTraceInclude: string[]
+	artifactNativeResiduals: ReadonlyMap<string, ReadonlySet<string>>
 	onTracedPackages(packages: Record<string, unknown>): void
 }): Plugin {
 	const include = new Set(options.include)
@@ -181,6 +198,15 @@ function nf3ExternalsPlugin(options: {
 		writeBundle: {
 			order: 'post',
 			async handler() {
+				for (const [packageName, entries] of options.artifactNativeResiduals) {
+					for (const resolved of entries) {
+						tracedPaths.add(resolved)
+						const declaredPackage = await findDeclaredPackage(resolved, packageName)
+						if (!/(^|[\\/])node_modules([\\/]|$)/.test(declaredPackage.root)) {
+							declaredWorkspacePackages.set(packageName, declaredPackage)
+						}
+					}
+				}
 				if (tracedPaths.size === 0) {
 					options.onTracedPackages({})
 					return

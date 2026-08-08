@@ -180,4 +180,74 @@ describe('pluginArtifactBuildPlugin', () => {
 		expect(artifact).toContain('answer')
 		expect(artifact).not.toContain('@pluxel/runtime')
 	})
+
+	it('lowers a worker declaration through the shared Node artifact pipeline', async () => {
+		await using fixture = await createFixture({
+			'src/index.ts':
+				"import { defineWorkerTask } from '@pluxel/runtime'\nexport const task = defineWorkerTask<number, number>(\n  import.meta.url,\n  './worker.ts',\n)\n",
+			'src/worker.ts': 'export default (value: number) => value * 2\n',
+		})
+		const bundle = await rolldown({
+			input: `${fixture.path}/src/index.ts`,
+			external: ['@pluxel/runtime'],
+			plugins: [
+				pluginArtifactBuildPlugin({
+					root: fixture.path,
+					buildDir: 'dist',
+					workbench: false,
+					node: { minify: false },
+				}),
+			],
+		})
+		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
+		await bundle.close()
+
+		const server = await readFile(`${fixture.path}/dist/index.js`, 'utf8')
+		const key = server.match(
+			/defineWorkerTask(?:<[^>]+>)?\(import\.meta\.url,\s*['"]\.\/worker\.ts['"],\s*['"]([^'"]+)/,
+		)?.[1]
+		expect(key).toMatch(/^node-[a-f\d]{16}$/)
+		const artifact = await readFile(`${fixture.path}/dist/artifacts/node/${key}.mjs`, 'utf8')
+		expect(artifact).toContain('value * 2')
+	})
+
+	it('reports controlled native worker residuals to deployment assembly', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ dependencies: { 'fake-native': '1.0.0' } }),
+			'src/index.ts':
+				"import { defineWorkerTask } from '@pluxel/runtime'\nexport const task = defineWorkerTask(import.meta.url, './worker.ts')\n",
+			'src/worker.ts': "import native from 'fake-native'\nexport default () => native\n",
+			'node_modules/fake-native/package.json': JSON.stringify({
+				name: 'fake-native',
+				version: '1.0.0',
+				main: 'index.js',
+				napi: { binaryName: 'fake' },
+			}),
+			'node_modules/fake-native/index.js': 'module.exports = 42\n',
+		})
+		const residuals: Array<{ name: string; entry: string }> = []
+		const bundle = await rolldown({
+			input: `${fixture.path}/src/index.ts`,
+			external: ['@pluxel/runtime'],
+			plugins: [
+				pluginArtifactBuildPlugin({
+					root: fixture.path,
+					buildDir: 'dist',
+					workbench: false,
+					node: {
+						minify: false,
+						onNativeResidual(name, entry) {
+							residuals.push({ name, entry })
+						},
+					},
+				}),
+			],
+		})
+		await bundle.write({ dir: `${fixture.path}/dist`, format: 'esm' })
+		await bundle.close()
+
+		expect(residuals).toEqual([
+			expect.objectContaining({ name: 'fake-native', entry: expect.stringContaining('index.js') }),
+		])
+	})
 })

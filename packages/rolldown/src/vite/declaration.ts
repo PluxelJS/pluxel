@@ -20,7 +20,7 @@ export function resolvePluginArtifactKey(
 }
 
 export function resolveNodeModuleBuildSignature(input: { minify?: boolean }): string {
-	return ['node-module-builder:2', `minify:${input.minify === false ? 'false' : 'true'}`].join('\n')
+	return ['node-module-builder:3', `minify:${input.minify === false ? 'false' : 'true'}`].join('\n')
 }
 
 function canonicalDeclarationModuleId(root: string, id: string): string {

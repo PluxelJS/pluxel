@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
 import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
@@ -6,7 +11,8 @@ import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
 } from '@pluxel/runtime/web/paths'
-import { describe, expect, it } from 'vitest'
+import { buildNodeModule } from '@pluxel/rolldown/vite/node-module'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
 	EChartsError,
 	EChartsPlugin,
@@ -19,6 +25,7 @@ class EChartsTestConsumer extends BasePlugin {
 	constructor(
 		readonly echarts: EChartsPlugin,
 		readonly canvas: CanvasPlugin,
+		readonly fonts: FontsPlugin,
 	) {
 		super()
 	}
@@ -38,7 +45,33 @@ const barOption: EChartsOption = {
 	series: [{ type: 'bar', data: [3, 7, 5] }],
 }
 
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const fontPath = findTestFont()
+let workerBuildDir: string
+let workerUrl: URL
+
+beforeAll(async () => {
+	workerBuildDir = await mkdtemp(join(packageRoot, '.pluxel-echarts-worker-test-'))
+	const outFile = join(workerBuildDir, 'worker.mjs')
+	await buildNodeModule({
+		root: packageRoot,
+		entryPath: join(packageRoot, 'src/worker.ts'),
+		outFile,
+		minify: false,
+	})
+	workerUrl = pathToFileURL(outFile)
+})
+
+afterAll(async () => {
+	await rm(workerBuildDir, { recursive: true, force: true })
+})
+
 function addEChartsHost(host: Parameters<Parameters<typeof withRuntimeHost>[0]>[0]): void {
+	const detach = host.ctx.nodeModules.attachSourceBinder(async () => ({
+		url: workerUrl,
+		dispose: () => undefined,
+	}))
+	host.ctx.effects.defer(detach)
 	host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, EChartsTestConsumer])
 	host.cfg(FontsPlugin).enable()
 }
@@ -158,6 +191,46 @@ describe('EChartsPlugin', () => {
 		)
 	})
 
+	it('requires explicit inline execution for formatter functions', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const charts = host.require(EChartsTestConsumer).echarts
+				const option: EChartsOption = {
+					...barOption,
+					tooltip: { formatter: () => 'inline' },
+				}
+				await expect(charts.render({ width: 240, height: 120, option })).rejects.toMatchObject({
+					code: 'WORKER_INPUT_UNSUPPORTED',
+				})
+				await expect(
+					charts.render({ width: 240, height: 120, option, execution: 'inline' }),
+				).resolves.toMatchObject({ mediaType: 'image/png' })
+			},
+			{ workbench: false },
+		)
+	})
+
+	it.skipIf(!fontPath)('uses a main-thread managed font inside the Canvas worker', async () => {
+		await withRuntimeHost(
+			async (host) => {
+				addEChartsHost(host)
+				await host.commit()
+				const consumer = host.require(EChartsTestConsumer)
+				const family = `ECharts Worker ${randomUUID()}`
+				consumer.fonts.registerFromPath({ path: fontPath!, family })
+				await consumer.fonts.selectionManager().setDefaultFamily(family)
+
+				expect(consumer.echarts.defaultFont.family).toBe(family)
+				await expect(
+					consumer.echarts.render({ width: 240, height: 120, option: barOption }),
+				).resolves.toMatchObject({ mediaType: 'image/png' })
+			},
+			{ workbench: false },
+		)
+	})
+
 	it('revokes theme handles and cached capability views with the caller generation', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -205,3 +278,11 @@ describe('EChartsPlugin', () => {
 		})
 	})
 })
+
+function findTestFont(): string | undefined {
+	return [
+		'/usr/share/fonts/dejavu/DejaVuSans.ttf',
+		'/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+		'/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf',
+	].find((path) => existsSync(path))
+}
