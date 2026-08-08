@@ -56,6 +56,16 @@ Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 
 layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
 live query 和 grant；rollback 通过重新 mount 获得新 lease。
 
+constructor 注入的 dependency 是覆盖 `ctx.caller` 的轻量 prototype view。顶层字段读取会委托 provider instance，
+但在 caller method 中直接给 `this.someField` 赋值会落到当前 view。provider-wide mutable state 因此放在 constructor
+创建的稳定 state/registry 对象中并修改其内容；caller-owned state 继续以 `Context` 为 key。不要用顶层标量赋值暗中
+表达共享 mutation，也不要依赖可变全局 current caller。
+
+第三方库只有不可撤销的进程级 registration/platform callback 时，全局部分只保存稳定且在无 active scope 时 inert 的
+路由实现；caller registration、mutable resource 与 cleanup 继续保存在以 `Context` 为 key 的 registry。并发异步调用
+使用平台原生 async context 传递 invocation scope，不使用可变 module-level current owner。若第三方 API 接受对象而非
+全局名称，优先直接传 caller-owned snapshot，避免把无法 unregister 的外部表伪装成可回收 Pluxel resource。
+
 `ctx.database.use()` 保留 immutable plugin owner，并在返回 handle 前解析 active database instance、完成 migration prepare。
 handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；stop/replacement 撤销旧 generation handle。默认
 `migrations` evolution 用 checked immutable history；显式 `reset-on-schema-change` 由 compiler 从 schema snapshot 派生 lineage，

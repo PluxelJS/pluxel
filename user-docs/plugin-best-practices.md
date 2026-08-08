@@ -40,6 +40,26 @@ export class OrdersPlugin extends BasePlugin {
 - `init()` 验证启动条件、创建资源、注册业务能力；无法提供核心能力时直接抛错。
 - `ctx.workbench.mount()` 只挂载 Workbench resource Binding，业务行为不得依赖其返回值是否存在。
 
+constructor dependency 是带 `ctx.caller` 的轻量 view。provider method 中的顶层标量赋值属于当前 caller view，
+不应拿来表达跨 consumer 的共享 mutation。provider-wide 状态放进稳定对象并修改对象内容；caller-owned 状态用
+`Context` 作 key：
+
+```ts
+import { BasePlugin, type Context } from '@pluxel/runtime'
+
+class SharedProvider extends BasePlugin {
+	private readonly state = { defaultName: 'system' }
+	private readonly callers = new Map<Context, unknown>()
+
+	setDefault(name: string) {
+		this.state.defaultName = name
+	}
+}
+```
+
+不要在 caller 调用路径写 `this.defaultName = name` 并期待其他 consumer 看到新值。provider stop/replacement 仍由
+effects 清理共享对象持有的外部资源。
+
 ## Required、optional 与 feature
 
 | 意图                                 | 标准写法                                                       | 不要这样写                            |
@@ -67,6 +87,9 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 - cleanup 必须幂等，并能处理部分初始化。
 - timer、watcher、queue consumer 的单次错误属于业务错误，应捕获、结构化记录并按业务语义重试。
 - 插件不得调用 `process.exit()`；插件报告事实，宿主决定退出、告警或降级。
+- 第三方库若只有无法 unregister 的进程全局 callback/registry，全局 callback 保持稳定且无 active invocation 时拒绝
+  工作；caller 状态仍放在 Context-owned registry。并发异步调用用 async context 传递 scope，不写 module-level
+  `currentCaller`。第三方 API 能直接接收配置对象时，传 caller-owned snapshot，不把对象塞进不可回收的全局名称表。
 
 ## 保持业务面独立
 
