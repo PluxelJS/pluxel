@@ -23,13 +23,16 @@ export type EChartsWorkerOutput =
 			error: Readonly<{ code: EChartsErrorCode; message: string }>
 	  }>
 
+const workerSignal = new AbortController().signal
+
 const handler = async (input: EChartsWorkerInput): Promise<EChartsWorkerOutput> => {
 	try {
 		const canvas = createCanvasWorkerAdapter(input.canvas)
 		const result = await renderECharts(
 			input.render,
 			canvas as unknown as RenderCanvasAdapter,
-			new AbortController().signal,
+			workerSignal,
+			'owned',
 		)
 		return { ok: true, result }
 	} catch (cause) {

@@ -12,18 +12,38 @@ type TaskOutput = Readonly<{
 	ended: number
 }>
 
+type TransferTaskInput = Readonly<{ bytes: Uint8Array }>
+type TransferTaskOutput = Readonly<{
+	byteLength: number
+	first: number
+	last: number
+	threadId: number
+}>
+
 const artifactKey = 'worker-task'
 const declaration = (defineWorkerTask as unknown as (...args: unknown[]) => unknown)(
 	import.meta.url,
 	'./fixtures/worker-task.mjs',
 	artifactKey,
 ) as ReturnType<typeof defineWorkerTask<TaskInput, TaskOutput>>
+const transferDeclaration = (defineWorkerTask as unknown as (...args: unknown[]) => unknown)(
+	import.meta.url,
+	'./fixtures/worker-transfer.mjs',
+	'worker-transfer',
+) as ReturnType<typeof defineWorkerTask<TransferTaskInput, TransferTaskOutput>>
 const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs', import.meta.url)))
 
 @Plugin({ name: 'WorkerTaskConsumerA' })
 class WorkerTaskConsumerA extends BasePlugin {
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input, { signal })
+	}
+
+	transfer(
+		input: TransferTaskInput,
+		transfer: readonly ArrayBuffer[],
+	): Promise<TransferTaskOutput> {
+		return this.ctx.workers.run(transferDeclaration, input, { transfer })
 	}
 }
 
@@ -71,6 +91,48 @@ describe('WorkerTaskService', () => {
 		}
 	})
 
+	it('moves explicitly transferred buffers without changing the shared pool contract', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const bytes = new Uint8Array(8 * 1024 * 1024)
+			bytes[0] = 17
+			bytes[bytes.byteLength - 1] = 29
+			const buffer = bytes.buffer
+			const result = host.require(WorkerTaskConsumerA).transfer({ bytes }, [buffer])
+
+			expect(buffer.byteLength).toBe(0)
+			await expect(result).resolves.toMatchObject({
+				byteLength: 8 * 1024 * 1024,
+				first: 17,
+				last: 29,
+				threadId: expect.any(Number),
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('validates transfer ownership before detaching caller buffers', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const bytes = new Uint8Array(16)
+			const buffer = bytes.buffer
+
+			await expect(
+				host.require(WorkerTaskConsumerA).transfer({ bytes }, [buffer, buffer]),
+			).rejects.toMatchObject<Partial<WorkerTaskError>>({ code: 'INVALID_INPUT' })
+			expect(buffer.byteLength).toBe(16)
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('shares one budget and dispatches queued owners round-robin', async () => {
 		const host = createWorkerHost({ maxThreads: 1 })
 		try {
@@ -98,6 +160,60 @@ describe('WorkerTaskService', () => {
 			expect(completed).toEqual(['a1', 'b1', 'a2'])
 			expect(new Set(results.map((result) => result.threadId)).size).toBe(1)
 		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('snapshots queued inputs synchronously before callers can mutate them', async () => {
+		const host = createWorkerHost({ maxThreads: 1 })
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			const running = consumer.run({ label: 'running', delay: 80 })
+			const queuedInput = { label: 'snapshot', delay: 0 }
+			const queued = consumer.run(queuedInput)
+			queuedInput.label = 'mutated'
+
+			await running
+			await expect(queued).resolves.toMatchObject({ label: 'snapshot' })
+		} finally {
+			await host.dispose()
+		}
+	})
+
+	it('bounds tasks while their shared artifact route is still resolving', async () => {
+		const host = createWorkerHost({
+			maxThreads: 1,
+			maxQueuedTasks: 1,
+			maxQueuedTasksPerPlugin: 8,
+		})
+		let releaseRoute!: () => void
+		const routeGate = new Promise<void>((resolve) => void (releaseRoute = resolve))
+		const detach = host.ctx.nodeModules.attachSourceBinder(async () => {
+			await routeGate
+			return {
+				url: new URL('./fixtures/worker-task.mjs', import.meta.url),
+				dispose: () => undefined,
+			}
+		})
+		try {
+			host.add(WorkerTaskConsumerA)
+			host.cfg(WorkerTaskConsumerA).enable()
+			await host.commit()
+			const consumer = host.require(WorkerTaskConsumerA)
+			const reserved = consumer.run({ label: 'reserved', delay: 0 })
+			const queued = consumer.run({ label: 'queued', delay: 0 })
+
+			await expect(consumer.run({ label: 'rejected', delay: 0 })).rejects.toMatchObject<
+				Partial<WorkerTaskError>
+			>({ code: 'QUEUE_FULL' })
+			releaseRoute()
+			await expect(Promise.all([reserved, queued])).resolves.toHaveLength(2)
+		} finally {
+			releaseRoute()
+			detach()
 			await host.dispose()
 		}
 	})
@@ -142,6 +258,11 @@ describe('WorkerTaskService', () => {
 			await expect(b.run({ label: 'rejected', delay: 0 })).rejects.toMatchObject<
 				Partial<WorkerTaskError>
 			>({ code: 'QUEUE_FULL' })
+			const bytes = new Uint8Array(16)
+			await expect(a.transfer({ bytes }, [bytes.buffer as ArrayBuffer])).rejects.toMatchObject<
+				Partial<WorkerTaskError>
+			>({ code: 'QUEUE_FULL' })
+			expect(bytes.byteLength).toBe(16)
 			await Promise.all([running, queued])
 		} finally {
 			await host.dispose()

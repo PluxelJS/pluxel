@@ -41,6 +41,8 @@ Host catalog 至少包含 `[FontsPlugin, CanvasPlugin, BadgePlugin]`。FontsPlug
 `createSvgCanvas()` 返回原生 SVG Canvas，`mode` 是上游三个互斥 enum variant，默认 `compact`。
 `decodeImage(bytes, { signal })` 只接受已经取得的 bytes；远程下载应先通过
 `@pluxel/wretch` 或领域 HTTP client 完成。
+decode 默认复制 borrowed bytes；render-local buffer 不再复用时可传 `dataOwnership: 'owned'` 永久移交 storage，避免输入
+copy。owned 数据在 abort 或 decode failure 后也不会返还，调用方不得再次读取或修改。
 
 默认 factory 限制为 8192×8192、16,777,216 pixels 和 32 MiB encoded image。返回的原生 Canvas 仍允许调用方自行
 resize，因此这些限制只保证通过插件 factory 发生的初始分配。native decode 无法中止；abort 会停止等待并丢弃迟到
@@ -61,6 +63,8 @@ export default async ({ canvas: snapshot }: Input) => {
 adapter 在线程内创建原生 Canvas/Image/SVG、解码图片并重新执行 host budget；具体选择的已安装 family 也会在 native
 registry 中验证。需要 Pretext 时单独从 `@pluxel/canvas/worker/pretext` 导入 `createCanvasWorkerTextLayout()`，避免 ECharts
 等不使用 Pretext 的 artifact 承担其代码和 cache 成本。两个子入口都没有 Plugin、Context、Workbench 或字体 mutation。
+同一线程内连续使用相同 limits/font revision 时，normalized snapshot 和无状态 adapter 会复用；每次绘制的原生 surface
+仍由当前任务独立创建和拥有。
 
 Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareText()` / `prepareTextWithSegments()` /
 `prepareRichInline()` 负责选择 Pluxel 默认 family、检查输入预算并在 Node 上提供 native measurement context；

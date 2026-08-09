@@ -12,6 +12,9 @@ runtime special case: the plugin declares a typed worker artifact and submits cl
 - Native Canvas/Image instances cannot cross a worker boundary. A job contains normalized option,
   resolved theme, output policy, and `CanvasPlugin.workerSnapshot`. The worker reconstructs native
   objects through `@pluxel/canvas/worker` and rechecks allocation, decode and font availability.
+- The worker owns its structured-cloned job, so data-URL rewriting and default-font injection update
+  that private option graph in place. Inline rendering keeps the borrowed-input clone path. Neither
+  mode mutates the caller's option.
 - `execution: 'inline'` is explicit compatibility for formatter functions and native objects. Clone
   failure never silently changes execution semantics.
 - Worker cancellation terminates its thread. Jobs must therefore be independently retryable and must
@@ -53,6 +56,11 @@ Each worker has its own ECharts module singleton. `setPlatformAPI()` installs st
 per JavaScript realm and resolves the active adapter through `AsyncLocalStorage`, so concurrent inline
 renders and future per-worker concurrency cannot use a mutable global “current render”. The ECharts
 instance is always disposed and never returned.
+
+The realm caches the validated platform state, current Canvas worker adapter, and default-font theme
+projection. Image maps remain lazy for charts without images; repeated use of one render-local source
+shares a single owned native decode. Encoded worker bytes are wrapped as a zero-copy Buffer view after
+transport instead of being copied a second time.
 
 Named themes are caller-owned frozen JSON snapshots and are passed directly to `echarts.init()`;
 they never enter ECharts' irreversible global theme registry. Data URL images are rewritten to short

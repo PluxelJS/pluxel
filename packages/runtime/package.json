@@ -114,6 +114,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts",
+		"bench:workers": "pnpm exec vitest bench bench/worker-task.bench.ts",
 		"build": "pnpm run build:web && pnpm run build:lib",
 		"build:lib": "tsdown",
 		"build:web": "vite build"

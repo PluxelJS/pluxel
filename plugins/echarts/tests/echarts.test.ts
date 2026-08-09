@@ -152,11 +152,19 @@ describe('EChartsPlugin', () => {
 					},
 				})
 
+				const rasterOption = imageOption(dataUrl)
+				const vectorOption = imageOption(svgDataUrl)
 				const concurrent = await Promise.all([
-					consumer.echarts.render({ width: 32, height: 32, option: imageOption(dataUrl) }),
-					consumer.echarts.render({ width: 48, height: 24, option: imageOption(svgDataUrl) }),
+					consumer.echarts.render({ width: 32, height: 32, option: rasterOption }),
+					consumer.echarts.render({ width: 48, height: 24, option: vectorOption }),
 				])
 				expect(concurrent.map(({ mediaType }) => mediaType)).toEqual(['image/png', 'image/png'])
+				expect(rasterOption).toMatchObject({
+					graphic: { elements: [{ style: { image: dataUrl } }] },
+				})
+				expect(vectorOption).toMatchObject({
+					graphic: { elements: [{ style: { image: svgDataUrl } }] },
+				})
 				await expect(
 					consumer.echarts.render({
 						width: 32,

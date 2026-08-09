@@ -110,6 +110,10 @@ build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包�
 插件不 direct-depend Tinypool，也不各自按 CPU 数创建 pool。该能力不替代异步 I/O：网络、数据库和已经真正异步的 native API
 继续使用原 capability；只有会长时间占用 JS event loop 且能用纯数据描述的工作才进入 worker task。
 
+`workers.run()` 在返回前同步取得输入 snapshot，因此 caller 随后的 mutation 不会影响排队任务。大二进制可以通过
+`{ transfer: [arrayBuffer] }` 显式转移 ownership；成功接纳后原 buffer 立即 detach，后续 artifact/execution 失败也不回滚
+ownership。artifact 首次解析中的任务与 ready queue 使用同一 global/per-owner admission 上界，不能绕过队列预算。
+
 ## 包边界
 
 - `@pluxel/core`：Context、graph、DI、lifecycle、effects；

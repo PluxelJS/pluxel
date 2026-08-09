@@ -30,6 +30,8 @@ scanner/watcher；进程中后来安装的系统字体在 provider/process resta
 默认选择放在 constructor 创建的稳定 state object，避免 caller-bound prototype view 的顶层 scalar assignment 变成
 caller-local shadow。`revision` 跟随 FontsPlugin 管理的 native registration/default selection 变化，并由包模块共享以
 反映进程级 `GlobalFonts`；renderer measurement cache 可据此丢弃旧宽度。外部直接修改 `GlobalFonts` 不在契约内。
+`defaultFont` 与 detached `families` snapshot 按该 revision 缓存并冻结；重复 renderer 调用不再扫描 native registry，
+registration/selection 变化仍会在下一次读取时原子生成新 snapshot。
 
 ## Workbench 与 Port
 

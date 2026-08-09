@@ -106,6 +106,10 @@ context.drawImage(image, 0, 0)
 `decodeImage()` 不接受 URL。下载、redirect、认证、代理、重试和 origin allowlist 应由 `@pluxel/wretch` 或业务 HTTP
 client 拥有，避免 Canvas 建立第二套不一致的 outbound policy。
 
+默认情况下 bytes 是 borrowed input，Canvas 会在进入 native decoder 前复制 snapshot，调用方可立即复用原数组。若数据
+本来就是本次渲染独占且之后不再使用，可用 `decodeImage(bytes, { dataOwnership: 'owned', signal })` 省略该 copy；调用后
+storage 永久归 Canvas，即使 abort 或失败也不得再次读取或修改。
+
 该方法在提交 native decode 前检查 encoded byte limit，在完成后检查 width、height 和 pixel count。上游 decoder 暂不
 支持取消：`AbortSignal` 会停止本次等待并丢弃迟到结果，已经进入 native code 的工作可能继续到完成。
 

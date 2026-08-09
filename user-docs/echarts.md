@@ -61,7 +61,9 @@ await this.charts.render({
 ```
 
 inline 是兼容路径，会占用主 event loop；不会因为 clone 失败静默 fallback。默认 worker 输入无法克隆时抛出
-`WORKER_INPUT_UNSUPPORTED`，shared queue 满时抛出 `RENDER_BUSY`。
+`WORKER_INPUT_UNSUPPORTED`，shared queue 满时抛出 `RENDER_BUSY`。worker 会直接改写自己拥有的 cloned option 以减少大图表
+的额外遍历分配；inline 继续复制 borrowed option，因此两种路径都不会修改调用方对象。worker 返回的独占 encoded storage
+直接包装成 Buffer view，不再进行第二次完整图片复制。
 
 ## 默认字体、上传字体与 Workbench
 

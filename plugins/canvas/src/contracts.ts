@@ -16,6 +16,12 @@ export type DecodeImageOptions = Readonly<{
 	 * submitted to native code, so a late result is discarded.
 	 */
 	signal?: AbortSignal
+	/**
+	 * `borrowed` snapshots bytes before native work. `owned` avoids that copy and permanently
+	 * relinquishes the supplied storage, which the caller must not read or mutate again.
+	 * @defaultValue 'borrowed'
+	 */
+	dataOwnership?: 'borrowed' | 'owned'
 }>
 
 /** Detached host ceilings suitable for validating native allocations in a worker task. */
@@ -122,6 +128,7 @@ export interface CanvasWorkerAdapter {
 	createSvgCanvas(width: number, height: number, options?: SvgCanvasOptions): SvgCanvas
 	/** Creates an unloaded native placeholder; load bytes through `decodeImage()`. */
 	createImage(): Image
+	/** Decodes borrowed bytes by default; `dataOwnership: 'owned'` explicitly trades ownership for zero-copy input. */
 	decodeImage(data: Uint8Array, options?: DecodeImageOptions): Promise<Image>
 }
 

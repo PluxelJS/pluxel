@@ -25,6 +25,7 @@ import type { EChartsWorkerInput, EChartsWorkerOutput } from './worker.ts'
 const MAX_THEME_NAME_LENGTH = 128
 const MAX_THEME_DEPTH = 64
 const BUILTIN_THEMES = new Set(['default', 'dark'])
+const EMPTY_THEME: EChartsTheme = Object.freeze({})
 
 const renderTask = defineWorkerTask<EChartsWorkerInput, EChartsWorkerOutput>(
 	import.meta.url,
@@ -142,6 +143,10 @@ type NormalizedRenderInput = Readonly<{
 @Plugin({ name: 'EChartsPlugin' })
 export class EChartsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(EChartsConfig)
+	private readonly themeFontCache = new WeakMap<
+		EChartsTheme,
+		Readonly<{ cssFamily: string; value: EChartsTheme }>
+	>()
 	private readonly leases = new Set<EChartsLease>()
 	private readonly leasesByOwner = new WeakMap<Context, EChartsLease>()
 	private generation?: object
@@ -313,7 +318,7 @@ export class EChartsPlugin extends BasePlugin {
 	): Readonly<{ value: string | EChartsTheme; injectOptionFont: boolean }> {
 		if (theme === undefined) {
 			return Object.freeze({
-				value: themeWithDefaultFont(Object.freeze({}), defaultFontCssFamily),
+				value: this.themeWithDefaultFont(EMPTY_THEME, defaultFontCssFamily),
 				injectOptionFont: false,
 			})
 		}
@@ -322,7 +327,7 @@ export class EChartsPlugin extends BasePlugin {
 			const registered = lease.themes.get(name)
 			if (registered) {
 				return Object.freeze({
-					value: themeWithDefaultFont(registered.theme.value, defaultFontCssFamily),
+					value: this.themeWithDefaultFont(registered.theme.value, defaultFontCssFamily),
 					injectOptionFont: false,
 				})
 			}
@@ -333,9 +338,17 @@ export class EChartsPlugin extends BasePlugin {
 		}
 		const normalized = normalizeTheme(theme, this.config.maxThemeBytes)
 		return Object.freeze({
-			value: themeWithDefaultFont(normalized.value, defaultFontCssFamily),
+			value: this.themeWithDefaultFont(normalized.value, defaultFontCssFamily),
 			injectOptionFont: false,
 		})
+	}
+
+	private themeWithDefaultFont(theme: EChartsTheme, cssFamily: string): EChartsTheme {
+		const cached = this.themeFontCache.get(theme)
+		if (cached?.cssFamily === cssFamily) return cached.value
+		const value = themeWithDefaultFont(theme, cssFamily)
+		this.themeFontCache.set(theme, Object.freeze({ cssFamily, value }))
+		return value
 	}
 
 	private normalizeRenderInput(input: EChartsRenderInput): NormalizedRenderInput {
@@ -570,8 +583,15 @@ function normalizeOutput(
 function toPublicResult(result: RenderEngineResult): EChartsRenderResult {
 	return Object.freeze({
 		...result,
-		data: Buffer.from(result.data),
+		data: bufferView(result.data),
 	})
+}
+
+function bufferView(data: Uint8Array): Buffer {
+	if (Buffer.isBuffer(data)) return data
+	return data.buffer instanceof ArrayBuffer
+		? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+		: Buffer.from(data)
 }
 
 function linkAbortSignals(signals: readonly (AbortSignal | undefined)[]): Readonly<{

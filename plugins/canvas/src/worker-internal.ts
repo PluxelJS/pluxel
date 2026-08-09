@@ -5,9 +5,29 @@ import {
 	type CanvasTextResourceLimits,
 	type CanvasWorkerFontSnapshot,
 	type CanvasWorkerSnapshot,
+	type DecodeImageOptions,
 } from './contracts.ts'
 
+let lastNormalizedSnapshot: CanvasWorkerSnapshot | undefined
+
+export function resolveImageDataOwnership(
+	options: DecodeImageOptions | undefined,
+): 'borrowed' | 'owned' {
+	if (options === undefined) return 'borrowed'
+	if (!options || typeof options !== 'object') {
+		throw new CanvasError('INVALID_IMAGE', 'decodeImage() options must be an object')
+	}
+	const ownership = options.dataOwnership ?? 'borrowed'
+	if (ownership !== 'borrowed' && ownership !== 'owned') {
+		throw new CanvasError('INVALID_IMAGE', 'dataOwnership must be borrowed or owned')
+	}
+	return ownership
+}
+
 export function normalizeCanvasWorkerSnapshot(value: CanvasWorkerSnapshot): CanvasWorkerSnapshot {
+	if (lastNormalizedSnapshot && matchesNormalizedSnapshot(value, lastNormalizedSnapshot)) {
+		return lastNormalizedSnapshot
+	}
 	if (!value || typeof value !== 'object') {
 		throw new CanvasError('INVALID_WORKER_SNAPSHOT', 'Canvas worker snapshot must be an object')
 	}
@@ -20,7 +40,36 @@ export function normalizeCanvasWorkerSnapshot(value: CanvasWorkerSnapshot): Canv
 			`Selected font family "${font.requiredFamily}" is unavailable in the Canvas worker`,
 		)
 	}
-	return Object.freeze({ limits, textLimits, font })
+	const normalized = Object.freeze({ limits, textLimits, font })
+	lastNormalizedSnapshot = normalized
+	return normalized
+}
+
+function matchesNormalizedSnapshot(
+	value: CanvasWorkerSnapshot,
+	normalized: CanvasWorkerSnapshot,
+): boolean {
+	if (value === normalized) return true
+	if (!value || typeof value !== 'object') return false
+	const { limits, textLimits, font } = value
+	return Boolean(
+		limits &&
+		typeof limits === 'object' &&
+		limits.maxWidth === normalized.limits.maxWidth &&
+		limits.maxHeight === normalized.limits.maxHeight &&
+		limits.maxPixels === normalized.limits.maxPixels &&
+		limits.maxImageBytes === normalized.limits.maxImageBytes &&
+		textLimits &&
+		typeof textLimits === 'object' &&
+		textLimits.maxTextCharacters === normalized.textLimits.maxTextCharacters &&
+		textLimits.maxRichTextItems === normalized.textLimits.maxRichTextItems &&
+		textLimits.maxTextCacheCharacters === normalized.textLimits.maxTextCacheCharacters &&
+		font &&
+		typeof font === 'object' &&
+		font.cssFamily === normalized.font.cssFamily &&
+		font.revision === normalized.font.revision &&
+		font.requiredFamily === normalized.font.requiredFamily,
+	)
 }
 
 export function assertCanvasDimensions(

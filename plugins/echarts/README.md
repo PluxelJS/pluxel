@@ -35,7 +35,8 @@ defaults to `execution: 'worker'` and uses the host-wide `ctx.workers` thread/qu
 reconstructs the bounded `@pluxel/canvas/worker` adapter from `canvas.workerSnapshot`, initializes
 ECharts in SSR mode, waits for tracked images, flushes, encodes, and disposes the instance in
 `finally`. ECharts does not initialize another CanvasPlugin or directly depend on the native binding.
-PNG is the default; JPEG/WebP and DPR are explicit options.
+The worker rewrites only its private structured-cloned option graph; caller input is unchanged. PNG
+is the default; JPEG/WebP and DPR are explicit options.
 
 ## Themes and fonts
 

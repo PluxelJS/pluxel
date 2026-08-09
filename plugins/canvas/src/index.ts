@@ -70,7 +70,7 @@ import {
 	type SvgCanvasOptions,
 } from './contracts.ts'
 import { CanvasTextLayoutController } from './text-layout.ts'
-import { assertCanvasDimensions } from './worker-internal.ts'
+import { assertCanvasDimensions, resolveImageDataOwnership } from './worker-internal.ts'
 
 const GENERIC_FONT_FAMILIES = new Set(['serif', 'sans-serif', 'monospace'])
 
@@ -96,6 +96,8 @@ export class CanvasPlugin extends BasePlugin {
 	private readonly leases = new Set<CanvasLease>()
 	private readonly leasesByOwner = new WeakMap<Context, CanvasLease>()
 	private readonly textLayout = new CanvasTextLayoutController()
+	private limitsSnapshot?: CanvasResourceLimits
+	private textLimitsSnapshot?: CanvasTextResourceLimits
 	private workerPolicy?: Readonly<{ revision: number; snapshot: CanvasWorkerSnapshot }>
 	private generation?: object
 
@@ -105,11 +107,26 @@ export class CanvasPlugin extends BasePlugin {
 
 	override async init(): Promise<void> {
 		const generation = Object.freeze({})
+		this.limitsSnapshot = Object.freeze({
+			maxWidth: this.config.maxWidth,
+			maxHeight: this.config.maxHeight,
+			maxPixels: this.config.maxPixels,
+			maxImageBytes: this.config.maxImageBytes,
+		})
+		this.textLimitsSnapshot = Object.freeze({
+			maxTextCharacters: this.config.maxTextCharacters,
+			maxRichTextItems: this.config.maxRichTextItems,
+			maxTextCacheCharacters: this.config.maxTextCacheCharacters,
+		})
 		this.workerPolicy = undefined
 		this.generation = generation
 		this.ctx.effects.defer(
 			() => {
-				if (this.generation === generation) this.generation = undefined
+				if (this.generation === generation) {
+					this.generation = undefined
+					this.limitsSnapshot = undefined
+					this.textLimitsSnapshot = undefined
+				}
 				for (const lease of this.leases) this.closeLease(lease)
 			},
 			{ tag: 'canvas-generation' },
@@ -199,8 +216,10 @@ export class CanvasPlugin extends BasePlugin {
 				`Encoded image is ${data.byteLength} bytes; the configured limit is ${this.config.maxImageBytes}`,
 			)
 		}
+		const dataOwnership = resolveImageDataOwnership(options)
 		if (options.signal?.aborted) throw abortReason(options.signal)
-		const task = decodeNativeImage(data)
+		const source = dataOwnership === 'owned' ? data : Buffer.from(data)
+		const task = decodeNativeImage(source)
 		const image = await waitForDecode(task, [lease.controller.signal, options.signal])
 		if (!lease.active || this.generation !== lease.generation) {
 			throw new CanvasError(
@@ -283,20 +302,15 @@ export class CanvasPlugin extends BasePlugin {
 	}
 
 	private resourceLimits(): CanvasResourceLimits {
-		return Object.freeze({
-			maxWidth: this.config.maxWidth,
-			maxHeight: this.config.maxHeight,
-			maxPixels: this.config.maxPixels,
-			maxImageBytes: this.config.maxImageBytes,
-		})
+		if (!this.limitsSnapshot) throw new CanvasError('NOT_RUNNING', 'CanvasPlugin is not running')
+		return this.limitsSnapshot
 	}
 
 	private textResourceLimits(): CanvasTextResourceLimits {
-		return Object.freeze({
-			maxTextCharacters: this.config.maxTextCharacters,
-			maxRichTextItems: this.config.maxRichTextItems,
-			maxTextCacheCharacters: this.config.maxTextCacheCharacters,
-		})
+		if (!this.textLimitsSnapshot) {
+			throw new CanvasError('NOT_RUNNING', 'CanvasPlugin is not running')
+		}
+		return this.textLimitsSnapshot
 	}
 }
 
@@ -333,7 +347,7 @@ function abortReason(signal: AbortSignal): Error {
 
 function decodeNativeImage(data: Uint8Array): Promise<Image> {
 	try {
-		return loadNativeImage(Buffer.from(data)).catch((cause: unknown) => {
+		return loadNativeImage(data).catch((cause: unknown) => {
 			throw new CanvasError('INVALID_IMAGE', 'Native image decoder rejected the image data', {
 				cause,
 			})

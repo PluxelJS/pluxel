@@ -10,11 +10,18 @@ import {
 	type CanvasWorkerSnapshot,
 	type DecodeImageOptions,
 } from './contracts.ts'
-import { assertCanvasDimensions, normalizeCanvasWorkerSnapshot } from './worker-internal.ts'
+import {
+	assertCanvasDimensions,
+	normalizeCanvasWorkerSnapshot,
+	resolveImageDataOwnership,
+} from './worker-internal.ts'
+
+let lastAdapter: CanvasWorkerAdapter | undefined
 
 /** Create a thread-local native Canvas adapter from a detached host policy snapshot. */
 export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): CanvasWorkerAdapter {
 	const normalized = normalizeCanvasWorkerSnapshot(snapshot)
+	if (lastAdapter?.snapshot === normalized) return lastAdapter
 	const adapter: CanvasWorkerAdapter = {
 		snapshot: normalized,
 		createCanvas(width, height) {
@@ -42,7 +49,8 @@ export function createCanvasWorkerAdapter(snapshot: CanvasWorkerSnapshot): Canva
 			return decodeImage(data, normalized, options)
 		},
 	}
-	return Object.freeze(adapter)
+	lastAdapter = Object.freeze(adapter)
+	return lastAdapter
 }
 
 async function decodeImage(
@@ -59,10 +67,11 @@ async function decodeImage(
 			`Encoded image is ${data.byteLength} bytes; the configured limit is ${snapshot.limits.maxImageBytes}`,
 		)
 	}
+	const dataOwnership = resolveImageDataOwnership(options)
 	if (options.signal?.aborted) throw abortReason(options.signal)
 	let task
 	try {
-		task = loadNativeImage(Buffer.from(data))
+		task = loadNativeImage(dataOwnership === 'owned' ? data : Buffer.from(data))
 	} catch (cause) {
 		throw new CanvasError('INVALID_IMAGE', 'Native image decoder rejected the image data', {
 			cause,

@@ -27,6 +27,10 @@
 `@pluxel/canvas/worker` 是无 Pluxel runtime dependency 的 Node-only adapter。每个 task 用 snapshot 创建轻量 adapter；
 `@napi-rs/canvas` module 和 ESM cache 仍按 worker lifetime 复用，只有 caller-owned Canvas/Image/ECharts surface 按任务创建。
 adapter 在 native allocation/decode 前后执行与主插件相同的 limit contract，并在 worker registry 中验证具体默认字体。
+每个线程只保留最近一个按值匹配的 normalized snapshot/adapter；相同 Fonts revision 与 limits 的连续任务跳过重复 freeze、
+font registry lookup 和 closure 创建。CanvasPlugin 同样在 generation init 后缓存 config-derived limit snapshot。
+`decodeImage()` 默认 snapshot borrowed bytes；明确的 `dataOwnership: 'owned'` 永久移交 storage，允许 ECharts 等已经拥有
+render-local bytes 的调用方直接提交 native decoder。
 
 `@pluxel/canvas/worker/pretext` 单独提供 `createCanvasWorkerTextLayout()` 和纯 layout/walker exports。它与主 CanvasPlugin
 复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的
@@ -56,7 +60,8 @@ factory 在原生分配前检查 width、height 和 pixel count；图片解码�
 Pretext cache；这些值可由 Canvas config 收紧或放宽到 schema ceiling。
 
 `decodeImage()` 接受 `AbortSignal`。上游 native decode 当前不可取消；abort 会立即停止等待并丢弃迟到结果，底层工作可能
-继续到本次 decode 完成。consumer/provider stop 使用相同等待信号。已经返回的 Canvas/Image 是 caller-owned native
+继续到本次 decode 完成。默认 borrowed bytes 已复制，caller 可在方法返回后继续使用；选择 `owned` 后即使 abort/failure
+也不返还 data ownership。consumer/provider stop 使用相同等待信号。已经返回的 Canvas/Image 是 caller-owned native
 对象，由 GC 管理，不会在 provider stop 时被隐式销毁。
 
 ## Workbench composition

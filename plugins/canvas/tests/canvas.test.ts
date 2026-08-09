@@ -157,8 +157,25 @@ describe('CanvasPlugin', () => {
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
 				const source = capability.createCanvas(11, 7)
-				const image = await capability.decodeImage(await source.encode('png'))
+				const borrowedBytes = await source.encode('png')
+				const borrowedDecode = capability.decodeImage(borrowedBytes)
+				borrowedBytes.fill(0)
+				const image = await borrowedDecode
 				expect({ width: image.width, height: image.height }).toEqual({ width: 11, height: 7 })
+
+				const ownedBytes = await source.encode('png')
+				const ownedImage = await capability.decodeImage(ownedBytes, {
+					dataOwnership: 'owned',
+				})
+				expect({ width: ownedImage.width, height: ownedImage.height }).toEqual({
+					width: 11,
+					height: 7,
+				})
+				await expect(
+					capability.decodeImage(await source.encode('png'), {
+						dataOwnership: 'shared' as 'owned',
+					}),
+				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
 			},
 			{ workbench: false },
 		)

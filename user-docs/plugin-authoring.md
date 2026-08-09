@@ -146,6 +146,25 @@ Native residual 必须是发出该 import 的 package 自己的 direct dependenc
 `@pluxel/canvas/worker` 时 binding 由 Canvas package 声明，业务插件不重复依赖 `@napi-rs/canvas`。构建器会保留 package
 owner 的解析边界；worker 源码应静态使用 default/named native import，不支持 dynamic、namespace 或 `export *` native import。
 
+默认输入会在 `run()` 返回前完整 snapshot。大型二进制由调用方明确移交 ownership，避免 snapshot copy 后 dispatch 再复制：
+
+```ts
+const bytes = new Uint8Array(await response.arrayBuffer())
+const result = this.ctx.workers.run(
+	decodeTask,
+	{ bytes },
+	{
+		signal,
+		transfer: [bytes.buffer],
+	},
+)
+// 任务已接纳时 bytes.buffer 在这里已经 detached；即使 result 最终失败也不会恢复。
+return result
+```
+
+只接受 `ArrayBuffer`，不得重复列出同一 buffer。`SharedArrayBuffer` 本来就是共享内存，不进入 transfer；调用方必须自行拥有其
+并发同步协议。队列已满时任务尚未接纳，runtime 不会 detach transfer buffer。
+
 ## 依赖：按“缺失时能否工作”选择
 
 ### Required plugin dependency

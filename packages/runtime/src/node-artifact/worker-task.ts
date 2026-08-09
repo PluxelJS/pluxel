@@ -34,6 +34,12 @@ export class WorkerTaskError extends Error {
 export type WorkerRunOptions = Readonly<{
 	/** Cancels queued work or terminates the worker executing this task. */
 	signal?: AbortSignal
+	/**
+	 * Moves these input `ArrayBuffer`s into the task snapshot instead of copying their bytes.
+	 * Accepted buffers are detached synchronously and ownership is not restored when later work fails.
+	 * Omission snapshots the complete input with the structured clone algorithm.
+	 */
+	transfer?: readonly ArrayBuffer[]
 }>
 
 export type WorkersConfig = Readonly<{

@@ -29,6 +29,7 @@
 	},
 	"scripts": {
 		"build": "pluxel build",
+		"bench:render": "vitest bench bench/render.bench.ts --config vitest.config.ts",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},

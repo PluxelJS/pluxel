@@ -85,9 +85,14 @@ owner stop/replacement 使 pending generation 失效，迟到 setup 返回的 cl
 `defineWorkerTask(import.meta.url, literal)` 声明默认导出 handler，再用 `workers.run(declaration, input, { signal })`
 提交 structured-clone-compatible 数据；Tinypool 是 runtime implementation detail，插件不创建自己的线程预算。
 
+`run()` 同步 snapshot 输入，保证任务等待 artifact 或排队期间不读取 caller 的后续 mutation。`transfer` 可列出 input 中
+caller 愿意移交的 `ArrayBuffer`：runtime 先把 ownership 转入内部 snapshot，再在 dispatch 时零拷贝移交 worker；接纳后
+caller buffer 立即 detach，即使 artifact 或任务稍后失败也不会恢复。未列出的数据继续使用 structured clone copy。
+
 root pool lazy 创建，`minThreads = 0`，默认最多使用 `min(4, available CPUs - 1)` 个 worker thread，空闲 30 秒后回收。
 runtime 在 Tinypool 之前维护 bounded global/per-owner queue，并在 ready owner 间 round-robin；每个 worker 同时只执行一个
-task。插件 Context stop 会拒绝 queued task、abort running task 并等待已接纳 promise，root shutdown 最后销毁 pool。
+task。等待首次 artifact route 的 job 也进入同一 admission 上界；ready owner/task 使用 O(1) insertion-ordered queue，取消不扫描或
+滞留大队列。插件 Context stop 会拒绝 queued task、abort running task 并等待已接纳 promise，root shutdown 最后销毁 pool。
 取消 running task 会终止承载它的 worker，因此该 capability 只适合独立、CPU-bound、可重试的计算或 thread-safe native
 调用，不用于普通 HTTP/数据库 I/O，也不是自动包装所有 N-API 调用的透明代理。
 

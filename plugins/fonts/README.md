@@ -76,6 +76,7 @@ host.cfg(FontsPlugin).set({
 
 系统字体不计入 limit，也不会被 cleanup 删除。`fonts.revision` 是 FontsPlugin-managed native registration/default
 selection 的进程内 signal；Canvas 等 measurement cache 在它变化时丢弃旧宽度。绕过本插件直接修改
-`GlobalFonts` 不属于该信号契约。
+`GlobalFonts` 不属于该信号契约。重复读取的 frozen default/families snapshot 按 revision 复用，字体注册或选择变化后
+下一次读取会生成新 snapshot。
 
 完整用户路径见 [`user-docs/fonts.md`](../../user-docs/fonts.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。

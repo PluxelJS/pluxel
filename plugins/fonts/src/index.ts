@@ -103,6 +103,8 @@ type DefaultFontState = {
 	configuredFamily?: string
 	workbenchFamily?: string
 	storage?: PersistenceNamespace
+	resolvedDefault?: Readonly<{ revision: number; snapshot: DefaultFontSnapshot }>
+	resolvedFamilies?: Readonly<{ revision: number; snapshot: readonly FontFamilySnapshot[] }>
 	tail: Promise<void>
 }
 
@@ -131,6 +133,8 @@ export class FontsPlugin extends BasePlugin {
 		this.defaults.configuredFamily = configuredDefaultFamily
 		this.defaults.workbenchFamily = workbenchDefaultFamily
 		this.defaults.storage = storage
+		this.defaults.resolvedDefault = undefined
+		this.defaults.resolvedFamilies = undefined
 		nativeRegistryRevision += 1
 		this.running = true
 		this.ctx.effects.defer(
@@ -139,6 +143,8 @@ export class FontsPlugin extends BasePlugin {
 				this.defaults.configuredFamily = undefined
 				this.defaults.workbenchFamily = undefined
 				this.defaults.storage = undefined
+				this.defaults.resolvedDefault = undefined
+				this.defaults.resolvedFamilies = undefined
 				this.defaults.systemFamilies.clear()
 				if (this.managed) {
 					this.managed.active = false
@@ -211,7 +217,7 @@ export class FontsPlugin extends BasePlugin {
 	/** Returns a detached snapshot of every family visible to the native renderer. */
 	get families(): readonly FontFamilySnapshot[] {
 		this.assertRunning()
-		return fontFamiliesSnapshot(this.defaults.systemFamilies)
+		return this.resolveFamilies()
 	}
 
 	/** Provider-wide default resolved from Workbench, config, system discovery, then generic CSS. */
@@ -427,7 +433,7 @@ export class FontsPlugin extends BasePlugin {
 					.map(({ snapshot }) => snapshot)
 					.toSorted((left, right) => left.fileName.localeCompare(right.fileName)),
 			),
-			families: fontFamiliesSnapshot(this.defaults.systemFamilies),
+			families: this.resolveFamilies(),
 			limits: Object.freeze({
 				maxFonts: this.config.maxManagedFonts,
 				maxFontBytes: this.config.maxFontBytes,
@@ -436,6 +442,8 @@ export class FontsPlugin extends BasePlugin {
 	}
 
 	private resolveDefaultFont(): DefaultFontSnapshot {
+		const cached = this.defaults.resolvedDefault
+		if (cached?.revision === nativeRegistryRevision) return cached.snapshot
 		const workbenchFamily = this.defaults.workbenchFamily
 		const configuredFamily = this.defaults.configuredFamily
 		const selectedWorkbenchFamily = workbenchFamily
@@ -444,7 +452,10 @@ export class FontsPlugin extends BasePlugin {
 		const selectedConfiguredFamily = configuredFamily
 			? findAvailableFamily(configuredFamily)
 			: undefined
-		const automaticFamily = findAutomaticSystemFamily(this.defaults.systemFamilies)
+		const automaticFamily =
+			selectedWorkbenchFamily || selectedConfiguredFamily
+				? undefined
+				: findAutomaticSystemFamily(this.defaults.systemFamilies)
 		const resolved = selectedWorkbenchFamily
 			? { family: selectedWorkbenchFamily, source: 'workbench' as const }
 			: selectedConfiguredFamily
@@ -452,12 +463,28 @@ export class FontsPlugin extends BasePlugin {
 				: automaticFamily
 					? { family: automaticFamily, source: 'system' as const }
 					: { family: 'sans-serif', source: 'generic' as const }
-		return Object.freeze({
+		const snapshot = Object.freeze({
 			...resolved,
 			cssFamily: toCssFamily(resolved.family),
 			...(workbenchFamily ? { workbenchFamily } : {}),
 			...(configuredFamily ? { configuredFamily } : {}),
 		})
+		this.defaults.resolvedDefault = Object.freeze({
+			revision: nativeRegistryRevision,
+			snapshot,
+		})
+		return snapshot
+	}
+
+	private resolveFamilies(): readonly FontFamilySnapshot[] {
+		const cached = this.defaults.resolvedFamilies
+		if (cached?.revision === nativeRegistryRevision) return cached.snapshot
+		const snapshot = fontFamiliesSnapshot(this.defaults.systemFamilies)
+		this.defaults.resolvedFamilies = Object.freeze({
+			revision: nativeRegistryRevision,
+			snapshot,
+		})
+		return snapshot
 	}
 
 	private registerBytes(
@@ -470,7 +497,7 @@ export class FontsPlugin extends BasePlugin {
 		const before = familySignatures()
 		let key: FontKey | null
 		try {
-			key = GlobalFonts.register(Buffer.from(data), family)
+			key = GlobalFonts.register(bufferView(data), family)
 		} catch (cause) {
 			throw new FontsError('INVALID_FONT', 'Native font registration rejected the font data', {
 				cause,
@@ -668,6 +695,13 @@ function hasControlCharacters(value: string): boolean {
 	return false
 }
 
+function bufferView(data: Uint8Array): Buffer {
+	if (Buffer.isBuffer(data)) return data
+	return data.buffer instanceof ArrayBuffer
+		? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
+		: Buffer.from(data)
+}
+
 function fontFamiliesSnapshot(systemFamilies: ReadonlySet<string>): readonly FontFamilySnapshot[] {
 	return Object.freeze(
 		GlobalFonts.families
@@ -720,14 +754,22 @@ async function persistDefaultFamily(
 function findAvailableFamily(requested: string): string | undefined {
 	const generic = requested.toLowerCase()
 	if (GENERIC_FAMILIES.has(generic)) return generic
+	const requestedKey = requested.toLocaleLowerCase('en-US')
 	return GlobalFonts.families.find(
-		({ family }) => family.toLocaleLowerCase('en-US') === requested.toLocaleLowerCase('en-US'),
+		({ family }) => family.toLocaleLowerCase('en-US') === requestedKey,
 	)?.family
 }
 
 function findAutomaticSystemFamily(systemFamilies: ReadonlySet<string>): string | undefined {
-	const available = [...systemFamilies].filter((family) =>
-		GlobalFonts.families.some((current) => current.family === family),
+	const visible = new Map(
+		GlobalFonts.families.map(({ family }) => [family.toLocaleLowerCase('en-US'), family]),
+	)
+	const available = [...systemFamilies].flatMap((family) => {
+		const current = visible.get(family.toLocaleLowerCase('en-US'))
+		return current === undefined ? [] : [current]
+	})
+	const availableByKey = new Map(
+		available.map((family) => [family.toLocaleLowerCase('en-US'), family]),
 	)
 	const preferences =
 		process.platform === 'darwin'
@@ -743,9 +785,7 @@ function findAutomaticSystemFamily(systemFamilies: ReadonlySet<string>): string 
 						'Ubuntu',
 					]
 	for (const preferred of preferences) {
-		const matched = available.find(
-			(family) => family.toLocaleLowerCase('en-US') === preferred.toLocaleLowerCase('en-US'),
-		)
+		const matched = availableByKey.get(preferred.toLocaleLowerCase('en-US'))
 		if (matched) return matched
 	}
 	return available.toSorted((left, right) => left.localeCompare(right))[0]
