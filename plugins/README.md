@@ -1,6 +1,6 @@
 # Pluxel 官方插件
 
-`plugins/*` 存放由 Pluxel 与框架一同维护、可独立安装和装配的具体插件。它们不是 runtime 内置服务：
+`plugins/*` 与 `plugins/<domain>/*` 存放由 Pluxel 与框架一同维护、可独立安装和装配的具体插件。它们不是 runtime 内置服务：
 应用通过正常 catalog 选择插件，其他插件也只通过与第三方作者相同的公开依赖协议消费它们。
 
 ## 仓库定位
@@ -17,7 +17,8 @@ core/runtime。
 
 ## 目录与能力边界
 
-- `plugins/*`：具体 `@Plugin` 实现及其包内 Workbench extension。
+- `plugins/*`：独立领域的具体 `@Plugin` 实现及其包内 Workbench extension。
+- `plugins/<domain>/*`：共享明确能力链的具体插件；领域目录只做仓库分类，不引入聚合插件或第二套作者 API。
 - `packages/*`：不声明具体插件生命周期的通用 contract、adapter 和框架库。
 - `projects/plugin-host`：框架维护者的动态/静态真实 host 验证场所。
 - 独立产品 workspace：通过 `pluxel source` 验证多个插件的产品级组合。
@@ -53,9 +54,10 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
   - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
 - [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
 - [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
-- [`@pluxel/fonts`](fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Port。
-- [`@pluxel/canvas`](canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas，并以 Fonts 插件管理字体。
-- [`@pluxel/echarts`](echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与字体选择 Port。
+- [`render/`](render/README.md)：服务端渲染能力链。
+  - [`@pluxel/fonts`](render/fonts/README.md)：统一拥有系统字体发现、上传持久化、默认选择、caller 注册和 Fonts Selection Port。
+  - [`@pluxel/canvas`](render/canvas/README.md)：基于 `@napi-rs/canvas` 的有界服务端 raster/SVG Canvas，并以 Fonts 插件管理字体。
+  - [`@pluxel/echarts`](render/echarts/README.md)：基于 Canvas/Fonts 的 Apache ECharts 6 服务端渲染、caller-owned 主题与字体选择 Port。
 
 仍标记为 private 的官方插件会先在真实 consumer 中稳定 contract；开放发布的插件也保持普通 package 与公开作者
 API，不获得 runtime 特例。`@pluxel/wretch` 提供原生 immutable Wretch base、最小宿主级出站策略和可选的统一

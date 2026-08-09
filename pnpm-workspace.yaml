@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - plugins/*
+  - plugins/*/*
   - vendor/gqlens/packages/codegen
   - vendor/gqlens/packages/core
   - vendor/gqlens/packages/react

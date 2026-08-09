@@ -1,0 +1,9 @@
+{
+	"extends": "../../../tsconfig.plugin.json",
+	"include": ["src", "tests", "bench", "tsdown.config.ts", "vitest.config.ts"],
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"lib": ["ES2024", "DOM", "DOM.Iterable"]
+	}
+}

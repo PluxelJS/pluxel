@@ -21,7 +21,7 @@ if (Object.keys(rootManifest.dependencies ?? {}).length > 0) {
 }
 
 const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8')
-for (const pattern of ['packages/*', 'plugins/*']) {
+for (const pattern of ['packages/*', 'plugins/*', 'plugins/*/*']) {
 	if (!workspaceSource.includes(`- ${pattern}`)) errors.push(`workspace is missing ${pattern}`)
 }
 if ((await isDirectory(resolve(root, 'apps'))) && !workspaceSource.includes('- apps/*')) {
@@ -37,13 +37,20 @@ const catalogNames = parseCatalogNames(workspaceSource)
 if (catalogNames.size === 0) errors.push('pnpm-workspace.yaml must define a default catalog')
 
 const projectRoots = await childDirectories(resolve(root, 'projects'))
-const packageContainers = [
-	resolve(root, 'apps'),
-	resolve(root, 'packages'),
-	resolve(root, 'plugins'),
-]
+const packageContainers = [resolve(root, 'apps'), resolve(root, 'packages')]
 const packageContainerChildren = await Promise.all(packageContainers.map(childDirectories))
-const candidateRoots = [resolve(root, 'web'), ...projectRoots, ...packageContainerChildren.flat()]
+const pluginRoots = await childDirectories(resolve(root, 'plugins'))
+const pluginPackageRoots = await Promise.all(
+	pluginRoots.map(async (directory) =>
+		(await isFile(resolve(directory, 'package.json'))) ? [directory] : childDirectories(directory),
+	),
+)
+const candidateRoots = [
+	resolve(root, 'web'),
+	...projectRoots,
+	...packageContainerChildren.flat(),
+	...pluginPackageRoots.flat(),
+]
 const candidatePackageRoots = await Promise.all(
 	candidateRoots.map(async (directory) => {
 		const hasManifest = await isFile(resolve(directory, 'package.json'))

@@ -48,7 +48,7 @@ pnpm plugin-host:static
 - `@pluxel/commands`：可投影为 Agent tool、CLI 或消息指令的 schema-first command kernel
 - `@pluxel/test`：测试工具包（Vitest preset + Host/Context helpers；仅用于测试/工具链）
 - `packages/*`：框架库与其他非具体插件的可复用 package
-- `plugins/*`：可独立装配的具体插件 package（当前根 workspace 没有此类包时可以为空）
+- `plugins/*`、`plugins/<domain>/*`：可独立装配的具体插件 package；领域目录只做仓库分类
 - `projects/*`：必须随框架一起演进的可运行维护者宿主；产品级应用使用独立源码工作区
 
 ## Tests

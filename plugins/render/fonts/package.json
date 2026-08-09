@@ -6,7 +6,7 @@
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",
-		"directory": "plugins/fonts"
+		"directory": "plugins/render/fonts"
 	},
 	"files": [
 		"dist",
