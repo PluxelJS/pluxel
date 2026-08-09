@@ -5,7 +5,7 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from 'react'
-import { useNavigate, useRouter } from '@tanstack/react-router'
+import { useRouter } from '@tanstack/react-router'
 import { useWorkbenchNavigation } from './workbench/context'
 
 export type RouterLinkAdapterProps = {
@@ -16,8 +16,7 @@ export type RouterLinkAdapterProps = {
 export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapterProps>(
 	({ to, children, onClick, target, rel, ...rest }, ref) => {
 		const router = useRouter()
-		const navigate = useNavigate()
-		const { requestNavigation } = useWorkbenchNavigation()
+		const { navigate } = useWorkbenchNavigation()
 
 		let href = to
 		try {
@@ -57,18 +56,9 @@ export const RouterLinkAdapter = forwardRef<HTMLAnchorElement, RouterLinkAdapter
 					return
 				}
 				event.preventDefault()
-				requestNavigation(to)
-				if (to === '/') {
-					// 主动点击首页链接时，通过 state 传递 manual 标记
-					void navigate({
-						to,
-						state: (prev) => ({ ...(prev as any), manual: true }) as any,
-					})
-				} else {
-					void navigate({ to })
-				}
+				navigate(to)
 			},
-			[href, navigate, onClick, requestNavigation, target, to],
+			[href, navigate, onClick, target, to],
 		)
 
 		return (

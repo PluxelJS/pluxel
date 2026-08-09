@@ -2,12 +2,15 @@
 
 import { MantineProvider } from '@mantine/core'
 import { RuntimeTransportClientProvider } from '../../src/web/react'
-import { act, useMemo, useState, type ReactNode } from 'react'
+import { act, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
-import { WorkbenchTabsProvider } from '../../../workbench-app/src/app/workbench/context'
+import {
+	WorkbenchNavigationProvider,
+	WorkspaceControllerProvider,
+} from '../../../workbench-app/src/app/workbench/context'
 import { WorkspaceController } from '../../../workbench-app/src/app/workbench/store'
 import { resolvePluginWorkbenchPanelsState } from '../../../workbench-app/src/app/workbench/split'
 import { ConfigLayout } from '../../../workbench-app/src/app/plugins/config/ConfigLayout'
@@ -196,7 +199,11 @@ function Harness({
 }
 
 function WorkbenchHarness({ active = true }: { active?: boolean }) {
-	const workspace = useMemo(() => new WorkspaceController(), [])
+	const workspace = useMemo(() => {
+		const controller = new WorkspaceController()
+		controller.reconcileLocation('/plugins/test-plugin/config')
+		return controller
+	}, [])
 	const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
 	const [dirty, setDirty] = useState(false)
 	const [assistHost, setAssistHost] = useState<HTMLDivElement | null>(null)
@@ -221,21 +228,7 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 	return (
 		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
 			<MantineProvider>
-				<WorkbenchTabsProvider
-					controller={workspace}
-					value={{
-						activeTabId: 'test-tab',
-						activeTabPath: '/plugins/test-plugin/config',
-						activeTabDirty: dirty,
-						isTabDirty: () => dirty,
-						getActiveTabState: () => {},
-						navigate: () => {},
-						openTab: () => {},
-						setActiveTabState: () => {},
-						requestNavigation: () => {},
-						setActiveTabDirty: () => {},
-					}}
-				>
+				<TestWorkspaceProvider controller={workspace}>
 					<PluginScopeProvider
 						value={{
 							pluginName: 'test-plugin',
@@ -277,7 +270,7 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 							</div>
 						</PluginWorkbenchAsideProvider>
 					</PluginScopeProvider>
-				</WorkbenchTabsProvider>
+				</TestWorkspaceProvider>
 			</MantineProvider>
 		</RuntimeTransportClientProvider>
 	)
@@ -471,24 +464,21 @@ function RenderRightPane() {
 }
 
 function RightPaneDirtyHarness() {
-	const workspace = useMemo(() => new WorkspaceController(), [])
-	const [activeTabDirty, setActiveTabDirtyState] = useState(false)
-	const tabsValue = useMemo(
-		() => ({
-			activeTabId: 'test-tab',
-			activeTabPath: '/plugins/test-plugin/config',
-			activeTabDirty,
-			isTabDirty: () => activeTabDirty,
-			getActiveTabState: () => {},
-			navigate: () => {},
-			openTab: () => {},
-			setActiveTabState: () => {},
-			requestNavigation: () => {},
-			setActiveTabDirty: (dirty: boolean) => {
-				setActiveTabDirtyState(dirty)
-			},
-		}),
-		[activeTabDirty],
+	const workspace = useMemo(() => {
+		const controller = new WorkspaceController()
+		controller.reconcileLocation('/plugins/test-plugin/config')
+		return controller
+	}, [])
+	const activeTabDirty = useSyncExternalStore(
+		(listener) => {
+			const subscription = workspace.store.subscribe(listener)
+			return () => subscription.unsubscribe()
+		},
+		() => {
+			const tabId = workspace.state.uiState.activeTabId
+			return Boolean(tabId && workspace.state.dirtyTabs[tabId])
+		},
+		() => false,
 	)
 	const layoutValue = useMemo(
 		() => ({
@@ -506,7 +496,7 @@ function RightPaneDirtyHarness() {
 		<RuntimeTransportClientProvider client={createFakeTransportClient()}>
 			<MantineProvider>
 				<div data-tab-dirty={activeTabDirty ? 'true' : 'false'}>
-					<WorkbenchTabsProvider controller={workspace} value={tabsValue}>
+					<TestWorkspaceProvider controller={workspace}>
 						<PluginWorkbenchLayoutProvider value={layoutValue}>
 							<PluginScopeProvider
 								value={{
@@ -532,7 +522,7 @@ function RightPaneDirtyHarness() {
 								<RenderRightPane />
 							</PluginScopeProvider>
 						</PluginWorkbenchLayoutProvider>
-					</WorkbenchTabsProvider>
+					</TestWorkspaceProvider>
 				</div>
 			</MantineProvider>
 		</RuntimeTransportClientProvider>
@@ -882,3 +872,23 @@ describe('ConfigForm loop safety', () => {
 		}
 	})
 })
+const TEST_WORKBENCH_NAVIGATION = {
+	navigate: () => {},
+	openTab: () => {},
+}
+
+function TestWorkspaceProvider({
+	controller,
+	children,
+}: {
+	controller: WorkspaceController
+	children: ReactNode
+}) {
+	return (
+		<WorkspaceControllerProvider controller={controller}>
+			<WorkbenchNavigationProvider value={TEST_WORKBENCH_NAVIGATION}>
+				{children}
+			</WorkbenchNavigationProvider>
+		</WorkspaceControllerProvider>
+	)
+}

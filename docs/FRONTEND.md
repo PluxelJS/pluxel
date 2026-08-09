@@ -27,8 +27,8 @@ Contract placement 只有两种产品语义：`plugin.tabs` 把管理 View 放�
 global layout 可以下发 route navigation metadata，但打开 target screen 后才取得 resource grant并加载实际引用的
 bundle。builtin document 由 host 渲染且只用于只读内容；交互流程使用 React View + typed RPC。
 
-Remote View 的普通页面切换使用 `useWorkbenchHost().navigate()`，沿用宿主 active Tab 和 dirty-state 策略。集合页需要
-打开对象详情时才使用 `openTab()`；Contract 以 `navigation: false` 声明整段参数 route，并通过 `routeParams` 读取匹配参数。
+Remote View 的普通页面切换使用可空的 `useWorkbenchHost().navigation` capability，沿用宿主 active Tab 和 dirty-state 策略；
+standalone View 不伪装该能力。集合页需要打开对象详情时才使用 `navigation.openTab()`；Contract 以 `navigation: false` 声明整段参数 route，并通过 `routeParams` 读取匹配参数。
 宿主对两种操作统一负责路径归一化、route 存在性与 shell frame 校验；`openTab()` 另外按完整路径去重并恢复标题
 metadata。插件不能传入任意宿主 URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
 

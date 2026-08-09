@@ -1,5 +1,5 @@
 import { useHotkey } from '@tanstack/react-hotkeys'
-import { Link, Outlet } from '@tanstack/react-router'
+import { Outlet } from '@tanstack/react-router'
 import {
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
@@ -14,6 +14,7 @@ import { useProduct } from '../../product'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import type { NavSection } from '../../navigation/navConfig'
 import { WorkbenchPaneControls } from '../../plugins/detail/controls/WorkbenchPaneControls'
+import { RouterLinkAdapter } from '../../RouterLinkAdapter'
 import { WorkbenchActionButton } from '../LayoutControls'
 import { isWorkbenchActivityActive } from '../location'
 import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS } from '../shortcuts'
@@ -60,20 +61,16 @@ export function WorkbenchHotkeys({
 	return null
 }
 
-type RequestNavigation = (to: string) => void
-
 export function ActivityRail({
 	activityItems,
 	collapsed,
 	onToggleCollapsed,
 	pathname,
-	requestNavigation,
 }: {
 	activityItems: NavSection[]
 	collapsed: boolean
 	onToggleCollapsed: () => void
 	pathname: string
-	requestNavigation: RequestNavigation
 }) {
 	const product = useProduct()
 	return (
@@ -100,11 +97,10 @@ export function ActivityRail({
 							)
 						: isWorkbenchActivityActive(pathname, item.href, item.exact)
 					return (
-						<Link
+						<RouterLinkAdapter
 							key={`${item.href}:${item.label}`}
 							to={item.href}
 							className="plx-workbench__activityItem"
-							onClick={() => requestNavigation(item.href)}
 							data-active={isActive ? 'true' : 'false'}
 							aria-current={isActive ? 'page' : undefined}
 							title={item.label}
@@ -113,7 +109,7 @@ export function ActivityRail({
 								{item.icon ?? <IconHome2 size={18} stroke={1.7} />}
 							</span>
 							<span className="plx-workbench__activityLabel">{item.label}</span>
-						</Link>
+						</RouterLinkAdapter>
 					)
 				})}
 			</nav>
@@ -162,15 +158,7 @@ function isExternalHref(href: string): boolean {
 	return !href.startsWith('/')
 }
 
-export function RouteGroupRail({
-	group,
-	pathname,
-	requestNavigation,
-}: {
-	group: NavSection
-	pathname: string
-	requestNavigation: RequestNavigation
-}) {
+export function RouteGroupRail({ group, pathname }: { group: NavSection; pathname: string }) {
 	return (
 		<aside className="plx-workbench__routeGroup" aria-label={`${group.label} 导航`}>
 			<div className="plx-workbench__routeGroupHeader">
@@ -183,17 +171,16 @@ export function RouteGroupRail({
 				{group.children?.map((item) => {
 					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
 					return (
-						<Link
+						<RouterLinkAdapter
 							key={`${item.href}:${item.label}`}
 							to={item.href}
 							className="plx-workbench__routeGroupItem"
 							data-active={isActive ? 'true' : 'false'}
 							aria-current={isActive ? 'page' : undefined}
-							onClick={() => requestNavigation(item.href)}
 						>
 							<span aria-hidden="true">{item.icon}</span>
 							<span>{item.label}</span>
-						</Link>
+						</RouterLinkAdapter>
 					)
 				})}
 			</nav>
@@ -267,26 +254,46 @@ export function EditorTabStrip({
 			<IconPlus size={15} stroke={1.9} />
 		</button>
 	)
-	const hasActiveTab = tabs.some((tab) => tab.id === activeTabId)
+	const hasActiveTab = tabs.some((tab) => tab.instanceId === activeTabId)
 	return (
 		<div className="plx-workbench__editorTabStrip" role="tablist" aria-label="工作标签页">
-			{tabs.map((tab) => {
-				const isActive = tab.id === activeTabId
-				const isDirty = Boolean(dirtyTabs[tab.id])
+			{tabs.map((tab, tabIndex) => {
+				const isActive = tab.instanceId === activeTabId
+				const isDirty = Boolean(dirtyTabs[tab.instanceId])
 				return (
-					<Fragment key={tab.id}>
+					<Fragment key={tab.instanceId}>
 						<div
 							className="plx-workbench__editorTabButton"
 							data-active={isActive ? 'true' : 'false'}
 							role="tab"
 							aria-selected={isActive}
-							tabIndex={0}
+							tabIndex={isActive ? 0 : -1}
 							onClick={() => onActivateTab(tab)}
 							onKeyDown={(event) => {
+								if (event.target !== event.currentTarget) return
 								if (event.key === 'Enter' || event.key === ' ') {
 									event.preventDefault()
 									onActivateTab(tab)
+									return
 								}
+								const nextIndex =
+									event.key === 'Home'
+										? 0
+										: event.key === 'End'
+											? tabs.length - 1
+											: event.key === 'ArrowLeft'
+												? (tabIndex - 1 + tabs.length) % tabs.length
+												: event.key === 'ArrowRight'
+													? (tabIndex + 1) % tabs.length
+													: -1
+								if (nextIndex === -1) return
+								event.preventDefault()
+								const nextTab = tabs[nextIndex]
+								if (!nextTab) return
+								onActivateTab(nextTab)
+								const tabElements =
+									event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')
+								tabElements?.[nextIndex]?.focus()
 							}}
 						>
 							<div className="plx-workbench__editorTabBody">
@@ -304,9 +311,10 @@ export function EditorTabStrip({
 								type="button"
 								className="plx-workbench__iconButton"
 								aria-label={`关闭 ${tab.title}`}
+								tabIndex={isActive ? 0 : -1}
 								onClick={(event) => {
 									event.stopPropagation()
-									onCloseTab(tab.id)
+									onCloseTab(tab.instanceId)
 								}}
 							>
 								<IconX size={14} stroke={1.8} />

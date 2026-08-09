@@ -69,11 +69,17 @@ export type WorkbenchOpenTabInput = Readonly<{
 	meta?: string
 }>
 
+export type WorkbenchNavigation = Readonly<{
+	/** Navigate to a registered plugin-relative shell route using the active Tab. */
+	navigate(path: string): void
+	/** Open or focus a business document identified by its normalized route path. */
+	openTab(input: WorkbenchOpenTabInput): void
+}>
+
 export type WorkbenchViewRuntime = Readonly<{
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
-	navigate?: (path: string) => void
-	openTab?: (input: WorkbenchOpenTabInput) => void
+	navigation?: WorkbenchNavigation
 	routeParams: Readonly<Record<string, string>>
 }>
 
@@ -83,21 +89,19 @@ const WorkbenchViewContext = createContext<WorkbenchViewRuntime | null>(null)
 export function WorkbenchViewProvider({
 	item,
 	environment,
-	navigate,
-	openTab,
+	navigation,
 	routeParams = EMPTY_ROUTE_PARAMS,
 	children,
 }: {
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
-	navigate?: (path: string) => void
-	openTab?: (input: WorkbenchOpenTabInput) => void
+	navigation?: WorkbenchNavigation
 	routeParams?: Readonly<Record<string, string>>
 	children: ReactNode
 }) {
 	const value = useMemo<WorkbenchViewRuntime>(
-		() => ({ item, environment, navigate, openTab, routeParams }),
-		[environment, item, navigate, openTab, routeParams],
+		() => ({ item, environment, navigation, routeParams }),
+		[environment, item, navigation, routeParams],
 	)
 	return <WorkbenchViewContext.Provider value={value}>{children}</WorkbenchViewContext.Provider>
 }
@@ -134,9 +138,8 @@ export type WorkbenchHost = Readonly<{
 	locale: string
 	notify(payload: WorkbenchUiNotifyPayload): void
 	confirm(payload: WorkbenchUiConfirmPayload): Promise<boolean>
-	/** Navigate to a registered plugin-relative shell route using the active Tab. */
-	navigate(path: string): void
-	openTab(input: WorkbenchOpenTabInput): void
+	/** Shell navigation capability. `null` in standalone or non-navigable hosts. */
+	navigation: WorkbenchNavigation | null
 	routeParams: Readonly<Record<string, string>>
 }>
 
@@ -157,14 +160,7 @@ export function useWorkbenchHost(): WorkbenchHost {
 			locale,
 			notify: environment.notify,
 			confirm: environment.confirm,
-			navigate: (path) => {
-				if (!view.navigate) throw new Error('[workbench-ui] current host does not support navigate')
-				view.navigate(path)
-			},
-			openTab: (input) => {
-				if (!view.openTab) throw new Error('[workbench-ui] current host does not support openTab')
-				view.openTab(input)
-			},
+			navigation: view.navigation ?? null,
 			routeParams: view.routeParams,
 		}),
 		[
@@ -172,8 +168,7 @@ export function useWorkbenchHost(): WorkbenchHost {
 			item.ownerPluginId,
 			item.targetPluginId,
 			locale,
-			view.navigate,
-			view.openTab,
+			view.navigation,
 			view.routeParams,
 		],
 	)

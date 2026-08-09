@@ -1,6 +1,6 @@
 import { useStore } from '@tanstack/react-store'
 import { useCallback, useMemo } from 'react'
-import { useWorkbenchTabIdentity, useWorkspaceController } from '../context'
+import { useActiveWorkbenchTabId, useWorkspaceController } from '../context'
 import { mergeLayout } from './storage'
 import type { SplitViewLayout } from './view'
 
@@ -14,7 +14,7 @@ function hasSameState<T extends TabStateRecord>(left: T, right: T) {
 }
 
 export function useResolvedWorkbenchTabState<T>(scope: string, resolve: (value: unknown) => T) {
-	const { activeTabId } = useWorkbenchTabIdentity()
+	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
 	const scopedValue = useStore(workspace.store, (state) =>
 		activeTabId ? state.uiState.tabState[activeTabId]?.[scope] : undefined,
@@ -26,7 +26,7 @@ export function usePatchedWorkbenchTabState<T extends TabStateRecord>(
 	scope: string,
 	resolve: (value: unknown) => T,
 ) {
-	const { activeTabId } = useWorkbenchTabIdentity()
+	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
 	const state = useResolvedWorkbenchTabState(scope, resolve)
 
@@ -47,7 +47,7 @@ export function useWorkbenchSplitLayout<T extends NumericLayout>(
 	resolve: (value: unknown) => T,
 	sanitize: (layout: T) => T,
 ) {
-	const { activeTabId } = useWorkbenchTabIdentity()
+	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
 	const layout = useResolvedWorkbenchTabState(scope, resolve)
 

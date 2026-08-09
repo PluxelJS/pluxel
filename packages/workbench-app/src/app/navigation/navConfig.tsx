@@ -23,14 +23,13 @@ import {
 	IconUsers,
 	type Icon,
 } from '@tabler/icons-react'
+import { BUILTIN_WORKBENCH_ROUTES, type BuiltinWorkbenchIcon } from '../workbench/location'
 
 export interface NavItem {
 	label: string
 	href: string
 	icon?: ReactNode
-	rightSection?: ReactNode
 	exact?: boolean
-	disabled?: boolean
 	group?: NavGroup
 }
 
@@ -44,13 +43,25 @@ export interface NavSection extends NavItem {
 	children?: NavItem[]
 }
 
-export const baseNavItems: NavItem[] = [
-	{ label: '首页', href: '/', exact: true, icon: <IconHome2 size={18} stroke={1.7} /> },
-	{ label: '日志', href: '/logs', icon: <IconHistory size={18} stroke={1.7} /> },
-	{ label: '安全', href: '/security', icon: <IconShieldLock size={18} stroke={1.7} /> },
-	{ label: 'Agent 工具', href: '/agent-tools', icon: <IconRobot size={18} stroke={1.7} /> },
-	{ label: '插件', href: '/plugins', icon: <IconPuzzle size={18} stroke={1.7} /> },
-]
+const builtinWorkbenchIconMap = {
+	home: IconHome2,
+	logs: IconHistory,
+	security: IconShieldLock,
+	'agent-tools': IconRobot,
+	plugins: IconPuzzle,
+} satisfies Record<BuiltinWorkbenchIcon, Icon>
+
+export const baseNavItems: NavItem[] = BUILTIN_WORKBENCH_ROUTES.filter(
+	(route) => route.navigation,
+).map((route) => {
+	const Component = builtinWorkbenchIconMap[route.icon]
+	return {
+		label: route.title,
+		href: route.path,
+		exact: route.path === '/',
+		icon: <Component size={18} stroke={1.7} />,
+	}
+})
 
 const workbenchIconMap = {
 	api: IconApi,
@@ -88,7 +99,6 @@ export interface WorkbenchNavMeta {
 	label?: string
 	href?: string
 	icon?: unknown
-	rightSection?: unknown
 	exact?: boolean
 	group?: {
 		id: string
@@ -101,14 +111,10 @@ export function buildWorkbenchNavItems(entries: WorkbenchNavMeta[]): NavItem[] {
 	return entries.map((entry) => {
 		const label = typeof entry.label === 'string' && entry.label.length > 0 ? entry.label : entry.id
 		const href = typeof entry.href === 'string' && entry.href.length > 0 ? entry.href : '#'
-		const rightSection = isValidElement(entry.rightSection)
-			? (entry.rightSection as ReactNode)
-			: undefined
 		return {
 			label,
 			href,
 			icon: resolveNavIcon(entry.icon),
-			rightSection,
 			exact: entry.exact === true,
 			group: entry.group
 				? {

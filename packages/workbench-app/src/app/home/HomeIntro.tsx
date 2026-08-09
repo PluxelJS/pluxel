@@ -1,7 +1,6 @@
 import { Button, Group, Paper, SimpleGrid, Text, Title } from '@mantine/core'
 import {
 	IconArrowRight,
-	IconClockPlay,
 	IconHistory,
 	IconPlugConnected,
 	IconShieldCheck,
@@ -42,8 +41,7 @@ const WORKSPACE_LINKS: WorkspaceLink[] = [
 	},
 ]
 
-export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
-	const resume = createResumeAction(lastRoute)
+export function HomeIntro() {
 	const overview = usePluginOverview()
 	const summary = overview.overview?.status.summary
 	const statuses = overview.overview?.status.statuses ?? []
@@ -70,10 +68,10 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 					<Group gap="sm" className="plx-home__heroActions">
 						<Button
 							component={RouterLinkAdapter}
-							to={resume?.to ?? '/plugins'}
-							leftSection={resume ? <IconClockPlay size={17} /> : <IconPlugConnected size={17} />}
+							to="/plugins"
+							leftSection={<IconPlugConnected size={17} />}
 						>
-							{resume?.title ?? '打开插件工作台'}
+							打开插件工作台
 						</Button>
 						<Button component={RouterLinkAdapter} to="/logs" variant="default">
 							查看实时日志
@@ -102,7 +100,7 @@ export function HomeIntro({ lastRoute }: { lastRoute: string | null }) {
 						</Title>
 					</div>
 					<Text size="sm" c="dimmed">
-						4 个核心入口
+						{WORKSPACE_LINKS.length} 个核心入口
 					</Text>
 				</div>
 
@@ -222,24 +220,4 @@ function PluginQueue({
 			</div>
 		</div>
 	)
-}
-
-function createResumeAction(lastRoute: string | null) {
-	if (!lastRoute || lastRoute === '/') return null
-	if (lastRoute.startsWith('/plugins/')) {
-		const raw = lastRoute.replace('/plugins/', '')
-		let name = '上次打开的插件'
-		try {
-			name = `插件「${decodeURIComponent(raw)}」`
-		} catch {}
-		return { title: '继续上次工作', description: `返回${name}`, to: lastRoute }
-	}
-
-	const map: Record<string, { title: string; description: string; to: string }> = {
-		'/plugins': { title: '继续上次工作', description: '返回插件工作台', to: '/plugins' },
-		'/logs': { title: '继续上次工作', description: '返回实时日志', to: '/logs' },
-		'/security': { title: '继续上次工作', description: '返回安全中心', to: '/security' },
-	}
-
-	return map[lastRoute] ?? null
 }

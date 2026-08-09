@@ -21,7 +21,7 @@ import { InlineNotice } from '../components'
 import { BuiltinDoc } from './builtin/Doc'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import { buildWorkbenchHref, normalizeWorkbenchPath } from './paths'
-import { useOptionalWorkspaceTabs } from '../app/workbench/context'
+import { useOptionalWorkspaceNavigation } from '../app/workbench/context'
 import {
 	WorkbenchClientRuntime,
 	type WorkbenchResolvedRoute,
@@ -204,7 +204,7 @@ function WorkbenchRemoteView({
 	routeParams: Readonly<Record<string, string>>
 }) {
 	const { runtime, environment } = useWorkbenchRuntime()
-	const tabs = useOptionalWorkspaceTabs()
+	const navigation = useOptionalWorkspaceNavigation()
 	const resolveShellPath = useCallback(
 		(inputPath: string, operation: 'navigate' | 'openTab') => {
 			const path = normalizeWorkbenchPath(inputPath)
@@ -220,25 +220,29 @@ function WorkbenchRemoteView({
 	)
 	const navigate = useCallback(
 		(inputPath: string) => {
-			if (!tabs) throw new Error('[workbench-ui] current frame does not support navigation')
+			if (!navigation) throw new Error('[workbench-ui] current frame does not support navigation')
 			const path = resolveShellPath(inputPath, 'navigate')
-			tabs.navigate(buildWorkbenchHref(item.targetPluginId, path, 'shell'))
+			navigation.navigate(buildWorkbenchHref(item.targetPluginId, path, 'shell'))
 		},
-		[item.targetPluginId, resolveShellPath, tabs],
+		[item.targetPluginId, navigation, resolveShellPath],
 	)
 	const openTab = useCallback(
 		(input: { path: string; title: string; meta?: string }) => {
-			if (!tabs) throw new Error('[workbench-ui] current frame does not support native tabs')
+			if (!navigation) throw new Error('[workbench-ui] current frame does not support native tabs')
 			const path = resolveShellPath(input.path, 'openTab')
 			const title = input.title.trim()
 			if (!title) throw new Error('[workbench-ui] openTab.title is required')
-			tabs.openTab({
-				to: buildWorkbenchHref(item.targetPluginId, path, 'shell'),
+			navigation.openTab({
+				path: buildWorkbenchHref(item.targetPluginId, path, 'shell'),
 				title,
 				meta: input.meta?.trim() || undefined,
 			})
 		},
-		[item.targetPluginId, resolveShellPath, tabs],
+		[item.targetPluginId, navigation, resolveShellPath],
+	)
+	const hostNavigation = useMemo(
+		() => (navigation ? { navigate, openTab } : undefined),
+		[navigate, navigation, openTab],
 	)
 	const View = runtime.view(snapshot.target, item)
 	if (!View) {
@@ -257,8 +261,7 @@ function WorkbenchRemoteView({
 			<WorkbenchViewProvider
 				item={item}
 				environment={environment}
-				navigate={navigate}
-				openTab={openTab}
+				navigation={hostNavigation}
 				routeParams={routeParams}
 			>
 				<View />

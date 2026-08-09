@@ -57,19 +57,44 @@ describe('Workbench UI resource facade', () => {
 							},
 						} as never
 					}
-					navigate={navigate}
-					openTab={openTab}
+					navigation={{ navigate, openTab }}
 				>
 					<Probe />
 				</WorkbenchViewProvider>,
 			)
 		})
 
-		host?.navigate('/settings')
-		host?.openTab({ path: '/accounts/default', title: 'default' })
+		host?.navigation?.navigate('/settings')
+		host?.navigation?.openTab({ path: '/accounts/default', title: 'default' })
 
 		expect(navigate).toHaveBeenCalledWith('/settings')
 		expect(openTab).toHaveBeenCalledWith({ path: '/accounts/default', title: 'default' })
+	})
+
+	it('reports unavailable navigation without exposing methods that only fail on use', async () => {
+		let host: ReturnType<typeof useWorkbenchHost> | undefined
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		const root = createRoot(container)
+		mounted.push(root)
+
+		function Probe() {
+			host = useWorkbenchHost()
+			return null
+		}
+
+		await act(async () => {
+			root.render(
+				<WorkbenchViewProvider
+					item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+					environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
+				>
+					<Probe />
+				</WorkbenchViewProvider>,
+			)
+		})
+
+		expect(host?.navigation).toBeNull()
 	})
 
 	it('is a frozen reflection-safe record backed only by granted resources', async () => {

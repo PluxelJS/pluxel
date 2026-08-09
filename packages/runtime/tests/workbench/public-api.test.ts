@@ -172,10 +172,12 @@ describe('Workbench authoring API', () => {
 	})
 
 	it('exposes plugin-scoped navigation and native document tabs to Workbench views', () => {
-		expectTypeOf<WorkbenchHost['navigate']>().toBeFunction()
-		expectTypeOf<Parameters<WorkbenchHost['navigate']>[0]>().toEqualTypeOf<string>()
-		expectTypeOf<WorkbenchHost['openTab']>().toBeFunction()
-		expectTypeOf<Parameters<WorkbenchHost['openTab']>[0]>().toMatchObjectType<{
+		type Navigation = NonNullable<WorkbenchHost['navigation']>
+		expectTypeOf<WorkbenchHost['navigation']>().toBeNullable()
+		expectTypeOf<Navigation['navigate']>().toBeFunction()
+		expectTypeOf<Parameters<Navigation['navigate']>[0]>().toEqualTypeOf<string>()
+		expectTypeOf<Navigation['openTab']>().toBeFunction()
+		expectTypeOf<Parameters<Navigation['openTab']>[0]>().toMatchObjectType<{
 			path: string
 			title: string
 			meta?: string

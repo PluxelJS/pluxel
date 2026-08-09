@@ -5,7 +5,7 @@ import {
 	PaneTabLabel,
 	getPaneTabsRootClassName,
 } from '../../../workbench/PaneTabs'
-import { useWorkbenchTabIdentity, useWorkspaceController } from '../../../workbench/context'
+import { useActiveWorkbenchTabId, useWorkspaceController } from '../../../workbench/context'
 import { useResolvedWorkbenchTabState } from '../../../workbench/split'
 import { useCurrentPathname } from '../../../router/useCurrentRoute'
 import {
@@ -74,7 +74,7 @@ export function PluginWorkbenchViewContainer({
 	searchPluginName?: string
 	headerMode?: 'stacked' | 'inline'
 }) {
-	const { activeTabId } = useWorkbenchTabIdentity()
+	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
 	const pathname = useCurrentPathname()
 	const routeSearch = usePluginDetailSearch()

@@ -1,13 +1,16 @@
 import { Store } from '@tanstack/react-store'
 import { hasSameLayout } from './split/storage'
+import { type WorkbenchState, type WorkbenchTab, readWorkbenchState } from './state'
 import {
-	getSectionPaneState,
-	type WorkbenchSectionId,
-	type WorkbenchState,
-	type WorkbenchTab,
-	readWorkbenchState,
-} from './state'
-import { deriveTabFromPath, duplicateActiveWorkbenchTab, syncWorkbenchTabs } from './tabs'
+	createInitialWorkbenchTab,
+	createAdjacentWorkbenchTab,
+	openWorkbenchDocument,
+	openWorkbenchNavigationTab,
+	replaceActiveWorkbenchTab,
+	type WorkbenchDocumentInput,
+} from './tabs'
+
+const MAX_PENDING_NAVIGATIONS = 64
 
 function createInitialState(): WorkbenchState {
 	return {
@@ -42,40 +45,50 @@ function hasSameStateValue(left: unknown, right: unknown, depth = 0): boolean {
 	return false
 }
 
-function syncWorkbenchLocation(
+function reconcileWorkbenchLocation(
 	store: Store<WorkbenchState>,
 	pathname: string,
-	mode: 'replace-active' | 'open-tab',
+	requestedInstanceId: string | null,
 ) {
-	const derivedTab = deriveTabFromPath(pathname)
 	store.setState((prev) => {
-		const existing = prev.uiState.tabs.find((tab) => tab.id === derivedTab.id)
-		const active = prev.uiState.tabs.find((tab) => tab.id === prev.uiState.activeTabId)
-		const currentTab =
-			active?.path === pathname
-				? active
-				: existing?.kind === 'document' && existing.path === pathname
-					? existing
-					: derivedTab
-		const nextUiState = syncWorkbenchTabs(prev.uiState, currentTab, mode)
+		const active = prev.uiState.tabs.find((tab) => tab.instanceId === prev.uiState.activeTabId)
+		const requested = requestedInstanceId
+			? prev.uiState.tabs.find((tab) => tab.instanceId === requestedInstanceId)
+			: undefined
+		if (requested?.path === pathname) {
+			if (prev.uiState.activeTabId === requested.instanceId) return prev
+			return {
+				...prev,
+				uiState: { ...prev.uiState, activeTabId: requested.instanceId },
+			}
+		}
+		if (active?.path === pathname) return prev
+		const restoredDocument = requested
+			? undefined
+			: prev.uiState.tabs.find((tab) => tab.documentKey === pathname)
+		if (restoredDocument) {
+			return {
+				...prev,
+				uiState: { ...prev.uiState, activeTabId: restoredDocument.instanceId },
+			}
+		}
+
+		const baseUiState = requested
+			? { ...prev.uiState, activeTabId: requested.instanceId }
+			: prev.uiState
+		const current = requested ?? active
+		const nextUiState =
+			!requested && current && prev.dirtyTabs[current.instanceId]
+				? openWorkbenchNavigationTab(baseUiState, pathname)
+				: replaceActiveWorkbenchTab(baseUiState, pathname)
 		if (nextUiState === prev.uiState) return prev
 		return commitWorkbenchUiState(prev, nextUiState)
 	})
 }
 
-function openWorkbenchTab(
-	store: Store<WorkbenchState>,
-	input: { path: string; title: string; meta?: string },
-) {
-	const derived = deriveTabFromPath(input.path)
-	const tab = {
-		...derived,
-		title: input.title,
-		meta: input.meta,
-		kind: 'document' as const,
-	}
+function openWorkbenchStoreDocument(store: Store<WorkbenchState>, input: WorkbenchDocumentInput) {
 	store.setState((prev) => {
-		const nextUiState = syncWorkbenchTabs(prev.uiState, tab, 'open-tab')
+		const nextUiState = openWorkbenchDocument(prev.uiState, input)
 		if (nextUiState === prev.uiState) return prev
 		return commitWorkbenchUiState(prev, nextUiState)
 	})
@@ -88,7 +101,7 @@ function retainTabRecords<T>(records: Record<string, T>, tabIds: Set<string>) {
 }
 
 function commitWorkbenchUiState(prev: WorkbenchState, nextUiState: WorkbenchState['uiState']) {
-	const tabIds = new Set(nextUiState.tabs.map((tab) => tab.id))
+	const tabIds = new Set(nextUiState.tabs.map((tab) => tab.instanceId))
 	const dirtyTabs = retainTabRecords(prev.dirtyTabs, tabIds)
 	const tabState = retainTabRecords(nextUiState.tabState, tabIds)
 	return {
@@ -98,43 +111,31 @@ function commitWorkbenchUiState(prev: WorkbenchState, nextUiState: WorkbenchStat
 	}
 }
 
-function setWorkbenchSectionPaneVisible(
-	store: Store<WorkbenchState>,
-	sectionId: WorkbenchSectionId,
-	visible: boolean,
-) {
+function setWorkbenchPluginPaneVisible(store: Store<WorkbenchState>, visible: boolean) {
 	store.setState((prev) => {
-		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
-		if (currentPaneState.visible === visible) return prev
+		if (prev.uiState.pluginPane.visible === visible) return prev
 		return {
 			...prev,
 			uiState: {
 				...prev.uiState,
-				sectionPanes: {
-					...prev.uiState.sectionPanes,
-					[sectionId]: {
-						...currentPaneState,
-						visible,
-					},
+				pluginPane: {
+					...prev.uiState.pluginPane,
+					visible,
 				},
 			},
 		}
 	})
 }
 
-function toggleWorkbenchSectionPane(store: Store<WorkbenchState>, sectionId: WorkbenchSectionId) {
+function toggleWorkbenchPluginPane(store: Store<WorkbenchState>) {
 	store.setState((prev) => {
-		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
 		return {
 			...prev,
 			uiState: {
 				...prev.uiState,
-				sectionPanes: {
-					...prev.uiState.sectionPanes,
-					[sectionId]: {
-						...currentPaneState,
-						visible: !currentPaneState.visible,
-					},
+				pluginPane: {
+					...prev.uiState.pluginPane,
+					visible: !prev.uiState.pluginPane.visible,
 				},
 			},
 		}
@@ -151,24 +152,19 @@ function toggleWorkbenchNavigationCollapsed(store: Store<WorkbenchState>) {
 	}))
 }
 
-function setWorkbenchSectionPaneLayout(
+function setWorkbenchPluginPaneLayout(
 	store: Store<WorkbenchState>,
-	sectionId: WorkbenchSectionId,
 	layout: Record<string, number>,
 ) {
 	store.setState((prev) => {
-		const currentPaneState = getSectionPaneState(prev.uiState, sectionId)
-		if (hasSameLayout(currentPaneState.layout, layout)) return prev
+		if (hasSameLayout(prev.uiState.pluginPane.layout, layout)) return prev
 		return {
 			...prev,
 			uiState: {
 				...prev.uiState,
-				sectionPanes: {
-					...prev.uiState.sectionPanes,
-					[sectionId]: {
-						...currentPaneState,
-						layout,
-					},
+				pluginPane: {
+					...prev.uiState.pluginPane,
+					layout,
 				},
 			},
 		}
@@ -233,11 +229,16 @@ function setWorkbenchTabDirty(store: Store<WorkbenchState>, tabId: string | null
 	if (!tabId) return
 	store.setState((prev) => {
 		if ((prev.dirtyTabs[tabId] ?? false) === dirty) return prev
+		if (!dirty) {
+			const dirtyTabs = { ...prev.dirtyTabs }
+			delete dirtyTabs[tabId]
+			return { ...prev, dirtyTabs }
+		}
 		return {
 			...prev,
 			dirtyTabs: {
 				...prev.dirtyTabs,
-				[tabId]: dirty,
+				[tabId]: true,
 			},
 		}
 	})
@@ -245,29 +246,25 @@ function setWorkbenchTabDirty(store: Store<WorkbenchState>, tabId: string | null
 
 function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 	store.setState((prev) => {
-		if (!prev.uiState.tabs.some((tab) => tab.id === tabId)) return prev
+		if (!prev.uiState.tabs.some((tab) => tab.instanceId === tabId)) return prev
 		if (prev.uiState.tabs.length === 1) {
-			const homeTab = deriveTabFromPath('/')
+			const homeTab = createInitialWorkbenchTab('/')
 			return {
 				...prev,
 				dirtyTabs: {},
 				uiState: {
-					activeTabId: homeTab.id,
+					activeTabId: homeTab.instanceId,
 					navigationCollapsed: prev.uiState.navigationCollapsed,
-					sectionPanes: prev.uiState.sectionPanes,
+					pluginPane: prev.uiState.pluginPane,
 					tabState: {},
 					tabs: [homeTab],
 				},
 			}
 		}
-		const nextTabs = prev.uiState.tabs.filter((tab) => tab.id !== tabId)
+		const nextTabs = prev.uiState.tabs.filter((tab) => tab.instanceId !== tabId)
 		const closingActive = prev.uiState.activeTabId === tabId
-		const index = prev.uiState.tabs.findIndex((tab) => tab.id === tabId)
-		const fallbackTab =
-			nextTabs[Math.max(0, index - 1)] ??
-			nextTabs[Math.min(index, nextTabs.length - 1)] ??
-			nextTabs[0] ??
-			null
+		const index = prev.uiState.tabs.findIndex((tab) => tab.instanceId === tabId)
+		const fallbackTab = nextTabs[Math.max(0, index - 1)]!
 		const nextDirtyTabs = { ...prev.dirtyTabs }
 		delete nextDirtyTabs[tabId]
 		const nextTabState =
@@ -283,7 +280,7 @@ function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 			dirtyTabs: nextDirtyTabs,
 			uiState: {
 				...prev.uiState,
-				activeTabId: closingActive ? (fallbackTab?.id ?? null) : prev.uiState.activeTabId,
+				activeTabId: closingActive ? fallbackTab.instanceId : prev.uiState.activeTabId,
 				tabState: nextTabState,
 				tabs: nextTabs,
 			},
@@ -291,46 +288,63 @@ function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 	})
 }
 
-function duplicateActiveWorkbenchStoreTab(store: Store<WorkbenchState>) {
+function createAdjacentWorkbenchStoreTab(store: Store<WorkbenchState>) {
 	store.setState((prev) => {
-		const uiState = duplicateActiveWorkbenchTab(prev.uiState)
+		const uiState = createAdjacentWorkbenchTab(prev.uiState)
 		return uiState === prev.uiState ? prev : { ...prev, uiState }
 	})
 }
 
-type WorkspaceNavigationMode = 'replace-active' | 'open-tab'
-
 export class WorkspaceController {
-	readonly store = new Store<WorkbenchState>(createInitialState())
-	private pendingNavigation: { to: string; mode: WorkspaceNavigationMode } | null = null
+	readonly store: Store<WorkbenchState>
+	private pendingNavigations: Array<{ to: string; instanceId: string }> = []
+
+	constructor(initialPathname?: string) {
+		this.store = new Store<WorkbenchState>(createInitialState())
+		if (initialPathname) this.reconcileLocation(initialPathname)
+	}
 
 	get state(): WorkbenchState {
 		return this.store.state
 	}
 
-	syncLocation(pathname: string, mode: WorkspaceNavigationMode): void {
-		syncWorkbenchLocation(this.store, pathname, mode)
+	private enqueueNavigation(to: string, instanceId: string): void {
+		const last = this.pendingNavigations.at(-1)
+		if (last?.to === to && last.instanceId === instanceId) return
+		this.pendingNavigations.push({ to, instanceId })
+		if (this.pendingNavigations.length > MAX_PENDING_NAVIGATIONS) {
+			this.pendingNavigations.splice(0, this.pendingNavigations.length - MAX_PENDING_NAVIGATIONS)
+		}
+	}
+
+	reconcileLocation(pathname: string): void {
+		const pendingIndex = this.pendingNavigations.findIndex((intent) => intent.to === pathname)
+		const pending = pendingIndex === -1 ? undefined : this.pendingNavigations[pendingIndex]
+		this.pendingNavigations =
+			pendingIndex === -1 ? [] : this.pendingNavigations.slice(pendingIndex + 1)
+		reconcileWorkbenchLocation(this.store, pathname, pending?.instanceId ?? null)
 	}
 
 	openTab(input: { path: string; title: string; meta?: string }): void {
-		this.pendingNavigation = { to: input.path, mode: 'open-tab' }
-		openWorkbenchTab(this.store, input)
+		openWorkbenchStoreDocument(this.store, input)
+		const instanceId = this.state.uiState.activeTabId
+		if (instanceId) this.enqueueNavigation(input.path, instanceId)
 	}
 
-	setSectionPaneVisible(sectionId: WorkbenchSectionId, visible: boolean): void {
-		setWorkbenchSectionPaneVisible(this.store, sectionId, visible)
+	setPluginPaneVisible(visible: boolean): void {
+		setWorkbenchPluginPaneVisible(this.store, visible)
 	}
 
-	toggleSectionPane(sectionId: WorkbenchSectionId): void {
-		toggleWorkbenchSectionPane(this.store, sectionId)
+	togglePluginPane(): void {
+		toggleWorkbenchPluginPane(this.store)
 	}
 
 	toggleNavigationCollapsed(): void {
 		toggleWorkbenchNavigationCollapsed(this.store)
 	}
 
-	setSectionPaneLayout(sectionId: WorkbenchSectionId, layout: Record<string, number>): void {
-		setWorkbenchSectionPaneLayout(this.store, sectionId, layout)
+	setPluginPaneLayout(layout: Record<string, number>): void {
+		setWorkbenchPluginPaneLayout(this.store, layout)
 	}
 
 	setActiveTabId(tabId: string | null): void {
@@ -348,35 +362,26 @@ export class WorkspaceController {
 	closeTab(tabId: string): WorkbenchTab | null {
 		closeWorkbenchTab(this.store, tabId)
 		const { tabs, activeTabId } = this.state.uiState
-		return tabs.find((tab) => tab.id === activeTabId) ?? null
+		return tabs.find((tab) => tab.instanceId === activeTabId) ?? null
 	}
 
-	duplicateActiveTab(): WorkbenchTab | null {
-		duplicateActiveWorkbenchStoreTab(this.store)
+	createAdjacentTab(): WorkbenchTab | null {
+		createAdjacentWorkbenchStoreTab(this.store)
 		const { tabs, activeTabId } = this.state.uiState
-		return tabs.find((tab) => tab.id === activeTabId) ?? null
+		return tabs.find((tab) => tab.instanceId === activeTabId) ?? null
 	}
 
 	requestNavigation(to: string): void {
 		const { activeTabId, tabs } = this.state.uiState
-		const activeTab = tabs.find((tab) => tab.id === activeTabId)
+		const activeTab = tabs.find((tab) => tab.instanceId === activeTabId)
 		if (activeTab?.path === to) return
-		const mode: WorkspaceNavigationMode =
-			activeTab && this.state.dirtyTabs[activeTab.id] ? 'open-tab' : 'replace-active'
-		this.pendingNavigation = { to, mode }
-		if (mode === 'open-tab') {
-			const tab = deriveTabFromPath(to)
-			openWorkbenchTab(this.store, {
-				path: tab.path,
-				title: tab.title,
-				meta: tab.meta,
-			})
+		if (!activeTab || this.state.dirtyTabs[activeTab.instanceId]) {
+			this.store.setState((prev) => ({
+				...prev,
+				uiState: openWorkbenchNavigationTab(prev.uiState, to),
+			}))
 		}
-	}
-
-	consumeNavigation(pathname: string): { to: string; mode: WorkspaceNavigationMode } | null {
-		const pending = this.pendingNavigation
-		this.pendingNavigation = null
-		return pending?.to === pathname ? pending : null
+		const instanceId = this.state.uiState.activeTabId
+		if (instanceId) this.enqueueNavigation(to, instanceId)
 	}
 }

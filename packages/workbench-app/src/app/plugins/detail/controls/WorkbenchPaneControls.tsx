@@ -8,7 +8,7 @@ import {
 	IconLayoutSidebarRightExpand,
 } from '@tabler/icons-react'
 import { memo, useEffect, useMemo, useRef } from 'react'
-import { useWorkbenchLayout, useWorkbenchTabIdentity } from '../../../workbench/context'
+import { useActiveWorkbenchTabId, useWorkbenchLayout } from '../../../workbench/context'
 import {
 	WorkbenchLayoutButton,
 	WorkbenchLayoutControls,
@@ -19,7 +19,7 @@ import { usePluginWorkbenchLayout } from '../workbench/context'
 export const WorkbenchPaneControls = memo(function WorkbenchPaneControls() {
 	const { leftPaneAvailable, leftPaneVisible, setLeftPaneVisible, toggleLeftPane } =
 		useWorkbenchLayout()
-	const { activeTabId } = useWorkbenchTabIdentity()
+	const activeTabId = useActiveWorkbenchTabId()
 	const {
 		dockVisible,
 		rightPaneVisible,

@@ -136,10 +136,12 @@ Remote View 通过 host facade 导航当前 target 已注册的 shell route，�
 
 ```tsx
 const host = useWorkbenchHost()
+const navigation = host.navigation
+if (!navigation) return null
 
-host.navigate('/settings')
+navigation.navigate('/settings')
 
-host.openTab({
+navigation.openTab({
 	path: '/accounts/notifications',
 	title: 'notifications',
 	meta: 'Telegram Bot',
@@ -148,8 +150,8 @@ host.openTab({
 const accountId = host.routeParams.accountId
 ```
 
-两种操作的 path 都是插件相对路径，不是任意宿主 URL。宿主只接受当前 target route table 中的 shell route；
-standalone route 和未注册路径都会失败，`openTab()` 还会拒绝空标题。`navigate()` 使用当前 Tab，并遵循 dirty-state
+两种操作的 path 都是插件相对路径，不是任意宿主 URL。`host.navigation` 只在 shell 中可用，standalone View 得到
+`null`；宿主只接受当前 target route table 中的 shell route，未注册路径会失败，`openTab()` 还会拒绝空标题。`navigate()` 使用当前 Tab，并遵循 dirty-state
 自动保留策略。规范化后的完整宿主路径是 `openTab()` document target 的唯一 identity：再次
 打开同一路径会聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。
 `routeParams` 只包含当前 route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
@@ -157,14 +159,14 @@ standalone route 和未注册路径都会失败，`openTab()` 还会拒绝空标
 Tab strip 在当前 Tab 后提供统一的 `+`。它创建一个沿用当前 path、title 和 meta 的宿主本地 navigation instance，
 但不复制 dirty flag 或 tab-scoped state；随后点击普通导航会替换这个干净 instance，从而保留原 Tab。这个操作不进入
 plugin host facade，也不改变 `navigate()` / `openTab()` 的职责边界。分组 route 和插件目录因此只提供普通导航，不为每个条目
-重复渲染“在新工作标签打开”按钮；集合页打开具体业务对象仍使用显式 `host.openTab()`。
+重复渲染“在新工作标签打开”按钮；集合页打开具体业务对象仍使用显式 `host.navigation.openTab()`。
 
 Workbench 至少有一个原生 Tab 时显示 Tab strip；单个 Tab 也可以被关闭并回到首页。普通导航遵循当前工作区的
 `auto` 策略（未保存的当前 Tab 会保留并打开新 Tab）。
 
 Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。`openTab()` 必须先原子写入
-document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；否则普通 route reconciliation 会把
-显式新 tab 误判成 `replace-active`。
+document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；连续 navigation intent 按提交顺序消费，
+命中已有 document instance 时只聚焦，不把它重写成普通 navigation instance。
 
 ## Cross-plugin UI
 

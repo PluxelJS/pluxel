@@ -433,12 +433,18 @@ import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 
 export function Launcher() {
 	const host = useWorkbenchHost()
+	const navigation = host.navigation
+	if (!navigation) return null
 	return (
 		<>
-			<button onClick={() => host.navigate('/accounts')}>Accounts</button>
+			<button onClick={() => navigation.navigate('/accounts')}>Accounts</button>
 			<button
 				onClick={() =>
-					host.openTab({ path: '/accounts/notifications', title: 'notifications', meta: 'Bot' })
+					navigation.openTab({
+						path: '/accounts/notifications',
+						title: 'notifications',
+						meta: 'Bot',
+					})
 				}
 			>
 				Open notifications
@@ -453,9 +459,10 @@ export function Account() {
 }
 ```
 
-参数只匹配完整路径段，参数名必须以字母开头；参数化 route 必须设置 `navigation: false`。普通页面切换使用
-`navigate(path)`，由当前 Tab 承载；当前 Tab 有未保存状态时宿主会自动保留它。只有打开独立业务对象时才使用
-`openTab()`。两者都只能指向当前 Workbench target 已注册的 shell route，不能跳转到任意宿主 URL。`openTab()` 对相同
+参数只匹配完整路径段，参数名必须以字母开头；参数化 route 必须设置 `navigation: false`。Shell View 才能取得非空
+`host.navigation`；standalone View 得到 `null`，应使用普通链接返回宿主。普通页面切换使用 `navigation.navigate(path)`，
+由当前 Tab 承载；当前 Tab 有未保存状态时宿主会自动保留它。只有打开独立业务对象时才使用
+`navigation.openTab()`。两者都只能指向当前 Workbench target 已注册的 shell route，不能跳转到任意宿主 URL。`openTab()` 对相同
 规范化路径只保留一个 Tab，再次打开会聚焦并更新标题；Tab 和 metadata 会随 Workbench 恢复。
 
 RPC generic 应引用独立 browser-safe interface，而不是 provider 实现类。TypeScript generic 在运行时会擦除；

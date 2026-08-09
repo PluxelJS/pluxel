@@ -1,181 +1,128 @@
+import { resolveWorkbenchLocation } from './location'
 import type { WorkbenchTab, WorkbenchUiState } from './state'
-import { parseWorkbenchHref } from '../../workbench/paths'
 
-function decodeSegment(value: string) {
-	try {
-		return decodeURIComponent(value)
-	} catch {
-		return value
+export type WorkbenchDocumentInput = Readonly<{
+	path: string
+	title: string
+	meta?: string
+}>
+
+function createTabInstanceId(tabs: readonly WorkbenchTab[]) {
+	const existingIds = new Set(tabs.map((tab) => tab.instanceId))
+	let instanceId: string
+	do {
+		const randomId = globalThis.crypto?.randomUUID?.()
+		instanceId = randomId
+			? `tab:${randomId}`
+			: `tab:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`
+	} while (existingIds.has(instanceId))
+	return instanceId
+}
+
+function createNavigationTab(tabs: readonly WorkbenchTab[], path: string): WorkbenchTab {
+	const descriptor = resolveWorkbenchLocation(path)
+	return {
+		instanceId: createTabInstanceId(tabs),
+		path: descriptor.path,
+		title: descriptor.title,
+		meta: descriptor.meta,
 	}
 }
 
-export function deriveTabFromPath(pathname: string): WorkbenchTab {
-	if (!pathname || pathname === '/') {
-		return { id: 'home', path: '/', title: '首页', meta: 'Workbench' }
-	}
-	if (pathname === '/logs') {
-		return { id: 'logs', path: pathname, title: '日志', meta: 'Runtime' }
-	}
-	if (pathname === '/security') {
-		return { id: 'security', path: pathname, title: '安全', meta: 'Host' }
-	}
-	if (pathname === '/security/audit') {
-		return { id: 'security:audit', path: pathname, title: '审计事件', meta: 'Security' }
-	}
-	if (pathname === '/agent-tools') {
-		return { id: 'agent-tools', path: pathname, title: 'Agent 工具', meta: 'Runtime' }
-	}
-	if (pathname === '/plugins') {
-		return { id: 'plugins', path: pathname, title: '插件', meta: 'Overview' }
-	}
-	const pluginMatch = pathname.match(/^\/plugins\/([^/]+)(?:\/(.*))?$/)
-	if (pluginMatch) {
-		const pluginName = decodeSegment(pluginMatch[1] ?? '')
-		const tail = pluginMatch[2] ?? ''
-		return {
-			id: `plugin:${pluginName}`,
-			path: pathname,
-			title: pluginName,
-			meta: tail ? (tail === 'config' ? '配置' : tail.replaceAll('/', ' / ')) : '概览',
-		}
-	}
-	const workbenchRoute = parseWorkbenchHref(pathname)
-	if (workbenchRoute?.frame === 'shell') {
-		return {
-			id: `workbench:${workbenchRoute.pluginName}:${workbenchRoute.path}`,
-			path: pathname,
-			title: workbenchRoute.pluginName,
-			meta: 'Workbench',
-		}
-	}
-	const section = pathname.split('/').find(Boolean) ?? '页面'
-	return {
-		id: `route:${pathname}`,
-		path: pathname,
-		title: section,
-		meta: pathname,
-	}
+export function createInitialWorkbenchTab(path: string): WorkbenchTab {
+	return createNavigationTab([], path)
 }
 
 function sameWorkbenchTab(left: WorkbenchTab, right: WorkbenchTab) {
 	return (
-		left.id === right.id &&
+		left.instanceId === right.instanceId &&
 		left.path === right.path &&
 		left.title === right.title &&
 		left.meta === right.meta &&
-		left.kind === right.kind
+		left.documentKey === right.documentKey
 	)
 }
 
-function sameWorkbenchTabs(left: WorkbenchTab[], right: WorkbenchTab[]) {
-	return (
-		left.length === right.length && left.every((tab, index) => sameWorkbenchTab(tab, right[index]))
-	)
-}
-
-function preserveEqualTabs(previous: WorkbenchTab[], next: WorkbenchTab[]) {
-	return sameWorkbenchTabs(previous, next) ? previous : next
-}
-
-function upsertTab(tabs: WorkbenchTab[], nextTab: WorkbenchTab) {
-	const existingIndex = tabs.findIndex((tab) => tab.id === nextTab.id)
-	if (existingIndex === -1) return [...tabs, nextTab]
-	if (sameWorkbenchTab(tabs[existingIndex], nextTab)) return tabs
-	const clone = [...tabs]
-	clone[existingIndex] = nextTab
-	return clone
-}
-
-function replaceActiveTab(tabs: WorkbenchTab[], activeTabId: string | null, nextTab: WorkbenchTab) {
-	if (!activeTabId) return [nextTab]
-	const seen = new Set<string>()
-	const nextTabs = tabs
-		.map((tab) => (tab.id === activeTabId ? nextTab : tab))
-		.filter((tab) => {
-			if (seen.has(tab.id)) return false
-			seen.add(tab.id)
-			return true
-		})
-	return preserveEqualTabs(tabs, nextTabs.length > 0 ? nextTabs : [nextTab])
-}
-
-function removeTabById(tabs: WorkbenchTab[], tabId: string | null) {
-	if (!tabId) return tabs
-	return tabs.filter((tab) => tab.id !== tabId)
-}
-
-function createTabInstanceId(tabs: WorkbenchTab[], path: string) {
-	const canonicalId = deriveTabFromPath(path).id
-	const existingIds = new Set(tabs.map((tab) => tab.id))
-	let instance = 2
-	while (existingIds.has(`${canonicalId}:instance:${instance}`)) instance += 1
-	return `${canonicalId}:instance:${instance}`
-}
-
-/**
- * Creates a clean navigation tab beside the active tab.
- *
- * The new instance intentionally keeps no tab-scoped or dirty state. Its first
- * ordinary navigation can therefore replace it while preserving the source tab.
- */
-export function duplicateActiveWorkbenchTab(prev: WorkbenchUiState): WorkbenchUiState {
-	const activeIndex = prev.tabs.findIndex((tab) => tab.id === prev.activeTabId)
+/** Creates a clean navigation instance beside the active Tab. */
+export function createAdjacentWorkbenchTab(prev: WorkbenchUiState): WorkbenchUiState {
+	const activeIndex = prev.tabs.findIndex((tab) => tab.instanceId === prev.activeTabId)
 	const activeTab = prev.tabs[activeIndex]
 	if (!activeTab) return prev
-	const duplicate = {
-		...activeTab,
-		id: createTabInstanceId(prev.tabs, activeTab.path),
-		kind: 'document' as const,
+	const adjacent: WorkbenchTab = {
+		instanceId: createTabInstanceId(prev.tabs),
+		path: activeTab.path,
+		title: activeTab.title,
+		meta: activeTab.meta,
 	}
 	const tabs = [...prev.tabs]
-	tabs.splice(activeIndex + 1, 0, duplicate)
+	tabs.splice(activeIndex + 1, 0, adjacent)
 	return {
 		...prev,
-		activeTabId: duplicate.id,
+		activeTabId: adjacent.instanceId,
 		tabs,
 	}
 }
 
-export function syncWorkbenchTabs(
-	prev: WorkbenchUiState,
-	nextTab: WorkbenchTab,
-	mode: 'replace-active' | 'open-tab',
-) {
-	const tabs = prev.tabs.length > 0 ? prev.tabs : [nextTab]
-	const activeTabId = prev.activeTabId ?? tabs[0]?.id ?? null
-	const targetExists = tabs.some((tab) => tab.id === nextTab.id)
-
-	if (activeTabId === nextTab.id) {
-		const nextTabs = upsertTab(tabs, nextTab)
-		if (prev.activeTabId === nextTab.id && nextTabs === prev.tabs) return prev
-		return {
-			...prev,
-			tabs: nextTabs,
-			activeTabId: nextTab.id,
-		}
+/** Replaces the active clean instance with an ordinary navigation target. */
+export function replaceActiveWorkbenchTab(prev: WorkbenchUiState, path: string): WorkbenchUiState {
+	const activeIndex = prev.tabs.findIndex((tab) => tab.instanceId === prev.activeTabId)
+	if (activeIndex === -1) return openWorkbenchNavigationTab(prev, path)
+	const activeTab = prev.tabs[activeIndex]!
+	const descriptor = resolveWorkbenchLocation(path)
+	const nextTab: WorkbenchTab = {
+		instanceId: activeTab.instanceId,
+		path: descriptor.path,
+		title: descriptor.title,
+		meta: descriptor.meta,
 	}
+	if (sameWorkbenchTab(activeTab, nextTab)) return prev
+	const tabs = [...prev.tabs]
+	tabs[activeIndex] = nextTab
+	return { ...prev, tabs }
+}
 
-	if (mode === 'open-tab') {
-		const nextTabs = upsertTab(tabs, nextTab)
-		return {
-			...prev,
-			tabs: nextTabs,
-			activeTabId: nextTab.id,
-		}
-	}
-
-	if (targetExists) {
-		const nextTabs = upsertTab(removeTabById(tabs, activeTabId), nextTab)
-		return {
-			...prev,
-			tabs: nextTabs,
-			activeTabId: nextTab.id,
-		}
-	}
-
+/** Opens an ordinary navigation target in a new clean instance. */
+export function openWorkbenchNavigationTab(prev: WorkbenchUiState, path: string): WorkbenchUiState {
+	const tab = createNavigationTab(prev.tabs, path)
 	return {
 		...prev,
-		tabs: replaceActiveTab(tabs, activeTabId, nextTab),
-		activeTabId: nextTab.id,
+		activeTabId: tab.instanceId,
+		tabs: [...prev.tabs, tab],
+	}
+}
+
+/** Opens or focuses a business document, deduplicated only by its full path. */
+export function openWorkbenchDocument(
+	prev: WorkbenchUiState,
+	input: WorkbenchDocumentInput,
+): WorkbenchUiState {
+	const existingIndex = prev.tabs.findIndex((tab) => tab.documentKey === input.path)
+	if (existingIndex !== -1) {
+		const existing = prev.tabs[existingIndex]!
+		const nextTab: WorkbenchTab = {
+			instanceId: existing.instanceId,
+			path: input.path,
+			title: input.title,
+			meta: input.meta,
+			documentKey: input.path,
+		}
+		const tabs = sameWorkbenchTab(existing, nextTab)
+			? prev.tabs
+			: prev.tabs.map((tab, index) => (index === existingIndex ? nextTab : tab))
+		if (tabs === prev.tabs && prev.activeTabId === existing.instanceId) return prev
+		return { ...prev, activeTabId: existing.instanceId, tabs }
+	}
+
+	const tab: WorkbenchTab = {
+		instanceId: createTabInstanceId(prev.tabs),
+		path: input.path,
+		title: input.title,
+		meta: input.meta,
+		documentKey: input.path,
+	}
+	return {
+		...prev,
+		activeTabId: tab.instanceId,
+		tabs: [...prev.tabs, tab],
 	}
 }

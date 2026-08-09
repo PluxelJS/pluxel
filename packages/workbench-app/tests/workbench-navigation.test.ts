@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { groupNavItems } from '../src/app/navigation/navConfig'
-import { createDefaultWorkbenchUiState } from '../src/app/workbench/state'
+import { restoreWorkbenchState, WORKBENCH_STORAGE_VERSION } from '../src/app/workbench/state'
+import { isPluginWorkbenchLocation, resolveWorkbenchLocation } from '../src/app/workbench/location'
 import { WorkspaceController } from '../src/app/workbench/store'
-import { deriveTabFromPath, syncWorkbenchTabs } from '../src/app/workbench/tabs'
 import {
 	compileWorkbenchRoute,
 	matchWorkbenchRoute,
@@ -49,38 +49,53 @@ describe('Workbench navigation groups', () => {
 })
 
 describe('Workbench native document tabs', () => {
-	it('isolates workspace state and navigation intent per controller instance', () => {
-		const first = new WorkspaceController()
-		const second = new WorkspaceController()
-		first.openTab({ path: '/workbench/KookPlugin/accounts/default', title: 'default' })
-
-		expect(first.state.uiState.tabs).toHaveLength(1)
-		expect(second.state.uiState.tabs).toHaveLength(0)
-		expect(first.consumeNavigation('/workbench/KookPlugin/accounts/default')?.mode).toBe('open-tab')
-		expect(first.consumeNavigation('/workbench/KookPlugin/accounts/default')).toBeNull()
+	it('matches builtin section paths on whole segments only', () => {
+		expect(isPluginWorkbenchLocation('/plugins/example')).toBe(true)
+		expect(isPluginWorkbenchLocation('/plugins-extra')).toBe(false)
+		expect(resolveWorkbenchLocation('/security-extra')).toMatchObject({
+			title: 'security-extra',
+		})
 	})
 
-	it('creates a clean navigation tab beside the active page', () => {
+	it('isolates workspace state per controller instance', () => {
+		const first = new WorkspaceController()
+		const second = new WorkspaceController()
+		const path = '/workbench/KookPlugin/accounts/default'
+		first.openTab({ path, title: 'default' })
+
+		expect(first.state.uiState.tabs).toEqual([
+			expect.objectContaining({ documentKey: path, path, title: 'default' }),
+		])
+		expect(second.state.uiState.tabs).toHaveLength(0)
+	})
+
+	it('can reconcile the initial router location before the shell renders', () => {
+		const workspace = new WorkspaceController('/logs')
+
+		expect(workspace.state.uiState.tabs).toEqual([
+			expect.objectContaining({ path: '/logs', title: '日志' }),
+		])
+	})
+
+	it('creates a clean navigation instance beside the active page', () => {
 		const workspace = new WorkspaceController()
 		const sourcePath = '/workbench/TelegramPlugin/settings'
-		workspace.syncLocation(sourcePath, 'replace-active')
+		workspace.reconcileLocation(sourcePath)
 		const sourceId = workspace.state.uiState.activeTabId
 		workspace.setActiveTabState(sourceId, 'form', { account: 'draft' })
 		workspace.setTabDirty(sourceId, true)
 
-		const duplicate = workspace.duplicateActiveTab()
+		const adjacent = workspace.createAdjacentTab()
 
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, sourcePath])
-		expect(duplicate).toMatchObject({
-			id: 'workbench:TelegramPlugin:/settings:instance:2',
-			path: sourcePath,
-		})
-		expect(workspace.state.uiState.tabState[duplicate!.id]).toBeUndefined()
-		expect(workspace.state.dirtyTabs[duplicate!.id]).toBeUndefined()
+		expect(adjacent).toMatchObject({ path: sourcePath })
+		expect(adjacent?.instanceId).not.toBe(sourceId)
+		expect(adjacent?.documentKey).toBeUndefined()
+		expect(workspace.state.uiState.tabState[adjacent!.instanceId]).toBeUndefined()
+		expect(workspace.state.dirtyTabs[adjacent!.instanceId]).toBeUndefined()
 
 		workspace.requestNavigation('/logs')
-		const intent = workspace.consumeNavigation('/logs')
-		workspace.syncLocation('/logs', intent?.mode ?? 'replace-active')
+		workspace.reconcileLocation('/logs')
 
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, '/logs'])
 		expect(workspace.state.uiState.tabState[sourceId!]).toEqual({
@@ -89,44 +104,44 @@ describe('Workbench native document tabs', () => {
 		expect(workspace.state.dirtyTabs[sourceId!]).toBe(true)
 	})
 
-	it('keeps a dirty active tab during ordinary navigation', () => {
+	it('keeps a dirty active instance during ordinary navigation', () => {
 		const workspace = new WorkspaceController()
 		const sourcePath = '/workbench/TelegramPlugin/settings'
-		workspace.syncLocation(sourcePath, 'replace-active')
+		workspace.reconcileLocation(sourcePath)
 		const sourceId = workspace.state.uiState.activeTabId
 		workspace.setTabDirty(sourceId, true)
 
 		workspace.requestNavigation('/logs')
-		const intent = workspace.consumeNavigation('/logs')
-		workspace.syncLocation('/logs', intent?.mode ?? 'replace-active')
+		workspace.reconcileLocation('/logs')
 
-		expect(intent?.mode).toBe('open-tab')
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, '/logs'])
+		expect(workspace.state.uiState.activeTabId).not.toBe(sourceId)
 		expect(workspace.state.dirtyTabs[sourceId!]).toBe(true)
 	})
 
-	it('preserves a same-path tab instance during route reconciliation', () => {
+	it('preserves a same-path instance during route reconciliation', () => {
 		const workspace = new WorkspaceController()
 		const path = '/workbench/TelegramPlugin/settings'
-		workspace.syncLocation(path, 'replace-active')
-		const duplicate = workspace.duplicateActiveTab()
+		workspace.reconcileLocation(path)
+		const adjacent = workspace.createAdjacentTab()
 
-		workspace.syncLocation(path, 'replace-active')
+		workspace.reconcileLocation(path)
 
-		expect(workspace.state.uiState.activeTabId).toBe(duplicate?.id)
+		expect(workspace.state.uiState.activeTabId).toBe(adjacent?.instanceId)
 		expect(workspace.state.uiState.tabs).toHaveLength(2)
 	})
 
-	it('closes the final tab back to a clean home tab', () => {
+	it('closes the final instance back to a clean home Tab', () => {
 		const workspace = new WorkspaceController()
-		workspace.syncLocation('/logs', 'replace-active')
+		workspace.reconcileLocation('/logs')
 		const tabId = workspace.state.uiState.activeTabId
 		workspace.setActiveTabState(tabId, 'filters', { level: 'error' })
 		workspace.setTabDirty(tabId, true)
 
 		const nextTab = workspace.closeTab(tabId!)
 
-		expect(nextTab).toMatchObject({ id: 'home', path: '/' })
+		expect(nextTab).toMatchObject({ path: '/' })
+		expect(nextTab?.documentKey).toBeUndefined()
 		expect(workspace.state.uiState.tabState).toEqual({})
 		expect(workspace.state.dirtyTabs).toEqual({})
 	})
@@ -149,68 +164,170 @@ describe('Workbench native document tabs', () => {
 		)
 	})
 
-	it('deduplicates native tabs by path while retaining document metadata', () => {
+	it('deduplicates business documents by path while retaining metadata', () => {
+		const workspace = new WorkspaceController()
 		const path = '/workbench/KookPlugin/accounts/default'
-		const document = {
-			...deriveTabFromPath(path),
-			title: 'default',
-			meta: 'KOOK Bot',
-			kind: 'document' as const,
-		}
-		const first = syncWorkbenchTabs(createDefaultWorkbenchUiState(), document, 'open-tab')
-		const second = syncWorkbenchTabs(first, document, 'open-tab')
-		expect(second.tabs).toEqual([document])
-		expect(second.activeTabId).toBe(document.id)
+		workspace.openTab({ path, title: 'default', meta: 'KOOK Bot' })
+		workspace.openTab({ path, title: 'alerts', meta: 'Connected' })
 
-		const renamed = { ...document, title: 'alerts', meta: 'Connected' }
-		const updated = syncWorkbenchTabs(second, renamed, 'open-tab')
-		expect(updated.tabs).toEqual([renamed])
-	})
-
-	it('opens a second native tab without replacing the current plugin workbench', () => {
-		const first = {
-			...deriveTabFromPath('/plugins/TelegramPlugin'),
-			kind: 'document' as const,
-		}
-		const second = {
-			...deriveTabFromPath('/workbench/TelegramPlugin/accounts/default'),
-			title: 'default',
-			meta: 'Telegram Bot',
-			kind: 'document' as const,
-		}
-		const state = syncWorkbenchTabs(createDefaultWorkbenchUiState(), first, 'open-tab')
-		const next = syncWorkbenchTabs(state, second, 'open-tab')
-
-		expect(next.tabs.map((tab) => tab.path)).toEqual([
-			'/plugins/TelegramPlugin',
-			'/workbench/TelegramPlugin/accounts/default',
+		expect(workspace.state.uiState.tabs).toEqual([
+			expect.objectContaining({
+				documentKey: path,
+				path,
+				title: 'alerts',
+				meta: 'Connected',
+			}),
 		])
-		expect(next.activeTabId).toBe(second.id)
 	})
 
-	it('preserves an explicit openTab across the following route reconciliation', () => {
+	it('does not deduplicate ordinary navigation instances by path', () => {
+		const workspace = new WorkspaceController()
+		workspace.reconcileLocation('/logs')
+		const first = workspace.state.uiState.tabs[0]!
+		workspace.createAdjacentTab()
+		workspace.requestNavigation('/security')
+		workspace.reconcileLocation('/security')
+		workspace.setActiveTabId(first.instanceId)
+		workspace.requestNavigation('/security')
+		workspace.reconcileLocation('/security')
+
+		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual(['/security', '/security'])
+		expect(workspace.state.uiState.tabs.every((tab) => tab.documentKey === undefined)).toBe(true)
+	})
+
+	it('preserves an explicit openTab across route reconciliation', () => {
 		const workspace = new WorkspaceController()
 		const managerPath = '/workbench/TelegramPlugin/settings'
 		const createPath = '/workbench/TelegramPlugin/create'
-		workspace.syncLocation(managerPath, 'replace-active')
+		workspace.reconcileLocation(managerPath)
 		workspace.openTab({
 			path: createPath,
 			title: '新建 Telegram Bot',
 			meta: 'Telegram',
 		})
 
-		const intent = workspace.consumeNavigation(createPath)
-		workspace.syncLocation(createPath, intent?.mode ?? 'replace-active')
+		workspace.reconcileLocation(createPath)
 
 		expect(workspace.state.uiState.tabs).toEqual([
 			expect.objectContaining({ path: managerPath }),
 			expect.objectContaining({
 				path: createPath,
+				documentKey: createPath,
 				title: '新建 Telegram Bot',
 				meta: 'Telegram',
-				kind: 'document',
 			}),
 		])
-		expect(workspace.state.uiState.activeTabId).toBe('workbench:TelegramPlugin:/create')
+		expect(workspace.state.uiState.tabs[0]?.documentKey).toBeUndefined()
+	})
+
+	it('preserves document identity across consecutive openTab route commits', () => {
+		const workspace = new WorkspaceController()
+		const firstPath = '/workbench/TelegramPlugin/accounts/first'
+		const secondPath = '/workbench/TelegramPlugin/accounts/second'
+		workspace.reconcileLocation('/workbench/TelegramPlugin/settings')
+		workspace.openTab({ path: firstPath, title: 'first' })
+		workspace.openTab({ path: secondPath, title: 'second' })
+
+		workspace.reconcileLocation(firstPath)
+		expect(workspace.state.uiState.tabs.find((tab) => tab.path === firstPath)).toMatchObject({
+			documentKey: firstPath,
+		})
+
+		workspace.reconcileLocation(secondPath)
+		expect(workspace.state.uiState.tabs.find((tab) => tab.path === secondPath)).toMatchObject({
+			documentKey: secondPath,
+		})
+	})
+
+	it('focuses a restored document when the initial URL already targets it', () => {
+		const firstPath = '/workbench/TelegramPlugin/accounts/first'
+		const secondPath = '/workbench/TelegramPlugin/accounts/second'
+		const workspace = new WorkspaceController()
+		workspace.openTab({ path: firstPath, title: 'first' })
+		workspace.openTab({ path: secondPath, title: 'second' })
+		workspace.reconcileLocation(firstPath)
+		workspace.reconcileLocation(secondPath)
+		const first = workspace.state.uiState.tabs.find((tab) => tab.path === firstPath)!
+
+		workspace.reconcileLocation(firstPath)
+
+		expect(workspace.state.uiState.activeTabId).toBe(first.instanceId)
+		expect(workspace.state.uiState.tabs.filter((tab) => tab.path === firstPath)).toHaveLength(1)
+		expect(first.documentKey).toBe(firstPath)
+	})
+
+	it('consumes skipped navigation intents without corrupting the committed document', () => {
+		const workspace = new WorkspaceController()
+		const skippedPath = '/workbench/TelegramPlugin/accounts/skipped'
+		const committedPath = '/workbench/TelegramPlugin/accounts/committed'
+		workspace.reconcileLocation('/workbench/TelegramPlugin/settings')
+		workspace.openTab({ path: skippedPath, title: 'skipped' })
+		workspace.openTab({ path: committedPath, title: 'committed' })
+
+		workspace.reconcileLocation(committedPath)
+
+		expect(workspace.state.uiState.tabs.find((tab) => tab.path === committedPath)).toMatchObject({
+			documentKey: committedPath,
+		})
+	})
+
+	it('migrates legacy document identity and section pane state into version 2', () => {
+		const path = '/workbench/TelegramPlugin/accounts/default'
+		const restored = restoreWorkbenchState({
+			activeTabId: 'workbench:TelegramPlugin:/accounts/default',
+			navigationCollapsed: false,
+			sectionPanes: { plugins: { visible: false, layout: { 'plugin-rail': 20 } } },
+			tabState: {
+				'workbench:TelegramPlugin:/accounts/default': { form: { expanded: true } },
+				orphan: { ignored: true },
+			},
+			tabs: [
+				{
+					id: 'workbench:TelegramPlugin:/accounts/default',
+					path,
+					title: 'default',
+					kind: 'document',
+				},
+			],
+		})
+
+		expect(WORKBENCH_STORAGE_VERSION).toBe(2)
+		expect(restored.tabs[0]).toMatchObject({
+			instanceId: 'workbench:TelegramPlugin:/accounts/default',
+			documentKey: path,
+		})
+		expect(restored.pluginPane.visible).toBe(false)
+		expect(restored.tabState).not.toHaveProperty('orphan')
+	})
+
+	it('sanitizes version 2 identity instead of accepting legacy aliases or duplicate documents', () => {
+		const path = '/workbench/TelegramPlugin/accounts/default'
+		const restored = restoreWorkbenchState({
+			version: 2,
+			state: {
+				activeTabId: 'tab:duplicate',
+				navigationCollapsed: true,
+				pluginPane: { visible: true, layout: {} },
+				sectionPanes: { plugins: { visible: false } },
+				tabState: {
+					'tab:first': { retained: true },
+					'tab:duplicate': { removed: true },
+				},
+				tabs: [
+					{ instanceId: 'tab:first', path, title: ' first ', documentKey: path },
+					{ instanceId: 'tab:duplicate', path, title: 'duplicate', documentKey: path },
+					{ id: 'legacy-alias', path: '/logs', title: 'legacy alias' },
+					{ instanceId: '__proto__', path: '/logs', title: 'unsafe id' },
+					{ instanceId: 'invalid-path', path: 'logs', title: 'invalid path' },
+				],
+			},
+		})
+
+		expect(restored.tabs).toEqual([
+			{ instanceId: 'tab:first', path, title: 'first', meta: undefined, documentKey: path },
+		])
+		expect(restored.activeTabId).toBe('tab:first')
+		expect(restored.pluginPane.visible).toBe(true)
+		expect(restored.tabState).toEqual({ 'tab:first': { retained: true } })
 	})
 })

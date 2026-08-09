@@ -13,6 +13,7 @@ export {
 	type WorkbenchLiveQueryResult,
 	type WorkbenchLocaleService,
 	type WorkbenchHost,
+	type WorkbenchNavigation,
 	type WorkbenchResourceClient,
 	type WorkbenchResourceClients,
 	type WorkbenchUiDefinition,

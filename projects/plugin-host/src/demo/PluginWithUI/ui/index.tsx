@@ -27,7 +27,12 @@ export function PluginInfo() {
 				演示 Workbench UI：Tab、Route、Standalone Route、SSE、RPC。
 			</Text>
 			<Group gap="xs">
-				<Button variant="light" size="xs" onClick={() => app.navigate('/dashboard')}>
+				<Button
+					variant="light"
+					size="xs"
+					disabled={!app.navigation}
+					onClick={() => app.navigation?.navigate('/dashboard')}
+				>
 					打开 Dashboard
 				</Button>
 				<Button

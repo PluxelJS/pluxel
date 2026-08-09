@@ -18,7 +18,7 @@ export interface AppProps {
 export function App({ history }: AppProps = {}) {
 	const [router] = useState(() => createAppRouter({ history }))
 	const [transportClient] = useState(() => getRuntimeTransportClient())
-	const [workspace] = useState(() => new WorkspaceController())
+	const [workspace] = useState(() => new WorkspaceController(router.state.location.pathname))
 	const { theme } = useAppTheme()
 	return (
 		<MantineProvider

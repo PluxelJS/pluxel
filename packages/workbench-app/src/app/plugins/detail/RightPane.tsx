@@ -55,11 +55,7 @@ import {
 } from './rightPaneState'
 import { usePluginWorkbenchLayout } from './workbench/context'
 import { PluginWorkbenchTabActivityProvider } from './workbench/tabActivity'
-import {
-	useWorkbenchTabDirty,
-	useWorkbenchTabIdentity,
-	useWorkspaceController,
-} from '../../workbench/context'
+import { useActiveWorkbenchTabId, useWorkspaceController } from '../../workbench/context'
 
 interface RightPaneProps {
 	config: PluginConfigState
@@ -290,8 +286,7 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	const { pluginName, isEnabled, isRunning, isSyncing } = usePluginMeta()
 	const { source, knownPluginNames } = usePluginScope()
 	const { rightPaneVisible } = usePluginWorkbenchLayout()
-	const { activeTabId } = useWorkbenchTabIdentity()
-	const { setActiveTabDirty } = useWorkbenchTabDirty()
+	const activeTabId = useActiveWorkbenchTabId()
 	const workspace = useWorkspaceController()
 	const { nodes: tabNodes, items: tabItems } = useWorkbenchSurface('plugin.tabs')
 	const pathname = useCurrentPathname()
@@ -495,8 +490,8 @@ export function RightPane({ config, showLevelsTab = false }: RightPaneProps) {
 	)
 
 	useEffect(() => {
-		setActiveTabDirty(hasDirtyConfig)
-	}, [hasDirtyConfig, setActiveTabDirty])
+		workspace.setTabDirty(activeTabId, hasDirtyConfig)
+	}, [activeTabId, hasDirtyConfig, workspace])
 
 	const storedPathMatches = (displayState.path ?? '') === restPath
 
