@@ -283,7 +283,6 @@ function PluginContextSummaryCard() {
 							<DependencyList
 								LinkComponent={RouterLinkAdapter}
 								resolveLinkTarget={resolveDependencyLinkTarget}
-								linkWorkbenchMode="open-tab"
 							/>
 						) : (
 							<Text className="plx-pluginWorkbench__summaryText" size="sm">

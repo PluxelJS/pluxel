@@ -8,18 +8,16 @@ export type WorkbenchLayoutContextValue = {
 	toggleLeftPane: () => void
 }
 
-export type WorkbenchNavigationMode = 'replace-active' | 'open-tab'
-export type WorkbenchNavigationRequest = WorkbenchNavigationMode | 'auto'
-
 export type WorkbenchTabsContextValue = {
 	activeTabId: string | null
 	activeTabPath: string | null
 	activeTabDirty: boolean
 	isTabDirty: (tabId: string | null) => boolean
 	getActiveTabState: <T = unknown>(scope: string) => T | undefined
+	navigate: (to: string) => void
 	openTab: (input: { to: string; title: string; meta?: string }) => void
 	setActiveTabState: (scope: string, value: unknown) => void
-	requestNavigation: (to: string, request?: WorkbenchNavigationRequest) => WorkbenchNavigationMode
+	requestNavigation: (to: string) => void
 	setActiveTabDirty: (dirty: boolean) => void
 }
 
@@ -64,7 +62,7 @@ const FALLBACK_TAB_STATE_CONTEXT: WorkbenchTabStateContextValue = {
 }
 
 const FALLBACK_NAVIGATION_CONTEXT: WorkbenchNavigationContextValue = {
-	requestNavigation: () => 'replace-active',
+	requestNavigation: () => {},
 }
 
 const WorkbenchLayoutContext = createContext<WorkbenchLayoutContextValue | null>(null)

@@ -10,7 +10,6 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from 'react'
-import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import { FLAT_VIRTUAL_OVERSCAN, type RowDensity } from '../constants'
 import { iid } from '../controllerModel'
 import { SortableRow } from './SortableRow'
@@ -18,7 +17,6 @@ import { SortableRow } from './SortableRow'
 type LinkLikeProps = {
 	to: string
 	children: ReactNode
-	workbenchMode?: WorkbenchNavigationRequest
 } & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 
 type FlatPluginListProps = {

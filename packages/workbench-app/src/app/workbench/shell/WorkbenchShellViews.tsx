@@ -1,20 +1,20 @@
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { Link, Outlet } from '@tanstack/react-router'
 import {
-	IconExternalLink,
 	IconHome2,
 	IconLayoutSidebarLeftCollapse,
 	IconLayoutSidebarLeftExpand,
+	IconPlus,
 	IconSearch,
 	IconX,
 } from '@tabler/icons-react'
+import { Fragment } from 'react'
 import { ColorSchemeToggle } from '../../../theme'
 import { useProduct } from '../../product'
 import { PluginCatalog } from '../../plugins/catalog/PluginCatalog'
 import type { NavSection } from '../../navigation/navConfig'
 import { WorkbenchPaneControls } from '../../plugins/detail/controls/WorkbenchPaneControls'
 import { WorkbenchActionButton } from '../LayoutControls'
-import type { WorkbenchNavigationMode } from '../context'
 import { isWorkbenchActivityActive } from '../location'
 import { WORKBENCH_HOTKEYS, WORKBENCH_HOTKEY_LABELS } from '../shortcuts'
 import type { WorkbenchTab } from '../state'
@@ -60,7 +60,7 @@ export function WorkbenchHotkeys({
 	return null
 }
 
-type RequestNavigation = (to: string, request?: WorkbenchNavigationMode | 'auto') => string
+type RequestNavigation = (to: string) => void
 
 export function ActivityRail({
 	activityItems,
@@ -104,7 +104,7 @@ export function ActivityRail({
 							key={`${item.href}:${item.label}`}
 							to={item.href}
 							className="plx-workbench__activityItem"
-							onClick={() => requestNavigation(item.href, 'auto')}
+							onClick={() => requestNavigation(item.href)}
 							data-active={isActive ? 'true' : 'false'}
 							aria-current={isActive ? 'page' : undefined}
 							title={item.label}
@@ -165,12 +165,10 @@ function isExternalHref(href: string): boolean {
 export function RouteGroupRail({
 	group,
 	pathname,
-	openTab,
 	requestNavigation,
 }: {
 	group: NavSection
 	pathname: string
-	openTab: (input: { to: string; title: string; meta?: string }) => void
 	requestNavigation: RequestNavigation
 }) {
 	return (
@@ -185,27 +183,17 @@ export function RouteGroupRail({
 				{group.children?.map((item) => {
 					const isActive = isWorkbenchActivityActive(pathname, item.href, item.exact)
 					return (
-						<div key={`${item.href}:${item.label}`} className="plx-workbench__routeGroupItemRow">
-							<Link
-								to={item.href}
-								className="plx-workbench__routeGroupItem"
-								data-active={isActive ? 'true' : 'false'}
-								aria-current={isActive ? 'page' : undefined}
-								onClick={() => requestNavigation(item.href, 'auto')}
-							>
-								<span aria-hidden="true">{item.icon}</span>
-								<span>{item.label}</span>
-							</Link>
-							<button
-								type="button"
-								className="plx-workbench__routeGroupItemOpen"
-								aria-label={`在新工作标签打开 ${item.label}`}
-								title="在新工作标签打开"
-								onClick={() => openTab({ to: item.href, title: item.label, meta: group.label })}
-							>
-								<IconExternalLink size={14} stroke={1.8} />
-							</button>
-						</div>
+						<Link
+							key={`${item.href}:${item.label}`}
+							to={item.href}
+							className="plx-workbench__routeGroupItem"
+							data-active={isActive ? 'true' : 'false'}
+							aria-current={isActive ? 'page' : undefined}
+							onClick={() => requestNavigation(item.href)}
+						>
+							<span aria-hidden="true">{item.icon}</span>
+							<span>{item.label}</span>
+						</Link>
 					)
 				})}
 			</nav>
@@ -257,61 +245,78 @@ export function EditorTabStrip({
 	activeTabId,
 	dirtyTabs,
 	onActivateTab,
+	onAddTab,
 	onCloseTab,
 	tabs,
 }: {
 	activeTabId: string | null
 	dirtyTabs: Record<string, boolean>
 	onActivateTab: (tab: WorkbenchTab) => void
+	onAddTab: () => void
 	onCloseTab: (tabId: string) => void
 	tabs: WorkbenchTab[]
 }) {
+	const addTabButton = (
+		<button
+			type="button"
+			className="plx-workbench__editorTabAdd"
+			aria-label="在新工作标签打开当前页面"
+			title="在新工作标签打开当前页面"
+			onClick={onAddTab}
+		>
+			<IconPlus size={15} stroke={1.9} />
+		</button>
+	)
+	const hasActiveTab = tabs.some((tab) => tab.id === activeTabId)
 	return (
 		<div className="plx-workbench__editorTabStrip" role="tablist" aria-label="工作标签页">
 			{tabs.map((tab) => {
 				const isActive = tab.id === activeTabId
 				const isDirty = Boolean(dirtyTabs[tab.id])
 				return (
-					<div
-						key={tab.id}
-						className="plx-workbench__editorTabButton"
-						data-active={isActive ? 'true' : 'false'}
-						role="tab"
-						aria-selected={isActive}
-						tabIndex={0}
-						onClick={() => onActivateTab(tab)}
-						onKeyDown={(event) => {
-							if (event.key === 'Enter' || event.key === ' ') {
-								event.preventDefault()
-								onActivateTab(tab)
-							}
-						}}
-					>
-						<div className="plx-workbench__editorTabBody">
-							<span className="plx-workbench__editorTabTitle">{tab.title}</span>
-							{isDirty ? (
-								<span
-									className="plx-workbench__editorTabDirtyDot"
-									title="未保存更改"
-									aria-hidden="true"
-								/>
-							) : null}
-							{tab.meta ? <span className="plx-workbench__editorTabMeta">{tab.meta}</span> : null}
-						</div>
-						<button
-							type="button"
-							className="plx-workbench__iconButton"
-							aria-label={`关闭 ${tab.title}`}
-							onClick={(event) => {
-								event.stopPropagation()
-								onCloseTab(tab.id)
+					<Fragment key={tab.id}>
+						<div
+							className="plx-workbench__editorTabButton"
+							data-active={isActive ? 'true' : 'false'}
+							role="tab"
+							aria-selected={isActive}
+							tabIndex={0}
+							onClick={() => onActivateTab(tab)}
+							onKeyDown={(event) => {
+								if (event.key === 'Enter' || event.key === ' ') {
+									event.preventDefault()
+									onActivateTab(tab)
+								}
 							}}
 						>
-							<IconX size={14} stroke={1.8} />
-						</button>
-					</div>
+							<div className="plx-workbench__editorTabBody">
+								<span className="plx-workbench__editorTabTitle">{tab.title}</span>
+								{isDirty ? (
+									<span
+										className="plx-workbench__editorTabDirtyDot"
+										title="未保存更改"
+										aria-hidden="true"
+									/>
+								) : null}
+								{tab.meta ? <span className="plx-workbench__editorTabMeta">{tab.meta}</span> : null}
+							</div>
+							<button
+								type="button"
+								className="plx-workbench__iconButton"
+								aria-label={`关闭 ${tab.title}`}
+								onClick={(event) => {
+									event.stopPropagation()
+									onCloseTab(tab.id)
+								}}
+							>
+								<IconX size={14} stroke={1.8} />
+							</button>
+						</div>
+						{isActive ? addTabButton : null}
+					</Fragment>
 				)
 			})}
+			{hasActiveTab ? null : addTabButton}
 		</div>
 	)
 }
@@ -332,9 +337,9 @@ export function PluginNavigationRail({
 	)
 }
 
-export function WorkspacePaneContent() {
+export function WorkspacePaneContent({ tabId }: { tabId: string | null }) {
 	return (
-		<div className="plx-workbench__workspace">
+		<div key={tabId ?? 'route'} className="plx-workbench__workspace">
 			<div className="plx-workbench__workspaceContent">
 				<Outlet />
 			</div>

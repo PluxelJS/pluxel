@@ -75,7 +75,6 @@ import { arraysEqual, COLLAPSE_STORAGE_KEY, readCollapsedState, sanitize } from 
 import { movePluginIdsToTarget, sortPluginIdsByOrder } from './groupOperations'
 import { usePluginOrganizerDnd } from './usePluginOrganizerDnd'
 import { usePluginSelectionController } from './usePluginSelectionController'
-import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 
 export type { GroupConfig, PluginStatus, PluginStatuses } from './types'
 
@@ -95,7 +94,6 @@ type Props = {
 		{
 			to: string
 			children: ReactNode
-			workbenchMode?: WorkbenchNavigationRequest
 		} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 	>
 	activeId?: string | null

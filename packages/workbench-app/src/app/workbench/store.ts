@@ -4,9 +4,10 @@ import {
 	getSectionPaneState,
 	type WorkbenchSectionId,
 	type WorkbenchState,
+	type WorkbenchTab,
 	readWorkbenchState,
 } from './state'
-import { deriveTabFromPath, syncWorkbenchTabs } from './tabs'
+import { deriveTabFromPath, duplicateActiveWorkbenchTab, syncWorkbenchTabs } from './tabs'
 
 function createInitialState(): WorkbenchState {
 	return {
@@ -49,13 +50,16 @@ function syncWorkbenchLocation(
 	const derivedTab = deriveTabFromPath(pathname)
 	store.setState((prev) => {
 		const existing = prev.uiState.tabs.find((tab) => tab.id === derivedTab.id)
-		const currentTab = existing?.kind === 'document' ? existing : derivedTab
+		const active = prev.uiState.tabs.find((tab) => tab.id === prev.uiState.activeTabId)
+		const currentTab =
+			active?.path === pathname
+				? active
+				: existing?.kind === 'document' && existing.path === pathname
+					? existing
+					: derivedTab
 		const nextUiState = syncWorkbenchTabs(prev.uiState, currentTab, mode)
 		if (nextUiState === prev.uiState) return prev
-		return {
-			...prev,
-			uiState: nextUiState,
-		}
+		return commitWorkbenchUiState(prev, nextUiState)
 	})
 }
 
@@ -73,29 +77,25 @@ function openWorkbenchTab(
 	store.setState((prev) => {
 		const nextUiState = syncWorkbenchTabs(prev.uiState, tab, 'open-tab')
 		if (nextUiState === prev.uiState) return prev
-		return { ...prev, uiState: nextUiState }
+		return commitWorkbenchUiState(prev, nextUiState)
 	})
 }
 
-function pruneWorkbenchDirtyTabs(store: Store<WorkbenchState>) {
-	store.setState((prev) => {
-		const next: Record<string, boolean> = {}
-		for (const tab of prev.uiState.tabs) {
-			next[tab.id] = prev.dirtyTabs[tab.id] ?? false
-		}
-		const prevKeys = Object.keys(prev.dirtyTabs)
-		const nextKeys = Object.keys(next)
-		if (
-			prevKeys.length === nextKeys.length &&
-			nextKeys.every((key) => prev.dirtyTabs[key] === next[key])
-		) {
-			return prev
-		}
-		return {
-			...prev,
-			dirtyTabs: next,
-		}
-	})
+function retainTabRecords<T>(records: Record<string, T>, tabIds: Set<string>) {
+	const entries = Object.entries(records)
+	if (entries.every(([tabId]) => tabIds.has(tabId))) return records
+	return Object.fromEntries(entries.filter(([tabId]) => tabIds.has(tabId))) as Record<string, T>
+}
+
+function commitWorkbenchUiState(prev: WorkbenchState, nextUiState: WorkbenchState['uiState']) {
+	const tabIds = new Set(nextUiState.tabs.map((tab) => tab.id))
+	const dirtyTabs = retainTabRecords(prev.dirtyTabs, tabIds)
+	const tabState = retainTabRecords(nextUiState.tabState, tabIds)
+	return {
+		...prev,
+		dirtyTabs,
+		uiState: tabState === nextUiState.tabState ? nextUiState : { ...nextUiState, tabState },
+	}
 }
 
 function setWorkbenchSectionPaneVisible(
@@ -246,6 +246,20 @@ function setWorkbenchTabDirty(store: Store<WorkbenchState>, tabId: string | null
 function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 	store.setState((prev) => {
 		if (!prev.uiState.tabs.some((tab) => tab.id === tabId)) return prev
+		if (prev.uiState.tabs.length === 1) {
+			const homeTab = deriveTabFromPath('/')
+			return {
+				...prev,
+				dirtyTabs: {},
+				uiState: {
+					activeTabId: homeTab.id,
+					navigationCollapsed: prev.uiState.navigationCollapsed,
+					sectionPanes: prev.uiState.sectionPanes,
+					tabState: {},
+					tabs: [homeTab],
+				},
+			}
+		}
 		const nextTabs = prev.uiState.tabs.filter((tab) => tab.id !== tabId)
 		const closingActive = prev.uiState.activeTabId === tabId
 		const index = prev.uiState.tabs.findIndex((tab) => tab.id === tabId)
@@ -277,22 +291,14 @@ function closeWorkbenchTab(store: Store<WorkbenchState>, tabId: string) {
 	})
 }
 
-function resetWorkbenchToHome(store: Store<WorkbenchState>) {
-	const homeTab = deriveTabFromPath('/')
-	store.setState((prev) => ({
-		...prev,
-		dirtyTabs: {},
-		uiState: {
-			activeTabId: homeTab.id,
-			navigationCollapsed: prev.uiState.navigationCollapsed,
-			sectionPanes: prev.uiState.sectionPanes,
-			tabState: {},
-			tabs: [homeTab],
-		},
-	}))
+function duplicateActiveWorkbenchStoreTab(store: Store<WorkbenchState>) {
+	store.setState((prev) => {
+		const uiState = duplicateActiveWorkbenchTab(prev.uiState)
+		return uiState === prev.uiState ? prev : { ...prev, uiState }
+	})
 }
 
-export type WorkspaceNavigationMode = 'replace-active' | 'open-tab'
+type WorkspaceNavigationMode = 'replace-active' | 'open-tab'
 
 export class WorkspaceController {
 	readonly store = new Store<WorkbenchState>(createInitialState())
@@ -307,11 +313,8 @@ export class WorkspaceController {
 	}
 
 	openTab(input: { path: string; title: string; meta?: string }): void {
+		this.pendingNavigation = { to: input.path, mode: 'open-tab' }
 		openWorkbenchTab(this.store, input)
-	}
-
-	pruneDirtyTabs(): void {
-		pruneWorkbenchDirtyTabs(this.store)
 	}
 
 	setSectionPaneVisible(sectionId: WorkbenchSectionId, visible: boolean): void {
@@ -342,16 +345,33 @@ export class WorkspaceController {
 		setWorkbenchTabDirty(this.store, tabId, dirty)
 	}
 
-	closeTab(tabId: string): void {
+	closeTab(tabId: string): WorkbenchTab | null {
 		closeWorkbenchTab(this.store, tabId)
+		const { tabs, activeTabId } = this.state.uiState
+		return tabs.find((tab) => tab.id === activeTabId) ?? null
 	}
 
-	resetToHome(): void {
-		resetWorkbenchToHome(this.store)
+	duplicateActiveTab(): WorkbenchTab | null {
+		duplicateActiveWorkbenchStoreTab(this.store)
+		const { tabs, activeTabId } = this.state.uiState
+		return tabs.find((tab) => tab.id === activeTabId) ?? null
 	}
 
-	queueNavigation(to: string, mode: WorkspaceNavigationMode): void {
+	requestNavigation(to: string): void {
+		const { activeTabId, tabs } = this.state.uiState
+		const activeTab = tabs.find((tab) => tab.id === activeTabId)
+		if (activeTab?.path === to) return
+		const mode: WorkspaceNavigationMode =
+			activeTab && this.state.dirtyTabs[activeTab.id] ? 'open-tab' : 'replace-active'
 		this.pendingNavigation = { to, mode }
+		if (mode === 'open-tab') {
+			const tab = deriveTabFromPath(to)
+			openWorkbenchTab(this.store, {
+				path: tab.path,
+				title: tab.title,
+				meta: tab.meta,
+			})
+		}
 	}
 
 	consumeNavigation(pathname: string): { to: string; mode: WorkspaceNavigationMode } | null {

@@ -114,7 +114,7 @@ async function renderOrganizer(props: {
 	filterQuery?: string
 	activeId?: string | null
 	onSelectedIdsChange?: (ids: string[]) => void
-	clicked?: Array<{ to: string; mode?: string }>
+	clicked?: Array<{ to: string }>
 }) {
 	const container = document.createElement('div')
 	container.style.height = '480px'
@@ -127,19 +127,17 @@ async function renderOrganizer(props: {
 		to,
 		children,
 		onClick,
-		workbenchMode: _workbenchMode,
 		...rest
 	}: {
 		to: string
 		children: React.ReactNode
-		workbenchMode?: string
 	} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>) => (
 		<a
 			href={to}
 			{...rest}
 			onClick={(event) => {
 				event.preventDefault()
-				props.clicked?.push({ to, mode: _workbenchMode })
+				props.clicked?.push({ to })
 				onClick?.(event)
 			}}
 		>

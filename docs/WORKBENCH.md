@@ -131,10 +131,13 @@ workbenchContract.route('/accounts/:accountId', {
 `navigation: false`，不能成为静态导航入口。精确 route 优先于参数化 route，宿主会拒绝两个能匹配
 同一路径的参数化模式，避免插件注册顺序改变结果。
 
-Remote View 通过 host facade 打开当前 target 已注册的 shell route，并读取当前 route 参数：
+Remote View 通过 host facade 导航当前 target 已注册的 shell route，并读取当前 route 参数。普通页面切换使用
+`navigate()`；只有需要保留当前页面的独立业务文档才使用 `openTab()`：
 
 ```tsx
 const host = useWorkbenchHost()
+
+host.navigate('/settings')
 
 host.openTab({
 	path: '/accounts/notifications',
@@ -145,14 +148,19 @@ host.openTab({
 const accountId = host.routeParams.accountId
 ```
 
-`path` 是插件相对路径，不是任意宿主 URL。宿主只接受当前 target route table 中的 shell route；standalone
-route、未注册路径和空标题都会失败。规范化后的完整宿主路径是 document Tab 的唯一 identity：再次打开同一路径会
-聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。`routeParams` 只包含当前
-route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
+两种操作的 path 都是插件相对路径，不是任意宿主 URL。宿主只接受当前 target route table 中的 shell route；
+standalone route 和未注册路径都会失败，`openTab()` 还会拒绝空标题。`navigate()` 使用当前 Tab，并遵循 dirty-state
+自动保留策略。规范化后的完整宿主路径是 `openTab()` document target 的唯一 identity：再次
+打开同一路径会聚焦并更新原 Tab，不会复制；`title`、`meta` 和 Tab 集合随 Workbench 状态持久化恢复。
+`routeParams` 只包含当前 route 的解码后整段参数，静态 route 和非 route placement 得到空对象。
 
-宿主对带 `navigation.group` 的 route 同时提供普通导航和“在新工作标签打开”操作。普通点击遵循当前工作区的
-`auto` 策略（未保存的当前 Tab 会保留并打开新 Tab），显式新 Tab 操作始终走同一套 `openTab()` 路径校验、去重和
-`WorkspaceController`；Workbench 至少有一个原生 Tab 时显示 Tab strip，单个 Tab 也可以被关闭并回到首页。
+Tab strip 在当前 Tab 后提供统一的 `+`。它创建一个沿用当前 path、title 和 meta 的宿主本地 navigation instance，
+但不复制 dirty flag 或 tab-scoped state；随后点击普通导航会替换这个干净 instance，从而保留原 Tab。这个操作不进入
+plugin host facade，也不改变 `navigate()` / `openTab()` 的职责边界。分组 route 和插件目录因此只提供普通导航，不为每个条目
+重复渲染“在新工作标签打开”按钮；集合页打开具体业务对象仍使用显式 `host.openTab()`。
+
+Workbench 至少有一个原生 Tab 时显示 Tab strip；单个 Tab 也可以被关闭并回到首页。普通导航遵循当前工作区的
+`auto` 策略（未保存的当前 Tab 会保留并打开新 Tab）。
 
 Workspace Controller 由 Router 之上的 App 根 Provider 持有，不由会随 route tree 重建的 Shell 或 route provider 持有。`openTab()` 必须先原子写入
 document tab 和 navigation intent，route commit 再在同一 Controller 中消费 intent；否则普通 route reconciliation 会把

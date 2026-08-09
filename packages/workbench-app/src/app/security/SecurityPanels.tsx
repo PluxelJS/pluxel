@@ -93,7 +93,6 @@ export function SecurityToolbar({
 					<Button
 						component={RouterLinkAdapter}
 						to="/security/audit"
-						workbenchMode="open-tab"
 						leftSection={<IconHistory size={16} />}
 						variant="light"
 						size="xs"

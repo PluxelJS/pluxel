@@ -258,13 +258,6 @@
 	overflow-y: auto;
 }
 
-.plx-workbench__routeGroupItemRow {
-	align-items: center;
-	display: flex;
-	gap: 2px;
-	min-width: 0;
-}
-
 .plx-workbench__routeGroupItem {
 	align-items: center;
 	border: 1px solid transparent;
@@ -278,7 +271,7 @@
 	min-width: 0;
 	padding-inline: 9px;
 	text-decoration: none;
-	flex: 1;
+	width: 100%;
 }
 
 .plx-workbench__routeGroupItem > span:last-child {
@@ -299,28 +292,6 @@
 	background: var(--plx-activity-item-active);
 	border-color: color-mix(in srgb, var(--plx-accent) 18%, transparent);
 	color: var(--plx-accent);
-}
-
-.plx-workbench__routeGroupItemOpen {
-	align-items: center;
-	background: transparent;
-	border: 1px solid transparent;
-	border-radius: 6px;
-	color: var(--plx-text-muted);
-	cursor: pointer;
-	display: inline-flex;
-	flex: 0 0 auto;
-	height: 28px;
-	justify-content: center;
-	width: 28px;
-}
-
-.plx-workbench__routeGroupItemOpen:hover,
-.plx-workbench__routeGroupItemOpen:focus-visible {
-	background: var(--plx-surface-muted);
-	border-color: var(--plx-border);
-	color: var(--plx-text);
-	outline: none;
 }
 
 .plx-workbench__navigationToggle {
@@ -584,6 +555,29 @@
 	opacity: 0.92;
 }
 
+.plx-workbench__editorTabAdd {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 28px;
+	justify-content: center;
+	padding: 0;
+	width: 28px;
+}
+
+.plx-workbench__editorTabAdd:hover,
+.plx-workbench__editorTabAdd:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	color: var(--plx-text);
+	outline: none;
+}
+
 .plx-workbench__layoutControls {
 	align-items: center;
 	background: var(--plx-surface-muted);
@@ -839,10 +833,6 @@
 	.plx-workbench__routeGroupItem {
 		flex: 0 0 auto;
 		height: 36px;
-	}
-
-	.plx-workbench__routeGroupItemRow {
-		flex: 0 0 auto;
 	}
 
 	.plx-workbench[data-has-route-group='true'] .plx-workbench__main {

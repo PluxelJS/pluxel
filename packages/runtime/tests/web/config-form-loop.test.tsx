@@ -229,9 +229,10 @@ function WorkbenchHarness({ active = true }: { active?: boolean }) {
 						activeTabDirty: dirty,
 						isTabDirty: () => dirty,
 						getActiveTabState: () => {},
+						navigate: () => {},
 						openTab: () => {},
 						setActiveTabState: () => {},
-						requestNavigation: () => 'replace-active',
+						requestNavigation: () => {},
 						setActiveTabDirty: () => {},
 					}}
 				>
@@ -479,9 +480,10 @@ function RightPaneDirtyHarness() {
 			activeTabDirty,
 			isTabDirty: () => activeTabDirty,
 			getActiveTabState: () => {},
+			navigate: () => {},
 			openTab: () => {},
 			setActiveTabState: () => {},
-			requestNavigation: () => 'replace-active' as const,
+			requestNavigation: () => {},
 			setActiveTabDirty: (dirty: boolean) => {
 				setActiveTabDirtyState(dirty)
 			},

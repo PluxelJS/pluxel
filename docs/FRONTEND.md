@@ -27,10 +27,10 @@ Contract placement 只有两种产品语义：`plugin.tabs` 把管理 View 放�
 global layout 可以下发 route navigation metadata，但打开 target screen 后才取得 resource grant并加载实际引用的
 bundle。builtin document 由 host 渲染且只用于只读内容；交互流程使用 React View + typed RPC。
 
-集合页需要打开对象详情时使用 Workbench 原生 document Tab。Contract 以 `navigation: false` 声明整段参数 route，
-Remote View 通过 `useWorkbenchHost().openTab()` 打开当前 target 的插件相对路径，并通过 `routeParams` 读取匹配参数。
-宿主负责路径归一化、route 存在性与 shell frame 校验、按完整路径去重以及标题 metadata 恢复；插件不能传入任意宿主
-URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
+Remote View 的普通页面切换使用 `useWorkbenchHost().navigate()`，沿用宿主 active Tab 和 dirty-state 策略。集合页需要
+打开对象详情时才使用 `openTab()`；Contract 以 `navigation: false` 声明整段参数 route，并通过 `routeParams` 读取匹配参数。
+宿主对两种操作统一负责路径归一化、route 存在性与 shell frame 校验；`openTab()` 另外按完整路径去重并恢复标题
+metadata。插件不能传入任意宿主 URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
 
 浏览器只创建一个 `WorkbenchClientRuntime` 实例。它拥有 layout SSE、catalog、按 target 引用计数的 session、route index
 以及 Remote module revision。一次 target 更新先加载并 setup 所需 module、校验 Contract 和 route，再原子发布 layout
@@ -39,7 +39,8 @@ snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。Re
 不重复请求 layout、加载 Remote 或终止唯一 runtime。Provider cleanup 不把 render-stable runtime 标记为永久 disposed，
 真正的 SSE、module setup 和 target snapshot 清理由引用 lease 完成。Workspace tabs、router intent 和持久化由独立
 `WorkspaceController` 实例拥有；该实例位于 Router 之上的稳定根 Provider，不随 Shell 或 route tree 重建，也不使用 module-level store。
-显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。
+显式 `openTab()` mutation、navigation intent 和随后 route reconciliation 必须落在同一个 Controller 上。Tab strip 的
+`+` 只创建 host-owned clean navigation instance；它不扩大 Remote View capability，也不复制 dirty 或 tab-scoped state。
 
 ## Worksplit adapter boundary
 
@@ -49,7 +50,7 @@ snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。Re
 
 所有直接 Worksplit import 和 pixel/percentage 转换收敛在
 `packages/workbench-app/src/app/workbench/split/view.tsx`。Workbench App 以百分比保存布局，只在 pointer、keyboard 或
-visibility 变更 commit 后写入 `WorkspaceController`；实时拖动不产生同步持久化。Remote plugin UI 只能使用 `openTab()` 等
+visibility 变更 commit 后写入 `WorkspaceController`；实时拖动不产生同步持久化。Remote plugin UI 只能使用 `navigate()`、`openTab()` 等
 host capability，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
 [`README.md`](../packages/workbench-app/src/app/workbench/split/README.md)。
 

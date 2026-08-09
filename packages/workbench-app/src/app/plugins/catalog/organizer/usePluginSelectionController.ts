@@ -118,23 +118,17 @@ export function usePluginSelectionController({
 		}
 	}, [focusedId])
 
-	const activateFocusedPlugin = useCallback(
-		(pluginId: string, mode: 'replace-active' | 'open-tab' = 'replace-active') => {
-			const rows = containerRef.current
-				? Array.from(containerRef.current.querySelectorAll('[data-plugin-row="true"]'))
-				: []
-			for (const row of rows) {
-				if (!(row instanceof HTMLElement) || row.dataset.pluginId !== pluginId) continue
-				const link =
-					row.querySelector(`[data-plugin-link-mode="${mode}"]`) ??
-					row.querySelector('[data-plugin-link-mode="replace-active"]') ??
-					row.querySelector('[data-plugin-link]')
-				if (link instanceof HTMLElement) link.click()
-				return
-			}
-		},
-		[],
-	)
+	const activateFocusedPlugin = useCallback((pluginId: string) => {
+		const rows = containerRef.current
+			? Array.from(containerRef.current.querySelectorAll('[data-plugin-row="true"]'))
+			: []
+		for (const row of rows) {
+			if (!(row instanceof HTMLElement) || row.dataset.pluginId !== pluginId) continue
+			const link = row.querySelector('[data-plugin-link]')
+			if (link instanceof HTMLElement) link.click()
+			return
+		}
+	}, [])
 
 	const handleRowSelect = useCallback(
 		(event: React.MouseEvent, pluginId: string, mode: OrganizerRowSelectMode = 'click') => {
@@ -278,7 +272,7 @@ export function usePluginSelectionController({
 				}
 				case 'Enter':
 					event.preventDefault()
-					if (focusedId) activateFocusedPlugin(focusedId, mod ? 'open-tab' : 'replace-active')
+					if (focusedId) activateFocusedPlugin(focusedId)
 					break
 				case 'm':
 				case 'M': {

@@ -72,6 +72,7 @@ export type WorkbenchOpenTabInput = Readonly<{
 export type WorkbenchViewRuntime = Readonly<{
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
+	navigate?: (path: string) => void
 	openTab?: (input: WorkbenchOpenTabInput) => void
 	routeParams: Readonly<Record<string, string>>
 }>
@@ -82,19 +83,21 @@ const WorkbenchViewContext = createContext<WorkbenchViewRuntime | null>(null)
 export function WorkbenchViewProvider({
 	item,
 	environment,
+	navigate,
 	openTab,
 	routeParams = EMPTY_ROUTE_PARAMS,
 	children,
 }: {
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
+	navigate?: (path: string) => void
 	openTab?: (input: WorkbenchOpenTabInput) => void
 	routeParams?: Readonly<Record<string, string>>
 	children: ReactNode
 }) {
 	const value = useMemo<WorkbenchViewRuntime>(
-		() => ({ item, environment, openTab, routeParams }),
-		[environment, item, openTab, routeParams],
+		() => ({ item, environment, navigate, openTab, routeParams }),
+		[environment, item, navigate, openTab, routeParams],
 	)
 	return <WorkbenchViewContext.Provider value={value}>{children}</WorkbenchViewContext.Provider>
 }
@@ -131,6 +134,8 @@ export type WorkbenchHost = Readonly<{
 	locale: string
 	notify(payload: WorkbenchUiNotifyPayload): void
 	confirm(payload: WorkbenchUiConfirmPayload): Promise<boolean>
+	/** Navigate to a registered plugin-relative shell route using the active Tab. */
+	navigate(path: string): void
 	openTab(input: WorkbenchOpenTabInput): void
 	routeParams: Readonly<Record<string, string>>
 }>
@@ -152,13 +157,25 @@ export function useWorkbenchHost(): WorkbenchHost {
 			locale,
 			notify: environment.notify,
 			confirm: environment.confirm,
+			navigate: (path) => {
+				if (!view.navigate) throw new Error('[workbench-ui] current host does not support navigate')
+				view.navigate(path)
+			},
 			openTab: (input) => {
 				if (!view.openTab) throw new Error('[workbench-ui] current host does not support openTab')
 				view.openTab(input)
 			},
 			routeParams: view.routeParams,
 		}),
-		[environment, item.ownerPluginId, item.targetPluginId, locale, view.openTab, view.routeParams],
+		[
+			environment,
+			item.ownerPluginId,
+			item.targetPluginId,
+			locale,
+			view.navigate,
+			view.openTab,
+			view.routeParams,
+		],
 	)
 }
 

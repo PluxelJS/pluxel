@@ -104,6 +104,38 @@ function removeTabById(tabs: WorkbenchTab[], tabId: string | null) {
 	return tabs.filter((tab) => tab.id !== tabId)
 }
 
+function createTabInstanceId(tabs: WorkbenchTab[], path: string) {
+	const canonicalId = deriveTabFromPath(path).id
+	const existingIds = new Set(tabs.map((tab) => tab.id))
+	let instance = 2
+	while (existingIds.has(`${canonicalId}:instance:${instance}`)) instance += 1
+	return `${canonicalId}:instance:${instance}`
+}
+
+/**
+ * Creates a clean navigation tab beside the active tab.
+ *
+ * The new instance intentionally keeps no tab-scoped or dirty state. Its first
+ * ordinary navigation can therefore replace it while preserving the source tab.
+ */
+export function duplicateActiveWorkbenchTab(prev: WorkbenchUiState): WorkbenchUiState {
+	const activeIndex = prev.tabs.findIndex((tab) => tab.id === prev.activeTabId)
+	const activeTab = prev.tabs[activeIndex]
+	if (!activeTab) return prev
+	const duplicate = {
+		...activeTab,
+		id: createTabInstanceId(prev.tabs, activeTab.path),
+		kind: 'document' as const,
+	}
+	const tabs = [...prev.tabs]
+	tabs.splice(activeIndex + 1, 0, duplicate)
+	return {
+		...prev,
+		activeTabId: duplicate.id,
+		tabs,
+	}
+}
+
 export function syncWorkbenchTabs(
 	prev: WorkbenchUiState,
 	nextTab: WorkbenchTab,

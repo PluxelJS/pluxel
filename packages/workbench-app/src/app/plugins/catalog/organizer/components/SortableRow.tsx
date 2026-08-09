@@ -10,7 +10,7 @@ import {
 	useMantineTheme,
 	rgba,
 } from '@mantine/core'
-import { IconCheck, IconExternalLink, IconGripVertical } from '@tabler/icons-react'
+import { IconCheck, IconGripVertical } from '@tabler/icons-react'
 import type { UniqueIdentifier } from '@dnd-kit/core'
 import {
 	memo,
@@ -20,14 +20,12 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from 'react'
-import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import type { RowDensity } from '../constants'
 
 type RowMeta = { tag?: string; version?: string }
 type LinkLikeProps = {
 	to: string
 	children: ReactNode
-	workbenchMode?: WorkbenchNavigationRequest
 } & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 
 export type SortableRowProps = {
@@ -201,9 +199,7 @@ const SortableRowComponent = ({
 				{LinkComp ? (
 					<LinkComp
 						to={href}
-						workbenchMode="replace-active"
 						data-plugin-link="true"
-						data-plugin-link-mode="replace-active"
 						style={{ textDecoration: 'none', display: 'block', color: rowColorValue, minWidth: 0 }}
 						onClick={(e: any) => {
 							e.stopPropagation()
@@ -235,7 +231,6 @@ const SortableRowComponent = ({
 							href={href}
 							underline="never"
 							data-plugin-link="true"
-							data-plugin-link-mode="replace-active"
 							style={{
 								whiteSpace: 'nowrap',
 								overflow: 'hidden',
@@ -308,26 +303,6 @@ const SortableRowComponent = ({
 					)}
 				</Group>
 			)}
-
-			{LinkComp ? (
-				<Tooltip label="在独立工作标签打开" withinPortal withArrow openDelay={200}>
-					<ActionIcon
-						component={LinkComp as any}
-						to={href}
-						workbenchMode="open-tab"
-						data-plugin-link="true"
-						data-plugin-link-mode="open-tab"
-						variant="subtle"
-						size="sm"
-						aria-label={`在独立工作标签打开 ${name}`}
-						onClick={(event: React.MouseEvent) => {
-							event.stopPropagation()
-						}}
-					>
-						<IconExternalLink size={14} />
-					</ActionIcon>
-				</Tooltip>
-			) : null}
 		</Box>
 	)
 }

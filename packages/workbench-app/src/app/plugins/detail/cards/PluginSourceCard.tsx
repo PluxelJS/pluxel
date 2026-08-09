@@ -12,7 +12,6 @@ import {
 } from '@mantine/core'
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import { useMemo, type ReactNode } from 'react'
-import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import { usePluginScope, type PluginSourceInfo } from '../context'
 import { resolveKnownPluginName, shortenPathSegments } from '../rightPaneState'
 import {
@@ -100,10 +99,9 @@ function getBadgeLabel(source: PluginSourceInfo): { label: string; color: string
 
 export interface PluginSourceCardProps {
 	LinkComponent?: DependencyListProps['LinkComponent']
-	linkWorkbenchMode?: WorkbenchNavigationRequest
 }
 
-export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSourceCardProps) {
+export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 	const { source, knownPluginNames } = usePluginScope()
 	const theme = useMantineTheme()
 	const badge = getBadgeLabel(source)
@@ -143,7 +141,6 @@ export function PluginSourceCard({ LinkComponent, linkWorkbenchMode }: PluginSou
 							<DependencyList
 								LinkComponent={LinkComponent}
 								resolveLinkTarget={resolveDependencyLinkTarget}
-								linkWorkbenchMode={linkWorkbenchMode}
 							/>
 						</Box>
 					</Group>

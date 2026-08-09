@@ -4,7 +4,6 @@
 // - standalone route
 
 import { Button, Group, Stack, Text } from '@mantine/core'
-import { IconExternalLink } from '@tabler/icons-react'
 import { useWorkbenchHost } from '@pluxel/runtime/workbench/ui'
 import {
 	EventsPanel,
@@ -28,12 +27,7 @@ export function PluginInfo() {
 				演示 Workbench UI：Tab、Route、Standalone Route、SSE、RPC。
 			</Text>
 			<Group gap="xs">
-				<Button
-					variant="light"
-					size="xs"
-					leftSection={<IconExternalLink size={14} />}
-					onClick={() => app.openTab({ path: '/dashboard', title: 'PluginWithUI Dashboard' })}
-				>
+				<Button variant="light" size="xs" onClick={() => app.navigate('/dashboard')}>
 					打开 Dashboard
 				</Button>
 				<Button

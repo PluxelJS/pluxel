@@ -35,12 +35,7 @@ import {
 	type WorkbenchTab,
 } from './state'
 import { deriveTabFromPath } from './tabs'
-import {
-	type WorkbenchNavigationMode,
-	WorkbenchLayoutProvider,
-	WorkbenchTabsProvider,
-	useWorkspaceController,
-} from './context'
+import { WorkbenchLayoutProvider, WorkbenchTabsProvider, useWorkspaceController } from './context'
 import {
 	ActivityRail,
 	EditorTabStrip,
@@ -99,10 +94,6 @@ export function WorkbenchShell() {
 		const intent = workspace.consumeNavigation(pathname)
 		workspace.syncLocation(pathname, intent?.mode ?? 'replace-active')
 	}, [pathname, workspace])
-
-	useEffect(() => {
-		workspace.pruneDirtyTabs()
-	}, [tabs, workspace])
 
 	const workbenchNavItems = useMemo(() => {
 		if (navigationRoutes.length === 0) return []
@@ -230,20 +221,32 @@ export function WorkbenchShell() {
 			})
 		})
 	}, [activePluginWorkbenchLayout.rightPaneVisible, setActivePluginWorkbenchLayout])
-
-	const openPluginWorkspace = useCallback(
-		(mode: 'open-tab' | 'replace-active') => {
-			setSectionPaneVisible(PLUGINS_SECTION_ID, true)
-			workspace.queueNavigation('/plugins', mode)
-			if (!pathname.startsWith('/plugins')) {
-				void navigate({ to: '/plugins' })
-			}
-			dispatchPluginSearchEvent()
+	const requestNavigation = useCallback(
+		(to: string) => {
+			workspace.requestNavigation(to)
 		},
-		[navigate, pathname, setSectionPaneVisible, workspace],
+		[workspace],
 	)
+	const navigateToRoute = useCallback(
+		(to: string) => {
+			if (activeTab?.path === to) return
+			requestNavigation(to)
+			startTransition(() => {
+				void navigate({ to })
+			})
+		},
+		[activeTab?.path, navigate, requestNavigation],
+	)
+
+	const openPluginWorkspace = useCallback(() => {
+		setSectionPaneVisible(PLUGINS_SECTION_ID, true)
+		if (!pathname.startsWith('/plugins')) {
+			navigateToRoute('/plugins')
+		}
+		dispatchPluginSearchEvent()
+	}, [navigateToRoute, pathname, setSectionPaneVisible])
 	const focusWorkbenchSearch = useCallback(() => {
-		openPluginWorkspace('replace-active')
+		openPluginWorkspace()
 	}, [openPluginWorkspace])
 
 	const navigateToWorkbenchTab = useCallback(
@@ -260,7 +263,6 @@ export function WorkbenchShell() {
 		(input: { to: string; title: string; meta?: string }) => {
 			workspace.openTab({ path: input.to, title: input.title, meta: input.meta })
 			if (input.to === pathname) return
-			workspace.queueNavigation(input.to, 'open-tab')
 			startTransition(() => {
 				void navigate({ to: input.to })
 			})
@@ -298,26 +300,17 @@ export function WorkbenchShell() {
 				)
 				if (!confirmed) return
 			}
-			if (storeTabs.length <= 1) {
-				workspace.resetToHome()
-				void navigate({ to: '/' })
-				return
-			}
-			const index = storeTabs.findIndex((tab) => tab.id === tabId)
-			if (index === -1) return
-			const nextTabs = storeTabs.filter((tab) => tab.id !== tabId)
 			const closingActive = storeActiveTabId === tabId
-			const fallbackTab =
-				nextTabs[Math.max(0, index - 1)] ??
-				nextTabs[Math.min(index, nextTabs.length - 1)] ??
-				nextTabs[0]
-			workspace.closeTab(tabId)
-			if (closingActive && fallbackTab) {
-				navigateToWorkbenchTab(fallbackTab)
+			const nextTab = workspace.closeTab(tabId)
+			if (closingActive && nextTab) {
+				navigateToWorkbenchTab(nextTab)
 			}
 		},
-		[dirtyTabs, navigate, navigateToWorkbenchTab, workspace],
+		[dirtyTabs, navigateToWorkbenchTab, workspace],
 	)
+	const duplicateActiveTab = useCallback(() => {
+		workspace.duplicateActiveTab()
+	}, [workspace])
 
 	const togglePluginNav = useCallback(() => {
 		toggleSectionPane(PLUGINS_SECTION_ID)
@@ -369,9 +362,9 @@ export function WorkbenchShell() {
 				currentSectionPane?.layout[PLUGIN_SECTION_CONTENT_PANEL_ID] ??
 				DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_SECTION_CONTENT_PANEL_ID],
 			minSize: 56,
-			children: <WorkspacePaneContent />,
+			children: <WorkspacePaneContent tabId={resolvedActiveTabId} />,
 		}),
-		[currentSectionPane?.layout],
+		[currentSectionPane?.layout, resolvedActiveTabId],
 	)
 	const mobileSinglePane = isNarrowViewport && isPluginDetail
 	const primaryPane = !isPluginDetail
@@ -441,27 +434,10 @@ export function WorkbenchShell() {
 			activeTabDirty,
 			isTabDirty,
 			getActiveTabState,
+			navigate: navigateToRoute,
 			openTab,
 			setActiveTabState,
-			requestNavigation: (to: string, request: WorkbenchNavigationMode | 'auto' = 'auto') => {
-				const mode =
-					request === 'auto'
-						? activeTabDirty && activeTab?.path !== to
-							? 'open-tab'
-							: 'replace-active'
-						: request
-				if (activeTab?.path !== to) {
-					// Materialize an explicit new-tab request before routing. The route effect
-					// still reconciles the URL, but a navigation cannot accidentally fall back
-					// to replace-active if another router update runs first.
-					if (mode === 'open-tab') {
-						const tab = deriveTabFromPath(to)
-						workspace.openTab({ path: tab.path, title: tab.title, meta: tab.meta })
-					}
-					workspace.queueNavigation(to, mode)
-				}
-				return mode
-			},
+			requestNavigation,
 			setActiveTabDirty,
 		}),
 		[
@@ -469,10 +445,11 @@ export function WorkbenchShell() {
 			activeTabDirty,
 			getActiveTabState,
 			isTabDirty,
+			navigateToRoute,
 			openTab,
+			requestNavigation,
 			setActiveTabDirty,
 			setActiveTabState,
-			workspace,
 		],
 	)
 
@@ -509,7 +486,6 @@ export function WorkbenchShell() {
 								<RouteGroupRail
 									group={activeRouteGroup}
 									pathname={pathname}
-									openTab={openTab}
 									requestNavigation={workbenchTabsValue.requestNavigation}
 								/>
 							) : null}
@@ -546,6 +522,7 @@ export function WorkbenchShell() {
 										activeTabId={activeTabId}
 										dirtyTabs={dirtyTabs}
 										onActivateTab={activateTab}
+										onAddTab={duplicateActiveTab}
 										onCloseTab={closeTab}
 										tabs={tabs}
 									/>

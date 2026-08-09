@@ -10,7 +10,6 @@ import {
 	type MouseEvent,
 	type ReactNode,
 } from 'react'
-import type { WorkbenchNavigationRequest } from '../../../../workbench/context'
 import type { GroupConfig } from '../types'
 import type { RowDensity } from '../constants'
 import { DroppableContainer } from './DroppableContainer'
@@ -29,7 +28,6 @@ type Props = {
 		{
 			to: string
 			children: ReactNode
-			workbenchMode?: WorkbenchNavigationRequest
 		} & Omit<ComponentPropsWithoutRef<'a'>, 'href'>
 	>
 	sortableId: UniqueIdentifier

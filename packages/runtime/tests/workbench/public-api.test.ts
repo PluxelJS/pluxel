@@ -171,7 +171,9 @@ describe('Workbench authoring API', () => {
 		expectTypeOf<Client>().not.toHaveProperty('localState')
 	})
 
-	it('exposes a plugin-scoped native tab capability to Workbench views', () => {
+	it('exposes plugin-scoped navigation and native document tabs to Workbench views', () => {
+		expectTypeOf<WorkbenchHost['navigate']>().toBeFunction()
+		expectTypeOf<Parameters<WorkbenchHost['navigate']>[0]>().toEqualTypeOf<string>()
 		expectTypeOf<WorkbenchHost['openTab']>().toBeFunction()
 		expectTypeOf<Parameters<WorkbenchHost['openTab']>[0]>().toMatchObjectType<{
 			path: string

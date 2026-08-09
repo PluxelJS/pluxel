@@ -205,25 +205,40 @@ function WorkbenchRemoteView({
 }) {
 	const { runtime, environment } = useWorkbenchRuntime()
 	const tabs = useOptionalWorkspaceTabs()
+	const resolveShellPath = useCallback(
+		(inputPath: string, operation: 'navigate' | 'openTab') => {
+			const path = normalizeWorkbenchPath(inputPath)
+			if (!path) throw new Error(`[workbench-ui] ${operation}.path must target a plugin route`)
+			const resolved = runtime.resolveRoute(item.targetPluginId, path)
+			if (!resolved) throw new Error(`[workbench-ui] ${operation} route is not registered: ${path}`)
+			if (resolved.frame !== 'shell') {
+				throw new Error(`[workbench-ui] ${operation} only supports shell routes`)
+			}
+			return path
+		},
+		[item.targetPluginId, runtime],
+	)
+	const navigate = useCallback(
+		(inputPath: string) => {
+			if (!tabs) throw new Error('[workbench-ui] current frame does not support navigation')
+			const path = resolveShellPath(inputPath, 'navigate')
+			tabs.navigate(buildWorkbenchHref(item.targetPluginId, path, 'shell'))
+		},
+		[item.targetPluginId, resolveShellPath, tabs],
+	)
 	const openTab = useCallback(
 		(input: { path: string; title: string; meta?: string }) => {
 			if (!tabs) throw new Error('[workbench-ui] current frame does not support native tabs')
-			const path = normalizeWorkbenchPath(input.path)
+			const path = resolveShellPath(input.path, 'openTab')
 			const title = input.title.trim()
-			if (!path) throw new Error('[workbench-ui] openTab.path must target a plugin route')
 			if (!title) throw new Error('[workbench-ui] openTab.title is required')
-			const resolved = runtime.resolveRoute(item.targetPluginId, path)
-			if (!resolved) throw new Error(`[workbench-ui] openTab route is not registered: ${path}`)
-			if (resolved.frame !== 'shell') {
-				throw new Error('[workbench-ui] openTab only supports shell routes')
-			}
 			tabs.openTab({
 				to: buildWorkbenchHref(item.targetPluginId, path, 'shell'),
 				title,
 				meta: input.meta?.trim() || undefined,
 			})
 		},
-		[item.targetPluginId, runtime, tabs],
+		[item.targetPluginId, resolveShellPath, tabs],
 	)
 	const View = runtime.view(snapshot.target, item)
 	if (!View) {
@@ -242,6 +257,7 @@ function WorkbenchRemoteView({
 			<WorkbenchViewProvider
 				item={item}
 				environment={environment}
+				navigate={navigate}
 				openTab={openTab}
 				routeParams={routeParams}
 			>

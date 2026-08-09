@@ -207,7 +207,6 @@ function PluginWorkbenchToolbar({
 							<DependencyList
 								LinkComponent={RouterLinkAdapter}
 								resolveLinkTarget={resolveDependencyLinkTarget}
-								linkWorkbenchMode="open-tab"
 							/>
 						</div>
 					) : null}

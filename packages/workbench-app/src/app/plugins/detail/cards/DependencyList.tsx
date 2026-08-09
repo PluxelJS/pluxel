@@ -1,16 +1,13 @@
 import { Badge, Box, Group, Text, Tooltip } from '@mantine/core'
 import { useMemo, type ElementType, type ReactNode } from 'react'
-import type { WorkbenchNavigationRequest } from '../../../workbench/context'
 import { usePluginDependencies } from '../context'
 
 export interface DependencyListProps {
 	LinkComponent?: ElementType<{
 		to: string
 		children: ReactNode
-		workbenchMode?: WorkbenchNavigationRequest
 	}>
 	resolveLinkTarget?: (name: string) => string | undefined
-	linkWorkbenchMode?: WorkbenchNavigationRequest
 }
 
 export function usePluginDependencyEntries() {
@@ -26,11 +23,7 @@ export function usePluginDependencyEntries() {
 	}, [contextDeps])
 }
 
-export function DependencyList({
-	LinkComponent,
-	resolveLinkTarget,
-	linkWorkbenchMode,
-}: DependencyListProps) {
+export function DependencyList({ LinkComponent, resolveLinkTarget }: DependencyListProps) {
 	const entries = usePluginDependencyEntries()
 
 	if (entries.length === 0) {
@@ -90,7 +83,6 @@ export function DependencyList({
 						color={color}
 						component={LinkComponent as any}
 						to={`/plugins/${encodeURIComponent(linkTarget)}`}
-						workbenchMode={linkWorkbenchMode}
 						leftSection={dot}
 						radius="sm"
 						size="sm"
