@@ -68,6 +68,9 @@ type WorkerInputSnapshot = Readonly<{
 	transferList?: ArrayBuffer[]
 }>
 
+type TinypoolRunOptions = NonNullable<Parameters<Tinypool['run']>[1]>
+type TinypoolTransferList = NonNullable<TinypoolRunOptions['transferList']>
+
 const rootStates = new WeakMap<WorkerTaskService, RootState>()
 
 declare module '@pluxel/core' {
@@ -259,7 +262,7 @@ export class WorkerTaskService {
 				this.drain(state)
 				return
 			}
-			void route.ready.then(() => {
+			void route.ready.then((): undefined => {
 				if (route.failure) {
 					this.failResolvingTask(state, task, taskUnavailable(route.failure.cause))
 					return undefined
@@ -347,7 +350,9 @@ export class WorkerTaskService {
 				filename: task.filename!,
 				name: 'default',
 				signal: task.signal,
-				...(task.transferList === undefined ? {} : { transferList: task.transferList }),
+				...(task.transferList === undefined
+					? {}
+					: { transferList: asTinypoolTransferList(task.transferList) }),
 			})
 			task.input = undefined
 			task.transferList = undefined
@@ -359,13 +364,13 @@ export class WorkerTaskService {
 			return
 		}
 		void execution.then(
-			(value) => {
+			(value): undefined => {
 				state.activeTasks--
 				this.settle(task, undefined, value)
 				this.drain(state)
 				return undefined
 			},
-			(cause) => {
+			(cause): undefined => {
 				const error = task.signal.aborted ? abortReason(task.signal) : workerExecutionError(cause)
 				state.activeTasks--
 				this.settle(task, error)
@@ -456,6 +461,12 @@ export class WorkerTaskService {
 		await state.pool?.destroy()
 		state.pool = undefined
 	}
+}
+
+function asTinypoolTransferList(transferList: ArrayBuffer[]): TinypoolTransferList {
+	// Tinypool accepts Node's transfer-list array at runtime. Under @types/node 26 its
+	// conditional type selects the newer postMessage options overload instead.
+	return transferList as unknown as TinypoolTransferList
 }
 
 function firstSetValue<T>(values: ReadonlySet<T>): T | undefined {
