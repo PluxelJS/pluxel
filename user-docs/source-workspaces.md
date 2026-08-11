@@ -73,7 +73,10 @@ link 原位消费。
 
 上游有 `turbo.json` 或 `turbo.jsonc` 时，CLI 只把这些精确目标交给 Turbo，由上游 task graph 决定真正
 需要的 prerequisite；不使用 `package...` filter 绕过任务所有者的边界。其他 pnpm workspace 才使用带
-dependency closure 的递归 `pnpm --filter`。消费仓库不复制 filter 或 dev dependency 清单。
+dependency closure 的递归 `pnpm --filter`。CLI 已在启动 Turbo 前确定 checkout 使用 pnpm，所以会关闭
+Turbo 重复执行的 package-manager 检查；合法的 `devEngines` pnpm range 不会被误判成无效的精确版本，
+checkout 的 lockfile 和 pnpm 约束仍然生效。consumer 的 Corepack 选择不会泄漏进独立 checkout；nested workspace
+声明了精确 `packageManager` 时仍由 pnpm 使用对应版本。消费仓库不复制 filter 或 dev dependency 清单。
 `source doctor` 会分别列出链接的 `packages` 与真正需要构建的 `artifacts`。
 
 项目通常保留短 script。dev 和直接导出源码的 application build 会立即看到 link 中的修改；需要验证

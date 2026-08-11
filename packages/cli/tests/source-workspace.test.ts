@@ -180,6 +180,7 @@ describe('source workspace planning', () => {
 			'turbo',
 			'run',
 			'build',
+			'--dangerously-disable-package-manager-check',
 			'--filter=@acme/app',
 		])
 		expect(createSourceBuildArgs(['@acme/app'], false)).toEqual([

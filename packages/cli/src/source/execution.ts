@@ -100,7 +100,16 @@ export function createPnpmInvocation(packageManager: string | undefined, args: s
 
 export function createSourceBuildArgs(packageNames: string[], hasTurbo: boolean) {
 	return hasTurbo
-		? ['exec', 'turbo', 'run', 'build', ...packageNames.map((name) => `--filter=${name}`)]
+		? [
+				'exec',
+				'turbo',
+				'run',
+				'build',
+				// The source orchestrator already selected pnpm for this checkout. Turbo otherwise
+				// rejects valid devEngines ranges such as "pnpm@>=11 <12" as non-exact specs.
+				'--dangerously-disable-package-manager-check',
+				...packageNames.map((name) => `--filter=${name}`),
+			]
 		: [
 				...packageNames.flatMap((name) => ['--filter', `${name}...`]),
 				'--if-present',
@@ -296,6 +305,7 @@ async function runInherited(command: string, args: string[], cwd: string) {
 	await new Promise<void>((resolvePromise, reject) => {
 		const child = spawn(command, args, {
 			cwd,
+			env: sourceChildEnvironment(),
 			stdio: 'inherit',
 			shell: process.platform === 'win32',
 		})
@@ -305,4 +315,13 @@ async function runInherited(command: string, args: string[], cwd: string) {
 			else reject(new Error(`${command} ${args.join(' ')} failed in ${cwd}`))
 		})
 	})
+}
+
+function sourceChildEnvironment(): NodeJS.ProcessEnv {
+	const env = { ...process.env }
+	// A source checkout owns package-manager selection independently from the consumer. Keeping the
+	// consumer's marker makes pnpm think Corepack already pinned it and prevents nested exact
+	// packageManager declarations from switching versions.
+	delete env.COREPACK_ROOT
+	return env
 }
