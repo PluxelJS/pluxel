@@ -152,6 +152,7 @@ import { staticApplication } from '@pluxel/rolldown/build'
 export default staticApplication({
 	entry: './src/pluxel.static.ts',
 	variant: 'workbench',
+	launcher: 'node',
 	target: 'node',
 	residualDependencies: {
 		packages: ['@vendor/native-runtime'],
@@ -159,6 +160,12 @@ export default staticApplication({
 	},
 })
 ```
+
+`launcher` 默认是 `node`：产物启动时把 runtime Fetch boundary 包装为 Node HTTP listener，并额外导出
+`address`。Electron utility process、测试之外的进程内宿主或已有网络适配器应使用 `launcher: 'fetch'`；该产物
+只启动固定 catalog 并导出 `ctx`、`fetch`、`start`、`stop`，不创建 TCP listener。两种 launcher 使用完全相同的
+plugin lifecycle、config、Vault、persistence、Workbench artifacts 和 distribution closure；不要用 test host 代替
+生产 Fetch launcher。
 
 通常不需要手写 `residualDependencies`；Pluxel 与 nf3 已覆盖框架 runtime 和已知原生 package。应用自己的 package
 若只通过 `createRequire()`、原生 binding loader 或运行时路径加载，加入 `packages` 后会从应用根解析并由 NFT 精确追踪。
@@ -183,7 +190,7 @@ Freezer 在 final assembly 末尾自动生成覆盖完整目录的 `pluxel-distr
 [`distribution.md`](distribution.md)。
 
 目标机不需要安装 `@pluxel/*`。`variant` 是 build-time capability：`headless` 不携带 Workbench，启动时不能再开启；
-`workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。Node target 读取
+`workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。`launcher: 'node'` 读取
 `PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。Node host 会在客户端中止请求或提前关闭流式响应时 abort 对应的 Fetch
 `Request.signal` 并取消 response body；长请求应监听该 signal，流式 body 的 `cancel()` 应释放订阅、定时器等资源。
 当前 freezer 只支持 Node application；不要把 Node runtime closure 标成 neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 时会以它作为 HTML/static

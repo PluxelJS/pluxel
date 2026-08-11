@@ -18,6 +18,14 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./internal/fetch-application": {
+			"@pluxel/source": "./src/internal/fetch-application.ts",
+			"default": "./dist/internal/fetch-application.mjs"
+		},
+		"./internal/fetch-workbench-application": {
+			"@pluxel/source": "./src/internal/fetch-workbench-application.ts",
+			"default": "./dist/internal/fetch-workbench-application.mjs"
+		},
 		"./internal/node-application": {
 			"@pluxel/source": "./src/internal/node-application.ts",
 			"default": "./dist/internal/node-application.mjs"
@@ -39,6 +47,8 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./internal/fetch-application": "./dist/internal/fetch-application.mjs",
+			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
 			"./internal/node-application": "./dist/internal/node-application.mjs",
 			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
 			"./test": "./dist/test.mjs",

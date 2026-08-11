@@ -32,6 +32,8 @@ export default defineConfig({
 	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
+		'internal/fetch-application': 'src/internal/fetch-application.ts',
+		'internal/fetch-workbench-application': 'src/internal/fetch-workbench-application.ts',
 		'internal/node-application': 'src/internal/node-application.ts',
 		'internal/node-workbench-application': 'src/internal/node-workbench-application.ts',
 		test: 'src/test.ts',

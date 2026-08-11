@@ -89,6 +89,16 @@ describe('staticApplication', () => {
 		expect(config.entry).toEqual({ app: 'pluxel:static-application-bootstrap' })
 	})
 
+	it('rejects an unknown launcher instead of silently opening a listener', () => {
+		expect(() =>
+			staticApplication({
+				cwd: '/tmp/pluxel-static-invalid-launcher',
+				entry: './src/pluxel.static.ts',
+				launcher: 'invalid' as never,
+			}),
+		).toThrow('[static-application] launcher must be either node or fetch')
+	})
+
 	it('generates a namespace-based production bootstrap for default and product exports', async () => {
 		const config = staticApplication({
 			cwd: '/tmp/pluxel-static-node',
@@ -112,6 +122,31 @@ describe('staticApplication', () => {
 		expect(source).toContain('readHostProduct as __readHostProduct')
 		expect(source).toContain('__pluxelHostModule.default')
 		expect(source).toContain('product: __pluxelProduct')
+	})
+
+	it('emits a fetch-only production bootstrap without a listener address', async () => {
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-fetch',
+			entry: './src/pluxel.static.ts',
+			variant: 'workbench',
+			launcher: 'fetch',
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: (id: string) => unknown
+				load?: (id: string) => unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel-static-application-entry')
+		const resolved = plugin?.resolveId?.('pluxel:static-application-bootstrap')
+		const source = String(await plugin?.load?.(String(resolved)))
+
+		expect(source).toContain('@pluxel/runtime-static/internal/fetch-workbench-application')
+		expect(source).toContain('runStaticFetchWorkbenchApplication')
+		expect(source).toContain('export const fetch = __pluxelStaticRuntime.fetch')
+		expect(source).not.toContain('runStaticNodeApplication')
+		expect(source).not.toContain('export const address')
 	})
 
 	it('keeps PostgreSQL on the Node residual boundary', async () => {

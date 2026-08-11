@@ -19,6 +19,8 @@ export type StaticApplicationBuildOptions = {
 	cwd?: string
 	outDir?: string
 	variant?: 'headless' | 'workbench'
+	/** Runtime adapter emitted by the production bootstrap. @default 'node' */
+	launcher?: 'node' | 'fetch'
 	target?: 'node'
 	residualDependencies?: StaticApplicationResidualDependencies
 	minify?: boolean
@@ -53,6 +55,10 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 	const entry = resolve(cwd, options.entry)
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
 	const variant = options.variant ?? 'workbench'
+	const launcher = String(options.launcher ?? 'node')
+	if (launcher !== 'node' && launcher !== 'fetch') {
+		throw new Error('[static-application] launcher must be either node or fetch')
+	}
 	const target = String(options.target ?? 'node')
 	if (target !== 'node')
 		throw new Error('[static-application] only the node target is currently supported')
@@ -124,7 +130,7 @@ export function staticApplication(options: StaticApplicationBuildOptions): UserC
 					state.residualPackages = Object.keys(packages).sort()
 				},
 			}),
-			staticApplicationEntryPlugin({ entry, variant, state }),
+			staticApplicationEntryPlugin({ entry, variant, launcher, state }),
 			staticApplicationAssemblyPlugin({ cwd, outDir, variant, state }),
 		],
 		inputOptions: {
@@ -382,6 +388,7 @@ function readPackageName(id: string): string | null {
 function staticApplicationEntryPlugin(options: {
 	entry: string
 	variant: 'headless' | 'workbench'
+	launcher: 'node' | 'fetch'
 	state: StaticApplicationBuildState
 }): Plugin {
 	return {
@@ -394,7 +401,7 @@ function staticApplicationEntryPlugin(options: {
 		},
 		load(id) {
 			if (id !== RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID) return null
-			return buildBootstrap(options.entry, options.variant)
+			return buildBootstrap(options.entry, options.variant, options.launcher)
 		},
 		transform(code, rawId) {
 			const id = rawId.split('?', 1)[0]
@@ -435,21 +442,33 @@ function staticApplicationEntryPlugin(options: {
 	}
 }
 
-function buildBootstrap(entry: string, variant: 'headless' | 'workbench'): string {
+function buildBootstrap(
+	entry: string,
+	variant: 'headless' | 'workbench',
+	launcher: 'node' | 'fetch',
+): string {
 	const deployment = `{ root: import.meta.dirname, target: 'node', variant: ${JSON.stringify(variant)} }`
+	const workbench = variant === 'workbench'
 	const [runnerModule, runner] =
-		variant === 'workbench'
-			? [
-					'@pluxel/runtime-static/internal/node-workbench-application',
-					'runStaticNodeWorkbenchApplication',
-				]
-			: ['@pluxel/runtime-static/internal/node-application', 'runStaticNodeApplication']
+		launcher === 'fetch'
+			? workbench
+				? [
+						'@pluxel/runtime-static/internal/fetch-workbench-application',
+						'runStaticFetchWorkbenchApplication',
+					]
+				: ['@pluxel/runtime-static/internal/fetch-application', 'runStaticFetchApplication']
+			: workbench
+				? [
+						'@pluxel/runtime-static/internal/node-workbench-application',
+						'runStaticNodeWorkbenchApplication',
+					]
+				: ['@pluxel/runtime-static/internal/node-application', 'runStaticNodeApplication']
 	return `
 import * as __pluxelHostModule from ${JSON.stringify(entry)}
 import { readHostProduct as __readHostProduct } from '@pluxel/runtime/internal'
-import { ${runner} as __runStaticNodeApplication } from ${JSON.stringify(runnerModule)}
+import { ${runner} as __runStaticApplication } from ${JSON.stringify(runnerModule)}
 const __pluxelProduct = __readHostProduct(__pluxelHostModule, ${JSON.stringify(`[static-application] ${entry}`)})
-const __pluxelStaticRuntime = await __runStaticNodeApplication(__pluxelHostModule.default, {
+const __pluxelStaticRuntime = await __runStaticApplication(__pluxelHostModule.default, {
 	env: process.env,
 	deployment: ${deployment},
 	product: __pluxelProduct,
@@ -458,7 +477,7 @@ export const ctx = __pluxelStaticRuntime.ctx
 export const fetch = __pluxelStaticRuntime.fetch
 export const start = __pluxelStaticRuntime.start
 export const stop = __pluxelStaticRuntime.stop
-export const address = __pluxelStaticRuntime.address
+${launcher === 'node' ? 'export const address = __pluxelStaticRuntime.address' : ''}
 `
 }
 

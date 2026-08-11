@@ -5,16 +5,10 @@ import { extname, isAbsolute, relative, resolve as resolvePath } from 'node:path
 import { Readable } from 'node:stream'
 import type { PluginConstructor } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
-import { startStaticRuntimeApplication } from './application'
+import { runStaticFetchApplication, type StaticFetchApplicationOptions } from './fetch-application'
 import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
 import type { StaticRuntimeWorkbenchInstaller } from './host'
-import type {
-	StaticRuntime,
-	StaticRuntimeApplication,
-	StaticRuntimeBindings,
-	StaticRuntimeDeployment,
-	StaticRuntimeEnvironment,
-} from '../types'
+import type { StaticRuntime, StaticRuntimeApplication, StaticRuntimeBindings } from '../types'
 
 export type StaticNodeApplication = StaticRuntime & {
 	readonly address: { host: string; port: number }
@@ -24,36 +18,13 @@ export async function runStaticNodeApplication<
 	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
 >(
 	application: StaticRuntimeApplication<readonly PluginConstructor[], TBindings>,
-	options: {
-		env?: StaticRuntimeEnvironment
-		bindings?: TBindings
-		deployment: StaticRuntimeDeployment
+	options: StaticFetchApplicationOptions<TBindings> & {
 		installWorkbench?: StaticRuntimeWorkbenchInstaller
 		product?: ProductDescriptor | null
 	},
 ): Promise<StaticNodeApplication> {
 	const env = options.env ?? readProcessEnvironment()
-	const runtime = await startStaticRuntimeApplication(application, {
-		startup: {
-			mode: 'production',
-			env,
-			bindings: options.bindings ?? ({} as TBindings),
-			deployment: options.deployment,
-		},
-		deployment: {
-			root: options.deployment.root,
-			nodeModulesDir: `${options.deployment.root}/artifacts/node`,
-			workbenchIncluded: options.deployment.variant === 'workbench',
-			...(options.deployment.variant === 'workbench'
-				? {
-						publicDir: `${options.deployment.root}/workbench/public`,
-						workbenchDir: `${options.deployment.root}/workbench`,
-					}
-				: {}),
-		},
-		installWorkbench: options.installWorkbench,
-		product: options.product ?? null,
-	})
+	const runtime = await runStaticFetchApplication(application, { ...options, env })
 	const host = env.PLUXEL_HOST_BIND?.trim() || '127.0.0.1'
 	const port = parsePort(env.PLUXEL_HOST_PORT, 3000)
 	const server = createServer((request, response) => {
