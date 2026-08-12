@@ -62,6 +62,21 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
 	})
 
+	it('leaves distribution bare packages to the Node host', () => {
+		const plugins = pluxelRuntimeSourceVitePlugins({ packageMode: 'distribution' }) as Plugin[]
+		const plugin = plugins.at(-1)!
+		const config = plugin.config?.({} as never, {
+			command: 'serve',
+			mode: 'production',
+		}) as {
+			resolve?: { conditions?: string[] }
+			ssr?: { external?: string[] | true }
+		}
+
+		expect(config.resolve?.conditions).not.toContain('@pluxel/source')
+		expect(config.ssr?.external).toBe(true)
+	})
+
 	it('exposes one source plugin group with server-only transforms', async () => {
 		const plugins = pluxelRuntimeSourceVitePlugins({
 			root: '/repo',
@@ -302,6 +317,44 @@ describe('runtime-dev Vite plugin stack', () => {
 					server: { middlewareMode: true },
 					appType: 'custom',
 					plugins: [createHostModuleVitePlugin()],
+				})
+				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
+				expect(mod.answer).toBe(42)
+			} finally {
+				await server?.close()
+			}
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it('loads CommonJS from Node while transforming distribution source entries', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'pluxel-distribution-host-module-vite-'))
+		const entryPath = join(root, 'entry.ts')
+		try {
+			await writePackage(
+				root,
+				'fixture-commonjs',
+				{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
+				'module.exports = { answer: 42 }\n',
+			)
+			await writeFile(
+				entryPath,
+				"import value from 'fixture-commonjs'\nexport const answer: number = value.answer\n",
+			)
+
+			let server: ViteDevServer | undefined
+			try {
+				server = await createServer({
+					root,
+					logLevel: 'silent',
+					server: { middlewareMode: true },
+					appType: 'custom',
+					plugins: pluxelRuntimeSourceVitePlugins({
+						packageMode: 'distribution',
+						lintGuard: false,
+						configSource: false,
+					}),
 				})
 				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
 				expect(mod.answer).toBe(42)

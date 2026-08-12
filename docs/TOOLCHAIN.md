@@ -112,7 +112,9 @@ Workbench browser entry 在 route `config` hook 进入 Vite optimizer；插件 U
 收集，不能为了编译元数据调用 client transform 并向 optimizer 注入不完整依赖批次。
 Dynamic host 显式使用 `mode: 'distribution'` 时仍保留 source transform/HMR pipeline，但 package resolution 不启用
 `@pluxel/hmr`、`development` 或 `@pluxel/source`，Workbench 改由 `@pluxel/runtime/dist/public` 提供，HTML 也不注入
-Vite client。该模式用于 host-owned 可搬运 source distribution；目录 closure、inventory 与签名不由 route plugin 猜测。
+Vite client。该模式把 bare SSR package import 留给 Node host，避免已经物化的 CommonJS/native package 被 Vite Module
+Runner 当作 ESM source 内联；显式 source entry 仍经过 Pluxel transform pipeline。该模式用于 host-owned 可搬运 source
+distribution；目录 closure、inventory 与签名不由 route plugin 猜测。
 static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/vite/dynamic-runtime-v2` 作为当前
 optimizer contract 的默认 Vite cache，
 避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部

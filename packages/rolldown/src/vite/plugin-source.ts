@@ -110,6 +110,8 @@ export function pluxelRuntimeSourceVitePlugins(
 		options.packageMode === 'distribution'
 			? [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS, 'module', 'browser', 'production']
 			: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS]
+	const externalPackages =
+		options.packageMode === 'distribution' ? true : [...PLUXEL_SSR_EXTERNAL_PACKAGES]
 	const configPlugin: Plugin = {
 		name: options.name ?? 'pluxel:runtime-source',
 		config(config) {
@@ -132,7 +134,7 @@ export function pluxelRuntimeSourceVitePlugins(
 					preserveSymlinks: false,
 				},
 				ssr: {
-					external: [...PLUXEL_SSR_EXTERNAL_PACKAGES],
+					external: externalPackages,
 					resolve: {
 						conditions: packageConditions,
 						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
