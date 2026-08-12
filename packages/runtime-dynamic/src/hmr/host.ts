@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
 import '../register-services'
-import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
+import type { Context as CoreContext, PluginConstructor, PluginIdentifier } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
@@ -306,6 +306,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		}
 		await Promise.all([ctx.root.configService.ready, ctx.root.runtimeState.ready])
 		await logging.initializePolicy(createContextPluginLogPolicyStore(ctx))
+		await ctx.prepareServices()
 		void ctx.loader
 
 		const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
@@ -315,7 +316,7 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 			logsDir: plan.runtimeStorage.logsDir,
 			ctx,
 			hmr,
-			stop: createLoaderRuntimeStop(ctx, logging),
+			stop: createLoaderRuntimeStop(ctx, hmr, logging),
 		}
 	} catch (error) {
 		try {
@@ -381,16 +382,54 @@ function resolveLoaderRuntimeLoggingInput(
 	}
 }
 
-function createLoaderRuntimeStop(ctx: Context, logging: RuntimeLogging): () => Promise<void> {
+function createLoaderRuntimeStop(
+	ctx: Context,
+	hmr: LoaderHmrService,
+	logging: RuntimeLogging,
+): () => Promise<void> {
 	let promise: Promise<void> | undefined
 	return () =>
 		(promise ??= (async () => {
 			try {
-				await ctx.effects.dispose()
+				try {
+					await hmr.close()
+				} finally {
+					await stopRuntimePluginGraph(ctx)
+				}
 			} finally {
-				await logging.dispose()
+				try {
+					await ctx.effects.dispose()
+				} finally {
+					await logging.dispose()
+				}
 			}
 		})())
+}
+
+async function stopRuntimePluginGraph(ctx: Context): Promise<void> {
+	ctx.registry.resetDraft()
+	const update = ctx.registry.beginUpdate({ reason: 'shutdown' })
+	try {
+		const plugins = ctx.registry.graph
+			.declarationsBySlot()
+			.map((declaration) => declaration?.meta?.class)
+			.filter((plugin): plugin is PluginIdentifier => typeof plugin === 'function')
+		for (const plugin of plugins) {
+			if (ctx.registry.isRegistered(plugin)) update.unregister(plugin)
+		}
+		const result = await update.commit({ rollbackOnFailure: false })
+		if (!result.ok) {
+			update.rollback()
+			throw new Error('[loader-hmr-host] plugin shutdown commit failed', {
+				cause: result.err,
+			})
+		}
+	} catch (error) {
+		update.rollback()
+		throw error
+	} finally {
+		ctx.registry.resetDraft()
+	}
 }
 
 function mergeContextConfig(
