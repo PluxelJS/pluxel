@@ -229,6 +229,14 @@ owner 的数据时组合多个获授权 resource snapshot，不建立跨插件 S
 - active variants、rows 与 serialized bytes 受 server quota 限制；idle variant 按 LRU 回收，并发 invalidation 合并重跑；
 - RPC、live query、events、bundle 和 Port 错误进入明确状态或 View error boundary。
 
+## Host route ownership
+
+`workbench.uiBasePath` 定义 shell 的浏览器 navigation 边界，默认 `/` 以保持专用 Workbench host 的现有行为。需要同时
+提供业务 Dashboard 的宿主选择非根绝对路径；dynamic/static Vite middleware 只在该路径及其子路径接管 HTML，浏览器
+router 从服务端 HTML meta 读取同一 base path。packaged shell 的 JS/CSS 使用 runtime 固定的 `/dist/public/` asset
+namespace；Workbench disabled 时 route middleware 不接管该 namespace。输入在 runtime 信任边界统一规范化并拒绝 URL
+authority、query、hash、反斜杠、NUL 与解码后的 dot segment，避免 route ownership 与文件解析产生歧义。
+
 ## Static distribution capability
 
 `variant: 'workbench'` 决定 distribution 是否携带 shell/remotes；application `configure()` 返回的 `workbench`

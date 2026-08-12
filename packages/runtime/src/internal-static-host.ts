@@ -1,4 +1,9 @@
-export { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
+export {
+	isWorkbenchEnabled,
+	matchesWorkbenchUiBasePath,
+	resolveWorkbenchUiBasePath,
+	workbenchAdminAccess,
+} from './workbench-config'
 export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
 export { isPluginEnabled, setPluginEnabled } from './services/RuntimeStateHelpers'
 export type {

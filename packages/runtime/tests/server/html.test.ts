@@ -12,9 +12,15 @@ const assets = {
 
 describe('runtime UI HTML rendering', () => {
 	it('keeps static UI HTML free of React refresh preamble', () => {
-		const html = renderRuntimeUiHtml(assets, { target: 'static-built' })
+		const html = renderRuntimeUiHtml(assets, {
+			target: 'static-built',
+			uiBasePath: '/__pluxel/workbench',
+		})
 
 		expect(html).toContain('<script type="module" src="/src/client.tsx"></script>')
+		expect(html).toContain(
+			'<meta name="pluxel-workbench-ui-base-path" content="/__pluxel/workbench" />',
+		)
 		expect(html).not.toContain('/@react-refresh')
 		expect(html).not.toContain('window.$RefreshReg$')
 	})
@@ -30,6 +36,7 @@ describe('runtime UI HTML rendering', () => {
 		])
 
 		for (const html of [devHtml, hmrHtml]) {
+			expect(html).toContain('<meta name="pluxel-workbench-ui-base-path" content="/" />')
 			expect(html).toContain('import { injectIntoGlobalHook } from "/@react-refresh"')
 			expect(html).toContain('window.$RefreshReg$ = () => {}')
 			expect(html).toContain('window.$RefreshSig$ = () => (type) => type')

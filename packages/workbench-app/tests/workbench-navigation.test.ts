@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory } from '@tanstack/react-router'
+import { createAppRouter } from '../src/app/router'
 import { groupNavItems } from '../src/app/navigation/navConfig'
 import { restoreWorkbenchState, WORKBENCH_STORAGE_VERSION } from '../src/app/workbench/state'
 import { isPluginWorkbenchLocation, resolveWorkbenchLocation } from '../src/app/workbench/location'
@@ -9,7 +11,25 @@ import {
 	workbenchRoutesOverlap,
 } from '../src/workbench/routes'
 
+vi.mock('../src/app/router/routeTree.gen', async () => {
+	const { createRootRoute } = await import('@tanstack/react-router')
+	return { routeTree: createRootRoute() }
+})
+vi.mock('../src/app/router/screens/NotFoundScreen', () => ({ NotFoundScreen: () => null }))
+vi.mock('../src/app/router/screens/RouteErrorScreen', () => ({ RouteErrorScreen: () => null }))
+
 describe('Workbench navigation groups', () => {
+	it('mounts the browser router below a host-owned UI base path', () => {
+		const router = createAppRouter({
+			history: createMemoryHistory({ initialEntries: ['/__pluxel/workbench/logs'] }),
+			uiBasePath: '/__pluxel/workbench',
+		})
+
+		expect(router.basepath).toBe('/__pluxel/workbench')
+		expect(router.state.location.pathname).toBe('/logs')
+		expect(router.buildLocation({ to: '/plugins' }).publicHref).toBe('/__pluxel/workbench/plugins')
+	})
+
 	it('collapses grouped routes into one primary section and preserves child order', () => {
 		const items = groupNavItems([
 			{ label: '首页', href: '/' },

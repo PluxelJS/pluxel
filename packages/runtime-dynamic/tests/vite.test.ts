@@ -71,7 +71,11 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
 			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
-			workbench: { enabled: true, access: { exposure: 'private' } },
+			workbench: {
+				enabled: true,
+				access: { exposure: 'private' },
+				uiBasePath: '/__pluxel/workbench',
+			},
 			logging: false,
 		})
 
@@ -79,6 +83,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		expect(config.workbench).toEqual({
 			enabled: true,
 			access: { exposure: 'private' },
+			uiBasePath: '/__pluxel/workbench',
 		})
 		expect(config.context).toBeUndefined()
 	})

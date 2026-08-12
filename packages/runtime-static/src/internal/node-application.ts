@@ -31,7 +31,8 @@ export async function runStaticNodeApplication<
 		void dispatch(runtime, request, response, {
 			applicationPublicDir: `${options.deployment.root}/public`,
 			serveApplicationPublic:
-				options.deployment.variant === 'headless' || !runtime.ctx.workbench.enabled,
+				options.deployment.variant === 'headless' ||
+				!workbenchOwnsRootNavigation(runtime.ctx.config.workbench),
 		})
 	})
 	try {
@@ -97,6 +98,10 @@ export async function runStaticNodeApplication<
 		address: { host, port: actualPort },
 		stop,
 	}
+}
+
+function workbenchOwnsRootNavigation(config: StaticRuntime['ctx']['config']['workbench']): boolean {
+	return config !== false && config?.enabled === true && (config.uiBasePath ?? '/') === '/'
 }
 
 async function dispatch(

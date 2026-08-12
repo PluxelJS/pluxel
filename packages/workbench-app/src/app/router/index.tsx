@@ -10,6 +10,7 @@ import { routeTree } from './routeTree.gen'
 
 export interface CreateRouterOptions {
 	history?: RouterHistory
+	uiBasePath?: string
 }
 
 export function createAppRouter(options: CreateRouterOptions = {}) {
@@ -26,6 +27,7 @@ export function createAppRouter(options: CreateRouterOptions = {}) {
 	return createRouter({
 		routeTree,
 		history,
+		basepath: options.uiBasePath ?? readWorkbenchUiBasePath(),
 		defaultPreload: enableIntentPreload ? 'intent' : false,
 		defaultNotFoundComponent: NotFoundScreen,
 		defaultErrorComponent: RouteErrorScreen,
@@ -33,6 +35,14 @@ export function createAppRouter(options: CreateRouterOptions = {}) {
 }
 
 const _routerForTypes = createAppRouter()
+
+function readWorkbenchUiBasePath(): string {
+	if (typeof document === 'undefined') return '/'
+	return (
+		document.querySelector('meta[name="pluxel-workbench-ui-base-path"]')?.getAttribute('content') ||
+		'/'
+	)
+}
 
 declare module '@tanstack/react-router' {
 	interface Register {

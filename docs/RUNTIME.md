@@ -162,8 +162,10 @@ Workbench 有两个正交边界：build variant 决定 distribution 是否携带
 Node adapter 拥有 listener、signal shutdown 和 deployment filesystem root。它把客户端中止请求或提前关闭响应传播到
 Fetch `Request.signal`，并取消尚未完成的 Web response body；长请求和流式 handler 可以据此及时释放 owner resource。
 Node distribution 可以另外携带业务 SPA
-`public/`：Workbench disabled 时它是 runtime 404 后的 HTML/static fallback，Workbench enabled 时根 navigation 仍由
-Workbench shell 拥有。平台 adapter 不进入 `runtime-static` application definition。当前 production freezer 只支持
+`public/`：Workbench disabled 或配置了非根 `workbench.uiBasePath` 时，它是 runtime 404 后的 HTML/static fallback；
+Workbench 默认根路径时，根 navigation 由 shell 拥有。dynamic/static Vite route 使用同一个路径边界，只把 Workbench
+navigation 与其 packaged `/dist/public/` asset 交给 runtime，其余请求继续交给宿主。平台 adapter 不进入
+`runtime-static` application definition。当前 production freezer 只支持
 Node；Worker/Fetch target 必须等待 runtime services 具备真正 platform-neutral closure 后再开放。
 
 ## Logging

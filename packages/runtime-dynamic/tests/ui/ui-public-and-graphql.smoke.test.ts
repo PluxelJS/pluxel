@@ -109,6 +109,39 @@ describe('HMR UI smoke', () => {
 		)
 	})
 
+	it('limits Workbench navigation to the configured UI base path', async () => {
+		await withRuntimeContext(
+			async (ctx) => {
+				ctx.http.reconfigureUiAssets({
+					uiAssets: 'dev-server',
+					uiBasePath: '/__pluxel/workbench',
+				})
+				const dashboard = await ctx.http.fetch(
+					new Request('http://local/', { headers: { accept: 'text/html' } }),
+				)
+				expect(dashboard.status).toBe(404)
+
+				const workbench = await ctx.http.fetch(
+					new Request('http://local/__pluxel/workbench/', {
+						headers: { accept: 'text/html' },
+					}),
+				)
+				expect(workbench.status).toBe(200)
+				expect(await workbench.text()).toContain(
+					'<meta name="pluxel-workbench-ui-base-path" content="/__pluxel/workbench" />',
+				)
+			},
+			{
+				configService: { mode: 'memory' },
+				workbench: {
+					enabled: true,
+					access: { exposure: 'private' },
+					uiBasePath: '/__pluxel/workbench',
+				},
+			},
+		)
+	})
+
 	it('exposes the internal GraphQL transport used by the UI', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),

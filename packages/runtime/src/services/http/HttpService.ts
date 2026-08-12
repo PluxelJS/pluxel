@@ -14,6 +14,11 @@ import type { RenderHandler } from '../../server/types'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
 import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
 import { resolveAdminAccessConfig } from '../admin-access/model'
+import {
+	matchesWorkbenchUiBasePath,
+	normalizeWorkbenchUiBasePath,
+	resolveWorkbenchUiBasePath,
+} from '../../workbench-config'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
 const serviceName = 'http' as const
@@ -60,6 +65,8 @@ type RuntimeHttpServiceConfig = HttpServiceConfig & {
 	 * Defaults to the package's `dist/public` (when present).
 	 */
 	uiPublicDir?: string
+	/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
+	uiBasePath?: string
 }
 
 interface MountedBoundarySpec {
@@ -91,6 +98,7 @@ type ResolvedHttpServiceConfig = {
 	graphql: boolean
 	uiAssets: RuntimeHttpUiAssetMode
 	uiPublicDir: string
+	uiBasePath: string
 }
 
 export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
@@ -208,6 +216,10 @@ export class HttpService {
 			graphql,
 			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
 			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
+			uiBasePath:
+				runtimeConfig.uiBasePath === undefined
+					? resolveWorkbenchUiBasePath(this.hostCtx.config.workbench)
+					: normalizeWorkbenchUiBasePath(runtimeConfig.uiBasePath),
 		}
 		if (adminAccessEnabled) {
 			this.mountHostBoundary({
@@ -250,15 +262,28 @@ export class HttpService {
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
 	/** @internal Route launchers use this to switch between bundled and dev-server workbench UI assets. */
-	reconfigureUiAssets(config: { uiAssets?: RuntimeHttpUiAssetMode; uiPublicDir?: string }): void {
+	reconfigureUiAssets(config: {
+		uiAssets?: RuntimeHttpUiAssetMode
+		uiPublicDir?: string
+		uiBasePath?: string
+	}): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''
-		if (nextUiAssets === this.config.uiAssets && nextUiPublicDir === this.config.uiPublicDir) {
+		const nextUiBasePath =
+			config.uiBasePath === undefined
+				? this.config.uiBasePath
+				: normalizeWorkbenchUiBasePath(config.uiBasePath)
+		if (
+			nextUiAssets === this.config.uiAssets &&
+			nextUiPublicDir === this.config.uiPublicDir &&
+			nextUiBasePath === this.config.uiBasePath
+		) {
 			return
 		}
 
 		this.config.uiAssets = nextUiAssets
 		this.config.uiPublicDir = nextUiPublicDir
+		this.config.uiBasePath = nextUiBasePath
 		this.renderer = null
 		this.uiPublicHandler = undefined
 		this.rebuildRootApp()
@@ -489,7 +514,10 @@ export class HttpService {
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
 			}
 
-			if (this.isHtmlNavigation(request)) {
+			if (
+				this.isHtmlNavigation(request) &&
+				matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
+			) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
@@ -700,10 +728,13 @@ export class HttpService {
 		}
 		if (this.config.uiAssets === 'static-built') {
 			const { createStaticRenderer } = await import('../../server/static')
-			return createStaticRenderer({ publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined })
+			return createStaticRenderer({
+				publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined,
+				uiBasePath: this.config.uiBasePath,
+			})
 		}
 		const { createHmrRenderer } = await import('../../server/hmr')
-		return createHmrRenderer()
+		return createHmrRenderer({ uiBasePath: this.config.uiBasePath })
 	}
 
 	private async render(request: Request) {

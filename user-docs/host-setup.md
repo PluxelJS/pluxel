@@ -194,8 +194,8 @@ Freezer 在 final assembly 末尾自动生成覆盖完整目录的 `pluxel-distr
 `workbench` 携带 artifacts，但仍可用 `PLUXEL_WORKBENCH=false` 或等价启动配置关闭。`launcher: 'node'` 读取
 `PLUXEL_HOST_BIND` 和 `PLUXEL_HOST_PORT`。Node host 会在客户端中止请求或提前关闭流式响应时 abort 对应的 Fetch
 `Request.signal` 并取消 response body；长请求应监听该 signal，流式 body 的 `cancel()` 应释放订阅、定时器等资源。
-当前 freezer 只支持 Node application；不要把 Node runtime closure 标成 neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 时会以它作为 HTML/static
-fallback；开启 Workbench 时根页面属于 Workbench。Fetch 平台需要未来独立的 platform-neutral runtime adapter。
+当前 freezer 只支持 Node application；不要把 Node runtime closure 标成 neutral/Worker bundle。Node distribution 若同时含有业务 SPA 的 `public/`，关闭 Workbench 或配置非根 `uiBasePath` 时，会以它作为 runtime 404 后的 HTML/static
+fallback；默认根路径下的 Workbench 则拥有根页面。Fetch 平台需要未来独立的 platform-neutral runtime adapter。
 
 ## Dynamic host
 
@@ -325,6 +325,21 @@ workbench: {
 	access: { exposure: 'private' },
 }
 ```
+
+默认情况下 Workbench shell 拥有根 navigation。宿主同时提供业务 SPA 时，把 Workbench 放在独立的绝对路径下：
+
+```ts
+workbench: {
+	enabled: true,
+	access: { exposure: 'private' },
+	uiBasePath: '/admin/workbench',
+}
+```
+
+`uiBasePath` 默认 `/`，会去掉尾部 `/`；它不能包含 query、hash、反斜杠或 dot segment。static 与 dynamic route
+只在这个路径及其子路径提供 Workbench HTML，packaged shell 仍从 runtime 自有的 `/dist/public/` 读取静态资源。
+Vite 宿主会把其他 HTML navigation 留给业务应用；Node static distribution 也会在 runtime 返回 404 后从
+`public/` 提供业务 SPA。
 
 不要再为 UI compiler、workbench routes 或 resource transport 配置独立开关。route plugin 从这个值派生整套安装行为。
 

@@ -14,7 +14,12 @@ export {
 } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
-export { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
+export {
+	isWorkbenchEnabled,
+	matchesWorkbenchUiBasePath,
+	resolveWorkbenchUiBasePath,
+	workbenchAdminAccess,
+} from './workbench-config'
 export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
 export { withPluginConfigEnvironment } from './services/config-environment'
 export { CommandsService, withCommandsPluginContext } from './services/CommandsService'

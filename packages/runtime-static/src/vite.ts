@@ -21,12 +21,16 @@ import {
 } from '../../runtime-dev/src/hmr-log.ts'
 import {
 	isPluginEnabled,
+	isWorkbenchEnabled,
+	matchesWorkbenchUiBasePath,
 	readHostProduct,
 	resolveDevWorkbenchClientEntryUrl,
+	resolveWorkbenchUiBasePath,
 	sameProduct,
 } from '@pluxel/runtime/internal'
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
+import { UI_PUBLIC_BASE } from '@pluxel/runtime/web/paths'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
@@ -522,16 +526,21 @@ function isStaticRuntimeRouteRequest(
 	const url = request.url ?? '/'
 	const pathname = requestPathname(url)
 	if (url.startsWith('/__pluxel/')) return true
+	const workbenchEnabled = isWorkbenchEnabled(host.ctx.config.workbench)
+	if (workbenchEnabled && pathname.startsWith(`${UI_PUBLIC_BASE}/`)) return true
 	const http = host.ctx.http as unknown as { matchesMountedRoute?: (pathname: string) => boolean }
 	if (http.matchesMountedRoute?.(pathname)) return true
 
 	const method = (request.method ?? 'GET').toUpperCase()
 	if (method !== 'GET' && method !== 'HEAD') return false
 	if (url.startsWith('/@') || url.startsWith('/node_modules/') || url.includes('.')) return false
-	if (!host.ctx.workbench.enabled) return false
+	if (!workbenchEnabled) return false
 
 	const accept = String(request.headers.accept ?? '').toLowerCase()
-	return accept.includes('text/html')
+	return (
+		accept.includes('text/html') &&
+		matchesWorkbenchUiBasePath(pathname, resolveWorkbenchUiBasePath(host.ctx.config.workbench))
+	)
 }
 
 function requestPathname(url: string): string {

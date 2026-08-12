@@ -28,11 +28,12 @@ window.$RefreshSig$ = () => (type) => type;
 
 export function renderRuntimeUiHtml(
 	assets: Assets,
-	options: { title?: string; target: RuntimeUiHtmlTarget },
+	options: { title?: string; target: RuntimeUiHtmlTarget; uiBasePath?: string },
 ) {
 	return renderUiHtmlDocument(assets, {
 		title: options?.title,
 		headScripts: runtimeUiHeadScripts(options.target),
+		uiBasePath: options.uiBasePath ?? '/',
 	})
 }
 
@@ -54,15 +55,17 @@ function assertNever(value: never): never {
 
 function renderUiHtmlDocument(
 	assets: Assets,
-	options?: { title?: string; headScripts?: string[] },
+	options?: { title?: string; headScripts?: string[]; uiBasePath?: string },
 ) {
 	const title = options?.title ?? DEFAULT_TITLE
 	const headScripts = options?.headScripts ?? []
+	const uiBasePath = escapeHtmlAttribute(options?.uiBasePath ?? '/')
 	return `<!DOCTYPE html>
 <html lang="zh">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+	<meta name="pluxel-workbench-ui-base-path" content="${uiBasePath}" />
     <title>${title}</title>
     ${colorSchemeScript}
     ${headScripts.join('\n    ')}
@@ -74,6 +77,14 @@ function renderUiHtmlDocument(
     <div id="root"></div>
   </body>
 </html>`
+}
+
+function escapeHtmlAttribute(value: string): string {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('"', '&quot;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
 }
 
 export function createHtmlResponse(html: string) {
