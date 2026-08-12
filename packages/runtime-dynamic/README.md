@@ -86,4 +86,19 @@ await runtime.start()
 source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running plugin instance，也不复制 lifecycle。
 成功的 mutable source batch 会使 active optional requests 失效并重新解析；optional request 自身不会授权自动安装。
 
+可搬运的 source-based host 使用显式 distribution 模式：
+
+```ts
+dynamicRuntimeVitePlugin({
+	config: './src/pluxel.dynamic.ts',
+	mode: 'distribution',
+})
+```
+
+该模式仍通过 OXC/Vite 执行宿主与 mutable plugin source，但 bare package import 只选择 built/default export，Workbench
+使用 `@pluxel/runtime` 自带的 `dist/public` bundle，也不会向 HTML 注入 Vite client。默认 `development` 模式保持框架
+`@pluxel/source`、plugin `@pluxel/hmr`、Workbench source graph 与浏览器 HMR。distribution 模式只定义执行拓扑；完整目录
+closure、inventory、签名和发布原子性仍由 host-owned distribution 工具负责。该模式的 Workbench remote cache 位于 runtime
+persistence 的兄弟 `workbench-artifacts/`，宿主自己的 Vite `cacheDir` 也应显式指向可写 state，而不是不可变 artifact root。
+
 用户配置路径见 [`../../user-docs/host-setup.md`](../../user-docs/host-setup.md)，内部边界见 [`../../docs/HMR.md`](../../docs/HMR.md)。

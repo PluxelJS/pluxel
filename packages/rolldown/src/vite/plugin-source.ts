@@ -59,6 +59,11 @@ const PLUXEL_SSR_EXTERNAL_PACKAGES = [
 export type PluxelRuntimeSourceVitePluginsOptions = PluginSourceVitePluginsOptions & {
 	/** Vite plugin name for Pluxel source/server resolution and OXC semantics. */
 	name?: string
+	/**
+	 * Selects whether bare package imports may use development/source export conditions.
+	 * `distribution` keeps transforms for explicit source while resolving built package exports.
+	 */
+	packageMode?: 'development' | 'distribution'
 }
 
 /** Vite adapter for source transforms that are safe in a long-lived dev server. */
@@ -101,6 +106,10 @@ export function pluginSourceVitePlugins(
 export function pluxelRuntimeSourceVitePlugins(
 	options: PluxelRuntimeSourceVitePluginsOptions = {},
 ): PluginOption[] {
+	const packageConditions =
+		options.packageMode === 'distribution'
+			? [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS, 'module', 'browser', 'production']
+			: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS]
 	const configPlugin: Plugin = {
 		name: options.name ?? 'pluxel:runtime-source',
 		config(config) {
@@ -117,7 +126,7 @@ export function pluxelRuntimeSourceVitePlugins(
 							},
 						}),
 				resolve: {
-					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+					conditions: packageConditions,
 					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 					dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
 					preserveSymlinks: false,
@@ -125,7 +134,7 @@ export function pluxelRuntimeSourceVitePlugins(
 				ssr: {
 					external: [...PLUXEL_SSR_EXTERNAL_PACKAGES],
 					resolve: {
-						conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
+						conditions: packageConditions,
 						externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],
 						dedupe: [...PLUXEL_RUNTIME_UI_DEDUPE_PACKAGES],
 						preserveSymlinks: false,

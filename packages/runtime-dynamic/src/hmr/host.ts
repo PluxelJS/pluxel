@@ -90,6 +90,10 @@ export type BootedLoaderHmrHost = {
 export type BootLoaderHmrHostOptions = {
 	viteServer?: ViteDevServer
 	product?: ProductDescriptor | null
+	/** @internal Route-owned Workbench asset selection. */
+	workbenchAssets?: 'source' | 'built'
+	/** @internal Route-owned Workbench remote cache directory. */
+	workbenchArtifactCacheDir?: string
 }
 
 export type LoaderHmrHostConfigInput = Omit<
@@ -293,7 +297,10 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		contextConfig.logger = logging.contextBinding
 		contextConfig.adminAccess = workbenchAdminAccess(contextConfig.workbench)
 		if (isWorkbenchEnabled(contextConfig.workbench)) {
-			contextConfig.http = withDevWorkbenchHttpConfig(contextConfig.http)
+			contextConfig.http = withWorkbenchHttpConfig(
+				contextConfig.http,
+				options.workbenchAssets ?? 'source',
+			)
 		}
 		ctx = new Context(contextConfig)
 		ctx.effects.defer(() => logging.dispose(), {
@@ -309,7 +316,12 @@ export async function bootPlannedLoaderHmrHost<TSnapshot extends LoaderHmrWorksp
 		await ctx.prepareServices()
 		void ctx.loader
 
-		const hmr = await startLoaderHmr(ctx, plan, options.viteServer)
+		const hmr = await startLoaderHmr(
+			ctx,
+			plan,
+			options.viteServer,
+			options.workbenchArtifactCacheDir,
+		)
 
 		return {
 			root: plan.root,
@@ -472,6 +484,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	ctx: Context,
 	plan: PlannedLoaderHmrHost<TSnapshot>,
 	viteServer: ViteDevServer | undefined,
+	workbenchArtifactCacheDir: string | undefined,
 ): Promise<LoaderHmrService> {
 	if (ctx.config.loaderHmr || ctx.runtimeRoute?.modules) {
 		throw new Error('[loader-hmr-host] Context already has loader HMR runtime state')
@@ -502,6 +515,7 @@ async function startLoaderHmr<TSnapshot extends LoaderHmrWorkspaceSnapshot>(
 	})
 
 	attachPluginArtifactCompiler(ctx, {
+		cacheDir: workbenchArtifactCacheDir,
 		viteServer: viteServer ?? hmr.vite,
 	})
 
@@ -536,13 +550,14 @@ function createDynamicPluginSourceReader(sources: readonly DynamicPluginSource[]
 	}
 }
 
-function withDevWorkbenchHttpConfig(
+function withWorkbenchHttpConfig(
 	config: CoreContext.Config['http'] | undefined,
+	assets: 'source' | 'built',
 ): CoreContext.Config['http'] {
 	const next = {
 		...config,
 		controlPlane: { web: true, rpc: true, sse: true },
-		uiAssets: 'dev-server',
+		uiAssets: assets === 'built' ? 'static-built' : 'dev-server',
 	}
 	return next
 }

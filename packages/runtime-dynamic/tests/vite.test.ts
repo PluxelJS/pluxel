@@ -163,4 +163,30 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 		)
 		expect('defineDynamicRuntimeConfig' in runtimeDynamicVite).toBe(false)
 	})
+
+	it('uses built package exports and Workbench assets in distribution mode', () => {
+		const plugins = runtimeDynamicVite.dynamicRuntimeVitePlugin({
+			config: './pluxel.dynamic.ts',
+			mode: 'distribution',
+		}) as Array<{
+			name?: string
+			config?: (config: Record<string, unknown>) => Record<string, unknown> | undefined
+		}>
+		const source = plugins.find((plugin) => plugin.name === 'pluxel:dynamic-runtime-source')
+		const route = plugins.at(-1)
+		const sourceConfig = source?.config?.({}) as {
+			resolve?: { conditions?: string[] }
+			ssr?: { resolve?: { conditions?: string[] } }
+		}
+		const routeConfig = route?.config?.({}) as { optimizeDeps?: unknown }
+
+		expect(sourceConfig.resolve?.conditions).toEqual(
+			expect.arrayContaining(['node', 'import', 'default', 'production']),
+		)
+		expect(sourceConfig.resolve?.conditions).not.toEqual(
+			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr', 'development']),
+		)
+		expect(sourceConfig.ssr?.resolve?.conditions).toEqual(sourceConfig.resolve?.conditions)
+		expect(routeConfig.optimizeDeps).toBeUndefined()
+	})
 })

@@ -230,6 +230,10 @@ export default defineConfig({
 })
 ```
 
+如果宿主在安装阶段已经物化完整 package closure，并希望目标机只使用 package built exports 与 runtime 自带的
+Workbench bundle，可设置 `mode: 'distribution'`。它不会替宿主创建可搬运目录、manifest 或签名；默认开发模式继续使用
+framework/plugin development exports 与 Workbench source HMR。
+
 dynamic runtime config 使用 `plugins` 声明宿主显式 import 的 fixed catalog，使用 `sources` 声明 mutable file catalog。
 `plugins` 不隐式启用，启停仍由 RuntimeState 决定；fixed import graph 变化重建 host，source add/change/unlink 走增量 batch。`file`
 source 是精确入口，`directory` source 必须用相对、正向 include glob 选择入口；glob 不能包含 negation、`.` 或 `..` segment。

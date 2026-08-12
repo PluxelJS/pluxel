@@ -38,6 +38,11 @@ const CORE_SOURCE_ROOT = normalizePath(
 export type DynamicRuntimeVitePluginOptions = {
 	config: string
 	/**
+	 * `development` resolves source exports and serves the Workbench source graph.
+	 * `distribution` resolves built package exports and serves the packaged Workbench bundle.
+	 */
+	mode?: 'development' | 'distribution'
+	/**
 	 * Runs after the loader HMR host is created and before HMR/plugin startup.
 	 * Use this for host-owned bootstrapping such as preparing or unlocking vault storage.
 	 */
@@ -51,6 +56,7 @@ type DynamicRuntimeController = {
 }
 
 export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOptions): PluginOption[] {
+	const mode = options.mode ?? 'development'
 	const state: {
 		server?: ViteDevServer
 		configPath?: string
@@ -98,6 +104,11 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		const booted = await bootPlannedLoaderHmrHost(plan, {
 			viteServer: server,
 			product: loaded.product,
+			workbenchAssets: mode === 'distribution' ? 'built' : 'source',
+			workbenchArtifactCacheDir:
+				mode === 'distribution'
+					? resolve(plan.runtimeStorage.persistenceDir, '..', 'workbench-artifacts')
+					: undefined,
 		})
 		try {
 			await options.prepareHost?.(booted)
@@ -125,7 +136,10 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		name: 'pluxel:dynamic-runtime',
 		apply: 'serve',
 		config(config) {
-			const workbenchClient = createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl())
+			const workbenchClient =
+				mode === 'development'
+					? createWorkbenchViteClientConfig(resolveDevWorkbenchClientEntryUrl())
+					: {}
 			return {
 				...workbenchClient,
 				...(config.cacheDir === undefined ? { cacheDir: DYNAMIC_RUNTIME_CACHE_DIR } : {}),
@@ -145,7 +159,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 			marked[DYNAMIC_RUNTIME_SERVER_KEY] = true
 			state.server = server
 			await startController(server)
-			installDynamicHttpMiddleware(state, server)
+			installDynamicHttpMiddleware(state, server, mode === 'development')
 		},
 		async handleHotUpdate(ctx) {
 			if (state.configFiles?.has(normalizePath(ctx.file))) {
@@ -206,6 +220,7 @@ export function dynamicRuntimeVitePlugin(options: DynamicRuntimeVitePluginOption
 		singletonBridgePlugin,
 		...pluxelRuntimeSourceVitePlugins({
 			name: 'pluxel:dynamic-runtime-source',
+			packageMode: mode,
 		}),
 		createHostModuleVitePlugin(),
 		routePlugin,
@@ -291,6 +306,7 @@ function validateDynamicRuntimeConfigModule(
 function installDynamicHttpMiddleware(
 	state: { controller?: DynamicRuntimeController; httpInstalled?: boolean },
 	server: ViteDevServer,
+	injectClientScript: boolean,
 ): void {
 	if (state.httpInstalled) return
 	state.httpInstalled = true
@@ -313,7 +329,7 @@ function installDynamicHttpMiddleware(
 			const ctx = state.controller?.booted.ctx
 			return Boolean(ctx && isRuntimeHttpRouteRequest(req, ctx))
 		},
-		injectClientScript: true,
+		injectClientScript,
 	})
 	callViteHook(plugin.configResolved, server.config)
 	callViteHook(plugin.configureServer, server)

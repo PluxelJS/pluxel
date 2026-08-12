@@ -10,6 +10,8 @@ import {
 } from './workbench/PluginArtifactCompiler'
 
 export type PluginArtifactCompilerAttachmentOptions = {
+	/** Route-owned disk cache for compiled Workbench remotes. */
+	cacheDir?: string
 	pluginDirs?: Record<string, string>
 	viteServer?: PluginArtifactCompilerViteServer
 }
@@ -28,7 +30,7 @@ export function attachPluginArtifactCompiler(
 		(compiler ??= new PluginArtifactCompiler(
 			ctx,
 			{ store: artifacts, viteServer: options.viteServer },
-			{ pluginDirs: options.pluginDirs },
+			{ cacheDir: options.cacheDir, pluginDirs: options.pluginDirs },
 		))
 
 	try {
