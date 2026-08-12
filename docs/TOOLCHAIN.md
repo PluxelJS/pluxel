@@ -259,6 +259,11 @@ runtime-dev artifact compiler：
 
 compiler 在绑定 declaration 时立即发布 `building`；ready/error revision 驱动 Workbench，不使用客户端轮询猜测。
 
+UI build root 按显式 `pluginDirs`、absolute declaration entry 最近的 package root、runtime module、Vite root 的顺序解析。
+dynamic source entry 可以只是宿主目录中的临时 re-export wrapper；absolute UI entry 仍由实际持有 browser source graph 的插件 package
+构建，wrapper 只提供 runtime source anchor，不能改变 Federation shared dependency 的解析边界。relative UI entry 则继续以声明插件的
+runtime module 为基准解析。
+
 ## Production build
 
 生产构建按 artifact key 输出 `dist/workbench/<artifact>/`。缓存 key 包含源码图、依赖 lockfile、shared version 和

@@ -210,6 +210,70 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
+	it('builds an absolute UI declaration from its package instead of a dynamic wrapper package', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ name: '@example/dynamic-host', private: true }),
+			'runtime-entries/tuya.mjs':
+				'export { TuyaPlugin } from "../integrations/tuya/src/plugin.ts"\n',
+			'integrations/tuya/package.json': JSON.stringify({
+				name: '@example/integration-tuya',
+				private: true,
+				type: 'module',
+			}),
+			'integrations/tuya/src/plugin.ts': 'export const marker = true\n',
+			'integrations/tuya/src/ui/index.tsx': 'export default {}\n',
+		})
+		const host = createHost()
+		const store: PluginArtifactCompilerWorkbenchStore = {
+			getCompiledModule: () => undefined,
+			async commitCompiledModule() {},
+			async markCompiling() {},
+			async markCompileError(_pluginName, error) {
+				throw error
+			},
+			async removePlugin() {},
+		}
+		const service = new PluginArtifactCompiler(
+			host.ctx,
+			{ store },
+			{ cacheDir: fixture.getPath('.pluxel/workbench') },
+		)
+
+		const dispose = service.bindDeclaration(
+			createPluginContext(host, 'TuyaPlugin', {
+				loader: {
+					api: {
+						registry: {
+							findModuleIdByName: () => fixture.getPath('runtime-entries/tuya.mjs'),
+						},
+						anchors: { list: () => [] },
+					},
+				},
+			}),
+			{
+				entryPath: fixture.getPath('integrations/tuya/src/ui/index.tsx'),
+				declarationKey: 'TuyaPlugin',
+			},
+		)
+
+		await service.requestCompile('TuyaPlugin')
+
+		expect(pluginBuildMocks.resolveWorkbenchFederationShared).toHaveBeenCalledWith(
+			fixture.getPath('integrations/tuya'),
+		)
+		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledWith(
+			expect.objectContaining({
+				root: fixture.getPath('integrations/tuya'),
+				entryPath: fixture.getPath('integrations/tuya/src/ui/index.tsx'),
+				pluginName: 'TuyaPlugin',
+			}),
+		)
+
+		dispose()
+		service.dispose()
+		await host.dispose()
+	})
+
 	it('resolves static Vite host UI entries from Vite root without a loader', async () => {
 		await using fixture = await createFixture({
 			'apps/static-host/package.json': JSON.stringify({

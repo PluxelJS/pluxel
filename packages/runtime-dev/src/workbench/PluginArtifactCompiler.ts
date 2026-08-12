@@ -159,7 +159,7 @@ const HASH_ALLOWED_EXTENSIONS = [
 ] as const
 
 // Bump when federation build semantics change (invalidates sourceHash cache key).
-const WORKBENCH_COMPILER_VERSION = 15
+const WORKBENCH_COMPILER_VERSION = 16
 const ARTIFACT_BUILD_CONCURRENCY = 2
 const ARTIFACT_CACHE_KEEP = 5
 
@@ -229,10 +229,14 @@ export class PluginArtifactCompiler {
 			return () => guard.dispose()
 		}
 
-		let pluginDir = this.findPluginDir(ctx, ownerId)
+		const configuredDir = this.pluginDirs.get(ownerId)
+		let pluginDir = configuredDir ? (findNearestPackageRoot(configuredDir) ?? configuredDir) : null
+		// Dynamic source modules may only be host-owned re-export wrappers. An absolute
+		// declaration still belongs to the package that owns the browser source graph.
 		if (!pluginDir && isAbsolute(config.entryPath)) {
-			pluginDir = dirname(config.entryPath)
+			pluginDir = findNearestPackageRoot(config.entryPath) ?? dirname(config.entryPath)
 		}
+		pluginDir ??= this.findPluginDir(ctx, ownerId)
 		if (!pluginDir) {
 			pluginDir = this.findViteRootPluginDir(config.entryPath)
 		}
