@@ -1,5 +1,6 @@
 import {
 	WorkbenchPaneLayoutControlsProvider,
+	useWorkbenchViewRuntime,
 	type WorkbenchPaneDescriptor,
 	type WorkbenchPaneLayoutControls,
 	type WorkbenchPaneLayoutMode,
@@ -57,6 +58,13 @@ export function HostRemotePaneLayout({
 	style,
 	label,
 }: HostRemotePaneLayoutProps) {
+	const localeService = useWorkbenchViewRuntime().environment.locale
+	const locale = useSyncExternalStore(
+		(listener) => localeService.subscribe(listener),
+		() => localeService.locale,
+		() => localeService.locale,
+	)
+	const labels = paneHostLabels(locale)
 	const hostState = useContext(RemotePaneStateContext)
 	const hostRef = useRef<HTMLDivElement | null>(null)
 	const splitRef = useRef<SplitViewHandle | null>(null)
@@ -233,7 +241,7 @@ export function HostRemotePaneLayout({
 					<div
 						className="plx-remotePaneLayout__responsiveBar"
 						role="toolbar"
-						aria-label="Pane controls"
+						aria-label={labels.controls}
 					>
 						{responsivePanes.map((pane) => (
 							<button
@@ -251,8 +259,10 @@ export function HostRemotePaneLayout({
 							type="button"
 							className="plx-remotePaneLayout__toolbarButton plx-remotePaneLayout__reset"
 							onClick={reset}
+							aria-label={labels.reset}
+							title={labels.reset}
 						>
-							Reset layout
+							<span aria-hidden="true">↺</span>
 						</button>
 					</div>
 				) : null}
@@ -276,6 +286,13 @@ export function HostRemotePaneLayout({
 			</div>
 		</WorkbenchPaneLayoutControlsProvider>
 	)
+}
+
+function paneHostLabels(locale: string) {
+	const chinese = /^(?:zh|yue)(?:-|$)/i.test(locale)
+	return chinese
+		? { controls: '面板控制', reset: '重置面板布局' }
+		: { controls: 'Pane controls', reset: 'Reset pane layout' }
 }
 
 function DrawerScrim({ title, onClose }: { title: string; onClose: () => void }) {

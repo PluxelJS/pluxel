@@ -167,6 +167,27 @@ describe('remote Pane Kit host renderer', () => {
 		expect(container.querySelector('[role="dialog"]')).toBeNull()
 	})
 
+	it('keeps the responsive reset affordance compact and localizes its accessible name', async () => {
+		observedWidth = 900
+		const container = document.createElement('div')
+		document.body.appendChild(container)
+		const root = createRoot(container)
+		mounted.push(root)
+		await act(async () =>
+			root.render(
+				<Fixture locale="zh-TW">
+					<span>main</span>
+				</Fixture>,
+			),
+		)
+
+		const toolbar = container.querySelector('[role="toolbar"]')
+		expect(toolbar?.getAttribute('aria-label')).toBe('面板控制')
+		const reset = container.querySelector<HTMLButtonElement>('[aria-label="重置面板布局"]')
+		expect(reset?.textContent).toBe('↺')
+		expect(toolbar?.textContent).not.toContain('Reset layout')
+	})
+
 	it('uses memory state in standalone and writes only when a host state service exists', async () => {
 		observedWidth = 1_400
 		const hostState = stateService()
@@ -239,12 +260,20 @@ describe('remote Pane Kit host renderer', () => {
 	})
 })
 
-function Fixture({ children, hostState }: { children: ReactNode; hostState?: WorkbenchViewState }) {
+function Fixture({
+	children,
+	hostState,
+	locale = 'en',
+}: {
+	children: ReactNode
+	hostState?: WorkbenchViewState
+	locale?: string
+}) {
 	return (
 		<RemotePaneLayoutStateProvider state={hostState}>
 			<WorkbenchViewProvider
 				item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
-				environment={{ locale: { locale: 'en', subscribe: () => () => {} } } as never}
+				environment={{ locale: { locale, subscribe: () => () => {} } } as never}
 				paneLayoutRenderer={HostRemotePaneLayout}
 			>
 				<WorkbenchPaneLayout id="fixture">

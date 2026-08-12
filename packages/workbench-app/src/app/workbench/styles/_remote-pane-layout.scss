@@ -95,8 +95,15 @@
 }
 
 .plx-remotePaneLayout__reset {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 28px;
+	padding-inline: 0;
 	margin-inline-start: auto;
 	color: var(--plx-pane-muted);
+	font-size: 16px;
+	line-height: 1;
 }
 
 .plx-remotePane {
