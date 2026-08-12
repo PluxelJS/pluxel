@@ -105,12 +105,13 @@ pnpmfile 时 CLI 不覆盖它，必须显式组合 `.pluxel/source-pnpmfile.cjs`
 安装前，CLI 在被忽略的 `.pluxel/` 生成两类机器状态：
 
 - `source-pnpmfile.cjs`：本次语义 package → source package 的 pnpm override；
-- `sources/<repository-hash>`：指向实际 checkout 的本地目录链接。
+- `sources/<repository-hash>/<package-slug>-<package-hash>`：只指向实际消费 package 的本地目录链接；slug 保留包名用于 lockfile review，短 hash 负责消歧。
 
-pnpm lockfile 只记录 `.pluxel/sources/<repository-hash>/...` 这种由仓库身份派生的稳定路径，不记录真实
-checkout 目录。移动 checkout 后，`register` + `source install` 只更新本地链接，lockfile 不发生路径
-漂移；第三方依赖仍由正常 lockfile 完整锁定。生成 pnpmfile 的 checksum 也只取决于语义映射，不取决于
-机器路径。
+pnpm lockfile 只记录 `.pluxel/sources/<repository-hash>/<package-slug>-<package-hash>` 这种由仓库与 package 身份派生的
+稳定路径，不记录真实 checkout 目录，也不把整个 checkout 暴露在 consumer 文件树下。移动 checkout 或 package
+目录后，`register` + `source install` 只更新本地链接，lockfile 不发生路径漂移；第三方依赖仍由正常 lockfile
+完整锁定。source package 目录本身不能包含 consumer workspace；CLI 会在安装前拒绝这种无法形成无环代理的
+所有权拓扑。生成 pnpmfile 的 checksum 也只取决于语义映射，不取决于机器路径。
 
 使用源码声明的私有项目应把 `pluxel source install` 作为唯一安装入口并提交更新后的 lockfile。等所有
 依赖都改为 registry 发行版时，删除 `pluxel.sources.jsonc` 和源码 scripts，再运行普通 `pnpm install`

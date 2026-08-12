@@ -103,6 +103,7 @@ describe('@pluxel/runtime-static', () => {
 			config?: (config: { cacheDir?: string }) =>
 				| {
 						resolve?: { dedupe?: string[] }
+						server?: { watch?: { ignored?: string[] } }
 						cacheDir?: string
 						[key: string]: unknown
 				  }
@@ -169,6 +170,7 @@ describe('@pluxel/runtime-static', () => {
 		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
 			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
 		)
+		expect(plugins.at(-3)?.config?.({})?.server?.watch?.ignored).toContain('**/.pluxel/**')
 		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)
 	})
 

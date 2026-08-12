@@ -4,13 +4,15 @@ import {
 	lstatSync,
 	mkdirSync,
 	readFileSync,
+	readdirSync,
 	readlinkSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from 'node:fs'
-import { dirname, relative, resolve } from 'pathe'
+import { basename, dirname, relative, resolve } from 'pathe'
 import { runCommand } from '../utils/exec'
 import { normalizeRepositoryIdentity } from './config'
 import {
@@ -138,6 +140,7 @@ export function materializeSourceOverrides(
 	checkouts: ResolvedSourceCheckout[],
 ) {
 	const stable: Record<string, string> = {}
+	const desiredLinks = new Map<string, Set<string>>()
 	for (const [name, specifier] of Object.entries(overrides)) {
 		if (!specifier.startsWith('link:')) throw new Error(`Unsupported source override: ${specifier}`)
 		const sourcePackageDir = resolve(specifier.slice('link:'.length))
@@ -145,10 +148,14 @@ export function materializeSourceOverrides(
 			.filter((candidate) => isInside(candidate.root, sourcePackageDir))
 			.sort((a, b) => b.root.length - a.root.length)[0]
 		if (!checkout) throw new Error(`Source package ${name} is outside every declared checkout`)
-		const checkoutLink = ensureCheckoutLink(root, checkout)
-		const packagePath = relativePath(checkout.root, sourcePackageDir)
-		stable[name] = `link:${relativePath(root, resolve(checkoutLink, packagePath))}`
+		const sourceLink = ensureSourceTargetLink(root, checkout, name, sourcePackageDir)
+		const repositoryRoot = dirname(sourceLink)
+		const desired = desiredLinks.get(repositoryRoot) ?? new Set<string>()
+		desired.add(basename(sourceLink))
+		desiredLinks.set(repositoryRoot, desired)
+		stable[name] = `link:${relativePath(root, sourceLink)}`
 	}
+	pruneStaleSourceTargetLinks(desiredLinks)
 	return stable
 }
 
@@ -207,11 +214,43 @@ export function ensureSourcePnpmfileBootstrap(root: string) {
 	return path
 }
 
-function ensureCheckoutLink(root: string, checkout: ResolvedSourceCheckout) {
-	const id = createHash('sha256').update(checkout.repository).digest('hex').slice(0, 12)
+function ensureSourceTargetLink(
+	root: string,
+	checkout: ResolvedSourceCheckout,
+	name: string,
+	sourcePackageDir: string,
+) {
+	const consumerRoot = realpathSync(root)
+	const target = realpathSync(sourcePackageDir)
+	if (isInside(target, consumerRoot)) {
+		throw new Error(
+			`Source package ${name} contains the consumer workspace and cannot be linked safely: ${target} -> ${consumerRoot}`,
+		)
+	}
+
+	const repositoryId = createHash('sha256').update(checkout.repository).digest('hex').slice(0, 12)
+	const packageHash = createHash('sha256').update(name).digest('hex').slice(0, 12)
+	const packageSlug = name.replace(/^@/, '').replaceAll('/', '+')
+	const packageId = `${packageSlug}-${packageHash}`
 	const linksRoot = resolve(root, '.pluxel/sources')
-	const path = resolve(linksRoot, id)
+	const repositoryRoot = resolve(linksRoot, repositoryId)
 	mkdirSync(linksRoot, { recursive: true })
+
+	let repositoryStat: ReturnType<typeof lstatSync> | undefined
+	try {
+		repositoryStat = lstatSync(repositoryRoot)
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+	}
+	if (repositoryStat?.isSymbolicLink()) {
+		// Migrate the v1 whole-checkout proxy to package-granular links.
+		rmSync(repositoryRoot)
+	} else if (repositoryStat && !repositoryStat.isDirectory()) {
+		throw new Error(`Refusing to replace non-directory source path: ${repositoryRoot}`)
+	}
+	mkdirSync(repositoryRoot, { recursive: true })
+
+	const path = resolve(repositoryRoot, packageId)
 	let stat: ReturnType<typeof lstatSync> | undefined
 	try {
 		stat = lstatSync(path)
@@ -223,21 +262,30 @@ function ensureCheckoutLink(root: string, checkout: ResolvedSourceCheckout) {
 			throw new Error(`Refusing to replace non-symlink source path: ${path}`)
 		}
 		const current = resolve(dirname(path), readlinkSync(path))
-		if (current === resolve(checkout.root)) return path
+		if (current === target) return path
 		rmSync(path)
 	}
 	const temporary = `${path}.${process.pid}.${Date.now()}.tmp`
 	try {
-		symlinkSync(
-			resolve(checkout.root),
-			temporary,
-			process.platform === 'win32' ? 'junction' : 'dir',
-		)
+		symlinkSync(target, temporary, process.platform === 'win32' ? 'junction' : 'dir')
 		renameSync(temporary, path)
 	} finally {
 		rmSync(temporary, { force: true })
 	}
 	return path
+}
+
+function pruneStaleSourceTargetLinks(desiredLinks: ReadonlyMap<string, ReadonlySet<string>>) {
+	for (const [repositoryRoot, desired] of desiredLinks) {
+		for (const entry of readdirSync(repositoryRoot, { withFileTypes: true })) {
+			if (desired.has(entry.name)) continue
+			const path = resolve(repositoryRoot, entry.name)
+			if (!entry.isSymbolicLink()) {
+				throw new Error(`Refusing to remove non-symlink stale source path: ${path}`)
+			}
+			rmSync(path)
+		}
+	}
 }
 
 function isInside(root: string, path: string) {

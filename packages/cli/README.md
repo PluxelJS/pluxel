@@ -63,7 +63,8 @@ pnpm add -D @pluxel/runtime-dynamic
 
 多个独立 pnpm 仓库共同修改未发布源码时使用 `pluxel source register/doctor/install/build`。项目提交
 `pluxel.sources.jsonc` 中的仓库身份，机器路径只进入用户 checkout registry；CLI 从真实 package 依赖
-推导 override 和构建闭包，并让 lockfile 只记录 `.pluxel/sources/<repository-hash>` 稳定代理路径。完整
+推导 override 和构建闭包，并让 lockfile 只记录 `.pluxel/sources/<repository-hash>/<package-slug>-<package-hash>`
+package-level 稳定代理路径。完整
 用法见打包的 `user-docs/source-workspaces.md`。
 
 CLI 不再转发其他包的 library API。代码应直接从能力所有者导入：

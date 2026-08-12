@@ -15,8 +15,9 @@ checkout，不进入消费方 closure。
 解析物理实例；不得把 owner 的 `node_modules` 相对路径写进项目配置。
 
 pnpm override 是一次安装的生成细节，不进入项目 workspace 配置。CLI 在 `.pluxel/` 原子生成 pnpmfile
-和 repository-hash checkout link；lockfile 因而只记录稳定代理路径，保留外部依赖可复现性且不泄漏机器
-目录。移动 checkout 只更新 machine registry 和代理 link。每个 checkout 始终按自己的依赖闭包生成
+和 `repository-hash/package-slug-package-hash` package link；lockfile 因而只记录可审查的稳定代理路径，保留外部依赖可复现性且不泄漏机器
+目录。代理只暴露实际依赖的 package，不把整个 checkout 嵌入 consumer 文件树；移动 checkout 或 package 目录只更新
+machine registry 和 package link。source package 若包含 consumer root 会被拒绝，因为这种所有权拓扑无法形成无环代理。每个 checkout 始终按自己的依赖闭包生成
 overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。
 上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时
 回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
@@ -103,7 +104,9 @@ static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/
 optimizer contract 的默认 Vite cache，
 避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
 Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
-目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。
+目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。两条 route 的 Vite watcher
+都忽略生成态 `.pluxel/`。package-level source proxy、optimizer cache 与 artifact output 本来就不属于应用源码 HMR；
+这一排除也是对损坏、旧版或用户手工创建的递归链接的纵深防御。
 
 开发期 Node module externalization 由 runtime-dev 的单一 host-module classifier 决定。它从 importer 所在位置按 Node
 规则解析 bare specifier，找到最近的 `package.json`，并结合 `.node`/`.cjs`/`.cts` 扩展名、package `type`、require-only

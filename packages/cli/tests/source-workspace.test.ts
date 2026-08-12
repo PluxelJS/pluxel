@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readdir, readlink, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { lstat, mkdtemp, mkdir, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -236,11 +237,22 @@ describe('source workspace planning', () => {
 
 	it('uses the most specific checkout and a stable proxy when repositories are nested', async () => {
 		const root = await createTemporaryRoot()
-		const consumer = resolve(root, 'consumer')
 		const parent = resolve(root, 'parent')
+		const consumer = resolve(parent, 'local-projects/consumer')
 		const child = resolve(parent, 'local-projects/child')
 		const childPackage = resolve(child, 'packages/example')
-		await mkdir(childPackage, { recursive: true })
+		const childRepository = 'https://github.com/acme/child'
+		await Promise.all([
+			mkdir(consumer, { recursive: true }),
+			mkdir(childPackage, { recursive: true }),
+		])
+		const legacyProxy = resolve(
+			consumer,
+			'.pluxel/sources',
+			createHash('sha256').update(childRepository).digest('hex').slice(0, 12),
+		)
+		await mkdir(resolve(legacyProxy, '..'), { recursive: true })
+		await symlink(child, legacyProxy, process.platform === 'win32' ? 'junction' : 'dir')
 		const checkouts = [
 			{
 				repository: 'https://github.com/acme/parent',
@@ -250,7 +262,7 @@ describe('source workspace planning', () => {
 				singletons: [],
 			},
 			{
-				repository: 'https://github.com/acme/child',
+				repository: childRepository,
 				root: child,
 				workspace: {} as never,
 				sources: [],
@@ -263,16 +275,48 @@ describe('source workspace planning', () => {
 			checkouts,
 		)
 		expect(stable['@acme/example']).toMatch(
-			/^link:\.pluxel\/sources\/[a-f\d]{12}\/packages\/example$/,
+			/^link:\.pluxel\/sources\/[a-f\d]{12}\/acme\+example-[a-f\d]{12}$/,
 		)
-		const links = await readdir(resolve(consumer, '.pluxel/sources'))
-		expect(links).toHaveLength(1)
-		expect(
-			resolve(
-				resolve(consumer, '.pluxel/sources'),
-				await readlink(resolve(consumer, '.pluxel/sources', links[0]!)),
-			),
-		).toBe(child)
+		const repositories = await readdir(resolve(consumer, '.pluxel/sources'))
+		expect(repositories).toHaveLength(1)
+		const repositoryProxy = resolve(consumer, '.pluxel/sources', repositories[0]!)
+		expect((await lstat(repositoryProxy)).isDirectory()).toBe(true)
+		const packages = await readdir(repositoryProxy)
+		expect(packages).toHaveLength(1)
+		expect(resolve(repositoryProxy, await readlink(resolve(repositoryProxy, packages[0]!)))).toBe(
+			childPackage,
+		)
+
+		const movedPackage = resolve(child, 'modules/example')
+		await mkdir(movedPackage, { recursive: true })
+		const movedStable = materializeSourceOverrides(
+			consumer,
+			{ '@acme/example': `link:${movedPackage}` },
+			checkouts,
+		)
+		expect(movedStable).toEqual(stable)
+		expect(resolve(repositoryProxy, await readlink(resolve(repositoryProxy, packages[0]!)))).toBe(
+			movedPackage,
+		)
+	})
+
+	it('rejects a source package that contains the consumer workspace', async () => {
+		const root = await createTemporaryRoot()
+		const sourcePackage = resolve(root, 'source')
+		const consumer = resolve(sourcePackage, 'local-projects/consumer')
+		await mkdir(consumer, { recursive: true })
+
+		expect(() =>
+			materializeSourceOverrides(consumer, { '@acme/source': `link:${sourcePackage}` }, [
+				{
+					repository: 'https://github.com/acme/source',
+					root: sourcePackage,
+					workspace: {} as never,
+					sources: [],
+					singletons: [],
+				},
+			]),
+		).toThrow(/contains the consumer workspace/i)
 	})
 })
 
