@@ -96,6 +96,28 @@ CLI、公开声明或 production default export 时，再由 `verify` 刷新精�
 Pluxel checkout 执行 `pnpm --dir <pluxel-checkout> exec pluxel source install --root <consumer>`。首次
 完成后，消费方的 `pnpm source:setup` 会使用源码 overlay 中的 CLI。
 
+位于 Pluxel checkout 自身 `local-projects/*` 下的开发仓库不需要预装全局 CLI，也不要把
+`pnpm source:setup` 当作首次入口。在 local project 根目录直接运行：
+
+```sh
+node ../../scripts/source-local-project.mjs
+```
+
+也可以从 Pluxel 根目录指定项目：
+
+```sh
+pnpm source:local -- local-projects/<name>
+```
+
+这个 launcher 必要时先准备父 checkout 的 CLI，登记同一 `local-projects/` 目录下具有 Git origin 的 checkout，
+然后委托标准 `source install`。它位于 consumer pnpm 生命周期之外，因此不会被 pnpm 11 在 script 前执行的
+dependency-status 自动安装卡住。`pnpm source:setup` 只适合 overlay 已经健康时的日常短命令；删除
+`node_modules`、`.pluxel` 或移动 checkout 后，重新使用 launcher。
+
+同一目录下没有 `pluxel.sources.jsonc` 的 registry-managed 项目也可以运行该 launcher；它会直接使用
+项目环境中的 pnpm 安装依赖，不创建 source overlay。`--no-build`、`--frozen-lockfile` 等 source install options
+只用于 source-managed 项目。
+
 ## pnpm 与 lockfile 语义
 
 CLI 不改写 `pnpm-workspace.yaml`。首次 `source install` 会生成应提交的 `.pnpmfile.cjs`；它不含 source

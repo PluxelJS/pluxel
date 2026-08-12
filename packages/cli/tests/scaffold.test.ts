@@ -370,15 +370,11 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
-		expect(manifest.exports['.']).toMatchObject({
-			types: './dist/index.d.mts',
-			'@pluxel/hmr': './src/hello-world.ts',
-			default: './dist/index.mjs',
-		})
-		expect(manifest.publishConfig.exports['.']).toEqual({
-			types: './dist/index.d.mts',
-			default: './dist/index.mjs',
-		})
+		expect(manifest).not.toHaveProperty('main')
+		expect(manifest).not.toHaveProperty('module')
+		expect(manifest).not.toHaveProperty('types')
+		expect(manifest).not.toHaveProperty('exports')
+		expect(manifest).not.toHaveProperty('publishConfig')
 		expect(manifest.files).toEqual(['dist', '!**/*.map'])
 		expect(manifest.devDependencies).toMatchObject({
 			'@pluxel/cli': 'catalog:',

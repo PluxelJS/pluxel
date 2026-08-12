@@ -19,6 +19,16 @@ pnpm override 是一次安装的生成细节，不进入项目 workspace 配置�
 目录。代理只暴露实际依赖的 package，不把整个 checkout 嵌入 consumer 文件树；移动 checkout 或 package 目录只更新
 machine registry 和 package link。source package 若包含 consumer root 会被拒绝，因为这种所有权拓扑无法形成无环代理。每个 checkout 始终按自己的依赖闭包生成
 overlay，并通过 Corepack 尊重精确的 `packageManager` 版本，所以被下游编排不会改写出另一份 lockfile。
+
+Pluxel checkout 内的 `local-projects/*` 使用仓库拥有的 `scripts/source-local-project.mjs` 作为首次安装入口。
+launcher 在 consumer pnpm 生命周期之外运行，必要时先安装并构建当前 checkout 的 CLI，再登记同一开发树中的
+Pluxel 与 local repository checkout，最后委托正常的 `pluxel source install`。不得把首次 bootstrap 放进
+consumer 的 pnpm script：pnpm 可能在执行 script 前先做 dependency-status install，此时 source overlay 尚未生成，
+会把私有 source package 错误解析到 registry。launcher 只解决 in-tree 开发 checkout 的可达性；package closure、
+overlay、构建与 lockfile 仍由唯一的 `pluxel source` 实现拥有。
+不声明 `pluxel.sources.jsonc` 的 registry-managed local project 也使用同一 launcher；该分支直接在项目根目录
+运行 pnpm install，不生成 source registry、overlay 或链接。source install options 只接受于声明了 source
+配置的项目，避免同一个 flag 在两条安装路径上产生模糊语义。
 上游构建优先把精确目标交给其 Turbo task graph，不用 `package...` filter 强制扩张依赖；无 Turbo 时
 回落到 pnpm recursive filter，不在消费仓库复制 package filter。`build` script 本身不代表 source
 consumer 需要产物：CLI 只选择 live manifest 引用顶层标准构建目录或暴露 executable bin 的 package，
@@ -124,6 +134,13 @@ bridge 精确改写为 `@pluxel/rolldown/vite` 公共入口。这样修改内核
 `@pluxel/source` 检查当前源码；具体插件通过 `tsconfig.plugin.json` 的
 `@pluxel/hmr` 只把其他插件解析到源码，Pluxel core/runtime/toolchain 本身消费已构建的公开声明。
 因此单个插件 typecheck 不会把整个框架源码并入同一个 TypeScript program，也不会用插件编译选项重新检查内部实现。
+
+tsdown `entry` 是 build package subpath 的唯一作者事实源。framework package 配置
+`exports.devExports: "@pluxel/source"`；`pluginPackage()` preset 统一配置
+`exports.devExports: "@pluxel/hmr"`；框架无关的开发源码包使用社区 `development` condition。tsdown 在成功构建后
+生成 `main/module/types/exports` 和无源码 condition 的 `publishConfig.exports`，这些 manifest 字段是应提交、可审查的
+生成物，不在 package.json 手工维护。开发解析按 `@pluxel/hmr`、`development`、`@pluxel/source` 顺序选择，
+production external resolution 不启用这些源码入口。
 
 production macro evaluator 仍只属于 Rolldown build pipeline。当前 `unplugin-macros` 的 Vite serve adapter 会安装进程级
 sourcemap handler，覆盖 ModuleRunner 的 source-aware stack mapping；在 evaluator 隔离或上游提供 cleanup 前，不得把它

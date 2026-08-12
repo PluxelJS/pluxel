@@ -84,15 +84,6 @@ pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 	"version": "0.1.0",
 	"description": "Orders capability for Pluxel",
 	"type": "module",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.mts",
-			"@pluxel/hmr": "./src/orders.ts",
-			"default": "./dist/index.mjs",
-		},
-		"./package.json": "./package.json",
-	},
 	"files": ["dist", "!**/*.map"],
 	"scripts": {
 		"build": "pluxel build",
@@ -133,22 +124,29 @@ pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 
 这些字段各有明确所有者：
 
-| 字段                                                 | 谁维护         | 规则                                                                |
-| ---------------------------------------------------- | -------------- | ------------------------------------------------------------------- |
-| `name`、`version`、`description`、license/repository | 作者或发布系统 | npm package 身份；名称需要符合宿主的插件发现规则                    |
-| `type`、`types`、`exports`、`files`                  | 作者           | 对齐实际 `dist` 文件；只暴露稳定入口                                |
-| `@pluxel/runtime` peer                               | 作者           | 插件和宿主共享同一 runtime，不打入插件 bundle                       |
-| 普通 `dependencies` / `devDependencies`              | 作者           | 遵循普通 npm 运行期/开发期语义                                      |
-| 其他插件的 peer、`peerDependenciesMeta`              | `pluxel build` | 根据源码声明同步；作者只需提供可用版本范围                          |
-| `pluxel.pluginPackages`                              | `pluxel build` | 生成字段，不手写、不在 review 中人工排序                            |
-| `publishConfig.exports`                              | 作者           | 发布时移除本地源码 condition，防止 consumer 直接执行 raw TypeScript |
+| 字段                                                 | 谁维护         | 规则                                                |
+| ---------------------------------------------------- | -------------- | --------------------------------------------------- |
+| `name`、`version`、`description`、license/repository | 作者或发布系统 | npm package 身份；名称需要符合宿主的插件发现规则    |
+| `type`、`files` 和 package 身份字段                  | 作者           | 声明稳定的 package 身份与发布文件边界               |
+| `main`、`module`、`types`、`exports`                 | `pluxel build` | 从 tsdown `entry` 和标准 plugin preset 生成，不手写 |
+| `@pluxel/runtime` peer                               | 作者           | 插件和宿主共享同一 runtime，不打入插件 bundle       |
+| 普通 `dependencies` / `devDependencies`              | 作者           | 遵循普通 npm 运行期/开发期语义                      |
+| 其他插件的 peer、`peerDependenciesMeta`              | `pluxel build` | 根据源码声明同步；作者只需提供可用版本范围          |
+| `pluxel.pluginPackages`                              | `pluxel build` | 生成字段，不手写、不在 review 中人工排序            |
+| `publishConfig.exports`                              | `pluxel build` | 生成不含本地源码 condition 的发布入口               |
 
 示例中的 `<compatible-version>` 表示发布后的正常 semver。使用 pnpm catalog 时，workspace 内的
 `package.json` 写 `catalog:`，范围由 `pnpm-workspace.yaml` 维护；`pnpm pack/publish` 会把它转换成
 catalog 中的 semver，不要把同一范围再复制回每个 manifest。
 
-`@pluxel/hmr` condition 统一服务 static/dynamic 本地开发 route，插件不感知宿主采用哪种启动方式。npm 发布产物通过
-`publishConfig.exports` 只暴露编译后的 JS 和声明文件；不要发布通用 `source` condition。
+`tsdown.config.ts` 的 `entry` 是 package subpath 的唯一作者事实源。标准 `pluxel build` preset 固定使用
+`exports.devExports: "@pluxel/hmr"`，tsdown 在构建成功后生成 authoring `exports`，并同步生成只暴露 JS/声明的
+`publishConfig.exports`。不要在 `package.json` 预写或人工维护这些生成字段。
+
+`@pluxel/hmr` condition 统一服务 static/dynamic 本地插件开发 route，插件不感知宿主采用哪种启动方式。
+框架无关的普通库使用社区通用的 `development` condition；Pluxel framework/toolchain 自身才使用
+`@pluxel/source`。开发解析优先级固定为 `@pluxel/hmr` → `development` → `@pluxel/source`；生产外部解析
+不启用这三个源码 condition。
 
 ## `tsconfig.json` 标准形状
 

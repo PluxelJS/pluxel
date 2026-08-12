@@ -33,7 +33,15 @@ const CODE_HINT = /\b(?:workbench\s*\.\s*extension\s*\(|defineNodeModule\s*\(|de
 const DATABASE_CODE_HINT = /\bdefineDatabase\s*\(/
 const IMPORT_SOURCE = '@pluxel/runtime/workbench'
 const NODE_MODULE_IMPORT_SOURCE = '@pluxel/runtime'
-const NODE_ARTIFACT_RESOLVE_CONDITIONS = ['@pluxel/hmr', 'node', 'import', 'module', 'default']
+const NODE_ARTIFACT_RESOLVE_CONDITIONS = [
+	'@pluxel/hmr',
+	'development',
+	'@pluxel/source',
+	'node',
+	'import',
+	'module',
+	'default',
+]
 const productionBuilds = new Map<string, Promise<void>>()
 
 type NodeLike = {

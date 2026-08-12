@@ -38,6 +38,7 @@ describe('staticApplication', () => {
 			'pluxel:decorator-output-guard',
 		])
 		expect(config.deps?.neverBundle).toEqual([/^@pluxel\//])
+		expect(config.exports).toEqual({ devExports: '@pluxel/hmr' })
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
 			emitDecoratorMetadata: true,

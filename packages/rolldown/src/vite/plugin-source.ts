@@ -20,12 +20,13 @@ const PLUXEL_SOURCE_RESOLVE_CONDITIONS = [
 	// Plugin packages use a dedicated dev export so their generated manifests do
 	// not expose raw TypeScript through the framework-only source condition.
 	'@pluxel/hmr',
+	// Framework-neutral packages use Node's community development condition.
+	'development',
 	'@pluxel/source',
 	'node',
 	'import',
 	'module',
 	'browser',
-	'development',
 	'production',
 	'default',
 ] as const

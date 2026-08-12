@@ -66,11 +66,11 @@ describe('@pluxel/test/vitest', () => {
 
 	it('keeps node conditions deterministic', () => {
 		expect(buildPluxelResolveConditions('test')).toEqual([
-			'@pluxel/source',
 			'@pluxel/hmr',
+			'development',
+			'@pluxel/source',
 			'node',
 			'import',
-			'development',
 			'production',
 			'default',
 			'test',

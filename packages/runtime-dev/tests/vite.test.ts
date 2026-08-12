@@ -43,9 +43,11 @@ describe('runtime-dev Vite plugin stack', () => {
 		}
 
 		expect(plugin.name).toBe('pluxel:runtime-source')
-		expect(config.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/hmr', '@pluxel/source', 'node', 'import', 'default']),
-		)
+		expect(config.resolve?.conditions?.slice(0, 3)).toEqual([
+			'@pluxel/hmr',
+			'development',
+			'@pluxel/source',
+		])
 		expect(config.ssr?.resolve?.conditions).toEqual(
 			expect.arrayContaining(['@pluxel/source', 'node', 'import', 'default']),
 		)

@@ -117,8 +117,9 @@ Each package can keep its own `vitest.config.ts` (typically
 By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
 when some packages have no tests.
 
-The preset always enables the two Pluxel workspace conditions: internal packages resolve through
-`@pluxel/source`, and plugin packages resolve their loader HMR entry through `@pluxel/hmr`.
+The preset resolves development entries in a fixed order: plugin packages through `@pluxel/hmr`,
+framework-neutral packages through the community `development` condition, then Pluxel internals through
+`@pluxel/source`. Externalized Node dependencies keep production-like conditions.
 
 If you prefer automatic discovery instead of maintaining globs:
 

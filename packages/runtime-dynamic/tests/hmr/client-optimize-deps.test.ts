@@ -25,8 +25,14 @@ describe('HMR client optimizeDeps', () => {
 
 		const resolveConfig = config.resolve as {
 			alias?: Array<{ find: RegExp; replacement: string }>
+			conditions?: string[]
 			externalConditions?: string[]
 		}
+		expect(resolveConfig.conditions?.slice(0, 3)).toEqual([
+			'@pluxel/hmr',
+			'development',
+			'@pluxel/source',
+		])
 		expect(resolveConfig.alias).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

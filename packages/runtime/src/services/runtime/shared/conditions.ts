@@ -1,4 +1,5 @@
 export const PLUXEL_CONDITION_HMR = '@pluxel/hmr' as const
+export const COMMUNITY_CONDITION_DEVELOPMENT = 'development' as const
 export const PLUXEL_CONDITION_SOURCE = '@pluxel/source' as const
 
 /**
@@ -6,11 +7,13 @@ export const PLUXEL_CONDITION_SOURCE = '@pluxel/source' as const
  *
  * Notes:
  * - `@pluxel/hmr` is the plugin-package loader-hmr source condition.
+ * - `development` is the community condition for framework-neutral development entries.
  * - `@pluxel/source` is for internal workspace packages.
  * - `default` is included to match Node's default export resolution behavior.
  */
 export const PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE = [
 	PLUXEL_CONDITION_HMR,
+	COMMUNITY_CONDITION_DEVELOPMENT,
 	PLUXEL_CONDITION_SOURCE,
 	'import',
 	'default',
@@ -19,7 +22,12 @@ export const PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE = [
 export function withPluxelHmrConditions(conditions: readonly string[]): string[] {
 	const out: string[] = []
 	const seen = new Set<string>()
-	for (const condition of [PLUXEL_CONDITION_HMR, ...conditions]) {
+	for (const condition of [
+		PLUXEL_CONDITION_HMR,
+		COMMUNITY_CONDITION_DEVELOPMENT,
+		PLUXEL_CONDITION_SOURCE,
+		...conditions,
+	]) {
 		if (seen.has(condition)) continue
 		seen.add(condition)
 		out.push(condition)

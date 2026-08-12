@@ -26,6 +26,8 @@ describe('EntryResolver preferHmrExports', () => {
 				exports: {
 					'.': {
 						'@pluxel/hmr': './src/hmr.ts',
+						development: './src/development.ts',
+						'@pluxel/source': './src/source.ts',
 						default: './dist/wretch.mjs',
 					},
 				},
@@ -34,6 +36,8 @@ describe('EntryResolver preferHmrExports', () => {
 			2,
 		),
 		'src/hmr.ts': '// loader HMR entry',
+		'src/development.ts': '// community development entry',
+		'src/source.ts': '// framework source entry',
 		'dist/wretch.mjs': '// bundled entry',
 	}
 
@@ -45,6 +49,30 @@ describe('EntryResolver preferHmrExports', () => {
 		expect(result.ok).toBe(true)
 		if (!result.ok) throw new Error('expected entry resolution to succeed')
 		expect(normalize(result.entry).endsWith('/src/hmr.ts')).toBe(true)
+	})
+
+	test('falls through community development before framework source', async () => {
+		await using fixture = await createDiskFixture({
+			...fixtureTree,
+			'package.json': JSON.stringify({
+				name: 'neutral-development-package',
+				exports: {
+					'.': {
+						development: './src/development.ts',
+						'@pluxel/source': './src/source.ts',
+						default: './dist/wretch.mjs',
+					},
+				},
+			}),
+		})
+		const resolver = new EntryResolver(cache, fixture.fs)
+		const result = await resolver.resolve(fixture.path, {
+			...baseOptions,
+			preferHmrExports: true,
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) throw new Error('expected entry resolution to succeed')
+		expect(normalize(result.entry).endsWith('/src/development.ts')).toBe(true)
 	})
 
 	test('falls back to default export when disabled', async () => {

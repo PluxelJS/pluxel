@@ -83,17 +83,11 @@ const TABLER_ICONS_ESM_ENTRY = resolveOptionalPackageEntry(
 // NOTE: We must exclude these conditions from the client environment to avoid resolving Node-only sources.
 export const BASE_LOADER_HMR_RESOLVE_CONDITIONS = [
 	PLUXEL_CONDITION_HMR,
+	'development',
 	PLUXEL_CONDITION_SOURCE,
 ] as const
 // Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
-const DEFAULT_RESOLVE_CONDITIONS = [
-	'import',
-	'module',
-	'browser',
-	'development',
-	'production',
-	'default',
-]
+const DEFAULT_RESOLVE_CONDITIONS = ['import', 'module', 'browser', 'production', 'default']
 const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
 export function buildHmrResolveConditions(env = process.env.NODE_ENV): string[] {
@@ -157,17 +151,9 @@ function resolveClientEntries(root: string, entries?: readonly string[]): string
 
 export function buildLoaderHmrViteConfig(opts: HmrViteConfigOptions): InlineConfig {
 	const ssrConditions = buildHmrResolveConditions()
-	// The HMR server hosts BOTH:
-	// - a browser UI (client environment)
-	// - a server-side runner (ssr environment)
-	//
-	// Pluxel source conditions are server-only (workspace TS sources, Node-only deps).
-	// If we forward it into the client environment, Vite may resolve packages like
-	// `@pluxel/wretch` (or any runner-only plugin) to `./src/...` and then try to analyze/optimize Node-only imports
-	// (e.g. `undici`) as if they were browser deps.
-	const clientConditions = ssrConditions.filter(
-		(c) => c !== PLUXEL_CONDITION_HMR && c !== PLUXEL_CONDITION_SOURCE,
-	)
+	// Keep the condition order identical in both HMR environments. Package exports remain responsible
+	// for exposing only browser-safe source entries to the client environment.
+	const clientConditions = ssrConditions
 	const clientEntries = resolveClientEntries(opts.root, opts.clientEntries)
 	const hasClientEntries = clientEntries.length > 0
 	const dedupePackages = [...new Set([...REQUIRED_DEDUPE_PACKAGES, ...DEFAULT_CLIENT_DEDUPE])]

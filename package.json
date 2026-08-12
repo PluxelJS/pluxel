@@ -24,6 +24,7 @@
 		"changeset": "changeset",
 		"release:check": "node scripts/check-release-invariants.mjs",
 		"release:smoke": "pnpm --filter @pluxel/cli test:templates",
+		"source:local": "node scripts/source-local-project.mjs",
 		"release:version": "changeset version",
 		"release:publish": "pnpm run verify && pnpm run release:smoke && changeset publish",
 		"build:gqlens": "turbo run build --filter=@gqlens/core --filter=@gqlens/react --filter=@gqlens/codegen --filter=@gqlens/vite",

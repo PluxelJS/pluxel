@@ -11,15 +11,6 @@
 			"onFail": "error"
 		}
 	},
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.mts",
-			"@pluxel/hmr": "./src/{{pluginName}}.ts",
-			"default": "./dist/index.mjs"
-		},
-		"./package.json": "./package.json"
-	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -48,14 +39,5 @@
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
-	},
-	"publishConfig": {
-		"exports": {
-			".": {
-				"types": "./dist/index.d.mts",
-				"default": "./dist/index.mjs"
-			},
-			"./package.json": "./package.json"
-		}
 	}
 }

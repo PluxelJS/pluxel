@@ -47,7 +47,15 @@ const forbiddenDeclaration =
 	/\b(?:defineNodeModule|defineWorkerTask|workbench\s*\.\s*(?:entry|extension)|Plugin)\s*\(/
 const sourceExtensions = ['.tsx', '.ts', '.jsx', '.js', '.mts', '.mjs', '.cts', '.cjs', '.json']
 const builtins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]))
-const nodeArtifactConditions = ['@pluxel/hmr', 'node', 'import', 'module', 'default']
+const nodeArtifactConditions = [
+	'@pluxel/hmr',
+	'development',
+	'@pluxel/source',
+	'node',
+	'import',
+	'module',
+	'default',
+]
 
 /** Build a self-contained, single-file Node ESM artifact. */
 export async function buildNodeModule(options: BuildNodeModuleOptions): Promise<void> {

@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto'
-import { lstat, mkdtemp, mkdir, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+	lstat,
+	mkdtemp,
+	mkdir,
+	readFile,
+	readdir,
+	readlink,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,7 +22,9 @@ import {
 	createPnpmInvocation,
 	createSourceBuildArgs,
 	createSourceInstallArgs,
+	ensureSourcePnpmfileBootstrap,
 	materializeSourceOverrides,
+	sourcePnpmfileBootstrapContents,
 } from '../src/source/execution'
 import { createSourceWorkspacePlan, sourceCheckoutInstallOverrides } from '../src/source/plan'
 import { registerSourceCheckout } from '../src/source/registry'
@@ -156,6 +168,17 @@ describe('source workspace planning', () => {
 		expect(() => createPnpmInvocation('npm@11.0.0', args)).toThrow(/require pnpm/i)
 	})
 
+	it('fails before pnpm resolves private source packages when the overlay is absent', async () => {
+		const root = await createTemporaryRoot()
+		ensureSourcePnpmfileBootstrap(root)
+		const written = await readFile(resolve(root, '.pnpmfile.cjs'), 'utf8')
+		const bootstrap = sourcePnpmfileBootstrapContents()
+		expect(written).toBe(bootstrap)
+		expect(bootstrap).toContain('Source overlay is missing')
+		expect(bootstrap).toContain('source-local-project.mjs')
+		expect(bootstrap).not.toContain('{ hooks: {} }')
+	})
+
 	it('builds only manifests that expose generated artifacts', () => {
 		expect(
 			sourcePackageNeedsBuild({
@@ -280,7 +303,8 @@ describe('source workspace planning', () => {
 		const repositories = await readdir(resolve(consumer, '.pluxel/sources'))
 		expect(repositories).toHaveLength(1)
 		const repositoryProxy = resolve(consumer, '.pluxel/sources', repositories[0]!)
-		expect((await lstat(repositoryProxy)).isDirectory()).toBe(true)
+		const repositoryStat = await lstat(repositoryProxy)
+		expect(repositoryStat.isDirectory()).toBe(true)
 		const packages = await readdir(repositoryProxy)
 		expect(packages).toHaveLength(1)
 		expect(resolve(repositoryProxy, await readlink(resolve(repositoryProxy, packages[0]!)))).toBe(

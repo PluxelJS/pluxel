@@ -26,7 +26,11 @@ export type PluxelVitestOptions = {
 	prePlugins?: NonNullable<ViteUserConfig['plugins']>
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/hmr'] as const
+export const PLUXEL_BASE_RESOLVE_CONDITIONS = [
+	'@pluxel/hmr',
+	'development',
+	'@pluxel/source',
+] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
@@ -34,7 +38,6 @@ const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// `import` is a Node contract; `module` is only a bundler convention and may
 	// point at ESM that Node cannot execute without extension rewriting.
 	'import',
-	'development',
 	'production',
 	'default',
 ] as const
@@ -101,7 +104,7 @@ function normalizeGlobs(patterns: string[]): string[] {
 
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
- * - enables fixed Pluxel resolution conditions (`@pluxel/source` for internals, `@pluxel/hmr` for plugin dev entries)
+ * - resolves plugin, neutral-development, then framework-source entries in that order
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
  * - runs the local core-only `@pluxel/test/setup` module once per worker
  */

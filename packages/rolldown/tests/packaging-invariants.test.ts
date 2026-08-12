@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+import { buildPluxelFrontendResolveConditions } from '../src/workspace/vite.ts'
 
 type PackageJson = {
 	exports?: unknown
@@ -42,6 +43,13 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 }
 
 describe('toolchain package boundaries', () => {
+	it('prefers community development entries before framework source entries in frontend graphs', () => {
+		expect(buildPluxelFrontendResolveConditions('development').slice(0, 2)).toEqual([
+			'development',
+			'@pluxel/source',
+		])
+	})
+
 	it('keeps Vite toolchain helpers out of runtime public exports', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
 		const runtime = await readJson(`${root}/packages/runtime/package.json`)
