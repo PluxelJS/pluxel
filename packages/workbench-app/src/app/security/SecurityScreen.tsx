@@ -161,39 +161,41 @@ export function SecurityScreen() {
 				id="pluxel-security-split"
 				onLayoutCommit={handleSecuritySplitLayoutChanged}
 				orientation="horizontal"
-				primary={{
-					id: SECURITY_CONTROLS_PANEL_ID,
-					defaultSize: securitySplitLayout[SECURITY_CONTROLS_PANEL_ID],
-					minSize: 20,
-					children: (
-						<SecurityControlsPane
-							adminAccess={adminAccess}
-							busy={busy}
-							deployRecipients={deployRecipients}
-							deployRecipientsDirty={deployRecipientsDirty}
-							deployRecipientsDraft={deployRecipientsDraft}
-							generatedKeyPair={generatedKeyPair}
-							onDeployRecipientsDraftChange={setDeployRecipientsDraft}
-							onGenerateDeployKey={() => void generateDeployKey()}
-							onSaveDeployRecipients={() => void saveDeployRecipients()}
-							vault={vault}
-						/>
-					),
-				}}
-				secondary={{
-					id: SECURITY_NAMESPACE_PANEL_ID,
-					defaultSize: securitySplitLayout[SECURITY_NAMESPACE_PANEL_ID],
-					minSize: 52,
-					children: (
-						<NamespaceInventoryPanel
-							filteredNamespaces={filteredNamespaces}
-							inventory={inventory}
-							namespaceSearch={namespaceSearch}
-							onNamespaceSearchChange={setNamespaceSearch}
-							totalNamespaces={totalNamespaces}
-						/>
-					),
-				}}
+				panes={[
+					{
+						id: SECURITY_CONTROLS_PANEL_ID,
+						defaultSizePercent: securitySplitLayout[SECURITY_CONTROLS_PANEL_ID],
+						minSizePercent: 20,
+						children: (
+							<SecurityControlsPane
+								adminAccess={adminAccess}
+								busy={busy}
+								deployRecipients={deployRecipients}
+								deployRecipientsDirty={deployRecipientsDirty}
+								deployRecipientsDraft={deployRecipientsDraft}
+								generatedKeyPair={generatedKeyPair}
+								onDeployRecipientsDraftChange={setDeployRecipientsDraft}
+								onGenerateDeployKey={() => void generateDeployKey()}
+								onSaveDeployRecipients={() => void saveDeployRecipients()}
+								vault={vault}
+							/>
+						),
+					},
+					{
+						id: SECURITY_NAMESPACE_PANEL_ID,
+						defaultSizePercent: securitySplitLayout[SECURITY_NAMESPACE_PANEL_ID],
+						minSizePercent: 52,
+						children: (
+							<NamespaceInventoryPanel
+								filteredNamespaces={filteredNamespaces}
+								inventory={inventory}
+								namespaceSearch={namespaceSearch}
+								onNamespaceSearchChange={setNamespaceSearch}
+								totalNamespaces={totalNamespaces}
+							/>
+						),
+					},
+				]}
 			/>
 		</Stack>
 	)

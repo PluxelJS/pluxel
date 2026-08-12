@@ -9,6 +9,12 @@ import {
 	useWorkbenchHost,
 	WorkbenchViewProvider,
 } from '../../src/workbench/ui-runtime'
+import {
+	WorkbenchPane,
+	WorkbenchPaneLayout,
+	type WorkbenchPaneProps,
+	type WorkbenchPaneLayoutRendererProps,
+} from '../../src/workbench/ui-pane'
 
 const contract = workbenchContract.define({
 	resources: {
@@ -18,6 +24,7 @@ const contract = workbenchContract.define({
 })
 const ui = createWorkbenchUi(contract)
 const mounted: Array<ReturnType<typeof createRoot>> = []
+const pane = (props: WorkbenchPaneProps) => <WorkbenchPane {...props} />
 
 beforeAll(() => {
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -30,6 +37,107 @@ afterEach(async () => {
 })
 
 describe('Workbench UI resource facade', () => {
+	it('normalizes a valid pane declaration for the host renderer', async () => {
+		let rendered: WorkbenchPaneLayoutRendererProps | undefined
+		const container = document.createElement('div')
+		const root = createRoot(container)
+		mounted.push(root)
+		const Renderer = (props: WorkbenchPaneLayoutRendererProps) => {
+			rendered = props
+			return null
+		}
+
+		await act(async () => {
+			root.render(
+				<WorkbenchViewProvider
+					item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+					environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
+					paneLayoutRenderer={Renderer}
+				>
+					<WorkbenchPaneLayout id="access">
+						{pane({
+							id: 'nav',
+							role: 'navigation',
+							title: 'Navigation',
+							children: <span>nav child</span>,
+						})}
+						{pane({
+							id: 'main',
+							role: 'primary',
+							title: 'Editor',
+							children: <span>main child</span>,
+						})}
+					</WorkbenchPaneLayout>
+				</WorkbenchViewProvider>,
+			)
+		})
+
+		expect(rendered).toMatchObject({ id: 'access', label: 'Workbench panes' })
+		expect(rendered?.panes.map((item) => [item.id, item.role])).toEqual([
+			['nav', 'navigation'],
+			['main', 'primary'],
+		])
+	})
+
+	it.each([
+		['non-pane child', <div key="non-pane" />],
+		[
+			'duplicate ids',
+			<>
+				{pane({ id: 'same', role: 'navigation', title: 'Navigation', children: 'a' })}
+				{pane({ id: 'same', role: 'primary', title: 'Editor', children: 'b' })}
+			</>,
+		],
+		[
+			'duplicate roles',
+			<>
+				{pane({ id: 'a', role: 'primary', title: 'A', children: 'a' })}
+				{pane({ id: 'b', role: 'primary', title: 'B', children: 'b' })}
+			</>,
+		],
+		[
+			'hideable primary',
+			pane({ id: 'main', role: 'primary', title: 'Editor', defaultVisible: false, children: 'a' }),
+		],
+		[
+			'too many panes',
+			<>
+				{pane({ id: 'a', role: 'primary', title: 'A', children: 'a' })}
+				{pane({ id: 'b', role: 'navigation', title: 'B', children: 'b' })}
+				{pane({ id: 'c', role: 'inspector', title: 'C', children: 'c' })}
+				{pane({ id: 'd', role: 'inspector', title: 'D', children: 'd' })}
+			</>,
+		],
+		[
+			'percentage default size above the container',
+			pane({ id: 'main', role: 'primary', title: 'Editor', defaultSize: '200%', children: 'a' }),
+		],
+	] as const)('rejects invalid pane contract: %s', async (_label, children) => {
+		const container = document.createElement('div')
+		const root = createRoot(container)
+		mounted.push(root)
+		const Renderer = () => null
+		const original = console.error
+		console.error = vi.fn()
+		try {
+			await expect(
+				act(async () => {
+					root.render(
+						<WorkbenchViewProvider
+							item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+							environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
+							paneLayoutRenderer={Renderer}
+						>
+							<WorkbenchPaneLayout id="layout">{children}</WorkbenchPaneLayout>
+						</WorkbenchViewProvider>,
+					)
+				}),
+			).rejects.toThrow(/WorkbenchPane/)
+		} finally {
+			console.error = original
+		}
+	})
+
 	it('forwards ordinary navigation separately from document tab creation', async () => {
 		const navigate = vi.fn()
 		const openTab = vi.fn()

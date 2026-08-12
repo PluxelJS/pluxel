@@ -69,7 +69,7 @@ this.ctx.workbench.mount(settings, {
 - `@pluxel/runtime/services/vault`：宿主显式启用 Vault；未导入时不注册 Vault backend 或 eager preflight；
 - `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
 - `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
-- `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks 和 UI exports；
+- `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks、受限 host capability 与 declarative Pane Kit；
 - `@pluxel/runtime/web`：host browser transport 与 Workbench Context。
 
 宿主只通过顶层 `workbench` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact route 或

@@ -6,6 +6,6 @@ export default defineConfig({
 		conditions: ['development', '@pluxel/source'],
 	},
 	test: {
-		include: ['tests/**/*.test.ts'],
+		include: ['tests/**/*.test.{ts,tsx}'],
 	},
 })

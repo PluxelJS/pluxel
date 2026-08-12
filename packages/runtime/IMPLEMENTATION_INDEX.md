@@ -11,7 +11,8 @@
 
 - `src/workbench/contracts.ts`：module、resource、view、port、layout contract；
 - `src/workbench/runtime.ts`：server bindings 与 mount；
-- `src/workbench/ui-runtime.tsx`：browser typed resource client；
+- `src/workbench/ui-runtime.tsx`：browser typed resource client 与 host-injected View runtime；
+- `src/workbench/ui-pane.tsx`：public Pane Kit declaration、契约校验与 host renderer bridge；
 - `src/services/workbench/WorkbenchService.ts`：Context-isolated gate；
 - `src/services/workbench/WorkbenchRegistry.ts`：target layout、relations、opaque grants、revision；
 - `src/services/workbench/WorkbenchArtifactService.ts`：artifact store；
@@ -40,4 +41,5 @@
 - `src/web/client.ts`：HTTP/RPC/SSE transport；
 - `src/web/rpc.ts`：request-scoped Cap'n Web proxy；
 - `src/workbench/ui-runtime.tsx`：Remote View environment、host capabilities 与 resource clients；
+- `../workbench-app/src/app/workbench/RemotePaneLayout.tsx`：host-owned Pane Kit geometry、responsive drawer 与 state adapter；
 - `../workbench-app/src/workbench/client.ts`：browser catalog、target snapshot、route index 与 staged module lease；

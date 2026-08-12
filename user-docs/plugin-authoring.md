@@ -408,6 +408,33 @@ export default ui.define({ Overview })
 `ui.define()` 精确检查全部 remote View，没有额外 export。普通 View 不声明 `uses`；同一 bundle 是
 owner resources 的前端信任边界，facade 按 RPC 调用、query variant 或 event subscription 延迟连接。
 
+需要 VS Code 风格多栏任务区时声明 Pane Kit；不要在插件 bundle 中安装 Worksplit，也不要自己实现 viewport breakpoint、
+fixed drawer 或 layout localStorage：
+
+```tsx
+import { WorkbenchPane, WorkbenchPaneLayout } from '@pluxel/runtime/workbench/ui'
+
+export function AccessWorkbench() {
+	return (
+		<WorkbenchPaneLayout id="access" label="Access workspace">
+			<WorkbenchPane id="objects" role="navigation" title="Objects" defaultSize={252} minSize={220}>
+				<ObjectList />
+			</WorkbenchPane>
+			<WorkbenchPane id="editor" role="primary" title="Editor" minSize={420}>
+				<Editor />
+			</WorkbenchPane>
+			<WorkbenchPane id="policy" role="inspector" title="Policy" defaultSize={320} minSize={270}>
+				<PolicyInspector />
+			</WorkbenchPane>
+		</WorkbenchPaneLayout>
+	)
+}
+```
+
+一个 layout 接受一至三个直接 `WorkbenchPane` children、每种 role 最多一个且恰好一个 `primary`。默认 inspector 在
+medium 变 drawer，navigation 在 compact 变 drawer；响应依据组件容器，切换不会卸载 pane 内容。需要从内容按钮控制侧栏时，
+在 layout 内调用 `useWorkbenchPaneLayout()` 的 `show(id)`、`hide(id)`、`toggle(id)` 或 `reset()`。
+
 集合页需要把不同对象作为 Workbench 原生 Tab 打开时，声明一个不进入导航的参数化 route：
 
 ```ts

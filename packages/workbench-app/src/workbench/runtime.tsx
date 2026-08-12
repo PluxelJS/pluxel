@@ -21,7 +21,14 @@ import { InlineNotice } from '../components'
 import { BuiltinDoc } from './builtin/Doc'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import { buildWorkbenchHref, normalizeWorkbenchPath } from './paths'
-import { useOptionalWorkspaceNavigation } from '../app/workbench/context'
+import {
+	useOptionalWorkspaceNavigation,
+	useWorkbenchViewState as useHostWorkbenchViewState,
+} from '../app/workbench/context'
+import {
+	HostRemotePaneLayout,
+	RemotePaneLayoutStateProvider,
+} from '../app/workbench/RemotePaneLayout'
 import {
 	WorkbenchClientRuntime,
 	type WorkbenchResolvedRoute,
@@ -128,6 +135,7 @@ export function useWorkbenchSurface(
 				: items.map((item) => (
 						<WorkbenchItem
 							key={`${target ?? '$global'}:${item.id}`}
+							frame="shell"
 							item={item}
 							snapshot={snapshot}
 						/>
@@ -158,20 +166,31 @@ export function WorkbenchRoute({
 	route: WorkbenchResolvedRoute
 }) {
 	const snapshot = useWorkbenchTargetSnapshot(target)
-	return <WorkbenchItem item={route.item} routeParams={route.params} snapshot={snapshot} />
+	return (
+		<WorkbenchItem
+			frame={route.frame}
+			item={route.item}
+			routeParams={route.params}
+			snapshot={snapshot}
+		/>
+	)
 }
 
 function WorkbenchItem({
+	frame,
 	item,
 	snapshot,
 	routeParams = EMPTY_ROUTE_PARAMS,
 }: {
+	frame: 'shell' | 'standalone'
 	item: WorkbenchLayoutItem
 	snapshot: WorkbenchTargetSnapshot
 	routeParams?: Readonly<Record<string, string>>
 }) {
 	if (item.view.kind === 'builtin') return <WorkbenchBuiltinView item={item} />
-	return <WorkbenchRemoteView item={item} routeParams={routeParams} snapshot={snapshot} />
+	return (
+		<WorkbenchRemoteView frame={frame} item={item} routeParams={routeParams} snapshot={snapshot} />
+	)
 }
 
 function WorkbenchBuiltinView({ item }: { item: WorkbenchLayoutItem }) {
@@ -195,16 +214,19 @@ function WorkbenchBuiltinView({ item }: { item: WorkbenchLayoutItem }) {
 }
 
 function WorkbenchRemoteView({
+	frame,
 	item,
 	snapshot,
 	routeParams,
 }: {
+	frame: 'shell' | 'standalone'
 	item: WorkbenchLayoutItem
 	snapshot: WorkbenchTargetSnapshot
 	routeParams: Readonly<Record<string, string>>
 }) {
 	const { runtime, environment } = useWorkbenchRuntime()
 	const navigation = useOptionalWorkspaceNavigation()
+	const viewState = useHostWorkbenchViewState(workbenchViewStateIdentity(item), frame)
 	const resolveShellPath = useCallback(
 		(inputPath: string, operation: 'navigate' | 'openTab') => {
 			const path = normalizeWorkbenchPath(inputPath)
@@ -258,16 +280,28 @@ function WorkbenchRemoteView({
 			contributionId={item.id}
 			point={item.placement}
 		>
-			<WorkbenchViewProvider
-				item={item}
-				environment={environment}
-				navigation={hostNavigation}
-				routeParams={routeParams}
-			>
-				<View />
-			</WorkbenchViewProvider>
+			<RemotePaneLayoutStateProvider state={viewState}>
+				<WorkbenchViewProvider
+					item={item}
+					environment={environment}
+					frame={frame}
+					navigation={frame === 'shell' ? hostNavigation : undefined}
+					paneLayoutRenderer={HostRemotePaneLayout}
+					routeParams={routeParams}
+					state={viewState}
+				>
+					<View />
+				</WorkbenchViewProvider>
+			</RemotePaneLayoutStateProvider>
 		</WorkbenchErrorBoundary>
 	)
+}
+
+function workbenchViewStateIdentity(item: WorkbenchLayoutItem): string {
+	const route = item.meta?.route?.path ?? ''
+	return [item.ownerPluginId, item.targetPluginId, item.viewId, item.placement, route]
+		.map(encodeURIComponent)
+		.join(':')
 }
 
 export function workbenchItemMeta(item: WorkbenchLayoutItem): WorkbenchViewMeta {

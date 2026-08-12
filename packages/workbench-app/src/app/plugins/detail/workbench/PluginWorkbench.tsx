@@ -66,8 +66,8 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	const dockPane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_WORKBENCH_DOCK_PANEL_ID,
-			defaultSize: verticalLayout[PLUGIN_WORKBENCH_DOCK_PANEL_ID],
-			minSize: 8,
+			defaultSizePercent: verticalLayout[PLUGIN_WORKBENCH_DOCK_PANEL_ID],
+			minSizePercent: 8,
 			snap: true,
 			visible: dockVisible,
 			onVisibleChange: setDockVisible,
@@ -79,8 +79,8 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	const contentPane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_WORKBENCH_CONTENT_PANEL_ID,
-			defaultSize: verticalLayout[PLUGIN_WORKBENCH_CONTENT_PANEL_ID],
-			minSize: 12,
+			defaultSizePercent: verticalLayout[PLUGIN_WORKBENCH_CONTENT_PANEL_ID],
+			minSizePercent: 12,
 			children: (
 				<div className="plx-pluginWorkbench__workspace">
 					<RightPane config={config} />
@@ -93,8 +93,8 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	const asidePane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_WORKBENCH_ASIDE_PANEL_ID,
-			defaultSize: horizontalLayout[PLUGIN_WORKBENCH_ASIDE_PANEL_ID],
-			minSize: 12,
+			defaultSizePercent: horizontalLayout[PLUGIN_WORKBENCH_ASIDE_PANEL_ID],
+			minSizePercent: 12,
 			snap: true,
 			visible: rightPaneVisible,
 			onVisibleChange: setRightPaneVisible,
@@ -106,8 +106,8 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 	const mainPane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_WORKBENCH_MAIN_PANEL_ID,
-			defaultSize: horizontalLayout[PLUGIN_WORKBENCH_MAIN_PANEL_ID],
-			minSize: 44,
+			defaultSizePercent: horizontalLayout[PLUGIN_WORKBENCH_MAIN_PANEL_ID],
+			minSizePercent: 44,
 			children: isNarrowViewport ? (
 				contentPane.children
 			) : (
@@ -117,8 +117,7 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 					id="pluxel-plugin-workbench-vertical"
 					onLayoutCommit={dockVisible ? handleVerticalLayoutChanged : undefined}
 					orientation="vertical"
-					primary={contentPane}
-					secondary={dockPane}
+					panes={[contentPane, dockPane]}
 					separatorClassName="plx-workbench__resizeHandle plx-workbench__resizeHandle--horizontal"
 					ref={verticalGroupRef}
 				/>
@@ -144,8 +143,7 @@ export function PluginWorkbench({ config }: { config: PluginConfigState }) {
 					id="pluxel-plugin-workbench-horizontal"
 					onLayoutCommit={rightPaneVisible ? handleHorizontalLayoutChanged : undefined}
 					orientation="horizontal"
-					primary={mainPane}
-					secondary={isNarrowViewport ? undefined : asidePane}
+					panes={isNarrowViewport ? [mainPane] : [mainPane, asidePane]}
 					ref={horizontalGroupRef}
 				/>
 			</div>

@@ -32,6 +32,11 @@ standalone View 不伪装该能力。集合页需要打开对象详情时才使�
 宿主对两种操作统一负责路径归一化、route 存在性与 shell frame 校验；`openTab()` 另外按完整路径去重并恢复标题
 metadata。插件不能传入任意宿主 URL，也不应在 bundle 中引入宿主 Tab store、router 或 split implementation。
 
+Remote View 内需要导航 / 主任务 / 检查器布局时，使用 `@pluxel/runtime/workbench/ui` 的
+`WorkbenchPaneLayout` 与 `WorkbenchPane`。插件只声明稳定 ID、`navigation | primary | inspector` role、尺寸约束和内容；
+宿主拥有 split driver、响应式 drawer、键盘调整、焦点管理和持久化。一个布局最多三栏且恰好一个 primary；响应式以布局
+容器宽度为准，中屏先把 inspector 转 drawer，窄屏再把 navigation 转 drawer，转换不卸载 pane children。
+
 浏览器只创建一个 `WorkbenchClientRuntime` 实例。它拥有 layout SSE、catalog、按 target 引用计数的 session、route index
 以及 Remote module revision。一次 target 更新先加载并 setup 所需 module、校验 Contract 和 route，再原子发布 layout
 snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。React 只订阅 snapshot 和渲染，不拥有 artifact 或 route
@@ -49,9 +54,10 @@ snapshot；旧 module 在仍被任一 target snapshot 引用时继续存活。Re
 不为它增加 Vite plugin、codegen、virtual module 或 Pluxel-specific library API。
 
 所有直接 Worksplit import 和 pixel/percentage 转换收敛在
-`packages/workbench-app/src/app/workbench/split/view.tsx`。Workbench App 以百分比保存布局，只在 pointer、keyboard 或
-visibility 变更 commit 后写入 `WorkspaceController`；实时拖动不产生同步持久化。Remote plugin UI 只能使用 `navigate()`、`openTab()` 等
-host capability，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
+`packages/workbench-app/src/app/workbench/split/view.tsx`。Workbench App 以百分比保存布局，只在 pointer、keyboard、显式
+visibility 或 reset commit 后写入 `WorkspaceController`；实时拖动和响应式 drawer 开关不产生持久化。Remote layout state
+按当前原生 Tab、owner、target、View、placement/route 与公开 layout ID 隔离；standalone 使用当前挂载期内存 fallback。
+Remote plugin UI 只能使用公开 host capability 和 Pane Kit，不能依赖 Worksplit、宿主 router、split adapter 或 workspace store。具体文件职责和修改路由见该目录的
 [`README.md`](../packages/workbench-app/src/app/workbench/split/README.md)。
 
 ## Updates and isolation

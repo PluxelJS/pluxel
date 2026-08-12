@@ -321,10 +321,10 @@ export function WorkbenchShell() {
 	const pluginRailPane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_RAIL_PANEL_ID,
-			defaultSize:
+			defaultSizePercent:
 				currentPluginPane?.layout[PLUGIN_RAIL_PANEL_ID] ??
 				DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_RAIL_PANEL_ID],
-			minSize: 14,
+			minSizePercent: 14,
 			snap: true,
 			visible: showPluginNav,
 			onVisibleChange: setPluginPaneVisible,
@@ -335,10 +335,10 @@ export function WorkbenchShell() {
 	const workspacePane = useMemo<SplitViewPane>(
 		() => ({
 			id: PLUGIN_SECTION_CONTENT_PANEL_ID,
-			defaultSize:
+			defaultSizePercent:
 				currentPluginPane?.layout[PLUGIN_SECTION_CONTENT_PANEL_ID] ??
 				DEFAULT_PLUGIN_SECTION_LAYOUT[PLUGIN_SECTION_CONTENT_PANEL_ID],
-			minSize: 56,
+			minSizePercent: 56,
 			children: <WorkspacePaneContent tabId={resolvedActiveTabId} />,
 		}),
 		[currentPluginPane?.layout, resolvedActiveTabId],
@@ -465,8 +465,7 @@ export function WorkbenchShell() {
 											id="pluxel-workbench-main"
 											onLayoutCommit={handleLayoutChanged}
 											orientation="horizontal"
-											primary={primaryPane}
-											secondary={secondaryPane}
+											panes={secondaryPane ? [primaryPane, secondaryPane] : [primaryPane]}
 											ref={pluginLayoutGroupRef}
 										/>
 									</div>

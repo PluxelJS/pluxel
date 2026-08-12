@@ -43,6 +43,7 @@ it('provides every declared shared package and force-replaces only changed remot
 	expect(Object.keys(hostOptions.shared).sort()).toEqual(
 		[...workbenchFederationSharedPackages].sort(),
 	)
+	expect(Object.keys(hostOptions.shared)).not.toContain('@worksplit/react')
 	expect(federation.runtime.registerRemotes).toHaveBeenCalledTimes(2)
 	expect(federation.runtime.registerRemotes).toHaveBeenNthCalledWith(
 		1,

@@ -381,6 +381,8 @@ PLUXEL_MANIFEST_FIELD=acme pnpm build
 
 UI source 只能导入 browser-safe Contract、`@pluxel/runtime/workbench/contract`、
 `@pluxel/runtime/workbench/ui` 和公开 UI peers；不能导入 Plugin、Context、server Extension 或 Node API。
+多栏 View 使用 `@pluxel/runtime/workbench/ui` 的 `WorkbenchPaneLayout` / `WorkbenchPane`；
+`@worksplit/react`、宿主 split adapter、router 与 workspace store 都不是插件依赖，也不得进入 remote artifact。
 完整边界见 [`plugin-authoring.md`](plugin-authoring.md#http-与-workbench-plane)。
 
 ## 构建、检查和发布

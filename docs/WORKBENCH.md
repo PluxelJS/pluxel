@@ -88,6 +88,51 @@ Remote View 的运行环境由当前 target snapshot 显式注入，包含 opaqu
 commands；它不读取全局 Extension context。浏览器 host 直接索引服务端 layout，不再把 placement 转换进第二套 registry。
 catalog、module、route 和 contribution 因而共享同一个 revision 与清理所有者。
 
+## Remote View Pane Kit
+
+Remote View 使用公共 Pane Kit 声明一至三栏的任务布局，不导入宿主 split 实现：
+
+```tsx
+import { WorkbenchPane, WorkbenchPaneLayout } from '@pluxel/runtime/workbench/ui'
+
+export function Simulator() {
+	return (
+		<WorkbenchPaneLayout id="simulator" label="Simulator workspace">
+			<WorkbenchPane
+				id="scenario"
+				role="navigation"
+				title="Scenario"
+				defaultSize={260}
+				minSize={220}
+			>
+				<ScenarioList />
+			</WorkbenchPane>
+			<WorkbenchPane id="conversation" role="primary" title="Conversation" minSize={390}>
+				<Conversation />
+			</WorkbenchPane>
+			<WorkbenchPane
+				id="inspection"
+				role="inspector"
+				title="Inspection"
+				defaultSize={300}
+				minSize={248}
+			>
+				<Inspection />
+			</WorkbenchPane>
+		</WorkbenchPaneLayout>
+	)
+}
+```
+
+每种 role 最多一个，并且必须恰好有一个始终可见的 `primary`。其余 pane 默认可折叠，也可设
+`collapsible={false}`；默认 inspector 在 medium/compact 变 drawer，navigation 只在 compact 变 drawer。
+`useWorkbenchPaneLayout()` 只提供 `show/hide/toggle/reset` 和当前 `mode/activeDrawer`，不暴露 raw split handle、
+router、Tab store 或 `WorkspaceController`。
+
+宿主按 Pane Kit 容器宽度响应，一次只允许一个 drawer，并处理 Escape、scrim、focus trap 与焦点恢复。同一 pane DOM 在
+宽窄切换时保持挂载，表单草稿、composer 和 resource subscription 不会丢失。Shell 的用户布局按当前原生 Tab 和 View
+identity 隔离，只在用户 commit 后写入；standalone 不写宿主工作区状态。
+
 ## Host application projection
 
 Workbench backend 安装时接收 host 已校验的 nullable product snapshot，并通过既有 runtime `/meta` read model 的

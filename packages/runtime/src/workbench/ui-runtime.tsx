@@ -23,6 +23,7 @@ import type { RuntimeTransportClient } from '../web/client'
 import type { SseClientWithNamespaces } from '../web/sse'
 import { createLiveQueryClient, type WorkbenchLiveQueryClient } from './ui-live-query'
 import { createEventsClient, type WorkbenchEventsClient } from './ui-events'
+import type { WorkbenchPaneLayoutRenderer } from './ui-pane'
 
 export { createLiveQueryClient } from './ui-live-query'
 export type { WorkbenchLiveQueryClient, WorkbenchLiveQueryResult } from './ui-live-query'
@@ -60,6 +61,13 @@ export type WorkbenchViewEnvironment = Readonly<{
 	confirm(payload: WorkbenchUiConfirmPayload): Promise<boolean>
 }>
 
+/** @internal Host-owned, render-scoped state isolated from the workspace store implementation. */
+export type WorkbenchViewState = Readonly<{
+	read(scope: string): unknown
+	write(scope: string, value: unknown): void
+	subscribe(scope: string, listener: () => void): () => void
+}>
+
 export type WorkbenchOpenTabInput = Readonly<{
 	/** Plugin-relative route path registered by the current Workbench target. */
 	path: string
@@ -79,8 +87,11 @@ export type WorkbenchNavigation = Readonly<{
 export type WorkbenchViewRuntime = Readonly<{
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
+	frame: 'shell' | 'standalone'
 	navigation?: WorkbenchNavigation
 	routeParams: Readonly<Record<string, string>>
+	state?: WorkbenchViewState
+	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 }>
 
 const EMPTY_ROUTE_PARAMS = Object.freeze({})
@@ -89,19 +100,25 @@ const WorkbenchViewContext = createContext<WorkbenchViewRuntime | null>(null)
 export function WorkbenchViewProvider({
 	item,
 	environment,
+	frame = 'standalone',
 	navigation,
 	routeParams = EMPTY_ROUTE_PARAMS,
+	state,
+	paneLayoutRenderer,
 	children,
 }: {
 	item: WorkbenchLayoutItem
 	environment: WorkbenchViewEnvironment
+	frame?: 'shell' | 'standalone'
 	navigation?: WorkbenchNavigation
 	routeParams?: Readonly<Record<string, string>>
+	state?: WorkbenchViewState
+	paneLayoutRenderer?: WorkbenchPaneLayoutRenderer
 	children: ReactNode
 }) {
 	const value = useMemo<WorkbenchViewRuntime>(
-		() => ({ item, environment, navigation, routeParams }),
-		[environment, item, navigation, routeParams],
+		() => ({ item, environment, frame, navigation, routeParams, state, paneLayoutRenderer }),
+		[environment, frame, item, navigation, paneLayoutRenderer, routeParams, state],
 	)
 	return <WorkbenchViewContext.Provider value={value}>{children}</WorkbenchViewContext.Provider>
 }
@@ -110,10 +127,16 @@ export function useWorkbenchView(): WorkbenchLayoutItem {
 	return useWorkbenchViewRuntime().item
 }
 
-function useWorkbenchViewRuntime(): WorkbenchViewRuntime {
+/** @internal Used by public UI primitives without exposing the host runtime to plugins. */
+export function useWorkbenchViewRuntime(): WorkbenchViewRuntime {
 	const value = useContext(WorkbenchViewContext)
 	if (!value) throw new Error('Workbench View must be rendered by its host runtime')
 	return value
+}
+
+/** @internal Used by public UI primitives without exposing the host workspace store. */
+export function useWorkbenchViewState(): WorkbenchViewState | undefined {
+	return useWorkbenchViewRuntime().state
 }
 
 export type WorkbenchResourceClient<Resource> = Resource extends { kind: 'rpc' }

@@ -3,7 +3,10 @@ import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import {
 	createWorkbenchUi,
+	WorkbenchPane,
+	WorkbenchPaneLayout,
 	type WorkbenchHost,
+	type WorkbenchPaneLayoutControls,
 	type WorkbenchRpcClient,
 } from '@pluxel/runtime/workbench/ui'
 import { createRuntimeContext } from '@pluxel/runtime/test'
@@ -183,6 +186,17 @@ describe('Workbench authoring API', () => {
 			meta?: string
 		}>()
 		expectTypeOf<WorkbenchHost['routeParams']>().toEqualTypeOf<Readonly<Record<string, string>>>()
+	})
+
+	it('exports the host-neutral Pane Kit without exposing workspace or split internals', () => {
+		expect(WorkbenchPane).toBeTypeOf('function')
+		expect(WorkbenchPaneLayout).toBeTypeOf('function')
+		expectTypeOf<WorkbenchPaneLayoutControls['show']>().toBeFunction()
+		expectTypeOf<WorkbenchPaneLayoutControls['hide']>().toBeFunction()
+		expectTypeOf<WorkbenchPaneLayoutControls['toggle']>().toBeFunction()
+		expectTypeOf<WorkbenchHost>().not.toHaveProperty('state')
+		expectTypeOf<WorkbenchHost>().not.toHaveProperty('workspace')
+		expectTypeOf<WorkbenchHost>().not.toHaveProperty('splitView')
 	})
 
 	it('exposes exactly the declared UI views', () => {

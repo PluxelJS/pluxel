@@ -21,6 +21,18 @@ export {
 	type WorkbenchViewComponent,
 } from './workbench/ui-runtime'
 export {
+	WorkbenchPane,
+	WorkbenchPaneLayout,
+	useWorkbenchPaneLayout,
+	type WorkbenchPaneCollapseAt,
+	type WorkbenchPaneLayoutControls,
+	type WorkbenchPaneLayoutMode,
+	type WorkbenchPaneLayoutProps,
+	type WorkbenchPaneProps,
+	type WorkbenchPaneRole,
+	type WorkbenchPaneSize,
+} from './workbench/ui-pane'
+export {
 	RuntimeTransportClientProvider,
 	type RuntimeTransportClientProviderProps,
 	useRuntimeTransportClient,

@@ -37,6 +37,15 @@ Workbench route / plugin screen
 This is entirely a browser runtime path. It has no generated file, Vite hook, remote contract, or
 server session.
 
+Remote View Pane Kit adds a declarative layer above this private adapter:
+
+```text
+Remote WorkbenchPane declarations
+        -> host validation bridge
+        -> RemotePaneLayout container policy and tab-scoped state
+        -> WorkbenchSplitView adapter
+```
+
 ## Rules
 
 - Route and screen components should import from `workbench/split`.
@@ -45,7 +54,7 @@ server session.
 - `WorkbenchSplitView` receives the current percentage `layout` and emits `onLayoutCommit` only
   after user pointer or keyboard resizing commits.
 - Pane visibility state is scoped to the active workbench tab unless explicitly section-owned.
-- Remote plugin UI must use host capabilities such as `navigate()` and `openTab()` and must not import this adapter,
+- Remote plugin UI must use public capabilities such as `navigate()`, `openTab()`, and the Pane Kit and must not import this adapter,
   Worksplit, the Workbench router, or the workspace store.
 - Change this adapter for Pluxel ownership, persistence, or tab behavior. Change Worksplit itself
   only for a reusable split-view behavior defect or capability.
