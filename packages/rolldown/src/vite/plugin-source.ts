@@ -103,15 +103,19 @@ export function pluxelRuntimeSourceVitePlugins(
 ): PluginOption[] {
 	const configPlugin: Plugin = {
 		name: options.name ?? 'pluxel:runtime-source',
-		config() {
+		config(config) {
 			return {
-				server: {
-					watch: {
-						// Generated package proxies and artifacts are not application source.
-						// Keep ignoring them, including stale v1 whole-checkout links.
-						ignored: ['**/.pluxel/**'],
-					},
-				},
+				...(config.server?.watch === null
+					? {}
+					: {
+							server: {
+								watch: {
+									// Generated package proxies and artifacts are not application source.
+									// Keep ignoring them, including stale v1 whole-checkout links.
+									ignored: ['**/.pluxel/**'],
+								},
+							},
+						}),
 				resolve: {
 					conditions: [...PLUXEL_SOURCE_RESOLVE_CONDITIONS],
 					externalConditions: [...PLUXEL_EXTERNAL_RESOLVE_CONDITIONS],

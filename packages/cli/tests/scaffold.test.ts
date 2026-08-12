@@ -278,7 +278,7 @@ describe('scaffold template rendering', () => {
 		)
 		expect(workspaceSource).toContain("'@pluxel/runtime': ^0.3.0")
 		expect(parseYaml(workspaceSource)).toMatchObject({
-			packages: ['web', 'packages/*', 'plugins/*'],
+			packages: ['web', 'packages/*', 'plugins/*', 'plugins/*/*'],
 			catalog: { '@pluxel/runtime': '^0.3.0' },
 		})
 		expect(
