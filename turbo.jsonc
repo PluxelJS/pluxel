@@ -170,7 +170,14 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/workbench-app#build": {
-			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dynamic#build", "valibot-form#build"],
+			"dependsOn": [
+				"@gqlens/react#build",
+				"@gqlens/vite#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dynamic#build",
+				"@worksplit/react#build",
+				"valibot-form#build",
+			],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -260,6 +267,17 @@
 			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
 			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
 			"dependsOn": ["@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/workbench-app#typecheck": {
+			// Vendored UI packages expose their built declarations by default. A clean checkout has
+			// no dist files, so typecheck must not race those declaration builds.
+			"dependsOn": [
+				"@gqlens/react#build",
+				"@gqlens/vite#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
+				"@worksplit/react#build",
+			],
 		},
 		"@pluxel/plugins-host#typecheck": {
 			// The maintainer host is the explicit dist-boundary smoke check.
