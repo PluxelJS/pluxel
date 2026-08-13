@@ -58,6 +58,10 @@ catalog:
 managePackageManagerVersions: false
 
 packageExtensions:
+  '@worksplit/react@0.1.0':
+    devDependencies:
+      '@types/react': 'catalog:'
+      '@types/react-dom': 'catalog:'
   '@mantine/hooks@9.4.1':
     peerDependencies:
       react-dom: ^19.2.0

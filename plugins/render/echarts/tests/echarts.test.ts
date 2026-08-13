@@ -60,7 +60,7 @@ beforeAll(async () => {
 		minify: false,
 	})
 	workerUrl = pathToFileURL(outFile)
-})
+}, 30_000)
 
 afterAll(async () => {
 	await rm(workerBuildDir, { recursive: true, force: true })
