@@ -249,6 +249,23 @@
 			],
 			"outputLogs": "errors-only",
 		},
+		"@gqlens/codegen#test": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@gqlens/react#test": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@gqlens/vite#test": {
+			"dependsOn": [
+				"@gqlens/codegen#build",
+				"@gqlens/core#build",
+				"@pluxel/test#build",
+				"@pluxel/runtime#build",
+			],
+		},
+		"@worksplit/react#test": {
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@worksplit/core#build"],
+		},
 		"typecheck": {
 			// Workspace consumers validate the published runtime declaration boundary.
 			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
@@ -262,6 +279,23 @@
 				"!**/docs/**",
 			],
 			"outputLogs": "errors-only",
+		},
+		"@gqlens/codegen#typecheck": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
+		},
+		"@gqlens/react#typecheck": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
+		},
+		"@gqlens/vite#typecheck": {
+			"dependsOn": [
+				"@gqlens/codegen#build",
+				"@gqlens/core#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
+			],
+		},
+		"@worksplit/react#typecheck": {
+			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/core#build"],
 		},
 		"@pluxel/package-manager#typecheck": {
 			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
