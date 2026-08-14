@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
-import { createServer, type Plugin } from 'vite'
+import { createServer, type InlineConfig, type Plugin, type ViteDevServer } from 'vite'
 import { pluxelRuntimeSourceVitePlugins } from '@pluxel/rolldown/vite'
 
 import {
@@ -12,6 +12,28 @@ import {
 	getPluxelViteSsrModuleRunner,
 	importViteSsrModule,
 } from '../src/vite'
+
+function createTestViteServer(config: InlineConfig): Promise<ViteDevServer> {
+	return createServer({
+		logLevel: 'silent',
+		server: { middlewareMode: true },
+		appType: 'custom',
+		optimizeDeps: { noDiscovery: true, include: [] },
+		...config,
+	})
+}
+
+async function withTestViteServer<T>(
+	config: InlineConfig,
+	run: (server: ViteDevServer) => Promise<T>,
+): Promise<T> {
+	const server = await createTestViteServer(config)
+	try {
+		return await run(server)
+	} finally {
+		await server.close()
+	}
+}
 
 describe('runtime-dev Vite plugin stack', () => {
 	it('declares the Workbench client graph before optimizer startup', () => {
@@ -105,7 +127,8 @@ describe('runtime-dev Vite plugin stack', () => {
 	})
 
 	it('applies preprocessor semantics through the real Vite module runner', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.pluxel-runtime-dev-source-pipeline-'))
+		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
+		const root = fixture.path
 		const modulePath = join(root, 'plugin.ts')
 		await writeFile(
 			modulePath,
@@ -121,159 +144,138 @@ describe('runtime-dev Vite plugin stack', () => {
 			].join('\n'),
 		)
 
-		let server: ViteDevServer | undefined
-		try {
-			server = await createServer({
+		await withTestViteServer(
+			{
 				root,
-				logLevel: 'silent',
-				server: { middlewareMode: true },
-				appType: 'custom',
 				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
-			})
-			const mod = await importViteSsrModule<{ branch: string }>(server, modulePath)
-			expect(mod.branch).toBe('included')
-		} finally {
-			await server?.close()
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+			async (server) => {
+				const mod = await importViteSsrModule<{ branch: string }>(server, modulePath)
+				expect(mod.branch).toBe('included')
+			},
+		)
 	})
 
 	it('uses Node conditions for external packages in the real Vite runner', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-node-external-conditions-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
-		try {
-			await writePackage(root, 'fixture-bundler-condition', {
-				name: 'fixture-bundler-condition',
-				type: 'module',
-				exports: { module: './bundler.js', default: './node.cjs' },
-			})
-			await Promise.all([
-				writeFile(
-					join(root, 'node_modules', 'fixture-bundler-condition', 'bundler.js'),
-					"import './missing-extension'\nexport default 'bundler'\n",
-				),
-				writeFile(
-					join(root, 'node_modules', 'fixture-bundler-condition', 'node.cjs'),
-					"module.exports = 'node'\n",
-				),
-				writeFile(
-					entryPath,
-					"import selected from 'fixture-bundler-condition'\nexport { selected }\n",
-				),
-			])
+		await writePackage(root, 'fixture-bundler-condition', {
+			name: 'fixture-bundler-condition',
+			type: 'module',
+			exports: { module: './bundler.js', default: './node.cjs' },
+		})
+		await Promise.all([
+			writeFile(
+				join(root, 'node_modules', 'fixture-bundler-condition', 'bundler.js'),
+				"import './missing-extension'\nexport default 'bundler'\n",
+			),
+			writeFile(
+				join(root, 'node_modules', 'fixture-bundler-condition', 'node.cjs'),
+				"module.exports = 'node'\n",
+			),
+			writeFile(
+				entryPath,
+				"import selected from 'fixture-bundler-condition'\nexport { selected }\n",
+			),
+		])
 
-			let server: ViteDevServer | undefined
-			try {
-				server = await createServer({
-					root,
-					logLevel: 'silent',
-					server: { middlewareMode: true },
-					appType: 'custom',
-					plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
-				})
+		await withTestViteServer(
+			{
+				root,
+				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+			},
+			async (server) => {
 				const mod = await importViteSsrModule<{ selected: string }>(server, entryPath)
 				expect(mod.selected).toBe('node')
-			} finally {
-				await server?.close()
-			}
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+		)
 	})
 
 	it('classifies CommonJS and native packages without externalization config', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-host-modules-'))
-		try {
-			await writePackage(root, 'fixture-commonjs', {
-				name: 'fixture-commonjs',
-				type: 'commonjs',
-				main: './index.js',
-			})
-			await writePackage(root, 'fixture-native', {
-				name: 'fixture-native',
-				type: 'module',
-				main: './index.js',
-				napi: { name: 'fixture-native' },
-			})
-			await writePackage(root, 'fixture-esm', {
-				name: 'fixture-esm',
-				type: 'module',
-				main: './index.js',
-			})
-			await writePackage(root, 'fixture-dual', {
-				name: 'fixture-dual',
-				type: 'module',
-				exports: { import: './index.mjs', require: './index.cjs' },
-			})
-			await Promise.all([
-				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
-				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.cjs'), 'module.exports = 42\n'),
-			])
-			const explicitCommonjs = join(root, 'node_modules', 'fixture-esm', 'explicit.cjs')
-			const explicitNative = join(root, 'node_modules', 'fixture-esm', 'binding.node')
-			await Promise.all([writeFile(explicitCommonjs, ''), writeFile(explicitNative, '')])
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 
-			const classifier = createHostModuleClassifier({ root })
-			await expect(classifier.classifySpecifier('fixture-commonjs')).resolves.toMatchObject({
-				packageName: 'fixture-commonjs',
-				format: 'commonjs',
-				reason: 'commonjs',
-			})
-			await expect(classifier.classifySpecifier('fixture-native')).resolves.toMatchObject({
-				packageName: 'fixture-native',
-				format: 'module',
-				reason: 'native',
-			})
-			await expect(classifier.classifySpecifier('fixture-esm')).resolves.toBeNull()
-			await expect(classifier.classifySpecifier('fixture-dual')).resolves.toBeNull()
-			await expect(classifier.classifyFile(explicitCommonjs)).resolves.toMatchObject({
-				format: 'commonjs',
-				reason: 'commonjs',
-			})
-			await expect(classifier.classifyFile(explicitNative)).resolves.toMatchObject({
-				format: 'commonjs',
-				reason: 'native',
-			})
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
+		await writePackage(root, 'fixture-commonjs', {
+			name: 'fixture-commonjs',
+			type: 'commonjs',
+			main: './index.js',
+		})
+		await writePackage(root, 'fixture-native', {
+			name: 'fixture-native',
+			type: 'module',
+			main: './index.js',
+			napi: { name: 'fixture-native' },
+		})
+		await writePackage(root, 'fixture-esm', {
+			name: 'fixture-esm',
+			type: 'module',
+			main: './index.js',
+		})
+		await writePackage(root, 'fixture-dual', {
+			name: 'fixture-dual',
+			type: 'module',
+			exports: { import: './index.mjs', require: './index.cjs' },
+		})
+		await Promise.all([
+			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
+			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.cjs'), 'module.exports = 42\n'),
+		])
+		const explicitCommonjs = join(root, 'node_modules', 'fixture-esm', 'explicit.cjs')
+		const explicitNative = join(root, 'node_modules', 'fixture-esm', 'binding.node')
+		await Promise.all([writeFile(explicitCommonjs, ''), writeFile(explicitNative, '')])
+
+		const classifier = createHostModuleClassifier({ root })
+		await expect(classifier.classifySpecifier('fixture-commonjs')).resolves.toMatchObject({
+			packageName: 'fixture-commonjs',
+			format: 'commonjs',
+			reason: 'commonjs',
+		})
+		await expect(classifier.classifySpecifier('fixture-native')).resolves.toMatchObject({
+			packageName: 'fixture-native',
+			format: 'module',
+			reason: 'native',
+		})
+		await expect(classifier.classifySpecifier('fixture-esm')).resolves.toBeNull()
+		await expect(classifier.classifySpecifier('fixture-dual')).resolves.toBeNull()
+		await expect(classifier.classifyFile(explicitCommonjs)).resolves.toMatchObject({
+			format: 'commonjs',
+			reason: 'commonjs',
+		})
+		await expect(classifier.classifyFile(explicitNative)).resolves.toMatchObject({
+			format: 'commonjs',
+			reason: 'native',
+		})
 	})
 
 	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-host-module-dual-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
-		try {
-			await writePackage(root, 'fixture-dual', {
-				name: 'fixture-dual',
-				type: 'module',
-				exports: { import: './index.mjs', require: './index.cjs' },
-			})
-			await Promise.all([
-				writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
-				writeFile(
-					join(root, 'node_modules', 'fixture-dual', 'index.cjs'),
-					"throw new Error('CJS entry must not be evaluated')\n",
-				),
-				writeFile(entryPath, "import answer from 'fixture-dual'\nexport { answer }\n"),
-			])
+		await writePackage(root, 'fixture-dual', {
+			name: 'fixture-dual',
+			type: 'module',
+			exports: { import: './index.mjs', require: './index.cjs' },
+		})
+		await Promise.all([
+			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
+			writeFile(
+				join(root, 'node_modules', 'fixture-dual', 'index.cjs'),
+				"throw new Error('CJS entry must not be evaluated')\n",
+			),
+			writeFile(entryPath, "import answer from 'fixture-dual'\nexport { answer }\n"),
+		])
 
-			let server: ViteDevServer | undefined
-			try {
-				server = await createServer({
-					root,
-					logLevel: 'silent',
-					server: { middlewareMode: true },
-					appType: 'custom',
-					plugins: [createHostModuleVitePlugin()],
-				})
+		await withTestViteServer(
+			{
+				root,
+				plugins: [createHostModuleVitePlugin()],
+			},
+			async (server) => {
 				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
 				expect(mod.answer).toBe(42)
-			} finally {
-				await server?.close()
-			}
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+		)
 	})
 
 	it('applies host-module externalization only to server environments', async () => {
@@ -295,111 +297,86 @@ describe('runtime-dev Vite plugin stack', () => {
 	})
 
 	it('loads a zero-config CommonJS package through the real Vite SSR runner', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-host-module-vite-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
-		try {
-			await writePackage(
-				root,
-				'fixture-commonjs',
-				{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
-				'module.exports = { answer: 42 }\n',
-			)
-			await writeFile(
-				entryPath,
-				"import value from 'fixture-commonjs'\nexport const answer = value.answer\n",
-			)
+		await writePackage(
+			root,
+			'fixture-commonjs',
+			{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
+			'module.exports = { answer: 42 }\n',
+		)
+		await writeFile(
+			entryPath,
+			"import value from 'fixture-commonjs'\nexport const answer = value.answer\n",
+		)
 
-			let server: ViteDevServer | undefined
-			try {
-				server = await createServer({
-					root,
-					logLevel: 'silent',
-					server: { middlewareMode: true },
-					appType: 'custom',
-					plugins: [createHostModuleVitePlugin()],
-				})
+		await withTestViteServer(
+			{
+				root,
+				plugins: [createHostModuleVitePlugin()],
+			},
+			async (server) => {
 				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
 				expect(mod.answer).toBe(42)
-			} finally {
-				await server?.close()
-			}
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+		)
 	})
 
 	it('loads CommonJS from Node while transforming distribution source entries', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-distribution-host-module-vite-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const entryPath = join(root, 'entry.ts')
-		try {
-			await writePackage(
-				root,
-				'fixture-commonjs',
-				{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
-				'module.exports = { answer: 42 }\n',
-			)
-			await writeFile(
-				entryPath,
-				"import value from 'fixture-commonjs'\nexport const answer: number = value.answer\n",
-			)
+		await writePackage(
+			root,
+			'fixture-commonjs',
+			{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
+			'module.exports = { answer: 42 }\n',
+		)
+		await writeFile(
+			entryPath,
+			"import value from 'fixture-commonjs'\nexport const answer: number = value.answer\n",
+		)
 
-			let server: ViteDevServer | undefined
-			try {
-				server = await createServer({
-					root,
-					logLevel: 'silent',
-					server: { middlewareMode: true },
-					appType: 'custom',
-					plugins: pluxelRuntimeSourceVitePlugins({
-						packageMode: 'distribution',
-						lintGuard: false,
-						configSource: false,
-					}),
-				})
+		await withTestViteServer(
+			{
+				root,
+				plugins: pluxelRuntimeSourceVitePlugins({
+					packageMode: 'distribution',
+					lintGuard: false,
+					configSource: false,
+				}),
+			},
+			async (server) => {
 				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
 				expect(mod.answer).toBe(42)
-			} finally {
-				await server?.close()
-			}
-		} finally {
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+		)
 	})
 
 	it('loads SSR modules through the source-map aware Vite module runner', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-runtime-dev-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const modulePath = join(root, 'probe.ts')
 		await writeFile(
 			modulePath,
 			['export function captureStack() {', "  return new Error('probe').stack", '}', ''].join('\n'),
 		)
 
-		let server: ViteDevServer | undefined
-		try {
-			server = await createServer({
-				root,
-				logLevel: 'silent',
-				server: { middlewareMode: true },
-				appType: 'custom',
-			})
+		await withTestViteServer({ root }, async (server) => {
 			const mod = await importViteSsrModule<{ captureStack(): string }>(server, modulePath)
 
 			expect(mod.captureStack()).toMatch(/probe\.ts:2:\d+/)
-		} finally {
-			await server?.close()
-			await rm(root, { recursive: true, force: true })
-		}
+		})
 	})
 
 	it('owns one SSR runner per Vite server and closes it with the server', async () => {
-		const root = await mkdtemp(join(tmpdir(), 'pluxel-runtime-dev-runner-owner-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		let runner: ReturnType<typeof getPluxelViteSsrModuleRunner> | undefined
 		let runnerOpenDuringCloseBundle = false
-		const server = await createServer({
+		const server = await createTestViteServer({
 			root,
-			logLevel: 'silent',
-			server: { middlewareMode: true },
-			appType: 'custom',
 			plugins: [
 				{
 					name: 'test:runner-close-order',
@@ -417,11 +394,11 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(runnerOpenDuringCloseBundle).toBe(true)
 		expect(first.isClosed()).toBe(true)
 		await server.close()
-		await rm(root, { recursive: true, force: true })
 	})
 
 	it('emits constructor dependency metadata through the real Vite module runner', async () => {
-		const root = await mkdtemp(join(process.cwd(), '.pluxel-runtime-dev-metadata-'))
+		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
+		const root = fixture.path
 		const modulePath = join(root, 'plugin.ts')
 		await writeFile(
 			modulePath,
@@ -438,24 +415,19 @@ describe('runtime-dev Vite plugin stack', () => {
 			].join('\n'),
 		)
 
-		let server: ViteDevServer | undefined
-		try {
-			server = await createServer({
+		await withTestViteServer(
+			{
 				root,
-				logLevel: 'silent',
-				server: { middlewareMode: true },
-				appType: 'custom',
 				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
-			})
-			const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
-				server,
-				modulePath,
-			)
-			expect(mod.params).toEqual([mod.Provider])
-		} finally {
-			await server?.close()
-			await rm(root, { recursive: true, force: true })
-		}
+			},
+			async (server) => {
+				const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
+					server,
+					modulePath,
+				)
+				expect(mod.params).toEqual([mod.Provider])
+			},
+		)
 	})
 })
 

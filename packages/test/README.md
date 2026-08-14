@@ -20,6 +20,7 @@ implementation across test packages.
 
 Workspace tests can use `@pluxel/test/fixtures` for VFS-backed fixtures. External consumers should still prefer bringing their own fixture/fs library.
 Each fixture owns its own filesystem instance. Prefer `await using fixture = await createFixture(...)`, then pass `fixture.fs` / `fixture.fsp` into the code under test.
+Use `createDiskFixture(...)` only when a real watcher, process, or toolchain requires native filesystem semantics. Disk fixture disposal retries transient recursive-removal failures from late-closing file handles.
 
 ```ts
 import { createFixture } from '@pluxel/test/fixtures'

@@ -1,32 +1,26 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createDiskFixture } from '@pluxel/test/fixtures'
+import { describe, expect, it } from 'vitest'
 import { createServer, normalizePath, type Plugin, type ViteDevServer } from 'vite'
 import { dynamicRuntimeVitePlugin } from '../src/vite.ts'
 
-const roots: string[] = []
-
-afterEach(async () => {
-	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
-})
-
 describe('dynamic Vite config generations', () => {
 	it('retries a config generation after startup failure and awaits host cleanup on close', async () => {
-		const root = await mkdtemp(resolve(process.cwd(), '.vite-config-reload-'))
-		roots.push(root)
-		const configPath = resolve(root, 'pluxel.dynamic.ts')
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
-				version: 2,
-				profile: 'test',
-				defaults: { roots: [] },
-				profiles: { test: { enabled: [] } },
-			}),
+		await using fixture = await createDiskFixture(
+			{
+				'pnpm-workspace.yaml': 'packages: []\n',
+				'pluxel.loader.hmr.jsonc': JSON.stringify({
+					version: 2,
+					profile: 'test',
+					defaults: { roots: [] },
+					profiles: { test: { enabled: [] } },
+				}),
+			},
+			{ tempDir: process.cwd() },
 		)
-		await writeFile(
-			configPath,
+		const root = fixture.path
+		const configPath = fixture.getPath('pluxel.dynamic.ts')
+		await fixture.writeFile(
+			'pluxel.dynamic.ts',
 			[
 				"import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'",
 				'export default defineDynamicRuntimeConfig({',
@@ -58,7 +52,9 @@ describe('dynamic Vite config generations', () => {
 		const server = await createServer({
 			configFile: false,
 			root,
+			cacheDir: fixture.getPath('.vite-cache'),
 			logLevel: 'silent',
+			optimizeDeps: { noDiscovery: true, include: [] },
 			plugins: [
 				...plugins,
 				{

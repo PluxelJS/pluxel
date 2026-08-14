@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createDiskFixture } from '@pluxel/test/fixtures'
+import { describe, expect, it } from 'vitest'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../src/hmr/host.ts'
 import {
 	DynamicPluginSourceRequirementError,
@@ -10,19 +10,13 @@ import {
 } from '../src/source-producer.ts'
 import { resolveDynamicPluginSources } from '../src/sources.ts'
 
-const roots: string[] = []
-
-afterEach(async () => {
-	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
-})
-
 describe('dynamic plugin sources', () => {
 	it('discovers current entries and retains missing directories as watch roots', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-sources-'))
-		roots.push(root)
-		await mkdir(resolve(root, 'managed'), { recursive: true })
-		await writeFile(resolve(root, 'managed', 'alpha.mjs'), 'export const alpha = true\n')
-		await writeFile(resolve(root, 'managed', 'ignored.json'), '{}\n')
+		await using fixture = await createDiskFixture({
+			'managed/alpha.mjs': 'export const alpha = true\n',
+			'managed/ignored.json': '{}\n',
+		})
+		const root = fixture.path
 
 		const resolved = await resolveDynamicPluginSources(root, [
 			{ kind: 'directory', path: 'managed', include: ['*.mjs'] },
@@ -54,18 +48,16 @@ describe('dynamic plugin sources', () => {
 	})
 
 	it('loads and unloads a plugin added to a previously missing source directory', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-source-lifecycle-'))
-		roots.push(root)
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
+		await using fixture = await createDiskFixture({
+			'pnpm-workspace.yaml': 'packages: []\n',
+			'pluxel.loader.hmr.jsonc': JSON.stringify({
 				version: 2,
 				profile: 'test',
 				defaults: { roots: [] },
 				profiles: { test: { enabled: [] } },
 			}),
-		)
+		})
+		const root = fixture.path
 
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
@@ -135,18 +127,16 @@ describe('dynamic plugin sources', () => {
 	}, 60_000)
 
 	it('starts fixed source producers only after their source watcher is installed', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-source-producer-'))
-		roots.push(root)
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
+		await using fixture = await createDiskFixture({
+			'pnpm-workspace.yaml': 'packages: []\n',
+			'pluxel.loader.hmr.jsonc': JSON.stringify({
 				version: 2,
 				profile: 'test',
 				defaults: { roots: [] },
 				profiles: { test: { enabled: [] } },
 			}),
-		)
+		})
+		const root = fixture.path
 
 		class SourceProducerPlugin extends BasePlugin {
 			override async init(): Promise<void> {

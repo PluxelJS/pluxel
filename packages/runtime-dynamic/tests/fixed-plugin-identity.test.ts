@@ -1,57 +1,46 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createDiskFixture } from '@pluxel/test/fixtures'
+import { describe, expect, it } from 'vitest'
 import { workspaceRoot } from './hmr/_paths.ts'
 
 const execFileAsync = promisify(execFile)
-const roots: string[] = []
-
-afterEach(async () => {
-	await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
-})
 
 describe('dynamic fixed plugin module identity', () => {
 	it('evaluates config fixed providers and mutable consumers in one real Vite namespace', async () => {
-		const root = await mkdtemp(resolve(workspaceRoot, 'packages/runtime-dynamic/tests/.identity-'))
-		roots.push(root)
-		await mkdir(resolve(root, 'entries'), { recursive: true })
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
-				version: 2,
-				profile: 'test',
-				defaults: { roots: [] },
-				profiles: { test: { enabled: [] } },
-			}),
+		await using fixture = await createDiskFixture(
+			{
+				'pnpm-workspace.yaml': 'packages: []\n',
+				'pluxel.loader.hmr.jsonc': JSON.stringify({
+					version: 2,
+					profile: 'test',
+					defaults: { roots: [] },
+					profiles: { test: { enabled: [] } },
+				}),
+				'fixed-provider.ts': [
+					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"@Plugin({ name: 'FixedProvider' })",
+					'export class FixedProvider extends BasePlugin { readonly value = 42 }',
+					'',
+				].join('\n'),
+				'entries/mutable-consumer.ts': [
+					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"import { FixedProvider } from '../fixed-provider'",
+					"@Plugin({ name: 'MutableConsumer' })",
+					'export class MutableConsumer extends BasePlugin {',
+					'  constructor(readonly provider: FixedProvider) { super() }',
+					'}',
+					'',
+				].join('\n'),
+			},
+			{ tempDir: resolve(workspaceRoot, 'packages/runtime-dynamic/tests') },
 		)
-		await writeFile(
-			resolve(root, 'fixed-provider.ts'),
-			[
-				"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-				"@Plugin({ name: 'FixedProvider' })",
-				'export class FixedProvider extends BasePlugin { readonly value = 42 }',
-				'',
-			].join('\n'),
-		)
-		await writeFile(
-			resolve(root, 'entries/mutable-consumer.ts'),
-			[
-				"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-				"import { FixedProvider } from '../fixed-provider'",
-				"@Plugin({ name: 'MutableConsumer' })",
-				'export class MutableConsumer extends BasePlugin {',
-				'  constructor(readonly provider: FixedProvider) { super() }',
-				'}',
-				'',
-			].join('\n'),
-		)
+		const root = fixture.path
 		const configPath = resolve(root, 'pluxel.dynamic.ts')
-		await writeFile(
-			configPath,
+		await fixture.writeFile(
+			'pluxel.dynamic.ts',
 			[
 				"import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'",
 				"import { FixedProvider } from './fixed-provider'",
@@ -74,8 +63,8 @@ describe('dynamic fixed plugin module identity', () => {
 		const viteEntry = pathToFileURL(
 			resolve(workspaceRoot, 'packages/runtime-dynamic/src/vite.ts'),
 		).href
-		await writeFile(
-			runner,
+		await fixture.writeFile(
+			'verify.mts',
 			[
 				"import assert from 'node:assert/strict'",
 				"import { resolve } from 'node:path'",
@@ -87,6 +76,7 @@ describe('dynamic fixed plugin module identity', () => {
 				'  configFile: false,',
 				"  root: resolve(workspaceRoot, 'packages/runtime-dynamic'),",
 				"  cacheDir: resolve(root, '.vite-cache'),",
+				'  optimizeDeps: { noDiscovery: true, include: [] },',
 				`  plugins: dynamicRuntimeVitePlugin({ config: ${JSON.stringify(configPath)} }),`,
 				'  server: { middlewareMode: true, watch: { usePolling: true, interval: 20 } },',
 				'})',

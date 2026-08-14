@@ -1,8 +1,6 @@
 import '@pluxel/runtime/services/vault'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../../src/hmr/host.ts'
 
@@ -36,18 +34,16 @@ describe('dynamic host eager service preflight', () => {
 	it('prepares eager services before the initial plugin graph starts', async () => {
 		cleanupCount = 0
 		stopCount = 0
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-dynamic-eager-service-'))
-		await mkdir(root, { recursive: true })
-		await writeFile(resolve(root, 'pnpm-workspace.yaml'), 'packages: []\n')
-		await writeFile(
-			resolve(root, 'pluxel.loader.hmr.jsonc'),
-			JSON.stringify({
+		await using fixture = await createDiskFixture({
+			'pnpm-workspace.yaml': 'packages: []\n',
+			'pluxel.loader.hmr.jsonc': JSON.stringify({
 				version: 2,
 				profile: 'test',
 				defaults: { roots: [] },
 				profiles: { test: { enabled: [] } },
 			}),
-		)
+		})
+		const root = fixture.path
 
 		let host: Awaited<ReturnType<typeof bootPlannedLoaderHmrHost>> | undefined
 		try {
@@ -85,7 +81,6 @@ describe('dynamic host eager service preflight', () => {
 			await host?.stop()
 			for (const timer of liveTimers) clearInterval(timer)
 			liveTimers.clear()
-			await rm(root, { recursive: true, force: true })
 		}
 	}, 30_000)
 })

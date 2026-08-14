@@ -1,6 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it, vi } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
@@ -875,10 +873,11 @@ describe('@pluxel/runtime-static', () => {
 	})
 
 	it('serves a packaged application SPA when Workbench is disabled', async () => {
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-static-spa-'))
-		await mkdir(resolve(root, 'public/assets'), { recursive: true })
-		await writeFile(resolve(root, 'public/index.html'), '<title>Static App</title>', 'utf8')
-		await writeFile(resolve(root, 'public/assets/app.js'), 'export const ready = true', 'utf8')
+		await using fixture = await createDiskFixture({
+			'public/index.html': '<title>Static App</title>',
+			'public/assets/app.js': 'export const ready = true',
+		})
+		const root = fixture.path
 
 		const runtime = await runStaticNodeApplication(
 			defineStaticRuntime({
@@ -913,7 +912,6 @@ describe('@pluxel/runtime-static', () => {
 			expect(apiMiss.status).toBe(404)
 		} finally {
 			await Promise.all([runtime.stop(), runtime.stop()])
-			await rm(root, { recursive: true, force: true })
 		}
 	})
 
@@ -951,7 +949,8 @@ describe('@pluxel/runtime-static', () => {
 			}
 		}
 
-		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-static-disconnect-'))
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
 		const runtime = await runStaticNodeApplication(
 			defineStaticRuntime({
 				name: 'static-node-disconnect',
@@ -988,7 +987,6 @@ describe('@pluxel/runtime-static', () => {
 			})
 		} finally {
 			await runtime.stop()
-			await rm(root, { recursive: true, force: true })
 		}
 	})
 

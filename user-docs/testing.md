@@ -202,6 +202,9 @@ it('discovers a plugin package', async () => {
 每个 fixture 拥有隔离的 filesystem；优先用 `await using` 自动释放，并把 `fixture.fs`/`fixture.fsp`
 显式传给被测代码。普通插件业务测试不需要 VFS fixture。
 
+默认 fixture 位于隔离的内存文件系统。只有 watcher、子进程或构建工具必须使用原生文件系统时，才改用
+`createDiskFixture`；继续配合 `await using`，让 fixture 在资源关闭后自动清理，并对短暂的文件占用进行有限重试。
+
 ## Monorepo 与 CI
 
 每个插件保留自己的 `vitest.config.ts` 最容易理解。需要根级自动发现时：

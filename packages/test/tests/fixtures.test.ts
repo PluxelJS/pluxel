@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { createDiskFixture, createFixture } from '@pluxel/test/fixtures'
 
 describe('@pluxel/test/fixtures', () => {
-	it('creates fixtures on disk when requested explicitly', async () => {
+	it('creates and idempotently disposes disk fixtures', async () => {
 		let filePath = ''
 		{
 			await using fixture = await createDiskFixture({
@@ -14,6 +14,14 @@ describe('@pluxel/test/fixtures', () => {
 			filePath = fixture.getPath('plain.txt')
 			expect(fixture.fs.existsSync(filePath)).toBe(true)
 			expect(filePath.startsWith(fixture.root)).toBe(true)
+			await fixture.writeFile('written.txt', 'written through fixture\n')
+			await expect(fixture.readFile('written.txt', 'utf8')).resolves.toBe(
+				'written through fixture\n',
+			)
+			await expect(fixture.exists('written.txt')).resolves.toBe(true)
+
+			await fixture[Symbol.asyncDispose]()
+			expect(realPathExists(filePath)).toBe(false)
 		}
 
 		expect(realPathExists(filePath)).toBe(false)
