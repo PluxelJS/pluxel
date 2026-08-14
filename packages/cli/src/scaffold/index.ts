@@ -1,9 +1,15 @@
 import { cancel, intro, isCancel, note, outro, spinner, text } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
-import { resolve } from 'pathe'
-import { resolvePluginEnv } from '@pluxel/rolldown/build'
-import { detectPm, type PM, runPackageManager } from '../utils/pm'
-import { parsePackageName, pascalCase, suggestPackageName, validatePackageName } from './name'
+import { basename, resolve } from 'pathe'
+import { newCommandArgs, newCommandDefinition } from '../command-manifest'
+import { detectPm, formatPackageScriptCommand, type PM, runPackageManager } from '../utils/pm'
+import {
+	parsePackageIdentity,
+	parsePackageName,
+	pascalCase,
+	suggestPackageName,
+	validatePackageName,
+} from './name'
 import {
 	ensureTemplate,
 	generateFromTemplate,
@@ -16,48 +22,9 @@ import {
 	resolveWorkspaceRoot,
 	type WorkspaceReason,
 } from './workspace'
+import { resolveTemplatesDir } from './utils'
 
-export { parsePackageName } from './name'
-
-const newCommandArgs = {
-	dest: {
-		type: 'positional',
-		description: 'Destination base dir (relative to --root; auto when omitted)',
-	},
-	root: {
-		type: 'string',
-		description: 'Workspace root (auto-detect by default)',
-	},
-	template: {
-		type: 'string',
-		description: 'Template name or path (auto/prompt by default)',
-	},
-	pm: {
-		type: 'enum',
-		description: 'Package manager (auto-detect by default)',
-		choices: ['pnpm', 'npm', 'yarn'],
-	},
-	force: {
-		type: 'boolean',
-		description: 'Overwrite existing files',
-		default: false,
-	},
-	install: {
-		type: 'boolean',
-		description: 'Install dependencies after generation',
-		default: true,
-		negatable: true,
-	},
-	dryRun: {
-		type: 'boolean',
-		description: 'Show the plan without touching the filesystem',
-		default: false,
-	},
-	name: {
-		type: 'string',
-		description: 'Full npm name or short name, e.g. @scope/foo or foo',
-	},
-} as const
+export { parsePackageIdentity, parsePackageName } from './name'
 
 type NewCommandArgs = typeof newCommandArgs
 type NewCommandValues = ArgValues<NewCommandArgs>
@@ -78,9 +45,7 @@ type ScaffoldPlan = {
 }
 
 export const newCommand = define({
-	name: 'new',
-	description: 'Scaffold from templates',
-	args: newCommandArgs,
+	...newCommandDefinition,
 	async run(ctx) {
 		const interactive = Boolean(process.stdout.isTTY && process.stdin.isTTY)
 
@@ -148,7 +113,7 @@ export const newCommand = define({
 				throw error
 			}
 
-			ctx.log(`\n${pm} build`)
+			ctx.log(`\nNext: ${formatPackageScriptCommand(pm, 'verify')}`)
 		}
 
 		outro(`✔ Done.\ncd ${plan.targetDir}`)
@@ -166,7 +131,7 @@ async function ensurePackageName(explicit?: string) {
 	const suggestion = suggestPackageName(process.cwd())
 	const answer = await text({
 		message: 'Package name (@scope/name or name)',
-		placeholder: suggestion ?? '@scope/plugin-example',
+		placeholder: suggestion ?? '@scope/example',
 		defaultValue: suggestion,
 		validate: validatePackageName,
 	})
@@ -182,14 +147,28 @@ function createScaffoldPlan(
 	template: string,
 	values: NewCommandValues,
 ): ScaffoldPlan {
-	const { dest, root, force = false, dryRun = false, install = true, pm } = values
+	const { dest: destValues, root, force = false, install = true, pm } = values
+	const dryRun = values['dry-run']
+	const dest = resolveScaffoldDestinationInput(destValues)
 	const cwd = process.cwd()
 
 	const rootInfo = resolveWorkspaceRoot(cwd, root)
-	const destPlan = resolveDestination(rootInfo, dest)
+	const templateBase = resolveTemplateBase(template)
+	const createsWorkspace = basename(templateBase) === 'app-monorepo'
+	const builtInPackageManager = resolveBuiltInTemplatePackageManager(templateBase)
+	if (builtInPackageManager && pm && pm !== builtInPackageManager) {
+		throw new Error(
+			`The ${basename(templateBase)} template requires ${builtInPackageManager}; received --pm ${pm}.`,
+		)
+	}
+	const destPlan =
+		createsWorkspace && !dest ? { destBase: cwd } : resolveDestination(rootInfo, dest)
 
-	const envConfig = resolvePluginEnv()
-	const { name: pluginName, packageName } = parsePackageName(input, envConfig.pluginPrefixes)
+	const { name: pluginName, packageName } = resolveScaffoldIdentity(
+		input,
+		templateBase,
+		resolvePluginPrefixes(),
+	)
 	const targetDir = resolve(destPlan.destBase, pluginName)
 
 	const plan: ScaffoldPlan = {
@@ -198,7 +177,7 @@ function createScaffoldPlan(
 		className: pascalCase(pluginName),
 		workspaceRoot: rootInfo.root,
 		targetDir,
-		templateBase: resolveTemplateBase(template),
+		templateBase,
 		workspaceReason: rootInfo.reason,
 		force,
 		dryRun,
@@ -206,8 +185,47 @@ function createScaffoldPlan(
 		year: new Date().getFullYear(),
 	}
 
-	if (pm) plan.pm = pm
+	const planPackageManager = builtInPackageManager ?? pm
+	if (planPackageManager) plan.pm = planPackageManager
 	return plan
+}
+
+export function resolveScaffoldDestinationInput(
+	input: readonly string[] | string | undefined,
+): string | undefined {
+	const values = typeof input === 'string' ? [input] : input
+	if (!values || values.length === 0) return undefined
+	if (values.length > 1) throw new Error('Expected at most one scaffold destination')
+	return values[0]
+}
+
+export function resolveBuiltInTemplatePackageManager(
+	templateBase: string,
+	templatesDir = resolveTemplatesDir(),
+): PM | undefined {
+	const resolvedBase = resolve(templateBase)
+	return ['app-monorepo', 'plugin'].some((name) => resolvedBase === resolve(templatesDir, name))
+		? 'pnpm'
+		: undefined
+}
+
+export function resolveScaffoldIdentity(
+	input: string,
+	templateBase: string,
+	pluginPrefixes: string[],
+) {
+	return basename(templateBase) === 'app-monorepo'
+		? parsePackageIdentity(input)
+		: parsePackageName(input, pluginPrefixes)
+}
+
+function resolvePluginPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {
+	const raw = env.PLUXEL_PLUGIN_PREFIX
+	if (!raw?.trim()) return ['pluxel-plugin']
+	return raw
+		.split(',')
+		.map((segment) => segment.trim())
+		.filter(Boolean)
 }
 
 async function buildTemplateData(plan: ScaffoldPlan): Promise<Record<string, string> | null> {

@@ -1,102 +1,45 @@
 # @pluxel/runtime — Implementation Index
 
-目标：快速定位 runtime kernel 的公开面和关键实现。
+## Runtime entry
 
-## Runtime Entry
+- `src/index.ts`：唯一插件作者入口，并加载常驻 runtime services；
+- `src/services/index.ts`：常驻 service 注册清单；
+- `src/services/vault.ts`：显式启用的 optional Vault capability；
+- `src/services/workbench.ts`：宿主显式安装的 optional Workbench backend。
 
-- `packages/runtime/src/index.ts`
-  plugin authoring / runtime common 默认入口，只注册 static/common services
-- `packages/runtime/src/runtime/register/static.ts`
-  static/common side-effect service registration
-- `packages/runtime/src/runtime/register/full.ts`
-  dynamic/dev common side-effect service registration; optional vault and web-management stay behind service subpaths
+## Workbench Plane
 
-## Core Services
+- `src/workbench/contracts.ts`：module、resource、view、port、layout contract；
+- `src/workbench/runtime.ts`：server bindings 与 mount；
+- `src/workbench/ui-runtime.tsx`：browser typed resource client 与 host-injected View runtime；
+- `src/workbench/ui-pane.tsx`：public Pane Kit declaration、契约校验与 host renderer bridge；
+- `src/services/workbench/WorkbenchService.ts`：Context-isolated gate；
+- `src/services/workbench/WorkbenchRegistry.ts`：target layout、relations、opaque grants、revision；
+- `src/services/workbench/WorkbenchArtifactService.ts`：artifact store；
+- `src/services/workbench/resources/`：RPC、live query、events 实现；
+- `src/api/http/workbench.ts`：catalog/layout/artifact/resource/event routes。
 
-- `packages/runtime/src/services/http/HttpService.ts`
-  HTTP / control plane / UI assets
-- `packages/runtime/src/services/verification/VerificationService.ts`
-  host verification gate
-- `packages/runtime/src/services/vault/VaultService.ts`
-  `ctx.vault` 存储面与 host-only `ctx.root.vaultAdmin`
-- `packages/runtime/src/services/vault.ts`
-  显式 vault boundary，导出 bootstrap helper；`services/security/bootstrap.ts` 是内部实现
-- `packages/runtime/src/services/persistence/PersistenceService.ts`
-  runtime persistence namespace/backend 抽象
-- `packages/runtime/src/services/ConfigService.ts`
-  配置读写
-- `packages/runtime/src/plugin-catalog.ts`
-  route-neutral plugin catalog 契约
-- `packages/runtime/src/api/contributions.ts`
-  route package 挂载 GraphQL/RPC 控制面的最小注册点
-- `packages/runtime-dynamic/src/loader/LoaderService.ts`
-  loader route 插件加载
-- `packages/runtime-dynamic/src/package/PackageService.ts`
-  loader route 包管理 facade
-- `packages/runtime-dynamic/src/package/mutation.ts`
-  package install/remove/reinstall flow
-- `packages/runtime-dynamic/src/package/load-runtime.ts`
-  package load/retry/runtime cache flow
-- `packages/runtime-dynamic/src/package/inventory.ts`
-  package inventory/load issue read model
-- `packages/runtime-dynamic/src/scan/ScanService.ts`
-  loader route workspace scan
+## 常驻服务
 
-## Plugin Interaction
+- `src/services/http/HttpService.ts`：HTTP 与 UI assets；
+- `src/services/DatabaseService.ts`：database instance registry、lineage promotion、PostgreSQL/PGlite 与 invalidation；
+- `src/services/admin-access/AdminAccessService.ts`：host admin gate；
+- `src/services/vault/VaultService.ts`：加密存储；
+- `src/services/persistence/PersistenceService.ts`：persistence backend；
+- `src/services/ConfigService.ts`：配置读写；
+- `src/api/http/rpc/RuntimeRpcApi.ts`：host control-plane 与 bound Workbench API dispatch。
 
-- `packages/runtime/src/services/plugin-interaction/ExtService.ts`
-  `ctx.ext` 聚合入口
-- `packages/runtime/src/services/plugin-interaction/ExtensionService.ts`
-  packaged UI remote + builtin/doc 扩展
-- `packages/runtime/src/services/plugin-interaction/SignalDbService.ts`
-  runtime-owned collection + sync transport
-- `packages/runtime/src/services/plugin-interaction/RpcService.ts`
-  RPC 暴露
-- `packages/runtime/src/services/plugin-interaction/SseService.ts`
-  SSE 暴露
+## Node artifact 与共享 worker
 
-## Control Plane
+- `src/node-artifact/node-module.ts`：opaque Node module declaration 与 setup/cleanup contract；
+- `src/node-artifact/NodeModuleService.ts`：owner lease、staged replacement 与 packaged/source artifact resolution；
+- `src/node-artifact/worker-task.ts`：typed worker specialization、稳定错误与 host pool config contract；
+- `src/node-artifact/WorkerTaskService.ts`：root shared pool、bounded fair admission、cancellation 与 shutdown。
 
-- `packages/runtime/src/api/usecases/pluginStatus.ts`
-  插件生命周期批量操作
-- `packages/runtime/src/api/usecases/pluginConfig.ts`
-  插件 schema/config 读取、校验和 patch
-- `packages/runtime/src/api/usecases/pluginDependencies.ts`
-  插件依赖、base provider、fork 相关操作
-- `packages/runtime/src/api/http/rpc/RuntimeRpcApi.ts`
-  host control-plane 的具体 RPC 方法入口
+## Browser
 
-## Host Security
-
-- `packages/runtime/HOST_VERIFICATION_DESIGN.md`
-  安全模型与原则
-- `packages/runtime/src/api/http/security.ts`
-  host-only security 管理 API
-- `packages/runtime/src/api/http/meta.ts`
-  verification state snapshot
-- `packages/runtime/src/services/http/internalApi.ts`
-  internal API verification gate
-- `packages/runtime/src/services/vault/加密实现规范.md`
-  vault 使用边界
-
-## Web Surface
-
-- `packages/runtime/src/web/client.ts`
-  transport client、HTTP links、RPC/SSE 接入
-- `packages/runtime/src/web/rpc.ts`
-  RPC client/session helper
-- `packages/runtime/src/web/protocol.ts`
-  浏览器/服务端共享协议类型
-- `packages/runtime/src/web/react.tsx`
-  transport provider
-- `packages/runtime/src/web/federation.ts`
-  MF remote/shared contract
-- `packages/runtime/src/web/plugin-ui/*`
-  UI authoring helpers / signaldb hooks
-
-## Tests
-
-- `packages/runtime/tests/services/vault-service.test.ts`
-  vault 状态、密钥与预检
-- `packages/runtime/tests/verification/host-verification-flow.test.ts`
-  verification gate 与 security API
+- `src/web/client.ts`：HTTP/RPC/SSE transport；
+- `src/web/rpc.ts`：request-scoped Cap'n Web proxy；
+- `src/workbench/ui-runtime.tsx`：Remote View environment、host capabilities 与 resource clients；
+- `../workbench-app/src/app/workbench/RemotePaneLayout.tsx`：host-owned Pane Kit geometry、responsive drawer 与 state adapter；
+- `../workbench-app/src/workbench/client.ts`：browser catalog、target snapshot、route index 与 staged module lease；

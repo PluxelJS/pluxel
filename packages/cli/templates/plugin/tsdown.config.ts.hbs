@@ -1,10 +1,6 @@
 import { defineConfig } from 'tsdown'
 
-// oxlint-disable-next-line import/no-default-export -- tsdown config expects a default export.
 export default defineConfig({
-	exports: {
-		devExports: '@pluxel/source',
-	},
 	tsconfig: './tsconfig.json',
 	entry: {
 		index: 'src/{{pluginName}}.ts',
@@ -18,14 +14,4 @@ export default defineConfig({
 	clean: true,
 	minify: true,
 	treeshake: true,
-	inputOptions: {
-		transform: {
-			assumptions: {
-				setPublicClassFields: true,
-			},
-			typescript: {
-				removeClassFieldsWithoutInitializer: true,
-			},
-		},
-	},
 })

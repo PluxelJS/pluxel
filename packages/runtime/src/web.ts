@@ -1,18 +1,18 @@
 export {
-	type VerificationAwareFetchOptions,
-	type VerificationBlockedInfo,
+	type AdminAccessAwareFetchOptions,
+	type AdminAccessBlockedInfo,
 	type RuntimeFetch,
-	createVerificationAwareFetch,
-	defaultOnVerificationBlocked,
-	type OnVerificationBlocked,
-} from './web/verification'
+	createAdminAccessAwareFetch,
+	defaultOnAdminAccessBlocked,
+	type OnAdminAccessBlocked,
+} from './web/admin-access'
 export {
-	resolveVerificationLandingPath,
-	type VerificationBlockedCode,
-	type VerificationBlockedKind,
-	type VerificationBlockedPayload,
-	type VerificationReason,
-} from './shared/verification-http'
+	resolveAdminAccessLandingPath,
+	type AdminAccessBlockedCode,
+	type AdminAccessBlockedKind,
+	type AdminAccessBlockedPayload,
+	type AdminAccessReason,
+} from './shared/admin-access-http'
 
 export {
 	createRuntimeTransportClient,
@@ -27,9 +27,9 @@ export {
 } from './web/client'
 export {
 	createRuntimeSecurityClient,
+	type AdminAccessOverview,
 	type SecurityAuditEvent,
 	type SecurityOverview,
-	type VerificationOverview,
 	type RuntimeSecurityClient,
 	type RuntimeSecurityClientOptions,
 	type VaultAdminState,
@@ -48,11 +48,6 @@ export type {
 	RuntimeLogLine,
 } from './web/logs'
 export {
-	RUNTIME_EXTENSIONS_BASE,
-	RUNTIME_EXTENSIONS_ARTIFACTS_BASE,
-	RUNTIME_EXTENSIONS_EVENTS_PATH,
-	RUNTIME_EXTENSIONS_MANIFEST_PATH,
-	RUNTIME_EXTENSIONS_MODULES_BASE,
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_LOG_STREAMS_BASE,
 	RUNTIME_META_BASE,
@@ -65,30 +60,12 @@ export {
 	RUNTIME_SECURITY_VAULT_UNLOCK_PATH,
 	RUNTIME_META_SSE_PATH,
 	RUNTIME_TRANSPORT_PATHS,
-	RUNTIME_VERIFICATION_BASE,
-	runtimeExtensionArtifactBasePath,
-	runtimeExtensionArtifactPath,
-	runtimeExtensionModulePath,
+	RUNTIME_ADMIN_ACCESS_BASE,
 	runtimeLogStreamPath,
-	runtimeSignalDbCollectionPath,
+	runtimeWorkbenchModelEventsPath,
+	runtimeWorkbenchLiveQueryPath,
 	joinPath,
 } from './web/paths'
-export * from './web/plugin-ui/types'
-export type {
-	InteractionContract,
-	InteractionContractRef,
-} from './web/plugin-ui/interaction-contracts'
-export {
-	EXTENSION_FEDERATION_EXPOSE,
-	EXTENSION_FEDERATION_MANIFEST_FILE,
-	EXTENSION_FEDERATION_REMOTE_ENTRY_FILE,
-	EXTENSION_FEDERATION_SHARE_STRATEGY,
-	extensionFederationModuleId,
-	extensionFederationRemoteName,
-	extensionFederationSharedPackages,
-	sanitizeExtensionPluginName,
-	type ExtensionFederationSharedPackage,
-} from './web/plugin-ui/federation'
 export * from './web/protocol'
 export {
 	RuntimeTransportClientProvider,
@@ -96,20 +73,6 @@ export {
 	useRuntimeTransportClient,
 } from './web/react'
 export { invokeRpc, rpcErrorMessage } from './web/rpc'
-export {
-	useSignalDbCollectionState,
-	useSignalDbCollectionsState,
-	useSignalDbDocState,
-	useSignalDbQueryState,
-	type SignalDbCollectionView,
-} from './web/plugin-ui/signaldb-runtime'
-export type {
-	SignalDbFindOptions,
-	SignalDbItem,
-	SignalDbLoadResponse,
-	SignalDbListSpec,
-	SignalDbSelector,
-} from './web/plugin-ui/signaldb-contracts'
 export type {
 	ResolvedSseEvents,
 	SseClientOptions,

@@ -1,0 +1,31 @@
+{
+	"name": "{{packageName}}-web",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host 127.0.0.1",
+		"start": "node dist/app.mjs",
+		"build": "tsdown && vite build",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@gqlens/core": "catalog:",
+		"@gqlens/react": "catalog:",
+		"@pluxel/runtime-static": "catalog:",
+		"{{packageName}}-domain": "workspace:*",
+		"{{packageName}}-example-plugin": "workspace:*",
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"devDependencies": {
+		"@gqlens/vite": "catalog:",
+		"@pluxel/rolldown": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"graphql": "catalog:",
+		"tsdown": "catalog:",
+		"vite": "catalog:"
+	}
+}

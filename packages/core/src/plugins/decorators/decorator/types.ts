@@ -22,6 +22,8 @@ export interface PluginMetadata {
 	 */
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
+	/** Required plugin-local features whose config/dependency metadata participates in planning. */
+	features?: readonly Identifier<unknown>[]
 	[key: string]: unknown
 }
 

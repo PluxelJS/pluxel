@@ -4,31 +4,18 @@
  * Keep protocol contracts and UI extension augmentation in one place so
  * `@pluxel/runtime/web` can stay the canonical browser-facing type surface.
  */
+import type { AgentToolsAdminSnapshot, AgentToolsPolicyInput } from '../agent-tools'
 export type { VaultKeyPair } from '../services/vault/types'
+export type {
+	AgentToolAssignment,
+	AgentToolsAdminSnapshot,
+	AgentToolsPolicy,
+	AgentToolsPolicyInput,
+	CommandInventoryItem,
+	CommandToolset,
+} from '../agent-tools'
 
-/**
- * UI extensibility surface.
- *
- * @example
- * declare module '@pluxel/runtime/web' {
- *   interface ExtensionUiRpcMap {
- *     MyPlugin: MyPluginRpc
- *   }
- *
- *   interface ExtensionUiSseMap {
- *     MyPlugin: MyPluginSsePayload
- *   }
- *
- *   interface ExtensionUiSignalDbMap {
- *     MyPlugin: {
- *       events: DemoEvent
- *     }
- *   }
- * }
- */
-export interface ExtensionUiRpcMap {}
-export interface ExtensionUiSseMap {}
-export interface ExtensionUiSignalDbMap {}
+export type WorkbenchRpcView = Record<string, unknown>
 
 export type PluginStatusAction =
 	| 'start'
@@ -65,53 +52,6 @@ export type ConfigResultErr = {
 
 export type ConfigResult = ConfigResultOk | ConfigResultErr
 
-export type ExtensionSessionLoadResultOk = {
-	ok: true
-	input: unknown
-	draft: unknown
-	prepared: unknown
-}
-
-export type ExtensionSessionLoadResultErr = {
-	ok: false
-	code:
-		| 'session_not_found'
-		| 'surface_not_found'
-		| 'offer_not_found'
-		| 'prepare_failed'
-		| 'validation_failed'
-	message?: string
-}
-
-export type ExtensionSessionLoadResult =
-	| ExtensionSessionLoadResultOk
-	| ExtensionSessionLoadResultErr
-
-export type ExtensionSessionDraftSyncInput = {
-	sessionId: string
-	draft: unknown
-}
-
-export type ExtensionSessionCommitInput = {
-	sessionId: string
-	result: unknown
-}
-
-export type ExtensionSessionMutationResult =
-	| {
-			ok: true
-	  }
-	| {
-			ok: false
-			code:
-				| 'session_not_found'
-				| 'surface_not_found'
-				| 'offer_not_found'
-				| 'validation_failed'
-				| 'apply_failed'
-			message?: string
-	  }
-
 export type SchemaResultOk = {
 	ok: true
 	schemaSource: Record<string, string>
@@ -121,7 +61,7 @@ export type SchemaResultOk = {
 	 *
 	 * Extracted from `this.configs.use(cfg(schemaMap)\`...\`)` by build toolchains.
 	 */
-	layout?: import('./plugin-ui/extensions-contracts').BuiltinMarkdownPart[] | null
+	layout?: import('../workbench/document-contracts').BuiltinMarkdownPart[] | null
 }
 
 export type SchemaResultErr = {
@@ -208,149 +148,60 @@ export type BaseProviderInfo = {
 	providers: PluginDependencyOption[]
 }
 
-export type PackageSpecInput = {
-	raw?: string | null
-	name?: string | null
-	version?: string | null
-	tag?: string | null
-}
-
-export type PackageIssueSpec = {
-	__typename: 'PackageIssueSpec'
-	key: string
-	name: string
-	version: string | null
-	tag: string | null
-	target: string
-	raw: string
-}
-
-export type PackageLoadIssue = {
-	__typename: 'PackageLoadIssue'
-	id: string
-	spec: PackageIssueSpec
-	source: 'load' | 'restore' | 'retry'
-	message: string
-	error: string | null
-	moduleId: string | null
-	recordedAt: number
-}
-
-export type PackageInventoryEntry = {
-	__typename: 'PackageInventoryEntry'
-	id: string
-	spec: PackageIssueSpec
-	installedVersion: string | null
-	requestedVersion: string | null
-	loaded: boolean
-	moduleId: string | null
-	issues: PackageLoadIssue[] | null
-}
-
-export type PackageInventoryFilter = {
-	includeUntracked?: boolean
-}
-
-export type PackageMutationAction =
-	| 'install'
-	| 'uninstall'
-	| 'remove'
-	| 'reinstall'
-	| 'reload'
-	| 'retry'
-
-export type PackageMutationOptions = {
-	force?: boolean
-	fresh?: boolean
-	reinstall?: boolean
-}
-
-export type PackageMutationInput = {
-	action: PackageMutationAction
-	specs: PackageSpecInput[]
-	options?: PackageMutationOptions
-}
-
-export type PackageMutationResult = {
-	__typename: 'PackageMutationResult'
-	id: string
-	ok: boolean
-	code: string
-	spec: PackageIssueSpec | null
-	installStatus: 'installed' | 'reused' | null
-	error: string | null
-}
-
-export type PackageBatchResult = {
-	__typename: 'PackageBatchMutationResult'
-	ok: boolean
-	results: PackageMutationResult[]
-	error: string | null
-}
-
-export type PackageManagerSnapshot = {
-	__typename: 'PackageManagerSnapshot'
-	inventory: PackageInventoryEntry[]
-	loadIssues: PackageLoadIssue[]
-}
-
-export interface PackageManagerFeatureApi {
-	mutate: (input: PackageMutationInput) => Promise<PackageBatchResult>
-	snapshot: (filter?: PackageInventoryFilter) => Promise<PackageManagerSnapshot>
-	inventory: (filter?: PackageInventoryFilter) => Promise<PackageInventoryEntry[]>
-	loadIssues: () => Promise<PackageLoadIssue[]>
-}
-
-export type RuntimeRouteFeatureApiMap = {
-	packageManager: PackageManagerFeatureApi
-}
-
-export type RuntimeRouteFeatureName = keyof RuntimeRouteFeatureApiMap
-export type RuntimeRouteFeatureApi<Name extends RuntimeRouteFeatureName = RuntimeRouteFeatureName> =
-	RuntimeRouteFeatureApiMap[Name]
-
-export interface BuildSnapshotResult {
-	ok: boolean
-	path?: string
-	error?: string
-}
-
-export interface ExtensionSessionHandleApi {
-	loadSession: (sessionId: string) => Promise<ExtensionSessionLoadResult>
-	syncDraft: (input: ExtensionSessionDraftSyncInput) => Promise<ExtensionSessionMutationResult>
-	commitSession: (input: ExtensionSessionCommitInput) => Promise<ExtensionSessionMutationResult>
-}
-
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error' | 'fatal'
 export type RuntimePluginLogLevel = LogLevel | 'off'
 
 export type PluginLogPolicySnapshot = {
-	defaultLevel?: RuntimePluginLogLevel
+	version: 1
+	defaultLevel: RuntimePluginLogLevel
 	overrides: Record<string, RuntimePluginLogLevel>
 }
 
-export type LoggingHandleApi = {
-	getPolicy: () => Promise<PluginLogPolicySnapshot>
-	replacePolicy: (snapshot: PluginLogPolicySnapshot) => Promise<PluginLogPolicySnapshot>
-	setDefaultLevel: (level: RuntimePluginLogLevel) => Promise<PluginLogPolicySnapshot>
-	clearDefaultLevel: () => Promise<PluginLogPolicySnapshot>
-	setPluginLevel: (
-		pluginId: string,
-		level: RuntimePluginLogLevel,
-	) => Promise<PluginLogPolicySnapshot>
-	clearPluginLevel: (pluginId: string) => Promise<PluginLogPolicySnapshot>
-	resetPolicy: () => Promise<PluginLogPolicySnapshot>
+export type VersionedPluginLogPolicySnapshot = PluginLogPolicySnapshot & {
+	revision: number
+	persistence: 'none' | 'clean' | 'dirty' | 'failed'
 }
 
-type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
+export type PluginLogPolicyMutationResult = Pick<
+	VersionedPluginLogPolicySnapshot,
+	'revision' | 'persistence'
+>
+
+export type LoggingHandleApi = {
+	getPolicy: () => Promise<VersionedPluginLogPolicySnapshot>
+	replacePolicy: (
+		expectedRevision: number,
+		snapshot: PluginLogPolicySnapshot,
+	) => Promise<PluginLogPolicyMutationResult>
+	setDefaultLevel: (
+		expectedRevision: number,
+		level: RuntimePluginLogLevel,
+	) => Promise<PluginLogPolicyMutationResult>
+	setPluginLevel: (
+		expectedRevision: number,
+		pluginId: string,
+		level: RuntimePluginLogLevel,
+	) => Promise<PluginLogPolicyMutationResult>
+	clearPluginLevel: (
+		expectedRevision: number,
+		pluginId: string,
+	) => Promise<PluginLogPolicyMutationResult>
+	resetPolicy: (expectedRevision: number) => Promise<VersionedPluginLogPolicySnapshot>
+}
+
+export type AgentToolsHandleApi = {
+	snapshot: () => Promise<AgentToolsAdminSnapshot>
+	replacePolicy: (
+		expectedRevision: number,
+		policy: AgentToolsPolicyInput,
+	) => Promise<AgentToolsAdminSnapshot>
+}
+
+type RuntimeRpcApiContract = {
 	ping: () => string
-	features: () => string[]
-	feature: <Name extends RuntimeRouteFeatureName>(name: Name) => RuntimeRouteFeatureApi<Name>
 	logging: () => LoggingHandleApi
-	ui: () => ExtensionSessionHandleApi
-	ext: ExtRpc
-	extensions: () => string[]
-	buildSnapshot: () => Promise<BuildSnapshotResult>
+	agentTools: () => AgentToolsHandleApi
+	workbenchRpc: (grantId: string) => WorkbenchRpcView
 	updatePluginGroups: (groups: PluginGroupInput[]) => Promise<PluginGroup[]>
 	pluginSchema: (name: string) => Promise<SchemaResult>
 	pluginConfig: (name: string) => Promise<ConfigResult>
@@ -377,4 +228,4 @@ type RuntimeRpcApiContract<ExtRpc = Record<string, unknown>> = {
 	applyPluginStatusActions: (actions: PluginStatusBatchAction[]) => Promise<PluginStatusBatchResult>
 }
 
-export type RuntimeRpcApi = RuntimeRpcApiContract<ExtensionUiRpcMap>
+export type RuntimeRpcApi = RuntimeRpcApiContract

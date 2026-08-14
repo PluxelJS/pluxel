@@ -1,0 +1,20 @@
+import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { {{className}}Plugin } from '{{packageName}}-example-plugin'
+
+export default defineStaticRuntime({
+	name: '{{pluginName}}',
+	plugins: [{{className}}Plugin],
+	configure({ env }) {
+		return {
+			runtimeState: {
+				mode: 'memory',
+				snapshot: { enabled: ['{{className}}Plugin'] },
+			},
+			persistence: { mode: 'memory' },
+			workbench:
+				env.PLUXEL_WORKBENCH === 'true'
+					? { enabled: true, access: { exposure: 'private' } }
+					: false,
+		}
+	},
+})

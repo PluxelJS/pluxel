@@ -6,6 +6,7 @@ import {
 	Plugin,
 	assertPluginLifecycleIssue,
 	pluginLifecycleIssuePlugins,
+	type CommitSummary,
 	type PluginIdentifier,
 	setParamToken,
 	withCoreHost,
@@ -25,12 +26,12 @@ function createDeferred() {
 function collectCommitSummaries(host: {
 	ctx: {
 		internalEvent: {
-			runtimeCommitted: { on(listener: (summary: unknown) => void): unknown }
+			runtimeCommitted: { on(listener: (summary: CommitSummary) => void): unknown }
 		}
 	}
 }) {
-	const summaries: unknown[] = []
-	host.ctx.internalEvent.runtimeCommitted.on((summary: unknown) => {
+	const summaries: CommitSummary[] = []
+	host.ctx.internalEvent.runtimeCommitted.on((summary) => {
 		summaries.push(summary)
 	})
 	return summaries
@@ -304,6 +305,45 @@ describe('PluginService commit()', () => {
 			expect(secondCommit.lifecycleReport.issues).toEqual([])
 
 			expect(host.get(Consumer)?.dep).toBeInstanceOf(DepB)
+		})
+	})
+
+	it('restarts dependents when a provider dependency override changes', async () => {
+		await withCoreHost(async (host) => {
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-A' })
+			class DepA extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-B' })
+			class DepB extends BasePlugin {}
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-PROVIDER' })
+			class Provider extends BasePlugin {
+				constructor(readonly dep: DepA) {
+					super()
+				}
+			}
+			setParamToken(Provider, 0, DepA)
+
+			@Plugin({ name: 'TX-OVERRIDE-CASCADE-CONSUMER' })
+			class Consumer extends BasePlugin {
+				constructor(readonly provider: Provider) {
+					super()
+				}
+			}
+			setParamToken(Consumer, 0, Provider)
+
+			host.add([DepA, DepB, Provider, Consumer])
+			const initialCommit = await host.commit()
+			expect(initialCommit.lifecycleReport.issues).toEqual([])
+			const initialConsumer = host.get(Consumer)
+
+			host.ctx.registry.replaceRuntimeDependencyOverrides(Provider, [DepB])
+			const overrideCommit = await host.commit()
+			expect(overrideCommit.lifecycleReport.issues).toEqual([])
+
+			const replacedConsumer = host.get(Consumer)
+			expect(replacedConsumer).not.toBe(initialConsumer)
+			expect(replacedConsumer?.provider.dep).toBeInstanceOf(DepB)
 		})
 	})
 
@@ -881,71 +921,7 @@ describe('PluginService commit()', () => {
 				cGate.resolve()
 				await commitPromise
 			},
-			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
-		)
-	})
-
-	it('batch strategy keeps depth barriers', async () => {
-		await withCoreHost(
-			async (host) => {
-				const events: string[] = []
-
-				const aGate = createDeferred()
-				const cGate = createDeferred()
-
-				let aStarted = false
-				let cStarted = false
-				let bStarted = false
-
-				@Plugin({ name: 'BATCH-A' })
-				class A extends BasePlugin {
-					override async init(): Promise<void> {
-						aStarted = true
-						events.push('A:start')
-						await aGate.promise
-						events.push('A:done')
-					}
-				}
-
-				@Plugin({ name: 'BATCH-C' })
-				class C extends BasePlugin {
-					override async init(): Promise<void> {
-						cStarted = true
-						events.push('C:start')
-						await cGate.promise
-						events.push('C:done')
-					}
-				}
-
-				@Plugin({ name: 'BATCH-B' })
-				class B extends BasePlugin {
-					constructor(public a: A) {
-						super()
-					}
-
-					override init(): void {
-						bStarted = true
-						events.push('B:init')
-					}
-				}
-				setParamToken(B, 0, A)
-
-				host.add([A, C, B])
-				const commitPromise = host.commit()
-
-				await waitUntil(() => aStarted && cStarted)
-
-				aGate.resolve()
-				await new Promise((resolve) => setTimeout(resolve, 10))
-				expect(bStarted).toBe(false)
-				expect(events).not.toContain('B:init')
-
-				cGate.resolve()
-				await waitUntil(() => bStarted)
-
-				await commitPromise
-			},
-			{ registry: { startStrategy: 'batch' } },
+			{ registry: { startConcurrency: 2 } },
 		)
 	})
 
@@ -993,7 +969,7 @@ describe('PluginService commit()', () => {
 				for (const u of unblockers) u()
 				await commitPromise
 			},
-			{ registry: { startStrategy: 'ready-queue', startConcurrency: 2 } },
+			{ registry: { startConcurrency: 2 } },
 		)
 	})
 
@@ -1043,7 +1019,7 @@ describe('PluginService commit()', () => {
 				expect(host.get(B)).toBeUndefined()
 				expect(host.get(C)).toBeUndefined()
 			},
-			{ registry: { startStrategy: 'ready-queue', startConcurrency: 3 } },
+			{ registry: { startConcurrency: 3 } },
 		)
 	})
 
@@ -1143,9 +1119,7 @@ describe('PluginService commit()', () => {
 
 	it('serializes overlapping commits and preserves plugin state', async () => {
 		await withCoreHost(async (host) => {
-			const summaries = collectCommitSummaries(host) as Array<{
-				added?: unknown[]
-			}>
+			const summaries = collectCommitSummaries(host)
 
 			const slowInit = createDeferred()
 			let slowInitCalled = false

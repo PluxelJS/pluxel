@@ -1,7 +1,6 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
-import { resolveProfiledPath, resolveRuntimeStoragePaths } from '../runtime/paths'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
 export type PluginGroupState = {
@@ -15,7 +14,8 @@ export type RuntimeStateSnapshot = Readonly<{
 	forks: Readonly<Record<string, readonly string[]>>
 	baseProviders: Readonly<Record<string, string>>
 	dependencyOverrides: Readonly<Record<string, Readonly<Record<number, string>>>>
-	builtinsKnown: Readonly<Record<string, 1>>
+	optionalKnown: Readonly<Record<string, 1>>
+	/** @deprecated Legacy input read once by Workbench catalog preference migration. */
 	pluginGroups: readonly PluginGroupState[]
 }>
 
@@ -24,17 +24,18 @@ export type RuntimeStateDraft = {
 	forks: Record<string, string[]>
 	baseProviders: Record<string, string>
 	dependencyOverrides: Record<string, Record<number, string>>
-	builtinsKnown: Record<string, 1>
+	optionalKnown: Record<string, 1>
 	pluginGroups: PluginGroupState[]
 }
 
 export type RuntimeStateFile = {
-	version: 1
+	version: 2
 	enabled: string[]
 	forks?: Record<string, string[]>
 	baseProviders?: Record<string, string>
 	dependencyOverrides?: Record<string, Record<number, string>>
-	builtinsKnown?: Record<string, 1>
+	optionalKnown?: Record<string, 1>
+	/** @deprecated Legacy Workbench group layout retained for non-destructive migration. */
 	pluginGroups?: PluginGroupState[]
 }
 
@@ -42,7 +43,6 @@ export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
-	path?: string
 	snapshot?: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] }
 }
 
@@ -95,15 +95,12 @@ export class RuntimeStateStore {
 		this.readonlyMode = this.mode === 'readonly'
 		this.storage = ctx.root.persistence.namespace('runtime-state')
 
-		const profile = normalizeProfileName(ctx.config.profile)
-		const runtimeStorage = resolveRuntimeStoragePaths(currentWorkingDirectory())
-		const resolved = resolveProfiledPath(cfg.path ?? runtimeStorage.runtimeStateFile, profile)
-		this.file = resolved.path
+		this.file = 'state.json'
 
 		if (cfg.snapshot) applySnapshot(this.data, cfg.snapshot)
 
 		if (this.mode === 'file') {
-			this.ready = this.loadFromDisk(this.file, resolved.fallbackPath).finally(() => {
+			this.ready = this.loadFromDisk(this.file).finally(() => {
 				this.isReady = true
 			})
 		} else {
@@ -181,7 +178,9 @@ export class RuntimeStateStore {
 			this.saveTimer = null
 			if (!this.saveScheduled) return
 			this.saveScheduled = false
-			void this.saveToDisk(this.file)
+			void this.saveToDisk(this.file).catch((error: unknown) => {
+				this.ctx.logger.error('RuntimeStateStore background save failed', { error })
+			})
 		}, this.saveDelayMs)
 	}
 
@@ -193,19 +192,12 @@ export class RuntimeStateStore {
 		}
 	}
 
-	private async loadFromDisk(file: string, fallbackFile?: string) {
+	private async loadFromDisk(file: string) {
 		let txt: string
-		let readFromFallback = false
 		const primary = await this.storage.getText(file)
-		const fallback =
-			primary === undefined && fallbackFile ? await this.storage.getText(fallbackFile) : undefined
-		if (fallback !== undefined) {
-			txt = fallback
-			readFromFallback = true
-		} else if (primary !== undefined) {
+		if (primary !== undefined) {
 			txt = primary
 		} else {
-			replaceDraft(this.data, createDefaultDraft())
 			await this.saveToDisk(file)
 			return
 		}
@@ -228,7 +220,6 @@ export class RuntimeStateStore {
 		}
 
 		replaceDraft(this.data, coerceRuntimeStateFile(parsed))
-		if (readFromFallback) await this.saveToDisk(file)
 	}
 
 	private async saveToDisk(file: string, options: { force?: boolean } = {}): Promise<void> {
@@ -291,7 +282,7 @@ function createDefaultDraft(): RuntimeStateDraft {
 		forks: Object.create(null),
 		baseProviders: Object.create(null),
 		dependencyOverrides: Object.create(null),
-		builtinsKnown: Object.create(null),
+		optionalKnown: Object.create(null),
 		pluginGroups: [],
 	}
 }
@@ -302,7 +293,7 @@ function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): voi
 	replaceRecord(target.forks, source.forks)
 	replaceRecord(target.baseProviders, source.baseProviders)
 	replaceRecord(target.dependencyOverrides, source.dependencyOverrides)
-	replaceRecord(target.builtinsKnown, source.builtinsKnown)
+	replaceRecord(target.optionalKnown, source.optionalKnown)
 	target.pluginGroups = source.pluginGroups.map(clonePluginGroup)
 }
 
@@ -322,8 +313,8 @@ function applySnapshot(
 	if (snapshot.dependencyOverrides) {
 		replaceRecord(draft.dependencyOverrides, coerceDepOverrides(snapshot.dependencyOverrides))
 	}
-	if (snapshot.builtinsKnown)
-		replaceRecord(draft.builtinsKnown, coerceBuiltinsKnown(snapshot.builtinsKnown))
+	if (snapshot.optionalKnown)
+		replaceRecord(draft.optionalKnown, coerceKnownRecord(snapshot.optionalKnown))
 	if (snapshot.pluginGroups) draft.pluginGroups = coercePluginGroups(snapshot.pluginGroups)
 }
 
@@ -333,19 +324,19 @@ function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
 		forks: freezeRecordOfArrays(draft.forks),
 		baseProviders: Object.freeze({ ...draft.baseProviders }),
 		dependencyOverrides: freezeNestedRecord(draft.dependencyOverrides),
-		builtinsKnown: Object.freeze({ ...draft.builtinsKnown }),
+		optionalKnown: Object.freeze({ ...draft.optionalKnown }),
 		pluginGroups: Object.freeze(draft.pluginGroups.map(clonePluginGroup)),
 	})
 }
 
 function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
 	return {
-		version: 1,
+		version: 2,
 		enabled: [...draft.enabled],
 		forks: cloneRecordOfArrays(draft.forks),
 		baseProviders: { ...draft.baseProviders },
 		dependencyOverrides: cloneNestedRecord(draft.dependencyOverrides),
-		builtinsKnown: { ...draft.builtinsKnown },
+		optionalKnown: { ...draft.optionalKnown },
 		pluginGroups: draft.pluginGroups.map(clonePluginGroup),
 	}
 }
@@ -353,7 +344,16 @@ function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
 function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 	const out = createDefaultDraft()
 	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	const raw = input as Partial<RuntimeStateFile>
+	const raw = input as Omit<Partial<RuntimeStateFile>, 'version'> & {
+		version?: unknown
+		/** Runtime-state v1 field intentionally discarded during migration. */
+		builtinsKnown?: unknown
+	}
+	if (raw.version !== 1 && raw.version !== 2) {
+		throw new Error(
+			`[RuntimeStateStore] Unsupported persisted state version: ${String(raw.version)}`,
+		)
+	}
 	if (Array.isArray(raw.enabled)) {
 		for (const name of raw.enabled) {
 			if (typeof name === 'string' && name) out.enabled.add(name)
@@ -364,7 +364,7 @@ function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
 	if (raw.dependencyOverrides) {
 		replaceRecord(out.dependencyOverrides, coerceDepOverrides(raw.dependencyOverrides))
 	}
-	if (raw.builtinsKnown) replaceRecord(out.builtinsKnown, coerceBuiltinsKnown(raw.builtinsKnown))
+	if (raw.optionalKnown) replaceRecord(out.optionalKnown, coerceKnownRecord(raw.optionalKnown))
 	if (raw.pluginGroups) out.pluginGroups = coercePluginGroups(raw.pluginGroups)
 	return out
 }
@@ -410,7 +410,7 @@ function coerceDepOverrides(input: unknown): Record<string, Record<number, strin
 	return out
 }
 
-function coerceBuiltinsKnown(input: unknown): Record<string, 1> {
+function coerceKnownRecord(input: unknown): Record<string, 1> {
 	const out: Record<string, 1> = Object.create(null)
 	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
 	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
@@ -472,25 +472,6 @@ function freezeNestedRecord(
 		out[key] = Object.freeze(Object.assign(Object.create(null), value))
 	}
 	return Object.freeze(out)
-}
-
-function normalizeProfileName(raw: unknown): string | undefined {
-	if (typeof raw !== 'string') return undefined
-	const trimmed = raw.trim()
-	if (!trimmed) return undefined
-	const safe = trimmed
-		// oxlint-disable-next-line eslint/no-control-regex -- intentionally strips ASCII control characters for safe filenames.
-		.replaceAll(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
-		.replaceAll(/\s+/g, '-')
-		.replaceAll(/-+/g, '-')
-		.replace(/^[-.]+/, '')
-		.replace(/[-.]+$/, '')
-	return safe || undefined
-}
-
-function currentWorkingDirectory(): string {
-	const proc = (globalThis as unknown as { process?: { cwd?: () => string } }).process
-	return typeof proc?.cwd === 'function' ? proc.cwd() : '/'
 }
 
 function defaultRuntimeStateStoreMode(

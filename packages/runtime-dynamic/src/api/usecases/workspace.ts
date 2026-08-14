@@ -1,5 +1,5 @@
 import type { Context } from '@pluxel/core'
-import { PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/shared'
+import { PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/internal'
 
 export type WorkspaceResolveEntryInput = {
 	name: string
@@ -22,9 +22,7 @@ type ScanServiceLike = {
 function getScanService(ctx: Context): ScanServiceLike {
 	const scanService = (ctx as unknown as { scanService?: ScanServiceLike }).scanService
 	if (!scanService) {
-		throw new Error(
-			'[pluxel/runtime-dynamic] workspace APIs require ScanService registration.',
-		)
+		throw new Error('[pluxel/runtime-dynamic] workspace APIs require ScanService registration.')
 	}
 	return scanService
 }
@@ -49,6 +47,9 @@ export async function workspaceResolveEntry(ctx: Context, input: WorkspaceResolv
 
 export async function workspaceListEntries(ctx: Context) {
 	return await getScanService(ctx).listWorkspaceEntries({
-		scan: { conditions: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE], preferHmrExports: true },
+		scan: {
+			conditions: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE],
+			preferHmrExports: true,
+		},
 	})
 }

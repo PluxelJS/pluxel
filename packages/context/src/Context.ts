@@ -10,6 +10,7 @@ import type {
 } from './service-types'
 
 type SymMap = { [k in symbol]?: symbol }
+type ContextInstanceState = { instances: Record<symbol, unknown> }
 
 // "Any service" should allow arbitrary instance types and method proxy lists.
 // Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
@@ -20,6 +21,7 @@ type ServiceMeta = {
 	sk: symbol
 	key: string
 	scope: 'context' | 'root'
+	eager: boolean
 }
 type RuntimeServiceCtor<T> = new (ctx: Context, cfg?: any) => T
 
@@ -43,6 +45,7 @@ export class Context {
 	public mapping: SymMap
 	/** 服务实例缓存，所有同 root 的 Context 共享，除 isolate 时另行克隆 */
 	private instances: Record<symbol, unknown> = Object.create(null)
+	private servicePreparePromises = new Map<symbol, Promise<unknown>>()
 	public parent?: Context
 	public root: Context.Root
 	public name: string
@@ -73,7 +76,8 @@ export class Context {
 		const scope = ((ctor as unknown as { scope?: 'context' | 'root' }).scope ?? 'context') as
 			| 'context'
 			| 'root'
-		const meta: ServiceMeta = { sk, key, scope }
+		const eager = (ctor as unknown as { eager?: boolean }).eager === true
+		const meta: ServiceMeta = { sk, key, scope, eager }
 		Context.serviceMetaByCtor.set(ctor as unknown as AnyServiceClass, meta)
 		Context.serviceMetaByKey.set(key, meta)
 		Context.defaultMapping[sk] = sk
@@ -111,6 +115,8 @@ export class Context {
 		const scope = ((overrideCtor as unknown as { scope?: 'context' | 'root' }).scope ??
 			meta.scope) as 'context' | 'root'
 		meta.scope = scope
+		const eager = (overrideCtor as unknown as { eager?: boolean }).eager
+		if (eager !== undefined) meta.eager = eager === true
 		const sk = meta.sk
 		Object.defineProperty(Context.prototype, key, {
 			configurable: true,
@@ -124,6 +130,30 @@ export class Context {
 
 		// 4) 同步补齐代理（不覆盖既有 Context 方法/属性代理）
 		installServiceProxies(key, overrideCtor.methods, overrideCtor.props)
+	}
+
+	async prepareServices(): Promise<void> {
+		for (const meta of Context.serviceMetaByKey.values()) {
+			if (!meta.eager) continue
+			const target = meta.scope === 'root' ? this.root : this
+			const service = (target as unknown as Record<string, unknown>)[meta.key]
+			const prepare = (service as { prepare?: unknown } | null | undefined)?.prepare
+			if (typeof prepare !== 'function') continue
+			const existing = target.servicePreparePromises.get(meta.sk)
+			if (existing) {
+				await existing
+				continue
+			}
+			const pending = Promise.resolve().then(() => prepare.call(service))
+			target.servicePreparePromises.set(meta.sk, pending)
+			try {
+				await pending
+			} finally {
+				if (target.servicePreparePromises.get(meta.sk) === pending) {
+					target.servicePreparePromises.delete(meta.sk)
+				}
+			}
+		}
 	}
 	/**
 	 * 扩展 Context，继承 mapping & 共享 instances
@@ -145,6 +175,7 @@ export class Context {
 		// avoid per-child objects and deep prototype chains.
 		child.mapping = this.mapping
 		child.instances = this.instances // 共享实例池
+		child.servicePreparePromises = new Map()
 
 		return child
 	}
@@ -223,13 +254,14 @@ function createServiceGetter<T>(
 	if (scope === 'root') {
 		return function (this: Context) {
 			const root = this.root
-			let inst = root.instances[sk] as T
+			const rootInstances = contextInstanceState(root).instances
+			let inst = rootInstances[sk] as T
 			if (inst) return bindServiceContext(inst, root)
 
 			const cfg = (root.config as Record<string, unknown>)[key]
 			inst = new ctor(root, cfg)
 			bindServiceContext(inst, root)
-			root.instances[sk] = inst
+			rootInstances[sk] = inst
 			return inst
 		}
 	}
@@ -242,7 +274,8 @@ function createServiceGetter<T>(
 		//   `this.instances` either *is* `root.instances` (normal) or prototypically inherits it
 		//   (after isolate() via Object.create), so lookups still hit.
 		// - For isolated services, `ik !== sk` and the instance lives in `this.instances[ik]`.
-		let inst = this.instances[ik] as T
+		const instances = contextInstanceState(this).instances
+		let inst = instances[ik] as T
 		if (inst) return bindServiceContext(inst, this)
 
 		const cfg = (this.config as Record<string, unknown>)[key]
@@ -251,9 +284,16 @@ function createServiceGetter<T>(
 		// Only decide where to store on miss:
 		// - `ik === sk` -> shared root space (avoid accidental isolation)
 		// - `ik !== sk` -> this context's isolated space
-		;(ik === sk ? this.root.instances : this.instances)[ik] = inst
+		const targetInstances = ik === sk ? contextInstanceState(this.root).instances : instances
+		targetInstances[ik] = inst
 		return inst
 	}
+}
+
+function contextInstanceState(ctx: Context): ContextInstanceState {
+	// Keep the cache private on the public Context type while allowing this module's installed getters
+	// to access the same implementation state.
+	return ctx as unknown as ContextInstanceState
 }
 
 function bindServiceContext<T>(inst: T, ctx: Context) {
@@ -364,8 +404,8 @@ export namespace Context {
 	 * declare module "@pluxel/context" {
 	 *   namespace Context {
 	 *     interface DebugTopics {
-	 *       "pluxel:hmr:*": true
-	 *       "pluxel:bundler": true
+	 *       "hmr:*": true
+	 *       "bundler": true
 	 *     }
 	 *   }
 	 * }
@@ -396,14 +436,14 @@ export namespace Context {
 		/**
 		 * Enable debug topics (pluxel convention).
 		 *
-		 * Values are `:`-separated category strings. Supported patterns:
-		 * - `pluxel:hmr:batch` → enables that exact category
-		 * - `pluxel:hmr:*` → enables the prefix category `["pluxel","hmr"]` (and thus its children)
+		 * Values are `:`-separated topic strings. Supported patterns:
+		 * - `hmr:batch` → enables that exact topic
+		 * - `hmr:*` → enables the `hmr` topic prefix
 		 * - `*` → enables all debug topics (discouraged)
 		 *
 		 * Notes:
-		 * - Used by `@pluxel/runtime` to gate internal debug logs and to seed LogTape auto-config debug rules.
-		 * - Consumers can also pass these to `createPluxelLogtapeConfig({ debug })`.
+		 * - Runtime launchers compile these once into the active root debug matcher.
+		 * - Plugin debug records must also pass that plugin's dynamic log-level policy.
 		 */
 		debug?: readonly DebugTopicPattern[]
 		[key: string]: unknown

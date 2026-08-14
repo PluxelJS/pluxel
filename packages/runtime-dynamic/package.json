@@ -1,7 +1,12 @@
 {
 	"name": "@pluxel/runtime-dynamic",
 	"version": "0.3.0",
-	"description": "Pluxel runtime dynamic route (dynamic plugin loading, scanning, and package installs)",
+	"description": "Pluxel mutable file-source runtime route",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/runtime-dynamic"
+	},
 	"files": [
 		"!**/*.map",
 		"dist"
@@ -17,17 +22,13 @@
 			"@pluxel/source": "./src/hmr.ts",
 			"default": "./dist/hmr.mjs"
 		},
-		"./plugin": {
-			"@pluxel/source": "./src/plugin.ts",
-			"default": "./dist/plugin.mjs"
+		"./hmr/diagnose": {
+			"@pluxel/source": "./src/hmr/diagnose.ts",
+			"default": "./dist/hmr/diagnose.mjs"
 		},
-		"./register": {
-			"@pluxel/source": "./src/register.ts",
-			"default": "./dist/register.mjs"
-		},
-		"./services": {
-			"@pluxel/source": "./src/services.ts",
-			"default": "./dist/services.mjs"
+		"./source-producer": {
+			"@pluxel/source": "./src/source-producer.ts",
+			"default": "./dist/source-producer.mjs"
 		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
@@ -39,9 +40,8 @@
 		"exports": {
 			".": "./dist/index.mjs",
 			"./hmr": "./dist/hmr.mjs",
-			"./plugin": "./dist/plugin.mjs",
-			"./register": "./dist/register.mjs",
-			"./services": "./dist/services.mjs",
+			"./hmr/diagnose": "./dist/hmr/diagnose.mjs",
+			"./source-producer": "./dist/source-producer.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}
@@ -51,28 +51,21 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@gqloom/core": "^0.16.1",
 		"@logtape/logtape": "^2.0.2",
 		"@pluxel/core": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
-		"capnweb": "^0.5.0",
-		"chokidar": "^5.0.0",
-		"graphql": "^16.13.0",
 		"jsonc-parser": "^3.3.1",
-		"nypm": "^0.6.5",
-		"option-t": "^55.1.2",
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
-		"tinypool": "^2.1.0",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/bun": "^1.3.14",
 		"superjson": "^2.2.6",
-		"typescript": "^6.0.3",
+		"tsx": "^4.23.0",
+		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
@@ -82,5 +75,9 @@
 		"vite": {
 			"optional": true
 		}
+	},
+	"inlinedDependencies": {
+		"chokidar": "5.0.0",
+		"readdirp": "5.0.0"
 	}
 }

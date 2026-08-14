@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
+import { pluxelViteSourceBridgeExternal } from '../runtime-dev/tsdown-source-bridge.ts'
 
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
@@ -17,8 +18,6 @@ export default defineConfig({
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
-			'@pluxel/runtime/shared',
-			'@pluxel/runtime/web/federation',
 			'@pluxel/runtime/web/paths',
 			'vite',
 			'vite/*',
@@ -30,8 +29,14 @@ export default defineConfig({
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevViteEntry,
 	},
+	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
+		'internal/fetch-application': 'src/internal/fetch-application.ts',
+		'internal/fetch-workbench-application': 'src/internal/fetch-workbench-application.ts',
+		'internal/node-application': 'src/internal/node-application.ts',
+		'internal/node-workbench-application': 'src/internal/node-workbench-application.ts',
+		test: 'src/test.ts',
 		vite: 'src/vite.ts',
 	},
 	dts: {

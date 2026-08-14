@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { withRuntimeContext } from '@pluxel/runtime/test'
+import { setPluginEnabled } from '@pluxel/runtime/internal'
 import {
 	createElysiaApp,
 	createPluginGatedRouter,
 	getPluginRoutingSnapshot,
-	setPluginEnabled,
 	type PluginGatedModuleDef,
 } from '@pluxel/runtime'
 

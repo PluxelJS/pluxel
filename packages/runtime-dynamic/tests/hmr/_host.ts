@@ -1,6 +1,6 @@
-import '@pluxel/runtime-dynamic/register'
+import '../../src/register-services'
 import { createRuntimeHost, type RuntimeHost } from '@pluxel/runtime/test'
-import type { LoaderBatch } from '@pluxel/runtime-dynamic/services'
+import type { LoaderBatch } from '../../src/loader/support'
 
 export type ErrorLog = { msg: string; obj: unknown }
 export type LoaderModuleCapture = {

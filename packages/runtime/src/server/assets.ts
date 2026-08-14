@@ -33,27 +33,26 @@ function toViteFsPath(absPath: string): string {
 	return normalized.startsWith('/') ? `/@fs${normalized}` : `/@fs/${normalized}`
 }
 
-function resolveHmrClientEntryUrl(): string {
+export function resolveDevWorkbenchClientEntryUrl(): string {
 	const candidates = [
-		resolve(moduleDir, '../client.tsx'),
-		resolve(moduleDir, '../src/client.tsx'),
-		resolve(moduleDir, '../../src/client.tsx'),
+		resolve(moduleDir, '../../../workbench-app/src/client.tsx'),
+		resolve(moduleDir, '../../workbench-app/src/client.tsx'),
 	]
 
 	for (const candidate of candidates) {
 		if (existsSync(candidate)) return toViteFsPath(candidate)
 	}
 
-	return '/src/client.tsx'
+	return '/packages/workbench-app/src/client.tsx'
 }
 
 export const DEV_ASSETS: Assets = {
-	js: resolveHmrClientEntryUrl(),
+	js: resolveDevWorkbenchClientEntryUrl(),
 	css: [],
 	preload: [],
 }
 
-const pickEntry = (manifest: Manifest, entry = 'src/client.tsx') =>
+const pickEntry = (manifest: Manifest, entry = '../workbench-app/src/client.tsx') =>
 	entry in manifest
 		? entry
 		: (Object.keys(manifest).find((key) => manifest[key]?.isEntry) ?? Object.keys(manifest)[0])

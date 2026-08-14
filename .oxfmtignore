@@ -2,7 +2,11 @@ dist/
 **/dist/
 coverage/
 .turbo/
+vendor/
 **/*.hbs
-packages/diod/docs/api/
-packages/components/src/app/router/routeTree.gen.ts
-packages/plugins/host/pluxel.hmr.discovered.jsonc
+packages/core/benchmarks/
+packages/core-di/benchmarks/
+packages/workbench-app/src/app/gqlens/
+packages/workbench-app/src/app/router/routeTree.gen.ts
+projects/plugin-host/pluxel.loader.hmr.discovered.jsonc
+packages/plugins/static-commercial-demo/web/gqlens/

@@ -1,0 +1,261 @@
+.plx-remotePaneLayout {
+	--plx-pane-border: var(
+		--mantine-color-default-border,
+		color-mix(in srgb, CanvasText 16%, transparent)
+	);
+	--plx-pane-surface: var(--mantine-color-body, Canvas);
+	--plx-pane-muted: var(--mantine-color-dimmed, color-mix(in srgb, CanvasText 62%, transparent));
+	--plx-pane-hover: var(
+		--mantine-color-default-hover,
+		color-mix(in srgb, CanvasText 8%, transparent)
+	);
+	display: grid;
+	grid-template-rows: minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	position: relative;
+	overflow: hidden;
+	background: var(--plx-pane-surface);
+}
+
+.plx-remotePaneLayout:has(.plx-remotePaneLayout__responsiveBar) {
+	grid-template-rows: auto minmax(0, 1fr);
+}
+
+.plx-remotePaneLayout__main,
+.plx-remotePaneLayout__split {
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-remotePaneLayout__split {
+	--worksplit-sash-hit: var(--mantine-primary-color-filled, Highlight);
+	contain: none;
+	overflow: visible;
+}
+
+.plx-remotePaneLayout__split > .worksplit-pane {
+	overflow: hidden;
+}
+
+.plx-remotePaneLayout__paneHost--responsive {
+	z-index: -1;
+	pointer-events: none;
+}
+
+.plx-remotePaneLayout__paneHost--drawerOpen {
+	z-index: 90;
+	pointer-events: auto;
+	box-shadow: 0 16px 42px color-mix(in srgb, black 32%, transparent);
+}
+
+.plx-remotePaneLayout__responsiveBar {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-width: 0;
+	min-height: 38px;
+	padding: 4px 7px;
+	border-bottom: 1px solid var(--plx-pane-border);
+	overflow-x: auto;
+	background: color-mix(in srgb, var(--plx-pane-surface) 94%, CanvasText 6%);
+}
+
+.plx-remotePaneLayout__toolbarButton,
+.plx-remotePaneLayout__restore,
+.plx-remotePane__close {
+	font: inherit;
+	color: inherit;
+	border: 1px solid transparent;
+	background: transparent;
+	cursor: pointer;
+}
+
+.plx-remotePaneLayout__toolbarButton {
+	min-height: 28px;
+	padding: 3px 9px;
+	border-radius: 6px;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 650;
+}
+
+.plx-remotePaneLayout__toolbarButton:hover,
+.plx-remotePaneLayout__toolbarButton:focus-visible,
+.plx-remotePaneLayout__toolbarButton[data-active='true'] {
+	border-color: var(--plx-pane-border);
+	background: var(--plx-pane-hover);
+	outline: none;
+}
+
+.plx-remotePaneLayout__toolbarButton[data-active='true'] {
+	box-shadow: inset 0 -2px 0 var(--mantine-primary-color-filled, Highlight);
+}
+
+.plx-remotePaneLayout__reset {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 28px;
+	padding-inline: 0;
+	margin-inline-start: auto;
+	color: var(--plx-pane-muted);
+	font-size: 16px;
+	line-height: 1;
+}
+
+.plx-remotePane {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr);
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	background: var(--plx-pane-surface);
+}
+
+.plx-remotePane[data-role='navigation'] {
+	border-inline-end: 1px solid var(--plx-pane-border);
+}
+
+.plx-remotePane[data-role='inspector'] {
+	border-inline-start: 1px solid var(--plx-pane-border);
+}
+
+.plx-remotePane[data-drawer='true'] {
+	border: 0;
+}
+
+.plx-remotePane__header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	min-height: 44px;
+	padding: 6px 9px 6px 11px;
+	border-bottom: 1px solid var(--plx-pane-border);
+	background: color-mix(in srgb, var(--plx-pane-surface) 96%, CanvasText 4%);
+}
+
+.plx-remotePane__heading {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	line-height: 1.2;
+}
+
+.plx-remotePane__heading strong,
+.plx-remotePane__heading span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-remotePane__heading strong {
+	font-size: 12px;
+	font-weight: 720;
+}
+
+.plx-remotePane__heading span {
+	color: var(--plx-pane-muted);
+	font-size: 10px;
+}
+
+.plx-remotePane__actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+	margin-inline-start: auto;
+}
+
+.plx-remotePane__close {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 27px;
+	height: 27px;
+	margin-inline-start: auto;
+	border-radius: 6px;
+	font-size: 18px;
+	line-height: 1;
+	color: var(--plx-pane-muted);
+}
+
+.plx-remotePane__close:hover,
+.plx-remotePane__close:focus-visible {
+	border-color: var(--plx-pane-border);
+	background: var(--plx-pane-hover);
+	color: inherit;
+	outline: none;
+}
+
+.plx-remotePane__body {
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-remotePane__body[data-scroll='auto'] {
+	overflow: auto;
+}
+
+.plx-remotePane__body[data-scroll='hidden'] {
+	overflow: hidden;
+}
+
+.plx-remotePaneLayout__restore {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 28px;
+	border-color: var(--plx-pane-border);
+	border-radius: 6px;
+	background: var(--plx-pane-surface);
+	box-shadow: 0 5px 15px color-mix(in srgb, black 16%, transparent);
+	font-size: 17px;
+}
+
+.plx-remotePaneLayout__restore:hover,
+.plx-remotePaneLayout__restore:focus-visible {
+	background: var(--plx-pane-hover);
+	outline: 2px solid var(--mantine-primary-color-filled, Highlight);
+	outline-offset: 1px;
+}
+
+.plx-remotePaneLayout__scrim {
+	position: absolute;
+	inset: 0;
+	z-index: 80;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 0;
+	background: color-mix(in srgb, black 38%, transparent);
+	cursor: default;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.plx-remotePaneLayout__paneHost--drawerOpen {
+		animation: plx-pane-enter 150ms ease-out;
+	}
+}
+
+@keyframes plx-pane-enter {
+	from {
+		transform: translateX(12px);
+		opacity: 0.7;
+	}
+}
+
+@media (max-width: 480px) {
+	.plx-remotePaneLayout__paneHost--responsive {
+		width: min(360px, calc(100% - 18px)) !important;
+	}
+
+	.plx-remotePaneLayout__reset {
+		display: none;
+	}
+}

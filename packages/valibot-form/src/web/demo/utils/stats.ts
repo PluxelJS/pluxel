@@ -14,9 +14,7 @@ export function buildCaseStats(schema: ObjectSchema<any, any>): CaseStats {
 	const fieldCount = fields.length
 	const complexCount = fields.filter((field) => COMPLEX_KINDS.has(field.kind)).length
 	const sectionIds = new Set(
-		fields
-			.map((field) => field.meta.section?.id)
-			.filter(Boolean) as string[],
+		fields.map((field) => field.meta.section?.id).filter(Boolean) as string[],
 	)
 	return {
 		fieldCount,

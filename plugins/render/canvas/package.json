@@ -1,0 +1,62 @@
+{
+	"name": "@pluxel/canvas",
+	"version": "0.1.0",
+	"description": "Official bounded server-side Canvas capability for Pluxel plugins",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "plugins/render/canvas"
+	},
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
+	"type": "module",
+	"types": "./dist/index.d.mts",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/index.ts",
+			"default": "./dist/index.mjs"
+		},
+		"./worker": {
+			"@pluxel/hmr": "./src/worker.ts",
+			"default": "./dist/worker.mjs"
+		},
+		"./worker/pretext": {
+			"@pluxel/hmr": "./src/worker-pretext.ts",
+			"default": "./dist/worker/pretext.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"exports": {
+			".": "./dist/index.mjs",
+			"./worker": "./dist/worker.mjs",
+			"./worker/pretext": "./dist/worker/pretext.mjs",
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "pluxel build",
+		"test": "vitest run --config vitest.config.ts",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@chenglou/pretext": "catalog:",
+		"@napi-rs/canvas": "catalog:",
+		"@pluxel/fonts": "workspace:*"
+	},
+	"devDependencies": {
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/test": "workspace:*",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"@pluxel/runtime": "workspace:*"
+	}
+}

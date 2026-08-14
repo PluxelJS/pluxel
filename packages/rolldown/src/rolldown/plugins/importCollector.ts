@@ -1,4 +1,5 @@
 import type { Program } from 'oxc-parser'
+import { type AstNode, readLiteralString, walkAst } from './pluginUtils.ts'
 
 export type CollectedImportKind = 'static' | 'dynamic'
 
@@ -9,31 +10,12 @@ export interface CollectedImportSpecifier {
 	end?: number
 }
 
-type NodeLike = {
-	type?: unknown
-	start?: unknown
-	end?: unknown
-	[key: string]: unknown
-}
-
-const SKIP_KEYS = new Set([
-	'type',
-	'start',
-	'end',
-	'loc',
-	'range',
-	'comments',
-	'leadingComments',
-	'trailingComments',
-	'innerComments',
-])
-
 export function collectImportSpecifiers(ast: Program): CollectedImportSpecifier[] {
 	const out: CollectedImportSpecifier[] = []
 
 	for (const statement of ast.body ?? []) {
 		if (!statement || typeof statement !== 'object') continue
-		const node = statement as NodeLike
+		const node = statement as AstNode
 		if (
 			node.type === 'ImportDeclaration' ||
 			node.type === 'ExportNamedDeclaration' ||
@@ -44,7 +26,7 @@ export function collectImportSpecifiers(ast: Program): CollectedImportSpecifier[
 		}
 	}
 
-	visitNode(ast as unknown as NodeLike, (node) => {
+	walkAst(ast, (node) => {
 		if (node.type === 'ImportExpression') {
 			const specifier = readImportSource((node as { source?: unknown }).source)
 			if (specifier) out.push(withRange({ specifier, kind: 'dynamic' }, node.source))
@@ -68,7 +50,7 @@ function readImportSource(node: unknown): string | null {
 	if (literal) return literal
 
 	if (!node || typeof node !== 'object') return null
-	const value = node as NodeLike
+	const value = node as AstNode
 	if (value.type !== 'TemplateLiteral') return null
 
 	const expressions = (value as { expressions?: unknown }).expressions
@@ -83,12 +65,6 @@ function readImportSource(node: unknown): string | null {
 	return typeof cooked === 'string' ? cooked : typeof raw === 'string' ? raw : null
 }
 
-function readLiteralString(node: unknown): string | null {
-	if (!node || typeof node !== 'object') return null
-	const value = node as { type?: unknown; value?: unknown }
-	return value.type === 'Literal' && typeof value.value === 'string' ? value.value : null
-}
-
 function isImportCallee(node: unknown): boolean {
 	if (!node || typeof node !== 'object') return false
 	return (node as { type?: unknown }).type === 'Import'
@@ -100,21 +76,4 @@ function withRange<T extends CollectedImportSpecifier>(item: T, node: unknown): 
 	if (typeof range.start === 'number') item.start = range.start
 	if (typeof range.end === 'number') item.end = range.end
 	return item
-}
-
-function visitNode(node: unknown, visit: (node: NodeLike) => void): void {
-	if (!node || typeof node !== 'object') return
-	if (Array.isArray(node)) {
-		for (const item of node) visitNode(item, visit)
-		return
-	}
-
-	const current = node as NodeLike
-	if (typeof current.type === 'string') visit(current)
-
-	for (const [key, value] of Object.entries(current)) {
-		if (SKIP_KEYS.has(key)) continue
-		if (!value || typeof value !== 'object') continue
-		visitNode(value, visit)
-	}
 }

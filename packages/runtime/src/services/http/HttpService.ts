@@ -2,21 +2,23 @@ import { type Context as PluxelContext, Injectable } from '@pluxel/core'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
-import { ensureRuntimePluginPolicyLoaded } from '../../logger/levels'
 import {
 	canAccessSecurityAdmin,
-	createVerificationBlockedHeaders,
-	createVerificationBlockedPayload,
-	resolveControlPlaneRedirectPath,
-	type VerificationBlockedKind,
-	type VerificationReason,
-} from '../../shared/verification-http'
+	createAdminAccessBlockedHeaders,
+	createAdminAccessBlockedPayload,
+	resolveAdminAccessRedirectPath,
+	type AdminAccessBlockedKind,
+	type AdminAccessReason,
+} from '../../shared/admin-access-http'
 import type { RenderHandler } from '../../server/types'
-import type { ExtensionManifestEvent } from '../../web/extensions'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, UI_PUBLIC_BASE } from '../../web/paths'
-import { buildVerificationRedirectPath, VERIFICATION_PAGE_PATH } from '../verification/transport'
-import { resolveManagementConfig } from '../verification/model'
-import type { SseChannel } from '../plugin-interaction/SseService'
+import { buildAdminAccessRedirectPath, ADMIN_ACCESS_PAGE_PATH } from '../admin-access/transport'
+import { resolveAdminAccessConfig } from '../admin-access/model'
+import {
+	matchesWorkbenchUiBasePath,
+	normalizeWorkbenchUiBasePath,
+	resolveWorkbenchUiBasePath,
+} from '../../workbench-config'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
 
 const serviceName = 'http' as const
@@ -44,7 +46,7 @@ export type HttpHandler = (
 export type HttpBoundary = HttpHandler | { fetch: HttpHandler }
 
 export interface HttpServiceConfig {
-	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from management RPC/SSE/UI. */
+	/** Enables the runtime GraphQL HTTP endpoint. Defaults to true, independent from workbench RPC/SSE/UI. */
 	graphql?: boolean
 }
 
@@ -63,6 +65,8 @@ type RuntimeHttpServiceConfig = HttpServiceConfig & {
 	 * Defaults to the package's `dist/public` (when present).
 	 */
 	uiPublicDir?: string
+	/** Browser path owned by the Workbench shell. Route launchers derive it from WorkbenchConfig. */
+	uiBasePath?: string
 }
 
 interface MountedBoundarySpec {
@@ -94,6 +98,7 @@ type ResolvedHttpServiceConfig = {
 	graphql: boolean
 	uiAssets: RuntimeHttpUiAssetMode
 	uiPublicDir: string
+	uiBasePath: string
 }
 
 export type ElysiaBoundaryBuilder = (app: BaseElysiaApp) => HttpBoundary
@@ -114,6 +119,12 @@ export interface HostHttpMountSpec {
 
 export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
 	path?: string
+	/**
+	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
+	 * default `/__pluxel/plugins/<plugin-id>` namespace. This changes routing only;
+	 * authentication remains the plugin's responsibility.
+	 */
+	publicPath?: string
 	id?: string
 }
 
@@ -142,6 +153,17 @@ function normalizePluginPath(path = '/'): string {
 	return raw.startsWith('/') ? raw.replace(/\/+$/, '') || '/' : `/${raw.replace(/\/+$/, '')}`
 }
 
+function normalizePluginPublicPath(path: string): string {
+	const raw = path.trim()
+	if (!raw.startsWith('/')) throw new Error('Plugin publicPath must be an absolute path')
+	const normalized = normalizeMountBase(raw)
+	if (normalized === '/') throw new Error('Plugin publicPath cannot own the runtime root')
+	if (normalized === '/__pluxel' || normalized.startsWith('/__pluxel/')) {
+		throw new Error('Plugin publicPath cannot use the reserved /__pluxel namespace')
+	}
+	return normalized
+}
+
 function encodePathSegment(input: string): string {
 	return encodeURIComponent(input)
 }
@@ -163,7 +185,6 @@ export class HttpService {
 	private readonly hostCtx: PluxelContext
 	private readonly logger: NonNullable<PluxelContext['logger']>
 	private renderer: Promise<RenderHandler> | null = null
-	private sseBuiltinsReady = false
 	private readonly config: ResolvedHttpServiceConfig
 
 	constructor(
@@ -173,32 +194,38 @@ export class HttpService {
 		const runtimeConfig = config as RuntimeHttpServiceConfig
 		this.hostCtx = ctx.root
 		this.logger = this.hostCtx.logger!
-		const managementConfig = resolveManagementConfig(this.hostCtx.config.management)
-		const management = managementConfig.enabled
-		if (
-			management &&
-			managementConfig.access.exposure === 'public' &&
-			!managementConfig.access.oidc
-		) {
-			throw new Error('Public management access requires management.access.oidc.')
+		const adminAccessConfig = resolveAdminAccessConfig(this.hostCtx.config.adminAccess)
+		const adminAccessEnabled = adminAccessConfig.enabled
+		if (adminAccessEnabled && adminAccessConfig.exposure === 'public' && !adminAccessConfig.oidc) {
+			throw new Error('Public admin access requires adminAccess.oidc.')
 		}
-		const useDefaultControlPlane = management && runtimeConfig.controlPlane === undefined
+		const useDefaultControlPlane = adminAccessEnabled && runtimeConfig.controlPlane === undefined
 		const graphql = config.graphql !== false
 		this.config = {
 			controlPlane: {
-				web: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
-				rpc: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
-				sse: management && (useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
+				web:
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.web === true),
+				rpc:
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.rpc === true),
+				sse:
+					adminAccessEnabled &&
+					(useDefaultControlPlane || runtimeConfig.controlPlane?.sse === true),
 			},
 			graphql,
-			uiAssets: management ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
+			uiAssets: adminAccessEnabled ? (runtimeConfig.uiAssets ?? 'static-built') : 'disabled',
 			uiPublicDir: runtimeConfig.uiPublicDir ?? '',
+			uiBasePath:
+				runtimeConfig.uiBasePath === undefined
+					? resolveWorkbenchUiBasePath(this.hostCtx.config.workbench)
+					: normalizeWorkbenchUiBasePath(runtimeConfig.uiBasePath),
 		}
-		if (management) {
+		if (adminAccessEnabled) {
 			this.mountHostBoundary({
-				id: 'pluxel:verification',
-				path: VERIFICATION_PAGE_PATH,
-				boundary: this.createLazyVerificationBoundary(),
+				id: 'pluxel:admin-access',
+				path: ADMIN_ACCESS_PAGE_PATH,
+				boundary: this.createLazyAdminAccessBoundary(),
 			})
 		}
 		this.rebuildRootApp()
@@ -222,11 +249,6 @@ export class HttpService {
 				boundary: this.createLazyGraphqlBoundary(),
 			})
 		}
-		if (this.config.controlPlane.sse) this.registerSseBuiltins()
-
-		void ensureRuntimePluginPolicyLoaded(ctx).catch((error) => {
-			this.logger.warn('Failed to load persisted plugin log policy', { error })
-		})
 	}
 
 	get fetch() {
@@ -239,16 +261,29 @@ export class HttpService {
 	 * HMR hosts can decide UI asset mode at process startup; if the HTTP service is already
 	 * instantiated, it must be reconfigured in-place or it will keep serving the previous renderer.
 	 */
-	/** @internal Route launchers use this to switch between bundled and dev-server management UI assets. */
-	reconfigureUiAssets(config: { uiAssets?: RuntimeHttpUiAssetMode; uiPublicDir?: string }): void {
+	/** @internal Route launchers use this to switch between bundled and dev-server workbench UI assets. */
+	reconfigureUiAssets(config: {
+		uiAssets?: RuntimeHttpUiAssetMode
+		uiPublicDir?: string
+		uiBasePath?: string
+	}): void {
 		const nextUiAssets = config.uiAssets ?? 'static-built'
 		const nextUiPublicDir = config.uiPublicDir ?? ''
-		if (nextUiAssets === this.config.uiAssets && nextUiPublicDir === this.config.uiPublicDir) {
+		const nextUiBasePath =
+			config.uiBasePath === undefined
+				? this.config.uiBasePath
+				: normalizeWorkbenchUiBasePath(config.uiBasePath)
+		if (
+			nextUiAssets === this.config.uiAssets &&
+			nextUiPublicDir === this.config.uiPublicDir &&
+			nextUiBasePath === this.config.uiBasePath
+		) {
 			return
 		}
 
 		this.config.uiAssets = nextUiAssets
 		this.config.uiPublicDir = nextUiPublicDir
+		this.config.uiBasePath = nextUiBasePath
 		this.renderer = null
 		this.uiPublicHandler = undefined
 		this.rebuildRootApp()
@@ -263,6 +298,14 @@ export class HttpService {
 		const value = this.fullReloadRequested
 		this.fullReloadRequested = false
 		return value
+	}
+
+	matchesMountedRoute(pathname: string): boolean {
+		const path = normalizeMountBase(pathname)
+		return this.mountedIndex.some((slot) => {
+			if (slot.base === '/') return true
+			return path === slot.base || path.startsWith(`${slot.base}/`)
+		})
 	}
 
 	get plugin() {
@@ -303,15 +346,15 @@ export class HttpService {
 		})
 	}
 
-	private createLazyVerificationBoundary(): HttpHandler {
+	private createLazyAdminAccessBoundary(): HttpHandler {
 		let appPromise: Promise<BaseElysiaApp> | undefined
 		return async (request) => {
-			appPromise ??= import('../verification/http').then(({ createVerificationRoutes }) =>
-				createVerificationRoutes(
+			appPromise ??= import('../admin-access/http').then(({ createAdminAccessRoutes }) =>
+				createAdminAccessRoutes(
 					this.hostCtx,
 					this.createApp(this.hostCtx, {
 						aot: true,
-						name: 'pluxel.http.verification',
+						name: 'pluxel.http.admin-access',
 					}),
 				),
 			)
@@ -352,11 +395,18 @@ export class HttpService {
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
+		if (options.path !== undefined && options.publicPath !== undefined) {
+			throw new Error('Plugin HTTP mount cannot combine path and publicPath')
+		}
 		const path = normalizePluginPath(options.path)
-		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path)
+		const base =
+			options.publicPath === undefined
+				? this.resolvePluginBase(pluginId, path)
+				: normalizePluginPublicPath(options.publicPath)
+		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path, options.publicPath)
 		return this.mountAtPath(pluginCtx, {
 			id: routeId,
-			base: this.resolvePluginBase(pluginId, path),
+			base,
 			boundary,
 		})
 	}
@@ -464,7 +514,10 @@ export class HttpService {
 				return (await uiPublic(request)) ?? new Response('Not Found', { status: 404 })
 			}
 
-			if (this.isHtmlNavigation(request)) {
+			if (
+				this.isHtmlNavigation(request) &&
+				matchesWorkbenchUiBasePath(path, this.config.uiBasePath)
+			) {
 				if (this.config.uiAssets === 'disabled') return new Response('Not Found', { status: 404 })
 				const denied = await this.guardUiRequest(request, path, method, 'ui')
 				if (denied) return denied
@@ -479,47 +532,13 @@ export class HttpService {
 		this.fetchPtr = (request) => root.fetch(request)
 	}
 
-	private registerSseBuiltins() {
-		if (this.sseBuiltinsReady) return
-		this.sseBuiltinsReady = true
-
-		const disposers = [
-			this.registerBuiltinSse('extensions', (channel) => this.streamManifestEvents(channel)),
-		]
-
-		for (const dispose of disposers) this.hostCtx.effects.defer(dispose)
-	}
-
-	private registerBuiltinSse(
-		namespace: string,
-		handler: (channel: SseChannel) => undefined | (() => void),
-	) {
-		return this.hostCtx.ext.sse.expose(() => handler, { namespace })
-	}
-
-	private streamManifestEvents(channel: SseChannel): undefined | (() => void) {
-		const service = this.hostCtx.ext.ui
-		if (!service) {
-			channel.emit('error', { reason: 'Extension service unavailable' })
-			return undefined
-		}
-
-		channel.emit('ready', { type: 'ready' })
-		channel.emit('sync', { type: 'sync', version: service.getManifest().version })
-
-		const send = (event: ExtensionManifestEvent) => channel.emit(event.type, event)
-		const unsubscribe = service.subscribeManifest(send)
-		channel.onAbort(unsubscribe)
-		return () => unsubscribe()
-	}
-
 	private async guardUiRequest(
 		request: Request,
 		path: string,
 		method: string,
-		kind: VerificationBlockedKind,
+		kind: AdminAccessBlockedKind,
 	): Promise<Response | undefined> {
-		const state = await this.hostCtx.root.verification.authorize({
+		const state = await this.hostCtx.root.adminAccess.authorize({
 			headers: request.headers,
 			request,
 			url: request.url,
@@ -535,29 +554,29 @@ export class HttpService {
 				method,
 				reason: state.reason,
 			})
-			return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
+			return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
 		}
 		if (state.allow) return undefined
 
-		this.logger.warn('Blocked host verification gate', {
+		this.logger.warn('Blocked admin access gate', {
 			kind,
 			path,
 			method,
 			reason: state.reason,
 		})
 
-		return this.buildVerificationDeniedResponse(request, path, method, kind, state.reason)
+		return this.buildAdminAccessDeniedResponse(request, path, method, kind, state.reason)
 	}
 
-	private buildVerificationDeniedResponse(
+	private buildAdminAccessDeniedResponse(
 		request: Request,
 		path: string,
 		method: string,
-		kind: VerificationBlockedKind,
-		reason?: VerificationReason,
+		kind: AdminAccessBlockedKind,
+		reason?: AdminAccessReason,
 	): Response {
-		const redirectPath = resolveControlPlaneRedirectPath(
-			buildVerificationRedirectPath,
+		const redirectPath = resolveAdminAccessRedirectPath(
+			buildAdminAccessRedirectPath,
 			request,
 			kind,
 			reason,
@@ -573,10 +592,10 @@ export class HttpService {
 		}
 
 		return Response.json(
-			createVerificationBlockedPayload(path, method, kind, redirectPath, reason),
+			createAdminAccessBlockedPayload(path, method, kind, redirectPath, reason),
 			{
 				status: 401,
-				headers: createVerificationBlockedHeaders(redirectPath, reason),
+				headers: createAdminAccessBlockedHeaders(redirectPath, reason),
 			},
 		)
 	}
@@ -600,6 +619,12 @@ export class HttpService {
 
 	private upsertMounted(spec: MountedBoundarySpec): MountedBoundary {
 		const base = normalizeMountBase(spec.base)
+		const conflict = this.mountedIndex.find((slot) => slot.id !== spec.id && slot.base === base)
+		if (conflict) {
+			throw new Error(
+				`HTTP mount path "${base}" is already owned by "${conflict.id}"; "${spec.id}" cannot mount the same path`,
+			)
+		}
 		const slot: MountedBoundary = {
 			id: spec.id,
 			base,
@@ -672,7 +697,14 @@ export class HttpService {
 		return suffix === '/' ? base : `${base}${suffix}`
 	}
 
-	private defaultPluginBoundaryId(pluginId: string, path: string): string {
+	private defaultPluginBoundaryId(
+		pluginId: string,
+		path: string,
+		publicPath: string | undefined,
+	): string {
+		if (publicPath !== undefined) {
+			return `${pluginId}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
+		}
 		return path === '/'
 			? `${pluginId}:http`
 			: `${pluginId}:http:${path.slice(1).replaceAll('/', ':')}`
@@ -696,10 +728,13 @@ export class HttpService {
 		}
 		if (this.config.uiAssets === 'static-built') {
 			const { createStaticRenderer } = await import('../../server/static')
-			return createStaticRenderer({ publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined })
+			return createStaticRenderer({
+				publicDirAbs: (await this.resolveUiPublicDir()) ?? undefined,
+				uiBasePath: this.config.uiBasePath,
+			})
 		}
 		const { createHmrRenderer } = await import('../../server/hmr')
-		return createHmrRenderer()
+		return createHmrRenderer({ uiBasePath: this.config.uiBasePath })
 	}
 
 	private async render(request: Request) {

@@ -1,17 +1,55 @@
-import type { LoaderHmrWorkspaceSnapshot } from '@pluxel/runtime-dynamic/hmr'
+import {
+	bootPlannedLoaderHmrHost,
+	planLoaderHmrHostFromConfig,
+	type LoaderHmrWorkspaceSnapshot,
+} from '@pluxel/runtime-dynamic/hmr'
 import { createFixture } from '@pluxel/test/fixtures'
-import { dirname, resolve } from 'pathe'
-import { SuperJSON } from 'superjson'
+import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { createTestHmrHost } from '../support/test-host'
 
-describe('HMR ConfigService profile storage', () => {
-	it('writes a per-profile config file (and can seed from the base file)', async () => {
+describe('HMR runtime persistence storage', () => {
+	it('initializes plugin config from the dynamic host environment', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
 				'{',
-				'  "version": 1,',
+				'  "version": 2,',
+				'  "profile": "dev",',
+				'  "defaults": { "roots": "auto" },',
+				'  "profiles": { "dev": { "enabled": [] } }',
+				'}',
+				'',
+			].join('\n'),
+		})
+
+		const plan = await planLoaderHmrHostFromConfig({
+			root: fixture.path,
+			fs: fixture.fs,
+			chdir: false,
+			logging: false,
+			configService: { mode: 'memory' },
+			runtimeState: { mode: 'memory' },
+			env: {
+				PLUXEL_CONFIG__ExamplePlugin__config__endpoint: 'https://api.example.test',
+			},
+		})
+		const host = await bootPlannedLoaderHmrHost(plan)
+		try {
+			expect(host.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
+				config: { endpoint: 'https://api.example.test' },
+			})
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('stores config and runtime state under the shared persistence root', async () => {
+		await using fixture = await createFixture({
+			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
+			'pluxel.loader.hmr.jsonc': [
+				'{',
+				'  "version": 2,',
 				'  "profile": "dev",',
 				'  "defaults": { "roots": "auto" },',
 				'  "profiles": { "dev": { "enabled": ["pluxel-plugin-a"] } }',
@@ -40,7 +78,6 @@ describe('HMR ConfigService profile storage', () => {
 				activeProfile: 'dev',
 				roots: ['packages/a'],
 				enabled: ['pluxel-plugin-a'],
-				builtinPackages: [],
 				enabledEntries: ['packages/a/src/index.ts'],
 				includedEntries: [],
 				watchRoots: ['packages/a'],
@@ -50,40 +87,35 @@ describe('HMR ConfigService profile storage', () => {
 			const host = await createTestHmrHost({
 				fs: fixture.fs,
 				root: fixture.path,
-				storage: {},
 				snapshot,
 			})
 			ctx = host.ctx
 
-			// Seed the base config file (shared name). The HMR ConfigService should read it as a fallback
-			// and then write the per-profile file on first load.
-			const base = resolve(fixture.path, '.pluxel/loader-hmr/config.json')
-			await fixture.fsp.mkdir(dirname(base), { recursive: true })
-			await fixture.fsp.writeFile(
-				base,
-				SuperJSON.stringify({
-					enabled: new Set(['pluxel-plugin-a']),
-					plugins: {},
-					extra: {},
-				}),
-			)
-
 			await host.ctx.root.configService.ready
+			await host.ctx.root.runtimeState.ready
 
-			const perProfile = resolve(fixture.path, '.pluxel/loader-hmr/config.dev.json')
-			expect(fixture.fs.existsSync(base)).toBe(true)
-			expect(fixture.fs.existsSync(perProfile)).toBe(true)
+			expect(
+				fixture.fs.existsSync(resolve(fixture.path, '.pluxel/persistence/config/config.json')),
+			).toBe(true)
+			expect(
+				fixture.fs.existsSync(
+					resolve(fixture.path, '.pluxel/persistence/runtime-state/state.json'),
+				),
+			).toBe(true)
+			expect(
+				fixture.fs.existsSync(resolve(fixture.path, '.pluxel/loader-hmr/config.dev.json')),
+			).toBe(false)
 		} finally {
 			if (ctx) await ctx.effects.dispose()
 		}
 	}, 15_000)
 
-	it('supports `{profile}` in storage.configFile (directory placement)', async () => {
+	it('allows changing only the persistence root', async () => {
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
 				'{',
-				'  "version": 1,',
+				'  "version": 2,',
 				'  "profile": "dev",',
 				'  "defaults": { "roots": "auto" },',
 				'  "profiles": { "dev": { "enabled": [] } }',
@@ -99,7 +131,6 @@ describe('HMR ConfigService profile storage', () => {
 				activeProfile: 'dev',
 				roots: [],
 				enabled: [],
-				builtinPackages: [],
 				enabledEntries: [],
 				includedEntries: [],
 				watchRoots: [],
@@ -109,15 +140,18 @@ describe('HMR ConfigService profile storage', () => {
 			const host = await createTestHmrHost({
 				fs: fixture.fs,
 				root: fixture.path,
-				storage: { configFile: '.pluxel/runtime/{profile}/config.json', seedConfig: false },
+				storage: { persistenceDir: '.pluxel/runtime-persistence' },
 				snapshot,
 			})
 			ctx = host.ctx
 
 			await host.ctx.root.configService.ready
 
-			const perProfile = resolve(fixture.path, '.pluxel/runtime/dev/config.json')
-			expect(fixture.fs.existsSync(perProfile)).toBe(true)
+			expect(
+				fixture.fs.existsSync(
+					resolve(fixture.path, '.pluxel/runtime-persistence/config/config.json'),
+				),
+			).toBe(true)
 		} finally {
 			if (ctx) await ctx.effects.dispose()
 		}

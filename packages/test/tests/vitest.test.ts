@@ -12,11 +12,18 @@ const rolldownMocks = vi.hoisted(() => {
 		name: `config-source-${configSourcePlugin.mock.calls.length}`,
 		options,
 	}))
+	const databaseSourceVitePlugin = vi.fn((options?: unknown) => ({
+		name: `database-source-${databaseSourceVitePlugin.mock.calls.length}`,
+		options,
+	}))
 
-	return { lintGuardPlugin, configSourcePlugin }
+	return { lintGuardPlugin, configSourcePlugin, databaseSourceVitePlugin }
 })
 
 vi.mock('@pluxel/rolldown/plugins', () => rolldownMocks)
+vi.mock('@pluxel/rolldown/vite', () => ({
+	databaseSourceVitePlugin: rolldownMocks.databaseSourceVitePlugin,
+}))
 
 afterEach(() => {
 	vi.clearAllMocks()
@@ -33,6 +40,10 @@ describe('@pluxel/test/vitest', () => {
 			cwd: resolve(process.cwd(), 'packages/test'),
 		})
 		expect(config.plugins?.[0]).toMatchObject({
+			name: expect.stringMatching(/^database-source-/),
+			options: { root: resolve(process.cwd(), 'packages/test') },
+		})
+		expect(config.plugins?.[1]).toMatchObject({
 			options: {
 				cwd: resolve(process.cwd(), 'packages/test'),
 			},
@@ -44,25 +55,34 @@ describe('@pluxel/test/vitest', () => {
 		expect(config).not.toHaveProperty('then')
 		expect(config.test?.name).toBe('sync-config')
 		expect(config.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
+			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
+		expect(config.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 		expect(config.ssr?.resolve?.conditions).toEqual(
-			expect.arrayContaining(['@pluxel/source', '@pluxel/runtime-dynamic']),
+			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
+		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
 	})
 
 	it('keeps node conditions deterministic', () => {
 		expect(buildPluxelResolveConditions('test')).toEqual([
+			'@pluxel/hmr',
+			'development',
 			'@pluxel/source',
-			'@pluxel/runtime-dynamic',
 			'node',
 			'import',
-			'module',
-			'development',
 			'production',
 			'default',
-			'browser',
 			'test',
 		])
+	})
+
+	it('includes source files directly under configured toolchain roots', () => {
+		definePluxelVitestConfig({}, { include: ['src/**/*.ts'] })
+
+		expect(rolldownMocks.configSourcePlugin).toHaveBeenLastCalledWith({
+			include: ['**/src/**/*.ts', '**/src/*.ts'],
+			exclude: ['**/node_modules/**', '**/*.d.ts'],
+		})
 	})
 })

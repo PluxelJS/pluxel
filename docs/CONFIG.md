@@ -1,97 +1,56 @@
-# Config
+# Config Architecture
 
-配置能力分成两半：
+配置链分成声明/校验与宿主持久化两层：
 
 ```text
-core      declaration / validation / defaults / normalized snapshots
-runtime   persistence / profile / patch-reset usecases / web config
+core: schema declaration -> defaults -> validation -> normalized snapshot
+runtime: core engine subclass -> persistence -> patch/reset -> workbench read model
 ```
 
-这个分法让配置声明可移植，同时让 runtime 提供文件落盘、网页配置、profile 和控制面。
+## 不变量
 
-## 作者写法
+- 默认值属于 schema；runtime 和插件不重复 fallback。
+- `configs.use()` 与 `cfg(schemaMap)` 是作者声明。
+- 配置在实例构造后、`init()` 前注入；constructor 不读取配置值。
+- config metadata 是 build-time 数据，不是 runtime AST 推断。
+- core validation 不依赖文件系统或 Workbench Plane。
+- raw record、revision 与 validation cache 只有 core `ConfigService` 一份；runtime 子类只增加持久化策略。
+- static application build 固定的是 plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
 
-推荐：
+## Static startup config
 
-- `configs.use(schema)`
-- `configs.use(cfg(schemaMap))`
-- 默认值写进 Valibot schema。
-- `cfg` layout 用 schema key 控制配置页排版。
-- `configs.use(...)` 和 `features.use(...)` 放在 module-level class fields。
+`defineStaticRuntime({ configure(startup) {} })` 将固定 catalog 与启动值分开。`startup` 提供 mode、env、platform bindings
+和 deployment facts；resolver 每次 host startup 重新执行，可选择 persistence、ConfigService、RuntimeState、HTTP、
+logging、profile 和 Workbench policy。
 
-不推荐：
+插件的 config records 与 enabled state 继续由 ConfigService/RuntimeState 管理，可以在 fixed catalog 范围内修改并跨
+启动持久化。production bundle 不把这些记录烘焙成不可变常量。
 
-- 在插件里对 `configs.use(...)` 的返回值再写 `?? defaults`。
-- 用 `||` 或 ad hoc fallback object 重做默认值。
-- 运行期动态构造 schema key，导致 build/runtime 无法稳定分析。
+Static 与 dynamic Node host 会把 `PLUXEL_CONFIG__` 前缀的启动环境交给 runtime ConfigService。变量名直接描述
+raw config 路径：
 
-## core 负责什么
+```text
+PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]
+```
 
-- schema defaulting。
-- `ConfigService.ensureValidated(...)`。
-- validated snapshot。
-- defaults 和 patch validation helper。
-- `cfg(schemaMap)` declaration 和 layout DSL。
-- config metadata 进入 plugin definition snapshot。
+值能被 JSON 解析时保留 array、object、boolean、number 或 null 类型，否则作为 string。environment record 覆盖
+host snapshot 中的同路径，并只用于初始化新的 config store；已有 file config 仍是权威来源。解析结果继续进入同一
+Standard Schema 校验、raw record、revision、Workbench 和持久化链，不建立第二套 env config 状态。
 
-## runtime 负责什么
+## Toolchain metadata
 
-- file/memory/readonly 配置模式。
-- profile-aware config path。
-- debounced save。
-- disk watch。
-- config get/validate/patch/reset operations。
-- web/workbench config integration。
-- Host/UI 需要的 `plugin.schema()` read model。
+`configSourcePlugin()` 提取 schema source、binding 和 layout，生成代码通过 `@pluxel/runtime/toolchain` 写入 definition metadata。该 subpath 不是作者 API。
 
-## Build metadata flow
-
-构建期 `configSourcePlugin` 只分析启动前静态声明，并注入：
-
-- `__setConfigSource__(Ctor, key, schemaSource)`
-- `__registerConfigSchema__(Ctor, key, schema)`
-- `__registerConfigBinding__(Ctor, field, keys)`
-- `__setConfigLayout__(Ctor, field, layoutParts)`
-
-core 快照把 metadata 组织到 `configSourceMap`、`configBindingsMap`、`configLayoutMap`。runtime 的 `plugin.schema()` 再整理成 Host 真正需要的：
-
-- `schemaSource`
-- `defaults`
-- `layout`
-
-如果存在多个 layout 绑定，runtime 优先选择覆盖全部 schema keys 的绑定；否则退回确定性的首个绑定。
-
-## layout parts
-
-`BuiltinMarkdownPart` 当前有三种：
-
-- `{ kind: 'md', text }`：静态 markdown。
-- `{ kind: 'schema', key }`：渲染单个 schema key。
-- `{ kind: 'schemas', keys }`：渲染指定 keys；`keys: null` 表示剩余未放置 keys。
-
-约束：
-
-- 同一个 schema key 不能重复放置。
-- `schemas()` 只能出现一次，且必须是最后一个 schema-placement token。
+runtime 将 metadata 投影为宿主需要的 schema、defaults 和 layout。Workbench Plane 只是其中一个消费者，不拥有配置事实。
 
 ## 实现入口
 
-- `packages/core/src/services/config/ConfigService.ts`：core config validation 和 normalized snapshots。
-- `packages/core/src/services/config/ops.ts`：defaults/patch validation helpers。
-- `packages/core/src/plugins/composition/cfg.ts`：`cfg(schemaMap)` 和 layout DSL。
-- `packages/core/src/plugins/composition/ConfigHost.ts`：config declaration field injection。
-- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`：schema/layout source extraction。
-- `packages/runtime/src/services/ConfigService.ts`：runtime persistence/profile/watch/debounce。
-- `packages/runtime/src/api/usecases/pluginConfig.ts`：config control-plane usecase。
-- `packages/runtime/src/api/features/plugins/**`：plugin config/status read model。
-- `packages/runtime/docs/config/contract.md`：runtime 与 Host/UI 的配置实现契约。
+- `packages/core/src/services/config/`
+- `packages/core/src/plugins/composition/ConfigHost.ts`
+- `packages/core/src/plugins/composition/cfg.ts`
+- `packages/runtime/src/services/ConfigService.ts`
+- `packages/runtime/src/api/usecases/pluginConfig.ts`
+- `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
+- `packages/runtime/docs/config/contract.md`
 
-## 企业固定插件目录的复用点
-
-即使未来走 runtime-static/fixed catalog，配置仍应复用这条链路：
-
-- static runtime definition 声明插件总量。
-- runtime 读取落盘配置并唯一接管 enabled/disabled 状态。
-- core 校验 schema/defaults。
-- runtime 投影 web config 和 plugin control-plane read models。
-- 启动时生成 strict startup report，明确哪个插件因配置或依赖没启动。
+作者用法见 [`user-docs/plugin-authoring.md`](../user-docs/plugin-authoring.md#配置声明一次只读取归一化结果)。

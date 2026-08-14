@@ -1,0 +1,91 @@
+# {{packageName}}
+
+{{description}}
+
+This is a small Pluxel monorepo with one deployable `web` workspace, one plugin and one
+framework-neutral domain package. Start with plugin behavior; host composition is documented
+separately below.
+
+## Develop the plugin
+
+Before changing `plugins/`, contracts, host policy or lint configuration, read
+[`docs/pluxel/README.md`](docs/pluxel/README.md). `pluxel new` copies that documentation verbatim
+from the `user-docs/` bundled with the CLI, so the generated repository uses the same authoring,
+testing and Oxlint guidance as Pluxel itself. Coding agents are directed there by `AGENTS.md`.
+
+The main plugin is `plugins/example/src/index.ts`. Its test uses `@pluxel/test/vitest` and
+`withRuntimeHost()` to prove that business HTTP works with Workbench Plane disabled. Keep that
+property as the plugin grows.
+
+Run the complete local verification before finishing a change:
+
+```sh
+pnpm lint:fix
+pnpm verify
+```
+
+`verify` checks format, unused lint suppressions, types, tests and the production build. Treat
+Pluxel rule failures as ownership or correctness feedback; do not broadly disable them.
+Workspace build, test and typecheck tasks run through Turborepo. Pure builds can use all logical
+CPUs; tests and combined verification reserve half of the Turbo slots for Vitest's own worker pool.
+Results are stored in `.turbo`, so an unchanged second `pnpm verify` restores build outputs and skips
+successful checks. Use `pnpm test:full` or `pnpm build:full` when you intentionally need to bypass
+the cache, or lower `--concurrency` further on a memory-constrained machine. The source-only plugin
+and domain workspaces participate through upstream typecheck task hashes, so changing either one
+invalidates the deployable `web` build cache.
+
+This repository intentionally uses pnpm 11. The CLI rejects another `--pm` for this template, and
+`devEngines.packageManager` prevents an accidental npm/yarn install from producing a second
+lockfile. The generated GitHub Actions workflow runs a frozen install followed by the same
+`pnpm verify` gate.
+
+## Start the application
+
+```sh
+pnpm install
+pnpm dev
+```
+
+Open `http://127.0.0.1:3310` for the typed GQLens greeting UI. Verify the underlying plugin business
+route directly:
+
+```sh
+curl http://127.0.0.1:3310/__pluxel/plugins/{{className}}Plugin/api/greeting
+```
+
+Build and run the movable production distribution locally:
+
+```sh
+pnpm build
+PLUXEL_WORKBENCH=false pnpm start
+```
+
+## Project boundaries
+
+- `web`: deployable Vite application, static host policy and React/GQLens frontend.
+- `plugins/example`: plugin lifecycle, configuration and business HTTP routes.
+- `packages/domain`: neutral logic shared by `web` and the plugin.
+
+The repository root only coordinates workspaces, the pnpm version catalog, Turbo task graph and
+shared quality tooling. Every workspace still declares every package it imports: `catalog:`
+centralizes external versions but does not make a dependency implicitly available. `web/package.json`
+owns React, GQLens, Vite and static runtime dependencies. Pluxel packages are catalog-managed
+registry dependencies; only packages owned here use `workspace:*`. If the repository gains multiple
+deployable applications, move `web` under an `apps/*` convention then.
+
+## Host composition
+
+The Vite plugin order in `web/vite.config.ts` is intentional:
+
+1. Pluxel mounts the static runtime and plugin HTTP routes.
+2. GQLens watches the domain schema and regenerates typed frontend accessors.
+3. React provides normal component HMR.
+
+GQLens middleware stays disabled because GraphQL is served by the Pluxel plugin, not by a second
+development-only backend.
+
+To enable the optional Pluxel Workbench, start with `PLUXEL_WORKBENCH=true`. The production build
+uses the same `web/src/pluxel.static.ts` entry through `@pluxel/rolldown/build`; `web/dist` contains
+the server closure, deployment manifest, browser application and Workbench artifacts and can be
+moved as one directory. Plugin business routes and domain state must remain independent of that
+capability.

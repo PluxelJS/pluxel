@@ -1,32 +1,28 @@
-import { existsSync } from 'node:fs'
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type CommitSummary, type Context, checkPluginDecorator, getPluginInfo } from '@pluxel/core'
-import { dirname, resolve } from 'pathe'
 import {
-	createServer,
-	type DevEnvironment,
-	normalizePath,
-	type ViteDevServer,
-	type InlineConfig,
-} from 'vite'
-import type { BuiltinPluginSpec } from '@pluxel/runtime-dynamic/services'
+	type CommitSummary,
+	type Context,
+	getPluginInfo,
+	type PluginConstructor,
+} from '@pluxel/core'
+import { dirname, resolve } from 'pathe'
+import { createServer, type DevEnvironment, normalizePath, type ViteDevServer } from 'vite'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
+	isPluginEnabled,
 	resolveGlobPatterns,
 	setPkgrootCacheLimit,
 	startTimer,
-} from '@pluxel/runtime/shared'
-import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+} from '@pluxel/runtime/internal'
 import { roundHmrMs, type HmrReportReason } from '@pluxel/runtime-dev/hmr-log'
 import {
 	buildLoaderHmrViteConfig,
-	type LoaderHmrDependencyConfig,
-	type ResolvedLoaderHmrDependencyConfig,
+	LOADER_HMR_BRIDGE_MODULES,
+	LOADER_HMR_BRIDGE_PROVIDERS,
 	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
 } from './config'
 import { HmrEnvironment, type HmrPathApi, type HmrToolkit } from './environment'
 import { AsyncSerialLock, BatchDebouncer, matchesSpecifierPattern } from './internals'
@@ -44,6 +40,7 @@ import { HmrRunner, isHardBridgeSpecifier } from './runner'
 import { installRequireShims, type RuntimeShimConfig, RuntimeShimRegistry } from './runtime-shims'
 import { WorkspaceEntryResolver } from './workspace-entry-resolver'
 import { createFetchHmrServerPlugin } from '../vite-fetch-plugin'
+import { isRuntimeHttpRouteRequest } from '../runtime-route-request'
 
 function assertHmrExecutionOk(
 	result: HmrExecutionResult | undefined,
@@ -72,13 +69,6 @@ export interface LoaderHmrConfig {
 	/** Vite HMR server port (use `0` to pick a random free port). */
 	port?: number
 	/**
-	 * Cold-start warmup (best-effort).
-	 *
-	 * When enabled, `start()` will kick off warmup in background:
-	 * - execute `entries` once to register plugins and populate runner caches
-	 */
-	warmup?: boolean
-	/**
 	 * Warmup transform prefetch (via `ssrEnv.fetchModule`) primes Vite caches.
 	 *
 	 * Defaults to `true` for small warmups (<= 32 files).
@@ -99,12 +89,6 @@ export interface LoaderHmrConfig {
 	runnerCacheLimit?: number
 	/** Nearest package root cache size. Defaults to `2_000`. */
 	pkgrootCacheLimit?: number
-	/** Enable Vite dep optimization for the UI (client env). Defaults to `false`. */
-	optimizeDeps?: boolean
-	/** Enable Vite dep optimization for the SSR runner env. Defaults to `false`. */
-	ssrOptimizeDeps?: boolean
-	/** Custom Vite cacheDir (advanced). Defaults to Vite's own cacheDir. */
-	viteCacheDir?: string
 	/**
 	 * 额外的 HMR include glob（优先级高于默认的 `roots/**` + `.ts`）。
 	 * - 需要完整路径或相对 cwd 的 glob
@@ -134,8 +118,6 @@ export interface LoaderHmrConfig {
 	 * Paths may be absolute or relative to `cwd`.
 	 */
 	clientEntries?: string[]
-	/** 依赖相关配置（external / bridge / optimizeDeps 等） */
-	deps?: LoaderHmrDependencyConfig
 	/**
 	 * When commit fails due to missing dependencies, automatically disable the offending plugins
 	 * (persisted) and retry commit so the rest of the batch can still load.
@@ -149,62 +131,10 @@ export interface LoaderHmrConfig {
 	 * @default 8
 	 */
 	commitAutoDisableMaxPasses?: number
-	/** Extra Vite config merged into the loader HMR Vite server. */
-	vite?: InlineConfig
-	/**
-	 * Preloaded plugin constructors that should be enabled without needing a scanned entry file.
-	 *
-	 * Supported forms are the same as `LoaderService.preloadPlugins()`:
-	 * - plugin ctor
-	 * - `{ plugin, forks }` for forkable builtins
-	 */
-	builtins?: readonly BuiltinPluginSpec[]
-	/**
-	 * Builtin plugins loaded from workspace package dist entries (named exports).
-	 *
-	 * This form is designed for monorepos where `@pluxel/runtime` should not directly depend on builtin packages,
-	 * while still preserving **constructor identity** inside the SSR runner (so `features.dep(BuiltinCtor)`
-	 * works reliably).
-	 *
-	 * The host resolves each `entry` path (from `exports["."]`, e.g. `dist/index.mjs`) and HMR evaluates
-	 * it via the runner, then commits all detected plugin ctors via `LoaderService.preloadPlugins()`.
-	 */
-	builtinsFromDist?: ReadonlyArray<{
-		/** Workspace package name (also used as Loader moduleId). */
-		packageName: string
-		/** Dist entry file path (absolute or workspace-relative). Prefer `.mjs`. */
-		entry: string
-		/**
-		 * Optional export key.
-		 *
-		 * Note: when omitted, HMR auto-detects all `@Plugin`-decorated constructors from the module's
-		 * **named exports** (fail-fast; does not rely on default export).
-		 */
-		exportKey?: string
-		/** Whether to enable this builtin in config. Defaults to `true`. */
-		enable?: boolean
-	}>
-	/**
-	 * Builtins preload policy:
-	 * - `true`: fail-fast if builtin preload commit fails (host startup crashes).
-	 * - `false`: best-effort; commit failures are logged and ignored (UI remains available).
-	 *
-	 * @default false
-	 */
-	builtinsPreloadStrict?: boolean
-	/**
-	 * When `builtinsPreloadStrict=false`, automatically disable plugins that fail DI verification
-	 * due to missing dependencies, then retry preload with remaining enabled plugins.
-	 *
-	 * @default true
-	 */
-	builtinsAutoDisableMissingDependencies?: boolean
-	/**
-	 * Safety cap for builtins auto-disable retries.
-	 *
-	 * @default 8
-	 */
-	builtinsAutoDisableMaxPasses?: number
+	/** Fixed catalog evaluated by the canonical config runner. Internal route wiring only. */
+	fixedPlugins?: readonly PluginConstructor[]
+	/** Canonical owner derived from the config module path. Internal route wiring only. */
+	fixedModuleId: string
 	/**
 	 * SSR runner-only runtime shims (Vite pipeline).
 	 *
@@ -280,6 +210,8 @@ type HmrBatchWaiter = {
 export class LoaderHmrService {
 	public vite!: ViteDevServer
 	private startPromise?: Promise<void>
+	private closePromise?: Promise<void>
+	private closed = false
 	private ownsViteServer = false
 	private readonly serverConfigured: Promise<void>
 	private serverConfiguredResolve: () => void = () => {}
@@ -298,17 +230,14 @@ export class LoaderHmrService {
 	public readonly path: HmrPathApi
 	private readonly includeGlobs?: string[]
 	private readonly excludeGlobs?: string[]
-	private readonly builtinDistDirsClean: readonly string[]
 
-	private readonly deps: ResolvedLoaderHmrDependencyConfig
 	private readonly runtimeShims: RuntimeShimRegistry
 	private readonly useRequireShims: boolean
 
 	private readonly timing: TimingTracker
 
 	private readonly workspaceEntryResolver: WorkspaceEntryResolver
-	private didPreloadBuiltins = false
-	private warnedBuiltinOverlap = false
+	private didRegisterFixedPlugins = false
 	private baseline?: Promise<void>
 	private startupScope?: Promise<{
 		rootsAbs: readonly string[]
@@ -319,7 +248,6 @@ export class LoaderHmrService {
 		entriesByRoot: readonly number[]
 	}>
 	private readonly execLock = new AsyncSerialLock()
-	private warmupStarted = false
 	private warmupPromise?: Promise<void>
 
 	private debouncer!: BatchDebouncer
@@ -390,17 +318,11 @@ export class LoaderHmrService {
 		})
 		this.toolkit = this.env.toolkit
 		this.path = this.toolkit.path
-		this.builtinDistDirsClean = this.resolveBuiltinDistDirsClean()
 		this.workspaceEntryResolver = new WorkspaceEntryResolver(
 			this.scanService,
 			this.path,
 			this.workspaceConditions,
 		)
-
-		this.deps = resolveLoaderHmrDependencyConfig(this.config.deps, {
-			cwd: this.cwd,
-			resolveCache: this.scanService.resolverCache,
-		})
 
 		const runtimeResolved: Record<string, RuntimeShimConfig> = this.config.runtimeShims ?? {}
 		this.runtimeShims = new RuntimeShimRegistry({ shims: runtimeResolved })
@@ -410,12 +332,12 @@ export class LoaderHmrService {
 		const getDebugChannel = (topic: string): LogtapeLogger => this.ctx.logger.getDebugChannel(topic)
 
 		this.dbg = {
-			modules: getDebugChannel('pluxel:hmr:modules'),
-			warmup: getDebugChannel('pluxel:hmr:warmup'),
-			batch: getDebugChannel('pluxel:hmr:batch'),
-			cache: getDebugChannel('pluxel:hmr:cache'),
-			graph: getDebugChannel('pluxel:hmr:graph'),
-			timeEntry: getDebugChannel('pluxel:hmr:time:entry'),
+			modules: getDebugChannel('hmr:modules'),
+			warmup: getDebugChannel('hmr:warmup'),
+			batch: getDebugChannel('hmr:batch'),
+			cache: getDebugChannel('hmr:cache'),
+			graph: getDebugChannel('hmr:graph'),
+			timeEntry: getDebugChannel('hmr:time:entry'),
 		}
 
 		this.timing = new TimingTracker({
@@ -434,6 +356,10 @@ export class LoaderHmrService {
 
 		this.attachCommitTracker()
 		this.attachResolverCacheInvalidation()
+		this.ctx.effects.defer(() => this.close(), {
+			tag: 'LoaderHmrService',
+			phase: 'shutdown',
+		})
 		if (server) this.configureServer(server)
 	}
 
@@ -504,13 +430,13 @@ export class LoaderHmrService {
 		} catch (error) {
 			// Allow retry after failure.
 			this.warmupPromise = undefined
-			this.warmupStarted = false
 			if (!bestEffort) throw error
 			this.ctx.logger.error('warmup failed', { error })
 		}
 	}
 
 	public start(): Promise<void> {
+		if (this.closed) return Promise.reject(new Error('[hmr] LoaderHmrService is closed'))
 		if (this.startPromise) return this.startPromise
 		const p = this.startImpl()
 		this.startPromise = p.catch((error) => {
@@ -520,22 +446,44 @@ export class LoaderHmrService {
 		return this.startPromise
 	}
 
-	public async close(): Promise<void> {
-		const server = (this as unknown as { vite?: ViteDevServer }).vite
-		if (!server) return
-		for (const dispose of this.watcherDisposers.splice(0)) dispose()
-		if (this.ownsViteServer) await server.close().catch((): undefined => undefined)
-		this.startPromise = undefined
+	public close(): Promise<void> {
+		if (this.closePromise) return this.closePromise
+		this.closed = true
+		this.closePromise = (async () => {
+			const server = (this as unknown as { vite?: ViteDevServer }).vite
+			for (const dispose of this.watcherDisposers.splice(0)) dispose()
+			if (server) {
+				try {
+					await server.watcher.unwatch(this.scanRootsAbs)
+				} catch {
+					// The server may already have closed its watcher.
+				}
+			}
+			const debouncer = this.debouncer as BatchDebouncer | undefined
+			if (typeof debouncer?.close === 'function') await debouncer.close()
+
+			const closedError = Object.assign(new Error('[hmr] LoaderHmrService is closed'), {
+				name: 'HmrClosedError',
+			})
+			for (const waiter of this.batchWaiters) {
+				waiter.cleanup()
+				waiter.reject(closedError)
+			}
+
+			if (server && this.ownsViteServer) await server.close()
+			this.startPromise = undefined
+		})()
+		return this.closePromise
 	}
 
 	private async startImpl(): Promise<void> {
 		if (this.vite) {
 			await this.ensureBaseline()
+			await this.loadInitialEntries()
 			void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
 			void this.logOperationalReport('startup').catch((error) => {
 				this.ctx.logger.warn('HMR report failed', { error })
 			})
-			if (this.shouldAutoWarmup()) this.startWarmup()
 			return
 		}
 
@@ -556,8 +504,6 @@ export class LoaderHmrService {
 			fsAllow: serverFsAllow,
 			clientEntries,
 			port: this.config.port,
-			deps: this.deps,
-			vite: this.config.vite,
 			runnerPlugin: this.plugin,
 			httpPlugin: createFetchHmrServerPlugin({
 				exclude: [
@@ -569,6 +515,7 @@ export class LoaderHmrService {
 					/\?t=\d+$/,
 				],
 				fetch: (req) => this.ctx.http.fetch(req),
+				shouldHandle: (req) => isRuntimeHttpRouteRequest(req, this.ctx),
 				handleHotUpdate: ({ server }) => {
 					if (this.ctx.http.consumeFullReloadRequest()) {
 						server.ws.send({ type: 'full-reload' })
@@ -576,23 +523,15 @@ export class LoaderHmrService {
 					return []
 				},
 			}),
-			optimizeDepsEnabled: this.config.optimizeDeps === true,
-			ssrOptimizeDepsEnabled: this.config.ssrOptimizeDeps === true,
-			cacheDir: this.config.viteCacheDir,
 		})
 		const server = await createServer(serverConfig)
 		this.ownsViteServer = true
-		// Bind server shutdown to host lifetime (CLI agent runs call `ctx.effects.dispose()`).
-		this.ctx.effects.defer(() => server.close().catch((): undefined => undefined), {
-			tag: 'LoaderHmrService.viteServer',
-			phase: 'shutdown',
-		})
 		try {
-			// Parallelize "listen" (Vite server boot) and "baseline" (bridge + builtins),
+			// Parallelize Vite listen and fixed-baseline establishment.
 			// so overall startup latency is closer to the slower of the two.
 			await Promise.all([
 				server.listen(),
-				// Fail-fast on core HMR correctness errors (bridge/builtins baseline). If this throws,
+				// Fail-fast on bridge/fixed-catalog correctness errors. If this throws,
 				// the host process should crash rather than limping along with a broken HMR runtime.
 				this.ensureBaseline(),
 			])
@@ -600,6 +539,7 @@ export class LoaderHmrService {
 			await server.close().catch((): undefined => undefined)
 			throw error
 		}
+		await this.loadInitialEntries()
 
 		if (this.config.printUrls !== false) server.printUrls()
 		void this.ctx.logger.info`HMR 服务已启动，只监听：${this.config.roots.join(', ')}`
@@ -608,24 +548,14 @@ export class LoaderHmrService {
 		void this.logOperationalReport('startup').catch((error) => {
 			this.ctx.logger.warn('HMR report failed', { error })
 		})
-
-		if (this.shouldAutoWarmup()) this.startWarmup()
 	}
 
-	private shouldAutoWarmup(): boolean {
-		return this.config.warmup === true
+	private async loadInitialEntries(): Promise<void> {
+		if (this.config.entries.length === 0 && this.getAnchorsCleanSnapshot().size === 0) return
+		await this.warmup({ bestEffort: false })
 	}
 
 	private createRunnerPlugin(): Plugin {
-		const builtinsFromDist = this.config.builtinsFromDist?.length
-			? new Map(
-					this.config.builtinsFromDist.map((b) => [
-						String(b.packageName ?? '').trim(),
-						String(b.entry ?? '').trim(),
-					]),
-				)
-			: null
-
 		const plugin: Plugin = {
 			name: 'pluxel-runner',
 			enforce: 'pre',
@@ -647,15 +577,6 @@ export class LoaderHmrService {
 					return null
 				}
 
-				// Builtins from dist: keep them stable and consistent across the runner cache.
-				// This avoids rewriting them to HMR/source TS entries which would
-				// produce a different ctor identity and break `features.dep(BuiltinCtor)` integrations.
-				const builtinEntry = builtinsFromDist?.get(id)
-				if (builtinEntry) {
-					const clean = this.path.toClean(builtinEntry)
-					return clean ? { id: clean } : null
-				}
-
 				const resolved = await this.workspaceEntryResolver.resolveBareWorkspaceEntry(id)
 				if (resolved) return { id: resolved }
 				return null
@@ -670,6 +591,7 @@ export class LoaderHmrService {
 	}
 
 	private configureServer(server: ViteDevServer): void {
+		if (this.closed) throw new Error('[hmr] cannot configure a closed LoaderHmrService')
 		if (this.vite) {
 			if (this.vite !== server) {
 				const error = new Error(
@@ -697,12 +619,11 @@ export class LoaderHmrService {
 
 	private configureRunner(server: ViteDevServer) {
 		this.runner.init(server, {
+			debug: this.ctx.logger.getDebugChannel('hmr:fetch'),
 			cacheLimit: this.config.runnerCacheLimit,
 			hostCwd: this.cwd,
-			cjsExternal: this.deps.cjsExternal,
-			bridgeModules: this.deps.bridgeModules,
-			bridgeProviders: this.deps.bridgeProviders,
-			skipPlugin: this.plugin,
+			bridgeModules: LOADER_HMR_BRIDGE_MODULES,
+			bridgeProviders: LOADER_HMR_BRIDGE_PROVIDERS,
 			resolveCache: this.scanService.resolverCache,
 			workspaceConditions: this.workspaceConditions,
 		})
@@ -710,10 +631,10 @@ export class LoaderHmrService {
 	}
 
 	private async bridgeHostModules() {
-		await this.runner.bridgeHostModules(this.deps.bridgeModules, this.path, {
+		await this.runner.bridgeHostModules(LOADER_HMR_BRIDGE_MODULES, this.path, {
 			warn: (message, props) => this.ctx.logger.warn(message, props),
 		})
-		await this.runner.assertBridgedSingletons(this.deps.bridgeModules)
+		await this.runner.assertBridgedSingletons(LOADER_HMR_BRIDGE_MODULES)
 	}
 
 	private configurePipeline() {
@@ -759,9 +680,9 @@ export class LoaderHmrService {
 		this.baseline = this.serverConfigured
 			.then(() => this.bootstrapBaseline())
 			.catch((error) => {
-				// Allow retries if baseline fails (bridge/builtins can fail during dev).
+				// Allow retries if the fixed baseline fails during development.
 				this.baseline = undefined
-				this.didPreloadBuiltins = false
+				this.didRegisterFixedPlugins = false
 				throw error
 			})
 		return this.baseline
@@ -777,203 +698,25 @@ export class LoaderHmrService {
 		// 1) Bridge host modules (singleton identity).
 		await this.bridgeHostModules()
 
-		// 2) Establish builtin baseline (so later batch rollbacks fall back to it).
-		await this.preloadBuiltins()
+		// 2) Establish the fixed baseline so mutable rollback returns to it.
+		await this.registerFixedPlugins()
 	}
 
-	private startWarmup() {
-		if (this.warmupStarted) return
-		this.warmupStarted = true
-		// Warmup is best-effort: it must never prevent the host from running once baseline is correct.
-		const p = (this.warmupPromise ??= this.performWarmup())
-		void p.catch((error) => {
-			this.ctx.logger.error('warmup failed', { error })
-			// Allow retry after failure in dev environments.
-			this.warmupPromise = undefined
-			this.warmupStarted = false
-		})
-	}
-
-	private async preloadBuiltins(): Promise<void> {
-		if (this.didPreloadBuiltins) return
-		this.didPreloadBuiltins = true
-
-		const builtins = this.config.builtins ?? []
-		const builtinsFromDist = this.config.builtinsFromDist ?? []
-		if (builtins.length === 0 && builtinsFromDist.length === 0) return
-
-		this.maybeWarnBuiltinOverlap()
-
-		const config = this.ctx.configService
-		if (!config.isReady) await config.ready
-		if (!this.ctx.runtimeState.isReady) await this.ctx.runtimeState.ready
+	private async registerFixedPlugins(): Promise<void> {
+		if (this.didRegisterFixedPlugins) return
+		this.didRegisterFixedPlugins = true
+		const plugins = this.config.fixedPlugins ?? []
+		if (plugins.length === 0) return
 
 		try {
-			const resolved: BuiltinPluginSpec[] = []
-			const builtinsByPackage: Record<string, string[]> = {}
-			const builtinPlugins: string[] = []
-			const builtinPluginSet = new Set<string>()
-
-			if (builtinsFromDist.length > 0) {
-				const specs = builtinsFromDist
-					.map((b) => ({
-						packageName: String(b.packageName ?? '').trim(),
-						exportKey: String(b.exportKey ?? '').trim(),
-						enable: b.enable !== false,
-						entry: String(b.entry ?? '').trim(),
-					}))
-					.filter((b) => b.packageName)
-
-				const exportsList = await Promise.all(
-					specs.map(async (b) => {
-						try {
-							return await this.runner.import(b.packageName)
-						} catch (error) {
-							throw new Error(
-								`[hmr] Failed to evaluate builtin "${b.packageName}" via runner import (entry=${b.entry || 'unknown'}).`,
-								{ cause: error },
-							)
-						}
-					}),
-				)
-
-				for (let i = 0; i < specs.length; i++) {
-					const b = specs[i]!
-					const exportsNamespace = exportsList[i]
-					if (!exportsNamespace || typeof exportsNamespace !== 'object') {
-						throw new Error(
-							`[hmr] Builtin "${b.packageName}" did not evaluate to an ESM exports object.`,
-						)
-					}
-					const exports = exportsNamespace as Record<string, unknown>
-
-					// Governance (fail-fast): do not rely on default export.
-					// Builtin packages may export multiple plugins; we auto-detect all decorated plugin ctors
-					// from *named* exports.
-					const keys = Object.keys(exports)
-					const pluginKeys: string[] = []
-					const pushIfPlugin = (k: string) => {
-						if (!k || k === 'default') return
-						const maybe = exports[k]
-						if (typeof maybe !== 'function') return
-						if (!checkPluginDecorator(maybe as any)) return
-						pluginKeys.push(k)
-					}
-
-					if (b.exportKey) {
-						if (b.exportKey === 'default') {
-							throw new Error(
-								`[hmr] Builtin "${b.packageName}" cannot use exportKey="default". Export the plugin ctor as a named export.`,
-							)
-						}
-						pushIfPlugin(b.exportKey)
-						if (pluginKeys.length === 0) {
-							throw new Error(
-								`[hmr] Builtin "${b.packageName}" export "${b.exportKey}" is not an @Plugin ctor.` +
-									(keys.length > 0 ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
-							)
-						}
-					} else {
-						for (const k of keys) pushIfPlugin(k)
-						pluginKeys.sort((leftKey, rightKey) => leftKey.localeCompare(rightKey))
-						if (pluginKeys.length === 0) {
-							throw new Error(
-								`[hmr] Builtin "${b.packageName}" exports no @Plugin ctors as named exports.` +
-									' Export at least one plugin ctor as a named export (do not rely on default).' +
-									(keys.length > 0 ? ` Available keys: ${keys.slice(0, 16).join(', ')}` : ''),
-							)
-						}
-					}
-
-					const ids: string[] = []
-					for (const exportKey of pluginKeys) {
-						const ctor = exports[exportKey] as any
-						try {
-							const id = getPluginInfo(ctor as never).id
-							ids.push(id)
-							if (!builtinPluginSet.has(id)) {
-								builtinPluginSet.add(id)
-								builtinPlugins.push(id)
-							}
-						} catch {
-							// Should not happen: pluginKeys only includes decorated ctors.
-							ids.push(exportKey)
-						}
-						resolved.push({
-							plugin: ctor as any,
-							enable: b.enable,
-							// Use the workspace package name so snapshots can be generated as runnable imports.
-							moduleId: b.packageName,
-							packageName: b.packageName,
-							exportKey,
-						})
-					}
-					builtinsByPackage[b.packageName] = ids
-				}
-			}
-
-			if (builtins.length > 0) resolved.push(...builtins)
-			// Commit builtins as a baseline so later loader batch rollbacks revert back to a container
-			// that already includes the built-in plugins.
-			const declared = await this.ctx.loader.preloadPlugins(resolved, {
-				commit: true,
-				strict: this.config.builtinsPreloadStrict ?? false,
-				autoDisableMissingDependencies: this.config.builtinsAutoDisableMissingDependencies ?? true,
-				autoDisableMaxPasses: this.config.builtinsAutoDisableMaxPasses ?? 8,
+			const declared = await this.ctx.loader.registerFixedPlugins(plugins, {
+				moduleId: this.config.fixedModuleId,
 			})
-
-			if (builtinsFromDist.length > 0) {
-				this.ctx.logger.info('Builtin baseline ready (from dist)', {
-					packages: builtinsFromDist.length,
-					plugins: builtinPlugins.length,
-					builtins: builtinsByPackage,
-					builtinPlugins,
-				})
-			}
-			if (builtins.length > 0 && builtinsFromDist.length === 0) {
-				this.ctx.logger.info(`Builtin baseline ready: ${declared.length} plugin(s)`)
-			}
+			this.ctx.logger.info('Fixed plugin catalog ready', { plugins: declared })
 		} catch (error) {
-			// Allow a retry on the next start cycle (or in tests) when configuration changes.
-			this.didPreloadBuiltins = false
+			this.didRegisterFixedPlugins = false
 			throw error
 		}
-	}
-
-	private maybeWarnBuiltinOverlap() {
-		if (this.warnedBuiltinOverlap) return
-		const builtins = this.config.builtins ?? []
-		const builtinsFromDist = this.config.builtinsFromDist ?? []
-		if (builtins.length === 0 && builtinsFromDist.length === 0) return
-
-		const isUnder = (child: string, root: string) =>
-			child === root || child.startsWith(root.endsWith('/') ? root : `${root}/`)
-
-		// Common monorepo layout: built-in plugin sources live under `packages/plugins/*`.
-		// If users set scan roots to the workspace root (pnpm workspace), those sources get picked up
-		// by path-based scanning and can conflict with the synthetic builtin module id.
-		const candidates = [
-			'packages/plugins',
-			'packages/plugin',
-			'packages/builtins',
-			'builtin-plugins',
-		]
-		const overlaps: string[] = []
-		for (const rel of candidates) {
-			const abs = normalizePath(resolve(this.cwd, rel))
-			if (!existsSync(abs)) continue
-			if (this.scanRootsAbs.some((root) => isUnder(abs, root))) overlaps.push(rel)
-		}
-		if (overlaps.length === 0) return
-
-		this.warnedBuiltinOverlap = true
-		this.ctx.logger.warn(
-			'loaderHmr.builtins/builtinsFromDist 与 loaderHmr.roots/include 可能发生“重复加载”冲突（检测到扫描范围覆盖 {dirs}）。' +
-				' builtins 会以 moduleId（builtins: "pluxel:builtins"；builtinsFromDist: packageName）建立 baseline；若同一插件源码又被按文件路径扫描执行，可能触发插件名冲突或双注册。' +
-				' 建议：1) 从扫描范围排除这些 builtin 插件目录（loaderHmr.exclude）；或 2) 移除 builtins，让它们由扫描/loader HMR 管理；' +
-				' 注意 deps.bridgeModules 仅影响“按 specifier 导入”的单例，不会阻止按路径扫描。',
-			{ dirs: overlaps.join(', ') },
-		)
 	}
 
 	private setupBatching() {
@@ -999,22 +742,18 @@ export class LoaderHmrService {
 	}
 
 	private registerWatchers(server: ViteDevServer) {
+		server.watcher.add(this.scanRootsAbs)
 		const events = ['change', 'add', 'unlink'] as const
 		for (const event of events) {
 			const listener = (file: string) => this.enqueueFileChange(file)
 			server.watcher.on(event, listener)
 			this.watcherDisposers.push(() => server.watcher.off(event, listener))
 		}
-		this.ctx.effects.defer(() => {
-			for (const dispose of this.watcherDisposers.splice(0)) dispose()
-		})
 	}
 
 	private enqueueFileChange(file: string) {
+		if (this.closed) return false
 		const clean = this.path.toClean(file)
-		// Governance: builtinsFromDist establish a baseline container and are intentionally not managed
-		// by the HMR pipeline. Ignore any changes under builtin dist dirs to avoid double-registration.
-		if (clean && this.isInBuiltinDist(clean)) return false
 		if (this.toolkit.pathFilter(clean)) {
 			this.debouncer.push(clean)
 			return true
@@ -1039,29 +778,6 @@ export class LoaderHmrService {
 					return true
 				}
 			}
-		}
-		return false
-	}
-
-	private resolveBuiltinDistDirsClean(): readonly string[] {
-		const list = this.config.builtinsFromDist ?? []
-		if (list.length === 0) return []
-		const out: string[] = []
-		for (const b of list) {
-			const entry = typeof b?.entry === 'string' ? b.entry.trim() : ''
-			if (!entry) continue
-			const clean = this.path.toClean(entry)
-			if (!clean) continue
-			out.push(dirname(clean))
-		}
-		return unique(out).sort((a, b) => a.localeCompare(b))
-	}
-
-	private isInBuiltinDist(clean: string): boolean {
-		for (const dir of this.builtinDistDirsClean) {
-			if (clean === dir) return true
-			const prefix = dir.endsWith('/') ? dir : `${dir}/`
-			if (clean.startsWith(prefix)) return true
 		}
 		return false
 	}
@@ -1140,6 +856,7 @@ export class LoaderHmrService {
 
 	private onBatchSummary(summary: HmrBatchSummary) {
 		this.lastBatchSummary = summary
+		if (summary.ok && summary.affected > 0) this.ctx.root.optionalPlugins.invalidate()
 		if (this.batchWaiters.size === 0) return
 
 		const waiters = [...this.batchWaiters]
@@ -1151,6 +868,13 @@ export class LoaderHmrService {
 	}
 
 	private waitForBatch(options: HmrWaitForBatchOptions = {}): Promise<HmrBatchSummary> {
+		if (this.closed) {
+			return Promise.reject(
+				Object.assign(new Error('[hmr] LoaderHmrService is closed'), {
+					name: 'HmrClosedError',
+				}),
+			)
+		}
 		const afterEpoch =
 			typeof options.afterEpoch === 'number'
 				? options.afterEpoch
@@ -1369,7 +1093,7 @@ export class LoaderHmrService {
 	}
 
 	private isBridgeModule(specifier: string) {
-		for (const pattern of this.deps.bridgeModules) {
+		for (const pattern of LOADER_HMR_BRIDGE_MODULES) {
 			if (matchesSpecifierPattern(specifier, pattern)) return true
 		}
 		return false
@@ -1456,7 +1180,6 @@ export class LoaderHmrService {
 			resolveBareWorkspaceEntry: (specifier) =>
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,
-			builtinsModuleIds: this.config.builtinsFromDist?.map((b) => b.packageName) ?? [],
 			hotspots: hotspots.length > 0 ? hotspots : undefined,
 		})
 

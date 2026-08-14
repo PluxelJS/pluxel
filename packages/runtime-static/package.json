@@ -2,6 +2,11 @@
 	"name": "@pluxel/runtime-static",
 	"version": "0.1.0",
 	"description": "Pluxel runtime static route (fixed plugin catalog, startup reports, and drift checks)",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/runtime-static"
+	},
 	"files": [
 		"!**/*.map",
 		"dist"
@@ -13,6 +18,26 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
+		"./internal/fetch-application": {
+			"@pluxel/source": "./src/internal/fetch-application.ts",
+			"default": "./dist/internal/fetch-application.mjs"
+		},
+		"./internal/fetch-workbench-application": {
+			"@pluxel/source": "./src/internal/fetch-workbench-application.ts",
+			"default": "./dist/internal/fetch-workbench-application.mjs"
+		},
+		"./internal/node-application": {
+			"@pluxel/source": "./src/internal/node-application.ts",
+			"default": "./dist/internal/node-application.mjs"
+		},
+		"./internal/node-workbench-application": {
+			"@pluxel/source": "./src/internal/node-workbench-application.ts",
+			"default": "./dist/internal/node-workbench-application.mjs"
+		},
+		"./test": {
+			"@pluxel/source": "./src/test.ts",
+			"default": "./dist/test.mjs"
+		},
 		"./vite": {
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
@@ -22,6 +47,11 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
+			"./internal/fetch-application": "./dist/internal/fetch-application.mjs",
+			"./internal/fetch-workbench-application": "./dist/internal/fetch-workbench-application.mjs",
+			"./internal/node-application": "./dist/internal/node-application.mjs",
+			"./internal/node-workbench-application": "./dist/internal/node-workbench-application.mjs",
+			"./test": "./dist/test.mjs",
 			"./vite": "./dist/vite.mjs",
 			"./package.json": "./package.json"
 		}
@@ -32,25 +62,29 @@
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:*",
-		"@pluxel/rolldown": "workspace:*",
-		"@pluxel/runtime": "workspace:*",
-		"pathe": "^2.0.3"
+		"@pluxel/runtime": "workspace:*"
 	},
 	"devDependencies": {
+		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime-dev": "workspace:*",
 		"@pluxel/test": "workspace:*",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
+		"@pluxel/rolldown": ">=0.1.0 <1",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
 	"peerDependenciesMeta": {
+		"@pluxel/rolldown": {
+			"optional": true
+		},
 		"vite": {
 			"optional": true
 		}
 	},
 	"inlinedDependencies": {
 		"chokidar": "5.0.0",
+		"pathe": "2.0.3",
 		"readdirp": "5.0.0"
 	}
 }

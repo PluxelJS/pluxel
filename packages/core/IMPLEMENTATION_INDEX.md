@@ -7,6 +7,7 @@
 - `docs/CORE.md`
 - `docs/CONFIG.md`
 - `docs/GOVERNANCE.md`
+- `docs/LOGGING.md`
 - `docs/proposals/README.md`
 
 ## Public Surface (package exports)
@@ -21,12 +22,15 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
-- `packages/core/docs/runtime-update/DESIGN.md`
-  - runtime declaration update / HMR 支持的核心重设设计、性能预算、迁移阶段和被否决方向
-- `packages/core/docs/runtime-update/STATUS.md`
-  - runtime update 重构当前已完成、未完成、Phase 3 RuntimePluginKey graph 收口状态、下一步接手顺序和快速验证命令
-- `packages/core/docs/runtime-update/RATIONALE.md`
+- `docs/PLUGIN_SYSTEM.md`
+  - 当前唯一插件 authoring、dependency/feature 与 optional capability 设计
   - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
+
+## Internal kernels
+
+- `packages/core/src/internal/di/`：plugin-specialized incremental dependency graph；
+- `packages/core/src/internal/fsm/`：PluginActor 使用的 baked lifecycle state machine；
+- 两者都属于 core 实现，不是 package subpath 或作者 API。
 
 ## Services
 
@@ -36,4 +40,4 @@
 ## Logger
 
 - `packages/core/src/logger/index.ts`
-  - logger 服务与 UI log store 的基础构件
+  - Context logger facade 与 category identity；runtime sinks/store 不在 core

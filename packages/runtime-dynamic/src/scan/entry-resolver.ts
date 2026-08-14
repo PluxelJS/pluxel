@@ -5,7 +5,7 @@ import {
 	type OxcResolveCache,
 	resolveModulePath,
 	withPluxelHmrConditions,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 import { nodeWorkspaceFs, safeReadManifest, type WorkspaceFs } from './fs'
 import type { EntryResolution, EntryResolutionOk, ResolvedScanOptions } from './types'
 
@@ -74,9 +74,9 @@ export class EntryResolver {
 			}
 		}
 
-			const resolver = getCachedResolver(this.resolveCache, 'scan:pkg-resolver', [dir], {
-				limit: 256,
-			})
+		const resolver = getCachedResolver(this.resolveCache, 'scan:pkg-resolver', [dir], {
+			limit: 256,
+		})
 
 		let exportsEntry: string | null = null
 		if (pkgJson?.name) {

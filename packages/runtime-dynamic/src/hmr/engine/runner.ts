@@ -1,18 +1,11 @@
 import { existsSync } from 'node:fs'
 import { readFile, realpath } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { getDebugLogger } from '@pluxel/core/logger'
 import { dirname, resolve } from 'pathe'
+import { type DevEnvironment, type ViteDevServer } from 'vite'
 import {
-	createServerModuleRunner,
-	type DevEnvironment,
-	type Plugin,
-	type ViteDevServer,
-} from 'vite'
-import {
-	ESModulesEvaluator,
 	type EvaluatedModuleNode,
-	EvaluatedModules,
+	type EvaluatedModules,
 	type ModuleRunner,
 } from 'vite/module-runner'
 import {
@@ -31,7 +24,13 @@ import {
 	resolveCacheLimit,
 	resolveModulePath,
 	unwrapViteId,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
+import {
+	createHostModuleClassifier,
+	getPluxelViteSsrModuleRunner,
+	type HostModuleClassifier,
+	type HostModuleDecision,
+} from '../../../../runtime-dev/src/vite.ts'
 import type { HmrPathApi } from './environment'
 import { matchesSpecifierPattern } from './internals'
 
@@ -42,6 +41,8 @@ export type PrimeModuleCacheEntryParams = {
 }
 
 export type HmrRunnerInitOptions = {
+	/** Runtime-root-bound debug channel. */
+	debug?: Pick<ReturnType<import('@pluxel/core').Context['logger']['getDebugChannel']>, 'debug'>
 	/** Internal cache limit for runner bookkeeping. Defaults to `10_000`. */
 	cacheLimit?: number
 	/**
@@ -51,10 +52,6 @@ export type HmrRunnerInitOptions = {
 	 * We still need a stable way to resolve "host-installed" packages, especially in linked repos.
 	 */
 	hostCwd?: string
-	/** CJS-only specifiers/prefixes that must be executed via Node/require. */
-	cjsExternal?: readonly string[]
-	/** The Vite plugin that owns HMR resolveId hooks, skipped when resolving CJS externals to real files. */
-	skipPlugin?: Plugin
 	/** Modules that must be shared as host singletons (loaded by host and runner). */
 	bridgeModules?: readonly string[]
 	/** Optional bridge specifier → provider specifier mapping. */
@@ -68,27 +65,25 @@ export type HmrRunnerInitOptions = {
 const HARD_BRIDGE_IDS = ['@pluxel/core', '@pluxel/runtime'] as const
 const HARD_BRIDGE_PREFIXES = ['@pluxel/core/', '@pluxel/runtime/'] as const
 const HARD_BRIDGE_ID_SET = new Set<string>(HARD_BRIDGE_IDS)
-const dbgFetch = getDebugLogger('pluxel:hmr:fetch').with({ name: 'runner' })
-
 type ExternalizeHint = {
 	externalize: string
 	type: 'module' | 'commonjs'
 }
 
 export class HmrRunner {
-	public readonly evaluatedModules = new EvaluatedModules()
-
 	private _env: DevEnvironment | null = null
 	private _runner: ModuleRunner | null = null
 	private _hostResolver!: OxcResolver
 	private _hostCwdAbs: string | null = null
-	private _cjsExternal: readonly string[] = []
-	private _skipPlugin: Plugin | null = null
+	private _hostModules: HostModuleClassifier | null = null
 	private _bridgeModules: readonly string[] = []
 	private _bridgeProviders: Readonly<Record<string, string>> = Object.freeze({})
 	private _workspaceSourceConditions: string[] = []
 	private _workspaceDistConditions: string[] = []
 	private _cacheLimit = 10_000
+	private dbg:
+		| Pick<ReturnType<import('@pluxel/core').Context['logger']['getDebugChannel']>, 'debug'>
+		| undefined
 	private realpathCache = new Map<string, Promise<string>>()
 	private packageNameByPackageRoot = new Map<string, Promise<string | null>>()
 	private packageNameByFile = new Map<string, Promise<string | null>>()
@@ -97,6 +92,7 @@ export class HmrRunner {
 	private workspaceEntryByKey = new Map<string, Promise<string | null>>()
 
 	init(server: ViteDevServer, opts: HmrRunnerInitOptions = {}) {
+		this.dbg = opts.debug
 		this._env = server.environments.ssr
 		this._cacheLimit = resolveCacheLimit(opts.cacheLimit, 10_000)
 
@@ -116,22 +112,12 @@ export class HmrRunner {
 			? [...opts.workspaceConditions]
 			: [...PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE]
 		this._workspaceDistConditions = [...PLUXEL_DIST_EXPORT_CONDITIONS]
-		const hasNativeSourcemapSupport =
-			typeof (globalThis as unknown as { process?: { setSourceMapsEnabled?: unknown } })?.process
-				?.setSourceMapsEnabled === 'function'
-		this._runner = createServerModuleRunner(this.env, {
-			hmr: false,
-			evaluatedModules: this.evaluatedModules,
-			// Prefer Node/Bun native sourcemap support when available; fall back to Vite's
-			// prepareStackTrace interceptor (older runtimes / edge environments).
-			sourcemapInterceptor: hasNativeSourcemapSupport ? 'node' : 'prepareStackTrace',
-			// Ensure stack traces are aligned when running modules via AsyncFunction wrapper.
-			// (ESModulesEvaluator applies the appropriate `startOffset` for inlined sourcemaps.)
-			evaluator: new ESModulesEvaluator(),
-		})
+		this._runner = getPluxelViteSsrModuleRunner(server)
 
-		this._cjsExternal = opts.cjsExternal ?? []
-		this._skipPlugin = opts.skipPlugin ?? null
+		this._hostModules = createHostModuleClassifier({
+			root: this._hostCwdAbs,
+			cacheLimit: this._cacheLimit,
+		})
 		this._bridgeProviders = opts.bridgeProviders ?? Object.freeze({})
 		const baseBridgeModules = opts.bridgeModules ?? []
 		const providerModules = Object.values(this._bridgeProviders).filter(
@@ -152,6 +138,10 @@ export class HmrRunner {
 	get runner(): ModuleRunner {
 		if (!this._runner) throw new Error('HmrRunner not initialized')
 		return this._runner
+	}
+
+	get evaluatedModules(): EvaluatedModules {
+		return this.runner.evaluatedModules
 	}
 
 	import(id: string) {
@@ -204,6 +194,7 @@ export class HmrRunner {
 	}
 
 	clearResolutionCaches() {
+		this._hostModules?.clear()
 		this.workspaceEntryByKey.clear()
 		clearSieveState(this.workspaceEntryByKey)
 		this.realpathCache.clear()
@@ -327,36 +318,48 @@ export class HmrRunner {
 	private installFetchModuleInterceptor() {
 		const transport = (this._runner as unknown as { transport?: unknown })?.transport
 		if (!transport || typeof transport !== 'object') return
-		const invoke = (transport as Record<string, unknown>).invoke
+		const record = transport as Record<PropertyKey, unknown>
+		const interceptorKey = Symbol.for('pluxel.dynamicHmrFetchInterceptor')
+		const installed = record[interceptorKey] as
+			| { current: HmrRunner; originalInvoke: (name: string, data: unknown) => Promise<unknown> }
+			| undefined
+		if (installed) {
+			installed.current = this
+			return
+		}
+		const invoke = record.invoke
 		if (typeof invoke !== 'function') return
 
 		const originalInvoke = (invoke as (name: string, data: unknown) => Promise<unknown>).bind(
 			transport,
 		)
-		;(transport as Record<string, unknown>).invoke = async (name: string, data: unknown) => {
+		const state = { current: this, originalInvoke }
+		record[interceptorKey] = state
+		record.invoke = async (name: string, data: unknown) => {
+			const current = state.current
 			if (name === 'fetchModule' && Array.isArray(data)) {
 				const url = typeof data[0] === 'string' ? data[0] : null
 				if (url) {
 					const rawId = unwrapViteId(url)
 					const canonicalId = cleanUrl(rawId)
 					if (
-						this.bridgedRunnerUrls.has(url) ||
-						this.bridgedRunnerUrls.has(rawId) ||
-						this.bridgedRunnerUrls.has(canonicalId)
+						current.bridgedRunnerUrls.has(url) ||
+						current.bridgedRunnerUrls.has(rawId) ||
+						current.bridgedRunnerUrls.has(canonicalId)
 					) {
 						const cached =
-							this.evaluatedModules.getModuleByUrl(url) ??
-							this.evaluatedModules.getModuleByUrl(rawId) ??
-							this.evaluatedModules.getModuleByUrl(canonicalId)
+							current.evaluatedModules.getModuleByUrl(url) ??
+							current.evaluatedModules.getModuleByUrl(rawId) ??
+							current.evaluatedModules.getModuleByUrl(canonicalId)
 						if (cached?.promise && cached.meta) return { cache: true }
 					}
 				}
-				const intercepted = await this.tryInterceptFetchModule(data as unknown[])
+				const intercepted = await current.tryInterceptFetchModule(data as unknown[])
 				if (intercepted) return intercepted
-				const result = await originalInvoke(name, data)
-				return await this.maybePatchFetchModuleResult(data as unknown[], result)
+				const result = await state.originalInvoke(name, data)
+				return await current.maybePatchFetchModuleResult(data as unknown[], result)
 			}
-			return originalInvoke(name, data)
+			return state.originalInvoke(name, data)
 		}
 	}
 
@@ -414,92 +417,30 @@ export class HmrRunner {
 		) {
 			console.error('[hmr:runner] fetchModule', { url, canonicalId, importer })
 		}
-		if (
-			canonicalId.includes('cjs') ||
-			canonicalId.includes('@napi-rs') ||
-			canonicalId.includes('napi-rs')
-		) {
-			dbgFetch.debug('fetchModule {rawId}', {
-				url,
-				rawId: canonicalId,
-				importer,
-				cjsExternal: this._cjsExternal,
-			})
-		}
-
 		if (isBarePackageSpecifier(canonicalId)) {
-			if (!this.isCjsExternal(canonicalId)) return null
-			if (
-				canonicalId.includes('cjs') ||
-				canonicalId.includes('@napi-rs') ||
-				canonicalId.includes('napi-rs')
-			) {
-				dbgFetch.debug('externalize bare as CJS {rawId}', { rawId: canonicalId })
-			}
-			return await this.externalizeBareId(canonicalId, importer, { typeHint: 'commonjs' })
+			const decision = await this._hostModules?.classifySpecifier(canonicalId, importer)
+			return decision ? await this.externalizeHostModule(decision) : null
 		}
 
-		// Some resolvers (tsconfig paths, workspace aliases, export conditions) can turn a bare import into a
-		// /@fs/ file URL before the runner sees it. Intercept these as well so:
-		// - CJS-only deps are loaded via Node/require.
+		// Aliases and workspace resolution can turn a bare host dependency into `/@fs/*` before the
+		// runner sees it. Classify the owning package again at the resolved file boundary.
 		const fsPath = urlToFsPath(this.env.config.root, canonicalId)
 		if (!fsPath) return null
-
-		if (this._cjsExternal.length === 0) return null
-		if (!(await this.isCjsExternalFile(fsPath))) return null
-		if (rawId.includes('cjs') || rawId.includes('@napi-rs') || rawId.includes('napi-rs')) {
-			dbgFetch.debug('externalize fsPath as CJS {fsPath}', { fsPath })
-		}
-		return await this.externalizeFsPath(fsPath, { typeHint: 'commonjs' })
+		const decision = await this._hostModules?.classifyFile(fsPath)
+		return decision ? await this.externalizeHostModule(decision) : null
 	}
 
-	private async externalizeBareId(
-		rawId: string,
-		importer: string | undefined,
-		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<ExternalizeHint | null> {
-		const env = this.env
-		const options: { skip?: Set<Plugin> } = {}
-		if (this._skipPlugin) options.skip = new Set([this._skipPlugin])
-
-		const resolved = await env.pluginContainer.resolveId(rawId, importer, options)
-		const fsPath =
-			typeof resolved?.id === 'string' ? urlToFsPath(env.config.root, resolved.id) : null
-		if (!fsPath) return null
-
-		const canonical = await this.realpathCached(fsPath)
-
-		const ext = canonical.toLowerCase()
-		const type =
-			ext.endsWith('.cjs') || ext.endsWith('.cts')
-				? 'commonjs'
-				: opts.typeHint === 'commonjs'
-					? 'commonjs'
-					: 'module'
-
+	private async externalizeHostModule(decision: HostModuleDecision): Promise<ExternalizeHint> {
+		const canonical = await this.realpathCached(decision.resolvedPath)
+		this.dbg?.debug('externalize host module {packageName}', {
+			packageName: decision.packageName ?? decision.resolvedPath,
+			format: decision.format,
+			reason: decision.reason,
+		})
 		return {
 			externalize: pathToFileURL(canonical).toString(),
-			type,
+			type: decision.format,
 		}
-	}
-
-	private async externalizeFsPath(
-		fsPath: string,
-		opts: { typeHint: 'module' | 'commonjs' },
-	): Promise<ExternalizeHint> {
-		const canonical = await this.realpathCached(fsPath)
-		const type = inferModuleTypeFromPath(canonical, opts.typeHint)
-		return {
-			externalize: pathToFileURL(canonical).toString(),
-			type,
-		}
-	}
-
-	private isCjsExternal(specifier: string) {
-		for (const pattern of this._cjsExternal) {
-			if (matchesSpecifierPattern(specifier, pattern)) return true
-		}
-		return false
 	}
 
 	private cachedPromise<K, V>(
@@ -522,17 +463,6 @@ export class HmrRunner {
 			() => this.resolvePackageNameForFile(canonical),
 			{ evictIf: (name) => !name },
 		)
-	}
-
-	private async isCjsExternalFile(fsPath: string) {
-		const canonical = await this.realpathCached(fsPath)
-		const name = await this.cachedPromise(
-			this.packageNameByFile,
-			canonical,
-			() => this.resolvePackageNameForFile(canonical),
-			{ evictIf: (resolvedName) => !resolvedName },
-		)
-		return name ? this.isCjsExternal(name) : false
 	}
 
 	private resolvePackageNameForFile(fsPath: string): Promise<string | null> {
@@ -608,7 +538,7 @@ export class HmrRunner {
 
 	private async importHostExports(specifier: string): Promise<unknown> {
 		try {
-			return await import(specifier)
+			return await import(/* @vite-ignore */ specifier)
 		} catch (error) {
 			// Only fall back to workspace resolution when the bare specifier cannot be resolved.
 			// If the import throws during evaluation, surfacing the original error is more useful
@@ -633,7 +563,7 @@ export class HmrRunner {
 				})
 			}
 			try {
-				return await import(pathToFileURL(dist).toString())
+				return await import(/* @vite-ignore */ pathToFileURL(dist).toString())
 			} catch (importError) {
 				throw new Error(`[hmr] Failed to import host export for "${specifier}" (${dist}).`, {
 					cause: importError,
@@ -682,11 +612,4 @@ function urlToFsPath(serverRoot: string, idOrUrl: string): string | null {
 	if (existsSync(rebased)) return rebased
 	if (existsSync(cleaned)) return cleaned
 	return rebased
-}
-
-function inferModuleTypeFromPath(fsPath: string, hint: 'module' | 'commonjs') {
-	const lower = fsPath.toLowerCase()
-	if (lower.endsWith('.mjs') || lower.endsWith('.mts')) return 'module'
-	if (lower.endsWith('.cjs') || lower.endsWith('.cts')) return 'commonjs'
-	return hint
 }

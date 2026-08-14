@@ -1,0 +1,12 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	"extends": "./tsconfig.options.json",
+	"compilerOptions": {
+		"customConditions": ["@pluxel/hmr"],
+		"composite": false,
+		"declaration": true,
+		"declarationMap": true,
+		"incremental": false,
+		"noEmit": true
+	}
+}

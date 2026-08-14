@@ -39,4 +39,20 @@ describe('HttpService host.routes', () => {
 			expect(await res.text()).toBe('/nested')
 		})
 	})
+
+	it('rejects ambiguous ownership of the same mount path', async () => {
+		await withRuntimeHost(async (host) => {
+			host.ctx.http.host.routes((app) => app.get('/', () => 'first'), {
+				id: 'test:first-owner',
+				path: '/shared',
+			})
+
+			expect(() =>
+				host.ctx.http.host.routes((app) => app.get('/', () => 'second'), {
+					id: 'test:second-owner',
+					path: '/shared',
+				}),
+			).toThrow('already owned by "test:first-owner"')
+		})
+	})
 })

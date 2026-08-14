@@ -50,10 +50,13 @@ import {
 	type FieldError,
 	type RendererProps,
 	type TriggerOptions,
+	toInputString,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
 import { buildNestedInputProps, tweakNestedNode } from './nested'
+
+const EMPTY_ARRAY_ITEMS: unknown[] = []
 
 function cloneValue<T>(value: T): T {
 	if (value == null || typeof value !== 'object') return value
@@ -275,7 +278,7 @@ function ArrayFieldMain(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as ArrayFieldNode
 	const renderField = useFieldRenderer()
-	const items = Array.isArray(value) ? (value as unknown[]) : []
+	const items = Array.isArray(value) ? (value as unknown[]) : EMPTY_ARRAY_ITEMS
 	const itemNode = info.item ?? null
 
 	const layoutInfo = analyzeArrayItemLayout(itemNode)
@@ -552,9 +555,7 @@ function ArrayFieldMain(props: RendererProps) {
 					return {
 						node: (
 							<Textarea
-								value={
-									typeof current === 'string' ? current : current == null ? '' : String(current)
-								}
+								value={toInputString(current)}
 								onChange={(event) =>
 									handleChange(index, (event.currentTarget as HTMLTextAreaElement).value)
 								}
@@ -578,7 +579,7 @@ function ArrayFieldMain(props: RendererProps) {
 				return {
 					node: (
 						<TextInput
-							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
+							value={toInputString(current)}
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
@@ -623,7 +624,7 @@ function ArrayFieldMain(props: RendererProps) {
 				return {
 					node: (
 						<TextInput
-							value={typeof current === 'string' ? current : current == null ? '' : String(current)}
+							value={toInputString(current)}
 							onChange={(event) => {
 								handleChange(index, (event.currentTarget as HTMLInputElement).value)
 							}}
@@ -772,13 +773,7 @@ function ArrayFieldMain(props: RendererProps) {
 					</div>
 				) : (
 					<TextInput
-						value={
-							typeof draftValue === 'string'
-								? draftValue
-								: draftValue == null
-									? ''
-									: String(draftValue)
-						}
+						value={toInputString(draftValue)}
 						onChange={(event) => setDraftValue(event.currentTarget.value)}
 						ref={draftFocusRef}
 						onKeyDown={(event) => {
@@ -957,7 +952,7 @@ function ArrayFieldMain(props: RendererProps) {
 					<tr>
 						<th style={{ width: 56 }}>#</th>
 						<th>{itemLabel}</th>
-						<th />
+						<th>操作</th>
 					</tr>
 				</thead>
 				<tbody>

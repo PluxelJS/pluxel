@@ -1,5 +1,9 @@
 import { isAbsolute, resolve } from 'pathe'
-import { DEFAULT_LOADER_HMR_CONFIG_BASENAME, readLoaderHmrConfigV1, type PluxelLoaderHmrConfigV1 } from './config'
+import {
+	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
+	readLoaderHmrConfigV2,
+	type PluxelLoaderHmrConfigV2,
+} from './config'
 import { diagnoseWorkspace, mergeLoaderHmrProfile, type WorkspaceSnapshot } from './diagnose'
 import { nodeLoaderHmrWorkspaceFs, type LoaderHmrWorkspaceFs } from './fs'
 import { uniqPreserveOrder } from './utils'
@@ -37,26 +41,32 @@ export type LoaderHmrProfileRef = {
 export type LoaderHmrProfileView = {
 	rootDir: string
 	configPath: string
-	config: PluxelLoaderHmrConfigV1
+	config: PluxelLoaderHmrConfigV2
 	activeProfile: string
 	roots: 'auto' | string[]
 	enabled: string[]
-	builtinPackages: string[]
 	includeGlobs: string[]
 	excludeGlobs: string[]
 }
 
-export function resolveLoaderHmrConfigPath(ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath'> = {}) {
+export function resolveLoaderHmrConfigPath(
+	ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath'> = {},
+) {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
 	const raw = ref.configPath?.trim()
 	if (!raw) return resolve(rootDirAbs, DEFAULT_LOADER_HMR_CONFIG_BASENAME)
 	return isAbsolute(raw) ? raw : resolve(rootDirAbs, raw)
 }
 
-export function readLoaderHmrConfigRaw(ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath' | 'fs'> = {}) {
+export function readLoaderHmrConfigRaw(
+	ref: Pick<LoaderHmrProfileRef, 'rootDir' | 'configPath' | 'fs'> = {},
+) {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
-	const configPathAbs = resolveLoaderHmrConfigPath({ rootDir: rootDirAbs, configPath: ref.configPath })
-	const config = readLoaderHmrConfigV1(configPathAbs, ref.fs ?? nodeLoaderHmrWorkspaceFs)
+	const configPathAbs = resolveLoaderHmrConfigPath({
+		rootDir: rootDirAbs,
+		configPath: ref.configPath,
+	})
+	const config = readLoaderHmrConfigV2(configPathAbs, ref.fs ?? nodeLoaderHmrWorkspaceFs)
 	return { rootDir: rootDirAbs, configPath: configPathAbs, config }
 }
 
@@ -78,14 +88,9 @@ export function readLoaderHmrProfileView(ref: LoaderHmrProfileRef = {}): LoaderH
 		activeProfile: merged.activeProfile,
 		roots: merged.roots,
 		enabled: uniqPreserveOrder(merged.enabled),
-		builtinPackages: uniqPreserveOrder(merged.builtinPackages),
 		includeGlobs: uniqPreserveOrder(merged.includeGlobs),
 		excludeGlobs: uniqPreserveOrder(merged.excludeGlobs),
 	}
-}
-
-export function getLoaderHmrProfileBuiltinPackages(ref: LoaderHmrProfileRef = {}): string[] {
-	return readLoaderHmrProfileView(ref).builtinPackages
 }
 
 export function getLoaderHmrProfileEnabledPackages(ref: LoaderHmrProfileRef = {}): string[] {
@@ -95,9 +100,6 @@ export function getLoaderHmrProfileEnabledPackages(ref: LoaderHmrProfileRef = {}
 export type ResolveLoaderHmrWorkspaceOptions = LoaderHmrProfileRef & {
 	/**
 	 * Package names to omit from discovery/enabled resolution.
-	 *
-	 * Primary use case: hosts that preload certain packages as builtins and want to avoid
-	 * double-loading their `@pluxel/runtime-dynamic` source entries.
 	 */
 	omitPackages?: string[]
 }
@@ -111,7 +113,10 @@ export async function resolveLoaderHmrWorkspace(
 	ref: ResolveLoaderHmrWorkspaceOptions,
 ): Promise<WorkspaceSnapshot> {
 	const rootDirAbs = resolve(ref.rootDir ?? process.cwd())
-	const configPathAbs = resolveLoaderHmrConfigPath({ rootDir: rootDirAbs, configPath: ref.configPath })
+	const configPathAbs = resolveLoaderHmrConfigPath({
+		rootDir: rootDirAbs,
+		configPath: ref.configPath,
+	})
 	const env = { ...(ref.env ?? process.env) }
 	if (ref.profile) env.PLUXEL_HMR_PROFILE = ref.profile
 

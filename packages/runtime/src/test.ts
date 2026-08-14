@@ -1,8 +1,11 @@
-import './runtime/register/full'
+import './index'
+import './services/vault'
+import { installWorkbench } from './services/workbench'
+import { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
+import { isWorkbenchEnabled, workbenchAdminAccess } from './workbench-config'
 import {
 	createCoreContext,
 	createCoreHost,
-	withCoreContext,
 	type Context,
 	type CoreHost,
 	type CoreHostConfigHandle,
@@ -12,16 +15,16 @@ import {
 	type CoreTestContext,
 	type PluginConstructor,
 } from '@pluxel/core/test'
-import { bootstrapHostVault } from './services/vault'
 
 export {
 	BaseFeature,
 	BasePlugin,
 	Config,
-	defineOptionalFeature,
+	defineLazyFeature,
 	FeatureHost,
 	ForkablePlugin,
 	HostBoundFeature,
+	optionalPlugin,
 	Plugin,
 	assertPluginLifecycleIssue,
 	checkPluginDecorator,
@@ -39,7 +42,6 @@ export {
 	pluginLifecycleIssuePlugins,
 	setParamToken,
 	setParamTokens,
-	UseFeature,
 } from '@pluxel/core/test'
 export type {
 	CommitSummary,
@@ -65,19 +67,27 @@ export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> 
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {
-	return createCoreHost(
-		{
+	const workbench = config.workbench ?? {
+		enabled: true,
+		access: { exposure: 'private' as const },
+	}
+	const host = createCoreHost(
+		withWorkbenchPluginContext({
 			persistence: { mode: 'memory' },
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			...config,
-		},
+			workbench,
+			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
+		}),
 		{
 			prepareCommit: async (ctx) => {
-				await bootstrapHostVault(ctx)
+				await ctx.prepareServices()
 			},
 		},
 	)
+	if (isWorkbenchEnabled(workbench)) installWorkbench(host.ctx)
+	return host
 }
 
 export async function withRuntimeHost<T>(
@@ -93,22 +103,37 @@ export async function withRuntimeHost<T>(
 }
 
 export function createRuntimeContext(config: Context.Config = {}): RuntimeTestContext {
-	return createCoreContext({
-		persistence: { mode: 'memory' },
-		configService: { mode: 'memory' },
-		runtimeState: { mode: 'memory' },
-		...config,
-	})
+	const workbench = config.workbench ?? {
+		enabled: true,
+		access: { exposure: 'private' as const },
+	}
+	const ctx = createCoreContext(
+		withWorkbenchPluginContext({
+			persistence: { mode: 'memory' },
+			configService: { mode: 'memory' },
+			runtimeState: { mode: 'memory' },
+			...config,
+			workbench,
+			adminAccess: config.adminAccess ?? workbenchAdminAccess(workbench),
+		}),
+	)
+	if (isWorkbenchEnabled(workbench)) installWorkbench(ctx.ctx)
+	return ctx
 }
 
 export async function withRuntimeContext<T>(
 	fn: (ctx: Context) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	return withCoreContext(fn, {
+	const runtime = createRuntimeContext({
 		persistence: { mode: 'memory' },
 		configService: { mode: 'memory' },
 		runtimeState: { mode: 'memory' },
 		...config,
 	})
+	try {
+		return await fn(runtime.ctx)
+	} finally {
+		await runtime.dispose()
+	}
 }

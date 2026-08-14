@@ -2,10 +2,12 @@ import fs from 'node:fs'
 import { cancel, confirm, isCancel, select, text } from '@clack/prompts'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser'
-import { capitalize, kebabCase, pascalCase } from './name'
-import { resolveTemplatesDir } from './utils'
+import { capitalize, kebabCase, pascalCase } from './name.ts'
+import { resolveTemplatesDir, resolveUserDocsDir } from './utils.ts'
 
 const TEMPLATE_PROMPT_FILES = new Set(['prompts.json', 'prompts.jsonc'])
+const USER_DOCS_CONFIG_FILES = new Set(['user-docs.json', 'user-docs.jsonc'])
+const TEMPLATE_CONTROL_FILES = new Set([...TEMPLATE_PROMPT_FILES, ...USER_DOCS_CONFIG_FILES])
 const TEMPLATE_EXT = '.hbs'
 
 const TEMPLATE_REGEX = /{{\s*([a-zA-Z][\w]*)\s+([a-zA-Z0-9_]+)\s*}}|{{\s*([a-zA-Z0-9_]+)\s*}}/g
@@ -161,11 +163,12 @@ export async function generateFromTemplate(
 	}
 
 	const templateFiles = await listTemplateFiles(params.templateBase, fileSystem)
+	const userDocs = await loadUserDocsConfig(params.templateBase, fileSystem)
 	if (templateFiles.length === 0) {
 		throw new Error(`No template files found in ${params.templateBase}`)
 	}
 
-	const outputs = templateFiles.map((templatePath) => {
+	const outputs: TemplateOutput[] = templateFiles.map((templatePath) => {
 		const relPath = relative(params.templateBase, templatePath)
 		const renderedRelPath = renderTemplateValue(relPath, params.data, `template path (${relPath})`)
 		const isTextTemplate = templatePath.endsWith(TEMPLATE_EXT)
@@ -173,6 +176,32 @@ export async function generateFromTemplate(
 		const outputPath = resolve(params.targetDir, outputRelPath)
 		return { templatePath, outputPath, outputRelPath, isTextTemplate }
 	})
+
+	if (userDocs) {
+		const sourceDir = resolveUserDocsDir(fileSystem)
+		if (!fileSystem.existsSync(sourceDir)) {
+			throw new Error(`Pluxel user docs not found: ${sourceDir}`)
+		}
+		const discoveredFiles = await walkTemplateFiles(sourceDir, fileSystem)
+		const files = userDocs.files ?? discoveredFiles.map((path) => relative(sourceDir, path))
+		if (files.length === 0) throw new Error(`Pluxel user docs directory is empty: ${sourceDir}`)
+		for (const file of files) {
+			const sourcePath = resolveContainedPath(sourceDir, file, 'user docs source')
+			if (!fileSystem.existsSync(sourcePath)) {
+				throw new Error(`Pluxel user doc not found: ${sourcePath}`)
+			}
+			const outputRelPath = relative(
+				params.targetDir,
+				resolveContainedPath(params.targetDir, `${userDocs.target}/${file}`, 'user docs target'),
+			)
+			outputs.push({
+				templatePath: sourcePath,
+				outputPath: resolve(params.targetDir, outputRelPath),
+				outputRelPath,
+				isTextTemplate: false,
+			})
+		}
+	}
 
 	const duplicates = new Map<string, string>()
 	for (const output of outputs) {
@@ -272,6 +301,7 @@ export async function promptTemplateData(
 
 	const reserved = new Set(Object.keys(baseData))
 	const answers: Record<string, string> = {}
+	const interactive = isInteractive()
 
 	for (const prompt of prompts) {
 		const name = assertPromptName(prompt)
@@ -285,6 +315,10 @@ export async function promptTemplateData(
 		const promptScope = { ...baseData, ...answers }
 		const message = renderPromptValue(assertPromptMessage(prompt, name), promptScope, 'message')
 		const type = normalizePromptType(prompt.type)
+		if (!interactive) {
+			answers[name] = resolveNonInteractivePromptDefault(prompt, promptScope, name, type)
+			continue
+		}
 
 		if (type === 'confirm') {
 			const result = await confirm({
@@ -341,6 +375,32 @@ export async function promptTemplateData(
 	return answers
 }
 
+function resolveNonInteractivePromptDefault(
+	prompt: TemplatePrompt,
+	scope: Record<string, string>,
+	name: string,
+	type: ReturnType<typeof normalizePromptType>,
+): string {
+	if (type === 'confirm') {
+		if (typeof prompt.default !== 'boolean') {
+			throw new TypeError(`Non-interactive prompt "${name}" requires a boolean default`)
+		}
+		return prompt.default ? 'true' : 'false'
+	}
+
+	if (typeof prompt.default !== 'string') {
+		throw new TypeError(`Non-interactive prompt "${name}" requires a string default`)
+	}
+	const value = renderPromptValue(prompt.default, scope, 'default')
+	if (type === 'select') {
+		const options = normalizePromptOptions(prompt, name)
+		if (!options.some((option) => option.value === value)) {
+			throw new Error(`Non-interactive prompt "${name}" default is not one of its choices`)
+		}
+	}
+	return value
+}
+
 function isInteractive() {
 	return Boolean(process.stdout.isTTY && process.stdin.isTTY)
 }
@@ -357,6 +417,8 @@ function resolveHelper(name: string) {
 			return pascalCase
 		case 'capitalize':
 			return capitalize
+		case 'json':
+			return (value: string) => JSON.stringify(value)
 		default:
 			return undefined
 	}
@@ -391,8 +453,76 @@ async function listTemplateFiles(templateBase: string, fileSystem: typeof fs): P
 	const files = await walkTemplateFiles(templateBase, fileSystem)
 	return files.filter((path) => {
 		const rel = relative(templateBase, path)
-		return !TEMPLATE_PROMPT_FILES.has(rel)
+		return !TEMPLATE_CONTROL_FILES.has(rel)
 	})
+}
+
+type TemplateOutput = {
+	templatePath: string
+	outputPath: string
+	outputRelPath: string
+	isTextTemplate: boolean
+}
+
+type UserDocsConfig = {
+	target: string
+	files?: string[]
+}
+
+function resolveContainedPath(root: string, path: string, label: string): string {
+	if (!path || isAbsolute(path) || /^[A-Za-z]:[\\/]/.test(path)) {
+		throw new Error(`Invalid ${label} path: ${path}`)
+	}
+	const resolved = resolve(root, path)
+	const rel = relative(root, resolved)
+	if (!rel || rel === '..' || rel.startsWith('../') || isAbsolute(rel)) {
+		throw new Error(`Invalid ${label} path: ${path}`)
+	}
+	return resolved
+}
+
+async function loadUserDocsConfig(
+	templateBase: string,
+	fileSystem: typeof fs,
+): Promise<UserDocsConfig | null> {
+	for (const fileName of ['user-docs.jsonc', 'user-docs.json']) {
+		const filePath = resolve(templateBase, fileName)
+		if (!fileSystem.existsSync(filePath)) continue
+
+		const raw = await fileSystem.promises.readFile(filePath, 'utf8')
+		const errors: ParseError[] = []
+		const parsed = parse(raw, errors, { allowTrailingComma: true }) as
+			| Partial<UserDocsConfig>
+			| undefined
+		if (errors.length > 0) {
+			const detail = printParseErrorCode(errors[0]!.error)
+			throw new Error(`Invalid user docs config: ${filePath} (${detail})`)
+		}
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			throw new TypeError(`Invalid user docs config: ${filePath} (expected object)`)
+		}
+		if (typeof parsed.target !== 'string' || !parsed.target.trim()) {
+			throw new TypeError(`Invalid user docs config: ${filePath} (target must be a path)`)
+		}
+		if (
+			parsed.files !== undefined &&
+			(!Array.isArray(parsed.files) ||
+				parsed.files.length === 0 ||
+				parsed.files.some((file) => typeof file !== 'string' || !file.trim()))
+		) {
+			throw new TypeError(`Invalid user docs config: ${filePath} (files must be non-empty paths)`)
+		}
+		const target = parsed.target.trim()
+		resolveContainedPath('template-output', target, 'user docs target')
+		const files = parsed.files?.map((file) => file.trim())
+		for (const file of files ?? []) resolveContainedPath('user-docs', file, 'user docs source')
+		if (files && new Set(files).size !== files.length) {
+			throw new TypeError(`Invalid user docs config: ${filePath} (duplicate files)`)
+		}
+		return { target, files }
+	}
+
+	return null
 }
 
 type PromptChoice = {
@@ -430,7 +560,7 @@ async function loadTemplatePrompts(
 
 		const raw = await fileSystem.promises.readFile(filePath, 'utf8')
 		const errors: ParseError[] = []
-		const parsed = parse(raw, errors)
+		const parsed = parse(raw, errors, { allowTrailingComma: true })
 		if (errors.length > 0) {
 			const first = errors[0]!
 			const detail = printParseErrorCode(first.error)

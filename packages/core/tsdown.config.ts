@@ -1,11 +1,8 @@
-import { rewriteDtsModuleAugmentations } from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'tsdown'
+import Macros from 'unplugin-macros/rolldown'
+import { rewriteCoreDtsModuleAugmentations } from './tools/rewriteDtsModuleAugmentations.ts'
 
-const moduleAugmentationMap = {
-	'@pluxel/context': '@pluxel/core',
-}
-
-const createModuleRewritePlugin = () => rewriteDtsModuleAugmentations(moduleAugmentationMap)
+const createModuleRewritePlugin = () => rewriteCoreDtsModuleAugmentations()
 
 const transformOptions = {
 	assumptions: {
@@ -19,14 +16,14 @@ const transformOptions = {
 export default defineConfig({
 	deps: {
 		onlyBundle: ['@abraham/reflection', /^option-t(\/.*)?$/],
-		alwaysBundle: ['@pluxel/context', '@pluxel/context/*', '@pluxel/core-di', '@pluxel/core-di/*'],
+		alwaysBundle: ['@pluxel/context', '@pluxel/context/*'],
 	},
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	entry: {
-		env: 'src/env.ts',
 		federation: 'src/federation.ts',
+		internal: 'src/internal.ts',
 		index: 'src/index.ts',
 		services: 'src/services/index.ts',
 		logger: 'src/logger/index.ts',
@@ -36,7 +33,7 @@ export default defineConfig({
 		sourcemap: true,
 	},
 	format: ['esm', 'cjs'],
-	plugins: [createModuleRewritePlugin()],
+	plugins: [Macros(), createModuleRewritePlugin()],
 	sourcemap: true,
 	clean: true,
 	minify: true,

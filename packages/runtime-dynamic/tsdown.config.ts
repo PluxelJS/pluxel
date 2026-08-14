@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
+import { pluxelViteSourceBridgeExternal } from '../runtime-dev/tsdown-source-bridge.ts'
 
-const runtimeDynamicRegister = fileURLToPath(new URL('./src/register.ts', import.meta.url))
 const runtimeDevEntry = fileURLToPath(new URL('../runtime-dev/src/index.ts', import.meta.url))
-const runtimeDevExtensions = fileURLToPath(
-	new URL('../runtime-dev/src/extensions.ts', import.meta.url),
+const runtimeDevWorkbench = fileURLToPath(
+	new URL('../runtime-dev/src/workbench.ts', import.meta.url),
 )
 const runtimeDevHmrLog = fileURLToPath(new URL('../runtime-dev/src/hmr-log.ts', import.meta.url))
 const runtimeDevVite = fileURLToPath(new URL('../runtime-dev/src/vite.ts', import.meta.url))
@@ -20,8 +20,6 @@ export default defineConfig({
 			'@pluxel/runtime',
 			'@pluxel/runtime/*',
 			'@pluxel/runtime/internal',
-			'@pluxel/runtime/plugin-catalog',
-			'@pluxel/runtime/shared',
 			'@pluxel/rolldown',
 			'@pluxel/rolldown/*',
 			'@pluxel/rolldown/vite',
@@ -32,21 +30,19 @@ export default defineConfig({
 		alwaysBundle: ['@pluxel/runtime-dev', '@pluxel/runtime-dev/*'],
 	},
 	alias: {
-		'@pluxel/runtime-dynamic/register': runtimeDynamicRegister,
 		'@pluxel/runtime-dev': runtimeDevEntry,
-		'@pluxel/runtime-dev/extensions': runtimeDevExtensions,
+		'@pluxel/runtime-dev/workbench': runtimeDevWorkbench,
 		'@pluxel/runtime-dev/hmr-log': runtimeDevHmrLog,
 		'@pluxel/runtime-dev/vite': runtimeDevVite,
 	},
+	plugins: [pluxelViteSourceBridgeExternal()],
 	entry: {
 		index: 'src/index.ts',
-		register: 'src/register.ts',
-		services: 'src/services.ts',
 		hmr: 'src/hmr.ts',
+		'hmr/diagnose': 'src/hmr/diagnose.ts',
 		vite: 'src/vite.ts',
-		plugin: 'src/plugin.ts',
+		'source-producer': 'src/source-producer.ts',
 	},
-	copy: ['src/hmr/compile/bundler/bundle-worker.mjs'],
 	dts: {
 		sourcemap: true,
 		eager: true,

@@ -6,6 +6,7 @@ import {
 	type EventEmitterOptions,
 	type EventListener,
 	Eventure,
+	type IEventMap,
 	type OnOptions,
 	type Unsubscribe,
 } from 'eventure'
@@ -145,7 +146,7 @@ export interface Events {
 
 type FilterFunction = (attachedCtx: PluxelContext) => boolean
 
-function withEventLogger<T extends Record<string, EventDescriptor>>(
+function withEventLogger<T extends IEventMap<T>>(
 	ctx: PluxelContext,
 	config?: EventEmitterOptions<T>,
 ): EventEmitterOptions<T> {

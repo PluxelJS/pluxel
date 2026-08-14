@@ -2,6 +2,11 @@
 	"name": "@pluxel/rolldown",
 	"version": "0.1.0",
 	"description": "Pluxel Rolldown/Vite/tsdown toolchain helpers",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/rolldown"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -16,6 +21,14 @@
 		"./build": {
 			"@pluxel/source": "./src/cli/index.ts",
 			"default": "./dist/build.mjs"
+		},
+		"./database": {
+			"@pluxel/source": "./src/database/index.ts",
+			"default": "./dist/database.mjs"
+		},
+		"./distribution": {
+			"@pluxel/source": "./src/distribution/index.ts",
+			"default": "./dist/distribution.mjs"
 		},
 		"./oxlint": {
 			"@pluxel/source": "./src/workspace/oxlint/index.ts",
@@ -33,17 +46,33 @@
 			"@pluxel/source": "./src/vite/index.ts",
 			"default": "./dist/vite.mjs"
 		},
+		"./vite/declaration": {
+			"@pluxel/source": "./src/plugin-artifact/declaration.ts",
+			"default": "./dist/vite/declaration.mjs"
+		},
 		"./vite/environment": {
 			"@pluxel/source": "./src/vite/environment.ts",
 			"default": "./dist/vite/environment.mjs"
+		},
+		"./vite/node-module": {
+			"@pluxel/source": "./src/plugin-artifact/node-module.ts",
+			"default": "./dist/vite/node-module.mjs"
 		},
 		"./vite/paraglide": {
 			"@pluxel/source": "./src/vite/paraglide.ts",
 			"default": "./dist/vite/paraglide.mjs"
 		},
-		"./vite/plugin-ui": {
-			"@pluxel/source": "./src/vite/plugin-ui.ts",
-			"default": "./dist/vite/plugin-ui.mjs"
+		"./vite/source-graph": {
+			"@pluxel/source": "./src/vite/source-graph.ts",
+			"default": "./dist/vite/source-graph.mjs"
+		},
+		"./vite/workbench-ui": {
+			"@pluxel/source": "./src/vite/workbench-ui.ts",
+			"default": "./dist/vite/workbench-ui.mjs"
+		},
+		"./workbench/artifact": {
+			"@pluxel/source": "./src/workbench/artifact.ts",
+			"default": "./dist/workbench/artifact.mjs"
 		},
 		"./workspace": {
 			"@pluxel/source": "./src/workspace/index.ts",
@@ -61,24 +90,32 @@
 			"@pluxel/source": "./src/workspace/vite.ts",
 			"default": "./dist/workspace/vite.mjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./distribution/schema.json": "./schemas/pluxel-distribution-v1.schema.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
 			"./build": "./dist/build.mjs",
+			"./database": "./dist/database.mjs",
+			"./distribution": "./dist/distribution.mjs",
 			"./oxlint": "./dist/oxlint.mjs",
 			"./plugins": "./dist/plugins.mjs",
 			"./resolver/oxc": "./dist/resolver/oxc.mjs",
 			"./vite": "./dist/vite.mjs",
+			"./vite/declaration": "./dist/vite/declaration.mjs",
 			"./vite/environment": "./dist/vite/environment.mjs",
+			"./vite/node-module": "./dist/vite/node-module.mjs",
 			"./vite/paraglide": "./dist/vite/paraglide.mjs",
-			"./vite/plugin-ui": "./dist/vite/plugin-ui.mjs",
+			"./vite/source-graph": "./dist/vite/source-graph.mjs",
+			"./vite/workbench-ui": "./dist/vite/workbench-ui.mjs",
+			"./workbench/artifact": "./dist/workbench/artifact.mjs",
 			"./workspace": "./dist/workspace.mjs",
 			"./workspace/fs": "./dist/workspace/fs.mjs",
 			"./workspace/info": "./dist/workspace/info.mjs",
 			"./workspace/vite": "./dist/workspace/vite.mjs",
-			"./package.json": "./package.json"
+			"./package.json": "./package.json",
+			"./distribution/schema.json": "./dist/schemas/pluxel-distribution-v1.schema.json"
 		}
 	},
 	"scripts": {
@@ -87,24 +124,29 @@
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
-		"@module-federation/vite": "^1.16.6",
+		"@module-federation/vite": "^1.16.16",
 		"@pluxel/core": "workspace:*",
+		"drizzle-kit": "^0.31.5",
+		"nf3": "^0.3.22",
 		"oxc-parser": "^0.115.0",
-		"oxc-resolver": "^11.21.3"
+		"oxc-resolver": "^11.21.3",
+		"unplugin-macros": "^0.20.2",
+		"unplugin-preprocessor-directives": "^1.2.0"
 	},
 	"devDependencies": {
 		"@rolldown/pluginutils": "^1.0.0-rc.5",
 		"fdir": "^6.5.0",
 		"fs-fixture": "^2.13.0",
+		"oxlint": "^1.73.0",
 		"pathe": "^2.0.3",
 		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "^0.22.3",
-		"typescript": "^6.0.3",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
 		"rolldown": "^1.0.0-rc.5",
-		"tsdown": "*",
+		"tsdown": "catalog:",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
 	"peerDependenciesMeta": {

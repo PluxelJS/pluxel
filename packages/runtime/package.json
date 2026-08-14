@@ -2,6 +2,11 @@
 	"name": "@pluxel/runtime",
 	"version": "0.3.0",
 	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/runtime"
+	},
 	"files": [
 		"!**/*.map",
 		"dist"
@@ -13,141 +18,122 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./api": {
-			"@pluxel/source": "./src/api/contributions.ts",
-			"default": "./dist/api.mjs"
-		},
 		"./capnweb": {
 			"@pluxel/source": "./src/capnweb.ts",
 			"default": "./dist/capnweb.mjs"
+		},
+		"./database": {
+			"@pluxel/source": "./src/database.ts",
+			"default": "./dist/database.mjs"
 		},
 		"./events": {
 			"@pluxel/source": "./src/events.ts",
 			"default": "./dist/events.mjs"
 		},
-		"./frozen": {
-			"@pluxel/source": "./src/frozen.ts",
-			"default": "./dist/frozen.mjs"
-		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./internal/static": {
+			"@pluxel/source": "./src/internal-static.ts",
+			"default": "./dist/internal/static.mjs"
+		},
+		"./internal/static-host": {
+			"@pluxel/source": "./src/internal-static-host.ts",
+			"default": "./dist/internal/static-host.mjs"
 		},
 		"./logger": {
 			"@pluxel/source": "./src/logger.ts",
 			"default": "./dist/logger.mjs"
 		},
-		"./plugin": {
-			"@pluxel/source": "./src/plugin.ts",
-			"default": "./dist/plugin.mjs"
-		},
-		"./plugin-catalog": {
-			"@pluxel/source": "./src/plugin-catalog.ts",
-			"default": "./dist/plugin-catalog.mjs"
-		},
-		"./protocol": {
-			"@pluxel/source": "./src/protocol.ts",
-			"default": "./dist/protocol.mjs"
-		},
-		"./register/full": {
-			"@pluxel/source": "./src/runtime/register/full.ts",
-			"default": "./dist/register/full.mjs"
-		},
-		"./register/static": {
-			"@pluxel/source": "./src/runtime/register/static.ts",
-			"default": "./dist/register/static.mjs"
-		},
-		"./runtime-state": {
-			"@pluxel/source": "./src/runtime-state.ts",
-			"default": "./dist/runtime-state.mjs"
+		"./product": {
+			"@pluxel/source": "./src/product.ts",
+			"default": "./dist/product.mjs"
 		},
 		"./services/vault": {
 			"@pluxel/source": "./src/services/vault.ts",
 			"default": "./dist/services/vault.mjs"
 		},
-		"./services/web-management": {
-			"@pluxel/source": "./src/services/web-management.ts",
-			"default": "./dist/services/web-management.mjs"
-		},
-		"./shared": {
-			"@pluxel/source": "./src/shared.ts",
-			"default": "./dist/shared.mjs"
-		},
 		"./test": {
 			"@pluxel/source": "./src/test.ts",
 			"default": "./dist/test.mjs"
+		},
+		"./toolchain": {
+			"@pluxel/source": "./src/toolchain.ts",
+			"default": "./dist/toolchain.mjs"
 		},
 		"./web": {
 			"@pluxel/source": "./src/web.ts",
 			"default": "./dist/web.mjs"
 		},
-		"./web/extensions": {
-			"@pluxel/source": "./src/web/extensions.ts",
-			"default": "./dist/web/extensions.mjs"
-		},
-		"./web/federation": {
-			"@pluxel/source": "./src/web/federation.ts",
-			"default": "./dist/web/federation.mjs"
-		},
 		"./web/paths": {
 			"@pluxel/source": "./src/web/paths.ts",
 			"default": "./dist/web/paths.mjs"
 		},
-		"./web/ui": {
-			"@pluxel/source": "./src/web/ui.ts",
-			"default": "./dist/web/ui.mjs"
+		"./workbench": {
+			"@pluxel/source": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
+		},
+		"./workbench/contract": {
+			"@pluxel/source": "./src/workbench-contract.ts",
+			"default": "./dist/workbench/contract.mjs"
+		},
+		"./workbench/ui": {
+			"@pluxel/source": "./src/workbench-ui.ts",
+			"default": "./dist/workbench/ui.mjs"
+		},
+		"./workbench/ui/internal": {
+			"@pluxel/source": "./src/workbench-ui-internal.ts",
+			"default": "./dist/workbench/ui/internal.mjs"
 		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./api": "./dist/api.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
+			"./database": "./dist/database.mjs",
 			"./events": "./dist/events.mjs",
-			"./frozen": "./dist/frozen.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/static": "./dist/internal/static.mjs",
+			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",
-			"./plugin": "./dist/plugin.mjs",
-			"./plugin-catalog": "./dist/plugin-catalog.mjs",
-			"./protocol": "./dist/protocol.mjs",
-			"./register/full": "./dist/register/full.mjs",
-			"./register/static": "./dist/register/static.mjs",
-			"./runtime-state": "./dist/runtime-state.mjs",
+			"./product": "./dist/product.mjs",
 			"./services/vault": "./dist/services/vault.mjs",
-			"./services/web-management": "./dist/services/web-management.mjs",
-			"./shared": "./dist/shared.mjs",
 			"./test": "./dist/test.mjs",
+			"./toolchain": "./dist/toolchain.mjs",
 			"./web": "./dist/web.mjs",
-			"./web/extensions": "./dist/web/extensions.mjs",
-			"./web/federation": "./dist/web/federation.mjs",
 			"./web/paths": "./dist/web/paths.mjs",
-			"./web/ui": "./dist/web/ui.mjs",
+			"./workbench": "./dist/workbench.mjs",
+			"./workbench/contract": "./dist/workbench/contract.mjs",
+			"./workbench/ui": "./dist/workbench/ui.mjs",
+			"./workbench/ui/internal": "./dist/workbench/ui/internal.mjs",
 			"./package.json": "./package.json"
 		}
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"bench:logger": "pnpm exec vitest bench bench/logger.bench.ts",
+		"bench:workers": "pnpm exec vitest bench bench/worker-task.bench.ts",
 		"build": "pnpm run build:web && pnpm run build:lib",
 		"build:lib": "tsdown",
 		"build:web": "vite build"
 	},
 	"dependencies": {
+		"@electric-sql/pglite": "^0.5.4",
 		"@elysiajs/eden": "^1.4.8",
 		"@gqloom/core": "^0.16.1",
 		"@gqloom/valibot": "^0.15.1",
 		"@logtape/file": "^2.0.2",
 		"@logtape/logtape": "^2.0.2",
-		"@maverick-js/signals": "^6.0.0",
+		"@logtape/pretty": "^2.0.2",
+		"@pluxel/commands": "workspace:*",
 		"@pluxel/core": "workspace:*",
-		"@signaldb/core": "^1.7.2",
-		"@signaldb/maverickjs": "^1.0.0",
-		"@signaldb/react": "^1.0.1",
-		"@signaldb/sync": "^1.3.1",
+		"@sinclair/typebox": "^0.34.48",
 		"age-encryption": "^0.3.0",
 		"better-sse": "^0.16.1",
 		"capnweb": "^0.5.0",
+		"drizzle-orm": "catalog:",
 		"elysia": "^1.4.27",
 		"graphql": "^16.13.0",
 		"graphql-yoga": "^5.18.0",
@@ -155,22 +141,35 @@
 		"ohash": "^2.0.11",
 		"oxc-resolver": "^11.21.3",
 		"pathe": "^2.0.3",
+		"pg": "^8.22.0",
 		"std-env": "^4.0.0-rc.1",
 		"superjson": "^2.2.6",
+		"tinypool": "catalog:",
 		"valibot": "^1.2.0"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "^0.2.0",
+		"@gqlens/vite": "workspace:*",
+		"@mantine/core": "catalog:",
+		"@mantine/notifications": "catalog:",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/react": "^19.2.14",
+		"@tabler/icons-react": "catalog:",
+		"@types/pg": "^8.20.0",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"fs-fixture": "^2.13.0",
 		"postcss": "^8.5.6",
 		"postcss-preset-mantine": "^1.18.0",
 		"postcss-simple-vars": "^7.0.1",
+		"react": "catalog:",
+		"react-dom": "catalog:",
 		"valibot-form": "workspace:*",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
-		"@tabler/icons-react": "*"
+		"@tabler/icons-react": "catalog:"
+	},
+	"pluxel": {
+		"workbenchContractProtocol": 2
 	}
 }

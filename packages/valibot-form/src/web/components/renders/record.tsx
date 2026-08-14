@@ -31,6 +31,7 @@ import {
 	normalizeErrorMessages,
 	type RendererProps,
 	type TriggerOptions,
+	toInputString,
 	triggerFormBlur,
 	triggerFormEvents,
 } from './types'
@@ -502,7 +503,7 @@ export function RecordField(props: RendererProps) {
 				return (
 					<TextInput
 						{...cleanProps({
-							value: typeof current === 'string' ? current : current == null ? '' : String(current),
+							value: toInputString(current),
 							onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
 								handleValueChange(index, event.currentTarget.value),
 							onBlur: handleBlur,
@@ -691,13 +692,7 @@ export function RecordField(props: RendererProps) {
 					}
 					return (
 						<TextInput
-							value={
-								typeof draftValue === 'string'
-									? draftValue
-									: draftValue == null
-										? ''
-										: String(draftValue)
-							}
+							value={toInputString(draftValue)}
 							onChange={(event) => setDraftValue(event.currentTarget.value)}
 							onKeyDown={(event) => {
 								if (event.key === 'Enter') {
@@ -764,7 +759,7 @@ export function RecordField(props: RendererProps) {
 					<tr>
 						<th style={keyWidth ? { width: keyWidth } : undefined}>{keyLabel}</th>
 						<th style={valueWidth ? { width: valueWidth } : undefined}>{valueLabel}</th>
-						<th />
+						<th>操作</th>
 					</tr>
 				</thead>
 				<tbody>

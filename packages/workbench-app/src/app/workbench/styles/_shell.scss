@@ -1,0 +1,973 @@
+@use '../../../styles/theme/mantine' as mantine;
+@use '../../../styles/theme/tokens' as theme;
+
+.plx-workbench {
+	--plx-shell-bg: var(--plx-workbench-shell-bg);
+	--plx-shell-bg-alt: var(--plx-workbench-shell-bg-alt);
+	--plx-activity-bg: var(--plx-workbench-activity-bg);
+	--plx-activity-item-active: var(--plx-workbench-activity-item-active);
+	--plx-topbar-bg: var(--plx-workbench-topbar-bg);
+	--plx-tabbar-bg: var(--plx-workbench-tabbar-bg);
+	--plx-surface-canvas: var(--plx-workbench-surface-canvas);
+	--plx-activity-width: 220px;
+	background: var(--plx-shell-bg-alt);
+	color: var(--plx-text);
+	display: grid;
+	grid-template-columns: var(--plx-activity-width) minmax(0, 1fr);
+	height: 100dvh;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	width: 100%;
+}
+
+.plx-workbench[data-has-route-group='true'] {
+	grid-template-columns: var(--plx-activity-width) 188px minmax(0, 1fr);
+}
+
+.plx-workbench :where(.mantine-Badge-root) {
+	box-sizing: border-box;
+	min-height: 20px;
+	padding-inline: 8px;
+}
+
+.plx-workbench :where(.mantine-Button-root) {
+	border-radius: 8px;
+}
+
+.plx-workbench :where(.mantine-Badge-label),
+.plx-workbench :where(.mantine-Button-label) {
+	line-height: 1.2;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.plx-workbench :where(.mantine-ActionIcon-root) {
+	border-radius: 6px;
+}
+
+.plx-workbench :where(.mantine-Input-input) {
+	padding-inline: 10px;
+}
+
+.plx-workbench :where(.mantine-Input-input):where([data-with-left-section]) {
+	padding-left: var(--input-left-section-size);
+}
+
+.plx-workbench :where(.mantine-Input-input):where([data-with-right-section]) {
+	padding-right: var(--input-right-section-size);
+}
+
+.plx-workbench__activity {
+	align-items: stretch;
+	background: var(--plx-activity-bg);
+	border-right: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	overflow: hidden;
+	padding: 16px 12px;
+	position: relative;
+	z-index: 20;
+}
+
+.plx-workbench__activityBrand {
+	align-items: center;
+	display: flex;
+	gap: 10px;
+	height: 40px;
+	min-width: 0;
+	padding-inline: 4px;
+}
+
+.plx-workbench__activityBrandMark.mantine-ActionIcon-root {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 9px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 34px;
+	justify-content: center;
+	width: 34px;
+}
+
+.plx-workbench__activityBrandMark.mantine-ActionIcon-root:hover,
+.plx-workbench__activityBrandMark.mantine-ActionIcon-root:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__activityBrandText {
+	display: flex;
+	flex-direction: column;
+	line-height: 1.1;
+	min-width: 0;
+}
+
+.plx-workbench__activityBrandText strong {
+	font-size: 14px;
+	letter-spacing: -0.01em;
+}
+
+.plx-workbench__activityBrandText small {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	margin-top: 3px;
+	text-transform: uppercase;
+}
+
+.plx-workbench__activityList {
+	align-items: stretch;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 4px;
+	width: 100%;
+}
+
+.plx-workbench__activityItem {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: flex;
+	font-size: 13px;
+	font-weight: 620;
+	gap: 11px;
+	height: 38px;
+	padding: 0 10px;
+	position: relative;
+	text-decoration: none;
+	transition:
+		background-color 140ms ease,
+		color 140ms ease,
+		transform 140ms ease;
+	width: 100%;
+}
+
+.plx-workbench__activityItem:hover,
+.plx-workbench__activityItem:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+	transform: none;
+}
+
+.plx-workbench__activityItem[data-active='true'] {
+	background: var(--plx-activity-item-active);
+	border-color: color-mix(in srgb, var(--plx-accent) 18%, transparent);
+	color: var(--plx-accent);
+}
+
+.plx-workbench__activityIcon {
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	justify-content: center;
+	width: 20px;
+}
+
+.plx-workbench__activityLabel {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__activityFooter {
+	align-items: stretch;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: auto;
+	width: 100%;
+}
+
+.plx-workbench__productLegal {
+	color: var(--plx-text-muted);
+	display: flex;
+	flex-direction: column;
+	font-size: 10px;
+	gap: 4px;
+	line-height: 1.35;
+	min-width: 0;
+}
+
+.plx-workbench__productLegal small {
+	overflow-wrap: anywhere;
+}
+
+.plx-workbench__productLegal nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 8px;
+}
+
+.plx-workbench__productLegal a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.plx-workbench__productLegal a:hover,
+.plx-workbench__productLegal a:focus-visible {
+	color: var(--plx-text);
+	text-decoration: underline;
+}
+
+.plx-workbench__routeGroup {
+	background: var(--plx-shell-bg);
+	border-right: 1px solid var(--plx-border);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 16px 10px;
+}
+
+.plx-workbench__routeGroupHeader {
+	align-items: center;
+	display: flex;
+	font-size: 13px;
+	gap: 8px;
+	height: 40px;
+	padding-inline: 8px;
+}
+
+.plx-workbench__routeGroupIcon {
+	align-items: center;
+	color: var(--plx-accent);
+	display: inline-flex;
+	justify-content: center;
+	width: 20px;
+}
+
+.plx-workbench__routeGroupList {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 10px;
+	overflow-y: auto;
+}
+
+.plx-workbench__routeGroupItem {
+	align-items: center;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	display: flex;
+	font-size: 12px;
+	font-weight: 620;
+	gap: 9px;
+	height: 36px;
+	min-width: 0;
+	padding-inline: 9px;
+	text-decoration: none;
+	width: 100%;
+}
+
+.plx-workbench__routeGroupItem > span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__routeGroupItem:hover,
+.plx-workbench__routeGroupItem:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__routeGroupItem[data-active='true'] {
+	background: var(--plx-activity-item-active);
+	border-color: color-mix(in srgb, var(--plx-accent) 18%, transparent);
+	color: var(--plx-accent);
+}
+
+.plx-workbench__navigationToggle {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: flex;
+	font-size: 12px;
+	font-weight: 620;
+	gap: 11px;
+	height: 36px;
+	padding: 0 10px;
+	text-align: left;
+	width: 100%;
+}
+
+.plx-workbench__navigationToggle:hover,
+.plx-workbench__navigationToggle:focus-visible {
+	background: var(--plx-surface-muted);
+	border-color: var(--plx-border);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__main {
+	display: grid;
+	grid-template-rows: 44px 34px minmax(0, 1fr) auto;
+	height: 100%;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	position: relative;
+	z-index: 1;
+}
+
+.plx-workbench__main[data-has-tabs='false'] {
+	grid-template-rows: 44px minmax(0, 1fr) auto;
+}
+
+.plx-workbench__topbar,
+.plx-workbench__editorTabStrip,
+.plx-workbench__statusbar {
+	align-items: center;
+	display: flex;
+	min-width: 0;
+}
+
+.plx-workbench__topbar {
+	background: var(--plx-topbar-bg);
+	border-bottom: 1px solid var(--plx-border);
+	gap: 18px;
+	justify-content: space-between;
+	padding: 0 14px 0 18px;
+}
+
+.plx-workbench__topbar[data-compact='true'] {
+	padding-inline: 18px 14px;
+}
+
+.plx-workbench__topbarTitle {
+	align-items: center;
+	display: flex;
+	flex-direction: row;
+	gap: 10px;
+	min-width: 0;
+}
+
+.plx-workbench__eyebrow {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	line-height: 1;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.plx-workbench__title {
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__subtitle {
+	color: var(--plx-text-muted);
+	font-size: 12px;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__topbarActions {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.plx-workbench__toolbarButton {
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	color: var(--plx-text);
+	align-items: center;
+	cursor: pointer;
+	display: inline-flex;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease,
+		transform 140ms ease;
+}
+
+.plx-workbench__toolbarButton:hover,
+.plx-workbench__toolbarButton:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	outline: none;
+	transform: none;
+}
+
+.plx-workbench__toolbarButton--action {
+	border-radius: 7px;
+	gap: 6px;
+	height: 32px;
+	min-width: 32px;
+	padding: 0 10px;
+}
+
+.plx-workbench__actionLabel {
+	line-height: 1.2;
+	white-space: nowrap;
+}
+
+.plx-workbench__actionHint {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+}
+
+.plx-workbench__editorTabStrip {
+	@include theme.tab-strip(surface-muted, border);
+	align-items: center;
+	background: var(--plx-tabbar-bg);
+	border-bottom: 1px solid var(--plx-border);
+	border-inline: 0;
+	border-radius: 0;
+	box-shadow: none;
+	gap: 4px;
+	max-height: 34px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	overscroll-behavior-x: contain;
+	overscroll-behavior-y: none;
+	padding: 2px 8px;
+	scrollbar-width: none;
+}
+
+.plx-workbench__editorTabStrip::-webkit-scrollbar {
+	display: none;
+}
+
+.plx-workbench__editorTabButton {
+	@include theme.tab-button-base(28px, 7px, 9px);
+	align-items: center;
+	display: inline-flex;
+	flex: 0 0 auto;
+	gap: 8px;
+	max-width: 220px;
+	min-width: 0;
+	position: relative;
+}
+
+.plx-workbench__editorTabButton:hover,
+.plx-workbench__editorTabButton:focus-visible {
+	@include theme.tab-button-hover(surface, border-strong);
+	box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--plx-border-strong) 56%, transparent);
+	outline: none;
+	transform: none;
+}
+
+.plx-workbench__editorTabButton[data-active='true'] {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	box-shadow: inset 0 -2px 0 var(--plx-accent);
+	color: var(--plx-text);
+	transform: none;
+}
+
+.plx-workbench__editorTabBody {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	text-align: left;
+}
+
+.plx-workbench__editorTabTitle {
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__editorTabDirtyDot {
+	background: var(--plx-dirty-dot);
+	border-radius: 999px;
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 6px;
+	margin-top: 1px;
+	width: 6px;
+}
+
+.plx-workbench__editorTabMeta {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	line-height: 1.1;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-workbench__editorTabButton[data-active='true'] .plx-workbench__editorTabMeta {
+	color: color-mix(in srgb, var(--plx-text) 78%, var(--plx-text-muted) 22%);
+}
+
+.plx-workbench__iconButton {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 999px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	height: 18px;
+	justify-content: center;
+	margin-left: auto;
+	opacity: 0.7;
+	padding: 0;
+	width: 18px;
+}
+
+.plx-workbench__iconButton:hover,
+.plx-workbench__iconButton:focus-visible {
+	background: var(--plx-accent-soft);
+	color: var(--plx-text);
+	opacity: 1;
+	outline: none;
+}
+
+.plx-workbench__editorTabButton[data-active='true'] .plx-workbench__iconButton {
+	color: color-mix(in srgb, var(--plx-accent-strong) 76%, var(--plx-text) 24%);
+	opacity: 0.92;
+}
+
+.plx-workbench__editorTabAdd {
+	align-items: center;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	color: var(--plx-text-muted);
+	cursor: pointer;
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 28px;
+	justify-content: center;
+	padding: 0;
+	width: 28px;
+}
+
+.plx-workbench__editorTabAdd:hover,
+.plx-workbench__editorTabAdd:focus-visible {
+	background: var(--plx-surface-strong);
+	border-color: var(--plx-border-strong);
+	color: var(--plx-text);
+	outline: none;
+}
+
+.plx-workbench__layoutControls {
+	align-items: center;
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 8px;
+	display: inline-flex;
+	gap: 2px;
+	padding: 2px;
+}
+
+.plx-workbench__toolbarButton--layout {
+	align-items: center;
+	background: transparent;
+	border: 0;
+	border-radius: 8px;
+	color: var(--plx-text-muted);
+	height: 32px;
+	justify-content: center;
+	padding: 0;
+	width: 32px;
+}
+
+.plx-workbench__toolbarButton--layout:hover,
+.plx-workbench__toolbarButton--layout:focus-visible {
+	background: var(--plx-surface-strong);
+	color: var(--plx-text);
+	outline: none;
+	transform: none;
+}
+
+.plx-workbench__toolbarButton--layout[data-active='true'] {
+	background: var(--plx-surface-strong);
+	box-shadow: inset 0 0 0 1px var(--plx-selected-border);
+	color: var(--plx-text);
+}
+
+.plx-workbench__body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow: hidden;
+	padding: 6px;
+}
+
+.plx-workbench__surface,
+.plx-workbench__panelGroup,
+.plx-workbench__navigationBody,
+.plx-workbench__navigationBody > *,
+.plx-workbench__workspace,
+.plx-workbench__workspaceContent,
+.plx-workbench__workspaceContent > * {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+}
+
+.plx-workbench__surface {
+	@include theme.panel-surface(surface-canvas, border);
+	border-radius: 8px;
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--plx-text) 5%, transparent);
+	overflow: hidden;
+}
+
+.plx-workbench__navigationRail {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.plx-workbench__navigationHeader {
+	align-items: center;
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+	padding: 6px 8px 5px;
+}
+
+.plx-workbench__navigationTitle {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+
+.plx-workbench__navigationHeader .plx-workbench__subtitle {
+	display: none;
+}
+
+.plx-workbench__navigationBody {
+	overflow: hidden;
+	padding: 3px;
+}
+
+.plx-workbench__resizeHandle {
+	--worksplit-sash-hit: color-mix(in srgb, var(--plx-accent) 78%, transparent);
+	background: transparent;
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	position: relative;
+	width: 100%;
+}
+
+.plx-workbench__resizeHandle .worksplit-sash::after {
+	background: color-mix(in srgb, var(--plx-accent) 72%, transparent);
+}
+
+.plx-workbench__workspace {
+	padding: 0;
+}
+
+.plx-workbench__statusbar {
+	border-top: 1px solid var(--plx-border);
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	gap: 10px;
+	padding: 0 12px;
+}
+
+.plx-workbench__statusbar:empty {
+	display: none;
+}
+
+@include mantine.larger-than(sm) {
+	.plx-workbench[data-navigation-collapsed='true'] {
+		--plx-activity-width: 64px;
+
+		.plx-workbench__activity {
+			align-items: center;
+			gap: 12px;
+			overflow: visible;
+			padding-inline: 8px;
+		}
+
+		.plx-workbench__activityBrand {
+			justify-content: center;
+			padding: 0;
+		}
+
+		.plx-workbench__activityBrandText {
+			display: none;
+		}
+
+		.plx-workbench__activityList {
+			align-items: center;
+			gap: 6px;
+		}
+
+		.plx-workbench__activityItem {
+			gap: 0;
+			justify-content: center;
+			padding: 0;
+			width: 42px;
+		}
+
+		.plx-workbench__activityLabel {
+			background: var(--plx-surface-strong);
+			border: 1px solid var(--plx-border);
+			border-radius: 6px;
+			box-shadow: var(--plx-shadow);
+			color: var(--plx-text);
+			font-size: 12px;
+			font-weight: 650;
+			left: calc(100% + 10px);
+			opacity: 0;
+			padding: 6px 9px;
+			pointer-events: none;
+			position: absolute;
+			top: 50%;
+			transform: translateY(-50%) translateX(-4px);
+			transition:
+				opacity 140ms ease,
+				transform 140ms ease;
+			z-index: 8;
+		}
+
+		.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
+		.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
+			opacity: 1;
+			transform: translateY(-50%) translateX(0);
+		}
+
+		.plx-workbench__activityFooter {
+			justify-content: center;
+		}
+
+		.plx-workbench__productLegal {
+			display: none;
+		}
+
+		.plx-workbench__navigationToggle {
+			justify-content: center;
+			padding: 0;
+			width: 42px;
+		}
+
+		.plx-workbench__navigationToggle span {
+			display: none;
+		}
+	}
+}
+
+@include mantine.smaller-than(lg) {
+	.plx-workbench__topbarActions .plx-workbench__actionLabel,
+	.plx-workbench__actionHint {
+		display: none;
+	}
+
+	.plx-workbench__body {
+		padding: 5px;
+	}
+}
+
+@include mantine.smaller-than(sm) {
+	.plx-workbench {
+		display: block;
+		padding-bottom: 66px;
+		position: relative;
+	}
+
+	.plx-workbench[data-has-route-group='true'] {
+		display: flex;
+		flex-direction: column;
+		padding-bottom: 66px;
+	}
+
+	.plx-workbench__routeGroup {
+		border-bottom: 1px solid var(--plx-border);
+		border-right: 0;
+		flex: 0 0 48px;
+		order: -1;
+		overflow: hidden;
+		padding: 5px 8px;
+	}
+
+	.plx-workbench__routeGroupHeader {
+		display: none;
+	}
+
+	.plx-workbench__routeGroupList {
+		align-items: center;
+		flex-direction: row;
+		gap: 4px;
+		margin: 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+
+	.plx-workbench__routeGroupItem {
+		flex: 0 0 auto;
+		height: 36px;
+	}
+
+	.plx-workbench[data-has-route-group='true'] .plx-workbench__main {
+		flex: 1;
+		height: auto;
+		min-height: 0;
+	}
+
+	.plx-workbench__activity {
+		align-items: stretch;
+		background: color-mix(in srgb, var(--plx-activity-bg) 96%, transparent);
+		border: 0;
+		border-top: 1px solid var(--plx-border-strong);
+		bottom: 0;
+		box-shadow: 0 -8px 24px color-mix(in srgb, var(--plx-text) 8%, transparent);
+		gap: 0;
+		height: 66px;
+		left: 0;
+		overflow: hidden;
+		padding: 5px max(6px, env(safe-area-inset-left)) max(5px, env(safe-area-inset-bottom));
+		position: fixed;
+		right: 0;
+		top: auto;
+		z-index: 50;
+	}
+
+	.plx-workbench__activityBrand {
+		display: none;
+	}
+
+	.plx-workbench__activityFooter {
+		display: none;
+	}
+
+	.plx-workbench__activityList {
+		align-items: stretch;
+		display: grid;
+		gap: 2px;
+		grid-auto-columns: minmax(64px, 1fr);
+		grid-auto-flow: column;
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+	}
+
+	.plx-workbench__activityList::-webkit-scrollbar {
+		display: none;
+	}
+
+	.plx-workbench__activityItem {
+		flex-direction: column;
+		font-size: 10px;
+		gap: 3px;
+		height: 54px;
+		justify-content: center;
+		padding: 3px 6px;
+		width: auto;
+	}
+
+	.plx-workbench__activityLabel {
+		background: none;
+		border: 0;
+		border-radius: 0;
+		box-shadow: none;
+		color: inherit;
+		font-size: 10px;
+		font-weight: 650;
+		left: auto;
+		opacity: 1;
+		padding: 0;
+		position: static;
+		transform: none;
+	}
+
+	.plx-workbench__activityItem:hover .plx-workbench__activityLabel,
+	.plx-workbench__activityItem:focus-visible .plx-workbench__activityLabel {
+		transform: none;
+	}
+
+	.plx-workbench__main {
+		grid-template-rows: 44px 32px minmax(0, 1fr);
+		height: calc(100dvh - 66px);
+	}
+
+	.plx-workbench__main[data-has-tabs='false'] {
+		grid-template-rows: 44px minmax(0, 1fr);
+	}
+
+	.plx-workbench__topbar {
+		padding: 0 10px 0 14px;
+	}
+
+	.plx-workbench__topbar[data-compact='true'] {
+		padding-inline: 14px 10px;
+	}
+
+	.plx-workbench__eyebrow,
+	.plx-workbench__subtitle {
+		display: none;
+	}
+
+	.plx-workbench__title {
+		font-size: 14px;
+	}
+
+	.plx-workbench__editorTabStrip {
+		padding-inline: 6px;
+	}
+
+	.plx-workbench__editorTabButton {
+		max-width: 170px;
+	}
+
+	.plx-workbench__editorTabMeta {
+		display: none;
+	}
+
+	.plx-workbench__layoutControls {
+		display: none;
+	}
+
+	.plx-workbench__body {
+		padding: 4px;
+	}
+
+	.plx-workbench__surface {
+		border-radius: 8px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.plx-workbench__activityItem,
+	.plx-workbench__activityLabel,
+	.plx-workbench__toolbarButton,
+	.plx-workbench__editorTabButton {
+		transition: none;
+	}
+}

@@ -1,17 +1,87 @@
 packages:
   - packages/*
-  - packages/plugins/*
+  - plugins/*
+  - plugins/*/*
+  - vendor/gqlens/packages/codegen
+  - vendor/gqlens/packages/core
+  - vendor/gqlens/packages/react
+  - vendor/gqlens/packages/vite
+  - vendor/split-like-vscode/packages/core
+  - vendor/split-like-vscode/packages/react
+  - projects/*
+
+catalog:
+  '@chenglou/pretext': ^0.0.8
+  '@grpc/grpc-js': ^1.14.4
+  '@napi-rs/canvas': ^1.0.3
+  '@opentelemetry/api': ^1.9.0
+  '@opentelemetry/api-logs': ^0.221.0
+  '@opentelemetry/context-async-hooks': ^2.10.0
+  '@opentelemetry/core': ^2.10.0
+  '@opentelemetry/exporter-logs-otlp-grpc': ^0.221.0
+  '@opentelemetry/exporter-logs-otlp-http': ^0.221.0
+  '@opentelemetry/exporter-logs-otlp-proto': ^0.221.0
+  '@opentelemetry/exporter-metrics-otlp-grpc': ^0.221.0
+  '@opentelemetry/exporter-metrics-otlp-http': ^0.221.0
+  '@opentelemetry/exporter-metrics-otlp-proto': ^0.221.0
+  '@opentelemetry/exporter-prometheus': ^0.221.0
+  '@opentelemetry/exporter-trace-otlp-grpc': ^0.221.0
+  '@opentelemetry/exporter-trace-otlp-http': ^0.221.0
+  '@opentelemetry/exporter-trace-otlp-proto': ^0.221.0
+  '@opentelemetry/resources': ^2.10.0
+  '@opentelemetry/sdk-logs': ^0.221.0
+  '@opentelemetry/sdk-metrics': ^2.10.0
+  '@opentelemetry/sdk-trace-base': ^2.10.0
+  '@pnpm/napi': 12.0.0-rc.0
+  '@mantine/core': ^9.4.1
+  '@mantine/dates': ^9.4.1
+  '@mantine/hooks': ^9.4.1
+  '@mantine/modals': ^9.4.1
+  '@mantine/notifications': ^9.4.1
+  '@pluxel/market': ^0.1.0
+  '@tabler/icons-react': ^3.37.1
+  '@types/react': ^19.2.14
+  '@types/react-dom': ^19.2.3
+  drizzle-orm: ^0.45.2
+  echarts: ^6.1.0
+  react: ^19.2.7
+  react-dom: ^19.2.7
+  redis: ^6.1.0
+  s3mini: ^1.0.0
+  tinypool: ^2.1.0
+  tsdown: ^0.22.5
+  typescript: ^6.0.3
+  undici: ^7.16.0
+  vitest: ^4.1.10
+  wretch: ^3.0.9
+
+managePackageManagerVersions: false
+
+packageExtensions:
+  '@mantine/hooks@9.4.1':
+    peerDependencies:
+      react-dom: ^19.2.0
 
 allowBuilds:
   '@parcel/watcher': false
   better-sqlite3: false
   esbuild: false
+  protobufjs: false
 
 minimumReleaseAgeExclude:
   - '@gqlens/codegen@0.2.0'
   - '@gqlens/core@0.2.0'
   - '@gqlens/react@0.2.0'
   - '@gqlens/vite@0.2.0'
+  - '@pnpm/napi.darwin-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.darwin-x64@12.0.0-rc.0'
+  - '@pnpm/napi.linux-arm64-musl@12.0.0-rc.0'
+  - '@pnpm/napi.linux-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.linux-x64-musl@12.0.0-rc.0'
+  - '@pnpm/napi.linux-x64@12.0.0-rc.0'
+  - '@pnpm/napi.win32-arm64@12.0.0-rc.0'
+  - '@pnpm/napi.win32-x64@12.0.0-rc.0'
+  - '@pnpm/napi@12.0.0-rc.0'
 
 onlyBuiltDependencies:
   - esbuild
@@ -28,4 +98,6 @@ public-hoist-pattern:
   - tsdown
 
 trustPolicy: no-downgrade
+trustPolicyExclude:
+  - '@pnpm/napi@12.0.0-rc.0'
 trustPolicyIgnoreAfter: 43200

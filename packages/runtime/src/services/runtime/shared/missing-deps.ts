@@ -30,7 +30,7 @@ function extractMissingDependencyChains(detail: string): string[][] {
 		if (parts.length > 0) out.push(parts)
 	}
 
-	// Example (core-di):
+	// Example (a plugin package):
 	//   [MissingDependency] Bad -> MissingBase
 	const simple = /\[MissingDependency\]\s*([^\n\r|]+?)\s*->\s*([^\n\r]+)/g
 	for (;;) {

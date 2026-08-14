@@ -2,11 +2,11 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
 	resolve: {
-		conditions: ['@pluxel/source', 'node', 'import', 'module', 'development', 'default'],
+		conditions: ['development', '@pluxel/source', 'node', 'import', 'module', 'default'],
 	},
 	ssr: {
 		resolve: {
-			conditions: ['@pluxel/source', 'node', 'import', 'module', 'development', 'default'],
+			conditions: ['development', '@pluxel/source', 'node', 'import', 'module', 'default'],
 		},
 	},
 	test: {

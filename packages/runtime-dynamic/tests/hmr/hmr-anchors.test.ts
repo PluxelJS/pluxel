@@ -36,38 +36,34 @@ describe('LoaderHmrService anchors', () => {
 		})
 	})
 
-	it('returns stable anchor snapshots across calls', async () => {
-		await using fixture = await createFixture({
-			'A.ts': 'export const a = 1\n',
-			'B.ts': 'export const b = 1\n',
-		})
-		const root = fixture.path
-
-		const a = join(root, 'A.ts')
-		const b = join(root, 'B.ts')
-
+	it('keeps anchor snapshots immutable and merges explicit cold-start entries without scanning', async () => {
+		await using fixture = await createFixture({ A: '', B: '', Entry: '' })
+		const a = join(fixture.path, 'A')
+		const b = join(fixture.path, 'B')
+		const entry = join(fixture.path, 'Entry')
 		class AnchorA extends BasePlugin {}
-		Plugin({ name: 'AnchorA' })(AnchorA)
-
 		class AnchorB extends BasePlugin {}
+		Plugin({ name: 'AnchorA' })(AnchorA)
 		Plugin({ name: 'AnchorB' })(AnchorB)
 
 		await withTestDynamicContext(async (ctx) => {
 			await ctx.loader.replaceModule(a, { AnchorA })
-
-			const hmr = new LoaderHmrService(ctx, { roots: [root], entries: [] })
+			const hmr = new LoaderHmrService(ctx, { roots: [fixture.path], entries: [entry] })
 			const hmrBox = inspectLoaderHmr(hmr)
-
-			const snapshot1 = hmrBox.getAnchorsCleanSnapshot()
-			expect(snapshot1.has(a)).toBe(true)
-			expect(snapshot1.has(b)).toBe(false)
-
+			const before = hmrBox.getAnchorsCleanSnapshot()
 			await ctx.loader.replaceModule(b, { AnchorB })
-			const snapshot2 = hmrBox.getAnchorsCleanSnapshot()
-			expect(snapshot2.has(a)).toBe(true)
-			expect(snapshot2.has(b)).toBe(true)
 
-			expect(snapshot1.has(b)).toBe(false)
+			expect([...before]).toEqual([a])
+			expect([...hmrBox.getAnchorsCleanSnapshot()]).toEqual([a, b])
+
+			ctx.scanService.listWorkspaceEntries = () => {
+				throw new Error('explicit entries must bypass workspace scanning')
+			}
+			ctx.scanService.resolveEntry = async () => {
+				throw new Error('explicit entries must bypass entry resolution')
+			}
+			const startup = await hmrBox.ensureStartupScope()
+			expect(new Set(startup.entryList)).toEqual(new Set([entry, a, b]))
 		})
 	})
 })

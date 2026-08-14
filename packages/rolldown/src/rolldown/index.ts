@@ -3,16 +3,10 @@ export type { CollectedImportKind, CollectedImportSpecifier } from './plugins/im
 export { collectImportSpecifiers } from './plugins/importCollector.ts'
 export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
-export type { RuntimeUiBridgePluginOptions } from './plugins/runtimeUiBridgePlugin.ts'
-export { runtimeUiBridgePlugin } from './plugins/runtimeUiBridgePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
-export type {
-	ImportTracker,
-	ImportTrackerPluginOptions,
-	TrackedPluginUsage,
-} from './plugins/importTrackerPlugin.ts'
-export { createImportTracker } from './plugins/importTrackerPlugin.ts'
+export type { PluginArtifactBuildPluginOptions } from '../plugin-artifact/pluginArtifactBuildPlugin.ts'
+export { pluginArtifactBuildPlugin } from '../plugin-artifact/pluginArtifactBuildPlugin.ts'
 export type { Lang } from './plugins/pluginUtils.ts'
 export {
 	getLangFromId,
@@ -20,6 +14,5 @@ export {
 	parseStandaloneWithLang,
 	parseWithLang,
 } from './plugins/pluginUtils.ts'
-export { rewriteDtsModuleAugmentations } from './plugins/rewriteDtsModuleAugmentations.ts'
 export { rewriteDtsText } from './plugins/rewriteDtsText.ts'
 export { assertBundleNoText } from './plugins/assertBundleNoText.ts'

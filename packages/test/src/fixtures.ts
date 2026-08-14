@@ -18,8 +18,19 @@ const realOs = require('node:os') as typeof import('node:os')
 
 type PathLike = string | URL | Buffer
 type CopyOptions = { recursive?: boolean; force?: boolean }
-type RmOptions = { recursive?: boolean; force?: boolean }
+type RmOptions = {
+	recursive?: boolean
+	force?: boolean
+	maxRetries?: number
+	retryDelay?: number
+}
 type RmdirOptions = { recursive?: boolean }
+const DISK_FIXTURE_CLEANUP_OPTIONS: RmOptions = {
+	recursive: true,
+	force: true,
+	maxRetries: 5,
+	retryDelay: 100,
+}
 type NamedEntry = string | { name: string }
 type SupportedDirEntry = {
 	name: string
@@ -950,11 +961,29 @@ function createVirtualRuntime(state: VirtualFixtureState): FixtureFsApi {
 }
 
 function wrapFixture(raw: FsFixture, runtime: FixtureFsApi): TestFixture {
-	return Object.assign(raw, runtime, {
+	// Keep fs-fixture's promise-backed instance intact: its convenience methods close over
+	// `raw.fs`, while TestFixture intentionally exposes the Node-style API as `fixture.fs`.
+	const fixture = Object.assign(Object.create(raw) as object, runtime, {
+		path: raw.path,
+		getPath: raw.getPath.bind(raw),
+		exists: raw.exists.bind(raw),
+		rm: raw.rm.bind(raw),
+		cp: raw.cp.bind(raw),
+		mkdir: raw.mkdir.bind(raw),
+		mv: raw.mv.bind(raw),
+		readFile: raw.readFile,
+		readdir: raw.readdir,
+		writeFile: raw.writeFile,
+		readJson: raw.readJson.bind(raw),
+		writeJson: raw.writeJson.bind(raw),
 		async [Symbol.asyncDispose]() {
-			await runtime.fsp.rm(raw.path, { recursive: true, force: true })
+			await runtime.fsp.rm(
+				raw.path,
+				runtime.mode === 'disk' ? DISK_FIXTURE_CLEANUP_OPTIONS : { recursive: true, force: true },
+			)
 		},
-	}) as TestFixture
+	})
+	return fixture as TestFixture
 }
 
 export async function createFixture(

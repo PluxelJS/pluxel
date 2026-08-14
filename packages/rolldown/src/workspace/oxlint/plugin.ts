@@ -1,5 +1,4 @@
 import { configsRules } from './rules/configs.ts'
-import { augmentationsRules } from './rules/augmentations.ts'
 import { importsRules } from './rules/imports.ts'
 import { loggingRules } from './rules/logging.ts'
 import { pluginsRules } from './rules/plugins.ts'
@@ -10,7 +9,6 @@ export const pluxelRules = {
 	...configsRules,
 	...importsRules,
 	...pluginsRules,
-	...augmentationsRules,
 }
 
 export type PluxelRuleCategory = 'correctness' | 'logging'
@@ -63,17 +61,17 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-no-class-field': {
+	'features-load-no-class-field': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-requires-defined-spec': {
+	'features-load-requires-defined-spec': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'features-try-use-no-static-load': {
+	'features-load-no-static-load': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
@@ -92,11 +90,6 @@ export const pluxelRulePolicy = {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'fix',
-	},
-	'runtime-type-augmentations': {
-		category: 'correctness',
-		buildCritical: false,
-		remediation: 'diagnostic',
 	},
 } as const satisfies Record<
 	keyof typeof pluxelRules,

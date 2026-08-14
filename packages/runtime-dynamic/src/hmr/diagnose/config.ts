@@ -4,8 +4,8 @@ import { nodeLoaderHmrWorkspaceFs, type LoaderHmrWorkspaceFs } from './fs'
 
 export const DEFAULT_LOADER_HMR_CONFIG_BASENAME = 'pluxel.loader.hmr.jsonc' as const
 
-export type PluxelLoaderHmrConfigV1 = {
-	version: 1
+export type PluxelLoaderHmrConfigV2 = {
+	version: 2
 	profile: string
 	defaults?: {
 		roots?: 'auto' | string[]
@@ -13,7 +13,7 @@ export type PluxelLoaderHmrConfigV1 = {
 		 * Extra entry globs (workspace-relative unless absolute).
 		 *
 		 * This is for non-package entry modules (e.g. demo modules like
-		 * `packages/plugins/host/src/demo/PluginEventsDemo.ts`).
+		 * `projects/plugin-host/src/demo/PluginEventsDemo.ts`).
 		 */
 		include?: string[]
 		exclude?: string[]
@@ -23,27 +23,17 @@ export type PluxelLoaderHmrConfigV1 = {
 		{
 			roots?: 'auto' | string[]
 			enabled: string[]
-			/**
-			 * Workspace plugin packages that are provided by the host as builtins (baseline).
-			 *
-			 * These package names are omitted from workspace discovery/entries resolution to prevent
-			 * double-loading the same package (plugin name conflicts).
-			 *
-			 * Note: builtins are preloaded by the host (via `@pluxel/runtime-dynamic/hmr`). This field only
-			 * declares *which packages* should be treated as builtins for discovery purposes.
-			 */
-			builtin?: string[]
 			include?: string[]
 			exclude?: string[]
 		}
 	>
 }
 
-export type PluxelLoaderHmrConfig = PluxelLoaderHmrConfigV1
+export type PluxelLoaderHmrConfig = PluxelLoaderHmrConfigV2
 
-export function createDefaultLoaderHmrConfigV1(): PluxelLoaderHmrConfigV1 {
+export function createDefaultLoaderHmrConfigV2(): PluxelLoaderHmrConfigV2 {
 	return {
-		version: 1,
+		version: 2,
 		profile: 'hmr',
 		defaults: {
 			roots: 'auto',
@@ -71,10 +61,10 @@ export function resolveDefaultLoaderHmrConfigPath(rootDir: string) {
 	return resolve(rootDir, DEFAULT_LOADER_HMR_CONFIG_BASENAME)
 }
 
-export function parseLoaderHmrConfigV1Jsonc(
+export function parseLoaderHmrConfigV2Jsonc(
 	contents: string,
 	label: string = DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-): PluxelLoaderHmrConfigV1 {
+): PluxelLoaderHmrConfigV2 {
 	const errors: ParseError[] = []
 	const data = parse(contents, errors, {
 		allowTrailingComma: true,
@@ -86,50 +76,51 @@ export function parseLoaderHmrConfigV1Jsonc(
 			.join(', ')
 		throw new Error(`[loader-hmr-config] Failed to parse ${label}: ${summary}`)
 	}
-	return validateLoaderHmrConfigV1Strict(data, label)
+	return validateLoaderHmrConfigV2Strict(data, label)
 }
 
-export function readLoaderHmrConfigV1(
+export function readLoaderHmrConfigV2(
 	configPath: string,
 	fs: LoaderHmrWorkspaceFs = nodeLoaderHmrWorkspaceFs,
-): PluxelLoaderHmrConfigV1 {
-	if (!fs.existsSync(configPath)) throw new Error(`[loader-hmr-config] Missing config file: ${configPath}`)
+): PluxelLoaderHmrConfigV2 {
+	if (!fs.existsSync(configPath))
+		throw new Error(`[loader-hmr-config] Missing config file: ${configPath}`)
 	const raw = readLoaderHmrConfigText(configPath, fs)
-	return parseLoaderHmrConfigV1Jsonc(raw, configPath)
+	return parseLoaderHmrConfigV2Jsonc(raw, configPath)
 }
 
-export function writeLoaderHmrConfigV1(
+export function writeLoaderHmrConfigV2(
 	configPath: string,
-	config: PluxelLoaderHmrConfigV1,
+	config: PluxelLoaderHmrConfigV2,
 	opts?: { headerComment?: string; fs?: LoaderHmrWorkspaceFs },
 ) {
 	const header = opts?.headerComment ?? defaultLoaderHmrConfigHeaderComment()
-	const normalized = normalizeLoaderHmrConfigV1(config)
+	const normalized = normalizeLoaderHmrConfigV2(config)
 	const json = JSON.stringify(normalized, null, '\t')
 	const out = header ? `${header}${json}\n` : `${json}\n`
 	;(opts?.fs ?? nodeLoaderHmrWorkspaceFs).writeFileSync(configPath, out, 'utf8')
 }
 
-export function ensureLoaderHmrConfigV1(
+export function ensureLoaderHmrConfigV2(
 	configPath: string,
 	fs: LoaderHmrWorkspaceFs = nodeLoaderHmrWorkspaceFs,
-): PluxelLoaderHmrConfigV1 {
-	if (fs.existsSync(configPath)) return readLoaderHmrConfigV1(configPath, fs)
-	const cfg = createDefaultLoaderHmrConfigV1()
-	writeLoaderHmrConfigV1(configPath, cfg, { fs })
+): PluxelLoaderHmrConfigV2 {
+	if (fs.existsSync(configPath)) return readLoaderHmrConfigV2(configPath, fs)
+	const cfg = createDefaultLoaderHmrConfigV2()
+	writeLoaderHmrConfigV2(configPath, cfg, { fs })
 	return cfg
 }
 
-export function backupAndRewriteLoaderHmrConfigV1(
+export function backupAndRewriteLoaderHmrConfigV2(
 	configPath: string,
-	next: PluxelLoaderHmrConfigV1,
+	next: PluxelLoaderHmrConfigV2,
 	fs: LoaderHmrWorkspaceFs = nodeLoaderHmrWorkspaceFs,
 ) {
 	const ts = new Date().toISOString().replaceAll(/[:.]/g, '-')
 	const backupPath = `${configPath}.bak.${ts}`
 	const raw = readLoaderHmrConfigText(configPath, fs)
 	fs.writeFileSync(backupPath, raw, 'utf8')
-	writeLoaderHmrConfigV1(configPath, next, { fs })
+	writeLoaderHmrConfigV2(configPath, next, { fs })
 	return { backupPath }
 }
 
@@ -170,14 +161,19 @@ function assertNoUnknownKeys(
 		throw new Error(`[loader-hmr-config] Unknown field(s) in ${ctx}: ${unknown.join(', ')}`)
 }
 
-export function validateLoaderHmrConfigV1Strict(
+export function validateLoaderHmrConfigV2Strict(
 	raw: unknown,
 	label: string = DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-): PluxelLoaderHmrConfigV1 {
+): PluxelLoaderHmrConfigV2 {
 	assertPlainObject(raw, label)
 	assertNoUnknownKeys(raw, ['version', 'profile', 'defaults', 'profiles'], label)
 
-	if (raw.version !== 1) throw new Error(`[loader-hmr-config] ${label}: version must be 1`)
+	if (raw.version === 1) {
+		throw new Error(
+			`[loader-hmr-config] ${label}: version 1 is unsupported; remove profile builtin fields and set version to 2`,
+		)
+	}
+	if (raw.version !== 2) throw new Error(`[loader-hmr-config] ${label}: version must be 2`)
 	assertString(raw.profile, `${label}.profile`)
 
 	const defaultsRaw = raw.defaults
@@ -197,24 +193,22 @@ export function validateLoaderHmrConfigV1Strict(
 		assertPlainObject(profileRaw, `${label}.profiles.${name}`)
 		assertNoUnknownKeys(
 			profileRaw,
-			['roots', 'enabled', 'builtin', 'include', 'exclude'],
+			['roots', 'enabled', 'include', 'exclude'],
 			`${label}.profiles.${name}`,
 		)
 		if (profileRaw.roots !== undefined)
 			assertRoots(profileRaw.roots, `${label}.profiles.${name}.roots`)
 		assertStringArray(profileRaw.enabled, `${label}.profiles.${name}.enabled`)
-		if (profileRaw.builtin !== undefined)
-			assertStringArray(profileRaw.builtin, `${label}.profiles.${name}.builtin`)
 		if (profileRaw.include !== undefined)
 			assertStringArray(profileRaw.include, `${label}.profiles.${name}.include`)
 		if (profileRaw.exclude !== undefined)
 			assertStringArray(profileRaw.exclude, `${label}.profiles.${name}.exclude`)
 	}
 
-	return raw as PluxelLoaderHmrConfigV1
+	return raw as PluxelLoaderHmrConfigV2
 }
 
-function normalizeLoaderHmrConfigV1(config: PluxelLoaderHmrConfigV1): PluxelLoaderHmrConfigV1 {
+function normalizeLoaderHmrConfigV2(config: PluxelLoaderHmrConfigV2): PluxelLoaderHmrConfigV2 {
 	const defaults = config.defaults
 		? {
 				...(config.defaults.roots !== undefined ? { roots: config.defaults.roots } : {}),
@@ -223,20 +217,19 @@ function normalizeLoaderHmrConfigV1(config: PluxelLoaderHmrConfigV1): PluxelLoad
 			}
 		: undefined
 
-	const profiles: PluxelLoaderHmrConfigV1['profiles'] = {}
+	const profiles: PluxelLoaderHmrConfigV2['profiles'] = {}
 	for (const key of Object.keys(config.profiles)) {
 		const p = config.profiles[key]!
 		profiles[key] = {
 			...(p.roots !== undefined ? { roots: p.roots } : {}),
 			enabled: [...p.enabled],
-			...(p.builtin?.length ? { builtin: [...p.builtin] } : {}),
 			...(p.include?.length ? { include: [...p.include] } : {}),
 			...(p.exclude?.length ? { exclude: [...p.exclude] } : {}),
 		}
 	}
 
 	return {
-		version: 1,
+		version: 2,
 		profile: config.profile,
 		...(defaults ? { defaults } : {}),
 		profiles,

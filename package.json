@@ -1,55 +1,53 @@
 {
-	"name": "monorepo",
+	"name": "pluxel",
 	"private": true,
-	"repository": "https://github.com/jkomyno/pnpm-monorepo-example.git",
-	"workspaces": [
-		"packages/*",
-		"packages/plugins/*"
-	],
-	"type": "module",
-	"publishConfig": {
-		"registry": "https://registry.npmjs.org/"
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel"
 	},
+	"type": "module",
 	"scripts": {
-		"test": "turbo run test",
-		"test:full": "turbo run test --force",
+		"test": "turbo run test --concurrency=50%",
+		"test:full": "turbo run test --force --concurrency=50%",
 		"test:watch": "vitest",
-		"build": "turbo run build --filter=!@pluxel/plugins-host",
-		"build:full": "turbo run build --force --filter=!@pluxel/plugins-host",
+		"build": "turbo run build",
+		"build:full": "turbo run build --force",
+		"typecheck": "turbo run typecheck",
+		"governance:check": "node scripts/check-workspace-governance.mjs",
 		"bench:core:compare": "scripts/core-bench-compare.sh",
-		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts",
-		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts && pnpm run lint:frontend-types",
+		"lint:frontend-types": "oxlint -c oxlint.config.ts --type-aware -A correctness -A suspicious -A perf -D typescript/await-thenable -D typescript/no-array-delete -D typescript/no-base-to-string -D typescript/no-floating-promises -D typescript/no-for-in-array -D typescript/no-misused-promises -D typescript/no-misused-spread -D typescript/only-throw-error -D typescript/prefer-promise-reject-errors -D typescript/use-unknown-in-catch-callback-variable packages/workbench-app/src packages/valibot-form/src/web",
+		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
-		"generate:gqlens": "node scripts/generate-gqlens.ts",
+		"verify": "pnpm run release:check && pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test --concurrency=50%",
+		"changeset": "changeset",
+		"release:check": "node scripts/check-release-invariants.mjs",
+		"release:smoke": "pnpm --filter @pluxel/cli test:templates",
+		"source:local": "node scripts/source-local-project.mjs",
+		"release:version": "changeset version",
+		"release:publish": "pnpm run verify && pnpm run release:smoke && changeset publish",
+		"build:gqlens": "turbo run build --filter=@gqlens/core --filter=@gqlens/react --filter=@gqlens/codegen --filter=@gqlens/vite",
+		"generate:gqlens": "pnpm run build:gqlens && node scripts/generate-gqlens.ts",
 		"plugin-host:dynamic": "pnpm --filter @pluxel/plugins-host dynamic",
-		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static",
-		"plugin-host:static:direct": "pnpm --filter @pluxel/plugins-host static:direct",
-		"plugin-demo:authelia-oidc": "pnpm --filter @pluxel/plugins-authelia-oidc-demo static",
-		"plugin-demo:static-commercial": "pnpm --filter @pluxel/plugins-static-commercial-demo dev"
-	},
-	"dependencies": {
-		"@mantine/core": "^9.4.0",
-		"@mantine/hooks": "^9.4.0",
-		"@mantine/notifications": "^9.4.0",
-		"@pluxel/market": "^0.1.0",
-		"react": "^19.2.7",
-		"react-dom": "^19.2.7"
+		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
 	},
 	"devDependencies": {
-		"@gqlens/codegen": "^0.2.0",
+		"@changesets/cli": "^2.31.0",
+		"@gqlens/vite": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/test": "workspace:*",
-		"@types/bun": "^1.3.14",
-		"oxfmt": "^0.56.0",
-		"oxlint": "^1.71.0",
+		"@tsdown/css": "0.22.5",
+		"oxfmt": "^0.58.0",
+		"oxlint": "^1.73.0",
+		"oxlint-tsgolint": "^0.24.0",
 		"pncat": "^0.12.0",
-		"tsdown": "^0.22.3",
-		"turbo": "^2.10.0",
-		"typescript": "^6.0.3",
+		"tsdown": "catalog:",
+		"turbo": "^2.10.4",
+		"typescript": "catalog:",
 		"unplugin-preprocessor-directives": "^1.2.0",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx,cjs,mjs,md,json,jsonc}": [
@@ -58,9 +56,15 @@
 		]
 	},
 	"pre-commit": "lint-staged",
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": ">=11 <12",
+			"onFail": "ignore"
+		}
+	},
 	"engines": {
 		"node": ">=24",
 		"pnpm": ">=9"
-	},
-	"packageManager": "pnpm@11.8.0"
+	}
 }

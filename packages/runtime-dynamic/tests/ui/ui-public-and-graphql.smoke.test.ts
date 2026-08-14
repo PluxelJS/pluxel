@@ -1,5 +1,4 @@
 import type { LoaderHmrWorkspaceSnapshot } from '@pluxel/runtime-dynamic/hmr'
-import '@pluxel/runtime/services/web-management'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { withRuntimeContext } from '@pluxel/runtime/test'
 import { writeFile } from 'node:fs/promises'
@@ -7,7 +6,8 @@ import { resolve } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import { SuperJSON } from 'superjson'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
-import { createCompiledExtensionModule } from '@pluxel/runtime/internal'
+import { createCompiledWorkbenchArtifact } from '@pluxel/runtime/internal'
+import { requireWorkbench } from '../../../runtime/src/services/workbench'
 import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR UI smoke', () => {
@@ -33,7 +33,7 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})
@@ -104,7 +104,40 @@ describe('HMR UI smoke', () => {
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
+			},
+		)
+	})
+
+	it('limits Workbench navigation to the configured UI base path', async () => {
+		await withRuntimeContext(
+			async (ctx) => {
+				ctx.http.reconfigureUiAssets({
+					uiAssets: 'dev-server',
+					uiBasePath: '/__pluxel/workbench',
+				})
+				const dashboard = await ctx.http.fetch(
+					new Request('http://local/', { headers: { accept: 'text/html' } }),
+				)
+				expect(dashboard.status).toBe(404)
+
+				const workbench = await ctx.http.fetch(
+					new Request('http://local/__pluxel/workbench/', {
+						headers: { accept: 'text/html' },
+					}),
+				)
+				expect(workbench.status).toBe(200)
+				expect(await workbench.text()).toContain(
+					'<meta name="pluxel-workbench-ui-base-path" content="/__pluxel/workbench" />',
+				)
+			},
+			{
+				configService: { mode: 'memory' },
+				workbench: {
+					enabled: true,
+					access: { exposure: 'private' },
+					uiBasePath: '/__pluxel/workbench',
+				},
 			},
 		)
 	})
@@ -136,7 +169,6 @@ describe('HMR UI smoke', () => {
 			activeProfile: 'dev',
 			roots: ['packages/a'],
 			enabled: ['pluxel-plugin-a'],
-			builtinPackages: [],
 			enabledEntries: ['packages/a/src/index.ts'],
 			includedEntries: [],
 			watchRoots: ['packages/a'],
@@ -163,7 +195,7 @@ describe('HMR UI smoke', () => {
 		await host.ctx.effects.dispose()
 	}, 15_000)
 
-	it('serves extension artifact manifests and files through the internal artifact route', async () => {
+	it('serves workbench artifact manifests and files through the internal artifact route', async () => {
 		await using fixture = await createFixture({
 			artifacts: {
 				'mf-manifest.json': JSON.stringify({
@@ -177,8 +209,8 @@ describe('HMR UI smoke', () => {
 
 		await withRuntimeContext(
 			async (ctx) => {
-				await ctx.ext.ui.commitCompiledModule(
-					createCompiledExtensionModule({
+				await requireWorkbench(ctx).artifacts.commitCompiledModule(
+					createCompiledWorkbenchArtifact({
 						pluginName: 'DemoPlugin',
 						sourceHash: 'demo-hash',
 						compiledAt: 123,
@@ -186,8 +218,10 @@ describe('HMR UI smoke', () => {
 					{ artifactRoot: resolve(fixture.path, 'artifacts') },
 				)
 
-				const manifestUrl = ctx.ext.ui.getCompiledModule('DemoPlugin')?.manifestUrl
-				expect(manifestUrl).toBeTruthy()
+				const remoteEntryUrl =
+					requireWorkbench(ctx).artifacts.getCompiledModule('DemoPlugin')?.remoteEntryUrl
+				expect(remoteEntryUrl).toBeTruthy()
+				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')
 
 				const manifestRes = await ctx.http.fetch(new Request(`http://local${manifestUrl}`))
 				expect(manifestRes.status).toBe(200)
@@ -196,19 +230,17 @@ describe('HMR UI smoke', () => {
 					metaData?: { publicPath?: string }
 				}
 				expect(manifest.metaData?.publicPath).toBe(
-					`${RUNTIME_INTERNAL_API_BASE}/extensions/artifacts/DemoPlugin/demo-hash/`,
+					`${RUNTIME_INTERNAL_API_BASE}/workbench/artifacts/DemoPlugin/demo-hash/`,
 				)
 
-				const assetRes = await ctx.http.fetch(
-					new Request(`http://local${manifest.metaData?.publicPath}remoteEntry.js`),
-				)
+				const assetRes = await ctx.http.fetch(new Request(`http://local${remoteEntryUrl}`))
 				expect(assetRes.status).toBe(200)
 				expect(assetRes.headers.get('content-type')).toContain('application/javascript')
 				expect(await assetRes.text()).toContain('export const ok = 1')
 			},
 			{
 				configService: { mode: 'memory' },
-				management: { enabled: true, access: { exposure: 'private' } },
+				workbench: { enabled: true, access: { exposure: 'private' } },
 			},
 		)
 	})

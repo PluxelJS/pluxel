@@ -1,7 +1,3 @@
 {
-	"extends": "./tsconfig.workspace.json",
-	"compilerOptions": {
-		// **关键**：告诉 TS 要加载 Bun 的类型
-		"types": ["@types/bun"]
-	}
+	"extends": "./tsconfig.workspace.json"
 }

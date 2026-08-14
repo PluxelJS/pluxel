@@ -1,6 +1,7 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 
 export type Cleanup = () => void | Promise<void>
+/** A resource handle whose async disposal settles only after its owned work has stopped. */
 export type DisposableLike = { dispose: () => void | Promise<void> }
 export type Phase = 'shutdown' | 'runtime' | 'final'
 
@@ -137,6 +138,7 @@ export type ReleaseFn<T> = (value: T) => void | Promise<void>
 
 export interface Effects {
 	defer(cleanup: Cleanup, meta?: EffectsMeta): EffectGuard
+	/** Own a resource until this effects scope disposes or the returned guard releases it early. */
 	own(disposable: DisposableLike, meta?: EffectsMeta): EffectGuard
 	acquire<T>(acquire: AcquireFn<T>, release: ReleaseFn<T>, meta?: EffectsMeta): Promise<T>
 	scope(meta?: EffectsMeta): EffectsScope

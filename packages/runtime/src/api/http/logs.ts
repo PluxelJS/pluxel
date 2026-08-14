@@ -8,11 +8,11 @@ import {
 	type LogSseReset,
 	type RuntimeLogLine,
 } from '../../logger/protocol'
+import { requireActiveRuntimeLogging } from '../../logger/logging'
 import {
 	type RuntimeLogStoreAppend,
 	type RuntimeLogStoreReset,
-	runtimeLogStores,
-	runtimeLogs,
+	type RuntimeLogStore,
 } from '../../logger/store'
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { createSseResponse } from '../../services/http/sse'
@@ -32,7 +32,7 @@ type ResolvedLogStream = {
 	/** Stream id requested by the client (may be virtual). */
 	streamId: string
 	/** Underlying store. */
-	store: typeof runtimeLogs
+	store: RuntimeLogStore
 	/** Extra filter implied by the stream id (virtual streams only). */
 	derivedFilter?: LogFilter
 	/** Whether this stream is virtual (backed by `default` store). */
@@ -40,21 +40,23 @@ type ResolvedLogStream = {
 }
 
 function resolveStream(streamIdRaw: string | undefined): ResolvedLogStream | null {
+	const stores = requireActiveRuntimeLogging().stores
+	const defaultStore = stores.getOrCreate('default')
 	const requested = (streamIdRaw ?? '').trim() || 'default'
-	if (requested === 'default') return { streamId: 'default', store: runtimeLogs, virtual: false }
+	if (requested === 'default') return { streamId: 'default', store: defaultStore, virtual: false }
 
-	const existing = runtimeLogStores.get(requested)
+	const existing = stores.get(requested)
 	if (existing) return { streamId: requested, store: existing, virtual: false }
 
 	if (requested.startsWith('plugin:')) {
 		const pluginId = requested.slice('plugin:'.length)
 		if (!pluginId) return null
-		return { streamId: requested, store: runtimeLogs, virtual: true, derivedFilter: { pluginId } }
+		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { pluginId } }
 	}
 	if (requested.startsWith('context:')) {
 		const context = requested.slice('context:'.length)
 		if (!context) return null
-		return { streamId: requested, store: runtimeLogs, virtual: true, derivedFilter: { context } }
+		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { context } }
 	}
 
 	return null
@@ -110,7 +112,11 @@ function mergeResolvedFilter(url: URL, resolved: ResolvedLogStream): LogFilter |
 export const logRoutes = (app: AnyElysiaApp) =>
 	app.group(RUNTIME_LOG_STREAMS_BASE, (streams) =>
 		streams
-			.get('', () => ({ streams: runtimeLogStores.list().map((store) => store.meta()) }))
+			.get('', () => ({
+				streams: requireActiveRuntimeLogging()
+					.stores.list()
+					.map((store) => store.meta()),
+			}))
 			.get(
 				'/:streamId/meta',
 				(c) =>

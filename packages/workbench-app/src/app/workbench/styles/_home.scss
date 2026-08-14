@@ -1,0 +1,322 @@
+@use '../../../styles/theme/mantine' as mantine;
+
+.plx-home {
+	box-sizing: border-box;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 18px;
+	overflow: auto;
+	padding: clamp(16px, 2vw, 28px);
+	width: 100%;
+}
+
+.plx-home__hero {
+	align-items: stretch;
+	background: var(--plx-surface-strong);
+	border: 1px solid var(--plx-border);
+	border-radius: 10px;
+	display: grid;
+	gap: clamp(20px, 3vw, 44px);
+	grid-template-columns: minmax(320px, 1fr) minmax(420px, 0.9fr);
+	padding: clamp(18px, 2.2vw, 30px);
+}
+
+.plx-home__heroCopy {
+	align-self: center;
+	max-width: 640px;
+}
+
+.plx-home__eyebrow,
+.plx-home__sectionKicker {
+	color: var(--plx-accent-strong);
+	font-size: 11px;
+	font-weight: 800;
+	letter-spacing: 0.11em;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+
+.plx-home__title {
+	font-size: clamp(26px, 3vw, 36px);
+	font-weight: 720;
+	letter-spacing: -0.035em;
+	line-height: 1.1;
+	margin-top: 7px;
+}
+
+.plx-home__description {
+	color: var(--plx-text-muted);
+	font-size: 15px;
+	line-height: 1.55;
+	margin-top: 9px;
+	max-width: 620px;
+}
+
+.plx-home__heroActions {
+	margin-top: 15px;
+}
+
+.plx-home__runtimeSummary {
+	display: grid;
+	gap: 8px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plx-home__metric {
+	background: var(--plx-surface-muted);
+	border: 1px solid var(--plx-border);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	min-height: 76px;
+	padding: 12px 14px;
+}
+
+.plx-home__metric[data-tone='running'] {
+	border-color: color-mix(in srgb, var(--mantine-color-teal-6) 42%, var(--plx-border));
+}
+
+.plx-home__metric[data-tone='disabled'] {
+	border-color: color-mix(in srgb, var(--mantine-color-orange-6) 36%, var(--plx-border));
+}
+
+.plx-home__metricLabel {
+	color: var(--plx-text-muted);
+	font-size: 11px;
+	font-weight: 650;
+}
+
+.plx-home__metricValue {
+	font-size: 25px;
+	font-weight: 750;
+	letter-spacing: -0.03em;
+	line-height: 1;
+}
+
+.plx-home__sectionHeader {
+	align-items: end;
+	display: flex;
+	justify-content: space-between;
+	margin-bottom: 14px;
+}
+
+.plx-home__sectionTitle {
+	font-size: 20px;
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+	margin-top: 4px;
+}
+
+.plx-home__workspaceCard {
+	align-items: start;
+	background: var(--plx-surface-strong);
+	color: inherit;
+	display: flex;
+	gap: 12px;
+	min-height: 104px;
+	min-width: 0;
+	text-decoration: none;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		box-shadow 140ms ease,
+		transform 140ms ease;
+}
+
+.plx-home__workspaceCard:hover,
+.plx-home__workspaceCard:focus-visible {
+	background: color-mix(in srgb, var(--plx-surface-strong) 82%, var(--plx-accent-soft) 18%);
+	border-color: var(--plx-selected-border);
+	box-shadow: 0 10px 26px color-mix(in srgb, var(--plx-text) 6%, transparent);
+	outline: none;
+	transform: translateY(-2px);
+}
+
+.plx-home__workspaceIcon {
+	align-items: center;
+	background: var(--plx-accent-soft);
+	border-radius: 10px;
+	color: var(--plx-accent-strong);
+	display: flex;
+	flex: 0 0 40px;
+	height: 40px;
+	justify-content: center;
+	width: 40px;
+}
+
+.plx-home__workspaceCopy {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 0;
+}
+
+.plx-home__workspaceTitleLine {
+	align-items: baseline;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: minmax(0, 1fr) auto;
+	min-width: 0;
+}
+
+.plx-home__workspaceTitle {
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-home__workspaceMeta {
+	color: var(--plx-text-muted);
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.plx-home__pluginQueues {
+	min-width: 0;
+}
+
+.plx-home__allLink {
+	color: var(--plx-accent-strong);
+	font-weight: 650;
+	text-decoration: none;
+}
+
+.plx-home__allLink:hover,
+.plx-home__allLink:focus-visible {
+	text-decoration: underline;
+}
+
+.plx-home__queue {
+	background: var(--plx-surface-strong);
+	border: 1px solid var(--plx-border);
+	border-radius: 8px;
+	display: flex;
+	flex-direction: column;
+	min-height: 176px;
+	overflow: hidden;
+}
+
+.plx-home__queueHeader {
+	align-items: center;
+	border-bottom: 1px solid var(--plx-border);
+	display: flex;
+	justify-content: space-between;
+	padding: 9px 12px;
+}
+
+.plx-home__queueBody {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+}
+
+.plx-home__queueRow {
+	align-items: center;
+	color: inherit;
+	display: grid;
+	font-size: 12px;
+	gap: 9px;
+	grid-template-columns: 8px minmax(0, 1fr) auto 16px;
+	min-height: 34px;
+	padding: 5px 12px;
+	text-decoration: none;
+}
+
+.plx-home__queueRow + .plx-home__queueRow {
+	border-top: 1px solid color-mix(in srgb, var(--plx-border) 68%, transparent);
+}
+
+.plx-home__queueRow:hover,
+.plx-home__queueRow:focus-visible {
+	background: var(--plx-surface-muted);
+	outline: none;
+}
+
+.plx-home__statusDot {
+	background: var(--plx-text-muted);
+	border-radius: 999px;
+	height: 7px;
+	width: 7px;
+}
+
+.plx-home__statusDot[data-status='running'] {
+	background: var(--mantine-color-teal-6);
+}
+
+.plx-home__statusDot[data-status='disabled'] {
+	background: var(--mantine-color-orange-6);
+}
+
+.plx-home__queueName {
+	font-weight: 650;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.plx-home__queueStatus {
+	color: var(--plx-text-muted);
+}
+
+.plx-home__queueEmpty {
+	align-items: center;
+	color: var(--plx-text-muted);
+	display: flex;
+	flex: 1;
+	font-size: 12px;
+	justify-content: center;
+	padding: 24px;
+}
+
+@include mantine.smaller-than(md) {
+	.plx-home__hero {
+		align-items: start;
+		grid-template-columns: 1fr;
+	}
+}
+
+@include mantine.smaller-than(sm) {
+	.plx-home {
+		gap: 16px;
+		padding: 14px 12px 88px;
+	}
+
+	.plx-home__hero {
+		gap: 16px;
+		padding: 16px;
+	}
+
+	.plx-home__title {
+		font-size: 27px;
+	}
+
+	.plx-home__description {
+		font-size: 14px;
+		line-height: 1.65;
+	}
+
+	.plx-home__heroActions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.plx-home__heroActions > * {
+		width: 100%;
+	}
+
+	.plx-home__workspaceCard {
+		min-height: 96px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.plx-home__workspaceCard {
+		transition: none;
+	}
+}

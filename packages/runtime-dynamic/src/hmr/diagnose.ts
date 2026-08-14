@@ -1,16 +1,16 @@
 export {
 	DEFAULT_LOADER_HMR_CONFIG_BASENAME,
-	backupAndRewriteLoaderHmrConfigV1,
-	createDefaultLoaderHmrConfigV1,
+	backupAndRewriteLoaderHmrConfigV2,
+	createDefaultLoaderHmrConfigV2,
 	defaultLoaderHmrConfigHeaderComment,
-	ensureLoaderHmrConfigV1,
-	parseLoaderHmrConfigV1Jsonc,
-	readLoaderHmrConfigV1,
+	ensureLoaderHmrConfigV2,
+	parseLoaderHmrConfigV2Jsonc,
+	readLoaderHmrConfigV2,
 	resolveDefaultLoaderHmrConfigPath,
-	validateLoaderHmrConfigV1Strict,
-	writeLoaderHmrConfigV1,
+	validateLoaderHmrConfigV2Strict,
+	writeLoaderHmrConfigV2,
 } from './diagnose/config'
-export type { PluxelLoaderHmrConfig, PluxelLoaderHmrConfigV1 } from './diagnose/config'
+export type { PluxelLoaderHmrConfig, PluxelLoaderHmrConfigV2 } from './diagnose/config'
 export { nodeLoaderHmrWorkspaceFs, nodeWorkspaceFs } from './diagnose/fs'
 export type { LoaderHmrWorkspaceFs, WorkspaceFs } from './diagnose/fs'
 
@@ -27,7 +27,9 @@ export type {
 
 export {
 	buildWorkspaceSnapshotFromScan,
+	buildWorkspaceSnapshotFromScan as buildLoaderHmrWorkspaceFromScan,
 	diagnoseWorkspace,
+	diagnoseWorkspace as diagnoseLoaderHmrWorkspace,
 	mergeLoaderHmrProfile,
 	resolveLoaderHmrConfigPathFromCwd,
 	resolveLoaderHmrRootsExpanded,
@@ -36,10 +38,10 @@ export type {
 	DiagnoseWorkspaceInput,
 	DiagnoseWorkspaceResult,
 	WorkspaceSnapshot,
+	WorkspaceSnapshot as LoaderHmrWorkspace,
 } from './diagnose/diagnose'
 
 export {
-	getLoaderHmrProfileBuiltinPackages,
 	getLoaderHmrProfileEnabledPackages,
 	readLoaderHmrConfigRaw,
 	readLoaderHmrProfileView,

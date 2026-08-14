@@ -1,6 +1,0 @@
-export { App } from './app'
-export { PluxelGQLensProvider, graphqlFetcher } from './app/gqlens'
-export * from './components'
-export * from './extension'
-export * from './theme'
-export * from './hooks'

@@ -3,7 +3,7 @@ const ENV_MANIFEST_FIELD = 'PLUXEL_MANIFEST_FIELD'
 
 const DEFAULT_PLUGIN_PREFIXES = ['pluxel-plugin']
 const DEFAULT_MANIFEST_FIELD = 'pluxel'
-export const MANIFEST_DEPEND_ON_FIELD = 'dependOn'
+export const MANIFEST_PLUGIN_PACKAGES_FIELD = 'pluginPackages'
 
 export interface PluginEnvConfig {
 	pluginPrefixes: string[]

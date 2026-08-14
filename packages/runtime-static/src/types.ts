@@ -4,33 +4,51 @@ import type {
 	Context,
 	HttpHandler,
 	HttpServiceConfig,
-	PersistenceBackend,
-	PersistenceCapability,
-	PersistenceEntry,
-	PersistenceNamespace,
-	PersistenceRequirement,
 	PersistenceServiceConfig,
-	PluginDataServiceConfig,
+	DatabaseConfig,
+	WorkbenchConfig,
 } from '@pluxel/runtime'
-import type { StaticRuntimeRegisteredServices as RuntimeStaticRegisteredServices } from '@pluxel/runtime/register/static'
-import type { RuntimeStateStoreConfig } from '@pluxel/runtime/runtime-state'
+import type { RuntimeStateStoreConfig } from '@pluxel/runtime/internal'
+import type { RuntimeLoggingInput } from '@pluxel/runtime/logger'
 
-export type StaticRuntimeRegisteredServices = RuntimeStaticRegisteredServices
+export type StaticRuntimeContextConfig = Omit<
+	CoreContext.Config,
+	| 'configService'
+	| 'runtimeState'
+	| 'persistence'
+	| 'database'
+	| 'http'
+	| 'workbench'
+	| 'logger'
+	| 'profile'
+	| 'adminAccess'
+	| 'workbenchArtifactRoot'
+	| 'workbenchArtifactResolver'
+	| 'nodeModuleArtifactRoot'
+	| 'nodeModuleArtifactResolver'
+>
 
-export type StaticRuntimeConfigServiceConfig = ConfigServiceConfig
-export type StaticRuntimePersistenceCapability = PersistenceCapability
-export type StaticRuntimePersistenceEntry = PersistenceEntry
-export type StaticRuntimePersistenceRequirement = PersistenceRequirement
-export type StaticRuntimePersistenceNamespace = PersistenceNamespace
-export type StaticRuntimePersistenceBackend = PersistenceBackend
-export type StaticRuntimePersistenceConfig = PersistenceServiceConfig
-export type StaticRuntimePluginDataConfig = PluginDataServiceConfig
-export type StaticRuntimeHttpHandler = HttpHandler
-export type StaticRuntimeHttpConfig = HttpServiceConfig
+export type StaticRuntimeEnvironment = Readonly<Record<string, string | undefined>>
+export type StaticRuntimeBindings = Readonly<Record<string, unknown>>
+
+export type StaticRuntimeDeployment = Readonly<{
+	root: string
+	target: 'node'
+	variant: 'headless' | 'workbench'
+}>
+
+export type StaticRuntimeStartupContext<
+	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+> = Readonly<{
+	mode: 'development' | 'production' | 'test'
+	env: StaticRuntimeEnvironment
+	bindings: TBindings
+	deployment?: StaticRuntimeDeployment
+}>
 
 export type StaticRuntimeDefinition = {
 	/**
-	 * Stable runtime id used only for diagnostics, storage labels, and read models.
+	 * Stable runtime id used only for diagnostics and read models.
 	 */
 	name: string
 	/**
@@ -39,7 +57,24 @@ export type StaticRuntimeDefinition = {
 	plugins: readonly PluginConstructor[]
 }
 
-export type StaticRuntimeConfig = StaticRuntimeDefinition & StaticRuntimeHostOptions
+export type StaticRuntimeApplication<
+	TPlugins extends readonly PluginConstructor[] = readonly PluginConstructor[],
+	TBindings extends StaticRuntimeBindings = StaticRuntimeBindings,
+> = {
+	/** Stable runtime id used for diagnostics, manifests, and read models. */
+	name: string
+	/** Fixed production catalog. Development Vite hosts may replace this graph through HMR. */
+	plugins: TPlugins
+	/** Bundled resolver code. Returned values are resolved again for every host startup. */
+	configure?: (
+		startup: StaticRuntimeStartupContext<TBindings>,
+	) => StaticRuntimeHostOptions | Promise<StaticRuntimeHostOptions>
+	/** Host-owned startup policy run after services are prepared and before plugins start. */
+	prepare?: (input: {
+		host: StaticRuntimeHost
+		startup: StaticRuntimeStartupContext<TBindings>
+	}) => void | Promise<void>
+}
 
 export type StaticRuntimeHostOptions = {
 	/**
@@ -47,7 +82,7 @@ export type StaticRuntimeHostOptions = {
 	 *
 	 * @default JSON config stored in the configured persistence backend.
 	 */
-	configService?: StaticRuntimeConfigServiceConfig
+	configService?: ConfigServiceConfig
 	/**
 	 * Runtime control-plane state source used for plugin enablement, fork metadata,
 	 * dependency overrides, and built-in catalog state.
@@ -56,32 +91,24 @@ export type StaticRuntimeHostOptions = {
 	 */
 	runtimeState?: RuntimeStateStoreConfig
 	/**
-	 * Shared runtime persistence backend used by config/state/plugin data/logger/vault.
+	 * Shared runtime persistence backend used by config/state/logger/vault.
 	 *
-	 * @default In-memory persistence. Durable/file-backed static hosts must pass a backend.
+	 * @default In-memory persistence. Node hosts can pass a string root path.
 	 */
-	persistence?: StaticRuntimePersistenceConfig
+	persistence?: PersistenceServiceConfig
+	/** Shared lazy PostgreSQL capability. Omit for persistent local PGlite. */
+	database?: DatabaseConfig
 	/**
-	 * Plugin-owned runtime data storage.
-	 *
-	 * @default Uses the shared persistence backend under the plugin-data namespace.
+	 * HTTP runtime settings. Workbench UI/RPC/SSE are controlled by the top-level
+	 * Workbench config.
 	 */
-	pluginData?: StaticRuntimePluginDataConfig
+	http?: HttpServiceConfig
+	/** Optional Workbench Plane resources, UI artifacts, and access policy. @default false */
+	workbench?: WorkbenchConfig
+	/** Host-owned logging plan. `false` installs a silent root. */
+	logging?: false | RuntimeLoggingInput
 	/**
-	 * HTTP runtime settings. Management UI/RPC/SSE are controlled by the top-level
-	 * management config.
-	 */
-	http?: StaticRuntimeHttpConfig
-	/**
-	 * Host management surface and access policy. When enabled with public exposure, OIDC is required.
-	 */
-	management?: CoreContext.Config['management']
-	/**
-	 * Runtime logger settings.
-	 */
-	logger?: CoreContext.Config['logger']
-	/**
-	 * Runtime profile used for config/state storage labels and diagnostics.
+	 * Runtime profile used for diagnostics.
 	 */
 	profile?: CoreContext.Config['profile']
 	/**
@@ -90,7 +117,7 @@ export type StaticRuntimeHostOptions = {
 	 *
 	 * @default {}
 	 */
-	context?: CoreContext.Config
+	context?: StaticRuntimeContextConfig
 }
 
 export type StaticRuntimeHost = {
@@ -106,7 +133,7 @@ export type StaticRuntimeHost = {
 
 export type StaticRuntime = {
 	readonly ctx: Context
-	fetch: StaticRuntimeHttpHandler
+	fetch: HttpHandler
 	start(): Promise<StaticRuntimeStartupReport>
 	stop(): Promise<void>
 }

@@ -8,7 +8,7 @@ import {
 	PluginOrganizer,
 	type GroupConfig,
 	type PluginStatuses,
-} from '../../../components/src/app/plugins/catalog/organizer/PluginOrganizer'
+} from '../../../workbench-app/src/app/plugins/catalog/organizer/PluginOrganizer'
 
 type MountedApp = {
 	container: HTMLDivElement
@@ -114,7 +114,7 @@ async function renderOrganizer(props: {
 	filterQuery?: string
 	activeId?: string | null
 	onSelectedIdsChange?: (ids: string[]) => void
-	clicked?: Array<{ to: string; mode?: string }>
+	clicked?: Array<{ to: string }>
 }) {
 	const container = document.createElement('div')
 	container.style.height = '480px'
@@ -127,19 +127,17 @@ async function renderOrganizer(props: {
 		to,
 		children,
 		onClick,
-		workbenchMode: _workbenchMode,
 		...rest
 	}: {
 		to: string
 		children: React.ReactNode
-		workbenchMode?: string
 	} & Omit<React.ComponentPropsWithoutRef<'a'>, 'href'>) => (
 		<a
 			href={to}
 			{...rest}
 			onClick={(event) => {
 				event.preventDefault()
-				props.clicked?.push({ to, mode: _workbenchMode })
+				props.clicked?.push({ to })
 				onClick?.(event)
 			}}
 		>
@@ -195,8 +193,9 @@ describe('PluginOrganizer virtualization', () => {
 		})
 
 		expect(container.textContent).toContain('未分组')
-		expect(container.textContent).toContain('我的分组')
+		expect(container.textContent).toContain('插件分类')
 		expect(container.textContent).toContain('Alpha')
+		expect(container.textContent).not.toContain('新建分组')
 		expect(container.querySelector('.plx-pluginCatalog__subgroupHeader')).not.toBeNull()
 		expect(container.querySelectorAll('[data-plugin-row="true"]')).toHaveLength(6)
 	})

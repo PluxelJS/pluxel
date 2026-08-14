@@ -1,4 +1,4 @@
-import type { RuntimeFetch } from './verification'
+import type { RuntimeFetch } from './admin-access'
 
 export function withMethod(init: RequestInit | undefined, method: string): RequestInit {
 	return { ...init, method }

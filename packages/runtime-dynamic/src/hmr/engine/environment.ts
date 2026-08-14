@@ -12,7 +12,7 @@ import {
 	resolveCacheLimit,
 	toViteFsIdVariants,
 	tryRealpathSync,
-} from '@pluxel/runtime/shared'
+} from '@pluxel/runtime/internal'
 
 type RootAlias = { from: string; to: string }
 type FsExists = (fsPath: string) => boolean

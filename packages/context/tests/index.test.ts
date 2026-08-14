@@ -21,9 +21,11 @@ declare module '@pluxel/context' {
 			mathService: MathService
 			tapService: TapService
 			countService: CountService
+			eagerService: EagerService
 		}
 		interface RootServices {
 			rootTapService: RootTapService
+			eagerRootService: EagerRootService
 		}
 	}
 	interface Context {
@@ -109,6 +111,39 @@ class RootTapService {
 }
 Context.registerService(asTestServiceClass(RootTapService))
 
+const eagerEvents: string[] = []
+
+class EagerService {
+	static key = 'eagerService' as const
+	static eager = true
+	constructor(
+		public ctx: Context,
+		_cfg?: unknown,
+	) {
+		eagerEvents.push(`construct:${ctx.name}`)
+	}
+	async prepare() {
+		eagerEvents.push(`prepare:${this.ctx.name}`)
+	}
+}
+Context.registerService(asTestServiceClass(EagerService))
+
+class EagerRootService {
+	static key = 'eagerRootService' as const
+	static scope = 'root' as const
+	static eager = true
+	constructor(
+		public ctx: Context,
+		_cfg?: unknown,
+	) {
+		eagerEvents.push(`construct-root:${ctx.name}`)
+	}
+	async prepare() {
+		eagerEvents.push(`prepare-root:${this.ctx.name}`)
+	}
+}
+Context.registerService(asTestServiceClass(EagerRootService))
+
 /* -------------------------------------------------------------------------- */
 /* 3) 覆盖用的新实现们（链式覆盖、last-wins）                                  */
 /* -------------------------------------------------------------------------- */
@@ -158,6 +193,40 @@ describe('基础行为：注入、代理、配置', () => {
 	test('Context.prototype 的属性代理读取 service 属性/getter', () => {
 		const ctx = new Context({ mathService: { foo: 'prop' } })
 		expect(ctx.mathConfig).toEqual({ foo: 'prop' })
+	})
+})
+
+describe('service lifecycle', () => {
+	test('prepareServices 显式实例化并 prepare eager services', async () => {
+		eagerEvents.length = 0
+		const ctx = new Context({ name: 'root' })
+		expect(eagerEvents).toEqual([])
+
+		await ctx.prepareServices()
+
+		expect(eagerEvents).toEqual([
+			'construct:root',
+			'prepare:root',
+			'construct-root:root',
+			'prepare-root:root',
+		])
+		expect(ctx.eagerService).toBe(ctx.eagerService)
+		expect(ctx.root.eagerRootService).toBe(ctx.root.eagerRootService)
+	})
+
+	test('root eager services prepare against root context from child', async () => {
+		eagerEvents.length = 0
+		const ctx = new Context({ name: 'root' })
+		const child = ctx.extend({ name: 'child' })
+
+		await child.prepareServices()
+
+		expect(eagerEvents).toEqual([
+			'construct:child',
+			'prepare:child',
+			'construct-root:root',
+			'prepare-root:root',
+		])
 	})
 })
 

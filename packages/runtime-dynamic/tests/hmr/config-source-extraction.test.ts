@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { join } from 'pathe'
 import { rmSync, symlinkSync } from 'node:fs'
-import { createServer, normalizePath, type Plugin as VitePlugin } from 'vite'
+import { createServer, mergeConfig, normalizePath, type Plugin as VitePlugin } from 'vite'
 import {
 	captureLoaderModules,
 	createHmrTestHost,
@@ -9,22 +9,8 @@ import {
 	type LoaderModuleCapture,
 } from './_host'
 import { fixturesPluginsDir, fixturesPluginsRelFromWorkspace, workspaceRoot } from './_paths'
-import {
-	buildLoaderHmrViteConfig,
-	type LoaderHmrDependencyConfig,
-	resolveFsAllowList,
-	resolveLoaderHmrDependencyConfig,
-} from '../../src/hmr/engine/config'
+import { buildLoaderHmrViteConfig, resolveFsAllowList } from '../../src/hmr/engine/config'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
-
-const baseDeps: LoaderHmrDependencyConfig = {
-	bridgeModules: [],
-	ssrExternal: [],
-	ssrNoExternal: [],
-	optimizeDepsInclude: [],
-	optimizeDepsInterop: [],
-	cjsExternal: [],
-}
 
 type CoreApi = {
 	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
@@ -52,7 +38,6 @@ async function withPluginRunner<T>(
 	const errorLogs: ErrorLog[] = []
 	const host = createHmrTestHost({ errorLogs })
 	captureLoaderModules(host, capture)
-	const deps = resolveLoaderHmrDependencyConfig(baseDeps)
 	const rootsRel = opts?.rootsRelFromWorkspace ?? fixturesPluginsRelFromWorkspace
 	const scanRootsAbs = opts?.scanRootsAbs ?? [normalizePath(fixturesPluginsDir)]
 	const fsAllow = resolveFsAllowList({
@@ -65,24 +50,27 @@ async function withPluginRunner<T>(
 		roots: [rootsRel],
 		entries: [],
 		report: false,
-		deps: baseDeps,
 		include: opts?.include,
 		exclude: opts?.exclude,
 	})
 	hmr.setServerRoot(root)
 	const runnerPlugin = (hmr as unknown as { plugin: VitePlugin }).plugin
 
-	const server = await createServer({
-		...buildLoaderHmrViteConfig({
+	const serverConfig = mergeConfig(
+		buildLoaderHmrViteConfig({
 			root,
 			fsAllow,
-			deps,
 			runnerPlugin,
 			httpPlugin: { name: 'noop' },
 			port: 0,
 		}),
-		server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false },
-	})
+		{ server: { middlewareMode: true, fs: { allow: fsAllow }, hmr: false, ws: false } },
+	)
+	// Vite's mergeConfig intentionally ignores null overrides. Assign after merging because this test
+	// drives the module runner explicitly and must not recursively watch the workspace root.
+	serverConfig.server = { ...serverConfig.server, watch: null }
+	const server = await createServer(serverConfig)
+	expect(server.config.server.watch).toBeNull()
 
 	try {
 		return await run(async (pluginEntry) => {

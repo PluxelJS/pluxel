@@ -1,5 +1,5 @@
 import { resolve } from 'pathe'
-import { toPosixPath } from '@pluxel/runtime/shared'
+import { toPosixPath } from '@pluxel/runtime/internal'
 
 export function toPosix(p: string) {
 	return toPosixPath(p)

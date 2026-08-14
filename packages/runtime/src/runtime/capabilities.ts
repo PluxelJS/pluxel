@@ -6,7 +6,6 @@ import {
 	type Context,
 	type PluginConstructor,
 } from '@pluxel/core'
-import type { Resolver } from '@gqloom/core'
 import type { ConfigSchemaMap } from '@pluxel/core/services'
 import { isPluginEnabled } from '../services/RuntimeStateStore'
 
@@ -101,50 +100,18 @@ export interface RuntimeModuleRuntime {
 	dropModuleCacheEntries(ids: Iterable<string>): void
 }
 
-export type RuntimeApiResolverFactory = (ctx: Context) => Resolver | Resolver[]
-
-export type RuntimeApiCapabilities = {
-	resolvers?: readonly RuntimeApiResolverFactory[]
-}
-
-export type RuntimeRouteFeatureHandleFactory = (ctx: Context) => unknown
-export type RuntimeRouteFeatures = Readonly<Record<string, RuntimeRouteFeatureHandleFactory>>
-
-export type RuntimeWorkerWatchOptions = {
-	external?: string[]
-	onUpdate: (workerUrl: string) => void | Promise<void>
-	onError?: (error: unknown) => void
-}
-
-export type RuntimeDevCapabilities = {
-	uiSource?: {
-		bind(ctx: Context, options: { entryPath: string }): () => void
-	}
-	worker?: {
-		watch(
-			ctx: Context,
-			tsEntry: string,
-			options: RuntimeWorkerWatchOptions,
-		): Promise<() => Promise<void>>
-	}
-	batches?: {
-		lastBatch(): unknown
-		waitForBatch(options?: unknown): Promise<unknown>
-		waitForStable(options?: unknown): Promise<unknown>
-		waitForIdle(options?: unknown): Promise<void>
-		executeFiles?(files: string[], keepOrder?: boolean): Promise<void>
-	}
-}
-
 export type RuntimeRouteCapabilities = {
 	catalog: PluginCatalogRead
 	lifecycle?: PluginLifecycleControl
 	configMetadata?: PluginConfigMetadataRead
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
-	api?: RuntimeApiCapabilities
-	features?: RuntimeRouteFeatures
 	modules?: RuntimeModuleRuntime
+	/** Internal route capability used by file-source producers to validate their publication target. */
+	dynamicPluginSources?: {
+		hasFile(path: string): boolean
+		hasDirectory(path: string, include: readonly string[]): boolean
+	}
 }
 
 const identityModuleRuntime: RuntimeModuleRuntime = {
@@ -161,7 +128,6 @@ const identityModuleRuntime: RuntimeModuleRuntime = {
 declare module '@pluxel/core' {
 	interface Context {
 		runtimeRoute?: RuntimeRouteCapabilities
-		runtimeDev?: RuntimeDevCapabilities
 	}
 }
 
@@ -178,10 +144,6 @@ export function requireRouteCapability<K extends keyof RuntimeRouteCapabilities>
 
 export function runtimeModuleRuntime(ctx: Context): RuntimeModuleRuntime {
 	return ctx.runtimeRoute?.modules ?? ctx.root.runtimeRoute?.modules ?? identityModuleRuntime
-}
-
-export function runtimeDevCapabilities(ctx: Context): RuntimeDevCapabilities | undefined {
-	return ctx.runtimeDev ?? ctx.root.runtimeDev
 }
 
 export function unknownPluginSource(): RuntimePluginSource {

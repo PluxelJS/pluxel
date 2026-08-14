@@ -32,11 +32,16 @@ export function runPackageManager(pm: PM, args: string[], cwd: string) {
 			cwd,
 			shell: process.platform === 'win32',
 		})
-		child.on('exit', (code) => {
+		child.once('error', reject)
+		child.once('exit', (code) => {
 			if (code === 0) resolvePromise()
 			else reject(new Error(`${pm} ${args.join(' ')} failed`))
 		})
 	})
+}
+
+export function formatPackageScriptCommand(pm: PM, script: string): string {
+	return pm === 'npm' || pm === 'bun' ? `${pm} run ${script}` : `${pm} ${script}`
 }
 
 function normalizeAgent(agent: AgentName | null): PM | undefined {

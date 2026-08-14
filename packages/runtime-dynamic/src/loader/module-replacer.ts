@@ -4,8 +4,7 @@ import {
 	getPluginInfo,
 	type PluginConstructor,
 } from '@pluxel/core'
-import { findRuntimeModuleId } from '@pluxel/runtime/internal'
-import { isPluginEnabled } from '@pluxel/runtime/runtime-state'
+import { findRuntimeModuleId, isPluginEnabled } from '@pluxel/runtime/internal'
 import type { PluginRegistry } from './PluginRegistry'
 import type { AnchorJournal, AnchorStore } from './support'
 
@@ -56,16 +55,8 @@ export class ModuleReplacer {
 	): Promise<ReplaceModuleResult> {
 		const id = moduleId
 		options.anchors?.record(id)
-		const oldItems = this.registry.modules.get(id) ?? []
 		const exported = collectPluginExports(mod)
-		const affectedModules = this.collectAffectedModules(oldItems)
-
-		// 停旧模块本身；dependent declarations are kept and re-synced through affectedModules.
-		// This preserves core graph identity/slots and lets lifecycle cascade happen at commit time.
-		this.registry.stopModule(id, { cascadeDependents: false })
-
-		// 清理旧声明，准备落新声明
-		this.registry.undeclareModule(id, options.tx)
+		const { affectedModules } = this.removeModule(id, options)
 
 		for (const item of exported) {
 			this.registry.declarePlugin(id, item.ctor, item.exportKey, options.tx)
@@ -93,6 +84,19 @@ export class ModuleReplacer {
 		this.updateAnchors(id, isAnchor, options.anchors)
 
 		return { isAnchor, affectedModules }
+	}
+
+	removeModule(moduleId: string, options: ReplaceModuleOptions = {}): ReplaceModuleResult {
+		const id = moduleId
+		options.anchors?.record(id)
+		const oldItems = this.registry.modules.get(id) ?? []
+		const affectedModules = this.collectAffectedModules(oldItems)
+
+		// Keep dependent declarations and let the core runtime update stop/restart the affected closure.
+		this.registry.stopModule(id, { cascadeDependents: false })
+		this.registry.undeclareModule(id, options.tx)
+		this.updateAnchors(id, false, options.anchors)
+		return { isAnchor: false, affectedModules }
 	}
 
 	private collectAffectedModules(

@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.plugin.json",
+	"include": ["src", "tsdown.config.ts"],
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"types": ["vite/client"]
+	}
+}

@@ -10,7 +10,8 @@
 
 import { Injectable, type Context as PluxelContext, type ServiceClass } from '@pluxel/context'
 import { createErr, createOk } from 'option-t/plain_result'
-import { isProduction } from '../../env'
+import { isProduction } from 'std-env'
+import { LoggerService } from '../../logger/LoggerService'
 import { EffectsService } from '../../services/effects/EffectsService'
 import type { BasePlugin } from '../composition/BasePlugin'
 import type { PluginInfo } from '../decorators/decorator/types'
@@ -22,13 +23,7 @@ import type {
 	PluginIdentifier,
 	PluginInstance,
 } from '../types'
-import {
-	computeInitPlan,
-	type InitPlan,
-	type PluginStartStrategy,
-	startPluginsWithStrategy,
-	stopPluginsTopo,
-} from './commit'
+import { computeInitPlan, type InitPlan, startPluginsTopo, stopPluginsTopo } from './commit'
 import { forkPlugin, getForkedCtor, listForks } from './fork'
 import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
 import { PluginDefinitions, type PluginGraph, type PluginRuntime } from './PluginDefinitions'
@@ -44,7 +39,6 @@ import {
 	type CommitExecutionDelta,
 	type CommitExecutionPlan,
 	type CommitSummary,
-	type PluginReplacement,
 } from './plugin-service/CommitPlan'
 import {
 	assignValidatedConfigBindings,
@@ -102,7 +96,6 @@ type PluginServiceConfig = {
 	pluginCTXIsolate?: AnyServiceClass[]
 	startTimeoutMs?: number
 	stopTimeoutMs?: number
-	startStrategy?: PluginStartStrategy
 	startConcurrency?: number
 	stopConcurrency?: number
 	featureDeclarationPolicy?: FeatureDeclarationPolicy
@@ -120,7 +113,6 @@ type RuntimeUpdateCommitResult = Awaited<ReturnType<PluginService['commit']>>
 
 const DEFAULT_START_TIMEOUT_MS = 1_500
 const DEFAULT_STOP_TIMEOUT_MS = 3_000
-const DEFAULT_START_STRATEGY: PluginStartStrategy = 'ready-queue'
 const DEFAULT_START_CONCURRENCY = 8
 const DEFAULT_STOP_CONCURRENCY = 1
 const FEATURE_DECLARATION_POLICY_KEY = 'pluxel:feature:declarationPolicy'
@@ -169,7 +161,6 @@ export class PluginService {
 	private _commitLock: Promise<unknown> = Promise.resolve()
 	private readonly startTimeoutMs: number
 	private readonly stopTimeoutMs: number
-	private readonly startStrategy: PluginStartStrategy
 	private readonly startConcurrency: number
 	private readonly stopConcurrency: number
 	private _lastCommit?: CommitSummary
@@ -223,7 +214,6 @@ export class PluginService {
 	) {
 		this.startTimeoutMs = config?.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS
 		this.stopTimeoutMs = config?.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS
-		this.startStrategy = config?.startStrategy ?? DEFAULT_START_STRATEGY
 		this.startConcurrency = config?.startConcurrency ?? DEFAULT_START_CONCURRENCY
 		this.stopConcurrency = config?.stopConcurrency ?? DEFAULT_STOP_CONCURRENCY
 		this.featureDeclarationPolicyExplicit =
@@ -268,6 +258,11 @@ export class PluginService {
 		if (!seen.has(effectsSvc)) {
 			seen.add(effectsSvc)
 			isolated.push(effectsSvc)
+		}
+		const loggerSvc = LoggerService as unknown as AnyServiceClass
+		if (!seen.has(loggerSvc)) {
+			seen.add(loggerSvc)
+			isolated.push(loggerSvc)
 		}
 		return isolated
 	}
@@ -484,7 +479,9 @@ export class PluginService {
 		this.definitions.replace(canonical, current, {
 			provideBase,
 		})
-		this._pendingRestart.add(canonical)
+		for (const target of this.collectPlanningCascadeTargets(canonical, true)) {
+			this._pendingRestart.add(target)
+		}
 	}
 
 	private resolveRuntimeDependencyOverrideOwner(
@@ -561,6 +558,11 @@ export class PluginService {
 		cb: (instance: InstanceType<T> | undefined) => void,
 	): () => void {
 		return this.watcherRegistry.watch(this._activeGraph ?? this.graph, id, cb)
+	}
+
+	/** @internal Schedule route-owned work after the currently queued commit settles. */
+	public afterCurrentCommit<T>(run: () => T | Promise<T>): Promise<T> {
+		return this._commitLock.then(run)
 	}
 
 	/* ─────────────────────────── Forks ─────────────────────────── */
@@ -716,15 +718,17 @@ export class PluginService {
 	 * Shutdown (unload) the current plugin (and optionally its dependents) from within a plugin context.
 	 *
 	 * This is an orchestration-layer operation and intentionally lives on PluginService (registry),
-	 * not on `effects`.
+	 * not on `effects`. The commit is scheduled and cannot be awaited from the owner call being stopped.
 	 */
-	public shutdownSelf(opts?: CascadeOptions) {
+	public shutdownSelf(opts?: CascadeOptions): void {
 		const pluginInfo = (this.ctx as unknown as { pluginInfo?: { class?: unknown } }).pluginInfo
 		if (!pluginInfo?.class) {
 			throw new Error(SHUTDOWN_OUTSIDE_PLUGIN_CONTEXT_MESSAGE)
 		}
 		this.unregister(pluginInfo.class as PluginIdentifier, opts)
-		return this.commit()
+		// Self-shutdown cannot be awaited from an owner invocation: lifecycle stop must first wait
+		// for that invocation lease. Queue the commit and let the current call return.
+		void this.commit()
 	}
 
 	/**
@@ -963,7 +967,7 @@ export class PluginService {
 				message: `Plugin ${String(id)} could not be scheduled because its dependency graph is cyclic.`,
 			})
 		}
-		return startPluginsWithStrategy(
+		return startPluginsTopo(
 			plan,
 			(slot) => {
 				const id = graph.keyOf(slot)
@@ -972,7 +976,6 @@ export class PluginService {
 					: this.instantiateAndStart(runtime, id as RuntimePluginKey, report)
 			},
 			{
-				strategy: this.startStrategy,
 				concurrency: this.startConcurrency,
 				onDependencyBlocked: (slot, dependency) => {
 					const id = graph.keyOf(slot as number)
@@ -1052,11 +1055,7 @@ export class PluginService {
 		this._activeRuntime = runtime
 		try {
 			const oldGraph = this.graph
-			const plan = this.buildCommitPlan(oldGraph, graph, {
-				added: delta.added as readonly RuntimePluginKey[],
-				replaced: delta.replaced as readonly PluginReplacement[],
-				removed: delta.removed as readonly RuntimePluginKey[],
-			})
+			const plan = this.buildCommitPlan(oldGraph, graph, delta)
 
 			// No-op commit: still report state (after applying pending restarts/retries).
 			if (isCommitExecutionPlanEmpty(delta, plan)) {

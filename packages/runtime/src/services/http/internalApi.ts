@@ -1,16 +1,20 @@
 import type { Context as PluginContext } from '@pluxel/core'
-import type { Changeset } from '@signaldb/core'
 import {
 	canAccessSecurityAdmin,
-	createVerificationBlockedHeaders,
-	createVerificationBlockedPayload,
-	resolveControlPlaneRedirectPath,
-} from '../../shared/verification-http'
-import { RUNTIME_INTERNAL_API_BASE, RUNTIME_SECURITY_BASE, RUNTIME_TRANSPORT_PATHS } from '../../web/paths'
-import { buildVerificationRedirectPath } from '../verification/transport'
+	createAdminAccessBlockedHeaders,
+	createAdminAccessBlockedPayload,
+	resolveAdminAccessRedirectPath,
+} from '../../shared/admin-access-http'
+import {
+	RUNTIME_INTERNAL_API_BASE,
+	RUNTIME_WORKBENCH_MODELS_BASE,
+	RUNTIME_SECURITY_BASE,
+	RUNTIME_TRANSPORT_PATHS,
+} from '../../web/paths'
+import { buildAdminAccessRedirectPath } from '../admin-access/transport'
 import { newHttpBatchRpcResponse } from 'capnweb'
 
-import { extensionRoutes } from '../../api/http/extensions'
+import { workbenchRoutes } from '../../api/http/workbench'
 import { metaRoutes } from '../../api/http/meta'
 import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
@@ -18,9 +22,7 @@ import { logRoutes } from '../../api/http/logs'
 import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
 import { pluginSchema } from '../../api/usecases/pluginConfig'
-import { requireRouteCapability } from '../../runtime/capabilities'
-import type { SignalDbItem, SignalDbLoadResponse } from '../../web/plugin-ui/signaldb-contracts'
-import { SignalDbService } from '../plugin-interaction/SignalDbService'
+import { requireWorkbench } from '../workbench'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
 
@@ -32,10 +34,6 @@ type InternalApiOptions = {
 	graphql?: boolean
 }
 
-type SignalDbPushBody<T extends SignalDbItem = SignalDbItem> = {
-	changes: Changeset<T>
-}
-
 function resolveRequestKind(path: string): 'api' | 'graphql' {
 	const internalPath = toInternalApiPath(path)
 	return internalPath === RUNTIME_TRANSPORT_PATHS.graphql ? 'graphql' : 'api'
@@ -44,8 +42,7 @@ function resolveRequestKind(path: string): 'api' | 'graphql' {
 function isSecurityApiPath(path: string): boolean {
 	const internalPath = toInternalApiPath(path)
 	return (
-		internalPath === RUNTIME_SECURITY_BASE ||
-		internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
+		internalPath === RUNTIME_SECURITY_BASE || internalPath.startsWith(`${RUNTIME_SECURITY_BASE}/`)
 	)
 }
 
@@ -73,20 +70,20 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 	return app.onBeforeHandle(async ({ pluginCtx, request, set, status }: any) => {
 		const path = new URL(request.url).pathname
 		const method = (request.method ?? 'GET').toUpperCase()
-		const state = await pluginCtx.root.verification.authorize({ request })
+		const state = await pluginCtx.root.adminAccess.authorize({ request })
 
 		if (isSecurityApiPath(path)) {
 			if (canAccessSecurityAdmin(state)) return undefined
-			const redirectPath = resolveControlPlaneRedirectPath(
-				buildVerificationRedirectPath,
+			const redirectPath = resolveAdminAccessRedirectPath(
+				buildAdminAccessRedirectPath,
 				request,
 				'api',
 				state.reason,
 			)
-			Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+			Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
 			return status(
 				401,
-				createVerificationBlockedPayload(path, method, 'api', redirectPath, state.reason),
+				createAdminAccessBlockedPayload(path, method, 'api', redirectPath, state.reason),
 			)
 		}
 
@@ -121,23 +118,23 @@ function applyInternalApiGuard(app: BaseElysiaApp): BaseElysiaApp {
 		const kind = resolveRequestKind(path)
 		if (state.allow) return undefined
 
-		const redirectPath = resolveControlPlaneRedirectPath(
-			buildVerificationRedirectPath,
+		const redirectPath = resolveAdminAccessRedirectPath(
+			buildAdminAccessRedirectPath,
 			request,
 			kind,
 			state.reason,
 		)
-		pluginCtx.logger.warn('Blocked host verification gate', {
+		pluginCtx.logger.warn('Blocked admin access gate', {
 			kind,
 			path,
 			method,
 			reason: state.reason,
 		})
 
-		Object.assign(set.headers, createVerificationBlockedHeaders(redirectPath, state.reason))
+		Object.assign(set.headers, createAdminAccessBlockedHeaders(redirectPath, state.reason))
 		return status(
 			401,
-			createVerificationBlockedPayload(path, method, kind, redirectPath, state.reason),
+			createAdminAccessBlockedPayload(path, method, kind, redirectPath, state.reason),
 		)
 	}) as BaseElysiaApp
 }
@@ -167,7 +164,7 @@ function createInternalTransportPlugins(
 		plugins.push(
 			createInternalPlugin(ctx, 'sse', (app) =>
 				app.get(RUNTIME_TRANSPORT_PATHS.sse, (context: any) =>
-					context.pluginCtx.ext.sse.stream(context),
+					requireWorkbench(context.pluginCtx).events.stream(context),
 				),
 			),
 		)
@@ -194,57 +191,31 @@ function createInternalTransportPlugins(
 		plugins.push(ctx.internalGraphql.plugin())
 	}
 	if (web || rpc || sse) {
+		plugins.push(createInternalPlugin(ctx, 'workbench', workbenchRoutes))
 		plugins.push(
-			createInternalPlugin(ctx, 'signaldb', (app) =>
-				app
-					.get(
-						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
-						async ({ params, pluginCtx, set }: any) => {
-							set.headers['cache-control'] = 'no-store'
-							return await loadSignalDbSnapshot(
-								pluginCtx,
-								decodePathParam(params.plugin),
-								decodePathParam(params.collection),
+			createInternalPlugin(ctx, 'workbench-resources', (app) =>
+				app.get(
+					`${RUNTIME_WORKBENCH_MODELS_BASE}/live-queries/:grantId`,
+					async ({ params, pluginCtx, request, set, status }: any) => {
+						set.headers['cache-control'] = 'no-store'
+						const workbench = requireWorkbench(pluginCtx)
+						const ref = workbench.registry.findModel(decodePathParam(params.grantId), 'liveQuery')
+						if (!ref) return status(410, { code: 'workbench_grant_expired' })
+						try {
+							const raw = new URL(request.url).searchParams.get('params')
+							return await workbench.liveQueries.loadFor(
+								ref.ownerPluginId,
+								ref.modelKey,
+								raw ? JSON.parse(raw) : undefined,
 							)
-						},
-					)
-					.post(
-						`${RUNTIME_TRANSPORT_PATHS.signaldb}/:plugin/:collection`,
-						async ({ params, pluginCtx, request, set, status }: any) => {
-							set.headers['cache-control'] = 'no-store'
-							const body = await request.json().catch((): null => null)
-							const changes = readSignalDbChanges(body)
-							if (!changes) {
-								return status(400, {
-									ok: false,
-									code: 'invalid_signaldb_changes',
-								})
-							}
-
-							const result = await pushSignalDbChanges(
-								pluginCtx,
-								decodePathParam(params.plugin),
-								decodePathParam(params.collection),
-								changes,
-							)
-
-							if (result === 'missing') {
-								return status(409, {
-									ok: false,
-									code: 'signaldb_unavailable',
-								})
-							}
-							if (result === 'readonly') {
-								return status(403, {
-									ok: false,
-									code: 'signaldb_readonly',
-								})
-							}
-
-							return { ok: true }
-						},
-						{ parse: 'none' },
-					),
+						} catch (error) {
+							return status(400, {
+								code: 'invalid_live_query',
+								message: error instanceof Error ? error.message : String(error),
+							})
+						}
+					},
+				),
 			),
 			createInternalPlugin(ctx, 'meta', (app) =>
 				metaRoutes(app as unknown as Parameters<typeof metaRoutes>[0]),
@@ -260,14 +231,6 @@ function createInternalTransportPlugins(
 			),
 		)
 	}
-	if (web) {
-		plugins.push(
-			createInternalPlugin(ctx, 'extensions', (app) =>
-				extensionRoutes(app as unknown as Parameters<typeof extensionRoutes>[0]),
-			),
-		)
-	}
-
 	return plugins
 }
 
@@ -301,72 +264,4 @@ function decodePathParam(value: unknown): string {
 	} catch {
 		return String(value ?? '').trim()
 	}
-}
-
-async function loadSignalDbSnapshot<T extends SignalDbItem>(
-	ctx: PluginContext,
-	pluginName: string,
-	collectionName: string,
-): Promise<SignalDbLoadResponse<T>> {
-	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return { items: [], meta: { clientWrites: false } }
-	return await service.loadCollectionSync<T>(collectionName)
-}
-
-async function pushSignalDbChanges<T extends SignalDbItem>(
-	ctx: PluginContext,
-	pluginName: string,
-	collectionName: string,
-	changes: Changeset<T>,
-): Promise<'applied' | 'readonly' | 'missing'> {
-	const service = resolveSignalDbService(ctx, pluginName)
-	if (!service) return 'missing'
-	return await service.applyCollectionSyncChanges(collectionName, changes)
-}
-
-function resolveSignalDbService(ctx: PluginContext, pluginName: string): SignalDbService | null {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(pluginName)
-	if (!ctor) return null
-
-	const instance = ctx.registry.getInstance(ctor as never) as
-		| {
-				ctx?: {
-					ext?: {
-						signaldb?: unknown
-					}
-				}
-		  }
-		| undefined
-	const signaldb = instance?.ctx?.ext?.signaldb
-	if (!signaldb || typeof signaldb !== 'object') return null
-	if (
-		typeof (signaldb as SignalDbService).loadCollectionSync !== 'function' ||
-		typeof (signaldb as SignalDbService).applyCollectionSyncChanges !== 'function'
-	) {
-		return null
-	}
-	return signaldb as SignalDbService
-}
-
-function readSignalDbChanges(body: unknown): Changeset<SignalDbItem> | null {
-	if (!body || typeof body !== 'object') return null
-	const changes = (body as SignalDbPushBody<SignalDbItem>).changes
-	if (!changes || typeof changes !== 'object') return null
-
-	return {
-		added: sanitizeSignalDbItems(changes.added),
-		modified: sanitizeSignalDbItems(changes.modified),
-		removed: sanitizeSignalDbItems(changes.removed),
-	}
-}
-
-function sanitizeSignalDbItems<T extends SignalDbItem>(items: readonly T[] | undefined): T[] {
-	if (!Array.isArray(items)) return []
-	return items
-		.filter((item): item is T => !!item && typeof item.id === 'string' && item.id.length > 0)
-		.map((item) => cloneSignalDbItem(item))
-}
-
-function cloneSignalDbItem<T>(item: T): T {
-	return item && typeof item === 'object' ? ({ ...(item as Record<string, unknown>) } as T) : item
 }

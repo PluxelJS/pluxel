@@ -15,6 +15,9 @@ import {
 
 const booleanVariants = new Set<UnionFieldNode['control']>(['switch'])
 const truthySet = new Set<unknown>([true, 'true', 1, '1'])
+const EMPTY_BRANCHES: UnionBranch[] = []
+const EMPTY_SHARED_FIELDS: NonNullable<UnionFieldNode['sharedFields']> = []
+const EMPTY_LABELS: Record<string, string> = {}
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
 	value !== null && typeof value === 'object'
@@ -165,12 +168,12 @@ export function UnionField(props: RendererProps) {
 	const { node, errors, inputProps, value } = props
 	const info = node as UnionFieldNode
 	const renderField = useFieldRenderer()
-	const branches = info.branches ?? []
+	const branches = info.branches ?? EMPTY_BRANCHES
 	const discriminator = info.discriminator
-	const sharedFields = info.sharedFields ?? []
+	const sharedFields = info.sharedFields ?? EMPTY_SHARED_FIELDS
 	const resolvedControl = info.control ?? 'select'
-	const branchLabels = info.labels ?? {}
-	const branchDescriptions = info.descriptions ?? {}
+	const branchLabels = info.labels ?? EMPTY_LABELS
+	const branchDescriptions = info.descriptions ?? EMPTY_LABELS
 	const preserveBranchValues = info.preserve !== false
 	const exposeDiscriminator = info.expose ?? 'auto'
 	const isLocked = Boolean(inputProps.disabled || inputProps.readOnly)
@@ -536,7 +539,17 @@ export function UnionField(props: RendererProps) {
 				{fieldsContent}
 			</Card>
 		)
-	}, [selectedBranch, errors, value, inputProps, discriminator, nonBranchKeys, info.compact])
+	}, [
+		selectedBranch,
+		errors,
+		value,
+		inputProps,
+		discriminator,
+		nonBranchKeys,
+		info.compact,
+		renderField,
+		errorBuckets.map,
+	])
 
 	return (
 		<FieldChrome

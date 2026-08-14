@@ -83,7 +83,6 @@ export type HmrReportLogProps = {
 	roots: readonly HmrReportRoot[]
 	plugins: HmrPluginTotals
 	pluginsByRoot?: HmrPluginsByRootInfo
-	builtins?: HmrPluginTotals
 	hotspots?: readonly HmrHotspot[]
 	loaded?: readonly string[]
 	entries?: readonly string[]

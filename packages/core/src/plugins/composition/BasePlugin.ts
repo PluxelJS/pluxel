@@ -11,10 +11,13 @@
 import type { Context } from '@pluxel/context'
 import type { AnyCtor } from '../decorators/decorator/shared'
 import { getPluginInfo } from '../decorators/decorator/api'
+import { closeOwnerInvocations } from '../../internal/owner-invocations'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
 import { FeatureHost } from './FeatureHost'
+import { PluginHost } from './PluginHost'
 import { FORK_CTX, PLUGIN_CTX } from './symbols'
 const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
+const PLUGIN_HOST = Symbol.for('pluxel:plugin:pluginHost')
 
 export { FORK_CTX, PLUGIN_CTX } from './symbols'
 
@@ -62,6 +65,12 @@ export abstract class BasePlugin<C extends Context = Context> {
 		return host
 	}
 
+	/** Optional integrations with other running plugins. Required dependencies stay in the constructor. */
+	public get plugins(): PluginHost {
+		const self = this as unknown as { [PLUGIN_HOST]?: PluginHost }
+		return (self[PLUGIN_HOST] ??= new PluginHost(this.features))
+	}
+
 	/** Config declaration helper: `foo = this.configs.use(schema)` */
 	public get configs(): ConfigHost {
 		return CONFIGS
@@ -105,6 +114,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 		const effects = extended.effects
 		const emitWithContext = extended.emitWithContext
 		const onError = extended.onError
+		const stop = typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined
 
 		return {
 			beforeStart:
@@ -112,7 +122,11 @@ export abstract class BasePlugin<C extends Context = Context> {
 					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
-			stop: typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined,
+			stop: (signal: AbortSignal) => {
+				const closing = closeOwnerInvocations(ctx)
+				if (closing) return closing.then(() => stop?.(signal))
+				return stop?.(signal)
+			},
 			dispose: typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'

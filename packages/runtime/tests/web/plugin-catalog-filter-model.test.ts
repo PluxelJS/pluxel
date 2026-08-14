@@ -5,8 +5,8 @@ import {
 	hasActiveStatusFilter,
 	matchesGroupSearch,
 	matchesPluginSearch,
-} from '../../../components/src/app/plugins/catalog/filterModel'
-import { parseSearchTokens } from '../../../components/src/app/plugins/catalog/searchTokens'
+} from '../../../workbench-app/src/app/plugins/catalog/filterModel'
+import { parseSearchTokens } from '../../../workbench-app/src/app/plugins/catalog/searchTokens'
 
 describe('plugin catalog filter model', () => {
 	it('detects active token and status filters consistently', () => {

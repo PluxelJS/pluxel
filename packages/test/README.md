@@ -2,9 +2,14 @@
 
 > Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
 
+Plugin authors should start with the repository-level
+[`user-docs/testing.md`](../../user-docs/testing.md). It explains the standard Vitest setup, how to
+choose between the core-only and runtime test hosts, lifecycle failure assertions, cleanup, HTTP,
+Workbench Plane and fixture strategy.
+
 Core-side test surface for Pluxel plugin semantics:
 
-- Automatic core setup on import (`@pluxel/core/env` + services registration)
+- Automatic core service registration on import
 - A minimal core Host/Context API for integration/unit tests
 - An opinionated Vitest preset (optional)
 
@@ -15,6 +20,7 @@ implementation across test packages.
 
 Workspace tests can use `@pluxel/test/fixtures` for VFS-backed fixtures. External consumers should still prefer bringing their own fixture/fs library.
 Each fixture owns its own filesystem instance. Prefer `await using fixture = await createFixture(...)`, then pass `fixture.fs` / `fixture.fsp` into the code under test.
+Use `createDiskFixture(...)` only when a real watcher, process, or toolchain requires native filesystem semantics. Disk fixture disposal retries transient recursive-removal failures from late-closing file handles.
 
 ```ts
 import { createFixture } from '@pluxel/test/fixtures'
@@ -79,10 +85,8 @@ host.cfg(ForkA).set({ v: 'A' })
 `vitest.config.ts`:
 
 ```ts
-export { default } from '../test/src/vitest.ts'
+export { default } from '@pluxel/test/vitest'
 ```
-
-For published packages outside this monorepo, import `@pluxel/test/vitest` instead.
 
 Because the preset runs Pluxel build-correctness lint before transforms, the test project should
 also install `oxlint` as a dev dependency.
@@ -108,13 +112,15 @@ export default defineConfig({
 })
 ```
 
-Each package can keep its own `vitest.config.ts` (typically `export { default } from '../test/src/vitest.ts'`).
+Each package can keep its own `vitest.config.ts` (typically
+`export { default } from '@pluxel/test/vitest'`).
 
 By default, `@pluxel/test/vitest` sets `passWithNoTests: !process.env.CI` to avoid breaking local workspace runs
 when some packages have no tests.
 
-The preset always enables the two Pluxel workspace conditions: internal packages resolve through
-`@pluxel/source`, and plugin packages resolve their loader HMR entry through `@pluxel/runtime-dynamic`.
+The preset resolves development entries in a fixed order: plugin packages through `@pluxel/hmr`,
+framework-neutral packages through the community `development` condition, then Pluxel internals through
+`@pluxel/source`. Externalized Node dependencies keep production-like conditions.
 
 If you prefer automatic discovery instead of maintaining globs:
 
@@ -134,7 +140,7 @@ export default definePluxelVitestWorkspaceConfig({
 If you need to add extra Vite plugins:
 
 ```ts
-import { definePluxelVitestConfig } from '../test/src/vitest.ts'
+import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 import SomeTransform from 'some-transform/vite'
 
 export default definePluxelVitestConfig(

@@ -1,5 +1,3 @@
-import type { Plugin } from 'vite'
-
 const DEFAULT_FRONTEND_RESOLVE_CONDITIONS = [
 	'import',
 	'module',
@@ -38,7 +36,14 @@ export function buildPluxelFrontendResolveConditions(env = process.env.NODE_ENV)
 		)
 			? [env]
 			: []
-	return [...new Set(['@pluxel/source', ...DEFAULT_FRONTEND_RESOLVE_CONDITIONS, ...extras])]
+	return [
+		...new Set([
+			'development',
+			'@pluxel/source',
+			...DEFAULT_FRONTEND_RESOLVE_CONDITIONS,
+			...extras,
+		]),
+	]
 }
 
 export function createPluxelUiChunkGroups() {
@@ -90,19 +95,4 @@ export function createPluxelUiChunkGroups() {
 			minSize: 10 * 1024,
 		},
 	] as const
-}
-
-export function fixRolldownUndefinedExportsPlugin(): Plugin {
-	return {
-		name: 'fix-rolldown-undefined-exports',
-		enforce: 'post',
-		generateBundle(_options, bundle) {
-			for (const entry of Object.values(bundle)) {
-				if (entry.type !== 'chunk') continue
-				if (!entry.code.includes('server_browser_exports')) continue
-				if (/\b(?:var|let|const)\s+server_browser_exports\b/.test(entry.code)) continue
-				entry.code = `var server_browser_exports;\n${entry.code}`
-			}
-		},
-	}
 }

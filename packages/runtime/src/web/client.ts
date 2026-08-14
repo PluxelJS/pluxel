@@ -2,23 +2,26 @@ import type { RpcStub } from 'capnweb'
 import { treaty } from '@elysiajs/eden'
 
 import {
-	type VerificationAwareFetchOptions,
-	createVerificationAwareFetch,
-	defaultOnVerificationBlocked,
+	type AdminAccessAwareFetchOptions,
+	createAdminAccessAwareFetch,
+	defaultOnAdminAccessBlocked,
 	type RuntimeFetch,
 	toGlobalFetch,
-} from './verification'
+} from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
-import type { ExtensionManifest } from './extensions'
-import type { ExtensionUiRpcMap, RuntimeRpcApi } from './protocol'
-import { createRpcClientFactory, createUiRpcView, invokeRpc } from './rpc'
-import { type SseClientOptions, type SseClientWithNamespaces, sse } from './sse'
+import type { WorkbenchCatalog, WorkbenchLayout } from '../workbench/contracts'
+import type { HostApplicationMeta } from '../product-contract'
+import type { RuntimeRpcApi } from './protocol'
+import { createWorkbenchRpcView, createRpcClientFactory, invokeRpc } from './rpc'
+import { type SseClientOptions, type SseClientWithNamespaces, sseWithLifecycle } from './sse'
 import { createRuntimeSecurityClient } from './security'
+import { runRuntimeTransportCleanups } from './client-lifecycle'
 import {
-	RUNTIME_EXTENSIONS_EVENTS_PATH,
+	RUNTIME_WORKBENCH_EVENTS_PATH,
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_TRANSPORT_PATHS,
-	runtimeSignalDbCollectionPath,
+	runtimeWorkbenchModelEventsPath,
+	runtimeWorkbenchLiveQueryPath,
 	runtimeLogStreamPath,
 	joinPath,
 } from './paths'
@@ -28,18 +31,18 @@ import { resolveClientUrl } from './http-utils'
 export interface RuntimeMeta {
 	service: 'pluxel-runtime'
 	ready: true
+	application: HostApplicationMeta
 	sse: {
 		namespaces: string[]
 	}
-	extensions: {
+	workbench: {
 		version: number
-		modules: number
+		bundles: number
 	}
 	transport: {
 		rpc: string
 		graphql: string
 		sse: string
-		signaldb: string
 	}
 }
 
@@ -85,8 +88,12 @@ type RuntimeTreatyStreamsRoute = RuntimeTreatyGet<RuntimeLogStreamsIndex> &
 
 interface RuntimeTreatyClient {
 	meta: RuntimeTreatyGet<RuntimeMeta>
-	extensions: {
-		manifest: RuntimeTreatyGet<ExtensionManifest>
+	workbench: {
+		catalog: RuntimeTreatyGet<WorkbenchCatalog>
+		layout: {
+			global: RuntimeTreatyGet<WorkbenchLayout>
+			plugin: (params: { target: string }) => RuntimeTreatyGet<WorkbenchLayout>
+		}
 	}
 	logs: {
 		v1: {
@@ -103,7 +110,7 @@ export type RuntimeTransportClientOptions = {
 	defaultNamespace?: string
 	credentials?: RequestCredentials
 	fetch?: RuntimeFetch
-	verification?: VerificationAwareFetchOptions & {
+	adminAccess?: AdminAccessAwareFetchOptions & {
 		enabled?: boolean
 	}
 }
@@ -112,8 +119,10 @@ type RuntimeTransportHttp = {
 	meta: {
 		info(init?: RequestInit): Promise<RuntimeMeta>
 	}
-	extensions: {
-		manifest(init?: RequestInit): Promise<ExtensionManifest>
+	workbench: {
+		catalog(init?: RequestInit): Promise<WorkbenchCatalog>
+		globalLayout(init?: RequestInit): Promise<WorkbenchLayout>
+		pluginLayout(target: string, init?: RequestInit): Promise<WorkbenchLayout>
 	}
 	logs: {
 		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
@@ -132,16 +141,22 @@ type RuntimeTransportLinks = {
 	rpc: string
 	graphql: string
 	sse: string
-	signaldbCollection(pluginName: string, collection: string): string
+	workbenchLiveQuery(grantId: string, params?: unknown): string
+	workbenchModelEvents(grantId: string): string
 	logsFollow(streamId: string, query?: URLSearchParams | string): string
-	extensionEvents(namespaces?: string[]): string
+	workbenchEvents(): string
 }
 
 export interface RuntimeTransportClient {
 	fetch: RuntimeFetch
 	http: RuntimeTransportHttp
 	links: RuntimeTransportLinks
-	extensions: ExtensionUiRpcMap
+	workbench: {
+		rpc<TRpc>(grantId: string): TRpc
+		events<TEvent = unknown>(
+			grantId: string,
+		): SseClientWithNamespaces & { readonly __event?: TEvent }
+	}
 	withRpc: <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) => Promise<T>
 	createSse: (options?: SseClientOptions) => SseClientWithNamespaces
 	sse: SseClientWithNamespaces
@@ -170,9 +185,12 @@ function createRuntimeTransportHttp(
 		meta: {
 			info: (init) => expectData<RuntimeMeta>(http.meta.get({ fetch: init })),
 		},
-		extensions: {
-			manifest: (init) =>
-				expectData<ExtensionManifest>(http.extensions.manifest.get({ fetch: init })),
+		workbench: {
+			catalog: (init) => expectData<WorkbenchCatalog>(http.workbench.catalog.get({ fetch: init })),
+			globalLayout: (init) =>
+				expectData<WorkbenchLayout>(http.workbench.layout.global.get({ fetch: init })),
+			pluginLayout: (target, init) =>
+				expectData<WorkbenchLayout>(http.workbench.layout.plugin({ target }).get({ fetch: init })),
 		},
 		logs: {
 			streams: (init) =>
@@ -227,9 +245,9 @@ export function createRuntimeTransportFetch(
 ): RuntimeFetch {
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
 	const baseFetch = withDefaultCredentials(resolveBaseFetch(options), credentials)
-	if (options.verification?.enabled === false) return baseFetch
-	return createVerificationAwareFetch(baseFetch, {
-		onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
+	if (options.adminAccess?.enabled === false) return baseFetch
+	return createAdminAccessAwareFetch(baseFetch, {
+		onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
 	})
 }
 
@@ -242,21 +260,21 @@ export function createRuntimeTransportLinks(
 		rpc: resolveClientUrl(options.rpcBase ?? joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.rpc)),
 		graphql: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.graphql)),
 		sse: resolveClientUrl(joinPath(apiBase, RUNTIME_TRANSPORT_PATHS.sse)),
-		signaldbCollection: (pluginName: string, collection: string) =>
-			resolveClientUrl(joinPath(apiBase, runtimeSignalDbCollectionPath(pluginName, collection))),
+		workbenchLiveQuery: (grantId: string, params?: unknown) => {
+			const url = resolveClientUrl(joinPath(apiBase, runtimeWorkbenchLiveQueryPath(grantId)))
+			if (params === undefined) return url
+			const query = new URLSearchParams({ params: JSON.stringify(params) })
+			return `${url}?${query}`
+		},
+		workbenchModelEvents: (grantId: string) =>
+			resolveClientUrl(joinPath(apiBase, runtimeWorkbenchModelEventsPath(grantId))),
 		logsFollow: (streamId: string, query?: URLSearchParams | string) => {
 			const base = resolveClientUrl(joinPath(apiBase, runtimeLogStreamPath(streamId, '/follow')))
 			const suffix =
 				query instanceof URLSearchParams ? query.toString() : typeof query === 'string' ? query : ''
 			return suffix ? `${base}?${suffix}` : base
 		},
-		extensionEvents: (namespaces?: string[]) => {
-			const base = resolveClientUrl(joinPath(apiBase, RUNTIME_EXTENSIONS_EVENTS_PATH))
-			const params = new URLSearchParams()
-			for (const namespace of namespaces ?? []) params.append('ns', namespace)
-			const suffix = params.toString()
-			return suffix ? `${base}?${suffix}` : base
-		},
+		workbenchEvents: () => resolveClientUrl(joinPath(apiBase, RUNTIME_WORKBENCH_EVENTS_PATH)),
 	}
 	return transport
 }
@@ -285,13 +303,13 @@ export function createRuntimeTransportClient(
 	const baseSseOptions = options.sse ?? {}
 	const defaultNamespaces = options.defaultNamespace ? [options.defaultNamespace] : undefined
 	const credentials: RequestCredentials = options.credentials ?? 'same-origin'
-	const verificationEnabled = options.verification?.enabled !== false
+	const adminAccessEnabled = options.adminAccess?.enabled !== false
 	const security = createRuntimeSecurityClient({
 		apiBase: links.apiBase,
 		fetch,
 	})
 	const rawRpc = createRpcClientFactory(links.rpc)
-	const extensions = createUiRpcView(rawRpc, { credentials })
+	const workbenchRpcs = createWorkbenchRpcView(rawRpc, { credentials })
 	const withRpc = <T>(runner: (client: RpcStub<RuntimeRpcApi>) => Promise<T>) =>
 		invokeRpc(runner, { rpcBase: links.rpc, credentials })
 
@@ -312,13 +330,13 @@ export function createRuntimeTransportClient(
 			...opts,
 			url: opts?.url ?? baseSseOptions.url ?? links.sse,
 			withCredentials,
-			verification: verificationEnabled
+			adminAccess: adminAccessEnabled
 				? {
 						readState: async () => {
 							const overview = await security.readOverview()
-							return overview.verification
+							return overview.adminAccess
 						},
-						onBlocked: options.verification?.onBlocked ?? defaultOnVerificationBlocked,
+						onBlocked: options.adminAccess?.onBlocked ?? defaultOnAdminAccessBlocked,
 					}
 				: undefined,
 			params,
@@ -326,7 +344,13 @@ export function createRuntimeTransportClient(
 		}
 	}
 
-	const createSse = (opts?: SseClientOptions) => sse(buildSseOptions(opts))
+	const managedSse = new Set<SseClientWithNamespaces>()
+	const createSse = (opts?: SseClientOptions) => {
+		let client: SseClientWithNamespaces
+		client = sseWithLifecycle(buildSseOptions(opts), () => managedSse.delete(client))
+		managedSse.add(client)
+		return client
+	}
 
 	let memoSse: SseClientWithNamespaces | null = null
 	const getSse = () => {
@@ -334,20 +358,28 @@ export function createRuntimeTransportClient(
 		return memoSse
 	}
 
-	return {
+	const client: RuntimeTransportClient = {
 		fetch,
 		http,
 		links,
-		extensions,
+		workbench: {
+			rpc: <TRpc>(grantId: string) => (workbenchRpcs as Record<string, unknown>)[grantId] as TRpc,
+			events: <TEvent = unknown>(grantId: string) =>
+				createSse({ url: links.workbenchModelEvents(grantId) }) as SseClientWithNamespaces & {
+					readonly __event?: TEvent
+				},
+		},
 		withRpc,
 		createSse,
 		get sse() {
 			return getSse()
 		},
 		dispose: () => {
-			if (!memoSse) return
-			memoSse.close()
+			runRuntimeTransportCleanups(client)
+			for (const stream of managedSse) stream.close()
+			managedSse.clear()
 			memoSse = null
 		},
 	}
+	return client
 }

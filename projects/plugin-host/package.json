@@ -1,0 +1,37 @@
+{
+	"name": "@pluxel/plugins-host",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "pnpm run static",
+		"build": "pnpm run build:static",
+		"start": "node dist/app.mjs",
+		"dynamic": "pnpm exec vite --config vite.dynamic.config.ts --host 127.0.0.1",
+		"static": "pnpm exec vite --config vite.static.config.ts --host 127.0.0.1",
+		"build:static": "pnpm exec tsdown --config tsdown.static.config.ts",
+		"typecheck": "pnpm exec tsc -p src/demo/tsconfig.json --pretty false",
+		"dynamic:prompt": "pnpm exec pluxel hmr prompt --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host",
+		"dynamic:doctor": "pnpm exec pluxel hmr doctor --root ../.. --config projects/plugin-host/pluxel.loader.hmr.jsonc --profile plugins-host"
+	},
+	"dependencies": {
+		"@pluxel/package-manager": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
+		"@pluxel/runtime-static": "workspace:*",
+		"drizzle-orm": "catalog:"
+	},
+	"devDependencies": {
+		"@mantine/core": "catalog:",
+		"@pluxel/cli": "workspace:*",
+		"@pluxel/rolldown": "workspace:*",
+		"@tabler/icons-react": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"pathe": "^2.0.3",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
+		"vite": "^8.0.0-beta.18"
+	}
+}

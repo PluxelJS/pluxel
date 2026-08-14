@@ -1,5 +1,5 @@
 // PluginDefinitions.ts
-// Graph declaration layer around @pluxel/core-di with draft/commit semantics.
+// Plugin declaration layer around core's internal graph kernel.
 //
 // Responsibilities:
 // - register/unregister plugin ctors into the draft graph
@@ -20,7 +20,7 @@ import {
 	type GraphSnapshot,
 	Runtime,
 	type Token,
-} from '@pluxel/core-di'
+} from '../../internal/di'
 import { createErr, createOk } from 'option-t/plain_result'
 import { getForkOf } from './fork'
 import { BasePlugin } from '../composition/BasePlugin'
@@ -31,11 +31,7 @@ import {
 	getRequiredPluginDependencies,
 } from '../decorators/PluginDecorator'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
-import {
-	runtimePluginKeyOfCtor,
-	type RuntimePluginHandle,
-	type RuntimePluginKey,
-} from './identity'
+import { runtimePluginKeyOfCtor, type RuntimePluginHandle, type RuntimePluginKey } from './identity'
 
 export type PluginGraph = GraphSnapshot<ReturnType<typeof getPluginInfo>>
 export type PluginRuntime = Runtime<ReturnType<typeof getPluginInfo>>
@@ -45,10 +41,16 @@ type PluginDependencyTokenOverrideResolver = (
 	pluginId: string,
 ) => readonly (PluginIdentifier | undefined)[] | undefined
 
+type PluginGraphDelta = GraphDelta & {
+	readonly added: readonly RuntimePluginKey[]
+	readonly removed: readonly RuntimePluginKey[]
+	readonly replaced: readonly { from: RuntimePluginKey; to: RuntimePluginKey }[]
+}
+
 type BuildRet = {
 	graph: PluginGraph
 	runtime: PluginRuntime
-	delta: GraphDelta
+	delta: PluginGraphDelta
 	confirm: () => void
 }
 
@@ -155,7 +157,7 @@ export class PluginDefinitions {
 			[
 				`Missing constructor dependencies for ${String(Plugin)}.`,
 				`This plugin uses decorators that require: ${missing.map(String).join(', ')}`,
-				'Declare them as constructor params (or use setParamToken) before registering.',
+				'Declare them as constructor params (or apply an explicit token override) before registering.',
 			].join(' '),
 		)
 	}
@@ -287,6 +289,7 @@ export class PluginDefinitions {
 			return createErr({ err: built.err as GraphBuildError, reset })
 		}
 
+		assertPluginGraphDelta(built.val.delta)
 		const ret: BuildRet = {
 			graph: built.val.graph as PluginGraph,
 			runtime: built.val.runtime as PluginRuntime,
@@ -297,5 +300,20 @@ export class PluginDefinitions {
 		}
 
 		return createOk(ret)
+	}
+}
+
+function assertPluginGraphDelta(delta: GraphDelta): asserts delta is PluginGraphDelta {
+	for (const key of delta.added) assertRuntimePluginKey(key)
+	for (const key of delta.removed) assertRuntimePluginKey(key)
+	for (const replacement of delta.replaced) {
+		assertRuntimePluginKey(replacement.from)
+		assertRuntimePluginKey(replacement.to)
+	}
+}
+
+function assertRuntimePluginKey(value: unknown): asserts value is RuntimePluginKey {
+	if (typeof value !== 'string') {
+		throw new TypeError('[pluxel/core] plugin graph produced a non-string runtime key')
 	}
 }

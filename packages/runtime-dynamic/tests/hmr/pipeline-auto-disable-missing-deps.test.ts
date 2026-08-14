@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import '@pluxel/runtime-dynamic/register'
+import '../../src/register-services'
 import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
 
 import {
@@ -20,6 +20,7 @@ function createExecutor(
 	options: {
 		importModule?: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>
 		config?: Partial<ConstructorParameters<typeof HmrExecutor>[4]>
+		path?: Partial<ConstructorParameters<typeof HmrExecutor>[2]>
 	} = {},
 ) {
 	const runner: ConstructorParameters<typeof HmrExecutor>[1] = {
@@ -31,6 +32,7 @@ function createExecutor(
 		toClean: (id: string) => id,
 		toVite: (id: string) => id,
 		pretty: (id: string) => id,
+		...options.path,
 	} as ConstructorParameters<typeof HmrExecutor>[2]
 	const timing: ConstructorParameters<typeof HmrExecutor>[3] = { start: () => () => 0 }
 
@@ -42,6 +44,36 @@ function createExecutor(
 }
 
 describe('HmrExecutor commit retry', () => {
+	it('imports filesystem ids through /@fs while preserving the clean registry identity', async () => {
+		const host = createRuntimeHost()
+		try {
+			const cleanId = '/repo/plugins/a/src/index.ts'
+			const calls: string[] = []
+			class Anchor extends BasePlugin {}
+			Plugin({ name: 'Anchor' })(Anchor)
+
+			const executor = createExecutor(host.ctx, {
+				importModule: async (id) => {
+					calls.push(id)
+					if (id === `/@fs${cleanId}`) return { Anchor }
+					throw new Error(`unexpected id: ${id}`)
+				},
+				path: {
+					variants: (id) => [id, `/@fs${id}`],
+					variantsClean: (id) => [id, `/@fs${id}`],
+				},
+			})
+
+			const out = await executor.runAndLoadAllClean([cleanId])
+			expect(out?.commitResult.ok).toBe(true)
+			expect(calls).toEqual([`/@fs${cleanId}`])
+			expect(host.ctx.loader.api.anchors.has(cleanId)).toBe(true)
+			expect(host.ctx.loader.api.registry.findModuleId('Anchor')).toBe(cleanId)
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('syncs runtime-reported affected modules before commit', async () => {
 		const host = createRuntimeHost()
 		try {

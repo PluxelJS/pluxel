@@ -1,9 +1,22 @@
 import type { Context } from '@pluxel/core'
 
 import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
-import { requireRouteCapability } from '../../runtime/capabilities'
+import {
+	requireRouteCapability,
+	type RuntimePluginSource,
+	type RuntimePluginStatusSnapshot,
+} from '../../runtime/capabilities'
 
-export type PluginStatusSnapshot = ReturnType<typeof readStatusSnapshot> & { name: string }
+type PluginSourceSnapshot = RuntimePluginSource extends infer Source
+	? Source extends RuntimePluginSource
+		? Omit<Source, '__typename'>
+		: never
+	: never
+
+export type PluginStatusSnapshot = Omit<RuntimePluginStatusSnapshot, 'source'> & {
+	name: string
+	source: PluginSourceSnapshot
+}
 
 export type PluginsListOutput = {
 	plugins: PluginStatusSnapshot[]

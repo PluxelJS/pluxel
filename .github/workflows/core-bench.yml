@@ -7,6 +7,7 @@ on:
       - 'packages/core/**'
       - 'packages/build/**'
       - 'scripts/core-bench-compare.sh'
+      - 'scripts/core-bench-node-runner.mjs'
       - 'pnpm-lock.yaml'
       - '.github/workflows/core-bench.yml'
   pull_request:
@@ -14,6 +15,7 @@ on:
       - 'packages/core/**'
       - 'packages/build/**'
       - 'scripts/core-bench-compare.sh'
+      - 'scripts/core-bench-node-runner.mjs'
       - 'pnpm-lock.yaml'
       - '.github/workflows/core-bench.yml'
   workflow_dispatch:
@@ -29,6 +31,7 @@ on:
 
 env:
   BENCH_TOLERANCE: '5'
+  PNPM_CONFIG_PM_ON_FAIL: 'ignore'
 
 concurrency:
   group: core-bench-${{ github.ref }}
@@ -50,11 +53,8 @@ jobs:
       BASE_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - name: Prepare git
-        run: git config --global core.autocrlf false
-
       - name: Checkout head
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
@@ -63,12 +63,30 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags origin "$BASE_BRANCH"
 
-      - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+      - name: Install toolchain
+        uses: jdx/mise-action@v4
         with:
-          install: 'false'
+          cache: true
+          install: true
+
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dependency cache
+        id: pnpm-store-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          # The pnpm store is content-addressed; commit-specific keys only duplicate the same cache.
+          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-files-v3-
 
       - name: Run base/head benchmark comparison
+        id: benchmark
         env:
           PLUXEL_BENCH_COMPARE_BASE: ${{ env.BASE_REF }}
           PLUXEL_BENCH_COMPARE_HEAD: ${{ env.HEAD_REF }}
@@ -77,8 +95,18 @@ jobs:
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
         run: pnpm bench:core:compare
 
+      - name: Save dependency cache
+        if: always() && steps.benchmark.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
+
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v4
+        if: always() && steps.benchmark.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
         with:
           name: core-bench-run-${{ github.run_id }}
           path: |
@@ -90,11 +118,12 @@ jobs:
             .bench-results/core/head/plugin-lifecycle.md
             .bench-results/core/head/install.log
             .bench-results/core/head/bench.log
+          include-hidden-files: true
           if-no-files-found: error
 
       - name: Comment PR with results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request' && steps.benchmark.outcome != 'skipped'
+        uses: actions/github-script@v9
         env:
           BASE_REF: ${{ env.BASE_REF }}
           HEAD_REF: ${{ env.HEAD_REF }}

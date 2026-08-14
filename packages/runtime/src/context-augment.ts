@@ -1,6 +1,6 @@
 import type { HttpServiceConfig } from './services/http/HttpService'
-import type { ExtensionServiceConfig } from './services/plugin-interaction/ExtensionService'
-import type { ManagementConfig } from './services/verification/types'
+import type { AdminAccessConfig } from './services/admin-access/types'
+import type { WorkbenchConfig } from './workbench-config'
 
 // Type-only module augmentation for @pluxel/runtime-owned config keys.
 //
@@ -13,12 +13,20 @@ declare module '@pluxel/core' {
 			path?: string
 			/** Workspace profile (generic). */
 			profile?: string
-			/** HTTP runtime settings. Management internals are owned by route launchers. */
+			/** HTTP runtime settings. Workbench internals are owned by route launchers. */
 			http?: HttpServiceConfig
-			/** Host management surface and access policy. */
-			management?: ManagementConfig
-			/** UI extension registry settings. */
-			extensionService?: ExtensionServiceConfig
+			/** Host admin surface enablement and access policy. */
+			adminAccess?: AdminAccessConfig
+			/** Optional Workbench Plane capability and access policy. */
+			workbench?: WorkbenchConfig
+			/** @internal Deployment-owned root containing assembled Workbench artifacts. */
+			workbenchArtifactRoot?: string
+			/** @internal Dynamic/package hosts provide package artifact resolution explicitly. */
+			workbenchArtifactResolver?: (
+				root: import('@pluxel/core').Context,
+				pluginName: string,
+				artifactName: string,
+			) => string | null | Promise<string | null>
 		}
 	}
 }

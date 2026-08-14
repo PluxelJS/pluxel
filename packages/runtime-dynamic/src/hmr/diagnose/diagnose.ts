@@ -1,7 +1,11 @@
 import { resolve } from 'pathe'
 import picomatch from 'picomatch'
-import type { BuiltinsFromDistEntry, LoaderHmrWorkspaceSnapshot } from '../snapshot'
-import { type PluxelLoaderHmrConfigV1, readLoaderHmrConfigV1, resolveDefaultLoaderHmrConfigPath } from './config'
+import type { LoaderHmrWorkspaceSnapshot } from '../snapshot'
+import {
+	type PluxelLoaderHmrConfigV2,
+	readLoaderHmrConfigV2,
+	resolveDefaultLoaderHmrConfigPath,
+} from './config'
 import {
 	type DiscoveredPlugin,
 	discoverPluginsFromPackages,
@@ -14,7 +18,6 @@ import {
 	loadWorkspaceInfoWithFs,
 	nodeLoaderHmrWorkspaceFs,
 	nodeWorkspaceFs,
-	readTextFile,
 	type LoaderHmrWorkspaceFs,
 	type WorkspaceFs,
 } from './fs'
@@ -25,10 +28,6 @@ export type DiagnoseWorkspaceInput = {
 	env?: Record<string, string | undefined>
 	/**
 	 * Package names to omit from discovery/enabled resolution.
-	 *
-	 * Primary use case: the host preloads certain packages as builtins (baseline),
-	 * so workspace profiles should not also load their `@pluxel/runtime-dynamic` source entries
-	 * (prevents "plugin name conflict" from double-loading the same package).
 	 */
 	omitPackages?: string[]
 	fs?: LoaderHmrWorkspaceFs
@@ -44,63 +43,12 @@ type MergedProfile = {
 	activeProfile: string
 	roots: 'auto' | string[]
 	enabled: string[]
-	builtinPackages: string[]
 	includeGlobs: string[]
 	excludeGlobs: string[]
 }
 
-const MANAGED_PLUGIN_PKG_RE = /^(?:@[^/]+\/)?pluxel-plugin-/i
-
-function isManagedPluginPackageName(name: string) {
-	return MANAGED_PLUGIN_PKG_RE.test(name)
-}
-
-function resolveDefaultDistEntryFromManifest(manifest: unknown): string | null {
-	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return null
-	const exportsField = (manifest as Record<string, unknown>).exports
-	const dot =
-		exportsField && typeof exportsField === 'object' && !Array.isArray(exportsField)
-			? (exportsField as Record<string, unknown>)['.']
-			: undefined
-	if (!dot) return null
-
-	// Intentional simplification (no compat burden): builtin packages must provide a direct dist ESM entry.
-	// We only accept a string `.mjs` at `exports["."].import|default|module` or `exports["."]` itself.
-	const pick = (v: unknown) =>
-		typeof v === 'string' && v.trim().endsWith('.mjs') ? v.trim() : null
-	if (typeof dot === 'string') return pick(dot)
-	if (typeof dot !== 'object' || Array.isArray(dot)) return null
-	const obj = dot as Record<string, unknown>
-	return pick(obj.import) ?? pick(obj.default) ?? pick(obj.module)
-}
-
-function collectManifestDeps(manifest: unknown): Set<string> {
-	const out = new Set<string>()
-	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return out
-	const m = manifest as Record<string, unknown>
-	for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
-		const rec = m[field]
-		if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue
-		for (const k of Object.keys(rec)) out.add(k)
-	}
-	return out
-}
-
-async function readWorkspaceRootDeclaredPluginDeps(
-	rootDirAbs: string,
-	fs: WorkspaceFs = nodeWorkspaceFs,
-): Promise<Set<string>> {
-	try {
-		const raw = await readTextFile(fs, resolve(rootDirAbs, 'package.json'))
-		const json = JSON.parse(raw) as unknown
-		return collectManifestDeps(json)
-	} catch {
-		return new Set<string>()
-	}
-}
-
 export function mergeLoaderHmrProfile(
-	cfg: PluxelLoaderHmrConfigV1,
+	cfg: PluxelLoaderHmrConfigV2,
 	env?: Record<string, string | undefined>,
 ): MergedProfile {
 	const activeProfile = env?.PLUXEL_HMR_PROFILE ?? cfg.profile
@@ -113,11 +61,10 @@ export function mergeLoaderHmrProfile(
 
 	const roots = profile.roots ?? cfg.defaults?.roots ?? 'auto'
 	const enabled = profile.enabled
-	const builtinPackages = profile.builtin ?? []
 	const includeGlobs = [...(cfg.defaults?.include ?? []), ...(profile.include ?? [])]
 	const excludeGlobs = [...(cfg.defaults?.exclude ?? []), ...(profile.exclude ?? [])]
 
-	return { activeProfile, roots, enabled, builtinPackages, includeGlobs, excludeGlobs }
+	return { activeProfile, roots, enabled, includeGlobs, excludeGlobs }
 }
 
 export async function resolveLoaderHmrRootsExpanded(
@@ -252,7 +199,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	fs?: WorkspaceFs
 }): Promise<DiagnoseWorkspaceResult> {
 	const rootDirAbs = resolve(params.rootDir)
-	const rootDeclaredDeps = await readWorkspaceRootDeclaredPluginDeps(rootDirAbs, params.fs)
 	const fs = params.fs ?? nodeWorkspaceFs
 
 	const depsByName = new Map(params.packages.map((p) => [p.name, p.deps]))
@@ -266,12 +212,8 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 
 	const omit = new Set((params.omitPackages ?? []).map((s) => String(s).trim()).filter(Boolean))
 	const effectiveEnabled: string[] = []
-	const skippedEnabled: string[] = []
 	for (const name of params.merged.enabled) {
-		if (omit.has(name)) {
-			skippedEnabled.push(name)
-			continue
-		}
+		if (omit.has(name)) continue
 		effectiveEnabled.push(name)
 	}
 
@@ -300,13 +242,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 	if (errors.length > 0) return { ok: false, errors, discovered: params.discovered }
 
 	const warnings: string[] = []
-	if (skippedEnabled.length > 0) {
-		warnings.push(
-			`[loader-hmr] Skipped ${skippedEnabled.length} enabled package(s) because they are provided by builtins: ${skippedEnabled.join(
-				', ',
-			)}`,
-		)
-	}
 
 	{
 		// Monorepo correctness: if an enabled plugin package declares another plugin package as a dependency,
@@ -328,49 +263,17 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 				`[loader-hmr] ${missingEdges.length} selected plugin package(s) depend on other plugin packages that are not selected in this profile. Consider adding them to profile.enabled to avoid MissingDependency when their plugins are enabled at runtime.`,
 			)
 			for (const edge of shown) {
-				warnings.push(`[loader-hmr] Missing profile packages: ${edge.from} -> ${edge.missing.join(', ')}`)
-			}
-			if (missingEdges.length > maxEdges) {
-				warnings.push(`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing-deps edge(s).`)
-			}
-		}
-	}
-	{
-		// PackageService correctness: managed plugin packages installed via node_modules are typically auto-loaded
-		// only when they are declared in the workspace root manifest (see PackageService.syncTrackedPlugins()).
-		//
-		// When a selected workspace plugin package depends on a managed plugin package, but the root manifest does
-		// not declare it, the plugin may be installed transitively yet never loaded into LoaderService (unless the
-		// host explicitly loads it via PackageService or provides it as a builtin).
-		const missingEdges: Array<{ from: string; missing: string[] }> = []
-		for (const name of effectiveEnabled) {
-			const deps = depsByName.get(name) ?? []
-			const missing = deps
-				.filter((d) => isManagedPluginPackageName(d))
-				.filter((d) => !discoveredSet.has(d)) // not a workspace plugin package
-				.filter((d) => !rootDeclaredDeps.has(d)) // not declared at workspace root
-				.filter((d) => !omit.has(d))
-			if (missing.length > 0) missingEdges.push({ from: name, missing: uniqSorted(missing) })
-		}
-
-		if (missingEdges.length > 0) {
-			const maxEdges = 20
-			warnings.push(
-				`[loader-hmr] ${missingEdges.length} selected plugin package(s) depend on managed (node_modules) plugin packages that are not declared in the workspace root package.json. If you rely on PackageService auto-load, add them to root deps (or load them manually / provide as builtins).`,
-			)
-			for (const edge of missingEdges.slice(0, maxEdges)) {
 				warnings.push(
-					`[loader-hmr] Missing root deps (managed plugins): ${edge.from} -> ${edge.missing.join(', ')}`,
+					`[loader-hmr] Missing profile packages: ${edge.from} -> ${edge.missing.join(', ')}`,
 				)
 			}
 			if (missingEdges.length > maxEdges) {
 				warnings.push(
-					`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing managed-plugin edge(s).`,
+					`[loader-hmr] …and ${missingEdges.length - maxEdges} more missing-deps edge(s).`,
 				)
 			}
 		}
 	}
-
 	const roots = params.rootsExpandedAbs.map((r) => toRootRelative(rootDirAbs, r))
 	const includeGlobs = uniqPreserveOrder(params.merged.includeGlobs)
 	const excludeGlobs = uniqPreserveOrder(params.merged.excludeGlobs)
@@ -402,7 +305,6 @@ export async function buildWorkspaceSnapshotFromScan(params: {
 		activeProfile: params.merged.activeProfile,
 		roots,
 		enabled: effectiveEnabled,
-		builtinPackages: uniqSorted(params.merged.builtinPackages),
 		enabledEntries,
 		includedEntries,
 		discovered: params.discovered,
@@ -424,9 +326,9 @@ export async function diagnoseWorkspace(
 	if (!fs.existsSync(configPathAbs))
 		return { ok: false, errors: [`Missing config file: ${configPathAbs}`] }
 
-	let cfg: PluxelLoaderHmrConfigV1
+	let cfg: PluxelLoaderHmrConfigV2
 	try {
-		cfg = readLoaderHmrConfigV1(configPathAbs, fs)
+		cfg = readLoaderHmrConfigV2(configPathAbs, fs)
 	} catch (error) {
 		return { ok: false, errors: [error instanceof Error ? error.message : String(error)] }
 	}
@@ -453,10 +355,7 @@ export async function diagnoseWorkspace(
 	})
 	const discovered = discoverPluginsFromPackages(rootDirAbs, packages)
 
-	const omitPackages = uniqSorted([
-		...(input.omitPackages ?? []),
-		...(merged.builtinPackages ?? []),
-	])
+	const omitPackages = uniqSorted(input.omitPackages ?? [])
 
 	const base = await buildWorkspaceSnapshotFromScan({
 		rootDir: rootDirAbs,
@@ -468,46 +367,7 @@ export async function diagnoseWorkspace(
 		fs,
 	})
 
-	if (!base.ok) return base
-
-	const builtinPkgs = base.snapshot.builtinPackages
-	if (builtinPkgs.length === 0) return base
-
-	const byName = new Map(packages.map((p) => [p.name, p]))
-	const builtinsFromDist: BuiltinsFromDistEntry[] = []
-	for (const pkgName of builtinPkgs) {
-		const pkg = byName.get(pkgName)
-		if (!pkg)
-			return {
-				ok: false,
-				errors: [`[loader-hmr] Builtin package not found in workspace: ${pkgName}`],
-				discovered: base.snapshot.discovered,
-			}
-
-		const rel = resolveDefaultDistEntryFromManifest(pkg.manifest)
-		if (!rel) {
-			return {
-				ok: false,
-				errors: [
-					`[loader-hmr] Builtin package missing dist .mjs export entry (check package.json exports): ${pkgName}`,
-				],
-				discovered: base.snapshot.discovered,
-			}
-		}
-
-		const entryAbs = resolve(pkg.pkgDirAbs, rel)
-		if (!fs.existsSync(entryAbs)) {
-			return {
-				ok: false,
-				errors: [`[loader-hmr] Builtin dist entry missing on disk for ${pkgName}: ${entryAbs}`],
-				discovered: base.snapshot.discovered,
-			}
-		}
-
-		builtinsFromDist.push({ packageName: pkgName, entry: toRootRelative(rootDirAbs, entryAbs) })
-	}
-
-	return { ok: true, snapshot: { ...base.snapshot, builtinsFromDist }, warnings: base.warnings }
+	return base
 }
 
 export function resolveLoaderHmrConfigPathFromCwd(cwd = process.cwd()) {

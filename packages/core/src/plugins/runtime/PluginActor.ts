@@ -2,8 +2,8 @@
 // Runtime lifecycle state machine for a single plugin instance.
 // This module is performance‑sensitive: it avoids allocations on hot transitions.
 
-import { bakeMachine } from '../../../fsm/defineMachine.macro' with { type: 'macro' }
-import { hydrateMachine, type MachineImpl } from '../../../fsm/defineMachine.macro'
+import { bakeMachine } from '../../internal/fsm/defineMachine.macro' with { type: 'macro' }
+import { hydrateMachine, type MachineImpl } from '../../internal/fsm/defineMachine.macro'
 import type { PluginLifecycleRuntime } from '../composition/BasePlugin'
 
 /* ────────────────────────── 外部事件 ────────────────────────── */
@@ -86,17 +86,8 @@ const stateNames = ['idle', 'starting', 'running', 'stopping', 'failing', 'stopp
 type LifecycleState = (typeof stateNames)[number]
 
 const bakedLifecycle = bakeMachine({
-	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'] as const,
-	events: [
-		'start',
-		'startOk',
-		'startErr',
-		'stop',
-		'stopOk',
-		'stopErr',
-		'asyncError',
-		'retry',
-	] as const,
+	states: ['idle', 'starting', 'running', 'stopping', 'failing', 'stopped'],
+	events: ['start', 'startOk', 'startErr', 'stop', 'stopOk', 'stopErr', 'asyncError', 'retry'],
 	init: 'idle',
 	transitions: [
 		['idle', 'start', 'starting', 'onStart'],
@@ -111,11 +102,11 @@ const bakedLifecycle = bakeMachine({
 		['stopping', 'stopOk', 'stopped'],
 		['stopping', 'stopErr', 'stopped'],
 		['stopped', 'start', 'starting', 'onStart'],
-	] as const,
+	],
 	hooks: {
 		enter: { running: 'onEnterRunning' },
 		exit: { running: 'onExitRunning' },
-	} as const,
+	},
 	abortOnStateChange: false,
 })
 
@@ -190,7 +181,8 @@ export class PluginLifecycleActor {
 					let stopErr: unknown
 					let disposeErr: unknown
 					try {
-						if (runtime.stop) await runtime.stop(this.stopAbort.signal)
+						const stopping = runtime.stop?.(this.stopAbort.signal)
+						if (stopping) await stopping
 					} catch (e) {
 						stopErr = e
 					}

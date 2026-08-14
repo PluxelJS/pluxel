@@ -2,6 +2,11 @@
 	"name": "@pluxel/test",
 	"version": "0.1.0",
 	"description": "Core/plugin test utilities for Pluxel packages (fixtures + Vitest preset).",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/test"
+	},
 	"files": [
 		"dist",
 		"!**/*.map"
@@ -20,11 +25,6 @@
 			"@pluxel/source": "./src/fixtures.ts",
 			"import": "./dist/fixtures.mjs",
 			"require": "./dist/fixtures.cjs"
-		},
-		"./oxlint": {
-			"@pluxel/source": "./src/oxlint.ts",
-			"import": "./dist/oxlint.mjs",
-			"require": "./dist/oxlint.cjs"
 		},
 		"./setup": {
 			"@pluxel/source": "./src/setup.ts",
@@ -53,10 +53,6 @@
 				"import": "./dist/fixtures.mjs",
 				"require": "./dist/fixtures.cjs"
 			},
-			"./oxlint": {
-				"import": "./dist/oxlint.mjs",
-				"require": "./dist/oxlint.cjs"
-			},
 			"./setup": {
 				"import": "./dist/setup.mjs",
 				"require": "./dist/setup.cjs"
@@ -83,12 +79,11 @@
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
 		"fs-fixture": "^2.13.0",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"peerDependencies": {
 		"@pluxel/core": "workspace:*",
-		"oxlint": "^1.58.0",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"inlinedDependencies": {
 		"@platformatic/vfs": "0.3.4",

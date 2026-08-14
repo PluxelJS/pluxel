@@ -6,52 +6,52 @@ This document compares the current `@pluxel/core` DI migration against the pre-m
 
 Two benchmark layers were used:
 
-1. Pure DI kernel:
-   `packages/core-di/bench/compare-diod.bench.ts`
-   This runs current `core-di` and workspace `diod` side by side in the same process.
+1. Pure DI kernel archived result:
+   `packages/core/benchmarks/di-kernel-vs-diod.md`
+   This records the internal kernel and `diod` comparison used to validate the migration.
 
 2. Real plugin lifecycle:
    `packages/core/bench/pluginLifecycle.bench.ts`
    This compares current `@pluxel/core` against the pre-migration `diod` baseline from commit `7c800b89`.
 
-## Environment
+## Archived Environment
 
 - Date: `2026-04-14`
 - Runtime: `bun 1.3.4`
 - Current workspace: GitButler workspace HEAD `a41338dc`
 - Pre-migration baseline: `7c800b89` (`origin/main` at benchmark time)
 
+This Bun result is retained as a migration record only. Current benchmark scripts execute directly
+on the workspace Node runtime and same-runner regression checks compare base and head on that Node
+process; the archived Bun result is not a current regression reference.
+
 ## Commands
 
 ```sh
-# pre-migration diod baseline
-git worktree add /tmp/pluxel-bench-7c800 7c800b89
-pnpm install --frozen-lockfile
-PLUXEL_BENCH_TIME=1000 PLUXEL_BENCH_WARMUP_TIME=300 PLUXEL_BENCH_STRICT=0 \
-  pnpm --filter @pluxel/core bench
+# current lifecycle benchmark on Node
+pnpm --filter @pluxel/core bench:dist
 
-# current @pluxel/core vs diod baseline
-PLUXEL_BENCH_TIME=1000 PLUXEL_BENCH_WARMUP_TIME=300 PLUXEL_BENCH_STRICT=0 \
-PLUXEL_BENCH_BASELINE=packages/core/benchmarks/plugin-lifecycle.diod-baseline.json \
-  pnpm --filter @pluxel/core bench
-
-# current pure DI kernel vs diod
+# current internal DI kernel vs retained benchmark-local diod
 PLUXEL_DI_BENCH_TIME_MS=1000 PLUXEL_DI_WARMUP_MS=300 PLUXEL_DI_BENCH_ROUNDS=3 \
-  pnpm --filter @pluxel/core-di bench
+PLUXEL_DI_BENCH_OUTPUT_DIR=.bench-results/core/di \
+  pnpm --filter @pluxel/core bench:di
+
+# same-runner base/head regression comparison on Node
+pnpm bench:core:compare
 ```
 
 ## Raw Reports
 
-- Pure DI report: `packages/core-di/benchmarks/core-di-vs-diod.md`
-- Current lifecycle report: `packages/core/benchmarks/plugin-lifecycle.md`
-- Current lifecycle diff JSON: `packages/core/benchmarks/plugin-lifecycle-diff.json`
-- Pre-migration lifecycle baseline JSON: `packages/core/benchmarks/plugin-lifecycle.diod-baseline.json`
+- Pure DI report: `packages/core/benchmarks/di-kernel-vs-diod.md`
+- Generated lifecycle reports: `packages/core/benchmarks/plugin-lifecycle.{json,md}` (ignored)
+- Archived Bun pre-migration lifecycle baseline:
+  `packages/core/benchmarks/plugin-lifecycle.diod-baseline.json`
 
 ## Result
 
 ### 1. Pure DI kernel: clear win
 
-`core-di` won all 8 direct DI scenarios against `diod`.
+The internal DI kernel won all 8 direct DI scenarios against `diod`.
 
 | Scenario | Speedup |
 | --- | ---: |
@@ -113,7 +113,7 @@ The migration is now a confirmed performance win both at the DI kernel layer and
 
 The benchmark-backed statement that is safe to make is:
 
-- `core-di` itself is substantially faster than `diod`.
+- The internal DI kernel is substantially faster than `diod`.
 - In real plugin lifecycle paths, every meaningful measured task improved versus the pre-migration `diod` baseline.
 - The only residual regression is empty-commit ops/sec with unchanged `0.002ms` mean latency, which is below practical concern.
 

@@ -5,12 +5,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 
 import type { HttpHandler } from '@pluxel/runtime'
+import { DEFAULT_VITE_WATCH_IGNORED, VITE_WATCH_USE_POLLING } from './vite-watch'
 
 export interface FetchHmrServerPluginOptions {
 	exclude?: Array<string | RegExp>
 	fetch: HttpHandler
 	handleHotUpdate?: Plugin['handleHotUpdate']
 	injectClientScript?: boolean
+	shouldHandle?: (request: IncomingMessage) => boolean
 }
 
 function shouldSkipBody(method: string) {
@@ -124,7 +126,8 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 			return {
 				server: {
 					watch: {
-						ignored: [/\.wrangler/, /\.mf/],
+						ignored: [...DEFAULT_VITE_WATCH_IGNORED],
+						usePolling: VITE_WATCH_USE_POLLING,
 					},
 				},
 			}
@@ -140,6 +143,10 @@ export function createFetchHmrServerPlugin(options: FetchHmrServerPluginOptions)
 								next()
 								return
 							}
+						}
+						if (options.shouldHandle && !options.shouldHandle(req)) {
+							next()
+							return
 						}
 
 						const response = await options.fetch(toRequest(req))

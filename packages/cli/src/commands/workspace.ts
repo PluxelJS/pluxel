@@ -4,6 +4,19 @@ import { intro, isCancel, multiselect, note, outro } from '@clack/prompts'
 import { type ArgValues, define } from 'gunshi'
 import { basename, dirname, relative, resolve } from 'pathe'
 import picomatch from 'picomatch'
+import {
+	workspaceAddDefinition,
+	workspaceCommandDefinition,
+	workspaceListDefinition,
+	workspacePatternArgs,
+	workspacePromptDefinition,
+	workspacePullArgs,
+	workspacePullDefinition,
+	workspaceRemoveDefinition,
+	workspaceRootArgs,
+	workspaceScanArgs,
+	workspaceScanDefinition,
+} from '../command-manifest'
 import { detectPm, runPackageManager } from '../utils/pm'
 import {
 	readWorkspaceCandidates,
@@ -18,56 +31,6 @@ import {
 	resolveRelative,
 } from '../workspace/state'
 
-const workspaceRootArgs = {
-	root: {
-		type: 'string',
-		description: 'Workspace root',
-		default: '.',
-	},
-} as const
-
-const workspacePatternArgs = {
-	...workspaceRootArgs,
-	pattern: {
-		type: 'positional',
-		description: 'Workspace pattern or folder to mutate',
-	},
-} as const
-
-const workspacePullArgs = {
-	...workspaceRootArgs,
-	repo: {
-		type: 'positional',
-		description: 'Git URL to clone',
-	},
-	dir: {
-		type: 'string',
-		description: 'Destination base dir for pull (relative to root)',
-		default: 'packages',
-	},
-	name: {
-		type: 'string',
-		description: 'Folder name for pull (auto from repo name by default)',
-	},
-	ref: {
-		type: 'string',
-		description: 'Git ref/branch for pull',
-	},
-	force: {
-		type: 'boolean',
-		description: 'Overwrite existing folder for pull',
-		default: false,
-	},
-} as const
-
-const workspaceScanArgs = {
-	...workspaceRootArgs,
-	base: {
-		type: 'positional',
-		description: 'Base directory to scan (relative to root)',
-	},
-} as const
-
 type WorkspaceRootArgs = typeof workspaceRootArgs
 type WorkspaceRootValues = ArgValues<WorkspaceRootArgs>
 type WorkspacePatternArgs = typeof workspacePatternArgs
@@ -81,31 +44,22 @@ function resolveWorkspaceRoot(values: WorkspaceRootValues) {
 	return resolve(process.cwd(), values.root || '.')
 }
 
-const workspacePromptCommand = define({
-	name: 'prompt',
-	description: 'Interactive workspace toggler',
-	toKebab: true,
-	args: workspaceRootArgs,
+export const workspacePromptCommand = define({
+	...workspacePromptDefinition,
 	async run(ctx) {
 		await handleInteractive(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
 	},
 })
 
-const workspaceListCommand = define({
-	name: 'list',
-	description: 'List active workspace patterns and detected packages',
-	toKebab: true,
-	args: workspaceRootArgs,
+export const workspaceListCommand = define({
+	...workspaceListDefinition,
 	async run(ctx) {
 		await handleList(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
 	},
 })
 
-const workspaceAddCommand = define({
-	name: 'add',
-	description: 'Add/enable a workspace pattern',
-	toKebab: true,
-	args: workspacePatternArgs,
+export const workspaceAddCommand = define({
+	...workspaceAddDefinition,
 	async run(ctx) {
 		const values = ctx.values as WorkspacePatternValues
 		const workspaceRoot = resolveWorkspaceRoot(values)
@@ -119,11 +73,8 @@ const workspaceAddCommand = define({
 	},
 })
 
-const workspaceRemoveCommand = define({
-	name: 'remove',
-	description: 'Remove/disable a workspace pattern',
-	toKebab: true,
-	args: workspacePatternArgs,
+export const workspaceRemoveCommand = define({
+	...workspaceRemoveDefinition,
 	async run(ctx) {
 		const values = ctx.values as WorkspacePatternValues
 		const workspaceRoot = resolveWorkspaceRoot(values)
@@ -137,11 +88,8 @@ const workspaceRemoveCommand = define({
 	},
 })
 
-const workspacePullCommand = define({
-	name: 'pull',
-	description: 'Clone a repository and add it to workspace patterns',
-	toKebab: true,
-	args: workspacePullArgs,
+export const workspacePullCommand = define({
+	...workspacePullDefinition,
 	async run(ctx) {
 		const values = ctx.values as WorkspacePullValues
 		const workspaceRoot = resolveWorkspaceRoot(values)
@@ -164,11 +112,8 @@ const workspacePullCommand = define({
 	},
 })
 
-const workspaceScanCommand = define({
-	name: 'scan',
-	description: 'Scan directories and refresh workspace candidate cache',
-	toKebab: true,
-	args: workspaceScanArgs,
+export const workspaceScanCommand = define({
+	...workspaceScanDefinition,
 	async run(ctx) {
 		const values = ctx.values as WorkspaceScanValues
 		const workspaceRoot = resolveWorkspaceRoot(values)
@@ -181,18 +126,7 @@ const workspaceScanCommand = define({
 })
 
 export const workspaceCommand = define({
-	name: 'workspace',
-	description: 'Manage workspaces (pnpm / yarn)',
-	toKebab: true,
-	args: workspaceRootArgs,
-	subCommands: new Map([
-		['prompt', workspacePromptCommand],
-		['list', workspaceListCommand],
-		['add', workspaceAddCommand],
-		['remove', workspaceRemoveCommand],
-		['pull', workspacePullCommand],
-		['scan', workspaceScanCommand],
-	]),
+	...workspaceCommandDefinition,
 	async run(ctx) {
 		await handleInteractive(resolveWorkspaceRoot(ctx.values as WorkspaceRootValues), ctx.log)
 	},

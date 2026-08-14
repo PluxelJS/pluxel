@@ -45,30 +45,50 @@ export function capitalize(s: string) {
 }
 
 export function parsePackageName(input: string, pluginPrefixes: string[]) {
+	const identity = parsePackageIdentity(input)
+	const prefixes = pluginPrefixes
+	const packageSegment = applyPluginPrefix(identity.name, prefixes)
+	const name = stripPluginPrefix(packageSegment, prefixes)
+	return {
+		scope: identity.scope,
+		name,
+		packageName: identity.scope ? `${identity.scope}/${packageSegment}` : packageSegment,
+	}
+}
+
+export function parsePackageIdentity(input: string) {
 	const raw = String(input).trim()
 	if (!raw) throw new Error('Missing packageName')
 	const match = raw.match(/^(@[^/]+)\/(.+)$/)
-	const prefixes = pluginPrefixes
-	if (match) {
-		const scope = match[1]
-		const scopedName = kebabCase(match[2])
-		const scopedPackage = applyPluginPrefix(scopedName, prefixes)
-		return { scope, name: scopedName, packageName: `${scope}/${scopedPackage}` }
+	if (!match) {
+		const name = kebabCase(raw)
+		return { scope: '', name, packageName: name }
 	}
-	const name = kebabCase(raw)
-	const packageName = applyPluginPrefix(name, prefixes)
-	return { scope: '', name, packageName }
+	const scope = match[1]!.toLowerCase()
+	const name = kebabCase(match[2])
+	return { scope, name, packageName: `${scope}/${name}` }
 }
 
 function applyPluginPrefix(name: string, prefixes: string[]) {
 	if (prefixes.length === 0) return name
-	const normalizedName = name
 	for (const prefix of prefixes) {
-		if (normalizedName.startsWith(prefix)) {
-			return normalizedName
-		}
+		if (hasPluginPrefix(name, prefix)) return name
 	}
 	const fallback = prefixes[0]!
-	const separator = fallback.endsWith('-') || normalizedName.startsWith('-') ? '' : '-'
-	return `${fallback}${separator}${normalizedName}`
+	const separator = fallback.endsWith('-') || name.startsWith('-') ? '' : '-'
+	return `${fallback}${separator}${name}`
+}
+
+function stripPluginPrefix(name: string, prefixes: string[]) {
+	for (const prefix of prefixes) {
+		if (!hasPluginPrefix(name, prefix)) continue
+		const stripped = name.slice(prefix.length).replace(/^-+/, '')
+		return stripped || name
+	}
+	return name
+}
+
+function hasPluginPrefix(name: string, prefix: string) {
+	if (!prefix) return false
+	return prefix.endsWith('-') ? name.startsWith(prefix) : name.startsWith(`${prefix}-`)
 }

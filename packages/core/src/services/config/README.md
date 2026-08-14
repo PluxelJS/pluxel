@@ -2,11 +2,12 @@
 
 ## 目标
 
-`ConfigService` 的职责是给 **插件侧** 提供一个稳定、极小的“读取配置快照”的契约，并且提供一个“是否启用”的偏好存储；同时它也承担唯一的“运行期配置引擎”职责：在插件启动前**确保配置已校验并回填默认值**，并维护“last-known-good”的 validated 视图缓存。
+`ConfigService` 是唯一的内存配置引擎：保存 raw record 与 revision，在插件启动前**确保配置已校验并回填默认值**，并维护 normalized snapshot 缓存。
 
 - Core 只负责：已声明配置字段的注入时机/规则、在插件 Context 下按插件名取配置。
-- 更推荐的用法：插件用 class field initializer 声明字段，例如 `field = this.configs.use(schema)` / `field = this.configs.use(cfg(schemaMap))` / `field = this.configs.use(cfg(schemaMap)\`...\`)`；schema/source 以及可选的 cfg layout 由上层工具链（如 configSourcePlugin）注册。
+- 插件用 class field initializer 声明字段，例如 `field = this.configs.use(schema)` 或 `field = this.configs.use(cfg(schemaMap))`；schema/source 以及可选 layout 由工具链注册。
 - 上层（App/HMR/Loader）负责：持久化、启用策略的解释、以及 UI/RPC 侧的“schema defaults / patch validation”等业务编排（这些在 core 里提供为纯函数 helper，不需要走 service）。
+- runtime 的 `ConfigService` 直接继承此引擎，只增加 persistence load/save、readonly policy 与 write coalescing；不复制 record、revision 或 validation 状态。
 
 ## Schema 合同（Standard Schema v1）
 
@@ -38,8 +39,7 @@ UI/RPC 往往需要：
 - `ensureValidated(pluginName, schemaMap)` **是幂等的**：当 raw revision 未变化且 schema 稳定（同一对象引用；或 schemaMap 仅被重新创建但复用同一批 schema 引用）时，会直接返回缓存的 validated 快照（避免 loader/runtime 重复校验）。
 - `patchConfig(name, patch)` 是“对某个插件名的配置快照打补丁”，用于测试/加载器模拟/持久化写入。
 - `unsetConfigKeys(name, keys)` 用于“重置到默认值”的语义：先删除 key，再由 `ConfigService.ensureValidated(...)` 回填。
-- `enabledInConfig` 是偏好集合：Core 不解释它，上层可用它决定是否启动插件。
-- `batch(run)` 用于对齐 HMR 版 API：Core 版仅同步合批，不做事务回滚。
+- `batch(run)` 在 core 中只是同步执行；runtime 子类用它合并持久化写入，不提供事务回滚语义。
 
 ## 扩展点（上层可覆盖）
 
@@ -49,11 +49,15 @@ UI/RPC 往往需要：
 - 支持 schema 校验、默认值、环境变量、热更新
 - 把 enable/disable 变成真正的启动策略
 
-建议在上层运行时覆盖/替换 `ConfigService` 的实现（保持同名 service key）：HMR 的落盘实现仍然只是在此基础上增加 I/O 与启用策略存储。
+上层运行时通过继承 `ConfigService` 并覆盖受保护的加载、可变策略与 mutation hook 增加 I/O。record/revision/validation 状态必须继续由 core 基类持有，避免出现第二套配置引擎。
+
+当前 persistent runtime 还会把 host 提供的 `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]`
+environment record 合并进初始 snapshot；这仍只是 raw record 的启动来源，校验、默认回填和 revision 全部由本 core
+service 处理。已有 file config 在加载后替换启动 snapshot。
 
 ## 测试策略
 
-优先用 `@pluxel/test` 的 `withHost()` 走真实插件启动流程：
+优先用 core test host 走真实插件启动流程：
 
 - 通过 `host.cfg(pluginCtor).set(record)` 构造注入快照
 - 在插件里调用 `ctx.configService.getValidatedConfig()` 或读取 `this.configs.use(...)` 声明的字段并断言

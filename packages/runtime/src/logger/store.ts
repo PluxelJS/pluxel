@@ -264,7 +264,7 @@ export class RuntimeLogStore {
 		this.headSeq = 1n
 		this.tailSeq = 0n
 		this.nextSeq = 1n
-			this.chunks.fill(undefined)
+		this.chunks.fill(undefined)
 		const meta = this.meta()
 		this.events.emit(RESET_EVENT, {
 			type: 'reset',
@@ -589,7 +589,7 @@ const DEFAULTS: RegistryDefaults = {
 	windowLines: 200_000,
 }
 
-class RuntimeLogStoreRegistry {
+export class RuntimeLogStoreRegistry {
 	private readonly stores = new Map<string, RuntimeLogStore>()
 	private readonly maxStores: number
 
@@ -634,6 +634,3 @@ class RuntimeLogStoreRegistry {
 		}
 	}
 }
-
-export const runtimeLogStores = new RuntimeLogStoreRegistry()
-export const runtimeLogs = runtimeLogStores.getOrCreate('default')

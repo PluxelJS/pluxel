@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/shared'
+import { PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE } from '@pluxel/runtime/internal'
 import { WorkspaceEntryResolver } from '../../src/hmr/engine/workspace-entry-resolver'
 import type { HmrPathApi } from '../../src/hmr/engine/environment'
 

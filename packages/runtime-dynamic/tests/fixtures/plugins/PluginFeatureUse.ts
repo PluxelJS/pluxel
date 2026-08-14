@@ -1,4 +1,5 @@
-import { BaseFeature, BasePlugin, Plugin, pluginMethodDecorator } from '@pluxel/runtime'
+import { pluginMethodDecorator } from '@pluxel/core'
+import { BaseFeature, BasePlugin, Plugin } from '@pluxel/runtime'
 
 @Plugin({ name: 'KvPlugin' })
 export class KvPlugin extends BasePlugin {}
@@ -12,7 +13,10 @@ class CacheFeature extends BaseFeature {
 	}
 }
 
-@Plugin({ name: 'PluginFeatureUse' })
+@Plugin({
+	name: 'PluginFeatureUse',
+	features: [CacheFeature],
+})
 export class PluginFeatureUse extends BasePlugin {
 	readonly cache = this.features.use(CacheFeature)
 }

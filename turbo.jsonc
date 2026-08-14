@@ -1,44 +1,20 @@
 {
 	"$schema": "https://turbo.build/schema.json",
-	"globalDependencies": [
-		"package.json",
-		"pnpm-lock.yaml",
-		"oxlint.config.ts",
-		// Many packages extend root TS configs; changing them must invalidate caches.
-		"tsconfig*.json",
-		// Workspace-level Vitest entry (used by `pnpm exec vitest` at repo root).
-		"vitest.config.ts",
-		"pnpm-workspace.yaml",
-	],
+	// Build/test packages are independent once their declared artifact prerequisites are ready.
+	// Use every logical processor; callers can still lower this with `--concurrency` when needed.
+	"concurrency": "100%",
+	// Keep a useful local history without allowing build artifacts to grow without bounds.
+	"cacheMaxAge": "30d",
+	"cacheMaxSize": "5GB",
+	// Test fixtures start file watchers; let constrained hosts opt into polling for every task.
+	"globalPassThroughEnv": ["CHOKIDAR_USEPOLLING"],
 	"tasks": {
 		"build": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
-		"@pluxel/rolldown#build": {
-			// Most internal packages resolve workspace sources through `@pluxel/source`
-			// or explicit source aliases. They need dependency source changes hashed,
-			// but they do not need upstream dist artifacts built first.
-			"dependsOn": [],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig*.json",
 				"!README.md",
 				"!**/*.md",
 				"!docs/**",
@@ -79,70 +55,10 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/core#build": {
-			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/context#build", "@pluxel/core-di#build"],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
-		"@pluxel/core-di#build": {
-			"dependsOn": [],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
-		"@pluxel/ops#build": {
-			"dependsOn": [],
-			"outputs": ["dist/**"],
-			"inputs": [
-				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
-				"!bench/**",
-				"!**/bench/**",
-				"!test/**",
-				"!tests/**",
-				"!**/test/**",
-				"!**/tests/**",
-				"!**/*.test.*",
-				"!**/*.spec.*",
-			],
-			"outputLogs": "new-only",
-		},
 		"@pluxel/runtime#build": {
 			"dependsOn": [
+				"@pluxel/commands#build",
 				"@pluxel/core#build",
-				"@pluxel/ops#build",
 				"@pluxel/rolldown#build",
 				"valibot-form#build",
 			],
@@ -169,7 +85,30 @@
 				"@pluxel/rolldown#build",
 				"@pluxel/core#build",
 				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
 			],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+				"!test/**",
+				"!tests/**",
+				"!**/test/**",
+				"!**/tests/**",
+				"!**/*.test.*",
+				"!**/*.spec.*",
+			],
+			"outputLogs": "new-only",
+		},
+		"@pluxel/runtime-dev#build": {
+			// Test helpers are development-only consumers; production compiler entries only need
+			// core, runtime and rolldown artifacts.
+			"dependsOn": ["@pluxel/core#build", "@pluxel/rolldown#build", "@pluxel/runtime#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -189,10 +128,7 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/runtime-static#build": {
-			"dependsOn": [
-				"@pluxel/core#build",
-				"@pluxel/runtime#build",
-			],
+			"dependsOn": ["@pluxel/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -212,10 +148,9 @@
 			"outputLogs": "new-only",
 		},
 		"@pluxel/cli#build": {
-			"dependsOn": [
-				"@pluxel/rolldown#build",
-				"@pluxel/runtime#build",
-			],
+			// CLI declarations reference the toolchain, while runtime integrations stay external and
+			// are loaded only when their commands execute.
+			"dependsOn": ["@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -234,8 +169,15 @@
 			],
 			"outputLogs": "new-only",
 		},
-		"@pluxel/components#build": {
-			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dynamic#build", "valibot-form#build"],
+		"@pluxel/workbench-app#build": {
+			"dependsOn": [
+				"@gqlens/react#build",
+				"@gqlens/vite#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dynamic#build",
+				"@worksplit/react#build",
+				"valibot-form#build",
+			],
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -270,10 +212,16 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			"dependsOn": ["build", "@pluxel/test#build"],
+			// The shared Vitest preset is loaded through its built package export. Do not make every
+			// workspace test depend on the runtime build: Vitest resolves runtime imports through the
+			// source condition, and a global edge invalidates every test cache on any runtime change.
+			"dependsOn": ["@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/oxlint.config.ts",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"$TURBO_ROOT$/vitest.config.ts",
 				"!README.md",
 				"!**/*.md",
 				"!docs/**",
@@ -281,6 +229,128 @@
 				"!bench/**",
 				"!**/bench/**",
 			],
+			"outputLogs": "errors-only",
+		},
+		"@pluxel/runtime#test": {
+			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
+			// stable instead of testing while the runtime build cleans and replaces dist.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-dev#test": {
+			// Real Vite runners exercise Node-facing runtime package exports.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-dynamic#test": {
+			// Real distribution-mode config reloads and the fixed-plugin identity smoke test resolve
+			// package exports outside Vitest's source condition. Their own dist must not race a clean
+			// runtime-dynamic build, and the child process also consumes the runtime distribution.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/runtime-static#test": {
+			// Static host integration exercises Node-facing runtime package exports.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/echarts#test": {
+			// The render contract builds and executes a real worker module.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/workbench-app#test": {
+			// The UI package intentionally tests the published Workbench contract modules.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/rolldown#test": {
+			// Packaging invariants intentionally inspect the runtime-static production declarations.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime-static#build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/oxlint.config.ts",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"$TURBO_ROOT$/vitest.config.ts",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+				"!bench/**",
+				"!**/bench/**",
+			],
+			"outputLogs": "errors-only",
+		},
+		"@gqlens/codegen#test": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@gqlens/react#test": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@gqlens/vite#test": {
+			"dependsOn": [
+				"@gqlens/codegen#build",
+				"@gqlens/core#build",
+				"@pluxel/test#build",
+				"@pluxel/runtime#build",
+			],
+		},
+		"@worksplit/react#test": {
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@worksplit/core#build"],
+		},
+		"typecheck": {
+			// Plugin projects and the test helpers validate the published runtime declaration boundary.
+			// Only the few consumers that import runtime-dev declarations add that build explicitly
+			// below; a global edge made unrelated typechecks wait for and hash runtime-dev.
+			"dependsOn": ["@pluxel/runtime#build"],
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig*.json",
+				"!README.md",
+				"!**/*.md",
+				"!docs/**",
+				"!**/docs/**",
+			],
+			"outputLogs": "errors-only",
+		},
+		"@gqlens/codegen#typecheck": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
+		},
+		"@gqlens/react#typecheck": {
+			"dependsOn": ["@gqlens/core#build", "@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
+		},
+		"@gqlens/vite#typecheck": {
+			"dependsOn": [
+				"@gqlens/codegen#build",
+				"@gqlens/core#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
+			],
+		},
+		"@worksplit/react#typecheck": {
+			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build", "@worksplit/core#build"],
+		},
+		"@pluxel/package-manager#typecheck": {
+			// PackageManager consumes the dist declaration boundary of the dynamic source-producer
+			// and HMR host subpaths while plugin TypeScript stays on the @pluxel/hmr condition.
+			"dependsOn": ["@pluxel/runtime-dynamic#build"],
+		},
+		"@pluxel/workbench-app#typecheck": {
+			// Vendored UI packages expose their built declarations by default. A clean checkout has
+			// no dist files, so typecheck must not race those declaration builds.
+			"dependsOn": [
+				"@gqlens/react#build",
+				"@gqlens/vite#build",
+				"@pluxel/runtime#build",
+				"@pluxel/runtime-dev#build",
+				"@worksplit/react#build",
+			],
+		},
+		"@pluxel/plugins-host#typecheck": {
+			// The maintainer host is the explicit dist-boundary smoke check.
+			"dependsOn": [
+				"@pluxel/cli#build",
+				"@pluxel/runtime-dynamic#build",
+				"@pluxel/runtime-static#build",
+			],
+			"outputs": [],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/tsconfig*.json"],
 			"outputLogs": "errors-only",
 		},
 		"dev": {

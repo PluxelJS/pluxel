@@ -1,38 +1,3 @@
-export { ensurePluxelLogging, type EnsurePluxelLoggingOptions } from './logger/ensure'
-
-export {
-	getDebugLogger,
-	isDebugTopicEnabled,
-	resolveDebugTopics,
-	type DebugTopic,
-} from '@pluxel/core/logger'
-
-export {
-	createRuntimeLogging,
-	type ResolvedConsoleSink,
-	type ResolvedFileSink,
-	type ResolvedRuntimeLoggingConfig,
-	type ResolvedUiSink,
-	type RuntimeConsoleSinkInput,
-	type RuntimeFileSinkInput,
-	type RuntimeLogging,
-	type RuntimeLoggingDescription,
-	type RuntimeLoggingInput,
-	type RuntimeLoggingPreset,
-	type RuntimeLoggingSinkId,
-	type RuntimeUiSinkInput,
-} from './logger/logging'
-
-export {
-	createDailyTimeRotatingFileSink,
-	getTimeRotatingFileSink,
-	type PluxelDailyFileSinkOptions,
-	type TimeRotationInterval,
-	type TimeRotatingFileSinkOptions,
-} from './logger/file'
-
-export { ensureRuntimePluginPolicyLoaded, persistRuntimePluginPolicy } from './logger/levels'
-
 export type {
 	CompiledLogFilter,
 	LogFilter,
@@ -49,17 +14,19 @@ export type {
 } from './logger/protocol'
 export { compileLogFilter, matchesLogFilter, matchesLogFilterCompiled } from './logger/protocol'
 
-export { createRuntimeLogSink, type RuntimeLogSinkOptions } from './logger/sink'
-
 export {
+	DEFAULT_PLUGIN_LOG_POLICY,
 	RuntimePluginLogPolicy,
+	normalizePluginLogPolicySnapshot,
 	parsePluginLogPolicySnapshot,
-	runtimePluginLogPolicy,
 	serializePluginLogPolicySnapshot,
+	type PluginLogPolicyPersistence,
+	type PluginLogPolicyMutationResult,
 	type PluginLogPolicySnapshot,
+	type PluginLogPolicyStore,
 	type RuntimePluginLogLevel,
+	type VersionedPluginLogPolicySnapshot,
 } from './logger/policy'
-export { readPluginLogPolicyFile, writePluginLogPolicyFile } from './logger/policy-file'
 
 export type {
 	RuntimeLogStoreAppend,
@@ -67,4 +34,18 @@ export type {
 	RuntimeLogStoreOptions,
 	RuntimeLogStoreReset,
 } from './logger/store'
-export { RuntimeLogStore, runtimeLogs, runtimeLogStores } from './logger/store'
+export { RuntimeLogStore, RuntimeLogStoreRegistry } from './logger/store'
+
+export type {
+	ResolvedRuntimeLoggingPlan,
+	RuntimeConsoleSinkInput,
+	RuntimeCustomSinkInput,
+	RuntimeFileSinkInput,
+	RuntimeLoggingDescription,
+	RuntimeLoggingInput,
+	RuntimeLoggingRootInput,
+	RuntimeLoggingRouteBinding,
+	RuntimeLoggingSinkInput,
+	RuntimeLoggingState,
+	RuntimeStoreSinkInput,
+} from './logger/logging'

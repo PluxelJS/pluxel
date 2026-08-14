@@ -14,10 +14,6 @@
 			"@pluxel/source": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./extensions": {
-			"@pluxel/source": "./src/extensions.ts",
-			"default": "./dist/extensions.mjs"
-		},
 		"./hmr-log": {
 			"@pluxel/source": "./src/hmr-log.ts",
 			"default": "./dist/hmr-log.mjs"
@@ -26,14 +22,18 @@
 			"@pluxel/source": "./src/vite.ts",
 			"default": "./dist/vite.mjs"
 		},
+		"./workbench": {
+			"@pluxel/source": "./src/workbench.ts",
+			"default": "./dist/workbench.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./extensions": "./dist/extensions.mjs",
 			"./hmr-log": "./dist/hmr-log.mjs",
 			"./vite": "./dist/vite.mjs",
+			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
 		}
 	},
@@ -51,7 +51,7 @@
 	"devDependencies": {
 		"@logtape/logtape": "^2.0.2",
 		"@pluxel/test": "workspace:*",
-		"typescript": "^6.0.3",
+		"typescript": "catalog:",
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {

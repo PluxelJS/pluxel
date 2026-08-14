@@ -1,0 +1,34 @@
+# {{packageName}}
+
+{{description}}
+
+Before changing plugin code or package/build configuration, start at
+[`docs/pluxel/README.md`](docs/pluxel/README.md). The CLI copies the same authoring, package,
+testing, and Oxlint guidance used by Pluxel itself.
+
+## Install
+
+```sh
+pnpm add {{packageName}} @pluxel/runtime
+```
+
+Import the plugin constructor into a static catalog or expose the package through a dynamic loader
+workspace profile. Both routes use the same plugin class.
+
+```ts
+import { {{className}}Plugin } from '{{packageName}}'
+
+export const plugins = [{{className}}Plugin]
+```
+
+## Develop
+
+```sh
+pnpm install
+pnpm verify
+```
+
+`verify` checks Oxfmt, Oxlint with the Pluxel rule plugin, unused lint suppressions, types, tests, and
+the production plugin build. Runtime is a peer dependency; build and test tooling stays in
+development dependencies. `pnpm-workspace.yaml` owns their shared compatible ranges through the
+catalog and explicitly allows the esbuild install script required by the toolchain.

@@ -3,14 +3,8 @@ import type { Context as PluxelContext } from '@pluxel/core'
 export type SecurityEvent = {
 	id: string
 	at: number
-	area: 'verification' | 'vault'
-	action:
-		| 'authorize'
-		| 'verify'
-		| 'clear'
-		| 'preflight'
-		| 'unlock'
-		| 'rekey'
+	area: 'adminAccess' | 'vault'
+	action: 'authorize' | 'verify' | 'clear' | 'preflight' | 'unlock' | 'rekey'
 	status: 'success' | 'failure' | 'info'
 	mount?: string
 	reason?: string
@@ -50,10 +44,7 @@ export function recordSecurityEvent(
 	return next
 }
 
-export function listSecurityEvents(
-	ctx: PluxelContext,
-	limit = 50,
-): SecurityEvent[] {
+export function listSecurityEvents(ctx: PluxelContext, limit = 50): SecurityEvent[] {
 	const state = resolveState(ctx)
 	return state.events.slice(0, Math.max(0, limit))
 }

@@ -1,39 +1,43 @@
 {
 	"$schema": "https://market.pluxel.dev/schema/package.json",
 	"name": "{{packageName}}",
-	"description": "{{description}}",
+	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
-	"types": "./dist/index.d.mts",
-	"exports": {
-		".": {
-			"@pluxel/runtime": "./src/{{pluginName}}.ts",
-			"default": "./dist/index.mjs"
-		},
-		"./package.json": "./package.json"
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": ">=11 <12",
+			"onFail": "error"
+		}
 	},
-	"files": ["!**/*.map", "dist"],
+	"files": [
+		"dist",
+		"!**/*.map"
+	],
 	"scripts": {
 		"build": "pluxel build",
-		"build:plugin": "pluxel build",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error src tests tsdown.config.ts vitest.config.ts oxlint.config.ts",
+		"lint:fix": "pnpm lint --fix",
+		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --write .",
+		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --check .",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"typecheck": "tsc -p tsconfig.test.json --noEmit"
+		"typecheck": "tsc --noEmit --pretty false",
+		"verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/runtime": "catalog:"
 	},
 	"devDependencies": {
-		"@pluxel/cli": "workspace:*",
-		"@pluxel/test": "workspace:*",
-		"typescript": "^5.9.3",
-		"vitest": "^4.0.18"
-	},
-	"publishConfig": {
-		"exports": {
-			".": "./dist/index.mjs",
-			"./package.json": "./package.json"
-		}
+		"@pluxel/cli": "catalog:",
+		"@pluxel/core": "catalog:",
+		"@pluxel/rolldown": "catalog:",
+		"@pluxel/test": "catalog:",
+		"oxfmt": "catalog:",
+		"oxlint": "catalog:",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	}
 }

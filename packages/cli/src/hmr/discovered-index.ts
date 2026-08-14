@@ -1,9 +1,8 @@
 import { writeFileSync } from 'node:fs'
-import type { DiscoveredPlugin } from '@pluxel/runtime-dynamic/hmr'
+import type { DiscoveredPlugin } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { dirname, resolve } from 'pathe'
 
-export const DEFAULT_LOADER_HMR_DISCOVERED_BASENAME =
-	'pluxel.loader.hmr.discovered.jsonc' as const
+export const DEFAULT_LOADER_HMR_DISCOVERED_BASENAME = 'pluxel.loader.hmr.discovered.jsonc' as const
 
 function toPosix(p: string) {
 	return p.replaceAll('\\', '/')
@@ -42,8 +41,6 @@ export function writeLoaderHmrDiscoveredIndex(params: {
 	rootsExpandedAbs?: string[]
 	excludeGlobs?: string[]
 	hiddenPackages?: string[]
-	builtinPackages?: string[]
-	omitFromEntries?: string[]
 	discovered: DiscoveredPlugin[]
 }) {
 	const rootDirAbs = resolve(params.rootDir)
@@ -51,12 +48,10 @@ export function writeLoaderHmrDiscoveredIndex(params: {
 		(a, b) => a.name.localeCompare(b.name) || a.pkgDir.localeCompare(b.pkgDir),
 	)
 
-	const builtinPackages = uniqSorted((params.builtinPackages ?? []).map(String).filter(Boolean))
-	const omitFromEntries = uniqSorted((params.omitFromEntries ?? []).map(String).filter(Boolean))
 	const hiddenPackages = uniqSorted((params.hiddenPackages ?? []).map(String).filter(Boolean))
 
 	const discoveredNames = uniqSorted(discoveredSorted.map((p) => p.name))
-	const enabledCandidates = discoveredNames.filter((n) => !builtinPackages.includes(n))
+	const enabledCandidates = discoveredNames
 
 	const rootsExpanded = params.rootsExpandedAbs?.length
 		? params.rootsExpandedAbs.map((abs) => toRootRelative(rootDirAbs, abs))
@@ -72,10 +67,6 @@ export function writeLoaderHmrDiscoveredIndex(params: {
 			...(rootsExpanded ? { rootsExpanded } : {}),
 			...(params.excludeGlobs?.length ? { excludeGlobs: [...params.excludeGlobs] } : {}),
 			...(hiddenPackages.length > 0 ? { hiddenPackages } : {}),
-		},
-		builtin: {
-			...(builtinPackages.length > 0 ? { packages: builtinPackages } : {}),
-			...(omitFromEntries.length > 0 ? { omitFromEntries } : {}),
 		},
 		discovered: {
 			count: discoveredSorted.length,

@@ -1,102 +1,170 @@
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { configureSync, resetSync } from '@logtape/logtape'
-import { LoggerService } from '@pluxel/core/services'
-import { join } from 'pathe'
-import { afterEach, describe, expect, it } from 'vitest'
+import { configureSync, getConfig, reset } from '@logtape/logtape'
+import { LoggerService } from '@pluxel/core/logger'
 import {
 	createRuntimeLogging,
-	runtimeLogStores,
-	writePluginLogPolicyFile,
-} from '@pluxel/runtime/logger'
-import { withRuntimeContext } from '@pluxel/runtime/test'
-import { createLoggerPluginContext } from '../support/logger-context'
+	type RuntimeLogging,
+	type RuntimeLoggingInput,
+} from '@pluxel/runtime/internal'
+import { afterEach, describe, expect, it } from 'vitest'
 
-async function emitPluginLog(pluginId: string, level: 'debug' | 'info', message: string) {
-	return withRuntimeContext((root) => {
-		const logger = new LoggerService(createLoggerPluginContext(root, pluginId))
-		logger[level](message)
-	})
+function storePlan(initialPluginPolicy?: RuntimeLoggingInput['root']['initialPluginPolicy']) {
+	return {
+		root: {
+			profile: 'test',
+			initialPluginPolicy,
+			debugTopics: ['hmr:*'],
+		},
+		sinks: {
+			store: {
+				kind: 'store',
+				streamId: 'default',
+				bufferSize: 1,
+				flushIntervalMs: 0,
+				caller: true,
+			},
+		},
+		routes: {
+			runtime: [{ sink: 'store', minLevel: 'trace' }],
+			plugins: [{ sink: 'store', minLevel: 'trace' }],
+			debug: [{ sink: 'store', minLevel: 'trace' }],
+			meta: [],
+		},
+	} satisfies RuntimeLoggingInput
 }
 
-describe('createRuntimeLogging', () => {
-	let tmp: string | undefined
+function pluginLogger(logging: RuntimeLogging, pluginId: string) {
+	return new LoggerService(
+		{ name: pluginId, pluginInfo: { id: pluginId } } as never,
+		logging.contextBinding,
+	)
+}
+
+describe('RuntimeLogging', () => {
+	let logging: RuntimeLogging | undefined
 
 	afterEach(async () => {
-		resetSync()
-		if (tmp) await rm(tmp, { recursive: true, force: true })
-		tmp = undefined
+		await logging?.dispose()
+		logging = undefined
+		if (getConfig()) await reset()
 	})
 
-	it('resolves explicit sinks and policy into inspectable config', () => {
-		const logging = createRuntimeLogging({
-			profile: 'plugins-host',
-			preset: 'hmr',
-			minLevel: 'debug',
-			sinks: {
-				console: { enabled: true, caller: true, youch: false },
-				file: { enabled: true, path: './logs/runtime.log', caller: false },
-				ui: { enabled: true, streamId: 'inspect', caller: true },
-			},
-			pluginPolicy: { defaultLevel: 'info', overrides: { PluginA: 'debug' } },
-			debugTopics: ['pluxel:runtime:*'],
-		})
-
+	it('resolves an inspectable root plan without per-plugin logger config', () => {
+		logging = createRuntimeLogging(
+			storePlan({ version: 1, defaultLevel: 'info', overrides: { PluginA: 'debug' } }),
+		)
 		const description = logging.describe()
-		expect(description.resolved.sinks.console?.caller).toBe(true)
-		expect(description.resolved.sinks.file?.caller).toBe(false)
-		expect(description.resolved.sinks.ui?.caller).toBe(true)
-		expect(description.policy).toEqual({
+		expect(description.state).toBe('created')
+		expect(description.plan.root.id).toBeTruthy()
+		expect(description.plan.routes.plugins).toEqual([{ sink: 'store', minLevel: 'trace' }])
+		expect(description.root.policy).toMatchObject({
+			version: 1,
 			defaultLevel: 'info',
 			overrides: { PluginA: 'debug' },
 		})
-
-		const config = logging.logtapeConfig()
-		expect(config.sinks).toHaveProperty('console')
-		expect(config.sinks).toHaveProperty('file')
-		expect(config.sinks).toHaveProperty('ui')
-		expect(config.filters).toHaveProperty('pluxelPluginLevels')
 	})
 
-	it('loads persisted policy before configuring LogTape', async () => {
-		tmp = await mkdtemp(join(tmpdir(), 'pluxel-runtime-logging-'))
-		const policyPath = join(tmp, 'logging-policy.json')
-		const streamId = 'policy-configure'
-		await writePluginLogPolicyFile(policyPath, {
-			defaultLevel: 'warning',
-			overrides: { PluginA: 'debug' },
-		})
+	it('changes one plugin level without reconfiguring LogTape', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const config = getConfig()
+		const logger = pluginLogger(logging, 'PluginA')
 
-		const logging = createRuntimeLogging({
-			preset: 'hmr',
-			sinks: {
-				console: false,
-				file: false,
-				ui: { enabled: true, streamId, bufferSize: 1, flushIntervalMs: 0, caller: false },
-			},
-			pluginPolicy: { path: policyPath, defaultLevel: 'info' },
-		})
+		logger.debug('rejected')
+		logging.policy.setPluginLevel('PluginA', 'debug')
+		logger.debug('accepted')
 
-		await expect(logging.configure()).resolves.toBe(true)
-		expect(logging.policy.snapshot()).toEqual({
-			defaultLevel: 'warning',
-			overrides: { PluginA: 'debug' },
-		})
-
-		await emitPluginLog('PluginA', 'debug', 'debug from A')
-		await emitPluginLog('PluginB', 'info', 'info from B')
-
-		const lines = runtimeLogStores.getOrCreate(streamId).tailWindow(10)
-		expect(lines.map((line) => line.pluginId)).toEqual(['PluginA'])
+		expect(getConfig()).toBe(config)
+		expect(
+			logging.stores
+				.getOrCreate('default')
+				.tailWindow(10)
+				.map((line) => ({ message: line.msg, pluginId: line.pluginId })),
+		).toEqual([{ message: 'accepted', pluginId: 'PluginA' }])
 	})
 
-	it('does not reconfigure when LogTape is already configured', async () => {
-		configureSync({
-			sinks: { capture() {} },
-			loggers: [{ category: ['pluxel'], sinks: ['capture'], lowestLevel: 'info' }],
+	it('preserves an error-like property in both structured log views', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const diagnostic = Object.assign(new Error('source unavailable'), {
+			code: 'unavailable',
+			retryable: false,
+		})
+		diagnostic.name = 'ProviderError'
+
+		pluginLogger(logging, 'PluginA').warn('playback failed', { error: diagnostic })
+
+		const line = logging.stores.getOrCreate('default').tailWindow(1)[0]
+		expect(line?.props?.error).toMatchObject({
+			name: 'ProviderError',
+			message: 'source unavailable',
+			code: 'unavailable',
+			retryable: false,
+		})
+		expect(line?.error).toMatchObject({
+			name: 'ProviderError',
+			message: 'source unavailable',
+			code: 'unavailable',
+			retryable: false,
+		})
+	})
+
+	it('intersects plugin policy with the root debug topic matcher', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const logger = pluginLogger(logging, 'PluginA')
+
+		logger.getDebugChannel('hmr:cache').debug('policy rejected')
+		logging.policy.setPluginLevel('PluginA', 'debug')
+		logger.getDebugChannel('other:cache').debug('topic rejected')
+		logger.getDebugChannel('hmr:cache').debug('accepted')
+
+		expect(
+			logging.stores
+				.getOrCreate('default')
+				.tailWindow(10)
+				.map((line) => ({ message: line.msg, pluginId: line.pluginId })),
+		).toEqual([{ message: 'accepted', pluginId: 'PluginA' }])
+	})
+
+	it('fails closed for records bound to another root', async () => {
+		logging = createRuntimeLogging(storePlan())
+		await logging.install()
+		await logging.initializePolicy()
+		const foreign = new LoggerService({ name: 'PluginA', pluginInfo: { id: 'PluginA' } } as never, {
+			rootId: 'foreign-root',
 		})
 
-		const logging = createRuntimeLogging({ sinks: { console: false, file: false, ui: false } })
-		await expect(logging.configure()).resolves.toBe(false)
+		foreign.info('foreign')
+		expect(logging.stores.getOrCreate('default').tailWindow(10)).toHaveLength(0)
+		expect(logging.describe().diagnostics.wrongRootRecords).toBe(1)
+	})
+
+	it('rejects installation when LogTape has a foreign owner', async () => {
+		configureSync({ sinks: {}, loggers: [] })
+		logging = createRuntimeLogging(storePlan())
+		await expect(logging.install()).rejects.toThrow('foreign owner')
+	})
+
+	it('bounds compiled debug topic patterns', () => {
+		expect(() =>
+			createRuntimeLogging({
+				...storePlan(),
+				root: { profile: 'test', debugTopics: ['x'.repeat(81)] },
+			}),
+		).toThrow('Invalid debug topic pattern')
+	})
+
+	it('releases the LogTape process exit hook when disposed', async () => {
+		const before = process.listenerCount('exit')
+		for (let index = 0; index < 12; index++) {
+			logging = createRuntimeLogging(storePlan())
+			await logging.install()
+			await logging.dispose()
+			logging = undefined
+		}
+		expect(process.listenerCount('exit')).toBe(before)
 	})
 })

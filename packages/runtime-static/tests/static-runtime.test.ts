@@ -1,17 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import { createDiskFixture } from '@pluxel/test/fixtures'
+import { describe, expect, it, vi } from 'vitest'
 
 import { setParamToken } from '@pluxel/core'
+import { getActiveRuntimeLogging } from '@pluxel/runtime/internal'
+import { installWorkbench } from '@pluxel/runtime/internal/static'
+import { defineProduct } from '@pluxel/runtime/product'
 import { RUNTIME_INTERNAL_API_BASE, RUNTIME_TRANSPORT_PATHS } from '@pluxel/runtime/web/paths'
+import { workbench } from '@pluxel/runtime/workbench'
+import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 import {
 	BasePlugin,
-	createStaticRuntime,
-	defineStaticRuntimeConfig,
+	defineStaticRuntime,
 	Plugin,
 	type StaticRuntimePluginStatus,
 } from '@pluxel/runtime-static'
-import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
+import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
+import * as runtimeStaticVite from '@pluxel/runtime-static/vite'
 
 import { createStaticRuntimeHost } from '../src/internal/host'
+import { runStaticNodeApplication } from '../src/internal/node-application'
 import { reloadStaticRuntime } from '../src/hmr'
 import type { StaticRuntimeHost } from '../src/types'
 
@@ -45,6 +52,11 @@ class InvalidConfigPlugin extends BasePlugin {
 	value = this.configs.use(RequiredStringSchema as never)
 }
 
+@Plugin({ name: 'SchemaSourcePlugin' })
+class SchemaSourcePlugin extends BasePlugin {
+	value = this.configs.use(RequiredStringSchema as never)
+}
+
 const hotConfigRuns: string[] = []
 
 @Plugin({ name: 'HotConfig' })
@@ -72,46 +84,151 @@ class DisabledHotV2 extends BasePlugin {
 }
 
 describe('@pluxel/runtime-static', () => {
-	it('exposes a marked static runtime config and a single route plugin entry', () => {
-		const config = defineStaticRuntimeConfig({
+	it('exposes a marked static application and one shared Vite source plugin group', async () => {
+		const application = defineStaticRuntime({
 			name: 'static-vite-config-test',
-			profile: 'test',
 			plugins: [],
-			runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+			configure: () => ({
+				profile: 'test',
+				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+			}),
 		})
-		const plugins = staticRuntimeVitePlugin({ config: './pluxel.static.ts' }) as Array<{
+		const plugins = runtimeStaticVite.staticRuntimeVitePlugin({
+			entry: './pluxel.static.ts',
+		}) as Array<{
 			name?: string
 			apply?: unknown
+			config?: (config: { cacheDir?: string }) =>
+				| {
+						resolve?: { dedupe?: string[] }
+						server?: { watch?: { ignored?: string[] } }
+						cacheDir?: string
+						[key: string]: unknown
+				  }
+				| undefined
 		}>
 
-		expect(Object.keys(config)).toEqual(['name', 'profile', 'plugins', 'runtimeState'])
+		expect(Object.keys(application)).toEqual(['name', 'plugins', 'configure'])
 		expect(() =>
-			defineStaticRuntimeConfig({
+			defineStaticRuntime({
 				name: 'static-vite-rejected',
 				plugins: [],
 				vite: {},
 			} as never),
-		).toThrow(/nested "vite" field/i)
+		).toThrow(/unsupported "vite"/i)
 		expect(() =>
-			defineStaticRuntimeConfig({
+			defineStaticRuntime({
 				name: 'static-hmr-rejected',
 				plugins: [],
 				hmr: {},
 			} as never),
-		).toThrow(/must not include an "hmr" field/i)
-		expect(() =>
-			defineStaticRuntimeConfig({
-				name: 'static-http-internals-rejected',
-				plugins: [],
-				http: { uiAssets: 'disabled' },
-			} as never),
-		).toThrow(/http must not include "uiAssets"/i)
+		).toThrow(/unsupported "hmr"/i)
+		await expect(
+			createStaticRuntimeTestHost(
+				defineStaticRuntime({
+					name: 'static-http-internals-rejected',
+					plugins: [],
+					configure: () => ({ http: { uiAssets: 'disabled' } }) as never,
+				}),
+			),
+		).rejects.toThrow(/http must not include "uiAssets"/i)
+		await expect(
+			createStaticRuntimeTestHost(
+				defineStaticRuntime({
+					name: 'static-context-workbench-rejected',
+					plugins: [],
+					configure: () =>
+						({
+							context: { workbench: { enabled: true } },
+						}) as never,
+				}),
+			),
+		).rejects.toThrow(/context must not include "workbench"/i)
 		expect(plugins.map((plugin) => plugin.name)).toEqual([
+			'unplugin-preprocessor-directives',
+			'pluxel:database-source',
+			'pluxel:plugin-semantics',
+			'pluxel-lint-guard',
+			'pluxel-config-source',
 			'pluxel:static-runtime-source',
-			'pluxel-runtime-ui-bridge',
+			'pluxel:host-modules',
 			'pluxel:static-runtime',
 		])
-		expect(plugins[2]?.apply).toBe('serve')
+		expect(plugins.at(-1)?.apply).toBe('serve')
+		expect(plugins.at(-1)?.config?.({})).toMatchObject({
+			cacheDir: '.pluxel/vite/static-runtime-v2',
+			optimizeDeps: {
+				entries: [expect.stringContaining('/packages/workbench-app/src/client.tsx')],
+				include: expect.arrayContaining(['@tabler/icons-react']),
+			},
+		})
+		expect(plugins.at(-1)?.config?.({ cacheDir: '/custom/vite-cache' })).not.toHaveProperty(
+			'cacheDir',
+		)
+		expect(plugins.at(-3)?.config?.({})?.resolve?.dedupe).toEqual(
+			expect.arrayContaining(['react', 'react-dom', '@mantine/core', '@mantine/hooks']),
+		)
+		expect(plugins.at(-3)?.config?.({})?.server?.watch?.ignored).toContain('**/.pluxel/**')
+		expect('defineStaticRuntime' in runtimeStaticVite).toBe(false)
+	})
+
+	it('rejects unmarked objects at every application adapter boundary', async () => {
+		await expect(
+			createStaticRuntimeTestHost({
+				name: 'unmarked-static-application',
+				plugins: [],
+			} as never),
+		).rejects.toThrow('must be created with defineStaticRuntime')
+	})
+
+	it('preserves application binding types and values through the test adapter', async () => {
+		let bindingValue = ''
+		const application = defineStaticRuntime<readonly [], { serviceUrl: string }>({
+			name: 'typed-static-bindings',
+			plugins: [],
+			configure({ bindings }) {
+				bindingValue = bindings.serviceUrl
+				return {
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+				}
+			},
+		})
+		const runtime = await createStaticRuntimeTestHost(application, {
+			bindings: { serviceUrl: 'https://service.test' },
+		})
+		try {
+			expect(bindingValue).toBe('https://service.test')
+		} finally {
+			await runtime.stop()
+		}
+	})
+
+	it('uses reserved environment entries as initial plugin config without application mapping', async () => {
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
+				name: 'static-environment-config',
+				plugins: [SchemaSourcePlugin],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: ['SchemaSourcePlugin'] },
+					},
+				}),
+			}),
+			{
+				env: { PLUXEL_CONFIG__SchemaSourcePlugin__value: 'from-environment' },
+			},
+		)
+		try {
+			expect(runtime.ctx.configService.getRawConfig('SchemaSourcePlugin')).toEqual({
+				value: 'from-environment',
+			})
+			expect(runtime.ctx.registry.getInstance(SchemaSourcePlugin)?.value).toBe('from-environment')
+		} finally {
+			await runtime.stop()
+		}
 	})
 
 	it('creates a direct fetch runtime from the route-neutral config', async () => {
@@ -119,41 +236,86 @@ describe('@pluxel/runtime-static', () => {
 		class DirectHttp extends BasePlugin {
 			override init(): void {
 				this.ctx.http.plugin.routes((app) => app.get('/ping', 'pong'))
+				this.ctx.http.host.routes((app) => app.post('/rpc', () => 'ok'), {
+					id: 'DirectHttp:public-api',
+					path: '/public-api',
+				})
 			}
 		}
 
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
 				name: 'static-direct-fetch',
 				plugins: [DirectHttp],
-				configService: { mode: 'memory' },
-				runtimeState: {
-					mode: 'memory',
-					snapshot: { enabled: ['DirectHttp'] },
-				},
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: ['DirectHttp'] },
+					},
+				}),
 			}),
 		)
 		try {
 			const response = await runtime.fetch(
 				new Request('http://local.test/__pluxel/plugins/DirectHttp/ping'),
 			)
+			const publicApi = await runtime.fetch(
+				new Request('http://local.test/public-api/rpc', { method: 'POST' }),
+			)
 			const root = await runtime.fetch(new Request('http://local.test/'))
 
 			expect(await response.text()).toBe('pong')
+			expect(await publicApi.text()).toBe('ok')
+			expect(runtime.ctx.http.matchesMountedRoute('/public-api/rpc')).toBe(true)
 			expect(root.status).toBe(404)
 		} finally {
 			await runtime.stop()
 		}
 	})
 
-	it('serves internal GraphQL by default without enabling management UI/RPC/SSE', async () => {
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
+	it('tears down a prepared host when application startup policy fails', async () => {
+		await expect(
+			createStaticRuntimeTestHost(
+				defineStaticRuntime({
+					name: 'static-prepare-failure',
+					plugins: [],
+					configure: () => ({
+						configService: { mode: 'memory' },
+						runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					}),
+					prepare: () => {
+						throw new Error('prepare failed')
+					},
+				}),
+			),
+		).rejects.toThrow('prepare failed')
+		expect(getActiveRuntimeLogging()).toBeUndefined()
+	})
+
+	it('serves internal GraphQL by default without enabling workbench UI/RPC/SSE', async () => {
+		let mounted = false
+		@Plugin({ name: 'HeadlessWebGate' })
+		class HeadlessWebGate extends BasePlugin {
+			override init(): void {
+				mounted = Boolean(
+					this.ctx.workbench.mount(
+						workbench.extension({ contract: workbenchContract.define({}) }),
+						{},
+					),
+				)
+			}
+		}
+
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
 				name: 'static-direct-graphql',
-				plugins: [],
-				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				management: { enabled: false, access: { exposure: 'private' } },
+				plugins: [HeadlessWebGate],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: ['HeadlessWebGate'] } },
+					workbench: false,
+				}),
 			}),
 		)
 		try {
@@ -171,59 +333,66 @@ describe('@pluxel/runtime-static', () => {
 			expect(response.status).toBe(200)
 			const json = (await response.json()) as { data?: { _empty?: string } }
 			expect(json.data?._empty).toBe('ok')
+			expect(mounted).toBe(false)
+			expect(runtime.ctx.registry.isRunning(HeadlessWebGate)).toBe(true)
 		} finally {
 			await runtime.stop()
 		}
 	})
 
 	it('applies static config fields for default runtime services without nesting them under context', async () => {
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
 				name: 'static-default-services',
 				plugins: [],
-				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				persistence: { mode: 'memory' },
-				pluginData: { enabled: false },
-				logger: { preset: 'hmr' },
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					persistence: { mode: 'memory' },
+					database: false,
+				}),
 			}),
 		)
 		try {
 			expect(runtime.ctx.root.persistence.capability).toBe('ephemeral')
-			expect(runtime.ctx.config.pluginData).toEqual({ enabled: false })
-			expect(runtime.ctx.config.logger).toMatchObject({ preset: 'hmr' })
+			expect(runtime.ctx.config.database).toBe(false)
+			expect(runtime.ctx.config.logger?.rootId).toEqual(expect.any(String))
+			expect(getActiveRuntimeLogging()?.resolved.sinks).not.toHaveProperty('store')
 		} finally {
 			await runtime.stop()
 		}
 	})
 
-	it('fails fast when management is enabled without importing web-management', async () => {
-		await expect(
-			createStaticRuntime(
-				defineStaticRuntimeConfig({
-					name: 'static-management-without-web-management',
-					plugins: [],
-					configService: { mode: 'memory' },
-					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-					management: { enabled: true, access: { exposure: 'private' } },
-				}),
-			),
-		).rejects.toThrow(/services\/web-management/)
-	})
+	it('installs Workbench Plane from the single host configuration boundary', async () => {
+		let mounted = false
+		@Plugin({ name: 'ManagedWebGate' })
+		class ManagedWebGate extends BasePlugin {
+			override init(): void {
+				mounted = Boolean(
+					this.ctx.workbench.mount(
+						workbench.extension({ contract: workbenchContract.define({}) }),
+						{},
+					),
+				)
+			}
+		}
 
-	it('starts static management when web-management is explicitly imported', async () => {
-		await import('@pluxel/runtime/services/web-management')
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
-				name: 'static-management-with-web-management',
-				plugins: [],
-				configService: { mode: 'memory' },
-				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				management: { enabled: true, access: { exposure: 'private' } },
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
+				name: 'static-runtime-with-workbench',
+				plugins: [ManagedWebGate],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: ['ManagedWebGate'] } },
+					workbench: { enabled: true, access: { exposure: 'private' } },
+				}),
 			}),
 		)
 		try {
-			expect('ext' in runtime.ctx).toBe(true)
+			expect(runtime.ctx.workbench.enabled).toBe(true)
+			expect(getActiveRuntimeLogging()?.resolved.sinks).toHaveProperty('store')
+			expect(mounted).toBe(true)
+			expect(runtime.ctx.registry.isRunning(ManagedWebGate)).toBe(true)
 			const response = await runtime.fetch(
 				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}`),
 			)
@@ -233,22 +402,57 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
-	it('exposes vault only after explicit import without static host auto-bootstrap', async () => {
-		await import('@pluxel/runtime/services/vault')
-		const runtime = await createStaticRuntime(
-			defineStaticRuntimeConfig({
-				name: 'static-explicit-vault',
-				plugins: [],
+	it('projects a host-owned product snapshot through the existing runtime meta route', async () => {
+		const product = defineProduct({
+			displayName: 'Rhythm',
+			publisher: 'Example Company',
+			legalLinks: [{ label: 'Legal', href: '/legal' }],
+		})
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-product-meta', plugins: [] }),
+			{
 				configService: { mode: 'memory' },
 				runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
-				persistence: { mode: 'memory' },
+				workbench: { enabled: true, access: { exposure: 'private' } },
+			},
+			{ installWorkbench, product },
+		)
+		try {
+			await host.start()
+			const response = await host.ctx.http.fetch(
+				new Request(`http://local.test${RUNTIME_INTERNAL_API_BASE}/meta`),
+			)
+			expect(response.status).toBe(200)
+			await expect(response.json()).resolves.toMatchObject({
+				application: { product },
+			})
+		} finally {
+			await host.stop()
+		}
+	})
+
+	it('bootstraps vault before startup after explicit import', async () => {
+		await import('@pluxel/runtime/services/vault')
+		const runtime = await createStaticRuntimeTestHost(
+			defineStaticRuntime({
+				name: 'static-explicit-vault',
+				plugins: [],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					persistence: { mode: 'memory' },
+				}),
 			}),
 		)
 		try {
 			expect('vault' in runtime.ctx).toBe(true)
 			const state = await runtime.ctx.root.vaultAdmin.describe()
-			expect(state.present).toBe(false)
-			expect(state.hostIdentityPresent).toBe(false)
+			expect(state).toMatchObject({
+				present: true,
+				unlocked: true,
+				unlockedBy: 'host',
+				hostIdentityPresent: true,
+			})
 		} finally {
 			await runtime.stop()
 		}
@@ -272,7 +476,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-test', plugins: [StaticA, StaticB] }),
+			defineStaticRuntime({ name: 'static-test', plugins: [StaticA, StaticB] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -303,9 +507,34 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
+	it('exposes injected config schema source through the static runtime route', async () => {
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({ name: 'static-schema-source', plugins: [SchemaSourcePlugin] }),
+			{
+				configService: {
+					mode: 'memory',
+					snapshot: { plugins: { SchemaSourcePlugin: { value: 'configured' } } },
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['SchemaSourcePlugin'] },
+				},
+			},
+		)
+		try {
+			await host.start()
+
+			const source = host.ctx.runtimeRoute?.configMetadata?.getSchemaSource('SchemaSourcePlugin')
+			expect(source).toEqual({ value: expect.any(String) })
+			expect(source?.value.length).toBeGreaterThan(0)
+		} finally {
+			await host.stop()
+		}
+	})
+
 	it('blocks enabled plugins with invalid config before commit', async () => {
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-config', plugins: [InvalidConfigPlugin] }),
+			defineStaticRuntime({ name: 'static-config', plugins: [InvalidConfigPlugin] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -342,7 +571,7 @@ describe('@pluxel/runtime-static', () => {
 		setParamToken(DepB, 0, DepA)
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-deps', plugins: [DepA, DepB] }),
+			defineStaticRuntime({ name: 'static-deps', plugins: [DepA, DepB] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -366,6 +595,49 @@ describe('@pluxel/runtime-static', () => {
 		}
 	})
 
+	it('resolves abstract/base provider tokens during static dependency preflight', async () => {
+		abstract class UsageRecorderPlugin extends BasePlugin {}
+
+		class UsageBillingPlugin extends UsageRecorderPlugin {}
+		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
+
+		@Plugin({ name: 'ZhipuProviderPlugin' })
+		class ZhipuProviderPlugin extends BasePlugin {
+			constructor(_recorder: UsageRecorderPlugin) {
+				super()
+			}
+		}
+		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
+
+		const host = await createStaticRuntimeHost(
+			defineStaticRuntime({
+				name: 'static-abstract-provider',
+				plugins: [UsageBillingPlugin, ZhipuProviderPlugin],
+			}),
+			{
+				configService: {
+					mode: 'memory',
+				},
+				runtimeState: {
+					mode: 'memory',
+					snapshot: { enabled: ['UsageBillingPlugin', 'ZhipuProviderPlugin'] },
+				},
+			},
+		)
+		try {
+			await host.start()
+
+			expect(statuses(host)).toMatchObject({
+				UsageBillingPlugin: 'started',
+				ZhipuProviderPlugin: 'started',
+			})
+			expect(host.ctx.registry.isRunning(UsageRecorderPlugin)).toBe(true)
+			expect(host.ctx.registry.isRunning(ZhipuProviderPlugin)).toBe(true)
+		} finally {
+			await host.stop()
+		}
+	})
+
 	it('reports start-failed without hiding independent startup results', async () => {
 		@Plugin({ name: 'StartFail' })
 		class StartFail extends BasePlugin {
@@ -378,7 +650,7 @@ describe('@pluxel/runtime-static', () => {
 		class StartOk extends BasePlugin {}
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-failures', plugins: [StartFail, StartOk] }),
+			defineStaticRuntime({ name: 'static-failures', plugins: [StartFail, StartOk] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -424,7 +696,7 @@ describe('@pluxel/runtime-static', () => {
 		setParamToken(ConsumerBlocked, 0, ProviderFail)
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({
+			defineStaticRuntime({
 				name: 'static-provider-fail',
 				plugins: [ProviderFail, ConsumerBlocked],
 			}),
@@ -472,7 +744,7 @@ describe('@pluxel/runtime-static', () => {
 		}
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-hmr', plugins: [HotStaticV1] }),
+			defineStaticRuntime({ name: 'static-hmr', plugins: [HotStaticV1] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -487,7 +759,7 @@ describe('@pluxel/runtime-static', () => {
 			await host.start()
 			const report = await reloadStaticRuntime({
 				host,
-				definition: defineStaticRuntimeConfig({ name: 'static-hmr', plugins: [HotStaticV2] }),
+				definition: defineStaticRuntime({ name: 'static-hmr', plugins: [HotStaticV2] }),
 			})
 
 			expect(report.replaced).toEqual(['HotStatic'])
@@ -505,7 +777,7 @@ describe('@pluxel/runtime-static', () => {
 		class RemovedStatic extends BasePlugin {}
 
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-hmr-remove', plugins: [RemovedStatic] }),
+			defineStaticRuntime({ name: 'static-hmr-remove', plugins: [RemovedStatic] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -522,7 +794,7 @@ describe('@pluxel/runtime-static', () => {
 
 			const report = await reloadStaticRuntime({
 				host,
-				definition: defineStaticRuntimeConfig({ name: 'static-hmr-remove', plugins: [] }),
+				definition: defineStaticRuntime({ name: 'static-hmr-remove', plugins: [] }),
 			})
 
 			expect(report.removed).toEqual(['RemovedStatic'])
@@ -537,12 +809,12 @@ describe('@pluxel/runtime-static', () => {
 
 	it('keeps static HMR retryable when the next same-name ctor has invalid config', async () => {
 		hotConfigRuns.length = 0
-		const nextDefinition = defineStaticRuntimeConfig({
+		const nextDefinition = defineStaticRuntime({
 			name: 'static-hmr-config',
 			plugins: [HotConfigV2],
 		})
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-hmr-config', plugins: [HotConfigV1] }),
+			defineStaticRuntime({ name: 'static-hmr-config', plugins: [HotConfigV1] }),
 			{
 				configService: {
 					mode: 'memory',
@@ -579,14 +851,14 @@ describe('@pluxel/runtime-static', () => {
 
 	it('does not validate disabled plugins during static HMR', async () => {
 		const host = await createStaticRuntimeHost(
-			defineStaticRuntimeConfig({ name: 'static-hmr-disabled', plugins: [DisabledHotV1] }),
+			defineStaticRuntime({ name: 'static-hmr-disabled', plugins: [DisabledHotV1] }),
 			{ configService: { mode: 'memory' }, runtimeState: { mode: 'memory' } },
 		)
 		try {
 			await host.start()
 			const report = await reloadStaticRuntime({
 				host,
-				definition: defineStaticRuntimeConfig({
+				definition: defineStaticRuntime({
 					name: 'static-hmr-disabled',
 					plugins: [DisabledHotV2],
 				}),
@@ -598,5 +870,141 @@ describe('@pluxel/runtime-static', () => {
 		} finally {
 			await host.stop()
 		}
+	})
+
+	it('serves a packaged application SPA when Workbench is disabled', async () => {
+		await using fixture = await createDiskFixture({
+			'public/index.html': '<title>Static App</title>',
+			'public/assets/app.js': 'export const ready = true',
+		})
+		const root = fixture.path
+
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-spa',
+				plugins: [],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: { mode: 'memory', snapshot: { enabled: [] } },
+					workbench: false,
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root, target: 'node', variant: 'headless' },
+			},
+		)
+
+		try {
+			const origin = `http://${runtime.address.host}:${runtime.address.port}`
+			const page = await fetch(`${origin}/nested/route`, {
+				headers: { accept: 'text/html' },
+			})
+			const asset = await fetch(`${origin}/assets/app.js`)
+			const apiMiss = await fetch(`${origin}/not-an-api`, {
+				headers: { accept: 'application/json' },
+			})
+
+			expect(page.status).toBe(200)
+			expect(await page.text()).toContain('Static App')
+			expect(asset.status).toBe(200)
+			expect(await asset.text()).toContain('ready = true')
+			expect(apiMiss.status).toBe(404)
+		} finally {
+			await Promise.all([runtime.stop(), runtime.stop()])
+		}
+	})
+
+	it('aborts Fetch work and cancels a streaming response when the Node client disconnects', async () => {
+		let requestAborted = false
+		let responseCancelled = false
+
+		@Plugin({ name: 'StreamingDisconnect' })
+		class StreamingDisconnect extends BasePlugin {
+			override init(): void {
+				this.ctx.http.plugin.routes(
+					(app) =>
+						app.get('/events', ({ request }) => {
+							request.signal.addEventListener(
+								'abort',
+								() => {
+									requestAborted = true
+								},
+								{ once: true },
+							)
+							return new Response(
+								new ReadableStream<Uint8Array>({
+									start(controller) {
+										controller.enqueue(new TextEncoder().encode('ready\n'))
+									},
+									cancel() {
+										responseCancelled = true
+									},
+								}),
+								{ headers: { 'content-type': 'text/event-stream' } },
+							)
+						}),
+					{ publicPath: '/streaming-disconnect', id: 'StreamingDisconnect:public-http' },
+				)
+			}
+		}
+
+		await using fixture = await createDiskFixture()
+		const root = fixture.path
+		const runtime = await runStaticNodeApplication(
+			defineStaticRuntime({
+				name: 'static-node-disconnect',
+				plugins: [StreamingDisconnect],
+				configure: () => ({
+					configService: { mode: 'memory' },
+					runtimeState: {
+						mode: 'memory',
+						snapshot: { enabled: ['StreamingDisconnect'] },
+					},
+					workbench: false,
+				}),
+			}),
+			{
+				env: { PLUXEL_HOST_PORT: '0' },
+				deployment: { root, target: 'node', variant: 'headless' },
+			},
+		)
+
+		try {
+			const controller = new AbortController()
+			const origin = `http://${runtime.address.host}:${runtime.address.port}`
+			const response = await fetch(`${origin}/streaming-disconnect/events`, {
+				signal: controller.signal,
+			})
+			const reader = response.body!.getReader()
+			await expect(reader.read()).resolves.toMatchObject({ done: false })
+
+			controller.abort()
+			await reader.cancel().catch(() => undefined)
+			await vi.waitFor(() => {
+				expect(requestAborted).toBe(true)
+				expect(responseCancelled).toBe(true)
+			})
+		} finally {
+			await runtime.stop()
+		}
+	})
+
+	it('does not enable Workbench from a headless distribution', async () => {
+		await expect(
+			runStaticNodeApplication(
+				defineStaticRuntime({
+					name: 'static-headless-workbench',
+					plugins: [],
+					configure: () => ({
+						workbench: { enabled: true, access: { exposure: 'private' } },
+					}),
+				}),
+				{
+					env: { PLUXEL_HOST_PORT: '0' },
+					deployment: { root: '.', target: 'node', variant: 'headless' },
+				},
+			),
+		).rejects.toThrow('built as headless and cannot enable Workbench')
 	})
 })

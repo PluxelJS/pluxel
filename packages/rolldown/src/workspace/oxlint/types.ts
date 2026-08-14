@@ -1,7 +1,4 @@
-export type DiagnosticData = Record<
-	string,
-	string | number | boolean | bigint | null | undefined
->
+export type DiagnosticData = Record<string, string | number | boolean | bigint | null | undefined>
 
 export type OxRange = [number, number]
 

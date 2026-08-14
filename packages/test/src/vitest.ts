@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
+import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
 import {
 	defineConfig,
 	mergeConfig,
@@ -25,20 +26,26 @@ export type PluxelVitestOptions = {
 	prePlugins?: NonNullable<ViteUserConfig['plugins']>
 }
 
-export const PLUXEL_BASE_RESOLVE_CONDITIONS = ['@pluxel/source', '@pluxel/runtime-dynamic'] as const
+export const PLUXEL_BASE_RESOLVE_CONDITIONS = [
+	'@pluxel/hmr',
+	'development',
+	'@pluxel/source',
+] as const
 
 const DEFAULT_NODE_RESOLVE_CONDITIONS = [
 	// Prefer Node-friendly exports in tests.
 	'node',
-	// Keep `import` explicitly: Vite's exports resolution depends on it for packages that only expose `import`/`require`.
+	// `import` is a Node contract; `module` is only a bundler convention and may
+	// point at ESM that Node cannot execute without extension rewriting.
 	'import',
-	'module',
-	'development',
 	'production',
 	'default',
-	// Keep `browser` last; it should never win over `node`.
-	'browser',
 ] as const
+
+// Externalized dependencies are executed directly by Node. Keep bundler-only
+// conditions such as `module` and `browser` out of this set: packages may map
+// them to ESM that intentionally relies on extension rewriting or bundling.
+const DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS = ['node', 'import', 'default'] as const
 
 export function buildPluxelResolveConditions(env = process.env.NODE_ENV): string[] {
 	const extras = env && !DEFAULT_NODE_RESOLVE_CONDITIONS.includes(env as any) ? [env] : []
@@ -84,12 +91,20 @@ function normalizeGlob(pattern: string): string {
 }
 
 function normalizeGlobs(patterns: string[]): string[] {
-	return patterns.map((p) => normalizeGlob(p))
+	return uniqStrings(
+		patterns.flatMap((pattern) => {
+			const normalized = normalizeGlob(pattern)
+			// Vite's hook-filter glob matcher treats the final `**/` as one-or-more
+			// directories. Add the zero-depth form so `src/index.ts` is transformed too.
+			const direct = normalized.replace(/\/\*\*\/([^/]+)$/, '/$1')
+			return direct === normalized ? [normalized] : [normalized, direct]
+		}),
+	)
 }
 
 /**
  * Opinionated Vitest preset for Pluxel monorepo tests:
- * - enables fixed Pluxel resolution conditions (`@pluxel/source` for internals, `@pluxel/runtime-dynamic` for plugin dev entries)
+ * - resolves plugin, neutral-development, then framework-source entries in that order
  * - installs lint guard + configSource Vite plugins (source-policy enforcement + metadata extraction)
  * - runs the local core-only `@pluxel/test/setup` module once per worker
  */
@@ -107,8 +122,18 @@ export function definePluxelVitestConfig(
 	)
 
 	const base: ViteUserConfig = {
-		resolve: { conditions: baseConditions },
-		ssr: { resolve: { conditions: baseConditions } },
+		resolve: {
+			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+		},
+		ssr: {
+			resolve: {
+				conditions: baseConditions,
+				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+			},
+			// Generated metadata imports must share the same source-mode core instance as tests.
+			noExternal: ['@pluxel/runtime/toolchain'],
+		},
 		test: {
 			environment: 'node',
 			setupFiles: [setupFile],
@@ -122,6 +147,9 @@ export function definePluxelVitestConfig(
 					web: { enabled: false },
 				},
 			},
+			server: {
+				deps: { inline: ['@pluxel/runtime/toolchain'] },
+			},
 		},
 	}
 
@@ -132,17 +160,23 @@ export function definePluxelVitestConfig(
 		const projectRoot = resolve(merged.root ?? process.cwd())
 		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
 			...asPluginArray(options.prePlugins),
+			databaseSourceVitePlugin({ root: projectRoot }),
 			lintGuardPlugin({ cwd: projectRoot }),
 			configSourcePlugin({ include, exclude }),
 		]
 
 		// Keep Pluxel resolution deterministic: internal packages use @pluxel/source,
-		// plugin packages use @pluxel/runtime-dynamic. Do not let per-package config widen this.
-		merged.resolve = { ...merged.resolve, conditions: baseConditions }
+		// plugin packages use @pluxel/hmr. Do not let per-package config widen this.
+		merged.resolve = {
+			...merged.resolve,
+			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
+		}
 		merged.ssr = merged.ssr ?? {}
 		merged.ssr.resolve = {
 			...merged.ssr.resolve,
 			conditions: baseConditions,
+			externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 		}
 
 		// Always keep core setup in place. Caller can add more setup files.
@@ -286,7 +320,7 @@ export function definePluxelVitestWorkspaceConfig(
 			'parts/**/*.tsx',
 		] as const)
 	const excludeToolchain =
-		options.excludeToolchain ?? (['node_modules/**', 'dist/**', '**/*.d.ts', '.*/**'] as const)
+		options.excludeToolchain ?? (['node_modules/**', 'dist/**', '**/*.d.ts'] as const)
 
 	const pkgs = collectPluxelVitestWorkspaceProjects(options)
 	const projects = pkgs.map((p) => {

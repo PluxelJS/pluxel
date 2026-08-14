@@ -1,4 +1,4 @@
-import { isProduction } from '../../../env'
+import { isProduction } from 'std-env'
 import type { Identifier, PluginIdentifier } from '../../types'
 import { assertValidBasePluginId, assertValidPluginId } from '../../runtime/pluginId'
 import type { ConfigSchemaList, DeclaredMetaView, ParamOverride, PluginInfo } from './types'

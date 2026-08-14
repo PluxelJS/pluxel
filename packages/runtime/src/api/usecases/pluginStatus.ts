@@ -47,8 +47,7 @@ async function runStatusAction(
 				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
-				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
-				await lifecycle.enable(name, ctor)
+				ctx.registry.restart(ctor)
 				break
 			case 'disable':
 				lifecycle.deactivate(name, ctor, { runtimeOnly: false })

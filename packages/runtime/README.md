@@ -1,269 +1,76 @@
 # @pluxel/runtime
 
-`@pluxel/runtime` 是插件作者默认入口和 runtime common kernel：负责插件 authoring API、static/common 服务注册、配置/状态/插件数据持久化、HTTP/control-plane、web 协议和插件 UI runtime protocols。loader/package/scan 属于 `@pluxel/runtime-dynamic` route，不是普通插件或 static direct host 的默认依赖。整体边界见 [`docs/RUNTIME.md`](../../docs/RUNTIME.md)，前端链路见 [`docs/FRONTEND.md`](../../docs/FRONTEND.md)。
+插件实现包本身允许不存在时，用 opaque optional ref 声明增强能力：
 
-## 运行时模型
+```ts
+const Audit = optionalPlugin(() =>
+	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
+)
 
-runtime 只消费两类前端输入：
+this.plugins.use(Audit, (audit) => audit.registerSource(this))
+```
 
-- 编译后的插件 UI remote
-- 宿主渲染的 builtin/doc 扩展
+runtime 在 consumer commit 后解析 ref，使用正常 graph lifecycle、RuntimeState 和 replacement watcher；absent
+不阻塞 consumer，broken provider 产生独立诊断。已由 host catalog 管理的 provider 继续使用
+`plugins.use(Provider, callback)`。
 
-对应边界：
+单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
+`ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner
+cleanup 由 runtime 管理。artifact 不定义 worker 或任务协议。
 
-- 作者侧声明：`ui('./ui/index.tsx').bind(ctx)`
-- build 后产物：重写成 `ctx.ext.ui.remote.packaged()`
-- runtime 只理解 `remote.packaged()`，不理解源码入口
+CPU-bound / thread-safe native 工作使用 `defineWorkerTask<Input, Output>()` 和 `ctx.workers.run()`。所有插件共享一个
+root-owned、lazy、bounded、owner-fair 的 worker-thread pool；Tinypool 不进入插件 API。输入输出必须可 structured clone，
+插件 stop 会取消并等待已接纳工作。`run(..., { transfer: [buffer] })` 可把大型 `ArrayBuffer` ownership 立即转入已接纳任务，
+避免第二次字节复制；buffer 会同步 detach，后续失败不回滚。普通异步 I/O 与短小 native 调用不应为了“统一”而额外跨线程。
 
-## MF2 在 runtime 里的角色
+Runtime 保持业务 HTTP 与 optional Workbench 正交。Workbench 分为 browser-safe Contract、server Extension 和
+owner-bound Binding：
 
-- 作为插件 UI 的 remote artifact format
-- 作为浏览器宿主按需加载插件 UI 的协议层
-- 作为 shared singleton 的统一契约
+```ts
+// browser-safe module
+const ExampleUi = workbenchContract.define({
+	resources: { commands: workbenchContract.rpc<ExampleCommands>() },
+	views: {
+		Overview: {
+			placements: [workbenchContract.tab()],
+		},
+	},
+})
 
-对应实现入口：
+// server module
+const extension = workbench.extension({
+	contract: ExampleUi,
+	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
+})
 
-- `@pluxel/runtime/web/federation`
-- `ExtensionService`
-- 浏览器宿主侧的 federation runtime
+this.ctx.workbench.mount(extension, {
+	commands: workbench.bind.rpc(() => new ExampleRpc(this)),
+})
+```
 
-## Runtime Services
+consumer 只需把一个 Port 的同名 resources 一对一注入 placement 时，用 `portOutlet()` 省略重复 Contract：
 
-默认 `@pluxel/runtime` 只注册 static/common services。普通插件 authoring 从
-`@pluxel/runtime` 导入；vault 和 web-management 是显式增强边界。
+```ts
+const settings = workbench.portOutlet({
+	port: SettingsPort,
+	placement: workbenchContract.tab(),
+})
 
-- `this.ctx.http.plugin.routes(...)`
-  插件级 HTTP 路由挂载入口
-- `workerDecl.bind(this.ctx, options)`
-  HMR worker 绑定入口
-- `this.ctx.root.verification`
-  host-only gate；只回答“当前宿主是否允许进入 control plane”
-  `authorize()` / `describe()`；management private mode 直接放行，management public mode 使用 OIDC JWT 校验
-- `this.ctx.root.persistence`
-  runtime 数据持久化入口。config、runtime state、plugin data、logger policy、vault 等共享
-  namespace 化 backend；它不是业务文件系统，也不是 Node `fs` 镜像。
-- `this.ctx.loader.api`
-  dynamic loader route API；只在 `@pluxel/runtime-dynamic` full route 中存在
+this.ctx.workbench.mount(settings, {
+	settings: workbench.bind.rpc(() => new SettingsRpc(this)),
+})
+```
 
-### Optional Web Management
+需要重命名、组合或只提供部分 consumer resources 时继续使用显式 `workbenchContract.define({ outlets })`。
 
-显式 import `@pluxel/runtime/services/web-management` 后才注册 `ctx.ext`、RPC、SSE、
-SignalDB、runtime web UI 和 management panel。
+公开入口：
 
-- `this.ctx.ext.rpc.expose(...)`
-  暴露自定义 UI 的 RPC
-- `this.ctx.ext.sse.expose(...)`
-  暴露自定义 UI 的 SSE
-- `this.ctx.ext.signaldb.collection({ name })`
-  runtime-owned collection，服务端 authoritative store
-  `collection.doc(selector)` 给单文档场景生成 `get/field/path/snapshot/form/action`
-  `doc.form()` 默认同步当前 selector 命中的文档；如果你明确要无同步表单，用 `doc.formUnsynced()`；如果你要指定其他同步源，用 `doc.formFrom(...)`
-- `pluginUi.bind(this.ctx)`
-  绑定作者侧 UI 声明
-- `this.ctx.ext.ui.remote.packaged()`
-  注册编译后的 UI remote
-- `this.ctx.ext.ui.builtin.doc(...)`
-  注册宿主渲染 doc/builtin 扩展
-- `this.ctx.ext.ui.interaction.surface(...)`
-  声明 consumer-owned interaction surface，负责 placement、输入与最终 apply
-- `this.ctx.ext.ui.interaction.offer(...)`
-  声明 provider-owned interaction offer，负责准备资源与提供 session UI
+- `@pluxel/runtime`：唯一作者入口，原样转发 core API，并注册配置、HTTP、persistence 等常驻能力；
+- `@pluxel/runtime/services/vault`：宿主显式启用 Vault；未导入时不注册 Vault backend 或 eager preflight；
+- `@pluxel/runtime/workbench/contract`：browser-safe resource、View、placement 和 Port Contract；
+- `@pluxel/runtime/workbench`：server-only Extension、entry 和 Binding；
+- `@pluxel/runtime/workbench/ui`：浏览器 resource facade、hooks、受限 host capability 与 declarative Pane Kit；
+- `@pluxel/runtime/web`：host browser transport 与 Workbench Context。
 
-### Optional Vault
-
-显式 import `@pluxel/runtime/services/vault` 后才注册 `ctx.vault` 和
-`ctx.root.vaultAdmin`。
-
-- `this.ctx.vault`
-  插件与 runtime 的共享加密存储入口，只保留数据读写能力
-- `this.ctx.vault.kv(...)` / `this.ctx.vault.docs(...)` / `this.ctx.vault.blobs(...)`
-  共享加密持久化入口；namespace 只是存储分区，不是额外权限模型
-- `this.ctx.root.vaultAdmin.*`
-  host-only 管理面：`preflight()` / `describe()` / `unlock()` / `rekey()` / `ensureHostKey()` / `generateDeployKey()` / `setDeployRecipients()`
-- `this.ctx.vault`
-  设计原则见 `HOST_VERIFICATION_DESIGN.md`；vault 使用说明见 `src/services/vault/加密实现规范.md`
-
-### runtime control-plane 原则
-
-- runtime control-plane 使用明确的 usecase + RPC method，不再通过通用 operation registry 做二次分发。
-- 插件状态、config、dependency、fork 等宿主操作统一落在 `src/api/usecases/*`，RPC 只暴露具体方法。
-- 当前不提供 MCP transport；未来若接入，应复用 `src/api/usecases/*`，不要在 runtime 内核里预留半套 carrier。
-- 性能上少一次 registry 查找、carrier 可见性判断和 op envelope unwrap；代价是每个公开能力都要有清晰的 RPC/usecase 契约。
-- 插件自定义 UI 的浏览器通信继续使用 `ctx.ext.rpc/sse/signaldb`，不共享宿主 control-plane API。
-
-浏览器宿主管理面统一走 `/security`，前端只通过专用 security client 调用：
-
-- `readOverview()`
-- `listEvents()`
-- `vault.unlock()`
-- `vault.ensureHostKey()`
-- `vault.generateDeployKey()`
-- `vault.setDeployRecipients()`
-
-## 配置
-
-- `configs.use(schema)` 读到的是 schema 归一化后的输出
-- 默认值放进 Valibot schema 本身，不要在插件里再写 `config ?? defaults`
-- 管理面访问策略放在 `management`：`management.enabled=true` 开启 runtime web management，
-  `management.access.exposure='public'` 时必须配置 `management.access.oidc`，否则 fail fast。
-  OIDC 可以预先保留在 private/disabled 配置里，方便后续切到 public。
-- cfg/schema 提取与 cfg layout 设计见 `docs/CONFIG.md`；Host 合同见 `packages/runtime/docs/config/contract.md`。
-
-## SignalDB 语义
-
-- 服务端 authoritative collection
-- 浏览器 replica collection
-- runtime 内建的 pull/push transport
-- 基于 SSE 的变更广播
-
-浏览器侧读取：
-
-- `const plugin = pluginUi('MyPlugin')`
-- `plugin.use().db.collection('name').useView()`
-- `plugin.use().db.useDoc(...)`
-
-服务端写法：
-
-- `this.ctx.ext.signaldb.collection({ name, initial, persistence, clientWrites })`
-- `collection.doc(selector)`
-- `await collection.ready()`
-- `collection.watch(...)`
-
-其中 `clientWrites` 控制浏览器 replica 是否允许把修改 push 回服务端 collection。
-
-## `pluginUi(...)`
-
-- `const plugin = pluginUi('MyPlugin')`
-  为当前插件 UI 绑定一次插件名，作为 RPC/SSE/SignalDB 的类型锚点
-- `plugin.use()`
-  默认拿 plugin-scoped app；这也是绝大多数插件 UI 组件的主入口
-- `plugin.useGlobal()`
-  只在 header/global status bar 这类全局扩展点下使用；其返回值同样是 `app`
-- `app.db.collection('name')`
-  返回某个 collection 的 hook 句柄：`useView()` / `useDoc()` / `useList()` / `useCount()` / `useLiveQuery()`
-- `app.db.useDoc()`
-  读取 SignalDB 单条记录
-- `app.db.useList()` / `app.db.useCount()`
-  读取常见列表与计数
-- `app.db.useLiveQuery()`
-  在 React 组件里执行 SignalDB reactive query
-
-SignalDB 的 React 响应性现在走官方链路：
-
-- collection 副本使用 official reactivity adapter：`@signaldb/maverickjs`
-- React 读取使用 official hook factory：`@signaldb/react`
-- Pluxel 在 `@pluxel/runtime/web/ui` 里把这条链路封装成 `plugin.use().db.*`
-
-导入边界：
-
-- 插件 UI 不应直接 import `@signaldb/react`
-- 插件 UI 不应直接 import `@signaldb/maverickjs`
-- 插件 UI 不应直接 import `@maverick-js/signals`
-- MF shared contract 也不单独共享这些包；只共享 `@pluxel/runtime/web/ui`
-- 插件 UI 类型增强统一写到 `declare module '@pluxel/runtime/web'`；
-  `@pluxel/runtime/web/ui` 只作为浏览器 UI runtime/MF shared import 入口
-
-`rpc` / `sse` / `notify` / `confirm` / `colorScheme` / `locale` / `formatDate()` / `formatNumber()` 都直接从 `plugin.use()` / `plugin.useGlobal()` 返回的 `app` 对象上拿；底层传输细节统一走 `transport`，SignalDB 统一走 `app.db`。
-
-`app` 对象的常用能力边界：
-
-- `pluginName`
-  当前 helper 绑定的插件名
-- `pathname`
-  plugin-scoped 页面下的当前路径；global scope 下为 `null`
-- `colorScheme`
-  宿主当前主题模式
-- `runningPlugins` / `runningPluginsReady`
-  当前宿主已运行插件集合与 ready 状态
-- `rpc`
-  当前插件命名空间 RPC 客户端
-- `sse`
-  当前插件命名空间 SSE 客户端
-- `notify` / `confirm`
-  宿主注入的 UI 能力（强制）
-- `locale` / `fallbackLocale`
-  宿主当前 locale 信息
-- `setLocale()` / `formatDate()` / `formatNumber()`
-  宿主提供的本地化能力
-- `db`
-  当前插件命名空间的 SignalDB 浏览器副本入口
-- `transport`
-  底层 transport 客户端（`fetch / withRpc / http / links / sse`），仅在需要低层能力时使用
-
-插件自定义 UI 的正式本地化现在统一走 `@inlang/paraglide-js`，runtime 不再维护插件级文本字典注册层。Paraglide 的 Vite 插件已经由 Pluxel 的插件 UI 编译链自动接入：
-
-- HMR：需要插件 UI 子编译的 route 通过 `@pluxel/rolldown/vite/plugin-ui` 注入；dynamic host 可用标准 `vite` config 追加 React/codegen 等插件
-- build：`@pluxel/rolldown/vite/plugin-ui` 的 `buildPluginUiRemote(...)` 自动注入，也支持标准 `vite?: InlineConfig` merge
-- 约定：插件包根目录必须提供 `project.inlang`，消息源目录固定为 `messages/`，生成目录固定为 `src/paraglide/`
-
-## doc 约束
-
-宿主渲染 doc 现在只依赖 `signaldb`：
-
-- 展示读 state collection
-- `form`
-  宿主 AutoForm，默认从 `collection.doc(selector)` 对应文档同步，并把提交写回 `write`
-- `action`
-  宿主按钮，不持有独立状态；点击后执行 `write`，常见用法是写入 action collection
-- 副作用由插件后端 watch collection 后处理
-
-`PluginBuiltinShowcase.ts` 演示了这三种 builtin：`doc(schemaMap).card(...)`、`docHandle.form(...)`、`docHandle.action(...)`。`PluginContributionFontDemo.ts` 额外演示了 `surface + offer + session` 这条跨插件自定义 UI 交互路径。
-
-当前这套 interaction 系统主要覆盖 3 类职责：
-
-- consumer-own placement + consumer-own state ownership
-- provider-own custom UI + provider-own resource preparation
-- host-own session resolution + diagnostics + transport
-
-需要明确区分：
-
-- 插件自己的 builtin UI：
-  `doc(...)`
-- 跨插件 interaction：
-  `surface(...) + offer(...) + session host + ui().loadSession/syncDraft/commitSession`
-
-也就是说，`doc` 不再参与 cross-plugin interaction 语义；跨插件系统只服务 provider 自定义 UI。
-
-扩展 manifest 也会暴露这条链路的诊断快照：
-
-- `builtins`
-  最终实际渲染的 builtin/doc contribution
-- `surfaces`
-  consumer 声明的 interaction surface
-- `offers`
-  provider 声明的 interaction offer
-- `sessions`
-  host 解析后的活动 session
-- `interactions`
-  `active / waiting-provider / waiting-surface / rejected` 诊断记录
-- `states`
-  插件 UI 编译/加载状态
-
-## 开发期
-
-runtime 本身不启动 Vite。开发期应用宿主统一通过 route-owned Vite 插件接入：
-
-- `@pluxel/runtime-dynamic/vite`：`dynamicRuntimeVitePlugin({ config })`
-- `@pluxel/runtime-static/vite`：`staticRuntimeVitePlugin({ config })`
-- `@pluxel/runtime-dynamic/vite` owns dynamic dev host startup; apps should not wire loader HMR manually.
-
-## 主要 subpath
-
-- `@pluxel/runtime`
-  普通插件 authoring 和 runtime common 能力默认入口；内置可用的 HTTP、GraphQL、persistence、runtime state、事件等常用 API 都从这里导入
-- `@pluxel/runtime/services/vault`
-  可选 vault 增强；插件或 host 需要加密存储能力时显式导入
-- `@pluxel/runtime/services/web-management`
-  可选 web-management 增强；需要 `ctx.ext`、SSE、runtime web UI、management panel 或 UI log sink 时显式导入
-- `@pluxel/runtime/web`
-  浏览器协议与 SDK；插件 UI 类型增强统一声明到这里
-- `@pluxel/runtime/web/ui`
-  插件 UI contract / client helpers / SignalDB hooks
-- `@pluxel/runtime/web/extensions`
-  builtin/doc contract
-- `@pluxel/runtime/web/federation`
-  MF remote 命名和 shared contract
-- `@pluxel/runtime/frozen`
-  冻结宿主构建
-- `@pluxel/runtime/shared` / `@pluxel/runtime/internal`
-  仅供 `@pluxel/runtime-dynamic` / `@pluxel/runtime-dev` 内部复用；普通插件不要依赖
+宿主只通过顶层 `workbench` 配置启用整套能力。关闭后不创建 registry、compiler、watcher、artifact route 或
+resource transport，插件业务 HTTP 和生命周期不受影响。

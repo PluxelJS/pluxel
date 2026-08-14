@@ -25,42 +25,103 @@ defaults:
 env:
   CI: 'true'
   NODE_OPTIONS: '--max-old-space-size=4096'
+  PNPM_CONFIG_PM_ON_FAIL: 'ignore'
   PLUXEL_FAST_BUILD: 'true'
 
 jobs:
-  test:
-    name: Tests
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Prepare git
-        run: git config --global core.autocrlf false
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
+    steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          submodules: recursive
 
-      - name: Setup toolchain
-        uses: ./.github/actions/setup-toolchain
+      - name: Install toolchain
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
+          install: true
 
-      - name: Determine test scope
-        id: scope
+      - name: Resolve pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store
+        id: pnpm-store-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-files-v3-
+
+      - name: Restore Turbo cache
+        id: turbo-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo
+          # Cache entries are immutable. Give every attempt its own key so a failed run can save
+          # partial Turbo results without preventing a rerun from publishing the completed cache.
+          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-turbo-v3-
+
+      - name: Install dependencies
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release metadata
+        run: pnpm run release:check
+
+      - name: Lint and check formatting
+        run: pnpm run lint && pnpm run format:check
+
+      - name: Typecheck, build, and test
+        id: turbo-verify
         env:
-          DEFAULT_BASE: main
-          PR_BASE_REF: ${{ github.base_ref || '' }}
-        run: bash ./.github/scripts/determine-test-scope.sh
-
-      - name: Run tests
-        env:
-          MODE: ${{ steps.scope.outputs.mode }}
-          FILTER_REF: ${{ steps.scope.outputs.filter_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PLUXEL_REDIS_TEST_URL: redis://127.0.0.1:6379
         run: |
           set -euo pipefail
-          if [ "${MODE:-full}" = "affected" ] && [ -n "${FILTER_REF:-}" ]; then
-            echo "Running affected tests against ${FILTER_REF}"
-            pnpm -w turbo run test "--filter=...[${FILTER_REF}]"
+          # Vitest creates workers inside each Turbo task, so cap package-level fan-out as the
+          # repository's local verify command does instead of oversubscribing hosted runners.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            pnpm exec turbo run typecheck build test --concurrency=50% "--filter=...[origin/${BASE_REF}]"
           else
-            echo "Running full test suite"
-            pnpm -w turbo run test
+            pnpm exec turbo run typecheck build test --concurrency=50%
           fi
+
+      - name: Save Turbo cache
+        if: always() && steps.turbo-cache.outcome == 'success' && steps.turbo-verify.outcome != 'skipped' && steps.turbo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo
+          key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
+
+      - name: Save pnpm store
+        if: always() && steps.install.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}

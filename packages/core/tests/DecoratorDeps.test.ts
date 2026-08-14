@@ -9,7 +9,7 @@ import {
 	withCoreHost,
 } from '@pluxel/core/test'
 import { pluginMethodDecorator } from '../src/plugins/decorators/decoratorRuntime'
-import { __registerUsedFeature__ } from '../src/plugins/decorators/decorator/api'
+import { getClassParams } from '../src/plugins/decorators/decorator/api'
 
 type PluginToken<T extends BasePlugin = BasePlugin> = abstract new (...args: unknown[]) => T
 type KvLike = {
@@ -59,7 +59,7 @@ class FeatureDepsCacheFeature extends BaseFeature {
 	}
 }
 
-@Plugin({ name: 'FeatureDepsConsumerMissing' })
+@Plugin({ name: 'FeatureDepsConsumerMissing', features: [FeatureDepsCacheFeature] })
 class FeatureDepsConsumerMissing extends BasePlugin {
 	readonly cache = this.features.use(FeatureDepsCacheFeature)
 	async run() {
@@ -67,7 +67,10 @@ class FeatureDepsConsumerMissing extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'FeatureDepsConsumerOk' })
+@Plugin({
+	name: 'FeatureDepsConsumerOk',
+	features: [FeatureDepsCacheFeature],
+})
 class FeatureDepsConsumerOk extends BasePlugin {
 	readonly cache = this.features.use(FeatureDepsCacheFeature)
 	constructor(public kv: FeatureDepsKvPlugin) {
@@ -78,11 +81,23 @@ class FeatureDepsConsumerOk extends BasePlugin {
 	}
 }
 
-__registerUsedFeature__(FeatureDepsConsumerMissing, FeatureDepsCacheFeature)
-__registerUsedFeature__(FeatureDepsConsumerOk, FeatureDepsCacheFeature)
 setParamToken(FeatureDepsConsumerOk, 0, FeatureDepsKvPlugin)
 
 describe('Decorator-required plugin deps', () => {
+	it('uses design:paramtypes as the canonical constructor DI declaration', () => {
+		@Plugin({ name: 'MetadataProvider' })
+		class MetadataProvider extends BasePlugin {}
+
+		@Plugin({ name: 'MetadataConsumer' })
+		class MetadataConsumer extends BasePlugin {
+			constructor(readonly provider: MetadataProvider) {
+				super()
+			}
+		}
+
+		expect(getClassParams(MetadataConsumer)).toEqual([MetadataProvider])
+	})
+
 	it('throws when a plugin uses a decorator but has no ctor dependency', async () => {
 		await withCoreHost(async (host) => {
 			@Plugin({ name: 'KvPlugin' })

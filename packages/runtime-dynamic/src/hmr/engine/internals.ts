@@ -1,5 +1,3 @@
-import { getDebugLogger } from '@pluxel/core/logger'
-
 export function matchesSpecifierPattern(specifier: string, pattern: string) {
 	if (!pattern) return false
 	if (pattern.endsWith('/*')) {
@@ -10,11 +8,8 @@ export function matchesSpecifierPattern(specifier: string, pattern: string) {
 }
 
 type BatchDebounceReason = 'debounce' | 'maxwait' | 'maxbatch'
-const batchDebouncerLogger = getDebugLogger('pluxel:hmr:batch').with({
-	name: 'BatchDebouncer',
-})
 const defaultBatchDebounceErrorHandler = (error: unknown) => {
-	batchDebouncerLogger.error('flush failed', { error })
+	console.error('[pluxel:hmr] batch flush failed', error)
 }
 
 export class BatchDebouncer {
@@ -24,6 +19,7 @@ export class BatchDebouncer {
 	private epoch = 0
 	private inFlight: Promise<void> = Promise.resolve()
 	private inFlightCount = 0
+	private closed = false
 	private idleWaiters = new Set<{
 		resolve: () => void
 		reject: (error: unknown) => void
@@ -116,10 +112,21 @@ export class BatchDebouncer {
 	}
 
 	push(id: string) {
+		if (this.closed) return
 		this.pending.add(id)
 		if (!this.t) this.t = setTimeout(() => this.flush('debounce'), this.debounceMs)
 		if (!this.tMax) this.tMax = setTimeout(() => this.flush('maxwait'), this.maxWaitMs)
 		if (this.pending.size >= this.maxBatchFiles) this.flush('maxbatch')
+	}
+
+	/** Stops admission, drops queued work, and waits for the active flush. */
+	async close(): Promise<void> {
+		if (this.closed) return this.inFlight
+		this.closed = true
+		this.clearTimers()
+		this.pending.clear()
+		await this.inFlight
+		this.notifyIdle()
 	}
 	private flush(_reason: BatchDebounceReason) {
 		if (this.pending.size === 0) return
@@ -146,6 +153,9 @@ export class BatchDebouncer {
 
 	private async runFlush(files: string[], epoch: number): Promise<void> {
 		try {
+			// A flush already executing when close() starts is allowed to finish. Promise-chain
+			// successors have not started yet and are discarded with the rest of queued work.
+			if (this.closed) return
 			await this.flushFn(files, epoch)
 		} catch (error) {
 			this.onError(error)

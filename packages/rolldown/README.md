@@ -1,21 +1,20 @@
 # @pluxel/rolldown
 
-Pluxel toolchain package for build helpers, Rolldown plugins, Vite adapters, workspace utilities, web Module Federation UI builds, and the repository oxlint plugin.
+Rolldown/Vite 工具链入口：
 
-Use the narrowest subpath that matches the job:
+- `@pluxel/rolldown/build`：`pluginPackage()` 与 `staticApplication()` 通过 tsdown 驱动 Rolldown，并组合同一个
+  `createPluginBuildPipeline()`，统一 decorator metadata、preprocessor/macro、lint、config metadata、Workbench
+  source transform、optional plugin semantic policy 和输出检查。`pluginPackage()` 的单次 semantic pass 同时生成幂等的
+  `pluxel.pluginPackages` 与 peer metadata，并从第一次构建起保持 detected required/optional provider external；
+  static application 使用 bundle-or-absent。CLI 不追加 import tracker。
+- `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
+- `@pluxel/rolldown/distribution`：static artifact-set finalizer、in-toto/DSSE helper、offline verifier 和 inert delivery
+  marker；raw v1 schema 位于 `@pluxel/rolldown/distribution/schema.json`。用户流程见
+  [`../../user-docs/distribution.md`](../../user-docs/distribution.md)，维护约束见
+  [`../../docs/DISTRIBUTION.md`](../../docs/DISTRIBUTION.md)。
+- `configSourcePlugin`：生成 config metadata，并从 `@pluxel/runtime/toolchain` 导入 helper。
+- `lintGuardPlugin`：执行插件声明约束检查。
+- `pluginArtifactBuildPlugin`：在同一次 transform 中提取 Workbench UI 与 `defineNodeModule()` declaration，
+  分别增量构建并原子发布 browser Federation remote 和单文件 Node ESM；无 declaration 时不加载 target builder。
 
-- `@pluxel/rolldown/build`: tsdown/build runner helpers used by `pluxel build`.
-- `@pluxel/rolldown/plugins`: Rolldown-first plugins such as `runtimeUiBridgePlugin`, `configSourcePlugin`, and `lintGuardPlugin`.
-- `@pluxel/rolldown/vite`: Vite-facing helpers. These are Rolldown/toolchain utilities plus Vite-specific fields where Vite needs them.
-- `@pluxel/rolldown/vite/environment`: Vite environment filters such as `serverOnlyVitePlugin(...)` and `browserOnlyVitePlugin(...)`.
-- `@pluxel/rolldown/vite/plugin-ui`: plugin UI remote build helper used by static/dynamic development routes through their inlined `runtime-dev` glue.
-- `@pluxel/rolldown/workspace/fs`, `@pluxel/rolldown/workspace/info`, `@pluxel/rolldown/workspace/vite`: workspace helpers. Prefer explicit subpaths over `@pluxel/rolldown/workspace`.
-- `@pluxel/rolldown/oxlint`: Pluxel oxlint JS plugin.
-
-Runtime routes own HMR commit semantics. `@pluxel/rolldown` only provides route-neutral toolchain pieces:
-
-- dynamic route does workspace scan, loader/module replacement, and dynamic commit tracking
-- static route does static definition import and catalog diff
-- private `@pluxel/runtime-dev` wires source UI declarations to `@pluxel/rolldown/vite/plugin-ui`
-
-Do not inline native toolchain packages such as OXC parser/resolver or Rolldown bindings into route packages. Published consumers that need complex toolchain behavior should depend on `@pluxel/rolldown` and externalize its subpaths in their own tsdown configs.
+工具链不包含公开 API bridge 或兼容 rewrite。

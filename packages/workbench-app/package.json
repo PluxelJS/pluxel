@@ -1,0 +1,77 @@
+{
+	"name": "@pluxel/workbench-app",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Private Pluxel Workbench host application",
+	"type": "module",
+	"main": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"dev": "pnpm -w run build:gqlens && vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"test": "pnpm exec vitest run",
+		"typecheck": "tsc --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@dnd-kit/core": "^6.3.1",
+		"@dnd-kit/modifiers": "^9.0.0",
+		"@dnd-kit/sortable": "^10.0.0",
+		"@gqlens/core": "workspace:*",
+		"@gqlens/react": "workspace:*",
+		"@material/material-color-utilities": "^0.4.0",
+		"@module-federation/runtime": "^2.7.0",
+		"@pluxel/core": "workspace:*",
+		"@pluxel/runtime": "workspace:*",
+		"@tanstack/react-hotkeys": "^0.8.4",
+		"@tanstack/react-router": "^1.168.8",
+		"@tanstack/react-store": "^0.9.3",
+		"@tanstack/react-virtual": "^3.13.19",
+		"@worksplit/react": "workspace:*",
+		"markdown-exit": "^1.0.0-beta.8",
+		"valibot-form": "workspace:*"
+	},
+	"devDependencies": {
+		"@gqlens/vite": "workspace:*",
+		"@mantine/core": "catalog:",
+		"@mantine/dates": "catalog:",
+		"@mantine/hooks": "catalog:",
+		"@mantine/modals": "catalog:",
+		"@mantine/notifications": "catalog:",
+		"@pluxel/rolldown": "workspace:*",
+		"@pluxel/runtime-dynamic": "workspace:*",
+		"@tabler/icons-react": "catalog:",
+		"@tanstack/router-plugin": "^1.167.9",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "^5.1.4",
+		"capnweb": "^0.5.0",
+		"graphql": "^16.13.0",
+		"postcss": "^8.5.6",
+		"postcss-preset-mantine": "^1.18.0",
+		"postcss-simple-vars": "^7.0.1",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"sass-embedded": "^1.93.2",
+		"valibot": "^1.2.0",
+		"vite": "^8.0.0-beta.18"
+	},
+	"peerDependencies": {
+		"@mantine/core": "catalog:",
+		"@mantine/dates": "catalog:",
+		"@mantine/hooks": "catalog:",
+		"@mantine/modals": "catalog:",
+		"@mantine/notifications": "catalog:",
+		"@tabler/icons-react": "catalog:",
+		"@tanstack/react-form": "^1.28.3",
+		"react": "catalog:",
+		"react-dom": "catalog:",
+		"valibot": "^1.2.0"
+	}
+}

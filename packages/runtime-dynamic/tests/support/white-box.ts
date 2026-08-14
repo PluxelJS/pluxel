@@ -1,4 +1,5 @@
 import type { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
+import type { HmrBatchSummary } from '../../src/hmr/engine/pipeline'
 import type { HmrRunner } from '../../src/hmr/engine/runner'
 
 type LoaderHmrWhiteBox = LoaderHmrService & {
@@ -9,7 +10,9 @@ type LoaderHmrWhiteBox = LoaderHmrService & {
 		}
 	}
 	enqueueFileChange: (file: string) => boolean
+	ensureStartupScope: () => Promise<{ entryList: string[] }>
 	getAnchorsCleanSnapshot: () => ReadonlySet<string>
+	onBatchSummary: (summary: HmrBatchSummary) => void
 }
 
 type HmrRunnerWhiteBox = HmrRunner & {

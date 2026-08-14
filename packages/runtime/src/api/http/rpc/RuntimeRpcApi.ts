@@ -2,7 +2,6 @@
 import type { Context } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { writeGroups } from '../../features/pluginGroups/service'
-import { createRuntimeRouteFeatureHandle, listRuntimeRouteFeatures } from '../../contributions'
 import {
 	pluginConfigGet,
 	pluginConfigPatch,
@@ -18,40 +17,27 @@ import {
 } from '../../usecases/pluginDependencies'
 import { ensureFork } from '../../usecases/pluginForks'
 import { applyStatusActions } from '../../usecases/pluginStatus'
-import { ExtensionSessionHandle } from './ExtensionSessionHandle'
 import { LoggingHandle } from './LoggingHandle'
+import { AgentToolsHandle } from './AgentToolsHandle'
+import { requireWorkbench } from '../../../services/workbench'
 import type {
 	ConfigFieldMutation,
-	ExtensionUiRpcMap,
+	WorkbenchRpcView,
 	PluginGroup,
 	PluginGroupInput,
 	PluginStatusBatchAction,
-	RuntimeRouteFeatureApi,
-	RuntimeRouteFeatureName,
 } from '../../../web/protocol'
 
 export class RuntimeRpcApi extends RpcTarget {
 	private readonly ctx: Context
-	private readonly extView: ExtensionUiRpcMap
 
 	constructor(ctx: Context) {
 		super()
 		this.ctx = ctx
-		this.extView = ctx.ext.rpc.createExtensionsView(ctx)
 	}
 
 	ping() {
 		return 'runtime-rpc:ok'
-	}
-
-	/** Route-provided optional control-plane features. */
-	features(): string[] {
-		return listRuntimeRouteFeatures(this.ctx)
-	}
-
-	/** Lookup a route feature handle after checking `features()`. */
-	feature<Name extends RuntimeRouteFeatureName>(name: Name): RuntimeRouteFeatureApi<Name> {
-		return createRuntimeRouteFeatureHandle<RuntimeRouteFeatureApi<Name>>(this.ctx, name)
 	}
 
 	/** Logging settings (host-level, persisted). */
@@ -59,31 +45,18 @@ export class RuntimeRpcApi extends RpcTarget {
 		return new LoggingHandle(this.ctx)
 	}
 
-	/** Cross-plugin interaction sessions (surface/offer lifecycle). */
-	ui() {
-		return new ExtensionSessionHandle(this.ctx)
+	/** Persisted Agent toolsets and assignments over the live command catalog. */
+	agentTools() {
+		return new AgentToolsHandle(this.ctx)
 	}
 
-	/**
-	 * 访问插件注册的 RPC 扩展
-	 * @example rpc.ext['my-plugin'].method()
-	 */
-	get ext(): ExtensionUiRpcMap {
-		return this.extView
-	}
-
-	/**
-	 * 列出所有已注册的 RPC 扩展命名空间
-	 */
-	extensions(): string[] {
-		return this.ctx.ext.rpc.getNamespaces()
-	}
-
-	async buildSnapshot() {
-		return {
-			ok: false as const,
-			error: 'Snapshot builder is temporarily unavailable while the plugin is being rewritten.',
-		}
+	workbenchRpc(grantId: string): WorkbenchRpcView {
+		const workbench = requireWorkbench(this.ctx)
+		const ref = workbench.registry.resolveModel(grantId, 'rpc')
+		return workbench.rpc.resolve(
+			this.ctx,
+			`${ref.ownerPluginId}:${ref.modelKey}`,
+		) as unknown as WorkbenchRpcView
 	}
 
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
@@ -132,12 +105,7 @@ export class RuntimeRpcApi extends RpcTarget {
 		baseToken: string
 		providerName: string | null
 	}) {
-		return await pluginBaseProviderSet(
-			this.ctx,
-			input.name,
-			input.baseToken,
-			input.providerName,
-		)
+		return await pluginBaseProviderSet(this.ctx, input.name, input.baseToken, input.providerName)
 	}
 
 	async ensurePluginFork(input: { baseName: string; forkId: string; enable?: boolean }) {

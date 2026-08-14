@@ -1,129 +1,104 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import type { LogRecord } from '@logtape/logtape'
-import { join } from 'pathe'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
 	RuntimePluginLogPolicy,
-	ensureRuntimePluginPolicyLoaded,
-	persistRuntimePluginPolicy,
-	readPluginLogPolicyFile,
-	runtimePluginLogPolicy,
-	writePluginLogPolicyFile,
+	parsePluginLogPolicySnapshot,
+	serializePluginLogPolicySnapshot,
 	type PluginLogPolicySnapshot,
+	type PluginLogPolicyStore,
 } from '@pluxel/runtime/logger'
-import { withRuntimeHost } from '@pluxel/runtime/test'
-
-function record(level: 'debug' | 'info' | 'warning', pluginId?: string) {
-	const out: LogRecord = {
-		level,
-		category: ['pluxel', 'plugins'],
-		properties: pluginId ? { pluginId } : {},
-		message: ['test'],
-		rawMessage: 'test',
-		timestamp: Date.now(),
-	}
-	return out
-}
 
 describe('RuntimePluginLogPolicy', () => {
-	let tmp: string | undefined
-
-	afterEach(async () => {
-		runtimePluginLogPolicy.clear()
-		if (tmp) await rm(tmp, { recursive: true, force: true })
-		tmp = undefined
-	})
-
-	it('applies default level, overrides, clear, and off', () => {
-		const policy = new RuntimePluginLogPolicy({ defaultLevel: 'info' })
-
-		expect(policy.allows(record('debug', 'PluginA'))).toBe(false)
-		expect(policy.allows(record('info', 'PluginA'))).toBe(true)
+	it('applies default, override, clear, and off with one plugin lookup', () => {
+		const policy = new RuntimePluginLogPolicy()
+		expect(policy.allows('PluginA', 'debug')).toBe(false)
+		expect(policy.allows('PluginA', 'info')).toBe(true)
 
 		policy.setPluginLevel('PluginA', 'debug')
-		expect(policy.allows(record('debug', 'PluginA'))).toBe(true)
-		expect(policy.allows(record('debug', 'PluginB'))).toBe(false)
+		expect(policy.allows('PluginA', 'debug')).toBe(true)
+		expect(policy.allows('PluginB', 'debug')).toBe(false)
 
 		policy.setPluginLevel('PluginB', 'off')
-		expect(policy.allows(record('warning', 'PluginB'))).toBe(false)
-
+		expect(policy.allows('PluginB', 'fatal')).toBe(false)
 		policy.clearPluginLevel('PluginA')
-		expect(policy.allows(record('debug', 'PluginA'))).toBe(false)
+		expect(policy.allows('PluginA', 'debug')).toBe(false)
 	})
 
-	it('exposes a LogTape lookup without leaking policy off syntax', () => {
-		const policy = new RuntimePluginLogPolicy()
+	it('returns compact mutation results instead of materializing all overrides', () => {
+		const overrides = Object.fromEntries(
+			Array.from({ length: 10_000 }, (_, index) => [`Plugin${index}`, 'debug'] as const),
+		)
+		const policy = new RuntimePluginLogPolicy({ version: 1, defaultLevel: 'info', overrides })
+		const result = policy.setPluginLevel('Plugin9999', 'trace')
 
-		policy.setDefaultLevel('warning')
-		policy.setPluginLevel('PluginA', 'off')
-		policy.setPluginLevel('PluginB', 'debug')
+		expect(result).toEqual({ revision: 1, persistence: 'none' })
+		expect(result).not.toHaveProperty('overrides')
+		expect(policy.snapshot().overrides.Plugin9999).toBe('trace')
+	})
 
-		expect(policy.lookupLogtapeLevel('PluginA')).toBeNull()
-		expect(policy.lookupLogtapeLevel('PluginB')).toBe('debug')
-		expect(policy.lookupLogtapeLevel('PluginC')).toBe('warning')
-		expect(policy.snapshot()).toEqual({
+	it('coalesces persistence and loads a versioned snapshot', async () => {
+		let persisted: PluginLogPolicySnapshot | undefined = {
+			version: 1,
 			defaultLevel: 'warning',
-			overrides: { PluginA: 'off', PluginB: 'debug' },
+			overrides: { PluginA: 'debug' },
+		}
+		const save = vi.fn(async (_profile: string, snapshot: PluginLogPolicySnapshot) => {
+			persisted = snapshot
 		})
+		const store: PluginLogPolicyStore = {
+			load: async () => persisted,
+			save,
+		}
+		const policy = new RuntimePluginLogPolicy()
+		await policy.initialize('test', store)
+		expect(policy.snapshot()).toEqual(persisted)
 
-		policy.clearDefaultLevel()
-		expect(policy.lookupLogtapeLevel('PluginC')).toBeUndefined()
+		policy.setPluginLevel('PluginB', 'off')
+		policy.setPluginLevel('PluginC', 'trace')
+		await policy.flush()
+
+		expect(save).toHaveBeenCalled()
+		expect(persisted?.overrides).toMatchObject({
+			PluginA: 'debug',
+			PluginB: 'off',
+			PluginC: 'trace',
+		})
+		expect(policy.persistence).toBe('clean')
 	})
 
-	it('round-trips policy snapshots through disk', async () => {
-		tmp = await mkdtemp(join(tmpdir(), 'pluxel-logger-policy-'))
-		const path = join(tmp, 'logging-policy.json')
+	it('enforces optimistic revision checks', () => {
+		const policy = new RuntimePluginLogPolicy()
+		policy.assertRevision(0)
+		policy.setDefaultLevel('debug')
+		expect(() => policy.assertRevision(0)).toThrow('revision conflict')
+		policy.assertRevision(1)
+	})
+
+	it('round-trips and validates the versioned persistence format', () => {
 		const snapshot: PluginLogPolicySnapshot = {
+			version: 1,
 			defaultLevel: 'warning',
 			overrides: { PluginA: 'debug', PluginB: 'off' },
 		}
-
-		await writePluginLogPolicyFile(path, snapshot)
-
-		expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(snapshot)
-		await expect(readPluginLogPolicyFile(path)).resolves.toEqual(snapshot)
-		await expect(readPluginLogPolicyFile(join(tmp, 'missing.json'))).resolves.toBeNull()
-	})
-
-	it('rejects legacy null levels instead of treating them as off', async () => {
-		tmp = await mkdtemp(join(tmpdir(), 'pluxel-logger-policy-'))
-		const path = join(tmp, 'legacy-policy.json')
-		await writeFile(path, '{"overrides":{"PluginA":null}}\n')
-
-		await expect(readPluginLogPolicyFile(path)).rejects.toThrow('Invalid plugin log level')
-	})
-
-	it('loads and persists runtime policy through persistence namespace', async () => {
-		runtimePluginLogPolicy.clear()
-
-		await withRuntimeHost(
-			async (host) => {
-				const storage = host.ctx.root.persistence.namespace('logger')
-				const key = 'plugin-policy/test-profile.json'
-				await storage.put(
-					key,
-					`${JSON.stringify({
-						defaultLevel: 'warning',
-						overrides: { PluginA: 'debug' },
-					} satisfies PluginLogPolicySnapshot)}\n`,
-				)
-
-				await ensureRuntimePluginPolicyLoaded(host.ctx)
-				expect(runtimePluginLogPolicy.snapshot()).toEqual({
-					defaultLevel: 'warning',
-					overrides: { PluginA: 'debug' },
-				})
-
-				runtimePluginLogPolicy.setPluginLevel('PluginB', 'off')
-				await persistRuntimePluginPolicy(host.ctx)
-
-				expect(JSON.parse((await storage.getText(key)) ?? '{}')).toEqual({
-					defaultLevel: 'warning',
-					overrides: { PluginA: 'debug', PluginB: 'off' },
-				})
-			},
-			{ persistence: { mode: 'memory' }, profile: 'test-profile' },
+		expect(parsePluginLogPolicySnapshot(serializePluginLogPolicySnapshot(snapshot))).toEqual(
+			snapshot,
 		)
+		expect(() => parsePluginLogPolicySnapshot('{"version":1,"overrides":{}}')).toThrow(
+			'Invalid plugin log level',
+		)
+	})
+
+	it('bounds plugin identifiers in persisted and dynamic overrides', () => {
+		const oversized = 'x'.repeat(513)
+		const policy = new RuntimePluginLogPolicy()
+		expect(() => policy.setPluginLevel(oversized, 'debug')).toThrow('too long')
+		expect(() =>
+			parsePluginLogPolicySnapshot(
+				JSON.stringify({
+					version: 1,
+					defaultLevel: 'info',
+					overrides: { [oversized]: 'debug' },
+				}),
+			),
+		).toThrow('oversized plugin id')
 	})
 })

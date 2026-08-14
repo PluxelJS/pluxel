@@ -37,9 +37,9 @@ export function clearOxcResolveCache(cache: OxcResolveCache) {
 function isOxcResolver(value: unknown): value is OxcResolver {
 	return Boolean(
 		value &&
-			typeof value === 'object' &&
-			'clearCache' in value &&
-			typeof (value as { clearCache?: unknown }).clearCache === 'function',
+		typeof value === 'object' &&
+		'clearCache' in value &&
+		typeof (value as { clearCache?: unknown }).clearCache === 'function',
 	)
 }
 

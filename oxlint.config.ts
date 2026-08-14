@@ -31,7 +31,7 @@ type IgnorePatterns = NonNullable<OxlintConfig['ignorePatterns']>
 type GlobSet = NonNullable<OxlintOverride['files']>
 
 const reactHooksGlobs: GlobSet = [
-	'packages/components/src/**/*.{ts,tsx}',
+	'packages/workbench-app/src/**/*.{ts,tsx}',
 	'packages/valibot-form/src/web/**/*.{ts,tsx}',
 ]
 
@@ -41,7 +41,16 @@ const env: Env = {
 	builtin: true,
 }
 
-const plugins: Plugins = ['typescript', 'unicorn', 'oxc', 'import', 'promise', 'react', 'vitest']
+const plugins: Plugins = [
+	'typescript',
+	'unicorn',
+	'oxc',
+	'import',
+	'promise',
+	'react',
+	'jsx-a11y',
+	'vitest',
+]
 const jsPlugins: JsPlugins = [createPluxelSourceJsPluginEntry()]
 
 const categories: Categories = {
@@ -73,6 +82,10 @@ const baselineRules: RuleMap = {
 	'jest/require-to-throw-message': 'off',
 	'jest/valid-expect': 'off',
 	'jest/valid-title': 'off',
+	// Modal focus is deliberate. The organizer and dependency editors focus their only primary input.
+	'jsx-a11y/no-autofocus': 'off',
+	// DnD grouping/list roles do not map cleanly to fieldset/ul without changing layout semantics.
+	'jsx-a11y/prefer-tag-over-role': 'off',
 	'react/exhaustive-deps': 'off',
 	'react/no-array-index-key': 'off',
 	'react/no-danger': 'error',
@@ -93,6 +106,18 @@ const baselineRules: RuleMap = {
 const highSignalRules: RuleMap = {
 	'eslint/no-duplicate-imports': 'error',
 	'eslint/prefer-object-has-own': 'error',
+	'react/button-has-type': 'error',
+	'react/checked-requires-onchange-or-readonly': 'error',
+	'react/forward-ref-uses-ref': 'error',
+	'react/iframe-missing-sandbox': 'error',
+	'react/jsx-no-constructed-context-values': 'error',
+	'react/jsx-no-script-url': 'error',
+	'react/jsx-no-target-blank': 'error',
+	'react/no-danger-with-children': 'error',
+	'react/no-object-type-as-default-prop': 'error',
+	'react/no-unknown-property': 'error',
+	'react/style-prop-object': 'error',
+	'react/void-dom-elements-no-children': 'error',
 	'unicorn/error-message': 'error',
 	'unicorn/explicit-length-check': 'error',
 	'unicorn/no-await-expression-member': 'error',
@@ -114,7 +139,6 @@ const highSignalRules: RuleMap = {
 const rules: RuleMap = {
 	...baselineRules,
 	...(prefixPluxelRuleSet(pluxelRules) as RuleMap),
-	'pluxel/runtime-type-augmentations': 'warn',
 	...highSignalRules,
 }
 
@@ -131,6 +155,8 @@ const overrides: OxlintOverride[] = [
 		// Hooks enforcement stays scoped to real React hook-heavy surfaces.
 		reactHooksGlobs,
 		{
+			'react/exhaustive-deps': 'error',
+			'react/no-unstable-nested-components': ['error', { allowAsProps: true }],
 			'react/rules-of-hooks': 'error',
 		},
 	),

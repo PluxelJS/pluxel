@@ -1,14 +1,5 @@
 export type VaultServiceConfig = {
 	/**
-	 * Base directory for the shared vault mount.
-	 *
-	 * Vault files are stored under `${dir}/global`.
-	 *
-	 * @default "data/vault"
-	 */
-	dir?: string
-
-	/**
 	 * Debounce window for snapshot flushes.
 	 *
 	 * @default 50
@@ -93,16 +84,17 @@ export type VaultDocHandle<TDoc extends Record<string, unknown> = Record<string,
 	exists: () => Promise<boolean>
 }
 
-export type VaultCollectionHandle<TDoc extends Record<string, unknown> = Record<string, unknown>> = {
-	doc: (id: string) => VaultDocHandle<TDoc>
-	get: (id: string) => Promise<TDoc | undefined>
-	set: (id: string, value: TDoc) => Promise<void>
-	patch: (id: string, value: Partial<TDoc>) => Promise<TDoc>
-	delete: (id: string) => Promise<void>
-	ids: () => Promise<string[]>
-	list: () => Promise<Array<{ id: string; value: TDoc }>>
-	clear: () => Promise<void>
-}
+export type VaultCollectionHandle<TDoc extends Record<string, unknown> = Record<string, unknown>> =
+	{
+		doc: (id: string) => VaultDocHandle<TDoc>
+		get: (id: string) => Promise<TDoc | undefined>
+		set: (id: string, value: TDoc) => Promise<void>
+		patch: (id: string, value: Partial<TDoc>) => Promise<TDoc>
+		delete: (id: string) => Promise<void>
+		ids: () => Promise<string[]>
+		list: () => Promise<Array<{ id: string; value: TDoc }>>
+		clear: () => Promise<void>
+	}
 
 export type VaultDocsHandle = {
 	collection: <TDoc extends Record<string, unknown> = Record<string, unknown>>(
@@ -110,7 +102,9 @@ export type VaultDocsHandle = {
 	) => VaultCollectionHandle<TDoc>
 }
 
-export type VaultCollectionTransaction<TDoc extends Record<string, unknown> = Record<string, unknown>> = {
+export type VaultCollectionTransaction<
+	TDoc extends Record<string, unknown> = Record<string, unknown>,
+> = {
 	get: (id: string) => TDoc | undefined
 	set: (id: string, value: TDoc) => void
 	patch: (id: string, value: Partial<TDoc>) => TDoc

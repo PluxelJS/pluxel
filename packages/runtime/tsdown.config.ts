@@ -9,24 +9,20 @@ const rolldownWorkspaceFs = fileURLToPath(
 const rolldownWorkspaceInfo = fileURLToPath(
 	new URL('../rolldown/src/workspace/info-entry.ts', import.meta.url),
 )
-const inlineWorkspaceHelpers = [
-	'@pluxel/rolldown/workspace/fs',
-	'@pluxel/rolldown/workspace/info',
-]
+const inlineWorkspaceHelpers = ['@pluxel/rolldown/workspace/fs', '@pluxel/rolldown/workspace/info']
 
 export default defineConfig({
 	exports: {
 		devExports: '@pluxel/source',
 	},
 	deps: {
-		alwaysBundle: [
-			...inlineWorkspaceHelpers,
-			'valibot-form',
-			'valibot-form/*',
-		],
+		alwaysBundle: [...inlineWorkspaceHelpers, 'valibot-form', 'valibot-form/*'],
 		onlyBundle: [],
 		neverBundle: [
+			'@pluxel/commands',
+			'@pluxel/commands/*',
 			'@pluxel/core',
+			'@pluxel/core/internal',
 			'@pluxel/core/services',
 			'@pluxel/core/logger',
 			'react',
@@ -39,37 +35,35 @@ export default defineConfig({
 	env: {},
 	entry: {
 		index: 'src/index.ts',
-		frozen: 'src/frozen.ts',
+		database: 'src/database.ts',
 		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
 		events: 'src/events.ts',
-		api: 'src/api/contributions.ts',
 		logger: 'src/logger.ts',
-		'plugin-catalog': 'src/plugin-catalog.ts',
-		plugin: 'src/plugin.ts',
-		protocol: 'src/protocol.ts',
+		product: 'src/product.ts',
 		'services/vault': 'src/services/vault.ts',
-		'services/web-management': 'src/services/web-management.ts',
-		'register/full': 'src/runtime/register/full.ts',
-		'register/static': 'src/runtime/register/static.ts',
-		'runtime-state': 'src/runtime-state.ts',
-		shared: 'src/shared.ts',
 		test: 'src/test.ts',
+		toolchain: 'src/toolchain.ts',
 		internal: 'src/internal.ts',
+		'internal/static': 'src/internal-static.ts',
+		'internal/static-host': 'src/internal-static-host.ts',
 		web: 'src/web.ts',
-		'web/ui': 'src/web/ui.ts',
-		'web/extensions': 'src/web/extensions.ts',
-		'web/federation': 'src/web/federation.ts',
+		workbench: 'src/workbench.ts',
+		'workbench/contract': 'src/workbench-contract.ts',
+		'workbench/ui': 'src/workbench-ui.ts',
+		'workbench/ui/internal': 'src/workbench-ui-internal.ts',
 		'web/paths': 'src/web/paths.ts',
 		capnweb: 'src/capnweb.ts',
 	},
 	copy: ['public'],
 	alias: {
+		'valibot-form': `${valibotFormSrc}/index.ts`,
 		'~': valibotFormSrc,
 		'@pluxel/rolldown/workspace/fs': rolldownWorkspaceFs,
 		'@pluxel/rolldown/workspace/info': rolldownWorkspaceInfo,
 	},
 	tsconfig: './tsconfig.json',
 	dts: {
+		eager: true,
 		sourcemap: true,
 	},
 	format: ['esm'],

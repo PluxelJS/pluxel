@@ -1,5 +1,6 @@
 import type { AnyElysiaApp } from '../../services/http/elysia'
 import { listSecurityEvents } from '../../services/security/audit'
+import type { VaultAdminApi } from '../../services/vault/types'
 import { RUNTIME_SECURITY_BASE } from '../../web/paths'
 
 function setNoStore(set: { headers: Record<string, string | number> }) {
@@ -31,10 +32,7 @@ function readRecipients(value: unknown): string[] | null {
 	return recipients
 }
 
-function invalidSecurityInput(
-	status: (code: number, body: unknown) => unknown,
-	message?: string,
-) {
+function invalidSecurityInput(status: (code: number, body: unknown) => unknown, message?: string) {
 	return status(400, {
 		ok: false,
 		code: 'invalid_security_input',
@@ -42,14 +40,25 @@ function invalidSecurityInput(
 	})
 }
 
+function requireVaultAdmin(root: unknown): VaultAdminApi {
+	const admin = (root as { vaultAdmin?: VaultAdminApi }).vaultAdmin
+	if (!admin) {
+		throw new Error(
+			'[pluxel/runtime] Vault admin capability is not installed; import @pluxel/runtime/services/vault during host setup',
+		)
+	}
+	return admin
+}
+
 export const securityRoutes = (app: AnyElysiaApp) =>
 	app.group(RUNTIME_SECURITY_BASE, (security) =>
 		security
 			.get('/', async ({ set, pluginCtx, request }) => {
 				setNoStore(set)
+				const vaultAdmin = requireVaultAdmin(pluginCtx.root)
 				return {
-					verification: await pluginCtx.root.verification.describe({ request }),
-					vault: await pluginCtx.root.vaultAdmin.describe(),
+					adminAccess: await pluginCtx.root.adminAccess.describe({ request }),
+					vault: await vaultAdmin.describe(),
 				}
 			})
 			.get('/events', ({ set, pluginCtx }) => {
@@ -58,23 +67,23 @@ export const securityRoutes = (app: AnyElysiaApp) =>
 			})
 			.post('/vault/unlock', async ({ set, pluginCtx }) => {
 				setNoStore(set)
-				return await pluginCtx.root.vaultAdmin.unlock()
+				return await requireVaultAdmin(pluginCtx.root).unlock()
 			})
 			.post('/vault/keys/host', async ({ set, pluginCtx }) => {
 				setNoStore(set)
 				return {
-					publicKey: await pluginCtx.root.vaultAdmin.ensureHostKey(),
+					publicKey: await requireVaultAdmin(pluginCtx.root).ensureHostKey(),
 				}
 			})
 			.post('/vault/keys/deploy/generate', async ({ set, pluginCtx }) => {
 				setNoStore(set)
-				return await pluginCtx.root.vaultAdmin.generateDeployKey()
+				return await requireVaultAdmin(pluginCtx.root).generateDeployKey()
 			})
 			.post('/vault/keys/deploy', async ({ request, set, pluginCtx, status }) => {
 				setNoStore(set)
 				const body = await readJsonObject(request)
 				const recipients = body ? readRecipients(body.publicKeys) : null
 				if (!recipients) return invalidSecurityInput(status)
-				return await pluginCtx.root.vaultAdmin.setDeployRecipients(recipients)
+				return await requireVaultAdmin(pluginCtx.root).setDeployRecipients(recipients)
 			}),
-		)
+	)

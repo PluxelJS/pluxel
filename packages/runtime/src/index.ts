@@ -1,20 +1,33 @@
-import './runtime/register/static'
-import { setPluxelRuntime } from '@pluxel/core'
+import './context-augment'
+import './events'
+import './services'
+import './services/debug'
 
-setPluxelRuntime('core')
-
-export { EvtChannel } from '@pluxel/core/services'
-export * from './base'
+export * from '@pluxel/core'
+export { Config, type ConfigSchemaMap } from './base'
+export {
+	defineWorkerTask,
+	WorkerTaskError,
+	type WorkerTaskDeclaration,
+	type WorkerTaskHandler,
+	type WorkerRunOptions,
+	type WorkersConfig,
+	type WorkerTaskErrorCode,
+} from './node-artifact/worker-task'
+export { defineNodeModule, type NodeModuleDeclaration } from './node-artifact/node-module'
+export type { DatabaseConfig } from './services/DatabaseService'
 export { f, v } from './config'
+export type { RuntimeEvents } from './events'
 export {
 	PersistenceError,
 	createMemoryPersistenceBackend,
+	createNodePersistenceBackend,
 	createReadonlyPersistenceBackend,
 	createWorkspacePersistenceBackend,
+	type MemoryPersistenceBackendOptions,
 	type PersistenceBackend,
 	type PersistenceCapability,
 	type PersistenceEntry,
-	type PersistenceMode,
 	type PersistenceNamespace,
 	type PersistenceRequirement,
 	type PersistenceServiceConfig,
@@ -22,7 +35,17 @@ export {
 	type WorkspacePersistenceBackendOptions,
 } from './services/persistence/PersistenceService'
 export type { ConfigServiceConfig } from './services/ConfigService'
-export type { PluginDataServiceConfig } from './services/PluginDataService'
+export type { CommandCatalogSnapshot } from './services/CommandsService'
+export {
+	type AgentCommandCatalog,
+	type AgentCommandCatalogSnapshot,
+	type AgentToolAssignment,
+	type AgentToolsAdminSnapshot,
+	type AgentToolsPolicy,
+	type AgentToolsPolicyInput,
+	type CommandInventoryItem,
+	type CommandToolset,
+} from './agent-tools'
 export {
 	PLUGIN_HTTP_BASE,
 	type ElysiaRouteHandle,
@@ -37,11 +60,8 @@ export {
 export { createPluginGatedRouter, type PluginGatedModuleDef } from './services/http/elysia-routing'
 export { createInternalGraphQLSchemaSDL } from './services/http/internalGraphqlSchema'
 export {
-	setPluginEnabled,
-} from './runtime-state'
-export {
 	getPluginRoutingSnapshot,
 	type PluginRoutingSnapshot,
 	type RouteId,
 } from './services/routing/pluginGatedRoutes'
-export type { StaticRuntimeRegisteredServices } from './runtime/register/static'
+export type { WorkbenchConfig, WorkbenchPluginGroupConfig } from './workbench-config'

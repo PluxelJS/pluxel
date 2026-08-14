@@ -1,13 +1,17 @@
 import { withRuntimeHost } from '@pluxel/runtime/test'
-import { createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import { createMemoryPersistenceBackend, createWorkspacePersistenceBackend } from '@pluxel/runtime'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { resolve } from 'pathe'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 function createMemoryFsLike() {
 	const files = new Map<string, Uint8Array>()
 	const encode = (text: string) => new TextEncoder().encode(text)
 	const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
-	const missing = (path: string) => Object.assign(new Error(`Missing file: ${path}`), { code: 'ENOENT' })
+	const missing = (path: string) =>
+		Object.assign(new Error(`Missing file: ${path}`), { code: 'ENOENT' })
 
 	return {
 		files,
@@ -45,7 +49,9 @@ function createMemoryFsLike() {
 			},
 			stat: async (path: string) => {
 				const value = files.get(path)
-				return value ? { type: 'file' as const, size: value.byteLength, mtimeMs: 0 } : { type: 'missing' as const }
+				return value
+					? { type: 'file' as const, size: value.byteLength, mtimeMs: 0 }
+					: { type: 'missing' as const }
 			},
 		},
 	}
@@ -77,12 +83,84 @@ describe('PersistenceService (runtime)', () => {
 				for await (const entry of ns.list('nested')) nestedEntries.push(entry.key)
 				expect(nestedEntries).toEqual(['nested/b.bin'])
 
-				await expect(
-					host.ctx.root.persistence.preflight({ durable: true }),
-				).rejects.toThrow(/ephemeral/)
+				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toThrow(
+					/ephemeral/,
+				)
 			},
 			{ persistence: { mode: 'memory' } },
 		)
+	})
+
+	it('enforces declared capabilities when a custom backend omits preflight', async () => {
+		const memory = createMemoryPersistenceBackend()
+		const backend = {
+			capability: memory.capability,
+			namespace: memory.namespace,
+		}
+
+		await withRuntimeHost(
+			async (host) => {
+				await expect(host.ctx.root.persistence.preflight({ durable: true })).rejects.toMatchObject({
+					code: 'UNAVAILABLE',
+				})
+			},
+			{ persistence: { mode: 'custom', backend } },
+		)
+	})
+
+	it('supports built-in Node file persistence with a configured directory', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'pluxel-persistence-'))
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					const ns = host.ctx.root.persistence.namespace('runtime-test')
+					expect(host.ctx.root.persistence.capability).toBe('durable')
+					await expect(
+						host.ctx.root.persistence.preflight({ durable: true, writable: true }),
+					).resolves.toBeUndefined()
+					await ns.put('a.txt', 'hello')
+					await ns.put('nested/b.bin', new Uint8Array([1, 2, 3]))
+				},
+				{ persistence: dir },
+			)
+
+			await withRuntimeHost(
+				async (host) => {
+					const ns = host.ctx.root.persistence.namespace('runtime-test')
+					expect(await ns.getText('a.txt')).toBe('hello')
+					expect(await ns.get('nested/b.bin')).toEqual(new Uint8Array([1, 2, 3]))
+				},
+				{ persistence: dir },
+			)
+		} finally {
+			await rm(dir, { recursive: true, force: true })
+		}
+	})
+
+	it('warns once when implicit memory persistence receives writes', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+		try {
+			await withRuntimeHost(
+				async (host) => {
+					const ns = host.ctx.root.persistence.namespace('runtime-test')
+					await ns.put('a.txt', 'hello')
+					await ns.put('b.txt', 'again')
+					expect(warn).toHaveBeenCalledTimes(1)
+					expect(warn.mock.calls[0]?.[0]).toContain('implicit in-memory persistence')
+				},
+				{ persistence: undefined },
+			)
+		} finally {
+			warn.mockRestore()
+		}
+	})
+
+	it('rejects object-shaped file compatibility config', async () => {
+		await expect(
+			withRuntimeHost(async () => undefined, {
+				persistence: {} as never,
+			}),
+		).rejects.toThrow(/invalid persistence config/i)
 	})
 
 	it('wraps text/blob backends with explicit capability and forgiving missing operations', async () => {

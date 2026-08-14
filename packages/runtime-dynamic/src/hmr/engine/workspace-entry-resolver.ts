@@ -1,5 +1,9 @@
-import type { ScanService } from '@pluxel/runtime-dynamic/services'
-import { clearSieveState, getOrCreatePromise, isBarePackageSpecifier } from '@pluxel/runtime/shared'
+import type { ScanService } from '../../scan/ScanService'
+import {
+	clearSieveState,
+	getOrCreatePromise,
+	isBarePackageSpecifier,
+} from '@pluxel/runtime/internal'
 import type { HmrPathApi } from './environment'
 
 export class WorkspaceEntryResolver {

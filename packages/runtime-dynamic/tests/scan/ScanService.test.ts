@@ -119,6 +119,31 @@ describe('ScanService', () => {
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/src\/index\.ts$/)
 	})
 
+	it('falls through to development before the framework source condition', async () => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({
+				name: 'scan-development-condition-fixture',
+				exports: {
+					'.': {
+						development: './src/development.ts',
+						'@pluxel/source': './src/source.ts',
+						default: './dist/index.mjs',
+					},
+				},
+			}),
+			'src/development.ts': "export const source = 'development'\n",
+			'src/source.ts': "export const source = 'source'\n",
+			'dist/index.mjs': "export const source = 'dist'\n",
+		})
+		await using service = createService(normalize(fixture.path))
+		const resolution = await service.resolveEntryByName('scan-development-condition-fixture', {
+			scan: { preferHmrExports: true },
+		})
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/src\/development\.ts$/)
+	})
+
 	it('falls back to installed packages when not in workspace', async () => {
 		await using fixture = await createDiskFixture(scanSingleFixture)
 		await using service = createService(normalize(fixture.path))
@@ -163,6 +188,44 @@ describe('ScanService', () => {
 
 		expect(entries.length).toBeGreaterThan(0)
 		expect(asPosix(entries[0].entry)).toMatch(/lib\/index\.js$/)
+	})
+
+	it('resolves project-local workspace packages from nested pnpm patterns', async () => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({ name: 'root', version: '1.0.0' }, null, 2),
+			'pnpm-workspace.yaml': ['packages:', '  - projects/*/plugins/*', ''].join('\n'),
+			'projects/example-app/plugins/billing/package.json': JSON.stringify(
+				{
+					name: '@repo/nested-fixture-billing',
+					version: '0.0.0',
+					type: 'module',
+					exports: {
+						'.': {
+							'@pluxel/hmr': './src/index.ts',
+							default: './dist/index.mjs',
+						},
+					},
+				},
+				null,
+				2,
+			),
+			'projects/example-app/plugins/billing/src/index.ts':
+				"export const source = 'billing-source'\n",
+			'projects/example-app/plugins/billing/dist/index.mjs':
+				"export const source = 'billing-dist'\n",
+		})
+		const fixtureRoot = normalize(fixture.path)
+		await using service = createService(fixtureRoot)
+
+		const resolution = await service.resolveEntryByName('@repo/nested-fixture-billing', {
+			workspaceOnly: true,
+			scan: { preferHmrExports: true },
+		})
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(
+			/projects\/example-app\/plugins\/billing\/src\/index\.ts$/,
+		)
 	})
 
 	it('can swap to a virtual scan fs via updateConfig', async () => {

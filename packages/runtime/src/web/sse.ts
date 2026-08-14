@@ -1,20 +1,12 @@
-import {
-	defaultOnVerificationBlocked,
-	type OnVerificationBlocked,
-} from './verification'
+import { defaultOnAdminAccessBlocked, type OnAdminAccessBlocked } from './admin-access'
 import { RUNTIME_INTERNAL_API_BASE } from './paths'
-import type { ExtensionManifestEvent } from './extensions'
-import type { ExtensionUiSseMap } from './protocol'
-import {
-	resolveVerificationLandingPath,
-	type VerificationReason,
-} from '../shared/verification-http'
+import { resolveAdminAccessLandingPath, type AdminAccessReason } from '../shared/admin-access-http'
 
 export interface BuiltinSseEvents {
-	extensions: ExtensionManifestEvent | { type: 'ready' }
+	'workbench.layouts': { revision?: number } | number
 }
 
-export type ResolvedSseEvents = BuiltinSseEvents & ExtensionUiSseMap
+export type ResolvedSseEvents = BuiltinSseEvents
 
 type PayloadForNs<Ns extends string> = Ns extends keyof ResolvedSseEvents
 	? ResolvedSseEvents[Ns]
@@ -50,12 +42,12 @@ export interface SseClientOptions {
 	/** Whether to send cookies/credentials for cross-origin SSE. */
 	withCredentials?: boolean
 	/**
-	 * Optional verification integration: when SSE errors, we can probe host verification state and redirect
+	 * Optional admin access integration: when SSE errors, probe the admin gate and redirect
 	 * instead of reconnecting forever.
 	 */
-	verification?: {
-		readState: () => Promise<{ allow: boolean; reason?: VerificationReason }>
-		onBlocked?: OnVerificationBlocked
+	adminAccess?: {
+		readState: () => Promise<{ allow: boolean; reason?: AdminAccessReason }>
+		onBlocked?: OnAdminAccessBlocked
 	}
 }
 
@@ -71,10 +63,10 @@ class SseClient {
 	private readonly errorHandlers = new Set<() => void>()
 	private stopped = false
 	private readonly url: string
-	private readonly verification?: NonNullable<SseClientOptions['verification']>
+	private readonly adminAccess?: NonNullable<SseClientOptions['adminAccess']>
 	private readonly withCredentials?: boolean
-	private verificationProbeInFlight: Promise<boolean> | null = null
-	private lastVerificationProbeAt = 0
+	private adminAccessProbeInFlight: Promise<boolean> | null = null
+	private lastAdminAccessProbeAt = 0
 	private connected = false
 
 	private static asap(fn: () => void) {
@@ -82,7 +74,10 @@ class SseClient {
 		else Promise.resolve().then(fn)
 	}
 
-	constructor(options: SseClientOptions = {}) {
+	constructor(
+		options: SseClientOptions = {},
+		private readonly onClose?: () => void,
+	) {
 		const url = new URL(options.url ?? `${RUNTIME_INTERNAL_API_BASE}/sse`, window.location.origin)
 		const namespaces = options.namespaces?.filter(Boolean)
 		if (namespaces?.length) url.searchParams.set('ns', namespaces.join(','))
@@ -93,29 +88,29 @@ class SseClient {
 			}
 		}
 		this.url = url.toString()
-		this.verification = options.verification
+		this.adminAccess = options.adminAccess
 		this.withCredentials = options.withCredentials
 
 		this.connect()
 	}
 
-	private async probeVerificationBlocked(): Promise<boolean> {
-		const verification = this.verification
-		if (!verification) return false
+	private async probeAdminAccessBlocked(): Promise<boolean> {
+		const adminAccess = this.adminAccess
+		if (!adminAccess) return false
 
 		const now = Date.now()
-		if (now - this.lastVerificationProbeAt < 1500) return false
-		this.lastVerificationProbeAt = now
+		if (now - this.lastAdminAccessProbeAt < 1500) return false
+		this.lastAdminAccessProbeAt = now
 
 		try {
-			const state = await verification.readState()
+			const state = await adminAccess.readState()
 			if (!state || state.allow === true) return false
 
-			const onBlocked = verification.onBlocked ?? defaultOnVerificationBlocked
+			const onBlocked = adminAccess.onBlocked ?? defaultOnAdminAccessBlocked
 			onBlocked({
 				status: 401,
 				url: this.url,
-				redirectPath: resolveVerificationLandingPath(state.reason),
+				redirectPath: resolveAdminAccessLandingPath(state.reason),
 				reason: state.reason,
 			})
 			return true
@@ -140,13 +135,13 @@ class SseClient {
 		src.onerror = () => {
 			this.connected = false
 			for (const fn of this.errorHandlers) fn()
-			if (!this.verification) return
-			if (!this.verificationProbeInFlight) {
-				this.verificationProbeInFlight = this.probeVerificationBlocked().finally(() => {
-					this.verificationProbeInFlight = null
+			if (!this.adminAccess) return
+			if (!this.adminAccessProbeInFlight) {
+				this.adminAccessProbeInFlight = this.probeAdminAccessBlocked().finally(() => {
+					this.adminAccessProbeInFlight = null
 				})
 			}
-			void this.verificationProbeInFlight.then((blocked): undefined => {
+			void this.adminAccessProbeInFlight.then((blocked): undefined => {
 				if (blocked) this.close()
 				return undefined
 			})
@@ -155,7 +150,8 @@ class SseClient {
 			let msg: { namespace?: unknown; event?: unknown; payload?: unknown } | null = null
 			try {
 				msg = JSON.parse(ev.data) as { namespace?: unknown; event?: unknown; payload?: unknown }
-			} catch {
+			} catch (error) {
+				console.error('[runtime-sse] malformed event payload', error)
 				return
 			}
 			const namespace = String(msg?.namespace ?? '')
@@ -263,20 +259,40 @@ class SseClient {
 	}
 
 	close(): void {
+		if (this.stopped) return
 		this.stopped = true
 		this.connected = false
 		this.lastByNamespace.clear()
+		this.anyHandlers.clear()
+		this.nsHandlers.clear()
+		this.openHandlers.clear()
+		this.errorHandlers.clear()
+		const source = this.source
+		this.source = null
 		try {
-			this.source?.close()
+			if (source) {
+				source.onopen = null
+				source.onerror = null
+				source.onmessage = null
+				source.close()
+			}
 		} catch {
 			void 0
 		}
-		this.source = null
+		this.onClose?.()
 	}
 }
 
 export function sse(options: SseClientOptions = {}): SseClientWithNamespaces {
-	const client = new SseClient(options) as SseClientWithNamespaces
+	return sseWithLifecycle(options)
+}
+
+/** @internal Create an SSE client that unregisters itself from its transport owner on close. */
+export function sseWithLifecycle(
+	options: SseClientOptions,
+	onClose?: () => void,
+): SseClientWithNamespaces {
+	const client = new SseClient(options, onClose) as SseClientWithNamespaces
 	return new Proxy(client, {
 		get(target, prop, receiver) {
 			if (prop === 'ns') return target.ns.bind(target)

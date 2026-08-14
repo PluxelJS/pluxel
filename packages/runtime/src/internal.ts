@@ -1,22 +1,12 @@
-export { runtimeDevCapabilities, runtimeModuleRuntime } from './runtime/capabilities'
-export type {
-	RuntimeDevCapabilities,
-	RuntimeModuleCacheEntry,
-	RuntimeModuleRuntime,
-	RuntimeWorkerWatchOptions,
-} from './runtime/capabilities'
+export * from './shared'
+export * from './plugin-catalog'
+export * from './runtime-state'
+export type * from './web/protocol'
+export { runtimeModuleRuntime } from './runtime/capabilities'
+export type { RuntimeModuleCacheEntry, RuntimeModuleRuntime } from './runtime/capabilities'
 
-export type {
-	MaterializeProfiledFileOptions,
-	ResolvedProfiledPath,
-	RuntimeStorageLayout,
-	RuntimeStoragePaths,
-} from './runtime/paths'
-export {
-	HOST_PROFILE_TOKEN,
-	resolveProfiledPath,
-	resolveRuntimeStoragePaths,
-} from './runtime/paths'
+export type { RuntimeStorageLayout, RuntimeStoragePaths } from './runtime/paths'
+export { resolveRuntimeStoragePaths } from './runtime/paths'
 export {
 	findRuntimeModuleId,
 	resolveModuleIdBaseDir,
@@ -24,7 +14,65 @@ export {
 } from './runtime/module-id'
 export { createNodeWorkspaceFsBackend } from './runtime/workspace-fs'
 export type { NodeWorkspaceFs, WorkspaceFsBackend } from './runtime/workspace-fs'
+export {
+	isWorkbenchEnabled,
+	matchesWorkbenchUiBasePath,
+	resolveWorkbenchUiBasePath,
+	workbenchAdminAccess,
+} from './workbench-config'
+export { withWorkbenchPluginContext } from './services/workbench/WorkbenchService'
+export { withPluginConfigEnvironment } from './services/config-environment'
+export { CommandsService, withCommandsPluginContext } from './services/CommandsService'
+export {
+	NodeModuleService,
+	withNodeModulePluginContext,
+	type NodeModuleSourceBinder,
+	type NodeModuleSourceSubscription,
+} from './node-artifact/NodeModuleService'
+export { WorkerTaskService, withWorkerTaskPluginContext } from './node-artifact/WorkerTaskService'
+export { readNodeModuleDeclaration } from './node-artifact/node-module'
+export { readHostProduct, sameProduct } from './product-internal'
+export {
+	withDatabasePluginContext,
+	subscribeDatabaseHandle,
+	databaseHandleOwnsTables,
+} from './services/DatabaseService'
+export {
+	readDatabaseDefinition,
+	type DatabaseArtifact,
+	type DatabaseMigration,
+} from './database-internal'
+export { readWorkbenchUiEntry } from './workbench/ui-entry'
+export { resolveDevWorkbenchClientEntryUrl } from './server/assets'
 
 // HMR-only helpers used by @pluxel/runtime-dynamic/hmr (kept out of the public `services` surface).
-export type { ExtensionModuleStore } from './services/plugin-interaction/ExtensionService'
-export { createCompiledExtensionModule } from './services/plugin-interaction/ExtensionService'
+export type { WorkbenchArtifactService } from './services/workbench/WorkbenchArtifactService'
+export { createCompiledWorkbenchArtifact } from './services/workbench/WorkbenchArtifactService'
+export {
+	resolvePackagedNodeModule,
+	resolvePackagedWorkbenchManifest,
+} from './services/workbench/packaged-artifact'
+export {
+	installWorkbench,
+	requireWorkbench,
+	type WorkbenchInstallOptions,
+} from './services/workbench'
+export { createContextPluginLogPolicyStore } from './logger/levels'
+export {
+	createRuntimeLogging,
+	getActiveRuntimeLogging,
+	requireActiveRuntimeLogging,
+	requireContextRuntimeLogging,
+	type ResolvedRuntimeLoggingPlan,
+	type RuntimeConsoleSinkInput,
+	type RuntimeCustomSinkInput,
+	type RuntimeFileSinkInput,
+	type RuntimeLogging,
+	type RuntimeLoggingDescription,
+	type RuntimeLoggingInput,
+	type RuntimeLoggingRootInput,
+	type RuntimeLoggingRouteBinding,
+	type RuntimeLoggingSinkInput,
+	type RuntimeLoggingState,
+	type RuntimeStoreSinkInput,
+} from './logger/logging'

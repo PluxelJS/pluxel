@@ -14,7 +14,6 @@ export default defineConfig({
 	entry: {
 		fixtures: './src/fixtures.ts',
 		index: './src/index.ts',
-		oxlint: './src/oxlint.ts',
 		setup: './src/setup.ts',
 		vitest: './src/vitest.ts',
 		unsafe: './src/unsafe.ts',

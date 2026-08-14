@@ -1,3 +1,5 @@
+import { selectTaskNames } from './catalog.ts'
+
 const numberFromEnv = (key: string, fallback: number) => {
 	const raw = process.env[key]
 	if (raw == null) return fallback
@@ -35,3 +37,5 @@ export const referenceEnvPath = process.env.PLUXEL_BENCH_REFERENCE
 export const outputDirEnvPath = process.env.PLUXEL_BENCH_OUTPUT_DIR
 
 export const verboseBench = process.env.PLUXEL_BENCH_VERBOSE === '1'
+
+export const selectedTaskNames = selectTaskNames(process.env.PLUXEL_BENCH_TASKS)

@@ -1,6 +1,7 @@
 import { Autocomplete, MultiSelect, Radio, Select, Stack, TagsInput, Text } from '@mantine/core'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { SegmentedButtons } from '../../SegmentedButtons'
+import { toInputString } from '../types'
 
 export interface PicklistControlProps {
 	meta: {
@@ -167,7 +168,7 @@ export function PicklistControl({
 	)
 
 	const singleValue = useMemo(
-		() => (value == null ? '' : (rawToId.get(value as any) ?? String(value))),
+		() => (value == null ? '' : (rawToId.get(value as any) ?? toInputString(value))),
 		[value, rawToId],
 	)
 

@@ -1,184 +1,116 @@
-# HMR
+# HMR Architecture
 
-HMR 是 `@pluxel/runtime-dynamic` 的 HMR mode，不是独立包。它把 Vite、源码执行、watch、moduleGraph 和插件 UI 编译接到 loader route 上，并通过 loader batch 提交 runtime module replacement。
+Database handle 与 plugin generation 绑定，并固定引用一个 active database instance。replacement 撤销旧 handle 和
+live-query lease；同 lineage 新 generation 复用 instance，`migrations` evolution 只应用缺失 migration，
+`reset-on-schema-change` 的 schema-derived lineage 改变时则构建空 candidate、原子激活
+并归档旧 instance。PGlite backend、PG pool、instance registry 和 durable rows 属于 root，不随 module replacement 重建；
+candidate 失败保持原 active instance，但 core rollback 仍通过新 handle acquisition 验证 artifact 与 lineage。
+owner teardown 先使 handle 拒绝新操作，再等待已经接受的运行中和排队操作排空；plugin stop 完成后才允许 replacement
+generation 启动。因此不会产生预期取消的 unhandled rejection，也不会让旧 generation 的数据库操作跨越 replacement。
 
-## 设计边界
-
-Loader HMR mode 拥有：
-
-- loader HMR config diagnose
-- Vite HMR server
-- SSR runner
-- watcher 和 moduleGraph traversal
-- runner singleton bridge
-- HMR batch orchestration
-- 通过 `ctx.loader.beginBatch()` 做 runtime module replacement
-- HMR 期插件 UI 源码编译
-
-Loader HMR mode 不拥有：
-
-- 生产 runtime 服务
-- runtime 协议定义
-- core 生命周期算法
-- 正式运行时 UI 注册语义
-
-一句话边界：loader HMR mode 负责“源码如何变成可运行模块/remote”，runtime 负责“可运行 artifact 如何注册和消费”。
-
-## 当前 HMR 流程
+HMR replacement 必须保持 core lifecycle、Workbench resources 和 UI artifact 同步：
 
 ```text
-file change
--> Vite moduleGraph affected ids
--> runner import
--> loader batch replaceModule
--> runtime affected module sync
--> core registry commit
+module batch -> committed graph -> stop old owner/effects -> start new owner
+             -> mount module/resources -> compile artifact -> Workbench revision
+             -> Workbench refetch target layouts -> lazy load new remote
 ```
 
-HMR summary 需要解释：
+optional plugin candidate 的 canonical plugin ID 生成 synthetic module owner。consumer module replacement 会撤销旧 watcher
+subscription；新 ref 重新解析后，同一 synthetic owner 通过正常 `replace()` transaction 更新 provider，running watcher
+负责 callback cleanup/rebind。成功的 dynamic file-source batch 只重试 active requests，同一失败 generation 不循环重试。
 
-- changed/target modules
-- runtime affected modules
-- synced modules
-- auto-disabled missing dependencies
-- enabled-but-stopped plugins
-- commit failures
+`PluginArtifactCompiler` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供 Vite server、
+plugin directory 和 host policy。attachment 始终安装 Node source provider，并只在 Workbench enabled 时安装 UI
+source provider；两者共享 lazy compiler、target-keyed graph/watch queue、cache retention 和 atomic publication。
+Workbench 与 Node builder 都保持 lazy import，因此 Node-only/Workbench-disabled 路径不加载 Federation builder。
+旧 artifact 有界保留供 inflight import 完成。
+artifact 编译状态只推进 catalog/layout revision，不撤销资源 grant；module、实例或依赖资源图变化会推进
+独立的 grant revision，并让旧 layout binding 立即失效。这样 UI-only HMR 不会制造无效 binding 竞态，
+也不会放宽资源图变化时的 capability 撤销语义。
 
-## Workspace Path Model
+测试至少覆盖 module replacement cleanup、compile error state、cached artifact、target layout refresh 和
+disabled Workbench Plane，以及 Node module 的合并 rebuild、staged setup 和 last-known-good。
 
-loader HMR 里有三种 `roots`，不要混用：
+## Static Vite route
 
-- `pluxel.loader.hmr.jsonc` 的 `roots`：workspace discovery scope，只决定哪些 package 会被扫描出来。
-- `LoaderHmrWorkspace.enabledEntries`：真正提交给 loader/HMR 的入口，只来自 profile enabled package 和显式 include。
-- `LoaderHmrWorkspace.watchRoots`：HMR/Vite 的 watch 和 `server.fs.allow` scope，不会自动启用插件。
+`staticRuntimeVitePlugin({ entry })` 通过 Vite SSR ModuleRunner 加载 canonical `defineStaticRuntime()` entry。普通 plugin
+module 变化会失效精确 module/importer graph，并通过 core replacement lifecycle 更新 fixed catalog；entry 本身或
+只改变 `configure()` 结果的依赖变化会重建 host。single-active logging root 要求重建时先停止旧 host；新 application
+启动失败时 route 会用上一次成功的 application 重新创建 host，使后续 HMR 仍可重试。
 
-诊断阶段统一把路径输出成 root-relative snapshot；host 启动阶段再以 `root/cwd` 解析成绝对路径。这样 CLI、TUI、host script 和测试 fixture 都使用同一套路径模型。
+Workbench UI 与 Node module declaration 都交给 runtime-dev compiler，因此 static route 在开发期具备与 dynamic route
+相同的 artifact HMR contract。两者的差别是 catalog policy：static 只有 application import 的 fixed catalog；dynamic 先提交
+config import 的 fixed baseline，再处理 workspace profile 和显式 `sources` 得到的 mutable entries。production frozen distribution
+不携带 watcher、Vite server 或 HMR compiler。
 
-monorepo 下 `watchRoots` 会包含 enabled workspace package 的 workspace dependency closure。这个 closure 的语义只限于 HMR 观察范围：
+每个 `ViteDevServer` 只有一个 Pluxel SSR ModuleRunner 与 evaluated module namespace。dynamic config、它 import 的 fixed plugins、
+mutable source anchors 和普通 ESM dependencies 都经由该实例求值；HMR runner 只增加 path、bridge、host-module classification、
+invalidation 与诊断，不创建第二个 cache。config import graph 变化重建 dynamic host，mutable dependency 变化沿 importer graph
+精确回到 source anchor。
 
-- 不修改 `pluxel.loader.hmr.jsonc`。
-- 不扩大 discovery roots。
-- 不把 dependency package 加进 `enabledEntries`。
-- 不自动启用另一个插件。
-- 遵守 `omitPackages`，避免 builtin/double-load 包被拉回 source watch。
+dynamic loader 的 bridge modules/providers、SSR、dedupe、optimizer 和 Vite cache 都是运行时不变量，不接受宿主覆盖，
+也不合并第二份 `InlineConfig`。模块执行边界按固定优先级处理：bridge 首先保持 host singleton identity；随后由
+runtime-dev 共享 classifier 将 CommonJS/native package 留在 Node host；其余 workspace ESM source 才进入 Vite transform
+和 HMR graph。dynamic runner 在 bare specifier 与 Vite 已解析的 `/@fs/` 边界调用同一个 classifier，因此 workspace alias
+不会绕过分类，也不需要 package 名单。
 
-这样做是为了让被启用插件 import 的 workspace shared package 能被 Vite 访问和监听。若 dependency package 本身也是插件但没有被 profile enabled，diagnose 会给 warning；HMR 可以看到源码变化，但 runtime 是否启用该插件仍由 profile/config 决定。
+dynamic source 只接受精确文件和带显式、相对、正向 include glob 的目录；glob 不允许越过 source directory，解析结果有
+10,000 entry 的内核上限。启动 discovery 与 watcher add/change/unlink 共用同一入口语义；暂时不存在的目录仍保留为 watch root。
+初始 entries 必须完成 graph commit 后 host 才报告 ready，不存在可跳过正确性的 optional warmup。source entry 已进入 module graph
+后，目录外的普通 import dependency 变化会沿 importer graph 回到 source anchor；没有任何
+source-owned importer 的过期事件作为 debug-level no-op，不制造失败告警。source producer 负责在目标目录原子发布普通 ESM entry，dynamic route
+负责解析、执行、batch commit、卸载和 optional availability invalidation。registry client、lockfile、market、安装状态、
+RPC 与 UI 都必须位于 source producer 插件，不得进入 HMR pipeline。
 
-## 插件 UI HMR
+source watcher 和 resolved source declaration reader 在 fixed baseline commit 前安装。producer 可通过隔离的
+`@pluxel/runtime-dynamic/source-producer` 校验目标 file/directory；该入口不创建 watcher 或 publication lease，也不加载 Vite、
+workspace scanner 或 package manager。
 
-作者侧可以写：
+Workspace profile 的 `enabled` 是 mutable package entry selection：CLI 选择的 package entry 会进入初始加载列表，其 workspace
+dependency closure 会成为 watch roots。它不直接启用插件 lifecycle；module 求值后，插件是否启动仍只读取 RuntimeState。config
+的 `plugins` 是 fixed availability，不进入 CLI discovery；同一 plugin ID 同时由 fixed 与 mutable catalog 提供时启动失败。
+generation shutdown 先停止 watcher/batch admission，丢弃尚未开始的 debounce queue，等待正在执行的 batch 完成，再进入 core
+lifecycle/effects cleanup；Vite/plugin close hooks 完成后才关闭 canonical ModuleRunner。
 
-```ts
-ui('./ui/index.tsx').bind(ctx)
-```
+## Workbench UI Federation 构建隔离
 
-开发期由 runtime-dynamic HMR bridge 消费源码入口并编译 remote；build 期由 build plugin 改写；runtime 最终只消费：
+`buildWorkbenchUiRemote()` 把每个 remote 作为独立 staging transaction 构建、校验并原子发布。
+相同 build key 的请求在进程内合并；同一输出目录的不同请求按整条 transaction 串行，避免较早构建在
+较晚构建之后覆盖目标目录。
 
-```ts
-ctx.ext.ui.remote.packaged()
-```
+截至 `@module-federation/vite@1.16.16`，上游 builder 仍不是 reentrant：
+`normalizeModuleFederationOptions()` 会覆盖 module-scoped `config`，VirtualModule registry、
+`hostAutoInitModule` 和部分 shared caches 也属于模块级单例；manifest 和 bundle hooks 会在稍后重新读取这些
+状态。因此同一 Node.js 进程内并发执行两个 `vite.build()` 会发生 remote name、virtual entry 或 shared
+配置串扰。Pluxel 将实际 Federation builder 调用建模为 process-wide exclusive resource；源码 hash、缓存
+检查和图准备等前置工作由内核 worker pool 并发，精确相同的构建仍会去重。并发和 shared package 集合不是
+项目配置面，避免调用方意外串行化安全阶段或生成与宿主不一致的 remote。
 
-runtime 永远不应该回头理解 source `entryPath`。
+static/dynamic Vite route 在 `config` hook 声明同一个 Workbench client entry 与必要的 CJS interop include，配置会进入
+Vite 的首轮 optimizer plan 和 config hash；项目不需要维护 `optimizeDeps.include`、`noDiscovery` 或包管理器路径
+alias。不得在 `configureServer` 后修改 resolved client config，也不额外并发 client warmup。
 
-## Vite 配置
+artifact compiler 收集插件 UI watch graph 时只使用 SSR environment 的 transform/module graph；这属于服务端编译
+元数据，不得调用 host client `transformRequest()` 污染 browser optimizer。否则插件 UI 的部分依赖会与全局
+Workbench entry scan 形成两个 metadata 集合，触发 Vite 增量比较缺陷。route cache directory 随 optimizer contract
+版本化，避免旧 dependency graph metadata 跨 contract 复用。
 
-Dynamic HMR 由宿主 `vite.config.ts` 拥有唯一 Vite server。GQLens、React、macro、
-GraphQL codegen 这类已有 Vite 插件直接写在宿主 Vite config；Pluxel 只挂 dynamic route plugin：
+升级上游后不要凭版本号删除该隔离。移除前必须同时确认：
 
-```ts
-import react from '@vitejs/plugin-react'
-import { gqlens } from '@gqlens/vite'
-import { dynamicRuntimeVitePlugin } from '@pluxel/runtime-dynamic/vite'
-import { defineConfig } from 'vite'
+1. normalized options 和所有 VirtualModule/cache registry 已改成 federation instance ownership；
+2. 不同 package root 的并发 remote 回归用例允许 builder 临界区重叠后，连续运行仍得到各自正确的
+   manifest name、entry 和 UI marker；
+3. 同输出目录的 transaction queue 继续保留，它解决的是 Pluxel 自身的发布次序，与上游是否 reentrant
+   无关。
 
-export default defineConfig({
-	root: import.meta.dirname,
-	plugins: [
-		dynamicRuntimeVitePlugin({ config: './pluxel.dynamic.ts' }),
-		gqlens({
-			entry: '/src/graphql-entry.ts',
-			output: 'src/gqlens',
-			endpoint: '/graphql',
-			framework: 'react',
-		}),
-		react(),
-	],
-	resolve: {
-		alias: {
-			'@generated/graphql': '/absolute/path/to/generated/graphql.ts',
-		},
-	},
-})
-```
+Workbench 的 Federation host 和 `remoteName -> cache-busted entry` registry 保存在 `globalThis` 的
+`Symbol.for('pluxel.workbench.federation-runtime')` 状态中，以跨越 Vite module HMR。相同 entry 的多个 view
+load 是幂等的，不重复 `registerRemotes()`；只有 `sourceHash` 或 `compiledAt` 改变后才以 `force: true` 替换
+remote。不要把该状态退回普通 module local，否则同一插件的多个 view 和 HMR 重载会反复清除 MF remote
+cache 并产生 `already registered` 警告。
 
-Dynamic route config 只描述 workspace/profile/runtime 语义，不再嵌套 Vite 或 HMR config：
-
-```ts
-import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
-
-export default defineDynamicRuntimeConfig({
-	root: process.cwd(),
-	configPath: 'pluxel.loader.hmr.jsonc',
-	profile: 'dev',
-})
-```
-
-Pluxel 在宿主 Vite server 内挂载 runner、config-source、HTTP bridge、watch 和 module
-replacement。普通 Vite 插件仍由宿主 Vite config 排序和配置。
-
-需要谨慎对待的字段：
-
-- `plugins`：可以正常追加；如果插件假设自己运行在普通 app dev server，要确认它不会拦截 Pluxel HMR 内部请求。
-- `server` / `preview` / `appType`：仍属于宿主 Vite 配置，会影响开发宿主行为。
-- `resolve` / `ssr` / `environments`：会影响 runner singleton、workspace source condition 和 linked package 去重。
-- `build` / `worker`：会影响插件 UI remote build；覆盖 `outDir`、`rollupOptions.input`、MF remote 相关输出会导致 runtime 找不到 remote artifact。
-
-原则是：Vite 配置入口只在宿主 `vite.config.ts`；配置错误导致 HMR 或 remote build 不正确，由配置方负责。
-
-## MF2 在 Loader HMR 的角色
-
-Loader HMR mode 不把 MF2 当 authoring API。MF2 只定义 remote artifact format 和宿主加载协议；loader HMR mode 负责发现 UI 源码变更、触发 remote build，并处理 HMR watch/rebuild/submit。
-
-当前共享的 `@pluxel/rolldown/vite/plugin-ui` build helper 策略：
-
-- 同一插件包根目录共享 root-scoped build scheduler。
-- 同 root 多个 UI remote 串行构建。
-- 每次真实 MF2/Vite build 默认在当前进程内执行。
-- 每次只清理本次专属临时 cache，避免误删 root federation 临时目录。
-- `@module-federation/vite` 仍会在测试环境跳过插件加载，所以测试环境只在创建 federation 插件时临时设置 `MFE_VITE_NO_TEST_ENV_CHECK=true`。
-
-`@module-federation/vite@1.16.6` 已经不需要每次 build 新开子进程；同进程连续 build 通过回归测试。但同一 root 下并发 build 仍可能让 MF virtual module id 互相串扰，所以 root-scoped 串行队列仍是必要边界，而不是旧 workaround。这是 route-neutral 的 Vite 工具链能力；dynamic/static route 可以在需要插件 UI 子编译时复用，但它不拥有两条 route 的 HMR 提交流程。
-
-## 实现入口
-
-- `packages/runtime-dynamic/src/vite.ts`：host-owned dynamic route Vite plugin。
-- `packages/runtime-dynamic/src/hmr.ts`：CLI/test-facing loader HMR internals and diagnose exports。
-- `packages/runtime-dynamic/src/hmr/host.ts`：loader HMR host planning/boot internals。
-- `packages/runtime-dynamic/src/hmr/engine/LoaderHmrService.ts`：HMR server、runner、watch pipeline。
-- `packages/runtime-dynamic/src/hmr/engine/config.ts`：Vite config、bridge modules、dedupe、optimizeDeps。
-- `packages/runtime-dynamic/src/hmr/engine/pipeline.ts`：graph processing、executor、commit scheduler。
-- `packages/runtime-dynamic/src/hmr/engine/runner.ts`：SSR runner 和 bridge handling。
-- `packages/runtime/src/plugin.ts`：route-neutral `ui(...)` / `worker(...)` authoring bridge。
-- `packages/runtime-dynamic/src/hmr/extensions/ExtensionCompilerService.ts`：HMR 期消费 bridge、编译 UI、提交 compiled module。
-- `packages/rolldown/src/vite/plugin-ui.ts`：共享的插件 UI remote build helper。
-- `packages/runtime-dynamic/src/hmr/diagnose/**`：loader HMR config 和 workspace diagnose。
-- `packages/runtime-dynamic/src/hmr/snapshot.ts`：`LoaderHmrWorkspace`。
-
-## 静态插件目录的 HMR 方向
-
-`@pluxel/runtime-static/vite` 内部实现轻量 static HMR 基线：Vite route 通过 SSR import 重新得到 `StaticRuntimeDefinition`，static route 只按 plugin name diff fixed catalog，并提交 affected enabled plugins。它不复用 dynamic loader replacement，也不拥有独立 Vite server、module graph、module id registry、package cache 或 loader batch。
-
-两条 route 的 HMR 能力保持一致的目标是“插件代码变化后可以重新提交运行中插件”，不是共享同一个 loader。dynamic route 负责动态 module exports -> loader batch；static route 负责 definition -> catalog diff；插件 UI remote build 这类 Vite/MF 子编译能力统一在 `@pluxel/rolldown/vite/plugin-ui`。
-
-route 能力和 dev/HMR 能力分开挂载：`ctx.runtimeRoute` 只描述 catalog/lifecycle/source/API 等路线语义，`ctx.runtimeDev` 才承载 source UI、worker watch 和 batch 等开发期能力。
-
-固定插件集合可以支持开发期热替换，但语义不是“动态 loader HMR”：
-
-- 启动时插件集合必须已知。
-- HMR runner 可以重新 import static entry 或 plugin boundary。
-- 替换目标必须映射回已知 plugin id/name。
-- 插件集合 drift 默认报错，要求重启或显式允许。
-- 不使用 workspace scan、package install、dynamic module catalog。
-- 不把 loader route 的 `enabledEntries` / `watchRoots` 规则复用给 runtime-static route。
-
-也就是说，runtime-static route 的 HMR 优势来自 fixed catalog：边界更严格、诊断更确定；代价是不能像 loader route 那样自然支持插件集合漂移和动态安装。
+浏览器通过 Federation Runtime API 把 cache-busted `remoteEntry.js` 明确注册为 ESM remote，再调用
+`loadRemote()`；`mf-manifest.json` 保留上游生成的完整 asset graph，只用于 artifact 校验和诊断。构建器不得
+改写 MF virtual module 或清空 manifest preload 字段来修正初始化次序；remote container 的 `init -> get`
+顺序由 runtime contract 负责。
