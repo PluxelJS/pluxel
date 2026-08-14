@@ -241,9 +241,10 @@
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
 		},
 		"@pluxel/runtime-dynamic#test": {
-			// The fixed-plugin identity smoke test starts a separate Node process, outside Vitest's
-			// source-condition resolver.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			// Real distribution-mode config reloads and the fixed-plugin identity smoke test resolve
+			// package exports outside Vitest's source condition. Their own dist must not race a clean
+			// runtime-dynamic build, and the child process also consumes the runtime distribution.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@pluxel/runtime-dynamic#build"],
 		},
 		"@pluxel/runtime-static#test": {
 			// Static host integration exercises Node-facing runtime package exports.
