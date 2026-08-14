@@ -1,6 +1,6 @@
 # Core lifecycle benchmark：cascade 回退调查交接
 
-> 状态：已完成首轮优化与 A-B 验证
+> 状态：已完成优化、诊断增强与 A-B 验证
 >
 > 记录日期：2026-08-14
 >
@@ -16,6 +16,7 @@
 - 已存在但没有 active lease 的 gate 同步关闭；只有实际 drain 才返回 Promise；
 - lifecycle actor 只等待真实异步 stop 结果，空 wrapper 不再产生无意义 microtask；
 - no-gate close 写入轻量 closed tombstone，修复“缓存 wrapper 在 owner 停止后首次调用时创建新 gate”的 generation 隔离缺口；
+- 默认顺序 teardown 使用专用 reverse-topo 循环，去掉每节点 Promise chain、in-flight Set 和 singleton `Promise.race()`；并发 teardown 继续使用原 bounded scheduler；
 - 新增 no-gate、idle gate、active drain、stop 顺序和 cached stale wrapper 覆盖。
 
 同一机器、同一 2000ms/1000ms 配置下，修改前对历史 base 有 9 项 regression；两次修改后运行均只剩
@@ -28,10 +29,14 @@
 | restart: root (star)             | 2.948ms |      2.170ms |      2.175ms |
 | hmr: replace root (star)         | 3.253ms |      2.191ms |      2.288ms |
 
-`large: replace root` 的剩余信号约为 +0.19–0.36ms，且不再呈现原来的约 6–7µs/affected-node 斜率。
-增量 graph snapshot 仍有随 slot 数量增长的数组/Map 复制，但进一步结构共享会扩大 rollback 与实例 revision 风险；在获得独立
-profile 和稳定 task-filter 数据前不作为本轮修改。基准 artifact 位于本地忽略目录
-`.bench-results/core/{pre-optimization,post-optimization,post-optimization-run2}`。
+最终顺序 teardown 隔离实验中，stop-only 的 star root unregister 为 `0.839 → 0.679ms`（-19.07%）；root HMR
+为 `2.271 → 2.196ms`（-3.30%），chain middle restart 基本不变。该实验仍存在 base→head 进程间漂移，因此只把与实现形状
+一致的 stop-only 结果作为方向证据，不用单轮 composite task 数字宣称稳定收益。
+
+benchmark 现在支持精确 task filter，JSON 记录实际 selection；ratio signal 同时展示 numerator/denominator delta 与 source
+quality，并明确 ratio 不是 regression gate。增量 graph snapshot 仍有随 slot 数量增长的数组/Map 复制，但进一步结构共享会扩大
+rollback 与实例 revision 风险，不作为本轮修改。基准 artifact 位于本地忽略目录
+`.bench-results/core/{pre-optimization,post-optimization,post-optimization-run2,sequential-stop-full-ab}`。
 
 ## 1. 目的与当前结论
 
@@ -248,7 +253,16 @@ pnpm bench:core:compare 35fc6273^ 35fc6273
 
 ### Step D：profile，而不是继续猜
 
-Tinybench 当前会运行全部 19 个 task。为了获得清晰 profile，可以临时增加 task filter，或制作只注册以下任务的本地 probe：
+Tinybench 默认运行全部 19 个 task。可以用逗号分隔的 canonical task 名精确过滤；未知名称会 fail-fast，reference 中未选择的
+任务不会被误报为 missing：
+
+```bash
+PLUXEL_BENCH_TASKS='unregister: root cascade (star),restart: root (star),unregister: leaf cascade (star)' \
+PLUXEL_BENCH_TIME=5000 \
+pnpm bench:core:compare eb022d86 HEAD
+```
+
+用于 stop-side profile 时优先选择：
 
 - `unregister: root cascade (star)`：只看 stop/unregister。
 - `restart: root (star)`：stop + delete + instantiate/start。

@@ -139,6 +139,15 @@ export function loadReferenceReport(
 	}
 }
 
+export function selectReferenceTasks(
+	report: ReferenceReport | null,
+	selectedTasks: readonly string[],
+): ReferenceReport | null {
+	if (!report) return null
+	const selected = new Set(selectedTasks)
+	return { ...report, tasks: report.tasks.filter((task) => selected.has(task.name)) }
+}
+
 export type ComparisonRow = {
 	name: string
 	referenceOpsMean: number | null
@@ -208,6 +217,9 @@ export type DecisionSignal = {
 	current: number | null
 	reference: number | null
 	deltaPct: number | null
+	numeratorDeltaPct: number | null
+	denominatorDeltaPct: number | null
+	reliable: boolean
 	status: 'watch' | 'ok' | 'missing'
 	focus: string
 }
@@ -227,24 +239,29 @@ const ratioOf = (rowsByName: Map<string, BenchRow>, numerator: string, denominat
 const referenceRowsFromComparison = (comparison: ComparisonRow[]): BenchRow[] =>
 	comparison
 		.filter((row) => row.referenceLatencyMeanMs != null)
-		.map((row) => ({
-			name: row.name,
-			runs: null,
-			opsMean: row.referenceOpsMean ?? 0,
-			opsRmePct: 0,
-			latencyMeanMs: row.referenceLatencyMeanMs!,
-			latencyP99Ms: null,
-			latencyRmePct: 0,
-		}))
+		.map(
+			(row): BenchRow => ({
+				name: row.name,
+				runs: null,
+				opsMean: row.referenceOpsMean ?? 0,
+				opsRmePct: 0,
+				latencyMeanMs: row.referenceLatencyMeanMs!,
+				latencyP99Ms: null,
+				latencyRmePct: 0,
+			}),
+		)
 
 export function buildDecisionSignals(rows: BenchRow[], comparison: ComparisonRow[]) {
 	const referenceRows = referenceRowsFromComparison(comparison)
 	const rowsByName = byName(rows)
 	const referenceRowsByName = byName(referenceRows)
+	const comparisonByName = new Map(comparison.map((row) => [row.name, row] as const))
 
 	return DECISION_SIGNALS.map((signal): DecisionSignal => {
 		const current = ratioOf(rowsByName, signal.numerator, signal.denominator)
 		const reference = ratioOf(referenceRowsByName, signal.numerator, signal.denominator)
+		const numerator = comparisonByName.get(signal.numerator)
+		const denominator = comparisonByName.get(signal.denominator)
 		const deltaPct =
 			current != null && reference != null ? pct(ratioPct(current, reference) ?? Number.NaN) : null
 		return {
@@ -252,6 +269,9 @@ export function buildDecisionSignals(rows: BenchRow[], comparison: ComparisonRow
 			current,
 			reference,
 			deltaPct,
+			numeratorDeltaPct: numerator?.latencyDeltaPct ?? null,
+			denominatorDeltaPct: denominator?.latencyDeltaPct ?? null,
+			reliable: numerator?.reliable === true && denominator?.reliable === true,
 			status: current == null ? 'missing' : current >= signal.watchAt ? 'watch' : 'ok',
 			focus:
 				latencyOf(rowsByName, signal.numerator) == null ||
@@ -267,6 +287,7 @@ export type MainReport = {
 	runtime: { name: string; version: string }
 	options: {
 		scenario: Record<string, unknown>
+		selectedTasks: readonly string[]
 		timeMs: number
 		warmupTimeMs: number
 		warmupIterations: number
@@ -340,6 +361,7 @@ export function renderMarkdown(input: {
 		.slice(0, 8)
 	const noisyCount = noisyLatencyRows(report.tasks).length
 	const taskByName = byName(report.tasks)
+	const decisionSignals = report.decisionSignals.filter((signal) => signal.current != null)
 
 	const lines = [
 		'# Plugin lifecycle benchmark',
@@ -355,14 +377,24 @@ export function renderMarkdown(input: {
 		'',
 		'## Signals',
 		'',
-		'| Signal | Now | Ref | Δ | State | Focus |',
-		'| --- | ---: | ---: | ---: | --- | --- |',
-		...report.decisionSignals.map(
-			(signal) =>
-				`| ${signal.name} | ${ratioDisplay(signal.current)} | ${ratioDisplay(
-					signal.reference,
-				)} | ${pctDisplay(signal.deltaPct)} | ${signal.status} | ${signal.focus} |`,
-		),
+		'Ratio signals describe topology, not the regression gate. A faster denominator can increase a ratio.',
+		'',
+		...(decisionSignals.length > 0
+			? [
+					'| Signal | Now | Ref | Ratio Δ | Numerator Δ | Denominator Δ | Quality | State | Focus |',
+					'| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |',
+					...decisionSignals.map(
+						(signal) =>
+							`| ${signal.name} | ${ratioDisplay(signal.current)} | ${ratioDisplay(
+								signal.reference,
+							)} | ${pctDisplay(signal.deltaPct)} | ${pctDisplay(
+								signal.numeratorDeltaPct,
+							)} | ${pctDisplay(signal.denominatorDeltaPct)} | ${
+								signal.reliable ? 'reliable' : 'directional'
+							} | ${signal.status} | ${signal.focus} |`,
+					),
+				]
+			: ['No complete signal pairs for the selected tasks.']),
 		'',
 		'## Regressions',
 		'',

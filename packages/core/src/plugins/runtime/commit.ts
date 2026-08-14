@@ -272,9 +272,11 @@ export async function stopPluginsTopo<T>(
 	if (!getDependents || affected.size === 0) return
 	if (affected.size === 1) {
 		for (const id of affected) {
-			await stop(id).catch(() => {
+			try {
+				await stop(id)
+			} catch {
 				// stop is best-effort by design; keep teardown progressing.
-			})
+			}
 		}
 		return
 	}
@@ -308,7 +310,6 @@ export async function stopPluginsTopo<T>(
 
 	const stopped = new Set<T>()
 	let head = 0
-	const inFlight = new Set<Promise<void>>()
 
 	const complete = (id: T) => {
 		for (const parent of parents.get(id)!) {
@@ -318,6 +319,29 @@ export async function stopPluginsTopo<T>(
 		}
 	}
 
+	if (concurrency === 1) {
+		while (stopped.size < affected.size) {
+			if (head >= ready.length) {
+				// Cycle: break it by stopping remaining nodes in insertion order.
+				for (const id of affected) {
+					if (!stopped.has(id)) ready.push(id)
+				}
+			}
+
+			const id = ready[head++]!
+			if (stopped.has(id)) continue
+			stopped.add(id)
+			try {
+				await stop(id)
+			} catch {
+				// stop is best-effort by design; keep teardown progressing.
+			}
+			complete(id)
+		}
+		return
+	}
+
+	const inFlight = new Set<Promise<void>>()
 	const schedule = (id: T) => {
 		stopped.add(id)
 		const p = stop(id)

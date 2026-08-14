@@ -9,6 +9,7 @@ import {
 	debugBench,
 	outputDirEnvPath,
 	referenceEnvPath,
+	selectedTaskNames,
 	scenarioSizes,
 	strictMode,
 	tolerancePct,
@@ -24,6 +25,7 @@ import {
 	printRowsTable,
 	renderMarkdown,
 	resolveReferencePath,
+	selectReferenceTasks,
 	isLatencyRegression,
 	toMainReport,
 	writeReports,
@@ -66,6 +68,10 @@ const scenario = createScenario(scenarioSizes)
 
 const restore = silencePluginLogs()
 const disposeBenchContexts = registerPluginLifecycleBenchmarks(bench, scenario)
+const selectedTasks = new Set<string>(selectedTaskNames)
+for (const task of bench.tasks.slice()) {
+	if (!selectedTasks.has(task.name)) bench.remove(task.name)
+}
 try {
 	await bench.run()
 } finally {
@@ -92,7 +98,10 @@ if (debugBench && referenceEnvPath) {
 	console.log('[bench] reference report resolved to:', resolvedReferencePath ?? '(not found)')
 }
 
-const referenceReport = loadReferenceReport(resolvedReferencePath)
+const referenceReport = selectReferenceTasks(
+	loadReferenceReport(resolvedReferencePath),
+	selectedTaskNames,
+)
 const comparison = buildComparison(rows, referenceReport)
 
 const mainReport = toMainReport({
@@ -100,6 +109,7 @@ const mainReport = toMainReport({
 	runtime,
 	options: {
 		scenario: scenario.sizes,
+		selectedTasks: selectedTaskNames,
 		timeMs: benchOptions.timeMs,
 		warmupTimeMs: benchOptions.warmupTimeMs,
 		warmupIterations: benchOptions.warmupIterations,

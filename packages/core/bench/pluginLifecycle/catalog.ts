@@ -29,6 +29,30 @@ export const TASK = {
 
 export type TaskName = (typeof TASK)[keyof typeof TASK]
 
+export const TASK_NAMES = Object.freeze(Object.values(TASK)) as readonly TaskName[]
+
+export function selectTaskNames(raw: string | undefined): readonly TaskName[] {
+	if (!raw?.trim()) return TASK_NAMES
+
+	const requested = new Set(
+		raw
+			.split(',')
+			.map((name) => name.trim())
+			.filter(Boolean),
+	)
+	if (requested.size === 0) {
+		throw new Error('PLUXEL_BENCH_TASKS did not contain a task name')
+	}
+	const known = new Set<string>(TASK_NAMES)
+	const unknown = [...requested].filter((name) => !known.has(name))
+	if (unknown.length > 0) {
+		throw new Error(
+			`Unknown PLUXEL_BENCH_TASKS: ${unknown.join(', ')}. Valid tasks: ${TASK_NAMES.join(', ')}`,
+		)
+	}
+	return TASK_NAMES.filter((name) => requested.has(name))
+}
+
 export type TaskMetadata = {
 	area: Area
 	focus: string
