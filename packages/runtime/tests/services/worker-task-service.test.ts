@@ -142,6 +142,12 @@ describe('WorkerTaskService', () => {
 			await host.commit()
 			const a = host.require(WorkerTaskConsumerA)
 			const b = host.require(WorkerTaskConsumerB)
+			// Resolve both owner-local artifact routes before exercising scheduler fairness.
+			// Artifact readiness is intentionally independent and has no submission-order contract.
+			await Promise.all([
+				a.run({ label: 'warm-a', delay: 0 }),
+				b.run({ label: 'warm-b', delay: 0 }),
+			])
 			const completed: string[] = []
 			const first = a.run({ label: 'a1', delay: 80 }).then((result) => {
 				completed.push(result.label)
