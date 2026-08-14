@@ -1,6 +1,6 @@
 # Core lifecycle benchmark：cascade 回退调查交接
 
-> 状态：待专项 profile / A-B 验证
+> 状态：已完成首轮优化与 A-B 验证
 >
 > 记录日期：2026-08-14
 >
@@ -8,9 +8,35 @@
 >
 > 环境：Node.js 24.18.0，Tinybench time 2000ms / warmup 1000ms
 
+## 0. 处理结果（2026-08-14）
+
+首要假设已被实现级 A-B 验证。优化保持 owner admission / abort / drain 顺序，不改变 cascade、Effects 或 stop concurrency：
+
+- no-gate close 改为同步路径，不创建 `AbortController`、默认 `Error` 或 resolved Promise；
+- 已存在但没有 active lease 的 gate 同步关闭；只有实际 drain 才返回 Promise；
+- lifecycle actor 只等待真实异步 stop 结果，空 wrapper 不再产生无意义 microtask；
+- no-gate close 写入轻量 closed tombstone，修复“缓存 wrapper 在 owner 停止后首次调用时创建新 gate”的 generation 隔离缺口；
+- 新增 no-gate、idle gate、active drain、stop 顺序和 cached stale wrapper 覆盖。
+
+同一机器、同一 2000ms/1000ms 配置下，修改前对历史 base 有 9 项 regression；两次修改后运行均只剩
+`large: replace root` 1 项。六个原始 cascade 信号中的五个回到 gate 内或快于 base。代表性 head 延迟：
+
+| Task                             |  修改前 | 修改后 run 1 | 修改后 run 2 |
+| -------------------------------- | ------: | -----------: | -----------: |
+| unregister: root cascade (star)  | 1.518ms |      0.852ms |      0.810ms |
+| unregister: chain middle cascade | 1.038ms |      0.535ms |      0.500ms |
+| restart: root (star)             | 2.948ms |      2.170ms |      2.175ms |
+| hmr: replace root (star)         | 3.253ms |      2.191ms |      2.288ms |
+
+`large: replace root` 的剩余信号约为 +0.19–0.36ms，且不再呈现原来的约 6–7µs/affected-node 斜率。
+增量 graph snapshot 仍有随 slot 数量增长的数组/Map 复制，但进一步结构共享会扩大 rollback 与实例 revision 风险；在获得独立
+profile 和稳定 task-filter 数据前不作为本轮修改。基准 artifact 位于本地忽略目录
+`.bench-results/core/{pre-optimization,post-optimization,post-optimization-run2}`。
+
 ## 1. 目的与当前结论
 
-本文给后续性能调查 session 提供可直接执行的起点。当前没有实施优化，下面的原因判断仍需通过 profile 和隔离实验验证。
+本文原本给后续性能调查 session 提供可直接执行的起点。以下第 1–8 节保留修改前的信号、假设和调查方法；
+已验证的当前结果与后续边界以第 0 节为准。
 
 当前结论：这不是整体性能退化，而是大范围 dependent cascade 的稳定逐插件开销。常见的 leaf restart、leaf HMR、leaf unregister、增量 add 和 config-heavy restart 均明显加速；回退集中在一次停止或重建约 100–201 个插件的操作。
 
@@ -32,30 +58,30 @@
 
 ### 2.1 回退项
 
-| Task | Base ms | Head ms | 绝对增加 | 相对变化 |
-| --- | ---: | ---: | ---: | ---: |
-| unregister: root cascade (star) | 1.208 | 2.533 | +1.325ms | +109.69% |
-| unregister: chain middle cascade | 0.885 | 1.557 | +0.672ms | +75.93% |
-| restart: root (star) | 3.639 | 5.003 | +1.364ms | +37.48% |
-| hmr: replace root (star) | 3.986 | 5.326 | +1.340ms | +33.62% |
-| large: replace root | 4.121 | 5.430 | +1.309ms | +31.76% |
-| restart: chain middle | 2.571 | 3.286 | +0.715ms | +27.81% |
+| Task                             | Base ms | Head ms | 绝对增加 | 相对变化 |
+| -------------------------------- | ------: | ------: | -------: | -------: |
+| unregister: root cascade (star)  |   1.208 |   2.533 | +1.325ms | +109.69% |
+| unregister: chain middle cascade |   0.885 |   1.557 | +0.672ms |  +75.93% |
+| restart: root (star)             |   3.639 |   5.003 | +1.364ms |  +37.48% |
+| hmr: replace root (star)         |   3.986 |   5.326 | +1.340ms |  +33.62% |
+| large: replace root              |   4.121 |   5.430 | +1.309ms |  +31.76% |
+| restart: chain middle            |   2.571 |   3.286 | +0.715ms |  +27.81% |
 
 这些任务的 RME 约 4–5%，方向可信。报告中 3 个 RME 超过 10% 的是 cold-build 项，只应作为方向参考。
 
 ### 2.2 明显改善或不变的项
 
-| Task | Base ms | Head ms | 相对变化 |
-| --- | ---: | ---: | ---: |
-| incremental: add leaf (star) | 0.123 | 0.076 | -38.21% |
-| restart: leaf (star) | 0.075 | 0.046 | -38.67% |
-| hmr: replace leaf (star) | 0.123 | 0.088 | -28.46% |
-| unregister: leaf cascade (star) | 0.125 | 0.093 | -25.60% |
-| restart: chain leaf | 0.076 | 0.050 | -34.21% |
-| config: inject-heavy restart | 0.074 | 0.044 | -40.54% |
-| large: add leaf | 0.213 | 0.191 | -10.33% |
-| large: replace leaf | 0.243 | 0.211 | -13.17% |
-| no pending op | 约 0.001 | 约 0.001 | 基本不变 |
+| Task                            |  Base ms |  Head ms | 相对变化 |
+| ------------------------------- | -------: | -------: | -------: |
+| incremental: add leaf (star)    |    0.123 |    0.076 |  -38.21% |
+| restart: leaf (star)            |    0.075 |    0.046 |  -38.67% |
+| hmr: replace leaf (star)        |    0.123 |    0.088 |  -28.46% |
+| unregister: leaf cascade (star) |    0.125 |    0.093 |  -25.60% |
+| restart: chain leaf             |    0.076 |    0.050 |  -34.21% |
+| config: inject-heavy restart    |    0.074 |    0.044 |  -40.54% |
+| large: add leaf                 |    0.213 |    0.191 |  -10.33% |
+| large: replace leaf             |    0.243 |    0.211 |  -13.17% |
+| no pending op                   | 约 0.001 | 约 0.001 | 基本不变 |
 
 冷启动大图为 `20.934 → 21.721ms`（+3.76%），但该项 RME 为 10.19%，不能据此宣称存在稳定冷启动回退。
 
@@ -70,14 +96,14 @@
 
 按实际 cascade 节点数摊销：
 
-| 场景 | 影响节点数 | Head - Base | 额外成本/节点 |
-| --- | ---: | ---: | ---: |
-| star root unregister | 201 | 1.325ms | 约 6.59µs |
-| star root restart | 201 | 1.364ms | 约 6.79µs |
-| star root HMR | 201 | 1.340ms | 约 6.67µs |
-| large root HMR | 201 | 1.309ms | 约 6.51µs |
-| chain middle unregister | 100 | 0.672ms | 约 6.72µs |
-| chain middle restart | 100 | 0.715ms | 约 7.15µs |
+| 场景                    | 影响节点数 | Head - Base | 额外成本/节点 |
+| ----------------------- | ---------: | ----------: | ------------: |
+| star root unregister    |        201 |     1.325ms |     约 6.59µs |
+| star root restart       |        201 |     1.364ms |     约 6.79µs |
+| star root HMR           |        201 |     1.340ms |     约 6.67µs |
+| large root HMR          |        201 |     1.309ms |     约 6.51µs |
+| chain middle unregister |        100 |     0.672ms |     约 6.72µs |
+| chain middle restart    |        100 |     0.715ms |     约 7.15µs |
 
 这个一致性很强：restart、replace、unregister 两种拓扑都落在相同量级。large root HMR 即使带有 800 个无关节点，也没有比普通 star 多出相应成本，说明当前小 diff 基本保持局部，没有显现随全图规模增长的失控遍历。
 

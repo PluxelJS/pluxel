@@ -9,6 +9,8 @@ describe('owner invocations', () => {
 			const lease = enterOwnerInvocation(owner)
 			const reason = new Error('owner stopped')
 			const closing = closeOwnerInvocations(owner, reason)
+			expect(closing).toBeInstanceOf(Promise)
+			if (!closing) throw new Error('active owner close must wait for its lease')
 
 			expect(lease.signal.aborted).toBe(true)
 			expect(lease.signal.reason).toBe(reason)
@@ -20,6 +22,15 @@ describe('owner invocations', () => {
 			lease.dispose()
 			lease.dispose()
 			await closing
+		})
+	})
+
+	it('closes an unused owner synchronously without allocating an invocation gate', async () => {
+		await withCoreHost(async (host) => {
+			const owner = host.ctx.extend({ name: 'unused-owner' })
+
+			expect(closeOwnerInvocations(owner)).toBeUndefined()
+			expect(() => enterOwnerInvocation(owner)).toThrow('Plugin owner stopped')
 		})
 	})
 
@@ -35,6 +46,20 @@ describe('owner invocations', () => {
 			const next = enterOwnerInvocation(owner)
 			expect(next.signal.aborted).toBe(false)
 			next.dispose()
+		})
+	})
+
+	it('closes an idle gate synchronously and preserves the supplied reason', async () => {
+		await withCoreHost(async (host) => {
+			const owner = host.ctx.extend({ name: 'idle-owner' })
+			const lease = enterOwnerInvocation(owner)
+			lease.dispose()
+			const reason = new Error('idle owner stopped')
+
+			expect(closeOwnerInvocations(owner, reason)).toBeUndefined()
+			expect(lease.signal.aborted).toBe(true)
+			expect(lease.signal.reason).toBe(reason)
+			expect(() => enterOwnerInvocation(owner)).toThrow(reason)
 		})
 	})
 

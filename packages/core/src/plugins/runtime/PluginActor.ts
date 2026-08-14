@@ -181,7 +181,8 @@ export class PluginLifecycleActor {
 					let stopErr: unknown
 					let disposeErr: unknown
 					try {
-						if (runtime.stop) await runtime.stop(this.stopAbort.signal)
+						const stopping = runtime.stop?.(this.stopAbort.signal)
+						if (stopping) await stopping
 					} catch (e) {
 						stopErr = e
 					}

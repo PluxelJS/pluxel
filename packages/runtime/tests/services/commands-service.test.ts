@@ -214,6 +214,33 @@ describe('CommandsService', () => {
 		}
 	})
 
+	it('rejects a cached owner command first invoked after its generation stops', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			@Plugin({ name: 'UnusedCommandOwner' })
+			class UnusedCommandOwner extends BasePlugin {
+				override init() {
+					this.ctx.commands.register(valueCommand('unused', 'owner.unused.get'))
+				}
+			}
+
+			host.add(UnusedCommandOwner)
+			host.cfg(UnusedCommandOwner).enable()
+			await host.commit()
+			const captured = host.ctx.commands.get('owner.unused.get')!
+
+			host.remove(UnusedCommandOwner)
+			await host.commit()
+
+			await expect(captured.execute({}, {})).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'ABORTED' },
+			})
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('rolls back registrations when plugin startup fails', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {

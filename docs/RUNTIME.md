@@ -12,7 +12,8 @@ registry 的 lookup 和 revision-cached catalog 仍由 `@pluxel/commands` 实现
 
 runtime registration 会用插件 Context 对执行入口做 owner binding。插件 generation 离开 running 时，core 先关闭
 该 owner 的内部 invocation gate：拒绝新调用、abort 已接纳调用的 call/owner 合成 signal，并等待 lease 释放；之后才
-进入插件 `stop()` 和 effects drain。这个 gate 按首次执行惰性创建，不是插件 API 或新的 lifecycle hook。单独调用
+进入插件 `stop()` 和 effects drain。这个 gate 按首次执行惰性创建；从未进入过 gate 的 owner 停止时只保留轻量 closed
+marker，确保此前缓存的 wrapper 不能在停止后首次创建新 gate。它不是插件 API 或新的 lifecycle hook。单独调用
 registration disposer 只撤销 catalog publication，不会取消已经开始的调用。
 
 基础 `plugin.list`、`plugin.status.get`、`plugin.start`、`plugin.stop`、`plugin.restart` 由 root Commands

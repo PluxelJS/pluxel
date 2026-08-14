@@ -36,15 +36,19 @@ class OwnerInvocationGate {
 		})
 	}
 
-	async close(reason: unknown): Promise<void> {
-		if (!this.lifetime.signal.aborted) this.lifetime.abort(reason)
+	close(reason?: unknown): void | Promise<void> {
+		if (!this.lifetime.signal.aborted) {
+			this.lifetime.abort(reason === undefined ? new Error('Plugin owner stopped') : reason)
+		}
 		if (this.active === 0) return
 		this.idle ??= Promise.withResolvers<void>()
-		await this.idle.promise
+		return this.idle.promise
 	}
 }
 
 const ownerInvocations = new WeakMap<Context, OwnerInvocationGate>()
+const closedOwners = new WeakMap<Context, unknown>()
+const DEFAULT_CLOSE_REASON = Symbol('default owner invocation close reason')
 
 /** @internal Enter one owner generation call boundary. */
 export function enterOwnerInvocation(
@@ -53,6 +57,10 @@ export function enterOwnerInvocation(
 ): OwnerInvocationLease {
 	let gate = ownerInvocations.get(owner)
 	if (!gate) {
+		const closedReason = closedOwners.get(owner)
+		if (closedReason !== undefined) {
+			throw closedReason === DEFAULT_CLOSE_REASON ? new Error('Plugin owner stopped') : closedReason
+		}
 		gate = new OwnerInvocationGate()
 		ownerInvocations.set(owner, gate)
 	}
@@ -60,11 +68,10 @@ export function enterOwnerInvocation(
 }
 
 /** @internal Stop admission, cancel active calls, and wait until their leases are released. */
-export function closeOwnerInvocations(
-	owner: Context,
-	reason: unknown = new Error('Plugin owner stopped'),
-): Promise<void> {
-	return ownerInvocations.get(owner)?.close(reason) ?? Promise.resolve()
+export function closeOwnerInvocations(owner: Context, reason?: unknown): void | Promise<void> {
+	const gate = ownerInvocations.get(owner)
+	if (gate) return gate.close(reason)
+	closedOwners.set(owner, reason === undefined ? DEFAULT_CLOSE_REASON : reason)
 }
 
 function abortReason(signal: AbortSignal): unknown {

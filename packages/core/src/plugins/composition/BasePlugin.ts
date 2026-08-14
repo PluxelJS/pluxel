@@ -114,6 +114,7 @@ export abstract class BasePlugin<C extends Context = Context> {
 		const effects = extended.effects
 		const emitWithContext = extended.emitWithContext
 		const onError = extended.onError
+		const stop = typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined
 
 		return {
 			beforeStart:
@@ -121,9 +122,10 @@ export abstract class BasePlugin<C extends Context = Context> {
 					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
 					: undefined,
 			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
-			stop: async (signal: AbortSignal) => {
-				await closeOwnerInvocations(ctx)
-				if (typeof plugin.stop === 'function') await plugin.stop(signal)
+			stop: (signal: AbortSignal) => {
+				const closing = closeOwnerInvocations(ctx)
+				if (closing) return closing.then(() => stop?.(signal))
+				return stop?.(signal)
 			},
 			dispose: typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
