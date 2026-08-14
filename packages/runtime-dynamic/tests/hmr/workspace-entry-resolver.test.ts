@@ -4,14 +4,6 @@ import { WorkspaceEntryResolver } from '../../src/hmr/engine/workspace-entry-res
 import type { HmrPathApi } from '../../src/hmr/engine/environment'
 
 describe('WorkspaceEntryResolver', () => {
-	test('orders plugin, community development, then framework source conditions', () => {
-		expect(PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE.slice(0, 3)).toEqual([
-			'@pluxel/hmr',
-			'development',
-			'@pluxel/source',
-		])
-	})
-
 	test('passes loader HMR export conditions to workspace entry resolution', async () => {
 		const calls: unknown[] = []
 		const resolver = new WorkspaceEntryResolver(

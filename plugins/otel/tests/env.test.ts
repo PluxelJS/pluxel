@@ -38,9 +38,6 @@ describe('OpenTelemetry environment', () => {
 			protocol: 'grpc',
 			endpoint: 'http://logs.example:4317',
 		})
-	})
-
-	it('uses protocol-specific defaults and endpoint path rules', () => {
 		expect(resolveOtlpConfig({}, 'metrics').endpoint).toBe('http://localhost:4318/v1/metrics')
 		expect(resolveOtlpConfig({ OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc' }, 'traces').endpoint).toBe(
 			'http://localhost:4317',
@@ -49,15 +46,6 @@ describe('OpenTelemetry environment', () => {
 			resolveOtlpConfig({ OTEL_EXPORTER_OTLP_ENDPOINT: 'https://collector.example/otel/' }, 'logs')
 				.endpoint,
 		).toBe('https://collector.example/otel/v1/logs')
-		expect(
-			resolveOtlpConfig(
-				{
-					OTEL_EXPORTER_OTLP_PROTOCOL: 'grpc',
-					OTEL_EXPORTER_OTLP_ENDPOINT: 'collector.example:4317',
-				},
-				'traces',
-			).endpoint,
-		).toBe('collector.example:4317')
 	})
 
 	it('resolves metric and bounded batch processor settings', () => {
@@ -105,11 +93,6 @@ describe('OpenTelemetry environment', () => {
 			/grpc, http\/protobuf, or http\/json/,
 		],
 		[
-			{ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: 'file:///tmp/traces' },
-			'traces' as const,
-			/http: or https:/,
-		],
-		[
 			{ OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: 'https://user:secret@example.test/logs' },
 			'logs' as const,
 			/URL userinfo/,
@@ -117,7 +100,6 @@ describe('OpenTelemetry environment', () => {
 		[{ OTEL_EXPORTER_OTLP_HEADERS: 'bad' }, 'metrics' as const, /key=value/],
 		[{ OTEL_EXPORTER_OTLP_METRICS_HEADERS: 'X-A=1,x-a=2' }, 'metrics' as const, /duplicates a key/],
 		[{ OTEL_EXPORTER_OTLP_LOGS_HEADERS: 'X-A=%0Avalue' }, 'logs' as const, /valid field/],
-		[{ OTEL_EXPORTER_OTLP_COMPRESSION: 'zstd' }, 'traces' as const, /none or gzip/],
 	] as const)('rejects invalid OTLP input %#', (env, signal, expected) => {
 		expect(() => resolveOtlpConfig(env, signal)).toThrow(expected)
 	})

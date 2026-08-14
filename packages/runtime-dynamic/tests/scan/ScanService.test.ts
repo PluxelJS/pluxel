@@ -119,6 +119,31 @@ describe('ScanService', () => {
 		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/src\/index\.ts$/)
 	})
 
+	it('falls through to development before the framework source condition', async () => {
+		await using fixture = await createDiskFixture({
+			'package.json': JSON.stringify({
+				name: 'scan-development-condition-fixture',
+				exports: {
+					'.': {
+						development: './src/development.ts',
+						'@pluxel/source': './src/source.ts',
+						default: './dist/index.mjs',
+					},
+				},
+			}),
+			'src/development.ts': "export const source = 'development'\n",
+			'src/source.ts': "export const source = 'source'\n",
+			'dist/index.mjs': "export const source = 'dist'\n",
+		})
+		await using service = createService(normalize(fixture.path))
+		const resolution = await service.resolveEntryByName('scan-development-condition-fixture', {
+			scan: { preferHmrExports: true },
+		})
+
+		expect(resolution.ok).toBe(true)
+		expect(asPosix((resolution as EntryResolutionOk).entry)).toMatch(/src\/development\.ts$/)
+	})
+
 	it('falls back to installed packages when not in workspace', async () => {
 		await using fixture = await createDiskFixture(scanSingleFixture)
 		await using service = createService(normalize(fixture.path))

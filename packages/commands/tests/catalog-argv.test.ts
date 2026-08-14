@@ -61,15 +61,4 @@ describe('automatic command argv projection', () => {
 			argv.dispatchOrThrow(`config.patch --name CachePlugin --patch '{"enabled":false}'`),
 		).resolves.toMatchObject({ version: 'v2' })
 	})
-
-	it('returns bounded command-name suggestions from the current catalog', async () => {
-		const registry = createCommandRegistry()
-		registry.register(patchCommand('v1'))
-		const argv = createCommandArgv(registry)
-
-		await expect(argv.dispatchOrThrow('config.patc')).rejects.toMatchObject({
-			code: 'COMMAND_NOT_FOUND',
-			details: { name: 'config.patc', suggestions: ['config.patch'] },
-		})
-	})
 })

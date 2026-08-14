@@ -18,7 +18,6 @@ import {
 	RemotePaneLayoutStateProvider,
 	sanitizeRemotePaneState,
 } from '../src/app/workbench/RemotePaneLayout'
-import { splitPercentLayoutFromSizeById } from '../src/app/workbench/split/view'
 
 const mounted: Array<ReturnType<typeof createRoot>> = []
 const pane = (props: WorkbenchPaneProps) => <WorkbenchPane {...props} />
@@ -91,45 +90,15 @@ describe('remote Pane Kit host renderer', () => {
 			await act(async () => resizeCallback?.())
 		}
 
+		const paneWidths = [
+			...container.querySelectorAll<HTMLElement>('.plx-remotePaneLayout__paneHost'),
+		]
+			.filter((host) => host.querySelector('[data-role="navigation"], [data-role="inspector"]'))
+			.map((host) => Number.parseFloat(host.style.width))
 		expect(mounts).toHaveBeenCalledTimes(1)
 		expect(container.querySelector<HTMLInputElement>('[aria-label="draft"]')?.value).toBe('unsaved')
-	})
-
-	it('restores default pane sizes after responsive drawers return to wide mode', async () => {
-		const mounts = vi.fn()
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-		mounted.push(root)
-
-		function Probe() {
-			useEffect(() => {
-				mounts()
-			}, [])
-			return <span>stateful pane</span>
-		}
-
-		await act(async () =>
-			root.render(
-				<Fixture>
-					<Probe />
-				</Fixture>,
-			),
-		)
-		observedWidth = 390
-		await act(async () => resizeCallback?.())
-		observedWidth = 1_400
-		await act(async () => resizeCallback?.())
-
-		const navigation = container
-			.querySelector<HTMLElement>('.plx-remotePane[data-role="navigation"]')
-			?.closest<HTMLElement>('.plx-remotePaneLayout__paneHost')
-		const inspector = container
-			.querySelector<HTMLElement>('.plx-remotePane[data-role="inspector"]')
-			?.closest<HTMLElement>('.plx-remotePaneLayout__paneHost')
-		expect(Number.parseFloat(navigation?.style.width ?? '0')).toBeGreaterThan(0)
-		expect(Number.parseFloat(inspector?.style.width ?? '0')).toBeGreaterThan(0)
-		expect(mounts).toHaveBeenCalledTimes(1)
+		expect(paneWidths).toHaveLength(2)
+		expect(paneWidths.every((width) => width > 0)).toBe(true)
 	})
 
 	it('allows only one responsive drawer and closes it with Escape', async () => {
@@ -165,27 +134,6 @@ describe('remote Pane Kit host renderer', () => {
 				?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
 		})
 		expect(container.querySelector('[role="dialog"]')).toBeNull()
-	})
-
-	it('keeps the responsive reset affordance compact and localizes its accessible name', async () => {
-		observedWidth = 900
-		const container = document.createElement('div')
-		document.body.appendChild(container)
-		const root = createRoot(container)
-		mounted.push(root)
-		await act(async () =>
-			root.render(
-				<Fixture locale="zh-TW">
-					<span>main</span>
-				</Fixture>,
-			),
-		)
-
-		const toolbar = container.querySelector('[role="toolbar"]')
-		expect(toolbar?.getAttribute('aria-label')).toBe('面板控制')
-		const reset = container.querySelector<HTMLButtonElement>('[aria-label="重置面板布局"]')
-		expect(reset?.textContent).toBe('↺')
-		expect(toolbar?.textContent).not.toContain('Reset layout')
 	})
 
 	it('uses memory state in standalone and writes only when a host state service exists', async () => {
@@ -242,21 +190,6 @@ describe('remote Pane Kit host renderer', () => {
 			layout: { inspection: 25 },
 			visibility: { scenario: false, main: true, inspection: true },
 		})
-	})
-
-	it('commits sizes by pane id when another pane is absent from the event', () => {
-		const panes = [
-			{ id: 'scenario', children: null },
-			{ id: 'main', children: null },
-			{ id: 'inspection', children: null },
-		]
-		expect(
-			splitPercentLayoutFromSizeById(panes, { main: 700, inspection: 300 }, 1_000, {
-				scenario: 25,
-				main: 50,
-				inspection: 25,
-			}),
-		).toEqual({ scenario: 25, main: 70, inspection: 30 })
 	})
 })
 

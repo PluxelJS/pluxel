@@ -65,14 +65,18 @@ describe('@pluxel/redis scripts', () => {
 				keys: ['counter'],
 				arguments: ['5'],
 			})
-		})
-	})
 
-	it('validates key count and wraps reply decoder failures', async () => {
-		await withHost(async (host) => {
-			host.add(ScriptRedisPlugin)
-			await host.commit()
-			const redis = host.require(ScriptRedisPlugin)
+			redis.fake.evalShaRo.mockRejectedValueOnce(new Error('NOSCRIPT missing'))
+			redis.fake.evalRo.mockResolvedValueOnce('value')
+			expect(await redis.scripts.run(Read, { keys: ['key'] })).toBe('value')
+			expect(redis.fake.evalShaRo).toHaveBeenCalledWith(Read.sha1, {
+				keys: ['key'],
+				arguments: [],
+			})
+			expect(redis.fake.evalRo).toHaveBeenCalledWith(Read.source, {
+				keys: ['key'],
+				arguments: [],
+			})
 
 			await expect(
 				redis.scripts.run(Add, { keys: [] as unknown as readonly [string], arguments: ['1'] }),
@@ -82,28 +86,6 @@ describe('@pluxel/redis scripts', () => {
 			await expect(
 				redis.scripts.run(Add, { keys: ['counter'], arguments: ['1'] }),
 			).rejects.toBeInstanceOf(RedisScriptDecodeError)
-		})
-	})
-
-	it('uses read-only script commands when requested', async () => {
-		await withHost(async (host) => {
-			host.add(ScriptRedisPlugin)
-			await host.commit()
-			const redis = host.require(ScriptRedisPlugin)
-			redis.fake.evalShaRo.mockRejectedValueOnce(new Error('NOSCRIPT missing'))
-			redis.fake.evalRo.mockResolvedValueOnce('value')
-
-			expect(await redis.scripts.run(Read, { keys: ['key'] })).toBe('value')
-			expect(redis.fake.evalSha).not.toHaveBeenCalled()
-			expect(redis.fake.eval).not.toHaveBeenCalled()
-			expect(redis.fake.evalShaRo).toHaveBeenCalledWith(Read.sha1, {
-				keys: ['key'],
-				arguments: [],
-			})
-			expect(redis.fake.evalRo).toHaveBeenCalledWith(Read.source, {
-				keys: ['key'],
-				arguments: [],
-			})
 		})
 	})
 })

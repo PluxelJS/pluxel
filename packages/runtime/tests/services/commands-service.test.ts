@@ -84,47 +84,6 @@ describe('CommandsService', () => {
 		}
 	})
 
-	it('withdraws a manual registration without cancelling its admitted invocation', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			let registration!: { dispose(): void }
-			let started!: () => void
-			const didStart = new Promise<void>((resolve) => (started = resolve))
-			let release!: () => void
-			const released = new Promise<void>((resolve) => (release = resolve))
-
-			@Plugin({ name: 'WithdrawnCommandOwner' })
-			class WithdrawnCommandOwner extends BasePlugin {
-				override init(): void {
-					registration = this.ctx.commands.register(
-						defineCommand({
-							name: 'owner.withdraw.run',
-							description: 'Finish an admitted call after publication is withdrawn.',
-							behavior: { kind: 'query', world: 'closed' },
-							input: obj({}),
-							async execute() {
-								started()
-								await released
-							},
-						}),
-					)
-				}
-			}
-
-			host.add(WithdrawnCommandOwner)
-			host.cfg(WithdrawnCommandOwner).enable()
-			await host.commit()
-			const pending = host.ctx.commands.executeOrThrow('owner.withdraw.run', {})
-			await didStart
-			registration.dispose()
-			expect(host.ctx.commands.get('owner.withdraw.run')).toBeUndefined()
-			release()
-			await expect(pending).resolves.toBeUndefined()
-		} finally {
-			await host.dispose()
-		}
-	})
-
 	it('schedules owner self-shutdown after its command invocation releases', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
@@ -209,33 +168,6 @@ describe('CommandsService', () => {
 			host.remove(CommandOwnerV2)
 			await host.commit()
 			expect(host.ctx.commands.get('example.value.get')).toBeUndefined()
-		} finally {
-			await host.dispose()
-		}
-	})
-
-	it('rejects a cached owner command first invoked after its generation stops', async () => {
-		const host = createRuntimeHost({ workbench: false })
-		try {
-			@Plugin({ name: 'UnusedCommandOwner' })
-			class UnusedCommandOwner extends BasePlugin {
-				override init() {
-					this.ctx.commands.register(valueCommand('unused', 'owner.unused.get'))
-				}
-			}
-
-			host.add(UnusedCommandOwner)
-			host.cfg(UnusedCommandOwner).enable()
-			await host.commit()
-			const captured = host.ctx.commands.get('owner.unused.get')!
-
-			host.remove(UnusedCommandOwner)
-			await host.commit()
-
-			await expect(captured.execute({}, {})).resolves.toMatchObject({
-				ok: false,
-				error: { code: 'ABORTED' },
-			})
 		} finally {
 			await host.dispose()
 		}

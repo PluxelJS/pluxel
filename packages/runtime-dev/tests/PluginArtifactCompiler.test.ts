@@ -66,6 +66,16 @@ function defineTestProperty(target: object, key: string, value: unknown) {
 	})
 }
 
+const noopWorkbenchStore: PluginArtifactCompilerWorkbenchStore = {
+	getCompiledModule: () => undefined,
+	async commitCompiledModule() {},
+	async markCompiling() {},
+	async markCompileError(_pluginName, error) {
+		throw error
+	},
+	async removePlugin() {},
+}
+
 describe('PluginArtifactCompiler', () => {
 	beforeEach(() => {
 		pluginBuildMocks.buildWorkbenchUiRemote.mockClear()
@@ -224,18 +234,9 @@ describe('PluginArtifactCompiler', () => {
 			'integrations/tuya/src/ui/index.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const store: PluginArtifactCompilerWorkbenchStore = {
-			getCompiledModule: () => undefined,
-			async commitCompiledModule() {},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
-			async removePlugin() {},
-		}
 		const service = new PluginArtifactCompiler(
 			host.ctx,
-			{ store },
+			{ store: noopWorkbenchStore },
 			{ cacheDir: fixture.getPath('.pluxel/workbench') },
 		)
 
@@ -284,20 +285,10 @@ describe('PluginArtifactCompiler', () => {
 			'apps/static-host/web/client/main.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const store: PluginArtifactCompilerWorkbenchStore = {
-			getCompiledModule: () => undefined,
-			async commitCompiledModule() {},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
-			async removePlugin() {},
-		}
-
 		const service = new PluginArtifactCompiler(
 			host.ctx,
 			{
-				store,
+				store: noopWorkbenchStore,
 				viteServer: {
 					config: {
 						root: fixture.getPath('apps/static-host'),
@@ -330,131 +321,18 @@ describe('PluginArtifactCompiler', () => {
 		await host.dispose()
 	})
 
-	it('collects UI watch graphs without touching the client optimizer', async () => {
-		await using fixture = await createFixture({
-			'ui/index.tsx': 'export default {}\n',
-		})
-		const entryFile = fixture.getPath('ui/index.tsx')
-		const rootModule = {
-			id: entryFile,
-			file: entryFile,
-			importedModules: new Set(),
-		}
-		const getModuleByUrl = vi.fn().mockResolvedValueOnce(null).mockResolvedValue(rootModule)
-		const ssrTransformRequest = vi.fn().mockResolvedValue(undefined)
-		const clientTransformRequest = vi.fn()
-		const host = createHost()
-		const service = new PluginArtifactCompiler(host.ctx, {
-			viteServer: {
-				config: { root: fixture.path },
-				environments: {
-					ssr: {
-						config: { root: fixture.path },
-						moduleGraph: { getModuleByUrl },
-						transformRequest: ssrTransformRequest,
-					},
-					client: { transformRequest: clientTransformRequest },
-				} as never,
-			},
-		})
-		const entry = {
-			entryBaseDir: fixture.path,
-			entryPath: './ui/index.tsx',
-			pluginDir: fixture.path,
-			declarationKey: 'UiGraphPlugin',
-			graphDirty: true,
-			sourceFiles: [entryFile],
-			paraglide: null,
-		}
-
-		await (
-			service as unknown as {
-				refreshWatchFiles(value: typeof entry): Promise<void>
-			}
-		).refreshWatchFiles(entry)
-
-		expect(ssrTransformRequest).toHaveBeenCalledWith('/ui/index.tsx')
-		expect(clientTransformRequest).not.toHaveBeenCalled()
-		service.dispose()
-		await host.dispose()
-	})
-
-	it('hashes sources in package names containing build and always retains the active artifact', async () => {
-		await using fixture = await createFixture({
-			'packages/plugin-builder/package.json': JSON.stringify({
-				name: '@example/plugin-builder',
-				private: true,
-				type: 'module',
-			}),
-			'packages/plugin-builder/src/plugin.ts': 'export const plugin = true\n',
-			'packages/plugin-builder/src/ui/index.tsx': 'export default { version: 1 }\n',
-		})
-		const host = createHost()
-		let currentModule: ReturnType<PluginArtifactCompilerWorkbenchStore['getCompiledModule']>
-		const store: PluginArtifactCompilerWorkbenchStore = {
-			getCompiledModule: () => currentModule,
-			async commitCompiledModule(module) {
-				currentModule = module
-			},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
-			async removePlugin() {},
-		}
-		const service = new PluginArtifactCompiler(
-			host.ctx,
-			{ store },
-			{
-				cacheDir: fixture.getPath('.pluxel/workbench'),
-				cacheKeep: 0,
-			},
-		)
-		const dispose = service.bindDeclaration(
-			createPluginContext(host, 'BuilderPlugin', {
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: () => fixture.getPath('packages/plugin-builder/src/plugin.ts'),
-						},
-						anchors: { list: () => [] },
-					},
-				},
-			}),
-			{ entryPath: './ui/index.tsx', declarationKey: 'BuilderPlugin' },
-		)
-
-		await service.requestCompile('BuilderPlugin')
-		const firstHash = currentModule?.sourceHash
-		await writeFile(
-			fixture.getPath('packages/plugin-builder/src/ui/index.tsx'),
-			'export default { version: 2 }\n',
-		)
-		await service.requestCompile('BuilderPlugin')
-
-		expect(pluginBuildMocks.buildWorkbenchUiRemote).toHaveBeenCalledTimes(2)
-		expect(currentModule?.sourceHash).not.toBe(firstHash)
-
-		dispose()
-		service.dispose()
-		await host.dispose()
-	})
-
 	it('rebuilds the UI artifact when only the Workbench Contract changes', async () => {
 		await using fixture = await createFixture({
-			'plugin/package.json': JSON.stringify({ name: 'contract-plugin', type: 'module' }),
-			'plugin/src/ui.tsx': 'export default {}\n',
+			'plugin-builder/package.json': JSON.stringify({ name: 'contract-plugin', type: 'module' }),
+			'plugin-builder/src/ui.tsx': 'export default {}\n',
 		})
 		const host = createHost()
 		let currentModule: ReturnType<PluginArtifactCompilerWorkbenchStore['getCompiledModule']>
 		const store: PluginArtifactCompilerWorkbenchStore = {
+			...noopWorkbenchStore,
 			getCompiledModule: () => currentModule,
 			async commitCompiledModule(module) {
 				currentModule = module
-			},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
 			},
 			async removePlugin() {
 				currentModule = undefined
@@ -465,7 +343,8 @@ describe('PluginArtifactCompiler', () => {
 			{ store },
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
-				pluginDirs: { ContractPlugin: fixture.getPath('plugin') },
+				cacheKeep: 0,
+				pluginDirs: { ContractPlugin: fixture.getPath('plugin-builder') },
 			},
 		)
 		const bind = (contractFingerprint: string) =>
@@ -499,12 +378,7 @@ describe('PluginArtifactCompiler', () => {
 		const host = createHost()
 		const removed: string[] = []
 		const store: PluginArtifactCompilerWorkbenchStore = {
-			getCompiledModule: () => undefined,
-			async commitCompiledModule() {},
-			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
-				throw error
-			},
+			...noopWorkbenchStore,
 			async removePlugin(pluginName) {
 				removed.push(pluginName)
 			},

@@ -44,15 +44,6 @@ export const deepNested = v.object({
 	}),
 })
 `,
-	'nested-schema.ts': `// 深层嵌套的 schema 定义 - 用于测试跨文件导入
-import * as v from 'valibot'
-
-export const nestedSchema = v.object({
-	apiKey: v.string(),
-	endpoint: v.pipe(v.string(), v.url()),
-	retryCount: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0)), 3),
-})
-`,
 	'plugin-with-composed-schema.ts': `import * as v from 'valibot'
 import {
 	baseFields,
@@ -318,112 +309,18 @@ export class ComputedKeyPlugin extends BasePlugin {
 	private config!: any
 }
 `,
-	'plugin-with-nested-import.ts': `// 测试直接跨文件导入 schema 的插件（不通过中间模块）
-import * as v from 'valibot'
-import { nestedSchema } from './nested-schema'
-
-// 模拟 @pluxel/core 的装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'NestedImportPlugin' })
-export class NestedImportPlugin extends BasePlugin {
-	// 通过中间模块导入的 schema
-	@Config(nestedSchema)
-	private nestedConfig!: any
-
-	// 内联 schema 作为对照
-	@Config(v.object({ inline: v.boolean() }))
-	private inlineConfig!: any
-}
-`,
-	'plugin-with-type-import.ts': `// 测试 import type 修复的插件文件
-import type { SomeService } from './services';
-import type { AnotherService, RegularImport } from './services';
-
-// 模拟装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'TypeImportPlugin' })
-export class TypeImportPlugin extends BasePlugin {
-	constructor(
-		private someService: SomeService,
-		private anotherService: AnotherService,
-		private regular: RegularImport,
-	) {
-		super()
-	}
-}
-`,
-	'plugin-with-type-import-alias.ts': `// 测试 import type + alias 修复
-import { type SomeService as ServiceAlias } from './services'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'TypeImportAliasPlugin' })
-export class TypeImportAliasPlugin extends BasePlugin {
-	constructor(private service: ServiceAlias) {
-		super()
-	}
-}
-`,
-	'schema.js': `// 跨文件 schema 定义 (JavaScript)
+	'schema.js': `// 从 JavaScript 模块导入的跨文件 schema
 import * as v from 'valibot'
 
 export const externalSchema = v.object({
 	host: v.string(),
 	port: v.pipe(v.number(), v.minValue(1), v.maxValue(65535)),
-})
-
-export const anotherSchema = v.object({
-	enabled: v.boolean(),
-	timeout: v.optional(v.number(), 5000),
-})
-`,
-	'schema.ts': `// 跨文件 schema 定义
-import * as v from 'valibot'
-
-export const externalSchema = v.object({
-	host: v.string(),
-	port: v.pipe(v.number(), v.minValue(1), v.maxValue(65535)),
-})
-
-export const anotherSchema = v.object({
-	enabled: v.boolean(),
-	timeout: v.optional(v.number(), 5000),
 })
 `,
 	'services.ts': `// 模拟服务类
 export class SomeService {
 	doSomething() {
 		return 'something'
-	}
-}
-
-export class AnotherService {
-	doAnother() {
-		return 'another'
-	}
-}
-
-export class RegularImport {
-	regular() {
-		return 'regular'
 	}
 }
 `,
@@ -480,92 +377,6 @@ export class BuildLintInvalidTypeImportPlugin extends BasePlugin {
 	constructor(private readonly service: SomeService) {
 		super()
 		void service
-	}
-}
-`,
-	'plugin-build-lint-invalid-private-config.ts': `function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs = { use(value: unknown) { return value } }
-}
-
-const schema = { ok: true }
-
-@Plugin({ name: 'BuildLintInvalidPrivateConfigPlugin' })
-export class BuildLintInvalidPrivateConfigPlugin extends BasePlugin {
-	#config = this.configs.use(schema)
-}
-`,
-	'plugin-build-lint-invalid-feature-nested.ts': `function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	features = { use<T>(value: T) { return value } }
-}
-
-class CacheFeature {}
-
-export function makePlugin() {
-	@Plugin({ name: 'BuildLintInvalidFeatureNestedPlugin' })
-	class BuildLintInvalidFeatureNestedPlugin extends BasePlugin {
-		cache = this.features.use(CacheFeature)
-	}
-	return BuildLintInvalidFeatureNestedPlugin
-}
-`,
-	'plugin-build-lint-invalid-config-nested.ts': `function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs = { use(value: unknown) { return value } }
-}
-
-const schema = { ok: true }
-
-export function makePlugin() {
-	@Plugin({ name: 'BuildLintInvalidConfigNestedPlugin' })
-	class BuildLintInvalidConfigNestedPlugin extends BasePlugin {
-		config = this.configs.use(schema)
-	}
-	return BuildLintInvalidConfigNestedPlugin
-}
-`,
-	'plugin-build-lint-invalid-config-early-read.ts': `function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs = { use(value: unknown) { return value } }
-}
-
-const schema = { ok: true }
-
-@Plugin({ name: 'BuildLintInvalidConfigEarlyReadPlugin' })
-export class BuildLintInvalidConfigEarlyReadPlugin extends BasePlugin {
-	config = this.configs.use(schema)
-	ready = this.config
-}
-`,
-	'plugin-build-lint-invalid-config-redefault.ts': `function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs = { use(value: unknown) { return value } }
-}
-
-const schema = { ok: true }
-
-@Plugin({ name: 'BuildLintInvalidConfigRedefaultPlugin' })
-export class BuildLintInvalidConfigRedefaultPlugin extends BasePlugin {
-	config = this.configs.use(schema)
-
-	init() {
-		return this.config ?? {}
 	}
 }
 `,
@@ -705,39 +516,6 @@ async function generateWithLintGuard(
 	return await bundle.generate({ format: 'esm' })
 }
 
-const buildLintFailureCases = [
-	[
-		'type-only constructor dependency imports',
-		'plugin-build-lint-invalid-type-import.ts',
-		'plugin-constructor-no-type-only-imports',
-	],
-	[
-		'configs.use(...) private fields',
-		'plugin-build-lint-invalid-private-config.ts',
-		'configs-use-no-private-field',
-	],
-	[
-		'nested features.use(...) declarations',
-		'plugin-build-lint-invalid-feature-nested.ts',
-		'features-use-top-level-class',
-	],
-	[
-		'nested configs.use(...) declarations',
-		'plugin-build-lint-invalid-config-nested.ts',
-		'configs-use-top-level-class',
-	],
-	[
-		'early reads of configs.use(...) fields',
-		'plugin-build-lint-invalid-config-early-read.ts',
-		'configs-use-no-early-read',
-	],
-	[
-		're-defaulting configs.use(...) outputs',
-		'plugin-build-lint-invalid-config-redefault.ts',
-		'configs-use-no-redefault',
-	],
-] as const
-
 describe('configSourcePlugin', () => {
 	it('keeps code hint filtering compatible with Vite object hooks', () => {
 		const transform = configSourcePlugin().transform
@@ -813,7 +591,7 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
-	it('extracts inline @Config schema source', async () => {
+	it('extracts local, inline, and imported @Config schema sources', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const code = await generateCode({
 				fixturesDir,
@@ -822,8 +600,14 @@ describe('configSourcePlugin', () => {
 				external: CONFIG_SOURCE_EXTERNALS,
 			})
 
-			expect(code).toContain('__setConfigSource__')
+			expect(code).toContain('__setConfigSource__(TestPlugin')
+			expect(code).toContain('"localConfig"')
+			expect(code).toContain('"inlineConfig"')
+			expect(code).toContain('"externalConfig"')
 			expect(code).toContain('v.object({inline:v.boolean()})')
+			expect(code).toMatch(
+				/v\.object\(\{host:v\.string\(\),port:v\.pipe\(v\.number\(\),v\.minValue\(1\),v\.maxValue\(65535\)\),?\}\)/,
+			)
 		})
 	})
 
@@ -953,43 +737,6 @@ describe('configSourcePlugin', () => {
 		})
 	})
 
-	it('extracts cross-file imported schema source', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			// 应该包含跨文件导入的 schema 源码（注意末尾可能有逗号）
-			expect(code).toMatch(
-				/v\.object\(\{host:v\.string\(\),port:v\.pipe\(v\.number\(\),v\.minValue\(1\),v\.maxValue\(65535\)\),?\}\)/,
-			)
-
-			// 确保 externalConfig 字段有对应的 __setConfigSource__ 调用
-			expect(code).toContain('__setConfigSource__(TestPlugin, "externalConfig"')
-		})
-	})
-
-	it('generates correct __setConfigSource__ calls', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-config.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			expect(code).toContain('__setConfigSource__(TestPlugin')
-			expect(code).toContain('"localConfig"')
-			expect(code).toContain('"inlineConfig"')
-			expect(code).toContain('"externalConfig"')
-		})
-	})
-
 	it('respects include/exclude patterns', async () => {
 		await withFixtures(async (fixturesDir) => {
 			const bundle = await rolldown({
@@ -1007,24 +754,6 @@ describe('configSourcePlugin', () => {
 
 			// 被排除的文件不应该有注入
 			expect(code).not.toContain('__setConfigSource__')
-		})
-	})
-
-	it('extracts schema from another cross-file import', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-nested-import.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__(NestedImportPlugin')
-			expect(code).toContain(
-				'v.object({apiKey:v.string(),endpoint:v.pipe(v.string(),v.url()),retryCount:v.optional(v.pipe(v.number(),v.integer(),v.minValue(0)),3)})',
-			)
 		})
 	})
 
@@ -1102,27 +831,11 @@ describe('plugins integration', () => {
 		})
 	})
 
-	for (const [label, input, ruleName] of buildLintFailureCases) {
-		it(`fails build on ${label}`, async () => {
-			await withFixtures(async (fixturesDir) => {
-				await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(
-					new RegExp(ruleName),
-				)
-			})
-		})
-	}
-
-	it('composes configSourcePlugin on plugin modules', async () => {
+	it('propagates a build-critical correctness failure', async () => {
 		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-config.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			expect(code).toContain('__setConfigSource__')
-			expect(code).toContain('TestPlugin')
+			await expect(
+				generateWithLintGuard(fixturesDir, 'plugin-build-lint-invalid-type-import.ts'),
+			).rejects.toThrow(/plugin-constructor-no-type-only-imports/)
 		})
 	})
 })

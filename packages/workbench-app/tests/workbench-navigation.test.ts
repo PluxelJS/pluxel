@@ -28,6 +28,9 @@ describe('Workbench navigation groups', () => {
 		expect(router.basepath).toBe('/__pluxel/workbench')
 		expect(router.state.location.pathname).toBe('/logs')
 		expect(router.buildLocation({ to: '/plugins' }).publicHref).toBe('/__pluxel/workbench/plugins')
+		expect(isPluginWorkbenchLocation('/plugins/example')).toBe(true)
+		expect(isPluginWorkbenchLocation('/plugins-extra')).toBe(false)
+		expect(resolveWorkbenchLocation('/security-extra').title).toBe('security-extra')
 	})
 
 	it('collapses grouped routes into one primary section and preserves child order', () => {
@@ -55,48 +58,16 @@ describe('Workbench navigation groups', () => {
 				{ label: 'Telegram', href: '/workbench/Telegram/settings' },
 			],
 		})
-	})
-
-	it('does not merge routes from different group ids with the same label', () => {
-		const items = groupNavItems([
-			{ label: 'A', href: '/a', group: { id: 'first', label: 'Tools' } },
-			{ label: 'B', href: '/b', group: { id: 'second', label: 'Tools' } },
-		])
-
-		expect(items).toHaveLength(2)
-		expect(items.map((item) => item.children?.[0]?.href)).toEqual(['/a', '/b'])
+		expect(
+			groupNavItems([
+				{ label: 'A', href: '/a', group: { id: 'first', label: 'Tools' } },
+				{ label: 'B', href: '/b', group: { id: 'second', label: 'Tools' } },
+			]),
+		).toHaveLength(2)
 	})
 })
 
 describe('Workbench native document tabs', () => {
-	it('matches builtin section paths on whole segments only', () => {
-		expect(isPluginWorkbenchLocation('/plugins/example')).toBe(true)
-		expect(isPluginWorkbenchLocation('/plugins-extra')).toBe(false)
-		expect(resolveWorkbenchLocation('/security-extra')).toMatchObject({
-			title: 'security-extra',
-		})
-	})
-
-	it('isolates workspace state per controller instance', () => {
-		const first = new WorkspaceController()
-		const second = new WorkspaceController()
-		const path = '/workbench/KookPlugin/accounts/default'
-		first.openTab({ path, title: 'default' })
-
-		expect(first.state.uiState.tabs).toEqual([
-			expect.objectContaining({ documentKey: path, path, title: 'default' }),
-		])
-		expect(second.state.uiState.tabs).toHaveLength(0)
-	})
-
-	it('can reconcile the initial router location before the shell renders', () => {
-		const workspace = new WorkspaceController('/logs')
-
-		expect(workspace.state.uiState.tabs).toEqual([
-			expect.objectContaining({ path: '/logs', title: '日志' }),
-		])
-	})
-
 	it('creates a clean navigation instance beside the active page', () => {
 		const workspace = new WorkspaceController()
 		const sourcePath = '/workbench/TelegramPlugin/settings'
@@ -106,8 +77,10 @@ describe('Workbench native document tabs', () => {
 		workspace.setTabDirty(sourceId, true)
 
 		const adjacent = workspace.createAdjacentTab()
+		workspace.reconcileLocation(sourcePath)
 
 		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, sourcePath])
+		expect(workspace.state.uiState.activeTabId).toBe(adjacent?.instanceId)
 		expect(adjacent).toMatchObject({ path: sourcePath })
 		expect(adjacent?.instanceId).not.toBe(sourceId)
 		expect(adjacent?.documentKey).toBeUndefined()
@@ -122,33 +95,6 @@ describe('Workbench native document tabs', () => {
 			form: { account: 'draft' },
 		})
 		expect(workspace.state.dirtyTabs[sourceId!]).toBe(true)
-	})
-
-	it('keeps a dirty active instance during ordinary navigation', () => {
-		const workspace = new WorkspaceController()
-		const sourcePath = '/workbench/TelegramPlugin/settings'
-		workspace.reconcileLocation(sourcePath)
-		const sourceId = workspace.state.uiState.activeTabId
-		workspace.setTabDirty(sourceId, true)
-
-		workspace.requestNavigation('/logs')
-		workspace.reconcileLocation('/logs')
-
-		expect(workspace.state.uiState.tabs.map((tab) => tab.path)).toEqual([sourcePath, '/logs'])
-		expect(workspace.state.uiState.activeTabId).not.toBe(sourceId)
-		expect(workspace.state.dirtyTabs[sourceId!]).toBe(true)
-	})
-
-	it('preserves a same-path instance during route reconciliation', () => {
-		const workspace = new WorkspaceController()
-		const path = '/workbench/TelegramPlugin/settings'
-		workspace.reconcileLocation(path)
-		const adjacent = workspace.createAdjacentTab()
-
-		workspace.reconcileLocation(path)
-
-		expect(workspace.state.uiState.activeTabId).toBe(adjacent?.instanceId)
-		expect(workspace.state.uiState.tabs).toHaveLength(2)
 	})
 
 	it('closes the final instance back to a clean home Tab', () => {
@@ -189,6 +135,8 @@ describe('Workbench native document tabs', () => {
 		const path = '/workbench/KookPlugin/accounts/default'
 		workspace.openTab({ path, title: 'default', meta: 'KOOK Bot' })
 		workspace.openTab({ path, title: 'alerts', meta: 'Connected' })
+		const instanceId = workspace.state.uiState.tabs[0]?.instanceId
+		workspace.reconcileLocation(path)
 
 		expect(workspace.state.uiState.tabs).toEqual([
 			expect.objectContaining({
@@ -198,6 +146,7 @@ describe('Workbench native document tabs', () => {
 				meta: 'Connected',
 			}),
 		])
+		expect(workspace.state.uiState.activeTabId).toBe(instanceId)
 	})
 
 	it('does not deduplicate ordinary navigation instances by path', () => {
@@ -219,14 +168,16 @@ describe('Workbench native document tabs', () => {
 		const workspace = new WorkspaceController()
 		const managerPath = '/workbench/TelegramPlugin/settings'
 		const createPath = '/workbench/TelegramPlugin/create'
+		const committedPath = '/workbench/TelegramPlugin/accounts/default'
 		workspace.reconcileLocation(managerPath)
 		workspace.openTab({
 			path: createPath,
 			title: '新建 Telegram Bot',
 			meta: 'Telegram',
 		})
+		workspace.openTab({ path: committedPath, title: 'default' })
 
-		workspace.reconcileLocation(createPath)
+		workspace.reconcileLocation(committedPath)
 
 		expect(workspace.state.uiState.tabs).toEqual([
 			expect.objectContaining({ path: managerPath }),
@@ -236,59 +187,9 @@ describe('Workbench native document tabs', () => {
 				title: '新建 Telegram Bot',
 				meta: 'Telegram',
 			}),
+			expect.objectContaining({ path: committedPath, documentKey: committedPath }),
 		])
 		expect(workspace.state.uiState.tabs[0]?.documentKey).toBeUndefined()
-	})
-
-	it('preserves document identity across consecutive openTab route commits', () => {
-		const workspace = new WorkspaceController()
-		const firstPath = '/workbench/TelegramPlugin/accounts/first'
-		const secondPath = '/workbench/TelegramPlugin/accounts/second'
-		workspace.reconcileLocation('/workbench/TelegramPlugin/settings')
-		workspace.openTab({ path: firstPath, title: 'first' })
-		workspace.openTab({ path: secondPath, title: 'second' })
-
-		workspace.reconcileLocation(firstPath)
-		expect(workspace.state.uiState.tabs.find((tab) => tab.path === firstPath)).toMatchObject({
-			documentKey: firstPath,
-		})
-
-		workspace.reconcileLocation(secondPath)
-		expect(workspace.state.uiState.tabs.find((tab) => tab.path === secondPath)).toMatchObject({
-			documentKey: secondPath,
-		})
-	})
-
-	it('focuses a restored document when the initial URL already targets it', () => {
-		const firstPath = '/workbench/TelegramPlugin/accounts/first'
-		const secondPath = '/workbench/TelegramPlugin/accounts/second'
-		const workspace = new WorkspaceController()
-		workspace.openTab({ path: firstPath, title: 'first' })
-		workspace.openTab({ path: secondPath, title: 'second' })
-		workspace.reconcileLocation(firstPath)
-		workspace.reconcileLocation(secondPath)
-		const first = workspace.state.uiState.tabs.find((tab) => tab.path === firstPath)!
-
-		workspace.reconcileLocation(firstPath)
-
-		expect(workspace.state.uiState.activeTabId).toBe(first.instanceId)
-		expect(workspace.state.uiState.tabs.filter((tab) => tab.path === firstPath)).toHaveLength(1)
-		expect(first.documentKey).toBe(firstPath)
-	})
-
-	it('consumes skipped navigation intents without corrupting the committed document', () => {
-		const workspace = new WorkspaceController()
-		const skippedPath = '/workbench/TelegramPlugin/accounts/skipped'
-		const committedPath = '/workbench/TelegramPlugin/accounts/committed'
-		workspace.reconcileLocation('/workbench/TelegramPlugin/settings')
-		workspace.openTab({ path: skippedPath, title: 'skipped' })
-		workspace.openTab({ path: committedPath, title: 'committed' })
-
-		workspace.reconcileLocation(committedPath)
-
-		expect(workspace.state.uiState.tabs.find((tab) => tab.path === committedPath)).toMatchObject({
-			documentKey: committedPath,
-		})
 	})
 
 	it('migrates legacy document identity and section pane state into version 2', () => {

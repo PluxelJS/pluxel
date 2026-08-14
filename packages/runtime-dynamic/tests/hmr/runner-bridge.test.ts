@@ -16,6 +16,10 @@ import { inspectHmrRunner } from '../support/white-box'
 
 describe('HMR runner bridge', () => {
 	it('reuses host @pluxel/core singletons in the runner', async () => {
+		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/context')
+		expect(LOADER_HMR_BRIDGE_MODULES).toContain('@pluxel/runtime/internal')
+		expect(LOADER_HMR_BRIDGE_PROVIDERS['@pluxel/context']).toBe('@pluxel/core')
+
 		const cwd = workspaceRoot
 		await using fixture = await createFixture({
 			'PluginWithUI.ts': [

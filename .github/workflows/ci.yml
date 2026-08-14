@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: recursive
@@ -61,19 +61,32 @@ jobs:
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore dependency and Turbo caches
-        uses: actions/cache@v4
+      - name: Restore pnpm store
+        id: pnpm-store-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
             ${{ steps.pnpm-store.outputs.path }}/index.db
-            .turbo
-          key: ${{ runner.os }}-pnpm-files-v2-turbo-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-files-v2-turbo-${{ hashFiles('pnpm-lock.yaml') }}-
-            ${{ runner.os }}-pnpm-files-v2-turbo-
+            ${{ runner.os }}-pnpm-files-v3-
+
+      - name: Restore Turbo cache
+        id: turbo-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo
+          # Cache entries are immutable. Give every attempt its own key so a failed run can save
+          # partial Turbo results without preventing a rerun from publishing the completed cache.
+          key: ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.event.pull_request.head.sha || github.sha }}-
+            ${{ runner.os }}-turbo-v3-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-turbo-v3-
 
       - name: Install dependencies
+        id: install
         run: pnpm install --frozen-lockfile
 
       - name: Check release metadata
@@ -83,13 +96,32 @@ jobs:
         run: pnpm run lint && pnpm run format:check
 
       - name: Typecheck, build, and test
+        id: turbo-verify
         env:
           BASE_REF: ${{ github.base_ref }}
           PLUXEL_REDIS_TEST_URL: redis://127.0.0.1:6379
         run: |
           set -euo pipefail
+          # Vitest creates workers inside each Turbo task, so cap package-level fan-out as the
+          # repository's local verify command does instead of oversubscribing hosted runners.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pnpm exec turbo run typecheck build test "--filter=...[origin/${BASE_REF}]"
+            pnpm exec turbo run typecheck build test --concurrency=50% "--filter=...[origin/${BASE_REF}]"
           else
-            pnpm exec turbo run typecheck build test
+            pnpm exec turbo run typecheck build test --concurrency=50%
           fi
+
+      - name: Save Turbo cache
+        if: always() && steps.turbo-cache.outcome == 'success' && steps.turbo-verify.outcome != 'skipped' && steps.turbo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo
+          key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
+
+      - name: Save pnpm store
+        if: always() && steps.install.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}

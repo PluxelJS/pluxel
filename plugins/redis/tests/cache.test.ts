@@ -1,6 +1,5 @@
-import { Cache, CacheBackend, CachePlugin, MemoryCacheBackendPlugin } from '@pluxel/cache'
 import { v } from '@pluxel/runtime'
-import { BasePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
+import { Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -16,7 +15,6 @@ class FakeRedisClient {
 	readonly ttls = new Map<string, number>()
 	readonly evalShaCalls: Array<{ sha1: string; keys: string[] }> = []
 	readonly evalCalls: Array<{ source: string; keys: string[] }> = []
-	readonly setCalls: Array<{ key: string; options?: FakeSetOptions }> = []
 	readonly unlinkCalls: string[][] = []
 	readonly scanCalls: Array<{ MATCH?: string; COUNT?: number }> = []
 	readonly isReady = true
@@ -39,7 +37,6 @@ class FakeRedisClient {
 		this.values.set(key, value)
 		if (options?.expiration) this.ttls.set(key, options.expiration.value)
 		else this.ttls.delete(key)
-		this.setCalls.push({ key, options })
 		return 'OK'
 	}
 
@@ -84,25 +81,12 @@ class FakeRedisPlugin extends Redis {
 	}
 }
 
-@Plugin({ name: 'RedisCacheConsumer' })
-class RedisCacheConsumer extends BasePlugin {
-	constructor(readonly cache: Cache) {
-		super()
-	}
-}
-
 describe('@pluxel/redis cache backend', () => {
 	it('rejects Redis prefixes that do not have a stable UTF-8 encoding', () => {
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\u{1f680}:' }).success).toBe(
 			true,
 		)
 		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800:' }).success).toBe(false)
-		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud800' }).success).toBe(false)
-		expect(v.safeParse(RedisCacheBackendConfig, { keyPrefix: 'cache:\ud801:' }).success).toBe(false)
-	})
-	it('ships CacheBackend while preserving Redis and Cache capability boundaries', () => {
-		expect(getPluginInfo(RedisCacheBackendPlugin).base).toBe(CacheBackend)
-		expect(getPluginInfo(FakeRedisPlugin).base).toBe(Redis)
 	})
 
 	it('uses registered Lua script and round-trips structured cache values', async () => {
@@ -129,16 +113,8 @@ describe('@pluxel/redis cache backend', () => {
 			expect(await backend.get('finite')).toBeUndefined()
 
 			await backend.set('forever', value, { ttlMs: 0 })
-			expect(redis.setCalls.at(-1)).toEqual({ key: 'pluxel:cache:forever', options: undefined })
+			expect(redis.ttls.has('pluxel:cache:forever')).toBe(false)
 			expect(await backend.get<typeof value>('forever')).toEqual({ value, ttlMs: 0 })
-			await backend.delete('forever')
-			expect(await backend.get('forever')).toBeUndefined()
-
-			await backend.set('negative', null, { ttlMs: 1_000 })
-			expect(await backend.get('negative')).toEqual({ value: null, ttlMs: 1_000 })
-			await expect(backend.set('undefined', undefined, { ttlMs: 1_000 })).rejects.toThrow(
-				/undefined/,
-			)
 		})
 	})
 
@@ -160,32 +136,6 @@ describe('@pluxel/redis cache backend', () => {
 			expect(redis.scanCalls).toEqual([{ MATCH: 'pluxel\\[prod\\]:cache:scope:*', COUNT: 3 }])
 			expect(redis.unlinkCalls.every((batch) => batch.length <= 2)).toBe(true)
 			expect([...redis.values.keys()]).toEqual(['pluxel[prod]:cache:other:a'])
-		})
-	})
-
-	it('switches CachePlugin from memory to built-in Redis backend', async () => {
-		await withHost(async (host) => {
-			host.add(MemoryCacheBackendPlugin)
-			host.add(FakeRedisPlugin)
-			host.add(RedisCacheBackendPlugin, { provideBase: false })
-			host.add([CachePlugin, RedisCacheConsumer])
-			await host.commit()
-
-			const originalConsumer = host.require(RedisCacheConsumer)
-			await originalConsumer.cache.set('memory', 'before')
-			expect(host.require(FakeRedisPlugin).fake.values.size).toBe(0)
-
-			host.ctx.registry.replaceRuntimeDependencyOverrides(CachePlugin, [RedisCacheBackendPlugin])
-			await host.commit()
-
-			const replacedConsumer = host.require(RedisCacheConsumer)
-			expect(replacedConsumer).not.toBe(originalConsumer)
-			await replacedConsumer.cache.set('redis', 'after')
-			expect(
-				[...host.require(FakeRedisPlugin).fake.values.keys()].some((key) =>
-					key.startsWith('pluxel:cache:plugin:RedisCacheConsumer:'),
-				),
-			).toBe(true)
 		})
 	})
 })

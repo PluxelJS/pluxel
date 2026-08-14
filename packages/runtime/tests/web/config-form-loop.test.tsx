@@ -4,7 +4,7 @@ import { MantineProvider } from '@mantine/core'
 import { RuntimeTransportClientProvider } from '../../src/web/react'
 import { act, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 import {
@@ -551,9 +551,17 @@ async function mount(ui: ReactNode) {
 }
 
 beforeAll(async () => {
+	globalThis.IS_REACT_ACT_ENVIRONMENT = true
+	const warn = console.warn
+	vi.spyOn(console, 'warn').mockImplementation((message: unknown, ...args: unknown[]) => {
+		if (message === 'Warning: useRouter must be used inside a <RouterProvider> component!') return
+		warn(message, ...args)
+	})
 	const module = await import('../../../workbench-app/src/app/plugins/detail/RightPane')
 	RightPaneComponent = module.RightPane
 })
+
+afterAll(() => vi.restoreAllMocks())
 
 describe('ConfigForm loop safety', () => {
 	it('shows plugin context and logs by default without overriding explicit choices', () => {
@@ -608,11 +616,6 @@ describe('ConfigForm loop safety', () => {
 			})
 		}
 	}
-
-	it('does not hit maximum update depth while typing with active toc enabled', async () => {
-		expect.hasAssertions()
-		await exerciseTypingLoop(<Harness active />, '[data-dirty="true"]')
-	})
 
 	it('keeps toolbar actions connected to the registered config form', async () => {
 		const withRpc = vi.fn(async () => ({ ok: true, config: { config: { name: 'saved' } } }))
@@ -771,12 +774,8 @@ describe('ConfigForm loop safety', () => {
 		await exerciseTypingLoop(<WorkbenchHarness active />, '[data-dirty="true"]')
 	})
 
-	it('does not hit maximum update depth in cfg layout mode', async () => {
-		expect.hasAssertions()
-		await exerciseTypingLoop(<LayoutHarness active />, '[data-dirty="true"]')
-	})
-
-	it('provides visible submit actions in cfg layout mode', async () => {
+	it('provides visible submit actions without cfg layout loops', async () => {
+		captureConsoleErrors()
 		const withRpc = vi.fn(async () => ({ ok: true, config: { config: { name: 'saved' } } }))
 		const { container, root } = await mount(
 			<LayoutHarness active client={createFakeTransportClient(withRpc)} />,
@@ -790,6 +789,11 @@ describe('ConfigForm loop safety', () => {
 			expect(input).toBeTruthy()
 			expect(submit).toBeTruthy()
 			await typeIntoInput(input!, 'layout save')
+			await act(async () => {
+				vi.advanceTimersByTime(200)
+				await Promise.resolve()
+			})
+			expect(consoleErrors.join('\n')).not.toContain('Maximum update depth exceeded')
 			expect(submit?.disabled).toBe(false)
 			await act(async () => {
 				submit?.click()
@@ -807,7 +811,7 @@ describe('ConfigForm loop safety', () => {
 		await exerciseTypingLoop(<RightPaneDirtyHarness />, '[data-tab-dirty="true"]')
 	})
 
-	it('mounts builtin doc toc into the workbench aside host instead of inline content', async () => {
+	it('mounts builtin doc toc into the aside host only while its tab is active', async () => {
 		const { container, root } = await mount(<BuiltinDocHarness mountAssistHost={false} />)
 		try {
 			const shell = container.querySelector('[data-doc-shell="true"]')
@@ -826,25 +830,21 @@ describe('ConfigForm loop safety', () => {
 			expect(container.querySelector('[data-doc-shell="true"]')?.textContent).not.toContain(
 				'文档导航',
 			)
-		} finally {
-			await act(async () => {
-				root.unmount()
-			})
-		}
-	})
 
-	it('does not expose builtin doc toc when its tab is inactive', async () => {
-		const { container, root } = await mount(
-			<BuiltinDocHarness mountAssistHost={true} active={false} />,
-		)
-		try {
 			await act(async () => {
+				root.render(<BuiltinDocHarness mountAssistHost active={false} />)
 				await Promise.resolve()
 			})
+			expect(host?.textContent).not.toMatch(/Overview|Usage/)
 
-			const host = container.querySelector('[data-assist-host="true"]')
-			expect(host?.textContent).not.toContain('Overview')
-			expect(host?.textContent).not.toContain('Usage')
+			const inactive = await mount(<BuiltinDocHarness mountAssistHost active={false} />)
+			try {
+				expect(
+					inactive.container.querySelector('[data-assist-host="true"]')?.textContent,
+				).not.toMatch(/Overview|Usage/)
+			} finally {
+				await act(async () => inactive.root.unmount())
+			}
 		} finally {
 			await act(async () => {
 				root.unmount()

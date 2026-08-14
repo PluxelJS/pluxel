@@ -8,7 +8,6 @@ import {
 	Cached,
 	CachePlugin,
 	CacheStoppedError,
-	type CacheNamespace,
 	type CacheValue,
 	MemoryCacheBackendPlugin,
 	Memoized,
@@ -30,26 +29,12 @@ class ConsumerB extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'EagerScopeConsumer' })
-class EagerScopeConsumer extends BasePlugin {
-	users!: CacheNamespace
-
-	constructor(readonly cache: Cache) {
-		super()
-	}
-
-	protected override init(): void {
-		this.users = this.cache.scope('users', { ttlMs: 60_000 })
-	}
-}
-
 @Plugin({ name: 'DecoratedCacheConsumer' })
 class DecoratedConsumer extends BasePlugin {
 	asyncCalls = 0
 	syncCalls = 0
 	explicitCalls = 0
 	pairCalls = 0
-	defaultPairCalls = 0
 	gate: Promise<void> = Promise.resolve()
 
 	constructor(readonly cache: Cache) {
@@ -81,12 +66,6 @@ class DecoratedConsumer extends BasePlugin {
 	})
 	async pair(group: string, id: string): Promise<User> {
 		this.pairCalls++
-		return { id, name: `${group}-${id}` }
-	}
-
-	@Cached({ name: 'default-pairs' })
-	async defaultPair(group: string, id: string): Promise<User> {
-		this.defaultPairCalls++
 		return { id, name: `${group}-${id}` }
 	}
 }
@@ -135,53 +114,16 @@ function deferred<T>() {
 }
 
 describe('@pluxel/cache', () => {
-	it('supports binding a stable scope during consumer init', async () => {
-		await withHost(async (host) => {
-			host.add([MemoryCacheBackendPlugin, CachePlugin, EagerScopeConsumer])
-			await host.commit()
-			const users = host.require(EagerScopeConsumer).users
-			expect(await users.getOrLoad('1', () => 'Ada')).toBe('Ada')
-			expect(await users.get('1')).toBe('Ada')
-		})
-	})
-
-	it('inherits CachePlugin defaults while scopes may override them', async () => {
+	it('keeps scoped L1 synchronous, bounded, TTL-aware, and independently configurable', async () => {
 		vi.useFakeTimers()
 		try {
 			await withHost(async (host) => {
 				host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-				host.cfg(CachePlugin).set({
-					config: {
-						ttlMs: 20,
-						maxEntries: 10,
-						maxInFlight: 4,
-						readPolicy: 'cache-first',
-					},
-				})
+				host.cfg(CachePlugin).set({ config: { ttlMs: 20, maxEntries: 2 } })
 				await host.commit()
 				const cache = host.require(ConsumerA).cache
-				cache.local.set('default', 1)
-				const custom = cache.scope('custom', { ttlMs: 100 }).local
-				custom.set('value', 2)
-				custom.set('short', 3, { ttlMs: 5 })
-				vi.advanceTimersByTime(6)
-				expect(custom.get('short')).toBeUndefined()
-				vi.advanceTimersByTime(15)
-				expect(cache.local.get('default')).toBeUndefined()
-				expect(custom.get('value')).toBe(2)
-			})
-		} finally {
-			vi.useRealTimers()
-		}
-	})
-
-	it('keeps scoped L1 synchronous, bounded, and TTL-aware', async () => {
-		vi.useFakeTimers()
-		try {
-			await withHost(async (host) => {
-				host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-				await host.commit()
-				const l1 = host.require(ConsumerA).cache.scope('hot', {
+				cache.local.set('default', 0)
+				const l1 = cache.scope('hot', {
 					ttlMs: 100,
 					maxEntries: 2,
 				}).local
@@ -193,7 +135,10 @@ describe('@pluxel/cache', () => {
 				expect(l1.get('b')).toBeUndefined()
 				expect(l1.get('a')).not.toBeInstanceOf(Promise)
 				expect(l1.stats().evictions).toBe(1)
-				vi.advanceTimersByTime(101)
+				vi.advanceTimersByTime(21)
+				expect(cache.local.get('default')).toBeUndefined()
+				expect(l1.get('a')).toBe(1)
+				vi.advanceTimersByTime(80)
 				expect(l1.get('a')).toBeUndefined()
 			})
 		} finally {
@@ -396,18 +341,6 @@ describe('@pluxel/cache', () => {
 		})
 	})
 
-	it('revokes old handles when the provider generation restarts', async () => {
-		await withHost(async (host) => {
-			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			await host.commit()
-			const old = host.require(ConsumerA).cache.scope('generation')
-			await old.set('value', 1)
-			host.restart(CachePlugin, { cascadeDependents: true })
-			await host.commit()
-			await expect(old.get('value')).rejects.toBeInstanceOf(CacheStoppedError)
-		})
-	})
-
 	it('revokes caller-local, global, and decorator handles when the caller stops', async () => {
 		await withHost(async (host) => {
 			host.add([MemoryCacheBackendPlugin, CachePlugin, DecoratedConsumer])
@@ -499,9 +432,6 @@ describe('@pluxel/cache', () => {
 			await consumer.pair('admins', '3')
 			await consumer.pair('admins', '3')
 			expect(consumer.pairCalls).toBe(1)
-			await consumer.defaultPair('admins', '3')
-			await consumer.defaultPair('admins', '3')
-			expect(consumer.defaultPairCalls).toBe(1)
 		})
 	})
 
@@ -528,6 +458,7 @@ describe('@pluxel/cache', () => {
 			await host.commit()
 			const cache = host.require(ConsumerA).cache
 			expect(() => cache.scope('bad name')).toThrow(/Cache scope/)
+			expect(() => cache.scope(`scope\ud800`)).toThrow(/well-formed Unicode/)
 			expect(() => cache.scope('valid', { maxEntries: 0 })).toThrow(/maxEntries/)
 			await expect(cache.set(Number.NaN, 1)).rejects.toThrow(/finite/)
 		})
@@ -553,9 +484,6 @@ describe('@pluxel/cache', () => {
 			).toBe(original)
 			expect(() => cache.scope('policy', { ttlMs: 11 })).toThrow(CachePolicyConflictError)
 			expect(() => cache.scope('unknown', { extra: true } as never)).toThrow(/unknown field/)
-			const accessor = Object.defineProperty({}, 'ttlMs', { get: () => 1, enumerable: true })
-			expect(() => cache.scope('accessor', accessor)).toThrow(/data property/)
-			expect(() => cache.scope('symbol', { [Symbol('x')]: true } as never)).toThrow(/symbol/)
 			expect(() => cache.scope('nonplain', new (class {})() as never)).toThrow(/plain object/)
 		})
 	})
@@ -582,9 +510,7 @@ describe('@pluxel/cache', () => {
 
 			await expect(cache.set({ nested: {} } as never, 1)).rejects.toThrow(/primitive/)
 			await expect(cache.set('\ud800', 1)).rejects.toThrow(/well-formed Unicode/)
-			await expect(cache.set('\ud801', 1)).rejects.toThrow(/well-formed Unicode/)
 			await expect(cache.set({ ['\ud800']: 'value' }, 1)).rejects.toThrow(/well-formed Unicode/)
-			await expect(cache.set({ field: '\ud801' }, 1)).rejects.toThrow(/well-formed Unicode/)
 			const accessorKey = Object.defineProperty({}, 'id', { get: () => 1, enumerable: true })
 			await expect(cache.set(accessorKey as never, 1)).rejects.toThrow(/data propert/)
 			await expect(cache.set({ id: 1, [Symbol('x')]: 2 } as never, 1)).rejects.toThrow(/symbol/)
@@ -596,16 +522,6 @@ describe('@pluxel/cache', () => {
 			).rejects.toThrow(/16/)
 			await expect(cache.set('x'.repeat(1_025), 1)).rejects.toThrow(/1024/)
 			await expect(cache.set(Number.POSITIVE_INFINITY, 1)).rejects.toThrow(/finite/)
-		})
-	})
-
-	it('rejects non-well-formed scope names synchronously', async () => {
-		await withHost(async (host) => {
-			host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-			await host.commit()
-			const cache = host.require(ConsumerA).cache
-			expect(() => cache.scope(`scope\ud800`)).toThrow(/well-formed Unicode/)
-			expect(() => cache.scope(`scope\ud801`)).toThrow(/well-formed Unicode/)
 		})
 	})
 

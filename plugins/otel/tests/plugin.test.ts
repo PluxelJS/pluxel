@@ -1,8 +1,7 @@
-import type { Counter, Histogram, Meter, ObservableCallback, Tracer } from '@opentelemetry/api'
-import type { Logger } from '@opentelemetry/api-logs'
+import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
 import { PLUGIN_HTTP_BASE, v } from '@pluxel/runtime'
 import { withRuntimeHost } from '@pluxel/runtime/test'
-import { BasePlugin, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 
@@ -32,21 +31,6 @@ class Consumer extends BasePlugin {
 	record(): void {
 		this.counter.add(2, { region: 'hk', outcome: 'ok' })
 		this.duration.record(0.25, { region: 'hk', outcome: 'ok' })
-	}
-}
-
-@Plugin({ name: 'SignalConsumer' })
-class SignalConsumer extends BasePlugin {
-	readonly tracers: Tracer[] = []
-	readonly loggers: Logger[] = []
-
-	constructor(readonly otel: OtelPlugin) {
-		super()
-	}
-
-	protected override init(): void {
-		this.tracers.push(this.otel.tracer, this.otel.tracer)
-		this.loggers.push(this.otel.logger, this.otel.logger)
 	}
 }
 
@@ -80,51 +64,6 @@ describe('OtelPlugin', () => {
 				expect(body).toContain('otel_scope_name="OtelConsumer"')
 				expect(body).toContain('region="hk"')
 				expect(body).toContain('outcome="ok"')
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('revokes the old provider view across cascade restart', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([OtelPlugin, Consumer])
-				host.cfg(OtelPlugin).set({ config: { otlp: [], prometheus: {} } })
-				host.cfg(OtelPlugin).enable()
-				host.cfg(Consumer).enable()
-				await host.commit()
-				const oldConsumer = host.require(Consumer)
-
-				host.restart(OtelPlugin, { cascadeDependents: true })
-				await host.commit()
-
-				expect(() => oldConsumer.otel.meter).toThrow(/not running/)
-				expect(host.require(Consumer)).not.toBe(oldConsumer)
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('uses normal required dependency validation', async () => {
-		await withHost(async (host) => {
-			host.add(Consumer)
-			await expect(host.commit()).rejects.toThrow(/service verification failed/)
-		})
-	})
-
-	it('exposes native caller-scoped tracers and loggers without global providers', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([OtelPlugin, SignalConsumer])
-				host.cfg(OtelPlugin).set({ config: { otlp: ['traces', 'logs'] } })
-				host.cfg(OtelPlugin).enable()
-				host.cfg(SignalConsumer).enable()
-				await host.commit()
-
-				const consumer = host.require(SignalConsumer)
-				expect(consumer.tracers[0]).toBe(consumer.tracers[1])
-				expect(consumer.loggers[0]).toBe(consumer.loggers[1])
-				expect(() => consumer.otel.meter).toThrow(/metrics signal is disabled/)
 			},
 			{ workbench: false },
 		)

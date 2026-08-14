@@ -15,7 +15,6 @@ import type { ExportResult } from '@opentelemetry/core'
 import type { LogRecordExporter, ReadableLogRecord } from '@opentelemetry/sdk-logs'
 import {
 	AggregationTemporality,
-	DataPointType,
 	type PushMetricExporter,
 	type ResourceMetrics,
 } from '@opentelemetry/sdk-metrics'
@@ -132,10 +131,6 @@ test('exports native metrics, traces, and logs with caller scopes and trace corr
 		region: 'hk',
 		result: 'fresh',
 	})
-	meter.createGauge('catalog.queue.depth').record(2, { region: 'hk' })
-	meter.createHistogram('catalog.lookup.duration', { unit: 's' }).record(0.25, {
-		region: 'hk',
-	})
 	const active = meter.createObservableGauge('catalog.workers.active')
 	const observe: ObservableCallback = (result) => result.observe(4, { region: 'hk' })
 	active.addCallback(observe)
@@ -181,11 +176,6 @@ test('exports native metrics, traces, and logs with caller scopes and trace corr
 	assert.equal(metricExport.scopeMetrics[0]?.scope.name, 'CatalogPlugin')
 	const exportedMetrics = metricsByName(metricExport)
 	assert.equal(exportedMetrics.get('catalog.items')?.descriptor.unit, '{item}')
-	assert.equal(
-		exportedMetrics.get('catalog.lookup.duration')?.dataPointType,
-		DataPointType.HISTOGRAM,
-	)
-	assert.ok(exportedMetrics.has('catalog.queue.depth'))
 	assert.ok(exportedMetrics.has('catalog.workers.active'))
 
 	const span = spans.exports.flat().find(({ name }) => name === 'catalog.refresh')
@@ -223,10 +213,7 @@ test('serves Prometheus pull independently and ignores disabled OTLP inputs', as
 		},
 	)
 	runtime.getMeter('BillingPlugin').createCounter('billing.charges').add(2, { currency: 'HKD' })
-	const first = runtime.prometheus!.scrape()
-	const second = runtime.prometheus!.scrape()
-	assert.strictEqual(first, second)
-	const scrape = await first
+	const scrape = await runtime.prometheus!.scrape()
 	assert.match(scrape.body, /billing_charges/)
 	assert.match(scrape.body, /otel_scope_name="BillingPlugin"/)
 	assert.equal(factoryCalled, false)

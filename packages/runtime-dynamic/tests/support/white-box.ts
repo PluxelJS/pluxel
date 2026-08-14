@@ -10,6 +10,7 @@ type LoaderHmrWhiteBox = LoaderHmrService & {
 		}
 	}
 	enqueueFileChange: (file: string) => boolean
+	ensureStartupScope: () => Promise<{ entryList: string[] }>
 	getAnchorsCleanSnapshot: () => ReadonlySet<string>
 	onBatchSummary: (summary: HmrBatchSummary) => void
 }

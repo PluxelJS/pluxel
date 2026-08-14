@@ -54,40 +54,17 @@ describe('createFetchDevServerPlugin', () => {
 		await Promise.all(servers.splice(0).map((server) => server.close()))
 	})
 
-	it('injects /@vite/client into HTML responses', async () => {
-		let middleware: Middleware | undefined
-		const plugin = createFetchDevServerPlugin({
-			fetch: async () =>
-				new Response('<!doctype html><html><body>hmr</body></html>', {
-					headers: { 'Content-Type': 'text/html; charset=utf-8' },
-				}),
-		})
-
-		plugin.configResolved?.({ base: '/' } as any)
-		plugin.configureServer?.({
-			middlewares: {
-				use(fn: Middleware) {
-					middleware = fn
-				},
-			},
-			ssrFixStacktrace: vi.fn(),
-		} as any)
-
-		if (!middleware) throw new Error('middleware not installed')
-		const harness = createMiddlewareHarness(middleware)
-		servers.push(harness)
-
-		const baseUrl = await harness.listen()
-		const res = await fetch(`${baseUrl}/`)
-		expect(res.status).toBe(200)
-		expect(await res.text()).toContain('/@vite/client')
-	})
-
-	it('passes excluded requests to the next middleware', async () => {
+	it('injects the Vite client while preserving excluded and rejected middleware routes', async () => {
 		let middleware: Middleware | undefined
 		const plugin = createFetchDevServerPlugin({
 			exclude: [/^\/src\/.+/],
-			fetch: async () => new Response('handled'),
+			shouldHandle: (req) => req.url === '/' || req.url === '/runtime',
+			fetch: async (req) =>
+				new URL(req.url).pathname === '/'
+					? new Response('<!doctype html><html><body>hmr</body></html>', {
+							headers: { 'Content-Type': 'text/html; charset=utf-8' },
+						})
+					: new Response('handled'),
 		})
 
 		plugin.configResolved?.({ base: '/' } as any)
@@ -105,35 +82,15 @@ describe('createFetchDevServerPlugin', () => {
 		servers.push(harness)
 
 		const baseUrl = await harness.listen()
-		const res = await fetch(`${baseUrl}/src/client.tsx`)
-		expect(res.status).toBe(299)
-		expect(await res.text()).toBe('next')
-	})
-
-	it('passes requests rejected by shouldHandle to the next middleware', async () => {
-		let middleware: Middleware | undefined
-		const plugin = createFetchDevServerPlugin({
-			shouldHandle: (req) => req.url === '/runtime',
-			fetch: async () => new Response('handled'),
-		})
-
-		plugin.configResolved?.({ base: '/' } as any)
-		plugin.configureServer?.({
-			middlewares: {
-				use(fn: Middleware) {
-					middleware = fn
-				},
-			},
-			ssrFixStacktrace: vi.fn(),
-		} as any)
-
-		if (!middleware) throw new Error('middleware not installed')
-		const harness = createMiddlewareHarness(middleware)
-		servers.push(harness)
-
-		const baseUrl = await harness.listen()
+		const html = await fetch(`${baseUrl}/`)
+		const excluded = await fetch(`${baseUrl}/src/client.tsx`)
 		const skipped = await fetch(`${baseUrl}/vite-asset.js`)
 		const handled = await fetch(`${baseUrl}/runtime`)
+
+		expect(html.status).toBe(200)
+		expect(await html.text()).toContain('/@vite/client')
+		expect(excluded.status).toBe(299)
+		expect(await excluded.text()).toBe('next')
 		expect(skipped.status).toBe(299)
 		expect(await skipped.text()).toBe('next')
 		expect(handled.status).toBe(200)

@@ -68,6 +68,8 @@ describe('FontsPlugin', () => {
 					fonts.defaultFont.source !== 'system' ||
 						fonts.families.some(({ family }) => family === fonts.defaultFont.family),
 				).toBe(true)
+				expect(host.isRunning(FontsPlugin)).toBe(true)
+				expect(host.ctx.workbench.enabled).toBe(false)
 			},
 			{ workbench: false },
 		)
@@ -221,51 +223,33 @@ describe('FontsPlugin', () => {
 		)
 	})
 
-	it('fails the provider instead of silently skipping a corrupt persisted font', async () => {
-		const backend = createMemoryPersistenceBackend()
-		await backend
+	it('fails the provider instead of silently skipping corrupt persisted state', async () => {
+		const fontBackend = createMemoryPersistenceBackend()
+		await fontBackend
 			.namespace('@pluxel/fonts')
 			.put(`managed/${'a'.repeat(43)}.font`, new Uint8Array([1, 2, 3]))
+		const selectionBackend = createMemoryPersistenceBackend()
+		await selectionBackend.namespace('@pluxel/fonts').put('settings/default-font.json', '{broken')
 
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, FontsTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				const summary = await host.commitAllowFail()
-
-				assertPluginLifecycleIssue(summary, FontsPlugin, {
-					kind: 'start-failed',
-					message: 'Managed font is corrupt',
-				})
-				expect(host.isRunning(FontsPlugin)).toBe(false)
-				expect(host.isRunning(FontsTestConsumer)).toBe(false)
-			},
-			{ workbench: false, persistence: { mode: 'custom', backend } },
-		)
+		for (const [backend, message] of [
+			[fontBackend, 'Managed font is corrupt'],
+			[selectionBackend, 'Default font preference is corrupt'],
+		] as const) {
+			await withRuntimeHost(
+				async (host) => {
+					host.add([FontsPlugin, FontsLazyConsumer])
+					host.cfg(FontsPlugin).enable()
+					const summary = await host.commitAllowFail()
+					assertPluginLifecycleIssue(summary, FontsPlugin, { kind: 'start-failed', message })
+					expect(host.isRunning(FontsPlugin)).toBe(false)
+					expect(host.isRunning(FontsLazyConsumer)).toBe(false)
+				},
+				{ workbench: false, persistence: { mode: 'custom', backend } },
+			)
+		}
 	})
 
-	it('fails the provider when its persisted default selection is corrupt', async () => {
-		const backend = createMemoryPersistenceBackend()
-		await backend.namespace('@pluxel/fonts').put('settings/default-font.json', '{broken')
-
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, FontsLazyConsumer])
-				host.cfg(FontsPlugin).enable()
-				const summary = await host.commitAllowFail()
-
-				assertPluginLifecycleIssue(summary, FontsPlugin, {
-					kind: 'start-failed',
-					message: 'Default font preference is corrupt',
-				})
-				expect(host.isRunning(FontsPlugin)).toBe(false)
-				expect(host.isRunning(FontsLazyConsumer)).toBe(false)
-			},
-			{ workbench: false, persistence: { mode: 'custom', backend } },
-		)
-	})
-
-	it('renders the provider view into a direct consumer Port outlet', async () => {
+	it('renders direct consumer and provider-owned Workbench views', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add([FontsPlugin, FontsTestConsumer])
 			host.cfg(FontsPlugin).enable()
@@ -289,23 +273,15 @@ describe('FontsPlugin', () => {
 					}),
 				}),
 			])
-		})
-	})
 
-	it('owns the canonical font manager resource and view in the FontsPlugin workbench', async () => {
-		await withRuntimeHost(async (host) => {
-			host.add(FontsPlugin)
-			host.cfg(FontsPlugin).enable()
-			await host.commit()
-
-			const response = await host.ctx.http.fetch(
+			const providerResponse = await host.ctx.http.fetch(
 				new Request(
 					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/FontsPlugin`,
 				),
 			)
-			expect(response.status).toBe(200)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items).toEqual([
+			expect(providerResponse.status).toBe(200)
+			const providerLayout = (await providerResponse.json()) as WorkbenchLayout
+			expect(providerLayout.items).toEqual([
 				expect.objectContaining({
 					ownerPluginId: 'FontsPlugin',
 					targetPluginId: 'FontsPlugin',
@@ -314,20 +290,6 @@ describe('FontsPlugin', () => {
 				}),
 			])
 		})
-	})
-
-	it('keeps core font capability available when Workbench is disabled', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, FontsLazyConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				expect(Array.isArray(host.require(FontsLazyConsumer).fonts.families)).toBe(true)
-				expect(host.isRunning(FontsPlugin)).toBe(true)
-				expect(host.ctx.workbench.enabled).toBe(false)
-			},
-			{ workbench: false },
-		)
 	})
 })
 

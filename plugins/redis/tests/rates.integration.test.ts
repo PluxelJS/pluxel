@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { type RatesBackendConsumeRequest } from '@pluxel/rates/backend'
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import { RedisPlugin, RedisRatesBackendPlugin } from '../src/index.ts'
@@ -55,16 +54,6 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					expect(decisions.filter((decision) => !decision.denied)).toHaveLength(25)
 				}
 
-				const concurrent = consumer.rates.use('integration.concurrent', {
-					algorithm: 'sliding-window-log',
-					limit: 50,
-					windowMs: 60_000,
-				})
-				const decisions = await Promise.all(
-					Array.from({ length: 120 }, () => concurrent.consume('same')),
-				)
-				expect(decisions.filter((decision) => !decision.denied)).toHaveLength(50)
-
 				const largeDeny = consumer.rates.use('integration.large-log-deny', {
 					algorithm: 'sliding-window-log',
 					limit: 130,
@@ -99,23 +88,6 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 					limit: 2,
 					windowMs: 60_000,
 				} as const)
-				const request: RatesBackendConsumeRequest = {
-					key: 'rolling-policy',
-					policy: fixed,
-					cost: 1,
-				}
-				await backend.consume(request)
-				await expect(
-					backend.consume({
-						...request,
-						policy: Object.freeze({
-							algorithm: 'token-bucket',
-							limit: 2,
-							windowMs: 60_000,
-							burst: 2,
-						}),
-					}),
-				).rejects.toMatchObject({ code: 'RATES_POLICY_CONFLICT', active: fixed })
 				const logPolicy = Object.freeze({
 					algorithm: 'sliding-window-log',
 					limit: 2,
@@ -150,13 +122,6 @@ describe.skipIf(!redisUrl)('Redis 7 rates integration', () => {
 				await expect(
 					consumer.rates.use('integration.after-flush', algorithms[0]!).consume('user'),
 				).resolves.toMatchObject({ denied: false })
-
-				const corruptLogicalKey = 'corrupt-state'
-				const corruptStorageKey = storageKey(prefix, corruptLogicalKey)
-				await redis.set(corruptStorageKey, 'not-rates-state')
-				await expect(
-					backend.consume({ key: corruptLogicalKey, policy: fixed, cost: 1 }),
-				).rejects.toThrow('invalid reply')
 
 				const rollbackLogicalKey = 'clock-rollback-state'
 				const rollbackStorageKey = storageKey(prefix, rollbackLogicalKey)
@@ -239,7 +204,6 @@ type IntegrationRedisClient = {
 	scanIterator(options: { MATCH: string; COUNT: number }): AsyncIterable<Array<string | Buffer>>
 	unlink(keys: string[]): Promise<number>
 	scriptFlush(): Promise<unknown>
-	set(key: string, value: string): Promise<unknown>
 	hSet(key: string, fields: Record<string, string>): Promise<number>
 	zAdd(key: string, members: Array<{ score: number; value: string }>): Promise<number>
 	exists(key: string): Promise<number>

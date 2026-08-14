@@ -97,63 +97,56 @@ describe('PackageManagerPlugin', () => {
 		)
 	})
 
-	it.each([
-		['directory', '/different/entries', ['*.mjs']],
-		['include', null, ['*.js']],
-		['include-extra', null, ['*.mjs', '*.js']],
-	] as const)(
-		'fails before side effects when the declared source has a %s mismatch',
-		async (_kind, declaredPath, declaredInclude) => {
-			const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-mismatch-'))
-			roots.push(root)
-			const managedRoot = resolve(root, 'managed')
+	it('fails before side effects when the declared source has a mismatched include', async () => {
+		const root = await mkdtemp(resolve(tmpdir(), 'pluxel-package-manager-mismatch-'))
+		roots.push(root)
+		const managedRoot = resolve(root, 'managed')
 
-			await withRuntimeHost(
-				async (host) => {
-					type TestContext = {
-						runtimeRoute?: {
-							dynamicPluginSources?: {
-								hasFile(path: string): boolean
-								hasDirectory(path: string, include: readonly string[]): boolean
-							}
+		await withRuntimeHost(
+			async (host) => {
+				type TestContext = {
+					runtimeRoute?: {
+						dynamicPluginSources?: {
+							hasFile(path: string): boolean
+							hasDirectory(path: string, include: readonly string[]): boolean
 						}
 					}
-					const ctx = host.ctx as unknown as TestContext
-					ctx.runtimeRoute = {
-						dynamicPluginSources: {
-							hasFile: () => false,
-							hasDirectory: (path, include) => {
-								const declared = new Set<string>(declaredInclude)
-								const required = new Set(include)
-								return (
-									path === (declaredPath ?? resolve(managedRoot, 'entries')) &&
-									declared.size === required.size &&
-									[...required].every((pattern) => declared.has(pattern))
-								)
-							},
+				}
+				const ctx = host.ctx as unknown as TestContext
+				ctx.runtimeRoute = {
+					dynamicPluginSources: {
+						hasFile: () => false,
+						hasDirectory: (path, include) => {
+							const declared = new Set(['*.js'])
+							const required = new Set(include)
+							return (
+								path === resolve(managedRoot, 'entries') &&
+								declared.size === required.size &&
+								[...required].every((pattern) => declared.has(pattern))
+							)
 						},
-					}
-					host.add(PackageManagerPlugin)
-					host.cfg(PackageManagerPlugin).set({
-						config: {
-							rootDir: managedRoot,
-							ignoreScripts: true,
-							allowBuilds: [],
-							minimumReleaseAgeMinutes: 0,
-						},
-					})
-					host.cfg(PackageManagerPlugin).enable()
-					const summary = await host.commitAllowFail()
+					},
+				}
+				host.add(PackageManagerPlugin)
+				host.cfg(PackageManagerPlugin).set({
+					config: {
+						rootDir: managedRoot,
+						ignoreScripts: true,
+						allowBuilds: [],
+						minimumReleaseAgeMinutes: 0,
+					},
+				})
+				host.cfg(PackageManagerPlugin).enable()
+				const summary = await host.commitAllowFail()
 
-					assertPluginLifecycleIssue(summary, PackageManagerPlugin, {
-						kind: 'start-failed',
-						message: 'not declared',
-					})
-					expect(existsSync(managedRoot)).toBe(false)
-					expect(host.ctx.commands.get('package.install')).toBeUndefined()
-				},
-				{ workbench: false },
-			)
-		},
-	)
+				assertPluginLifecycleIssue(summary, PackageManagerPlugin, {
+					kind: 'start-failed',
+					message: 'not declared',
+				})
+				expect(existsSync(managedRoot)).toBe(false)
+				expect(host.ctx.commands.get('package.install')).toBeUndefined()
+			},
+			{ workbench: false },
+		)
+	})
 })

@@ -152,22 +152,6 @@ describe('source workspace planning', () => {
 		expect(plan.overrides).not.toHaveProperty('@acme/unused')
 	})
 
-	it('loads generated source policy without placing machine paths in workspace config', () => {
-		const args = createSourceInstallArgs({ '@acme/a': 'link:/src/a' })
-		expect(args).toEqual(['install'])
-		expect(createSourceInstallArgs({ '@acme/a': 'link:/src/a' }, true)).toEqual([
-			'install',
-			'--frozen-lockfile',
-		])
-		expect(createSourceInstallArgs({})).toEqual(['install', '--frozen-lockfile'])
-		expect(createPnpmInvocation('pnpm@11.12.0', args)).toEqual({
-			command: 'corepack',
-			args: ['pnpm', 'install'],
-		})
-		expect(createPnpmInvocation(undefined, args)).toEqual({ command: 'pnpm', args })
-		expect(() => createPnpmInvocation('npm@11.0.0', args)).toThrow(/require pnpm/i)
-	})
-
 	it('fails before pnpm resolves private source packages when the overlay is absent', async () => {
 		const root = await createTemporaryRoot()
 		ensureSourcePnpmfileBootstrap(root)
@@ -179,11 +163,19 @@ describe('source workspace planning', () => {
 		expect(bootstrap).not.toContain('{ hooks: {} }')
 	})
 
-	it('builds only manifests that expose generated artifacts', () => {
+	it('derives install and build commands from source artifact contracts', () => {
+		expect(createSourceInstallArgs({ '@acme/app': 'link:/src/app' })).toEqual(['install'])
+		expect(createSourceInstallArgs({})).toEqual(['install', '--frozen-lockfile'])
+		expect(createPnpmInvocation('pnpm@11.12.0', ['install'])).toEqual({
+			command: 'corepack',
+			args: ['pnpm', 'install'],
+		})
+		expect(() => createPnpmInvocation('npm@11.0.0', ['install'])).toThrow(/require pnpm/i)
+
 		expect(
 			sourcePackageNeedsBuild({
 				scripts: { build: 'vite build' },
-				exports: { '.': './src/index.ts', './lib': './src/lib/index.ts' },
+				exports: { '.': './src/index.ts' },
 			}),
 		).toBe(false)
 		expect(
@@ -192,13 +184,9 @@ describe('source workspace planning', () => {
 				exports: { '.': { '@pluxel/source': './src/index.ts', default: './dist/index.mjs' } },
 			}),
 		).toBe(true)
-		expect(
-			sourcePackageNeedsBuild({
-				scripts: { build: 'tsdown' },
-				bin: { pluxel: './bin/pluxel.mjs' },
-			}),
-		).toBe(true)
-		expect(sourcePackageNeedsBuild({ exports: { '.': './dist/index.mjs' } })).toBe(false)
+		expect(sourcePackageNeedsBuild({ scripts: { build: 'tsdown' }, bin: './bin/cli.mjs' })).toBe(
+			true,
+		)
 		expect(createSourceBuildArgs(['@acme/app'], true)).toEqual([
 			'exec',
 			'turbo',

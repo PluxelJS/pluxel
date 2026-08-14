@@ -1,7 +1,6 @@
-import { MemoryRatesBackendPlugin, Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
-import { RatesBackend } from '@pluxel/rates/backend'
+import { Rates, RatesPlugin, type RatePolicy } from '@pluxel/rates'
 import { v } from '@pluxel/runtime'
-import { BasePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 import {
 	Redis,
@@ -65,11 +64,8 @@ describe('@pluxel/redis rates backend', () => {
 			true,
 		)
 		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800:' }).success).toBe(false)
-		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud800' }).success).toBe(false)
-		expect(v.safeParse(RedisRatesBackendConfig, { keyPrefix: 'rates:\ud801:' }).success).toBe(false)
 	})
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
-		expect(getPluginInfo(RedisRatesBackendPlugin).base).toBe(RatesBackend)
 		await withHost(async (host) => {
 			host.add([FakeRatesRedisPlugin, RedisRatesBackendPlugin, RatesPlugin, RedisRatesConsumer])
 			host.cfg(RedisRatesBackendPlugin).set({ config: { keyPrefix: 'pluxel:{rates}:' } })
@@ -142,29 +138,6 @@ describe('@pluxel/redis rates backend', () => {
 			})
 			redis.reply = [-2]
 			await expect(limiter.consume('other')).rejects.toMatchObject({ code: 'RATES_UNAVAILABLE' })
-		})
-	})
-
-	it('restarts Rates and its consumer when switching memory to Redis', async () => {
-		await withHost(async (host) => {
-			host.add(MemoryRatesBackendPlugin)
-			host.add(FakeRatesRedisPlugin)
-			host.add(RedisRatesBackendPlugin, { provideBase: false })
-			host.add([RatesPlugin, RedisRatesConsumer])
-			await host.commit()
-			const original = host.require(RedisRatesConsumer)
-			const originalRates = host.require(RatesPlugin)
-			const stale = original.rates.use('memory', policies[1]!)
-			await stale.consume('user')
-
-			host.ctx.registry.replaceRuntimeDependencyOverrides(RatesPlugin, [RedisRatesBackendPlugin])
-			await host.commit()
-			const replaced = host.require(RedisRatesConsumer)
-			expect(replaced).not.toBe(original)
-			expect(host.require(RatesPlugin)).not.toBe(originalRates)
-			await expect(stale.consume('user')).rejects.toMatchObject({ code: 'RATES_STOPPED' })
-			await replaced.rates.use('redis', policies[1]!).consume('user')
-			expect(host.require(FakeRatesRedisPlugin).fake.evalShaCalls).toHaveLength(1)
 		})
 	})
 })

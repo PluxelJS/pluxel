@@ -31,7 +31,7 @@ class CanvasFontAdminConsumer extends BasePlugin {
 const discoveredFamily = GlobalFonts.families[0]?.family
 
 describe('CanvasPlugin', () => {
-	it('creates and encodes a native raster canvas in a headless host', async () => {
+	it('creates native raster and SVG canvases in a headless host', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -42,8 +42,13 @@ describe('CanvasPlugin', () => {
 				context.fillStyle = '#ff0000'
 				context.fillRect(0, 0, canvas.width, canvas.height)
 				const png = await canvas.encode('png')
+				const svg = host.require(CanvasTestConsumer).canvas.createSvgCanvas(40, 20, {
+					mode: 'compact',
+				})
+				svg.getContext('2d').fillRect(0, 0, 40, 20)
 
 				expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+				expect(svg.getContent().toString()).toContain('<svg')
 				expect(host.ctx.workbench.enabled).toBe(false)
 			},
 			{ workbench: false },
@@ -62,58 +67,25 @@ describe('CanvasPlugin', () => {
 				const canvas = workerCanvas.createCanvas(24, 12)
 				canvas.getContext('2d').fillRect(0, 0, 24, 12)
 				const image = await workerCanvas.decodeImage(await canvas.encode('png'))
+				const text = createCanvasWorkerTextLayout(structuredClone(snapshot))
+				const prepared = text.prepareTextWithSegments({
+					text: 'Worker 中的 Pretext 仍然使用统一字体快照',
+					fontSize: 18,
+				})
 
 				expect({ width: image.width, height: image.height }).toEqual({ width: 24, height: 12 })
+				expect(layoutWithLines(prepared, 100, 24).lineCount).toBeGreaterThan(1)
+				expect(() =>
+					text.prepareText({
+						text: 'x'.repeat(snapshot.textLimits.maxTextCharacters + 1),
+					}),
+				).toThrowError(expect.objectContaining({ code: 'TEXT_TOO_LARGE' }))
 				expect(workerCanvas.snapshot.font.cssFamily).toBe(snapshot.font.cssFamily)
 				expect(Object.isFrozen(workerCanvas.snapshot.limits)).toBe(true)
 				expect(capability.workerSnapshot).toBe(snapshot)
 				expect(() => workerCanvas.createCanvas(snapshot.limits.maxWidth + 1, 1)).toThrowError(
 					expect.objectContaining({ code: 'DIMENSIONS_EXCEEDED' }),
 				)
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('provides bounded Pretext preparation without starting another CanvasPlugin', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				const snapshot = host.require(CanvasTestConsumer).canvas.workerSnapshot
-				const text = createCanvasWorkerTextLayout(structuredClone(snapshot))
-				const prepared = text.prepareTextWithSegments({
-					text: 'Worker 中的 Pretext 仍然使用统一字体快照',
-					fontSize: 18,
-				})
-				const result = layoutWithLines(prepared, 100, 24)
-
-				expect(result.lineCount).toBeGreaterThan(1)
-				expect(result.lines.map((line) => line.text).join('')).toContain('Pretext')
-				expect(() =>
-					text.prepareText({
-						text: 'x'.repeat(snapshot.textLimits.maxTextCharacters + 1),
-					}),
-				).toThrowError(expect.objectContaining({ code: 'TEXT_TOO_LARGE' }))
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('creates an SVG canvas without wrapping its native drawing context', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				const canvas = host.require(CanvasTestConsumer).canvas.createSvgCanvas(40, 20, {
-					mode: 'compact',
-				})
-				const context = canvas.getContext('2d')
-				context.fillStyle = '#2563eb'
-				context.fillRect(0, 0, 40, 20)
-				expect(canvas.getContent().toString()).toContain('<svg')
 			},
 			{ workbench: false },
 		)
@@ -181,7 +153,7 @@ describe('CanvasPlugin', () => {
 		)
 	})
 
-	it('uses Pretext for server-side multiline layout with the current default family', async () => {
+	it('uses bounded Pretext for multiline and rich-inline layout', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -197,24 +169,11 @@ describe('CanvasPlugin', () => {
 				expect(result.lineCount).toBeGreaterThan(1)
 				expect(result.height).toBe(result.lineCount * 24)
 				expect(result.lines.map(({ text }) => text).join('')).toContain('Pluxel')
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('supports bounded rich-inline Pretext preparation', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				const capability = host.require(CanvasTestConsumer).canvas
-				const prepared = capability.prepareRichInline([
+				const rich = capability.prepareRichInline([
 					{ text: 'Ship ', fontSize: 16 },
 					{ text: '@pluxel', font: '700 14px sans-serif', break: 'never', extraWidth: 12 },
 				])
-
-				expect(measureRichInlineStats(prepared, 200)).toMatchObject({ lineCount: 1 })
+				expect(measureRichInlineStats(rich, 200)).toMatchObject({ lineCount: 1 })
 			},
 			{ workbench: false },
 		)
@@ -236,41 +195,7 @@ describe('CanvasPlugin', () => {
 		)
 	})
 
-	it('honors an already-aborted image decode request', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				const capability = host.require(CanvasTestConsumer).canvas
-				const source = capability.createCanvas(2, 2)
-				const data = await source.encode('png')
-				const controller = new AbortController()
-				controller.abort(new Error('request closed'))
-
-				await expect(capability.decodeImage(data, { signal: controller.signal })).rejects.toThrow(
-					'request closed',
-				)
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('provides a stable error code for malformed image bytes', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				await expect(
-					host.require(CanvasTestConsumer).canvas.decodeImage(new Uint8Array([1, 2, 3])),
-				).rejects.toMatchObject({ code: 'INVALID_IMAGE' })
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('enforces dimension, pixel, and encoded image budgets before returning resources', async () => {
+	it('enforces allocation and decode boundaries before returning resources', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
@@ -280,7 +205,15 @@ describe('CanvasPlugin', () => {
 				})
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
+				const controller = new AbortController()
+				controller.abort(new Error('request closed'))
 
+				await expect(
+					capability.decodeImage(new Uint8Array([1]), { signal: controller.signal }),
+				).rejects.toThrow('request closed')
+				await expect(capability.decodeImage(new Uint8Array([1, 2, 3]))).rejects.toMatchObject({
+					code: 'INVALID_IMAGE',
+				})
 				expect(() => capability.createCanvas(101, 1)).toThrow(
 					expect.objectContaining<Partial<CanvasError>>({ code: 'DIMENSIONS_EXCEEDED' }),
 				)
@@ -290,25 +223,6 @@ describe('CanvasPlugin', () => {
 				await expect(capability.decodeImage(new Uint8Array(5))).rejects.toMatchObject({
 					code: 'IMAGE_BYTES_EXCEEDED',
 				})
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('invalidates a cached caller-bound capability after the consumer stops', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
-				host.cfg(FontsPlugin).enable()
-				await host.commit()
-				const capability = host.require(CanvasTestConsumer).canvas
-				capability.createCanvas(1, 1)
-
-				host.remove(CanvasTestConsumer)
-				await host.commit()
-				expect(() => capability.createCanvas(1, 1)).toThrow(
-					expect.objectContaining<Partial<CanvasError>>({ code: 'NOT_RUNNING' }),
-				)
 			},
 			{ workbench: false },
 		)

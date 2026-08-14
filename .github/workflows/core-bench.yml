@@ -54,7 +54,7 @@ jobs:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Checkout head
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.sha }}
@@ -74,17 +74,19 @@ jobs:
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore dependency cache
-        uses: actions/cache@v4
+        id: pnpm-store-cache
+        uses: actions/cache/restore@v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
             ${{ steps.pnpm-store.outputs.path }}/index.db
-          key: ${{ runner.os }}-pnpm-files-v2-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          # The pnpm store is content-addressed; commit-specific keys only duplicate the same cache.
+          key: ${{ runner.os }}-pnpm-files-v3-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-files-v2-${{ hashFiles('pnpm-lock.yaml') }}-
-            ${{ runner.os }}-pnpm-files-v2-
+            ${{ runner.os }}-pnpm-files-v3-
 
       - name: Run base/head benchmark comparison
+        id: benchmark
         env:
           PLUXEL_BENCH_COMPARE_BASE: ${{ env.BASE_REF }}
           PLUXEL_BENCH_COMPARE_HEAD: ${{ env.HEAD_REF }}
@@ -93,8 +95,18 @@ jobs:
           PLUXEL_BENCH_STRICT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.fail_on_regression == 'true' && '1' || '0' }}
         run: pnpm bench:core:compare
 
+      - name: Save dependency cache
+        if: always() && steps.benchmark.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ steps.pnpm-store.outputs.path }}/files
+            ${{ steps.pnpm-store.outputs.path }}/index.db
+          key: ${{ steps.pnpm-store-cache.outputs.cache-primary-key }}
+
       - name: Upload benchmark artifacts
-        uses: actions/upload-artifact@v4
+        if: always() && steps.benchmark.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
         with:
           name: core-bench-run-${{ github.run_id }}
           path: |
@@ -106,11 +118,12 @@ jobs:
             .bench-results/core/head/plugin-lifecycle.md
             .bench-results/core/head/install.log
             .bench-results/core/head/bench.log
+          include-hidden-files: true
           if-no-files-found: error
 
       - name: Comment PR with results
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request' && steps.benchmark.outcome != 'skipped'
+        uses: actions/github-script@v9
         env:
           BASE_REF: ${{ env.BASE_REF }}
           HEAD_REF: ${{ env.HEAD_REF }}

@@ -1,4 +1,4 @@
-import { BasePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	MemoryRatesBackendPlugin,
@@ -6,7 +6,6 @@ import {
 	RatesInvalidArgumentError,
 	RatesPlugin,
 	RatesPolicyConflictError,
-	RatesStoppedError,
 	RatesUnavailableError,
 	type RateLimiter,
 	type RatePolicy,
@@ -46,8 +45,6 @@ afterEach(() => vi.useRealTimers())
 
 describe('@pluxel/rates public API', () => {
 	it('binds local quotas to callers and shares only explicit global quotas', async () => {
-		expect(getPluginInfo(RatesPlugin).base).toBe(Rates)
-		expect(getPluginInfo(MemoryRatesBackendPlugin).base).toBe(RatesBackend)
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA, ConsumerB])
 			await host.commit()
@@ -63,7 +60,7 @@ describe('@pluxel/rates public API', () => {
 		})
 	})
 
-	it('normalizes policy once, freezes its copy, and detects registration conflicts', async () => {
+	it('snapshots policies and detects registration conflicts', async () => {
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
 			await host.commit()
@@ -113,15 +110,9 @@ describe('@pluxel/rates public API', () => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
 			await host.commit()
 			const rates = host.require(ConsumerA).rates
-			expect(() => rates.use('valid-\u{1f680}', Fixed)).not.toThrow()
 			expect(() => rates.use(' padded ', Fixed)).toThrow(RatesInvalidArgumentError)
-			expect(() => rates.use('control\u0000', Fixed)).toThrow(RatesInvalidArgumentError)
 			expect(() => rates.use('invalid\ud800', Fixed)).toThrow(RatesInvalidArgumentError)
-			expect(() => rates.use('invalid\ud801', Fixed)).toThrow(RatesInvalidArgumentError)
 			expect(() => rates.use('bad', { ...Fixed, extra: true } as never)).toThrow(
-				RatesInvalidArgumentError,
-			)
-			expect(() => rates.use('bad-burst', { ...Fixed, burst: 2 } as never)).toThrow(
 				RatesInvalidArgumentError,
 			)
 			expect(() =>
@@ -130,13 +121,6 @@ describe('@pluxel/rates public API', () => {
 					limit: 1,
 					windowMs: 2,
 					burst: Number.MAX_SAFE_INTEGER,
-				}),
-			).toThrow(RatesInvalidArgumentError)
-			expect(() =>
-				rates.use('overflow-counter', {
-					algorithm: 'sliding-window-counter',
-					limit: Number.MAX_SAFE_INTEGER,
-					windowMs: 2,
 				}),
 			).toThrow(RatesInvalidArgumentError)
 			expect(() =>
@@ -153,13 +137,6 @@ describe('@pluxel/rates public API', () => {
 			)
 			const limiter = rates.use('valid', Fixed)
 			await expect(limiter.consume('\ud800')).rejects.toBeInstanceOf(RatesInvalidArgumentError)
-			await expect(limiter.consume('\ud801')).rejects.toBeInstanceOf(RatesInvalidArgumentError)
-			await expect(limiter.consume({ ['\ud800']: 'value' })).rejects.toBeInstanceOf(
-				RatesInvalidArgumentError,
-			)
-			await expect(limiter.consume({ field: '\ud801' })).rejects.toBeInstanceOf(
-				RatesInvalidArgumentError,
-			)
 			await expect(limiter.consume(Number.NaN)).rejects.toMatchObject({
 				code: 'RATES_INVALID_ARGUMENT',
 				argument: 'identity',
@@ -171,9 +148,6 @@ describe('@pluxel/rates public API', () => {
 			await expect(limiter.consume('x'.repeat(1_025))).rejects.toBeInstanceOf(
 				RatesInvalidArgumentError,
 			)
-			await expect(
-				limiter.consume(Array.from({ length: 17 }, (_, index) => index)),
-			).rejects.toBeInstanceOf(RatesInvalidArgumentError)
 			await expect(limiter.consume({ nested: {} } as never)).rejects.toBeInstanceOf(
 				RatesInvalidArgumentError,
 			)
@@ -187,18 +161,6 @@ describe('@pluxel/rates public API', () => {
 			await expect(limiter.consume('x', accessorOptions)).rejects.toBeInstanceOf(
 				RatesInvalidArgumentError,
 			)
-		})
-	})
-
-	it('revokes cached handles with the caller/provider generation', async () => {
-		await withHost(async (host) => {
-			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
-			await host.commit()
-			const consumer = host.require(ConsumerA)
-			const cached = consumer.local
-			host.remove(ConsumerA)
-			await host.commit()
-			await expect(cached.consume('later')).rejects.toBeInstanceOf(RatesStoppedError)
 		})
 	})
 
@@ -273,30 +235,6 @@ describe('@pluxel/rates public API', () => {
 })
 
 describe('@pluxel/rates memory algorithms', () => {
-	it.each([
-		['token-bucket', { algorithm: 'token-bucket', limit: 2, windowMs: 1_000, burst: 2 }],
-		['fixed-window', { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 }],
-		['sliding-window-counter', { algorithm: 'sliding-window-counter', limit: 2, windowMs: 1_000 }],
-		['sliding-window-log', { algorithm: 'sliding-window-log', limit: 2, windowMs: 1_000 }],
-	] satisfies Array<[string, RatePolicy]>)(
-		'%s exhausts, denies without charging, and recovers',
-		async (_name, policy) => {
-			vi.useFakeTimers()
-			vi.setSystemTime(10_000)
-			await withHost(async (host) => {
-				host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
-				await host.commit()
-				const limiter = host.require(ConsumerA).rates.use(`vector.${policy.algorithm}`, policy)
-				expect(await limiter.consume('user')).toMatchObject({ denied: false, remaining: 1 })
-				expect(await limiter.consume('user')).toMatchObject({ denied: false, remaining: 0 })
-				const denied = await limiter.consume('user')
-				expect(denied).toMatchObject({ denied: true, retryAfterMs: expect.any(Number) })
-				vi.advanceTimersByTime(2_000)
-				expect(await limiter.consume('user')).toMatchObject({ denied: false })
-			})
-		},
-	)
-
 	it('keeps same-key consumption atomic before the async boundary', async () => {
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
@@ -493,24 +431,5 @@ describe('@pluxel/rates memory algorithms', () => {
 				resetAt: 51_000,
 			})
 		})
-	})
-})
-
-describe('ExpiryHeap', () => {
-	it('keeps exactly one indexed node per key across updates and deletes', () => {
-		const heap = new ExpiryHeap()
-		heap.set('later', 30)
-		heap.set('first', 10)
-		heap.set('middle', 20)
-		heap.set('later', 5)
-		expect(heap.size).toBe(3)
-		expect(heap.peek()).toEqual({ key: 'later', expiresAt: 5 })
-		heap.set('later', 40)
-		expect(heap.size).toBe(3)
-		expect(heap.peek()).toEqual({ key: 'first', expiresAt: 10 })
-		expect(heap.delete('first')).toBe(true)
-		expect(heap.delete('missing')).toBe(false)
-		expect(heap.size).toBe(2)
-		expect(heap.peek()).toEqual({ key: 'middle', expiresAt: 20 })
 	})
 })

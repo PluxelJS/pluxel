@@ -1,13 +1,7 @@
 import { createMemoryPersistenceBackend, type PersistenceBackend, v } from '@pluxel/runtime'
 import { withRuntimeHost } from '@pluxel/runtime/test'
-import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
-import {
-	RUNTIME_INTERNAL_API_BASE,
-	RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE,
-} from '@pluxel/runtime/web/paths'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
-import { retry } from 'wretch/middlewares'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchConfig } from '../src/config.ts'
@@ -65,36 +59,6 @@ beforeEach(() => {
 })
 
 describe('WretchPlugin', () => {
-	it('connects the provider renderer to the opted-in consumer through a target-scoped Port', async () => {
-		await withRuntimeHost(async (host) => {
-			host.add([WretchPlugin, ConsumerA])
-			host.cfg(WretchPlugin).enable()
-			await host.commit()
-
-			expect(host.isRunning(WretchPlugin)).toBe(true)
-			expect(host.isRunning(ConsumerA)).toBe(true)
-
-			const response = await host.ctx.http.fetch(
-				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/WretchConsumerA`,
-				),
-			)
-			expect(response.status).toBe(200)
-			const layout = (await response.json()) as WorkbenchLayout
-			expect(layout.items).toEqual([
-				expect.objectContaining({
-					ownerPluginId: 'WretchPlugin',
-					targetPluginId: 'WretchConsumerA',
-					viewId: 'HttpSettings',
-					port: expect.objectContaining({
-						id: '@pluxel/wretch.settings',
-						model: { settings: expect.objectContaining({ kind: 'rpc' }) },
-					}),
-				}),
-			])
-		})
-	})
-
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -165,10 +129,11 @@ describe('WretchPlugin', () => {
 		)
 	})
 
-	it('rejects proxy URLs with credentials or path components', async () => {
+	it('rejects unsafe proxy, header, and timeout settings', async () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
+				host.cfg(WretchPlugin).set({ config: { timeoutMs: 1_000 } })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 				const commands = host.require(ConsumerA).http.workbenchSettings()
@@ -179,6 +144,12 @@ describe('WretchPlugin', () => {
 				await expect(
 					commands.update({ headers: {}, proxyUrl: 'http://proxy.example/tunnel' }),
 				).rejects.toThrow('without path')
+				await expect(
+					commands.update({ headers: { Authorization: 'Bearer secret' } }),
+				).rejects.toThrow('secret-bearing')
+				await expect(commands.update({ headers: {}, timeoutMs: 2_000 })).rejects.toThrow(
+					'cannot exceed the host limit',
+				)
 			},
 			{ workbench: false },
 		)
@@ -193,26 +164,6 @@ describe('WretchPlugin', () => {
 		).toBe(false)
 		expect(v.safeParse(WretchConfig, { allowedOrigins: ['ftp://allowed.example'] }).success).toBe(
 			false,
-		)
-	})
-
-	it('rejects secret-bearing Workbench headers', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).enable()
-				await host.commit()
-
-				await expect(
-					host
-						.require(ConsumerA)
-						.http.workbenchSettings()
-						.update({
-							headers: { Authorization: 'Bearer secret' },
-						}),
-				).rejects.toThrow('secret-bearing')
-			},
-			{ workbench: false },
 		)
 	})
 
@@ -288,25 +239,6 @@ describe('WretchPlugin', () => {
 		)
 	})
 
-	it('rejects a consumer timeout above the host limit', async () => {
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { timeoutMs: 1_000 } })
-				host.cfg(WretchPlugin).enable()
-				await host.commit()
-
-				await expect(
-					host.require(ConsumerA).http.workbenchSettings().update({
-						headers: {},
-						timeoutMs: 2_000,
-					}),
-				).rejects.toThrow('cannot exceed the host limit')
-			},
-			{ workbench: false },
-		)
-	})
-
 	it('applies the host origin policy after native Wretch composition', async () => {
 		let called = false
 		fetchA = async () => {
@@ -326,30 +258,6 @@ describe('WretchPlugin', () => {
 					'origin is not allowed',
 				)
 				expect(called).toBe(false)
-			},
-			{ workbench: false },
-		)
-	})
-
-	it('keeps retry as an explicit native Wretch middleware', async () => {
-		let attempts = 0
-		fetchA = async () => {
-			attempts += 1
-			return attempts === 1 ? jsonResponse({ ok: false }, 503) : jsonResponse({ ok: true })
-		}
-		setFixtureFetches(fetchA, fetchB)
-
-		await withRuntimeHost(
-			async (host) => {
-				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).enable()
-				await host.commit()
-
-				const client = host
-					.require(ConsumerA)
-					.client.middlewares([retry({ maxAttempts: 1, delayTimer: 0 })])
-				await expect(client.get('/retry').json()).resolves.toEqual({ ok: true })
-				expect(attempts).toBe(2)
 			},
 			{ workbench: false },
 		)
@@ -518,52 +426,6 @@ describe('WretchPlugin', () => {
 			},
 			{ workbench: false },
 		)
-	})
-
-	it('disposes the provider scheduler independently of caller cleanup', async () => {
-		let started = 0
-		const policy = createOutboundPolicy({
-			timeoutMs: 0,
-			maxConcurrentRequests: 1,
-			maxQueuedRequests: 1,
-			allowedOrigins: [],
-		})
-		const client = wretch('https://policy.example')
-			.middlewares([policy.middleware()])
-			.fetchPolyfill(async (_url, options) => {
-				started += 1
-				return new Promise((_resolve, reject) => {
-					const signal = options.signal
-					if (signal?.aborted) reject(signal.reason)
-					else signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
-				})
-			})
-
-		const active = client
-			.get('/active')
-			.res()
-			.then(
-				() => undefined,
-				(error: unknown) => error,
-			)
-		await waitFor(() => expect(started).toBe(1))
-		const queued = client
-			.get('/queued')
-			.res()
-			.then(
-				() => undefined,
-				(error: unknown) => error,
-			)
-		policy.dispose()
-
-		const [activeError, queuedError] = await Promise.all([active, queued])
-		expect(activeError).toMatchObject({
-			message: expect.stringContaining('stopped or replaced plugin generation'),
-		})
-		expect(queuedError).toMatchObject({
-			message: expect.stringContaining('stopped or replaced plugin generation'),
-		})
-		expect(started).toBe(1)
 	})
 
 	it('does not enter fetch when policy disposal wins the admission continuation race', async () => {

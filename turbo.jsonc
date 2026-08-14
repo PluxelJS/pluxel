@@ -212,10 +212,10 @@
 			"outputLogs": "new-only",
 		},
 		"test": {
-			// Vitest usually resolves workspace packages from source, but public runtime subpaths and
-			// compiler-backed fixtures can cross the dist boundary. Keep runtime declarations stable
-			// instead of testing while its build task cleans and replaces them.
-			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+			// The shared Vitest preset is loaded through its built package export. Do not make every
+			// workspace test depend on the runtime build: Vitest resolves runtime imports through the
+			// source condition, and a global edge invalidates every test cache on any runtime change.
+			"dependsOn": ["@pluxel/test#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",
@@ -230,6 +230,32 @@
 				"!**/bench/**",
 			],
 			"outputLogs": "errors-only",
+		},
+		"@pluxel/runtime#test": {
+			// Runtime compiler/worker fixtures cross the package export boundary. Keep declarations
+			// stable instead of testing while the runtime build cleans and replaces dist.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-dev#test": {
+			// Real Vite runners exercise Node-facing runtime package exports.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-dynamic#test": {
+			// The fixed-plugin identity smoke test starts a separate Node process, outside Vitest's
+			// source-condition resolver.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/runtime-static#test": {
+			// Static host integration exercises Node-facing runtime package exports.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/echarts#test": {
+			// The render contract builds and executes a real worker module.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
+		},
+		"@pluxel/workbench-app#test": {
+			// The UI package intentionally tests the published Workbench contract modules.
+			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build"],
 		},
 		"@pluxel/rolldown#test": {
 			// Packaging invariants intentionally inspect the runtime-static production declarations.
@@ -267,8 +293,10 @@
 			"dependsOn": ["@pluxel/test#build", "@pluxel/runtime#build", "@worksplit/core#build"],
 		},
 		"typecheck": {
-			// Workspace consumers validate the published runtime declaration boundary.
-			"dependsOn": ["@pluxel/runtime#build", "@pluxel/runtime-dev#build"],
+			// Plugin projects and the test helpers validate the published runtime declaration boundary.
+			// Only the few consumers that import runtime-dev declarations add that build explicitly
+			// below; a global edge made unrelated typechecks wait for and hash runtime-dev.
+			"dependsOn": ["@pluxel/runtime#build"],
 			"outputs": [],
 			"inputs": [
 				"$TURBO_DEFAULT$",

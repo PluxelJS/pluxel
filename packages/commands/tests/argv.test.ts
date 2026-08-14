@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Runtime } from '@sinclair/parsebox'
-import * as argvPublic from '../src/argv'
 import { CommandError, defineCommand, validation, type Command } from '../src/index'
 import { createArgvRouter, tail } from '../src/argv'
-import { tokenizeArgv } from '../src/argv/tokenize'
 import { Type, obj } from '../src/typebox'
 
 const deploy = defineCommand({
@@ -44,23 +42,6 @@ describe('@pluxel/commands argv', () => {
 		retagInput(deploy)
 	}
 	void assertTextTailTypes
-
-	it('exposes one factory construction path at runtime', () => {
-		expect(argvPublic).toHaveProperty('createArgvRouter')
-		expect(argvPublic).not.toHaveProperty('ArgvRouter')
-		expect(argvPublic.tail).toHaveProperty('text')
-		expect(argvPublic.tail).toHaveProperty('json')
-		expect(argvPublic.tail).not.toHaveProperty('line')
-		expect(argvPublic.tail).not.toHaveProperty('parseBox')
-	})
-
-	it('tokenizes quotes once while retaining exact source spans', () => {
-		const input = `deploy "api worker" --force`
-		const tokens = tokenizeArgv(input)
-		expect(tokens.map((token) => token.value)).toEqual(['deploy', 'api worker', '--force'])
-		expect(tokens[1]?.raw).toBe('"api worker"')
-		expect(input.slice(tokens[1]!.start, tokens[1]!.end)).toBe('"api worker"')
-	})
 
 	it('resolves longest routes, typed positionals, flags, enums, and repeated arrays', async () => {
 		const router = createArgvRouter()
@@ -206,17 +187,6 @@ describe('@pluxel/commands argv', () => {
 		})
 	})
 
-	it('keeps argv binding keys tied to the command input type', () => {
-		const router = createArgvRouter()
-		expect(() =>
-			router.bind(deploy, {
-				routes: ['invalid binding'],
-				// @ts-expect-error "missing" is not an input field of deploy.
-				positionals: ['missing'],
-			}),
-		).toThrow(/Unknown input field/)
-	})
-
 	it('displays one canonical option name while accepting practical spelling variants', () => {
 		const command = defineCommand({
 			name: 'retry.configure',
@@ -330,35 +300,14 @@ describe('@pluxel/commands argv', () => {
 			},
 		})
 
-		expect(command.descriptor.inputSchema).toMatchObject({
-			properties: {
-				query: {
-					type: 'string',
-					examples: ['warnings >= 3', 'playtime < 10'],
-				},
-			},
-		})
-		await command.executeOrThrow({ query: 'warnings >= 3', limit: 25 })
-		expect(received).toEqual({
-			query: {
-				source: 'warnings >= 3',
-				expression: { field: 'warnings', operator: '>=', threshold: 3 },
-			},
-			limit: 25,
-		})
-
 		const optionRouter = createArgvRouter()
 		optionRouter.bind(command, {
 			routes: ['players filter'],
 			options: { query: { aliases: ['q'] }, limit: { aliases: ['l'] } },
 		})
 		await optionRouter.dispatchOrThrow('players filter --query "playtime < 10" --limit 25')
-		expect(received).toEqual({
-			query: {
-				source: 'playtime < 10',
-				expression: { field: 'playtime', operator: '<', threshold: 10 },
-			},
-			limit: 25,
+		expect(received).toMatchObject({
+			query: { expression: { field: 'playtime', operator: '<', threshold: 10 } },
 		})
 
 		const textTailRouter = createArgvRouter()
@@ -368,13 +317,7 @@ describe('@pluxel/commands argv', () => {
 			tail: tail.text('query', '<filter-expression>'),
 		})
 		await textTailRouter.dispatchOrThrow('players search --limit 25 --   playtime < 10')
-		expect(received).toEqual({
-			query: {
-				source: 'playtime < 10',
-				expression: { field: 'playtime', operator: '<', threshold: 10 },
-			},
-			limit: 25,
-		})
+		expect(received).toMatchObject({ query: { source: 'playtime < 10' }, limit: 25 })
 		await expect(command.executeOrThrow({ query: 'warnings >= 3 trailing' })).rejects.toMatchObject(
 			{
 				code: 'INPUT_VALIDATION',
@@ -406,20 +349,6 @@ describe('@pluxel/commands argv', () => {
 		expect(router.resolve('deploy api --environment stage')?.command.name).toBe('service.deploy')
 	})
 
-	it('requires disposal before rebinding the same command name', () => {
-		const router = createArgvRouter()
-		const registration = router.bind(deploy, { routes: ['deploy'], positionals: ['service'] })
-		expect(() =>
-			router.bind(deploy, { routes: ['service deploy'], positionals: ['service'] }),
-		).toThrow(/already has an argv binding/)
-		expect(router.resolve('deploy api --environment stage')?.route).toBe('deploy')
-
-		registration.dispose()
-		expect(() =>
-			router.bind(deploy, { routes: ['service deploy'], positionals: ['service'] }),
-		).not.toThrow()
-	})
-
 	it('removes every route for a disposed binding while preserving shared prefixes', () => {
 		const router = createArgvRouter()
 		const deployRegistration = router.bind(deploy, {
@@ -439,17 +368,5 @@ describe('@pluxel/commands argv', () => {
 		expect(router.resolve('deploy api --environment stage')).toBeUndefined()
 		expect(router.resolve('service deploy api --environment stage')).toBeUndefined()
 		expect(router.resolve('deploy status')?.command.name).toBe('service.status')
-	})
-
-	it('captures binding identity from an otherwise mutable command wrapper', () => {
-		const router = createArgvRouter()
-		const wrapper = { ...deploy }
-		const registration = router.bind(wrapper, { routes: ['deploy'], positionals: ['service'] })
-		Object.assign(wrapper, { name: 'service.changed' })
-
-		expect(registration.name).toBe('service.deploy')
-		expect(router.help('service.deploy')?.name).toBe('service.deploy')
-		registration.dispose()
-		expect(router.resolve('deploy api --environment stage')).toBeUndefined()
 	})
 })

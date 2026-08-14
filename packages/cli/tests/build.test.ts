@@ -378,6 +378,9 @@ describe('build command', () => {
 				log: () => {},
 				extraConfig: pluginPackageOverlay(runtime),
 			})
+			expect(
+				await stat(resolve(fixtureDir, '.pluxel/workbench-build')).catch((): null => null),
+			).toBeNull()
 
 			const pkg = await readPackageJSON(runtime.packageJsonPath)
 			expect(pkg.optionalDependencies?.['pluxel-plugin-alpha']).toBeUndefined()
@@ -485,56 +488,36 @@ describe('build command', () => {
 		}
 	})
 
-	it('fills repository metadata from GitHub env', async () => {
-		try {
-			await withBuildFixture('basic', async () => {
-				vi.stubEnv('GITHUB_ACTIONS', 'true')
-				vi.stubEnv('GITHUB_REPOSITORY', 'pluxel/example')
-
-				const runtime = await resolveBuildContext({})
-				await runWithTsdown({
-					context: runtime,
-					log: () => {},
-					extraConfig: pluginPackageOverlay(runtime),
+	it('fills repository metadata from supported CI providers', async () => {
+		for (const provider of [
+			{
+				env: { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'pluxel/example' },
+				baseUrl: 'https://github.com/pluxel/example',
+				issues: '/issues',
+			},
+			{
+				env: { GITLAB_CI: 'true', CI_PROJECT_PATH: 'pluxel/example', CI_SERVER_HOST: 'gitlab.com' },
+				baseUrl: 'https://gitlab.com/pluxel/example',
+				issues: '/-/issues',
+			},
+		]) {
+			try {
+				await withBuildFixture('basic', async () => {
+					for (const [key, value] of Object.entries(provider.env)) vi.stubEnv(key, value)
+					const runtime = await resolveBuildContext({})
+					await runWithTsdown({
+						context: runtime,
+						log: () => {},
+						extraConfig: pluginPackageOverlay(runtime),
+					})
+					const pkg = await readPackageJSON(runtime.packageJsonPath)
+					expect(pkg.repository).toEqual({ type: 'git', url: `${provider.baseUrl}.git` })
+					expect(pkg.homepage).toBe(provider.baseUrl)
+					expect(pkg.bugs).toEqual({ url: `${provider.baseUrl}${provider.issues}` })
 				})
-
-				const pkg = await readPackageJSON(runtime.packageJsonPath)
-				expect(pkg.repository).toEqual({
-					type: 'git',
-					url: 'https://github.com/pluxel/example.git',
-				})
-				expect(pkg.homepage).toBe('https://github.com/pluxel/example')
-				expect(pkg.bugs).toEqual({ url: 'https://github.com/pluxel/example/issues' })
-			})
-		} finally {
-			vi.unstubAllEnvs()
-		}
-	})
-
-	it('fills repository metadata from GitLab env', async () => {
-		try {
-			await withBuildFixture('basic', async () => {
-				vi.stubEnv('GITLAB_CI', 'true')
-				vi.stubEnv('CI_PROJECT_PATH', 'pluxel/example')
-				vi.stubEnv('CI_SERVER_HOST', 'gitlab.com')
-
-				const runtime = await resolveBuildContext({})
-				await runWithTsdown({
-					context: runtime,
-					log: () => {},
-					extraConfig: pluginPackageOverlay(runtime),
-				})
-
-				const pkg = await readPackageJSON(runtime.packageJsonPath)
-				expect(pkg.repository).toEqual({
-					type: 'git',
-					url: 'https://gitlab.com/pluxel/example.git',
-				})
-				expect(pkg.homepage).toBe('https://gitlab.com/pluxel/example')
-				expect(pkg.bugs).toEqual({ url: 'https://gitlab.com/pluxel/example/-/issues' })
-			})
-		} finally {
-			vi.unstubAllEnvs()
+			} finally {
+				vi.unstubAllEnvs()
+			}
 		}
 	})
 
@@ -624,21 +607,6 @@ describe('build command', () => {
 			expect(output).toContain('FixtureProvider')
 			expect(output).toContain('FixtureConsumer')
 			expect(output).toContain('preserved')
-		})
-	})
-
-	it('does not initialize the Workbench UI builder for plugins without a UI declaration', async () => {
-		await withBuildFixture('basic', async (fixtureDir) => {
-			const runtime = await resolveBuildContext({})
-			await runWithTsdown({
-				context: runtime,
-				onSuccess: async () => {},
-				log: () => {},
-				extraConfig: pluginPackageOverlay,
-			})
-			expect(
-				await stat(resolve(fixtureDir, '.pluxel/workbench-build')).catch((): null => null),
-			).toBeNull()
 		})
 	})
 

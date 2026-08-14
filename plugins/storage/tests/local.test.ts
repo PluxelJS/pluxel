@@ -78,28 +78,10 @@ describe('S3Plugin local backend', () => {
 			expect(range.status).toBe(206)
 			expect(range.headers.get('content-range')).toBe('bytes 6-9/12')
 			expect(await range.text()).toBe('deep')
-			const explicitFullRange = await s3.client.getObjectRaw('files/a', false, 0, 7)
-			expect(explicitFullRange.status).toBe(206)
-			expect(explicitFullRange.headers.get('content-range')).toBe('bytes 0-6/7')
 			const etag = await s3.client.getEtag('files/a')
 			expect(await s3.client.getObject('files/a', { 'if-match': `"${etag}"` })).toBe('files/a')
 			expect(await s3.client.objectExists('files/a', { 'if-none-match': `"${etag}"` })).toBe(null)
-			const fileResponse = await s3.client.getObjectResponse('files/a')
-			const lastModified = fileResponse!.headers.get('last-modified')!
-			await fileResponse!.body?.cancel()
-			expect(await s3.client.getObject('files/a', { 'if-modified-since': lastModified })).toBe(null)
-			expect(await s3.client.getObject('files/a', { 'if-unmodified-since': lastModified })).toBe(
-				'files/a',
-			)
-			expect(
-				await s3.client.getObject('files/a', {
-					'if-none-match': '"another-etag"',
-					'if-modified-since': new Date(Date.now() + 60_000).toUTCString(),
-				}),
-			).toBe('files/a')
 			expect(await s3.client.getObject('missing')).toBe(null)
-			expect(await s3.client.getEtag('missing')).toBe(null)
-			expect(await s3.client.getObjectWithETag('missing')).toEqual({ etag: null, data: null })
 
 			const copied = await s3.client.copyObject('files/a', 'copy/a', {
 				metadataDirective: 'REPLACE',

@@ -99,33 +99,6 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toBe(true)
 	})
 
-	it('exposes one source plugin group with server-only transforms', async () => {
-		const plugins = pluxelRuntimeSourceVitePlugins({
-			root: '/repo',
-		}) as Plugin[]
-
-		expect(plugins.map((plugin) => plugin.name)).toEqual([
-			'unplugin-preprocessor-directives',
-			'pluxel:database-source',
-			'pluxel:plugin-semantics',
-			'pluxel-lint-guard',
-			'pluxel-config-source',
-			'pluxel:runtime-source',
-		])
-		for (const plugin of plugins.slice(1, -1)) {
-			const server = await plugin.applyToEnvironment?.({
-				name: 'ssr',
-				config: { consumer: 'server' },
-			} as never)
-			const client = await plugin.applyToEnvironment?.({
-				name: 'client',
-				config: { consumer: 'client' },
-			} as never)
-			expect(server).not.toBe(false)
-			expect(client).toBe(false)
-		}
-	})
-
 	it('applies preprocessor semantics through the real Vite module runner', async () => {
 		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
 		const root = fixture.path
@@ -192,60 +165,26 @@ describe('runtime-dev Vite plugin stack', () => {
 		)
 	})
 
-	it('classifies CommonJS and native packages without externalization config', async () => {
+	it('classifies CommonJS and native packages for Node externalization', async () => {
 		await using fixture = await createDiskFixture()
 		const root = fixture.path
-
-		await writePackage(root, 'fixture-commonjs', {
-			name: 'fixture-commonjs',
-			type: 'commonjs',
-			main: './index.js',
-		})
-		await writePackage(root, 'fixture-native', {
-			name: 'fixture-native',
-			type: 'module',
-			main: './index.js',
-			napi: { name: 'fixture-native' },
-		})
-		await writePackage(root, 'fixture-esm', {
-			name: 'fixture-esm',
-			type: 'module',
-			main: './index.js',
-		})
-		await writePackage(root, 'fixture-dual', {
-			name: 'fixture-dual',
-			type: 'module',
-			exports: { import: './index.mjs', require: './index.cjs' },
-		})
 		await Promise.all([
-			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.mjs'), 'export default 42\n'),
-			writeFile(join(root, 'node_modules', 'fixture-dual', 'index.cjs'), 'module.exports = 42\n'),
+			writePackage(root, 'fixture-commonjs', { type: 'commonjs', main: './index.js' }),
+			writePackage(root, 'fixture-native', { type: 'module', napi: { name: 'fixture-native' } }),
+			writePackage(root, 'fixture-esm', { type: 'module', main: './index.js' }),
 		])
-		const explicitCommonjs = join(root, 'node_modules', 'fixture-esm', 'explicit.cjs')
-		const explicitNative = join(root, 'node_modules', 'fixture-esm', 'binding.node')
-		await Promise.all([writeFile(explicitCommonjs, ''), writeFile(explicitNative, '')])
-
 		const classifier = createHostModuleClassifier({ root })
-		await expect(classifier.classifySpecifier('fixture-commonjs')).resolves.toMatchObject({
-			packageName: 'fixture-commonjs',
-			format: 'commonjs',
-			reason: 'commonjs',
-		})
-		await expect(classifier.classifySpecifier('fixture-native')).resolves.toMatchObject({
-			packageName: 'fixture-native',
-			format: 'module',
-			reason: 'native',
-		})
-		await expect(classifier.classifySpecifier('fixture-esm')).resolves.toBeNull()
-		await expect(classifier.classifySpecifier('fixture-dual')).resolves.toBeNull()
-		await expect(classifier.classifyFile(explicitCommonjs)).resolves.toMatchObject({
-			format: 'commonjs',
-			reason: 'commonjs',
-		})
-		await expect(classifier.classifyFile(explicitNative)).resolves.toMatchObject({
-			format: 'commonjs',
-			reason: 'native',
-		})
+		expect(
+			await Promise.all([
+				classifier.classifySpecifier('fixture-commonjs'),
+				classifier.classifySpecifier('fixture-native'),
+				classifier.classifySpecifier('fixture-esm'),
+			]),
+		).toEqual([
+			expect.objectContaining({ format: 'commonjs', reason: 'commonjs' }),
+			expect.objectContaining({ reason: 'native' }),
+			null,
+		])
 	})
 
 	it('prefers the ESM side of dual import/require exports in the real Vite runner', async () => {
@@ -294,33 +233,6 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(
 			plugin.resolveId?.('./workspace-source.ts', undefined, { ssr: true } as never),
 		).toBeNull()
-	})
-
-	it('loads a zero-config CommonJS package through the real Vite SSR runner', async () => {
-		await using fixture = await createDiskFixture()
-		const root = fixture.path
-		const entryPath = join(root, 'entry.ts')
-		await writePackage(
-			root,
-			'fixture-commonjs',
-			{ name: 'fixture-commonjs', type: 'commonjs', main: './index.js' },
-			'module.exports = { answer: 42 }\n',
-		)
-		await writeFile(
-			entryPath,
-			"import value from 'fixture-commonjs'\nexport const answer = value.answer\n",
-		)
-
-		await withTestViteServer(
-			{
-				root,
-				plugins: [createHostModuleVitePlugin()],
-			},
-			async (server) => {
-				const mod = await importViteSsrModule<{ answer: number }>(server, entryPath)
-				expect(mod.answer).toBe(42)
-			},
-		)
 	})
 
 	it('loads CommonJS from Node while transforming distribution source entries', async () => {

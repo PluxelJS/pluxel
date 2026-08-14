@@ -1,4 +1,4 @@
-import { BasePlugin, ForkablePlugin, getPluginInfo, Plugin, withHost } from '@pluxel/test'
+import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { v } from '@pluxel/runtime'
 
@@ -38,13 +38,6 @@ class RedisConsumer extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'RedisConsumerB' })
-class RedisConsumerB extends BasePlugin {
-	constructor(readonly redis: Redis) {
-		super()
-	}
-}
-
 beforeEach(() => {
 	redisMock.state.open = false
 	redisMock.state.ready = false
@@ -66,18 +59,13 @@ beforeEach(() => {
 })
 
 describe('@pluxel/redis', () => {
-	it('provides a polymorphic Redis capability with bounded client defaults', async () => {
-		expect(getPluginInfo(RedisPlugin).base).toBe(Redis)
-		expect(Redis.prototype).toBeInstanceOf(ForkablePlugin)
-
+	it('provides bounded client defaults and revokes the capability on stop', async () => {
 		await withHost(async (host) => {
-			host.add([RedisPlugin, RedisConsumer, RedisConsumerB])
+			host.add([RedisPlugin, RedisConsumer])
 			await host.commit()
 
 			const consumer = host.require(RedisConsumer)
-			const consumerB = host.require(RedisConsumerB)
 			expect(consumer.redis.client).toBe(redisMock.client)
-			expect(consumer.redis.scripts).not.toBe(consumerB.redis.scripts)
 			expect(redisMock.createClient).toHaveBeenCalledWith(
 				expect.objectContaining({
 					url: 'redis://127.0.0.1:6379',

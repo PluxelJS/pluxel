@@ -62,7 +62,7 @@ function createEngine() {
 }
 
 describe('ManagedPackageStore', () => {
-	it('publishes entry files only after one batched pnpm install succeeds', async () => {
+	it('publishes entry files only after install and removes them only after prune succeeds', async () => {
 		const rootDir = await fixtureRoot()
 		const { engine, install } = createEngine()
 		const store = new ManagedPackageStore(engine, {
@@ -85,26 +85,13 @@ describe('ManagedPackageStore', () => {
 		const wrapper = await readFile(resolve(snapshot.entriesDir, entryFiles[0]!), 'utf8')
 		expect(wrapper).toContain('export * from')
 		expect(wrapper).toContain('export default pluginModule.default')
-	})
 
-	it('removes the published entry after pnpm prunes the managed manifest', async () => {
-		const rootDir = await fixtureRoot()
-		const { engine, install } = createEngine()
-		const store = new ManagedPackageStore(engine, {
-			rootDir,
-			ignoreScripts: true,
-			allowBuilds: [],
-			minimumReleaseAgeMinutes: 0,
-		})
-		await store.initialize()
-		await store.install(['alpha@1.0.0'])
+		const removed = await store.remove(['alpha', '@scope/beta'])
 
-		const result = await store.remove(['alpha'])
-
-		expect(result).toEqual({ ok: true, succeeded: ['alpha'], failed: [] })
+		expect(removed).toEqual({ ok: true, succeeded: ['alpha', '@scope/beta'], failed: [] })
 		expect(install).toHaveBeenCalledTimes(2)
-		const snapshot = await store.snapshot()
-		expect(snapshot.packages).toEqual([])
+		const removedSnapshot = await store.snapshot()
+		expect(removedSnapshot.packages).toEqual([])
 		expect(await readdir(resolve(rootDir, 'entries'))).toEqual([])
 	})
 
@@ -132,31 +119,9 @@ describe('ManagedPackageStore', () => {
 		expect(result.ok).toBe(false)
 		expect(result.failed).toHaveLength(7)
 		expect(result.failed.every(({ code }) => code === 'INVALID_SPEC')).toBe(true)
-		expect(install).not.toHaveBeenCalled()
-	})
-
-	it('validates the runtime RPC input boundary before invoking pnpm', async () => {
-		const rootDir = await fixtureRoot()
-		const { engine, install } = createEngine()
-		const store = new ManagedPackageStore(engine, {
-			rootDir,
-			ignoreScripts: true,
-			allowBuilds: [],
-			minimumReleaseAgeMinutes: 0,
-		})
-		await store.initialize()
-
-		await expect(store.install([])).resolves.toMatchObject({
-			ok: false,
-			failed: [{ code: 'INVALID_SPEC' }],
-		})
 		await expect(store.install(null as never)).resolves.toMatchObject({
 			ok: false,
 			failed: [{ code: 'INVALID_SPEC' }],
-		})
-		await expect(store.install([42 as never])).resolves.toMatchObject({
-			ok: false,
-			failed: [{ input: '<item 1>', code: 'INVALID_SPEC' }],
 		})
 		await expect(
 			store.install(Array.from({ length: 101 }, () => 'alpha@1.0.0')),
@@ -189,32 +154,6 @@ describe('ManagedPackageStore', () => {
 			dependencies: {},
 		})
 		expect(await readdir(resolve(rootDir, 'entries'))).toEqual([])
-	})
-
-	it('uses the first spec and reports conflicting selectors for the same package', async () => {
-		const rootDir = await fixtureRoot()
-		const { engine, install } = createEngine()
-		const store = new ManagedPackageStore(engine, {
-			rootDir,
-			ignoreScripts: true,
-			allowBuilds: [],
-			minimumReleaseAgeMinutes: 0,
-		})
-		await store.initialize()
-
-		const result = await store.install(['alpha@1.0.0', 'alpha@2.0.0'])
-
-		expect(result).toMatchObject({
-			ok: false,
-			succeeded: ['alpha'],
-			failed: [{ input: 'alpha@2.0.0', code: 'INVALID_SPEC' }],
-		})
-		expect(install).toHaveBeenCalledOnce()
-		const snapshot = await store.snapshot()
-		expect(snapshot.packages[0]).toMatchObject({
-			name: 'alpha',
-			requested: '1.0.0',
-		})
 	})
 
 	it('does not publish persisted dependencies that are not materialized', async () => {

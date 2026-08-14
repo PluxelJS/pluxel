@@ -4,31 +4,21 @@ import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { fixturesPluginsDir, workspaceRoot } from './_paths'
 import { withTestDynamicContext } from '../support/context'
 
-const pkgRoot = workspaceRoot
-const pluginDir = fixturesPluginsDir
-const pluginFile = join(pluginDir, 'PluginA.ts')
-
 describe('LoaderHmrService file filter', () => {
 	it('accepts relative, absolute and /@fs watcher paths inside scan roots', async () => {
 		await withTestDynamicContext((ctx) => {
-			const hmr = new LoaderHmrService(ctx, {
-				roots: [pluginDir],
-				entries: [],
-			})
-			// Simulate Vite configuring server root to packages/runtime (matches real dev script)
-			hmr.setServerRoot(pkgRoot)
+			const pluginFile = join(fixturesPluginsDir, 'PluginA.ts')
+			const hmr = new LoaderHmrService(ctx, { roots: [fixturesPluginsDir], entries: [] })
+			hmr.setServerRoot(workspaceRoot)
 
-			const filter = hmr.toolkit.pathFilter
-			// Relative watcher paths are resolved against LoaderHmrService cwd (process.cwd()).
-			// This test suite can be executed from either workspace root or package root, so compute it dynamically.
-			const relPath = normalize(relative(process.cwd(), pluginFile))
-			const cleanRel = hmr.normalizeId(relPath)
-
-			expect(cleanRel).toBe(pluginFile)
-			expect(filter(relPath)).toBe(true)
-			expect(filter(pluginFile)).toBe(true)
-			expect(filter(`/@fs${pluginFile}`)).toBe(true)
-			expect(filter(join(pkgRoot, 'node_modules/some/pkg/index.ts'))).toBe(false)
+			const relativePath = normalize(relative(process.cwd(), pluginFile))
+			expect(hmr.normalizeId(relativePath)).toBe(pluginFile)
+			expect([
+				hmr.toolkit.pathFilter(relativePath),
+				hmr.toolkit.pathFilter(pluginFile),
+				hmr.toolkit.pathFilter(`/@fs${pluginFile}`),
+				hmr.toolkit.pathFilter(join(workspaceRoot, 'node_modules/pkg/index.ts')),
+			]).toEqual([true, true, true, false])
 		})
 	})
 })

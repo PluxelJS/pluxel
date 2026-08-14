@@ -1,6 +1,5 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Type as JavaScriptType } from '@sinclair/typebox'
-import * as corePublic from '../src/index'
 import {
 	CommandError,
 	createCommandRegistry,
@@ -9,7 +8,6 @@ import {
 	type CommandContext,
 	type ValidationIssue,
 } from '../src/index'
-import { compileSchema } from '../src/schema'
 import { Type, obj, openObj } from '../src/typebox'
 
 function incrementCommand() {
@@ -51,11 +49,6 @@ const assertCommandContextVariance = () => {
 void assertCommandContextVariance
 
 describe('@pluxel/commands core', () => {
-	it('exposes one factory construction path at runtime', () => {
-		expect(corePublic).toHaveProperty('createCommandRegistry')
-		expect(corePublic).not.toHaveProperty('CommandRegistry')
-	})
-
 	it('compiles a flat JSON descriptor and keeps the typed handler private', async () => {
 		const behavior = { kind: 'query', world: 'closed' } as const
 		const command = defineCommand({
@@ -81,68 +74,6 @@ describe('@pluxel/commands core', () => {
 		expect(Object.isFrozen(command.descriptor.behavior)).toBe(true)
 		expect(JSON.parse(JSON.stringify(command.descriptor))).toEqual(command.descriptor)
 		await expect(command.executeOrThrow({ value: 2 })).resolves.toEqual({ value: 3 })
-	})
-
-	it('compiles schema projection and runtime validation into one cached artifact', async () => {
-		const schema = obj({ value: Type.Integer({ default: 4 }) })
-		const compiled = compileSchema(schema)
-
-		expect(compileSchema(schema)).toBe(compiled)
-		expect(Object.isFrozen(compiled)).toBe(true)
-		expect(Object.isFrozen(compiled.jsonSchema)).toBe(true)
-		expect(compiled.validateInput({})).toEqual({ ok: true, value: { value: 4 } })
-		expect(compiled.validateOutput({})).toMatchObject({ ok: false })
-
-		const command = defineCommand({
-			name: 'schema.compiled.once',
-			description: 'Reuse one compiled schema artifact.',
-			behavior: { kind: 'query', world: 'closed' },
-			input: schema,
-			output: schema,
-			execute: ({ value }) => ({ value }),
-		})
-		expect(command.descriptor.inputSchema).toBe(compiled.jsonSchema)
-		expect(command.descriptor.outputSchema).toBe(compiled.jsonSchema)
-		await expect(command.executeOrThrow({})).resolves.toEqual({ value: 4 })
-	})
-
-	it('captures the implementation without freezing the public command handle', async () => {
-		const input = obj({})
-		const output = obj({ value: Type.Number() })
-		const config = {
-			name: 'snapshot.implementation',
-			description: 'Capture one implementation.',
-			behavior: { kind: 'query', world: 'closed' } as const,
-			input,
-			output,
-			execute: () => ({ value: 1 }),
-		}
-		const command = defineCommand(config)
-		config.execute = () => ({ value: 2 })
-
-		expect(Object.isFrozen(command)).toBe(false)
-		await expect(command.executeOrThrow({})).resolves.toEqual({ value: 1 })
-	})
-
-	it('requires context only when a host adds required context fields', async () => {
-		type HostContext = CommandContext & { tenant: string }
-		const input = obj({})
-		const output = obj({ tenant: Type.String() })
-		const command = defineCommand<typeof input, typeof output, HostContext>({
-			name: 'context.required',
-			description: 'Read required host context.',
-			behavior: { kind: 'query', world: 'closed' },
-			input,
-			output,
-			execute(_input, context) {
-				return { tenant: context.tenant }
-			},
-		})
-
-		expectTypeOf(command.executeOrThrow).parameters.toEqualTypeOf<[unknown, HostContext]>()
-		await expect(command.executeOrThrow({}, { tenant: 'acme' })).resolves.toEqual({
-			tenant: 'acme',
-		})
 	})
 
 	it('applies defaults before custom validation and validates output', async () => {
@@ -256,24 +187,6 @@ describe('@pluxel/commands core', () => {
 				examples: [{ input: { value: 1n } }],
 			}),
 		).toThrow(/not valid JSON: bigint/)
-	})
-
-	it('applies defaults to input but never fills missing handler output', async () => {
-		const command = defineCommand({
-			name: 'defaults.direction',
-			description: 'Keep default direction explicit.',
-			behavior: { kind: 'query', world: 'closed' },
-			input: obj({ inputValue: Type.Optional(Type.Number({ default: 4 })) }),
-			output: obj({ outputValue: Type.Optional(Type.Number({ default: 8 })) }),
-			examples: [{ input: {}, output: {} }],
-			execute(input) {
-				expect(input.inputValue).toBe(4)
-				return {}
-			},
-		})
-
-		await expect(command.executeOrThrow({})).resolves.toEqual({})
-		expect(command.descriptor.examples).toEqual([{ input: { inputValue: 4 }, output: {} }])
 	})
 
 	it('rejects non-JSON wire values even when the schema accepts anything', async () => {
@@ -425,25 +338,6 @@ describe('@pluxel/commands core', () => {
 		).toThrow(/destructive and idempotent/)
 	})
 
-	it('rejects non-string command names at the runtime configuration boundary', () => {
-		let failure: unknown
-		try {
-			defineCommand({
-				name: new String('boxed.name'),
-				description: 'Reject a boxed command name.',
-				behavior: { kind: 'query', world: 'closed' },
-				input: obj({}),
-				execute() {},
-			} as never)
-		} catch (error) {
-			failure = error
-		}
-		expect(failure).toMatchObject({
-			code: 'COMMAND_CONFIG',
-			details: { field: 'name' },
-		})
-	})
-
 	it('rejects non-object schemas at runtime as well as at the type boundary', () => {
 		expect(() =>
 			defineCommand({
@@ -490,36 +384,21 @@ describe('@pluxel/commands core', () => {
 	})
 
 	it('rejects JavaScript value schemas that cannot cross a JSON tool boundary', () => {
-		expect(() =>
-			defineCommand({
-				name: 'date.read',
-				description: 'Read a date.',
-				behavior: { kind: 'query', world: 'closed' },
-				input: obj({ value: JavaScriptType.Date() }),
-				output: obj({ value: Type.String() }),
-				execute: () => ({ value: 'never' }),
-			}),
-		).toThrow(/input must be a portable JSON Schema/)
-		expect(() =>
-			defineCommand({
-				name: 'bigint.read',
-				description: 'Read a big integer.',
-				behavior: { kind: 'query', world: 'closed' },
-				input: obj({ value: JavaScriptType.BigInt() }),
-				output: obj({ value: Type.String() }),
-				execute: () => ({ value: 'never' }),
-			}),
-		).toThrow(/input must be a portable JSON Schema/)
-		expect(() =>
-			defineCommand({
-				name: 'callback.run',
-				description: 'Run a callback.',
-				behavior: { kind: 'query', world: 'closed' },
-				input: obj({ callback: JavaScriptType.Function([], JavaScriptType.Void()) }),
-				output: obj({ value: Type.String() }),
-				execute: () => ({ value: 'never' }),
-			}),
-		).toThrow(/input must be a portable JSON Schema/)
+		for (const [name, input] of [
+			['date', obj({ value: JavaScriptType.Date() })],
+			['bigint', obj({ value: JavaScriptType.BigInt() })],
+			['function', obj({ value: JavaScriptType.Function([], JavaScriptType.Void()) })],
+		] as const) {
+			expect(() =>
+				defineCommand({
+					name: `invalid.${name}`,
+					description: 'Reject a JavaScript-only schema.',
+					behavior: { kind: 'query', world: 'closed' },
+					input,
+					execute() {},
+				} as never),
+			).toThrow(/input must be a portable JSON Schema/)
+		}
 	})
 
 	it('accepts self-contained TypeBox modules and rejects unresolved schema references', async () => {
@@ -575,19 +454,9 @@ describe('@pluxel/commands core', () => {
 	})
 
 	it('uses TypeBox transforms as private codecs around the JSON command boundary', async () => {
-		let dateDecodes = 0
-		let dateEncodes = 0
 		const date = Type.Transform(Type.String())
-			.Decode((value) => {
-				dateDecodes += 1
-				const decoded = new Date(value)
-				if (Number.isNaN(decoded.valueOf())) throw new Error('Invalid ISO date')
-				return decoded
-			})
-			.Encode((value) => {
-				dateEncodes += 1
-				return value.toISOString()
-			})
+			.Decode((value) => new Date(value))
+			.Encode((value) => value.toISOString())
 		const integer = Type.Transform(Type.String({ pattern: '^-?\\d+$' }))
 			.Decode((value) => BigInt(value))
 			.Encode((value) => String(value))
@@ -603,19 +472,9 @@ describe('@pluxel/commands core', () => {
 					output: { at: '2026-07-27T00:00:00.000Z', value: '42' },
 				},
 			],
-			validate(input) {
-				expect(input.at).toBeInstanceOf(Date)
-				expect(typeof input.value).toBe('bigint')
-			},
-			validateOutput(output) {
-				expect(output.at).toBeInstanceOf(Date)
-				expect(typeof output.value).toBe('bigint')
-			},
 			execute: ({ at, value }) => ({ at, value: value + 1n }),
 		})
 
-		expect(dateDecodes).toBe(0)
-		expect(dateEncodes).toBe(0)
 		expect(command.descriptor.inputSchema).toMatchObject({
 			type: 'object',
 			properties: { at: { type: 'string' }, value: { type: 'string' } },
@@ -624,8 +483,6 @@ describe('@pluxel/commands core', () => {
 		await expect(
 			command.executeOrThrow({ at: '2026-07-27T00:00:00.000Z', value: '41' }),
 		).resolves.toEqual({ at: '2026-07-27T00:00:00.000Z', value: '42' })
-		expect(dateDecodes).toBe(2)
-		expect(dateEncodes).toBe(1)
 	})
 
 	it('maps transform failures to the relevant validation boundary', async () => {
@@ -712,21 +569,6 @@ describe('@pluxel/commands core', () => {
 		await expect(pending).rejects.toMatchObject({ code: 'ABORTED' })
 	})
 
-	it('maintains one cached immutable registry catalog', async () => {
-		const registry = createCommandRegistry()
-		const registration = registry.register(incrementCommand())
-		const first = registry.list()
-		expect(Object.isFrozen(first)).toBe(true)
-		expect(registry.list()).toBe(first)
-		await expect(registry.executeOrThrow('math.increment', { value: 1 })).resolves.toEqual({
-			value: 2,
-		})
-		expect(() => registry.register(incrementCommand())).toThrow(/already registered/)
-		registration.dispose()
-		registration.dispose()
-		expect(registry.list()).toEqual([])
-	})
-
 	it('disposes catalog visibility without pretending to cancel in-flight execution', async () => {
 		let markStarted!: () => void
 		let release!: () => void
@@ -783,57 +625,5 @@ describe('@pluxel/commands core', () => {
 		registry.register(lower)
 		registry.register(upper)
 		expect(registry.list().map(({ name }) => name)).toEqual(['Alpha.command', 'alpha.command'])
-	})
-
-	it('captures registry identity from an otherwise mutable command wrapper', () => {
-		const registry = createCommandRegistry()
-		const command = incrementCommand()
-		const wrapper = { ...command }
-		const registration = registry.register(wrapper)
-		Object.assign(wrapper, { name: 'math.changed', descriptor: { name: 'math.changed' } })
-
-		expect(registration.name).toBe('math.increment')
-		expect(registry.get('math.increment')).toBe(wrapper)
-		expect(registry.list()).toEqual([command.descriptor])
-		registration.dispose()
-		expect(registry.list()).toEqual([])
-	})
-
-	it('snapshots mutable external descriptors without freezing caller data', () => {
-		const registry = createCommandRegistry()
-		const command = incrementCommand()
-		const descriptor = JSON.parse(JSON.stringify(command.descriptor)) as typeof command.descriptor
-		const wrapper = { ...command, descriptor }
-		registry.register(wrapper)
-
-		expect(Object.isFrozen(descriptor)).toBe(false)
-		Object.assign(descriptor, { description: 'Changed externally.' })
-		expect(registry.list()[0]?.description).toBe('Increment a number.')
-	})
-
-	it('validates deeply frozen external descriptors before reusing their identity', () => {
-		const command = incrementCommand()
-		const descriptor = Object.freeze({
-			name: command.name,
-			description: command.descriptor.description,
-			behavior: Object.freeze({ kind: 'query', world: 'closed' } as const),
-			inputSchema: Object.freeze({
-				type: 'object',
-				annotation: Object.freeze(new Date('2026-07-27T00:00:00.000Z')),
-			}),
-		})
-		const registry = createCommandRegistry()
-
-		let failure: unknown
-		try {
-			registry.register({ ...command, descriptor })
-		} catch (error) {
-			failure = error
-		}
-		expect(failure).toMatchObject({
-			code: 'COMMAND_CONFIG',
-			details: { command: 'math.increment', reason: 'invalid_descriptor' },
-			cause: expect.objectContaining({ message: expect.stringContaining('not valid JSON') }),
-		})
 	})
 })

@@ -40,10 +40,10 @@ async function runHmr(root: string, hmr: LoaderHmrService) {
 			httpPlugin: { name: 'noop' },
 			port: 0,
 		}),
-		// Tests use the SSR module runner only; avoid flakiness from Vite's default HMR ws port (24678).
-		// Some Vite versions still attempt to spin up the ws server even in middleware mode, so we always
+		// Tests use the SSR module runner only; avoid flakiness from Vite's default WebSocket port.
+		// Vite can still attempt to spin up the ws server in middleware mode, so we always
 		// allocate a unique free port to prevent cross-test / local dev conflicts.
-		{ server: { middlewareMode: true, hmr: { port: hmrPort }, fs: { allow: fsAllow } } },
+		{ server: { middlewareMode: true, ws: { port: hmrPort }, fs: { allow: fsAllow } } },
 	)
 	// The module runner triggers imports explicitly. Assign after mergeConfig because null overrides are ignored.
 	serverConfig.server = { ...serverConfig.server, watch: null }
@@ -55,6 +55,19 @@ async function runHmr(root: string, hmr: LoaderHmrService) {
 	} finally {
 		await server.close()
 	}
+}
+
+async function executeHmr(root: string) {
+	const errorLogs: ErrorLog[] = []
+	const host = createHmrTestHost({ errorLogs })
+	const hmr = new LoaderHmrService(host.ctx, { roots: [root], entries: [], report: false })
+	hmr.setServerRoot(root)
+	try {
+		await runHmr(root, hmr)
+	} finally {
+		await host.dispose()
+	}
+	return errorLogs.find((entry) => entry.msg === '[HMR] execute failed')
 }
 
 describe('HMR CJS dependency handling', () => {
@@ -70,105 +83,8 @@ describe('HMR CJS dependency handling', () => {
 			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
 		})
 		const root = fixture.path
-		const errorLogs: ErrorLog[] = []
-		const host = createHmrTestHost({ errorLogs })
-		const hmr = new LoaderHmrService(host.ctx, {
-			roots: [root],
-			entries: [],
-			report: false,
-		})
-		hmr.setServerRoot(root)
-
-		try {
-			await runHmr(root, hmr)
-		} finally {
-			await host.dispose()
-		}
-
-		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
-		expect(executeFailed).toBeUndefined()
+		await expect(executeHmr(root)).resolves.toBeUndefined()
 	}, 15_000)
-
-	it('externalizes CJS subpath exports (pkg/subpath)', async () => {
-		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-napi-rs/package.json': JSON.stringify(
-				{
-					name: 'pluxel-plugin-napi-rs',
-					version: '1.0.0',
-					exports: {
-						'./canvas': './canvas/index.cjs',
-					},
-				},
-				null,
-				2,
-			),
-			'node_modules/pluxel-plugin-napi-rs/canvas/index.cjs':
-				"const { platform } = require('os'); module.exports = { platform };\n",
-			'entry.ts':
-				"import pkg from 'pluxel-plugin-napi-rs/canvas'; export const platform = pkg.platform;\n",
-		})
-		const root = fixture.path
-		const errorLogs: ErrorLog[] = []
-		const host = createHmrTestHost({ errorLogs })
-		const hmr = new LoaderHmrService(host.ctx, {
-			roots: [root],
-			entries: [],
-			report: false,
-		})
-		hmr.setServerRoot(root)
-
-		try {
-			await runHmr(root, hmr)
-		} finally {
-			await host.dispose()
-		}
-
-		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
-		expect(executeFailed).toBeUndefined()
-	})
-
-	it('externalizes CJS deps before workspace resolver', async () => {
-		await using fixture = await createFixture({
-			// A node_modules CJS package that will work when externalized.
-			'node_modules/cjs-pkg/package.json': JSON.stringify(
-				{ name: 'cjs-pkg', version: '1.0.0', main: 'index.js' },
-				null,
-				2,
-			),
-			'node_modules/cjs-pkg/index.js':
-				"const { platform } = require('os'); module.exports = { platform };\n",
-			// A workspace-scanned entry that points to a CJS file (this is what used to preempt externalization).
-			'cjs-pkg/package.json': JSON.stringify({ name: 'cjs-pkg', version: '1.0.0' }, null, 2),
-			'cjs-pkg/index.cjs': "const { platform } = require('os'); module.exports = { platform };\n",
-			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
-		})
-		const root = fixture.path
-		const errorLogs: ErrorLog[] = []
-		const host = createHmrTestHost({
-			errorLogs,
-			scanService: {
-				resolveEntry: async ({ name }: { name: string }) => {
-					if (name !== 'cjs-pkg') return { ok: false }
-					return { ok: true, entry: join(root, 'cjs-pkg', 'index.cjs') }
-				},
-			},
-		})
-		const hmr = new LoaderHmrService(host.ctx, {
-			roots: [root],
-			entries: [],
-			report: false,
-		})
-		hmr.setServerRoot(root)
-
-		try {
-			await runHmr(root, hmr)
-		} finally {
-			await host.dispose()
-		}
-
-		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
-		expect(executeFailed).toBeUndefined()
-	})
 
 	it('auto-externalizes CJS files resolved through workspace aliases', async () => {
 		await using fixture = await createFixture({
@@ -192,62 +108,6 @@ describe('HMR CJS dependency handling', () => {
 			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
 		})
 		const root = fixture.path
-		const errorLogs: ErrorLog[] = []
-		const host = createHmrTestHost({ errorLogs })
-		const hmr = new LoaderHmrService(host.ctx, {
-			roots: [root],
-			entries: [],
-			report: false,
-		})
-		hmr.setServerRoot(root)
-
-		try {
-			await runHmr(root, hmr)
-		} finally {
-			await host.dispose()
-		}
-
-		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
-		expect(executeFailed).toBeUndefined()
-	})
-
-	it('auto-externalizes CJS deps even when resolved to /@fs/ file URLs', async () => {
-		await using fixture = await createFixture({
-			// Force a bare specifier to resolve into a local .cjs file via tsconfig paths.
-			'tsconfig.json': JSON.stringify(
-				{
-					include: ['**/*'],
-					compilerOptions: {
-						baseUrl: '.',
-						paths: {
-							'cjs-pkg': ['./cjs-pkg/index.cjs'],
-						},
-					},
-				},
-				null,
-				2,
-			),
-			'cjs-pkg/package.json': JSON.stringify({ name: 'cjs-pkg', version: '1.0.0' }, null, 2),
-			'cjs-pkg/index.cjs': "const { platform } = require('os'); module.exports = { platform };\n",
-			'entry.ts': "import pkg from 'cjs-pkg'; export const platform = pkg.platform;\n",
-		})
-		const root = fixture.path
-		const errorLogs: ErrorLog[] = []
-		const host = createHmrTestHost({ errorLogs })
-		const hmr = new LoaderHmrService(host.ctx, {
-			roots: [root],
-			entries: [],
-			report: false,
-		})
-		hmr.setServerRoot(root)
-
-		try {
-			await runHmr(root, hmr)
-		} finally {
-			await host.dispose()
-		}
-
-		const executeFailed = errorLogs.find((e) => e.msg === '[HMR] execute failed')
-		expect(executeFailed).toBeUndefined()
+		await expect(executeHmr(root)).resolves.toBeUndefined()
 	})
 })

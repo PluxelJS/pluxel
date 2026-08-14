@@ -40,6 +40,9 @@ describe('dynamic Vite config generations', () => {
 		let disposed = 0
 		const plugins = dynamicRuntimeVitePlugin({
 			config: configPath,
+			// This test owns config-generation teardown, not the Workbench client graph. Distribution
+			// mode keeps Vite's background dependency optimizer from racing fixture disposal.
+			mode: 'distribution',
 			prepareHost(host) {
 				generations++
 				host.ctx.effects.defer(() => {
