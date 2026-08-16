@@ -1003,17 +1003,49 @@ export class PluginService {
 		oldRuntime: PluginRuntime,
 		oldRunning: Set<PluginNodeSlot>,
 	): void {
-		const runningRootsWithDependents: PluginNodeSlot[] = []
-		for (const node of plan.toStop) {
-			if (!this.isRunningInRuntime(oldRuntime, node)) continue
+		// Required cascade targets are normally already closed in `toStop`. Start traversal at the
+		// first ordering dependent outside that set so a broad unregister does not walk the same
+		// required closure twice. Optional dependents and explicitly non-cascading operations still
+		// enter here and retain the generation-availability behavior.
+		const externalRoots: PluginNodeSlot[] = []
+		for (const slot of plan.toStopSlots) {
+			const requiredDependents = oldGraph.dependentSlotsOf(slot)
+			const optionalDependents = oldGraph.optionalDependentSlotsOf(slot)
+			let hasExternalDependent = false
+			for (let i = 0; i < requiredDependents.length; i++) {
+				if (!plan.toStopSlots.has(requiredDependents[i]!)) {
+					hasExternalDependent = true
+					break
+				}
+			}
+			if (!hasExternalDependent) {
+				for (let i = 0; i < optionalDependents.length; i++) {
+					if (!plan.toStopSlots.has(optionalDependents[i]!)) {
+						hasExternalDependent = true
+						break
+					}
+				}
+			}
+			if (!hasExternalDependent) continue
+
+			const node = oldGraph.keyOf(slot)
+			if (!isPluginNodeSlot(node) || !this.isRunningInRuntime(oldRuntime, node)) continue
 			oldRunning.add(node)
-			const slot = oldGraph.slotOf(node)
-			if (slot !== undefined && oldGraph.orderDependentSlotsOf(slot).length > 0) {
-				runningRootsWithDependents.push(node)
+			for (let i = 0; i < requiredDependents.length; i++) {
+				const dependentSlot = requiredDependents[i]!
+				if (plan.toStopSlots.has(dependentSlot)) continue
+				const dependent = oldGraph.keyOf(dependentSlot)
+				if (isPluginNodeSlot(dependent)) externalRoots.push(dependent)
+			}
+			for (let i = 0; i < optionalDependents.length; i++) {
+				const dependentSlot = optionalDependents[i]!
+				if (plan.toStopSlots.has(dependentSlot)) continue
+				const dependent = oldGraph.keyOf(dependentSlot)
+				if (isPluginNodeSlot(dependent)) externalRoots.push(dependent)
 			}
 		}
-		if (runningRootsWithDependents.length === 0) return
-		const closure = this.dependentClosure.collectOrdering(oldGraph, runningRootsWithDependents)
+		if (externalRoots.length === 0) return
+		const closure = this.dependentClosure.collectOrdering(oldGraph, externalRoots)
 		for (const node of closure) {
 			if (!oldRunning.has(node)) {
 				if (!this.isRunningInRuntime(oldRuntime, node)) continue

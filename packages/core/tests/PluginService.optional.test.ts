@@ -47,11 +47,31 @@ class OptionalConsumer extends BasePlugin {
 class OptionalProviderReplacement extends OptionalProviderCtor {}
 clonePluginDefinition(OptionalProviderCtor, OptionalProviderReplacement)
 
+@Plugin({ displayName: 'Required optional-provider consumer' })
+class RequiredOptionalProviderConsumer extends BasePlugin {
+	constructor(readonly provider: OptionalProviderCtor) {
+		super()
+	}
+}
+
+const RequiredOptionalProviderConsumerRef = definePluginRef<RequiredOptionalProviderConsumer>()
+let nestedOptionalConsumerStarts = 0
+
+@Plugin({ displayName: 'Nested optional consumer' })
+class NestedOptionalConsumer extends BasePlugin {
+	readonly generation = ++nestedOptionalConsumerStarts
+
+	override init() {
+		this.plugins.use(RequiredOptionalProviderConsumerRef, () => undefined)
+	}
+}
+
 describe('static optional Plugin integration', () => {
 	beforeEach(() => {
 		consumerStarts = 0
 		consumerCleanups = 0
 		integrationCleanups = 0
+		nestedOptionalConsumerStarts = 0
 		observedGenerations.length = 0
 		resetOptionalProvider()
 		resetSecondOptionalProvider()
@@ -123,6 +143,25 @@ describe('static optional Plugin integration', () => {
 			expect(observedGenerations).toHaveLength(2)
 			expect(summary.pluginChanges.restarted).toEqual([
 				host.ctx.registry.resolvePluginNode(OptionalConsumer),
+			])
+		})
+	})
+
+	it('restarts optional consumers outside a required removal cascade', async () => {
+		await withCoreHost(async (host) => {
+			host.add([OptionalProviderCtor, RequiredOptionalProviderConsumer, NestedOptionalConsumer])
+			await host.commit()
+			const firstOptionalConsumer = host.require(NestedOptionalConsumer)
+
+			host.remove(OptionalProviderCtor)
+			const summary = await host.commit()
+
+			expect(host.has(OptionalProviderCtor)).toBe(false)
+			expect(host.has(RequiredOptionalProviderConsumer)).toBe(false)
+			expect(host.require(NestedOptionalConsumer)).not.toBe(firstOptionalConsumer)
+			expect(nestedOptionalConsumerStarts).toBe(2)
+			expect(summary.pluginChanges.restarted).toEqual([
+				host.ctx.registry.resolvePluginNode(NestedOptionalConsumer),
 			])
 		})
 	})

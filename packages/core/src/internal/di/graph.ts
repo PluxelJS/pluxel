@@ -221,14 +221,14 @@ class MutableTokenOwnerIndex implements MutableTokenOwnerLookup {
 		const compactAt = Math.max(tokenOwnerCompactionMinChanges, Math.ceil(this.base.size / 4))
 		if (this.changes.size <= compactAt) return new TokenOwnerIndex(this.base, this.changes)
 
-		const compacted = new Map(this.base)
+		// Materialize the overlay directly. Cloning the base and then deleting a broad removal
+		// repeats work for every tombstone and retains the base entries until the second pass.
+		const compacted = new Map<Token, Slot>()
+		for (const [token, slot] of this.base) {
+			if (!this.changes.has(token)) compacted.set(token, slot)
+		}
 		for (const [token, slot] of this.changes) {
-			if (slot === deletedTokenOwner) compacted.delete(token)
-			else {
-				// Match the delete-then-set order used by incremental owner replacement.
-				compacted.delete(token)
-				compacted.set(token, slot)
-			}
+			if (slot !== deletedTokenOwner) compacted.set(token, slot)
 		}
 		return compacted
 	}
@@ -1302,13 +1302,20 @@ const collectAffectedSlots = <M>(
 	const affectedMarks = scratch.affectedMarks
 	const affectedSlots = scratch.affectedSlots
 	const affectedStack = scratch.affectedStack
+	let dirtyPreviousActiveCount = 0
 
-	for (const slot of dirty) markSlot(dirtyMarks, dirtySlots, slot)
+	for (const slot of dirty) {
+		markSlot(dirtyMarks, dirtySlots, slot)
+		if (prev.declarationAtSlot(slot) !== undefined) dirtyPreviousActiveCount += 1
+	}
 
 	for (let i = 0; i < dirtySlots.length; i++) {
 		const slot = dirtySlots[i]!
 		if (markSlot(affectedMarks, affectedStack, slot)) affectedSlots.push(slot)
 	}
+	// Every previous node is already affected, so token retargeting and dependent propagation
+	// cannot discover another slot. The retargeted-token delta is still computed and reported.
+	if (dirtyPreviousActiveCount === prev.activeCount()) return affectedSlots
 	for (let i = 0; i < retargetedTokens.length; i++) {
 		const { token } = retargetedTokens[i]!
 		for (const consumerSlot of prev.tokenConsumerSlotsOf(token)) {
