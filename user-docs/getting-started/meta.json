@@ -1,0 +1,5 @@
+{
+	"title": "入门",
+	"defaultOpen": true,
+	"pages": ["index", "plugin-model", "configuration", "host-setup"]
+}

@@ -20,7 +20,7 @@ engines 约束。
 
 `projects/*` 只保留必须随 Pluxel 一起演进的维护者宿主。产品项目不要嵌入该目录，避免一个 package
 同时属于父、子两个 workspace；各仓库分别维护 lockfile、验证命令和提交历史。完整流程见
-[`user-docs/source-workspaces.md`](user-docs/source-workspaces.md)。
+[`user-docs/development/source-workspaces.md`](user-docs/development/source-workspaces.md)。
 
 文档入口（先看这些，避免被历史笔记误导）：
 
@@ -28,7 +28,7 @@ engines 约束。
 - 维护者文档：`docs/README.md`
 - 插件系统总边界：`docs/PLUGIN_SYSTEM.md`
 - 未实现研究：`docs/proposals/README.md`
-- 新应用模板：`user-docs/starter-monorepo.md`
+- 新应用模板：`user-docs/development/starter-monorepo.md`
 - 维护者宿主：`projects/README.md`
 
 开发宿主走 `projects/plugin-host`，但建议直接从仓库根目录使用这些入口：

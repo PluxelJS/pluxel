@@ -206,6 +206,9 @@ web_modules/
 
 # Next.js build output
 .next
+projects/docs/.source
+projects/docs/public/playground-types.json
+projects/docs/public/playground-types/
 out
 
 # Nuxt.js build / generate output

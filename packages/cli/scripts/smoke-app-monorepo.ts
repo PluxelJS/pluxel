@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
 import { parse, stringify } from 'yaml'
@@ -209,12 +209,10 @@ async function assertGeneratedGitIgnore(root: string): Promise<void> {
 async function verifyBundledUserDocs(root: string): Promise<void> {
 	const sourceRoot = resolve(root, 'user-docs')
 	const bundledRoot = resolve(root, 'packages/cli/dist/user-docs')
-	const [sourceEntries, bundledEntries] = await Promise.all([
-		readdir(sourceRoot),
-		readdir(bundledRoot),
+	const [sourceFiles, bundledFiles] = await Promise.all([
+		listRelativeFiles(sourceRoot),
+		listRelativeFiles(bundledRoot),
 	])
-	const sourceFiles = sourceEntries.sort()
-	const bundledFiles = bundledEntries.sort()
 	if (JSON.stringify(bundledFiles) !== JSON.stringify(sourceFiles)) {
 		throw new Error('CLI bundled user-docs file list differs from source')
 	}
@@ -225,6 +223,19 @@ async function verifyBundledUserDocs(root: string): Promise<void> {
 		])
 		if (bundled !== source) throw new Error(`CLI bundled user doc differs from source: ${file}`)
 	}
+}
+
+async function listRelativeFiles(root: string): Promise<string[]> {
+	const files: string[] = []
+	const visit = async (directory: string) => {
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			const path = resolve(directory, entry.name)
+			if (entry.isDirectory()) await visit(path)
+			else files.push(relative(root, path))
+		}
+	}
+	await visit(root)
+	return files.sort()
 }
 
 async function verifyStandalonePluginPack(root: string): Promise<void> {

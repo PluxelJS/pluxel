@@ -78,4 +78,4 @@ capability, call `CanvasPlugin.decodeImage()`, and use that Image in the option.
 authentication, proxy, retry, origin, and cancellation policy outside a drawing library.
 
 See [`DESIGN.md`](DESIGN.md) for global-state and concurrency invariants and
-[`user-docs/echarts.md`](../../user-docs/echarts.md) for the full author path.
+[`user-docs/rendering/echarts.md`](../../../user-docs/rendering/echarts.md) for the full author path.

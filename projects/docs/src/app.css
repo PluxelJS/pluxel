@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'fumapress/css/preset.css';
+@import 'fumadocs-twoslash/twoslash.css';
+
+html {
+	scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+	margin-right: 0 !important;
+	--removed-body-scroll-bar-size: 0 !important;
+}
+
+.configuration-example-layout {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+}
+
+.configuration-example-layout > * {
+	min-width: 0;
+}
+
+.configuration-preview-disclosure {
+	overflow: hidden;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.75rem;
+}
+
+.configuration-preview-disclosure > summary {
+	cursor: pointer;
+	padding: 1rem 1.25rem;
+	font-weight: 500;
+	list-style-position: inside;
+}
+
+.configuration-preview-disclosure[open] > summary {
+	border-bottom: 1px solid var(--color-fd-border);
+}
+
+.configuration-preview-disclosure-body {
+	padding: 1rem;
+}
+
+.configuration-playground-editor {
+	min-height: 22rem;
+	height: min(62vh, 34rem);
+}
+
+.configuration-playground-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.25rem;
+	align-items: start;
+}
+
+.configuration-playground-layout > * {
+	min-width: 0;
+}
+
+@media (min-width: 1100px) {
+	.configuration-playground-layout {
+		grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr);
+	}
+}
+
+@media (max-width: 639px) {
+	.configuration-preview-disclosure-body {
+		padding: 0.5rem;
+	}
+}

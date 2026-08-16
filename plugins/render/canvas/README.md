@@ -71,4 +71,4 @@ Canvas 同时集成 `@chenglou/pretext` 的服务端测量桥。`prepareText()` 
 `layoutWithLines()`、`measureLineStats()`、rich-inline walkers 等纯 arithmetic helper 从本包直接导出。Pretext 的共享
 cache 会在字体 registry revision 改变或累计字符达到配置预算时清空，避免动态字体替换后继续复用旧宽度。
 
-完整用户路径见 [`user-docs/canvas.md`](../../user-docs/canvas.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。
+完整用户路径见 [`user-docs/rendering/canvas.md`](../../../user-docs/rendering/canvas.md)，设计不变量见 [`DESIGN.md`](DESIGN.md)。

@@ -6,7 +6,7 @@ repository integration and lifecycle boundaries.
 
 Documentation ownership is deliberately split:
 
-- [`user-docs/commands.md`](../user-docs/commands.md): standard author and host usage;
+- [`user-docs/runtime/commands.md`](../user-docs/runtime/commands.md): standard author and host usage;
 - [`packages/commands/README.md`](../packages/commands/README.md): complete package API and recipes;
 - [`packages/commands/docs/DESIGN.md`](../packages/commands/docs/DESIGN.md): package implementation,
   performance, parser, and projection decisions.

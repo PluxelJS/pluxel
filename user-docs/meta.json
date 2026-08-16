@@ -1,0 +1,12 @@
+{
+	"title": "Pluxel 用户文档",
+	"pages": [
+		"README",
+		"getting-started",
+		"workbench",
+		"development",
+		"runtime",
+		"rendering",
+		"reference"
+	]
+}

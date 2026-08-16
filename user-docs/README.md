@@ -1,65 +1,43 @@
-# Pluxel 插件开发指南
+---
+title: Pluxel 用户文档
+description: 用四篇入门文档完成 Plugin、配置和宿主装配，再按任务查阅专题。
+---
 
-这里服务插件作者和修改插件的 coding agent。文档按实际工作流组织：先建立可发布的 package，再写插件、
-测试和 review；宿主安装是独立的后续路径。
+# Pluxel 用户文档
 
-## 插件作者最短路径
+Pluxel Plugin 是具有依赖、配置和生命周期的能力单元。入门路径包含四篇文档；其他页面按任务查阅。
 
-1. [`plugin-package.md`](plugin-package.md)：创建插件 package，配置 `package.json`、`tsconfig.json`、
-   `tsdown.config.ts`，理解生成 metadata，并完成构建和发布检查。
-2. [`plugin-authoring.md`](plugin-authoring.md)：从标准插件形状开始，掌握依赖、配置、生命周期、
-   HTTP、Workbench Plane 和公开 capability。
-3. [`database.md`](database.md)：选择 plugin/application database ownership、migration/reset evolution、transaction 与 live query。
-4. [`cache.md`](cache.md)：用显式 scope 组合同步 L1、异步 backend、数据库 loader、主动失效与请求合并。
-5. [`rates.md`](rates.md)：使用 caller-aware 四算法 admission control、处理 deny/error 并选择 memory/Redis backend。
-6. [`redis.md`](redis.md)：使用独立 Redis capability、选择 provider 并桥接 cache/rates backend。
-7. [`storage.md`](storage.md)：使用统一 s3mini API 并在 local、S3 与平台 provider 之间切换。
-8. [`wretch.md`](wretch.md)：使用原生 immutable Wretch client、统一宿主策略与可选 HTTP 设置 Port。
-9. [`otel.md`](otel.md)：直接使用标准 OpenTelemetry Meter/Tracer/Logger，并选择 OTLP signal 与 Prometheus pull。
-10. [`fonts.md`](fonts.md)：统一管理系统字体、Pluxel 上传字体、程序化注册、默认选择与 Fonts Selection Port。
-11. [`canvas.md`](canvas.md)：使用有资源预算的原生服务端 Canvas，并与 Fonts 插件组合。
-12. [`echarts.md`](echarts.md)：用 Canvas/Fonts 在服务端渲染 Apache ECharts，并管理主题、字体和图片来源。
-13. [`testing.md`](testing.md)：使用 `@pluxel/test/vitest`、core/runtime test host 和 Vitest 验证真实
-    插件生命周期、HTTP、失败传播、cleanup 与 disabled Workbench Plane。
-14. [`commands.md`](commands.md)：把同一能力暴露为 Agent tool、CLI 或消息指令，并保持权限与 carrier 所有权。
-15. [`plugin-best-practices.md`](plugin-best-practices.md)：写代码和 review 时使用的所有权决策、
-    常见反模式与提交检查表。
-16. [`oxlint.md`](oxlint.md)：Pluxel 增补规则保护的设计约束、修复方式和推荐配置。
+## 四篇入门文档
 
-CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到生成仓库的
-`docs/pluxel/`，根 `AGENTS.md` 会要求 coding agent 从 `docs/pluxel/README.md` 开始。生成项目
-不维护另一套改写版 API 指南。
+1. [编写第一个插件](./getting-started/index.md)：在一页内完成 package、配置、Plugin、宿主启用和 lifecycle test。
+2. [Plugin 模型与生命周期](./getting-started/plugin-model.md)：理解 required/optional dependency、generation、effects 和失败传播。
+3. [配置模型](./getting-started/configuration.md)：让一个 Valibot schema 成为类型、默认值、校验和管理 UI 的共同真源。
+4. [配置插件宿主](./getting-started/host-setup.md)：只选择 static 或 dynamic 其中一条 route，完成可运行宿主。
 
-## 先做这四个判断
+完成后可以确定 Plugin 的依赖、启动条件、配置来源、资源所有权和宿主入口。运行时能力不属于入门前置内容。
 
-| 问题                                           | 选择                                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------------------- |
-| 缺少另一个 Plugin 时，本 Plugin 是否无法工作？ | 是：constructor value import；否：`definePluginRef<T>()` + `plugins.use()` |
-| 这段组成是否拥有独立配置、失败、启停或治理？   | 是：Plugin；否：普通 class/function + owner effects                        |
-| 这是业务 API 还是只服务管理 UI？               | 业务：`ctx.http.plugin`；管理：`ctx.workbench.mount()`                     |
-| 资源何时释放？                                 | 创建成功后立即登记 effect，或从 `init()` 返回幂等 cleanup/disposable       |
+## 按任务进入
 
-如果代码无法清楚回答其中一个问题，先解决所有权再继续扩展 API。Pluxel Oxlint 会自动检查
-其中可静态判断的部分，但不能替代 required/optional 和业务/Workbench的设计判断。
+| 当前任务                                    | 只读这一页                                                                                       |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 完整验证 lifecycle、HTTP、config 与 cleanup | [测试插件](./development/testing.md)                                                             |
+| 暴露业务 API 或 webhook                     | [插件 HTTP](./runtime/http.md)                                                                   |
+| 数据库、加密小数据、对象存储                | [数据库](./runtime/database.md)、[Vault](./runtime/vault.md)、[S3 存储](./runtime/storage.md)    |
+| 缓存、限流、Redis                           | [缓存](./runtime/cache.md)、[请求频率控制](./runtime/rates.md)、[Redis](./runtime/redis.md)      |
+| CPU 密集任务或独立 Node ESM                 | [Node module 与 worker task](./runtime/node-artifacts.md)                                        |
+| 管理界面或 schema 表单                      | [管理工作台](./workbench/index.md)、[配置 Playground](./workbench/configuration-playground.md)   |
+| 服务端字体、Canvas 或图表                   | [字体](./rendering/fonts.md)、[Canvas](./rendering/canvas.md)、[ECharts](./rendering/echarts.md) |
+| Agent、CLI 或消息指令                       | [Commands 与 Agent tools](./runtime/commands.md)                                                 |
+| 构建、发布、HMR 或跨仓库联调                | [CLI 与工具链](./development/tooling.md)                                                         |
+| 定位错误或确认公开入口                      | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)            |
 
-## 其他任务
+## 内容与机器接口
 
-- [`workbench.md`](workbench.md)：管理工作台的导航、标签、插件分栏和高效空间使用。
-- [`starter-monorepo.md`](starter-monorepo.md)：生成可独立运行、带本地插件指南和完整验证命令的
-  canonical application monorepo。
-- [`source-workspaces.md`](source-workspaces.md)：让多个独立 pnpm 仓库按语义仓库身份消费本地源码，
-  不提交机器路径或手写 override。
-- [`host-setup.md`](host-setup.md)：选择 static/dynamic Vite route，配置 Workbench Plane 和启动策略。
-- [`package-manager.md`](package-manager.md)：为 dynamic host 装配官方 pnpm package source producer。
-- [`distribution.md`](distribution.md)：finalize、检查、签名和可选关联 static application 发行物。
-- [`tooling.md`](tooling.md)：CLI 命令、构建环境变量、工具所有权和 HMR diagnostics 速查。
+`user-docs/` 是唯一正文来源：仓库中可直接阅读，线上由 Fumapress 提供导航、搜索、类型提示和交互预览。
 
-内部架构、实现入口和维护约束只存在于 Pluxel 源码仓库的 maintainer docs。插件作者不需要它们，
-插件代码也不要导入 internal helper。
+- 索引：`/llms.txt`
+- 全部 Markdown：`/llms-full.txt`
+- 单页 Markdown：`/llms.mdx/docs/<slug>/content.md`
+- 文档页也支持 `/docs/<slug>.md` 和 `Accept: text/markdown`
 
-## 文档承诺
-
-- 示例只使用当前公开 API。
-- 先给标准写法和选择规则，再解释必要的设计原因。
-- 不展示兼容 API、内部 helper 或迁移历史。
-- 插件作者行为变化只更新这里；CLI 打包和 `pluxel new` 复制同一份文件，不维护平行指南。
+维护者架构位于 `docs/`；proposal 和历史记录不是当前用户 API。

@@ -196,6 +196,11 @@
 			],
 			"outputLogs": "new-only",
 		},
+		"pluxel-docs#build": {
+			"outputs": ["dist/**", ".source/**"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/user-docs/**"],
+			"outputLogs": "new-only",
+		},
 		"build:lib": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist/**"],

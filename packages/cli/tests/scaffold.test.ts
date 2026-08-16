@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
-import { resolve } from 'pathe'
+import { relative, resolve } from 'pathe'
 import fs from 'node:fs'
 import { parse as parseYaml } from 'yaml'
 import {
@@ -12,6 +12,19 @@ import {
 } from '../src/scaffold'
 import { generateFromTemplate, promptTemplateData } from '../src/scaffold/template'
 import { formatPackageScriptCommand } from '../src/utils/pm'
+
+function listRelativeFilesSync(root: string, fileSystem: typeof fs): string[] {
+	const files: string[] = []
+	const visit = (directory: string) => {
+		for (const name of fileSystem.readdirSync(directory) as string[]) {
+			const path = resolve(directory, name)
+			if (fileSystem.statSync(path).isDirectory()) visit(path)
+			else files.push(relative(root, path))
+		}
+	}
+	visit(root)
+	return files.sort()
+}
 
 describe('scaffold name helpers', () => {
 	it('applies the plugin package convention separately from application identities', () => {
@@ -186,11 +199,15 @@ describe('scaffold template rendering', () => {
 		expect(agentsGuide).toContain('docs/pluxel/README.md')
 
 		const sourceDocsDir = resolve(import.meta.dirname, '../../../user-docs')
-		const sourceDocs = fs.readdirSync(sourceDocsDir).sort()
-		const generatedDocs = fixture.fs.readdirSync(resolve(targetDir, 'docs/pluxel')).sort()
+		const generatedDocsDir = resolve(targetDir, 'docs/pluxel')
+		const sourceDocs = listRelativeFilesSync(sourceDocsDir, fs)
+		const generatedDocs = listRelativeFilesSync(
+			generatedDocsDir,
+			fixture.fs as unknown as typeof fs,
+		)
 		expect(generatedDocs).toEqual(sourceDocs)
 		for (const file of sourceDocs) {
-			expect(fixture.fs.readFileSync(resolve(targetDir, 'docs/pluxel', file), 'utf8')).toBe(
+			expect(fixture.fs.readFileSync(resolve(generatedDocsDir, file), 'utf8')).toBe(
 				fs.readFileSync(resolve(sourceDocsDir, file), 'utf8'),
 			)
 		}

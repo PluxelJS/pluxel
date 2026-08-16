@@ -64,4 +64,4 @@ graph，`entries/*.mjs` 是 dynamic runtime 的公开文件协议。不要让其
 策略时实现另一个 source producer。
 
 工程不变量见 [`DESIGN.md`](DESIGN.md)，宿主用户路径见
-[`../../user-docs/package-manager.md`](../../user-docs/package-manager.md)。
+[`../../user-docs/development/package-manager.md`](../../user-docs/development/package-manager.md)。
