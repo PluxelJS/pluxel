@@ -699,8 +699,6 @@ export class PluginService {
 		const targets = this.collectPlanningCascadeTargets(canonical, opts?.cascadeDependents ?? true)
 		for (const t of targets) this.definitions.unregister(t)
 		this.clearPendingOperations(targets)
-		this._pendingStart.delete(canonical)
-		this._pendingRestart.delete(canonical)
 	}
 
 	/**
@@ -989,14 +987,8 @@ export class PluginService {
 		return failed
 	}
 
-	private collectRunningNodes(graph: PluginGraph, runtime: PluginRuntime): Set<PluginNodeSlot> {
-		const running = new Set<PluginNodeSlot>()
-		for (const key of graph.keys()) {
-			if (!isPluginNodeSlot(key)) continue
-			const instance = runtime.peekByKey<BasePlugin>(key)
-			if (this.lifecycleManager.isRunning(instance)) running.add(key)
-		}
-		return running
+	private isRunningInRuntime(runtime: PluginRuntime, node: PluginNodeSlot): boolean {
+		return this.lifecycleManager.isRunning(runtime.peekByKey<BasePlugin>(node))
 	}
 
 	/**
@@ -1008,13 +1000,25 @@ export class PluginService {
 		plan: CommitExecutionPlan,
 		oldGraph: PluginGraph,
 		graph: PluginGraph,
-		oldRunning: ReadonlySet<PluginNodeSlot>,
+		oldRuntime: PluginRuntime,
+		oldRunning: Set<PluginNodeSlot>,
 	): void {
-		const runningRoots = [...plan.toStop].filter((node) => oldRunning.has(node))
-		if (runningRoots.length === 0) return
-		const closure = this.dependentClosure.collectOrdering(oldGraph, runningRoots)
+		const runningRootsWithDependents: PluginNodeSlot[] = []
+		for (const node of plan.toStop) {
+			if (!this.isRunningInRuntime(oldRuntime, node)) continue
+			oldRunning.add(node)
+			const slot = oldGraph.slotOf(node)
+			if (slot !== undefined && oldGraph.orderDependentSlotsOf(slot).length > 0) {
+				runningRootsWithDependents.push(node)
+			}
+		}
+		if (runningRootsWithDependents.length === 0) return
+		const closure = this.dependentClosure.collectOrdering(oldGraph, runningRootsWithDependents)
 		for (const node of closure) {
-			if (!oldRunning.has(node)) continue
+			if (!oldRunning.has(node)) {
+				if (!this.isRunningInRuntime(oldRuntime, node)) continue
+				oldRunning.add(node)
+			}
 			const oldSlot = oldGraph.slotOf(node)
 			if (oldSlot !== undefined) {
 				plan.toStop.add(node)
@@ -1025,6 +1029,36 @@ export class PluginService {
 				plan.toStart.add(node)
 				plan.toStartSlots.add(nextSlot)
 			}
+		}
+	}
+
+	/**
+	 * Snapshot only the nodes whose previous availability can affect the post-start restart phase.
+	 * A leaf update must stay local instead of scanning every unrelated running Plugin in the host.
+	 */
+	private capturePostStartAvailabilityState(
+		plan: CommitExecutionPlan,
+		graph: PluginGraph,
+		oldRuntime: PluginRuntime,
+		oldRunning: Set<PluginNodeSlot>,
+	): void {
+		const rootsWithDependents: PluginNodeSlot[] = []
+		for (const node of plan.toStart) {
+			if (oldRunning.has(node)) continue
+			if (this.isRunningInRuntime(oldRuntime, node)) {
+				oldRunning.add(node)
+				continue
+			}
+			const slot = graph.slotOf(node)
+			if (slot !== undefined && graph.orderDependentSlotsOf(slot).length > 0) {
+				rootsWithDependents.push(node)
+			}
+		}
+		if (rootsWithDependents.length === 0) return
+		const candidates = this.dependentClosure.collectOrdering(graph, rootsWithDependents)
+		for (const node of candidates) {
+			if (oldRunning.has(node)) continue
+			if (this.isRunningInRuntime(oldRuntime, node)) oldRunning.add(node)
 		}
 	}
 
@@ -1106,7 +1140,6 @@ export class PluginService {
 
 		const oldGraph = this.graph
 		const oldRuntime = this.definitions.runtime
-		const oldRunning = this.collectRunningNodes(oldGraph, oldRuntime)
 		const action = this.definitions.build()
 		if (!action.ok) {
 			action.err.reset()
@@ -1120,7 +1153,8 @@ export class PluginService {
 		this._activeRuntime = runtime
 		try {
 			const plan = this.buildCommitPlan(oldGraph, graph, delta)
-			this.expandPreStopAvailabilityClosure(plan, oldGraph, graph, oldRunning)
+			const oldRunning = new Set<PluginNodeSlot>()
+			this.expandPreStopAvailabilityClosure(plan, oldGraph, graph, oldRuntime, oldRunning)
 
 			// No-op commit: still report state (after applying pending restarts/retries).
 			if (isCommitExecutionPlanEmpty(delta, plan)) {
@@ -1134,6 +1168,7 @@ export class PluginService {
 				})
 				return createOk({ graph: this.graph, delta })
 			}
+			this.capturePostStartAvailabilityState(plan, graph, oldRuntime, oldRunning)
 
 			this.ctx.logger.info('插件变更', () => ({
 				remove: [...plan.removed].map((node) => this.label(node)),

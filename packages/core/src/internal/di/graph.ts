@@ -85,14 +85,21 @@ export type GraphBuild<M = unknown> = {
 
 type Activator = (runtime: Runtime<any>) => unknown
 type Slot = number
+type TokenOwnerLookup = Pick<ReadonlyMap<Token, Slot>, 'get'>
+type MutableTokenOwnerLookup = TokenOwnerLookup & {
+	set(token: Token, slot: Slot): void
+	delete(token: Token): void
+}
 type BuildScratch = {
 	dirtyMarks: Uint8Array
 	affectedMarks: Uint8Array
 	changedDependentMarks: Uint8Array
+	changedOptionalDependentMarks: Uint8Array
 	dirtySlots: Slot[]
 	affectedSlots: Slot[]
 	affectedStack: Slot[]
 	changedDependentSlots: Slot[]
+	changedOptionalDependentSlots: Slot[]
 }
 type DraftState<M = unknown> = {
 	slotByKey: Map<NodeKey, Slot>
@@ -115,6 +122,117 @@ type PlanningCache<M = unknown> = {
 
 const emptyArray: readonly unknown[] = []
 const emptySlotArray: readonly Slot[] = []
+const deletedTokenOwner = Symbol('deleted-token-owner')
+const tokenOwnerCompactionMinChanges = 64
+
+/**
+ * Immutable base plus a bounded change set. Incremental graph edits copy only changed token
+ * owners; the change set is flattened before lookup or iteration depth can grow.
+ */
+class TokenOwnerIndex implements ReadonlyMap<Token, Slot> {
+	public readonly size: number
+	public readonly [Symbol.toStringTag] = 'TokenOwnerIndex'
+
+	public constructor(
+		public readonly base: ReadonlyMap<Token, Slot>,
+		public readonly changes: ReadonlyMap<Token, Slot | typeof deletedTokenOwner>,
+	) {
+		let size = base.size
+		for (const [token, value] of changes) {
+			const existed = base.has(token)
+			if (value === deletedTokenOwner) {
+				if (existed) size -= 1
+			} else if (!existed) size += 1
+		}
+		this.size = size
+	}
+
+	public get(token: Token): Slot | undefined {
+		const changed = this.changes.get(token)
+		if (changed === deletedTokenOwner) return undefined
+		return changed ?? this.base.get(token)
+	}
+
+	public has(token: Token): boolean {
+		return this.get(token) !== undefined
+	}
+
+	public *entries(): MapIterator<[Token, Slot]> {
+		for (const [token, slot] of this.base) {
+			if (!this.changes.has(token)) yield [token, slot]
+		}
+		for (const [token, slot] of this.changes) {
+			if (slot !== deletedTokenOwner) yield [token, slot]
+		}
+	}
+
+	public *keys(): MapIterator<Token> {
+		for (const [token] of this.entries()) yield token
+	}
+
+	public *values(): MapIterator<Slot> {
+		for (const [, slot] of this.entries()) yield slot
+	}
+
+	public forEach(
+		callbackfn: (value: Slot, key: Token, map: ReadonlyMap<Token, Slot>) => void,
+		thisArg?: unknown,
+	): void {
+		for (const [token, slot] of this.entries()) callbackfn.call(thisArg, slot, token, this)
+	}
+
+	public [Symbol.iterator](): MapIterator<[Token, Slot]> {
+		return this.entries()
+	}
+}
+
+class MutableTokenOwnerIndex implements MutableTokenOwnerLookup {
+	private readonly base: ReadonlyMap<Token, Slot>
+	private readonly changes: Map<Token, Slot | typeof deletedTokenOwner>
+
+	public constructor(previous: ReadonlyMap<Token, Slot>) {
+		if (previous instanceof TokenOwnerIndex) {
+			this.base = previous.base
+			this.changes = new Map(previous.changes)
+		} else {
+			this.base = previous
+			this.changes = new Map()
+		}
+	}
+
+	public get(token: Token): Slot | undefined {
+		const changed = this.changes.get(token)
+		if (changed === deletedTokenOwner) return undefined
+		return changed ?? this.base.get(token)
+	}
+
+	public set(token: Token, slot: Slot): void {
+		if (this.base.get(token) === slot) this.changes.delete(token)
+		else this.changes.set(token, slot)
+	}
+
+	public delete(token: Token): void {
+		if (this.base.has(token)) this.changes.set(token, deletedTokenOwner)
+		else this.changes.delete(token)
+	}
+
+	public finish(): ReadonlyMap<Token, Slot> {
+		if (this.changes.size === 0) return this.base
+		const compactAt = Math.max(tokenOwnerCompactionMinChanges, Math.ceil(this.base.size / 4))
+		if (this.changes.size <= compactAt) return new TokenOwnerIndex(this.base, this.changes)
+
+		const compacted = new Map(this.base)
+		for (const [token, slot] of this.changes) {
+			if (slot === deletedTokenOwner) compacted.delete(token)
+			else {
+				// Match the delete-then-set order used by incremental owner replacement.
+				compacted.delete(token)
+				compacted.set(token, slot)
+			}
+		}
+		return compacted
+	}
+}
 
 const cloneArray = <T>(value: readonly T[]): readonly T[] =>
 	value.length === 0 ? (emptyArray as readonly T[]) : [...value]
@@ -193,10 +311,12 @@ const createBuildScratch = (length: number): BuildScratch => ({
 	dirtyMarks: new Uint8Array(length),
 	affectedMarks: new Uint8Array(length),
 	changedDependentMarks: new Uint8Array(length),
+	changedOptionalDependentMarks: new Uint8Array(length),
 	dirtySlots: [],
 	affectedSlots: [],
 	affectedStack: [],
 	changedDependentSlots: [],
+	changedOptionalDependentSlots: [],
 })
 
 const ensureBuildScratch = (scratch: BuildScratch, length: number): BuildScratch => {
@@ -214,10 +334,14 @@ const resetBuildScratch = (scratch: BuildScratch): void => {
 	for (let i = 0; i < scratch.changedDependentSlots.length; i++) {
 		scratch.changedDependentMarks[scratch.changedDependentSlots[i]!] = 0
 	}
+	for (let i = 0; i < scratch.changedOptionalDependentSlots.length; i++) {
+		scratch.changedOptionalDependentMarks[scratch.changedOptionalDependentSlots[i]!] = 0
+	}
 	scratch.dirtySlots.length = 0
 	scratch.affectedSlots.length = 0
 	scratch.affectedStack.length = 0
 	scratch.changedDependentSlots.length = 0
+	scratch.changedOptionalDependentSlots.length = 0
 }
 
 const activeKeysOfState = <M>(state: DraftState<M>): readonly NodeKey[] => {
@@ -261,7 +385,7 @@ const createGraphDeclaration = <M>(
 })
 
 const resolveTokenSlotFromTable = (
-	tokenOwnerSlots: ReadonlyMap<Token, Slot>,
+	tokenOwnerSlots: TokenOwnerLookup,
 	slotByKey: ReadonlyMap<NodeKey, Slot>,
 	token: Token,
 ): Slot | undefined =>
@@ -1081,7 +1205,7 @@ const updateTokenOwnersForDirtySlots = <M>(args: {
 	prevDecls: Array<NormalizedProviderDecl<unknown, M> | undefined>
 	nextDecls: Array<NormalizedProviderDecl<unknown, M> | undefined>
 	dirty: ReadonlySet<Slot>
-	tokenOwnerSlots: Map<Token, Slot>
+	tokenOwnerSlots: MutableTokenOwnerLookup
 	touchedTokens: Set<Token>
 	slotByKey: ReadonlyMap<NodeKey, Slot>
 	keyBySlot: readonly (NodeKey | undefined)[]
@@ -1111,13 +1235,6 @@ const updateTokenOwnersForDirtySlots = <M>(args: {
 	for (const slot of dirty) {
 		const after = nextDecls[slot]
 		if (!after) continue
-		if (after.create.kind === 'value' && (after.deps.length > 0 || after.optionalDeps.length > 0)) {
-			issues.push({
-				kind: 'InvalidDeclaration',
-				nodeKey: after.key,
-				message: 'value providers can not declare dependencies',
-			})
-		}
 		for (const token of after.explicitTokens) {
 			touchedTokens.add(token)
 			const ownerSlot = resolveTokenSlotFromTable(tokenOwnerSlots, slotByKey, token)
@@ -1132,6 +1249,44 @@ const updateTokenOwnersForDirtySlots = <M>(args: {
 					})
 				}
 			}
+		}
+	}
+}
+
+const canReuseTokenOwnerSlots = <M>(
+	prevDecls: Array<NormalizedProviderDecl<unknown, M> | undefined>,
+	nextDecls: Array<NormalizedProviderDecl<unknown, M> | undefined>,
+	dirty: ReadonlySet<Slot>,
+): boolean => {
+	for (const slot of dirty) {
+		const before = prevDecls[slot]
+		const after = nextDecls[slot]
+		if (
+			!before ||
+			!after ||
+			before.key !== after.key ||
+			!shallowArrayEqual(before.explicitTokens, after.explicitTokens)
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+const validateDirtyDeclarations = <M>(
+	nextDecls: Array<NormalizedProviderDecl<unknown, M> | undefined>,
+	dirty: ReadonlySet<Slot>,
+	issues: GraphBuildIssue[],
+): void => {
+	for (const slot of dirty) {
+		const after = nextDecls[slot]
+		if (!after) continue
+		if (after.create.kind === 'value' && (after.deps.length > 0 || after.optionalDeps.length > 0)) {
+			issues.push({
+				kind: 'InvalidDeclaration',
+				nodeKey: after.key,
+				message: 'value providers can not declare dependencies',
+			})
 		}
 	}
 }
@@ -1240,23 +1395,34 @@ const buildIncrementalSnapshot = <M>(
 	const affectedStack = scratch.affectedStack
 	const changedDependentMarks = scratch.changedDependentMarks
 	const changedDependentSlots = scratch.changedDependentSlots
+	const changedOptionalDependentMarks = scratch.changedOptionalDependentMarks
+	const changedOptionalDependentSlots = scratch.changedOptionalDependentSlots
 	dirtySlots.length = 0
 	affectedSlots.length = 0
 	affectedStack.length = 0
 	changedDependentSlots.length = 0
+	changedOptionalDependentSlots.length = 0
 
-	const tokenOwnerSlots = new Map(prev.tokenOwnerSlots())
 	const touchedTokens = new Set<Token>()
-	updateTokenOwnersForDirtySlots({
-		prevDecls,
-		nextDecls,
-		dirty,
-		tokenOwnerSlots,
-		touchedTokens,
-		slotByKey,
-		keyBySlot,
-		issues,
-	})
+	const reuseTokenOwnerSlots = canReuseTokenOwnerSlots(prevDecls, nextDecls, dirty)
+	let tokenOwnerSlots: ReadonlyMap<Token, Slot>
+	validateDirtyDeclarations(nextDecls, dirty, issues)
+	if (reuseTokenOwnerSlots) {
+		tokenOwnerSlots = prev.tokenOwnerSlots()
+	} else {
+		const mutableTokenOwnerSlots = new MutableTokenOwnerIndex(prev.tokenOwnerSlots())
+		updateTokenOwnersForDirtySlots({
+			prevDecls,
+			nextDecls,
+			dirty,
+			tokenOwnerSlots: mutableTokenOwnerSlots,
+			touchedTokens,
+			slotByKey,
+			keyBySlot,
+			issues,
+		})
+		tokenOwnerSlots = mutableTokenOwnerSlots.finish()
+	}
 
 	const retargetedTokens = computeRetargetedTokens(
 		touchedTokens,
@@ -1272,12 +1438,20 @@ const buildIncrementalSnapshot = <M>(
 	const createsBySlot = prev.createsBySlot().slice()
 	const depsBySlot = prev.depsBySlot().slice()
 	const dependentsBySlot = prev.dependentsBySlot().slice()
-	const optionalDepsBySlot = prev.optionalDepsBySlot().slice()
-	const optionalDependentsBySlot = prev.optionalDependentsBySlot().slice()
+	// Optional indexes are independently copy-on-write. Most incremental Plugin graph edits do
+	// not carry optional edges, so keep the previous snapshot tables until an actual write occurs.
+	let optionalDepsBySlot = prev.optionalDepsBySlot() as Array<readonly Slot[] | undefined>
+	let optionalDependentsBySlot = prev.optionalDependentsBySlot() as Array<
+		readonly Slot[] | Slot[] | undefined
+	>
+	let optionalDepsBySlotMutable = false
+	let optionalDependentsBySlotMutable = false
 	const tokenConsumerSlots = new Map<Token, readonly Slot[] | Slot[]>(prev.tokenConsumerSlots())
-	const optionalTokenConsumerSlots = new Map<Token, readonly Slot[] | Slot[]>(
-		prev.optionalTokenConsumerSlots(),
-	)
+	let optionalTokenConsumerSlots = prev.optionalTokenConsumerSlots() as Map<
+		Token,
+		readonly Slot[] | Slot[]
+	>
+	let optionalTokenConsumerSlotsMutable = false
 	const changedTokenConsumers = new Set<Token>()
 	const changedOptionalTokenConsumers = new Set<Token>()
 
@@ -1302,12 +1476,19 @@ const buildIncrementalSnapshot = <M>(
 				)
 			}
 			for (let i = 0; i < beforeOptionalDepSlots.length; i++) {
+				const dependencySlot = beforeOptionalDepSlots[i]!
+				const dependents = optionalDependentsBySlot[dependencySlot]
+				if (!dependents?.includes(slot)) continue
+				if (!optionalDependentsBySlotMutable) {
+					optionalDependentsBySlot = optionalDependentsBySlot.slice()
+					optionalDependentsBySlotMutable = true
+				}
 				removeFromMutableSlotTable(
-					optionalDependentsBySlot as Array<readonly Slot[] | Slot[] | undefined>,
-					beforeOptionalDepSlots[i]!,
+					optionalDependentsBySlot,
+					dependencySlot,
 					slot,
-					changedDependentMarks,
-					changedDependentSlots,
+					changedOptionalDependentMarks,
+					changedOptionalDependentSlots,
 				)
 			}
 			if (declarationChanged) {
@@ -1315,6 +1496,12 @@ const buildIncrementalSnapshot = <M>(
 					removeFromMutableSlotListMap(tokenConsumerSlots, depToken, slot, changedTokenConsumers)
 				}
 				for (const depToken of beforeDecl.optionalDeps) {
+					const consumers = optionalTokenConsumerSlots.get(depToken)
+					if (!consumers?.includes(slot)) continue
+					if (!optionalTokenConsumerSlotsMutable) {
+						optionalTokenConsumerSlots = new Map(optionalTokenConsumerSlots)
+						optionalTokenConsumerSlotsMutable = true
+					}
 					removeFromMutableSlotListMap(
 						optionalTokenConsumerSlots,
 						depToken,
@@ -1330,8 +1517,20 @@ const buildIncrementalSnapshot = <M>(
 			createsBySlot[slot] = undefined
 			depsBySlot[slot] = emptySlotArray
 			dependentsBySlot[slot] = emptySlotArray
-			optionalDepsBySlot[slot] = emptySlotArray
-			optionalDependentsBySlot[slot] = emptySlotArray
+			if ((optionalDepsBySlot[slot]?.length ?? 0) > 0) {
+				if (!optionalDepsBySlotMutable) {
+					optionalDepsBySlot = optionalDepsBySlot.slice()
+					optionalDepsBySlotMutable = true
+				}
+				optionalDepsBySlot[slot] = emptySlotArray
+			}
+			if ((optionalDependentsBySlot[slot]?.length ?? 0) > 0) {
+				if (!optionalDependentsBySlotMutable) {
+					optionalDependentsBySlot = optionalDependentsBySlot.slice()
+					optionalDependentsBySlotMutable = true
+				}
+				optionalDependentsBySlot[slot] = emptySlotArray
+			}
 			continue
 		}
 
@@ -1368,26 +1567,46 @@ const buildIncrementalSnapshot = <M>(
 		const resolvedOptionalDeps: Slot[] = []
 		for (const depToken of afterDecl.optionalDeps) {
 			if (declarationChanged) {
-				addToMutableSlotListMap(
-					optionalTokenConsumerSlots,
-					depToken,
-					slot,
-					changedOptionalTokenConsumers,
-				)
+				const consumers = optionalTokenConsumerSlots.get(depToken)
+				if (!consumers?.includes(slot)) {
+					if (!optionalTokenConsumerSlotsMutable) {
+						optionalTokenConsumerSlots = new Map(optionalTokenConsumerSlots)
+						optionalTokenConsumerSlotsMutable = true
+					}
+					addToMutableSlotListMap(
+						optionalTokenConsumerSlots,
+						depToken,
+						slot,
+						changedOptionalTokenConsumers,
+					)
+				}
 			}
 			const depSlot = resolveTokenSlotFromTable(tokenOwnerSlots, slotByKey, depToken)
 			if (depSlot === undefined) continue
 			if (!resolvedOptionalDeps.includes(depSlot)) resolvedOptionalDeps.push(depSlot)
-			addToMutableSlotTable(
-				optionalDependentsBySlot as Array<readonly Slot[] | Slot[] | undefined>,
-				depSlot,
-				slot,
-				changedDependentMarks,
-				changedDependentSlots,
-			)
+			const dependents = optionalDependentsBySlot[depSlot]
+			if (!dependents?.includes(slot)) {
+				if (!optionalDependentsBySlotMutable) {
+					optionalDependentsBySlot = optionalDependentsBySlot.slice()
+					optionalDependentsBySlotMutable = true
+				}
+				addToMutableSlotTable(
+					optionalDependentsBySlot,
+					depSlot,
+					slot,
+					changedOptionalDependentMarks,
+					changedOptionalDependentSlots,
+				)
+			}
 		}
-		optionalDepsBySlot[slot] = finishArray(resolvedOptionalDeps)
-		if (!optionalDependentsBySlot[slot]) optionalDependentsBySlot[slot] = emptySlotArray
+		const nextOptionalDeps = finishArray(resolvedOptionalDeps)
+		if (!shallowArrayEqual(optionalDepsBySlot[slot] ?? emptySlotArray, nextOptionalDeps)) {
+			if (!optionalDepsBySlotMutable) {
+				optionalDepsBySlot = optionalDepsBySlot.slice()
+				optionalDepsBySlotMutable = true
+			}
+			optionalDepsBySlot[slot] = nextOptionalDeps
+		}
 	}
 
 	if (issues.length === 0) {
@@ -1423,6 +1642,9 @@ const buildIncrementalSnapshot = <M>(
 			continue
 		}
 		dependentsBySlot[slot] = finishArray(dependents as Slot[])
+	}
+	for (let i = 0; i < changedOptionalDependentSlots.length; i++) {
+		const slot = changedOptionalDependentSlots[i]!
 		const optionalDependents = optionalDependentsBySlot[slot]
 		optionalDependentsBySlot[slot] = optionalDependents
 			? finishArray(optionalDependents as Slot[])
@@ -1445,10 +1667,12 @@ const buildIncrementalSnapshot = <M>(
 				tokenConsumerSlots,
 				changedTokenConsumers,
 			),
-			optionalTokenConsumerSlots: finalizeChangedTokenConsumerSlots(
-				optionalTokenConsumerSlots,
-				changedOptionalTokenConsumers,
-			),
+			optionalTokenConsumerSlots: optionalTokenConsumerSlotsMutable
+				? finalizeChangedTokenConsumerSlots(
+						optionalTokenConsumerSlots,
+						changedOptionalTokenConsumers,
+					)
+				: optionalTokenConsumerSlots,
 		}),
 		delta: collectGraphDelta({
 			prevDecls,

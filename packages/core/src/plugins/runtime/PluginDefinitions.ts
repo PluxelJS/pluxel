@@ -217,11 +217,17 @@ export class PluginDefinitions {
 			return createErr({ err: built.err as GraphBuildError, reset: () => this.draft.reset() })
 		}
 		assertPluginGraphDelta(built.val.delta)
+		const graph = built.val.graph
+		const runtime =
+			this.committedRuntime?.graph === graph ? this.committedRuntime : built.val.runtime
 		const ret: BuildRet = {
-			graph: built.val.graph,
-			runtime: built.val.runtime,
+			graph,
+			runtime,
 			delta: built.val.delta,
-			confirm: () => void built.val.commit(),
+			confirm: () => {
+				built.val.commit()
+				this.committedRuntime = runtime
+			},
 		}
 		return createOk(ret)
 	}
