@@ -6,10 +6,10 @@ describe('runtime/test host', () => {
 	it('starts plugins through the real runtime context', async () => {
 		const host = createRuntimeHost()
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'Dep' })
 			class Dep extends BasePlugin {}
 
-			@Plugin()
+			@Plugin({ displayName: 'Consumer' })
 			class Consumer extends BasePlugin {
 				constructor(readonly dep: Dep) {
 					super()

@@ -35,7 +35,7 @@ describe('CommandsService', () => {
 			let started!: () => void
 			const didStart = new Promise<void>((resolve) => (started = resolve))
 
-			@Plugin()
+			@Plugin({ displayName: 'LongCommandOwner' })
 			class LongCommandOwner extends BasePlugin {
 				override init(): void {
 					this.ctx.commands.register(
@@ -91,7 +91,7 @@ describe('CommandsService', () => {
 	it('schedules owner self-shutdown after its command invocation releases', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'SelfStoppingCommandOwner' })
 			class SelfStoppingCommandOwner extends BasePlugin {
 				override init(): void {
 					this.ctx.commands.register(
@@ -183,7 +183,7 @@ describe('CommandsService', () => {
 	it('rolls back registrations when plugin startup fails', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'BrokenCommandOwner' })
 			class BrokenCommandOwner extends BasePlugin {
 				override init() {
 					this.ctx.commands.register(valueCommand('broken'))
@@ -206,7 +206,7 @@ describe('CommandsService', () => {
 	it('keeps cached service views and cleanup isolated between plugin owners', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'CommandOwnerA' })
 			class CommandOwnerA extends BasePlugin {
 				override async init() {
 					const commands = this.ctx.commands
@@ -215,7 +215,7 @@ describe('CommandsService', () => {
 				}
 			}
 
-			@Plugin()
+			@Plugin({ displayName: 'CommandOwnerB' })
 			class CommandOwnerB extends BasePlugin {
 				override async init() {
 					const commands = this.ctx.commands
@@ -248,7 +248,7 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'ManagedPlugin' })
 			class ManagedPlugin extends BasePlugin {}
 
 			lowerTestPlugin(ManagedPlugin)
@@ -288,10 +288,10 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin()
+			@Plugin({ displayName: 'ManagedProvider' })
 			class ManagedProvider extends BasePlugin {}
 
-			@Plugin()
+			@Plugin({ displayName: 'ManagedConsumer' })
 			class ManagedConsumer extends BasePlugin {
 				constructor(readonly provider: ManagedProvider) {
 					super()

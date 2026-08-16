@@ -100,13 +100,13 @@ describe('Workbench plugin catalog classification', () => {
 	})
 
 	it('classifies fixed plugins first, host package families second, and exact packages last', async () => {
-		@Plugin()
+		@Plugin({ displayName: 'FixedChatPlugin' })
 		class FixedChatPlugin extends BasePlugin {}
-		@Plugin()
+		@Plugin({ displayName: 'SuitePackagePlugin' })
 		class SuitePackagePlugin extends BasePlugin {}
-		@Plugin()
+		@Plugin({ displayName: 'VendorPluginA' })
 		class VendorPluginA extends BasePlugin {}
-		@Plugin()
+		@Plugin({ displayName: 'VendorPluginB' })
 		class VendorPluginB extends BasePlugin {}
 		for (const PluginCtor of [FixedChatPlugin, SuitePackagePlugin, VendorPluginA, VendorPluginB]) {
 			lowerTestPlugin(PluginCtor)
@@ -149,9 +149,9 @@ describe('Workbench plugin catalog classification', () => {
 	})
 
 	it('stores user moves as overrides while keeping the group registry closed', async () => {
-		@Plugin()
+		@Plugin({ displayName: 'HostDefaultPlugin' })
 		class HostDefaultPlugin extends BasePlugin {}
-		@Plugin()
+		@Plugin({ displayName: 'PackageDefaultPlugin' })
 		class PackageDefaultPlugin extends BasePlugin {}
 		lowerTestPlugin(HostDefaultPlugin)
 		lowerTestPlugin(PackageDefaultPlugin)
