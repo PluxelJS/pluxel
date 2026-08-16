@@ -1,66 +1,54 @@
-import type { PluginIdentifier } from '../../types'
+import type { PluginDefinitionSlot, PluginNodeSlot } from '../identity'
 
-export type RuntimeDependencyOverrideList = readonly (PluginIdentifier | undefined)[]
+export type RuntimeDependencyOverride = PluginDefinitionSlot | PluginNodeSlot | undefined
+export type RuntimeDependencyOverrideList = readonly RuntimeDependencyOverride[]
 export type RuntimeDependencyOverrideSnapshot = Map<
-	string,
+	PluginNodeSlot,
 	RuntimeDependencyOverrideList | undefined
 >
 
 export class RuntimeDependencyOverrides {
-	private readonly values = new Map<string, RuntimeDependencyOverrideList>()
+	private readonly values = new Map<PluginNodeSlot, RuntimeDependencyOverrideList>()
 
-	public get(pluginId: string): RuntimeDependencyOverrideList | undefined {
-		return this.values.get(pluginId)
+	get(consumer: PluginNodeSlot): RuntimeDependencyOverrideList | undefined {
+		return this.values.get(consumer)
 	}
 
-	public replace(
-		pluginId: string,
+	replace(
+		consumer: PluginNodeSlot,
 		overrides: RuntimeDependencyOverrideList | undefined,
-	): {
-		changed: boolean
-		previous: RuntimeDependencyOverrideList | undefined
-	} {
-		const previous = this.values.get(pluginId)
-		const next = normalizeRuntimeDependencyOverrides(overrides)
-		if (sameRuntimeDependencyOverrides(previous, next)) {
-			return { changed: false, previous }
-		}
-
-		if (!next) this.values.delete(pluginId)
-		else this.values.set(pluginId, next)
-
+	): { changed: boolean; previous: RuntimeDependencyOverrideList | undefined } {
+		const previous = this.values.get(consumer)
+		const next = normalize(overrides)
+		if (same(previous, next)) return { changed: false, previous }
+		if (next) this.values.set(consumer, next)
+		else this.values.delete(consumer)
 		return { changed: true, previous }
 	}
 
-	public restore(snapshots: ReadonlyMap<string, RuntimeDependencyOverrideList | undefined>): void {
-		for (const [pluginId, previous] of snapshots) {
-			if (!previous) this.values.delete(pluginId)
-			else this.values.set(pluginId, previous)
+	restore(snapshots: ReadonlyMap<PluginNodeSlot, RuntimeDependencyOverrideList | undefined>): void {
+		for (const [consumer, previous] of snapshots) {
+			if (previous) this.values.set(consumer, previous)
+			else this.values.delete(consumer)
 		}
 	}
 }
 
-function normalizeRuntimeDependencyOverrides(
-	overrides: RuntimeDependencyOverrideList | undefined,
+function normalize(
+	value: RuntimeDependencyOverrideList | undefined,
 ): RuntimeDependencyOverrideList | undefined {
-	if (!overrides || overrides.length === 0) return undefined
-	let end = overrides.length
-	while (end > 0 && overrides[end - 1] === undefined) end--
-	if (end === 0) return undefined
-	const next = Array<PluginIdentifier | undefined>(end)
-	for (let i = 0; i < end; i++) next[i] = overrides[i]
-	return next
+	if (!value?.length) return undefined
+	let end = value.length
+	while (end > 0 && value[end - 1] === undefined) end--
+	return end === 0 ? undefined : Object.freeze(value.slice(0, end))
 }
 
-function sameRuntimeDependencyOverrides(
+function same(
 	left: RuntimeDependencyOverrideList | undefined,
 	right: RuntimeDependencyOverrideList | undefined,
 ): boolean {
-	if (!left || left.length === 0) return !right || right.length === 0
-	if (!right || right.length === 0) return false
-	if (left.length !== right.length) return false
-	for (let i = 0; i < left.length; i++) {
-		if (left[i] !== right[i]) return false
-	}
+	if (!left) return !right
+	if (!right || left.length !== right.length) return false
+	for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false
 	return true
 }

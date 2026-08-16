@@ -3,6 +3,7 @@ import { extname } from 'pathe'
 import type { AnyElysiaApp } from '../../services/http/elysia'
 import { requireWorkbench } from '../../services/workbench'
 import { WORKBENCH_FEDERATION_MANIFEST_FILE } from '@pluxel/core/federation'
+import { parsePluginNodeAddress } from '@pluxel/core'
 import {
 	RUNTIME_INTERNAL_API_BASE,
 	RUNTIME_WORKBENCH_BASE,
@@ -23,7 +24,7 @@ export const workbenchRoutes = (app: AnyElysiaApp) =>
 			.get('/layout/plugin/:target', ({ params, pluginCtx, set }) => {
 				set.headers['cache-control'] = 'no-store'
 				return requireWorkbench(pluginCtx).registry.getPluginLayout(
-					decodeURIComponent(params.target),
+					parsePluginNodeAddress(JSON.parse(decodeURIComponent(params.target)) as unknown),
 				)
 			})
 			.get('/artifacts/:owner/:hash/*', async ({ params, pluginCtx, request, status }) => {
@@ -65,8 +66,7 @@ export const workbenchRoutes = (app: AnyElysiaApp) =>
 				if (ref.kind !== 'events' && ref.kind !== 'liveQuery') {
 					return context.status(400, 'Resource does not expose an event stream')
 				}
-				const namespace = `${ref.ownerPluginId}:${ref.modelKey}`
-				return backend.events.stream(context, [namespace])
+				return backend.events.stream(context, [ref.resourceId])
 			}),
 	)
 

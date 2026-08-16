@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import {
 	BasePlugin,
 	createRuntimeHost,
@@ -8,6 +9,8 @@ import {
 } from '@pluxel/runtime/test'
 import type { RuntimePluginSource } from '../../src/runtime/capabilities'
 import { requireWorkbench } from '../../src/services/workbench'
+import { WorkbenchPluginCatalogService } from '../../src/services/workbench/WorkbenchPluginCatalogService'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const hosts: RuntimeHost[] = []
 
@@ -27,25 +30,37 @@ function packageSource(packageName: string): RuntimePluginSource {
 }
 
 function installSourceMap(host: RuntimeHost, packages: Readonly<Record<string, string>>): void {
+	const key = (address: ReturnType<typeof pluginNodeAddressOf>) => JSON.stringify(address)
 	const registered = () =>
-		new Map(host.plugins().map((ctor) => [getPluginInfo(ctor).id, ctor] as const))
+		host.plugins().map((ctor) => {
+			const info = getPluginInfo(ctor)
+			return {
+				address: pluginNodeAddressOf(ctor),
+				ctor,
+				displayName: info.displayName,
+				rootExportName: info.rootExportName,
+			}
+		})
 	host.ctx.runtimeRoute = {
 		catalog: {
-			resolve(target) {
-				return typeof target === 'string' ? registered().get(target) : target
+			resolve(address) {
+				return registered().find((entry) => key(entry.address) === key(address))?.ctor
 			},
-			resolveOrRegistered: (name) => registered().get(name),
-			require(name) {
-				const ctor = registered().get(name)
-				if (!ctor) throw new Error(`missing test plugin: ${name}`)
+			resolveDefinition(definition) {
+				return registered().find(
+					(entry) => JSON.stringify(entry.address.definition) === JSON.stringify(definition),
+				)?.ctor
+			},
+			require(address) {
+				const ctor = registered().find((entry) => key(entry.address) === key(address))?.ctor
+				if (!ctor) throw new Error(`missing test plugin: ${key(address)}`)
 				return ctor
 			},
 			listRegistered: registered,
-			listLoadedNames: () => [...registered().keys()],
 		},
 		lifecycle: {
-			isRunning(target) {
-				const ctor = typeof target === 'string' ? registered().get(target) : target
+			isRunning(address) {
+				const ctor = registered().find((entry) => key(entry.address) === key(address))?.ctor
 				return ctor ? host.isRunning(ctor) : false
 			},
 			enable: () => undefined,
@@ -54,8 +69,11 @@ function installSourceMap(host: RuntimeHost, packages: Readonly<Record<string, s
 			stop: () => undefined,
 		},
 		source: {
-			resolveSource(name) {
-				const packageName = packages[name]
+			resolveSource(address) {
+				const displayName = registered().find(
+					(entry) => key(entry.address) === key(address),
+				)?.displayName
+				const packageName = displayName ? packages[displayName] : undefined
 				return packageName
 					? packageSource(packageName)
 					: {
@@ -82,14 +100,17 @@ describe('Workbench plugin catalog classification', () => {
 	})
 
 	it('classifies fixed plugins first, host package families second, and exact packages last', async () => {
-		@Plugin({ name: 'FixedChatPlugin' })
+		@Plugin({ displayName: 'FixedChatPlugin' })
 		class FixedChatPlugin extends BasePlugin {}
-		@Plugin({ name: 'SuitePackagePlugin' })
+		@Plugin({ displayName: 'SuitePackagePlugin' })
 		class SuitePackagePlugin extends BasePlugin {}
-		@Plugin({ name: 'VendorPluginA' })
+		@Plugin({ displayName: 'VendorPluginA' })
 		class VendorPluginA extends BasePlugin {}
-		@Plugin({ name: 'VendorPluginB' })
+		@Plugin({ displayName: 'VendorPluginB' })
 		class VendorPluginB extends BasePlugin {}
+		for (const PluginCtor of [FixedChatPlugin, SuitePackagePlugin, VendorPluginA, VendorPluginB]) {
+			lowerTestPlugin(PluginCtor)
+		}
 
 		const host = createRuntimeHost({
 			workbench: {
@@ -98,7 +119,7 @@ describe('Workbench plugin catalog classification', () => {
 					{
 						id: 'chatbots',
 						name: 'Chatbots',
-						plugins: ['FixedChatPlugin'],
+						nodes: [pluginNodeAddressOf(FixedChatPlugin)],
 						packages: ['@suite/chat-*'],
 					},
 				],
@@ -117,21 +138,23 @@ describe('Workbench plugin catalog classification', () => {
 			{
 				groupId: 'chatbots',
 				name: 'Chatbots',
-				pluginIds: ['FixedChatPlugin', 'SuitePackagePlugin'],
+				nodes: [pluginNodeAddressOf(FixedChatPlugin), pluginNodeAddressOf(SuitePackagePlugin)],
 			},
 			{
 				groupId: 'package:@vendor/tools',
 				name: '@vendor/tools',
-				pluginIds: ['VendorPluginA', 'VendorPluginB'],
+				nodes: [pluginNodeAddressOf(VendorPluginA), pluginNodeAddressOf(VendorPluginB)],
 			},
 		])
 	})
 
 	it('stores user moves as overrides while keeping the group registry closed', async () => {
-		@Plugin({ name: 'HostDefaultPlugin' })
+		@Plugin({ displayName: 'HostDefaultPlugin' })
 		class HostDefaultPlugin extends BasePlugin {}
-		@Plugin({ name: 'PackageDefaultPlugin' })
+		@Plugin({ displayName: 'PackageDefaultPlugin' })
 		class PackageDefaultPlugin extends BasePlugin {}
+		lowerTestPlugin(HostDefaultPlugin)
+		lowerTestPlugin(PackageDefaultPlugin)
 
 		const host = createRuntimeHost({
 			workbench: {
@@ -140,7 +163,7 @@ describe('Workbench plugin catalog classification', () => {
 					{
 						id: 'host',
 						name: 'Host',
-						plugins: ['HostDefaultPlugin'],
+						nodes: [pluginNodeAddressOf(HostDefaultPlugin)],
 					},
 				],
 			},
@@ -153,56 +176,37 @@ describe('Workbench plugin catalog classification', () => {
 		const catalog = requireWorkbench(host.ctx).pluginCatalog
 		await expect(
 			catalog.updateGroups([
-				{ groupId: 'host', name: 'Host', pluginIds: ['PackageDefaultPlugin'] },
-				{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', pluginIds: [] },
+				{ groupId: 'host', name: 'Host', nodes: [pluginNodeAddressOf(PackageDefaultPlugin)] },
+				{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', nodes: [] },
 			]),
 		).resolves.toEqual([
-			{ groupId: 'host', name: 'Host', pluginIds: ['PackageDefaultPlugin'] },
-			{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', pluginIds: [] },
+			{ groupId: 'host', name: 'Host', nodes: [pluginNodeAddressOf(PackageDefaultPlugin)] },
+			{ groupId: 'package:@vendor/pkg', name: '@vendor/pkg', nodes: [] },
 		])
 
 		await expect(
 			catalog.updateGroups([
-				{ groupId: 'invented', name: 'Invented', pluginIds: ['HostDefaultPlugin'] },
+				{ groupId: 'invented', name: 'Invented', nodes: [pluginNodeAddressOf(HostDefaultPlugin)] },
 			]),
 		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_GROUP_LAYOUT' })
 		await expect(
 			catalog.updateGroups([
-				{ groupId: 'host', name: 'Renamed', pluginIds: ['HostDefaultPlugin'] },
+				{ groupId: 'host', name: 'Renamed', nodes: [pluginNodeAddressOf(HostDefaultPlugin)] },
 			]),
 		).rejects.toMatchObject({ code: 'INVALID_PLUGIN_GROUP_LAYOUT' })
 	})
 
-	it('migrates only legacy memberships registered by the host', async () => {
-		@Plugin({ name: 'MigratedPlugin' })
-		class MigratedPlugin extends BasePlugin {}
-		@Plugin({ name: 'DiscardedPlugin' })
-		class DiscardedPlugin extends BasePlugin {}
-
-		const host = createRuntimeHost({
-			runtimeState: {
-				mode: 'memory',
-				snapshot: {
-					enabled: [],
-					pluginGroups: [
-						{ groupId: 'allowed', name: 'Old allowed', pluginIds: ['MigratedPlugin'] },
-						{ groupId: 'custom', name: 'Old custom', pluginIds: ['DiscardedPlugin'] },
-					],
-				},
-			},
-			workbench: {
-				enabled: true,
-				pluginGroups: [{ id: 'allowed', name: 'Allowed' }],
-			},
-		})
+	it('rejects legacy catalog preferences instead of migrating them', async () => {
+		const host = createRuntimeHost()
 		hosts.push(host)
-		host.add([MigratedPlugin, DiscardedPlugin])
-		installSourceMap(host, {})
-		await host.commit()
-
-		await expect(requireWorkbench(host.ctx).pluginCatalog.listGroups()).resolves.toEqual([
-			{ groupId: 'allowed', name: 'Allowed', pluginIds: ['MigratedPlugin'] },
-		])
+		await host.ctx.root.persistence
+			.namespace('workbench')
+			.put(
+				'plugin-catalog.json',
+				JSON.stringify({ version: 1, assignments: [], groupOrder: [], pluginOrder: [] }),
+			)
+		const catalog = new WorkbenchPluginCatalogService(host.ctx)
+		await expect(catalog.ready).rejects.toThrow('preferences version must be 2')
 	})
 
 	it('rejects ambiguous host rules during Workbench installation', () => {

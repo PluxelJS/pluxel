@@ -2,7 +2,6 @@ import { Badge, Box, Paper, Stack, Text, Typography } from '@mantine/core'
 import { MarkdownExit } from 'markdown-exit'
 import { createPortal } from 'react-dom'
 import {
-	Fragment,
 	memo,
 	useCallback,
 	useEffect,
@@ -15,15 +14,10 @@ import {
 import type {
 	WorkbenchDocumentBlock as BuiltinDocBlock,
 	WorkbenchDocumentContent as BuiltinDocContent,
-	WorkbenchMarkdownPart as BuiltinMarkdownPart,
 	WorkbenchDocumentPart as BuiltinDocPart,
 } from '@pluxel/runtime/workbench'
 import { findScrollableParent, toDomSlug } from '../../app/plugins/config/configAnchors'
 import { BuiltinInfoCard } from './InfoCard'
-import { usePluginConfig } from '../../app/plugins/config/usePluginConfig'
-import type { ObjectSchema } from 'valibot'
-import { ConfigTabContent } from '../../app/plugins/config/ConfigTab'
-import { compareSchemaKeys } from '../../app/plugins/config/schemaKey'
 import { OutlineNavigator } from '../../app/plugins/detail/workbench/OutlineNavigator'
 import type { OutlineAnchor } from '../../app/plugins/detail/workbench/outline'
 import { usePluginWorkbenchTabActivity } from '../../app/plugins/detail/workbench/tabActivity'
@@ -32,25 +26,15 @@ import {
 	usePluginWorkbenchAssistVisibility,
 } from '../../app/plugins/detail/workbench/context'
 
-type DocConfigDirective = Extract<BuiltinMarkdownPart, { kind: 'schema' | 'schemas' }>
-
 type CompiledItem =
 	| { kind: 'html'; key: string; html: string }
 	| { kind: 'block'; key: string; id: string; title: string; block: BuiltinDocBlock }
-	| { kind: 'cfg'; key: string; directive: DocConfigDirective }
-
-type ResolvedDocConfigDirective = {
-	keys: string[] | null
-	excludedKeys: string[]
-}
 
 type BuiltinBlockRendererProps = {
 	pluginName: string
 	title: string
 	block: BuiltinDocBlock
 }
-
-const EMPTY_CONFIG_RECORD: Record<string, unknown> = {}
 
 function renderBuiltinBlock(input: BuiltinBlockRendererProps): ReactNode {
 	const { block } = input
@@ -71,128 +55,6 @@ function BuiltinBlockUnavailable({ kind }: { kind: string }) {
 			</Text>
 		</Paper>
 	)
-}
-
-function BuiltinConfigRendererUnavailable() {
-	return (
-		<Paper withBorder radius="md" p="sm" my="sm">
-			<Text size="sm" c="red">
-				Builtin config renderer unavailable
-			</Text>
-		</Paper>
-	)
-}
-
-function toRecord(value: unknown): Record<string, any> {
-	if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
-	return value as Record<string, any>
-}
-
-function DocCfgDirective({
-	pluginName,
-	resolution,
-}: {
-	pluginName: string
-	resolution: ResolvedDocConfigDirective
-}) {
-	const cfg = usePluginConfig(pluginName)
-	const data = cfg.data
-	const schemaMapAll = (data?.schemaMap ?? EMPTY_CONFIG_RECORD) as Record<
-		string,
-		ObjectSchema<any, any>
-	>
-	const defaultsAll = data?.defaults ?? EMPTY_CONFIG_RECORD
-	const savedAll = data?.savedConfig ?? EMPTY_CONFIG_RECORD
-	const schemaKeys = useMemo(
-		() => Object.keys(schemaMapAll).sort(compareSchemaKeys),
-		[schemaMapAll],
-	)
-
-	if (cfg.loading && !cfg.data) return null
-	if (cfg.error) {
-		return (
-			<Paper withBorder radius="md" p="sm" my="sm">
-				<Text size="sm" c="red">
-					Failed to load config: {cfg.error.message}
-				</Text>
-			</Paper>
-		)
-	}
-
-	const excludedKeys = new Set(resolution.excludedKeys)
-	const keys = resolution.keys ?? schemaKeys.filter((key) => !excludedKeys.has(key))
-	if (keys.length === 0) return null
-
-	return (
-		<Box my="sm">
-			{keys.map((schemaKey) => {
-				const schema = schemaMapAll[schemaKey]
-				if (!schema) {
-					return (
-						<Paper key={`cfg-unknown-${schemaKey}`} withBorder radius="md" p="sm" my="sm">
-							<Text size="sm" c="red">
-								Unknown schema key: {schemaKey}
-							</Text>
-						</Paper>
-					)
-				}
-
-				return (
-					<Box key={`cfg-schema-${schemaKey}`} my="sm">
-						{typeof ConfigTabContent === 'function' ? (
-							<ConfigTabContent
-								pluginName={pluginName}
-								tabKey={schemaKey}
-								schema={schema}
-								savedValue={toRecord(savedAll[schemaKey])}
-								defaultValue={toRecord(defaultsAll[schemaKey])}
-								showToc={false}
-								showActions
-								active={false}
-							/>
-						) : (
-							<BuiltinConfigRendererUnavailable />
-						)}
-					</Box>
-				)
-			})}
-		</Box>
-	)
-}
-
-export function resolveDocConfigDirectives(
-	items: CompiledItem[],
-): ReadonlyMap<string, ResolvedDocConfigDirective> {
-	const resolved = new Map<string, ResolvedDocConfigDirective>()
-	const used = new Set<string>()
-
-	for (const item of items) {
-		if (item.kind !== 'cfg') continue
-		const directive = item.directive
-		if (directive.kind === 'schema') {
-			const key = String(directive.key ?? '').trim()
-			const keys = key && !used.has(key) ? [key] : []
-			if (keys.length > 0) used.add(key)
-			resolved.set(item.key, { keys, excludedKeys: [] })
-			continue
-		}
-
-		if (directive.keys === null) {
-			resolved.set(item.key, { keys: null, excludedKeys: [...used] })
-			continue
-		}
-
-		const keys: string[] = []
-		for (const raw of directive.keys ?? []) {
-			const key = String(raw ?? '').trim()
-			if (!key || used.has(key)) continue
-			used.add(key)
-			keys.push(key)
-		}
-		resolved.set(item.key, { keys, excludedKeys: [] })
-	}
-
-	return resolved
 }
 
 function extractInlineText(token: any): string {
@@ -240,29 +102,6 @@ function compileDoc(input: { content: BuiltinDocContent; docPrefix: string }): {
 			continue
 		}
 
-		if (part.kind === 'schema') {
-			const key = String(part.key ?? '').trim()
-			if (key)
-				items.push({
-					kind: 'cfg',
-					key: `cfg-${items.length + 1}`,
-					directive: { kind: 'schema', key },
-				})
-			continue
-		}
-		if (part.kind === 'schemas') {
-			const keys = part.keys
-			items.push({
-				kind: 'cfg',
-				key: `cfg-${items.length + 1}`,
-				directive: {
-					kind: 'schemas',
-					keys: Array.isArray(keys) ? keys.map(String) : null,
-				},
-			})
-			continue
-		}
-
 		const text =
 			part.kind === 'md' ? (typeof (part as any).text === 'string' ? (part as any).text : '') : ''
 		if (!text) continue
@@ -296,12 +135,10 @@ const DocBody = memo(function DocBody({
 	items,
 	contentRef,
 	renderBlock,
-	renderCfg,
 }: {
 	items: CompiledItem[]
 	contentRef: RefObject<HTMLDivElement>
 	renderBlock: (title: string, block: BuiltinDocBlock) => ReactNode
-	renderCfg: (directive: CompiledItem & { kind: 'cfg' }) => ReactNode
 }) {
 	return (
 		<Box
@@ -315,8 +152,6 @@ const DocBody = memo(function DocBody({
 		>
 			<Typography>
 				{items.map((item) => {
-					if (item.kind === 'cfg')
-						return <Fragment key={item.key}>{renderCfg(item as any)}</Fragment>
 					if (item.kind === 'block')
 						return (
 							<Box key={item.key} my="sm">
@@ -366,11 +201,6 @@ export function BuiltinDoc({
 			}),
 		[content, docPrefix],
 	)
-	const configDirectives = useMemo(
-		() => resolveDocConfigDirectives(compiled.items),
-		[compiled.items],
-	)
-
 	const renderBlock = useCallback(
 		(blockTitle: string, block: BuiltinDocBlock) => {
 			return renderBuiltinBlock({
@@ -380,15 +210,6 @@ export function BuiltinDoc({
 			})
 		},
 		[pluginName],
-	)
-
-	const renderCfg = useCallback(
-		(item: CompiledItem & { kind: 'cfg' }) => {
-			const resolution = configDirectives.get(item.key)
-			if (!resolution) return null
-			return <DocCfgDirective pluginName={pluginName} resolution={resolution} />
-		},
-		[configDirectives, pluginName],
 	)
 
 	const headingAnchors = compiled.anchors
@@ -539,12 +360,7 @@ export function BuiltinDoc({
 
 	const bodyContent =
 		compiled.items.length > 0 ? (
-			<DocBody
-				items={compiled.items}
-				contentRef={contentRef}
-				renderBlock={renderBlock}
-				renderCfg={renderCfg}
-			/>
+			<DocBody items={compiled.items} contentRef={contentRef} renderBlock={renderBlock} />
 		) : null
 
 	const inlineToc = (

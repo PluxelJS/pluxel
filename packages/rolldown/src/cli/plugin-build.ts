@@ -34,10 +34,9 @@ export type PluginBuildPipelineOptions = {
 }
 
 export type PluginPackageOptions = PluginBuildPipelineOptions & {
-	packageMetadata?: {
+	packageMetadata: {
 		packageJsonPath: string
 		manifestField: string
-		prefixes: string[]
 		log: BuildLogger
 	}
 }
@@ -53,7 +52,7 @@ export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
 ): PluginBuildPipeline {
-	return createPipeline(options, createPluginSemanticsPlugin().plugin)
+	return createPipeline(options, createPluginSemanticsPlugin({ root: options.root }).plugin)
 }
 
 function createPipeline(
@@ -97,8 +96,8 @@ function createPipeline(
 /** Standard tsdown overlay for independently published plugin packages. */
 export function pluginPackage(options: PluginPackageOptions): InlineConfig {
 	const semantics = createPluginSemanticsPlugin({
-		prefixes: options.packageMetadata?.prefixes,
-		optionalImportMode: 'external',
+		root: options.root,
+		packageJsonPath: options.packageMetadata.packageJsonPath,
 	})
 	return {
 		exports: {
@@ -110,16 +109,12 @@ export function pluginPackage(options: PluginPackageOptions): InlineConfig {
 			neverBundle: [/^@pluxel\//],
 		},
 		...createPipeline(options, semantics.plugin),
-		...(options.packageMetadata
-			? {
-					onSuccess: createPluginDependencyMetadataHook({
-						packageJsonPath: options.packageMetadata.packageJsonPath,
-						manifestField: options.packageMetadata.manifestField,
-						log: options.packageMetadata.log,
-						collectPlugins: () => semantics.snapshot(),
-					}),
-				}
-			: {}),
+		onSuccess: createPluginDependencyMetadataHook({
+			packageJsonPath: options.packageMetadata.packageJsonPath,
+			manifestField: options.packageMetadata.manifestField,
+			log: options.packageMetadata.log,
+			collectPlugins: () => semantics.snapshot(),
+		}),
 	}
 }
 
@@ -130,7 +125,7 @@ function createPluginTransformOptions(): TsdownTransformOptions {
 		},
 		decorator: {
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		},
 		typescript: {
 			removeClassFieldsWithoutInitializer: true,

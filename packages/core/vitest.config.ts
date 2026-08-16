@@ -1,4 +1,8 @@
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
+import {
+	configSourcePlugin,
+	createPluginSemanticsPlugin,
+	lintGuardPlugin,
+} from '@pluxel/rolldown/plugins'
 import { defineConfig } from 'vitest/config'
 
 const pluxelConditions = ['@pluxel/source', 'node', 'import', 'module', 'development', 'default']
@@ -13,6 +17,10 @@ export default defineConfig({
 		},
 	},
 	plugins: [
+		createPluginSemanticsPlugin({
+			root: import.meta.dirname,
+			helperImportSource: '@pluxel/core',
+		}).plugin,
 		lintGuardPlugin({ cwd: import.meta.dirname }),
 		configSourcePlugin({
 			metadataHelperImportSource: '@pluxel/core',

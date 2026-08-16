@@ -42,10 +42,10 @@ Toolchain/lint design: `docs/TOOLCHAIN.md`.
 ```ts
 import { Plugin, BasePlugin, withHost } from '@pluxel/test'
 
-await withHost(async (host) => {
-	@Plugin({ name: 'P' })
-	class P extends BasePlugin {}
+@Plugin({ displayName: 'Plugin P' })
+class P extends BasePlugin {}
 
+await withHost(async (host) => {
 	host.add(P) // or host.add([P1, P2, ...])
 	await host.commit()
 
@@ -69,9 +69,11 @@ runtime host.
 ```ts
 host.cfg(P).set({ answer: 42 })
 host.cfg(P).unset('answer')
-host.cfg('P').enable()
-host.cfg('P').set({ answer: 42 })
+host.cfg(P).enable()
 ```
+
+Config test handles take a Plugin constructor/address, never a display name. Plugin source must declare
+one `this.configs.use(ObjectSchema)` field; nested structure and display metadata belong to that schema.
 
 ### Forks
 
@@ -88,14 +90,12 @@ host.cfg(ForkA).set({ v: 'A' })
 export { default } from '@pluxel/test/vitest'
 ```
 
-Because the preset runs Pluxel build-correctness lint before transforms, the test project should
-also install `oxlint` as a dev dependency.
+Because the preset runs Pluxel build-correctness lint in its pre-transform pipeline, the test project
+should also install `oxlint` as a dev dependency.
 
-Note: `@pluxel/core` installs a lightweight reflection provider (`@abraham/reflection`) and adds a small
-compat shim so importing `reflect-metadata` later does not crash.
-
-If a dependency truly requires `reflect-metadata`'s full semantics (key enumeration/deletion, etc),
-import `reflect-metadata` explicitly in _your_ app/test entry **before** any decorated classes are evaluated.
+The preset runs Pluxel semantic lowering before TypeScript erases constructor annotations. Required
+Plugin dependencies therefore use direct value imports from package roots; the test runtime consumes the same
+definition/edge facts as Vite and production builds.
 
 ### Workspace (monorepo)
 

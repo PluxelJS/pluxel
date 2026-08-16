@@ -62,19 +62,26 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
 Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
-legacy decorator、`design:paramtypes`、lint、config metadata、Workbench declaration extraction 和 decorator output
-guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
+legacy decorator、Plugin semantic facts、lint、single-object config metadata、Workbench declaration extraction 和 decorator
+output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 `runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
 
-optional plugin source transform 只接受 module-level `const optionalPlugin(() =>
-import(<literal>).then(<export selection>))`。Rolldown 和 Vite 使用同一个 semantic pass 完成声明校验、依赖事实收集和
-route-specific import policy；普通 dynamic import 不获得 plugin 语义。
+Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named export table，并 lower：
+
+- concrete `@Plugin` definition address 与 `displayName`/`startTimeoutMs` marker facts；
+- constructor parameter 的 direct root value-import provenance 与 ordered required edges；
+- non-exported module-level `definePluginRef<T>()` 的 direct root type-import provenance；
+- `init()` 中 direct `plugins.use(Ref, callback)` 的 optional restart edges；
+- abstract token/provider relation。
+
+同一 pass 由 plugin package、static application 和 Vite source route 复用。未能证明 root provenance、同一 constructor
+经多个根名称导出、plugin-bearing subpath、跨包 Plugin re-export、async/间接 optional setup 都在 build 时失败。普通
+dynamic import 不获得 Plugin 语义。
 
 `pluginPackage()` 从 semantic facts 直接把 detected required provider 和 optional provider 保持为 external peer，
-不依赖 metadata transaction 完成后的下一次构建；optional loader 还会注入仅供运行时区分 direct absent 与
-transitive broken 的目标 package 注记。`staticApplication()` 与 Vite source route 采用 bundle-or-absent：可解析
-candidate 进入 module graph，不可解析 candidate 变成显式 absent virtual module。两种策略共享语义分析，但不混淆
-发布包与固定应用的产物边界。
+不依赖 metadata transaction 完成后的下一次构建。required edge 锚定 value import；optional ref 的实现 import 在发布 JS
+中不存在，因此 host closure 未包含 provider 时 consumer 仍可加载。static application 和 Vite source route 只从各自
+显式 catalog/module graph 提供 candidate，不生成 absent virtual module 或 runtime loader annotation。
 
 独立插件包从同一 semantic facts 生成：
 
@@ -89,11 +96,11 @@ candidate 进入 module graph，不可解析 candidate 变成显式 absent virtu
 }
 ```
 
-constructor concrete package usage 是 `required`，optional ref literal import 是 `optional`，required 胜出。
+constructor concrete package usage 是 `required`，`definePluginRef<T>()` 的 direct type import 是 `optional`，required 胜出。
 版本范围只来自 peer/dev/dependency authoring metadata；发布边界统一写入 `peerDependencies`，optional 同步
 `peerDependenciesMeta.optional = true`。同一 build 的多格式 output 读取同一 facts snapshot，下一次 `buildStart` 才重置；
-连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时，上一版生成的 peer、optional peer metadata 与 legacy
-`dependOn` 会一并清理；devDependencies 保留供作者工具使用。metadata transaction 任何失败都会使 build 失败。
+连续构建与 ESM/CJS 双输出都保持幂等。源码删除依赖时，上一版生成的 peer、optional peer metadata 与 manifest
+mapping 会一并清理；devDependencies 保留供作者工具使用。metadata transaction 任何失败都会使 build 失败。
 
 两条 production route 只在输出拓扑处分叉：plugin package 保留 runtime peer boundary、dts 和 package exports；static
 application 追加全量 runtime closure、nf3 residual tracing、platform bootstrap 与 deployment assembly。不要把 static
@@ -171,8 +178,8 @@ remote extraction 和 production preprocessing，然后生成以 canonical entry
 猜测 export、不静态求值 product，也不把产品字段复制进 deployment metadata。direct export、local export 与标准 re-export
 因此具有相同语义。fixed plugins、runtime-static 和可达的
 runtime/core 默认属于 application bundle closure；code splitting 允许，但输出不得残留 `@pluxel/*` deployment import。
-可解析 optional candidate 形成内部 chunk；不可解析 optional candidate 形成带结构化 absent code 的 virtual chunk，
-不得进入 nf3 residual 或 deployment external。
+optional ref 不产生实现 import；只有 host fixed catalog 或其他可达代码显式引入的 provider 才进入 application closure。
+缺席的 optional provider 不产生 chunk、virtual absent module、nf3 residual 或 deployment external。
 
 Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安全跨 CommonJS/ESM 边界内联的 residual packages，
 复制到 distribution 自己的 `node_modules`。PostgreSQL `pg` 属于后一类：freezer 保留它的 Node package boundary，避免改变
@@ -210,7 +217,7 @@ workbench.extension({
 
 Rolldown 静态提取 literal entry，并按 declaration module、entry path、source graph、Contract/shared versions 和
 compiler version 生成稳定 artifact key。构建 transform 把该 key 注入 `workbench.entry()` 的 internal 第三参数；
-作者不声明 plugin ID。artifact 按 key 内容寻址，committed mount 时才关联 Context owner。
+作者不声明 owner address。artifact 按 key 内容寻址，committed mount 时才关联 Context 的 Plugin node owner。
 
 UI entry 不进入 server bundle。反向边界同样成立：UI source graph 只能引用 browser-safe contract、
 `@pluxel/runtime/workbench/contract`、`@pluxel/runtime/workbench/ui` 和公开 UI peers，不得包含 server Workbench

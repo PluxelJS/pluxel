@@ -1,308 +1,227 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
+import {
+	clonePluginDefinition,
+	getPluginDefinitionFacts,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+} from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import type { LoaderService } from '../../src/loader/LoaderService'
 import { createHmrTestContext } from '../support/hmr-context'
+import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins } from '../support/runtime-state'
 
-type HmrCore = ReturnType<typeof createHmrTestContext>['core']
-type RuntimeUpdate = ReturnType<HmrCore['registry']['beginUpdate']>
+type RuntimeUpdate = ReturnType<
+	ReturnType<typeof createHmrTestContext>['core']['registry']['beginUpdate']
+>
 type RuntimeBatch = ReturnType<LoaderService['beginBatch']>
 
-function defineParamTypes(ctor: new (...args: any[]) => BasePlugin, paramTypes: unknown[]): void {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
-
-function beginRuntimeBatch(core: HmrCore, loader: LoaderService) {
-	const runtimeUpdate = core.registry.beginUpdate({ reason: 'hmr' })
-	return {
-		runtimeUpdate,
-		batch: loader.beginBatch({ runtimeUpdate }),
-	}
-}
-
 async function commitBatch(runtimeUpdate: RuntimeUpdate, batch: RuntimeBatch) {
-	const res = await runtimeUpdate.commit({ rollbackOnFailure: false })
-	expect(res).toMatchObject({ ok: true })
+	const result = await runtimeUpdate.commit({ rollbackOnFailure: false })
+	expect(result).toMatchObject({ ok: true })
 	batch.commit()
 }
 
 describe('LoaderService HMR lifecycle', () => {
-	it('resolves ctor-param tokens by plugin id across HMR ctor identity mismatches', async () => {
+	it('keeps the definition/node slot and restarts required dependents once', async () => {
 		const { core, ctx } = createHmrTestContext()
-		enablePlugins(ctx, 'Dep', 'Consumer')
-		const loader = ctx.loader
+		let depStarts = 0
+		let consumerStarts = 0
 
-		class Dep extends BasePlugin {}
-		Plugin({ name: 'Dep' })(Dep)
-
-		class DepShadow extends BasePlugin {}
-		Plugin({ name: 'Dep' })(DepShadow)
-
-		class Consumer extends BasePlugin {
-			constructor(_dep: DepShadow) {
-				super()
+		@Plugin({ displayName: 'Dependency' })
+		class Dep extends BasePlugin {
+			readonly generation = 1
+			override init() {
+				depStarts++
 			}
 		}
-		defineParamTypes(Consumer, [DepShadow])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, DepShadow)
+		lowerTestPlugin(Dep)
 
-		await loader.registerFixedPlugins([Dep], {
-			moduleId: 'pluxel:fixed:/workspace/pluxel.dynamic.ts',
-		})
-		expect(core.registry.isRunning(Dep)).toBe(true)
-
-		{
-			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(runtimeUpdate, batch)
-		}
-
-		expect(core.registry.isRunning(Consumer)).toBe(true)
-	})
-
-	it('reports DI-cascade affected modules so HMR can restart non-reexecuted dependents', async () => {
-		const { core, ctx } = createHmrTestContext()
-		enablePlugins(ctx, 'Dep', 'Consumer')
-		const loader = ctx.loader
-		let depSeq = 0
-		let consumerSeq = 0
-
-		class Dep extends BasePlugin {
-			readonly seq = ++depSeq
-		}
-		Plugin({ name: 'Dep' })(Dep)
-
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
-			readonly seq = ++consumerSeq
-
 			constructor(readonly dep: Dep) {
 				super()
 			}
+			override init() {
+				consumerStarts++
+			}
 		}
-		defineParamTypes(Consumer, [Dep])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Dep)
+		lowerTestPlugin(Consumer, { requires: [Dep] })
 
-		{
-			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-			await batch.replaceModule('Dep.ts', { Dep })
-			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(runtimeUpdate, batch)
-		}
+		enablePlugins(ctx, Dep, Consumer)
+		await ctx.loader.replaceModule('Dep.ts', { Dep })
+		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
 
-		const firstDep = core.registry.getInstance(Dep)
+		const originalAddress = pluginNodeAddressOf(Dep)
+		const originalSlot = core.registry.internNodeAddress(originalAddress)
 		const firstConsumer = core.registry.getInstance(Consumer)
-		expect(firstDep?.seq).toBe(1)
-		expect(firstConsumer?.seq).toBe(1)
-		expect(firstConsumer?.dep.seq).toBe(firstDep?.seq)
+		expect(firstConsumer?.dep.generation).toBe(1)
+		expect([depStarts, consumerStarts]).toEqual([1, 1])
 
 		class DepNext extends BasePlugin {
-			readonly seq = ++depSeq
+			readonly generation = 2
+			override init() {
+				depStarts++
+			}
 		}
-		Plugin({ name: 'Dep' })(DepNext)
+		clonePluginDefinition(Dep, DepNext)
 
-		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-		await batch.replaceModule('Dep.ts', { DepNext })
-		expect(new Set(batch.getAffectedModules())).toEqual(new Set(['Dep.ts', 'Consumer.ts']))
-		await batch.syncModules(batch.getAffectedModules())
+		const result = await ctx.loader.replaceModule('Dep.ts', { Dep: DepNext })
+		const nextAddress = pluginNodeAddressOf(DepNext)
+		const nextConsumer = core.registry.getInstance(Consumer)
 
-		await commitBatch(runtimeUpdate, batch)
-
-		const secondDep = core.registry.getInstance(DepNext)
-		const secondConsumer = core.registry.getInstance(
-			loader.api.registry.getCtor('Consumer') ?? Consumer,
-		)
-		expect(secondDep?.seq).toBe(2)
-		expect(secondConsumer?.seq).toBe(2)
-		expect(secondConsumer?.dep.seq).toBe(secondDep?.seq)
-		expect(secondDep).not.toBe(firstDep)
-		expect(secondConsumer).not.toBe(firstConsumer)
+		expect(new Set(result.affectedModules)).toEqual(new Set(['Consumer.ts', 'Dep.ts']))
+		expect(pluginNodeAddressEqual(nextAddress, originalAddress)).toBe(true)
+		expect(core.registry.internNodeAddress(nextAddress)).toBe(originalSlot)
+		expect(ctx.loader.api.registry.getCtor(originalAddress)).toBe(DepNext)
+		expect(nextConsumer?.dep.generation).toBe(2)
+		expect(nextConsumer).not.toBe(firstConsumer)
+		expect([depStarts, consumerStarts]).toEqual([2, 2])
 	})
 
-	it('rolls back loader state when core commit fails after module replacement', async () => {
+	it('rolls back catalog and constructor ownership when replacement graph build fails', async () => {
 		const { core, ctx } = createHmrTestContext()
-		enablePlugins(ctx, 'Dep', 'Bad')
-		const loader = ctx.loader
 
+		@Plugin({ displayName: 'Stable dependency' })
 		class Dep extends BasePlugin {}
-		Plugin({ name: 'Dep' })(Dep)
+		lowerTestPlugin(Dep)
+		enablePlugins(ctx, Dep)
+		await ctx.loader.replaceModule('Dep.ts', { Dep })
 
-		class Bad extends BasePlugin {
-			constructor(_dep: Dep) {
-				super()
-			}
-		}
-		defineParamTypes(Bad, [Dep])
-		Plugin({ name: 'Bad' })(Bad)
-		setParamToken(Bad, 0, Dep)
+		abstract class Missing extends BasePlugin {}
+		lowerTestAbstract(Missing)
 
-		{
-			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-			await batch.replaceModule('Dep.ts', { Dep })
-			await batch.replaceModule('Bad.ts', { Bad })
-			await commitBatch(runtimeUpdate, batch)
-		}
-
-		abstract class MissingBase extends BasePlugin {}
-
+		@Plugin({ displayName: 'Broken generation' })
 		class DepBroken extends BasePlugin {
-			constructor(_missing: MissingBase) {
+			constructor(_missing: Missing) {
 				super()
 			}
 		}
-		defineParamTypes(DepBroken, [MissingBase])
-		Plugin({ name: 'Dep' })(DepBroken)
-		setParamToken(DepBroken, 0, MissingBase)
+		const original = getPluginDefinitionFacts(Dep).definition
+		lowerTestPlugin(DepBroken, {
+			exportName: original.exportName,
+			source:
+				original.entry.kind === 'source-entry'
+					? original.entry.source
+					: 'tests/runtime-dynamic/Dep.ts',
+			requires: [Missing],
+		})
 
-		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-		await batch.replaceModule('Dep.ts', { DepBroken })
-		const res = await runtimeUpdate.commit({ rollbackOnFailure: false })
-		expect(res.ok).toBe(false)
-		batch.rollback()
-		runtimeUpdate.rollback()
+		await expect(ctx.loader.replaceModule('Dep.ts', { Dep: DepBroken })).rejects.toThrow(
+			/Dynamic source commit failed/i,
+		)
 
-		expect(loader.api.registry.getCtor('Dep')).toBe(Dep)
-		expect(loader.api.registry.findModuleId('Dep')).toBe('Dep.ts')
+		const address = pluginNodeAddressOf(Dep)
+		expect(ctx.loader.api.registry.getCtor(address)).toBe(Dep)
+		expect(ctx.loader.api.registry.findModuleId(address)).toBe('Dep.ts')
 		expect(core.registry.isRunning(Dep)).toBe(true)
 	})
 
-	it('non-batch replaceModule returns structured results and restarts affected dependents', async () => {
+	it('applies structured dependency overrides across replacement generations', async () => {
 		const { core, ctx } = createHmrTestContext()
-		enablePlugins(ctx, 'Dep', 'Consumer')
-		const loader = ctx.loader
-		let depSeq = 0
-		let consumerSeq = 0
+		let consumerStarts = 0
 
-		class Dep extends BasePlugin {
-			readonly seq = ++depSeq
-		}
-		Plugin({ name: 'Dep' })(Dep)
-
-		class Consumer extends BasePlugin {
-			readonly seq = ++consumerSeq
-
-			constructor(readonly dep: Dep) {
-				super()
-			}
-		}
-		defineParamTypes(Consumer, [Dep])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Dep)
-
-		expect(await loader.replaceModule('Dep.ts', { Dep })).toMatchObject({
-			isAnchor: true,
-			affectedModules: [],
-		})
-		expect(await loader.replaceModule('Consumer.ts', { Consumer })).toMatchObject({
-			isAnchor: true,
-			affectedModules: [],
-		})
-		let res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-
-		class DepNext extends BasePlugin {
-			readonly seq = ++depSeq
-		}
-		Plugin({ name: 'Dep' })(DepNext)
-
-		const replaced = await loader.replaceModule('Dep.ts', { DepNext })
-		expect(replaced.isAnchor).toBe(true)
-		expect(new Set(replaced.affectedModules)).toEqual(new Set(['Dep.ts', 'Consumer.ts']))
-		res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-
-		const nextConsumer = core.registry.getInstance(
-			loader.api.registry.getCtor('Consumer') ?? Consumer,
-		)
-		expect(nextConsumer?.seq).toBe(2)
-		expect(nextConsumer?.dep.seq).toBe(2)
-	})
-
-	it('applies persisted dependency overrides across HMR reloads', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-		let depBSeq = 0
-		let consumerSeq = 0
-
+		@Plugin({ displayName: 'A' })
 		class DepA extends BasePlugin {
 			readonly kind = 'A'
 		}
-		Plugin({ name: 'DepA' })(DepA)
+		lowerTestPlugin(DepA)
 
+		@Plugin({ displayName: 'B' })
 		class DepB extends BasePlugin {
 			readonly kind = 'B'
-			readonly seq = ++depBSeq
+			readonly generation = 1
 		}
-		Plugin({ name: 'DepB' })(DepB)
+		lowerTestPlugin(DepB)
 
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
-			readonly seq = ++consumerSeq
-
 			constructor(readonly dep: DepA) {
 				super()
+				consumerStarts++
 			}
 		}
-		defineParamTypes(Consumer, [DepA])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, DepA)
+		lowerTestPlugin(Consumer, { requires: [DepA] })
 
-		enablePlugins(ctx, 'DepA', 'DepB', 'Consumer')
+		enablePlugins(ctx, DepA, DepB, Consumer)
 		ctx.runtimeState.update((draft) => {
-			draft.dependencyOverrides = { Consumer: { 0: 'DepB' } }
+			draft.dependencyOverrides = [
+				{
+					consumer: pluginNodeAddressOf(Consumer),
+					parameterIndex: 0,
+					provider: pluginNodeAddressOf(DepB),
+				},
+			]
 		})
-
-		{
-			const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-			await batch.replaceModule('DepA.ts', { DepA })
-			await batch.replaceModule('DepB.ts', { DepB })
-			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(runtimeUpdate, batch)
-		}
+		await ctx.loader.replaceModule('DepA.ts', { DepA })
+		await ctx.loader.replaceModule('DepB.ts', { DepB })
+		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
 
 		const firstConsumer = core.registry.getInstance(Consumer)
-		expect(firstConsumer?.seq).toBe(1)
 		expect(firstConsumer?.dep.kind).toBe('B')
-		expect((firstConsumer?.dep as InstanceType<typeof DepB> | undefined)?.seq).toBe(1)
+		expect((firstConsumer?.dep as InstanceType<typeof DepB> | undefined)?.generation).toBe(1)
 
 		class DepBNext extends BasePlugin {
 			readonly kind = 'B'
-			readonly seq = ++depBSeq
+			readonly generation = 2
 		}
-		Plugin({ name: 'DepB' })(DepBNext)
-
-		const { runtimeUpdate, batch } = beginRuntimeBatch(core, loader)
-		await batch.replaceModule('DepB.ts', { DepBNext })
-		expect(new Set(batch.getAffectedModules())).toEqual(new Set(['DepB.ts', 'Consumer.ts']))
-		await batch.syncModules(batch.getAffectedModules())
-		await commitBatch(runtimeUpdate, batch)
+		clonePluginDefinition(DepB, DepBNext)
+		await ctx.loader.replaceModule('DepB.ts', { DepB: DepBNext })
 
 		const nextConsumer = core.registry.getInstance(Consumer)
-		expect(nextConsumer?.seq).toBe(2)
 		expect(nextConsumer?.dep.kind).toBe('B')
-		expect((nextConsumer?.dep as InstanceType<typeof DepBNext> | undefined)?.seq).toBe(2)
+		expect((nextConsumer?.dep as InstanceType<typeof DepBNext> | undefined)?.generation).toBe(2)
 		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(consumerStarts).toBe(2)
+	})
+
+	it('lets Core restart an optional closure exactly once on appearance and removal', async () => {
+		const { core, ctx } = createHmrTestContext()
+		let consumerStarts = 0
+
+		@Plugin({ displayName: 'Optional provider' })
+		class OptionalProvider extends BasePlugin {}
+		lowerTestPlugin(OptionalProvider)
+
+		@Plugin({ displayName: 'Optional consumer' })
+		class OptionalConsumer extends BasePlugin {
+			override init() {
+				consumerStarts++
+			}
+		}
+		lowerTestPlugin(OptionalConsumer, { optional: [OptionalProvider] })
+
+		enablePlugins(ctx, OptionalConsumer, OptionalProvider)
+		await ctx.loader.replaceModule('consumer.ts', { OptionalConsumer })
+		expect(consumerStarts).toBe(1)
+
+		await ctx.loader.replaceModule('provider.ts', { OptionalProvider })
+		expect(consumerStarts).toBe(2)
+
+		const runtimeUpdate = core.registry.beginUpdate({ reason: 'hmr' })
+		const batch = ctx.loader.beginBatch({ runtimeUpdate })
+		batch.removeModule('provider.ts')
+		runtimeUpdate.markAffectedModules(['provider.ts', ...batch.getAffectedModules()])
+		await batch.syncModules(batch.getAffectedModules(), { exclude: ['provider.ts'] })
+		await commitBatch(runtimeUpdate, batch)
+		expect(consumerStarts).toBe(3)
 	})
 
 	it('closes batch transactions after commit or rollback', async () => {
 		const { ctx } = createHmrTestContext()
-		const loader = ctx.loader
 
+		@Plugin({ displayName: 'Anchor' })
 		class Anchor extends BasePlugin {}
-		Plugin({ name: 'Anchor' })(Anchor)
+		lowerTestPlugin(Anchor)
 
-		const committed = loader.beginBatch()
+		const committed = ctx.loader.beginBatch()
 		await committed.replaceModule('Committed.ts', { Anchor })
-		expect(committed.getAffectedModules()).toEqual([])
 		committed.commit()
-		expect(committed.getAffectedModules()).toEqual([])
 		await expect(committed.replaceModule('Committed.ts', { Anchor })).rejects.toThrow(
 			/LoaderBatch is already closed/,
 		)
 
-		const rolledBack = loader.beginBatch()
+		const rolledBack = ctx.loader.beginBatch()
 		rolledBack.rollback()
 		await expect(rolledBack.syncModules(['Committed.ts'])).rejects.toThrow(
 			/LoaderBatch is already closed/,

@@ -12,9 +12,7 @@ import {
 	useRuntimeTransportClient,
 	type PluginStatusAction,
 } from '../../../../runtime'
-import { buildStartPlan, executeStartPlan } from '../../pluginStatusActions'
 import { usePluginScope } from '../context'
-import { resolveKnownPluginName } from '../rightPaneState'
 import { PLUGIN_DETAIL_HOTKEYS, PLUGIN_DETAIL_HOTKEY_LABELS } from '../../../workbench/shortcuts'
 
 export interface ActionBarProps {
@@ -114,10 +112,9 @@ function ActionBarButton({
 export function ActionBar({ compact = false, prominent = false }: ActionBarProps) {
 	const transport = useRuntimeTransportClient()
 	const {
+		owner,
 		pluginName,
 		dependencies,
-		knownPluginNames,
-		statusSnapshot,
 		isRunning,
 		isEnabled,
 		lifecycleStage,
@@ -195,7 +192,7 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 		setIsLoading(true)
 
 		try {
-			const res = await transport.withRpc((rpc) => runPluginStatusAction(rpc, pluginName, action))
+			const res = await transport.withRpc((rpc) => runPluginStatusAction(rpc, owner, action))
 			if (mySeq !== seqRef.current) return
 
 			if (res.ok === false) {
@@ -230,95 +227,10 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 		}
 	}
 
-	const cascadeStart = async (deps: string[], action: PluginStatusAction) => {
-		if (!pluginName) return
-		const mySeq = ++seqRef.current
-		setIsLoading(true)
-
-		try {
-			const plan = await buildStartPlan([...deps, pluginName], {
-				includeTargets: true,
-				includeRunningTargets: action === 'restart',
-				requireConfiguredFor: 'dependencies',
-				statusSnapshot,
-			})
-
-			if (plan.missing.length > 0) {
-				notify({
-					title: '部分依赖未找到',
-					message: `已跳过：${plan.missing.join('，')}`,
-					color: 'yellow',
-				})
-			}
-
-			if (plan.blockedByConfig.length > 0) {
-				notify({
-					title: '级联启动已取消',
-					message: `以下依赖尚未配置：${plan.blockedByConfig.join('，')}`,
-					color: 'yellow',
-				})
-				return
-			}
-
-			if (plan.order.length === 0) {
-				if (plan.missing.length === 0) {
-					notify({
-						title: '依赖已就绪',
-						message: '所有依赖均已运行，无需级联启动。',
-						color: 'blue',
-					})
-				}
-				return
-			}
-
-			const results = await executeStartPlan(plan.order, action === 'restart' ? 'restart' : 'start')
-			if (mySeq !== seqRef.current) return
-			const failed = results.filter((r) => !r.ok)
-			if (failed.length > 0) {
-				notify({
-					title: '部分依赖启动失败',
-					message: failed.map((f) => f.name).join('，') || '启动失败',
-					color: 'red',
-				})
-				await refetch()
-				return
-			}
-
-			await syncAfterSuccess()
-			notify({
-				title: '已级联启动',
-				message: `已按依赖顺序${ACTION_LABEL[action]}：${plan.order.join(' → ')}`,
-				color: 'green',
-			})
-		} catch (e: any) {
-			if (mySeq !== seqRef.current) return
-			notify({
-				title: '级联启动失败',
-				message: e?.message ?? '操作失败，请稍后重试',
-				color: 'red',
-			})
-			await refetch()
-		} finally {
-			setIsLoading(false)
-		}
-	}
-
 	const handleAction = (action: PluginStatusAction) => {
 		const needsDependencyCheck = action === 'start' || action === 'restart'
 		const missing = needsDependencyCheck
-			? Array.from(
-					new Map(
-						dependencies
-							.filter((dep) => !dep.isRunning)
-							.map((dep) => {
-								const label = dep.name?.trim()
-								const target = label ? resolveKnownPluginName(knownPluginNames, label) : undefined
-								return label && target ? [target, { label, target }] : null
-							})
-							.filter(Boolean)
-							.map((entry) => entry as [string, { label: string; target: string }]),
-					).values(),
-				)
+			? dependencies.filter((dependency) => !dependency.isRunning)
 			: []
 
 		const proceed = (): void => {
@@ -330,18 +242,14 @@ export function ActionBar({ compact = false, prominent = false }: ActionBarProps
 				title: '前置依赖未启动',
 				children: (
 					<div>
-						<div>可尝试级联启动已配置的依赖链，然后启动当前插件。</div>
+						<div>启动当前插件时，运行时会按结构化依赖图启动所需节点。</div>
 						<div style={{ marginTop: 10 }}>
-							以下依赖尚未运行：{missing.map((item) => item.label).join('，')}
+							以下依赖尚未运行：{missing.map((item) => item.name).join('，')}
 						</div>
 					</div>
 				),
-				labels: { confirm: '级联启动', cancel: '取消' },
-				onConfirm: () =>
-					void cascadeStart(
-						missing.map((item) => item.target),
-						action,
-					),
+				labels: { confirm: '继续启动', cancel: '取消' },
+				onConfirm: proceed,
 				closeOnConfirm: true,
 			})
 		} else {

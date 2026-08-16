@@ -63,8 +63,11 @@ function useLatestTick(activity: PluginWithUIEventsClient) {
 	return tick
 }
 
-function pluginRouteHref(pluginName: string, path: string) {
-	return `/workbench/${encodeURIComponent(pluginName)}${path}`
+function pluginRouteHref(
+	address: ReturnType<typeof useWorkbenchHost>['target']['address'],
+	path: string,
+) {
+	return `/workbench/${encodeURIComponent(JSON.stringify(address))}${path}`
 }
 
 function panelTitle(icon: ReactNode, title: string) {
@@ -127,7 +130,7 @@ export function OverviewPanel() {
 			<Card withBorder radius="md" p="md">
 				<Stack gap="xs">
 					<Text size="sm">
-						插件：<Code>{host.targetPluginId}</Code>
+						插件：<Code>{host.target.displayName}</Code>
 					</Text>
 					<Text size="sm">
 						运行时长：<Code>{uptimeSeconds}s</Code>
@@ -329,7 +332,7 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 						size="xs"
 						leftSection={<IconArrowLeft size={14} />}
 						component="a"
-						href={pluginRouteHref(host.targetPluginId, '/dashboard')}
+						href={pluginRouteHref(host.target.address, '/dashboard')}
 					>
 						返回宿主壳
 					</Button>
@@ -337,7 +340,7 @@ export function RoutePage({ frame = 'shell' }: RoutePageProps) {
 			</Group>
 			<Text size="sm" c="dimmed">
 				这是插件提供的页面路由，用于演示 Workbench extension。插件名：
-				<Code>{host.targetPluginId}</Code>
+				<Code>{host.target.displayName}</Code>
 			</Text>
 			{standalone ? (
 				<Text size="sm">

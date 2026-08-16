@@ -30,26 +30,25 @@ export default defineConfig({
 `prefixPluxelRuleSet(pluxelRules)` 默认以 error 启用全部规则。建议 lint 命令同时启用
 `--report-unused-disable-directives-severity=error`，避免抑制项永久失效。
 
-## 插件与 feature
+## Plugin
 
-| 规则                                             | 保护的约束                                     | 推荐修复                                                                        |
-| ------------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| `plugin-base-class-requires-plugin-registration` | 具体插件类必须进入 metadata/graph              | 添加 `@Plugin(...)`；抽象基类保持 `abstract`                                    |
-| `plugin-constructor-no-type-only-imports`        | constructor token 必须存在于 runtime           | 将 dependency 从 `import type` 改为 runtime import；通常可自动修复              |
-| `plugin-no-process-exit`                         | 进程策略属于 host                              | 启动时抛错或报告 operational error                                              |
-| `features-use-top-level-class`                   | 工具链需要稳定提取 required feature metadata   | 将 plugin class 和 `features.use()` field 移到 module top level                 |
-| `features-load-no-class-field`                   | lazy feature 是 runtime 行为                   | 在 `init()` 或后续 runtime method 调用 `features.load()`                        |
-| `features-load-requires-defined-spec`            | lazy feature spec 必须稳定且可分析             | module scope 用 `const spec = defineLazyFeature(...)`，`load(spec)` 只传该 spec |
-| `features-load-no-static-load`                   | optional implementation 必须真正离开 hard path | 在 spec 的 `load` 中使用动态 `import(...)`                                      |
+| 规则                                             | 保护的约束                                             | 推荐修复                                                              |
+| ------------------------------------------------ | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| `plugin-base-class-requires-plugin-registration` | 具体 Plugin 必须带薄 `@Plugin` marker                  | 添加 `@Plugin({ displayName })`；抽象基类保持 `abstract`              |
+| `plugin-constructor-canonical-dependencies`      | required edge 必须能证明 package-root value provenance | 从 provider package root direct value-import named Plugin             |
+| `plugin-no-process-exit`                         | 进程策略属于 host                                      | 启动时抛错或报告 operational error                                    |
+| `plugin-no-removed-feature-api`                  | Plugin 内部只保留普通对象/effects                      | 用普通 class/function、effects scope 或独立 Plugin 代替内部 lifecycle |
 
 ## 配置
 
-| 规则                           | 保护的约束                                  | 推荐修复                                                                 |
-| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------ |
-| `configs-use-top-level-class`  | 工具链需要稳定提取 config metadata          | 将 plugin class 和 `configs.use()` field 移到 module top level           |
-| `configs-use-no-private-field` | runtime 无法注入 JavaScript `#private` slot | 使用普通的 `private readonly config` field                               |
-| `configs-use-no-early-read`    | config 在构造后、启动前才完成注入           | 只在 `init()` 或后续 method 读取                                         |
-| `configs-use-no-redefault`     | schema 已负责默认值和归一化                 | 把默认值写进 schema，移除额外的空值或逻辑或 fallback；部分情况可自动修复 |
+| 规则                               | 保护的约束                                  | 推荐修复                                                                 |
+| ---------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------ |
+| `configs-use-top-level-class`      | 工具链需要稳定提取 config metadata          | 将 plugin class 和 `configs.use()` field 移到 module top level           |
+| `configs-use-no-private-field`     | runtime 无法注入 JavaScript `#private` slot | 使用普通的 `private readonly config` field                               |
+| `configs-use-no-early-read`        | config 在构造后、启动前才完成注入           | 只在 `init()` 或后续 method 读取                                         |
+| `configs-use-no-redefault`         | schema 已负责默认值和归一化                 | 把默认值写进 schema，移除额外的空值或逻辑或 fallback；部分情况可自动修复 |
+| `configs-use-single-object-schema` | 每个具体 Plugin 只有一个 object schema      | 合并到一个 object schema，用嵌套字段表达 section                         |
+| `configs-no-removed-dsl`           | config 只有一个作者声明                     | 使用一个 `this.configs.use(ObjectSchema)` field                          |
 
 ## 日志与 import 边界
 

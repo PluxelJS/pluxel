@@ -1,17 +1,4 @@
-export {
-	BaseFeature,
-	BasePlugin,
-	cfg,
-	Config,
-	Context,
-	defineLazyFeature,
-	f,
-	ForkablePlugin,
-	HostBoundFeature,
-	Plugin,
-	v,
-	type ConfigSchemaMap,
-} from '@pluxel/runtime'
+export { BasePlugin, Context, ForkablePlugin, Plugin, v } from '@pluxel/runtime'
 
 export type {
 	StaticRuntime,

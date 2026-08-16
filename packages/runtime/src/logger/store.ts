@@ -105,7 +105,7 @@ function seqToString(n: bigint): string {
 type CounterMap = Map<string, number>
 
 type ChunkMeta = {
-	pluginId: CounterMap
+	plugin: CounterMap
 	context: CounterMap
 	name: CounterMap
 	categoryFull: CounterMap
@@ -129,7 +129,7 @@ function createChunk(): Chunk {
 		start: 0,
 		len: 0,
 		meta: {
-			pluginId: createCounterMap(),
+			plugin: createCounterMap(),
 			context: createCounterMap(),
 			name: createCounterMap(),
 			categoryFull: createCounterMap(),
@@ -162,7 +162,7 @@ function addCategoryMeta(meta: ChunkMeta, category: string[], delta: 1 | -1): vo
 }
 
 function addLineMeta(meta: ChunkMeta, line: RuntimeLogLine, delta: 1 | -1): void {
-	if (line.pluginId) inc(meta.pluginId, line.pluginId, delta)
+	if (line.plugin) inc(meta.plugin, pluginKey(line.plugin), delta)
 	if (line.context) inc(meta.context, line.context, delta)
 	if (line.name) inc(meta.name, line.name, delta)
 	addCategoryMeta(meta, line.category, delta)
@@ -194,7 +194,7 @@ function chunkShift(chunk: Chunk): RuntimeLogLine | undefined {
 
 function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 	if (!f.hasFilter) return true
-	if (f.pluginId && !meta.pluginId.has(f.pluginId)) return false
+	if (f.plugin && !meta.plugin.has(pluginKey(f.plugin))) return false
 	if (f.context && !meta.context.has(f.context)) return false
 	if (f.displayName && !meta.name.has(f.displayName)) return false
 	if (f.categoryKey) {
@@ -205,6 +205,17 @@ function chunkMayMatch(meta: ChunkMeta, f: CompiledLogFilter): boolean {
 		}
 	}
 	return true
+}
+
+function pluginKey(plugin: import('@pluxel/core').PluginNodeAddressSnapshot): string {
+	const entry = plugin.definition.entry
+	return JSON.stringify([
+		entry.kind,
+		entry.kind === 'package-root' ? entry.packageName : entry.source,
+		plugin.definition.exportName,
+		plugin.instance,
+		plugin.instance === 'fork' ? plugin.forkId : null,
+	])
 }
 
 export class RuntimeLogStore {

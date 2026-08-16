@@ -26,10 +26,6 @@
 			"@pluxel/source": "./src/database.ts",
 			"default": "./dist/database.mjs"
 		},
-		"./events": {
-			"@pluxel/source": "./src/events.ts",
-			"default": "./dist/events.mjs"
-		},
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
@@ -93,7 +89,6 @@
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./database": "./dist/database.mjs",
-			"./events": "./dist/events.mjs",
 			"./internal": "./dist/internal.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",

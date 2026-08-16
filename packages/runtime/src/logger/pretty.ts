@@ -1,5 +1,6 @@
 import { getConsoleSink, type LogRecord, type Sink } from '@logtape/logtape'
 import { getPrettyFormatter } from '@logtape/pretty'
+import { formatPluginNodeAddress } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { formatPrettyTimestamp, isReservedLogProperty } from './host'
 import { toPlainObject } from './serialization'
@@ -33,11 +34,11 @@ export function createRuntimePrettyConsoleSink(options: {
 
 function displayCategory(category: readonly string[]): string[] {
 	if (category[0] === 'pluxel' && category[1] === 'debug') {
-		const topicStart = category[3] === 'plugin' ? 5 : 4
+		const topicStart = readPluginLogIdentity(category)?.topicOffset ?? 4
 		return ['debug', category.slice(topicStart).join(':')]
 	}
 	const plugin = readPluginLogIdentity(category)
-	if (plugin) return ['plugin', plugin.pluginId]
+	if (plugin) return ['plugin', formatPluginNodeAddress(plugin.node)]
 	if (category[0] === 'pluxel' && category[1] === 'runtime') return ['runtime']
 	return [...category]
 }

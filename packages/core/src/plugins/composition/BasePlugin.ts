@@ -1,77 +1,87 @@
-// BasePlugin.ts
-// Core runtime base class for all plugins.
-//
-// Responsibilities:
-// - Provide `ctx` (DI context) to instances via FORK_CTX injection.
-// - Offer optional lifecycle hooks (`init`, `stop`).
-// - Expose `getLifecycleRuntime` adapter used by the lifecycle actor.
-//
-// This file sits on the construction hot‑path; keep it allocation‑light.
-
 import type { Context } from '@pluxel/context'
-import type { AnyCtor } from '../decorators/decorator/shared'
-import { getPluginInfo } from '../decorators/decorator/api'
 import { closeOwnerInvocations } from '../../internal/owner-invocations'
+import {
+	EffectsDisposedError,
+	type Cleanup,
+	type DisposableLike,
+} from '../../services/effects/EffectsService'
 import { CONFIGS, type ConfigHost } from './ConfigHost'
-import { FeatureHost } from './FeatureHost'
 import { PluginHost } from './PluginHost'
-import { FORK_CTX, PLUGIN_CTX } from './symbols'
-const FEATURE_HOST = Symbol.for('pluxel:plugin:featureHost')
-const PLUGIN_HOST = Symbol.for('pluxel:plugin:pluginHost')
+import { FORK_CTX, LATE_INIT_CLEANUP_ERROR, PLUGIN_CTX } from './symbols'
+
+const PLUGIN_HOST = Symbol('pluxel:plugin:pluginHost')
+const INIT_ACTIVE = Symbol('pluxel:plugin:initActive')
 
 export { FORK_CTX, PLUGIN_CTX } from './symbols'
 
+export type PluginCleanup = void | Cleanup | DisposableLike
+
 export interface PluginLifecycleRuntime<_C extends Context = Context> {
-	beforeStart?: () => void
-	init?: (signal: AbortSignal) => void | Promise<void>
-	stop?: (signal: AbortSignal) => void | Promise<void>
-	dispose?: () => void | Promise<void>
+	init?: (signal: AbortSignal) => PluginCleanup | Promise<PluginCleanup>
+	drain: () => Promise<void>
 	subscribeErrors?: (cb: (err: unknown) => void) => undefined | (() => void)
 }
 
 export type PluginContextOf<P extends BasePlugin> = P extends BasePlugin<infer C> ? C : Context
 
+function isDisposable(value: unknown): value is DisposableLike {
+	return (
+		!!value &&
+		typeof value === 'object' &&
+		typeof (value as { dispose?: unknown }).dispose === 'function'
+	)
+}
+
+async function disposeLate(resource: Cleanup | DisposableLike): Promise<void> {
+	if (typeof resource === 'function') await resource()
+	else await resource.dispose()
+}
+
+function lateCleanupError(cause: unknown): Error {
+	const detail = cause instanceof Error ? cause.message : String(cause)
+	const error = new Error(`Late Plugin init cleanup failed: ${detail}`, { cause }) as Error & {
+		[LATE_INIT_CLEANUP_ERROR]?: true
+	}
+	Object.defineProperty(error, LATE_INIT_CLEANUP_ERROR, { value: true })
+	return error
+}
+
+async function adoptCleanup(ctx: Context, resource: PluginCleanup): Promise<void> {
+	if (resource === undefined) return
+	try {
+		if (typeof resource === 'function') ctx.effects.defer(resource)
+		else if (isDisposable(resource)) ctx.effects.own(resource)
+		else throw new TypeError('[pluxel/core] Plugin init() returned an invalid cleanup resource')
+	} catch (error) {
+		if (!(error instanceof EffectsDisposedError)) throw error
+		try {
+			await disposeLate(resource as Cleanup | DisposableLike)
+		} catch (cause) {
+			throw lateCleanupError(cause)
+		}
+	}
+}
+
 export abstract class BasePlugin<C extends Context = Context> {
 	static [FORK_CTX]: () => Context
 	protected [PLUGIN_CTX]!: C
+	private [INIT_ACTIVE] = false
+	private [PLUGIN_HOST]?: PluginHost
 
 	constructor() {
-		if (BasePlugin[FORK_CTX] === undefined) {
+		if (BasePlugin[FORK_CTX] === undefined)
 			throw new Error("Don't instantiate BasePlugin directly.")
-		}
 		this[PLUGIN_CTX] = BasePlugin[FORK_CTX]() as C
 	}
 
-	/** Access system deps and register disposables */
 	public get ctx(): C {
 		return this[PLUGIN_CTX]
 	}
 
-	/** Feature composition (plan A): one scoped host per effective ctx. */
-	public get features(): FeatureHost<BasePlugin<C>> {
-		const self = this as unknown as { [FEATURE_HOST]?: FeatureHost<BasePlugin<C>> }
-		const existing = self[FEATURE_HOST]
-		if (existing && existing.ctx === (this.ctx as unknown as Context)) return existing
-
-		const ctor = (this as unknown as { constructor?: unknown }).constructor
-		const ownerCtor = typeof ctor === 'function' ? (ctor as unknown as AnyCtor) : undefined
-		const host = new FeatureHost<BasePlugin<C>>(this.ctx as unknown as Context, ownerCtor, this)
-		Object.defineProperty(this, FEATURE_HOST, {
-			value: host,
-			writable: false,
-			enumerable: false,
-			configurable: false,
-		})
-		return host
-	}
-
-	/** Optional integrations with other running plugins. Required dependencies stay in the constructor. */
 	public get plugins(): PluginHost {
-		const self = this as unknown as { [PLUGIN_HOST]?: PluginHost }
-		return (self[PLUGIN_HOST] ??= new PluginHost(this.features))
+		return (this[PLUGIN_HOST] ??= new PluginHost(this.ctx, () => this[INIT_ACTIVE]))
 	}
 
-	/** Config declaration helper: `foo = this.configs.use(schema)` */
 	public get configs(): ConfigHost {
 		return CONFIGS
 	}
@@ -80,57 +90,34 @@ export abstract class BasePlugin<C extends Context = Context> {
 		return this.ctx.caller
 	}
 
-	static [Symbol.toPrimitive](_hint: string) {
-		// Some abstract base classes are used only as DI keys and may not be
-		// decorated with @Plugin. Avoid throwing during logging/stringification.
-		let id: string
-		try {
-			// Safe use of `this` inside Symbol.toPrimitive formatting.
-			id = getPluginInfo(this)?.id ?? this.name
-		} catch {
-			// undecorated base
-			id = BasePlugin.name
-		}
-		// Safe use of `this` inside Symbol.toPrimitive formatting.
-		return `${id}(${this.name})`
-	}
-
-	/** —— Optional lifecycles ——
-	 * Plugins may implement either, both, or none.
-	 * Use `override` when implementing to get compiler checks.
-	 */
-	protected init?(abort: AbortSignal): void | Promise<void>
-	protected stop?(abort: AbortSignal): void | Promise<void>
+	protected init?(_abort: AbortSignal): PluginCleanup | Promise<PluginCleanup>
 
 	static getLifecycleRuntime<P extends BasePlugin>(
 		plugin: P,
 	): PluginLifecycleRuntime<PluginContextOf<P>> {
 		const ctx = plugin[PLUGIN_CTX] as PluginContextOf<P>
-		const extended = ctx as unknown as {
-			effects?: { dispose?: () => void | Promise<void> }
-			emitWithContext?: (thisArg: unknown, event: string, ...args: unknown[]) => unknown
-			onError?: (cb: (err: unknown) => void) => unknown
-		}
-		const effects = extended.effects
-		const emitWithContext = extended.emitWithContext
+		const extended = ctx as unknown as { onError?: (cb: (err: unknown) => void) => unknown }
 		const onError = extended.onError
-		const stop = typeof plugin.stop === 'function' ? plugin.stop.bind(plugin) : undefined
-
 		return {
-			beforeStart:
-				typeof emitWithContext === 'function'
-					? () => emitWithContext.call(ctx, plugin, 'beforeStart', plugin)
+			init:
+				typeof plugin.init === 'function'
+					? async (signal) => {
+							plugin[INIT_ACTIVE] = true
+							try {
+								const cleanup = await plugin.init!(signal)
+								await adoptCleanup(ctx, cleanup)
+							} finally {
+								plugin[INIT_ACTIVE] = false
+							}
+						}
 					: undefined,
-			init: typeof plugin.init === 'function' ? plugin.init.bind(plugin) : undefined,
-			stop: (signal: AbortSignal) => {
-				const closing = closeOwnerInvocations(ctx)
-				if (closing) return closing.then(() => stop?.(signal))
-				return stop?.(signal)
+			drain: async () => {
+				await closeOwnerInvocations(ctx)
+				await ctx.effects.dispose()
 			},
-			dispose: typeof effects?.dispose === 'function' ? effects.dispose.bind(effects) : undefined,
 			subscribeErrors:
 				typeof onError === 'function'
-					? (cb: (err: unknown) => void) => {
+					? (cb) => {
 							const off = onError.call(ctx, cb)
 							return typeof off === 'function' ? (off as () => void) : undefined
 						}
@@ -139,14 +126,4 @@ export abstract class BasePlugin<C extends Context = Context> {
 	}
 }
 
-/**
- * ForkablePlugin
- *
- * Only plugins that extend this class are allowed to be forked into multiple
- * runtime instances (multiple ForkCtors).
- *
- * This is a strict opt‑in to keep the system deterministic and fast:
- * - no runtime decorators/flags;
- * - no fallback paths.
- */
 export abstract class ForkablePlugin<C extends Context = Context> extends BasePlugin<C> {}

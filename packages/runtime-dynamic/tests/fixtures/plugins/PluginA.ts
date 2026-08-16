@@ -1,4 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'PluginA' })
+@Plugin({ displayName: 'Plugin A' })
 export class PluginA extends BasePlugin {}

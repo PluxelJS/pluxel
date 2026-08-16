@@ -1,4 +1,9 @@
 import { Badge, Button, Code, Group, ScrollArea, Select, Stack, Text, Title } from '@mantine/core'
+import {
+	formatPluginNodeAddress,
+	pluginNodeAddressEqual,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
 	rpcErrorMessage,
@@ -7,6 +12,7 @@ import {
 	type RuntimePluginLogLevel,
 	type VersionedPluginLogPolicySnapshot,
 } from '../../../../runtime'
+import { workbenchNodeKey } from '../../../../workbench/node-address'
 
 type Snapshot = VersionedPluginLogPolicySnapshot
 
@@ -27,10 +33,10 @@ function isLogLevel(value: string): value is LogLevel {
 }
 
 export function LogLevelsCard({
-	pluginId,
+	owner,
 	compact = false,
 }: {
-	pluginId: string
+	owner: PluginNodeAddressSnapshot
 	compact?: boolean
 }) {
 	const transport = useRuntimeTransportClient()
@@ -59,7 +65,9 @@ export function LogLevelsCard({
 	}, [refresh])
 
 	const currentDefault = snapshot?.defaultLevel ?? 'info'
-	const currentPlugin = snapshot?.overrides?.[pluginId]
+	const currentPlugin = snapshot?.overrides.find((entry) =>
+		pluginNodeAddressEqual(entry.owner, owner),
+	)?.level
 
 	const pluginSelectValue = currentPlugin === undefined ? '__inherit__' : currentPlugin
 	const defaultSelectValue = currentDefault
@@ -72,17 +80,19 @@ export function LogLevelsCard({
 				const updated = await transport.withRpc(async (rpc) => {
 					const api = rpc.logging()
 					if (!snapshot) throw new Error('Plugin log policy is not loaded')
-					if (next === '__inherit__') return await api.clearPluginLevel(snapshot.revision, pluginId)
-					if (next === '__off__')
-						return await api.setPluginLevel(snapshot.revision, pluginId, 'off')
+					if (next === '__inherit__') return await api.clearPluginLevel(snapshot.revision, owner)
+					if (next === '__off__') return await api.setPluginLevel(snapshot.revision, owner, 'off')
 					if (!next || !isLogLevel(next)) throw new Error(`Invalid log level: ${String(next)}`)
-					return await api.setPluginLevel(snapshot.revision, pluginId, next)
+					return await api.setPluginLevel(snapshot.revision, owner, next)
 				})
 				setSnapshot((previous) => {
 					if (!previous) return previous
-					const overrides = { ...previous.overrides }
-					if (next === '__inherit__') delete overrides[pluginId]
-					else overrides[pluginId] = next === '__off__' ? 'off' : (next as LogLevel)
+					const overrides = previous.overrides.filter(
+						(entry) => !pluginNodeAddressEqual(entry.owner, owner),
+					)
+					if (next !== '__inherit__') {
+						overrides.push({ owner, level: next === '__off__' ? 'off' : (next as LogLevel) })
+					}
 					return { ...previous, ...updated, overrides }
 				})
 			} catch (e) {
@@ -91,22 +101,23 @@ export function LogLevelsCard({
 				setSaving(false)
 			}
 		},
-		[transport, pluginId, snapshot],
+		[transport, owner, snapshot],
 	)
 
 	const deleteRule = useCallback(
-		async (id: string) => {
+		async (ruleOwner: PluginNodeAddressSnapshot) => {
 			setSaving(true)
 			setError(null)
 			try {
 				if (!snapshot) throw new Error('Plugin log policy is not loaded')
 				const updated = await transport.withRpc((rpc) =>
-					rpc.logging().clearPluginLevel(snapshot.revision, id),
+					rpc.logging().clearPluginLevel(snapshot.revision, ruleOwner),
 				)
 				setSnapshot((previous) => {
 					if (!previous) return previous
-					const overrides = { ...previous.overrides }
-					delete overrides[id]
+					const overrides = previous.overrides.filter(
+						(entry) => !pluginNodeAddressEqual(entry.owner, ruleOwner),
+					)
 					return { ...previous, ...updated, overrides }
 				})
 			} catch (e) {
@@ -151,12 +162,16 @@ export function LogLevelsCard({
 	const overrides = useMemo(() => {
 		const levels = snapshot?.overrides
 		if (!levels) return []
-		const out: Array<{ id: string; level: RuntimePluginLogLevel }> = []
-		for (const id in levels) {
-			if (!Object.hasOwn(levels, id)) continue
-			out.push({ id, level: levels[id] })
-		}
-		out.sort((a, b) => a.id.localeCompare(b.id))
+		const out: Array<{
+			owner: PluginNodeAddressSnapshot
+			label: string
+			level: RuntimePluginLogLevel
+		}> = levels.map((entry) => ({
+			owner: entry.owner,
+			label: formatPluginNodeAddress(entry.owner),
+			level: entry.level,
+		}))
+		out.sort((a, b) => a.label.localeCompare(b.label))
 		return out
 	}, [snapshot])
 
@@ -239,7 +254,7 @@ export function LogLevelsCard({
 							当前插件
 						</Text>
 						<Badge variant="light" color="gray">
-							<Code>{pluginId}</Code>
+							<Code>{formatPluginNodeAddress(owner)}</Code>
 						</Badge>
 					</Group>
 					<Select
@@ -275,11 +290,16 @@ export function LogLevelsCard({
 					>
 						<Stack gap={4} p={2}>
 							{overrides.map((r) => (
-								<Group key={r.id} gap="xs" justify="space-between" wrap="nowrap">
+								<Group
+									key={workbenchNodeKey(r.owner)}
+									gap="xs"
+									justify="space-between"
+									wrap="nowrap"
+								>
 									<Code
 										style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
 									>
-										{r.id}
+										{r.label}
 									</Code>
 									<Group gap="xs" wrap="nowrap">
 										<Badge variant="light" color={r.level === 'off' ? 'red' : 'blue'}>
@@ -290,7 +310,7 @@ export function LogLevelsCard({
 											variant="subtle"
 											color="gray"
 											disabled={saving}
-											onClick={() => void deleteRule(r.id)}
+											onClick={() => void deleteRule(r.owner)}
 										>
 											移除
 										</Button>

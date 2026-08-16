@@ -1,24 +1,22 @@
 import { resolve } from 'node:path'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { PluginEventsDeclaredConsumer, PluginEventsDeclaredProducer } from './demo/PluginEventsDemo'
-import { PluginFeatureDepsConsumer, PluginFeatureDepsProvider } from './demo/PluginFeatureDepsDemo'
 import { PluginHttpRoutesDemo } from './demo/PluginHttpRoutesDemo'
+import {
+	PluginOptionalIntegrationConsumer,
+	PluginOptionalIntegrationProvider,
+} from './demo/PluginOptionalIntegrationDemo'
 
 export const staticDemoPlugins = [
 	PluginEventsDeclaredProducer,
 	PluginEventsDeclaredConsumer,
-	PluginFeatureDepsProvider,
-	PluginFeatureDepsConsumer,
+	PluginOptionalIntegrationProvider,
+	PluginOptionalIntegrationConsumer,
 	PluginHttpRoutesDemo,
 ] as const
 
-export const staticDemoEnabledPlugins = [
-	'PluginEventsDeclaredProducer',
-	'PluginEventsDeclaredConsumer',
-	'PluginFeatureDepsProvider',
-	'PluginFeatureDepsConsumer',
-	'PluginHttpRoutesDemo',
-] as const
+export const staticDemoEnabledPlugins = staticDemoPlugins.map(pluginNodeAddressOf)
 
 export default defineStaticRuntime({
 	name: 'plugins-host-static',

@@ -1,4 +1,12 @@
-import { __registerConfigSchema__, BasePlugin, Context, Plugin, setParamTokens } from '@pluxel/core'
+import {
+	__setPluginConfig,
+	__setPluginDefinition,
+	BasePlugin,
+	Context,
+	getPluginDefinitionFacts,
+	pluginNodeAddressOf,
+	Plugin,
+} from '@pluxel/core'
 
 export type Ctx = InstanceType<typeof Context>
 type CommitResult = Awaited<ReturnType<Ctx['registry']['commit']>>
@@ -18,10 +26,17 @@ export const ensureOk = (result: CommitResult) => {
 
 export type PluginCtor = new (...args: unknown[]) => BasePlugin
 
-function definePlugin(name: string, deps?: unknown[]): PluginCtor {
+function definePlugin(name: string, deps?: PluginCtor[]): PluginCtor {
 	class P extends BasePlugin {}
-	if (deps?.length) setParamTokens(P, deps as any)
-	Plugin({ name })(P)
+	Plugin({ displayName: name })(P)
+	__setPluginDefinition(P, {
+		kind: 'plugin',
+		definition: {
+			entry: { kind: 'source-entry', source: `core-bench/plugin-lifecycle/${name}` },
+			exportName: name,
+		},
+		requires: deps?.map((dependency) => getPluginDefinitionFacts(dependency).definition),
+	})
 	return P
 }
 
@@ -74,14 +89,20 @@ function createStar(leaves: number) {
 function createConfigHeavy(keys: number) {
 	class P extends BasePlugin {}
 
-	// Register schemas before @Plugin so configMap is captured.
-	for (let i = 0; i < keys; i++) __registerConfigSchema__(P, `k${i}`, passthroughSchema)
-	Plugin({ name: 'BenchConfigHeavy' })(P)
+	Plugin({ displayName: 'BenchConfigHeavy' })(P)
+	__setPluginDefinition(P, {
+		kind: 'plugin',
+		definition: {
+			entry: { kind: 'source-entry', source: 'core-bench/plugin-lifecycle/BenchConfigHeavy' },
+			exportName: 'BenchConfigHeavy',
+		},
+	})
+	__setPluginConfig(P, { fieldName: 'config', schema: passthroughSchema })
 
 	const record: Record<string, unknown> = Object.create(null)
 	for (let i = 0; i < keys; i++) record[`k${i}`] = i
 
-	return { ctor: P as PluginCtor, id: 'BenchConfigHeavy', record }
+	return { ctor: P as PluginCtor, address: pluginNodeAddressOf(P), record }
 }
 
 export type ScenarioSizes = {

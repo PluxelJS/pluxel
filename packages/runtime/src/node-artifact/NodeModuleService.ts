@@ -47,7 +47,7 @@ declare module '@pluxel/core' {
 			/** @internal Dynamic hosts resolve Node module artifacts from plugin packages. */
 			nodeModuleArtifactResolver?: (
 				root: import('@pluxel/core').Context,
-				pluginName: string,
+				owner: import('@pluxel/core').PluginNodeAddressSnapshot,
 				artifactKey: string,
 			) => string | null | Promise<string | null>
 		}
@@ -135,7 +135,7 @@ export class NodeModuleService {
 			? `${configuredRoot.replace(/[\\/]$/, '')}/${descriptor.artifactKey}.mjs`
 			: await root.config.nodeModuleArtifactResolver?.(
 					root,
-					this.ctx.pluginInfo.id,
+					this.ctx.pluginInfo.nodeAddress,
 					descriptor.artifactKey,
 				)
 		if (!file) {

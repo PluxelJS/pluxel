@@ -20,7 +20,7 @@ const deleteCommand = defineCommand({
 	execute: () => undefined,
 })
 
-@Plugin({ name: 'NotesCommands' })
+@Plugin({ displayName: 'NotesCommands' })
 class NotesCommands extends BasePlugin {
 	override init(): void {
 		this.ctx.commands.register(readCommand)

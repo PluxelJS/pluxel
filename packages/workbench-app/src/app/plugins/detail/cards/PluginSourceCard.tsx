@@ -13,7 +13,7 @@ import {
 import { IconCheck, IconCopy } from '@tabler/icons-react'
 import { useMemo, type ReactNode } from 'react'
 import { usePluginScope, type PluginSourceInfo } from '../context'
-import { resolveKnownPluginName, shortenPathSegments } from '../rightPaneState'
+import { shortenPathSegments } from '../rightPaneState'
 import {
 	DependencyList,
 	usePluginDependencyEntries,
@@ -102,7 +102,7 @@ export interface PluginSourceCardProps {
 }
 
 export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
-	const { source, knownPluginNames } = usePluginScope()
+	const { source } = usePluginScope()
 	const theme = useMantineTheme()
 	const badge = getBadgeLabel(source)
 	const accent = theme.colors[theme.primaryColor]?.[6] ?? theme.colors.blue?.[6] ?? theme.black
@@ -110,11 +110,6 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 
 	const content = useMemo(() => renderSourceContent(source, accent), [source, accent])
 	const labelStyle = { width: 44, flexShrink: 0 }
-	const resolveDependencyLinkTarget = useMemo(() => {
-		return (name: string) => {
-			return resolveKnownPluginName(knownPluginNames, name)
-		}
-	}, [knownPluginNames])
 
 	return (
 		<Stack gap="sm">
@@ -138,10 +133,7 @@ export function PluginSourceCard({ LinkComponent }: PluginSourceCardProps) {
 							{dependencies.length}
 						</Badge>
 						<Box style={{ flex: 1, minWidth: 0 }}>
-							<DependencyList
-								LinkComponent={LinkComponent}
-								resolveLinkTarget={resolveDependencyLinkTarget}
-							/>
+							<DependencyList LinkComponent={LinkComponent} />
 						</Box>
 					</Group>
 				</Stack>

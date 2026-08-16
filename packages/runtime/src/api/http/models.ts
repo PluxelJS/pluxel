@@ -1,9 +1,5 @@
 import { t } from 'elysia'
 
-export const pluginNameParams = t.Object({
-	name: t.String({ minLength: 1 }),
-})
-
 export const extensionModuleParams = t.Object({
 	plugin: t.String({ minLength: 1 }),
 	file: t.String({ minLength: 1 }),
@@ -15,7 +11,7 @@ export const logStreamParams = t.Object({
 
 const logFilterQueryShape = {
 	name: t.Optional(t.String()),
-	pluginId: t.Optional(t.String()),
+	plugin: t.Optional(t.String()),
 	context: t.Optional(t.String()),
 	displayName: t.Optional(t.String()),
 	category: t.Optional(t.String()),

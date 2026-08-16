@@ -103,6 +103,40 @@ describe('DraftGraph', () => {
 		if ('err' in built) expectBuildError(built.err, 'CircularDependency')
 	})
 
+	it('reports cycles formed by required and optional ordering edges', () => {
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: A, deps: [B], use: A }))
+		draft.put(classProvider({ key: B, optionalDeps: [A], use: B }))
+
+		const built = draft.build()
+		expect(built.ok).toBe(false)
+		if ('err' in built) expectBuildError(built.err, 'CircularDependency')
+	})
+
+	it('accepts a missing optional token and links its consumer when a provider appears', () => {
+		const OPTIONAL = Symbol('OPTIONAL')
+		class OptionalProvider {}
+		class OptionalConsumer {}
+		const draft = new DraftGraph()
+		draft.put(
+			classProvider({ key: OptionalConsumer, optionalDeps: [OPTIONAL], use: OptionalConsumer }),
+		)
+
+		const absent = draft.build()
+		expect(absent.ok).toBe(true)
+		if (!absent.ok) return
+		expect(absent.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([])
+		absent.val.commit()
+
+		draft.put(classProvider({ key: OptionalProvider, tokens: [OPTIONAL], use: OptionalProvider }))
+		const present = draft.build()
+		expect(present.ok).toBe(true)
+		if (!present.ok) return
+		expect(present.val.graph.optionalDepsOf(OptionalConsumer)).toEqual([OptionalProvider])
+		expect(present.val.graph.optionalDependentsOf(OptionalProvider)).toEqual([OptionalConsumer])
+		expect(present.val.delta.affected).toContain(OptionalConsumer)
+	})
+
 	it('reports token conflicts against implicit self tokens', () => {
 		const draft = new DraftGraph()
 		draft.put(classProvider({ key: Logger, use: Logger }))

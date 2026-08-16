@@ -9,26 +9,26 @@ commands, HTTP, or another host-owned carrier.
 import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 
-export const pluginStatus = defineCommand({
-	name: 'plugin.status.get',
-	description: 'Read the current status of one plugin.',
+export const jobStatus = defineCommand({
+	name: 'job.status.get',
+	description: 'Read the current status of one job.',
 	behavior: { kind: 'query', world: 'closed' },
 	input: obj({
-		name: Type.String({ description: 'Canonical plugin name.', examples: ['CachePlugin'] }),
+		jobId: Type.String({ description: 'Stable job identifier.', examples: ['cache-refresh'] }),
 	}),
 	output: obj({
 		status: Type.Union([Type.Literal('running'), Type.Literal('stopped'), Type.Literal('failed')]),
 	}),
 	examples: [
 		{
-			title: 'Running plugin',
-			input: { name: 'CachePlugin' },
+			title: 'Running job',
+			input: { jobId: 'cache-refresh' },
 			output: { status: 'running' },
 		},
 	],
-	async execute({ name }, context) {
+	async execute({ jobId }, context) {
 		context.signal?.throwIfAborted()
-		return { status: await readPluginStatus(name) }
+		return { status: await readJobStatus(jobId) }
 	},
 })
 ```
@@ -140,15 +140,15 @@ Use JSON Schema annotations for one field's meaning and representative values. U
 
 ```ts
 input: obj({
-	name: Type.String({
-		description: 'Canonical plugin name.',
-		examples: ['CachePlugin'],
+	jobId: Type.String({
+		description: 'Stable job identifier.',
+		examples: ['cache-refresh'],
 	}),
 }),
 examples: [
 	{
-		title: 'Running plugin',
-		input: { name: 'CachePlugin' },
+		title: 'Running job',
+		input: { jobId: 'cache-refresh' },
 		output: { status: 'running' },
 	},
 ]
@@ -157,7 +157,7 @@ examples: [
 Examples are schema-checked when the command is defined, their inputs receive declared defaults,
 and the normalized JSON is frozen in `CommandDescriptor.examples`. Example outputs are checked as
 written; output defaults never invent handler results. An argv example such as
-`plugin status CachePlugin` belongs beside the argv binding or in carrier documentation because
+`job status cache-refresh` belongs beside the argv binding or in carrier documentation because
 routes, quoting, and aliases are not command semantics.
 
 MCP currently has no standard structured tool-example field. The core therefore never appends
@@ -173,12 +173,12 @@ pnpm add @pluxel/commands
 ## Execute safely
 
 ```ts
-const result = await pluginStatus.execute({ name: 'CachePlugin' }, context)
+const result = await jobStatus.execute({ jobId: 'cache-refresh' }, context)
 if (result.ok) console.log(result.value.status)
 else console.error(result.error.code, result.error.publicMessage)
 
 // For a carrier that already maps CommandError exceptions:
-const output = await pluginStatus.executeOrThrow({ name: 'CachePlugin' }, context)
+const output = await jobStatus.executeOrThrow({ jobId: 'cache-refresh' }, context)
 ```
 
 Both methods validate and normalize input, run custom validation, execute the typed handler, and
@@ -255,11 +255,11 @@ maps without loss to common Agent/MCP annotations.
 import { createCommandRegistry } from '@pluxel/commands'
 
 const commands = createCommandRegistry()
-const registration = commands.register(pluginStatus)
+const registration = commands.register(jobStatus)
 
-commands.get('plugin.status.get')
+commands.get('job.status.get')
 commands.list() // frozen, revision-cached CommandDescriptor[]
-await commands.execute('plugin.status.get', { name: 'CachePlugin' }, context)
+await commands.execute('job.status.get', { jobId: 'cache-refresh' }, context)
 
 registration.dispose() // idempotent
 ```
@@ -330,7 +330,7 @@ selection remain carrier/host concerns. Filter descriptors before sending them t
 import { createCommandArgv } from '@pluxel/commands/argv'
 
 const argv = createCommandArgv(commands)
-await argv.dispatchOrThrow(['config.patch', '--name', 'CachePlugin', '--patch', '{"enabled":true}'])
+await argv.dispatchOrThrow(['job.status.get', '--job-id', 'cache-refresh'])
 ```
 
 `createCommandArgv()` is the default catalog projection for a CLI carrier. It uses the exact command
@@ -353,15 +353,15 @@ the host or carrier installs it explicitly with `createArgvRouter().bind()`.
 import { createArgvRouter } from '@pluxel/commands/argv'
 
 const argv = createArgvRouter()
-argv.bind(pluginStatus, {
-	routes: ['plugin status', 'status'],
-	positionals: ['name'],
+argv.bind(jobStatus, {
+	routes: ['job status', 'status'],
+	positionals: ['jobId'],
 })
 
-const resolution = argv.resolve('plugin status CachePlugin')
-// { command, route: 'plugin status', candidate: { name: 'CachePlugin' }, rawArgs: 'CachePlugin' }
+const resolution = argv.resolve('job status cache-refresh')
+// { command, route: 'job status', candidate: { jobId: 'cache-refresh' }, rawArgs: 'cache-refresh' }
 
-await argv.dispatchOrThrow('plugin status CachePlugin', context)
+await argv.dispatchOrThrow('job status cache-refresh', context)
 
 // A real CLI already has token boundaries. Pass them through without joining them back into text.
 await argv.dispatchOrThrow(process.argv.slice(2), context)
@@ -432,14 +432,14 @@ JSON decoding:
 
 ```ts
 argv.bind(patchConfig, {
-	routes: ['plugin config patch'],
-	positionals: ['name'],
+	routes: ['settings patch'],
+	positionals: ['scope'],
 	options: {
 		patch: { format: 'json' },
 	},
 })
 
-await argv.dispatchOrThrow(`plugin config patch CachePlugin --patch '{"enabled":true}'`, context)
+await argv.dispatchOrThrow(`settings patch cache --patch '{"enabled":true}'`, context)
 ```
 
 Unsupported automatic mappings fail at bind time instead of being guessed.

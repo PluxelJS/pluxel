@@ -44,11 +44,12 @@ export function capitalize(s: string) {
 	return text ? text[0]!.toUpperCase() + text.slice(1) : ''
 }
 
-export function parsePackageName(input: string, pluginPrefixes: string[]) {
+const PLUGIN_PACKAGE_PREFIX = 'pluxel-plugin'
+
+export function parsePackageName(input: string) {
 	const identity = parsePackageIdentity(input)
-	const prefixes = pluginPrefixes
-	const packageSegment = applyPluginPrefix(identity.name, prefixes)
-	const name = stripPluginPrefix(packageSegment, prefixes)
+	const packageSegment = applyPluginPackagePrefix(identity.name)
+	const name = stripPluginPackagePrefix(packageSegment)
 	return {
 		scope: identity.scope,
 		name,
@@ -69,26 +70,17 @@ export function parsePackageIdentity(input: string) {
 	return { scope, name, packageName: `${scope}/${name}` }
 }
 
-function applyPluginPrefix(name: string, prefixes: string[]) {
-	if (prefixes.length === 0) return name
-	for (const prefix of prefixes) {
-		if (hasPluginPrefix(name, prefix)) return name
-	}
-	const fallback = prefixes[0]!
-	const separator = fallback.endsWith('-') || name.startsWith('-') ? '' : '-'
-	return `${fallback}${separator}${name}`
+function applyPluginPackagePrefix(name: string) {
+	if (hasPluginPackagePrefix(name)) return name
+	return `${PLUGIN_PACKAGE_PREFIX}-${name}`
 }
 
-function stripPluginPrefix(name: string, prefixes: string[]) {
-	for (const prefix of prefixes) {
-		if (!hasPluginPrefix(name, prefix)) continue
-		const stripped = name.slice(prefix.length).replace(/^-+/, '')
-		return stripped || name
-	}
-	return name
+function stripPluginPackagePrefix(name: string) {
+	if (!hasPluginPackagePrefix(name)) return name
+	const stripped = name.slice(PLUGIN_PACKAGE_PREFIX.length).replace(/^-+/, '')
+	return stripped || name
 }
 
-function hasPluginPrefix(name: string, prefix: string) {
-	if (!prefix) return false
-	return prefix.endsWith('-') ? name.startsWith(prefix) : name.startsWith(`${prefix}-`)
+function hasPluginPackagePrefix(name: string) {
+	return name.startsWith(`${PLUGIN_PACKAGE_PREFIX}-`)
 }

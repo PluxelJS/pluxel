@@ -13,9 +13,9 @@ import { buildLoaderHmrViteConfig, resolveFsAllowList } from '../../src/hmr/engi
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 
 type CoreApi = {
-	getConfigSource: (ctor: unknown) => Record<string, unknown> | null
-	getRequiredPluginDependencies: (ctor: unknown) => unknown[]
-	getUsedFeatures: (ctor: unknown) => Array<{ name: string }>
+	getPluginInfo: (ctor: unknown) => {
+		config?: { fieldName: string; source?: string }
+	}
 }
 
 async function withPluginRunner<T>(
@@ -89,7 +89,7 @@ async function withPluginRunner<T>(
 }
 
 describe('configSourcePlugin integration', () => {
-	it('extracts config and feature metadata for fixture entries', async () => {
+	it('extracts one object config definition for fixture entries', async () => {
 		const root = workspaceRoot
 		await withPluginRunner(async (execute) => {
 			{
@@ -100,10 +100,10 @@ describe('configSourcePlugin integration', () => {
 				expect(capture.lastModule).toBeTruthy()
 				const ctor = (capture.lastModule as { PluginB?: unknown } | null)?.PluginB
 				expect(typeof ctor).toBe('function')
-				const map = core.getConfigSource(ctor)
-				expect(map).toBeTruthy()
-				expect(Object.keys(map ?? {})).toContain('a')
-				expect(Object.keys(map ?? {})).toContain('ba')
+				const config = core.getPluginInfo(ctor).config
+				expect(config?.fieldName).toBe('config')
+				expect(config?.source).toContain('a:')
+				expect(config?.source).toContain('ba:')
 			}
 
 			{
@@ -114,23 +114,9 @@ describe('configSourcePlugin integration', () => {
 				expect(capture.lastModule).toBeTruthy()
 				const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
 				expect(typeof ctor).toBe('function')
-				const map = core.getConfigSource(ctor)
-				expect(map).toBeTruthy()
-				expect(Object.keys(map ?? {})).toContain('foo')
-			}
-
-			{
-				const pluginEntry = join(root, fixturesPluginsRelFromWorkspace, 'PluginFeatureUse.ts')
-				const { capture, errorLogs, core } = await execute(pluginEntry)
-
-				expect(errorLogs).toEqual([])
-				expect(capture.lastModule).toBeTruthy()
-				const ctor = (capture.lastModule as { PluginFeatureUse?: unknown } | null)?.PluginFeatureUse
-				expect(typeof ctor).toBe('function')
-				const kv = (capture.lastModule as { KvPlugin?: unknown } | null)?.KvPlugin
-				expect(typeof kv).toBe('function')
-				expect(core.getRequiredPluginDependencies(ctor)).toContain(kv)
-				expect(core.getUsedFeatures(ctor).map((x) => x.name)).toContain('CacheFeature')
+				const config = core.getPluginInfo(ctor).config
+				expect(config?.fieldName).toBe('foo')
+				expect(config?.source).toContain('enabled:')
 			}
 		})
 	}, 20_000)
@@ -154,9 +140,9 @@ describe('configSourcePlugin integration', () => {
 					expect(capture.lastModule).toBeTruthy()
 					const ctor = (capture.lastModule as { PluginConfigUse?: unknown } | null)?.PluginConfigUse
 					expect(typeof ctor).toBe('function')
-					const map = core.getConfigSource(ctor)
-					expect(map).toBeTruthy()
-					expect(Object.keys(map ?? {})).toContain('foo')
+					const config = core.getPluginInfo(ctor).config
+					expect(config?.fieldName).toBe('foo')
+					expect(config?.source).toContain('enabled:')
 				},
 				{
 					rootsRelFromWorkspace: rootsRel,

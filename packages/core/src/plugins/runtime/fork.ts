@@ -9,12 +9,11 @@
 // Forking is **strict opt‑in**: only ctors extending ForkablePlugin can be forked.
 
 import { ForkablePlugin } from '../composition/BasePlugin'
-import { clonePluginDefinition, getPluginInfo } from '../decorators/PluginDecorator'
+import { clonePluginDefinition } from '../decorators/PluginDecorator'
 import type { ForkablePluginConstructor, PluginConstructor, PluginIdentifier } from '../types'
-import { formatForkPluginId } from './pluginId'
+import { markFork } from './fork-identity'
 
-const FORK_ID = Symbol.for('pluxel:plugin:forkId')
-const FORK_OF = Symbol.for('pluxel:plugin:forkOf')
+export { getForkId, getForkOf } from './fork-identity'
 
 type ForkTable = WeakMap<PluginIdentifier, Map<string, PluginIdentifier>>
 const forks: ForkTable = new WeakMap()
@@ -48,12 +47,9 @@ export function forkPlugin<T extends ForkablePluginConstructor>(
 	const Base = ctor as unknown as new (...args: any[]) => ForkablePlugin
 	const ForkCtor = class extends Base {} as unknown as PluginConstructor
 
-	const info = getPluginInfo(ctor)
-	const id = formatForkPluginId(info.id, forkId)
-	clonePluginDefinition(ctor, ForkCtor, { id, displayName: id, packageName: info.packageName })
+	clonePluginDefinition(ctor, ForkCtor)
 
-	Object.defineProperty(ForkCtor, FORK_ID, { value: forkId, enumerable: false })
-	Object.defineProperty(ForkCtor, FORK_OF, { value: ctor, enumerable: false })
+	markFork(ForkCtor, ctor, forkId)
 
 	map.set(forkId, ForkCtor)
 	return ForkCtor
@@ -69,12 +65,4 @@ export function getForkedCtor<T extends PluginIdentifier>(
 export function listForks<T extends PluginIdentifier>(ctor: T): PluginConstructor[] {
 	const map = forks.get(ctor)
 	return map ? ([...map.values()] as PluginConstructor[]) : []
-}
-
-export function getForkId(ctor: PluginIdentifier): string | undefined {
-	return (ctor as unknown as { [FORK_ID]?: string })[FORK_ID]
-}
-
-export function getForkOf(ctor: PluginIdentifier): PluginIdentifier | undefined {
-	return (ctor as unknown as { [FORK_OF]?: PluginIdentifier })[FORK_OF]
 }

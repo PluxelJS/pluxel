@@ -1,71 +1,58 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Config, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-const PassthroughSchema: StandardSchemaV1 = {
+const ObjectSchema: StandardSchemaV1<unknown, { answer?: number }> = {
 	'~standard': {
 		version: 1,
 		vendor: 'pluxel:test',
-		validate: (value: unknown) => ({ value }),
+		validate: (value: unknown) => ({
+			value:
+				value && typeof value === 'object' && !Array.isArray(value)
+					? (value as { answer?: number })
+					: {},
+		}),
 	},
 }
 
-describe('ConfigService', () => {
-	it('returns the per-plugin config snapshot in plugin context', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'P' })
-			class P extends BasePlugin {
-				@Config(PassthroughSchema)
-				answer!: number
-			}
+@Plugin({ displayName: 'P' })
+class P extends BasePlugin {
+	readonly config = this.configs.use(ObjectSchema)
+}
 
+describe('ConfigService', () => {
+	it('injects one validated object config per Plugin node', async () => {
+		await withCoreHost(async (host) => {
 			host.cfg(P).set({ answer: 42 })
 			await host.start(P)
-
-			const p = host.require(P)
-			expect(p.answer).toBe(42)
-			expect(p.ctx.configService.getValidatedConfig<{ answer?: number }>().answer).toBe(42)
+			const plugin = host.require(P)
+			expect(plugin.config.answer).toBe(42)
+			expect(plugin.ctx.configService.getValidatedConfig<{ answer?: number }>().answer).toBe(42)
 		})
 	})
 
-	it('reuses the cached validated snapshot across schemaMap recreation', async () => {
+	it('does not bump revision for no-op patches or unsets', async () => {
 		await withCoreHost(async (host) => {
-			host.ctx.configService.patchConfig('P', { answer: 1 })
-
-			const first = await host.ctx.configService.ensureValidated('P', { answer: PassthroughSchema })
-			const second = await host.ctx.configService.ensureValidated('P', {
-				answer: PassthroughSchema,
-			})
-
-			expect(second).toBe(first)
+			const handle = host.cfg(P)
+			handle.set({ answer: 1 })
+			const first = handle.rev()
+			handle.set({ answer: 1 })
+			expect(handle.rev()).toBe(first)
+			handle.unset('_missing')
+			expect(handle.rev()).toBe(first)
+			handle.unset('answer')
+			expect(handle.rev()).toBeGreaterThan(first)
 		})
 	})
 
-	it('does not bump revision for no-op patches/unsets', async () => {
+	it('stores structured enable preferences without interpreting them', async () => {
 		await withCoreHost(async (host) => {
-			host.ctx.configService.patchConfig('P', { answer: 1 })
-			const rev1 = host.ctx.configService.getConfigRevision('P')
-
-			host.ctx.configService.patchConfig('P', { answer: 1 })
-			expect(host.ctx.configService.getConfigRevision('P')).toBe(rev1)
-
-			host.ctx.configService.unsetConfigKeys('P', ['_missing'])
-			expect(host.ctx.configService.getConfigRevision('P')).toBe(rev1)
-
-			host.ctx.configService.unsetConfigKeys('P', ['answer'])
-			expect(host.ctx.configService.getConfigRevision('P')).toBeGreaterThan(rev1)
-		})
-	})
-
-	it('stores enable/disable preferences without interpreting them', async () => {
-		await withCoreHost(async (host) => {
-			expect(host.cfg('P').enabled()).toBe(false)
-
-			host.cfg('P').enable()
-			expect(host.cfg('P').enabled()).toBe(true)
-
-			host.cfg('P').disable()
-			expect(host.cfg('P').enabled()).toBe(false)
+			const handle = host.cfg(P)
+			expect(handle.enabled()).toBe(false)
+			handle.enable()
+			expect(handle.enabled()).toBe(true)
+			handle.disable()
+			expect(handle.enabled()).toBe(false)
 		})
 	})
 })

@@ -1,4 +1,4 @@
 import { BasePlugin, Plugin } from '@pluxel/core'
 
-@Plugin({ name: 'PluginWithUI' })
+@Plugin({ displayName: 'Plugin with UI' })
 export class PluginWithUI extends BasePlugin {}

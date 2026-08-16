@@ -34,24 +34,17 @@ export function normalizeWorkbenchPath(path: string): string {
 }
 
 export function buildWorkbenchHref(
-	pluginName: string,
+	target: PluginNodeAddressSnapshot,
 	path: string,
 	frame: WorkbenchFrame = 'shell',
 ): string {
 	const normalizedPath = normalizeWorkbenchPath(path)
-	const encodedName = (() => {
-		try {
-			return encodeURIComponent(pluginName)
-		} catch {
-			return pluginName
-		}
-	})()
 	const prefix = getWorkbenchRoutePrefix(frame)
-	return `${prefix}/${encodedName}${normalizedPath}`
+	return `${prefix}/${encodeWorkbenchNodeSegment(target)}${normalizedPath}`
 }
 
 export type ParsedWorkbenchHref = Readonly<{
-	pluginName: string
+	target: PluginNodeAddressSnapshot
 	path: string
 	frame: WorkbenchFrame
 }>
@@ -72,16 +65,14 @@ function parseWorkbenchHrefWithPrefix(
 	if (!pathname.startsWith(marker)) return undefined
 	const tail = pathname.slice(marker.length)
 	const separator = tail.indexOf('/')
-	const encodedPluginName = separator === -1 ? tail : tail.slice(0, separator)
-	if (!encodedPluginName) return undefined
+	const encodedTarget = separator === -1 ? tail : tail.slice(0, separator)
+	if (!encodedTarget) return undefined
 	const path = separator === -1 ? '' : normalizeWorkbenchPath(tail.slice(separator))
-	return Object.freeze({ pluginName: decodeSegment(encodedPluginName), path, frame })
-}
-
-function decodeSegment(value: string): string {
 	try {
-		return decodeURIComponent(value)
+		return Object.freeze({ target: decodeWorkbenchNodeSegment(encodedTarget), path, frame })
 	} catch {
-		return value
+		return undefined
 	}
 }
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { decodeWorkbenchNodeSegment, encodeWorkbenchNodeSegment } from './node-address'

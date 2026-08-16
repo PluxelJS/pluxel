@@ -25,7 +25,7 @@ cache-aside 的便利写法，不负责 repository orchestration。
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { Cache, type CacheNamespace } from '@pluxel/cache'
 
-@Plugin({ name: 'ProfilesPlugin' })
+@Plugin({ displayName: 'Profiles' })
 class ProfilesPlugin extends BasePlugin {
 	private profiles!: CacheNamespace
 

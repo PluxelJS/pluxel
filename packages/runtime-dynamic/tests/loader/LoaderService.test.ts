@@ -1,44 +1,58 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
-import type { ForkablePluginConstructor } from '@pluxel/core'
+import {
+	clonePluginDefinition,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+	type PluginConstructor,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import { createHmrTestContext } from '../support/hmr-context'
+import { lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins, isEnabled } from '../support/runtime-state'
-
-function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
 
 const fixedOwner = 'pluxel:fixed:/workspace/pluxel.dynamic.ts'
 
-describe('LoaderService', () => {
-	it('registers disabled fixed plugins in the catalog without changing enablement', async () => {
-		const { core, ctx } = createHmrTestContext()
-		class Fixed extends BasePlugin {}
-		Plugin({ name: 'Fixed' })(Fixed)
+function forkAddress(plugin: PluginConstructor, forkId: string): PluginNodeAddressSnapshot {
+	return {
+		definition: pluginNodeAddressOf(plugin).definition,
+		instance: 'fork',
+		forkId,
+	}
+}
 
+describe('LoaderService', () => {
+	it('registers disabled fixed plugins by address without changing enablement', async () => {
+		const { core, ctx } = createHmrTestContext()
+
+		@Plugin({ displayName: 'Fixed' })
+		class Fixed extends BasePlugin {}
+		lowerTestPlugin(Fixed)
+
+		const address = pluginNodeAddressOf(Fixed)
 		await expect(
 			ctx.loader.registerFixedPlugins([Fixed], { moduleId: fixedOwner }),
-		).resolves.toEqual(['Fixed'])
+		).resolves.toEqual([address])
 
-		expect(isEnabled(ctx, 'Fixed')).toBe(false)
-		expect(ctx.loader.api.registry.getCtor('Fixed')).toBe(Fixed)
-		expect(ctx.loader.api.registry.findModuleId('Fixed')).toBe(fixedOwner)
+		expect(isEnabled(ctx, address)).toBe(false)
+		expect(ctx.loader.api.registry.getCtor(address)).toBe(Fixed)
+		expect(ctx.loader.api.registry.findModuleId(address)).toBe(fixedOwner)
 		expect(core.registry.isRunning(Fixed)).toBe(false)
 	})
 
-	it('starts enabled fixed providers before consumers through the normal graph commit', async () => {
+	it('starts enabled fixed dependencies from lowered constructor facts', async () => {
 		const { core, ctx } = createHmrTestContext()
 		const started: string[] = []
 
+		@Plugin({ displayName: 'Provider' })
 		class Provider extends BasePlugin {
 			override init() {
 				started.push('provider')
 			}
 		}
-		Plugin({ name: 'Provider' })(Provider)
+		lowerTestPlugin(Provider)
 
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(readonly provider: Provider) {
 				super()
@@ -47,224 +61,136 @@ describe('LoaderService', () => {
 				started.push('consumer')
 			}
 		}
-		defineParamTypes(Consumer, [Provider])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Provider)
+		lowerTestPlugin(Consumer, { requires: [Provider] })
 
-		enablePlugins(ctx, 'Provider', 'Consumer')
+		enablePlugins(ctx, Provider, Consumer)
 		await ctx.loader.registerFixedPlugins([Consumer, Provider], { moduleId: fixedOwner })
 
 		expect(started).toEqual(['provider', 'consumer'])
 		expect(core.registry.getInstance(Consumer)?.provider).toBeInstanceOf(Provider)
 	})
 
-	it('rejects distinct fixed constructors with the same plugin id', async () => {
+	it('allows equal display names at distinct definition addresses', async () => {
 		const { ctx } = createHmrTestContext()
-		class First extends BasePlugin {}
-		class Second extends BasePlugin {}
-		Plugin({ name: 'Duplicate' })(First)
-		Plugin({ name: 'Duplicate' })(Second)
 
-		await expect(
-			ctx.loader.registerFixedPlugins([First, Second], { moduleId: fixedOwner }),
-		).rejects.toThrow(/fixed catalog contains duplicate plugin id "Duplicate"/i)
-		expect(ctx.loader.api.registry.getCtor('Duplicate')).toBeUndefined()
+		@Plugin({ displayName: 'Shared label' })
+		class FirstAddress extends BasePlugin {}
+		lowerTestPlugin(FirstAddress)
+
+		@Plugin({ displayName: 'Shared label' })
+		class SecondAddress extends BasePlugin {}
+		lowerTestPlugin(SecondAddress)
+
+		await ctx.loader.replaceModule('first.ts', { FirstAddress })
+		await ctx.loader.replaceModule('second.ts', { SecondAddress })
+
+		const entries = ctx.loader.api.registry.listRegistered()
+		expect(entries).toHaveLength(2)
+		expect(entries.map((entry) => entry.displayName)).toEqual(['Shared label', 'Shared label'])
+		expect(pluginNodeAddressEqual(entries[0]!.address, entries[1]!.address)).toBe(false)
 	})
 
-	it('rejects the same constructor when a mutable entry re-exports a fixed plugin', async () => {
+	it('rejects a second module claiming an existing definition slot', async () => {
 		const { ctx } = createHmrTestContext()
-		class Fixed extends BasePlugin {}
-		Plugin({ name: 'Fixed' })(Fixed)
 
-		await ctx.loader.registerFixedPlugins([Fixed], { moduleId: fixedOwner })
+		@Plugin({ displayName: 'Original' })
+		class Original extends BasePlugin {}
+		lowerTestPlugin(Original)
 
-		await expect(
-			ctx.loader.replaceModule('/workspace/entries/reexport.ts', { Fixed }),
-		).rejects.toThrow(/插件名冲突.*Fixed/)
-		expect(ctx.loader.api.registry.getCtor('Fixed')).toBe(Fixed)
-		expect(ctx.loader.api.registry.findModuleId('Fixed')).toBe(fixedOwner)
+		@Plugin({ displayName: 'Replacement generation' })
+		class Replacement extends BasePlugin {}
+		lowerTestPlugin(Replacement)
+
+		clonePluginDefinition(Original, Replacement)
+		const address = pluginNodeAddressOf(Original)
+		await ctx.loader.replaceModule('first.ts', { Original })
+
+		await expect(ctx.loader.replaceModule('second.ts', { Original: Replacement })).rejects.toThrow(
+			/already owned by first\.ts/i,
+		)
+		expect(ctx.loader.api.registry.getCtor(address)).toBe(Original)
+		expect(ctx.loader.api.registry.findModuleId(address)).toBe('first.ts')
 	})
 
-	it('fails fixed catalog verification without auto-disabling persisted state', async () => {
+	it('rolls back the complete source transaction on root export mismatch', async () => {
 		const { ctx } = createHmrTestContext()
-		abstract class Missing extends BasePlugin {}
-		class Consumer extends BasePlugin {
-			constructor(_missing: Missing) {
-				super()
-			}
-		}
-		defineParamTypes(Consumer, [Missing])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Missing)
-		enablePlugins(ctx, 'Consumer')
 
-		await expect(
-			ctx.loader.registerFixedPlugins([Consumer], { moduleId: fixedOwner }),
-		).rejects.toThrow(/fixed catalog commit failed/i)
-		expect(isEnabled(ctx, 'Consumer')).toBe(true)
-		expect(ctx.loader.api.registry.getCtor('Consumer')).toBeUndefined()
+		@Plugin({ displayName: 'Root export' })
+		class RootExport extends BasePlugin {}
+		lowerTestPlugin(RootExport)
+
+		const address = pluginNodeAddressOf(RootExport)
+		await expect(ctx.loader.replaceModule('bad-export.ts', { Alias: RootExport })).rejects.toThrow(
+			/must be loaded from root export "RootExport"/i,
+		)
+		expect(ctx.loader.api.registry.getCtor(address)).toBeUndefined()
+		expect(ctx.loader.api.anchors.has('bad-export.ts')).toBe(false)
 	})
 
-	it('derives enabled forks exclusively from RuntimeState', async () => {
+	it('rolls back a source with a marked constructor missing lowering facts', async () => {
+		const { ctx } = createHmrTestContext()
+		const Unlowered = class extends BasePlugin {}
+		Plugin()(Unlowered)
+
+		await expect(ctx.loader.replaceModule('unlowered.ts', { Unlowered })).rejects.toThrow(
+			/Plugin definition was not lowered/i,
+		)
+		expect(ctx.loader.api.registry.listRegistered()).toEqual([])
+		expect(ctx.loader.api.anchors.has('unlowered.ts')).toBe(false)
+	})
+
+	it('derives enabled fork nodes exclusively from RuntimeState v3', async () => {
 		const { core, ctx } = createHmrTestContext()
+
+		@Plugin({ displayName: 'Forkable' })
 		class FixedForkable extends ForkablePlugin {}
-		Plugin({ name: 'FixedForkable' })(FixedForkable)
+		lowerTestPlugin(FixedForkable)
+
+		const base = pluginNodeAddressOf(FixedForkable)
+		const worker = forkAddress(FixedForkable, 'worker')
 		ctx.runtimeState.update((draft) => {
-			draft.forks = { FixedForkable: ['worker'] }
+			draft.forks = [{ definition: base.definition, forkIds: ['worker'] }]
 		})
-		enablePlugins(ctx, 'FixedForkable#worker')
+		enablePlugins(ctx, worker)
 
 		await ctx.loader.registerFixedPlugins([FixedForkable], { moduleId: fixedOwner })
-		const Fork = core.registry.fork(FixedForkable as unknown as ForkablePluginConstructor, 'worker')
 		expect(core.registry.isRunning(FixedForkable)).toBe(false)
-		expect(core.registry.isRunning(Fork)).toBe(true)
-		expect(ctx.loader.api.registry.findModuleId('FixedForkable#worker')).toBe(fixedOwner)
+		expect(ctx.loader.api.runtime.isRunning(worker)).toBe(true)
+		expect(ctx.loader.api.registry.findModuleId(worker)).toBe(fixedOwner)
 	})
 
-	it('dependency inspector tolerates abstract/base tokens', async () => {
+	it('publishes address-first module ownership and no export-name identity map', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
 
-		abstract class Abs extends BasePlugin {}
+		@Plugin({ displayName: 'Catalog entry' })
+		class CatalogEntry extends BasePlugin {}
+		lowerTestPlugin(CatalogEntry)
 
-		class Impl extends Abs {}
-		Plugin(Abs, { name: 'Impl' })(Impl)
+		await ctx.loader.replaceModule('catalog.ts', { CatalogEntry })
+		const address = pluginNodeAddressOf(CatalogEntry)
 
-		class Consumer extends BasePlugin {
-			constructor(_dep: Abs) {
-				super()
-			}
-		}
-		defineParamTypes(Consumer, [Abs])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Abs)
-
-		core.registry.register(Impl)
-		core.registry.register(Consumer)
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-
-		const deps = loader.api.deps.list(Consumer)
-		expect(deps).toEqual([{ name: 'Abs', isRunning: true }])
+		expect(ctx.loader.api.registry.findModuleId(address)).toBe('catalog.ts')
+		expect(ctx.loader.api.registry.getExportKey(address)).toBe('CatalogEntry')
+		expect(core.registry.getRuntimeModuleId(core.registry.internNodeAddress(address))).toBe(
+			'catalog.ts',
+		)
+		expect(core.registry.listRuntimeModuleItems('catalog.ts')).toEqual([{ ctor: CatalogEntry }])
 	})
 
-	it('batch rollback keeps loader state consistent when core commit fails', async () => {
+	it('does not publish rolled-back loader declarations to Core ownership', async () => {
 		const { core, ctx } = createHmrTestContext()
-		// Enable baseline provider; the later consumer will be enabled too.
-		enablePlugins(ctx, 'Impl1', 'Consumer')
-		const loader = ctx.loader
 
-		abstract class Abs extends BasePlugin {}
-		abstract class MissingBase extends BasePlugin {}
-
-		class Impl1 extends Abs {}
-		Plugin(Abs, { name: 'Impl1' })(Impl1)
-
-		class Consumer extends BasePlugin {
-			constructor(_dep: MissingBase) {
-				super()
-			}
-		}
-		defineParamTypes(Consumer, [MissingBase])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, MissingBase)
-
-		// Baseline: load module A providing Impl1 and commit successfully.
-		{
-			const batch = loader.beginBatch()
-			await batch.replaceModule('A.ts', { Impl1 })
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(true)
-			batch.commit()
-		}
-
-		expect(core.registry.isRunning(Abs)).toBe(true)
-		expect(core.registry.getInstance(Abs)).toBeInstanceOf(Impl1)
-
-		// Hot update: load module B providing an enabled plugin with missing deps -> commit should fail.
-		{
-			const batch = loader.beginBatch()
-			await batch.replaceModule('B.ts', { Consumer })
-			const res = await core.registry.commit()
-			expect(res.ok).toBe(false)
-			batch.rollback()
-			core.registry.resetDraft()
-		}
-
-		// After rollback, loader should not claim Consumer is loaded.
-		expect(loader.api.registry.getCtor('Consumer')).toBeUndefined()
-		expect(loader.api.anchors.has('B.ts')).toBe(false)
-
-		// Core should still be on the previous container: base resolves to Impl1 and remains running.
-		expect(core.registry.isRunning(Abs)).toBe(true)
-		expect(core.registry.getInstance(Abs)).toBeInstanceOf(Impl1)
-	})
-
-	it('registry view exposes module ids and loaded names', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		class Alpha extends BasePlugin {}
-		Plugin({ name: 'Alpha' })(Alpha)
-
-		class Beta extends BasePlugin {}
-		Plugin({ name: 'Beta' })(Beta)
-
-		const batch = loader.beginBatch()
-		await batch.replaceModule('B.ts', { Beta })
-		await batch.replaceModule('A.ts', { Alpha })
-		const res = await core.registry.commit()
-		expect(res.ok).toBe(true)
-		batch.commit()
-
-		expect(loader.api.registry.findModuleId('Alpha')).toBe('A.ts')
-		expect(loader.api.registry.findModuleIdByName('Beta')).toBe('B.ts')
-		expect(loader.api.registry.listLoadedNames()).toEqual(['Alpha', 'Beta'])
-		expect(core.registry.getRuntimeModuleId(Alpha)).toBe('A.ts')
-		expect(core.registry.getRuntimeModuleId('Beta')).toBe('B.ts')
-		expect(core.registry.listRuntimeModuleItems('A.ts')).toEqual([
-			{ ctor: Alpha, exportKey: 'Alpha' },
-		])
-	})
-
-	it('does not publish rolled back loader declarations to core ownership', async () => {
-		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		class Committed extends BasePlugin {}
-		Plugin({ name: 'Committed' })(Committed)
-
+		@Plugin({ displayName: 'Rolled back' })
 		class RolledBack extends BasePlugin {}
-		Plugin({ name: 'RolledBack' })(RolledBack)
+		lowerTestPlugin(RolledBack)
 
-		const committed = loader.beginBatch()
-		await committed.replaceModule('Committed.ts', { Committed })
-		const committedRes = await core.registry.commit()
-		expect(committedRes.ok).toBe(true)
-		committed.commit()
-
-		const rolledBack = loader.beginBatch()
-		await rolledBack.replaceModule('RolledBack.ts', { RolledBack })
-		rolledBack.rollback()
+		const batch = ctx.loader.beginBatch()
+		await batch.replaceModule('rolled-back.ts', { RolledBack })
+		batch.rollback()
 		core.registry.resetDraft()
 
-		expect(core.registry.getRuntimeModuleId(Committed)).toBe('Committed.ts')
-		expect(core.registry.getRuntimeModuleId(RolledBack)).toBeUndefined()
-		expect(core.registry.listRuntimeModuleItems('RolledBack.ts')).toEqual([])
-	})
-
-	it('anchors remove expects clean ids', async () => {
-		const { ctx } = createHmrTestContext()
-		const loader = ctx.loader
-
-		class Anchor extends BasePlugin {}
-		Plugin({ name: 'Anchor' })(Anchor)
-
-		const batch = loader.beginBatch()
-		await batch.replaceModule('/abs/Plugin.ts', { Anchor })
-
-		expect(loader.api.anchors.has('/abs/Plugin.ts')).toBe(true)
-		loader.api.anchors.remove('/abs/Plugin.ts')
-		expect(loader.api.anchors.has('/abs/Plugin.ts')).toBe(false)
+		expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(RolledBack))).toBeUndefined()
+		expect(core.registry.getRuntimeModuleId(pluginNodeAddressOf(RolledBack))).toBeUndefined()
+		expect(core.registry.listRuntimeModuleItems('rolled-back.ts')).toEqual([])
 	})
 })

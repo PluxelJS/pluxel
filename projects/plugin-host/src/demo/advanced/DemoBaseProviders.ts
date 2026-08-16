@@ -2,7 +2,7 @@
 // - 你需要“抽象能力 token + 多个 provider 实现”
 // - 你不想让 consumer 依赖某个具体插件类
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
 
 export abstract class DemoClock extends BasePlugin {
 	abstract now(): number
@@ -11,7 +11,7 @@ export abstract class DemoClock extends BasePlugin {
 	}
 }
 
-@Plugin(DemoClock, { name: 'DemoClock.System' })
+@Plugin(DemoClock, { displayName: 'DemoClock.System' })
 export class DemoClockSystem extends DemoClock {
 	override init(): void {
 		this.logReady()
@@ -22,11 +22,13 @@ export class DemoClockSystem extends DemoClock {
 	}
 
 	private logReady() {
-		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id })
+		this.ctx.logger.info('ready', {
+			address: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+		})
 	}
 }
 
-@Plugin(DemoClock, { name: 'DemoClock.Fixed' })
+@Plugin(DemoClock, { displayName: 'DemoClock.Fixed' })
 export class DemoClockFixed extends DemoClock {
 	private fixed = Date.now()
 
@@ -40,11 +42,14 @@ export class DemoClockFixed extends DemoClock {
 	}
 
 	private logReady() {
-		this.ctx.logger.info('ready', { id: this.ctx.pluginInfo.id, fixed: this.format(this.fixed) })
+		this.ctx.logger.info('ready', {
+			address: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+			fixed: this.format(this.fixed),
+		})
 	}
 }
 
-@Plugin({ name: 'DemoClockConsumer' })
+@Plugin({ displayName: 'DemoClockConsumer' })
 export class DemoClockConsumer extends BasePlugin {
 	constructor(private readonly clock: DemoClock) {
 		super()
@@ -52,8 +57,8 @@ export class DemoClockConsumer extends BasePlugin {
 
 	override init(): void {
 		this.ctx.logger.info('injected base provider', {
-			consumer: this.ctx.pluginInfo.id,
-			provider: this.clock.ctx.pluginInfo.id,
+			consumer: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
+			provider: formatPluginNodeAddress(this.clock.ctx.pluginInfo.nodeAddress),
 			now: this.clock.format(),
 		})
 	}

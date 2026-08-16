@@ -7,7 +7,6 @@ export {
 } from './services/RuntimeStateHelpers'
 
 export type {
-	PluginGroupState,
 	RuntimeStateDraft,
 	RuntimeStateFile,
 	RuntimeStateSnapshot,

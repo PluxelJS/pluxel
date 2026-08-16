@@ -1,4 +1,5 @@
 import { compareLogLevel, type LogLevel, type LogRecord, type Sink } from '@logtape/logtape'
+import { formatPluginNodeAddress } from '@pluxel/core'
 import { readPluginLogIdentity } from '@pluxel/core/logger'
 import { captureCaller, formatLogName, isReservedLogProperty } from './host'
 import type { RuntimeLogError, RuntimeLogLine } from './protocol'
@@ -185,13 +186,14 @@ function toRuntimeLogLineInput(
 			? (record.properties as Record<string, unknown>)
 			: (Object.create(null) as Record<string, unknown>)
 
-	const pluginId = readPluginLogIdentity(record.category)?.pluginId
+	const plugin = readPluginLogIdentity(record.category)?.node
+	const pluginLabel = plugin ? formatPluginNodeAddress(plugin) : undefined
 	const context = typeof rawProps.context === 'string' ? (rawProps.context as string) : undefined
 	const name =
 		typeof rawProps.name === 'string'
 			? (rawProps.name as string)
-			: pluginId && context
-				? formatLogName(context, pluginId)
+			: pluginLabel && context
+				? formatLogName(context, pluginLabel)
 				: context
 
 	const props = pickExtraProps(
@@ -230,7 +232,7 @@ function toRuntimeLogLineInput(
 		level: record.level,
 		category: [...record.category],
 		name,
-		pluginId,
+		plugin,
 		context,
 		msg,
 		message,

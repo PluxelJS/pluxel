@@ -113,7 +113,7 @@ artifact；这样测试才能覆盖作者实际发布的 schema 与 evolution po
 当 fixed catalog、schema 和部署都由同一作者维护时，把 schema、Drizzle client、repositories 与 migration 放进普通的
 `@app/database` package。最自然的入口是无参数 lazy `use()`：static application 中所有插件解析到同一个 ESM module，module-scoped
 Promise 就是共享实例；第一个调用负责打开连接并执行一次 migration，并发调用直接复用。不要在 module import 时创建 pool，
-也不要把 pool 绑定到第一个调用它的 plugin effects，否则该 plugin stop/HMR 会提前关闭全局数据库。
+也不要把 pool 绑定到第一个调用它的 Plugin effects，否则该 owner generation drain/HMR 会提前关闭全局数据库。
 
 ```ts
 // @app/database — application-private server module

@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { ObjectSchema } from 'valibot'
 import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 import { getPluginConfig, getPluginSchema, invokeRpc } from '../../../runtime'
 import { stringifyUnknown } from '../../../utils/unknown'
-import type { WorkbenchMarkdownPart as BuiltinMarkdownPart } from '@pluxel/runtime/workbench'
+import { workbenchNodeKey } from '../../../workbench/node-address'
 
 export type PluginConfigData = {
-	schemaMap: Record<string, any>
-	/** schema 默认值 */
-	defaults: Record<string, any>
-	/** 已保存的配置（来自 configService） */
-	savedConfig: Record<string, any>
-	/** optional cfg layout (host-rendered) */
-	layout?: BuiltinMarkdownPart[] | null
+	fieldName: string
+	schema?: ObjectSchema<any, any>
+	defaults: Record<string, unknown>
+	savedConfig: Record<string, unknown>
 }
 
 export type PluginConfigState = {
@@ -23,80 +22,52 @@ export type PluginConfigState = {
 	refetch: () => Promise<void>
 }
 
-type PluginSchemaData = Omit<PluginConfigData, 'savedConfig'>
 type PluginConfigSnapshot = Omit<PluginConfigState, 'refetch'>
 
 const EMPTY_CONFIG_SNAPSHOT: PluginConfigSnapshot = { loading: false }
 const PLUGIN_CONFIG_TTL = 30_000
 const configResources = new Map<string, PluginConfigResource>()
 
-function errorMessage(error: unknown): string {
-	return stringifyUnknown(error, 'Unknown error')
-}
-
-function evaluateSchemaSource(pluginName: string, key: string, expr: string): unknown {
+function evaluateSchemaSource(displayName: string, expr: string): ObjectSchema<any, any> {
 	try {
-		return new Function('v', 'f', `return ${expr}`)(v, f)
+		return new Function('v', 'f', `return ${expr}`)(v, f) as ObjectSchema<any, any>
 	} catch (error) {
 		throw new Error(
-			`配置 schema 加载失败：${pluginName}.${key} 无法还原（${errorMessage(error)}）。schemaSource 只能引用运行时注入的 v/f；请避免本地 helper 闭包。`,
+			`配置 schema 加载失败：${displayName} 无法还原（${stringifyUnknown(error, 'Unknown error')}）。schemaSource 只能引用运行时注入的 v/f。`,
 			{ cause: error },
 		)
 	}
 }
 
 async function loadPluginConfigData(
-	pluginName: string,
+	owner: PluginNodeAddressSnapshot,
+	displayName: string,
 	forceSchemaRefresh: boolean,
-	currentSchema?: PluginSchemaData,
+	current?: Omit<PluginConfigData, 'savedConfig'>,
 ): Promise<PluginConfigData> {
-	const cachedSchema = forceSchemaRefresh ? undefined : currentSchema
-
 	return invokeRpc(async (rpc) => {
-		const schemaPromise = cachedSchema ? null : getPluginSchema(rpc, pluginName)
-		const configPromise = getPluginConfig(rpc, pluginName)
-		const [schemaResult, configResult] = await Promise.all([schemaPromise, configPromise])
+		const [schemaResult, configResult] = await Promise.all([
+			forceSchemaRefresh || !current ? getPluginSchema(rpc, owner) : null,
+			getPluginConfig(rpc, owner),
+		])
 		if (configResult.ok === false) {
 			throw new Error(configResult.message ?? configResult.code ?? '配置加载失败')
 		}
-		const savedConfig = (configResult.config ?? {}) as Record<string, any>
-
-		if (cachedSchema) return { ...cachedSchema, savedConfig }
+		const savedConfig = configResult.config ?? {}
+		if (current) return { ...current, savedConfig }
 		if (!schemaResult) throw new Error('schema 加载失败')
 		if (schemaResult.ok === false) {
 			if (schemaResult.code === 'schema_not_found') {
-				const schema: PluginSchemaData = { schemaMap: {}, defaults: {}, layout: null }
-				return { ...schema, savedConfig }
+				return { fieldName: '', defaults: {}, savedConfig }
 			}
 			throw new Error(schemaResult.message ?? schemaResult.code)
 		}
-
-		const schemaMap: Record<string, any> = {}
-		const pending: Promise<void>[] = []
-		for (const [key, expr] of Object.entries(schemaResult.schemaSource)) {
-			if (key.startsWith('_')) continue
-			const schema = evaluateSchemaSource(pluginName, key, expr)
-			if (schema instanceof Promise) {
-				pending.push(
-					schema.then((resolved): undefined => {
-						schemaMap[key] = resolved
-						return undefined
-					}),
-				)
-			} else {
-				schemaMap[key] = schema
-			}
+		return {
+			fieldName: schemaResult.fieldName,
+			schema: evaluateSchemaSource(displayName, schemaResult.schemaSource),
+			defaults: schemaResult.defaults ?? {},
+			savedConfig,
 		}
-		if (pending.length > 0) await Promise.all(pending)
-
-		const defaults: Record<string, any> = {}
-		for (const key of Object.keys(schemaMap)) defaults[key] = (schemaResult.defaults ?? {})[key]
-		const schema: PluginSchemaData = {
-			schemaMap,
-			defaults,
-			layout: schemaResult.layout ?? null,
-		}
-		return { ...schema, savedConfig }
 	})
 }
 
@@ -107,7 +78,10 @@ class PluginConfigResource {
 	private requestVersion = 0
 	private loadedAt = 0
 
-	constructor(readonly pluginName: string) {}
+	constructor(
+		readonly owner: PluginNodeAddressSnapshot,
+		readonly displayName: string,
+	) {}
 
 	readonly subscribe = (listener: () => void): (() => void) => {
 		this.listeners.add(listener)
@@ -127,34 +101,31 @@ class PluginConfigResource {
 		}
 		const version = ++this.requestVersion
 		this.setSnapshot({ data: this.snapshot.data, loading: true })
-
-		const currentSchema = this.snapshot.data
+		const current = this.snapshot.data
 			? {
-					schemaMap: this.snapshot.data.schemaMap,
+					fieldName: this.snapshot.data.fieldName,
+					schema: this.snapshot.data.schema,
 					defaults: this.snapshot.data.defaults,
-					layout: this.snapshot.data.layout,
 				}
 			: undefined
-		const task = loadPluginConfigData(this.pluginName, forceSchemaRefresh, currentSchema)
+		const task = loadPluginConfigData(this.owner, this.displayName, forceSchemaRefresh, current)
 			.then((data): undefined => {
 				if (version !== this.requestVersion) return undefined
 				this.loadedAt = Date.now()
 				this.setSnapshot({ data, loading: false })
 				return undefined
 			})
-			.catch((error: unknown): undefined => {
-				if (version !== this.requestVersion) return undefined
+			.catch((error: unknown) => {
+				if (version !== this.requestVersion) return
 				this.setSnapshot({
 					data: this.snapshot.data,
 					loading: false,
 					error: error instanceof Error ? error : new Error('加载失败'),
 				})
-				return undefined
 			})
 			.finally(() => {
 				if (this.inflight === task) this.inflight = null
 			})
-
 		this.inflight = task
 		return task
 	}
@@ -163,10 +134,7 @@ class PluginConfigResource {
 		if (!this.snapshot.data) return
 		this.requestVersion += 1
 		this.loadedAt = Date.now()
-		this.setSnapshot({
-			data: { ...this.snapshot.data, savedConfig },
-			loading: false,
-		})
+		this.setSnapshot({ data: { ...this.snapshot.data, savedConfig }, loading: false })
 	}
 
 	invalidateSchema(): void {
@@ -178,55 +146,57 @@ class PluginConfigResource {
 	}
 
 	private setSnapshot(next: PluginConfigSnapshot): void {
-		if (
-			this.snapshot.data === next.data &&
-			this.snapshot.loading === next.loading &&
-			this.snapshot.error === next.error
-		) {
-			return
-		}
 		this.snapshot = next
 		for (const listener of this.listeners) listener()
 	}
 }
 
-function getConfigResource(pluginName: string): PluginConfigResource {
-	let resource = configResources.get(pluginName)
+function getConfigResource(
+	owner: PluginNodeAddressSnapshot,
+	displayName: string,
+): PluginConfigResource {
+	const key = workbenchNodeKey(owner)
+	let resource = configResources.get(key)
 	if (!resource) {
-		resource = new PluginConfigResource(pluginName)
-		configResources.set(pluginName, resource)
+		resource = new PluginConfigResource(owner, displayName)
+		configResources.set(key, resource)
 	}
 	return resource
 }
 
-export function commitPluginConfig(pluginName: string, savedConfig: Record<string, unknown>): void {
-	getConfigResource(pluginName).commit(savedConfig)
-}
-
-function invalidatePluginConfigResources(): void {
-	for (const resource of configResources.values()) resource.invalidateSchema()
+export function commitPluginConfig(
+	owner: PluginNodeAddressSnapshot,
+	displayName: string,
+	savedConfig: Record<string, unknown>,
+): void {
+	getConfigResource(owner, displayName).commit(savedConfig)
 }
 
 if (import.meta.hot) {
-	import.meta.hot.on('vite:beforeUpdate', () => invalidatePluginConfigResources())
+	import.meta.hot.on('vite:beforeUpdate', () => {
+		for (const resource of configResources.values()) resource.invalidateSchema()
+	})
 }
 
-export function usePluginConfig(pluginName: string | undefined): PluginConfigState {
-	const resource = useMemo(() => (pluginName ? getConfigResource(pluginName) : null), [pluginName])
+export function usePluginConfig(
+	owner: PluginNodeAddressSnapshot | undefined,
+	displayName = owner?.definition.exportName ?? '',
+): PluginConfigState {
+	const resource = useMemo(
+		() => (owner ? getConfigResource(owner, displayName) : null),
+		[owner, displayName],
+	)
 	const snapshot = useSyncExternalStore(
 		resource?.subscribe ?? noopSubscribe,
 		resource?.getSnapshot ?? getEmptySnapshot,
 		resource?.getSnapshot ?? getEmptySnapshot,
 	)
-
 	useEffect(() => {
 		if (resource) void resource.load(false)
 	}, [resource])
-
 	const refetch = useCallback(async () => {
 		if (resource) await resource.load(true)
 	}, [resource])
-
 	return { ...snapshot, refetch }
 }
 

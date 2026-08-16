@@ -3,6 +3,7 @@ import { type Context as PluxelContext, Injectable, RootService } from '@pluxel/
 import { basename, join } from 'pathe'
 import { env as stdEnv } from 'std-env'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
+import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { recordSecurityEvent } from '../security/audit'
 import type {
 	VaultAdminState,
@@ -576,7 +577,7 @@ function getMountCache(): Map<string, MountCacheEntry> {
 
 function getMountCacheKey(ctx: PluxelContext): string {
 	const g = globalThis as Record<symbol, unknown> & { __pluxelVaultMountCacheSeq?: number }
-	let ids = g[CACHE_IDS_SYMBOL]
+	let ids = g[CACHE_IDS_SYMBOL] as WeakMap<object, string> | undefined
 	if (!(ids instanceof WeakMap)) {
 		ids = new WeakMap<object, string>()
 		g[CACHE_IDS_SYMBOL] = ids
@@ -669,7 +670,10 @@ function setStatusFailure(
 }
 
 function namespaceFrom(ctx: PluxelContext, options?: VaultNamespaceOptions): string {
-	return normalizeSegment(options?.namespace ?? ctx.pluginInfo?.id ?? 'default')
+	const address = ctx.pluginInfo?.nodeAddress
+	return normalizeSegment(
+		options?.namespace ?? (address ? `plugin-${pluginNodePhysicalKey(address)}` : 'default'),
+	)
 }
 
 function findNamespaceState(snapshot: VaultSnapshot, namespace: string) {

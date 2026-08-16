@@ -1,44 +1,54 @@
 import { describe, expect, it } from 'vitest'
 
-import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, Plugin, definePluginRef, withCoreHost } from '@pluxel/core/test'
+
+@Plugin({ displayName: 'REG-B' })
+class RegistrationB extends BasePlugin {}
+
+@Plugin({ displayName: 'REG-C' })
+class RegistrationC extends BasePlugin {}
+
+@Plugin({ displayName: 'REG-A' })
+class RegistrationA extends BasePlugin {
+	constructor(public readonly dep: RegistrationB) {
+		super()
+	}
+}
 
 describe('PluginService registration state', () => {
+	it('fails explicitly when a raw runner bypasses semantic lowering', async () => {
+		const rawDefinePluginRef = definePluginRef
+		await withCoreHost((host) => {
+			@Plugin({ displayName: 'Raw Plugin' })
+			class RawPlugin extends BasePlugin {}
+
+			expect(() => host.add(RawPlugin)).toThrow(/Plugin definition was not lowered/)
+			expect(() => rawDefinePluginRef<RawPlugin>()).toThrow(/Plugin ref was not lowered/)
+		})
+	})
+
 	it('updates registered plugin set across commits', async () => {
 		await withCoreHost(async (host) => {
-			@Plugin({ name: 'REG-B' })
-			class B extends BasePlugin {}
-
-			@Plugin({ name: 'REG-C' })
-			class C extends BasePlugin {}
-
-			@Plugin({ name: 'REG-A' })
-			class A extends BasePlugin {
-				constructor(public readonly dep: B) {
-					super()
-				}
-			}
-			setParamToken(A, 0, B)
-
 			const readPluginSet = () => new Set<any>(host.plugins())
 
-			host.add([B, C, A])
+			host.add([RegistrationB, RegistrationC, RegistrationA])
 			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([B, C, A]))
+			expect(readPluginSet()).toEqual(new Set([RegistrationB, RegistrationC, RegistrationA]))
 
-			host.restart(A)
-			host.remove(A)
+			host.restart(RegistrationA)
+			host.remove(RegistrationA)
 			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([B, C]))
+			expect(readPluginSet()).toEqual(new Set([RegistrationB, RegistrationC]))
 
-			host.add(A)
+			host.add(RegistrationA)
 			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([B, C, A]))
-			expect(host.isRunning(A)).toBe(true)
+			expect(readPluginSet()).toEqual(new Set([RegistrationB, RegistrationC, RegistrationA]))
+			expect(host.isRunning(RegistrationA)).toBe(true)
 
-			host.remove(A)
+			host.remove(RegistrationA)
 			await host.commit()
-			expect(readPluginSet()).toEqual(new Set([B, C]))
-			expect(host.isRunning(A)).toBe(false)
+			expect(readPluginSet()).toEqual(new Set([RegistrationB, RegistrationC]))
+			expect(host.isRunning(RegistrationA)).toBe(false)
 		})
 	})
 })

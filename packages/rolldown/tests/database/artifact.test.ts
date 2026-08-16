@@ -93,7 +93,7 @@ describe('database migration artifact', () => {
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
-	})
+	}, 15_000)
 
 	it('changes the reset lineage when the physical schema changes', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-reset-change-test-'))

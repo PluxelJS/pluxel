@@ -30,7 +30,7 @@ const fontsSelectorSchema = v.objectAsync({
 		}),
 	),
 })
-@Plugin({ name: 'PluginAsyncSchema', type: 'hook' })
+@Plugin({ displayName: 'Async schema' })
 export class PluginAsyncSchema extends BasePlugin {
 	private test1 = this.configs.use(fontsSelectorSchema)
 	override init(): void {

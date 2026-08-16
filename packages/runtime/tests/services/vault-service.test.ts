@@ -1,6 +1,9 @@
 import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { env as stdEnv } from 'std-env'
 import { describe, expect, it } from 'vitest'
+import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 type RuntimeHostLike = Parameters<Parameters<typeof withRuntimeHost>[0]>[0]
 
@@ -31,8 +34,10 @@ async function deleteVaultIdentity(host: RuntimeHostLike): Promise<void> {
 describe('VaultService (shared mount runtime)', () => {
 	it('startup preflight creates an empty shared mount before plugin access', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -60,8 +65,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('writes to the preflighted shared mount with key envelope and snapshot', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -87,8 +94,10 @@ describe('VaultService (shared mount runtime)', () => {
 	it('flush writes one snapshot for multiple kv mutations', async () => {
 		await withRuntimeHost(
 			async (host) => {
-				@Plugin({ name: 'PluginA' })
+				@Plugin({ displayName: 'PluginA' })
 				class PluginA extends BasePlugin {}
+
+				lowerTestPlugin(PluginA)
 
 				host.add(PluginA)
 				await host.commit()
@@ -121,13 +130,16 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('shared mount keeps plugin namespaces separate', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
 
-			@Plugin({ name: 'PluginB' })
+			@Plugin({ displayName: 'PluginB' })
 			class PluginB extends BasePlugin {}
 
+			lowerTestPlugin(PluginA)
+
 			host.add(PluginA)
+			lowerTestPlugin(PluginB)
 			host.add(PluginB)
 			await host.commit()
 
@@ -140,14 +152,18 @@ describe('VaultService (shared mount runtime)', () => {
 
 			expect(await a.ctx.vault.kv().get('token')).toBe('a-secret')
 			expect(await b.ctx.vault.kv().get('token')).toBe('b-secret')
-			expect(await a.ctx.vault.kv({ namespace: 'PluginB' }).get('token')).toBe('b-secret')
+			expect(await a.ctx.vault.kv({ namespace: b.ctx.vault.namespace().name }).get('token')).toBe(
+				'b-secret',
+			)
 		}, {})
 	})
 
 	it('namespace() provides a stable scoped facade over kv/docs/blobs', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -157,8 +173,9 @@ describe('VaultService (shared mount runtime)', () => {
 			const kv = space.kv()
 			const docs = space.docs().collection<{ ready: boolean }>('profiles')
 			const blob = space.blobs().open('notes')
+			const ownerNamespace = `plugin-${pluginNodePhysicalKey(pluginNodeAddressOf(PluginA))}`
 
-			expect(space.name).toBe('PluginA')
+			expect(space.name).toBe(ownerNamespace)
 			await kv.set('token', 'value')
 			await docs.set('default', { ready: true })
 			await blob.writeText('scoped')
@@ -172,8 +189,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('namespace.batch() updates kv and docs atomically within one namespace copy-on-write', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -196,8 +215,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('tampered shared snapshot fails to decrypt after relock', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -225,8 +246,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('describe stays pure-read when a local host identity is available', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -251,8 +274,10 @@ describe('VaultService (shared mount runtime)', () => {
 		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -296,8 +321,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('rekey() rewrites only the managed key envelope without rewriting the snapshot payload', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -326,8 +353,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('stores blobs separately from the shared snapshot', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'PluginA' })
+			@Plugin({ displayName: 'PluginA' })
 			class PluginA extends BasePlugin {}
+
+			lowerTestPlugin(PluginA)
 
 			host.add(PluginA)
 			await host.commit()
@@ -338,7 +367,8 @@ describe('VaultService (shared mount runtime)', () => {
 			await blob.writeText('hello vault')
 			expect(await blob.readText()).toBe('hello vault')
 			expect(await plugin.ctx.vault.blobs().list()).toEqual(['notes'])
-			expect(blob.describe().path).toBe('global/blobs/PluginA/notes.blob')
+			const ownerNamespace = `plugin-${pluginNodePhysicalKey(pluginNodeAddressOf(PluginA))}`
+			expect(blob.describe().path).toBe(`global/blobs/${ownerNamespace}/notes.blob`)
 		}, {})
 	})
 
@@ -365,8 +395,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('host preflight fails when an existing sealed mount has no unlock identity', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'Seeder' })
+			@Plugin({ displayName: 'Seeder' })
 			class Seeder extends BasePlugin {}
+
+			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
 			await host.commit()
@@ -395,8 +427,10 @@ describe('VaultService (shared mount runtime)', () => {
 		let envName = 'PLUXEL_VAULT_DEPLOY_IDENTITY'
 
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'Seeder' })
+			@Plugin({ displayName: 'Seeder' })
 			class Seeder extends BasePlugin {}
+
+			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
 			await host.commit()
@@ -433,8 +467,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('sealed mounts report unlock_required when no matching identity is available', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'Seeder' })
+			@Plugin({ displayName: 'Seeder' })
 			class Seeder extends BasePlugin {}
+
+			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
 			await host.commit()
@@ -466,11 +502,13 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('registry commit rejects before activating more plugins when vault preflight fails', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'Seeder' })
+			@Plugin({ displayName: 'Seeder' })
 			class Seeder extends BasePlugin {}
 
-			@Plugin({ name: 'VaultConsumer' })
+			@Plugin({ displayName: 'VaultConsumer' })
 			class VaultConsumer extends BasePlugin {}
+
+			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
 			await host.commit()
@@ -480,6 +518,8 @@ describe('VaultService (shared mount runtime)', () => {
 			await seeder.ctx.vault.flush()
 			await sealVaultForTesting(seeder.ctx.vault)
 			await deleteVaultIdentity(host)
+
+			lowerTestPlugin(VaultConsumer)
 
 			host.add(VaultConsumer)
 			await expect(host.commitAllowFail()).rejects.toThrow(
@@ -495,8 +535,10 @@ describe('VaultService (shared mount runtime)', () => {
 
 	it('replacing deploy recipients rekeys the envelope for all saved recipients', async () => {
 		await withRuntimeHost(async (host) => {
-			@Plugin({ name: 'Seeder' })
+			@Plugin({ displayName: 'Seeder' })
 			class Seeder extends BasePlugin {}
+
+			lowerTestPlugin(Seeder)
 
 			host.add(Seeder)
 			await host.commit()

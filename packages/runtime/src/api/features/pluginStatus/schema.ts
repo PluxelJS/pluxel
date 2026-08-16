@@ -1,6 +1,6 @@
 import * as v from 'valibot'
 
-import { Plugin } from '../plugins/schema'
+import { Plugin, PluginNodeAddress } from '../plugins/schema'
 
 export const PluginStatusEntryLifecycleStage = v.picklist([
 	'running',
@@ -49,6 +49,6 @@ export const PluginStatusMutationResult = v.object({
 })
 
 export const UpdateStatusInput = v.object({
-	name: v.string(),
+	address: PluginNodeAddress,
 	status: v.picklist(['start', 'stop', 'restart', 'enable', 'enable-persisted', 'disable']),
 })

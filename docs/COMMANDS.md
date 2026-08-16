@@ -43,7 +43,7 @@ subsequent calls, matching command publication withdrawal semantics.
 registry registration to the calling plugin Context's effects, so stop, replacement, failed startup,
 and shutdown remove future discovery and lookup automatically. Runtime registration also wraps execution
 in the owner's internal invocation gate. Leaving the running generation closes admission, aborts the
-combined call/owner signal, and waits for admitted invocations before the plugin `stop()` hook. A manually
+combined call/owner signal, and waits for admitted invocations before generation effects drain. A manually
 disposed registration only withdraws publication and does not cancel work that already started.
 
 The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers

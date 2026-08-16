@@ -1,5 +1,6 @@
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { formatPluginNodeAddress, pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
@@ -9,6 +10,7 @@ import {
 	requireDynamicPluginSource,
 } from '../src/source-producer.ts'
 import { resolveDynamicPluginSources } from '../src/sources.ts'
+import { lowerTestPlugin } from './support/lowered-plugin'
 
 describe('dynamic plugin sources', () => {
 	it('discovers current entries and retains missing directories as watch roots', async () => {
@@ -58,7 +60,6 @@ describe('dynamic plugin sources', () => {
 			}),
 		})
 		const root = fixture.path
-
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
 			chdir: false,
@@ -67,33 +68,30 @@ describe('dynamic plugin sources', () => {
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: ['MutableSourcePlugin'] },
 			},
-			sources: [{ kind: 'directory', path: 'entries', include: ['*.mjs'] }],
+			sources: [{ kind: 'directory', path: 'entries', include: ['*.ts'] }],
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
 			await host.hmr.start()
 			const entriesDir = resolve(root, 'entries')
-			const entry = resolve(entriesDir, 'mutable.mjs')
-			const temporary = resolve(root, 'mutable.mjs.tmp')
+			const entry = resolve(entriesDir, 'mutable.ts')
+			const temporary = resolve(root, 'mutable.ts.tmp')
 			const addedBatch = host.hmr.api.waitForBatch({ timeoutMs: 30_000 })
 			await mkdir(entriesDir, { recursive: true })
 			await writeFile(
 				temporary,
 				[
 					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+					"@Plugin({ displayName: 'Mutable source' })",
 					'export class MutableSourcePlugin extends BasePlugin {',
 					'  started = false',
-					'  stopped = false',
 					'  cleaned = false',
 					'  init() {',
 					'    this.started = true',
 					'    this.ctx.effects.defer(() => { this.cleaned = true })',
 					'  }',
-					'  stop() { this.stopped = true }',
 					'}',
-					"Plugin({ name: 'MutableSourcePlugin' })(MutableSourcePlugin)",
 					'',
 				].join('\n'),
 			)
@@ -101,13 +99,20 @@ describe('dynamic plugin sources', () => {
 
 			const added = await addedBatch
 			expect(added.ok).toBe(true)
-			expect(added.pluginChanges?.added).toContain('MutableSourcePlugin')
-			const ctor = host.ctx.loader.api.registry.getCtor('MutableSourcePlugin')
+			const catalogEntry = host.ctx.loader.api.registry
+				.listRegistered()
+				.find((candidate) => candidate.rootExportName === 'MutableSourcePlugin')
+			expect(catalogEntry).toBeDefined()
+			const mutableAddress = catalogEntry!.address
+			const ctor = catalogEntry!.ctor
 			expect(ctor).toBeTypeOf('function')
+			await host.ctx.loader.api.control.enable(mutableAddress, ctor)
+			const enabled = await host.ctx.registry.commit()
+			expect(enabled.ok).toBe(true)
 			const instance = host.ctx.registry.getInstance(ctor!) as
-				| { started: boolean; stopped: boolean; cleaned: boolean }
+				| { started: boolean; cleaned: boolean }
 				| undefined
-			expect(instance).toMatchObject({ started: true, stopped: false, cleaned: false })
+			expect(instance).toMatchObject({ started: true, cleaned: false })
 
 			const removedBatch = host.hmr.api.waitForBatch({
 				afterEpoch: added.epoch,
@@ -117,10 +122,10 @@ describe('dynamic plugin sources', () => {
 			const removed = await removedBatch
 
 			expect(removed.ok).toBe(true)
-			expect(removed.pluginChanges?.removed).toContain('MutableSourcePlugin')
-			expect(host.ctx.loader.api.registry.getCtor('MutableSourcePlugin')).toBeUndefined()
+			expect(removed.pluginChanges?.removed).toContain(formatPluginNodeAddress(mutableAddress))
+			expect(host.ctx.loader.api.registry.getCtor(mutableAddress)).toBeUndefined()
 			expect(host.ctx.registry.isRunning(ctor!)).toBe(false)
-			expect(instance).toMatchObject({ started: true, stopped: true, cleaned: true })
+			expect(instance).toMatchObject({ started: true, cleaned: true })
 		} finally {
 			await host.stop()
 		}
@@ -138,29 +143,30 @@ describe('dynamic plugin sources', () => {
 		})
 		const root = fixture.path
 
+		@Plugin({ displayName: 'Source producer' })
 		class SourceProducerPlugin extends BasePlugin {
 			override async init(): Promise<void> {
 				const entriesDir = resolve(root, 'entries')
 				requireDynamicPluginSource(this.ctx, {
 					kind: 'directory',
 					path: entriesDir,
-					include: ['*.mjs'],
+					include: ['*.ts'],
 				})
-				const temporary = resolve(root, 'published.mjs.tmp')
+				const temporary = resolve(root, 'published.ts.tmp')
 				await mkdir(entriesDir, { recursive: true })
 				await writeFile(
 					temporary,
 					[
 						"import { BasePlugin, Plugin } from '@pluxel/runtime'",
+						"@Plugin({ displayName: 'Published by fixed' })",
 						'export class PublishedByFixedPlugin extends BasePlugin {}',
-						"Plugin({ name: 'PublishedByFixedPlugin' })(PublishedByFixedPlugin)",
 						'',
 					].join('\n'),
 				)
-				await rename(temporary, resolve(entriesDir, 'published.mjs'))
+				await rename(temporary, resolve(entriesDir, 'published.ts'))
 			}
 		}
-		Plugin({ name: 'SourceProducerPlugin' })(SourceProducerPlugin)
+		lowerTestPlugin(SourceProducerPlugin)
 
 		const plan = await planLoaderHmrHostFromConfig({
 			root,
@@ -170,10 +176,10 @@ describe('dynamic plugin sources', () => {
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: ['SourceProducerPlugin', 'PublishedByFixedPlugin'] },
+				snapshot: { enabled: [pluginNodeAddressOf(SourceProducerPlugin)] },
 			},
 			plugins: [SourceProducerPlugin],
-			sources: [{ kind: 'directory', path: 'entries', include: ['*.mjs'] }],
+			sources: [{ kind: 'directory', path: 'entries', include: ['*.ts'] }],
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
@@ -185,7 +191,11 @@ describe('dynamic plugin sources', () => {
 
 			expect(host.ctx.registry.isRunning(SourceProducerPlugin)).toBe(true)
 			expect(published.ok).toBe(true)
-			expect(published.pluginChanges?.added).toContain('PublishedByFixedPlugin')
+			expect(
+				host.ctx.loader.api.registry
+					.listRegistered()
+					.some((entry) => entry.rootExportName === 'PublishedByFixedPlugin'),
+			).toBe(true)
 		} finally {
 			await host.stop()
 		}

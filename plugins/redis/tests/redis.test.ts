@@ -1,6 +1,6 @@
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { v } from '@pluxel/runtime'
+import { formatPluginNodeAddress, v } from '@pluxel/runtime'
 
 const redisMock = vi.hoisted(() => {
 	const state = { open: false, ready: false }
@@ -31,7 +31,7 @@ import {
 	RedisPlugin,
 } from '../src/index.ts'
 
-@Plugin({ name: 'RedisConsumer' })
+@Plugin({ displayName: 'RedisConsumer' })
 class RedisConsumer extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()
@@ -70,7 +70,9 @@ describe('@pluxel/redis', () => {
 				expect.objectContaining({
 					url: 'redis://127.0.0.1:6379',
 					database: 0,
-					name: 'pluxel:RedisPlugin',
+					name: `pluxel:${formatPluginNodeAddress(
+						host.require(RedisPlugin).ctx.pluginInfo.nodeAddress,
+					)}`,
 					commandsQueueMaxLength: 10_000,
 					disableOfflineQueue: true,
 				}),

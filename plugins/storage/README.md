@@ -7,7 +7,7 @@ Pluxel 官方 S3 capability。S3/s3mini 是唯一业务 API；官方安装面只
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { S3, S3Plugin } from '@pluxel/storage'
 
-@Plugin({ name: 'AssetsPlugin' })
+@Plugin({ displayName: 'AssetsPlugin' })
 class AssetsPlugin extends BasePlugin {
 	constructor(private readonly s3: S3) {
 		super()
@@ -35,13 +35,11 @@ caller prefix；业务 key、metadata schema 和删除所有权属于 consumer�
 
 ```ts
 host.cfg(S3Plugin).set({
-	config: {
-		backend: {
-			type: 'local',
-			rootDir: '/var/lib/my-app/s3',
-			bucketName: 'assets',
-			syncWrites: true,
-		},
+	backend: {
+		type: 'local',
+		rootDir: '/var/lib/my-app/s3',
+		bucketName: 'assets',
+		syncWrites: true,
 	},
 })
 ```
@@ -50,16 +48,14 @@ host.cfg(S3Plugin).set({
 
 ```ts
 host.cfg(S3Plugin).set({
-	config: {
-		backend: {
-			type: 'remote',
-			endpoint: 'https://public-assets.s3.example.com',
-			region: 'auto',
-			credentials: { type: 'anonymous' },
-			requestSizeInBytes: 8 * 1024 * 1024,
-			requestAbortTimeout: 30_000,
-			minPartSize: 8 * 1024 * 1024,
-		},
+	backend: {
+		type: 'remote',
+		endpoint: 'https://public-assets.s3.example.com',
+		region: 'auto',
+		credentials: { type: 'anonymous' },
+		requestSizeInBytes: 8 * 1024 * 1024,
+		requestAbortTimeout: 30_000,
+		minPartSize: 8 * 1024 * 1024,
 	},
 })
 ```
@@ -77,16 +73,14 @@ S3 配置只保存引用：
 
 ```ts
 host.cfg(S3Plugin).set({
-	config: {
-		backend: {
-			type: 'remote',
-			endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
-			region: 'us-east-1',
-			credentials: {
-				type: 'vault',
-				namespace: 'production-secrets',
-				key: 'assets.s3',
-			},
+	backend: {
+		type: 'remote',
+		endpoint: 'https://assets.s3.us-east-1.amazonaws.com',
+		region: 'us-east-1',
+		credentials: {
+			type: 'vault',
+			namespace: 'production-secrets',
+			key: 'assets.s3',
 		},
 	},
 })

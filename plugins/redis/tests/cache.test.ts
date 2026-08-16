@@ -72,7 +72,7 @@ function literalPrefix(pattern: string): string {
 	return withoutWildcard.replaceAll(/\\(.)/g, '$1')
 }
 
-@Plugin(Redis, { name: 'FakeRedisPlugin' })
+@Plugin(Redis, { displayName: 'FakeRedisPlugin' })
 class FakeRedisPlugin extends Redis {
 	readonly fake = new FakeRedisClient()
 
@@ -122,7 +122,9 @@ describe('@pluxel/redis cache backend', () => {
 		await withHost(async (host) => {
 			host.add([FakeRedisPlugin, RedisCacheBackendPlugin])
 			host.cfg(RedisCacheBackendPlugin).set({
-				config: { keyPrefix: 'pluxel[prod]:cache:', scanCount: 3, deleteBatchSize: 2 },
+				keyPrefix: 'pluxel[prod]:cache:',
+				scanCount: 3,
+				deleteBatchSize: 2,
 			})
 			await host.commit()
 			const backend = host.require(RedisCacheBackendPlugin)

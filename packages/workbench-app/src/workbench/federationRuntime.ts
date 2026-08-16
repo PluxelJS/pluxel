@@ -90,7 +90,7 @@ export async function loadFederatedWorkbenchModule(
 		`${artifact.remoteName}/${workbenchFederationModuleId(artifact.exposedModule)}`,
 		{ from: 'runtime' },
 	)
-	if (!loaded) throw new Error(`Failed to load workbench UI module: ${artifact.pluginName}`)
+	if (!loaded) throw new Error(`Failed to load workbench UI module: ${artifact.owner.displayName}`)
 	return loaded
 }
 

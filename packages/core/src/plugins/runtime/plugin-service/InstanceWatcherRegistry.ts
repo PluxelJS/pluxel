@@ -1,11 +1,11 @@
 import type { BasePlugin } from '../../composition/BasePlugin'
 import type { PluginIdentifier } from '../../types'
-import type { RuntimePluginKey } from '../identity'
+import type { PluginNodeSlot } from '../identity'
 import type { PluginGraph } from '../PluginDefinitions'
 
 type InstanceWatcher = {
-	id: PluginIdentifier
-	resolvedKey: RuntimePluginKey | undefined
+	id: PluginIdentifier | PluginNodeSlot
+	resolvedKey: PluginNodeSlot | undefined
 	lastInstance: BasePlugin | undefined
 	lastPublishSeq: number
 	callback: (instance: BasePlugin | undefined) => void
@@ -14,13 +14,13 @@ type InstanceWatcher = {
 type InstanceWatcherCommitSummary = {
 	graph: PluginGraph
 	pluginChanges: {
-		availabilityChanged: readonly RuntimePluginKey[]
+		availabilityChanged: readonly PluginNodeSlot[]
 	}
 }
 
 export class InstanceWatcherRegistry {
 	private readonly watchersByResolvedKey = new Map<
-		RuntimePluginKey | undefined,
+		PluginNodeSlot | undefined,
 		Set<InstanceWatcher>
 	>()
 	private publishSeq = 0
@@ -28,10 +28,10 @@ export class InstanceWatcherRegistry {
 	public constructor(
 		private readonly resolveGraphKey: (
 			graph: PluginGraph | undefined,
-			id: PluginIdentifier,
-		) => RuntimePluginKey | undefined,
+			id: PluginIdentifier | PluginNodeSlot,
+		) => PluginNodeSlot | undefined,
 		private readonly getRunningRuntimeInstance: (
-			id: RuntimePluginKey | undefined,
+			id: PluginNodeSlot | undefined,
 		) => BasePlugin | undefined,
 		private readonly logError: (error: unknown) => void,
 	) {}
@@ -40,6 +40,16 @@ export class InstanceWatcherRegistry {
 		graph: PluginGraph | undefined,
 		id: T,
 		cb: (instance: InstanceType<T> | undefined) => void,
+	): () => void
+	public watch(
+		graph: PluginGraph | undefined,
+		id: PluginNodeSlot,
+		cb: (instance: BasePlugin | undefined) => void,
+	): () => void
+	public watch(
+		graph: PluginGraph | undefined,
+		id: PluginIdentifier | PluginNodeSlot,
+		cb: (instance: BasePlugin | undefined) => void,
 	): () => void {
 		const resolved = this.resolveGraphKey(graph, id)
 		const entry: InstanceWatcher = {

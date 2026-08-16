@@ -1,11 +1,11 @@
 import { field, query, resolver, type Resolver } from '@gqloom/core'
-import type { Context as PlxContext } from '@pluxel/core'
+import { parsePluginNodeAddress, type Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
 import { getStatusOverview } from '../pluginStatus/service'
 import { PluginStatusOverview } from '../pluginStatus/schema'
 import { Plugin, PluginCatalog, PluginDetail } from './schema'
-import { createPlugin, getPluginDependencies, getPluginCtor, listPlugins } from './scope'
+import { createPlugin, getPluginDependencies, listPlugins } from './scope'
 
 export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 	const queries = resolver({
@@ -22,12 +22,11 @@ export function createPluginResolvers(pCtx: PlxContext): Resolver[] {
 
 	const pluginFields = resolver.of(Plugin, {
 		detail: field(PluginDetail).resolve((plugin) => {
-			const ctor = getPluginCtor(pCtx, plugin)
 			return {
 				__typename: 'PluginDetail' as const,
 				name: plugin.name,
 				desc: '插件示例描述',
-				dependencies: getPluginDependencies(pCtx, ctor),
+				dependencies: getPluginDependencies(pCtx, parsePluginNodeAddress(plugin.address)),
 			}
 		}),
 	})

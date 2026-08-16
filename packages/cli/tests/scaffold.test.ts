@@ -14,30 +14,28 @@ import { generateFromTemplate, promptTemplateData } from '../src/scaffold/templa
 import { formatPackageScriptCommand } from '../src/utils/pm'
 
 describe('scaffold name helpers', () => {
-	it('resolves plugin prefixes separately from normalized application identities', () => {
-		expect(parsePackageName('foo', ['pluxel-plugin'])).toMatchObject({
+	it('applies the plugin package convention separately from application identities', () => {
+		expect(parsePackageName('foo')).toMatchObject({
 			name: 'foo',
 			packageName: 'pluxel-plugin-foo',
 		})
-		expect(parsePackageName('@acme/foo', ['pluxel-plugin'])).toMatchObject({
+		expect(parsePackageName('@acme/foo')).toMatchObject({
 			name: 'foo',
 			packageName: '@acme/pluxel-plugin-foo',
 		})
-		expect(parsePackageName('pluxel-plugin-bar', ['pluxel-plugin']).name).toBe('bar')
-		expect(
-			parsePackageName('acme-plugin-extra', ['pluxel-plugin', 'acme-plugin']).packageName,
-		).toBe('acme-plugin-extra')
+		expect(parsePackageName('pluxel-plugin-bar').name).toBe('bar')
 		expect(parsePackageIdentity('@Acme/My-App')).toEqual({
 			scope: '@acme',
 			name: 'my-app',
 			packageName: '@acme/my-app',
 		})
 		expect(
-			resolveScaffoldIdentity('@acme/pluxel-plugin-orders', '/templates/plugin', ['pluxel-plugin']),
+			resolveScaffoldIdentity('@acme/pluxel-plugin-orders', '/templates/plugin'),
 		).toMatchObject({ name: 'orders', packageName: '@acme/pluxel-plugin-orders' })
-		expect(
-			resolveScaffoldIdentity('@acme/my-app', '/templates/app-monorepo', ['pluxel-plugin']),
-		).toMatchObject({ name: 'my-app', packageName: '@acme/my-app' })
+		expect(resolveScaffoldIdentity('@acme/my-app', '/templates/app-monorepo')).toMatchObject({
+			name: 'my-app',
+			packageName: '@acme/my-app',
+		})
 	})
 })
 
@@ -136,6 +134,12 @@ describe('scaffold template rendering', () => {
 		expect(staticBuild).toContain("from '@pluxel/rolldown/build'")
 		expect(staticBuild).toContain("entry: './src/pluxel.static.ts'")
 		expect(staticBuild).toContain("variant: 'workbench'")
+		const staticRuntime = fixture.fs.readFileSync(
+			resolve(targetDir, 'web/src/pluxel.static.ts'),
+			'utf8',
+		)
+		expect(staticRuntime).toContain('pluginNodeAddressOf(AcmeAppPlugin)')
+		expect(staticRuntime).not.toContain("enabled: ['AcmeAppPlugin']")
 
 		const pluginManifest = fixture.fs.readFileSync(
 			resolve(targetDir, 'plugins/example/package.json'),
@@ -172,8 +176,11 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
 		const rootTsconfig = JSON.parse(
 			String(fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.base.json'), 'utf8')),
-		) as { compilerOptions?: { customConditions?: string[] } }
+		) as {
+			compilerOptions?: { customConditions?: string[]; emitDecoratorMetadata?: boolean }
+		}
 		expect(rootTsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
+		expect(rootTsconfig.compilerOptions?.emitDecoratorMetadata).toBeUndefined()
 
 		const agentsGuide = fixture.fs.readFileSync(resolve(targetDir, 'AGENTS.md'), 'utf8')
 		expect(agentsGuide).toContain('docs/pluxel/README.md')
@@ -193,6 +200,8 @@ describe('scaffold template rendering', () => {
 			'utf8',
 		)
 		expect(pluginTest).toContain("from '@pluxel/runtime/test'")
+		expect(pluginTest).toContain("from '@acme/acme-app-example-plugin'")
+		expect(pluginTest).not.toContain("from '../src/")
 		expect(pluginTest).toContain('withRuntimeHost(')
 		expect(pluginTest).toContain('workbench: false')
 	})
@@ -226,7 +235,13 @@ describe('scaffold template rendering', () => {
 		expect(manifest.scripts.build).toBe('pluxel build')
 		expect(manifest.scripts).toHaveProperty('verify')
 		expect(manifest.peerDependencies).toEqual({ '@pluxel/runtime': 'catalog:' })
-		for (const field of ['main', 'module', 'types', 'exports', 'publishConfig']) {
+		expect(manifest.exports).toEqual({
+			'.': {
+				'@pluxel/hmr': './src/hello-world.ts',
+				default: './dist/index.mjs',
+			},
+		})
+		for (const field of ['main', 'module', 'types', 'publishConfig']) {
 			expect(manifest).not.toHaveProperty(field)
 		}
 		expect(manifest.files).toEqual(['dist', '!**/*.map'])
@@ -244,12 +259,15 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
 		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
 		expect(source).toContain('export class HelloWorldPlugin extends BasePlugin')
-		expect(source).toContain("@Plugin({ name: 'HelloWorldPlugin' })")
-		expect(source).not.toContain('export default')
+		expect(source).toContain("@Plugin({ displayName: 'HelloWorldPlugin' })")
+		expect(source).toContain('const MessageConfig = v.object({')
 		const pluginTest = fixture.fs.readFileSync(
 			resolve(targetDir, 'tests/hello-world.test.ts'),
 			'utf8',
 		)
+		expect(pluginTest).toContain("from 'pluxel-plugin-hello-world'")
+		expect(pluginTest).not.toContain("from '../src/")
+		expect(source).not.toContain('export default')
 		expect(pluginTest).toContain('await host.commit()')
 		expect(pluginTest).toContain('workbench: false')
 		expect(pluginTest).not.toContain('host.start(')
@@ -257,9 +275,10 @@ describe('scaffold template rendering', () => {
 			fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.json'), 'utf8'),
 		)
 		const tsconfig = JSON.parse(tsconfigSource) as {
-			compilerOptions?: { customConditions?: string[] }
+			compilerOptions?: { customConditions?: string[]; emitDecoratorMetadata?: boolean }
 		}
 		expect(tsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
+		expect(tsconfig.compilerOptions?.emitDecoratorMetadata).toBeUndefined()
 		const tsdownConfig = fixture.fs.readFileSync(resolve(targetDir, 'tsdown.config.ts'), 'utf8')
 		expect(tsdownConfig).toContain("index: 'src/hello-world.ts'")
 		expect(tsdownConfig).not.toContain('pluginPackage(')

@@ -3,9 +3,12 @@ import { type ReactNode } from 'react'
 import type { WorkbenchResolvedRoute, WorkbenchTargetSnapshot } from '../../../workbench/client'
 import { WorkbenchRoute, useWorkbenchRuntime } from '../../../workbench/runtime'
 import { WorkbenchRouteStateFallback, WorkbenchRouteStatusBanner } from './WorkbenchRouteStatus'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { workbenchNodeKey } from '../../../workbench/node-address'
 
 export function WorkbenchRouteRenderer(props: {
-	pluginName: string
+	target: PluginNodeAddressSnapshot
+	displayName: string
 	displayPath: string
 	pathname: string
 	route: WorkbenchResolvedRoute | undefined
@@ -13,9 +16,9 @@ export function WorkbenchRouteRenderer(props: {
 	backContent?: ReactNode
 	wrapContent?: (content: ReactNode) => ReactNode
 }) {
-	const { pluginName, displayPath, route, snapshot, backContent, wrapContent } = props
+	const { target, displayName, displayPath, route, snapshot, backContent, wrapContent } = props
 	const host = useWorkbenchRuntime()
-	const pluginRunning = host.runningPlugins.has(pluginName)
+	const pluginRunning = host.runningPluginKeys.has(workbenchNodeKey(target))
 
 	if (!pluginRunning && host.runningPluginsReady) {
 		return (
@@ -23,7 +26,7 @@ export function WorkbenchRouteRenderer(props: {
 				<Stack gap="xs" align="center">
 					<Text fw={600}>插件未运行</Text>
 					<Text c="dimmed" size="sm" ta="center">
-						请先启动插件 {pluginName}，才能访问 {displayPath}
+						请先启动插件 {displayName}，才能访问 {displayPath}
 					</Text>
 					{backContent ?? null}
 				</Stack>
@@ -32,7 +35,9 @@ export function WorkbenchRouteRenderer(props: {
 	}
 
 	if (snapshot.state !== 'ready' && !snapshot.layout) {
-		return <WorkbenchRouteStateFallback pluginName={pluginName} snapshot={snapshot} />
+		return (
+			<WorkbenchRouteStateFallback target={target} displayName={displayName} snapshot={snapshot} />
+		)
 	}
 
 	if (!route) {
@@ -51,8 +56,8 @@ export function WorkbenchRouteRenderer(props: {
 
 	const content = (
 		<>
-			<WorkbenchRouteStatusBanner pluginName={pluginName} />
-			<WorkbenchRoute target={pluginName} route={route} />
+			<WorkbenchRouteStatusBanner target={target} />
+			<WorkbenchRoute target={target} route={route} />
 		</>
 	)
 

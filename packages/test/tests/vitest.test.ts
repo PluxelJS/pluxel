@@ -16,8 +16,19 @@ const rolldownMocks = vi.hoisted(() => {
 		name: `database-source-${databaseSourceVitePlugin.mock.calls.length}`,
 		options,
 	}))
+	const createPluginSemanticsPlugin = vi.fn((options?: unknown) => ({
+		plugin: {
+			name: `plugin-semantics-${createPluginSemanticsPlugin.mock.calls.length}`,
+			options,
+		},
+	}))
 
-	return { lintGuardPlugin, configSourcePlugin, databaseSourceVitePlugin }
+	return {
+		lintGuardPlugin,
+		configSourcePlugin,
+		createPluginSemanticsPlugin,
+		databaseSourceVitePlugin,
+	}
 })
 
 vi.mock('@pluxel/rolldown/plugins', () => rolldownMocks)
@@ -44,6 +55,10 @@ describe('@pluxel/test/vitest', () => {
 			options: { root: resolve(process.cwd(), 'packages/test') },
 		})
 		expect(config.plugins?.[1]).toMatchObject({
+			name: expect.stringMatching(/^plugin-semantics-/),
+			options: { root: resolve(process.cwd(), 'packages/test') },
+		})
+		expect(config.plugins?.[2]).toMatchObject({
 			options: {
 				cwd: resolve(process.cwd(), 'packages/test'),
 			},
@@ -62,6 +77,8 @@ describe('@pluxel/test/vitest', () => {
 			expect.arrayContaining(['@pluxel/source', '@pluxel/hmr']),
 		)
 		expect(config.ssr?.resolve?.externalConditions).toEqual(['node', 'import', 'default'])
+		expect(config.ssr?.noExternal).toEqual(['@pluxel/runtime'])
+		expect(config.test?.server?.deps?.inline).toEqual(['@pluxel/runtime'])
 	})
 
 	it('keeps node conditions deterministic', () => {

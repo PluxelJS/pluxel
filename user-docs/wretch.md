@@ -6,7 +6,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
 
-@Plugin({ name: 'CatalogPlugin' })
+@Plugin({ displayName: 'Catalog' })
 export class CatalogPlugin extends BasePlugin {
 	private api!: Wretch
 
@@ -41,6 +41,5 @@ settings RPC，旧 generation 不能继续读写配置，managed proxy 也会随
 敏感 headers 和 proxy credential 不进入这套普通配置；当前设置页不支持 authenticated proxy。领域测试请求
 仍由 consumer 自己的 RPC 定义，中心插件不提供任意 URL 请求控制台。
 
-需要一个完整参考或 static runtime smoke plugin 时，直接安装同包的 `@pluxel/wretch/example`。其中的
-`WretchExamplePlugin` 展示 constructor DI、consumer config、原生 retry、业务 HTTP route 和共享 Workbench
-设置 Port 的标准组合。
+应用自己的 consumer Plugin 直接从 `@pluxel/wretch` 根入口注入 `WretchPlugin`；需要共享设置 UI 时再消费
+plugin-free 的 `@pluxel/wretch/workbench` Contract/Port 边界。

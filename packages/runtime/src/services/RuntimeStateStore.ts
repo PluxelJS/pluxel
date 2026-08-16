@@ -1,49 +1,60 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import {
+	type Context as PluxelContext,
+	Injectable,
+	parsePluginDefinitionAddress,
+	parsePluginNodeAddress,
+	type PluginDefinitionAddressSnapshot,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 
-export type PluginGroupState = {
-	groupId: string
-	name: string
-	pluginIds: string[]
-}
-
 export type RuntimeStateSnapshot = Readonly<{
-	enabled: readonly string[]
-	forks: Readonly<Record<string, readonly string[]>>
-	baseProviders: Readonly<Record<string, string>>
-	dependencyOverrides: Readonly<Record<string, Readonly<Record<number, string>>>>
-	optionalKnown: Readonly<Record<string, 1>>
-	/** @deprecated Legacy input read once by Workbench catalog preference migration. */
-	pluginGroups: readonly PluginGroupState[]
+	enabled: readonly PluginNodeAddressSnapshot[]
+	forks: readonly RuntimeForkState[]
+	providerDefaults: readonly RuntimeProviderDefaultState[]
+	dependencyOverrides: readonly RuntimeDependencyOverrideState[]
 }>
 
 export type RuntimeStateDraft = {
-	enabled: Set<string>
-	forks: Record<string, string[]>
-	baseProviders: Record<string, string>
-	dependencyOverrides: Record<string, Record<number, string>>
-	optionalKnown: Record<string, 1>
-	pluginGroups: PluginGroupState[]
+	enabled: PluginNodeAddressSnapshot[]
+	forks: RuntimeForkState[]
+	providerDefaults: RuntimeProviderDefaultState[]
+	dependencyOverrides: RuntimeDependencyOverrideState[]
+}
+
+export type RuntimeForkState = {
+	definition: PluginDefinitionAddressSnapshot
+	forkIds: readonly string[]
+}
+
+export type RuntimeProviderDefaultState = {
+	token: PluginDefinitionAddressSnapshot
+	provider: PluginNodeAddressSnapshot
+}
+
+export type RuntimeDependencyOverrideState = {
+	consumer: PluginNodeAddressSnapshot
+	parameterIndex: number
+	provider: PluginNodeAddressSnapshot
 }
 
 export type RuntimeStateFile = {
-	version: 2
-	enabled: string[]
-	forks?: Record<string, string[]>
-	baseProviders?: Record<string, string>
-	dependencyOverrides?: Record<string, Record<number, string>>
-	optionalKnown?: Record<string, 1>
-	/** @deprecated Legacy Workbench group layout retained for non-destructive migration. */
-	pluginGroups?: PluginGroupState[]
+	version: 3
+	enabled: PluginNodeAddressSnapshot[]
+	forks: RuntimeForkState[]
+	providerDefaults: RuntimeProviderDefaultState[]
+	dependencyOverrides: RuntimeDependencyOverrideState[]
 }
 
 export type RuntimeStateStoreMode = 'file' | 'memory' | 'readonly'
 
 export interface RuntimeStateStoreConfig {
 	mode?: RuntimeStateStoreMode
-	snapshot?: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] }
+	snapshot?: Partial<RuntimeStateSnapshot> & {
+		enabled?: Iterable<PluginNodeAddressSnapshot> | PluginNodeAddressSnapshot[]
+	}
 }
 
 export {
@@ -278,200 +289,300 @@ export class RuntimeStateStore {
 
 function createDefaultDraft(): RuntimeStateDraft {
 	return {
-		enabled: new Set(),
-		forks: Object.create(null),
-		baseProviders: Object.create(null),
-		dependencyOverrides: Object.create(null),
-		optionalKnown: Object.create(null),
-		pluginGroups: [],
+		enabled: [],
+		forks: [],
+		providerDefaults: [],
+		dependencyOverrides: [],
 	}
 }
 
 function replaceDraft(target: RuntimeStateDraft, source: RuntimeStateDraft): void {
-	target.enabled.clear()
-	for (const name of source.enabled) target.enabled.add(name)
-	replaceRecord(target.forks, source.forks)
-	replaceRecord(target.baseProviders, source.baseProviders)
-	replaceRecord(target.dependencyOverrides, source.dependencyOverrides)
-	replaceRecord(target.optionalKnown, source.optionalKnown)
-	target.pluginGroups = source.pluginGroups.map(clonePluginGroup)
+	target.enabled = source.enabled.map(cloneNodeAddress)
+	target.forks = source.forks.map(cloneForkState)
+	target.providerDefaults = source.providerDefaults.map(cloneProviderDefault)
+	target.dependencyOverrides = source.dependencyOverrides.map(cloneDependencyOverride)
 }
 
 function applySnapshot(
 	draft: RuntimeStateDraft,
-	snapshot: Partial<RuntimeStateSnapshot> & { enabled?: Iterable<string> | string[] },
+	snapshot: Partial<RuntimeStateSnapshot> & {
+		enabled?: Iterable<PluginNodeAddressSnapshot> | PluginNodeAddressSnapshot[]
+	},
 ): void {
 	if (snapshot.enabled) {
-		draft.enabled.clear()
-		for (const name of snapshot.enabled) {
-			if (typeof name === 'string' && name) draft.enabled.add(name)
-		}
+		draft.enabled = parseUniqueNodes([...snapshot.enabled], 'runtimeState.snapshot.enabled')
 	}
-	if (snapshot.forks) replaceRecord(draft.forks, coerceForks(snapshot.forks))
-	if (snapshot.baseProviders)
-		replaceRecord(draft.baseProviders, coerceStringRecord(snapshot.baseProviders))
+	if (snapshot.forks) draft.forks = parseForks(snapshot.forks, 'runtimeState.snapshot.forks')
+	if (snapshot.providerDefaults) {
+		draft.providerDefaults = parseProviderDefaults(
+			snapshot.providerDefaults,
+			'runtimeState.snapshot.providerDefaults',
+		)
+	}
 	if (snapshot.dependencyOverrides) {
-		replaceRecord(draft.dependencyOverrides, coerceDepOverrides(snapshot.dependencyOverrides))
+		draft.dependencyOverrides = parseDependencyOverrides(
+			snapshot.dependencyOverrides,
+			'runtimeState.snapshot.dependencyOverrides',
+		)
 	}
-	if (snapshot.optionalKnown)
-		replaceRecord(draft.optionalKnown, coerceKnownRecord(snapshot.optionalKnown))
-	if (snapshot.pluginGroups) draft.pluginGroups = coercePluginGroups(snapshot.pluginGroups)
 }
 
 function freezeSnapshot(draft: RuntimeStateDraft): RuntimeStateSnapshot {
 	return Object.freeze({
-		enabled: Object.freeze([...draft.enabled]),
-		forks: freezeRecordOfArrays(draft.forks),
-		baseProviders: Object.freeze({ ...draft.baseProviders }),
-		dependencyOverrides: freezeNestedRecord(draft.dependencyOverrides),
-		optionalKnown: Object.freeze({ ...draft.optionalKnown }),
-		pluginGroups: Object.freeze(draft.pluginGroups.map(clonePluginGroup)),
+		enabled: Object.freeze(draft.enabled.map(freezeNodeAddress)),
+		forks: Object.freeze(
+			draft.forks.map((entry) =>
+				Object.freeze({
+					definition: freezeDefinitionAddress(entry.definition),
+					forkIds: Object.freeze([...entry.forkIds]),
+				}),
+			),
+		),
+		providerDefaults: Object.freeze(
+			draft.providerDefaults.map((entry) =>
+				Object.freeze({
+					token: freezeDefinitionAddress(entry.token),
+					provider: freezeNodeAddress(entry.provider),
+				}),
+			),
+		),
+		dependencyOverrides: Object.freeze(
+			draft.dependencyOverrides.map((entry) =>
+				Object.freeze({
+					consumer: freezeNodeAddress(entry.consumer),
+					parameterIndex: entry.parameterIndex,
+					provider: freezeNodeAddress(entry.provider),
+				}),
+			),
+		),
 	})
 }
 
 function toRuntimeStateFile(draft: RuntimeStateDraft): RuntimeStateFile {
 	return {
-		version: 2,
-		enabled: [...draft.enabled],
-		forks: cloneRecordOfArrays(draft.forks),
-		baseProviders: { ...draft.baseProviders },
-		dependencyOverrides: cloneNestedRecord(draft.dependencyOverrides),
-		optionalKnown: { ...draft.optionalKnown },
-		pluginGroups: draft.pluginGroups.map(clonePluginGroup),
+		version: 3,
+		enabled: draft.enabled.map(cloneNodeAddress),
+		forks: draft.forks.map(cloneForkState),
+		providerDefaults: draft.providerDefaults.map(cloneProviderDefault),
+		dependencyOverrides: draft.dependencyOverrides.map(cloneDependencyOverride),
 	}
 }
 
 function coerceRuntimeStateFile(input: unknown): RuntimeStateDraft {
-	const out = createDefaultDraft()
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	const raw = input as Omit<Partial<RuntimeStateFile>, 'version'> & {
-		version?: unknown
-		/** Runtime-state v1 field intentionally discarded during migration. */
-		builtinsKnown?: unknown
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw invalidState('persisted state must be an object')
 	}
-	if (raw.version !== 1 && raw.version !== 2) {
-		throw new Error(
-			`[RuntimeStateStore] Unsupported persisted state version: ${String(raw.version)}`,
+	const raw = input as Record<string, unknown>
+	if (raw.version !== 3) {
+		throw invalidState(`unsupported persisted state version: ${String(raw.version)}`)
+	}
+	if (!Array.isArray(raw.enabled)) throw invalidState('enabled must be an array')
+	if (!Array.isArray(raw.forks)) throw invalidState('forks must be an array')
+	if (!Array.isArray(raw.providerDefaults)) {
+		throw invalidState('providerDefaults must be an array')
+	}
+	if (!Array.isArray(raw.dependencyOverrides)) {
+		throw invalidState('dependencyOverrides must be an array')
+	}
+	return {
+		enabled: parseUniqueNodes(raw.enabled, 'enabled'),
+		forks: parseForks(raw.forks, 'forks'),
+		providerDefaults: parseProviderDefaults(raw.providerDefaults, 'providerDefaults'),
+		dependencyOverrides: parseDependencyOverrides(raw.dependencyOverrides, 'dependencyOverrides'),
+	}
+}
+
+function parseUniqueNodes(input: readonly unknown[], at: string): PluginNodeAddressSnapshot[] {
+	const out: PluginNodeAddressSnapshot[] = []
+	for (let i = 0; i < input.length; i++) {
+		const node = parseNode(input[i], `${at}[${i}]`)
+		if (out.some((candidate) => sameNode(candidate, node))) {
+			throw invalidState(`${at}[${i}] duplicates an earlier node`)
+		}
+		out.push(node)
+	}
+	return out
+}
+
+function parseForks(input: readonly unknown[], at: string): RuntimeForkState[] {
+	const out: RuntimeForkState[] = []
+	for (let i = 0; i < input.length; i++) {
+		const raw = record(input[i], `${at}[${i}]`)
+		const definition = parseDefinition(raw.definition, `${at}[${i}].definition`)
+		if (!Array.isArray(raw.forkIds)) throw invalidState(`${at}[${i}].forkIds must be an array`)
+		const forkIds = raw.forkIds.map((value, index) =>
+			nonEmptyText(value, `${at}[${i}].forkIds[${index}]`),
 		)
-	}
-	if (Array.isArray(raw.enabled)) {
-		for (const name of raw.enabled) {
-			if (typeof name === 'string' && name) out.enabled.add(name)
+		if (new Set(forkIds).size !== forkIds.length) {
+			throw invalidState(`${at}[${i}].forkIds contains duplicates`)
 		}
-	}
-	if (raw.forks) replaceRecord(out.forks, coerceForks(raw.forks))
-	if (raw.baseProviders) replaceRecord(out.baseProviders, coerceStringRecord(raw.baseProviders))
-	if (raw.dependencyOverrides) {
-		replaceRecord(out.dependencyOverrides, coerceDepOverrides(raw.dependencyOverrides))
-	}
-	if (raw.optionalKnown) replaceRecord(out.optionalKnown, coerceKnownRecord(raw.optionalKnown))
-	if (raw.pluginGroups) out.pluginGroups = coercePluginGroups(raw.pluginGroups)
-	return out
-}
-
-function replaceRecord<T>(target: Record<string, T>, source: Record<string, T>): void {
-	for (const key in target) delete target[key]
-	Object.assign(target, source)
-}
-
-function coerceForks(input: unknown): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (!Array.isArray(value)) continue
-		const items = value.filter((item): item is string => typeof item === 'string' && !!item)
-		if (items.length > 0) out[key] = items
-	}
-	return out
-}
-
-function coerceStringRecord(input: unknown): Record<string, string> {
-	const out: Record<string, string> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (typeof value === 'string' && value) out[key] = value
-	}
-	return out
-}
-
-function coerceDepOverrides(input: unknown): Record<string, Record<number, string>> {
-	const out: Record<string, Record<number, string>> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [consumer, rawOverrides] of Object.entries(input as Record<string, unknown>)) {
-		if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) continue
-		const entry: Record<number, string> = Object.create(null)
-		for (const [rawIndex, target] of Object.entries(rawOverrides as Record<string, unknown>)) {
-			const index = Number(rawIndex)
-			if (!Number.isFinite(index) || index < 0) continue
-			if (typeof target === 'string' && target) entry[index] = target
+		if (out.some((candidate) => sameDefinition(candidate.definition, definition))) {
+			throw invalidState(`${at}[${i}] duplicates a definition`)
 		}
-		if (Object.keys(entry).length > 0) out[consumer] = entry
+		out.push({ definition, forkIds })
 	}
 	return out
 }
 
-function coerceKnownRecord(input: unknown): Record<string, 1> {
-	const out: Record<string, 1> = Object.create(null)
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-		if (value === 1) out[key] = 1
+function parseProviderDefaults(
+	input: readonly unknown[],
+	at: string,
+): RuntimeProviderDefaultState[] {
+	const out: RuntimeProviderDefaultState[] = []
+	for (let i = 0; i < input.length; i++) {
+		const raw = record(input[i], `${at}[${i}]`)
+		const token = parseDefinition(raw.token, `${at}[${i}].token`)
+		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
+		if (out.some((candidate) => sameDefinition(candidate.token, token))) {
+			throw invalidState(`${at}[${i}] duplicates a provider token`)
+		}
+		out.push({ token, provider })
 	}
 	return out
 }
 
-function coercePluginGroups(input: unknown): PluginGroupState[] {
-	if (!Array.isArray(input)) return []
-	return input.flatMap((item): PluginGroupState[] => {
-		if (!item || typeof item !== 'object' || Array.isArray(item)) return []
-		const raw = item as Record<string, unknown>
-		if (typeof raw.groupId !== 'string' || typeof raw.name !== 'string') return []
-		if (!Array.isArray(raw.pluginIds)) return []
-		return [
-			{
-				groupId: raw.groupId,
-				name: raw.name,
-				pluginIds: raw.pluginIds.filter((id): id is string => typeof id === 'string'),
-			},
-		]
-	})
-}
-
-function clonePluginGroup(group: PluginGroupState): PluginGroupState {
-	return { groupId: group.groupId, name: group.name, pluginIds: [...group.pluginIds] }
-}
-
-function cloneRecordOfArrays(input: Record<string, readonly string[]>): Record<string, string[]> {
-	const out: Record<string, string[]> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) out[key] = [...value]
-	return out
-}
-
-function cloneNestedRecord(
-	input: Record<string, Readonly<Record<number, string>>>,
-): Record<string, Record<number, string>> {
-	const out: Record<string, Record<number, string>> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) {
-		out[key] = Object.assign(Object.create(null), value)
+function parseDependencyOverrides(
+	input: readonly unknown[],
+	at: string,
+): RuntimeDependencyOverrideState[] {
+	const out: RuntimeDependencyOverrideState[] = []
+	for (let i = 0; i < input.length; i++) {
+		const raw = record(input[i], `${at}[${i}]`)
+		const consumer = parseNode(raw.consumer, `${at}[${i}].consumer`)
+		const provider = parseNode(raw.provider, `${at}[${i}].provider`)
+		const parameterIndex = raw.parameterIndex
+		if (!Number.isSafeInteger(parameterIndex) || (parameterIndex as number) < 0) {
+			throw invalidState(`${at}[${i}].parameterIndex must be a non-negative integer`)
+		}
+		if (
+			out.some(
+				(candidate) =>
+					sameNode(candidate.consumer, consumer) && candidate.parameterIndex === parameterIndex,
+			)
+		) {
+			throw invalidState(`${at}[${i}] duplicates a consumer parameter`)
+		}
+		out.push({ consumer, parameterIndex: parameterIndex as number, provider })
 	}
 	return out
 }
 
-function freezeRecordOfArrays(
-	input: Record<string, readonly string[]>,
-): Readonly<Record<string, readonly string[]>> {
-	const out: Record<string, readonly string[]> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) out[key] = Object.freeze([...value])
-	return Object.freeze(out)
+function parseDefinition(value: unknown, at: string): PluginDefinitionAddressSnapshot {
+	try {
+		return parsePluginDefinitionAddress(value)
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
+	}
 }
 
-function freezeNestedRecord(
-	input: Record<string, Readonly<Record<number, string>>>,
-): Readonly<Record<string, Readonly<Record<number, string>>>> {
-	const out: Record<string, Readonly<Record<number, string>>> = Object.create(null)
-	for (const [key, value] of Object.entries(input)) {
-		out[key] = Object.freeze(Object.assign(Object.create(null), value))
+function parseNode(value: unknown, at: string): PluginNodeAddressSnapshot {
+	try {
+		return parsePluginNodeAddress(value)
+	} catch (error) {
+		throw invalidState(`${at}: ${error instanceof Error ? error.message : String(error)}`)
 	}
-	return Object.freeze(out)
+}
+
+function record(value: unknown, at: string): Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw invalidState(`${at} must be an object`)
+	}
+	return value as Record<string, unknown>
+}
+
+function nonEmptyText(value: unknown, at: string): string {
+	if (typeof value !== 'string' || value.trim() === '') {
+		throw invalidState(`${at} must be a non-empty string`)
+	}
+	return value
+}
+
+function invalidState(message: string): Error {
+	return new Error(`[RuntimeStateStore] ${message}`)
+}
+
+function sameDefinition(
+	left: PluginDefinitionAddressSnapshot,
+	right: PluginDefinitionAddressSnapshot,
+): boolean {
+	if (left.exportName !== right.exportName || left.entry.kind !== right.entry.kind) return false
+	return left.entry.kind === 'package-root'
+		? right.entry.kind === 'package-root' && left.entry.packageName === right.entry.packageName
+		: right.entry.kind === 'source-entry' && left.entry.source === right.entry.source
+}
+
+function sameNode(left: PluginNodeAddressSnapshot, right: PluginNodeAddressSnapshot): boolean {
+	if (!sameDefinition(left.definition, right.definition) || left.instance !== right.instance) {
+		return false
+	}
+	return left.instance === 'default'
+		? true
+		: right.instance === 'fork' && left.forkId === right.forkId
+}
+
+function cloneDefinitionAddress(
+	definition: PluginDefinitionAddressSnapshot,
+): PluginDefinitionAddressSnapshot {
+	return {
+		entry:
+			definition.entry.kind === 'package-root'
+				? { kind: 'package-root', packageName: definition.entry.packageName }
+				: { kind: 'source-entry', source: definition.entry.source },
+		exportName: definition.exportName,
+	}
+}
+
+function cloneNodeAddress(node: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+	return node.instance === 'default'
+		? { definition: cloneDefinitionAddress(node.definition), instance: 'default' }
+		: {
+				definition: cloneDefinitionAddress(node.definition),
+				instance: 'fork',
+				forkId: node.forkId,
+			}
+}
+
+function cloneForkState(entry: RuntimeForkState): RuntimeForkState {
+	return { definition: cloneDefinitionAddress(entry.definition), forkIds: [...entry.forkIds] }
+}
+
+function cloneProviderDefault(entry: RuntimeProviderDefaultState): RuntimeProviderDefaultState {
+	return {
+		token: cloneDefinitionAddress(entry.token),
+		provider: cloneNodeAddress(entry.provider),
+	}
+}
+
+function cloneDependencyOverride(
+	entry: RuntimeDependencyOverrideState,
+): RuntimeDependencyOverrideState {
+	return {
+		consumer: cloneNodeAddress(entry.consumer),
+		parameterIndex: entry.parameterIndex,
+		provider: cloneNodeAddress(entry.provider),
+	}
+}
+
+function freezeDefinitionAddress(
+	definition: PluginDefinitionAddressSnapshot,
+): PluginDefinitionAddressSnapshot {
+	const entry = Object.freeze({ ...definition.entry })
+	return Object.freeze({
+		entry,
+		exportName: definition.exportName,
+	}) as PluginDefinitionAddressSnapshot
+}
+
+function freezeNodeAddress(node: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+	return Object.freeze(
+		node.instance === 'default'
+			? { definition: freezeDefinitionAddress(node.definition), instance: 'default' as const }
+			: {
+					definition: freezeDefinitionAddress(node.definition),
+					instance: 'fork' as const,
+					forkId: node.forkId,
+				},
+	)
 }
 
 function defaultRuntimeStateStoreMode(

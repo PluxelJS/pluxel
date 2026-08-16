@@ -1,5 +1,6 @@
 import { configureSync, getConfig, reset } from '@logtape/logtape'
 import { LoggerService } from '@pluxel/core/logger'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import {
 	createRuntimeLogging,
 	type RuntimeLogging,
@@ -32,9 +33,21 @@ function storePlan(initialPluginPolicy?: RuntimeLoggingInput['root']['initialPlu
 	} satisfies RuntimeLoggingInput
 }
 
-function pluginLogger(logging: RuntimeLogging, pluginId: string) {
+const pluginA = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/plugin-a' },
+		exportName: 'PluginA',
+	},
+	instance: 'default',
+} as const satisfies PluginNodeAddressSnapshot
+
+function pluginLogger(
+	logging: RuntimeLogging,
+	address: PluginNodeAddressSnapshot,
+	displayName = 'Plugin A',
+) {
 	return new LoggerService(
-		{ name: pluginId, pluginInfo: { id: pluginId } } as never,
+		{ name: displayName, pluginInfo: { nodeAddress: address } } as never,
 		logging.contextBinding,
 	)
 }
@@ -50,16 +63,20 @@ describe('RuntimeLogging', () => {
 
 	it('resolves an inspectable root plan without per-plugin logger config', () => {
 		logging = createRuntimeLogging(
-			storePlan({ version: 1, defaultLevel: 'info', overrides: { PluginA: 'debug' } }),
+			storePlan({
+				version: 2,
+				defaultLevel: 'info',
+				overrides: [{ owner: pluginA, level: 'debug' }],
+			}),
 		)
 		const description = logging.describe()
 		expect(description.state).toBe('created')
 		expect(description.plan.root.id).toBeTruthy()
 		expect(description.plan.routes.plugins).toEqual([{ sink: 'store', minLevel: 'trace' }])
 		expect(description.root.policy).toMatchObject({
-			version: 1,
+			version: 2,
 			defaultLevel: 'info',
-			overrides: { PluginA: 'debug' },
+			overrides: [{ owner: pluginA, level: 'debug' }],
 		})
 	})
 
@@ -68,10 +85,10 @@ describe('RuntimeLogging', () => {
 		await logging.install()
 		await logging.initializePolicy()
 		const config = getConfig()
-		const logger = pluginLogger(logging, 'PluginA')
+		const logger = pluginLogger(logging, pluginA)
 
 		logger.debug('rejected')
-		logging.policy.setPluginLevel('PluginA', 'debug')
+		logging.policy.setPluginLevel(pluginA, 'debug')
 		logger.debug('accepted')
 
 		expect(getConfig()).toBe(config)
@@ -79,8 +96,8 @@ describe('RuntimeLogging', () => {
 			logging.stores
 				.getOrCreate('default')
 				.tailWindow(10)
-				.map((line) => ({ message: line.msg, pluginId: line.pluginId })),
-		).toEqual([{ message: 'accepted', pluginId: 'PluginA' }])
+				.map((line) => ({ message: line.msg, plugin: line.plugin })),
+		).toEqual([{ message: 'accepted', plugin: pluginA }])
 	})
 
 	it('preserves an error-like property in both structured log views', async () => {
@@ -93,7 +110,7 @@ describe('RuntimeLogging', () => {
 		})
 		diagnostic.name = 'ProviderError'
 
-		pluginLogger(logging, 'PluginA').warn('playback failed', { error: diagnostic })
+		pluginLogger(logging, pluginA).warn('playback failed', { error: diagnostic })
 
 		const line = logging.stores.getOrCreate('default').tailWindow(1)[0]
 		expect(line?.props?.error).toMatchObject({
@@ -114,10 +131,10 @@ describe('RuntimeLogging', () => {
 		logging = createRuntimeLogging(storePlan())
 		await logging.install()
 		await logging.initializePolicy()
-		const logger = pluginLogger(logging, 'PluginA')
+		const logger = pluginLogger(logging, pluginA)
 
 		logger.getDebugChannel('hmr:cache').debug('policy rejected')
-		logging.policy.setPluginLevel('PluginA', 'debug')
+		logging.policy.setPluginLevel(pluginA, 'debug')
 		logger.getDebugChannel('other:cache').debug('topic rejected')
 		logger.getDebugChannel('hmr:cache').debug('accepted')
 
@@ -125,17 +142,20 @@ describe('RuntimeLogging', () => {
 			logging.stores
 				.getOrCreate('default')
 				.tailWindow(10)
-				.map((line) => ({ message: line.msg, pluginId: line.pluginId })),
-		).toEqual([{ message: 'accepted', pluginId: 'PluginA' }])
+				.map((line) => ({ message: line.msg, plugin: line.plugin })),
+		).toEqual([{ message: 'accepted', plugin: pluginA }])
 	})
 
 	it('fails closed for records bound to another root', async () => {
 		logging = createRuntimeLogging(storePlan())
 		await logging.install()
 		await logging.initializePolicy()
-		const foreign = new LoggerService({ name: 'PluginA', pluginInfo: { id: 'PluginA' } } as never, {
-			rootId: 'foreign-root',
-		})
+		const foreign = new LoggerService(
+			{ name: 'Plugin A', pluginInfo: { nodeAddress: pluginA } } as never,
+			{
+				rootId: 'foreign-root',
+			},
+		)
 
 		foreign.info('foreign')
 		expect(logging.stores.getOrCreate('default').tailWindow(10)).toHaveLength(0)

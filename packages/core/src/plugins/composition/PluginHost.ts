@@ -1,55 +1,55 @@
-import type { PluginConstructor, PluginIdentifier } from '../types'
-import type { FeatureHost } from './FeatureHost'
-import { isOptionalPluginRef, type OptionalPluginRef } from './OptionalPlugin'
+import type { Context } from '@pluxel/context'
+import type { Cleanup, DisposableLike } from '../../services/effects/EffectsService'
+import { isPluginRef, type PluginRef } from '../runtime/definition'
 
-type OptionalPluginAvailability = {
-	subscribe<T extends PluginConstructor>(
-		ref: OptionalPluginRef<T>,
-		onResolved: (token: T) => void,
-	): () => void
+type OptionalResolver = {
+	resolvePluginRef<T>(ref: PluginRef<T>, consumer: Context): T | undefined
 }
 
-/** Optional integrations with independently managed plugin lifecycle nodes. */
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+	return (
+		!!value &&
+		(typeof value === 'object' || typeof value === 'function') &&
+		typeof (value as { then?: unknown }).then === 'function'
+	)
+}
+
+function isDisposable(value: unknown): value is DisposableLike {
+	return (
+		!!value &&
+		typeof value === 'object' &&
+		typeof (value as { dispose?: unknown }).dispose === 'function'
+	)
+}
+
+/** Init-only optional integration facade. Optional edges are static lowered facts. */
 export class PluginHost {
-	constructor(private readonly features: FeatureHost<any>) {}
+	constructor(
+		private readonly ctx: Context,
+		private readonly isInitActive: () => boolean,
+	) {}
 
-	get<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined {
-		return this.features.pluginIntegration(id)
-	}
-
-	use<T extends PluginIdentifier>(
-		id: T,
-		callback: (plugin: InstanceType<T>) => void | (() => void),
-	): () => void
-	use<T extends PluginConstructor>(
-		ref: OptionalPluginRef<T>,
-		callback: (plugin: InstanceType<T>) => void | (() => void),
-	): () => void
-	use(
-		target: PluginIdentifier | OptionalPluginRef<PluginConstructor>,
-		callback: (plugin: any) => void | (() => void),
-	): () => void {
-		if (!isOptionalPluginRef(target)) return this.features.pluginIntegration(target, callback)
-
-		const availability = (this.features.ctx.root as unknown as { optionalPlugins?: unknown })
-			.optionalPlugins as OptionalPluginAvailability | undefined
-		if (!availability) {
-			throw new Error(
-				'[pluxel/core] package-optional plugins require a runtime availability service',
-			)
+	use<T>(ref: PluginRef<T>, setup: (plugin: T) => void | Cleanup | DisposableLike): void {
+		if (!this.isInitActive()) {
+			throw new Error('[pluxel/core] plugins.use() is only available during Plugin init()')
 		}
-
-		let stopWatching: (() => void) | undefined
-		const stopAvailability = availability.subscribe(target, (token) => {
-			stopWatching?.()
-			stopWatching = this.features.pluginIntegration(token, callback)
-		})
-		const off = () => {
-			stopWatching?.()
-			stopWatching = undefined
-			stopAvailability()
+		if (!isPluginRef(ref)) {
+			throw new TypeError('[pluxel/core] plugins.use() expects a lowered module-level PluginRef')
 		}
-		this.features.ctx.effects.defer(off)
-		return off
+		const registry = (this.ctx as unknown as { registry?: OptionalResolver }).registry
+		if (!registry || typeof registry.resolvePluginRef !== 'function') {
+			throw new Error('[pluxel/core] plugins.use() requires the Plugin registry')
+		}
+		const plugin = registry.resolvePluginRef(ref, this.ctx) as T | undefined
+		if (plugin === undefined) return
+		const resource = setup(plugin)
+		if (isPromiseLike(resource)) {
+			throw new TypeError('[pluxel/core] plugins.use() setup must be synchronous')
+		}
+		if (typeof resource === 'function') this.ctx.effects.defer(resource)
+		else if (isDisposable(resource)) this.ctx.effects.own(resource)
+		else if (resource !== undefined) {
+			throw new TypeError('[pluxel/core] plugins.use() setup returned an invalid resource')
+		}
 	}
 }

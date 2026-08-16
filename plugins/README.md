@@ -23,7 +23,8 @@ core/runtime。
 - `projects/plugin-host`：框架维护者的动态/静态真实 host 验证场所。
 - 独立产品 workspace：通过 `pluxel source` 验证多个插件的产品级组合。
 - 官方插件只使用 `@pluxel/runtime` 的公开入口，不使用 toolchain 或 host installation internal helper。
-- 必需 capability 写成 constructor dependency；可选集成使用 `plugins.use()`。
+- 必需 capability 写成 constructor dependency；可选集成使用非导出的 module-level
+  `definePluginRef<T>()` 与 `init()` 中的 `plugins.use(ref, setup)`。
 - 调用方状态从依赖注入时绑定的 `ctx.caller` 推导。共享 provider 状态不得依赖可变的全局“当前调用方”。
 - Workbench 是可选且由宿主拥有的能力。它可以投影配置、状态、诊断和 typed resource，但关闭后不得影响
   业务能力与核心生命周期。
@@ -51,7 +52,6 @@ runtime 逐渐积累只服务于某个集成的特殊 hook。
 - [`@pluxel/redis`](redis/README.md)：Redis capability、standalone provider、Lua helper 与内置 cache/rates backend。
 - [`@pluxel/storage`](storage/README.md)：以 s3mini API 为契约、通过配置选择 local/remote 的单一 S3 provider。
 - [`@pluxel/wretch`](wretch/README.md)：基于 Wretch 的出站 HTTP capability。
-  - `@pluxel/wretch/example`：随包构建的标准 consumer 与 static runtime smoke 入口。
 - [`@pluxel/package-manager`](package-manager/README.md)：基于 pnpm Rust engine 的受控插件包安装、原子 source publication 与可选 Workbench 管理页。
 - [`@pluxel/otel`](otel/README.md)：原生 OpenTelemetry Meter/Tracer/Logger，支持三种 OTLP transport 与 Prometheus pull。
 - [`render/`](render/README.md)：服务端渲染能力链。

@@ -1,160 +1,141 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, ForkablePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
+import {
+	clonePluginDefinition,
+	getPluginDefinitionFacts,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+} from '@pluxel/core'
+import { BasePlugin, ForkablePlugin, Plugin } from '@pluxel/runtime/test'
 import { createHmrTestContext } from '../support/hmr-context'
+import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins } from '../support/runtime-state'
 
-async function commitBatch(
-	core: ReturnType<typeof createHmrTestContext>['core'],
-	batch: { commit(): void },
-) {
-	const res = await core.registry.commit()
-	expect(res.ok).toBe(true)
-	batch.commit()
-}
-
-function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
-
 describe('base provider selection', () => {
-	it('self-heals when baseProviders points to a fork id', async () => {
+	it('rejects a fork as provider default and persists the deterministic default node', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
 
 		abstract class Abs extends ForkablePlugin {}
+		lowerTestAbstract(Abs)
 
+		@Plugin(Abs, { displayName: 'Implementation' })
 		class Impl extends Abs {}
-		Plugin(Abs, { name: 'Impl' })(Impl)
+		lowerTestPlugin(Impl, { provides: getPluginDefinitionFacts(Abs).definition })
 
-		// Persist an invalid selection: base points to a fork id.
+		const implementation = pluginNodeAddressOf(Impl)
+		const fork = {
+			definition: implementation.definition,
+			instance: 'fork',
+			forkId: 'f1',
+		} as const
 		ctx.runtimeState.update((draft) => {
-			draft.baseProviders = { Abs: 'Impl#f1' }
-			draft.forks = { Impl: ['f1'] }
+			draft.providerDefaults = [{ token: getPluginDefinitionFacts(Abs).definition, provider: fork }]
+			draft.forks = [{ definition: implementation.definition, forkIds: ['f1'] }]
 		})
+		enablePlugins(ctx, implementation, fork)
 
-		// Enable both the provider and the fork.
-		enablePlugins(ctx, 'Impl', 'Impl#f1')
+		await ctx.loader.replaceModule('A.ts', { Impl })
 
-		const batch = loader.beginBatch()
-		await batch.replaceModule('A.ts', { Impl })
-		await commitBatch(core, batch)
-
-		// Base token must still resolve/runs (selection should not break DI).
 		expect(core.registry.isRunning(Abs)).toBe(true)
+		expect(ctx.runtimeState.snapshot().providerDefaults).toEqual([
+			{
+				token: getPluginDefinitionFacts(Abs).definition,
+				provider: implementation,
+			},
+		])
 	})
 
-	it('restarts consumers that depend on a base token when the selected provider module reloads', async () => {
+	it('restarts consumers of a base token when its provider generation changes', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-		let providerSeq = 0
-		let consumerSeq = 0
+		let consumerStarts = 0
 
 		abstract class Abs extends ForkablePlugin {
-			abstract readonly providerSeq: number
+			abstract readonly generation: number
 		}
+		lowerTestAbstract(Abs)
 
+		@Plugin(Abs, { displayName: 'Provider' })
 		class Impl extends Abs {
-			readonly providerSeq = ++providerSeq
+			readonly generation = 1
 		}
-		Plugin(Abs, { name: 'Impl' })(Impl)
+		lowerTestPlugin(Impl, { provides: getPluginDefinitionFacts(Abs).definition })
 
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
-			readonly consumerSeq = ++consumerSeq
-
 			constructor(readonly dep: Abs) {
 				super()
+				consumerStarts++
 			}
 		}
-		defineParamTypes(Consumer, [Abs])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, Abs)
+		lowerTestPlugin(Consumer, { requires: [Abs] })
 
-		enablePlugins(ctx, 'Impl', 'Consumer')
-
-		{
-			const batch = loader.beginBatch()
-			await batch.replaceModule('Provider.ts', { Impl })
-			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(core, batch)
-		}
-
+		enablePlugins(ctx, Impl, Consumer)
+		await ctx.loader.replaceModule('Provider.ts', { Impl })
+		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
 		const firstConsumer = core.registry.getInstance(Consumer)
-		expect(firstConsumer?.consumerSeq).toBe(1)
-		expect(firstConsumer?.dep.providerSeq).toBe(1)
+		expect(firstConsumer?.dep.generation).toBe(1)
 
 		class ImplNext extends Abs {
-			readonly providerSeq = ++providerSeq
+			readonly generation = 2
 		}
-		Plugin(Abs, { name: 'Impl' })(ImplNext)
-
-		const batch = loader.beginBatch()
-		await batch.replaceModule('Provider.ts', { ImplNext })
-		expect(new Set(batch.getAffectedModules())).toEqual(new Set(['Provider.ts', 'Consumer.ts']))
-		await batch.syncModules(batch.getAffectedModules())
-		await commitBatch(core, batch)
+		clonePluginDefinition(Impl, ImplNext)
+		await ctx.loader.replaceModule('Provider.ts', { Impl: ImplNext })
 
 		const nextConsumer = core.registry.getInstance(Consumer)
-		expect(nextConsumer?.consumerSeq).toBe(2)
-		expect(nextConsumer?.dep.providerSeq).toBe(2)
+		expect(pluginNodeAddressEqual(pluginNodeAddressOf(ImplNext), pluginNodeAddressOf(Impl))).toBe(
+			true,
+		)
+		expect(nextConsumer?.dep.generation).toBe(2)
 		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(consumerStarts).toBe(2)
 	})
 
-	it('restarts consumers that depend on an enabled fork when the provider module reloads', async () => {
+	it('preserves a structured fork override across provider replacement', async () => {
 		const { core, ctx } = createHmrTestContext()
-		const loader = ctx.loader
-		let providerSeq = 0
-		let consumerSeq = 0
+		let consumerStarts = 0
 
+		@Plugin({ displayName: 'Worker' })
 		class Worker extends ForkablePlugin {
-			readonly providerSeq = ++providerSeq
+			readonly generation = 1
 		}
-		Plugin({ name: 'Worker' })(Worker)
+		lowerTestPlugin(Worker)
 
-		const WorkerFork = core.registry.fork(Worker, 'f1')
-
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
-			readonly consumerSeq = ++consumerSeq
-
-			constructor(readonly dep: InstanceType<typeof Worker>) {
+			constructor(readonly dep: Worker) {
 				super()
+				consumerStarts++
 			}
 		}
-		defineParamTypes(Consumer, [WorkerFork])
-		Plugin({ name: 'Consumer' })(Consumer)
-		setParamToken(Consumer, 0, WorkerFork)
+		lowerTestPlugin(Consumer, { requires: [Worker] })
 
+		const worker = pluginNodeAddressOf(Worker)
+		const fork = {
+			definition: worker.definition,
+			instance: 'fork',
+			forkId: 'f1',
+		} as const
 		ctx.runtimeState.update((draft) => {
-			draft.forks = { Worker: ['f1'] }
+			draft.forks = [{ definition: worker.definition, forkIds: ['f1'] }]
+			draft.dependencyOverrides = [
+				{ consumer: pluginNodeAddressOf(Consumer), parameterIndex: 0, provider: fork },
+			]
 		})
-		enablePlugins(ctx, 'Worker#f1', 'Consumer')
-
-		{
-			const batch = loader.beginBatch()
-			await batch.replaceModule('Provider.ts', { Worker })
-			await batch.replaceModule('Consumer.ts', { Consumer })
-			await commitBatch(core, batch)
-		}
-
+		enablePlugins(ctx, fork, Consumer)
+		await ctx.loader.replaceModule('Provider.ts', { Worker })
+		await ctx.loader.replaceModule('Consumer.ts', { Consumer })
 		const firstConsumer = core.registry.getInstance(Consumer)
-		expect(firstConsumer?.consumerSeq).toBe(1)
-		expect(firstConsumer?.dep.providerSeq).toBe(1)
+		expect(firstConsumer?.dep.generation).toBe(1)
 
 		class WorkerNext extends ForkablePlugin {
-			readonly providerSeq = ++providerSeq
+			readonly generation = 2
 		}
-		Plugin({ name: 'Worker' })(WorkerNext)
-
-		const batch = loader.beginBatch()
-		await batch.replaceModule('Provider.ts', { WorkerNext })
-		expect(new Set(batch.getAffectedModules()).has('Consumer.ts')).toBe(true)
-		await batch.syncModules(batch.getAffectedModules())
-		await commitBatch(core, batch)
+		clonePluginDefinition(Worker, WorkerNext)
+		await ctx.loader.replaceModule('Provider.ts', { Worker: WorkerNext })
 
 		const nextConsumer = core.registry.getInstance(Consumer)
-		expect(nextConsumer?.consumerSeq).toBe(2)
-		expect(nextConsumer?.dep.providerSeq).toBe(2)
+		expect(nextConsumer?.dep.generation).toBe(2)
 		expect(nextConsumer).not.toBe(firstConsumer)
+		expect(ctx.loader.api.runtime.isRunning(fork)).toBe(true)
+		expect(consumerStarts).toBe(2)
 	})
 })

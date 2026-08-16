@@ -5,11 +5,11 @@
 `@pluxel/otel` 是 OTel SDK 的 Pluxel 生命周期装配层。公开作者 contract 只有 concrete `OtelPlugin` 的三个 caller-scoped
 getter：
 
-| Contract | 原生类型                           | instrumentation scope      |
-| -------- | ---------------------------------- | -------------------------- |
-| `meter`  | `@opentelemetry/api` `Meter`       | caller Plugin canonical ID |
-| `tracer` | `@opentelemetry/api` `Tracer`      | caller Plugin canonical ID |
-| `logger` | `@opentelemetry/api-logs` `Logger` | caller Plugin canonical ID |
+| Contract | 原生类型                           | instrumentation scope                 |
+| -------- | ---------------------------------- | ------------------------------------- |
+| `meter`  | `@opentelemetry/api` `Meter`       | caller Plugin node address projection |
+| `tracer` | `@opentelemetry/api` `Tracer`      | caller Plugin node address projection |
+| `logger` | `@opentelemetry/api-logs` `Logger` | caller Plugin node address projection |
 
 Plugin 不拥有 instrument/span/log 数据模型，不包装热路径，不猜测业务结果，也不提供 arbitrary provider mutation。events 使用原生
 OTel Logger 的 `eventName`，而不是增加第四套 event API。
@@ -55,7 +55,7 @@ process-stable `AsyncLocalStorageContextManager`，以及组合的 W3C tracecont
 - application 已安装的 global coordinator 始终优先，本包不覆盖；
 - 只在全部已选择 provider 构造成功后安装，普通配置或 exporter 初始化失败不会提前留下 global state；
 - coordinator 不持有任何 provider/exporter；没有 active scope 时是 inert；
-- Plugin stop 后不 unregister，因为 global unregister 会破坏同进程其他 Host 或 application instrumentation；
+- owner generation drain 后不 unregister，因为 global unregister 会破坏同进程其他 Host 或 application instrumentation；
 - provider 始终是 generation-local，context 中只短暂携带标准 OTel span/context value。
 
 这是一项稳定、不可逆但无业务 authority 的 process coordination；它与注册 global provider 有本质区别。

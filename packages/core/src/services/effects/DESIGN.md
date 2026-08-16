@@ -340,9 +340,8 @@ Guard 只保存：
 
 1. registry 标记 plugin unloading（可选：阻止新 side-effect）
 2. 关闭内部 owner invocation admission，abort 并等待已接纳调用退出
-3. 调用插件 stop hooks（如果有）
-4. `await ctx.effects.dispose()`（drain）
-5. registry.unregister(plugin) + commit（真正卸载）
+3. `await ctx.effects.dispose()`（drain；包含 `init()` 返回的 cleanup/disposable）
+4. registry.unregister(plugin) + commit（真正卸载）
 
 插件自毁使用 `ctx.registry.shutdownSelf()` 调度后续 commit，不能从正在被停止的 owner invocation 中等待自己
 释放；该入口属于 lifecycle orchestration，不属于 effects 核心。
@@ -360,7 +359,7 @@ Guard 只保存：
 - acquire：
   - `await effects.acquire(connect, c => c.close(), { tag: "db:conn" })`
 - 子模块：
-  - `const feature = effects.scope({ tag: "feature:x" }); feature.defer(...); await feature.dispose()`
+  - `const component = effects.scope({ tag: "component:x" }); component.defer(...); await component.dispose()`
 - init 回滚：
   - `await effects.transaction(async (tx) => { tx.defer(...); tx.own(await connect()); ... })`
 

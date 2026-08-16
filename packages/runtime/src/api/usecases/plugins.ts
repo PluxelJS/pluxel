@@ -1,11 +1,12 @@
-import type { Context } from '@pluxel/core'
-
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 import { readStatusSnapshot, resolvePluginSource } from '../features/pluginStatus/service'
 import {
 	requireRouteCapability,
+	runtimePluginStatusOverview,
 	type RuntimePluginSource,
 	type RuntimePluginStatusSnapshot,
 } from '../../runtime/capabilities'
+import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 
 type PluginSourceSnapshot = RuntimePluginSource extends infer Source
 	? Source extends RuntimePluginSource
@@ -14,75 +15,47 @@ type PluginSourceSnapshot = RuntimePluginSource extends infer Source
 	: never
 
 export type PluginStatusSnapshot = Omit<RuntimePluginStatusSnapshot, 'source'> & {
-	name: string
+	id: string
 	source: PluginSourceSnapshot
 }
 
 export type PluginsListOutput = {
 	plugins: PluginStatusSnapshot[]
-	summary: {
-		total: number
-		running: number
-		stopped: number
-		disabled: number
-	}
+	summary: { total: number; running: number; stopped: number; disabled: number }
 }
 
-export function pluginStatus(ctx: Context, name: string): PluginStatusSnapshot | null {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const ctor = catalog.resolveOrRegistered(name)
-	if (!ctor) return null
-	const snap = readStatusSnapshot(ctx, name, ctor)
-	const source =
-		(snap as any).source && typeof (snap as any).source === 'object'
-			? (() => {
-					const { __typename: _t, ...rest } = (snap as any).source
-					return rest
-				})()
-			: snap.source
-	return { name, ...snap, source } as any
+function plainSource(source: RuntimePluginSource): PluginSourceSnapshot {
+	const { __typename: _type, ...rest } = source
+	return rest as PluginSourceSnapshot
+}
+
+export function pluginStatus(
+	ctx: Context,
+	address: PluginNodeAddressSnapshot,
+): PluginStatusSnapshot | null {
+	if (!requireRouteCapability(ctx, 'catalog').resolve(address)) return null
+	const snapshot = readStatusSnapshot(ctx, address)
+	return {
+		...snapshot,
+		id: pluginNodeAddressKey(address),
+		source: plainSource(snapshot.source as RuntimePluginSource),
+	}
 }
 
 export function pluginsList(ctx: Context): PluginsListOutput {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const out: PluginStatusSnapshot[] = []
-	for (const [name, ctor] of catalog.listRegistered()) {
-		const snap = readStatusSnapshot(ctx, name, ctor)
-		const source =
-			(snap as any).source && typeof (snap as any).source === 'object'
-				? (() => {
-						const { __typename: _t, ...rest } = (snap as any).source
-						return rest
-					})()
-				: snap.source
-		out.push({ name, ...snap, source } as any)
-	}
-	out.sort((a, b) => a.name.localeCompare(b.name))
-
-	let running = 0
-	let disabled = 0
-	for (const e of out) {
-		if (e.isRunning) running += 1
-		if (e.isEnabled === false) disabled += 1
-	}
-
+	const overview = runtimePluginStatusOverview(ctx)
 	return {
-		plugins: out,
-		summary: {
-			total: out.length,
-			running,
-			disabled,
-			stopped: out.length - running - disabled,
-		},
+		plugins: overview.statuses.map((snapshot) => ({
+			...snapshot,
+			id: pluginNodeAddressKey(snapshot.address),
+			source: plainSource(snapshot.source),
+		})),
+		summary: overview.summary,
 	}
 }
 
-export function pluginSource(ctx: Context, name: string) {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolveOrRegistered(name)
-	const src: any = resolvePluginSource(ctx, name, ctor)
-	if (src && typeof src === 'object') {
-		const { __typename: _t, ...rest } = src
-		return rest
-	}
-	return src
+export function pluginSource(ctx: Context, address: PluginNodeAddressSnapshot) {
+	const source = resolvePluginSource(ctx, address)
+	const { __typename: _type, ...rest } = source
+	return rest
 }

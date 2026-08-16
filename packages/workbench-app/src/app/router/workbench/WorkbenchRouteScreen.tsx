@@ -2,21 +2,16 @@ import { Stack } from '@mantine/core'
 import { useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import {
+	buildWorkbenchHref,
 	getWorkbenchFrame,
 	parseWorkbenchHref,
 	type WorkbenchRoutePrefix,
 } from '../../../workbench/paths'
+import { decodeWorkbenchNodeSegment, workbenchNodeKey } from '../../../workbench/node-address'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import { WorkbenchTargetProvider, useResolvedWorkbenchRoute } from '../../../workbench/runtime'
 import { useCurrentPathname } from '../useCurrentRoute'
 import { WorkbenchRouteRenderer } from './WorkbenchRouteRenderer'
-
-function decodeURIComponentSafe(input: string): string {
-	try {
-		return decodeURIComponent(input)
-	} catch {
-		return input
-	}
-}
 
 function normalizeWorkbenchRestPath(raw?: string): string {
 	if (!raw) return ''
@@ -30,41 +25,41 @@ function normalizeWorkbenchRestPath(raw?: string): string {
 
 function readRestPathFromLocation(opts: {
 	locationPath: string | null | undefined
-	rawName: string
+	target: PluginNodeAddressSnapshot
 	prefix: WorkbenchRoutePrefix
 }): string {
-	const { locationPath, rawName, prefix } = opts
+	const { locationPath, target, prefix } = opts
 	if (!locationPath) return ''
 	const parsed = parseWorkbenchHref(locationPath)
 	if (!parsed || parsed.frame !== getWorkbenchFrame(prefix)) {
 		return ''
 	}
-	if (parsed.pluginName !== decodeURIComponentSafe(rawName)) return ''
+	if (workbenchNodeKey(parsed.target) !== workbenchNodeKey(target)) return ''
 	return parsed.path
 }
 
 export function WorkbenchRouteScreen({ prefix }: { prefix: WorkbenchRoutePrefix }) {
 	const { pluginName: rawName, path: rawRest } = useParams({ strict: false })
 	const locationPath = useCurrentPathname()
-	const pluginName = decodeURIComponentSafe(rawName)
+	const target = useMemo(() => decodeWorkbenchNodeSegment(rawName), [rawName])
 
 	const restPathFromParams = normalizeWorkbenchRestPath(rawRest)
 	const restPathFromLocation = useMemo(() => {
-		return readRestPathFromLocation({ locationPath, rawName, prefix })
-	}, [locationPath, prefix, rawName])
+		return readRestPathFromLocation({ locationPath, target, prefix })
+	}, [locationPath, prefix, target])
 	// The location keeps percent-encoded segment boundaries intact. Route params may
 	// already be decoded by the router, so only use them as a fallback.
 	const restPath = restPathFromLocation || restPathFromParams
-	const displayPath = `${prefix}/${pluginName}${restPath}`
+	const displayPath = buildWorkbenchHref(target, restPath, getWorkbenchFrame(prefix))
 	const ctxPathname =
 		locationPath && locationPath.startsWith(`${prefix}/`) ? locationPath : displayPath
 
 	return (
-		<WorkbenchTargetProvider target={pluginName} pathname={ctxPathname}>
+		<WorkbenchTargetProvider target={target} pathname={ctxPathname}>
 			<ResolvedRoute
 				displayPath={displayPath}
 				pathname={ctxPathname}
-				pluginName={pluginName}
+				target={target}
 				restPath={restPath}
 			/>
 		</WorkbenchTargetProvider>
@@ -72,20 +67,22 @@ export function WorkbenchRouteScreen({ prefix }: { prefix: WorkbenchRoutePrefix 
 }
 
 function ResolvedRoute({
-	pluginName,
+	target,
 	displayPath,
 	pathname,
 	restPath,
 }: {
-	pluginName: string
+	target: PluginNodeAddressSnapshot
 	displayPath: string
 	pathname: string
 	restPath: string
 }) {
-	const { route, snapshot } = useResolvedWorkbenchRoute(pluginName, restPath)
+	const { route, snapshot } = useResolvedWorkbenchRoute(target, restPath)
+	const displayName = snapshot.layout?.target?.displayName ?? target.definition.exportName
 	return (
 		<WorkbenchRouteRenderer
-			pluginName={pluginName}
+			target={target}
+			displayName={displayName}
 			displayPath={displayPath}
 			pathname={pathname}
 			route={route}

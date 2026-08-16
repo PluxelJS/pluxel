@@ -1,18 +1,22 @@
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, type Dirent } from 'node:fs'
 import { readdir, readFile, rm, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import { type Context, type NodeModuleDeclaration } from '@pluxel/runtime'
+import {
+	type Context,
+	type NodeModuleDeclaration,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
+} from '@pluxel/runtime'
 import {
 	createCompiledWorkbenchArtifact,
 	findNearestPackageRoot,
-	findRuntimeModuleId,
 	readNodeModuleDeclaration,
 	resolveModuleIdBaseDir,
 	type NodeModuleSourceSubscription,
 	type WorkbenchArtifactService,
 } from '@pluxel/runtime/internal'
+import type { WorkbenchPluginDescriptor } from '@pluxel/runtime/workbench'
 import {
 	WORKBENCH_FEDERATION_EXPOSE,
 	WORKBENCH_FEDERATION_MANIFEST_FILE,
@@ -57,12 +61,12 @@ type PluginArtifactCompilerOptions = {
 	 */
 	cacheKeep?: number
 	/**
-	 * Explicit plugin package directories keyed by plugin name.
+	 * Explicit plugin package directories keyed by structured Plugin node owner.
 	 *
 	 * Static hosts do not have a dynamic loader anchor table, so Vite/static
 	 * integrations can provide these after loading the fixed catalog.
 	 */
-	pluginDirs?: Record<string, string>
+	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddressSnapshot; dir: string }>[]
 }
 
 export type PluginArtifactCompilerViteServer = {
@@ -86,7 +90,7 @@ export type PluginArtifactCompilerDeps = {
 
 type PluginCompileEntry = {
 	declarationKey: string
-	owners: Set<string>
+	owners: Map<PluginNodeSlot, WorkbenchPluginDescriptor>
 	pluginDir: string
 	entryBaseDir: string
 	entryPath: string
@@ -164,12 +168,12 @@ const ARTIFACT_BUILD_CONCURRENCY = 2
 const ARTIFACT_CACHE_KEEP = 5
 
 export class PluginArtifactCompiler {
-	private readonly dbg: LogtapeLogger
+	private readonly dbg: ReturnType<Context['logger']['getDebugChannel']>
 	private readonly store?: PluginArtifactCompilerWorkbenchStore
 	private readonly viteServer?: PluginArtifactCompilerViteServer
 	private readonly cacheDir: string
 	private readonly cacheKeep: number
-	private readonly pluginDirs: ReadonlyMap<string, string>
+	private readonly pluginDirs: ReadonlyMap<PluginNodeSlot, string>
 
 	private readonly entries = new Map<string, PluginCompileEntry>()
 	private pendingPlugins = new Set<string>()
@@ -178,7 +182,7 @@ export class PluginArtifactCompiler {
 	private flushPromise: Promise<void> | null = null
 	private readonly compileTasks = new Map<string, Promise<boolean>>()
 	private readonly nodeEntries = new Map<string, NodeModuleCompileEntry>()
-	private readonly ownerWorkbenchDeclarations = new Map<string, string>()
+	private readonly ownerWorkbenchDeclarations = new Map<PluginNodeSlot, string>()
 	private activeNodeBuilds = 0
 	private readonly nodeBuildWaiters: Array<() => void> = []
 
@@ -191,7 +195,12 @@ export class PluginArtifactCompiler {
 		this.viteServer = deps.viteServer
 		this.cacheDir = options?.cacheDir ?? resolve(process.cwd(), '.pluxel/plugin-artifacts')
 		this.cacheKeep = Math.max(1, Math.floor(options?.cacheKeep ?? ARTIFACT_CACHE_KEEP))
-		this.pluginDirs = new Map(Object.entries(options?.pluginDirs ?? {}))
+		this.pluginDirs = new Map(
+			(options?.pluginDirs ?? []).map(({ owner, dir }) => [
+				ctx.registry.internNodeAddress(owner),
+				dir,
+			]),
+		)
 		this.dbg = this.ctx.logger.getDebugChannel('workbench:compile')
 	}
 
@@ -201,52 +210,58 @@ export class PluginArtifactCompiler {
 	): () => void {
 		const store = this.store
 		if (!store) throw new Error('[runtime-dev] Workbench compiler is not attached')
-
-		const ownerId = ctx.pluginInfo.id
-		const pluginName = config.declarationKey
-		const existing = this.entries.get(pluginName)
+		const ownerSlot = ctx.pluginInfo.nodeSlot
+		const owner: WorkbenchPluginDescriptor = Object.freeze({
+			address: ctx.pluginInfo.nodeAddress,
+			displayName: ctx.pluginInfo.displayName,
+			rootExportName: ctx.pluginInfo.rootExportName,
+		})
+		const declarationKey = config.declarationKey
+		const existing = this.entries.get(declarationKey)
 		if (existing) {
 			if (existing.entryPath !== config.entryPath) {
-				throw new Error(`[runtime-dev] Workbench declaration key collision: ${pluginName}`)
+				throw new Error(`[runtime-dev] Workbench declaration key collision: ${declarationKey}`)
 			}
 			existing.contractFingerprint = config.contractFingerprint ?? ''
-			existing.owners.add(ownerId)
-			this.ownerWorkbenchDeclarations.set(ownerId, pluginName)
-			void store.markCompiling(ownerId)
-			this.enqueueCompile(pluginName)
+			existing.owners.set(ownerSlot, owner)
+			this.ownerWorkbenchDeclarations.set(ownerSlot, declarationKey)
+			void store.markCompiling(owner)
+			this.enqueueCompile(declarationKey)
 			const guard = ctx.effects.defer(() => {
-				existing.owners.delete(ownerId)
-				if (this.ownerWorkbenchDeclarations.get(ownerId) === pluginName) {
-					this.ownerWorkbenchDeclarations.delete(ownerId)
-					void store.removePlugin(ownerId)
+				existing.owners.delete(ownerSlot)
+				if (this.ownerWorkbenchDeclarations.get(ownerSlot) === declarationKey) {
+					this.ownerWorkbenchDeclarations.delete(ownerSlot)
+					void store.removePlugin(owner)
 				}
 				if (existing.owners.size > 0) return
 				existing.active = false
 				this.disposeWatcher(existing)
-				this.pendingPlugins.delete(pluginName)
-				if (this.entries.get(pluginName) === existing) this.entries.delete(pluginName)
+				this.pendingPlugins.delete(declarationKey)
+				if (this.entries.get(declarationKey) === existing) {
+					this.entries.delete(declarationKey)
+				}
 			})
 			return () => guard.dispose()
 		}
 
-		const configuredDir = this.pluginDirs.get(ownerId)
+		const configuredDir = this.pluginDirs.get(ownerSlot)
 		let pluginDir = configuredDir ? (findNearestPackageRoot(configuredDir) ?? configuredDir) : null
 		// Dynamic source modules may only be host-owned re-export wrappers. An absolute
 		// declaration still belongs to the package that owns the browser source graph.
 		if (!pluginDir && isAbsolute(config.entryPath)) {
 			pluginDir = findNearestPackageRoot(config.entryPath) ?? dirname(config.entryPath)
 		}
-		pluginDir ??= this.findPluginDir(ctx, ownerId)
+		pluginDir ??= this.findPluginDir(ctx, ownerSlot)
 		if (!pluginDir) {
 			pluginDir = this.findViteRootPluginDir(config.entryPath)
 		}
-		if (!pluginDir) throw new Error(`无法定位插件目录: ${ownerId}`)
-		const entryBaseDir = this.findPluginEntryBaseDir(ctx, ownerId) ?? pluginDir
+		if (!pluginDir) throw new Error(`无法定位插件目录: ${owner.displayName}`)
+		const entryBaseDir = this.findPluginEntryBaseDir(ctx, ownerSlot) ?? pluginDir
 
 		const sourceFiles = this.collectSourceFiles(entryBaseDir, pluginDir, config.entryPath)
 		const entry: PluginCompileEntry = {
-			declarationKey: pluginName,
-			owners: new Set([ownerId]),
+			declarationKey,
+			owners: new Map([[ownerSlot, owner]]),
 			pluginDir,
 			entryBaseDir,
 			entryPath: config.entryPath,
@@ -257,31 +272,31 @@ export class PluginArtifactCompiler {
 			active: true,
 			watcher: null,
 		}
-		this.ownerWorkbenchDeclarations.set(ownerId, pluginName)
+		this.ownerWorkbenchDeclarations.set(ownerSlot, declarationKey)
 
-		this.entries.set(pluginName, entry)
-		this.setupWatcher(pluginName, entry)
-		void store.markCompiling(ownerId).catch((error) => {
+		this.entries.set(declarationKey, entry)
+		this.setupWatcher(declarationKey, entry)
+		void store.markCompiling(owner).catch((error) => {
 			this.ctx.logger.error('failed to mark workbench UI as compiling', {
-				pluginName: ownerId,
+				owner: owner.address,
 				error,
 			})
 		})
-		this.enqueueCompile(pluginName)
+		this.enqueueCompile(declarationKey)
 
 		const guard = ctx.effects.defer(() => {
-			const stored = this.entries.get(pluginName)
+			const stored = this.entries.get(declarationKey)
 			if (stored !== entry) return
-			stored.owners.delete(ownerId)
-			if (this.ownerWorkbenchDeclarations.get(ownerId) === pluginName) {
-				this.ownerWorkbenchDeclarations.delete(ownerId)
-				void store.removePlugin(ownerId)
+			stored.owners.delete(ownerSlot)
+			if (this.ownerWorkbenchDeclarations.get(ownerSlot) === declarationKey) {
+				this.ownerWorkbenchDeclarations.delete(ownerSlot)
+				void store.removePlugin(owner)
 			}
 			if (stored.owners.size > 0) return
 			stored.active = false
 			this.disposeWatcher(stored)
-			this.pendingPlugins.delete(pluginName)
-			this.entries.delete(pluginName)
+			this.pendingPlugins.delete(declarationKey)
+			this.entries.delete(declarationKey)
 		})
 		return () => guard.dispose()
 	}
@@ -490,7 +505,7 @@ export class PluginArtifactCompiler {
 	}
 
 	private async cleanupNodeCache(dir: string, currentHash: string): Promise<void> {
-		const files = await readdir(dir, { withFileTypes: true }).catch(() => [])
+		const files = await readdir(dir, { withFileTypes: true }).catch((): Dirent[] => [])
 		const builds: Array<{ path: string; mtime: number }> = []
 		for (const file of files) {
 			if (!file.isFile() || file.name === `${currentHash}.mjs`) continue
@@ -609,7 +624,7 @@ export class PluginArtifactCompiler {
 			})
 			const owners = this.activeWorkbenchOwners(entry)
 			const currentOwner = owners[0]
-			const current = currentOwner ? store.getCompiledModule(currentOwner) : undefined
+			const current = currentOwner ? store.getCompiledModule(currentOwner.slot) : undefined
 			if (current?.sourceHash === sourceHash) {
 				await this.commitWorkbenchOwners(
 					entry,
@@ -621,11 +636,11 @@ export class PluginArtifactCompiler {
 				return true
 			}
 			await Promise.all(
-				this.activeWorkbenchOwners(entry).map((ownerId) =>
-					store.markCompiling(ownerId, {
+				this.activeWorkbenchOwners(entry).map(({ slot, descriptor }) =>
+					store.markCompiling(descriptor, {
 						updatedAt: Date.now(),
-						sourceHash: store.getCompiledModule(ownerId)?.sourceHash,
-						compiledAt: store.getCompiledModule(ownerId)?.compiledAt,
+						sourceHash: store.getCompiledModule(slot)?.sourceHash,
+						compiledAt: store.getCompiledModule(slot)?.compiledAt,
 					}),
 				),
 			)
@@ -655,9 +670,9 @@ export class PluginArtifactCompiler {
 			return true
 		} catch (error) {
 			await Promise.all(
-				this.activeWorkbenchOwners(entry).map((ownerId) => {
-					const current = store.getCompiledModule(ownerId)
-					return store.markCompileError(ownerId, error, {
+				this.activeWorkbenchOwners(entry).map(({ slot, descriptor }) => {
+					const current = store.getCompiledModule(slot)
+					return store.markCompileError(descriptor, error, {
 						updatedAt: Date.now(),
 						sourceHash: current?.sourceHash,
 						compiledAt: current?.compiledAt,
@@ -678,10 +693,10 @@ export class PluginArtifactCompiler {
 		const store = this.store
 		if (!store || !entry.active) return
 		await Promise.all(
-			this.activeWorkbenchOwners(entry).map((ownerId) =>
+			this.activeWorkbenchOwners(entry).map(({ descriptor }) =>
 				store.commitCompiledModule(
 					createCompiledWorkbenchArtifact({
-						pluginName: ownerId,
+						owner: descriptor,
 						artifactName: entry.declarationKey,
 						sourceHash,
 						compiledAt,
@@ -692,10 +707,12 @@ export class PluginArtifactCompiler {
 		)
 	}
 
-	private activeWorkbenchOwners(entry: PluginCompileEntry): string[] {
-		return [...entry.owners].filter(
-			(ownerId) => this.ownerWorkbenchDeclarations.get(ownerId) === entry.declarationKey,
-		)
+	private activeWorkbenchOwners(
+		entry: PluginCompileEntry,
+	): Array<{ slot: PluginNodeSlot; descriptor: WorkbenchPluginDescriptor }> {
+		return [...entry.owners]
+			.filter(([slot]) => this.ownerWorkbenchDeclarations.get(slot) === entry.declarationKey)
+			.map(([slot, descriptor]) => ({ slot, descriptor }))
 	}
 
 	private async flushWorker(): Promise<void> {
@@ -983,29 +1000,12 @@ export class PluginArtifactCompiler {
 		return resolve(pluginDir, targetPath)
 	}
 
-	private findPluginDir(ctx: Context, pluginName: string): string | null {
-		const configured = this.pluginDirs.get(pluginName)
+	private findPluginDir(ctx: Context, owner: PluginNodeSlot): string | null {
+		const configured = this.pluginDirs.get(owner)
 		if (configured) return findNearestPackageRoot(configured) ?? configured
 
-		const baseDir = this.findPluginEntryBaseDir(ctx, pluginName)
+		const baseDir = this.findPluginEntryBaseDir(ctx, owner)
 		if (baseDir) return findNearestPackageRoot(baseDir) ?? baseDir
-
-		const loaderApi = (
-			ctx as unknown as {
-				loader?: {
-					api?: {
-						anchors?: { list?: () => Iterable<string> }
-					}
-				}
-			}
-		).loader?.api
-		const needle = pluginName.toLowerCase()
-		for (const path of loaderApi?.anchors?.list?.() ?? []) {
-			if (path.toLowerCase().includes(needle) && isAbsolute(path)) {
-				const pathBaseDir = dirname(path)
-				return findNearestPackageRoot(pathBaseDir) ?? pathBaseDir
-			}
-		}
 		return null
 	}
 
@@ -1019,8 +1019,8 @@ export class PluginArtifactCompiler {
 		return findNearestPackageRoot(root) ?? root
 	}
 
-	private findPluginEntryBaseDir(ctx: Context, pluginName: string): string | null {
-		const registryPath = findRuntimeModuleId(ctx, pluginName)
+	private findPluginEntryBaseDir(ctx: Context, owner: PluginNodeSlot): string | null {
+		const registryPath = ctx.registry.getRuntimeModuleId(owner)
 		if (!registryPath) return null
 		return resolveModuleIdBaseDir(registryPath)
 	}

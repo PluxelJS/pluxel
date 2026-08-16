@@ -71,7 +71,7 @@ const mutationOutput = obj({
 	failed: Type.Array(mutationFailureOutput),
 })
 
-@Plugin({ name: 'PackageManagerPlugin', startTimeoutMs: 120_000 })
+@Plugin({ displayName: 'PackageManagerPlugin', startTimeoutMs: 120_000 })
 export class PackageManagerPlugin extends BasePlugin implements PackageManagerCommands {
 	private readonly config = this.configs.use(PackageManagerConfig)
 	private store?: ManagedPackageStore

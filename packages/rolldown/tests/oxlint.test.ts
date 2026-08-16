@@ -166,298 +166,6 @@ runRule('configs-use-no-private-field', pluxelRules['configs-use-no-private-fiel
 	],
 })
 
-runRule('features-use-top-level-class', pluxelRules['features-use-top-level-class'], {
-	valid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {
-					cache = this.features.use(CacheFeature)
-				}
-			`,
-		},
-	],
-	invalid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				function makePlugin() {
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						cache = this.features.use(CacheFeature)
-					}
-					return PluginA
-				}
-			`,
-			errors: [{ messageId: 'topLevel' }],
-		},
-	],
-})
-
-runRule('features-load-no-class-field', pluxelRules['features-load-no-class-field'], {
-	valid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-				})
-
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {
-					feature
-
-					override async init() {
-						this.feature = await this.features.load(optionalFeature)
-					}
-				}
-			`,
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-				})
-
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {
-					constructor() {
-						super()
-						const activateLater = async () =>
-							this.features.load(optionalFeature)
-						void activateLater
-					}
-				}
-			`,
-		},
-	],
-	invalid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-				})
-
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {
-					feature = this.features.load(optionalFeature)
-				}
-			`,
-			errors: [{ messageId: 'classField' }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-				})
-
-				@Plugin({ name: 'PluginA' })
-				class PluginA extends BasePlugin {
-					constructor() {
-						super()
-						void this.features.load(optionalFeature)
-					}
-				}
-			`,
-			errors: [{ messageId: 'constructor' }],
-		},
-	],
-})
-
-runRule('features-load-requires-defined-spec', pluxelRules['features-load-requires-defined-spec'], {
-	valid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					const optionalFeature = defineLazyFeature({
-						key: 'optional',
-						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-					})
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load(optionalFeature)
-						}
-					}
-				`,
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					import { optionalFeature } from './optional-spec'
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load(optionalFeature)
-						}
-					}
-				`,
-		},
-	],
-	invalid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load({
-								key: 'optional',
-								load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-							})
-						}
-					}
-				`,
-			errors: [{ messageId: 'inlineSpec' }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					let optionalFeature = defineLazyFeature({
-						key: 'optional',
-						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-					})
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load(optionalFeature)
-						}
-					}
-				`,
-			errors: [{ messageId: 'mutableSpec' }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					const optionalFeature = {
-						key: 'optional',
-						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-					}
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load(optionalFeature)
-						}
-					}
-				`,
-			errors: [{ messageId: 'invalidSpec' }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-					const optionalFeature = defineLazyFeature({
-						key: 'optional',
-						load: () => import('./optional').then(({ OptionalFeature }) => OptionalFeature),
-					})
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						override async init() {
-							await this.features.load(optionalFeature, 'legacy')
-						}
-					}
-				`,
-			errors: [{ messageId: 'extraArgs' }],
-		},
-	],
-})
-
-runRule('features-load-no-static-load', pluxelRules['features-load-no-static-load'], {
-	valid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: () =>
-						import('./optional').then(
-							({ OptionalFeature }) => OptionalFeature,
-						),
-				})
-			`,
-		},
-	],
-	invalid: [
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				import { OptionalFeature } from './optional'
-
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: async () => OptionalFeature,
-				})
-			`,
-			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				import * as optionalModule from './optional'
-
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load() {
-						return optionalModule.OptionalFeature
-					},
-				})
-			`,
-			errors: [{ messageId: 'staticLoad', data: { name: 'optionalModule' } }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				class OptionalFeature extends BaseFeature {}
-
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: async () => OptionalFeature,
-				})
-			`,
-			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				import { OptionalFeature } from './optional'
-
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: async () => {
-						await import('./optional')
-						return OptionalFeature
-					},
-				})
-			`,
-			errors: [{ messageId: 'staticLoad', data: { name: 'OptionalFeature' } }],
-		},
-		{
-			filename: '/repo/packages/core/tests/plugin-a.ts',
-			code: `
-				const optionalFeature = defineLazyFeature({
-					key: 'optional',
-					load: async () => {
-						await Promise.resolve()
-					},
-				})
-			`,
-			errors: [{ messageId: 'noDynamicImport' }],
-		},
-	],
-})
-
 runRule('configs-use-no-early-read', pluxelRules['configs-use-no-early-read'], {
 	valid: [
 		{
@@ -580,7 +288,7 @@ runRule('plugin-no-process-exit', pluxelRules['plugin-no-process-exit'], {
 		},
 		{
 			code: `
-				@Plugin({ name: 'P' })
+				@Plugin({ displayName: 'Plugin P' })
 				class P extends BasePlugin {
 					override init() {
 						throw new Error('not ready')
@@ -592,7 +300,7 @@ runRule('plugin-no-process-exit', pluxelRules['plugin-no-process-exit'], {
 	invalid: [
 		{
 			code: `
-				@Plugin({ name: 'P' })
+				@Plugin({ displayName: 'Plugin P' })
 				class P extends BasePlugin {
 					override init() {
 						process.exit(1)
@@ -603,7 +311,7 @@ runRule('plugin-no-process-exit', pluxelRules['plugin-no-process-exit'], {
 		},
 		{
 			code: `
-				@Plugin({ name: 'P' })
+				@Plugin({ displayName: 'Plugin P' })
 				class P extends BasePlugin {
 					override init() {
 						setTimeout(() => process.exit(1), 10)
@@ -681,13 +389,13 @@ runRule(
 		valid: [
 			{
 				code: `
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {}
 				`,
 			},
 			{
 				code: `
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends ForkablePlugin {}
 				`,
 			},
@@ -698,20 +406,8 @@ runRule(
 			},
 			{
 				code: `
-					class PluginA extends BasePlugin {}
-					Plugin({ name: 'PluginA' })(PluginA)
-				`,
-			},
-			{
-				code: `
-					const PluginA = class extends BasePlugin {}
-					Plugin({ name: 'PluginA' })(PluginA)
-				`,
-			},
-			{
-				code: `
+					@runtime.Plugin({ displayName: 'Plugin A' })
 					class PluginA extends runtime.BasePlugin {}
-					runtime.Plugin({ name: 'PluginA' })(PluginA)
 				`,
 			},
 		],
@@ -736,7 +432,8 @@ runRule(
 			},
 			{
 				code: `
-					const PluginA = class extends BasePlugin {}
+					class PluginA extends BasePlugin {}
+					Plugin({ displayName: 'Plugin A' })(PluginA)
 				`,
 				errors: [{ messageId: 'missing' }],
 			},
@@ -745,19 +442,51 @@ runRule(
 )
 
 runRule(
-	'plugin-constructor-no-type-only-imports',
-	pluxelRules['plugin-constructor-no-type-only-imports'],
+	'plugin-constructor-canonical-dependencies',
+	pluxelRules['plugin-constructor-canonical-dependencies'],
 	{
 		valid: [
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					import { PluginB } from './PluginB'
+					import { PluginB } from '@pluxel/plugin-b'
 
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {
 						constructor(pluginB: PluginB) {
 							super()
+							void pluginB
+						}
+					}
+				`,
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					import { PluginB as Dependency } from '@pluxel/plugin-b'
+
+					@Plugin({ displayName: 'Plugin A' })
+					class PluginA extends BasePlugin {
+						constructor(dependency: Dependency) {
+							super()
+							void dependency
+						}
+					}
+				`,
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					abstract class PluginBackend extends BasePlugin {}
+
+					@Plugin({ displayName: 'Plugin B' })
+					class PluginB extends BasePlugin {}
+
+					@Plugin({ displayName: 'Plugin A' })
+					class PluginA extends BasePlugin {
+						constructor(backend: PluginBackend, pluginB: PluginB) {
+							super()
+							void backend
 							void pluginB
 						}
 					}
@@ -780,20 +509,9 @@ runRule(
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					import type { PluginB } from './PluginB'
+					import type { PluginB } from '@pluxel/plugin-b'
 
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						constructor(pluginB: PluginB) {
-							super()
-							void pluginB
-						}
-					}
-				`,
-				output: `
-					import { PluginB } from './PluginB'
-
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {
 						constructor(pluginB: PluginB) {
 							super()
@@ -806,9 +524,9 @@ runRule(
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					import type { PluginB, Helper } from './PluginB'
+					import { PluginB } from '@pluxel/plugin-b/backend'
 
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {
 						constructor(pluginB: PluginB) {
 							super()
@@ -816,48 +534,142 @@ runRule(
 						}
 					}
 				`,
-				output: `
-					import { PluginB, type Helper } from './PluginB'
-
-					@Plugin({ name: 'PluginA' })
-					class PluginA extends BasePlugin {
-						constructor(pluginB: PluginB) {
-							super()
-							void pluginB
-						}
-					}
-				`,
-				errors: [{ messageId: 'typeOnly' }],
+				errors: [{ messageId: 'subpath' }],
 			},
 			{
 				filename: '/repo/packages/core/tests/plugin-a.ts',
 				code: `
-					import { type PluginB as Dep, Helper } from './PluginB'
+					import { PluginB } from '@pluxel/plugin-b'
+					type Dependency = PluginB
 
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {
-						constructor(dep: Dep) {
+						constructor(dependency: Dependency) {
 							super()
-							void dep
+							void dependency
 						}
 					}
 				`,
-				output: `
-					import { PluginB as Dep, Helper } from './PluginB'
+				errors: [{ messageId: 'unprovable' }],
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					import { PluginB } from '@pluxel/plugin-b'
+					import { PluginC } from '@pluxel/plugin-c'
 
-					@Plugin({ name: 'PluginA' })
+					@Plugin({ displayName: 'Plugin A' })
 					class PluginA extends BasePlugin {
-						constructor(dep: Dep) {
+						constructor(dependency: PluginB | PluginC) {
 							super()
-							void dep
+							void dependency
 						}
 					}
 				`,
-				errors: [{ messageId: 'typeOnly' }],
+				errors: [{ messageId: 'unprovable' }],
+			},
+			{
+				filename: '/repo/packages/core/tests/plugin-a.ts',
+				code: `
+					interface PluginDependency {}
+
+					@Plugin({ displayName: 'Plugin A' })
+					class PluginA extends BasePlugin {
+						constructor(dependency: PluginDependency) {
+							super()
+							void dependency
+						}
+					}
+				`,
+				errors: [{ messageId: 'unprovable' }],
 			},
 		],
 	},
 )
+
+runRule('plugin-no-removed-feature-api', pluxelRules['plugin-no-removed-feature-api'], {
+	valid: [
+		{
+			code: `
+				class CacheCatalog {
+					load() {}
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: 'class CacheFeature extends BaseFeature {}',
+			errors: [{ messageId: 'removed' }],
+		},
+		{
+			code: "const lazy = defineLazyFeature({ load: () => import('./cache') })",
+			errors: [{ messageId: 'removed' }],
+		},
+		{
+			code: 'this.features.use(CacheFeature)',
+			errors: [{ messageId: 'removed' }],
+		},
+	],
+})
+
+runRule('configs-use-single-object-schema', pluxelRules['configs-use-single-object-schema'], {
+	valid: [
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					config = this.configs.use(v.object({ enabled: v.boolean() }))
+				}
+			`,
+		},
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					config = this.configs.use(ConfigSchema)
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					server = this.configs.use(ServerSchema)
+					client = this.configs.use(ClientSchema)
+				}
+			`,
+			errors: [{ messageId: 'multiple' }, { messageId: 'multiple' }],
+		},
+		{
+			code: `
+				class PluginA extends BasePlugin {
+					config = this.configs.use(v.string())
+				}
+			`,
+			errors: [{ messageId: 'nonObject' }],
+		},
+	],
+})
+
+runRule('configs-no-removed-dsl', pluxelRules['configs-no-removed-dsl'], {
+	valid: [
+		{ code: 'const config = this.configs.use(ConfigSchema)' },
+		{ code: 'host.cfg(PluginA).set({ enabled: true })' },
+	],
+	invalid: [
+		{
+			code: `
+				@Config({ key: 'enabled' })
+				class PluginConfig {}
+			`,
+			errors: [{ messageId: 'removed' }],
+		},
+		{
+			code: "const schema = cfg('PluginA', { enabled: true })",
+			errors: [{ messageId: 'removed' }],
+		},
+	],
+})
 
 describe('pluxel correctness helpers', () => {
 	it('keeps build enforcement sourced from the correctness rule set', () => {

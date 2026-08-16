@@ -12,137 +12,121 @@ import {
 	Tooltip,
 } from '@mantine/core'
 import { openConfirmModal } from '@mantine/modals'
+import {
+	formatPluginDefinitionAddress,
+	formatPluginNodeAddress,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 import { IconPlus, IconRefresh } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNotify } from '../../../hooks/useNotify'
 import {
 	ensurePluginFork,
 	inspectPluginDependencies,
 	rpcErrorMessage,
 	setPluginDependencyTarget,
 	useRuntimeTransportClient,
-	type EnsureForkResult,
-	type PluginDependencyMutationResult,
 	type PluginDependencyState,
 } from '../../../../runtime'
+import { workbenchNodeKey } from '../../../../workbench/node-address'
+import { useNotify } from '../../../hooks/useNotify'
 import { usePluginScope } from '../context'
 
-function runtimeColor(isRunning: boolean) {
-	return isRunning ? 'green' : 'gray'
-}
-
 function kindLabel(kind: PluginDependencyState['kind']) {
-	switch (kind) {
-		case 'base':
-			return { label: '基类', color: 'indigo' }
-		case 'forkable':
-			return { label: 'Fork', color: 'violet' }
-		default:
-			return { label: '依赖', color: 'gray' }
-	}
+	return kind === 'abstract'
+		? { label: '抽象依赖', color: 'indigo' }
+		: { label: '插件依赖', color: 'gray' }
 }
 
 export function DependencyOverridesCard() {
-	const { pluginName, refetch } = usePluginScope()
+	const { owner, refetch } = usePluginScope()
+	const ownerKey = workbenchNodeKey(owner)
 	const transport = useRuntimeTransportClient()
 	const notify = useNotify()
-	const [stateByPlugin, setStateByPlugin] = useState(
-		() => new Map<string, PluginDependencyState[]>(),
-	)
-	const [loadingPlugins, setLoadingPlugins] = useState(() => new Set<string>())
+	const [stateByOwner, setStateByOwner] = useState(() => new Map<string, PluginDependencyState[]>())
+	const [loadingOwners, setLoadingOwners] = useState(() => new Set<string>())
 	const requestIdsRef = useRef(new Map<string, number>())
 	const mountedRef = useRef(true)
-	const state = stateByPlugin.get(pluginName) ?? null
-	const loading = loadingPlugins.has(pluginName)
+	const state = stateByOwner.get(ownerKey) ?? null
+	const loading = loadingOwners.has(ownerKey)
 
-	useEffect(() => {
-		return () => {
+	useEffect(
+		() => () => {
 			mountedRef.current = false
-		}
-	}, [])
+		},
+		[],
+	)
 
 	const load = useCallback(async () => {
-		if (!pluginName) return
-		const requestId = (requestIdsRef.current.get(pluginName) ?? 0) + 1
-		requestIdsRef.current.set(pluginName, requestId)
-		setLoadingPlugins((prev) => new Set(prev).add(pluginName))
+		const requestId = (requestIdsRef.current.get(ownerKey) ?? 0) + 1
+		requestIdsRef.current.set(ownerKey, requestId)
+		setLoadingOwners((previous) => new Set(previous).add(ownerKey))
 		try {
-			const deps = await transport.withRpc((rpc) => inspectPluginDependencies(rpc, pluginName))
-			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
-			const rows = Array.isArray(deps) ? deps : []
-			// 仅在“可操作”的依赖存在时展示：base/forkable 才需要注入选择；
-			// 普通插件依赖已经在“依赖”列表里表达，无需重复一份 UI。
-			setStateByPlugin((prev) =>
-				new Map(prev).set(
-					pluginName,
-					rows.filter((row) => row.kind === 'base' || row.kind === 'forkable'),
-				),
+			const dependencies = await transport.withRpc((rpc) => inspectPluginDependencies(rpc, owner))
+			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
+			const rows = dependencies.filter(
+				(row) => row.kind === 'abstract' || row.options.length > 1 || row.selected !== null,
 			)
+			setStateByOwner((previous) => new Map(previous).set(ownerKey, rows))
 		} catch (error) {
-			if (!mountedRef.current || requestIdsRef.current.get(pluginName) !== requestId) return
-			setStateByPlugin((prev) => new Map(prev).set(pluginName, []))
+			if (!mountedRef.current || requestIdsRef.current.get(ownerKey) !== requestId) return
+			setStateByOwner((previous) => new Map(previous).set(ownerKey, []))
 			notify({
 				title: '读取依赖失败',
 				message: rpcErrorMessage(error, '无法读取依赖状态'),
 				color: 'red',
 			})
 		} finally {
-			if (mountedRef.current && requestIdsRef.current.get(pluginName) === requestId) {
-				setLoadingPlugins((prev) => {
-					const next = new Set(prev)
-					next.delete(pluginName)
+			if (mountedRef.current && requestIdsRef.current.get(ownerKey) === requestId) {
+				setLoadingOwners((previous) => {
+					const next = new Set(previous)
+					next.delete(ownerKey)
 					return next
 				})
 			}
 		}
-	}, [transport, notify, pluginName])
+	}, [notify, owner, ownerKey, transport])
 
 	useEffect(() => {
 		void load()
 	}, [load])
 
 	const rows = useMemo(() => state ?? [], [state])
-
 	const triggerRefresh = useCallback(async () => {
 		await load()
 		await refetch()
 	}, [load, refetch])
 
 	const setDependencyTarget = useCallback(
-		async (index: number, next: string | null) => {
-			const res = await transport.withRpc(
-				(rpc) =>
-					setPluginDependencyTarget(rpc, {
-						name: pluginName,
-						index,
-						targetName: next,
-					}) as Promise<PluginDependencyMutationResult>,
+		async (index: number, provider: PluginNodeAddressSnapshot | null) => {
+			const result = await transport.withRpc((rpc) =>
+				setPluginDependencyTarget(rpc, {
+					consumer: owner,
+					index,
+					provider,
+				}),
 			)
-			if (!res.ok) throw new Error(res.error || res.code || '操作失败')
+			if (!result.ok) throw new Error(result.error || result.code || '操作失败')
 		},
-		[transport, pluginName],
+		[owner, transport],
 	)
 
-	const ensureFork = useCallback(
-		async (baseName: string, forkId: string) => {
-			const res = await transport.withRpc(
-				(rpc) =>
-					ensurePluginFork(rpc, {
-						baseName,
-						forkId,
-						enable: true,
-					}) as Promise<EnsureForkResult>,
+	const createFork = useCallback(
+		async (base: PluginNodeAddressSnapshot, forkId: string): Promise<PluginNodeAddressSnapshot> => {
+			const result = await transport.withRpc((rpc) =>
+				ensurePluginFork(rpc, { base, forkId, enable: true }),
 			)
-			if (!res.ok) throw new Error(res.error || res.code || '创建 fork 失败')
-			return res.forkName ?? `${baseName}#${forkId}`
+			if (!result.ok || !result.fork)
+				throw new Error(result.error || result.code || '创建 fork 失败')
+			return result.fork
 		},
 		[transport],
 	)
 
 	const handleForkCreate = useCallback(
 		(row: PluginDependencyState) => {
-			const baseName = row.options[0]?.name
-			if (!baseName) return
+			const base =
+				row.options.find((option) => option.address.instance === 'default') ?? row.options[0]
+			if (!base) return
 			let forkId = ''
 			openConfirmModal({
 				title: '创建 Fork',
@@ -151,20 +135,18 @@ export function DependencyOverridesCard() {
 						<Text size="sm" c="dimmed">
 							为{' '}
 							<Text component="span" fw={600}>
-								{baseName}
+								{base.displayName}
 							</Text>{' '}
 							创建新的 forkId。
 						</Text>
 						<TextInput
 							autoFocus
 							mt="sm"
-							placeholder="例如：a / worker-1"
-							onChange={(e) => {
-								forkId = e.currentTarget.value
+							placeholder="例如：worker-1"
+							onChange={(event) => {
+								forkId = event.currentTarget.value
 							}}
-							styles={{
-								input: { fontFamily: 'var(--mantine-font-monospace)' },
-							}}
+							styles={{ input: { fontFamily: 'var(--mantine-font-monospace)' } }}
 						/>
 					</Box>
 				),
@@ -172,12 +154,16 @@ export function DependencyOverridesCard() {
 				onConfirm: () => {
 					void (async () => {
 						try {
-							const fid = forkId.trim()
-							if (!fid) throw new Error('forkId 不能为空')
-							const forkName = await ensureFork(baseName, fid)
-							await setDependencyTarget(row.index, forkName)
+							const normalizedForkId = forkId.trim()
+							if (!normalizedForkId) throw new Error('forkId 不能为空')
+							const fork = await createFork(base.address, normalizedForkId)
+							await setDependencyTarget(row.index, fork)
 							await triggerRefresh()
-							notify({ title: 'Fork 已创建', message: forkName, color: 'green' })
+							notify({
+								title: 'Fork 已创建',
+								message: formatPluginNodeAddress(fork),
+								color: 'green',
+							})
 						} catch (error) {
 							notify({
 								title: '创建 Fork 失败',
@@ -189,14 +175,10 @@ export function DependencyOverridesCard() {
 				},
 			})
 		},
-		[ensureFork, notify, setDependencyTarget, triggerRefresh],
+		[createFork, notify, setDependencyTarget, triggerRefresh],
 	)
 
-	if (!pluginName) return null
-	// 初次加载时不渲染占位，避免“先显示空卡片/0 条，再突然出现/消失”导致重排。
-	if (state === null) return null
-	// 不可操作（仅普通插件依赖/无依赖）时直接隐藏整块，避免与“依赖”列表重复。
-	if (rows.length === 0) return null
+	if (state === null || rows.length === 0) return null
 
 	return (
 		<Paper withBorder radius="sm" p="sm" shadow="none">
@@ -222,170 +204,95 @@ export function DependencyOverridesCard() {
 			</Group>
 
 			<Stack gap="sm">
-				{rows.map((row, idx) => {
+				{rows.map((row, index) => {
 					const kind = kindLabel(row.kind)
-					const options = row.options ?? []
-					const currentForkValue =
-						row.kind === 'forkable' ? (row.selected ?? row.effective ?? null) : null
-
-					const selectData = options.map((opt) => ({
-						value: opt.name,
-						label: opt.isEnabled ? opt.name : `${opt.name} (disabled)`,
+					const optionsByKey = new Map(
+						row.options.map((option) => [workbenchNodeKey(option.address), option]),
+					)
+					const selectData = row.options.map((option) => ({
+						value: workbenchNodeKey(option.address),
+						label: option.isEnabled ? option.displayName : `${option.displayName} (disabled)`,
 					}))
-
-					const handleForkChange = async (value: string | null) => {
-						try {
-							if (row.kind !== 'forkable') return
-							const base = options[0]?.name
-							if (value && base && value === base) await setDependencyTarget(row.index, null)
-							else await setDependencyTarget(row.index, value)
-							await triggerRefresh()
-							notify({
-								title: '已更新',
-								message: `${row.token} → ${value ?? '默认'}`,
-								color: 'green',
-							})
-						} catch (error) {
-							notify({
-								title: '更新失败',
-								message: rpcErrorMessage(error, '操作失败'),
-								color: 'red',
-							})
-						}
-					}
-
+					const tokenLabel = formatPluginDefinitionAddress(row.token)
+					const effectiveLabel = row.effective ? formatPluginNodeAddress(row.effective) : '未解析'
+					const defaultLabel = row.providerDefault
+						? formatPluginNodeAddress(row.providerDefault)
+						: '未设置'
 					return (
-						<Box key={`${row.index}:${row.token}`} style={{ minWidth: 0 }}>
-							{row.kind === 'base' ? (
-								<Stack gap={6}>
-									<Group gap="xs" align="center" wrap="wrap">
-										<Badge variant="light" color={kind.color} radius="sm" size="sm">
-											{kind.label}
-										</Badge>
-										<Text
-											size="sm"
-											fw={600}
-											style={{
-												fontFamily: 'var(--mantine-font-monospace)',
-												flex: 1,
-												minWidth: 220,
-											}}
-											lineClamp={1}
-										>
-											{row.token}
-										</Text>
-										<Badge
-											variant="light"
-											color={runtimeColor(row.isRunning)}
-											radius="sm"
-											size="xs"
-										>
-											{row.isRunning ? 'running' : 'stopped'}
-										</Badge>
-									</Group>
-
-									<Text size="xs" c="dimmed">
-										当前注入：{row.effective}；全局默认：{row.baseProvider ?? '未设置'}
-										（覆盖为空则使用全局默认）
+						<Box key={`${row.index}:${tokenLabel}`} style={{ minWidth: 0 }}>
+							<Stack gap={6}>
+								<Group gap="xs" align="center" wrap="wrap">
+									<Badge variant="light" color={kind.color} radius="sm" size="sm">
+										{kind.label}
+									</Badge>
+									<Text
+										size="sm"
+										fw={600}
+										ff="monospace"
+										style={{ flex: 1, minWidth: 220 }}
+										lineClamp={1}
+									>
+										{tokenLabel}
 									</Text>
-
-									<Select
+									<Badge
+										variant="light"
+										color={row.isRunning ? 'green' : 'gray'}
+										radius="sm"
 										size="xs"
-										label="覆盖（仅本插件）"
-										placeholder="选择实现插件（留空=全局默认）"
-										data={selectData}
-										value={row.selected ?? null}
-										onChange={(v) => {
-											const next = v && v === row.baseProvider ? null : v
-											void (async () => {
-												try {
-													await setDependencyTarget(row.index, next)
-													await triggerRefresh()
-													notify({
-														title: '已更新覆盖',
-														message: `${row.token} → ${next ?? '默认'}`,
-														color: 'green',
-													})
-												} catch (error) {
-													notify({
-														title: '更新失败',
-														message: rpcErrorMessage(error, '操作失败'),
-														color: 'red',
-													})
-												}
-											})()
-										}}
-										clearable
-										disabled={loading}
-										nothingFoundMessage="暂无可选项"
-										searchable
-									/>
-								</Stack>
-							) : (
-								<Stack gap={6}>
-									<Group gap="xs" align="center" wrap="wrap">
-										<Badge variant="light" color={kind.color} radius="sm" size="sm">
-											{kind.label}
-										</Badge>
-										<Text
-											size="sm"
-											fw={600}
-											style={{
-												fontFamily: 'var(--mantine-font-monospace)',
-												flex: 1,
-												minWidth: 220,
-											}}
-											lineClamp={1}
-										>
-											{row.token}
-										</Text>
-										<Badge
-											variant="light"
-											color={runtimeColor(row.isRunning)}
-											radius="sm"
+									>
+										{row.isRunning ? 'running' : 'stopped'}
+									</Badge>
+								</Group>
+								<Text size="xs" c="dimmed">
+									当前注入：{effectiveLabel}；全局默认：{defaultLabel}
+								</Text>
+								<Group gap="xs" align="flex-end" wrap="wrap">
+									<Box style={{ flex: 1, minWidth: 260 }}>
+										<Select
 											size="xs"
+											label="覆盖（仅当前节点）"
+											placeholder="留空以使用运行时默认解析"
+											data={selectData}
+											value={row.selected ? workbenchNodeKey(row.selected) : null}
+											onChange={(value) => {
+												const provider = value ? (optionsByKey.get(value)?.address ?? null) : null
+												void (async () => {
+													try {
+														await setDependencyTarget(row.index, provider)
+														await triggerRefresh()
+														notify({
+															title: '已更新覆盖',
+															message: `${tokenLabel} → ${provider ? formatPluginNodeAddress(provider) : '默认'}`,
+															color: 'green',
+														})
+													} catch (error) {
+														notify({
+															title: '更新失败',
+															message: rpcErrorMessage(error, '操作失败'),
+															color: 'red',
+														})
+													}
+												})()
+											}}
+											clearable
+											disabled={loading}
+											searchable
+											nothingFoundMessage="暂无可选项"
+										/>
+									</Box>
+									<Tooltip label="从一个实现创建 Fork" withArrow>
+										<ActionIcon
+											size="sm"
+											variant="light"
+											onClick={() => handleForkCreate(row)}
+											disabled={loading || row.options.length === 0}
 										>
-											{row.isRunning ? 'running' : 'stopped'}
-										</Badge>
-									</Group>
-
-									{row.kind === 'forkable' ? (
-										<Text size="xs" c="dimmed">
-											当前注入：{row.effective}（选择基类/清空 = 不覆盖）
-										</Text>
-									) : null}
-
-									{row.kind === 'forkable' ? (
-										<Group gap="xs" align="flex-end" wrap="wrap">
-											<Box style={{ flex: 1, minWidth: 260 }}>
-												<Select
-													size="xs"
-													label="选择 Fork"
-													placeholder="选择 fork"
-													data={selectData}
-													value={currentForkValue}
-													onChange={(v) => void handleForkChange(v)}
-													clearable
-													disabled={loading}
-													nothingFoundMessage="暂无可选项"
-													searchable
-												/>
-											</Box>
-											<Tooltip label="创建 Fork" withArrow>
-												<ActionIcon
-													size="sm"
-													variant="light"
-													onClick={() => handleForkCreate(row)}
-													disabled={loading}
-												>
-													<IconPlus size={14} />
-												</ActionIcon>
-											</Tooltip>
-										</Group>
-									) : null}
-								</Stack>
-							)}
-							{idx < rows.length - 1 ? <Divider my="sm" /> : null}
+											<IconPlus size={14} />
+										</ActionIcon>
+									</Tooltip>
+								</Group>
+							</Stack>
+							{index < rows.length - 1 ? <Divider my="sm" /> : null}
 						</Box>
 					)
 				})}

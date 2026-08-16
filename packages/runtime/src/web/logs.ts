@@ -1,7 +1,8 @@
 import type { LogLevel } from './protocol'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 
 export interface LogFilter {
-	pluginId?: string
+	plugin?: PluginNodeAddressSnapshot
 	context?: string
 	displayName?: string
 	/** Category string, e.g. "pluxel.plugins" or "pluxel.core". Supports "prefix.*". */
@@ -24,7 +25,7 @@ export interface RuntimeLogLine {
 	level: LogLevel
 	category: string[]
 	name?: string
-	pluginId?: string
+	plugin?: PluginNodeAddressSnapshot
 	context?: string
 	msg: string
 	message?: unknown[]

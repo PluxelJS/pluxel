@@ -1,13 +1,23 @@
-import { type Context as PluxelContext, Injectable, OverrideOf } from '@pluxel/core'
-import { ConfigService as CoreConfigService } from '@pluxel/core/services'
+import {
+	type Context as PluxelContext,
+	Injectable,
+	OverrideOf,
+	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
+	type PluginNodeSlot,
+} from '@pluxel/core'
+import {
+	ConfigService as CoreConfigService,
+	type PluginConfigRecordSnapshot,
+} from '@pluxel/core/services'
 import { hash as ohash } from 'ohash'
 import { SuperJSON } from 'superjson'
 import type { PersistenceNamespace } from './persistence/PersistenceService'
 import { configRecordsFromEnvironment, mergeConfigRecords } from './config-environment'
 
 export interface PluginConfigFile {
-	version: 1
-	plugins: Record<string, Record<string, unknown>>
+	version: 2
+	plugins: readonly PluginConfigRecordSnapshot[]
 }
 
 export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
@@ -15,11 +25,11 @@ export type ConfigServiceMode = 'file' | 'memory' | 'readonly'
 export interface ConfigServiceConfig {
 	mode?: ConfigServiceMode
 	snapshot?: Partial<{
-		plugins: Record<string, Record<string, unknown>>
+		plugins: readonly PluginConfigRecordSnapshot[]
 	}>
 	/**
 	 * Host startup environment used to initialize a new config store from
-	 * `PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]` entries.
+	 * the `PLUXEL_CONFIG` structured snapshot.
 	 * Static and dynamic Node hosts provide their startup environment when this is omitted;
 	 * set `false` only when a custom host must disable environment initialization.
 	 * Existing file-backed config remains authoritative.
@@ -75,7 +85,7 @@ export class ConfigService extends CoreConfigService {
 		throw new Error(`[ConfigService] ${action} is disabled in readonly mode.`)
 	}
 
-	protected override onConfigChanged(_name: string): void {
+	protected override onConfigChanged(_owner: PluginNodeSlot): void {
 		this.requestSave()
 	}
 
@@ -150,12 +160,17 @@ export class ConfigService extends CoreConfigService {
 				error,
 			})
 			await this.isolateBrokenConfigFile(text)
-			this.replaceConfigRecords({})
+			this.replaceConfigRecords([])
 			await this.saveToDisk()
 			return
 		}
 
-		this.replaceConfigRecords(parsed.plugins ? coercePlugins(parsed.plugins) : {})
+		if (parsed.version !== 2) {
+			throw new Error(
+				`[ConfigService] Unsupported persisted config version: ${String(parsed.version)}`,
+			)
+		}
+		this.replaceConfigRecords(coercePlugins(parsed.plugins))
 	}
 
 	private async isolateBrokenConfigFile(content: string): Promise<void> {
@@ -186,7 +201,7 @@ export class ConfigService extends CoreConfigService {
 		}
 
 		const content = SuperJSON.stringify({
-			version: 1,
+			version: 2,
 			plugins: this.getConfigSnapshot().plugins,
 		} satisfies PluginConfigFile)
 		const nextDigest = ohash(content)
@@ -220,16 +235,23 @@ function defaultConfigServiceMode(
 	return capability === 'readonly' ? 'readonly' : 'file'
 }
 
-function coercePlugins(input: Record<string, unknown>): Record<string, Record<string, unknown>> {
-	const out: Record<string, Record<string, unknown>> = Object.create(null)
-	for (const [name, raw] of Object.entries(input)) {
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-		const maybe = raw as Record<string, unknown>
-		const record = maybe.configRecord
-		out[name] = Object.assign(
-			Object.create(null),
-			record && typeof record === 'object' && !Array.isArray(record) ? record : raw,
-		)
+function coercePlugins(input: unknown): PluginConfigRecordSnapshot[] {
+	if (!Array.isArray(input)) throw new Error('[ConfigService] Persisted plugins must be an array')
+	const out: PluginConfigRecordSnapshot[] = []
+	for (let index = 0; index < input.length; index++) {
+		const raw = input[index]
+		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+			throw new Error(`[ConfigService] plugins[${index}] must be an object`)
+		}
+		const record = raw as Record<string, unknown>
+		const owner = parsePluginNodeAddress(record.owner)
+		if (!record.config || typeof record.config !== 'object' || Array.isArray(record.config)) {
+			throw new Error(`[ConfigService] plugins[${index}].config must be an object`)
+		}
+		if (out.some((entry) => pluginNodeAddressEqual(entry.owner, owner))) {
+			throw new Error(`[ConfigService] plugins[${index}] duplicates a Plugin node owner`)
+		}
+		out.push({ owner, config: { ...(record.config as Record<string, unknown>) } })
 	}
 	return out
 }

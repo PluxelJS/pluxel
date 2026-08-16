@@ -17,7 +17,17 @@ import { loadFederatedWorkbenchModule } from '../src/workbench/federationRuntime
 
 const stateKey = Symbol.for('pluxel.workbench.federation-runtime')
 const firstArtifact: Parameters<typeof loadFederatedWorkbenchModule>[0] = {
-	pluginName: 'Billing',
+	owner: {
+		address: {
+			definition: {
+				entry: { kind: 'source-entry', source: 'tests/Billing.ts' },
+				exportName: 'Billing',
+			},
+			instance: 'default',
+		},
+		displayName: 'Billing',
+		rootExportName: 'Billing',
+	},
 	remoteName: 'pluxel_workbench_billing',
 	remoteEntryUrl: '/workbench/billing/remoteEntry.js',
 	exposedModule: './ui-module',

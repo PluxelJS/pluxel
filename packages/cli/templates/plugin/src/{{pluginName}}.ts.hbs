@@ -1,12 +1,14 @@
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 
-const MessageConfig = v.optional(v.string(), 'ready')
+const MessageConfig = v.object({
+	message: v.optional(v.string(), 'ready'),
+})
 
-@Plugin({ name: '{{className}}Plugin' })
+@Plugin({ displayName: '{{className}}Plugin' })
 export class {{className}}Plugin extends BasePlugin {
-	readonly message = this.configs.use(MessageConfig)
+	readonly config = this.configs.use(MessageConfig)
 
 	override init(): void {
-		this.ctx.logger.info('{{className}}Plugin ready', { message: this.message })
+		this.ctx.logger.info('{{className}}Plugin ready', { message: this.config.message })
 	}
 }

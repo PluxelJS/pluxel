@@ -13,6 +13,7 @@ import type {
 	WorkbenchLiveQueryOf,
 	WorkbenchLiveQueryResource,
 	WorkbenchLayoutItem,
+	WorkbenchPluginDescriptor,
 	WorkbenchPortContract,
 	WorkbenchResourceMap,
 	WorkbenchResourceRef,
@@ -155,8 +156,8 @@ export type WorkbenchResourceClients<Resources extends WorkbenchResourceMap> = R
 }>
 
 export type WorkbenchHost = Readonly<{
-	ownerPluginId: string
-	targetPluginId: string
+	owner: WorkbenchPluginDescriptor
+	target: WorkbenchPluginDescriptor
 	colorScheme: 'light' | 'dark'
 	locale: string
 	notify(payload: WorkbenchUiNotifyPayload): void
@@ -177,8 +178,8 @@ export function useWorkbenchHost(): WorkbenchHost {
 	)
 	return useMemo(
 		() => ({
-			ownerPluginId: item.ownerPluginId,
-			targetPluginId: item.targetPluginId,
+			owner: item.owner,
+			target: item.target,
 			colorScheme: environment.colorScheme,
 			locale,
 			notify: environment.notify,
@@ -186,14 +187,7 @@ export function useWorkbenchHost(): WorkbenchHost {
 			navigation: view.navigation ?? null,
 			routeParams: view.routeParams,
 		}),
-		[
-			environment,
-			item.ownerPluginId,
-			item.targetPluginId,
-			locale,
-			view.navigation,
-			view.routeParams,
-		],
+		[environment, item.owner, item.target, locale, view.navigation, view.routeParams],
 	)
 }
 
@@ -203,7 +197,7 @@ export type WorkbenchUiModule = Readonly<{
 	contractFingerprint: string
 	views: Readonly<Record<string, WorkbenchViewComponent>>
 	setup?: (ctx: {
-		ownerPluginId: string
+		owner: WorkbenchPluginDescriptor
 		locale: WorkbenchLocaleService
 	}) => void | (() => void) | Promise<void | (() => void)>
 }>

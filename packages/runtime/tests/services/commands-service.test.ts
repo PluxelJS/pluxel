@@ -1,14 +1,20 @@
 import { defineCommand } from '@pluxel/commands'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { Type, obj } from '@pluxel/commands/typebox'
-import type { PluginConstructor } from '@pluxel/runtime'
+import type {
+	PluginConstructor,
+	PluginDefinitionAddressSnapshot,
+	PluginNodeAddressSnapshot,
+} from '@pluxel/runtime'
 import {
 	BasePlugin,
 	createRuntimeHost,
+	getPluginInfo,
 	Plugin,
-	setParamToken,
 	type RuntimeHost,
 } from '@pluxel/runtime/test'
 import { describe, expect, it } from 'vitest'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 function valueCommand(value: string, name = 'example.value.get') {
 	return defineCommand({
@@ -29,7 +35,7 @@ describe('CommandsService', () => {
 			let started!: () => void
 			const didStart = new Promise<void>((resolve) => (started = resolve))
 
-			@Plugin({ name: 'LongCommandOwner' })
+			@Plugin({ displayName: 'LongCommandOwner' })
 			class LongCommandOwner extends BasePlugin {
 				override init(): void {
 					this.ctx.commands.register(
@@ -53,13 +59,11 @@ describe('CommandsService', () => {
 							},
 						}),
 					)
-				}
-
-				override stop(): void {
-					order.push('stop')
+					return () => order.push('cleanup')
 				}
 			}
 
+			lowerTestPlugin(LongCommandOwner)
 			host.add(LongCommandOwner)
 			host.cfg(LongCommandOwner).enable()
 			await host.commit()
@@ -73,7 +77,7 @@ describe('CommandsService', () => {
 				ok: false,
 				error: { code: 'ABORTED' },
 			})
-			expect(order).toEqual(['abort', 'stop'])
+			expect(order).toEqual(['abort', 'cleanup'])
 			expect(host.ctx.commands.get('owner.long.run')).toBeUndefined()
 			await expect(captured.execute({}, {})).resolves.toMatchObject({
 				ok: false,
@@ -87,7 +91,7 @@ describe('CommandsService', () => {
 	it('schedules owner self-shutdown after its command invocation releases', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'SelfStoppingCommandOwner' })
+			@Plugin({ displayName: 'SelfStoppingCommandOwner' })
 			class SelfStoppingCommandOwner extends BasePlugin {
 				override init(): void {
 					this.ctx.commands.register(
@@ -107,6 +111,7 @@ describe('CommandsService', () => {
 				}
 			}
 
+			lowerTestPlugin(SelfStoppingCommandOwner)
 			host.add(SelfStoppingCommandOwner)
 			host.cfg(SelfStoppingCommandOwner).enable()
 			await host.commit()
@@ -138,20 +143,22 @@ describe('CommandsService', () => {
 	it('reclaims plugin commands on stop and replaces them without stale handlers', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'CommandOwner' })
+			@Plugin({ displayName: 'CommandOwner' })
 			class CommandOwnerV1 extends BasePlugin {
 				override init() {
 					this.ctx.commands.register(valueCommand('v1'))
 				}
 			}
 
-			@Plugin({ name: 'CommandOwner' })
+			@Plugin({ displayName: 'CommandOwner' })
 			class CommandOwnerV2 extends BasePlugin {
 				override init() {
 					this.ctx.commands.register(valueCommand('v2'))
 				}
 			}
 
+			lowerTestPlugin(CommandOwnerV1, { id: 'command-owner-generation' })
+			lowerTestPlugin(CommandOwnerV2, { id: 'command-owner-generation' })
 			host.add(CommandOwnerV1)
 			host.cfg(CommandOwnerV1).enable()
 			await host.commit()
@@ -176,7 +183,7 @@ describe('CommandsService', () => {
 	it('rolls back registrations when plugin startup fails', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'BrokenCommandOwner' })
+			@Plugin({ displayName: 'BrokenCommandOwner' })
 			class BrokenCommandOwner extends BasePlugin {
 				override init() {
 					this.ctx.commands.register(valueCommand('broken'))
@@ -184,6 +191,7 @@ describe('CommandsService', () => {
 				}
 			}
 
+			lowerTestPlugin(BrokenCommandOwner)
 			host.add(BrokenCommandOwner)
 			host.cfg(BrokenCommandOwner).enable()
 			await host.commitAllowFail()
@@ -198,7 +206,7 @@ describe('CommandsService', () => {
 	it('keeps cached service views and cleanup isolated between plugin owners', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'CommandOwnerA' })
+			@Plugin({ displayName: 'CommandOwnerA' })
 			class CommandOwnerA extends BasePlugin {
 				override async init() {
 					const commands = this.ctx.commands
@@ -207,7 +215,7 @@ describe('CommandsService', () => {
 				}
 			}
 
-			@Plugin({ name: 'CommandOwnerB' })
+			@Plugin({ displayName: 'CommandOwnerB' })
 			class CommandOwnerB extends BasePlugin {
 				override async init() {
 					const commands = this.ctx.commands
@@ -216,6 +224,8 @@ describe('CommandsService', () => {
 				}
 			}
 
+			lowerTestPlugin(CommandOwnerA)
+			lowerTestPlugin(CommandOwnerB)
 			host.add([CommandOwnerA, CommandOwnerB])
 			host.cfg(CommandOwnerA).enable()
 			host.cfg(CommandOwnerB).enable()
@@ -238,15 +248,18 @@ describe('CommandsService', () => {
 	it('executes management commands through the existing lifecycle use case', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'ManagedPlugin' })
+			@Plugin({ displayName: 'ManagedPlugin' })
 			class ManagedPlugin extends BasePlugin {}
 
-			installTestRoute(host, new Map([['ManagedPlugin', ManagedPlugin]]))
+			lowerTestPlugin(ManagedPlugin)
+			installTestRoute(host, [ManagedPlugin])
+			const address = pluginNodeAddressOf(ManagedPlugin)
 			const started = await host.ctx.commands.executeOrThrow('plugin.start', {
-				name: 'ManagedPlugin',
+				address,
 			})
 			expect(started).toMatchObject({
-				name: 'ManagedPlugin',
+				address,
+				displayName: 'ManagedPlugin',
 				isRunning: true,
 				isEnabled: true,
 				lifecycleStage: 'running',
@@ -254,15 +267,15 @@ describe('CommandsService', () => {
 
 			const listed = await host.ctx.commands.executeOrThrow('plugin.list', {})
 			expect(listed).toMatchObject({
-				plugins: [expect.objectContaining({ name: 'ManagedPlugin', isRunning: true })],
+				plugins: [expect.objectContaining({ address, isRunning: true })],
 				summary: { total: 1, running: 1, stopped: 0, disabled: 0 },
 			})
 
 			const stopped = await host.ctx.commands.executeOrThrow('plugin.stop', {
-				name: 'ManagedPlugin',
+				address,
 			})
 			expect(stopped).toMatchObject({
-				name: 'ManagedPlugin',
+				address,
 				isRunning: false,
 				isEnabled: true,
 				lifecycleStage: 'stopped',
@@ -275,24 +288,18 @@ describe('CommandsService', () => {
 	it('restarts the required dependent closure through management commands', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {
-			@Plugin({ name: 'ManagedProvider' })
+			@Plugin({ displayName: 'ManagedProvider' })
 			class ManagedProvider extends BasePlugin {}
 
-			@Plugin({ name: 'ManagedConsumer' })
+			@Plugin({ displayName: 'ManagedConsumer' })
 			class ManagedConsumer extends BasePlugin {
 				constructor(readonly provider: ManagedProvider) {
 					super()
 				}
 			}
-			setParamToken(ManagedConsumer, 0, ManagedProvider)
-
-			installTestRoute(
-				host,
-				new Map([
-					['ManagedProvider', ManagedProvider],
-					['ManagedConsumer', ManagedConsumer],
-				]),
-			)
+			lowerTestPlugin(ManagedProvider)
+			lowerTestPlugin(ManagedConsumer, { requires: [ManagedProvider] })
+			installTestRoute(host, [ManagedProvider, ManagedConsumer])
 			host.add([ManagedProvider, ManagedConsumer])
 			host.cfg(ManagedProvider).enable()
 			host.cfg(ManagedConsumer).enable()
@@ -300,12 +307,13 @@ describe('CommandsService', () => {
 
 			const firstProvider = host.require(ManagedProvider)
 			const firstConsumer = host.require(ManagedConsumer)
+			const providerAddress = pluginNodeAddressOf(ManagedProvider)
 			const restarted = await host.ctx.commands.executeOrThrow('plugin.restart', {
-				name: 'ManagedProvider',
+				address: providerAddress,
 			})
 
 			expect(restarted).toMatchObject({
-				name: 'ManagedProvider',
+				address: providerAddress,
 				isRunning: true,
 				isEnabled: true,
 				lifecycleStage: 'running',
@@ -321,40 +329,57 @@ describe('CommandsService', () => {
 	})
 })
 
-function installTestRoute(
-	host: RuntimeHost,
-	catalog: ReadonlyMap<string, PluginConstructor>,
-): void {
+function installTestRoute(host: RuntimeHost, constructors: readonly PluginConstructor[]): void {
+	const entries = constructors.map((ctor) => {
+		const info = getPluginInfo(ctor)
+		return {
+			address: pluginNodeAddressOf(ctor),
+			ctor,
+			displayName: info.displayName,
+			rootExportName: info.rootExportName,
+		}
+	})
+	const key = (address: PluginNodeAddressSnapshot) => JSON.stringify(address)
+	const definitionKey = (address: PluginDefinitionAddressSnapshot) => JSON.stringify(address)
+	const byNode = new Map(entries.map((entry) => [key(entry.address), entry]))
+	const byDefinition = new Map(
+		entries.map((entry) => [definitionKey(entry.address.definition), entry]),
+	)
 	host.ctx.runtimeRoute = {
 		catalog: {
-			resolve(target) {
-				return typeof target === 'string' ? catalog.get(target) : target
+			resolve(address) {
+				return byNode.get(key(address))?.ctor
 			},
-			resolveOrRegistered(name) {
-				return catalog.get(name)
+			resolveDefinition(address) {
+				return byDefinition.get(definitionKey(address))?.ctor
 			},
-			require(name) {
-				const plugin = catalog.get(name)
-				if (!plugin) throw new Error(`Plugin not found: ${name}`)
+			require(address) {
+				const plugin = byNode.get(key(address))?.ctor
+				if (!plugin) throw new Error('Plugin node not found')
 				return plugin
 			},
-			listRegistered: () => catalog,
-			listLoadedNames: () => [...catalog.keys()],
+			listRegistered: () => entries,
 		},
 		lifecycle: {
-			isRunning: (target) => host.isRunning(target),
-			enable(name, plugin) {
+			isRunning: (address) => {
+				const plugin = byNode.get(key(address))?.ctor
+				return plugin ? host.isRunning(plugin) : false
+			},
+			enable(_address, plugin) {
 				if (!host.has(plugin)) host.add(plugin)
-				host.cfg(name).enable()
+				host.cfg(plugin).enable()
 			},
-			enablePersisted(name) {
-				host.cfg(name).enable()
+			enablePersisted(address) {
+				const plugin = byNode.get(key(address))?.ctor
+				if (!plugin) throw new Error('Plugin node not found')
+				if (!host.has(plugin)) host.add(plugin)
+				host.cfg(plugin).enable()
 			},
-			deactivate(name, plugin, { runtimeOnly }) {
+			deactivate(_address, plugin, { runtimeOnly }) {
 				if (host.has(plugin)) host.remove(plugin)
-				if (!runtimeOnly) host.cfg(name).disable()
+				if (!runtimeOnly) host.cfg(plugin).disable()
 			},
-			stop(_name, plugin) {
+			stop(_address, plugin) {
 				if (host.has(plugin)) host.remove(plugin)
 			},
 		},

@@ -1,39 +1,45 @@
-import type { Context as PluginContext } from '@pluxel/core'
+import type { Context as PluginContext, PluginNodeAddressSnapshot } from '@pluxel/core'
 
 import { type AnyElysiaApp } from '../../services/http/elysia'
 import { requireRouteCapability } from '../../runtime/capabilities'
-import { pluginSchema } from '../usecases/pluginConfig'
+import { pluginNodeAddressKey, pluginNodePhysicalKey } from '../../runtime/plugin-address'
 import { RUNTIME_INTERNAL_API_BASE } from '../../web/paths'
-import { debugSchemaSourceQuery, pluginNameParams } from './models'
+import { debugSchemaSourceQuery } from './models'
 
 const DEBUG_BASE = `${RUNTIME_INTERNAL_API_BASE}/debug`
 
 interface PluginSchemaInfo {
-	name: string
+	address: PluginNodeAddressSnapshot
+	addressKey: string
+	domId: string
+	displayName: string
+	rootExportName: string
 	hasSchema: boolean
 	hasSchemaSource: boolean
-	schemaSource?: Record<string, string>
+	fieldName?: string
+	schemaSource?: string
 }
 
 function getPluginSchemaInfos(ctx: PluginContext): PluginSchemaInfo[] {
 	const catalog = requireRouteCapability(ctx, 'catalog')
 	const configMetadata = requireRouteCapability(ctx, 'configMetadata')
-	const names = catalog.listLoadedNames()
 	const result: PluginSchemaInfo[] = []
 
-	for (const name of names) {
-		const ctor = catalog.resolveOrRegistered(name)
-		if (!ctor) continue
-		const schema = configMetadata.getSchema(name)
-		const schemaSource = configMetadata.getSchemaSource(name)
+	for (const entry of catalog.listRegistered()) {
+		const config = configMetadata.getConfig(entry.address)
 		result.push({
-			name,
-			hasSchema: !!schema && Object.keys(schema).length > 0,
-			hasSchemaSource: !!schemaSource && Object.keys(schemaSource).length > 0,
-			schemaSource: schemaSource ?? undefined,
+			address: entry.address,
+			addressKey: pluginNodeAddressKey(entry.address),
+			domId: `plugin-${pluginNodePhysicalKey(entry.address)}`,
+			displayName: entry.displayName,
+			rootExportName: entry.rootExportName,
+			hasSchema: !!config,
+			hasSchemaSource: !!config?.source,
+			fieldName: config?.fieldName,
+			schemaSource: config?.source,
 		})
 	}
-	return result
+	return result.sort((left, right) => left.addressKey.localeCompare(right.addressKey))
 }
 
 // 转义 HTML 特殊字符
@@ -288,15 +294,15 @@ function layout(title: string, content: string, activeNav?: string) {
 </html>`
 }
 
-function renderSchemaField(pluginName: string, fieldName: string, source: string, index: number) {
-	const fieldId = `code-${pluginName}-${fieldName}-${index}`
-	const formatted = escapeHtml(source)
+function renderSchemaSource(plugin: PluginSchemaInfo) {
+	const fieldId = `code-${pluginNodePhysicalKey(plugin.address)}`
+	const formatted = escapeHtml(plugin.schemaSource ?? '')
 
 	return `
 		<div class="schema-field">
 			<div class="field-label">
-				<span class="decorator">@Config</span>
-				<span>${escapeHtml(fieldName)}</span>
+				<span class="decorator">configs.use</span>
+				<span>${escapeHtml(plugin.fieldName ?? 'config')}</span>
 				<button class="copy-btn" onclick="copyCode(this, '${fieldId}')">Copy</button>
 			</div>
 			<pre><code id="${fieldId}">${formatted}</code></pre>
@@ -305,29 +311,23 @@ function renderSchemaField(pluginName: string, fieldName: string, source: string
 }
 
 function renderPluginCard(plugin: PluginSchemaInfo, expanded = false) {
-	const fields = plugin.schemaSource ? Object.entries(plugin.schemaSource) : []
-
 	return `
-		<div class="card plugin-card" data-name="${escapeHtml(plugin.name)}" data-has-schema="${plugin.hasSchema}" data-has-source="${plugin.hasSchemaSource}">
+		<div id="${plugin.domId}" class="card plugin-card" data-name="${escapeHtml(`${plugin.displayName} ${plugin.rootExportName} ${plugin.addressKey}`)}" data-has-schema="${plugin.hasSchema}" data-has-source="${plugin.hasSchemaSource}">
 			<div class="card-header" onclick="toggleCard(this)">
-				<span class="card-title">${escapeHtml(plugin.name)}</span>
+				<span class="card-title">${escapeHtml(plugin.displayName)} <span style="color: var(--text-muted);">${escapeHtml(plugin.rootExportName)}</span></span>
 				<div style="display: flex; align-items: center; gap: 12px;">
 					<div class="badges">
 						${plugin.hasSchema ? '<span class="badge badge-success">Schema</span>' : '<span class="badge badge-muted">No Schema</span>'}
 						${plugin.hasSchemaSource ? '<span class="badge badge-success">Source</span>' : '<span class="badge badge-warning">No Source</span>'}
-						${fields.length > 0 ? `<span class="badge badge-muted">${fields.length} field${fields.length > 1 ? 's' : ''}</span>` : ''}
+						${plugin.hasSchema ? '<span class="badge badge-muted">1 object schema</span>' : ''}
 					</div>
 					<span class="toggle-icon" style="font-family: monospace; color: var(--text-muted);">${expanded ? '-' : '+'}</span>
 				</div>
 			</div>
 			<div class="card-body ${expanded ? '' : 'collapsed'}">
 				${
-					fields.length > 0
-						? fields
-								.map(([fieldName, source], i) =>
-									renderSchemaField(plugin.name, fieldName, source, i),
-								)
-								.join('')
+					plugin.schemaSource
+						? renderSchemaSource(plugin)
 						: '<p style="color: var(--text-muted); font-size: 13px;">No schema source extracted for this plugin.</p>'
 				}
 			</div>
@@ -383,9 +383,9 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 						${plugins
 							.map(
 								(p) => `
-							<a href="${DEBUG_BASE}/schema-source/${encodeURIComponent(p.name)}" class="quick-link">
-								<h3>${escapeHtml(p.name)}</h3>
-								<p>${p.hasSchemaSource ? `${Object.keys(p.schemaSource || {}).length} config fields` : 'No schema source'}</p>
+							<a href="${DEBUG_BASE}/schema-source#${p.domId}" class="quick-link">
+								<h3>${escapeHtml(p.displayName)}</h3>
+								<p>${escapeHtml(p.rootExportName)} · ${p.hasSchemaSource ? '1 object schema source' : 'No schema source'}</p>
 							</a>
 						`,
 							)
@@ -413,7 +413,9 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 					}
 					if (search) {
 						const q = search.toLowerCase()
-						filtered = filtered.filter((p) => p.name.toLowerCase().includes(q))
+						filtered = filtered.filter((p) =>
+							`${p.displayName} ${p.rootExportName} ${p.addressKey}`.toLowerCase().includes(q),
+						)
 					}
 
 					const withSource = plugins.filter((p) => p.hasSchemaSource).length
@@ -451,73 +453,7 @@ export const debugRoutes = (app: AnyElysiaApp) =>
 					query: debugSchemaSourceQuery,
 				},
 			)
-			.get(
-				'/schema-source/:name',
-				async ({ params, pluginCtx, set, status }) => {
-					const name = params.name
-					const result = await pluginSchema(pluginCtx, name)
-
-					if (result.ok === false) {
-						const content = `
-				<div class="card">
-					<div class="card-header">
-						<span class="card-title">${escapeHtml(name)}</span>
-						<span class="badge badge-error">Error</span>
-					</div>
-					<div class="card-body">
-						<p style="color: var(--error);">${escapeHtml(result.code)}: ${escapeHtml(result.message)}</p>
-					</div>
-				</div>
-			`
-						set.headers['content-type'] = 'text/html; charset=utf-8'
-						return status(404, layout(`${name} - Schema Source`, content, 'schema-source'))
-					}
-
-					const fields = result.schemaSource ? Object.entries(result.schemaSource) : []
-
-					const content = `
-				<div style="margin-bottom: 16px;">
-					<a href="${DEBUG_BASE}/schema-source" style="color: var(--accent); text-decoration: none;">&larr; Back to all plugins</a>
-				</div>
-
-			<div class="card">
-				<div class="card-header" style="cursor: default;">
-					<span class="card-title">${escapeHtml(name)}</span>
-					<div class="badges">
-						<span class="badge badge-success">OK</span>
-						${fields.length > 0 ? `<span class="badge badge-muted">${fields.length} field${fields.length > 1 ? 's' : ''}</span>` : ''}
-					</div>
-				</div>
-				<div class="card-body">
-					<h2 style="margin-top: 0;">Schema Source</h2>
-					${
-						fields.length > 0
-							? fields
-									.map(([fieldName, source], i) =>
-										renderSchemaField(name, fieldName, source as string, i),
-									)
-									.join('')
-							: '<p style="color: var(--text-muted);">No schema source extracted</p>'
-					}
-
-					<h2>Defaults</h2>
-					<pre><code>${escapeHtml(JSON.stringify(result.defaults, null, 2))}</code></pre>
-				</div>
-			</div>
-		`
-					set.headers['content-type'] = 'text/html; charset=utf-8'
-					return layout(`${name} - Schema Source`, content, 'schema-source')
-				},
-				{
-					params: pluginNameParams,
-				},
-			)
 			.get('/json/schemas', ({ pluginCtx }) => {
-				const plugins = getPluginSchemaInfos(pluginCtx)
-				const result: Record<string, PluginSchemaInfo> = {}
-				for (const plugin of plugins) {
-					result[plugin.name] = plugin
-				}
-				return result
+				return getPluginSchemaInfos(pluginCtx)
 			}),
 	)

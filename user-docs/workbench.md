@@ -45,7 +45,7 @@ workbenchContract.route('/settings', {
 
 ## 插件目录分类
 
-插件目录中的分类由宿主和真实包来源决定，不写进 `@Plugin`。固定产品可以按 plugin ID 注册分类，同时用末尾 `*`
+插件目录中的分类由宿主和真实包来源决定，不写进 `@Plugin`。固定产品可以按结构化 Plugin node address 注册分类，同时用末尾 `*`
 包名前缀覆盖以后动态安装的同系列插件：
 
 ```ts
@@ -55,14 +55,15 @@ workbench: {
 		{
 			id: 'observability',
 			name: 'Observability',
-			plugins: ['OtelPlugin'],
+			nodes: [pluginNodeAddressOf(OtelPlugin)],
 			packages: ['@pluxel/otel'],
 		},
 	],
 }
 ```
 
-`plugins` 只接受 canonical plugin ID；`packages` 只接受精确包名或一个末尾 `*` 前缀。没有命中宿主分类的动态第三方
+`nodes` 只接受 `PluginNodeAddressSnapshot`；canonical host module 可以用 `pluginNodeAddressOf(Constructor)` 取得。
+`packages` 只接受精确包名或一个末尾 `*` 前缀。没有命中宿主分类的动态第三方
 package 会自动以精确 `packageName` 成组，同一包导出的多个插件进入同一分类。用户可以把插件移动到已有分类、调整顺序
 或放回未分组，但不能在 Workbench 中创建、重命名或删除分类。这样分类名称和身份始终由宿主或真实包来源提供。
 

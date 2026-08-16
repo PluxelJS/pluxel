@@ -1,32 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, setParamToken } from '@pluxel/runtime/test'
+import { clonePluginDefinition, getPluginDefinitionFacts } from '@pluxel/core'
+import { BasePlugin, Plugin } from '@pluxel/runtime/test'
 import { createHmrTestContext } from '../support/hmr-context'
+import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins } from '../support/runtime-state'
-
-function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
 
 describe('monorepo plugin dependencies', () => {
 	it('commits successfully when dependent plugin modules are both loaded (separate moduleIds)', async () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ name: 'Provider' })
+		@Plugin({ displayName: 'Provider' })
 		class Provider extends BasePlugin {}
+		lowerTestPlugin(Provider)
 
-		@Plugin({ name: 'Consumer' })
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()
 			}
 		}
-		// In tests we explicitly set DI tokens (no reflect-metadata).
-		setParamToken(Consumer, 0, Provider)
+		lowerTestPlugin(Consumer, { requires: [Provider] })
 
-		enablePlugins(ctx, 'Provider', 'Consumer')
+		enablePlugins(ctx, Provider, Consumer)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('packages/provider/src/entry.ts', { Provider })
@@ -43,20 +39,21 @@ describe('monorepo plugin dependencies', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ name: 'Provider' })
+		@Plugin({ displayName: 'Provider' })
 		class Provider extends BasePlugin {}
+		lowerTestPlugin(Provider)
 
-		@Plugin({ name: 'Consumer' })
+		@Plugin({ displayName: 'Consumer' })
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()
 			}
 		}
-		setParamToken(Consumer, 0, Provider)
+		lowerTestPlugin(Consumer, { requires: [Provider] })
 
 		// Simulate: profile selected Consumer's package entry, but not Provider's package entry.
 		// Runtime config enables Consumer anyway -> DI commit must fail.
-		enablePlugins(ctx, 'Consumer')
+		enablePlugins(ctx, Consumer)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('packages/consumer/src/entry.ts', { Consumer })
@@ -75,12 +72,17 @@ describe('monorepo plugin dependencies', () => {
 		abstract class UsageRecorderPlugin extends BasePlugin {
 			abstract readonly seq: number
 		}
+		lowerTestAbstract(UsageRecorderPlugin)
 
+		@Plugin(UsageRecorderPlugin, { displayName: 'Usage billing' })
 		class UsageBillingPlugin extends UsageRecorderPlugin {
 			readonly seq = ++billingSeq
 		}
-		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPlugin)
+		lowerTestPlugin(UsageBillingPlugin, {
+			provides: getPluginDefinitionFacts(UsageRecorderPlugin).definition,
+		})
 
+		@Plugin({ displayName: 'Zhipu provider' })
 		class ZhipuProviderPlugin extends BasePlugin {
 			readonly seq = ++providerSeq
 
@@ -88,11 +90,9 @@ describe('monorepo plugin dependencies', () => {
 				super()
 			}
 		}
-		defineParamTypes(ZhipuProviderPlugin, [UsageRecorderPlugin])
-		Plugin({ name: 'ZhipuProviderPlugin' })(ZhipuProviderPlugin)
-		setParamToken(ZhipuProviderPlugin, 0, UsageRecorderPlugin)
+		lowerTestPlugin(ZhipuProviderPlugin, { requires: [UsageRecorderPlugin] })
 
-		enablePlugins(ctx, 'UsageBillingPlugin', 'ZhipuProviderPlugin')
+		enablePlugins(ctx, UsageBillingPlugin, ZhipuProviderPlugin)
 
 		{
 			const batch = loader.beginBatch()
@@ -115,7 +115,7 @@ describe('monorepo plugin dependencies', () => {
 		class UsageBillingPluginNext extends UsageRecorderPlugin {
 			readonly seq = ++billingSeq
 		}
-		Plugin(UsageRecorderPlugin, { name: 'UsageBillingPlugin' })(UsageBillingPluginNext)
+		clonePluginDefinition(UsageBillingPlugin, UsageBillingPluginNext)
 
 		const batch = loader.beginBatch()
 		await batch.replaceModule('projects/example-app/plugins/billing/src/index.ts', {

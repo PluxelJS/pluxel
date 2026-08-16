@@ -1,119 +1,95 @@
-import type { ConfigServiceConfig } from './ConfigService'
+import { parsePluginNodeAddress, pluginNodeAddressEqual } from '@pluxel/core'
+import type { PluginConfigRecordSnapshot } from '@pluxel/core/services'
+import type { ConfigServiceConfig, PluginConfigFile } from './ConfigService'
 
-const PLUGIN_CONFIG_ENV_PREFIX = 'PLUXEL_CONFIG__'
-const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor'])
-
-type ConfigRecord = Record<string, unknown>
+const PLUGIN_CONFIG_ENV = 'PLUXEL_CONFIG'
 
 export function withPluginConfigEnvironment(
 	config: ConfigServiceConfig | undefined,
 	environment: Readonly<Record<string, string | undefined>>,
 ): ConfigServiceConfig | undefined {
 	if (config?.environment !== undefined) return config
-	const selected = Object.fromEntries(
-		Object.entries(environment).filter(
-			([name, value]) => name.startsWith(PLUGIN_CONFIG_ENV_PREFIX) && value !== undefined,
-		),
-	)
-	if (Object.keys(selected).length === 0) return config
-	return { ...config, environment: selected }
+	const snapshot = environment[PLUGIN_CONFIG_ENV]
+	return snapshot === undefined
+		? config
+		: { ...config, environment: { [PLUGIN_CONFIG_ENV]: snapshot } }
 }
 
 export function configRecordsFromEnvironment(
 	environment: false | Readonly<Record<string, string | undefined>> | undefined,
-): Record<string, ConfigRecord> {
-	const plugins: Record<string, ConfigRecord> = Object.create(null)
-	if (!environment) return plugins
-
-	const entries = Object.entries(environment)
-		.filter(([name, value]) => name.startsWith(PLUGIN_CONFIG_ENV_PREFIX) && value !== undefined)
-		.sort(([left], [right]) => left.localeCompare(right))
-	for (const [name, value] of entries) {
-		const path = name.slice(PLUGIN_CONFIG_ENV_PREFIX.length).split('__')
-		if (path.length < 2 || path.some((segment) => !segment)) {
+): PluginConfigRecordSnapshot[] {
+	if (!environment) return []
+	const text = environment[PLUGIN_CONFIG_ENV]
+	if (text === undefined) return []
+	let raw: unknown
+	try {
+		raw = JSON.parse(text)
+	} catch (error) {
+		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain JSON`, { cause: error })
+	}
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain an object snapshot`)
+	}
+	const file = raw as Partial<PluginConfigFile>
+	if (file.version !== 2 || !Array.isArray(file.plugins)) {
+		throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV} must contain config snapshot version 2`)
+	}
+	return file.plugins.map((entry, index) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Error(`[ConfigService] ${PLUGIN_CONFIG_ENV}.plugins[${index}] must be an object`)
+		}
+		const owner = parsePluginNodeAddress((entry as PluginConfigRecordSnapshot).owner)
+		const config = (entry as PluginConfigRecordSnapshot).config
+		if (!config || typeof config !== 'object' || Array.isArray(config)) {
 			throw new Error(
-				`[ConfigService] Invalid plugin config environment name "${name}"; expected ${PLUGIN_CONFIG_ENV_PREFIX}<plugin-id>__<schema-key>[__<field>...]`,
+				`[ConfigService] ${PLUGIN_CONFIG_ENV}.plugins[${index}].config must be an object`,
 			)
 		}
-		if (path.some((segment) => FORBIDDEN_PATH_SEGMENTS.has(segment))) {
-			throw new Error(`[ConfigService] Unsafe plugin config environment path: ${name}`)
-		}
-
-		const pluginName = path.shift()!
-		const plugin = (plugins[pluginName] ??= Object.create(null))
-		writeConfigPath(plugin, path, decodeEnvironmentValue(value! as string), name)
-	}
-	return plugins
+		return { owner, config: { ...config } }
+	})
 }
 
 export function mergeConfigRecords(
-	base: Readonly<Record<string, ConfigRecord>> | undefined,
-	override: Readonly<Record<string, ConfigRecord>> | undefined,
-): Record<string, ConfigRecord> {
-	const plugins: Record<string, ConfigRecord> = Object.create(null)
-	for (const name of new Set([...Object.keys(base ?? {}), ...Object.keys(override ?? {})])) {
-		plugins[name] = mergeConfigRecord(base?.[name], override?.[name])
-	}
-	return plugins
+	base: readonly PluginConfigRecordSnapshot[] | undefined,
+	override: readonly PluginConfigRecordSnapshot[] | undefined,
+): PluginConfigRecordSnapshot[] {
+	const merged: PluginConfigRecordSnapshot[] = []
+	for (const entry of base ?? []) upsert(merged, entry)
+	for (const entry of override ?? []) upsert(merged, entry)
+	return merged
 }
 
-function mergeConfigRecord(
-	base: Readonly<ConfigRecord> | undefined,
-	override: Readonly<ConfigRecord> | undefined,
-): ConfigRecord {
-	const merged: ConfigRecord = Object.create(null)
-	for (const [key, value] of Object.entries(base ?? {})) merged[key] = cloneConfigValue(value)
+function upsert(target: PluginConfigRecordSnapshot[], input: PluginConfigRecordSnapshot): void {
+	const owner = parsePluginNodeAddress(input.owner)
+	const index = target.findIndex((entry) => pluginNodeAddressEqual(entry.owner, owner))
+	const previous = index < 0 ? undefined : target[index]
+	const entry = {
+		owner,
+		config: mergeRecord(previous?.config, input.config),
+	}
+	if (index < 0) target.push(entry)
+	else target[index] = entry
+}
+
+function mergeRecord(
+	base: Readonly<Record<string, unknown>> | undefined,
+	override: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+	const merged: Record<string, unknown> = Object.create(null)
+	for (const [key, value] of Object.entries(base ?? {})) merged[key] = clone(value)
 	for (const [key, value] of Object.entries(override ?? {})) {
-		const current = merged[key]
 		merged[key] =
-			isPlainRecord(current) && isPlainRecord(value)
-				? mergeConfigRecord(current, value)
-				: cloneConfigValue(value)
+			isRecord(merged[key]) && isRecord(value) ? mergeRecord(merged[key], value) : clone(value)
 	}
 	return merged
 }
 
-function writeConfigPath(
-	target: ConfigRecord,
-	path: readonly string[],
-	value: unknown,
-	environmentName: string,
-): void {
-	let cursor = target
-	for (let index = 0; index < path.length - 1; index += 1) {
-		const segment = path[index]!
-		const existing = cursor[segment]
-		if (existing !== undefined && !isPlainRecord(existing)) {
-			throw new Error(
-				`[ConfigService] Conflicting plugin config environment paths at "${environmentName}"`,
-			)
-		}
-		cursor = (cursor[segment] ??= Object.create(null)) as ConfigRecord
-	}
-	const leaf = path.at(-1)!
-	if (cursor[leaf] !== undefined) {
-		throw new Error(
-			`[ConfigService] Duplicate plugin config environment path at "${environmentName}"`,
-		)
-	}
-	cursor[leaf] = value
+function clone(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(clone)
+	return isRecord(value) ? mergeRecord(undefined, value) : value
 }
 
-function decodeEnvironmentValue(value: string): unknown {
-	try {
-		return JSON.parse(value) as unknown
-	} catch {
-		return value
-	}
-}
-
-function cloneConfigValue(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(cloneConfigValue)
-	if (!isPlainRecord(value)) return value
-	return mergeConfigRecord(undefined, value)
-}
-
-function isPlainRecord(value: unknown): value is ConfigRecord {
+function isRecord(value: unknown): value is Record<string, unknown> {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
 	const prototype = Object.getPrototypeOf(value)
 	return prototype === Object.prototype || prototype === null

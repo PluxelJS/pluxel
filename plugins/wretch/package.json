@@ -19,10 +19,6 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./example": {
-			"@pluxel/hmr": "./src/example/index.ts",
-			"default": "./dist/example.mjs"
-		},
 		"./workbench": {
 			"@pluxel/hmr": "./src/workbench-contract.ts",
 			"default": "./dist/workbench.mjs"
@@ -32,7 +28,6 @@
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./example": "./dist/example.mjs",
 			"./workbench": "./dist/workbench.mjs",
 			"./package.json": "./package.json"
 		}

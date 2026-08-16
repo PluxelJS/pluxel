@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'pathe'
 import type { ViteDevServer } from 'vite'
 
 import '../register-services'
-import type { Context as CoreContext, PluginConstructor, PluginIdentifier } from '@pluxel/core'
+import type { Context as CoreContext, PluginConstructor } from '@pluxel/core'
 import {
 	createContextPluginLogPolicyStore,
 	createNodeWorkspaceFsBackend,
@@ -425,7 +425,7 @@ async function stopRuntimePluginGraph(ctx: Context): Promise<void> {
 		const plugins = ctx.registry.graph
 			.declarationsBySlot()
 			.map((declaration) => declaration?.meta?.class)
-			.filter((plugin): plugin is PluginIdentifier => typeof plugin === 'function')
+			.filter((plugin): plugin is PluginConstructor => typeof plugin === 'function')
 		for (const plugin of plugins) {
 			if (ctx.registry.isRegistered(plugin)) update.unregister(plugin)
 		}

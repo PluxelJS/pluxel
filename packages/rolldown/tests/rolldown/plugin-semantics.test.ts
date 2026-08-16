@@ -1,229 +1,301 @@
 import { createFixture } from 'fs-fixture'
-import { parseSync } from 'oxc-parser'
 import { rolldown } from 'rolldown'
 import { describe, expect, it } from 'vitest'
-import {
-	analyzePluginSemantics,
-	createPluginSemanticsPlugin,
-} from '../../src/rolldown/plugins/pluginSemanticsPlugin'
+import { createPluginSemanticsPlugin } from '../../src/rolldown/plugins/pluginSemanticsPlugin'
 
-function parse(code: string) {
-	return parseSync('src/consumer.ts', code, { sourceType: 'module', lang: 'ts' }).program
+async function transform(code: string, id = '/repo/src/index.ts') {
+	const collector = createPluginSemanticsPlugin({ root: '/repo' })
+	const hook = collector.plugin.transform as {
+		handler: (this: unknown, code: string, id: string) => unknown
+	}
+	return (await hook.handler.call(
+		{
+			error(message: string): never {
+				throw new Error(message)
+			},
+			resolve: async () => null,
+		},
+		code,
+		id,
+	)) as { code: string; map: null } | null
 }
 
-describe('plugin semantics', () => {
-	it('collects only constructor and optional declaration dependencies', () => {
-		const semantics = analyzePluginSemantics(
-			parse(`
-				import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'
-				import { DatabasePlugin } from 'pluxel-plugin-database'
-				import { AuditContract } from '@acme/audit-contract'
-				import 'pluxel-plugin-unrelated'
-				const Audit = optionalPlugin(() =>
-					import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
-				)
-				@Plugin({ name: 'Consumer' })
-				class Consumer extends BasePlugin {
-					constructor(readonly db: DatabasePlugin, readonly audit: AuditContract) { super() }
-				}
-				void import('pluxel-plugin-lazy-code')
-			`),
+describe('plugin semantic lowering', () => {
+	it('emits slot facts with ordered required provenance and type-only optional refs', async () => {
+		const result = await transform(`
+			import type { AuditPlugin as AuditImplementation } from '@acme/audit'
+			import { DatabasePlugin as Database, SearchPlugin } from '@acme/database'
+			import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+			const Audit = definePluginRef<AuditImplementation>()
+			@Plugin({ displayName: 'Orders', startTimeoutMs: 5000 })
+			export class OrdersPlugin extends BasePlugin {
+				constructor(readonly search: SearchPlugin, readonly database: Database) { super() }
+				override init() { this.plugins.use(Audit, audit => audit.registerSource(this)) }
+			}
+		`)
+
+		expect(result?.code).toContain('__setPluginDefinition as __pluxelSetPluginDefinition')
+		expect(result?.code).toContain('__definePluginRef as __pluxelDefinePluginRef')
+		expect(result?.code).toContain('"kind":"source-entry","source":"src/index.ts"')
+		expect(result?.code).toContain('"exportName":"OrdersPlugin"')
+		expect(result?.code).toMatch(
+			/"requires":\[\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"SearchPlugin"},\{"entry":\{"kind":"package-root","packageName":"@acme\/database"},"exportName":"DatabasePlugin"}\]/,
 		)
+		expect(result?.code).toContain(
+			'__pluxelDefinePluginRef({"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"})',
+		)
+		expect(result?.code).toContain(
+			'"optional":[{"entry":{"kind":"package-root","packageName":"@acme/audit"},"exportName":"AuditPlugin"}]',
+		)
+		expect(result?.code).not.toContain('optionalPlugin')
+		expect(result?.code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
+	})
 
-		expect(semantics.optionalPlugins).toMatchObject([
-			{
-				packageSpecifier: 'pluxel-plugin-audit',
-				exportName: 'AuditPlugin',
-				argumentCount: 1,
+	it('emits abstract provider facts and a concrete provides edge', async () => {
+		const result = await transform(`
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			export abstract class Database extends BasePlugin {}
+			@Plugin(Database)
+			export class MemoryDatabasePlugin extends Database {}
+		`)
+
+		expect(result?.code).toContain('__pluxelSetPluginDefinition(Database, {"kind":"abstract"')
+		expect(result?.code).toContain(
+			'"provides":{"entry":{"kind":"source-entry","source":"src/index.ts"},"exportName":"Database"}',
+		)
+	})
+
+	it('uses one host-root-relative address across provider and cross-directory edges', async () => {
+		await using fixture = await createFixture({
+			'tests/plugins/Provider.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class Provider extends BasePlugin {}
+			`,
+			'tests/required/RequiredConsumer.ts': `
+				import { Provider } from '../plugins/Provider'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class RequiredConsumer extends BasePlugin {
+					constructor(readonly provider: Provider) { super() }
+				}
+			`,
+			'tests/optional/OptionalConsumer.ts': `
+				import type { Provider } from '../plugins/Provider'
+				import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+				const OptionalProvider = definePluginRef<Provider>()
+				@Plugin() export class OptionalConsumer extends BasePlugin {
+					init() { this.plugins.use(OptionalProvider, provider => void provider) }
+				}
+			`,
+		})
+		const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
+		const build = await rolldown({
+			input: {
+				provider: fixture.getPath('tests/plugins/Provider.ts'),
+				required: fixture.getPath('tests/required/RequiredConsumer.ts'),
+				optional: fixture.getPath('tests/optional/OptionalConsumer.ts'),
 			},
-		])
-		expect(semantics.requiredPackages).toEqual(['pluxel-plugin-database', '@acme/audit-contract'])
-	})
-
-	it('lowers an unresolved optional package to an explicit absent chunk', async () => {
-		await using fixture = await createFixture({
-			'src/index.ts': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				"export const Missing = optionalPlugin(() => import('pluxel-plugin-missing').then(({ MissingPlugin }) => MissingPlugin))",
-				'',
-			].join('\n'),
-		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
 			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin().plugin],
+			plugins: [collector.plugin],
 		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output
-			.filter((item) => item.type === 'chunk')
-			.map((item) => item.code)
-			.join('\n')
+		await build.generate({ format: 'esm' })
 
-		expect(code).toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
-		expect(code).toContain('pluxel-plugin-missing')
-		expect(code).not.toContain("import('pluxel-plugin-missing')")
+		const definitions = new Map(
+			collector.definitions().map((definition) => [definition.className, definition]),
+		)
+		const providerAddress = {
+			entry: { kind: 'source-entry', source: 'tests/plugins/Provider.ts' },
+			exportName: 'Provider',
+		} as const
+		expect(definitions.get('Provider')?.definition).toEqual(providerAddress)
+		expect(definitions.get('RequiredConsumer')?.requires).toEqual([providerAddress])
+		expect(definitions.get('OptionalConsumer')?.optional).toEqual([providerAddress])
 	})
 
-	it('keeps optional peers external in an independent plugin package', async () => {
+	it('maps source-mode package root re-exports to package provenance', async () => {
 		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-present/package.json': JSON.stringify({
-				name: 'pluxel-plugin-present',
+			'package.json': JSON.stringify({
+				name: '@acme/cache',
 				type: 'module',
-				exports: './index.js',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			}),
-			'node_modules/pluxel-plugin-present/index.js':
-				'export class PresentPlugin { static marker = "must-stay-external" }',
-			'src/index.ts': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				"export const Missing = optionalPlugin(() => import('pluxel-plugin-missing').then(({ MissingPlugin }) => MissingPlugin))",
-				"export const Present = optionalPlugin(() => import('pluxel-plugin-present').then(({ PresentPlugin }) => PresentPlugin))",
-			].join('\n'),
+			'src/backend.ts': `
+				import { ForkablePlugin } from '@pluxel/runtime'
+				export abstract class CacheBackend extends ForkablePlugin {}
+			`,
+			'src/index.ts': `
+				import { CacheBackend } from './backend'
+				import { Plugin } from '@pluxel/runtime'
+				export { CacheBackend } from './backend'
+				@Plugin(CacheBackend) export class MemoryCacheBackendPlugin extends CacheBackend {}
+			`,
+			'tests/TestCacheBackend.ts': `
+				import { CacheBackend } from '../src/index'
+				import { Plugin } from '@pluxel/runtime'
+				@Plugin(CacheBackend) export class TestCacheBackend extends CacheBackend {}
+			`,
 		})
+		const collector = createPluginSemanticsPlugin({ root: fixture.getPath() })
 		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
+			input: fixture.getPath('tests/TestCacheBackend.ts'),
 			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin({ optionalImportMode: 'external' }).plugin],
+			plugins: [collector.plugin],
 		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output.find((item) => item.type === 'chunk')?.code ?? ''
-		expect(code).toContain('import("pluxel-plugin-missing")')
-		expect(code).toContain('import("pluxel-plugin-present")')
-		expect(code).toContain('), "pluxel-plugin-missing")')
-		expect(code).not.toContain('must-stay-external')
-		expect(code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
+		await build.generate({ format: 'esm' })
+
+		const definitions = new Map(
+			collector.definitions().map((definition) => [definition.className, definition]),
+		)
+		const tokenAddress = {
+			entry: { kind: 'package-root', packageName: '@acme/cache' },
+			exportName: 'CacheBackend',
+		} as const
+		expect(definitions.get('CacheBackend')?.definition).toEqual(tokenAddress)
+		expect(definitions.get('MemoryCacheBackendPlugin')?.provides).toEqual(tokenAddress)
+		expect(definitions.get('TestCacheBackend')?.definition).toEqual({
+			entry: { kind: 'source-entry', source: 'tests/TestCacheBackend.ts' },
+			exportName: 'TestCacheBackend',
+		})
+		expect(definitions.get('TestCacheBackend')?.provides).toEqual(tokenAddress)
 	})
 
-	it('keeps detected required plugin packages external on the first build', async () => {
+	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(
+		'recognizes the formal test authoring facade %s',
+		async (source) => {
+			const result = await transform(`
+				import { BasePlugin, Plugin } from '${source}'
+				@Plugin({ displayName: 'Test Plugin' })
+				export class TestPlugin extends BasePlugin {}
+			`)
+			expect(result?.code).toContain('__pluxelSetPluginDefinition(TestPlugin')
+		},
+	)
+
+	it.each([
+		{
+			name: 'type-only required dependency',
+			code: `
+				import type { DatabasePlugin } from '@acme/database'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					constructor(readonly database: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'must use a value import',
+		},
+		{
+			name: 'package subpath dependency',
+			code: `
+				import { DatabasePlugin } from '@acme/database/backend'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					constructor(readonly database: DatabasePlugin) { super() }
+				}
+			`,
+			message: 'must come from package root',
+		},
+		{
+			name: 'exported ref',
+			code: `
+				import type { AuditPlugin } from '@acme/audit'
+				import { definePluginRef } from '@pluxel/runtime'
+				export const Audit = definePluginRef<AuditPlugin>()
+			`,
+			message: 'must not be exported',
+		},
+		{
+			name: 'inline ref',
+			code: `
+				import type { AuditPlugin } from '@acme/audit'
+				import { definePluginRef } from '@pluxel/runtime'
+				export function make() { return definePluginRef<AuditPlugin>() }
+			`,
+			message: 'module-level const',
+		},
+		{
+			name: 'conditional optional edge',
+			code: `
+				import type { AuditPlugin } from '@acme/audit'
+				import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
+				const Audit = definePluginRef<AuditPlugin>()
+				@Plugin() export class ConsumerPlugin extends BasePlugin {
+					init() { if (true) this.plugins.use(Audit, audit => void audit) }
+				}
+			`,
+			message: 'direct statement in init',
+		},
+		{
+			name: 'legacy marker option',
+			code: `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin({ name: 'Legacy' }) export class ConsumerPlugin extends BasePlugin {}
+			`,
+			message: 'unsupported @Plugin option',
+		},
+	])('rejects $name', async ({ code, message }) => {
+		await expect(transform(code)).rejects.toThrow(message)
+	})
+
+	it('validates package-root uniqueness and plugin-free subpaths before bundling', async () => {
 		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-required/package.json': JSON.stringify({
-				name: 'pluxel-plugin-required',
+			'package.json': JSON.stringify({
+				name: '@acme/orders',
 				type: 'module',
-				exports: './index.js',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+					'./worker': { '@pluxel/hmr': './src/worker.ts', default: './dist/worker.mjs' },
+				},
 			}),
-			'node_modules/pluxel-plugin-required/index.js':
-				'export class RequiredPlugin { static marker = "must-stay-required-peer" }',
-			'src/index.ts': [
-				"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-				"import { RequiredPlugin } from 'pluxel-plugin-required'",
-				"@Plugin({ name: 'ConsumerPlugin' })",
-				'export class ConsumerPlugin extends BasePlugin {',
-				'  static readonly Required = RequiredPlugin',
-				'  constructor(readonly required: RequiredPlugin) { super() }',
-				'}',
-			].join('\n'),
+			'src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {}
+			`,
+			'src/worker.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class WorkerPlugin extends BasePlugin {}
+			`,
 		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/runtime'],
-			plugins: [
-				createPluginSemanticsPlugin({
-					prefixes: ['pluxel-plugin'],
-					optionalImportMode: 'external',
-				}).plugin,
-			],
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
 		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output.find((item) => item.type === 'chunk')?.code ?? ''
-		expect(code).toContain('from "pluxel-plugin-required"')
-		expect(code).not.toContain('must-stay-required-peer')
+
+		await expect(
+			rolldown({
+				input: fixture.getPath('src/index.ts'),
+				external: ['@pluxel/runtime'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow('is plugin-bearing')
 	})
 
-	it('accepts its internal package annotation on a later route build', async () => {
+	it('rejects one constructor exported by two package-root names', async () => {
 		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-present/package.json': JSON.stringify({
-				name: 'pluxel-plugin-present',
+			'package.json': JSON.stringify({
+				name: '@acme/orders',
 				type: 'module',
-				exports: './index.js',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			}),
-			'node_modules/pluxel-plugin-present/index.js':
-				'export class PresentPlugin { static marker = "annotated-candidate" }',
-			'src/index.js': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				"export const Present = optionalPlugin(() => import('pluxel-plugin-present').then(({ PresentPlugin }) => PresentPlugin), 'pluxel-plugin-present')",
-			].join('\n'),
+			'src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() class OrdersPlugin extends BasePlugin {}
+				export { OrdersPlugin, OrdersPlugin as AliasPlugin }
+			`,
 		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.js'),
-			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin().plugin],
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath(),
+			packageJsonPath: fixture.getPath('package.json'),
 		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output
-			.filter((item) => item.type === 'chunk')
-			.map((item) => item.code)
-			.join('\n')
-		expect(code).toContain('annotated-candidate')
-		expect(code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
-	})
 
-	it('lowers an absent candidate declared by an installed plugin package', async () => {
-		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-consumer/package.json': JSON.stringify({
-				name: 'pluxel-plugin-consumer',
-				type: 'module',
-				exports: './index.js',
-			}),
-			'node_modules/pluxel-plugin-consumer/index.js': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				"export const Missing = optionalPlugin(() => import('pluxel-plugin-missing').then(({ MissingPlugin }) => MissingPlugin), 'pluxel-plugin-missing')",
-			].join('\n'),
-		})
-		const build = await rolldown({
-			input: fixture.getPath('node_modules/pluxel-plugin-consumer/index.js'),
-			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin().plugin],
-		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output
-			.filter((item) => item.type === 'chunk')
-			.map((item) => item.code)
-			.join('\n')
-		expect(code).toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
-		expect(code).not.toContain('import("pluxel-plugin-missing")')
-	})
-
-	it('rejects inline declarations before bundling', async () => {
-		await using fixture = await createFixture({
-			'src/index.ts': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				'export function load() {',
-				"  return optionalPlugin(() => import('pluxel-plugin-missing').then(({ MissingPlugin }) => MissingPlugin))",
-				'}',
-			].join('\n'),
-		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin().plugin],
-		})
-		await expect(build.generate({ format: 'esm' })).rejects.toThrow('module-level const')
-	})
-
-	it('keeps a resolvable candidate in the fixed bundle closure', async () => {
-		await using fixture = await createFixture({
-			'node_modules/pluxel-plugin-present/package.json': JSON.stringify({
-				name: 'pluxel-plugin-present',
-				type: 'module',
-				exports: './index.js',
-			}),
-			'node_modules/pluxel-plugin-present/index.js':
-				'export class PresentPlugin { static marker = "present-candidate" }',
-			'src/index.ts': [
-				"import { optionalPlugin } from '@pluxel/runtime'",
-				"export const Present = optionalPlugin(() => import('pluxel-plugin-present').then(({ PresentPlugin }) => PresentPlugin))",
-			].join('\n'),
-		})
-		const build = await rolldown({
-			input: fixture.getPath('src/index.ts'),
-			external: ['@pluxel/runtime'],
-			plugins: [createPluginSemanticsPlugin().plugin],
-		})
-		const output = await build.generate({ format: 'esm' })
-		const code = output.output
-			.filter((item) => item.type === 'chunk')
-			.map((item) => item.code)
-			.join('\n')
-		expect(code).toContain('present-candidate')
-		expect(code).not.toContain('PLUXEL_OPTIONAL_PLUGIN_ABSENT')
+		await expect(
+			rolldown({
+				input: fixture.getPath('src/index.ts'),
+				external: ['@pluxel/runtime'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow('multiple root names')
 	})
 })

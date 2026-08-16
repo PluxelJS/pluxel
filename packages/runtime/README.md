@@ -1,18 +1,22 @@
 # @pluxel/runtime
 
-插件实现包本身允许不存在时，用 opaque optional ref 声明增强能力：
+插件实现包本身允许不存在时，用 type-only import 和 opaque optional ref 声明增强能力：
 
 ```ts
-const Audit = optionalPlugin(() =>
-	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
-)
+import type { AuditPlugin } from 'pluxel-plugin-audit'
+import { definePluginRef } from '@pluxel/runtime'
+
+const Audit = definePluginRef<AuditPlugin>()
 
 this.plugins.use(Audit, (audit) => audit.registerSource(this))
 ```
 
-runtime 在 consumer commit 后解析 ref，使用正常 graph lifecycle、RuntimeState 和 replacement watcher；absent
-不阻塞 consumer，broken provider 产生独立诊断。已由 host catalog 管理的 provider 继续使用
-`plugins.use(Provider, callback)`。
+ref 与 `plugins.use()` 由 semantic pass lower 成 optional definition edge。ref 不 import、安装、注册或默认启用 package；
+provider absent/disabled/start-failed 不阻塞 consumer，running generation 出现、消失或 replacement 时 Core 用正常 graph plan
+重启 consumer closure。`plugins.use()` 只允许在 `init()` 中直接调用，callback 必须同步，返回资源进入 generation effects。
+
+所有 runtime plugin owner protocol 使用结构化 `PluginNodeAddressSnapshot`。class name、constructor 与 `displayName` 只用于
+代码或展示，不作为 RuntimeState、config、logging、HTTP、Workbench、commands 或 persistence identity。
 
 单独构建的 Node ESM entry 使用 `defineNodeModule(import.meta.url, literal)` 声明，并通过
 `ctx.nodeModules.use(declaration, setup)` 消费。首次 load/setup 会阻塞插件启动；开发期 staged replacement 与 owner

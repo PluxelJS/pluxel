@@ -19,16 +19,11 @@
 			"@pluxel/hmr": "./src/index.ts",
 			"default": "./dist/index.mjs"
 		},
-		"./backend": {
-			"@pluxel/hmr": "./src/backend.ts",
-			"default": "./dist/backend.mjs"
-		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
 		"exports": {
 			".": "./dist/index.mjs",
-			"./backend": "./dist/backend.mjs",
 			"./package.json": "./package.json"
 		}
 	},

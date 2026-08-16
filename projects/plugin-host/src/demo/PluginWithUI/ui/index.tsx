@@ -14,8 +14,11 @@ import {
 } from './components'
 import { pluginUi } from './runtime'
 
-function standaloneRouteHref(pluginName: string, path: string) {
-	return `/workbench-standalone/${encodeURIComponent(pluginName)}${path}`
+function standaloneRouteHref(
+	address: ReturnType<typeof useWorkbenchHost>['target']['address'],
+	path: string,
+) {
+	return `/workbench-standalone/${encodeURIComponent(JSON.stringify(address))}${path}`
 }
 
 export function PluginInfo() {
@@ -39,7 +42,7 @@ export function PluginInfo() {
 					variant="subtle"
 					size="xs"
 					component="a"
-					href={standaloneRouteHref(app.targetPluginId, '/standalone')}
+					href={standaloneRouteHref(app.target.address, '/standalone')}
 				>
 					Standalone
 				</Button>

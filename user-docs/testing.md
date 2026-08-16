@@ -36,20 +36,20 @@ export default definePluxelVitestConfig(
 - preset 会在 transform 前运行 Pluxel build-correctness lint，因此需要安装 `oxlint`。
 - preset 会为 `defineDatabase()` 注入与正常构建相同的 checked migration 或 reset baseline；database
   plugin test 不要手写 hidden artifact，也不要绕过 `@pluxel/test/vitest` 直接加载源码。
-- 不要用 raw TypeScript runner 替代这条路径；constructor DI 和 config/feature metadata 依赖
-  Pluxel toolchain。
+- 不要用 raw TypeScript runner 替代这条路径；definition identity、constructor/optional edge 和 single-object config facts
+  依赖 Pluxel toolchain。
 - 需要其他 Vite plugin 时使用 `definePluxelVitestConfig(overrides, { prePlugins })` 明确它位于
   Pluxel plugin 之前还是之后，不要复制 preset 内部配置。
 
 ## 按被测边界选择 host
 
-| 要验证的行为                                                    | 入口                                                             | 说明                                                          |
-| --------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
-| 纯函数、领域模型、schema helper                                 | 直接 Vitest                                                      | 不启动 Pluxel，速度最快                                       |
-| DI、required dependency graph、feature、effects、core lifecycle | `@pluxel/test` 的 `withHost()`                                   | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
-| config 注入、HTTP、persistence、Vault、Workbench Plane          | `@pluxel/runtime/test` 的 `withRuntimeHost()`                    | 默认 memory backend，callback 结束后自动 dispose              |
-| 应用的 static catalog 和完整 fetch boundary                     | `@pluxel/runtime-static/test` 的 `createStaticRuntimeTestHost()` | 用于 host/application integration，不是普通插件单测默认选择   |
-| dynamic loader、HMR、UI compiler、真实 Vite route               | 对应 runtime package 的集成测试                                  | 需要验证工具链或 route 时才上升到这一层                       |
+| 要验证的行为                                           | 入口                                                             | 说明                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| 纯函数、领域模型、schema helper                        | 直接 Vitest                                                      | 不启动 Pluxel，速度最快                                       |
+| DI、required/optional graph、effects、core lifecycle   | `@pluxel/test` 的 `withHost()`                                   | core-only，不提供 HTTP、persistence、Vault 等 runtime service |
+| config 注入、HTTP、persistence、Vault、Workbench Plane | `@pluxel/runtime/test` 的 `withRuntimeHost()`                    | 默认 memory backend，callback 结束后自动 dispose              |
+| 应用的 static catalog 和完整 fetch boundary            | `@pluxel/runtime-static/test` 的 `createStaticRuntimeTestHost()` | 用于 host/application integration，不是普通插件单测默认选择   |
+| dynamic loader、HMR、UI compiler、真实 Vite route      | 对应 runtime package 的集成测试                                  | 需要验证工具链或 route 时才上升到这一层                       |
 
 选择能覆盖行为的最小 host。不要用 core-only host 测 HTTP，也不要为一个纯生命周期断言启动完整
 static application。
@@ -74,9 +74,7 @@ describe('OrdersPlugin', () => {
 				expect(host.isRunning(OrdersPlugin)).toBe(true)
 				expect(host.require(OrdersPlugin).pageSize).toBe(25)
 
-				const response = await host.ctx.http.fetch(
-					new Request('http://local.test/__pluxel/plugins/OrdersPlugin/api/orders'),
-				)
+				const response = await host.ctx.http.fetch(new Request('http://local.test/api/orders'))
 				expect(response.status).toBe(200)
 			},
 			{ workbench: false },
@@ -89,6 +87,10 @@ describe('OrdersPlugin', () => {
 类型化实例，未运行时会给出明确错误。`withRuntimeHost()` 在成功、断言失败和 callback 抛错时都会
 dispose host，因此优先于手动维护 `afterEach` cleanup。
 
+上例假定 `OrdersPlugin` 为业务协议显式声明了 `{ publicPath: '/api' }`。不要在测试或客户端硬编码
+默认的 `/__pluxel/plugins/<opaque-owner-key>` 路径；owner key 由结构化 node address 派生，不是 class
+或 `displayName`。
+
 runtime host 默认使用 memory persistence、config service 和 runtime state，并默认启用私有
 Workbench Plane。测试业务独立性时必须显式传 `{ workbench: false }`；只有验证Workbench contract、
 layout 或 resource binding 时才启用它。
@@ -99,10 +101,10 @@ layout 或 resource binding 时才启用它。
 import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { describe, expect, it } from 'vitest'
 
-@Plugin({ name: 'ProviderPlugin' })
+@Plugin({ displayName: 'Provider' })
 class ProviderPlugin extends BasePlugin {}
 
-@Plugin({ name: 'ConsumerPlugin' })
+@Plugin({ displayName: 'Consumer' })
 class ConsumerPlugin extends BasePlugin {
 	constructor(readonly provider: ProviderPlugin) {
 		super()
@@ -131,14 +133,14 @@ report 时，使用 `commitAllowFail()` 和结构化 assertion helper：
 ```ts
 import { assertPluginLifecycleIssue, BasePlugin, Plugin, withHost } from '@pluxel/test'
 
-@Plugin({ name: 'BrokenProvider' })
+@Plugin({ displayName: 'Broken provider' })
 class BrokenProvider extends BasePlugin {
 	override init() {
 		throw new Error('database schema is outdated')
 	}
 }
 
-@Plugin({ name: 'BlockedConsumer' })
+@Plugin({ displayName: 'Blocked consumer' })
 class BlockedConsumer extends BasePlugin {
 	constructor(readonly provider: BrokenProvider) {
 		super()

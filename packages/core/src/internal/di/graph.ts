@@ -2,7 +2,7 @@ import { GraphBuildError, type GraphBuildIssue } from './errors'
 import { InstanceStore } from './InstanceStore'
 import { err, ok, type Result } from './result'
 
-export type Token = string | symbol | Function
+export type Token = string | symbol | object | Function
 export type NodeKey = string | symbol | object | Function
 export type CachePolicy = 'retain' | 'fresh'
 
@@ -27,6 +27,8 @@ export type ProviderDecl<T = unknown, M = unknown> = {
 	key: NodeKey
 	tokens?: readonly Token[]
 	deps?: readonly Token[]
+	/** Soft ordering/restart edges. Missing providers do not fail graph verification or DI activation. */
+	optionalDeps?: readonly Token[]
 	cache?: CachePolicy
 	meta?: M
 	create: ProviderCreate<T>
@@ -37,6 +39,7 @@ type NormalizedProviderDecl<T = unknown, M = unknown> = {
 	explicitTokens: readonly Token[]
 	tokens: readonly Token[]
 	deps: readonly Token[]
+	optionalDeps: readonly Token[]
 	cache: CachePolicy
 	meta: M | undefined
 	create: ProviderCreate<T>
@@ -46,6 +49,7 @@ export type GraphDeclaration<M = unknown> = {
 	key: NodeKey
 	tokens: readonly Token[]
 	depTokens: readonly Token[]
+	optionalDepTokens: readonly Token[]
 	cache: CachePolicy
 	meta: M | undefined
 	providerKind: ProviderCreate<unknown>['kind']
@@ -118,6 +122,14 @@ const cloneArray = <T>(value: readonly T[]): readonly T[] =>
 const finishArray = <T>(value: T[]): readonly T[] =>
 	value.length === 0 ? (emptyArray as readonly T[]) : value
 
+const mergeUniqueSlots = (first: readonly Slot[], second: readonly Slot[]): readonly Slot[] => {
+	if (first.length === 0) return second
+	if (second.length === 0) return first
+	const out = [...first]
+	for (const slot of second) if (!out.includes(slot)) out.push(slot)
+	return out
+}
+
 const shallowArrayEqual = (a: readonly unknown[], b: readonly unknown[]): boolean => {
 	if (a.length !== b.length) return false
 	for (let i = 0; i < a.length; i++) {
@@ -126,8 +138,7 @@ const shallowArrayEqual = (a: readonly unknown[], b: readonly unknown[]): boolea
 	return true
 }
 
-const isDefaultTokenCandidate = (value: NodeKey): value is Token =>
-	typeof value === 'string' || typeof value === 'symbol' || typeof value === 'function'
+const isDefaultTokenCandidate = (value: NodeKey): value is Token => value !== null
 
 const normalizeExplicitTokens = (decl: ProviderDecl<unknown, unknown>): readonly Token[] => {
 	const out: Token[] = []
@@ -151,6 +162,7 @@ const normalizeDecl = <M>(decl: ProviderDecl<unknown, M>): NormalizedProviderDec
 		explicitTokens,
 		tokens: composeTokens(decl.key, explicitTokens),
 		deps: cloneArray(decl.deps ?? []),
+		optionalDeps: cloneArray(decl.optionalDeps ?? []),
 		cache: decl.create.kind === 'value' ? 'retain' : (decl.cache ?? 'retain'),
 		meta: decl.meta,
 		create: decl.create,
@@ -167,7 +179,8 @@ const declEqual = (
 	a.create.kind === b.create.kind &&
 	a.create.value === b.create.value &&
 	shallowArrayEqual(a.explicitTokens, b.explicitTokens) &&
-	shallowArrayEqual(a.deps, b.deps)
+	shallowArrayEqual(a.deps, b.deps) &&
+	shallowArrayEqual(a.optionalDeps, b.optionalDeps)
 
 const createDraftState = <M>(): DraftState<M> => ({
 	slotByKey: new Map(),
@@ -241,6 +254,7 @@ const createGraphDeclaration = <M>(
 	key: decl.key,
 	tokens: decl.tokens,
 	depTokens: decl.deps,
+	optionalDepTokens: decl.optionalDeps,
 	cache: decl.cache,
 	meta: decl.meta,
 	providerKind: decl.create.kind,
@@ -480,11 +494,16 @@ export class GraphSnapshot<M = unknown> {
 	private readonly createsBySlotTable: readonly (ProviderCreate<unknown> | undefined)[]
 	private readonly depsBySlotTable: readonly (readonly Slot[] | undefined)[]
 	private readonly dependentsBySlotTable: readonly (readonly Slot[] | undefined)[]
+	private readonly optionalDepsBySlotTable: readonly (readonly Slot[] | undefined)[]
+	private readonly optionalDependentsBySlotTable: readonly (readonly Slot[] | undefined)[]
 	private readonly tokenOwnerSlotMap: ReadonlyMap<Token, Slot>
 	private readonly tokenConsumerSlotsMap: ReadonlyMap<Token, readonly Slot[]>
+	private readonly optionalTokenConsumerSlotsMap: ReadonlyMap<Token, readonly Slot[]>
 	private readonly activatorsBySlot: Array<Activator | undefined> = []
 	private readonly depsKeysCache: Array<readonly NodeKey[] | undefined> = []
 	private readonly dependentsKeysCache: Array<readonly NodeKey[] | undefined> = []
+	private readonly optionalDepsKeysCache: Array<readonly NodeKey[] | undefined> = []
+	private readonly optionalDependentsKeysCache: Array<readonly NodeKey[] | undefined> = []
 
 	public constructor(args: {
 		revision: number
@@ -494,8 +513,11 @@ export class GraphSnapshot<M = unknown> {
 		createsBySlot: readonly (ProviderCreate<unknown> | undefined)[]
 		depsBySlot: readonly (readonly Slot[] | undefined)[]
 		dependentsBySlot: readonly (readonly Slot[] | undefined)[]
+		optionalDepsBySlot: readonly (readonly Slot[] | undefined)[]
+		optionalDependentsBySlot: readonly (readonly Slot[] | undefined)[]
 		tokenOwnerSlots: ReadonlyMap<Token, Slot>
 		tokenConsumerSlots: ReadonlyMap<Token, readonly Slot[]>
+		optionalTokenConsumerSlots: ReadonlyMap<Token, readonly Slot[]>
 	}) {
 		this.revision = args.revision
 		this.slotByKeyMap = args.slotByKey
@@ -504,8 +526,11 @@ export class GraphSnapshot<M = unknown> {
 		this.createsBySlotTable = args.createsBySlot
 		this.depsBySlotTable = args.depsBySlot
 		this.dependentsBySlotTable = args.dependentsBySlot
+		this.optionalDepsBySlotTable = args.optionalDepsBySlot
+		this.optionalDependentsBySlotTable = args.optionalDependentsBySlot
 		this.tokenOwnerSlotMap = args.tokenOwnerSlots
 		this.tokenConsumerSlotsMap = args.tokenConsumerSlots
+		this.optionalTokenConsumerSlotsMap = args.optionalTokenConsumerSlots
 		let activeNodeCount = 0
 		for (let slot = 0; slot < this.declarationsBySlotTable.length; slot++) {
 			if (this.declarationsBySlotTable[slot] !== undefined) activeNodeCount += 1
@@ -522,8 +547,11 @@ export class GraphSnapshot<M = unknown> {
 			createsBySlot: [],
 			depsBySlot: [],
 			dependentsBySlot: [],
+			optionalDepsBySlot: [],
+			optionalDependentsBySlot: [],
 			tokenOwnerSlots: new Map(),
 			tokenConsumerSlots: new Map(),
+			optionalTokenConsumerSlots: new Map(),
 		})
 	}
 
@@ -558,8 +586,25 @@ export class GraphSnapshot<M = unknown> {
 		return slot === undefined ? (emptyArray as readonly NodeKey[]) : this.dependentsOfSlot(slot)
 	}
 
+	public optionalDepsOf(nodeKey: NodeKey): readonly NodeKey[] {
+		const slot = this.slotByKeyMap.get(nodeKey)
+		return slot === undefined ? (emptyArray as readonly NodeKey[]) : this.optionalDepsOfSlot(slot)
+	}
+
+	public optionalDependentsOf(nodeKey: NodeKey): readonly NodeKey[] {
+		const slot = this.slotByKeyMap.get(nodeKey)
+		return slot === undefined
+			? (emptyArray as readonly NodeKey[])
+			: this.optionalDependentsOfSlot(slot)
+	}
+
 	public consumers(token: Token): readonly NodeKey[] {
 		const slots = this.tokenConsumerSlotsMap.get(token)
+		return slots ? this.mapSlotsToKeys(slots) : (emptyArray as readonly NodeKey[])
+	}
+
+	public optionalConsumers(token: Token): readonly NodeKey[] {
+		const slots = this.optionalTokenConsumerSlotsMap.get(token)
 		return slots ? this.mapSlotsToKeys(slots) : (emptyArray as readonly NodeKey[])
 	}
 
@@ -602,8 +647,28 @@ export class GraphSnapshot<M = unknown> {
 		return this.dependentsBySlotTable[slot] ?? emptySlotArray
 	}
 
+	public optionalDepSlotsOf(slot: Slot): readonly Slot[] {
+		return this.optionalDepsBySlotTable[slot] ?? emptySlotArray
+	}
+
+	public optionalDependentSlotsOf(slot: Slot): readonly Slot[] {
+		return this.optionalDependentsBySlotTable[slot] ?? emptySlotArray
+	}
+
+	public orderDepSlotsOf(slot: Slot): readonly Slot[] {
+		return mergeUniqueSlots(this.depSlotsOf(slot), this.optionalDepSlotsOf(slot))
+	}
+
+	public orderDependentSlotsOf(slot: Slot): readonly Slot[] {
+		return mergeUniqueSlots(this.dependentSlotsOf(slot), this.optionalDependentSlotsOf(slot))
+	}
+
 	public tokenConsumerSlotsOf(token: Token): readonly Slot[] {
 		return this.tokenConsumerSlotsMap.get(token) ?? emptySlotArray
+	}
+
+	public optionalTokenConsumerSlotsOf(token: Token): readonly Slot[] {
+		return this.optionalTokenConsumerSlotsMap.get(token) ?? emptySlotArray
 	}
 
 	public tokenOwnerSlots(): ReadonlyMap<Token, Slot> {
@@ -612,6 +677,10 @@ export class GraphSnapshot<M = unknown> {
 
 	public tokenConsumerSlots(): ReadonlyMap<Token, readonly Slot[]> {
 		return this.tokenConsumerSlotsMap
+	}
+
+	public optionalTokenConsumerSlots(): ReadonlyMap<Token, readonly Slot[]> {
+		return this.optionalTokenConsumerSlotsMap
 	}
 
 	public declarationsBySlot(): readonly (GraphDeclaration<M> | undefined)[] {
@@ -630,6 +699,14 @@ export class GraphSnapshot<M = unknown> {
 		return this.dependentsBySlotTable
 	}
 
+	public optionalDepsBySlot(): readonly (readonly Slot[] | undefined)[] {
+		return this.optionalDepsBySlotTable
+	}
+
+	public optionalDependentsBySlot(): readonly (readonly Slot[] | undefined)[] {
+		return this.optionalDependentsBySlotTable
+	}
+
 	private depsOfSlot(slot: Slot): readonly NodeKey[] {
 		const cached = this.depsKeysCache[slot]
 		if (cached) return cached
@@ -643,6 +720,22 @@ export class GraphSnapshot<M = unknown> {
 		if (cached) return cached
 		const mapped = this.mapSlotsToKeys(this.dependentsBySlotTable[slot] ?? emptySlotArray)
 		this.dependentsKeysCache[slot] = mapped
+		return mapped
+	}
+
+	private optionalDepsOfSlot(slot: Slot): readonly NodeKey[] {
+		const cached = this.optionalDepsKeysCache[slot]
+		if (cached) return cached
+		const mapped = this.mapSlotsToKeys(this.optionalDepsBySlotTable[slot] ?? emptySlotArray)
+		this.optionalDepsKeysCache[slot] = mapped
+		return mapped
+	}
+
+	private optionalDependentsOfSlot(slot: Slot): readonly NodeKey[] {
+		const cached = this.optionalDependentsKeysCache[slot]
+		if (cached) return cached
+		const mapped = this.mapSlotsToKeys(this.optionalDependentsBySlotTable[slot] ?? emptySlotArray)
+		this.optionalDependentsKeysCache[slot] = mapped
 		return mapped
 	}
 
@@ -839,7 +932,7 @@ const buildFullSnapshot = <M>(
 	for (let slot = 0; slot < normalizedBySlot.length; slot++) {
 		const decl = normalizedBySlot[slot]
 		if (!decl) continue
-		if (decl.create.kind === 'value' && decl.deps.length > 0) {
+		if (decl.create.kind === 'value' && (decl.deps.length > 0 || decl.optionalDeps.length > 0)) {
 			issues.push({
 				kind: 'InvalidDeclaration',
 				nodeKey: decl.key,
@@ -864,7 +957,10 @@ const buildFullSnapshot = <M>(
 
 	const depsBySlot: Array<readonly Slot[] | undefined> = Array(keyBySlot.length)
 	const dependentsBySlot: Array<readonly Slot[] | undefined> = Array(keyBySlot.length)
+	const optionalDepsBySlot: Array<readonly Slot[] | undefined> = Array(keyBySlot.length)
+	const optionalDependentsBySlot: Array<readonly Slot[] | undefined> = Array(keyBySlot.length)
 	const tokenConsumerSlots = new Map<Token, Slot[]>()
+	const optionalTokenConsumerSlots = new Map<Token, Slot[]>()
 
 	for (let slot = 0; slot < normalizedBySlot.length; slot++) {
 		const decl = normalizedBySlot[slot]
@@ -888,6 +984,22 @@ const buildFullSnapshot = <M>(
 			} else dependentsBySlot[depSlot] = [slot]
 		}
 		depsBySlot[slot] = finishArray(resolvedDeps)
+		const resolvedOptionalDeps: Slot[] = []
+		for (const depToken of decl.optionalDeps) {
+			const consumers = optionalTokenConsumerSlots.get(depToken)
+			if (consumers) {
+				if (!consumers.includes(slot)) consumers.push(slot)
+			} else optionalTokenConsumerSlots.set(depToken, [slot])
+			const depSlot = resolveTokenSlotFromTable(tokenOwnerSlots, slotByKey, depToken)
+			if (depSlot === undefined) continue
+			if (!resolvedOptionalDeps.includes(depSlot)) resolvedOptionalDeps.push(depSlot)
+			const dependents = optionalDependentsBySlot[depSlot]
+			if (dependents) {
+				const next = dependents as Slot[]
+				if (!next.includes(slot)) next.push(slot)
+			} else optionalDependentsBySlot[depSlot] = [slot]
+		}
+		optionalDepsBySlot[slot] = finishArray(resolvedOptionalDeps)
 	}
 
 	if (issues.length === 0) {
@@ -898,7 +1010,11 @@ const buildFullSnapshot = <M>(
 			if (!declarationsBySlot[slot] || color[slot] !== 0) continue
 			visitCycleSlots(
 				slot,
-				(current) => depsBySlot[current] ?? emptySlotArray,
+				(current) =>
+					mergeUniqueSlots(
+						depsBySlot[current] ?? emptySlotArray,
+						optionalDepsBySlot[current] ?? emptySlotArray,
+					),
 				(current) => declarationsBySlot[current] !== undefined,
 				(current) => keyBySlot[current],
 				color,
@@ -919,6 +1035,10 @@ const buildFullSnapshot = <M>(
 		}
 		dependentsBySlot[slot] = finishArray(dependents as Slot[])
 	}
+	for (let slot = 0; slot < optionalDependentsBySlot.length; slot++) {
+		const dependents = optionalDependentsBySlot[slot]
+		optionalDependentsBySlot[slot] = dependents ? finishArray(dependents as Slot[]) : emptySlotArray
+	}
 
 	return ok(
 		new GraphSnapshot<M>({
@@ -929,9 +1049,17 @@ const buildFullSnapshot = <M>(
 			createsBySlot,
 			depsBySlot,
 			dependentsBySlot,
+			optionalDepsBySlot,
+			optionalDependentsBySlot,
 			tokenOwnerSlots,
 			tokenConsumerSlots: new Map(
 				[...tokenConsumerSlots.entries()].map(([token, slots]) => [token, finishArray(slots)]),
+			),
+			optionalTokenConsumerSlots: new Map(
+				[...optionalTokenConsumerSlots.entries()].map(([token, slots]) => [
+					token,
+					finishArray(slots),
+				]),
 			),
 		}),
 	)
@@ -983,7 +1111,7 @@ const updateTokenOwnersForDirtySlots = <M>(args: {
 	for (const slot of dirty) {
 		const after = nextDecls[slot]
 		if (!after) continue
-		if (after.create.kind === 'value' && after.deps.length > 0) {
+		if (after.create.kind === 'value' && (after.deps.length > 0 || after.optionalDeps.length > 0)) {
 			issues.push({
 				kind: 'InvalidDeclaration',
 				nodeKey: after.key,
@@ -1031,10 +1159,13 @@ const collectAffectedSlots = <M>(
 		for (const consumerSlot of prev.tokenConsumerSlotsOf(token)) {
 			if (markSlot(affectedMarks, affectedStack, consumerSlot)) affectedSlots.push(consumerSlot)
 		}
+		for (const consumerSlot of prev.optionalTokenConsumerSlotsOf(token)) {
+			if (markSlot(affectedMarks, affectedStack, consumerSlot)) affectedSlots.push(consumerSlot)
+		}
 	}
 	while (affectedStack.length > 0) {
 		const current = affectedStack.pop()!
-		const dependents = prev.dependentSlotsOf(current)
+		const dependents = prev.orderDependentSlotsOf(current)
 		for (let i = 0; i < dependents.length; i++) {
 			const dependentSlot = dependents[i]!
 			if (markSlot(affectedMarks, affectedStack, dependentSlot)) affectedSlots.push(dependentSlot)
@@ -1141,8 +1272,14 @@ const buildIncrementalSnapshot = <M>(
 	const createsBySlot = prev.createsBySlot().slice()
 	const depsBySlot = prev.depsBySlot().slice()
 	const dependentsBySlot = prev.dependentsBySlot().slice()
+	const optionalDepsBySlot = prev.optionalDepsBySlot().slice()
+	const optionalDependentsBySlot = prev.optionalDependentsBySlot().slice()
 	const tokenConsumerSlots = new Map<Token, readonly Slot[] | Slot[]>(prev.tokenConsumerSlots())
+	const optionalTokenConsumerSlots = new Map<Token, readonly Slot[] | Slot[]>(
+		prev.optionalTokenConsumerSlots(),
+	)
 	const changedTokenConsumers = new Set<Token>()
+	const changedOptionalTokenConsumers = new Set<Token>()
 
 	for (const slot of affectedSlots) {
 		const beforeDecl = prevDecls[slot]
@@ -1150,6 +1287,7 @@ const buildIncrementalSnapshot = <M>(
 		const beforeKey = beforeDecl?.key
 		const afterKey = afterDecl?.key
 		const beforeDepSlots = prev.depSlotsOf(slot)
+		const beforeOptionalDepSlots = prev.optionalDepSlotsOf(slot)
 		const declarationChanged = beforeKey !== afterKey || dirtyMarks[slot] === 1
 		const hadNodeBefore = beforeKey !== undefined && beforeDecl !== undefined
 
@@ -1163,9 +1301,26 @@ const buildIncrementalSnapshot = <M>(
 					changedDependentSlots,
 				)
 			}
+			for (let i = 0; i < beforeOptionalDepSlots.length; i++) {
+				removeFromMutableSlotTable(
+					optionalDependentsBySlot as Array<readonly Slot[] | Slot[] | undefined>,
+					beforeOptionalDepSlots[i]!,
+					slot,
+					changedDependentMarks,
+					changedDependentSlots,
+				)
+			}
 			if (declarationChanged) {
 				for (const depToken of beforeDecl.deps) {
 					removeFromMutableSlotListMap(tokenConsumerSlots, depToken, slot, changedTokenConsumers)
+				}
+				for (const depToken of beforeDecl.optionalDeps) {
+					removeFromMutableSlotListMap(
+						optionalTokenConsumerSlots,
+						depToken,
+						slot,
+						changedOptionalTokenConsumers,
+					)
 				}
 			}
 		}
@@ -1175,6 +1330,8 @@ const buildIncrementalSnapshot = <M>(
 			createsBySlot[slot] = undefined
 			depsBySlot[slot] = emptySlotArray
 			dependentsBySlot[slot] = emptySlotArray
+			optionalDepsBySlot[slot] = emptySlotArray
+			optionalDependentsBySlot[slot] = emptySlotArray
 			continue
 		}
 
@@ -1207,6 +1364,30 @@ const buildIncrementalSnapshot = <M>(
 			declarationChanged || !createsBySlot[slot] ? afterDecl.create : createsBySlot[slot]
 		depsBySlot[slot] = finishArray(resolvedDeps)
 		if (!dependentsBySlot[slot]) dependentsBySlot[slot] = emptySlotArray
+
+		const resolvedOptionalDeps: Slot[] = []
+		for (const depToken of afterDecl.optionalDeps) {
+			if (declarationChanged) {
+				addToMutableSlotListMap(
+					optionalTokenConsumerSlots,
+					depToken,
+					slot,
+					changedOptionalTokenConsumers,
+				)
+			}
+			const depSlot = resolveTokenSlotFromTable(tokenOwnerSlots, slotByKey, depToken)
+			if (depSlot === undefined) continue
+			if (!resolvedOptionalDeps.includes(depSlot)) resolvedOptionalDeps.push(depSlot)
+			addToMutableSlotTable(
+				optionalDependentsBySlot as Array<readonly Slot[] | Slot[] | undefined>,
+				depSlot,
+				slot,
+				changedDependentMarks,
+				changedDependentSlots,
+			)
+		}
+		optionalDepsBySlot[slot] = finishArray(resolvedOptionalDeps)
+		if (!optionalDependentsBySlot[slot]) optionalDependentsBySlot[slot] = emptySlotArray
 	}
 
 	if (issues.length === 0) {
@@ -1217,7 +1398,11 @@ const buildIncrementalSnapshot = <M>(
 			if (declarationsBySlot[slot] === undefined || color[slot] !== 0) continue
 			visitCycleSlots(
 				slot,
-				(current) => depsBySlot[current] ?? emptySlotArray,
+				(current) =>
+					mergeUniqueSlots(
+						depsBySlot[current] ?? emptySlotArray,
+						optionalDepsBySlot[current] ?? emptySlotArray,
+					),
 				(current) => declarationsBySlot[current] !== undefined,
 				(current) => keyBySlot[current],
 				color,
@@ -1238,6 +1423,10 @@ const buildIncrementalSnapshot = <M>(
 			continue
 		}
 		dependentsBySlot[slot] = finishArray(dependents as Slot[])
+		const optionalDependents = optionalDependentsBySlot[slot]
+		optionalDependentsBySlot[slot] = optionalDependents
+			? finishArray(optionalDependents as Slot[])
+			: emptySlotArray
 	}
 
 	return ok({
@@ -1249,10 +1438,16 @@ const buildIncrementalSnapshot = <M>(
 			createsBySlot,
 			depsBySlot,
 			dependentsBySlot,
+			optionalDepsBySlot,
+			optionalDependentsBySlot,
 			tokenOwnerSlots,
 			tokenConsumerSlots: finalizeChangedTokenConsumerSlots(
 				tokenConsumerSlots,
 				changedTokenConsumers,
+			),
+			optionalTokenConsumerSlots: finalizeChangedTokenConsumerSlots(
+				optionalTokenConsumerSlots,
+				changedOptionalTokenConsumers,
 			),
 		}),
 		delta: collectGraphDelta({
@@ -1271,6 +1466,7 @@ export const classProvider = <T, M = unknown>(
 	key: input.key,
 	tokens: input.tokens,
 	deps: input.deps,
+	optionalDeps: input.optionalDeps,
 	cache: input.cache,
 	meta: input.meta,
 	create: { kind: 'class', value: input.use },
@@ -1282,6 +1478,7 @@ export const factoryProvider = <T, M = unknown>(
 	key: input.key,
 	tokens: input.tokens,
 	deps: input.deps,
+	optionalDeps: input.optionalDeps,
 	cache: input.cache,
 	meta: input.meta,
 	create: { kind: 'factory', value: input.use },
@@ -1293,6 +1490,7 @@ export const valueProvider = <T, M = unknown>(
 	key: input.key,
 	tokens: input.tokens,
 	deps: input.deps,
+	optionalDeps: input.optionalDeps,
 	cache: input.cache,
 	meta: input.meta,
 	create: { kind: 'value', value: input.use },
@@ -1316,6 +1514,13 @@ export class DraftGraph<M = unknown> {
 
 	public has(nodeKey: NodeKey): boolean {
 		return this.draftState.slotByKey.has(nodeKey)
+	}
+
+	public planningDeclaration(nodeKey: NodeKey): GraphDeclaration<M> | undefined {
+		const slot = this.draftState.slotByKey.get(nodeKey)
+		if (slot === undefined) return undefined
+		const declaration = this.draftState.declsBySlot[slot]
+		return declaration ? createGraphDeclaration(declaration) : undefined
 	}
 
 	public hasPendingChanges(): boolean {
@@ -1354,6 +1559,9 @@ export class DraftGraph<M = unknown> {
 				if (current !== slot) explicitTokenOwnerSlots.set(token, null)
 			}
 			for (const depToken of decl.deps) {
+				addToSlotListMap(consumerSlotsByToken, depToken, slot)
+			}
+			for (const depToken of decl.optionalDeps) {
 				addToSlotListMap(consumerSlotsByToken, depToken, slot)
 			}
 		}

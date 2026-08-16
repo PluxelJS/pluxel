@@ -6,7 +6,7 @@
 ```ts
 import { Redis } from '@pluxel/redis'
 
-@Plugin({ name: 'QueuePlugin' })
+@Plugin({ displayName: 'Queue' })
 class QueuePlugin extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()

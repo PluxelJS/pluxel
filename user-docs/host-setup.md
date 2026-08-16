@@ -66,6 +66,7 @@ export default defineConfig({
 `src/pluxel.static.ts`：
 
 ```ts
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineStaticRuntime } from '@pluxel/runtime-static'
 import { product } from './product.ts'
 import { AccountsPlugin } from './plugins/AccountsPlugin.ts'
@@ -86,7 +87,9 @@ export default defineStaticRuntime({
 					}
 				: undefined,
 			runtimeState: {
-				snapshot: { enabled: ['AccountsPlugin', 'BillingPlugin'] },
+				snapshot: {
+					enabled: [pluginNodeAddressOf(AccountsPlugin), pluginNodeAddressOf(BillingPlugin)],
+				},
 			},
 			persistence: env.PLUXEL_DATA_ROOT ?? `${deployment?.root ?? '.'}/data`,
 			workbench:
@@ -112,29 +115,40 @@ alias。route 同时从 Vite watcher 排除整个生成态 `.pluxel/`，不监�
 `plugins` 是固定 catalog：production build 后不能从外部增加或替换插件代码。`configure()` 本身进入 bundle，
 但会在每次启动时重新执行，因此环境变量、平台 bindings、persistence、logging、HTTP、plugin config records 和
 runtime enabled state 仍可变。运行时启停只改变 fixed catalog 中哪些插件运行，不改变 catalog 本身。
-`runtimeState.snapshot.enabled` 使用 `@Plugin({ name })` 的稳定 ID；不要从 constructor `.name` 动态生成，class name
-会在 production minify 后改变。
+`runtimeState.snapshot.enabled` 使用结构化 Plugin node address。canonical entry 完成 semantic lowering 后，host module 可以
+通过 `pluginNodeAddressOf(Constructor)` 取得 snapshot；不要使用 constructor/class/display name。source entry 移动或 root
+export rename 会产生新 identity，RuntimeState 不猜测迁移旧 name-key state。
 
 ### 用环境变量初始化插件配置
 
-Static 与 dynamic Node host 原生识别以下变量，不需要在 `configure()` 中按 plugin ID 手写 config snapshot：
+Static 与 dynamic Node host 原生识别一个 `PLUXEL_CONFIG` 变量。值必须是 ConfigService v2 完整 JSON snapshot；每条
+record 使用结构化 Plugin node address：
 
-```text
-PLUXEL_CONFIG__<plugin-id>__<schema-key>[__<field>...]
+```json
+{
+	"version": 2,
+	"plugins": [
+		{
+			"owner": {
+				"definition": {
+					"entry": { "kind": "package-root", "packageName": "@acme/worker" },
+					"exportName": "WorkerPlugin"
+				},
+				"instance": "default"
+			},
+			"config": {
+				"endpoint": "https://worker.example.com",
+				"concurrency": 8,
+				"allowedOrigins": ["https://app.example.com"]
+			}
+		}
+	]
+}
 ```
 
-例如：
-
-```dotenv
-PLUXEL_CONFIG__WorkerPlugin__config__endpoint=https://worker.example.com
-PLUXEL_CONFIG__WorkerPlugin__config__concurrency=8
-PLUXEL_CONFIG__WebPlugin__config__allowedOrigins=["https://app.example.com"]
-```
-
-值能被 JSON 解析时保留 array、object、boolean、number 或 null 类型，否则作为普通 string；之后仍由插件声明的
-Standard Schema 完成校验和归一化。变量只初始化新的 config store，并会像 Workbench 保存的配置一样进入普通
-持久化；已有 file config 始终优先，因此重启或升级不会用 env 覆盖管理员配置。host 明确传入的初始 snapshot 与 env
-同时存在时，env 中的同路径优先。
+JSON、snapshot version、owner address 或 config record 非法时 host fail-fast；之后仍由 Plugin 的完整 object Standard Schema
+完成校验和归一化。environment snapshot 只初始化新的 config store，并会像 Workbench 保存的配置一样进入普通持久化；
+已有 file config 始终优先。host initial snapshot 与 environment 同时存在时，environment 中相同 owner 的字段优先。
 
 这个入口用于非秘密的部署默认值。token、Cookie 和账号凭据仍使用插件拥有的 Vault/credential 流程，不要为了 env
 方便把秘密降级成普通 plugin config。
@@ -203,6 +217,7 @@ fallback；默认根路径下的 Workbench 则拥有根页面。Fetch 平台需�
 `defineDynamicRuntimeConfig()`：
 
 ```ts
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { HostOperationsPlugin } from './HostOperationsPlugin'
 
@@ -212,7 +227,7 @@ export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [HostOperationsPlugin],
 	sources: [{ kind: 'directory', path: 'plugins/runtime', include: ['*.mjs'] }],
-	runtimeState: { snapshot: { enabled: ['HostOperationsPlugin'] } },
+	runtimeState: { snapshot: { enabled: [pluginNodeAddressOf(HostOperationsPlugin)] } },
 })
 ```
 
@@ -273,9 +288,11 @@ logging: {
 		profile: 'dev',
 		debugTopics: ['hmr:*', 'cache:lookup'],
 		initialPluginPolicy: {
-			version: 1,
+			version: 2,
 			defaultLevel: 'info',
-			overrides: { BillingPlugin: 'debug' },
+			overrides: [
+				{ owner: pluginNodeAddressOf(BillingPlugin), level: 'debug' },
+			],
 		},
 	},
 	sinks: {
@@ -307,6 +324,7 @@ logging: {
 
 `plugins` route 通常保持 `trace`，再由 O(1) 的 plugin policy 查表决定实际等级。`logging: false` 仍会安装一个
 无输出的 root，以保持 Context identity、policy 和控制面所有权一致；它不是“没有 logging manager”。
+policy override 使用结构化 owner address array；相同 `displayName` 的 Plugin 互不冲突，也不存在 name-key fallback。
 pretty console 会保持 info 日志紧凑，并在 warning/error/fatal 时直接展开错误和 lifecycle diagnostics；排查启动失败
 不需要切换 JSON formatter 或只依赖 Workbench log store。
 

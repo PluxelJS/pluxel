@@ -10,23 +10,34 @@ import {
 } from '../../src/runtime/module-id'
 
 describe('runtime module id lookup', () => {
-	it('prefers core runtime ownership before loader registry fallback', () => {
+	it('uses the Core node slot ownership index without a name fallback', () => {
+		const pluginA = {
+			definition: {
+				entry: { kind: 'package-root', packageName: '@test/a' },
+				exportName: 'Plugin',
+			},
+			instance: 'default',
+		} as const
+		const pluginB = {
+			definition: {
+				entry: { kind: 'package-root', packageName: '@test/b' },
+				exportName: 'Plugin',
+			},
+			instance: 'default',
+		} as const
+		const nodeA = { owner: pluginA }
+		const nodeB = { owner: pluginB }
 		const ctx = {
 			registry: {
-				getRuntimeModuleId: (name: string) => (name === 'PluginA' ? '/core/PluginA.ts' : undefined),
-			},
-			loader: {
-				api: {
-					registry: {
-						findModuleIdByName: (name: string) => `/loader/${name}.ts`,
-					},
-				},
+				internNodeAddress: (owner: typeof pluginA | typeof pluginB) =>
+					(owner === pluginA ? nodeA : nodeB) as never,
+				getRuntimeModuleId: (node: never) =>
+					(node as unknown) === nodeA ? '/core/PluginA.ts' : undefined,
 			},
 		}
 
-		expect(findRuntimeModuleId(ctx, 'PluginA')).toBe('/core/PluginA.ts')
-		expect(findRuntimeModuleId(ctx, 'PluginB')).toBe('/loader/PluginB.ts')
-		expect(findRuntimeModuleId(ctx, '   ')).toBeNull()
+		expect(findRuntimeModuleId(ctx, pluginA)).toBe('/core/PluginA.ts')
+		expect(findRuntimeModuleId(ctx, pluginB)).toBeNull()
 	})
 
 	it('resolves runtime module ids with OXC resolver from cwd', async () => {

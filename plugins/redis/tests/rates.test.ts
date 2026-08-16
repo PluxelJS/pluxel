@@ -36,7 +36,7 @@ function cloneOptions(options: ScriptOptions): ScriptOptions {
 	return { keys: [...options.keys], arguments: [...options.arguments] }
 }
 
-@Plugin(Redis, { name: 'FakeRatesRedisPlugin' })
+@Plugin(Redis, { displayName: 'FakeRatesRedisPlugin' })
 class FakeRatesRedisPlugin extends Redis {
 	readonly fake = new FakeRatesRedisClient()
 	override get client(): RedisClient {
@@ -44,7 +44,7 @@ class FakeRatesRedisPlugin extends Redis {
 	}
 }
 
-@Plugin({ name: 'RedisRatesConsumer' })
+@Plugin({ displayName: 'RedisRatesConsumer' })
 class RedisRatesConsumer extends BasePlugin {
 	constructor(readonly rates: Rates) {
 		super()
@@ -68,7 +68,7 @@ describe('@pluxel/redis rates backend', () => {
 	it('selects one server-timed single-key script for each algorithm and digests identity keys', async () => {
 		await withHost(async (host) => {
 			host.add([FakeRatesRedisPlugin, RedisRatesBackendPlugin, RatesPlugin, RedisRatesConsumer])
-			host.cfg(RedisRatesBackendPlugin).set({ config: { keyPrefix: 'pluxel:{rates}:' } })
+			host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: 'pluxel:{rates}:' })
 			await host.commit()
 			const consumer = host.require(RedisRatesConsumer)
 			const redis = host.require(FakeRatesRedisPlugin).fake
@@ -85,12 +85,13 @@ describe('@pluxel/redis rates backend', () => {
 				expect(call.source).toContain("redis.call('PEXPIRE'")
 				if (policy.algorithm === 'sliding-window-log') slidingLogSource = call.source
 				expect(call.options.keys).toHaveLength(1)
-				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v1:[a-f0-9]{64}$/)
+				expect(call.options.keys[0]).toMatch(/^pluxel:\{rates\}:v2:[a-f0-9]{64}$/)
 				expect(call.options.keys[0]).not.toContain('secret-tenant')
 				expect(call.options.arguments).toEqual([
 					String(policy.limit),
 					String(policy.windowMs),
 					String(policy.algorithm === 'token-bucket' ? policy.burst : 0),
+					JSON.stringify(consumer.ctx.pluginInfo.nodeAddress),
 					'1',
 				])
 			}

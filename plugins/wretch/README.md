@@ -22,7 +22,7 @@ const CustomerConfig = v.object({
 	baseUrl: v.pipe(v.string(), v.url()),
 })
 
-@Plugin({ name: 'CustomerPlugin' })
+@Plugin({ displayName: 'CustomerPlugin' })
 export class CustomerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(CustomerConfig)
 	private api!: Wretch
@@ -61,29 +61,6 @@ this.api = this.http.client
 
 如果 consumer 直接导入 Wretch 的 addon/middleware，请把 `wretch` 声明为自己的 dependency，以明确所用
 原生 API 的版本。
-
-## 标准示例插件
-
-包同时导出 `@pluxel/wretch/example`：
-
-```ts
-import { WretchPlugin } from '@pluxel/wretch'
-import { WretchExamplePlugin } from '@pluxel/wretch/example'
-
-export const plugins = [WretchPlugin, WretchExamplePlugin]
-```
-
-`WretchExamplePlugin` 是可运行的标准 consumer，用来证明推荐组合方式：
-
-- constructor required dependency；
-- consumer-owned base URL/retry config；
-- 从 `http.client` 派生原生 immutable Wretch instance；
-- 原生 `retry()` middleware；
-- `enableManagedSettings()` + `WretchWorkbenchPort`；
-- headless 可用的业务 HTTP `/inspect` route；
-- 可直接用于后续 static runtime smoke/demo。
-
-源码位于 `src/example/`，独立构建为 `dist/example.mjs`，不会给主入口增加第二套 client API。
 
 ## 宿主级 policy
 
@@ -149,7 +126,8 @@ UI 当前统一管理：
 - HTTP(S) proxy；
 - 只能收紧宿主上限的 consumer timeout。
 
-设置按 caller plugin ID 持久化。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
+设置按 caller 的结构化 plugin node address 隔离：文件名只使用 canonical address JSON 的 SHA-256，文件内容同时保存并
+校验完整 owner snapshot。`displayName` 相同的 plugin/fork 不会冲突，旧裸 settings 格式不会迁移。`client` 使用 Wretch `defer()` 在每次请求发送前读取当前设置，因此保存后
 已经缓存的 client 也会自动生效，不需要重建。
 同一 caller 并发调用 `enableManagedSettings()` 会共享一次初始化；缓存的 settings RPC 在 caller/provider stop 或
 replacement 后会撤销，不能继续写入旧 generation。provider cleanup 也会主动释放全部 managed ProxyAgent，不依赖

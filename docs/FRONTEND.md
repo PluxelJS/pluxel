@@ -63,7 +63,7 @@ Remote plugin UI 只能使用公开 host capability 和 Pane Kit，不能依赖 
 ## Updates and isolation
 
 registry 与 artifact store 可由 host 共享，但 owner registration、Binding 和 cleanup 保留 immutable Context。
-bundle-only HMR 复用 resource lease；plugin stop/replacement 撤销旧 lease。不同 target 不共享 grant，但可以共享
+bundle-only HMR 复用 resource lease；owner generation stop/replacement 撤销旧 lease。不同 target 不共享 grant，但可以共享
 底层 transport connection。
 
 ## React state correctness

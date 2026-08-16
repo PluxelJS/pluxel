@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import type { Context } from '@pluxel/core'
+import type { Context, PluginNodeAddressSnapshot, PluginNodeSlot } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
 import type {
 	WorkbenchBundleEvent,
 	WorkbenchBundle,
 	WorkbenchBundleState,
+	WorkbenchPluginDescriptor,
 } from '../../workbench/contracts'
 import { readWorkbenchUiEntry, type WorkbenchUiEntry } from '../../workbench/ui-entry'
 import {
@@ -17,6 +18,7 @@ import {
 	workbenchFederationRemoteName,
 } from '@pluxel/core/federation'
 import { RUNTIME_INTERNAL_API_BASE, runtimeWorkbenchArtifactPath } from '../../web/paths'
+import { pluginNodeAddressKey, pluginNodePhysicalKey } from '../../runtime/plugin-address'
 
 type WorkbenchSourceBinder = (
 	owner: Context,
@@ -26,8 +28,8 @@ type WorkbenchSourceBinder = (
 
 export class WorkbenchArtifactService {
 	private revision = 0
-	private bundles: WorkbenchBundle[] = []
-	private readonly states = new Map<string, WorkbenchBundleState>()
+	private readonly bundles = new Map<PluginNodeSlot, WorkbenchBundle>()
+	private readonly states = new Map<PluginNodeSlot, WorkbenchBundleState>()
 	private readonly roots = new Map<string, { sourceHash: string; dir: string }>()
 	private readonly listeners = new Set<(event: WorkbenchBundleEvent) => void>()
 	private sourceBinder?: WorkbenchSourceBinder
@@ -68,38 +70,37 @@ export class WorkbenchArtifactService {
 	} {
 		return {
 			revision: this.revision,
-			bundles: [...this.bundles],
-			states: [...this.states.values()].sort((a, b) => a.pluginName.localeCompare(b.pluginName)),
+			bundles: [...this.bundles.values()].sort(compareBundleOwner),
+			states: [...this.states.values()].sort(compareBundleOwner),
 		}
 	}
 
-	getCompiledModule(pluginName: string): WorkbenchBundle | undefined {
-		return this.bundles.find((module) => module.pluginName === pluginName)
+	getCompiledModule(owner: PluginNodeSlot): WorkbenchBundle | undefined {
+		return this.bundles.get(owner)
 	}
 
 	async commitCompiledModule(
 		module: WorkbenchBundle,
 		options?: { artifactRoot?: string | null },
 	): Promise<void> {
+		const ownerSlot = this.root.registry.internNodeAddress(module.owner.address)
 		if (options?.artifactRoot) {
-			this.roots.set(module.pluginName, {
+			this.roots.set(workbenchArtifactOwnerKey(module.owner.address), {
 				sourceHash: module.sourceHash,
 				dir: options.artifactRoot,
 			})
 		}
-		const previous = this.getCompiledModule(module.pluginName)
+		const previous = this.getCompiledModule(ownerSlot)
 		if (
 			previous?.sourceHash === module.sourceHash &&
 			previous.compiledAt === module.compiledAt &&
-			this.states.get(module.pluginName)?.state === 'ready'
+			this.states.get(ownerSlot)?.state === 'ready'
 		) {
 			return
 		}
-		this.bundles = this.bundles.filter((item) => item.pluginName !== module.pluginName)
-		this.bundles.push(module)
-		this.bundles.sort((a, b) => a.pluginName.localeCompare(b.pluginName))
-		this.states.set(module.pluginName, {
-			pluginName: module.pluginName,
+		this.bundles.set(ownerSlot, module)
+		this.states.set(ownerSlot, {
+			owner: module.owner,
 			state: 'ready',
 			updatedAt: module.compiledAt,
 			sourceHash: module.sourceHash,
@@ -109,38 +110,38 @@ export class WorkbenchArtifactService {
 	}
 
 	async markCompiling(
-		pluginName: string,
+		owner: WorkbenchPluginDescriptor,
 		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
 	): Promise<void> {
 		const state: WorkbenchBundleState = {
-			pluginName,
+			owner,
 			state: 'building',
 			updatedAt: options?.updatedAt ?? Date.now(),
 			sourceHash: options?.sourceHash,
 			compiledAt: options?.compiledAt,
 		}
-		this.states.set(pluginName, state)
+		this.states.set(this.root.registry.internNodeAddress(owner.address), state)
 		this.emit({ type: 'building', revision: this.nextRevision(), ...state })
 	}
 
 	async markCompileError(
-		pluginName: string,
+		owner: WorkbenchPluginDescriptor,
 		error: unknown,
 		options?: { updatedAt?: number; sourceHash?: string; compiledAt?: number },
 	): Promise<void> {
 		const state: WorkbenchBundleState = {
-			pluginName,
+			owner,
 			state: 'error',
 			updatedAt: options?.updatedAt ?? Date.now(),
 			sourceHash: options?.sourceHash,
 			compiledAt: options?.compiledAt,
 			message: errorMessage(error),
 		}
-		this.states.set(pluginName, state)
+		this.states.set(this.root.registry.internNodeAddress(owner.address), state)
 		this.emit({
 			type: 'error',
 			revision: this.nextRevision(),
-			pluginName,
+			owner,
 			updatedAt: state.updatedAt,
 			sourceHash: state.sourceHash,
 			compiledAt: state.compiledAt,
@@ -148,19 +149,18 @@ export class WorkbenchArtifactService {
 		})
 	}
 
-	async removePlugin(pluginName: string): Promise<void> {
-		this.roots.delete(pluginName)
-		this.states.delete(pluginName)
-		const next = this.bundles.filter((item) => item.pluginName !== pluginName)
-		if (next.length === this.bundles.length) return
-		this.bundles = next
-		this.emit({ type: 'remove', revision: this.nextRevision(), pluginName })
+	async removePlugin(owner: WorkbenchPluginDescriptor): Promise<void> {
+		const ownerSlot = this.root.registry.internNodeAddress(owner.address)
+		this.roots.delete(workbenchArtifactOwnerKey(owner.address))
+		this.states.delete(ownerSlot)
+		if (!this.bundles.delete(ownerSlot)) return
+		this.emit({ type: 'remove', revision: this.nextRevision(), owner })
 	}
 
-	resolveArtifactFile(pluginName: string, sourceHash: string, file: string): string | null {
+	resolveArtifactFile(ownerKey: string, sourceHash: string, file: string): string | null {
 		const normalized = normalizeArtifactFile(file)
 		if (!normalized) return null
-		const stored = this.roots.get(pluginName)
+		const stored = this.roots.get(ownerKey)
 		const baseDir = stored?.sourceHash === sourceHash ? stored.dir : null
 		if (!baseDir) return null
 		const fullPath = resolve(baseDir, normalized)
@@ -169,32 +169,36 @@ export class WorkbenchArtifactService {
 	}
 
 	private registerPackaged(owner: Context, declaration: WorkbenchUiEntry): () => void {
-		const pluginName = owner.pluginInfo.id
-		const descriptor = readWorkbenchUiEntry(declaration)
+		const ownerDescriptor: WorkbenchPluginDescriptor = Object.freeze({
+			address: owner.pluginInfo.nodeAddress,
+			displayName: owner.pluginInfo.displayName,
+			rootExportName: owner.pluginInfo.rootExportName,
+		})
+		const uiEntry = readWorkbenchUiEntry(declaration)
 		let disposed = false
 		void this.registerPackagedModule(
-			pluginName,
-			descriptor.artifactKey ?? pluginName,
+			ownerDescriptor,
+			uiEntry.artifactKey ?? workbenchArtifactOwnerKey(ownerDescriptor.address),
 			() => disposed,
 		).catch((error) => {
 			if (!disposed) {
-				void this.markCompileError(pluginName, error)
+				void this.markCompileError(ownerDescriptor, error)
 				owner.logger.error('failed to register workbench UI artifact', { error })
 			}
 		})
 		const guard = owner.effects.defer(() => {
 			disposed = true
-			void this.removePlugin(pluginName)
+			void this.removePlugin(ownerDescriptor)
 		})
 		return () => guard.dispose()
 	}
 
 	private async registerPackagedModule(
-		pluginName: string,
+		owner: WorkbenchPluginDescriptor,
 		artifactName: string,
 		isDisposed: () => boolean,
 	): Promise<void> {
-		const manifestPath = await this.resolvePackagedManifestPath(pluginName, artifactName)
+		const manifestPath = await this.resolvePackagedManifestPath(owner.address, artifactName)
 		if (!manifestPath || isDisposed()) {
 			if (!isDisposed()) {
 				throw new Error(`packaged workbench UI artifact not found: ${artifactName}`)
@@ -213,7 +217,9 @@ export class WorkbenchArtifactService {
 			resolve(artifactRoot, WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE),
 		).catch((): null => null)
 		if (!remoteEntry) {
-			throw new Error(`incomplete workbench UI artifact for ${pluginName}: remoteEntry.js missing`)
+			throw new Error(
+				`incomplete workbench UI artifact for ${owner.displayName}: remoteEntry.js missing`,
+			)
 		}
 		await validatePackagedManifest(artifactRoot, artifactName, content)
 		if (isDisposed()) return
@@ -224,7 +230,7 @@ export class WorkbenchArtifactService {
 			.slice(0, 16)
 		await this.commitCompiledModule(
 			createCompiledWorkbenchArtifact({
-				pluginName,
+				owner,
 				artifactName,
 				sourceHash,
 				compiledAt: Math.floor(fileStat.mtimeMs || Date.now()),
@@ -234,7 +240,7 @@ export class WorkbenchArtifactService {
 	}
 
 	private async resolvePackagedManifestPath(
-		pluginName: string,
+		owner: PluginNodeAddressSnapshot,
 		artifactName: string,
 	): Promise<string | null> {
 		const deploymentRoot = String(this.root.config.workbenchArtifactRoot ?? '').trim()
@@ -242,8 +248,7 @@ export class WorkbenchArtifactService {
 			return resolveDeploymentWorkbenchManifestPath(deploymentRoot, artifactName)
 		}
 		return (
-			(await this.root.config.workbenchArtifactResolver?.(this.root, pluginName, artifactName)) ??
-			null
+			(await this.root.config.workbenchArtifactResolver?.(this.root, owner, artifactName)) ?? null
 		)
 	}
 
@@ -326,17 +331,18 @@ async function validatePackagedManifest(
 }
 
 export function createCompiledWorkbenchArtifact(input: {
-	pluginName: string
+	owner: WorkbenchPluginDescriptor
 	artifactName?: string
 	sourceHash: string
 	compiledAt?: number
 }): WorkbenchBundle {
 	const compiledAt = input.compiledAt ?? Date.now()
+	const ownerKey = workbenchArtifactOwnerKey(input.owner.address)
 	return {
-		pluginName: input.pluginName,
-		remoteName: workbenchFederationRemoteName(input.artifactName ?? input.pluginName),
+		owner: input.owner,
+		remoteName: workbenchFederationRemoteName(input.artifactName ?? ownerKey),
 		remoteEntryUrl: `${RUNTIME_INTERNAL_API_BASE}${runtimeWorkbenchArtifactPath(
-			input.pluginName,
+			ownerKey,
 			input.sourceHash,
 			WORKBENCH_FEDERATION_REMOTE_ENTRY_FILE,
 		)}`,
@@ -344,6 +350,20 @@ export function createCompiledWorkbenchArtifact(input: {
 		sourceHash: input.sourceHash,
 		compiledAt,
 	}
+}
+
+/** Opaque physical URL index. Workbench identity remains the structured address in its DTO. */
+export function workbenchArtifactOwnerKey(owner: PluginNodeAddressSnapshot): string {
+	return pluginNodePhysicalKey(owner, 64)
+}
+
+function compareBundleOwner(
+	left: { owner: WorkbenchPluginDescriptor },
+	right: { owner: WorkbenchPluginDescriptor },
+): number {
+	return pluginNodeAddressKey(left.owner.address).localeCompare(
+		pluginNodeAddressKey(right.owner.address),
+	)
 }
 
 function normalizeArtifactFile(file: string): string | null {

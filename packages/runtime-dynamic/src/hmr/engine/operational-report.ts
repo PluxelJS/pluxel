@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import type { Logger as LogtapeLogger } from '@logtape/logtape'
-import type { PluginConstructor } from '@pluxel/core'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import { resolve } from 'pathe'
 import { normalizePath } from 'vite'
 import { DRIVE_PATH_RE, fsPathFromViteFsId, resolveCacheLimit } from '@pluxel/runtime/internal'
@@ -15,8 +15,10 @@ import type {
 } from '@pluxel/runtime-dev/hmr-log'
 
 export type RegistryViewLike = {
-	listRegistered: () => ReadonlyMap<string, PluginConstructor>
-	findModuleIdByName: (name: string) => string | null
+	listRegistered: () => readonly {
+		address: PluginNodeAddressSnapshot
+	}[]
+	findModuleId: (address: PluginNodeAddressSnapshot) => string | null
 }
 
 const FILE_EXT_RE = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|json)$/i
@@ -55,14 +57,14 @@ function normalizeModuleIdToFsPath(cwd: string, moduleId: string) {
 
 export function collectPluginTotals(params: {
 	registryView: RegistryViewLike
-	isPluginEnabled: (name: string) => boolean
-	isRunning: (ctor: PluginConstructor) => boolean
+	isPluginEnabled: (address: PluginNodeAddressSnapshot) => boolean
+	isRunning: (address: PluginNodeAddressSnapshot) => boolean
 }): PluginTotals {
 	const plugins: PluginTotals = { loaded: 0, enabled: 0, running: 0 }
 
-	for (const [name, ctor] of params.registryView.listRegistered()) {
-		const enabled = params.isPluginEnabled(name)
-		const running = params.isRunning(ctor)
+	for (const entry of params.registryView.listRegistered()) {
+		const enabled = params.isPluginEnabled(entry.address)
+		const running = params.isRunning(entry.address)
 		plugins.loaded++
 		if (enabled) plugins.enabled++
 		if (running) plugins.running++
@@ -80,8 +82,8 @@ export async function buildHmrOperationalReport(params: {
 	rootsPretty: readonly string[]
 	entriesByRoot: readonly number[]
 	registryView: RegistryViewLike
-	isPluginEnabled: (name: string) => boolean
-	isRunning: (ctor: PluginConstructor) => boolean
+	isPluginEnabled: (address: PluginNodeAddressSnapshot) => boolean
+	isRunning: (address: PluginNodeAddressSnapshot) => boolean
 	resolveBareWorkspaceEntry: (specifier: string) => Promise<string | null>
 	resolveLimit?: number
 	hotspots?: Array<{ id: string; ms: number }>
@@ -137,12 +139,12 @@ export async function buildHmrOperationalReport(params: {
 		return await p
 	}
 
-	for (const [name, ctor] of params.registryView.listRegistered()) {
-		const moduleId = params.registryView.findModuleIdByName(name)
+	for (const entry of params.registryView.listRegistered()) {
+		const moduleId = params.registryView.findModuleId(entry.address)
 		if (!moduleId) continue
 
-		const enabled = params.isPluginEnabled(name)
-		const running = params.isRunning(ctor)
+		const enabled = params.isPluginEnabled(entry.address)
+		const running = params.isRunning(entry.address)
 
 		const clean = await resolveModuleIdForRootGrouping(moduleId)
 		if (!clean) {

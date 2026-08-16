@@ -286,8 +286,25 @@ describe('Workbench authoring API', () => {
 function pluginContext(root: object, id: string) {
 	const ctx = Object.create(root) as any
 	let disposed = false
+	const nodeAddress = {
+		definition: {
+			entry: { kind: 'source-entry' as const, source: `pluxel-test:${id}` },
+			exportName: 'Plugin',
+		},
+		instance: 'default' as const,
+	}
+	const nodeSlot = (root as any).registry.internNodeAddress(nodeAddress)
 	Object.defineProperties(ctx, {
-		pluginInfo: { value: { id }, configurable: true },
+		pluginInfo: {
+			value: {
+				nodeSlot,
+				nodeAddress,
+				definition: nodeAddress.definition,
+				displayName: id,
+				rootExportName: 'Plugin',
+			},
+			configurable: true,
+		},
 		effects: {
 			value: {
 				defer(cleanup: () => void) {

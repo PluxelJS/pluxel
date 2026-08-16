@@ -81,7 +81,7 @@ describe('runtime-dev Vite plugin stack', () => {
 		expect(config.ssr?.external).toEqual(expect.arrayContaining(['@pluxel/runtime']))
 		expect(config.ssr?.external).toContain('@pluxel/core')
 		expect(config.oxc?.decorator?.legacy).toBe(true)
-		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(true)
+		expect(config.oxc?.decorator?.emitDecoratorMetadata).toBe(false)
 	})
 
 	it('leaves distribution bare packages to the Node host', () => {
@@ -156,7 +156,10 @@ describe('runtime-dev Vite plugin stack', () => {
 		await withTestViteServer(
 			{
 				root,
-				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
+				plugins: pluxelRuntimeSourceVitePlugins({
+					lintGuard: false,
+					configSource: false,
+				}),
 			},
 			async (server) => {
 				const mod = await importViteSsrModule<{ selected: string }>(server, entryPath)
@@ -308,21 +311,36 @@ describe('runtime-dev Vite plugin stack', () => {
 		await server.close()
 	})
 
-	it('emits constructor dependency metadata through the real Vite module runner', async () => {
+	it('lowers constructor dependencies into explicit Plugin definition facts', async () => {
 		await using fixture = await createDiskFixture({}, { tempDir: process.cwd() })
 		const root = fixture.path
 		const modulePath = join(root, 'plugin.ts')
+		await writePackage(
+			root,
+			'@pluxel/runtime',
+			{
+				name: '@pluxel/runtime',
+				type: 'module',
+				exports: './index.js',
+			},
+			[
+				'const facts = new WeakMap()',
+				'export class BasePlugin {}',
+				'export function Plugin() { return (target) => target }',
+				'export function __setPluginDefinition(target, value) { facts.set(target, value) }',
+				'export function getPluginDefinitionFacts(target) { const value = facts.get(target); if (!value) throw new Error("missing facts"); return value }',
+			].join('\n'),
+		)
 		await writeFile(
 			modulePath,
 			[
-				'const metadata = new WeakMap<object, Map<string, unknown>>()',
-				';(Reflect as any).metadata = (key: string, value: unknown) => (target: object) => { const values = metadata.get(target) ?? new Map(); values.set(key, value); metadata.set(target, values) }',
-				';(Reflect as any).getMetadata = (key: string, target: object) => metadata.get(target)?.get(key)',
-				'function Plugin(): ClassDecorator { return () => {} }',
-				'export class Provider {}',
+				"import { BasePlugin, getPluginDefinitionFacts, Plugin } from '@pluxel/runtime'",
 				'@Plugin()',
-				'export class Consumer { constructor(readonly provider: Provider) {} }',
-				"export const params = Reflect.getMetadata('design:paramtypes', Consumer)",
+				'export class Provider extends BasePlugin {}',
+				'@Plugin()',
+				'export class Consumer extends BasePlugin { constructor(readonly provider: Provider) { super() } }',
+				'export function providerDefinition() { return getPluginDefinitionFacts(Provider).definition }',
+				'export function consumerRequires() { return getPluginDefinitionFacts(Consumer).requires }',
 				'',
 			].join('\n'),
 		)
@@ -333,11 +351,11 @@ describe('runtime-dev Vite plugin stack', () => {
 				plugins: pluxelRuntimeSourceVitePlugins({ lintGuard: false, configSource: false }),
 			},
 			async (server) => {
-				const mod = await importViteSsrModule<{ Provider: unknown; params: unknown[] }>(
-					server,
-					modulePath,
-				)
-				expect(mod.params).toEqual([mod.Provider])
+				const mod = await importViteSsrModule<{
+					providerDefinition(): unknown
+					consumerRequires(): unknown[]
+				}>(server, modulePath)
+				expect(mod.consumerRequires()).toEqual([mod.providerDefinition()])
 			},
 		)
 	})

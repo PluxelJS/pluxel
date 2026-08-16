@@ -51,7 +51,7 @@ export function FontSettings() {
 				<Select
 					size="sm"
 					label="Font Set"
-					description={`renderer 来自 ${host.ownerPluginId}，配置写回 ${host.targetPluginId}`}
+					description={`renderer 来自 ${host.owner.displayName}，配置写回 ${host.target.displayName}`}
 					placeholder="选择一个字体集"
 					data={options}
 					value={selected}

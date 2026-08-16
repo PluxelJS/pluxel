@@ -15,7 +15,11 @@ import {
 	type LoggerConfig,
 	type Sink,
 } from '@logtape/logtape'
-import { pluxelCategoryFamilies, type LoggerServiceConfig } from '@pluxel/core/logger'
+import {
+	pluxelCategoryFamilies,
+	readPluginLogIdentity,
+	type LoggerServiceConfig,
+} from '@pluxel/core/logger'
 import type { Context } from '@pluxel/core'
 import { dirname } from 'pathe'
 import { createDailyTimeRotatingFileSink } from './file'
@@ -539,15 +543,16 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 
 	private allowsPluginRecord(record: LogRecord): boolean {
 		const category = record.category
-		if (category.length !== 4 || category[0] !== 'pluxel' || category[1] !== 'plugins') {
+		const identity = readPluginLogIdentity(category)
+		if (!identity || category[1] !== 'plugins' || identity.topicOffset !== category.length) {
 			this.incrementMalformed()
 			return false
 		}
-		if (category[2] !== this.resolved.root.id) {
+		if (identity.rootId !== this.resolved.root.id) {
 			this.incrementWrongRoot()
 			return false
 		}
-		return this.policy.allows(category[3]!, record.level)
+		return this.policy.allows(identity.node, record.level)
 	}
 
 	private allowsDebugRecord(record: LogRecord): boolean {
@@ -562,13 +567,14 @@ class RuntimeLoggingImpl implements RuntimeLogging {
 		}
 		const origin = category[3]
 		if (origin === 'runtime') return matchesDebugTopic(this.debugMatcher, category, 4)
-		if (origin !== 'plugin' || category.length < 6) {
+		const identity = readPluginLogIdentity(category)
+		if (origin !== 'plugin' || !identity || identity.topicOffset >= category.length) {
 			this.incrementMalformed()
 			return false
 		}
 		return (
-			this.policy.allows(category[4]!, record.level) &&
-			matchesDebugTopic(this.debugMatcher, category, 5)
+			this.policy.allows(identity.node, record.level) &&
+			matchesDebugTopic(this.debugMatcher, category, identity.topicOffset)
 		)
 	}
 

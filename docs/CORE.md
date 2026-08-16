@@ -1,54 +1,67 @@
 # Core
 
-`@pluxel/core` 定义插件语义，不拥有宿主能力。
+`@pluxel/core` 定义 Plugin definition/node、DI graph、Context 和 generation lifecycle，不拥有宿主能力。
 
 ## 负责
 
-- `Context` 与 service registry；
-- plugin definition、required dependency graph 和 DI；
-- `register`、`replace`、`restart`、`commit`；
-- start/stop 顺序、failure propagation 和 `CommitSummary`；
-- per-plugin effects scope；
-- feature/config declaration 与校验快照。
-- opaque `OptionalPluginRef` 声明、instance watcher 与 commit-settled internal scheduling hook。
+- `PluginDefinitionSlot`、`PluginNodeSlot` 与结构化 entry/definition/node address；
+- lowered Plugin definition facts、required/optional edge 和 abstract provider relation；
+- `Context`、service registry、caller-bound dependency view 与 DI；
+- `register`、`replace`、`restart`、`commit` 和 fork node；
+- provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
+- per-generation effects、owner invocation gate 与 late `init()` cleanup；
+- 单 object config declaration、校验与 normalized snapshot；
+- init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription。
 
 ## 不负责
 
 - HTTP、RPC、SSE、Workbench Plane；
 - 配置或业务数据持久化；
 - workspace scan、package install、Vite、HMR；
-- optional package import、retry 和 route diagnostics；
+- optional package import、安装、retry 或 absent-module protocol；
 - 进程退出、健康检查和部署策略。
+
+## Identity 与 DI 不变量
+
+- graph identity 来自 canonical entry + root named export；class name、constructor 和 `displayName` 都不是 key。
+- package Plugin 只从 package root 的唯一 named export 进入 catalog；source Plugin 使用 route 规范化的 source entry。
+- required dependency 只来自 semantic pass lower 的 constructor value-import provenance。
+- optional dependency只来自 lower 后的 non-exported module-level `definePluginRef<T>()`，不执行 runtime import。
+- Core intern 结构化 address 后只按 slot object 查图；持久化 snapshot 不被 stringify 成作者协议。
+- 未经过 Pluxel semantic pass 的 Plugin 源码明确失败；DI 只读取 lowered definition/edge facts。
 
 ## 生命周期不变量
 
 ```text
-draft graph -> verify -> stop dependents -> start providers -> CommitSummary
+draft graph -> verify combined required/optional graph -> stop plan -> start plan -> CommitSummary
 ```
 
-- required dependency 只来自 constructor metadata。
-- provider 启动失败只阻塞 required dependents。
-- replacement 复用 stop/start 和 effects cleanup。
-- lifecycle report 是事实源，宿主基于它制定策略。
-- generation 停止时先关闭内部 owner invocation gate 并等待已接纳调用退出，再执行插件 `stop()`。
-- effects 只 drain 显式登记的 cleanup、Disposable 和 acquired resource；异步任务应返回可等待释放的 handle。
+- provider 启动失败只阻塞 required dependents；optional consumer 走 absent 路径。
+- optional provider 的 running generation 出现、消失或 replacement 时，consumer 与其 required dependent closure 在同一
+  plan 中最多重启一次；consumer effects 必须在 provider 停止前 drain。
+- generation 停止时先关闭 owner invocation gate、abort generation，再 drain effects。
+- `init()` 返回的 cleanup/disposable 自动进入当前 effects；正常停止、rollback、replacement、optional restart 与 shutdown
+  不调用第二套 teardown hook。
+- abort/timeout 后迟到的 `init()` fulfillment 不会重新发布 running；迟到返回的 cleanup 会立即执行。
+- lifecycle report 是事实源，宿主基于它制定退出、告警或降级策略。
 
-## Feature 边界
+## 内部组成与事件
 
-- `features.use()`：required plugin-local composition。
-- `features.load()`：通过 `defineLazyFeature()` 声明的 lazy composition。
-- 插件间 optional integration 属于 `plugins.use()`，不属于 FeatureHost；package-optional ref 的解析由 runtime
-  availability service 承担，core 不执行 loader。
+Plugin 内部拆分使用普通 class/function；子资源用 `ctx.effects.scope()`，需要独立配置、失败传播、启停或治理的组成成为
+Plugin。公开的固定事件集合使用具名 `EvtChannel` 属性；Core lifecycle 和 route invalidation 使用明确的 internal
+subscription，不共享 Context global event bus。
 
 ## 实现入口
 
+- `packages/core/src/plugins/runtime/identity.ts`
+- `packages/core/src/plugins/runtime/definition.ts`
 - `packages/core/src/plugins/runtime/PluginService.ts`
-- `packages/core/src/plugins/runtime/PluginDefinitions.ts`
 - `packages/core/src/internal/di/`
 - `packages/core/src/internal/fsm/`
 - `packages/core/src/plugins/runtime/plugin-service/LifecycleManager.ts`
-- `packages/core/src/plugins/decorators/`
 - `packages/core/src/plugins/composition/`
 - `packages/core/src/services/effects/EffectsService.ts`
+- `packages/core/src/services/config/`
 
-仅验证 DI、生命周期、feature 和 effects 时使用 core test host；需要 runtime service 时进入 `@pluxel/runtime/test`。
+只验证 DI、lifecycle、optional restart、config 和 effects 时使用 core test host；需要 runtime service 时进入
+`@pluxel/runtime/test`。测试中的 Plugin 仍必须经过 semantic lowering；unsafe facts helper 只用于明确的 core/runtime 内部测试。

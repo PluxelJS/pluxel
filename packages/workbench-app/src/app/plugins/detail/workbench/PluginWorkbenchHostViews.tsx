@@ -20,7 +20,7 @@ import { BaseProviderCard } from '../cards/BaseProviderCard'
 import { DependencyList, usePluginDependencyEntries } from '../cards/DependencyList'
 import { DependencyOverridesCard } from '../cards/DependencyOverridesCard'
 import { LogLevelsCard } from '../cards/LogLevelsCard'
-import { formatCompactSource, resolveKnownPluginName } from '../rightPaneState'
+import { formatCompactSource } from '../rightPaneState'
 import {
 	type PluginWorkbenchView,
 	PluginWorkbenchViewContainer,
@@ -210,7 +210,7 @@ function AssistHostMount({
 }
 
 function PluginContextSummaryCard() {
-	const { pluginName, source, knownPluginNames } = usePluginScope()
+	const { pluginName, source } = usePluginScope()
 	const deps = usePluginDependencyEntries()
 	const runningDependencyCount = deps.filter((dep) => dep.isRunning).length
 	const sourcePreview = useMemo(
@@ -227,11 +227,6 @@ function PluginContextSummaryCard() {
 		.slice(0, 2)
 		.map((dep) => dep.name)
 		.join(' / ')
-	const resolveDependencyLinkTarget = useMemo(() => {
-		return (name: string) => {
-			return resolveKnownPluginName(knownPluginNames, name)
-		}
-	}, [knownPluginNames])
 	const copyValue = source.moduleId ?? source.packageName ?? null
 
 	return (
@@ -280,10 +275,7 @@ function PluginContextSummaryCard() {
 							{deps.length}
 						</Badge>
 						{deps.length > 0 ? (
-							<DependencyList
-								LinkComponent={RouterLinkAdapter}
-								resolveLinkTarget={resolveDependencyLinkTarget}
-							/>
+							<DependencyList LinkComponent={RouterLinkAdapter} />
 						) : (
 							<Text className="plx-pluginWorkbench__summaryText" size="sm">
 								{dependencyPreview || '暂无依赖项'}
@@ -308,7 +300,7 @@ function PluginContextSummaryCard() {
 }
 
 export function PluginWorkbenchPanel() {
-	const { pluginName } = usePluginMeta()
+	const { owner, pluginName } = usePluginMeta()
 	const views = useMemo<PluginWorkbenchView[]>(
 		() => [
 			{
@@ -316,7 +308,7 @@ export function PluginWorkbenchPanel() {
 				label: '日志',
 				content: (
 					<div className="plx-pluginWorkbench__dockPane">
-						<LiveLog module={pluginName} showName={false} variant="embedded" />
+						<LiveLog owner={owner} showName={false} variant="embedded" />
 					</div>
 				),
 			},
@@ -325,12 +317,12 @@ export function PluginWorkbenchPanel() {
 				label: '级别',
 				content: (
 					<WorkbenchScrollPane compact>
-						<LogLevelsCard pluginId={pluginName} compact />
+						<LogLevelsCard owner={owner} compact />
 					</WorkbenchScrollPane>
 				),
 			},
 		],
-		[pluginName],
+		[owner],
 	)
 
 	return (

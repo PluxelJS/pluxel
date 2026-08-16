@@ -46,32 +46,22 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'fix',
 	},
+	'configs-use-single-object-schema': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'configs-no-removed-dsl': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
 	'no-direct-logtape-get-logger': {
 		category: 'logging',
 		buildCritical: false,
 		remediation: 'diagnostic',
 	},
 	'no-workspace-root-import': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-use-top-level-class': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-no-class-field': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-requires-defined-spec': {
-		category: 'correctness',
-		buildCritical: true,
-		remediation: 'diagnostic',
-	},
-	'features-load-no-static-load': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',
@@ -86,10 +76,15 @@ export const pluxelRulePolicy = {
 		buildCritical: true,
 		remediation: 'diagnostic',
 	},
-	'plugin-constructor-no-type-only-imports': {
+	'plugin-constructor-canonical-dependencies': {
 		category: 'correctness',
 		buildCritical: true,
-		remediation: 'fix',
+		remediation: 'diagnostic',
+	},
+	'plugin-no-removed-feature-api': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
 	},
 } as const satisfies Record<
 	keyof typeof pluxelRules,

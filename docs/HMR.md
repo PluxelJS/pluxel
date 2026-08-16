@@ -5,7 +5,7 @@ live-query lease；同 lineage 新 generation 复用 instance，`migrations` evo
 `reset-on-schema-change` 的 schema-derived lineage 改变时则构建空 candidate、原子激活
 并归档旧 instance。PGlite backend、PG pool、instance registry 和 durable rows 属于 root，不随 module replacement 重建；
 candidate 失败保持原 active instance，但 core rollback 仍通过新 handle acquisition 验证 artifact 与 lineage。
-owner teardown 先使 handle 拒绝新操作，再等待已经接受的运行中和排队操作排空；plugin stop 完成后才允许 replacement
+owner teardown 先使 handle 拒绝新操作，再等待已经接受的运行中和排队操作排空；generation effects drain 完成后才允许 replacement
 generation 启动。因此不会产生预期取消的 unhandled rejection，也不会让旧 generation 的数据库操作跨越 replacement。
 
 HMR replacement 必须保持 core lifecycle、Workbench resources 和 UI artifact 同步：
@@ -16,9 +16,9 @@ module batch -> committed graph -> stop old owner/effects -> start new owner
              -> Workbench refetch target layouts -> lazy load new remote
 ```
 
-optional plugin candidate 的 canonical plugin ID 生成 synthetic module owner。consumer module replacement 会撤销旧 watcher
-subscription；新 ref 重新解析后，同一 synthetic owner 通过正常 `replace()` transaction 更新 provider，running watcher
-负责 callback cleanup/rebind。成功的 dynamic file-source batch 只重试 active requests，同一失败 generation 不循环重试。
+optional ref 已被 lower 成 definition slot edge，不拥有 loader、watcher subscription 或 synthetic module owner。catalog/source
+transaction 让 provider running generation 出现、消失或 replacement 时，core 在同一 plan 中先停止 optional consumer closure、
+drain effects，再更新 provider并重启 consumer；absent 状态下重复失败不会制造 restart。
 
 `PluginArtifactCompiler` 位于 `packages/runtime-dev/src/workbench/`，dynamic/static route 只负责提供 Vite server、
 plugin directory 和 host policy。attachment 始终安装 Node source provider，并只在 Workbench enabled 时安装 UI
@@ -69,7 +69,7 @@ workspace scanner 或 package manager。
 
 Workspace profile 的 `enabled` 是 mutable package entry selection：CLI 选择的 package entry 会进入初始加载列表，其 workspace
 dependency closure 会成为 watch roots。它不直接启用插件 lifecycle；module 求值后，插件是否启动仍只读取 RuntimeState。config
-的 `plugins` 是 fixed availability，不进入 CLI discovery；同一 plugin ID 同时由 fixed 与 mutable catalog 提供时启动失败。
+的 `plugins` 是 fixed availability，不进入 CLI discovery；同一 definition address 同时由 fixed 与 mutable catalog 提供时启动失败。
 generation shutdown 先停止 watcher/batch admission，丢弃尚未开始的 debounce queue，等待正在执行的 batch 完成，再进入 core
 lifecycle/effects cleanup；Vite/plugin close hooks 完成后才关闭 canonical ModuleRunner。
 

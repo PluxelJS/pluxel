@@ -1,384 +1,253 @@
 import {
-	BasePlugin,
+	getPluginDefinitionFacts,
+	isPluginNodeSlot,
+	pluginNodeAddressEqual,
 	type Context,
-	checkPluginDecorator,
-	formatForkPluginId,
-	ForkablePlugin,
-	getClassParams,
-	getDeclaredName,
-	getForkId,
-	getForkOf,
-	getPluginInfo,
-	parseForkPluginId,
-	PARAM_TYPES,
-	type PluginConstructor,
-	type PluginIdentifier,
+	type PluginDefinitionAddressSnapshot,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
 } from '@pluxel/core'
 import { requireRouteCapability } from '../../runtime/capabilities'
-import { isPluginEnabled } from '../../services/RuntimeStateStore'
-import { addForkToCatalog } from './forksCatalog'
+import {
+	isPluginEnabled,
+	samePluginDefinitionAddress,
+	samePluginNodeAddress,
+} from '../../services/RuntimeStateHelpers'
 import type {
 	BaseProviderInfo,
-	PluginDependencyRef,
-	PluginDependencyKind,
 	PluginDependencyMutationResult,
 	PluginDependencyOption,
+	PluginDependencyRef,
 	PluginDependencyState,
 } from '../../web/protocol'
 
-function resolvePlugin(ctx: Context, name: string, hint?: PluginConstructor): PluginConstructor {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const ctor = catalog.resolve(name) ?? catalog.resolve(hint ?? name) ?? hint
-	if (!ctor) throw new Error(`Plugin not found: ${name}`)
+function message(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
+function resolve(ctx: Context, address: PluginNodeAddressSnapshot) {
+	const ctor = requireRouteCapability(ctx, 'catalog').resolve(address)
+	if (!ctor) throw new Error('Plugin node is not present in the route catalog')
 	return ctor
 }
 
-function tokenName(token: unknown): string {
-	if (typeof token !== 'function') return String(token)
-	try {
-		return getPluginInfo(token as never).id
-	} catch {
-		const name = (token as { name?: unknown }).name
-		return typeof name === 'string' ? name : String(token)
-	}
-}
-
-function getErrorMessage(error: unknown): string {
-	if (error instanceof Error) return error.message
-	if (error && typeof error === 'object') {
-		const message = (error as { message?: unknown }).message
-		if (typeof message === 'string') return message
-	}
-	return String(error)
-}
-
-function readParamTypes(ctor: PluginConstructor): unknown[] {
-	const reflectApi = Reflect as unknown
-	const fallback = () => [...getClassParams<unknown>(ctor)]
-	if (!reflectApi || typeof reflectApi !== 'object') return fallback()
-	const getMetadata = (reflectApi as { getMetadata?: unknown }).getMetadata
-	if (typeof getMetadata !== 'function') return fallback()
-	try {
-		const out = (getMetadata as (key: unknown, target: unknown) => unknown)(PARAM_TYPES, ctor)
-		return Array.isArray(out) && out.length > 0 ? out : fallback()
-	} catch {
-		return fallback()
-	}
-}
-
-function readDepOverrides(ctx: Context, consumerName: string): Record<number, string> | undefined {
-	return ctx.runtimeState.snapshot().dependencyOverrides[consumerName] as
-		| Record<number, string>
-		| undefined
-}
-
-function writeDepOverride(
+function explicitOverride(
 	ctx: Context,
-	consumerName: string,
+	consumer: PluginNodeAddressSnapshot,
 	index: number,
-	targetName: string | null,
-) {
-	ctx.runtimeState.update((draft) => {
-		const existing = draft.dependencyOverrides[consumerName]
-			? { ...draft.dependencyOverrides[consumerName] }
-			: {}
-		if (!targetName) delete existing[index]
-		else existing[index] = targetName
+): PluginNodeAddressSnapshot | undefined {
+	return ctx.runtimeState
+		.snapshot()
+		.dependencyOverrides.find(
+			(entry) => samePluginNodeAddress(entry.consumer, consumer) && entry.parameterIndex === index,
+		)?.provider
+}
 
-		if (Object.keys(existing).length === 0) delete draft.dependencyOverrides[consumerName]
-		else draft.dependencyOverrides[consumerName] = existing
+function providerDefault(
+	ctx: Context,
+	token: PluginDefinitionAddressSnapshot,
+): PluginNodeAddressSnapshot | undefined {
+	return ctx.runtimeState
+		.snapshot()
+		.providerDefaults.find((entry) => samePluginDefinitionAddress(entry.token, token))?.provider
+}
+
+function candidates(
+	ctx: Context,
+	token: PluginDefinitionAddressSnapshot,
+): PluginDependencyOption[] {
+	const state = ctx.runtimeState.snapshot()
+	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
+	return requireRouteCapability(ctx, 'catalog')
+		.listRegistered()
+		.filter((entry) => {
+			const facts = getPluginDefinitionFacts(entry.ctor)
+			return (
+				samePluginDefinitionAddress(facts.definition, token) ||
+				(!!facts.provides && samePluginDefinitionAddress(facts.provides, token))
+			)
+		})
+		.map((entry) => ({
+			address: entry.address,
+			displayName: entry.displayName,
+			isEnabled: isPluginEnabled(state, entry.address),
+			isRunning: lifecycle.isRunning(entry.address),
+		}))
+}
+
+function effectiveNode(
+	ctx: Context,
+	consumer: PluginNodeSlot,
+	index: number,
+): PluginNodeAddressSnapshot | null {
+	const resolved = ctx.registry.graph.depsOf(consumer)[index]
+	return isPluginNodeSlot(resolved) ? ctx.registry.nodeAddressOf(resolved) : null
+}
+
+export function listPluginDependencies(
+	ctx: Context,
+	consumer: PluginNodeAddressSnapshot,
+): PluginDependencyRef[] {
+	const ctor = resolve(ctx, consumer)
+	const facts = getPluginDefinitionFacts(ctor)
+	const slot = ctx.registry.internNodeAddress(consumer)
+	return facts.requires.flatMap((_token, index) => {
+		const address = effectiveNode(ctx, slot, index)
+		if (!address) return []
+		const provider = requireRouteCapability(ctx, 'catalog').resolve(address)
+		return [
+			{
+				address,
+				displayName: provider
+					? getPluginDefinitionFacts(provider).definition.exportName
+					: address.definition.exportName,
+				isRunning: requireRouteCapability(ctx, 'lifecycle').isRunning(address),
+			},
+		]
 	})
 }
 
-function buildRuntimeDependencyOverrides(
+export function inspectPluginDependencies(
 	ctx: Context,
-	consumerName: string,
-): Array<PluginIdentifier | undefined> | undefined {
-	const persisted = readDepOverrides(ctx, consumerName)
-	if (!persisted) return undefined
-
-	const overrides: Array<PluginIdentifier | undefined> = []
-	for (const [rawIndex, targetName] of Object.entries(persisted)) {
-		const index = Number(rawIndex)
-		if (!Number.isFinite(index) || index < 0) continue
-		if (typeof targetName !== 'string' || targetName.trim() === '') continue
-		overrides[index] = resolvePlugin(ctx, targetName.trim())
-	}
-
-	return overrides.length === 0 ? undefined : overrides
-}
-
-export function listPluginDependencies(ctx: Context, name: string): PluginDependencyRef[] {
-	const ctor = resolvePlugin(ctx, name)
-	return requireRouteCapability(ctx, 'dependencies').listDependencies(ctor)
-}
-
-export function inspectPluginDependencies(ctx: Context, name: string): PluginDependencyState[] {
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
-	const runtimeState = ctx.runtimeState.snapshot()
-	const ctor = resolvePlugin(ctx, name)
-	const rawParams = readParamTypes(ctor)
-	const effectiveParams = getClassParams<unknown>(ctor)
-	const overrides = readDepOverrides(ctx, name)
-
-	const out: PluginDependencyState[] = []
-	for (let index = 0; index < rawParams.length; index += 1) {
-		const token = rawParams[index]
-		if (typeof token !== 'function') continue
-		const selected = overrides?.[index] ?? null
-		let effectiveToken = effectiveParams[index] ?? token
-		if (selected) {
-			try {
-				effectiveToken = resolvePlugin(ctx, selected)
-			} catch {
-				// Persisted selections can point at unloaded/removed plugins; keep the build/default token.
-			}
-		}
-
-		const effective = tokenName(effectiveToken)
-
-		const isDecorated = checkPluginDecorator(token as PluginConstructor)
-		const tokenProto = (token as { prototype?: unknown }).prototype
-		const isBaseToken = !isDecorated && tokenProto instanceof BasePlugin
-
-		const original = getForkOf(token as PluginConstructor) ?? token
-		const originalProto = (original as { prototype?: unknown }).prototype
-		const isForkable = originalProto instanceof ForkablePlugin
-
-		let kind: PluginDependencyKind = 'plugin'
-		if (isBaseToken) kind = 'base'
-		else if (isForkable) kind = 'forkable'
-
-		const isRunning = ctx.registry.isRunning(effectiveToken as PluginIdentifier)
-		let baseProvider: string | null = null
-		const options: PluginDependencyOption[] = []
-
-		if (kind === 'base') {
-			const baseToken = token
-			try {
-				const resolved = ctx.registry.graph.resolve(baseToken as PluginIdentifier)
-				if (resolved !== undefined) baseProvider = tokenName(resolved)
-			} catch {}
-
-			for (const [pluginName, pluginCtor] of catalog.listRegistered()) {
-				try {
-					const info = getPluginInfo(pluginCtor)
-					if (info.base !== baseToken) continue
-					options.push({
-						name: pluginName,
-						isEnabled: isPluginEnabled(runtimeState, pluginName),
-						isRunning: lifecycle.isRunning(pluginCtor),
-					})
-				} catch {}
-			}
-			options.sort((left, right) => left.name.localeCompare(right.name))
-		} else if (kind === 'forkable') {
-			let originalName: string
-			try {
-				originalName = getPluginInfo(original as PluginConstructor).id
-			} catch {
-				originalName = tokenName(original)
-			}
-
-			const forkIds: string[] = []
-			const fromCatalog = ctx.runtimeState.snapshot().forks[originalName] ?? []
-			for (const id of fromCatalog) {
-				const forkId = typeof id === 'string' ? id.trim() : ''
-				if (forkId) forkIds.push(forkId)
-			}
-			for (const forkCtor of ctx.registry.listForks(original as PluginConstructor)) {
-				const forkId = getForkId(forkCtor)
-				if (forkId && !forkIds.includes(forkId)) forkIds.push(forkId)
-			}
-
-			options.push({
-				name: originalName,
-				isEnabled: isPluginEnabled(runtimeState, originalName),
-				isRunning:
-					typeof original === 'function'
-						? lifecycle.isRunning(original as PluginConstructor)
-						: false,
-			})
-			for (const forkId of forkIds) {
-				let forkName: string
-				try {
-					forkName = formatForkPluginId(originalName, forkId)
-				} catch {
-					continue
-				}
-				const forkCtor = catalog.resolve(forkName)
-				options.push({
-					name: forkName,
-					isEnabled: isPluginEnabled(runtimeState, forkName),
-					isRunning: forkCtor ? lifecycle.isRunning(forkCtor) : false,
-				})
-			}
-			options.sort((left, right) => left.name.localeCompare(right.name))
-		}
-
-		out.push({
+	consumer: PluginNodeAddressSnapshot,
+): PluginDependencyState[] {
+	const ctor = resolve(ctx, consumer)
+	const facts = getPluginDefinitionFacts(ctor)
+	const consumerSlot = ctx.registry.internNodeAddress(consumer)
+	return facts.requires.map((token, index) => {
+		const selected = explicitOverride(ctx, consumer, index) ?? null
+		const defaultProvider = providerDefault(ctx, token) ?? null
+		const effective = effectiveNode(ctx, consumerSlot, index)
+		return {
 			index,
-			token: tokenName(token),
-			kind,
+			token,
+			kind: candidates(ctx, token).some(
+				(option) => !samePluginDefinitionAddress(option.address.definition, token),
+			)
+				? 'abstract'
+				: 'plugin',
 			effective,
-			isRunning,
+			isRunning: effective ? requireRouteCapability(ctx, 'lifecycle').isRunning(effective) : false,
 			selected,
-			baseProvider,
-			options,
-		})
-	}
+			providerDefault: defaultProvider,
+			options: candidates(ctx, token),
+		}
+	})
+}
 
-	return out
+function replaceExplicitOverride(
+	ctx: Context,
+	consumer: PluginNodeAddressSnapshot,
+	index: number,
+	provider: PluginNodeAddressSnapshot | null,
+): void {
+	ctx.runtimeState.update((draft) => {
+		draft.dependencyOverrides = draft.dependencyOverrides.filter(
+			(entry) =>
+				!(samePluginNodeAddress(entry.consumer, consumer) && entry.parameterIndex === index),
+		)
+		if (provider) draft.dependencyOverrides.push({ consumer, parameterIndex: index, provider })
+	})
+}
+
+function applyRuntimeOverrides(ctx: Context, consumer: PluginNodeAddressSnapshot): void {
+	const ctor = resolve(ctx, consumer)
+	const facts = getPluginDefinitionFacts(ctor)
+	const overrides = facts.requires.map((token, index) => {
+		const address = explicitOverride(ctx, consumer, index) ?? providerDefault(ctx, token)
+		return address ? ctx.registry.internNodeAddress(address) : undefined
+	})
+	ctx.registry.replaceRuntimeDependencyOverrides(
+		ctx.registry.internNodeAddress(consumer),
+		overrides,
+	)
 }
 
 export async function pluginDependencySetTarget(
 	ctx: Context,
-	name: string,
+	consumer: PluginNodeAddressSnapshot,
 	index: number,
-	targetName: string | null,
+	provider: PluginNodeAddressSnapshot | null,
 ): Promise<PluginDependencyMutationResult> {
 	try {
-		const ctor = resolvePlugin(ctx, name)
-
-		if (!Number.isFinite(index) || index < 0) {
-			return { ok: false, code: 'invalid_index', error: `Invalid index: ${index}` }
+		const facts = getPluginDefinitionFacts(resolve(ctx, consumer))
+		if (!Number.isInteger(index) || index < 0 || index >= facts.requires.length) {
+			return { ok: false, code: 'invalid_index', error: `Invalid dependency index: ${index}` }
 		}
-
-		const normalized =
-			typeof targetName === 'string' && targetName.trim() ? targetName.trim() : null
-		writeDepOverride(ctx, name, index, normalized)
-
-		if (normalized) {
-			const token = resolvePlugin(ctx, normalized)
-
-			const fork = parseForkPluginId(normalized)
-			if (fork) addForkToCatalog(ctx, fork.baseId, fork.forkId)
-
-			await requireRouteCapability(ctx, 'lifecycle').enable(normalized, token)
+		if (provider) {
+			resolve(ctx, provider)
+			await requireRouteCapability(ctx, 'lifecycle').enable(provider)
 		}
-
-		const overrides = buildRuntimeDependencyOverrides(ctx, name)
-		ctx.registry.replaceRuntimeDependencyOverrides(ctor, overrides)
+		replaceExplicitOverride(ctx, consumer, index, provider)
+		applyRuntimeOverrides(ctx, consumer)
 		const commit = await ctx.registry.commit()
-		if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
-		return { ok: true }
+		return commit.err
+			? { ok: false, code: 'commit_failed', error: String(commit.err) }
+			: { ok: true }
 	} catch (error) {
-		return {
-			ok: false,
-			code: 'set_dependency_failed',
-			error: getErrorMessage(error),
-		}
+		return { ok: false, code: 'set_dependency_failed', error: message(error) }
 	}
 }
 
 export async function pluginBaseProviderSet(
 	ctx: Context,
-	pluginName: string,
-	baseToken: string,
-	providerName: string | null,
+	consumer: PluginNodeAddressSnapshot,
+	token: PluginDefinitionAddressSnapshot,
+	provider: PluginNodeAddressSnapshot | null,
 ): Promise<PluginDependencyMutationResult> {
 	try {
-		resolvePlugin(ctx, pluginName)
-
-		const baseKey = typeof baseToken === 'string' ? baseToken.trim() : ''
-		if (!baseKey) return { ok: false, code: 'invalid_base', error: 'baseToken is required' }
-
-		const providers: Array<{
-			name: string
-			ctor: PluginConstructor
-			baseCtor: PluginIdentifier
-		}> = []
-		const catalog = requireRouteCapability(ctx, 'catalog')
-		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
-		for (const [name, pluginCtor] of catalog.listRegistered()) {
-			try {
-				const info = getPluginInfo(pluginCtor)
-				const base = info.base
-				if (!base || typeof base !== 'function') continue
-				if (getDeclaredName(base) !== baseKey) continue
-				providers.push({ name, ctor: pluginCtor, baseCtor: base })
-			} catch {}
+		resolve(ctx, consumer)
+		if (provider) {
+			const allowed = candidates(ctx, token).some((entry) =>
+				pluginNodeAddressEqual(entry.address, provider),
+			)
+			if (!allowed)
+				return {
+					ok: false,
+					code: 'provider_not_found',
+					error: 'Provider does not implement the requested token',
+				}
+			await requireRouteCapability(ctx, 'lifecycle').enable(provider)
 		}
-		if (providers.length === 0) {
-			return { ok: false, code: 'base_not_found', error: `No providers for base: ${baseKey}` }
-		}
-
-		const normalizedProvider =
-			typeof providerName === 'string' && providerName.trim() ? providerName.trim() : null
-
-		if (!normalizedProvider) {
-			ctx.runtimeState.update((draft) => {
-				delete draft.baseProviders[baseKey]
-			})
-			return { ok: true }
-		}
-
-		const target = providers.find((provider) => provider.name === normalizedProvider)
-		if (!target) {
-			return {
-				ok: false,
-				code: 'provider_not_found',
-				error: `Provider not found: ${normalizedProvider}`,
-			}
-		}
-
 		ctx.runtimeState.update((draft) => {
-			draft.baseProviders[baseKey] = target.name
+			draft.providerDefaults = draft.providerDefaults.filter(
+				(entry) => !samePluginDefinitionAddress(entry.token, token),
+			)
+			if (provider) draft.providerDefaults.push({ token, provider })
 		})
-
-		const runtimeState = ctx.runtimeState.snapshot()
-		const enabled = [...catalog.listRegistered()].filter(([name]) =>
-			isPluginEnabled(runtimeState, name),
-		)
-		for (const [name, ctor] of enabled) lifecycle.stop(name, ctor)
-		for (const [name, ctor] of enabled) await lifecycle.enable(name, ctor)
-		if (!enabled.some(([name]) => name === target.name)) {
-			await lifecycle.enable(target.name, target.ctor)
+		for (const entry of requireRouteCapability(ctx, 'catalog').listRegistered()) {
+			if (
+				getPluginDefinitionFacts(entry.ctor).requires.some((required) =>
+					samePluginDefinitionAddress(required, token),
+				)
+			)
+				applyRuntimeOverrides(ctx, entry.address)
 		}
-
-		try {
-			ctx.registry.restart(target.baseCtor)
-		} catch {}
-
 		const commit = await ctx.registry.commit()
-		if (commit.err) return { ok: false, code: 'commit_failed', error: String(commit.err) }
-		return { ok: true }
+		return commit.err
+			? { ok: false, code: 'commit_failed', error: String(commit.err) }
+			: { ok: true }
 	} catch (error) {
-		return { ok: false, code: 'set_base_failed', error: getErrorMessage(error) }
+		return { ok: false, code: 'set_provider_default_failed', error: message(error) }
 	}
 }
 
-export function inspectPluginBaseProvider(ctx: Context, name: string): BaseProviderInfo | null {
-	const ctor = resolvePlugin(ctx, name)
-	const info = getPluginInfo(ctor)
-	const base = info.base
-	if (!base || typeof base !== 'function') return null
-
-	const baseToken = getDeclaredName(base)
-	const map = ctx.runtimeState.snapshot().baseProviders
-	const currentDefault = (map?.[baseToken] as string | undefined) ?? null
-
-	const providers: PluginDependencyOption[] = []
-	const catalog = requireRouteCapability(ctx, 'catalog')
-	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
-	for (const [pluginName, pluginCtor] of catalog.listRegistered()) {
-		try {
-			const pluginInfo = getPluginInfo(pluginCtor)
-			if (pluginInfo.base !== base) continue
-			providers.push({
-				name: pluginName,
-				isEnabled: isPluginEnabled(ctx.runtimeState.snapshot(), pluginName),
-				isRunning: lifecycle.isRunning(pluginCtor),
-			})
-		} catch {}
-	}
-	providers.sort((left, right) => left.name.localeCompare(right.name))
-
+export function inspectPluginBaseProvider(
+	ctx: Context,
+	consumer: PluginNodeAddressSnapshot,
+): BaseProviderInfo | null {
+	const facts = getPluginDefinitionFacts(resolve(ctx, consumer))
+	const token = facts.requires.find((required) =>
+		candidates(ctx, required).some(
+			(option) => !samePluginDefinitionAddress(option.address.definition, required),
+		),
+	)
+	if (!token) return null
+	const currentDefault = providerDefault(ctx, token) ?? null
 	return {
-		baseToken,
+		token,
 		currentDefault,
-		isDefault: currentDefault === name,
-		providers,
+		isDefault: !!currentDefault && samePluginNodeAddress(currentDefault, consumer),
+		providers: candidates(ctx, token),
 	}
 }

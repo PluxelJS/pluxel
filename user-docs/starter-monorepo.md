@@ -77,7 +77,7 @@ lint 抑制、类型、测试和生产构建。
 
 - 标准 plugin shape 与目录所有权；
 - 独立插件 package 的 `package.json`、`tsconfig.json`、`tsdown.config.ts` 和发布检查；
-- required/optional、plugin/feature、业务/Workbench的选择表；
+- required/optional、Plugin/普通内部对象、业务/Workbench的选择表；
 - `@pluxel/test/vitest`、`withRuntimeHost()` 和必须覆盖的插件测试边界；
 - config、lifecycle、cleanup 和 disabled Workbench Plane 的实践；
 - 模板启用的每一条 Pluxel Oxlint rule 及修复方向；

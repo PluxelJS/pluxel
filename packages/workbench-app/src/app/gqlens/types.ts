@@ -20,6 +20,7 @@ export type PluginCatalog = {
   plugins: Array<Plugin>;
   status: PluginStatusOverview;
   group: PluginGroup;
+  groupNode: PluginGroupNode;
   groups: Array<PluginGroup>;
 };
 
@@ -30,6 +31,11 @@ export type PluginCatalogPluginArgs = {
 
 
 export type PluginCatalogGroupArgs = {
+  id: Scalars['String']['input'];
+};
+
+
+export type PluginCatalogGroupNodeArgs = {
   id: Scalars['String']['input'];
 };
 
@@ -52,13 +58,43 @@ export type PluginGroup = {
   id: Scalars['String']['output'];
   groupId: Scalars['String']['output'];
   name: Scalars['String']['output'];
-  pluginIds: Array<Scalars['String']['output']>;
+  nodes: Array<PluginGroupNode>;
+};
+
+export type PluginGroupNode = {
+  __typename?: 'PluginGroupNode';
+  id: Scalars['String']['output'];
+  displayName: Scalars['String']['output'];
+  rootExportName: Scalars['String']['output'];
+  address: PluginAddress;
+};
+
+export type PluginAddress = {
+  __typename?: 'PluginAddress';
+  definition: PluginAddressDefinition;
+  instance: Scalars['String']['output'];
+  forkId?: Maybe<Scalars['String']['output']>;
+};
+
+export type PluginAddressDefinition = {
+  __typename?: 'PluginAddressDefinition';
+  entry: PluginAddressDefinitionEntry;
+  exportName: Scalars['String']['output'];
+};
+
+export type PluginAddressDefinitionEntry = {
+  __typename?: 'PluginAddressDefinitionEntry';
+  kind: Scalars['String']['output'];
+  packageName?: Maybe<Scalars['String']['output']>;
+  source?: Maybe<Scalars['String']['output']>;
 };
 
 export type Plugin = {
   __typename?: 'Plugin';
   id: Scalars['String']['output'];
   name: Scalars['String']['output'];
+  rootExportName: Scalars['String']['output'];
+  address: PluginAddress;
   detail: PluginDetail;
   status: PluginStatus;
 };
@@ -116,5 +152,22 @@ export type MutationUpdatePluginGroupsArgs = {
 export type UpdatePluginGroupsGroupsInput = {
   groupId: Scalars['String']['input'];
   name: Scalars['String']['input'];
-  pluginIds: Array<Scalars['String']['input']>;
+  nodes: Array<UpdatePluginGroupsGroupsNodesInput>;
+};
+
+export type UpdatePluginGroupsGroupsNodesInput = {
+  definition: UpdatePluginGroupsGroupsNodesDefinitionInput;
+  instance: Scalars['String']['input'];
+  forkId?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdatePluginGroupsGroupsNodesDefinitionInput = {
+  entry: UpdatePluginGroupsGroupsNodesDefinitionEntryInput;
+  exportName: Scalars['String']['input'];
+};
+
+export type UpdatePluginGroupsGroupsNodesDefinitionEntryInput = {
+  kind: Scalars['String']['input'];
+  packageName?: InputMaybe<Scalars['String']['input']>;
+  source?: InputMaybe<Scalars['String']['input']>;
 };

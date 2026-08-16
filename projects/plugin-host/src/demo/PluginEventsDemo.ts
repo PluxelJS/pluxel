@@ -1,39 +1,38 @@
 // Read this when:
-// - 你需要声明式全局事件总线
-// - 你不想再看局部 `EvtChannel`，那部分已经在 `PluginFeatureDepsDemo.ts` 里
+// - 你需要一个 Plugin 明确拥有事件 channel
+// - 你需要通过 required constructor dependency 消费另一个 Plugin 的事件
 
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, EvtChannel, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
 
-declare module '@pluxel/runtime' {
-	interface RuntimeEvents {
-		'pluxel:demo:bus:tick': [payload: { from: string; seq: number; at: number }]
-	}
-}
+type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 
-const EVENT_TICK = 'pluxel:demo:bus:tick' as const
-
-@Plugin({ name: 'PluginEventsDeclaredProducer' })
+@Plugin({ displayName: 'PluginEventsDeclaredProducer' })
 export class PluginEventsDeclaredProducer extends BasePlugin {
+	readonly tick = new EvtChannel<TickEvent>(this.ctx)
 	private seq = 0
 
-	override init(): void {
+	override init(): () => void {
 		const timer = setInterval(() => {
 			this.seq += 1
-			this.ctx.emit(EVENT_TICK, {
-				from: this.ctx.pluginInfo.id,
+			this.tick.emit({
+				from: formatPluginNodeAddress(this.ctx.pluginInfo.nodeAddress),
 				seq: this.seq,
 				at: Date.now(),
 			})
 		}, 1000)
 
-		this.ctx.effects.defer(() => clearInterval(timer))
+		return () => clearInterval(timer)
 	}
 }
 
-@Plugin({ name: 'PluginEventsDeclaredConsumer' })
+@Plugin({ displayName: 'PluginEventsDeclaredConsumer' })
 export class PluginEventsDeclaredConsumer extends BasePlugin {
+	constructor(private readonly producer: PluginEventsDeclaredProducer) {
+		super()
+	}
+
 	override init(): void {
-		this.ctx.on(EVENT_TICK, ({ from, seq }) => {
+		this.producer.tick.on(({ from, seq }) => {
 			// Avoid spamming info logs in the demo host; enable debug to observe the stream.
 			this.ctx.logger.debug('Declared Events tick', { from, seq })
 		})

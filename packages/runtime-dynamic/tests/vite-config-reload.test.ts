@@ -19,10 +19,11 @@ describe('dynamic Vite config generations', () => {
 		)
 		const root = fixture.path
 		const configPath = fixture.getPath('pluxel.dynamic.ts')
+		const runtimeDynamicEntry = new URL('../src/index.ts', import.meta.url).href
 		await fixture.writeFile(
 			'pluxel.dynamic.ts',
 			[
-				"import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'",
+				`import { defineDynamicRuntimeConfig } from ${JSON.stringify(runtimeDynamicEntry)}`,
 				'export default defineDynamicRuntimeConfig({',
 				`  root: ${JSON.stringify(root)},`,
 				"  configPath: 'pluxel.loader.hmr.jsonc',",

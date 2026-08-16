@@ -4,6 +4,7 @@ import { BasePlugin, Plugin } from '@pluxel/test'
 import { join } from 'pathe'
 import { LoaderHmrService } from '../../src/hmr/engine/LoaderHmrService'
 import { withTestDynamicContext } from '../support/context'
+import { lowerTestPlugin } from '../support/lowered-plugin'
 import { inspectLoaderHmr } from '../support/white-box'
 
 const noop = () => {}
@@ -16,8 +17,9 @@ describe('LoaderHmrService anchors', () => {
 		const root = fixture.path
 		const entry = join(root, 'Entry.tsx')
 
+		@Plugin({ displayName: 'Entry' })
 		class EntryPlugin extends BasePlugin {}
-		Plugin({ name: 'EntryPlugin' })(EntryPlugin)
+		lowerTestPlugin(EntryPlugin)
 
 		await withTestDynamicContext(async (ctx) => {
 			await ctx.loader.replaceModule(entry, { EntryPlugin })
@@ -41,10 +43,12 @@ describe('LoaderHmrService anchors', () => {
 		const a = join(fixture.path, 'A')
 		const b = join(fixture.path, 'B')
 		const entry = join(fixture.path, 'Entry')
+		@Plugin({ displayName: 'Anchor A' })
 		class AnchorA extends BasePlugin {}
+		lowerTestPlugin(AnchorA)
+		@Plugin({ displayName: 'Anchor B' })
 		class AnchorB extends BasePlugin {}
-		Plugin({ name: 'AnchorA' })(AnchorA)
-		Plugin({ name: 'AnchorB' })(AnchorB)
+		lowerTestPlugin(AnchorB)
 
 		await withTestDynamicContext(async (ctx) => {
 			await ctx.loader.replaceModule(a, { AnchorA })

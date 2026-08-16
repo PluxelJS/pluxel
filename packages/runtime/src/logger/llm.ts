@@ -154,7 +154,7 @@ export function formatUiLogRecordForLlm(
 	}
 
 	if (cfg.includeOrigin) {
-		const origin = record.pluginId ?? record.context ?? record.name
+		const origin = record.plugin ? JSON.stringify(record.plugin) : (record.context ?? record.name)
 		if (origin) pieces.push(origin)
 	}
 

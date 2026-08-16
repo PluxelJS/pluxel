@@ -1,4 +1,9 @@
-import type { Context } from '@pluxel/core'
+import {
+	parsePluginNodeAddress,
+	type Context,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
+} from '@pluxel/core'
 import type { WorkbenchConfig, WorkbenchPluginGroupConfig } from '../../workbench-config'
 import { runtimePluginStatusOverview } from '../../runtime/capabilities'
 import type { PersistenceNamespace } from '../persistence/PersistenceService'
@@ -9,15 +14,26 @@ const PREFERENCE_KEY = 'plugin-catalog.json'
 export type WorkbenchPluginGroupLayout = Readonly<{
 	groupId: string
 	name: string
-	pluginIds: readonly string[]
+	nodes: readonly PluginNodeAddressSnapshot[]
+}>
+
+type PluginCatalogPreferencesSnapshot = Readonly<{
+	version: 2
+	assignments: readonly Readonly<{
+		owner: PluginNodeAddressSnapshot
+		groupId: string | null
+	}>[]
+	groupOrder: readonly string[]
+	pluginOrder: readonly Readonly<{
+		groupId: string
+		owners: readonly PluginNodeAddressSnapshot[]
+	}>[]
 }>
 
 type PluginCatalogPreferences = {
-	version: 1
-	assignments: Record<string, string | null>
+	assignments: Map<PluginNodeSlot, string | null>
 	groupOrder: string[]
-	pluginOrder: Record<string, string[]>
-	migratedRuntimeGroups: boolean
+	pluginOrder: Map<string, PluginNodeSlot[]>
 }
 
 type NormalizedPackagePattern = Readonly<{
@@ -29,12 +45,13 @@ type NormalizedPackagePattern = Readonly<{
 type NormalizedHostGroup = Readonly<{
 	id: string
 	name: string
-	plugins: readonly string[]
+	nodes: readonly PluginNodeSlot[]
 	packages: readonly NormalizedPackagePattern[]
 }>
 
 type CatalogEntry = Readonly<{
-	id: string
+	slot: PluginNodeSlot
+	address: PluginNodeAddressSnapshot
 	packageName: string | null
 }>
 
@@ -57,15 +74,15 @@ export class WorkbenchPluginCatalogService {
 	readonly ready: Promise<void>
 
 	private readonly hostGroups: readonly NormalizedHostGroup[]
-	private readonly explicitPluginGroups = new Map<string, string>()
+	private readonly explicitNodeGroups = new Map<PluginNodeSlot, string>()
 	private readonly storage: PersistenceNamespace
 	private preferences: PluginCatalogPreferences = emptyPreferences()
 	private writeQueue: Promise<void> = Promise.resolve()
 
 	constructor(private readonly root: Context) {
-		this.hostGroups = normalizeHostGroups(readPluginGroups(root.config.workbench))
+		this.hostGroups = normalizeHostGroups(root, readPluginGroups(root.config.workbench))
 		for (const group of this.hostGroups) {
-			for (const pluginId of group.plugins) this.explicitPluginGroups.set(pluginId, group.id)
+			for (const node of group.nodes) this.explicitNodeGroups.set(node, group.id)
 		}
 		this.storage = root.root.persistence.namespace('workbench')
 		this.ready = this.load()
@@ -73,7 +90,6 @@ export class WorkbenchPluginCatalogService {
 
 	async listGroups(): Promise<WorkbenchPluginGroupLayout[]> {
 		await this.ready
-		await this.migrateRuntimeGroups()
 		return this.resolveLayout().groups
 	}
 
@@ -87,14 +103,13 @@ export class WorkbenchPluginCatalogService {
 	): Promise<WorkbenchPluginGroupLayout[]> {
 		if (!Array.isArray(groups)) throw invalid('groups must be an array')
 		await this.ready
-		await this.migrateRuntimeGroups()
 		const current = this.resolveLayout()
 		const registered = current.registered
 		const entries = current.entries
-		const knownPlugins = new Set(entries.map((entry) => entry.id))
-		const desired = new Map<string, string>()
+		const knownNodes = new Set(entries.map((entry) => entry.slot))
+		const desired = new Map<PluginNodeSlot, string>()
 		const groupOrder: string[] = []
-		const pluginOrder: Record<string, string[]> = Object.create(null)
+		const pluginOrder = new Map<string, PluginNodeSlot[]>()
 
 		for (const rawGroup of groups) {
 			if (!rawGroup || typeof rawGroup !== 'object' || Array.isArray(rawGroup)) {
@@ -108,34 +123,35 @@ export class WorkbenchPluginCatalogService {
 			}
 			if (groupOrder.includes(groupId)) throw invalid(`duplicate group "${groupId}"`)
 			groupOrder.push(groupId)
-			if (!Array.isArray(rawGroup.pluginIds)) {
-				throw invalid(`group "${groupId}" pluginIds must be an array`)
+			if (!Array.isArray(rawGroup.nodes)) {
+				throw invalid(`group "${groupId}" nodes must be an array`)
 			}
-			const order: string[] = []
-			for (const rawPluginId of rawGroup.pluginIds) {
-				const pluginId = layoutText('pluginId', rawPluginId)
-				if (!knownPlugins.has(pluginId)) throw invalid(`unknown plugin "${pluginId}"`)
-				if (desired.has(pluginId)) throw invalid(`plugin "${pluginId}" appears more than once`)
-				desired.set(pluginId, groupId)
-				order.push(pluginId)
+			const order: PluginNodeSlot[] = []
+			for (const rawOwner of rawGroup.nodes) {
+				let owner: PluginNodeAddressSnapshot
+				try {
+					owner = parsePluginNodeAddress(rawOwner)
+				} catch (error) {
+					throw invalid(`group "${groupId}" contains an invalid Plugin node address`, error)
+				}
+				const slot = this.root.registry.internNodeAddress(owner)
+				if (!knownNodes.has(slot))
+					throw invalid(`group "${groupId}" contains an unknown Plugin node`)
+				if (desired.has(slot)) throw invalid('a Plugin node appears more than once')
+				desired.set(slot, groupId)
+				order.push(slot)
 			}
-			pluginOrder[groupId] = order
+			pluginOrder.set(groupId, order)
 		}
 
-		const assignments: Record<string, string | null> = Object.create(null)
+		const assignments = new Map<PluginNodeSlot, string | null>()
 		for (const entry of entries) {
-			const desiredGroup = desired.get(entry.id) ?? null
+			const desiredGroup = desired.get(entry.slot) ?? null
 			const defaultGroup = this.defaultGroup(entry, registered)
-			if (desiredGroup !== defaultGroup) assignments[entry.id] = desiredGroup
+			if (desiredGroup !== defaultGroup) assignments.set(entry.slot, desiredGroup)
 		}
 
-		this.preferences = {
-			version: 1,
-			assignments,
-			groupOrder,
-			pluginOrder,
-			migratedRuntimeGroups: true,
-		}
+		this.preferences = { assignments, groupOrder, pluginOrder }
 		await this.save()
 		return this.resolveLayout().groups
 	}
@@ -147,24 +163,24 @@ export class WorkbenchPluginCatalogService {
 	} {
 		const entries = this.catalogEntries()
 		const registered = this.registeredGroups(entries)
-		const members = new Map<string, string[]>()
+		const members = new Map<string, CatalogEntry[]>()
 		for (const groupId of registered.keys()) members.set(groupId, [])
 
 		for (const entry of entries) {
-			const hasOverride = Object.hasOwn(this.preferences.assignments, entry.id)
-			const override = hasOverride ? this.preferences.assignments[entry.id] : undefined
-			const groupId =
-				override === undefined ? this.defaultGroup(entry, registered) : (override ?? null)
-			if (groupId && registered.has(groupId)) members.get(groupId)!.push(entry.id)
+			const hasOverride = this.preferences.assignments.has(entry.slot)
+			const override = this.preferences.assignments.get(entry.slot)
+			const groupId = hasOverride ? (override ?? null) : this.defaultGroup(entry, registered)
+			if (groupId && registered.has(groupId)) members.get(groupId)!.push(entry)
 		}
 
-		for (const [groupId, pluginIds] of members) {
-			const order = this.preferences.pluginOrder[groupId] ?? []
-			const rank = new Map(order.map((id, index) => [id, index]))
-			pluginIds.sort(
+		for (const [groupId, memberEntries] of members) {
+			const order = this.preferences.pluginOrder.get(groupId) ?? []
+			const rank = new Map(order.map((slot, index) => [slot, index]))
+			memberEntries.sort(
 				(a, b) =>
-					(rank.get(a) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b) ?? Number.MAX_SAFE_INTEGER) ||
-					a.localeCompare(b),
+					(rank.get(a.slot) ?? Number.MAX_SAFE_INTEGER) -
+						(rank.get(b.slot) ?? Number.MAX_SAFE_INTEGER) ||
+					addressSortKey(a.address).localeCompare(addressSortKey(b.address)),
 			)
 		}
 
@@ -183,14 +199,15 @@ export class WorkbenchPluginCatalogService {
 			.map((group) => ({
 				groupId: group.id,
 				name: group.name,
-				pluginIds: members.get(group.id) ?? [],
+				nodes: Object.freeze((members.get(group.id) ?? []).map((entry) => entry.address)),
 			}))
 		return { groups, registered, entries }
 	}
 
 	private catalogEntries(): CatalogEntry[] {
 		return runtimePluginStatusOverview(this.root).statuses.map((status) => ({
-			id: status.name,
+			slot: this.root.registry.internNodeAddress(status.address),
+			address: status.address,
 			packageName: status.source.packageName?.trim() || null,
 		}))
 	}
@@ -212,7 +229,7 @@ export class WorkbenchPluginCatalogService {
 		entry: CatalogEntry,
 		registered: ReadonlyMap<string, RegisteredGroup>,
 	): string | null {
-		const explicit = this.explicitPluginGroups.get(entry.id)
+		const explicit = this.explicitNodeGroups.get(entry.slot)
 		if (explicit) return explicit
 		if (!entry.packageName) return null
 		const hostPackage = this.matchHostPackage(entry.packageName)
@@ -238,45 +255,12 @@ export class WorkbenchPluginCatalogService {
 	private async load(): Promise<void> {
 		const raw = await this.storage.getText(PREFERENCE_KEY)
 		if (raw === undefined) return
-		try {
-			this.preferences = parsePreferences(JSON.parse(raw) as unknown)
-		} catch (error) {
-			this.root.logger.warn('Workbench plugin catalog preferences are invalid; using defaults', {
-				error,
-			})
-		}
-	}
-
-	private async migrateRuntimeGroups(): Promise<void> {
-		if (this.preferences.migratedRuntimeGroups) return
-		const registeredHostIds = new Set(this.hostGroups.map((group) => group.id))
-		const knownPlugins = new Set(this.catalogEntries().map((entry) => entry.id))
-		const membershipCounts = new Map<string, number>()
-		for (const legacy of this.root.runtimeState.snapshot().pluginGroups) {
-			if (!registeredHostIds.has(legacy.groupId)) continue
-			for (const pluginId of legacy.pluginIds) {
-				if (!knownPlugins.has(pluginId)) continue
-				membershipCounts.set(pluginId, (membershipCounts.get(pluginId) ?? 0) + 1)
-			}
-		}
-		for (const legacy of this.root.runtimeState.snapshot().pluginGroups) {
-			if (!registeredHostIds.has(legacy.groupId)) continue
-			const order: string[] = []
-			for (const pluginId of legacy.pluginIds) {
-				if (!knownPlugins.has(pluginId) || membershipCounts.get(pluginId) !== 1) continue
-				this.preferences.assignments[pluginId] = legacy.groupId
-				order.push(pluginId)
-			}
-			if (order.length > 0) this.preferences.pluginOrder[legacy.groupId] = order
-		}
-		this.preferences.migratedRuntimeGroups = true
-		await this.save().catch((error: unknown) => {
-			this.root.logger.warn('Workbench plugin catalog migration could not be persisted', { error })
-		})
+		const snapshot = parsePreferencesSnapshot(JSON.parse(raw) as unknown)
+		this.preferences = preferencesFromSnapshot(this.root, snapshot)
 	}
 
 	private async save(): Promise<void> {
-		const content = JSON.stringify(this.preferences)
+		const content = JSON.stringify(preferencesSnapshot(this.root, this.preferences))
 		this.writeQueue = this.writeQueue
 			.catch((): void => undefined)
 			.then(() => this.storage.put(PREFERENCE_KEY, content))
@@ -291,10 +275,11 @@ function readPluginGroups(config: unknown): readonly WorkbenchPluginGroupConfig[
 }
 
 function normalizeHostGroups(
+	root: Context,
 	input: readonly WorkbenchPluginGroupConfig[],
 ): readonly NormalizedHostGroup[] {
 	const groupIds = new Set<string>()
-	const pluginOwners = new Map<string, string>()
+	const nodeOwners = new Map<PluginNodeSlot, string>()
 	const patternOwners = new Map<string, string>()
 	return input.map((raw, index) => {
 		const at = `workbench.pluginGroups[${index}]`
@@ -305,12 +290,21 @@ function normalizeHostGroups(
 		}
 		if (groupIds.has(id)) throw new TypeError(`${at}.id duplicates group "${id}"`)
 		groupIds.add(id)
-		const plugins = uniqueText(raw.plugins ?? [], `${at}.plugins`)
-		for (const pluginId of plugins) {
-			const previous = pluginOwners.get(pluginId)
-			if (previous) throw new TypeError(`${at}.plugins assigns "${pluginId}" to both groups`)
-			pluginOwners.set(pluginId, id)
-		}
+		const nodes = (raw.nodes ?? []).map((owner, ownerIndex) => {
+			let address: PluginNodeAddressSnapshot
+			try {
+				address = parsePluginNodeAddress(owner)
+			} catch (error) {
+				throw new TypeError(`${at}.nodes[${ownerIndex}] is not a valid Plugin node address`, {
+					cause: error,
+				})
+			}
+			const slot = root.registry.internNodeAddress(address)
+			const previous = nodeOwners.get(slot)
+			if (previous) throw new TypeError(`${at}.nodes assigns one Plugin node to both groups`)
+			nodeOwners.set(slot, id)
+			return slot
+		})
 		const packages = uniqueText(raw.packages ?? [], `${at}.packages`).map((pattern) => {
 			const firstWildcard = pattern.indexOf('*')
 			if (firstWildcard >= 0 && firstWildcard !== pattern.length - 1) {
@@ -321,55 +315,164 @@ function normalizeHostGroups(
 			}
 			const literal = firstWildcard < 0 ? pattern : pattern.slice(0, -1)
 			if (!literal) throw new TypeError(`${at}.packages cannot use a bare "*"`)
-			const collisionKey = literal
-			const previous = patternOwners.get(collisionKey)
+			const previous = patternOwners.get(literal)
 			if (previous) throw new TypeError(`${at}.packages duplicates a rule from "${previous}"`)
-			patternOwners.set(collisionKey, id)
+			patternOwners.set(literal, id)
 			return { groupId: id, literal, prefix: firstWildcard >= 0 }
 		})
-		return Object.freeze({ id, name, plugins, packages })
+		return Object.freeze({ id, name, nodes: Object.freeze(nodes), packages })
 	})
 }
 
-function parsePreferences(input: unknown): PluginCatalogPreferences {
-	const out = emptyPreferences()
-	if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-	const raw = input as Record<string, unknown>
-	if (raw.version !== 1) return out
-	if (raw.assignments && typeof raw.assignments === 'object' && !Array.isArray(raw.assignments)) {
-		for (const [pluginId, groupId] of Object.entries(raw.assignments)) {
-			if (!pluginId || (groupId !== null && typeof groupId !== 'string')) continue
-			out.assignments[pluginId] = groupId
+function parsePreferencesSnapshot(input: unknown): PluginCatalogPreferencesSnapshot {
+	if (
+		!input ||
+		typeof input !== 'object' ||
+		Array.isArray(input) ||
+		(input as Record<string, unknown>).version !== 2
+	) {
+		throw new TypeError('[workbench.pluginCatalog] preferences version must be 2')
+	}
+	const raw = exactRecord(
+		input,
+		['version', 'assignments', 'groupOrder', 'pluginOrder'],
+		'preferences',
+	)
+	if (!Array.isArray(raw.assignments)) {
+		throw new TypeError('[workbench.pluginCatalog] assignments must be an array')
+	}
+	if (!Array.isArray(raw.groupOrder)) {
+		throw new TypeError('[workbench.pluginCatalog] groupOrder must be an array')
+	}
+	if (!Array.isArray(raw.pluginOrder)) {
+		throw new TypeError('[workbench.pluginCatalog] pluginOrder must be an array')
+	}
+	const assignmentKeys = new Set<string>()
+	const assignments = raw.assignments.map((inputAssignment, index) => {
+		const assignment = exactRecord(inputAssignment, ['owner', 'groupId'], `assignments[${index}]`)
+		const owner = parsePluginNodeAddress(assignment.owner)
+		const key = addressSortKey(owner)
+		if (assignmentKeys.has(key)) throw new TypeError('duplicate preference assignment owner')
+		assignmentKeys.add(key)
+		let groupId: string | null
+		if (assignment.groupId === null) groupId = null
+		else if (typeof assignment.groupId === 'string') groupId = assignment.groupId
+		else {
+			throw new TypeError(`assignments[${index}].groupId must be string or null`)
 		}
-	}
-	if (Array.isArray(raw.groupOrder)) {
-		out.groupOrder = uniqueStrings(raw.groupOrder)
-	}
-	if (raw.pluginOrder && typeof raw.pluginOrder === 'object' && !Array.isArray(raw.pluginOrder)) {
-		for (const [groupId, order] of Object.entries(raw.pluginOrder)) {
-			if (Array.isArray(order)) out.pluginOrder[groupId] = uniqueStrings(order)
+		return Object.freeze({ owner, groupId })
+	})
+	const groupOrder = strictUniqueStrings(raw.groupOrder, 'groupOrder')
+	const orderGroups = new Set<string>()
+	const pluginOrder = raw.pluginOrder.map((inputOrder, index) => {
+		const order = exactRecord(inputOrder, ['groupId', 'owners'], `pluginOrder[${index}]`)
+		const groupId = requiredText(`pluginOrder[${index}].groupId`, order.groupId)
+		if (orderGroups.has(groupId)) throw new TypeError(`duplicate pluginOrder group "${groupId}"`)
+		orderGroups.add(groupId)
+		if (!Array.isArray(order.owners)) {
+			throw new TypeError(`pluginOrder[${index}].owners must be an array`)
 		}
+		const ownerKeys = new Set<string>()
+		const owners = order.owners.map((owner) => {
+			const address = parsePluginNodeAddress(owner)
+			const key = addressSortKey(address)
+			if (ownerKeys.has(key)) throw new TypeError(`pluginOrder[${index}] has a duplicate owner`)
+			ownerKeys.add(key)
+			return address
+		})
+		return Object.freeze({ groupId, owners: Object.freeze(owners) })
+	})
+	return Object.freeze({
+		version: 2,
+		assignments: Object.freeze(assignments),
+		groupOrder: Object.freeze(groupOrder),
+		pluginOrder: Object.freeze(pluginOrder),
+	})
+}
+
+function preferencesFromSnapshot(
+	root: Context,
+	snapshot: PluginCatalogPreferencesSnapshot,
+): PluginCatalogPreferences {
+	return {
+		assignments: new Map(
+			snapshot.assignments.map(({ owner, groupId }) => [
+				root.registry.internNodeAddress(owner),
+				groupId,
+			]),
+		),
+		groupOrder: [...snapshot.groupOrder],
+		pluginOrder: new Map(
+			snapshot.pluginOrder.map(({ groupId, owners }) => [
+				groupId,
+				owners.map((owner) => root.registry.internNodeAddress(owner)),
+			]),
+		),
 	}
-	out.migratedRuntimeGroups = raw.migratedRuntimeGroups === true
-	return out
+}
+
+function preferencesSnapshot(
+	root: Context,
+	preferences: PluginCatalogPreferences,
+): PluginCatalogPreferencesSnapshot {
+	return {
+		version: 2,
+		assignments: [...preferences.assignments].map(([owner, groupId]) => ({
+			owner: root.registry.nodeAddressOf(owner),
+			groupId,
+		})),
+		groupOrder: [...preferences.groupOrder],
+		pluginOrder: [...preferences.pluginOrder].map(([groupId, owners]) => ({
+			groupId,
+			owners: owners.map((owner) => root.registry.nodeAddressOf(owner)),
+		})),
+	}
 }
 
 function emptyPreferences(): PluginCatalogPreferences {
-	return {
-		version: 1,
-		assignments: Object.create(null),
-		groupOrder: [],
-		pluginOrder: Object.create(null),
-		migratedRuntimeGroups: false,
+	return { assignments: new Map(), groupOrder: [], pluginOrder: new Map() }
+}
+
+function exactRecord(
+	input: unknown,
+	keys: readonly string[],
+	label: string,
+): Record<string, unknown> {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError(`[workbench.pluginCatalog] ${label} must be an object`)
 	}
+	const record = input as Record<string, unknown>
+	const expected = new Set(keys)
+	for (const key of Object.keys(record)) {
+		if (!expected.has(key))
+			throw new TypeError(`[workbench.pluginCatalog] ${label} has unknown field ${key}`)
+	}
+	for (const key of keys) {
+		if (!(key in record))
+			throw new TypeError(`[workbench.pluginCatalog] ${label} is missing ${key}`)
+	}
+	return record
+}
+
+function addressSortKey(address: PluginNodeAddressSnapshot): string {
+	const entry = address.definition.entry
+	return JSON.stringify([
+		entry.kind,
+		entry.kind === 'package-root' ? entry.packageName : entry.source,
+		address.definition.exportName,
+		address.instance,
+		address.instance === 'fork' ? address.forkId : null,
+	])
 }
 
 function packageGroupId(packageName: string): string {
 	return `${PACKAGE_GROUP_PREFIX}${packageName}`
 }
 
-function invalid(message: string): PluginCatalogLayoutError {
-	return new PluginCatalogLayoutError(`[workbench.pluginCatalog] ${message}`)
+function invalid(message: string, cause?: unknown): PluginCatalogLayoutError {
+	return new PluginCatalogLayoutError(
+		`[workbench.pluginCatalog] ${message}${cause instanceof Error ? `: ${cause.message}` : ''}`,
+	)
 }
 
 function layoutText(field: string, value: unknown): string {
@@ -395,13 +498,14 @@ function uniqueText(input: readonly string[], field: string): string[] {
 	return result
 }
 
-function uniqueStrings(input: readonly unknown[]): string[] {
+function strictUniqueStrings(input: readonly unknown[], field: string): string[] {
 	const result: string[] = []
 	const seen = new Set<string>()
-	for (const value of input) {
-		if (typeof value !== 'string' || !value || seen.has(value)) continue
-		seen.add(value)
-		result.push(value)
+	for (const [index, value] of input.entries()) {
+		const text = requiredText(`${field}[${index}]`, value)
+		if (seen.has(text)) throw new TypeError(`${field} contains duplicate "${text}"`)
+		seen.add(text)
+		result.push(text)
 	}
 	return result
 }

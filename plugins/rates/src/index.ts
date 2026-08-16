@@ -1,4 +1,12 @@
-import { BasePlugin, Plugin, v } from '@pluxel/runtime'
+import { createHash } from 'node:crypto'
+import {
+	BasePlugin,
+	parsePluginNodeAddress,
+	Plugin,
+	pluginNodeAddressEqual,
+	type PluginNodeAddressSnapshot,
+	v,
+} from '@pluxel/runtime'
 import { RatesBackend, type RatesBackendConsumeRequest } from './backend.ts'
 import {
 	RatesInvalidArgumentError,
@@ -32,6 +40,8 @@ export {
 	RatesStoppedError,
 	RatesUnavailableError,
 } from './errors.ts'
+export { RatesBackend } from './backend.ts'
+export type { RatesBackendConsumeRequest } from './backend.ts'
 export type {
 	RateConsumeOptions,
 	RateDecision,
@@ -67,7 +77,10 @@ export abstract class Rates extends BasePlugin implements RatesBinding {
 
 type EffectGuard = { readonly active: boolean }
 type OwnerContext = {
-	readonly pluginInfo: { readonly id: string }
+	readonly pluginInfo: {
+		readonly nodeSlot: object
+		readonly nodeAddress: PluginNodeAddressSnapshot
+	}
 	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): EffectGuard }
 	readonly registry: { getInstance(identifier: unknown): unknown }
 }
@@ -75,33 +88,49 @@ type OwnerState = {
 	active: boolean
 	readonly context: OwnerContext
 	readonly handles: Map<string, RateLimiterHandle>
-	readonly registrations: Set<string>
+	readonly registrations: Set<Registration>
 }
 type Registration = {
 	readonly policy: Readonly<ResolvedRatePolicy>
+	readonly ownerSlot: object | null
+	readonly lookup: Map<string, Registration>
+	readonly lookupKey: string
 	readonly owners: Set<OwnerState>
 }
 type RatesRuntime = {
 	active: boolean
 	readonly owners: WeakMap<object, OwnerState>
-	readonly registrations: Map<string, Registration>
+	readonly globalRegistrations: Map<string, Registration>
+	readonly localRegistrations: WeakMap<object, Map<string, Registration>>
+	readonly registrations: Set<Registration>
 }
 
 /** Validating caller-aware coordinator over a polymorphic atomic backend. */
-@Plugin(Rates, { name: 'RatesPlugin' })
+@Plugin(Rates, { displayName: 'RatesPlugin' })
 export class RatesPlugin extends Rates {
 	private readonly runtime: RatesRuntime = {
 		active: false,
 		owners: new WeakMap(),
-		registrations: new Map(),
+		globalRegistrations: new Map(),
+		localRegistrations: new WeakMap(),
+		registrations: new Set(),
 	}
 
 	constructor(private readonly backend: RatesBackend) {
 		super()
 	}
 
-	protected override init(): void {
+	protected override init(): () => void {
 		this.runtime.active = true
+		return () => {
+			this.runtime.active = false
+			for (const registration of this.runtime.registrations) {
+				registration.lookup.delete(registration.lookupKey)
+				registration.owners.clear()
+			}
+			this.runtime.registrations.clear()
+			this.runtime.globalRegistrations.clear()
+		}
 	}
 
 	override use(name: string, policy: RatePolicy): RateLimiter {
@@ -110,11 +139,6 @@ export class RatesPlugin extends Rates {
 
 	override get global(): RatesBinding {
 		return this.binding(true)
-	}
-
-	protected override stop(): void {
-		this.runtime.active = false
-		this.runtime.registrations.clear()
 	}
 
 	private binding(global: boolean): RatesBinding {
@@ -160,25 +184,34 @@ export class RatesPlugin extends Rates {
 			return existingHandle
 		}
 
-		const pluginId = owner.context.pluginInfo.id
-		const registrationId = global ? `g\0${name}` : `l\0${pluginId}\0${name}`
-		let registration = this.runtime.registrations.get(registrationId)
+		const ownerSlot = owner.context.pluginInfo.nodeSlot
+		const lookup = global ? this.runtime.globalRegistrations : this.localRegistrationsFor(ownerSlot)
+		let registration = lookup.get(name)
 		if (registration && !policiesEqual(registration.policy, policy)) {
 			throw new RatesPolicyConflictError(registration.policy, policy)
 		}
 		if (!registration) {
-			registration = { policy, owners: new Set() }
-			this.runtime.registrations.set(registrationId, registration)
+			registration = {
+				policy,
+				ownerSlot: global ? null : ownerSlot,
+				lookup,
+				lookupKey: name,
+				owners: new Set(),
+			}
+			lookup.set(name, registration)
+			this.runtime.registrations.add(registration)
 		}
 		registration.owners.add(owner)
-		owner.registrations.add(registrationId)
+		owner.registrations.add(registration)
 
+		const ownerAddress = global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress)
 		const prefix = global
-			? `rates|v1|global|${encodeString(name)}|`
-			: `rates|v1|plugin|${encodeString(pluginId)}|${encodeString(name)}|`
+			? `rates|v2|global|${encodeString(name)}|`
+			: `rates|v2|plugin|${ownerAddressDigest(ownerAddress!)}|${encodeString(name)}|`
 		const handle = new RateLimiterHandle(
 			policy,
 			prefix,
+			ownerAddress,
 			() => this.assertHandleActive(owner),
 			(request) => this.consumeBackend(request),
 		)
@@ -189,14 +222,27 @@ export class RatesPlugin extends Rates {
 	private releaseOwner(owner: OwnerState): void {
 		if (!owner.active) return
 		owner.active = false
-		for (const id of owner.registrations) {
-			const registration = this.runtime.registrations.get(id)
-			if (!registration) continue
+		for (const registration of owner.registrations) {
 			registration.owners.delete(owner)
-			if (registration.owners.size === 0) this.runtime.registrations.delete(id)
+			if (registration.owners.size === 0) {
+				registration.lookup.delete(registration.lookupKey)
+				this.runtime.registrations.delete(registration)
+				if (registration.ownerSlot && registration.lookup.size === 0) {
+					this.runtime.localRegistrations.delete(registration.ownerSlot)
+				}
+			}
 		}
 		owner.registrations.clear()
 		owner.handles.clear()
+	}
+
+	private localRegistrationsFor(ownerSlot: object): Map<string, Registration> {
+		let registrations = this.runtime.localRegistrations.get(ownerSlot)
+		if (!registrations) {
+			registrations = new Map()
+			this.runtime.localRegistrations.set(ownerSlot, registrations)
+		}
+		return registrations
 	}
 
 	private async consumeBackend(request: RatesBackendConsumeRequest): Promise<RateDecision> {
@@ -229,7 +275,7 @@ export class RatesPlugin extends Rates {
 
 	private assertHandleActive(owner: OwnerState): void {
 		this.assertActive(owner)
-		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.id) as
+		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.nodeSlot) as
 			| { ctx?: unknown }
 			| undefined
 		if (!activeOwner || activeOwner.ctx !== owner.context) throw new RatesStoppedError()
@@ -240,6 +286,7 @@ class RateLimiterHandle implements RateLimiter {
 	constructor(
 		readonly policy: Readonly<ResolvedRatePolicy>,
 		private readonly keyPrefix: string,
+		private readonly owner: PluginNodeAddressSnapshot | null,
 		private readonly assertActive: () => void,
 		private readonly consumeBackend: (request: RatesBackendConsumeRequest) => Promise<RateDecision>,
 	) {}
@@ -249,18 +296,23 @@ class RateLimiterHandle implements RateLimiter {
 		if (options !== undefined) validateConsumeOptions(options)
 		const cost = normalizeCost(options?.cost, this.policy)
 		const key = `${this.keyPrefix}${encodeIdentity(identity)}`
-		return this.consumeBackend({ key, policy: this.policy, cost })
+		return this.consumeBackend({ key, owner: this.owner, policy: this.policy, cost })
 	}
+}
+
+type MemoryRateState = {
+	readonly owner: PluginNodeAddressSnapshot | null
+	readonly state: RateState
 }
 
 type MemoryRuntime = {
 	active: boolean
-	readonly states: Map<string, RateState>
+	readonly states: Map<string, MemoryRateState>
 	readonly expiry: ExpiryHeap
 }
 
 /** Single-process backend for all built-in algorithms. Active identities are never evicted. */
-@Plugin(RatesBackend, { name: 'MemoryRatesBackendPlugin' })
+@Plugin(RatesBackend, { displayName: 'MemoryRatesBackendPlugin' })
 export class MemoryRatesBackendPlugin extends RatesBackend {
 	private readonly config = this.configs.use(MemoryRatesBackendConfig)
 	private readonly runtime: MemoryRuntime = {
@@ -269,24 +321,33 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 		expiry: new ExpiryHeap(),
 	}
 
-	protected override init(): void {
+	protected override init(): () => void {
 		this.runtime.active = true
+		return () => {
+			this.runtime.active = false
+			this.runtime.states.clear()
+			this.runtime.expiry.clear()
+		}
 	}
 
 	async consume(request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		this.assertActive()
 		const now = Date.now()
 		this.deleteExpired(now, EXPIRY_CLEANUP_BUDGET)
-		let state = this.runtime.states.get(request.key)
-		if (state && state.expiresAt <= now) {
+		const owner = normalizeBackendOwner(request.owner)
+		let stored = this.runtime.states.get(request.key)
+		if (stored && stored.state.expiresAt <= now) {
 			this.runtime.expiry.delete(request.key)
 			this.runtime.states.delete(request.key)
-			state = undefined
+			stored = undefined
 		}
-		if (state && !policiesEqual(state.policy, request.policy)) {
-			throw new RatesPolicyConflictError(state.policy, request.policy)
+		if (stored && !ownerAddressesEqual(stored.owner, owner)) {
+			throw new TypeError('Stored rates owner does not match the request owner.')
 		}
-		if (!state) {
+		if (stored && !policiesEqual(stored.state.policy, request.policy)) {
+			throw new RatesPolicyConflictError(stored.state.policy, request.policy)
+		}
+		if (!stored) {
 			if (this.runtime.states.size >= this.config.maxIdentities) {
 				// Reclaim only enough expired state to admit this identity. If the root is live,
 				// every remaining state is live and capacity must fail closed.
@@ -298,18 +359,12 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 					retryAfterMs: expiresAt === undefined ? undefined : Math.max(1, expiresAt - now),
 				})
 			}
-			state = createState(request.policy, now)
-			this.runtime.states.set(request.key, state)
+			stored = { owner, state: createState(request.policy, now) }
+			this.runtime.states.set(request.key, stored)
 		}
-		const decision = consumeState(state, request.cost, now)
-		this.runtime.expiry.set(request.key, state.expiresAt)
+		const decision = consumeState(stored.state, request.cost, now)
+		this.runtime.expiry.set(request.key, stored.state.expiresAt)
 		return decision
-	}
-
-	protected override stop(): void {
-		this.runtime.active = false
-		this.runtime.states.clear()
-		this.runtime.expiry.clear()
 	}
 
 	private deleteExpired(now: number, budget: number): void {
@@ -324,6 +379,30 @@ export class MemoryRatesBackendPlugin extends RatesBackend {
 	private assertActive(): void {
 		if (!this.runtime.active) throw new RatesStoppedError()
 	}
+}
+
+function normalizeOwnerAddress(address: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+	return parsePluginNodeAddress(address)
+}
+
+function normalizeBackendOwner(
+	owner: PluginNodeAddressSnapshot | null,
+): PluginNodeAddressSnapshot | null {
+	return owner === null ? null : normalizeOwnerAddress(owner)
+}
+
+function ownerAddressesEqual(
+	left: PluginNodeAddressSnapshot | null,
+	right: PluginNodeAddressSnapshot | null,
+): boolean {
+	if (left === null || right === null) return left === right
+	return pluginNodeAddressEqual(left, right)
+}
+
+function ownerAddressDigest(address: PluginNodeAddressSnapshot): string {
+	return createHash('sha256')
+		.update(JSON.stringify(normalizeOwnerAddress(address)))
+		.digest('hex')
 }
 
 function validateBackendDecision(

@@ -15,21 +15,21 @@ import {
 
 type User = { id: string; name: string }
 
-@Plugin({ name: 'CacheConsumerA' })
+@Plugin({ displayName: 'CacheConsumer' })
 class ConsumerA extends BasePlugin {
 	constructor(readonly cache: Cache) {
 		super()
 	}
 }
 
-@Plugin({ name: 'CacheConsumerB' })
+@Plugin({ displayName: 'CacheConsumer' })
 class ConsumerB extends BasePlugin {
 	constructor(readonly cache: Cache) {
 		super()
 	}
 }
 
-@Plugin({ name: 'DecoratedCacheConsumer' })
+@Plugin({ displayName: 'DecoratedCacheConsumer' })
 class DecoratedConsumer extends BasePlugin {
 	asyncCalls = 0
 	syncCalls = 0
@@ -70,7 +70,7 @@ class DecoratedConsumer extends BasePlugin {
 	}
 }
 
-@Plugin(CacheBackend, { name: 'TestCacheBackendPlugin' })
+@Plugin(CacheBackend, { displayName: 'TestCacheBackendPlugin' })
 class TestCacheBackendPlugin extends CacheBackend {
 	readonly values = new Map<string, CacheValue<unknown>>()
 	readonly metrics = { gets: 0, sets: 0, deletes: 0 }
@@ -103,6 +103,24 @@ class TestCacheBackendPlugin extends CacheBackend {
 	}
 }
 
+@Plugin(CacheBackend, { displayName: 'MissingClearCacheBackend' })
+class MissingClearCacheBackend extends CacheBackend {
+	private readonly values = new Map<string, CacheValue<unknown>>()
+	override clear = undefined as never
+
+	async get<V>(key: string): Promise<CacheValue<V> | undefined> {
+		return this.values.get(key) as CacheValue<V> | undefined
+	}
+
+	async set<V>(key: string, value: V, options: { ttlMs: number }): Promise<void> {
+		this.values.set(key, { value, ttlMs: options.ttlMs })
+	}
+
+	async delete(key: string): Promise<void> {
+		this.values.delete(key)
+	}
+}
+
 function deferred<T>() {
 	let resolve!: (value: T | PromiseLike<T>) => void
 	let reject!: (reason?: unknown) => void
@@ -119,7 +137,7 @@ describe('@pluxel/cache', () => {
 		try {
 			await withHost(async (host) => {
 				host.add([MemoryCacheBackendPlugin, CachePlugin, ConsumerA])
-				host.cfg(CachePlugin).set({ config: { ttlMs: 20, maxEntries: 2 } })
+				host.cfg(CachePlugin).set({ ttlMs: 20, maxEntries: 2 })
 				await host.commit()
 				const cache = host.require(ConsumerA).cache
 				cache.local.set('default', 0)
@@ -159,7 +177,7 @@ describe('@pluxel/cache', () => {
 		})
 	})
 
-	it('prefixes default access by caller while global uses one managed shared namespace', async () => {
+	it('uses node identity for caller isolation while global uses one managed shared namespace', async () => {
 		await withHost(async (host) => {
 			host.add([TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
 			await host.commit()
@@ -175,12 +193,47 @@ describe('@pluxel/cache', () => {
 				id: '1',
 				name: 'shared',
 			})
-			expect(
-				[...backend.values.keys()].some((key) => key.startsWith('plugin:CacheConsumerA:')),
-			).toBe(true)
-			expect([...backend.values.keys()].some((key) => key.startsWith('global:'))).toBe(true)
-			expect(backend.values.has('plugin:CacheConsumerA:v1|p|s6:user:1')).toBe(true)
-			expect(backend.values.has('global:v1|p|s6:user:1')).toBe(true)
+			const privateEntry = [...backend.values.entries()].find(([key]) =>
+				/^cache:v2:plugin:[a-f0-9]{64}:v1\|p\|s6:user:1$/.test(key),
+			)
+			const globalEntry = backend.values.get('cache:v2:global:v1|p|s6:user:1')
+			expect(privateEntry?.[1].value).toMatchObject({
+				format: 'pluxel-cache-entry',
+				version: 1,
+				owner: a.ctx.pluginInfo.nodeAddress,
+				value: { id: '1', name: 'private' },
+			})
+			expect(globalEntry?.value).toMatchObject({
+				format: 'pluxel-cache-entry',
+				version: 1,
+				owner: null,
+				value: { id: '1', name: 'shared' },
+			})
+		})
+	})
+
+	it('rejects a backend entry whose structured owner does not match its physical key', async () => {
+		await withHost(async (host) => {
+			host.add([TestCacheBackendPlugin, CachePlugin, ConsumerA, ConsumerB])
+			await host.commit()
+			const a = host.require(ConsumerA)
+			const b = host.require(ConsumerB)
+			const backend = host.require(TestCacheBackendPlugin)
+			await a.cache.set('owned', 'value')
+			const [key, entry] = [...backend.values.entries()].find(([candidate]) =>
+				candidate.endsWith('v1|p|s5:owned'),
+			)!
+			backend.values.set(key, {
+				...entry,
+				value: {
+					...(entry.value as Record<string, unknown>),
+					owner: b.ctx.pluginInfo.nodeAddress,
+				},
+			})
+			a.cache.local.delete('owned')
+			await expect(a.cache.get('owned')).rejects.toThrow('owner does not match')
+			backend.values.set(key, { ...entry, value: 'legacy-raw-value' })
+			await expect(a.cache.get('owned')).rejects.toThrow('entry must be an object')
 		})
 	})
 
@@ -301,24 +354,6 @@ describe('@pluxel/cache', () => {
 	})
 
 	it('fails loudly instead of reporting a local-only clear as successful', async () => {
-		@Plugin(CacheBackend, { name: 'MissingClearCacheBackend' })
-		class MissingClearCacheBackend extends CacheBackend {
-			private readonly values = new Map<string, CacheValue<unknown>>()
-			override clear = undefined as never
-
-			async get<V>(key: string): Promise<CacheValue<V> | undefined> {
-				return this.values.get(key) as CacheValue<V> | undefined
-			}
-
-			async set<V>(key: string, value: V, options: { ttlMs: number }): Promise<void> {
-				this.values.set(key, { value, ttlMs: options.ttlMs })
-			}
-
-			async delete(key: string): Promise<void> {
-				this.values.delete(key)
-			}
-		}
-
 		await withHost(async (host) => {
 			host.add([MissingClearCacheBackend, CachePlugin, ConsumerA])
 			await host.commit()

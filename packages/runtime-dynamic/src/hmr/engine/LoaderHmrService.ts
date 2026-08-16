@@ -4,11 +4,18 @@ import type { Logger as LogtapeLogger } from '@logtape/logtape'
 import {
 	type CommitSummary,
 	type Context,
-	getPluginInfo,
+	formatPluginNodeAddress,
+	isPluginNodeSlot,
 	type PluginConstructor,
 } from '@pluxel/core'
 import { dirname, resolve } from 'pathe'
-import { createServer, type DevEnvironment, normalizePath, type ViteDevServer } from 'vite'
+import {
+	createServer,
+	type DevEnvironment,
+	normalizePath,
+	type Plugin,
+	type ViteDevServer,
+} from 'vite'
 import {
 	PLUXEL_LOADER_HMR_WORKSPACE_CONDITIONS_WITH_SOURCE,
 	findNearestPackageRoot,
@@ -329,7 +336,8 @@ export class LoaderHmrService {
 		this.useRequireShims = this.runtimeShims.hasAny()
 		if (this.useRequireShims) installRequireShims((id) => this.runtimeShims.require(id))
 
-		const getDebugChannel = (topic: string): LogtapeLogger => this.ctx.logger.getDebugChannel(topic)
+		const getDebugChannel = (topic: string): LogtapeLogger =>
+			this.ctx.logger.getDebugChannel(topic).logtape
 
 		this.dbg = {
 			modules: getDebugChannel('hmr:modules'),
@@ -787,16 +795,17 @@ export class LoaderHmrService {
 	}
 
 	private attachCommitTracker() {
-		this.ctx.internalEvent.runtimeCommitted.on((summary: CommitSummary) => {
+		const unsubscribe = this.ctx.registry.subscribeCommitted((summary: CommitSummary) => {
 			const epoch = this.inFlightBatchEpoch
 			if (epoch !== null) {
 				this.commitByBatchEpoch.set(epoch, summary)
 			}
 		})
+		this.ctx.effects.defer(unsubscribe, { tag: 'LoaderHmrService.commitTracker' })
 	}
 
 	private attachResolverCacheInvalidation() {
-		this.ctx.internalEvent.resolverCacheInvalidated.on((detail) => {
+		const unsubscribe = this.scanService.subscribeResolverInvalidated((detail) => {
 			// When ScanService clears its resolver cache, our derived caches may become stale:
 			// - workspace entry rewrite (bare → fs entry)
 			// - runner host-entry fallbacks and package-name lookups
@@ -804,17 +813,14 @@ export class LoaderHmrService {
 			this.runner.clearResolutionCaches()
 			this.dbg.cache.debug('resolution caches cleared', { detail })
 		})
+		this.ctx.effects.defer(unsubscribe, {
+			tag: 'LoaderHmrService.resolverCacheInvalidation',
+		})
 	}
 
 	private formatIdentifier(id: unknown): string {
-		if (typeof id === 'string') return id
-		if (typeof id === 'function') {
-			try {
-				return getPluginInfo(id as never).id
-			} catch {
-				const name = (id as { name?: unknown }).name
-				return typeof name === 'string' && name ? name : 'Function'
-			}
+		if (isPluginNodeSlot(id)) {
+			return formatPluginNodeAddress(this.ctx.registry.nodeAddressOf(id))
 		}
 		return String(id)
 	}
@@ -837,13 +843,18 @@ export class LoaderHmrService {
 		const pluginChanges = { added, replaced, removed, availabilityChanged, restarted }
 		const pluginLifecycleReport = {
 			ok: commit.lifecycleReport.ok,
-			issues: commit.lifecycleReport.issues.map((issue) => {
-				const next = Object.assign({}, issue, {
-					plugin: this.formatIdentifier(issue.plugin),
-				})
-				if (issue.blockedBy) next.blockedBy = this.formatIdentifier(issue.blockedBy)
-				return next
-			}),
+			issues: commit.lifecycleReport.issues.map((issue) =>
+				Object.assign(
+					{
+						plugin: this.formatIdentifier(issue.plugin),
+						phase: issue.phase,
+						kind: issue.kind,
+						message: issue.message,
+					},
+					issue.error ? { error: issue.error } : {},
+					issue.blockedBy ? { blockedBy: this.formatIdentifier(issue.blockedBy) } : {},
+				),
+			),
 		}
 
 		return {
@@ -856,7 +867,6 @@ export class LoaderHmrService {
 
 	private onBatchSummary(summary: HmrBatchSummary) {
 		this.lastBatchSummary = summary
-		if (summary.ok && summary.affected > 0) this.ctx.root.optionalPlugins.invalidate()
 		if (this.batchWaiters.size === 0) return
 
 		const waiters = [...this.batchWaiters]
@@ -1175,8 +1185,9 @@ export class LoaderHmrService {
 			rootsPretty: scope.rootsPretty,
 			entriesByRoot: scope.entriesByRoot,
 			registryView,
-			isPluginEnabled: (name) => isPluginEnabled(this.ctx.runtimeState.snapshot(), name),
-			isRunning: (ctor) => this.ctx.registry.isRunning(ctor),
+			isPluginEnabled: (address) => isPluginEnabled(this.ctx.runtimeState.snapshot(), address),
+			isRunning: (address) =>
+				this.ctx.registry.isRunning(this.ctx.registry.internNodeAddress(address)),
 			resolveBareWorkspaceEntry: (specifier) =>
 				this.workspaceEntryResolver.resolveBareWorkspaceEntry(specifier),
 			resolveLimit: this.config.reportResolveLimit,

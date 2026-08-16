@@ -1,4 +1,9 @@
-import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import {
+	formatPluginNodeAddress,
+	type Context as PluxelContext,
+	Injectable,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 
 const serviceName = 'internalApiValidation' as const
 
@@ -24,11 +29,11 @@ export type InternalApiValidationResult =
 	| { allow: true }
 	| {
 			allow: false
-			pluginName: string
+			owner: PluginNodeAddressSnapshot | null
 	  }
 
 type ActiveValidator = {
-	pluginName: string
+	owner: PluginNodeAddressSnapshot | null
 	validate: InternalApiValidator
 	removeFromScope: () => void
 }
@@ -41,7 +46,7 @@ export class InternalApiValidationService {
 	constructor(public ctx: PluxelContext) {
 		this.logger = ctx.logger!
 		this.validators.add({
-			pluginName: 'hmr:internalApiValidation',
+			owner: null,
 			removeFromScope: () => {},
 			validate: ({ url, headers }) => {
 				const site = (headers.get('sec-fetch-site') ?? '').trim().toLowerCase()
@@ -69,10 +74,11 @@ export class InternalApiValidationService {
 			throw new TypeError('[InternalApiValidationService] register(validate) is required.')
 		}
 
-		const pluginId = this.ctx.pluginInfo?.id ?? 'unknown'
+		const owner = this.ctx.pluginInfo?.nodeAddress
+		if (!owner) throw new Error('[InternalApiValidationService] Plugin node owner is required')
 
 		const active: ActiveValidator = {
-			pluginName: pluginId,
+			owner,
 			validate,
 			removeFromScope: () => {},
 		}
@@ -91,16 +97,16 @@ export class InternalApiValidationService {
 			try {
 				const ok = await v.validate(input)
 				if (!ok) {
-					return { allow: false, pluginName: v.pluginName }
+					return { allow: false, owner: v.owner }
 				}
 			} catch (error) {
 				this.logger.error('Internal API validator threw', {
 					error,
-					pluginId: v.pluginName,
+					plugin: v.owner ? formatPluginNodeAddress(v.owner) : 'runtime',
 					path: input.path,
 					method: input.method,
 				})
-				return { allow: false, pluginName: v.pluginName }
+				return { allow: false, owner: v.owner }
 			}
 		}
 

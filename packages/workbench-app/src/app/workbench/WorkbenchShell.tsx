@@ -100,7 +100,7 @@ export function WorkbenchShell() {
 					id: item.id,
 					label: route?.navigationLabel ?? route?.title,
 					href: route
-						? buildWorkbenchHref(item.targetPluginId, route.path, route.frame ?? 'shell')
+						? buildWorkbenchHref(item.target.address, route.path, route.frame ?? 'shell')
 						: undefined,
 					icon: route?.icon,
 					group: route?.navigationGroup,

@@ -32,8 +32,6 @@ export {
 	toPosixPath,
 	tryRealpathSync,
 } from './services/runtime/shared/fs-path'
-export type { MissingDepsCandidate } from './services/runtime/shared/missing-deps'
-export { disablePluginsOnMissingDependencyError } from './services/runtime/shared/missing-deps'
 export {
 	hasNodeModulesPackageJson,
 	installedPackageJsonPath,

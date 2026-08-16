@@ -15,7 +15,7 @@ Host catalog 同时放入 `FontsPlugin` 和 `CanvasPlugin`。业务插件只需�
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'CardsPlugin' })
+@Plugin({ displayName: 'Cards' })
 export class CardsPlugin extends BasePlugin {
 	constructor(private readonly canvas: CanvasPlugin) {
 		super()

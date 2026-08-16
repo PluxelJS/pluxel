@@ -1,99 +1,33 @@
 import { describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin, pluginNodeAddressOf, withCoreHost } from '@pluxel/core/test'
 
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+let observedSequence = 0
+
+@Plugin({ displayName: 'Observed' })
+class ObservedPlugin extends BasePlugin {
+	readonly sequence = ++observedSequence
+}
 
 describe('PluginService watchInstance()', () => {
-	it('tracks alias resolution from unavailable to started to replaced to removed', async () => {
+	it('publishes exact slot availability across restart and removal', async () => {
 		await withCoreHost(async (host) => {
-			abstract class Abs extends BasePlugin {}
-
-			@Plugin(Abs, { name: 'WATCH-A' })
-			class A extends Abs {}
-
-			@Plugin(Abs, { name: 'WATCH-B' })
-			class B extends Abs {}
-
-			const seen: string[] = []
-			const off = host.ctx.registry.watchInstance(Abs, (instance) => {
-				seen.push(instance?.constructor.name ?? 'none')
-			})
-
-			expect(seen).toEqual(['none'])
-
-			await host.start(A, { provideBase: true })
-			expect(seen).toEqual(['none', 'A'])
-
+			observedSequence = 0
+			const seen: Array<number | undefined> = []
+			const node = host.ctx.registry.internNodeAddress(pluginNodeAddressOf(ObservedPlugin))
+			const off = host.ctx.registry.watchInstance(node, (instance) =>
+				seen.push((instance as ObservedPlugin | undefined)?.sequence),
+			)
+			expect(seen).toEqual([undefined])
+			await host.start(ObservedPlugin)
+			expect(seen).toEqual([undefined, 1])
+			expect(host.ctx.registry.isRunning(node)).toBe(true)
+			host.restart(ObservedPlugin)
 			await host.commit()
-			expect(seen).toEqual(['none', 'A'])
-
-			host.replace(A, B, { provideBase: true })
+			expect(seen).toEqual([undefined, 1, 2])
+			host.remove(ObservedPlugin)
 			await host.commit()
-			expect(seen).toEqual(['none', 'A', 'B'])
-
-			host.remove(B)
-			await host.commit()
-			expect(seen).toEqual(['none', 'A', 'B', 'none'])
-
-			off()
-		})
-	})
-
-	it('marks restart-only commits as availability changes and re-emits the restarted instance once', async () => {
-		await withCoreHost(async (host) => {
-			const seen: string[] = []
-			let seq = 0
-
-			@Plugin({ name: 'WATCH-RESTART' })
-			class Restartable extends BasePlugin {
-				public readonly label = `instance-${++seq}`
-			}
-
-			host.ctx.registry.watchInstance(Restartable, (instance) => {
-				seen.push(instance?.label ?? 'none')
-			})
-
-			await host.start(Restartable)
-			const first = host.require(Restartable)
-			expect(seen).toEqual(['none', first.label])
-
-			host.restart(Restartable)
-			const summary = await host.commit()
-			const second = host.require(Restartable)
-
-			expect(summary.pluginChanges.added).toEqual([])
-			expect(summary.pluginChanges.removed).toEqual([])
-			expect(summary.pluginChanges.replaced).toEqual([])
-			expect(summary.lifecycleReport.issues).toEqual([])
-			expect(summary.pluginChanges.availabilityChanged).toEqual(['WATCH-RESTART'])
-			expect(summary.pluginChanges.restarted).toEqual(['WATCH-RESTART'])
-			expect(second).not.toBe(first)
-			expect(seen).toEqual(['none', first.label, second.label])
-		})
-	})
-
-	it('resolves watched ctor identity drift from runtime module ownership', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'WATCH-DRIFT' })
-			class Dep extends BasePlugin {}
-
-			@Plugin({ name: 'WATCH-DRIFT' })
-			class DepShadow extends BasePlugin {}
-
-			const tx = host.ctx.registry.beginUpdate({ reason: 'hmr' })
-			tx.upsertModule({
-				moduleId: 'watch-drift.ts',
-				items: [{ ctor: Dep, exportKey: 'Dep' }],
-			})
-			tx.register(Dep)
-			const commitResult = await tx.commit()
-			expect(commitResult.ok).toBe(true)
-
-			const seen: string[] = []
-			const off = host.ctx.registry.watchInstance(DepShadow, (instance) => {
-				seen.push(instance?.constructor.name ?? 'none')
-			})
-
-			expect(seen).toEqual(['Dep'])
+			expect(seen).toEqual([undefined, 1, 2, undefined])
+			expect(host.ctx.registry.isRunning(node)).toBe(false)
 			off()
 		})
 	})

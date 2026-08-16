@@ -164,11 +164,7 @@ function createScaffoldPlan(
 	const destPlan =
 		createsWorkspace && !dest ? { destBase: cwd } : resolveDestination(rootInfo, dest)
 
-	const { name: pluginName, packageName } = resolveScaffoldIdentity(
-		input,
-		templateBase,
-		resolvePluginPrefixes(),
-	)
+	const { name: pluginName, packageName } = resolveScaffoldIdentity(input, templateBase)
 	const targetDir = resolve(destPlan.destBase, pluginName)
 
 	const plan: ScaffoldPlan = {
@@ -209,23 +205,10 @@ export function resolveBuiltInTemplatePackageManager(
 		: undefined
 }
 
-export function resolveScaffoldIdentity(
-	input: string,
-	templateBase: string,
-	pluginPrefixes: string[],
-) {
+export function resolveScaffoldIdentity(input: string, templateBase: string) {
 	return basename(templateBase) === 'app-monorepo'
 		? parsePackageIdentity(input)
-		: parsePackageName(input, pluginPrefixes)
-}
-
-function resolvePluginPrefixes(env: NodeJS.ProcessEnv = process.env): string[] {
-	const raw = env.PLUXEL_PLUGIN_PREFIX
-	if (!raw?.trim()) return ['pluxel-plugin']
-	return raw
-		.split(',')
-		.map((segment) => segment.trim())
-		.filter(Boolean)
+		: parsePackageName(input)
 }
 
 async function buildTemplateData(plan: ScaffoldPlan): Promise<Record<string, string> | null> {

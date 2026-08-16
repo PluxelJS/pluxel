@@ -126,11 +126,11 @@ export function resolveWorkbenchLocation(pathname: string): WorkbenchLocationDes
 	if (workbenchRoute?.frame === 'shell') {
 		return {
 			path,
-			title: workbenchRoute.pluginName,
+			title: workbenchRoute.target.definition.exportName,
 			meta: 'Workbench',
 			header: {
 				eyebrow: 'Workbench',
-				title: workbenchRoute.pluginName,
+				title: workbenchRoute.target.definition.exportName,
 				subtitle: workbenchRoute.path || '插件页面',
 			},
 		}

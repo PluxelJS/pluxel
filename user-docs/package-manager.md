@@ -4,6 +4,7 @@
 `@pluxel/package-manager`：
 
 ```ts
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
@@ -17,7 +18,7 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
-	runtimeState: { snapshot: { enabled: ['PackageManagerPlugin'] } },
+	runtimeState: { snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] } },
 	workbench: { enabled: true, access: { exposure: 'private' } },
 })
 ```

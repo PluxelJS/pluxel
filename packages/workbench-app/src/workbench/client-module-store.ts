@@ -1,9 +1,10 @@
-import type { WorkbenchBundle } from '@pluxel/runtime/workbench'
+import type { WorkbenchBundle, WorkbenchPluginDescriptor } from '@pluxel/runtime/workbench'
 import type { WorkbenchLocaleService, WorkbenchUiModule } from '@pluxel/runtime/workbench/ui'
+import { workbenchNodeKey } from './node-address'
 
 export type WorkbenchModuleRecord = {
 	key: string
-	owner: string
+	owner: WorkbenchPluginDescriptor
 	hash: string
 	module: WorkbenchUiModule
 	cleanup?: () => void
@@ -25,7 +26,7 @@ export class WorkbenchModuleStore {
 	) {}
 
 	async prepare(artifact: WorkbenchBundle): Promise<WorkbenchModuleRecord> {
-		const key = `${artifact.pluginName}:${artifact.sourceHash}`
+		const key = `${workbenchNodeKey(artifact.owner.address)}:${artifact.sourceHash}`
 		let record = this.records.get(key)
 		if (!record) {
 			let task = this.pending.get(key)
@@ -76,14 +77,14 @@ export class WorkbenchModuleStore {
 			!module.views ||
 			typeof module.contractFingerprint !== 'string'
 		) {
-			throw new Error(`[workbench-ui] invalid UI module for ${artifact.pluginName}`)
+			throw new Error(`[workbench-ui] invalid UI module for ${artifact.owner.displayName}`)
 		}
 		const cleanup = module.setup
-			? await module.setup({ ownerPluginId: artifact.pluginName, locale: this.locale })
+			? await module.setup({ owner: artifact.owner, locale: this.locale })
 			: undefined
 		const record: WorkbenchModuleRecord = {
 			key,
-			owner: artifact.pluginName,
+			owner: artifact.owner,
 			hash: artifact.sourceHash,
 			module,
 			cleanup: typeof cleanup === 'function' ? cleanup : undefined,
@@ -105,7 +106,7 @@ export class WorkbenchModuleStore {
 		try {
 			record.cleanup?.()
 		} catch (error) {
-			console.error(`[workbench-ui] remote cleanup failed (${record.owner})`, error)
+			console.error(`[workbench-ui] remote cleanup failed (${record.owner.displayName})`, error)
 		}
 	}
 }

@@ -6,6 +6,7 @@ Pluxel 官方、可选的 pnpm package source producer。它使用 `@pnpm/napi` 
 ## Host 装配
 
 ```ts
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { PackageManagerPlugin } from '@pluxel/package-manager'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 
@@ -19,7 +20,7 @@ export default defineDynamicRuntimeConfig({
 			include: ['*.mjs'],
 		},
 	],
-	runtimeState: { snapshot: { enabled: ['PackageManagerPlugin'] } },
+	runtimeState: { snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] } },
 	workbench: { enabled: true, access: { exposure: 'private' } },
 })
 ```
@@ -27,8 +28,8 @@ export default defineDynamicRuntimeConfig({
 `plugins` 把管理插件加入固定 catalog，RuntimeState 显式启用它；`sources` 是唯一的 runtime 接缝。source directory 必须和
 插件的 `rootDir/entries` 一致。插件会在加载 pnpm native engine、创建目录或注册 commands/UI 前验证这项声明；static host
 会以 `DYNAMIC_SOURCE_REQUIRED` 启动失败，声明不匹配则以 `DYNAMIC_SOURCE_NOT_DECLARED` 失败。
-Workbench enabled 时插件贡献 plugin-relative `/packages` route，完整地址是
-`/workbench/PackageManagerPlugin/packages`；headless host 仍可使用 `package.install` 和 `package.remove` commands。
+Workbench enabled 时插件贡献 plugin-relative `/packages` route；Workbench 根据 catalog node address 生成导航，调用方不拼接
+Plugin 名称 URL。headless host 仍可使用 `package.install` 和 `package.remove` commands。
 
 安装与启用是两个操作。安装成功只发布 source；dynamic runtime 按 RuntimeState 和正常 dependency graph 决定插件是否
 启动。删除 package 会先让 pnpm prune managed project，再删除 entry，之后由 dynamic batch 卸载对应 module。
@@ -37,12 +38,10 @@ Workbench enabled 时插件贡献 plugin-relative `/packages` route，完整地�
 
 ```ts
 host.cfg(PackageManagerPlugin).set({
-	config: {
-		rootDir: '.pluxel/managed-plugins',
-		ignoreScripts: true,
-		allowBuilds: [],
-		minimumReleaseAgeMinutes: 1_440,
-	},
+	rootDir: '.pluxel/managed-plugins',
+	ignoreScripts: true,
+	allowBuilds: [],
+	minimumReleaseAgeMinutes: 1_440,
 })
 ```
 

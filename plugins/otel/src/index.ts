@@ -1,6 +1,6 @@
 import type { Meter, Tracer } from '@opentelemetry/api'
 import type { Logger } from '@opentelemetry/api-logs'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, formatPluginNodeAddress, Plugin } from '@pluxel/runtime'
 import { OtelConfig, type OtelSignal } from './config.ts'
 import { safeErrorType } from './diagnostics.ts'
 import type { OtlpExportState } from './otlp.ts'
@@ -17,7 +17,7 @@ type FailureState = { failing: boolean; loggedAt: number }
 /**
  * Caller-scoped native OpenTelemetry access with host-owned OTLP push and Prometheus pull.
  */
-@Plugin({ name: 'OtelPlugin' })
+@Plugin({ displayName: 'OtelPlugin' })
 export class OtelPlugin extends BasePlugin {
 	private readonly config = this.configs.use(OtelConfig)
 	private readonly meters = new WeakMap<object, Meter>()
@@ -27,17 +27,17 @@ export class OtelPlugin extends BasePlugin {
 	private runtime: OtelRuntime | undefined
 	private prometheusFailureLogAt = Number.NEGATIVE_INFINITY
 
-	/** Standard OTel Meter scoped to the caller Plugin ID. */
+	/** Standard OTel Meter scoped to the caller Plugin node address. */
 	get meter(): Meter {
 		return this.getCallerScoped(this.meters, (runtime, scope) => runtime.getMeter(scope))
 	}
 
-	/** Standard OTel Tracer scoped to the caller Plugin ID. */
+	/** Standard OTel Tracer scoped to the caller Plugin node address. */
 	get tracer(): Tracer {
 		return this.getCallerScoped(this.tracers, (runtime, scope) => runtime.getTracer(scope))
 	}
 
-	/** Standard OTel Logger scoped to the caller Plugin ID. */
+	/** Standard OTel Logger scoped to the caller Plugin node address. */
 	get logger(): Logger {
 		return this.getCallerScoped(this.loggers, (runtime, scope) => runtime.getLogger(scope))
 	}
@@ -67,10 +67,6 @@ export class OtelPlugin extends BasePlugin {
 		}
 	}
 
-	protected override stop(): void {
-		this.runtime = undefined
-	}
-
 	private getCallerScoped<T>(
 		cache: WeakMap<object, T>,
 		create: (runtime: OtelRuntime, scopeName: string) => T,
@@ -81,13 +77,16 @@ export class OtelPlugin extends BasePlugin {
 		const key = owner as object
 		const existing = cache.get(key)
 		if (existing) return existing
-		const value = create(runtime, owner.pluginInfo.id)
+		const value = create(runtime, formatPluginNodeAddress(owner.pluginInfo.nodeAddress))
 		cache.set(key, value)
 		return value
 	}
 
 	private mountPrometheus(reader: PrometheusPullReader, path: string): void {
-		this.ctx.http.plugin.routes((app) => app.get(path, () => this.scrapePrometheus(reader)))
+		this.ctx.http.plugin.routes((app) => app.get('/', () => this.scrapePrometheus(reader)), {
+			publicPath: path,
+			id: 'prometheus',
+		})
 	}
 
 	private async scrapePrometheus(reader: PrometheusPullReader): Promise<Response> {

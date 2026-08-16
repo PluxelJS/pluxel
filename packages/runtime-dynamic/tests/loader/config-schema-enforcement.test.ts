@@ -1,23 +1,50 @@
 import { describe, expect, test } from 'vitest'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { BasePlugin, Plugin } from '@pluxel/runtime/test'
-import { __registerConfigSchema__ as registerUnsafeConfigSchema } from '@pluxel/test/unsafe'
 import * as v from 'valibot'
 
 import { withTestDynamicContext } from '../support/context'
+import { enablePlugins } from '../support/runtime-state'
 
-@Plugin({ name: 'BadConfigPlugin' })
-class BadConfigPlugin extends BasePlugin {
-	bad = this.configs.use(v.optional(v.string()))
+const ConfigSchema = v.object({ value: v.optional(v.string(), 'default') })
+
+@Plugin({ displayName: 'Configured Plugin' })
+class ConfiguredPlugin extends BasePlugin {
+	readonly config = this.configs.use(ConfigSchema)
 }
 
 describe('PluginRegistry config schema enforcement', () => {
-	test('throws when a plugin declares non-object config schema', async () => {
-		registerUnsafeConfigSchema(BadConfigPlugin, 'bad', v.optional(v.string()))
+	test('publishes exactly one lowered object config definition', async () => {
+		await withTestDynamicContext(async (ctx) => {
+			await ctx.loader.replaceModule('ConfiguredPlugin.ts', { ConfiguredPlugin })
 
-		await withTestDynamicContext((ctx) => {
-			expect(() => ctx.loader.api.registry.getSchema(BadConfigPlugin)).toThrow(
-				/Invalid config schema: "BadConfigPlugin\.bad"/,
+			const config = ctx.loader.api.registry.getConfig(pluginNodeAddressOf(ConfiguredPlugin))
+			expect(config).toMatchObject({ fieldName: 'config' })
+			expect(config?.schema).toBe(ConfigSchema)
+		})
+	})
+
+	test('commits the catalog while Core reports invalid config as a lifecycle issue', async () => {
+		await withTestDynamicContext(async (ctx) => {
+			enablePlugins(ctx, ConfiguredPlugin)
+			const owner = ctx.registry.internNodeAddress(pluginNodeAddressOf(ConfiguredPlugin))
+			ctx.configService.patchConfig(owner, { value: 42 })
+
+			await expect(
+				ctx.loader.replaceModule('ConfiguredPlugin.ts', { ConfiguredPlugin }),
+			).resolves.toMatchObject({ isAnchor: true })
+
+			expect(ctx.loader.api.registry.getCtor(pluginNodeAddressOf(ConfiguredPlugin))).toBe(
+				ConfiguredPlugin,
 			)
+			expect(ctx.registry.isRunning(ConfiguredPlugin)).toBe(false)
+			expect(ctx.registry.lastCommit?.lifecycleReport.issues).toEqual([
+				expect.objectContaining({
+					plugin: owner,
+					phase: 'config',
+					kind: 'config-failed',
+				}),
+			])
 		})
 	})
 })

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { Injectable, type Context as CoreContext } from '@pluxel/core'
+import { formatPluginNodeAddress, Injectable, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
@@ -12,6 +12,7 @@ import {
 	type DatabaseMigration,
 } from '../database-internal'
 import type { DatabaseDefinition, PluginDatabaseHandle } from '../database'
+import { pluginNodeAddressKey } from '../runtime/plugin-address'
 
 const serviceName = 'database' as const
 const SYSTEM_SCHEMA = 'pluxel_system'
@@ -196,14 +197,15 @@ class DatabaseCoordinator {
 		owner: CoreContext,
 		definition: Definition,
 	): Promise<PluginDatabaseHandle<Definition>> {
+		const address = owner.pluginInfo?.nodeAddress
+		if (!address) throw new Error('[pluxel/database] database use requires a plugin Context')
 		if (this.root.config.database === false) {
 			throw new Error(
-				`[pluxel/database] database capability is disabled for plugin "${owner.pluginInfo.id}"`,
+				`[pluxel/database] database capability is disabled for plugin "${formatPluginNodeAddress(address)}"`,
 			)
 		}
 		const artifact = readDatabaseDefinition(definition)
-		const ownerId = String(owner.pluginInfo.id ?? '').trim()
-		if (!ownerId) throw new Error('[pluxel/database] database use requires a plugin Context')
+		const ownerId = pluginNodeAddressKey(address)
 		const instance = await this.prepare(ownerId, definition, artifact)
 		return new OwnerDatabaseHandle(this, owner, definition, instance)
 	}
@@ -662,7 +664,7 @@ class OwnerDatabaseHandle<
 
 	constructor(
 		private readonly coordinator: DatabaseCoordinator,
-		private readonly owner: CoreContext,
+		owner: CoreContext,
 		private readonly definition: Definition,
 		private readonly instance: PreparedDatabaseInstance,
 	) {
@@ -698,7 +700,7 @@ class OwnerDatabaseHandle<
 			return Promise.reject(new TypeError('[pluxel/database] operation requires a callback'))
 		}
 		return this.coordinator.operation(
-			String(this.owner.pluginInfo.id),
+			this.instance.ownerId,
 			this.token,
 			this.instance,
 			readonly,

@@ -21,14 +21,14 @@ vi.mock('s3mini', () => ({
 
 import { S3, S3CredentialsError, S3NotRunningError, S3Plugin } from '../src/index.ts'
 
-@Plugin({ name: 'S3Consumer' })
+@Plugin({ displayName: 'S3Consumer' })
 class S3Consumer extends BasePlugin {
 	constructor(readonly s3: S3) {
 		super()
 	}
 }
 
-@Plugin({ name: 'S3VaultSeeder' })
+@Plugin({ displayName: 'S3VaultSeeder' })
 class S3VaultSeeder extends BasePlugin {}
 
 beforeEach(() => {
@@ -70,7 +70,7 @@ describe('S3Plugin remote backend', () => {
 
 			host.add([S3Plugin, S3Consumer])
 			host.cfg(S3Plugin).set({
-				config: remoteConfig({
+				...remoteConfig({
 					type: 'vault',
 					key: 'assets.s3',
 					namespace: 'shared-secrets',
@@ -88,7 +88,7 @@ describe('S3Plugin remote backend', () => {
 		await withRuntimeHost(async (host) => {
 			host.add([S3Plugin, S3Consumer])
 			host.cfg(S3Plugin).set({
-				config: remoteConfig({ type: 'vault', key: 'missing.s3' }),
+				...remoteConfig({ type: 'vault', key: 'missing.s3' }),
 			})
 			const commit = await host.commitAllowFail()
 			expect(host.isRunning(S3Plugin)).toBe(false)
@@ -113,7 +113,7 @@ describe('S3Plugin remote backend', () => {
 
 		await withRuntimeHost(async (host) => {
 			host.add([S3Plugin, S3Consumer])
-			host.cfg(S3Plugin).set({ config: remoteConfig({ type: 'anonymous' }) })
+			host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
 			await host.commit()
 			const capability = host.require(S3Consumer).s3
 			const client = s3Mock.clients.at(-1)!
@@ -151,7 +151,7 @@ async function withRemoteS3(
 ): Promise<void> {
 	await withRuntimeHost(async (host) => {
 		host.add([S3Plugin, S3Consumer])
-		host.cfg(S3Plugin).set({ config: remoteConfig({ type: 'anonymous' }) })
+		host.cfg(S3Plugin).set(remoteConfig({ type: 'anonymous' }))
 		await host.commit()
 		await run(host.require(S3Consumer).s3, s3Mock.clients.at(-1)!, s3Mock.configs.at(-1)!)
 	})

@@ -1,18 +1,18 @@
 import { existsSync } from 'node:fs'
-import type { Context } from '@pluxel/core'
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 import {
 	workbenchFederationBuildManifestPath,
 	workbenchFederationManifestPath,
 } from '@pluxel/core/federation'
 import { dirname, resolve } from 'pathe'
-import { findRuntimeModuleId, resolveModuleIdBaseDir } from '../../runtime/module-id'
+import { resolveModuleIdBaseDir } from '../../runtime/module-id'
 
 export function resolvePackagedWorkbenchManifest(
 	root: Context,
-	pluginName: string,
+	owner: PluginNodeAddressSnapshot,
 	artifactName: string,
 ): string | null {
-	const registryPath = findRuntimeModuleId(root, pluginName)
+	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))
 	if (registryPath) {
 		const baseDir = resolveModuleIdBaseDir(registryPath)
 		if (baseDir) {
@@ -36,10 +36,10 @@ export function resolvePackagedWorkbenchManifest(
 
 export function resolvePackagedNodeModule(
 	root: Context,
-	pluginName: string,
+	owner: PluginNodeAddressSnapshot,
 	artifactKey: string,
 ): string | null {
-	const registryPath = findRuntimeModuleId(root, pluginName)
+	const registryPath = root.registry.getRuntimeModuleId(root.registry.internNodeAddress(owner))
 	if (!registryPath) return null
 	const baseDir = resolveModuleIdBaseDir(registryPath)
 	if (!baseDir) return null

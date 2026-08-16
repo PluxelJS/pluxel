@@ -1,4 +1,5 @@
 import type { BuiltinDocContent } from './document-contracts'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 
 export const WorkbenchIcons = Object.freeze({
 	Api: 'api',
@@ -613,11 +614,18 @@ export type WorkbenchResourceRef = Readonly<{
 	kind: WorkbenchResourceContract['kind']
 }>
 
+/** Immutable transport projection of a Plugin node and its human-readable title. */
+export type WorkbenchPluginDescriptor = Readonly<{
+	address: PluginNodeAddressSnapshot
+	displayName: string
+	rootExportName: string
+}>
+
 export type WorkbenchLayoutItem = Readonly<{
 	id: string
 	viewId: string
-	ownerPluginId: string
-	targetPluginId: string
+	owner: WorkbenchPluginDescriptor
+	target: WorkbenchPluginDescriptor
 	contractFingerprint: string
 	placement: WorkbenchPlacement
 	view: WorkbenchViewRef
@@ -635,12 +643,12 @@ export type WorkbenchLayoutItem = Readonly<{
 
 export type WorkbenchLayout = Readonly<{
 	revision: number
-	targetPluginId: string | null
+	target: WorkbenchPluginDescriptor | null
 	items: readonly WorkbenchLayoutItem[]
 }>
 
 export type WorkbenchBundle = Readonly<{
-	pluginName: string
+	owner: WorkbenchPluginDescriptor
 	remoteName: string
 	remoteEntryUrl: string
 	exposedModule: string
@@ -649,7 +657,7 @@ export type WorkbenchBundle = Readonly<{
 }>
 
 export type WorkbenchBundleState = Readonly<{
-	pluginName: string
+	owner: WorkbenchPluginDescriptor
 	state: 'building' | 'ready' | 'error'
 	updatedAt: number
 	sourceHash?: string
@@ -662,7 +670,7 @@ export type WorkbenchBundleEvent =
 	| Readonly<{
 			type: 'building' | 'error'
 			revision: number
-			pluginName: string
+			owner: WorkbenchPluginDescriptor
 			updatedAt: number
 			sourceHash?: string
 			compiledAt?: number
@@ -671,14 +679,18 @@ export type WorkbenchBundleEvent =
 	| Readonly<{
 			type: 'update'
 			revision: number
-			pluginName: string
+			owner: WorkbenchPluginDescriptor
 			remoteName: string
 			remoteEntryUrl: string
 			exposedModule: string
 			sourceHash: string
 			compiledAt: number
 	  }>
-	| Readonly<{ type: 'remove'; revision: number; pluginName: string }>
+	| Readonly<{
+			type: 'remove'
+			revision: number
+			owner: WorkbenchPluginDescriptor
+	  }>
 
 export type WorkbenchCatalog = Readonly<{
 	revision: number

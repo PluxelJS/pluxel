@@ -1,7 +1,8 @@
 import { getLogger, type Logger as LogtapeLogger } from '@logtape/logtape'
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import { debugLogCategory, pluginLogCategory, runtimeLogCategory } from './categories'
-import { findPluginId } from './context'
+import { findPluginNodeAddress } from './context'
+import type { PluginNodeAddressSnapshot } from '../plugins/runtime/identity'
 
 const serviceName = 'logger' as const
 const RESERVED_CONTEXT_PROPERTY = 'context'
@@ -26,7 +27,7 @@ declare module '@pluxel/context' {
 
 type ContextLoggerIdentity = Readonly<{
 	rootId: string
-	pluginId?: string
+	plugin?: PluginNodeAddressSnapshot
 	context: string
 	debugTopic?: string
 }>
@@ -118,9 +119,9 @@ export class ContextLogger {
 		this.identity = identity
 		this.properties = properties
 		const category = identity.debugTopic
-			? debugLogCategory(identity.rootId, identity.debugTopic, identity.pluginId)
-			: identity.pluginId
-				? pluginLogCategory(identity.rootId, identity.pluginId)
+			? debugLogCategory(identity.rootId, identity.debugTopic, identity.plugin)
+			: identity.plugin
+				? pluginLogCategory(identity.rootId, identity.plugin)
 				: runtimeLogCategory(identity.rootId)
 		this.logtape = getLogger(category as string[]).with({
 			...properties,
@@ -156,10 +157,10 @@ export class LoggerService extends ContextLogger {
 	public readonly ctx: PluxelContext
 
 	constructor(ctx: PluxelContext, config?: LoggerServiceConfig) {
-		const pluginId = findPluginId(ctx)
+		const plugin = findPluginNodeAddress(ctx)
 		super({
 			rootId: rootIdFor(ctx, config),
-			pluginId,
+			plugin,
 			context: ctx.name,
 		})
 		this.ctx = ctx

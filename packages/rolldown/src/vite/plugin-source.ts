@@ -76,7 +76,7 @@ export function pluginSourceVitePlugins(
 		serverOnlyVitePlugin('pluxel:database-source', databaseSourceVitePlugin({ root }), {
 			enforce: 'pre',
 		}),
-		serverOnlyVitePlugin('pluxel:plugin-semantics', createPluginSemanticsPlugin().plugin, {
+		serverOnlyVitePlugin('pluxel:plugin-semantics', createPluginSemanticsPlugin({ root }).plugin, {
 			enforce: 'pre',
 		}),
 	]
@@ -145,7 +145,7 @@ export function pluxelRuntimeSourceVitePlugins(
 				oxc: {
 					decorator: {
 						legacy: true,
-						emitDecoratorMetadata: true,
+						emitDecoratorMetadata: false,
 					},
 				},
 			}

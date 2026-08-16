@@ -25,6 +25,28 @@ const contract = workbenchContract.define({
 const ui = createWorkbenchUi(contract)
 const mounted: Array<ReturnType<typeof createRoot>> = []
 const pane = (props: WorkbenchPaneProps) => <WorkbenchPane {...props} />
+const ownerDescriptor = {
+	address: {
+		definition: {
+			entry: { kind: 'source-entry', source: 'tests/Owner.ts' },
+			exportName: 'Owner',
+		},
+		instance: 'default',
+	},
+	displayName: 'Owner',
+	rootExportName: 'Owner',
+} as const
+const targetDescriptor = {
+	address: {
+		definition: {
+			entry: { kind: 'source-entry', source: 'tests/Target.ts' },
+			exportName: 'Target',
+		},
+		instance: 'default',
+	},
+	displayName: 'Target',
+	rootExportName: 'Target',
+} as const
 
 beforeAll(() => {
 	globalThis.IS_REACT_ACT_ENVIRONMENT = true
@@ -50,7 +72,7 @@ describe('Workbench UI resource facade', () => {
 		await act(async () => {
 			root.render(
 				<WorkbenchViewProvider
-					item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+					item={{ owner: ownerDescriptor, target: targetDescriptor } as never}
 					environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
 					paneLayoutRenderer={Renderer}
 				>
@@ -124,7 +146,7 @@ describe('Workbench UI resource facade', () => {
 				act(async () => {
 					root.render(
 						<WorkbenchViewProvider
-							item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+							item={{ owner: ownerDescriptor, target: targetDescriptor } as never}
 							environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
 							paneLayoutRenderer={Renderer}
 						>
@@ -155,7 +177,7 @@ describe('Workbench UI resource facade', () => {
 		await act(async () => {
 			root.render(
 				<WorkbenchViewProvider
-					item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+					item={{ owner: ownerDescriptor, target: targetDescriptor } as never}
 					environment={
 						{
 							colorScheme: 'dark',
@@ -194,7 +216,7 @@ describe('Workbench UI resource facade', () => {
 		await act(async () => {
 			root.render(
 				<WorkbenchViewProvider
-					item={{ ownerPluginId: 'Owner', targetPluginId: 'Target' } as never}
+					item={{ owner: ownerDescriptor, target: targetDescriptor } as never}
 					environment={{ locale: { locale: 'zh-CN', subscribe: () => () => {} } } as never}
 				>
 					<Probe />

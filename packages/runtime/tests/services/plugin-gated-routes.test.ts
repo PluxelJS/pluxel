@@ -9,27 +9,46 @@ import {
 	type PluginGatedModuleDef,
 } from '@pluxel/runtime'
 
+const pluginA = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/a' },
+		exportName: 'PluginA',
+	},
+	instance: 'default',
+} as const
+
+const pluginB = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/b' },
+		exportName: 'PluginB',
+	},
+	instance: 'default',
+} as const
+
 const routes: PluginGatedModuleDef[] = [
 	{
 		id: 'a.hello',
-		plugin: 'PluginA',
+		plugin: pluginA,
 		build: (app) => app.get('/hello', () => ({ ok: true, plugin: 'A' })),
 	},
 	{
 		id: 'b.ok',
-		plugin: 'PluginB',
+		plugin: pluginB,
 		build: (app) => app.get('/ok', () => 'ok'),
 	},
 ]
 
 describe('plugin gated routes', () => {
-	const enable = (ctx: Parameters<typeof createPluginGatedRouter>[0], name: string) => {
-		ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
+	const enable = (
+		ctx: Parameters<typeof createPluginGatedRouter>[0],
+		owner: typeof pluginA | typeof pluginB,
+	) => {
+		ctx.runtimeState.update((draft) => setPluginEnabled(draft, owner, true))
 	}
 
 	it('returns 404 when plugin is disabled', async () => {
 		await withRuntimeContext(async (ctx) => {
-			enable(ctx, 'PluginA')
+			enable(ctx, pluginA)
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
 			app.mount('/api', api)
@@ -41,7 +60,7 @@ describe('plugin gated routes', () => {
 
 	it('handles request when plugin is enabled', async () => {
 		await withRuntimeContext(async (ctx) => {
-			enable(ctx, 'PluginB')
+			enable(ctx, pluginB)
 			const api = createPluginGatedRouter(ctx, routes)
 			const app = createElysiaApp(ctx, { aot: true })
 			app.mount('/api', api)
@@ -54,10 +73,10 @@ describe('plugin gated routes', () => {
 
 	it('computes a runtime snapshot of enabled plugins/routes', () => {
 		return withRuntimeContext((ctx) => {
-			enable(ctx, 'PluginA')
+			enable(ctx, pluginA)
 			const snap = getPluginRoutingSnapshot(ctx, routes)
 			expect(snap).toEqual({
-				enabledPlugins: ['PluginA'],
+				enabledPlugins: [pluginA],
 				enabledRouteIds: ['a.hello'],
 			})
 		})

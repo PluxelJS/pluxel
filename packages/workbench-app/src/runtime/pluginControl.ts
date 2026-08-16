@@ -1,4 +1,5 @@
 import type { RpcStub } from 'capnweb'
+import type { PluginDefinitionAddressSnapshot, PluginNodeAddressSnapshot } from '@pluxel/core'
 import type {
 	BaseProviderInfo,
 	ConfigResult,
@@ -15,33 +16,37 @@ import type {
 
 export type RuntimeRpcStub = RpcStub<RuntimeRpcApi>
 
-export async function getPluginSchema(rpc: RuntimeRpcStub, name: string): Promise<SchemaResult> {
-	return await rpc.pluginSchema(name)
+export async function getPluginSchema(
+	rpc: RuntimeRpcStub,
+	owner: PluginNodeAddressSnapshot,
+): Promise<SchemaResult> {
+	return await rpc.pluginSchema(owner)
 }
 
-export async function getPluginConfig(rpc: RuntimeRpcStub, name: string): Promise<ConfigResult> {
-	return await rpc.pluginConfig(name)
+export async function getPluginConfig(
+	rpc: RuntimeRpcStub,
+	owner: PluginNodeAddressSnapshot,
+): Promise<ConfigResult> {
+	return await rpc.pluginConfig(owner)
 }
 
 export async function patchPluginConfig(
 	rpc: RuntimeRpcStub,
-	name: string,
+	owner: PluginNodeAddressSnapshot,
 	patch: Record<string, unknown>,
 ): Promise<ConfigResult> {
-	return await rpc.patchPluginConfig(name, patch)
+	return await rpc.patchPluginConfig(owner, patch)
 }
 
 export async function patchPluginConfigField(
 	rpc: RuntimeRpcStub,
 	input: {
-		name: string
-		schemaKey: string
+		owner: PluginNodeAddressSnapshot
 		fieldPath: string
 		value: unknown
 	},
 ): Promise<ConfigResult> {
-	return await rpc.patchPluginConfigField(input.name, {
-		schemaKey: input.schemaKey,
+	return await rpc.patchPluginConfigField(input.owner, {
 		fieldPath: input.fieldPath,
 		value: input.value,
 	})
@@ -49,24 +54,24 @@ export async function patchPluginConfigField(
 
 export async function listPluginDependencies(
 	rpc: RuntimeRpcStub,
-	name: string,
+	owner: PluginNodeAddressSnapshot,
 ): Promise<PluginDependencyRef[]> {
-	return await rpc.pluginDependencies(name)
+	return await rpc.pluginDependencies(owner)
 }
 
 export async function inspectPluginDependencies(
 	rpc: RuntimeRpcStub,
-	name: string,
+	owner: PluginNodeAddressSnapshot,
 ): Promise<PluginDependencyState[]> {
-	return await rpc.inspectPluginDependencies(name)
+	return await rpc.inspectPluginDependencies(owner)
 }
 
 export async function setPluginDependencyTarget(
 	rpc: RuntimeRpcStub,
 	input: {
-		name: string
+		consumer: PluginNodeAddressSnapshot
 		index: number
-		targetName: string | null
+		provider: PluginNodeAddressSnapshot | null
 	},
 ): Promise<PluginDependencyMutationResult> {
 	return await rpc.setPluginDependencyTarget(input)
@@ -74,17 +79,17 @@ export async function setPluginDependencyTarget(
 
 export async function inspectPluginBaseProvider(
 	rpc: RuntimeRpcStub,
-	name: string,
+	owner: PluginNodeAddressSnapshot,
 ): Promise<BaseProviderInfo | null> {
-	return await rpc.inspectPluginBaseProvider(name)
+	return await rpc.inspectPluginBaseProvider(owner)
 }
 
 export async function selectPluginBaseProvider(
 	rpc: RuntimeRpcStub,
 	input: {
-		name: string
-		baseToken: string
-		providerName: string | null
+		consumer: PluginNodeAddressSnapshot
+		token: PluginDefinitionAddressSnapshot
+		provider: PluginNodeAddressSnapshot | null
 	},
 ): Promise<PluginDependencyMutationResult> {
 	return await rpc.selectPluginBaseProvider(input)
@@ -93,7 +98,7 @@ export async function selectPluginBaseProvider(
 export async function ensurePluginFork(
 	rpc: RuntimeRpcStub,
 	input: {
-		baseName: string
+		base: PluginNodeAddressSnapshot
 		forkId: string
 		enable?: boolean
 	},
@@ -110,14 +115,19 @@ export async function applyPluginStatusActions(
 
 export async function runPluginStatusAction(
 	rpc: RuntimeRpcStub,
-	name: string,
+	address: PluginNodeAddressSnapshot,
 	action: PluginStatusAction,
-): Promise<{ ok: boolean; name: string; error?: string; commitError?: string }> {
-	const result = await rpc.applyPluginStatusActions([{ name, action }])
+): Promise<{
+	ok: boolean
+	address: PluginNodeAddressSnapshot
+	error?: string
+	commitError?: string
+}> {
+	const result = await rpc.applyPluginStatusActions([{ address, action }])
 	const first = result.results[0]
 	return {
 		ok: Boolean(first?.ok),
-		name,
+		address,
 		error: first?.error,
 		commitError: result.commitError,
 	}

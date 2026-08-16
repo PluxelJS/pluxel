@@ -54,17 +54,17 @@ export class WorkbenchLiveQueryService {
 
 	registerResourceFor<Params, Row>(
 		owner: Context,
+		resourceId: string,
 		modelKey: string,
 		contract: WorkbenchLiveQueryResource<Params, Row>,
 		binding: WorkbenchLiveQueryBinding<Params, Row>,
 	): () => void {
-		const namespace = liveQueryNamespace(owner.pluginInfo.id, modelKey)
 		if (!databaseHandleOwnsTables(binding.database, binding.dependsOn)) {
 			throw new Error(
 				`[workbench] liveQuery "${modelKey}" dependsOn tables outside its database definition`,
 			)
 		}
-		const previous = this.resources.get(namespace)
+		const previous = this.resources.get(resourceId)
 		previous?.disposeInvalidation()
 		const registered: RegisteredLiveQuery = {
 			owner,
@@ -78,8 +78,8 @@ export class WorkbenchLiveQueryService {
 			binding.dependsOn,
 			() => this.invalidate(registered),
 		)
-		this.resources.set(namespace, registered)
-		const disposeEvents = this.events.registerResourceFor(owner, namespace, (channel) =>
+		this.resources.set(resourceId, registered)
+		const disposeEvents = this.events.registerResourceFor(owner, resourceId, (channel) =>
 			this.stream(registered, channel),
 		)
 		let active = true
@@ -87,15 +87,15 @@ export class WorkbenchLiveQueryService {
 			if (!active) return
 			active = false
 			disposeEvents()
-			if (this.resources.get(namespace) !== registered) return
-			this.resources.delete(namespace)
+			if (this.resources.get(resourceId) !== registered) return
+			this.resources.delete(resourceId)
 			registered.disposeInvalidation()
 			registered.variants.clear()
 		}
 	}
 
-	async loadFor(ownerId: string, modelKey: string, rawParams: unknown): Promise<LiveQuerySnapshot> {
-		const resource = this.resources.get(liveQueryNamespace(ownerId, modelKey))
+	async loadFor(resourceId: string, rawParams: unknown): Promise<LiveQuerySnapshot> {
+		const resource = this.resources.get(resourceId)
 		if (!resource) throw new Error('[workbench] liveQuery resource is unavailable')
 		const variant = await this.variant(resource, rawParams)
 		return await this.rerun(resource, variant, true)
@@ -247,10 +247,6 @@ export class WorkbenchLiveQueryService {
 			resource.variants.delete(idle.shift()![0])
 		}
 	}
-}
-
-export function liveQueryNamespace(ownerPluginId: string, modelKey: string): string {
-	return `${ownerPluginId}:${modelKey}`
 }
 
 function snapshotOf(variant: Variant): LiveQuerySnapshot {

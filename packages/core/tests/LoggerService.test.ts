@@ -2,6 +2,15 @@ import { configureSync, type LogRecord, resetSync } from '@logtape/logtape'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LoggerService } from '../src/logger/LoggerService'
 import { withCoreContext } from '../src/test'
+import { createPluginNodeAddress } from '../src/plugins'
+
+const loggerPluginAddress = createPluginNodeAddress({
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/logger-plugin' },
+		exportName: 'PluginX',
+	},
+	instance: 'default',
+})
 
 describe('LoggerService', () => {
 	let records: LogRecord[] = []
@@ -33,10 +42,18 @@ describe('LoggerService', () => {
 	it('encodes plugin identity in the category instead of record properties', () =>
 		withCoreContext(
 			(ctx) => {
-				ctx.pluginInfo = { id: 'PluginX' } as never
+				ctx.pluginInfo = { nodeAddress: loggerPluginAddress } as never
 				ctx.logger.warn('warn message')
 				const record = records.find((item) => item.rawMessage === 'warn message')
-				expect(record?.category).toEqual(['pluxel', 'plugins', 'root-test', 'PluginX'])
+				expect(record?.category).toEqual([
+					'pluxel',
+					'plugins',
+					'root-test',
+					'package-root',
+					'@test/logger-plugin',
+					'PluginX',
+					'default',
+				])
 				expect(record?.properties.context).toBe('plugin-test')
 				expect(record?.properties.pluginId).toBeUndefined()
 			},
@@ -46,7 +63,7 @@ describe('LoggerService', () => {
 	it('encodes debug topic segments and preserves plugin ownership', () =>
 		withCoreContext(
 			(ctx) => {
-				ctx.pluginInfo = { id: 'PluginX' } as never
+				ctx.pluginInfo = { nodeAddress: loggerPluginAddress } as never
 				ctx.logger.getDebugChannel('hmr:cache').debug('cache probe')
 				const record = records.find((item) => item.rawMessage === 'cache probe')
 				expect(record?.category).toEqual([
@@ -54,7 +71,10 @@ describe('LoggerService', () => {
 					'debug',
 					'root-test',
 					'plugin',
+					'package-root',
+					'@test/logger-plugin',
 					'PluginX',
+					'default',
 					'hmr',
 					'cache',
 				])

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { defineWorkerTask } from '@pluxel/runtime'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 import { afterAll, beforeAll, bench, describe } from 'vitest'
+import { lowerTestPlugin } from '../tests/helpers/lowered-plugin'
 
 type TransferInput = Readonly<{ bytes: Uint8Array }>
 type TransferOutput = Readonly<{ byteLength: number }>
@@ -17,7 +18,7 @@ const artifactRoot = dirname(
 )
 const byteLength = 8 * 1024 * 1024
 
-@Plugin({ name: 'WorkerTaskBenchmark' })
+@Plugin({ displayName: 'WorkerTaskBenchmark' })
 class WorkerTaskBenchmark extends BasePlugin {
 	run(bytes: Uint8Array, transfer = false): Promise<TransferOutput> {
 		return this.ctx.workers.run(
@@ -36,7 +37,7 @@ const host = createRuntimeHost({
 let worker!: WorkerTaskBenchmark
 
 beforeAll(async () => {
-	host.add(WorkerTaskBenchmark)
+	host.add(lowerTestPlugin(WorkerTaskBenchmark))
 	host.cfg(WorkerTaskBenchmark).enable()
 	await host.commit()
 	worker = host.require(WorkerTaskBenchmark)

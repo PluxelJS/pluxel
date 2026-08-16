@@ -3,7 +3,7 @@ import { staticRuntimeVitePlugin } from '@pluxel/runtime-static/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-const graphqlEndpoint = '/__pluxel/plugins/{{className}}Plugin/api/graphql'
+const graphqlEndpoint = '/api/graphql'
 
 export default defineConfig(({ mode }) => ({
 	appType: 'spa',

@@ -11,8 +11,8 @@ runtime 提供 owner-bound `ctx.commands` 和每个 root 唯一的 command regis
 registry 的 lookup 和 revision-cached catalog 仍由 `@pluxel/commands` 实现，runtime 不维护第二份索引。
 
 runtime registration 会用插件 Context 对执行入口做 owner binding。插件 generation 离开 running 时，core 先关闭
-该 owner 的内部 invocation gate：拒绝新调用、abort 已接纳调用的 call/owner 合成 signal，并等待 lease 释放；之后才
-进入插件 `stop()` 和 effects drain。这个 gate 按首次执行惰性创建；从未进入过 gate 的 owner 停止时只保留轻量 closed
+该 owner 的内部 invocation gate：拒绝新调用、abort 已接纳调用的 call/owner 合成 signal，并等待 lease 释放；之后
+drain generation effects。这个 gate 按首次执行惰性创建；从未进入过 gate 的 owner 停止时只保留轻量 closed
 marker，确保此前缓存的 wrapper 不能在停止后首次创建新 gate。它不是插件 API 或新的 lifecycle hook。单独调用
 registration disposer 只撤销 catalog publication，不会取消已经开始的调用。
 
@@ -41,28 +41,23 @@ fair admission、immutable database instance registry、lineage promotion、phys
 transactional outbox；Workbench 只是可选消费者。
 完整约束见 [`DATABASE.md`](DATABASE.md)。
 
-## Optional plugin availability
+## Plugin identity 与 optional integration
 
-`OptionalPluginAvailabilityService` 是 root-scoped 常驻协调器。它在 consumer commit 后解析 opaque
-`OptionalPluginRef`，去重相同 ref 的 loader，串行提交正常 graph update，并把实例发布交给 core running watcher。
-服务不复制 lifecycle 或 availability read model；失败进入结构化日志，synthetic runtime module 以 canonical plugin ID
-管理 replacement ownership，并随正常 root graph 一起释放。
+runtime capability、HTTP/config/logging/database/Vault owner、commands、Workbench 和 route protocol 全部携带
+`PluginNodeAddressSnapshot`。address 由 route/toolchain 生成并由 Core intern；`displayName` 与 root export name 只用于展示，
+class/constructor name 不作为 lookup、storage key 或 fallback。
 
-工具链为独立插件包标注 direct optional package：目标 package 本身缺失记录为 debug-level absent；目标存在但 transitive
-dependency、evaluation、metadata 或 start 失败记录为 broken error。static/Vite absent virtual module 携带同一 package fact，
-不会把真实 provider 故障静默当成缺包。
-
-首次发现的 candidate 写入 RuntimeState `optionalKnown` 并默认启用；之后显式 disable 不会被 descriptor 请求覆盖。
-dynamic route 的成功 file-source batch 会触发 availability retry。resolver 只解析已经进入 workspace、显式 dynamic
-source 或 static distribution closure 的代码，optional request 不授权自动安装包。
+Optional implementation 是否存在只由 host catalog 决定。作者的 lowered `PluginRef` 不触发 runtime loader、安装、注册、
+retry 或默认 enable；provider generation 的出现、消失和 replacement 由 Core combined graph 触发 consumer restart。dynamic
+source batch 只提交正常 catalog transaction，不维护 optional request 或 synthetic module owner。
 
 ## Dynamic fixed catalog
 
 Dynamic config 使用 `plugins` 声明宿主显式 import 的固定 catalog，使用 `sources` 声明运行时可增删的文件 catalog。
 `plugins` 只提供 availability；启停、fork、dependency override 和 config validation 全部读取统一 RuntimeState。固定 constructor
-即使 disabled 也可由 catalog resolve，但不会因首次出现而自动启用。RuntimeState 写盘格式是 version 2；读取 version 1 时保留
-enabled、forks、base provider、dependency override 与 optional availability，并丢弃旧的 route 私有固定目录历史；未知持久化
-版本会 fail-fast，不由旧 runtime 猜测解释。
+即使 disabled 也可由 catalog resolve，但不会因首次出现而自动启用。RuntimeState 写盘格式是 version 3，以结构化 node/definition
+address arrays 保存 enabled、fork、provider default 和 dependency override。任何旧版本或未知版本都 fail-fast；runtime 不从
+Plugin name、constructor 或 display title 猜测迁移。
 
 程序化 dynamic launcher 只接受 config module path，让 config、固定插件和 mutable source 都经由 launcher 所有的 canonical
 Vite SSR runner 求值。object config 不跨 module realm 传递 constructor。

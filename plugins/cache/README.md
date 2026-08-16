@@ -24,7 +24,7 @@ freshness、transaction 或外部 API 协调塞进 decorator。
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { Cache, type CacheNamespace } from '@pluxel/cache'
 
-@Plugin({ name: 'AccountsPlugin' })
+@Plugin({ displayName: 'AccountsPlugin' })
 class AccountsPlugin extends BasePlugin {
 	private users!: CacheNamespace
 
@@ -60,12 +60,15 @@ backend 切换后，旧 handle 会稳定抛出 `CacheStoppedError`。
 
 ## 默认 namespace 与 global
 
-直接使用注入的 `cache` 时，key 自动带 caller plugin namespace：
+直接使用注入的 `cache` 时，key 自动带 caller Plugin node namespace：
 
 ```ts
 await accountsCache.set('user:1', user) // AccountsPlugin 私有
 await billingCache.set('user:1', user) // BillingPlugin 私有
 ```
+
+隔离依据是 caller 的 opaque node slot；持久 backend 使用结构化 node address 的 SHA-256 作为物理前缀，并在 value
+envelope 中保存、校验完整 address。`displayName` 相同的不同 plugin/fork 不会共享 namespace。
 
 只有多个插件确实消费相同 value contract 时才使用 `global`：
 
@@ -194,13 +197,11 @@ function 或超过 16 个参数时必须提供 `key()`。
 
 ```ts
 host.cfg(CachePlugin).set({
-	config: {
-		ttlMs: 300_000,
-		maxEntries: 1_000,
-		maxInFlight: 256,
-		readPolicy: 'cache-first',
-		backendFailure: 'required',
-	},
+	ttlMs: 300_000,
+	maxEntries: 1_000,
+	maxInFlight: 256,
+	readPolicy: 'cache-first',
+	backendFailure: 'required',
 })
 ```
 
@@ -220,9 +221,9 @@ host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 
 Workbench 通过 `CachePlugin(CacheBackend)` constructor dependency 使用标准 provider 选择，不需要 cache 专属 UI。
 
-第三方 `CacheBackend` adapter 必须遵守：`get()` 仅以 `undefined` 表示 miss、hit value 不得为 `undefined`、TTL 返回剩余
-毫秒且 `0` 表示不失效、required `delete/clear` 幂等、`clear(prefix)` 不得越过 managed prefix、backend failure 必须
-reject。
+第三方 `CacheBackend` adapter 必须遵守：`get()` 仅以 `undefined` 表示 miss、hit value 不得为 `undefined`、泛型 value
+必须原样 round-trip、TTL 返回剩余毫秒且 `0` 表示不失效、required `delete/clear` 幂等、`clear(prefix)` 不得越过
+managed prefix、backend failure 必须 reject。结构化 owner envelope 由 `CachePlugin` 生成和验证，adapter 不解释它。
 
 ## Memory backend 重启预热
 
@@ -230,9 +231,7 @@ reject。
 
 ```ts
 host.cfg(MemoryCacheBackendPlugin).set({
-	config: {
-		persistence: { mode: 'durable' },
-	},
+	persistence: { mode: 'durable' },
 })
 ```
 

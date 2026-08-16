@@ -1,13 +1,15 @@
 import {
 	ForkablePlugin,
-	formatForkPluginId,
 	getPluginInfo,
-	type ConfigLayout,
+	pluginNodeAddressOf,
 	type Context,
+	type PluginConfigDefinition,
 	type PluginConstructor,
+	type PluginDefinitionAddressSnapshot,
+	type PluginNodeAddressSnapshot,
 } from '@pluxel/core'
-import type { ConfigSchemaMap } from '@pluxel/core/services'
-import { isPluginEnabled } from '../services/RuntimeStateStore'
+import { isPluginEnabled, listForkIds } from '../services/RuntimeStateStore'
+import { pluginNodeAddressKey } from './plugin-address'
 
 export type RuntimePluginSource =
 	| {
@@ -37,7 +39,17 @@ export type RuntimePluginSource =
 
 export type RuntimePluginLifecycleStage = 'running' | 'stopped' | 'disabled'
 
+export type RuntimePluginCatalogEntry = Readonly<{
+	address: PluginNodeAddressSnapshot
+	ctor: PluginConstructor
+	displayName: string
+	rootExportName: string
+}>
+
 export type RuntimePluginStatusSnapshot = {
+	address: PluginNodeAddressSnapshot
+	displayName: string
+	rootExportName: string
 	isRunning: boolean
 	isEnabled: boolean
 	lifecycleStage: RuntimePluginLifecycleStage
@@ -45,46 +57,46 @@ export type RuntimePluginStatusSnapshot = {
 }
 
 export type RuntimePluginStatusOverview = {
-	statuses: Array<RuntimePluginStatusSnapshot & { name: string }>
-	summary: {
-		total: number
-		running: number
-		stopped: number
-		disabled: number
-	}
+	statuses: RuntimePluginStatusSnapshot[]
+	summary: { total: number; running: number; stopped: number; disabled: number }
 }
 
-export type RuntimePluginDependencyInfo = Array<{ name: string; isRunning: boolean }>
+export type RuntimePluginDependencyInfo = Array<{
+	address: PluginNodeAddressSnapshot
+	displayName: string
+	isRunning: boolean
+}>
 
 export interface PluginCatalogRead {
-	resolve(target: PluginConstructor | string): PluginConstructor | undefined
-	resolveOrRegistered(name: string): PluginConstructor | undefined
-	require(name: string): PluginConstructor
-	listRegistered(): ReadonlyMap<string, PluginConstructor>
-	listLoadedNames(): readonly string[]
+	resolve(address: PluginNodeAddressSnapshot): PluginConstructor | undefined
+	resolveDefinition(address: PluginDefinitionAddressSnapshot): PluginConstructor | undefined
+	require(address: PluginNodeAddressSnapshot): PluginConstructor
+	listRegistered(): readonly RuntimePluginCatalogEntry[]
 }
 
 export interface PluginLifecycleControl {
-	isRunning(target: PluginConstructor | string): boolean
-	enable(name: string, ctor: PluginConstructor): Promise<void> | void
-	enablePersisted(name: string): Promise<void> | void
-	deactivate(name: string, ctor: PluginConstructor, options: { runtimeOnly: boolean }): void
-	stop(name: string, ctor: PluginConstructor): void
+	isRunning(address: PluginNodeAddressSnapshot): boolean
+	enable(address: PluginNodeAddressSnapshot, ctor?: PluginConstructor): Promise<void> | void
+	enablePersisted(address: PluginNodeAddressSnapshot): Promise<void> | void
+	deactivate(
+		address: PluginNodeAddressSnapshot,
+		ctor: PluginConstructor,
+		options: { runtimeOnly: boolean },
+	): void
+	stop(address: PluginNodeAddressSnapshot, ctor: PluginConstructor): void
 }
 
 export interface PluginConfigMetadataRead {
-	getSchema(name: string): ConfigSchemaMap | undefined
-	getSchemaSource(name: string): Readonly<Record<string, string>> | undefined
-	getConfigLayout(name: string): Readonly<Record<string, ConfigLayout>> | undefined
+	getConfig(address: PluginNodeAddressSnapshot): PluginConfigDefinition | undefined
 }
 
 export interface PluginDependencyRead {
-	listDependencies(ctor: PluginConstructor): RuntimePluginDependencyInfo
-	ensureForkBase(baseName: string): PluginConstructor | undefined
+	listDependencies(address: PluginNodeAddressSnapshot): RuntimePluginDependencyInfo
+	ensureForkBase(definition: PluginDefinitionAddressSnapshot): PluginConstructor | undefined
 }
 
 export interface PluginSourceRead {
-	resolveSource(name: string, ctor?: PluginConstructor): RuntimePluginSource
+	resolveSource(address: PluginNodeAddressSnapshot, ctor?: PluginConstructor): RuntimePluginSource
 }
 
 export interface RuntimeModuleCacheEntry {
@@ -107,7 +119,6 @@ export type RuntimeRouteCapabilities = {
 	dependencies?: PluginDependencyRead
 	source?: PluginSourceRead
 	modules?: RuntimeModuleRuntime
-	/** Internal route capability used by file-source producers to validate their publication target. */
 	dynamicPluginSources?: {
 		hasFile(path: string): boolean
 		hasDirectory(path: string, include: readonly string[]): boolean
@@ -115,12 +126,8 @@ export type RuntimeRouteCapabilities = {
 }
 
 const identityModuleRuntime: RuntimeModuleRuntime = {
-	normalizeId(moduleId) {
-		return moduleId
-	},
-	moduleIdAliases(moduleId) {
-		return [moduleId]
-	},
+	normalizeId: (moduleId) => moduleId,
+	moduleIdAliases: (moduleId) => [moduleId],
 	primeModuleCacheEntry() {},
 	dropModuleCacheEntries() {},
 }
@@ -136,9 +143,8 @@ export function requireRouteCapability<K extends keyof RuntimeRouteCapabilities>
 	key: K,
 ): NonNullable<RuntimeRouteCapabilities[K]> {
 	const value = ctx.runtimeRoute?.[key]
-	if (!value) {
+	if (!value)
 		throw new Error(`[pluxel/runtime] Runtime route capability "${key}" is not available.`)
-	}
 	return value
 }
 
@@ -159,62 +165,68 @@ export function unknownPluginSource(): RuntimePluginSource {
 
 export function readRuntimePluginStatus(
 	ctx: Context,
-	name: string,
-	ctor: PluginConstructor,
+	entry: RuntimePluginCatalogEntry,
 ): RuntimePluginStatusSnapshot {
 	const lifecycle = requireRouteCapability(ctx, 'lifecycle')
-	const isRunning = lifecycle.isRunning(ctor)
-	const isEnabled = isPluginEnabled(ctx.runtimeState.snapshot(), name)
+	const isRunning = lifecycle.isRunning(entry.address)
+	const isEnabled = isPluginEnabled(ctx.runtimeState.snapshot(), entry.address)
 	const lifecycleStage: RuntimePluginLifecycleStage = !isEnabled
 		? 'disabled'
 		: isRunning
 			? 'running'
 			: 'stopped'
-	const source = ctx.runtimeRoute?.source?.resolveSource(name, ctor) ?? unknownPluginSource()
-	return { isRunning, isEnabled, lifecycleStage, source }
+	const source =
+		ctx.runtimeRoute?.source?.resolveSource(entry.address, entry.ctor) ?? unknownPluginSource()
+	return {
+		address: entry.address,
+		displayName: entry.displayName,
+		rootExportName: entry.rootExportName,
+		isRunning,
+		isEnabled,
+		lifecycleStage,
+		source,
+	}
 }
 
 export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOverview {
 	const catalog = requireRouteCapability(ctx, 'catalog')
-	const nameToCtor = catalog.listRegistered()
-	const forkNames = new Set<string>()
-	const persistedForks = ctx.runtimeState.snapshot().forks
+	const entries = new Map<string, RuntimePluginCatalogEntry>()
+	for (const entry of catalog.listRegistered())
+		entries.set(pluginNodeAddressKey(entry.address), entry)
 
-	for (const [baseName, baseCtor] of nameToCtor) {
-		const forkIds = persistedForks[baseName]
-		if (Array.isArray(forkIds)) {
-			for (const raw of forkIds) {
-				const fid = typeof raw === 'string' ? raw.trim() : ''
-				if (!fid) continue
-				try {
-					forkNames.add(formatForkPluginId(baseName, fid))
-				} catch {}
-			}
+	for (const base of entries.values()) {
+		for (const forkId of listForkIds(ctx.runtimeState.snapshot(), base.address.definition)) {
+			const ctor = ctx.registry.fork(base.ctor as never, forkId) as PluginConstructor
+			const address = pluginNodeAddressOf(ctor)
+			entries.set(pluginNodeAddressKey(address), {
+				address,
+				ctor,
+				displayName: getPluginInfo(ctor).displayName,
+				rootExportName: base.rootExportName,
+			})
 		}
-		for (const forkCtor of ctx.registry.listForks(baseCtor as never)) {
-			try {
-				forkNames.add(getPluginInfo(forkCtor as never).id)
-			} catch {}
+		for (const ctor of ctx.registry.listForks(base.ctor as never)) {
+			const address = pluginNodeAddressOf(ctor)
+			entries.set(pluginNodeAddressKey(address), {
+				address,
+				ctor,
+				displayName: getPluginInfo(ctor).displayName,
+				rootExportName: base.rootExportName,
+			})
 		}
 	}
 
-	const allNames = [...new Set<string>([...nameToCtor.keys(), ...forkNames])].sort((a, b) =>
-		a.localeCompare(b),
-	)
-	const statuses: Array<RuntimePluginStatusSnapshot & { name: string }> = []
-	for (const name of allNames) {
-		const ctor = catalog.resolve(name) ?? nameToCtor.get(name)
-		if (!ctor) continue
-		statuses.push({ name, ...readRuntimePluginStatus(ctx, name, ctor) })
-	}
-
+	const statuses = [...entries.values()]
+		.map((entry) => readRuntimePluginStatus(ctx, entry))
+		.sort((left, right) =>
+			pluginNodeAddressKey(left.address).localeCompare(pluginNodeAddressKey(right.address)),
+		)
 	let running = 0
 	let disabled = 0
 	for (const entry of statuses) {
-		if (entry.isRunning) running += 1
-		if (entry.isEnabled === false) disabled += 1
+		if (entry.isRunning) running++
+		if (!entry.isEnabled) disabled++
 	}
-
 	return {
 		statuses,
 		summary: {
@@ -228,11 +240,10 @@ export function runtimePluginStatusOverview(ctx: Context): RuntimePluginStatusOv
 
 export function ensureForkBaseFromCatalog(
 	ctx: Context,
-	baseName: string,
+	definition: PluginDefinitionAddressSnapshot,
 ): PluginConstructor | undefined {
-	const baseCtor = requireRouteCapability(ctx, 'catalog').resolve(baseName)
+	const baseCtor = requireRouteCapability(ctx, 'catalog').resolveDefinition(definition)
 	if (!baseCtor) return undefined
 	const proto = (baseCtor as { prototype?: unknown }).prototype
-	if (!proto || !(proto instanceof ForkablePlugin)) return undefined
-	return baseCtor
+	return proto && proto instanceof ForkablePlugin ? baseCtor : undefined
 }

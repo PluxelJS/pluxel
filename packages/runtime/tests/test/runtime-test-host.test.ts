@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
+import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 describe('runtime/test host', () => {
 	it('starts plugins through the real runtime context', async () => {
 		const host = createRuntimeHost()
 		try {
-			@Plugin({ name: 'Dep' })
+			@Plugin({ displayName: 'Dep' })
 			class Dep extends BasePlugin {}
 
-			@Plugin({ name: 'Consumer' })
+			@Plugin({ displayName: 'Consumer' })
 			class Consumer extends BasePlugin {
 				constructor(readonly dep: Dep) {
 					super()
 				}
 			}
-			setParamToken(Consumer, 0, Dep)
-
+			lowerTestPlugin(Dep)
+			lowerTestPlugin(Consumer, { requires: [Dep] })
 			host.add([Dep, Consumer])
 			host.cfg(Dep).enable()
 			host.cfg(Consumer).enable()

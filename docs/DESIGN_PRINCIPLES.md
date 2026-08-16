@@ -6,8 +6,11 @@
 
 - 未经明确设计决策，不改变现有插件调用方式。
 - required plugin dependency 只写在 constructor；不得要求在 decorator 中重复声明。
-- 已在 catalog/graph 中的 optional integration 使用 `plugins.use(Token)`；实现包允许不存在时使用
-  `optionalPlugin()` + `plugins.use(Ref)`；plugin 内部组成使用 feature。
+- optional integration 使用 non-exported module-level `definePluginRef<T>()` 和 init-time
+  `plugins.use(Ref, callback)`；ref 只观察 host catalog，不加载、安装或默认启用实现包。
+- 具体 Plugin package 只有 package root `"."` 可以承载 Plugin；每个 constructor 只有一个 root named export。
+- `@Plugin({ displayName })` 只提供展示默认值；definition/node identity 来自 canonical entry + root export。
+- plugin 内部组成使用普通对象或函数；需要子资源边界时使用 owner effects scope，需要独立治理时成为 Plugin。
 - 同一语义只保留一个公开入口，不新增兼容 alias 或平行 contract。
 - internal、toolchain 和 host installation helper 不进入默认作者入口。
 
@@ -15,7 +18,8 @@
 
 ## 2. 保持能力所有权清晰
 
-- HTTP、config、logger、events、effects、commands、persistence/database 是常驻 runtime 能力。
+- HTTP、config、logger、effects、commands、persistence/database 是常驻 runtime 能力；公开事件用具名
+  `EvtChannel` 属性表达，不提供 Context global event bus。
 - Workbench extension 和资源只能通过 `ctx.workbench.mount()` 挂载。
 - 宿主负责 Workbench Plane 安装、进程退出、部署和健康策略；插件不声明这些策略。
 - 业务状态和业务 API 不得依赖可选Workbench。
@@ -34,7 +38,7 @@
 
 - plugin-owned gate、logger、effects 和 registration 必须保留 owner Context。
 - host 可以共享 registry，但共享对象不得通过可变“当前 ctx”识别调用者。
-- 缓存 service handle、并发初始化和异步 callback 都不得造成 plugin id 或 cleanup scope 串线。
+- 缓存 service handle、并发初始化和异步 callback 都不得造成 plugin node address 或 cleanup scope 串线。
 - 优先复用现有 Context isolation 和轻量绑定视图，不引入新的全局上下文协议。
 
 收益：并发与 HMR replacement 下的注册、日志和资源回收保持确定性。
@@ -44,16 +48,19 @@
 - provider 先启动、后停止；required failure 只传播到 dependents。
 - `init()` 必须诚实报告无法提供能力的启动失败，不能记录日志后半启动。
 - 资源创建成功后立即登记幂等 cleanup。
-- replacement、rollback 和 shutdown 复用同一 stop/effects 语义。
+- `init()` 返回的 cleanup/disposable 自动进入当前 generation effects；replacement、rollback、optional
+  restart、正常停止和 shutdown 只 drain 这一套 effects。
 - core 返回 lifecycle facts；宿主决定退出、告警或降级。
 
 收益：失败隔离、重试、HMR 和关闭行为共享一套可测试语义。
 
 ## 6. 插件源码必须经过 Pluxel 工具链
 
-- Vite/OXC 负责 legacy decorator transform 和 `design:paramtypes`。
-- Rolldown plugin 负责 config/feature metadata 与 UI artifact。
-- raw TypeScript runner 不作为插件源码入口。
+- `@Plugin` 只保留 `displayName`、`startTimeoutMs` 和显式 abstract provider relation；`displayName` 不参与身份。
+- Rolldown/Vite 共用 semantic pass，在 TypeScript 擦除前生成 root export、definition address、constructor
+  required edge、optional ref/edge 与单 object config facts。
+- raw TypeScript runner 不作为插件源码入口；缺少 lowering facts 时必须 fail-fast，不能回退 reflection、class
+  name 或 constructor identity。
 - Node 原生 type stripping 只用于不依赖 decorator transform 的普通工具脚本。
 - 工具链不得注入第二套作者 API。
 

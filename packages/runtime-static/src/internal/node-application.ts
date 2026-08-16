@@ -8,7 +8,12 @@ import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { runStaticFetchApplication, type StaticFetchApplicationOptions } from './fetch-application'
 import { createNodeFetchRequest, writeNodeFetchResponse } from './node-http'
 import type { StaticRuntimeWorkbenchInstaller } from './host'
-import type { StaticRuntime, StaticRuntimeApplication, StaticRuntimeBindings } from '../types'
+import type {
+	StaticRuntime,
+	StaticRuntimeApplication,
+	StaticRuntimeBindings,
+	StaticRuntimeEnvironment,
+} from '../types'
 
 export type StaticNodeApplication = StaticRuntime & {
 	readonly address: { host: string; port: number }
@@ -171,7 +176,10 @@ async function toApplicationAssetResponse(
 		'content-type': applicationContentType(path),
 	})
 	if (request.method === 'HEAD') return new Response(null, { status: 200, headers })
-	return new Response(Readable.toWeb(createReadStream(path)) as BodyInit, { status: 200, headers })
+	return new Response(Readable.toWeb(createReadStream(path)) as unknown as BodyInit, {
+		status: 200,
+		headers,
+	})
 }
 
 function applicationContentType(path: string): string {

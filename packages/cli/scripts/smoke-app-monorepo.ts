@@ -324,7 +324,7 @@ async function verifyFrozenApplicationDistribution(root: string): Promise<void> 
 		'try {',
 		"\tif (app.ctx.workbench.enabled) throw new Error('Workbench should be disabled by startup config')",
 		'\tconst origin = `http://${app.address.host}:${app.address.port}`',
-		'\tconst health = await fetch(`${origin}/__pluxel/plugins/StarterAppPlugin/api/health`)',
+		'\tconst health = await fetch(`${origin}/api/health`)',
 		'\tif (!health.ok || (await health.json()).ok !== true) throw new Error(`Frozen health route returned ${health.status}`)',
 		"\tconst page = await fetch(`${origin}/nested/page`, { headers: { accept: 'text/html' } })",
 		'\tif (!page.ok || !(await page.text()).includes(\'<div id="root"></div>\')) throw new Error(`Frozen SPA fallback returned ${page.status}`)',

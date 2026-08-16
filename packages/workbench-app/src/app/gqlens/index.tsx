@@ -3,10 +3,13 @@ import type { ReactNode } from 'react'
 import type { Fetcher } from '@gqlens/core'
 import type {
 	Plugin,
+	PluginGroup,
+	PluginGroupNode,
 	PluginStatus,
 	PluginSourceInfoKind as PluginSourceInfoKindType,
 	PluginStatusLifecycleStage,
 } from './types'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 
 import { getRuntimeTransportClient } from '../../runtime'
 import { stringifyUnknown } from '../../utils/unknown'
@@ -17,8 +20,15 @@ export const PluginStatusEntryLifecycleStage = {
 	disabled: 'disabled',
 } as const
 export type PluginStatusEntryLifecycleStage = PluginStatusLifecycleStage
-export type PluginStatusEntry = PluginStatus & Pick<Plugin, 'id' | 'name'>
-export type PluginDependency = Pick<Plugin, 'id' | 'name'> & {
+export type PluginStatusEntry = PluginStatus &
+	Pick<Plugin, 'id' | 'name' | 'rootExportName'> & {
+		address: PluginNodeAddressSnapshot
+	}
+export type PluginGroupEntry = Omit<PluginGroup, 'nodes'> & {
+	nodes: Array<Omit<PluginGroupNode, 'address'> & { address: PluginNodeAddressSnapshot }>
+}
+export type PluginDependency = Pick<Plugin, 'id' | 'name' | 'rootExportName'> & {
+	address: PluginNodeAddressSnapshot
 	isRunning: boolean
 }
 

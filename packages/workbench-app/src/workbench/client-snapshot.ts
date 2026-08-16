@@ -3,14 +3,16 @@ import type {
 	WorkbenchLayoutItem,
 	WorkbenchPlacement,
 } from '@pluxel/runtime/workbench'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import type { WorkbenchModuleRecord } from './client-module-store'
+import { workbenchNodeKey } from './node-address'
 import {
 	compileWorkbenchRoute,
 	workbenchRoutesOverlap,
 	type CompiledWorkbenchRoute,
 } from './routes'
 
-export type WorkbenchTargetId = string | null
+export type WorkbenchTargetId = PluginNodeAddressSnapshot | null
 export type WorkbenchTargetState = 'loading' | 'ready' | 'error'
 
 export type RegisteredWorkbenchRoute = Readonly<{
@@ -110,16 +112,17 @@ function validateRemoteView(
 	item: WorkbenchLayoutItem,
 	modules: ReadonlyMap<string, WorkbenchModuleRecord>,
 ): void {
-	const record = modules.get(item.ownerPluginId)
-	if (!record) throw new Error(`[workbench-ui] UI module not found for ${item.ownerPluginId}`)
+	const ownerKey = workbenchNodeKey(item.owner.address)
+	const record = modules.get(ownerKey)
+	if (!record) throw new Error(`[workbench-ui] UI module not found for ${item.owner.displayName}`)
 	if (record.module.contractFingerprint !== item.contractFingerprint) {
-		throw new Error(`[workbench-ui] Contract mismatch for ${item.ownerPluginId}`)
+		throw new Error(`[workbench-ui] Contract mismatch for ${item.owner.displayName}`)
 	}
 	if (
 		typeof record.module.views[item.view.kind === 'remote' ? item.view.export : ''] !== 'function'
 	) {
 		throw new TypeError(
-			`[workbench-ui] View export not found: ${item.ownerPluginId}:${
+			`[workbench-ui] View export not found: ${item.owner.displayName}:${
 				item.view.kind === 'remote' ? item.view.export : item.viewId
 			}`,
 		)

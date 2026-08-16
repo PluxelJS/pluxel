@@ -33,7 +33,7 @@ const transferDeclaration = (defineWorkerTask as unknown as (...args: unknown[])
 ) as ReturnType<typeof defineWorkerTask<TransferTaskInput, TransferTaskOutput>>
 const artifactRoot = dirname(fileURLToPath(new URL('./fixtures/worker-task.mjs', import.meta.url)))
 
-@Plugin({ name: 'WorkerTaskConsumerA' })
+@Plugin({ displayName: 'WorkerTaskConsumerA' })
 class WorkerTaskConsumerA extends BasePlugin {
 	run(input: TaskInput, signal?: AbortSignal): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input, { signal })
@@ -47,7 +47,7 @@ class WorkerTaskConsumerA extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'WorkerTaskConsumerB' })
+@Plugin({ displayName: 'WorkerTaskConsumerB' })
 class WorkerTaskConsumerB extends BasePlugin {
 	run(input: TaskInput): Promise<TaskOutput> {
 		return this.ctx.workers.run(declaration, input)

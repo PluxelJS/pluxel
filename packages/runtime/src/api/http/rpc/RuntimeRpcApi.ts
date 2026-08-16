@@ -1,5 +1,5 @@
 // rpc/RuntimeRpcApi.ts - 主 RPC API
-import type { Context } from '@pluxel/core'
+import { parsePluginNodeAddress, type Context, type PluginNodeAddressSnapshot } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 import { writeGroups } from '../../features/pluginGroups/service'
 import {
@@ -53,63 +53,72 @@ export class RuntimeRpcApi extends RpcTarget {
 	workbenchRpc(grantId: string): WorkbenchRpcView {
 		const workbench = requireWorkbench(this.ctx)
 		const ref = workbench.registry.resolveModel(grantId, 'rpc')
-		return workbench.rpc.resolve(
-			this.ctx,
-			`${ref.ownerPluginId}:${ref.modelKey}`,
-		) as unknown as WorkbenchRpcView
+		return workbench.rpc.resolve(this.ctx, ref.resourceId) as unknown as WorkbenchRpcView
 	}
 
 	async updatePluginGroups(groups: PluginGroupInput[]): Promise<PluginGroup[]> {
 		const safe = Array.isArray(groups) ? groups : []
-		return writeGroups(this.ctx, safe)
+		const output = await writeGroups(this.ctx, safe)
+		return output.map((group) =>
+			Object.assign({}, group, {
+				nodes: group.nodes.map((node) => ({
+					...node,
+					address: parsePluginNodeAddress(node.address),
+				})),
+			}),
+		)
 	}
 
-	async pluginSchema(name: string) {
-		return await pluginSchema(this.ctx, name)
+	async pluginSchema(owner: PluginNodeAddressSnapshot) {
+		return await pluginSchema(this.ctx, owner)
 	}
 
-	async pluginConfig(name: string) {
-		return await pluginConfigGet(this.ctx, name)
+	async pluginConfig(owner: PluginNodeAddressSnapshot) {
+		return await pluginConfigGet(this.ctx, owner)
 	}
 
-	async patchPluginConfig(name: string, patch: Record<string, unknown>) {
-		return await pluginConfigPatch(this.ctx, name, patch)
+	async patchPluginConfig(owner: PluginNodeAddressSnapshot, patch: Record<string, unknown>) {
+		return await pluginConfigPatch(this.ctx, owner, patch)
 	}
 
-	async patchPluginConfigField(name: string, input: ConfigFieldMutation) {
-		return await pluginConfigPatchField(this.ctx, name, input)
+	async patchPluginConfigField(owner: PluginNodeAddressSnapshot, input: ConfigFieldMutation) {
+		return await pluginConfigPatchField(this.ctx, owner, input)
 	}
 
-	pluginDependencies(name: string) {
-		return listPluginDependencies(this.ctx, name)
+	pluginDependencies(owner: PluginNodeAddressSnapshot) {
+		return listPluginDependencies(this.ctx, owner)
 	}
 
-	inspectPluginDependencies(name: string) {
-		return inspectPluginDependencies(this.ctx, name)
+	inspectPluginDependencies(owner: PluginNodeAddressSnapshot) {
+		return inspectPluginDependencies(this.ctx, owner)
 	}
 
 	async setPluginDependencyTarget(input: {
-		name: string
+		consumer: PluginNodeAddressSnapshot
 		index: number
-		targetName: string | null
+		provider: PluginNodeAddressSnapshot | null
 	}) {
-		return await pluginDependencySetTarget(this.ctx, input.name, input.index, input.targetName)
+		return await pluginDependencySetTarget(this.ctx, input.consumer, input.index, input.provider)
 	}
 
-	inspectPluginBaseProvider(name: string) {
-		return inspectPluginBaseProvider(this.ctx, name)
+	inspectPluginBaseProvider(owner: PluginNodeAddressSnapshot) {
+		return inspectPluginBaseProvider(this.ctx, owner)
 	}
 
 	async selectPluginBaseProvider(input: {
-		name: string
-		baseToken: string
-		providerName: string | null
+		consumer: PluginNodeAddressSnapshot
+		token: import('@pluxel/core').PluginDefinitionAddressSnapshot
+		provider: PluginNodeAddressSnapshot | null
 	}) {
-		return await pluginBaseProviderSet(this.ctx, input.name, input.baseToken, input.providerName)
+		return await pluginBaseProviderSet(this.ctx, input.consumer, input.token, input.provider)
 	}
 
-	async ensurePluginFork(input: { baseName: string; forkId: string; enable?: boolean }) {
-		return await ensureFork(this.ctx, input.baseName, input.forkId, { enable: input.enable })
+	async ensurePluginFork(input: {
+		base: PluginNodeAddressSnapshot
+		forkId: string
+		enable?: boolean
+	}) {
+		return await ensureFork(this.ctx, input.base, input.forkId, { enable: input.enable })
 	}
 
 	async applyPluginStatusActions(actions: PluginStatusBatchAction[]) {

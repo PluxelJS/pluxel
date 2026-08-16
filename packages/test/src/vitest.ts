@@ -1,7 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { configSourcePlugin, lintGuardPlugin } from '@pluxel/rolldown/plugins'
+import {
+	configSourcePlugin,
+	createPluginSemanticsPlugin,
+	lintGuardPlugin,
+} from '@pluxel/rolldown/plugins'
 import { databaseSourceVitePlugin } from '@pluxel/rolldown/vite'
 import {
 	defineConfig,
@@ -131,8 +135,8 @@ export function definePluxelVitestConfig(
 				conditions: baseConditions,
 				externalConditions: [...DEFAULT_NODE_EXTERNAL_RESOLVE_CONDITIONS],
 			},
-			// Generated metadata imports must share the same source-mode core instance as tests.
-			noExternal: ['@pluxel/runtime/toolchain'],
+			// Generated metadata imports must share the same source-mode runtime instance as tests.
+			noExternal: ['@pluxel/runtime'],
 		},
 		test: {
 			environment: 'node',
@@ -148,7 +152,7 @@ export function definePluxelVitestConfig(
 				},
 			},
 			server: {
-				deps: { inline: ['@pluxel/runtime/toolchain'] },
+				deps: { inline: ['@pluxel/runtime'] },
 			},
 		},
 	}
@@ -161,6 +165,7 @@ export function definePluxelVitestConfig(
 		const toolchainPlugins: NonNullable<ViteUserConfig['plugins']> = [
 			...asPluginArray(options.prePlugins),
 			databaseSourceVitePlugin({ root: projectRoot }),
+			createPluginSemanticsPlugin({ root: projectRoot }).plugin,
 			lintGuardPlugin({ cwd: projectRoot }),
 			configSourcePlugin({ include, exclude }),
 		]

@@ -11,6 +11,8 @@
 
 当前进行中的提案：
 
+- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：尚未证明净收益的 decoratorless Plugin、browser config
+  representation、first-class multi-instance、Context kernel、Workbench transport、binding 与 catalog 简化研究。
 - [`OFFICIAL_TELEMETRY_PLUGIN.md`](OFFICIAL_TELEMETRY_PLUGIN.md)：服务器 metrics/traces/events 的信号与所有权边界，
   以及不建立通用 Telemetry umbrella API 的约束。
 - [`WORKBENCH_INSIGHTFLARE_ANALYTICS.md`](WORKBENCH_INSIGHTFLARE_ANALYTICS.md)：Workbench 使用 InsightFlare 分析页面性能、

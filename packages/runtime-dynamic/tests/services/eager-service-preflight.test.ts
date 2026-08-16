@@ -1,13 +1,13 @@
 import '@pluxel/runtime/services/vault'
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, pluginNodeAddressOf } from '@pluxel/runtime'
 import { createDiskFixture } from '@pluxel/test/fixtures'
 import { describe, expect, it } from 'vitest'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '../../src/hmr/host.ts'
 
 let cleanupCount = 0
-let stopCount = 0
 const liveTimers = new Set<ReturnType<typeof setInterval>>()
 
+@Plugin({ displayName: 'Dynamic vault consumer' })
 class DynamicVaultConsumerPlugin extends BasePlugin {
 	started = false
 
@@ -23,17 +23,11 @@ class DynamicVaultConsumerPlugin extends BasePlugin {
 			cleanupCount++
 		})
 	}
-
-	protected override async stop(): Promise<void> {
-		stopCount++
-	}
 }
-Plugin({ name: 'DynamicVaultConsumerPlugin' })(DynamicVaultConsumerPlugin)
 
 describe('dynamic host eager service preflight', () => {
 	it('prepares eager services before the initial plugin graph starts', async () => {
 		cleanupCount = 0
-		stopCount = 0
 		await using fixture = await createDiskFixture({
 			'pnpm-workspace.yaml': 'packages: []\n',
 			'pluxel.loader.hmr.jsonc': JSON.stringify({
@@ -55,7 +49,7 @@ describe('dynamic host eager service preflight', () => {
 				configService: { mode: 'memory' },
 				runtimeState: {
 					mode: 'memory',
-					snapshot: { enabled: ['DynamicVaultConsumerPlugin'] },
+					snapshot: { enabled: [pluginNodeAddressOf(DynamicVaultConsumerPlugin)] },
 				},
 				plugins: [DynamicVaultConsumerPlugin],
 			})
@@ -70,12 +64,11 @@ describe('dynamic host eager service preflight', () => {
 				present: true,
 				unlocked: true,
 			})
+			expect(host.ctx.registry.isRegistered(DynamicVaultConsumerPlugin)).toBe(true)
 			await host.stop()
-			expect(stopCount).toBe(1)
 			expect(cleanupCount).toBe(1)
 			expect(liveTimers.size).toBe(0)
 			await host.stop()
-			expect(stopCount).toBe(1)
 			expect(cleanupCount).toBe(1)
 		} finally {
 			await host?.stop()

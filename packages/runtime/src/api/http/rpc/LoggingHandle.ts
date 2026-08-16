@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/core'
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 import { RpcTarget } from 'capnweb'
 
 import { requireContextRuntimeLogging } from '../../../logger/logging'
@@ -38,19 +38,19 @@ export class LoggingHandle extends RpcTarget {
 
 	async setPluginLevel(
 		expectedRevision: number,
-		pluginId: string,
+		owner: PluginNodeAddressSnapshot,
 		level: RuntimePluginLogLevel,
 	): Promise<PluginLogPolicyMutationResult> {
 		const policy = await this.policy(expectedRevision)
-		return policy.setPluginLevel(pluginId, level)
+		return policy.setPluginLevel(owner, level)
 	}
 
 	async clearPluginLevel(
 		expectedRevision: number,
-		pluginId: string,
+		owner: PluginNodeAddressSnapshot,
 	): Promise<PluginLogPolicyMutationResult> {
 		const policy = await this.policy(expectedRevision)
-		return policy.clearPluginLevel(pluginId)
+		return policy.clearPluginLevel(owner)
 	}
 
 	async resetPolicy(expectedRevision: number): Promise<VersionedPluginLogPolicySnapshot> {

@@ -5,8 +5,7 @@
 
 import type { Context } from '@pluxel/context'
 import { BasePlugin } from '../../composition/BasePlugin'
-import type { PluginIdentifier } from '../../types'
-import type { RuntimePluginKey } from '../identity'
+import { formatPluginNodeAddress, type PluginNodeSlot, type PluginSlotRegistry } from '../identity'
 import { type LifecycleSnapshot, lifecycleSelectors, PluginLifecycleActor } from '../PluginActor'
 
 const PLUGIN_LIFECYCLE_SLOT_KEY = 'pluxel:plugin:lifecycle'
@@ -15,8 +14,9 @@ const PLUGIN_LIFECYCLE_SLOT = Symbol.for(PLUGIN_LIFECYCLE_SLOT_KEY)
 export class LifecycleManager {
 	constructor(
 		private readonly ctx: Context,
+		private readonly slots: PluginSlotRegistry,
 		private readonly startTimeoutMs: number,
-		private readonly stopTimeoutMs: number,
+		private readonly drainTimeoutMs: number,
 	) {}
 
 	/* ─────────────────────────── Lifecycle Slot ─────────────────────────── */
@@ -44,19 +44,17 @@ export class LifecycleManager {
 	}
 
 	private createLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
+		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
 	): PluginLifecycleActor {
 		const ref = new PluginLifecycleActor(
-			{ autoStart: false, useErrorChannel: true },
+			{ autoStart: false, useErrorChannel: true, onLateError },
 			{ id, runtime: BasePlugin.getLifecycleRuntime(plugin) },
 		)
 		ref.subscribe({
 			error: (err) => {
-				const label =
-					typeof id === 'function'
-						? ((id as { readonly name?: string }).name ?? String(id))
-						: String(id)
+				const label = formatPluginNodeAddress(this.slots.nodeAddress(id))
 				this.ctx.logger.error('actor {actor} unhandled error', {
 					actor: label,
 					error: err,
@@ -69,15 +67,16 @@ export class LifecycleManager {
 	}
 
 	private ensureLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
+		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
 	): PluginLifecycleActor {
 		const existing = this.getLifecycle(plugin)
 		if (existing) {
 			if (!lifecycleSelectors.isStopped(existing.getSnapshot?.())) return existing
 			this.setLifecycle(plugin)
 		}
-		return this.createLifecycle(id, plugin)
+		return this.createLifecycle(id, plugin, onLateError)
 	}
 
 	getSnapshot(plugin: BasePlugin): LifecycleSnapshot | undefined {
@@ -92,11 +91,12 @@ export class LifecycleManager {
 	/* ─────────────────────────── Lifecycle Workbench ─────────────────────────── */
 
 	async startLifecycle(
-		id: PluginIdentifier | RuntimePluginKey,
+		id: PluginNodeSlot,
 		plugin: BasePlugin,
 		timeoutMs?: number,
+		onLateError?: (error: unknown, phase: 'start' | 'drain') => void,
 	): Promise<void> {
-		const ref = this.ensureLifecycle(id, plugin)
+		const ref = this.ensureLifecycle(id, plugin, onLateError)
 		if (lifecycleSelectors.isRunning(ref.getSnapshot?.())) return
 
 		ref.send({ type: 'START' })
@@ -108,17 +108,15 @@ export class LifecycleManager {
 			snapshot = await ref.waitForStable(startTimeoutMs)
 		} catch (error) {
 			await this.stopLifecycle(id, plugin, { ref })
-			throw new Error(`Plugin ${String(id)} start timeout after ${startTimeoutMs}ms`, {
-				cause: error,
-			})
+			throw new Error(
+				`Plugin ${formatPluginNodeAddress(this.slots.nodeAddress(id))} start timeout after ${startTimeoutMs}ms`,
+				{
+					cause: error,
+				},
+			)
 		}
 
 		if (lifecycleSelectors.isRunning(snapshot)) {
-			try {
-				this.ctx.emit('afterStart', plugin.ctx)
-			} catch {
-				// ignore: events service may be overridden
-			}
 			return
 		}
 
@@ -131,24 +129,19 @@ export class LifecycleManager {
 
 		await this.stopLifecycle(id, plugin, { ref })
 
-		const pluginCtx = plugin.ctx
 		const err =
 			capturedErr instanceof Error
 				? capturedErr
 				: capturedErr !== null && capturedErr !== undefined
 					? new Error(String(capturedErr), { cause: capturedErr })
-					: new Error(`Plugin ${String(id)} failed to start`)
-
-		try {
-			this.ctx.emit('startError', pluginCtx, err)
-		} catch {
-			// ignore: events service may be overridden
-		}
+					: new Error(
+							`Plugin ${formatPluginNodeAddress(this.slots.nodeAddress(id))} failed to start`,
+						)
 		throw err
 	}
 
 	async stopLifecycle(
-		_id: PluginIdentifier | RuntimePluginKey,
+		_id: PluginNodeSlot,
 		plugin: BasePlugin,
 		opts?: { ref?: PluginLifecycleActor; timeoutMs?: number },
 	): Promise<LifecycleSnapshot | undefined> {
@@ -161,7 +154,7 @@ export class LifecycleManager {
 			/* ignore */
 		}
 
-		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.stopTimeoutMs)
+		const timeoutMs = normalizeTimeoutMs(opts?.timeoutMs, this.drainTimeoutMs)
 		const snapshot = await this.waitUntilStopped(lifecycle, timeoutMs)
 		this.setLifecycle(plugin)
 		return snapshot
@@ -175,10 +168,21 @@ export class LifecycleManager {
 		if (lifecycleSelectors.isStopped(current)) return current
 		try {
 			return await ref.waitForStopped(timeoutMs)
-		} catch {
-			/* ignore */
+		} catch (cause) {
+			const latest = ref.getSnapshot?.()
+			if (!latest) return undefined
+			const drainError = ref.getDrainError()
+			const error =
+				drainError === undefined
+					? new Error(`Plugin generation drain timeout after ${timeoutMs}ms`, { cause })
+					: drainError instanceof Error
+						? drainError
+						: new Error(String(drainError), { cause: drainError })
+			return {
+				...latest,
+				context: { ...latest.context, err: error, failedStep: 'drain' },
+			}
 		}
-		return ref.getSnapshot?.()
 	}
 }
 

@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto'
-import { RatesBackend, type RatesBackendConsumeRequest } from '@pluxel/rates/backend'
-import { type RateDecision, type ResolvedRatePolicy, RatesPolicyConflictError } from '@pluxel/rates'
-import { Plugin, v } from '@pluxel/runtime'
+import {
+	RatesBackend,
+	type RatesBackendConsumeRequest,
+	type RateDecision,
+	type ResolvedRatePolicy,
+	RatesPolicyConflictError,
+} from '@pluxel/rates'
+import { parsePluginNodeAddress, Plugin, type PluginNodeAddressSnapshot, v } from '@pluxel/runtime'
 import { Redis } from './client.ts'
 import { defineRedisScript, type RedisScriptDefinition, type RedisScriptRunner } from './scripts.ts'
 import { isWellFormedUnicode } from './validation.ts'
@@ -44,16 +49,16 @@ local function conflict(algorithm, limit, window, burst)
 end
 local function parse_log_meta(member)
   if not member then return nil end
-  local version, algorithm, limit, window, used, observed, lastAt, sequence = string.match(
-    member, '^m|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)$'
+  local version, algorithm, limit, window, used, observed, lastAt, sequence, owner = string.match(
+    member, '^m|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|([^|]+)|(.*)$'
   )
   version = integer(version); limit = positive(limit); window = positive(window); used = positive(used)
   observed = timestamp(observed); lastAt = timestamp(lastAt); sequence = integer(sequence)
-  if version ~= 1 or algorithm ~= 'sliding-window-log' or not limit or limit > 10000 or
+  if version ~= 2 or algorithm ~= 'sliding-window-log' or not limit or limit > 10000 or
      not window or window > MAX_WINDOW or not used or used > limit or not observed or
-     not lastAt or lastAt > observed or not sequence or sequence > 10000 or
+     not lastAt or lastAt > observed or not sequence or sequence > 10000 or not owner or owner == '' or
      lastAt + window > MAX_SAFE or lastAt + window <= observed then return nil end
-  return {algorithm=algorithm, limit=limit, window=window, used=used, observed=observed, lastAt=lastAt, sequence=sequence}
+  return {algorithm=algorithm, limit=limit, window=window, used=used, observed=observed, lastAt=lastAt, sequence=sequence, owner=owner}
 end
 local function parse_log_event(member, score)
   local at, sequence, cost = string.match(member, '^e|([^|]+)|([^|]+)|([^|]+)$')
@@ -80,34 +85,34 @@ local function read_log_header(key)
   return {meta=meta, metaMember=metaMember, eventCount=eventCount}
 end
 local function read_hash_state(key)
-  local common = redis.call('HMGET', key, 'version', 'algorithm', 'limit', 'window', 'burst', 'observedAt')
+  local common = redis.call('HMGET', key, 'version', 'algorithm', 'limit', 'window', 'burst', 'observedAt', 'owner')
   local version = integer(common[1]); local algorithm = common[2]
   local limit = positive(common[3]); local window = positive(common[4]); local burst = integer(common[5])
-  local observed = timestamp(common[6])
-  if version ~= 1 or not algorithm or not limit or not window or window > MAX_WINDOW or
-     not burst or not observed then return nil end
+  local observed = timestamp(common[6]); local owner = common[7]
+  if version ~= 2 or not algorithm or not limit or not window or window > MAX_WINDOW or
+     not burst or not observed or not owner or owner == '' then return nil end
   if algorithm == 'token-bucket' then
-    if redis.call('HLEN', key) ~= 8 or burst < 1 then return nil end
+    if redis.call('HLEN', key) ~= 9 or burst < 1 then return nil end
     local capacity = safe_product(burst, window)
     local refillTtl = capacity and math.ceil(capacity / limit) or nil
     local values = redis.call('HMGET', key, 'balance', 'updatedAt')
     local balance = integer(values[1]); local updatedAt = timestamp(values[2])
     if not capacity or not refillTtl or refillTtl > MAX_STATE_TTL or not balance or
        balance >= capacity or updatedAt ~= observed then return nil end
-    return {algorithm=algorithm, limit=limit, window=window, burst=burst, observed=observed,
+    return {algorithm=algorithm, limit=limit, window=window, burst=burst, observed=observed, owner=owner,
       capacity=capacity, balance=balance, updatedAt=updatedAt}
   end
   if burst ~= 0 then return nil end
   if algorithm == 'fixed-window' then
-    if redis.call('HLEN', key) ~= 8 then return nil end
+    if redis.call('HLEN', key) ~= 9 then return nil end
     local values = redis.call('HMGET', key, 'windowStart', 'used')
     local start = timestamp(values[1]); local used = integer(values[2])
     if not start or start ~= math.floor(observed / window) * window or not used or used < 1 or
        used > limit or start + window <= observed then return nil end
-    return {algorithm=algorithm, limit=limit, window=window, burst=0, observed=observed, start=start, used=used}
+    return {algorithm=algorithm, limit=limit, window=window, burst=0, observed=observed, owner=owner, start=start, used=used}
   end
   if algorithm == 'sliding-window-counter' then
-    if redis.call('HLEN', key) ~= 9 then return nil end
+    if redis.call('HLEN', key) ~= 10 then return nil end
     local capacity = safe_product(limit, window)
     local values = redis.call('HMGET', key, 'windowStart', 'previous', 'current')
     local start = timestamp(values[1]); local previous = integer(values[2]); local current = integer(values[3])
@@ -117,22 +122,24 @@ local function read_hash_state(key)
     local usedUnits = current * window + previous * (window - elapsed)
     local resetAt = current > 0 and start + 2 * window or start + window
     if usedUnits > capacity or resetAt <= observed then return nil end
-    return {algorithm=algorithm, limit=limit, window=window, burst=0, observed=observed,
+    return {algorithm=algorithm, limit=limit, window=window, burst=0, observed=observed, owner=owner,
       start=start, previous=previous, current=current}
   end
   return nil
 end
-local function existing_hash_or_conflict(key, requestedAlgorithm, requestedLimit, requestedWindow, requestedBurst)
+local function existing_hash_or_conflict(key, requestedAlgorithm, requestedLimit, requestedWindow, requestedBurst, requestedOwner)
   local kind = redis.call('TYPE', key).ok
   if kind == 'none' then return nil end
   if kind == 'zset' then
     local state = read_log_header(key)
     if not state then return {-2} end
+    if state.meta.owner ~= requestedOwner then return {-2} end
     return conflict(state.meta.algorithm, state.meta.limit, state.meta.window, 0)
   end
   if kind ~= 'hash' then return {-2} end
   local state = read_hash_state(key)
   if not state then return {-2} end
+  if state.owner ~= requestedOwner then return {-2} end
   if state.algorithm ~= requestedAlgorithm or state.limit ~= requestedLimit or
      state.window ~= requestedWindow or state.burst ~= requestedBurst then
     return conflict(state.algorithm, state.limit, state.window, state.burst)
@@ -144,11 +151,11 @@ end
 const ConsumeTokenBucket = script(
 	'token-bucket',
 	String.raw`
-local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local burst = positive(ARGV[3]); local cost = positive(ARGV[4])
+local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local burst = positive(ARGV[3]); local owner = ARGV[4]; local cost = positive(ARGV[5])
 local requestedCapacity = limit and window and burst and safe_product(burst, window) or nil
 if not limit or not window or window > MAX_WINDOW or not burst or not cost or cost > burst or
-   not requestedCapacity or math.ceil(requestedCapacity / limit) > MAX_STATE_TTL then return {-2} end
-local existing = existing_hash_or_conflict(KEYS[1], 'token-bucket', limit, window, burst)
+   not owner or owner == '' or not requestedCapacity or math.ceil(requestedCapacity / limit) > MAX_STATE_TTL then return {-2} end
+local existing = existing_hash_or_conflict(KEYS[1], 'token-bucket', limit, window, burst, owner)
 if existing and existing[1] then return existing end
 local now = now_ms(); local capacity = requestedCapacity; local balance; local updatedAt
 if existing then
@@ -167,8 +174,8 @@ local costUnits = cost * window; local allowed = 0
 if balance >= costUnits then allowed = 1; balance = balance - costUnits end
 local untilFull = math.ceil((capacity - balance) / limit)
 local remaining = math.floor(balance / window)
-redis.call('HSET', KEYS[1], 'version', 1, 'algorithm', 'token-bucket', 'limit', limit, 'window', window,
-  'burst', burst, 'observedAt', now, 'balance', balance, 'updatedAt', now)
+redis.call('HSET', KEYS[1], 'version', 2, 'algorithm', 'token-bucket', 'limit', limit, 'window', window,
+  'burst', burst, 'observedAt', now, 'owner', owner, 'balance', balance, 'updatedAt', now)
 redis.call('PEXPIRE', KEYS[1], math.max(1, untilFull))
 if allowed == 1 then return {1, remaining, now + untilFull} end
 return {0, remaining, math.max(1, math.ceil((costUnits - balance) / limit)), now + untilFull}
@@ -178,9 +185,9 @@ return {0, remaining, math.max(1, math.ceil((costUnits - balance) / limit)), now
 const ConsumeFixedWindow = script(
 	'fixed-window',
 	String.raw`
-local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local cost = positive(ARGV[4])
-if not limit or not window or window > MAX_WINDOW or not cost or cost > limit then return {-2} end
-local existing = existing_hash_or_conflict(KEYS[1], 'fixed-window', limit, window, 0)
+local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local owner = ARGV[4]; local cost = positive(ARGV[5])
+if not limit or not window or window > MAX_WINDOW or not owner or owner == '' or not cost or cost > limit then return {-2} end
+local existing = existing_hash_or_conflict(KEYS[1], 'fixed-window', limit, window, 0, owner)
 if existing and existing[1] then return existing end
 local now = now_ms(); if existing and now < existing.observed then now = existing.observed end
 local start = math.floor(now / window) * window; local used = 0
@@ -190,8 +197,8 @@ if existing then
 end
 local allowed = 0; if cost <= limit - used then allowed = 1; used = used + cost end
 local resetAt = start + window; local remaining = limit - used
-redis.call('HSET', KEYS[1], 'version', 1, 'algorithm', 'fixed-window', 'limit', limit, 'window', window,
-  'burst', 0, 'observedAt', now, 'windowStart', start, 'used', used)
+redis.call('HSET', KEYS[1], 'version', 2, 'algorithm', 'fixed-window', 'limit', limit, 'window', window,
+  'burst', 0, 'observedAt', now, 'owner', owner, 'windowStart', start, 'used', used)
 redis.call('PEXPIRE', KEYS[1], math.max(1, resetAt - now))
 if allowed == 1 then return {1, remaining, resetAt} end
 return {0, remaining, math.max(1, resetAt - now), resetAt}
@@ -201,10 +208,10 @@ return {0, remaining, math.max(1, resetAt - now), resetAt}
 const ConsumeSlidingCounter = script(
 	'sliding-window-counter',
 	String.raw`
-local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local cost = positive(ARGV[4])
+local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local owner = ARGV[4]; local cost = positive(ARGV[5])
 local requestedCapacity = limit and window and safe_product(limit, window) or nil
-if not limit or not window or window > MAX_WINDOW or not cost or cost > limit or not requestedCapacity then return {-2} end
-local existing = existing_hash_or_conflict(KEYS[1], 'sliding-window-counter', limit, window, 0)
+if not limit or not window or window > MAX_WINDOW or not owner or owner == '' or not cost or cost > limit or not requestedCapacity then return {-2} end
+local existing = existing_hash_or_conflict(KEYS[1], 'sliding-window-counter', limit, window, 0, owner)
 if existing and existing[1] then return existing end
 local now = now_ms(); if existing and now < existing.observed then now = existing.observed end
 local targetStart = math.floor(now / window) * window; local start = targetStart; local previous = 0; local current = 0
@@ -221,8 +228,8 @@ if costUnits <= capacity - usedUnits then allowed = 1; current = current + cost;
 local remaining = math.floor((capacity - usedUnits) / window)
 local resetAt = now
 if current > 0 then resetAt = start + 2 * window elseif previous > 0 then resetAt = start + window end
-redis.call('HSET', KEYS[1], 'version', 1, 'algorithm', 'sliding-window-counter', 'limit', limit, 'window', window,
-  'burst', 0, 'observedAt', now, 'windowStart', start, 'previous', previous, 'current', current)
+redis.call('HSET', KEYS[1], 'version', 2, 'algorithm', 'sliding-window-counter', 'limit', limit, 'window', window,
+  'burst', 0, 'observedAt', now, 'owner', owner, 'windowStart', start, 'previous', previous, 'current', current)
 redis.call('PEXPIRE', KEYS[1], math.max(1, resetAt - now))
 if allowed == 1 then return {1, remaining, resetAt} end
 local boundary = start + window
@@ -243,22 +250,23 @@ return {0, remaining, retry, resetAt}
 
 const ConsumeSlidingLog = defineRedisScript<
 	readonly [string],
-	readonly [string, string, string, string],
+	readonly [string, string, string, string, string],
 	RedisRatesReply
 >({
-	name: 'pluxel.rates.consume-sliding-window-log-v1',
+	name: 'pluxel.rates.consume-sliding-window-log-v2',
 	numberOfKeys: 1,
 	source: `${LUA_COMMON}\n${String.raw`
 local function log_meta_member(meta, observed)
-  return 'm|1|sliding-window-log|' .. meta.limit .. '|' .. meta.window .. '|' .. meta.used .. '|' ..
-    observed .. '|' .. meta.lastAt .. '|' .. meta.sequence
+  return 'm|2|sliding-window-log|' .. meta.limit .. '|' .. meta.window .. '|' .. meta.used .. '|' ..
+    observed .. '|' .. meta.lastAt .. '|' .. meta.sequence .. '|' .. meta.owner
 end
-local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local cost = positive(ARGV[4])
-if not limit or limit > 10000 or not window or window > MAX_WINDOW or not cost or cost > limit then return {-2} end
+local limit = positive(ARGV[1]); local window = positive(ARGV[2]); local owner = ARGV[4]; local cost = positive(ARGV[5])
+if not limit or limit > 10000 or not window or window > MAX_WINDOW or not owner or owner == '' or not cost or cost > limit then return {-2} end
 local kind = redis.call('TYPE', KEYS[1]).ok
 if kind == 'hash' then
   local active = read_hash_state(KEYS[1])
   if not active then return {-2} end
+  if active.owner ~= owner then return {-2} end
   return conflict(active.algorithm, active.limit, active.window, active.burst)
 elseif kind ~= 'none' and kind ~= 'zset' then return {-2} end
 local now = now_ms(); local metaMember; local meta; local eventCount = 0
@@ -267,6 +275,7 @@ if kind == 'zset' then
   local state = read_log_header(KEYS[1])
   if not state then return {-2} end
   metaMember = state.metaMember; meta = state.meta; eventCount = state.eventCount
+  if meta.owner ~= owner then return {-2} end
   if now < meta.observed then now = meta.observed end
   local cutoff = now - meta.window
   if meta.lastAt <= cutoff then
@@ -299,7 +308,7 @@ if meta and (meta.limit ~= limit or meta.window ~= window) then
   redis.call('PEXPIRE', KEYS[1], math.max(1, meta.lastAt + meta.window - now))
   return conflict(meta.algorithm, meta.limit, meta.window, 0)
 end
-if not meta then meta = {limit=limit, window=window, used=0, observed=now, lastAt=0, sequence=0} end
+if not meta then meta = {limit=limit, window=window, used=0, observed=now, lastAt=0, sequence=0, owner=owner} end
 local allowed = 0
 if cost <= limit - meta.used then
   allowed = 1
@@ -340,7 +349,7 @@ const SCRIPTS: Record<
 	ResolvedRatePolicy['algorithm'],
 	RedisScriptDefinition<
 		readonly [string],
-		readonly [string, string, string, string],
+		readonly [string, string, string, string, string],
 		RedisRatesReply
 	>
 > = {
@@ -364,12 +373,16 @@ export const RedisRatesBackendConfig = v.object({
 export type RedisRatesBackendPluginConfig = v.InferOutput<typeof RedisRatesBackendConfig>
 
 /** Redis 7 backend using one server-timed, single-key Lua transition per decision. */
-@Plugin(RatesBackend, { name: 'RedisRatesBackendPlugin' })
+@Plugin(RatesBackend, { displayName: 'RedisRatesBackendPlugin' })
 export class RedisRatesBackendPlugin extends RatesBackend {
 	private readonly config = this.configs.use(RedisRatesBackendConfig)
 	private readonly runners = new Map<
 		ResolvedRatePolicy['algorithm'],
-		RedisScriptRunner<readonly [string], readonly [string, string, string, string], RedisRatesReply>
+		RedisScriptRunner<
+			readonly [string],
+			readonly [string, string, string, string, string],
+			RedisRatesReply
+		>
 	>()
 	private readonly encodedPolicies = new WeakMap<
 		Readonly<ResolvedRatePolicy>,
@@ -383,6 +396,7 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 	async consume(request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		const policy = request.policy
 		const digest = createHash('sha256').update(request.key).digest('hex')
+		const owner = canonicalBackendOwner(request.owner)
 		let runner = this.runners.get(policy.algorithm)
 		if (!runner) {
 			runner = this.redis.scripts.use(SCRIPTS[policy.algorithm])
@@ -398,21 +412,25 @@ export class RedisRatesBackendPlugin extends RatesBackend {
 			this.encodedPolicies.set(policy, encodedPolicy)
 		}
 		const reply = await runner({
-			keys: [`${this.config.keyPrefix}v1:${digest}`],
-			arguments: [...encodedPolicy, String(request.cost)],
+			keys: [`${this.config.keyPrefix}v2:${digest}`],
+			arguments: [...encodedPolicy, owner, String(request.cost)],
 		})
 		if (reply.kind === 'decision') return reply.decision
 		throw new RatesPolicyConflictError(reply.active, policy)
 	}
 }
 
+function canonicalBackendOwner(owner: PluginNodeAddressSnapshot | null): string {
+	return owner === null ? 'null' : JSON.stringify(parsePluginNodeAddress(owner))
+}
+
 function script(algorithm: string, body: string) {
 	return defineRedisScript<
 		readonly [string],
-		readonly [string, string, string, string],
+		readonly [string, string, string, string, string],
 		RedisRatesReply
 	>({
-		name: `pluxel.rates.consume-${algorithm}-v1`,
+		name: `pluxel.rates.consume-${algorithm}-v2`,
 		numberOfKeys: 1,
 		source: `${LUA_COMMON}\n${body}`,
 		decode: decodeReply,

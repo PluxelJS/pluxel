@@ -32,7 +32,7 @@ export async function createDynamicDevRuntime(
 			.then(({ startOwnedDynamicRuntimeViteServer }) =>
 				startOwnedDynamicRuntimeViteServer({ config: configPath }),
 			)
-			.then((result) => {
+			.then((result): undefined => {
 				server = result
 				return undefined
 			})

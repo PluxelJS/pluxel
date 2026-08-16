@@ -21,6 +21,7 @@ import { updatePluginStatuses } from '../pluginStatusActions'
 import { usePluginOverview } from '../pluginOverview'
 import type { PluginStatusAction } from '../../../runtime'
 import { stringifyUnknown } from '../../../utils/unknown'
+import { workbenchNodeKey } from '../../../workbench/node-address'
 import {
 	EMPTY_OVERVIEW,
 	areGroupsEqual,
@@ -214,16 +215,21 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 		}
 		pendingCommitRef.current = null
 		const task = updatePluginGroups(
-			{ groups: pending },
-			{ invalidates: [PLUGIN_GROUPS_INVALIDATION] },
-		)
-			.then((result): undefined => {
-				const nextGroups = result.map((group) => ({
+			{
+				groups: pending.map((group) => ({
 					groupId: group.groupId,
 					name: group.name,
-					pluginIds: [...group.pluginIds],
-				}))
-				lastSyncedRef.current = cloneGroups(nextGroups)
+					nodes: group.pluginIds.map((id) => {
+						const status = overview.statuses[id]
+						if (!status) throw new Error(`Plugin group references unknown catalog id: ${id}`)
+						return status.address
+					}),
+				})),
+			},
+			{ invalidates: [PLUGIN_GROUPS_INVALIDATION] },
+		)
+			.then((): undefined => {
+				lastSyncedRef.current = cloneGroups(pending)
 				return undefined
 			})
 			.catch((error: unknown): void => {
@@ -249,7 +255,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				}
 			})
 		inflightCommitRef.current = task
-	}, [notify, updatePluginGroups])
+	}, [notify, overview.statuses, updatePluginGroups])
 
 	const handleGroupsChange = useCallback(
 		(next: GroupConfig[]) => {
@@ -271,16 +277,29 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 	const handleBulkStatus = useCallback(
 		async (action: Exclude<PluginStatusAction, 'start' | 'restart' | 'enable-persisted'>) => {
 			if (selectedIds.length === 0) return
-			const batch = [...selectedIds]
+			const batch = selectedIds.map((id) => {
+				const status = overview.statuses[id]
+				if (!status) throw new Error(`Unknown catalog plugin id: ${id}`)
+				return status
+			})
+			const displayNameByAddress = new Map(
+				batch.map((status) => [workbenchNodeKey(status.address), status.name ?? status.id]),
+			)
 			setBulkBusy(true)
 			try {
-				const results = await updatePluginStatuses(batch.map((name) => ({ name, action })))
+				const results = await updatePluginStatuses(
+					batch.map(({ address }) => ({ address, action })),
+				)
 				if (results.some((result) => result.ok)) refetchOverview()
 				const failed = results.filter((r) => !r.ok)
 				if (failed.length > 0) {
 					notify({
 						title: '操作完成但部分失败',
-						message: failed.map((f) => f.name).join('，') || '操作失败',
+						message:
+							failed
+								.map((result) => displayNameByAddress.get(workbenchNodeKey(result.address)))
+								.filter(Boolean)
+								.join('，') || '操作失败',
 						color: 'red',
 					})
 				} else {
@@ -303,7 +322,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 												setBulkBusy(true)
 												try {
 													const undoResults = await updatePluginStatuses(
-														batch.map((name) => ({ name, action: undoAction })),
+														batch.map(({ address }) => ({ address, action: undoAction })),
 													)
 													if (undoResults.some((result) => result.ok)) {
 														refetchOverview()
@@ -312,7 +331,13 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 													if (undoFailed.length > 0) {
 														notify({
 															title: '撤销失败',
-															message: undoFailed.map((f) => f.name).join('，') || '撤销失败',
+															message:
+																undoFailed
+																	.map((result) =>
+																		displayNameByAddress.get(workbenchNodeKey(result.address)),
+																	)
+																	.filter(Boolean)
+																	.join('，') || '撤销失败',
 															color: 'red',
 														})
 													} else {
@@ -360,7 +385,7 @@ export const PluginCatalog: React.FC<PluginCatalogProps> = ({ onCollapse, plugin
 				setBulkBusy(false)
 			}
 		},
-		[selectedIds, notify, refetchOverview],
+		[selectedIds, notify, overview.statuses, refetchOverview],
 	)
 
 	const handleBulkAction = useCallback(

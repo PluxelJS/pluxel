@@ -12,13 +12,16 @@ const CfgSchema = v.object({
 	mikroOptions: v.optional(v.record(v.string(), v.any()), {}),
 })
 
-@Plugin({ name: 'PluginB', type: 'hook' })
+const PluginBConfig = v.object({
+	appearance: config,
+	database: CfgSchema,
+})
+
+@Plugin({ displayName: 'Plugin B' })
 export class PluginB extends BasePlugin {
-	private a = this.configs.use(config)
-	private ba = this.configs.use(CfgSchema)
+	private config = this.configs.use(PluginBConfig)
 	override init(): void {
-		void this.a
-		void this.ba
+		void this.config
 
 		this.ctx.logger.info('PluginB initialized')
 		throw new Error('a')

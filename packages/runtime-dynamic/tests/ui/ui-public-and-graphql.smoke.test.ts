@@ -196,6 +196,17 @@ describe('HMR UI smoke', () => {
 	}, 15_000)
 
 	it('serves workbench artifact manifests and files through the internal artifact route', async () => {
+		const owner = {
+			address: {
+				definition: {
+					entry: { kind: 'source-entry', source: 'plugins/demo.ts' },
+					exportName: 'DemoPlugin',
+				},
+				instance: 'default',
+			} as const,
+			displayName: 'Demo Plugin',
+			rootExportName: 'DemoPlugin',
+		}
 		await using fixture = await createFixture({
 			artifacts: {
 				'mf-manifest.json': JSON.stringify({
@@ -211,15 +222,16 @@ describe('HMR UI smoke', () => {
 			async (ctx) => {
 				await requireWorkbench(ctx).artifacts.commitCompiledModule(
 					createCompiledWorkbenchArtifact({
-						pluginName: 'DemoPlugin',
+						owner,
 						sourceHash: 'demo-hash',
 						compiledAt: 123,
 					}),
 					{ artifactRoot: resolve(fixture.path, 'artifacts') },
 				)
 
-				const remoteEntryUrl =
-					requireWorkbench(ctx).artifacts.getCompiledModule('DemoPlugin')?.remoteEntryUrl
+				const remoteEntryUrl = requireWorkbench(ctx).artifacts.getCompiledModule(
+					ctx.registry.internNodeAddress(owner.address),
+				)?.remoteEntryUrl
 				expect(remoteEntryUrl).toBeTruthy()
 				const manifestUrl = remoteEntryUrl?.replace(/remoteEntry\.js$/, 'mf-manifest.json')
 
@@ -229,9 +241,7 @@ describe('HMR UI smoke', () => {
 				const manifest = (await manifestRes.json()) as {
 					metaData?: { publicPath?: string }
 				}
-				expect(manifest.metaData?.publicPath).toBe(
-					`${RUNTIME_INTERNAL_API_BASE}/workbench/artifacts/DemoPlugin/demo-hash/`,
-				)
+				expect(manifest.metaData?.publicPath).toBe(remoteEntryUrl?.replace(/remoteEntry\.js$/, ''))
 
 				const assetRes = await ctx.http.fetch(new Request(`http://local${remoteEntryUrl}`))
 				expect(assetRes.status).toBe(200)

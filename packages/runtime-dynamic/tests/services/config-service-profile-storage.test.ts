@@ -10,6 +10,13 @@ import { createTestHmrHost } from '../support/test-host'
 
 describe('HMR runtime persistence storage', () => {
 	it('initializes plugin config from the dynamic host environment', async () => {
+		const owner = {
+			definition: {
+				entry: { kind: 'source-entry', source: 'plugins/example.ts' },
+				exportName: 'ExamplePlugin',
+			},
+			instance: 'default',
+		} as const
 		await using fixture = await createFixture({
 			'pnpm-workspace.yaml': ['packages:', '  - packages/*', ''].join('\n'),
 			'pluxel.loader.hmr.jsonc': [
@@ -31,13 +38,18 @@ describe('HMR runtime persistence storage', () => {
 			configService: { mode: 'memory' },
 			runtimeState: { mode: 'memory' },
 			env: {
-				PLUXEL_CONFIG__ExamplePlugin__config__endpoint: 'https://api.example.test',
+				PLUXEL_CONFIG: JSON.stringify({
+					version: 2,
+					plugins: [{ owner, config: { endpoint: 'https://api.example.test' } }],
+				}),
 			},
 		})
 		const host = await bootPlannedLoaderHmrHost(plan)
 		try {
-			expect(host.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
-				config: { endpoint: 'https://api.example.test' },
+			expect(
+				host.ctx.configService.getRawConfig(host.ctx.registry.internNodeAddress(owner)),
+			).toEqual({
+				endpoint: 'https://api.example.test',
 			})
 		} finally {
 			await host.stop()

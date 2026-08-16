@@ -6,7 +6,7 @@
 ```text
 plugin source
 	├─ constructor dependencies
-	├─ config / feature declarations
+	├─ optional Plugin refs and one object config declaration
 	├─ separately-built Node module / worker task declarations
 	└─ Workbench Contract / Extension declarations
           ↓
@@ -21,36 +21,47 @@ optional Workbench Plane: target layout / artifacts / bound resources
 
 ## 依赖与组成
 
-| 意图                    | API                                       | 生命周期含义                 |
-| ----------------------- | ----------------------------------------- | ---------------------------- |
-| required plugin         | constructor parameter                     | provider 失败会阻塞 consumer |
-| graph-optional plugin   | `this.plugins.use(Token)`                 | 只监听已由 host 管理的 node  |
-| package-optional plugin | `optionalPlugin()` + `plugins.use(Ref)`   | commit 后解析，包可不存在    |
-| required local feature  | `this.features.use()`                     | 随宿主插件启动               |
-| lazy local feature      | `defineLazyFeature()` + `features.load()` | 按需加载                     |
+| 意图                 | API                                      | 生命周期含义                 |
+| -------------------- | ---------------------------------------- | ---------------------------- |
+| required plugin      | constructor parameter                    | provider 失败会阻塞 consumer |
+| optional plugin      | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer |
+| internal composition | 普通 class/function + owner effects      | 随 owner generation 回收     |
 
-constructor 是 required dependency 的唯一作者声明。static/dynamic route 必须读取同一 committed core
-graph；Workbench resolver 不依赖 loader 私有图。
+constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
+目标 Plugin 的 type-only root import 和 non-exported module-level ref。两者都由 semantic pass lower 成 definition slot edge。
+static/dynamic route 必须读取同一 committed core graph；Workbench resolver 不依赖 loader 私有图。
 
 宿主修改 runtime dependency override 时，commit 必须重启被修改 plugin 与其 dependent closure。只重建 provider
 而保留 dependent 的旧 caller-bound view 会破坏 Context isolation，并让 Workbench 中的实现选择表面成功、实际继续
 调用旧 provider。
 
-`OptionalPluginRef` 是 opaque author declaration。core 的 `PluginHost` 只组合 availability subscription 与
-`watchInstance()`；`@pluxel/runtime` 的 root-scoped `OptionalPluginAvailabilityService` 只去重 loader、维护 active
-subscription，并把 candidate 提交给正常 graph transaction。synthetic module owner 直接使用 canonical plugin ID，
-不再维护第二套来源身份。static/dynamic route 只改变 module resolver。首次发现的
-candidate 写入 `optionalKnown` 并默认启用，之后显式 disabled state 优先。
+`PluginRef<T>` 是 opaque author declaration，只能由工具链从目标 root named export 的 type provenance lower。ref 不
+import、安装、注册或默认启用 package。`plugins.use(Ref, callback)` 只允许作为 `init()` 中的直接语句，callback 必须
+同步且返回的 cleanup/disposable 自动进入 consumer effects。provider absent、disabled 或 start-failed 时 callback 不执行，
+但不阻塞 consumer；running generation 出现、消失或 replacement 时，core 把 consumer 及其 required dependent closure
+合并进一次 restart plan。required/optional ordering edge 的合并图必须无环。
 
-optional load 在当前 commit settled 后执行，不能形成 nested transaction。absent 不阻塞 consumer；import/evaluation、
-constructor、ID collision 和 start failure 进入结构化日志。只有 core running watcher 发布实例，replacement、retry 和
-shutdown 继续复用正常 graph/effects。
+## Identity 与入口
+
+具体 Plugin definition 的唯一身份是 opaque `PluginDefinitionSlot(canonical entry, root named export)`；runtime node 是
+`PluginNodeSlot(definition, default | forkId)`。class name、constructor object、package display name 和
+`@Plugin({ displayName })` 都不是 graph、state、config、logging、Workbench 或 HMR identity。
+
+跨进程和持久化边界使用经过校验的结构化 address snapshot：entry 只允许 `package-root` 或 `source-entry`，definition
+增加 `exportName`，node 再增加 `instance: 'default'` 或结构化 fork。Core intern address 后只按 slot object 查图，不把
+address 拼成作者协议。不同 package/export 的同名 class 或相同 `displayName` 可以共存；Workbench 用
+`displayName ?? rootExportName` 和 package/export provenance 展示、消歧。
+
+一个具体插件包只有一个 plugin-bearing entry：package root `"."`。根入口可以唯一 named-export 多个 Plugin；同一
+constructor 的多个根名称、plugin-bearing subpath 与跨包 Plugin re-export 都由 build 拒绝。Workbench、worker、contract
+等 plugin-free subpath 只在确有独立消费边界时保留。
 
 ## 生命周期与资源
 
 core commit 顺序为 `draft graph -> verify -> stop plan -> start plan -> CommitSummary`。provider 先启动、
-consumer 先停止；失败插件不进入 running，required dependents 被阻塞。effects 在 stop、replacement、
-rollback 时清理。
+consumer 先停止；失败插件不进入 running，required dependents 被阻塞。generation 停止时先关闭 owner invocation
+gate、abort generation，再 drain effects。正常停止、init rollback、replacement、optional restart 与 root shutdown
+没有第二条 Plugin teardown hook。
 
 Workbench mount 从 Context 推导 owner 并绑定 owner effects。contribution 只有在 owner 真正 running 后才进入
 layout；init 失败不会留下可见 View 或 resource。HMR replacement 会撤销旧 layout binding、factory、stream、
@@ -72,9 +83,9 @@ handle 只允许短生命周期 `read()` 与完整 `transaction()` callback；st
 不要求作者维护 history。同 lineage 复用 active instance，新 lineage 原子激活 candidate 并归档旧 instance，不删除旧数据。
 
 `ctx.commands.register()` 共享一个 root command catalog，但注册所有权属于调用插件的 Context。registration 会进入
-owner effects，因此 plugin stop、replacement、start rollback 和 shutdown 都会撤销对应命令。runtime registration
+owner effects，因此 generation stop、replacement、start rollback 和 shutdown 都会撤销对应命令。runtime registration
 同时保留 owner invocation lease；generation 停止时先拒绝新调用、abort call/owner 合成 signal，并等待已接纳调用退出，
-再执行插件 `stop()`。此前取得的 command wrapper 也不能越过已关闭的 owner gate。手动 dispose 单个 registration 只撤销
+再 drain generation effects。此前取得的 command wrapper 也不能越过已关闭的 owner gate。手动 dispose 单个 registration 只撤销
 publication，不取消已经开始的调用。runtime 自身固定注册基础插件查询与生命周期命令，这些 handler 只调用既有
 runtime use case，不复制 graph 或 commit 逻辑。
 
@@ -102,7 +113,7 @@ Workbench 不根据 dependency graph 隐式投影 provider View。
 首次 artifact build/load 或 setup 失败会让插件启动失败。开发期更新先完成新 setup，再清理上一成功消费者；
 更新失败保留 last-known-good。owner stop/replacement 通过 effects 自动释放 source lease 和 active cleanup。
 
-declaration key、build revision 和 owner ID 是三个独立身份。相同 declaration 的多个 owner/consumer 共用
+declaration key、build revision 和 owner node address 是三个独立身份。相同 declaration 的多个 owner/consumer 共用
 build 与 watcher，但各自拥有 setup/cleanup。Node module 只输出自包含单文件 ESM，不定义 worker、线程或任务协议。
 
 `defineWorkerTask()` 是同一 artifact primitive 上的 typed specialization。`ctx.workers` 把不同插件的 cloneable CPU/native

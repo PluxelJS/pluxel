@@ -3,8 +3,8 @@ import type { Context as PlxContext } from '@pluxel/core'
 import * as v from 'valibot'
 
 import { PluginCatalog } from '../plugins/schema'
-import { PluginGroup, PluginGroupInput } from './schema'
-import { readGroup, readGroups, writeGroups } from './service'
+import { PluginGroup, PluginGroupInput, PluginGroupNode } from './schema'
+import { readGroup, readGroupNode, readGroups, writeGroups } from './service'
 
 export function createPluginGroupsResolver(pCtx: PlxContext) {
 	const rootFields = resolver({
@@ -17,6 +17,9 @@ export function createPluginGroupsResolver(pCtx: PlxContext) {
 		group: field(PluginGroup)
 			.input({ id: v.string() })
 			.resolve((_catalog, { id }) => readGroup(pCtx, id)),
+		groupNode: field(PluginGroupNode)
+			.input({ id: v.string() })
+			.resolve((_catalog, { id }) => readGroupNode(pCtx, id)),
 		groups: field(v.array(PluginGroup)).resolve(() => readGroups(pCtx)),
 	})
 

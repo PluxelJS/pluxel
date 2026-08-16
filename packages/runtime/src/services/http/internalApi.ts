@@ -19,9 +19,7 @@ import { metaRoutes } from '../../api/http/meta'
 import { securityRoutes } from '../../api/http/security'
 import { debugRoutes } from '../../api/http/debug'
 import { logRoutes } from '../../api/http/logs'
-import { pluginNameParams } from '../../api/http/models'
 import { RuntimeRpcApi } from '../../api/http/rpc/RuntimeRpcApi'
-import { pluginSchema } from '../../api/usecases/pluginConfig'
 import { requireWorkbench } from '../workbench'
 import type { ElysiaBoundaryBuilder } from './HttpService'
 import { createElysiaApp } from './elysia'
@@ -149,15 +147,6 @@ function createInternalTransportPlugins(
 	const graphql = options.graphql !== false
 	const plugins: BaseElysiaApp[] = [
 		createInternalPlugin(ctx, 'root', (app) => app.get('/', 'Pluxel runtime RPC ready')),
-		createInternalPlugin(ctx, 'plugin-schema', (app) =>
-			app.get(
-				'/plugins/:name/schema',
-				async ({ pluginCtx, params }: any) => await pluginSchema(pluginCtx, params.name),
-				{
-					params: pluginNameParams,
-				},
-			),
-		),
 	]
 
 	if (sse) {
@@ -204,8 +193,7 @@ function createInternalTransportPlugins(
 						try {
 							const raw = new URL(request.url).searchParams.get('params')
 							return await workbench.liveQueries.loadFor(
-								ref.ownerPluginId,
-								ref.modelKey,
+								ref.resourceId,
 								raw ? JSON.parse(raw) : undefined,
 							)
 						} catch (error) {

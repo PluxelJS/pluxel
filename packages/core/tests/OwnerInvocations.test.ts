@@ -2,6 +2,27 @@ import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 import { closeOwnerInvocations, enterOwnerInvocation } from '../src/internal'
 import { describe, expect, it } from 'vitest'
 
+const ownerDrainOrder: string[] = []
+let ownerDrainLease: ReturnType<typeof enterOwnerInvocation> | undefined
+
+@Plugin({ displayName: 'InvokedPlugin' })
+class InvokedPlugin extends BasePlugin {
+	override init() {
+		ownerDrainLease = enterOwnerInvocation(this.ctx)
+		ownerDrainLease.signal.addEventListener(
+			'abort',
+			() => {
+				ownerDrainOrder.push('abort')
+				ownerDrainLease?.dispose()
+			},
+			{ once: true },
+		)
+		return () => {
+			ownerDrainOrder.push('cleanup')
+		}
+	}
+}
+
 describe('owner invocations', () => {
 	it('closes admission, aborts active leases, and waits for their release', async () => {
 		await withCoreHost(async (host) => {
@@ -63,35 +84,15 @@ describe('owner invocations', () => {
 		})
 	})
 
-	it('closes and drains owner invocations before the plugin stop hook', async () => {
+	it('closes and drains owner invocations before generation cleanup', async () => {
 		await withCoreHost(async (host) => {
-			const order: string[] = []
-			let lease: ReturnType<typeof enterOwnerInvocation> | undefined
-
-			@Plugin({ name: 'InvokedPlugin' })
-			class InvokedPlugin extends BasePlugin {
-				override init(): void {
-					lease = enterOwnerInvocation(this.ctx)
-					lease.signal.addEventListener(
-						'abort',
-						() => {
-							order.push('abort')
-							lease?.dispose()
-						},
-						{ once: true },
-					)
-				}
-
-				override stop(): void {
-					order.push('stop')
-				}
-			}
-
+			ownerDrainOrder.length = 0
+			ownerDrainLease = undefined
 			host.add(InvokedPlugin)
 			await host.commit()
 			host.remove(InvokedPlugin)
 			await host.commit()
-			expect(order).toEqual(['abort', 'stop'])
+			expect(ownerDrainOrder).toEqual(['abort', 'cleanup'])
 		})
 	})
 })

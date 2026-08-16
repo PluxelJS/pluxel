@@ -1,205 +1,190 @@
-// loader/PluginRegistry.ts
 import {
-	type ConfigLayout,
+	formatPluginNodeAddress,
+	getPluginDefinitionFacts,
+	getPluginInfo,
+	pluginDefinitionAddressEqual,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
 	type Context,
 	type ForkablePluginConstructor,
-	formatForkPluginId,
-	getDeclaredName,
-	getForkOf,
-	isForkPluginId,
-	getPluginInfo,
+	type PluginConfigDefinition,
 	type PluginConstructor,
-	type PluginIdentifier,
-	setPluginIdentity,
+	type PluginDefinitionAddressSnapshot,
+	type PluginDefinitionSlot,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
 } from '@pluxel/core'
-import {
-	type ConfigSchemaMap as CoreConfigSchemaMap,
-	isStandardSchemaV1,
-} from '@pluxel/core/services'
-import { isPluginEnabled, setPluginsEnabled } from '@pluxel/runtime/internal'
-import * as v from 'valibot'
-type ModuleId = string
-type PluginName = string
-type ExportKey = string
-type ModuleItem = Readonly<{ ctor: PluginConstructor; exportKey: ExportKey }>
+import { isPluginEnabled, listForkIds, setPluginsEnabled } from '@pluxel/runtime/internal'
+
+export type ModuleId = string
+export type ExportKey = string
+
+export type ModuleItem = Readonly<{
+	ctor: PluginConstructor
+	exportKey: ExportKey
+	address: PluginNodeAddressSnapshot
+	nodeSlot: PluginNodeSlot
+	definitionSlot: PluginDefinitionSlot
+	displayName: string
+	rootExportName: string
+}>
+
 type RuntimeModuleUpdateBridge = {
 	upsertModule(module: {
 		moduleId: ModuleId
-		items: ReadonlyArray<{ ctor: PluginConstructor; exportKey?: ExportKey }>
+		items: ReadonlyArray<{ ctor: PluginConstructor }>
 	}): void
 	removeModule(moduleId: ModuleId): void
 }
 
-const EMPTY: readonly ModuleItem[] = []
-const isIndexFile = (p: string) => /(?:^|[\\/])index\.[cm]?[tj]sx?$/.test(p)
-const sameDir = (a: string, b: string) => {
-	// Hot path: HMR-normalized ids are posix paths without traversal segments.
-	// Avoid `pathe.normalize/dirname` in the common case.
-	const ai = a.lastIndexOf('/')
-	const bi = b.lastIndexOf('/')
-	if (ai > 0 && bi > 0 && !a.includes('\\') && !b.includes('\\')) {
-		return a.slice(0, ai) === b.slice(0, bi)
-	}
+type ActiveRegistration = Readonly<{
+	ctor: PluginConstructor
+	provideBase?: boolean
+}>
 
-	const na = a.includes('\\') ? a.replaceAll('\\', '/') : a
-	const nb = b.includes('\\') ? b.replaceAll('\\', '/') : b
-	const nai = na.lastIndexOf('/')
-	const nbi = nb.lastIndexOf('/')
-	if (nai === -1 || nbi === -1) return false
-	return na.slice(0, nai) === nb.slice(0, nbi)
-}
-export const LIFECYCLE_STATES = ['running', 'stopped', 'disabled'] as const
-export type PluginLifecycleStage = (typeof LIFECYCLE_STATES)[number]
+const EMPTY: readonly ModuleItem[] = Object.freeze([])
 
-/**
- * 从模块路径提取包名
- * e.g., "/path/node_modules/pkg-a/dist/plugin.js" -> "pkg-a"
- * e.g., "/path/node_modules/@scope/pkg/index.js" -> "@scope/pkg"
- * e.g., "/project/src/plugins/foo.ts" -> null (本地文件，无包名)
- */
-function extractPackageName(moduleId: string): string | null {
-	const match = moduleId.match(/node_modules[\\/](?:@[^/\\]+[\\/][^/\\]+|[^/\\]+)/)
-	if (!match) return null
-	const seg = match[0]
-	const cleaned = seg.replace(/^.*node_modules[\\/]/, '')
-	if (cleaned.startsWith('@')) {
-		const parts = cleaned.split(/[\\/]/).filter(Boolean)
-		const scoped = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : cleaned
-		return scoped || null
-	}
-	return cleaned.split(/[\\/]/)[0] ?? null
+function sameRegistration(
+	left: ActiveRegistration | undefined,
+	right: ActiveRegistration,
+): boolean {
+	return left?.ctor === right.ctor && left.provideBase === right.provideBase
 }
 
-export interface PluginLifecycleSnapshot {
-	id: string
-	isRunning: boolean
-	isEnabled: boolean
-	lifecycleStage: PluginLifecycleStage
+function compareAddress(left: PluginNodeAddressSnapshot, right: PluginNodeAddressSnapshot): number {
+	return formatPluginNodeAddress(left).localeCompare(formatPluginNodeAddress(right))
+}
+
+function matchesProvider(ctor: PluginConstructor, token: PluginDefinitionAddressSnapshot): boolean {
+	const provides = getPluginDefinitionFacts(ctor).provides
+	return !!provides && pluginDefinitionAddressEqual(provides, token)
+}
+
+export interface PluginRegistryTransaction {
+	recordModule(moduleId: ModuleId): void
+	recordDefinition(definition: PluginDefinitionSlot): void
+	recordRegistration(node: PluginNodeSlot): void
+	publishRuntimeModule(moduleId: ModuleId): void
+	rollback(): void
+	commit(): void
 }
 
 export class PluginRegistry {
-	// 声明层
-	private moduleMap = new Map<ModuleId, readonly ModuleItem[]>() // 模块 -> [{ ctor, exportKey }]
-	private nameMap = new Map<PluginName, PluginConstructor>() // 名称 -> ctor
-	private name2Path = new Map<PluginName, ModuleId>() // 名称 -> 文件
-	private enrolled = new WeakMap<PluginConstructor, Set<ModuleId>>() // 模块级去重
+	private readonly moduleMap = new Map<ModuleId, readonly ModuleItem[]>()
+	private readonly itemByDefinition = new Map<PluginDefinitionSlot, ModuleItem>()
+	private readonly moduleByDefinition = new Map<PluginDefinitionSlot, ModuleId>()
+	private readonly activeRegistrations = new Map<PluginNodeSlot, ActiveRegistration>()
 
-	constructor(private ctx: Context) {}
+	constructor(private readonly ctx: Context) {}
 
-	private isEnabled(name: string): boolean {
-		return isPluginEnabled(this.ctx.runtimeState.snapshot(), name)
+	get modules(): ReadonlyMap<ModuleId, readonly ModuleItem[]> {
+		return this.moduleMap
 	}
 
-	private setEnabled(names: Iterable<string>, enabled: boolean): void {
-		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, names, enabled))
+	listModuleItems(moduleId: ModuleId): readonly ModuleItem[] {
+		return this.moduleMap.get(moduleId) ?? EMPTY
 	}
 
-	private getForkIds(originalName: string): string[] {
-		const list = this.ctx.runtimeState.snapshot().forks[originalName]
-		if (!Array.isArray(list) || list.length === 0) return []
-		const out: string[] = []
-		for (const id of list) {
-			const forkId = typeof id === 'string' ? id.trim() : ''
-			if (forkId) out.push(forkId)
-		}
-		return out
+	listRegistered(): readonly ModuleItem[] {
+		return [...this.itemByDefinition.values()].sort((left, right) =>
+			compareAddress(left.address, right.address),
+		)
 	}
 
-	private recordBaseProvider(baseToken: PluginIdentifier, providerName: string) {
-		const baseKey = getDeclaredName(baseToken)
-		if (this.ctx.runtimeState.snapshot().baseProviders[baseKey] === providerName) return
-		this.ctx.runtimeState.update((draft) => {
-			draft.baseProviders[baseKey] = providerName
-		})
+	resolveDefinition(address: PluginDefinitionAddressSnapshot): PluginConstructor | undefined {
+		const slot = this.ctx.registry.internDefinitionAddress(address)
+		return this.itemByDefinition.get(slot)?.ctor
 	}
 
-	/* ----------------------------- Transaction ----------------------------- */
-	/**
-	 * Loader 内部事务（仅保护 loader 的声明层状态）。
-	 *
-	 * 说明：
-	 * - core 的 DI 草稿回滚由 core runtime update transaction 负责；
-	 * - 这里仅保证「模块声明层」与「name->ctor 映射」在 commit(含 build 校验)失败时可恢复，
-	 *   避免 loader 与 core 的容器状态出现漂移。
-	 *
-	 * 性能：只记录变更 key 的旧值（O(变更)），不 clone 全表（O(插件总数)）。
-	 */
-	public beginTransaction(options: { runtimeUpdate?: RuntimeModuleUpdateBridge } = {}) {
+	resolve(address: PluginNodeAddressSnapshot): PluginConstructor | undefined {
+		const base = this.resolveDefinition(address.definition)
+		if (!base) return undefined
+		const ctor =
+			address.instance === 'default'
+				? base
+				: (this.ctx.registry.fork(
+						base as unknown as ForkablePluginConstructor,
+						address.forkId,
+					) as PluginConstructor)
+		return pluginNodeAddressEqual(pluginNodeAddressOf(ctor), address) ? ctor : undefined
+	}
+
+	require(address: PluginNodeAddressSnapshot): PluginConstructor {
+		const ctor = this.resolve(address)
+		if (!ctor) throw new Error(`Plugin not found: ${formatPluginNodeAddress(address)}`)
+		return ctor
+	}
+
+	findModuleId(address: PluginNodeAddressSnapshot): string | null {
+		const definition = this.ctx.registry.internDefinitionAddress(address.definition)
+		return (
+			this.ctx.registry.getRuntimeModuleId(
+				address.instance === 'default' ? definition : this.ctx.registry.internNodeAddress(address),
+			) ??
+			this.moduleByDefinition.get(definition) ??
+			null
+		)
+	}
+
+	findModuleIdByNodeSlot(node: PluginNodeSlot): string | null {
+		return (
+			this.ctx.registry.getRuntimeModuleId(node) ??
+			this.moduleByDefinition.get(node.definition) ??
+			null
+		)
+	}
+
+	getExportKey(address: PluginNodeAddressSnapshot): ExportKey | undefined {
+		return this.itemByDefinition.get(this.ctx.registry.internDefinitionAddress(address.definition))
+			?.exportKey
+	}
+
+	getConfig(address: PluginNodeAddressSnapshot): PluginConfigDefinition | undefined {
+		return getPluginInfo(this.require(address)).config
+	}
+
+	beginTransaction(
+		options: { runtimeUpdate?: RuntimeModuleUpdateBridge } = {},
+	): PluginRegistryTransaction {
 		type Undo = () => void
 		const undos: Undo[] = []
-		const seen = new Map<object, Set<unknown>>() // map -> keys
+		const seen = new Map<object, Set<unknown>>()
 		const affectedModules = new Set<ModuleId>()
 		const runtimeUpdate = options.runtimeUpdate
 
 		const record = <K, V>(map: Map<K, V>, key: K) => {
-			let keys = seen.get(map as unknown as object)
+			let keys = seen.get(map)
 			if (!keys) {
 				keys = new Set()
-				seen.set(map as unknown as object, keys)
+				seen.set(map, keys)
 			}
 			if (keys.has(key)) return
 			keys.add(key)
 			const had = map.has(key)
-			const prev = map.get(key)
+			const previous = map.get(key)
 			undos.push(() => {
-				if (!had) map.delete(key)
-				else map.set(key, prev as V)
-			})
-		}
-
-		const recordWeak = <K extends object, V>(wm: WeakMap<K, V>, key: K) => {
-			let keys = seen.get(wm as unknown as object)
-			if (!keys) {
-				keys = new Set()
-				seen.set(wm as unknown as object, keys)
-			}
-			if (keys.has(key)) return
-			keys.add(key)
-			const had = wm.has(key)
-			const prev = wm.get(key)
-			undos.push(() => {
-				if (!had) wm.delete(key)
-				else wm.set(key, prev)
-			})
-		}
-
-		const recordIdentity = (ctor: PluginConstructor) => {
-			// identity is stored in @pluxel/core decorator state; treat it as part of loader state.
-			let keys = seen.get(ctor)
-			if (!keys) {
-				keys = new Set()
-				seen.set(ctor, keys)
-			}
-			if (keys.has('__identity__')) return
-			keys.add('__identity__')
-			const info = getPluginInfo(ctor)
-			const prev = {
-				id: info.id,
-				displayName: info.displayName ?? null,
-				packageName: info.packageName ?? null,
-			}
-			undos.push(() => {
-				setPluginIdentity(ctor, prev)
+				if (had) map.set(key, previous as V)
+				else map.delete(key)
 			})
 		}
 
 		return {
-			recordModule: (moduleId: ModuleId) => {
+			recordModule: (moduleId) => {
 				affectedModules.add(moduleId)
 				record(this.moduleMap, moduleId)
 			},
-			recordName: (name: PluginName) => {
-				record(this.nameMap, name)
-				record(this.name2Path, name)
+			recordDefinition: (definition) => {
+				record(this.itemByDefinition, definition)
+				record(this.moduleByDefinition, definition)
 			},
-			recordEnrolled: (ctor: PluginConstructor) => recordWeak(this.enrolled, ctor),
-			recordIdentity,
-			publishRuntimeModule: (moduleId: ModuleId) => {
-				if (!runtimeUpdate) return
-				this.publishRuntimeModule(moduleId, runtimeUpdate)
+			recordRegistration: (node) => record(this.activeRegistrations, node),
+			publishRuntimeModule: (moduleId) => {
+				if (runtimeUpdate) this.publishRuntimeModule(moduleId, runtimeUpdate)
 			},
 			rollback: () => {
-				for (let i = undos.length - 1; i >= 0; i--) undos[i]!()
+				for (let index = undos.length - 1; index >= 0; index--) undos[index]!()
+				undos.length = 0
+				seen.clear()
 				affectedModules.clear()
 			},
 			commit: () => {
@@ -213,508 +198,368 @@ export class PluginRegistry {
 		}
 	}
 
-	private publishRuntimeModule(moduleId: ModuleId, runtimeUpdate: RuntimeModuleUpdateBridge): void {
-		const items = this.moduleMap.get(moduleId)
-		if (!items || items.length === 0) {
-			runtimeUpdate.removeModule(moduleId)
-			return
-		}
-		runtimeUpdate.upsertModule({
-			moduleId,
-			items: items.map((item) => ({ ctor: item.ctor, exportKey: item.exportKey })),
-		})
-	}
-
-	private syncCoreRuntimeModule(moduleId: ModuleId): void {
-		const items = this.moduleMap.get(moduleId)
-		if (!items || items.length === 0) {
-			this.ctx.registry.removeRuntimeModule(moduleId)
-			return
-		}
-		this.ctx.registry.upsertRuntimeModule({
-			moduleId,
-			items: items.map((item) => ({ ctor: item.ctor, exportKey: item.exportKey })),
-		})
-	}
-
-	private isPrimaryProvider(moduleId: ModuleId, ctor: PluginConstructor): boolean {
-		const { id: name } = getPluginInfo(ctor)
-		const primary = this.name2Path.get(name)
-		return primary === undefined || primary === moduleId
-	}
-
-	// ---------- 只读 ----------
-	get modules(): ReadonlyMap<ModuleId, readonly ModuleItem[]> {
-		return this.moduleMap
-	}
-	get names(): ReadonlyMap<PluginName, PluginConstructor> {
-		return this.nameMap
-	}
-	get name2PathMap(): ReadonlyMap<PluginName, ModuleId> {
-		return this.name2Path
-	}
-
-	getLoadedNames(): string[] {
-		return [...this.nameMap.keys()].sort()
-	}
-	getPluginByName(name: string): PluginConstructor | undefined {
-		return this.nameMap.get(name)
-	}
-	getSchema(ctor: PluginConstructor): CoreConfigSchemaMap | undefined {
-		const info = getPluginInfo(ctor)
-		const map = info?.configMap as Record<string, unknown> | null | undefined
-		if (!map) return undefined
-
-		for (const [key, schema] of Object.entries(map)) {
-			if (!isStandardSchemaV1(schema) || !v.isOfType('object', schema as any)) {
-				throw new Error(
-					`Invalid config schema: "${info.id}.${key}" must be a valibot ObjectSchema (use v.object(...) / v.objectAsync(...)).`,
-				)
-			}
-		}
-
-		return map as unknown as CoreConfigSchemaMap
-	}
-	getSchemaSource(ctor: PluginConstructor): Readonly<Record<string, string>> | undefined {
-		return getPluginInfo(ctor)?.configSourceMap
-	}
-	getConfigLayout(ctor: PluginConstructor): Readonly<Record<string, ConfigLayout>> | undefined {
-		return getPluginInfo(ctor)?.configLayoutMap ?? undefined
-	}
-	getExportKeyByName(name: string): ExportKey | undefined {
-		const moduleId = this.name2Path.get(name)
-		if (!moduleId) return undefined
-		const items = this.moduleMap.get(moduleId) ?? EMPTY
-		for (let i = 0; i < items.length; i++) {
-			const item = items[i]!
-			try {
-				if (getPluginInfo(item.ctor).id === name) return item.exportKey
-			} catch {
-				// ignore invalid decorator state in stale declarations
-			}
-		}
-		return undefined
-	}
-
-	listModuleItems(moduleId: ModuleId): readonly ModuleItem[] {
-		return this.moduleMap.get(moduleId) ?? EMPTY
-	}
-
-	// =============== 声明层：落/撤 ===============
 	declarePlugin(
 		moduleId: ModuleId,
 		ctor: PluginConstructor,
 		exportKey: ExportKey,
-		tx?: ReturnType<PluginRegistry['beginTransaction']>,
-	): PluginName {
+		tx?: PluginRegistryTransaction,
+	): PluginNodeAddressSnapshot {
+		const info = getPluginInfo(ctor)
+		const facts = getPluginDefinitionFacts(ctor)
+		if (facts.kind !== 'plugin') {
+			throw new Error('[runtime-dynamic] Runtime module export must be a concrete Plugin')
+		}
+		if (exportKey !== info.rootExportName) {
+			throw new Error(
+				`[runtime-dynamic] Plugin ${info.displayName} must be loaded from root export ` +
+					`"${info.rootExportName}", received "${exportKey}" from ${moduleId}`,
+			)
+		}
+
+		const address = pluginNodeAddressOf(ctor)
+		if (address.instance !== 'default') {
+			throw new Error('[runtime-dynamic] Source modules may only declare default Plugin nodes')
+		}
+		const nodeSlot = this.ctx.registry.internNodeAddress(address)
+		const definitionSlot = nodeSlot.definition
+		const owner = this.moduleByDefinition.get(definitionSlot)
+		if (owner && owner !== moduleId) {
+			throw new Error(
+				`[runtime-dynamic] Plugin definition ${formatPluginNodeAddress(address)} is already ` +
+					`owned by ${owner}; ${moduleId} cannot claim the same package/export identity`,
+			)
+		}
+
 		tx?.recordModule(moduleId)
-		const declaredName = getDeclaredName(ctor)
-		let { id: name } = getPluginInfo(ctor)
-		tx?.recordName(name)
-
-		// 冲突：允许"同路径热替换"，拒绝"跨路径重名"
-		const existed = this.nameMap.get(name)
-		const existedPath = this.name2Path.get(name)
-		const enrolledPaths = existed ? this.enrolled.get(existed) : undefined
-		const isKnownAlias = enrolledPaths?.has(moduleId)
-		const crossesFixedCatalogBoundary =
-			existed &&
-			existedPath &&
-			existedPath !== moduleId &&
-			(existedPath.startsWith('pluxel:fixed:') || moduleId.startsWith('pluxel:fixed:'))
-		if (crossesFixedCatalogBoundary) {
-			throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
+		tx?.recordDefinition(definitionSlot)
+		const item: ModuleItem = Object.freeze({
+			ctor,
+			exportKey,
+			address,
+			nodeSlot,
+			definitionSlot,
+			displayName: info.displayName,
+			rootExportName: info.rootExportName,
+		})
+		const previous = this.moduleMap.get(moduleId) ?? EMPTY
+		const duplicate = previous.find((candidate) => candidate.definitionSlot === definitionSlot)
+		if (duplicate) {
+			if (duplicate.ctor === ctor && duplicate.exportKey === exportKey) return address
+			throw new Error(
+				`[runtime-dynamic] Module ${moduleId} declares Plugin definition ` +
+					`${formatPluginNodeAddress(address)} more than once`,
+			)
 		}
-		const existingIsIndexAlias =
-			existedPath &&
-			existedPath !== moduleId &&
-			isIndexFile(existedPath) &&
-			sameDir(existedPath, moduleId)
-		const candidateIsIndexAlias =
-			existedPath &&
-			existedPath !== moduleId &&
-			isIndexFile(moduleId) &&
-			sameDir(existedPath, moduleId)
-
-		// 若原主提供者是 index.*，让位给同目录的真实文件前，先停掉旧运行态以避免双注册
-		if (existingIsIndexAlias && !candidateIsIndexAlias) {
-			this.stopPlugin(name, existed!)
-		}
-
-		// 检测真正的冲突
-		const isConflict =
-			existed &&
-			existed !== ctor &&
-			existedPath &&
-			existedPath !== moduleId &&
-			!isKnownAlias &&
-			!existingIsIndexAlias &&
-			!candidateIsIndexAlias
-
-		if (isConflict) {
-			// 尝试自动解决：给后来者添加包名前缀
-			const pkgName = extractPackageName(moduleId)
-			if (pkgName === null) {
-				throw new Error(`插件名冲突：${name} 已由 ${existedPath} 提供，拒绝来自 ${moduleId}`)
-			}
-			const prefixedId = `${pkgName}/${declaredName}`
-			// 检查前缀后是否仍然冲突
-			if (this.nameMap.has(prefixedId)) {
-				throw new Error(
-					`插件名冲突：${name} 已由 ${existedPath} 提供，` +
-						`尝试使用 ${prefixedId} 仍然冲突，拒绝来自 ${moduleId}`,
-				)
-			}
-			// 设置新的 id 和包名
-			tx?.recordName(prefixedId)
-			tx?.recordIdentity(ctor)
-			setPluginIdentity(ctor, { id: prefixedId, packageName: pkgName })
-			name = prefixedId
-			void this.ctx.logger
-				.info`[PluginRegistry] 插件 "${declaredName}" 来自包 ${pkgName}，已自动重命名为 "${prefixedId}"`
-		}
-
-		const prevSeen = this.enrolled.get(ctor)
-		if (prevSeen?.has(moduleId)) return name
-		if (tx) {
-			tx.recordEnrolled(ctor)
-			const next = prevSeen ? new Set(prevSeen) : new Set<ModuleId>()
-			next.add(moduleId)
-			this.enrolled.set(ctor, next)
-		} else {
-			const seen = prevSeen ?? new Set<ModuleId>()
-			seen.add(moduleId)
-			this.enrolled.set(ctor, seen)
-		}
-
-		const prev = this.moduleMap.get(moduleId) ?? EMPTY
-		let alreadyDeclared = false
-		for (let i = 0; i < prev.length; i++) {
-			if (prev[i]!.ctor === ctor) {
-				alreadyDeclared = true
-				break
-			}
-		}
-		if (!alreadyDeclared) {
-			const next = prev.length === 0 ? [{ ctor, exportKey }] : [...prev, { ctor, exportKey }]
-			this.moduleMap.set(moduleId, next)
-		}
-
-		this.nameMap.set(name, ctor)
-		// 避免被“同 ctor 的跨路径再导出”覆盖掉首个声明的主路径；除非要把 index.* 别名让位给真实文件
-		const shouldUpdatePrimaryMapping =
-			(!existedPath || existedPath === moduleId || existed !== ctor || existingIsIndexAlias) &&
-			!candidateIsIndexAlias
-		if (shouldUpdatePrimaryMapping) {
-			this.name2Path.set(name, moduleId)
-		}
+		this.moduleMap.set(moduleId, previous.length === 0 ? [item] : [...previous, item])
+		this.itemByDefinition.set(definitionSlot, item)
+		this.moduleByDefinition.set(definitionSlot, moduleId)
 		tx?.publishRuntimeModule(moduleId)
 		if (!tx) this.syncCoreRuntimeModule(moduleId)
-		return name
+		return address
 	}
 
-	/** 清空模块的声明（通常在 replace/prune 前调用） */
-	undeclareModule(moduleId: ModuleId, tx?: ReturnType<PluginRegistry['beginTransaction']>): void {
+	undeclareModule(moduleId: ModuleId, tx?: PluginRegistryTransaction): void {
 		tx?.recordModule(moduleId)
-		const list = this.moduleMap.get(moduleId) ?? EMPTY
-		for (const item of list) {
-			const ctor = item.ctor
-			const { id: name } = getPluginInfo(ctor)
-			tx?.recordName(name)
-
-			// 仅当映射仍指向该 moduleId 才移除（避免其他路径已重建时误删）
-			if (this.name2Path.get(name) === moduleId) {
-				this.nameMap.delete(name)
-				this.name2Path.delete(name)
-			}
-			const prevSeen = this.enrolled.get(ctor)
-			if (!prevSeen) continue
-			if (tx) {
-				tx.recordEnrolled(ctor)
-				const next = new Set(prevSeen)
-				next.delete(moduleId)
-				if (next.size === 0) this.enrolled.delete(ctor)
-				else this.enrolled.set(ctor, next)
-				continue
-			}
-			prevSeen.delete(moduleId)
-			if (prevSeen.size === 0) this.enrolled.delete(ctor)
+		const items = this.moduleMap.get(moduleId) ?? EMPTY
+		for (const item of items) {
+			tx?.recordDefinition(item.definitionSlot)
+			if (this.moduleByDefinition.get(item.definitionSlot) !== moduleId) continue
+			this.moduleByDefinition.delete(item.definitionSlot)
+			this.itemByDefinition.delete(item.definitionSlot)
 		}
 		this.moduleMap.delete(moduleId)
 		tx?.publishRuntimeModule(moduleId)
 		if (!tx) this.syncCoreRuntimeModule(moduleId)
 	}
 
-	// =============== 运行层：启/停 ===============
-	/** 根据 config 启用位，为该模块内需要启用的插件执行 start */
 	async syncRuntimeForModule(
 		moduleId: ModuleId,
-		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
+		options: { tx?: PluginRegistryTransaction; forceRegistrations?: boolean } = {},
 	): Promise<void> {
-		const list = this.moduleMap.get(moduleId) ?? EMPTY
-		const starts: Array<Promise<void>> = []
-		const safeStart = (name: string, ctor: PluginConstructor) =>
-			this.startPlugin(name, ctor, options).catch((error) => {
-				this.ctx.logger.warn('启动失败：{name}', { name, moduleId, error })
-			})
-
-		// 并行启动（registerPlugin 只是声明，依赖处理在 commit 时）
-		for (const { ctor } of list) {
-			const { id: name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor)) continue
-			if (!this.isEnabled(name)) continue
-			starts.push(safeStart(name, ctor))
-		}
-
-		// Forks: start enabled forks for forkable plugins from this module.
-		for (const { ctor } of list) {
-			let name: string
-			try {
-				name = getPluginInfo(ctor).id
-			} catch {
-				continue
-			}
-			const forkIds = this.getForkIds(name)
-			if (forkIds.length === 0) continue
-
-			for (const forkId of forkIds) {
-				let forkName: string
-				try {
-					forkName = formatForkPluginId(name, forkId)
-				} catch {
-					continue
+		const state = this.ctx.runtimeState.snapshot()
+		for (const item of this.moduleMap.get(moduleId) ?? EMPTY) {
+			await this.syncNode(item.address, item.ctor, options.tx, options.forceRegistrations)
+			for (const forkId of listForkIds(state, item.address.definition)) {
+				const address: PluginNodeAddressSnapshot = {
+					definition: item.address.definition,
+					instance: 'fork',
+					forkId,
 				}
-				if (!this.isEnabled(forkName)) continue
-				try {
-					const ForkCtor = this.ctx.registry.fork(
-						ctor as unknown as ForkablePluginConstructor,
-						forkId,
-					) as PluginConstructor
-					starts.push(safeStart(forkName, ForkCtor))
-				} catch (err) {
-					this.ctx.logger.warn('启动 fork 失败：{name}#{forkId}', {
-						name,
-						forkId,
-						error: err,
-					})
-				}
+				await this.syncNode(address, this.require(address), options.tx, options.forceRegistrations)
 			}
 		}
-		if (starts.length > 0) await Promise.all(starts)
+		await this.syncProviderBindings(options.tx, options.forceRegistrations)
+		await this.applyDependencyOverrides(options.tx)
 	}
 
 	async enable(
-		name: PluginName,
-		ctor: PluginConstructor,
-		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
+		address: PluginNodeAddressSnapshot,
+		ctor: PluginConstructor = this.require(address),
 	): Promise<void> {
-		await this.startPlugin(name, ctor, options)
+		this.assertConstructorAddress(address, ctor)
+		this.setEnabled([address], true)
+		await this.syncNode(address, ctor)
+		await this.syncProviderBindings()
+		await this.applyDependencyOverrides()
 	}
 
-	async startPlugin(
-		name: PluginName,
-		ctor: PluginConstructor,
-		options: { refreshRegistered?: boolean; restartRegistered?: boolean } = {},
-	): Promise<void> {
-		const provideBase = this.resolveProvideBase(name, ctor)
-		const schema = this.getSchema(ctor)
-		if (schema) {
-			await this.ctx.configService.ensureValidated(name, schema, {
-				missingObjectDefault: {},
-			})
-		}
-
-		// 进入运行层（两段式，失败回滚）
-		let enabled = false
-		try {
-			if (!this.isEnabled(name)) {
-				this.setEnabled([name], true)
-			}
-			enabled = true
-			// Idempotency: enable/start may be invoked multiple times (config ready races, user clicks, etc.).
-			// Avoid treating "already registered" as a failure, as the rollback would incorrectly unregister
-			// an otherwise healthy plugin registration and desync UI/runtime.
-			const wasRegistered = this.ctx.registry.isRegistered(ctor)
-			if (options.refreshRegistered || !wasRegistered) {
-				this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
-			}
-			if (options.restartRegistered && wasRegistered) {
-				this.ctx.registry.restart(ctor, { cascadeDependents: false })
-			}
-			if (provideBase) {
-				try {
-					const info = getPluginInfo(ctor)
-					const base = info.base as unknown as PluginIdentifier | null
-					if (base) this.recordBaseProvider(base, name)
-				} catch {
-					// ignore: best-effort attribution
-				}
-			}
-		} catch (err) {
-			// 回滚
-			this.logGuard(`core.unregister(${name})`, () => {
-				this.ctx.registry.unregister(ctor)
-			})
-			if (enabled) {
-				this.logGuard(`config.disable(${name})`, () => {
-					this.setEnabled([name], false)
-				})
-			}
-			throw err
-		}
+	enablePersisted(...addresses: readonly PluginNodeAddressSnapshot[]): void {
+		this.setEnabled(addresses, true)
 	}
 
-	/** 只停运行层（保留 config 启用位） */
-	stopPlugin(
-		name: PluginName,
-		ctor: PluginConstructor,
-		options: { cascadeDependents?: boolean } = {},
-	): void {
-		this.logGuard(`core.unregister(${name})`, () => {
-			this.ctx.registry.unregister(ctor, {
-				cascadeDependents: options.cascadeDependents ?? true,
-			})
-		})
+	disablePersisted(...addresses: readonly PluginNodeAddressSnapshot[]): void {
+		this.setEnabled(addresses, false)
 	}
 
 	deactivate(
-		name: PluginName,
+		address: PluginNodeAddressSnapshot,
 		ctor: PluginConstructor,
 		options: { runtimeOnly?: boolean } = {},
 	): void {
-		this.stopPlugin(name, ctor)
-		if (!options.runtimeOnly) {
-			this.disablePersisted(name)
-		}
+		this.assertConstructorAddress(address, ctor)
+		this.stopPlugin(address, ctor)
+		if (!options.runtimeOnly) this.disablePersisted(address)
 	}
 
-	/** 停止某模块内全部插件（只影响运行层） */
-	stopModule(moduleId: ModuleId, options: { cascadeDependents?: boolean } = {}): void {
-		const list = this.moduleMap.get(moduleId) ?? EMPTY
-		for (const { ctor } of list) {
-			const { id: name } = getPluginInfo(ctor)
-			if (!this.isPrimaryProvider(moduleId, ctor)) continue
-			this.stopPlugin(name, ctor, options)
+	stopPlugin(
+		address: PluginNodeAddressSnapshot,
+		ctor: PluginConstructor,
+		options: { cascadeDependents?: boolean; tx?: PluginRegistryTransaction } = {},
+	): void {
+		this.assertConstructorAddress(address, ctor)
+		const node = this.ctx.registry.internNodeAddress(address)
+		options.tx?.recordRegistration(node)
+		this.ctx.registry.unregister(ctor, {
+			cascadeDependents: options.cascadeDependents ?? true,
+		})
+		this.activeRegistrations.delete(node)
+	}
 
-			// Stop forks derived from this ctor as well (module is going away).
-			for (const forkCtor of this.ctx.registry.listForks(ctor)) {
-				try {
-					const forkName = getPluginInfo(forkCtor).id
-					this.stopPlugin(forkName, forkCtor, options)
-				} catch {
-					// ignore: best-effort cleanup
-				}
+	stopModule(
+		moduleId: ModuleId,
+		options: { cascadeDependents?: boolean; tx?: PluginRegistryTransaction } = {},
+	): void {
+		for (const item of this.moduleMap.get(moduleId) ?? EMPTY) {
+			this.stopPlugin(item.address, item.ctor, options)
+			for (const forkCtor of this.ctx.registry.listForks(item.ctor)) {
+				this.stopPlugin(pluginNodeAddressOf(forkCtor), forkCtor, options)
 			}
 		}
 	}
 
-	// =============== 持久层（配置启用位） ===============
-	enablePersisted(...names: readonly string[]): void {
-		this.setEnabled(names, true)
-	}
-	disablePersisted(...names: readonly string[]): void {
-		this.setEnabled(names, false)
-	}
-	/** 将该模块内所有插件的持久启用位关闭（用于 prune(persisted)） */
 	disablePersistedByModule(moduleId: ModuleId): void {
-		this.ctx.runtimeState.update((draft) => {
-			const list = this.moduleMap.get(moduleId) ?? EMPTY
-			for (const { ctor } of list) {
-				const { id: name } = getPluginInfo(ctor)
-				if (!this.isPrimaryProvider(moduleId, ctor)) continue
-				setPluginsEnabled(draft, [name], false)
-
-				const forkIds = this.getForkIds(name)
-				for (const forkId of forkIds) {
-					try {
-						setPluginsEnabled(draft, [formatForkPluginId(name, forkId)], false)
-					} catch {
-						// ignore invalid persisted fork ids
-					}
-				}
+		const state = this.ctx.runtimeState.snapshot()
+		const addresses: PluginNodeAddressSnapshot[] = []
+		for (const item of this.moduleMap.get(moduleId) ?? EMPTY) {
+			addresses.push(item.address)
+			for (const forkId of listForkIds(state, item.address.definition)) {
+				addresses.push({ definition: item.address.definition, instance: 'fork', forkId })
 			}
+		}
+		this.setEnabled(addresses, false)
+	}
+
+	private async syncNode(
+		address: PluginNodeAddressSnapshot,
+		ctor: PluginConstructor,
+		tx?: PluginRegistryTransaction,
+		forceRegistration = false,
+	): Promise<void> {
+		this.assertConstructorAddress(address, ctor)
+		const node = this.ctx.registry.internNodeAddress(address)
+		if (!this.isEnabled(address)) {
+			if (this.activeRegistrations.has(node)) {
+				this.stopPlugin(address, ctor, { cascadeDependents: false, tx })
+			}
+			return
+		}
+		const facts = getPluginDefinitionFacts(ctor)
+		const provideBase = facts.provides
+			? address.instance === 'fork'
+				? false
+				: this.selectedProvider(facts.provides, address)
+			: undefined
+		this.ensureRegistered(node, ctor, provideBase, tx, forceRegistration)
+	}
+
+	private ensureRegistered(
+		node: PluginNodeSlot,
+		ctor: PluginConstructor,
+		provideBase: boolean | undefined,
+		tx?: PluginRegistryTransaction,
+		force = false,
+	): void {
+		const next: ActiveRegistration = { ctor, provideBase }
+		if (!force && sameRegistration(this.activeRegistrations.get(node), next)) return
+		tx?.recordRegistration(node)
+		this.ctx.registry.register(ctor, provideBase === undefined ? undefined : { provideBase })
+		this.activeRegistrations.set(node, next)
+	}
+
+	private async syncProviderBindings(
+		tx?: PluginRegistryTransaction,
+		forceRegistrations = false,
+	): Promise<void> {
+		const tokens: PluginDefinitionAddressSnapshot[] = []
+		for (const item of this.itemByDefinition.values()) {
+			const token = getPluginDefinitionFacts(item.ctor).provides
+			if (!token || tokens.some((candidate) => pluginDefinitionAddressEqual(candidate, token))) {
+				continue
+			}
+			tokens.push(token)
+		}
+		for (const token of tokens) {
+			const selected = this.resolveSelectedProvider(token)
+			if (!selected) continue
+			for (const item of this.itemByDefinition.values()) {
+				if (!matchesProvider(item.ctor, token) || !this.isEnabled(item.address)) continue
+				this.ensureRegistered(
+					item.nodeSlot,
+					item.ctor,
+					pluginNodeAddressEqual(item.address, selected),
+					tx,
+					forceRegistrations,
+				)
+			}
+		}
+	}
+
+	private selectedProvider(
+		token: PluginDefinitionAddressSnapshot,
+		candidate: PluginNodeAddressSnapshot,
+	): boolean {
+		const selected = this.resolveSelectedProvider(token, candidate)
+		return !!selected && pluginNodeAddressEqual(selected, candidate)
+	}
+
+	private resolveSelectedProvider(
+		token: PluginDefinitionAddressSnapshot,
+		current?: PluginNodeAddressSnapshot,
+	): PluginNodeAddressSnapshot | undefined {
+		const state = this.ctx.runtimeState.snapshot()
+		const selected = state.providerDefaults.find((entry) =>
+			pluginDefinitionAddressEqual(entry.token, token),
+		)?.provider
+		if (selected && selected.instance === 'default') {
+			const ctor = this.resolve(selected)
+			if (
+				ctor &&
+				matchesProvider(ctor, token) &&
+				(this.isEnabled(selected) || (!!current && pluginNodeAddressEqual(selected, current)))
+			) {
+				return selected
+			}
+		}
+
+		const candidates = [...this.itemByDefinition.values()]
+			.filter(
+				(item) =>
+					matchesProvider(item.ctor, token) &&
+					(this.isEnabled(item.address) ||
+						(!!current && pluginNodeAddressEqual(item.address, current))),
+			)
+			.map((item) => item.address)
+			.sort(compareAddress)
+		const fallback = candidates[0]
+		if (!fallback) return undefined
+		this.ctx.runtimeState.update((draft) => {
+			draft.providerDefaults = draft.providerDefaults.filter(
+				(entry) => !pluginDefinitionAddressEqual(entry.token, token),
+			)
+			draft.providerDefaults.push({ token, provider: fallback })
+		})
+		return fallback
+	}
+
+	private async applyDependencyOverrides(tx?: PluginRegistryTransaction): Promise<void> {
+		const state = this.ctx.runtimeState.snapshot()
+		for (const override of state.dependencyOverrides) {
+			if (!this.isEnabled(override.consumer)) continue
+			const consumer = this.resolve(override.consumer)
+			if (!consumer) continue
+			const facts = getPluginDefinitionFacts(consumer)
+			if (
+				!Number.isInteger(override.parameterIndex) ||
+				override.parameterIndex < 0 ||
+				override.parameterIndex >= facts.requires.length
+			) {
+				continue
+			}
+			const provider = this.resolve(override.provider)
+			if (!provider) continue
+			if (!this.isEnabled(override.provider)) this.setEnabled([override.provider], true)
+			await this.syncNode(override.provider, provider, tx)
+		}
+
+		for (const item of this.itemByDefinition.values()) {
+			const addresses: PluginNodeAddressSnapshot[] = [item.address]
+			for (const forkId of listForkIds(state, item.address.definition)) {
+				addresses.push({ definition: item.address.definition, instance: 'fork', forkId })
+			}
+			for (const address of addresses) {
+				if (!this.isEnabled(address)) continue
+				const ctor = this.resolve(address)
+				if (!ctor) continue
+				const facts = getPluginDefinitionFacts(ctor)
+				const overrides = facts.requires.map((_required, parameterIndex) => {
+					const selected = this.ctx.runtimeState
+						.snapshot()
+						.dependencyOverrides.find(
+							(entry) =>
+								pluginNodeAddressEqual(entry.consumer, address) &&
+								entry.parameterIndex === parameterIndex,
+						)?.provider
+					return selected ? this.ctx.registry.internNodeAddress(selected) : undefined
+				})
+				this.ctx.registry.replaceRuntimeDependencyOverrides(
+					this.ctx.registry.internNodeAddress(address),
+					overrides.some(Boolean) ? overrides : undefined,
+				)
+			}
+		}
+	}
+
+	private assertConstructorAddress(
+		address: PluginNodeAddressSnapshot,
+		ctor: PluginConstructor,
+	): void {
+		if (!pluginNodeAddressEqual(address, pluginNodeAddressOf(ctor))) {
+			throw new Error(
+				`[runtime-dynamic] Constructor generation does not belong to ` +
+					formatPluginNodeAddress(address),
+			)
+		}
+	}
+
+	private isEnabled(address: PluginNodeAddressSnapshot): boolean {
+		return isPluginEnabled(this.ctx.runtimeState.snapshot(), address)
+	}
+
+	private setEnabled(addresses: Iterable<PluginNodeAddressSnapshot>, enabled: boolean): void {
+		this.ctx.runtimeState.update((draft) => setPluginsEnabled(draft, addresses, enabled))
+	}
+
+	private publishRuntimeModule(moduleId: ModuleId, runtimeUpdate: RuntimeModuleUpdateBridge): void {
+		const items = this.moduleMap.get(moduleId)
+		if (!items?.length) {
+			runtimeUpdate.removeModule(moduleId)
+			return
+		}
+		runtimeUpdate.upsertModule({
+			moduleId,
+			items: items.map(({ ctor }) => ({ ctor })),
 		})
 	}
 
-	// --------------- 工具 ---------------
-	private resolveProvideBase(name: PluginName, ctor: PluginConstructor): boolean | undefined {
-		// Base provider selection (global default):
-		// - keep multiple providers enabled/running if desired;
-		// - only the selected provider binds the base token alias (provideBase=true);
-		// - others register only by their ctor (provideBase=false).
-		let provideBase: boolean | undefined
-		try {
-			const info = getPluginInfo(ctor)
-			const base = info.base as unknown as PluginIdentifier | null
-			if (!base) return undefined
-
-			// Forks must never implicitly replace or claim base-provider aliases.
-			// They may run in parallel with the primary provider without touching base DI routing.
-			if (getForkOf(ctor)) return false
-
-			const baseKey = getDeclaredName(base)
-			const map = this.ctx.runtimeState.snapshot().baseProviders
-			const selectedRaw = map?.[baseKey]
-			const selected =
-				typeof selectedRaw === 'string' && selectedRaw.trim().length > 0 ? selectedRaw.trim() : null
-			const selectedIsForkName = selected ? isForkPluginId(selected) : false
-			const selectedCtor = selected && !selectedIsForkName ? this.nameMap.get(selected) : undefined
-			const selectedIsForkCtor = selectedCtor ? Boolean(getForkOf(selectedCtor)) : false
-			const selectedEnabled =
-				selectedCtor && selected && !selectedIsForkName ? this.isEnabled(selected) : false
-
-			const selectedValid = Boolean(
-				selected && !selectedIsForkName && selectedCtor && !selectedIsForkCtor && selectedEnabled,
-			)
-
-			const pickFallback = (): string | null => {
-				const candidates: string[] = []
-				for (const [candidateName, candidateCtor] of this.nameMap) {
-					// nameMap is declaration-only; still be defensive.
-					if (isForkPluginId(candidateName)) continue
-					if (candidateName !== name && !this.isEnabled(candidateName)) continue
-
-					try {
-						if (getForkOf(candidateCtor)) continue
-						const cInfo = getPluginInfo(candidateCtor)
-						const cBase = cInfo.base as unknown as PluginIdentifier | null
-						if (!cBase) continue
-						if (getDeclaredName(cBase) !== baseKey) continue
-						candidates.push(candidateName)
-					} catch {
-						// ignore: best-effort fallback selection
-					}
-				}
-				candidates.sort((a, b) => a.localeCompare(b))
-				return candidates[0] ?? null
-			}
-
-			if (selectedValid) {
-				provideBase = selected === name
-			} else {
-				// Invalid selection (unknown provider / fork id / empty / disabled).
-				// Fall back deterministically to keep DI resolvable and avoid alias conflicts.
-				const fallback = pickFallback() ?? name
-				provideBase = fallback === name
-
-				// Persist the fallback so future commits stay deterministic.
-				if (map[baseKey] !== fallback) {
-					this.ctx.runtimeState.update((draft) => {
-						draft.baseProviders[baseKey] = fallback
-					})
-				}
-			}
-		} catch {
-			// ignore
+	private syncCoreRuntimeModule(moduleId: ModuleId): void {
+		const items = this.moduleMap.get(moduleId)
+		if (!items?.length) {
+			this.ctx.registry.removeRuntimeModule(moduleId)
+			return
 		}
-		return provideBase
-	}
-
-	private logGuard(label: string, fn: () => void) {
-		try {
-			fn()
-		} catch (err) {
-			this.ctx.logger.warn('可恢复异常：{label}', { label, error: err })
-		}
+		this.ctx.registry.upsertRuntimeModule({
+			moduleId,
+			items: items.map(({ ctor }) => ({ ctor })),
+		})
 	}
 }

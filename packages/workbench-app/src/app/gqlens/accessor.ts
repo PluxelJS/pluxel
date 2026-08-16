@@ -33,6 +33,7 @@ export interface PluginCatalogNode {
   readonly plugins: { readonly ids: readonly string[] | undefined };
   readonly status: PluginStatusOverviewNode;
   readonly group: (args: GQLensArgs<Types.PluginCatalogGroupArgs>) => PluginGroupNode;
+  readonly groupNode: (args: GQLensArgs<Types.PluginCatalogGroupNodeArgs>) => PluginGroupNodeNode;
   readonly groups: { readonly ids: readonly string[] | undefined };
 }
 
@@ -55,13 +56,43 @@ export interface PluginGroupNode {
   readonly id: Types.PluginGroup["id"] | undefined;
   readonly groupId: Types.PluginGroup["groupId"] | undefined;
   readonly name: Types.PluginGroup["name"] | undefined;
-  readonly pluginIds: Types.PluginGroup["pluginIds"] | undefined;
+  readonly nodes: { readonly ids: readonly string[] | undefined };
+}
+
+export interface PluginGroupNodeNode {
+  readonly __typename: string | undefined;
+  readonly id: Types.PluginGroupNode["id"] | undefined;
+  readonly displayName: Types.PluginGroupNode["displayName"] | undefined;
+  readonly rootExportName: Types.PluginGroupNode["rootExportName"] | undefined;
+  readonly address: PluginAddressNode;
+}
+
+export interface PluginAddressNode {
+  readonly __typename: string | undefined;
+  readonly definition: PluginAddressDefinitionNode;
+  readonly instance: Types.PluginAddress["instance"] | undefined;
+  readonly forkId: Types.PluginAddress["forkId"] | undefined;
+}
+
+export interface PluginAddressDefinitionNode {
+  readonly __typename: string | undefined;
+  readonly entry: PluginAddressDefinitionEntryNode;
+  readonly exportName: Types.PluginAddressDefinition["exportName"] | undefined;
+}
+
+export interface PluginAddressDefinitionEntryNode {
+  readonly __typename: string | undefined;
+  readonly kind: Types.PluginAddressDefinitionEntry["kind"] | undefined;
+  readonly packageName: Types.PluginAddressDefinitionEntry["packageName"] | undefined;
+  readonly source: Types.PluginAddressDefinitionEntry["source"] | undefined;
 }
 
 export interface PluginNode {
   readonly __typename: string | undefined;
   readonly id: Types.Plugin["id"] | undefined;
   readonly name: Types.Plugin["name"] | undefined;
+  readonly rootExportName: Types.Plugin["rootExportName"] | undefined;
+  readonly address: PluginAddressNode;
   readonly detail: PluginDetailNode;
   readonly status: PluginStatusNode;
 }
@@ -125,6 +156,7 @@ export const gqlensSchema: GQLensSchemaContract = {
         "plugins": { name: "plugins", result: { "kind": "object", "cardinality": "list", "typeName": "Plugin", "objectKind": "entity" } },
         "status": { name: "status", result: { "kind": "object", "cardinality": "one", "typeName": "PluginStatusOverview", "objectKind": "value" } },
         "group": { name: "group", result: { "kind": "object", "cardinality": "one", "typeName": "PluginGroup", "objectKind": "entity" }, args: { "id": "String!" } },
+        "groupNode": { name: "groupNode", result: { "kind": "object", "cardinality": "one", "typeName": "PluginGroupNode", "objectKind": "entity" }, args: { "id": "String!" } },
         "groups": { name: "groups", result: { "kind": "object", "cardinality": "list", "typeName": "PluginGroup", "objectKind": "entity" } },
       },
     },
@@ -156,7 +188,47 @@ export const gqlensSchema: GQLensSchemaContract = {
         "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
         "groupId": { name: "groupId", result: { "kind": "scalar", "cardinality": "one" } },
         "name": { name: "name", result: { "kind": "scalar", "cardinality": "one" } },
-        "pluginIds": { name: "pluginIds", result: { "kind": "scalar", "cardinality": "list" } },
+        "nodes": { name: "nodes", result: { "kind": "object", "cardinality": "list", "typeName": "PluginGroupNode", "objectKind": "entity" } },
+      },
+    },
+    "PluginGroupNode": {
+      type: "PluginGroupNode",
+      kind: "entity",
+      fields: {
+        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
+        "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
+        "displayName": { name: "displayName", result: { "kind": "scalar", "cardinality": "one" } },
+        "rootExportName": { name: "rootExportName", result: { "kind": "scalar", "cardinality": "one" } },
+        "address": { name: "address", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddress", "objectKind": "value" } },
+      },
+    },
+    "PluginAddress": {
+      type: "PluginAddress",
+      kind: "value",
+      fields: {
+        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
+        "definition": { name: "definition", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddressDefinition", "objectKind": "value" } },
+        "instance": { name: "instance", result: { "kind": "scalar", "cardinality": "one" } },
+        "forkId": { name: "forkId", result: { "kind": "scalar", "cardinality": "one" } },
+      },
+    },
+    "PluginAddressDefinition": {
+      type: "PluginAddressDefinition",
+      kind: "value",
+      fields: {
+        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
+        "entry": { name: "entry", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddressDefinitionEntry", "objectKind": "value" } },
+        "exportName": { name: "exportName", result: { "kind": "scalar", "cardinality": "one" } },
+      },
+    },
+    "PluginAddressDefinitionEntry": {
+      type: "PluginAddressDefinitionEntry",
+      kind: "value",
+      fields: {
+        "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
+        "kind": { name: "kind", result: { "kind": "scalar", "cardinality": "one" } },
+        "packageName": { name: "packageName", result: { "kind": "scalar", "cardinality": "one" } },
+        "source": { name: "source", result: { "kind": "scalar", "cardinality": "one" } },
       },
     },
     "Plugin": {
@@ -166,6 +238,8 @@ export const gqlensSchema: GQLensSchemaContract = {
         "__typename": { name: "__typename", result: { "kind": "scalar", "cardinality": "one" } },
         "id": { name: "id", result: { "kind": "scalar", "cardinality": "one" } },
         "name": { name: "name", result: { "kind": "scalar", "cardinality": "one" } },
+        "rootExportName": { name: "rootExportName", result: { "kind": "scalar", "cardinality": "one" } },
+        "address": { name: "address", result: { "kind": "object", "cardinality": "one", "typeName": "PluginAddress", "objectKind": "value" } },
         "detail": { name: "detail", result: { "kind": "object", "cardinality": "one", "typeName": "PluginDetail", "objectKind": "value" } },
         "status": { name: "status", result: { "kind": "object", "cardinality": "one", "typeName": "PluginStatus", "objectKind": "value" } },
       },
@@ -275,13 +349,13 @@ export function defineInvalidation(callback: (q: QueryNode) => unknown): GraphDa
 // Mutation operation descriptors
 export const api: {
   readonly pluginGroups: {
-    readonly update: MutationOperation<Types.MutationUpdatePluginGroupsArgs, Array<Pick<NonNullable<NonNullable<Types.Mutation["updatePluginGroups"]>[number]>, "id" | "__typename" | "groupId" | "name" | "pluginIds">>>;
+    readonly update: MutationOperation<Types.MutationUpdatePluginGroupsArgs, Array<Pick<NonNullable<NonNullable<Types.Mutation["updatePluginGroups"]>[number]>, "id" | "__typename" | "groupId" | "name">>>;
   };
 } = {
   pluginGroups: {
     update: {
       operationName: "updatePluginGroups",
-      query: "mutation updatePluginGroups($groups: [UpdatePluginGroupsGroupsInput!]!) { updatePluginGroups(groups: $groups) { id __typename groupId name pluginIds } }",
+      query: "mutation updatePluginGroups($groups: [UpdatePluginGroupsGroupsInput!]!) { updatePluginGroups(groups: $groups) { id __typename groupId name } }",
       schema: gqlensSchema,
       variables: (input: Types.MutationUpdatePluginGroupsArgs): Record<string, unknown> => ({
         groups: input.groups,

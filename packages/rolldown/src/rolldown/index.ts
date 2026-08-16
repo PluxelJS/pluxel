@@ -5,6 +5,14 @@ export type { ConfigSourcePluginOptions } from './plugins/configSourcePlugin.ts'
 export { configSourcePlugin } from './plugins/configSourcePlugin.ts'
 export type { LintGuardPluginOptions } from './plugins/lintGuardPlugin.ts'
 export { lintGuardPlugin } from './plugins/lintGuardPlugin.ts'
+export type {
+	PluginDefinitionAddressSnapshot,
+	PluginDependencyMode,
+	PluginEntryAddressSnapshot,
+	PluginSemanticDefinition,
+	PluginSemanticsPluginOptions,
+} from './plugins/pluginSemanticsPlugin.ts'
+export { createPluginSemanticsPlugin } from './plugins/pluginSemanticsPlugin.ts'
 export type { PluginArtifactBuildPluginOptions } from '../plugin-artifact/pluginArtifactBuildPlugin.ts'
 export { pluginArtifactBuildPlugin } from '../plugin-artifact/pluginArtifactBuildPlugin.ts'
 export type { Lang } from './plugins/pluginUtils.ts'

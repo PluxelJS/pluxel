@@ -1,4 +1,11 @@
-import { BasePlugin, Plugin, type Context, type PersistenceNamespace } from '@pluxel/runtime'
+import { createHash } from 'node:crypto'
+import {
+	BasePlugin,
+	parsePluginNodeAddress,
+	Plugin,
+	type Context,
+	type PersistenceNamespace,
+} from '@pluxel/runtime'
 import { RpcTarget } from '@pluxel/runtime/capnweb'
 import wretch, { type Wretch } from 'wretch'
 import { WretchConfig } from './config.ts'
@@ -28,7 +35,7 @@ function stoppedClientError(): Error {
 	return new Error('Wretch client belongs to a stopped or replaced plugin generation')
 }
 
-@Plugin({ name: 'WretchPlugin' })
+@Plugin({ displayName: 'WretchPlugin' })
 export class WretchPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WretchConfig)
 	private readonly managed = new Map<Context, ManagedSettingsState>()
@@ -183,7 +190,11 @@ export class WretchPlugin extends BasePlugin {
 	private async initializeManagedSettings(owner: Context): Promise<ManagedSettingsState> {
 		const policy = this.requirePolicy()
 		const storage = this.requireStorage()
-		const state = await loadManagedSettings(storage, this.settingsKey(owner))
+		const state = await loadManagedSettings(
+			storage,
+			this.settingsKey(owner),
+			owner.pluginInfo.nodeAddress,
+		)
 		if (this.policy !== policy || this.storage !== storage) {
 			await disposeManagedSettings(state)
 			throw stoppedClientError()
@@ -229,7 +240,9 @@ export class WretchPlugin extends BasePlugin {
 	}
 
 	private settingsKey(owner: Context): string {
-		return `consumers/${encodeURIComponent(owner.pluginInfo.id)}.json`
+		const canonicalOwner = JSON.stringify(parsePluginNodeAddress(owner.pluginInfo.nodeAddress))
+		const digest = createHash('sha256').update(canonicalOwner).digest('hex')
+		return `consumers/v2/${digest}.json`
 	}
 }
 

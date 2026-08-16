@@ -1,1 +1,3 @@
-export * from './EventsService'
+import './EventsService'
+
+export { EvtChannel } from './EventsService'

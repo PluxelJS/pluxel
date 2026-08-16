@@ -32,7 +32,6 @@ export async function resolveBuildContext(
 
 	const context: BuildRuntimeConfig = {
 		projectRoot,
-		pluginPrefixes: envConfig.pluginPrefixes,
 		manifestField: envConfig.manifestField,
 		packageJsonPath,
 		watch: Boolean(values.watch),

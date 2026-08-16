@@ -20,6 +20,7 @@ import {
 	resolveWorkbenchUiBasePath,
 } from '../../workbench-config'
 import { createElysiaApp, type AnyElysiaApp, type CreateElysiaAppOptions } from './elysia'
+import { pluginNodePhysicalKey } from '../../runtime/plugin-address'
 
 const serviceName = 'http' as const
 
@@ -121,7 +122,7 @@ export interface PluginHttpMountOptions extends ElysiaRouteMountOptions {
 	path?: string
 	/**
 	 * Mounts this plugin-owned boundary at a stable runtime-root path instead of the
-	 * default `/__pluxel/plugins/<plugin-id>` namespace. This changes routing only;
+	 * default `/__pluxel/plugins/<opaque-owner-key>` namespace. This changes routing only;
 	 * authentication remains the plugin's responsibility.
 	 */
 	publicPath?: string
@@ -310,19 +311,20 @@ export class HttpService {
 
 	get plugin() {
 		const pluginCtx = this.ctx
-		const pluginId = this.requirePluginId(pluginCtx)
+		const owner = this.requirePluginOwner(pluginCtx)
+		const ownerKey = pluginNodePhysicalKey(owner)
 		const elysia = (options?: CreateElysiaAppOptions) => this.createApp(pluginCtx, options)
 		return {
-			id: pluginId,
+			owner,
 			// Advanced escape hatch. Prefer `routes()` for normal Elysia route trees so
 			// callers follow Elysia's chaining model and can replace mounted trees safely.
 			elysia,
 			app: elysia,
-			base: (path = '/') => this.resolvePluginBase(pluginId, path),
+			base: (path = '/') => this.resolvePluginBase(ownerKey, path),
 			routes: (build: ElysiaBoundaryBuilder, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginRoutes(pluginCtx, pluginId, build, options),
+				this.mountPluginRoutes(pluginCtx, ownerKey, build, options),
 			mount: (boundary: HttpBoundary, options: PluginHttpMountOptions = {}) =>
-				this.mountPluginBoundary(pluginCtx, pluginId, boundary, options),
+				this.mountPluginBoundary(pluginCtx, ownerKey, boundary, options),
 		}
 	}
 
@@ -391,7 +393,7 @@ export class HttpService {
 
 	private mountPluginBoundary(
 		pluginCtx: PluxelContext,
-		pluginId: string,
+		ownerKey: string,
 		boundary: HttpBoundary,
 		options: PluginHttpMountOptions = {},
 	): HttpBoundaryHandle {
@@ -401,9 +403,9 @@ export class HttpService {
 		const path = normalizePluginPath(options.path)
 		const base =
 			options.publicPath === undefined
-				? this.resolvePluginBase(pluginId, path)
+				? this.resolvePluginBase(ownerKey, path)
 				: normalizePluginPublicPath(options.publicPath)
-		const routeId = options.id ?? this.defaultPluginBoundaryId(pluginId, path, options.publicPath)
+		const routeId = options.id ?? this.defaultPluginBoundaryId(ownerKey, path, options.publicPath)
 		return this.mountAtPath(pluginCtx, {
 			id: routeId,
 			base,
@@ -413,7 +415,7 @@ export class HttpService {
 
 	private mountPluginRoutes(
 		pluginCtx: PluxelContext,
-		pluginId: string,
+		ownerKey: string,
 		build: ElysiaBoundaryBuilder,
 		options: PluginHttpMountOptions = {},
 	): ElysiaRouteHandle {
@@ -422,7 +424,7 @@ export class HttpService {
 			nextBuild(this.createApp(pluginCtx, appOptions))
 		const handle = this.mountPluginBoundary(
 			pluginCtx,
-			pluginId,
+			ownerKey,
 			createBoundary(build),
 			mountOptions,
 		)
@@ -685,29 +687,29 @@ export class HttpService {
 		return boundary instanceof Elysia
 	}
 
-	private requirePluginId(ctx: PluxelContext): string {
-		const pluginId = String(ctx.pluginInfo?.id ?? '').trim()
-		if (!pluginId) throw new Error('Plugin-scoped HTTP routes require ctx.pluginInfo.id')
-		return pluginId
+	private requirePluginOwner(ctx: PluxelContext) {
+		const owner = ctx.pluginInfo?.nodeAddress
+		if (!owner) throw new Error('Plugin-scoped HTTP routes require a Plugin node owner')
+		return owner
 	}
 
-	private resolvePluginBase(pluginId: string, path = '/'): string {
+	private resolvePluginBase(ownerKey: string, path = '/'): string {
 		const suffix = normalizePluginPath(path)
-		const base = `${PLUGIN_HTTP_BASE}/${encodePathSegment(pluginId)}`
+		const base = `${PLUGIN_HTTP_BASE}/${encodePathSegment(ownerKey)}`
 		return suffix === '/' ? base : `${base}${suffix}`
 	}
 
 	private defaultPluginBoundaryId(
-		pluginId: string,
+		ownerKey: string,
 		path: string,
 		publicPath: string | undefined,
 	): string {
 		if (publicPath !== undefined) {
-			return `${pluginId}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
+			return `${ownerKey}:http:public:${normalizePluginPublicPath(publicPath).slice(1).replaceAll('/', ':')}`
 		}
 		return path === '/'
-			? `${pluginId}:http`
-			: `${pluginId}:http:${path.slice(1).replaceAll('/', ':')}`
+			? `${ownerKey}:http`
+			: `${ownerKey}:http:${path.slice(1).replaceAll('/', ':')}`
 	}
 
 	private requestFullReload() {

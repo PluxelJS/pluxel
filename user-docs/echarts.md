@@ -16,7 +16,7 @@ Host catalog 放入 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 和业务 c
 import { EChartsPlugin } from '@pluxel/echarts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'ReportsPlugin' })
+@Plugin({ displayName: 'Reports' })
 export class ReportsPlugin extends BasePlugin {
 	constructor(private readonly charts: EChartsPlugin) {
 		super()

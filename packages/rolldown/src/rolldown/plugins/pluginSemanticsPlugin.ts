@@ -1,55 +1,129 @@
+import { readFile } from 'node:fs/promises'
+import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Program } from 'oxc-parser'
 import type { ViteCompatPlugin } from './compat.ts'
 import {
 	type AstNode,
 	normalizePatterns,
+	parseStandaloneWithLang,
 	parseWithLang,
 	readIdentifier,
 	readLiteralString,
 	walkAst,
 } from './pluginUtils.ts'
 
-const ABSENT_PREFIX = '\0pluxel:optional-plugin-absent:'
-
 export type PluginDependencyMode = 'required' | 'optional'
 
-export type OptionalPluginCall = {
-	readonly argumentCount: number
-	readonly loaderEnd?: number
-	readonly packageSpecifier?: string
-	readonly exportName?: string
-	readonly packageAnnotation?: string
-	readonly topLevel: boolean
+export type PluginEntryAddressSnapshot =
+	| { readonly kind: 'package-root'; readonly packageName: string }
+	| { readonly kind: 'source-entry'; readonly source: string }
+
+export type PluginDefinitionAddressSnapshot = {
+	readonly entry: PluginEntryAddressSnapshot
+	readonly exportName: string
+}
+
+export type PluginSemanticDefinition = {
+	readonly className: string
+	readonly kind: 'plugin' | 'abstract'
+	readonly definition: PluginDefinitionAddressSnapshot
+	readonly requires: readonly PluginDefinitionAddressSnapshot[]
+	readonly optional: readonly PluginDefinitionAddressSnapshot[]
+	readonly provides?: PluginDefinitionAddressSnapshot
 }
 
 export type PluginSemantics = {
-	readonly optionalPlugins: readonly OptionalPluginCall[]
-	readonly requiredPackages: readonly string[]
+	readonly definitions: readonly PluginSemanticDefinition[]
+	readonly packageDependencies: ReadonlyMap<string, PluginDependencyMode>
+	readonly transformedCode?: string
 }
 
 export type PluginSemanticsPluginOptions = {
-	prefixes?: readonly string[]
 	include?: string | string[]
 	exclude?: string | string[]
-	optionalImportMode?: 'bundle' | 'external'
+	/** Host root used to create stable, route-relative source-entry locators. */
+	root?: string
+	/** Enables package-root provenance and package entry/export invariants. */
+	packageJsonPath?: string
+	/** Generated helper import. Plugin packages normally use the runtime authoring entry. */
+	helperImportSource?: '@pluxel/runtime' | '@pluxel/core'
 }
 
 export type PluginSemanticsCollector = {
 	plugin: ViteCompatPlugin
 	snapshot(): Map<string, PluginDependencyMode>
+	definitions(): readonly PluginSemanticDefinition[]
 }
 
 type ImportBinding = {
 	readonly source: string
+	readonly imported: string
+	readonly local: string
 	readonly namespace: boolean
-	readonly imported?: string
+	readonly typeOnly: boolean
 }
 
-/** One source pass owns optional lowering and package dependency facts. */
+type RawClass = {
+	readonly node: AstNode
+	readonly name: string
+	readonly marked: boolean
+	readonly abstract: boolean
+	readonly basePluginSubclass: boolean
+	readonly marker?: AstNode
+}
+
+type RawRef = {
+	readonly name: string
+	readonly call: AstNode
+	readonly targetType: string
+}
+
+type ModuleAnalysis = {
+	readonly ast: Program
+	readonly imports: Map<string, ImportBinding>
+	readonly classes: Map<string, RawClass>
+	readonly exports: Map<string, LocalExport>
+	readonly exportAll: readonly string[]
+	readonly refs: Map<string, RawRef>
+	readonly exportedRefs: ReadonlySet<string>
+}
+
+type LocalExport =
+	| { readonly kind: 'local'; readonly local: string }
+	| { readonly kind: 'reexport'; readonly source: string; readonly imported: string }
+
+type ClassOrigin = {
+	readonly id: string
+	readonly className: string
+	readonly raw: RawClass
+}
+
+type PackagePlan = {
+	readonly packageName: string
+	readonly packageRoot: string
+	readonly rootEntry: string
+	readonly publicEntries: ReadonlyMap<string, string>
+	readonly addresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot>
+}
+
+type Replacement = { readonly start: number; readonly end: number; readonly text: string }
+
+const AUTHORING_PACKAGES = new Set([
+	'@pluxel/core',
+	'@pluxel/core/test',
+	'@pluxel/runtime',
+	'@pluxel/runtime/test',
+	'@pluxel/test',
+])
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const
+
+/**
+ * One pass owns Plugin declaration provenance, constructor DI facts, optional refs and package
+ * dependency metadata. It deliberately has no loader/resolver fallback for absent packages.
+ */
 export function createPluginSemanticsPlugin(
 	options: PluginSemanticsPluginOptions = {},
 ): PluginSemanticsCollector {
-	const optionalImportMode = options.optionalImportMode ?? 'bundle'
 	const include = normalizePatterns(options.include, [
 		'**/*.ts',
 		'**/*.tsx',
@@ -60,167 +134,317 @@ export function createPluginSemanticsPlugin(
 		'**/*.mjs',
 		'**/*.cjs',
 	])
-	const exclude = normalizePatterns(options.exclude, [
-		...(optionalImportMode === 'external' ? ['**/node_modules/**'] : []),
-		'**/*.d.*',
-	])
-	const prefixes = options.prefixes ?? []
+	const exclude = normalizePatterns(options.exclude, ['**/node_modules/**', '**/*.d.*'])
+	const sourceRoot = resolve(options.root ?? process.cwd())
+	const helperImportSource = options.helperImportSource ?? '@pluxel/runtime'
 	const dependencies = new Map<string, PluginDependencyMode>()
-	const pluginImports = new Map<string, Map<string, PluginDependencyMode>>()
+	const collectedDefinitions = new Map<string, PluginSemanticDefinition>()
+	const requiredImports = new Map<string, Set<string>>()
+	const packageOwnerCache = new Map<string, Promise<string | undefined>>()
+	const inferredPackagePlans = new Map<string, Promise<PackagePlan | undefined>>()
+	let packagePlan: PackagePlan | undefined
 
-	const record = (source: string, mode: PluginDependencyMode) => {
-		const name = normalizePackage(source, prefixes)
-		if (name && (mode === 'required' || !dependencies.has(name))) dependencies.set(name, mode)
+	const recordPackage = (name: string, mode: PluginDependencyMode) => {
+		if (AUTHORING_PACKAGES.has(name)) return
+		if (mode === 'required' || !dependencies.has(name)) dependencies.set(name, mode)
 	}
 
 	const plugin: ViteCompatPlugin = {
 		name: 'pluxel:plugin-semantics',
 		enforce: 'pre',
-		buildStart() {
+		async buildStart() {
 			dependencies.clear()
-			pluginImports.clear()
+			collectedDefinitions.clear()
+			requiredImports.clear()
+			packageOwnerCache.clear()
+			inferredPackagePlans.clear()
+			packagePlan = options.packageJsonPath
+				? await createPackagePlan(options.packageJsonPath, (message) => this.error(message))
+				: undefined
 		},
 		transform: {
 			filter: {
 				id: { include, exclude },
-				code: {
-					include: prefixes.length > 0 ? /\boptionalPlugin\b|\bPlugin\b/ : /\boptionalPlugin\b/,
-				},
 			},
-			handler(code, id) {
+			async handler(code, rawId) {
+				const id = stripQuery(rawId)
+				if (code.includes('// [pluxel-plugin-semantics] Injected facts')) return null
+				if (!semanticHint(code)) return null
 				const ast = parseWithLang(this, code, id)
-				if (!ast) return null
-				const semantics = analyzePluginSemantics(ast)
-				for (const call of semantics.optionalPlugins) {
-					if (call.packageSpecifier) record(call.packageSpecifier, 'optional')
-				}
-				for (const source of semantics.requiredPackages) record(source, 'required')
-
-				const calls = semantics.optionalPlugins.map((call) => {
-					const validArguments =
-						call.argumentCount === 1 ||
-						(call.argumentCount === 2 && call.packageAnnotation === call.packageSpecifier)
-					if (
-						!validArguments ||
-						!call.packageSpecifier ||
-						!call.exportName ||
-						call.loaderEnd === undefined
-					) {
-						this.error(
-							`[pluxel:optional-plugin] ${id} expects optionalPlugin(() => import(<literal>).then(<export selection>))`,
+				if (!ast) this.error(`[pluxel:plugin-semantics] failed to parse ${id}`)
+				const analysis = analyzeModule(ast)
+				const inferredPackagePlan = packagePlan
+					? undefined
+					: await inferPackagePlan(id, packageOwnerCache, inferredPackagePlans, (message) =>
+							this.error(message),
 						)
-					}
-					if (!call.topLevel) {
-						this.error(
-							`[pluxel:optional-plugin] ${id} optionalPlugin() must be assigned to a module-level const`,
+				const activePackagePlan = packagePlan ?? inferredPackagePlan
+				const addresses = packagePlan
+					? packagePlan.addresses
+					: mergeSourceAddresses(
+							sourceAddresses(analysis, id, sourceRoot),
+							inferredPackagePlan?.addresses,
 						)
-					}
-					return call as Required<OptionalPluginCall>
+				const result = await lowerModule({
+					analysis,
+					code,
+					id,
+					sourceRoot,
+					addresses,
+					packagePlan: activePackagePlan,
+					strictPackagePlan: Boolean(packagePlan),
+					helperImportSource,
+					error: (message) => this.error(message),
+					resolve: async (source) => {
+						const resolved = await this.resolve(source, id, { skipSelf: true })
+						return resolved?.id ? stripQuery(resolved.id) : undefined
+					},
 				})
-				const cleanId = stripQuery(id)
-				const imports = new Map<string, PluginDependencyMode>()
-				for (const call of calls) imports.set(call.packageSpecifier, 'optional')
-				for (const source of semantics.requiredPackages) {
-					if (optionalImportMode === 'bundle' || normalizePackage(source, prefixes)) {
-						imports.set(source, 'required')
-					}
+
+				for (const [name, mode] of result.packageDependencies) recordPackage(name, mode)
+				for (const definition of result.definitions) {
+					collectedDefinitions.set(definitionKey(definition.definition), definition)
 				}
-				if (imports.size > 0) {
-					pluginImports.set(id, imports)
-					pluginImports.set(cleanId, imports)
+				if (result.requiredSources.size > 0) {
+					requiredImports.set(id, result.requiredSources)
+					requiredImports.set(rawId, result.requiredSources)
 				}
-				if (calls.length === 0) return null
-				if (optionalImportMode === 'bundle') return null
-				let transformed = code
-				for (const call of [...calls]
-					.filter((candidate) => !candidate.packageAnnotation)
-					.sort((a, b) => b.loaderEnd - a.loaderEnd)) {
-					transformed = `${transformed.slice(0, call.loaderEnd)},${JSON.stringify(call.packageSpecifier)}${transformed.slice(call.loaderEnd)}`
-				}
-				return { code: transformed, map: null }
+				return result.code === code ? null : { code: result.code, map: null }
 			},
 		},
-		async resolveId(source, importer, resolveOptions) {
-			if (!importer) return null
-			const mode = pluginImports.get(importer)?.get(source)
-			if (!mode) return null
-			if (optionalImportMode === 'external') return { id: source, external: true }
-			if (mode !== 'optional') return null
-			const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true })
-			if (resolved) return resolved
-			return `${ABSENT_PREFIX}${encodeURIComponent(source)}`
+		resolveId(source, importer) {
+			if (!packagePlan || !importer) return null
+			if (!requiredImports.get(stripQuery(importer))?.has(source)) return null
+			return { id: source, external: true }
 		},
-		load(id) {
-			if (!id.startsWith(ABSENT_PREFIX)) return null
-			const source = decodeURIComponent(id.slice(ABSENT_PREFIX.length))
-			return [
-				`const error = new Error(${JSON.stringify(`Optional plugin package is absent: ${source}`)});`,
-				`error.code = 'PLUXEL_OPTIONAL_PLUGIN_ABSENT';`,
-				`error.packageSpecifier = ${JSON.stringify(source)};`,
-				'throw error;',
-			].join('\n')
+		buildEnd() {
+			if (!packagePlan) return
+			for (const definition of collectedDefinitions.values()) {
+				if (definition.definition.entry.kind !== 'package-root') {
+					this.error(
+						`[pluxel:plugin-package] ${definition.className} was not mapped to the package root`,
+					)
+				}
+			}
 		},
 	}
 
 	return {
 		plugin,
-		snapshot() {
-			return new Map(dependencies)
-		},
+		snapshot: () => new Map(dependencies),
+		definitions: () => [...collectedDefinitions.values()],
 	}
 }
 
-export function analyzePluginSemantics(ast: Program): PluginSemantics {
-	const imports = collectImports(ast)
-	const topLevelCalls = collectTopLevelConstCalls(ast.body as unknown[])
-	const optionalPlugins: OptionalPluginCall[] = []
-	const requiredPackages: string[] = []
-
-	walkAst(ast, (node) => {
-		if (node.type === 'CallExpression' && isOptionalPluginCall(node, imports)) {
-			optionalPlugins.push(
-				analyzeOptionalPluginCall(
-					node,
-					typeof node.start === 'number' && topLevelCalls.has(node.start),
-				),
-			)
-			return
-		}
-		if (!isPluginClass(node, imports)) return
-		const members = (node.body as { body?: unknown } | undefined)?.body
-		if (!Array.isArray(members)) return
-		for (const member of members) {
-			if (!isConstructor(member)) continue
-			const params = ((member.value as { params?: unknown } | undefined)?.params ?? []) as unknown[]
-			for (const param of params) {
-				const source = resolveParameterImport(param, imports)
-				if (source) requiredPackages.push(source)
-			}
-		}
-	})
-
-	return { optionalPlugins, requiredPackages }
-}
-
-function analyzeOptionalPluginCall(node: AstNode, topLevel: boolean): OptionalPluginCall {
-	const args = Array.isArray(node.arguments) ? node.arguments : []
-	const loader = args[0] as AstNode | undefined
-	const imports: string[] = []
-	if (loader) {
-		walkAst(loader, (child) => {
-			if (child.type !== 'ImportExpression') return
-			const source = readLiteralString(child.source)
-			if (source) imports.push(source)
+/** Pure AST view used by focused tests and diagnostics. */
+export function analyzePluginSemantics(
+	ast: Program,
+	options: { id?: string; root?: string } = {},
+): PluginSemantics {
+	const id = resolve(options.id ?? 'src/plugin.ts')
+	const root = resolve(options.root ?? dirname(id))
+	const analysis = analyzeModule(ast)
+	const addresses = sourceAddresses(analysis, id, root)
+	const definitions: PluginSemanticDefinition[] = []
+	for (const raw of analysis.classes.values()) {
+		if (!raw.marked && !raw.abstract) continue
+		const definition = addresses.get(originKey(id, raw.name))
+		if (!definition) continue
+		definitions.push({
+			className: raw.name,
+			kind: raw.marked ? 'plugin' : 'abstract',
+			definition,
+			requires: [],
+			optional: [],
 		})
 	}
-	return {
-		argumentCount: args.length,
-		loaderEnd: typeof loader?.end === 'number' ? loader.end : undefined,
-		packageSpecifier: imports.length === 1 ? imports[0] : undefined,
-		exportName: loader ? readSelectedExport(loader) : undefined,
-		packageAnnotation: readLiteralString(args[1]),
-		topLevel,
+	return { definitions, packageDependencies: new Map() }
+}
+
+async function lowerModule(options: {
+	analysis: ModuleAnalysis
+	code: string
+	id: string
+	sourceRoot: string
+	addresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot>
+	packagePlan?: PackagePlan
+	strictPackagePlan: boolean
+	helperImportSource: string
+	error(message: string): never
+	resolve(source: string): Promise<string | undefined>
+}): Promise<{
+	code: string
+	definitions: PluginSemanticDefinition[]
+	packageDependencies: Map<string, PluginDependencyMode>
+	requiredSources: Set<string>
+}> {
+	const { analysis, id } = options
+	const packageDependencies = new Map<string, PluginDependencyMode>()
+	const requiredSources = new Set<string>()
+	const replacements: Replacement[] = []
+	const refAddresses = new Map<string, PluginDefinitionAddressSnapshot>()
+
+	for (const ref of analysis.refs.values()) {
+		if (analysis.exportedRefs.has(ref.name)) {
+			options.error(`[pluxel:plugin-ref] ${id} ${ref.name} must not be exported`)
+		}
+		const address = await resolveTypeAddress(ref.targetType, analysis, id, options, true)
+		refAddresses.set(ref.name, address)
+		if (address.entry.kind === 'package-root') {
+			packageDependencies.set(address.entry.packageName, 'optional')
+		}
+		const start = numberPosition(ref.call.start, options.error, `${id} ref start`)
+		const end = numberPosition(ref.call.end, options.error, `${id} ref end`)
+		replacements.push({
+			start,
+			end,
+			text: `__pluxelDefinePluginRef(${JSON.stringify(address)})`,
+		})
 	}
+
+	const definitions: PluginSemanticDefinition[] = []
+	for (const raw of analysis.classes.values()) {
+		if (!raw.marked && !raw.abstract) continue
+		const address = options.addresses.get(originKey(id, raw.name))
+		if (!address) {
+			if (options.strictPackagePlan && raw.marked) {
+				options.error(
+					`[pluxel:plugin-package] ${id} marked Plugin ${raw.name} must have one unique package-root named export`,
+				)
+			}
+			continue
+		}
+		if (raw.marked) validateMarker(raw, id, analysis, options.error)
+		const requires = raw.marked
+			? await constructorRequirements(
+					raw,
+					analysis,
+					id,
+					options,
+					packageDependencies,
+					requiredSources,
+				)
+			: []
+		const optional = raw.marked
+			? optionalRequirements(raw, analysis, refAddresses, id, options.error)
+			: []
+		const provides = raw.marked ? await markerProvider(raw, analysis, id, options) : undefined
+		definitions.push({
+			className: raw.name,
+			kind: raw.marked ? 'plugin' : 'abstract',
+			definition: address,
+			requires,
+			optional,
+			...(provides ? { provides } : {}),
+		})
+	}
+
+	let transformed = applyReplacements(options.code, replacements)
+	if (definitions.length > 0 || replacements.length > 0) {
+		const imports = [
+			definitions.length > 0 ? '__setPluginDefinition as __pluxelSetPluginDefinition' : undefined,
+			replacements.length > 0 ? '__definePluginRef as __pluxelDefinePluginRef' : undefined,
+		].filter((value): value is string => Boolean(value))
+		const lines = [
+			'// [pluxel-plugin-semantics] Injected facts',
+			`import { ${imports.join(', ')} } from ${JSON.stringify(options.helperImportSource)};`,
+		]
+		for (const definition of definitions) {
+			lines.push(
+				`__pluxelSetPluginDefinition(${definition.className}, ${JSON.stringify({
+					kind: definition.kind,
+					definition: definition.definition,
+					requires: definition.requires,
+					optional: definition.optional,
+					...(definition.provides ? { provides: definition.provides } : {}),
+				})});`,
+			)
+		}
+		transformed = `${transformed}\n${lines.join('\n')}\n`
+	}
+	return { code: transformed, definitions, packageDependencies, requiredSources }
+}
+
+function analyzeModule(ast: Program): ModuleAnalysis {
+	const imports = collectImports(ast)
+	const classes = new Map<string, RawClass>()
+	const exports = new Map<string, LocalExport>()
+	const exportAll: string[] = []
+	const refs = new Map<string, RawRef>()
+	const exportedRefs = new Set<string>()
+
+	const registerClass = (node: AstNode) => {
+		const name = readIdentifier(node.id)
+		if (!name) return
+		const marker = findPluginMarker(node, imports)
+		classes.set(name, {
+			node,
+			name,
+			marked: Boolean(marker),
+			abstract: node.abstract === true,
+			basePluginSubclass: extendsBasePlugin(node, imports),
+			...(marker ? { marker } : {}),
+		})
+	}
+
+	for (const statement of ast.body ?? []) {
+		const node = statement as unknown as AstNode
+		if (node.type === 'ClassDeclaration') registerClass(node)
+		if (node.type === 'VariableDeclaration') collectPluginRefs(node, imports, refs, false)
+		if (node.type === 'ExportAllDeclaration') {
+			const source = readLiteralString(node.source)
+			if (source && node.exportKind !== 'type') exportAll.push(source)
+			continue
+		}
+		if (node.type !== 'ExportNamedDeclaration' && node.type !== 'ExportDefaultDeclaration') {
+			continue
+		}
+		if (node.type === 'ExportDefaultDeclaration') {
+			const declaration = node.declaration as AstNode | undefined
+			if (declaration?.type === 'ClassDeclaration') registerClass(declaration)
+			continue
+		}
+		if (node.exportKind === 'type') continue
+		const declaration = node.declaration as AstNode | undefined
+		if (declaration?.type === 'ClassDeclaration') {
+			registerClass(declaration)
+			const name = readIdentifier(declaration.id)
+			if (name) exports.set(name, { kind: 'local', local: name })
+		}
+		if (declaration?.type === 'VariableDeclaration') {
+			collectPluginRefs(declaration, imports, refs, true)
+			for (const rawDeclaration of arrayOf(declaration.declarations)) {
+				const name = readIdentifier((rawDeclaration as AstNode).id)
+				if (name) exportedRefs.add(name)
+			}
+		}
+		const source = readLiteralString(node.source)
+		for (const rawSpecifier of arrayOf(node.specifiers)) {
+			const specifier = rawSpecifier as AstNode
+			if (specifier.exportKind === 'type') continue
+			const exported = propertyName(specifier.exported)
+			const local = propertyName(specifier.local)
+			if (!exported || !local) continue
+			if (source) exports.set(exported, { kind: 'reexport', source, imported: local })
+			else {
+				exports.set(exported, { kind: 'local', local })
+				if (refs.has(local)) exportedRefs.add(local)
+			}
+		}
+	}
+	for (const raw of classes.values()) {
+		if (raw.abstract && !raw.basePluginSubclass && !raw.marked) classes.delete(raw.name)
+	}
+	const declaredRefCalls = new Set([...refs.values()].map((ref) => ref.call.start))
+	walkAst(ast, (node) => {
+		if (node.type !== 'CallExpression' || !isAuthoringCall(node, 'definePluginRef', imports)) return
+		if (!declaredRefCalls.has(node.start)) {
+			throw new Error(
+				'[pluxel:plugin-ref] definePluginRef<T>() must be assigned to a non-exported module-level const',
+			)
+		}
+	})
+	return { ast, imports, classes, exports, exportAll, refs, exportedRefs }
 }
 
 function collectImports(ast: Program): Map<string, ImportBinding> {
@@ -230,143 +454,788 @@ function collectImports(ast: Program): Map<string, ImportBinding> {
 		if (node.type !== 'ImportDeclaration') continue
 		const source = readLiteralString(node.source)
 		if (!source) continue
-		for (const raw of Array.isArray(node.specifiers) ? node.specifiers : []) {
+		for (const raw of arrayOf(node.specifiers)) {
 			const specifier = raw as AstNode
 			const local = readIdentifier(specifier.local)
 			if (!local) continue
+			const namespace = specifier.type === 'ImportNamespaceSpecifier'
+			const imported =
+				specifier.type === 'ImportDefaultSpecifier'
+					? 'default'
+					: (readIdentifier(specifier.imported) ?? local)
 			imports.set(local, {
 				source,
-				namespace: specifier.type === 'ImportNamespaceSpecifier',
-				imported: readIdentifier(specifier.imported),
+				imported,
+				local,
+				namespace,
+				typeOnly: node.importKind === 'type' || specifier.importKind === 'type',
 			})
 		}
 	}
 	return imports
 }
 
-function isOptionalPluginCall(node: AstNode, imports: Map<string, ImportBinding>): boolean {
-	const callee = node.callee as AstNode | undefined
+function collectPluginRefs(
+	declaration: AstNode,
+	imports: Map<string, ImportBinding>,
+	refs: Map<string, RawRef>,
+	_exported: boolean,
+): void {
+	if (declaration.kind !== 'const') return
+	for (const rawDeclaration of arrayOf(declaration.declarations)) {
+		const item = rawDeclaration as AstNode
+		const name = readIdentifier(item.id)
+		const call = item.init as AstNode | undefined
+		if (
+			!name ||
+			call?.type !== 'CallExpression' ||
+			!isAuthoringCall(call, 'definePluginRef', imports)
+		) {
+			continue
+		}
+		const args = arrayOf(call.arguments)
+		const typeArguments = (call.typeArguments as AstNode | undefined)?.params
+		const params = arrayOf(typeArguments)
+		const targetType = params.length === 1 ? simpleTypeReference(params[0]) : undefined
+		if (args.length > 0 || !targetType) {
+			throw new Error(
+				`[pluxel:plugin-ref] ${name} expects definePluginRef<RootPluginType>() with no runtime arguments`,
+			)
+		}
+		refs.set(name, { name, call, targetType })
+	}
+}
+
+function sourceAddresses(
+	analysis: ModuleAnalysis,
+	id: string,
+	root: string,
+): Map<string, PluginDefinitionAddressSnapshot> {
+	const byLocal = new Map<string, string[]>()
+	for (const [exportName, target] of analysis.exports) {
+		if (target.kind !== 'local') continue
+		const binding = analysis.imports.get(target.local)
+		if (binding) continue
+		const list = byLocal.get(target.local) ?? []
+		list.push(exportName)
+		byLocal.set(target.local, list)
+	}
+	const addresses = new Map<string, PluginDefinitionAddressSnapshot>()
+	for (const raw of analysis.classes.values()) {
+		if (!raw.marked && !raw.abstract) continue
+		const names = byLocal.get(raw.name) ?? []
+		if (names.length > 1) {
+			throw new Error(
+				`[pluxel:plugin-semantics] ${id} ${raw.name} is exported by multiple root names: ${names.join(', ')}`,
+			)
+		}
+		const exportName = names[0] ?? raw.name
+		addresses.set(originKey(id, raw.name), {
+			entry: { kind: 'source-entry', source: sourceLocator(root, id) },
+			exportName,
+		})
+	}
+	return addresses
+}
+
+function mergeSourceAddresses(
+	local: Map<string, PluginDefinitionAddressSnapshot>,
+	packageAddresses: ReadonlyMap<string, PluginDefinitionAddressSnapshot> | undefined,
+): Map<string, PluginDefinitionAddressSnapshot> {
+	if (!packageAddresses) return local
+	for (const [origin, address] of packageAddresses) local.set(origin, address)
+	return local
+}
+
+async function constructorRequirements(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	options: Parameters<typeof lowerModule>[0],
+	packageDependencies: Map<string, PluginDependencyMode>,
+	requiredSources: Set<string>,
+): Promise<PluginDefinitionAddressSnapshot[]> {
+	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
+	const constructor = members.find(
+		(value) =>
+			(value as AstNode).type === 'MethodDefinition' && (value as AstNode).kind === 'constructor',
+	) as AstNode | undefined
+	if (!constructor) return []
+	const params = arrayOf((constructor.value as AstNode | undefined)?.params)
+	const out: PluginDefinitionAddressSnapshot[] = []
+	for (const parameter of params) {
+		const typeName = parameterTypeName(parameter)
+		if (!typeName) {
+			options.error(
+				`[pluxel:plugin-di] ${id} ${raw.name} constructor parameters must be simple Plugin type references`,
+			)
+		}
+		const binding = analysis.imports.get(typeName)
+		if (binding?.typeOnly) {
+			options.error(
+				`[pluxel:plugin-di] ${id} ${raw.name} required dependency ${typeName} must use a value import`,
+			)
+		}
+		const address = await resolveTypeAddress(typeName, analysis, id, options, false)
+		out.push(address)
+		if (binding && isBareSpecifier(binding.source)) {
+			const packageName = packageNameOf(binding.source)
+			packageDependencies.set(packageName, 'required')
+			requiredSources.add(binding.source)
+		}
+	}
+	return out
+}
+
+function optionalRequirements(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	refs: ReadonlyMap<string, PluginDefinitionAddressSnapshot>,
+	id: string,
+	error: (message: string) => never,
+): PluginDefinitionAddressSnapshot[] {
+	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
+	const init = members.find(
+		(value) =>
+			(value as AstNode).type === 'MethodDefinition' &&
+			propertyName((value as AstNode).key) === 'init',
+	) as AstNode | undefined
+	const addresses: PluginDefinitionAddressSnapshot[] = []
+	const seen = new Set<string>()
+	const directCalls = new Set<unknown>()
+	for (const member of members) {
+		if ((member as AstNode).type !== 'MethodDefinition') continue
+		const body = ((member as AstNode).value as AstNode | undefined)?.body as AstNode | undefined
+		for (const statement of arrayOf(body?.body)) {
+			const call = directPluginsUse(statement as AstNode)
+			if (!call) continue
+			directCalls.add(call.start)
+			if (member !== init) {
+				error(`[pluxel:plugin-ref] ${id} ${raw.name} plugins.use() is only allowed in init()`)
+			}
+			const args = arrayOf(call.arguments)
+			const refName = readIdentifier(args[0])
+			const callback = args[1] as AstNode | undefined
+			if (args.length !== 2 || !refName || !refs.has(refName)) {
+				error(
+					`[pluxel:plugin-ref] ${id} ${raw.name} plugins.use() requires a module-level PluginRef and one callback`,
+				)
+			}
+			if (
+				(callback?.type !== 'ArrowFunctionExpression' && callback?.type !== 'FunctionExpression') ||
+				callback.async === true
+			) {
+				error(`[pluxel:plugin-ref] ${id} ${raw.name} plugins.use() callback must be synchronous`)
+			}
+			const address = refs.get(refName)!
+			const key = definitionKey(address)
+			if (!seen.has(key)) {
+				seen.add(key)
+				addresses.push(address)
+			}
+		}
+	}
+	walkAst(raw.node, (node) => {
+		if (node.type !== 'CallExpression' || !isPluginsUseCall(node)) return
+		if (!directCalls.has(node.start)) {
+			error(
+				`[pluxel:plugin-ref] ${id} ${raw.name} plugins.use() must be a direct statement in init()`,
+			)
+		}
+	})
+	return addresses
+}
+
+async function markerProvider(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	options: Parameters<typeof lowerModule>[0],
+): Promise<PluginDefinitionAddressSnapshot | undefined> {
+	const expression = raw.marker?.expression as AstNode | undefined
+	if (expression?.type !== 'CallExpression') return undefined
+	const args = arrayOf(expression.arguments)
+	const first = args[0] as AstNode | undefined
+	if (first?.type !== 'Identifier') return undefined
+	const firstName = readIdentifier(first)
+	if (!firstName) return undefined
+	if (!analysis.imports.has(firstName) && !analysis.classes.get(firstName)?.abstract)
+		return undefined
+	return resolveTypeAddress(firstName, analysis, id, options, false)
+}
+
+function validateMarker(
+	raw: RawClass,
+	id: string,
+	analysis: ModuleAnalysis,
+	error: (message: string) => never,
+): void {
+	const expression = raw.marker?.expression as AstNode | undefined
+	if (!expression || expression.type !== 'CallExpression') return
+	const args = arrayOf(expression.arguments)
+	let optionsNode: AstNode | undefined
+	if (args.length === 1) {
+		const first = args[0] as AstNode
+		if (first.type === 'ObjectExpression') optionsNode = first
+		else if (first.type !== 'Identifier') {
+			error(`[pluxel:plugin-marker] ${id} ${raw.name} has an invalid @Plugin argument`)
+		}
+	} else if (args.length === 2) {
+		if ((args[0] as AstNode).type !== 'Identifier') {
+			error(`[pluxel:plugin-marker] ${id} ${raw.name} provider token must be an identifier`)
+		}
+		optionsNode = args[1] as AstNode
+	} else if (args.length > 2) {
+		error(`[pluxel:plugin-marker] ${id} ${raw.name} has too many @Plugin arguments`)
+	}
+	if (!optionsNode) return
+	if (optionsNode.type !== 'ObjectExpression') {
+		error(`[pluxel:plugin-marker] ${id} ${raw.name} options must be an object literal`)
+	}
+	for (const rawProperty of arrayOf(optionsNode.properties)) {
+		const property = rawProperty as AstNode
+		if (property.type !== 'Property' || property.computed === true) {
+			error(`[pluxel:plugin-marker] ${id} ${raw.name} options must use literal fields`)
+		}
+		const key = propertyName(property.key)
+		if (key === 'displayName') {
+			const value = readLiteralString(property.value)
+			if (!value?.trim()) {
+				error(
+					`[pluxel:plugin-marker] ${id} ${raw.name} displayName must be a non-empty string literal`,
+				)
+			}
+			continue
+		}
+		if (key === 'startTimeoutMs') {
+			const value = literalNumber(property.value)
+			if (!Number.isSafeInteger(value) || (value ?? 0) <= 0) {
+				error(
+					`[pluxel:plugin-marker] ${id} ${raw.name} startTimeoutMs must be a positive integer literal`,
+				)
+			}
+			continue
+		}
+		error(
+			`[pluxel:plugin-marker] ${id} ${raw.name} unsupported @Plugin option ${JSON.stringify(key)}`,
+		)
+	}
+	void analysis
+}
+
+async function resolveTypeAddress(
+	typeName: string,
+	analysis: ModuleAnalysis,
+	id: string,
+	options: Parameters<typeof lowerModule>[0],
+	typeOnly: boolean,
+): Promise<PluginDefinitionAddressSnapshot> {
+	const binding = analysis.imports.get(typeName)
+	if (!binding) {
+		const own = options.addresses.get(originKey(id, typeName))
+		if (own) return own
+		options.error(`[pluxel:plugin-provenance] ${id} cannot prove Plugin type ${typeName}`)
+	}
+	if (binding.namespace) {
+		options.error(`[pluxel:plugin-provenance] ${id} namespace Plugin references are not supported`)
+	}
+	if (typeOnly && !binding.typeOnly) {
+		options.error(
+			`[pluxel:plugin-ref] ${id} optional Plugin type ${typeName} must use a direct type-only import`,
+		)
+	}
+	if (!typeOnly && binding.typeOnly) {
+		options.error(
+			`[pluxel:plugin-di] ${id} required Plugin type ${typeName} must use a direct value import`,
+		)
+	}
+	if (isBareSpecifier(binding.source)) {
+		const packageName = packageNameOf(binding.source)
+		if (binding.source !== packageName) {
+			options.error(
+				`[pluxel:plugin-provenance] ${id} Plugin dependencies must come from package root; received ${binding.source}`,
+			)
+		}
+		return {
+			entry: { kind: 'package-root', packageName },
+			exportName: binding.imported,
+		}
+	}
+	const resolved = await options.resolve(binding.source)
+	if (!resolved) {
+		options.error(
+			`[pluxel:plugin-provenance] ${id} could not resolve local Plugin import ${binding.source}`,
+		)
+	}
+	if (options.packagePlan && resolve(resolved) === resolve(options.packagePlan.rootEntry)) {
+		const rootAddress = [...options.packagePlan.addresses.values()].find(
+			(address) => address.exportName === binding.imported,
+		)
+		if (rootAddress) return rootAddress
+	}
+	const direct = options.addresses.get(originKey(resolved, binding.imported))
+	if (direct) return direct
+	const source = await readFile(resolved, 'utf8').catch((): undefined => undefined)
+	const ast = source ? parseStandaloneWithLang(source, resolved) : null
+	if (!ast) {
+		options.error(`[pluxel:plugin-provenance] ${id} could not inspect ${resolved}`)
+	}
+	const target = analyzeModule(ast)
+	const targetExport = target.exports.get(binding.imported)
+	if (targetExport) {
+		const moduleCache = new Map<string, Promise<ModuleAnalysis>>([
+			[resolve(resolved), Promise.resolve(target)],
+		])
+		const readModule = (moduleId: string): Promise<ModuleAnalysis> => {
+			const clean = resolve(moduleId)
+			let pending = moduleCache.get(clean)
+			if (!pending) {
+				pending = readFile(clean, 'utf8').then((moduleCode) => {
+					const moduleAst = parseStandaloneWithLang(moduleCode, clean)
+					if (!moduleAst) {
+						options.error(`[pluxel:plugin-provenance] ${id} could not inspect ${clean}`)
+					}
+					return analyzeModule(moduleAst)
+				})
+				moduleCache.set(clean, pending)
+			}
+			return pending
+		}
+		const origin = await resolveExportOrigin(
+			resolved,
+			targetExport,
+			readModule,
+			new Set([`${resolve(resolved)}#${binding.imported}`]),
+		)
+		if (origin) {
+			const planned = options.addresses.get(originKey(origin.id, origin.className))
+			if (planned) return planned
+			const originModule = await readModule(origin.id)
+			const address = sourceAddresses(originModule, origin.id, options.sourceRoot).get(
+				originKey(origin.id, origin.className),
+			)
+			if (address) return address
+		}
+	}
+	options.error(
+		`[pluxel:plugin-provenance] ${id} ${binding.source}#${binding.imported} is not one unique Plugin export`,
+	)
+}
+
+async function inferPackagePlan(
+	id: string,
+	packageOwnerCache: Map<string, Promise<string | undefined>>,
+	inferredPackagePlans: Map<string, Promise<PackagePlan | undefined>>,
+	error: (message: string) => never,
+): Promise<PackagePlan | undefined> {
+	const startDirectory = dirname(resolve(stripQuery(id)))
+	let owner = packageOwnerCache.get(startDirectory)
+	if (!owner) {
+		owner = findNearestPackageJson(startDirectory)
+		packageOwnerCache.set(startDirectory, owner)
+	}
+	const packageJsonPath = await owner
+	if (!packageJsonPath) return undefined
+	let plan = inferredPackagePlans.get(packageJsonPath)
+	if (!plan) {
+		plan = readFile(packageJsonPath, 'utf8').then((raw) => {
+			let pkg: { exports?: unknown }
+			try {
+				pkg = JSON.parse(raw) as { exports?: unknown }
+			} catch (cause) {
+				throw new Error(`[pluxel:plugin-package] invalid JSON in ${packageJsonPath}`, {
+					cause,
+				})
+			}
+			if (!hasPluginSourceRoot(pkg.exports)) return undefined
+			return createPackagePlan(packageJsonPath, error)
+		})
+		inferredPackagePlans.set(packageJsonPath, plan)
+	}
+	return plan
+}
+
+async function findNearestPackageJson(startDirectory: string): Promise<string | undefined> {
+	let directory = startDirectory
+	while (true) {
+		const candidate = resolve(directory, 'package.json')
+		try {
+			await readFile(candidate)
+			return candidate
+		} catch {
+			const parent = dirname(directory)
+			if (parent === directory) return undefined
+			directory = parent
+		}
+	}
+}
+
+function hasPluginSourceRoot(value: unknown): boolean {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+	const root = (value as Record<string, unknown>)['.']
+	if (!root || typeof root !== 'object' || Array.isArray(root)) return false
+	return readSourceCondition((root as Record<string, unknown>)['@pluxel/hmr']) !== undefined
+}
+
+async function createPackagePlan(
+	packageJsonPath: string,
+	error: (message: string) => never,
+): Promise<PackagePlan> {
+	const resolvedPackageJson = resolve(packageJsonPath)
+	const packageRoot = dirname(resolvedPackageJson)
+	const raw = await readFile(resolvedPackageJson, 'utf8').catch((cause) => {
+		throw new Error(`[pluxel:plugin-package] cannot read ${resolvedPackageJson}`, { cause })
+	})
+	const pkg = JSON.parse(raw) as { name?: unknown; exports?: unknown }
+	const packageName = typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : undefined
+	if (!packageName)
+		error(`[pluxel:plugin-package] ${resolvedPackageJson} must declare package name`)
+	const publicEntries = readSourceExportEntries(pkg.exports, packageRoot, error)
+	const rootEntry = publicEntries.get('.')
+	if (!rootEntry) {
+		error(
+			`[pluxel:plugin-package] ${packageName} root export must expose a source entry via @pluxel/hmr or @pluxel/source`,
+		)
+	}
+	const cache = new Map<string, Promise<ModuleAnalysis>>()
+	const readModule = (id: string): Promise<ModuleAnalysis> => {
+		const clean = resolve(id)
+		let pending = cache.get(clean)
+		if (!pending) {
+			pending = readFile(clean, 'utf8').then((code) => {
+				const ast = parseStandaloneWithLang(code, clean)
+				if (!ast) error(`[pluxel:plugin-package] failed to parse public entry module ${clean}`)
+				return analyzeModule(ast)
+			})
+			cache.set(clean, pending)
+		}
+		return pending
+	}
+
+	const enumerate = async (
+		entry: string,
+		seen = new Set<string>(),
+	): Promise<Map<string, ClassOrigin>> => {
+		const clean = resolve(entry)
+		if (seen.has(clean)) return new Map()
+		seen.add(clean)
+		const module = await readModule(clean)
+		const out = new Map<string, ClassOrigin>()
+		for (const [exportName, target] of module.exports) {
+			const origin = await resolveExportOrigin(clean, target, readModule, seen)
+			if (origin) out.set(exportName, origin)
+		}
+		for (const source of module.exportAll) {
+			if (isBareSpecifier(source)) continue
+			const targetId = await resolveLocalFile(source, clean)
+			if (!targetId) error(`[pluxel:plugin-package] cannot resolve ${source} from ${clean}`)
+			const nested = await enumerate(targetId, new Set(seen))
+			for (const [name, origin] of nested)
+				if (name !== 'default' && !out.has(name)) out.set(name, origin)
+		}
+		return out
+	}
+
+	const rootExports = await enumerate(rootEntry)
+	const rootModule = await readModule(rootEntry)
+	for (const [exportName, target] of rootModule.exports) {
+		const binding = target.kind === 'local' ? rootModule.imports.get(target.local) : undefined
+		const source = target.kind === 'reexport' ? target.source : binding?.source
+		if (source && isBareSpecifier(source) && /(?:Plugin|Backend)$/.test(exportName)) {
+			error(
+				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a value from ${source}; cross-package Plugin re-exports are forbidden`,
+			)
+		}
+	}
+	const addresses = new Map<string, PluginDefinitionAddressSnapshot>()
+	const namesByOrigin = new Map<string, string[]>()
+	let concreteCount = 0
+	for (const [exportName, origin] of rootExports) {
+		if (!origin.raw.marked && !origin.raw.abstract) {
+			if (origin.raw.basePluginSubclass) {
+				error(
+					`[pluxel:plugin-package] ${packageName} root export ${exportName} extends BasePlugin but is missing @Plugin`,
+				)
+			}
+			continue
+		}
+		if (!isInside(packageRoot, origin.id)) {
+			error(
+				`[pluxel:plugin-package] ${packageName} root export ${exportName} re-exports a Plugin from another package`,
+			)
+		}
+		if (origin.raw.marked) concreteCount++
+		const key = originKey(origin.id, origin.className)
+		const names = namesByOrigin.get(key) ?? []
+		names.push(exportName)
+		namesByOrigin.set(key, names)
+		addresses.set(key, {
+			entry: { kind: 'package-root', packageName },
+			exportName,
+		})
+	}
+	for (const [key, names] of namesByOrigin) {
+		if (names.length > 1) {
+			error(
+				`[pluxel:plugin-package] ${packageName} exports one Plugin constructor by multiple root names: ${names.join(', ')}`,
+			)
+		}
+		void key
+	}
+	if (concreteCount === 0) {
+		error(`[pluxel:plugin-package] ${packageName} root entry does not export a marked Plugin`)
+	}
+	for (const [subpath, entry] of publicEntries) {
+		if (subpath === '.' || subpath === './package.json') continue
+		const exports = await enumerate(entry)
+		for (const [exportName, origin] of exports) {
+			if (origin.raw.marked || origin.raw.abstract) {
+				error(
+					`[pluxel:plugin-package] ${packageName}${subpath.slice(1)} is plugin-bearing (${exportName}); Plugin exports are only allowed at package root`,
+				)
+			}
+		}
+	}
+	return { packageName, packageRoot, rootEntry, publicEntries, addresses }
+}
+
+async function resolveExportOrigin(
+	id: string,
+	target: LocalExport,
+	readModule: (id: string) => Promise<ModuleAnalysis>,
+	seen: Set<string>,
+): Promise<ClassOrigin | undefined> {
+	const module = await readModule(id)
+	if (target.kind === 'reexport') {
+		if (isBareSpecifier(target.source)) return undefined
+		const targetId = await resolveLocalFile(target.source, id)
+		if (!targetId || seen.has(`${targetId}#${target.imported}`)) return undefined
+		seen.add(`${targetId}#${target.imported}`)
+		const targetModule = await readModule(targetId)
+		const nested = targetModule.exports.get(target.imported)
+		if (!nested) {
+			const raw = targetModule.classes.get(target.imported)
+			return raw ? { id: targetId, className: target.imported, raw } : undefined
+		}
+		return resolveExportOrigin(targetId, nested, readModule, seen)
+	}
+	const raw = module.classes.get(target.local)
+	if (raw) return { id, className: target.local, raw }
+	const binding = module.imports.get(target.local)
+	if (!binding || isBareSpecifier(binding.source)) return undefined
+	const targetId = await resolveLocalFile(binding.source, id)
+	if (!targetId || seen.has(`${targetId}#${binding.imported}`)) return undefined
+	seen.add(`${targetId}#${binding.imported}`)
+	const targetModule = await readModule(targetId)
+	const nested = targetModule.exports.get(binding.imported)
+	if (nested) return resolveExportOrigin(targetId, nested, readModule, seen)
+	const importedRaw = targetModule.classes.get(binding.imported)
+	return importedRaw ? { id: targetId, className: binding.imported, raw: importedRaw } : undefined
+}
+
+function readSourceExportEntries(
+	value: unknown,
+	packageRoot: string,
+	error: (message: string) => never,
+): Map<string, string> {
+	const entries = new Map<string, string>()
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		error('[pluxel:plugin-package] package exports must be an explicit subpath map')
+	}
+	for (const [subpath, target] of Object.entries(value as Record<string, unknown>)) {
+		if (!subpath.startsWith('.')) continue
+		const source = readSourceCondition(target)
+		if (!source || !/\.[cm]?[jt]sx?$/.test(source)) continue
+		entries.set(subpath, resolve(packageRoot, source))
+	}
+	return entries
+}
+
+function readSourceCondition(value: unknown): string | undefined {
+	if (typeof value === 'string') return value
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+	const record = value as Record<string, unknown>
+	for (const key of ['@pluxel/hmr', '@pluxel/source', 'development']) {
+		const nested = readSourceCondition(record[key])
+		if (nested) return nested
+	}
+	return undefined
+}
+
+async function resolveLocalFile(source: string, importer: string): Promise<string | undefined> {
+	const base = isAbsolute(source) ? source : resolve(dirname(importer), source)
+	const candidates = extname(base)
+		? [base]
+		: [
+				...SOURCE_EXTENSIONS.map((extension) => `${base}${extension}`),
+				...SOURCE_EXTENSIONS.map((extension) => resolve(base, `index${extension}`)),
+			]
+	for (const candidate of candidates) {
+		try {
+			await readFile(candidate)
+			return resolve(candidate)
+		} catch {
+			// Try the next TypeScript/JavaScript source form.
+		}
+	}
+	return undefined
+}
+
+function findPluginMarker(node: AstNode, imports: Map<string, ImportBinding>): AstNode | undefined {
+	for (const raw of arrayOf(node.decorators)) {
+		const decorator = raw as AstNode
+		const expression = decorator.expression as AstNode | undefined
+		const callee =
+			expression?.type === 'CallExpression' ? (expression.callee as AstNode) : expression
+		if (callee?.type === 'Identifier') {
+			const binding = imports.get(readIdentifier(callee) ?? '')
+			if (
+				binding &&
+				!binding.namespace &&
+				binding.imported === 'Plugin' &&
+				AUTHORING_PACKAGES.has(binding.source)
+			) {
+				return decorator
+			}
+		}
+		if (callee?.type === 'MemberExpression' && propertyName(callee.property) === 'Plugin') {
+			const binding = imports.get(readIdentifier(callee.object) ?? '')
+			if (binding?.namespace && AUTHORING_PACKAGES.has(binding.source)) return decorator
+		}
+	}
+	return undefined
+}
+
+function isAuthoringCall(
+	call: AstNode,
+	importedName: string,
+	imports: Map<string, ImportBinding>,
+): boolean {
+	const callee = call.callee as AstNode | undefined
 	if (callee?.type === 'Identifier') {
 		const binding = imports.get(readIdentifier(callee) ?? '')
 		return Boolean(
 			binding &&
 			!binding.namespace &&
-			binding.imported === 'optionalPlugin' &&
-			isAuthoringPackage(binding.source),
+			binding.imported === importedName &&
+			AUTHORING_PACKAGES.has(binding.source),
 		)
 	}
-	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'optionalPlugin') {
+	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== importedName) {
 		return false
 	}
 	const binding = imports.get(readIdentifier(callee.object) ?? '')
-	return Boolean(binding?.namespace && isAuthoringPackage(binding.source))
+	return Boolean(binding?.namespace && AUTHORING_PACKAGES.has(binding.source))
 }
 
-function isPluginClass(node: AstNode, imports: Map<string, ImportBinding>): boolean {
-	if (node.type !== 'ClassDeclaration' && node.type !== 'ClassExpression') return false
-	const decorators = Array.isArray(node.decorators) ? node.decorators : []
-	return decorators.some((raw) => {
-		const expression = (raw as AstNode).expression as AstNode | undefined
-		const callee =
-			expression?.type === 'CallExpression' ? (expression.callee as AstNode) : expression
-		if (callee?.type === 'Identifier') {
-			const binding = imports.get(readIdentifier(callee) ?? '')
-			return Boolean(
-				binding &&
-				!binding.namespace &&
-				binding.imported === 'Plugin' &&
-				isAuthoringPackage(binding.source),
-			)
-		}
-		if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'Plugin') {
-			return false
-		}
-		const binding = imports.get(readIdentifier(callee.object) ?? '')
-		return Boolean(binding?.namespace && isAuthoringPackage(binding.source))
-	})
+function extendsBasePlugin(node: AstNode, imports: Map<string, ImportBinding>): boolean {
+	const name = readIdentifier(node.superClass)
+	if (!name) return false
+	const binding = imports.get(name)
+	return Boolean(
+		binding &&
+		!binding.namespace &&
+		(binding.imported === 'BasePlugin' || binding.imported === 'ForkablePlugin') &&
+		AUTHORING_PACKAGES.has(binding.source),
+	)
 }
 
-function resolveParameterImport(param: unknown, imports: Map<string, ImportBinding>) {
-	let node = param as AstNode | undefined
+function directPluginsUse(statement: AstNode): AstNode | undefined {
+	if (statement.type !== 'ExpressionStatement') return undefined
+	const expression = statement.expression as AstNode | undefined
+	if (expression?.type !== 'CallExpression') return undefined
+	const callee = expression.callee as AstNode | undefined
+	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'use')
+		return undefined
+	const host = callee.object as AstNode | undefined
+	if (host?.type !== 'MemberExpression' || propertyName(host.property) !== 'plugins')
+		return undefined
+	return (host.object as AstNode | undefined)?.type === 'ThisExpression' ? expression : undefined
+}
+
+function isPluginsUseCall(expression: AstNode): boolean {
+	const callee = expression.callee as AstNode | undefined
+	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'use') return false
+	const host = callee.object as AstNode | undefined
+	if (host?.type !== 'MemberExpression' || propertyName(host.property) !== 'plugins') return false
+	return (host.object as AstNode | undefined)?.type === 'ThisExpression'
+}
+
+function parameterTypeName(value: unknown): string | undefined {
+	let node = value as AstNode | undefined
 	if (node?.type === 'TSParameterProperty') node = node.parameter as AstNode | undefined
 	const annotation = node?.typeAnnotation as AstNode | undefined
 	const type =
 		annotation?.type === 'TSTypeAnnotation' ? (annotation.typeAnnotation as AstNode) : annotation
-	if (type?.type !== 'TSTypeReference') return undefined
-	const name = type.typeName as AstNode | undefined
-	if (name?.type === 'Identifier') return imports.get(readIdentifier(name) ?? '')?.source
-	if (name?.type !== 'TSQualifiedName') return undefined
-	return imports.get(leftmostIdentifier(name) ?? '')?.source
+	return simpleTypeReference(type)
 }
 
-function readSelectedExport(loader: AstNode): string | undefined {
-	const body = loader.type === 'ArrowFunctionExpression' ? (loader.body as AstNode) : undefined
-	const callee = body?.type === 'CallExpression' ? (body.callee as AstNode) : undefined
-	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'then')
-		return undefined
-	const selector = Array.isArray(body?.arguments) ? (body.arguments[0] as AstNode) : undefined
-	if (selector?.type !== 'ArrowFunctionExpression') return undefined
-	const selected = selector.body as AstNode | undefined
-	if (selected?.type === 'MemberExpression') return propertyName(selected.property)
-	const selectedName = readIdentifier(selected)
-	const firstParam = Array.isArray(selector.params) ? (selector.params[0] as AstNode) : undefined
-	if (!selectedName || firstParam?.type !== 'ObjectPattern') return undefined
-	for (const raw of Array.isArray(firstParam.properties) ? firstParam.properties : []) {
-		const property = raw as AstNode
-		if (readIdentifier(property.value) === selectedName) return propertyName(property.key)
-	}
-	return undefined
+function simpleTypeReference(value: unknown): string | undefined {
+	const node = value as AstNode | undefined
+	if (node?.type !== 'TSTypeReference' || node.typeArguments) return undefined
+	return readIdentifier(node.typeName)
 }
 
-function collectTopLevelConstCalls(body: unknown[]): Set<number> {
-	const starts = new Set<number>()
-	for (const raw of body) {
-		let node = raw as AstNode
-		if (node.type === 'ExportNamedDeclaration' && node.declaration) {
-			node = node.declaration as AstNode
-		}
-		if (node.type !== 'VariableDeclaration' || node.kind !== 'const') continue
-		for (const rawDeclaration of Array.isArray(node.declarations) ? node.declarations : []) {
-			const init = (rawDeclaration as AstNode).init as AstNode | undefined
-			if (init?.type === 'CallExpression' && typeof init.start === 'number') starts.add(init.start)
-		}
-	}
-	return starts
+function semanticHint(code: string): boolean {
+	return /\b(?:Plugin|BasePlugin|ForkablePlugin|definePluginRef)\b|\.plugins\.use\s*\(/.test(code)
 }
 
-function isConstructor(value: unknown): value is AstNode {
-	if (!value || typeof value !== 'object') return false
-	const node = value as AstNode
-	return node.type === 'MethodDefinition' && node.kind === 'constructor'
+function packageNameOf(source: string): string {
+	const clean = source.split(/[?#]/, 1)[0] ?? source
+	const parts = clean.split('/')
+	return clean.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0]!
 }
 
-function leftmostIdentifier(node: AstNode): string | undefined {
-	const left = node.left as AstNode | undefined
-	return left?.type === 'Identifier'
-		? readIdentifier(left)
-		: left
-			? leftmostIdentifier(left)
-			: undefined
+function isBareSpecifier(source: string): boolean {
+	return !source.startsWith('.') && !source.startsWith('/') && !source.startsWith('\0')
+}
+
+function isInside(root: string, file: string): boolean {
+	const path = relative(resolve(root), resolve(file))
+	return path === '' || (!path.startsWith(`..${sep}`) && path !== '..' && !isAbsolute(path))
+}
+
+function sourceLocator(root: string, id: string): string {
+	const path = relative(resolve(root), resolve(id))
+	return (path.startsWith('..') ? resolve(id) : path || id).replaceAll('\\', '/')
+}
+
+function definitionKey(address: PluginDefinitionAddressSnapshot): string {
+	return address.entry.kind === 'package-root'
+		? `package:${address.entry.packageName}#${address.exportName}`
+		: `source:${address.entry.source}#${address.exportName}`
+}
+
+function originKey(id: string, className: string): string {
+	return `${resolve(stripQuery(id))}\0${className}`
+}
+
+function stripQuery(id: string): string {
+	return id.split(/[?#]/, 1)[0] ?? id
 }
 
 function propertyName(value: unknown): string | undefined {
 	return readIdentifier(value) ?? readLiteralString(value)
 }
 
-function isAuthoringPackage(source: string): boolean {
-	return source === '@pluxel/core' || source === '@pluxel/runtime'
+function literalNumber(value: unknown): number | undefined {
+	const node = value as { type?: unknown; value?: unknown } | undefined
+	return node?.type === 'Literal' && typeof node.value === 'number' ? node.value : undefined
 }
 
-function normalizePackage(source: string, prefixes: readonly string[]): string | undefined {
-	if (prefixes.length === 0) return undefined
-	const clean = source.split(/[?#]/, 1)[0] ?? source
-	if (!clean || clean.startsWith('.') || clean.startsWith('/')) return undefined
-	const parts = clean.split('/')
-	const name = clean.startsWith('@') ? parts[1] : parts[0]
-	if (!name || !prefixes.some((prefix) => name.startsWith(prefix))) return undefined
-	return clean.startsWith('@') ? `${parts[0]}/${name}` : name
+function arrayOf(value: unknown): unknown[] {
+	return Array.isArray(value) ? value : []
 }
 
-function stripQuery(id: string): string {
-	return id.split('?', 1)[0] ?? id
+function numberPosition(value: unknown, error: (message: string) => never, label: string): number {
+	if (typeof value === 'number') return value
+	return error(`[pluxel:plugin-semantics] cannot locate ${label}`)
+}
+
+function applyReplacements(code: string, replacements: readonly Replacement[]): string {
+	let out = code
+	for (const replacement of [...replacements].sort((left, right) => right.start - left.start)) {
+		out = `${out.slice(0, replacement.start)}${replacement.text}${out.slice(replacement.end)}`
+	}
+	return out
 }

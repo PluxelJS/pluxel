@@ -42,17 +42,18 @@ runtime
 ["pluxel", "runtime", rootId]
 
 plugin
-["pluxel", "plugins", rootId, pluginId]
+["pluxel", "plugins", rootId, entryKind, entryLocator, rootExportName, instance, ...forkId]
 
 runtime debug
 ["pluxel", "debug", rootId, "runtime", ...topicSegments]
 
 plugin debug
-["pluxel", "debug", rootId, "plugin", pluginId, ...topicSegments]
+["pluxel", "debug", rootId, "plugin", entryKind, entryLocator, rootExportName, instance, ...forkId, ...topicSegments]
 ```
 
-`properties.context` 只用于展示和查询。`rootId`、`pluginId` 和 debug topic 不允许通过 `with()` 或单次日志
-properties 修改。
+`entryKind + entryLocator + rootExportName + instance/forkId` 是 `PluginNodeAddressSnapshot` 的 category 投影。
+`displayName` 和 `properties.context` 只用于展示和查询。root/plugin identity 与 debug topic 不允许通过 `with()` 或
+单次日志 properties 修改。
 
 category builders/parser 位于：
 
@@ -158,9 +159,12 @@ policy snapshot：
 
 ```ts
 type PluginLogPolicySnapshot = {
-	version: 1
+	version: 2
 	defaultLevel: LogLevel | 'off'
-	overrides: Record<string, LogLevel | 'off'>
+	overrides: readonly {
+		owner: PluginNodeAddressSnapshot
+		level: LogLevel | 'off'
+	}[]
 }
 ```
 
@@ -169,11 +173,10 @@ type PluginLogPolicySnapshot = {
 ```ts
 class RuntimePluginLogPolicy {
 	private defaultRank: number
-	private ranks = new Map<string, number>()
+	private ranks = new Map<string, { owner: PluginNodeAddressSnapshot; rank: number }>()
 
-	allows(pluginId: string, level: LogLevel): boolean {
-		const override = this.ranks.get(pluginId)
-		const rank = override === undefined ? this.defaultRank : override
+	allows(owner: PluginNodeAddressSnapshot, level: LogLevel): boolean {
+		const rank = this.ranks.get(ownerKey(owner))?.rank ?? this.defaultRank
 		return rank !== OFF_RANK && LEVEL_RANK[level] >= rank
 	}
 }
@@ -192,7 +195,7 @@ mutation 规则：
 - `getPolicy()`、reset、replace 和 persistence snapshot 才是 O(N)；
 - RPC 使用 `expectedRevision` 防止并发覆盖；
 - persistence save 串行执行并合并中间状态；
-- 最多 100,000 个 overrides，plugin id 最长 512 code units；
+- 最多 100,000 个 overrides；每个 owner address 都经过严格 schema validation 和 canonical key 编码；
 - `off` 使用专用 numeric rank，不在热路径使用 nullable/string comparison。
 
 policy persistence 由 active root 的 `PersistenceService.namespace('logger')` adapter 提供，不存在 module-level
@@ -226,8 +229,9 @@ store 是 runtime API、SSE 和 Workbench log viewer 的事实源，不是 plugi
 - 默认最多 64 个 physical streams，非 default stream 使用无 subscriber LRU eviction；
 - 每个 store 使用 1024-line chunks 和 bounded retention window；
 - sink buffer、flush interval、retention、payload caps、hidden/redact keys 都有明确上限；
-- pluginId 从普通/plugin-debug category 解析，不依赖 record properties；
-- virtual `plugin:<id>` 和 `context:<name>` streams 复用 default physical store；
+- plugin node address 从普通/plugin-debug category 解析，不依赖 record properties；
+- structured `plugin` filter 直接接受 `PluginNodeAddressSnapshot`；只有非身份用途的 virtual
+  `context:<name>` stream 复用 default physical store；
 - range/latest/wait/SSE 使用同一 `RuntimeLogStore`。
 
 `RuntimeLogLine` 是 UI/transport projection，保留 category、plugin/context identity、structured message、props 和

@@ -14,9 +14,9 @@ import { usePluginConfig } from '../config/usePluginConfig'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
 import { usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
-import { matchesKnownPluginName, resolveKnownPluginName } from './rightPaneState'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
+import { parsePluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -81,6 +81,9 @@ export interface PluginScreenProps {
 }
 
 type PluginDetailView = {
+	id: string
+	address: PluginNodeAddressSnapshot
+	rootExportName: string
 	name: string
 	desc: string
 	dependencies: PluginDependency[]
@@ -166,29 +169,20 @@ function usePluginDetail(pluginName?: string) {
 	const statusMap = useMemo(() => {
 		const map = new Map<string, PluginStatusEntry>()
 		for (const entry of statusEntries) {
-			if (entry?.name) map.set(entry.name, entry)
+			if (entry?.id) map.set(entry.id, entry)
 		}
 		return map
 	}, [statusEntries])
 
-	const knownPluginNames = useMemo(() => {
-		const names = new Set<string>()
-		for (const entry of statusEntries) {
-			if (entry?.name) names.add(entry.name)
-		}
-		return names
-	}, [statusEntries])
-
 	const statusEntry = useMemo(() => {
 		if (!pluginName) return null
-		const resolvedName = resolveKnownPluginName(knownPluginNames, pluginName) ?? pluginName
-		return statusMap.get(resolvedName) ?? null
-	}, [knownPluginNames, pluginName, statusMap])
+		return statusMap.get(pluginName) ?? null
+	}, [pluginName, statusMap])
 
 	const listed = useMemo(() => {
 		if (!pluginName) return false
-		return matchesKnownPluginName(knownPluginNames, pluginName)
-	}, [pluginName, knownPluginNames])
+		return statusMap.has(pluginName)
+	}, [pluginName, statusMap])
 
 	// Always request detail; we handle missing plugins via stable UI decisions instead of gating.
 	const detailQuery = useQuery({
@@ -207,6 +201,8 @@ function usePluginDetail(pluginName?: string) {
 				return {
 					id: dep.id ?? id,
 					name: dep.name ?? id,
+					rootExportName: dep.rootExportName ?? '',
+					address: parseGraphqlAddress(dep.address),
 					isRunning: Boolean(dep.status.isRunning),
 				}
 			})
@@ -220,6 +216,9 @@ function usePluginDetail(pluginName?: string) {
 
 	const detail = scope?.name
 		? {
+				id: scope.id ?? pluginName ?? '',
+				address: parseGraphqlAddress(scope.address),
+				rootExportName: scope.rootExportName ?? '',
 				name: scope.name,
 				desc: scope.detail?.desc ?? '',
 				dependencies,
@@ -236,8 +235,6 @@ function usePluginDetail(pluginName?: string) {
 
 	return {
 		detail,
-		statusEntries,
-		knownPluginNames,
 		ready,
 		listed,
 		hasStatusSnapshot: overviewState.hasSnapshot,
@@ -267,18 +264,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 	const isStacked = isStackedWide || isStackedBreak
 
-	const {
-		detail,
-		statusEntries,
-		knownPluginNames,
-		ready,
-		listed,
-		hasStatusSnapshot,
-		statusEntry,
-		error,
-		loading,
-		refetch,
-	} = usePluginDetail(pluginName)
+	const { detail, ready, listed, hasStatusSnapshot, statusEntry, error, loading, refetch } =
+		usePluginDetail(pluginName)
 	const pathname = useCurrentPathname()
 
 	// 稳定快照：refetch/同步期间，详情查询可能短暂返回空字段，导致 UI “0 依赖/空注入卡片”闪一下。
@@ -293,7 +280,7 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		lastStableRef.current = clonePluginDetailView(detail)
 	}, [detail])
 
-	const stable = lastStableRef.current?.name === pluginName ? lastStableRef.current : null
+	const stable = lastStableRef.current?.id === pluginName ? lastStableRef.current : null
 	const viewReady = ready || Boolean(stable?.name)
 	const displayName = detail?.name ?? stable?.name ?? pluginName
 	const description = detail?.desc ?? stable?.desc ?? ''
@@ -335,7 +322,8 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		effectiveStatus?.lifecycleStage,
 	)
 
-	const configState = usePluginConfig(viewReady ? displayName : undefined)
+	const owner = detail?.address ?? stable?.address ?? statusEntry?.address
+	const configState = usePluginConfig(viewReady ? owner : undefined, displayName)
 	const syncing = useDebouncedFlag(loading || configState.loading, 160)
 
 	const rawDeps = detail?.dependencies
@@ -358,13 +346,13 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	)
 
 	const contextValue = useMemo(() => {
-		if (!detail && !stable) return null
+		if ((!detail && !stable) || !owner) return null
 		return {
+			owner,
+			pluginId: pluginName,
 			pluginName: displayName,
 			description,
 			dependencies,
-			knownPluginNames,
-			statusSnapshot: statusEntries,
 			status: effectiveStatusEntry,
 			isRunning,
 			isSyncing: syncing,
@@ -378,10 +366,10 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		dependencies,
 		description,
 		displayName,
+		owner,
+		pluginName,
 		handleRefetch,
 		handleStatusOverride,
-		knownPluginNames,
-		statusEntries,
 		effectiveStatusEntry,
 		isRunning,
 		isEnabled,
@@ -430,10 +418,32 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 	if (!contextValue) return null
 
 	return (
-		<WorkbenchTargetProvider target={displayName} pathname={pathname}>
+		<WorkbenchTargetProvider target={contextValue.owner} pathname={pathname}>
 			<PluginScopeProvider value={contextValue}>
 				<PluginWorkbench config={configState} />
 			</PluginScopeProvider>
 		</WorkbenchTargetProvider>
 	)
 })
+
+function parseGraphqlAddress(node: {
+	definition: {
+		entry: { kind?: string; packageName?: string | null; source?: string | null }
+		exportName?: string
+	}
+	instance?: string
+	forkId?: string | null
+}): PluginNodeAddressSnapshot {
+	const entry = node.definition.entry
+	return parsePluginNodeAddress({
+		definition: {
+			entry:
+				entry.kind === 'package-root'
+					? { kind: 'package-root', packageName: entry.packageName }
+					: { kind: entry.kind, source: entry.source },
+			exportName: node.definition.exportName,
+		},
+		instance: node.instance,
+		forkId: node.forkId,
+	})
+}

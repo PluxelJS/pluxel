@@ -1,13 +1,23 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/context'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
-import { type ConfigSchemaMap, normalizeConfigRecord } from './ops'
-import { ConfigValidationError } from './types'
+import type { PluginNodeAddressSnapshot, PluginNodeSlot } from '../../plugins/runtime/identity'
+import { safeParseStandardSchema } from './standardSchema'
+import { ConfigValidationError, type ConfigValidationErrors } from './types'
 
 type ConfigRecord = Record<string, unknown>
-
 const EMPTY_CONFIG: Readonly<ConfigRecord> = Object.freeze(Object.create(null))
-
 const serviceName = 'configService' as const
+
+type RegistryIdentity = {
+	internNodeAddress(address: PluginNodeAddressSnapshot): PluginNodeSlot
+	nodeAddressOf(slot: PluginNodeSlot): PluginNodeAddressSnapshot
+}
+
+export type PluginConfigRecordSnapshot = Readonly<{
+	owner: PluginNodeAddressSnapshot
+	config: Readonly<ConfigRecord>
+}>
+
 declare module '@pluxel/context' {
 	namespace Context {
 		interface Services {
@@ -16,36 +26,21 @@ declare module '@pluxel/context' {
 	}
 }
 
-/**
- * The single in-memory config engine shared by core hosts and persistent runtimes.
- *
- * Core owns records, revisions, validation/defaulting and normalized snapshots. Runtime subclasses
- * may load records and react to mutations, but persistence and host policy stay outside core.
- */
+/** One complete object config record per Plugin node slot. */
 @Injectable({ key: serviceName })
 export class ConfigService {
-	private readonly records = new Map<string, ConfigRecord>()
-	private readonly rawViews = new Map<string, Readonly<ConfigRecord>>()
-	private schemaObjectSeq = 0
-	private readonly schemaObjectIds = new WeakMap<object, number>()
+	private readonly records = new Map<PluginNodeSlot, ConfigRecord>()
+	private readonly rawViews = new Map<PluginNodeSlot, Readonly<ConfigRecord>>()
 	private readonly validated = new Map<
-		string,
-		{
-			rev: number
-			schemaMap: Record<string, StandardSchemaV1>
-			schemaSig?: string
-			snapshot: Readonly<ConfigRecord>
-		}
+		PluginNodeSlot,
+		{ rev: number; schema: StandardSchemaV1; snapshot: Readonly<ConfigRecord> }
 	>()
-	private configSeq = 0
-	private readonly configRevByPlugin = new Map<string, number>()
+	private readonly revisions = new Map<PluginNodeSlot, number>()
+	private sequence = 0
 	private readyState = true
 	private readyTask: Promise<void> = Promise.resolve()
 
-	constructor(
-		public ctx: PluxelContext,
-		_config?: unknown,
-	) {}
+	constructor(public ctx: PluxelContext) {}
 
 	get isReady(): boolean {
 		return this.readyState
@@ -55,7 +50,6 @@ export class ConfigService {
 		return this.readyTask
 	}
 
-	/** Install an asynchronous startup task without exposing persistence concepts to core. */
 	protected setReadyTask(task: Promise<void>): void {
 		this.readyState = false
 		this.readyTask = task.finally(() => {
@@ -63,66 +57,33 @@ export class ConfigService {
 		})
 	}
 
-	/** Runtime policy hook. Core's in-memory implementation is always mutable. */
 	protected assertConfigMutable(_action: string): void {}
+	protected onConfigChanged(_owner: PluginNodeSlot): void {}
 
-	/** Runtime persistence hook, called exactly once after each effective record mutation. */
-	protected onConfigChanged(_name: string): void {}
-
-	/**
-	 * Replace raw records loaded by a host adapter.
-	 *
-	 * Existing record objects are updated in place so cached read views remain valid. Loading is a
-	 * state replacement, not an author mutation, so it intentionally does not call onConfigChanged().
-	 */
-	protected replaceConfigRecords(next: Readonly<Record<string, ConfigRecord>>): void {
-		const removed = new Set(this.records.keys())
-		for (const [name, value] of Object.entries(next)) {
-			if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-			removed.delete(name)
-			const existing = this.records.get(name)
-			if (existing) {
-				for (const key of Object.keys(existing)) delete existing[key]
-				Object.assign(existing, value)
-			} else {
-				this.records.set(name, Object.assign(Object.create(null), value))
-			}
-			this.bumpConfigRevision(name)
+	protected replaceConfigRecords(next: readonly PluginConfigRecordSnapshot[]): void {
+		const registry = this.registry()
+		const remaining = new Set(this.records.keys())
+		for (const item of next) {
+			const owner = registry.internNodeAddress(item.owner)
+			remaining.delete(owner)
+			const source = item.config
+			if (!source || typeof source !== 'object' || Array.isArray(source)) continue
+			const target = this.records.get(owner) ?? Object.create(null)
+			for (const key of Object.keys(target)) delete target[key]
+			Object.assign(target, source)
+			this.records.set(owner, target)
+			this.bump(owner)
 		}
-
-		for (const name of removed) {
-			this.records.delete(name)
-			this.rawViews.delete(name)
-			this.configRevByPlugin.delete(name)
-			this.validated.delete(name)
+		for (const owner of remaining) {
+			this.records.delete(owner)
+			this.rawViews.delete(owner)
+			this.revisions.delete(owner)
+			this.validated.delete(owner)
 		}
 	}
 
-	private schemaMapSignature(schemaMap: Record<string, StandardSchemaV1>): string {
-		const keys = Object.keys(schemaMap)
-		if (keys.length === 0) return 'empty'
-		keys.sort()
-		let sig = ''
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i]!
-			const schema = schemaMap[key]
-			if (!schema || (typeof schema !== 'object' && typeof schema !== 'function')) {
-				throw new Error(`[ConfigService] Invalid schemaMap: missing schema for "${key}".`)
-			}
-			const schemaObj = schema as unknown as object
-			let id = this.schemaObjectIds.get(schemaObj)
-			if (!id) {
-				id = ++this.schemaObjectSeq
-				this.schemaObjectIds.set(schemaObj, id)
-			}
-			sig += `${key.length}:${key}#${id};`
-		}
-		return sig
-	}
-
-	/** Raw persisted input. Prefer getValidatedConfig() in plugin code. */
-	getRawConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> {
-		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
+	getRawConfig<T extends object = ConfigRecord>(owner?: PluginNodeSlot): Readonly<T> {
+		const resolved = owner ?? this.contextOwner()
 		if (!resolved) return EMPTY_CONFIG as T
 		const record = this.records.get(resolved)
 		if (!record) return EMPTY_CONFIG as T
@@ -133,155 +94,160 @@ export class ConfigService {
 		return view as T
 	}
 
-	getConfigRevision(name: string): number {
-		return this.configRevByPlugin.get(name) ?? 0
+	getConfigRevision(owner: PluginNodeSlot): number {
+		return this.revisions.get(owner) ?? 0
 	}
 
-	getValidatedConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> {
-		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
-		if (!resolved) throw new Error('[ConfigService] Missing plugin name (not in plugin context).')
-		const rev = this.getConfigRevision(resolved)
+	getValidatedConfig<T extends object = ConfigRecord>(owner?: PluginNodeSlot): Readonly<T> {
+		const resolved = owner ?? this.contextOwner()
+		if (!resolved) throw new Error('[ConfigService] Missing Plugin node owner.')
 		const cached = this.validated.get(resolved)
-		if (!cached || cached.rev !== rev) {
-			throw new Error(
-				`[ConfigService] Validated config not ready for "${resolved}". Call configService.ensureValidated(...) before reading validated config.`,
-			)
+		if (!cached || cached.rev !== this.getConfigRevision(resolved)) {
+			throw new Error('[ConfigService] Validated config is not ready for the Plugin node.')
 		}
 		return cached.snapshot as T
 	}
 
-	tryGetValidatedConfig<T extends object = ConfigRecord>(name?: string): Readonly<T> | undefined {
-		const resolved = name ?? this.ctx.pluginInfo?.id ?? ''
+	tryGetValidatedConfig<T extends object = ConfigRecord>(
+		owner?: PluginNodeSlot,
+	): Readonly<T> | undefined {
+		const resolved = owner ?? this.contextOwner()
 		if (!resolved) return undefined
-		const rev = this.getConfigRevision(resolved)
 		const cached = this.validated.get(resolved)
-		if (!cached || cached.rev !== rev) return undefined
-		return cached.snapshot as T
+		return cached?.rev === this.getConfigRevision(resolved) ? (cached.snapshot as T) : undefined
 	}
 
 	async ensureValidated(
-		pluginName: string,
-		schemaMap: Record<string, StandardSchemaV1>,
+		owner: PluginNodeSlot,
+		schema: StandardSchemaV1,
 		options: { missingObjectDefault?: unknown } = {},
 	): Promise<Readonly<ConfigRecord>> {
 		await this.ready
+		const revision = this.getConfigRevision(owner)
+		const cached = this.validated.get(owner)
+		if (cached?.rev === revision && cached.schema === schema) return cached.snapshot
 
-		const curRev = this.getConfigRevision(pluginName)
-		const cached = this.validated.get(pluginName)
-		let nextSchemaSig: string | undefined
-		if (cached && cached.rev === curRev) {
-			if (cached.schemaMap === schemaMap) return cached.snapshot
-			const cachedSig =
-				cached.schemaSig ?? (cached.schemaSig = this.schemaMapSignature(cached.schemaMap))
-			nextSchemaSig = this.schemaMapSignature(schemaMap)
-			if (cachedSig === nextSchemaSig) return cached.snapshot
+		const raw = this.getRawConfig<ConfigRecord>(owner)
+		let result = await safeParseStandardSchema(schema, raw)
+		if (
+			result.success === false &&
+			Object.keys(raw).length === 0 &&
+			options.missingObjectDefault !== undefined
+		) {
+			result = await safeParseStandardSchema(schema, options.missingObjectDefault)
 		}
-
-		const raw = this.getRawConfig<ConfigRecord>(pluginName)
-		const result = await normalizeConfigRecord(schemaMap as ConfigSchemaMap, raw, options)
-		if (result.ok === false) {
-			const errors = result.errors
-			let where = '_root'
-			let message = 'unknown'
-
-			outer: for (const configKey in errors) {
-				const fields = errors[configKey]
-				if (!fields) continue
-				for (const fieldKey in fields) {
-					const issues = fields[fieldKey]
-					const first = issues?.[0]
-					where = first?.path?.length
-						? first.path.map(String).join('.')
-						: `${configKey}.${fieldKey}`
-					message = first?.message ?? 'unknown'
-					break outer
-				}
-			}
-
-			throw new ConfigValidationError(`插件 ${pluginName} 配置无效：${where} -> ${message}`, errors)
+		if (result.success === false) {
+			const errors = toValidationErrors(result.issues)
+			throw new ConfigValidationError('Plugin config validation failed.', errors)
 		}
-
-		if (Object.keys(result.patch).length > 0) this.patchConfig(pluginName, result.patch)
-
-		const rev = this.getConfigRevision(pluginName)
-		this.validated.set(pluginName, {
-			rev,
-			schemaMap,
-			schemaSig: nextSchemaSig,
-			snapshot: result.snapshot,
-		})
-		return result.snapshot
+		if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+			throw new TypeError('[ConfigService] Plugin config schema must produce an object')
+		}
+		const snapshot = Object.freeze({ ...(result.output as ConfigRecord) })
+		if (!shallowEqual(raw, snapshot)) this.replaceRecord(owner, snapshot)
+		const nextRevision = this.getConfigRevision(owner)
+		this.validated.set(owner, { rev: nextRevision, schema, snapshot })
+		return snapshot
 	}
 
-	/** Detached read model for persistence and host diagnostics. */
-	getConfigSnapshot(): { plugins: Record<string, ConfigRecord> } {
-		const plugins: Record<string, ConfigRecord> = Object.create(null)
-		for (const [name, record] of this.records) plugins[name] = { ...record }
-		return { plugins }
+	getConfigSnapshot(): { plugins: readonly PluginConfigRecordSnapshot[] } {
+		const registry = this.registry()
+		return {
+			plugins: [...this.records].map(([owner, config]) => ({
+				owner: registry.nodeAddressOf(owner),
+				config: { ...config },
+			})),
+		}
 	}
 
-	patchConfig<T extends object = ConfigRecord>(name: string, patch: Partial<T>): void {
+	patchConfig<T extends object = ConfigRecord>(owner: PluginNodeSlot, patch: Partial<T>): void {
 		this.assertConfigMutable('patchConfig')
-		let entry = this.records.get(name)
-		if (!entry) {
-			entry = Object.create(null)
-			this.records.set(name, entry)
-		}
+		const entry = this.records.get(owner) ?? Object.assign(Object.create(null), {})
+		if (!this.records.has(owner)) this.records.set(owner, entry)
 		let changed = false
 		for (const [key, value] of Object.entries(patch as ConfigRecord)) {
-			if (entry[key] !== value) {
-				entry[key] = value
-				changed = true
-			}
+			if (entry[key] === value) continue
+			entry[key] = value
+			changed = true
 		}
-		if (!changed) return
-		this.bumpConfigRevision(name)
-		this.onConfigChanged(name)
+		if (changed) this.changed(owner)
 	}
 
-	unsetConfigKeys(name: string, keys: readonly string[]): void {
+	unsetConfigKeys(owner: PluginNodeSlot, keys: readonly string[]): void {
 		this.assertConfigMutable('unsetConfigKeys')
-		const entry = this.records.get(name)
+		const entry = this.records.get(owner)
 		if (!entry) return
 		let changed = false
-		for (let i = 0; i < keys.length; i++) {
-			const key = keys[i]!
-			if (key in entry) {
-				delete entry[key]
-				changed = true
-			}
+		for (const key of keys) {
+			if (!(key in entry)) continue
+			delete entry[key]
+			changed = true
 		}
-		if (!changed) return
-		this.bumpConfigRevision(name)
-		this.onConfigChanged(name)
+		if (changed) this.changed(owner)
 	}
 
 	batch(run: () => void): void {
 		run()
 	}
 
-	private bumpConfigRevision(name: string): void {
-		this.configRevByPlugin.set(name, ++this.configSeq)
-		this.validated.delete(name)
+	private replaceRecord(owner: PluginNodeSlot, value: Readonly<ConfigRecord>): void {
+		const target = this.records.get(owner) ?? Object.create(null)
+		for (const key of Object.keys(target)) delete target[key]
+		Object.assign(target, value)
+		this.records.set(owner, target)
+		this.changed(owner)
 	}
+
+	private changed(owner: PluginNodeSlot): void {
+		this.bump(owner)
+		this.onConfigChanged(owner)
+	}
+
+	private bump(owner: PluginNodeSlot): void {
+		this.revisions.set(owner, ++this.sequence)
+		this.validated.delete(owner)
+	}
+
+	private contextOwner(): PluginNodeSlot | undefined {
+		return (this.ctx as unknown as { pluginInfo?: { nodeSlot?: PluginNodeSlot } }).pluginInfo
+			?.nodeSlot
+	}
+
+	private registry(): RegistryIdentity {
+		const registry = (this.ctx as unknown as { registry?: RegistryIdentity }).registry
+		if (!registry) throw new Error('[ConfigService] Plugin registry is not available')
+		return registry
+	}
+}
+
+function toValidationErrors(
+	issues: readonly { message: string; path: readonly (string | number)[] }[],
+): ConfigValidationErrors {
+	const fields: Record<string, Array<{ message: string; path: string[] }>> = Object.create(null)
+	for (const issue of issues) {
+		const path = issue.path.map(String)
+		const key = path[0] ?? '_root'
+		;(fields[key] ??= []).push({ message: issue.message, path })
+	}
+	return { _root: fields }
+}
+
+function shallowEqual(left: Readonly<ConfigRecord>, right: Readonly<ConfigRecord>): boolean {
+	const leftKeys = Object.keys(left)
+	const rightKeys = Object.keys(right)
+	if (leftKeys.length !== rightKeys.length) return false
+	for (const key of leftKeys) if (left[key] !== right[key]) return false
+	return true
 }
 
 function createReadonlyView<T extends ConfigRecord>(target: T): Readonly<T> {
 	return new Proxy(target, {
-		set(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
-		defineProperty(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
-		deleteProperty(): boolean {
-			throw new Error(
-				'[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().',
-			)
-		},
+		set: rejectMutation,
+		defineProperty: rejectMutation,
+		deleteProperty: rejectMutation,
 	}) as Readonly<T>
+}
+
+function rejectMutation(): never {
+	throw new Error('[ConfigService] Raw config is read-only; use patchConfig()/unsetConfigKeys().')
 }

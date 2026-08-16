@@ -1,8 +1,8 @@
-import type { Context } from '@pluxel/core'
-
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 import { readStatusSnapshot } from '../features/pluginStatus/service'
 import { maybeAddForkToCatalog } from './forksCatalog'
 import { requireRouteCapability } from '../../runtime/capabilities'
+import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 import type {
 	PluginStatusAction,
 	PluginStatusBatchAction,
@@ -10,64 +10,52 @@ import type {
 	PluginStatusMutationResult,
 } from '../../web/protocol'
 
-function resolvePlugin(ctx: Context, name: string) {
-	const ctor = requireRouteCapability(ctx, 'catalog').resolve(name)
-	if (!ctor) throw new Error(`Plugin not found: ${name}`)
+function resolvePlugin(ctx: Context, address: PluginNodeAddressSnapshot) {
+	const ctor = requireRouteCapability(ctx, 'catalog').resolve(address)
+	if (!ctor) throw new Error('Plugin node is not present in the route catalog')
 	return ctor
-}
-
-function getErrorMessage(error: unknown): string {
-	if (error instanceof Error) return error.message
-	if (error && typeof error === 'object') {
-		const message = (error as { message?: unknown }).message
-		if (typeof message === 'string') return message
-	}
-	return String(error)
 }
 
 async function runStatusAction(
 	ctx: Context,
-	name: string,
+	address: PluginNodeAddressSnapshot,
 	action: PluginStatusAction,
 ): Promise<PluginStatusMutationResult> {
 	try {
 		const lifecycle = requireRouteCapability(ctx, 'lifecycle')
 		if (action === 'start' || action === 'restart' || action === 'enable') {
-			maybeAddForkToCatalog(ctx, name)
+			maybeAddForkToCatalog(ctx, address)
 		}
-
-		const ctor = resolvePlugin(ctx, name)
-
+		const ctor = resolvePlugin(ctx, address)
 		switch (action) {
 			case 'start':
 			case 'enable':
-				await lifecycle.enable(name, ctor)
+				await lifecycle.enable(address, ctor)
 				break
 			case 'stop':
-				lifecycle.deactivate(name, ctor, { runtimeOnly: true })
+				lifecycle.deactivate(address, ctor, { runtimeOnly: true })
 				break
 			case 'restart':
 				ctx.registry.restart(ctor)
 				break
 			case 'disable':
-				lifecycle.deactivate(name, ctor, { runtimeOnly: false })
+				lifecycle.deactivate(address, ctor, { runtimeOnly: false })
 				break
 			case 'enable-persisted':
-				lifecycle.enablePersisted(name)
+				await lifecycle.enablePersisted(address)
 				break
 			default:
-				return { name, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
+				return { address, ok: false, code: 'invalid_status', error: `Unsupported: ${action}` }
 		}
-		return { name, ok: true }
+		return { address, ok: true }
 	} catch (error) {
-		const isStart = action === 'start' || action === 'restart' || action === 'enable'
-		const message = getErrorMessage(error)
-		const code = message.includes('Plugin not found')
-			? 'plugin_not_found'
-			: isStart
-				? 'plugin_start_failed'
-				: 'plugin_operation_failed'
-		return { name, ok: false, code, error: message }
+		const text = error instanceof Error ? error.message : String(error)
+		return {
+			address,
+			ok: false,
+			code: text.includes('not present') ? 'plugin_not_found' : 'plugin_operation_failed',
+			error: text,
+		}
 	}
 }
 
@@ -76,42 +64,39 @@ export async function applyStatusActions(
 	actions: PluginStatusBatchAction[],
 ): Promise<PluginStatusBatchResult> {
 	if (actions.length === 0) return { ok: true, results: [] }
-
 	const interim: PluginStatusMutationResult[] = []
-	const touched = new Set<string>()
-
-	for (const { name, action } of actions) {
-		const res = await runStatusAction(ctx, name, action)
-		interim.push(res)
-		if (res.ok) touched.add(name)
+	const touched = new Map<string, PluginNodeAddressSnapshot>()
+	for (const { address, action } of actions) {
+		const result = await runStatusAction(ctx, address, action)
+		interim.push(result)
+		if (result.ok) touched.set(pluginNodeAddressKey(address), address)
 	}
-
-	const commitResult = await ctx.registry.commit()
-	if ((commitResult as any)?.err) {
-		const commitError = String((commitResult as any).err)
+	const commit = await ctx.registry.commit()
+	if (commit.err) {
+		const commitError = String(commit.err)
 		return {
 			ok: false,
 			commitError,
-			results: interim.map((r) =>
-				r.ok
-					? Object.assign({}, r, {
-							ok: false,
+			results: interim.map((result) =>
+				result.ok
+					? Object.assign({}, result, {
+							ok: false as const,
 							code: 'commit_failed',
 							error: commitError,
 						})
-					: r,
+					: result,
 			),
 		}
 	}
-
-	const snapshots = [...touched].map((name) => {
-		const ctor = resolvePlugin(ctx, name)
-		return Object.assign({ name }, readStatusSnapshot(ctx, name, ctor as any))
-	})
-	const snapMap = new Map(snapshots.map((s) => [s.name, s]))
-
+	const snapshots = new Map(
+		[...touched].map(([key, address]) => [key, readStatusSnapshot(ctx, address)]),
+	)
 	return {
-		ok: interim.every((r) => r.ok),
-		results: interim.map((r) => (r.ok ? Object.assign({}, r, snapMap.get(r.name)) : r)),
+		ok: interim.every((result) => result.ok),
+		results: interim.map((result) =>
+			result.ok
+				? Object.assign({}, result, snapshots.get(pluginNodeAddressKey(result.address)))
+				: result,
+		),
 	}
 }

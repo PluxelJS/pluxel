@@ -6,7 +6,9 @@ const ExampleConfig = v.object({
 	message: v.optional(v.string(), 'Hello'),
 })
 
-@Plugin({ name: '{{className}}Plugin' })
+const API_PATH = '/api'
+
+@Plugin({ displayName: '{{className}}Plugin' })
 export class {{className}}Plugin extends BasePlugin {
 	private readonly config = this.configs.use(ExampleConfig)
 	private readonly greetings = new GreetingService()
@@ -22,7 +24,7 @@ export class {{className}}Plugin extends BasePlugin {
 					},
 				},
 			}),
-			graphqlEndpoint: this.ctx.http.plugin.base('/api/graphql'),
+			graphqlEndpoint: `${API_PATH}/graphql`,
 		})
 
 		this.ctx.http.plugin.routes(
@@ -40,7 +42,7 @@ export class {{className}}Plugin extends BasePlugin {
 						})
 						return response.text()
 					}),
-			{ path: '/api', id: '{{className}}Plugin:api' },
+			{ publicPath: API_PATH, id: 'example-api' },
 		)
 	}
 }

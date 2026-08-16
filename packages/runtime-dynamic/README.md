@@ -18,6 +18,7 @@ export default defineConfig({
 
 ```ts
 // src/pluxel.dynamic.ts
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { defineDynamicRuntimeConfig } from '@pluxel/runtime-dynamic'
 import { defineProduct } from '@pluxel/runtime/product'
 import { HostOperationsPlugin } from './HostOperationsPlugin'
@@ -30,7 +31,7 @@ export const product = defineProduct({
 export default defineDynamicRuntimeConfig({
 	root: process.cwd(),
 	plugins: [HostOperationsPlugin],
-	runtimeState: { snapshot: { enabled: ['HostOperationsPlugin'] } },
+	runtimeState: { snapshot: { enabled: [pluginNodeAddressOf(HostOperationsPlugin)] } },
 	configPath: 'pluxel.loader.hmr.jsonc',
 	profile: 'dev',
 	sources: [
@@ -83,8 +84,9 @@ const runtime = await createDynamicDevRuntime({ config: 'src/pluxel.dynamic.ts' 
 await runtime.start()
 ```
 
-source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running plugin instance，也不复制 lifecycle。
-成功的 mutable source batch 会使 active optional requests 失效并重新解析；optional request 自身不会授权自动安装。
+source update 必须进入 core runtime update/replacement/commit；dynamic route 不直接修改 running Plugin instance，也不复制 lifecycle。
+成功的 mutable source batch 更新正常 catalog slots；provider generation 变化由 core optional restart plan 处理，不存在 runtime
+optional request、loader retry 或隐式 package installation。
 
 可搬运的 source-based host 使用显式 distribution 模式：
 

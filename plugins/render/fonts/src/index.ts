@@ -108,7 +108,7 @@ type DefaultFontState = {
 	tail: Promise<void>
 }
 
-@Plugin({ name: 'FontsPlugin' })
+@Plugin({ displayName: 'FontsPlugin' })
 export class FontsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(FontsConfig)
 	private readonly registrations = new Set<OwnedRegistration>()

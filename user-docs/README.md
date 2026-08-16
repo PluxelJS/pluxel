@@ -32,12 +32,12 @@ CLI 的 `plugin` 和 `app-monorepo` 模板都会把这组文档原样复制到�
 
 ## 先做这四个判断
 
-| 问题                                         | 选择                                                                        |
-| -------------------------------------------- | --------------------------------------------------------------------------- |
-| 缺少另一个插件时，本插件是否无法工作？       | 是：constructor；否：`plugins.use(Token)`；包也可缺：`optionalPlugin()` ref |
-| 这段组成是否拥有独立插件生命周期和替换边界？ | 是：plugin；否：feature                                                     |
-| 这是业务 API 还是只服务管理 UI？             | 业务：`ctx.http.plugin`；管理：`ctx.workbench.mount()`                      |
-| 资源何时释放？                               | 创建成功后立即用 `ctx.effects.defer()` 登记幂等 cleanup                     |
+| 问题                                           | 选择                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------- |
+| 缺少另一个 Plugin 时，本 Plugin 是否无法工作？ | 是：constructor value import；否：`definePluginRef<T>()` + `plugins.use()` |
+| 这段组成是否拥有独立配置、失败、启停或治理？   | 是：Plugin；否：普通 class/function + owner effects                        |
+| 这是业务 API 还是只服务管理 UI？               | 业务：`ctx.http.plugin`；管理：`ctx.workbench.mount()`                     |
+| 资源何时释放？                                 | 创建成功后立即登记 effect，或从 `init()` 返回幂等 cleanup/disposable       |
 
 如果代码无法清楚回答其中一个问题，先解决所有权再继续扩展 API。Pluxel Oxlint 会自动检查
 其中可静态判断的部分，但不能替代 required/optional 和业务/Workbench的设计判断。

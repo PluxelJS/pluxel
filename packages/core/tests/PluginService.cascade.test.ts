@@ -1,195 +1,44 @@
 import { describe, expect, it } from 'vitest'
+import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
-import { BasePlugin, Plugin, setParamToken, withCoreHost } from '@pluxel/core/test'
+@Plugin({ displayName: 'Cascade provider' })
+class CascadeProvider extends BasePlugin {}
 
-function defineDependentPair(prefix: string) {
-	@Plugin({ name: `${prefix}-A` })
-	class A extends BasePlugin {}
-
-	@Plugin({ name: `${prefix}-B` })
-	class B extends BasePlugin {
-		constructor(public readonly dep: A) {
-			super()
-		}
+@Plugin({ displayName: 'Cascade consumer' })
+class CascadeConsumer extends BasePlugin {
+	constructor(readonly provider: CascadeProvider) {
+		super()
 	}
-	setParamToken(B, 0, A)
-
-	return { A, B }
 }
 
-async function expectCascadeUnregisterFromDraft(opts?: { invalidateDraftFirst?: boolean }) {
-	await withCoreHost(async (host) => {
-		const { A, B } = defineDependentPair(
-			opts?.invalidateDraftFirst ? 'CASCADE-RECOVER' : 'CASCADE-DRAFT',
-		)
-
-		host.add(A)
-		await host.commit()
-
-		host.add(B)
-		if (opts?.invalidateDraftFirst) {
-			host.ctx.registry.unregister(A, { cascadeDependents: false })
-		}
-		host.remove(A)
-
-		const summary = await host.commit()
-
-		expect(summary.pluginChanges.added).toEqual([])
-		expect(summary.pluginChanges.removed).toEqual([
-			`${opts?.invalidateDraftFirst ? 'CASCADE-RECOVER' : 'CASCADE-DRAFT'}-A`,
-		])
-		expect(summary.lifecycleReport.issues).toEqual([])
-		expect(new Set(host.plugins())).toEqual(new Set())
-		expect(host.isRunning(A)).toBe(false)
-		expect(host.isRunning(B)).toBe(false)
-	})
-}
-
-describe('PluginService cascade options', () => {
-	it('rejects non-cascading unregisters that would leave a broken graph and restores the committed draft', async () => {
+describe('required dependent closure', () => {
+	it('restarts required dependents exactly once', async () => {
 		await withCoreHost(async (host) => {
-			const { A, B } = defineDependentPair('CASCADE-UNREG')
-
-			host.add([A, B])
+			host.add([CascadeProvider, CascadeConsumer])
 			await host.commit()
-
-			// Non-cascading unregister is allowed at the draft layer, but commit must reject
-			// the resulting broken graph and keep the last committed state intact.
-			host.ctx.registry.unregister(A, { cascadeDependents: false })
-			await expect(host.commit()).rejects.toThrow(/service verification failed/)
-
-			expect(host.ctx.registry.isRegistered(A)).toBe(true)
-			expect(host.ctx.registry.isRegistered(B)).toBe(true)
-			expect(host.isRunning(A)).toBe(true)
-			expect(host.isRunning(B)).toBe(true)
-			expect(new Set(host.plugins())).toEqual(new Set([A, B]))
-		})
-	})
-
-	it('cascades unregister across dependents added in the current draft', async () => {
-		expect.hasAssertions()
-		await expectCascadeUnregisterFromDraft()
-	})
-
-	it('still cascades unregister from an invalid draft where the root provider was already removed', async () => {
-		expect.hasAssertions()
-		await expectCascadeUnregisterFromDraft({ invalidateDraftFirst: true })
-	})
-
-	it('restart without cascading only restarts the target plugin', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'CASCADE-RESTART-A' })
-			class A extends BasePlugin {
-				public readonly id = Symbol('a')
-			}
-
-			@Plugin({ name: 'CASCADE-RESTART-B' })
-			class B extends BasePlugin {
-				constructor(public readonly dep: A) {
-					super()
-				}
-			}
-			setParamToken(B, 0, A)
-
-			host.add([A, B])
-			await host.commit()
-
-			const firstA = host.require(A)
-			const firstB = host.require(B)
-
-			// Explicit opt-out keeps dependent instances stable even though their dependency restarts.
-			host.restart(A, { cascadeDependents: false })
+			const firstProvider = host.require(CascadeProvider)
+			const firstConsumer = host.require(CascadeConsumer)
+			host.restart(CascadeProvider)
 			const summary = await host.commit()
-
-			const secondA = host.require(A)
-			const secondB = host.require(B)
-
-			expect(summary.pluginChanges.added).toEqual([])
-			expect(summary.pluginChanges.removed).toEqual([])
-			expect(summary.pluginChanges.replaced).toEqual([])
-			expect(summary.lifecycleReport.issues).toEqual([])
-			expect(summary.pluginChanges.availabilityChanged).toEqual(['CASCADE-RESTART-A'])
-			expect(secondA).not.toBe(firstA)
-			expect(secondB).toBe(firstB)
-		})
-	})
-
-	it('restart cascades to required dependents by default', async () => {
-		await withCoreHost(async (host) => {
-			const { A, B } = defineDependentPair('CASCADE-RESTART-DEFAULT')
-
-			host.add([A, B])
-			await host.commit()
-
-			const firstA = host.require(A)
-			const firstB = host.require(B)
-			host.restart(A)
-			const summary = await host.commit()
-
-			expect(summary.lifecycleReport.issues).toEqual([])
-			expect(summary.pluginChanges.restarted).toEqual([
-				'CASCADE-RESTART-DEFAULT-A',
-				'CASCADE-RESTART-DEFAULT-B',
-			])
-			expect(host.require(A)).not.toBe(firstA)
-			expect(host.require(B)).not.toBe(firstB)
-			expect(Object.getPrototypeOf(host.require(B).dep)).toBe(host.require(A))
-		})
-	})
-
-	it('restart fails early when the draft no longer has a provider for the requested root', async () => {
-		await withCoreHost(async (host) => {
-			const { A, B } = defineDependentPair('CASCADE-RESTART-MISSING')
-
-			host.add(A)
-			await host.commit()
-
-			host.add(B)
-			host.ctx.registry.unregister(A, { cascadeDependents: false })
-
-			expect(() => host.restart(A)).toThrow(/unloaded Plugin/)
-		})
-	})
-
-	it('replace without cascading leaves existing dependents running and limits availability changes', async () => {
-		await withCoreHost(async (host) => {
-			abstract class Abs extends BasePlugin {}
-
-			@Plugin(Abs, { name: 'CASCADE-REPLACE-A' })
-			class A extends Abs {}
-
-			@Plugin(Abs, { name: 'CASCADE-REPLACE-B' })
-			class B extends Abs {}
-
-			@Plugin({ name: 'CASCADE-REPLACE-C' })
-			class C extends BasePlugin {
-				constructor(public readonly dep: Abs) {
-					super()
-				}
-			}
-			setParamToken(C, 0, Abs)
-
-			host.add([A, C], { provideBase: true })
-			await host.commit()
-
-			const firstC = host.require(C)
-
-			// The graph retargets aliases immediately, but without cascade the already-running
-			// dependent instance is left untouched until it is explicitly restarted later.
-			host.replace(A, B, { provideBase: true, cascadeDependents: false })
-			const summary = await host.commit()
-
-			expect(summary.pluginChanges.replaced).toEqual([
-				{ from: 'CASCADE-REPLACE-A', to: 'CASCADE-REPLACE-B' },
-			])
-			expect(new Set(summary.pluginChanges.availabilityChanged)).toEqual(
-				new Set(['CASCADE-REPLACE-A', 'CASCADE-REPLACE-B']),
+			expect(host.require(CascadeProvider)).not.toBe(firstProvider)
+			expect(host.require(CascadeConsumer)).not.toBe(firstConsumer)
+			expect(new Set(summary.pluginChanges.restarted)).toEqual(
+				new Set([
+					host.ctx.registry.resolvePluginNode(CascadeProvider),
+					host.ctx.registry.resolvePluginNode(CascadeConsumer),
+				]),
 			)
-			expect(host.require(C)).toBe(firstC)
-			expect(host.ctx.registry.graph.resolve(Abs)).toBe('CASCADE-REPLACE-B')
-			expect(host.ctx.registry.graph.resolve(A)).toBeUndefined()
-			expect(host.ctx.registry.resolveRuntimeKey(A)).toBe('CASCADE-REPLACE-B')
-			expect(host.ctx.registry.resolveRuntimeKey(B)).toBe('CASCADE-REPLACE-B')
+		})
+	})
+
+	it('rejects a non-cascading removal that leaves a missing dependency', async () => {
+		await withCoreHost(async (host) => {
+			host.add([CascadeProvider, CascadeConsumer])
+			await host.commit()
+			host.ctx.registry.unregister(CascadeProvider, { cascadeDependents: false })
+			await expect(host.commit()).rejects.toThrow(/service verification failed/)
+			expect(host.isRunning(CascadeProvider)).toBe(true)
+			expect(host.isRunning(CascadeConsumer)).toBe(true)
 		})
 	})
 })

@@ -152,7 +152,7 @@ async function collectOutputFiles(root: string): Promise<string[]> {
 	const queue = [root]
 	while (queue.length > 0) {
 		const dir = queue.shift()!
-		for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+		for (const entry of await readdir(dir, { withFileTypes: true }).catch((): never[] => [])) {
 			const path = join(dir, entry.name)
 			if (entry.isDirectory()) queue.push(path)
 			else if (entry.isFile()) files.push(relative(root, path))

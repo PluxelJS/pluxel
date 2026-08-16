@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'pathe'
+import type { PluginNodeAddressSnapshot, PluginNodeSlot } from '@pluxel/core'
 import { getOxcResolveCache } from '../services/runtime/shared/oxc-resolver'
 import {
 	getCachedResolver,
@@ -9,14 +10,8 @@ import {
 
 type RuntimeModuleLookupContext = {
 	registry?: {
-		getRuntimeModuleId?: (id: string) => string | undefined
-	}
-	loader?: {
-		api?: {
-			registry?: {
-				findModuleIdByName?: (name: string) => string | undefined | null
-			}
-		}
+		internNodeAddress?: (address: PluginNodeAddressSnapshot) => PluginNodeSlot
+		getRuntimeModuleId?: (id: PluginNodeSlot) => string | undefined
 	}
 }
 
@@ -24,15 +19,10 @@ type RuntimeModuleLookupContext = {
 // Returns a module id, not a filesystem path; call resolveModuleIdBaseDir for path resolution.
 export function findRuntimeModuleId(
 	ctx: RuntimeModuleLookupContext,
-	pluginName: string | null | undefined,
+	owner: PluginNodeAddressSnapshot,
 ): string | null {
-	const name = String(pluginName ?? '').trim()
-	if (!name) return null
-	return (
-		ctx.registry?.getRuntimeModuleId?.(name) ??
-		ctx.loader?.api?.registry?.findModuleIdByName?.(name) ??
-		null
-	)
+	const node = ctx.registry?.internNodeAddress?.(owner)
+	return node ? (ctx.registry?.getRuntimeModuleId?.(node) ?? null) : null
 }
 
 export function resolveModuleIdPath(moduleId: string, cwd = process.cwd()): string | null {

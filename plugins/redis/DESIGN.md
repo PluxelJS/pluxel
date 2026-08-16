@@ -16,6 +16,10 @@ cache adapter 不重新编码 managed canonical key，也不解释 loader/databa
 opaque defined value、原子返回 value + remaining TTL，并对 exact managed prefix 执行有界 clear。`undefined` 只表示 miss，
 `null` 是合法 hit，adapter failure 必须 reject。
 
+Cache coordinator 的 opaque value 已包含完整结构化 owner envelope；Redis adapter 原样 round-trip。Rates adapter 的 Hash/ZSET
+metadata 直接保存 canonical owner snapshot JSON，并在 Lua transition 内校验；两者的物理 key 都只暴露 address-derived digest，
+digest 不替代 payload 中的完整 owner。
+
 cache/rates `keyPrefix` 必须是 well-formed Unicode，避免不同的未配对 surrogate 在 Redis UTF-8 transport 上折叠为同一
 byte prefix。
 
@@ -81,7 +85,7 @@ provider 使用宿主已经安装的安全能力。
 
 ## Package composition
 
-`@pluxel/redis` 依赖 node-redis 与轻量 `@pluxel/cache`，并从显式 `@pluxel/rates/backend` subpath 实现 adapter。依赖方向是：
+`@pluxel/redis` 依赖 node-redis 与轻量 `@pluxel/cache`，并从 `@pluxel/rates` 根入口实现 adapter。依赖方向是：
 
 ```text
 @pluxel/cache <- @pluxel/redis

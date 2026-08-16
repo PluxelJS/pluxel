@@ -2,7 +2,6 @@ export type PluginDetailSearch = {
 	dock?: string
 	side?: string
 	tab?: string
-	schema?: string
 }
 
 export function validatePluginDetailSearch(search: Record<string, unknown>): PluginDetailSearch {
@@ -12,9 +11,5 @@ export function validatePluginDetailSearch(search: Record<string, unknown>): Plu
 		side:
 			typeof search.side === 'string' && search.side.trim().length > 0 ? search.side : undefined,
 		tab: typeof search.tab === 'string' && search.tab.trim().length > 0 ? search.tab : undefined,
-		schema:
-			typeof search.schema === 'string' && search.schema.trim().length > 0
-				? search.schema
-				: undefined,
 	}
 }

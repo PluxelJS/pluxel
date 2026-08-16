@@ -20,11 +20,12 @@ export const EMPTY_OVERVIEW: OverviewSnapshot = {
 const toStatuses = (entries: Array<PluginStatusEntry | null | undefined> | undefined) => {
 	const snapshot: PluginStatuses = {}
 	for (const entry of entries ?? []) {
-		const id = entry?.name
+		const id = entry?.id
 		if (!id) continue
 		const source = entry?.source
 		snapshot[id] = {
 			id,
+			address: entry.address,
 			name: entry?.name ?? id,
 			packageName: source?.packageName ?? undefined,
 			version: source?.version ?? undefined,
@@ -42,7 +43,7 @@ const toGroups = (groups: Array<PluginGroup | null | undefined> | undefined) => 
 	return (groups ?? []).map((group) => ({
 		groupId: group?.groupId ?? '',
 		name: group?.name ?? '',
-		pluginIds: [...(group?.pluginIds ?? [])],
+		pluginIds: (group?.nodes ?? []).map((node) => node.id),
 	}))
 }
 

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { pluginNodeAddressOf } from '@pluxel/runtime'
 import { assertPluginLifecycleIssue, withRuntimeHost } from '@pluxel/runtime/test'
 import { bootPlannedLoaderHmrHost, planLoaderHmrHostFromConfig } from '@pluxel/runtime-dynamic/hmr'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -36,7 +37,7 @@ describe('PackageManagerPlugin', () => {
 			configService: { mode: 'memory' },
 			runtimeState: {
 				mode: 'memory',
-				snapshot: { enabled: ['PackageManagerPlugin'] },
+				snapshot: { enabled: [pluginNodeAddressOf(PackageManagerPlugin)] },
 			},
 			plugins: [PackageManagerPlugin],
 			sources: [
@@ -74,12 +75,10 @@ describe('PackageManagerPlugin', () => {
 			async (host) => {
 				host.add(PackageManagerPlugin)
 				host.cfg(PackageManagerPlugin).set({
-					config: {
-						rootDir: managedRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 0,
-					},
+					rootDir: managedRoot,
+					ignoreScripts: true,
+					allowBuilds: [],
+					minimumReleaseAgeMinutes: 0,
 				})
 				host.cfg(PackageManagerPlugin).enable()
 				const summary = await host.commitAllowFail()
@@ -129,12 +128,10 @@ describe('PackageManagerPlugin', () => {
 				}
 				host.add(PackageManagerPlugin)
 				host.cfg(PackageManagerPlugin).set({
-					config: {
-						rootDir: managedRoot,
-						ignoreScripts: true,
-						allowBuilds: [],
-						minimumReleaseAgeMinutes: 0,
-					},
+					rootDir: managedRoot,
+					ignoreScripts: true,
+					allowBuilds: [],
+					minimumReleaseAgeMinutes: 0,
 				})
 				host.cfg(PackageManagerPlugin).enable()
 				const summary = await host.commitAllowFail()

@@ -6,7 +6,7 @@ Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`Redis
 ```ts
 import { Redis, RedisPlugin } from '@pluxel/redis'
 
-@Plugin({ name: 'QueuePlugin' })
+@Plugin({ displayName: 'QueuePlugin' })
 class QueuePlugin extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()
@@ -27,14 +27,12 @@ pub/sub 的插件需要定义自己的 key/channel contract。需要 caller-awar
 
 ```ts
 host.cfg(RedisPlugin).set({
-	config: {
-		url: 'redis://127.0.0.1:6379',
-		database: 0,
-		connectTimeoutMs: 10_000,
-		commandQueueMaxLength: 10_000,
-		disableOfflineQueue: true,
-		pingIntervalMs: 0,
-	},
+	url: 'redis://127.0.0.1:6379',
+	database: 0,
+	connectTimeoutMs: 10_000,
+	commandQueueMaxLength: 10_000,
+	disableOfflineQueue: true,
+	pingIntervalMs: 0,
 })
 ```
 
@@ -53,7 +51,7 @@ credential 不进入普通 plugin config、Workbench、日志或 persistence。
 认证、Sentinel、Cluster、云平台 binding 或自定义 TLS 的应用提供另一个实现：
 
 ```ts
-@Plugin(Redis, { name: 'PlatformRedisPlugin' })
+@Plugin(Redis, { displayName: 'PlatformRedisPlugin' })
 class PlatformRedisPlugin extends Redis {
 	get client(): RedisClient {
 		return this.platformClient
@@ -107,11 +105,9 @@ import { RedisCacheBackendPlugin, RedisPlugin } from '@pluxel/redis'
 host.add([RedisPlugin, RedisCacheBackendPlugin, CachePlugin, AccountsPlugin])
 
 host.cfg(RedisCacheBackendPlugin).set({
-	config: {
-		keyPrefix: 'pluxel:cache:',
-		scanCount: 200,
-		deleteBatchSize: 200,
-	},
+	keyPrefix: 'pluxel:cache:',
+	scanCount: 200,
+	deleteBatchSize: 200,
 })
 ```
 
@@ -120,6 +116,8 @@ adapter 使用上述 script helper 原子读取 GET + PTTL，处理 TTL、struct
 memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；
+- cache opaque value 保留 `CachePlugin` 写入的完整结构化 owner envelope，Redis adapter 不解释或删除它；
+- rates state metadata 保存完整 owner snapshot 并由 Lua 校验，Redis 物理 key 只保留 canonical request digest；
 - cache/rates `keyPrefix` 必须是 well-formed Unicode，不接受未配对 surrogate；
 - Cache canonical key 直接追加到 managed prefix，不再 URI 二次转义，保持 byte bound 与 Redis key 紧凑；
 - `ttlMs: 0` 表示无 expiry，正 TTL 使用 millisecond PX；
@@ -139,9 +137,7 @@ import { RedisPlugin, RedisRatesBackendPlugin } from '@pluxel/redis'
 
 host.add([RedisPlugin, RedisRatesBackendPlugin, RatesPlugin, MessagingPlugin])
 
-host.cfg(RedisRatesBackendPlugin).set({
-	config: { keyPrefix: 'pluxel:rates:' },
-})
+host.cfg(RedisRatesBackendPlugin).set({ keyPrefix: 'pluxel:rates:' })
 ```
 
 adapter 为 token bucket、fixed window、sliding window counter 和 sliding window log 各使用一个静态单 key Lua script。

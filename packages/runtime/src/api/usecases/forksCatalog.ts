@@ -1,25 +1,29 @@
-import { ForkablePlugin, parseForkPluginId, type Context } from '@pluxel/core'
+import type {
+	Context,
+	PluginDefinitionAddressSnapshot,
+	PluginNodeAddressSnapshot,
+} from '@pluxel/core'
+import { samePluginDefinitionAddress } from '../../services/RuntimeStateHelpers'
 
-import { requireRouteCapability } from '../../runtime/capabilities'
-
-export function addForkToCatalog(ctx: Context, originalName: string, forkId: string) {
+export function addForkToCatalog(
+	ctx: Context,
+	definition: PluginDefinitionAddressSnapshot,
+	forkId: string,
+): void {
+	const id = String(forkId).trim()
+	if (!id) throw new Error('forkId is required')
 	ctx.runtimeState.update((draft) => {
-		const prev = Array.isArray(draft.forks[originalName]) ? draft.forks[originalName] : []
-		if (prev.includes(forkId)) return
-		draft.forks[originalName] = [...prev, forkId]
+		const index = draft.forks.findIndex((entry) =>
+			samePluginDefinitionAddress(entry.definition, definition),
+		)
+		const previous = index < 0 ? undefined : draft.forks[index]
+		if (previous?.forkIds.includes(id)) return
+		const next = { definition, forkIds: [...(previous?.forkIds ?? []), id] }
+		if (index < 0) draft.forks.push(next)
+		else draft.forks[index] = next
 	})
 }
 
-export function maybeAddForkToCatalog(ctx: Context, name: string) {
-	const fork = parseForkPluginId(name)
-	if (!fork) return
-	try {
-		const baseCtor = requireRouteCapability(ctx, 'catalog').resolve(fork.baseId)
-		if (!baseCtor) return
-		const proto = (baseCtor as { prototype?: unknown }).prototype
-		if (!proto || !(proto instanceof ForkablePlugin)) return
-		addForkToCatalog(ctx, fork.baseId, fork.forkId)
-	} catch {
-		// ignore
-	}
+export function maybeAddForkToCatalog(ctx: Context, node: PluginNodeAddressSnapshot): void {
+	if (node.instance === 'fork') addForkToCatalog(ctx, node.definition, node.forkId)
 }

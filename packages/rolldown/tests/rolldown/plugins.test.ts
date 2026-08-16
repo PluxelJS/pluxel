@@ -1,841 +1,205 @@
-import { describe, expect, it } from 'vitest'
-import { writeFileSync } from 'node:fs'
-import { relative, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { createFixture } from 'fs-fixture'
-import { rolldown } from 'rolldown'
+import { readFile } from 'node:fs/promises'
+import { describe, expect, it } from 'vitest'
 import { configSourcePlugin } from '../../src/rolldown/plugins/configSourcePlugin'
-import { lintGuardPlugin } from '../../src/rolldown/plugins/lintGuardPlugin'
 
-const buildLintConfigPath = fileURLToPath(
-	new URL('../../../../oxlint.build.config.ts', import.meta.url),
-)
-
-const CONFIG_SOURCE_EXTERNALS = ['valibot', '@pluxel/core', '@pluxel/runtime']
-const CONFIG_SOURCE_FORM_EXTERNALS = ['valibot', 'valibot-form', '@pluxel/core', '@pluxel/runtime']
-
-const fixtureFiles = {
-	'composed-parts.ts': `import * as v from 'valibot'
-
-// 跨文件共享的 schema 片段
-export const sharedArray = v.array(v.pipe(v.string(), v.minLength(1)))
-
-export const sharedObject = v.object({
-	flag: v.boolean(),
-	array: sharedArray,
-})
-
-// 用于 spread 拼接的基础字段对象
-export const baseFields = {
-	name: v.string(),
-	id: v.pipe(v.number(), v.integer()),
-}
-
-// 用于 shorthand 的单独 schema
-export const enabledSchema = v.boolean()
-export const countSchema = v.pipe(v.number(), v.minValue(0))
-
-// 深层嵌套的 object
-export const deepNested = v.object({
-	level1: v.object({
-		level2: v.object({
-			value: v.string(),
-		}),
-	}),
-})
-`,
-	'plugin-with-composed-schema.ts': `import * as v from 'valibot'
-import {
-	baseFields,
-	countSchema,
-	deepNested,
-	enabledSchema,
-	sharedArray,
-	sharedObject,
-} from './composed-parts'
-
-const localArray = v.array(v.number())
-const localObject = v.object({
-	array: localArray,
-	external: sharedArray,
-})
-
-// 本地 shorthand 用的 schema
-const timeout = v.optional(v.number(), 5000)
-
-// 模拟 @pluxel/core 的装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'ComposedPlugin' })
-export class ComposedPlugin extends BasePlugin {
-	// 1. 组合了本地 const
-	@Config(localObject)
-	private local!: any
-
-	// 2. 组合了跨文件导入的 schema
-	@Config(
-		v.object({
-			external: sharedObject,
-			array: sharedArray,
-		}),
-	)
-	private external!: any
-
-	// 3. spread 拼接 - 跨文件的基础字段
-	@Config(
-		v.object({
-			...baseFields,
-			extra: v.boolean(),
-		}),
-	)
-	private spread!: any
-
-	// 4. shorthand 属性 - 跨文件 schema
-	@Config(
-		v.object({
-			enabledSchema,
-			countSchema,
-		}),
-	)
-	private shorthand!: any
-
-	// 5. 本地 shorthand
-	@Config(
-		v.object({
-			timeout,
-			name: v.string(),
-		}),
-	)
-	private localShorthand!: any
-
-	// 6. 深层嵌套 object
-	@Config(deepNested)
-	private nested!: any
-
-	// 7. v.objectAsync 变体
-	@Config(
-		v.objectAsync({
-			asyncField: v.string(),
-			nested: sharedObject,
-		}),
-	)
-	private asyncSchema!: any
-
-	// 8. 混合场景：spread + shorthand + 跨文件
-	@Config(
-		v.object({
-			...baseFields,
-			enabledSchema,
-			nested: sharedObject,
-		}),
-	)
-	private mixed!: any
-}
-`,
-	'plugin-with-config-alias.ts': `import * as v from 'valibot'
-import { BasePlugin, Config as UseConfig, Plugin, type Config as InferConfig } from '@pluxel/core'
-
-const aliasSchema = v.object({
-	name: v.string(),
-})
-
-@Plugin({ name: 'AliasConfigPlugin' })
-export class AliasConfigPlugin extends BasePlugin {
-	@UseConfig(aliasSchema)
-	aliasConfig!: InferConfig<typeof aliasSchema>
-}
-`,
-	'plugin-with-config-valibot-namespace.ts': `// 测试 valibot namespace alias 的 schema 源码提取
-import * as valibot from 'valibot'
-
-// 模拟 @pluxel/core 的装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-const localSchema = valibot.object({
-	name: valibot.string(),
-	count: valibot.pipe(valibot.number(), valibot.integer()),
-})
-
-@Plugin({ name: 'ValibotNamespacePlugin' })
-export class ValibotNamespacePlugin extends BasePlugin {
-	@Config(localSchema)
-	private localConfig!: any
-}
-`,
-	'plugin-with-config-valibot-form-namespace.ts': `// 测试 valibot-form namespace alias 的 schema 源码提取
-	import * as v from 'valibot'
-	import * as valibotForm from 'valibot-form'
-
-// 模拟 @pluxel/core 的装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-const schema = v.object({
-	// meta 函数来自 valibot-form（runtime 只会提供 f，因此必须被重写）
-	name: v.pipe(v.string(), valibotForm.stringMeta({ label: 'Name' })),
-})
-
-@Plugin({ name: 'ValibotFormNamespacePlugin' })
-	export class ValibotFormNamespacePlugin extends BasePlugin {
-		@Config(schema)
-		private config!: any
-	}
-	`,
-	'plugin-with-config-valibot-named-import.ts': `// 测试 valibot named imports 的 schema 源码提取
-	import { object, string, number, integer, pipe } from 'valibot'
-
-	function Plugin(_meta?: any): ClassDecorator {
-		return () => {}
-	}
-
-	function Config(_schema: any): PropertyDecorator {
-		return () => {}
-	}
-
-	class BasePlugin {}
-
-	const localSchema = object({
-		name: string(),
-		count: pipe(number(), integer()),
-	})
-
-	@Plugin({ name: 'ValibotNamedImportPlugin' })
-	export class ValibotNamedImportPlugin extends BasePlugin {
-		@Config(localSchema)
-		private config!: any
-	}
-	`,
-	'plugin-with-config-valibot-form-named-import.ts': `// 测试 valibot-form named imports 的 schema 源码提取
-	import * as v from 'valibot'
-	import { stringMeta } from 'valibot-form'
-
-	function Plugin(_meta?: any): ClassDecorator {
-		return () => {}
-	}
-
-	function Config(_schema: any): PropertyDecorator {
-		return () => {}
-	}
-
-	class BasePlugin {}
-
-	const schema = v.object({
-		name: v.pipe(v.string(), stringMeta({ label: 'Name' })),
-	})
-
-	@Plugin({ name: 'ValibotFormNamedImportPlugin' })
-	export class ValibotFormNamedImportPlugin extends BasePlugin {
-		@Config(schema)
-		private config!: any
-	}
-	`,
-	'plugin-with-config.ts': `// 测试 @Config 源码提取的插件文件
-	import * as v from 'valibot'
-	import { externalSchema } from './schema'
-
-// 本地定义的 schema
-const localSchema = v.object({
-	name: v.string(),
-	count: v.pipe(v.number(), v.integer()),
-})
-
-// 模拟 @pluxel/core 的装饰器
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'TestPlugin' })
-export class TestPlugin extends BasePlugin {
-	// 使用本地 schema
-	@Config(localSchema)
-	private localConfig!: any
-
-	// 使用内联 schema
-	@Config(v.object({ inline: v.boolean() }))
-	private inlineConfig!: any
-
-	// 使用跨文件导入的 schema
-	@Config(externalSchema)
-	private externalConfig!: any
-}
-`,
-	'plugin-with-computed-config.ts': `// 测试 computed key 的 schema
-import * as v from 'valibot'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-function Config(_schema: any): PropertyDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-const key = 'dynamic'
-
-@Plugin({ name: 'ComputedKeyPlugin' })
-export class ComputedKeyPlugin extends BasePlugin {
-	@Config(v.object({ [key]: v.string(), ['static']: v.number() }))
-	private config!: any
-}
-`,
-	'schema.js': `// 从 JavaScript 模块导入的跨文件 schema
-import * as v from 'valibot'
-
-export const externalSchema = v.object({
-	host: v.string(),
-	port: v.pipe(v.number(), v.minValue(1), v.maxValue(65535)),
-})
-`,
-	'services.ts': `// 模拟服务类
-export class SomeService {
-	doSomething() {
-		return 'something'
-	}
-}
-`,
-	'plugin-with-feature-use.ts': `// Required features are explicit plugin metadata.
-import { BasePlugin, Plugin } from '@pluxel/core'
-
-function PluginDecorator(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-@PluginDecorator({ name: 'FeatureHostPlugin', features: [CacheFeature] })
-export class FeatureHostPlugin extends BasePlugin {
-	feature = this.features.use(CacheFeature)
-}
-
-export class CacheFeature {}
-`,
-	'plugin-build-lint-valid.ts': `import { SomeService } from './services'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs = { use(value: unknown) { return value } }
-	features = { use<T>(value: T) { return value } }
-}
-
-const schema = { ok: true }
-
-class CacheFeature {}
-
-@Plugin({ name: 'BuildLintValidPlugin' })
-export class BuildLintValidPlugin extends BasePlugin {
-	config = this.configs.use(schema)
-	cache = this.features.use(CacheFeature)
-
-	constructor(private readonly service: SomeService) {
-		super()
-		void service
-	}
-}
-`,
-	'plugin-build-lint-invalid-type-import.ts': `import type { SomeService } from './services'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {}
-
-@Plugin({ name: 'BuildLintInvalidTypeImportPlugin' })
-export class BuildLintInvalidTypeImportPlugin extends BasePlugin {
-	constructor(private readonly service: SomeService) {
-		super()
-		void service
-	}
-}
-`,
-	'plugin-with-cfg-layout.ts': `import * as v from 'valibot'
-	import { cfg } from '@pluxel/core'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	// only for syntax; not executed in this test bundle
-	configs: any = { use: (_x: any) => ({}) }
-}
-
-@Plugin({ name: 'CfgLayoutPlugin' })
-export class CfgLayoutPlugin extends BasePlugin {
-	static readonly schemas = {
-		a: v.object({ a: v.boolean() }),
-		b: v.object({ b: v.boolean() }),
-	} as const
-
-		private static readonly c = cfg(CfgLayoutPlugin.schemas)
-
-		settings = this.configs.use(
-			CfgLayoutPlugin.c\`
-				# Layout
-				\${CfgLayoutPlugin.c.schema('a')}
-				\${CfgLayoutPlugin.c.schema('b')}
-				\${CfgLayoutPlugin.c.schemas()}
-			\`,
-		)
-	}
-	`,
-	'cfg-schemas-imported.ts': `import * as v from 'valibot'
-import { cfg } from '@pluxel/core'
-import { schemas as importedSchemas } from './cfg-schemas-map'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	// only for syntax; not executed in this test bundle
-	configs: any = { use: (_x: any) => ({}) }
-}
-
-@Plugin({ name: 'CfgImportedSchemasPlugin' })
-export class CfgImportedSchemasPlugin extends BasePlugin {
-	private static readonly c = cfg(importedSchemas)
-
-	settings = this.configs.use(
-		CfgImportedSchemasPlugin.c\`
-			# Layout
-			\${CfgImportedSchemasPlugin.c.schema('a')}
-			\${CfgImportedSchemasPlugin.c.schemas()}
-		\`,
-	)
-}
-`,
-	'cfg-schemas-map.ts': `import * as v from 'valibot'
-
-export const schemas = {
-	a: v.object({ a: v.boolean() }),
-	b: v.object({ b: v.boolean() }),
-} as const
-`,
-	'invalid-cfg-layout.ts': `import * as v from 'valibot'
-import { cfg } from '@pluxel/core'
-
-function Plugin(_meta?: any): ClassDecorator {
-	return () => {}
-}
-
-class BasePlugin {
-	configs: any = { use: (_x: any) => ({}) }
-}
-
-@Plugin({ name: 'InvalidCfgLayoutPlugin' })
-export class InvalidCfgLayoutPlugin extends BasePlugin {
-	private static readonly schemas = {
-		a: v.object({ a: v.boolean() }),
-		b: v.object({ b: v.boolean() }),
-	} as const
-
-	private static readonly c = cfg(InvalidCfgLayoutPlugin.schemas)
-
-	settings = this.configs.use(
-		InvalidCfgLayoutPlugin.c\`
-			\${InvalidCfgLayoutPlugin.c.schemas()}
-			\${InvalidCfgLayoutPlugin.c.schema('a')}
-		\`,
-	)
-}
-`,
-} satisfies Record<string, string>
-
-async function withFixtures<T>(run: (fixturesDir: string) => Promise<T>) {
-	await using fixture = await createFixture(fixtureFiles)
-	return await run(fixture.path)
-}
-
-async function generateCode(options: {
-	fixturesDir: string
-	input: string
-	plugins: NonNullable<Parameters<typeof rolldown>[0]>['plugins']
-	external?: string[]
-}) {
-	const bundle = await rolldown({
-		input: resolve(options.fixturesDir, options.input),
-		plugins: options.plugins,
-		...(options.external ? { external: options.external } : {}),
-	})
-
-	const { output } = await bundle.generate({ format: 'esm' })
-	return output[0].code
-}
-
-async function generateWithLintGuard(
-	fixturesDir: string,
-	input: string,
-	options: Partial<Parameters<typeof lintGuardPlugin>[0]> = {},
+async function transform(
+	code: string,
+	helper?: string,
+	options: {
+		id?: string
+		resolve?: (source: string, importer: string) => Promise<{ id: string } | null>
+	} = {},
 ) {
-	const bundle = await rolldown({
-		input: resolve(fixturesDir, input),
-		plugins: [
-			lintGuardPlugin({
-				cwd: fixturesDir,
-				configPath: buildLintConfigPath,
-				paths: [input],
-				mode: 'enforce',
-				...options,
-			}),
-		],
-	})
-
-	return await bundle.generate({ format: 'esm' })
+	const plugin = configSourcePlugin(helper ? { metadataHelperImportSource: helper } : undefined)
+	const hook = plugin.transform as {
+		handler: (this: unknown, code: string, id: string) => unknown
+	}
+	return (await hook.handler.call(
+		{
+			error(message: string): never {
+				throw new Error(message)
+			},
+			resolve: options.resolve,
+		},
+		code,
+		options.id ?? '/repo/src/plugin.ts',
+	)) as { code: string; map: null } | null
 }
 
 describe('configSourcePlugin', () => {
-	it('keeps code hint filtering compatible with Vite object hooks', () => {
-		const transform = configSourcePlugin().transform
-		expect(transform).toBeTypeOf('object')
-		expect((transform as { filter?: { code?: unknown } }).filter?.code).toBeUndefined()
+	it('keeps Vite/Rolldown object hook filtering compatible', () => {
+		const hook = configSourcePlugin().transform
+		expect(hook).toBeTypeOf('object')
+		expect((hook as { filter?: { code?: unknown } }).filter?.code).toBeUndefined()
 	})
 
-	it('extracts cfg(schemaMap)`...` layout parts', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-cfg-layout.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
+	it('lowers one object config schema to the unified Plugin config fact', async () => {
+		const result = await transform(`
+			import * as v from 'valibot'
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			const OrdersConfig = v.object({ batchSize: v.optional(v.number(), 10) })
+			@Plugin({ displayName: 'Orders' })
+			export class OrdersPlugin extends BasePlugin {
+				private readonly config = this.configs.use(OrdersConfig)
+			}
+		`)
 
-			expect(code).toContain('__setConfigLayout__')
-			expect(code).toContain('"kind": "schema"')
-			expect(code).toContain('"key": "a"')
-			expect(code).toContain('"key": "b"')
-			expect(code).toContain('"kind": "schemas"')
-		})
+		expect(result?.code).toContain('// [pluxel-config] Injected definition')
+		expect(result?.code).toContain(
+			'import { __setPluginConfig as __pluxelSetPluginConfig } from "@pluxel/runtime"',
+		)
+		expect(result?.code).toContain(
+			'__pluxelSetPluginConfig(OrdersPlugin, { fieldName: "config", schema: OrdersConfig, source: "v.object({batchSize:v.optional(v.number(),10)})" })',
+		)
+		expect(result?.code).not.toContain('__registerConfigBinding__')
+		expect(result?.code).not.toContain('__setConfigLayout__')
 	})
 
-	it('extracts cfg(schemaMap) across modules (imported schemaMap const)', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'cfg-schemas-imported.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			expect(code).toContain('__registerConfigBinding__')
-			expect(code).toContain('__setConfigSource__')
-			expect(code).toContain('__setConfigLayout__')
-			expect(code).toContain('from "@pluxel/runtime/toolchain"')
-			expect(code).toContain('["a"]')
-			expect(code).toContain('["b"]')
+	it('preserves the existing normalized schema-source transport across modules', async () => {
+		await using fixture = await createFixture({
+			'schema.ts': `
+				import * as valibot from 'valibot'
+				const Enabled = valibot.boolean()
+				export const OrdersConfig = valibot.object({ enabled: Enabled })
+			`,
+			'plugin.ts': `
+				import { OrdersConfig } from './schema'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {
+					config = this.configs.use(OrdersConfig)
+				}
+			`,
 		})
+		const id = fixture.getPath('plugin.ts')
+		const code = await readFile(id, 'utf8')
+		const result = await transform(code, undefined, {
+			id,
+			resolve: async (source) =>
+				source === './schema' ? { id: fixture.getPath('schema.ts') } : null,
+		})
+
+		expect(result?.code).toContain('schema: OrdersConfig')
+		expect(result?.code).toContain('source: "v.object({enabled:v.boolean()})"')
 	})
 
-	it('allows overriding generated metadata helper import source', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-config.ts',
-				plugins: [
-					configSourcePlugin({
-						metadataHelperImportSource: '@scope/custom-runtime',
-					}),
-				],
-				external: ['valibot', '@pluxel/core', '@scope/custom-runtime'],
-			})
+	it('canonicalizes named Valibot and valibot-form imports for the Workbench renderer', async () => {
+		const result = await transform(`
+			import { object, pipe, string } from 'valibot'
+			import { stringMeta as meta } from 'valibot-form'
+			import { BasePlugin, Plugin } from '@pluxel/runtime'
+			const Schema = object({ name: pipe(string(), meta({ label: 'Name' })) })
+			@Plugin() export class P extends BasePlugin {
+				config = this.configs.use(Schema)
+			}
+		`)
 
-			expect(code).toContain('from "@scope/custom-runtime"')
-			expect(code).not.toContain('from "@pluxel/runtime"')
-			expect(code).toContain('__setConfigSource__(TestPlugin')
-		})
+		expect(result?.code).toContain(
+			'source: "v.object({name:v.pipe(v.string(),f.stringMeta({label:\'Name\'}))})"',
+		)
 	})
 
-	it('rejects invalid cfg layout ordering during extraction', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'invalid-cfg-layout.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			await expect(bundle.generate({ format: 'esm' })).rejects.toThrow(
-				/must be the last schema-placement token/,
-			)
-		})
+	it('supports an explicit internal helper import', async () => {
+		const result = await transform(
+			`
+				import * as v from 'valibot'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class P extends BasePlugin {
+					config = this.configs.use(v.object({ enabled: v.boolean() }))
+				}
+			`,
+			'@scope/runtime',
+		)
+		expect(result?.code).toContain('from "@scope/runtime"')
 	})
 
-	it('extracts local, inline, and imported @Config schema sources', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-config.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
+	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(
+		'recognizes the formal test authoring facade %s',
+		async (source) => {
+			const result = await transform(`
+				import * as v from 'valibot'
+				import { BasePlugin, Plugin } from '${source}'
+				@Plugin() export class P extends BasePlugin {
+					config = this.configs.use(v.object({ enabled: v.boolean() }))
+				}
+			`)
+			expect(result?.code).toContain('__pluxelSetPluginConfig(P')
+		},
+	)
 
-			expect(code).toContain('__setConfigSource__(TestPlugin')
-			expect(code).toContain('"localConfig"')
-			expect(code).toContain('"inlineConfig"')
-			expect(code).toContain('"externalConfig"')
-			expect(code).toContain('v.object({inline:v.boolean()})')
-			expect(code).toMatch(
-				/v\.object\(\{host:v\.string\(\),port:v\.pipe\(v\.number\(\),v\.minValue\(1\),v\.maxValue\(65535\)\),?\}\)/,
-			)
-		})
+	it.each([
+		{
+			name: 'two schemas',
+			code: `
+				import * as v from 'valibot'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class P extends BasePlugin {
+					a = this.configs.use(v.object({ a: v.string() }))
+					b = this.configs.use(v.object({ b: v.string() }))
+				}
+			`,
+			message: 'at most one ObjectSchema',
+		},
+		{
+			name: '#private config',
+			code: `
+				import * as v from 'valibot'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class P extends BasePlugin {
+					#config = this.configs.use(v.object({ a: v.string() }))
+				}
+			`,
+			message: 'must not use #private',
+		},
+		{
+			name: 'unmarked config owner',
+			code: `
+				import * as v from 'valibot'
+				class Feature { config = this.configs.use(v.object({ a: v.string() })) }
+			`,
+			message: 'is not a concrete @Plugin',
+		},
+		{
+			name: 'scalar schema',
+			code: `
+				import * as v from 'valibot'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class P extends BasePlugin {
+					config = this.configs.use(v.string())
+				}
+			`,
+			message: 'must use a valibot ObjectSchema',
+		},
+		{
+			name: '@Config decorator',
+			code: `
+				import { Config } from '@pluxel/runtime'
+				class P { @Config(Schema) config: unknown }
+			`,
+			message: 'removed Config authoring DSL',
+		},
+		{
+			name: 'cfg layout',
+			code: `
+				import { cfg } from '@pluxel/runtime'
+				const schema = cfg({ a: A })
+			`,
+			message: 'removed cfg authoring DSL',
+		},
+	])('rejects $name', async ({ code, message }) => {
+		await expect(transform(code)).rejects.toThrow(message)
 	})
 
-	it('extracts aliased @Config decorator imports', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-config-alias.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			expect(code).toContain('__setConfigSource__')
-			expect(code).toContain('__setConfigSource__(AliasConfigPlugin')
-			expect(code).toContain('v.object({name:v.string()})')
-		})
+	it('does not confuse test-host config handles with the removed cfg authoring helper', async () => {
+		const result = await transform('host.cfg(PluginA).set({ enabled: true })')
+		expect(result).toBeNull()
 	})
 
-	it('does not synthesize required feature metadata from class fields', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-feature-use.ts',
-				plugins: [configSourcePlugin()],
-				external: ['@pluxel/core', '@pluxel/runtime'],
-			})
-
-			expect(code).not.toContain('__registerUsedFeatures__')
-			expect(code).toContain('features: [CacheFeature]')
-		})
-	})
-
-	it('rewrites valibot namespace imports to runtime "v"', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config-valibot-namespace.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__')
-			expect(code).toContain(
-				'__setConfigSource__(ValibotNamespacePlugin, "localConfig", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
-			)
-		})
-	})
-
-	it('rewrites valibot-form namespace imports to runtime "f"', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-namespace.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_FORM_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__')
-			const match =
-				/__setConfigSource__\(\s*ValibotFormNamespacePlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
-					code,
-				)
-			expect(match).toBeTruthy()
-			const injected = match?.[1] ?? ''
-			expect(injected).toContain('f.stringMeta')
-			expect(injected).not.toContain('valibotForm.stringMeta')
-		})
-	})
-
-	it('rewrites valibot named imports to runtime "v"', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config-valibot-named-import.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__')
-			expect(code).toContain(
-				'__setConfigSource__(ValibotNamedImportPlugin, "config", "v.object({name:v.string(),count:v.pipe(v.number(),v.integer())})")',
-			)
-		})
-	})
-
-	it('rewrites valibot-form named imports to runtime "f"', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config-valibot-form-named-import.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_FORM_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__')
-			const match =
-				/__setConfigSource__\(\s*ValibotFormNamedImportPlugin\s*,\s*"config"\s*,\s*"([^"]*)"\s*\)/.exec(
-					code,
-				)
-			expect(match).toBeTruthy()
-			const injected = match?.[1] ?? ''
-			expect(injected).toContain('f.stringMeta')
-			expect(injected).not.toMatch(/(^|[^.])stringMeta\(/)
-		})
-	})
-
-	it('handles computed keys inside schema objects', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const code = await generateCode({
-				fixturesDir,
-				input: 'plugin-with-computed-config.ts',
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			expect(code).toContain('__setConfigSource__(ComputedKeyPlugin')
-			expect(code).toContain('[key]:v.string()')
-			expect(code).toContain("['static']:v.number()")
-		})
-	})
-
-	it('respects include/exclude patterns', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-config.ts'),
-				plugins: [
-					configSourcePlugin({
-						exclude: ['**/plugin-with-config.ts'],
-					}),
-				],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			// 被排除的文件不应该有注入
-			expect(code).not.toContain('__setConfigSource__')
-		})
-	})
-
-	it('extracts composed schema pieces', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const bundle = await rolldown({
-				input: resolve(fixturesDir, 'plugin-with-composed-schema.ts'),
-				plugins: [configSourcePlugin()],
-				external: CONFIG_SOURCE_EXTERNALS,
-			})
-
-			const { output } = await bundle.generate({ format: 'esm' })
-			const code = output[0].code
-
-			expect(code).toContain('__setConfigSource__(ComposedPlugin')
-			// 本地 + 跨文件组合
-			expect(code).toMatch(
-				/v\.object\(\{array:v\.array\(v\.number\(\)\),external:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
-			)
-			expect(code).toMatch(
-				/v\.object\(\{external:v\.object\(\{flag:v\.boolean\(\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\),array:v\.array\(v\.pipe\(v\.string\(\),v\.minLength\(1\)\)\),?\}\)/,
-			)
-			// spread + shorthand + 本地 shorthand
-			expect(code).toMatch(
-				/\.\.\.\{name:v\.string\(\),id:v\.pipe\(v\.number\(\),v\.integer\(\)\),?\}/,
-			)
-			expect(code).toMatch(/enabledSchema:v\.boolean\(\)/)
-			expect(code).toMatch(/countSchema:v\.pipe\(v\.number\(\),v\.minValue\(0\)\)/)
-			expect(code).toMatch(/timeout:v\.optional\(v\.number\(\),5000\)/)
-			// 深层嵌套与 async schema
-			expect(code).toMatch(
-				/v\.object\(\{level1:v\.object\(\{level2:v\.object\(\{value:v\.string\(\),?\}\),?\}\),?\}\)/,
-			)
-			expect(code).toMatch(/v\.objectAsync\(\{asyncField:v\.string\(\)/)
-			expect(code).toMatch(/nested:v\.object\(\{flag:v\.boolean\(\)/)
-			// mixed 场景保持
-			expect(code).toContain('mixed')
-		})
-	})
-})
-
-describe('plugins integration', () => {
-	it('allows valid plugin authoring through build lint guard', async () => {
-		await withFixtures(async (fixturesDir) => {
-			await expect(
-				generateWithLintGuard(fixturesDir, 'plugin-build-lint-valid.ts'),
-			).resolves.toBeDefined()
-		})
-	})
-
-	it('reruns lint on subsequent builds in the same process', async () => {
-		await withFixtures(async (fixturesDir) => {
-			const input = 'plugin-build-lint-valid.ts'
-			await expect(generateWithLintGuard(fixturesDir, input)).resolves.toBeDefined()
-
-			writeFileSync(
-				resolve(fixturesDir, input),
-				fixtureFiles['plugin-build-lint-invalid-type-import.ts'],
-				'utf8',
-			)
-
-			await expect(generateWithLintGuard(fixturesDir, input)).rejects.toThrow(
-				/plugin-constructor-no-type-only-imports/,
-			)
-		})
-	})
-
-	it('resolves a relative lint config path from plugin cwd', async () => {
-		await withFixtures(async (fixturesDir) => {
-			await expect(
-				generateWithLintGuard(fixturesDir, 'plugin-build-lint-valid.ts', {
-					configPath: relative(fixturesDir, buildLintConfigPath),
-				}),
-			).resolves.toBeDefined()
-		})
-	})
-
-	it('propagates a build-critical correctness failure', async () => {
-		await withFixtures(async (fixturesDir) => {
-			await expect(
-				generateWithLintGuard(fixturesDir, 'plugin-build-lint-invalid-type-import.ts'),
-			).rejects.toThrow(/plugin-constructor-no-type-only-imports/)
-		})
+	it('ignores unrelated cfg parameters and comments', async () => {
+		const result = await transform(
+			'/** `cfg` is a service constructor parameter. */\n' +
+				'type ServiceCtor = new (ctx: unknown, cfg?: unknown) => unknown',
+		)
+		expect(result).toBeNull()
 	})
 })

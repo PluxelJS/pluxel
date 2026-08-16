@@ -36,8 +36,6 @@ export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
 		database: 'src/database.ts',
-		// Type-only module augmentation bridge (stable .d.mts file for TS consumers).
-		events: 'src/events.ts',
 		logger: 'src/logger.ts',
 		product: 'src/product.ts',
 		'services/vault': 'src/services/vault.ts',

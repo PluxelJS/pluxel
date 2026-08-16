@@ -4,40 +4,27 @@
 // Folder layout:
 // - runtime/: orchestrator and commit scheduling
 // - runtime/plugin-service/: PluginService internals and runtime update helpers
-// - decorators/: @Plugin/@Config metadata and decorator runtime
-// - composition/: BasePlugin + FeatureHost + ConfigHost
+// - decorators/: thin @Plugin marker and decorator runtime
+// - composition/: BasePlugin + ConfigHost + PluginHost
 // - types.ts: shared plugin type aliases
 
-export * from './composition/BaseFeature'
 export * from './composition/ConfigHost'
-export * from './composition/cfg'
-export * from './composition/FeatureHost'
 export * from './composition/PluginHost'
-export {
-	optionalPlugin,
-	type OptionalPluginLoader,
-	type OptionalPluginRef,
-} from './composition/OptionalPlugin'
 export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'
 export * from './decorators/decoratorRuntime'
 export * from './runtime/fork'
-export {
-	parseRuntimePluginKey,
-	runtimePluginKeyOfIdentity,
-	type PluginIdentity,
-	type RuntimePluginKey,
-} from './runtime/identity'
-export * from './runtime/pluginId'
+export * from './runtime/definition'
+export * from './runtime/identity'
 export {
 	collectPluginLifecycleBlocked,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
-	collectPluginLifecycleStoppedWithErrors,
+	collectPluginLifecycleDrainErrors,
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleNotStartedIssue,
-	isPluginLifecycleStoppedWithErrorIssue,
+	isPluginLifecycleDrainErrorIssue,
 	type PluginLifecycleErrorInfo,
 	type PluginLifecycleIssue,
 	type PluginLifecycleIssueKind,

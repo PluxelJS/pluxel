@@ -7,23 +7,23 @@ export interface DependencyListProps {
 		to: string
 		children: ReactNode
 	}>
-	resolveLinkTarget?: (name: string) => string | undefined
 }
 
 export function usePluginDependencyEntries() {
 	const contextDeps = usePluginDependencies()
 	return useMemo(() => {
-		const map = new Map<string, { name: string; isRunning?: boolean }>()
+		const map = new Map<string, { id: string; name: string; isRunning?: boolean }>()
 		for (const dep of contextDeps ?? []) {
 			const name = dep.name?.trim()
-			if (!name || map.has(name)) continue
-			map.set(name, { name, isRunning: dep.isRunning ?? undefined })
+			const id = dep.id?.trim()
+			if (!id || !name || map.has(id)) continue
+			map.set(id, { id, name, isRunning: dep.isRunning ?? undefined })
 		}
 		return [...map.values()]
 	}, [contextDeps])
 }
 
-export function DependencyList({ LinkComponent, resolveLinkTarget }: DependencyListProps) {
+export function DependencyList({ LinkComponent }: DependencyListProps) {
 	const entries = usePluginDependencyEntries()
 
 	if (entries.length === 0) {
@@ -50,19 +50,10 @@ export function DependencyList({ LinkComponent, resolveLinkTarget }: DependencyL
 					/>
 				)
 
-				const linkTarget = LinkComponent
-					? resolveLinkTarget
-						? resolveLinkTarget(dep.name)
-						: dep.name
-					: undefined
+				const linkTarget = LinkComponent ? dep.id : undefined
 				if (!LinkComponent || !linkTarget) {
 					return (
-						<Tooltip
-							key={dep.name}
-							label={!LinkComponent ? undefined : '这是依赖 token（非插件），不可跳转'}
-							withArrow
-							disabled={!LinkComponent}
-						>
+						<Tooltip key={dep.id} label={undefined} withArrow disabled={!LinkComponent}>
 							<Badge
 								variant="light"
 								color={color}
@@ -78,7 +69,7 @@ export function DependencyList({ LinkComponent, resolveLinkTarget }: DependencyL
 				}
 				return (
 					<Badge
-						key={dep.name}
+						key={dep.id}
 						variant="light"
 						color={color}
 						component={LinkComponent as any}

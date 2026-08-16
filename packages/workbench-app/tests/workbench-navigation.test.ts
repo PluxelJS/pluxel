@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory } from '@tanstack/react-router'
 import { createAppRouter } from '../src/app/router'
 import { groupNavItems } from '../src/app/navigation/navConfig'
-import { restoreWorkbenchState, WORKBENCH_STORAGE_VERSION } from '../src/app/workbench/state'
+import { restoreWorkbenchState } from '../src/app/workbench/state'
 import { isPluginWorkbenchLocation, resolveWorkbenchLocation } from '../src/app/workbench/location'
 import { WorkspaceController } from '../src/app/workbench/store'
 import {
@@ -192,36 +192,7 @@ describe('Workbench native document tabs', () => {
 		expect(workspace.state.uiState.tabs[0]?.documentKey).toBeUndefined()
 	})
 
-	it('migrates legacy document identity and section pane state into version 2', () => {
-		const path = '/workbench/TelegramPlugin/accounts/default'
-		const restored = restoreWorkbenchState({
-			activeTabId: 'workbench:TelegramPlugin:/accounts/default',
-			navigationCollapsed: false,
-			sectionPanes: { plugins: { visible: false, layout: { 'plugin-rail': 20 } } },
-			tabState: {
-				'workbench:TelegramPlugin:/accounts/default': { form: { expanded: true } },
-				orphan: { ignored: true },
-			},
-			tabs: [
-				{
-					id: 'workbench:TelegramPlugin:/accounts/default',
-					path,
-					title: 'default',
-					kind: 'document',
-				},
-			],
-		})
-
-		expect(WORKBENCH_STORAGE_VERSION).toBe(2)
-		expect(restored.tabs[0]).toMatchObject({
-			instanceId: 'workbench:TelegramPlugin:/accounts/default',
-			documentKey: path,
-		})
-		expect(restored.pluginPane.visible).toBe(false)
-		expect(restored.tabState).not.toHaveProperty('orphan')
-	})
-
-	it('sanitizes version 2 identity instead of accepting legacy aliases or duplicate documents', () => {
+	it('sanitizes version 2 identity and rejects aliases or duplicate documents', () => {
 		const path = '/workbench/TelegramPlugin/accounts/default'
 		const restored = restoreWorkbenchState({
 			version: 2,

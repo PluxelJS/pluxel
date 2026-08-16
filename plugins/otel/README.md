@@ -15,7 +15,7 @@ import { SeverityNumber } from '@opentelemetry/api-logs'
 import { OtelPlugin } from '@pluxel/otel'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'CatalogPlugin' })
+@Plugin({ displayName: 'CatalogPlugin' })
 class CatalogPlugin extends BasePlugin {
 	private refreshed!: Counter
 
@@ -45,7 +45,7 @@ class CatalogPlugin extends BasePlugin {
 ```
 
 三个 getter 分别返回标准 `@opentelemetry/api` `Meter`、`Tracer` 和 `@opentelemetry/api-logs` `Logger`。
-instrumentation scope name 自动固定为 caller Plugin ID；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
+instrumentation scope name 使用 caller 的格式化 Plugin node address；同一 caller generation 重复读取返回同一实例。原生 instrument、span、
 event、link、status、baggage、log body、severity、`eventName` 和 attributes 均不经过 Pluxel wrapper。active span 中直接 emit 的 log
 会带上 trace/span correlation。
 
@@ -58,10 +58,8 @@ producer 仍须定义稳定的数据字典、attribute allowlist、基数和隐�
 
 ```ts
 host.cfg(OtelPlugin).set({
-	config: {
-		otlp: ['metrics', 'traces', 'logs'],
-		prometheus: false,
-	},
+	otlp: ['metrics', 'traces', 'logs'],
+	prometheus: false,
 })
 ```
 
@@ -69,17 +67,15 @@ host.cfg(OtelPlugin).set({
 
 ```ts
 host.cfg(OtelPlugin).set({
-	config: {
-		otlp: ['metrics', 'traces', 'logs'],
-		prometheus: { path: '/metrics' },
-	},
+	otlp: ['metrics', 'traces', 'logs'],
+	prometheus: { path: '/metrics' },
 })
 ```
 
 只做 Prometheus pull 时使用 `{ otlp: [], prometheus: {} }`。配置至少保留一个输出；被关闭的 signal 不加载 exporter、不读取它的
 endpoint，也不会返回一个看似工作的 no-op API。访问关闭 signal 的 getter 会立即报错。
 
-默认 pull URL 是 `GET /__pluxel/plugins/OtelPlugin/metrics`。它复用 Pluxel HTTP service，不启动第二个 listener。并发 scrape
+默认 pull URL 是显式产品协议 `GET /metrics`。它复用 Pluxel HTTP service，不启动第二个 listener。并发 scrape
 合并为同一次 collection；OTLP periodic reader 与 Prometheus reader 相互独立。
 
 ## OTLP transports 与环境变量

@@ -1,3 +1,8 @@
+import {
+	createPluginNodeAddress,
+	type PluginNodeAddressSnapshot,
+} from '../plugins/runtime/identity'
+
 export const pluxelCategoryFamilies = {
 	runtime: ['pluxel', 'runtime'],
 	plugins: ['pluxel', 'plugins'],
@@ -11,21 +16,32 @@ export function runtimeLogCategory(rootId: string): readonly ['pluxel', 'runtime
 	return ['pluxel', 'runtime', rootId]
 }
 
+function addressSegments(address: PluginNodeAddressSnapshot): string[] {
+	const entry = address.definition.entry
+	return [
+		entry.kind,
+		entry.kind === 'package-root' ? entry.packageName : entry.source,
+		address.definition.exportName,
+		address.instance,
+		...(address.instance === 'fork' ? [address.forkId] : []),
+	]
+}
+
 export function pluginLogCategory(
 	rootId: string,
-	pluginId: string,
-): readonly ['pluxel', 'plugins', string, string] {
-	return ['pluxel', 'plugins', rootId, pluginId]
+	address: PluginNodeAddressSnapshot,
+): readonly string[] {
+	return ['pluxel', 'plugins', rootId, ...addressSegments(address)]
 }
 
 export function debugLogCategory(
 	rootId: string,
 	topic: string,
-	pluginId?: string,
+	address?: PluginNodeAddressSnapshot,
 ): readonly string[] {
 	const segments = splitDebugTopic(topic)
-	return pluginId
-		? ['pluxel', 'debug', rootId, 'plugin', pluginId, ...segments]
+	return address
+		? ['pluxel', 'debug', rootId, 'plugin', ...addressSegments(address), ...segments]
 		: ['pluxel', 'debug', rootId, 'runtime', ...segments]
 }
 
@@ -47,13 +63,27 @@ export function splitDebugTopic(topic: string): string[] {
 
 export function readPluginLogIdentity(
 	category: readonly string[],
-): { rootId: string; pluginId: string } | undefined {
+): { rootId: string; node: PluginNodeAddressSnapshot; topicOffset: number } | undefined {
 	if (category[0] !== 'pluxel') return undefined
-	if (category.length === 4 && category[1] === 'plugins') {
-		return { rootId: category[2]!, pluginId: category[3]! }
-	}
-	if (category.length >= 6 && category[1] === 'debug' && category[3] === 'plugin') {
-		return { rootId: category[2]!, pluginId: category[4]! }
-	}
-	return undefined
+	let offset: number
+	if (category[1] === 'plugins') offset = 3
+	else if (category[1] === 'debug' && category[3] === 'plugin') offset = 4
+	else return undefined
+	const kind = category[offset]
+	const locator = category[offset + 1]
+	const exportName = category[offset + 2]
+	const instance = category[offset + 3]
+	if (!locator || !exportName || (kind !== 'package-root' && kind !== 'source-entry'))
+		return undefined
+	if (instance !== 'default' && instance !== 'fork') return undefined
+	const definition = {
+		entry: kind === 'package-root' ? { kind, packageName: locator } : { kind, source: locator },
+		exportName,
+	} as const
+	const node = createPluginNodeAddress(
+		instance === 'default'
+			? { definition, instance }
+			: { definition, instance, forkId: category[offset + 4] ?? '' },
+	)
+	return { rootId: category[2]!, node, topicOffset: offset + (instance === 'fork' ? 5 : 4) }
 }

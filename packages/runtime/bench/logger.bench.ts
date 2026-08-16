@@ -1,16 +1,29 @@
 import { type LogRecord } from '@logtape/logtape'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
+import { pluginLogCategory } from '@pluxel/core/logger'
 import { RuntimePluginLogPolicy } from '@pluxel/runtime/logger'
 import { bench, describe } from 'vitest'
 import { createRuntimeLogSink } from '../src/logger/sink'
 import { RuntimeLogStoreRegistry } from '../src/logger/store'
 
+function pluginAddress(index: number): PluginNodeAddressSnapshot {
+	return {
+		definition: {
+			entry: { kind: 'package-root', packageName: `@bench/plugin-${index}` },
+			exportName: 'Plugin',
+		},
+		instance: 'default',
+	}
+}
+
+const plugin42 = pluginAddress(42)
+
 function record(input: Partial<LogRecord> = {}): LogRecord {
 	return {
-		category: ['pluxel', 'plugins', 'bench-root', 'plugin-42'],
+		category: pluginLogCategory('bench-root', plugin42),
 		level: 'debug',
 		message: ['plugin message ', 42, { nested: { ok: true } }],
 		properties: {
-			pluginId: 'plugin-42',
 			context: 'Plugin42',
 			taskId: 'task-1',
 			value: 42,
@@ -23,27 +36,28 @@ function record(input: Partial<LogRecord> = {}): LogRecord {
 
 describe('runtime logger micro-bench', () => {
 	const policy = new RuntimePluginLogPolicy({
-		version: 1,
+		version: 2,
 		defaultLevel: 'info',
-		overrides: {
-			'plugin-42': 'debug',
-			'plugin-off': 'off',
-		},
+		overrides: [
+			{ owner: plugin42, level: 'debug' },
+			{ owner: pluginAddress(-1), level: 'off' },
+		],
 	})
 	bench('plugin policy allows override hit', () => {
-		policy.allows('plugin-42', 'debug')
+		policy.allows(plugin42, 'debug')
 	})
 
 	const largePolicy = new RuntimePluginLogPolicy({
-		version: 1,
+		version: 2,
 		defaultLevel: 'info',
-		overrides: Object.fromEntries(
-			Array.from({ length: 100_000 }, (_, index) => [`plugin-${index}`, 'debug'] as const),
-		),
+		overrides: Array.from({ length: 100_000 }, (_, index) => ({
+			owner: pluginAddress(index),
+			level: 'debug' as const,
+		})),
 	})
 
 	bench('plugin policy allows hit among 100k overrides', () => {
-		largePolicy.allows('plugin-99999', 'debug')
+		largePolicy.allows(pluginAddress(99_999), 'debug')
 	})
 
 	const sinkWithoutCaller = createRuntimeLogSink({

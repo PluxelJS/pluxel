@@ -24,7 +24,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { workbench } from '@pluxel/runtime/workbench'
 import { workbenchContract } from '@pluxel/runtime/workbench/contract'
 
-import { AccountsPlugin } from './AccountsPlugin.ts'
+import { AccountsPlugin } from '@acme/accounts'
 import type { BillingCommands } from './browser-contracts.ts'
 import { BillingConfig } from './config.ts'
 import { BillingRpc } from './rpc.ts'
@@ -50,7 +50,7 @@ const BillingWorkbench = workbench.extension({
 	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
-@Plugin({ name: 'BillingPlugin' })
+@Plugin({ displayName: 'Billing' })
 export class BillingPlugin extends BasePlugin {
 	private readonly config = this.configs.use(BillingConfig)
 
@@ -77,6 +77,11 @@ export class BillingPlugin extends BasePlugin {
 - 运行时工作放在 `init()`；
 - Workbench贡献通过唯一 optional gate 挂载。
 
+具体 Plugin 必须由 package root `"."` 唯一 named export；host-local Plugin 则由 canonical source entry 的唯一 root export
+登记。graph identity 是工具链生成的 entry + root export definition slot，runtime node 再区分 default/fork instance。
+class name、constructor object 和 `displayName` 都不是 identity；`displayName` 省略时 Workbench 精确显示 root export name，
+同名展示通过 package/export provenance 消歧。
+
 ## 单独构建的 Node module
 
 需要把另一份 TS/JS 源码图作为独立 Node ESM 加载时，在 module level 声明，
@@ -87,7 +92,7 @@ import { BasePlugin, defineNodeModule, Plugin } from '@pluxel/runtime'
 
 const taskModule = defineNodeModule(import.meta.url, './task.ts')
 
-@Plugin({ name: 'TaskPlugin' })
+@Plugin({ displayName: 'Task' })
 export class TaskPlugin extends BasePlugin {
 	override async init() {
 		await this.ctx.nodeModules.use(taskModule, async (url) => {
@@ -119,7 +124,7 @@ type Output = { total: number }
 
 const sumTask = defineWorkerTask<Input, Output>(import.meta.url, './sum-worker.ts')
 
-@Plugin({ name: 'ReportPlugin' })
+@Plugin({ displayName: 'Reports' })
 export class ReportPlugin extends BasePlugin {
 	calculate(values: number[], signal?: AbortSignal) {
 		return this.ctx.workers.run(sumTask, { values }, { signal })
@@ -169,10 +174,12 @@ return result
 
 ### Required plugin dependency
 
-没有 provider 就不能工作时，直接使用 constructor：
+没有 provider 就不能工作时，从 provider package 根入口 value-import Plugin，并直接使用 constructor：
 
 ```ts
-@Plugin({ name: 'OrdersPlugin' })
+import { CommerceDbPlugin } from '@acme/commerce-db'
+
+@Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
 	constructor(private readonly database: CommerceDbPlugin) {
 		super()
@@ -180,32 +187,24 @@ export class OrdersPlugin extends BasePlugin {
 }
 ```
 
-不需要在 `@Plugin` 中重复列依赖。Pluxel 工具链生成 `design:paramtypes`，core 据此排序、注入并传播启动失败。
+不需要在 `@Plugin` 中重复列依赖。Pluxel semantic pass 在 TypeScript 擦除前记录 parameter order、imported root export
+provenance 和 definition address；Core 按 committed slot graph 注入并传播启动失败。value import 让 required package 的
+resolution/evaluation 诚实失败，但 constructor/class name 不成为 graph identity。
 
-插件源码必须通过宿主的 Vite/Rolldown 链加载。Node 可以执行普通、可擦除类型的 `.ts` 工具脚本，但不会替 Pluxel 生成 legacy decorator metadata，因此不能作为插件源码 runner。
+插件源码必须通过宿主的 Vite/Rolldown 链加载。Node 可以执行普通、可擦除类型的 `.ts` 工具脚本，但不会替 Pluxel
+生成 definition facts；raw Plugin runner 会明确失败，不回退 reflection 或 class name。
 
 ### Optional plugin integration
 
-provider 已由宿主 catalog 管理、只需监听其运行状态时，直接使用 `this.plugins.use(Token)`：
+实现 package 允许不在最终 host 时，从目标 package 根入口 type-import Plugin type，并声明一个不导出的 module-level ref：
 
 ```ts
-override init() {
-	this.plugins.use(AuditPlugin, (audit) => audit.registerSource(this))
-}
-```
+import type { AuditPlugin } from '@acme/audit'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
 
-provider 未运行时 callback 不执行；provider replacement 后会重新绑定。callback 可以返回 cleanup。
+const Audit = definePluginRef<AuditPlugin>()
 
-实现包本身也允许不存在时，使用 module-level `optionalPlugin()` ref：
-
-```ts
-import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'
-
-const Audit = optionalPlugin(() =>
-	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
-)
-
-@Plugin({ name: 'OrdersPlugin' })
+@Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
 	override init() {
 		this.plugins.use(Audit, (audit) => audit.registerSource(this))
@@ -213,42 +212,28 @@ export class OrdersPlugin extends BasePlugin {
 }
 ```
 
-ref 必须是 module-level `const`，并包含一个 literal dynamic import 和明确 export selection。Pluxel 在 consumer
-启动完成后解析它；目标包 absent 不会阻塞 consumer，包存在但 evaluation、metadata 或启动损坏会产生明确诊断。
-首次发现的 candidate 默认启用，此后宿主保存的 disabled state 优先。optional request 不会自动安装包。
+`definePluginRef<T>()` 必须是 non-exported module-level `const`，`T` 必须能唯一追溯到具体 Plugin 的根 named export。
+`plugins.use(Ref, callback)` 只能作为 `init()` 中的直接语句；callback 必须同步，可以返回 cleanup/disposable。provider
+absent、disabled 或 start-failed 时 callback 不执行，也不阻塞 consumer；provider running generation 出现、消失或 replacement
+时，Core 重启 consumer 及其 required dependent closure，并先完整 drain 旧 consumer effects。
 
-不要把 optional integration 放进 constructor，否则它会错误地阻塞主插件；也不要自行执行 raw `import()` 后注册
-provider，否则会绕过 graph ownership、dedupe、RuntimeState 和 HMR。
+ref 不 import、安装、注册或默认启用 package。不要把 optional integration 放进 constructor，也不要自行 raw import provider、
+缓存裸实例或轮询 availability。需要高频切换的业务协议不应建模为 Plugin optional edge。
 
-## Feature：只表示插件内部组成
+## Plugin 内部组成
 
-required feature：
+内部拆分使用普通 class/function；需要子资源 scope 时使用 owner effects：
 
 ```ts
-@Plugin({
-	name: 'SearchPlugin',
-	features: [QueryCacheFeature],
-})
-export class SearchPlugin extends BasePlugin {
-	readonly cache = this.features.use(QueryCacheFeature)
+override init() {
+	const scope = this.ctx.effects.scope({ tag: 'orders-cache' })
+	const cache = new OrdersCache(scope, this.config.cache)
+	scope.defer(() => cache.close())
 }
 ```
 
-lazy feature：
-
-```ts
-const analyticsFeature = defineLazyFeature({
-	key: 'analytics',
-	load: async () => (await import('./AnalyticsFeature.ts')).AnalyticsFeature,
-})
-
-override async init() {
-	const analytics = await this.features.load(analyticsFeature)
-	if (analytics) this.installAnalytics(analytics)
-}
-```
-
-Feature 不承担插件间依赖。判断方法很简单：独立生命周期和替换边界用 plugin；宿主插件内部实现拆分用 feature。
+有独立配置、失败传播、启停、replacement 或治理意义的组成应成为 Plugin。纯内部 lazy import 由 owner Plugin 明确执行，
+import/evaluation 失败按普通 `init()` failure 传播。
 
 ## 配置：声明一次，只读取归一化结果
 
@@ -260,7 +245,7 @@ export const WorkerConfig = v.object({
 	endpoint: v.string(),
 })
 
-@Plugin({ name: 'WorkerPlugin' })
+@Plugin({ displayName: 'Worker' })
 export class WorkerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WorkerConfig)
 
@@ -273,7 +258,7 @@ export class WorkerPlugin extends BasePlugin {
 - 默认值写进 schema，不在业务代码里再写 fallback。
 - `configs.use()` 放在顶层 class field，便于工具链提取稳定 metadata。
 - 配置值在 `init()` 或运行期方法中读取，不在 constructor 中读取；runtime 在实例构造后、启动前完成注入和校验。
-- 多 schema 页面需要布局时使用 `cfg(schemaMap)`，不要动态拼 schema key。
+- 每个具体 Plugin 最多声明一次完整 object schema；section 和嵌套结构直接写在该 schema 中。
 
 ## 生命周期：失败要诚实，资源要可回收
 
@@ -289,7 +274,8 @@ override async init(signal: AbortSignal) {
 }
 ```
 
-资源创建成功后立即登记 cleanup。普通资源优先使用 `ctx.effects.defer()`；只有需要明确业务停止顺序时才实现 `stop()`。cleanup 必须幂等。
+资源创建成功后立即登记 cleanup。普通资源使用 `ctx.effects.defer/own/acquire/scope`；`init()` 最终返回的
+cleanup/disposable 也会自动进入当前 generation effects。cleanup 必须幂等。
 
 后台工作应返回可释放 handle，让 `effects.own()` 等待它真正停止：
 
@@ -328,8 +314,8 @@ override init() {
 
 HTTP 不依赖 Workbench Plane，适合业务 API、webhook、health endpoint 和外部集成。
 
-默认路由位于 `/__pluxel/plugins/<plugin-id>`，适合不需要宿主级稳定地址的插件 API。产品协议需要
-固定根路径时，仍由插件直接声明，不要改用 `ctx.http.host`：
+默认路由位于 `/__pluxel/plugins/<opaque-owner-key>`。opaque key 由结构化 node address 派生，只适合 runtime/Workbench
+发现，不是作者应该拼接的稳定产品 URL。产品协议需要固定根路径时，仍由插件直接声明，不要改用 `ctx.http.host`：
 
 ```ts
 override init() {
@@ -379,7 +365,7 @@ override init() {
 ```
 
 - Contract module 只导入 browser-safe 类型和 `@pluxel/runtime/workbench/contract`；
-- Extension 不写 plugin ID，owner 由 `ctx.workbench.mount()` 的 Context 推导；
+- Extension 不写 owner address，owner 由 `ctx.workbench.mount()` 的 Context 推导；
 - `bind.rpc()`、`bind.liveQuery()`、`bind.events()` 都是纯 declaration，disabled 时不执行 query 或 producer；
 - `liveQuery` 只投影当前 plugin database 的 runtime-validated DTO，mutation 走 typed RPC；
 - `dependsOn` 完整列出查询读取的普通 Drizzle tables，并与 database handle 保持同 owner；
@@ -554,7 +540,7 @@ import { BasePlugin, EvtChannel, Plugin } from '@pluxel/runtime'
 
 type InvoicePaid = (invoice: Invoice, signal: AbortSignal) => void | Promise<void>
 
-@Plugin({ name: 'BillingPlugin' })
+@Plugin({ displayName: 'Billing' })
 export class BillingPlugin extends BasePlugin {
 	readonly events = {
 		invoicePaid: new EvtChannel<InvoicePaid>(this.ctx),
@@ -652,9 +638,9 @@ typecheck、tests 和 production build 的 `pnpm verify`。
 
 测试最低覆盖标准和 core/runtime test host 的选择见 [`testing.md`](testing.md)。
 
-- required dependency 是否只写在 constructor？
-- optional integration 是否使用 `plugins.use()`？
-- feature 是否确实是插件内部组成？
+- required dependency 是否只写在 constructor，并从 provider package root value-import？
+- optional integration 是否使用 non-exported module-level `definePluginRef<T>()` 和 init-time `plugins.use()`？
+- 内部组成是否使用普通对象/effects，真正独立的治理单元是否成为 Plugin？
 - 默认值是否都在 schema？
 - 启动前置条件是否在 `init()` 中验证并诚实失败？
 - 每个资源是否在创建后立即登记 cleanup？

@@ -17,7 +17,6 @@ const pluginPackageOverlay = (context: BuildRuntimeConfig) =>
 		packageMetadata: {
 			packageJsonPath: context.packageJsonPath,
 			manifestField: context.manifestField,
-			prefixes: context.pluginPrefixes,
 			log: () => {},
 		},
 	})
@@ -29,6 +28,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 				dependencies: {
 					'pluxel-plugin-alpha': '^1.0.0',
 				},
@@ -79,11 +81,12 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
 			"import { AlphaPlugin } from 'pluxel-plugin-alpha'",
+			"import type { BetaPlugin } from 'pluxel-plugin-beta'",
 			'',
-			"const Beta = optionalPlugin(() => import('pluxel-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
-			"@Plugin({ name: 'FixturePlugin' })",
+			'const Beta = definePluginRef<BetaPlugin>()',
+			"@Plugin({ displayName: 'FixturePlugin' })",
 			'export class FixturePlugin extends BasePlugin {',
 			'  constructor(readonly alpha: AlphaPlugin) { super() }',
 			'  init() { this.plugins.use(Beta, () => undefined) }',
@@ -97,6 +100,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture-custom',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 				dependencies: {
 					'acme-plugin-alpha': '1.2.3',
 				},
@@ -138,11 +144,12 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
-			"import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'",
+			"import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'",
 			"import { AlphaPlugin } from 'acme-plugin-alpha'",
+			"import type { BetaPlugin } from 'acme-plugin-beta'",
 			'',
-			"const Beta = optionalPlugin(() => import('acme-plugin-beta').then(({ BetaPlugin }) => BetaPlugin))",
-			"@Plugin({ name: 'CustomFixturePlugin' })",
+			'const Beta = definePluginRef<BetaPlugin>()',
+			"@Plugin({ displayName: 'CustomFixturePlugin' })",
 			'export class CustomFixturePlugin extends BasePlugin {',
 			'  constructor(readonly alpha: AlphaPlugin) { super() }',
 			'  init() { this.plugins.use(Beta, () => undefined) }',
@@ -156,6 +163,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture-runtime-ui',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			},
 			null,
 			2,
@@ -188,6 +198,7 @@ const buildFixtures = {
 			'',
 		].join('\n'),
 		'src/index.ts': [
+			"import { BasePlugin, Plugin } from '@pluxel/runtime'",
 			"import { workbench } from '@pluxel/runtime/workbench'",
 			"import { workbenchContract } from '@pluxel/runtime/workbench/contract'",
 			'',
@@ -196,6 +207,10 @@ const buildFixtures = {
 			'',
 			'export function registerWorkbench(gate: any) {',
 			'\treturn gate.mount(extension, {})',
+			'}',
+			"@Plugin({ displayName: 'RuntimeUiFixturePlugin' })",
+			'export class RuntimeUiFixturePlugin extends BasePlugin {',
+			'\tinit() { registerWorkbench(this.ctx.workbench) }',
 			'}',
 			'export { secondExtension }',
 			'',
@@ -217,6 +232,9 @@ const buildFixtures = {
 				name: 'pluxel-cli-build-fixture-decorated-plugin',
 				version: '1.0.0',
 				type: 'module',
+				exports: {
+					'.': { '@pluxel/hmr': './src/index.ts', default: './dist/index.mjs' },
+				},
 			},
 			null,
 			2,
@@ -260,10 +278,10 @@ const buildFixtures = {
 			'declare const __FIXTURE_INPUT__: string',
 			'export const inputOverride = __FIXTURE_INPUT__',
 			'',
-			"@Plugin({ name: 'FixtureProvider' })",
+			"@Plugin({ displayName: 'FixtureProvider' })",
 			'export class FixtureProvider extends BasePlugin {}',
 			'',
-			"@Plugin({ name: 'FixtureConsumer' })",
+			"@Plugin({ displayName: 'FixtureConsumer' })",
 			'export class FixtureConsumer extends BasePlugin {',
 			'\tconstructor(readonly provider: FixtureProvider) {',
 			'\t\tsuper()',
@@ -410,7 +428,7 @@ describe('build command', () => {
 				resolve(fixtureDir, 'src/index.ts'),
 				[
 					"import { BasePlugin, Plugin } from '@pluxel/runtime'",
-					"@Plugin({ name: 'FixturePlugin' })",
+					"@Plugin({ displayName: 'FixturePlugin' })",
 					'export class FixturePlugin extends BasePlugin {}',
 				].join('\n'),
 			)
@@ -457,10 +475,9 @@ describe('build command', () => {
 		})
 	})
 
-	it('respects custom env config for prefixes and manifest fields', async () => {
+	it('respects custom manifest field config', async () => {
 		try {
 			await withBuildFixture('custom', async (_fixtureDir) => {
-				vi.stubEnv(BuildEnvKeys.pluginPrefix, 'acme-plugin')
 				vi.stubEnv(BuildEnvKeys.manifestField, 'customField')
 
 				const runtime = await resolveBuildContext({})
@@ -591,7 +608,7 @@ describe('build command', () => {
 		})
 	}, 45_000)
 
-	it('always lowers legacy plugin decorators and emits constructor metadata', async () => {
+	it('lowers plugin definitions and required dependency facts without reflection metadata', async () => {
 		await withBuildFixture('decoratedPlugin', async (fixtureDir) => {
 			const runtime = await resolveBuildContext({})
 			await runWithTsdown({
@@ -603,7 +620,7 @@ describe('build command', () => {
 
 			const output = await readFile(resolve(fixtureDir, 'dist/index.mjs'), 'utf-8')
 			expect(output).not.toMatch(/@Plugin\b/)
-			expect(output).toContain('design:paramtypes')
+			expect(output).not.toContain('design:paramtypes')
 			expect(output).toContain('FixtureProvider')
 			expect(output).toContain('FixtureConsumer')
 			expect(output).toContain('preserved')

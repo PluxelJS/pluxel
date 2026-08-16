@@ -25,8 +25,8 @@ describe('HMR runner bridge', () => {
 			'PluginWithUI.ts': [
 				"import { BasePlugin, Plugin } from '@pluxel/core'",
 				'',
+				"@Plugin({ displayName: 'Plugin with UI' })",
 				'export class PluginWithUI extends BasePlugin {}',
-				"Plugin({ name: 'PluginWithUI' })(PluginWithUI)",
 				'',
 			].join('\n'),
 		})

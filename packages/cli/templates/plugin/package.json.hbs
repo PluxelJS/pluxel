@@ -4,6 +4,12 @@
 	"description": {{json description}},
 	"version": "0.1.0",
 	"type": "module",
+	"exports": {
+		".": {
+			"@pluxel/hmr": "./src/{{pluginName}}.ts",
+			"default": "./dist/index.mjs"
+		}
+	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",

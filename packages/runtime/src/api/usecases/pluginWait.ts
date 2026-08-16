@@ -1,9 +1,9 @@
-import type { Context } from '@pluxel/core'
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 
 import { type PluginStatusSnapshot, pluginStatus } from './plugins'
 
 export type PluginWaitForStageInput = {
-	name: string
+	address: PluginNodeAddressSnapshot
 	stage: string
 	/** Timeout in milliseconds. Defaults to 30_000. */
 	timeoutMs?: number
@@ -13,10 +13,10 @@ export type PluginWaitForStageInput = {
 }
 
 export type PluginWaitForStageOutput =
-	| { ok: true; name: string; stage: string; status: PluginStatusSnapshot }
+	| { ok: true; address: PluginNodeAddressSnapshot; stage: string; status: PluginStatusSnapshot }
 	| {
 			ok: false
-			name: string
+			address: PluginNodeAddressSnapshot
 			stage: string
 			code: string
 			message: string
@@ -32,39 +32,37 @@ export async function pluginWaitForStage(
 	ctx: Context,
 	input: PluginWaitForStageInput,
 ): Promise<PluginWaitForStageOutput> {
-	const name = String(input.name ?? '').trim()
+	const address = input.address
 	const stage = String(input.stage ?? '').trim()
-	if (!name)
-		return { ok: false, name: '', stage, code: 'invalid_input', message: 'name is required' }
 	if (!stage)
-		return { ok: false, name, stage: '', code: 'invalid_input', message: 'stage is required' }
+		return { ok: false, address, stage: '', code: 'invalid_input', message: 'stage is required' }
 
 	const timeoutMs = normalizeMs(input.timeoutMs, 30_000, 0, 600_000)
 	const pollMs = normalizeMs(input.pollMs, 80, 20, 2_000)
 
 	const started = Date.now()
 
-	let last = pluginStatus(ctx, name)
+	let last = pluginStatus(ctx, address)
 	if (!last)
 		return {
 			ok: false,
-			name,
+			address,
 			stage,
 			code: 'plugin_not_found',
-			message: `Plugin not found: ${name}`,
+			message: 'Plugin node was not found',
 		}
-	if (last.lifecycleStage === stage) return { ok: true, name, stage, status: last }
+	if (last.lifecycleStage === stage) return { ok: true, address, stage, status: last }
 
 	for (;;) {
 		if (input.signal?.aborted) {
-			return { ok: false, name, stage, code: 'aborted', message: 'Aborted', last }
+			return { ok: false, address, stage, code: 'aborted', message: 'Aborted', last }
 		}
 
 		const elapsed = Date.now() - started
 		if (elapsed >= timeoutMs) {
 			return {
 				ok: false,
-				name,
+				address,
 				stage,
 				code: 'timeout',
 				message: `Timed out waiting for stage: ${stage}`,
@@ -74,18 +72,18 @@ export async function pluginWaitForStage(
 
 		await new Promise<void>((resolve) => setTimeout(resolve, pollMs))
 
-		const now = pluginStatus(ctx, name)
+		const now = pluginStatus(ctx, address)
 		if (!now) {
 			return {
 				ok: false,
-				name,
+				address,
 				stage,
 				code: 'plugin_not_found',
-				message: `Plugin not found: ${name}`,
+				message: 'Plugin node was not found',
 				last,
 			}
 		}
 		last = now
-		if (last.lifecycleStage === stage) return { ok: true, name, stage, status: last }
+		if (last.lifecycleStage === stage) return { ok: true, address, stage, status: last }
 	}
 }

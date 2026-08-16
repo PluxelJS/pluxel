@@ -20,14 +20,14 @@ const squareWorker = defineWorkerTask<{ value: number }, { squared: number }>(
 	import.meta.url,
 	'./PluginHttpWorkerDemo/ui/worker.ts',
 )
-const d = workbenchDoc({} as const)
+const d = workbenchDoc()
 const HttpWorkerUi = workbenchContract.define({
 	views: {
 		documentation: workbenchContract.document({
 			placements: [workbenchContract.tab({ label: 'Worker Demo' })],
 			title: 'HTTP Worker Demo',
 			content: d`
-					Route base: \`/__pluxel/plugins/PluginHttpWorkerDemo/worker-demo\`.
+					Public route base: \`/demo/worker\`.
 
 					- \`GET /status\`: reports the shared worker capability.
 					- \`GET /square/:value\`: invokes the typed task through \`ctx.workers\`.
@@ -39,7 +39,7 @@ const HttpWorkerUi = workbenchContract.define({
 })
 const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 
-@Plugin({ name: 'PluginHttpWorkerDemo' })
+@Plugin({ displayName: 'PluginHttpWorkerDemo' })
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
 		this.ctx.http.plugin.routes(
@@ -57,8 +57,8 @@ export class PluginHttpWorkerDemo extends BasePlugin {
 						return this.square(value)
 					}),
 			{
-				path: '/worker-demo',
-				id: 'PluginHttpWorkerDemo:http',
+				publicPath: '/demo/worker',
+				id: 'worker-demo',
 			},
 		)
 

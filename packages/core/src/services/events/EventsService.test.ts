@@ -1,53 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { BasePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
+import { BasePlugin, EvtChannel, Plugin } from '@pluxel/core'
+import { withCoreHost } from '@pluxel/core/test'
 
-describe('EventsService', () => {
-	it('auto-unsubscribes listeners when plugin is unloaded', async () => {
+@Plugin({ displayName: 'Channel owner' })
+class ChannelOwner extends BasePlugin {
+	readonly changed = new EvtChannel<[value: string]>(() => this.ctx)
+}
+
+@Plugin({ displayName: 'Channel consumer' })
+class ChannelConsumer extends BasePlugin {
+	readonly seen: string[] = []
+	constructor(private readonly owner: ChannelOwner) {
+		super()
+	}
+	override init() {
+		this.owner.changed.on((value) => this.seen.push(value))
+	}
+}
+
+describe('event boundaries', () => {
+	it('keeps named channels and owner-scoped subscriptions', async () => {
 		await withCoreHost(async (host) => {
-			@Plugin({ name: 'P' })
-			class P extends BasePlugin {
-				seen: string[] = []
-				protected override init(_abort: AbortSignal) {
-					this.ctx.on('onLoad', (name) => {
-						this.seen.push(name)
-					})
-				}
-			}
-
-			await host.start(P)
-			const p = host.require(P)
-
-			host.ctx.emit('onLoad', 'a')
-			expect(p.seen).toEqual(['a'])
-
-			host.remove(P)
+			host.add([ChannelOwner, ChannelConsumer])
 			await host.commit()
-
-			host.ctx.emit('onLoad', 'b')
-			expect(p.seen).toEqual(['a'])
-		})
-	})
-
-	it('auto-unsubscribes internal event listeners when plugin is unloaded', async () => {
-		await withCoreHost(async (host) => {
-			@Plugin({ name: 'InternalEventsPlugin' })
-			class InternalEventsPlugin extends BasePlugin {
-				seen = 0
-				protected override init(_abort: AbortSignal) {
-					this.ctx.internalEvent.runtimeCommitted.on(() => {
-						this.seen++
-					})
-				}
-			}
-
-			await host.start(InternalEventsPlugin)
-			const plugin = host.require(InternalEventsPlugin)
-			const seenAfterStart = plugin.seen
-
-			host.remove(InternalEventsPlugin)
+			const owner = host.require(ChannelOwner)
+			const consumer = host.require(ChannelConsumer)
+			owner.changed.emit('a')
+			expect(consumer.seen).toEqual(['a'])
+			host.remove(ChannelConsumer)
 			await host.commit()
-
-			expect(plugin.seen).toBe(seenAfterStart)
+			owner.changed.emit('b')
+			expect(consumer.seen).toEqual(['a'])
 		})
 	})
 })

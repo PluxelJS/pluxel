@@ -15,7 +15,7 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { fileURLToPath } from 'node:url'
 
-@Plugin({ name: 'ReportsPlugin' })
+@Plugin({ displayName: 'ReportsPlugin' })
 export class ReportsPlugin extends BasePlugin {
 	constructor(private readonly fonts: FontsPlugin) {
 		super()
@@ -65,12 +65,10 @@ selector 只读取 FontsPlugin 提供的系统/上传 family 选项并修改统�
 
 ```ts
 host.cfg(FontsPlugin).set({
-	config: {
-		defaultFamily: 'Noto Sans',
-		maxRegistrationsPerConsumer: 32,
-		maxManagedFonts: 64,
-		maxFontBytes: 16 * 1024 * 1024,
-	},
+	defaultFamily: 'Noto Sans',
+	maxRegistrationsPerConsumer: 32,
+	maxManagedFonts: 64,
+	maxFontBytes: 16 * 1024 * 1024,
 })
 ```
 

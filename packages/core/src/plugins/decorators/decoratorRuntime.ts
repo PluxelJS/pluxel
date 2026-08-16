@@ -2,7 +2,6 @@ import type { Context } from '@pluxel/context'
 import type { BasePlugin } from '../composition/BasePlugin'
 import { PLUGIN_CTX } from '../composition/symbols'
 import type { Identifier } from '../types'
-import { requirePluginDependency } from './PluginDecorator'
 
 type AnyFn = (...args: unknown[]) => unknown
 type Registry = { getInstance: <T>(id: Identifier<T>) => T | undefined }
@@ -39,15 +38,11 @@ function withCaller<P extends BasePlugin>(dep: P, callerCtx: Context): P {
 
 function getCallerCtx(self: unknown): Context {
 	if (!self || (typeof self !== 'object' && typeof self !== 'function')) {
-		throw new Error(
-			'[pluxel/core] Decorator runtime requires an instance with ctx (BasePlugin/BaseFeature)',
-		)
+		throw new Error('[pluxel/core] Decorator runtime requires a BasePlugin instance with ctx')
 	}
 	const ctx = (self as { ctx?: unknown }).ctx
 	if (!ctx || typeof ctx !== 'object') {
-		throw new Error(
-			'[pluxel/core] Decorator runtime requires an instance with ctx (BasePlugin/BaseFeature)',
-		)
+		throw new Error('[pluxel/core] Decorator runtime requires a BasePlugin instance with ctx')
 	}
 	return ctx as Context
 }
@@ -102,7 +97,6 @@ export function resolvePluginDependency<T extends BasePlugin>(
 
 /**
  * Helper for writing cross-plugin method decorators correctly and efficiently:
- * - records required dependency token at decoration time;
  * - resolves dependency by token at call time (caller-injected and cached);
  * - passes `key` without allocating an extra metadata object.
  *
@@ -124,9 +118,7 @@ export function pluginMethodDecorator<T extends BasePlugin>(
 	depToken: Identifier<T>,
 	fn: (this: unknown, original: AnyFn, dep: T, key: string | symbol, ...args: unknown[]) => unknown,
 ): MethodDecorator {
-	return (target, key, desc) => {
-		requirePluginDependency(target, depToken as unknown as Identifier<BasePlugin>)
-
+	return (_target, key, desc) => {
 		const original = (desc as PropertyDescriptor | undefined)?.value
 		if (typeof original !== 'function') {
 			throw new TypeError(

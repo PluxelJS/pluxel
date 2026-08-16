@@ -4,6 +4,7 @@ import { createFixture } from 'fs-fixture'
 import { describe, expect, it } from 'vitest'
 import { defineNodeModule } from '@pluxel/runtime'
 import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const declaration = defineNodeModule(import.meta.url, './fixtures/task.ts')
 
@@ -15,16 +16,17 @@ describe('NodeModuleService', () => {
 				throw new Error('node build failed')
 			})
 
-			@Plugin({ name: 'NodeModuleFailure' })
+			@Plugin({ displayName: 'NodeModuleFailure' })
 			class NodeModuleFailure extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(declaration, () => undefined)
 				}
 			}
 
+			lowerTestPlugin(NodeModuleFailure)
 			host.add(NodeModuleFailure)
 			host.cfg(NodeModuleFailure).enable()
-			await expect(host.commit()).rejects.toThrow('NodeModuleFailure')
+			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			expect(host.isRunning(NodeModuleFailure)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -45,7 +47,7 @@ describe('NodeModuleService', () => {
 			})
 			const events: string[] = []
 
-			@Plugin({ name: 'NodeModuleConsumer' })
+			@Plugin({ displayName: 'NodeModuleConsumer' })
 			class NodeModuleConsumer extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(declaration, async (url) => {
@@ -56,6 +58,7 @@ describe('NodeModuleService', () => {
 				}
 			}
 
+			lowerTestPlugin(NodeModuleConsumer)
 			host.add(NodeModuleConsumer)
 			host.cfg(NodeModuleConsumer).enable()
 			await host.commit()
@@ -91,12 +94,13 @@ describe('NodeModuleService', () => {
 		const host = createRuntimeHost({ workbench: false, nodeModuleArtifactRoot: artifactRoot })
 		try {
 			let received: URL | undefined
-			@Plugin({ name: 'PackagedNodeModule' })
+			@Plugin({ displayName: 'PackagedNodeModule' })
 			class PackagedNodeModule extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(lowered, (url) => void (received = url))
 				}
 			}
+			lowerTestPlugin(PackagedNodeModule)
 			host.add(PackagedNodeModule)
 			host.cfg(PackagedNodeModule).enable()
 			await host.commit()

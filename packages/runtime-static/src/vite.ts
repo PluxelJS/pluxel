@@ -31,6 +31,7 @@ import {
 import { installWorkbench } from '@pluxel/runtime/internal/static'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 import { UI_PUBLIC_BASE } from '@pluxel/runtime/web/paths'
+import { formatPluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { normalizePath, type Plugin, type PluginOption, type ViteDevServer } from 'vite'
 
@@ -309,7 +310,7 @@ function logStaticRuntimeHmrUpdated(
 			HMR_PATH_PREVIEW_LIMIT,
 		),
 		targets: summary.plugins.catalog,
-		affected: affectedStaticRuntimePlugins(report),
+		affected: affectedStaticRuntimePlugins(host, report),
 		activeServices: summary.plugins.started,
 		fallbackRoots: configFiles.size,
 		plugins: toHmrPluginTotals(summary),
@@ -326,29 +327,42 @@ function formatStaticRuntimeReport(
 	report: StaticRuntimeStartupReport,
 ): StaticRuntimeReportSummary {
 	const catalog = host.describeCatalog().plugins
-	const catalogNames = catalog.map(({ name }) => name)
-	const entries = report.entries.map(({ name, status, message }) =>
-		message ? `${name}:${status} (${message})` : `${name}:${status}`,
+	const catalogLabels = catalog.map(
+		({ address, displayName }) => `${displayName} (${formatPluginNodeAddress(address)})`,
+	)
+	const entries = report.entries.map(({ address, displayName, status, message }) =>
+		message
+			? `${displayName} [${formatPluginNodeAddress(address)}]:${status} (${message})`
+			: `${displayName} [${formatPluginNodeAddress(address)}]:${status}`,
 	)
 	const status = countStatuses(report.entries)
 	const runtimeState = host.ctx.runtimeState.snapshot()
 	const commit = report.commit
 	return {
 		plugins: {
-			catalog: catalogNames.length,
-			enabled: catalog.filter(({ name }) => isPluginEnabled(runtimeState, name)).length,
-			started: catalog.filter(({ plugin }) => host.ctx.registry.isRunning(plugin)).length,
+			catalog: catalogLabels.length,
+			enabled: catalog.filter(({ address }) => isPluginEnabled(runtimeState, address)).length,
+			started: catalog.filter(({ generation }) => host.ctx.registry.isRunning(generation)).length,
 			disabled: status.disabled,
 			blocked: status.blocked,
 		},
-		loaded: catalogNames,
+		loaded: catalogLabels,
 		entries,
 		commit: commit
 			? {
-					added: commit.pluginChanges.added.map(String),
-					removed: commit.pluginChanges.removed.map(String),
-					replaced: commit.pluginChanges.replaced.map(({ from, to }) => `${from} -> ${to}`),
-					restarted: commit.pluginChanges.restarted.map(String),
+					added: commit.pluginChanges.added.map((slot) =>
+						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+					),
+					removed: commit.pluginChanges.removed.map((slot) =>
+						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+					),
+					replaced: commit.pluginChanges.replaced.map(
+						({ from, to }) =>
+							`${formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(from))} -> ${formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(to))}`,
+					),
+					restarted: commit.pluginChanges.restarted.map((slot) =>
+						formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)),
+					),
 					lifecycleOk: commit.lifecycleReport.ok,
 				}
 			: undefined,
@@ -390,9 +404,18 @@ function toHmrPluginTotals(summary: StaticRuntimeReportSummary): HmrPluginTotals
 	}
 }
 
-function affectedStaticRuntimePlugins(report: StaticRuntimeHmrReport): number {
-	const restarted = report.commit?.pluginChanges.restarted.map(String) ?? []
-	return new Set([...report.added, ...report.removed, ...report.replaced, ...restarted]).size
+function affectedStaticRuntimePlugins(
+	host: StaticRuntimeHost,
+	report: StaticRuntimeHmrReport,
+): number {
+	const affected = new Set<string>()
+	for (const address of [...report.added, ...report.removed, ...report.replaced]) {
+		affected.add(formatPluginNodeAddress(address))
+	}
+	for (const slot of report.commit?.pluginChanges.restarted ?? []) {
+		affected.add(formatPluginNodeAddress(host.ctx.registry.nodeAddressOf(slot)))
+	}
+	return affected.size
 }
 
 function invalidateStaticRuntimeChangedModules(server: ViteDevServer, changedFile: string): number {
@@ -485,7 +508,7 @@ async function resolveViteBindings(
 async function configureStaticRuntimeDevRuntime(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-	pluginDirs: Record<string, string> | undefined,
+	pluginDirs: readonly { owner: PluginNodeAddressSnapshot; dir: string }[] | undefined,
 ): Promise<void> {
 	const runtimeDev = await loadStaticRuntimeDevModule(server)
 	const ctx = host.ctx
@@ -559,16 +582,16 @@ type ViteSsrModuleLike = {
 function resolveStaticRuntimePluginDirs(
 	server: ViteDevServer,
 	host: StaticRuntimeHost,
-): Record<string, string> | undefined {
+): readonly { owner: PluginNodeAddressSnapshot; dir: string }[] | undefined {
 	const modules = moduleGraphEntries(server)
 	if (modules.length === 0) return undefined
 
-	const pluginDirs: Record<string, string> = {}
-	for (const { name, plugin } of host.describeCatalog().plugins) {
-		const pluginDir = findSsrExportDir(modules, plugin)
-		if (pluginDir) pluginDirs[name] = pluginDir
+	const pluginDirs: Array<{ owner: PluginNodeAddressSnapshot; dir: string }> = []
+	for (const { address, generation } of host.describeCatalog().plugins) {
+		const pluginDir = findSsrExportDir(modules, generation)
+		if (pluginDir) pluginDirs.push({ owner: address, dir: pluginDir })
 	}
-	return Object.keys(pluginDirs).length > 0 ? pluginDirs : undefined
+	return pluginDirs.length > 0 ? pluginDirs : undefined
 }
 
 function moduleGraphEntries(server: ViteDevServer): ViteSsrModuleLike[] {
@@ -581,12 +604,12 @@ function moduleGraphEntries(server: ViteDevServer): ViteSsrModuleLike[] {
 
 function findSsrExportDir(
 	modules: readonly ViteSsrModuleLike[],
-	plugin: unknown,
+	generation: unknown,
 ): string | undefined {
 	for (const module of modules) {
 		if (!module.file || !module.ssrModule) continue
 		for (const value of Object.values(module.ssrModule)) {
-			if (value === plugin) return dirname(module.file)
+			if (value === generation) return dirname(module.file)
 		}
 	}
 	return undefined

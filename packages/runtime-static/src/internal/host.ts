@@ -1,11 +1,20 @@
 import {
-	type CommitSummary,
-	ForkablePlugin,
-	isPluginLifecycleNotStartedIssue,
-	type PluginConstructor,
-	type PluginIdentifier,
-	type PluginLifecycleIssue,
 	Context,
+	ForkablePlugin,
+	formatPluginDefinitionAddress,
+	formatPluginNodeAddress,
+	isPluginLifecycleNotStartedIssue,
+	pluginDefinitionAddressEqual,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+	PluginSlotRegistry,
+	type CommitSummary,
+	type ForkablePluginConstructor,
+	type PluginConstructor,
+	type PluginDefinitionAddressSnapshot,
+	type PluginLifecycleIssue,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
 } from '@pluxel/core'
 import type { ProductDescriptor } from '@pluxel/runtime/product'
 
@@ -17,11 +26,11 @@ import {
 	setPluginEnabled,
 	workbenchAdminAccess,
 	withWorkbenchPluginContext,
+	type RuntimeLogging,
+	type RuntimeLoggingInput,
 	type RuntimePluginDependencyInfo,
 	type RuntimePluginSource,
 	type RuntimeRouteCapabilities,
-	type RuntimeLogging,
-	type RuntimeLoggingInput,
 } from '@pluxel/runtime/internal/static-host'
 import {
 	buildCatalog,
@@ -29,9 +38,9 @@ import {
 	diffCatalog,
 	firstMissingDependency,
 	readConfigSnapshot,
-	type ConfigSnapshotReader,
 	type StaticRuntimeCatalog,
 	type StaticRuntimeCatalogDiff,
+	type StaticRuntimeCatalogEntryInternal,
 } from './catalog'
 import type {
 	StaticRuntimeCatalogSnapshot,
@@ -49,39 +58,55 @@ type StaticRuntimePlanOptions =
 	| {
 			reason: 'hmr'
 			diff: StaticRuntimeCatalogDiff
+			previous: StaticRuntimeCatalog
 	  }
+
+type StaticRuntimeNode = Readonly<{
+	entry: StaticRuntimeCatalogEntryInternal
+	nodeSlot: PluginNodeSlot
+	nodeAddress: PluginNodeAddressSnapshot
+	generation: PluginConstructor
+}>
+
+type StaticRuntimeRegistration = Readonly<{
+	generation: PluginConstructor
+	provideBase?: boolean
+}>
 
 type StaticRuntimeDraftOperation =
 	| {
-			readonly type: 'register'
-			readonly name: string
-			readonly plugin: PluginConstructor
+			type: 'register'
+			node: StaticRuntimeNode
+			binding: StaticRuntimeRegistration
 	  }
 	| {
-			readonly type: 'replace'
-			readonly name: string
-			readonly from: PluginConstructor
-			readonly to: PluginConstructor
+			type: 'replace'
+			node: StaticRuntimeNode
+			from: StaticRuntimeRegistration
+			to: StaticRuntimeRegistration
 	  }
 	| {
-			readonly type: 'unregister'
-			readonly name: string
-			readonly plugin: PluginConstructor
+			type: 'unregister'
+			nodeSlot: PluginNodeSlot
+			address: PluginNodeAddressSnapshot
+			binding: StaticRuntimeRegistration
 	  }
 
-type StaticRuntimeCatalogPlan = {
-	readonly reason: StaticRuntimePlanOptions['reason']
-	readonly catalog: StaticRuntimeCatalog
-	readonly enabled: ReadonlySet<string>
-	readonly blocked: ReadonlySet<string>
-	readonly operations: readonly StaticRuntimeDraftOperation[]
-	readonly entries: StaticRuntimeReportEntry[]
-}
+type StaticRuntimeCatalogPlan = Readonly<{
+	reason: StaticRuntimePlanOptions['reason']
+	catalog: StaticRuntimeCatalog
+	nodes: readonly StaticRuntimeNode[]
+	enabled: ReadonlySet<PluginNodeSlot>
+	blocked: ReadonlySet<PluginNodeSlot>
+	operations: readonly StaticRuntimeDraftOperation[]
+	entries: StaticRuntimeReportEntry[]
+}>
 
 export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public readonly ctx: Context
+	private readonly catalogSlots = new PluginSlotRegistry()
 	private catalog: StaticRuntimeCatalog
-	private readonly registeredByName = new Map<string, PluginConstructor>()
+	private readonly registeredByNode = new Map<PluginNodeSlot, StaticRuntimeRegistration>()
 	private started = false
 	private disposed = false
 	private report: StaticRuntimeStartupReport | undefined
@@ -96,7 +121,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		private readonly logging: RuntimeLogging,
 	) {
 		const context = createStaticRuntimeContextConfig(options, logging)
-		this.catalog = buildCatalog(definition)
+		this.catalog = buildCatalog(definition, this.catalogSlots)
 		this.ctx = new Context({
 			name: definition.name,
 			...context,
@@ -118,82 +143,76 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 			tag: null,
 		})
 
-		const route: RuntimeRouteCapabilities = {
+		return {
 			catalog: {
-				resolve: (target) => {
-					if (typeof target === 'string') {
-						return this.catalog.byName.get(target)?.plugin ?? this.registeredByName.get(target)
+				resolve: (address) => this.resolveGeneration(address),
+				resolveDefinition: (address) => this.resolveDefinition(address)?.generation,
+				require: (address) => {
+					const generation = this.resolveGeneration(address)
+					if (!generation) {
+						throw new Error(
+							`Plugin node is not present in the static catalog: ${formatPluginNodeAddress(address)}`,
+						)
 					}
-					return this.catalog.byPlugin.get(target)?.plugin ?? target
-				},
-				resolveOrRegistered: (name) =>
-					this.registeredByName.get(name) ?? this.catalog.byName.get(name)?.plugin,
-				require: (name) => {
-					const ctor = route.catalog.resolveOrRegistered(name)
-					if (!ctor) throw new Error(`Plugin not found: ${name}`)
-					return ctor
+					return generation
 				},
 				listRegistered: () =>
-					new Map(this.catalog.entries.map((entry) => [entry.name, entry.plugin])),
-				listLoadedNames: () => this.catalog.entries.map((entry) => entry.name),
+					this.catalog.entries.map((entry) => ({
+						address: entry.nodeAddress,
+						ctor: entry.generation,
+						displayName: entry.displayName,
+						rootExportName: entry.rootExport,
+					})),
 			},
 			lifecycle: {
-				isRunning: (target) => {
-					const ctor = route.catalog.resolve(target)
-					return ctor ? this.ctx.registry.isRunning(ctor) : false
+				isRunning: (address) => {
+					const generation = this.resolveGeneration(address)
+					return generation ? this.ctx.registry.isRunning(generation) : false
 				},
-				enable: (name, ctor) => {
-					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
-					this.ctx.registry.register(ctor)
-					this.registeredByName.set(name, ctor)
+				enable: async (address, generation) => {
+					const resolved = generation ?? this.requireGeneration(address)
+					this.assertCurrentGeneration(address, resolved)
+					await this.validateGenerationConfig(address)
+					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, address, true))
+					const nodeSlot = this.catalog.slots.internNode(address)
+					this.registeredByNode.set(nodeSlot, { generation: resolved })
+					this.syncActiveRegistrations()
 				},
-				enablePersisted: (name) => {
-					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, true))
+				enablePersisted: (address) => {
+					this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, address, true))
 				},
-				deactivate: (name, ctor, options) => {
-					this.ctx.registry.unregister(ctor)
-					this.registeredByName.delete(name)
+				deactivate: (address, generation, options) => {
+					this.assertCurrentGeneration(address, generation)
+					this.ctx.registry.unregister(generation, { cascadeDependents: true })
+					this.registeredByNode.delete(this.catalog.slots.internNode(address))
 					if (!options.runtimeOnly) {
-						this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, name, false))
+						this.ctx.runtimeState.update((draft) => setPluginEnabled(draft, address, false))
 					}
+					this.syncActiveRegistrations()
 				},
-				stop: (name, ctor) => {
-					this.ctx.registry.unregister(ctor)
-					this.registeredByName.delete(name)
+				stop: (address, generation) => {
+					this.assertCurrentGeneration(address, generation)
+					this.ctx.registry.unregister(generation, { cascadeDependents: true })
+					this.registeredByNode.delete(this.catalog.slots.internNode(address))
+					this.syncActiveRegistrations()
 				},
 			},
 			configMetadata: {
-				getSchema: (name) => this.catalog.byName.get(name)?.info.configMap ?? undefined,
-				getSchemaSource: (name) => this.catalog.byName.get(name)?.info.configSourceMap ?? undefined,
-				getConfigLayout: (name) => this.catalog.byName.get(name)?.info.configLayoutMap ?? undefined,
+				getConfig: (address) => this.resolveDefinition(address.definition)?.config,
 			},
 			dependencies: {
-				listDependencies: (ctor): RuntimePluginDependencyInfo => {
-					const entry = this.catalog.byPlugin.get(ctor)
-					if (!entry) return []
-					return entry.deps.map((dep) => {
-						const depEntry = this.catalog.byPlugin.get(dep)
-						const depCtor = depEntry?.plugin ?? dep
-						return {
-							name: depEntry?.name ?? describeStaticDependency(dep),
-							isRunning: this.ctx.registry.isRunning(depCtor),
-						}
-					})
-				},
-				ensureForkBase: (baseName) => {
-					const baseCtor = route.catalog.resolve(baseName)
-					if (!baseCtor) return undefined
-					const proto = (baseCtor as { prototype?: unknown }).prototype
-					if (!proto || !(proto instanceof ForkablePlugin)) return undefined
-					return baseCtor
+				listDependencies: (address) => this.listDependencies(address),
+				ensureForkBase: (definition) => {
+					const generation = this.resolveDefinition(definition)?.generation
+					if (!generation) return undefined
+					const proto = (generation as { prototype?: unknown }).prototype
+					return proto && proto instanceof ForkablePlugin ? generation : undefined
 				},
 			},
 			source: {
 				resolveSource: () => unknownSource(),
 			},
 		}
-
-		return route
 	}
 
 	public async prepare(): Promise<void> {
@@ -206,7 +225,14 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	public describeCatalog(): StaticRuntimeCatalogSnapshot {
 		return {
 			runtime: this.definition.name,
-			plugins: this.catalog.entries.map(({ name, plugin }) => ({ name, plugin })),
+			plugins: this.catalog.entries.map((entry) => ({
+				address: entry.nodeAddress,
+				definition: entry.definitionAddress,
+				displayName: entry.displayName,
+				rootExportName: entry.rootExport,
+				provenance: entry.provenance,
+				generation: entry.generation,
+			})),
 		}
 	}
 
@@ -236,10 +262,10 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		this.disposed = true
 		try {
 			this.ctx.registry.resetDraft()
-			const update = this.ctx.registry.beginUpdate({ reason: 'config' })
+			const update = this.ctx.registry.beginUpdate({ reason: 'shutdown' })
 			try {
-				for (const plugin of this.registeredByName.values()) {
-					if (this.ctx.registry.isRegistered(plugin)) update.unregister(plugin)
+				for (const { generation } of this.registeredByNode.values()) {
+					if (this.ctx.registry.isRegistered(generation)) update.unregister(generation)
 				}
 				const result = await update.commit({ rollbackOnFailure: false })
 				if (!result.ok) update.rollback()
@@ -247,7 +273,7 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 				update.rollback()
 			}
 		} finally {
-			this.registeredByName.clear()
+			this.registeredByNode.clear()
 			this.ctx.registry.resetDraft()
 			try {
 				await this.ctx.effects.dispose()
@@ -259,35 +285,46 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 
 	private async reload(definition: StaticRuntimeDefinition): Promise<StaticRuntimeHmrReport> {
 		if (this.disposed) throw new Error('[runtime-static] cannot reload a disposed host')
+		const previousDefinition = this.definition
 		const previous = this.catalog
-		const next = buildCatalog(definition)
+		const next = buildCatalog(definition, this.catalogSlots)
 		const diff = diffCatalog(previous, next)
 
 		this.definition = definition
 		this.catalog = next
-
-		const plan = await this.createCatalogPlan(next, {
-			reason: 'hmr',
-			diff,
-		})
-		const report = await this.applyCatalogPlan(plan)
-		const hmrReport: StaticRuntimeHmrReport = {
-			...report,
-			added: diff.added,
-			removed: diff.removed,
-			replaced: diff.replaced,
+		try {
+			const plan = await this.createCatalogPlan(next, {
+				reason: 'hmr',
+				diff,
+				previous,
+			})
+			const report = await this.applyCatalogPlan(plan)
+			const hmrReport: StaticRuntimeHmrReport = {
+				...report,
+				added: diff.added,
+				removed: diff.removed,
+				replaced: diff.replaced,
+			}
+			this.report = hmrReport
+			return hmrReport
+		} catch (error) {
+			this.definition = previousDefinition
+			this.catalog = previous
+			throw error
 		}
-		this.report = hmrReport
-		return hmrReport
 	}
 
 	private createNoopReport(): StaticRuntimeStartupReport {
 		return {
 			runtime: this.definition.name,
-			entries: this.catalog.entries.map(({ name }) => ({
-				name,
-				status: isPluginEnabled(this.ctx.runtimeState.snapshot(), name) ? 'started' : 'disabled',
-			})),
+			entries: this.resolveNodes(this.catalog).map((node) =>
+				this.reportEntry(
+					node,
+					isPluginEnabled(this.ctx.runtimeState.snapshot(), node.nodeAddress)
+						? 'started'
+						: 'disabled',
+				),
+			),
 		}
 	}
 
@@ -296,179 +333,220 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 		options: StaticRuntimePlanOptions,
 	): Promise<StaticRuntimeCatalogPlan> {
 		await Promise.all([this.ctx.root.configService.ready, this.ctx.root.runtimeState.ready])
+		const nodes = this.resolveNodes(catalog)
+		const entries: StaticRuntimeReportEntry[] = []
+		const runtimeState = this.ctx.runtimeState.snapshot()
 
-		const entries: StaticRuntimeReportEntry[] = [...catalog.diagnostics]
-		const configSnapshot = readConfigSnapshot(
-			this.ctx.configService as unknown as ConfigSnapshotReader,
+		const unknownAddresses = collectUnknownConfigEntries(
+			readConfigSnapshot(this.ctx.configService),
+			catalog,
+			runtimeState.enabled,
 		)
-		for (const unknown of collectUnknownConfigEntries(
-			configSnapshot,
-			catalog.byName,
-			this.ctx.runtimeState.snapshot().enabled,
-		)) {
-			entries.push({ name: unknown, status: 'unknown-config-entry' })
+		for (const unknown of unknownAddresses) {
+			if (
+				options.reason === 'hmr' &&
+				options.diff.removed.some((address) => pluginNodeAddressEqual(address, unknown))
+			) {
+				continue
+			}
+			entries.push(this.reportAddress(unknown, 'unknown-config-entry'))
 		}
 
 		if (options.reason === 'hmr') {
-			for (const name of options.diff.removed) {
-				entries.push({
-					name,
-					status: 'catalog-drift',
-					message: 'plugin was removed from the static catalog',
-				})
+			for (const address of options.diff.removed) {
+				entries.push(
+					this.reportAddress(
+						address,
+						'catalog-drift',
+						'Plugin was removed from the static catalog',
+						options.previous,
+					),
+				)
 			}
 		}
 
-		const enabled = new Set<string>()
-		const runtimeState = this.ctx.runtimeState.snapshot()
-		for (const { name } of catalog.entries) {
-			if (isPluginEnabled(runtimeState, name)) enabled.add(name)
+		const enabled = new Set<PluginNodeSlot>()
+		for (const node of nodes) {
+			if (isPluginEnabled(runtimeState, node.nodeAddress)) enabled.add(node.nodeSlot)
+			else entries.push(this.reportEntry(node, 'disabled'))
 		}
 
-		for (const { name } of catalog.entries) {
-			if (!enabled.has(name)) entries.push({ name, status: 'disabled' })
-		}
-
-		const validateNames = this.collectValidationTargets(catalog, enabled, options)
-		const blocked = await this.validatePlugins(catalog, validateNames, entries)
-		this.applyDependencyBlocks(catalog, enabled, blocked, entries)
+		const validationTargets = this.collectValidationTargets(nodes, enabled, options)
+		const blocked = await this.validatePlugins(validationTargets, entries)
+		this.applyDependencyBlocks(nodes, catalog, enabled, blocked, entries)
 
 		return {
 			reason: options.reason,
 			catalog,
+			nodes,
 			entries,
 			enabled,
 			blocked,
-			operations: this.createDraftOperations(catalog, enabled, blocked, options),
+			operations: this.createDraftOperations(nodes, enabled, blocked),
 		}
+	}
+
+	private resolveNodes(catalog: StaticRuntimeCatalog): StaticRuntimeNode[] {
+		const nodes: StaticRuntimeNode[] = catalog.entries.map((entry) => ({
+			entry,
+			nodeSlot: entry.nodeSlot,
+			nodeAddress: entry.nodeAddress,
+			generation: entry.generation,
+		}))
+		for (const fork of this.ctx.runtimeState.snapshot().forks) {
+			const base = this.resolveDefinition(fork.definition, catalog)
+			if (!base) continue
+			const proto = (base.generation as { prototype?: unknown }).prototype
+			if (!proto || !(proto instanceof ForkablePlugin)) {
+				throw new TypeError(
+					`[runtime-static] persisted fork base is not forkable: ${formatPluginDefinitionAddress(fork.definition)}`,
+				)
+			}
+			for (const forkId of fork.forkIds) {
+				const generation = this.ctx.registry.fork(
+					base.generation as ForkablePluginConstructor,
+					forkId,
+				)
+				const nodeAddress = pluginNodeAddressOf(generation)
+				nodes.push({
+					entry: base,
+					nodeSlot: catalog.slots.internNode(nodeAddress),
+					nodeAddress,
+					generation,
+				})
+			}
+		}
+		return nodes
 	}
 
 	private collectValidationTargets(
-		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
+		nodes: readonly StaticRuntimeNode[],
+		enabled: ReadonlySet<PluginNodeSlot>,
 		options: StaticRuntimePlanOptions,
-	): Set<string> {
-		const names = new Set<string>()
-		if (options.reason === 'startup') {
-			for (const name of enabled) names.add(name)
-			return names
-		}
-
-		for (const { name, plugin } of catalog.entries) {
-			if (!enabled.has(name)) continue
-			const current = this.registeredByName.get(name)
-			if (!current || current !== plugin) names.add(name)
-		}
-		return names
+	): StaticRuntimeNode[] {
+		if (options.reason === 'startup') return nodes.filter((node) => enabled.has(node.nodeSlot))
+		return nodes.filter((node) => {
+			if (!enabled.has(node.nodeSlot)) return false
+			return this.registeredByNode.get(node.nodeSlot)?.generation !== node.generation
+		})
 	}
 
 	private async validatePlugins(
-		catalog: StaticRuntimeCatalog,
-		names: ReadonlySet<string>,
+		nodes: readonly StaticRuntimeNode[],
 		entries: StaticRuntimeReportEntry[],
-	): Promise<Set<string>> {
-		const blocked = new Set<string>()
-		for (const { name, info } of catalog.entries) {
-			if (!names.has(name)) continue
-			const schemaMap = info.configMap
-			if (!schemaMap) continue
+	): Promise<Set<PluginNodeSlot>> {
+		const blocked = new Set<PluginNodeSlot>()
+		for (const node of nodes) {
+			const config = node.entry.config
+			if (!config) continue
 			try {
-				await this.ctx.configService.ensureValidated(name, schemaMap, {
-					missingObjectDefault: {},
-				})
+				await this.ctx.configService.ensureValidated(
+					this.ctx.registry.internNodeAddress(node.nodeAddress),
+					config.schema,
+					{ missingObjectDefault: {} },
+				)
 			} catch (error) {
-				blocked.add(name)
-				entries.push({
-					name,
-					status: 'config-invalid',
-					message: errorMessage(error),
-				})
+				blocked.add(node.nodeSlot)
+				entries.push(this.reportEntry(node, 'config-invalid', errorMessage(error)))
 			}
 		}
 		return blocked
 	}
 
 	private applyDependencyBlocks(
+		nodes: readonly StaticRuntimeNode[],
 		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
-		blocked: Set<string>,
+		enabled: ReadonlySet<PluginNodeSlot>,
+		blocked: Set<PluginNodeSlot>,
 		entries: StaticRuntimeReportEntry[],
 	): void {
 		let changed = true
 		while (changed) {
 			changed = false
-			for (const entry of catalog.entries) {
-				if (!enabled.has(entry.name) || blocked.has(entry.name)) continue
-				const missing = firstMissingDependency(entry, catalog, enabled, blocked)
+			for (const node of nodes) {
+				if (!enabled.has(node.nodeSlot) || blocked.has(node.nodeSlot)) continue
+				const missing = firstMissingDependency(node.entry, catalog, enabled, blocked)
 				if (!missing) continue
-				blocked.add(entry.name)
-				entries.push({
-					name: entry.name,
-					status: 'dependency-missing',
-					message: `missing dependency: ${missing}`,
-				})
+				blocked.add(node.nodeSlot)
+				entries.push(
+					this.reportEntry(
+						node,
+						'dependency-missing',
+						`Missing required Plugin definition: ${formatPluginDefinitionAddress(missing.definition)}`,
+					),
+				)
 				changed = true
 			}
 		}
 	}
 
 	private createDraftOperations(
-		catalog: StaticRuntimeCatalog,
-		enabled: ReadonlySet<string>,
-		blocked: ReadonlySet<string>,
-		options: StaticRuntimePlanOptions,
+		nodes: readonly StaticRuntimeNode[],
+		enabled: ReadonlySet<PluginNodeSlot>,
+		blocked: ReadonlySet<PluginNodeSlot>,
 	): StaticRuntimeDraftOperation[] {
 		const operations: StaticRuntimeDraftOperation[] = []
+		const desired = new Set(nodes.map((node) => node.nodeSlot))
 
-		if (options.reason === 'hmr') {
-			for (const name of options.diff.removed) {
-				const current = this.registeredByName.get(name)
-				if (!current) continue
-				operations.push({ type: 'unregister', name, plugin: current })
-			}
+		for (const [nodeSlot, binding] of this.registeredByNode) {
+			if (desired.has(nodeSlot)) continue
+			operations.push({
+				type: 'unregister',
+				nodeSlot,
+				address: this.catalog.slots.nodeAddress(nodeSlot),
+				binding,
+			})
 		}
 
-		for (const entry of catalog.entries) {
-			const current = this.registeredByName.get(entry.name)
-			if (!enabled.has(entry.name) || blocked.has(entry.name)) {
-				if (current) operations.push({ type: 'unregister', name: entry.name, plugin: current })
+		for (const node of nodes) {
+			const current = this.registeredByNode.get(node.nodeSlot)
+			if (!enabled.has(node.nodeSlot) || blocked.has(node.nodeSlot)) {
+				if (current) {
+					operations.push({
+						type: 'unregister',
+						nodeSlot: node.nodeSlot,
+						address: node.nodeAddress,
+						binding: current,
+					})
+				}
 				continue
 			}
 
+			const next = this.registrationFor(node.nodeAddress, node.generation, enabled, blocked)
 			if (!current) {
-				operations.push({ type: 'register', name: entry.name, plugin: entry.plugin })
+				operations.push({ type: 'register', node, binding: next })
 				continue
 			}
-			if (current !== entry.plugin) {
-				operations.push({
-					type: 'replace',
-					name: entry.name,
-					from: current,
-					to: entry.plugin,
-				})
+			if (current.generation !== next.generation || current.provideBase !== next.provideBase) {
+				operations.push({ type: 'replace', node, from: current, to: next })
 			}
 		}
-
 		return operations
 	}
 
 	private async applyCatalogPlan(
 		plan: StaticRuntimeCatalogPlan,
 	): Promise<StaticRuntimeStartupReport> {
-		const update = this.ctx.registry.beginUpdate({
-			reason: plan.reason,
-		})
-		let commit: CommitSummary | undefined
+		const update = this.ctx.registry.beginUpdate({ reason: plan.reason })
 		try {
 			this.applyDraftOperations(plan.operations, update)
-			commit = await this.commitPlan(plan, update)
+			for (const node of plan.nodes) {
+				if (!plan.enabled.has(node.nodeSlot) || plan.blocked.has(node.nodeSlot)) continue
+				this.applyPersistedOverrides(node.nodeAddress, node.generation, plan.enabled, plan.blocked)
+			}
+			const result = await update.commit({ rollbackOnFailure: false })
+			if (!result.ok) {
+				update.rollback()
+				throw new Error('[runtime-static] catalog transaction failed', { cause: result.err })
+			}
 		} catch (error) {
 			update.rollback()
 			throw error
 		}
-		if (commit) this.confirmDraftOperations(plan.operations)
-		this.applyCommitResult(plan, commit)
 
+		this.confirmDraftOperations(plan.operations)
+		const commit = this.ctx.registry.lastCommit
+		this.applyCommitResult(plan, commit)
 		return {
 			runtime: this.definition.name,
 			entries: compactReportEntries(plan.entries),
@@ -482,19 +560,32 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	): void {
 		for (const operation of operations) {
 			if (operation.type === 'register') {
-				update.register(operation.plugin)
+				update.register(
+					operation.binding.generation,
+					operation.binding.provideBase === undefined
+						? undefined
+						: { provideBase: operation.binding.provideBase },
+				)
 				continue
 			}
 			if (operation.type === 'replace') {
-				if (this.ctx.registry.isRegistered(operation.from)) {
-					update.replace(operation.from, operation.to, { cascadeDependents: true })
+				if (this.ctx.registry.isRegistered(operation.from.generation)) {
+					update.replace(operation.from.generation, operation.to.generation, {
+						cascadeDependents: true,
+						provideBase: operation.to.provideBase,
+					})
 				} else {
-					update.register(operation.to)
+					update.register(
+						operation.to.generation,
+						operation.to.provideBase === undefined
+							? undefined
+							: { provideBase: operation.to.provideBase },
+					)
 				}
 				continue
 			}
-			if (this.ctx.registry.isRegistered(operation.plugin)) {
-				update.unregister(operation.plugin, { cascadeDependents: true })
+			if (this.ctx.registry.isRegistered(operation.binding.generation)) {
+				update.unregister(operation.binding.generation, { cascadeDependents: true })
 			}
 		}
 	}
@@ -502,61 +593,242 @@ export class StaticRuntimeHostImpl implements StaticRuntimeHost {
 	private confirmDraftOperations(operations: readonly StaticRuntimeDraftOperation[]): void {
 		for (const operation of operations) {
 			if (operation.type === 'register') {
-				this.registeredByName.set(operation.name, operation.plugin)
+				this.registeredByNode.set(operation.node.nodeSlot, operation.binding)
 			} else if (operation.type === 'replace') {
-				this.registeredByName.set(operation.name, operation.to)
+				this.registeredByNode.set(operation.node.nodeSlot, operation.to)
 			} else {
-				this.registeredByName.delete(operation.name)
+				this.registeredByNode.delete(operation.nodeSlot)
 			}
 		}
-	}
-
-	private async commitPlan(
-		plan: StaticRuntimeCatalogPlan,
-		update: ReturnType<Context['registry']['beginUpdate']>,
-	): Promise<CommitSummary | undefined> {
-		const result = await update.commit({ rollbackOnFailure: false })
-		if (result.ok) return this.ctx.registry.lastCommit
-
-		update.rollback()
-		const message = errorMessage(result.err)
-		if (plan.operations.length === 0) {
-			plan.entries.push({
-				name: this.definition.name,
-				status: 'catalog-drift',
-				message,
-			})
-			return undefined
-		}
-
-		for (const operation of plan.operations) {
-			plan.entries.push({ name: operation.name, status: 'dependency-missing', message })
-		}
-		return undefined
 	}
 
 	private applyCommitResult(
 		plan: StaticRuntimeCatalogPlan,
 		commit: CommitSummary | undefined,
 	): void {
-		const issueByPlugin = new Map<string, PluginLifecycleIssue>()
+		const issueByNode = new Map<PluginNodeSlot, PluginLifecycleIssue>()
 		for (const issue of commit?.lifecycleReport.issues ?? []) {
-			if (isPluginLifecycleNotStartedIssue(issue) && !issueByPlugin.has(String(issue.plugin))) {
-				issueByPlugin.set(String(issue.plugin), issue)
+			if (!isPluginLifecycleNotStartedIssue(issue)) continue
+			const address = this.ctx.registry.nodeAddressOf(issue.plugin)
+			const node = plan.catalog.slots.internNode(address)
+			if (!issueByNode.has(node)) issueByNode.set(node, issue)
+		}
+		for (const node of plan.nodes) {
+			if (!plan.enabled.has(node.nodeSlot) || plan.blocked.has(node.nodeSlot)) continue
+			const issue = issueByNode.get(node.nodeSlot)
+			if (issue) {
+				plan.entries.push(
+					this.reportEntry(
+						node,
+						issue.kind === 'dependency-blocked' ? 'dependency-failed' : 'start-failed',
+						issue.message,
+					),
+				)
+			} else if (this.ctx.registry.isRunning(node.generation)) {
+				plan.entries.push(this.reportEntry(node, 'started'))
 			}
 		}
-		for (const { name, plugin } of plan.catalog.entries) {
-			if (!plan.enabled.has(name) || plan.blocked.has(name)) continue
-			const issue = issueByPlugin.get(name)
-			if (issue) {
-				plan.entries.push({
-					name,
-					status: issue.kind === 'dependency-blocked' ? 'dependency-failed' : 'start-failed',
-					message: issue.message,
-				})
-			} else if (this.ctx.registry.isRunning(plugin)) {
-				plan.entries.push({ name, status: 'started' })
+	}
+
+	private resolveGeneration(
+		address: PluginNodeAddressSnapshot,
+		catalog: StaticRuntimeCatalog = this.catalog,
+	): PluginConstructor | undefined {
+		const node = catalog.slots.internNode(address)
+		if (address.instance === 'default') return catalog.byNode.get(node)?.generation
+		const base = this.resolveDefinition(address.definition, catalog)?.generation
+		if (!base) return undefined
+		const proto = (base as { prototype?: unknown }).prototype
+		if (!proto || !(proto instanceof ForkablePlugin)) return undefined
+		return this.ctx.registry.fork(base as ForkablePluginConstructor, address.forkId)
+	}
+
+	private requireGeneration(address: PluginNodeAddressSnapshot): PluginConstructor {
+		const generation = this.resolveGeneration(address)
+		if (!generation) {
+			throw new Error(
+				`Plugin node is not present in the static catalog: ${formatPluginNodeAddress(address)}`,
+			)
+		}
+		return generation
+	}
+
+	private assertCurrentGeneration(
+		address: PluginNodeAddressSnapshot,
+		generation: PluginConstructor,
+	): void {
+		const current = this.requireGeneration(address)
+		if (
+			current !== generation ||
+			!pluginNodeAddressEqual(pluginNodeAddressOf(generation), address)
+		) {
+			throw new Error(
+				`Plugin constructor is not the current static catalog generation for ${formatPluginNodeAddress(address)}`,
+			)
+		}
+	}
+
+	private resolveDefinition(
+		address: PluginDefinitionAddressSnapshot,
+		catalog: StaticRuntimeCatalog = this.catalog,
+	): StaticRuntimeCatalogEntryInternal | undefined {
+		return catalog.byDefinition.get(catalog.slots.internDefinition(address))
+	}
+
+	private registrationFor(
+		address: PluginNodeAddressSnapshot,
+		generation: PluginConstructor,
+		enabled: ReadonlySet<PluginNodeSlot>,
+		blocked: ReadonlySet<PluginNodeSlot>,
+	): StaticRuntimeRegistration {
+		const entry = this.resolveDefinition(address.definition)
+		if (!entry?.provides) return { generation }
+		if (address.instance === 'fork') return { generation, provideBase: false }
+		const selected = this.selectProvider(entry.provides, enabled, blocked)
+		return {
+			generation,
+			provideBase: selected ? pluginNodeAddressEqual(selected, address) : false,
+		}
+	}
+
+	private syncActiveRegistrations(): void {
+		const enabled = new Set(this.registeredByNode.keys())
+		const blocked = new Set<PluginNodeSlot>()
+		for (const [nodeSlot, current] of this.registeredByNode) {
+			const address = this.catalog.slots.nodeAddress(nodeSlot)
+			const next = this.registrationFor(address, current.generation, enabled, blocked)
+			if (
+				!this.ctx.registry.isRegistered(current.generation) ||
+				current.provideBase !== next.provideBase
+			) {
+				this.ctx.registry.register(
+					next.generation,
+					next.provideBase === undefined ? undefined : { provideBase: next.provideBase },
+				)
 			}
+			this.registeredByNode.set(nodeSlot, next)
+		}
+		for (const [nodeSlot, binding] of this.registeredByNode) {
+			this.applyPersistedOverrides(
+				this.catalog.slots.nodeAddress(nodeSlot),
+				binding.generation,
+				enabled,
+				blocked,
+			)
+		}
+	}
+
+	private selectProvider(
+		definition: import('@pluxel/core').PluginDefinitionSlot,
+		enabled: ReadonlySet<PluginNodeSlot>,
+		blocked: ReadonlySet<PluginNodeSlot>,
+	): PluginNodeAddressSnapshot | undefined {
+		const candidates = (this.catalog.providersByDefinition.get(definition) ?? []).filter(
+			(entry) => enabled.has(entry.nodeSlot) && !blocked.has(entry.nodeSlot),
+		)
+		const definitionAddress = this.catalog.slots.definitionAddress(definition)
+		const persisted = this.ctx.runtimeState
+			.snapshot()
+			.providerDefaults.find((item) =>
+				pluginDefinitionAddressEqual(item.token, definitionAddress),
+			)?.provider
+		if (persisted) {
+			const selected = candidates.find((entry) =>
+				pluginNodeAddressEqual(entry.nodeAddress, persisted),
+			)
+			if (selected) return selected.nodeAddress
+		}
+		return candidates
+			.slice()
+			.sort((left, right) =>
+				formatPluginNodeAddress(left.nodeAddress).localeCompare(
+					formatPluginNodeAddress(right.nodeAddress),
+				),
+			)[0]?.nodeAddress
+	}
+
+	private applyPersistedOverrides(
+		consumer: PluginNodeAddressSnapshot,
+		generation: PluginConstructor,
+		enabled: ReadonlySet<PluginNodeSlot>,
+		blocked: ReadonlySet<PluginNodeSlot>,
+	): void {
+		const entry = this.resolveDefinition(consumer.definition)
+		if (!entry || entry.required.length === 0) return
+		const state = this.ctx.runtimeState.snapshot()
+		const overrides = entry.required.map((definition, parameterIndex) => {
+			const definitionAddress = this.catalog.slots.definitionAddress(definition)
+			const explicit = state.dependencyOverrides.find(
+				(item) =>
+					item.parameterIndex === parameterIndex && pluginNodeAddressEqual(item.consumer, consumer),
+			)?.provider
+			const fallback = state.providerDefaults.find((item) =>
+				pluginDefinitionAddressEqual(item.token, definitionAddress),
+			)?.provider
+			const selected = explicit ?? fallback ?? this.selectProvider(definition, enabled, blocked)
+			return selected ? this.ctx.registry.internNodeAddress(selected) : undefined
+		})
+		this.ctx.registry.replaceRuntimeDependencyOverrides(
+			this.ctx.registry.internNodeAddress(pluginNodeAddressOf(generation)),
+			overrides,
+		)
+	}
+
+	private async validateGenerationConfig(address: PluginNodeAddressSnapshot): Promise<void> {
+		const config = this.resolveDefinition(address.definition)?.config
+		if (!config) return
+		await this.ctx.configService.ensureValidated(
+			this.ctx.registry.internNodeAddress(address),
+			config.schema,
+			{ missingObjectDefault: {} },
+		)
+	}
+
+	private listDependencies(address: PluginNodeAddressSnapshot): RuntimePluginDependencyInfo {
+		const consumer = this.ctx.registry.internNodeAddress(address)
+		const graphDependencies = this.ctx.registry.graph.depsOf(consumer)
+		const output: RuntimePluginDependencyInfo = []
+		for (const dependency of graphDependencies) {
+			if (!dependency || typeof dependency !== 'object') continue
+			const nodeAddress = this.ctx.registry.nodeAddressOf(dependency as PluginNodeSlot)
+			const generation = this.resolveGeneration(nodeAddress)
+			const entry = this.resolveDefinition(nodeAddress.definition)
+			output.push({
+				address: nodeAddress,
+				displayName: entry?.displayName ?? nodeAddress.definition.exportName,
+				isRunning: generation ? this.ctx.registry.isRunning(generation) : false,
+			})
+		}
+		return output
+	}
+
+	private reportEntry(
+		node: StaticRuntimeNode,
+		status: StaticRuntimeReportEntry['status'],
+		message?: string,
+	): StaticRuntimeReportEntry {
+		return {
+			address: node.nodeAddress,
+			displayName: node.entry.displayName,
+			rootExportName: node.entry.rootExport,
+			status,
+			...(message === undefined ? {} : { message }),
+		}
+	}
+
+	private reportAddress(
+		address: PluginNodeAddressSnapshot,
+		status: StaticRuntimeReportEntry['status'],
+		message?: string,
+		catalog: StaticRuntimeCatalog = this.catalog,
+	): StaticRuntimeReportEntry {
+		const entry = this.resolveDefinition(address.definition, catalog)
+		return {
+			address,
+			displayName: entry?.displayName ?? address.definition.exportName,
+			rootExportName: address.definition.exportName,
+			status,
+			...(message === undefined ? {} : { message }),
 		}
 	}
 }
@@ -679,7 +951,7 @@ function compactReportEntries(
 	const out: StaticRuntimeReportEntry[] = []
 	const seen = new Set<string>()
 	for (const entry of entries) {
-		const key = `${entry.name}\0${entry.status}\0${entry.message ?? ''}`
+		const key = `${formatPluginNodeAddress(entry.address)}\0${entry.status}\0${entry.message ?? ''}`
 		if (seen.has(key)) continue
 		seen.add(key)
 		out.push(entry)
@@ -690,11 +962,6 @@ function compactReportEntries(
 function errorMessage(error: unknown): string {
 	if (error instanceof Error) return error.message
 	return String(error)
-}
-
-function describeStaticDependency(dep: PluginIdentifier): string {
-	if (typeof dep !== 'function') return String(dep)
-	return dep.name || '<anonymous>'
 }
 
 function staticHostNeedsWorkbench(ctxConfig: unknown): boolean {

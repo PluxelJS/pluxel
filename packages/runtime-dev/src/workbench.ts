@@ -1,4 +1,4 @@
-import type { Context } from '@pluxel/runtime'
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/runtime'
 import { fileURLToPath } from 'node:url'
 import { readWorkbenchUiEntry, requireWorkbench } from '@pluxel/runtime/internal'
 import { resolve } from 'pathe'
@@ -12,7 +12,7 @@ import {
 export type PluginArtifactCompilerAttachmentOptions = {
 	/** Route-owned disk cache for compiled Workbench remotes. */
 	cacheDir?: string
-	pluginDirs?: Record<string, string>
+	pluginDirs?: readonly Readonly<{ owner: PluginNodeAddressSnapshot; dir: string }>[]
 	viteServer?: PluginArtifactCompilerViteServer
 }
 

@@ -22,7 +22,7 @@ const ConsumerWorkbench = workbench.portOutlet({
 	}),
 })
 
-@Plugin({ name: 'WretchConsumerA' })
+@Plugin({ displayName: 'WretchConsumer' })
 export class ConsumerA extends BasePlugin {
 	private readonly testConfig = this.configs.use(v.object({}))
 	client!: Wretch
@@ -44,7 +44,7 @@ export class ConsumerA extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'WretchConsumerLateSettings' })
+@Plugin({ displayName: 'WretchConsumer' })
 export class ConsumerLateSettings extends BasePlugin {
 	client!: Wretch
 
@@ -58,7 +58,7 @@ export class ConsumerLateSettings extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'WretchConsumerB' })
+@Plugin({ displayName: 'WretchConsumerB' })
 export class ConsumerB extends BasePlugin {
 	private readonly testConfig = this.configs.use(v.object({}))
 	client!: Wretch

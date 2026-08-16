@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { parsePluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
 import {
 	PluginSourceInfoKind,
 	PluginStatusEntryLifecycleStage,
 	useQuery,
-	type PluginGroup,
+	type PluginGroupEntry,
 	type PluginStatusEntry,
 	type PluginStatusOverview,
 } from '../gqlens'
@@ -17,7 +18,7 @@ type PluginStatusOverviewView = Omit<PluginStatusOverview, 'plugins'> & {
 
 export type PluginOverview = {
 	status: PluginStatusOverviewView
-	groups: PluginGroup[]
+	groups: PluginGroupEntry[]
 }
 
 export type PluginOverviewSnapshot = Readonly<{
@@ -51,6 +52,8 @@ function materializePluginOverview(
 			return {
 				id: plugin.id ?? id,
 				name: plugin.name ?? id,
+				rootExportName: plugin.rootExportName ?? '',
+				address: materializeAddress(plugin.address),
 				isRunning: Boolean(plugin.status.isRunning),
 				isEnabled: plugin.status.isEnabled !== false,
 				lifecycleStage: plugin.status.lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
@@ -65,12 +68,23 @@ function materializePluginOverview(
 		})
 		const groups = groupIds.map((id) => {
 			const group = catalog.group({ id })
+			const nodes = (group.nodes.ids ?? []).map((nodeId) => {
+				const node = catalog.groupNode({ id: nodeId })
+				return {
+					__typename: 'PluginGroupNode' as const,
+					id: node.id ?? nodeId,
+					displayName: node.displayName ?? nodeId,
+					rootExportName: node.rootExportName ?? '',
+					address: materializeAddress(node.address),
+				}
+			})
 			return {
+				__typename: 'PluginGroup' as const,
 				id: group.id ?? id,
 				groupId: group.groupId ?? id,
 				name: group.name ?? '',
-				pluginIds: [...(group.pluginIds ?? [])],
-			} satisfies PluginGroup
+				nodes,
+			} satisfies PluginGroupEntry
 		})
 
 		return {
@@ -88,6 +102,28 @@ function materializePluginOverview(
 	} catch {
 		return null
 	}
+}
+
+function materializeAddress(node: {
+	definition: {
+		entry: { kind?: string; packageName?: string | null; source?: string | null }
+		exportName?: string
+	}
+	instance?: string
+	forkId?: string | null
+}): PluginNodeAddressSnapshot {
+	const entry = node.definition.entry
+	return parsePluginNodeAddress({
+		definition: {
+			entry:
+				entry.kind === 'package-root'
+					? { kind: 'package-root', packageName: entry.packageName }
+					: { kind: entry.kind, source: entry.source },
+			exportName: node.definition.exportName,
+		},
+		instance: node.instance,
+		forkId: node.forkId,
+	})
 }
 
 /**

@@ -7,7 +7,7 @@
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { S3, S3Plugin } from '@pluxel/storage'
 
-@Plugin({ name: 'ReportsPlugin' })
+@Plugin({ displayName: 'Reports' })
 class ReportsPlugin extends BasePlugin {
 	constructor(private readonly s3: S3) {
 		super()

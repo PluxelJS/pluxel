@@ -9,7 +9,7 @@ const KV_TOKEN = 'demo.token'
 const KV_COUNTER = 'demo.counter'
 
 @Plugin({
-	name: 'PluginVaultDemo',
+	displayName: 'PluginVaultDemo',
 })
 export class PluginVaultDemo extends BasePlugin {
 	override async init() {

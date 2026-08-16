@@ -1,5 +1,4 @@
-import { PLUGIN_HTTP_BASE } from '@pluxel/runtime'
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import { pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
@@ -7,7 +6,7 @@ import {
 } from '@pluxel/runtime/web/paths'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
-import { WretchExamplePlugin } from '../src/example/index.ts'
+import { WretchExamplePlugin } from './fixtures/wretch-example.ts'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -25,11 +24,9 @@ describe('WretchExamplePlugin', () => {
 				host.add([WretchPlugin, WretchExamplePlugin])
 				host.cfg(WretchPlugin).enable()
 				host.cfg(WretchExamplePlugin).set({
-					config: {
-						baseUrl: 'https://example.test/api',
-						inspectPath: '/inspect-me',
-						retryAttempts: 0,
-					},
+					baseUrl: 'https://example.test/api',
+					inspectPath: '/inspect-me',
+					retryAttempts: 0,
 				})
 				host.cfg(WretchExamplePlugin).enable()
 				await host.commit()
@@ -43,7 +40,7 @@ describe('WretchExamplePlugin', () => {
 				})
 
 				const response = await host.ctx.http.fetch(
-					new Request(`http://local.test${PLUGIN_HTTP_BASE}/WretchExamplePlugin/inspect`),
+					new Request('http://local.test/wretch-example/inspect'),
 				)
 				expect(response.status).toBe(200)
 				expect(await response.json()).toMatchObject({
@@ -66,13 +63,21 @@ describe('WretchExamplePlugin', () => {
 
 			const response = await host.ctx.http.fetch(
 				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/WretchExamplePlugin`,
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(WretchExamplePlugin)))}`,
 				),
 			)
 			const layout = (await response.json()) as WorkbenchLayout
 			expect(layout.items[0]).toMatchObject({
-				ownerPluginId: 'WretchPlugin',
-				targetPluginId: 'WretchExamplePlugin',
+				owner: {
+					address: pluginNodeAddressOf(WretchPlugin),
+					displayName: 'WretchPlugin',
+					rootExportName: 'WretchPlugin',
+				},
+				target: {
+					address: pluginNodeAddressOf(WretchExamplePlugin),
+					displayName: 'WretchExamplePlugin',
+					rootExportName: 'WretchExamplePlugin',
+				},
 				viewId: 'HttpSettings',
 				port: { id: '@pluxel/wretch.settings' },
 			})

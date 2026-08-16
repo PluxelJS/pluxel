@@ -76,18 +76,20 @@ function asPosix(input: string) {
 }
 
 describe('ScanService', () => {
-	it('emits resolverCacheInvalidated through internalEvent', async () => {
+	it('notifies explicit resolver invalidation subscribers', async () => {
 		const internalEmit = vi.fn()
 		await using service = createService('/tmp')
-		service.ctx.internalEvent.resolverCacheInvalidated.on(internalEmit)
+		const unsubscribe = service.subscribeResolverInvalidated(internalEmit)
 
-		service.invalidateResolverCache({ by: 'test', reason: 'unit', targets: ['x'] })
+		service.invalidateResolverCache({ by: 'test', reason: 'unit' })
 		const detail = {
 			by: 'test',
 			reason: 'unit',
-			targets: ['x'],
 		}
 		expect(internalEmit).toHaveBeenCalledWith(detail)
+		unsubscribe()
+		service.invalidateResolverCache({ by: 'test', reason: 'after-unsubscribe' })
+		expect(internalEmit).toHaveBeenCalledTimes(1)
 	})
 
 	it('resolves entry by package name inside workspace', async () => {

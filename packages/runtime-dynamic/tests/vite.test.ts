@@ -5,6 +5,14 @@ import { createDynamicDevRuntime, defineDynamicRuntimeConfig } from '@pluxel/run
 import * as runtimeDynamicHmr from '@pluxel/runtime-dynamic/hmr'
 import * as runtimeDynamicVite from '@pluxel/runtime-dynamic/vite'
 
+const demoAddress = {
+	definition: {
+		entry: { kind: 'source-entry', source: 'plugins/demo.ts' },
+		exportName: 'DemoPlugin',
+	},
+	instance: 'default',
+} as const
+
 describe('@pluxel/runtime-dynamic/vite', () => {
 	it('exposes only the explicit dynamic dev/HMR direct launcher', () => {
 		expect(runtimeDynamic.createDynamicDevRuntime).toBe(createDynamicDevRuntime)
@@ -27,11 +35,11 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { mode: 'memory', snapshot: { enabled: ['DemoPlugin'] } },
+			runtimeState: { mode: 'memory', snapshot: { enabled: [demoAddress] } },
 		})
 
 		expect(Object.keys(config)).toEqual(['root', 'configPath', 'profile', 'runtimeState'])
-		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(config.runtimeState?.snapshot?.enabled).toEqual([demoAddress])
 		expect(() => defineDynamicRuntimeConfig(null as never)).toThrow(/must be an object/i)
 		expect(() =>
 			defineDynamicRuntimeConfig({
@@ -70,7 +78,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			root: '/repo',
 			configPath: 'pluxel.loader.hmr.jsonc',
 			profile: 'dev',
-			runtimeState: { snapshot: { enabled: ['DemoPlugin'] } },
+			runtimeState: { snapshot: { enabled: [demoAddress] } },
 			workbench: {
 				enabled: true,
 				access: { exposure: 'private' },
@@ -79,7 +87,7 @@ describe('@pluxel/runtime-dynamic/vite', () => {
 			logging: false,
 		})
 
-		expect(config.runtimeState?.snapshot?.enabled).toEqual(['DemoPlugin'])
+		expect(config.runtimeState?.snapshot?.enabled).toEqual([demoAddress])
 		expect(config.workbench).toEqual({
 			enabled: true,
 			access: { exposure: 'private' },

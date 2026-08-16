@@ -1,11 +1,11 @@
 import type { Counter, Histogram, Meter, ObservableCallback } from '@opentelemetry/api'
-import { PLUGIN_HTTP_BASE, v } from '@pluxel/runtime'
+import { formatPluginNodeAddress, v } from '@pluxel/runtime'
 import { withRuntimeHost } from '@pluxel/runtime/test'
 import { BasePlugin, Plugin } from '@pluxel/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OtelConfig, OtelPlugin } from '../src/index.ts'
 
-@Plugin({ name: 'OtelConsumer' })
+@Plugin({ displayName: 'OtelConsumer' })
 class Consumer extends BasePlugin {
 	private counter!: Counter
 	private duration!: Histogram
@@ -42,7 +42,7 @@ describe('OtelPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([OtelPlugin, Consumer])
-				host.cfg(OtelPlugin).set({ config: { otlp: [], prometheus: { path: '/metrics' } } })
+				host.cfg(OtelPlugin).set({ otlp: [], prometheus: { path: '/metrics' } })
 				host.cfg(OtelPlugin).enable()
 				host.cfg(Consumer).enable()
 				await host.commit()
@@ -51,9 +51,7 @@ describe('OtelPlugin', () => {
 				expect(consumer.meters[0]).toBe(consumer.meters[1])
 				consumer.record()
 
-				const response = await host.ctx.http.fetch(
-					new Request(`http://local.test${PLUGIN_HTTP_BASE}/OtelPlugin/metrics`),
-				)
+				const response = await host.ctx.http.fetch(new Request('http://local.test/metrics'))
 				expect(response.status).toBe(200)
 				expect(response.headers.get('content-type')).toContain('text/plain')
 				const body = await response.text()
@@ -61,7 +59,9 @@ describe('OtelPlugin', () => {
 				expect(body).toContain('orders_duration')
 				expect(body).toContain('queue_depth')
 				expect(body).toContain('workers_active')
-				expect(body).toContain('otel_scope_name="OtelConsumer"')
+				expect(body).toContain(
+					`otel_scope_name="${formatPluginNodeAddress(consumer.ctx.pluginInfo.nodeAddress)}"`,
+				)
 				expect(body).toContain('region="hk"')
 				expect(body).toContain('outcome="ok"')
 			},

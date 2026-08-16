@@ -1,9 +1,11 @@
-import { BasePlugin } from '@pluxel/runtime'
+import { BasePlugin, type PluginNodeAddressSnapshot } from '@pluxel/runtime'
 import type { RateDecision, ResolvedRatePolicy } from './types.ts'
 
 export interface RatesBackendConsumeRequest {
 	/** Opaque, versioned caller/limiter/identity encoding. */
 	readonly key: string
+	/** Full structured owner snapshot. `null` identifies an explicit global limiter. */
+	readonly owner: PluginNodeAddressSnapshot | null
 	readonly policy: Readonly<ResolvedRatePolicy>
 	readonly cost: number
 }

@@ -12,8 +12,9 @@ testing, and Oxlint guidance used by Pluxel itself.
 pnpm add {{packageName}} @pluxel/runtime
 ```
 
-Import the plugin constructor into a static catalog or expose the package through a dynamic loader
-workspace profile. Both routes use the same plugin class.
+Import the root named Plugin export into a static catalog or expose the same package root through a
+dynamic catalog/source producer. Both routes use the same lowered definition address;
+class/display name is not identity.
 
 ```ts
 import { {{className}}Plugin } from '{{packageName}}'

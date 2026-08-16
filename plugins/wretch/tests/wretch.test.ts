@@ -1,10 +1,16 @@
-import { createMemoryPersistenceBackend, type PersistenceBackend, v } from '@pluxel/runtime'
-import { withRuntimeHost } from '@pluxel/runtime/test'
+import {
+	createMemoryPersistenceBackend,
+	type PersistenceBackend,
+	type PluginNodeAddressSnapshot,
+	v,
+} from '@pluxel/runtime'
+import { assertPluginLifecycleIssue, withRuntimeHost } from '@pluxel/runtime/test'
 import { ProxyAgent } from 'undici'
 import wretch, { type FetchLike } from 'wretch'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WretchPlugin } from '../src/index.ts'
 import { WretchConfig } from '../src/config.ts'
+import { loadManagedSettings } from '../src/managed-settings.ts'
 import { createOutboundPolicy } from '../src/outbound-policy.ts'
 import {
 	ConsumerA,
@@ -50,6 +56,41 @@ function gatedSettingsPersistence(): {
 	}
 }
 
+function trackedSettingsPersistence(): {
+	backend: PersistenceBackend
+	writes: Map<string, string>
+	put: (key: string, value: string) => Promise<void>
+} {
+	const memory = createMemoryPersistenceBackend()
+	const writes = new Map<string, string>()
+	const namespace = memory.namespace('@pluxel/wretch')
+	return {
+		writes,
+		put: async (key, value) => {
+			writes.set(key, value)
+			await namespace.put(key, value, { atomic: true })
+		},
+		backend: {
+			...memory,
+			namespace(name) {
+				const target = memory.namespace(name)
+				if (name !== '@pluxel/wretch') return target
+				return {
+					...target,
+					put: async (key, value, options) => {
+						if (typeof value === 'string') writes.set(key, value)
+						await target.put(key, value, options)
+					},
+					delete: async (key) => {
+						writes.delete(key)
+						await target.delete(key)
+					},
+				}
+			},
+		},
+	}
+}
+
 beforeEach(() => {
 	fetchA = async (url, options) =>
 		jsonResponse({ url, consumer: new Headers(options.headers).get('x-consumer') })
@@ -59,6 +100,77 @@ beforeEach(() => {
 })
 
 describe('WretchPlugin', () => {
+	it('separates same-display-name consumers by node address and persists the full owner', async () => {
+		const persistence = trackedSettingsPersistence()
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerA, ConsumerLateSettings])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+				const a = host.require(ConsumerA)
+				const late = host.require(ConsumerLateSettings)
+				await a.http.workbenchSettings().update({ headers: { 'X-Owner': 'a' } })
+				await late.http.workbenchSettings().update({ headers: { 'X-Owner': 'late' } })
+
+				expect([...persistence.writes.keys()]).toHaveLength(2)
+				for (const [key, text] of persistence.writes) {
+					expect(key).toMatch(/^consumers\/v2\/[a-f0-9]{64}\.json$/)
+					const stored = JSON.parse(text) as Record<string, unknown>
+					expect(stored).toMatchObject({
+						format: 'pluxel-wretch-managed-settings',
+						version: 1,
+					})
+					expect([a.ctx.pluginInfo.nodeAddress, late.ctx.pluginInfo.nodeAddress]).toContainEqual(
+						stored.owner,
+					)
+				}
+			},
+			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+		)
+	})
+
+	it('rejects persisted settings whose owner does not match the hashed filename', async () => {
+		const persistence = trackedSettingsPersistence()
+		let key = ''
+		let expectedOwner!: PluginNodeAddressSnapshot
+		let wrongOwner: unknown
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerA, ConsumerLateSettings])
+				host.cfg(WretchPlugin).enable()
+				await host.commit()
+				await host.require(ConsumerA).http.workbenchSettings().update({ headers: {} })
+				key = [...persistence.writes.keys()][0]!
+				expectedOwner = host.require(ConsumerA).ctx.pluginInfo.nodeAddress
+				wrongOwner = host.require(ConsumerLateSettings).ctx.pluginInfo.nodeAddress
+			},
+			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+		)
+		const stored = JSON.parse(persistence.writes.get(key)!) as Record<string, unknown>
+		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
+		await expect(
+			loadManagedSettings(persistence.backend.namespace('@pluxel/wretch'), key, expectedOwner),
+		).rejects.toThrow('owner does not match')
+		await persistence.put(key, JSON.stringify({ headers: {} }))
+		await expect(
+			loadManagedSettings(persistence.backend.namespace('@pluxel/wretch'), key, expectedOwner),
+		).rejects.toThrow('unsupported format')
+		await persistence.put(key, JSON.stringify({ ...stored, owner: wrongOwner }))
+
+		await withRuntimeHost(
+			async (host) => {
+				host.add([WretchPlugin, ConsumerA])
+				host.cfg(WretchPlugin).enable()
+				const summary = await host.commitAllowFail()
+				assertPluginLifecycleIssue(summary, ConsumerA, {
+					kind: 'start-failed',
+					message: 'owner does not match',
+				})
+			},
+			{ workbench: false, persistence: { mode: 'custom', backend: persistence.backend } },
+		)
+	})
+
 	it('provides one native immutable Wretch base for independent consumer composition', async () => {
 		await withRuntimeHost(
 			async (host) => {
@@ -133,7 +245,7 @@ describe('WretchPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { timeoutMs: 1_000 } })
+				host.cfg(WretchPlugin).set({ timeoutMs: 1_000 })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 				const commands = host.require(ConsumerA).http.workbenchSettings()
@@ -250,7 +362,7 @@ describe('WretchPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { allowedOrigins: ['https://allowed.example'] } })
+				host.cfg(WretchPlugin).set({ allowedOrigins: ['https://allowed.example'] })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 
@@ -274,7 +386,7 @@ describe('WretchPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { maxConcurrentRequests: 1, maxQueuedRequests: 1 } })
+				host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 
@@ -392,7 +504,7 @@ describe('WretchPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { maxConcurrentRequests: 1, maxQueuedRequests: 1 } })
+				host.cfg(WretchPlugin).set({ maxConcurrentRequests: 1, maxQueuedRequests: 1 })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 
@@ -401,7 +513,7 @@ describe('WretchPlugin', () => {
 					.get('/active')
 					.json()
 					.then(
-						() => undefined,
+						(): undefined => undefined,
 						(error: unknown) => error,
 					)
 				await waitFor(() => expect(started).toBe(1))
@@ -409,7 +521,7 @@ describe('WretchPlugin', () => {
 					.get('/queued')
 					.json()
 					.then(
-						() => undefined,
+						(): undefined => undefined,
 						(error: unknown) => error,
 					)
 
@@ -462,7 +574,7 @@ describe('WretchPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([WretchPlugin, ConsumerA])
-				host.cfg(WretchPlugin).set({ config: { timeoutMs: 5 } })
+				host.cfg(WretchPlugin).set({ timeoutMs: 5 })
 				host.cfg(WretchPlugin).enable()
 				await host.commit()
 

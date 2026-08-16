@@ -8,7 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
 
-@Plugin({ name: 'PersistentCacheConsumer' })
+@Plugin({ displayName: 'PersistentCacheConsumer' })
 class PersistentCacheConsumer extends BasePlugin {
 	constructor(readonly cache: Cache) {
 		super()
@@ -43,10 +43,8 @@ async function withPersistentCache(
 					: { flushIntervalMs: options.flushIntervalMs }),
 			}
 			host.cfg(MemoryCacheBackendPlugin).set({
-				config: {
-					...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
-					persistence,
-				},
+				...(options.maxEntries === undefined ? {} : { maxEntries: options.maxEntries }),
+				persistence,
 			})
 			await host.commit()
 			await fn(host.require(PersistentCacheConsumer).cache)
@@ -156,10 +154,8 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			async (host) => {
 				host.add(MemoryCacheBackendPlugin)
 				host.cfg(MemoryCacheBackendPlugin).set({
-					config: {
-						maxEntries: 10,
-						persistence: { mode: 'durable', flushIntervalMs: 1_000 },
-					},
+					maxEntries: 10,
+					persistence: { mode: 'durable', flushIntervalMs: 1_000 },
 				})
 				const summary = await host.commitAllowFail()
 				expect(
@@ -193,10 +189,8 @@ describe('MemoryCacheBackendPlugin persistence', () => {
 			async (host) => {
 				host.add(MemoryCacheBackendPlugin)
 				host.cfg(MemoryCacheBackendPlugin).set({
-					config: {
-						maxEntries: 10,
-						persistence: { mode: 'durable', flushIntervalMs: 1_000 },
-					},
+					maxEntries: 10,
+					persistence: { mode: 'durable', flushIntervalMs: 1_000 },
 				})
 				const summary = await host.commitAllowFail()
 				expect(

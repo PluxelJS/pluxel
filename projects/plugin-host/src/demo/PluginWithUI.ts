@@ -32,7 +32,7 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
-@Plugin({ name: 'PluginWithUI' })
+@Plugin({ displayName: 'PluginWithUI' })
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 
@@ -112,7 +112,7 @@ export class PluginWithUI extends BasePlugin {
 	getStatus() {
 		const status = this.getStatusDoc()
 		return {
-			pluginName: status?.pluginName ?? this.ctx.pluginInfo.id,
+			pluginName: status?.pluginName ?? this.ctx.pluginInfo.displayName,
 			startedAt: status?.startedAt ?? this.startedAt,
 			counter: status?.counter ?? 0,
 			eventCount: status?.eventCount ?? this.eventDocs.length,
@@ -207,7 +207,7 @@ export class PluginWithUI extends BasePlugin {
 		const current = this.getStatusDoc()
 		return {
 			id: STATUS_DOC_ID,
-			pluginName: this.ctx.pluginInfo.id,
+			pluginName: this.ctx.pluginInfo.displayName,
 			startedAt: this.startedAt,
 			counter: input.counter ?? current?.counter ?? 0,
 			eventCount: input.eventCount ?? this.eventDocs.length,

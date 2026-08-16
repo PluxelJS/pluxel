@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { defineNodeModule } from '@pluxel/runtime'
+import { defineNodeModule, type PluginNodeAddressSnapshot } from '@pluxel/runtime'
 import { dirname, join } from 'pathe'
 import { createHost, type Context, type Host } from '@pluxel/test'
 import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
@@ -48,13 +48,31 @@ import {
 
 function createPluginContext(
 	host: Host,
-	pluginName: string,
+	displayName: string,
 	overrides: Record<string, unknown> = {},
 ): Context {
-	const ctx = host.ctx.extend({ name: pluginName }) as Context
-	defineTestProperty(ctx, 'pluginInfo', { id: pluginName })
+	const owner = pluginAddress(displayName)
+	const nodeSlot = host.ctx.registry.internNodeAddress(owner)
+	const ctx = host.ctx.extend({ name: displayName }) as Context
+	defineTestProperty(ctx, 'pluginInfo', {
+		nodeSlot,
+		nodeAddress: owner,
+		definition: owner.definition,
+		displayName,
+		rootExportName: owner.definition.exportName,
+	})
 	for (const [key, value] of Object.entries(overrides)) defineTestProperty(ctx, key, value)
 	return ctx
+}
+
+function pluginAddress(displayName: string): PluginNodeAddressSnapshot {
+	return {
+		definition: {
+			entry: { kind: 'source-entry', source: `pluxel-test:${displayName}` },
+			exportName: 'Plugin',
+		},
+		instance: 'default',
+	}
 }
 
 function defineTestProperty(target: object, key: string, value: unknown) {
@@ -70,7 +88,7 @@ const noopWorkbenchStore: PluginArtifactCompilerWorkbenchStore = {
 	getCompiledModule: () => undefined,
 	async commitCompiledModule() {},
 	async markCompiling() {},
-	async markCompileError(_pluginName, error) {
+	async markCompileError(_owner, error) {
 		throw error
 	},
 	async removePlugin() {},
@@ -164,7 +182,7 @@ describe('PluginArtifactCompiler', () => {
 				if (options?.artifactRoot) artifactRoots.push(options.artifactRoot)
 			},
 			async markCompiling() {},
-			async markCompileError(_pluginName, error) {
+			async markCompileError(_owner, error) {
 				throw error
 			},
 			async removePlugin() {},
@@ -179,22 +197,10 @@ describe('PluginArtifactCompiler', () => {
 			},
 		)
 
-		const dispose = service.bindDeclaration(
-			createPluginContext(host, 'PluginWithUI', {
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: () =>
-								fixture.getPath('projects/plugin-host/src/demo/PluginWithUI.ts'),
-						},
-						anchors: {
-							list: () => [],
-						},
-					},
-				},
-			}),
-			{ entryPath: './PluginWithUI/ui/index.tsx', declarationKey: 'PluginWithUI' },
-		)
+		const dispose = service.bindDeclaration(createPluginContext(host, 'PluginWithUI'), {
+			entryPath: fixture.getPath('projects/plugin-host/src/demo/PluginWithUI/ui/index.tsx'),
+			declarationKey: 'PluginWithUI',
+		})
 
 		await Promise.all([
 			service.requestCompile('PluginWithUI'),
@@ -240,22 +246,10 @@ describe('PluginArtifactCompiler', () => {
 			{ cacheDir: fixture.getPath('.pluxel/workbench') },
 		)
 
-		const dispose = service.bindDeclaration(
-			createPluginContext(host, 'TuyaPlugin', {
-				loader: {
-					api: {
-						registry: {
-							findModuleIdByName: () => fixture.getPath('runtime-entries/tuya.mjs'),
-						},
-						anchors: { list: () => [] },
-					},
-				},
-			}),
-			{
-				entryPath: fixture.getPath('integrations/tuya/src/ui/index.tsx'),
-				declarationKey: 'TuyaPlugin',
-			},
-		)
+		const dispose = service.bindDeclaration(createPluginContext(host, 'TuyaPlugin'), {
+			entryPath: fixture.getPath('integrations/tuya/src/ui/index.tsx'),
+			declarationKey: 'TuyaPlugin',
+		})
 
 		await service.requestCompile('TuyaPlugin')
 
@@ -344,7 +338,9 @@ describe('PluginArtifactCompiler', () => {
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 0,
-				pluginDirs: { ContractPlugin: fixture.getPath('plugin-builder') },
+				pluginDirs: [
+					{ owner: pluginAddress('ContractPlugin'), dir: fixture.getPath('plugin-builder') },
+				],
 			},
 		)
 		const bind = (contractFingerprint: string) =>
@@ -376,11 +372,11 @@ describe('PluginArtifactCompiler', () => {
 			'plugin/src/new.tsx': 'export default {}\n',
 		})
 		const host = createHost()
-		const removed: string[] = []
+		const removed: PluginNodeAddressSnapshot[] = []
 		const store: PluginArtifactCompilerWorkbenchStore = {
 			...noopWorkbenchStore,
-			async removePlugin(pluginName) {
-				removed.push(pluginName)
+			async removePlugin(owner) {
+				removed.push(owner.address)
 			},
 		}
 		const service = new PluginArtifactCompiler(
@@ -389,7 +385,7 @@ describe('PluginArtifactCompiler', () => {
 			{
 				cacheDir: fixture.getPath('.pluxel/workbench'),
 				cacheKeep: 1,
-				pluginDirs: { ReplacementPlugin: fixture.getPath('plugin') },
+				pluginDirs: [{ owner: pluginAddress('ReplacementPlugin'), dir: fixture.getPath('plugin') }],
 			},
 		)
 		const disposeOld = service.bindDeclaration(createPluginContext(host, 'ReplacementPlugin'), {
@@ -410,7 +406,7 @@ describe('PluginArtifactCompiler', () => {
 		)
 
 		disposeNew()
-		expect(removed).toEqual(['ReplacementPlugin'])
+		expect(removed).toEqual([pluginAddress('ReplacementPlugin')])
 		service.dispose()
 		await host.dispose()
 	})

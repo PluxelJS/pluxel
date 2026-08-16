@@ -1,10 +1,8 @@
 import './context-augment'
-import './events'
 import './services'
 import './services/debug'
 
 export * from '@pluxel/core'
-export { Config, type ConfigSchemaMap } from './base'
 export {
 	defineWorkerTask,
 	WorkerTaskError,
@@ -17,7 +15,6 @@ export {
 export { defineNodeModule, type NodeModuleDeclaration } from './node-artifact/node-module'
 export type { DatabaseConfig } from './services/DatabaseService'
 export { f, v } from './config'
-export type { RuntimeEvents } from './events'
 export {
 	PersistenceError,
 	createMemoryPersistenceBackend,

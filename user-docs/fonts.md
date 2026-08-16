@@ -33,7 +33,7 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { fileURLToPath } from 'node:url'
 
-@Plugin({ name: 'DocumentsPlugin' })
+@Plugin({ displayName: 'Documents' })
 export class DocumentsPlugin extends BasePlugin {
 	constructor(private readonly fonts: FontsPlugin) {
 		super()

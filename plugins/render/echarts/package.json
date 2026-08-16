@@ -28,14 +28,12 @@
 		}
 	},
 	"scripts": {
-		"build": "pluxel build",
 		"bench:render": "vitest bench bench/render.bench.ts --config vitest.config.ts",
+		"build": "pluxel build",
 		"test": "vitest run --config vitest.config.ts",
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@pluxel/canvas": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
 		"echarts": "catalog:"
 	},
 	"devDependencies": {
@@ -48,6 +46,14 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
+		"@pluxel/canvas": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
 		"@pluxel/runtime": "workspace:*"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/canvas": "required",
+			"@pluxel/fonts": "required"
+		}
 	}
 }

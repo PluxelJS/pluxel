@@ -8,6 +8,12 @@ import {
 	resolveAdminAccessLandingPath,
 	useRuntimeTransportClient,
 } from '../../runtime'
+import {
+	formatPluginNodeAddress,
+	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
 	memo,
@@ -25,7 +31,7 @@ import { type PlxLogTheme, useThemeModel } from '../../theme'
 import { stringifyUnknown } from '../../utils/unknown'
 
 interface Props {
-	module?: string
+	owner?: PluginNodeAddressSnapshot
 	showName?: boolean
 	filter?: LogFilter
 	/**
@@ -93,7 +99,7 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 		return s ? s : undefined
 	}
 	return {
-		pluginId: trimOrUndef(filter?.pluginId),
+		plugin: filter?.plugin ? parsePluginNodeAddress(filter.plugin) : undefined,
 		context: trimOrUndef(filter?.context),
 		displayName: trimOrUndef(filter?.displayName),
 		category: trimOrUndef(filter?.category),
@@ -102,7 +108,10 @@ function normalizeFilter(filter: LogFilter | undefined): LogFilter {
 
 function sameFilter(a: LogFilter, b: LogFilter): boolean {
 	return (
-		(a.pluginId ?? '') === (b.pluginId ?? '') &&
+		((a.plugin === undefined && b.plugin === undefined) ||
+			(a.plugin !== undefined &&
+				b.plugin !== undefined &&
+				pluginNodeAddressEqual(a.plugin, b.plugin))) &&
 		(a.context ?? '') === (b.context ?? '') &&
 		(a.displayName ?? '') === (b.displayName ?? '') &&
 		(a.category ?? '') === (b.category ?? '')
@@ -111,7 +120,7 @@ function sameFilter(a: LogFilter, b: LogFilter): boolean {
 
 function filterSummary(filter: LogFilter): string | null {
 	const parts = [
-		filter.pluginId ? `plugin=${filter.pluginId}` : null,
+		filter.plugin ? `plugin=${formatPluginNodeAddress(filter.plugin)}` : null,
 		filter.context ? `context=${filter.context}` : null,
 		filter.displayName ? `display=${filter.displayName}` : null,
 		filter.category ? `category=${filter.category}` : null,
@@ -709,7 +718,7 @@ const LogList = memo(function LogList(props: {
 	)
 })
 
-export function LiveLog({ module, showName = true, filter, variant = 'full' }: Props) {
+export function LiveLog({ owner, showName = true, filter, variant = 'full' }: Props) {
 	const transport = useRuntimeTransportClient()
 	const plxScheme = useThemeModel()
 	const [meta, setMeta] = useState<LogStreamMeta | null>(null)
@@ -733,12 +742,12 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 	const defaultsFilter = useMemo(
 		() =>
 			normalizeFilter({
-				pluginId: filter?.pluginId ?? module,
+				plugin: filter?.plugin ?? owner,
 				context: filter?.context,
 				displayName: filter?.displayName,
 				category: filter?.category,
 			}),
-		[module, filter?.pluginId, filter?.context, filter?.displayName, filter?.category],
+		[owner, filter?.plugin, filter?.context, filter?.displayName, filter?.category],
 	)
 
 	const [draftFilter, setDraftFilter] = useState<LogFilter>(() => defaultsFilter)
@@ -768,7 +777,7 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 
 	const filterQuery = useMemo(() => {
 		const params = new URLSearchParams()
-		if (activeFilter.pluginId) params.set('pluginId', activeFilter.pluginId)
+		if (activeFilter.plugin) params.set('plugin', JSON.stringify(activeFilter.plugin))
 		if (activeFilter.context) params.set('context', activeFilter.context)
 		if (activeFilter.displayName) params.set('displayName', activeFilter.displayName)
 		if (activeFilter.category) params.set('category', activeFilter.category)
@@ -1235,23 +1244,8 @@ export function LiveLog({ module, showName = true, filter, variant = 'full' }: P
 													if (e.key === 'Enter') applyNow()
 												}}
 												spellCheck={false}
-												placeholder="name / pluginId / context"
+												placeholder="display name"
 												style={fieldStyle(palette, 260)}
-											/>
-											<input
-												value={draftFilter.pluginId ?? ''}
-												onChange={(e) =>
-													setDraftFilter((f) => ({
-														...f,
-														pluginId: e.currentTarget.value || undefined,
-													}))
-												}
-												onKeyDown={(e) => {
-													if (e.key === 'Enter') applyNow()
-												}}
-												spellCheck={false}
-												placeholder="pluginId"
-												style={fieldStyle(palette, 180)}
 											/>
 											<input
 												value={draftFilter.context ?? ''}

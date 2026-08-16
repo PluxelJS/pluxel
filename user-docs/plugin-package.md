@@ -21,7 +21,8 @@ user docs，不维护一份容易漂移的模板专用教程。模板还生成�
 
 ## 标准目录
 
-一个可独立发布的插件 package 保持单一公开入口：
+一个可独立发布的插件 package 只有一个 plugin-bearing entry：package root `"."`。根入口可以唯一
+named-export 多个 Plugin；其他 subpath 必须保持 plugin-free：
 
 ```text
 package.json
@@ -32,7 +33,7 @@ oxlint.config.ts
 .oxfmtrc.json
 .gitignore
 src/
-  orders.ts             package 公开入口和 OrdersPlugin constructor
+  orders.ts             package root entry，named-export OrdersPlugin
   config.ts             config schema
   contracts.ts          browser-safe 共享类型（需要时）
   workbench-contract.ts browser-safe Workbench Contract（需要时）
@@ -41,8 +42,8 @@ tests/
   orders.test.ts
 ```
 
-先从一个入口开始。只有确实存在独立、稳定的消费边界时才增加 subpath export；不要按内部目录结构
-逐个暴露文件。
+同一 constructor 只能有一个 root export name。Workbench、worker、browser contract 或 `package.json` 只有确实存在独立、
+稳定的消费边界时才增加 subpath；subpath 不得导出 Plugin，package root 也不得 re-export 其他 package 的 Plugin。
 
 ## 安装依赖
 
@@ -67,7 +68,7 @@ pnpm add react react-dom --save-peer
 pnpm add -D pluxel-plugin-database pluxel-plugin-audit
 ```
 
-源码中的 constructor 和 `optionalPlugin()` 声明才是 required/optional 的事实源。`pluxel build`
+源码中的 constructor 和 `definePluginRef<T>()` 声明才是 required/optional 的事实源。`pluxel build`
 会据此生成发布时的 peer metadata；不要使用 `optionalDependencies` 表达插件可选关系。
 
 普通第三方运行时库仍按 npm 语义管理：插件实现真正需要并私有使用的库放 `dependencies`，只在开发期
@@ -171,8 +172,7 @@ TypeScript 只做类型检查，不负责生成插件产物。外部 monorepo �
 		"resolveJsonModule": true,
 		"isolatedModules": true,
 		"customConditions": ["@pluxel/hmr"],
-		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true
+		"experimentalDecorators": true
 	},
 	"include": [
 		"src/**/*.ts",
@@ -186,9 +186,9 @@ TypeScript 只做类型检查，不负责生成插件产物。外部 monorepo �
 }
 ```
 
-`experimentalDecorators` 和 `emitDecoratorMetadata` 让编辑器与 typecheck 理解作者模型；真正发布的 legacy
-decorator transform 和 `design:paramtypes` 仍由 Pluxel 的 Rolldown pipeline 生成。不要用 `tsc`、`tsx`
-或 Node type stripping 直接构建/运行插件源码。
+`experimentalDecorators` 让编辑器与 typecheck 理解薄 `@Plugin` marker；Plugin identity 与 DI facts 由 Pluxel semantic pass
+从 root export 和 import provenance 生成，不依赖 TypeScript decorator metadata。不要用 `tsc`、`tsx` 或 Node type stripping
+直接构建/运行 Plugin 源码。
 
 ## `tsdown.config.ts` 标准形状
 
@@ -227,9 +227,9 @@ export default defineConfig({
 `tsdown.config.ts` 是用户 override，不是完整构建器。`pluxel build` 会在它外层组合标准
 `pluginPackage()` preset，统一加入：
 
-- legacy decorator 与 constructor metadata transform；
+- legacy decorator transform 与 slot-based Plugin semantic lowering；
 - preprocessor、macro、config metadata 和 Pluxel lint guard；
-- optional plugin semantic transform；
+- root export、required edge 与 optional ref/edge semantic transform；
 - Workbench declaration 提取和 remote build；
 - 最终 decorator output guard；
 - package dependency metadata transaction。
@@ -273,14 +273,13 @@ export default defineConfig({
 构建器只识别两种明确的作者声明：
 
 ```ts
-import { BasePlugin, optionalPlugin, Plugin } from '@pluxel/runtime'
+import type { AuditPlugin } from 'pluxel-plugin-audit'
+import { BasePlugin, definePluginRef, Plugin } from '@pluxel/runtime'
 import { DatabasePlugin } from 'pluxel-plugin-database'
 
-const Audit = optionalPlugin(() =>
-	import('pluxel-plugin-audit').then(({ AuditPlugin }) => AuditPlugin),
-)
+const Audit = definePluginRef<AuditPlugin>()
 
-@Plugin({ name: 'OrdersPlugin' })
+@Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
 	constructor(private readonly database: DatabasePlugin) {
 		super()
@@ -292,10 +291,10 @@ export class OrdersPlugin extends BasePlugin {
 }
 ```
 
-- concrete constructor parameter → `required`；
-- module-level `optionalPlugin()` literal import → `optional`；
+- concrete constructor parameter 的 direct root value import → `required`；
+- non-exported module-level `definePluginRef<T>()` direct root type import → `optional`；
 - 同一 package 同时出现时 `required` 胜出；
-- 与 constructor / `optionalPlugin()` 声明无关的普通 static、type 或 dynamic import 不推断插件关系。
+- 与 constructor / `definePluginRef<T>()` 声明无关的普通 static、type 或 dynamic import 不推断 Plugin 关系。
 
 构建前，两个 provider 可以只存在于 `devDependencies`：
 
@@ -346,10 +345,11 @@ semantic pass 会在 metadata 写回前就把检测到的 required/optional prov
 1. 把 build script 改成 `pluxel build`；
 2. 把 `tsdown.config.ts` 缩减为 entry、format、dts、sourcemap、clean、minify、treeshake 等输出配置；
 3. 删除手工复制的 Pluxel compiler plugins、decorator transform 和 metadata hook；
-4. 确保 `@pluxel/runtime` 位于 peer，其他插件至少在 peer/dev/dependencies 之一有明确版本；
-5. 用 constructor 和 `optionalPlugin()` 表达真实依赖，不再维护 `pluxel.dependOn`；
-6. 运行 `pnpm build`，review 自动生成的 peer、optional metadata 和 `pluxel.pluginPackages`；
-7. 再运行一次 build，确认 `package.json` 不再变化，然后执行完整 `pnpm verify`。
+4. 确保 Plugin 只由 package root 唯一 named export，删除 plugin-bearing subpath 与跨包 Plugin re-export；
+5. 确保 `@pluxel/runtime` 位于 peer，其他插件至少在 peer/dev/dependencies 之一有明确版本；
+6. 用 constructor 和 `definePluginRef<T>()` 表达真实依赖；
+7. 运行 `pnpm build`，review 自动生成的 peer、optional metadata 和 `pluxel.pluginPackages`；
+8. 再运行一次 build，确认 `package.json` 不再变化，然后执行完整 `pnpm verify`。
 
 不要同时在 `tsdown.config.ts` 调用 `pluginPackage()` 又通过 `pluxel build` 包装它。前者是底层 preset API，
 后者已经负责 CLI context、metadata transaction 和 hook 组合；叠加会重复编译语义。
@@ -412,11 +412,12 @@ npm pack --dry-run
 1. `dist/index.mjs` 和 `dist/index.d.mts` 存在，`exports` 没有指向缺失文件；
 2. tarball 只包含 `files` 允许的产物，没有源码、测试、缓存或 sourcemap；
 3. `@pluxel/runtime` 和插件依赖没有被打入独立插件 bundle；
-4. required/optional peer 与 `pluxel.pluginPackages` 符合源码；
-5. optional provider 缺失时 consumer 仍能启动；provider 损坏时有明确失败诊断；
-6. 有 Workbench UI 时 remote artifact 存在；无 UI 时不应产生 Workbench 产物；
-7. `pnpm build` 连续执行两次后 `package.json` 不再变化。
+4. 所有 Plugin 只来自 package root 唯一 named export，plugin-free subpath 不进入 catalog；
+5. required/optional peer 与 `pluxel.pluginPackages` 符合源码；
+6. optional provider 未被 host catalog 引入时 consumer 仍能加载和启动；provider start failure 不阻塞 absent-path consumer；
+7. 有 Workbench UI 时 remote artifact 存在；无 UI 时不应产生 Workbench 产物；
+8. `pnpm build` 连续执行两次后 `package.json` 不再变化。
 
-插件 package 发布后，宿主安装 required peer；optional peer 只有需要对应增强能力时才安装。static
-application 必须重新构建才能改变 optional provider 的固定闭包，dynamic host 则在 package 安装或失效后重试
-active optional request。
+插件 package 发布后，宿主安装 required peer；optional peer 只有需要对应增强能力时才安装并显式加入 catalog/RuntimeState。
+static application 必须重新构建才能改变 fixed closure；dynamic host 通过正常 source/catalog transaction 观察 provider node，
+不存在 runtime optional loader 或 active request retry。

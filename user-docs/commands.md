@@ -8,15 +8,15 @@ import { defineCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
 
 export const status = defineCommand({
-	name: 'plugin.status.get',
-	description: 'Read one plugin status.',
+	name: 'job.status.get',
+	description: 'Read one job status.',
 	behavior: { kind: 'query', world: 'closed' },
-	input: obj({ name: Type.String({ examples: ['CachePlugin'] }) }),
+	input: obj({ jobId: Type.String({ examples: ['cache-refresh'] }) }),
 	output: obj({ running: Type.Boolean() }),
 	examples: [
-		{ title: 'Running plugin', input: { name: 'CachePlugin' }, output: { running: true } },
+		{ title: 'Running job', input: { jobId: 'cache-refresh' }, output: { running: true } },
 	],
-	execute: ({ name }) => readPluginStatus(name),
+	execute: ({ jobId }) => readJobStatus(jobId),
 })
 ```
 
@@ -81,13 +81,14 @@ Manual disposal remains available when a plugin wants to withdraw a command befo
 
 Runtime execution also belongs to that plugin generation. When the generation stops, new calls are
 rejected, the current command signal is aborted, and Pluxel waits for admitted calls to settle before
-running the plugin `stop()` hook. Command implementations must cooperate with `context.signal`; arbitrary
+draining generation effects. Command implementations must cooperate with `context.signal`; arbitrary
 in-process work that ignores cancellation cannot be forcibly terminated. Disposing only the returned
 registration withdraws the command but deliberately lets an already-started call finish.
 
 The runtime catalog already contains `plugin.list`, `plugin.status.get`, `plugin.start`,
 `plugin.stop`, and `plugin.restart`. These commands operate through the existing runtime lifecycle
-use cases and return the resulting plugin status. Hosts project and filter this catalog for CLI,
+use cases and return the resulting Plugin status. Single-node commands accept an `address` field containing a structured
+`PluginNodeAddressSnapshot`; display/class name is not a command identity. Hosts project and filter this catalog for CLI,
 Workbench, HTTP, or Agent use; plugins do not register separate carrier-specific copies.
 
 ## Assign focused toolsets to Agents
@@ -148,7 +149,7 @@ The exact first token is the command name. Input fields become generated named o
 union, and other complex fields are decoded as JSON for that field:
 
 ```sh
-config.patch --name CachePlugin --patch '{"enabled":true}'
+settings.patch --scope cache --patch '{"enabled":true}'
 ```
 
 The adapter follows the live catalog, so stop and replacement do not require a route rebuild. It does not

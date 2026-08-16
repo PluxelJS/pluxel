@@ -10,6 +10,7 @@ import { NotificationCenterProvider } from '../notifications/NotificationCenterP
 import { usePluginOverview } from '../plugins/pluginOverview'
 import { RUNTIME_SECURITY_BASE, useRuntimeTransportClient } from '../../runtime'
 import { useCurrentPathname } from '../router/useCurrentRoute'
+import { workbenchNodeKey } from '../../workbench/node-address'
 
 export function AppProviders() {
 	const pathname = useCurrentPathname()
@@ -19,10 +20,10 @@ export function AppProviders() {
 	const pluginOverview = usePluginOverview()
 	const runningPluginSignature = (pluginOverview.overview?.status.statuses ?? [])
 		.filter((plugin) => plugin.isRunning)
-		.map((plugin) => plugin.name)
+		.map((plugin) => workbenchNodeKey(plugin.address))
 		.sort((left, right) => left.localeCompare(right))
 		.join('\n')
-	const runningPlugins = useMemo(
+	const runningPluginKeys = useMemo(
 		() => new Set(runningPluginSignature ? runningPluginSignature.split('\n') : []),
 		[runningPluginSignature],
 	)
@@ -37,7 +38,7 @@ export function AppProviders() {
 		// The locale service is mutable; its snapshot invalidates the host environment.
 		void localeSnapshot
 		return {
-			runningPlugins,
+			runningPluginKeys,
 			runningPluginsReady: pluginOverview.hasSnapshot,
 			environment: {
 				colorScheme,
@@ -77,7 +78,7 @@ export function AppProviders() {
 				},
 			},
 		}
-	}, [colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPlugins, transportClient])
+	}, [colorScheme, localeSnapshot, pluginOverview.hasSnapshot, runningPluginKeys, transportClient])
 
 	return (
 		<WorkbenchRuntimeProvider active={workbenchActive} host={workbenchHost}>

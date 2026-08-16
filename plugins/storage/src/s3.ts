@@ -162,7 +162,7 @@ type LocalBackend = Extract<S3PluginConfig['backend'], { type: 'local' }>
 type RemoteCredentials = RemoteBackend['credentials']
 
 /** One official S3 provider; configuration selects local emulation or a real s3mini client. */
-@Plugin(S3, { name: 'S3Plugin' })
+@Plugin(S3, { displayName: 'S3Plugin' })
 export class S3Plugin extends S3 {
 	private readonly config = this.configs.use(S3Config)
 	private readonly holder: { client?: S3Client } = {}

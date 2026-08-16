@@ -1,12 +1,40 @@
 import { CommandError, defineCommand, type AnyCommand } from '@pluxel/commands'
 import { Type, obj } from '@pluxel/commands/typebox'
-import type { Context } from '@pluxel/core'
+import { formatPluginNodeAddress, type Context, type PluginNodeAddressSnapshot } from '@pluxel/core'
 import { applyStatusActions } from '../../api/usecases/pluginStatus'
 import { pluginStatus, pluginsList, type PluginStatusSnapshot } from '../../api/usecases/plugins'
 import type { PluginStatusAction } from '../../web/protocol'
 
-const pluginNameInput = obj({
-	name: Type.String({ minLength: 1, description: 'Canonical plugin name.' }),
+const pluginEntryAddress = Type.Union([
+	obj({
+		kind: Type.Literal('package-root'),
+		packageName: Type.String({ minLength: 1 }),
+	}),
+	obj({
+		kind: Type.Literal('source-entry'),
+		source: Type.String({ minLength: 1 }),
+	}),
+])
+
+const pluginDefinitionAddress = obj({
+	entry: pluginEntryAddress,
+	exportName: Type.String({ minLength: 1 }),
+})
+
+const pluginNodeAddress = Type.Union([
+	obj({
+		definition: pluginDefinitionAddress,
+		instance: Type.Literal('default'),
+	}),
+	obj({
+		definition: pluginDefinitionAddress,
+		instance: Type.Literal('fork'),
+		forkId: Type.String({ minLength: 1 }),
+	}),
+])
+
+const pluginAddressInput = obj({
+	address: pluginNodeAddress,
 })
 
 const pluginSource = Type.Union([
@@ -34,7 +62,10 @@ const pluginSource = Type.Union([
 ])
 
 const pluginSnapshot = obj({
-	name: Type.String(),
+	address: pluginNodeAddress,
+	id: Type.String(),
+	displayName: Type.String(),
+	rootExportName: Type.String(),
 	isRunning: Type.Boolean(),
 	isEnabled: Type.Boolean(),
 	lifecycleStage: Type.Union([
@@ -55,31 +86,34 @@ const pluginsOutput = obj({
 	}),
 })
 
-function requirePlugin(ctx: Context, name: string): PluginStatusSnapshot {
-	const snapshot = pluginStatus(ctx, name)
+function requirePlugin(ctx: Context, address: PluginNodeAddressSnapshot): PluginStatusSnapshot {
+	const snapshot = pluginStatus(ctx, address)
 	if (snapshot) return snapshot
 	throw new CommandError('INPUT_VALIDATION', 'Plugin was not found', {
-		message: `Plugin not found: ${name}`,
+		message: `Plugin not found: ${formatPluginNodeAddress(address)}`,
 		details: {
-			issues: [{ path: ['name'], code: 'plugin_not_found', message: 'Plugin was not found' }],
+			issues: [{ path: ['address'], code: 'plugin_not_found', message: 'Plugin was not found' }],
 		},
 	})
 }
 
 async function mutatePlugin(
 	ctx: Context,
-	name: string,
+	address: PluginNodeAddressSnapshot,
 	action: PluginStatusAction,
 ): Promise<PluginStatusSnapshot> {
-	const result = await applyStatusActions(ctx, [{ name, action }])
+	const result = await applyStatusActions(ctx, [{ address, action }])
 	const mutation = result.results[0]
-	if (mutation?.ok) return requirePlugin(ctx, name)
+	if (mutation?.ok) return requirePlugin(ctx, address)
 
-	if (mutation?.code === 'plugin_not_found') return requirePlugin(ctx, name)
+	if (mutation?.code === 'plugin_not_found') return requirePlugin(ctx, address)
 	const causeCode =
 		mutation?.code ?? (result.commitError ? 'commit_failed' : 'plugin_operation_failed')
 	throw new CommandError('DEPENDENCY', 'Plugin operation failed', {
-		message: mutation?.error ?? result.commitError ?? `Plugin ${action} failed: ${name}`,
+		message:
+			mutation?.error ??
+			result.commitError ??
+			`Plugin ${action} failed: ${formatPluginNodeAddress(address)}`,
 		details: {
 			service: 'pluginLifecycle',
 			command: `plugin.${action}`,
@@ -101,9 +135,9 @@ function mutationCommand(ctx: Context, action: 'start' | 'stop' | 'restart'): An
 			idempotent: action !== 'restart',
 			world: 'open',
 		},
-		input: pluginNameInput,
+		input: pluginAddressInput,
 		output: pluginSnapshot,
-		execute: ({ name }) => mutatePlugin(ctx, name, action),
+		execute: ({ address }) => mutatePlugin(ctx, address, action),
 	})
 }
 
@@ -123,9 +157,9 @@ export function createPluginManagementCommands(ctx: Context): readonly AnyComman
 			title: 'Get plugin status',
 			description: 'Read the current lifecycle status of one plugin.',
 			behavior: { kind: 'query', world: 'closed' },
-			input: pluginNameInput,
+			input: pluginAddressInput,
 			output: pluginSnapshot,
-			execute: ({ name }) => requirePlugin(ctx, name),
+			execute: ({ address }) => requirePlugin(ctx, address),
 		}),
 		mutationCommand(ctx, 'start'),
 		mutationCommand(ctx, 'stop'),

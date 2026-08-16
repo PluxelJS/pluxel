@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { CanvasPlugin } from '@pluxel/canvas'
 import { FontsPlugin } from '@pluxel/fonts'
-import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
@@ -20,7 +20,7 @@ import {
 	type EChartsThemeRegistration,
 } from '../src/index.ts'
 
-@Plugin({ name: 'EChartsTestConsumer' })
+@Plugin({ displayName: 'EChartsTestConsumer' })
 class EChartsTestConsumer extends BasePlugin {
 	constructor(
 		readonly echarts: EChartsPlugin,
@@ -31,7 +31,7 @@ class EChartsTestConsumer extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'EChartsOtherConsumer' })
+@Plugin({ displayName: 'EChartsOtherConsumer' })
 class EChartsOtherConsumer extends BasePlugin {
 	constructor(readonly echarts: EChartsPlugin) {
 		super()
@@ -158,7 +158,7 @@ describe('EChartsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				addEChartsHost(host)
-				host.cfg(EChartsPlugin).set({ config: { maxDataUrlBytes: 4 } })
+				host.cfg(EChartsPlugin).set({ maxDataUrlBytes: 4 })
 				await host.commit()
 
 				await expect(
@@ -235,15 +235,23 @@ describe('EChartsPlugin', () => {
 
 			const response = await host.ctx.http.fetch(
 				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/EChartsPlugin`,
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(EChartsPlugin)))}`,
 				),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout
 			expect(layout.items).toEqual([
 				expect.objectContaining({
-					ownerPluginId: 'FontsPlugin',
-					targetPluginId: 'EChartsPlugin',
+					owner: {
+						address: pluginNodeAddressOf(FontsPlugin),
+						displayName: 'FontsPlugin',
+						rootExportName: 'FontsPlugin',
+					},
+					target: {
+						address: pluginNodeAddressOf(EChartsPlugin),
+						displayName: 'EChartsPlugin',
+						rootExportName: 'EChartsPlugin',
+					},
 					viewId: 'FontSelection',
 					port: expect.objectContaining({ id: '@pluxel/fonts.selection' }),
 				}),

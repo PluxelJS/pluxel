@@ -1,19 +1,21 @@
 import { describe, expect, it, vi } from 'vitest'
 import '../../src/register-services'
-import { BasePlugin, createRuntimeHost, Plugin, setParamToken } from '@pluxel/runtime/test'
+import {
+	clonePluginDefinition,
+	formatPluginNodeAddress,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
+	type PluginNodeAddressSnapshot,
+} from '@pluxel/core'
+import { BasePlugin, createRuntimeHost, Plugin } from '@pluxel/runtime/test'
 
 import {
 	collectEnabledButStopped,
 	type EnabledButStoppedLookupContext,
 	HmrExecutor,
 } from '../../src/hmr/engine/pipeline'
+import { lowerTestAbstract, lowerTestPlugin } from '../support/lowered-plugin'
 import { enablePlugins, isEnabled } from '../support/runtime-state'
-
-function defineParamTypes(ctor: unknown, paramTypes: unknown[]) {
-	;(
-		Reflect as { defineMetadata?: (key: string, value: unknown[], target: unknown) => void }
-	).defineMetadata?.('design:paramtypes', paramTypes, ctor)
-}
 
 function createExecutor(
 	ctx: ConstructorParameters<typeof HmrExecutor>[0],
@@ -43,14 +45,16 @@ function createExecutor(
 	})
 }
 
-describe('HmrExecutor commit retry', () => {
-	it('imports filesystem ids through /@fs while preserving the clean registry identity', async () => {
+describe('HmrExecutor transactions', () => {
+	it('imports /@fs ids while keeping clean module ownership', async () => {
 		const host = createRuntimeHost()
 		try {
 			const cleanId = '/repo/plugins/a/src/index.ts'
 			const calls: string[] = []
+
+			@Plugin({ displayName: 'Anchor' })
 			class Anchor extends BasePlugin {}
-			Plugin({ name: 'Anchor' })(Anchor)
+			lowerTestPlugin(Anchor)
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
@@ -64,60 +68,52 @@ describe('HmrExecutor commit retry', () => {
 				},
 			})
 
-			const out = await executor.runAndLoadAllClean([cleanId])
-			expect(out?.commitResult.ok).toBe(true)
+			const result = await executor.runAndLoadAllClean([cleanId])
+			expect(result?.commitResult.ok).toBe(true)
 			expect(calls).toEqual([`/@fs${cleanId}`])
 			expect(host.ctx.loader.api.anchors.has(cleanId)).toBe(true)
-			expect(host.ctx.loader.api.registry.findModuleId('Anchor')).toBe(cleanId)
+			expect(host.ctx.loader.api.registry.findModuleId(pluginNodeAddressOf(Anchor))).toBe(cleanId)
 		} finally {
 			await host.dispose()
 		}
 	})
 
-	it('syncs runtime-reported affected modules before commit', async () => {
+	it('publishes the replacement generation before one deduplicated dependent restart', async () => {
 		const host = createRuntimeHost()
 		try {
-			let depSeq = 0
-			let consumerSeq = 0
-			let moduleItemsSeenDuringHmrCommit: Function[] = []
+			let consumerStarts = 0
+			let moduleItemsSeenDuringCommit: Function[] = []
 
+			@Plugin({ displayName: 'Dependency' })
 			class Dep extends BasePlugin {
-				readonly seq = ++depSeq
+				readonly generation = 1
 			}
-			Plugin({ name: 'Dep' })(Dep)
+			lowerTestPlugin(Dep)
 
+			@Plugin({ displayName: 'Consumer' })
 			class Consumer extends BasePlugin {
-				readonly seq = ++consumerSeq
-
 				constructor(readonly dep: Dep) {
 					super()
+					consumerStarts++
 				}
 			}
-			defineParamTypes(Consumer, [Dep])
-			Plugin({ name: 'Consumer' })(Consumer)
-			setParamToken(Consumer, 0, Dep)
+			lowerTestPlugin(Consumer, { requires: [Dep] })
 
-			enablePlugins(host.ctx, 'Dep', 'Consumer')
+			enablePlugins(host.ctx, Dep, Consumer)
 			await host.ctx.loader.replaceModule('/dep.ts', { Dep })
 			await host.ctx.loader.replaceModule('/consumer.ts', { Consumer })
-			await host.commit()
-			host.ctx.internalEvent.runtimeCommitted.on(
-				(summary: { runtimeUpdate?: { reason?: string } }) => {
-					if (summary.runtimeUpdate?.reason !== 'hmr') return
-					moduleItemsSeenDuringHmrCommit = host.ctx.registry
-						.listRuntimeModuleItems('/dep.ts')
-						.map((item: { ctor: Function }) => item.ctor)
-				},
-			)
+			const unsubscribe = host.ctx.registry.subscribeCommitted((summary) => {
+				if (summary.runtimeUpdate?.reason !== 'hmr') return
+				moduleItemsSeenDuringCommit = host.ctx.registry
+					.listRuntimeModuleItems('/dep.ts')
+					.map((item) => item.ctor)
+			})
 
 			const firstConsumer = host.get(Consumer)
-			expect(firstConsumer?.seq).toBe(1)
-			expect(firstConsumer?.dep.seq).toBe(1)
-
 			class DepNext extends BasePlugin {
-				readonly seq = ++depSeq
+				readonly generation = 2
 			}
-			Plugin({ name: 'Dep' })(DepNext)
+			clonePluginDefinition(Dep, DepNext)
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
@@ -125,113 +121,83 @@ describe('HmrExecutor commit retry', () => {
 					return { Dep: DepNext }
 				},
 			})
+			const result = await executor.runAndLoadAllClean(['/dep.ts'])
+			unsubscribe()
 
-			const out = await executor.runAndLoadAllClean(['/dep.ts'])
-			expect(out?.commitResult.ok).toBe(true)
-			expect(new Set(out?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
-			expect(out?.syncedModules).toEqual(['/consumer.ts'])
-			expect(out?.autoDisabled).toEqual([])
-			expect(host.ctx.registry.lastCommit?.runtimeUpdate.reason).toBe('hmr')
-			expect(new Set(host.ctx.registry.lastCommit?.runtimeUpdate.affectedModules)).toEqual(
-				new Set(['/dep.ts', '/consumer.ts']),
-			)
-			expect(moduleItemsSeenDuringHmrCommit).toEqual([DepNext])
-
+			expect(result?.commitResult.ok).toBe(true)
+			expect(new Set(result?.affectedModules)).toEqual(new Set(['/dep.ts', '/consumer.ts']))
+			expect(result?.syncedModules).toEqual(['/consumer.ts'])
+			expect(moduleItemsSeenDuringCommit).toEqual([DepNext])
 			const nextConsumer = host.get(Consumer)
-			expect(nextConsumer?.seq).toBe(2)
-			expect(nextConsumer?.dep.seq).toBe(2)
+			expect(nextConsumer?.dep.generation).toBe(2)
 			expect(nextConsumer).not.toBe(firstConsumer)
+			expect(consumerStarts).toBe(2)
 		} finally {
 			await host.dispose()
 		}
 	})
 
-	it('auto-disables missing-deps plugins and commits the rest', async () => {
+	it('auto-disables missing-dependency node slots and commits the remaining batch', async () => {
 		const host = createRuntimeHost()
 		try {
-			abstract class MissingBase extends BasePlugin {}
+			abstract class Missing extends BasePlugin {}
+			lowerTestAbstract(Missing)
 
+			@Plugin({ displayName: 'Broken' })
 			class Broken extends BasePlugin {
-				constructor(_dep: MissingBase) {
+				constructor(_missing: Missing) {
 					super()
 				}
 			}
-			defineParamTypes(Broken, [MissingBase])
-			Plugin({ name: 'Broken' })(Broken)
-			setParamToken(Broken, 0, MissingBase)
-
-			enablePlugins(host.ctx, 'Broken')
+			lowerTestPlugin(Broken, { requires: [Missing] })
+			enablePlugins(host.ctx, Broken)
 
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
 					expect(id).toBe('/broken.ts')
 					return { Broken }
 				},
-				config: {
-					autoDisableMissingDependencies: true,
-					autoDisableMaxPasses: 3,
-				},
+				config: { autoDisableMissingDependencies: true, autoDisableMaxPasses: 3 },
 			})
+			const result = await executor.runAndLoadAllClean(['/broken.ts'])
+			const formatted = formatPluginNodeAddress(pluginNodeAddressOf(Broken))
 
-			const out = await executor.runAndLoadAllClean(['/broken.ts'])
-			expect(out?.commitResult.ok).toBe(true)
-			expect(out?.affectedModules).toEqual([])
-			expect(out?.syncedModules).toEqual(['/broken.ts'])
-			expect(out?.autoDisabled).toEqual(['Broken'])
-			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual(['Broken'])
-			expect(isEnabled(host.ctx, 'Broken')).toBe(false)
+			expect(result?.commitResult.ok).toBe(true)
+			expect(result?.autoDisabled).toEqual([formatted])
+			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled).toEqual([
+				host.ctx.registry.internNodeAddress(pluginNodeAddressOf(Broken)),
+			])
+			expect(isEnabled(host.ctx, Broken)).toBe(false)
 			expect(host.isRunning(Broken)).toBe(false)
 		} finally {
 			await host.dispose()
 		}
 	})
 
-	it('stops the batch when a runner evaluation fails before commit retry', async () => {
+	it('rolls back the entire source batch when evaluation fails', async () => {
 		const host = createRuntimeHost()
 		try {
-			let stableSeq = 0
-
-			class Stable extends BasePlugin {
-				readonly seq = ++stableSeq
-			}
-			Plugin({ name: 'Stable' })(Stable)
-
-			abstract class MissingBase extends BasePlugin {}
-
-			class Broken extends BasePlugin {
-				constructor(_dep: MissingBase) {
-					super()
-				}
-			}
-			defineParamTypes(Broken, [MissingBase])
-			Plugin({ name: 'Broken' })(Broken)
-			setParamToken(Broken, 0, MissingBase)
-
-			enablePlugins(host.ctx, 'Stable', 'Broken')
+			@Plugin({ displayName: 'Stable' })
+			class Stable extends BasePlugin {}
+			lowerTestPlugin(Stable)
+			enablePlugins(host.ctx, Stable)
 			await host.ctx.loader.replaceModule('/stable.ts', { Stable })
-			await host.commit()
-
 			const firstStable = host.require(Stable)
+
 			const executor = createExecutor(host.ctx, {
 				importModule: async (id) => {
 					if (id === '/stable.ts') throw new Error('syntax error')
-					if (id === '/broken.ts') return { Broken }
 					return {}
 				},
-				config: {
-					autoDisableMissingDependencies: true,
-					autoDisableMaxPasses: 3,
-				},
 			})
+			const result = await executor.runAndLoadAllClean(['/stable.ts'])
 
-			const out = await executor.runAndLoadAllClean(['/stable.ts', '/broken.ts'])
-			expect(out?.commitResult.ok).toBe(false)
-			expect(out?.executeError).toBe('syntax error')
-			expect(out?.syncedModules).toEqual([])
-			expect(out?.autoDisabled).toEqual([])
-			expect(host.ctx.registry.lastCommit?.runtimeUpdate.autoDisabled ?? []).toEqual([])
-			expect(isEnabled(host.ctx, 'Broken')).toBe(true)
+			expect(result?.commitResult.ok).toBe(false)
+			expect(result?.executeError).toBe('syntax error')
+			expect(result?.syncedModules).toEqual([])
+			expect(result?.autoDisabled).toEqual([])
 			expect(host.require(Stable)).toBe(firstStable)
+			expect(host.ctx.loader.api.registry.getCtor(pluginNodeAddressOf(Stable))).toBe(Stable)
 		} finally {
 			await host.dispose()
 		}
@@ -239,39 +205,43 @@ describe('HmrExecutor commit retry', () => {
 })
 
 describe('collectEnabledButStopped', () => {
-	it('reports enabled-but-stopped plugins within the batch-related module set', async () => {
-		const findModuleIdByName = vi.fn((name: string) =>
-			name === 'StoppedElsewhere' ? '/other.ts' : null,
+	it('reports only address-owned stopped nodes in the batch module set', () => {
+		const inBatch: PluginNodeAddressSnapshot = {
+			definition: {
+				entry: { kind: 'source-entry', source: 'consumer.ts' },
+				exportName: 'StoppedInBatch',
+			},
+			instance: 'default',
+		}
+		const elsewhere: PluginNodeAddressSnapshot = {
+			definition: {
+				entry: { kind: 'source-entry', source: 'other.ts' },
+				exportName: 'StoppedElsewhere',
+			},
+			instance: 'default',
+		}
+		const findModuleId = vi.fn((address: PluginNodeAddressSnapshot) =>
+			pluginNodeAddressEqual(address, inBatch) ? '/consumer.ts' : '/other.ts',
 		)
 		const ctx: EnabledButStoppedLookupContext = {
 			loader: {
 				api: {
-					registry: {
-						findModuleIdByName,
-					},
+					registry: { findModuleId },
 					status: {
 						snapshot: () => ({
-							statuses: {
-								StoppedInBatch: { isEnabled: true, isRunning: false },
-								StoppedElsewhere: { isEnabled: true, isRunning: false },
-								RunningInBatch: { isEnabled: true, isRunning: true },
-							},
+							statuses: [
+								{ address: inBatch, isEnabled: true, isRunning: false },
+								{ address: elsewhere, isEnabled: true, isRunning: false },
+							],
 						}),
-					},
-					anchors: {
-						has: () => false,
-						remove: () => {},
 					},
 				},
 			},
-			registry: {
-				getRuntimeModuleId: (name: string) =>
-					name === 'StoppedInBatch' ? '/consumer.ts' : undefined,
-			},
 		}
 
-		const stopped = collectEnabledButStopped(ctx, new Set(['/consumer.ts']))
-		expect(stopped).toEqual(['StoppedInBatch'])
-		expect(findModuleIdByName).not.toHaveBeenCalledWith('StoppedInBatch')
+		expect(collectEnabledButStopped(ctx, new Set(['/consumer.ts']))).toEqual([
+			formatPluginNodeAddress(inBatch),
+		])
+		expect(findModuleId).toHaveBeenCalledTimes(2)
 	})
 })

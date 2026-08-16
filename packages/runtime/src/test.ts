@@ -10,48 +10,36 @@ import {
 	type CoreHost,
 	type CoreHostConfigHandle,
 	type CoreHostConfigPatch,
-	type CoreHostConfigPatchByName,
-	type CoreHostConfigPatchFor,
 	type CoreTestContext,
 	type PluginConstructor,
 } from '@pluxel/core/test'
 
 export {
-	BaseFeature,
 	BasePlugin,
-	Config,
-	defineLazyFeature,
-	FeatureHost,
 	ForkablePlugin,
-	HostBoundFeature,
-	optionalPlugin,
 	Plugin,
 	assertPluginLifecycleIssue,
 	checkPluginDecorator,
-	clearParamToken,
 	collectPluginLifecycleBlocked,
+	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
-	collectPluginLifecycleStoppedWithErrors,
 	Context,
 	findPluginLifecycleIssue,
 	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
-	isPluginLifecycleStoppedWithErrorIssue,
+	pluginNodeAddressOf,
 	pluginLifecycleIssuePlugins,
-	setParamToken,
-	setParamTokens,
 } from '@pluxel/core/test'
 export type {
 	CommitSummary,
 	CoreHostLifecycleIssueExpectation,
-	PluginLifecycleErrorInfo,
 	PluginLifecycleIssue,
 	PluginLifecycleIssueKind,
 	PluginLifecycleIssuePhase,
 	PluginLifecycleIssuePredicate,
-	PluginLifecycleReport,
 	PluginCommitChanges,
 	PluginReplacement,
 	RuntimeUpdateCommitSummary,
@@ -60,10 +48,7 @@ export type {
 export type RuntimeHost = CoreHost
 export type RuntimeTestContext = CoreTestContext
 export type RuntimeHostConfigPatch<T extends PluginConstructor> = CoreHostConfigPatch<T>
-export type RuntimeHostConfigPatchByName = CoreHostConfigPatchByName
-export type RuntimeHostConfigPatchFor<TTarget extends string | PluginConstructor> =
-	CoreHostConfigPatchFor<TTarget>
-export type RuntimeHostConfigHandle<TTarget extends string | PluginConstructor> =
+export type RuntimeHostConfigHandle<TTarget extends PluginConstructor> =
 	CoreHostConfigHandle<TTarget>
 
 export function createRuntimeHost(config: Context.Config = {}): RuntimeHost {

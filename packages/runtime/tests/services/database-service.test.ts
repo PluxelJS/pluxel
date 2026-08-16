@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { pgTable, text } from 'drizzle-orm/pg-core'
 import { asc } from 'drizzle-orm'
 import * as v from 'valibot'
@@ -22,6 +23,8 @@ import {
 	attachPostgresPoolErrorHandler,
 	subscribeDatabaseHandle,
 } from '../../src/services/DatabaseService'
+import { pluginNodeAddressKey } from '../../src/runtime/plugin-address'
+import { lowerTestPlugin } from '../helpers/lowered-plugin'
 
 const migrationSql = `
 	CREATE TABLE items (
@@ -198,7 +201,7 @@ describe('DatabaseService', () => {
 		let releaseOperation: (() => void) | undefined
 		let runningOperation: Promise<void> | undefined
 		try {
-			@Plugin({ name: 'QueuedDatabasePlugin', startTimeoutMs: 30_000 })
+			@Plugin({ displayName: 'QueuedDatabasePlugin', startTimeoutMs: 30_000 })
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -206,6 +209,7 @@ describe('DatabaseService', () => {
 				}
 			}
 
+			lowerTestPlugin(QueuedDatabasePlugin)
 			host.add(QueuedDatabasePlugin)
 			host.cfg(QueuedDatabasePlugin).enable()
 			await host.commit()
@@ -242,7 +246,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'DatabaseLeft' })
+			@Plugin({ displayName: 'DatabaseLeft' })
 			class DatabaseLeft extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -253,7 +257,7 @@ describe('DatabaseService', () => {
 				}
 			}
 
-			@Plugin({ name: 'DatabaseRight' })
+			@Plugin({ displayName: 'DatabaseRight' })
 			class DatabaseRight extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -264,6 +268,8 @@ describe('DatabaseService', () => {
 				}
 			}
 
+			lowerTestPlugin(DatabaseLeft)
+			lowerTestPlugin(DatabaseRight)
 			host.add([DatabaseLeft, DatabaseRight])
 			host.cfg(DatabaseLeft).enable()
 			host.cfg(DatabaseRight).enable()
@@ -284,15 +290,16 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = createRuntimeHost({ workbench: false, database: false })
 		try {
-			@Plugin({ name: 'DisabledDatabasePlugin' })
+			@Plugin({ displayName: 'DisabledDatabasePlugin' })
 			class DisabledDatabasePlugin extends BasePlugin {
 				override async init() {
 					await this.ctx.database.use(definition.database)
 				}
 			}
+			lowerTestPlugin(DisabledDatabasePlugin)
 			host.add(DisabledDatabasePlugin)
 			host.cfg(DisabledDatabasePlugin).enable()
-			await expect(host.commit()).rejects.toThrow('DisabledDatabasePlugin')
+			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			expect(host.isRunning(DisabledDatabasePlugin)).toBe(false)
 		} finally {
 			await host.dispose()
@@ -310,7 +317,7 @@ describe('DatabaseService', () => {
 				database: { driver: 'pglite', dataDir },
 			})
 			try {
-				@Plugin({ name: 'PersistentDatabasePlugin' })
+				@Plugin({ displayName: 'PersistentDatabasePlugin' })
 				class FirstProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
@@ -320,6 +327,7 @@ describe('DatabaseService', () => {
 						)
 					}
 				}
+				lowerTestPlugin(FirstProcessPlugin, { id: 'PersistentDatabasePlugin' })
 				firstHost.add(FirstProcessPlugin)
 				firstHost.cfg(FirstProcessPlugin).enable()
 				await firstHost.commit()
@@ -333,13 +341,14 @@ describe('DatabaseService', () => {
 				database: { driver: 'pglite', dataDir },
 			})
 			try {
-				@Plugin({ name: 'PersistentDatabasePlugin' })
+				@Plugin({ displayName: 'PersistentDatabasePlugin' })
 				class SecondProcessPlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
 						this.db = await this.ctx.database.use(definition.database)
 					}
 				}
+				lowerTestPlugin(SecondProcessPlugin, { id: 'PersistentDatabasePlugin' })
 				secondHost.add(SecondProcessPlugin)
 				secondHost.cfg(SecondProcessPlugin).enable()
 				await secondHost.commit()
@@ -362,12 +371,13 @@ describe('DatabaseService', () => {
 		const persistence = join(root, 'nested', 'persistence')
 		const host = createRuntimeHost({ workbench: false, persistence })
 		try {
-			@Plugin({ name: 'DefaultPersistenceDatabasePlugin' })
+			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {
 				override async init() {
 					await this.ctx.database.use(definition.database)
 				}
 			}
+			lowerTestPlugin(DefaultPersistenceDatabasePlugin)
 			host.add(DefaultPersistenceDatabasePlugin)
 			host.cfg(DefaultPersistenceDatabasePlugin).enable()
 			await host.commit()
@@ -380,9 +390,18 @@ describe('DatabaseService', () => {
 
 	it('adopts the previous owner-schema layout without losing plugin rows', async () => {
 		const definition = databaseFixture('main')
-		const ownerId = 'LegacyDatabasePlugin'
-		const slug = ownerId.toLowerCase()
-		const ownerSchema = `pluxel_${slug}_${createHash('sha256').update(ownerId).digest('hex').slice(0, 16)}`
+		const ownerId = pluginNodeAddressKey({
+			definition: {
+				entry: { kind: 'source-entry', source: 'pluxel-test:LegacyDatabasePlugin' },
+				exportName: 'Plugin',
+			},
+			instance: 'default',
+		})
+		const slug = ownerId
+			.toLowerCase()
+			.replaceAll(/[^a-z0-9]+/g, '_')
+			.replaceAll(/^_+|_+$/g, '')
+		const ownerSchema = `pluxel_${slug.slice(0, 36) || 'plugin'}_${createHash('sha256').update(ownerId).digest('hex').slice(0, 16)}`
 		const ownerRole = `${ownerSchema}_r`
 		const root = await mkdtemp(join(tmpdir(), 'pluxel-database-legacy-'))
 		const dataDir = join(root, 'pglite')
@@ -412,13 +431,14 @@ describe('DatabaseService', () => {
 
 			const host = createRuntimeHost({ workbench: false, database: { driver: 'pglite', dataDir } })
 			try {
-				@Plugin({ name: 'LegacyDatabasePlugin' })
+				@Plugin({ displayName: 'LegacyDatabasePlugin' })
 				class LegacyDatabasePlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
 						this.db = await this.ctx.database.use(definition.database)
 					}
 				}
+				lowerTestPlugin(LegacyDatabasePlugin)
 				host.add(LegacyDatabasePlugin)
 				host.cfg(LegacyDatabasePlugin).enable()
 				await host.commit()
@@ -438,7 +458,7 @@ describe('DatabaseService', () => {
 		const upgraded = upgradedDatabaseFixture('incremental')
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'IncrementalDatabasePlugin' })
+			@Plugin({ displayName: 'IncrementalDatabasePlugin' })
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
@@ -448,6 +468,7 @@ describe('DatabaseService', () => {
 					)
 				}
 			}
+			lowerTestPlugin(InitialPlugin, { id: 'IncrementalDatabasePlugin' })
 			host.add(InitialPlugin)
 			host.cfg(InitialPlugin).enable()
 			await host.commit()
@@ -455,13 +476,14 @@ describe('DatabaseService', () => {
 			host.remove(InitialPlugin)
 			await host.commit()
 
-			@Plugin({ name: 'IncrementalDatabasePlugin' })
+			@Plugin({ displayName: 'IncrementalDatabasePlugin' })
 			class UpgradedPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof upgraded.database>
 				override async init() {
 					this.db = await this.ctx.database.use(upgraded.database)
 				}
 			}
+			lowerTestPlugin(UpgradedPlugin, { id: 'IncrementalDatabasePlugin' })
 			host.add(UpgradedPlugin)
 			host.cfg(UpgradedPlugin).enable()
 			await host.commit()
@@ -480,7 +502,7 @@ describe('DatabaseService', () => {
 		const second = databaseFixture('release-b')
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'RebasedDatabasePlugin' })
+			@Plugin({ displayName: 'RebasedDatabasePlugin' })
 			class FirstRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof first.database>
 				override async init() {
@@ -490,6 +512,7 @@ describe('DatabaseService', () => {
 					)
 				}
 			}
+			lowerTestPlugin(FirstRelease, { id: 'RebasedDatabasePlugin' })
 			host.add(FirstRelease)
 			host.cfg(FirstRelease).enable()
 			await host.commit()
@@ -497,13 +520,14 @@ describe('DatabaseService', () => {
 			host.remove(FirstRelease)
 			await host.commit()
 
-			@Plugin({ name: 'RebasedDatabasePlugin' })
+			@Plugin({ displayName: 'RebasedDatabasePlugin' })
 			class SecondRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof second.database>
 				override async init() {
 					this.db = await this.ctx.database.use(second.database)
 				}
 			}
+			lowerTestPlugin(SecondRelease, { id: 'RebasedDatabasePlugin' })
 			host.add(SecondRelease)
 			host.cfg(SecondRelease).enable()
 			await host.commit()
@@ -523,7 +547,7 @@ describe('DatabaseService', () => {
 		const rebuilt = resetDatabaseFixture(`-- generated by a newer toolchain\n${migrationSql}`)
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'ResetDatabasePlugin' })
+			@Plugin({ displayName: 'ResetDatabasePlugin' })
 			class InitialPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof initial.database>
 				override async init() {
@@ -533,6 +557,7 @@ describe('DatabaseService', () => {
 					)
 				}
 			}
+			lowerTestPlugin(InitialPlugin, { id: 'ResetDatabasePlugin' })
 			host.add(InitialPlugin)
 			host.cfg(InitialPlugin).enable()
 			await host.commit()
@@ -540,13 +565,14 @@ describe('DatabaseService', () => {
 			host.remove(InitialPlugin)
 			await host.commit()
 
-			@Plugin({ name: 'ResetDatabasePlugin' })
+			@Plugin({ displayName: 'ResetDatabasePlugin' })
 			class RebuiltPlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof rebuilt.database>
 				override async init() {
 					this.db = await this.ctx.database.use(rebuilt.database)
 				}
 			}
+			lowerTestPlugin(RebuiltPlugin, { id: 'ResetDatabasePlugin' })
 			host.add(RebuiltPlugin)
 			host.cfg(RebuiltPlugin).enable()
 			await host.commit()
@@ -565,7 +591,7 @@ describe('DatabaseService', () => {
 		const invalid = invalidDatabaseFixture('broken-replacement')
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'AtomicReplacementPlugin' })
+			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class StableRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
@@ -575,6 +601,7 @@ describe('DatabaseService', () => {
 					)
 				}
 			}
+			lowerTestPlugin(StableRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(StableRelease)
 			host.cfg(StableRelease).enable()
 			await host.commit()
@@ -582,25 +609,27 @@ describe('DatabaseService', () => {
 			host.remove(StableRelease)
 			await host.commit()
 
-			@Plugin({ name: 'AtomicReplacementPlugin' })
+			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class BrokenRelease extends BasePlugin {
 				override async init() {
 					await this.ctx.database.use(invalid.database)
 				}
 			}
+			lowerTestPlugin(BrokenRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(BrokenRelease)
 			host.cfg(BrokenRelease).enable()
-			await expect(host.commit()).rejects.toThrow('AtomicReplacementPlugin')
+			await expect(host.commit()).rejects.toThrow('Some plugins failed to start')
 			host.remove(BrokenRelease)
 			await host.commit()
 
-			@Plugin({ name: 'AtomicReplacementPlugin' })
+			@Plugin({ displayName: 'AtomicReplacementPlugin' })
 			class RecoveredRelease extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof stable.database>
 				override async init() {
 					this.db = await this.ctx.database.use(stable.database)
 				}
 			}
+			lowerTestPlugin(RecoveredRelease, { id: 'AtomicReplacementPlugin' })
 			host.add(RecoveredRelease)
 			host.cfg(RecoveredRelease).enable()
 			await host.commit()
@@ -623,11 +652,14 @@ describe('DatabaseService', () => {
 					key: 'id',
 				}),
 			},
+			views: {
+				Test: { placements: [workbenchContract.tab()] },
+			},
 		})
 		const extension = workbench.extension({ contract })
 		const host = workbenchDatabaseHost
 		try {
-			@Plugin({ name: 'LiveQueryDatabasePlugin' })
+			@Plugin({ displayName: 'LiveQueryDatabasePlugin' })
 			class LiveQueryDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -645,20 +677,23 @@ describe('DatabaseService', () => {
 				}
 			}
 
+			lowerTestPlugin(LiveQueryDatabasePlugin)
 			host.add(LiveQueryDatabasePlugin)
 			host.cfg(LiveQueryDatabasePlugin).enable()
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
-			await expect(
-				backend.liveQueries.loadFor('LiveQueryDatabasePlugin', 'items', undefined),
-			).resolves.toMatchObject({ revision: 1, rows: [{ id: 'b', value: 'second' }] })
+			const grantId = backend.registry.getPluginLayout(pluginNodeAddressOf(LiveQueryDatabasePlugin))
+				.items[0]!.model.items!.grantId
+			const resourceId = backend.registry.resolveModel(grantId, 'liveQuery').resourceId
+			await expect(backend.liveQueries.loadFor(resourceId, undefined)).resolves.toMatchObject({
+				revision: 1,
+				rows: [{ id: 'b', value: 'second' }],
+			})
 
 			await host
 				.require(LiveQueryDatabasePlugin)
 				.db.transaction((tx) => tx.insert(definition.items).values({ id: 'a', value: 'first' }))
-			await expect(
-				backend.liveQueries.loadFor('LiveQueryDatabasePlugin', 'items', undefined),
-			).resolves.toMatchObject({
+			await expect(backend.liveQueries.loadFor(resourceId, undefined)).resolves.toMatchObject({
 				revision: 2,
 				rows: [
 					{ id: 'a', value: 'first' },
@@ -672,9 +707,9 @@ describe('DatabaseService', () => {
 			await expect(stoppedHandle.read((db) => db.select().from(definition.items))).rejects.toThrow(
 				'stopped',
 			)
-			await expect(
-				backend.liveQueries.loadFor('LiveQueryDatabasePlugin', 'items', undefined),
-			).rejects.toThrow('unavailable')
+			await expect(backend.liveQueries.loadFor(resourceId, undefined)).rejects.toThrow(
+				'unavailable',
+			)
 		} finally {
 			await resetRuntimeHost(host)
 		}
@@ -690,11 +725,14 @@ describe('DatabaseService', () => {
 					key: 'id',
 				}),
 			},
+			views: {
+				Test: { placements: [workbenchContract.tab()] },
+			},
 		})
 		const extension = workbench.extension({ contract })
 		const host = workbenchDatabaseHost
 		try {
-			@Plugin({ name: 'ValidatedLiveQueryPlugin' })
+			@Plugin({ displayName: 'ValidatedLiveQueryPlugin' })
 			class ValidatedLiveQueryPlugin extends BasePlugin {
 				override async init() {
 					const database = await this.ctx.database.use(definition.database)
@@ -713,16 +751,21 @@ describe('DatabaseService', () => {
 					})
 				}
 			}
+			lowerTestPlugin(ValidatedLiveQueryPlugin)
 			host.add(ValidatedLiveQueryPlugin)
 			host.cfg(ValidatedLiveQueryPlugin).enable()
 			await host.commit()
 			const backend = requireWorkbench(host.ctx)
-			await expect(
-				backend.liveQueries.loadFor('ValidatedLiveQueryPlugin', 'items', undefined),
-			).rejects.toThrow('invalid liveQuery params')
-			await expect(
-				backend.liveQueries.loadFor('ValidatedLiveQueryPlugin', 'items', { search: '' }),
-			).rejects.toThrow('duplicate key')
+			const grantId = backend.registry.getPluginLayout(
+				pluginNodeAddressOf(ValidatedLiveQueryPlugin),
+			).items[0]!.model.items!.grantId
+			const resourceId = backend.registry.resolveModel(grantId, 'liveQuery').resourceId
+			await expect(backend.liveQueries.loadFor(resourceId, undefined)).rejects.toThrow(
+				'invalid liveQuery params',
+			)
+			await expect(backend.liveQueries.loadFor(resourceId, { search: '' })).rejects.toThrow(
+				'duplicate key',
+			)
 		} finally {
 			await resetRuntimeHost(host)
 		}
@@ -732,13 +775,14 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
-			@Plugin({ name: 'RollbackDatabasePlugin' })
+			@Plugin({ displayName: 'RollbackDatabasePlugin' })
 			class RollbackDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
 					this.db = await this.ctx.database.use(definition.database)
 				}
 			}
+			lowerTestPlugin(RollbackDatabasePlugin)
 			host.add(RollbackDatabasePlugin)
 			host.cfg(RollbackDatabasePlugin).enable()
 			await host.commit()

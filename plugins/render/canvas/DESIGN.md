@@ -34,7 +34,7 @@ render-local bytes 的调用方直接提交 native decoder。
 
 `@pluxel/canvas/worker/pretext` 单独提供 `createCanvasWorkerTextLayout()` 和纯 layout/walker exports。它与主 CanvasPlugin
 复用同一个输入校验、font revision invalidation、字符预算和 1×1 measurement shim；拆分子入口确保只做 Canvas raster 的
-worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/native/Pretext cache，不需要模拟 plugin stop。
+worker artifact 不加载 Pretext。worker thread 退出会自然回收其 ESM/native/Pretext cache，不需要模拟 owner generation lifecycle。
 
 ## Pretext 排版
 

@@ -5,7 +5,7 @@ import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
-@Plugin({ name: 'LocalS3Consumer' })
+@Plugin({ displayName: 'LocalS3Consumer' })
 class LocalS3Consumer extends BasePlugin {
 	constructor(readonly s3: S3) {
 		super()
@@ -182,13 +182,11 @@ describe('S3Plugin local backend', () => {
 		await withHost(async (host) => {
 			host.add([S3Plugin, LocalS3Consumer])
 			host.cfg(S3Plugin).set({
-				config: {
-					backend: {
-						type: 'local',
-						rootDir: root,
-						bucketName: 'test-bucket',
-						syncWrites: false,
-					},
+				backend: {
+					type: 'local',
+					rootDir: root,
+					bucketName: 'test-bucket',
+					syncWrites: false,
 				},
 			})
 			await host.commit()
@@ -212,13 +210,11 @@ async function withLocalS3(rootDir: string, run: (s3: S3) => void | Promise<void
 	await withHost(async (host) => {
 		host.add([S3Plugin, LocalS3Consumer])
 		host.cfg(S3Plugin).set({
-			config: {
-				backend: {
-					type: 'local',
-					rootDir,
-					bucketName: 'test-bucket',
-					syncWrites: false,
-				},
+			backend: {
+				type: 'local',
+				rootDir,
+				bucketName: 'test-bucket',
+				syncWrites: false,
 			},
 		})
 		await host.commit()

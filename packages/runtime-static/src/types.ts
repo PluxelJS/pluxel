@@ -1,4 +1,11 @@
-import type { Context as CoreContext, CommitSummary, PluginConstructor } from '@pluxel/core'
+import type {
+	Context as CoreContext,
+	CommitSummary,
+	PluginConstructor,
+	PluginDefinitionAddressSnapshot,
+	PluginEntryAddressSnapshot,
+	PluginNodeAddressSnapshot,
+} from '@pluxel/core'
 import type {
 	ConfigServiceConfig,
 	Context,
@@ -52,7 +59,7 @@ export type StaticRuntimeDefinition = {
 	 */
 	name: string
 	/**
-	 * Fixed plugin catalog. Plugin names are read from @Plugin metadata.
+	 * Fixed Plugin implementation generations. Identity comes from lowered root-entry/export facts.
 	 */
 	plugins: readonly PluginConstructor[]
 }
@@ -153,7 +160,9 @@ export type StaticRuntimePluginStatus =
 	| 'catalog-drift'
 
 export type StaticRuntimeReportEntry = {
-	readonly name: string
+	readonly address: PluginNodeAddressSnapshot
+	readonly displayName: string
+	readonly rootExportName: string
 	readonly status: StaticRuntimePluginStatus
 	readonly message?: string
 }
@@ -165,14 +174,19 @@ export type StaticRuntimeStartupReport = {
 }
 
 export type StaticRuntimeHmrReport = StaticRuntimeStartupReport & {
-	readonly added: readonly string[]
-	readonly removed: readonly string[]
-	readonly replaced: readonly string[]
+	readonly added: readonly PluginNodeAddressSnapshot[]
+	readonly removed: readonly PluginNodeAddressSnapshot[]
+	readonly replaced: readonly PluginNodeAddressSnapshot[]
 }
 
 export type StaticRuntimeCatalogEntry = {
-	readonly name: string
-	readonly plugin: PluginConstructor
+	readonly address: PluginNodeAddressSnapshot
+	readonly definition: PluginDefinitionAddressSnapshot
+	readonly displayName: string
+	readonly rootExportName: string
+	readonly provenance: PluginEntryAddressSnapshot
+	/** Current implementation generation for this stable Plugin node. */
+	readonly generation: PluginConstructor
 }
 
 export type StaticRuntimeCatalogSnapshot = {

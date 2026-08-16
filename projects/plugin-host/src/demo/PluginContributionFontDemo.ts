@@ -22,7 +22,7 @@ const FontManagerWorkbench = workbench.extension({
 })
 const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
 
-@Plugin({ name: 'PluginContributionFontManager' })
+@Plugin({ displayName: 'PluginContributionFontManager' })
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
 		if (!this.ctx.workbench.enabled) return
@@ -38,9 +38,9 @@ export class PluginContributionFontManager extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'PluginContributionFontConsumer' })
+@Plugin({ displayName: 'PluginContributionFontConsumer' })
 export class PluginContributionFontConsumer extends BasePlugin {
-	appearance = this.configs.use(ConsumerAppearanceConfig)
+	readonly config = this.configs.use(ConsumerAppearanceConfig)
 
 	constructor(_fontManager: PluginContributionFontManager) {
 		super()
@@ -53,14 +53,12 @@ export class PluginContributionFontConsumer extends BasePlugin {
 	}
 
 	currentFont(): FontRef | null {
-		return readFontRef(this.appearance.fontSetRef)
+		return readFontRef(this.config.fontSetRef)
 	}
 
 	setFont(ref: FontRef | null): FontRef | null {
 		const value = ref ? toFontRef(ref) : null
-		this.ctx.configService.patchConfig(this.ctx.pluginInfo.id, {
-			appearance: { fontSetRef: value },
-		})
+		this.ctx.configService.patchConfig(this.ctx.pluginInfo.nodeSlot, { fontSetRef: value })
 		return value
 	}
 }

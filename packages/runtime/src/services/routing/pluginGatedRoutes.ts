@@ -1,15 +1,16 @@
-import type { Context } from '@pluxel/core'
+import type { Context, PluginNodeAddressSnapshot } from '@pluxel/core'
 import { isPluginEnabled as isRuntimePluginEnabled } from '../RuntimeStateStore'
+import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 
-export type PluginId = string
+export type PluginOwner = PluginNodeAddressSnapshot
 export type RouteId = string
 
 export interface PluginGatedDef {
 	id: RouteId
-	plugin: PluginId
+	plugin: PluginOwner
 }
 
-export type IsPluginEnabled = (plugin: PluginId, ctx: Context) => boolean
+export type IsPluginEnabled = (plugin: PluginOwner, ctx: Context) => boolean
 
 export interface PluginGatedOptions {
 	/**
@@ -21,11 +22,11 @@ export interface PluginGatedOptions {
 }
 
 export interface PluginRoutingSnapshot {
-	enabledPlugins: PluginId[]
+	enabledPlugins: PluginOwner[]
 	enabledRouteIds: RouteId[]
 }
 
-function defaultIsPluginEnabled(plugin: PluginId, ctx: Context): boolean {
+function defaultIsPluginEnabled(plugin: PluginOwner, ctx: Context): boolean {
 	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState as
 		| { snapshot?: () => Parameters<typeof isRuntimePluginEnabled>[0] }
 		| undefined
@@ -45,17 +46,17 @@ export function getPluginRoutingSnapshot<T extends PluginGatedDef>(
 	options: PluginGatedOptions = {},
 ): PluginRoutingSnapshot {
 	const isPluginEnabled = resolveIsPluginEnabled(options)
-	const enabledPlugins = new Set<PluginId>()
+	const enabledPlugins = new Map<string, PluginOwner>()
 	const enabledRouteIds: RouteId[] = []
 
 	for (const route of routes) {
 		if (!isPluginEnabled(route.plugin, ctx)) continue
-		enabledPlugins.add(route.plugin)
+		enabledPlugins.set(pluginNodeAddressKey(route.plugin), route.plugin)
 		enabledRouteIds.push(route.id)
 	}
 
 	return {
-		enabledPlugins: [...enabledPlugins].sort(),
+		enabledPlugins: [...enabledPlugins.values()],
 		enabledRouteIds: enabledRouteIds.sort(),
 	}
 }

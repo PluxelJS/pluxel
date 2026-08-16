@@ -5,7 +5,6 @@ export default defineConfig({
 	entry: {
 		index: 'src/index.ts',
 		workbench: 'src/workbench-contract.ts',
-		example: 'src/example/index.ts',
 	},
 	dts: { eager: true, sourcemap: true },
 	format: ['esm'],

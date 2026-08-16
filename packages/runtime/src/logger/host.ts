@@ -1,6 +1,6 @@
 import { isAbsolute, relative } from 'pathe'
 
-const RESERVED_PROPERTY_KEYS = new Set(['pluginId', 'context', 'name', 'caller'])
+const RESERVED_PROPERTY_KEYS = new Set(['plugin', 'context', 'name', 'caller'])
 const CALLER_SKIP_MARKERS = [
 	'/node_modules/@logtape/',
 	'\\node_modules\\@logtape\\',
@@ -12,9 +12,9 @@ export function isReservedLogProperty(key: string): boolean {
 	return RESERVED_PROPERTY_KEYS.has(key)
 }
 
-export function formatLogName(context: string, pluginId?: string): string {
-	if (!pluginId || pluginId === context) return context
-	return `${pluginId}(${context})`
+export function formatLogName(context: string, pluginLabel?: string): string {
+	if (!pluginLabel || pluginLabel === context) return context
+	return `${pluginLabel}(${context})`
 }
 
 export function captureCaller(): string | undefined {

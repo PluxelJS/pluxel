@@ -1,4 +1,5 @@
-import type { Context } from '@pluxel/core'
+import { randomUUID } from 'node:crypto'
+import type { Context, PluginNodeSlot } from '@pluxel/core'
 import {
 	readProductDescriptor,
 	type HostApplicationMeta,
@@ -28,7 +29,7 @@ export class WorkbenchBackend {
 	readonly registry: WorkbenchRegistry
 	readonly pluginCatalog: WorkbenchPluginCatalogService
 	private readonly views = new WeakMap<Context, PluginWorkbench>()
-	private readonly mounts = new Map<string, { owner: Context; dispose: () => void }>()
+	private readonly mounts = new Map<PluginNodeSlot, { owner: Context; dispose: () => void }>()
 
 	constructor(root: Context, options: WorkbenchInstallOptions = {}) {
 		this.application = Object.freeze({
@@ -64,7 +65,12 @@ export class WorkbenchBackend {
 		Extension extends AnyWorkbenchExtension,
 		const Bindings extends WorkbenchBindings<Extension>,
 	>(owner: Context, extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> {
-		const ownerId = String(owner.pluginInfo.id ?? '').trim()
+		const ownerSlot = owner.pluginInfo.nodeSlot
+		const ownerDescriptor = Object.freeze({
+			address: owner.pluginInfo.nodeAddress,
+			displayName: owner.pluginInfo.displayName,
+			rootExportName: owner.pluginInfo.rootExportName,
+		})
 		const cleanup: Array<() => void> = []
 		const refs: Record<string, InternalModelRef> = {}
 		const resources = extension.contract.resources
@@ -88,9 +94,9 @@ export class WorkbenchBackend {
 			}
 		}
 
-		const previous = this.mounts.get(ownerId)
+		const previous = this.mounts.get(ownerSlot)
 		if (previous?.owner === owner) {
-			throw new Error(`[workbench] plugin "${ownerId}" already mounted a Workbench extension`)
+			throw new Error(`[workbench] Plugin node already mounted a Workbench extension`)
 		}
 		previous?.dispose()
 
@@ -99,30 +105,21 @@ export class WorkbenchBackend {
 				[string, WorkbenchResourceContract]
 			>) {
 				const binding = (bindings as Record<string, any>)[key]
-				refs[key] = Object.freeze({ ownerPluginId: ownerId, modelKey: key, kind: contract.kind })
+				const resourceId = randomUUID()
+				refs[key] = Object.freeze({ ownerSlot, resourceId, modelKey: key, kind: contract.kind })
 				switch (contract.kind) {
 					case 'rpc': {
-						cleanup.push(
-							this.rpc.registerResourceFor(
-								owner,
-								workbenchModelNamespace(ownerId, key),
-								binding.factory,
-							),
-						)
+						cleanup.push(this.rpc.registerResourceFor(owner, resourceId, binding.factory))
 						break
 					}
 					case 'events': {
-						cleanup.push(
-							this.events.registerResourceFor(
-								owner,
-								workbenchModelNamespace(ownerId, key),
-								binding.handler,
-							),
-						)
+						cleanup.push(this.events.registerResourceFor(owner, resourceId, binding.handler))
 						break
 					}
 					case 'liveQuery': {
-						cleanup.push(this.liveQueries.registerResourceFor(owner, key, contract, binding))
+						cleanup.push(
+							this.liveQueries.registerResourceFor(owner, resourceId, key, contract, binding),
+						)
 						break
 					}
 				}
@@ -133,7 +130,7 @@ export class WorkbenchBackend {
 					this.artifacts.registerFor(owner, extension.entry, extension.contract.fingerprint),
 				)
 			}
-			cleanup.push(this.registry.mount(ownerId, extension, Object.freeze(refs)))
+			cleanup.push(this.registry.mount(ownerSlot, ownerDescriptor, extension, Object.freeze(refs)))
 		} catch (error) {
 			for (const dispose of cleanup.toReversed()) dispose()
 			throw error
@@ -144,11 +141,11 @@ export class WorkbenchBackend {
 			if (!active) return
 			active = false
 			for (const cleanupItem of cleanup.toReversed()) cleanupItem()
-			if (this.mounts.get(ownerId)?.owner === owner) this.mounts.delete(ownerId)
+			if (this.mounts.get(ownerSlot)?.owner === owner) this.mounts.delete(ownerSlot)
 		}
 		const guard = owner.effects.defer(dispose)
 		const mounted = { owner, dispose: () => guard.dispose() }
-		this.mounts.set(ownerId, mounted)
+		this.mounts.set(ownerSlot, mounted)
 		return Object.freeze({
 			extension,
 		})
@@ -169,10 +166,6 @@ export function installWorkbench(ctx: Context, options: WorkbenchInstallOptions 
 /** @internal */
 export function requireWorkbench(ctx: Context): WorkbenchBackend {
 	return requireInstalledWorkbench(ctx)
-}
-
-export function workbenchModelNamespace(ownerPluginId: string, modelKey: string): string {
-	return `${ownerPluginId}:${modelKey}`
 }
 
 export type { SseChannel } from './workbench/resources/WorkbenchEventsService'

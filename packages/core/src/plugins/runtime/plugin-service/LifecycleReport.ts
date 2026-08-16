@@ -1,13 +1,13 @@
-import type { RuntimePluginKey } from '../identity'
+import type { PluginNodeSlot } from '../identity'
 
-export type PluginLifecycleIssuePhase = 'resolve' | 'config' | 'start' | 'dependency' | 'stop'
+export type PluginLifecycleIssuePhase = 'resolve' | 'config' | 'start' | 'dependency' | 'drain'
 
 export const PLUGIN_LIFECYCLE_ISSUE_KIND = {
 	ResolveFailed: 'resolve-failed',
 	ConfigFailed: 'config-failed',
 	StartFailed: 'start-failed',
 	DependencyBlocked: 'dependency-blocked',
-	StopFailed: 'stop-failed',
+	DrainFailed: 'drain-failed',
 } as const
 
 export type PluginLifecycleIssueKind =
@@ -21,12 +21,12 @@ export type PluginLifecycleErrorInfo = {
 }
 
 export type PluginLifecycleIssue = {
-	plugin: RuntimePluginKey
+	plugin: PluginNodeSlot
 	phase: PluginLifecycleIssuePhase
 	kind: PluginLifecycleIssueKind
 	message: string
 	error?: PluginLifecycleErrorInfo
-	blockedBy?: RuntimePluginKey
+	blockedBy?: PluginNodeSlot
 }
 
 export type PluginLifecycleReport = {
@@ -38,7 +38,7 @@ export type PluginLifecycleIssuePredicate = (issue: PluginLifecycleIssue) => boo
 
 export type MutableLifecycleReport = {
 	issues: PluginLifecycleIssue[]
-	issueKeys: Set<string>
+	issueKeys: WeakMap<PluginNodeSlot, Set<string>>
 }
 
 export const EMPTY_LIFECYCLE_REPORT: PluginLifecycleReport = Object.freeze({
@@ -48,7 +48,7 @@ export const EMPTY_LIFECYCLE_REPORT: PluginLifecycleReport = Object.freeze({
 
 export const createLifecycleReport = (): MutableLifecycleReport => ({
 	issues: [],
-	issueKeys: new Set(),
+	issueKeys: new WeakMap(),
 })
 
 export function serializeLifecycleError(error: unknown): PluginLifecycleErrorInfo {
@@ -69,6 +69,10 @@ export function serializeLifecycleError(error: unknown): PluginLifecycleErrorInf
 }
 
 export function errorMessage(error: unknown): string {
+	if (error instanceof AggregateError) {
+		const nested = [...error.errors].map(errorMessage).filter(Boolean)
+		return nested.length > 0 ? `${error.message}: ${nested.join('; ')}` : error.message
+	}
 	if (error instanceof Error) return error.message
 	if (typeof error === 'string') return error
 	try {
@@ -83,9 +87,22 @@ export function recordLifecycleIssue(
 	report: MutableLifecycleReport,
 	issue: PluginLifecycleIssue,
 ): void {
-	const key = `${issue.plugin}\0${issue.kind}\0${issue.blockedBy ?? ''}\0${issue.message}`
-	if (report.issueKeys.has(key)) return
-	report.issueKeys.add(key)
+	const blockedBy = issue.blockedBy
+		? JSON.stringify({
+				entry: issue.blockedBy.definition.entry.address,
+				exportName: issue.blockedBy.definition.exportName,
+				instance: issue.blockedBy.instance,
+				forkId: issue.blockedBy.forkId,
+			})
+		: ''
+	const key = `${issue.kind}\0${blockedBy}\0${issue.message}`
+	let keys = report.issueKeys.get(issue.plugin)
+	if (!keys) {
+		keys = new Set()
+		report.issueKeys.set(issue.plugin, keys)
+	}
+	if (keys.has(key)) return
+	keys.add(key)
 	report.issues.push(issue)
 }
 
@@ -95,23 +112,23 @@ export function finalizeLifecycleReport(report: MutableLifecycleReport): PluginL
 }
 
 export function isPluginLifecycleNotStartedIssue(issue: PluginLifecycleIssue): boolean {
-	return issue.kind !== PLUGIN_LIFECYCLE_ISSUE_KIND.StopFailed
+	return issue.kind !== PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed
 }
 
 export function isPluginLifecycleBlockedIssue(issue: PluginLifecycleIssue): boolean {
 	return issue.kind === PLUGIN_LIFECYCLE_ISSUE_KIND.DependencyBlocked
 }
 
-export function isPluginLifecycleStoppedWithErrorIssue(issue: PluginLifecycleIssue): boolean {
-	return issue.kind === PLUGIN_LIFECYCLE_ISSUE_KIND.StopFailed
+export function isPluginLifecycleDrainErrorIssue(issue: PluginLifecycleIssue): boolean {
+	return issue.kind === PLUGIN_LIFECYCLE_ISSUE_KIND.DrainFailed
 }
 
 export function collectPluginLifecycleIssuePlugins(
 	report: PluginLifecycleReport | undefined,
 	predicate: PluginLifecycleIssuePredicate = () => true,
-): RuntimePluginKey[] {
+): PluginNodeSlot[] {
 	if (!report) return []
-	const plugins = new Set<RuntimePluginKey>()
+	const plugins = new Set<PluginNodeSlot>()
 	for (const issue of report.issues) {
 		if (predicate(issue)) plugins.add(issue.plugin)
 	}
@@ -120,18 +137,18 @@ export function collectPluginLifecycleIssuePlugins(
 
 export function collectPluginLifecycleNotStarted(
 	report: PluginLifecycleReport | undefined,
-): RuntimePluginKey[] {
+): PluginNodeSlot[] {
 	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleNotStartedIssue)
 }
 
 export function collectPluginLifecycleBlocked(
 	report: PluginLifecycleReport | undefined,
-): RuntimePluginKey[] {
+): PluginNodeSlot[] {
 	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleBlockedIssue)
 }
 
-export function collectPluginLifecycleStoppedWithErrors(
+export function collectPluginLifecycleDrainErrors(
 	report: PluginLifecycleReport | undefined,
-): RuntimePluginKey[] {
-	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleStoppedWithErrorIssue)
+): PluginNodeSlot[] {
+	return collectPluginLifecycleIssuePlugins(report, isPluginLifecycleDrainErrorIssue)
 }

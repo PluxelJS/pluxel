@@ -1,10 +1,18 @@
 import { randomUUID } from 'node:crypto'
-import type { Context, PluginIdentifier, RuntimePluginKey } from '@pluxel/core'
+import {
+	getPluginInfo,
+	parsePluginNodeAddress,
+	type Context,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
+} from '@pluxel/core'
+import { pluginNodeAddressKey } from '../../runtime/plugin-address'
 import type {
 	WorkbenchCatalog,
 	WorkbenchLayout,
 	WorkbenchLayoutItem,
 	WorkbenchPlacementSpec,
+	WorkbenchPluginDescriptor,
 	WorkbenchPortContribution,
 	WorkbenchPortOutlet,
 	WorkbenchPortRenderer,
@@ -15,7 +23,8 @@ import type { AnyWorkbenchExtension } from '../../workbench/runtime'
 import type { WorkbenchArtifactService } from './WorkbenchArtifactService'
 
 type MountedExtension = {
-	ownerPluginId: string
+	ownerSlot: PluginNodeSlot
+	owner: WorkbenchPluginDescriptor
 	extension: AnyWorkbenchExtension
 	modelRefs: Readonly<Record<string, InternalModelRef>>
 	leaseRevision: number
@@ -23,7 +32,9 @@ type MountedExtension = {
 }
 
 export type InternalModelRef = Readonly<{
-	ownerPluginId: string
+	ownerSlot: PluginNodeSlot
+	/** Opaque server-only resource namespace. It is never derived from a Plugin name/address. */
+	resourceId: string
 	modelKey: string
 	kind: WorkbenchResourceRef['kind']
 }>
@@ -31,12 +42,12 @@ export type InternalModelRef = Readonly<{
 type ModelGrant = InternalModelRef & { leaseRevision: number }
 
 export class WorkbenchRegistry {
-	private readonly extensions = new Map<string, MountedExtension>()
+	private readonly extensions = new Map<PluginNodeSlot, MountedExtension>()
 	private revision = 0
 	private nextLeaseRevision = 0
 	private readonly listeners = new Set<() => void>()
 	private readonly grants = new Map<string, ModelGrant>()
-	private readonly grantIds = new Map<string, string>()
+	private readonly grantIds = new WeakMap<MountedExtension, Map<string, string>>()
 
 	constructor(
 		private readonly ctx: Context,
@@ -46,32 +57,33 @@ export class WorkbenchRegistry {
 	}
 
 	mount(
-		ownerPluginId: string,
+		ownerSlot: PluginNodeSlot,
+		owner: WorkbenchPluginDescriptor,
 		extension: AnyWorkbenchExtension,
 		modelRefs: Readonly<Record<string, InternalModelRef>>,
 	): () => void {
-		if (this.extensions.has(ownerPluginId)) {
-			throw new Error(`[workbench] plugin "${ownerPluginId}" already mounted a Workbench extension`)
+		if (this.extensions.has(ownerSlot)) {
+			throw new Error(
+				`[workbench] Plugin node already mounted a Workbench extension: ${pluginNodeAddressKey(owner.address)}`,
+			)
 		}
-		const disposeWatch = this.ctx.registry.watchInstance(
-			ownerPluginId as unknown as PluginIdentifier,
-			() => this.bump(),
-		)
-		const mounted = {
-			ownerPluginId,
+		const disposeWatch = this.ctx.registry.watchInstance(ownerSlot, () => this.bump())
+		const mounted: MountedExtension = {
+			ownerSlot,
+			owner,
 			extension,
 			modelRefs,
 			leaseRevision: ++this.nextLeaseRevision,
 			disposeWatch,
 		}
-		this.extensions.set(ownerPluginId, mounted)
+		this.extensions.set(ownerSlot, mounted)
 		this.bump()
 		let active = true
 		return () => {
 			if (!active) return
 			active = false
-			if (this.extensions.get(ownerPluginId) !== mounted) return
-			this.extensions.delete(ownerPluginId)
+			if (this.extensions.get(ownerSlot) !== mounted) return
+			this.extensions.delete(ownerSlot)
 			disposeWatch()
 			this.revokeLease(mounted)
 			this.bump()
@@ -83,11 +95,12 @@ export class WorkbenchRegistry {
 		return () => this.listeners.delete(listener)
 	}
 
-	getPluginLayout(targetPluginId: string): WorkbenchLayout {
-		const target = String(targetPluginId ?? '').trim()
+	getPluginLayout(targetAddress: PluginNodeAddressSnapshot): WorkbenchLayout {
+		const targetSlot = this.ctx.registry.internNodeAddress(targetAddress)
+		const target = this.describeNode(targetSlot)
 		const items: WorkbenchLayoutItem[] = []
-		const mounted = this.extensions.get(target)
-		if (mounted && this.isRunning(mounted.ownerPluginId)) {
+		const mounted = this.extensions.get(targetSlot)
+		if (mounted && this.isRunning(mounted.ownerSlot)) {
 			for (const [viewId, view] of Object.entries(mounted.extension.contract.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
@@ -100,16 +113,16 @@ export class WorkbenchRegistry {
 							placement,
 							placementIndex,
 							target,
-							`plugin:${target}`,
+							`plugin:${pluginNodeAddressKey(target.address)}`,
 						),
 					)
 				}
 			}
 		}
-		this.resolvePorts(target, items)
+		this.resolvePorts(targetSlot, target, items)
 		return Object.freeze({
 			revision: this.revision,
-			targetPluginId: target,
+			target,
 			items: sortItems(items),
 		})
 	}
@@ -117,7 +130,7 @@ export class WorkbenchRegistry {
 	getGlobalLayout(): WorkbenchLayout {
 		const items: WorkbenchLayoutItem[] = []
 		for (const mounted of this.extensions.values()) {
-			if (!this.isRunning(mounted.ownerPluginId)) continue
+			if (!this.isRunning(mounted.ownerSlot)) continue
 			for (const [viewId, view] of Object.entries(mounted.extension.contract.views) as Array<
 				[string, WorkbenchViewSpec]
 			>) {
@@ -132,7 +145,7 @@ export class WorkbenchRegistry {
 							view,
 							placement,
 							placementIndex,
-							mounted.ownerPluginId,
+							mounted.owner,
 							'global-route',
 							false,
 						),
@@ -140,7 +153,7 @@ export class WorkbenchRegistry {
 				}
 			}
 		}
-		return Object.freeze({ revision: this.revision, targetPluginId: null, items: sortItems(items) })
+		return Object.freeze({ revision: this.revision, target: null, items: sortItems(items) })
 	}
 
 	getCatalog(): WorkbenchCatalog {
@@ -156,13 +169,14 @@ export class WorkbenchRegistry {
 
 	findModel(grantId: string, expected?: WorkbenchResourceRef['kind']): InternalModelRef | null {
 		const grant = this.grants.get(String(grantId ?? ''))
-		const mounted = grant ? this.extensions.get(grant.ownerPluginId) : undefined
+		const mounted = grant ? this.extensions.get(grant.ownerSlot) : undefined
 		if (!grant || !mounted || mounted.leaseRevision !== grant.leaseRevision) return null
 		if (expected && grant.kind !== expected) {
 			throw new Error(`[workbench] model grant requires ${expected}, got ${grant.kind}`)
 		}
 		return Object.freeze({
-			ownerPluginId: grant.ownerPluginId,
+			ownerSlot: grant.ownerSlot,
+			resourceId: grant.resourceId,
 			modelKey: grant.modelKey,
 			kind: grant.kind,
 		})
@@ -174,17 +188,17 @@ export class WorkbenchRegistry {
 		view: WorkbenchViewSpec,
 		placement: WorkbenchPlacementSpec,
 		placementIndex: number,
-		targetPluginId: string,
+		target: WorkbenchPluginDescriptor,
 		scope: string,
 		includeModel = true,
 	): WorkbenchLayoutItem {
-		const viewKey = `${mounted.ownerPluginId}:${viewId}`
+		const viewKey = `${pluginNodeAddressKey(mounted.owner.address)}:${viewId}`
 		const id = `${viewKey}:${placementIndex}`
 		return Object.freeze({
 			id,
 			viewId,
-			ownerPluginId: mounted.ownerPluginId,
-			targetPluginId,
+			owner: mounted.owner,
+			target,
 			contractFingerprint: mounted.extension.contract.fingerprint,
 			placement: placement.placement,
 			view: view.view ?? Object.freeze({ kind: 'remote', export: viewId }),
@@ -196,8 +210,12 @@ export class WorkbenchRegistry {
 		})
 	}
 
-	private resolvePorts(targetPluginId: string, items: WorkbenchLayoutItem[]): void {
-		const target = this.extensions.get(targetPluginId)
+	private resolvePorts(
+		targetSlot: PluginNodeSlot,
+		targetDescriptor: WorkbenchPluginDescriptor,
+		items: WorkbenchLayoutItem[],
+	): void {
+		const target = this.extensions.get(targetSlot)
 		if (!target) return
 		const outlets = (
 			target.extension.contract.ports as readonly WorkbenchPortContribution[]
@@ -205,22 +223,26 @@ export class WorkbenchRegistry {
 		for (const outlet of outlets) {
 			const candidates: Array<{ mounted: MountedExtension; renderer: WorkbenchPortRenderer }> = []
 			for (const mounted of this.extensions.values()) {
-				if (!this.isRequiredDependent(mounted.ownerPluginId, targetPluginId)) continue
-				if (!this.isRunning(mounted.ownerPluginId)) continue
+				if (!this.isRequiredDependent(mounted.ownerSlot, targetSlot)) continue
+				if (!this.isRunning(mounted.ownerSlot)) continue
 				for (const item of mounted.extension.contract.ports) {
 					if (item.kind !== 'port-renderer' || !samePort(outlet, item)) continue
 					candidates.push({ mounted, renderer: item })
 				}
 			}
-			candidates.sort((a, b) => a.mounted.ownerPluginId.localeCompare(b.mounted.ownerPluginId))
+			candidates.sort((a, b) =>
+				pluginNodeAddressKey(a.mounted.owner.address).localeCompare(
+					pluginNodeAddressKey(b.mounted.owner.address),
+				),
+			)
 			if (candidates.length > 1) {
 				items.push(
 					this.portStatusItem(
-						targetPluginId,
+						targetDescriptor,
 						outlet,
 						'Workbench renderer is ambiguous',
 						`Port ${outlet.port.id} v${outlet.port.version} has multiple providers: ${candidates
-							.map(({ mounted }) => mounted.ownerPluginId)
+							.map(({ mounted }) => mounted.owner.displayName)
 							.join(', ')}`,
 					),
 				)
@@ -230,7 +252,7 @@ export class WorkbenchRegistry {
 			if (!selected) {
 				items.push(
 					this.portStatusItem(
-						targetPluginId,
+						targetDescriptor,
 						outlet,
 						'Workbench renderer unavailable',
 						`No running direct dependency provides Port ${outlet.port.id} v${outlet.port.version}.`,
@@ -255,26 +277,25 @@ export class WorkbenchRegistry {
 				}
 				portRefs[portKey] = ref
 			}
-			const id = `${targetPluginId}:${outlet.id}<-${selected.mounted.ownerPluginId}:${selected.renderer.id}`
+			const targetKey = pluginNodeAddressKey(targetDescriptor.address)
+			const ownerKey = pluginNodeAddressKey(selected.mounted.owner.address)
+			const id = `${targetKey}:${outlet.id}<-${ownerKey}:${selected.renderer.id}`
 			items.push(
 				Object.freeze({
 					id,
 					viewId: selected.renderer.viewId,
-					ownerPluginId: selected.mounted.ownerPluginId,
-					targetPluginId,
+					owner: selected.mounted.owner,
+					target: targetDescriptor,
 					contractFingerprint: selected.mounted.extension.contract.fingerprint,
 					placement: outlet.placement,
 					view: Object.freeze({ kind: 'remote', export: selected.renderer.viewId }),
 					priority: outlet.priority ?? 0,
 					meta: outlet.meta,
-					model: this.grantModel(
-						`plugin:${targetPluginId}:${id}:owner`,
-						selected.mounted.modelRefs,
-					),
+					model: this.grantModel(`plugin:${targetKey}:${id}:owner`, selected.mounted.modelRefs),
 					port: Object.freeze({
 						id: outlet.port.id,
 						version: outlet.port.version,
-						model: this.grantModel(`plugin:${targetPluginId}:${id}:port`, portRefs),
+						model: this.grantModel(`plugin:${targetKey}:${id}:port`, portRefs),
 					}),
 				}),
 			)
@@ -282,18 +303,19 @@ export class WorkbenchRegistry {
 	}
 
 	private portStatusItem(
-		targetPluginId: string,
+		target: WorkbenchPluginDescriptor,
 		outlet: WorkbenchPortOutlet,
 		title: string,
 		description: string,
 	): WorkbenchLayoutItem {
+		const targetSlot = this.ctx.registry.internNodeAddress(target.address)
+		const targetKey = pluginNodeAddressKey(target.address)
 		return Object.freeze({
-			id: `${targetPluginId}:${outlet.id}:status`,
+			id: `${targetKey}:${outlet.id}:status`,
 			viewId: `${outlet.id}:status`,
-			ownerPluginId: targetPluginId,
-			targetPluginId,
-			contractFingerprint:
-				this.extensions.get(targetPluginId)?.extension.contract.fingerprint ?? '',
+			owner: target,
+			target,
+			contractFingerprint: this.extensions.get(targetSlot)?.extension.contract.fingerprint ?? '',
 			placement: outlet.placement,
 			view: Object.freeze({
 				kind: 'builtin',
@@ -306,15 +328,25 @@ export class WorkbenchRegistry {
 		})
 	}
 
-	private isRequiredDependent(provider: string, consumer: string): boolean {
-		const providerKey = this.ctx.registry.resolveRuntimeKey(provider as RuntimePluginKey)
-		const consumerKey = this.ctx.registry.resolveRuntimeKey(consumer as RuntimePluginKey)
-		if (!providerKey || !consumerKey) return false
-		return this.ctx.registry.graph.depsOf(consumerKey).includes(providerKey as RuntimePluginKey)
+	private isRequiredDependent(provider: PluginNodeSlot, consumer: PluginNodeSlot): boolean {
+		return this.ctx.registry.graph.depsOf(consumer).includes(provider)
 	}
 
-	private isRunning(ownerPluginId: string): boolean {
-		return this.ctx.registry.isRunning(ownerPluginId as unknown as PluginIdentifier)
+	private isRunning(owner: PluginNodeSlot): boolean {
+		return this.ctx.registry.isRunning(owner)
+	}
+
+	private describeNode(slot: PluginNodeSlot): WorkbenchPluginDescriptor {
+		const mounted = this.extensions.get(slot)
+		if (mounted) return mounted.owner
+		const address = parsePluginNodeAddress(this.ctx.registry.nodeAddressOf(slot))
+		const ctor = this.ctx.runtimeRoute?.catalog.resolve(address)
+		const info = ctor ? getPluginInfo(ctor) : undefined
+		return Object.freeze({
+			address,
+			displayName: info?.displayName ?? address.definition.exportName,
+			rootExportName: info?.rootExportName ?? address.definition.exportName,
+		})
 	}
 
 	private bump(): void {
@@ -328,13 +360,18 @@ export class WorkbenchRegistry {
 	): Readonly<Record<string, WorkbenchResourceRef>> {
 		const result: Record<string, WorkbenchResourceRef> = {}
 		for (const [key, ref] of Object.entries(refs)) {
-			const owner = this.extensions.get(ref.ownerPluginId)
+			const owner = this.extensions.get(ref.ownerSlot)
 			if (!owner) continue
-			const grantKey = `${owner.leaseRevision}:${scope}:${key}:${ref.ownerPluginId}:${ref.modelKey}:${ref.kind}`
-			let grantId = this.grantIds.get(grantKey)
+			let byKey = this.grantIds.get(owner)
+			if (!byKey) {
+				byKey = new Map()
+				this.grantIds.set(owner, byKey)
+			}
+			const grantKey = `${scope}\0${key}\0${ref.resourceId}\0${ref.kind}`
+			let grantId = byKey.get(grantKey)
 			if (!grantId) {
 				grantId = randomUUID()
-				this.grantIds.set(grantKey, grantId)
+				byKey.set(grantKey, grantId)
 				this.grants.set(grantId, { ...ref, leaseRevision: owner.leaseRevision })
 			}
 			result[key] = Object.freeze({ grantId, kind: ref.kind })
@@ -344,16 +381,11 @@ export class WorkbenchRegistry {
 
 	private revokeLease(mounted: MountedExtension): void {
 		for (const [grantId, grant] of this.grants) {
-			if (
-				grant.ownerPluginId === mounted.ownerPluginId &&
-				grant.leaseRevision === mounted.leaseRevision
-			) {
+			if (grant.ownerSlot === mounted.ownerSlot && grant.leaseRevision === mounted.leaseRevision) {
 				this.grants.delete(grantId)
 			}
 		}
-		for (const [key, grantId] of this.grantIds) {
-			if (!this.grants.has(grantId)) this.grantIds.delete(key)
-		}
+		this.grantIds.delete(mounted)
 	}
 }
 

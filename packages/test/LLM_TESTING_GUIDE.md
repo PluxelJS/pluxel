@@ -2,30 +2,34 @@
 
 按所测边界选择最小 host：
 
-- core lifecycle、DI、feature、effects 与 config composition：`@pluxel/core/test`。
+- core lifecycle、DI、effects 与 config composition：`@pluxel/core/test`。
 - runtime HTTP、persistence、Workbench Plane service：`@pluxel/runtime/test`。
 - static/dynamic route、Vite、HMR 与 UI compiler：对应 runtime package 的集成测试。
 
-插件依赖与 feature 测试使用最终声明：
+插件依赖测试使用最终声明。required provider 从插件包根入口 value-import，并直接写在 constructor；
+测试必须经过 `@pluxel/test/vitest` semantic lowering，让 Core 消费与 Vite/production 相同的 slot edge facts：
 
 ```ts
-@Plugin({
-	name: 'Consumer',
-	features: [CacheFeature],
-})
-class Consumer extends BasePlugin {
-	cache = this.features.use(CacheFeature)
+import { ProviderPlugin } from '@acme/provider'
+import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-	constructor(readonly provider: Provider) {
+@Plugin({ displayName: 'Consumer' })
+class Consumer extends BasePlugin {
+	constructor(readonly provider: ProviderPlugin) {
 		super()
 	}
 }
 ```
 
-lazy feature 使用 module top-level `defineLazyFeature()` spec 与 `await features.load(spec)`；host-managed optional
-plugin 使用 `plugins.get/use(Token)`，package-optional implementation 使用 `optionalPlugin()` + `plugins.use(Ref)`，并在
-runtime/route host 中验证 absent、broken、replacement 与 cleanup。
+optional integration 使用目标包根入口的 type-only import、non-exported module-level
+`definePluginRef<T>()`，并只在 `init()` 的直接同步 `plugins.use(ref, callback)` statement 中消费。测试 absent、
+provider start failure、replacement/restart 与 callback cleanup；ref 只观察 host catalog，不加载或注册 package。
+
+每个 Plugin 最多声明一个 `this.configs.use(ObjectSchema)` 字段。配置测试只通过 Plugin constructor/address 设置值；
+嵌套结构、section 与展示 metadata 属于该 object schema。
+
+内部拆分用 owner-managed 普通对象与 effects cleanup；需要独立生命周期、配置或治理的能力建模为 Plugin。
 
 Workbench Plane 至少覆盖：关闭时 callback 不执行且插件可运行；开启时 backend 在首个 init 前安装；module cleanup、target layout、opaque resource binding，以及 dev source 与 production artifact 路径。
 
-仅测试底层 metadata/decorator 机制时，显式从 test/unsafe surface 导入 mutation helper，不要把它们当作 runtime 作者 API。
+仅测试底层 lowering facts 时，显式从 test/unsafe surface 导入 mutation helper，不要把它们当作 runtime 作者 API。

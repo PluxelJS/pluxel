@@ -333,7 +333,7 @@ describe('toolchain package boundaries', () => {
 		expect(pluginBuild).toContain('configSourcePlugin()')
 		expect(pluginBuild).toContain('pluginArtifactBuildPlugin(')
 		expect(pluginBuild).toContain('legacy: true')
-		expect(pluginBuild).toContain('emitDecoratorMetadata: true')
+		expect(pluginBuild).toContain('emitDecoratorMetadata: false')
 		expect(pluginBuild).toContain("name: 'pluxel:decorator-output-guard'")
 		expect(cliBuild).toContain('build.pluginPackage({')
 		expect(cliBuild).not.toContain('configSourcePlugin(')
@@ -426,7 +426,7 @@ describe('toolchain package boundaries', () => {
 		expect(runtimeManifest.exports?.['./frozen']).toBeUndefined()
 		expect(runtimeDynamicManifest.exports?.['./register']).toBeUndefined()
 		expect(configSourcePlugin).toContain(
-			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime/toolchain'",
+			"const DEFAULT_METADATA_HELPER_IMPORT_SOURCE = '@pluxel/runtime'",
 		)
 	})
 

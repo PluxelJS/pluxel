@@ -99,13 +99,11 @@ function sanitizeWorkbenchTabState(
 	return Object.fromEntries(entries)
 }
 
-function sanitizeWorkbenchTab(value: unknown, legacy: boolean): WorkbenchTab | undefined {
+function sanitizeWorkbenchTab(value: unknown): WorkbenchTab | undefined {
 	if (!isRecord(value)) return undefined
-	const legacyId = typeof value.id === 'string' ? value.id : undefined
-	const instanceId =
-		typeof value.instanceId === 'string' ? value.instanceId : legacy ? legacyId : undefined
+	const instanceId = typeof value.instanceId === 'string' ? value.instanceId : undefined
 	if (!instanceId?.trim()) return undefined
-	if (!legacy && !instanceId.startsWith('tab:')) return undefined
+	if (!instanceId.startsWith('tab:')) return undefined
 	if (instanceId === '__proto__' || instanceId === 'constructor' || instanceId === 'prototype') {
 		return undefined
 	}
@@ -114,25 +112,23 @@ function sanitizeWorkbenchTab(value: unknown, legacy: boolean): WorkbenchTab | u
 	const title = typeof value.title === 'string' && value.title.trim() ? value.title.trim() : '页面'
 	const explicitDocumentKey =
 		typeof value.documentKey === 'string' && value.documentKey === path ? path : undefined
-	const legacyDocumentKey =
-		legacy && value.kind === 'document' && !/:instance:\d+$/.test(instanceId) ? path : undefined
 	return {
 		instanceId,
 		path,
 		title,
 		meta: typeof value.meta === 'string' && value.meta.trim() ? value.meta.trim() : undefined,
-		documentKey: explicitDocumentKey ?? legacyDocumentKey,
+		documentKey: explicitDocumentKey,
 	}
 }
 
-function sanitizeWorkbenchUiState(value: unknown, legacy: boolean): WorkbenchUiState {
+function sanitizeWorkbenchUiState(value: unknown): WorkbenchUiState {
 	if (!isRecord(value)) return createDefaultWorkbenchUiState()
 	const seen = new Set<string>()
 	const documentInstances = new Map<string, string>()
 	const duplicateDocumentInstances = new Map<string, string>()
 	const tabs = Array.isArray(value.tabs)
 		? value.tabs.flatMap((raw) => {
-				const tab = sanitizeWorkbenchTab(raw, legacy)
+				const tab = sanitizeWorkbenchTab(raw)
 				if (!tab || seen.has(tab.instanceId)) return []
 				seen.add(tab.instanceId)
 				if (tab.documentKey) {
@@ -154,12 +150,11 @@ function sanitizeWorkbenchUiState(value: unknown, legacy: boolean): WorkbenchUiS
 		storedActiveTabId && tabs.some((tab) => tab.instanceId === storedActiveTabId)
 			? storedActiveTabId
 			: (tabs[0]?.instanceId ?? null)
-	const legacySectionPanes = legacy && isRecord(value.sectionPanes) ? value.sectionPanes : undefined
 	const retainedInstanceIds = new Set(tabs.map((tab) => tab.instanceId))
 	return {
 		activeTabId,
 		navigationCollapsed: value.navigationCollapsed !== false,
-		pluginPane: sanitizePluginPaneState(value.pluginPane ?? legacySectionPanes?.plugins),
+		pluginPane: sanitizePluginPaneState(value.pluginPane),
 		tabState: sanitizeWorkbenchTabState(value.tabState, retainedInstanceIds),
 		tabs,
 	}
@@ -180,9 +175,9 @@ export function createPersistedWorkbenchState(state: WorkbenchUiState) {
 export function restoreWorkbenchState(value: unknown): WorkbenchUiState {
 	if (!isRecord(value)) return createDefaultWorkbenchUiState()
 	if (value.version === WORKBENCH_STORAGE_VERSION) {
-		return sanitizeWorkbenchUiState(value.state, false)
+		return sanitizeWorkbenchUiState(value.state)
 	}
-	return sanitizeWorkbenchUiState(value, true)
+	return createDefaultWorkbenchUiState()
 }
 
 export function readWorkbenchState(): WorkbenchUiState {

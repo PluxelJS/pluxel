@@ -25,7 +25,14 @@ function pluginNames(config: { plugins?: unknown }): string[] {
 describe('staticApplication', () => {
 	it('exposes one standard plugin package preset and shared source pipeline', () => {
 		const pipeline = createPluginBuildPipeline({ root: '/tmp/pluxel-plugin-package' })
-		const config = pluginPackage({ root: '/tmp/pluxel-plugin-package' })
+		const config = pluginPackage({
+			root: '/tmp/pluxel-plugin-package',
+			packageMetadata: {
+				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
+				manifestField: 'pluxel',
+				log: () => undefined,
+			},
+		})
 
 		expect(pluginNames(config)).toEqual(pluginNames(pipeline))
 		expect(pluginNames(config)).toEqual([
@@ -41,7 +48,7 @@ describe('staticApplication', () => {
 		expect(config.exports).toEqual({ devExports: '@pluxel/hmr' })
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		})
 	})
 
@@ -51,7 +58,6 @@ describe('staticApplication', () => {
 			packageMetadata: {
 				packageJsonPath: '/tmp/pluxel-plugin-package/package.json',
 				manifestField: 'pluxel',
-				prefixes: ['pluxel-plugin'],
 				log: () => undefined,
 			},
 		})
@@ -85,7 +91,7 @@ describe('staticApplication', () => {
 		expect(pluginNames(config)).toContain('pluxel:decorator-output-guard')
 		expect(config.inputOptions?.transform?.decorator).toEqual({
 			legacy: true,
-			emitDecoratorMetadata: true,
+			emitDecoratorMetadata: false,
 		})
 		expect(config.entry).toEqual({ app: 'pluxel:static-application-bootstrap' })
 	})

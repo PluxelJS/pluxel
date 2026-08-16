@@ -1,4 +1,4 @@
-import { type Context, type PluginConstructor } from '@pluxel/core'
+import type { Context, PluginConstructor, PluginNodeAddressSnapshot } from '@pluxel/core'
 import {
 	ensureForkBaseFromCatalog,
 	type RuntimePluginSource,
@@ -7,61 +7,55 @@ import {
 import type { LoaderApi } from '../loader/LoaderService'
 
 export function createLoaderRuntimeRoute(ctx: Context, api: LoaderApi): RuntimeRouteCapabilities {
-	const findModuleId = (name: string, ctor?: PluginConstructor): string | null =>
-		api.registry.findModuleId(name, ctor)
-
-	const resolveSource = (name: string, ctor?: PluginConstructor): RuntimePluginSource => {
-		const moduleId = findModuleId(name, ctor)
-		if (moduleId) {
-			return {
-				__typename: 'PluginSourceInfo',
-				kind: 'hmr',
-				moduleId,
-				packageName: null,
-				version: null,
-				tag: null,
-			}
-		}
-		return {
-			__typename: 'PluginSourceInfo',
-			kind: 'unknown',
-			moduleId: null,
-			packageName: null,
-			version: null,
-			tag: null,
-		}
+	const resolveSource = (
+		address: PluginNodeAddressSnapshot,
+		_ctor?: PluginConstructor,
+	): RuntimePluginSource => {
+		const moduleId = api.registry.findModuleId(address)
+		return moduleId
+			? {
+					__typename: 'PluginSourceInfo',
+					kind: 'hmr',
+					moduleId,
+					packageName: null,
+					version: null,
+					tag: null,
+				}
+			: {
+					__typename: 'PluginSourceInfo',
+					kind: 'unknown',
+					moduleId: null,
+					packageName: null,
+					version: null,
+					tag: null,
+				}
 	}
 
 	return {
 		catalog: {
-			resolve: (target) => api.runtime.resolve(target),
-			resolveOrRegistered: (name) => api.runtime.resolve(name) ?? api.registry.getCtor(name),
-			require: (name) => {
-				const ctor = api.runtime.resolve(name) ?? api.registry.getCtor(name)
-				if (!ctor) throw new Error(`Plugin not found: ${name}`)
+			resolve: (address) => api.runtime.resolve(address),
+			resolveDefinition: (address) => api.runtime.resolveDefinition(address),
+			require: (address) => {
+				const ctor = api.runtime.resolve(address)
+				if (!ctor) throw new Error('Plugin node is not present in the dynamic catalog')
 				return ctor
 			},
 			listRegistered: () => api.registry.listRegistered(),
-			listLoadedNames: () => api.registry.listLoadedNames(),
 		},
 		lifecycle: {
-			isRunning: (target) => api.runtime.isRunning(target),
-			enable: (name, ctor) => api.control.enable(name, ctor),
-			enablePersisted: (name) => api.control.enablePersisted(name),
-			deactivate: (name, ctor, options) => api.control.deactivate(name, ctor, options),
-			stop: (name, ctor) => api.control.stop(name, ctor),
+			isRunning: (address) => api.runtime.isRunning(address),
+			enable: (address, ctor) => api.control.enable(address, ctor),
+			enablePersisted: (address) => api.control.enablePersisted(address),
+			deactivate: (address, ctor, options) => api.control.deactivate(address, ctor, options),
+			stop: (address, ctor) => api.control.stop(address, ctor),
 		},
 		configMetadata: {
-			getSchema: (name) => api.registry.getSchema(name),
-			getSchemaSource: (name) => api.registry.getSchemaSource(name),
-			getConfigLayout: (name) => api.registry.getConfigLayout(name),
+			getConfig: (address) => api.registry.getConfig(address),
 		},
 		dependencies: {
-			listDependencies: (ctor) => api.deps.list(ctor),
-			ensureForkBase: (baseName) => ensureForkBaseFromCatalog(ctx, baseName),
+			listDependencies: (address) => api.deps.list(address),
+			ensureForkBase: (definition) => ensureForkBaseFromCatalog(ctx, definition),
 		},
-		source: {
-			resolveSource,
-		},
+		source: { resolveSource },
 	}
 }

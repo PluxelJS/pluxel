@@ -44,8 +44,7 @@
 	},
 	"dependencies": {
 		"@chenglou/pretext": "catalog:",
-		"@napi-rs/canvas": "catalog:",
-		"@pluxel/fonts": "workspace:*"
+		"@napi-rs/canvas": "catalog:"
 	},
 	"devDependencies": {
 		"@pluxel/cli": "workspace:*",
@@ -57,6 +56,12 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
+		"@pluxel/fonts": "workspace:*",
 		"@pluxel/runtime": "workspace:*"
+	},
+	"pluxel": {
+		"pluginPackages": {
+			"@pluxel/fonts": "required"
+		}
 	}
 }

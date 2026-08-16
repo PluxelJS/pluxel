@@ -7,6 +7,7 @@ import {
 	assertPluginLifecycleIssue,
 	BasePlugin,
 	Plugin,
+	pluginNodeAddressOf,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
 import { workbench, type WorkbenchLayout } from '@pluxel/runtime/workbench'
@@ -29,7 +30,7 @@ const ConsumerWorkbench = workbench.portOutlet({
 	}),
 })
 
-@Plugin({ name: 'FontsTestConsumer' })
+@Plugin({ displayName: 'FontsTestConsumer' })
 class FontsTestConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
 		super()
@@ -42,7 +43,7 @@ class FontsTestConsumer extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'FontsLazyConsumer' })
+@Plugin({ displayName: 'FontsLazyConsumer' })
 class FontsLazyConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
 		super()
@@ -82,7 +83,7 @@ describe('FontsPlugin', () => {
 			await withRuntimeHost(
 				async (host) => {
 					host.add([FontsPlugin, FontsTestConsumer])
-					host.cfg(FontsPlugin).set({ config: { defaultFamily: 'serif' } })
+					host.cfg(FontsPlugin).set({ defaultFamily: 'serif' })
 					host.cfg(FontsPlugin).enable()
 					await host.commit()
 
@@ -207,7 +208,7 @@ describe('FontsPlugin', () => {
 		await withRuntimeHost(
 			async (host) => {
 				host.add([FontsPlugin, FontsLazyConsumer])
-				host.cfg(FontsPlugin).set({ config: { maxFontBytes: 4 } })
+				host.cfg(FontsPlugin).set({ maxFontBytes: 4 })
 				host.cfg(FontsPlugin).enable()
 				await host.commit()
 				const fonts = host.require(FontsLazyConsumer).fonts
@@ -257,15 +258,23 @@ describe('FontsPlugin', () => {
 
 			const response = await host.ctx.http.fetch(
 				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/FontsTestConsumer`,
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(FontsTestConsumer)))}`,
 				),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout
 			expect(layout.items).toEqual([
 				expect.objectContaining({
-					ownerPluginId: 'FontsPlugin',
-					targetPluginId: 'FontsTestConsumer',
+					owner: {
+						address: pluginNodeAddressOf(FontsPlugin),
+						displayName: 'FontsPlugin',
+						rootExportName: 'FontsPlugin',
+					},
+					target: {
+						address: pluginNodeAddressOf(FontsTestConsumer),
+						displayName: 'FontsTestConsumer',
+						rootExportName: 'FontsTestConsumer',
+					},
 					viewId: 'FontSelection',
 					port: expect.objectContaining({
 						id: '@pluxel/fonts.selection',
@@ -276,15 +285,23 @@ describe('FontsPlugin', () => {
 
 			const providerResponse = await host.ctx.http.fetch(
 				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/FontsPlugin`,
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(FontsPlugin)))}`,
 				),
 			)
 			expect(providerResponse.status).toBe(200)
 			const providerLayout = (await providerResponse.json()) as WorkbenchLayout
 			expect(providerLayout.items).toEqual([
 				expect.objectContaining({
-					ownerPluginId: 'FontsPlugin',
-					targetPluginId: 'FontsPlugin',
+					owner: {
+						address: pluginNodeAddressOf(FontsPlugin),
+						displayName: 'FontsPlugin',
+						rootExportName: 'FontsPlugin',
+					},
+					target: {
+						address: pluginNodeAddressOf(FontsPlugin),
+						displayName: 'FontsPlugin',
+						rootExportName: 'FontsPlugin',
+					},
 					viewId: 'Fonts',
 					model: { fonts: expect.objectContaining({ kind: 'rpc' }) },
 				}),

@@ -15,30 +15,22 @@ export type {
 } from '@pluxel/core'
 
 export {
-	BaseFeature,
 	BasePlugin,
-	Config,
 	collectPluginLifecycleBlocked,
+	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
-	collectPluginLifecycleStoppedWithErrors,
-	defineLazyFeature,
-	FeatureHost,
+	definePluginRef,
 	ForkablePlugin,
-	HostBoundFeature,
 	Plugin,
-	checkPluginDecorator,
-	clearParamToken,
 	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
-	isPluginLifecycleStoppedWithErrorIssue,
-	setParamToken,
-	setParamTokens,
 } from '@pluxel/core'
 
 export { LoggerService } from '@pluxel/core/logger'
-export { EffectsService, EventsService } from '@pluxel/core/services'
+export { EffectsService } from '@pluxel/core/services'
 
 export {
 	assertPluginLifecycleIssue,
@@ -48,11 +40,4 @@ export {
 export type { CoreHostLifecycleIssueExpectation } from '@pluxel/core/test'
 
 export { createContext, createHost, withContext, withHost } from './host'
-export type {
-	ConfigPatch,
-	ConfigPatchByName,
-	ConfigPatchFor,
-	Host,
-	HostConfigHandle,
-	TestContext,
-} from './host'
+export type { ConfigPatch, Host, HostConfigHandle, TestContext } from './host'

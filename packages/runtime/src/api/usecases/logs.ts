@@ -6,6 +6,7 @@ import {
 	type LogStreamMeta,
 	type RuntimeLogLine,
 } from '../../logger/protocol'
+import { pluginNodeAddressEqual } from '@pluxel/core'
 import { requireActiveRuntimeLogging } from '../../logger/logging'
 import type { RuntimeLogStore } from '../../logger/store'
 
@@ -66,11 +67,6 @@ function resolveStream(input?: string): ResolvedLogStream {
 	if (requested === 'default') return { streamId: 'default', store: defaultStore, virtual: false }
 	const existing = stores.get(requested)
 	if (existing) return { streamId: requested, store: existing, virtual: false }
-	if (requested.startsWith('plugin:')) {
-		const pluginId = requested.slice('plugin:'.length)
-		if (!pluginId) throw new Error('Invalid plugin stream id')
-		return { streamId: requested, store: defaultStore, virtual: true, derivedFilter: { pluginId } }
-	}
 	if (requested.startsWith('context:')) {
 		const context = requested.slice('context:'.length)
 		if (!context) throw new Error('Invalid context stream id')
@@ -100,12 +96,12 @@ function assignDefined<T extends object>(out: T, k: keyof T, v: unknown) {
 function mergeFilters(a: LogFilter | undefined, b: LogFilter | undefined): LogFilter | null {
 	if (!a) return b ?? {}
 	if (!b) return a
-	if (a.pluginId && b.pluginId && a.pluginId !== b.pluginId) return null
+	if (a.plugin && b.plugin && !pluginNodeAddressEqual(a.plugin, b.plugin)) return null
 	if (a.context && b.context && a.context !== b.context) return null
 	if (a.displayName && b.displayName && a.displayName !== b.displayName) return null
 	if (a.category && b.category && a.category !== b.category) return null
 	const out: LogFilter = { ...a }
-	assignDefined(out, 'pluginId', b.pluginId)
+	assignDefined(out, 'plugin', b.plugin)
 	assignDefined(out, 'context', b.context)
 	assignDefined(out, 'displayName', b.displayName)
 	assignDefined(out, 'category', b.category)

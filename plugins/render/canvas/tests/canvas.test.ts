@@ -1,4 +1,4 @@
-import { BasePlugin, Plugin, withRuntimeHost } from '@pluxel/runtime/test'
+import { BasePlugin, Plugin, pluginNodeAddressOf, withRuntimeHost } from '@pluxel/runtime/test'
 import type { WorkbenchLayout } from '@pluxel/runtime/workbench'
 import {
 	RUNTIME_INTERNAL_API_BASE,
@@ -11,14 +11,14 @@ import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } fr
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 
-@Plugin({ name: 'CanvasTestConsumer' })
+@Plugin({ displayName: 'CanvasTestConsumer' })
 class CanvasTestConsumer extends BasePlugin {
 	constructor(readonly canvas: CanvasPlugin) {
 		super()
 	}
 }
 
-@Plugin({ name: 'CanvasFontAdminConsumer' })
+@Plugin({ displayName: 'CanvasFontAdminConsumer' })
 class CanvasFontAdminConsumer extends BasePlugin {
 	constructor(
 		readonly canvas: CanvasPlugin,
@@ -184,7 +184,7 @@ describe('CanvasPlugin', () => {
 			async (host) => {
 				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				host.cfg(FontsPlugin).enable()
-				host.cfg(CanvasPlugin).set({ config: { maxTextCharacters: 4 } })
+				host.cfg(CanvasPlugin).set({ maxTextCharacters: 4 })
 				await host.commit()
 
 				expect(() =>
@@ -201,7 +201,10 @@ describe('CanvasPlugin', () => {
 				host.add([FontsPlugin, CanvasPlugin, CanvasTestConsumer])
 				host.cfg(FontsPlugin).enable()
 				host.cfg(CanvasPlugin).set({
-					config: { maxWidth: 100, maxHeight: 100, maxPixels: 1_000, maxImageBytes: 4 },
+					maxWidth: 100,
+					maxHeight: 100,
+					maxPixels: 1_000,
+					maxImageBytes: 4,
 				})
 				await host.commit()
 				const capability = host.require(CanvasTestConsumer).canvas
@@ -236,15 +239,23 @@ describe('CanvasPlugin', () => {
 
 			const response = await host.ctx.http.fetch(
 				new Request(
-					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/CanvasPlugin`,
+					`http://local.test${RUNTIME_INTERNAL_API_BASE}${RUNTIME_WORKBENCH_PLUGIN_LAYOUT_BASE}/${encodeURIComponent(JSON.stringify(pluginNodeAddressOf(CanvasPlugin)))}`,
 				),
 			)
 			expect(response.status).toBe(200)
 			const layout = (await response.json()) as WorkbenchLayout
 			expect(layout.items).toEqual([
 				expect.objectContaining({
-					ownerPluginId: 'FontsPlugin',
-					targetPluginId: 'CanvasPlugin',
+					owner: {
+						address: pluginNodeAddressOf(FontsPlugin),
+						displayName: 'FontsPlugin',
+						rootExportName: 'FontsPlugin',
+					},
+					target: {
+						address: pluginNodeAddressOf(CanvasPlugin),
+						displayName: 'CanvasPlugin',
+						rootExportName: 'CanvasPlugin',
+					},
 					viewId: 'FontSelection',
 					port: expect.objectContaining({
 						id: '@pluxel/fonts.selection',

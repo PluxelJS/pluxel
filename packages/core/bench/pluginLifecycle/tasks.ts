@@ -82,7 +82,8 @@ function coldTask(bench: Bench, name: TaskName, run: (ctx: Ctx) => Promise<void>
 
 async function setupConfigHeavy(scenario: Scenario) {
 	const ctx = new Context({ name: 'bench-config-heavy' })
-	ctx.configService.patchConfig(scenario.configHeavy.id, scenario.configHeavy.record)
+	const owner = ctx.registry.internNodeAddress(scenario.configHeavy.address)
+	ctx.configService.patchConfig(owner, scenario.configHeavy.record)
 	ctx.registry.register(scenario.configHeavy.ctor)
 	ensureOk(await ctx.registry.commit())
 	return ctx

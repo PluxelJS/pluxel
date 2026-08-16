@@ -4,11 +4,13 @@ import {
 	Plugin,
 	withRuntimeHost,
 } from '@pluxel/runtime/test'
+import { pluginNodeAddressOf } from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 
 import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime'
+import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
 
-@Plugin({ name: 'ScopedHttpPlugin', type: 'event' })
+@Plugin({ displayName: 'ScopedHttpPlugin' })
 class ScopedHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes((app) =>
@@ -17,7 +19,7 @@ class ScopedHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'DynamicScopedHttpPlugin', type: 'event' })
+@Plugin({ displayName: 'DynamicScopedHttpPlugin' })
 class DynamicScopedHttpPlugin extends BasePlugin {
 	private routesHandle: ElysiaRouteHandle | null = null
 
@@ -30,7 +32,7 @@ class DynamicScopedHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'PublicHttpPlugin', type: 'event' })
+@Plugin({ displayName: 'PublicHttpPlugin' })
 class PublicHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes(
@@ -40,7 +42,7 @@ class PublicHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'ReservedPublicHttpPlugin', type: 'event' })
+@Plugin({ displayName: 'ReservedPublicHttpPlugin' })
 class ReservedPublicHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes((app) => app.get('/', () => 'invalid'), {
@@ -50,20 +52,21 @@ class ReservedPublicHttpPlugin extends BasePlugin {
 }
 
 describe('HttpService plugin-scoped mount', () => {
-	it('mounts plugin routes under the plugin id prefix and auto-disposes on unload', async () => {
+	it('mounts plugin routes under the canonical owner key and auto-disposes on unload', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add(ScopedHttpPlugin)
-			host.cfg('ScopedHttpPlugin').enable()
+			host.cfg(ScopedHttpPlugin).enable()
 			await host.commit()
+			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(ScopedHttpPlugin))
 
 			const rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('root')
 
 			const settingsRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin/settings`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/settings`),
 			)
 			expect(settingsRes.status).toBe(200)
 			expect(await settingsRes.text()).toBe('settings')
@@ -72,7 +75,7 @@ describe('HttpService plugin-scoped mount', () => {
 			await host.commit()
 
 			const removedRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/ScopedHttpPlugin`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
 			)
 			expect(removedRes.status).toBe(404)
 		})
@@ -81,17 +84,18 @@ describe('HttpService plugin-scoped mount', () => {
 	it('supports replacing a mounted plugin route tree to add routes dynamically', async () => {
 		await withRuntimeHost(async (host) => {
 			host.add(DynamicScopedHttpPlugin)
-			host.cfg('DynamicScopedHttpPlugin').enable()
+			host.cfg(DynamicScopedHttpPlugin).enable()
 			await host.commit()
+			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(DynamicScopedHttpPlugin))
 
 			let rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('v1')
 
 			let extraRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/extra`),
 			)
 			expect(extraRes.status).toBe(404)
 
@@ -99,13 +103,13 @@ describe('HttpService plugin-scoped mount', () => {
 			instance?.replaceRoutes()
 
 			rootRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}`),
 			)
 			expect(rootRes.status).toBe(200)
 			expect(await rootRes.text()).toBe('v2')
 
 			extraRes = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/DynamicScopedHttpPlugin/extra`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/extra`),
 			)
 			expect(extraRes.status).toBe(200)
 			expect(await extraRes.text()).toBe('extra')
@@ -117,12 +121,13 @@ describe('HttpService plugin-scoped mount', () => {
 			host.add(PublicHttpPlugin)
 			host.cfg(PublicHttpPlugin).enable()
 			await host.commit()
+			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(PublicHttpPlugin))
 
 			const publicResponse = await host.ctx.http.fetch(new Request('http://local/business/health'))
 			expect(publicResponse.status).toBe(200)
 			expect(await publicResponse.text()).toBe('healthy')
 			const scopedResponse = await host.ctx.http.fetch(
-				new Request(`http://local${PLUGIN_HTTP_BASE}/PublicHttpPlugin/health`),
+				new Request(`http://local${PLUGIN_HTTP_BASE}/${ownerKey}/health`),
 			)
 			expect(scopedResponse.status).toBe(404)
 

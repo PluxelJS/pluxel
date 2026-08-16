@@ -1,10 +1,16 @@
-import type { WorkbenchCatalog, WorkbenchLayoutItem } from '@pluxel/runtime/workbench'
+import type {
+	WorkbenchCatalog,
+	WorkbenchLayoutItem,
+	WorkbenchPluginDescriptor,
+} from '@pluxel/runtime/workbench'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import type { WorkbenchLocaleService } from '@pluxel/runtime/workbench/ui'
 import type { RuntimeTransportClient } from '@pluxel/runtime/web'
 import { stringifyUnknown } from '../utils/unknown'
 import { loadFederatedWorkbenchModule } from './federationRuntime'
 import { matchWorkbenchRoute } from './routes'
 import { normalizeWorkbenchPath } from './paths'
+import { workbenchNodeKey } from './node-address'
 import {
 	WorkbenchModuleStore,
 	type WorkbenchModuleLoader,
@@ -108,7 +114,10 @@ export class WorkbenchClientRuntime {
 		return this.entry(target).snapshot
 	}
 
-	resolveRoute(target: string, path: string): WorkbenchResolvedRoute | undefined {
+	resolveRoute(
+		target: PluginNodeAddressSnapshot,
+		path: string,
+	): WorkbenchResolvedRoute | undefined {
 		const snapshot = this.getSnapshot(target)
 		const normalized = normalizeWorkbenchPath(path)
 		const exact = snapshot.routes.find(
@@ -126,13 +135,14 @@ export class WorkbenchClientRuntime {
 	}
 
 	view(target: WorkbenchTargetId, item: WorkbenchLayoutItem) {
-		const record = this.getSnapshot(target).modules.get(item.ownerPluginId)
+		const record = this.getSnapshot(target).modules.get(workbenchNodeKey(item.owner.address))
 		if (!record || record.module.contractFingerprint !== item.contractFingerprint) return undefined
 		return record.module.views[item.view.kind === 'remote' ? item.view.export : '']
 	}
 
-	artifactState(owner: string) {
-		return this.catalog.states.find((state) => state.pluginName === owner)
+	artifactState(owner: PluginNodeAddressSnapshot) {
+		const key = workbenchNodeKey(owner)
+		return this.catalog.states.find((state) => workbenchNodeKey(state.owner.address) === key)
 	}
 
 	private invalidate(): void {
@@ -233,27 +243,29 @@ export class WorkbenchClientRuntime {
 			? await this.transport.http.workbench.pluginLayout(target)
 			: await this.transport.http.workbench.globalLayout()
 		const catalog = await this.ensureCatalog(layout.revision, invalidation)
-		const owners = [
-			...new Set(
-				layout.items
-					.filter(
-						(item) =>
-							item.view.kind === 'remote' &&
-							(target !== null || item.placement !== 'plugin.routes'),
-					)
-					.map((item) => item.ownerPluginId),
-			),
-		]
+		const owners = new Map<string, WorkbenchPluginDescriptor>()
+		for (const item of layout.items) {
+			if (item.view.kind !== 'remote' || (target === null && item.placement === 'plugin.routes')) {
+				continue
+			}
+			owners.set(workbenchNodeKey(item.owner.address), item.owner)
+		}
 		const staged = new Map<string, WorkbenchModuleRecord>()
 		try {
-			for (const owner of owners) {
-				const artifact = catalog.bundles.find((item) => item.pluginName === owner)
+			for (const [ownerKey, owner] of owners) {
+				const artifact = catalog.bundles.find(
+					(item) => workbenchNodeKey(item.owner.address) === ownerKey,
+				)
 				if (!artifact) {
-					const state = catalog.states.find((item) => item.pluginName === owner)
-					if (state?.state === 'building') throw new Error(`Workbench UI is building: ${owner}`)
-					throw new Error(state?.message ?? `Workbench UI artifact not found: ${owner}`)
+					const state = catalog.states.find(
+						(item) => workbenchNodeKey(item.owner.address) === ownerKey,
+					)
+					if (state?.state === 'building') {
+						throw new Error(`Workbench UI is building: ${owner.displayName}`)
+					}
+					throw new Error(state?.message ?? `Workbench UI artifact not found: ${owner.displayName}`)
 				}
-				staged.set(owner, await this.modules.prepare(artifact))
+				staged.set(ownerKey, await this.modules.prepare(artifact))
 			}
 			return compileWorkbenchSnapshot(target, layout, staged)
 		} catch (error) {
@@ -299,7 +311,7 @@ export class WorkbenchClientRuntime {
 }
 
 function targetKey(target: WorkbenchTargetId): string {
-	return target === null ? '$global' : `plugin:${target}`
+	return target === null ? '$global' : `plugin:${workbenchNodeKey(target)}`
 }
 
 function toError(error: unknown): Error {

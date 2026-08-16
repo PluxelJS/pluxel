@@ -1,21 +1,24 @@
-import { BasePlugin, Plugin } from '@pluxel/runtime'
+import { BasePlugin, Plugin, v } from '@pluxel/runtime'
 import { TelegramConfig } from './config'
 import { PluginB } from './PluginB'
 import { PluginC } from './PluginC'
 import { test1 } from './testconfig'
 
-@Plugin({ name: 'PluginA', type: 'event' })
+const PluginAConfig = v.object({
+	test: test1,
+	telegram: TelegramConfig,
+})
+
+@Plugin({ displayName: 'Plugin A' })
 export class PluginA extends BasePlugin {
-	private test1 = this.configs.use(test1)
-	private telegram = this.configs.use(TelegramConfig)
+	private config = this.configs.use(PluginAConfig)
 
 	constructor(public pluginB: PluginB) {
 		super()
 	}
 
 	override init(_abort: AbortSignal): void | Promise<void> {
-		void this.test1
-		void this.telegram
+		void this.config
 
 		this.pluginB.doSomething()
 		const pluginC = this.ctx.registry.getInstance(PluginC)

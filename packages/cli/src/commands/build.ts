@@ -15,9 +15,6 @@ export const buildCommand = define({
 
 		ctx.log(`[build] root: ${runtime.projectRoot}`)
 		ctx.log(`[build] package.json: ${runtime.packageJsonPath}`)
-		if (runtime.pluginPrefixes.length > 0) {
-			ctx.log(`[build] plugin prefixes: ${runtime.pluginPrefixes.join(', ')}`)
-		}
 		if (runtime.tsdownConfigPath) {
 			ctx.log(`[build] tsdown overrides: ${runtime.tsdownConfigPath}`)
 		}
@@ -35,7 +32,6 @@ export const buildCommand = define({
 					packageMetadata: {
 						packageJsonPath: context.packageJsonPath,
 						manifestField: context.manifestField,
-						prefixes: context.pluginPrefixes,
 						log: ctx.log,
 					},
 				}),

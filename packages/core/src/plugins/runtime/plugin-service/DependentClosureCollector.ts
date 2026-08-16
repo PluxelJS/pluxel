@@ -1,4 +1,5 @@
-import type { RuntimePluginHandle, RuntimePluginKey } from '../identity'
+import type { PluginIdentifier } from '../../types'
+import type { PluginNodeSlot } from '../identity'
 import type { PluginGraph } from '../PluginDefinitions'
 
 type DependentScratch = {
@@ -17,16 +18,36 @@ export class DependentClosureCollector {
 	public constructor(
 		private readonly resolveGraphKey: (
 			graph: PluginGraph | undefined,
-			id: RuntimePluginHandle,
-		) => RuntimePluginKey | undefined,
+			id: PluginIdentifier | PluginNodeSlot,
+		) => PluginNodeSlot | undefined,
 	) {}
 
 	public collect(
 		graph: PluginGraph | undefined,
-		roots: Iterable<RuntimePluginHandle>,
-	): Set<RuntimePluginKey> {
+		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+	): Set<PluginNodeSlot> {
+		return this.collectWith(graph, roots, (currentGraph, slot) =>
+			currentGraph.dependentSlotsOf(slot),
+		)
+	}
+
+	/** Required + optional restart/ordering closure. */
+	public collectOrdering(
+		graph: PluginGraph | undefined,
+		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+	): Set<PluginNodeSlot> {
+		return this.collectWith(graph, roots, (currentGraph, slot) =>
+			currentGraph.orderDependentSlotsOf(slot),
+		)
+	}
+
+	private collectWith(
+		graph: PluginGraph | undefined,
+		roots: Iterable<PluginIdentifier | PluginNodeSlot>,
+		dependentsOf: (graph: PluginGraph, slot: number) => readonly number[],
+	): Set<PluginNodeSlot> {
 		if (!graph) {
-			const out = new Set<RuntimePluginKey>()
+			const out = new Set<PluginNodeSlot>()
 			for (const root of roots) {
 				const key = this.resolveGraphKey(undefined, root)
 				if (key) out.add(key)
@@ -45,7 +66,7 @@ export class DependentClosureCollector {
 		const { marks, markedSlots, stack } = this.scratch
 		markedSlots.length = 0
 		stack.length = 0
-		const affected = new Set<RuntimePluginKey>()
+		const affected = new Set<PluginNodeSlot>()
 		for (const root of roots) {
 			const canonical = this.resolveGraphKey(graph, root)
 			if (!canonical) continue
@@ -63,8 +84,8 @@ export class DependentClosureCollector {
 		while (stack.length > 0) {
 			const current = stack.pop()!
 			const currentKey = graph.keyOf(current)
-			if (currentKey !== undefined) affected.add(currentKey as RuntimePluginKey)
-			const dependents = graph.dependentSlotsOf(current)
+			if (currentKey !== undefined) affected.add(currentKey as PluginNodeSlot)
+			const dependents = dependentsOf(graph, current)
 			for (let i = 0; i < dependents.length; i++) {
 				const dep = dependents[i]!
 				if (!Number.isInteger(dep) || dep < 0 || dep >= marks.length) continue

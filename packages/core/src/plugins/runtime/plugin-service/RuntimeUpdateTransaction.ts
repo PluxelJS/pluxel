@@ -1,6 +1,6 @@
 import { createErr } from 'option-t/plain_result'
 import type { PluginConstructor, PluginIdentifier } from '../../types'
-import type { RuntimePluginKey } from '../identity'
+import type { PluginNodeSlot } from '../identity'
 import { collectPluginLifecycleNotStarted, type PluginLifecycleReport } from './LifecycleReport'
 import type { RuntimeModuleDeclaration, RuntimeModuleSnapshot } from './RuntimeModuleRegistry'
 
@@ -35,7 +35,7 @@ export type RuntimeUpdateCommitOptions = {
 	 * Core records this in the commit summary only; the policy and persistence side effects
 	 * remain owned by the adapter/control-plane layer.
 	 */
-	autoDisabled?: readonly RuntimePluginKey[]
+	autoDisabled?: readonly PluginNodeSlot[]
 }
 
 export type RuntimeUpdateTransaction<TCommitResult = unknown> = {
@@ -55,7 +55,7 @@ export type RuntimeUpdateTransaction<TCommitResult = unknown> = {
 export type RuntimeUpdateCommitMeta = {
 	reason: RuntimeUpdateReason
 	affectedModules: readonly string[]
-	autoDisabled: readonly RuntimePluginKey[]
+	autoDisabled: readonly PluginNodeSlot[]
 }
 
 type RuntimeUpdateCommitSummaryLike = {
@@ -200,6 +200,8 @@ export class PluginRuntimeUpdateTransaction<
 	}
 }
 
-export function createPluginsFailedToStartError(failed: readonly RuntimePluginKey[]): Error {
-	return new Error(`Some plugins failed to start: ${failed.map(String).join(', ')}`)
+export function createPluginsFailedToStartError(failed: readonly PluginNodeSlot[]): Error {
+	return new Error(
+		`Some plugins failed to start: ${failed.map((slot) => slot.definition.exportName).join(', ')}`,
+	)
 }

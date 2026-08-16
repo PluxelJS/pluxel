@@ -13,6 +13,7 @@ import type {
 	WorkbenchPlacement,
 	WorkbenchViewMeta,
 } from '@pluxel/runtime/workbench'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import {
 	WorkbenchViewProvider,
 	type WorkbenchViewEnvironment,
@@ -21,6 +22,7 @@ import { InlineNotice } from '../components'
 import { BuiltinDoc } from './builtin/Doc'
 import { WorkbenchErrorBoundary } from './ErrorBoundary'
 import { buildWorkbenchHref, normalizeWorkbenchPath } from './paths'
+import { workbenchNodeKey } from './node-address'
 import {
 	useOptionalWorkspaceNavigation,
 	useWorkbenchViewState as useHostWorkbenchViewState,
@@ -38,7 +40,7 @@ import {
 
 export type WorkbenchBrowserHost = Readonly<{
 	environment: WorkbenchViewEnvironment
-	runningPlugins: ReadonlySet<string>
+	runningPluginKeys: ReadonlySet<string>
 	runningPluginsReady: boolean
 }>
 
@@ -47,7 +49,7 @@ type WorkbenchRuntimeContextValue = WorkbenchBrowserHost & {
 }
 
 type WorkbenchTargetContextValue = Readonly<{
-	target: string
+	target: PluginNodeAddressSnapshot
 	pathname: string
 	snapshot: WorkbenchTargetSnapshot
 }>
@@ -79,7 +81,7 @@ export function WorkbenchTargetProvider({
 	pathname,
 	children,
 }: {
-	target: string
+	target: PluginNodeAddressSnapshot
 	pathname: string
 	children: ReactNode
 }) {
@@ -110,7 +112,7 @@ export function useWorkbenchTargetSnapshot(target: WorkbenchTargetId): Workbench
 	)
 }
 
-export function useWorkbenchArtifactState(owner: string) {
+export function useWorkbenchArtifactState(owner: PluginNodeAddressSnapshot) {
 	const { runtime } = useWorkbenchRuntime()
 	useWorkbenchTargetSnapshot(null)
 	return runtime.artifactState(owner)
@@ -134,7 +136,7 @@ export function useWorkbenchSurface(
 				? EMPTY_NODES
 				: items.map((item) => (
 						<WorkbenchItem
-							key={`${target ?? '$global'}:${item.id}`}
+							key={`${target === null ? '$global' : workbenchNodeKey(target)}:${item.id}`}
 							frame="shell"
 							item={item}
 							snapshot={snapshot}
@@ -149,7 +151,7 @@ const EMPTY_NODES: ReactNode[] = []
 const EMPTY_ITEMS: readonly WorkbenchLayoutItem[] = Object.freeze([])
 const EMPTY_ROUTE_PARAMS = Object.freeze({})
 
-export function useResolvedWorkbenchRoute(target: string, path: string) {
+export function useResolvedWorkbenchRoute(target: PluginNodeAddressSnapshot, path: string) {
 	const { runtime } = useWorkbenchRuntime()
 	const snapshot = useWorkbenchTargetSnapshot(target)
 	return useMemo(
@@ -162,7 +164,7 @@ export function WorkbenchRoute({
 	target,
 	route,
 }: {
-	target: string
+	target: PluginNodeAddressSnapshot
 	route: WorkbenchResolvedRoute
 }) {
 	const snapshot = useWorkbenchTargetSnapshot(target)
@@ -204,7 +206,7 @@ function WorkbenchBuiltinView({ item }: { item: WorkbenchLayoutItem }) {
 		<WorkbenchViewProvider item={item} environment={environment}>
 			<BuiltinDoc
 				id={item.id}
-				pluginName={item.targetPluginId}
+				pluginName={item.target.displayName}
 				title={props.title}
 				description={props.description}
 				content={props.content as never}
@@ -231,22 +233,22 @@ function WorkbenchRemoteView({
 		(inputPath: string, operation: 'navigate' | 'openTab') => {
 			const path = normalizeWorkbenchPath(inputPath)
 			if (!path) throw new Error(`[workbench-ui] ${operation}.path must target a plugin route`)
-			const resolved = runtime.resolveRoute(item.targetPluginId, path)
+			const resolved = runtime.resolveRoute(item.target.address, path)
 			if (!resolved) throw new Error(`[workbench-ui] ${operation} route is not registered: ${path}`)
 			if (resolved.frame !== 'shell') {
 				throw new Error(`[workbench-ui] ${operation} only supports shell routes`)
 			}
 			return path
 		},
-		[item.targetPluginId, runtime],
+		[item.target.address, runtime],
 	)
 	const navigate = useCallback(
 		(inputPath: string) => {
 			if (!navigation) throw new Error('[workbench-ui] current frame does not support navigation')
 			const path = resolveShellPath(inputPath, 'navigate')
-			navigation.navigate(buildWorkbenchHref(item.targetPluginId, path, 'shell'))
+			navigation.navigate(buildWorkbenchHref(item.target.address, path, 'shell'))
 		},
-		[item.targetPluginId, navigation, resolveShellPath],
+		[item.target.address, navigation, resolveShellPath],
 	)
 	const openTab = useCallback(
 		(input: { path: string; title: string; meta?: string }) => {
@@ -255,12 +257,12 @@ function WorkbenchRemoteView({
 			const title = input.title.trim()
 			if (!title) throw new Error('[workbench-ui] openTab.title is required')
 			navigation.openTab({
-				path: buildWorkbenchHref(item.targetPluginId, path, 'shell'),
+				path: buildWorkbenchHref(item.target.address, path, 'shell'),
 				title,
 				meta: input.meta?.trim() || undefined,
 			})
 		},
-		[item.targetPluginId, navigation, resolveShellPath],
+		[item.target.address, navigation, resolveShellPath],
 	)
 	const hostNavigation = useMemo(
 		() => (navigation ? { navigate, openTab } : undefined),
@@ -270,13 +272,13 @@ function WorkbenchRemoteView({
 	if (!View) {
 		return (
 			<InlineNotice title="Workbench Contract mismatch">
-				{`${item.ownerPluginId}:${item.view.kind === 'remote' ? item.view.export : item.viewId}`}
+				{`${item.owner.displayName}:${item.view.kind === 'remote' ? item.view.export : item.viewId}`}
 			</InlineNotice>
 		)
 	}
 	return (
 		<WorkbenchErrorBoundary
-			pluginName={item.ownerPluginId}
+			pluginName={item.owner.displayName}
 			contributionId={item.id}
 			point={item.placement}
 		>
@@ -299,7 +301,13 @@ function WorkbenchRemoteView({
 
 function workbenchViewStateIdentity(item: WorkbenchLayoutItem): string {
 	const route = item.meta?.route?.path ?? ''
-	return [item.ownerPluginId, item.targetPluginId, item.viewId, item.placement, route]
+	return [
+		workbenchNodeKey(item.owner.address),
+		workbenchNodeKey(item.target.address),
+		item.viewId,
+		item.placement,
+		route,
+	]
 		.map(encodeURIComponent)
 		.join(':')
 }

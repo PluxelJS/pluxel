@@ -7,7 +7,7 @@
 import { CanvasPlugin, Path2D } from '@pluxel/canvas'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ name: 'BadgePlugin' })
+@Plugin({ displayName: 'BadgePlugin' })
 export class BadgePlugin extends BasePlugin {
 	constructor(private readonly canvas: CanvasPlugin) {
 		super()

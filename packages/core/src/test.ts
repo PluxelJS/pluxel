@@ -1,7 +1,8 @@
 import './services/index'
 import {
 	checkPluginDecorator,
-	getPluginInfo,
+	pluginNodeAddressEqual,
+	pluginNodeAddressOf,
 	type BasePlugin,
 	type CommitSummary,
 	Context,
@@ -11,51 +12,46 @@ import {
 	type PluginLifecycleIssuePhase,
 	type PluginConstructor,
 	type PluginIdentifier,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
 	type PluginService,
-	type RuntimePluginKey,
 } from './index'
 
 export {
-	BaseFeature,
 	BasePlugin,
-	Config,
-	defineLazyFeature,
-	FeatureHost,
 	ForkablePlugin,
-	HostBoundFeature,
-	optionalPlugin,
 	Plugin,
 	checkPluginDecorator,
-	clearParamToken,
 	collectPluginLifecycleBlocked,
+	collectPluginLifecycleDrainErrors,
 	collectPluginLifecycleIssuePlugins,
 	collectPluginLifecycleNotStarted,
-	collectPluginLifecycleStoppedWithErrors,
+	definePluginRef,
+	getPluginDefinitionFacts,
 	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
+	isPluginLifecycleDrainErrorIssue,
 	isPluginLifecycleNotStartedIssue,
-	isPluginLifecycleStoppedWithErrorIssue,
-	setParamToken,
-	setParamTokens,
+	pluginNodeAddressOf,
 } from './index'
 export { Context } from './index'
 export type {
 	CommitSummary,
 	ForkablePluginConstructor,
 	PluginCommitChanges,
-	PluginReplacement,
+	PluginDefinitionAddressSnapshot,
 	PluginLifecycleIssue,
 	PluginLifecycleIssueKind,
 	PluginLifecycleIssuePhase,
 	PluginLifecycleIssuePredicate,
+	PluginNodeAddressSnapshot,
+	PluginNodeSlot,
+	PluginRef,
+	PluginReplacement,
 	PluginConstructor,
 	PluginIdentifier,
 	RuntimeUpdateCommitSummary,
-	RuntimePluginKey,
 } from './index'
-
-type NamespacedConfigKey = `${string}.${string}`
-type CoreHostConfigTarget = PluginConstructor | string
 
 type NonFunctionPropertyNames<T extends object> = {
 	[K in keyof T]-?: T[K] extends (...args: any[]) => any ? never : K
@@ -66,16 +62,11 @@ type PluginOwnFields<T extends PluginConstructor> = Omit<InstanceType<T>, keyof 
 export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<
 	Pick<PluginOwnFields<T>, NonFunctionPropertyNames<PluginOwnFields<T>>>
 > &
-	Partial<Record<string | NamespacedConfigKey, unknown>>
+	Record<string, unknown>
 
-export type CoreHostConfigPatchByName = Record<string, unknown>
-
-export type CoreHostConfigPatchFor<TTarget extends CoreHostConfigTarget> =
-	TTarget extends PluginConstructor ? CoreHostConfigPatch<TTarget> : CoreHostConfigPatchByName
-
-export type CoreHostConfigHandle<TTarget extends CoreHostConfigTarget> = {
-	readonly name: string
-	set: (patch: CoreHostConfigPatchFor<TTarget>) => void
+export type CoreHostConfigHandle<TTarget extends PluginConstructor> = {
+	readonly owner: PluginNodeAddressSnapshot
+	set: (patch: CoreHostConfigPatch<TTarget>) => void
 	unset: (...keys: string[]) => void
 	rev: () => number
 	enable: () => void
@@ -85,64 +76,50 @@ export type CoreHostConfigHandle<TTarget extends CoreHostConfigTarget> = {
 
 export interface CoreHost {
 	readonly ctx: Context
-
 	add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
 	add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
 	remove(id: PluginIdentifier): CoreHost
 	remove(ids: readonly PluginIdentifier[]): CoreHost
-	restart: (id: PluginIdentifier, opts?: { cascadeDependents?: boolean }) => CoreHost
-	replace: (
+	restart(id: PluginIdentifier, opts?: { cascadeDependents?: boolean }): CoreHost
+	replace(
 		id: PluginIdentifier,
 		next: PluginConstructor,
 		opts?: { cascadeDependents?: boolean; provideBase?: boolean },
-	) => CoreHost
-	fork: <T extends ForkablePluginConstructor>(
+	): CoreHost
+	fork<T extends ForkablePluginConstructor>(
 		Plugin: T,
 		forkId: string,
 		opts?: { provideBase?: boolean },
-	) => T
-
+	): T
 	commit(): Promise<CommitSummary>
 	commitAllowFail(): Promise<CommitSummary>
-
-	isRunning: (id: PluginIdentifier) => boolean
-	get: <T extends PluginIdentifier>(id: T) => InstanceType<T> | undefined
-	require: <T extends PluginIdentifier>(id: T) => InstanceType<T>
-
+	isRunning(id: PluginIdentifier): boolean
+	get<T extends PluginIdentifier>(id: T): InstanceType<T> | undefined
+	require<T extends PluginIdentifier>(id: T): InstanceType<T>
 	cfg<T extends PluginConstructor>(target: T): CoreHostConfigHandle<T>
-	cfg(target: string): CoreHostConfigHandle<string>
-
-	start: <T extends PluginConstructor>(
+	start<T extends PluginConstructor>(
 		Plugin: T,
 		opts?: { provideBase?: boolean },
-	) => Promise<InstanceType<T>>
-
-	last: () => CommitSummary | undefined
-	services: () => unknown[]
-	plugins: () => PluginConstructor[]
-	has: (id: unknown) => boolean
-
-	dispose: () => Promise<void>
+	): Promise<InstanceType<T>>
+	last(): CommitSummary | undefined
+	services(): PluginNodeSlot[]
+	plugins(): PluginConstructor[]
+	has(id: PluginIdentifier | PluginNodeSlot): boolean
+	dispose(): Promise<void>
 }
 
-export type CoreTestContext = {
-	readonly ctx: Context
-	dispose: () => Promise<void>
-}
-
-export type CoreHostOptions = {
-	prepareCommit?: (ctx: Context) => Promise<void> | void
-}
+export type CoreTestContext = { readonly ctx: Context; dispose: () => Promise<void> }
+export type CoreHostOptions = { prepareCommit?: (ctx: Context) => Promise<void> | void }
 
 type RuntimeStateLike = {
-	snapshot: () => { enabled: readonly string[] }
-	update: (run: (draft: { enabled: Set<string> }) => void) => void
+	snapshot(): { enabled: readonly PluginNodeAddressSnapshot[] }
+	update(run: (draft: { enabled: PluginNodeAddressSnapshot[] }) => void): void
 }
 
 function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
-	const runtimeState = (ctx as unknown as { runtimeState?: unknown }).runtimeState
-	if (!runtimeState || typeof runtimeState !== 'object') return undefined
-	const candidate = runtimeState as Partial<RuntimeStateLike>
+	const value = (ctx as unknown as { runtimeState?: unknown }).runtimeState
+	if (!value || typeof value !== 'object') return undefined
+	const candidate = value as Partial<RuntimeStateLike>
 	return typeof candidate.snapshot === 'function' && typeof candidate.update === 'function'
 		? (candidate as RuntimeStateLike)
 		: undefined
@@ -151,7 +128,7 @@ function runtimeStateOf(ctx: Context): RuntimeStateLike | undefined {
 export type CoreHostLifecycleIssueExpectation = {
 	phase?: PluginLifecycleIssuePhase
 	kind?: PluginLifecycleIssueKind
-	blockedBy?: PluginConstructor | string
+	blockedBy?: PluginConstructor
 	message?: string | RegExp
 }
 
@@ -172,19 +149,39 @@ function assertCommitSummary(
 	return summary
 }
 
-function pluginKey(target: PluginConstructor | string): RuntimePluginKey {
-	return (typeof target === 'string' ? target : getPluginInfo(target).id) as RuntimePluginKey
+function nodeFor(summary: CommitSummary, target: PluginConstructor): PluginNodeSlot | undefined {
+	const address = pluginNodeAddressOf(target)
+	const candidates: unknown[] = [...summary.graph.keys()]
+	for (const issue of summary.lifecycleReport.issues) {
+		candidates.push(issue.plugin)
+		if (issue.blockedBy) candidates.push(issue.blockedBy)
+	}
+	for (const node of candidates) {
+		if (!node || typeof node !== 'object' || !('definition' in node)) continue
+		const slot = node as PluginNodeSlot
+		const entry = slot.definition.entry.address
+		const current: PluginNodeAddressSnapshot =
+			slot.instance === 'default'
+				? { definition: { entry, exportName: slot.definition.exportName }, instance: 'default' }
+				: {
+						definition: { entry, exportName: slot.definition.exportName },
+						instance: 'fork',
+						forkId: slot.forkId!,
+					}
+		if (pluginNodeAddressEqual(current, address)) return slot
+	}
+	return undefined
 }
 
 export function findPluginLifecycleIssue(
 	summary: CommitSummary,
-	plugin: PluginConstructor | string,
+	plugin: PluginConstructor,
 	expected: CoreHostLifecycleIssueExpectation = {},
 ): PluginLifecycleIssue | undefined {
-	const key = pluginKey(plugin)
-	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
+	const node = nodeFor(summary, plugin)
+	const blockedBy = expected.blockedBy ? nodeFor(summary, expected.blockedBy) : undefined
 	return summary.lifecycleReport.issues.find((issue) => {
-		if (issue.plugin !== key) return false
+		if (issue.plugin !== node) return false
 		if (expected.phase && issue.phase !== expected.phase) return false
 		if (expected.kind && issue.kind !== expected.kind) return false
 		if (blockedBy && issue.blockedBy !== blockedBy) return false
@@ -197,43 +194,33 @@ export function findPluginLifecycleIssue(
 export function pluginLifecycleIssuePlugins(
 	summary: CommitSummary,
 	expected: CoreHostLifecycleIssueExpectation = {},
-): RuntimePluginKey[] {
-	const blockedBy = expected.blockedBy ? pluginKey(expected.blockedBy) : undefined
-	const plugins = new Set<RuntimePluginKey>()
-	for (const issue of summary.lifecycleReport.issues) {
-		if (expected.phase && issue.phase !== expected.phase) continue
-		if (expected.kind && issue.kind !== expected.kind) continue
-		if (blockedBy && issue.blockedBy !== blockedBy) continue
-		if (expected.message instanceof RegExp && !expected.message.test(issue.message)) continue
-		if (typeof expected.message === 'string' && !issue.message.includes(expected.message)) {
-			continue
-		}
-		plugins.add(issue.plugin)
-	}
-	return [...plugins]
+): PluginNodeSlot[] {
+	const blockedBy = expected.blockedBy ? nodeFor(summary, expected.blockedBy) : undefined
+	return [
+		...new Set(
+			summary.lifecycleReport.issues
+				.filter((issue) => {
+					if (expected.phase && issue.phase !== expected.phase) return false
+					if (expected.kind && issue.kind !== expected.kind) return false
+					if (blockedBy && issue.blockedBy !== blockedBy) return false
+					if (expected.message instanceof RegExp && !expected.message.test(issue.message))
+						return false
+					return typeof expected.message !== 'string' || issue.message.includes(expected.message)
+				})
+				.map((issue) => issue.plugin),
+		),
+	]
 }
 
 export function assertPluginLifecycleIssue(
 	summary: CommitSummary,
-	plugin: PluginConstructor | string,
+	plugin: PluginConstructor,
 	expected: CoreHostLifecycleIssueExpectation = {},
 ): PluginLifecycleIssue {
 	const issue = findPluginLifecycleIssue(summary, plugin, expected)
 	if (issue) return issue
-	const key = pluginKey(plugin)
-	const details = [
-		expected.phase ? `phase=${expected.phase}` : undefined,
-		expected.kind ? `kind=${expected.kind}` : undefined,
-		expected.blockedBy ? `blockedBy=${pluginKey(expected.blockedBy)}` : undefined,
-		expected.message ? `message=${String(expected.message)}` : undefined,
-	]
-		.filter(Boolean)
-		.join(', ')
 	throw new Error(
-		`Expected lifecycle issue for ${String(key)}${details ? ` (${details})` : ''}. ` +
-			`Actual issues: ${summary.lifecycleReport.issues
-				.map((item) => `${item.plugin}:${item.kind}:${item.message}`)
-				.join('; ')}`,
+		`Expected lifecycle issue for ${pluginNodeAddressOf(plugin).definition.exportName}`,
 	)
 }
 
@@ -242,54 +229,41 @@ export function createCoreHost(
 	options: CoreHostOptions = {},
 ): CoreHost {
 	let host!: CoreHost
-
 	const ctx = new Context({ name: 'test', ...normalizeConfig(config) })
 	const registry = ctx.registry as PluginService
 	const configService = ctx.configService
-	const localEnabled = new Set<string>()
-	const setEnabled = (name: string, enabled: boolean) => {
+	const localEnabled: PluginNodeAddressSnapshot[] = []
+
+	const setEnabled = (owner: PluginNodeAddressSnapshot, enabled: boolean) => {
 		const runtimeState = runtimeStateOf(ctx)
-		if (runtimeState) {
-			runtimeState.update((draft) => {
-				if (enabled) draft.enabled.add(name)
-				else draft.enabled.delete(name)
-			})
-			return
+		const mutate = (list: PluginNodeAddressSnapshot[]) => {
+			const index = list.findIndex((item) => pluginNodeAddressEqual(item, owner))
+			if (enabled && index < 0) list.push(owner)
+			else if (!enabled && index >= 0) list.splice(index, 1)
 		}
-		if (enabled) localEnabled.add(name)
-		else localEnabled.delete(name)
+		if (runtimeState) runtimeState.update((draft) => mutate(draft.enabled))
+		else mutate(localEnabled)
 	}
-	const isEnabled = (name: string) => {
-		const runtimeState = runtimeStateOf(ctx)
-		return runtimeState ? runtimeState.snapshot().enabled.includes(name) : localEnabled.has(name)
-	}
+	const isEnabled = (owner: PluginNodeAddressSnapshot) =>
+		(runtimeStateOf(ctx)?.snapshot().enabled ?? localEnabled).some((item) =>
+			pluginNodeAddressEqual(item, owner),
+		)
 
 	const last = () => registry.lastCommit
-	const services = () => [...(last()?.graph.keys() ?? [])]
+	const services = () => [...(last()?.graph.keys() ?? [])] as PluginNodeSlot[]
 	const plugins = () =>
 		(last()?.graph.declarationsBySlot() ?? [])
 			.map((decl) => decl?.meta?.class)
 			.filter(
-				(id): id is PluginConstructor =>
-					typeof id === 'function' && checkPluginDecorator(id as PluginConstructor),
+				(value): value is PluginConstructor =>
+					typeof value === 'function' && checkPluginDecorator(value),
 			)
-	const has = (id: unknown) => {
-		const graph = last()?.graph
-		if (!graph) return false
-		if (typeof id === 'string') return graph.has(id)
-		if (typeof id === 'function')
-			return registry.resolveRuntimeKey(id as PluginIdentifier) !== undefined
-		return false
-	}
-
+	const has = (id: PluginIdentifier | PluginNodeSlot) =>
+		registry.resolvePluginNode(id) !== undefined
 	const get = <T extends PluginIdentifier>(id: T) => registry.getInstance(id)
 	const require = <T extends PluginIdentifier>(id: T) => {
 		const instance = get(id)
-		if (!instance) {
-			throw new Error(
-				`Plugin instance not running: ${String(id)} (did you forget to add+commit, or did it fail to start?)`,
-			)
-		}
+		if (!instance) throw new Error('Plugin instance is not running')
 		return instance
 	}
 
@@ -297,108 +271,74 @@ export function createCoreHost(
 		await options.prepareCommit?.(ctx)
 		return assertCommitSummary(await registry.commitStrict(), registry)
 	}
-
 	async function commitAllowFail(): Promise<CommitSummary> {
 		await options.prepareCommit?.(ctx)
 		return assertCommitSummary(await registry.commit(), registry)
 	}
 
-	const cfgHandle = <TTarget extends CoreHostConfigTarget>(
-		name: string,
-	): CoreHostConfigHandle<TTarget> => ({
-		name,
-		set: (patch) => configService.patchConfig(name, patch as Record<string, unknown>),
-		unset: (...keys) => configService.unsetConfigKeys(name, keys),
-		rev: () => configService.getConfigRevision(name),
-		enable: () => setEnabled(name, true),
-		disable: () => setEnabled(name, false),
-		enabled: () => isEnabled(name),
-	})
-
-	const resolveCfgName = (target: CoreHostConfigTarget) =>
-		typeof target === 'string' ? target : getPluginInfo(target).id
-
 	function add(Plugin: PluginConstructor, opts?: { provideBase?: boolean }): CoreHost
 	function add(Plugins: readonly PluginConstructor[], opts?: { provideBase?: boolean }): CoreHost
 	function add(
-		PluginOrPlugins: PluginConstructor | readonly PluginConstructor[],
+		value: PluginConstructor | readonly PluginConstructor[],
 		opts?: { provideBase?: boolean },
 	): CoreHost {
-		if (typeof PluginOrPlugins === 'function') {
-			registry.register(PluginOrPlugins, opts)
-			return host
-		}
-		for (const Plugin of PluginOrPlugins) registry.register(Plugin, opts)
+		if (typeof value === 'function') registry.register(value, opts)
+		else for (const Plugin of value) registry.register(Plugin, opts)
 		return host
 	}
-
 	function remove(id: PluginIdentifier): CoreHost
 	function remove(ids: readonly PluginIdentifier[]): CoreHost
-	function remove(idOrIds: PluginIdentifier | readonly PluginIdentifier[]): CoreHost {
-		if (Array.isArray(idOrIds)) {
-			for (const id of idOrIds) registry.unregister(id)
-			return host
-		}
-		registry.unregister(idOrIds as PluginIdentifier)
+	function remove(value: PluginIdentifier | readonly PluginIdentifier[]): CoreHost {
+		if (Array.isArray(value)) for (const id of value) registry.unregister(id)
+		else registry.unregister(value as PluginIdentifier)
 		return host
 	}
 
 	host = {
 		ctx,
-
 		add,
 		remove,
-		restart: (id, opts) => {
-			registry.restart(id, opts)
-			return host
-		},
-		replace: (id, next, opts) => {
-			registry.replace(id, next, opts)
-			return host
-		},
-		fork: (Plugin, forkId, opts) => {
-			return registry.registerFork(Plugin, forkId, opts) as unknown as typeof Plugin
-		},
-
+		restart: (id, opts) => (registry.restart(id, opts), host),
+		replace: (id, next, opts) => (registry.replace(id, next, opts), host),
+		fork: (Plugin, forkId, opts) => registry.registerFork(Plugin, forkId, opts) as typeof Plugin,
 		commit,
 		commitAllowFail,
-
 		isRunning: registry.isRunning.bind(registry),
 		get,
 		require,
-
-		cfg: ((target: PluginConstructor | string) =>
-			cfgHandle(resolveCfgName(target))) as CoreHost['cfg'],
-
+		cfg: (<T extends PluginConstructor>(Plugin: T): CoreHostConfigHandle<T> => {
+			const owner = pluginNodeAddressOf(Plugin)
+			const slot = registry.internNodeAddress(owner)
+			return {
+				owner,
+				set: (patch) => configService.patchConfig(slot, patch),
+				unset: (...keys) => configService.unsetConfigKeys(slot, keys),
+				rev: () => configService.getConfigRevision(slot),
+				enable: () => setEnabled(owner, true),
+				disable: () => setEnabled(owner, false),
+				enabled: () => isEnabled(owner),
+			}
+		}) as CoreHost['cfg'],
 		start: async (Plugin, opts) => {
 			host.add(Plugin, opts)
 			await host.commit()
 			return host.require(Plugin)
 		},
-
 		last,
 		services,
 		plugins,
 		has,
-
 		dispose: async () => {
 			try {
 				registry.resetDraft()
-				for (const id of plugins()) registry.unregister(id)
-				if (last()) {
-					try {
-						await host.commitAllowFail()
-					} catch {
-						/* best-effort cleanup */
-					}
-				}
+				for (const Plugin of plugins()) registry.unregister(Plugin)
+				if (last()) await host.commitAllowFail().catch((): undefined => undefined)
 			} finally {
 				registry.resetDraft()
 				await ctx.effects.dispose()
 			}
 		},
 	}
-
 	return host
 }
 
@@ -420,13 +360,9 @@ export function createCoreContext(config: Context.Config = {}): CoreTestContext 
 	return {
 		ctx,
 		dispose: async () => {
-			try {
-				ctx.registry.resetDraft()
-				await ctx.effects.dispose()
-				ctx.registry.resetDraft()
-			} catch {
-				/* ignore */
-			}
+			ctx.registry.resetDraft()
+			await ctx.effects.dispose().catch((): undefined => undefined)
+			ctx.registry.resetDraft()
 		},
 	}
 }
@@ -435,10 +371,10 @@ export async function withCoreContext<T>(
 	fn: (ctx: Context) => Promise<T> | T,
 	config: Context.Config = {},
 ): Promise<T> {
-	const t = createCoreContext(config)
+	const value = createCoreContext(config)
 	try {
-		return await fn(t.ctx)
+		return await fn(value.ctx)
 	} finally {
-		await t.dispose()
+		await value.dispose()
 	}
 }

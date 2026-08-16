@@ -1,56 +1,46 @@
 # Plugin Config (Runtime Contract)
 
-这份文档描述的是 **runtime 与 host/UI** 在“插件配置”上的实现契约；设计原则与推荐写法见仓库级设计文档 `docs/CONFIG.md`。
+这份文档描述 runtime 与 host/UI 的 Plugin config contract。作者声明见
+[`../../../../user-docs/plugin-authoring.md`](../../../../user-docs/plugin-authoring.md#配置声明一次只读取归一化结果)，架构不变量见
+[`../../../../docs/CONFIG.md`](../../../../docs/CONFIG.md)。
 
-## `plugin.schema()` 返回值
+## Author fact
 
-Host 通过 `plugin.schema()` 获取：
+每个具体 Plugin 最多一个普通 class field：
 
-- `schemaSource: Record<schemaKey, string>`
-  Valibot schema 的源码字符串（供 UI/调试展示等）。
-- `defaults: Record<schemaKey, unknown>`
-  Schema 归一化后的默认值快照。
-- `layout?: BuiltinMarkdownPart[] | null`
-  可选的 cfg layout parts，用于 Host 侧自定义配置页排版。
+```ts
+private readonly config = this.configs.use(PluginConfig)
+```
 
-`layout` 是构建期从 `this.configs.use(cfg(schemaMap)\`...\`)` 提取并注入的；未提供时 Host 使用默认布局。
+参数必须是完整 object schema。嵌套结构、section 和 field display metadata 都属于这个 schema；runtime 不接受额外 schema
+namespace、binding/layout map 或 template DSL。
 
-## Build Metadata Flow
+## `pluginSchema()` result
 
-构建期 `configSourcePlugin` 只分析启动前静态声明，并注入：
+Host 用结构化 `PluginNodeAddressSnapshot` 查询 owner。成功结果为：
 
-- `__setConfigSource__(Ctor, key, schemaSource)`
-- `__registerConfigSchema__(Ctor, key, schema)`
-- `__registerConfigBinding__(Ctor, field, keys)`
-- `__setConfigLayout__(Ctor, field, layoutParts)`
+```ts
+{
+	ok: true
+	fieldName: string
+	schemaSource: string
+	defaults: Record<string, unknown>
+}
+```
 
-core 快照把这些 metadata 组织到 `configSourceMap / configBindingsMap / configLayoutMap`。
-runtime 的 `plugin.schema()` 再把 Host 真正需要的部分整理成：
+`fieldName` 是工具链验证过的声明 field；`schemaSource` 用于当前 Workbench renderer；`defaults` 是完整 object schema 的
+normalized default snapshot。Plugin 没有 schema 或 source 未由 toolchain 注入时返回稳定的失败 code，不从 runtime AST
+或旧 metadata map 猜测。
 
-- `schemaSource`
-- `defaults`
-- `layout`
+## Build metadata flow
 
-如果存在多个 layout 绑定，runtime 会优先选择“覆盖全部 schema keys”的那个绑定；否则退回到确定性的首个绑定。
+`configSourcePlugin()` 在 TypeScript class field lowering 前：
 
-## `layout` parts
+1. 识别具体 `@Plugin` 的 `this.configs.use(ObjectSchema)`；
+2. 拒绝 `#private` field、非 object schema 和同一 Plugin 的第二次声明；
+3. 注入单个 `__setPluginConfig(Ctor, { fieldName, schema, source })` definition fact；
+4. core 在实例构造后、`init()` 前按 node slot 校验并注入 normalized object；
+5. runtime control plane 使用同一 schema 完成 defaults、validate、patch、field patch 和 reset。
 
-`BuiltinMarkdownPart` 只有 3 种：
-
-- `{ kind: 'md', text }`：纯静态 markdown 文本片段
-- `{ kind: 'schema', key }`：渲染单个 `schemaKey` 的配置表单
-- `{ kind: 'schemas', keys: string[] | null }`：
-  - `keys: string[]`：按顺序渲染指定 keys
-  - `keys: null`：渲染“剩余未放置”的 keys（推荐在末尾放一个避免漏项）
-
-约束：
-
-- 同一个 schema key 不能重复放置
-- `schemas()` 只能出现一次，且必须是最后一个 schema-placement token
-
-Host 渲染时应跟踪“已放置 key”，并把未放置的 key 追加到页面末尾（例如 `Unplaced Schemas`），保证配置始终可编辑。
-
-## Builtin Doc 里的 `schema/schemas`
-
-运行期 builtin doc 的 markdown layout 也复用同一套 `{ kind: 'schema' | 'schemas' }` 语义，
-仅用于“在文档里嵌入配置表单”。doc 本身不参与启动前 schema 提取。
+Config record owner 始终是 interned node slot；HTTP/RPC、file 与 environment boundary 使用结构化 node address。Workbench
+只渲染这个事实，不拥有另一份 config layout 或 validation engine。

@@ -494,7 +494,7 @@ The following should remain outside:
 - dependency view wrapping such as parent `ctx` overlays
 - lifecycle start/stop/restart
 - config validation and injection
-- feature declaration policy
+- optional edge declaration policy
 - runtime logging
 - stop ordering policy
 - retry policy after failed starts

@@ -1,3 +1,8 @@
+import {
+	PluginSlotRegistry,
+	type PluginNodeAddressSnapshot,
+	type PluginNodeSlot,
+} from '@pluxel/core'
 import { describe, expect, it } from 'vitest'
 import { workbench } from '../../src/workbench'
 import { workbenchContract } from '../../src/workbench-contract'
@@ -6,19 +11,53 @@ import {
 	type InternalModelRef,
 } from '../../src/services/workbench/WorkbenchRegistry'
 
+type TestNode = Readonly<{
+	address: PluginNodeAddressSnapshot
+	slot: PluginNodeSlot
+	descriptor: {
+		address: PluginNodeAddressSnapshot
+		displayName: string
+		rootExportName: string
+	}
+}>
+
 function fixture(edges: Array<[string, string]> = []) {
 	let artifactChanged = () => {}
-	const running = new Set<string>()
-	const deps = new Map<string, string[]>()
-	for (const [consumer, provider] of edges)
+	const slots = new PluginSlotRegistry()
+	const nodes = new Map<string, TestNode>()
+	const node = (displayName: string): TestNode => {
+		const existing = nodes.get(displayName)
+		if (existing) return existing
+		const address: PluginNodeAddressSnapshot = {
+			definition: {
+				entry: { kind: 'source-entry', source: `pluxel-test:${displayName}` },
+				exportName: 'Plugin',
+			},
+			instance: 'default',
+		}
+		const result = {
+			address,
+			slot: slots.internNode(address),
+			descriptor: { address, displayName, rootExportName: 'Plugin' },
+		}
+		nodes.set(displayName, result)
+		return result
+	}
+	const running = new Set<PluginNodeSlot>()
+	const deps = new Map<PluginNodeSlot, PluginNodeSlot[]>()
+	for (const [consumerName, providerName] of edges) {
+		const consumer = node(consumerName).slot
+		const provider = node(providerName).slot
 		deps.set(consumer, [...(deps.get(consumer) ?? []), provider])
+	}
 	const ctx: any = {
 		root: { effects: { defer: () => ({ dispose() {} }) } },
 		registry: {
-			graph: { depsOf: (key: string) => deps.get(key) ?? [] },
-			resolveRuntimeKey: (id: string) => id,
-			isRunning: (id: string) => running.has(id),
-			watchInstance: (_id: string, listener: () => void) => {
+			graph: { depsOf: (slot: PluginNodeSlot) => deps.get(slot) ?? [] },
+			internNodeAddress: (address: PluginNodeAddressSnapshot) => slots.internNode(address),
+			nodeAddressOf: (slot: PluginNodeSlot) => slots.nodeAddress(slot),
+			isRunning: (slot: PluginNodeSlot) => running.has(slot),
+			watchInstance: (_slot: PluginNodeSlot, listener: () => void) => {
 				listener()
 				return () => {}
 			},
@@ -33,23 +72,27 @@ function fixture(edges: Array<[string, string]> = []) {
 	}
 	return {
 		registry: new WorkbenchRegistry(ctx, artifacts),
+		node,
 		running,
 		artifactChanged: () => artifactChanged(),
 	}
 }
 
-const rpcRef = (ownerPluginId: string, modelKey: string): InternalModelRef => ({
-	ownerPluginId,
+const rpcRef = (ownerSlot: PluginNodeSlot, modelKey: string): InternalModelRef => ({
+	ownerSlot,
+	resourceId: `resource:${modelKey}`,
 	modelKey,
 	kind: 'rpc',
 })
 
 describe('WorkbenchRegistry', () => {
 	it('grants every owner resource to each owner View', () => {
-		const { registry, running } = fixture()
-		running.add('Owner')
+		const { registry, node, running } = fixture()
+		const owner = node('Owner')
+		running.add(owner.slot)
 		registry.mount(
-			'Owner',
+			owner.slot,
+			owner.descriptor,
 			workbench.extension({
 				contract: workbenchContract.define({
 					resources: {
@@ -66,48 +109,54 @@ describe('WorkbenchRegistry', () => {
 					},
 				}),
 			}),
-			{ commands: rpcRef('Owner', 'commands'), secrets: rpcRef('Owner', 'secrets') },
+			{ commands: rpcRef(owner.slot, 'commands'), secrets: rpcRef(owner.slot, 'secrets') },
 		)
-		const items = registry.getPluginLayout('Owner').items
+		const items = registry.getPluginLayout(owner.address).items
 		expect(items).toHaveLength(2)
 		expect(new Set(items.map((item) => item.model.commands!.grantId)).size).toBe(1)
 		const item = items[0]!
 		expect(Object.keys(item.model)).toEqual(['commands', 'secrets'])
 		expect(registry.resolveModel(item.model.commands!.grantId, 'rpc')).toEqual(
-			rpcRef('Owner', 'commands'),
+			rpcRef(owner.slot, 'commands'),
 		)
 	})
 
 	it('keeps grants across bundle and unrelated plugin updates, then revokes the owner lease', () => {
-		const { registry, running, artifactChanged } = fixture()
-		running.add('Owner')
+		const { registry, node, running, artifactChanged } = fixture()
+		const owner = node('Owner')
+		running.add(owner.slot)
 		const disposeOwner = registry.mount(
-			'Owner',
+			owner.slot,
+			owner.descriptor,
 			workbench.extension({
 				contract: workbenchContract.define({
 					resources: { commands: workbenchContract.rpc<{}>() },
-					views: {
-						Overview: {
-							placements: [workbenchContract.tab()],
-						},
-					},
+					views: { Overview: { placements: [workbenchContract.tab()] } },
 				}),
 			}),
-			{ commands: rpcRef('Owner', 'commands') },
+			{ commands: rpcRef(owner.slot, 'commands') },
 		)
-		const grantId = registry.getPluginLayout('Owner').items[0]!.model.commands!.grantId
+		const grantId = registry.getPluginLayout(owner.address).items[0]!.model.commands!.grantId
 		artifactChanged()
-		expect(registry.getPluginLayout('Owner').items[0]!.model.commands!.grantId).toBe(grantId)
-		registry.mount('Other', workbench.extension({ contract: workbenchContract.define({}) }), {})
-		expect(registry.findModel(grantId)).toEqual(rpcRef('Owner', 'commands'))
+		expect(registry.getPluginLayout(owner.address).items[0]!.model.commands!.grantId).toBe(grantId)
+		const other = node('Other')
+		registry.mount(
+			other.slot,
+			other.descriptor,
+			workbench.extension({ contract: workbenchContract.define({}) }),
+			{},
+		)
+		expect(registry.findModel(grantId)).toEqual(rpcRef(owner.slot, 'commands'))
 		disposeOwner()
 		expect(registry.findModel(grantId)).toBeNull()
 	})
 
 	it('renders a required dependency through a target-scoped Port grant', () => {
-		const { registry, running } = fixture([['Consumer', 'Provider']])
-		running.add('Consumer')
-		running.add('Provider')
+		const { registry, node, running } = fixture([['Consumer', 'Provider']])
+		const consumer = node('Consumer')
+		const provider = node('Provider')
+		running.add(consumer.slot)
+		running.add(provider.slot)
 		const SettingsPort = workbenchContract.port({
 			id: 'test.settings',
 			version: 1,
@@ -128,27 +177,35 @@ describe('WorkbenchRegistry', () => {
 			resources: { status: workbenchContract.rpc<{}>() },
 			views: { Settings: { accepts: SettingsPort } },
 		})
-		registry.mount('Consumer', workbench.extension({ contract: ConsumerUi }), {
-			commands: rpcRef('Consumer', 'commands'),
-		})
-		expect(registry.getPluginLayout('Consumer').items[0]?.view).toMatchObject({
+		registry.mount(
+			consumer.slot,
+			consumer.descriptor,
+			workbench.extension({ contract: ConsumerUi }),
+			{ commands: rpcRef(consumer.slot, 'commands') },
+		)
+		expect(registry.getPluginLayout(consumer.address).items[0]?.view).toMatchObject({
 			kind: 'builtin',
 			renderer: 'document',
 		})
-		registry.mount('Provider', workbench.extension({ contract: ProviderUi }), {
-			status: rpcRef('Provider', 'status'),
-		})
+		registry.mount(
+			provider.slot,
+			provider.descriptor,
+			workbench.extension({ contract: ProviderUi }),
+			{ status: rpcRef(provider.slot, 'status') },
+		)
 
-		const item = registry.getPluginLayout('Consumer').items[0]!
+		const item = registry.getPluginLayout(consumer.address).items[0]!
 		expect(item).toMatchObject({
-			ownerPluginId: 'Provider',
-			targetPluginId: 'Consumer',
+			owner: provider.descriptor,
+			target: consumer.descriptor,
 			viewId: 'Settings',
 			port: { id: 'test.settings', version: 1 },
 		})
-		expect(registry.resolveModel(item.model.status!.grantId)).toEqual(rpcRef('Provider', 'status'))
+		expect(registry.resolveModel(item.model.status!.grantId)).toEqual(
+			rpcRef(provider.slot, 'status'),
+		)
 		expect(registry.resolveModel(item.port!.model.settings!.grantId)).toEqual(
-			rpcRef('Consumer', 'commands'),
+			rpcRef(consumer.slot, 'commands'),
 		)
 	})
 })

@@ -9,7 +9,5 @@ export type {
 	CoreHost as Host,
 	CoreHostConfigHandle as HostConfigHandle,
 	CoreHostConfigPatch as ConfigPatch,
-	CoreHostConfigPatchByName as ConfigPatchByName,
-	CoreHostConfigPatchFor as ConfigPatchFor,
 	CoreTestContext as TestContext,
 } from '@pluxel/core/test'

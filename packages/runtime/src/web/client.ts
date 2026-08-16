@@ -10,6 +10,7 @@ import {
 } from './admin-access'
 import type { LogFilter, LogRangeResult, LogStreamMeta } from './logs'
 import type { WorkbenchCatalog, WorkbenchLayout } from '../workbench/contracts'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import type { HostApplicationMeta } from '../product-contract'
 import type { RuntimeRpcApi } from './protocol'
 import { createWorkbenchRpcView, createRpcClientFactory, invokeRpc } from './rpc'
@@ -122,7 +123,7 @@ type RuntimeTransportHttp = {
 	workbench: {
 		catalog(init?: RequestInit): Promise<WorkbenchCatalog>
 		globalLayout(init?: RequestInit): Promise<WorkbenchLayout>
-		pluginLayout(target: string, init?: RequestInit): Promise<WorkbenchLayout>
+		pluginLayout(target: PluginNodeAddressSnapshot, init?: RequestInit): Promise<WorkbenchLayout>
 	}
 	logs: {
 		streams(init?: RequestInit): Promise<RuntimeLogStreamsIndex>
@@ -190,7 +191,9 @@ function createRuntimeTransportHttp(
 			globalLayout: (init) =>
 				expectData<WorkbenchLayout>(http.workbench.layout.global.get({ fetch: init })),
 			pluginLayout: (target, init) =>
-				expectData<WorkbenchLayout>(http.workbench.layout.plugin({ target }).get({ fetch: init })),
+				expectData<WorkbenchLayout>(
+					http.workbench.layout.plugin({ target: JSON.stringify(target) }).get({ fetch: init }),
+				),
 		},
 		logs: {
 			streams: (init) =>

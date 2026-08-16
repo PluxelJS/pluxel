@@ -1,28 +1,29 @@
-import type { RuntimePluginHandle, RuntimePluginKey } from '../identity'
+import type { PluginNodeSlot } from '../identity'
+import type { PluginIdentifier } from '../../types'
 import type { PluginGraph } from '../PluginDefinitions'
 import type { PluginLifecycleReport } from './LifecycleReport'
 import type { RuntimeUpdateCommitMeta, RuntimeUpdateReason } from './RuntimeUpdateTransaction'
 
-export type PluginReplacement = { readonly from: RuntimePluginKey; readonly to: RuntimePluginKey }
+export type PluginReplacement = { readonly from: PluginNodeSlot; readonly to: PluginNodeSlot }
 
 export type PluginCommitChanges = {
-	readonly added: readonly RuntimePluginKey[]
+	readonly added: readonly PluginNodeSlot[]
 	readonly replaced: readonly PluginReplacement[]
-	readonly removed: readonly RuntimePluginKey[]
-	readonly restarted: readonly RuntimePluginKey[]
+	readonly removed: readonly PluginNodeSlot[]
+	readonly restarted: readonly PluginNodeSlot[]
 	/**
 	 * Plugins whose runtime availability may have changed in this commit.
 	 *
 	 * This includes anything that was stopped or (re)started (adds, replaces, restarts, retries).
 	 * Useful for efficient optional-dependency watchers (e.g. PluginHost.use).
 	 */
-	readonly availabilityChanged: readonly RuntimePluginKey[]
+	readonly availabilityChanged: readonly PluginNodeSlot[]
 }
 
 export type RuntimeUpdateCommitSummary = {
 	readonly reason?: RuntimeUpdateReason
 	readonly affectedModules: readonly string[]
-	readonly autoDisabled: readonly RuntimePluginKey[]
+	readonly autoDisabled: readonly PluginNodeSlot[]
 }
 
 export interface CommitSummary {
@@ -33,26 +34,26 @@ export interface CommitSummary {
 }
 
 export type CommitExecutionDelta = {
-	readonly added: readonly RuntimePluginKey[]
+	readonly added: readonly PluginNodeSlot[]
 	readonly replaced: readonly PluginReplacement[]
-	readonly removed: readonly RuntimePluginKey[]
+	readonly removed: readonly PluginNodeSlot[]
 }
 
 export type CommitExecutionPlan = {
-	readonly added: Set<RuntimePluginKey>
+	readonly added: Set<PluginNodeSlot>
 	readonly replaced: PluginReplacement[]
-	readonly removed: Set<RuntimePluginKey>
-	readonly restartRequested: Set<RuntimePluginKey>
-	readonly toStop: Set<RuntimePluginKey>
-	readonly toStart: Set<RuntimePluginKey>
+	readonly removed: Set<PluginNodeSlot>
+	readonly restartRequested: Set<PluginNodeSlot>
+	readonly toStop: Set<PluginNodeSlot>
+	readonly toStart: Set<PluginNodeSlot>
 	readonly toStopSlots: Set<number>
 	readonly toStartSlots: Set<number>
 }
 
-export type RuntimePluginKeyResolver = (
+export type PluginNodeResolver = (
 	graph: PluginGraph | undefined,
-	id: RuntimePluginHandle,
-) => RuntimePluginKey | undefined
+	id: PluginIdentifier | PluginNodeSlot,
+) => PluginNodeSlot | undefined
 
 export const EMPTY_DELTA = {
 	added: [],
@@ -63,11 +64,11 @@ export const EMPTY_DELTA = {
 } as const
 
 export const EMPTY_PLUGIN_COMMIT_CHANGES: PluginCommitChanges = Object.freeze({
-	added: Object.freeze([]) as readonly RuntimePluginKey[],
+	added: Object.freeze([]) as readonly PluginNodeSlot[],
 	replaced: Object.freeze([]) as readonly PluginReplacement[],
-	removed: Object.freeze([]) as readonly RuntimePluginKey[],
-	restarted: Object.freeze([]) as readonly RuntimePluginKey[],
-	availabilityChanged: Object.freeze([]) as readonly RuntimePluginKey[],
+	removed: Object.freeze([]) as readonly PluginNodeSlot[],
+	restarted: Object.freeze([]) as readonly PluginNodeSlot[],
+	availabilityChanged: Object.freeze([]) as readonly PluginNodeSlot[],
 })
 
 export function hasCommitWork(
@@ -82,16 +83,16 @@ export function createCommitExecutionPlan(args: {
 	oldGraph: PluginGraph
 	graph: PluginGraph
 	delta: CommitExecutionDelta
-	restartRequested: Set<RuntimePluginKey>
-	pendingStart: Iterable<RuntimePluginKey>
-	resolveGraphKey: RuntimePluginKeyResolver
+	restartRequested: Set<PluginNodeSlot>
+	pendingStart: Iterable<PluginNodeSlot>
+	resolveGraphKey: PluginNodeResolver
 }): CommitExecutionPlan {
 	const { oldGraph, graph, delta, restartRequested, pendingStart, resolveGraphKey } = args
 	const added = new Set(delta.added)
 	const replaced = [...delta.replaced]
 	const removed = new Set(delta.removed)
-	const toStop = new Set<RuntimePluginKey>(removed)
-	const toStart = new Set<RuntimePluginKey>()
+	const toStop = new Set<PluginNodeSlot>(removed)
+	const toStart = new Set<PluginNodeSlot>()
 
 	for (let i = 0; i < replaced.length; i++) {
 		const { from, to } = replaced[i]!
@@ -140,8 +141,8 @@ export function isCommitExecutionPlanEmpty(
 	)
 }
 
-export function collectRuntimeEvictions(plan: CommitExecutionPlan): Set<RuntimePluginKey> {
-	const evict = new Set<RuntimePluginKey>(plan.toStop)
+export function collectRuntimeEvictions(plan: CommitExecutionPlan): Set<PluginNodeSlot> {
+	const evict = new Set<PluginNodeSlot>(plan.toStop)
 	for (let i = 0; i < plan.replaced.length; i++) {
 		evict.add(plan.replaced[i]!.from)
 	}
@@ -153,14 +154,14 @@ export function collectRuntimeEvictions(plan: CommitExecutionPlan): Set<RuntimeP
 
 export function createPluginCommitChanges(
 	plan: CommitExecutionPlan,
-	failed: ReadonlySet<RuntimePluginKey>,
+	failed: ReadonlySet<PluginNodeSlot>,
 ): PluginCommitChanges {
 	return {
 		added: [...plan.added],
 		replaced: [...plan.replaced],
 		removed: [...plan.removed],
 		restarted: collectRestartedSummary(plan, failed),
-		availabilityChanged: uniqueRuntimePluginKeys(plan.toStop, plan.toStart),
+		availabilityChanged: uniquePluginNodeSlots(plan.toStop, plan.toStart),
 	}
 }
 
@@ -168,13 +169,13 @@ export function createRuntimeUpdateSummary(
 	meta: RuntimeUpdateCommitMeta | null,
 ): RuntimeUpdateCommitSummary {
 	const affectedModules = meta ? uniqueStrings(meta.affectedModules) : []
-	const autoDisabled = meta ? uniqueRuntimePluginKeys(meta.autoDisabled) : []
+	const autoDisabled = meta ? uniquePluginNodeSlots(meta.autoDisabled) : []
 	return meta
 		? { reason: meta.reason, affectedModules, autoDisabled }
 		: { affectedModules, autoDisabled }
 }
 
-function collectExistingSlots(graph: PluginGraph, ids: Iterable<RuntimePluginKey>): Set<number> {
+function collectExistingSlots(graph: PluginGraph, ids: Iterable<PluginNodeSlot>): Set<number> {
 	const slots = new Set<number>()
 	for (const id of ids) {
 		const slot = graph.slotOf(id)
@@ -185,9 +186,9 @@ function collectExistingSlots(graph: PluginGraph, ids: Iterable<RuntimePluginKey
 
 function collectRestartedSummary(
 	plan: CommitExecutionPlan,
-	failed: ReadonlySet<RuntimePluginKey>,
-): RuntimePluginKey[] {
-	const structural = new Set<RuntimePluginKey>()
+	failed: ReadonlySet<PluginNodeSlot>,
+): PluginNodeSlot[] {
+	const structural = new Set<PluginNodeSlot>()
 	for (const id of plan.added) structural.add(id)
 	for (const id of plan.removed) structural.add(id)
 	for (const id of failed) structural.add(id)
@@ -196,8 +197,8 @@ function collectRestartedSummary(
 		structural.add(to)
 	}
 
-	const restarted: RuntimePluginKey[] = []
-	const seen = new Set<RuntimePluginKey>()
+	const restarted: PluginNodeSlot[] = []
+	const seen = new Set<PluginNodeSlot>()
 	for (const id of plan.toStart) {
 		if (structural.has(id) || seen.has(id)) continue
 		seen.add(id)
@@ -206,11 +207,11 @@ function collectRestartedSummary(
 	return restarted
 }
 
-function uniqueRuntimePluginKeys(
-	first: Iterable<RuntimePluginKey>,
-	second?: Iterable<RuntimePluginKey>,
-): RuntimePluginKey[] {
-	const out = new Set<RuntimePluginKey>()
+function uniquePluginNodeSlots(
+	first: Iterable<PluginNodeSlot>,
+	second?: Iterable<PluginNodeSlot>,
+): PluginNodeSlot[] {
+	const out = new Set<PluginNodeSlot>()
 	for (const id of first) out.add(id)
 	if (second) {
 		for (const id of second) out.add(id)

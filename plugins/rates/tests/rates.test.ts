@@ -3,19 +3,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
 	MemoryRatesBackendPlugin,
 	Rates,
+	RatesBackend,
 	RatesInvalidArgumentError,
 	RatesPlugin,
 	RatesPolicyConflictError,
 	RatesUnavailableError,
 	type RateLimiter,
 	type RatePolicy,
+	type RateDecision,
+	type RatesBackendConsumeRequest,
 } from '../src/index.ts'
-import { RatesBackend, type RateDecision, type RatesBackendConsumeRequest } from '../src/backend.ts'
 import { ExpiryHeap } from '../src/expiry-heap.ts'
 
 const Fixed = { algorithm: 'fixed-window', limit: 2, windowMs: 1_000 } as const
 
-@Plugin({ name: 'RatesConsumerA' })
+@Plugin({ displayName: 'RatesConsumer' })
 class ConsumerA extends BasePlugin {
 	local!: RateLimiter
 	shared!: RateLimiter
@@ -28,7 +30,7 @@ class ConsumerA extends BasePlugin {
 	}
 }
 
-@Plugin({ name: 'RatesConsumerB' })
+@Plugin({ displayName: 'RatesConsumer' })
 class ConsumerB extends BasePlugin {
 	local!: RateLimiter
 	shared!: RateLimiter
@@ -38,6 +40,36 @@ class ConsumerB extends BasePlugin {
 	protected override init(): void {
 		this.local = this.rates.use('messages', Fixed)
 		this.shared = this.rates.global.use('platform.messages', Fixed)
+	}
+}
+
+@Plugin(RatesBackend, { displayName: 'BrokenRatesBackend' })
+class BrokenRatesBackend extends RatesBackend {
+	async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
+		throw new Error('offline')
+	}
+}
+
+@Plugin(RatesBackend, { displayName: 'MalformedRatesBackend' })
+class MalformedRatesBackend extends RatesBackend {
+	private calls = 0
+
+	async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
+		this.calls += 1
+		if (this.calls === 1) return { denied: false, remaining: Number.NaN, resetAt: 1 }
+		if (this.calls === 2) return { denied: false, remaining: 3, resetAt: 1 }
+		return { denied: true, remaining: 1, retryAfterMs: 1, resetAt: 1 }
+	}
+}
+
+let finishDelayedDecision: ((decision: RateDecision) => void) | undefined
+
+@Plugin(RatesBackend, { displayName: 'DelayedRatesBackend' })
+class DelayedRatesBackend extends RatesBackend {
+	consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
+		return new Promise((resolve) => {
+			finishDelayedDecision = resolve
+		})
 	}
 }
 
@@ -165,12 +197,6 @@ describe('@pluxel/rates public API', () => {
 	})
 
 	it('wraps unknown backend failures and never synthesizes a decision', async () => {
-		@Plugin(RatesBackend, { name: 'BrokenRatesBackend' })
-		class BrokenRatesBackend extends RatesBackend {
-			async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
-				throw new Error('offline')
-			}
-		}
 		await withHost(async (host) => {
 			host.add([BrokenRatesBackend, RatesPlugin, ConsumerA])
 			await host.commit()
@@ -181,19 +207,6 @@ describe('@pluxel/rates public API', () => {
 	})
 
 	it('rejects malformed third-party backend decisions at the coordinator boundary', async () => {
-		@Plugin(RatesBackend, { name: 'MalformedRatesBackend' })
-		class MalformedRatesBackend extends RatesBackend {
-			private calls = 0
-
-			async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
-				this.calls += 1
-				if (this.calls === 1) {
-					return { denied: false, remaining: Number.NaN, resetAt: 1 }
-				}
-				if (this.calls === 2) return { denied: false, remaining: 3, resetAt: 1 }
-				return { denied: true, remaining: 1, retryAfterMs: 1, resetAt: 1 }
-			}
-		}
 		await withHost(async (host) => {
 			host.add([MalformedRatesBackend, RatesPlugin, ConsumerA])
 			await host.commit()
@@ -213,28 +226,38 @@ describe('@pluxel/rates public API', () => {
 	})
 
 	it('does not roll back or revoke an already submitted backend decision', async () => {
-		let finish!: (decision: RateDecision) => void
-		@Plugin(RatesBackend, { name: 'DelayedRatesBackend' })
-		class DelayedRatesBackend extends RatesBackend {
-			consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
-				return new Promise((resolve) => {
-					finish = resolve
-				})
-			}
-		}
+		finishDelayedDecision = undefined
 		await withHost(async (host) => {
 			host.add([DelayedRatesBackend, RatesPlugin, ConsumerA])
 			await host.commit()
 			const pending = host.require(ConsumerA).local.consume('in-flight')
 			host.remove(ConsumerA)
 			await host.commit()
-			finish({ denied: false, remaining: 0, resetAt: 1 })
+			if (!finishDelayedDecision) throw new Error('Delayed backend was not invoked')
+			finishDelayedDecision({ denied: false, remaining: 0, resetAt: 1 })
 			await expect(pending).resolves.toEqual({ denied: false, remaining: 0, resetAt: 1 })
 		})
 	})
 })
 
 describe('@pluxel/rates memory algorithms', () => {
+	it('stores and verifies the full structured owner independently of the opaque key', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			await host.commit()
+			const backend = host.require(MemoryRatesBackendPlugin)
+			await backend.consume({ key: 'owner-bound', owner: null, policy: Fixed, cost: 1 })
+			await expect(
+				backend.consume({
+					key: 'owner-bound',
+					owner: host.require(ConsumerA).ctx.pluginInfo.nodeAddress,
+					policy: Fixed,
+					cost: 1,
+				}),
+			).rejects.toThrow('owner does not match')
+		})
+	})
+
 	it('keeps same-key consumption atomic before the async boundary', async () => {
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
@@ -341,7 +364,7 @@ describe('@pluxel/rates memory algorithms', () => {
 		vi.setSystemTime(20_000)
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
-			host.cfg(MemoryRatesBackendPlugin).set({ config: { maxIdentities: 1 } })
+			host.cfg(MemoryRatesBackendPlugin).set({ maxIdentities: 1 })
 			await host.commit()
 			const limiter = host.require(ConsumerA).rates.use('capacity', Fixed)
 			await limiter.consume('existing')
@@ -359,7 +382,7 @@ describe('@pluxel/rates memory algorithms', () => {
 		vi.setSystemTime(20_000)
 		await withHost(async (host) => {
 			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
-			host.cfg(MemoryRatesBackendPlugin).set({ config: { maxIdentities: 1_000 } })
+			host.cfg(MemoryRatesBackendPlugin).set({ maxIdentities: 1_000 })
 			await host.commit()
 			const limiter = host.require(ConsumerA).rates.use('bounded-cleanup', Fixed)
 			await Promise.all(
@@ -391,6 +414,7 @@ describe('@pluxel/rates memory algorithms', () => {
 			for (let index = 0; index < 100; index++) {
 				await backend.consume({
 					key: index === 99 ? 'zzzz' : `key-${String(index).padStart(3, '0')}`,
+					owner: null,
 					policy: Fixed,
 					cost: 1,
 				})
@@ -399,6 +423,7 @@ describe('@pluxel/rates memory algorithms', () => {
 			await expect(
 				backend.consume({
 					key: 'zzzz',
+					owner: null,
 					policy: Object.freeze({
 						algorithm: 'token-bucket',
 						limit: 1,

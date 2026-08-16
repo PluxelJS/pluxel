@@ -14,7 +14,7 @@ Workbench 是 optional、host-owned 的前端扩展能力，不是插件业务 A
 | Extension | `@pluxel/runtime/workbench`          | Contract + server-only UI entry              |
 | Binding   | `@pluxel/runtime/workbench`          | RPC factory、database query、events producer |
 
-Contract 不包含 plugin ID、Context、Drizzle table、provider 或 Node API。Extension 不重复 owner；
+Contract 不包含 Plugin node address、Context、Drizzle table、provider 或 Node API。Extension 不重复 owner；
 `ctx.workbench.mount()` 从 immutable plugin Context 推导 owner，并把 registration 与 cleanup 绑定到 owner effects。
 
 ## Host-owned dependency selection
@@ -150,9 +150,10 @@ sidecar 推导它，也不创建 product service、额外 HTTP route、polling �
 `workbench.pluginGroups` 注册产品分类；未命中宿主规则且拥有可信 `packageName` 的动态插件按精确包名自动分类。
 用户只能在已注册分类与未分组区之间移动、排序插件，不能创建、重命名或删除分类。
 
-Workbench backend 持久化相对默认分类的 assignment 与排序偏好，不再把完整开放式 group 写进 RuntimeState。
-disabled/stopped plugin 仍按 catalog source 分类；Workbench disabled 时不创建分类 service 或偏好文件。完整身份、匹配、
-冲突和迁移规则见 [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
+Workbench backend 持久化相对默认分类的 assignment 与排序偏好；它与 RuntimeState 各自拥有独立文件。
+disabled/stopped Plugin 仍按 catalog source 分类；Workbench disabled 时不创建分类 service 或偏好文件。宿主 exact 规则和
+偏好都使用结构化 node address，不使用 class/display name。完整身份、匹配和持久化规则见
+[`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)。
 
 ## Route navigation groups
 

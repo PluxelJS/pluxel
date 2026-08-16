@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto'
 import { deserialize, serialize } from 'node:v8'
 import {
 	BasePlugin,
 	Plugin,
+	parsePluginNodeAddress,
+	pluginNodeAddressEqual,
 	pluginMethodDecorator,
 	type PersistenceNamespace,
+	type PluginNodeAddressSnapshot,
 	v,
 } from '@pluxel/runtime'
 import { CacheBackend, type CacheBackendStore, type CacheValue } from './backend.ts'
@@ -284,11 +288,15 @@ type CacheDefaults = {
 type Resolved = {
 	namespace: InternalNamespace
 	backendPrefix: string
+	ownerAddress: PluginNodeAddressSnapshot | null
 	bucket: Bucket
 }
 
 type OwnerContext = {
-	readonly pluginInfo: { readonly id: string }
+	readonly pluginInfo: {
+		readonly nodeSlot: object
+		readonly nodeAddress: PluginNodeAddressSnapshot
+	}
 	readonly effects: { defer(cleanup: () => void, meta?: { tag?: string }): unknown }
 	readonly registry: { getInstance(identifier: unknown): unknown }
 }
@@ -300,12 +308,16 @@ type CacheOwnerState = {
 		string,
 		{ readonly view: CacheNamespace; readonly policy: InternalNamespace }
 	>
-	readonly registrations: Set<string>
+	readonly registrations: Set<CacheRegistration>
 }
 
 type CacheRegistration = {
 	readonly namespace: InternalNamespace
 	readonly backendPrefix: string
+	readonly ownerAddress: PluginNodeAddressSnapshot | null
+	readonly ownerSlot: object | null
+	readonly lookup: Map<string, CacheRegistration>
+	readonly lookupKey: string
 	readonly bucket: Bucket
 	readonly owners: Set<CacheOwnerState>
 }
@@ -313,7 +325,16 @@ type CacheRegistration = {
 type CacheRuntime = {
 	active: boolean
 	readonly owners: WeakMap<object, CacheOwnerState>
-	readonly registrations: Map<string, CacheRegistration>
+	readonly globalRegistrations: Map<string, CacheRegistration>
+	readonly localRegistrations: WeakMap<object, Map<string, CacheRegistration>>
+	readonly registrations: Set<CacheRegistration>
+}
+
+type StoredCacheEntry<V> = {
+	readonly format: 'pluxel-cache-entry'
+	readonly version: 1
+	readonly owner: PluginNodeAddressSnapshot | null
+	readonly value: V
 }
 
 type MemoryCachePersistenceMode = MemoryCacheBackendPluginConfig['persistence']['mode']
@@ -612,21 +633,33 @@ export abstract class Cache extends BasePlugin implements CacheNamespace {
 /**
  * Caller-aware coordinator with synchronous local caching and a polymorphic async backend.
  */
-@Plugin(Cache, { name: 'CachePlugin' })
+@Plugin(Cache, { displayName: 'CachePlugin' })
 export class CachePlugin extends Cache {
 	protected readonly config = this.configs.use(CacheConfig)
 	private readonly runtime: CacheRuntime = {
 		active: false,
 		owners: new WeakMap(),
-		registrations: new Map(),
+		globalRegistrations: new Map(),
+		localRegistrations: new WeakMap(),
+		registrations: new Set(),
 	}
 
 	constructor(private readonly backend: CacheBackend) {
 		super()
 	}
 
-	protected override init(): void {
+	protected override init(): () => void {
 		this.runtime.active = true
+		return () => {
+			this.runtime.active = false
+			for (const registration of this.runtime.registrations) {
+				deactivateBucket(registration.bucket)
+				registration.lookup.delete(registration.lookupKey)
+				registration.owners.clear()
+			}
+			this.runtime.registrations.clear()
+			this.runtime.globalRegistrations.clear()
+		}
 	}
 
 	override get local(): LocalCache {
@@ -667,14 +700,6 @@ export class CachePlugin extends Cache {
 
 	override stats(): CacheStats {
 		return this.current().stats()
-	}
-
-	protected override stop(): void {
-		this.runtime.active = false
-		for (const registration of this.runtime.registrations.values()) {
-			deactivateBucket(registration.bucket)
-		}
-		this.runtime.registrations.clear()
 	}
 
 	private current(): CacheNamespace {
@@ -725,9 +750,9 @@ export class CachePlugin extends Cache {
 			return existingHandle.view
 		}
 
-		const pluginId = owner.context.pluginInfo.id
-		const registrationId = global ? `g\0${name}` : `l\0${pluginId}\0${name}`
-		let registration = this.runtime.registrations.get(registrationId)
+		const ownerSlot = owner.context.pluginInfo.nodeSlot
+		const lookup = global ? this.runtime.globalRegistrations : this.localRegistrationsFor(ownerSlot)
+		let registration = lookup.get(name)
 		let namespace: InternalNamespace
 		if (registration) {
 			namespace = registration.namespace
@@ -748,8 +773,8 @@ export class CachePlugin extends Cache {
 				(parentPolicy ?? this.config) as CacheDefaults,
 			)
 			const backendPrefix = global
-				? `global:${name ? `${escapePart(name)}:` : ''}`
-				: `plugin:${escapePart(pluginId)}:${name ? `${escapePart(name)}:` : ''}`
+				? `cache:v2:global:${name ? `${escapePart(name)}:` : ''}`
+				: `cache:v2:plugin:${ownerAddressDigest(owner.context.pluginInfo.nodeAddress)}:${name ? `${escapePart(name)}:` : ''}`
 			const bucket: Bucket = {
 				active: true,
 				entries: new Map(),
@@ -759,14 +784,25 @@ export class CachePlugin extends Cache {
 				maxEntries: namespace.maxEntries,
 				maxInFlight: namespace.maxInFlight,
 			}
-			registration = { namespace, backendPrefix, bucket, owners: new Set() }
-			this.runtime.registrations.set(registrationId, registration)
+			registration = {
+				namespace,
+				backendPrefix,
+				ownerAddress: global ? null : normalizeOwnerAddress(owner.context.pluginInfo.nodeAddress),
+				ownerSlot: global ? null : ownerSlot,
+				lookup,
+				lookupKey: name,
+				bucket,
+				owners: new Set(),
+			}
+			lookup.set(name, registration)
+			this.runtime.registrations.add(registration)
 		}
 		registration.owners.add(owner)
-		owner.registrations.add(registrationId)
+		owner.registrations.add(registration)
 		const resolved: Resolved = {
 			namespace,
 			backendPrefix: registration.backendPrefix,
+			ownerAddress: registration.ownerAddress,
 			bucket: registration.bucket,
 		}
 		const view = new NamespaceView(
@@ -785,17 +821,28 @@ export class CachePlugin extends Cache {
 	private releaseOwner(owner: CacheOwnerState): void {
 		if (!owner.active) return
 		owner.active = false
-		for (const id of owner.registrations) {
-			const registration = this.runtime.registrations.get(id)
-			if (!registration) continue
+		for (const registration of owner.registrations) {
 			registration.owners.delete(owner)
 			if (registration.owners.size === 0) {
 				deactivateBucket(registration.bucket)
-				this.runtime.registrations.delete(id)
+				registration.lookup.delete(registration.lookupKey)
+				this.runtime.registrations.delete(registration)
+				if (registration.ownerSlot && registration.lookup.size === 0) {
+					this.runtime.localRegistrations.delete(registration.ownerSlot)
+				}
 			}
 		}
 		owner.registrations.clear()
 		owner.handles.clear()
+	}
+
+	private localRegistrationsFor(ownerSlot: object): Map<string, CacheRegistration> {
+		let registrations = this.runtime.localRegistrations.get(ownerSlot)
+		if (!registrations) {
+			registrations = new Map()
+			this.runtime.localRegistrations.set(ownerSlot, registrations)
+		}
+		return registrations
 	}
 
 	private assertActive(): void {
@@ -808,7 +855,7 @@ export class CachePlugin extends Cache {
 
 	private assertHandleActive(owner: CacheOwnerState): void {
 		this.assertOwnerActive(owner)
-		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.id) as
+		const activeOwner = owner.context.registry.getInstance(owner.context.pluginInfo.nodeSlot) as
 			| { ctx?: unknown }
 			| undefined
 		if (!activeOwner || activeOwner.ctx !== owner.context) throw new CacheStoppedError()
@@ -820,7 +867,7 @@ export class CachePlugin extends Cache {
 	}
 }
 
-@Plugin(CacheBackend, { name: 'MemoryCacheBackendPlugin' })
+@Plugin(CacheBackend, { displayName: 'MemoryCacheBackendPlugin' })
 export class MemoryCacheBackendPlugin extends CacheBackend {
 	private readonly config = this.configs.use(MemoryCacheBackendConfig)
 	/** Caller-bound dependency views inherit this reference, so all mutations stay provider-owned. */
@@ -836,6 +883,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 
 	protected override async init(): Promise<void> {
 		this.prepareStart()
+		this.ctx.effects.defer(() => this.cleanup(), { tag: 'memory-cache-backend' })
 		try {
 			this.getState()
 			this.holder.persistenceMode = this.config.persistence.mode
@@ -918,7 +966,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 		if (changed) this.requestSnapshot()
 	}
 
-	protected override async stop(): Promise<void> {
+	private async cleanup(): Promise<void> {
 		this.holder.stopping = true
 		this.holder.running = false
 		this.cancelScheduledSnapshot()
@@ -1086,6 +1134,7 @@ export class MemoryCacheBackendPlugin extends CacheBackend {
 				backendFailure: 'required',
 			},
 			backendPrefix: '',
+			ownerAddress: null,
 			bucket,
 		}
 		return (this.holder.state = { bucket, resolved })
@@ -1566,7 +1615,10 @@ class AsyncView extends CacheViewBase {
 
 	private async readBackend<V>(encoded: string): Promise<CacheValue<V> | undefined> {
 		try {
-			return await this.backend.get<V>(this.backendKey(encoded))
+			const found = await this.backend.get<StoredCacheEntry<V>>(this.backendKey(encoded))
+			if (!found) return undefined
+			const stored = readStoredCacheEntry<V>(found.value, this.resolved.ownerAddress)
+			return { value: stored.value, ttlMs: found.ttlMs }
 		} catch (error) {
 			this.resolved.bucket.stats.backendReadErrors++
 			throw new BackendReadFailure(error)
@@ -1575,7 +1627,13 @@ class AsyncView extends CacheViewBase {
 
 	private async writeBackend<V>(encoded: string, value: V, ttlMs: number): Promise<void> {
 		try {
-			await this.backend.set(this.backendKey(encoded), value, { ttlMs })
+			const stored: StoredCacheEntry<V> = {
+				format: 'pluxel-cache-entry',
+				version: 1,
+				owner: this.resolved.ownerAddress,
+				value,
+			}
+			await this.backend.set(this.backendKey(encoded), stored, { ttlMs })
 		} catch (error) {
 			this.resolved.bucket.stats.backendWriteErrors++
 			throw error
@@ -1773,6 +1831,68 @@ function assertBackendValue(value: unknown): void {
 	if (value === undefined) {
 		throw new TypeError('Cache backend returned undefined as a hit value.')
 	}
+}
+
+function normalizeOwnerAddress(address: PluginNodeAddressSnapshot): PluginNodeAddressSnapshot {
+	return parsePluginNodeAddress(address)
+}
+
+function canonicalOwnerAddress(address: PluginNodeAddressSnapshot): string {
+	return JSON.stringify(normalizeOwnerAddress(address))
+}
+
+function ownerAddressDigest(address: PluginNodeAddressSnapshot): string {
+	return createHash('sha256').update(canonicalOwnerAddress(address)).digest('hex')
+}
+
+function readStoredCacheEntry<V>(
+	input: unknown,
+	expectedOwner: PluginNodeAddressSnapshot | null,
+): StoredCacheEntry<V> {
+	if (!input || typeof input !== 'object' || Array.isArray(input)) {
+		throw new TypeError('Cache backend entry must be an object.')
+	}
+	const prototype = Object.getPrototypeOf(input)
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw new TypeError('Cache backend entry must be a plain object.')
+	}
+	if (Object.getOwnPropertySymbols(input).length > 0) {
+		throw new TypeError('Cache backend entry must not contain symbol fields.')
+	}
+	const descriptors = Object.getOwnPropertyDescriptors(input)
+	const keys = Object.keys(descriptors)
+	if (
+		keys.length !== 4 ||
+		!keys.includes('format') ||
+		!keys.includes('version') ||
+		!keys.includes('owner') ||
+		!keys.includes('value')
+	) {
+		throw new TypeError('Cache backend entry has an unsupported or corrupt format.')
+	}
+	const field = (name: 'format' | 'version' | 'owner' | 'value'): unknown => {
+		const descriptor = descriptors[name]
+		if (!descriptor?.enumerable || !('value' in descriptor)) {
+			throw new TypeError('Cache backend entry fields must be enumerable data properties.')
+		}
+		return descriptor.value
+	}
+	const format = field('format')
+	const version = field('version')
+	const owner = field('owner')
+	const value = field('value')
+	if (format !== 'pluxel-cache-entry' || version !== 1 || value === undefined) {
+		throw new TypeError('Cache backend entry has an unsupported or corrupt format.')
+	}
+	if (expectedOwner === null) {
+		if (owner !== null) throw new TypeError('Cache backend entry owner does not match.')
+	} else {
+		const actualOwner = parsePluginNodeAddress(owner)
+		if (!pluginNodeAddressEqual(actualOwner, expectedOwner)) {
+			throw new TypeError('Cache backend entry owner does not match.')
+		}
+	}
+	return { format, version, owner: expectedOwner, value: value as V }
 }
 
 function assertActive(bucket: Bucket): void {

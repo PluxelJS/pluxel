@@ -1,12 +1,13 @@
 import type { AdminAccessConfig } from './services/admin-access/types'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 
 export type WorkbenchPluginGroupConfig = Readonly<{
 	/** Stable host-owned group identity. The `package:` prefix is reserved. */
 	id: string
 	/** Canonical display name. Users cannot rename registered groups. */
 	name: string
-	/** Exact canonical plugin IDs, primarily for fixed/static catalogs. */
-	plugins?: readonly string[]
+	/** Exact Plugin node addresses, primarily for fixed/static catalogs. */
+	nodes?: readonly PluginNodeAddressSnapshot[]
 	/** Exact package names or a package-name prefix with one trailing `*`. */
 	packages?: readonly string[]
 }>

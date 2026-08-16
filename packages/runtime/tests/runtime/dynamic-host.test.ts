@@ -3,6 +3,17 @@ import { createDiskFixture as createFixture } from '@pluxel/test/fixtures'
 import { createRuntimeContext } from '@pluxel/runtime/test'
 import { isPluginEnabled } from '@pluxel/runtime/internal'
 
+const exampleAddress = {
+	definition: {
+		entry: { kind: 'package-root', packageName: '@test/example' },
+		exportName: 'ExamplePlugin',
+	},
+	instance: 'default',
+} as const
+
+const environmentSnapshot = (config: Record<string, unknown>) =>
+	JSON.stringify({ version: 2, plugins: [{ owner: exampleAddress, config }] })
+
 describe('@pluxel/runtime Context bootstrap', () => {
 	it('boots core runtime services without any loader/HMR layer', async () => {
 		await using fixture = await createFixture({})
@@ -34,23 +45,20 @@ describe('@pluxel/runtime Context bootstrap', () => {
 				configService: {
 					mode: 'readonly',
 					snapshot: {
-						plugins: {
-							ExamplePlugin: { answer: 42 },
-						},
+						plugins: [{ owner: exampleAddress, config: { answer: 42 } }],
 					},
 				},
 				runtimeState: {
 					mode: 'readonly',
-					snapshot: { enabled: ['ExamplePlugin'] },
+					snapshot: { enabled: [exampleAddress] },
 				},
 			})
 			const ctx = runtime.ctx
 
-			expect(isPluginEnabled(ctx.runtimeState.snapshot(), 'ExamplePlugin')).toBe(true)
-			expect(ctx.configService.getRawConfig('ExamplePlugin')).toEqual({ answer: 42 })
-			expect(() => ctx.configService.patchConfig('ExamplePlugin', { answer: 7 })).toThrow(
-				/readonly mode/i,
-			)
+			const owner = ctx.registry.internNodeAddress(exampleAddress)
+			expect(isPluginEnabled(ctx.runtimeState.snapshot(), exampleAddress)).toBe(true)
+			expect(ctx.configService.getRawConfig(owner)).toEqual({ answer: 42 })
+			expect(() => ctx.configService.patchConfig(owner, { answer: 7 })).toThrow(/readonly mode/i)
 			await runtime.dispose()
 		} finally {
 			process.chdir(prev)
@@ -62,59 +70,66 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			configService: {
 				mode: 'memory',
 				snapshot: {
-					plugins: {
-						ExamplePlugin: { config: { preserved: 'snapshot', overridden: 'snapshot' } },
-					},
+					plugins: [
+						{
+							owner: exampleAddress,
+							config: { preserved: 'snapshot', overridden: 'snapshot' },
+						},
+					],
 				},
 				environment: {
-					PLUXEL_CONFIG__ExamplePlugin__config__allowedOrigins: '["https://app.example.test"]',
-					PLUXEL_CONFIG__ExamplePlugin__config__enabled: 'true',
-					PLUXEL_CONFIG__ExamplePlugin__config__limit: '12',
-					PLUXEL_CONFIG__ExamplePlugin__config__overridden: 'environment',
+					PLUXEL_CONFIG: environmentSnapshot({
+						allowedOrigins: ['https://app.example.test'],
+						enabled: true,
+						limit: 12,
+						overridden: 'environment',
+					}),
 				},
 			},
 		})
 		try {
-			expect(runtime.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
-				config: {
-					allowedOrigins: ['https://app.example.test'],
-					enabled: true,
-					limit: 12,
-					overridden: 'environment',
-					preserved: 'snapshot',
-				},
+			const owner = runtime.ctx.registry.internNodeAddress(exampleAddress)
+			expect(runtime.ctx.configService.getRawConfig(owner)).toEqual({
+				allowedOrigins: ['https://app.example.test'],
+				enabled: true,
+				limit: 12,
+				overridden: 'environment',
+				preserved: 'snapshot',
 			})
 		} finally {
 			await runtime.dispose()
 		}
 	})
 
-	it('rejects malformed reserved plugin config environment names', () => {
+	it('rejects malformed structured Plugin config environment snapshots', () => {
 		expect(
 			() =>
 				createRuntimeContext({
 					configService: {
 						mode: 'memory',
-						environment: { PLUXEL_CONFIG__MissingSchema: 'value' },
+						environment: { PLUXEL_CONFIG: '{"version":1,"plugins":[]}' },
 					},
 				}).ctx.configService,
-		).toThrow('Invalid plugin config environment name')
+		).toThrow('config snapshot version 2')
 	})
 
 	it('keeps persisted plugin config authoritative on later starts', async () => {
 		await using fixture = await createFixture({})
-		const environmentName = 'PLUXEL_CONFIG__ExamplePlugin__config__publicUrl'
+		const environment = {
+			PLUXEL_CONFIG: environmentSnapshot({ publicUrl: 'https://first.example.test' }),
+		}
 		const first = createRuntimeContext({
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',
-				environment: { [environmentName]: 'https://first.example.test' },
+				environment,
 			},
 		})
 		try {
 			await first.ctx.configService.ready
-			expect(first.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
-				config: { publicUrl: 'https://first.example.test' },
+			const owner = first.ctx.registry.internNodeAddress(exampleAddress)
+			expect(first.ctx.configService.getRawConfig(owner)).toEqual({
+				publicUrl: 'https://first.example.test',
 			})
 		} finally {
 			await first.dispose()
@@ -124,13 +139,16 @@ describe('@pluxel/runtime Context bootstrap', () => {
 			persistence: fixture.path,
 			configService: {
 				mode: 'file',
-				environment: { [environmentName]: 'https://second.example.test' },
+				environment: {
+					PLUXEL_CONFIG: environmentSnapshot({ publicUrl: 'https://second.example.test' }),
+				},
 			},
 		})
 		try {
 			await second.ctx.configService.ready
-			expect(second.ctx.configService.getRawConfig('ExamplePlugin')).toEqual({
-				config: { publicUrl: 'https://first.example.test' },
+			const owner = second.ctx.registry.internNodeAddress(exampleAddress)
+			expect(second.ctx.configService.getRawConfig(owner)).toEqual({
+				publicUrl: 'https://first.example.test',
 			})
 		} finally {
 			await second.dispose()

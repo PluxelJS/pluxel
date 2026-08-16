@@ -16,7 +16,7 @@ const OrdersWorkbench = workbench.extension({
 	entry: workbench.entry(import.meta.url, './ui/index.tsx'),
 })
 
-@Plugin({ name: 'OrdersPlugin' })
+@Plugin({ displayName: 'Orders' })
 export class OrdersPlugin extends BasePlugin {
 	private readonly config = this.configs.use(OrdersConfig)
 
@@ -35,7 +35,7 @@ export class OrdersPlugin extends BasePlugin {
 }
 ```
 
-- module scope 和 class field 只放 declaration；不要在这里启动 I/O 或 lazy feature。
+- module scope 和 class field 只放 declaration；不要在这里启动 I/O 或执行 lazy import。
 - constructor 只声明必需的 plugin dependency；不要读取 config、连接服务或决定宿主策略。
 - `init()` 验证启动条件、创建资源、注册业务能力；无法提供核心能力时直接抛错。
 - `ctx.workbench.mount()` 只挂载 Workbench resource Binding，业务行为不得依赖其返回值是否存在。
@@ -60,18 +60,18 @@ class SharedProvider extends BasePlugin {
 不要在 caller 调用路径写 `this.defaultName = name` 并期待其他 consumer 看到新值。provider stop/replacement 仍由
 effects 清理共享对象持有的外部资源。
 
-## Required、optional 与 feature
+## Required、optional 与内部组成
 
-| 意图                                 | 标准写法                                                       | 不要这样写                            |
-| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------- |
-| 没有 provider 就不能运行             | constructor parameter                                          | 在 decorator 重复依赖或运行时自行查找 |
-| host-managed provider 仅提供增强能力 | `this.plugins.use(Provider, callback)`                         | optional provider 放进 constructor    |
-| provider package 允许不存在          | module-level `optionalPlugin()` + `plugins.use(Ref)`           | raw import 后自行注册 provider        |
-| 插件内部必需组成                     | decorator `features` + `this.features.use()`                   | 为内部实现制造独立 plugin             |
-| 插件内部按需组成                     | module-level `defineLazyFeature()` + runtime `features.load()` | 静态 import 后伪装 lazy load          |
+| 意图                             | 标准写法                                                  | 不要这样写                            |
+| -------------------------------- | --------------------------------------------------------- | ------------------------------------- |
+| 没有 provider 就不能运行         | constructor + direct root value import                    | 在 decorator 重复依赖或运行时自行查找 |
+| provider package 允许不存在      | `definePluginRef<T>()` + init-time `plugins.use(Ref, cb)` | raw import、轮询或缓存 provider 实例  |
+| Plugin 内部拆分                  | 普通 class/function + owner effects                       | 创建第二套内部 lifecycle              |
+| 独立配置、失败、启停或治理的组成 | 独立 Plugin                                               | 把治理边界藏进普通 helper             |
 
-constructor dependency 必须是 runtime import，不能使用 `import type`。插件源码也必须由 Pluxel
-Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
+constructor dependency 必须从 provider package root value-import，不能使用 `import type`。optional ref 的 `T` 则必须来自
+root direct type import，ref 自身不导出。Plugin 源码必须由 Pluxel Vite/Rolldown pipeline 加载，否则 definition/edge facts
+缺失并明确失败。
 
 ## 配置只声明和归一化一次
 
@@ -84,6 +84,7 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
 
 - 外部服务不可达、schema 不匹配或必要配置无效时，让 `init()` 失败并给出行动建议。
 - 资源创建成功后立即登记 cleanup；不要等到函数末尾才统一登记。
+- `init()` 最终 cleanup/disposable 会自动进入 generation effects；停止、rollback、replacement 和 optional restart 只 drain effects。
 - cleanup 必须幂等，并能处理部分初始化。
 - timer、watcher、queue consumer 的单次错误属于业务错误，应捕获、结构化记录并按业务语义重试。
 - 插件不得调用 `process.exit()`；插件报告事实，宿主决定退出、告警或降级。
@@ -121,7 +122,7 @@ Vite/Rolldown pipeline 加载，否则 decorator metadata 不完整。
    或复制 Pluxel compiler plugin。
 3. 运行 `pnpm lint:fix`，阅读并理解仍未修复的 Pluxel rule；不要用 disable 绕过所有权问题。
 4. 运行 `pnpm verify`，覆盖 format、unused suppressions、typecheck、tests 和 production build。
-5. 确认 required/optional、plugin/feature、HTTP/workbench 三组边界都清楚。
+5. 确认 required/optional、Plugin/内部对象、HTTP/Workbench 三组边界都清楚。
 6. 确认启动失败不会留下 running 假象，每个资源都有幂等 cleanup。
 7. 确认 disabled Workbench Plane 测试仍通过，公开 contract 类型能被消费者发现。
 8. 独立数据库 plugin 是否提交/检查 `drizzle/` 或显式声明 reset；application database 是否只有一个 module owner、pool 和 migration 入口？
