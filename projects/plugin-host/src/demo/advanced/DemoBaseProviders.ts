@@ -49,7 +49,7 @@ export class DemoClockFixed extends DemoClock {
 	}
 }
 
-@Plugin({ displayName: 'DemoClockConsumer' })
+@Plugin()
 export class DemoClockConsumer extends BasePlugin {
 	constructor(private readonly clock: DemoClock) {
 		super()

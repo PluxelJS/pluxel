@@ -8,7 +8,7 @@ Pluxel 官方 caller-aware admission control 插件。它对一次 `identity + c
 import { Rates, type RateLimiter } from '@pluxel/rates'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ displayName: 'MessagingPlugin' })
+@Plugin()
 class MessagingPlugin extends BasePlugin {
 	private messages!: RateLimiter
 

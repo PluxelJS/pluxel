@@ -36,7 +36,7 @@ const WretchExampleWorkbench = workbench.portOutlet({
 	}),
 })
 
-@Plugin({ displayName: 'WretchExamplePlugin' })
+@Plugin()
 export class WretchExamplePlugin extends BasePlugin {
 	private readonly config = this.configs.use(WretchExampleConfig)
 	private api!: Wretch

@@ -24,7 +24,7 @@ describe('runtime control-plane RPC', () => {
 	it('exposes plugin status, config and dependency usecases through direct methods', async () => {
 		const fixture = createRpcFixture()
 
-		@Plugin({ displayName: 'Provider' })
+		@Plugin()
 		class Provider extends BasePlugin {
 			readonly kind = 'primary'
 		}
@@ -36,7 +36,7 @@ describe('runtime control-plane RPC', () => {
 		}
 		lowerTestPlugin(ProviderAlt)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly provider: Provider) {
 				super()

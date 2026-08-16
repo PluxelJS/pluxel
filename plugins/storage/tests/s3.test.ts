@@ -21,14 +21,14 @@ vi.mock('s3mini', () => ({
 
 import { S3, S3CredentialsError, S3NotRunningError, S3Plugin } from '../src/index.ts'
 
-@Plugin({ displayName: 'S3Consumer' })
+@Plugin()
 class S3Consumer extends BasePlugin {
 	constructor(readonly s3: S3) {
 		super()
 	}
 }
 
-@Plugin({ displayName: 'S3VaultSeeder' })
+@Plugin()
 class S3VaultSeeder extends BasePlugin {}
 
 beforeEach(() => {

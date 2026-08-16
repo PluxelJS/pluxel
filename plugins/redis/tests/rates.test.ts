@@ -36,7 +36,7 @@ function cloneOptions(options: ScriptOptions): ScriptOptions {
 	return { keys: [...options.keys], arguments: [...options.arguments] }
 }
 
-@Plugin(Redis, { displayName: 'FakeRatesRedisPlugin' })
+@Plugin(Redis)
 class FakeRatesRedisPlugin extends Redis {
 	readonly fake = new FakeRatesRedisClient()
 	override get client(): RedisClient {
@@ -44,7 +44,7 @@ class FakeRatesRedisPlugin extends Redis {
 	}
 }
 
-@Plugin({ displayName: 'RedisRatesConsumer' })
+@Plugin()
 class RedisRatesConsumer extends BasePlugin {
 	constructor(readonly rates: Rates) {
 		super()

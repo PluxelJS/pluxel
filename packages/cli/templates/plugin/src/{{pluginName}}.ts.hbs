@@ -4,7 +4,7 @@ const MessageConfig = v.object({
 	message: v.optional(v.string(), 'ready'),
 })
 
-@Plugin({ displayName: '{{className}}Plugin' })
+@Plugin()
 export class {{className}}Plugin extends BasePlugin {
 	readonly config = this.configs.use(MessageConfig)
 

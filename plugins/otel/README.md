@@ -15,7 +15,7 @@ import { SeverityNumber } from '@opentelemetry/api-logs'
 import { OtelPlugin } from '@pluxel/otel'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ displayName: 'CatalogPlugin' })
+@Plugin()
 class CatalogPlugin extends BasePlugin {
 	private refreshed!: Counter
 

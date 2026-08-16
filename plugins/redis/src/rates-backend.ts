@@ -373,7 +373,7 @@ export const RedisRatesBackendConfig = v.object({
 export type RedisRatesBackendPluginConfig = v.InferOutput<typeof RedisRatesBackendConfig>
 
 /** Redis 7 backend using one server-timed, single-key Lua transition per decision. */
-@Plugin(RatesBackend, { displayName: 'RedisRatesBackendPlugin' })
+@Plugin(RatesBackend)
 export class RedisRatesBackendPlugin extends RatesBackend {
 	private readonly config = this.configs.use(RedisRatesBackendConfig)
 	private readonly runners = new Map<

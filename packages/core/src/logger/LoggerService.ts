@@ -55,8 +55,8 @@ function rootIdFor(ctx: PluxelContext, config?: LoggerServiceConfig): string {
 
 function stripReservedProperties(value: Record<string, unknown>): Record<string, unknown> {
 	if (!Object.hasOwn(value, RESERVED_CONTEXT_PROPERTY)) return value
-	const out = { ...value }
-	delete out[RESERVED_CONTEXT_PROPERTY]
+	const { [RESERVED_CONTEXT_PROPERTY]: reservedContext, ...out } = value
+	void reservedContext
 	return out
 }
 

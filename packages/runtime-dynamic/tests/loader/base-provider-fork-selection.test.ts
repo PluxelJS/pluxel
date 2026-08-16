@@ -59,7 +59,7 @@ describe('base provider selection', () => {
 		}
 		lowerTestPlugin(Impl, { provides: getPluginDefinitionFacts(Abs).definition })
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly dep: Abs) {
 				super()
@@ -93,13 +93,13 @@ describe('base provider selection', () => {
 		const { core, ctx } = createHmrTestContext()
 		let consumerStarts = 0
 
-		@Plugin({ displayName: 'Worker' })
+		@Plugin()
 		class Worker extends ForkablePlugin {
 			readonly generation = 1
 		}
 		lowerTestPlugin(Worker)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly dep: Worker) {
 				super()

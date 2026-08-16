@@ -39,7 +39,7 @@ const HttpWorkerUi = workbenchContract.define({
 })
 const HttpWorkerWorkbench = workbench.extension({ contract: HttpWorkerUi })
 
-@Plugin({ displayName: 'PluginHttpWorkerDemo' })
+@Plugin()
 export class PluginHttpWorkerDemo extends BasePlugin {
 	override async init(): Promise<void> {
 		this.ctx.http.plugin.routes(

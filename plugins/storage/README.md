@@ -7,7 +7,7 @@ Pluxel 官方 S3 capability。S3/s3mini 是唯一业务 API；官方安装面只
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { S3, S3Plugin } from '@pluxel/storage'
 
-@Plugin({ displayName: 'AssetsPlugin' })
+@Plugin()
 class AssetsPlugin extends BasePlugin {
 	constructor(private readonly s3: S3) {
 		super()

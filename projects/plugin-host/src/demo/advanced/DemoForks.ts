@@ -4,7 +4,7 @@
 
 import { BasePlugin, formatPluginNodeAddress, ForkablePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ displayName: 'DemoWorker' })
+@Plugin()
 export class DemoWorker extends ForkablePlugin {
 	override init(): void {
 		this.ctx.logger.info('ready', {
@@ -17,7 +17,7 @@ export class DemoWorker extends ForkablePlugin {
 	}
 }
 
-@Plugin({ displayName: 'DemoWorkerConsumer' })
+@Plugin()
 export class DemoWorkerConsumer extends BasePlugin {
 	constructor(private readonly worker: DemoWorker) {
 		super()

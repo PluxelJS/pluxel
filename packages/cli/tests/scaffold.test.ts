@@ -259,7 +259,7 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
 		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
 		expect(source).toContain('export class HelloWorldPlugin extends BasePlugin')
-		expect(source).toContain("@Plugin({ displayName: 'HelloWorldPlugin' })")
+		expect(source).toContain('@Plugin()')
 		expect(source).toContain('const MessageConfig = v.object({')
 		const pluginTest = fixture.fs.readFileSync(
 			resolve(targetDir, 'tests/hello-world.test.ts'),

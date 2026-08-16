@@ -24,7 +24,7 @@ const HttpRoutesUi = workbenchContract.define({
 })
 const HttpRoutesWorkbench = workbench.extension({ contract: HttpRoutesUi })
 
-@Plugin({ displayName: 'PluginHttpRoutesDemo' })
+@Plugin()
 export class PluginHttpRoutesDemo extends BasePlugin {
 	override init(): void {
 		this.ctx.http.plugin.routes(

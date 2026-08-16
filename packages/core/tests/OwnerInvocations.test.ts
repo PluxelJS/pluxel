@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const ownerDrainOrder: string[] = []
 let ownerDrainLease: ReturnType<typeof enterOwnerInvocation> | undefined
 
-@Plugin({ displayName: 'InvokedPlugin' })
+@Plugin()
 class InvokedPlugin extends BasePlugin {
 	override init() {
 		ownerDrainLease = enterOwnerInvocation(this.ctx)

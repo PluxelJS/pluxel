@@ -72,7 +72,7 @@ function literalPrefix(pattern: string): string {
 	return withoutWildcard.replaceAll(/\\(.)/g, '$1')
 }
 
-@Plugin(Redis, { displayName: 'FakeRedisPlugin' })
+@Plugin(Redis)
 class FakeRedisPlugin extends Redis {
 	readonly fake = new FakeRedisClient()
 

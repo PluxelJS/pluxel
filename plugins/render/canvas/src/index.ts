@@ -90,7 +90,7 @@ type CanvasLease = {
 	active: boolean
 }
 
-@Plugin({ displayName: 'CanvasPlugin' })
+@Plugin()
 export class CanvasPlugin extends BasePlugin {
 	private readonly config = this.configs.use(CanvasConfig)
 	private readonly leases = new Set<CanvasLease>()

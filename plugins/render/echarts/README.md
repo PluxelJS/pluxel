@@ -9,7 +9,7 @@ managed registry, provider-wide default family, and Fonts Selection Port.
 import { EChartsPlugin } from '@pluxel/echarts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ displayName: 'ReportsPlugin' })
+@Plugin()
 export class ReportsPlugin extends BasePlugin {
 	constructor(private readonly charts: EChartsPlugin) {
 		super()

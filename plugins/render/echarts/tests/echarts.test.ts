@@ -20,7 +20,7 @@ import {
 	type EChartsThemeRegistration,
 } from '../src/index.ts'
 
-@Plugin({ displayName: 'EChartsTestConsumer' })
+@Plugin()
 class EChartsTestConsumer extends BasePlugin {
 	constructor(
 		readonly echarts: EChartsPlugin,
@@ -31,7 +31,7 @@ class EChartsTestConsumer extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'EChartsOtherConsumer' })
+@Plugin()
 class EChartsOtherConsumer extends BasePlugin {
 	constructor(readonly echarts: EChartsPlugin) {
 		super()

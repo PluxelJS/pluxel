@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BasePlugin, ForkablePlugin, Plugin, withCoreHost } from '@pluxel/core/test'
 
-@Plugin({ displayName: 'Forkable' })
+@Plugin()
 class Forkable extends ForkablePlugin {}
 
 @Plugin({ displayName: 'Fork consumer' })
@@ -14,7 +14,7 @@ class ForkConsumer extends BasePlugin {
 describe('fork node identity', () => {
 	it('rejects non-forkable Plugins', async () => {
 		await withCoreHost((host) => {
-			@Plugin({ displayName: 'Plain' })
+			@Plugin()
 			class Plain extends BasePlugin {}
 			expect(() => host.fork(Plain as never, 'a')).toThrow(/is not forkable/)
 		})

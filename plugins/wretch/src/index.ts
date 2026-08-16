@@ -35,7 +35,7 @@ function stoppedClientError(): Error {
 	return new Error('Wretch client belongs to a stopped or replaced plugin generation')
 }
 
-@Plugin({ displayName: 'WretchPlugin' })
+@Plugin()
 export class WretchPlugin extends BasePlugin {
 	private readonly config = this.configs.use(WretchConfig)
 	private readonly managed = new Map<Context, ManagedSettingsState>()

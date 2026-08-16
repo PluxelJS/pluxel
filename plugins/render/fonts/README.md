@@ -15,7 +15,7 @@ import { FontsPlugin } from '@pluxel/fonts'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { fileURLToPath } from 'node:url'
 
-@Plugin({ displayName: 'ReportsPlugin' })
+@Plugin()
 export class ReportsPlugin extends BasePlugin {
 	constructor(private readonly fonts: FontsPlugin) {
 		super()

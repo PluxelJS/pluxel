@@ -24,7 +24,7 @@ const Read = defineRedisScript<readonly [string], readonly [], string>({
 	},
 })
 
-@Plugin(Redis, { displayName: 'ScriptRedisPlugin' })
+@Plugin(Redis)
 class ScriptRedisPlugin extends Redis {
 	readonly fake = {
 		isOpen: true,

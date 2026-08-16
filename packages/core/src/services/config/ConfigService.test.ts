@@ -15,7 +15,7 @@ const ObjectSchema: StandardSchemaV1<unknown, { answer?: number }> = {
 	},
 }
 
-@Plugin({ displayName: 'P' })
+@Plugin()
 class P extends BasePlugin {
 	readonly config = this.configs.use(ObjectSchema)
 }

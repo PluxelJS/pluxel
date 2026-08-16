@@ -30,7 +30,7 @@ const ConsumerWorkbench = workbench.portOutlet({
 	}),
 })
 
-@Plugin({ displayName: 'FontsTestConsumer' })
+@Plugin()
 class FontsTestConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
 		super()
@@ -43,7 +43,7 @@ class FontsTestConsumer extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'FontsLazyConsumer' })
+@Plugin()
 class FontsLazyConsumer extends BasePlugin {
 	constructor(readonly fonts: FontsPlugin) {
 		super()

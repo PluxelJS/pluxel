@@ -22,7 +22,7 @@ const CustomerConfig = v.object({
 	baseUrl: v.pipe(v.string(), v.url()),
 })
 
-@Plugin({ displayName: 'CustomerPlugin' })
+@Plugin()
 export class CustomerPlugin extends BasePlugin {
 	private readonly config = this.configs.use(CustomerConfig)
 	private api!: Wretch

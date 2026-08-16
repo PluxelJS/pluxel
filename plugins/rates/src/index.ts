@@ -106,7 +106,7 @@ type RatesRuntime = {
 }
 
 /** Validating caller-aware coordinator over a polymorphic atomic backend. */
-@Plugin(Rates, { displayName: 'RatesPlugin' })
+@Plugin(Rates)
 export class RatesPlugin extends Rates {
 	private readonly runtime: RatesRuntime = {
 		active: false,
@@ -312,7 +312,7 @@ type MemoryRuntime = {
 }
 
 /** Single-process backend for all built-in algorithms. Active identities are never evicted. */
-@Plugin(RatesBackend, { displayName: 'MemoryRatesBackendPlugin' })
+@Plugin(RatesBackend)
 export class MemoryRatesBackendPlugin extends RatesBackend {
 	private readonly config = this.configs.use(MemoryRatesBackendConfig)
 	private readonly runtime: MemoryRuntime = {

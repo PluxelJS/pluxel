@@ -24,7 +24,7 @@ freshness、transaction 或外部 API 协调塞进 decorator。
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 import { Cache, type CacheNamespace } from '@pluxel/cache'
 
-@Plugin({ displayName: 'AccountsPlugin' })
+@Plugin()
 class AccountsPlugin extends BasePlugin {
 	private users!: CacheNamespace
 

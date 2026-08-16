@@ -37,7 +37,7 @@ class PluginLogger {
 	}
 }
 
-@Plugin({ displayName: 'PluginOptionalIntegrationProvider' })
+@Plugin()
 export class PluginOptionalIntegrationProvider extends BasePlugin {
 	readonly channel = new EvtChannel<TickEvent>(this.ctx)
 	private seq = 0
@@ -57,7 +57,7 @@ export class PluginOptionalIntegrationProvider extends BasePlugin {
 
 const OptionalProvider = definePluginRef<PluginOptionalIntegrationProvider>()
 
-@Plugin({ displayName: 'PluginOptionalIntegrationConsumer' })
+@Plugin()
 export class PluginOptionalIntegrationConsumer extends BasePlugin {
 	private readonly log = new PluginLogger(this)
 

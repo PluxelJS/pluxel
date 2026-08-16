@@ -52,7 +52,7 @@ describe('HmrExecutor transactions', () => {
 			const cleanId = '/repo/plugins/a/src/index.ts'
 			const calls: string[] = []
 
-			@Plugin({ displayName: 'Anchor' })
+			@Plugin()
 			class Anchor extends BasePlugin {}
 			lowerTestPlugin(Anchor)
 
@@ -90,7 +90,7 @@ describe('HmrExecutor transactions', () => {
 			}
 			lowerTestPlugin(Dep)
 
-			@Plugin({ displayName: 'Consumer' })
+			@Plugin()
 			class Consumer extends BasePlugin {
 				constructor(readonly dep: Dep) {
 					super()
@@ -143,7 +143,7 @@ describe('HmrExecutor transactions', () => {
 			abstract class Missing extends BasePlugin {}
 			lowerTestAbstract(Missing)
 
-			@Plugin({ displayName: 'Broken' })
+			@Plugin()
 			class Broken extends BasePlugin {
 				constructor(_missing: Missing) {
 					super()
@@ -177,7 +177,7 @@ describe('HmrExecutor transactions', () => {
 	it('rolls back the entire source batch when evaluation fails', async () => {
 		const host = createRuntimeHost()
 		try {
-			@Plugin({ displayName: 'Stable' })
+			@Plugin()
 			class Stable extends BasePlugin {}
 			lowerTestPlugin(Stable)
 			enablePlugins(host.ctx, Stable)

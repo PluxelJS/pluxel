@@ -79,7 +79,7 @@ export abstract class Redis extends ForkablePlugin {
  * Authenticated, Sentinel, Cluster, or platform-bound deployments can provide another
  * `@Plugin(Redis, ...)` implementation without changing consumers.
  */
-@Plugin(Redis, { displayName: 'RedisPlugin' })
+@Plugin(Redis)
 export class RedisPlugin extends Redis {
 	private readonly config = this.configs.use(RedisConfig)
 	private readonly holder: { client?: RedisClientType } = {}

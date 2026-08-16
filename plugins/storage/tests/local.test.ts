@@ -5,7 +5,7 @@ import { BasePlugin, Plugin, withHost } from '@pluxel/test'
 import { afterEach, describe, expect, it } from 'vitest'
 import { S3, S3NotRunningError, S3Plugin, S3UnsupportedOperationError } from '../src/index.ts'
 
-@Plugin({ displayName: 'LocalS3Consumer' })
+@Plugin()
 class LocalS3Consumer extends BasePlugin {
 	constructor(readonly s3: S3) {
 		super()

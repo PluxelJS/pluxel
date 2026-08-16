@@ -18,7 +18,7 @@ const artifactRoot = dirname(
 )
 const byteLength = 8 * 1024 * 1024
 
-@Plugin({ displayName: 'WorkerTaskBenchmark' })
+@Plugin()
 class WorkerTaskBenchmark extends BasePlugin {
 	run(bytes: Uint8Array, transfer = false): Promise<TransferOutput> {
 		return this.ctx.workers.run(

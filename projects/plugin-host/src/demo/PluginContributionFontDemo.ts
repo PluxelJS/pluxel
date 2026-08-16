@@ -22,7 +22,7 @@ const FontManagerWorkbench = workbench.extension({
 })
 const FontConsumerWorkbench = workbench.extension({ contract: FontConsumerUi })
 
-@Plugin({ displayName: 'PluginContributionFontManager' })
+@Plugin()
 export class PluginContributionFontManager extends BasePlugin {
 	override async init(): Promise<void> {
 		if (!this.ctx.workbench.enabled) return
@@ -38,7 +38,7 @@ export class PluginContributionFontManager extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'PluginContributionFontConsumer' })
+@Plugin()
 export class PluginContributionFontConsumer extends BasePlugin {
 	readonly config = this.configs.use(ConsumerAppearanceConfig)
 

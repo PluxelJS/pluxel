@@ -31,7 +31,7 @@ import {
 	RedisPlugin,
 } from '../src/index.ts'
 
-@Plugin({ displayName: 'RedisConsumer' })
+@Plugin()
 class RedisConsumer extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()

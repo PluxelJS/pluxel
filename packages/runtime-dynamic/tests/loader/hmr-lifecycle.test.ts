@@ -37,7 +37,7 @@ describe('LoaderService HMR lifecycle', () => {
 		}
 		lowerTestPlugin(Dep)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly dep: Dep) {
 				super()
@@ -134,7 +134,7 @@ describe('LoaderService HMR lifecycle', () => {
 		}
 		lowerTestPlugin(DepB)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly dep: DepA) {
 				super()
@@ -210,7 +210,7 @@ describe('LoaderService HMR lifecycle', () => {
 	it('closes batch transactions after commit or rollback', async () => {
 		const { ctx } = createHmrTestContext()
 
-		@Plugin({ displayName: 'Anchor' })
+		@Plugin()
 		class Anchor extends BasePlugin {}
 		lowerTestPlugin(Anchor)
 

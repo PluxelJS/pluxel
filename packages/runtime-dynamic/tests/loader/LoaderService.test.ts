@@ -25,7 +25,7 @@ describe('LoaderService', () => {
 	it('registers disabled fixed plugins by address without changing enablement', async () => {
 		const { core, ctx } = createHmrTestContext()
 
-		@Plugin({ displayName: 'Fixed' })
+		@Plugin()
 		class Fixed extends BasePlugin {}
 		lowerTestPlugin(Fixed)
 
@@ -44,7 +44,7 @@ describe('LoaderService', () => {
 		const { core, ctx } = createHmrTestContext()
 		const started: string[] = []
 
-		@Plugin({ displayName: 'Provider' })
+		@Plugin()
 		class Provider extends BasePlugin {
 			override init() {
 				started.push('provider')
@@ -52,7 +52,7 @@ describe('LoaderService', () => {
 		}
 		lowerTestPlugin(Provider)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(readonly provider: Provider) {
 				super()
@@ -93,7 +93,7 @@ describe('LoaderService', () => {
 	it('rejects a second module claiming an existing definition slot', async () => {
 		const { ctx } = createHmrTestContext()
 
-		@Plugin({ displayName: 'Original' })
+		@Plugin()
 		class Original extends BasePlugin {}
 		lowerTestPlugin(Original)
 

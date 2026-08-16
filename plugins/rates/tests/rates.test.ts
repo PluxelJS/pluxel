@@ -43,14 +43,14 @@ class ConsumerB extends BasePlugin {
 	}
 }
 
-@Plugin(RatesBackend, { displayName: 'BrokenRatesBackend' })
+@Plugin(RatesBackend)
 class BrokenRatesBackend extends RatesBackend {
 	async consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		throw new Error('offline')
 	}
 }
 
-@Plugin(RatesBackend, { displayName: 'MalformedRatesBackend' })
+@Plugin(RatesBackend)
 class MalformedRatesBackend extends RatesBackend {
 	private calls = 0
 
@@ -64,7 +64,7 @@ class MalformedRatesBackend extends RatesBackend {
 
 let finishDelayedDecision: ((decision: RateDecision) => void) | undefined
 
-@Plugin(RatesBackend, { displayName: 'DelayedRatesBackend' })
+@Plugin(RatesBackend)
 class DelayedRatesBackend extends RatesBackend {
 	consume(_request: RatesBackendConsumeRequest): Promise<RateDecision> {
 		return new Promise((resolve) => {

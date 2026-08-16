@@ -10,7 +10,7 @@ const PluginStatusBadgeWorkbench = workbench.extension({
 	entry: workbench.entry(import.meta.url, './PluginStatusBadge/ui/StatusBadge.tsx'),
 })
 
-@Plugin({ displayName: 'PluginStatusBadge' })
+@Plugin()
 export class PluginStatusBadge extends BasePlugin {
 	private counter = 0
 

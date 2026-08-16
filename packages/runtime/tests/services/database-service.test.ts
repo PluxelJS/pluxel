@@ -201,7 +201,7 @@ describe('DatabaseService', () => {
 		let releaseOperation: (() => void) | undefined
 		let runningOperation: Promise<void> | undefined
 		try {
-			@Plugin({ displayName: 'QueuedDatabasePlugin', startTimeoutMs: 30_000 })
+			@Plugin({ startTimeoutMs: 30_000 })
 			class QueuedDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -246,7 +246,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
-			@Plugin({ displayName: 'DatabaseLeft' })
+			@Plugin()
 			class DatabaseLeft extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -257,7 +257,7 @@ describe('DatabaseService', () => {
 				}
 			}
 
-			@Plugin({ displayName: 'DatabaseRight' })
+			@Plugin()
 			class DatabaseRight extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -290,7 +290,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = createRuntimeHost({ workbench: false, database: false })
 		try {
-			@Plugin({ displayName: 'DisabledDatabasePlugin' })
+			@Plugin()
 			class DisabledDatabasePlugin extends BasePlugin {
 				override async init() {
 					await this.ctx.database.use(definition.database)
@@ -371,7 +371,7 @@ describe('DatabaseService', () => {
 		const persistence = join(root, 'nested', 'persistence')
 		const host = createRuntimeHost({ workbench: false, persistence })
 		try {
-			@Plugin({ displayName: 'DefaultPersistenceDatabasePlugin' })
+			@Plugin()
 			class DefaultPersistenceDatabasePlugin extends BasePlugin {
 				override async init() {
 					await this.ctx.database.use(definition.database)
@@ -431,7 +431,7 @@ describe('DatabaseService', () => {
 
 			const host = createRuntimeHost({ workbench: false, database: { driver: 'pglite', dataDir } })
 			try {
-				@Plugin({ displayName: 'LegacyDatabasePlugin' })
+				@Plugin()
 				class LegacyDatabasePlugin extends BasePlugin {
 					db!: PluginDatabaseHandle<typeof definition.database>
 					override async init() {
@@ -659,7 +659,7 @@ describe('DatabaseService', () => {
 		const extension = workbench.extension({ contract })
 		const host = workbenchDatabaseHost
 		try {
-			@Plugin({ displayName: 'LiveQueryDatabasePlugin' })
+			@Plugin()
 			class LiveQueryDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {
@@ -732,7 +732,7 @@ describe('DatabaseService', () => {
 		const extension = workbench.extension({ contract })
 		const host = workbenchDatabaseHost
 		try {
-			@Plugin({ displayName: 'ValidatedLiveQueryPlugin' })
+			@Plugin()
 			class ValidatedLiveQueryPlugin extends BasePlugin {
 				override async init() {
 					const database = await this.ctx.database.use(definition.database)
@@ -775,7 +775,7 @@ describe('DatabaseService', () => {
 		const definition = databaseFixture()
 		const host = databaseHost
 		try {
-			@Plugin({ displayName: 'RollbackDatabasePlugin' })
+			@Plugin()
 			class RollbackDatabasePlugin extends BasePlugin {
 				db!: PluginDatabaseHandle<typeof definition.database>
 				override async init() {

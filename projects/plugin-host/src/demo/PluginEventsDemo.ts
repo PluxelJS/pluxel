@@ -6,7 +6,7 @@ import { BasePlugin, EvtChannel, formatPluginNodeAddress, Plugin } from '@pluxel
 
 type TickEvent = readonly [payload: { from: string; seq: number; at: number }]
 
-@Plugin({ displayName: 'PluginEventsDeclaredProducer' })
+@Plugin()
 export class PluginEventsDeclaredProducer extends BasePlugin {
 	readonly tick = new EvtChannel<TickEvent>(this.ctx)
 	private seq = 0
@@ -25,7 +25,7 @@ export class PluginEventsDeclaredProducer extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'PluginEventsDeclaredConsumer' })
+@Plugin()
 export class PluginEventsDeclaredConsumer extends BasePlugin {
 	constructor(private readonly producer: PluginEventsDeclaredProducer) {
 		super()

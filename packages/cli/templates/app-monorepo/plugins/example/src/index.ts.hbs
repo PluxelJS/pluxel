@@ -8,7 +8,7 @@ const ExampleConfig = v.object({
 
 const API_PATH = '/api'
 
-@Plugin({ displayName: '{{className}}Plugin' })
+@Plugin()
 export class {{className}}Plugin extends BasePlugin {
 	private readonly config = this.configs.use(ExampleConfig)
 	private readonly greetings = new GreetingService()

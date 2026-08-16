@@ -44,7 +44,7 @@ const PluginConfig = v.object({
 	}),
 })
 
-@Plugin({ displayName: 'PluginCompositionConfigDemo' })
+@Plugin()
 export class PluginCompositionConfigDemo extends BasePlugin {
 	readonly config = this.configs.use(PluginConfig)
 

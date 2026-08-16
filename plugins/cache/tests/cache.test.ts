@@ -70,7 +70,7 @@ class DecoratedConsumer extends BasePlugin {
 	}
 }
 
-@Plugin(CacheBackend, { displayName: 'TestCacheBackendPlugin' })
+@Plugin(CacheBackend)
 class TestCacheBackendPlugin extends CacheBackend {
 	readonly values = new Map<string, CacheValue<unknown>>()
 	readonly metrics = { gets: 0, sets: 0, deletes: 0 }
@@ -103,7 +103,7 @@ class TestCacheBackendPlugin extends CacheBackend {
 	}
 }
 
-@Plugin(CacheBackend, { displayName: 'MissingClearCacheBackend' })
+@Plugin(CacheBackend)
 class MissingClearCacheBackend extends CacheBackend {
 	private readonly values = new Map<string, CacheValue<unknown>>()
 	override clear = undefined as never

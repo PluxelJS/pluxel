@@ -10,11 +10,11 @@ describe('monorepo plugin dependencies', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ displayName: 'Provider' })
+		@Plugin()
 		class Provider extends BasePlugin {}
 		lowerTestPlugin(Provider)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()
@@ -39,11 +39,11 @@ describe('monorepo plugin dependencies', () => {
 		const { core, ctx } = createHmrTestContext()
 		const loader = ctx.loader
 
-		@Plugin({ displayName: 'Provider' })
+		@Plugin()
 		class Provider extends BasePlugin {}
 		lowerTestPlugin(Provider)
 
-		@Plugin({ displayName: 'Consumer' })
+		@Plugin()
 		class Consumer extends BasePlugin {
 			constructor(_dep: Provider) {
 				super()

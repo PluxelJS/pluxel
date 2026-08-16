@@ -8,9 +8,7 @@ import { BasePlugin, Plugin } from '@pluxel/runtime'
 const KV_TOKEN = 'demo.token'
 const KV_COUNTER = 'demo.counter'
 
-@Plugin({
-	displayName: 'PluginVaultDemo',
-})
+@Plugin()
 export class PluginVaultDemo extends BasePlugin {
 	override async init() {
 		const vault = this.ctx.vault

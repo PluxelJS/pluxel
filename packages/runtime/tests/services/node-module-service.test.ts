@@ -16,7 +16,7 @@ describe('NodeModuleService', () => {
 				throw new Error('node build failed')
 			})
 
-			@Plugin({ displayName: 'NodeModuleFailure' })
+			@Plugin()
 			class NodeModuleFailure extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(declaration, () => undefined)
@@ -47,7 +47,7 @@ describe('NodeModuleService', () => {
 			})
 			const events: string[] = []
 
-			@Plugin({ displayName: 'NodeModuleConsumer' })
+			@Plugin()
 			class NodeModuleConsumer extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(declaration, async (url) => {
@@ -94,7 +94,7 @@ describe('NodeModuleService', () => {
 		const host = createRuntimeHost({ workbench: false, nodeModuleArtifactRoot: artifactRoot })
 		try {
 			let received: URL | undefined
-			@Plugin({ displayName: 'PackagedNodeModule' })
+			@Plugin()
 			class PackagedNodeModule extends BasePlugin {
 				override async init() {
 					await this.ctx.nodeModules.use(lowered, (url) => void (received = url))

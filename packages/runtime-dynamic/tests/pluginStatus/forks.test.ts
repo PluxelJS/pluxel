@@ -46,7 +46,7 @@ describe('pluginStatus forks', () => {
 	it('enabling the same address twice is idempotent', async () => {
 		const { core, ctx } = createHmrTestContext()
 
-		@Plugin({ displayName: 'Alpha' })
+		@Plugin()
 		class Alpha extends BasePlugin {}
 		lowerTestPlugin(Alpha)
 

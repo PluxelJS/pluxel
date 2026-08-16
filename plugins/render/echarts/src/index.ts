@@ -140,7 +140,7 @@ type NormalizedRenderInput = Readonly<{
 	execution: 'worker' | 'inline'
 }>
 
-@Plugin({ displayName: 'EChartsPlugin' })
+@Plugin()
 export class EChartsPlugin extends BasePlugin {
 	private readonly config = this.configs.use(EChartsConfig)
 	private readonly themeFontCache = new WeakMap<

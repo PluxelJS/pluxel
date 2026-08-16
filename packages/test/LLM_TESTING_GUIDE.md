@@ -13,7 +13,7 @@
 import { ProviderPlugin } from '@acme/provider'
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
-@Plugin({ displayName: 'Consumer' })
+@Plugin()
 class Consumer extends BasePlugin {
 	constructor(readonly provider: ProviderPlugin) {
 		super()

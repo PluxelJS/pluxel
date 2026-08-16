@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { type ElysiaRouteHandle, PLUGIN_HTTP_BASE } from '@pluxel/runtime'
 import { pluginNodePhysicalKey } from '../../src/runtime/plugin-address'
 
-@Plugin({ displayName: 'ScopedHttpPlugin' })
+@Plugin()
 class ScopedHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes((app) =>
@@ -19,7 +19,7 @@ class ScopedHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'DynamicScopedHttpPlugin' })
+@Plugin()
 class DynamicScopedHttpPlugin extends BasePlugin {
 	private routesHandle: ElysiaRouteHandle | null = null
 
@@ -32,7 +32,7 @@ class DynamicScopedHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'PublicHttpPlugin' })
+@Plugin()
 class PublicHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes(
@@ -42,7 +42,7 @@ class PublicHttpPlugin extends BasePlugin {
 	}
 }
 
-@Plugin({ displayName: 'ReservedPublicHttpPlugin' })
+@Plugin()
 class ReservedPublicHttpPlugin extends BasePlugin {
 	override init() {
 		this.ctx.http.plugin.routes((app) => app.get('/', () => 'invalid'), {

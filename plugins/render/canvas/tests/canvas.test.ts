@@ -11,14 +11,14 @@ import { CanvasError, CanvasPlugin, layoutWithLines, measureRichInlineStats } fr
 import { createCanvasWorkerAdapter } from '../src/worker.ts'
 import { createCanvasWorkerTextLayout } from '../src/worker-pretext.ts'
 
-@Plugin({ displayName: 'CanvasTestConsumer' })
+@Plugin()
 class CanvasTestConsumer extends BasePlugin {
 	constructor(readonly canvas: CanvasPlugin) {
 		super()
 	}
 }
 
-@Plugin({ displayName: 'CanvasFontAdminConsumer' })
+@Plugin()
 class CanvasFontAdminConsumer extends BasePlugin {
 	constructor(
 		readonly canvas: CanvasPlugin,

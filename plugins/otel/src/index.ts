@@ -17,7 +17,7 @@ type FailureState = { failing: boolean; loggedAt: number }
 /**
  * Caller-scoped native OpenTelemetry access with host-owned OTLP push and Prometheus pull.
  */
-@Plugin({ displayName: 'OtelPlugin' })
+@Plugin()
 export class OtelPlugin extends BasePlugin {
 	private readonly config = this.configs.use(OtelConfig)
 	private readonly meters = new WeakMap<object, Meter>()

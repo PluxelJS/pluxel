@@ -8,7 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { Cache, CachePlugin, MemoryCacheBackendPlugin } from '../src/index.ts'
 
-@Plugin({ displayName: 'PersistentCacheConsumer' })
+@Plugin()
 class PersistentCacheConsumer extends BasePlugin {
 	constructor(readonly cache: Cache) {
 		super()

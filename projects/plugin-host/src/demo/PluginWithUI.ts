@@ -32,7 +32,7 @@ export type PluginWithUISsePayload =
 	| { type: 'tick'; now: number }
 	| { type: 'activity'; message: string }
 
-@Plugin({ displayName: 'PluginWithUI' })
+@Plugin()
 export class PluginWithUI extends BasePlugin {
 	private startedAt = Date.now()
 

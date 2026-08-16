@@ -6,7 +6,7 @@ Pluxel 官方 Redis capability，同时自带 `RedisCacheBackendPlugin`、`Redis
 ```ts
 import { Redis, RedisPlugin } from '@pluxel/redis'
 
-@Plugin({ displayName: 'QueuePlugin' })
+@Plugin()
 class QueuePlugin extends BasePlugin {
 	constructor(readonly redis: Redis) {
 		super()
@@ -51,7 +51,7 @@ credential 不进入普通 plugin config、Workbench、日志或 persistence。
 认证、Sentinel、Cluster、云平台 binding 或自定义 TLS 的应用提供另一个实现：
 
 ```ts
-@Plugin(Redis, { displayName: 'PlatformRedisPlugin' })
+@Plugin(Redis)
 class PlatformRedisPlugin extends Redis {
 	get client(): RedisClient {
 		return this.platformClient
