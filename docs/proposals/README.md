@@ -11,6 +11,8 @@
 
 当前进行中的提案：
 
+- [`CLI_DISTRIBUTION_AND_CAPABILITY_DISCOVERY.md`](CLI_DISTRIBUTION_AND_CAPABILITY_DISCOVERY.md)：全局/项目本地 CLI 的
+  版本选择、`@pluxel/create` initializer、官方能力发现与暂不开放通用 extension API 的边界。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：尚未证明净收益的 decoratorless Plugin、browser config
   representation、first-class multi-instance、Context kernel、Workbench transport、binding 与 catalog 简化研究。
 - [`OFFICIAL_TELEMETRY_PLUGIN.md`](OFFICIAL_TELEMETRY_PLUGIN.md)：服务器 metrics/traces/events 的信号与所有权边界，
