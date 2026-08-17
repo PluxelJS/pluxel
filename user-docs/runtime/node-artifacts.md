@@ -1,19 +1,19 @@
 ---
-title: Node module 与 worker task
-description: 为独立 Node ESM 和 CPU 密集工作选择正确的 artifact 与生命周期。
+title: Node 模块与 Worker 任务
+description: 为独立 Node ESM 和 CPU 密集任务选择合适的构建与生命周期模型。
 ---
 
-# Node module 与 worker task
+# Node 模块与 Worker 任务
 
-Pluxel 提供两种独立构建的 Node artifact。它们解决的问题不同：
+Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集任务放进共享线程池。两者解决的问题不同：
 
-| 需求                                                  | 选择                 |
-| ----------------------------------------------------- | -------------------- |
-| 把另一份源码图构建成独立 Node ESM，并在当前线程 setup | `defineNodeModule()` |
-| 把 CPU 密集、可 structured clone 的工作放入共享线程池 | `defineWorkerTask()` |
-| 普通异步 I/O、数据库或短小调用                        | 直接在 Plugin 中执行 |
+| 需求                                                | 选择                 |
+| --------------------------------------------------- | -------------------- |
+| 把另一份源码构建成独立 Node ESM，并在当前线程初始化 | `defineNodeModule()` |
+| 把可结构化克隆的 CPU 密集工作放入共享线程池         | `defineWorkerTask()` |
+| 普通异步 I/O、数据库或短小调用                      | 直接在 Plugin 中执行 |
 
-两种 declaration 都必须是 module-level、literal entry，交给 Pluxel build pipeline 提取。不要在 method 内动态声明 artifact。
+两种声明都必须位于模块顶层，并使用静态可分析的入口路径，以便 Pluxel 在构建时提取。不要在方法内部动态声明。
 
 ## 独立 Node module
 

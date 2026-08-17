@@ -1,11 +1,11 @@
 ---
 title: 配置 Playground
-description: 编辑 Valibot schema，操作 valibot-form，并实时比较原始输入与归一化输出。
+description: 编辑 Valibot schema，操作生成的表单，并比较原始输入与归一化结果。
 ---
 
 # 配置 Playground
 
-配置 Playground 是独立的交互页面，不嵌入普通文档。它把配置 contract 的三个阶段放在同一页面：
+配置 Playground 是一个独立的交互页面，用于快速试验配置 schema。它把 schema、生成的表单和 Valibot 解析结果放在同一页，方便观察默认值、转换和校验如何影响最终配置。
 
 ```text
 Valibot schema
@@ -13,7 +13,7 @@ Valibot schema
   -> Valibot parse/default/transform 输出
 ```
 
-打开 [配置 Playground](/playground) 开始操作。编辑器中的 `v` 对应当前 workspace 的 `valibot`，`f` 对应当前 workspace 的 `valibot-form`。输入 `v.` 或 `f.` 可查看源码生成的补全、参数类型和文档。类型声明在文档构建前从真实 package 生成，不维护独立的 Playground 类型副本。
+打开 [配置 Playground](/playground) 即可开始操作。编辑器中的 `v` 对应文档当前使用的 `valibot`，`f` 对应 `valibot-form`。输入 `v.` 或 `f.` 可以查看由真实包生成的补全、参数类型和文档；Playground 不维护另一份容易过期的类型副本。
 
 独立 Playground 在空间充足时并排显示 schema 编辑器与结果；容器较窄时按操作顺序改为上下排列。表单、Input 和 Output 可以独立折叠。普通文档中的配置示例始终使用纵向顺序，不加载编辑器。
 

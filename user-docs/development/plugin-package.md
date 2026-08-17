@@ -1,13 +1,13 @@
 ---
 title: 开发和发布插件包
-description: 配置一个可独立构建、测试和发布的 Pluxel Plugin package。
+description: 创建一个可以独立构建、测试和发布的 Pluxel 插件包。
 ---
 
 # 开发和发布插件包
 
-Plugin package 的目标是让宿主从 package root 安装一个可追溯的 Plugin definition，同时保留 runtime peer boundary、类型声明和 Pluxel semantic metadata。
+一个插件包应当让宿主只从包根入口导入 Plugin，同时保留完整的类型声明、运行时 peer dependency 和 Pluxel 构建元数据。这样依赖身份可以追溯到明确的包与导出，而不是某个源码路径或类名。
 
-CLI 模板生成 canonical package 结构：
+CLI 模板会生成标准目录结构：
 
 ```sh
 pluxel new --template plugin --name @acme/orders
@@ -35,7 +35,7 @@ oxlint.config.ts
 
 一个 package root 是一个明确的 plugin-bearing entry。它可以导出 schema、types 和普通 helper，但具体 Plugin class 必须能从 `"."` 的 named export 唯一追溯。
 
-## package root 是 identity 边界
+## 包根入口决定 Plugin 身份
 
 - consumer 从 package root value-import required Plugin。
 - identity 来自 canonical entry + root named export，不是 class name、`displayName` 或 constructor object。

@@ -5,13 +5,13 @@ description: 按构建、依赖图、配置、生命周期和宿主边界定位 
 
 # 常见错误与排查
 
-按 semantic pipeline、graph commit、配置注入和资源 ownership 四个边界定位问题。
+遇到问题时，先判断它发生在构建转换、依赖图提交、配置注入还是资源回收阶段。下面按常见现象给出检查顺序。
 
 ## Plugin 看起来是普通 class
 
-**现象：** metadata、依赖、`configs.use()` 或 HMR 行为缺失。
+**现象：** Plugin 元数据、依赖、`configs.use()` 或 HMR 行为缺失。
 
-Plugin 源码必须经过 Pluxel 的 Vite/Rolldown pipeline。不要用 raw TypeScript runner 直接执行 Plugin 文件，也不要把 package 的构建命令替换成裸 `tsc`。package 使用 `pluxel build`，测试使用 [测试 harness](../development/testing.md)。
+Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 TypeScript runner 直接执行 Plugin 文件，也不要把包的构建命令替换成裸 `tsc`。构建使用 `pluxel build`，测试使用 [Pluxel 测试宿主](../development/testing.md)。
 
 ## Plugin 没有启动
 

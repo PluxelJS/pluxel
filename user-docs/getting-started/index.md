@@ -1,15 +1,15 @@
 ---
 title: 编写第一个插件
-description: 在一页内完成 package、配置、Plugin、宿主启用和 lifecycle test。
+description: 在一页内完成插件包、配置、实现、宿主启用和生命周期测试。
 ---
 
 # 编写第一个插件
 
-本教程创建一个带配置和 HTTP route 的 Plugin，并通过真实 runtime host 验证启动与清理。
+本教程会创建一个带配置和 HTTP 路由的 Plugin，再通过真实测试宿主验证它能够启动、响应请求并完整清理资源。
 
-## 准备 package
+## 创建插件包
 
-CLI 模板生成 package root、TypeScript、构建和测试配置：
+CLI 模板会生成包根入口、TypeScript、构建和测试配置：
 
 ```sh
 pluxel new --template plugin --name @acme/status

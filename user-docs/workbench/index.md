@@ -1,13 +1,15 @@
 ---
 title: 管理工作台
-description: 用 Contract、Extension、Binding 和 browser client 发布可关闭、可撤销的 Plugin UI。
+description: 为 Plugin 提供可关闭、可撤销，并由宿主管理访问权限的管理界面。
 ---
 
 # 管理工作台
 
-Workbench 是 host-owned、可关闭的管理 UI plane。Plugin 声明 browser-safe Contract、server Extension 和 owner-bound Binding；host 决定是否安装 backend、访问策略、layout 与 artifact serving。
+Workbench 是由宿主管理的可选管理界面。Plugin 声明浏览器安全的 Contract、服务端 Extension 和绑定业务实现的 Binding；宿主决定是否启用 Workbench，以及它的访问策略、页面布局和静态资源服务方式。
 
-配置 schema 的交互试验使用独立的[配置 Playground](/playground)；普通文档只展示静态代码和渲染结果。
+这三层分别回答“浏览器可以调用什么”“Plugin 提供哪些页面与资源”和“请求最终由谁处理”。拆开后，Plugin 停止或被替换时，界面入口和调用能力也能一起撤销。
+
+需要试验配置 schema 时使用独立的[配置 Playground](/playground)；普通文档只展示稳定的代码和渲染结果。
 
 ```text
 Contract（browser-safe protocol）

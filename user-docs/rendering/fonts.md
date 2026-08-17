@@ -5,7 +5,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas 与 ECharts
 
 # 服务端字体
 
-`@pluxel/fonts` 负责发现系统字体、注册 Plugin 随包携带的字体、持久化 Workbench 上传的字体，以及解析 provider 共用的默认字体。
+`@pluxel/fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，并为 Canvas 和 ECharts 选择默认字体。
 
 渲染依赖始终沿着一个方向建立：
 
@@ -13,7 +13,7 @@ description: 发现、注册和管理服务端字体，并为 Canvas 与 ECharts
 FontsPlugin → CanvasPlugin → EChartsPlugin
 ```
 
-Fonts 是服务端字体事实的唯一 owner，不创建画布或图表。Canvas 与 ECharts 通过 FontsPlugin 取得字体快照，不直接修改 `@napi-rs/canvas` 的全局字体注册表。
+`FontsPlugin` 是服务端字体的唯一管理者，但不负责创建画布或图表。Canvas 与 ECharts 从它取得字体快照，不直接修改 `@napi-rs/canvas` 的全局字体注册表。
 
 ## 何时直接使用 FontsPlugin
 

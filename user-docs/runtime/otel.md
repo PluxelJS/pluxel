@@ -1,13 +1,13 @@
 ---
 title: OpenTelemetry
-description: 使用 caller-scoped 原生 Meter、Tracer 与 Logger，由 host 统一管理 OTLP 和 Prometheus 输出。
+description: 为每个 Plugin 提供原生 Meter、Tracer 与 Logger，由宿主统一管理输出。
 ---
 
 # OpenTelemetry
 
-> `@pluxel/otel` 仅供当前 workspace 使用，不属于公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/otel` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/otel` 不发明第二套 telemetry API。consumer 直接得到标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`；plugin 负责 provider、resource、exporter、context propagation 和 lifecycle。
+`@pluxel/otel` 直接向业务 Plugin 提供标准 OpenTelemetry `Meter`、`Tracer` 和 `Logger`，不另造一套遥测 API。宿主统一管理 provider、resource、exporter、上下文传播和生命周期，并保留每个调用方的身份。
 
 ## 记录 metrics、trace 与 log
 

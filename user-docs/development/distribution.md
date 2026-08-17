@@ -1,15 +1,17 @@
 ---
-title: Static 发行物
-description: 创建、检查、签名验证和关联可搬运的 static Node 发行目录。
+title: 静态应用发行物
+description: 创建、检查并签名验证可搬运的静态 Node 应用目录。
 ---
 
-# Static 发行物
+# 静态应用发行物
 
-`@pluxel/rolldown/distribution` 为已经 finalization 的 static Node 应用建立不可变 artifact set、in-toto/DSSE attestation 和可选 delivery marker。它属于构建与交付边界：Runtime 启动不会读取 manifest、扫描目录、计算 hash、验证签名或发送 telemetry。
+`@pluxel/rolldown/distribution` 用于封装已经完成构建的静态 Node 应用。它记录目录中的全部文件，可生成 in-toto/DSSE 证明，也可以写入用于关联交付记录的标记。
+
+这些操作属于构建和交付流程，不属于应用启动流程。运行时不会读取清单、扫描目录、计算哈希、验证签名或发送遥测数据。
 
 ## 输入必须是最终目录
 
-本页从已经构建好的 static application 目录开始；宿主入口和 `staticApplication()` 配置只在 [宿主装配](../getting-started/host-setup.md) 说明。
+本页假设静态应用目录已经构建完成。宿主入口和 `staticApplication()` 配置见[配置插件宿主](../getting-started/host-setup.md)。
 
 构建会先写入 server chunks、`pluxel-deployment.json`、Workbench/public、Node artifacts 与 residual `node_modules`。如果后续任务还会写 SPA、SBOM 或业务 `public/`，必须等最后一个写入者结束后再执行 `distribution create`。
 

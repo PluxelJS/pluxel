@@ -1,11 +1,11 @@
 ---
 title: 插件 HTTP
-description: 用 owner-bound Elysia route 暴露业务 API、webhook 和稳定 public path。
+description: 用自动绑定生命周期的 Elysia 路由暴露 API、webhook 和稳定公开地址。
 ---
 
 # 插件 HTTP
 
-业务 HTTP 是常驻 runtime 能力，与 Workbench 是否启用无关。Plugin 使用 `ctx.http.plugin` 声明路由，runtime 自动绑定 owner、挂载路径和 generation cleanup。
+业务 HTTP 是常驻的运行时能力，与 Workbench 是否启用无关。Plugin 通过 `ctx.http.plugin` 声明路由，运行时会自动绑定所属 Plugin、挂载路径和资源清理；Plugin 被替换或停止时，相应路由也会撤销。
 
 ## 最小路由
 

@@ -1,13 +1,13 @@
 ---
 title: 出站 HTTP（Wretch）
-description: 从 immutable Wretch base 派生业务 client，并统一应用宿主 outbound policy 与可选托管设置。
+description: 从不可变的 Wretch 基础实例派生业务客户端，并统一应用宿主的出站策略。
 ---
 
 # 出站 HTTP（Wretch）
 
-> `@pluxel/wretch` 的公开作者入口是 `.` 与 `./workbench`。可安装版本以 package registry 为准；仓库内 package 边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/wretch` 面向插件作者的公开入口是 `.` 与 `./workbench`。可安装版本以 npm registry 为准；仓库内边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/wretch` 提供一个原生、不可变的 Wretch base，并在真正发送请求前追加宿主级 outbound policy。URL 构造、addon、middleware、catcher 和 response chain 仍使用 Wretch API。
+`@pluxel/wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。
 
 ## 第一个 HTTP consumer
 

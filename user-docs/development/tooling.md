@@ -1,11 +1,11 @@
 ---
 title: CLI 与工具链
-description: 区分脚手架、Plugin build、static application、HMR、source workspace 和发行检查。
+description: 了解脚手架、插件构建、静态应用、HMR、源码联调和发行检查分别由谁负责。
 ---
 
 # CLI 与工具链
 
-`@pluxel/cli` 负责命令编排，真正的 build/Vite/runtime API 由各自 owner package 提供。应用代码不要从 CLI package 导入 runtime 或 build helper。
+`@pluxel/cli` 把脚手架、构建和诊断命令组织在一起；具体的 Vite、构建和运行时 API 仍由对应的包提供。CLI 是开发工具，不是应用运行时，因此业务代码不应从中导入运行时或构建辅助函数。
 
 ## 安装分层
 

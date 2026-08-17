@@ -1,20 +1,20 @@
 ---
-title: 数据库 ownership
-description: 选择 Plugin database 或 application database，并管理 Drizzle schema 与 migration lineage。
+title: 数据库与数据归属
+description: 根据数据归属选择 Plugin 数据库或应用数据库，并管理 Drizzle schema 与迁移。
 ---
 
-# 数据库 ownership
+# 数据库与数据归属
 
-Pluxel 管理的 Plugin database 只使用 PostgreSQL 语义与 Drizzle。宿主未配置远端 PostgreSQL 时可以使用持久 PGlite；同一份 schema、migration 和 query 不写 driver 分支。
+Pluxel 的数据库能力统一使用 PostgreSQL 语义和 Drizzle。宿主没有配置远端 PostgreSQL 时可以使用持久化 PGlite；同一份 schema、迁移和查询不需要为不同驱动编写分支。
 
 先回答“数据属于谁”：
 
-| 数据所有者                                       | 标准组织方式                                                    |
-| ------------------------------------------------ | --------------------------------------------------------------- |
-| 可独立发布、安装和替换的 Plugin                  | `defineDatabase()` + `ctx.database.use()`，每个 owner 独立实例  |
-| 同一作者控制的 static application 与全部内置模块 | application-private database module，统一 schema/pool/migration |
+| 数据所有者                           | 标准组织方式                                                        |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| 可独立发布、安装和替换的 Plugin      | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
+| 同一团队控制的静态应用与全部内置模块 | 应用私有数据库模块，统一管理 schema、连接池和迁移                   |
 
-application database 不是“共享 Plugin database”。消费它的插件成为该应用的内部模块，不再拥有独立的数据可移植性。
+应用数据库不是“多个 Plugin 共用一份 Plugin 数据库”。使用它的 Plugin 会成为该应用的内部模块，不再拥有独立的数据可移植性。
 
 ## 定义 Plugin schema
 

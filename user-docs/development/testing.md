@@ -1,13 +1,13 @@
 ---
 title: 测试 Pluxel 插件
-description: 用真实 semantic pipeline 和匹配边界的 host 验证 lifecycle、HTTP、config 与 cleanup。
+description: 用真实构建流程和对应的测试宿主验证依赖、配置、HTTP 与资源回收。
 ---
 
 # 测试 Pluxel 插件
 
-Plugin 测试需要覆盖作者真正使用的 pipeline：decorator transform、constructor dependency facts、config schema extraction 和 package root resolution。裸实例或 mock Context 只能测试普通函数，不能证明 Plugin 能被宿主加载。
+Plugin 测试应当经过与生产构建一致的语义处理，包括装饰器转换、构造器依赖提取、配置 schema 提取和包根入口解析。直接 `new` 一个实例或模拟 Context 只能验证普通业务逻辑，不能证明这个 Plugin 可以被宿主正确加载和停止。
 
-## 配置与测试边界
+## 选择测试宿主
 
 ### 安装与 Vitest preset
 

@@ -1,17 +1,17 @@
 ---
 title: 请求频率控制
-description: 用 caller-aware Rates capability 对 identity 与 cost 做原子准入判定。
+description: 按调用方、身份和成本执行原子的请求准入判定。
 ---
 
 # 请求频率控制
 
-> `@pluxel/rates` 仅供当前 workspace 使用，不属于公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/rates` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/rates` 解决的是一个很窄但重要的问题：对一次 `identity + cost` 做原子的 allow/deny 判定。它不负责排队、等待、长期套餐额度、计费，也不会替 HTTP 或 RPC 层选择响应状态。
+`@pluxel/rates` 只负责一件事：根据一次请求的身份和成本，原子地判断是否放行。它不负责排队、等待、长期套餐额度或计费，也不会替 HTTP 或 RPC 层选择响应状态。
 
 ## 第一个 limiter
 
-consumer 依赖抽象 capability `Rates`，在 `init()` 中用稳定业务名和 policy 创建 handle，在调用热路径只传 identity 与可选 cost：
+业务 Plugin 依赖抽象能力 `Rates`，在 `init()` 中用稳定业务名和策略创建 limiter，处理请求时只需传入身份和可选成本：
 
 ```ts twoslash
 import { Rates, type RateLimiter } from '@pluxel/rates'

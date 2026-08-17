@@ -2,11 +2,15 @@
 	"title": "Pluxel 用户文档",
 	"pages": [
 		"README",
+		"why-pluxel",
+		"---开始使用---",
 		"getting-started",
-		"workbench",
-		"development",
+		"---功能指南---",
 		"runtime",
+		"workbench",
 		"rendering",
+		"---工程与参考---",
+		"development",
 		"reference"
 	]
 }

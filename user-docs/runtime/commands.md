@@ -1,11 +1,11 @@
 ---
 title: Commands 与 Agent tools
-description: 定义一次命令契约，再安全地投影到 registry、Agent tools 与 argv carrier。
+description: 定义一次命令契约，再复用于注册表、Agent tools、CLI、HTTP 和 Workbench。
 ---
 
 # Commands 与 Agent tools
 
-`@pluxel/commands` 是 transport-neutral 的命令内核。一个 command 定义 JSON 输入、可选输出、最坏情况下的副作用和执行函数；registry、Agent、CLI、HTTP 与 Workbench carrier 复用同一契约。
+`@pluxel/commands` 让一条命令只定义一次输入、输出、副作用等级和执行函数，再安全地暴露给 Agent、CLI、HTTP 或 Workbench。不同入口共享同一份校验和错误契约，不需要各自重写参数解析。
 
 ```text
 untrusted JSON / argv

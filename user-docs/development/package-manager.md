@@ -1,15 +1,15 @@
 ---
-title: Dynamic host 的 package manager
-description: 在开发期 dynamic host 中装配 workspace-only 的 pnpm source producer。
+title: 动态宿主的包管理器
+description: 在开发环境中为动态宿主管理和发布 pnpm 插件包。
 ---
 
-# Dynamic host 的 package manager
+# 动态宿主的包管理器
 
-> `@pluxel/package-manager` 仅供当前 workspace 使用，不属于公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/package-manager` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/runtime-dynamic` 本身不下载 package。Package Manager Plugin 是一个可选 source producer：它用 `@pnpm/napi` 管理隔离的 pnpm project，把每个受管 package 原子发布为普通 `.mjs` entry；dynamic runtime 只观察这些 entry，并执行正常 graph transaction 与 Plugin lifecycle。
+动态运行时本身不负责下载包。Package Manager Plugin 是一项可选的来源提供者：它通过 `@pnpm/napi` 管理隔离的 pnpm 项目，并把每个受管包以普通 `.mjs` 入口原子发布。动态运行时只观察这些入口，后续仍走正常的依赖图事务和 Plugin 生命周期。
 
-## Host 装配
+## 装配宿主
 
 ```ts no-twoslash
 import { pluginNodeAddressOf } from '@pluxel/runtime'

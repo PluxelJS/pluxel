@@ -1,19 +1,19 @@
 ---
 title: Redis
-description: 使用 raw Redis capability、typed Lua scripts，并为 Cache 与 Rates 装配共享 backend。
+description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cache 与 Rates 提供后端。
 ---
 
 # Redis
 
-> `@pluxel/redis` 仅供当前 workspace 使用，不属于公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 `@pluxel/redis` 提供三层能力：
 
-1. 抽象 raw Redis capability `Redis` 与默认 standalone provider `RedisPlugin`；
-2. `defineRedisScript()` 和 caller-bound `redis.scripts`；
-3. `RedisCacheBackendPlugin` 与 `RedisRatesBackendPlugin` 两个 adapter。
+1. 原始 Redis 能力 `Redis` 和默认的单机实现 `RedisPlugin`；
+2. 用于定义类型安全 Lua 脚本的 `defineRedisScript()` 与 `redis.scripts`；
+3. 面向 Cache 和 Rates 的两个适配器 `RedisCacheBackendPlugin`、`RedisRatesBackendPlugin`。
 
-这三层的 ownership 不同。业务需要 Redis command、transaction、stream 或 pub/sub 时依赖 `Redis`；只需要 cache 或 admission control 时，应依赖对应抽象 capability，不要把 Redis 泄漏进业务 API。
+三层能力面向不同需求。业务确实需要 Redis 命令、事务、Stream 或 Pub/Sub 时依赖 `Redis`；只需要缓存或请求准入控制时，应依赖对应的抽象能力，不要让 Redis 进入业务 API。
 
 ## 直接使用 Redis
 

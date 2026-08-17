@@ -1,21 +1,21 @@
 ---
 title: 配置插件宿主
-description: 正确装配 static/dynamic route、catalog、运行时状态、Workbench 和部署策略。
+description: 在静态与动态模式中选择一种，装配 Plugin、运行时状态和 Workbench。
 ---
 
 # 配置插件宿主
 
-Static 与 dynamic 的差别是 Plugin source/catalog 从哪里来，不是 Plugin author API。两者使用同一个 dependency graph、config、runtime services 和 generation lifecycle。
+Pluxel 提供静态和动态两种宿主模式。它们的区别在于 Plugin 从哪里加载：静态模式在构建时确定完整目录，动态模式在运行时观察可变来源。Plugin 的写法不随模式变化，两者共享同一套依赖图、配置、运行时服务和生命周期。
 
-## 选择 route
+## 选择宿主模式
 
-| 场景                                                    | Route                     |
-| ------------------------------------------------------- | ------------------------- |
-| 产品内置 Plugin、固定可审计 catalog、可冻结部署         | static                    |
-| 开发期 mutable source、workspace HMR、运行期 entry 目录 | dynamic                   |
-| 已物化、可搬运的 source-based host                      | dynamic distribution mode |
+| 场景                                       | 选择         |
+| ------------------------------------------ | ------------ |
+| 产品内置 Plugin、目录固定、需要审计和冻结  | 静态模式     |
+| 开发期源码变化、工作区 HMR、运行时入口目录 | 动态模式     |
+| 已经物化并需要搬运的动态来源宿主           | 动态发行模式 |
 
-业务 Plugin 不根据 route 写两套实现。route launcher 负责加载 source，Plugin 只依赖公开 runtime contract。
+业务 Plugin 不需要为两种模式编写不同实现。宿主入口负责加载来源，Plugin 只依赖公开的运行时契约。
 
 ## Static host
 

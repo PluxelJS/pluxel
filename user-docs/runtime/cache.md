@@ -1,15 +1,15 @@
 ---
 title: 缓存
-description: 用 caller-aware scope 组合本地缓存、backend、loader、失效和请求合并。
+description: 为每个 Plugin 隔离缓存，并组合本地缓存、后端、加载器、失效和请求合并。
 ---
 
 # 缓存
 
-> `@pluxel/cache` 仅供当前 workspace 使用，不属于公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
+> `@pluxel/cache` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
-`@pluxel/cache` 是 caller-aware capability。consumer required-depend 抽象 `Cache`，host 选择 memory backend 或 Redis adapter。普通 key 自动按 caller Plugin 隔离，只有明确共享同一个 value contract 时才使用 `cache.global`。
+`@pluxel/cache` 会识别当前调用它的 Plugin，并自动隔离普通 key。业务 Plugin 依赖抽象的 `Cache`，宿主选择内存或 Redis 后端；只有多个 Plugin 明确共享同一份值协议时，才应使用 `cache.global`。
 
-## 先选择 primitive
+## 先选择用法
 
 | 需求                                    | 写法                            |
 | --------------------------------------- | ------------------------------- |

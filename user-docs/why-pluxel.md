@@ -7,7 +7,7 @@ description: 从 Cordis 与 Koishi 的实践出发，理解 Pluxel 对依赖身�
 
 Pluxel 是对 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4558addeba0f6a25294684d494) Plugin 思想的一次再诠释与重构。
 
-我们希望保留 Cordis 带来的组合体验：Plugin 拥有 Context 和生命周期，listener、timer、route 等副作用随 owner 自动回收，功能可以动态装载、替换和卸载。我们重新设计的是这些能力背后的依赖身份、构建语义和运行时边界。
+我们希望保留 Cordis 带来的组合体验：Plugin 拥有 Context 和生命周期，listener、timer、route 等副作用随所属 Plugin 自动回收，功能可以动态装载、替换和卸载。我们重新设计的是这些能力背后的依赖身份、构建语义和运行时边界。
 
 Pluxel 的核心原则是：
 

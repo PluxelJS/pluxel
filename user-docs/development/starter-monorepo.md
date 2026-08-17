@@ -1,11 +1,11 @@
 ---
 title: 从纯净 monorepo 开始
-description: 用 canonical starter 建立 static host、Plugin、领域包与 Web 前端。
+description: 用官方起始模板建立静态宿主、Plugin、领域包和 Web 前端。
 ---
 
 # 从纯净 monorepo 开始
 
-`app-monorepo` starter 建立四条边界：static host 负责装配，Plugin 负责生命周期和能力，domain package 保持中性，Web 提供浏览器入口。模板同时生成 CI 门禁。
+`app-monorepo` 模板适合从零创建完整应用。它把代码分成四个清楚的部分：静态宿主负责装配，Plugin 承载能力和生命周期，领域包保存与框架无关的业务逻辑，Web 提供浏览器入口。模板也会生成相应的 CI 检查。
 
 ## 生成和首次验证
 

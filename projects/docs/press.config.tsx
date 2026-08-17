@@ -7,6 +7,7 @@ import { linkValidationPlugin } from 'fumapress/plugins/link-validation'
 import { createRelativeLink } from 'fumadocs-ui/mdx'
 import { defineDocs } from 'fumadocs-mdx/macro'
 import { FlaskConical } from 'lucide-react'
+import { fileURLToPath } from 'node:url'
 import { ConfigurationExampleLayout } from './src/components/configuration-example-layout'
 import { ConfigurationPreviewLoader } from './src/components/configuration-preview-loader'
 import { getMDXComponents } from './src/components/mdx'
@@ -25,6 +26,8 @@ const docs = defineDocs({
 		schema: metaSchema,
 	},
 })
+
+const docsProjectRoot = fileURLToPath(new URL('.', import.meta.url))
 
 const content = docs.toFumadocsSource({ baseDir: 'docs' })
 
@@ -67,6 +70,9 @@ export default defineConfig({
 		git: {
 			branch: 'main',
 			repo: 'pluxel',
+			// The MDX adapter reports source paths from this project directory even
+			// though the canonical content directory lives at the repository root.
+			rootDir: docsProjectRoot,
 			user: 'PluxelJS',
 		},
 		name: 'Pluxel',

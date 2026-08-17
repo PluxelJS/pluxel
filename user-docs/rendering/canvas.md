@@ -1,13 +1,13 @@
 ---
 title: 服务端 Canvas
-description: 使用有资源预算的 raster、SVG、图片解码、Pretext 布局与 worker adapter。
+description: 在服务端绘制位图与 SVG，解码图片，并用资源预算约束原生内存。
 ---
 
 # 服务端 Canvas
 
-`@pluxel/canvas` 是基于 `@napi-rs/canvas` 的服务端绘图 capability。它提供 raster Canvas、SVG Canvas、图片解码和 Pretext 文字布局，同时在 native 分配前执行 host 资源预算。
+`@pluxel/canvas` 基于 `@napi-rs/canvas` 提供服务端绘图能力，包括位图 Canvas、SVG Canvas、图片解码和 Pretext 文字布局。宿主会在分配原生内存前检查资源预算，避免单个 Plugin 无限制占用内存。
 
-CanvasPlugin required-depend FontsPlugin，并为 EChartsPlugin 提供受预算约束的底层绘图能力。业务 Plugin 直接使用 Canvas 时只注入 CanvasPlugin。
+`CanvasPlugin` 必须依赖 `FontsPlugin`，也为 `EChartsPlugin` 提供底层绘图能力。业务 Plugin 直接绘图时只需注入 `CanvasPlugin`。
 
 ## 安装与 catalog
 

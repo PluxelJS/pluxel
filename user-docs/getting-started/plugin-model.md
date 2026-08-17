@@ -1,21 +1,21 @@
 ---
 title: Plugin 模型与生命周期
-description: 理解依赖图、generation、optional integration、effects 和失败传播。
+description: 理解 Plugin 的依赖关系、版本代际、可选集成、资源回收和失败传播。
 ---
 
 # Plugin 模型与生命周期
 
-Plugin 不是由宿主任意调用的普通 class。它是依赖图中的一个节点：只有 required dependencies 已运行、配置已通过校验且 `init()` 成功后，这个节点才进入 running。
+Plugin 不只是一个由宿主任意调用的类，而是依赖图中可独立启动和停止的能力节点。只有必需依赖已经运行、配置通过校验且 `init()` 成功后，它才会进入运行状态。
 
 ## 三种组成关系
 
-组成关系由能力是否依赖 provider 决定：
+先判断一项能力是否需要独立的生命周期，再选择关系：
 
-| 关系                        | 何时使用                     | 写法                                     |
-| --------------------------- | ---------------------------- | ---------------------------------------- |
-| Required Plugin             | 缺少 provider 就不能工作     | constructor value import                 |
-| Optional Plugin integration | provider 是可选增强          | `definePluginRef<T>()` + `plugins.use()` |
-| 内部组成                    | 没有独立启停、配置或治理意义 | 普通 class/function + effects            |
+| 关系             | 何时使用                   | 写法                                     |
+| ---------------- | -------------------------- | ---------------------------------------- |
+| 必需 Plugin      | 缺少提供方就不能工作       | 构造器参数 + 值导入                      |
+| 可选 Plugin 集成 | 提供方只是可选增强         | `definePluginRef<T>()` + `plugins.use()` |
+| Plugin 内部组成  | 不需要独立启停、配置或治理 | 普通类或函数 + effects                   |
 
 不要把所有组成都拆成 Plugin。Plugin 边界意味着独立的 identity、graph edge、启动结果和 replacement 行为；只服务一个 owner 的 cache、client 或 helper 通常应留在 owner 内部。
 

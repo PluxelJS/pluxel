@@ -1,13 +1,13 @@
 ---
 title: Package 与入口矩阵
-description: 区分公开 package surface、workspace-only 能力和内部实现入口。
+description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
 # Package 与入口矩阵
 
-本页描述仓库中的 package surface，不声明 npm registry 的发布状态。`private` 和 `exports` 决定仓库内的消费边界；可安装版本由 registry 与 release metadata 决定。
+本页说明仓库中每个包允许如何使用，不代表它已经发布到 npm。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
 
-## 公开 package surface
+## 公开包
 
 | Package                   | 用途                                                     | 从哪里开始                                           |
 | ------------------------- | -------------------------------------------------------- | ---------------------------------------------------- |
