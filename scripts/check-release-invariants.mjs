@@ -2,8 +2,9 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const root = new URL('../', import.meta.url)
-const packagesDirectory = new URL('../packages/', import.meta.url)
+const rootPath = root.pathname
 const repositoryUrl = 'https://github.com/PluxelJS/pluxel'
+const expectedLicense = 'AGPL-3.0-only'
 const dependencyFields = [
 	'dependencies',
 	'peerDependencies',
@@ -12,12 +13,13 @@ const dependencyFields = [
 ]
 
 const rootPackage = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
+const rootLicense = await readFile(new URL('LICENSE', root), 'utf8')
 const miseConfig = await readFile(new URL('mise.toml', root), 'utf8')
 const packages = await readPublicPackages()
 const publicVersions = new Map(packages.map(({ manifest }) => [manifest.name, manifest.version]))
 const errors = []
 
-if (packages.length === 0) errors.push('No public packages found under packages/.')
+if (packages.length === 0) errors.push('No public packages found under packages/ or plugins/.')
 
 const expectedTools = { node: 'lts', pnpm: 'latest' }
 for (const [tool, expected] of Object.entries(expectedTools)) {
@@ -32,6 +34,9 @@ if (/^bun\s*=/m.test(miseConfig)) {
 
 if (rootPackage.repository?.url !== repositoryUrl) {
 	errors.push(`Root repository.url must be ${repositoryUrl}.`)
+}
+if (rootPackage.license !== expectedLicense) {
+	errors.push(`Root package license must be ${expectedLicense}.`)
 }
 
 if (rootPackage.packageManager !== undefined) {
@@ -57,13 +62,21 @@ for (const { directory, manifest } of packages) {
 		errors.push(`${manifest.name} version must be valid semver, got ${manifest.version}.`)
 	}
 
+	if (manifest.license !== expectedLicense) {
+		errors.push(`${manifest.name} license must be ${expectedLicense}.`)
+	}
+
+	const packageLicense = await readOptionalFile(join(rootPath, directory, 'LICENSE'))
+	if (packageLicense !== rootLicense) {
+		errors.push(`${manifest.name} must include an unmodified package-local LICENSE.`)
+	}
+
 	if (manifest.repository?.url !== repositoryUrl) {
 		errors.push(`${manifest.name} repository.url must be ${repositoryUrl}.`)
 	}
 
-	const expectedDirectory = `packages/${directory}`
-	if (manifest.repository?.directory !== expectedDirectory) {
-		errors.push(`${manifest.name} repository.directory must be ${expectedDirectory}.`)
+	if (manifest.repository?.directory !== directory) {
+		errors.push(`${manifest.name} repository.directory must be ${directory}.`)
 	}
 
 	for (const field of dependencyFields) {
@@ -93,21 +106,61 @@ function isSemver(version) {
 }
 
 async function readPublicPackages() {
-	const entries = await readdir(packagesDirectory, { withFileTypes: true })
 	const publicPackages = []
+	const directories = [
+		...(await packageDirectories('packages')),
+		...(await pluginPackageDirectories()),
+	]
 
-	for (const entry of entries) {
-		if (!entry.isDirectory()) continue
-		const file = join(packagesDirectory.pathname, entry.name, 'package.json')
-		try {
-			const manifest = JSON.parse(await readFile(file, 'utf8'))
-			if (manifest.private !== true) publicPackages.push({ directory: entry.name, manifest })
-		} catch (error) {
-			if (error?.code !== 'ENOENT') throw error
-		}
+	for (const directory of directories) {
+		const file = join(rootPath, directory, 'package.json')
+		const manifest = JSON.parse(await readFile(file, 'utf8'))
+		if (manifest.private !== true) publicPackages.push({ directory, manifest })
 	}
 
 	return publicPackages.toSorted((left, right) =>
 		left.manifest.name.localeCompare(right.manifest.name),
 	)
+}
+
+async function packageDirectories(container) {
+	const directory = join(rootPath, container)
+	const entries = await readdir(directory, { withFileTypes: true })
+	const directories = []
+
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue
+		const child = `${container}/${entry.name}`
+		if ((await readOptionalFile(join(rootPath, child, 'package.json'))) !== undefined) {
+			directories.push(child)
+		}
+	}
+
+	return directories
+}
+
+async function pluginPackageDirectories() {
+	const entries = await readdir(join(rootPath, 'plugins'), { withFileTypes: true })
+	const directories = []
+
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue
+		const direct = `plugins/${entry.name}`
+		if ((await readOptionalFile(join(rootPath, direct, 'package.json'))) !== undefined) {
+			directories.push(direct)
+			continue
+		}
+		for (const child of await packageDirectories(direct)) directories.push(child)
+	}
+
+	return directories
+}
+
+async function readOptionalFile(path) {
+	try {
+		return await readFile(path, 'utf8')
+	} catch (error) {
+		if (error?.code === 'ENOENT') return undefined
+		throw error
+	}
 }

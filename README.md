@@ -70,3 +70,14 @@ and do not wait for unrelated production builds; packaging invariant tests keep 
 prerequisites.
 
 公开包的版本与发布流程见 [`docs/RELEASING.md`](docs/RELEASING.md)。
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0
+(`AGPL-3.0-only`).
+
+A separate commercial license is available for organizations that require
+proprietary use, closed-source distribution, embedding, or other terms
+incompatible with the AGPL.
+
+See [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md).

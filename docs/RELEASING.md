@@ -40,7 +40,8 @@ provenance 和 GitHub OIDC；npm 包的 trusted publisher 应绑定本仓库及 
 `pnpm release:check` 在 CI 和发布前验证：
 
 - mise 保持 Node.js `lts` 与 pnpm `latest`，且不引入额外 JavaScript runtime；
-- 所有公开包使用有效 semver 和正确的 repository metadata；
+- 所有公开包使用有效 semver、正确的 repository metadata 和 `AGPL-3.0-only` license metadata；
+- 所有公开 npm 包都包含与根目录一致的 AGPL `LICENSE` 正文；
 - 公开 workspace 包之间的普通源码依赖保持 `workspace:*`，peerDependencies 明确声明消费者兼容范围。
 
 任何一步失败都必须修复后重新发布 GitHub Release，不能跳过 verify 或 smoke。

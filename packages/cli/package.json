@@ -2,6 +2,7 @@
 	"name": "@pluxel/cli",
 	"version": "0.3.0",
 	"description": "Pluxel CLI",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

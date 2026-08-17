@@ -2,7 +2,7 @@
 	"name": "@pluxel/echarts",
 	"version": "0.1.0",
 	"description": "Official server-side Apache ECharts capability for Pluxel plugins",
-	"license": "MIT",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

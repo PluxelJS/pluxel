@@ -2,6 +2,7 @@
 	"name": "@pluxel/runtime-dynamic",
 	"version": "0.3.0",
 	"description": "Pluxel mutable file-source runtime route",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

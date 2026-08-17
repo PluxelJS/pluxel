@@ -2,6 +2,7 @@
 	"name": "@pluxel/core",
 	"version": "0.3.0",
 	"description": "Pluxel plugin graph, lifecycle, Context, and core services",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

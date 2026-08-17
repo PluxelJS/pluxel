@@ -1,0 +1,58 @@
+name: CLA
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: CLA
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target'
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: workspace
+          persist-credentials: false
+
+      - name: Checkout protected CLA policy
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref }}
+          path: cla-policy
+          persist-credentials: false
+
+      - name: Check CLA
+        run: node cla-policy/scripts/check-cla.mjs --root workspace
+        env:
+          CLA_HOST: ${{ github.server_url }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+  approve:
+    name: Record CLA approval
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.body == '/approve-cla'
+    steps:
+      - name: Checkout protected CLA policy
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Record CLA approval
+        run: node scripts/check-cla.mjs approve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

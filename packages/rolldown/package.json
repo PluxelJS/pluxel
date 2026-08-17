@@ -2,6 +2,7 @@
 	"name": "@pluxel/rolldown",
 	"version": "0.1.0",
 	"description": "Pluxel Rolldown/Vite/tsdown toolchain helpers",
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel",

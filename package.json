@@ -1,6 +1,7 @@
 {
 	"name": "pluxel",
 	"private": true,
+	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/PluxelJS/pluxel"
@@ -16,6 +17,8 @@
 		"docs:build": "pnpm --filter pluxel-docs build",
 		"docs:start": "pnpm --filter pluxel-docs start",
 		"typecheck": "turbo run typecheck",
+		"cla:check": "node scripts/check-cla.mjs",
+		"cla:hash": "node scripts/check-cla.mjs --print-hash",
 		"governance:check": "node scripts/check-workspace-governance.mjs",
 		"bench:core:compare": "scripts/core-bench-compare.sh",
 		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts && pnpm run lint:frontend-types",
