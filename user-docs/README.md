@@ -7,6 +7,8 @@ description: 用四篇入门文档完成 Plugin、配置和宿主装配，再按
 
 Pluxel Plugin 是具有依赖、配置和生命周期的能力单元。入门路径包含四篇文档；其他页面按任务查阅。
 
+第一次了解项目时，可以先阅读[为什么是 Pluxel](./why-pluxel.md)：它介绍项目与 Cordis、Koishi 的渊源，以及 Pluxel 对业务 Plugin、宿主能力和 typed meta-framework 的设计选择。
+
 ## 四篇入门文档
 
 1. [编写第一个插件](./getting-started/index.md)：在一页内完成 package、配置、Plugin、宿主启用和 lifecycle test。

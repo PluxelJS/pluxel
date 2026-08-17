@@ -16,6 +16,5 @@ to their respective commercial agreement.
 Except for rights expressly granted under such an agreement, all rights are
 reserved.
 
-For commercial licensing inquiries, contact:
-
-To be provided by the copyright holder before public commercial offering.
+For commercial licensing inquiries, contact the maintainers through the public
+contact information on the [PluxelJS organization profile](https://github.com/PluxelJS).

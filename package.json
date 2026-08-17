@@ -1,6 +1,18 @@
 {
 	"name": "pluxel",
 	"private": true,
+	"description": "A TypeScript plugin runtime with dependency graphs, lifecycle management, static delivery, and dynamic development workflows.",
+	"keywords": [
+		"microfrontend",
+		"module-federation",
+		"plugin-runtime",
+		"plugin-system",
+		"typescript"
+	],
+	"homepage": "https://github.com/PluxelJS/pluxel#readme",
+	"bugs": {
+		"url": "https://github.com/PluxelJS/pluxel/issues"
+	},
 	"license": "AGPL-3.0-only",
 	"repository": {
 		"type": "git",
