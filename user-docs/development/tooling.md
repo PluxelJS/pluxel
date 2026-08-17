@@ -10,17 +10,38 @@ description: 了解脚手架、插件构建、静态应用、HMR、源码联调�
 ## 安装分层
 
 ```sh
-# 脚手架与命令
+# 一次性创建项目或插件
+pnpm create @pluxel
+
+# 项目内可复现的 CLI
 pnpm add -D @pluxel/cli
 
+# 个人机器上的随处可用入口；进入已固定 CLI 的项目后会委托本地版本
+pnpm add -g @pluxel/cli
+```
+
+`@pluxel/cli` 是统一 executable，但不是所有能力的安装闭包。项目 `package.json` 直接声明
+`@pluxel/cli` 时，全局 `pluxel` 会优先使用这个项目本地版本；声明了但尚未安装时会失败并提示先安装，
+不会悄悄回退到全局版本。CI 和 package scripts 应继续使用本地 `pluxel` 或 `pnpm exec pluxel`。
+
+按命令安装可选能力：
+
+```sh
 # Plugin/static build 与 Vite adapter
 pnpm add -D @pluxel/rolldown tsdown oxlint
 
 # Dynamic host
 pnpm add -D @pluxel/runtime-dynamic
+
+# publish --webhook
+pnpm add -D @pluxel/market
 ```
 
 有 Workbench browser entry 的 host 还需要 Vite/React 等自己的 web toolchain。插件 package 的 canonical scripts 见 [开发和发布插件包](./plugin-package.md)。
+
+这些 owner 只在执行对应命令时从当前项目解析和加载。`pluxel --help`、`pluxel --version` 和
+`pluxel new` 不会加载 Rolldown、runtime-dynamic 或 market；缺少 owner 时只影响被调用的命令，并给出
+安装提示。
 
 ## 当前 CLI 命令地图
 

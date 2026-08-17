@@ -10,8 +10,7 @@ description: 用官方起始模板建立静态宿主、Plugin、领域包和 Web
 ## 生成和首次验证
 
 ```sh
-pnpm add -D @pluxel/cli
-pnpm exec pluxel new --template app-monorepo --name @acme/my-app
+pnpm create @pluxel --template app-monorepo --name @acme/my-app
 cd my-app
 pnpm install
 pnpm verify
@@ -19,6 +18,9 @@ pnpm dev
 ```
 
 模板要求 Node 24+、pnpm 11。根 `engines`、`devEngines.packageManager`、workspace catalog 与 CI frozen install 会阻止错误 package manager 或第二份 lockfile 进入项目。
+生成的 workspace root 会固定 `@pluxel/cli`，因此安装完成后本地 `pnpm exec pluxel` 和全局 `pluxel`
+都会执行项目版本。已经安装全局入口时，也可以用 `pluxel new --template app-monorepo --name @acme/my-app`
+生成同样的结构。
 
 首次修改前运行 `pnpm verify`，确认 Node、pnpm、依赖和生成结果有效。
 

@@ -1,16 +1,7 @@
 import { existsSync } from 'node:fs'
-import {
-	backupAndRewriteLoaderHmrConfigV2,
-	buildLoaderHmrWorkspaceFromScan,
-	createDefaultLoaderHmrConfigV2,
-	discoverPluginsFromPackages,
-	mergeLoaderHmrProfile,
-	type PluxelLoaderHmrConfigV2,
-	readLoaderHmrConfigV2,
-	resolveLoaderHmrRootsExpanded,
-	scanWorkspacePackages,
-	type LoaderHmrWorkspace,
-	writeLoaderHmrConfigV2,
+import type {
+	LoaderHmrWorkspace,
+	PluxelLoaderHmrConfigV2,
 } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { Box, render, Text, useInput, useStdout } from 'ink'
 import { resolve } from 'pathe'
@@ -25,6 +16,8 @@ type PromptResult = { action: 'exit' }
 type ConfigScope = 'profile' | 'defaults'
 
 type Overlay = 'profiles' | 'help' | null
+type LoaderHmrDiagnoseModule = typeof import('@pluxel/runtime-dynamic/hmr/diagnose')
+type ScanWorkspacePackages = LoaderHmrDiagnoseModule['scanWorkspacePackages']
 
 function clamp(n: number, min: number, max: number) {
 	return Math.max(min, Math.min(max, n))
@@ -597,7 +590,7 @@ type ScanState =
 			rootsExpandedAbs: string[]
 			discovered: Array<{ name: string; entry: string; pkgDir: string }>
 			discoveredForUi: PickPackagesDiscoveredPlugin[]
-			packages: Awaited<ReturnType<typeof scanWorkspacePackages>>['packages']
+			packages: Awaited<ReturnType<ScanWorkspacePackages>>['packages']
 	  }
 	| { status: 'error'; error: string }
 
@@ -615,6 +608,7 @@ function LoaderHmrPromptApp(props: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
+	diagnose: LoaderHmrDiagnoseModule
 	skipPackages: Set<string>
 	initialCfg: PluxelLoaderHmrConfigV2
 	initialProfile: string
@@ -628,6 +622,16 @@ function LoaderHmrPromptApp(props: {
 	const rows = stdout?.rows ?? 24
 
 	const [tab, setTab] = useState<TabKey>(props.initialTab ?? 'packages')
+	const {
+		backupAndRewriteLoaderHmrConfigV2,
+		buildLoaderHmrWorkspaceFromScan,
+		createDefaultLoaderHmrConfigV2,
+		discoverPluginsFromPackages,
+		mergeLoaderHmrProfile,
+		resolveLoaderHmrRootsExpanded,
+		scanWorkspacePackages,
+		writeLoaderHmrConfigV2,
+	} = props.diagnose
 	const [pathsFocus, setPathsFocus] = useState<PathsFocus>(() => {
 		if (props.initialOpen?.kind === 'paths') return props.initialOpen.focus ?? 'roots'
 		return 'roots'
@@ -1894,6 +1898,7 @@ export async function runLoaderHmrPromptTui(params: {
 	rootDir: string
 	configPath: string
 	env: Record<string, string | undefined>
+	diagnose: LoaderHmrDiagnoseModule
 	skipPackages: Set<string>
 	initialTab?: TabKey
 	initialOpen?: InitialOpen
@@ -1908,15 +1913,15 @@ export async function runLoaderHmrPromptTui(params: {
 	let initialParseError: string | null = null
 
 	if (!existsSync(params.configPath)) {
-		initialCfg = createDefaultLoaderHmrConfigV2()
+		initialCfg = params.diagnose.createDefaultLoaderHmrConfigV2()
 		initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		initialDirty = true
 	} else {
 		try {
-			initialCfg = readLoaderHmrConfigV2(params.configPath)
+			initialCfg = params.diagnose.readLoaderHmrConfigV2(params.configPath)
 			initialProfile = params.env.PLUXEL_HMR_PROFILE ?? initialCfg.profile
 		} catch (e) {
-			initialCfg = createDefaultLoaderHmrConfigV2()
+			initialCfg = params.diagnose.createDefaultLoaderHmrConfigV2()
 			initialProfile = initialCfg.profile
 			initialDirty = false
 			initialParseError = e instanceof Error ? e.message : String(e)
@@ -1944,6 +1949,7 @@ export async function runLoaderHmrPromptTui(params: {
 				rootDir={params.rootDir}
 				configPath={params.configPath}
 				env={params.env}
+				diagnose={params.diagnose}
 				skipPackages={params.skipPackages}
 				initialCfg={initialCfg}
 				initialProfile={initialProfile}

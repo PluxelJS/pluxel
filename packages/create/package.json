@@ -1,0 +1,21 @@
+{
+	"name": "@pluxel/create",
+	"version": "0.3.0",
+	"description": "Pluxel project initializer",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PluxelJS/pluxel",
+		"directory": "packages/create"
+	},
+	"bin": {
+		"create-pluxel": "bin/create.mjs"
+	},
+	"files": [
+		"bin"
+	],
+	"type": "module",
+	"dependencies": {
+		"@pluxel/cli": "workspace:0.3.0"
+	}
+}

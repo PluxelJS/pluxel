@@ -12,12 +12,14 @@ description: 在一页内完成插件包、配置、实现、宿主启用和生�
 CLI 模板会生成包根入口、TypeScript、构建和测试配置：
 
 ```sh
-pluxel new --template plugin --name @acme/status
+pnpm create @pluxel --template plugin --name @acme/status
 cd status
 pnpm install
 ```
 
 现有 Plugin package 需要使用 `pluxel build`、从 package root 导出具体 Plugin，并通过 `@pluxel/hmr` source condition 指向源码。完整 package contract 见 [插件 package](../development/plugin-package.md)。
+模板会固定项目本地 `@pluxel/cli`；安装后可用 `pnpm exec pluxel build`，也可以从全局 `pluxel` 入口委托到
+项目版本。
 
 ## 最小文件结构
 

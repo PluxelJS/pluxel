@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promis
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { type ArgValues, define } from 'gunshi'
+import { loadOfficialCapability } from '../capability-loader'
 import {
 	distributionCommandDefinition,
 	distributionCorrelateArgs,
@@ -20,11 +21,12 @@ type RootValues = ArgValues<typeof distributionRootArgs>
 type VerifyValues = ArgValues<typeof distributionVerifyArgs>
 type MarkValues = ArgValues<typeof distributionMarkArgs>
 type CorrelateValues = ArgValues<typeof distributionCorrelateArgs>
+type DistributionModule = typeof import('@pluxel/rolldown/distribution')
 
 export const distributionCreateCommand = define({
 	...distributionCreateDefinition,
 	async run(ctx) {
-		const distribution = await import('@pluxel/rolldown/distribution')
+		const distribution = await loadOfficialCapability<DistributionModule>('rolldown-distribution')
 		const root = resolveRoot(ctx.values as RootValues)
 		const manifest = await distribution.createDistributionManifest(root)
 		ctx.log(
@@ -36,7 +38,7 @@ export const distributionCreateCommand = define({
 export const distributionInspectCommand = define({
 	...distributionInspectDefinition,
 	async run(ctx) {
-		const distribution = await import('@pluxel/rolldown/distribution')
+		const distribution = await loadOfficialCapability<DistributionModule>('rolldown-distribution')
 		const report = await distribution.inspectDistribution(resolveRoot(ctx.values as RootValues))
 		ctx.log(
 			JSON.stringify(
@@ -62,7 +64,7 @@ export const distributionVerifyCommand = define({
 	...distributionVerifyDefinition,
 	async run(ctx) {
 		const values = ctx.values as VerifyValues
-		const distribution = await import('@pluxel/rolldown/distribution')
+		const distribution = await loadOfficialCapability<DistributionModule>('rolldown-distribution')
 		const root = resolveRoot(values)
 		const keyPaths = normalizeMany(values.key)
 		if (keyPaths.length === 0)
@@ -91,7 +93,7 @@ export const distributionMarkCommand = define({
 		if (!values.claims || !values['record-out']) {
 			throw new TypeError('[distribution] mark requires --claims and --record-out')
 		}
-		const distribution = await import('@pluxel/rolldown/distribution')
+		const distribution = await loadOfficialCapability<DistributionModule>('rolldown-distribution')
 		const root = resolveRoot(values)
 		const claimsPath = await assertExistingPathOutsideRoot(root, values.claims, 'release claims')
 		const claims = distribution.readDistributionReleaseClaims(
@@ -116,7 +118,7 @@ export const distributionCorrelateCommand = define({
 		if (!values['delivery-record']) {
 			throw new TypeError('[distribution] correlate requires --delivery-record')
 		}
-		const distribution = await import('@pluxel/rolldown/distribution')
+		const distribution = await loadOfficialCapability<DistributionModule>('rolldown-distribution')
 		const root = resolveRoot(values)
 		const recordPath = await assertExistingPathOutsideRoot(
 			root,

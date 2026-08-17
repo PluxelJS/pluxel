@@ -5,6 +5,7 @@ import type {
 } from '@pluxel/runtime-dynamic/hmr/diagnose'
 import { type ArgValues, define } from 'gunshi'
 import { resolve } from 'pathe'
+import { loadOfficialCapability } from '../capability-loader'
 import {
 	hmrCommandDefinition,
 	loaderHmrCommonArgs,
@@ -20,6 +21,7 @@ type LoaderHmrCommonValues = ArgValues<LoaderHmrCommonArgs>
 
 type LoaderHmrSetArgs = typeof loaderHmrSetArgs
 type LoaderHmrSetValues = ArgValues<LoaderHmrSetArgs>
+type LoaderHmrDiagnoseModule = typeof import('@pluxel/runtime-dynamic/hmr/diagnose')
 
 type LoaderHmrCommandContext = {
 	rootDir: string
@@ -98,11 +100,15 @@ async function runTui(params: {
 		typeof import('../tui/hmr-prompt').runLoaderHmrPromptTui
 	>[0]['initialOpen']
 }) {
-	const { runLoaderHmrPromptTui } = await import('../tui/hmr-prompt')
+	const [diagnose, { runLoaderHmrPromptTui }] = await Promise.all([
+		loadOfficialCapability<LoaderHmrDiagnoseModule>('runtime-dynamic-hmr-diagnose'),
+		import('../tui/hmr-prompt'),
+	])
 	const res = await runLoaderHmrPromptTui({
 		rootDir: params.rootDir,
 		configPath: params.configPath,
 		env: params.env,
+		diagnose,
 		skipPackages: new Set(),
 		initialTab: params.initialTab,
 		initialOpen: params.initialOpen,
@@ -111,7 +117,9 @@ async function runTui(params: {
 }
 
 async function runDoctor(values: LoaderHmrCommonValues) {
-	const { diagnoseLoaderHmrWorkspace } = await import('@pluxel/runtime-dynamic/hmr/diagnose')
+	const { diagnoseLoaderHmrWorkspace } = await loadOfficialCapability<LoaderHmrDiagnoseModule>(
+		'runtime-dynamic-hmr-diagnose',
+	)
 	const context = resolveCommandContext(values)
 	const res = await diagnoseLoaderHmrWorkspace({
 		rootDir: context.rootDir,
@@ -177,7 +185,7 @@ async function runEnabled(values: LoaderHmrSetValues) {
 	const context = resolveCommandContext(values)
 	if (values.set) {
 		const { readLoaderHmrConfigV2, writeLoaderHmrConfigV2 } =
-			await import('@pluxel/runtime-dynamic/hmr/diagnose')
+			await loadOfficialCapability<LoaderHmrDiagnoseModule>('runtime-dynamic-hmr-diagnose')
 		if (!existsSync(context.configPath)) {
 			throw new Error(`Missing config file: ${context.configPath} (run \`pluxel hmr\` first)`)
 		}

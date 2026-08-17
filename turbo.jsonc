@@ -149,15 +149,14 @@
 		},
 		"@pluxel/cli#build": {
 			// CLI declarations reference the toolchain, while runtime integrations stay external and
-			// are loaded only when their commands execute.
+			// are loaded only when their commands execute. The CLI package also copies starter
+			// templates and root user-docs into dist, so those single-source resources must invalidate
+			// the build cache.
 			"dependsOn": ["@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
-				"!README.md",
-				"!**/*.md",
-				"!docs/**",
-				"!**/docs/**",
+				"$TURBO_ROOT$/user-docs/**",
 				"!bench/**",
 				"!**/bench/**",
 				"!test/**",

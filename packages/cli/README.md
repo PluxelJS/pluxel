@@ -13,6 +13,7 @@ Pluxel CLI（对外发布包之一）。
 常用：
 
 ```sh
+pnpm create @pluxel
 pluxel build
 pluxel hmr
 pluxel new
@@ -38,8 +39,13 @@ pluxel distribution inspect ./dist
 新产品优先使用：
 
 ```sh
-pluxel new --template app-monorepo --name @acme/my-app
+pnpm create @pluxel --template app-monorepo --name @acme/my-app
 ```
+
+`@pluxel/create` 是 `@pluxel/cli` 的同版本 thin wrapper，只把 argv 转给 `pluxel new`，不复制模板或
+prompt 逻辑。`@pluxel/cli` 可以全局安装；如果当前目录向上最近的 `package.json` 直接声明了本地
+`@pluxel/cli`，全局 launcher 会在加载 CLI main 前委托该项目版本。声明了但没安装时会报错，不回退到
+全局版本。
 
 维护者可运行 `pnpm --filter @pluxel/cli test:templates`。该检查会计算并打包当前 workspace 的本地
 发布依赖闭包，安装生成的 CLI tarball，再通过其中的 `pluxel new` 在仓库外分别生成 standalone
@@ -60,6 +66,8 @@ pnpm add -D @pluxel/runtime-dynamic
 ```
 
 `pluxel publish` 的 npm 发布流程不依赖 market SDK；需要 market webhook 时再安装 `@pluxel/market`。
+这些 owner 都从调用项目解析，只在执行对应命令时加载。`pluxel --help`、`pluxel --version` 和
+`pluxel new` 不会初始化它们。
 
 多个独立 pnpm 仓库共同修改未发布源码时使用 `pluxel source register/doctor/install/build`。项目提交
 `pluxel.sources.jsonc` 中的仓库身份，机器路径只进入用户 checkout registry；CLI 从真实 package 依赖

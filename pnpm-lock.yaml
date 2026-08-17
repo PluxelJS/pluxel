@@ -579,6 +579,9 @@ importers:
       pkg-types:
         specifier: ^2.3.0
         version: 2.3.1
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       yaml:
         specifier: ^2.8.2
         version: 2.9.0
@@ -665,6 +668,12 @@ importers:
       unplugin-macros:
         specifier: ^0.20.2
         version: 0.20.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.5)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0)
+
+  packages/create:
+    dependencies:
+      '@pluxel/cli':
+        specifier: workspace:0.3.0
+        version: link:../cli
 
   packages/rolldown:
     dependencies:

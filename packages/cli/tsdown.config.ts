@@ -34,6 +34,7 @@ const inlineRuntimeDeps = [
 	'react-reconciler',
 	'restore-cursor',
 	'scheduler',
+	'semver',
 	'signal-exit',
 	'slice-ansi',
 	'stack-utils',

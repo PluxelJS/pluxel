@@ -166,6 +166,7 @@ describe('scaffold template rendering', () => {
 			description: 'Acme "application"\\workspace\nstarter',
 		})
 		expect(rootManifest).toContain('"@pluxel/rolldown": "catalog:"')
+		expect(rootManifest).toContain('"@pluxel/cli": "catalog:"')
 		expect(rootManifest).toContain('"oxfmt": "catalog:"')
 		expect(rootManifest).toContain('"turbo": "catalog:"')
 		expect(rootManifest).not.toContain('"react":')
@@ -185,6 +186,9 @@ describe('scaffold template rendering', () => {
 		expect(parseYaml(workspaceSource)).toMatchObject({
 			packages: ['web', 'packages/*', 'plugins/*', 'plugins/*/*'],
 			catalog: { '@pluxel/runtime': '^0.3.0' },
+		})
+		expect(parseYaml(workspaceSource)).toMatchObject({
+			catalog: { '@pluxel/cli': '^0.3.0' },
 		})
 		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
 		const rootTsconfig = JSON.parse(

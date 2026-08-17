@@ -39,6 +39,7 @@
 		"pathe": "^2.0.3",
 		"picomatch": "^4.0.3",
 		"pkg-types": "^2.3.0",
+		"semver": "^7.8.5",
 		"yaml": "^2.8.2"
 	},
 	"devDependencies": {
@@ -54,7 +55,7 @@
 		"typescript": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "catalog:",
+		"@pluxel/market": "^0.1.0",
 		"@pluxel/rolldown": "^0.1.0",
 		"@pluxel/runtime-dynamic": "^0.3.0",
 		"oxlint": "^1.58.0",

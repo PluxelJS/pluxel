@@ -11,6 +11,7 @@ import {
 	sourceCommandDefinition,
 	workspaceCommandDefinition,
 } from './command-manifest'
+import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
 const commands = new Map([
 	[
@@ -91,26 +92,9 @@ async function main() {
 }
 
 function formatCliError(error: unknown, command: string | undefined): string {
+	if (error instanceof OfficialCapabilityError) return formatOfficialCapabilityError(error)
 	const message = error instanceof Error ? error.message : String(error)
-	const dependencyByCommand: Record<string, string> = {
-		build: '@pluxel/rolldown',
-		database: '@pluxel/rolldown',
-		distribution: '@pluxel/rolldown',
-		hmr: '@pluxel/runtime-dynamic',
-		workspace: '@pluxel/rolldown',
-	}
-	const dependency = command ? dependencyByCommand[command] : undefined
-	if (
-		dependency &&
-		(error as NodeJS.ErrnoException | undefined)?.code === 'ERR_MODULE_NOT_FOUND' &&
-		message.includes(dependency)
-	) {
-		return [
-			`The \`pluxel ${command}\` command requires the optional ${dependency} package.`,
-			`Install it in this project with \`pnpm add -D ${dependency}\`.`,
-		].join('\n')
-	}
 	return message
 }
 
-void main()
+await main()

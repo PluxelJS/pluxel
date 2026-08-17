@@ -170,6 +170,9 @@ export async function publishPackage(options: PublishOptions): Promise<PublishRe
 			}
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error)
+			if (forceWebhook) {
+				throw new Error(`[publish] market notification failed: ${reason}`, { cause: error })
+			}
 			log(`[publish] warn: market notification failed: ${reason}`)
 		}
 	} else {
