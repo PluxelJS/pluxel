@@ -141,7 +141,7 @@ registration.dispose() // idempotent; withdraw future lookup/discovery
 
 不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。动态 name 查找无法推导具体 output，因此 registry dispatch 返回 `unknown`；应用内需要静态 output 类型时直接调用原 command object。
 
-Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 把 registration 绑定到 Plugin generation effects：stop、replacement、rollback 和 shutdown 会撤销 publication，并在 owner 离开 running generation 时关闭新 invocation、组合 call/owner signal、等待已接纳调用退出。手动 dispose 只撤销未来发现，不会取消已经开始的调用。
+Pluxel Plugin 应使用 `this.ctx.commands.register(jobStatus)`。Runtime 把 registration 绑定到 Plugin generation effects：stop、replacement、rollback 和 shutdown 会撤销 publication，并在 owner 离开 running generation 时关闭新 invocation、组合 call/owner signal、等待已接纳调用退出。手动 dispose 会撤销未来发现，并让此前缓存到的 runtime command wrapper 在后续新调用中返回 `COMMAND_NOT_FOUND`；它不会取消已经进入执行的调用，也不会关闭同 owner 其他 command 的 admission。
 
 ## 5. Agent tool 投影与 allowlist
 

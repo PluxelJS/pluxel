@@ -17,9 +17,6 @@
   representation、first-class multi-instance、Context kernel、Workbench transport、binding 与 catalog 简化研究。
 - [`OFFICIAL_TELEMETRY_PLUGIN.md`](OFFICIAL_TELEMETRY_PLUGIN.md)：服务器 metrics/traces/events 的信号与所有权边界，
   以及不建立通用 Telemetry umbrella API 的约束。
-- [`SPATIOTEMPORAL_COMPOSABILITY_HARDENING.md`](SPATIOTEMPORAL_COMPOSABILITY_HARDENING.md)：以 Cordis 论文为坐标，研究
-  lifecycle semantics、model-based transition 测试、provider withdrawal、system boundary 与 dependency compatibility
-  diagnostics。
 - [`WORKBENCH_INSIGHTFLARE_ANALYTICS.md`](WORKBENCH_INSIGHTFLARE_ANALYTICS.md)：Workbench 使用 InsightFlare 分析页面性能、
   插件运行覆盖、失败状态与发行观测时的 host policy、脱敏和关闭边界。
 
@@ -28,5 +25,8 @@ Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [
 
 数据库与 Workbench 的已实施结论见 [`../DATABASE.md`](../DATABASE.md) 与
 [`../WORKBENCH.md`](../WORKBENCH.md)。
+
+时空可组合性研究中已经落地的维护者思考见
+[`../SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](../SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)。
 
 Static distribution 的已实施结论见 [`../DISTRIBUTION.md`](../DISTRIBUTION.md)。

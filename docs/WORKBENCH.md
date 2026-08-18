@@ -225,6 +225,8 @@ owner 的数据时组合多个获授权 resource snapshot，不建立跨插件 S
 
 - transport 只接受 opaque grant，不接受 plugin/resource namespace；
 - owner stop/replacement 撤销 database query subscription 和 resource grant；
+- events producer cleanup 在 owner withdrawal 与 browser disconnect 交错时至多执行一次；detached channel 标记为 closed，
+  迟到 send/emit 被丢弃；
 - rollback 重新 mount 并签发新 lease，不复活旧 lease；
 - disabled Workbench 不执行 query、不订阅 outbox，也不创建 browser cache、route 或 transport；
 - active variants、rows 与 serialized bytes 受 server quota 限制；idle variant 按 LRU 回收，并发 invalidation 合并重跑；

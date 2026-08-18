@@ -79,6 +79,6 @@ last-known-good 与 grant lifecycle 见 [`WORKBENCH.md`](WORKBENCH.md)。
 ## Resource control
 
 PGlite 的所有 operation 经单连接 scheduler；远端 PG 的 admission concurrency 等于 pool 上限。scheduler 按 owner
-轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 拒绝新 operation、取消未开始任务并撤销 query
-subscription；同 lineage replacement 复用 active instance，新 lineage replacement 得到新 instance。archive 会占用宿主
-存储，但 plugin 无权删除宿主备份或绕过配额策略。
+轮询、公平取队列，限制每 owner pending 数并使排队超时。owner stop 先拒绝新 operation，再等待已接纳的运行中和排队
+operation 排空；live-query subscription 由 Workbench 绑定 cleanup 撤销。同 lineage replacement 复用 active instance，
+新 lineage replacement 得到新 instance。archive 会占用宿主存储，但 plugin 无权删除宿主备份或绕过配额策略。

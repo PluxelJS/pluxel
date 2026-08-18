@@ -44,7 +44,9 @@ registry registration to the calling plugin Context's effects, so stop, replacem
 and shutdown remove future discovery and lookup automatically. Runtime registration also wraps execution
 in the owner's internal invocation gate. Leaving the running generation closes admission, aborts the
 combined call/owner signal, and waits for admitted invocations before generation effects drain. A manually
-disposed registration only withdraws publication and does not cancel work that already started.
+disposed runtime registration withdraws publication, rejects later calls through previously cached runtime
+wrappers with `COMMAND_NOT_FOUND`, and does not cancel work that already entered execution or close owner
+admission for sibling registrations.
 
 The runtime's built-in plugin management commands use the same catalog. Unscoped host-control carriers
 consume `ctx.root.commands.list()` and dispatch through `execute()` rather than copying descriptors or

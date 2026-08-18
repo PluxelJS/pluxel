@@ -81,6 +81,76 @@ describe('NodeModuleService', () => {
 		}
 	})
 
+	it('drains a pending update and late cleanup when the owner stops after source detach', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			let publish!: (url: URL) => void | Promise<void>
+			let releaseSetup!: () => void
+			let setupStarted!: () => void
+			const didStartSetup = new Promise<void>((resolve) => (setupStarted = resolve))
+			const releaseSetupGate = new Promise<void>((resolve) => (releaseSetup = resolve))
+			let sourceDisposed!: () => void
+			const didDisposeSource = new Promise<void>((resolve) => (sourceDisposed = resolve))
+			const events: string[] = []
+			const detach = host.ctx.nodeModules.attachSourceBinder(async (_declaration, onUpdate) => {
+				publish = onUpdate
+				return {
+					url: new URL('file:///cache/initial.mjs'),
+					dispose: () => {
+						events.push('source:dispose')
+						sourceDisposed()
+					},
+				}
+			})
+
+			@Plugin({ displayName: 'PendingNodeModuleConsumer' })
+			class PendingNodeModuleConsumer extends BasePlugin {
+				override async init() {
+					await this.ctx.nodeModules.use(declaration, async (url) => {
+						events.push(`setup:${url.pathname}`)
+						if (url.pathname.endsWith('/next.mjs')) {
+							setupStarted()
+							await releaseSetupGate
+						}
+						return () => void events.push(`cleanup:${url.pathname}`)
+					})
+				}
+			}
+
+			lowerTestPlugin(PendingNodeModuleConsumer)
+			host.add(PendingNodeModuleConsumer)
+			host.cfg(PendingNodeModuleConsumer).enable()
+			await host.commit()
+			const pendingUpdate = Promise.resolve(publish(new URL('file:///cache/next.mjs')))
+			await didStartSetup
+
+			detach()
+			expect(events).toEqual(['setup:/cache/initial.mjs', 'setup:/cache/next.mjs'])
+
+			host.remove(PendingNodeModuleConsumer)
+			let stopped = false
+			const stopping = host.commit().then((): void => {
+				stopped = true
+				return undefined
+			})
+			await didDisposeSource
+			expect(stopped).toBe(false)
+
+			releaseSetup()
+			await pendingUpdate
+			await stopping
+			expect(events).toEqual([
+				'setup:/cache/initial.mjs',
+				'setup:/cache/next.mjs',
+				'source:dispose',
+				'cleanup:/cache/next.mjs',
+				'cleanup:/cache/initial.mjs',
+			])
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('loads the lowered artifact from a packaged/static root', async () => {
 		await using fixture = await createFixture()
 		const artifactRoot = `${fixture.path}/artifacts/node`

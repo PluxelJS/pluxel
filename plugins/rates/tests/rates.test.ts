@@ -7,6 +7,7 @@ import {
 	RatesInvalidArgumentError,
 	RatesPlugin,
 	RatesPolicyConflictError,
+	RatesStoppedError,
 	RatesUnavailableError,
 	type RateLimiter,
 	type RatePolicy,
@@ -225,6 +226,56 @@ describe('@pluxel/rates public API', () => {
 		})
 	})
 
+	it('revokes cached limiter handles when the Rates provider stops', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			await host.commit()
+			const limiter = host.require(ConsumerA).local
+			await expect(limiter.consume('live')).resolves.toMatchObject({ denied: false })
+
+			host.remove(RatesPlugin)
+			await host.commit()
+
+			await expect(limiter.consume('late')).rejects.toBeInstanceOf(RatesStoppedError)
+		})
+	})
+
+	it('revokes caller-local and global limiter handles when the caller stops', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA, ConsumerB])
+			await host.commit()
+			const a = host.require(ConsumerA)
+			const b = host.require(ConsumerB)
+			await expect(a.shared.consume('shared')).resolves.toMatchObject({ denied: false })
+
+			host.remove(ConsumerA)
+			await host.commit()
+
+			await expect(a.local.consume('late')).rejects.toBeInstanceOf(RatesStoppedError)
+			await expect(a.shared.consume('shared')).rejects.toBeInstanceOf(RatesStoppedError)
+			await expect(b.shared.consume('shared')).resolves.toMatchObject({ denied: false })
+		})
+	})
+
+	it('revokes cached limiter handles when the backend generation stops and restarts', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			await host.commit()
+			const limiter = host.require(ConsumerA).local
+			await expect(limiter.consume('before')).resolves.toMatchObject({ denied: false })
+
+			host.remove(MemoryRatesBackendPlugin)
+			await host.commit()
+			await expect(limiter.consume('after')).rejects.toBeInstanceOf(RatesStoppedError)
+
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			await host.commit()
+			await expect(host.require(ConsumerA).local.consume('after')).resolves.toMatchObject({
+				denied: false,
+			})
+		})
+	})
+
 	it('does not roll back or revoke an already submitted backend decision', async () => {
 		finishDelayedDecision = undefined
 		await withHost(async (host) => {
@@ -236,6 +287,22 @@ describe('@pluxel/rates public API', () => {
 			if (!finishDelayedDecision) throw new Error('Delayed backend was not invoked')
 			finishDelayedDecision({ denied: false, remaining: 0, resetAt: 1 })
 			await expect(pending).resolves.toEqual({ denied: false, remaining: 0, resetAt: 1 })
+		})
+	})
+
+	it('does not let a stopped memory backend handle recreate its state', async () => {
+		await withHost(async (host) => {
+			host.add([MemoryRatesBackendPlugin, RatesPlugin, ConsumerA])
+			await host.commit()
+			const backend = host.require(MemoryRatesBackendPlugin)
+			await backend.consume({ key: 'saved', owner: null, policy: Fixed, cost: 1 })
+
+			host.remove([ConsumerA, RatesPlugin, MemoryRatesBackendPlugin])
+			await host.commit()
+
+			await expect(
+				backend.consume({ key: 'late', owner: null, policy: Fixed, cost: 1 }),
+			).rejects.toBeInstanceOf(RatesStoppedError)
 		})
 	})
 })

@@ -275,15 +275,17 @@ Lookup by a runtime string cannot infer a particular output type, so registry an
 return `unknown`. Call the original `Command` object when application code needs statically inferred
 output; validate or narrow dynamic dispatch output in a carrier.
 
-The owner that registers a command owns the disposer. In a Pluxel plugin, bind it to `ctx.effects`.
-Disposal removes future lookup and discovery; it does not cancel an invocation that already obtained
-the command. Abort in-flight work through its call-scoped `signal` when the host requires that policy.
+The owner that registers a command owns the disposer. In a standalone `CommandRegistry`, disposal removes
+future lookup and discovery; command objects already held by application code remain ordinary executable
+objects, and disposal does not cancel calls that already started. Abort in-flight work through its
+call-scoped `signal` when the host requires that policy.
 
 `@pluxel/runtime` provides this ownership binding through `ctx.commands.register(command)`. Runtime
 plugins should use that service; it also closes owner admission, aborts the combined owner/call signal,
 and drains admitted invocations before the plugin stops. Direct registry construction remains
 lifecycle-neutral for standalone hosts and carrier implementations. Manually disposing one runtime
-registration still only withdraws publication and does not cancel a call that already started.
+registration withdraws publication, makes cached runtime command wrappers reject later calls with
+`COMMAND_NOT_FOUND`, and does not cancel a call that already started.
 
 ## Project Agent/MCP tool information
 

@@ -331,7 +331,7 @@ function OrdersWorkspace() {
 
 `ctx.workbench.mount()` 在 disabled 时仍是安全 no-op author gate。Plugin 不先判断 enabled 再执行一套不同业务逻辑。
 
-HMR replacement 会撤销旧 layout binding、RPC factory、events/live query 和 grant，再以新 generation mount。浏览器只能访问当前 target 获得的 opaque grant，不能按 Plugin namespace 读取其他 resource。
+HMR replacement 会撤销旧 layout binding、RPC factory、events/live query 和 grant，再以新 generation mount。浏览器只能访问当前 target 获得的 opaque grant，不能按 Plugin namespace 读取其他 resource。events producer 的 cleanup 由 owner 撤销和浏览器断连共享同一资源归属路径；两者交错时 cleanup 只执行一次，detached channel 的迟到 send/emit 会被忽略。
 
 ### Artifact 与测试
 

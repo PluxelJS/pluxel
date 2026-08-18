@@ -180,6 +180,66 @@ describe('CommandsService', () => {
 		}
 	})
 
+	it('manual dispose revokes cached command wrappers without cancelling entered work', async () => {
+		const host = createRuntimeHost({ workbench: false })
+		try {
+			let disposeManual!: () => void
+			let started!: () => void
+			let release!: () => void
+			const didStart = new Promise<void>((resolve) => (started = resolve))
+			const gate = new Promise<void>((resolve) => (release = resolve))
+
+			@Plugin({ displayName: 'ManualCommandOwner' })
+			class ManualCommandOwner extends BasePlugin {
+				override init(): void {
+					const registration = this.ctx.commands.register(
+						defineCommand({
+							name: 'owner.manual.dispose',
+							description: 'Run until its manual registration is disposed.',
+							behavior: { kind: 'query', world: 'closed' },
+							input: obj({}),
+							output: obj({ completed: Type.Boolean() }),
+							async execute() {
+								started()
+								await gate
+								return { completed: true }
+							},
+						}),
+					)
+					disposeManual = () => registration.dispose()
+					this.ctx.commands.register(valueCommand('live', 'owner.manual.sibling'))
+				}
+			}
+
+			lowerTestPlugin(ManualCommandOwner)
+			host.add(ManualCommandOwner)
+			host.cfg(ManualCommandOwner).enable()
+			await host.commit()
+			const captured = host.ctx.commands.get('owner.manual.dispose')!
+			const pending = captured.executeOrThrow({}, {})
+			await didStart
+
+			disposeManual()
+			expect(host.ctx.commands.get('owner.manual.dispose')).toBeUndefined()
+			await expect(captured.execute({}, {})).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'COMMAND_NOT_FOUND' },
+			})
+			await expect(host.ctx.commands.execute('owner.manual.dispose', {})).resolves.toMatchObject({
+				ok: false,
+				error: { code: 'COMMAND_NOT_FOUND' },
+			})
+			await expect(host.ctx.commands.executeOrThrow('owner.manual.sibling', {})).resolves.toEqual({
+				value: 'live',
+			})
+
+			release()
+			await expect(pending).resolves.toEqual({ completed: true })
+		} finally {
+			await host.dispose()
+		}
+	})
+
 	it('rolls back registrations when plugin startup fails', async () => {
 		const host = createRuntimeHost({ workbench: false })
 		try {

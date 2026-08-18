@@ -62,6 +62,7 @@ type StreamSubscription = {
 type SessionHandler = {
 	namespace: string
 	cleanup?: () => void | Promise<void>
+	abort?: () => void
 }
 
 type SessionState = {
@@ -195,21 +196,17 @@ export class WorkbenchEventsService {
 		httpCtx: SseHttpContext,
 		query: URLSearchParams,
 		owner: Context,
+		isAttached: () => boolean,
+		onAbort: (cb: () => void) => void,
 	): Omit<SseChannel, 'namespace' | 'send' | 'emit'> {
 		return {
 			query,
 			http: httpCtx,
 			ctx: owner,
 			get closed() {
-				return !session.isConnected
+				return !session.isConnected || !isAttached()
 			},
-			onAbort: (cb) => {
-				if (!session.isConnected) {
-					cb()
-					return
-				}
-				session.once('disconnected', cb)
-			},
+			onAbort,
 		}
 	}
 
@@ -232,13 +229,54 @@ export class WorkbenchEventsService {
 			return
 		}
 
+		const attachment: SessionHandler = { namespace }
+		const abortCallbacks = new Set<() => void>()
+		let aborted = false
+		const abortAttachment = () => {
+			if (aborted) return
+			aborted = true
+			const callbacks = [...abortCallbacks]
+			abortCallbacks.clear()
+			for (const cb of callbacks) {
+				try {
+					cb()
+				} catch (error) {
+					this.ctx.logger.warn('abort callback failed for "{namespace}"', {
+						namespace,
+						error,
+					})
+				}
+			}
+		}
+		const isAttached = () =>
+			!aborted &&
+			state.handlers.get(key) === attachment &&
+			state.requested.get(key) === namespace &&
+			this.resources.get(namespace) === registered
+		attachment.abort = abortAttachment
+
 		const base = this.createChannelBase(
 			session,
 			httpCtx,
 			state.query ?? new URL(session.getRequest().url).searchParams,
 			registered.owner,
+			isAttached,
+			(cb) => {
+				let called = false
+				const run = () => {
+					if (called) return
+					called = true
+					abortCallbacks.delete(run)
+					cb()
+				}
+				if (!session.isConnected || !isAttached()) {
+					run()
+					return
+				}
+				abortCallbacks.add(run)
+				session.once('disconnected', run)
+			},
 		)
-		const attachment: SessionHandler = { namespace }
 		state.handlers.set(key, attachment)
 		const channel = this.createChannel(key, session, base)
 		const cleanup = await this.runHandler(registered.handler, channel)
@@ -248,6 +286,7 @@ export class WorkbenchEventsService {
 			state.requested.get(key) !== namespace ||
 			this.resources.get(namespace) !== registered
 		) {
+			this.abortAttachment(attachment)
 			if (cleanup) this.runCleanup(cleanup, namespace)
 			if (state.handlers.get(key) === attachment) state.handlers.delete(key)
 			return
@@ -261,7 +300,7 @@ export class WorkbenchEventsService {
 		base: Omit<SseChannel, 'namespace' | 'send' | 'emit'>,
 	): SseChannel {
 		const send = (payload: SsePayload) => {
-			if (!session.isConnected) return
+			if (base.closed) return
 			const message = this.normalizePayload(namespace, payload)
 			if (!message) return
 			try {
@@ -278,7 +317,18 @@ export class WorkbenchEventsService {
 			extras?: Omit<SseEventPayload, 'data' | 'event'>,
 		) => send({ ...extras, event, data })
 
-		return { namespace, ...base, send, emit }
+		return {
+			namespace,
+			query: base.query,
+			http: base.http,
+			ctx: base.ctx,
+			get closed() {
+				return base.closed
+			},
+			onAbort: base.onAbort,
+			send,
+			emit,
+		}
 	}
 
 	private normalizePayload(
@@ -402,6 +452,7 @@ export class WorkbenchEventsService {
 		}
 
 		for (const attachment of session.state.handlers.values()) {
+			this.abortAttachment(attachment)
 			if (!attachment.cleanup) continue
 			this.runCleanup(attachment.cleanup, attachment.namespace)
 		}
@@ -412,6 +463,7 @@ export class WorkbenchEventsService {
 		for (const session of this.sessions) {
 			for (const [key, attachment] of session.state.handlers) {
 				if (attachment.namespace !== namespace) continue
+				this.abortAttachment(attachment)
 				if (attachment.cleanup) this.runCleanup(attachment.cleanup, namespace)
 				session.state.handlers.delete(key)
 				if (session.isConnected && session.state.requested.get(key) === namespace) {
@@ -419,6 +471,11 @@ export class WorkbenchEventsService {
 				}
 			}
 		}
+	}
+
+	private abortAttachment(attachment: SessionHandler) {
+		attachment.abort?.()
+		attachment.abort = undefined
 	}
 
 	private runCleanup(cleanup: () => void | Promise<void>, namespace: string) {

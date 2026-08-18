@@ -466,7 +466,8 @@ const ensureMutableSlotList = (
 		markSlot(mutatedMarks, mutatedSlots, slot)
 		return created
 	}
-	if (mutatedMarks[slot] === 1) return current as Slot[]
+	// A marked slot may have been collapsed back to the shared empty sentinel.
+	if (mutatedMarks[slot] === 1 && current !== emptySlotArray) return current as Slot[]
 	const next = [...current]
 	table[slot] = next
 	markSlot(mutatedMarks, mutatedSlots, slot)

@@ -112,7 +112,10 @@ export class CommandsService {
 		command: AnyCommand,
 		state = this.rootState(),
 	): Registration {
-		const registration = state.registry.register(bindCommandOwner(owner, command))
+		let manuallyDisposed = false
+		const registration = state.registry.register(
+			bindCommandOwner(owner, command, () => !manuallyDisposed),
+		)
 		this.bumpCatalog(state)
 		let active = true
 		const cleanup = () => {
@@ -134,6 +137,7 @@ export class CommandsService {
 		return Object.freeze({
 			name: registration.name,
 			dispose() {
+				manuallyDisposed = true
 				guard.cancel()
 				cleanup()
 			},
@@ -165,8 +169,13 @@ export class CommandsService {
 	}
 }
 
-function bindCommandOwner(owner: CoreContext, command: AnyCommand): AnyCommand {
+function bindCommandOwner(
+	owner: CoreContext,
+	command: AnyCommand,
+	isRegistrationActive: () => boolean,
+): AnyCommand {
 	const executeOrThrow = async (candidate: unknown, context?: CommandContext): Promise<unknown> => {
+		if (!isRegistrationActive()) throw commandNotFound(command.name)
 		let lease
 		try {
 			lease = enterOwnerInvocation(owner, context?.signal)
@@ -201,6 +210,13 @@ function bindCommandOwner(owner: CoreContext, command: AnyCommand): AnyCommand {
 			}
 		},
 	}
+}
+
+function commandNotFound(name: string): CommandError<'COMMAND_NOT_FOUND'> {
+	return new CommandError('COMMAND_NOT_FOUND', 'Command not found', {
+		message: `Command "${name}" is not registered`,
+		details: { name },
+	})
 }
 
 function cancellationError(error: unknown): CommandError {

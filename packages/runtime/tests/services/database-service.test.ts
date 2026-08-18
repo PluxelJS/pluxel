@@ -242,6 +242,38 @@ describe('DatabaseService', () => {
 		}
 	}, 30_000)
 
+	it('rejects new operations from a cached handle after owner teardown', async () => {
+		const definition = databaseFixture('cached-owner-handle')
+		const host = databaseHost
+		try {
+			@Plugin({ displayName: 'CachedDatabaseHandlePlugin' })
+			class CachedDatabaseHandlePlugin extends BasePlugin {
+				db!: PluginDatabaseHandle<typeof definition.database>
+				override async init() {
+					this.db = await this.ctx.database.use(definition.database)
+				}
+			}
+
+			lowerTestPlugin(CachedDatabaseHandlePlugin)
+			host.add(CachedDatabaseHandlePlugin)
+			host.cfg(CachedDatabaseHandlePlugin).enable()
+			await host.commit()
+			const database = host.require(CachedDatabaseHandlePlugin).db
+
+			host.remove(CachedDatabaseHandlePlugin)
+			await host.commit()
+
+			await expect(database.read((db) => db.select().from(definition.items))).rejects.toThrow(
+				'database handle owner has stopped',
+			)
+			expect(() => subscribeDatabaseHandle(database, [definition.items], () => undefined)).toThrow(
+				'database handle owner has stopped',
+			)
+		} finally {
+			await resetRuntimeHost(host)
+		}
+	}, 30_000)
+
 	it('runs migrations and isolates same-named tables by canonical plugin owner', async () => {
 		const definition = databaseFixture()
 		const host = databaseHost

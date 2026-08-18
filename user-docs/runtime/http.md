@@ -149,6 +149,8 @@ enableExtraRoutes() {
 }
 ```
 
+`dispose()` 或 Plugin stop/replacement 后，旧 handle 不能再替换路由。异步回调需要先确认当前 generation 仍拥有该 handle。
+
 大多数配置变化更适合由 host restart Plugin，建立新 generation；不要用 route replacement 模拟完整 lifecycle。
 
 ## 测试

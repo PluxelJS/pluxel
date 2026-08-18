@@ -40,6 +40,31 @@ describe('HttpService host.routes', () => {
 		})
 	})
 
+	it('does not let a stale host route disposer remove a replacement with the same id', async () => {
+		await withRuntimeHost(async (host) => {
+			const first = host.ctx.http.host.routes((app) => app.get('/', () => 'v1'), {
+				id: 'test:replaceable',
+				path: '/replaceable',
+			})
+			const second = host.ctx.http.host.routes((app) => app.get('/', () => 'v2'), {
+				id: 'test:replaceable',
+				path: '/replaceable',
+			})
+
+			first.dispose()
+			let res = await host.ctx.http.fetch(new Request('http://local/replaceable'))
+			expect(res.status).toBe(200)
+			expect(await res.text()).toBe('v2')
+			expect(() => first.replaceRoutes((app) => app.get('/', () => 'stale'))).toThrow(
+				'HTTP route handle is disposed',
+			)
+
+			second.dispose()
+			res = await host.ctx.http.fetch(new Request('http://local/replaceable'))
+			expect(res.status).toBe(404)
+		})
+	})
+
 	it('rejects ambiguous ownership of the same mount path', async () => {
 		await withRuntimeHost(async (host) => {
 			host.ctx.http.host.routes((app) => app.get('/', () => 'first'), {

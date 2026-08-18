@@ -51,6 +51,31 @@ class ReservedPublicHttpPlugin extends BasePlugin {
 	}
 }
 
+let staleRouteHandle: ElysiaRouteHandle | undefined
+
+@Plugin()
+class StaleRouteHandlePlugin extends BasePlugin {
+	override init() {
+		staleRouteHandle = this.ctx.http.plugin.routes((app) => app.get('/', () => 'v1'))
+	}
+}
+
+let inFlightRouteEntered: (() => void) | undefined
+let inFlightRouteRelease: Promise<void> | undefined
+
+@Plugin()
+class InFlightRoutePlugin extends BasePlugin {
+	override init() {
+		this.ctx.http.plugin.routes((app) =>
+			app.get('/slow', async () => {
+				inFlightRouteEntered?.()
+				await inFlightRouteRelease
+				return 'completed'
+			}),
+		)
+	}
+}
+
 describe('HttpService plugin-scoped mount', () => {
 	it('mounts plugin routes under the canonical owner key and auto-disposes on unload', async () => {
 		await withRuntimeHost(async (host) => {
@@ -149,5 +174,65 @@ describe('HttpService plugin-scoped mount', () => {
 			})
 			expect(host.isRunning(ReservedPublicHttpPlugin)).toBe(false)
 		})
+	})
+
+	it('does not let a stale plugin route handle republish after owner stop', async () => {
+		staleRouteHandle = undefined
+		await withRuntimeHost(async (host) => {
+			host.add(StaleRouteHandlePlugin)
+			host.cfg(StaleRouteHandlePlugin).enable()
+			await host.commit()
+			const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(StaleRouteHandlePlugin))
+			const url = `http://local${PLUGIN_HTTP_BASE}/${ownerKey}`
+
+			const mounted = await host.ctx.http.fetch(new Request(url))
+			expect(mounted.status).toBe(200)
+			expect(await mounted.text()).toBe('v1')
+
+			host.remove(StaleRouteHandlePlugin)
+			await host.commit()
+			const removed = await host.ctx.http.fetch(new Request(url))
+			expect(removed.status).toBe(404)
+			expect(() => staleRouteHandle?.replaceRoutes((app) => app.get('/', () => 'revived'))).toThrow(
+				'HTTP route handle is disposed',
+			)
+			const revived = await host.ctx.http.fetch(new Request(url))
+			expect(revived.status).toBe(404)
+		})
+	})
+
+	it('withdraws future plugin routes without cancelling an entered fetch', async () => {
+		let release: (() => void) | undefined
+		inFlightRouteRelease = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		const entered = new Promise<void>((resolve) => {
+			inFlightRouteEntered = resolve
+		})
+		try {
+			await withRuntimeHost(async (host) => {
+				host.add(InFlightRoutePlugin)
+				host.cfg(InFlightRoutePlugin).enable()
+				await host.commit()
+				const ownerKey = pluginNodePhysicalKey(pluginNodeAddressOf(InFlightRoutePlugin))
+				const url = `http://local${PLUGIN_HTTP_BASE}/${ownerKey}/slow`
+				const pending = host.ctx.http.fetch(new Request(url))
+				await entered
+
+				host.remove(InFlightRoutePlugin)
+				await host.commit()
+				const removed = await host.ctx.http.fetch(new Request(url))
+				expect(removed.status).toBe(404)
+				release?.()
+
+				const completed = await pending
+				expect(completed.status).toBe(200)
+				expect(await completed.text()).toBe('completed')
+			})
+		} finally {
+			release?.()
+			inFlightRouteEntered = undefined
+			inFlightRouteRelease = undefined
+		}
 	})
 })

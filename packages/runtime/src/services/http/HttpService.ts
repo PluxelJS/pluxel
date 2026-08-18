@@ -454,8 +454,12 @@ export class HttpService {
 	}
 
 	private mountAtPath(ownerCtx: PluxelContext, spec: MountedBoundarySpec): HttpBoundaryHandle {
-		const slot = this.upsertMounted(spec)
+		let slot: MountedBoundary | undefined
+		let active = true
 		const dispose = () => {
+			if (!active) return
+			active = false
+			if (!slot || this.mounted.get(slot.id) !== slot) return
 			if (this.mounted.delete(slot.id)) {
 				this.refreshMountedIndex()
 				this.rebuildRootApp()
@@ -463,10 +467,19 @@ export class HttpService {
 			}
 		}
 		const guard = ownerCtx.effects.defer(dispose)
+		try {
+			slot = this.upsertMounted(spec)
+		} catch (error) {
+			guard.cancel()
+			throw error
+		}
 
 		return {
 			replace: (boundary) => {
-				this.upsertMounted({ ...spec, boundary })
+				if (!active || !guard.active || !slot || this.mounted.get(slot.id) !== slot) {
+					throw new Error('[pluxel/http] HTTP route handle is disposed')
+				}
+				slot = this.upsertMounted({ ...spec, boundary })
 				this.requestFullReload()
 			},
 			dispose: () => guard.dispose(),

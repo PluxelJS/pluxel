@@ -230,6 +230,49 @@ describe('DraftGraph', () => {
 		expect(committed.optionalConsumers(TOKEN)).toEqual([OptionalConsumer])
 	})
 
+	it('does not mutate shared empty dependent lists during replacement retargeting', () => {
+		const TOKEN = Symbol('TOKEN')
+		class Provider {}
+		class ProviderReplacement {}
+		class RequiredConsumer {}
+		class OptionalConsumer {}
+		class Independent {}
+
+		const draft = new DraftGraph()
+		draft.put(classProvider({ key: Provider, tokens: [TOKEN], use: Provider }))
+		draft.put(classProvider({ key: RequiredConsumer, deps: [TOKEN], use: RequiredConsumer }))
+		draft.put(
+			classProvider({
+				key: OptionalConsumer,
+				optionalDeps: [TOKEN],
+				use: OptionalConsumer,
+			}),
+		)
+		draft.put(classProvider({ key: Independent, use: Independent }))
+
+		const first = draft.build()
+		expect(first.ok).toBe(true)
+		if (!first.ok) return
+		first.val.commit()
+
+		draft.replace(
+			Provider,
+			classProvider({ key: Provider, tokens: [TOKEN], use: ProviderReplacement }),
+		)
+		const second = draft.build()
+		expect(second.ok).toBe(true)
+		if (!second.ok) return
+
+		expect(second.val.graph.dependentsOf(Provider)).toEqual([RequiredConsumer])
+		expect(second.val.graph.optionalDependentsOf(Provider)).toEqual([OptionalConsumer])
+		expect(second.val.graph.dependentsOf(RequiredConsumer)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(RequiredConsumer)).toEqual([])
+		expect(second.val.graph.dependentsOf(OptionalConsumer)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(OptionalConsumer)).toEqual([])
+		expect(second.val.graph.dependentsOf(Independent)).toEqual([])
+		expect(second.val.graph.optionalDependentsOf(Independent)).toEqual([])
+	})
+
 	it('reuses the token owner index when replacement keeps the same key and aliases', () => {
 		const SERVICE = Symbol('SERVICE')
 		const ALIAS = Symbol('ALIAS')
