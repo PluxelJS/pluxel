@@ -114,9 +114,9 @@ get(target, prop, ctx) {
 
 Declaration merging 能给 `ctx.database` 提供类型，却不会生成 `super(ctx, 'database')` 或 `inject: ['database']`，也不会在 consumer 改用 `ctx.storage` 时同步修改 dependency metadata。Cordis v3 的 `Inject` 类型本身就是 `string[] | Dict<Inject.Meta>`。常量、lint 和封装可以继续加固这套约定，但不能消除重复声明。
 
-### v3 与 v4 都以 Proxy 解释 Context
+### Proxy 是 runtime Context 的解释器
 
-Cordis v3 `3.18.1` 已经从 `Context` constructor 返回 `new Proxy(this, ReflectService.handler)`；Proxy 并不是 v4 才引入的。v4 将 scope/lifecycle 重构为 Fiber，并重新组织 registry 与 reflection，但保留了 module augmentation、Context key、inject 和 Context-wide Proxy lookup 这条主线。
+Cordis v3 `3.18.1` 已经从 `Context` constructor 返回 `new Proxy(this, ReflectService.handler)`；Proxy 并不是 v4 才引入的，也不只是一种 service locator 写法。v4 将 scope/lifecycle 重构为 Fiber，并重新组织 registry 与 reflection，进一步明确了 Context 的双重角色：组件向 Context 写入可回收的 effect，也从 Context 读取会随环境变化的 coeffect。
 
 当前 Cordis v4 的根 Context 大致如下：
 
@@ -132,9 +132,11 @@ export class Context {
 }
 ```
 
-其 `get` trap 统一区分普通属性、service、accessor、inject、isolate、Fiber store、reserved property 和 caller tracing。固定版本实现见 [Context constructor](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/context.ts#L36-L49)、[Proxy handler](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/reflect.ts#L27-L133) 和 [Inject 定义](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/registry.ts#L11-L59)。
+一次 `ctx.database` 读取的含义由访问发生时的 runtime Context 决定。Proxy handler 先区分普通属性和 accessor，再结合当前 Fiber 的 `inject`、Context 的 isolate key、Fiber parent chain 与 active service implementation 寻找值；未声明依赖、依赖尚未 active 和跨 isolate 访问会得到不同结果。`ctx.provide()` 安装或撤销 implementation 时，又会通知相关 Fiber 重新检查依赖并刷新 lifecycle。固定版本实现见 [Context constructor](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/context.ts#L36-L49)、[Proxy handler](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/reflect.ts#L27-L133) 和 [Inject 定义](https://github.com/cordiverse/cordis/blob/8cc9e33fab69e2d0476d126baaf2acb24e6a6ab4/packages/core/src/registry.ts#L11-L59)。
 
-v4 强化了 lifecycle、tracking 和动态解析，但没有把 service identity 从 Context key 迁移到 constructor DI。
+因此，Cordis 的字符串 key 是有意保留的 late binding point。Plugin 不需要 import provider constructor；同一份代码可以在不同 Context、isolate 和 provider incarnation 下运行。Fiber 则同时持有这次 Plugin execution、它产生的 effect，以及它声明的 coeffect 当前是否满足。provider 变化会在 runtime 触发 unload/reload，effect cleanup 使旧组成可以被撤销。这正是 Cordis 所说的时空可组合性：空间上响应依赖环境，时间上回收组件对环境的改变。
+
+从这个角度看，[Cordis #34](https://github.com/cordiverse/cordis/issues/34) 不是 Fiber 路线的结论，更不是 Pluxel 可以长期依赖的差异。关联的 [Cordis #39](https://github.com/cordiverse/cordis/pull/39) 正在用 desired snapshot 与 generation token 分离、ownership-before-execution 和 reentrant-safe disposal 完善同一套 runtime 模型。它说明的是这条路线把依赖变化、旧异步工作、publication 和 cleanup 的一致性明确交给 runtime protocol；实现可以修复并继续演进，架构并不需要因此放弃 Proxy 或 Fiber。
 
 ## 为什么这对 Pluxel 不够
 
