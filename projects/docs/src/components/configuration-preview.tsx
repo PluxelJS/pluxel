@@ -7,7 +7,6 @@ import {
 	Card,
 	Code,
 	Group,
-	MantineProvider,
 	Stack,
 	Text,
 	Title,
@@ -16,6 +15,7 @@ import { useMemo } from 'react'
 import * as v from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { configurationSchema } from './configuration-schema'
+import { MantineThemeProvider } from './mantine-theme-provider'
 
 function JsonValue({ value }: { value: unknown }) {
 	return (
@@ -71,7 +71,7 @@ export function ConfigurationPreview() {
 	}, [])
 
 	return (
-		<MantineProvider>
+		<MantineThemeProvider>
 			<Card id="configuration-preview" radius="md" p="md">
 				<Stack gap="lg">
 					<div>
@@ -105,6 +105,6 @@ export function ConfigurationPreview() {
 					</AutoForm>
 				</Stack>
 			</Card>
-		</MantineProvider>
+		</MantineThemeProvider>
 	)
 }

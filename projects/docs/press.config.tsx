@@ -60,6 +60,9 @@ export default defineConfig({
 	loaderOptions: {
 		slugs(file) {
 			if (file.path === 'docs/README.md') return ['docs']
+			if (file.path.endsWith('/README.md')) {
+				return file.path.slice(0, -'/README.md'.length).split('/')
+			}
 			return undefined
 		},
 	},

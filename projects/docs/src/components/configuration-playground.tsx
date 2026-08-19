@@ -8,7 +8,6 @@ import {
 	Card,
 	Code,
 	Group,
-	MantineProvider,
 	Stack,
 	Text,
 	Title,
@@ -22,6 +21,7 @@ import * as f from 'valibot-form'
 import type { ObjectLikeSchema } from 'valibot-form'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { configurationSchema } from './configuration-schema'
+import { MantineThemeProvider } from './mantine-theme-provider'
 
 const template = `const Config = v.object({
   enabled: v.optional(
@@ -290,7 +290,7 @@ export function ConfigurationPlayground() {
 	}, [schema])
 
 	return (
-		<MantineProvider>
+		<MantineThemeProvider>
 			<Card id="configuration-playground" withBorder radius="md" p="lg">
 				<Stack gap="lg">
 					<div>
@@ -381,6 +381,6 @@ export function ConfigurationPlayground() {
 					</div>
 				</Stack>
 			</Card>
-		</MantineProvider>
+		</MantineThemeProvider>
 	)
 }

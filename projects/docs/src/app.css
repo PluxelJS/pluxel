@@ -13,6 +13,368 @@ html > body[data-scroll-locked] {
 	--removed-body-scroll-bar-size: 0 !important;
 }
 
+.pluxel-mantine-scope {
+	color-scheme: light;
+}
+
+.pluxel-mantine-scope[data-mantine-color-scheme='dark'] {
+	color-scheme: dark;
+}
+
+.pluxel-home {
+	--pluxel-green: #16845b;
+	--pluxel-green-strong: #096643;
+	--pluxel-ink: #17211d;
+	width: 100%;
+	overflow: hidden;
+}
+
+.dark .pluxel-home {
+	--pluxel-green: #48c78e;
+	--pluxel-green-strong: #73dda9;
+	--pluxel-ink: #edf7f1;
+}
+
+.pluxel-hero,
+.pluxel-stage-section,
+.pluxel-hosts,
+.pluxel-plugins {
+	width: min(100% - 3rem, 76rem);
+	margin-inline: auto;
+}
+
+.pluxel-hero {
+	display: grid;
+	grid-template-columns: minmax(0, 0.82fr) minmax(34rem, 1.18fr);
+	align-items: center;
+	gap: 4rem;
+	min-height: min(46rem, calc(100svh - 4rem));
+	padding-block: 5rem 4rem;
+}
+
+.pluxel-kicker {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0 0 1rem;
+	color: var(--pluxel-green);
+	font-size: 0.78rem;
+	font-weight: 700;
+	line-height: 1.3;
+	text-transform: uppercase;
+}
+
+.pluxel-kicker svg {
+	width: 1rem;
+	height: 1rem;
+}
+
+.pluxel-hero h1 {
+	margin: 0;
+	color: var(--pluxel-ink);
+	font-size: 7rem;
+	font-weight: 720;
+	letter-spacing: 0;
+	line-height: 0.95;
+}
+
+.pluxel-hero-lead {
+	max-width: 34rem;
+	margin: 1.75rem 0 0;
+	color: var(--color-fd-muted-foreground);
+	font-size: 1.125rem;
+	line-height: 1.8;
+}
+
+.pluxel-hero-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-top: 2rem;
+}
+
+.pluxel-primary-action,
+.pluxel-secondary-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 2.75rem;
+	padding-inline: 1rem;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.375rem;
+	font-size: 0.9rem;
+	font-weight: 650;
+	transition: background-color 160ms, border-color 160ms, color 160ms;
+}
+
+.pluxel-primary-action {
+	border-color: var(--pluxel-green-strong);
+	background: var(--pluxel-green-strong);
+	color: white;
+}
+
+.dark .pluxel-primary-action {
+	color: #0d2118;
+}
+
+.pluxel-primary-action:hover {
+	background: var(--pluxel-green);
+}
+
+.pluxel-secondary-action:hover {
+	background: var(--color-fd-accent);
+}
+
+.pluxel-primary-action svg,
+.pluxel-host-option svg,
+.pluxel-plugins a svg {
+	width: 1rem;
+	height: 1rem;
+}
+
+.pluxel-runtime-window {
+	overflow: hidden;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.5rem;
+	background: var(--color-fd-card);
+	box-shadow: 0 24px 70px rgb(22 53 40 / 12%);
+}
+
+.dark .pluxel-runtime-window {
+	box-shadow: 0 24px 70px rgb(0 0 0 / 34%);
+}
+
+.pluxel-window-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: 3rem;
+	padding-inline: 1rem;
+	border-bottom: 1px solid var(--color-fd-border);
+	color: var(--color-fd-muted-foreground);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.72rem;
+}
+
+.pluxel-build-state {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	color: var(--pluxel-green);
+}
+
+.pluxel-build-state svg {
+	width: 0.9rem;
+	height: 0.9rem;
+}
+
+.pluxel-runtime-grid {
+	display: grid;
+	grid-template-columns: 1.03fr 0.97fr;
+}
+
+.pluxel-code {
+	min-height: 22rem;
+	margin: 0;
+	padding: 2rem 1.5rem;
+	overflow: auto;
+	border-right: 1px solid var(--color-fd-border);
+	background: color-mix(in srgb, var(--color-fd-muted) 38%, transparent);
+	color: var(--color-fd-foreground);
+	font-size: 0.8rem;
+	line-height: 1.85;
+}
+
+.pluxel-code span { color: #97631a; }
+.pluxel-code em { color: #087f6b; font-style: normal; }
+.dark .pluxel-code span { color: #e1ad60; }
+.dark .pluxel-code em { color: #64d7bd; }
+
+.pluxel-runtime-panel {
+	display: flex;
+	flex-direction: column;
+	padding: 1.5rem;
+}
+
+.pluxel-panel-label {
+	margin: 0 0 1.4rem;
+	color: var(--color-fd-muted-foreground);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.68rem;
+	text-transform: uppercase;
+}
+
+.pluxel-graph-row {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 0.5rem;
+}
+
+.pluxel-graph-row strong {
+	padding: 0.55rem 0.7rem;
+	border: 1px solid var(--color-fd-border);
+	border-left: 3px solid var(--pluxel-green);
+	border-radius: 0.25rem;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.76rem;
+}
+
+.pluxel-graph-row span {
+	padding-left: 0.75rem;
+	color: var(--color-fd-muted-foreground);
+	font-size: 0.68rem;
+}
+
+.pluxel-generation {
+	display: grid;
+	gap: 0.6rem;
+	margin-top: auto;
+	padding-top: 1.5rem;
+}
+
+.pluxel-generation > div {
+	display: flex;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-top: 0.6rem;
+	border-top: 1px solid var(--color-fd-border);
+	font-size: 0.72rem;
+}
+
+.pluxel-generation span { color: var(--color-fd-muted-foreground); }
+.pluxel-status { color: var(--pluxel-green); }
+.pluxel-status span { display: inline-block; width: 0.45rem; height: 0.45rem; margin-right: 0.25rem; border-radius: 50%; background: currentColor; }
+
+.pluxel-stage-section,
+.pluxel-hosts {
+	padding-block: 6rem;
+}
+
+.pluxel-stage-section {
+	border-top: 1px solid var(--color-fd-border);
+}
+
+.pluxel-section-heading {
+	max-width: 43rem;
+}
+
+.pluxel-section-heading h2,
+.pluxel-plugins h2 {
+	margin: 0;
+	color: var(--pluxel-ink);
+	font-size: 2rem;
+	font-weight: 680;
+	letter-spacing: 0;
+	line-height: 1.2;
+}
+
+.pluxel-section-heading > p:last-child,
+.pluxel-plugins p {
+	margin: 1rem 0 0;
+	color: var(--color-fd-muted-foreground);
+	line-height: 1.75;
+}
+
+.pluxel-stages {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0;
+	margin-top: 3rem;
+	border-block: 1px solid var(--color-fd-border);
+}
+
+.pluxel-stage {
+	position: relative;
+	min-width: 0;
+	padding: 2rem;
+}
+
+.pluxel-stage + .pluxel-stage { border-left: 1px solid var(--color-fd-border); }
+.pluxel-stage > svg { width: 1.4rem; height: 1.4rem; color: var(--pluxel-green); }
+.pluxel-stage-index { position: absolute; top: 2rem; right: 2rem; color: var(--color-fd-muted-foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; }
+.pluxel-stage h3 { margin: 1.8rem 0 0; font-size: 1rem; font-weight: 680; }
+.pluxel-stage p { margin: 0.7rem 0 0; color: var(--color-fd-muted-foreground); font-size: 0.875rem; line-height: 1.7; }
+
+.pluxel-hosts {
+	display: grid;
+	grid-template-columns: minmax(0, 0.8fr) minmax(28rem, 1.2fr);
+	gap: 5rem;
+	align-items: end;
+}
+
+.pluxel-host-compare {
+	border-block: 1px solid var(--color-fd-border);
+}
+
+.pluxel-host-option {
+	display: grid;
+	grid-template-columns: 7rem 1fr auto;
+	align-items: center;
+	gap: 1rem;
+	min-height: 5rem;
+	padding-inline: 0.25rem;
+}
+
+.pluxel-host-option + .pluxel-host-option { border-top: 1px solid var(--color-fd-border); }
+.pluxel-host-option > span { color: var(--pluxel-green); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem; }
+.pluxel-host-option strong { font-size: 0.9rem; font-weight: 600; }
+.pluxel-host-option:hover svg { transform: translateX(0.2rem); }
+.pluxel-host-option svg { transition: transform 160ms; }
+
+.pluxel-plugins {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 1.5rem;
+	margin-bottom: 6rem;
+	padding: 2rem;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.5rem;
+}
+
+.pluxel-plugins > svg { width: 2rem; height: 2rem; color: var(--pluxel-green); }
+.pluxel-plugins h2 { font-size: 1.25rem; }
+.pluxel-plugins p { margin-top: 0.35rem; font-size: 0.875rem; }
+.pluxel-plugins a { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--pluxel-green); font-size: 0.875rem; font-weight: 650; }
+
+@media (max-width: 900px) {
+	.pluxel-hero { grid-template-columns: 1fr; gap: 3rem; min-height: auto; padding-block: 4rem; }
+	.pluxel-runtime-window { max-width: 44rem; }
+	.pluxel-hosts { grid-template-columns: 1fr; gap: 2.5rem; }
+}
+
+@media (max-width: 639px) {
+	.pluxel-hero,
+	.pluxel-stage-section,
+	.pluxel-hosts,
+	.pluxel-plugins { width: min(100% - 2rem, 76rem); }
+	.pluxel-hero { padding-block: 3.5rem 3rem; }
+	.pluxel-hero h1 { font-size: 4rem; }
+	.pluxel-hero-lead { font-size: 1rem; }
+	.pluxel-runtime-grid { grid-template-columns: 1fr; }
+	.pluxel-code { min-height: 12rem; max-height: 12rem; padding: 1.2rem 1rem; border-right: 0; border-bottom: 1px solid var(--color-fd-border); font-size: 0.7rem; }
+	.pluxel-runtime-panel { min-height: 0; padding: 0.8rem 1rem; }
+	.pluxel-runtime-panel .pluxel-panel-label,
+	.pluxel-runtime-panel .pluxel-graph-row { display: none; }
+	.pluxel-generation { grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin: 0; padding: 0; }
+	.pluxel-generation > div { display: block; min-width: 0; padding: 0; border: 0; }
+	.pluxel-generation > div > * { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.pluxel-generation strong { margin-top: 0.2rem; font-size: 0.68rem; }
+	.pluxel-window-bar > span:first-child { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.pluxel-stage-section,
+	.pluxel-hosts { padding-block: 4rem; }
+	.pluxel-stages { grid-template-columns: 1fr; }
+	.pluxel-stage + .pluxel-stage { border-top: 1px solid var(--color-fd-border); border-left: 0; }
+	.pluxel-host-option { grid-template-columns: 1fr auto; gap: 0.4rem 1rem; padding-block: 1rem; }
+	.pluxel-host-option > span { grid-column: 1; }
+	.pluxel-host-option strong { grid-column: 1; }
+	.pluxel-host-option svg { grid-column: 2; grid-row: 1 / span 2; }
+	.pluxel-plugins { grid-template-columns: auto 1fr; padding: 1.25rem; }
+	.pluxel-plugins a { grid-column: 2; }
+}
+
 .configuration-example-layout {
 	display: flex;
 	flex-direction: column;
