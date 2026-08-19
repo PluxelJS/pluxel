@@ -17,10 +17,18 @@ Pluxel is currently hosted on GitHub, so current pull requests use
 {
 	"host": "github.com",
 	"username": "your-username",
-	"acceptedAt": "2026-08-17",
-	"claSha256": "<current CLA.md SHA-256>"
+	"acceptedAt": "2026-08-17T03:12:45.000Z",
+	"claSha256": "<current CLA.md SHA-256>",
+	"repository": "PluxelJS/pluxel",
+	"pullRequest": 123,
+	"headSha": "<accepted pull request head commit>",
+	"evidenceUrl": "https://github.com/PluxelJS/pluxel/pull/123#issuecomment-..."
 }
 ```
+
+The repository, pull request, head commit, and public approval comment bind the
+account-level acceptance to a concrete contribution. The registry does not store
+legal names, addresses, or other private identity records.
 
 Print the current CLA hash with:
 

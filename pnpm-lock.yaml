@@ -672,7 +672,7 @@ importers:
   packages/create:
     dependencies:
       '@pluxel/cli':
-        specifier: workspace:0.3.0
+        specifier: workspace:*
         version: link:../cli
 
   packages/rolldown:

@@ -92,8 +92,12 @@ async function approveFromComment() {
 	const entry = {
 		host,
 		username: pullRequest.user.login,
-		acceptedAt: new Date().toISOString().slice(0, 10),
+		acceptedAt: new Date().toISOString(),
 		claSha256,
+		repository: repository(),
+		pullRequest: event.issue.number,
+		headSha: pullRequest.head.sha,
+		evidenceUrl: event.comment.html_url,
 	}
 	const update = await updateSignatureFile(pullRequest, entry)
 
@@ -208,14 +212,36 @@ function validateRegistry(registry) {
 		const entryUser = normalizeUser(signature?.username)
 		const entryHash = signature?.claSha256
 		const entryDate = signature?.acceptedAt
+		const entryRepository = signature?.repository
+		const entryPullRequest = signature?.pullRequest
+		const entryHeadSha = signature?.headSha
+		const entryEvidenceUrl = signature?.evidenceUrl
 
 		if (!entryHost) errors.push(`${label}.host must be a code hosting site hostname`)
 		if (!entryUser) errors.push(`${label}.username must be a code hosting account username`)
-		if (typeof entryDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(entryDate)) {
-			errors.push(`${label}.acceptedAt must be YYYY-MM-DD`)
+		if (
+			typeof entryDate !== 'string' ||
+			!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entryDate)
+		) {
+			errors.push(`${label}.acceptedAt must be an ISO 8601 UTC timestamp`)
 		}
 		if (typeof entryHash !== 'string' || !/^[a-f0-9]{64}$/i.test(entryHash)) {
 			errors.push(`${label}.claSha256 must be a SHA-256 hex digest`)
+		}
+		if (typeof entryRepository !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(entryRepository)) {
+			errors.push(`${label}.repository must be an owner/name repository`)
+		}
+		if (!Number.isSafeInteger(entryPullRequest) || entryPullRequest < 1) {
+			errors.push(`${label}.pullRequest must be a positive integer`)
+		}
+		if (
+			typeof entryHeadSha !== 'string' ||
+			!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(entryHeadSha)
+		) {
+			errors.push(`${label}.headSha must be a Git object ID`)
+		}
+		if (typeof entryEvidenceUrl !== 'string' || !/^https:\/\/\S+$/.test(entryEvidenceUrl)) {
+			errors.push(`${label}.evidenceUrl must be an HTTPS URL`)
 		}
 
 		const key = `${entryHost}/${entryUser}/${String(entryHash).toLowerCase()}`

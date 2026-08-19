@@ -16,6 +16,6 @@
 	],
 	"type": "module",
 	"dependencies": {
-		"@pluxel/cli": "workspace:0.3.0"
+		"@pluxel/cli": "workspace:*"
 	}
 }

@@ -39,3 +39,22 @@ You represent that:
 
 This agreement applies only to contributions you submit to this project. It does
 not grant the project rights to unrelated work.
+
+## License Enforcement Cooperation
+
+To the extent permitted by applicable law, you authorize the project maintainer
+and copyright holder to enforce the licenses under which your contribution is
+distributed. On reasonable request, you agree to provide available information
+confirming your authorship and this license grant, and to execute documents
+reasonably necessary for that enforcement. The project will reimburse reasonable
+pre-approved expenses caused by such cooperation. This section does not transfer
+copyright in your contribution.
+
+## Electronic Acceptance and Records
+
+Submitting the documented CLA approval command from the code-hosting account that
+opened a contribution constitutes your electronic acceptance of this agreement.
+You represent that you control that account and have authority to accept these
+terms. The project may retain the account, host, acceptance timestamp, repository,
+pull request, commit, approval URL, and hash of this agreement as evidence of that
+acceptance.

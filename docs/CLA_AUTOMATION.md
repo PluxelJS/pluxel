@@ -20,6 +20,12 @@ CI records that approval in `.cla/signatures.json` on the pull request branch.
 Pluxel is currently hosted on GitHub, so current pull requests use
 `host: "github.com"`.
 
+Each record preserves the precise UTC acceptance time, repository, pull request,
+accepted head commit, public approval comment URL, and CLA content hash. These
+fields bind an account-level approval to a concrete contribution without placing
+private legal identity data in the repository. Employment authorization or other
+non-public evidence belongs in access-controlled legal records.
+
 The `claSha256` value must match the current `CLA.md` content:
 
 ```sh
@@ -28,6 +34,12 @@ pnpm cla:hash
 
 Changing `CLA.md` intentionally invalidates older signature hashes. Contributors
 must approve the new revision before their next pull request can pass.
+
+The current CLA includes electronic acceptance and reasonable license-enforcement
+cooperation. It does not assign contributor copyright. The named legal steward,
+governing law, and whether the grant provides enforcement standing in relevant
+jurisdictions still require review by qualified counsel before relying on the CLA
+for litigation.
 
 ## GitHub
 

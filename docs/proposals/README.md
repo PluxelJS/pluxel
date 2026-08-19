@@ -11,14 +11,14 @@
 
 当前进行中的提案：
 
-- [`CLI_DISTRIBUTION_AND_CAPABILITY_DISCOVERY.md`](CLI_DISTRIBUTION_AND_CAPABILITY_DISCOVERY.md)：全局/项目本地 CLI 的
-  版本选择、`@pluxel/create` initializer、官方能力发现与暂不开放通用 extension API 的边界。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：尚未证明净收益的 decoratorless Plugin、browser config
   representation、first-class multi-instance、Context kernel、Workbench transport、binding 与 catalog 简化研究。
-- [`OFFICIAL_TELEMETRY_PLUGIN.md`](OFFICIAL_TELEMETRY_PLUGIN.md)：服务器 metrics/traces/events 的信号与所有权边界，
-  以及不建立通用 Telemetry umbrella API 的约束。
-- [`WORKBENCH_INSIGHTFLARE_ANALYTICS.md`](WORKBENCH_INSIGHTFLARE_ANALYTICS.md)：Workbench 使用 InsightFlare 分析页面性能、
-  插件运行覆盖、失败状态与发行观测时的 host policy、脱敏和关闭边界。
+
+CLI 分发、local-first delegation 与官方能力按需加载的已实施约束见 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 和
+[`../../user-docs/development/tooling.md`](../../user-docs/development/tooling.md)。
+
+OpenTelemetry 的当前设计、非目标与上游阻塞见 [`../../plugins/otel/DESIGN.md`](../../plugins/otel/DESIGN.md) 和
+[`../../user-docs/runtime/otel.md`](../../user-docs/runtime/otel.md)。
 
 Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
 [`../RUNTIME.md`](../RUNTIME.md)。

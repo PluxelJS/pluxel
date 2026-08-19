@@ -55,7 +55,7 @@
 		"typescript": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/market": "^0.1.0",
+		"@pluxel/market": "catalog:",
 		"@pluxel/rolldown": "^0.1.0",
 		"@pluxel/runtime-dynamic": "^0.3.0",
 		"oxlint": "^1.58.0",

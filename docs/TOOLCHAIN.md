@@ -2,6 +2,26 @@
 
 Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 
+## CLI distribution and capability ownership
+
+`@pluxel/cli` 是静态命令目录与用户交互 adapter，不是 runtime、构建、HMR 或发行协议的所有者。
+`@pluxel/create` 是与 CLI 同版本发布的 thin initializer，只把参数交给 `pluxel new`；模板、prompt 和安装逻辑
+仍只有 CLI 一份实现。
+
+全局 `pluxel` launcher 在加载命令框架前，从启动 `cwd` 向上查找最近一个直接声明 `@pluxel/cli` 的
+`package.json`。找到时委托该项目 executable；声明存在但安装不完整时失败，不回退到全局版本。CI、package
+scripts 和生成的 workspace 仍固定项目本地 CLI，避免全局升级越过 lockfile。
+
+命令目录保持静态。只有用户选择命令后，CLI 才从启动 `cwd` 的 Node dependency graph 解析已知的官方 owner，
+检查其版本是否满足 CLI 的 optional peer range，并 lazy import 对应 public subpath。命令的 `--root` 是领域输入，
+不改变依赖解析基准。Help、version 与 completion 不扫描 `node_modules`、不 import owner、不访问 registry，也不
+自动安装依赖。
+
+optional owner 保持 external，不得被 CLI bundle 或 nested lazy chunk 内联。缺少 owner、版本不兼容、public
+subpath 缺失和 owner 自身加载失败是四类不同诊断；最后一类必须保留原始 cause。当前没有第三方 CLI provider、
+capability registry、动态命令发现或通用 extension contract。至少出现两个真实的仓库外 provider，并且确实需要
+新增命令后，才重新设计命名冲突、版本协商、信任、取消与 cleanup。
+
 ## Independent source workspaces
 
 `pluxel source` 是 CLI 拥有的开发期 pnpm 编排层。消费仓库只在 `pluxel.sources.jsonc` 声明稳定 Git
