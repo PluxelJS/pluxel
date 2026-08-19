@@ -59,8 +59,10 @@ peer，并在需要独立开发时声明 dev 副本。导入 Drizzle schema/quer
 `drizzle-orm`；它与 Pluxel 高度集成并不意味着能从根或 `@pluxel/runtime` 隐式继承。只有确实要求宿主
 共享 Drizzle 运行时身份的公开边界才改用 peer。
 
-`pnpm governance:check` 固化 workspace 单一来源、catalog 使用、根依赖和具体插件目录边界；它是
-`pnpm verify` 的前置步骤。
+`pnpm governance:check` 是 repository policy 的唯一检查入口，先验证共享 package inventory 的分类规则，
+再固化 workspace 单一来源、catalog 使用、根依赖、具体插件目录边界、工具版本、公开包 metadata、
+内部依赖范围和 Tegami 发布集合。治理检查与 Tegami 从 `scripts/repository-packages.mjs` 读取同一份 inventory；
+`private`、目录类型和发布排除列表不再分别维护。该命令是 `pnpm verify` 的前置步骤。
 
 ## 导出
 

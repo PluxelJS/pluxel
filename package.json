@@ -21,7 +21,6 @@
 	"type": "module",
 	"scripts": {
 		"test": "turbo run test --concurrency=50%",
-		"test:watch": "vitest",
 		"build": "turbo run build",
 		"docs:dev": "pnpm --filter pluxel-docs dev",
 		"docs:build": "pnpm --filter pluxel-docs build",
@@ -29,16 +28,15 @@
 		"typecheck": "turbo run typecheck",
 		"cla:check": "node scripts/check-cla.mjs",
 		"cla:hash": "node scripts/check-cla.mjs --print-hash",
-		"governance:check": "node scripts/check-workspace-governance.mjs",
+		"governance:check": "node --test scripts/repository-packages.test.mjs && node scripts/check-repository-governance.mjs",
 		"bench:core:compare": "scripts/core-bench-compare.sh",
-		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts && pnpm run lint:frontend-types",
+		"lint": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts pncat.config.ts && pnpm run lint:frontend-types",
 		"lint:frontend-types": "oxlint -c oxlint.config.ts --type-aware -A correctness -A suspicious -A perf -D typescript/await-thenable -D typescript/no-array-delete -D typescript/no-base-to-string -D typescript/no-floating-promises -D typescript/no-for-in-array -D typescript/no-misused-promises -D typescript/no-misused-spread -D typescript/only-throw-error -D typescript/prefer-promise-reject-errors -D typescript/use-unknown-in-catch-callback-variable packages/workbench-app/src packages/valibot-form/src/web",
-		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts vitest.config.ts pncat.config.ts --fix",
+		"lint:fix": "oxlint -c oxlint.config.ts --report-unused-disable-directives-severity=error packages plugins projects scripts oxlint.config.ts pncat.config.ts --fix",
 		"format": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --write .",
 		"format:check": "oxfmt -c .oxfmtrc.json --ignore-path .gitignore --ignore-path .oxfmtignore --check .",
-		"verify": "pnpm run release:check && pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test --concurrency=50%",
+		"verify": "pnpm run governance:check && pnpm run lint && pnpm run format:check && pnpm exec turbo run typecheck build test --concurrency=50%",
 		"tegami": "node scripts/tegami.mts",
-		"release:check": "node scripts/check-release-invariants.mjs",
 		"source:local": "node scripts/source-local-project.mjs",
 		"build:gqlens": "turbo run build --filter=@gqlens/core --filter=@gqlens/react --filter=@gqlens/codegen --filter=@gqlens/vite",
 		"generate:gqlens": "pnpm run build:gqlens && node scripts/generate-gqlens.ts",
@@ -60,7 +58,8 @@
 		"turbo": "^2.10.4",
 		"typescript": "catalog:",
 		"unplugin-preprocessor-directives": "^1.2.0",
-		"vitest": "catalog:"
+		"vitest": "catalog:",
+		"yaml": "catalog:"
 	},
 	"lint-staged": {
 		"*.{js,jsx,ts,tsx,cjs,mjs,md,json,jsonc}": [

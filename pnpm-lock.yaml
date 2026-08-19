@@ -493,6 +493,9 @@ catalogs:
     wretch:
       specifier: ^3.0.9
       version: 3.0.9
+    yaml:
+      specifier: ^2.8.2
+      version: 2.9.0
 
 packageExtensionsChecksum: sha256-+L7KYXC7D4CVP/pVY89ymkHqHfYFZOM8WSCMtSUFVFA=
 
@@ -545,6 +548,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
 
   packages/cli:
     dependencies:
@@ -576,7 +582,7 @@ importers:
         specifier: ^7.8.5
         version: 7.8.5
       yaml:
-        specifier: ^2.8.2
+        specifier: 'catalog:'
         version: 2.9.0
     devDependencies:
       '@pluxel/market':

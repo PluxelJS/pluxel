@@ -39,7 +39,7 @@ Explain the observable behavior and any migration requirement.
 
 ## 自动流程
 
-1. Pull request CI 的 `release:check` 解析全部 pending changelog，并验证计划中只有允许发布的公开包。
+1. Pull request CI 的 `governance:check` 解析全部 pending changelog，并验证计划中只有允许发布的公开包。
 2. 变更合并到 `main` 后，CI 完成通用 lint、format、typecheck、build 和 test。
 3. `.github/workflows/release.yml` 由成功 CI 的 `workflow_run` 触发并执行 `pnpm tegami ci`。
 4. 有 pending changelog 时，Tegami 更新 versions、package changelogs 和 lockfile，并创建或更新
@@ -83,5 +83,7 @@ pnpm verify
 CI=true pnpm --filter @pluxel/cli test:templates
 ```
 
-`release:check` 作为 `verify` 的前置步骤，验证精确工具版本、公开 package metadata、consumer peer ranges、
-Tegami draft 和发布集合。模板命令复现整批发布前执行一次的 package boundary smoke，不修改版本或发布。
+`governance:check` 作为 `verify` 的前置步骤，同时验证精确工具版本、workspace 结构、公开 package metadata、
+consumer peer ranges、Tegami draft 和发布集合。模板命令复现整批发布前执行一次的 package boundary smoke，
+不修改版本或发布。公开包判定和 Tegami ignore 都来自共享 repository package inventory：只有
+`packages/*`、`plugins/*` 中未标记 `private` 的包可发布，root、project 和 private package 自动排除。

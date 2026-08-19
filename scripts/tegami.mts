@@ -6,20 +6,10 @@ import { promisify } from 'node:util'
 import { tegami, type TegamiPlugin } from 'tegami'
 import { runCli } from 'tegami/cli'
 import { github } from 'tegami/plugins/github'
+import { repositoryPackages, tegamiIgnoredPackageNames } from './repository-packages.mjs'
 
 const ignoredPackages = [
-	'pluxel',
-	'pluxel-docs',
-	'@pluxel/plugins-host',
-	'@pluxel/context',
-	'@pluxel/runtime-dev',
-	'@pluxel/workbench-app',
-	'@pluxel/cache',
-	'@pluxel/otel',
-	'@pluxel/package-manager',
-	'@pluxel/rates',
-	'@pluxel/redis',
-	'@pluxel/storage',
+	...tegamiIgnoredPackageNames(repositoryPackages),
 	/^@gqlens\//,
 	/^@worksplit\//,
 ]

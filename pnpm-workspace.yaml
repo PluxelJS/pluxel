@@ -54,6 +54,7 @@ catalog:
   undici: ^7.16.0
   vitest: ^4.1.10
   wretch: ^3.0.9
+  yaml: ^2.8.2
 
 managePackageManagerVersions: false
 
