@@ -4,31 +4,84 @@ import {
 	ArrowRight,
 	Boxes,
 	Braces,
-	Check,
 	CircleDot,
+	CloudCog,
 	GitBranch,
+	Gauge,
 	PackageCheck,
 	RefreshCw,
-	ShieldCheck,
+	ServerCog,
+	Settings2,
+	Workflow,
 } from 'lucide-react'
+import { PluginShowcase } from '../components/plugin-showcase'
 
 const HomeLayout = createHomeLayout()
 
 const stages = [
 	{
 		description: '构造函数中的依赖直接成为类型约束，不再另写一份运行时声明。',
+		href: '/docs/getting-started/plugin-model',
 		icon: Braces,
 		title: '从 TypeScript 读取依赖',
 	},
 	{
 		description: '构建阶段生成静态描述，缺失依赖和循环在启动前就能暴露。',
+		href: '/docs/development/tooling',
 		icon: GitBranch,
 		title: '构建可检查的 Plugin 图',
 	},
 	{
 		description: 'Runtime 按代际发布服务；重载、失败和资源清理遵循同一套生命周期。',
+		href: '/docs/getting-started/plugin-model',
 		icon: RefreshCw,
 		title: '让变更完整地生效',
+	},
+]
+
+const hosts = [
+	{
+		description: 'Plugin 清单随应用构建，适合固定部署、审计和可复现发行。开发期仍支持 HMR。',
+		icon: ServerCog,
+		meta: 'Fixed catalog',
+		title: 'Static host',
+	},
+	{
+		description: '运行期间增加或删除 Plugin 文件入口，适合由配置和 package source 驱动的宿主。',
+		icon: CloudCog,
+		meta: 'Mutable sources',
+		title: 'Dynamic host',
+	},
+]
+
+const pluginPaths = [
+	{
+		description: '带宿主出站策略的原生 Wretch client。',
+		href: '/docs/plugins/wretch',
+		icon: Workflow,
+		meta: '@pluxel/wretch',
+		title: 'HTTP client',
+	},
+	{
+		description: '服务端字体、Canvas 与 ECharts 图片渲染。',
+		href: '/docs/plugins/rendering',
+		icon: Gauge,
+		meta: 'Fonts · Canvas · ECharts',
+		title: '服务端渲染',
+	},
+	{
+		description: '隔离缓存、Redis、对象存储与频率控制。',
+		href: '/docs/plugins/cache',
+		icon: PackageCheck,
+		meta: 'Workspace integrations',
+		title: '数据与基础设施',
+	},
+	{
+		description: '用一份 Valibot schema 生成类型、校验和管理表单。',
+		href: '/docs/getting-started/configuration',
+		icon: Settings2,
+		meta: 'Schema-driven',
+		title: '配置与 Workbench',
 	},
 ]
 
@@ -55,33 +108,7 @@ export default function HomePage() {
 						</div>
 					</div>
 
-					<div className="pluxel-runtime-window" aria-label="Pluxel 构建与运行状态示例">
-						<div className="pluxel-window-bar">
-							<span>packages/greeter/src/index.ts</span>
-							<span className="pluxel-build-state"><Check aria-hidden="true" /> graph valid</span>
-						</div>
-						<div className="pluxel-runtime-grid">
-							<pre className="pluxel-code"><code><span>export class</span>{' Greeter {\n'}
-{'  '}<span>constructor</span>{'('}<em>http</em>{': Http, '}<em>logger</em>{': Logger) {}\n\n'}
-{'  '}<span>start</span>{'() {\n'}
-{"    this.logger.info('ready')\n"}
-{'  }\n}'}</code></pre>
-							<div className="pluxel-runtime-panel">
-								<p className="pluxel-panel-label">Generated dependency graph</p>
-								<div className="pluxel-graph-row">
-									<strong>Greeter</strong>
-									<span>requires</span>
-									<strong>Http</strong>
-									<strong>Logger</strong>
-								</div>
-								<div className="pluxel-generation">
-									<div><span>generation</span><strong>#12</strong></div>
-									<div><span>status</span><strong className="pluxel-status"><span /> running</strong></div>
-									<div><span>resources</span><strong>3 owned</strong></div>
-								</div>
-							</div>
-						</div>
-					</div>
+					<PluginShowcase />
 				</section>
 
 				<section className="pluxel-stage-section" aria-labelledby="runtime-model">
@@ -93,44 +120,59 @@ export default function HomePage() {
 						{stages.map((stage, index) => {
 							const Icon = stage.icon
 							return (
-								<article key={stage.title} className="pluxel-stage">
+								<Link key={stage.title} href={stage.href} className="pluxel-stage">
 									<div className="pluxel-stage-index">0{index + 1}</div>
 									<Icon aria-hidden="true" />
 									<h3>{stage.title}</h3>
 									<p>{stage.description}</p>
-								</article>
+									<span className="pluxel-card-link">阅读文档 <ArrowRight aria-hidden="true" /></span>
+								</Link>
 							)
 						})}
 					</div>
 				</section>
 
-				<section className="pluxel-hosts" aria-labelledby="choose-host">
+				<section className="pluxel-docs-section" aria-labelledby="choose-host">
 					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><ShieldCheck aria-hidden="true" /> 明确的宿主边界</p>
+						<p className="pluxel-kicker"><ServerCog aria-hidden="true" /> 两种宿主，共享一套 Plugin API</p>
 						<h2 id="choose-host">按部署方式选择 Runtime</h2>
-						<p>Plugin API 保持一致，宿主只决定依赖图何时生成、何时可以变化。</p>
 					</div>
-					<div className="pluxel-host-compare">
-						<Link href="/docs/getting-started/host-setup" className="pluxel-host-option">
-							<span>Static host</span>
-							<strong>固定部署图，构建时完成验证</strong>
-							<ArrowRight aria-hidden="true" />
-						</Link>
-						<Link href="/docs/getting-started/host-setup" className="pluxel-host-option">
-							<span>Dynamic host</span>
-							<strong>运行时装卸 Plugin，支持配置驱动更新</strong>
-							<ArrowRight aria-hidden="true" />
-						</Link>
+					<div className="pluxel-host-cards">
+						{hosts.map((host) => {
+							const Icon = host.icon
+							return (
+								<Link key={host.title} href="/docs/getting-started/host-setup" className="pluxel-doc-card">
+									<Icon aria-hidden="true" />
+									<span className="pluxel-card-meta">{host.meta}</span>
+									<h3>{host.title}</h3>
+									<p>{host.description}</p>
+									<span className="pluxel-card-link">配置宿主 <ArrowRight aria-hidden="true" /></span>
+								</Link>
+							)
+						})}
 					</div>
 				</section>
 
-				<section className="pluxel-plugins" aria-labelledby="official-plugins">
-					<PackageCheck aria-hidden="true" />
-					<div>
-						<h2 id="official-plugins">需要 HTTP、缓存或可观测性？</h2>
-						<p>核心只定义 Plugin 与 Runtime。服务端能力由官方 Plugin 按需安装。</p>
+				<section className="pluxel-docs-section pluxel-plugin-section" aria-labelledby="official-plugins">
+					<div className="pluxel-section-heading">
+						<p className="pluxel-kicker"><PackageCheck aria-hidden="true" /> 按需安装，不挤进核心</p>
+						<h2 id="official-plugins">从任务进入官方 Plugin</h2>
+						<p>公开 package 与工作区集成分开标注，文档说明真实边界和当前可用状态。</p>
 					</div>
-					<Link href="/docs/plugins">查看官方 Plugin <ArrowRight aria-hidden="true" /></Link>
+					<div className="pluxel-plugin-cards">
+						{pluginPaths.map((item) => {
+							const Icon = item.icon
+							return (
+								<Link key={item.title} href={item.href} className="pluxel-doc-card">
+									<Icon aria-hidden="true" />
+									<span className="pluxel-card-meta">{item.meta}</span>
+									<h3>{item.title}</h3>
+									<p>{item.description}</p>
+									<span className="pluxel-card-link">查看能力 <ArrowRight aria-hidden="true" /></span>
+								</Link>
+							)
+						})}
+					</div>
 				</section>
 			</main>
 		</HomeLayout>
