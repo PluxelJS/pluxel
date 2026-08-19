@@ -62,7 +62,7 @@ TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#priv
 
 ## 默认值只写一次
 
-默认值、normalized output 和错误 fallback 放在同一个可运行示例中：
+默认值只由 schema 提供。下面是正确写法与重复 fallback 的对照：
 
 ```ts twoslash
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
@@ -174,11 +174,10 @@ host.cfg(WorkerPlugin).set({
 	concurrency: 8,
 })
 host.cfg(WorkerPlugin).enable()
+await host.commit()
 ```
 
-static 与 dynamic host 的持久化和 reload 行为由 route launcher 决定；Plugin author contract 不变。环境变量映射、配置文件路径和 readonly 模式见 [配置插件宿主](./host-setup.md)。
-
-配置变化通过 graph commit/restart 创建新 generation。旧 generation 完成 cleanup 后，新实例读取新的冻结配置快照。
+static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin 只读取校验后的配置。配置变化会重启 Plugin，具体清理顺序见 [Plugin 模型与生命周期](./plugin-model.md)。
 
 ## 配置表单
 

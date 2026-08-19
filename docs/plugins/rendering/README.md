@@ -5,7 +5,7 @@ description: 组合 Fonts、Canvas 与 ECharts，在服务端生成图片和图�
 
 # 服务端渲染 Plugin
 
-Pluxel 提供三个可独立安装的服务端渲染 Plugin：
+Pluxel 提供三个服务端渲染 package，按依赖链组合：
 
 | Plugin            | 何时使用                                           |
 | ----------------- | -------------------------------------------------- |

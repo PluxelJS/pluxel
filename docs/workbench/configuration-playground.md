@@ -15,8 +15,6 @@ Valibot schema
 
 打开 [配置 Playground](/playground) 即可开始操作。编辑器中的 `v` 对应文档当前使用的 `valibot`，`f` 对应 `valibot-form`。输入 `v.` 或 `f.` 可以查看由真实包生成的补全、参数类型和文档；Playground 不维护另一份容易过期的类型副本。
 
-独立 Playground 在空间充足时并排显示 schema 编辑器与结果；容器较窄时按操作顺序改为上下排列。表单、Input 和 Output 可以独立折叠。普通文档中的配置示例始终使用纵向顺序，不加载编辑器。
-
 运行代码后：
 
 - 下方表单由返回的 object/intersect schema 生成；
@@ -26,4 +24,4 @@ Valibot schema
 
 Playground 代码只在当前浏览器页面执行。不要粘贴 secret，也不要运行不可信代码。
 
-完整配置约束见 [配置模型](../getting-started/configuration.md)；字段 metadata 与 Web adapter 见 [Valibot 配置表单](./valibot-form.mdx)。普通文档只展示静态代码和渲染结果，不加载编辑器。
+完整配置约束见 [配置模型](../getting-started/configuration.md)；字段 metadata 与 Web adapter 见 [Valibot 配置表单](./valibot-form.mdx)。

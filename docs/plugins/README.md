@@ -18,7 +18,7 @@ Pluxel 的核心 package 提供 Plugin 模型、依赖图、生命周期和宿�
 
 这些 package 已声明公共入口。具体可安装版本以 npm registry 和发布记录为准。
 
-## 尚未公开
+## Workspace 预览（不可安装）
 
 以下 Plugin 目前仍是 Pluxel workspace 的内部集成，不是仓库外项目可以依赖的公开 package。文档用于说明当前能力和验证设计，不构成发布承诺。
 

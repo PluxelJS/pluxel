@@ -43,6 +43,18 @@ export class BadgePlugin extends BasePlugin {
 }
 ```
 
+```ts no-twoslash
+import { CanvasPlugin } from '@pluxel/canvas'
+import { FontsPlugin } from '@pluxel/fonts'
+import { BadgePlugin } from '@acme/badge'
+
+host.add([FontsPlugin, CanvasPlugin, BadgePlugin])
+host.cfg(FontsPlugin).enable()
+host.cfg(CanvasPlugin).enable()
+host.cfg(BadgePlugin).enable()
+await host.commit()
+```
+
 `createCanvas()` 返回上游 native Canvas。2D context、绘图、measure、encode 和 stream API 没有 Pluxel wrapper；创建后的 surface 由 caller 持有。
 
 ## 创建 raster 与 SVG

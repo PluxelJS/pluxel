@@ -18,8 +18,6 @@ npx nypm add @pluxel/wretch
 ```ts twoslash
 import { WretchPlugin, type Wretch } from '@pluxel/wretch'
 import { BasePlugin, Plugin, v } from '@pluxel/runtime'
-import QueryStringAddon from 'wretch/addons/queryString'
-import { retry } from 'wretch/middlewares'
 
 type Customer = { id: string; name: string }
 
@@ -37,10 +35,7 @@ export class CustomerPlugin extends BasePlugin {
 	}
 
 	override init(): void {
-		this.api = this.http.client
-			.url(this.config.baseUrl, true)
-			.addon(QueryStringAddon)
-			.middlewares([retry({ maxAttempts: 2, retryOnNetworkError: true })])
+		this.api = this.http.client.url(this.config.baseUrl, true)
 	}
 
 	find(id: string): Promise<Customer> {
@@ -59,11 +54,19 @@ host.cfg(WretchPlugin).set({
 	maxQueuedRequests: 256,
 	allowedOrigins: ['https://catalog.example'],
 })
+host.cfg(WretchPlugin).enable()
+host.cfg(CustomerPlugin).set({ baseUrl: 'https://catalog.example' })
+host.cfg(CustomerPlugin).enable()
+await host.commit()
 ```
 
 `client` 本身就是 Wretch。Wretch 的 immutable 语义保证不同 consumer 通过 `.url()`、`.options()`、`.headers()`、`.auth()`、`.addon()` 或 `.middlewares()` 派生 client 时不会互相污染。
 
-主入口只导出 `WretchPlugin` 与 `Wretch` 类型，不重新导出裸 `wretch()` factory 或 addons。示例在同一个 immutable chain 中组合上游 addon/middleware；consumer 使用这些扩展时仍应把 `wretch` 声明为自己的 dependency。
+主入口只导出 `WretchPlugin` 与 `Wretch` 类型，不重新导出裸 `wretch()` factory 或 addons。需要 query-string addon、retry middleware 等上游扩展时，由 consumer 直接安装 `wretch`：
+
+```sh package-install
+npx nypm add wretch
+```
 
 ## 宿主 outbound policy
 

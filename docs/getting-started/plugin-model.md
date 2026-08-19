@@ -24,7 +24,6 @@ Plugin 不只是一个由宿主任意调用的类，而是依赖图中可独立�
 从 provider package 根入口 value-import 具体 Plugin，并直接放入 constructor：
 
 ```ts twoslash
-// Twoslash virtual file: real projects import AccountsPlugin from @acme/accounts.
 // @filename: accounts.ts
 import { BasePlugin, Plugin } from '@pluxel/runtime'
 
@@ -49,13 +48,9 @@ class BillingPlugin extends BasePlugin {
 		return this.accounts.listInvoices()
 	}
 }
-
-// The host creates both nodes and supplies the required edge.
-declare const billing: BillingPlugin
-billing.listInvoices()
 ```
 
-示例使用同一个 Twoslash block 的 virtual file 模拟 provider，因此 consumer 的 import、constructor 类型和调用结果可以一起检查。真实项目仍应从 `@acme/accounts` package root 的 named export 导入；virtual file 只提供文档编译所需的最小 provider，不替代 package-root provenance。semantic pass 会记录 constructor 参数顺序、package-root provenance 和 definition address；`@Plugin()` 不重复声明依赖。
+真实项目应从 `@acme/accounts` package root 的 named export 导入 `AccountsPlugin`。构建工具从这个 value import 和 constructor 参数生成 required edge；`@Plugin()` 不再重复声明依赖。
 
 provider 启动失败时，consumer 不会拿到一个半可用实例：consumer 被标记为 blocked，其他无关分支仍可以继续运行。
 
@@ -64,7 +59,6 @@ provider 启动失败时，consumer 不会拿到一个半可用实例：consumer
 如果最终宿主可以完全不安装 provider，使用 type-only import 和 module-level opaque ref：
 
 ```ts twoslash
-// Twoslash virtual file: the real type comes from @acme/audit.
 // @filename: audit.ts
 import { BasePlugin } from '@pluxel/runtime'
 

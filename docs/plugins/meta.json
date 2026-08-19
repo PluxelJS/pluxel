@@ -2,15 +2,15 @@
 	"title": "官方 Plugin",
 	"pages": [
 		"README",
-		"---网络与基础设施---",
+		"---公开 Plugin---",
 		"wretch",
+		"rendering",
+		"---Workspace 预览（不可安装）---",
 		"cache",
 		"rates",
 		"redis",
 		"storage",
 		"otel",
-		"package-manager",
-		"---服务端渲染---",
-		"rendering"
+		"package-manager"
 	]
 }

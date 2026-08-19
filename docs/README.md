@@ -1,25 +1,20 @@
 ---
 title: Pluxel 用户文档
-description: 先认识 Pluxel 的设计，再从第一个插件逐步走向完整宿主。
+description: 从第一个 Plugin 开始，按任务查找 Pluxel 的运行时、官方 Plugin 和交付文档。
 ---
 
 # Pluxel 用户文档
 
-Pluxel 把一项业务能力连同它的依赖、配置和生命周期组织成 Plugin。框架在构建期验证依赖关系，在运行时负责装载、替换和资源回收。
+Pluxel 把业务能力及其依赖、配置和生命周期组织成 Plugin。构建工具检查依赖关系，runtime 负责装载、替换和资源回收。
 
-## 从这里开始
+## 开始使用
 
-- 想先了解项目的来历和设计取舍，阅读[为什么是 Pluxel](./why-pluxel.md)。这篇文档说明 Pluxel 与 Cordis、Koishi 的渊源，以及为什么业务依赖使用构造器注入，而宿主公共能力保留在 Context。
-- 想直接动手，阅读[编写第一个插件](./getting-started/index.md)。你会创建一个带配置和 HTTP 接口的 Plugin，并用真实宿主完成测试。
-
-## 推荐阅读顺序
-
-1. [编写第一个插件](./getting-started/index.md)：完成插件包、配置、实现、宿主启用和生命周期测试。
+1. [编写第一个插件](./getting-started/index.md)：从 CLI 模板完成配置、HTTP 接口和生命周期测试。
 2. [Plugin 模型与生命周期](./getting-started/plugin-model.md)：理解必需依赖、可选集成、版本代际、资源回收和失败传播。
-3. [配置模型](./getting-started/configuration.md)：让一个 Valibot schema 同时提供类型、默认值、校验和管理界面。
-4. [配置插件宿主](./getting-started/host-setup.md)：在静态与动态模式中选择一种，装配可运行的宿主。
+3. [配置模型](./getting-started/configuration.md)：用一份 Valibot schema 提供类型、默认值、校验和管理界面。
+4. [配置插件宿主](./getting-started/host-setup.md)：选择 static 或 dynamic host。
 
-读完这四篇，你就能判断一项能力是否应该成为 Plugin，以及它的依赖、配置、资源和宿主入口分别属于哪里。HTTP、数据库等 runtime 能力可以按需查阅；缓存、Redis、服务端渲染等独立 package 统一列在[官方 Plugin](./plugins/README.md)中。
+项目来源和依赖模型的取舍见[为什么是 Pluxel](./why-pluxel.md)。HTTP、数据库等宿主能力按需查阅；HTTP client、缓存和服务端渲染等独立 package 见[官方 Plugin](./plugins/README.md)。
 
 ## 按任务进入
 
@@ -36,14 +31,4 @@ Pluxel 把一项业务能力连同它的依赖、配置和生命周期组织成 
 | 构建、发布、HMR 或跨仓库联调           | [CLI 与工具链](./development/tooling.md)                                                       |
 | 定位错误或确认公开入口                 | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)          |
 
-## 文档边界
-
-`docs/` 是用户文档的唯一正文来源，可以在仓库或文档网站中阅读。Agent 与维护者使用的
-[工程文档](https://github.com/PluxelJS/pluxel/tree/main/engineering)位于 Pluxel 源码仓库；其中的提案和历史记录不代表当前公开 API。
-
-文档网站还提供以下机器可读入口：
-
-- 索引：`/llms.txt`
-- 全部 Markdown：`/llms-full.txt`
-- 单页 Markdown：`/llms.mdx/docs/<slug>/content.md`
-- 文档页也支持 `/docs/<slug>.md` 和 `Accept: text/markdown`
+`docs/` 记录当前用户 API。源码仓库中的 [engineering](https://github.com/PluxelJS/pluxel/tree/main/engineering) 用于工程设计和历史提案，不作为用户 API 依据。

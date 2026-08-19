@@ -44,6 +44,16 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
+```ts no-twoslash
+import { FontsPlugin } from '@pluxel/fonts'
+import { ReportsPlugin } from '@acme/reports'
+
+host.add([FontsPlugin, ReportsPlugin])
+host.cfg(FontsPlugin).enable()
+host.cfg(ReportsPlugin).enable()
+await host.commit()
+```
+
 系统字体由 `@napi-rs/canvas` 的 platform font manager 在 FontsPlugin 启动时发现。它不会安装或删除操作系统字体，也不会把字体文件发到浏览器。
 
 ## 注册 Plugin 随包携带的字体

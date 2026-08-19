@@ -1,11 +1,13 @@
 ---
 title: 配置插件宿主
-description: 在静态与动态模式中选择一种，装配 Plugin、运行时状态和 Workbench。
+description: 为现有项目选择 static 或 dynamic host，并配置 Plugin 清单、运行状态和 Workbench。
 ---
 
 # 配置插件宿主
 
 Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单由入口文件确定；动态宿主在固定清单之外，还可以监听运行时增删的文件来源。Plugin 的写法不随模式变化，两者共享同一套依赖图、配置、运行时服务和生命周期。
+
+从零创建完整应用时先使用 [app-monorepo 模板](../development/starter-monorepo.md)，模板已经包含可运行的 static host、Vite 和构建配置。本页用于把 Pluxel 接入现有项目。
 
 ## 选择宿主模式
 
@@ -21,6 +23,10 @@ Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单�
 
 ```sh package-install
 npx nypm add @pluxel/runtime @pluxel/runtime-static
+```
+
+```sh package-install
+npx nypm add -D @pluxel/rolldown vite tsdown
 ```
 
 ### Canonical entry
@@ -103,6 +109,10 @@ export default staticApplication({
 
 ```sh package-install
 npx nypm add @pluxel/runtime @pluxel/runtime-dynamic
+```
+
+```sh package-install
+npx nypm add -D vite
 ```
 
 ### Canonical config

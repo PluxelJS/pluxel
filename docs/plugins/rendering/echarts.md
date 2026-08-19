@@ -40,6 +40,20 @@ export class ReportsPlugin extends BasePlugin {
 }
 ```
 
+```ts no-twoslash
+import { CanvasPlugin } from '@pluxel/canvas'
+import { EChartsPlugin } from '@pluxel/echarts'
+import { FontsPlugin } from '@pluxel/fonts'
+import { ReportsPlugin } from '@acme/reports'
+
+host.add([FontsPlugin, CanvasPlugin, EChartsPlugin, ReportsPlugin])
+host.cfg(FontsPlugin).enable()
+host.cfg(CanvasPlugin).enable()
+host.cfg(EChartsPlugin).enable()
+host.cfg(ReportsPlugin).enable()
+await host.commit()
+```
+
 ## render 输入与结果
 
 `render()` 的核心输入是：
