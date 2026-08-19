@@ -26,8 +26,8 @@ FontsPlugin → CanvasPlugin → EChartsPlugin
 
 ## 安装与 catalog
 
-```sh
-pnpm add @pluxel/fonts
+```sh package-install
+npx nypm add @pluxel/fonts
 ```
 
 host catalog 必须包含 `FontsPlugin`。直接使用字体能力的 Plugin 将它声明为 required dependency：

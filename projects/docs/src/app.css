@@ -21,6 +21,86 @@ html > body[data-scroll-locked] {
 	color-scheme: dark;
 }
 
+.package-install {
+	margin-block: 1rem;
+	overflow: hidden;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.5rem;
+	background: var(--color-fd-card);
+}
+
+.package-install-tabs {
+	display: flex;
+	gap: 0.25rem;
+	padding: 0.35rem;
+	border-bottom: 1px solid var(--color-fd-border);
+}
+
+.package-install-tabs button {
+	height: 2rem;
+	min-width: 3.4rem;
+	padding-inline: 0.65rem;
+	border: 0;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: var(--color-fd-muted-foreground);
+	font-size: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.package-install-tabs button[aria-pressed='true'] {
+	background: var(--color-fd-accent);
+	color: var(--color-fd-foreground);
+}
+
+.package-install-tabs button:focus-visible,
+.package-install-command button:focus-visible {
+	outline: 2px solid var(--color-fd-primary);
+	outline-offset: 1px;
+}
+
+.package-install-command {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 2.25rem;
+	align-items: center;
+	gap: 0.75rem;
+	min-height: 3.5rem;
+	padding: 0.6rem 0.7rem 0.6rem 1rem;
+}
+
+.package-install-command code {
+	min-width: 0;
+	overflow-x: auto;
+	color: var(--color-fd-foreground);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.8rem;
+	white-space: nowrap;
+}
+
+.package-install-command button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.25rem;
+	height: 2.25rem;
+	border: 0;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: var(--color-fd-muted-foreground);
+	cursor: pointer;
+}
+
+.package-install-command button:hover {
+	background: var(--color-fd-accent);
+	color: var(--color-fd-foreground);
+}
+
+.package-install-command svg {
+	width: 1rem;
+	height: 1rem;
+}
+
 .pluxel-home {
 	--pluxel-green: #16845b;
 	--pluxel-green-strong: #096643;
@@ -288,6 +368,19 @@ html > body[data-scroll-locked] {
 .pluxel-stage p { margin: 0.7rem 0 0; color: var(--color-fd-muted-foreground); font-size: 0.875rem; line-height: 1.7; }
 .pluxel-stage .pluxel-card-link { margin-top: 1.2rem; }
 
+.pluxel-pattern-code {
+	display: block;
+	margin-top: 1rem;
+	padding: 0.7rem;
+	overflow-wrap: anywhere;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.3rem;
+	background: color-mix(in srgb, var(--color-fd-muted) 42%, transparent);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.7rem;
+	line-height: 1.55;
+}
+
 .pluxel-docs-section {
 	border-top: 1px solid var(--color-fd-border);
 }
@@ -354,6 +447,19 @@ html > body[data-scroll-locked] {
 	color: var(--color-fd-muted-foreground);
 	font-size: 0.84rem;
 	line-height: 1.7;
+}
+
+.pluxel-host-code {
+	grid-column: 1 / -1;
+	margin: 1rem 0 0;
+	padding: 0.8rem;
+	overflow: hidden;
+	border: 1px solid var(--color-fd-border);
+	border-radius: 0.3rem;
+	background: color-mix(in srgb, var(--color-fd-muted) 42%, transparent);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.72rem;
+	line-height: 1.55;
 }
 
 .pluxel-doc-card .pluxel-card-link {

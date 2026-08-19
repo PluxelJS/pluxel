@@ -7,6 +7,10 @@ description: 定义一次命令契约，再复用于注册表、Agent tools、CL
 
 `@pluxel/commands` 让一条命令只定义一次输入、输出、副作用等级和执行函数，再安全地暴露给 Agent、CLI、HTTP 或 Workbench。不同入口共享同一份校验和错误契约，不需要各自重写参数解析。
 
+```sh package-install
+npx nypm add @pluxel/commands
+```
+
 ```text
 untrusted JSON / argv
   -> Command input schema

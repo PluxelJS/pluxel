@@ -193,10 +193,8 @@ type FormProps = keyof AutoFormProps<ObjectLikeSchema>
 
 只有需要 React 表单时才从 `valibot-form/web` 导入。它依赖 React、Mantine、TanStack Form、Tabler Icons 和 dnd-kit peer：
 
-```sh
-pnpm add valibot-form valibot react react-dom \
-  @mantine/core @mantine/hooks @tanstack/react-form \
-  @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```sh package-install
+npx nypm add valibot-form valibot react react-dom @mantine/core @mantine/hooks @tanstack/react-form @tabler/icons-react @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
 ```
 
 ```tsx twoslash

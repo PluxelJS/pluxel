@@ -19,6 +19,10 @@ Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单�
 
 ## Static host
 
+```sh package-install
+npx nypm add @pluxel/runtime @pluxel/runtime-static
+```
+
 ### Canonical entry
 
 ```ts no-twoslash
@@ -96,6 +100,10 @@ export default staticApplication({
 最终 inventory、签名和 delivery marker 见 [Static 发行物](../development/distribution.md)。
 
 ## Dynamic host
+
+```sh package-install
+npx nypm add @pluxel/runtime @pluxel/runtime-dynamic
+```
 
 ### Canonical config
 

@@ -6,10 +6,8 @@ import {
 	Braces,
 	CircleDot,
 	CloudCog,
-	GitBranch,
 	Gauge,
 	PackageCheck,
-	RefreshCw,
 	ServerCog,
 	Settings2,
 	Workflow,
@@ -18,35 +16,44 @@ import { PluginShowcase } from '../components/plugin-showcase'
 
 const HomeLayout = createHomeLayout()
 
-const stages = [
+const patterns = [
 	{
-		description: '构造函数中的依赖直接成为类型约束，不再另写一份运行时声明。',
+		code: 'constructor(private http: WretchPlugin) { super() }',
+		description: '需要另一个 Plugin 时，直接写构造函数参数。类型就是依赖声明。',
 		href: '/docs/getting-started/plugin-model',
 		icon: Braces,
-		title: '从 TypeScript 读取依赖',
+		title: '注入依赖',
 	},
 	{
-		description: '构建阶段生成静态描述，缺失依赖和循环在启动前就能暴露。',
-		href: '/docs/development/tooling',
-		icon: GitBranch,
-		title: '构建可检查的 Plugin 图',
+		code: 'private config = this.configs.use(StatusConfig)',
+		description: '读取经过默认值和校验的冻结配置，不再维护平行的 TypeScript interface。',
+		href: '/docs/getting-started/configuration',
+		icon: Settings2,
+		title: '读取配置',
 	},
 	{
-		description: 'Runtime 按代际发布服务；重载、失败和资源清理遵循同一套生命周期。',
+		code: 'this.ctx.effects.defer(() => clearInterval(timer))',
+		description: '创建资源后立即登记释放函数；停止、替换和启动回滚都会执行。',
 		href: '/docs/getting-started/plugin-model',
-		icon: RefreshCw,
-		title: '让变更完整地生效',
+		icon: Boxes,
+		title: '登记清理',
 	},
 ]
 
 const hosts = [
 	{
+		code: `defineStaticRuntime({
+  plugins: [OrdersPlugin],
+})`,
 		description: 'Plugin 清单随应用构建，适合固定部署、审计和可复现发行。开发期仍支持 HMR。',
 		icon: ServerCog,
 		meta: 'Fixed catalog',
 		title: 'Static host',
 	},
 	{
+		code: `defineDynamicRuntimeConfig({
+  plugins: [HostOperationsPlugin],
+})`,
 		description: '运行期间增加或删除 Plugin 文件入口，适合由配置和 package source 驱动的宿主。',
 		icon: CloudCog,
 		meta: 'Mutable sources',
@@ -96,7 +103,7 @@ export default function HomePage() {
 						</p>
 						<h1>Pluxel</h1>
 						<p className="pluxel-hero-lead">
-							用构造函数表达依赖，由构建工具生成 Plugin 图，再由 Runtime 负责启动、更新与资源回收。
+							写一个 class，用构造函数注入能力；配置、HTTP route 和资源清理都放在固定位置，开发期直接热更新。
 						</p>
 						<div className="pluxel-hero-actions">
 							<Link className="pluxel-primary-action" href="/docs/getting-started">
@@ -111,20 +118,21 @@ export default function HomePage() {
 					<PluginShowcase />
 				</section>
 
-				<section className="pluxel-stage-section" aria-labelledby="runtime-model">
+				<section className="pluxel-stage-section" aria-labelledby="writing-patterns">
 					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><Boxes aria-hidden="true" /> 一套模型贯穿构建与运行</p>
-						<h2 id="runtime-model">依赖关系不止用来决定启动顺序</h2>
+						<p className="pluxel-kicker"><Braces aria-hidden="true" /> 直接看日常写法</p>
+						<h2 id="writing-patterns">写 Plugin 最常用的三个位置</h2>
 					</div>
 					<div className="pluxel-stages">
-						{stages.map((stage, index) => {
-							const Icon = stage.icon
+						{patterns.map((pattern, index) => {
+							const Icon = pattern.icon
 							return (
-								<Link key={stage.title} href={stage.href} className="pluxel-stage">
+								<Link key={pattern.title} href={pattern.href} className="pluxel-stage">
 									<div className="pluxel-stage-index">0{index + 1}</div>
 									<Icon aria-hidden="true" />
-									<h3>{stage.title}</h3>
-									<p>{stage.description}</p>
+									<h3>{pattern.title}</h3>
+									<code className="pluxel-pattern-code">{pattern.code}</code>
+									<p>{pattern.description}</p>
 									<span className="pluxel-card-link">阅读文档 <ArrowRight aria-hidden="true" /></span>
 								</Link>
 							)
@@ -134,8 +142,8 @@ export default function HomePage() {
 
 				<section className="pluxel-docs-section" aria-labelledby="choose-host">
 					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><ServerCog aria-hidden="true" /> 两种宿主，共享一套 Plugin API</p>
-						<h2 id="choose-host">按部署方式选择 Runtime</h2>
+						<p className="pluxel-kicker"><ServerCog aria-hidden="true" /> 最后放进宿主</p>
+						<h2 id="choose-host">Plugin 写法不随宿主改变</h2>
 					</div>
 					<div className="pluxel-host-cards">
 						{hosts.map((host) => {
@@ -145,6 +153,7 @@ export default function HomePage() {
 									<Icon aria-hidden="true" />
 									<span className="pluxel-card-meta">{host.meta}</span>
 									<h3>{host.title}</h3>
+									<pre className="pluxel-host-code"><code>{host.code}</code></pre>
 									<p>{host.description}</p>
 									<span className="pluxel-card-link">配置宿主 <ArrowRight aria-hidden="true" /></span>
 								</Link>

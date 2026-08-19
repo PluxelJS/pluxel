@@ -11,8 +11,8 @@ description: 在服务端绘制位图与 SVG，解码图片，并用资源预算
 
 ## 安装与 catalog
 
-```sh
-pnpm add @pluxel/canvas @pluxel/fonts
+```sh package-install
+npx nypm add @pluxel/canvas @pluxel/fonts
 ```
 
 host catalog 至少包含 `FontsPlugin`、`CanvasPlugin` 和 consumer。CanvasPlugin required-depend FontsPlugin；业务 Plugin 只需注入 Canvas：

@@ -11,8 +11,8 @@ Plugin 测试应当经过与生产构建一致的语义处理，包括装饰器�
 
 ### 安装与 Vitest preset
 
-```sh
-pnpm add -D @pluxel/test @pluxel/core vitest oxlint
+```sh package-install
+npx nypm add -D @pluxel/test @pluxel/core vitest oxlint
 ```
 
 最小 `vitest.config.ts`：

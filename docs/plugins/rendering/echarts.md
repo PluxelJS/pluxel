@@ -9,8 +9,8 @@ description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache EC
 
 ## 安装与 catalog
 
-```sh
-pnpm add @pluxel/echarts @pluxel/canvas @pluxel/fonts
+```sh package-install
+npx nypm add @pluxel/echarts @pluxel/canvas @pluxel/fonts
 ```
 
 host catalog 包含 `FontsPlugin`、`CanvasPlugin`、`EChartsPlugin` 与 consumer。业务 Plugin 只注入 ECharts：
