@@ -1,49 +1,49 @@
-# Pluxel Maintainer Docs
+---
+title: Pluxel 用户文档
+description: 先认识 Pluxel 的设计，再从第一个插件逐步走向完整宿主。
+---
 
-`docs/` 记录当前实现的架构边界、维护不变量和内部入口。插件作者请从 [`user-docs/README.md`](../user-docs/README.md) 开始，不需要理解这里的内部 wiring。
+# Pluxel 用户文档
 
-## 阅读路径
+Pluxel 把一项业务能力连同它的依赖、配置和生命周期组织成 Plugin。框架在构建期验证依赖关系，在运行时负责装载、替换和资源回收。
 
-1. [`DESIGN_PRINCIPLES.md`](DESIGN_PRINCIPLES.md)：维护者和 coding agent 必须遵守的工程不变量。
-2. [`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)：插件、runtime、route、toolchain 和 Workbench Plane 的总边界。
-3. 按改动领域阅读：
-   - [`CORE.md`](CORE.md)：slot identity、DI graph、optional restart、generation lifecycle 与 effects。
-   - [`CORE_LIFECYCLE_SEMANTICS.md`](CORE_LIFECYCLE_SEMANTICS.md)：Core lifecycle 抽象状态、不变量和测试证据矩阵。
-   - [`RUNTIME.md`](RUNTIME.md)：常驻服务、static/dynamic route、可选宿主能力。
-   - [`PROVIDER_WITHDRAWAL_AUDIT.md`](PROVIDER_WITHDRAWAL_AUDIT.md)：owner-bound runtime capability 的 withdrawal、cached handle 和 in-flight 边界。
-   - [`SPATIOTEMPORAL_COMPOSABILITY_NOTES.md`](SPATIOTEMPORAL_COMPOSABILITY_NOTES.md)：Cordis 对照后的 lifecycle、capability withdrawal、system boundary 与 compatibility 思考记录。
-   - [`DATABASE.md`](DATABASE.md)：PostgreSQL/Drizzle、PGlite/PG、migration、隔离与 outbox。
-   - [`LOGGING.md`](LOGGING.md)：single active root、Context identity、plugin policy、sinks 与大基数预算。
-   - [`CONFIG.md`](CONFIG.md)：声明、校验、持久化和Workbench投影。
-   - [`FRONTEND.md`](FRONTEND.md)：插件 UI、interaction 和 workbench ownership。
-   - [`TOOLCHAIN.md`](TOOLCHAIN.md)：Vite/Rolldown metadata、artifact 和 lint。
-   - [`DISTRIBUTION.md`](DISTRIBUTION.md)：static artifact set、DSSE、offline verification 与 delivery marker。
-   - [`HMR.md`](HMR.md)：module runner、replacement 和 watcher 边界。
-   - [`WORKBENCH.md`](WORKBENCH.md)：host-owned 管理工作台。
-   - [`PLUGIN_CATALOG.md`](PLUGIN_CATALOG.md)：Workbench 插件目录分类、包默认值与用户偏好。
-   - [`COMMANDS.md`](COMMANDS.md)：Agent/CLI/message command kernel 与 carrier 边界。
-4. [`GOVERNANCE.md`](GOVERNANCE.md)：依赖方向、导出和文档维护规则。
-5. [`RELEASING.md`](RELEASING.md)：维护者工具版本、Changesets 与可信发布流程。
+## 从这里开始
 
-## 文档职责
+- 想先了解项目的来历和设计取舍，阅读[为什么是 Pluxel](./why-pluxel.md)。这篇文档说明 Pluxel 与 Cordis、Koishi 的渊源，以及为什么业务依赖使用构造器注入，而宿主公共能力保留在 Context。
+- 想直接动手，阅读[编写第一个插件](./getting-started/index.md)。你会创建一个带配置和 HTTP 接口的 Plugin，并用真实宿主完成测试。
 
-- `.agents/rules/`：可跨项目复用的 agent 决策规则，不作为 Pluxel 当前架构事实。
-- `docs/`：为什么这样分层、内部不变量、代码从哪里看起。
-- `user-docs/`：用户应该写什么、如何选择 API、如何避免错误设计。
-- package README：安装、入口和本包特有操作。
-- `docs/proposals/`：尚未实现的研究，不得作为当前 API 依据。
+## 推荐阅读顺序
 
-## 写作规则
+1. [编写第一个插件](./getting-started/index.md)：完成插件包、配置、实现、宿主启用和生命周期测试。
+2. [Plugin 模型与生命周期](./getting-started/plugin-model.md)：理解必需依赖、可选集成、版本代际、资源回收和失败传播。
+3. [配置模型](./getting-started/configuration.md)：让一个 Valibot schema 同时提供类型、默认值、校验和管理界面。
+4. [配置插件宿主](./getting-started/host-setup.md)：在静态与动态模式中选择一种，装配可运行的宿主。
 
-- 只描述当前模型，不维护“旧 API 已删除”清单；历史由 Git 保存。
-- 一个事实只有一个权威位置，其他文档链接过去而不复制长段落。
-- 实现后的 proposal 必须删除或缩成仍未实现的部分。
-- 文档中的示例必须能对应当前公开入口和 workspace 用法。
+读完这四篇，你就能判断一项能力是否应该成为 Plugin，以及它的依赖、配置、资源和宿主入口分别属于哪里。HTTP、数据库、缓存等能力可以在需要时再查阅。
 
-### 用户文档
+## 按任务进入
 
-- 每页开头先回答“它解决什么问题、什么时候使用”，再介绍实现规则；不要用内部名词堆叠代替说明。
-- 中文负责叙述，英文只保留 API 标识符、专有名词和确有区分意义的框架术语。首次出现的术语要用一句话解释。
-- 优先按“如何选择 → 最小用法 → 关键边界 → 失败与验证”组织内容。标题应帮助读者完成任务或作出选择。
-- 对设计取舍给出可核对的实现事实，明确能力与限制，不把偏好写成未经验证的性能结论。
-- 用户无需理解内部 package、helper 或构建阶段名称，除非这些内容会直接影响其代码或交付结果。
+| 当前任务                               | 只读这一页                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 完整验证生命周期、HTTP、配置与资源清理 | [测试插件](./development/testing.md)                                                             |
+| 暴露业务 API 或 webhook                | [插件 HTTP](./runtime/http.md)                                                                   |
+| 数据库、加密小数据、对象存储           | [数据库](./runtime/database.md)、[Vault](./runtime/vault.md)、[S3 存储](./runtime/storage.md)    |
+| 缓存、限流、Redis                      | [缓存](./runtime/cache.md)、[请求频率控制](./runtime/rates.md)、[Redis](./runtime/redis.md)      |
+| CPU 密集任务或独立 Node ESM            | [Node 模块与 Worker 任务](./runtime/node-artifacts.md)                                           |
+| 管理界面或 schema 表单                 | [管理工作台](./workbench/index.md)、[配置 Playground](./workbench/configuration-playground.md)   |
+| 服务端字体、Canvas 或图表              | [字体](./rendering/fonts.md)、[Canvas](./rendering/canvas.md)、[ECharts](./rendering/echarts.md) |
+| Agent、CLI 或消息指令                  | [Commands 与 Agent tools](./runtime/commands.md)                                                 |
+| 构建、发布、HMR 或跨仓库联调           | [CLI 与工具链](./development/tooling.md)                                                         |
+| 定位错误或确认公开入口                 | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)            |
+
+## 文档边界
+
+`docs/` 是用户文档的唯一正文来源，可以在仓库或文档网站中阅读。Agent 与维护者使用的
+[工程文档](https://github.com/PluxelJS/pluxel/tree/main/engineering)位于 Pluxel 源码仓库；其中的提案和历史记录不代表当前公开 API。
+
+文档网站还提供以下机器可读入口：
+
+- 索引：`/llms.txt`
+- 全部 Markdown：`/llms-full.txt`
+- 单页 Markdown：`/llms.mdx/docs/<slug>/content.md`
+- 文档页也支持 `/docs/<slug>.md` 和 `Accept: text/markdown`

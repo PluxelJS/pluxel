@@ -11,10 +11,10 @@ Plugin definition facts由 Pluxel Vite/Rolldown semantic pass 生成。required 
 
 文档入口：
 
-- [`../../docs/CORE.md`](../../docs/CORE.md)
-- [`../../docs/PLUGIN_SYSTEM.md`](../../docs/PLUGIN_SYSTEM.md)
-- [`../../docs/CONFIG.md`](../../docs/CONFIG.md)
-- [`../../docs/LOGGING.md`](../../docs/LOGGING.md)
+- [`../../engineering/CORE.md`](../../engineering/CORE.md)
+- [`../../engineering/PLUGIN_SYSTEM.md`](../../engineering/PLUGIN_SYSTEM.md)
+- [`../../engineering/CONFIG.md`](../../engineering/CONFIG.md)
+- [`../../engineering/LOGGING.md`](../../engineering/LOGGING.md)
 
 公开入口：
 

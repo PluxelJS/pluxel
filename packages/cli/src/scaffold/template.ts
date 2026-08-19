@@ -3,11 +3,11 @@ import { cancel, confirm, isCancel, select, text } from '@clack/prompts'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import { type ParseError, parse, printParseErrorCode } from 'jsonc-parser'
 import { capitalize, kebabCase, pascalCase } from './name.ts'
-import { resolveTemplatesDir, resolveUserDocsDir } from './utils.ts'
+import { resolveDocsDir, resolveTemplatesDir } from './utils.ts'
 
 const TEMPLATE_PROMPT_FILES = new Set(['prompts.json', 'prompts.jsonc'])
-const USER_DOCS_CONFIG_FILES = new Set(['user-docs.json', 'user-docs.jsonc'])
-const TEMPLATE_CONTROL_FILES = new Set([...TEMPLATE_PROMPT_FILES, ...USER_DOCS_CONFIG_FILES])
+const PLUXEL_DOCS_CONFIG_FILES = new Set(['pluxel-docs.json', 'pluxel-docs.jsonc'])
+const TEMPLATE_CONTROL_FILES = new Set([...TEMPLATE_PROMPT_FILES, ...PLUXEL_DOCS_CONFIG_FILES])
 const TEMPLATE_EXT = '.hbs'
 
 const TEMPLATE_REGEX = /{{\s*([a-zA-Z][\w]*)\s+([a-zA-Z0-9_]+)\s*}}|{{\s*([a-zA-Z0-9_]+)\s*}}/g
@@ -163,7 +163,7 @@ export async function generateFromTemplate(
 	}
 
 	const templateFiles = await listTemplateFiles(params.templateBase, fileSystem)
-	const userDocs = await loadUserDocsConfig(params.templateBase, fileSystem)
+	const docs = await loadDocsConfig(params.templateBase, fileSystem)
 	if (templateFiles.length === 0) {
 		throw new Error(`No template files found in ${params.templateBase}`)
 	}
@@ -177,22 +177,22 @@ export async function generateFromTemplate(
 		return { templatePath, outputPath, outputRelPath, isTextTemplate }
 	})
 
-	if (userDocs) {
-		const sourceDir = resolveUserDocsDir(fileSystem)
+	if (docs) {
+		const sourceDir = resolveDocsDir(fileSystem)
 		if (!fileSystem.existsSync(sourceDir)) {
-			throw new Error(`Pluxel user docs not found: ${sourceDir}`)
+			throw new Error(`Pluxel docs not found: ${sourceDir}`)
 		}
 		const discoveredFiles = await walkTemplateFiles(sourceDir, fileSystem)
-		const files = userDocs.files ?? discoveredFiles.map((path) => relative(sourceDir, path))
-		if (files.length === 0) throw new Error(`Pluxel user docs directory is empty: ${sourceDir}`)
+		const files = docs.files ?? discoveredFiles.map((path) => relative(sourceDir, path))
+		if (files.length === 0) throw new Error(`Pluxel docs directory is empty: ${sourceDir}`)
 		for (const file of files) {
-			const sourcePath = resolveContainedPath(sourceDir, file, 'user docs source')
+			const sourcePath = resolveContainedPath(sourceDir, file, 'docs source')
 			if (!fileSystem.existsSync(sourcePath)) {
-				throw new Error(`Pluxel user doc not found: ${sourcePath}`)
+				throw new Error(`Pluxel doc not found: ${sourcePath}`)
 			}
 			const outputRelPath = relative(
 				params.targetDir,
-				resolveContainedPath(params.targetDir, `${userDocs.target}/${file}`, 'user docs target'),
+				resolveContainedPath(params.targetDir, `${docs.target}/${file}`, 'docs target'),
 			)
 			outputs.push({
 				templatePath: sourcePath,
@@ -464,7 +464,7 @@ type TemplateOutput = {
 	isTextTemplate: boolean
 }
 
-type UserDocsConfig = {
+type DocsConfig = {
 	target: string
 	files?: string[]
 }
@@ -481,28 +481,28 @@ function resolveContainedPath(root: string, path: string, label: string): string
 	return resolved
 }
 
-async function loadUserDocsConfig(
+async function loadDocsConfig(
 	templateBase: string,
 	fileSystem: typeof fs,
-): Promise<UserDocsConfig | null> {
-	for (const fileName of ['user-docs.jsonc', 'user-docs.json']) {
+): Promise<DocsConfig | null> {
+	for (const fileName of ['pluxel-docs.jsonc', 'pluxel-docs.json']) {
 		const filePath = resolve(templateBase, fileName)
 		if (!fileSystem.existsSync(filePath)) continue
 
 		const raw = await fileSystem.promises.readFile(filePath, 'utf8')
 		const errors: ParseError[] = []
 		const parsed = parse(raw, errors, { allowTrailingComma: true }) as
-			| Partial<UserDocsConfig>
+			| Partial<DocsConfig>
 			| undefined
 		if (errors.length > 0) {
 			const detail = printParseErrorCode(errors[0]!.error)
-			throw new Error(`Invalid user docs config: ${filePath} (${detail})`)
+			throw new Error(`Invalid Pluxel docs config: ${filePath} (${detail})`)
 		}
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-			throw new TypeError(`Invalid user docs config: ${filePath} (expected object)`)
+			throw new TypeError(`Invalid Pluxel docs config: ${filePath} (expected object)`)
 		}
 		if (typeof parsed.target !== 'string' || !parsed.target.trim()) {
-			throw new TypeError(`Invalid user docs config: ${filePath} (target must be a path)`)
+			throw new TypeError(`Invalid Pluxel docs config: ${filePath} (target must be a path)`)
 		}
 		if (
 			parsed.files !== undefined &&
@@ -510,14 +510,14 @@ async function loadUserDocsConfig(
 				parsed.files.length === 0 ||
 				parsed.files.some((file) => typeof file !== 'string' || !file.trim()))
 		) {
-			throw new TypeError(`Invalid user docs config: ${filePath} (files must be non-empty paths)`)
+			throw new TypeError(`Invalid Pluxel docs config: ${filePath} (files must be non-empty paths)`)
 		}
 		const target = parsed.target.trim()
-		resolveContainedPath('template-output', target, 'user docs target')
+		resolveContainedPath('template-output', target, 'docs target')
 		const files = parsed.files?.map((file) => file.trim())
-		for (const file of files ?? []) resolveContainedPath('user-docs', file, 'user docs source')
+		for (const file of files ?? []) resolveContainedPath('docs', file, 'docs source')
 		if (files && new Set(files).size !== files.length) {
-			throw new TypeError(`Invalid user docs config: ${filePath} (duplicate files)`)
+			throw new TypeError(`Invalid Pluxel docs config: ${filePath} (duplicate files)`)
 		}
 		return { target, files }
 	}

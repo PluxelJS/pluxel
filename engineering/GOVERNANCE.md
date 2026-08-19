@@ -88,7 +88,7 @@ publishing 的维护流程见 [`RELEASING.md`](RELEASING.md)。
 
 ## 文档
 
-- `user-docs/` 不讲内部类名、迁移历史或 toolchain helper。
-- `docs/` 不复制用户教程，只解释边界和实现入口。
+- `docs/` 不讲内部类名、迁移历史或 toolchain helper。
+- `engineering/` 不复制用户教程，只解释边界和实现入口。
 - package README 不重新定义仓库级插件模型。
 - 当前文档不列旧 API；需要追溯时查看 Git history。

@@ -30,7 +30,7 @@ try {
 		repositoryRoot,
 	)
 
-	await verifyBundledUserDocs(repositoryRoot)
+	await verifyBundledDocs(repositoryRoot)
 
 	const overrides: Record<string, string> = {}
 	for (const item of publishPackages) {
@@ -206,22 +206,22 @@ async function assertGeneratedGitIgnore(root: string): Promise<void> {
 	}
 }
 
-async function verifyBundledUserDocs(root: string): Promise<void> {
-	const sourceRoot = resolve(root, 'user-docs')
-	const bundledRoot = resolve(root, 'packages/cli/dist/user-docs')
+async function verifyBundledDocs(root: string): Promise<void> {
+	const sourceRoot = resolve(root, 'docs')
+	const bundledRoot = resolve(root, 'packages/cli/dist/docs')
 	const [sourceFiles, bundledFiles] = await Promise.all([
 		listRelativeFiles(sourceRoot),
 		listRelativeFiles(bundledRoot),
 	])
 	if (JSON.stringify(bundledFiles) !== JSON.stringify(sourceFiles)) {
-		throw new Error('CLI bundled user-docs file list differs from source')
+		throw new Error('CLI bundled docs file list differs from source')
 	}
 	for (const file of sourceFiles) {
 		const [source, bundled] = await Promise.all([
 			readFile(resolve(sourceRoot, file), 'utf8'),
 			readFile(resolve(bundledRoot, file), 'utf8'),
 		])
-		if (bundled !== source) throw new Error(`CLI bundled user doc differs from source: ${file}`)
+		if (bundled !== source) throw new Error(`CLI bundled doc differs from source: ${file}`)
 	}
 }
 

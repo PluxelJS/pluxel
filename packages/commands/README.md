@@ -721,5 +721,5 @@ keeps the arbitrary `AbortSignal.reason` as `cause` rather than placing it in pu
 - `@pluxel/commands/argv`: default catalog projection, custom route binding, argv parsing, help
   data, and text/JSON tails.
 
-Repository integration constraints are in [`docs/COMMANDS.md`](../../docs/COMMANDS.md); package
+Repository integration constraints are in [`engineering/COMMANDS.md`](../../engineering/COMMANDS.md); package
 implementation invariants and CLI ecosystem decisions are in [`docs/DESIGN.md`](docs/DESIGN.md).

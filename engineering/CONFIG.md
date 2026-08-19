@@ -74,4 +74,4 @@ runtime 将同一个 schema 投影为 host/UI 所需的 field name、source、de
 - `packages/rolldown/src/rolldown/plugins/configSourcePlugin.ts`
 - `packages/runtime/docs/config/contract.md`
 
-作者用法见 [`user-docs/getting-started/configuration.md`](../user-docs/getting-started/configuration.md#声明规则)。
+作者用法见 [`docs/getting-started/configuration.md`](../docs/getting-started/configuration.md#声明规则)。

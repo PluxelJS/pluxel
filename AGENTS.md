@@ -8,8 +8,8 @@ This is a reusable decision guide, not a substitute for repository-specific cons
 
 Before changing plugin APIs, runtime capabilities, lifecycle, Context services, Vite/Rolldown integration, or package boundaries, read:
 
-1. `docs/DESIGN_PRINCIPLES.md`
-2. `docs/PLUGIN_SYSTEM.md`
-3. the relevant domain document linked from `docs/README.md`
+1. `engineering/DESIGN_PRINCIPLES.md`
+2. `engineering/PLUGIN_SYSTEM.md`
+3. the relevant domain document linked from `engineering/README.md`
 
-Treat those documents as current engineering constraints. User-facing behavior must also be reflected in `user-docs/`; proposals and historical notes are not current API authority.
+Treat those documents as current engineering constraints. User-facing behavior must also be reflected in `docs/`; proposals and historical notes are not current API authority.

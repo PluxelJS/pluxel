@@ -2,9 +2,9 @@
 
 这套目录承载 Plugin identity、definition facts、DI graph、generation lifecycle 与作者 composition facade。权威设计见：
 
-- [`../../../../docs/CORE.md`](../../../../docs/CORE.md)
-- [`../../../../docs/PLUGIN_SYSTEM.md`](../../../../docs/PLUGIN_SYSTEM.md)
-- [`../../../../docs/CONFIG.md`](../../../../docs/CONFIG.md)
+- [`../../../../engineering/CORE.md`](../../../../engineering/CORE.md)
+- [`../../../../engineering/PLUGIN_SYSTEM.md`](../../../../engineering/PLUGIN_SYSTEM.md)
+- [`../../../../engineering/CONFIG.md`](../../../../engineering/CONFIG.md)
 
 ## 当前实现基线
 

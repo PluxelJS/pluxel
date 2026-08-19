@@ -78,4 +78,4 @@ headless 与 workbench 使用独立的 production adapter，因此 headless serv
 import { createStaticRuntimeTestHost } from '@pluxel/runtime-static/test'
 ```
 
-用户配置见 [`../../user-docs/getting-started/host-setup.md`](../../user-docs/getting-started/host-setup.md)，内部边界见 [`../../docs/RUNTIME.md`](../../docs/RUNTIME.md)。
+用户配置见 [`../../docs/getting-started/host-setup.md`](../../docs/getting-started/host-setup.md)，内部边界见 [`../../engineering/RUNTIME.md`](../../engineering/RUNTIME.md)。

@@ -11,14 +11,15 @@
 
 当前进行中的提案：
 
-- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：尚未证明净收益的 decoratorless Plugin、browser config
-  representation、first-class multi-instance、Context kernel、Workbench transport、binding 与 catalog 简化研究。
+- [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含已否决的
+  decoratorless Plugin 与 catalog exact-only 简化，以及仍可升级为 proposal 的 browser config artifact、
+  multi-instance internals、Context kernel、Workbench transport 与 binding 稳定性研究。
 
 CLI 分发、local-first delegation 与官方能力按需加载的已实施约束见 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 和
-[`../../user-docs/development/tooling.md`](../../user-docs/development/tooling.md)。
+[`../../docs/development/tooling.md`](../../docs/development/tooling.md)。
 
 OpenTelemetry 的当前设计、非目标与上游阻塞见 [`../../plugins/otel/DESIGN.md`](../../plugins/otel/DESIGN.md) 和
-[`../../user-docs/runtime/otel.md`](../../user-docs/runtime/otel.md)。
+[`../../docs/runtime/otel.md`](../../docs/runtime/otel.md)。
 
 Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
 [`../RUNTIME.md`](../RUNTIME.md)。

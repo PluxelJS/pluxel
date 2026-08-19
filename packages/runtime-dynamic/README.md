@@ -103,4 +103,4 @@ dynamicRuntimeVitePlugin({
 closure、inventory、签名和发布原子性仍由 host-owned distribution 工具负责。该模式的 Workbench remote cache 位于 runtime
 persistence 的兄弟 `workbench-artifacts/`，宿主自己的 Vite `cacheDir` 也应显式指向可写 state，而不是不可变 artifact root。
 
-用户配置路径见 [`../../user-docs/getting-started/host-setup.md`](../../user-docs/getting-started/host-setup.md)，内部边界见 [`../../docs/HMR.md`](../../docs/HMR.md)。
+用户配置路径见 [`../../docs/getting-started/host-setup.md`](../../docs/getting-started/host-setup.md)，内部边界见 [`../../engineering/HMR.md`](../../engineering/HMR.md)。

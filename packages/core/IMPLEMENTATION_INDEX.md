@@ -4,11 +4,11 @@
 
 仓库级约束与设计目标见：
 
-- `docs/CORE.md`
-- `docs/CONFIG.md`
-- `docs/GOVERNANCE.md`
-- `docs/LOGGING.md`
-- `docs/proposals/README.md`
+- `engineering/CORE.md`
+- `engineering/CONFIG.md`
+- `engineering/GOVERNANCE.md`
+- `engineering/LOGGING.md`
+- `engineering/proposals/README.md`
 
 ## Public Surface (package exports)
 
@@ -22,7 +22,7 @@
 
 - `packages/core/src/index.ts`
   - `Context`、`Plugin`/`BasePlugin`、decorators、runtime 生命周期基建
-- `docs/PLUGIN_SYSTEM.md`
+- `engineering/PLUGIN_SYSTEM.md`
   - 当前唯一 Plugin authoring、slot identity、required/optional graph 与 generation effects 设计
   - runtime update 重构是否值得推进、dynamic/static 收益差异、性能损益和停止规则
 

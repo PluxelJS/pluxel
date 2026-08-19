@@ -1,7 +1,7 @@
 # Logging Architecture
 
 本文记录 Pluxel 当前日志模型、性能约束和实现入口。插件作者用法见
-[`user-docs/reference/plugin-best-practices.md`](../user-docs/reference/plugin-best-practices.md)；本文面向维护者和宿主实现。
+[`docs/reference/plugin-best-practices.md`](../docs/reference/plugin-best-practices.md)；本文面向维护者和宿主实现。
 
 ## 模型
 

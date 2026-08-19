@@ -97,9 +97,9 @@
 
 ## 9. 文档只描述当前事实
 
-- `user-docs/` 给出标准用法和必要设计原因，不暴露 internal helper。
-- `docs/` 记录架构不变量和实现入口，不重复用户教程。
-- 未实现内容只进入 `docs/proposals/`。
+- `docs/` 给出标准用法和必要设计原因，不暴露 internal helper。
+- `engineering/` 记录架构不变量和实现入口，不重复用户教程。
+- 未实现内容只进入 `engineering/proposals/`。
 - 当前文档不保存迁移过程或旧 API 清单；历史由 Git 保存。
 
 收益：用户和 agent 不会从历史方案推导出错误的当前 API。

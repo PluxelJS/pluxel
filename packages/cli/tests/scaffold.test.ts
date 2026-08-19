@@ -137,7 +137,7 @@ describe('scaffold template rendering', () => {
 
 		expect(ok).toBe(true)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'user-docs.jsonc'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 
 		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'web/vite.config.ts'), 'utf8')
 		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
@@ -202,7 +202,7 @@ describe('scaffold template rendering', () => {
 		const agentsGuide = fixture.fs.readFileSync(resolve(targetDir, 'AGENTS.md'), 'utf8')
 		expect(agentsGuide).toContain('docs/pluxel/README.md')
 
-		const sourceDocsDir = resolve(import.meta.dirname, '../../../user-docs')
+		const sourceDocsDir = resolve(import.meta.dirname, '../../../docs')
 		const generatedDocsDir = resolve(targetDir, 'docs/pluxel')
 		const sourceDocs = listRelativeFilesSync(sourceDocsDir, fs)
 		const generatedDocs = listRelativeFilesSync(
@@ -276,7 +276,7 @@ describe('scaffold template rendering', () => {
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
 			"'@pluxel/runtime': ^0.3.0",
 		)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'user-docs.jsonc'))).toBe(false)
+		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)
 		const source = fixture.fs.readFileSync(resolve(targetDir, 'src/hello-world.ts'), 'utf8')
 		expect(source).toContain('export class HelloWorldPlugin extends BasePlugin')

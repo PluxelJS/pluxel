@@ -1,6 +1,6 @@
 # Plugin System Architecture
 
-本文定义当前插件系统边界。作者用法以 [`user-docs/getting-started/index.md`](../user-docs/getting-started/index.md)
+本文定义当前插件系统边界。作者用法以 [`docs/getting-started/index.md`](../docs/getting-started/index.md)
 为准。
 
 ```text

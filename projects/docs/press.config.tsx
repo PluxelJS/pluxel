@@ -13,7 +13,7 @@ import { ConfigurationPreviewLoader } from './src/components/configuration-previ
 import { getMDXComponents } from './src/components/mdx'
 
 const docs = defineDocs({
-	dir: '../../user-docs',
+	dir: '../../docs',
 	docs: {
 		async: true,
 		lastModified: true,

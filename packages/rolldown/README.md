@@ -11,8 +11,8 @@ Rolldown/Vite 工具链入口：
 - `@pluxel/rolldown/vite`：提供同语义的 Vite source adapter，供 static/dynamic ModuleRunner 和 HMR route 复用。
 - `@pluxel/rolldown/distribution`：static artifact-set finalizer、in-toto/DSSE helper、offline verifier 和 inert delivery
   marker；raw v1 schema 位于 `@pluxel/rolldown/distribution/schema.json`。用户流程见
-  [`../../user-docs/development/distribution.md`](../../user-docs/development/distribution.md)，维护约束见
-  [`../../docs/DISTRIBUTION.md`](../../docs/DISTRIBUTION.md)。
+  [`../../docs/development/distribution.md`](../../docs/development/distribution.md)，维护约束见
+  [`../../engineering/DISTRIBUTION.md`](../../engineering/DISTRIBUTION.md)。
 - `configSourcePlugin`：生成单一 ObjectSchema config metadata，并从 `@pluxel/runtime` 导入 lowering helper。
 - `lintGuardPlugin`：执行插件声明约束检查。
 - `pluginArtifactBuildPlugin`：在同一次 transform 中提取 Workbench UI 与 `defineNodeModule()` declaration，

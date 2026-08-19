@@ -10,7 +10,7 @@
 [![CI](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml/badge.svg)](https://github.com/PluxelJS/pluxel/actions/workflows/ci.yml)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-663399.svg)](./LICENSE)
 
-[文档](https://docs.pluxel.dev) · [设计初心](./user-docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
+[文档](https://docs.pluxel.dev) · [设计初心](./docs/why-pluxel.md) · [参与贡献](./CONTRIBUTING.md) · [许可](./LICENSE)
 
 </div>
 
@@ -20,7 +20,7 @@ Pluxel 是对 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734e
 
 在长期实践中，我们逐步探索出不同的依赖表达方式：Pluxel 的 required dependency 直接来自 constructor value import，构建期语义将类型、package provenance 和 graph identity 连在一起，运行时再由 DI graph 注入真实 Plugin generation。Context service 则通过预安装 getter 访问，而不是交给 Context-wide Proxy 统一解释。我们的目标，是让 TypeScript 不只提供补全，而是参与定义一套可以构建、验证和治理的 **typed meta-framework**。
 
-[阅读完整的项目背景与设计选择 →](./user-docs/why-pluxel.md)
+[阅读完整的项目背景与设计选择 →](./docs/why-pluxel.md)
 
 ## ✨ 为什么选择 Pluxel？
 
@@ -48,7 +48,7 @@ Pluxel 将应用拆分为具有依赖、配置和生命周期的 Plugin。框架
 
 - [用户文档](https://docs.pluxel.dev) — 入门、Plugin 开发、宿主装配与能力指南
 - [Package 与公开入口](https://docs.pluxel.dev/docs/reference/package-matrix) — package 职责和可用入口
-- [维护者架构](./docs/README.md) — 设计原则、内部边界与发布流程
+- [工程文档](./engineering/README.md) — Agent 与维护者使用的设计原则、内部边界和发布流程
 - [贡献指南](./CONTRIBUTING.md) — 开发环境、测试、Changeset 与 Pull Request
 
 > Pluxel 目前处于积极开发的 `0.x` 阶段。安装版本和公开 API 请以文档站及 npm registry 为准。

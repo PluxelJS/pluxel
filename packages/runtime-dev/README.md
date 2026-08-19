@@ -7,4 +7,4 @@ compiler config 和 enabled policy，并通过一个 attachment 绑定 root serv
 compiler 按 declaration 懒创建；Workbench Plane 关闭时不安装 UI provider或加载 Federation builder，Node module
 仍可独立编译。每个 runtime root/Vite server 最多安装一个 compiler，不创建通用 Context capability adapter。
 
-内部边界见 `docs/PLUGIN_SYSTEM.md`；作者用法见 `user-docs/getting-started/index.md`。
+内部边界见 `engineering/PLUGIN_SYSTEM.md`；作者用法见 `docs/getting-started/index.md`。

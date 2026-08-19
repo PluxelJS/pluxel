@@ -84,7 +84,7 @@ export default defineConfig({
 		DEV: 'false',
 		NODE_ENV: 'production',
 	},
-	copy: ['templates', '../../user-docs'],
+	copy: ['templates', '../../docs'],
 	plugins: [],
 	format: ['esm'],
 	clean: true,

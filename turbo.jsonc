@@ -150,13 +150,13 @@
 		"@pluxel/cli#build": {
 			// CLI declarations reference the toolchain, while runtime integrations stay external and
 			// are loaded only when their commands execute. The CLI package also copies starter
-			// templates and root user-docs into dist, so those single-source resources must invalidate
+			// templates and root docs into dist, so those single-source resources must invalidate
 			// the build cache.
 			"dependsOn": ["@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/user-docs/**",
+				"$TURBO_ROOT$/docs/**",
 				"!bench/**",
 				"!**/bench/**",
 				"!test/**",
@@ -200,7 +200,7 @@
 			// export points at dist, so the docs build must not race the package build.
 			"dependsOn": ["valibot-form#build"],
 			"outputs": ["dist/**", ".source/**"],
-			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/user-docs/**"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docs/**"],
 			"outputLogs": "new-only",
 		},
 		"build:lib": {

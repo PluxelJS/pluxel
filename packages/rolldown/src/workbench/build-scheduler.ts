@@ -40,7 +40,7 @@ const outputTransactionQueue = new KeyedSerialTaskQueue()
 /**
  * @module-federation/vite is not reentrant: its normalized config and virtual-module
  * registries are module-scoped through at least 1.16.16. Keep every in-process
- * Federation builder invocation inside this critical section. See docs/HMR.md.
+ * Federation builder invocation inside this critical section. See engineering/HMR.md.
  */
 export function runWorkbenchFederationBuild(task: Task): Promise<void> {
 	return federationBuildQueue.run(task)

@@ -1,8 +1,8 @@
 # Plugin Config (Runtime Contract)
 
 这份文档描述 runtime 与 host/UI 的 Plugin config contract。作者声明见
-[`../../../../user-docs/getting-started/configuration.md`](../../../../user-docs/getting-started/configuration.md#声明规则)，架构不变量见
-[`../../../../docs/CONFIG.md`](../../../../docs/CONFIG.md)。
+[`../../../../docs/getting-started/configuration.md`](../../../../docs/getting-started/configuration.md#声明规则)，架构不变量见
+[`../../../../engineering/CONFIG.md`](../../../../engineering/CONFIG.md)。
 
 ## Author fact
 

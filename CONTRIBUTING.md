@@ -25,8 +25,8 @@ pnpm verify
 
 ## 修改规则
 
-1. 修改前先阅读 [维护者文档入口](./docs/README.md) 和相关领域文档。
-2. 用户可见行为必须同步更新 `user-docs/`；内部架构约束更新 `docs/`，不要把未实现设计写成当前能力。
+1. 修改前先阅读 [工程文档入口](./engineering/README.md) 和相关领域文档。
+2. 用户可见行为必须同步更新 `docs/`；内部架构约束更新 `engineering/`，不要把未实现设计写成当前能力。
 3. 新增或修改公开 API、类型、错误契约、配置契约或资源生命周期时，遵循 [library API design guide](./.agents/rules/library-api-design.md)。
 4. 保持 package boundary；只从 `package.json#exports` 声明的入口导入，不使用其他 package 的源码相对路径。
 5. 为行为变化补充测试，并确保 acquire 的长期资源在 replacement、rollback 与 shutdown 时都能释放。
@@ -58,7 +58,7 @@ pnpm format:check
 pnpm changeset
 ```
 
-只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 Changeset。版本与发布规则见 [发布指南](./docs/RELEASING.md)。
+只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 Changeset。版本与发布规则见 [发布指南](./engineering/RELEASING.md)。
 
 ## Pull Request
 

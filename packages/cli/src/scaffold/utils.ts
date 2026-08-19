@@ -20,12 +20,12 @@ export function resolveTemplatesDir() {
 	return candidates[0]!
 }
 
-export function resolveUserDocsDir(fileSystem: Pick<typeof fs, 'existsSync'> = fs) {
+export function resolveDocsDir(fileSystem: Pick<typeof fs, 'existsSync'> = fs) {
 	const candidates = [
-		// Bundled CLI: tsdown copies the repository user-docs into dist/user-docs.
-		resolve(__dirname, './user-docs'),
-		// Source layout: packages/cli/src/scaffold -> repository user-docs.
-		resolve(__dirname, '../../../../user-docs'),
+		// Bundled CLI: tsdown copies the repository docs into dist/docs.
+		resolve(__dirname, './docs'),
+		// Source layout: packages/cli/src/scaffold -> repository docs.
+		resolve(__dirname, '../../../../docs'),
 	]
 
 	for (const candidate of candidates) {

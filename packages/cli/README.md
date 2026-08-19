@@ -6,9 +6,9 @@ Pluxel CLI（对外发布包之一）。
 
 如果你在追：
 
-- runtime / loader HMR / build 的总边界：看 `docs/RUNTIME.md`、`docs/HMR.md`、`docs/TOOLCHAIN.md`
-- 插件前端链路：看 `docs/FRONTEND.md`
-- 发布与内联约束：看 `docs/GOVERNANCE.md`
+- runtime / loader HMR / build 的总边界：看 `engineering/RUNTIME.md`、`engineering/HMR.md`、`engineering/TOOLCHAIN.md`
+- 插件前端链路：看 `engineering/FRONTEND.md`
+- 发布与内联约束：看 `engineering/GOVERNANCE.md`
 
 常用：
 
@@ -30,7 +30,7 @@ pluxel distribution inspect ./dist
 使用 `--pm` 选择自己的安装器。非交互调用使用模板显式声明的 prompt default，模板缺少 default 时
 直接失败，不在 CI 中等待输入。
 
-`user-docs/` 是插件作者文档的唯一真源。CLI build 将它原样打包到 `dist/user-docs/`；
+`docs/` 是插件作者文档的唯一真源。CLI build 将它原样打包到 `dist/docs/`；
 `app-monorepo` 只声明目标目录，`pluxel new` 会把当前 CLI 版本携带的完整文档递归复制到生成仓库的
 `docs/pluxel/`。模板不维护改写版 Markdown，也不对文档执行 Handlebars 渲染。生成的 workspace
 默认安装 Turborepo，以全 CPU 并发和本地缓存编排 build、test、typecheck；`verify` 在一个任务图中
@@ -50,7 +50,7 @@ prompt 逻辑。`@pluxel/cli` 可以全局安装；如果当前目录向上最�
 维护者可运行 `pnpm --filter @pluxel/cli test:templates`。该检查会计算并打包当前 workspace 的本地
 发布依赖闭包，安装生成的 CLI tarball，再通过其中的 `pluxel new` 在仓库外分别生成 standalone
 plugin 和 app monorepo，并完成独立安装、lint、typecheck、test、build 和 package smoke。测试不会
-绕过 npm pack，因此也覆盖模板 dotfile 和 bundled user docs。
+绕过 npm pack，因此也覆盖模板 dotfile 和 bundled docs。
 
 只使用 `pluxel new` 不需要安装其他 Pluxel runtime 或 toolchain 包。按命令安装可选能力：
 
@@ -73,7 +73,7 @@ pnpm add -D @pluxel/runtime-dynamic
 `pluxel.sources.jsonc` 中的仓库身份，机器路径只进入用户 checkout registry；CLI 从真实 package 依赖
 推导 override 和构建闭包，并让 lockfile 只记录 `.pluxel/sources/<repository-hash>/<package-slug>-<package-hash>`
 package-level 稳定代理路径。完整
-用法见打包的 `user-docs/development/source-workspaces.md`。
+用法见打包的 `docs/development/source-workspaces.md`。
 
 CLI 不再转发其他包的 library API。代码应直接从能力所有者导入：
 

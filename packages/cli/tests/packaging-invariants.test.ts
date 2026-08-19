@@ -38,7 +38,7 @@ describe('CLI package boundaries', () => {
 		const createBin = await readFile(`${root}/packages/create/bin/create.mjs`, 'utf8')
 
 		expect(createPkg.version).toBe(cliPkg.version)
-		expect(createPkg.dependencies?.['@pluxel/cli']).toBe(`workspace:${cliPkg.version}`)
+		expect(createPkg.dependencies?.['@pluxel/cli']).toBe('workspace:*')
 		expect(createPkg.bin).toEqual({ 'create-pluxel': 'bin/create.mjs' })
 		expect(createBin).toContain("Symbol.for('pluxel.cli.direct')")
 		expect(createBin).toContain("'new'")

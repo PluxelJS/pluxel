@@ -3,7 +3,7 @@
 > Status: published dev-only. It is intended for tests/tooling, not for production runtime dependencies.
 
 Plugin authors should start with the repository-level
-[`user-docs/development/testing.md`](../../user-docs/development/testing.md). It explains the standard Vitest setup, how to
+[`docs/development/testing.md`](../../docs/development/testing.md). It explains the standard Vitest setup, how to
 choose between the core-only and runtime test hosts, lifecycle failure assertions, cleanup, HTTP,
 Workbench Plane and fixture strategy.
 
@@ -35,7 +35,7 @@ expect(fixture.fs.existsSync(fixture.getPath('tmp.txt'))).toBe(true)
 
 LLM-facing guide: `packages/test/LLM_TESTING_GUIDE.md`.
 
-Toolchain/lint design: `docs/TOOLCHAIN.md`.
+Toolchain/lint design: `engineering/TOOLCHAIN.md`.
 
 ## Host
 

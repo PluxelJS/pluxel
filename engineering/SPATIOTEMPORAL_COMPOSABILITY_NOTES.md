@@ -1,7 +1,7 @@
 # 时空可组合性思考记录
 
 本文是维护者思考文档，不是当前 API、配置契约、错误契约或 roadmap 承诺。当前事实以
-[`CORE.md`](CORE.md)、[`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)、各领域文档和 `user-docs/` 为准。
+[`CORE.md`](CORE.md)、[`PLUGIN_SYSTEM.md`](PLUGIN_SYSTEM.md)、各领域文档和 `docs/` 为准。
 
 这份记录来自对 [Cordis 论文](https://github.com/cordiverse/paper)中 revertible effect、reactive coeffect、Context/Fiber
 和 system boundary 的对照。它不要求 Pluxel 复制 Cordis 的统一 realization；它的作用是持续约束我们如何描述、测试和诊断
