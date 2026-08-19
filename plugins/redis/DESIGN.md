@@ -85,7 +85,8 @@ provider 使用宿主已经安装的安全能力。
 
 ## Package composition
 
-`@pluxel/redis` 依赖 node-redis 与轻量 `@pluxel/cache`，并从 `@pluxel/rates` 根入口实现 adapter。依赖方向是：
+`@pluxel/redis` 依赖 node-redis，并通过 peer dependency 消费 `@pluxel/cache` 与 `@pluxel/rates` 的
+provider contract。依赖方向是：
 
 ```text
 @pluxel/cache <- @pluxel/redis

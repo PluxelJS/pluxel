@@ -75,15 +75,16 @@
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"dependencies": {
-		"@pluxel/rolldown": "workspace:*"
+		"@pluxel/rolldown": "workspace:^"
 	},
 	"devDependencies": {
 		"@platformatic/vfs": "^0.3.0",
+		"@pluxel/core": "workspace:*",
 		"fs-fixture": "^2.13.0",
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/core": "workspace:*",
+		"@pluxel/core": "workspace:^",
 		"vitest": "catalog:"
 	},
 	"inlinedDependencies": {

@@ -39,7 +39,8 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 政策；每个 workspace 仍必须在自己的 `dependencies`、`devDependencies` 或 `peerDependencies` 中声明
 实际使用的包。hoist 只用于工具兼容和实例去重，不构成依赖声明。
 
-- 第一方 workspace 依赖使用 `workspace:*`，确保开发时链接当前源码，发布时由 pnpm 转换版本。
+- semver-compatible 的第一方实现依赖使用 `workspace:^`，确保开发时链接当前源码，发布后允许同 major
+  的修复和功能版本；只有必须锁定同版本的 wrapper 使用 `workspace:*`。
 - catalog 管理的外部依赖使用 `catalog:`；只在 `pnpm-workspace.yaml` 修改兼容范围。
 - CLI 生成的独立应用把发布版 `@pluxel/*`、React、工具链等范围放进自己的 catalog；生成的
   workspace 之间仍逐包声明直接依赖。
@@ -48,8 +49,10 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 - 独立仓库共同开发未发布源码时使用 `pluxel source`；项目提交 repository identity 和正常
   catalog/semver，机器 checkout 路径只进入用户 registry 与 `.pluxel/` 代理。不得手写跨仓库 `link:`
   override 或链接另一个 checkout 的 `node_modules`。
-- peer 表示必须与宿主共享的运行时身份，不是减少安装声明的手段。peer 的本地构建/测试副本同时放
-  `devDependencies`。
+- peer 表示必须与宿主共享的运行时身份，不是减少安装声明的手段。Plugin package 在源码中使用
+  `workspace:^` 消费 Pluxel runtime 和 provider contract，发布后由 pnpm 转换为 `^1.0.0`；本地构建/测试
+  副本同时以 `workspace:*` 放入 `devDependencies`，不得把 provider 放入普通 dependencies 形成第二份
+  Plugin identity。
 
 Mantine/React 等 Workbench singleton 由 host 直接安装；插件 UI 把自己 import 的 singleton 声明为
 peer，并在需要独立开发时声明 dev 副本。导入 Drizzle schema/query API 的每个 package 都直接声明
@@ -83,7 +86,7 @@ module、export key 或首次启用 author options。
 4. 审计 public exports、workspace 插件、示例和链接。
 5. 如果 proposal 已实现，删除已落地部分。
 
-公开包发生用户可见变化时，同一 PR 必须添加 Changeset。版本提交、发布前验证和 npm trusted
+公开包发生用户可见变化时，同一 PR 必须添加 Tegami changelog。Version Packages PR、发布前验证和 npm trusted
 publishing 的维护流程见 [`RELEASING.md`](RELEASING.md)。
 
 ## 文档

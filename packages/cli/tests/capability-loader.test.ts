@@ -3,11 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-	loadOfficialCapability,
-	OfficialCapabilityError,
-	type OfficialCapabilityErrorCode,
-} from '../src/capability-loader'
+import { loadOfficialCapability, OfficialCapabilityError } from '../src/capability-loader'
 
 const temporaryRoots: string[] = []
 
@@ -51,14 +47,6 @@ function projectWithRolldown(params: {
 	}
 }
 
-async function expectCapabilityCode(
-	run: () => Promise<unknown>,
-	code: OfficialCapabilityErrorCode,
-) {
-	await expect(run()).rejects.toMatchObject({ code })
-	await expect(run()).rejects.toBeInstanceOf(OfficialCapabilityError)
-}
-
 describe('official capability loader', () => {
 	it('imports official owners from the project dependency graph', async () => {
 		const root = await createProject(projectWithRolldown({}))
@@ -81,29 +69,31 @@ describe('official capability loader', () => {
 			'node_modules/@pluxel/rolldown/not-root.mjs': 'export const notRoot = true\n',
 		})
 
-		await expectCapabilityCode(
-			() => loadOfficialCapability('rolldown-build', { cwd: root }),
-			'PLUXEL_CAPABILITY_OWNER_MISSING',
-		)
+		const loaded = loadOfficialCapability('rolldown-build', { cwd: root })
+		await expect(loaded).rejects.toMatchObject({ code: 'PLUXEL_CAPABILITY_OWNER_MISSING' })
+		await expect(loaded).rejects.toBeInstanceOf(OfficialCapabilityError)
 	})
 
-	it('checks owner versions against CLI optional peers before import', async () => {
+	it('accepts workspace protocol peers while running the CLI from source', async () => {
 		const root = await createProject(projectWithRolldown({ version: '9.0.0' }))
+		const loaded = await loadOfficialCapability<{ marker: string }>('rolldown-build', {
+			cwd: root,
+		})
 
-		await expectCapabilityCode(
-			() => loadOfficialCapability('rolldown-build', { cwd: root }),
-			'PLUXEL_CAPABILITY_OWNER_INCOMPATIBLE',
-		)
+		expect(loaded.marker).toBe('project-owner')
 	})
 
 	it('separates public subpath errors from owner import failures', async () => {
 		const missingSubpath = await createProject(
 			projectWithRolldown({ exports: { '.': './index.mjs' }, files: {} }),
 		)
-		await expectCapabilityCode(
-			() => loadOfficialCapability('rolldown-database', { cwd: missingSubpath }),
-			'PLUXEL_CAPABILITY_SUBPATH_MISSING',
-		)
+		const missingSubpathLoad = loadOfficialCapability('rolldown-database', {
+			cwd: missingSubpath,
+		})
+		await expect(missingSubpathLoad).rejects.toMatchObject({
+			code: 'PLUXEL_CAPABILITY_SUBPATH_MISSING',
+		})
+		await expect(missingSubpathLoad).rejects.toBeInstanceOf(OfficialCapabilityError)
 
 		const importFailure = await createProject(
 			projectWithRolldown({
@@ -113,9 +103,8 @@ describe('official capability loader', () => {
 				},
 			}),
 		)
-		await expectCapabilityCode(
-			() => loadOfficialCapability('rolldown-build', { cwd: importFailure }),
-			'PLUXEL_CAPABILITY_IMPORT_FAILED',
-		)
+		const failedImport = loadOfficialCapability('rolldown-build', { cwd: importFailure })
+		await expect(failedImport).rejects.toMatchObject({ code: 'PLUXEL_CAPABILITY_IMPORT_FAILED' })
+		await expect(failedImport).rejects.toBeInstanceOf(OfficialCapabilityError)
 	})
 })

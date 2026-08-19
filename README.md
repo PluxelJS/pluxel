@@ -50,9 +50,9 @@ Plugin 不需要感知宿主模式。无论来自固定清单还是动态文件�
 - [用户文档](https://docs.pluxel.dev) — 入门、Plugin 开发、宿主装配与能力指南
 - [Package 与公开入口](https://docs.pluxel.dev/docs/reference/package-matrix) — package 职责和可用入口
 - [工程文档](./engineering/README.md) — Agent 与维护者使用的设计原则、内部边界和发布流程
-- [贡献指南](./CONTRIBUTING.md) — 开发环境、测试、Changeset 与 Pull Request
+- [贡献指南](./CONTRIBUTING.md) — 开发环境、测试、Tegami changelog 与 Pull Request
 
-> Pluxel 目前处于积极开发的 `0.x` 阶段。安装版本和公开 API 请以文档站及 npm registry 为准。
+> Pluxel 的公开版本线从 `1.0.0` 开始。安装版本和公开 API 请以文档站及 npm registry 为准。
 
 ## ⚖️ 许可
 

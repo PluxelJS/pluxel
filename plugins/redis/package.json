@@ -33,12 +33,12 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"@pluxel/cache": "workspace:*",
-		"@pluxel/rates": "workspace:*",
 		"redis": "catalog:"
 	},
 	"devDependencies": {
+		"@pluxel/cache": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/rates": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -47,6 +47,8 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/cache": "workspace:^",
+		"@pluxel/rates": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
 	}
 }

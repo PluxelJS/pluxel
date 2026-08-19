@@ -112,7 +112,8 @@ host.cfg(RedisCacheBackendPlugin).set({
 ```
 
 adapter 使用上述 script helper 原子读取 GET + PTTL，处理 TTL、structured value codec、SCAN 与有界 UNLINK。
-`@pluxel/redis` 直接依赖轻量的 `@pluxel/cache`，因此不需要第三个集成包；`@pluxel/cache` 反向不依赖 Redis，
+`@pluxel/redis` 通过 peer dependency 复用 `@pluxel/cache` 与 `@pluxel/rates` 的 provider contract，
+因此 adapter 与宿主使用同一份 Plugin identity，也不需要第三个集成包。`@pluxel/cache` 反向不依赖 Redis，
 memory-only host 仍不会安装 node-redis。
 
 - cache caller/scope prefix 继续由 `CachePlugin` 生成，`keyPrefix` 只隔离 Redis cache keyspace；

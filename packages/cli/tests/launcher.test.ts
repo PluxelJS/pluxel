@@ -102,7 +102,7 @@ describe('pluxel bin launcher', () => {
 
 		const result = await runNode([pluxelBin, '--version'], root)
 
-		expect(result.code, JSON.stringify(result)).toBe(1)
+		expect(result.code).toBe(1)
 		expect(result.stderr).toContain('declares @pluxel/cli, but it is not installed')
 	})
 })

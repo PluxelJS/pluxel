@@ -62,8 +62,8 @@
 		"build": "tsdown"
 	},
 	"dependencies": {
-		"@pluxel/core": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/core": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
 	},
 	"devDependencies": {
 		"@pluxel/rolldown": "workspace:*",
@@ -72,7 +72,7 @@
 		"vite": "^8.0.0-beta.18"
 	},
 	"peerDependencies": {
-		"@pluxel/rolldown": ">=0.1.0 <1",
+		"@pluxel/rolldown": "workspace:^",
 		"vite": ">=8.0.0-beta.18 <9"
 	},
 	"peerDependenciesMeta": {

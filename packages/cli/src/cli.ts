@@ -85,13 +85,13 @@ async function main() {
 			subCommands: commands,
 		})
 	} catch (error) {
-		const msg = formatCliError(error, process.argv[2])
+		const msg = formatCliError(error)
 		process.stderr.write(`${msg}\n`)
 		process.exitCode = 1
 	}
 }
 
-function formatCliError(error: unknown, command: string | undefined): string {
+function formatCliError(error: unknown): string {
 	if (error instanceof OfficialCapabilityError) return formatOfficialCapabilityError(error)
 	const message = error instanceof Error ? error.message : String(error)
 	return message

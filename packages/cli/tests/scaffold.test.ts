@@ -182,13 +182,13 @@ describe('scaffold template rendering', () => {
 		const workspaceSource = String(
 			fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8'),
 		)
-		expect(workspaceSource).toContain("'@pluxel/runtime': ^0.3.0")
+		expect(workspaceSource).toContain("'@pluxel/runtime': ^1.0.0")
 		expect(parseYaml(workspaceSource)).toMatchObject({
 			packages: ['web', 'packages/*', 'plugins/*', 'plugins/*/*'],
-			catalog: { '@pluxel/runtime': '^0.3.0' },
+			catalog: { '@pluxel/runtime': '^1.0.0' },
 		})
 		expect(parseYaml(workspaceSource)).toMatchObject({
-			catalog: { '@pluxel/cli': '^0.3.0' },
+			catalog: { '@pluxel/cli': '^1.0.0' },
 		})
 		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
 		const rootTsconfig = JSON.parse(
@@ -274,7 +274,7 @@ describe('scaffold template rendering', () => {
 			oxfmt: 'catalog:',
 		})
 		expect(fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8')).toContain(
-			"'@pluxel/runtime': ^0.3.0",
+			"'@pluxel/runtime': ^1.0.0",
 		)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
 		expect(fixture.fs.existsSync(resolve(targetDir, 'tsconfig.test.json'))).toBe(false)

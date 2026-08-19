@@ -55,7 +55,7 @@
 	},
 	"peerDependencies": {
 		"@mantine/core": "catalog:",
-		"@pluxel/runtime": "workspace:*",
+		"@pluxel/runtime": "workspace:^",
 		"@tabler/icons-react": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:"

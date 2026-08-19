@@ -70,7 +70,8 @@ pnpm governance:check
 pnpm verify              # CI 的 canonical 聚合门禁
 ```
 
-`verify` 覆盖 governance、format、lint，以及各 workspace 的 typecheck/test/build。提交前优先跑 `pnpm verify`；需要排除缓存影响时使用模板提供的 `build:full`/`test:full`。
+`verify` 覆盖 governance、format、lint，以及各 workspace 的 typecheck/test/build。提交前运行 `pnpm verify`；
+Turbo 根据输入 hash 决定复用结果，日常脚本不提供绕过缓存的平行入口。
 
 ## 首个改动顺序
 

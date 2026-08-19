@@ -6,8 +6,6 @@ on:
   pull_request:
     paths-ignore:
       - '.vscode/**'
-      - 'LICENSE'
-      - 'README.md'
   workflow_dispatch:
 
 concurrency:
@@ -46,13 +44,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           submodules: recursive
 
       - name: Install toolchain
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4
         with:
           cache: true
           install: true
@@ -63,7 +61,7 @@ jobs:
 
       - name: Restore pnpm store
         id: pnpm-store-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files
@@ -74,7 +72,7 @@ jobs:
 
       - name: Restore Turbo cache
         id: turbo-cache
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
           # Cache entries are immutable. Give every attempt its own key so a failed run can save
@@ -89,8 +87,8 @@ jobs:
         id: install
         run: pnpm install --frozen-lockfile
 
-      - name: Check release metadata
-        run: pnpm run release:check
+      - name: Check repository invariants
+        run: pnpm run release:check && pnpm run governance:check
 
       - name: Lint and check formatting
         run: pnpm run lint && pnpm run format:check
@@ -112,14 +110,14 @@ jobs:
 
       - name: Save Turbo cache
         if: always() && steps.turbo-cache.outcome == 'success' && steps.turbo-verify.outcome != 'skipped' && steps.turbo-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
       - name: Save pnpm store
         if: always() && steps.install.outcome == 'success' && steps.pnpm-store-cache.outcome == 'success' && steps.pnpm-store-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ${{ steps.pnpm-store.outputs.path }}/files

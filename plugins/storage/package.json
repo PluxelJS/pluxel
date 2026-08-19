@@ -45,6 +45,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/runtime": "workspace:^"
 	}
 }

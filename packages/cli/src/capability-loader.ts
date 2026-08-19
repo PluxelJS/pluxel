@@ -195,6 +195,7 @@ async function assertOwnerVersion(
 	const ownerVersion = manifest.data.version
 	const supportedRange = pkg.peerDependencies?.[metadata.owner]
 	if (!ownerVersion || !supportedRange) return
+	if (supportedRange.startsWith('workspace:')) return
 
 	const semver = await import('semver')
 	if (!semver.valid(ownerVersion) || !semver.validRange(supportedRange)) return

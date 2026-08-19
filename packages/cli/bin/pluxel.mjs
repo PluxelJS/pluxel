@@ -43,7 +43,7 @@ async function delegateToProjectLocalCli(cwd) {
 	let localRealpath
 	try {
 		localRealpath = await realpath(localExecutable)
-	} catch (error) {
+	} catch {
 		console.error(`[pluxel] Resolved project-local @pluxel/cli bin, but it is missing.`)
 		console.error(`Expected executable: ${localExecutable}`)
 		process.exit(1)
@@ -84,7 +84,7 @@ async function resolveDeclaredCliBin(projectManifest) {
 	let cliManifestPath
 	try {
 		cliManifestPath = require.resolve('@pluxel/cli/package.json')
-	} catch (error) {
+	} catch {
 		console.error(`[pluxel] ${projectManifest.path} declares @pluxel/cli, but it is not installed.`)
 		console.error('Run the project package manager install before invoking `pluxel`.')
 		process.exit(1)
@@ -106,9 +106,7 @@ async function resolveDeclaredCliBin(projectManifest) {
 }
 
 function hasOwn(value, key) {
-	return Boolean(
-		value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key),
-	)
+	return Boolean(value && typeof value === 'object' && Object.hasOwn(value, key))
 }
 
 function isNotFound(error) {

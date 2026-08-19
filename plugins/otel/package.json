@@ -66,6 +66,6 @@
 	"peerDependencies": {
 		"@opentelemetry/api": "catalog:",
 		"@opentelemetry/api-logs": "catalog:",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/runtime": "workspace:^"
 	}
 }

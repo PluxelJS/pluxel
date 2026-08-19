@@ -11,7 +11,11 @@ interface MarkdownNode {
 export function remarkPackageInstall() {
 	return (tree: MarkdownNode) => {
 		function visit(node: MarkdownNode) {
-			if (node.type === 'code' && node.lang === 'sh' && node.meta?.split(/\s+/).includes('package-install')) {
+			if (
+				node.type === 'code' &&
+				node.lang === 'sh' &&
+				node.meta?.split(/\s+/).includes('package-install')
+			) {
 				const command = node.value?.trim() ?? ''
 				const match = /^npx nypm add (?:(-D|-g) )?(.+)$/.exec(command)
 				if (!match) throw new Error(`Invalid package-install command: ${command}`)

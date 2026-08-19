@@ -50,15 +50,15 @@ pnpm format:check
 
 不要通过削弱测试、跳过检查或提交生成缓存来让验证通过。
 
-## Changeset
+## Changelog
 
-公开 package 的用户可见变化需要 Changeset：
+公开 package 的用户可见变化需要 Tegami changelog：
 
 ```sh
-pnpm changeset
+pnpm tegami
 ```
 
-只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 Changeset。版本与发布规则见 [发布指南](./engineering/RELEASING.md)。
+只选择公开行为实际发生变化的 package，并写清楚用户会感知到的结果。纯文档、测试或不影响公开行为的内部重构不需要空 changelog。版本与发布规则见 [发布指南](./engineering/RELEASING.md)。
 
 ## Pull Request
 
@@ -67,4 +67,4 @@ pnpm changeset
 - 勾选 PR 模板中的检查项。
 - 阅读 [CLA](./CLA.md) 后，在 PR 中评论 `/approve-cla`。自动化会记录并验证同意状态。
 
-维护者可能要求补充测试、文档或 Changeset。所有检查通过并不保证合并，但会让评审集中在设计和行为本身。
+维护者可能要求补充测试、文档或 Tegami changelog。所有检查通过并不保证合并，但会让评审集中在设计和行为本身。

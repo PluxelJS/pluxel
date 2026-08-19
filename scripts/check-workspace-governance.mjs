@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const dependencyFields = [
@@ -58,6 +58,7 @@ const candidatePackageRoots = await Promise.all(
 	}),
 )
 const packageRoots = [root, ...candidatePackageRoots.filter(Boolean)]
+const pluginDirectory = resolve(root, 'plugins')
 
 const packageManifests = await Promise.all(
 	packageRoots.map(async (packageRoot) => {
@@ -73,6 +74,27 @@ for (const { manifestPath, manifest } of packageManifests) {
 			}
 			if (specifier === 'catalog:' && !catalogNames.has(name)) {
 				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from the catalog`)
+			}
+		}
+	}
+
+	if (manifestPath.startsWith(`${pluginDirectory}${sep}`)) {
+		for (const field of ['dependencies', 'optionalDependencies']) {
+			for (const name of Object.keys(manifest[field] ?? {})) {
+				if (name.startsWith('@pluxel/')) {
+					errors.push(
+						`${relative(manifestPath)}: Plugin package ${field}.${name} must be a peer dependency to preserve host Plugin identity`,
+					)
+				}
+			}
+		}
+		for (const [name, specifier] of Object.entries(manifest.peerDependencies ?? {})) {
+			if (!name.startsWith('@pluxel/')) continue
+			if (specifier !== 'workspace:^') {
+				errors.push(`${relative(manifestPath)}: peerDependencies.${name} must be workspace:^`)
+			}
+			if (manifest.devDependencies?.[name] !== 'workspace:*') {
+				errors.push(`${relative(manifestPath)}: peer ${name} must have a workspace:* devDependency`)
 			}
 		}
 	}

@@ -1,10 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { paper } from './tegami.mts'
+
 const root = new URL('../', import.meta.url)
 const rootPath = root.pathname
 const repositoryUrl = 'https://github.com/PluxelJS/pluxel'
 const expectedLicense = 'AGPL-3.0-only'
+const sourcePeerRange = 'workspace:^'
 const dependencyFields = [
 	'dependencies',
 	'peerDependencies',
@@ -15,17 +18,36 @@ const dependencyFields = [
 const rootPackage = JSON.parse(await readFile(new URL('package.json', root), 'utf8'))
 const rootLicense = await readFile(new URL('LICENSE', root), 'utf8')
 const miseConfig = await readFile(new URL('mise.toml', root), 'utf8')
+const pnpmLock = await readFile(new URL('pnpm-lock.yaml', root), 'utf8')
 const packages = await readPublicPackages()
 const publicVersions = new Map(packages.map(({ manifest }) => [manifest.name, manifest.version]))
+const releaseDraft = await paper.draft()
 const errors = []
 
 if (packages.length === 0) errors.push('No public packages found under packages/ or plugins/.')
 
-const expectedTools = { node: 'lts', pnpm: 'latest' }
-for (const [tool, expected] of Object.entries(expectedTools)) {
+const plannedPackages = []
+for (const [id, draft] of releaseDraft.getPackageDrafts()) {
+	if (draft.type === undefined) continue
+	const name = id.startsWith('npm:') ? id.slice('npm:'.length) : id
+	plannedPackages.push(name)
+	if (!publicVersions.has(name)) errors.push(`Tegami planned non-public package ${name}.`)
+}
+
+const minimumNodeMajor = 24
+const requiredPnpmMajor = 11
+for (const tool of ['node', 'pnpm']) {
 	const configured = new RegExp(`^${tool}\\s*=\\s*["']([^"']+)["']`, 'm').exec(miseConfig)?.[1]
-	if (configured !== expected) {
-		errors.push(`mise.toml ${tool} must use the rolling ${expected} alias, got ${configured}.`)
+	if (!isSemver(configured)) {
+		errors.push(`mise.toml ${tool} must pin an exact semver, got ${configured}.`)
+		continue
+	}
+	const major = Number(configured.split('.')[0])
+	if (tool === 'node' && major < minimumNodeMajor) {
+		errors.push(`mise.toml node must be at least major ${minimumNodeMajor}, got ${configured}.`)
+	}
+	if (tool === 'pnpm' && major !== requiredPnpmMajor) {
+		errors.push(`mise.toml pnpm must stay on major ${requiredPnpmMajor}, got ${configured}.`)
 	}
 }
 if (/^bun\s*=/m.test(miseConfig)) {
@@ -42,6 +64,9 @@ if (rootPackage.license !== expectedLicense) {
 if (rootPackage.packageManager !== undefined) {
 	errors.push('Use devEngines.packageManager instead of a version-pinned packageManager field.')
 }
+if (!isSemver(rootPackage.devDependencies?.tegami)) {
+	errors.push('Root devDependencies.tegami must pin an exact semver.')
+}
 const packageManager = rootPackage.devEngines?.packageManager
 if (packageManager?.name !== 'pnpm') {
 	errors.push('devEngines.packageManager.name must be pnpm.')
@@ -54,6 +79,11 @@ if (typeof packageManager?.version !== 'string' || isSemver(packageManager.versi
 if (packageManager?.onFail !== 'ignore') {
 	errors.push(
 		'devEngines.packageManager.onFail must be ignore; mise selects pnpm while npm handles trusted publishing.',
+	)
+}
+if (/^\s+packageManagerDependencies:/m.test(pnpmLock)) {
+	errors.push(
+		'pnpm-lock.yaml must not pin pnpm; mise controls the installed package manager version.',
 	)
 }
 
@@ -82,11 +112,30 @@ for (const { directory, manifest } of packages) {
 	for (const field of dependencyFields) {
 		for (const [name, range] of Object.entries(manifest[field] ?? {})) {
 			if (!publicVersions.has(name)) continue
-			if (field === 'peerDependencies' && typeof range === 'string' && range.length > 0) continue
-			if (range === 'workspace:*' || range === publicVersions.get(name)) continue
+			if (field === 'peerDependencies') {
+				const publishedPeerRange = `^${publicVersions.get(name)}`
+				if (range !== sourcePeerRange && range !== publishedPeerRange) {
+					errors.push(
+						`${manifest.name} peerDependencies.${name} must be ${sourcePeerRange} in source or ${publishedPeerRange} in a packed manifest, got ${range}.`,
+					)
+				}
+				if (manifest.devDependencies?.[name] !== 'workspace:*') {
+					errors.push(
+						`${manifest.name} must provide peer ${name} through devDependencies.${name}=workspace:* for repository development.`,
+					)
+				}
+				continue
+			}
+			if (field === 'devDependencies' && range === 'workspace:*') continue
+			const syncVersion = manifest.name === '@pluxel/create' && name === '@pluxel/cli'
+			const expectedSourceRange = syncVersion ? 'workspace:*' : 'workspace:^'
+			const expectedPublishedRange = syncVersion
+				? publicVersions.get(name)
+				: `^${publicVersions.get(name)}`
+			if (range === expectedSourceRange || range === expectedPublishedRange) continue
 			errors.push(
-				`${manifest.name} ${field}.${name} must be workspace:* in source or ` +
-					`${publicVersions.get(name)} in a packed manifest, got ${range}.`,
+				`${manifest.name} ${field}.${name} must be ${expectedSourceRange} in source or ` +
+					`${expectedPublishedRange} in a packed manifest, got ${range}.`,
 			)
 		}
 	}
@@ -96,7 +145,9 @@ if (errors.length > 0) {
 	for (const error of errors) console.error(error)
 	process.exitCode = 1
 } else {
-	console.log(`Release invariants OK: ${packages.length} independently versioned public packages.`)
+	console.log(
+		`Release invariants OK: ${packages.length} public packages, ${plannedPackages.length} currently planned.`,
+	)
 }
 
 function isSemver(version) {

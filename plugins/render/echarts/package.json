@@ -37,7 +37,9 @@
 		"echarts": "catalog:"
 	},
 	"devDependencies": {
+		"@pluxel/canvas": "workspace:*",
 		"@pluxel/cli": "workspace:*",
+		"@pluxel/fonts": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",
 		"@pluxel/runtime": "workspace:*",
 		"@pluxel/test": "workspace:*",
@@ -46,9 +48,9 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"@pluxel/canvas": "workspace:*",
-		"@pluxel/fonts": "workspace:*",
-		"@pluxel/runtime": "workspace:*"
+		"@pluxel/canvas": "workspace:^",
+		"@pluxel/fonts": "workspace:^",
+		"@pluxel/runtime": "workspace:^"
 	},
 	"pluxel": {
 		"pluginPackages": {

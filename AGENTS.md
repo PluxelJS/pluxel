@@ -13,3 +13,8 @@ Before changing plugin APIs, runtime capabilities, lifecycle, Context services, 
 3. the relevant domain document linked from `engineering/README.md`
 
 Treat those documents as current engineering constraints. User-facing behavior must also be reflected in `docs/`; proposals and historical notes are not current API authority.
+
+For a user-visible change to a public package, add a pending `.tegami/*.md` changelog with explicit
+package bump types and at least one Markdown heading. Internal-only refactors, tests, and documentation
+changes do not require empty changelogs. Do not edit package versions or `.tegami/publish-lock.yaml`
+manually; Tegami owns version and internal dependency updates.

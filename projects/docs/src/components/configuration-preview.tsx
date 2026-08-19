@@ -1,16 +1,7 @@
 'use client'
 
 import '@mantine/core/styles.css'
-import {
-	Accordion,
-	Button,
-	Card,
-	Code,
-	Group,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { Accordion, Button, Card, Code, Group, Stack, Text, Title } from '@mantine/core'
 import { useMemo } from 'react'
 import * as v from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'

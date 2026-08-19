@@ -22,7 +22,7 @@ jobs:
     if: github.event_name == 'pull_request_target'
     steps:
       - name: Checkout pull request
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout protected CLA policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.base_ref }}
           path: cla-policy
@@ -48,7 +48,7 @@ jobs:
     if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.body == '/approve-cla'
     steps:
       - name: Checkout protected CLA policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 

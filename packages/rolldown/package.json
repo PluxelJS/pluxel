@@ -126,7 +126,7 @@
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
 		"@module-federation/vite": "^1.16.16",
-		"@pluxel/core": "workspace:*",
+		"@pluxel/core": "workspace:^",
 		"drizzle-kit": "^0.31.5",
 		"nf3": "^0.3.22",
 		"oxc-parser": "^0.115.0",
