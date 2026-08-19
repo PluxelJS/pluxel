@@ -11,6 +11,8 @@
 
 当前进行中的提案：
 
+- [`CLI_SCAFFOLDING_REFACTOR.md`](CLI_SCAFFOLDING_REFACTOR.md)：重构 `@pluxel/create` / `pluxel new`
+  的模板 acquisition、受限插值、generation plan、远程 giget adapter 与 starter 产品边界。
 - [`FUTURE_ARCHITECTURE_DIRECTIONS.md`](FUTURE_ARCHITECTURE_DIRECTIONS.md)：未来架构方向的取舍记录，包含已否决的
   decoratorless Plugin 与 catalog exact-only 简化，以及仍可升级为 proposal 的 browser config artifact、
   multi-instance internals、Context kernel、Workbench transport 与 binding 稳定性研究。
