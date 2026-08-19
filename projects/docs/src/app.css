@@ -157,15 +157,15 @@ body > [role='presentation'].z-50[data-closed],
 .pluxel-hero,
 .pluxel-stage-section,
 .pluxel-docs-section {
-	width: min(100% - 3rem, 76rem);
+	width: min(100% - 3rem, 86rem);
 	margin-inline: auto;
 }
 
 .pluxel-hero {
 	display: grid;
-	grid-template-columns: minmax(0, 0.82fr) minmax(34rem, 1.18fr);
+	grid-template-columns: minmax(23rem, 0.72fr) minmax(42rem, 1.28fr);
 	align-items: center;
-	gap: 4rem;
+	gap: 3rem;
 	min-height: min(46rem, calc(100svh - 4rem));
 	padding-block: 5rem 4rem;
 }
@@ -318,17 +318,30 @@ body > [role='presentation'].z-50[data-closed],
 }
 
 .pluxel-code {
-	height: 18rem;
-	margin: 0;
-	padding: 2rem 1.5rem;
+	height: 27.5rem;
+	padding: 1.25rem 1.5rem;
 	overflow: auto;
 	border-bottom: 1px solid var(--color-fd-border);
 	background: color-mix(in srgb, var(--color-fd-muted) 38%, transparent);
 	color: var(--color-fd-foreground);
 	font-size: 0.8rem;
-	line-height: 1.7;
+	line-height: 1.6;
 	overflow-wrap: anywhere;
-	white-space: pre-wrap;
+}
+
+.pluxel-code .shiki {
+	min-width: max-content;
+	margin: 0;
+	background: transparent !important;
+}
+
+.dark .pluxel-code .shiki span {
+	color: var(--shiki-dark) !important;
+}
+
+.pluxel-code code {
+	display: block;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .pluxel-showcase-footer {
@@ -563,7 +576,7 @@ body > [role='presentation'].z-50[data-closed],
 		flex: 1;
 	}
 	.pluxel-code {
-		height: 16rem;
+		height: min(30rem, 60svh);
 		padding: 0.8rem 1rem;
 		font-size: 0.68rem;
 		line-height: 1.5;
@@ -623,9 +636,32 @@ body > [role='presentation'].z-50[data-closed],
 	padding: 1rem;
 }
 
+.configuration-playground-page {
+	display: flex;
+	width: 100%;
+	max-width: 96rem;
+	height: calc(100dvh - 6.5rem);
+	min-height: 0;
+	margin-inline: auto;
+	padding: 1rem 1.5rem;
+	overflow: hidden;
+}
+
+.configuration-playground-card,
+.configuration-playground-shell {
+	width: 100%;
+	height: 100%;
+	min-height: 0;
+}
+
+.configuration-playground-shell {
+	overflow: hidden;
+}
+
 .configuration-playground-editor {
+	width: 100%;
+	height: 100%;
 	min-height: 22rem;
-	height: min(62vh, 34rem);
 }
 
 .configuration-playground-layout {
@@ -633,19 +669,59 @@ body > [role='presentation'].z-50[data-closed],
 	grid-template-columns: minmax(0, 1fr);
 	gap: 1.25rem;
 	align-items: start;
+	min-height: 0;
 }
 
-.configuration-playground-layout > * {
+.configuration-playground-pane {
 	min-width: 0;
 }
 
 @media (min-width: 1100px) {
 	.configuration-playground-layout {
+		flex: 1;
 		grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr);
+		align-items: stretch;
+		overflow: hidden;
+	}
+
+	.configuration-playground-editor-frame {
+		flex: 1;
+		min-height: 0;
+	}
+
+	.configuration-playground-preview-pane {
+		overflow-y: auto;
+		padding-inline-end: 0.5rem;
+		scrollbar-gutter: stable;
+	}
+}
+
+@media (max-width: 1099px) {
+	.configuration-playground-page {
+		height: auto;
+		min-height: calc(100dvh - 3.5rem);
+		overflow: visible;
+	}
+
+	.configuration-playground-card,
+	.configuration-playground-shell {
+		height: auto;
+	}
+
+	.configuration-playground-shell {
+		overflow: visible;
+	}
+
+	.configuration-playground-editor {
+		height: min(62vh, 34rem);
 	}
 }
 
 @media (max-width: 639px) {
+	.configuration-playground-page {
+		padding: 1rem 0.75rem;
+	}
+
 	.configuration-preview-disclosure-body {
 		padding: 0.5rem;
 	}

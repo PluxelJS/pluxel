@@ -1,18 +1,9 @@
 'use client'
 
 import '@mantine/core/styles.css'
-import {
-	Accordion,
-	Alert,
-	Button,
-	Card,
-	Code,
-	Group,
-	Stack,
-	Text,
-	Title,
-} from '@mantine/core'
+import { Accordion, Alert, Button, Card, Code, Group, Stack, Text, Title } from '@mantine/core'
 import { init } from 'modern-monaco'
+import { registerLSPProvider } from 'modern-monaco/core'
 import type { editor } from 'modern-monaco/editor-core'
 import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -23,7 +14,31 @@ import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 import { configurationSchema } from './configuration-schema'
 import { MantineThemeProvider } from './mantine-theme-provider'
 
-const template = `const Config = v.object({
+registerLSPProvider('typescript', {
+	aliases: ['javascript', 'jsx', 'tsx'],
+	import: () => import('modern-monaco/lsp/typescript/setup'),
+})
+
+let monacoPromise: ReturnType<typeof init> | undefined
+
+function initPlaygroundMonaco(defaultTheme: string) {
+	globalThis.MonacoEnvironment ??= {}
+	Object.assign(globalThis.MonacoEnvironment, { useBuiltinLSP: false })
+
+	monacoPromise ??= init({
+		defaultTheme,
+		langs: ['typescript'],
+		lsp: {
+			typescript: getTypeScriptLspOptions(),
+		},
+	})
+	return monacoPromise
+}
+
+const template = `import * as v from 'valibot'
+import * as f from 'valibot-form'
+
+const Config = v.object({
   enabled: v.optional(
     v.pipe(
       v.boolean(),
@@ -114,7 +129,7 @@ const template = `const Config = v.object({
   ),
 })
 
-return Config`
+export default Config`
 
 type PlaygroundSchema = ObjectLikeSchema
 
@@ -141,14 +156,18 @@ function getTypeScriptLspOptions() {
 		},
 		compilerOptions: {
 			strict: true,
-			types: [valibotUrl, valibotFormUrl, new URL('globals.d.ts', baseUrl).href],
+			types: [valibotUrl, valibotFormUrl],
 		},
 	}
 }
 
 function compileSchema(code: string): PlaygroundSchema {
+	const executableCode = code
+		.replace(/^\s*import \* as v from ['"]valibot['"];?\s*$/m, '')
+		.replace(/^\s*import \* as f from ['"]valibot-form['"];?\s*$/m, '')
+		.replace(/\bexport default Config\s*$/, 'return Config')
 	// The editor intentionally runs a user-authored schema in the page sandbox.
-	const result: unknown = new Function('v', 'f', `"use strict";\n${code}`)(v, f)
+	const result: unknown = new Function('v', 'f', `"use strict";\n${executableCode}`)(v, f)
 	if (!isPlaygroundSchema(result)) {
 		throw new Error('Playground 只接受 object 或 intersect schema')
 	}
@@ -215,16 +234,7 @@ export function ConfigurationPlayground() {
 		async function mountEditor() {
 			if (!editorContainerRef.current) return
 
-			globalThis.MonacoEnvironment ??= {}
-			Object.assign(globalThis.MonacoEnvironment, { useBuiltinLSP: true })
-
-			const monaco = await init({
-				defaultTheme: editorTheme,
-				langs: ['typescript'],
-				lsp: {
-					typescript: getTypeScriptLspOptions(),
-				},
-			})
+			const monaco = await initPlaygroundMonaco(editorTheme)
 			if (disposed || !editorContainerRef.current) return
 
 			model = monaco.editor.createModel(
@@ -291,8 +301,14 @@ export function ConfigurationPlayground() {
 
 	return (
 		<MantineThemeProvider>
-			<Card id="configuration-playground" withBorder radius="md" p="lg">
-				<Stack gap="lg">
+			<Card
+				id="configuration-playground"
+				className="configuration-playground-card"
+				withBorder
+				radius="md"
+				p="lg"
+			>
+				<Stack className="configuration-playground-shell" gap="lg">
 					<div>
 						<Title order={2} size="h3">
 							配置 Playground
@@ -304,7 +320,10 @@ export function ConfigurationPlayground() {
 					</div>
 
 					<div className="configuration-playground-layout">
-						<Stack gap="md">
+						<Stack
+							className="configuration-playground-pane configuration-playground-editor-pane"
+							gap="md"
+						>
 							<div>
 								<Title order={3} size="h4">
 									Schema 编辑器
@@ -314,7 +333,7 @@ export function ConfigurationPlayground() {
 								</Text>
 							</div>
 
-							<div className="overflow-hidden rounded-lg border">
+							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
 								<div ref={editorContainerRef} className="configuration-playground-editor" />
 							</div>
 
@@ -345,7 +364,10 @@ export function ConfigurationPlayground() {
 							</Text>
 						</Stack>
 
-						<Stack gap="md">
+						<Stack
+							className="configuration-playground-pane configuration-playground-preview-pane"
+							gap="md"
+						>
 							<div>
 								<Title order={3} size="h4">
 									表单与结果
