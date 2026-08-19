@@ -6,23 +6,31 @@ import { useState } from 'react'
 
 const examples = [
 	{
-		code: `@Plugin({ displayName: 'Status' })
+		code: `@Plugin({ displayName: 'Health' })
+export class HealthPlugin extends BasePlugin {
+  status() {
+    return { ready: true }
+  }
+}
+
+@Plugin({ displayName: 'Status' })
 export class StatusPlugin extends BasePlugin {
+  constructor(private health: HealthPlugin) { super() }
   private config = this.configs.use(StatusConfig)
 
-  override init() {
-    this.ctx.http.plugin.routes((app) =>
-      app.get('/status', () => ({
-        label: this.config.label,
-      })),
-    )
+  status() {
+    return {
+      ...this.health.status(),
+      label: this.config.label,
+    }
   }
 }`,
-		description: '一个 class 就是一个 Plugin。配置和 HTTP route 都绑定当前实例，重载或停止时自动撤销。',
+		description:
+			'StatusPlugin 直接注入 HealthPlugin。构造函数参数就是依赖声明，两者的启动顺序和实例类型不需要另写配置。',
 		href: '/docs/getting-started',
-		label: 'Plugin',
-		packageName: 'src/StatusPlugin.ts',
-		status: '直接运行',
+		label: '依赖',
+		packageName: 'src/plugins.ts',
+		status: '类型即依赖',
 	},
 	{
 		code: `export const StatusConfig = v.object({
@@ -35,24 +43,27 @@ export class StatusPlugin extends BasePlugin {
     'ready',
   ),
 })`,
-		description: '同一份 Valibot schema 同时提供 TypeScript 类型、默认值、运行时校验和 Workbench 表单。',
+		description:
+			'同一份 Valibot schema 同时提供 TypeScript 类型、默认值、运行时校验和 Workbench 表单。',
 		href: '/docs/getting-started/configuration',
 		label: '配置',
 		packageName: 'src/config.ts',
 		status: '无需重复类型',
 	},
 	{
-		code: `it('starts and serves HTTP', async () => {
+		code: `it('starts plugin dependencies', async () => {
   await withRuntimeHost(async (host) => {
     host.add(StatusPlugin)
     host.cfg(StatusPlugin).set({ label: 'healthy' })
     host.cfg(StatusPlugin).enable()
 
     await host.commit()
+    expect(host.require(HealthPlugin)).toBeDefined()
     expect(host.require(StatusPlugin)).toBeDefined()
   })
 })`,
-		description: '测试经过真实语义转换和生命周期；callback 结束后 host 自动关闭，也会验证资源清理。',
+		description:
+			'测试经过真实语义转换和生命周期；callback 结束后 host 自动关闭，也会验证资源清理。',
 		href: '/docs/development/testing',
 		label: '测试',
 		packageName: 'tests/StatusPlugin.test.ts',
@@ -76,22 +87,22 @@ export function PluginShowcase() {
 			<div className="pluxel-showcase-tabs" role="tablist" aria-label="选择开发步骤">
 				{examples.map((example, index) => (
 					<button
-					key={example.label}
-					type="button"
-					role="tab"
-					id={`pluxel-plugin-tab-${index}`}
-					aria-selected={index === activeIndex}
-					aria-controls="pluxel-plugin-example"
-					tabIndex={index === activeIndex ? 0 : -1}
-					onClick={() => setActiveIndex(index)}
-					onKeyDown={(event) => {
-						if (event.key === 'ArrowRight') moveTab(index + 1, event.currentTarget)
-						else if (event.key === 'ArrowLeft') moveTab(index - 1, event.currentTarget)
-						else if (event.key === 'Home') moveTab(0, event.currentTarget)
-						else if (event.key === 'End') moveTab(examples.length - 1, event.currentTarget)
-						else return
-						event.preventDefault()
-					}}
+						key={example.label}
+						type="button"
+						role="tab"
+						id={`pluxel-plugin-tab-${index}`}
+						aria-selected={index === activeIndex}
+						aria-controls="pluxel-plugin-example"
+						tabIndex={index === activeIndex ? 0 : -1}
+						onClick={() => setActiveIndex(index)}
+						onKeyDown={(event) => {
+							if (event.key === 'ArrowRight') moveTab(index + 1, event.currentTarget)
+							else if (event.key === 'ArrowLeft') moveTab(index - 1, event.currentTarget)
+							else if (event.key === 'Home') moveTab(0, event.currentTarget)
+							else if (event.key === 'End') moveTab(examples.length - 1, event.currentTarget)
+							else return
+							event.preventDefault()
+						}}
 					>
 						{example.label}
 					</button>

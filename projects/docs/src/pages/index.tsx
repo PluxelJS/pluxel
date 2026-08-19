@@ -1,17 +1,6 @@
 import { Link } from 'fumapress/client'
 import { createHomeLayout } from 'fumapress/layouts/home'
-import {
-	ArrowRight,
-	Boxes,
-	Braces,
-	CircleDot,
-	CloudCog,
-	Gauge,
-	PackageCheck,
-	ServerCog,
-	Settings2,
-	Workflow,
-} from 'lucide-react'
+import { ArrowRight, Boxes, Braces, CircleDot, CloudCog, ServerCog, Settings2 } from 'lucide-react'
 import { PluginShowcase } from '../components/plugin-showcase'
 
 const HomeLayout = createHomeLayout()
@@ -61,37 +50,6 @@ const hosts = [
 	},
 ]
 
-const pluginPaths = [
-	{
-		description: '带宿主出站策略的原生 Wretch client。',
-		href: '/docs/plugins/wretch',
-		icon: Workflow,
-		meta: '@pluxel/wretch',
-		title: 'HTTP client',
-	},
-	{
-		description: '服务端字体、Canvas 与 ECharts 图片渲染。',
-		href: '/docs/plugins/rendering',
-		icon: Gauge,
-		meta: 'Fonts · Canvas · ECharts',
-		title: '服务端渲染',
-	},
-	{
-		description: '隔离缓存、Redis、对象存储与频率控制。',
-		href: '/docs/plugins/cache',
-		icon: PackageCheck,
-		meta: 'Workspace integrations',
-		title: '数据与基础设施',
-	},
-	{
-		description: '用一份 Valibot schema 生成类型、校验和管理表单。',
-		href: '/docs/getting-started/configuration',
-		icon: Settings2,
-		meta: 'Schema-driven',
-		title: '配置与 Workbench',
-	},
-]
-
 export default function HomePage() {
 	return (
 		<HomeLayout>
@@ -103,7 +61,8 @@ export default function HomePage() {
 						</p>
 						<h1>Pluxel</h1>
 						<p className="pluxel-hero-lead">
-							写一个 class，用构造函数注入能力；配置、HTTP route 和资源清理都放在固定位置，开发期直接热更新。
+							写一个 class，用构造函数注入能力；配置、HTTP route
+							和资源清理都放在固定位置，开发期直接热更新。
 						</p>
 						<div className="pluxel-hero-actions">
 							<Link className="pluxel-primary-action" href="/docs/getting-started">
@@ -120,7 +79,9 @@ export default function HomePage() {
 
 				<section className="pluxel-stage-section" aria-labelledby="writing-patterns">
 					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><Braces aria-hidden="true" /> 直接看日常写法</p>
+						<p className="pluxel-kicker">
+							<Braces aria-hidden="true" /> 直接看日常写法
+						</p>
 						<h2 id="writing-patterns">写 Plugin 最常用的三个位置</h2>
 					</div>
 					<div className="pluxel-stages">
@@ -133,7 +94,9 @@ export default function HomePage() {
 									<h3>{pattern.title}</h3>
 									<code className="pluxel-pattern-code">{pattern.code}</code>
 									<p>{pattern.description}</p>
-									<span className="pluxel-card-link">阅读文档 <ArrowRight aria-hidden="true" /></span>
+									<span className="pluxel-card-link">
+										阅读文档 <ArrowRight aria-hidden="true" />
+									</span>
 								</Link>
 							)
 						})}
@@ -142,42 +105,30 @@ export default function HomePage() {
 
 				<section className="pluxel-docs-section" aria-labelledby="choose-host">
 					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><ServerCog aria-hidden="true" /> 最后放进宿主</p>
+						<p className="pluxel-kicker">
+							<ServerCog aria-hidden="true" /> 最后放进宿主
+						</p>
 						<h2 id="choose-host">Plugin 写法不随宿主改变</h2>
 					</div>
 					<div className="pluxel-host-cards">
 						{hosts.map((host) => {
 							const Icon = host.icon
 							return (
-								<Link key={host.title} href="/docs/getting-started/host-setup" className="pluxel-doc-card">
+								<Link
+									key={host.title}
+									href="/docs/getting-started/host-setup"
+									className="pluxel-doc-card"
+								>
 									<Icon aria-hidden="true" />
 									<span className="pluxel-card-meta">{host.meta}</span>
 									<h3>{host.title}</h3>
-									<pre className="pluxel-host-code"><code>{host.code}</code></pre>
+									<pre className="pluxel-host-code">
+										<code>{host.code}</code>
+									</pre>
 									<p>{host.description}</p>
-									<span className="pluxel-card-link">配置宿主 <ArrowRight aria-hidden="true" /></span>
-								</Link>
-							)
-						})}
-					</div>
-				</section>
-
-				<section className="pluxel-docs-section pluxel-plugin-section" aria-labelledby="official-plugins">
-					<div className="pluxel-section-heading">
-						<p className="pluxel-kicker"><PackageCheck aria-hidden="true" /> 按需安装，不挤进核心</p>
-						<h2 id="official-plugins">从任务进入官方 Plugin</h2>
-						<p>公开 package 与工作区集成分开标注，文档说明真实边界和当前可用状态。</p>
-					</div>
-					<div className="pluxel-plugin-cards">
-						{pluginPaths.map((item) => {
-							const Icon = item.icon
-							return (
-								<Link key={item.title} href={item.href} className="pluxel-doc-card">
-									<Icon aria-hidden="true" />
-									<span className="pluxel-card-meta">{item.meta}</span>
-									<h3>{item.title}</h3>
-									<p>{item.description}</p>
-									<span className="pluxel-card-link">查看能力 <ArrowRight aria-hidden="true" /></span>
+									<span className="pluxel-card-link">
+										配置宿主 <ArrowRight aria-hidden="true" />
+									</span>
 								</Link>
 							)
 						})}

@@ -13,6 +13,45 @@ html > body[data-scroll-locked] {
 	--removed-body-scroll-bar-size: 0 !important;
 }
 
+body > [role='presentation'].z-50 {
+	backdrop-filter: none;
+}
+
+body > [role='presentation'].z-50[data-open],
+#fd-search-dialog-content[data-open] {
+	animation: pluxel-search-in 140ms ease-out;
+}
+
+body > [role='presentation'].z-50[data-closed],
+#fd-search-dialog-content[data-closed] {
+	animation: pluxel-search-out 100ms ease-in;
+}
+
+@keyframes pluxel-search-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes pluxel-search-out {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#fd-search-dialog-content,
+	body > [role='presentation'].z-50 {
+		animation: none;
+	}
+}
+
 .pluxel-mantine-scope {
 	color-scheme: light;
 }
@@ -184,7 +223,10 @@ html > body[data-scroll-locked] {
 	border-radius: 0.375rem;
 	font-size: 0.9rem;
 	font-weight: 650;
-	transition: background-color 160ms, border-color 160ms, color 160ms;
+	transition:
+		background-color 160ms,
+		border-color 160ms,
+		color 160ms;
 }
 
 .pluxel-primary-action {
@@ -360,13 +402,39 @@ html > body[data-scroll-locked] {
 	transition: background-color 160ms;
 }
 
-.pluxel-stage + .pluxel-stage { border-left: 1px solid var(--color-fd-border); }
-.pluxel-stage:hover { background: var(--color-fd-accent); }
-.pluxel-stage > svg { width: 1.4rem; height: 1.4rem; color: var(--pluxel-green); }
-.pluxel-stage-index { position: absolute; top: 2rem; right: 2rem; color: var(--color-fd-muted-foreground); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; }
-.pluxel-stage h3 { margin: 1.8rem 0 0; font-size: 1rem; font-weight: 680; }
-.pluxel-stage p { margin: 0.7rem 0 0; color: var(--color-fd-muted-foreground); font-size: 0.875rem; line-height: 1.7; }
-.pluxel-stage .pluxel-card-link { margin-top: 1.2rem; }
+.pluxel-stage + .pluxel-stage {
+	border-left: 1px solid var(--color-fd-border);
+}
+.pluxel-stage:hover {
+	background: var(--color-fd-accent);
+}
+.pluxel-stage > svg {
+	width: 1.4rem;
+	height: 1.4rem;
+	color: var(--pluxel-green);
+}
+.pluxel-stage-index {
+	position: absolute;
+	top: 2rem;
+	right: 2rem;
+	color: var(--color-fd-muted-foreground);
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.72rem;
+}
+.pluxel-stage h3 {
+	margin: 1.8rem 0 0;
+	font-size: 1rem;
+	font-weight: 680;
+}
+.pluxel-stage p {
+	margin: 0.7rem 0 0;
+	color: var(--color-fd-muted-foreground);
+	font-size: 0.875rem;
+	line-height: 1.7;
+}
+.pluxel-stage .pluxel-card-link {
+	margin-top: 1.2rem;
+}
 
 .pluxel-pattern-code {
 	display: block;
@@ -385,19 +453,11 @@ html > body[data-scroll-locked] {
 	border-top: 1px solid var(--color-fd-border);
 }
 
-.pluxel-host-cards,
-.pluxel-plugin-cards {
+.pluxel-host-cards {
 	display: grid;
 	gap: 1rem;
 	margin-top: 3rem;
-}
-
-.pluxel-host-cards {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.pluxel-plugin-cards {
-	grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .pluxel-doc-card {
@@ -410,7 +470,10 @@ html > body[data-scroll-locked] {
 	border: 1px solid var(--color-fd-border);
 	border-radius: 0.5rem;
 	background: var(--color-fd-card);
-	transition: border-color 160ms, background-color 160ms, transform 160ms;
+	transition:
+		border-color 160ms,
+		background-color 160ms,
+		transform 160ms;
 }
 
 .pluxel-doc-card:hover {
@@ -468,33 +531,65 @@ html > body[data-scroll-locked] {
 	margin-top: 1.4rem;
 }
 
-.pluxel-plugin-section {
-	padding-bottom: 7rem;
-}
-
 @media (max-width: 900px) {
-	.pluxel-hero { grid-template-columns: 1fr; gap: 3rem; min-height: auto; padding-block: 4rem; }
-	.pluxel-runtime-window { max-width: 44rem; }
-	.pluxel-plugin-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.pluxel-hero {
+		grid-template-columns: 1fr;
+		gap: 3rem;
+		min-height: auto;
+		padding-block: 4rem;
+	}
+	.pluxel-runtime-window {
+		max-width: 44rem;
+	}
 }
 
 @media (max-width: 639px) {
 	.pluxel-hero,
 	.pluxel-stage-section,
-	.pluxel-docs-section { width: min(100% - 2rem, 76rem); }
-	.pluxel-hero { padding-block: 3.5rem 3rem; }
-	.pluxel-hero h1 { font-size: 4rem; }
-	.pluxel-hero-lead { font-size: 1rem; }
-	.pluxel-showcase-tabs button { min-width: 0; flex: 1; }
-	.pluxel-code { height: 16rem; padding: 0.8rem 1rem; font-size: 0.68rem; line-height: 1.5; }
-	.pluxel-showcase-footer { align-items: flex-start; flex-direction: column; min-height: 7rem; }
+	.pluxel-docs-section {
+		width: min(100% - 2rem, 76rem);
+	}
+	.pluxel-hero {
+		padding-block: 3.5rem 3rem;
+	}
+	.pluxel-hero h1 {
+		font-size: 4rem;
+	}
+	.pluxel-hero-lead {
+		font-size: 1rem;
+	}
+	.pluxel-showcase-tabs button {
+		min-width: 0;
+		flex: 1;
+	}
+	.pluxel-code {
+		height: 16rem;
+		padding: 0.8rem 1rem;
+		font-size: 0.68rem;
+		line-height: 1.5;
+	}
+	.pluxel-showcase-footer {
+		align-items: flex-start;
+		flex-direction: column;
+		min-height: 7rem;
+	}
 	.pluxel-stage-section,
-	.pluxel-docs-section { padding-block: 4rem; }
-	.pluxel-stages { grid-template-columns: 1fr; }
-	.pluxel-stage + .pluxel-stage { border-top: 1px solid var(--color-fd-border); border-left: 0; }
-	.pluxel-host-cards,
-	.pluxel-plugin-cards { grid-template-columns: 1fr; }
-	.pluxel-doc-card { min-height: 13rem; }
+	.pluxel-docs-section {
+		padding-block: 4rem;
+	}
+	.pluxel-stages {
+		grid-template-columns: 1fr;
+	}
+	.pluxel-stage + .pluxel-stage {
+		border-top: 1px solid var(--color-fd-border);
+		border-left: 0;
+	}
+	.pluxel-host-cards {
+		grid-template-columns: 1fr;
+	}
+	.pluxel-doc-card {
+		min-height: 13rem;
+	}
 }
 
 .configuration-example-layout {
