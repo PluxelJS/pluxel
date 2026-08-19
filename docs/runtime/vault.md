@@ -9,12 +9,12 @@ Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提
 
 ## 何时选择 Vault
 
-| 数据                                            | 选择                    |
-| ----------------------------------------------- | ----------------------- |
-| token、cursor、checkpoint、少量加密 JSON        | Vault                   |
-| 需要 query、index、join、migration 的结构化数据 | [数据库](./database.md) |
-| 大文件、用户上传和远端对象                      | [S3 存储](./storage.md) |
-| 进程内/跨实例短期加速                           | [缓存](./cache.md)      |
+| 数据                                            | 选择                             |
+| ----------------------------------------------- | -------------------------------- |
+| token、cursor、checkpoint、少量加密 JSON        | Vault                            |
+| 需要 query、index、join、migration 的结构化数据 | [数据库](./database.md)          |
+| 大文件、用户上传和远端对象                      | [S3 存储](../plugins/storage.md) |
+| 进程内/跨实例短期加速                           | [缓存](../plugins/cache.md)      |
 
 Vault 只在 host 明确导入服务入口时注册，未启用时没有 backend、preflight 或管理成本。
 

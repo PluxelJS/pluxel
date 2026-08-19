@@ -155,7 +155,7 @@ export default defineConfig({
 
 Dynamic route 只拥有 file/source lifecycle：watch、OXC resolution、module execution、graph transaction 与 HMR。package download、market、安装管理 RPC 和页面不属于 route core。
 
-运行期安装 package 时显式装配 [Dynamic host 的 package manager](../development/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
+运行期安装 package 时显式装配官方 [Package Manager Plugin](../plugins/package-manager.md)；它把受管 package 原子发布成 `.mjs` source entry，dynamic route 只观察这些文件。
 
 ### Source 约束
 

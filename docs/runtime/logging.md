@@ -129,7 +129,7 @@ logging: {
 
 `plugins` route 可以保持较低门槛，再由 O(1) Plugin policy 决定实际等级。`logging: false` 表示安装一个没有 sinks/routes 的 silent root，仍保留 Context identity 和管理所有权。
 
-部署与 Workbench store 选项见 [配置插件宿主](../getting-started/host-setup.md)，标准 OpenTelemetry signals 见 [OpenTelemetry](./otel.md)。
+部署与 Workbench store 选项见 [配置插件宿主](../getting-started/host-setup.md)，标准 OpenTelemetry signals 由官方 [OpenTelemetry Plugin](../plugins/otel.md) 提供。
 
 ## 测试与 review
 

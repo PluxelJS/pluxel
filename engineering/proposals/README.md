@@ -19,7 +19,7 @@ CLI 分发、local-first delegation 与官方能力按需加载的已实施约�
 [`../../docs/development/tooling.md`](../../docs/development/tooling.md)。
 
 OpenTelemetry 的当前设计、非目标与上游阻塞见 [`../../plugins/otel/DESIGN.md`](../../plugins/otel/DESIGN.md) 和
-[`../../docs/runtime/otel.md`](../../docs/runtime/otel.md)。
+[`../../docs/plugins/otel.md`](../../docs/plugins/otel.md)。
 
 Command 默认 CLI projection 与 owner-bound invocation 的已实施约束见 [`../COMMANDS.md`](../COMMANDS.md) 与
 [`../RUNTIME.md`](../RUNTIME.md)。

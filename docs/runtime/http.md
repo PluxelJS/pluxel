@@ -163,4 +163,4 @@ enableExtraRoutes() {
 - auth/signature failure 不泄露内部错误；
 - Workbench disabled 时业务 route 仍工作。
 
-完整 test host 配置见 [测试 Pluxel 插件](../development/testing.md)。出站请求由 [Wretch capability](./wretch.md) 或领域 HTTP client 负责，不要与入站 route ownership 混在一起。
+完整 test host 配置见 [测试 Pluxel 插件](../development/testing.md)。出站请求可以使用官方 [Wretch Plugin](../plugins/wretch.md) 或领域 HTTP client，不要与入站 route ownership 混在一起。

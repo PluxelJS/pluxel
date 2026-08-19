@@ -20,10 +20,10 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 | `@pluxel/test`            | 经过真实语义转换的 Plugin 测试 harness                   | [测试 Plugin](../development/testing.md)             |
 | `@pluxel/commands`        | command registry、CLI/Agent 投影与参数路由               | [Commands](../runtime/commands.md)                   |
 | `valibot-form`            | Valibot 表单 metadata 与可选 Web adapter                 | [Valibot 配置表单](../workbench/valibot-form.mdx)    |
-| `@pluxel/wretch`          | Plugin-owned HTTP client                                 | [Wretch HTTP client](../runtime/wretch.md)           |
-| `@pluxel/fonts`           | 服务端字体注册与 provider                                | [字体](../rendering/fonts.md)                        |
-| `@pluxel/canvas`          | 有预算约束的服务端 Canvas                                | [Canvas](../rendering/canvas.md)                     |
-| `@pluxel/echarts`         | 服务端 ECharts 渲染                                      | [ECharts](../rendering/echarts.md)                   |
+| `@pluxel/wretch`          | Plugin-owned HTTP client                                 | [Wretch HTTP client](../plugins/wretch.md)           |
+| `@pluxel/fonts`           | 服务端字体注册与 provider                                | [字体](../plugins/rendering/fonts.md)                |
+| `@pluxel/canvas`          | 有预算约束的服务端 Canvas                                | [Canvas](../plugins/rendering/canvas.md)             |
+| `@pluxel/echarts`         | 服务端 ECharts 渲染                                      | [ECharts](../plugins/rendering/echarts.md)           |
 
 这些 package 未标记为 private，并声明了面向消费者的入口。消费者只从 package `exports` 导入；版本可用性以 registry 和 release metadata 为准。
 
@@ -31,14 +31,14 @@ description: 区分公开包、仅供仓库内部使用的能力和不可直接�
 
 以下 package 标记为 `private: true`，仅供当前 workspace 集成：
 
-| Package                   | 能力                                       | 文档                                                 |
-| ------------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| `@pluxel/cache`           | owner-scoped cache、single-flight、backend | [缓存](../runtime/cache.md)                          |
-| `@pluxel/rates`           | 按 identity 计费的频率限制                 | [请求频率控制](../runtime/rates.md)                  |
-| `@pluxel/redis`           | Redis client、script 与 backend            | [Redis](../runtime/redis.md)                         |
-| `@pluxel/storage`         | local/remote object storage                | [对象存储](../runtime/storage.md)                    |
-| `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../runtime/otel.md)                  |
-| `@pluxel/package-manager` | dynamic host package 管理                  | [Package manager](../development/package-manager.md) |
+| Package                   | 能力                                       | 文档                                             |
+| ------------------------- | ------------------------------------------ | ------------------------------------------------ |
+| `@pluxel/cache`           | owner-scoped cache、single-flight、backend | [缓存](../plugins/cache.md)                      |
+| `@pluxel/rates`           | 按 identity 计费的频率限制                 | [请求频率控制](../plugins/rates.md)              |
+| `@pluxel/redis`           | Redis client、script 与 backend            | [Redis](../plugins/redis.md)                     |
+| `@pluxel/storage`         | local/remote object storage                | [对象存储](../plugins/storage.md)                |
+| `@pluxel/otel`            | traces、metrics 与 exporters               | [OpenTelemetry](../plugins/otel.md)              |
+| `@pluxel/package-manager` | dynamic host package 管理                  | [Package manager](../plugins/package-manager.md) |
 
 仓库外项目不得把这些 package 视为可安装的公共依赖，也不得用源码相对路径绕过 package boundary。
 

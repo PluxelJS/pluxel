@@ -1,0 +1,16 @@
+{
+	"title": "官方 Plugin",
+	"pages": [
+		"README",
+		"---网络与基础设施---",
+		"wretch",
+		"cache",
+		"rates",
+		"redis",
+		"storage",
+		"otel",
+		"package-manager",
+		"---服务端渲染---",
+		"rendering"
+	]
+}

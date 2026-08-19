@@ -19,22 +19,22 @@ Pluxel 把一项业务能力连同它的依赖、配置和生命周期组织成 
 3. [配置模型](./getting-started/configuration.md)：让一个 Valibot schema 同时提供类型、默认值、校验和管理界面。
 4. [配置插件宿主](./getting-started/host-setup.md)：在静态与动态模式中选择一种，装配可运行的宿主。
 
-读完这四篇，你就能判断一项能力是否应该成为 Plugin，以及它的依赖、配置、资源和宿主入口分别属于哪里。HTTP、数据库、缓存等能力可以在需要时再查阅。
+读完这四篇，你就能判断一项能力是否应该成为 Plugin，以及它的依赖、配置、资源和宿主入口分别属于哪里。HTTP、数据库等 runtime 能力可以按需查阅；缓存、Redis、服务端渲染等独立 package 统一列在[官方 Plugin](./plugins/README.md)中。
 
 ## 按任务进入
 
-| 当前任务                               | 只读这一页                                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 完整验证生命周期、HTTP、配置与资源清理 | [测试插件](./development/testing.md)                                                             |
-| 暴露业务 API 或 webhook                | [插件 HTTP](./runtime/http.md)                                                                   |
-| 数据库、加密小数据、对象存储           | [数据库](./runtime/database.md)、[Vault](./runtime/vault.md)、[S3 存储](./runtime/storage.md)    |
-| 缓存、限流、Redis                      | [缓存](./runtime/cache.md)、[请求频率控制](./runtime/rates.md)、[Redis](./runtime/redis.md)      |
-| CPU 密集任务或独立 Node ESM            | [Node 模块与 Worker 任务](./runtime/node-artifacts.md)                                           |
-| 管理界面或 schema 表单                 | [管理工作台](./workbench/index.md)、[配置 Playground](./workbench/configuration-playground.md)   |
-| 服务端字体、Canvas 或图表              | [字体](./rendering/fonts.md)、[Canvas](./rendering/canvas.md)、[ECharts](./rendering/echarts.md) |
-| Agent、CLI 或消息指令                  | [Commands 与 Agent tools](./runtime/commands.md)                                                 |
-| 构建、发布、HMR 或跨仓库联调           | [CLI 与工具链](./development/tooling.md)                                                         |
-| 定位错误或确认公开入口                 | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)            |
+| 当前任务                               | 只读这一页                                                                                     |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 完整验证生命周期、HTTP、配置与资源清理 | [测试插件](./development/testing.md)                                                           |
+| 暴露业务 API 或 webhook                | [插件 HTTP](./runtime/http.md)                                                                 |
+| 数据库或加密小数据                     | [数据库](./runtime/database.md)、[Vault](./runtime/vault.md)                                   |
+| CPU 密集任务或独立 Node ESM            | [Node 模块与 Worker 任务](./runtime/node-artifacts.md)                                         |
+| 管理界面或 schema 表单                 | [管理工作台](./workbench/index.md)、[配置 Playground](./workbench/configuration-playground.md) |
+| HTTP client、缓存、Redis、存储或遥测   | [官方 Plugin](./plugins/README.md)                                                             |
+| 服务端字体、Canvas 或图表              | [服务端渲染 Plugin](./plugins/rendering/README.md)                                             |
+| Agent、CLI 或消息指令                  | [Commands 与 Agent tools](./runtime/commands.md)                                               |
+| 构建、发布、HMR 或跨仓库联调           | [CLI 与工具链](./development/tooling.md)                                                       |
+| 定位错误或确认公开入口                 | [排错](./reference/troubleshooting.md)、[Package 矩阵](./reference/package-matrix.md)          |
 
 ## 文档边界
 

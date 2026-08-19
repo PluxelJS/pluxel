@@ -128,4 +128,4 @@ package.install
 
 适合：受控开发 host、内部插件试装、验证 dynamic source producer 流程。
 
-不适合：production static distribution、把任意 npm package 当可信 Plugin、由 Plugin 自己执行 pnpm、或对外承诺稳定 package-manager SDK。静态离线交付请看 [Static 发行物](./distribution.md)。
+不适合：production static distribution、把任意 npm package 当可信 Plugin、由 Plugin 自己执行 pnpm、或对外承诺稳定 package-manager SDK。静态离线交付请看 [Static 发行物](../development/distribution.md)。
