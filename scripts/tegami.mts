@@ -26,7 +26,6 @@ export const paper = tegami({
 	},
 	packages: {
 		'@pluxel/cli': { group: 'cli' },
-		'@pluxel/create': { group: 'cli' },
 	},
 	npm: {
 		client: 'pnpm',
@@ -64,6 +63,7 @@ function verifyBeforePublish(): TegamiPlugin {
 			await formatChangedPackageManifests(this.cwd)
 		},
 		async beforePublishAll() {
+			await run('pnpm', ['--filter', '@pluxel/create', 'test:starter'], this.cwd)
 			await run('pnpm', ['--filter', '@pluxel/cli', 'test:templates'], this.cwd)
 		},
 		async willPublish({ pkg }) {

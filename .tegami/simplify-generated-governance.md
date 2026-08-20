@@ -1,8 +1,8 @@
 ---
 packages:
-  'group:cli': patch
+  '@pluxel/create': patch
 ---
 
 ## Simplify generated repository verification
 
-Generate app monorepos with one canonical `verify` pipeline instead of an additional workspace-task alias.
+Generate the example monorepo with one canonical `verify` pipeline instead of an additional workspace-task alias.

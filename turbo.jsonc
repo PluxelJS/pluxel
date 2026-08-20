@@ -149,14 +149,12 @@
 		},
 		"@pluxel/cli#build": {
 			// CLI declarations reference the toolchain, while runtime integrations stay external and
-			// are loaded only when their commands execute. The CLI package also copies starter
-			// templates and root docs into dist, so those single-source resources must invalidate
-			// the build cache.
+			// are loaded only when their commands execute. Bundled Plugin templates are package-local
+			// inputs; versioned user docs belong only to @pluxel/create.
 			"dependsOn": ["@pluxel/rolldown#build"],
 			"outputs": ["dist/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
-				"$TURBO_ROOT$/docs/**",
 				"!bench/**",
 				"!**/bench/**",
 				"!test/**",
@@ -165,6 +163,21 @@
 				"!**/tests/**",
 				"!**/*.test.*",
 				"!**/*.spec.*",
+			],
+			"outputLogs": "new-only",
+		},
+		"@pluxel/create#build": {
+			// The published initializer copies the package-local fixed starter and the repository user
+			// docs. Both asset trees must invalidate its tsdown output cache.
+			"dependsOn": [],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/docs/**",
+				"!README.md",
+				"!IMPLEMENTATION_INDEX.md",
+				"!scripts/**",
+				"!tests/**",
 			],
 			"outputLogs": "new-only",
 		},

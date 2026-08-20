@@ -1,6 +1,7 @@
 ---
 packages:
   'group:cli': major
+  '@pluxel/create': major
   '@pluxel/commands': major
   '@pluxel/core': major
   '@pluxel/rolldown': major
