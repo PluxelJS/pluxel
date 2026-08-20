@@ -1,0 +1,8 @@
+{
+	"extends": "../../tsconfig.src.json",
+	"include": ["src", "tsdown.config.ts"],
+	"compilerOptions": {
+		"outDir": "dist",
+		"types": ["node"]
+	}
+}

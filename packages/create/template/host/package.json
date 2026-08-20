@@ -1,0 +1,35 @@
+{
+	"name": "@example/host",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --config vite.config.ts",
+		"dev:dynamic": "vite --config vite.config.ts --mode dynamic",
+		"start": "node dist/app.mjs",
+		"build": "vite build --config vite.config.ts && tsdown && pluxel distribution create ./dist",
+		"typecheck": "tsc --noEmit --pretty false && tsc -p web/tsconfig.json --noEmit --pretty false"
+	},
+	"dependencies": {
+		"@example/audit-plugin": "workspace:*",
+		"@example/http-plugin": "workspace:*",
+		"@example/todo-plugin": "workspace:*",
+		"@pluxel/runtime": "catalog:",
+		"@pluxel/runtime-dynamic": "catalog:",
+		"@pluxel/runtime-static": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"devDependencies": {
+		"@mantine/core": "catalog:",
+		"@pluxel/cli": "catalog:",
+		"@pluxel/rolldown": "catalog:",
+		"@tabler/icons-react": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"tsdown": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	}
+}

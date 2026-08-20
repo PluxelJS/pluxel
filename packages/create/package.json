@@ -9,13 +9,28 @@
 		"directory": "packages/create"
 	},
 	"bin": {
-		"create-pluxel": "bin/create.mjs"
+		"create-pluxel": "./dist/create.mjs"
 	},
 	"files": [
-		"bin"
+		"dist"
 	],
 	"type": "module",
-	"dependencies": {
-		"@pluxel/cli": "workspace:*"
+	"scripts": {
+		"build": "tsdown",
+		"test": "pnpm run build && node --test tests/*.test.mjs",
+		"test:starter": "node scripts/smoke-starter.ts",
+		"typecheck": "tsc --noEmit --pretty false",
+		"prepack": "pnpm run build"
+	},
+	"devDependencies": {
+		"@types/node": "^25.9.3",
+		"tsdown": "catalog:",
+		"typescript": "catalog:"
+	},
+	"engines": {
+		"node": ">=24"
+	},
+	"exports": {
+		"./package.json": "./package.json"
 	}
 }

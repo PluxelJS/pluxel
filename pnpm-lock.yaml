@@ -672,10 +672,16 @@ importers:
         version: 0.20.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.5)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0)
 
   packages/create:
-    dependencies:
-      '@pluxel/cli':
-        specifier: workspace:*
-        version: link:../cli
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.4
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
 
   packages/rolldown:
     dependencies:

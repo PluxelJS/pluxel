@@ -16,5 +16,5 @@ workspace.
 For a new application, generate the canonical standalone monorepo:
 
 ```bash
-pluxel new --template app-monorepo --name @acme/my-app
+pnpm create @pluxel my-workspace
 ```

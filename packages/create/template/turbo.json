@@ -1,0 +1,49 @@
+{
+	"$schema": "https://turbo.build/schema.json",
+	"concurrency": "100%",
+	"cacheMaxAge": "30d",
+	"cacheMaxSize": "2GB",
+	"tasks": {
+		"build": {
+			"dependsOn": ["^build", "^typecheck"],
+			"outputs": ["dist/**"],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig.base.json",
+				"!README.md",
+				"!docs/**",
+				"!**/*.md",
+				"!tests/**",
+				"!**/tests/**",
+				"!**/*.test.*"
+			],
+			"outputLogs": "new-only"
+		},
+		"test": {
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig.base.json",
+				"!README.md",
+				"!docs/**",
+				"!**/*.md"
+			],
+			"outputLogs": "errors-only"
+		},
+		"typecheck": {
+			"outputs": [],
+			"inputs": [
+				"$TURBO_DEFAULT$",
+				"$TURBO_ROOT$/tsconfig.base.json",
+				"!README.md",
+				"!docs/**",
+				"!**/*.md"
+			],
+			"outputLogs": "errors-only"
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
+}

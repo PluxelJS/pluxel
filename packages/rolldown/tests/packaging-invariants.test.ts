@@ -358,7 +358,7 @@ describe('toolchain package boundaries', () => {
 		].filter((file) => file.endsWith('/pluxel.static.ts'))
 		const files = [
 			...sourceFiles,
-			`${root}/packages/cli/templates/app-monorepo/web/src/pluxel.static.ts.hbs`,
+			`${root}/packages/create/template/host/src/pluxel.static.ts`,
 		]
 		const offenders: string[] = []
 
