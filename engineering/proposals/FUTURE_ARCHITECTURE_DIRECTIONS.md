@@ -39,21 +39,8 @@ export class OrdersPlugin extends BasePlugin {
 
 ## 2. Browser config representation
 
-当前 schema source string + `new Function('v', 'f', ...)` 有 CSP、闭包限制和 import rewrite 成本，但替换方案尚未证明更小：
-
-### Serializable FormPlan
-
-build/runtime 从 Valibot object schema 生成冻结 plan，browser 只渲染，服务端负责权威 validation。
-
-否决条件：为了即时 validation 复制整个 Valibot constraint/transform semantics，形成第二种 schema language。
-
-### Browser schema artifact
-
-toolchain 生成独立 browser-safe schema module，Workbench 通过正常 artifact/module loader 执行，不传输或 eval 源码字符串。
-
-否决条件：需要第二套 compiler/watcher/cache，或不能复用现有 Workbench artifact、CSP 与 HMR pipeline。
-
-研究应先完成当前单 object schema 重构，再以真实复杂 schema 对比生成代码、删除量、client validation、CSP 和 HMR。
+该方向已提升到 [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)。后续研究以第三方 management host 能否消费、
+server validation 是否保持唯一 authority、CSP/HMR 和外部实现成本为判据，不在本 backlog 维护平行方案。
 
 ## 3. First-class multi-instance nodes
 
@@ -86,14 +73,8 @@ object-identity capability declaration
 
 ## 5. Workbench root management transport
 
-当前 root catalog/status/group query 使用 internal GraphQL，config/dependency/status mutation 与 resource 使用 Cap'n Web RPC；部分 mutation 重复。
-
-候选是删除 internal GraphQL/GQLoom/GQLens，统一 typed Runtime RPC。升级前必须确认：
-
-- 没有独立 external GraphQL consumer；
-- GQLens selection/cache/invalidation 可以被更小的 client resource 替代；
-- grant-bound Plugin RPC 与 root management RPC 继续隔离；
-- 删除的 schema/codegen/build 量大于新增 client cache/projection。
+该方向已提升到 [`PORTABLE_WORKBENCH_PROTOCOL.md`](PORTABLE_WORKBENCH_PROTOCOL.md)。root management 与 grant-bound Plugin resource
+继续隔离；实施前仍需审计 external GraphQL consumer，并证明删除的 schema/codegen/build 量大于新增 framework-neutral client。
 
 ## 6. Dependency binding contract
 

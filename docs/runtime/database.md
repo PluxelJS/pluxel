@@ -3,16 +3,24 @@ title: 数据库与数据归属
 description: 根据数据归属选择 Plugin 数据库或应用数据库，并管理 Drizzle schema 与迁移。
 ---
 
-Pluxel 的数据库能力统一使用 PostgreSQL 语义和 Drizzle。宿主没有配置远端 PostgreSQL 时可以使用持久化 PGlite；同一份 schema、迁移和查询不需要为不同驱动编写分支。
+先判断数据是否必须跟随 Plugin 独立安装、替换和迁移，再选择数据库组织方式。不要仅因为代码写在 Plugin class 中，就默认使用 `ctx.database`。
 
-先回答“数据属于谁”：
+| 数据与生命周期要求                                                   | 正确组织方式                                                        |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Plugin 可以独立发布、安装或替换，数据也属于这个 Plugin               | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
+| 需要 Plugin 独立 lineage、旧 generation handle 撤销或 Workbench 查询 | `defineDatabase()` + `ctx.database.use()`                           |
+| fixed catalog、schema 和部署由同一个应用团队控制                     | application-private database package                                |
+| 多个内置 Plugin 的表必须 join、使用 foreign key 或共享原子事务       | application-private database package                                |
 
-| 数据所有者                           | 标准组织方式                                                        |
-| ------------------------------------ | ------------------------------------------------------------------- |
-| 可独立发布、安装和替换的 Plugin      | `defineDatabase()` + `ctx.database.use()`，每个 Plugin 使用独立实例 |
-| 同一团队控制的静态应用与全部内置模块 | 应用私有数据库模块，统一管理 schema、连接池和迁移                   |
+Managed Plugin database 统一使用 PostgreSQL dialect 和 Drizzle。Plugin 作者只依赖 `drizzle-orm`，不选择 driver；部署宿主在 native PostgreSQL 与 PGlite 之间选择，同一份 schema、migration 和 query 不编写 driver 分支。
 
-应用数据库不是“多个 Plugin 共用一份 Plugin 数据库”。使用它的 Plugin 会成为该应用的内部模块，不再拥有独立的数据可移植性。
+Application-private database 由应用自行选择 PostgreSQL、SQLite、ORM 和 migration 方案。它不是“多个 Plugin 共用一份 Plugin database”：使用它的 Plugin 是应用内部模块，不再拥有独立的数据可移植性，也不会自动获得 Pluxel 的 per-plugin lineage、隔离、旧 handle 撤销或 `liveQuery`。
+
+发布与否只是常见线索，不是最终判断。私有 Plugin 如果仍要被独立启停、替换并保留自己的数据，应该使用 managed database；公开 Plugin 如果不拥有结构化数据，则不需要数据库。
+
+## Managed Plugin database
+
+选择 managed database 后，正式部署使用 native PostgreSQL；PGlite 用于本地开发、自动化测试、demo 和简单低负载运行。两者统一的是 PostgreSQL 作者 contract，不是性能、并发和 durability 等价。
 
 ## 定义 Plugin schema
 
@@ -128,9 +136,11 @@ export const SearchDatabase = defineDatabase({
 
 如果数据只是少量加密 JSON 且不需要 query/index，先评估 [Vault](./vault.md)；不要为一个 token 建完整关系表，也不要拿 Vault documents 替代需要查询的数据库。
 
-## Static application database
+## Application-private database
 
-当 fixed catalog、schema 和部署都由同一作者维护时，把 schema、Drizzle client、repositories 与 migration 放进普通 application-private package，例如 `@app/database`。
+当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
+
+内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
 自然入口是无参数 lazy `use()`：
 
@@ -150,6 +160,10 @@ export function useAppDatabase(): Promise<AppDatabase> {
 	return task
 }
 
+export async function prepareAppDatabase(): Promise<void> {
+	await useAppDatabase()
+}
+
 export async function closeAppDatabase(): Promise<void> {
 	const task = active
 	active = undefined
@@ -159,7 +173,7 @@ export async function closeAppDatabase(): Promise<void> {
 }
 ```
 
-业务 Plugin 只消费 application module，不各自读取 DSN 或 migrate：
+只有部分 Plugin 依赖数据库时保持 lazy，失败只阻止真正依赖数据库的 Plugin：
 
 ```ts no-twoslash
 override async init() {
@@ -169,11 +183,28 @@ override async init() {
 
 不要在 module import 时创建 pool，也不要把全局 pool 绑定第一个调用它的 Plugin effects，否则该 Plugin replacement 会关闭其他 consumer 的数据库。
 
-如果数据库是整个应用的 readiness 前提，static runtime `prepare()` 可以 eager 调同一个 `useAppDatabase()`；否则保持 lazy，只阻止真正依赖数据库的 Plugin。`closeAppDatabase()` 属于 application/deployment teardown。
+如果数据库是整个应用的 readiness 前提，在 static application 的 `prepare()` 中显式 preflight：
 
-## Workbench live query
+```ts no-twoslash
+import { defineStaticRuntime } from '@pluxel/runtime-static'
+import { prepareAppDatabase } from '@app/database'
 
-Workbench contract 用 Standard Schema 描述 params/row，并选择稳定唯一的 string/number key。server binding 提供同 owner database handle、完整 `dependsOn` 和显式 DTO query：
+export default defineStaticRuntime({
+	name: 'rhythm',
+	plugins: [BillingPlugin, AuditPlugin],
+	prepare: async () => {
+		await prepareAppDatabase()
+	},
+})
+```
+
+`prepare()` 在 runtime services ready 后、Plugin graph 启动前运行。它抛错会终止本次 host startup，不会留下半启动的 Plugin。`closeAppDatabase()` 由 application/deployment shutdown 调用，不绑定任何一个 consumer Plugin 的 effects。
+
+这条路径可以使用 SQLite 或其他数据库，但应用必须自行负责 migration 并发、连接恢复、备份、durability 和 shutdown。不要把 application client 包装成 `ctx.database`，否则会让调用者误以为它具备 managed Plugin database 的 owner isolation 与 replacement 语义。
+
+## Managed database 的 Workbench live query
+
+`liveQuery` 只接受 managed Plugin database handle。Workbench contract 用 Standard Schema 描述 params/row，并选择稳定唯一的 string/number key。server binding 提供同 owner database handle、完整 `dependsOn` 和显式 DTO query：
 
 ```ts no-twoslash
 notes: workbench.bind.liveQuery({
@@ -185,15 +216,27 @@ notes: workbench.bind.liveQuery({
 
 mutation 仍走 typed RPC；query 只返回 browser-safe DTO。完整 Contract/Binding 边界见 [管理工作台](../workbench/index.md)。
 
-## PGlite 与生产 PostgreSQL
+## 选择 native PostgreSQL 或 PGlite
 
-PGlite 适合零配置开发、demo 和本机运行。生产部署应显式配置 PostgreSQL，并在真实 PG 环境验证 row lock、deadlock、pool exhaustion、连接中断和并发 migration。
+| 部署或验证目标                                   | Backend                |
+| ------------------------------------------------ | ---------------------- |
+| 正式部署、持续负载或多个 Plugin 频繁访问数据库   | native PostgreSQL      |
+| 本地开发、自动化测试、demo、简单低负载的单机运行 | PGlite                 |
+| row lock、deadlock、pool exhaustion、连接中断    | 必须验证 native PG     |
+| 多进程并发 migration、advisory lock 和故障恢复   | 必须验证 native PG     |
+| throughput、latency、容量规划或生产硬件性能验收  | 必须使用目标 native PG |
 
-连接字符串、TLS、pool 与 data directory 是 host startup policy，不是 Plugin config。Plugin schema/query 不根据 driver 分支。
+PGlite 是执行真实 PostgreSQL 语义的本地 backend，不是 query mock；它适合快速验证 schema、migration、CRUD、owner isolation 和 Plugin lifecycle。但是 Pluxel 会把共享 PGlite 上的所有 database operation 串行调度，因此一个 host 中的 Plugin 会共同受到单连接吞吐上限影响。不要用 PGlite benchmark 推断 native PostgreSQL 性能。
+
+在 filesystem flush 与 fault-injection 验收完成前，不把 PGlite 作为 production durability baseline。资源受限但仍需正式部署时，优先在目标设备上调低 native PostgreSQL connection/pool budget 并实测，而不是假设 PGlite 更快或更可靠。真正无法承载 native PostgreSQL 的设备，需要把整个 Node host、存储和故障模型一起重新评估。
+
+连接字符串、TLS、pool 与 PGlite data directory 是 host startup policy，不是 Plugin config。Plugin schema/query 不根据 backend 分支。
 
 ## 测试与发布检查
 
 `@pluxel/test/vitest` 会对 database declaration 运行与开发/生产相同的 artifact transform：migration strategy 校验已提交 history，reset strategy 生成临时 baseline。
+
+日常测试可以使用 `memory://` PGlite；生产门禁增加真实 PostgreSQL integration suite。PGlite 覆盖语义与生命周期，native PostgreSQL suite 覆盖并发、锁、连接池和故障行为。
 
 至少验证：
 
