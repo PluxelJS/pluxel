@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { Injectable, type Context as CoreContext } from '@pluxel/core'
+import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import {
 	readNodeModuleDeclaration,
 	type NodeModuleCleanup,
@@ -60,6 +61,11 @@ export class NodeModuleService {
 		public readonly ctx: CoreContext,
 		_cfg: unknown,
 	) {}
+
+	/** @internal Bind consumer effects while retaining the root source/build state. */
+	[OWNER_CONTEXT_BIND](owner: CoreContext): NodeModuleService {
+		return new NodeModuleService(owner, undefined)
+	}
 
 	async use(declaration: NodeModuleDeclaration, setup: NodeModuleSetup): Promise<void> {
 		if (typeof setup !== 'function') {

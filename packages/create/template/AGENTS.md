@@ -8,7 +8,8 @@ Keep these boundaries intact:
 
 - required plugin dependencies belong in constructors; optional integrations use a non-exported
   module-level `definePluginRef<T>()` and a direct `plugins.use(ref, setup)` statement in `init()`;
-- each plugin declares at most one complete object schema with `configs.use(schema)`;
+- each Plugin and PluginPart class declares at most one complete object schema with
+  `configs.use(schema)`; owner-contained resources use field-only `parts.use(PartClass)` composition;
 - return generation cleanup from `init()` or register resources immediately with `ctx.effects`;
 - business HTTP must work with Workbench Plane disabled;
 - the static host is the production authority; the dynamic Vite config is an alternative development

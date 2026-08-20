@@ -7,6 +7,7 @@
 plugin source
 	├─ constructor dependencies
 	├─ optional Plugin refs and one object config declaration
+	├─ statically owned PluginPart containment tree
 	├─ separately-built Node module / worker task declarations
 	└─ Workbench Contract / Extension declarations
           ↓
@@ -21,11 +22,12 @@ optional Workbench Plane: target layout / artifacts / bound resources
 
 ## 依赖与组成
 
-| 意图                 | API                                      | 生命周期含义                 |
-| -------------------- | ---------------------------------------- | ---------------------------- |
-| required plugin      | constructor parameter                    | provider 失败会阻塞 consumer |
-| optional plugin      | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer |
-| internal composition | 普通 class/function + owner effects      | 随 owner generation 回收     |
+| 意图              | API                                      | 生命周期含义                       |
+| ----------------- | ---------------------------------------- | ---------------------------------- |
+| required plugin   | constructor parameter                    | provider 失败会阻塞 consumer       |
+| optional plugin   | `definePluginRef<T>()` + `plugins.use()` | provider 变化时重启 consumer       |
+| owned composition | `this.parts.use(PluginPartClass)`        | 子 scope，随 owner generation 回收 |
+| trivial helper    | 普通 class/function + owner effects      | 作者显式管理                       |
 
 constructor 是 required dependency 的唯一作者声明。required 使用目标 package 根入口的 value import；optional 使用
 目标 Plugin 的 type-only root import 和 non-exported module-level ref。两者都由 semantic pass lower 成 definition slot edge。
@@ -40,6 +42,41 @@ import、安装、注册或默认启用 package。`plugins.use(Ref, callback)` �
 同步且返回的 cleanup/disposable 自动进入 consumer effects。provider absent、disabled 或 start-failed 时 callback 不执行，
 但不阻塞 consumer；running generation 出现、消失或 replacement 时，core 把 consumer 及其 required dependent closure
 合并进一次 restart plan。required/optional ordering edge 的合并图必须无环。
+
+### Owner-bound PluginPart
+
+`PluginPart` 用于有独立配置、资源 scope 或 capability registration、但不需要独立治理身份的内部组成：
+
+```ts
+class CachePart extends PluginPart<SearchPlugin> {
+	private readonly config = this.configs.use(CacheConfig)
+
+	override init() {
+		this.ctx.commands.register(createCacheCommand(this.config))
+	}
+}
+
+@Plugin()
+class SearchPlugin extends BasePlugin {
+	readonly cache = this.parts.use(CachePart)
+}
+```
+
+`parts.use()` 只能是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field initializer。Part 不声明
+constructor，不使用 `@Plugin`，也没有 node address、catalog、fork、独立 enable/restart、RuntimeState 或 Workbench owner。
+同一 Part class 的每个 field occurrence 都产生独立实例；Part 可以递归拥有 Part，local containment cycle 在 build 时拒绝，
+跨模块防线由 runtime 在 generation 构造阶段 fail-fast。
+
+generation 构造后，core 注入 Plugin/Part composite config，再按 children-before-owner 深度优先启动 Part，最后调用 Plugin
+`init()`。每个 Part 得到结构化 child Context、由父 effects 持有的 child scope、`partPath` logger 和惰性 owner-bound
+capability view；HTTP、commands、worker、Node module 等共享 root/backend 状态，但 registration 与 cleanup 绑定 Part scope。
+Part `init()` 失败会让 owning Plugin start 失败，lifecycle error 携带 `partPath`，rollback 仍只 drain Plugin generation effects。
+child Context 不是新的 root 或完整 `isolate()`；未声明 owner binding 的 service 继续使用 owning Plugin view，database definition、
+migration 与 handle ownership 也保持 Plugin 级。Part 只隔离资源所有权，不作为 trust boundary 或 service-instance sandbox。
+
+Part 可以在自己的 `init()` 中使用 `plugins.use()`；semantic pass 把 reachable Part optional refs 合并到 owning Plugin node，
+provider availability 变化重启整个 owner。Part 不直接 mount Workbench Extension；唯一 owning Plugin 负责聚合贡献。
+需要独立启停、失败状态、provider selection、配置 revision、HMR identity 或跨 owner 共享状态时，应升级为真正 Plugin。
 
 ## Identity 与入口
 

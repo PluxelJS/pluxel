@@ -12,6 +12,7 @@ import {
 	type PluginLifecycleIssuePhase,
 	type PluginConstructor,
 	type PluginIdentifier,
+	type PluginPart,
 	type PluginNodeAddressSnapshot,
 	type PluginNodeSlot,
 	type PluginService,
@@ -21,6 +22,7 @@ export {
 	BasePlugin,
 	ForkablePlugin,
 	Plugin,
+	PluginPart,
 	checkPluginDecorator,
 	collectPluginLifecycleBlocked,
 	collectPluginLifecycleDrainErrors,
@@ -58,10 +60,11 @@ type NonFunctionPropertyNames<T extends object> = {
 }[keyof T]
 
 type PluginOwnFields<T extends PluginConstructor> = Omit<InstanceType<T>, keyof BasePlugin>
+type PluginConfigFieldValue<T> = T extends PluginPart<any, any> ? Record<string, unknown> : T
 
-export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<
-	Pick<PluginOwnFields<T>, NonFunctionPropertyNames<PluginOwnFields<T>>>
-> &
+export type CoreHostConfigPatch<T extends PluginConstructor> = Partial<{
+	[K in NonFunctionPropertyNames<PluginOwnFields<T>>]: PluginConfigFieldValue<PluginOwnFields<T>[K]>
+}> &
 	Record<string, unknown>
 
 export type CoreHostConfigHandle<TTarget extends PluginConstructor> = {

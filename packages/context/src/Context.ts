@@ -9,8 +9,15 @@ import type {
 	ServiceWithCtx,
 } from './service-types'
 
+const OWNER_CONTEXT_VIEW = Symbol.for('pluxel:ctx.owner-context-view')
+const OWNER_CONTEXT_BIND = Symbol.for('pluxel:ctx.owner-context-bind')
+
 type SymMap = { [k in symbol]?: symbol }
 type ContextInstanceState = { instances: Record<symbol, unknown> }
+type OwnerViewState = {
+	readonly source: Context
+	readonly services: Map<symbol, unknown>
+}
 
 // "Any service" should allow arbitrary instance types and method proxy lists.
 // Using the default `ServiceClass<ServiceCtor>` would make `methods` resolve to `never[]`
@@ -46,6 +53,7 @@ export class Context {
 	/** 服务实例缓存，所有同 root 的 Context 共享，除 isolate 时另行克隆 */
 	private instances: Record<symbol, unknown> = Object.create(null)
 	private servicePreparePromises = new Map<symbol, Promise<unknown>>()
+	private ownerViewState?: OwnerViewState
 	public parent?: Context
 	public root: Context.Root
 	public name: string
@@ -180,6 +188,16 @@ export class Context {
 		return child
 	}
 
+	/** @internal Used by owner-contained runtime resources such as PluginPart. */
+	[OWNER_CONTEXT_VIEW](opts: Context.ExtendOpts = {}): this {
+		const child = this.extend(opts)
+		child.ownerViewState = {
+			source: this.ownerViewState?.source ?? this,
+			services: new Map(),
+		}
+		return child
+	}
+
 	/**
 	 * 隔离指定服务：克隆 instances 池，并为这些 ctor 单独生成 instKey
 	 *
@@ -267,6 +285,15 @@ function createServiceGetter<T>(
 	}
 
 	return function (this: Context) {
+		const ownerView = contextOwnerViewState(this)
+		if (ownerView) {
+			if (ownerView.services.has(sk)) return ownerView.services.get(sk) as T
+			const source = (ownerView.source as unknown as Record<string, unknown>)[key] as T
+			const bind = (source as { [OWNER_CONTEXT_BIND]?: (owner: Context) => T })[OWNER_CONTEXT_BIND]
+			const view = typeof bind === 'function' ? bind.call(source, this) : source
+			ownerView.services.set(sk, view)
+			return view
+		}
 		const ik = this.mapping[sk] as symbol
 
 		// Fast path: read from `this.instances` first.
@@ -294,6 +321,10 @@ function contextInstanceState(ctx: Context): ContextInstanceState {
 	// Keep the cache private on the public Context type while allowing this module's installed getters
 	// to access the same implementation state.
 	return ctx as unknown as ContextInstanceState
+}
+
+function contextOwnerViewState(ctx: Context): OwnerViewState | undefined {
+	return (ctx as unknown as { ownerViewState?: OwnerViewState }).ownerViewState
 }
 
 function bindServiceContext<T>(inst: T, ctx: Context) {

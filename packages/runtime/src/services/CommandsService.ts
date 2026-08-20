@@ -8,7 +8,11 @@ import {
 	type Registration,
 } from '@pluxel/commands'
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
-import { closeOwnerInvocations, enterOwnerInvocation } from '@pluxel/core/internal'
+import {
+	closeOwnerInvocations,
+	enterOwnerInvocation,
+	OWNER_CONTEXT_BIND,
+} from '@pluxel/core/internal'
 import { createPluginManagementCommands } from './commands/plugin-management'
 
 const serviceName = 'commands' as const
@@ -41,6 +45,11 @@ export class CommandsService {
 		public ctx: CoreContext,
 		_cfg: unknown,
 	) {}
+
+	/** @internal Bind registration ownership without duplicating the root command catalog. */
+	[OWNER_CONTEXT_BIND](owner: CoreContext): CommandsService {
+		return new CommandsService(owner, undefined)
+	}
 
 	/** Register a command until its owner Context stops or the returned handle is disposed. */
 	register(command: AnyCommand): Registration {

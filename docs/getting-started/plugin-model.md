@@ -9,11 +9,12 @@ Plugin 不只是一个由宿主任意调用的类，而是依赖图中可独立�
 
 先判断一项能力是否需要独立的生命周期，再选择关系：
 
-| 关系             | 何时使用                   | 写法                                     |
-| ---------------- | -------------------------- | ---------------------------------------- |
-| 必需 Plugin      | 缺少提供方就不能工作       | 构造器参数 + 值导入                      |
-| 可选 Plugin 集成 | 提供方只是可选增强         | `definePluginRef<T>()` + `plugins.use()` |
-| Plugin 内部组成  | 不需要独立启停、配置或治理 | 普通类或函数 + effects                   |
+| 关系             | 何时使用                        | 写法                                     |
+| ---------------- | ------------------------------- | ---------------------------------------- |
+| 必需 Plugin      | 缺少提供方就不能工作            | 构造器参数 + 值导入                      |
+| 可选 Plugin 集成 | 提供方只是可选增强              | `definePluginRef<T>()` + `plugins.use()` |
+| owner-bound Part | 需要局部配置/资源，但不独立治理 | `this.parts.use(PluginPartClass)`        |
+| 简单内部 helper  | 只有少量纯逻辑或显式 wiring     | 普通类或函数 + effects                   |
 
 不要把所有组成都拆成 Plugin。Plugin 边界意味着独立的 identity、graph edge、启动结果和 replacement 行为；只服务一个 owner 的 cache、client 或 helper 通常应留在 owner 内部。
 
@@ -90,6 +91,96 @@ provider absent、disabled 或 start-failed 时 callback 不执行，也不阻�
 
 不要用动态 `import()`、轮询 availability 或缓存裸实例模拟 optional edge。高频变化的业务对象也不适合建模为 Plugin graph edge。
 
+## 用 PluginPart 拆分 owner 内部资源
+
+当内部组成需要自己的 config、effects、commands/HTTP registration 或 nested composition，但仍应与父 Plugin 一起启动、失败和
+重启时，使用 `PluginPart`。作者不传 `ctx`、config 或 effects：
+
+```ts no-twoslash
+import { BasePlugin, Plugin, PluginPart, v } from '@pluxel/runtime'
+
+const CacheConfig = v.object({ maxEntries: v.optional(v.number(), 1_000) })
+
+class CachePart extends PluginPart<SearchPlugin> {
+	private readonly config = this.configs.use(CacheConfig)
+
+	override init() {
+		const cache = createCache(this.config.maxEntries)
+		this.ctx.effects.defer(() => cache.close())
+	}
+}
+
+@Plugin({ displayName: 'Search' })
+export class SearchPlugin extends BasePlugin {
+	readonly cache = this.parts.use(CachePart)
+}
+```
+
+`parts.use()` 必须完整占据一个普通 class field initializer；Part 不写 constructor，也不加 `@Plugin`。每个 field occurrence
+都有独立实例、child Context 和 effects scope，相同 Part class 可以使用多次。Part 也可用同样方式拥有 child Part。
+Part 在每个 owner generation 中都会构造并调用 `init()`，因此 field initializer 只放声明和轻量状态，资源与外部副作用留在
+`init()` 中。
+
+启动顺序是深度优先的 children-before-owner：nested child Part、direct Part，最后才是 Plugin `init()`。停止和 rollback
+通过 effects LIFO 反向清理。Part `init()` 失败会让整个 Plugin start 失败，lifecycle error 会指出 `partPath`。
+
+### 理解 Part Context 的隔离边界
+
+Part 得到的不是 owning Plugin 的同一个 Context，也不是新的 isolated root：
+
+```ts no-twoslash
+part.ctx !== part.plugin.ctx
+part.ctx.root === part.plugin.ctx.root
+part.ctx.effects !== part.plugin.ctx.effects
+```
+
+它隔离 registration、cleanup 和诊断所有权，同时共享 runtime backend。没有 owner-bound view 的普通 service 继续复用 Plugin
+service handle，因此 Part Context 不是安全 sandbox，也不会为每个 Part 复制完整 service graph。
+
+| 能力               | Part 用法                                                                   | 所有权边界                                                 |
+| ------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| config             | `this.configs.use(schema)`                                                  | 独立 slice，同一个 Plugin config record                    |
+| effects/logger     | `this.ctx.effects` / `this.ctx.logger`                                      | child scope 与 `partPath`，随 owner 回收                   |
+| optional Plugin    | `this.plugins.use(ref, setup)`                                              | edge 合并到 owner，provider 变化重启 owner                 |
+| commands/HTTP      | 对应 `ctx` capability                                                       | facade 绑定 Part，catalog/server 共享                      |
+| Node module/worker | module-level `defineNodeModule()` / `defineWorkerTask()` + `ctx` capability | consumer 属于 Part，compiler/pool 共享                     |
+| database           | owning Plugin 的 `ctx.database` capability                                  | database definition、migration 和 handle owner 仍是 Plugin |
+| required Plugin    | owning Plugin constructor 声明，Part 通过类型化 `this.host` 使用            | 不给 Part 建 required graph edge                           |
+| Workbench          | Part 可以准备普通 binding 数据                                              | 只能由 owning Plugin 调用 `ctx.workbench.mount()`          |
+
+nested Part 的 `host` 是 immediate parent Part，`plugin` 始终指向 root owning Plugin。需要 sibling 完全不可见的业务状态时，状态由
+Part 自己的普通对象持有；不要依赖 child Context 自动复制 service instance。
+
+### 用 optional provider 激活 Part
+
+Part containment 保持静态，optional provider 只控制业务 activation。把该 integration 的所有 registration 和 cleanup 放进
+`plugins.use()` callback：
+
+```ts no-twoslash
+import type { MetricsPlugin } from '@acme/metrics'
+import { definePluginRef, PluginPart } from '@pluxel/runtime'
+
+const Metrics = definePluginRef<MetricsPlugin>()
+
+class MetricsPart extends PluginPart<AppPlugin> {
+	override init() {
+		this.plugins.use(Metrics, (metrics) => {
+			this.ctx.commands.register(createMetricsCommand(metrics))
+			const subscription = metrics.subscribe((sample) => this.record(sample))
+			return () => subscription.dispose()
+		})
+	}
+}
+```
+
+provider absent、disabled 或 start-failed 时，Part 仍完成构造、config validation 和一次空 activation 的 `init()`，但 callback
+不执行，也不产生 integration effects。provider 出现、消失或 replacement 时，整个 owner generation 重启并按 LIFO 清理旧
+Part scope。`plugins.use()` setup 当前必须同步；不要在 callback 中启动 detached Promise。若异步 activation 的成功必须决定
+启动结果，或 provider 变化不应重启 owner，应建模为有独立生命周期的 Plugin。
+
+如果组成需要独立 enable/disable、失败状态、provider selection、config revision、HMR replacement、跨 owner 共享状态或被其他
+Plugin 注入，它就不是 Part，应成为真正 Plugin。只有少量逻辑且不介意显式传参时，普通 helper 仍然更小。
+
 ## Generation 是资源所有权边界
 
 每次成功启动都是一个 generation。stop、restart、HMR replacement 或 optional graph 变化会结束旧 generation，并在新实例可提交后建立下一代。
@@ -114,7 +205,8 @@ override async init(signal: AbortSignal) {
 | 登记一个 cleanup function      | `effects.defer(cleanup)`            |
 | 持有带 `dispose()` 的对象      | `effects.own(disposable)`           |
 | 成对 acquire/release           | `effects.acquire(acquire, release)` |
-| 给内部组成单独建立子作用域     | `effects.scope(meta)`               |
+| 给简单 helper 单独建立子作用域 | `effects.scope(meta)`               |
+| 自动派生 Context/config/scope  | `this.parts.use(PluginPartClass)`   |
 | 一组登记要么全部提交、要么回滚 | `effects.transaction()`             |
 
 ```ts no-twoslash

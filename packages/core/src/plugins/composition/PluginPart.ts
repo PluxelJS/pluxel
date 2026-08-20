@@ -1,0 +1,317 @@
+import type { Context } from '@pluxel/context'
+import type { BasePlugin, PluginCleanup } from './BasePlugin'
+import { CONFIGS, type ConfigHost } from './ConfigHost'
+import { PluginHost } from './PluginHost'
+import {
+	getPluginPartConfig,
+	getPluginPartOccurrences,
+	type PluginPartClass,
+} from '../runtime/part-definition'
+import {
+	EffectsDisposedError,
+	type EffectsMeta,
+	type EffectsScope,
+} from '../../services/effects/EffectsService'
+
+const PART_CONSTRUCTION = Symbol('pluxel:part:construction')
+const PART_HOST = Symbol('pluxel:part:host')
+const PART_INIT_ACTIVE = Symbol('pluxel:part:init-active')
+const EFFECTS_CHILD_SCOPE = Symbol.for('pluxel:effects:child-scope')
+const OWNER_CONTEXT_VIEW = Symbol.for('pluxel:ctx.owner-context-view')
+
+type PartPath = readonly string[]
+
+export type PluginPartInfo = Readonly<{
+	readonly path: PartPath
+	readonly key: string
+}>
+
+export type PluginPartContext<C extends Context = Context> = C & {
+	readonly partInfo: PluginPartInfo
+}
+
+export interface PluginPartOwner {
+	readonly ctx: Context
+}
+
+type PartConstruction = Readonly<{
+	readonly token: typeof PART_CONSTRUCTION
+	readonly ctx: PluginPartContext
+	readonly host: PluginPartOwner
+	readonly plugin: BasePlugin
+	readonly path: PartPath
+	readonly ancestry: ReadonlySet<Function>
+}>
+
+type ChildScopeFactory = {
+	[EFFECTS_CHILD_SCOPE](ctx: Context, meta?: EffectsMeta): EffectsScope
+}
+
+type OwnerContextFactory = {
+	[OWNER_CONTEXT_VIEW](opts: { name: string }): Context
+}
+
+type PartEntry = Readonly<{
+	readonly fieldName: string
+	readonly instance: PluginPart<any, any>
+	readonly host: PartHostRuntime<any>
+}>
+
+function pin(target: object, key: PropertyKey, value: unknown): void {
+	Object.defineProperty(target, key, {
+		value,
+		writable: false,
+		enumerable: false,
+		configurable: false,
+	})
+}
+
+function createPartContext(parent: Context, path: PartPath): PluginPartContext {
+	const key = path.at(-1)!
+	const ctx = (parent as unknown as OwnerContextFactory)[OWNER_CONTEXT_VIEW]({
+		name: `${parent.name}.${key}`,
+	}) as PluginPartContext
+	const info = Object.freeze({ path: Object.freeze([...path]), key })
+	pin(ctx, 'partInfo', info)
+	const factory = parent.effects as unknown as ChildScopeFactory
+	const createScope = factory[EFFECTS_CHILD_SCOPE]
+	if (typeof createScope !== 'function') {
+		throw new TypeError('[pluxel/core] Effects service cannot create an owner-bound child scope')
+	}
+	const effects = createScope.call(factory, ctx, { tag: `part:${path.join('.')}` })
+	pin(ctx, 'effects', effects)
+	const logger = parent.logger.with({ partPath: path.join('.') })
+	pin(ctx, 'logger', logger)
+	return ctx
+}
+
+function isCleanup(value: unknown): value is Exclude<PluginCleanup, void> {
+	return (
+		typeof value === 'function' ||
+		Boolean(
+			value &&
+			typeof value === 'object' &&
+			typeof (value as { dispose?: unknown }).dispose === 'function',
+		)
+	)
+}
+
+async function adoptPartCleanup(effects: EffectsScope, resource: PluginCleanup): Promise<void> {
+	if (resource === undefined) return
+	if (!isCleanup(resource)) {
+		throw new TypeError('[pluxel/core] PluginPart init() returned an invalid cleanup resource')
+	}
+	try {
+		if (typeof resource === 'function') effects.defer(resource)
+		else effects.own(resource)
+	} catch (error) {
+		if (!(error instanceof EffectsDisposedError)) throw error
+		try {
+			if (typeof resource === 'function') await resource()
+			else await resource.dispose()
+		} catch (cause) {
+			throw new Error('Late PluginPart init cleanup failed', { cause })
+		}
+	}
+}
+
+class PluginPartInitError extends Error {
+	readonly name = 'PluginPartInitError'
+	readonly partPath: readonly string[]
+
+	constructor(path: readonly string[], cause: unknown) {
+		const detail = cause instanceof Error ? cause.message : String(cause)
+		super(`PluginPart ${path.join('.')} failed to initialize: ${detail}`, { cause })
+		this.partPath = Object.freeze([...path])
+	}
+}
+
+export interface PartHost<_Host extends PluginPartOwner> {
+	/** The returned Part's own Host generic remains the source of host typing. */
+	use<P extends PluginPart<any, any>>(Part: PluginPartClass<P>): P
+}
+
+class PartHostRuntime<Host extends PluginPartOwner> implements PartHost<Host> {
+	readonly #facts
+	readonly #entries: PartEntry[] = []
+	#cursor = 0
+
+	constructor(
+		readonly host: Host,
+		private readonly ctx: Context,
+		private readonly plugin: BasePlugin,
+		private readonly path: PartPath,
+		private readonly ancestry: ReadonlySet<Function>,
+	) {
+		this.#facts = getPluginPartOccurrences(host.constructor)
+	}
+
+	use<P extends PluginPart<any, any>>(Part: PluginPartClass<P>): P {
+		const fact = this.#facts[this.#cursor]
+		if (!fact) {
+			throw new Error(
+				'[pluxel/core] parts.use() was not lowered. Keep it in a normal class field and use the Pluxel toolchain.',
+			)
+		}
+		if (fact.Part !== Part) {
+			throw new Error(
+				`[pluxel/core] Part occurrence mismatch at ${[...this.path, fact.fieldName].join('.')}`,
+			)
+		}
+		if (this.ancestry.has(Part)) {
+			throw new Error(
+				`[pluxel/core] PluginPart containment cycle at ${[...this.path, fact.fieldName].join('.')}`,
+			)
+		}
+		this.#cursor++
+		const childPath = Object.freeze([...this.path, fact.fieldName])
+		const ctx = createPartContext(this.ctx, childPath)
+		const ancestry = new Set([...this.ancestry, Part])
+		const construction: PartConstruction = Object.freeze({
+			token: PART_CONSTRUCTION,
+			ctx,
+			host: this.host,
+			plugin: this.plugin,
+			path: childPath,
+			ancestry,
+		})
+		const instance = Reflect.construct(Part, [construction]) as P
+		if (!(instance instanceof PluginPart)) {
+			throw new TypeError(`[pluxel/core] ${Part.name || '<anonymous>'} must extend PluginPart`)
+		}
+		const childHost = instance[PART_HOST] as PartHostRuntime<any>
+		childHost.finalize()
+		this.#entries.push(Object.freeze({ fieldName: fact.fieldName, instance, host: childHost }))
+		return instance
+	}
+
+	finalize(): void {
+		if (this.#cursor === this.#facts.length) return
+		const missing = this.#facts.slice(this.#cursor).map((item) => item.fieldName)
+		throw new Error(
+			`[pluxel/core] Lowered PluginPart fields were not constructed: ${missing.join(', ')}`,
+		)
+	}
+
+	async start(signal: AbortSignal): Promise<void> {
+		for (const entry of this.#entries) {
+			await entry.host.start(signal)
+			await startPluginPart(entry.instance, signal)
+		}
+	}
+
+	assignConfig(value: unknown): void {
+		const record = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+		for (const entry of this.#entries) {
+			const childValue = record[entry.fieldName]
+			const childRecord =
+				childValue && typeof childValue === 'object'
+					? (childValue as Record<string, unknown>)
+					: Object.freeze({})
+			const childKeys = new Set(
+				getPluginPartOccurrences(entry.instance.constructor).map((x) => x.fieldName),
+			)
+			const declaration = getPluginPartConfig(entry.instance.constructor)
+			if (declaration) {
+				const own: Record<string, unknown> = {}
+				for (const [key, item] of Object.entries(childRecord)) {
+					if (!childKeys.has(key)) own[key] = item
+				}
+				;(entry.instance as unknown as Record<string, unknown>)[declaration.fieldName] =
+					Object.freeze(own)
+			}
+			entry.host.assignConfig(childRecord)
+		}
+	}
+}
+
+export abstract class PluginPart<
+	Host extends PluginPartOwner = BasePlugin,
+	C extends Context = Context,
+> {
+	readonly #ctx: PluginPartContext<C>
+	readonly #host: Host
+	readonly #plugin: BasePlugin
+	private [PART_INIT_ACTIVE] = false
+	readonly [PART_HOST]: PartHostRuntime<this>
+	#plugins?: PluginHost
+
+	protected constructor() {
+		const construction = arguments[0] as PartConstruction | undefined
+		if (construction?.token !== PART_CONSTRUCTION) {
+			throw new Error("Don't instantiate PluginPart directly.")
+		}
+		this.#ctx = construction.ctx as unknown as PluginPartContext<C>
+		this.#host = construction.host as Host
+		this.#plugin = construction.plugin
+		this[PART_HOST] = new PartHostRuntime<this>(
+			this,
+			this.#ctx,
+			this.#plugin,
+			construction.path,
+			construction.ancestry,
+		)
+	}
+
+	get ctx(): PluginPartContext<C> {
+		return this.#ctx
+	}
+
+	get host(): Host {
+		return this.#host
+	}
+
+	get plugin(): BasePlugin {
+		return this.#plugin
+	}
+
+	get parts(): PartHost<this> {
+		return this[PART_HOST]
+	}
+
+	get plugins(): PluginHost {
+		return (this.#plugins ??= new PluginHost(this.#ctx, () => this[PART_INIT_ACTIVE]))
+	}
+
+	get configs(): ConfigHost {
+		return CONFIGS
+	}
+
+	protected init?(_signal: AbortSignal): PluginCleanup | Promise<PluginCleanup>
+}
+
+async function startPluginPart(part: PluginPart<any, any>, signal: AbortSignal): Promise<void> {
+	const init = (
+		part as unknown as { init?: (signal: AbortSignal) => PluginCleanup | Promise<PluginCleanup> }
+	).init
+	if (typeof init !== 'function') return
+	part[PART_INIT_ACTIVE] = true
+	try {
+		try {
+			await adoptPartCleanup(part.ctx.effects, await init.call(part, signal))
+		} catch (error) {
+			if (error instanceof PluginPartInitError) throw error
+			throw new PluginPartInitError(part.ctx.partInfo.path, error)
+		}
+	} finally {
+		part[PART_INIT_ACTIVE] = false
+	}
+}
+
+export function createRootPartHost(plugin: BasePlugin, ctx: Context): PartHostRuntime<BasePlugin> {
+	return new PartHostRuntime(plugin, ctx, plugin, Object.freeze([]), new Set([plugin.constructor]))
+}
+
+export function finalizePluginParts(host: PartHost<BasePlugin>): void {
+	;(host as PartHostRuntime<BasePlugin>).finalize()
+}
+
+export function startPluginParts(host: PartHost<BasePlugin>, signal: AbortSignal): Promise<void> {
+	return (host as PartHostRuntime<BasePlugin>).start(signal)
+}
+
+export function assignPluginPartConfig(host: PartHost<BasePlugin>, value: unknown): void {
+	;(host as PartHostRuntime<BasePlugin>).assignConfig(value)
+}
+
+export type { PluginPartClass } from '../runtime/part-definition'

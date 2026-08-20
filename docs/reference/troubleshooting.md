@@ -23,10 +23,18 @@ Plugin 源码必须经过 Pluxel 的 Vite/Rolldown 转换。不要用普通 Type
 
 required dependency 失败会阻止消费者启动。optional provider absent、disabled 或 start-failed 时 callback 不执行，但不会阻止消费者启动。参见 [Plugin 模型](../getting-started/plugin-model.md)。
 
+## Optional provider 不存在但 Part 仍被构造
+
+这是预期行为。`parts.use()` 声明静态 containment；每个 owner generation 都会构造 Part、注入并校验 config，再调用一次
+`init()`。`plugins.use()` 控制的是 callback 内的业务 activation，不控制 Part class 的加载或实例是否存在。保持 Part field
+initializer 无副作用，并把该 integration 的 registration、资源和 cleanup 全部放进 callback。若实现 package 本身可能未安装，
+或需要独立启停与失败状态，应使用 optional Plugin。
+
 ## 配置值是 `undefined` 或配置校验失败
 
-- `this.configs.use(schema)` 必须是具体 Plugin 的顶层普通 field；
-- schema 必须是支持的 object 形状，并且一个具体 Plugin 只声明一次；
+- `this.configs.use(schema)` 必须是具体 Plugin 或 direct PluginPart subclass 的顶层普通 field；
+- `this.parts.use(PartClass)` 必须完整占据普通 field initializer；Part 不能声明 constructor 或使用 `@Plugin`；
+- schema 必须是支持的 object 形状，并且每个具体 Plugin/PluginPart class 各自只声明一次；
 - 不要在 constructor 中读取配置；
 - 默认值放进 schema，宿主输入仍要经过同一个 schema normalization。
 

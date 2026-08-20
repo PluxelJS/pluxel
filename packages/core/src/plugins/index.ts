@@ -10,12 +10,25 @@
 
 export * from './composition/ConfigHost'
 export * from './composition/PluginHost'
+export {
+	PluginPart,
+	type PartHost,
+	type PluginPartClass,
+	type PluginPartContext,
+	type PluginPartInfo,
+	type PluginPartOwner,
+} from './composition/PluginPart'
 export * from './composition/BasePlugin'
 export * from './types'
 export * from './decorators/PluginDecorator'
 export * from './decorators/decoratorRuntime'
 export * from './runtime/fork'
 export * from './runtime/definition'
+export {
+	__setPluginPartConfig,
+	__setPluginPartOptional,
+	__setPluginParts,
+} from './runtime/part-definition'
 export * from './runtime/identity'
 export {
 	collectPluginLifecycleBlocked,

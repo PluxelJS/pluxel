@@ -72,8 +72,8 @@ host.cfg(P).unset('answer')
 host.cfg(P).enable()
 ```
 
-Config test handles take a Plugin constructor/address, never a display name. Plugin source must declare
-one `this.configs.use(ObjectSchema)` field; nested structure and display metadata belong to that schema.
+Config test handles take a Plugin constructor/address, never a display name. Plugin/PluginPart class each
+declare at most one `this.configs.use(ObjectSchema)` field; Part paths still belong to the owning Plugin record.
 
 ### Forks
 

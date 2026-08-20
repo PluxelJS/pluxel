@@ -69,6 +69,7 @@ type RawClass = {
 	readonly marked: boolean
 	readonly abstract: boolean
 	readonly basePluginSubclass: boolean
+	readonly pluginPartSubclass: boolean
 	readonly marker?: AstNode
 }
 
@@ -107,6 +108,14 @@ type PackagePlan = {
 }
 
 type Replacement = { readonly start: number; readonly end: number; readonly text: string }
+type PartOwnerFacts = Readonly<{
+	readonly className: string
+	readonly occurrences: readonly Readonly<{ fieldName: string; partName: string }>[]
+}>
+type PartOptionalFacts = Readonly<{
+	readonly className: string
+	readonly optional: readonly PluginDefinitionAddressSnapshot[]
+}>
 
 const AUTHORING_PACKAGES = new Set([
 	'@pluxel/core',
@@ -246,7 +255,17 @@ export function analyzePluginSemantics(
 	const analysis = analyzeModule(ast)
 	const addresses = sourceAddresses(analysis, id, root)
 	const definitions: PluginSemanticDefinition[] = []
+	const error = (message: string): never => {
+		throw new Error(message)
+	}
 	for (const raw of analysis.classes.values()) {
+		if (raw.marked && raw.pluginPartSubclass) {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
+			)
+		}
+		partOccurrences(raw, analysis, id, error)
+		if (raw.pluginPartSubclass) validatePluginPartConstructor(raw, id, error)
 		if (!raw.marked && !raw.abstract) continue
 		const definition = addresses.get(originKey(id, raw.name))
 		if (!definition) continue
@@ -303,7 +322,23 @@ async function lowerModule(options: {
 	}
 
 	const definitions: PluginSemanticDefinition[] = []
+	const partOwners: PartOwnerFacts[] = []
+	const partOptional: PartOptionalFacts[] = []
 	for (const raw of analysis.classes.values()) {
+		if (raw.marked && raw.pluginPartSubclass) {
+			options.error(
+				`[pluxel:plugin-part] ${id} ${raw.name} must not use @Plugin; PluginPart has no graph identity`,
+			)
+		}
+		const occurrences = partOccurrences(raw, analysis, id, options.error)
+		if (occurrences.length > 0) {
+			partOwners.push({ className: raw.name, occurrences })
+		}
+		if (raw.pluginPartSubclass) {
+			validatePluginPartConstructor(raw, id, options.error)
+			const optional = optionalRequirements(raw, analysis, refAddresses, id, options.error)
+			if (optional.length > 0) partOptional.push({ className: raw.name, optional })
+		}
 		if (!raw.marked && !raw.abstract) continue
 		const address = options.addresses.get(originKey(id, raw.name))
 		if (!address) {
@@ -338,12 +373,22 @@ async function lowerModule(options: {
 			...(provides ? { provides } : {}),
 		})
 	}
+	validateLocalPartContainment(partOwners, analysis, id, options.error)
 
 	let transformed = applyReplacements(options.code, replacements)
-	if (definitions.length > 0 || replacements.length > 0) {
+	if (
+		definitions.length > 0 ||
+		replacements.length > 0 ||
+		partOwners.length > 0 ||
+		partOptional.length > 0
+	) {
 		const imports = [
 			definitions.length > 0 ? '__setPluginDefinition as __pluxelSetPluginDefinition' : undefined,
 			replacements.length > 0 ? '__definePluginRef as __pluxelDefinePluginRef' : undefined,
+			partOwners.length > 0 ? '__setPluginParts as __pluxelSetPluginParts' : undefined,
+			partOptional.length > 0
+				? '__setPluginPartOptional as __pluxelSetPluginPartOptional'
+				: undefined,
 		].filter((value): value is string => Boolean(value))
 		const lines = [
 			'// [pluxel-plugin-semantics] Injected facts',
@@ -358,6 +403,17 @@ async function lowerModule(options: {
 					optional: definition.optional,
 					...(definition.provides ? { provides: definition.provides } : {}),
 				})});`,
+			)
+		}
+		for (const owner of partOwners) {
+			const occurrences = owner.occurrences
+				.map((item) => `{ fieldName: ${JSON.stringify(item.fieldName)}, Part: ${item.partName} }`)
+				.join(', ')
+			lines.push(`__pluxelSetPluginParts(${owner.className}, [${occurrences}]);`)
+		}
+		for (const part of partOptional) {
+			lines.push(
+				`__pluxelSetPluginPartOptional(${part.className}, ${JSON.stringify(part.optional)});`,
 			)
 		}
 		transformed = `${transformed}\n${lines.join('\n')}\n`
@@ -383,6 +439,7 @@ function analyzeModule(ast: Program): ModuleAnalysis {
 			marked: Boolean(marker),
 			abstract: node.abstract === true,
 			basePluginSubclass: extendsBasePlugin(node, imports),
+			pluginPartSubclass: extendsPluginPart(node, imports),
 			...(marker ? { marker } : {}),
 		})
 	}
@@ -433,7 +490,9 @@ function analyzeModule(ast: Program): ModuleAnalysis {
 		}
 	}
 	for (const raw of classes.values()) {
-		if (raw.abstract && !raw.basePluginSubclass && !raw.marked) classes.delete(raw.name)
+		if (raw.abstract && !raw.basePluginSubclass && !raw.pluginPartSubclass && !raw.marked) {
+			classes.delete(raw.name)
+		}
 	}
 	const declaredRefCalls = new Set([...refs.values()].map((ref) => ref.call.start))
 	walkAst(ast, (node) => {
@@ -1140,6 +1199,146 @@ function extendsBasePlugin(node: AstNode, imports: Map<string, ImportBinding>): 
 	)
 }
 
+function extendsPluginPart(node: AstNode, imports: Map<string, ImportBinding>): boolean {
+	const name = readIdentifier(node.superClass)
+	if (!name) return false
+	const binding = imports.get(name)
+	return Boolean(
+		binding &&
+		!binding.namespace &&
+		binding.imported === 'PluginPart' &&
+		AUTHORING_PACKAGES.has(binding.source),
+	)
+}
+
+function partOccurrences(
+	raw: RawClass,
+	analysis: ModuleAnalysis,
+	id: string,
+	error: (message: string) => never,
+): readonly Readonly<{ fieldName: string; partName: string }>[] {
+	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
+	const occurrences: Array<Readonly<{ fieldName: string; partName: string }>> = []
+	const directCalls = new Set<unknown>()
+	const fields = new Set<string>()
+	for (const rawMember of members) {
+		const member = rawMember as AstNode
+		if (member.type !== 'PropertyDefinition') continue
+		const call = partsUse(member.value)
+		if (!call) continue
+		directCalls.add(call.start)
+		if (!raw.marked && !raw.pluginPartSubclass) {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name} declares parts.use() but is not a concrete @Plugin or PluginPart`,
+			)
+		}
+		if (member.static === true) {
+			error(`[pluxel:plugin-part] ${id} ${raw.name} parts.use() must be an instance field`)
+		}
+		if ((member.key as AstNode | undefined)?.type === 'PrivateIdentifier') {
+			error(`[pluxel:plugin-part] ${id} ${raw.name} Part field must not use #private syntax`)
+		}
+		const fieldName = propertyName(member.key)
+		if (!fieldName || member.computed === true) {
+			error(`[pluxel:plugin-part] ${id} ${raw.name} Part field name must be static`)
+		}
+		if (fields.has(fieldName)) {
+			error(`[pluxel:plugin-part] ${id} ${raw.name} declares duplicate Part field ${fieldName}`)
+		}
+		fields.add(fieldName)
+		const args = arrayOf(call.arguments)
+		const argument = args[0] as AstNode | undefined
+		const partName = args.length === 1 ? readIdentifier(argument) : undefined
+		if (!partName || argument?.type === 'SpreadElement') {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name}.${fieldName} expects parts.use(PluginPartClass) with one value identifier`,
+			)
+		}
+		const binding = analysis.imports.get(partName)
+		if (binding?.typeOnly) {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name}.${fieldName} Part ${partName} must use a value import`,
+			)
+		}
+		const local = analysis.classes.get(partName)
+		if (!binding && !local?.pluginPartSubclass) {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name}.${fieldName} target ${partName} must be an imported value or direct PluginPart subclass`,
+			)
+		}
+		occurrences.push(Object.freeze({ fieldName, partName }))
+	}
+	walkAst(raw.node, (node) => {
+		if (node.type !== 'CallExpression' || !isPartsUseCall(node)) return
+		if (!directCalls.has(node.start)) {
+			error(
+				`[pluxel:plugin-part] ${id} ${raw.name} parts.use() must be the complete initializer of a normal class field`,
+			)
+		}
+	})
+	return Object.freeze(occurrences)
+}
+
+function validateLocalPartContainment(
+	owners: readonly PartOwnerFacts[],
+	analysis: ModuleAnalysis,
+	id: string,
+	error: (message: string) => never,
+): void {
+	const edges = new Map(owners.map((owner) => [owner.className, owner.occurrences]))
+	const visit = (name: string, path: readonly string[], ancestry: Set<string>) => {
+		for (const occurrence of edges.get(name) ?? []) {
+			if (!analysis.classes.get(occurrence.partName)?.pluginPartSubclass) continue
+			const nextPath = [...path, occurrence.fieldName]
+			if (ancestry.has(occurrence.partName)) {
+				error(
+					`[pluxel:plugin-part] ${id} local PluginPart containment cycle at ${nextPath.join('.')}`,
+				)
+			}
+			const next = new Set([...ancestry, occurrence.partName])
+			visit(occurrence.partName, nextPath, next)
+		}
+	}
+	for (const raw of analysis.classes.values()) {
+		if (!raw.marked) continue
+		visit(raw.name, [], new Set([raw.name]))
+	}
+}
+
+function validatePluginPartConstructor(
+	raw: RawClass,
+	id: string,
+	error: (message: string) => never,
+): void {
+	if (raw.abstract) {
+		error(`[pluxel:plugin-part] ${id} ${raw.name} must be concrete`)
+	}
+	const members = arrayOf((raw.node.body as AstNode | undefined)?.body)
+	if (
+		members.some(
+			(value) =>
+				(value as AstNode).type === 'MethodDefinition' && (value as AstNode).kind === 'constructor',
+		)
+	) {
+		error(
+			`[pluxel:plugin-part] ${id} ${raw.name} must not declare a constructor; use class fields or init()`,
+		)
+	}
+}
+
+function partsUse(value: unknown): AstNode | undefined {
+	const call = value as AstNode | undefined
+	return call?.type === 'CallExpression' && isPartsUseCall(call) ? call : undefined
+}
+
+function isPartsUseCall(expression: AstNode): boolean {
+	const callee = expression.callee as AstNode | undefined
+	if (callee?.type !== 'MemberExpression' || propertyName(callee.property) !== 'use') return false
+	const host = callee.object as AstNode | undefined
+	if (host?.type !== 'MemberExpression' || propertyName(host.property) !== 'parts') return false
+	return (host.object as AstNode | undefined)?.type === 'ThisExpression'
+}
+
 function directPluginsUse(statement: AstNode): AstNode | undefined {
 	if (statement.type !== 'ExpressionStatement') return undefined
 	const expression = statement.expression as AstNode | undefined
@@ -1177,7 +1376,9 @@ function simpleTypeReference(value: unknown): string | undefined {
 }
 
 function semanticHint(code: string): boolean {
-	return /\b(?:Plugin|BasePlugin|ForkablePlugin|definePluginRef)\b|\.plugins\.use\s*\(/.test(code)
+	return /\b(?:Plugin|PluginPart|BasePlugin|ForkablePlugin|definePluginRef)\b|\.(?:plugins|parts)\.use\s*\(/.test(
+		code,
+	)
 }
 
 function packageNameOf(source: string): string {

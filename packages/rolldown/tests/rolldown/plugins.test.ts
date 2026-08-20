@@ -28,6 +28,24 @@ async function transform(
 }
 
 describe('configSourcePlugin', () => {
+	it('lowers Plugin and PluginPart config declarations to their distinct owners', async () => {
+		const result = await transform(`
+			import * as v from 'valibot'
+			import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+			const PartConfig = v.object({ size: v.optional(v.number(), 10) })
+			class CachePart extends PluginPart<OwnerPlugin> {
+				readonly config = this.configs.use(PartConfig)
+			}
+			@Plugin() class OwnerPlugin extends BasePlugin {
+				readonly config = this.configs.use(v.object({ enabled: v.boolean() }))
+			}
+		`)
+
+		expect(result?.code).toContain('__setPluginPartConfig as __pluxelSetPluginPartConfig')
+		expect(result?.code).toContain('__pluxelSetPluginPartConfig(CachePart, { fieldName: "config"')
+		expect(result?.code).toContain('__pluxelSetPluginConfig(OwnerPlugin, { fieldName: "config"')
+	})
+
 	it('keeps Vite/Rolldown object hook filtering compatible', () => {
 		const hook = configSourcePlugin().transform
 		expect(hook).toBeTypeOf('object')

@@ -18,6 +18,8 @@ export type PluginLifecycleErrorInfo = {
 	message: string
 	stack?: string
 	cause?: string
+	/** Present when startup failed inside an owner-contained PluginPart. */
+	partPath?: readonly string[]
 }
 
 export type PluginLifecycleIssue = {
@@ -60,6 +62,10 @@ export function serializeLifecycleError(error: unknown): PluginLifecycleErrorInf
 		if (error.stack) info.stack = error.stack
 		const cause = (error as Error & { cause?: unknown }).cause
 		if (cause !== null && cause !== undefined) info.cause = errorMessage(cause)
+		const partPath = (error as Error & { partPath?: unknown }).partPath
+		if (Array.isArray(partPath) && partPath.every((item) => typeof item === 'string')) {
+			info.partPath = Object.freeze([...partPath]) as readonly string[]
+		}
 		return info
 	}
 	return {

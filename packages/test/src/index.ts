@@ -23,6 +23,7 @@ export {
 	definePluginRef,
 	ForkablePlugin,
 	Plugin,
+	PluginPart,
 	getPluginInfo,
 	isPluginLifecycleBlockedIssue,
 	isPluginLifecycleDrainErrorIssue,

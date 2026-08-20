@@ -1,4 +1,5 @@
 import { type Context as PluxelContext, Injectable } from '@pluxel/core'
+import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import { Elysia } from 'elysia'
 import { isAbsolute, resolve } from 'pathe'
 
@@ -250,6 +251,25 @@ export class HttpService {
 				boundary: this.createLazyGraphqlBoundary(),
 			})
 		}
+	}
+
+	/** @internal Bind plugin-facing closures to an owner without constructing another HTTP backend. */
+	[OWNER_CONTEXT_BIND](owner: PluxelContext): HttpService {
+		const methods = new Map<PropertyKey, (...args: unknown[]) => unknown>()
+		let view: HttpService
+		view = new Proxy(this, {
+			get: (target, property) => {
+				if (property === 'ctx') return owner
+				const value = Reflect.get(target, property, view) as unknown
+				if (typeof value !== 'function') return value
+				const cached = methods.get(property)
+				if (cached) return cached
+				const bound = (...args: unknown[]) => Reflect.apply(value, view, args)
+				methods.set(property, bound)
+				return bound
+			},
+		})
+		return view
 	}
 
 	get fetch() {

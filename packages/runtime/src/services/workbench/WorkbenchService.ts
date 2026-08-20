@@ -1,4 +1,5 @@
 import { type Context as CoreContext, Injectable } from '@pluxel/core'
+import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import type { AnyWorkbenchExtension, WorkbenchBindings, WorkbenchMount } from '../../workbench'
 import type { WorkbenchBackend } from '../workbench'
 import { withNodeModulePluginContext } from '../../node-artifact/NodeModuleService'
@@ -33,6 +34,11 @@ export class WorkbenchService {
 		_cfg: unknown,
 	) {}
 
+	/** @internal Preserve one backend while retaining the requesting owner Context. */
+	[OWNER_CONTEXT_BIND](owner: CoreContext): WorkbenchService {
+		return new WorkbenchService(owner, undefined)
+	}
+
 	get enabled(): boolean {
 		return backendFor(this.ctx) !== undefined
 	}
@@ -41,6 +47,11 @@ export class WorkbenchService {
 		Extension extends AnyWorkbenchExtension,
 		const Bindings extends WorkbenchBindings<Extension>,
 	>(extension: Extension, bindings: Bindings): WorkbenchMount<Extension, Bindings> | undefined {
+		if ('partInfo' in this.ctx) {
+			throw new Error(
+				'[pluxel/runtime] PluginPart cannot mount a Workbench extension directly; aggregate it in the owning Plugin mount.',
+			)
+		}
 		const backend = backendFor(this.ctx)
 		if (!backend) return undefined
 		return backend.forContext(this.ctx).mount(extension, bindings)

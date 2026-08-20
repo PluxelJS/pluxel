@@ -21,6 +21,32 @@ async function transform(code: string, id = '/repo/src/index.ts') {
 }
 
 describe('plugin semantic lowering', () => {
+	it('lowers nested PluginPart occurrences and Part-owned optional edges', async () => {
+		const result = await transform(`
+			import type { AuditPlugin } from '@acme/audit'
+			import { BasePlugin, definePluginRef, Plugin, PluginPart } from '@pluxel/runtime'
+			const Audit = definePluginRef<AuditPlugin>()
+			class LeafPart extends PluginPart<BranchPart> {
+				override init() { this.plugins.use(Audit, audit => void audit) }
+			}
+			class BranchPart extends PluginPart<OwnerPlugin> {
+				readonly leaf = this.parts.use(LeafPart)
+			}
+			@Plugin() export class OwnerPlugin extends BasePlugin {
+				readonly branch = this.parts.use(BranchPart)
+			}
+		`)
+
+		expect(result?.code).toContain('__setPluginParts as __pluxelSetPluginParts')
+		expect(result?.code).toContain(
+			'__pluxelSetPluginParts(BranchPart, [{ fieldName: "leaf", Part: LeafPart }])',
+		)
+		expect(result?.code).toContain(
+			'__pluxelSetPluginParts(OwnerPlugin, [{ fieldName: "branch", Part: BranchPart }])',
+		)
+		expect(result?.code).toContain('__pluxelSetPluginPartOptional(LeafPart, [{"entry"')
+	})
+
 	it('emits slot facts with ordered required provenance and type-only optional refs', async () => {
 		const result = await transform(`
 			import type { AuditPlugin as AuditImplementation } from '@acme/audit'
@@ -173,6 +199,62 @@ describe('plugin semantic lowering', () => {
 	)
 
 	it.each([
+		{
+			name: 'abstract PluginPart',
+			code: `
+				import { PluginPart } from '@pluxel/runtime'
+				abstract class BadPart extends PluginPart {}
+			`,
+			message: 'must be concrete',
+		},
+		{
+			name: 'PluginPart constructor',
+			code: `
+				import { PluginPart } from '@pluxel/runtime'
+				class BadPart extends PluginPart { constructor() { super() } }
+			`,
+			message: 'must not declare a constructor',
+		},
+		{
+			name: 'marked PluginPart',
+			code: `
+				import { Plugin, PluginPart } from '@pluxel/runtime'
+				@Plugin() class BadPart extends PluginPart {}
+			`,
+			message: 'must not use @Plugin',
+		},
+		{
+			name: 'local Part containment cycle',
+			code: `
+				import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+				class FirstPart extends PluginPart { second = this.parts.use(SecondPart) }
+				class SecondPart extends PluginPart { first = this.parts.use(FirstPart) }
+				@Plugin() class Owner extends BasePlugin { first = this.parts.use(FirstPart) }
+			`,
+			message: 'containment cycle',
+		},
+		{
+			name: 'dynamic Part occurrence',
+			code: `
+				import { BasePlugin, Plugin, PluginPart } from '@pluxel/runtime'
+				class ChildPart extends PluginPart {}
+				@Plugin() class Owner extends BasePlugin {
+					make() { return this.parts.use(ChildPart) }
+				}
+			`,
+			message: 'complete initializer of a normal class field',
+		},
+		{
+			name: 'type-only Part occurrence',
+			code: `
+				import type { RemotePart } from './part'
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() class Owner extends BasePlugin {
+					readonly child = this.parts.use(RemotePart)
+				}
+			`,
+			message: 'must use a value import',
+		},
 		{
 			name: 'type-only required dependency',
 			code: `

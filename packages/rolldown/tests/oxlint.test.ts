@@ -613,6 +613,82 @@ runRule('plugin-no-removed-feature-api', pluxelRules['plugin-no-removed-feature-
 	],
 })
 
+runRule('plugin-part-static-occurrences', pluxelRules['plugin-part-static-occurrences'], {
+	valid: [
+		{
+			code: `
+				class CachePart extends PluginPart {}
+				@Plugin() class Owner extends BasePlugin {
+					readonly cache = this.parts.use(CachePart)
+				}
+			`,
+		},
+		{
+			code: `
+				class LeafPart extends PluginPart {}
+				class BranchPart extends PluginPart {
+					readonly leaf = this.parts.use(LeafPart)
+				}
+			`,
+		},
+	],
+	invalid: [
+		{
+			code: `
+				class CachePart extends PluginPart {}
+				@Plugin() class Owner extends BasePlugin {
+					make() { return this.parts.use(CachePart) }
+				}
+			`,
+			errors: [{ messageId: 'field' }],
+		},
+		{
+			code: `
+				class CachePart extends PluginPart {}
+				class Helper { readonly cache = this.parts.use(CachePart) }
+			`,
+			errors: [{ messageId: 'owner' }],
+		},
+		{
+			code: `
+				class CachePart extends PluginPart {}
+				@Plugin() class Owner extends BasePlugin {
+					readonly cache = this.parts.use(makePart())
+				}
+			`,
+			errors: [{ messageId: 'argument' }],
+		},
+		{
+			code: `
+				function defineOwner() {
+					@Plugin() class Owner extends BasePlugin {
+						readonly cache = this.parts.use(CachePart)
+					}
+				}
+			`,
+			errors: [{ messageId: 'topLevel' }],
+		},
+	],
+})
+
+runRule('plugin-part-class-contract', pluxelRules['plugin-part-class-contract'], {
+	valid: [{ code: 'class CachePart extends PluginPart { override init() {} }' }],
+	invalid: [
+		{
+			code: 'abstract class CachePart extends PluginPart {}',
+			errors: [{ messageId: 'abstract' }],
+		},
+		{
+			code: 'class CachePart extends PluginPart { constructor() { super() } }',
+			errors: [{ messageId: 'constructor' }],
+		},
+		{
+			code: '@Plugin() class CachePart extends PluginPart {}',
+			errors: [{ messageId: 'marked' }],
+		},
+	],
+})
+
 runRule('configs-use-single-object-schema', pluxelRules['configs-use-single-object-schema'], {
 	valid: [
 		{

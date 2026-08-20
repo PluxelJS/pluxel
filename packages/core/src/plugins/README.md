@@ -14,7 +14,8 @@
 - constructor required dependency 和 `definePluginRef<T>()` optional dependency 都来自 toolchain lowering facts。
 - `plugins.use(Ref, callback)` 只允许在 `init()` 中直接调用；callback 同步返回的资源进入 consumer effects。
 - `init()` cleanup 与显式 effects 是唯一 generation teardown；没有并行 lifecycle cleanup hook。
-- Plugin 最多声明一个 `this.configs.use(ObjectSchema)` class field。
+- Plugin/PluginPart class 各自最多声明一个 `this.configs.use(ObjectSchema)` class field；runtime 仍只有一个 owner record。
+- `this.parts.use(PartClass)` lower 静态 containment；Part 自动得到 child Context/effects/config，并先于 owner 启动。
 
 class name、constructor object 和 `displayName` 都不参与 graph identity。没有 lowering facts 的 Plugin 必须明确失败，不允许
 reflection 或 name fallback。
@@ -39,11 +40,12 @@ reflection 或 name fallback。
 
 - `BasePlugin.ts`：Context、init cleanup adoption 与 generation drain；
 - `PluginHost.ts`：init-only optional callback facade；
-- `ConfigHost.ts`：single-object config sentinel；
+- `ConfigHost.ts`：Plugin/PluginPart object config sentinel；
+- `PluginPart.ts`：owner-bound Part authoring、containment construction 与 lifecycle；
 - `symbols.ts`：内部 Context/generation symbols。
 
-Plugin 内部拆分使用普通 class/function。需要子资源 scope 时使用 owner effects；需要独立配置、失败传播、启停、replacement
-或治理边界时建模为 Plugin。
+简单拆分使用普通 class/function；需要局部 config/scope/capability owner、但不独立治理时使用 `PluginPart`。需要独立失败状态、
+启停、replacement、config owner 或治理边界时建模为 Plugin。
 
 ## 验证入口
 

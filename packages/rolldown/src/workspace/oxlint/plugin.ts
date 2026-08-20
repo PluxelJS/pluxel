@@ -2,6 +2,7 @@ import { configsRules } from './rules/configs.ts'
 import { importsRules } from './rules/imports.ts'
 import { loggingRules } from './rules/logging.ts'
 import { pluginsRules } from './rules/plugins.ts'
+import { pluginPartsRules } from './rules/plugin-parts.ts'
 import type { OxPlugin } from './types.ts'
 
 export const pluxelRules = {
@@ -9,6 +10,7 @@ export const pluxelRules = {
 	...configsRules,
 	...importsRules,
 	...pluginsRules,
+	...pluginPartsRules,
 }
 
 export type PluxelRuleCategory = 'correctness' | 'logging'
@@ -82,6 +84,16 @@ export const pluxelRulePolicy = {
 		remediation: 'diagnostic',
 	},
 	'plugin-no-removed-feature-api': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'plugin-part-static-occurrences': {
+		category: 'correctness',
+		buildCritical: true,
+		remediation: 'diagnostic',
+	},
+	'plugin-part-class-contract': {
 		category: 'correctness',
 		buildCritical: true,
 		remediation: 'diagnostic',

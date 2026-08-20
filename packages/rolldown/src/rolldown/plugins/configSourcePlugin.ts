@@ -2,7 +2,8 @@
  * Extracts the single Plugin config declaration before TypeScript class fields are lowered.
  *
  * The authoring contract is intentionally narrow: a concrete marked Plugin may declare at most
- * one non-#private class field initialized by `this.configs.use(ObjectSchema)`. The runtime helper
+ * one non-#private class field initialized by `this.configs.use(ObjectSchema)`. A PluginPart uses
+ * the same authoring shape and lowers to Part-owned metadata. The runtime helper
  * performs the final Standard Schema/ObjectSchema validation while this pass owns declaration
  * shape, cardinality and source capture. There is no Config decorator or cfg/layout protocol.
  */
@@ -38,6 +39,7 @@ type ConfigDeclaration = {
 	readonly fieldName: string
 	readonly schemaExpression: string
 	readonly source: string
+	readonly target: 'plugin' | 'part'
 }
 
 type SourceExport =
@@ -107,13 +109,23 @@ export function configSourcePlugin(options: ConfigSourcePluginOptions = {}): Vit
 					(message) => this.error(message),
 				)
 				if (declarations.length === 0) return null
+				const hasPluginConfigs = declarations.some((item) => item.target === 'plugin')
+				const hasPartConfigs = declarations.some((item) => item.target === 'part')
+				const imports = [
+					hasPluginConfigs ? '__setPluginConfig as __pluxelSetPluginConfig' : undefined,
+					hasPartConfigs ? '__setPluginPartConfig as __pluxelSetPluginPartConfig' : undefined,
+				].filter((value): value is string => Boolean(value))
 				const lines = [
 					'// [pluxel-config] Injected definition',
-					`import { __setPluginConfig as __pluxelSetPluginConfig } from ${JSON.stringify(helperSource)};`,
+					`import { ${imports.join(', ')} } from ${JSON.stringify(helperSource)};`,
 				]
 				for (const declaration of declarations) {
+					const helper =
+						declaration.target === 'plugin'
+							? '__pluxelSetPluginConfig'
+							: '__pluxelSetPluginPartConfig'
 					lines.push(
-						`__pluxelSetPluginConfig(${declaration.className}, { fieldName: ${JSON.stringify(declaration.fieldName)}, schema: ${declaration.schemaExpression}, source: ${JSON.stringify(declaration.source)} });`,
+						`${helper}(${declaration.className}, { fieldName: ${JSON.stringify(declaration.fieldName)}, schema: ${declaration.schemaExpression}, source: ${JSON.stringify(declaration.source)} });`,
 					)
 				}
 				return { code: `${code}\n${lines.join('\n')}\n`, map: null }
@@ -198,14 +210,17 @@ async function extractDeclarations(
 		const className = readIdentifier(node.id)
 		if (!className) continue
 		const marked = hasPluginMarker(node, imports)
+		const part = extendsPluginPart(node, imports)
 		const declarations: ConfigDeclaration[] = []
 		for (const rawMember of arrayOf((node.body as AstNode | undefined)?.body)) {
 			const member = rawMember as AstNode
 			if (member.type !== 'PropertyDefinition') continue
 			const use = configsUse(member.value)
 			if (!use) continue
-			if (!marked) {
-				error(`[pluxel-config] ${id} ${className} declares config but is not a concrete @Plugin`)
+			if (!marked && !part) {
+				error(
+					`[pluxel-config] ${id} ${className} declares config but is not a concrete @Plugin or PluginPart`,
+				)
 			}
 			if ((member.key as AstNode | undefined)?.type === 'PrivateIdentifier') {
 				error(`[pluxel-config] ${id} ${className} config field must not use #private syntax`)
@@ -233,16 +248,29 @@ async function extractDeclarations(
 				fieldName,
 				schemaExpression,
 				source: await sourceResolver.render(module, schema),
+				target: marked ? 'plugin' : 'part',
 			})
 		}
 		if (declarations.length > 1) {
 			error(
-				`[pluxel-config] ${id} ${className} declares ${declarations.length} configs.use() fields; each Plugin may declare at most one ObjectSchema`,
+				`[pluxel-config] ${id} ${className} declares ${declarations.length} configs.use() fields; each Plugin or PluginPart may declare at most one ObjectSchema`,
 			)
 		}
 		out.push(...declarations)
 	}
 	return out
+}
+
+function extendsPluginPart(node: AstNode, imports: ReadonlyMap<string, ImportBinding>): boolean {
+	const name = readIdentifier(node.superClass)
+	if (!name) return false
+	const binding = imports.get(name)
+	return Boolean(
+		binding &&
+		!binding.namespace &&
+		binding.imported === 'PluginPart' &&
+		AUTHORING_PACKAGES.has(binding.source),
+	)
 }
 
 function collectSchemaModule(ast: Program, code: string, id: string): SchemaModule {

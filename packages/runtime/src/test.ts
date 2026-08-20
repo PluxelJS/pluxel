@@ -18,6 +18,7 @@ export {
 	BasePlugin,
 	ForkablePlugin,
 	Plugin,
+	PluginPart,
 	assertPluginLifecycleIssue,
 	checkPluginDecorator,
 	collectPluginLifecycleBlocked,

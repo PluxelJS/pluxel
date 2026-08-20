@@ -5,11 +5,18 @@ import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 import type { ObjectSchema } from 'valibot'
 import { AutoForm, useAutoFormCtx } from 'valibot-form/web'
 
-import { patchPluginConfig, useRuntimeTransportClient, type ConfigResult } from '../../../runtime'
+import {
+	patchPluginConfig,
+	patchPluginConfigField,
+	useRuntimeTransportClient,
+	type ConfigResult,
+} from '../../../runtime'
 import { useNotify } from '../../hooks/useNotify'
 import { commitPluginConfig } from './usePluginConfig'
 import { FormToc } from './components/FormToc'
 import { makeFieldAnchorPrefix, makeSectionAnchorPrefix } from './configAnchors'
+
+const EMPTY_PATH: readonly string[] = []
 
 export function ConfigTabContent({
 	owner,
@@ -21,6 +28,7 @@ export function ConfigTabContent({
 	showActions = true,
 	active = true,
 	onDirtyChange,
+	path = EMPTY_PATH,
 }: {
 	owner: PluginNodeAddressSnapshot
 	displayName: string
@@ -31,6 +39,7 @@ export function ConfigTabContent({
 	showActions?: boolean
 	active?: boolean
 	onDirtyChange?: (dirty: boolean) => void
+	path?: readonly string[]
 }) {
 	const notify = useNotify()
 	const transport = useRuntimeTransportClient()
@@ -38,15 +47,22 @@ export function ConfigTabContent({
 		() => ({ ...defaultValue, ...savedValue }),
 		[defaultValue, savedValue],
 	)
-	const sectionIdPrefix = makeSectionAnchorPrefix(displayName, 'config')
-	const fieldIdPrefix = makeFieldAnchorPrefix(displayName, 'config')
+	const tabKey = path.join('.') || 'config'
+	const sectionIdPrefix = makeSectionAnchorPrefix(displayName, tabKey)
+	const fieldIdPrefix = makeFieldAnchorPrefix(displayName, tabKey)
 	const opts = useMemo(
 		() =>
 			formOptions({
 				defaultValues: initialValue,
 				onSubmit: async ({ value, formApi }) => {
 					const result = (await transport.withRpc((rpc) =>
-						patchPluginConfig(rpc, owner, value),
+						path.length === 0
+							? patchPluginConfig(rpc, owner, value)
+							: patchPluginConfigField(rpc, {
+									owner,
+									fieldPath: path.join('.'),
+									value,
+								}),
 					)) as ConfigResult
 					if (result.ok === false) {
 						notify({
@@ -61,7 +77,7 @@ export function ConfigTabContent({
 					notify({ title: '提交成功', message: '配置已保存', color: 'green' })
 				},
 			}),
-		[displayName, initialValue, notify, owner, transport],
+		[displayName, initialValue, notify, owner, path, transport],
 	)
 
 	return (

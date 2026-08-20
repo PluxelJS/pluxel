@@ -48,6 +48,15 @@ function directPluginBase(node: OxNode): boolean {
 	return name === 'BasePlugin' || name === 'ForkablePlugin'
 }
 
+function directPluginPart(node: OxNode): boolean {
+	const base = unwrapExpression(node.superClass)
+	if (base?.type === 'Identifier') return base.name === 'PluginPart'
+	return (
+		base?.type === 'MemberExpression' &&
+		getStaticPropertyName(base.property, Boolean(base.computed)) === 'PluginPart'
+	)
+}
+
 function topLevelClasses(program: OxNode): OxNode[] {
 	const out: OxNode[] = []
 	for (const raw of Array.isArray(program.body) ? program.body : []) {
@@ -196,7 +205,13 @@ const pluginNoProcessExit = createRule(
 			if (getStaticPropertyName(callee.property, Boolean(callee.computed)) !== 'exit') return
 			const object = unwrapExpression(callee.object)
 			if (object?.type !== 'Identifier' || object.name !== 'process') return
-			if (context.sourceCode.getAncestors(node).some(isPluginClass)) report(context, node, 'exit')
+			if (
+				context.sourceCode
+					.getAncestors(node)
+					.some((ancestor) => isPluginClass(ancestor) || directPluginPart(ancestor))
+			) {
+				report(context, node, 'exit')
+			}
 		},
 	}),
 )

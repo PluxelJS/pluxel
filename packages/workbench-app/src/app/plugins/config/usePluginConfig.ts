@@ -13,7 +13,15 @@ export type PluginConfigData = {
 	schema?: ObjectSchema<any, any>
 	defaults: Record<string, unknown>
 	savedConfig: Record<string, unknown>
+	sections: readonly PluginConfigSection[]
 }
+
+export type PluginConfigSection = Readonly<{
+	path: readonly string[]
+	fieldName: string
+	schema: ObjectSchema<any, any>
+	defaults: Record<string, unknown>
+}>
 
 export type PluginConfigState = {
 	data?: PluginConfigData
@@ -58,7 +66,7 @@ async function loadPluginConfigData(
 		if (!schemaResult) throw new Error('schema 加载失败')
 		if (schemaResult.ok === false) {
 			if (schemaResult.code === 'schema_not_found') {
-				return { fieldName: '', defaults: {}, savedConfig }
+				return { fieldName: '', defaults: {}, savedConfig, sections: [] }
 			}
 			throw new Error(schemaResult.message ?? schemaResult.code)
 		}
@@ -67,6 +75,15 @@ async function loadPluginConfigData(
 			schema: evaluateSchemaSource(displayName, schemaResult.schemaSource),
 			defaults: schemaResult.defaults ?? {},
 			savedConfig,
+			sections: (schemaResult.sections ?? []).map((section) => ({
+				path: section.path,
+				fieldName: section.fieldName,
+				schema: evaluateSchemaSource(
+					`${displayName}:${section.path.join('.') || 'general'}`,
+					section.schemaSource,
+				),
+				defaults: section.defaults ?? {},
+			})),
 		}
 	})
 }
@@ -106,6 +123,7 @@ class PluginConfigResource {
 					fieldName: this.snapshot.data.fieldName,
 					schema: this.snapshot.data.schema,
 					defaults: this.snapshot.data.defaults,
+					sections: this.snapshot.data.sections,
 				}
 			: undefined
 		const task = loadPluginConfigData(this.owner, this.displayName, forceSchemaRefresh, current)

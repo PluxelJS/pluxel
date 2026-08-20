@@ -57,6 +57,12 @@ export type SchemaResultOk = {
 	fieldName: string
 	schemaSource: string
 	defaults: Record<string, unknown>
+	sections: readonly {
+		path: readonly string[]
+		fieldName: string
+		schemaSource: string
+		defaults: Record<string, unknown>
+	}[]
 }
 
 export type SchemaResultErr = {

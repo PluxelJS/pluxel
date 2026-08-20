@@ -11,6 +11,7 @@ import {
 import { createErr, createOk } from 'option-t/plain_result'
 import { BasePlugin } from '../composition/BasePlugin'
 import { CALLER_CONTEXT_BIND, FORK_CTX, PLUGIN_CTX } from '../composition/symbols'
+import { finalizePluginParts } from '../composition/PluginPart'
 import { createPluginInfo } from '../decorators/PluginDecorator'
 import type { PluginInfo } from '../decorators/decorator/types'
 import type { PluginConstructor, PluginIdentifier, PluginInstance } from '../types'
@@ -181,7 +182,9 @@ export class PluginDefinitions {
 		const prevFork = BasePlugin[FORK_CTX]
 		BasePlugin[FORK_CTX] = () => pluginCTX
 		try {
-			return this.instantiatePlugin(Plugin, deps, this.createCallerViewFactory(pluginCTX))
+			const instance = this.instantiatePlugin(Plugin, deps, this.createCallerViewFactory(pluginCTX))
+			finalizePluginParts(instance.parts)
+			return instance
 		} finally {
 			BasePlugin[FORK_CTX] = prevFork
 		}

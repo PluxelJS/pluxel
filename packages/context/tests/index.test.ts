@@ -2,6 +2,9 @@
 import { describe, expect, test } from 'vitest'
 import { Context, type ServiceClass } from '@pluxel/context'
 
+const OWNER_CONTEXT_BIND = Symbol.for('pluxel:ctx.owner-context-bind')
+const OWNER_CONTEXT_VIEW = Symbol.for('pluxel:ctx.owner-context-view')
+
 type TestServiceCtor = new (ctx: unknown, cfg?: unknown) => object
 type TestServiceClass = ServiceClass<TestServiceCtor>
 const asTestServiceClass = (ctor: unknown) => ctor as TestServiceClass
@@ -22,6 +25,7 @@ declare module '@pluxel/context' {
 			tapService: TapService
 			countService: CountService
 			eagerService: EagerService
+			ownerService: OwnerService
 		}
 		interface RootServices {
 			rootTapService: RootTapService
@@ -144,6 +148,23 @@ class EagerRootService {
 }
 Context.registerService(asTestServiceClass(EagerRootService))
 
+class OwnerService {
+	static key = 'ownerService' as const
+	constructor(
+		public ctx: Context,
+		_cfg?: unknown,
+	) {}
+	[OWNER_CONTEXT_BIND](owner: Context): OwnerService {
+		const view = Object.create(this) as OwnerService
+		view.ctx = owner
+		return view
+	}
+	ping() {
+		return this.ctx.name
+	}
+}
+Context.registerService(asTestServiceClass(OwnerService))
+
 /* -------------------------------------------------------------------------- */
 /* 3) 覆盖用的新实现们（链式覆盖、last-wins）                                  */
 /* -------------------------------------------------------------------------- */
@@ -231,6 +252,27 @@ describe('service lifecycle', () => {
 })
 
 describe('extend / isolate / ctx 回灌', () => {
+	test('owner view lazily caches bound facades without rebinding shared services', () => {
+		const source = new Context({ name: 'plugin' })
+		const service = source.ownerService
+		const createOwnerView = (ctx: Context, name: string): Context =>
+			(ctx as unknown as { [OWNER_CONTEXT_VIEW](opts: { name: string }): Context })[
+				OWNER_CONTEXT_VIEW
+			]({ name })
+		const first = createOwnerView(source, 'plugin.first')
+		const second = createOwnerView(first, 'plugin.first.second')
+
+		expect(first.ownerService).not.toBe(service)
+		expect(first.ownerService).toBe(first.ownerService)
+		expect(first.ownerService.ping()).toBe('plugin.first')
+		expect(second.ownerService).not.toBe(first.ownerService)
+		expect(second.ownerService.ping()).toBe('plugin.first.second')
+		expect(service.ping()).toBe('plugin')
+		expect(first.tapService).toBe(source.tapService)
+		expect((first.tapService as TapService).ctx).toBe(source)
+		expect(first.root.rootTapService).toBe(source.root.rootTapService)
+	})
+
 	test('extend 共享实例池：同一服务返回同一实例', () => {
 		const ctx = new Context()
 		const inst1 = ctx.mathService

@@ -1,5 +1,5 @@
-import type { StandardSchemaV1 } from '@standard-schema/spec'
 import type { PluginConstructor, PluginIdentifier } from '../../types'
+import type { PluginConfigDefinition } from '../../runtime/definition'
 import type {
 	PluginDefinitionAddressSnapshot,
 	PluginDefinitionSlot,
@@ -19,11 +19,7 @@ export interface PluginDeclarationInfo {
 	readonly displayName: string
 	readonly startTimeoutMs?: number
 	readonly provider?: PluginDefinitionAddressSnapshot
-	readonly config?: Readonly<{
-		fieldName: string
-		schema: StandardSchemaV1
-		source?: string
-	}>
+	readonly config?: PluginConfigDefinition
 }
 
 /** Runtime generation identity installed on each isolated Plugin Context. */

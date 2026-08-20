@@ -3,21 +3,24 @@
 配置链分成 declaration/validation 与宿主持久化两层：
 
 ```text
-Plugin class field: configs.use(ObjectSchema)
-  -> toolchain single-schema facts
-  -> core defaults / validation / normalized snapshot
-  -> runtime persistence / patch / reset / Workbench projection
+Plugin + owned PluginPart fields: configs.use(ObjectSchema)
+  -> toolchain owner/path schema facts
+  -> core composite defaults / validation / normalized aggregate snapshot
+  -> one Plugin config record / revision / restart owner
+  -> runtime persistence / patch / reset / Workbench section projection
 ```
 
 ## 不变量
 
-- 每个具体 Plugin 最多一个普通 class field 调用 `this.configs.use(ObjectSchema)`；相关 section 使用 schema 的嵌套对象表达。
+- 每个具体 Plugin 和每个 direct `PluginPart` subclass 各自最多一个普通 class field 调用 `this.configs.use(ObjectSchema)`。
+- Plugin schema 保持现有 flat root；Part schema 位于 occurrence field path。owner schema output 不能与直接 Part field 重名。
 - 默认值和展示 metadata 属于同一个 schema；runtime 和业务代码不重复 fallback。
 - 配置在实例构造后、`init()` 前注入；constructor 和其他 field initializer 不读取配置值。
 - config metadata 是 build-time semantic fact，不是 runtime AST 推断。
 - config owner 是 interned `PluginNodeSlot`；跨边界使用 `PluginNodeAddressSnapshot`，不使用 Plugin name/schema key。
 - core validation 不依赖文件系统或 Workbench Plane。
 - raw record、revision 与 validation cache 只有 core `ConfigService` 一份；runtime 子类只增加持久化策略。
+- 任意 Part config patch 都重新验证 composite record，并重启整个 owning Plugin；没有 Part config revision 或独立 persistence owner。
 - static application build 固定的是 Plugin code graph 和 `configure()` resolver code，不是 resolver 的启动返回值。
 
 ## Static startup config
@@ -56,12 +59,14 @@ JSON parse、snapshot version、address 或 config record 非法时启动 fail-f
 
 ## Toolchain metadata
 
-`configSourcePlugin()` 在 TypeScript class field lowering 前验证具体 `@Plugin` 最多一个非 `#private`
-`configs.use(ObjectSchema)` declaration，并通过 `@pluxel/runtime/toolchain` 写入 definition metadata：field name、schema
-对象和可选 schema source。该 subpath 不是作者 API。
+`configSourcePlugin()` 在 TypeScript class field lowering 前验证具体 `@Plugin`/`PluginPart` 各自最多一个非 `#private`
+`configs.use(ObjectSchema)` declaration，并写入 owner metadata：field name、schema 对象和可选 schema source。Plugin
+semantic pass 同时 lower Part occurrence field path；这些 build helper 不是作者 API。
 
-runtime 将同一个 schema 投影为 host/UI 所需的 field name、source、defaults 与 validation。Workbench Plane 只是其中一个
-消费者，不拥有配置事实，也不恢复 layout/template DSL。
+core 按 path partition raw input，分别执行 owner/Part schema default、transform 与校验，再冻结 aggregate output。Plugin field
+只注入 root owner slice，每个 Part field只注入自己的 slice。runtime API 额外返回每个 declaration 的 path/source/defaults；
+Workbench 以 General/Part tabs 编辑这些 section，但提交、持久化和 server validation 仍指向同一个 Plugin node owner。
+Workbench Plane 不拥有配置事实，也不恢复 layout/template DSL。
 
 ## 实现入口
 

@@ -3,7 +3,9 @@ title: 配置模型
 description: 用一个 Valibot object schema 统一配置类型、默认值、归一化和校验。
 ---
 
-每个 Plugin 只维护一份配置定义：传给 `this.configs.use()` 的 Valibot object schema。TypeScript 类型、默认值、归一化、运行时校验和 Workbench 表单都从这份 schema 派生，不需要再写一套平行的配置接口。
+每个 Plugin 和它拥有的每种 `PluginPart` 各自最多维护一份配置定义：传给 `this.configs.use()` 的 Valibot object schema。
+TypeScript 类型、默认值、归一化、运行时校验和 Workbench 表单都从这些局部 schema 派生；宿主仍只保存 owning Plugin 的
+一个 composite config record，不需要再写平行配置接口。
 
 ## 从一个完整 schema 开始
 
@@ -50,10 +52,10 @@ export class WorkerPlugin extends BasePlugin {
 
 工具链依赖这个稳定形状提取 metadata，因此：
 
-- `configs.use()` 必须是 concrete `@Plugin` class 的普通 class field；
+- `configs.use()` 必须是 concrete `@Plugin` 或 direct `PluginPart` subclass 的普通 class field；
 - 不能放进 constructor、method、嵌套 class 或 helper function；
 - 不能使用 JavaScript `#private` field，因为 runtime 无法注入；
-- 每个具体 Plugin 最多一次，并且 schema 必须产出 object；
+- 每个 Plugin/Part class 各自最多一次，并且 schema 必须产出 object；
 - schema expression 要能由 semantic pass 追踪，不用动态 runtime 分支拼接。
 
 TypeScript 的 `private`/`protected` 可以使用；限制针对真正的 `#private` runtime slot。
@@ -129,7 +131,7 @@ host config patch
 
 如果校验失败，Plugin 不进入 running，错误以字段 path 形式反馈给宿主。不要在 Plugin 内捕获 `ConfigValidationError` 后继续启动。
 
-## 嵌套相关设置
+## 嵌套相关设置与 Part config
 
 每个 Plugin 声明一个 object schema；不同配置域使用嵌套 object 组织，不要多次调用 `configs.use()`：
 
@@ -149,6 +151,41 @@ const Config = v.object({
 ```
 
 是否拆成另一个 Plugin 的判断标准不是“字段很多”，而是这部分是否拥有独立依赖、失败、启停或治理意义。
+
+如果设置对应一个 owner-bound `PluginPart`，Part 可以声明自己的 schema，配置会自然进入 occurrence field path：
+
+```ts no-twoslash
+const CacheConfig = v.object({ maxEntries: v.optional(v.number(), 1_000) })
+const SearchConfig = v.object({ endpoint: v.string() })
+
+class CachePart extends PluginPart<SearchPlugin> {
+	private readonly config = this.configs.use(CacheConfig)
+}
+
+@Plugin()
+class SearchPlugin extends BasePlugin {
+	readonly cache = this.parts.use(CachePart)
+	private readonly config = this.configs.use(SearchConfig)
+}
+```
+
+对应 raw record：
+
+```json
+{
+	"endpoint": "https://search.example.com",
+	"cache": { "maxEntries": 2000 }
+}
+```
+
+父 schema 仍占 root，Part schema 只接收 `cache` subtree；两边分别执行 default/transform，随后合成冻结 snapshot。父 schema
+output 不能使用与 direct Part field 相同的 key。Part field rename 会改变公开配置 path，应按配置 contract 变更处理。
+Part config 属于静态 owner schema：即使 optional provider absent、对应 Part 没有产生业务 effects，这个 subtree 仍会执行
+default、transform 和 validation。需要“未启用时不要求凭据”等语义时，在 schema 中使用带 `enabled` discriminator 的 object
+明确表达，不根据 runtime catalog 动态改变配置契约。
+
+Workbench 把父 schema 显示为 General tab，把 Part schema 按 nested path 显示为独立 tab。所有 tab 编辑同一个 Plugin config
+owner；提交任意 tab 都会在 server 重新验证完整 composite record，并重启整个 Plugin，而不是单独重启 Part。
 
 ## 敏感信息
 
@@ -185,7 +222,7 @@ static 与 dynamic host 的持久化和 reload 行为由宿主决定；Plugin �
 
 ## 检查清单
 
-- schema 产出一个 object，且 Plugin 只声明一次 `configs.use()`。
+- schema 产出一个 object，且每个 Plugin/Part class 只声明一次 `configs.use()`。
 - 所有默认值和 normalization 都在 schema 中。
 - constructor 与 field initializer 不读取 config。
 - secret 没有进入普通 UI/config/log contract。

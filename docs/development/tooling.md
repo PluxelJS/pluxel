@@ -168,7 +168,8 @@ pnpm build
 
 - root export 是否唯一可追溯；
 - constructor dependency 是否从 provider root value-import；
-- `configs.use()` 是否是一个 object schema class field；
+- Plugin/PluginPart 的 `configs.use()` 是否各自是唯一的 object schema class field；
+- `parts.use()` 是否完整占据普通 class field，并引用 direct `PluginPart` subclass；
 - optional ref/use 是否符合 direct-call shape；
 - Workbench/worker/database declaration 是否使用 literal entry。
 

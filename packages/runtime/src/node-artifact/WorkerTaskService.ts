@@ -1,6 +1,7 @@
 import { availableParallelism, cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { Injectable, type Context as CoreContext } from '@pluxel/core'
+import { OWNER_CONTEXT_BIND } from '@pluxel/core/internal'
 import { Tinypool } from 'tinypool'
 import type { NodeModuleDeclaration } from './node-module'
 import {
@@ -109,6 +110,11 @@ export class WorkerTaskService {
 				phase: 'shutdown',
 			})
 		}
+	}
+
+	/** @internal Bind scheduling admission to an owner without creating another worker pool. */
+	[OWNER_CONTEXT_BIND](owner: CoreContext): WorkerTaskService {
+		return new WorkerTaskService(owner, undefined)
 	}
 
 	/** Run a cloneable task within the host's shared worker-thread budget. */

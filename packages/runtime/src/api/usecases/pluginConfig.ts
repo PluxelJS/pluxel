@@ -13,8 +13,16 @@ export type PluginSchemaResult =
 			fieldName: string
 			schemaSource: string
 			defaults: Record<string, unknown>
+			sections: readonly PluginSchemaSection[]
 	  }
 	| { ok: false; code: string; message: string }
+
+export type PluginSchemaSection = Readonly<{
+	path: readonly string[]
+	fieldName: string
+	schemaSource: string
+	defaults: Record<string, unknown>
+}>
 
 export type PluginConfigResult =
 	| { ok: true; saved: boolean; config: Record<string, unknown>; defaults: Record<string, unknown> }
@@ -81,11 +89,39 @@ export async function pluginSchema(
 				'Schema source is unavailable. Ensure configSourcePlugin processes the single configs.use(ObjectSchema) declaration.',
 		}
 	}
+	const declarations = [
+		...(config.owner ? [{ path: Object.freeze([] as string[]), declaration: config.owner }] : []),
+		...config.parts.flatMap((part) =>
+			part.declaration ? [{ path: part.path, declaration: part.declaration }] : [],
+		),
+	]
+	if (declarations.some((item) => item.declaration.source === undefined)) {
+		return {
+			ok: false,
+			code: 'schema_source_missing',
+			message:
+				'Schema source is unavailable for a PluginPart. Ensure configSourcePlugin processes every configs.use(ObjectSchema) declaration.',
+		}
+	}
+	const sections = await Promise.all(
+		declarations.map(
+			async ({ path, declaration }): Promise<PluginSchemaSection> =>
+				Object.freeze({
+					path: Object.freeze([...path]),
+					fieldName: declaration.fieldName,
+					schemaSource: declaration.source!,
+					defaults: await collectConfigDefaults(declaration.schema, {
+						missingObjectDefault: {},
+					}),
+				}),
+		),
+	)
 	return {
 		ok: true,
 		fieldName: config.fieldName,
 		schemaSource: config.source,
 		defaults: await collectConfigDefaults(config.schema, { missingObjectDefault: {} }),
+		sections: Object.freeze(sections),
 	}
 }
 

@@ -68,8 +68,11 @@ object-identity capability declaration
 
 目标是删除 module-evaluation global registration、runtime override 和 string identity，而不是把 registry 改写成 launcher 的巨大 factory 参数表。
 
-研究必须覆盖 core/runtime-static/runtime-dynamic/test host、按需 Workbench/Vault、service override 测试、Context getter hot path 与 package dependency
-方向。没有 composition API prototype 和 benchmark 前不进入当前重构。
+owner-bound `PluginPart` composition 已进入当前架构，事实见 [`../PLUGIN_SYSTEM.md`](../PLUGIN_SYSTEM.md)。它只使用 internal、
+lightweight immutable capability view，没有公开新的 global Context extension protocol，也没有全面重写 service kernel。
+
+更广的 kernel 研究仍必须覆盖 core/runtime-static/runtime-dynamic/test host、按需 Workbench/Vault、service override 测试、Context getter hot path
+与 package dependency 方向；不能仅凭 PluginPart 的内部 owner-view hook 扩大为 public service protocol。
 
 ## 5. Workbench root management transport
 

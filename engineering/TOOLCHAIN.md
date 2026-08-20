@@ -117,7 +117,7 @@ artifact；reset baseline staging 在注入后立即清理，因此 HMR schema �
 
 `pluxel build` 只负责编排，实际构建由 `@pluxel/rolldown/build` 的 `pluginPackage()` preset 通过 tsdown 驱动
 Rolldown。`pluginPackage()` 与 `staticApplication()` 都组合唯一的 `createPluginBuildPipeline()`：preprocessor、macro、
-legacy decorator、Plugin semantic facts、lint、single-object config metadata、Workbench declaration extraction 和 decorator
+legacy decorator、Plugin/PluginPart semantic facts、lint、owner-scoped object config metadata、Workbench declaration extraction 和 decorator
 output guard。`pluginPackage()` 自己组合单次 semantic pass 与 metadata transaction；CLI 不追加 compiler plugins。
 `runWithTsdown()` 按基础 hook、preset metadata hook、用户 hook 的顺序组合 `onSuccess`，overlay 不覆盖用户行为。
 
@@ -127,11 +127,15 @@ Plugin semantic pass 在 TypeScript 擦除前建立 package/source root named ex
 - constructor parameter 的 direct root value-import provenance 与 ordered required edges；
 - non-exported module-level `definePluginRef<T>()` 的 direct root type-import provenance；
 - `init()` 中 direct `plugins.use(Ref, callback)` 的 optional restart edges；
+- concrete Plugin/PluginPart 普通 field 中 direct `parts.use(PartClass)` 的 ordered containment facts；
+- Part `init()` optional edges，并将 reachable edges 合并到 owning Plugin definition；
+- Plugin 与 Part 各自唯一的 object config declaration/source，以及 Part config path；
 - abstract token/provider relation。
 
 同一 pass 由 plugin package、static application 和 Vite source route 复用。未能证明 root provenance、同一 constructor
-经多个根名称导出、plugin-bearing subpath、跨包 Plugin re-export、async/间接 optional setup 都在 build 时失败。普通
-dynamic import 不获得 Plugin 语义。
+经多个根名称导出、plugin-bearing subpath、跨包 Plugin re-export、async/间接 optional setup、动态 Part occurrence、
+Part constructor、`@Plugin` Part 与 local containment cycle 都在 build 时失败。普通 dynamic import 不获得 Plugin 语义。
+Part source/HMR 仍通过普通静态 import graph 使所有 owner module generation 失效；Part 不是独立 replacement unit。
 
 `pluginPackage()` 从 semantic facts 直接把 detected required provider 和 optional provider 保持为 external peer，
 不依赖 metadata transaction 完成后的下一次构建。required edge 锚定 value import；optional ref 的实现 import 在发布 JS

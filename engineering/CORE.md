@@ -10,7 +10,8 @@
 - `register`、`replace`、`restart`、`commit` 和 fork node；
 - provider-first start、consumer-first stop、failure propagation 与 `CommitSummary`；
 - per-generation effects、owner invocation gate 与 late `init()` cleanup；
-- 单 object config declaration、校验与 normalized snapshot；
+- PluginPart containment tree、owner-bound child Context/effects 与 children-before-owner startup；
+- Plugin/Part composite object config declaration、校验与 normalized aggregate snapshot；
 - init-time `PluginRef` optional resolution、slot-aware runtime reads 和明确的 internal commit subscription。
 
 ## 不负责
@@ -26,7 +27,7 @@
 - graph identity 来自 canonical entry + root named export；class name、constructor 和 `displayName` 都不是 key。
 - package Plugin 只从 package root 的唯一 named export 进入 catalog；source Plugin 使用 route 规范化的 source entry。
 - required dependency 只来自 semantic pass lower 的 constructor value-import provenance。
-- optional dependency只来自 lower 后的 non-exported module-level `definePluginRef<T>()`，不执行 runtime import。
+- optional dependency只来自 lower 后的 non-exported module-level `definePluginRef<T>()`；Part optional edge 合并到 owning Plugin，不执行 runtime import。
 - Core intern 结构化 address 后只按 slot object 查图；持久化 snapshot 不被 stringify 成作者协议。
 - 未经过 Pluxel semantic pass 的 Plugin 源码明确失败；DI 只读取 lowered definition/edge facts。
 
@@ -47,9 +48,13 @@ draft graph -> verify combined required/optional graph -> stop plan -> start pla
 
 ## 内部组成与事件
 
-Plugin 内部拆分使用普通 class/function；子资源用 `ctx.effects.scope()`，需要独立配置、失败传播、启停或治理的组成成为
-Plugin。公开的固定事件集合使用具名 `EvtChannel` 属性；Core lifecycle 和 route invalidation 使用明确的 internal
-subscription，不共享 Context global event bus。
+简单内部拆分使用普通 class/function 与 `ctx.effects.scope()`。同时需要自己的 config slice、effects scope、nested
+composition 或 owner-bound capability registration 时使用 `PluginPart`；它是 generation-local containment，不是第二张 graph。
+Part child Context 的 service view 惰性缓存，不回灌共享 service 的 mutable `ctx`；未声明 owner binding 的 service 保持
+owning Plugin view，root service 原样共享。需要独立失败传播、启停、replacement 或治理的组成成为 Plugin。
+
+公开的固定事件集合使用具名 `EvtChannel` 属性；Core lifecycle 和 route invalidation 使用明确的 internal subscription，
+不共享 Context global event bus。
 
 ## 实现入口
 
@@ -60,6 +65,7 @@ subscription，不共享 Context global event bus。
 - `packages/core/src/internal/fsm/`
 - `packages/core/src/plugins/runtime/plugin-service/LifecycleManager.ts`
 - `packages/core/src/plugins/composition/`
+- `packages/core/src/plugins/runtime/part-definition.ts`
 - `packages/core/src/services/effects/EffectsService.ts`
 - `packages/core/src/services/config/`
 

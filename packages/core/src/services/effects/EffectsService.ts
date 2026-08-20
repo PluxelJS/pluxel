@@ -57,6 +57,7 @@ type EntryState = (typeof EntryState)[keyof typeof EntryState]
 
 const PHASES: readonly Phase[] = ['shutdown', 'runtime', 'final'] as const
 const DEFAULT_PHASE: Phase = 'runtime'
+const EFFECTS_CHILD_SCOPE = Symbol.for('pluxel:effects:child-scope')
 
 // Stack stores a "handle" = token * HANDLE_STRIDE + id, so id reuse is safe.
 const HANDLE_ID_BITS = 20
@@ -279,10 +280,10 @@ class EffectsImpl implements Effects, EffectGuardHost {
 		return value
 	}
 
-	scope(meta?: EffectsMeta, opts?: RegisterOpts): EffectsScope {
+	scope(meta?: EffectsMeta, opts?: RegisterOpts, ownerCtx: PluxelContext = this.ctx): EffectsScope {
 		this.assertRegisterAllowed(opts)
 		// Child scopes are owned by default so parent disposal propagates.
-		return new EffectsScopeImpl(this.ctx, { parent: this, meta, registerOpts: opts })
+		return new EffectsScopeImpl(ownerCtx, { parent: this, meta, registerOpts: opts })
 	}
 
 	async transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
@@ -511,6 +512,11 @@ class EffectsScopeImpl implements EffectsScope {
 	}
 	scope(meta?: EffectsMeta): EffectsScope {
 		return this.impl.scope(meta)
+	}
+
+	/** @internal Create a child scope whose diagnostics and nested registrations retain owner ctx. */
+	[EFFECTS_CHILD_SCOPE](ctx: PluxelContext, meta?: EffectsMeta): EffectsScope {
+		return this.impl.scope(meta, undefined, ctx)
 	}
 	transaction<R>(fn: (tx: Effects) => R | Promise<R>): Promise<R> {
 		return this.impl.transaction(fn)

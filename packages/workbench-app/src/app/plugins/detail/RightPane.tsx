@@ -184,6 +184,7 @@ function ConfigContent({
 			schema={config.data.schema as ObjectSchema<any, any>}
 			savedConfig={config.data.savedConfig}
 			defaults={config.data.defaults}
+			sections={config.data.sections}
 			active={active}
 		/>
 	)
