@@ -1,7 +1,7 @@
 'use client'
 
 import '@mantine/core/styles.css'
-import { Accordion, Alert, Button, Card, Code, Group, Stack, Text, Title } from '@mantine/core'
+import { Accordion, Alert, Button, Code, Group, Select, Stack, Text, Title } from '@mantine/core'
 import { init } from 'modern-monaco'
 import { registerLSPProvider } from 'modern-monaco/core'
 import type { editor } from 'modern-monaco/editor-core'
@@ -35,7 +35,7 @@ function initPlaygroundMonaco(defaultTheme: string) {
 	return monacoPromise
 }
 
-const template = `import * as v from 'valibot'
+const serviceTemplate = `import * as v from 'valibot'
 import * as f from 'valibot-form'
 
 const Config = v.object({
@@ -131,6 +131,117 @@ const Config = v.object({
 
 export default Config`
 
+const cacheTemplate = `import * as v from 'valibot'
+import * as f from 'valibot-form'
+
+const Config = v.object({
+  backend: v.optional(
+    v.pipe(
+      v.picklist(['memory', 'redis'] as const),
+      f.formMeta({ label: '缓存后端' }),
+      f.picklistMeta({
+        control: 'segmented',
+        labels: { memory: '内存', redis: 'Redis' },
+      }),
+    ),
+    'memory',
+  ),
+  namespace: v.optional(
+    v.pipe(
+      v.string(),
+      f.formMeta({ label: '命名空间' }),
+      f.stringMeta({ placeholder: 'pluxel' }),
+    ),
+    'pluxel',
+  ),
+  ttl: v.optional(
+    v.pipe(
+      v.number(),
+      v.integer(),
+      v.minValue(1),
+      f.formMeta({ label: 'TTL（秒）' }),
+      f.numberMeta({ min: 1, step: 60 }),
+    ),
+    3600,
+  ),
+})
+
+export default Config`
+
+const releaseTemplate = `import * as v from 'valibot'
+import * as f from 'valibot-form'
+
+const Config = v.object({
+  channel: v.optional(
+    v.pipe(
+      v.picklist(['canary', 'stable'] as const),
+      f.formMeta({ label: '发布通道' }),
+      f.picklistMeta({
+        control: 'segmented',
+        labels: { canary: 'Canary', stable: 'Stable' },
+      }),
+    ),
+    'canary',
+  ),
+  dryRun: v.optional(
+    v.pipe(
+      v.boolean(),
+      f.formMeta({ label: '仅生成计划' }),
+      f.booleanMeta({}),
+    ),
+    true,
+  ),
+  targets: v.optional(
+    v.pipe(
+      v.array(v.string()),
+      f.formMeta({ label: '目标环境' }),
+      f.arrayMeta({
+        layout: 'list',
+        itemLabel: '环境',
+        addLabel: '添加环境',
+        defaultItem: 'staging',
+      }),
+    ),
+    ['staging'],
+  ),
+})
+
+export default Config`
+
+const presets = {
+	service: { label: '服务运行时', code: serviceTemplate },
+	cache: { label: '缓存插件', code: cacheTemplate },
+	release: { label: '发布流程', code: releaseTemplate },
+} as const
+
+type PresetId = keyof typeof presets
+type PlaygroundSelection = PresetId | 'custom'
+
+const playgroundStorageKey = 'pluxel.configuration-playground.v1'
+
+interface StoredPlayground {
+	code: string
+	lastRunCode: string
+	preset: PlaygroundSelection
+}
+
+function isPresetId(value: string): value is PresetId {
+	return value in presets
+}
+
+function isStoredPlayground(value: unknown): value is StoredPlayground {
+	return (
+		isRecord(value) &&
+		typeof value.code === 'string' &&
+		typeof value.lastRunCode === 'string' &&
+		(value.preset === 'custom' || (typeof value.preset === 'string' && isPresetId(value.preset)))
+	)
+}
+
+function savePlayground(value: StoredPlayground) {
+	localStorage.setItem(playgroundStorageKey, JSON.stringify(value))
+}
+
 type PlaygroundSchema = ObjectLikeSchema
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -165,6 +276,7 @@ function compileSchema(code: string): PlaygroundSchema {
 	const executableCode = code
 		.replace(/^\s*import \* as v from ['"]valibot['"];?\s*$/m, '')
 		.replace(/^\s*import \* as f from ['"]valibot-form['"];?\s*$/m, '')
+		.replaceAll(' as const', '')
 		.replace(/\bexport default Config\s*$/, 'return Config')
 	// 编辑器有意在页面沙箱中执行用户编写的 schema。
 	const result: unknown = new Function('v', 'f', `"use strict";\n${executableCode}`)(v, f)
@@ -194,18 +306,12 @@ function ValueInspector({ schema }: { schema: PlaygroundSchema }) {
 						<Accordion.Item value="input">
 							<Accordion.Control>Input · 表单原始值</Accordion.Control>
 							<Accordion.Panel>
-								<Text size="sm" fw={600} mb={6}>
-									提交给 Valibot 前的字段值
-								</Text>
 								<JsonValue value={input} />
 							</Accordion.Panel>
 						</Accordion.Item>
 						<Accordion.Item value="output">
 							<Accordion.Control>Output · Valibot 归一化结果</Accordion.Control>
 							<Accordion.Panel>
-								<Text size="sm" fw={600} mb={6}>
-									默认值、校验与 transform 后的结果
-								</Text>
 								<JsonValue value={result.success ? result.output : { issues: result.issues }} />
 							</Accordion.Panel>
 						</Accordion.Item>
@@ -220,11 +326,15 @@ export function ConfigurationPlayground() {
 	const { resolvedTheme } = useTheme()
 	const editorContainerRef = useRef<HTMLDivElement>(null)
 	const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-	const codeRef = useRef(template)
+	const codeRef = useRef(serviceTemplate)
+	const lastRunCodeRef = useRef(serviceTemplate)
+	const selectionRef = useRef<PlaygroundSelection>('service')
 	const [schema, setSchema] = useState<PlaygroundSchema>(() => configurationSchema)
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('使用当前 schema 生成表单。')
 	const [revision, setRevision] = useState(0)
+	const [selection, setSelection] = useState<PlaygroundSelection>('service')
+	const [dirty, setDirty] = useState(false)
 	const editorTheme = resolvedTheme === 'dark' ? 'vitesse-dark' : 'vitesse-light'
 
 	useEffect(() => {
@@ -233,6 +343,28 @@ export function ConfigurationPlayground() {
 
 		async function mountEditor() {
 			if (!editorContainerRef.current) return
+
+			try {
+				const stored: unknown = JSON.parse(localStorage.getItem(playgroundStorageKey) ?? 'null')
+				if (isStoredPlayground(stored)) {
+					const restoredSchema = compileSchema(stored.lastRunCode)
+					codeRef.current = stored.code
+					lastRunCodeRef.current = stored.lastRunCode
+					const storedSelection =
+						stored.preset === 'custom' ||
+						(typeof stored.preset === 'string' && isPresetId(stored.preset))
+							? stored.preset
+							: 'custom'
+					selectionRef.current = storedSelection
+					setSelection(storedSelection)
+					setDirty(stored.code !== stored.lastRunCode)
+					setSchema(restoredSchema)
+					setRevision((value) => value + 1)
+					setStatus('已恢复上次编辑。')
+				}
+			} catch {
+				localStorage.removeItem(playgroundStorageKey)
+			}
 
 			const monaco = await initPlaygroundMonaco(editorTheme)
 			if (disposed || !editorContainerRef.current) return
@@ -256,6 +388,19 @@ export function ConfigurationPlayground() {
 			editorRef.current = editorInstance
 			editorInstance.onDidChangeModelContent(() => {
 				codeRef.current = editorInstance.getValue()
+				const nextSelection =
+					selectionRef.current !== 'custom' &&
+					presets[selectionRef.current].code === codeRef.current
+						? selectionRef.current
+						: 'custom'
+				selectionRef.current = nextSelection
+				setSelection(nextSelection)
+				setDirty(codeRef.current !== lastRunCodeRef.current)
+				savePlayground({
+					code: codeRef.current,
+					lastRunCode: lastRunCodeRef.current,
+					preset: nextSelection,
+				})
 			})
 		}
 
@@ -275,8 +420,16 @@ export function ConfigurationPlayground() {
 		editorRef.current?.updateOptions({ theme: editorTheme })
 	}, [editorTheme])
 
-	const setEditorCode = useCallback((nextCode: string) => {
+	const setEditorCode = useCallback((nextCode: string, nextSelection: PlaygroundSelection) => {
 		codeRef.current = nextCode
+		selectionRef.current = nextSelection
+		setSelection(nextSelection)
+		setDirty(nextCode !== lastRunCodeRef.current)
+		savePlayground({
+			code: nextCode,
+			lastRunCode: lastRunCodeRef.current,
+			preset: nextSelection,
+		})
 		const editorInstance = editorRef.current
 		if (editorInstance && editorInstance.getValue() !== nextCode) {
 			editorInstance.setValue(nextCode)
@@ -286,9 +439,16 @@ export function ConfigurationPlayground() {
 	const run = useCallback(() => {
 		try {
 			setSchema(compileSchema(codeRef.current))
+			lastRunCodeRef.current = codeRef.current
 			setRevision((value) => value + 1)
 			setError(undefined)
+			setDirty(false)
 			setStatus('Schema 已运行，表单与结果已更新。')
+			savePlayground({
+				code: codeRef.current,
+				lastRunCode: codeRef.current,
+				preset: selectionRef.current,
+			})
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : 'Schema 执行失败')
 		}
@@ -301,24 +461,12 @@ export function ConfigurationPlayground() {
 
 	return (
 		<MantineThemeProvider>
-			<Card
-				id="configuration-playground"
-				className="configuration-playground-card"
-				withBorder
-				radius="md"
-				p="lg"
-			>
-				<Stack className="configuration-playground-shell" gap="lg">
-					<div>
-						<Title order={2} size="h3">
-							配置 Playground
-						</Title>
-						<Text size="sm" c="dimmed" mt={4}>
-							编辑器直接加载当前 workspace 的 Valibot 与 valibot-form 声明。输入 <Code>v.</Code> 或{' '}
-							<Code>f.</Code> 可查看补全和类型；运行后表单、Input 与 Output 同步更新。
-						</Text>
-					</div>
+			<div id="configuration-playground" className="configuration-playground-shell">
+				<Title order={1} size="h2">
+					配置 Playground
+				</Title>
 
+				<AutoForm schema={schema} formOpts={formOptions} resetKey={revision}>
 					<div className="configuration-playground-layout">
 						<Stack
 							className="configuration-playground-pane configuration-playground-editor-pane"
@@ -326,11 +474,8 @@ export function ConfigurationPlayground() {
 						>
 							<div>
 								<Title order={3} size="h4">
-									Schema 编辑器
+									Schema
 								</Title>
-								<Text size="sm" c="dimmed" mt={4}>
-									修改代码后运行，结果区域会使用新的 schema。
-								</Text>
 							</div>
 
 							<div className="configuration-playground-editor-frame overflow-hidden rounded-lg border">
@@ -339,22 +484,38 @@ export function ConfigurationPlayground() {
 
 							<Group justify="space-between" align="center">
 								<Text size="xs" c="dimmed">
-									代码只在当前浏览器页面执行，不会保存或发送到服务端。
+									草稿仅保存在当前浏览器，不会发送到服务端。
 								</Text>
 								<Group gap="xs">
+									<Select
+										aria-label="Config 预设"
+										data={[
+											{ value: 'custom', label: '自定义', disabled: true },
+											...Object.entries(presets).map(([value, preset]) => ({
+												value,
+												label: preset.label,
+											})),
+										]}
+										value={selection}
+										onChange={(value) => {
+											if (value && isPresetId(value)) setEditorCode(presets[value].code, value)
+										}}
+										w={150}
+									/>
 									<Button
 										variant="default"
 										onClick={() => {
-											setEditorCode(template)
-											setSchema(configurationSchema)
-											setRevision((value) => value + 1)
+											const preset = selection === 'custom' ? 'service' : selection
+											setEditorCode(presets[preset].code, preset)
 											setError(undefined)
-											setStatus('已恢复示例 schema。')
+											setStatus(`已恢复「${presets[preset].label}」预设，运行后更新预览。`)
 										}}
 									>
 										重置
 									</Button>
-									<Button onClick={run}>运行 schema</Button>
+									<Button disabled={!dirty} onClick={run}>
+										运行 schema
+									</Button>
 								</Group>
 							</Group>
 
@@ -362,6 +523,10 @@ export function ConfigurationPlayground() {
 							<Text size="xs" c="dimmed" aria-live="polite">
 								{status}
 							</Text>
+
+							<Accordion multiple variant="contained" order={4}>
+								<ValueInspector schema={schema} />
+							</Accordion>
 						</Stack>
 
 						<Stack
@@ -370,39 +535,33 @@ export function ConfigurationPlayground() {
 						>
 							<div>
 								<Title order={3} size="h4">
-									表单与结果
+									预览
 								</Title>
-								<Text size="sm" c="dimmed" mt={4}>
-									表单由 schema 和 valibot-form metadata 共同生成；各区域可独立折叠。
-								</Text>
 							</div>
 
-							<AutoForm schema={schema} formOpts={formOptions} resetKey={revision}>
-								<Accordion multiple defaultValue={['form', 'output']} variant="contained" order={4}>
-									<Accordion.Item value="form">
-										<Accordion.Control>生成的表单</Accordion.Control>
-										<Accordion.Panel>
-											<Stack gap="md">
-												<AutoForm.Fields />
-												<AutoForm.Actions>
-													{({ reset, dirty }) => (
-														<Group justify="flex-end">
-															<Button variant="default" disabled={!dirty} onClick={() => reset()}>
-																恢复默认值
-															</Button>
-														</Group>
-													)}
-												</AutoForm.Actions>
-											</Stack>
-										</Accordion.Panel>
-									</Accordion.Item>
-									<ValueInspector schema={schema} />
-								</Accordion>
-							</AutoForm>
+							<Accordion defaultValue="form" variant="contained" order={4}>
+								<Accordion.Item value="form">
+									<Accordion.Control>生成的表单</Accordion.Control>
+									<Accordion.Panel>
+										<Stack gap="md">
+											<AutoForm.Fields />
+											<AutoForm.Actions>
+												{({ reset, dirty: formDirty }) => (
+													<Group justify="flex-end">
+														<Button variant="default" disabled={!formDirty} onClick={() => reset()}>
+															恢复默认值
+														</Button>
+													</Group>
+												)}
+											</AutoForm.Actions>
+										</Stack>
+									</Accordion.Panel>
+								</Accordion.Item>
+							</Accordion>
 						</Stack>
 					</div>
-				</Stack>
-			</Card>
+				</AutoForm>
+			</div>
 		</MantineThemeProvider>
 	)
 }
