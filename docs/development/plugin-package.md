@@ -10,9 +10,11 @@ CLI 模板会生成标准目录结构：
 ```sh
 pluxel new --template plugin --name @acme/orders
 cd orders
-pnpm install
 pnpm verify
 ```
+
+官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。local template 则默认不执行安装，必须显式传入
+`--install` 才会运行 package manager。
 
 ## 标准目录
 

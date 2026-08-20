@@ -5,7 +5,7 @@ description: 为现有项目选择 static 或 dynamic host，并配置 Plugin �
 
 Pluxel 提供静态和动态两种宿主模式。静态宿主的 Plugin 清单由入口文件确定；动态宿主在固定清单之外，还可以监听运行时增删的文件来源。Plugin 的写法不随模式变化，两者共享同一套依赖图、配置、运行时服务和生命周期。
 
-从零创建完整应用时先使用 [app-monorepo 模板](../development/starter-monorepo.md)，模板已经包含可运行的 static host、Vite 和构建配置。本页用于把 Pluxel 接入现有项目。
+从零创建完整应用时先使用 [example monorepo](../development/starter-monorepo.md)，它已经包含可运行的 static host、alternative dynamic host、Vite 和构建配置。本页用于把 Pluxel 接入现有项目。
 
 ## 选择宿主模式
 
@@ -60,6 +60,8 @@ export default defineStaticRuntime({
 ```
 
 `plugins` 定义 build-time fixed catalog 和 code closure；运行时依赖图由 enabled state、fork 和 provider override 形成。`workbench`、persistence、logging、HTTP、Plugin config records 和 enabled state 是 `configure()` 返回的 startup data。
+
+`prepare()` 用于必须在 Plugin graph 启动前成功的 application-owned prerequisite。它在 runtime services ready 后执行；抛错会终止 startup 并清理已经创建的 host resources。应用共享数据库可以在这里 eager migrate/preflight，只有部分 Plugin 使用的数据库则保持 lazy。不要在 `prepare()` 中替 Plugin 调用 `ctx.database.use()`；两种数据所有权的选择见[数据库与数据归属](../runtime/database.md)。
 
 不要把 `root` 或 `workbench` 直接写进 static application 顶层。`configure()` 每次宿主启动都会重新读取 env、bindings 与 deployment。
 

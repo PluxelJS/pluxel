@@ -1,86 +1,142 @@
 ---
-title: 从纯净 monorepo 开始
-description: 用官方起始模板建立静态宿主、Plugin、领域包和 Web 前端。
+title: 从 example monorepo 开始
+description: 用固定 starter 学习 static/dynamic host、Plugin 依赖、配置、测试和 Web 前端。
 ---
 
-`app-monorepo` 模板适合从零创建完整应用。它把代码分成四个清楚的部分：静态宿主负责装配，Plugin 承载能力和生命周期，领域包保存与框架无关的业务逻辑，Web 提供浏览器入口。模板也会生成相应的 CI 检查。
+`@pluxel/create` 发布一个固定、使用中性名称的 example monorepo。它不是按项目名拼接的通用模板；根
+`package.json` 没有 `name`，workspace package 固定使用 `@example/*`。先让示例保持可运行，真正形成自己的产品后再
+统一重命名。
 
-## 生成和首次验证
+## 创建和首次验证
 
 ```sh
-pnpm create @pluxel --template app-monorepo --name @acme/my-app
-cd my-app
-pnpm install
+pnpm create @pluxel my-workspace
+cd my-workspace
 pnpm verify
 pnpm dev
 ```
 
-模板要求 Node 24+、pnpm 11。根 `engines`、`devEngines.packageManager`、workspace catalog 与 CI frozen install 会阻止错误 package manager 或第二份 lockfile 进入项目。
-生成的 workspace root 会固定 `@pluxel/cli`，因此安装完成后本地 `pnpm exec pluxel` 和全局 `pluxel`
-都会执行项目版本。已经安装全局入口时，也可以用 `pluxel new --template app-monorepo --name @acme/my-app`
-生成同样的结构。
+默认目录是 `pluxel-example`，默认执行 `pnpm install`；只复制文件时使用：
 
-首次修改前运行 `pnpm verify`，确认 Node、pnpm、依赖和生成结果有效。
-
-## 生成后的边界
-
-```text
-web/
-  src/pluxel.static.ts   canonical static Runtime entry
-  src/graphql-entry.ts   browser-facing GraphQL entry
-  src/client/            React client 与 fetcher
-  vite.config.ts         dev host
-  tsdown.config.ts       production static application
-plugins/example/
-  src/index.ts           Plugin 生命周期、配置与业务 HTTP
-  tests/                 Plugin-level tests
-packages/domain/
-  src/index.ts           不依赖 Pluxel 的领域类型和纯逻辑
-  tests/
-docs/                    项目本地约束与维护说明
-AGENTS.md                coding agent 的 repository rules
+```sh
+pnpm create @pluxel my-workspace --no-install
 ```
 
-dependency 方向应保持：
+create package 不依赖 CLI，也不联网下载模板。它把发布包中的 starter 复制到空目标，并把该版本发布时的完整用户
+文档原字节复制到 `docs/pluxel/`。因此新项目在离线环境中也有与 starter 匹配的 API、测试和工具链说明。
+
+## 目录与依赖方向
 
 ```text
-web host -> Plugin -> domain
-web client ---------> domain
-domain -X-> runtime / Context / Workbench / host config
+packages/domain/            @example/domain，纯函数与普通 Vitest
+plugins/audit/              @example/audit-plugin，可选 provider
+plugins/todo/               config + domain + optional AuditPlugin
+plugins/http/               constructor required TodoPlugin + validated HTTP route
+host/
+  src/pluxel.static.ts      默认与 production runtime authority
+  src/pluxel.dynamic.ts     相同 fixed catalog/config + mutable file source
+  src/runtime-state.ts      两种 host 共用的 enabled/config snapshot
+  vite.config.ts            指向 web/ 的唯一 Vite config；mode 选择 runtime route
+  tsdown.config.ts          staticApplication() + Web public copy
+  web/                      无 package manifest、无 Pluxel import 的 React client
+pluxel.loader.hmr.jsonc     dynamic loader 的最小 example profile
+docs/pluxel/                create 发布时的 Pluxel 文档快照
 ```
 
-如果 domain 开始 import `@pluxel/runtime`，它就不再是可被 Web、测试和其他执行环境共享的中性包。需要 Context 或 lifecycle 的代码应留在 Plugin。
+核心方向是：
 
-## 宿主入口
+```text
+one Vite origin
+  ├─ / + browser modules -> web
+  └─ /api/example/todos  -> HttpPlugin -> TodoPlugin -> domain
+                                             |
+                                             +-- optional -> AuditPlugin
+```
 
-`web/src/pluxel.static.ts` 默认导出 `defineStaticRuntime()`，并由开发 Vite plugin 与生产 `staticApplication()` 共同使用。`plugins` 定义 fixed catalog，`runtimeState.snapshot.enabled` 定义启动时启用的 nodes，`configure()` 返回启动配置。完整配置见 [宿主装配](../getting-started/host-setup.md)。
+`@example/domain` 不导入 Pluxel；需要 Context、config、依赖图或 lifecycle 的代码留在 Plugin。HTTP 对 Todo 的普通
+workspace dependency 对应 constructor required edge。Todo 对 Audit 使用 optional peer dependency、
+`peerDependenciesMeta.optional` 和非导出的 module-level `definePluginRef<AuditPlugin>()`，provider 不存在时仍能启动。
+
+## Static 是默认与生产 authority
+
+```sh
+pnpm dev
+pnpm build
+pnpm start
+```
+
+`host/src/pluxel.static.ts` 的 default export 同时交给 `staticRuntimeVitePlugin()` 和 `staticApplication()`。fixed catalog、
+结构化 enabled addresses 与 Todo config snapshot 都是显式数据。Workbench artifact 会进入 production distribution，
+但启动时默认关闭；需要管理 UI 时使用：
+
+`host/web/` 只是浏览器源码目录，没有 `package.json` 或 Pluxel import。唯一 application package `host/package.json` 直接
+依赖 React、runtime 与三个 Plugin package，所以 Vite client/SSR graph 和 static catalog 都具有正常 package provenance。
+`staticApplication()` 的 canonical 配置位于 `host/tsdown.config.ts`；根目录只通过 Turbo 编排，不重复 build config。
+
+host build 先用唯一 Vite config 构建 `host/web/dist`，再由 freezer 清理并生成 server/Workbench 产物，同时通过 tsdown
+copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distribution create`，让最终 inventory 包含浏览器文件；
+禁止在 finalization 完成后继续写 distribution。
+
+```sh
+PLUXEL_WORKBENCH=true pnpm dev
+```
+
+开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `web/`；Pluxel middleware 先认领
+Plugin-mounted `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 proxy、CORS 或第二套
+HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
+
+Workbench 启用时使用 `/__pluxel/workbench`，不会与产品 SPA 的 `/` fallback 竞争。
+
+## Dynamic 是 alternative host
+
+```sh
+pnpm dev:dynamic
+```
+
+`pnpm dev:dynamic` 仍读取同一个 `host/vite.config.ts`，只用 Vite `dynamic` mode 把 static route plugin 替换成 dynamic
+route plugin。`host/src/pluxel.dynamic.ts` 复用同一组 fixed plugins、enabled state 和 config snapshot，并额外观察：
+
+```text
+.pluxel/managed-plugins/*.mjs
+```
+
+这展示的是 mutable file source，不包含 package 下载或 market 管理。Static 与 dynamic 使用完全相同的 Plugin class、
+constructor dependency、optional ref 和 config authoring model；不要为两条 route 复制业务实现。
+
+## 测试层次
+
+- `packages/domain/tests` 是不启动 Pluxel 的普通 Vitest。
+- `plugins/audit/tests` 使用 `@pluxel/test` 的 core-only `withHost()`。
+- `plugins/todo/tests` 验证 config、状态操作、optional provider 存在与缺失两种情况。
+- `plugins/http/tests` 使用 `withRuntimeHost()` 验证 required edge、HTTP schema、mutation 和错误状态。
+- `@pluxel/test/vitest` 对 Plugin source 执行与 build 一致的 semantic lowering 和 lint guard。
+
+选择能覆盖被测 capability 的最小 host；HTTP、Workbench、Vault 等 runtime service 才使用 runtime host。
 
 ## 常用命令
 
 ```sh
-pnpm dev                 # 启动 web workspace 的开发 host
-pnpm build               # Turbo 增量构建
-pnpm test                # workspace tests
+pnpm dev
+pnpm dev:dynamic
+pnpm build
+pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format:check
 pnpm governance:check
-pnpm verify              # CI 的 canonical 聚合门禁
+pnpm verify
 ```
 
-`verify` 覆盖 governance、format、lint，以及各 workspace 的 typecheck/test/build。提交前运行 `pnpm verify`；
-Turbo 根据输入 hash 决定复用结果，日常脚本不提供绕过缓存的平行入口。
+`verify` 是 CI 的 canonical 门禁，覆盖 governance、format、lint，以及 Turbo task graph 中的 typecheck、test 和 build。
 
-## 首个改动顺序
+## 创建自己的 Plugin package
 
-1. 在 `packages/domain` 定义纯数据与纯函数，并先写测试。
-2. 在 `plugins/example` 通过 Plugin Context 接入配置、HTTP、数据库或其他 capability。
-3. 把 Plugin 保持在 `plugins` catalog，并用 `pluginNodeAddressOf()` 更新 enabled snapshot。
-4. 在 `web/src/client` 添加浏览器 UI，通过明确的 HTTP/GraphQL/Workbench contract 调用能力。
-5. 每完成一个边界就运行对应 workspace test，最后运行 `pnpm verify`。
+starter root 安装 `@pluxel/cli` 是为了后续工具命令，不代表 create package 依赖 CLI。在 workspace 中新增一个可独立
+发布的 Plugin：
 
-## 何时选择其他起点
+```sh
+pnpm exec pluxel new --name @your-scope/your-plugin plugins
+```
 
-- 独立发布、可被多个 host 消费的 Plugin：看 [开发和发布插件包](./plugin-package.md)。
-- 已经有成熟 monorepo：不要再嵌套 starter；按 [宿主装配](../getting-started/host-setup.md) 引入 host，并用 [跨仓库源码开发](./source-workspaces.md) 消费本地 Pluxel checkout。
-- 运行时发现和替换 package：那是 dynamic host，不应把 package manager 塞进 static starter。
+CLI 只生成 Plugin package；它不会再次生成 starter，也不会复制 `docs/pluxel/`。Plugin package 的发布形状见
+[开发和发布插件包](./plugin-package.md)。

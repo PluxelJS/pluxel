@@ -5,10 +5,9 @@ Pluxel 使用 Tegami 管理公开包版本、Version Packages PR、npm 发布锁
 
 ## 版本模型
 
-- 公开包保持独立 semver，只有 `@pluxel/cli` 与同版本的 `@pluxel/create` 属于同步 release group；
+- 公开包保持独立 semver；`@pluxel/create` 与 `@pluxel/cli` 没有实现依赖或同步版本要求；
 - workspace-only、private、project 和 vendor package 在 `scripts/tegami.mts` 中显式忽略，不参与版本传播；
-- semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为 `^1.0.0`；只有限定同版本的
-  `@pluxel/create -> @pluxel/cli` 使用 `workspace:*`；
+- semver-compatible 的第一方实现依赖使用 `workspace:^`，发布后成为 `^1.0.0`；
 - 第一方 peerDependencies 在源码中使用 `workspace:^`，发布后成为面向消费者的 `^1.0.0`；同时以
   `workspace:*` devDependency 提供仓库内构建和测试实现；
 - Plugin package 对 runtime 和 required provider 一律使用 peer dependency，避免宿主图出现重复 Plugin identity；
@@ -57,7 +56,7 @@ publish lock 是发布事实来源。部分包发布失败时保留原 lock，�
 
 真正发布时，Tegami hooks 只执行 package boundary 验证：
 
-- `beforePublishAll` 从真实 CLI tarball 验证生成应用、独立插件模板和冻结发行物，整批发布只执行一次；
+- `beforePublishAll` 分别从真实 create/CLI tarball 验证 example workspace 与独立插件模板，整批发布只执行一次；
 - `willPublish` 按 Tegami 当前即将发布的 package 调用 Turbo build，由 task graph 补齐其构建依赖；
 - 已成功发布的 package 在失败重试时不会重新发布，未完成 package 仍会在发布前单独重建。
 
@@ -80,6 +79,7 @@ GitHub repository 必须允许 GitHub Actions 创建 pull request；workflow 的
 mise install
 pnpm install --frozen-lockfile
 pnpm verify
+CI=true pnpm --filter @pluxel/create test:starter
 CI=true pnpm --filter @pluxel/cli test:templates
 ```
 

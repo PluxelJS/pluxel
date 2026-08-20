@@ -8,8 +8,11 @@ description: 了解脚手架、插件构建、静态应用、HMR、源码联调�
 ## 安装分层
 
 ```sh
-# 一次性创建项目或插件
-pnpm create @pluxel
+# 创建完整 example workspace
+pnpm create @pluxel my-workspace
+
+# 在已有 workspace 创建可发布 Plugin package
+pnpm exec pluxel new --name @acme/orders plugins
 ```
 
 项目内固定 CLI 版本：
@@ -58,7 +61,8 @@ npx nypm add -D @pluxel/market
 
 | 目标                                | 命令                                          |
 | ----------------------------------- | --------------------------------------------- |
-| 生成 app/plugin workspace           | `pluxel new`                                  |
+| 生成固定 example workspace          | `pnpm create @pluxel [directory]`             |
+| 在 workspace 生成 Plugin package    | `pluxel new`                                  |
 | 构建当前 Plugin package             | `pluxel build`                                |
 | 生成/检查/rebase database migration | `pluxel database generate/check/rebase`       |
 | 创建/检查/验证 static distribution  | `pluxel distribution create/inspect/verify`   |

@@ -5,8 +5,43 @@ Workbench UI build primitive 位于 `@pluxel/rolldown/vite/workbench-ui`。
 ## CLI distribution and capability ownership
 
 `@pluxel/cli` 是静态命令目录与用户交互 adapter，不是 runtime、构建、HMR 或发行协议的所有者。
-`@pluxel/create` 是与 CLI 同版本发布的 thin initializer，只把参数交给 `pluxel new`；模板、prompt 和安装逻辑
-仍只有 CLI 一份实现。
+`@pluxel/create` 是独立的 workspace initializer：它发布一个固定、无插值的 example monorepo，并把发布时的
+`docs/` 静态快照原字节复制到新项目 `docs/pluxel/`。create 不加载 CLI、不解释 plugin template contract，也不从
+Git/registry 获取 starter。create 自身使用 TypeScript entry；tsdown 的 `exports.bin` 显式生成 npm
+`create-pluxel` executable、保留 shebang 并输出单个 Node 24 ESM chunk，同时用标准 `copy` 配置把 `template/` 与仓库
+`docs/` 物化到发布 `dist/`。这里不使用 `exe`：该选项是实验性的 Node SEA，不是 npm CLI contract。目标必须不存在
+或为空；生成先在同级临时目录完成，再原子落到最终目录。
+
+固定 starter 是 create package 的产品资产，不是 CLI template。它使用中性的 `@example/*` workspace package、无
+`name` 的 private root、默认 static mode、alternative dynamic mode、React Todo client、普通 domain package、三种
+Plugin 依赖/config 范式、core/runtime Vitest、Turbo、Oxlint/Oxfmt、CI 和 governance。starter workspace 仍安装
+`@pluxel/cli`，用于后续 `pluxel new` 与 build 命令；这不形成 create package 对 CLI 的实现依赖。
+starter 的 `host/web/` 是无 package manifest、无 Pluxel import 的纯 React source；`host/` application package 直接依赖
+React、runtime 与 workspace Plugins，并维护唯一指向自己的 `web/` 的 Vite config，以及 static/dynamic route entry、
+catalog、config 与 runtime state。static
+application 的 package root 是
+`host/`，所以 `host/tsdown.config.ts` 是唯一 freezer authority；monorepo root 只通过 Turbo 编排。
+
+`@example/host` build 先用同一 config 完成 `web/dist` browser build，再运行 freezer；tsdown 在 host build 末尾把 Web
+输出复制到 `host/dist/public`。由于 static assembly 已在 Rolldown `writeBundle` finalization，package script 随后必须
+调用同一个 `pluxel distribution create` finalizer，确保最终 manifest 覆盖 browser assets。任何后续写入仍然非法。
+
+`pluxel new` 把 bundled/local template 统一处理为
+`parse source -> acquire root -> validate manifest -> collect answers -> compile byte plan -> materialize -> optional install`。
+CLI 只维护 `plugin` bundled template；bare name 只解析 bundled plugin template，local template 必须使用 `./`、
+`../`、absolute path 或 `file:`，当前不支持 remote source 或 registry fallback。每个 root 只有一个严格校验的
+`pluxel-template.jsonc`，只声明 id、package-manager policy 与 prompts；所有 identity 都按 plugin package 规则解析。
+
+只有 `.tpl` 文件执行 `{{ key }}` 与 `{{ json key }}` 插值并在输出时去掉扩展名；其他 regular file 按字节复制。
+模板不支持 block、loop、condition、partial、动态 helper、symlink 或任意 code/command。plan 在首次目标写入前完成
+UTF-8、未知 token、path containment、portable collision、目标 parent 和 existing file 检查，并持有最终
+`Uint8Array`；materializer 不重新读取 template。`--force` 只授权 plan 编译时发现的精确 existing file，
+单文件通过同目录 temporary file + rename 替换，整个目录不承诺事务回滚。
+
+bundled template 默认安装依赖；local template 默认不执行 package manager，只有显式 `--install` 才提升信任。
+CLI packed smoke 只验证 plugin scaffold 的 install、lint、typecheck、test、build 和 pack。create packed smoke 独立验证
+starter inventory、docs 字节、完整 workspace verify、static distribution 和 unified Vite 的 static/dynamic mode；两种输出有意不同，
+不建立 parity contract。
 
 全局 `pluxel` launcher 在加载命令框架前，从启动 `cwd` 向上查找最近一个直接声明 `@pluxel/cli` 的
 `package.json`。找到时委托该项目 executable；声明存在但安装不完整时失败，不回退到全局版本。CI、package
@@ -143,8 +178,8 @@ Vite client。该模式把 bare SSR package import 留给 Node host，避免已�
 Runner 当作 ESM source 内联；显式 source entry 仍经过 Pluxel transform pipeline。该模式用于 host-owned 可搬运 source
 distribution；目录 closure、inventory 与签名不由 route plugin 猜测。
 static/dynamic route 分别使用 `.pluxel/vite/static-runtime-v2` 和 `.pluxel/vite/dynamic-runtime-v2` 作为当前
-optimizer contract 的默认 Vite cache，
-避免与相同 root 下的业务前端 optimizer 互相替换；host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
+optimizer contract 的默认 Vite cache。同一 host Vite 可以同时拥有业务前端 client graph 与 Pluxel SSR graph；默认目录
+避免它与不包含相同 runtime optimizer contract 的其他 Vite 进程互相替换。host 显式提供 `cacheDir` 时始终优先。reset baseline 的内部
 Drizzle generate 成功输出被捕获，失败时才附回完整诊断。dynamic route 的 watcher 默认忽略原生构建 `target/`
 目录与 Turborepo `.turbo/` 缓存，不把 Rust/N-API 编译或任务缓存纳入插件源码 HMR。两条 route 的 Vite watcher
 都忽略生成态 `.pluxel/`。package-level source proxy、optimizer cache 与 artifact output 本来就不属于应用源码 HMR；

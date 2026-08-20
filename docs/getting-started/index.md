@@ -8,13 +8,13 @@ description: 从 CLI 模板完成配置、HTTP 路由和生命周期测试。
 ## 创建项目
 
 ```sh
-pnpm create @pluxel --template plugin --name @acme/pluxel-plugin-status
+pnpm dlx @pluxel/cli new --template plugin --name @acme/pluxel-plugin-status
 cd status
-pnpm install
 pnpm verify
 ```
 
-模板已经配置 package root export、`@pluxel/hmr` 源码入口、tsdown、Vitest 和本地 `@pluxel/cli`。生成后只有两个需要修改的文件：
+官方模板默认完成依赖安装；需要只生成文件时传入 `--no-install`。模板已经配置 package root export、
+`@pluxel/hmr` 源码入口、tsdown、Vitest 和本地 `@pluxel/cli`。生成后只有两个需要修改的文件：
 
 ```text
 src/status.ts
