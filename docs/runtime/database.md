@@ -3,8 +3,6 @@ title: 数据库与数据归属
 description: 根据数据归属选择 Plugin 数据库或应用数据库，并管理 Drizzle schema 与迁移。
 ---
 
-# 数据库与数据归属
-
 Pluxel 的数据库能力统一使用 PostgreSQL 语义和 Drizzle。宿主没有配置远端 PostgreSQL 时可以使用持久化 PGlite；同一份 schema、迁移和查询不需要为不同驱动编写分支。
 
 先回答“数据属于谁”：
@@ -20,7 +18,7 @@ Pluxel 的数据库能力统一使用 PostgreSQL 语义和 Drizzle。宿主没�
 
 ```ts twoslash
 // @filename: database.ts
-// server only
+// 仅服务端
 import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { defineDatabase } from '@pluxel/runtime/database'
 

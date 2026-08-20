@@ -3,8 +3,6 @@ title: Package 与入口矩阵
 description: 区分公开包、仅供仓库内部使用的能力和不可直接导入的实现入口。
 ---
 
-# Package 与入口矩阵
-
 本页说明仓库中每个包允许如何使用，不代表它已经发布到 npm。`private` 和 `exports` 决定源码中的导入边界；实际可安装版本以 npm registry 和发布记录为准。
 
 ## 公开包

@@ -1,8 +1,7 @@
 import tailwindcss from '@tailwindcss/vite'
 import { fumadocsMdx } from 'fumadocs-mdx/vite'
 import press from 'fumapress/vite'
-import type { Plugin } from 'vite'
-import { defineConfig } from 'waku/config'
+import { defineConfig, type Plugin } from 'vite'
 
 function bundleModernMonacoTypeScriptWorker(): Plugin {
 	return {
@@ -31,14 +30,14 @@ function getWorker`,
 }
 
 export default defineConfig({
-	vite: {
-		optimizeDeps: {
-			exclude: ['modern-monaco/lsp/typescript/setup'],
-			include: ['typescript'],
-		},
-		plugins: [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()],
-		resolve: {
-			dedupe: ['react', 'react-dom'],
-		},
+	optimizeDeps: {
+		exclude: ['modern-monaco/lsp/typescript/setup'],
+		include: ['typescript'],
+	},
+	plugins: [bundleModernMonacoTypeScriptWorker(), press(), fumadocsMdx(), tailwindcss()],
+	// The canonical docs source lives outside this Vite root, so Rolldown needs
+	// explicit framework resolution for virtual MDX modules from ../../docs.
+	resolve: {
+		dedupe: ['react', 'react-dom'],
 	},
 })

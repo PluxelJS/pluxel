@@ -3,8 +3,6 @@ title: Redis
 description: 直接使用 Redis、定义类型安全的 Lua 脚本，或为 Cache 与 Rates 提供后端。
 ---
 
-# Redis
-
 > `@pluxel/redis` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 `@pluxel/redis` 提供三层能力：

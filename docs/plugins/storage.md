@@ -3,8 +3,6 @@ title: S3 对象存储
 description: 通过统一的 s3mini API 在本地存储、远端 S3 和平台实现之间切换。
 ---
 
-# S3 对象存储
-
 > `@pluxel/storage` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 `@pluxel/storage` 提供接近原始 bucket 的 `S3` 能力。业务 Plugin 通过 `S3.client` 使用 s3mini 1.x API，宿主则通过 `S3Plugin` 选择本地存储或真实 S3 后端。

@@ -1,7 +1,7 @@
 # Pluxel Engineering Docs
 
 `engineering/` 面向 coding agent、维护者和需要理解实现边界的技术人员，记录当前架构、工程不变量和内部入口。
-插件作者请从 [`docs/README.md`](../docs/README.md) 开始，不需要理解这里的内部 wiring。
+插件作者请从 [`docs/index.md`](../docs/index.md) 开始，不需要理解这里的内部 wiring。
 
 ## 阅读路径
 

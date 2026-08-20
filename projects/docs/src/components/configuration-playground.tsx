@@ -166,7 +166,7 @@ function compileSchema(code: string): PlaygroundSchema {
 		.replace(/^\s*import \* as v from ['"]valibot['"];?\s*$/m, '')
 		.replace(/^\s*import \* as f from ['"]valibot-form['"];?\s*$/m, '')
 		.replace(/\bexport default Config\s*$/, 'return Config')
-	// The editor intentionally runs a user-authored schema in the page sandbox.
+	// 编辑器有意在页面沙箱中执行用户编写的 schema。
 	const result: unknown = new Function('v', 'f', `"use strict";\n${executableCode}`)(v, f)
 	if (!isPlaygroundSchema(result)) {
 		throw new Error('Playground 只接受 object 或 intersect schema')

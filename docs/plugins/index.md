@@ -1,9 +1,8 @@
 ---
 title: 官方 Plugin
 description: 按需选择 Pluxel 团队维护的 HTTP、缓存、存储、可观测性和服务端渲染 Plugin。
+icon: Blocks
 ---
-
-# 官方 Plugin
 
 Pluxel 的核心 package 提供 Plugin 模型、依赖图、生命周期和宿主能力。这里列出的 package 是使用这些公开机制构建的官方 Plugin，不是运行 Pluxel 的必需依赖。应用只安装实际需要的 Plugin。
 

@@ -3,8 +3,6 @@ title: Valibot 配置表单
 description: 用一个 Valibot object schema 同时驱动 Plugin 配置、字段信息和 Web 表单。
 ---
 
-# Valibot 配置表单
-
 Pluxel 的配置只需要一份 Valibot object schema，Plugin 通过 `private readonly config = this.configs.use(Config)` 注册它。
 
 这份 schema 同时提供 TypeScript 类型、默认值、运行时校验，以及配置界面需要的字段结构。`valibot-form` 只附加标签、控件和布局信息，不会创建第二套配置语言。

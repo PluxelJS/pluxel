@@ -3,8 +3,6 @@ title: Commands 与 Agent tools
 description: 定义一次命令契约，再复用于注册表、Agent tools、CLI、HTTP 和 Workbench。
 ---
 
-# Commands 与 Agent tools
-
 `@pluxel/commands` 让一条命令只定义一次输入、输出、副作用等级和执行函数，再安全地暴露给 Agent、CLI、HTTP 或 Workbench。不同入口共享同一份校验和错误契约，不需要各自重写参数解析。
 
 ```sh package-install
@@ -136,11 +134,11 @@ const commands = createCommandRegistry()
 const registration = commands.register(jobStatus)
 
 commands.get('job.status.get')
-commands.list() // frozen, name-sorted descriptors
+commands.list() // 冻结、按名称排序的 descriptor
 await commands.execute('job.status.get', { jobId: 'cache-refresh' })
 await commands.executeOrThrow('job.status.get', { jobId: 'cache-refresh' })
 
-registration.dispose() // idempotent; withdraw future lookup/discovery
+registration.dispose() // 幂等撤销后续查找与发现
 ```
 
 不要 `new CommandRegistry()` 或 subclass；需要注解时只 `import type`。动态 name 查找无法推导具体 output，因此 registry dispatch 返回 `unknown`；应用内需要静态 output 类型时直接调用原 command object。

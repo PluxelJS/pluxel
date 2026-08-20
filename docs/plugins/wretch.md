@@ -3,8 +3,6 @@ title: 出站 HTTP（Wretch）
 description: 从不可变的 Wretch 基础实例派生业务客户端，并统一应用宿主的出站策略。
 ---
 
-# 出站 HTTP（Wretch）
-
 > `@pluxel/wretch` 面向插件作者的公开入口是 `.` 与 `./workbench`。可安装版本以 npm registry 为准；仓库内边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 `@pluxel/wretch` 提供一个原生、不可变的 Wretch 基础实例，并在请求真正发出前应用宿主级出站策略。URL 构造、addon、middleware、catcher 和响应链仍使用原生 Wretch API。

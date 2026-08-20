@@ -10,7 +10,7 @@ export function MantineThemeProvider({ children }: { children: ReactNode }) {
 	const colorScheme = resolvedTheme === 'dark' ? 'dark' : 'light'
 
 	useEffect(() => {
-		// Older page instances wrote this attribute to <html>; clear it after client navigation.
+		// 旧页面实例曾把此属性写入 <html>；客户端导航后将它清除。
 		document.documentElement.removeAttribute('data-mantine-color-scheme')
 	}, [])
 

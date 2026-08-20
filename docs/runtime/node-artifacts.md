@@ -3,8 +3,6 @@ title: Node 模块与 Worker 任务
 description: 为独立 Node ESM 和 CPU 密集任务选择合适的构建与生命周期模型。
 ---
 
-# Node 模块与 Worker 任务
-
 Pluxel 可以把一段代码构建成独立 Node ESM，也可以把 CPU 密集任务放进共享线程池。两者解决的问题不同：
 
 | 需求                                                | 选择                 |

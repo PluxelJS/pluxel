@@ -44,6 +44,7 @@
 		"plugin-host:static": "pnpm --filter @pluxel/plugins-host static"
 	},
 	"devDependencies": {
+		"@fumapress/tegami": "1.0.0",
 		"@gqlens/vite": "workspace:*",
 		"@pluxel/cli": "workspace:*",
 		"@pluxel/rolldown": "workspace:*",

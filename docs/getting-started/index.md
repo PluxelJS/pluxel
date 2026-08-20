@@ -3,8 +3,6 @@ title: 编写第一个插件
 description: 从 CLI 模板完成配置、HTTP 路由和生命周期测试。
 ---
 
-# 编写第一个插件
-
 本教程从 CLI 生成的单文件 Plugin 开始，加入配置和 HTTP 路由，再用真实 runtime host 验证启动与清理。
 
 ## 创建项目

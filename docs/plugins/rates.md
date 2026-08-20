@@ -3,8 +3,6 @@ title: 请求频率控制
 description: 按调用方、身份和成本执行原子的请求准入判定。
 ---
 
-# 请求频率控制
-
 > `@pluxel/rates` 目前只供 Pluxel 工作区使用，尚不是公开安装入口。完整边界见 [Package 矩阵](../reference/package-matrix.md)。
 
 `@pluxel/rates` 只负责一件事：根据一次请求的身份和成本，原子地判断是否放行。它不负责排队、等待、长期套餐额度或计费，也不会替 HTTP 或 RPC 层选择响应状态。

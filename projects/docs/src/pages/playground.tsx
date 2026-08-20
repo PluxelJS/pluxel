@@ -1,7 +1,4 @@
-import { createHomeLayout } from 'fumapress/layouts/home'
 import { ConfigurationPlaygroundPreview } from '../components/configuration-playground-preview'
-
-const HomeLayout = createHomeLayout()
 
 export default function PlaygroundPage() {
 	return (
@@ -11,11 +8,9 @@ export default function PlaygroundPage() {
 				name="description"
 				content="在浏览器中编写 Valibot schema，查看类型提示、生成的表单以及 Input/Output。"
 			/>
-			<HomeLayout>
-				<div className="configuration-playground-page">
-					<ConfigurationPlaygroundPreview />
-				</div>
-			</HomeLayout>
+			<div className="configuration-playground-page">
+				<ConfigurationPlaygroundPreview />
+			</div>
 		</>
 	)
 }

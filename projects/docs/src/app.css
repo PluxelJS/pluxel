@@ -2,7 +2,18 @@
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
 @import 'fumapress/css/preset.css';
+@import '@fumapress/tegami/css/preset.css';
 @import 'fumadocs-twoslash/twoslash.css';
+
+@theme {
+	--default-font-family: 'Geist', sans-serif;
+	--font-mono: 'JetBrains Mono', monospace;
+	--color-fd-primary: oklch(52% 0.13 160);
+}
+
+.dark {
+	--color-fd-primary: oklch(76% 0.14 160);
+}
 
 html {
 	scrollbar-gutter: stable;
@@ -318,7 +329,7 @@ body > [role='presentation'].z-50[data-closed],
 }
 
 .pluxel-code {
-	height: 27.5rem;
+	height: 20rem;
 	padding: 1.25rem 1.5rem;
 	overflow: auto;
 	border-bottom: 1px solid var(--color-fd-border);
@@ -576,7 +587,7 @@ body > [role='presentation'].z-50[data-closed],
 		flex: 1;
 	}
 	.pluxel-code {
-		height: min(30rem, 60svh);
+		height: min(21rem, 50svh);
 		padding: 0.8rem 1rem;
 		font-size: 0.68rem;
 		line-height: 1.5;

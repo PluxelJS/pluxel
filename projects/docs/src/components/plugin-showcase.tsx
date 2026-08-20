@@ -1,74 +1,118 @@
 import { highlight } from 'fumadocs-core/highlight'
+import * as Twoslash from 'fumadocs-twoslash/ui'
 import { PluginShowcaseClient, type ShowcaseExample } from './plugin-showcase-client'
 
 const examples = [
 	{
-		code: `@Plugin({ displayName: 'Health' })
-export class HealthPlugin extends BasePlugin {
-  status() {
-    return { ready: true }
+		code: `import { HealthPlugin } from '@acme/health' // 值导入：提供必需依赖的来源
+import type { AuditPlugin } from '@acme/audit' // 类型导入：不会加载可选插件
+const Audit = definePluginRef<AuditPlugin>() // 模块级引用：声明可选依赖
+@Plugin()
+class StatusPlugin extends BasePlugin {
+  constructor(readonly health: HealthPlugin) { super() } // 构造器参数：注入必需依赖
+  init() {
+    // init 中的直接语句：消费可选依赖
+    this.plugins.use(Audit, (audit) => audit.attach(this))
   }
-}
+  status = () => this.health.status() // 直接调用必需依赖
+}`,
+		description: 'Health 缺席会阻塞 Status；Audit 缺席不阻塞，出现、消失或替换时重启 consumer。',
+		href: '/docs/getting-started/plugin-model',
+		label: '依赖',
+		packageName: '@acme/health + @acme/audit → src/status.ts',
+		status: '必需 + 可选 → 同一依赖图',
+		twoslash: false,
+	},
+	{
+		code: `@Plugin()
+class SamplerPlugin extends BasePlugin {
+  init() {
+    const timer = setInterval(() => this.sample(), 1_000)
 
-@Plugin({ displayName: 'Status' })
-export class StatusPlugin extends BasePlugin {
-  constructor(private health: HealthPlugin) { super() }
-  private config = this.configs.use(StatusConfig)
-
-  status() {
-    return {
-      ...this.health.status(),
-      label: this.config.label,
-    }
+    // 登记到当前 generation：停止、回滚或 HMR 时统一回收
+    this.ctx.effects.defer(
+      () => clearInterval(timer),
+      { tag: 'sampler' },
+    )
   }
 }`,
-		description:
-			'StatusPlugin 直接注入 HealthPlugin。构造函数参数就是依赖声明，两者的启动顺序和实例类型不需要另写配置。',
-		href: '/docs/getting-started',
-		label: '依赖',
-		packageName: 'src/plugins.ts',
-		status: '类型即依赖',
+		description: '副作用登记到当前 generation；停止、启动回滚和 HMR replacement 都走同一套回收。',
+		href: '/docs/getting-started/plugin-model',
+		label: '回收',
+		packageName: 'src/sampler.ts',
+		status: 'generation → 统一回收',
+		twoslash: false,
 	},
 	{
-		code: `export const StatusConfig = v.object({
-  label: v.optional(
-    v.pipe(
-      v.string(),
-      f.formMeta({ label: '状态标签' }),
-      f.stringMeta({}),
-    ),
-    'ready',
-  ),
-})`,
-		description:
-			'同一份 Valibot schema 同时提供 TypeScript 类型、默认值、运行时校验和 Workbench 表单。',
+		code: `type Schema<T> = { output: T }
+declare const v: {
+  string(): Schema<string>
+  optional<T>(schema: Schema<T>, fallback: T): Schema<T>
+  object<T>(shape: T): Schema<{ [K in keyof T]: T[K] extends Schema<infer V> ? V : never }>
+}
+declare const Plugin: (...args: unknown[]) => any
+declare class BasePlugin {
+  configs: { use<T>(schema: Schema<T>): Readonly<T> }
+}
+// ---cut---
+const StatusConfig = v.object({
+  label: v.optional(v.string(), 'ready'), // 同一字段还可携带 Workbench 元数据
+})
+
+@Plugin()
+class StatusPlugin extends BasePlugin {
+  config = this.configs.use(StatusConfig)
+  // ^?
+}
+
+// 同一份 schema 贯穿默认值、校验与表单`,
+		description: '一份 schema 同时给出默认值、运行时校验、冻结输出和 Workbench 表单。',
 		href: '/docs/getting-started/configuration',
 		label: '配置',
-		packageName: 'src/config.ts',
-		status: '无需重复类型',
+		packageName: 'src/config.ts → src/plugins.ts',
+		status: 'Schema → 全链路配置',
+		twoslash: true,
 	},
 	{
-		code: `it('starts plugin dependencies', async () => {
+		code: `type PluginClass<T> = abstract new (...args: any[]) => T
+declare class StatusPlugin {
+  status(): { ready: true; label: string }
+}
+declare interface RuntimeHost {
+  add<T>(plugin: PluginClass<T>): void
+  cfg<T>(plugin: PluginClass<T>): { enable(): void }
+  commit(): Promise<void>
+  require<T>(plugin: PluginClass<T>): T
+}
+declare const withRuntimeHost: (run: (host: RuntimeHost) => Promise<void>) => Promise<void>
+// ---cut---
+import { expect, it } from 'vitest'
+
+it('运行完整的 Plugin graph', async () => {
   await withRuntimeHost(async (host) => {
     host.add(StatusPlugin)
-    host.cfg(StatusPlugin).set({ label: 'healthy' })
     host.cfg(StatusPlugin).enable()
-
     await host.commit()
-    expect(host.require(HealthPlugin)).toBeDefined()
-    expect(host.require(StatusPlugin)).toBeDefined()
+    const status = host.require(StatusPlugin).status()
+    //    ^?
+    expect(status).toEqual({ ready: true, label: 'ready' })
   })
-})`,
-		description:
-			'测试经过真实语义转换和生命周期；callback 结束后 host 自动关闭，也会验证资源清理。',
+})
+
+// withRuntimeHost 退出：停止依赖图并回收 effects`,
+		description: '测试运行同一张依赖图；作用域退出后按所有权停止 Plugin 并释放 effects。',
 		href: '/docs/development/testing',
 		label: '测试',
-		packageName: 'tests/StatusPlugin.test.ts',
-		status: '真实 Runtime',
+		packageName: 'tests/status.test.ts',
+		status: '构建语义 → 生命周期',
+		twoslash: true,
 	},
 ] as const
 
 export async function PluginShowcase() {
+	// 让 TypeScript compiler 留在 Node 侧，避免进入 RSC bundle。
+	const twoslashPackage = 'fumadocs-twoslash'
+	const { transformerTwoslash } = await import(/* @vite-ignore */ twoslashPackage)
 	const highlighted: ShowcaseExample[] = await Promise.all(
 		examples.map(async (example) => ({
 			description: example.description,
@@ -79,6 +123,13 @@ export async function PluginShowcase() {
 					light: 'github-light',
 					dark: 'github-dark',
 				},
+				...(example.twoslash
+					? {
+							components: Twoslash,
+							meta: { __raw: 'twoslash' },
+							transformers: [transformerTwoslash()],
+						}
+					: {}),
 			}),
 			href: example.href,
 			label: example.label,

@@ -3,8 +3,6 @@ title: 服务端 Apache ECharts
 description: 通过 Fonts、Canvas 和共享 Worker 在服务端渲染 Apache ECharts 6 图片。
 ---
 
-# 服务端 Apache ECharts
-
 `@pluxel/echarts` 使用 Apache ECharts 6 在服务端生成 PNG、JPEG 或 WebP 图片，适合报表、分享图、邮件附件和预生成图表。它依赖 `CanvasPlugin` 与 `FontsPlugin`，默认在线程池中完成布局、文字测量、ZRender 刷新和图片编码，避免阻塞主线程。
 
 ## 安装与 catalog

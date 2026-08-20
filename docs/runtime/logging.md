@@ -3,8 +3,6 @@ title: 结构化日志
 description: 使用 Context logger 和稳定属性记录结构化日志，由宿主统一管理输出与等级。
 ---
 
-# 结构化日志
-
 Plugin 只需要使用 `ctx.logger` 记录事件。宿主为整个进程统一配置控制台、文件、存储或 OpenTelemetry 输出，并负责路由、动态日志等级和关闭时的刷新。
 
 ## 基本写法

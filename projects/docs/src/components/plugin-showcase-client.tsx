@@ -15,7 +15,7 @@ export interface ShowcaseExample {
 
 export function PluginShowcaseClient({ examples }: { examples: ShowcaseExample[] }) {
 	const [activeIndex, setActiveIndex] = useState(0)
-	const active = examples[activeIndex]
+	const active = examples[activeIndex] ?? examples[0]
 
 	function moveTab(index: number, target: EventTarget & HTMLButtonElement) {
 		const nextIndex = (index + examples.length) % examples.length
@@ -23,6 +23,8 @@ export function PluginShowcaseClient({ examples }: { examples: ShowcaseExample[]
 		const nextTab = target.parentElement?.children[nextIndex]
 		if (nextTab instanceof HTMLButtonElement) nextTab.focus()
 	}
+
+	if (!active) return null
 
 	return (
 		<div className="pluxel-runtime-window" aria-label="Plugin 开发示例">

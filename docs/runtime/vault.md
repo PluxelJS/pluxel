@@ -3,8 +3,6 @@ title: Vault 加密小数据
 description: 用按 Plugin 隔离的 KV、文档和小型二进制对象保存加密状态。
 ---
 
-# Vault 加密小数据
-
 Vault 是一项需要宿主显式启用的运行时能力，为每个 Plugin 提供相互隔离、加密持久化的 KV、文档和小型二进制对象。它适合保存 token、checkpoint、小配置和少量领域状态，但不能替代关系数据库或对象存储。
 
 ## 何时选择 Vault

@@ -3,8 +3,6 @@ title: 为什么是 Pluxel？
 description: 从 Cordis 与 Koishi 的实践出发，理解 Pluxel 对依赖身份、能力所有权和生命周期的选择。
 ---
 
-# 为什么是 Pluxel？
-
 Pluxel 是对 [Cordis v3](https://github.com/cordiverse/cordis/tree/f8f10ec6734ebb4558addeba0f6a25294684d494) Plugin 思想的一次再诠释。它以依赖注入为核心：Plugin 之间的 required dependency 直接写在 constructor，从 package root 的 value import 生成可追溯的依赖边，形成一条从 provider import 到 consumer 参数的清晰路径。保留的是 Plugin 的 Context 与生命周期模型，listener、timer、route 等副作用随所属 Plugin 自动回收，功能可以动态装载、替换和卸载；重新设计的是这些能力背后的依赖身份、构建语义和运行时边界。
 
 ## 从 Koishi Plugin 实践出发
@@ -60,13 +58,13 @@ export class TimerService extends Service {
 以 `database` service 为例，Cordis v3 的标准写法需要在三个位置使用同一个名称：
 
 ```ts
-// provider registration
+// provider 注册
 super(ctx, 'database')
 
-// consumer dependency metadata
+// consumer 声明依赖 metadata
 export const inject = ['database']
 
-// consumer property lookup
+// consumer 读取 Context property
 ctx.database.get(table, id)
 ```
 

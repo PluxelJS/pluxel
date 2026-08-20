@@ -1,20 +1,17 @@
 import { Link } from 'fumapress/client'
-import { createHomeLayout } from 'fumapress/layouts/home'
 import { ArrowRight, Boxes, Braces, CircleDot, CloudCog, ServerCog, Settings2 } from 'lucide-react'
 import { PluginShowcase } from '../components/plugin-showcase'
 
-const HomeLayout = createHomeLayout()
-
 const patterns = [
 	{
-		code: 'constructor(private http: WretchPlugin) { super() }',
+		code: 'constructor(private readonly http: WretchPlugin) { super() }',
 		description: '需要另一个 Plugin 时，直接写构造函数参数。类型就是依赖声明。',
 		href: '/docs/getting-started/plugin-model',
 		icon: Braces,
 		title: '注入依赖',
 	},
 	{
-		code: 'private config = this.configs.use(StatusConfig)',
+		code: 'private readonly config = this.configs.use(StatusConfig)',
 		description: '读取经过默认值和校验的冻结配置，不再维护平行的 TypeScript interface。',
 		href: '/docs/getting-started/configuration',
 		icon: Settings2,
@@ -52,8 +49,18 @@ const hosts = [
 
 export default function HomePage() {
 	return (
-		<HomeLayout>
-			<main className="pluxel-home">
+		<>
+			<title>Pluxel — TypeScript Plugin Runtime</title>
+			<meta
+				name="description"
+				content="以类型化依赖、确定性生命周期和统一配置构建 TypeScript Plugin。"
+			/>
+			<meta property="og:title" content="Pluxel — TypeScript Plugin Runtime" />
+			<meta
+				property="og:description"
+				content="以类型化依赖、确定性生命周期和统一配置构建 TypeScript Plugin。"
+			/>
+			<div className="pluxel-home">
 				<section className="pluxel-hero">
 					<div className="pluxel-hero-copy">
 						<p className="pluxel-kicker">
@@ -134,7 +141,7 @@ export default function HomePage() {
 						})}
 					</div>
 				</section>
-			</main>
-		</HomeLayout>
+			</div>
+		</>
 	)
 }

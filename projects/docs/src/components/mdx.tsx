@@ -10,9 +10,6 @@ export function getMDXComponents(components?: MDXComponents) {
 		...Twoslash,
 		PackageInstall,
 		TypeTable,
-		// The repository Markdown keeps an H1 for static readers. DocsTitle is the
-		// only online H1, so the source heading is intentionally not rendered here.
-		h1: () => null,
 		...components,
 	} satisfies MDXComponents
 }

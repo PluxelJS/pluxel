@@ -3,8 +3,6 @@ title: Pluxel Oxlint 规则
 description: 用静态规则检查 Plugin 元数据、配置、资源归属和生命周期约束。
 ---
 
-# Pluxel Oxlint 规则
-
 普通 Oxlint 检查 JavaScript 和 TypeScript 代码质量；`@pluxel/rolldown/oxlint` 继续检查只有 Pluxel 才理解的 Plugin 规则，例如元数据位置、配置读取时机和资源归属。
 
 ## 标准配置

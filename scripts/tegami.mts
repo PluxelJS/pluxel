@@ -1,3 +1,4 @@
+import { fumapressPlugin } from '@fumapress/tegami/tegami'
 import { execFile, spawn } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -43,6 +44,7 @@ export const paper = tegami({
 	},
 	plugins: [
 		verifyBeforePublish(),
+		fumapressPlugin({ dir: 'projects/docs/content/changelog' }),
 		github({
 			repo: 'PluxelJS/pluxel',
 			versionPr: {

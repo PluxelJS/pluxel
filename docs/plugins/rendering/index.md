@@ -1,9 +1,8 @@
 ---
 title: 服务端渲染 Plugin
 description: 组合 Fonts、Canvas 与 ECharts，在服务端生成图片和图表。
+icon: Image
 ---
-
-# 服务端渲染 Plugin
 
 Pluxel 提供三个服务端渲染 package，按依赖链组合：
 

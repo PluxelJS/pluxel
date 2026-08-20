@@ -3,8 +3,6 @@ title: 配置模型
 description: 用一个 Valibot object schema 统一配置类型、默认值、归一化和校验。
 ---
 
-# 配置模型
-
 每个 Plugin 只维护一份配置定义：传给 `this.configs.use()` 的 Valibot object schema。TypeScript 类型、默认值、归一化、运行时校验和 Workbench 表单都从这份 schema 派生，不需要再写一套平行的配置接口。
 
 ## 从一个完整 schema 开始

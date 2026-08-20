@@ -3,8 +3,6 @@ title: 服务端字体
 description: 发现、注册和管理服务端字体，并为 Canvas 与 ECharts 提供统一默认字体。
 ---
 
-# 服务端字体
-
 `@pluxel/fonts` 统一管理服务端字体：发现系统字体、注册 Plugin 随包携带的字体、保存从 Workbench 上传的字体，并为 Canvas 和 ECharts 选择默认字体。
 
 渲染依赖始终沿着一个方向建立：

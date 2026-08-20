@@ -3,8 +3,6 @@ title: 跨仓库源码开发
 description: 在保持 Git 仓库、工作区和 lockfile 独立的前提下联调本地源码。
 ---
 
-# 跨仓库源码开发
-
 当应用需要联调尚未发布的 Pluxel 或另一个独立仓库时，可以用 `pluxel source` 管理开发期的包解析。每个源码仓库仍保留自己的 Git 历史、工作区和 lockfile；这个命令也不会接管运行时的 Plugin 安装。
 
 ## 声明源码仓库
