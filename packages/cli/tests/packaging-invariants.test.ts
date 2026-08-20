@@ -23,26 +23,23 @@ async function collectSourceFiles(dir: string): Promise<string[]> {
 }
 
 describe('CLI package boundaries', () => {
-	it('keeps the scoped initializer as a thin same-version CLI wrapper', async () => {
+	it('keeps the scoped initializer independent from the CLI', async () => {
 		const root = fileURLToPath(new URL('../../..', import.meta.url))
-		const cliPkg = JSON.parse(await readFile(`${root}/packages/cli/package.json`, 'utf8')) as {
-			version: string
-		}
 		const createPkg = JSON.parse(
 			await readFile(`${root}/packages/create/package.json`, 'utf8'),
 		) as {
-			version: string
 			dependencies?: Record<string, string>
 			bin?: Record<string, string>
+			files?: string[]
 		}
-		const createBin = await readFile(`${root}/packages/create/bin/create.mjs`, 'utf8')
+		const createBin = await readFile(`${root}/packages/create/src/create.ts`, 'utf8')
 
-		expect(createPkg.version).toBe(cliPkg.version)
-		expect(createPkg.dependencies?.['@pluxel/cli']).toBe('workspace:*')
-		expect(createPkg.bin).toEqual({ 'create-pluxel': 'bin/create.mjs' })
-		expect(createBin).toContain("Symbol.for('pluxel.cli.direct')")
-		expect(createBin).toContain("'new'")
-		expect(createBin).not.toContain('../templates')
+		expect(createPkg.dependencies).toBeUndefined()
+		expect(createPkg.bin).toEqual({ 'create-pluxel': './dist/create.mjs' })
+		expect(createPkg.files).toContain('dist')
+		expect(createBin).toContain("'docs/pluxel'")
+		expect(createBin).not.toContain('@pluxel/cli')
+		expect(createBin).not.toContain("Symbol.for('pluxel.cli.direct')")
 	})
 
 	it('keeps optional owner value imports behind the official capability loader', async () => {

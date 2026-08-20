@@ -29,7 +29,7 @@
 		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"test:templates": "node scripts/smoke-app-monorepo.ts"
+		"test:templates": "node scripts/smoke-plugin.ts"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",

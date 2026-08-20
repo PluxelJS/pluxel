@@ -1,8 +1,0 @@
-import { describe, expect, it } from 'vitest'
-import { GreetingService } from '../src/index.ts'
-
-describe('GreetingService', () => {
-	it('keeps domain behavior independent from Pluxel', () => {
-		expect(new GreetingService().greet('Codex', 'Hello')).toBe('Hello, Codex!')
-	})
-})

@@ -17,6 +17,21 @@
 - `src/command-manifest.ts`：帮助文本、参数和 lazy command 映射。
 - `src/commands/`、`src/scaffold/`：仅在对应命令执行时加载。
 
+Scaffold 内部边界：
+
+- `src/scaffold/source.ts`：区分并取得 bundled/local template root；
+- `src/scaffold/contract.ts`：严格解析 `pluxel-template.jsonc`；
+- `src/scaffold/prompts.ts`：收集并验证答案，不写文件；
+- `src/scaffold/render.ts`：纯 `.tpl` interpolation；
+- `src/scaffold/plan.ts`：编译包含最终字节和 destination preflight 的 immutable plan；
+- `src/scaffold/materialize.ts`：只写 plan 已授权的 outputs；
+- `src/scaffold/index.ts`：Gunshi/Clack command、安装和用户诊断。
+
+这些模块没有 package export，也不是第三方 generator API。
+
+CLI scaffold 只有 Plugin package identity 和 bundled `plugin` template。完整 example workspace、固定 starter 与
+`docs/pluxel/` 快照归 `@pluxel/create`，不经过这些模块。
+
 可选能力：
 
 - `build`、`workspace` → `@pluxel/rolldown`；

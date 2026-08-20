@@ -2,9 +2,9 @@
 
 {{description}}
 
-Before changing plugin code or package/build configuration, start at
-[`docs/pluxel/README.md`](docs/pluxel/README.md). The CLI copies the same authoring, package,
-testing, and Oxlint guidance used by Pluxel itself.
+Before changing plugin code or package/build configuration, consult the documentation matching the
+installed Pluxel version. A full offline documentation snapshot is included when starting a workspace
+with `pnpm create @pluxel`.
 
 ## Install
 

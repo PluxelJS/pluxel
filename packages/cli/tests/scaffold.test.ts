@@ -1,33 +1,44 @@
 import { describe, expect, it } from 'vitest'
 import { createFixture } from '@pluxel/test/fixtures'
-import { relative, resolve } from 'pathe'
+import { resolve } from 'pathe'
 import fs from 'node:fs'
-import { parse as parseYaml } from 'yaml'
 import {
-	parsePackageIdentity,
+	createCommandPlan,
 	parsePackageName,
-	resolveBuiltInTemplatePackageManager,
 	resolveScaffoldDestinationInput,
-	resolveScaffoldIdentity,
 } from '../src/scaffold'
-import { generateFromTemplate, promptTemplateData } from '../src/scaffold/template'
+import { loadTemplateContract, validateTemplateContract } from '../src/scaffold/contract'
+import { materializeScaffoldPlan } from '../src/scaffold/materialize'
+import { authorizePlanOverwrite, compileScaffoldPlan } from '../src/scaffold/plan'
+import { collectTemplateAnswers } from '../src/scaffold/prompts'
+import { renderTemplateValue } from '../src/scaffold/render'
+import { parseTemplateSource } from '../src/scaffold/source'
 import { formatPackageScriptCommand } from '../src/utils/pm'
 
-function listRelativeFilesSync(root: string, fileSystem: typeof fs): string[] {
-	const files: string[] = []
-	const visit = (directory: string) => {
-		for (const name of fileSystem.readdirSync(directory) as string[]) {
-			const path = resolve(directory, name)
-			if (fileSystem.statSync(path).isDirectory()) visit(path)
-			else files.push(relative(root, path))
-		}
-	}
-	visit(root)
-	return files.sort()
+async function generateTemplate(params: {
+	templateBase: string
+	targetDir: string
+	data: Record<string, string>
+	force?: boolean
+	fs: typeof fs
+}) {
+	const contract = await loadTemplateContract(params.templateBase, { fs: params.fs })
+	const plan = await compileScaffoldPlan({
+		templateRoot: params.templateBase,
+		template: { kind: 'local', path: params.templateBase },
+		contract,
+		targetDir: params.targetDir,
+		data: params.data,
+		force: params.force ?? false,
+		install: false,
+		fs: params.fs,
+	})
+	await materializeScaffoldPlan(plan, () => {}, { fs: params.fs })
+	return plan
 }
 
 describe('scaffold name helpers', () => {
-	it('applies the plugin package convention separately from application identities', () => {
+	it('always applies the plugin package convention', () => {
 		expect(parsePackageName('foo')).toMatchObject({
 			name: 'foo',
 			packageName: 'pluxel-plugin-foo',
@@ -37,218 +48,302 @@ describe('scaffold name helpers', () => {
 			packageName: '@acme/pluxel-plugin-foo',
 		})
 		expect(parsePackageName('pluxel-plugin-bar').name).toBe('bar')
-		expect(parsePackageIdentity('@Acme/My-App')).toEqual({
-			scope: '@acme',
-			name: 'my-app',
-			packageName: '@acme/my-app',
-		})
-		expect(
-			resolveScaffoldIdentity('@acme/pluxel-plugin-orders', '/templates/plugin'),
-		).toMatchObject({ name: 'orders', packageName: '@acme/pluxel-plugin-orders' })
-		expect(resolveScaffoldIdentity('@acme/my-app', '/templates/app-monorepo')).toMatchObject({
-			name: 'my-app',
-			packageName: '@acme/my-app',
-		})
 	})
 })
 
-describe('scaffold package-manager guidance', () => {
-	it('validates destinations and emits built-in package-manager guidance', () => {
+describe('scaffold command inputs', () => {
+	it('validates destinations, source syntax, and package-manager guidance', () => {
 		expect(resolveScaffoldDestinationInput(undefined)).toBeUndefined()
 		expect(resolveScaffoldDestinationInput([])).toBeUndefined()
 		expect(resolveScaffoldDestinationInput(['apps'])).toBe('apps')
 		expect(() => resolveScaffoldDestinationInput(['apps', 'extra'])).toThrow(
 			'Expected at most one scaffold destination',
 		)
-		expect(resolveBuiltInTemplatePackageManager('/templates/app-monorepo', '/templates')).toBe(
-			'pnpm',
-		)
-		expect(resolveBuiltInTemplatePackageManager('/templates/plugin', '/templates')).toBe('pnpm')
-		expect(resolveBuiltInTemplatePackageManager('/templates/custom', '/templates')).toBeUndefined()
-		expect(resolveBuiltInTemplatePackageManager('/custom/plugin', '/templates')).toBeUndefined()
+		expect(parseTemplateSource('plugin')).toEqual({ kind: 'bundled', name: 'plugin' })
+		expect(parseTemplateSource('./templates/custom', { cwd: '/workspace' })).toEqual({
+			kind: 'local',
+			path: '/workspace/templates/custom',
+		})
+		expect(parseTemplateSource('.\\templates\\custom', { cwd: '/workspace' })).toEqual({
+			kind: 'local',
+			path: '/workspace/templates/custom',
+		})
+		expect(() => parseTemplateSource('gh:acme/template')).toThrow('Unsupported template source')
 		expect(formatPackageScriptCommand('pnpm', 'verify')).toBe('pnpm verify')
 		expect(formatPackageScriptCommand('yarn', 'verify')).toBe('yarn verify')
 		expect(formatPackageScriptCommand('npm', 'verify')).toBe('npm run verify')
 		expect(formatPackageScriptCommand('bun', 'verify')).toBe('bun run verify')
 	})
+
+	it('derives install trust defaults after resolving template provenance', () => {
+		const contract = validateTemplateContract({
+			schemaVersion: 1,
+			id: 'plugin',
+			packageManager: { name: 'pnpm' },
+		})
+		const values = { force: false, 'dry-run': false } as Parameters<typeof createCommandPlan>[3]
+		const bundled = createCommandPlan(
+			'orders',
+			{
+				root: '/templates/plugin',
+				provenance: { kind: 'bundled', name: 'plugin' },
+				async dispose() {},
+			},
+			contract,
+			values,
+			{ cwd: '/workspace' },
+		)
+		const local = createCommandPlan(
+			'orders',
+			{
+				root: '/templates/plugin',
+				provenance: { kind: 'local', path: '/templates/plugin' },
+				async dispose() {},
+			},
+			contract,
+			values,
+			{ cwd: '/workspace' },
+		)
+		expect(bundled).toMatchObject({ install: true, packageManager: 'pnpm' })
+		expect(local).toMatchObject({ install: false, packageManager: 'pnpm' })
+		expect(
+			createCommandPlan(
+				'orders',
+				{
+					root: '/templates/plugin',
+					provenance: { kind: 'local', path: '/templates/plugin' },
+					async dispose() {},
+				},
+				contract,
+				{ ...values, install: true },
+				{ cwd: '/workspace' },
+			),
+		).toMatchObject({ install: true })
+	})
 })
 
 describe('scaffold template rendering', () => {
-	it('uses explicit prompt defaults without opening a TTY prompt', async () => {
+	it('strictly validates manifests and rejects legacy template contracts', async () => {
+		expect(() =>
+			validateTemplateContract({
+				schemaVersion: 1,
+				id: 'fixture',
+				prompts: [],
+				prompt: [],
+			}),
+		).toThrow('unknown field: prompt')
+		expect(() =>
+			validateTemplateContract({
+				schemaVersion: 2,
+				id: 'fixture',
+			}),
+		).toThrow('TEMPLATE_SCHEMA_UNSUPPORTED')
+		expect(() =>
+			validateTemplateContract({
+				schemaVersion: 1,
+				id: 'fixture',
+				prompts: [
+					{
+						name: 'release-channel',
+						type: 'text',
+						message: 'Release channel',
+						default: 'stable',
+					},
+				],
+			}),
+		).toThrow('must be a template variable identifier')
+
 		await using fixture = await createFixture({
 			template: {
-				'prompts.jsonc': JSON.stringify([
-					{
-						name: 'description',
-						message: 'Description for {{className}}',
-						default: 'Plugin {{className}}',
-					},
-				]),
+				'pluxel-template.jsonc': JSON.stringify({
+					schemaVersion: 1,
+					id: 'fixture',
+				}),
+				'README.md.hbs': '# {{ packageName }}',
 			},
 		})
+		const templateRoot = resolve(fixture.path, 'template')
+		const contract = await loadTemplateContract(templateRoot, {
+			fs: fixture.fs as unknown as typeof fs,
+		})
 		await expect(
-			promptTemplateData(
-				resolve(fixture.path, 'template'),
-				{ className: 'Orders' },
+			compileScaffoldPlan({
+				templateRoot,
+				template: { kind: 'local', path: templateRoot },
+				contract,
+				targetDir: resolve(fixture.path, 'output'),
+				data: { packageName: '@acme/orders' },
+				force: false,
+				install: false,
+				fs: fixture.fs as unknown as typeof fs,
+			}),
+		).rejects.toThrow('Legacy template file is not supported')
+	})
+
+	it('uses explicit prompt defaults without opening a TTY prompt', async () => {
+		const contract = validateTemplateContract({
+			schemaVersion: 1,
+			id: 'fixture',
+			prompts: [
 				{
-					fs: fixture.fs as unknown as typeof fs,
+					name: 'description',
+					type: 'text',
+					message: 'Description for {{ className }}',
+					default: 'Plugin {{ className }}',
 				},
-			),
+			],
+		})
+		await expect(
+			collectTemplateAnswers(contract, { className: 'Orders' }, { interactive: false }),
 		).resolves.toEqual({ description: 'Plugin Orders' })
 	})
 
 	it('rejects non-interactive prompts without an explicit default', async () => {
-		await using fixture = await createFixture({
-			template: {
-				'prompts.jsonc': JSON.stringify([{ name: 'description', message: 'Description' }]),
-			},
+		const contract = validateTemplateContract({
+			schemaVersion: 1,
+			id: 'fixture',
+			prompts: [{ name: 'description', type: 'text', message: 'Description' }],
 		})
-		await expect(
-			promptTemplateData(
-				resolve(fixture.path, 'template'),
-				{},
-				{
-					fs: fixture.fs as unknown as typeof fs,
-				},
-			),
-		).rejects.toThrow('Non-interactive prompt "description" requires a string default')
+		await expect(collectTemplateAnswers(contract, {}, { interactive: false })).rejects.toThrow(
+			'Non-interactive prompt "description" requires a default',
+		)
 	})
 
-	it('generates a standalone application monorepo from public package entrypoints', async () => {
-		await using fixture = await createFixture()
-		const targetDir = resolve(fixture.path, 'acme-app')
-		const ok = await generateFromTemplate(
-			{
-				templateBase: resolve(import.meta.dirname, '../templates/app-monorepo'),
-				targetDir,
-				data: {
-					pluginName: 'acme-app',
-					packageName: '@acme/acme-app',
-					className: 'AcmeApp',
-					year: '2026',
-					description: 'Acme "application"\\workspace\nstarter',
+	it('uses only strict variables and the json helper', () => {
+		expect(
+			renderTemplateValue(
+				'{{ packageName }}: {{ json description }}',
+				{
+					packageName: '@acme/orders',
+					description: 'say "hello"',
 				},
-				force: false,
-				dryRun: false,
-				fs: fixture.fs as unknown as typeof fs,
+				'fixture',
+			),
+		).toBe('@acme/orders: "say \\"hello\\""')
+		expect(() =>
+			renderTemplateValue('{{ pascalCase name }}', { name: 'orders' }, 'fixture'),
+		).toThrow('Unknown template helper')
+		expect(() => renderTemplateValue('{{ missing }}', {}, 'fixture')).toThrow(
+			'Unknown template key',
+		)
+		expect(() => renderTemplateValue('{{ missing', {}, 'fixture')).toThrow(
+			'Unclosed template token',
+		)
+	})
+
+	it('materializes the byte snapshot captured by the plan', async () => {
+		await using fixture = await createFixture({
+			template: {
+				'pluxel-template.jsonc': JSON.stringify({
+					schemaVersion: 1,
+					id: 'fixture',
+				}),
+				'README.md.tpl': '# {{ packageName }}',
+				'logo.bin': Buffer.from([0, 1, 2, 255]),
 			},
-			() => {},
-		)
-
-		expect(ok).toBe(true)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'apps'))).toBe(false)
-		expect(fixture.fs.existsSync(resolve(targetDir, 'pluxel-docs.jsonc'))).toBe(false)
-
-		const hostVite = fixture.fs.readFileSync(resolve(targetDir, 'web/vite.config.ts'), 'utf8')
-		expect(hostVite).toContain("from '@pluxel/runtime-static/vite'")
-		expect(hostVite).toContain("entry: './src/pluxel.static.ts'")
-		expect(hostVite).not.toContain('../../packages/')
-		const staticBuild = fixture.fs.readFileSync(resolve(targetDir, 'web/tsdown.config.ts'), 'utf8')
-		expect(staticBuild).toContain("from '@pluxel/rolldown/build'")
-		expect(staticBuild).toContain("entry: './src/pluxel.static.ts'")
-		expect(staticBuild).toContain("variant: 'workbench'")
-		const staticRuntime = fixture.fs.readFileSync(
-			resolve(targetDir, 'web/src/pluxel.static.ts'),
-			'utf8',
-		)
-		expect(staticRuntime).toContain('pluginNodeAddressOf(AcmeAppPlugin)')
-		expect(staticRuntime).not.toContain("enabled: ['AcmeAppPlugin']")
-
-		const pluginManifest = fixture.fs.readFileSync(
-			resolve(targetDir, 'plugins/example/package.json'),
-			'utf8',
-		)
-		expect(pluginManifest).toContain('"@pluxel/runtime": "catalog:"')
-		expect(pluginManifest).not.toContain('"@pluxel/runtime": "workspace:*"')
-
-		const rootManifest = String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8'))
-		expect(JSON.parse(rootManifest)).toMatchObject({
-			description: 'Acme "application"\\workspace\nstarter',
 		})
-		expect(rootManifest).toContain('"@pluxel/rolldown": "catalog:"')
-		expect(rootManifest).toContain('"@pluxel/cli": "catalog:"')
-		expect(rootManifest).toContain('"oxfmt": "catalog:"')
-		expect(rootManifest).toContain('"turbo": "catalog:"')
-		expect(rootManifest).not.toContain('"react":')
-		expect(rootManifest).not.toContain('"@pluxel/core"')
-		expect(rootManifest).not.toContain('"tsdown"')
-		const turboConfig = fixture.fs.readFileSync(resolve(targetDir, 'turbo.json'), 'utf8')
-		expect(turboConfig).toContain('"concurrency": "100%"')
-		expect(turboConfig).toContain('"dependsOn": ["^build", "^typecheck"]')
-
-		const webManifest = fixture.fs.readFileSync(resolve(targetDir, 'web/package.json'), 'utf8')
-		expect(webManifest).toContain('"react": "catalog:"')
-		expect(webManifest).toContain('"@gqlens/react": "catalog:"')
-		const workspaceSource = String(
-			fixture.fs.readFileSync(resolve(targetDir, 'pnpm-workspace.yaml'), 'utf8'),
-		)
-		expect(workspaceSource).toContain("'@pluxel/runtime': ^1.0.0")
-		expect(parseYaml(workspaceSource)).toMatchObject({
-			packages: ['web', 'packages/*', 'plugins/*', 'plugins/*/*'],
-			catalog: { '@pluxel/runtime': '^1.0.0' },
+		const templateRoot = resolve(fixture.path, 'template')
+		const targetDir = resolve(fixture.path, 'output')
+		const contract = await loadTemplateContract(templateRoot, {
+			fs: fixture.fs as unknown as typeof fs,
 		})
-		expect(parseYaml(workspaceSource)).toMatchObject({
-			catalog: { '@pluxel/cli': '^1.0.0' },
+		const plan = await compileScaffoldPlan({
+			templateRoot,
+			template: { kind: 'local', path: templateRoot },
+			contract,
+			targetDir,
+			data: { packageName: '@acme/orders' },
+			force: false,
+			install: false,
+			fs: fixture.fs as unknown as typeof fs,
 		})
-		expect(fixture.fs.existsSync(resolve(targetDir, 'packages/web'))).toBe(false)
-		const rootTsconfig = JSON.parse(
-			String(fixture.fs.readFileSync(resolve(targetDir, 'tsconfig.base.json'), 'utf8')),
-		) as {
-			compilerOptions?: { customConditions?: string[]; emitDecoratorMetadata?: boolean }
-		}
-		expect(rootTsconfig.compilerOptions?.customConditions).toEqual(['@pluxel/hmr'])
-		expect(rootTsconfig.compilerOptions?.emitDecoratorMetadata).toBeUndefined()
+		fixture.fs.writeFileSync(resolve(templateRoot, 'README.md.tpl'), '# changed', 'utf8')
+		await materializeScaffoldPlan(plan, () => {}, {
+			fs: fixture.fs as unknown as typeof fs,
+		})
+		expect(fixture.fs.readFileSync(resolve(targetDir, 'README.md'), 'utf8')).toBe('# @acme/orders')
+		expect([...fixture.fs.readFileSync(resolve(targetDir, 'logo.bin'))]).toEqual([0, 1, 2, 255])
+	})
 
-		const agentsGuide = fixture.fs.readFileSync(resolve(targetDir, 'AGENTS.md'), 'utf8')
-		expect(agentsGuide).toContain('docs/pluxel/README.md')
+	it('requires exact overwrite authorization and rejects rendered collisions', async () => {
+		await using fixture = await createFixture({
+			template: {
+				'pluxel-template.jsonc': JSON.stringify({
+					schemaVersion: 1,
+					id: 'fixture',
+				}),
+				'{{ first }}.tpl': 'first',
+				'{{ second }}.tpl': 'second',
+			},
+		})
+		const templateRoot = resolve(fixture.path, 'template')
+		const contract = await loadTemplateContract(templateRoot, {
+			fs: fixture.fs as unknown as typeof fs,
+		})
+		await expect(
+			compileScaffoldPlan({
+				templateRoot,
+				template: { kind: 'local', path: templateRoot },
+				contract,
+				targetDir: resolve(fixture.path, 'output'),
+				data: { first: 'same.txt', second: 'same.txt' },
+				force: false,
+				install: false,
+				fs: fixture.fs as unknown as typeof fs,
+			}),
+		).rejects.toThrow('TEMPLATE_OUTPUT_CONFLICT')
 
-		const sourceDocsDir = resolve(import.meta.dirname, '../../../docs')
-		const generatedDocsDir = resolve(targetDir, 'docs/pluxel')
-		const sourceDocs = listRelativeFilesSync(sourceDocsDir, fs)
-		const generatedDocs = listRelativeFilesSync(
-			generatedDocsDir,
-			fixture.fs as unknown as typeof fs,
-		)
-		expect(generatedDocs).toEqual(sourceDocs)
-		for (const file of sourceDocs) {
-			expect(fixture.fs.readFileSync(resolve(generatedDocsDir, file), 'utf8')).toBe(
-				fs.readFileSync(resolve(sourceDocsDir, file), 'utf8'),
-			)
-		}
-
-		const pluginTest = fixture.fs.readFileSync(
-			resolve(targetDir, 'plugins/example/tests/plugin.test.ts'),
-			'utf8',
-		)
-		expect(pluginTest).toContain("from '@pluxel/runtime/test'")
-		expect(pluginTest).toContain("from '@acme/acme-app-example-plugin'")
-		expect(pluginTest).not.toContain("from '../src/")
-		expect(pluginTest).toContain('withRuntimeHost(')
-		expect(pluginTest).toContain('workbench: false')
+		fixture.fs.rmSync(resolve(templateRoot, '{{ second }}.tpl'))
+		await expect(
+			compileScaffoldPlan({
+				templateRoot,
+				template: { kind: 'local', path: templateRoot },
+				contract,
+				targetDir: resolve(fixture.path, 'output'),
+				data: { first: '../escape' },
+				force: false,
+				install: false,
+				fs: fixture.fs as unknown as typeof fs,
+			}),
+		).rejects.toThrow('Invalid output path')
+		fixture.fs.mkdirSync(resolve(fixture.path, 'output'), { recursive: true })
+		fixture.fs.writeFileSync(resolve(fixture.path, 'output/same.txt'), 'existing', 'utf8')
+		const plan = await compileScaffoldPlan({
+			templateRoot,
+			template: { kind: 'local', path: templateRoot },
+			contract,
+			targetDir: resolve(fixture.path, 'output'),
+			data: { first: 'same.txt' },
+			force: false,
+			install: false,
+			fs: fixture.fs as unknown as typeof fs,
+		})
+		await expect(
+			materializeScaffoldPlan(plan, () => {}, { fs: fixture.fs as unknown as typeof fs }),
+		).rejects.toThrow('Use --force')
+		await materializeScaffoldPlan(authorizePlanOverwrite(plan), () => {}, {
+			fs: fixture.fs as unknown as typeof fs,
+		})
+		expect(fixture.fs.readFileSync(resolve(fixture.path, 'output/same.txt'), 'utf8')).toBe('first')
 	})
 
 	it('generates a self-contained publishable plugin package', async () => {
 		await using fixture = await createFixture()
 		const targetDir = resolve(fixture.path, 'hello-world')
-		const ok = await generateFromTemplate(
-			{
-				templateBase: resolve(import.meta.dirname, '../templates/plugin'),
-				targetDir,
-				data: {
-					pluginName: 'hello-world',
-					packageName: 'pluxel-plugin-hello-world',
-					className: 'HelloWorld',
-					year: '2026',
-					description: 'Hello plugin',
-				},
-				force: false,
-				dryRun: false,
-				fs: fixture.fs as unknown as typeof fs,
+		const plan = await generateTemplate({
+			templateBase: resolve(import.meta.dirname, '../templates/plugin'),
+			targetDir,
+			data: {
+				pluginName: 'hello-world',
+				packageName: 'pluxel-plugin-hello-world',
+				className: 'HelloWorld',
+				year: '2026',
+				description: 'Hello plugin',
 			},
-			() => {},
-		)
+			fs: fixture.fs as unknown as typeof fs,
+		})
 
-		expect(ok).toBe(true)
+		expect(plan.outputs.length).toBeGreaterThan(0)
 		const manifest = JSON.parse(
 			String(fixture.fs.readFileSync(resolve(targetDir, 'package.json'), 'utf8')),
 		) as Record<string, any>

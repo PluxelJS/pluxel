@@ -1,8 +1,8 @@
 # Repository instructions for coding agents
 
 Before changing plugin code, public contracts, package metadata, `tsdown.config.ts`, or
-`oxlint.config.ts`, start at `docs/pluxel/README.md`. Those files are copied verbatim from the Pluxel
-user documentation shipped with the CLI; do not fork their API guidance locally.
+`oxlint.config.ts`, consult the documentation for the installed Pluxel version. Keep local notes
+focused on this package instead of forking Pluxel's API guidance.
 
 Keep these boundaries intact:
 

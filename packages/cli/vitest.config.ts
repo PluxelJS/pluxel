@@ -1,7 +1,12 @@
 import { definePluxelVitestConfig } from '@pluxel/test/vitest'
 
 export default definePluxelVitestConfig(
-	{},
+	{
+		test: {
+			include: ['tests/**/*.test.ts', 'tests/**/*.spec.ts'],
+			exclude: ['**/node_modules/**', '**/dist/**', 'templates/**', '**/.*/**'],
+		},
+	},
 	{
 		include: [
 			'src/**/*.ts',

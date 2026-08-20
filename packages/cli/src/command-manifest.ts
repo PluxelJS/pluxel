@@ -7,17 +7,19 @@ export const newCommandArgs = {
 		description: 'Destination base dir (relative to --root; auto when omitted)',
 	},
 	root: { type: 'string', description: 'Workspace root (auto-detect by default)' },
-	template: { type: 'string', description: 'Template name or path (auto/prompt by default)' },
+	template: {
+		type: 'string',
+		description: 'Bundled template name or explicit local path (auto/prompt by default)',
+	},
 	pm: {
 		type: 'enum',
 		description: 'Package manager (auto-detect by default)',
-		choices: ['pnpm', 'npm', 'yarn'],
+		choices: ['pnpm', 'npm', 'yarn', 'bun'],
 	},
 	force: { type: 'boolean', description: 'Overwrite existing files', default: false },
 	install: {
 		type: 'boolean',
-		description: 'Install dependencies after generation',
-		default: true,
+		description: 'Install dependencies (default: bundled templates only)',
 		negatable: true,
 	},
 	'dry-run': {
