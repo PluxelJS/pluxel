@@ -65,6 +65,8 @@
 			"outputs": ["dist/**", "public/**"],
 			"inputs": [
 				"$TURBO_DEFAULT$",
+				// The runtime Web build compiles the private Workbench shell directly.
+				"$TURBO_ROOT$/packages/workbench-app/src/**",
 				"!README.md",
 				"!**/*.md",
 				"!docs/**",

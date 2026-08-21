@@ -40,89 +40,130 @@ function usePluginOverviewQuery() {
 function materializePluginOverview(
 	query: ReturnType<typeof usePluginOverviewQuery>,
 ): PluginOverview | null {
-	try {
-		const catalog = query.pluginCatalog
-		const status = catalog.status
-		const statusIds = status.plugins.ids
-		const groupIds = catalog.groups.ids
-		if (!statusIds || !groupIds) return null
+	const catalog = query.pluginCatalog
+	const status = catalog.status
+	const statusIds = status.plugins.ids
+	const groupIds = catalog.groups.ids
+	if (!statusIds || !groupIds) return null
+	const summaryTotal = status.summary.total
+	const summaryRunning = status.summary.running
+	const summaryStopped = status.summary.stopped
+	const summaryDisabled = status.summary.disabled
 
-		const statuses = statusIds.map((id) => {
-			const plugin = catalog.plugin({ id })
-			return {
-				id: plugin.id ?? id,
-				name: plugin.name ?? id,
-				rootExportName: plugin.rootExportName ?? '',
-				address: materializeAddress(plugin.address),
-				isRunning: Boolean(plugin.status.isRunning),
-				isEnabled: plugin.status.isEnabled !== false,
-				lifecycleStage: plugin.status.lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
-				source: {
-					kind: plugin.status.source.kind ?? PluginSourceInfoKind.unknown,
-					moduleId: plugin.status.source.moduleId ?? null,
-					packageName: plugin.status.source.packageName ?? null,
-					version: plugin.status.source.version ?? null,
-					tag: plugin.status.source.tag ?? null,
-				},
-			} satisfies PluginStatusEntry
+	const statuses = statusIds.map((id) => {
+		const plugin = catalog.plugin({ id })
+		const address = materializeAddress(plugin.address)
+		const pluginId = plugin.id
+		const name = plugin.name
+		const rootExportName = plugin.rootExportName
+		const isRunning = plugin.status.isRunning
+		const isEnabled = plugin.status.isEnabled
+		const lifecycleStage = plugin.status.lifecycleStage
+		const sourceKind = plugin.status.source.kind
+		const sourceModuleId = plugin.status.source.moduleId
+		const sourcePackageName = plugin.status.source.packageName
+		const sourceVersion = plugin.status.source.version
+		const sourceTag = plugin.status.source.tag
+		return address
+			? ({
+					id: pluginId ?? id,
+					name: name ?? id,
+					rootExportName: rootExportName ?? '',
+					address,
+					isRunning: Boolean(isRunning),
+					isEnabled: isEnabled !== false,
+					lifecycleStage: lifecycleStage ?? PluginStatusEntryLifecycleStage.stopped,
+					source: {
+						kind: sourceKind ?? PluginSourceInfoKind.unknown,
+						moduleId: sourceModuleId ?? null,
+						packageName: sourcePackageName ?? null,
+						version: sourceVersion ?? null,
+						tag: sourceTag ?? null,
+					},
+				} satisfies PluginStatusEntry)
+			: null
+	})
+	const groups = groupIds.map((id) => {
+		const group = catalog.group({ id })
+		const nodes = (group.nodes.ids ?? []).map((nodeId) => {
+			const node = catalog.groupNode({ id: nodeId })
+			const address = materializeAddress(node.address)
+			const resolvedNodeId = node.id
+			const displayName = node.displayName
+			const rootExportName = node.rootExportName
+			return address
+				? {
+						__typename: 'PluginGroupNode' as const,
+						id: resolvedNodeId ?? nodeId,
+						displayName: displayName ?? nodeId,
+						rootExportName: rootExportName ?? '',
+						address,
+					}
+				: null
 		})
-		const groups = groupIds.map((id) => {
-			const group = catalog.group({ id })
-			const nodes = (group.nodes.ids ?? []).map((nodeId) => {
-				const node = catalog.groupNode({ id: nodeId })
-				return {
-					__typename: 'PluginGroupNode' as const,
-					id: node.id ?? nodeId,
-					displayName: node.displayName ?? nodeId,
-					rootExportName: node.rootExportName ?? '',
-					address: materializeAddress(node.address),
-				}
-			})
-			return {
-				__typename: 'PluginGroup' as const,
-				id: group.id ?? id,
-				groupId: group.groupId ?? id,
-				name: group.name ?? '',
-				nodes,
-			} satisfies PluginGroupEntry
-		})
+		return nodes.every((node) => node !== null)
+			? ({
+					__typename: 'PluginGroup' as const,
+					id: group.id ?? id,
+					groupId: group.groupId ?? id,
+					name: group.name ?? '',
+					nodes,
+				} satisfies PluginGroupEntry)
+			: null
+	})
 
-		return {
-			status: {
-				statuses,
-				summary: {
-					total: Number(status.summary.total ?? 0),
-					running: Number(status.summary.running ?? 0),
-					stopped: Number(status.summary.stopped ?? 0),
-					disabled: Number(status.summary.disabled ?? 0),
-				},
-			},
-			groups,
-		}
-	} catch {
+	if (statuses.some((entry) => entry === null) || groups.some((group) => group === null)) {
 		return null
+	}
+
+	return {
+		status: {
+			statuses,
+			summary: {
+				total: Number(summaryTotal ?? 0),
+				running: Number(summaryRunning ?? 0),
+				stopped: Number(summaryStopped ?? 0),
+				disabled: Number(summaryDisabled ?? 0),
+			},
+		},
+		groups,
 	}
 }
 
-function materializeAddress(node: {
+export function materializeAddress(node: {
 	definition: {
 		entry: { kind?: string; packageName?: string | null; source?: string | null }
 		exportName?: string
 	}
 	instance?: string
 	forkId?: string | null
-}): PluginNodeAddressSnapshot {
-	const entry = node.definition.entry
+}): PluginNodeAddressSnapshot | null {
+	// Read both entry variants up front. GQLens records property access as field demand,
+	// so branching before these reads would fetch one address field per render cycle.
+	const kind = node.definition.entry.kind
+	const packageName = node.definition.entry.packageName
+	const source = node.definition.entry.source
+	const exportName = node.definition.exportName
+	const instance = node.instance
+	const forkId = node.forkId
+	if (
+		kind === undefined ||
+		exportName === undefined ||
+		instance === undefined ||
+		(kind === 'package-root' ? packageName === undefined : source === undefined) ||
+		(instance === 'fork' && forkId === undefined)
+	) {
+		return null
+	}
+
+	const definition = {
+		entry:
+			kind === 'package-root' ? { kind: 'package-root' as const, packageName } : { kind, source },
+		exportName,
+	}
 	return parsePluginNodeAddress({
-		definition: {
-			entry:
-				entry.kind === 'package-root'
-					? { kind: 'package-root', packageName: entry.packageName }
-					: { kind: entry.kind, source: entry.source },
-			exportName: node.definition.exportName,
-		},
-		instance: node.instance,
-		forkId: node.forkId,
+		definition,
+		...(instance === 'fork' ? { instance, forkId } : { instance }),
 	})
 }
 
