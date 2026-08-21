@@ -196,6 +196,7 @@ describe('source workspace planning', () => {
 			'turbo',
 			'run',
 			'build',
+			'--force',
 			'--dangerously-disable-package-manager-check',
 			'--filter=@acme/app',
 		])

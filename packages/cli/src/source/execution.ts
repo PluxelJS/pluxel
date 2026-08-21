@@ -107,6 +107,10 @@ export function createSourceBuildArgs(packageNames: string[], hasTurbo: boolean)
 				'turbo',
 				'run',
 				'build',
+				// Source overlays live outside the consumer workspace, so a consumer cache key cannot
+				// prove their restored output directories are exact. Execute the selected source builds;
+				// their own build tools clean outputs before emitting the linked artifacts.
+				'--force',
 				// The source orchestrator already selected pnpm for this checkout. Turbo otherwise
 				// rejects valid devEngines ranges such as "pnpm@>=11 <12" as non-exact specs.
 				'--dangerously-disable-package-manager-check',
