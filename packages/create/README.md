@@ -13,7 +13,8 @@ shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publ
 trees:
 
 - `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
-  host-owned Vite config, static/dynamic modes, a same-origin Todo API, tests and build governance;
+  host-owned Vite config, root-owned `pncat` catalog policy, static/dynamic modes, a same-origin Todo API,
+  tests and build governance;
 - `dist/docs/`: the repository user documentation snapshot from the same publication.
 
 Creation copies the starter byte-for-byte, maps the package-safe `gitignore` asset to `.gitignore`,
@@ -23,7 +24,8 @@ final rename.
 
 `@pluxel/cli` remains a development dependency inside the generated workspace so users can run
 `pluxel new` and build commands later. That generated-project dependency is not an implementation
-dependency of this package.
+dependency of this package. The starter root also installs `pncat` as the sole interface for catalog
+changes; individual packages continue declaring their direct runtime, peer and development dependencies.
 
 Maintainer checks:
 

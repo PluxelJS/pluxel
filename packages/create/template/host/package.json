@@ -13,24 +13,24 @@
 		"@example/audit-plugin": "workspace:*",
 		"@example/http-plugin": "workspace:*",
 		"@example/todo-plugin": "workspace:*",
-		"@pluxel/runtime": "catalog:",
-		"@pluxel/runtime-dynamic": "catalog:",
-		"@pluxel/runtime-static": "catalog:",
-		"react": "catalog:",
-		"react-dom": "catalog:"
+		"@pluxel/runtime": "catalog:pluxel",
+		"@pluxel/runtime-dynamic": "catalog:pluxel",
+		"@pluxel/runtime-static": "catalog:pluxel",
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"devDependencies": {
 		"@example/web": "workspace:*",
-		"@mantine/core": "catalog:",
-		"@pluxel/cli": "catalog:",
-		"@pluxel/rolldown": "catalog:",
-		"@tabler/icons-react": "catalog:",
-		"@types/node": "catalog:",
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"@vitejs/plugin-react": "catalog:",
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vite": "catalog:"
+		"@mantine/core": "catalog:frontend",
+		"@pluxel/cli": "catalog:pluxel",
+		"@pluxel/rolldown": "catalog:pluxel",
+		"@tabler/icons-react": "catalog:frontend",
+		"@types/node": "catalog:tooling",
+		"@types/react": "catalog:frontend",
+		"@types/react-dom": "catalog:frontend",
+		"@vitejs/plugin-react": "catalog:frontend",
+		"tsdown": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vite": "catalog:tooling"
 	}
 }

@@ -41,6 +41,7 @@ host/
   web/                      @example/web workspace package，React client 与前端专属依赖
 pluxel.loader.hmr.jsonc     dynamic loader 的最小 example profile
 docs/pluxel/                create 发布时的 Pluxel 文档快照
+pncat.config.ts             catalog 分组和迁移的唯一策略入口
 ```
 
 核心方向是：
@@ -73,6 +74,13 @@ pnpm start
 `host/package.json` 把 `@example/web` 声明为 build-time workspace dependency，并直接声明 Workbench/Vite graph 需要共享的
 React singleton、runtime 与三个 Plugin package；两边的 React 版本都来自同一个 catalog，不依赖隐式 hoist。
 `staticApplication()` 的 canonical 配置位于 `host/tsdown.config.ts`；根目录只通过 Turbo 编排，不重复 build config。
+
+根目录预装 `pncat`，并用 `pluxel`、`frontend`、`backend`、`test`、`tooling` named catalogs 集中版本政策。
+新增、重新分组或清理依赖分别使用 `pnpm catalog:add -- <package>`、`pnpm catalog:migrate` 和
+`pnpm catalog:clean`，不要手改 catalog 与 package 引用。集中的是版本选择，不是依赖所有权：每个 workspace
+仍声明直接使用的包。Plugin 生产代码通常只需要 `@pluxel/runtime`；测试中的 `@pluxel/test` 及其
+`@pluxel/core` peer、Vitest、TypeScript 继续属于各 Plugin 的 `devDependencies`。pnpm 会复用安装内容，重复声明
+不会产生多份物理安装。
 
 host build 先用唯一 Vite config 构建 `host/web/dist`，再由 freezer 清理并生成 server/Workbench 产物，同时通过 tsdown
 copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distribution create`，让最终 inventory 包含浏览器文件；
@@ -124,6 +132,7 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format:check
+pnpm catalog:check
 pnpm governance:check
 pnpm verify
 ```

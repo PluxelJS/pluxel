@@ -6,13 +6,13 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
-		"react": "catalog:",
-		"react-dom": "catalog:"
+		"react": "catalog:frontend",
+		"react-dom": "catalog:frontend"
 	},
 	"devDependencies": {
-		"@types/react": "catalog:",
-		"@types/react-dom": "catalog:",
-		"typescript": "catalog:",
-		"vite": "catalog:"
+		"@types/react": "catalog:frontend",
+		"@types/react-dom": "catalog:frontend",
+		"typescript": "catalog:tooling",
+		"vite": "catalog:tooling"
 	}
 }

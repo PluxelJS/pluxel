@@ -15,8 +15,8 @@
 		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"devDependencies": {
-		"tsdown": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"tsdown": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:test"
 	}
 }

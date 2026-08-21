@@ -16,14 +16,13 @@
 	"dependencies": {
 		"@example/domain": "workspace:*",
 		"@example/todo-plugin": "workspace:*",
-		"@pluxel/runtime": "catalog:",
-		"elysia": "catalog:"
+		"@pluxel/runtime": "catalog:pluxel",
+		"elysia": "catalog:backend"
 	},
 	"devDependencies": {
-		"@pluxel/core": "catalog:",
-		"@pluxel/test": "catalog:",
-		"oxlint": "catalog:",
-		"typescript": "catalog:",
-		"vitest": "catalog:"
+		"@pluxel/core": "catalog:pluxel",
+		"@pluxel/test": "catalog:pluxel",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:test"
 	}
 }

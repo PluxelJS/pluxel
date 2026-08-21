@@ -13,3 +13,5 @@ opt-in lightweight `.tpl` interpolation, immutable byte plans and exact overwrit
 The example uses one host-owned Vite configuration for its React Todo UI and Plugin routes. Static
 and dynamic development are modes of the same application server, while `host/web` is an independent
 private workspace package for browser source and frontend-only dependencies without Pluxel imports.
+The workspace root now preinstalls pncat as the only catalog-management interface and groups Pluxel,
+frontend, backend, test and tooling versions without replacing package-level direct dependency declarations.

@@ -19,6 +19,22 @@ if (rootManifest.workspaces !== undefined) {
 if (Object.keys(rootManifest.dependencies ?? {}).length > 0) {
 	errors.push('the root package must not own runtime dependencies; declare them in each consumer')
 }
+if (rootManifest.devDependencies?.pncat === undefined) {
+	errors.push('the root package must install pncat as the workspace catalog manager')
+}
+for (const [name, command] of Object.entries({
+	'catalog:add': 'pncat add',
+	'catalog:check': 'pncat detect --yes',
+	'catalog:clean': 'pncat clean --yes',
+	'catalog:migrate': 'pncat migrate --force --yes',
+})) {
+	if (rootManifest.scripts?.[name] !== command) {
+		errors.push(`package.json#scripts.${name} must be ${JSON.stringify(command)}`)
+	}
+}
+if (!(await isFile(resolve(root, 'pncat.config.ts')))) {
+	errors.push('workspace is missing pncat.config.ts')
+}
 
 const workspaceSource = await readFile(resolve(root, 'pnpm-workspace.yaml'), 'utf8')
 for (const pattern of ['packages/*', 'plugins/*']) {
@@ -37,8 +53,8 @@ if (await isDirectory(resolve(root, 'projects'))) {
 	}
 }
 
-const catalogNames = parseCatalogNames(workspaceSource)
-if (catalogNames.size === 0) errors.push('pnpm-workspace.yaml must define a default catalog')
+const catalogEntries = parseCatalogEntries(workspaceSource)
+if (catalogEntries.size === 0) errors.push('pnpm-workspace.yaml must define catalogs')
 
 const projectRoots = await childDirectories(resolve(root, 'projects'))
 const packageContainers = [resolve(root, 'apps'), resolve(root, 'packages')]
@@ -73,10 +89,12 @@ const packageManifests = await Promise.all(
 for (const { manifestPath, manifest } of packageManifests) {
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
-			if (catalogNames.has(name) && specifier !== 'catalog:') {
-				errors.push(`${relative(manifestPath)}: ${field}.${name} must use catalog:`)
+			const catalogName = catalogEntries.get(name)
+			const expectedSpecifier = catalogName && catalogSpecifier(catalogName)
+			if (expectedSpecifier && specifier !== expectedSpecifier) {
+				errors.push(`${relative(manifestPath)}: ${field}.${name} must use ${expectedSpecifier}`)
 			}
-			if (specifier === 'catalog:' && !catalogNames.has(name)) {
+			if (specifier.startsWith('catalog:') && !catalogName) {
 				errors.push(`${relative(manifestPath)}: ${field}.${name} is missing from the catalog`)
 			}
 		}
@@ -106,21 +124,47 @@ if (errors.length > 0) {
 	console.info(`Workspace governance passed for ${packageRoots.length} package roots`)
 }
 
-function parseCatalogNames(source) {
-	const names = new Set()
-	let inCatalog = false
+function parseCatalogEntries(source) {
+	const entries = new Map()
+	let section
+	let catalogName
 	for (const line of source.split(/\r?\n/)) {
 		if (line === 'catalog:') {
-			inCatalog = true
+			section = 'catalog'
+			catalogName = 'default'
 			continue
 		}
-		if (!inCatalog) continue
-		if (line !== '' && !line.startsWith('  ')) break
-		const match = line.match(/^  (?:'([^']+)'|"([^"]+)"|([^:]+)):\s/)
-		const name = match?.[1] ?? match?.[2] ?? match?.[3]
-		if (name) names.add(name)
+		if (line === 'catalogs:') {
+			section = 'catalogs'
+			catalogName = undefined
+			continue
+		}
+		if (!section) continue
+		if (line !== '' && !line.startsWith('  ')) {
+			section = undefined
+			catalogName = undefined
+			continue
+		}
+		if (section === 'catalogs') {
+			const group = line.match(/^  ([^:'"\s]+):\s*$/)
+			if (group) {
+				catalogName = group[1]
+				continue
+			}
+		}
+		const indentation = section === 'catalog' ? '  ' : '    '
+		const match = line.match(new RegExp(`^${indentation}(?:'([^']+)'|"([^"]+)"|([^:]+)):\\s`))
+		const packageName = match?.[1] ?? match?.[2] ?? match?.[3]
+		if (packageName && catalogName) {
+			if (entries.has(packageName)) throw new Error(`duplicate catalog entry: ${packageName}`)
+			entries.set(packageName, catalogName)
+		}
 	}
-	return names
+	return entries
+}
+
+function catalogSpecifier(name) {
+	return name === 'default' ? 'catalog:' : `catalog:${name}`
 }
 
 async function childDirectories(directory) {

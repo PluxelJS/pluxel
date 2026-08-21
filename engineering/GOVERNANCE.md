@@ -41,7 +41,8 @@ vendor/*                明确纳入的上游源码；不套用第一方目录�
 
 - semver-compatible 的第一方实现依赖使用 `workspace:^`，确保开发时链接当前源码，发布后允许同 major
   的修复和功能版本；只有必须锁定同版本的 wrapper 使用 `workspace:*`。
-- catalog 管理的外部依赖使用 `catalog:`；只在 `pnpm-workspace.yaml` 修改兼容范围。
+- catalog 管理的外部依赖使用 `catalog:` 或 `catalog:<name>`。仓库已有 `pncat.config.ts` 时，pncat 是新增、
+  迁移、重新分组和清理 catalog 的唯一修改入口；不得分别手改 workspace catalog 与 package 引用。
 - CLI 生成的独立应用把发布版 `@pluxel/*`、React、工具链等范围放进自己的 catalog；生成的
   workspace 之间仍逐包声明直接依赖。
 - standalone plugin 模板使用最小单 package pnpm workspace，让 catalog 与 `allowBuilds` 安全政策有明确
