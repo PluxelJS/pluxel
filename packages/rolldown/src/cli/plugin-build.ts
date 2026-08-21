@@ -58,7 +58,13 @@ export type PluginBuildPipeline = {
 export function createPluginBuildPipeline(
 	options: PluginBuildPipelineOptions,
 ): PluginBuildPipeline {
-	return createPipeline(options, createPluginSemanticsPlugin({ root: options.root }).plugin)
+	return createPipeline(
+		options,
+		createPluginSemanticsPlugin({
+			root: options.root,
+			rejectExternalSourceEntries: true,
+		}).plugin,
+	)
 }
 
 function createPipeline(

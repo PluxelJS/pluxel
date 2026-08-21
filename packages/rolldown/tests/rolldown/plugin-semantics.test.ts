@@ -188,6 +188,33 @@ describe('plugin semantic lowering', () => {
 		expect(definitions.get('TestCacheBackend')?.provides).toEqual(tokenAddress)
 	})
 
+	it('rejects absolute source identities outside a static application root', async () => {
+		await using fixture = await createFixture({
+			'host/package.json': JSON.stringify({ name: '@acme/host', type: 'module' }),
+			'plugins/orders/package.json': JSON.stringify({
+				name: '@acme/orders',
+				type: 'module',
+				exports: { '.': { types: './src/index.ts', default: './src/index.ts' } },
+			}),
+			'plugins/orders/src/index.ts': `
+				import { BasePlugin, Plugin } from '@pluxel/runtime'
+				@Plugin() export class OrdersPlugin extends BasePlugin {}
+			`,
+		})
+		const collector = createPluginSemanticsPlugin({
+			root: fixture.getPath('host'),
+			rejectExternalSourceEntries: true,
+		})
+
+		await expect(
+			rolldown({
+				input: fixture.getPath('plugins/orders/src/index.ts'),
+				external: ['@pluxel/runtime'],
+				plugins: [collector.plugin],
+			}).then((build) => build.generate({ format: 'esm' })),
+		).rejects.toThrow('expose the Plugin as one named export from its package root')
+	})
+
 	it.each(['@pluxel/core/test', '@pluxel/runtime/test', '@pluxel/test'])(
 		'recognizes the formal test authoring facade %s',
 		async (source) => {

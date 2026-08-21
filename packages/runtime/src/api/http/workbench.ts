@@ -21,10 +21,10 @@ export const workbenchRoutes = (app: AnyElysiaApp) =>
 				set.headers['cache-control'] = 'no-store'
 				return requireWorkbench(pluginCtx).registry.getGlobalLayout()
 			})
-			.get('/layout/plugin/:target', ({ params, pluginCtx, set }) => {
+			.get('/layout/plugin', ({ query, pluginCtx, set }) => {
 				set.headers['cache-control'] = 'no-store'
 				return requireWorkbench(pluginCtx).registry.getPluginLayout(
-					parsePluginNodeAddress(JSON.parse(decodeURIComponent(params.target)) as unknown),
+					parsePluginNodeAddress(JSON.parse(String(query.target)) as unknown),
 				)
 			})
 			.get('/artifacts/:owner/:hash/*', async ({ params, pluginCtx, request, status }) => {

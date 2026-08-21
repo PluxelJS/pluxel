@@ -6,17 +6,15 @@ import {
 } from '@pluxel/core'
 import { GraphQLError } from 'graphql'
 import type { PluginOutput } from './schema'
-import { requireRouteCapability, runtimePluginStatusOverview } from '../../../runtime/capabilities'
-import { pluginNodeAddressKey } from '../../../runtime/plugin-address'
+import { requireRouteCapability } from '../../../runtime/capabilities'
+import {
+	projectedPluginByAddress,
+	projectPluginCatalog,
+	type PluginCatalogProjectionEntry,
+} from './catalog-projection'
 
 const PLUGIN_CTOR = Symbol('pluginCtor')
 type InternalPlugin = PluginOutput & { [PLUGIN_CTOR]?: PluginConstructor }
-
-function entryById(pCtx: PlxContext, id: string) {
-	return requireRouteCapability(pCtx, 'catalog')
-		.listRegistered()
-		.find((entry) => pluginNodeAddressKey(entry.address) === id)
-}
 
 export function ensurePlugin(
 	pCtx: PlxContext,
@@ -28,16 +26,9 @@ export function ensurePlugin(
 }
 
 export function createPlugin(pCtx: PlxContext, id: string): PluginOutput {
-	const entry = entryById(pCtx, id)
+	const entry = projectPluginCatalog(pCtx).byId.get(id)
 	if (!entry) throw new GraphQLError('Plugin not found', { extensions: { code: 'NOT_FOUND', id } })
-	return {
-		__typename: 'Plugin',
-		id,
-		name: entry.displayName,
-		rootExportName: entry.rootExportName,
-		address: entry.address,
-		[PLUGIN_CTOR]: entry.ctor,
-	} as InternalPlugin
+	return pluginOutput(pCtx, entry)
 }
 
 export function getPluginCtor(pCtx: PlxContext, plugin: PluginOutput): PluginConstructor {
@@ -48,26 +39,34 @@ export function getPluginCtor(pCtx: PlxContext, plugin: PluginOutput): PluginCon
 }
 
 export function listPlugins(pCtx: PlxContext): PluginOutput[] {
-	return runtimePluginStatusOverview(pCtx).statuses.map((entry) => ({
-		__typename: 'Plugin',
-		id: pluginNodeAddressKey(entry.address),
-		name: entry.displayName,
-		rootExportName: entry.rootExportName,
-		address: entry.address,
-	}))
+	return projectPluginCatalog(pCtx).entries.map((entry) => pluginOutput(pCtx, entry))
 }
 
 export function getPluginDependencies(
 	pCtx: PlxContext,
 	owner: PluginNodeAddressSnapshot,
 ): PluginOutput[] {
+	const projection = projectPluginCatalog(pCtx)
 	return requireRouteCapability(pCtx, 'dependencies')
 		.listDependencies(owner)
-		.map((dependency) => ({
-			__typename: 'Plugin',
-			id: pluginNodeAddressKey(dependency.address),
-			name: dependency.displayName,
-			rootExportName: dependency.address.definition.exportName,
-			address: dependency.address,
-		}))
+		.map((dependency) => {
+			const entry = projectedPluginByAddress(projection, dependency.address)
+			if (!entry) {
+				throw new GraphQLError('Plugin dependency is not present in the route catalog', {
+					extensions: { code: 'NOT_FOUND', address: dependency.address },
+				})
+			}
+			return pluginOutput(pCtx, entry)
+		})
+}
+
+function pluginOutput(pCtx: PlxContext, entry: PluginCatalogProjectionEntry): PluginOutput {
+	return {
+		__typename: 'Plugin',
+		id: entry.id,
+		name: entry.displayName,
+		rootExportName: entry.rootExportName,
+		address: entry.address,
+		[PLUGIN_CTOR]: ensurePlugin(pCtx, entry.address),
+	} as InternalPlugin
 }

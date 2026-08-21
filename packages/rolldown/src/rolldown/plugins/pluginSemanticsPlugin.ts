@@ -45,6 +45,8 @@ export type PluginSemanticsPluginOptions = {
 	root?: string
 	/** Enables package-root provenance and package entry/export invariants. */
 	packageJsonPath?: string
+	/** Rejects source identities that would embed an absolute path outside the build root. */
+	rejectExternalSourceEntries?: boolean
 	/** Generated helper import. Plugin packages normally use the runtime authoring entry. */
 	helperImportSource?: '@pluxel/runtime' | '@pluxel/core'
 }
@@ -227,13 +229,22 @@ export function createPluginSemanticsPlugin(
 			return { id: source, external: true }
 		},
 		buildEnd() {
-			if (!packagePlan) return
-			for (const definition of collectedDefinitions.values()) {
-				if (definition.definition.entry.kind !== 'package-root') {
+			if (packagePlan) {
+				for (const definition of collectedDefinitions.values()) {
+					if (definition.definition.entry.kind === 'package-root') continue
 					this.error(
 						`[pluxel:plugin-package] ${definition.className} was not mapped to the package root`,
 					)
 				}
+				return
+			}
+			if (!options.rejectExternalSourceEntries) return
+			for (const definition of collectedDefinitions.values()) {
+				const entry = definition.definition.entry
+				if (entry.kind !== 'source-entry' || !isAbsolute(entry.source)) continue
+				this.error(
+					`[pluxel:static-application] ${definition.className} resolved outside the application root as ${entry.source}; expose the Plugin as one named export from its package root with an @pluxel/hmr source condition`,
+				)
 			}
 		},
 	}

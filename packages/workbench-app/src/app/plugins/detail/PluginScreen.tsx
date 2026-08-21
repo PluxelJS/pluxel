@@ -12,11 +12,11 @@ import {
 } from '../../gqlens'
 import { usePluginConfig } from '../config/usePluginConfig'
 import { useCurrentPathname } from '../../router/useCurrentRoute'
-import { usePluginOverview } from '../pluginOverview'
+import { materializeAddress, usePluginOverview } from '../pluginOverview'
 import { PluginScopeProvider, type PluginSourceKind } from './context'
 import { PluginWorkbench } from './workbench/PluginWorkbench'
 import { WorkbenchTargetProvider } from '../../../workbench/runtime'
-import { parsePluginNodeAddress, type PluginNodeAddressSnapshot } from '@pluxel/core'
+import type { PluginNodeAddressSnapshot } from '@pluxel/core'
 
 function PluginSkeleton({ stacked }: { stacked: boolean }) {
 	return (
@@ -192,19 +192,27 @@ function usePluginDetail(pluginName?: string) {
 
 	let scope: ReturnType<(typeof detailQuery.pluginCatalog)['plugin']> | undefined
 	let dependencies: PluginDependency[] = []
+	let dependenciesReady = true
 	if (pluginName !== undefined) {
 		try {
 			const catalog = detailQuery.pluginCatalog
 			scope = catalog.plugin({ id: pluginName })
-			dependencies = (scope.detail.dependencies.ids ?? []).map((id) => {
+			dependencies = (scope.detail.dependencies.ids ?? []).flatMap((id) => {
 				const dep = catalog.plugin({ id })
-				return {
-					id: dep.id ?? id,
-					name: dep.name ?? id,
-					rootExportName: dep.rootExportName ?? '',
-					address: parseGraphqlAddress(dep.address),
-					isRunning: Boolean(dep.status.isRunning),
+				const address = materializeAddress(dep.address)
+				if (!address) {
+					dependenciesReady = false
+					return []
 				}
+				return [
+					{
+						id: dep.id ?? id,
+						name: dep.name ?? id,
+						rootExportName: dep.rootExportName ?? '',
+						address,
+						isRunning: Boolean(dep.status.isRunning),
+					},
+				]
 			})
 		} catch (error) {
 			if (process.env.NODE_ENV !== 'production') {
@@ -214,16 +222,18 @@ function usePluginDetail(pluginName?: string) {
 		}
 	}
 
-	const detail = scope?.name
-		? {
-				id: scope.id ?? pluginName ?? '',
-				address: parseGraphqlAddress(scope.address),
-				rootExportName: scope.rootExportName ?? '',
-				name: scope.name,
-				desc: scope.detail?.desc ?? '',
-				dependencies,
-			}
-		: undefined
+	const address = scope ? materializeAddress(scope.address) : null
+	const detail =
+		scope?.name && address && dependenciesReady
+			? {
+					id: scope.id ?? pluginName ?? '',
+					address,
+					rootExportName: scope.rootExportName ?? '',
+					name: scope.name,
+					desc: scope.detail?.desc ?? '',
+					dependencies,
+				}
+			: undefined
 	const ready = Boolean(detail?.name)
 	const loading = Boolean(detailQuery.loading)
 	const error = detailQuery.error
@@ -425,25 +435,3 @@ export const PluginScreen = memo(function PluginScreen({ pluginName }: PluginScr
 		</WorkbenchTargetProvider>
 	)
 })
-
-function parseGraphqlAddress(node: {
-	definition: {
-		entry: { kind?: string; packageName?: string | null; source?: string | null }
-		exportName?: string
-	}
-	instance?: string
-	forkId?: string | null
-}): PluginNodeAddressSnapshot {
-	const entry = node.definition.entry
-	return parsePluginNodeAddress({
-		definition: {
-			entry:
-				entry.kind === 'package-root'
-					? { kind: 'package-root', packageName: entry.packageName }
-					: { kind: entry.kind, source: entry.source },
-			exportName: node.definition.exportName,
-		},
-		instance: node.instance,
-		forkId: node.forkId,
-	})
-}

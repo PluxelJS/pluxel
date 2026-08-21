@@ -2,13 +2,17 @@ import { parsePluginNodeAddress, type Context as PlxContext } from '@pluxel/core
 import { GraphQLError } from 'graphql'
 
 import { requireWorkbench } from '../../../services/workbench'
-import { pluginNodeAddressKey } from '../../../runtime/plugin-address'
-import { runtimePluginStatusOverview } from '../../../runtime/capabilities'
+import {
+	projectedPluginByAddress,
+	projectPluginCatalog,
+	type PluginCatalogProjection,
+} from '../plugins/catalog-projection'
 import type { PluginGroupInputValue, PluginGroupOutput } from './schema'
 
 export async function readGroups(pCtx: PlxContext): Promise<PluginGroupOutput[]> {
 	const groups = await requireWorkbench(pCtx).pluginCatalog.listGroups()
-	return groups.map((group) => toOutput(pCtx, group))
+	const projection = projectPluginCatalog(pCtx)
+	return groups.map((group) => toOutput(group, projection))
 }
 
 export async function readGroup(pCtx: PlxContext, id: string): Promise<PluginGroupOutput> {
@@ -18,7 +22,7 @@ export async function readGroup(pCtx: PlxContext, id: string): Promise<PluginGro
 			extensions: { code: 'NOT_FOUND', id },
 		})
 	}
-	return toOutput(pCtx, group)
+	return toOutput(group, projectPluginCatalog(pCtx))
 }
 
 export async function writeGroups(
@@ -32,7 +36,8 @@ export async function writeGroups(
 				nodes: group.nodes.map((owner) => parsePluginNodeAddress(owner)),
 			})),
 		)
-		return result.map((group) => toOutput(pCtx, group))
+		const projection = projectPluginCatalog(pCtx)
+		return result.map((group) => toOutput(group, projection))
 	} catch (error) {
 		if (error && typeof error === 'object' && 'code' in error) {
 			throw new GraphQLError(error instanceof Error ? error.message : 'Invalid plugin groups', {
@@ -44,30 +49,38 @@ export async function writeGroups(
 }
 
 function toOutput(
-	pCtx: PlxContext,
 	group: {
 		groupId: string
 		name: string
 		nodes: readonly import('@pluxel/core').PluginNodeAddressSnapshot[]
 	},
+	projection: PluginCatalogProjection,
 ): PluginGroupOutput {
 	return {
 		__typename: 'PluginGroup' as const,
 		id: group.groupId,
 		groupId: group.groupId,
 		name: group.name,
-		nodes: group.nodes.map((owner) => readGroupNode(pCtx, pluginNodeAddressKey(owner))),
+		nodes: group.nodes.map((owner) => {
+			const node = projectedPluginByAddress(projection, owner)
+			if (!node) throw new GraphQLError('Plugin group node not found')
+			return groupNodeOutput(node)
+		}),
 	}
 }
 
 export function readGroupNode(pCtx: PlxContext, id: string): PluginGroupOutput['nodes'][number] {
-	const status = runtimePluginStatusOverview(pCtx).statuses.find(
-		(candidate) => pluginNodeAddressKey(candidate.address) === id,
-	)
+	const status = projectPluginCatalog(pCtx).byId.get(id)
 	if (!status) throw new GraphQLError('Plugin group node not found')
+	return groupNodeOutput(status)
+}
+
+function groupNodeOutput(
+	status: PluginCatalogProjection['entries'][number],
+): PluginGroupOutput['nodes'][number] {
 	return {
 		__typename: 'PluginGroupNode' as const,
-		id,
+		id: status.id,
 		displayName: status.displayName,
 		rootExportName: status.rootExportName,
 		address: status.address,

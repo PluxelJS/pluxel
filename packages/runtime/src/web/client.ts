@@ -93,7 +93,7 @@ interface RuntimeTreatyClient {
 		catalog: RuntimeTreatyGet<WorkbenchCatalog>
 		layout: {
 			global: RuntimeTreatyGet<WorkbenchLayout>
-			plugin: (params: { target: string }) => RuntimeTreatyGet<WorkbenchLayout>
+			plugin: RuntimeTreatyGet<WorkbenchLayout, { target: string }>
 		}
 	}
 	logs: {
@@ -192,7 +192,10 @@ function createRuntimeTransportHttp(
 				expectData<WorkbenchLayout>(http.workbench.layout.global.get({ fetch: init })),
 			pluginLayout: (target, init) =>
 				expectData<WorkbenchLayout>(
-					http.workbench.layout.plugin({ target: JSON.stringify(target) }).get({ fetch: init }),
+					http.workbench.layout.plugin.get({
+						query: { target: JSON.stringify(target) },
+						fetch: init,
+					}),
 				),
 		},
 		logs: {
@@ -284,13 +287,13 @@ export function createRuntimeTransportLinks(
 
 export async function expectData<T>(promise: Promise<EdenResultLike<T>>): Promise<T> {
 	const result = await promise
+	const status = result.response?.status
+	if (status !== undefined && status >= 400) throw new Error(`HTTP ${status}`)
 	if (result.error) {
 		if (result.error instanceof Error) throw result.error
-		const status = result.response?.status
 		throw new Error(status ? `HTTP ${status}` : 'Request failed')
 	}
 	if (result.data === null || result.data === undefined) {
-		const status = result.response?.status
 		throw new Error(status ? `HTTP ${status}` : 'Empty response')
 	}
 	return result.data
