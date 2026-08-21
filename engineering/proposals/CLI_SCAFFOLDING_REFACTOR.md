@@ -26,22 +26,8 @@ packageName 或 author 输入。create 的 tsdown build 使用标准 `copy` 把 
 严格 `pluxel-template.jsonc` 与只支持 `{{ key }}` / `{{ json key }}` 的 `.tpl`。普通文件逐字节复制；不引入
 Handlebars、condition、loop、partial 或模板代码执行。
 
-### 固定 starter 的质量门槛
-
-create starter 使用中性 `@example/*` 命名并同时展示：
-
-- 无 package manifest 和 Pluxel import 的 `host/web/` React source，以及直接依赖 workspace Plugins 的 host package；
-- host-owned 单一 Vite config，以自己的 `web/` 为 root，并让 mode 只选择 static/dynamic route policy；
-- 默认 static Vite mode 与经过 Web public copy 后重新 finalization 的 `staticApplication()` production build；
-- React Todo client 与同 origin 的 Plugin-owned HTTP；
-- 普通 domain package 和普通 Vitest；
-- Valibot config、constructor required dependency、`definePluginRef()` optional integration；
-- core-only 与 runtime test host；
-- pnpm catalog、Turbo、Oxfmt、Oxlint、governance、CI；
-- 与 create 发布物逐文件一致的 `docs/pluxel/`。
-
-packed create smoke 必须完成外部安装、workspace `verify`、frozen static route、同一 Vite 的 SPA/API、dynamic mode。packed
-CLI smoke 独立完成 Plugin install、verify、build 和 pack inventory。两者不比较 parity。
+固定 starter 的当前结构、质量门槛与 packed smoke 由 [`../TOOLCHAIN.md`](../TOOLCHAIN.md) 维护；本 proposal
+不重复已实现的 package boundary 或 build contract。
 
 ## 为什么不使用 giget 交付官方 starter
 

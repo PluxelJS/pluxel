@@ -11,9 +11,9 @@ pnpm dev
 ```
 
 The default host is static. It imports an auditable fixed catalog and uses the same canonical entry for
-Vite development and the production freezer. `host/web/` is browser-only React source with no package
-manifest or Pluxel imports; `host/` owns the only application package and Vite configuration, points
-Vite root at `web/`, installs the workspace Plugins and serves the page and Plugin routes on
+Vite development and the production freezer. `host/web/` is an independent private workspace package
+for browser-only React source and frontend dependencies; `host/` owns the Vite and Pluxel application
+configuration, installs the workspace Plugins and serves the page and Plugin routes on
 `http://127.0.0.1:3310`.
 
 The host package build runs its one Vite config first, then [`host/tsdown.config.ts`](host/tsdown.config.ts)
@@ -43,9 +43,9 @@ Both modes use the same Plugin classes and runtime state. Dynamic mode additiona
 - `plugins/http` declares `TodoPlugin` as a required constructor dependency and validates HTTP input.
 - `plugins/todo` observes `AuditPlugin` through `definePluginRef()` as an optional integration.
 - Plugin tests use the Pluxel Vitest preset and the smallest matching core/runtime test host.
-- `host/web` owns only React browser source; it has no package manifest or Pluxel import.
+- `host/web` is the `@example/web` workspace package and declares its frontend-only dependencies.
 - `host/vite.config.ts` serves that source and lets Plugin-mounted routes claim `/api` before SPA fallback.
-- `host` directly depends on the workspace Plugins and switches static/dynamic route policy by Vite mode.
+- `host` records `@example/web` as a build input, installs the workspace Plugins and switches static/dynamic route policy by Vite mode.
 
 Open `http://127.0.0.1:3310` after `pnpm dev`. The Todo UI calls the same-origin Plugin-owned
 `/api/example/todos` routes to list, create, complete and remove items.

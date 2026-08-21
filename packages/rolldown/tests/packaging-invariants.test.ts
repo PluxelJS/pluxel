@@ -356,10 +356,7 @@ describe('toolchain package boundaries', () => {
 			...(await collectSourceFiles(`${root}/packages/plugins`)),
 			...(await collectSourceFiles(`${root}/projects`)),
 		].filter((file) => file.endsWith('/pluxel.static.ts'))
-		const files = [
-			...sourceFiles,
-			`${root}/packages/create/template/host/src/pluxel.static.ts`,
-		]
+		const files = [...sourceFiles, `${root}/packages/create/template/host/src/pluxel.static.ts`]
 		const offenders: string[] = []
 
 		for (const file of files) {

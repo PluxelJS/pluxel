@@ -38,7 +38,11 @@ export class TodoPlugin extends BasePlugin {
 
 	snapshot(): TodoSnapshot {
 		return {
-			items: [...this.items.values()].map((item) => ({ ...item })),
+			items: Array.from(this.items.values(), ({ id, title, completed }) => ({
+				id,
+				title,
+				completed,
+			})),
 			maxItems: this.config.maxItems,
 			auditEnabled: this.audit !== undefined,
 		}

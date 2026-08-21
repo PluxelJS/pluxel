@@ -24,7 +24,8 @@ describe('create-pluxel', () => {
 		assert.deepEqual(manifest.bin, { 'create-pluxel': './dist/create.mjs' })
 		assert.deepEqual(manifest.exports, { './package.json': './package.json' })
 		assert.match(await readFile(bin, 'utf8'), /^#!\/usr\/bin\/env node\n/)
-		assert.equal((await lstat(bin)).mode & 0o111, 0o111)
+		const binStat = await lstat(bin)
+		assert.equal(binStat.mode & 0o111, 0o111)
 	})
 
 	it('copies the fixed starter and the versioned documentation byte-for-byte', async () => {
@@ -36,7 +37,15 @@ describe('create-pluxel', () => {
 		const manifest = JSON.parse(await readFile(resolve(generated, 'package.json'), 'utf8'))
 		assert.equal(manifest.name, undefined)
 		assert.equal(manifest.private, true)
-		await assert.rejects(readFile(resolve(generated, 'host/web/package.json')), { code: 'ENOENT' })
+		const webManifest = JSON.parse(
+			await readFile(resolve(generated, 'host/web/package.json'), 'utf8'),
+		)
+		assert.equal(webManifest.name, '@example/web')
+		assert.equal(webManifest.private, true)
+		assert.deepEqual(webManifest.dependencies, {
+			react: 'catalog:',
+			'react-dom': 'catalog:',
+		})
 		assert.doesNotMatch(
 			await readFile(resolve(generated, 'host/web/src/client/main.tsx'), 'utf8'),
 			/from ['"](?:@pluxel\/|@example\/)/,
@@ -52,6 +61,7 @@ describe('create-pluxel', () => {
 				'@example/todo-plugin': 'workspace:*',
 			},
 		)
+		assert.equal(hostManifest.devDependencies['@example/web'], 'workspace:*')
 		assert.match(await readFile(resolve(generated, 'host/vite.config.ts'), 'utf8'), /root: webRoot/)
 		await assert.rejects(readFile(resolve(generated, 'host/vite.dynamic.config.ts')), {
 			code: 'ENOENT',

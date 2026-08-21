@@ -12,8 +12,8 @@ dedicated tsdown npm CLI entry: tsdown validates/generates the `create-pluxel` b
 shebang, emits one Node 24 ESM chunk and uses the standard `copy` option to publish two immutable asset
 trees:
 
-- `dist/template/`: a neutral `@example/*` monorepo with one host-owned Vite config, browser-only
-  `host/web/` source, static/dynamic modes, a same-origin Todo API, tests and build governance;
+- `dist/template/`: a neutral `@example/*` monorepo with an independent `host/web` workspace package, one
+  host-owned Vite config, static/dynamic modes, a same-origin Todo API, tests and build governance;
 - `dist/docs/`: the repository user documentation snapshot from the same publication.
 
 Creation copies the starter byte-for-byte, maps the package-safe `gitignore` asset to `.gitignore`,

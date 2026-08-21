@@ -16,13 +16,13 @@ Git/registry 获取 starter。create 自身使用 TypeScript entry；tsdown 的 
 `name` 的 private root、默认 static mode、alternative dynamic mode、React Todo client、普通 domain package、三种
 Plugin 依赖/config 范式、core/runtime Vitest、Turbo、Oxlint/Oxfmt、CI 和 governance。starter workspace 仍安装
 `@pluxel/cli`，用于后续 `pluxel new` 与 build 命令；这不形成 create package 对 CLI 的实现依赖。
-starter 的 `host/web/` 是无 package manifest、无 Pluxel import 的纯 React source；`host/` application package 直接依赖
-React、runtime 与 workspace Plugins，并维护唯一指向自己的 `web/` 的 Vite config，以及 static/dynamic route entry、
-catalog、config 与 runtime state。static
+starter 的 `host/web/` 是独立 private workspace package，只拥有纯 React source 与前端直接依赖，不 import Pluxel；
+`host/` application package 把 Web package 声明为 build input，直接依赖 React singleton、runtime 与 workspace Plugins，
+并维护唯一指向 `web/` 的 Vite config，以及 static/dynamic route entry、catalog、config 与 runtime state。static
 application 的 package root 是
 `host/`，所以 `host/tsdown.config.ts` 是唯一 freezer authority；monorepo root 只通过 Turbo 编排。
 
-`@example/host` build 先用同一 config 完成 `web/dist` browser build，再运行 freezer；tsdown 在 host build 末尾把 Web
+`@example/host` build 先用同一 config 完成 `host/web/dist` browser build，再运行 freezer；tsdown 在 host build 末尾把 Web
 输出复制到 `host/dist/public`。由于 static assembly 已在 Rolldown `writeBundle` finalization，package script 随后必须
 调用同一个 `pluxel distribution create` finalizer，确保最终 manifest 覆盖 browser assets。任何后续写入仍然非法。
 

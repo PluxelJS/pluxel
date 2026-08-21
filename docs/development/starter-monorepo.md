@@ -38,7 +38,7 @@ host/
   src/runtime-state.ts      两种 host 共用的 enabled/config snapshot
   vite.config.ts            指向 web/ 的唯一 Vite config；mode 选择 runtime route
   tsdown.config.ts          staticApplication() + Web public copy
-  web/                      无 package manifest、无 Pluxel import 的 React client
+  web/                      @example/web workspace package，React client 与前端专属依赖
 pluxel.loader.hmr.jsonc     dynamic loader 的最小 example profile
 docs/pluxel/                create 发布时的 Pluxel 文档快照
 ```
@@ -69,8 +69,9 @@ pnpm start
 结构化 enabled addresses 与 Todo config snapshot 都是显式数据。Workbench artifact 会进入 production distribution，
 但启动时默认关闭；需要管理 UI 时使用：
 
-`host/web/` 只是浏览器源码目录，没有 `package.json` 或 Pluxel import。唯一 application package `host/package.json` 直接
-依赖 React、runtime 与三个 Plugin package，所以 Vite client/SSR graph 和 static catalog 都具有正常 package provenance。
+`host/web/` 是独立 private workspace package，直接声明 React 与以后新增的纯前端依赖，但不 import Pluxel。
+`host/package.json` 把 `@example/web` 声明为 build-time workspace dependency，并直接声明 Workbench/Vite graph 需要共享的
+React singleton、runtime 与三个 Plugin package；两边的 React 版本都来自同一个 catalog，不依赖隐式 hoist。
 `staticApplication()` 的 canonical 配置位于 `host/tsdown.config.ts`；根目录只通过 Turbo 编排，不重复 build config。
 
 host build 先用唯一 Vite config 构建 `host/web/dist`，再由 freezer 清理并生成 server/Workbench 产物，同时通过 tsdown
@@ -81,9 +82,9 @@ copy 把 Web 输出放入 `host/dist/public`。最后显式执行 `pluxel distri
 PLUXEL_WORKBENCH=true pnpm dev
 ```
 
-开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `web/`；Pluxel middleware 先认领
-Plugin-mounted `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 proxy、CORS 或第二套
-HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
+开发时只有 `host/vite.config.ts` 启动一个 `3310` server。它把 Vite `root` 指向 `host/web/`；Pluxel middleware 先认领
+Plugin-mounted `/api/example/todos`，其余 browser module、asset 和 navigation 继续交给 Vite SPA。没有 alias、proxy、CORS
+或第二套 HMR graph。production 则由 frozen host 从同一 origin 提供 `public/` fallback，调用相同 Plugin routes。
 
 Workbench 启用时使用 `/__pluxel/workbench`，不会与产品 SPA 的 `/` fallback 竞争。
 

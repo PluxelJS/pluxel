@@ -27,6 +27,7 @@ for (const pattern of ['packages/*', 'plugins/*']) {
 if (!workspaceSource.includes('- host')) {
 	errors.push('workspace is missing host')
 }
+if (!workspaceSource.includes('- host/web')) errors.push('workspace is missing host/web')
 if ((await isDirectory(resolve(root, 'apps'))) && !workspaceSource.includes('- apps/*')) {
 	errors.push('workspace is missing apps/*')
 }
@@ -50,6 +51,7 @@ const pluginPackageRoots = await Promise.all(
 )
 const candidateRoots = [
 	resolve(root, 'host'),
+	resolve(root, 'host/web'),
 	...projectRoots,
 	...packageContainerChildren.flat(),
 	...pluginPackageRoots.flat(),

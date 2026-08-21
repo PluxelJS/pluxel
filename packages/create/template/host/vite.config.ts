@@ -8,14 +8,14 @@ const staticEntry = fileURLToPath(new URL('./src/pluxel.static.ts', import.meta.
 const dynamicConfig = fileURLToPath(new URL('./src/pluxel.dynamic.ts', import.meta.url))
 
 export default defineConfig(async ({ mode }): Promise<UserConfig> => {
-	const runtime =
-		mode === 'dynamic'
-			? (await import('@pluxel/runtime-dynamic/vite')).dynamicRuntimeVitePlugin({
-					config: dynamicConfig,
-				})
-			: (await import('@pluxel/runtime-static/vite')).staticRuntimeVitePlugin({
-					entry: staticEntry,
-				})
+	let runtime
+	if (mode === 'dynamic') {
+		const { dynamicRuntimeVitePlugin } = await import('@pluxel/runtime-dynamic/vite')
+		runtime = dynamicRuntimeVitePlugin({ config: dynamicConfig })
+	} else {
+		const { staticRuntimeVitePlugin } = await import('@pluxel/runtime-static/vite')
+		runtime = staticRuntimeVitePlugin({ entry: staticEntry })
+	}
 
 	return {
 		root: webRoot,

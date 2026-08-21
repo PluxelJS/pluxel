@@ -205,7 +205,8 @@ async function collectFiles(root: string, current: string, plan: PlannedFile[]):
 async function isDirectory(path: string): Promise<boolean> {
 	try {
 		await access(path)
-		return (await lstat(path)).isDirectory()
+		const stat = await lstat(path)
+		return stat.isDirectory()
 	} catch (error) {
 		if (hasErrorCode(error, 'ENOENT')) return false
 		throw error

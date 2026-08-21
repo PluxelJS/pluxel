@@ -251,7 +251,8 @@ async function verifyStaticViteApplication(root: string): Promise<void> {
 
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
 		const page = await fetch(`http://127.0.0.1:${port}/`)
-		if (!page.ok || !(await page.text()).includes('<div id="root"></div>')) {
+		const pageSource = await page.text()
+		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
 			throw new Error(`Unified Vite page returned ${page.status}`)
 		}
 	} finally {
@@ -269,16 +270,14 @@ async function verifyDynamicViteHost(root: string): Promise<void> {
 				throw new Error(`Dynamic Vite host exited before it was ready (${signal ?? code})`)
 			}),
 		])
-		if (
-			!response.ok ||
-			((await response.json()) as { items?: Array<{ title?: string }> }).items?.[0]?.title !==
-				'Trace a Todo from React to a Plugin'
-		) {
+		const snapshot = (await response.json()) as { items?: Array<{ title?: string }> }
+		if (!response.ok || snapshot.items?.[0]?.title !== 'Trace a Todo from React to a Plugin') {
 			throw new Error(`Dynamic Todo route returned ${response.status}`)
 		}
 		await verifyViteBrowserGraph(`http://127.0.0.1:${port}`)
 		const page = await fetch(`http://127.0.0.1:${port}/`)
-		if (!page.ok || !(await page.text()).includes('<div id="root"></div>')) {
+		const pageSource = await page.text()
+		if (!page.ok || !pageSource.includes('<div id="root"></div>')) {
 			throw new Error(`Dynamic unified Vite page returned ${page.status}`)
 		}
 	} finally {
@@ -289,7 +288,9 @@ async function verifyDynamicViteHost(root: string): Promise<void> {
 async function verifyViteBrowserGraph(origin: string): Promise<void> {
 	const entry = await waitForResponse(`${origin}/src/client/main.tsx`, 30_000)
 	const source = await entry.text()
-	const imports = [...source.matchAll(/\bfrom\s+["'](\/[^"']+)["']/g)].map((match) => match[1]!)
+	const imports = [...source.matchAll(/\b(?:from|import)\s+["'](\/[^"']+)["']/g)].map(
+		(match) => match[1]!,
+	)
 	if (imports.length < 2) throw new Error('Vite browser entry did not expose its React imports')
 	await Promise.all(
 		imports.map((specifier) => waitForResponse(new URL(specifier, origin).href, 30_000)),
@@ -350,7 +351,13 @@ async function reservePort(): Promise<number> {
 				reject(new Error('Could not reserve a smoke-test port'))
 				return
 			}
-			server.close((error) => (error ? reject(error) : accept(address.port)))
+			server.close((error) => {
+				if (error) {
+					reject(error)
+					return
+				}
+				accept(address.port)
+			})
 		})
 	})
 }

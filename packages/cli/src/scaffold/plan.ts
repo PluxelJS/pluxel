@@ -202,7 +202,8 @@ function validateOutputPath(path: string, source: string): string {
 	for (const segment of segments) {
 		const stem = segment.split('.')[0]!.toUpperCase()
 		if (
-			/[<>:"|?*\u0000-\u001F]/.test(segment) ||
+			/[<>:"|?*]/.test(segment) ||
+			Array.from(segment).some((character) => character.charCodeAt(0) <= 0x1f) ||
 			/[ .]$/.test(segment) ||
 			/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem)
 		) {

@@ -28,7 +28,8 @@ describe('HttpPlugin', () => {
 					}),
 				)
 				expect(created.status).toBe(201)
-				expect((await created.json()).items).toHaveLength(2)
+				const createdBody = await created.json()
+				expect(createdBody.items).toHaveLength(2)
 
 				const limited = await host.ctx.http.fetch(
 					new Request('http://local.test/api/example/todos', {
@@ -48,7 +49,8 @@ describe('HttpPlugin', () => {
 					}),
 				)
 				expect(completed.status).toBe(200)
-				expect((await completed.json()).items[0].completed).toBe(true)
+				const completedBody = await completed.json()
+				expect(completedBody.items[0].completed).toBe(true)
 			},
 			{ workbench: false },
 		)
