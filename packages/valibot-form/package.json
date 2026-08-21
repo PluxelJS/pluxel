@@ -35,9 +35,8 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"dev": "vite",
-		"preview": "vite preview",
-		"test": "pnpm exec vitest run"
+		"test": "pnpm exec vitest run",
+		"typecheck": "tsc --noEmit --pretty false"
 	},
 	"dependencies": {
 		"valibot": "^1.2.0"

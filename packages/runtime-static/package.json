@@ -59,7 +59,8 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
 		"@pluxel/core": "workspace:^",

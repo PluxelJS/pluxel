@@ -26,7 +26,11 @@ import {
 	materializeSourceOverrides,
 	sourcePnpmfileBootstrapContents,
 } from '../src/source/execution'
-import { createSourceWorkspacePlan, sourceCheckoutInstallOverrides } from '../src/source/plan'
+import {
+	createSourceWorkspacePlan,
+	type ResolvedSourceCheckout,
+	sourceCheckoutInstallOverrides,
+} from '../src/source/plan'
 import { registerSourceCheckout } from '../src/source/registry'
 import { sourcePackageNeedsBuild } from '../src/source/workspace'
 
@@ -264,7 +268,7 @@ describe('source workspace planning', () => {
 		)
 		await mkdir(resolve(legacyProxy, '..'), { recursive: true })
 		await symlink(child, legacyProxy, process.platform === 'win32' ? 'junction' : 'dir')
-		const checkouts = [
+		const checkouts: ResolvedSourceCheckout[] = [
 			{
 				repository: 'https://github.com/acme/parent',
 				root: parent,

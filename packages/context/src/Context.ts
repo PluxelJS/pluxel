@@ -373,6 +373,7 @@ type ContextImplMeta = {
 	url: string
 	stack?: string
 }
+const moduleUrl = (import.meta as ImportMeta & { readonly url: string }).url
 const contextGlobal = globalThis as unknown as Record<symbol, unknown>
 const existingContextImpl = contextGlobal[CONTEXT_IMPL] as typeof Context | undefined
 if (existingContextImpl && existingContextImpl !== Context) {
@@ -383,7 +384,7 @@ if (existingContextImpl && existingContextImpl !== Context) {
 			'This indicates that more than one copy of @pluxel/context was evaluated (e.g. via HMR runner/workspace resolution).',
 			'Fix your module resolution to guarantee a single implementation.',
 			`First implementation: ${meta?.url ?? '<unknown>'}`,
-			`Current implementation: ${import.meta.url}`,
+			`Current implementation: ${moduleUrl}`,
 			meta?.stack ? `First implementation stack:\n${meta.stack}` : undefined,
 		]
 			.filter((line): line is string => typeof line === 'string')
@@ -399,7 +400,7 @@ if (!existingContextImpl) {
 	})
 	Object.defineProperty(contextGlobal, CONTEXT_IMPL_META, {
 		value: {
-			url: import.meta.url,
+			url: moduleUrl,
 			stack: new Error('[pluxel/context] First Context implementation loaded here').stack,
 		} satisfies ContextImplMeta,
 		configurable: false,

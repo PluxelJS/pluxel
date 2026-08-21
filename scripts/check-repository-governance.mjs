@@ -135,6 +135,9 @@ if (preOnePackages.length > 0) {
 
 for (const { packageRoot, manifestPath, directory, kind, manifest } of packageManifests) {
 	const isPublic = isPublishablePackage({ kind, manifest })
+	if (typeof manifest.scripts?.typecheck !== 'string' || manifest.scripts.typecheck.length === 0) {
+		errors.push(`${relative(manifestPath)}: every workspace package must define a typecheck script`)
+	}
 	if (
 		Object.values(manifest.scripts ?? {}).some((script) =>
 			/(?:^|\s)node\s+--test(?:\s|$)/.test(script),

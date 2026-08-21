@@ -172,11 +172,13 @@ function resolveTargets(state: WorkspaceState): WorkspaceTarget[] {
 	return targets
 }
 
-function readManifestPatterns(manifest: PackageJson) {
+function readManifestPatterns(
+	manifest: PackageJson,
+): Pick<ManifestSource, 'mode' | 'patterns' | 'objectSource'> {
 	const raw = manifest.workspaces
 	if (!raw) {
 		return {
-			mode: null as const,
+			mode: null,
 			patterns: [] as string[],
 			objectSource: undefined as WorkspacesObject | undefined,
 		}

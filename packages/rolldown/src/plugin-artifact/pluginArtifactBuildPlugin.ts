@@ -830,9 +830,10 @@ function readObjectProperty(node: NodeLike, key: string): NodeLike | null {
 	return null
 }
 
-function sourceSlice(code: string, node: NodeLike | undefined): string {
-	return node && typeof node.start === 'number' && typeof node.end === 'number'
-		? code.slice(node.start, node.end).replaceAll(/\s+/g, '')
+function sourceSlice(code: string, node: unknown): string {
+	const value = object(node)
+	return value && typeof value.start === 'number' && typeof value.end === 'number'
+		? code.slice(value.start, value.end).replaceAll(/\s+/g, '')
 		: ''
 }
 

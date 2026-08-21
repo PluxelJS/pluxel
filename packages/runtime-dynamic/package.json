@@ -49,7 +49,8 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false --rootDir ../.."
 	},
 	"dependencies": {
 		"@logtape/logtape": "^2.0.2",

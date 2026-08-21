@@ -166,6 +166,12 @@
 			],
 			"outputLogs": "new-only",
 		},
+		"@pluxel/cli#typecheck": {
+			// The CLI loads toolchain capabilities through package exports. Typecheck the same dist
+			// boundary used in production after the capability owners have emitted declarations.
+			"dependsOn": ["@pluxel/rolldown#build", "@pluxel/runtime-dynamic#build"],
+			"outputs": [],
+		},
 		"@pluxel/create#build": {
 			// The published initializer copies the package-local fixed starter and the repository user
 			// docs. Both asset trees must invalidate its tsdown output cache.

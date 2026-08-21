@@ -1,4 +1,4 @@
-import { lazy } from 'gunshi'
+import { lazy, type SubCommandable } from 'gunshi'
 
 export const newCommandArgs = {
 	dest: {
@@ -86,7 +86,7 @@ export const databaseRebaseDefinition = {
 	args: databaseRebaseArgs,
 } as const
 
-export const databaseSubCommands = new Map([
+export const databaseSubCommands = new Map<string, SubCommandable>([
 	[
 		'generate',
 		lazy(
@@ -175,7 +175,7 @@ export const distributionCorrelateDefinition = {
 	args: distributionCorrelateArgs,
 } as const
 
-export const distributionSubCommands = new Map([
+export const distributionSubCommands = new Map<string, SubCommandable>([
 	[
 		'create',
 		lazy(
@@ -287,7 +287,7 @@ export const loaderHmrEnabledDefinition = {
 	args: loaderHmrSetArgs,
 } as const
 
-export const hmrSubCommands = new Map([
+export const hmrSubCommands = new Map<string, SubCommandable>([
 	[
 		'prompt',
 		lazy(
@@ -385,7 +385,7 @@ export const sourceInstallDefinition = {
 	},
 } as const
 
-export const sourceSubCommands = new Map([
+export const sourceSubCommands = new Map<string, SubCommandable>([
 	[
 		'register',
 		lazy(
@@ -493,7 +493,7 @@ export const workspaceScanDefinition = {
 	args: workspaceScanArgs,
 } as const
 
-export const workspaceSubCommands = new Map([
+export const workspaceSubCommands = new Map<string, SubCommandable>([
 	[
 		'prompt',
 		lazy(

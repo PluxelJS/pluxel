@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cli, define, lazy } from 'gunshi'
+import { cli, define, lazy, type SubCommandable } from 'gunshi'
 import pkg from '../package.json'
 import {
 	buildCommandDefinition,
@@ -13,7 +13,7 @@ import {
 } from './command-manifest'
 import { formatOfficialCapabilityError, OfficialCapabilityError } from './capability-loader'
 
-const commands = new Map([
+const commands = new Map<string, SubCommandable>([
 	[
 		'new',
 		lazy(() => import('./scaffold').then((module) => module.newCommand), newCommandDefinition),

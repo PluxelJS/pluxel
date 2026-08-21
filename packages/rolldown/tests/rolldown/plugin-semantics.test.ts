@@ -13,7 +13,9 @@ async function transform(code: string, id = '/repo/src/index.ts') {
 			error(message: string): never {
 				throw new Error(message)
 			},
-			resolve: async () => null,
+			async resolve(): Promise<null> {
+				return null
+			},
 		},
 		code,
 		id,

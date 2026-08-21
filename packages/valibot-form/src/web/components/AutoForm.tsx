@@ -12,6 +12,7 @@ import React, {
 import { getDefaults } from 'valibot'
 import type { ObjectLikeSchema } from '../../core'
 import { DEFAULT_SECTION_ID, DEFAULT_TEXTS } from '../../core/constants'
+import { isDevelopmentEnvironment } from '../../core/utils/environment'
 import { type PlannedField, planSchemaFields, type SectionPlan } from './internal/fieldPlanner'
 import { useAppForm } from './internal/formContext'
 import { alignToCss, resolveFieldSpan } from './internal/layout'
@@ -255,7 +256,7 @@ function SectionBlock({
 }
 
 AutoForm.Fields = memo(FieldsImpl) as React.FC<AutoFormFieldsProps>
-if (process.env.NODE_ENV !== 'production') {
+if (isDevelopmentEnvironment()) {
 	AutoForm.Fields.displayName = 'AutoForm.Fields'
 	AutoForm.displayName = 'AutoForm'
 }
@@ -297,7 +298,7 @@ function ActionsImpl({ children }: ActionsProps) {
 	)
 }
 AutoForm.Actions = ActionsImpl as React.FC<ActionsProps>
-if (process.env.NODE_ENV !== 'production') {
+if (isDevelopmentEnvironment()) {
 	AutoForm.Actions.displayName = 'AutoForm.Actions'
 }
 
@@ -307,16 +308,7 @@ const DebugValues = React.lazy(() =>
 )
 function DebugPanelImpl() {
 	const { form } = useAutoFormCtx<any>()
-	const isDev = (() => {
-		if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
-			return process.env.NODE_ENV !== 'production'
-		}
-		if (typeof globalThis !== 'undefined' && (globalThis as any).__DEV__ !== undefined) {
-			return Boolean((globalThis as any).__DEV__)
-		}
-		return true
-	})()
-	if (!isDev) return null
+	if (!isDevelopmentEnvironment()) return null
 	return (
 		<form.Subscribe
 			selector={(s) => ({
@@ -336,6 +328,6 @@ function DebugPanelImpl() {
 
 export interface DebugPanelProps {}
 AutoForm.DebugPanel = DebugPanelImpl as React.FC<DebugPanelProps>
-if (process.env.NODE_ENV !== 'production') {
+if (isDevelopmentEnvironment()) {
 	AutoForm.DebugPanel.displayName = 'AutoForm.DebugPanel'
 }

@@ -256,8 +256,15 @@ async function applyInputOptions(
 	format: Parameters<InputOptionsHook>[1],
 	context: Parameters<InputOptionsHook>[2],
 ): Promise<Parameters<InputOptionsHook>[0]> {
-	if (typeof value === 'function') return (await value(options, format, context)) ?? options
-	return mergePlainObjects(options, value) as Parameters<InputOptionsHook>[0]
+	if (typeof value === 'function') {
+		const result = await value(options, format, context)
+		if (result == null) return options
+		return result as Parameters<InputOptionsHook>[0]
+	}
+	return mergePlainObjects(
+		options as unknown as Record<string, unknown>,
+		value as unknown as Record<string, unknown>,
+	) as Parameters<InputOptionsHook>[0]
 }
 
 function mergePlainObjects(

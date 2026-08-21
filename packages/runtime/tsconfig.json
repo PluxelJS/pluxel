@@ -3,14 +3,6 @@
 	"include": ["src"],
 	"compilerOptions": {
 		"noEmit": false,
-		"paths": {
-			"@pluxel/runtime": ["packages/runtime/src/index.ts"],
-			"@pluxel/runtime/*": ["packages/runtime/src/*"],
-			"@pluxel/runtime/web": ["packages/runtime/src/web.ts"],
-			"@pluxel/runtime/capnweb": ["packages/runtime/src/capnweb.ts"],
-			"@pluxel/runtime/logger": ["packages/runtime/src/logger.ts"],
-			"@pluxel/runtime/services/*": ["packages/runtime/src/services/*"]
-		},
 		"outDir": "dist",
 		"jsx": "react-jsx",
 		"lib": ["ES2023", "DOM"],

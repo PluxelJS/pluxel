@@ -1,4 +1,4 @@
-import type { InlineConfig } from 'tsdown'
+import type { InlineConfig, TsdownPluginOption } from 'tsdown'
 import Macros from 'unplugin-macros/rolldown'
 import PreprocessorDirectives from 'unplugin-preprocessor-directives/rollup'
 import { configSourcePlugin } from '../rolldown/plugins/configSourcePlugin'
@@ -10,7 +10,10 @@ import { createPluginDependencyMetadataHook } from './plugin-metadata'
 import type { BuildLogger } from './types'
 import type { OutputChunk, Plugin } from 'rolldown'
 
-type TsdownInputOptions = NonNullable<InlineConfig['inputOptions']>
+type TsdownInputOptions = Exclude<
+	NonNullable<InlineConfig['inputOptions']>,
+	(...args: any[]) => unknown
+>
 type TsdownTransformOptions = NonNullable<TsdownInputOptions['transform']>
 
 export type PluginBuildPipelineOptions = {
@@ -41,7 +44,10 @@ export type PluginPackageOptions = PluginBuildPipelineOptions & {
 	}
 }
 
-export type PluginBuildPipeline = Pick<InlineConfig, 'plugins' | 'inputOptions'>
+export type PluginBuildPipeline = {
+	plugins: TsdownPluginOption[]
+	inputOptions: TsdownInputOptions
+}
 
 /**
  * Shared production compiler semantics for plugin sources.
@@ -94,7 +100,9 @@ function createPipeline(
 }
 
 /** Standard tsdown overlay for independently published plugin packages. */
-export function pluginPackage(options: PluginPackageOptions): InlineConfig {
+export function pluginPackage(
+	options: PluginPackageOptions,
+): Omit<InlineConfig, 'inputOptions' | 'plugins'> & PluginBuildPipeline {
 	const semantics = createPluginSemanticsPlugin({
 		root: options.root,
 		packageJsonPath: options.packageMetadata.packageJsonPath,
@@ -166,7 +174,7 @@ function hasUnloweredDecorators(value: unknown): boolean {
 	return Object.values(node).some(hasUnloweredDecorators)
 }
 
-function toPluginArray(plugins: InlineConfig['plugins']): unknown[] {
+function toPluginArray(plugins: InlineConfig['plugins']): TsdownPluginOption[] {
 	if (!plugins) return []
 	return Array.isArray(plugins) ? plugins : [plugins]
 }

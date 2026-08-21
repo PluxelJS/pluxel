@@ -1,4 +1,5 @@
 import type { Schema } from '../schema'
+import { isDevelopmentEnvironment } from './environment'
 
 export interface ObjectEntry {
 	name: string
@@ -11,17 +12,12 @@ function isSchema(value: unknown): value is Schema {
 	)
 }
 
-const isDevEnv = () => {
-	if (typeof process === 'undefined') return true
-	return process.env?.NODE_ENV !== 'production'
-}
-
 function collectFromObject(schema: Schema, bucket: Map<string, Schema>): boolean {
 	const entries = (schema as { entries?: Record<string, Schema> }).entries
 	if (!entries) return false
 	for (const [name, child] of Object.entries(entries)) {
 		if (!isSchema(child)) continue
-		if (bucket.has(name) && isDevEnv()) {
+		if (bucket.has(name) && isDevelopmentEnvironment()) {
 			console.warn(
 				`[valibot-form] Intersection contains duplicate key "${name}". The latter definition will override the former.`,
 			)

@@ -456,7 +456,7 @@ function parseDistributionStatement(bytes: Uint8Array): DistributionStatementV1 
 				name: DISTRIBUTION_MANIFEST_FILE,
 				digest: Object.freeze({ sha256: digest.sha256 }),
 			}),
-		]),
+		] as const),
 		predicateType: DISTRIBUTION_PREDICATE_TYPE,
 		predicate: readDistributionReleaseClaims(value.predicate),
 	})

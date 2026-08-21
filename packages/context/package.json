@@ -27,6 +27,7 @@
 	"scripts": {
 		"test": "pnpm exec vitest run",
 		"bench": "pnpm exec vitest bench bench/context-getter.bench.ts",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false"
 	}
 }

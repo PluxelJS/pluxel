@@ -12,6 +12,7 @@ import {
 	type UnionMeta,
 } from './meta'
 import { readMeta, type Schema } from './schema'
+import { isDevelopmentEnvironment } from './utils/environment'
 import { collectObjectEntries } from './utils/objectEntries'
 
 export type FieldKind =
@@ -811,7 +812,7 @@ export function extractField(schema: Schema, ctx: ExtractCtx = {}): FieldNode | 
 		case 'union':
 			return extractUnionNode(unwrapped, { ...ctx, path, depth }, resolvedMeta)
 		default:
-			if (process.env.NODE_ENV !== 'production') {
+			if (isDevelopmentEnvironment()) {
 				console.warn(DEFAULT_TEXTS.errors.extractionFailed(unwrapped.type))
 			}
 			return {

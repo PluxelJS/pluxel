@@ -111,6 +111,7 @@ type Modal =
 function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 12), 6)
 
 	const [value, setValue] = useState(
@@ -181,9 +182,9 @@ function ModalOverlay(props: { modal: Exclude<Modal, null> }) {
 	return (
 		<Box
 			position="absolute"
-			top={Math.floor((rows - height) / 2)}
-			left={2}
-			right={2}
+			marginTop={Math.floor((rows - height) / 2)}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="yellow"
@@ -243,7 +244,7 @@ function ScreenMask(props: { visible: boolean }) {
 	}, [props.visible, rows, cols])
 	if (!props.visible) return null
 	return (
-		<Box position="absolute" top={0} left={0} width={cols} height={rows} backgroundColor="black">
+		<Box position="absolute" width={cols} height={rows} backgroundColor="black">
 			<Text>{fill}</Text>
 		</Box>
 	)
@@ -670,7 +671,7 @@ function LoaderHmrPromptApp(props: {
 	}
 
 	useEffect(() => {
-		if (!toast) return
+		if (!toast) return undefined
 		const t = setTimeout(() => setToast(''), 2500)
 		return () => clearTimeout(t)
 	}, [toast])
@@ -812,8 +813,10 @@ function LoaderHmrPromptApp(props: {
 	// Snapshot build: derived from scan + merged; debounce to avoid thrash while selecting packages.
 	useEffect(() => {
 		let cancelled = false
-		if (!merged) return
-		if (scan.status !== 'ready') return
+		if (!merged) return undefined
+		if (scan.status !== 'ready') return undefined
+		const currentMerged = merged
+		const readyScan = scan
 		setSnapshot({ status: 'building' })
 
 		const t = setTimeout(() => {
@@ -822,17 +825,17 @@ function LoaderHmrPromptApp(props: {
 					const rootDirAbs = resolve(props.rootDir)
 					const snapshotRes = await buildLoaderHmrWorkspaceFromScan({
 						rootDir: rootDirAbs,
-						merged,
-						rootsExpandedAbs: scan.rootsExpandedAbs,
-						packages: scan.packages.map((p) => ({
+						merged: currentMerged,
+						rootsExpandedAbs: readyScan.rootsExpandedAbs,
+						packages: readyScan.packages.map((p) => ({
 							name: p.name,
 							deps: p.deps,
 							pkgDirAbs: p.pkgDirAbs,
 						})),
-						discovered: scan.discovered,
+						discovered: readyScan.discovered,
 					})
 					if (cancelled) return
-					if (!snapshotRes.ok) {
+					if (snapshotRes.ok === false) {
 						setSnapshot({
 							status: 'error',
 							errors: snapshotRes.errors,
@@ -1711,6 +1714,7 @@ function ProfilesOverlay(props: {
 }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 16), 10)
 
 	const [query, setQuery] = useState('')
@@ -1782,9 +1786,9 @@ function ProfilesOverlay(props: {
 	return (
 		<Box
 			position="absolute"
-			top={1}
-			left={2}
-			right={2}
+			marginTop={1}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="cyan"
@@ -1837,6 +1841,7 @@ function HelpKey(props: { children: string }) {
 function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	const { stdout } = useStdout()
 	const rows = stdout?.rows ?? 24
+	const columns = stdout?.columns ?? 80
 	const height = Math.max(Math.min(rows - 4, 14), 10)
 
 	useInput((input, key) => {
@@ -1869,9 +1874,9 @@ function HelpOverlay(props: { tab: TabKey; onClose: () => void }) {
 	return (
 		<Box
 			position="absolute"
-			top={1}
-			left={2}
-			right={2}
+			marginTop={1}
+			marginLeft={2}
+			width={Math.max(columns - 4, 1)}
 			height={height}
 			borderStyle="round"
 			borderColor="magenta"

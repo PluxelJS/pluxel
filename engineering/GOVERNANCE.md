@@ -69,6 +69,10 @@ workspace 单元测试统一由 Vitest 执行；package `test` script 不调用 
 保留独立 fixture 或 test directory，但仍由 Vitest 的 Node environment 编排，避免不同 runner 的 hook、过滤、
 reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它不构成第二套 test runner。
 
+每个 root、package、plugin 和 project workspace 都必须声明自己的 `typecheck` script；Turbo 只负责编排，不能用
+上游 declaration build 代替当前 package 的 `tsc --noEmit`。package 级 `tsconfig` 明确拥有其源码、测试和构建配置，
+避免编辑器检查到 CI task graph 未覆盖的文件。
+
 ## 导出
 
 - public export 必须对应稳定用户概念；

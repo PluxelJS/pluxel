@@ -104,7 +104,7 @@ export const distributionMarkCommand = define({
 		}
 		const record = await distribution.markDistribution({
 			root,
-			claims,
+			claims: { ...claims, distributionId: claims.distributionId },
 			recordOut: resolve(values['record-out']),
 		})
 		ctx.log(`[distribution] delivery marker created for ${record.distributionId}`)
@@ -147,7 +147,7 @@ function resolveRoot(values: RootValues): string {
 
 function normalizeMany(value: string | readonly string[] | undefined): string[] {
 	if (value === undefined) return []
-	return Array.isArray(value) ? [...value] : [value]
+	return typeof value === 'string' ? [value] : [...value]
 }
 
 function assertOutsideRoot(root: string, candidate: string, label: string): void {

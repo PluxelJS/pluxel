@@ -505,7 +505,7 @@ importers:
     devDependencies:
       '@fumapress/tegami':
         specifier: 1.0.0
-        version: 1.0.0(a975ae5ce8873bf41db15ed895b43b40)
+        version: 1.0.0(733b3ec70bc27165608f4e0d6cbfb3b5)
       '@gqlens/vite':
         specifier: workspace:*
         version: link:vendor/gqlens/packages/vite
@@ -606,6 +606,9 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.17
+      '@types/semver':
+        specifier: ^7.8.0
+        version: 7.8.0
       ink:
         specifier: ^6.8.0
         version: 6.8.0(@types/react@19.2.17)(react@19.2.7)
@@ -693,7 +696,7 @@ importers:
         version: 2.20.2(typescript@6.0.3)
       '@module-federation/vite':
         specifier: ^1.16.16
-        version: 1.16.16(typescript@6.0.3)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
+        version: 1.16.16(typescript@6.0.3)(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
       '@pluxel/core':
         specifier: workspace:^
         version: link:../core
@@ -711,14 +714,17 @@ importers:
         version: 11.23.0
       unplugin-macros:
         specifier: ^0.20.2
-        version: 0.20.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.4)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0)
+        version: 0.20.2(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.4)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0)
       unplugin-preprocessor-directives:
         specifier: ^1.2.0
-        version: 1.2.0(esbuild@0.28.1)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))
+        version: 1.2.0(esbuild@0.28.1)(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))
     devDependencies:
       '@rolldown/pluginutils':
         specifier: ^1.0.0-rc.5
         version: 1.0.1
+      '@types/node':
+        specifier: ^25.9.4
+        version: 25.9.4
       fdir:
         specifier: ^6.5.0
         version: 6.5.0(picomatch@4.0.5)
@@ -742,7 +748,7 @@ importers:
         version: 6.0.3
       vite:
         specifier: ^8.0.0-beta.18
-        version: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+        version: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
 
   packages/runtime:
     dependencies:
@@ -5730,6 +5736,9 @@ packages:
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
 
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
+
   '@types/sql.js@1.4.11':
     resolution: {integrity: sha512-QXIx38p2ZThJaK9vP5ZdqdlRe1FG9I8SmCZOS7FHfB/2qPAjZwkL7/vlfPg6N/oWHuuOaGg/P/IRwfP2W0kWVQ==}
 
@@ -10486,13 +10495,13 @@ snapshots:
       - '@date-fns/tz'
       - date-fns
 
-  '@fumapress/tegami@1.0.0(a975ae5ce8873bf41db15ed895b43b40)':
+  '@fumapress/tegami@1.0.0(733b3ec70bc27165608f4e0d6cbfb3b5)':
     dependencies:
       '@base-ui/react': 1.7.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       cnfast: 0.1.0
       fumadocs-core: 16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3)
       fumadocs-ui: 16.14.5(@types/mdx@2.0.13)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(fumadocs-core@16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(tailwindcss@4.3.3)(takumi-js@2.10.0(csstype@3.2.3)(react@19.2.7))
-      fumapress: 1.0.0(a02154a43e77e52384c969c9cebc24a9)
+      fumapress: 1.0.0(5c7d8e75b23e64cebcd01894c6fb4923)
       js-yaml: 5.3.0
       lucide-react: 1.31.0(react@19.2.7)
       react: 19.2.7
@@ -11047,12 +11056,12 @@ snapshots:
       empathic: 2.0.0
       exsolve: 1.0.8
 
-  '@module-federation/vite@1.16.16(typescript@6.0.3)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))':
+  '@module-federation/vite@1.16.16(typescript@6.0.3)(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))':
     dependencies:
       '@module-federation/dts-plugin': 2.7.0(typescript@6.0.3)
       '@module-federation/runtime': 2.7.0
       '@module-federation/sdk': 2.7.0
-      vite: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+      vite: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - bufferutil
       - typescript
@@ -12717,6 +12726,22 @@ snapshots:
       - tsx
       - yaml
 
+  '@tsdown/css@0.22.5(jiti@2.7.0)(postcss@8.5.26)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.5)(tsx@4.23.0)(yaml@2.9.0)':
+    dependencies:
+      lightningcss: 1.33.0
+      postcss-load-config: 6.0.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.0)(yaml@2.9.0)
+      rolldown: 1.1.5
+      tsdown: 0.22.5(@tsdown/css@0.22.5)(oxc-resolver@11.23.0)(tsx@4.23.0)(typescript@6.0.3)(unrun@0.2.39)
+    optionalDependencies:
+      postcss: 8.5.26
+      sass: 1.100.0
+      sass-embedded: 1.100.0
+    transitivePeerDependencies:
+      - jiti
+      - tsx
+      - yaml
+    optional: true
+
   '@turbo/darwin-64@2.10.4':
     optional: true
 
@@ -12830,6 +12855,8 @@ snapshots:
   '@types/react@19.2.17':
     dependencies:
       csstype: 3.2.3
+
+  '@types/semver@7.8.0': {}
 
   '@types/sql.js@1.4.11':
     dependencies:
@@ -14173,7 +14200,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  fumadocs-mdx@15.2.3(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.17)(fumadocs-core@16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react@19.2.7)(rolldown@1.1.5)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)):
+  fumadocs-mdx@15.2.3(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.17)(fumadocs-core@16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react@19.2.7)(rolldown@1.2.4)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)):
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@standard-schema/spec': 1.1.0
@@ -14201,7 +14228,7 @@ snapshots:
       '@types/react': 19.2.17
       next: 16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0)
       react: 19.2.7
-      rolldown: 1.1.5
+      rolldown: 1.2.4
       vite: 8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
@@ -14265,7 +14292,7 @@ snapshots:
       - '@types/react-dom'
       - tailwindcss
 
-  fumapress@1.0.0(a02154a43e77e52384c969c9cebc24a9):
+  fumapress@1.0.0(5c7d8e75b23e64cebcd01894c6fb4923):
     dependencies:
       '@fuma-translate/react': 1.0.2(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       class-variance-authority: 0.7.1
@@ -14284,7 +14311,7 @@ snapshots:
     optionalDependencies:
       '@types/mdx': 2.0.13
       '@types/react': 19.2.17
-      fumadocs-mdx: 15.2.3(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.17)(fumadocs-core@16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react@19.2.7)(rolldown@1.1.5)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
+      fumadocs-mdx: 15.2.3(@types/mdast@4.0.4)(@types/mdx@2.0.13)(@types/react@19.2.17)(fumadocs-core@16.14.5(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.17(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.2.17)(flexsearch@0.8.212)(lucide-react@1.31.0(react@19.2.7))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.4.3))(next@16.3.1(@opentelemetry/api@1.9.1)(@types/node@26.1.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(sass@1.100.0))(react@19.2.7)(rolldown@1.2.4)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))
       hono: 4.12.29
     transitivePeerDependencies:
       - '@rolldown/plugin-babel'
@@ -15894,6 +15921,16 @@ snapshots:
       tsx: 4.23.0
       yaml: 2.9.0
 
+  postcss-load-config@6.0.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.0)(yaml@2.9.0):
+    dependencies:
+      lilconfig: 3.1.3
+    optionalDependencies:
+      jiti: 2.7.0
+      postcss: 8.5.26
+      tsx: 4.23.0
+      yaml: 2.9.0
+    optional: true
+
   postcss-mixins@12.1.2(postcss@8.5.16):
     dependencies:
       postcss: 8.5.16
@@ -16954,7 +16991,7 @@ snapshots:
       tree-kill: 1.2.2
       unconfig-core: 7.5.0
     optionalDependencies:
-      '@tsdown/css': 0.22.5(jiti@2.7.0)(postcss@8.5.16)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.5)(tsx@4.23.0)(yaml@2.9.0)
+      '@tsdown/css': 0.22.5(jiti@2.7.0)(postcss@8.5.26)(sass-embedded@1.100.0)(sass@1.100.0)(tsdown@0.22.5)(tsx@4.23.0)(yaml@2.9.0)
       tsx: 4.23.0
       typescript: 6.0.3
       unrun: 0.2.39
@@ -17090,15 +17127,15 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-macros@0.20.2(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.4)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0):
+  unplugin-macros@0.20.2(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(rolldown@1.1.4)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))(yaml@2.9.0):
     dependencies:
       '@babel/types': 8.0.0
       ast-kit: 3.0.0
       magic-string-ast: 2.0.0
       rolldown-string: 0.3.0(rolldown@1.1.4)
-      unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.1.4)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))
-      vite: 8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
-      vite-node: 6.0.0(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+      unplugin: 3.3.0(esbuild@0.28.1)(rolldown@1.1.4)(vite@8.2.1(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26))
+      vite: 8.2.1(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+      vite-node: 6.0.0(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -17150,7 +17187,7 @@ snapshots:
       - webpack
       - yaml
 
-  unplugin-preprocessor-directives@1.2.0(esbuild@0.28.1)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26)):
+  unplugin-preprocessor-directives@1.2.0(esbuild@0.28.1)(vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
       dotenv-expand: 12.0.3
@@ -17159,7 +17196,7 @@ snapshots:
       unplugin: 2.3.11
     optionalDependencies:
       esbuild: 0.28.1
-      vite: 8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+      vite: 8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
       webpack: 5.109.2(esbuild@0.28.1)(postcss@8.5.26)
 
   unplugin-preprocessor-directives@1.2.0(esbuild@0.28.1)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26)):
@@ -17181,7 +17218,7 @@ snapshots:
       picomatch: 4.0.5
       webpack-virtual-modules: 0.6.2
 
-  unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.1.4)(vite@8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26)):
+  unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.1.4)(vite@8.2.1(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.26)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
       picomatch: 4.0.5
@@ -17189,7 +17226,7 @@ snapshots:
     optionalDependencies:
       esbuild: 0.28.1
       rolldown: 1.1.4
-      vite: 8.2.1(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+      vite: 8.2.1(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
       webpack: 5.109.2(esbuild@0.28.1)(postcss@8.5.26)
 
   unplugin@3.3.0(esbuild@0.28.1)(rolldown@1.1.5)(vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0))(webpack@5.109.2(esbuild@0.28.1)(postcss@8.5.16)):
@@ -17281,6 +17318,27 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
+  vite-node@6.0.0(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0):
+    dependencies:
+      cac: 7.0.0
+      es-module-lexer: 2.3.0
+      obug: 2.1.3
+      pathe: 2.0.3
+      vite: 8.2.1(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0)
+    transitivePeerDependencies:
+      - '@types/node'
+      - '@vitejs/devtools'
+      - esbuild
+      - jiti
+      - less
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
+
   vite-node@6.0.0(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0):
     dependencies:
       cac: 7.0.0
@@ -17301,6 +17359,25 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  vite@8.1.3(@types/node@25.9.4)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.26))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0):
+    dependencies:
+      lightningcss: 1.32.0
+      picomatch: 4.0.5
+      postcss: 8.5.23
+      rolldown: 1.1.5
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 25.9.4
+      esbuild: 0.28.1
+      fsevents: 2.3.3
+      jiti: 2.7.0
+      sass: 1.100.0
+      sass-embedded: 1.100.0
+      sugarss: 5.0.1(postcss@8.5.26)
+      terser: 5.50.0
+      tsx: 4.23.0
+      yaml: 2.9.0
 
   vite@8.1.3(@types/node@26.1.0)(esbuild@0.28.1)(jiti@2.7.0)(sass-embedded@1.100.0)(sass@1.100.0)(sugarss@5.0.1(postcss@8.5.16))(terser@5.50.0)(tsx@4.23.0)(yaml@2.9.0):
     dependencies:

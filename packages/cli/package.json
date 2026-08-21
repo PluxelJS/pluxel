@@ -29,7 +29,8 @@
 		"dev": "pnpm run build && node dist/cli.mjs new --dry-run --no-install",
 		"build": "tsdown",
 		"test": "pnpm exec vitest run",
-		"test:templates": "node scripts/smoke-plugin.ts"
+		"test:templates": "node scripts/smoke-plugin.ts",
+		"typecheck": "tsc --noEmit --pretty false --composite false --customConditions development"
 	},
 	"dependencies": {
 		"@clack/prompts": "^1.0.1",
@@ -49,6 +50,7 @@
 		"@pluxel/test": "workspace:*",
 		"@types/picomatch": "^4.0.2",
 		"@types/react": "catalog:",
+		"@types/semver": "^7.8.0",
 		"ink": "^6.8.0",
 		"react": "catalog:",
 		"tsdown": "catalog:",

@@ -121,7 +121,8 @@
 	},
 	"scripts": {
 		"test": "pnpm exec vitest run",
-		"build": "tsdown"
+		"build": "tsdown",
+		"typecheck": "tsc --noEmit --pretty false --composite false"
 	},
 	"dependencies": {
 		"@inlang/paraglide-js": "^2.15.1",
@@ -136,6 +137,7 @@
 	},
 	"devDependencies": {
 		"@rolldown/pluginutils": "^1.0.0-rc.5",
+		"@types/node": "^25.9.4",
 		"fdir": "^6.5.0",
 		"fs-fixture": "^2.13.0",
 		"oxlint": "^1.73.0",

@@ -7,12 +7,13 @@ import {
 	WORKBENCH_SHELL_BUILD_INFO_VERSION,
 } from '@pluxel/core/federation'
 import { FullTracePackages, NodeNativePackages, NonBundleablePackages } from 'nf3/db'
+import type { ExternalsTraceOptions } from 'nf3'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
 import type { OutputBundle, OutputChunk, Plugin } from 'rolldown'
 import type { UserConfig } from 'tsdown'
 import { parseWithLang } from '../rolldown/plugins/pluginUtils'
 import { createDistributionManifest } from '../distribution'
-import { createPluginBuildPipeline } from './plugin-build'
+import { createPluginBuildPipeline, type PluginBuildPipeline } from './plugin-build'
 
 export type StaticApplicationBuildOptions = {
 	entry: string
@@ -45,12 +46,19 @@ type DeclaredWorkspacePackage = {
 	packageJson: Record<string, unknown>
 }
 
+type TracedPackages = Parameters<
+	NonNullable<NonNullable<ExternalsTraceOptions['hooks']>['tracedPackages']>
+>[0]
+type TracedPackageVersion = TracedPackages[string]['versions'][string]
+
 const RuntimeResidualPackages = ['@electric-sql/pglite', 'pg'] as const
 const RuntimeFullTracePackages = ['tslib', '@electric-sql/pglite'] as const
 const STATIC_APPLICATION_BOOTSTRAP_ID = 'pluxel:static-application-bootstrap'
 const RESOLVED_STATIC_APPLICATION_BOOTSTRAP_ID = `\0${STATIC_APPLICATION_BOOTSTRAP_ID}`
 
-export function staticApplication(options: StaticApplicationBuildOptions): UserConfig {
+export function staticApplication(
+	options: StaticApplicationBuildOptions,
+): Omit<UserConfig, 'inputOptions'> & Pick<PluginBuildPipeline, 'inputOptions'> {
 	const cwd = resolve(options.cwd ?? process.cwd())
 	const entry = resolve(cwd, options.entry)
 	const outDir = resolve(cwd, options.outDir ?? 'dist')
@@ -151,7 +159,7 @@ function nf3ExternalsPlugin(options: {
 	conditions: string[]
 	fullTraceInclude: string[]
 	artifactNativeResiduals: ReadonlyMap<string, ReadonlySet<string>>
-	onTracedPackages(packages: Record<string, unknown>): void
+	onTracedPackages(packages: TracedPackages): void
 }): Plugin {
 	const include = new Set(options.include)
 	const tracedPaths = new Set<string>()
@@ -257,15 +265,13 @@ function nf3ExternalsPlugin(options: {
 									files,
 									resolve(options.outDir, 'node_modules', declaredPackage.name),
 								)
-								const existing = packages[declaredPackage.name] as
-									| { name?: string; versions?: Record<string, unknown> }
-									| undefined
+								const existing = packages[declaredPackage.name]
 								packages[declaredPackage.name] = {
 									name: declaredPackage.name,
 									versions: {
 										...existing?.versions,
 										[declaredPackage.version]: {
-											pkgJSON: declaredPackage.packageJson,
+											pkgJSON: declaredPackage.packageJson as TracedPackageVersion['pkgJSON'],
 											path: declaredPackage.root,
 											files,
 										},
@@ -610,7 +616,7 @@ async function copyBundledPackageWorkbenchArtifacts(
 	for (const packageRoot of packageRoots) {
 		const sourceRoot = resolve(packageRoot, 'dist/workbench')
 		if (sourceRoot === destinationRoot) continue
-		const entries = await readdir(sourceRoot, { withFileTypes: true }).catch(() => [])
+		const entries = await readdir(sourceRoot, { withFileTypes: true }).catch((): never[] => [])
 		for (const entry of entries) {
 			if (!entry.isDirectory()) continue
 			const source = resolve(sourceRoot, entry.name)
@@ -708,7 +714,7 @@ export async function assertWorkbenchShellContractProtocol(
 }
 
 async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+	const entries = await readdir(root, { withFileTypes: true }).catch((): never[] => [])
 	const artifacts: unknown[] = []
 	for (const entry of entries) {
 		if (!entry.isDirectory()) continue
@@ -727,7 +733,7 @@ async function collectWorkbenchArtifacts(root: string): Promise<unknown[]> {
 }
 
 async function collectNodeModuleArtifacts(root: string): Promise<unknown[]> {
-	const entries = await readdir(root, { withFileTypes: true }).catch(() => [])
+	const entries = await readdir(root, { withFileTypes: true }).catch((): never[] => [])
 	const artifacts: Array<{ key: string; file: string; sha256: string }> = []
 	for (const entry of entries) {
 		if (!entry.isFile() || !entry.name.endsWith('.mjs')) continue

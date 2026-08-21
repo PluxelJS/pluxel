@@ -345,14 +345,15 @@ async function runPnpm(args: string[], cwd: string, packageManager = readPackage
 	await runInherited(invocation.command, invocation.args, cwd)
 }
 
-function readPackageManager(root: string) {
+function readPackageManager(root: string): string | undefined {
 	const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
 		packageManager?: unknown
 	}
-	if (manifest.packageManager !== undefined && typeof manifest.packageManager !== 'string') {
+	const packageManager = manifest.packageManager
+	if (packageManager !== undefined && typeof packageManager !== 'string') {
 		throw new Error(`${resolve(root, 'package.json')}: packageManager must be a string`)
 	}
-	return manifest.packageManager
+	return packageManager as string | undefined
 }
 
 async function readRootManifestRepository(root: string) {
