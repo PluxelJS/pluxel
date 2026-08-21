@@ -82,6 +82,8 @@ describe('staticApplication', () => {
 			entry: './src/pluxel.static.ts',
 			variant: 'headless',
 			target: 'node',
+			sourcemap: true,
+			sourcemapExcludeSources: true,
 			lint: false,
 		})
 
@@ -94,6 +96,8 @@ describe('staticApplication', () => {
 			emitDecoratorMetadata: false,
 		})
 		expect(config.entry).toEqual({ app: 'pluxel:static-application-bootstrap' })
+		expect(config.sourcemap).toBe(true)
+		expect(config.outputOptions).toMatchObject({ sourcemapExcludeSources: true })
 	})
 
 	it('rejects an unknown launcher instead of silently opening a listener', () => {
@@ -181,6 +185,107 @@ describe('staticApplication', () => {
 			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-node/src/app.ts', {}),
 		).resolves.toMatchObject({ id: 'pg', external: true })
 		expect(resolve).toHaveBeenCalledWith('pg', '/tmp/pluxel-static-node/src/app.ts', {})
+	})
+
+	it('lowers disabled managed database drivers to explicit absent modules', async () => {
+		vi.mocked(traceNodeModules).mockClear()
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-private-database',
+			entry: './src/pluxel.static.ts',
+			variant: 'headless',
+			managedDatabaseDrivers: [],
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: unknown
+				load?: unknown
+				writeBundle?: unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+		const resolveId = plugin?.resolveId as
+			| ((
+					this: { resolve: ReturnType<typeof vi.fn> },
+					id: string,
+					importer: string,
+					options: object,
+			  ) => Promise<unknown>)
+			| undefined
+		const load = plugin?.load as ((id: string) => string | null) | undefined
+		const writeBundle = (
+			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
+		)?.handler
+		const resolve = vi.fn()
+
+		for (const [driver, entry, exportName] of [
+			['pglite', '#pluxel/database-driver/pglite', 'createPgliteDatabaseAdapter'],
+			['postgres', '#pluxel/database-driver/postgres', 'createPostgresDatabaseAdapter'],
+		] as const) {
+			const resolved = await resolveId?.call(
+				{ resolve },
+				entry,
+				'/tmp/pluxel-static-private-database/src/app.ts',
+				{},
+			)
+			expect(resolved).toBe(`\0pluxel:omitted-managed-database:${driver}`)
+			const source = load?.(String(resolved))
+			expect(source).toContain(`export async function ${exportName}()`)
+			expect(source).toContain(`managed database driver \\"${driver}\\" is not included`)
+		}
+		await writeBundle?.call({})
+
+		expect(resolve).not.toHaveBeenCalled()
+		expect(traceNodeModules).not.toHaveBeenCalled()
+	})
+
+	it('still traces application-private driver imports when managed drivers are omitted', async () => {
+		vi.mocked(traceNodeModules).mockClear()
+		const config = staticApplication({
+			cwd: '/tmp/pluxel-static-private-postgres',
+			entry: './src/pluxel.static.ts',
+			managedDatabaseDrivers: [],
+			lint: false,
+		})
+		const plugin = (
+			config.plugins as Array<{
+				name?: string
+				resolveId?: unknown
+				writeBundle?: unknown
+			}>
+		).find((candidate) => candidate?.name === 'pluxel:nf3-externals')
+		const resolveId = plugin?.resolveId as
+			| ((
+					this: { resolve: ReturnType<typeof vi.fn> },
+					id: string,
+					importer: string,
+					options: object,
+			  ) => Promise<unknown>)
+			| undefined
+		const writeBundle = (
+			plugin?.writeBundle as { handler?: (this: object) => Promise<void> } | undefined
+		)?.handler
+		const entry = '/tmp/node_modules/pg/esm/index.mjs'
+		const resolve = vi.fn(async () => ({ id: entry }))
+
+		await expect(
+			resolveId?.call({ resolve }, 'pg', '/tmp/pluxel-static-private-postgres/src/app.ts', {}),
+		).resolves.toMatchObject({ id: 'pg', external: true })
+		await writeBundle?.call({})
+
+		expect(traceNodeModules).toHaveBeenCalledWith(
+			[entry],
+			expect.objectContaining({ rootDir: '/tmp/pluxel-static-private-postgres' }),
+		)
+	})
+
+	it('rejects unknown managed database drivers', () => {
+		expect(() =>
+			staticApplication({
+				entry: './src/pluxel.static.ts',
+				managedDatabaseDrivers: ['sqlite' as never],
+			}),
+		).toThrow('managedDatabaseDrivers[0] must be "pglite" or "postgres"')
 	})
 
 	it('traces declared runtime packages that are absent from the module graph', async () => {
@@ -344,6 +449,8 @@ describe('staticApplication', () => {
 		)
 
 		expect(source).not.toContain("from '@pluxel/runtime/internal/static'")
+		expect(source).not.toContain("from '@pluxel/runtime/internal'")
+		expect(source).toContain("from '@pluxel/runtime/internal/static-host'")
 		expect(source).toContain('@pluxel/runtime-static/internal/node-workbench-application')
 		expect(source).toContain('runStaticNodeWorkbenchApplication')
 		expect(source).toContain('...RuntimeFullTracePackages')

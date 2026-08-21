@@ -140,6 +140,8 @@ export const SearchDatabase = defineDatabase({
 
 当 fixed catalog、schema 和部署都由同一团队维护时，把 schema、client、repositories、migration 和 connection lifecycle 放进普通 application-private package，例如 `@app/database`。这个 package 自己声明 ORM 和 driver dependency；不要只把依赖安装在 workspace root，再让子包隐式使用。
 
+Static application 应在 `configure()` 返回 `database: false`，使误用 `ctx.database` 的内置 Plugin 直接启动失败；production freezer 同时设置 `managedDatabaseDrivers: []`，避免把未使用的 PGlite 与 `pg` package 复制进发行物。两处配置分别约束运行时 capability 与构建闭包，必须保持一致。
+
 内置 Plugin 优先消费 repository 或 application service。只有确实需要构造查询时才暴露 ORM client；不要让每个 Plugin 各自读取 DSN、创建 pool 或运行 migration。
 
 自然入口是无参数 lazy `use()`：

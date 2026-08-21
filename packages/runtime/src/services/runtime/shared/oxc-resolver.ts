@@ -1,7 +1,14 @@
+import { createRequire } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { ResolverFactory, type NapiResolveOptions } from 'oxc-resolver'
+import type { NapiResolveOptions } from 'oxc-resolver'
 import { dirname, normalize, resolve } from 'pathe'
 import { getOrCreateCachedValue } from './cache'
+
+type OxcResolverModule = typeof import('oxc-resolver')
+type ResolverFactory = InstanceType<OxcResolverModule['ResolverFactory']>
+
+const requireFromRuntime = createRequire(import.meta.url)
+let resolverModule: OxcResolverModule | undefined
 
 export type OxcResolveCache = Map<string, unknown>
 export interface OxcResolveHit {
@@ -85,6 +92,7 @@ export function getCachedOxcResolver(
 export function createOxcResolver(from: readonly string[]): OxcResolver {
 	const directories = normalizeOxcResolveDirectories(from)
 	const baseOptions = createResolverOptions()
+	const { ResolverFactory } = loadOxcResolver()
 	const baseFactory = new ResolverFactory(baseOptions)
 	const factoriesByConditions = new Map<string, ResolverFactory>()
 
@@ -135,6 +143,10 @@ export function createOxcResolver(from: readonly string[]): OxcResolver {
 			factoriesByConditions.clear()
 		},
 	}
+}
+
+function loadOxcResolver(): OxcResolverModule {
+	return (resolverModule ??= requireFromRuntime('oxc-resolver') as OxcResolverModule)
 }
 
 export function resolvePackageJsonPathWithOxc(

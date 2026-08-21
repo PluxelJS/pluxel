@@ -12,6 +12,7 @@ export type {
 	RuntimeRouteCapabilities,
 } from './runtime/capabilities'
 export { createContextPluginLogPolicyStore } from './logger/levels'
+export { readHostProduct } from './product-internal'
 export {
 	createRuntimeLogging,
 	type RuntimeLogging,

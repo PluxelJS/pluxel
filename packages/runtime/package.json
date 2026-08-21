@@ -14,6 +14,16 @@
 	],
 	"type": "module",
 	"types": "./dist/index.d.mts",
+	"imports": {
+		"#pluxel/database-driver/pglite": {
+			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
+			"default": "./dist/internal/database/pglite.mjs"
+		},
+		"#pluxel/database-driver/postgres": {
+			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
+			"default": "./dist/internal/database/postgres.mjs"
+		}
+	},
 	"exports": {
 		".": {
 			"@pluxel/source": "./src/index.ts",
@@ -30,6 +40,14 @@
 		"./internal": {
 			"@pluxel/source": "./src/internal.ts",
 			"default": "./dist/internal.mjs"
+		},
+		"./internal/database/pglite": {
+			"@pluxel/source": "./src/services/database-adapters/pglite.ts",
+			"default": "./dist/internal/database/pglite.mjs"
+		},
+		"./internal/database/postgres": {
+			"@pluxel/source": "./src/services/database-adapters/postgres.ts",
+			"default": "./dist/internal/database/postgres.mjs"
 		},
 		"./internal/static": {
 			"@pluxel/source": "./src/internal-static.ts",
@@ -86,11 +104,17 @@
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
+		"imports": {
+			"#pluxel/database-driver/pglite": "./dist/internal/database/pglite.mjs",
+			"#pluxel/database-driver/postgres": "./dist/internal/database/postgres.mjs"
+		},
 		"exports": {
 			".": "./dist/index.mjs",
 			"./capnweb": "./dist/capnweb.mjs",
 			"./database": "./dist/database.mjs",
 			"./internal": "./dist/internal.mjs",
+			"./internal/database/pglite": "./dist/internal/database/pglite.mjs",
+			"./internal/database/postgres": "./dist/internal/database/postgres.mjs",
 			"./internal/static": "./dist/internal/static.mjs",
 			"./internal/static-host": "./dist/internal/static-host.mjs",
 			"./logger": "./dist/logger.mjs",

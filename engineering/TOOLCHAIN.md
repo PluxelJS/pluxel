@@ -246,6 +246,15 @@ Node target 用 `nf3` externalize 并追踪 native/non-bundleable 或无法安�
 复制到 distribution 自己的 `node_modules`。PostgreSQL `pg` 属于后一类：freezer 保留它的 Node package boundary，避免改变
 `pg-pool` 的 CommonJS 构造器语义。这只是 bundler 无法安全内联部分的 fallback，不是部署端 package install 模式。当前
 freezer 只发布 Node application；在提供真正 platform-neutral 的 runtime/service closure 前，不生成伪 neutral Worker bundle。
+Managed database driver 默认同时追踪 PGlite 与 `pg`；`managedDatabaseDrivers` 可以按 deployment 收窄实际复制的 driver。
+未选择的 driver 被 lowering 成明确 absent module，使 dead runtime branch 不会反向进入 bundle或留下 unresolved external；
+选择与 startup config 不一致会在真正加载 driver 时明确失败，而不是从 build config 猜测或改写 canonical `configure()`。
+Production source map 可用 `sourcemapExcludeSources` 省略重复的 `sourcesContent`，仍保留 Node stack mapping 所需的
+source path、name 和 mapping；是否另存完整源码归档由 deployment/release policy 决定。
+
+Runtime shared resolver 只在真正执行 module resolution 时通过 `createRequire()` 加载 OXC native binding。普通 static
+application 虽然会从 runtime root 消费作者 API，但 tree-shake 后不得残留无调用者的 `oxc-resolver` side-effect import，
+也不得让 NF3 把其 native binding 复制进发行物。
 
 应用自己的 Node package 若通过 `createRequire()`、原生 binding loader 或运行时资源路径加载，可以在
 `residualDependencies.packages` 中声明；freezer 会从 application root 预解析并交给 NFT 追踪，即使它不在 ESM module graph

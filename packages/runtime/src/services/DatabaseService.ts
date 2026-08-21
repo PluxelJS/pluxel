@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
 import { formatPluginNodeAddress, Injectable, type Context as CoreContext } from '@pluxel/core'
 import { getTableName, is, sql } from 'drizzle-orm'
 import { PgTable, type PgDatabase } from 'drizzle-orm/pg-core'
 import type { PgQueryResultHKT } from 'drizzle-orm/pg-core/session'
-import type { Pool } from 'pg'
+import { attachPostgresPoolErrorHandler } from './database-adapters/shared'
 import {
 	readDatabaseDefinition,
 	type DatabaseArtifact,
@@ -1047,69 +1045,19 @@ async function createAdapter(
 	onPostgresPoolError: (error: Error) => void,
 ): Promise<DatabaseAdapter> {
 	if (config && config.driver === 'postgres') {
-		const [{ Pool }, { drizzle }] = await Promise.all([
-			import('pg'),
-			import('drizzle-orm/node-postgres'),
-		])
-		const pool = new Pool({
-			connectionString: config.connectionString,
-			max: config.pool?.max ?? 10,
-			idleTimeoutMillis: config.pool?.idleTimeoutMs,
-			connectionTimeoutMillis: config.pool?.connectionTimeoutMs,
-			ssl:
-				config.tls === undefined
-					? undefined
-					: config.tls === 'verify-full'
-						? { rejectUnauthorized: true }
-						: { rejectUnauthorized: false },
-		})
-		attachPostgresPoolErrorHandler(pool, onPostgresPoolError)
-		return {
-			driver: 'postgres',
-			db: drizzle(pool) as AnyDatabase,
-			concurrency: config.pool?.max ?? 10,
-			close: async () => await pool.end(),
-		}
+		const { createPostgresDatabaseAdapter } = await import('#pluxel/database-driver/postgres')
+		return createPostgresDatabaseAdapter(config, onPostgresPoolError)
 	}
 
-	const [{ PGlite }, { drizzle }] = await Promise.all([
-		import('@electric-sql/pglite'),
-		import('drizzle-orm/pglite'),
-	])
-	const configured = config && config.driver === 'pglite' ? config.dataDir : undefined
-	const dataDir = configured ?? defaultPgliteDataDir(persistence)
-	if (!dataDir.includes('://')) await mkdir(dirname(dataDir), { recursive: true })
-	const client = new PGlite(dataDir)
-	await client.waitReady
-	return {
-		driver: 'pglite',
-		db: drizzle(client) as AnyDatabase,
-		concurrency: 1,
-		close: async () => await client.close(),
-	}
+	const { createPgliteDatabaseAdapter } = await import('#pluxel/database-driver/pglite')
+	return createPgliteDatabaseAdapter(
+		config && config.driver === 'pglite' ? config : undefined,
+		persistence,
+	)
 }
 
 /** @internal Keeps pg-pool idle-client failures operational instead of process-fatal. */
-export function attachPostgresPoolErrorHandler(
-	pool: Pick<Pool, 'on'>,
-	report: (error: Error) => void,
-): void {
-	pool.on('error', (error) => {
-		try {
-			report(error)
-		} catch {
-			// EventEmitter treats a thrown `error` listener as process-fatal too. Reporting must be a
-			// terminal boundary because pg-pool has already removed the failed idle client.
-		}
-	})
-}
-
-function defaultPgliteDataDir(persistence: CoreContext.Config['persistence']): string {
-	if (typeof persistence === 'string') return join(persistence, 'database', 'pglite')
-	if (persistence && typeof persistence === 'object' && persistence.mode === 'memory')
-		return 'memory://'
-	return join('.pluxel', 'persistence', 'database', 'pglite')
-}
+export { attachPostgresPoolErrorHandler }
 
 function resultRows(result: unknown): Array<Record<string, unknown>> {
 	if (Array.isArray(result)) return result as Array<Record<string, unknown>>

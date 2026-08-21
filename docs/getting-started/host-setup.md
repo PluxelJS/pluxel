@@ -103,6 +103,19 @@ export default staticApplication({
 
 生产产物包含 Node server entry、fixed Plugin closure、deployment manifest 和所需 Node dependencies。目标机不再安装 Pluxel packages。
 
+freezer 默认同时携带 managed database 的 PGlite 与 PostgreSQL driver，使 `configure()` 可以在启动时选择任一 backend。部署若只支持部分 driver，使用 `managedDatabaseDrivers` 收窄闭包；完全使用 application-private database 时传空数组，并在 runtime config 中设置 `database: false`：
+
+```ts twoslash
+export default staticApplication({
+	entry: './src/pluxel.static.ts',
+	managedDatabaseDrivers: [],
+})
+```
+
+这个列表必须覆盖 `configure()` 可能返回的每个 managed database driver。未列出的 driver 不会复制进发行物；Plugin 首次实际取得该 database capability 时会进入明确的 absent module，并报告该 deployment 未包含对应 driver。
+
+需要生产 source map 时可同时设置 `sourcemap: true` 与 `sourcemapExcludeSources: true`。后者保留路径和行列映射，但不在每份 `.map` 中嵌入完整源码；目标环境另有可信源码归档时通常应开启。
+
 最终 inventory、签名和 delivery marker 见 [Static 发行物](../development/distribution.md)。
 
 ## Dynamic host
