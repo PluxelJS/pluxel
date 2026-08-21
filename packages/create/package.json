@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/create",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel project initializer",
 	"license": "AGPL-3.0-only",
 	"repository": {
@@ -20,7 +20,7 @@
 	},
 	"scripts": {
 		"build": "tsdown",
-		"test": "pnpm run build && node --test tests/*.test.mjs",
+		"test": "pnpm run build && vitest run tests/*.test.mjs",
 		"test:starter": "node scripts/smoke-starter.ts",
 		"typecheck": "tsc --noEmit --pretty false",
 		"prepack": "pnpm run build"
@@ -28,7 +28,8 @@
 	"devDependencies": {
 		"@types/node": "^25.9.3",
 		"tsdown": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"vitest": "catalog:"
 	},
 	"engines": {
 		"node": ">=24"

@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/commands",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Schema-first command kernel for agent tools, CLIs, and message adapters",
 	"license": "AGPL-3.0-only",
 	"repository": {

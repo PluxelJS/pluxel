@@ -1,0 +1,94 @@
+core:changelogs:
+  - content: "---\npackages:\n  group:cli:\n    type: major\n  \"@pluxel/create\":\n    type: major\n  \"@pluxel/commands\":\n    type: major\n  \"@pluxel/core\":\n    type: major\n  \"@pluxel/rolldown\":\n    type: major\n  \"@pluxel/runtime\":\n    type: major\n  \"@pluxel/runtime-dynamic\":\n    type: major\n  \"@pluxel/runtime-static\":\n    type: major\n  \"@pluxel/test\":\n    type: major\n  \"@pluxel/canvas\":\n    type: major\n  \"@pluxel/echarts\":\n    type: major\n  \"@pluxel/fonts\":\n    type: major\n  \"@pluxel/wretch\":\n    type: major\n  valibot-form:\n    type: major\n---\n\n## Initial open-source release\n\nPublish the supported Pluxel framework, runtimes, build toolchain, testing utilities, CLI, and\nofficial public plugins. The current architecture, package boundaries, and public APIs are documented\nin the repository; pre-open-source development records are intentionally not carried into this release\nhistory.\n"
+    filename: initial-open-source-release.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: patch\n  \"@pluxel/core\":\n    type: minor\n  \"@pluxel/create\":\n    type: patch\n  \"@pluxel/runtime\":\n    type: minor\n  \"@pluxel/rolldown\":\n    type: minor\n  \"@pluxel/test\":\n    type: minor\n---\n\n## Add owner-bound PluginPart composition\n\nAdd statically lowered `PluginPart` containment with automatic child Context/effects ownership,\ncomposite Part configuration sections, owner-level optional Plugin edges, lifecycle diagnostics, and\nWorkbench tab projection. The Rolldown and Oxlint toolchain now validates the field-only Part authoring\ncontract and rejects constructors, dynamic occurrences, graph markers, and local containment cycles.\n"
+    filename: owner-bound-plugin-parts.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/cli\":\n    type: minor\n  \"@pluxel/create\":\n    type: minor\n---\n\n## Separate project creation from Plugin scaffolding\n\nShip a fixed, production-quality example monorepo and version-matched offline documentation from\n`@pluxel/create`. Keep `pluxel new` focused on publishable Plugin packages with a strict manifest,\nopt-in lightweight `.tpl` interpolation, immutable byte plans and exact overwrite preflight.\n\nThe example uses one host-owned Vite configuration for its React Todo UI and Plugin routes. Static\nand dynamic development are modes of the same application server, while `host/web` is an independent\nprivate workspace package for browser source and frontend-only dependencies without Pluxel imports.\nThe workspace root now preinstalls pncat as the only catalog-management interface and groups Pluxel,\nfrontend, backend, test and tooling versions without replacing package-level direct dependency declarations.\n"
+    filename: refactor-cli-scaffolding.md
+    v: 0.0.0
+  - content: "---\npackages:\n  \"@pluxel/create\":\n    type: patch\n---\n\n## Simplify generated repository verification\n\nGenerate the example monorepo with one canonical `verify` pipeline instead of an additional workspace-task alias.\n"
+    filename: simplify-generated-governance.md
+    v: 0.0.0
+core:packages:
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+      - refactor-cli-scaffolding.md
+    id: npm:@pluxel/cli
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/commands
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+      - refactor-cli-scaffolding.md
+      - simplify-generated-governance.md
+    id: npm:@pluxel/create
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+    id: npm:@pluxel/core
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+    id: npm:@pluxel/rolldown
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+    id: npm:@pluxel/runtime
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/runtime-dynamic
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/runtime-static
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+      - owner-bound-plugin-parts.md
+    id: npm:@pluxel/test
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:valibot-form
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/wretch
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/canvas
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/echarts
+    updated: true
+  - changelogIds:
+      - initial-open-source-release.md
+    id: npm:@pluxel/fonts
+    updated: true
+npm:packages:
+  - id: npm:@pluxel/cli
+  - id: npm:@pluxel/commands
+  - id: npm:@pluxel/create
+  - id: npm:@pluxel/core
+  - id: npm:@pluxel/rolldown
+  - id: npm:@pluxel/runtime
+  - id: npm:@pluxel/runtime-dynamic
+  - id: npm:@pluxel/runtime-static
+  - id: npm:@pluxel/test
+  - id: npm:valibot-form
+  - id: npm:@pluxel/wretch
+  - id: npm:@pluxel/canvas
+  - id: npm:@pluxel/echarts
+  - id: npm:@pluxel/fonts

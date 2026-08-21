@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/core",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel plugin graph, lifecycle, Context, and core services",
 	"license": "AGPL-3.0-only",
 	"repository": {

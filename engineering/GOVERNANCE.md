@@ -65,6 +65,10 @@ peer，并在需要独立开发时声明 dev 副本。导入 Drizzle schema/quer
 内部依赖范围和 Tegami 发布集合。治理检查与 Tegami 从 `scripts/repository-packages.mjs` 读取同一份 inventory；
 `private`、目录类型和发布排除列表不再分别维护。该命令是 `pnpm verify` 的前置步骤。
 
+workspace 单元测试统一由 Vitest 执行；package `test` script 不调用 `node --test`。需要验证纯 Node 边界时可以
+保留独立 fixture 或 test directory，但仍由 Vitest 的 Node environment 编排，避免不同 runner 的 hook、过滤、
+reporter 和 CI 语义漂移。Node `assert` 仍可作为断言库使用，它不构成第二套 test runner。
+
 ## 导出
 
 - public export 必须对应稳定用户概念；

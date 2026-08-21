@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { createServer, type IncomingHttpHeaders } from 'node:http'
-import test from 'node:test'
 import * as grpc from '@grpc/grpc-js'
 import {
 	context,
@@ -19,6 +18,7 @@ import {
 	type ResourceMetrics,
 } from '@opentelemetry/sdk-metrics'
 import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base'
+import { test } from 'vitest'
 import { createOtlpMetricReader, type OtlpExportState } from '../src/otlp.ts'
 import { createOtelRuntime } from '../src/sdk.ts'
 

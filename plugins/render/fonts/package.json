@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/fonts",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Official provider-owned server font management capability for Pluxel plugins",
 	"license": "AGPL-3.0-only",
 	"repository": {

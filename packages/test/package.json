@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/test",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"description": "Core/plugin test utilities for Pluxel packages (fixtures + Vitest preset).",
 	"license": "AGPL-3.0-only",
 	"repository": {

@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/cli",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel CLI",
 	"license": "AGPL-3.0-only",
 	"repository": {

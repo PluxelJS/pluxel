@@ -3,18 +3,18 @@ import { spawn } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { after, before, describe, it } from 'node:test'
+import { afterAll, beforeAll, describe, it } from 'vitest'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const repositoryRoot = resolve(packageRoot, '../..')
 const bin = resolve(packageRoot, 'dist/create.mjs')
 let temporaryRoot
 
-before(async () => {
+beforeAll(async () => {
 	temporaryRoot = await mkdtemp(join(tmpdir(), 'create-pluxel-test-'))
 })
 
-after(async () => {
+afterAll(async () => {
 	await rm(temporaryRoot, { recursive: true, force: true })
 })
 

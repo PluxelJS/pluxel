@@ -112,15 +112,36 @@ if (publicPackages.length === 0) errors.push('no public packages found under pac
 
 const releaseDraft = await paper.draft()
 const plannedPackages = []
+const plannedTypes = new Map()
 for (const [id, draft] of releaseDraft.getPackageDrafts()) {
 	if (draft.type === undefined) continue
 	const name = id.startsWith('npm:') ? id.slice('npm:'.length) : id
 	plannedPackages.push(name)
+	plannedTypes.set(name, draft.type)
 	if (!publicVersions.has(name)) errors.push(`Tegami planned non-public package ${name}`)
+}
+
+const preOnePackages = publicPackages.filter(({ manifest }) => manifest.version.startsWith('0.'))
+if (preOnePackages.length > 0) {
+	if (preOnePackages.length !== publicPackages.length) {
+		errors.push('initial public release must move every public package to 1.0.0 atomically')
+	}
+	for (const { manifest } of publicPackages) {
+		if (plannedTypes.get(manifest.name) !== 'major') {
+			errors.push(`${manifest.name} must have a major Tegami intent for the initial 1.0.0 release`)
+		}
+	}
 }
 
 for (const { packageRoot, manifestPath, directory, kind, manifest } of packageManifests) {
 	const isPublic = isPublishablePackage({ kind, manifest })
+	if (
+		Object.values(manifest.scripts ?? {}).some((script) =>
+			/(?:^|\s)node\s+--test(?:\s|$)/.test(script),
+		)
+	) {
+		errors.push(`${relative(manifestPath)}: test scripts must use Vitest instead of node --test`)
+	}
 	for (const field of dependencyFields) {
 		for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
 			if (catalogNames.has(name) && specifier !== 'catalog:') {

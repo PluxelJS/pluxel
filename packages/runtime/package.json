@@ -1,6 +1,6 @@
 {
 	"name": "@pluxel/runtime",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"description": "Pluxel runtime kernel (includes control plane, web SDK, and frozen export)",
 	"license": "AGPL-3.0-only",
 	"repository": {
